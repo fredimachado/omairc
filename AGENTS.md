@@ -1,0 +1,53 @@
+# Omairc contributor notes
+
+## Product boundary
+
+- Keep Omairc dead-simple, keyboard-friendly, and visually native to Omarchy.
+- The current app is a visual prototype. Keep all conversations local and
+  mocked until IRC connectivity is explicitly introduced.
+- Prefer a small, calm interface over adding controls for hypothetical future
+  features.
+
+## Architecture
+
+- This is a Qt 6 Quick application built with qmake and C++17.
+- Keep mock conversation state and presentation logic in `src/Main.qml`.
+- Keep `Backend` limited to desktop integration: Omarchy theme colors, live
+  theme watching, text scale, and window geometry.
+- Keep system light/dark mode and portal text-scale detection in
+  `SystemTheme`.
+- Use the bundled `iA Writer Mono S` font for all custom interface text.
+
+## Visual conventions
+
+- Derive UI colors from `backend.themeBackground`, `themeForeground`,
+  `themeAccent`, and `themeSelection`; do not introduce a separate fixed
+  palette for structural UI.
+- Derive secondary surfaces and muted text with `mixColors()` so new Omarchy
+  themes continue to work.
+- Scale dimensions and text through `scaledSize()` and `backend.textScale`.
+- Keep conversation counts consistent between the header and member panel.
+
+## QML conventions
+
+- For the fixed mock navigation, prefer explicit `ConversationRow` instances.
+  A `ListModel`/`Repeater` boundary using a `name` role resolved to empty
+  strings in this interface even though the QML tree started without errors.
+- If navigation becomes dynamic, use an unambiguous role such as
+  `conversation`, test the delegate boundary directly, and confirm rendered
+  labels rather than relying only on a clean startup.
+- Channel switching must update the topic, message model, people count, and
+  member list together.
+- `Enter` sends a message; `Shift+Enter` inserts a newline. Preserve this when
+  changing the composer.
+
+## Build and validation
+
+```sh
+bin/build
+QT_QPA_PLATFORM=offscreen timeout 3 ./build/omairc
+```
+
+The timeout is expected for the startup smoke check because the GUI event loop
+continues running. For visual changes, also inspect the running application;
+a warning-free QML startup does not prove that bindings render visible values.
