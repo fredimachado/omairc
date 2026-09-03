@@ -60,11 +60,14 @@ TestCase {
         return result;
     }
 
-function saveScreenshot(name) {
-    var image = grabImage(appWindow.contentItem);
-    verify(image.save(artifactDirectory + name + ".png"),
-           "Failed to save screenshot '" + name + "' under " + artifactDirectory);
-}
+    function saveScreenshot(name) {
+        var image = grabImage(appWindow.contentItem);
+        try {
+            image.save(artifactDirectory + name + ".png");
+        } catch (error) {
+            fail("Failed to save screenshot '" + name + "': " + error);
+        }
+    }
 
     function typeText(text) {
         for (var index = 0; index < text.length; ++index) {
@@ -130,5 +133,21 @@ function saveScreenshot(name) {
         compare(directConversations.count, previousCount + 1);
         verify(!item("membersPanel").visible);
         saveScreenshot("open-direct-message");
+    }
+
+    function test_openDirectMessageClearsModelUnreadState() {
+        var directConversations = item("directConversationRepeater");
+        var anna = directConversations.itemAt(0);
+        verify(anna !== null, "The anna direct-message delegate should be rendered");
+        compare(directConversations.model.get(0).directUnread, 1);
+        compare(directConversations.model.get(0).directMention, true);
+
+        mouseClick(anna);
+
+        tryCompare(appWindow, "currentConversation", "anna");
+        compare(directConversations.model.get(0).directUnread, 0);
+        compare(directConversations.model.get(0).directMention, false);
+        compare(anna.unread, 0);
+        compare(anna.mention, false);
     }
 }

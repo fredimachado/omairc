@@ -152,7 +152,19 @@ ApplicationWindow {
         selectConversation(nick);
     }
 
+    function markDirectConversationRead(name) {
+        for (var index = 0; index < directConversations.count; ++index) {
+            if (directConversations.get(index).conversation === name) {
+                directConversations.setProperty(index, "directUnread", 0);
+                directConversations.setProperty(index, "directMention", false);
+                return;
+            }
+        }
+    }
+
     function selectConversation(name) {
+        if (name.charAt(0) !== "#")
+            markDirectConversationRead(name);
         currentConversation = name;
         currentTopic = topicFor(name);
         activeMessages = messagesFor(name);
@@ -218,8 +230,10 @@ ApplicationWindow {
         height: win.scaledSize(36)
 
         function activate() {
-            conversationRow.unread = 0;
-            conversationRow.mention = false;
+            if (!conversationRow.direct) {
+                conversationRow.unread = 0;
+                conversationRow.mention = false;
+            }
             win.selectConversation(conversationRow.conversationName);
         }
 

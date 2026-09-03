@@ -22,6 +22,10 @@ fi
 
 "$ROOT/bin/build"
 mkdir -p "$ROOT/test-artifacts"
+SCREENSHOTS="switch-channel send-message toggle-members open-direct-message"
+for screenshot in $SCREENSHOTS; do
+  rm -f -- "$ROOT/test-artifacts/$screenshot.png"
+done
 
 cd "$ROOT"
 XDG_CONFIG_HOME="$TEST_STATE/config" \
@@ -30,3 +34,10 @@ XDG_DATA_HOME="$TEST_STATE/data" \
 QT_QPA_PLATFORM=offscreen \
 QT_QUICK_BACKEND=software \
 "$QMLTESTRUNNER" -input "$ROOT/tests/ui"
+
+for screenshot in $SCREENSHOTS; do
+  if [ ! -s "$ROOT/test-artifacts/$screenshot.png" ]; then
+    echo "UI test did not create test-artifacts/$screenshot.png." >&2
+    exit 1
+  fi
+done
