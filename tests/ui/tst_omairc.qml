@@ -60,10 +60,11 @@ TestCase {
         return result;
     }
 
-    function saveScreenshot(name) {
-        var image = grabImage(appWindow.contentItem);
-        image.save(artifactDirectory + name + ".png");
-    }
+function saveScreenshot(name) {
+    var image = grabImage(appWindow.contentItem);
+    verify(image.save(artifactDirectory + name + ".png"),
+           "Failed to save screenshot '" + name + "' under " + artifactDirectory);
+}
 
     function typeText(text) {
         for (var index = 0; index < text.length; ++index) {
