@@ -30,6 +30,7 @@ ApplicationWindow {
     property string currentTopic: "A cozy corner for Omarchy users and builders."
     property var activeMessages: omarchyMessages
     property bool membersVisible: true
+    readonly property bool currentConversationIsChannel: currentConversation.charAt(0) === "#"
     readonly property int currentPeopleCount: peopleCountFor(currentConversation)
 
     Material.theme: darkMode ? Material.Dark : Material.Light
@@ -162,6 +163,7 @@ ApplicationWindow {
     Shortcut {
         sequence: "Ctrl+Shift+M"
         context: Qt.ApplicationShortcut
+        enabled: currentConversationIsChannel
         onActivated: membersVisible = !membersVisible
     }
 
@@ -769,8 +771,8 @@ ApplicationWindow {
                 Column {
                     anchors.left: parent.left
                     anchors.leftMargin: win.scaledSize(24)
-                    anchors.right: peopleButton.left
-                    anchors.rightMargin: win.scaledSize(18)
+                    anchors.right: win.currentConversationIsChannel ? peopleButton.left : parent.right
+                    anchors.rightMargin: win.scaledSize(win.currentConversationIsChannel ? 18 : 24)
                     anchors.verticalCenter: parent.verticalCenter
                     spacing: win.scaledSize(3)
 
@@ -796,6 +798,7 @@ ApplicationWindow {
 
                 Rectangle {
                     id: peopleButton
+                    visible: win.currentConversationIsChannel
                     anchors.right: parent.right
                     anchors.rightMargin: win.scaledSize(19)
                     anchors.verticalCenter: parent.verticalCenter
@@ -1025,7 +1028,9 @@ ApplicationWindow {
 
         Rectangle {
             id: membersPanel
-            visible: win.membersVisible && win.width >= win.scaledSize(980)
+            visible: win.currentConversationIsChannel
+                && win.membersVisible
+                && win.width >= win.scaledSize(980)
             Layout.preferredWidth: visible ? win.scaledSize(216) : 0
             Layout.minimumWidth: visible ? win.scaledSize(196) : 0
             Layout.fillHeight: true
