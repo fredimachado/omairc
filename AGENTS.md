@@ -30,14 +30,18 @@
 
 ## QML conventions
 
-- For the fixed mock navigation, prefer explicit `ConversationRow` instances.
-  A `ListModel`/`Repeater` boundary using a `name` role resolved to empty
-  strings in this interface even though the QML tree started without errors.
-- If navigation becomes dynamic, use an unambiguous role such as
-  `conversation`, test the delegate boundary directly, and confirm rendered
-  labels rather than relying only on a clean startup.
+- For fixed mock channel navigation, prefer explicit `ConversationRow`
+  instances. A `ListModel`/`Repeater` boundary using a `name` role resolved to
+  empty strings in this interface even though the QML tree started without
+  errors.
+- Dynamic direct-message navigation uses an unambiguous `conversation` role.
+  Test delegate boundaries directly and confirm rendered labels rather than
+  relying only on a clean startup.
 - Channel switching must update the topic, message model, people count, and
   member list together.
+- Show the people count, member toggle, and member panel only for channels.
+  Clicking another user in the member panel must open or create a direct
+  message with its own local message history.
 - `Enter` sends a message; `Shift+Enter` inserts a newline. Preserve this when
   changing the composer.
 
