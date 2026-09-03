@@ -28,6 +28,33 @@ bin/build
 ./build/omairc
 ```
 
+## Test
+
+```sh
+bin/test
+```
+
+The UI suite loads the production QML in an isolated temporary environment,
+renders it with Qt's offscreen software backend, and controls it with real
+mouse and keyboard events. It verifies channel switching, message sending,
+keyboard shortcuts, and opening direct messages from the member list.
+Screenshots from each workflow are written to `test-artifacts/` for visual
+inspection by people or AI agents.
+
+For a black-box check of the compiled executable, install the free
+`xorg-server-xvfb`, `xorg-xauth`, `xdotool`, and `imagemagick` packages, then
+run:
+
+```sh
+bin/test-desktop
+```
+
+This starts an access-controlled virtual display, launches the real
+`build/omairc` executable with temporary settings and no host desktop portal,
+and drives it using external mouse and keyboard events. It never sends input
+to the active desktop. The runner checks visible changes between screenshots;
+logs and screenshots are written to `test-artifacts/desktop/`.
+
 ## Requirements
 
 - Qt 6: `qt6-base`, `qt6-declarative`
