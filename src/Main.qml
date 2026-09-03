@@ -76,10 +76,8 @@ ApplicationWindow {
             return "Themes, type, wallpapers, and the tiny details.";
         if (name === "#help")
             return "Ask a clear question. Share what you already tried.";
-        if (name === "anna")
-            return "Direct message with anna";
-        if (name === "dax")
-            return "Direct message with dax";
+        if (name.charAt(0) !== "#")
+            return "Direct message with " + name;
         return "A local mock conversation.";
     }
 
@@ -114,7 +112,41 @@ ApplicationWindow {
             return annaMessages;
         if (name === "dax")
             return daxMessages;
+        if (name === "mira")
+            return miraMessages;
+        if (name === "sol")
+            return solMessages;
+        if (name === "kai")
+            return kaiMessages;
+        if (name === "nora")
+            return noraMessages;
+        if (name === "teo")
+            return teoMessages;
+        if (name === "lena")
+            return lenaMessages;
+        if (name === "sam")
+            return samMessages;
+        if (name === "ivy")
+            return ivyMessages;
+        if (name === "max")
+            return maxMessages;
         return omarchyMessages;
+    }
+
+    function openDirectMessage(nick) {
+        for (var index = 0; index < directConversations.count; ++index) {
+            if (directConversations.get(index).conversation === nick) {
+                selectConversation(nick);
+                return;
+            }
+        }
+
+        directConversations.append({
+            conversation: nick,
+            directUnread: 0,
+            directMention: false
+        });
+        selectConversation(nick);
     }
 
     function selectConversation(name) {
@@ -484,6 +516,65 @@ ApplicationWindow {
     }
 
     ListModel {
+        id: miraMessages
+        ListElement { author: ""; time: ""; body: "This is the beginning of your conversation with mira."; kind: "event" }
+    }
+
+    ListModel {
+        id: solMessages
+        ListElement { author: ""; time: ""; body: "This is the beginning of your conversation with sol."; kind: "event" }
+    }
+
+    ListModel {
+        id: kaiMessages
+        ListElement { author: ""; time: ""; body: "This is the beginning of your conversation with kai."; kind: "event" }
+    }
+
+    ListModel {
+        id: noraMessages
+        ListElement { author: ""; time: ""; body: "This is the beginning of your conversation with nora."; kind: "event" }
+    }
+
+    ListModel {
+        id: teoMessages
+        ListElement { author: ""; time: ""; body: "This is the beginning of your conversation with teo."; kind: "event" }
+    }
+
+    ListModel {
+        id: lenaMessages
+        ListElement { author: ""; time: ""; body: "This is the beginning of your conversation with lena."; kind: "event" }
+    }
+
+    ListModel {
+        id: samMessages
+        ListElement { author: ""; time: ""; body: "This is the beginning of your conversation with sam."; kind: "event" }
+    }
+
+    ListModel {
+        id: ivyMessages
+        ListElement { author: ""; time: ""; body: "This is the beginning of your conversation with ivy."; kind: "event" }
+    }
+
+    ListModel {
+        id: maxMessages
+        ListElement { author: ""; time: ""; body: "This is the beginning of your conversation with max."; kind: "event" }
+    }
+
+    ListModel {
+        id: directConversations
+        ListElement {
+            conversation: "anna"
+            directUnread: 1
+            directMention: true
+        }
+        ListElement {
+            conversation: "dax"
+            directUnread: 0
+            directMention: false
+        }
+    }
+
+    ListModel {
         id: membersModel
         ListElement { nick: "anna"; status: "writing docs"; away: false }
         ListElement { nick: "dax"; status: "on #desktop"; away: false }
@@ -671,20 +762,20 @@ ApplicationWindow {
                     }
                 }
 
-                ConversationRow {
-                    width: sidebar.width
-                    conversationName: "anna"
-                    unread: 1
-                    mention: true
-                    direct: true
-                }
+                Repeater {
+                    model: directConversations
 
-                ConversationRow {
-                    width: sidebar.width
-                    conversationName: "dax"
-                    unread: 0
-                    mention: false
-                    direct: true
+                    delegate: ConversationRow {
+                        required property string conversation
+                        required property int directUnread
+                        required property bool directMention
+
+                        width: sidebar.width
+                        conversationName: conversation
+                        unread: directUnread
+                        mention: directMention
+                        direct: true
+                    }
                 }
             }
 
@@ -1084,6 +1175,14 @@ ApplicationWindow {
                     height: win.scaledSize(43)
 
                     Rectangle {
+                        anchors.fill: parent
+                        anchors.leftMargin: win.scaledSize(8)
+                        anchors.rightMargin: win.scaledSize(8)
+                        radius: win.scaledSize(7)
+                        color: memberMouse.containsMouse ? win.hoverColor : "transparent"
+                    }
+
+                    Rectangle {
                         anchors.left: parent.left
                         anchors.leftMargin: win.scaledSize(18)
                         anchors.verticalCenter: parent.verticalCenter
@@ -1144,6 +1243,15 @@ ApplicationWindow {
                             font.family: "iA Writer Mono S"
                             font.pixelSize: win.scaledSize(9)
                         }
+                    }
+
+                    MouseArea {
+                        id: memberMouse
+                        anchors.fill: parent
+                        enabled: memberDelegate.nick !== "fred"
+                        hoverEnabled: true
+                        cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                        onClicked: win.openDirectMessage(memberDelegate.nick)
                     }
                 }
             }
