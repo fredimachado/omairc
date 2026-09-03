@@ -978,7 +978,11 @@ ApplicationWindow {
                     wrapMode: TextEdit.Wrap
                     font.family: "iA Writer Mono S"
                     font.pixelSize: win.scaledSize(13)
-                    padding: win.scaledSize(8)
+                    leftPadding: win.scaledSize(8)
+                    rightPadding: win.scaledSize(8)
+                    topPadding: Math.max(win.scaledSize(8),
+                        (height - contentHeight) / 2)
+                    bottomPadding: topPadding
                     background: Item {}
 
                     Keys.onPressed: function(event) {
