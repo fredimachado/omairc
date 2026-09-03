@@ -56,7 +56,7 @@ int main(int argc, char *argv[]) {
         for (const QQmlError &warning : warnings)
             qWarning().noquote() << warning.toString();
     });
-    engine.rootContext()->setContextProperty(QStringLiteral("backend"), &backend);
+    engine.rootContext()->setContextProperty(QStringLiteral("appBackend"), &backend);
     engine.load(QUrl(QStringLiteral("qrc:/Main.qml")));
     if (engine.rootObjects().isEmpty()) {
         qCritical() << "Could not load the Omairc interface; resource available:"

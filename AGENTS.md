@@ -48,9 +48,17 @@
 
 ```sh
 bin/build
+bin/test
+bin/test-desktop
 QT_QPA_PLATFORM=offscreen timeout 3 ./build/omairc
 ```
 
 The timeout is expected for the startup smoke check because the GUI event loop
 continues running. For visual changes, also inspect the running application;
 a warning-free QML startup does not prove that bindings render visible values.
+The UI tests exercise the production QML with mouse and keyboard input and
+write screenshots to `test-artifacts/`; inspect the relevant screenshot when
+changing layout or presentation.
+Use `bin/test-desktop` when the optional Xvfb, Xauthority, xdotool, and
+ImageMagick dependencies are available to verify the compiled executable as a
+black box without interacting with the user's active desktop.

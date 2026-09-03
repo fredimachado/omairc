@@ -1,0 +1,32 @@
+#!/usr/bin/env sh
+set -eu
+
+ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
+TEST_STATE="$(mktemp -d "${TMPDIR:-/tmp}/omairc-tests.XXXXXX")"
+
+cleanup() {
+  rm -rf -- "$TEST_STATE"
+}
+trap cleanup EXIT HUP INT TERM
+
+if command -v qmltestrunner6 >/dev/null 2>&1; then
+  QMLTESTRUNNER=qmltestrunner6
+elif command -v qmltestrunner >/dev/null 2>&1; then
+  QMLTESTRUNNER=qmltestrunner
+elif [ -x /usr/lib/qt6/bin/qmltestrunner ]; then
+  QMLTESTRUNNER=/usr/lib/qt6/bin/qmltestrunner
+else
+  echo "Qt 6 qmltestrunner is required to test omairc." >&2
+  exit 1
+fi
+
+"$ROOT/bin/build"
+mkdir -p "$ROOT/test-artifacts"
+
+cd "$ROOT"
+XDG_CONFIG_HOME="$TEST_STATE/config" \
+XDG_CACHE_HOME="$TEST_STATE/cache" \
+XDG_DATA_HOME="$TEST_STATE/data" \
+QT_QPA_PLATFORM=offscreen \
+QT_QUICK_BACKEND=software \
+"$QMLTESTRUNNER" -input "$ROOT/tests/ui"

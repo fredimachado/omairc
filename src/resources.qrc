@@ -1,6 +1,7 @@
 <RCC>
     <qresource prefix="/">
         <file alias="Main.qml">Main.qml</file>
+        <file alias="OmaircWindow.qml">OmaircWindow.qml</file>
         <file alias="fonts/iAWriterMonoS-Regular.ttf">../fonts/iAWriterMonoS-Regular.ttf</file>
         <file alias="fonts/iAWriterMonoS-Bold.ttf">../fonts/iAWriterMonoS-Bold.ttf</file>
     </qresource>
