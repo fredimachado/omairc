@@ -1,0 +1,481 @@
+#!/usr/bin/env sh
+set -eu
+
+SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+ROOT="$(CDPATH= cd -- "$SCRIPT_DIR/../../.." && pwd)"
+STATE_FILE="${OMAIRC_VERIFY_STATE:-${TMPDIR:-/tmp}/omairc-verify-$USER/state}"
+EVIDENCE_DIR="${OMAIRC_VERIFY_EVIDENCE:-$ROOT/test-artifacts/verify}"
+
+usage() {
+  cat <<'EOF'
+control-omairc - isolated driver for the compiled Omairc desktop app
+
+Usage:
+  control-omairc launch
+  control-omairc doctor
+  control-omairc title
+  control-omairc wait-title --exact "<title>"
+  control-omairc click --x <px> --y <px>
+  control-omairc click-conversation --name <#channel|nick>
+  control-omairc click-member --name <nick>
+  control-omairc click-people
+  control-omairc click-send
+  control-omairc focus-composer
+  control-omairc type --text "<text>"
+  control-omairc key --key <xdotool-key>
+  control-omairc send --text "<text>"
+  control-omairc screenshot --feature <id> --name <stem>
+  control-omairc compare --before <path> --after <path>
+  control-omairc qml-suite
+  control-omairc doctor-qml
+  control-omairc cleanup
+
+Coordinates assume the isolated window is the default 1180x760 at textScale 1.0.
+Never point this helper at the user's interactive display.
+EOF
+}
+
+die() {
+  echo "control-omairc: $*" >&2
+  exit 1
+}
+
+require_tools() {
+  missing=
+  for command_name in Xvfb xauth xdotool import magick; do
+    if ! command -v "$command_name" >/dev/null 2>&1; then
+      missing="$missing $command_name"
+    fi
+  done
+  if [ -n "$missing" ]; then
+    die "missing desktop tools:$missing. On Arch/Omarchy install: xorg-server-xvfb xorg-xauth xdotool imagemagick"
+  fi
+}
+
+load_state() {
+  [ -f "$STATE_FILE" ] || die "no active instance. Run: $SCRIPT_DIR/control-omairc launch"
+  # shellcheck disable=SC1090
+  . "$STATE_FILE"
+  [ -n "${DISPLAY:-}" ] || die "state file is missing DISPLAY"
+  [ -n "${XAUTHORITY:-}" ] || die "state file is missing XAUTHORITY"
+  [ -n "${APP_PID:-}" ] || die "state file is missing APP_PID"
+  [ -n "${XVFB_PID:-}" ] || die "state file is missing XVFB_PID"
+  [ -n "${WINDOW:-}" ] || die "state file is missing WINDOW"
+  export DISPLAY XAUTHORITY
+}
+
+write_state() {
+  mkdir -p "$(dirname -- "$STATE_FILE")"
+  cat > "$STATE_FILE" <<EOF
+ROOT=$ROOT
+STATE_DIR=$STATE_DIR
+EVIDENCE_DIR=$EVIDENCE_DIR
+DISPLAY=$DISPLAY
+XAUTHORITY=$XAUTHORITY
+XVFB_PID=$XVFB_PID
+APP_PID=$APP_PID
+WINDOW=$WINDOW
+BINARY=$BINARY
+EOF
+}
+
+process_alive() {
+  kill -0 "$1" 2>/dev/null
+}
+
+stop_pid() {
+  pid=$1
+  if [ -n "$pid" ] && process_alive "$pid"; then
+    kill "$pid"
+    wait "$pid" 2>/dev/null || true
+  fi
+}
+
+conversation_y() {
+  case $1 in
+    "#omarchy") echo 124 ;;
+    "#desktop") echo 160 ;;
+    "#ricing") echo 196 ;;
+    "#help") echo 232 ;;
+    anna) echo 312 ;;
+    dax) echo 348 ;;
+    *) die "unknown conversation '$1'. Use #omarchy, #desktop, #ricing, #help, anna, or dax." ;;
+  esac
+}
+
+member_y() {
+  case $1 in
+    anna) echo 71 ;;
+    dax) echo 114 ;;
+    mira) echo 157 ;;
+    sol) echo 200 ;;
+    fred) echo 243 ;;
+    kai) echo 286 ;;
+    nora) echo 329 ;;
+    teo) echo 372 ;;
+    lena) echo 415 ;;
+    sam) echo 458 ;;
+    ivy) echo 501 ;;
+    max) echo 544 ;;
+    *) die "unknown member '$1'." ;;
+  esac
+}
+
+window_title() {
+  xdotool getwindowname "$WINDOW"
+}
+
+click_xy() {
+  x=$1
+  y=$2
+  xdotool windowfocus --sync "$WINDOW"
+  xdotool mousemove --window "$WINDOW" "$x" "$y" click 1
+}
+
+cmd_launch() {
+  require_tools
+  if [ -f "$STATE_FILE" ]; then
+    if "$0" doctor >/dev/null 2>&1; then
+      die "an isolated instance is already running. Run cleanup first, or doctor to inspect it."
+    fi
+    echo "control-omairc: clearing stale run state" >&2
+    cmd_cleanup >/dev/null 2>&1 || true
+  fi
+
+  "$ROOT/bin/build"
+
+  STATE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/omairc-verify.XXXXXX")"
+  BINARY="$ROOT/build/omairc"
+  [ -x "$BINARY" ] || die "missing $BINARY after bin/build"
+
+  display_number=110
+  while [ -e "/tmp/.X11-unix/X$display_number" ]; do
+    display_number=$((display_number + 1))
+  done
+  DISPLAY=":$display_number"
+  export DISPLAY
+  XAUTHORITY="$STATE_DIR/Xauthority"
+  export XAUTHORITY
+  cookie="$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')"
+  xauth -f "$XAUTHORITY" add "$DISPLAY" . "$cookie"
+
+  mkdir -p "$EVIDENCE_DIR" "$STATE_DIR/logs"
+  Xvfb "$DISPLAY" -screen 0 1280x800x24 -nolisten tcp -auth "$XAUTHORITY" \
+    >"$STATE_DIR/logs/xvfb.log" 2>&1 &
+  XVFB_PID=$!
+
+  attempt=0
+  while ! xdotool getmouselocation >/dev/null 2>&1; do
+    attempt=$((attempt + 1))
+    if [ "$attempt" -ge 50 ] || ! process_alive "$XVFB_PID"; then
+      die "isolated X server did not start; see $STATE_DIR/logs/xvfb.log"
+    fi
+    sleep 0.1
+  done
+
+  XDG_CONFIG_HOME="$STATE_DIR/config" \
+  XDG_CACHE_HOME="$STATE_DIR/cache" \
+  XDG_DATA_HOME="$STATE_DIR/data" \
+  DBUS_SESSION_BUS_ADDRESS="unix:path=$STATE_DIR/no-session-bus" \
+  QT_QPA_PLATFORM=xcb \
+  "$BINARY" >"$STATE_DIR/logs/omairc.log" 2>&1 &
+  APP_PID=$!
+
+  attempt=0
+  WINDOW=
+  while [ -z "$WINDOW" ]; do
+    WINDOW="$(xdotool search --onlyvisible --pid "$APP_PID" --name 'Omairc' 2>/dev/null | head -1 || true)"
+    attempt=$((attempt + 1))
+    if [ "$attempt" -ge 50 ] || ! process_alive "$APP_PID"; then
+      die "Omairc did not open; see $STATE_DIR/logs/omairc.log"
+    fi
+    sleep 0.1
+  done
+
+  write_state
+  xdotool windowfocus --sync "$WINDOW"
+  echo "launched isolated Omairc"
+  echo "display=$DISPLAY"
+  echo "pid=$APP_PID"
+  echo "window=$WINDOW"
+  echo "title=$(window_title)"
+  echo "state=$STATE_FILE"
+}
+
+cmd_doctor() {
+  load_state
+  process_alive "$XVFB_PID" || die "Xvfb pid $XVFB_PID is not running"
+  process_alive "$APP_PID" || die "Omairc pid $APP_PID is not running"
+  [ -x "$BINARY" ] || die "binary missing: $BINARY"
+  [ -e "/tmp/.X11-unix/X${DISPLAY#:}" ] || die "display $DISPLAY is gone"
+  found="$(xdotool search --onlyvisible --pid "$APP_PID" --name 'Omairc' 2>/dev/null | head -1 || true)"
+  [ "$found" = "$WINDOW" ] || die "window $WINDOW is not the Omairc window for pid $APP_PID"
+  title="$(window_title)"
+  case $title in
+    *" - Omairc") ;;
+    *) die "unexpected window title '$title'" ;;
+  esac
+  echo "ok isolated Omairc"
+  echo "binary=$BINARY"
+  echo "display=$DISPLAY"
+  echo "app_pid=$APP_PID"
+  echo "xvfb_pid=$XVFB_PID"
+  echo "window=$WINDOW"
+  echo "title=$title"
+  echo "xdg=$STATE_DIR"
+  echo "evidence=$EVIDENCE_DIR"
+}
+
+cmd_title() {
+  load_state
+  window_title
+}
+
+cmd_wait_title() {
+  exact=
+  while [ $# -gt 0 ]; do
+    case $1 in
+      --exact) exact=$2; shift 2 ;;
+      *) die "unknown wait-title argument: $1" ;;
+    esac
+  done
+  [ -n "$exact" ] || die "wait-title requires --exact"
+  load_state
+  attempt=0
+  while [ "$(window_title)" != "$exact" ]; do
+    attempt=$((attempt + 1))
+    if [ "$attempt" -ge 30 ]; then
+      die "expected title '$exact', got '$(window_title)'"
+    fi
+    sleep 0.1
+  done
+  window_title
+}
+
+cmd_click() {
+  x=
+  y=
+  while [ $# -gt 0 ]; do
+    case $1 in
+      --x) x=$2; shift 2 ;;
+      --y) y=$2; shift 2 ;;
+      *) die "unknown click argument: $1" ;;
+    esac
+  done
+  [ -n "$x" ] && [ -n "$y" ] || die "click requires --x and --y"
+  load_state
+  click_xy "$x" "$y"
+}
+
+cmd_click_conversation() {
+  name=
+  while [ $# -gt 0 ]; do
+    case $1 in
+      --name) name=$2; shift 2 ;;
+      *) die "unknown click-conversation argument: $1" ;;
+    esac
+  done
+  [ -n "$name" ] || die "click-conversation requires --name"
+  load_state
+  click_xy 120 "$(conversation_y "$name")"
+}
+
+cmd_click_member() {
+  name=
+  while [ $# -gt 0 ]; do
+    case $1 in
+      --name) name=$2; shift 2 ;;
+      *) die "unknown click-member argument: $1" ;;
+    esac
+  done
+  [ -n "$name" ] || die "click-member requires --name"
+  load_state
+  click_xy 1070 "$(member_y "$name")"
+}
+
+cmd_click_people() {
+  load_state
+  click_xy 908 36
+}
+
+cmd_click_send() {
+  load_state
+  click_xy 909 717
+}
+
+cmd_focus_composer() {
+  load_state
+  xdotool windowfocus --sync "$WINDOW"
+  xdotool key --window "$WINDOW" ctrl+l
+}
+
+cmd_type() {
+  text=
+  while [ $# -gt 0 ]; do
+    case $1 in
+      --text) text=$2; shift 2 ;;
+      *) die "unknown type argument: $1" ;;
+    esac
+  done
+  [ -n "$text" ] || die "type requires --text"
+  load_state
+  xdotool windowfocus --sync "$WINDOW"
+  xdotool type --window "$WINDOW" --delay 20 -- "$text"
+}
+
+cmd_key() {
+  key=
+  while [ $# -gt 0 ]; do
+    case $1 in
+      --key) key=$2; shift 2 ;;
+      *) die "unknown key argument: $1" ;;
+    esac
+  done
+  [ -n "$key" ] || die "key requires --key"
+  load_state
+  xdotool windowfocus --sync "$WINDOW"
+  xdotool key --window "$WINDOW" "$key"
+}
+
+cmd_send() {
+  text=
+  while [ $# -gt 0 ]; do
+    case $1 in
+      --text) text=$2; shift 2 ;;
+      *) die "unknown send argument: $1" ;;
+    esac
+  done
+  [ -n "$text" ] || die "send requires --text"
+  cmd_focus_composer
+  cmd_type --text "$text"
+  cmd_key --key Return
+}
+
+cmd_screenshot() {
+  feature=
+  name=
+  while [ $# -gt 0 ]; do
+    case $1 in
+      --feature) feature=$2; shift 2 ;;
+      --name) name=$2; shift 2 ;;
+      *) die "unknown screenshot argument: $1" ;;
+    esac
+  done
+  [ -n "$feature" ] && [ -n "$name" ] || die "screenshot requires --feature and --name"
+  load_state
+  dest="$EVIDENCE_DIR/$feature"
+  mkdir -p "$dest"
+  path="$dest/$name.png"
+  import -display "$DISPLAY" -window "$WINDOW" "$path"
+  echo "$path"
+}
+
+cmd_compare() {
+  before=
+  after=
+  while [ $# -gt 0 ]; do
+    case $1 in
+      --before) before=$2; shift 2 ;;
+      --after) after=$2; shift 2 ;;
+      *) die "unknown compare argument: $1" ;;
+    esac
+  done
+  [ -n "$before" ] && [ -n "$after" ] || die "compare requires --before and --after"
+  [ -s "$before" ] || die "missing before image: $before"
+  [ -s "$after" ] || die "missing after image: $after"
+  difference="$(magick compare -metric AE "$before" "$after" null: 2>&1 || true)"
+  if ! awk -v difference="$difference" 'BEGIN { exit !(difference > 100) }'; then
+    die "expected a visible UI change between $before and $after (AE=$difference)"
+  fi
+  echo "changed AE=$difference"
+}
+
+find_qmltestrunner() {
+  if command -v qmltestrunner6 >/dev/null 2>&1; then
+    command -v qmltestrunner6
+  elif command -v qmltestrunner >/dev/null 2>&1; then
+    command -v qmltestrunner
+  elif [ -x /usr/lib/qt6/bin/qmltestrunner ]; then
+    echo /usr/lib/qt6/bin/qmltestrunner
+  else
+    die "Qt 6 qmltestrunner is required for qml-suite. bin/test looks for qmltestrunner6, qmltestrunner, or /usr/lib/qt6/bin/qmltestrunner."
+  fi
+}
+
+cmd_doctor_qml() {
+  runner="$(find_qmltestrunner)"
+  [ -x "$ROOT/bin/build" ] || die "missing $ROOT/bin/build"
+  [ -x "$ROOT/bin/test" ] || die "missing $ROOT/bin/test"
+  [ -f "$ROOT/tests/ui/tst_omairc.qml" ] || die "missing $ROOT/tests/ui/tst_omairc.qml"
+  echo "ok qml suite"
+  echo "qmltestrunner=$runner"
+  echo "suite=$ROOT/tests/ui/tst_omairc.qml"
+  echo "evidence=$EVIDENCE_DIR"
+  if [ -x "$ROOT/build/omairc" ]; then
+    echo "binary=$ROOT/build/omairc"
+  else
+    echo "binary=missing (bin/test will build)"
+  fi
+}
+
+cmd_qml_suite() {
+  cmd_doctor_qml >/dev/null
+  "$ROOT/bin/test"
+  mkdir -p \
+    "$EVIDENCE_DIR/switch-conversation" \
+    "$EVIDENCE_DIR/send-message" \
+    "$EVIDENCE_DIR/toggle-members" \
+    "$EVIDENCE_DIR/open-direct-message"
+  cp -f -- "$ROOT/test-artifacts/switch-channel.png" \
+    "$EVIDENCE_DIR/switch-conversation/after-desktop.png"
+  cp -f -- "$ROOT/test-artifacts/send-message.png" \
+    "$EVIDENCE_DIR/send-message/after-send.png"
+  cp -f -- "$ROOT/test-artifacts/toggle-members.png" \
+    "$EVIDENCE_DIR/toggle-members/members-hidden.png"
+  cp -f -- "$ROOT/test-artifacts/open-direct-message.png" \
+    "$EVIDENCE_DIR/open-direct-message/mira-dm.png"
+  echo "qml suite evidence copied to $EVIDENCE_DIR"
+}
+
+cmd_cleanup() {
+  if [ -f "$STATE_FILE" ]; then
+    # shellcheck disable=SC1090
+    . "$STATE_FILE"
+    stop_pid "${APP_PID:-}"
+    stop_pid "${XVFB_PID:-}"
+    if [ -n "${STATE_DIR:-}" ] && [ -d "$STATE_DIR" ]; then
+      rm -rf -- "$STATE_DIR"
+    fi
+    rm -f -- "$STATE_FILE"
+  fi
+  echo "cleaned isolated instance"
+  echo "evidence kept at $EVIDENCE_DIR"
+}
+
+cmd=${1:-}
+if [ -n "$cmd" ]; then
+  shift
+fi
+
+case $cmd in
+  launch) cmd_launch ;;
+  doctor) cmd_doctor ;;
+  title) cmd_title ;;
+  wait-title) cmd_wait_title "$@" ;;
+  click) cmd_click "$@" ;;
+  click-conversation) cmd_click_conversation "$@" ;;
+  click-member) cmd_click_member "$@" ;;
+  click-people) cmd_click_people ;;
+  click-send) cmd_click_send ;;
+  focus-composer) cmd_focus_composer ;;
+  type) cmd_type "$@" ;;
+  key) cmd_key "$@" ;;
+  send) cmd_send "$@" ;;
+  screenshot) cmd_screenshot "$@" ;;
+  compare) cmd_compare "$@" ;;
+  qml-suite) cmd_qml_suite ;;
+  doctor-qml) cmd_doctor_qml ;;
+  cleanup) cmd_cleanup ;;
+  -h|--help|help|"") usage ;;
+  *) die "unknown command '$cmd'. Try --help." ;;
+esac

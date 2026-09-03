@@ -1,0 +1,150 @@
+---
+name: verify-omairc
+description: Drive the Omairc Qt desktop prototype as a user would (isolated Xvfb + compiled binary). Use when proving channel switching, sending local messages, the member panel, or opening a direct message.
+---
+
+# Verify Omairc
+
+Omairc is a Qt 6 Quick desktop app. Networks, channels, people, and messages are mocked locally. There is no IRC socket, web UI, or public API. The user-facing surface is the compiled `build/omairc` window.
+
+Read `features/README.md` before driving. Drive the mapped entry points for the feature under proof. A convenient path that skips listed entry points is incomplete.
+
+## Launch
+
+Prefer a private X server and the compiled binary when `Xvfb`, `xauth`, `xdotool`, `import`, and `magick` are on `PATH`. Do not launch on the user's live display.
+
+```sh
+.cursor/skills/verify-omairc/control-omairc launch
+```
+
+Ready when stdout includes `title=#omarchy - Omairc` and `doctor` exits 0. The window title is always `{conversation} - Omairc`.
+
+This launch:
+
+- runs `bin/build`
+- picks the next free X display from `:110`
+- uses a disposable `XDG_*` tree so window geometry is the default 1180x760
+- points `DBUS_SESSION_BUS_ADDRESS` at a missing socket so portal text-scale stays 1.0
+- writes run state to `/tmp/omairc-verify-$USER/state`
+
+Two isolated instances can run if they get different displays. Never attach to a window you did not start. Never send `xdotool` to the session `$DISPLAY`.
+
+If those desktop tools are missing, do not invent a drive against the user's session. Launch the offscreen production-QML suite instead. It is short-lived: build happens inside `bin/test`, then each run starts its own window.
+
+```sh
+.cursor/skills/verify-omairc/control-omairc doctor-qml
+.cursor/skills/verify-omairc/control-omairc qml-suite
+```
+
+Teardown for a live Xvfb instance:
+
+```sh
+.cursor/skills/verify-omairc/control-omairc cleanup
+```
+
+`qml-suite` already tears down its temporary XDG tree. Keep `test-artifacts/verify/`.
+
+## Doctor
+
+Run this first whenever anything looks off:
+
+```sh
+.cursor/skills/verify-omairc/control-omairc doctor
+```
+
+Require all of:
+
+- `ok isolated Omairc`
+- `binary=` is `$ROOT/build/omairc`
+- `display=` is the isolated Xvfb from launch, not the user's session
+- `app_pid=` and `xvfb_pid=` are alive
+- `title=` ends with ` - Omairc`
+- `xdg=` is the disposable state directory from this run
+
+If doctor fails, cleanup, then launch again. Do not continue against a shared or stale instance.
+
+When using the offscreen suite:
+
+```sh
+.cursor/skills/verify-omairc/control-omairc doctor-qml
+```
+
+Require `ok qml suite` and a working `qmltestrunner=`. This path loads production QML with a fake `Backend` (fixed theme colors, textScale 1.0). It does not open the compiled `build/omairc` window.
+
+## Drive
+
+Use `control-omairc` against the isolated window. Stable handles:
+
+| Handle | Meaning |
+|---|---|
+| Window title `{name} - Omairc` | Current conversation |
+| `click-conversation --name #desktop` | Sidebar channel or seeded DM (`#omarchy`, `#desktop`, `#ricing`, `#help`, `anna`, `dax`) |
+| `click-member --name mira` | Member row while the panel is visible |
+| `click-people` | Header `12 PEOPLE` / `Hide members` / `Show members` control (channels only) |
+| `focus-composer` | `Ctrl+L` |
+| `send --text "..."` | Focus composer, type, `Enter` |
+| `key --key ctrl+shift+m` | Toggle members on a channel |
+| `key --key ctrl+q` | Quit |
+
+Named clicks are window-relative pixels for 1180x760 at textScale 1.0. They are invalid on a maximized window, a restored user geometry, or a portal text scale other than 1.0. That is why launch isolates XDG and DBus.
+
+QML object names used by `bin/test` (not visible to xdotool): `conversation-#desktop`, `conversation-anna`, `messageComposer`, `sendButton`, `peopleButton`, `membersPanel`, `membersList`, `member-mira`, `messageList`, `directConversationRepeater`.
+
+Typical drive:
+
+```sh
+.cursor/skills/verify-omairc/control-omairc doctor
+.cursor/skills/verify-omairc/control-omairc title
+.cursor/skills/verify-omairc/control-omairc click-conversation --name "#desktop"
+.cursor/skills/verify-omairc/control-omairc wait-title --exact "#desktop - Omairc"
+.cursor/skills/verify-omairc/control-omairc screenshot --feature switch-conversation --name after-desktop
+```
+
+Inspect the matching feature file for the exact recipe and observables.
+
+When desktop tools are missing, drive the mapped feature through the suite. `qml-suite` runs `bin/test`, which clicks `conversation-#desktop`, `messageComposer`, `membersPanel` / `Ctrl+Shift+M`, and `member-mira` with real mouse and key events, then copies screenshots into `test-artifacts/verify/`. That covers the four mapped features. It is not a pass on a skipped desktop entry point; say so in the proof notes.
+
+## Evidence
+
+Proof lives in `test-artifacts/verify/<feature-id>/`. Cleanup must not delete it.
+
+Standards:
+
+- Exercise the real window the way a user does: sidebar click, member click, composer, shortcuts. Do not call QML functions or write the mock models from outside the UI.
+- Capture the action and the resulting state. A final screenshot alone is not proof.
+- Window title is the conversation identity. A screenshot must show the sidebar selection, header name, topic, and (for channels) people count together.
+- Messages are local only. Persistence proof is the same session: the row stays after sending, and switching away and back still shows it. There is no server or database.
+- `control-omairc compare --before <a> --after <b>` requires a visible pixel change (ImageMagick AE > 100).
+- `bin/test` writes `test-artifacts/{switch-channel,send-message,toggle-members,open-direct-message}.png`. Treat those as QML-suite evidence, not desktop-window evidence.
+- Record the feature ID and entry point on every artifact name.
+
+## Cleanup
+
+```sh
+.cursor/skills/verify-omairc/control-omairc cleanup
+```
+
+Kills only the `APP_PID` and `XVFB_PID` from the state file, then removes the disposable XDG/Xauth directory and the state file. It does not kill by process name. It does not remove `test-artifacts/verify/`.
+
+After cleanup, confirm the proof files still exist at `test-artifacts/verify/<feature-id>/`.
+
+## Helpers
+
+`control-omairc` is executable. Invoke it from the repo root as shown above. Commands:
+
+```text
+launch | doctor | title | wait-title --exact TITLE
+click --x N --y N
+click-conversation --name NAME
+click-member --name NICK
+click-people | click-send | focus-composer
+type --text TEXT | key --key KEY | send --text TEXT
+screenshot --feature ID --name STEM
+compare --before PATH --after PATH
+qml-suite | doctor-qml
+cleanup
+```
+
+`click-send` assumes the member panel is open (channel, members visible, width >= 980). Prefer `send --text` / `Enter`.
+
+If Xvfb tools are missing, install `xorg-server-xvfb xorg-xauth xdotool imagemagick` before using this skill. `bin/test` can still run the offscreen QML suite without those packages.
