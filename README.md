@@ -2,6 +2,8 @@
 
 A dead-simple IRC client for Omarchy, built with Qt Quick and C++.
 
+![Omairc interface](omairc.png)
+
 Omairc currently runs as an interactive visual prototype. Networks, channels,
 people, and conversations are mocked locally; it does not open a socket or
 connect to an IRC server yet.
