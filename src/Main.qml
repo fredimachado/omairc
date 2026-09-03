@@ -949,10 +949,10 @@ ApplicationWindow {
                 id: composerShell
                 anchors.left: parent.left
                 anchors.right: parent.right
-                anchors.bottom: composerHint.top
+                anchors.bottom: parent.bottom
                 anchors.leftMargin: win.scaledSize(20)
                 anchors.rightMargin: win.scaledSize(20)
-                anchors.bottomMargin: win.scaledSize(5)
+                anchors.bottomMargin: win.scaledSize(20)
                 height: Math.max(win.scaledSize(46), Math.min(win.scaledSize(112),
                     composer.contentHeight + win.scaledSize(20)))
                 radius: win.scaledSize(10)
@@ -1021,17 +1021,6 @@ ApplicationWindow {
                 }
             }
 
-            Text {
-                id: composerHint
-                anchors.left: parent.left
-                anchors.leftMargin: win.scaledSize(28)
-                anchors.bottom: parent.bottom
-                anchors.bottomMargin: win.scaledSize(8)
-                text: "Enter to send  -  Shift+Enter for a new line"
-                color: win.mutedColor
-                font.family: "iA Writer Mono S"
-                font.pixelSize: win.scaledSize(9)
-            }
         }
 
         Rectangle {
