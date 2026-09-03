@@ -1054,7 +1054,7 @@ ApplicationWindow {
                 border.width: 1
                 border.color: composer.activeFocus ? win.accentColor : win.dividerColor
 
-                TextArea {
+                TextField {
                     id: composer
                     anchors.left: parent.left
                     anchors.right: sendButton.left
@@ -1066,7 +1066,6 @@ ApplicationWindow {
                     color: win.inkColor
                     selectionColor: win.selectionColor
                     selectedTextColor: "#ffffff"
-                    wrapMode: TextEdit.Wrap
                     font.family: "iA Writer Mono S"
                     font.pixelSize: win.scaledSize(13)
                     leftPadding: win.scaledSize(8)
@@ -1077,8 +1076,7 @@ ApplicationWindow {
                     background: Item {}
 
                     Keys.onPressed: function(event) {
-                        if ((event.key === Qt.Key_Return || event.key === Qt.Key_Enter)
-                                && !(event.modifiers & Qt.ShiftModifier)) {
+                        if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
                             win.sendMessage();
                             event.accepted = true;
                         }

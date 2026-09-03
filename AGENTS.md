@@ -42,8 +42,7 @@
 - Show the people count, member toggle, and member panel only for channels.
   Clicking another user in the member panel must open or create a direct
   message with its own local message history.
-- `Enter` sends a message; `Shift+Enter` inserts a newline. Preserve this when
-  changing the composer.
+- Keep the composer single-line. `Enter` sends the message.
 
 ## Build and validation
 
