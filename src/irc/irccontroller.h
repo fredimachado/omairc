@@ -26,6 +26,8 @@ class IrcController : public QObject
     Q_PROPERTY(QString connectionStatus READ connectionStatus NOTIFY statusChanged)
     Q_PROPERTY(QString lastError READ lastError NOTIFY statusChanged)
     Q_PROPERTY(QString currentNick READ currentNick NOTIFY selectionChanged)
+    Q_PROPERTY(bool hasAwayPresence READ hasAwayPresence NOTIFY capabilitiesChanged)
+    Q_PROPERTY(bool hasMemberStatus READ hasMemberStatus NOTIFY capabilitiesChanged)
     Q_PROPERTY(IrcStatusConsole* console READ console CONSTANT)
 
 public:
@@ -47,6 +49,9 @@ public:
     QString connectionStatus() const;
     QString lastError() const;
     QString currentNick() const;
+
+    bool hasAwayPresence() const;
+    bool hasMemberStatus() const;
     IrcStatusConsole *console();
 
     Q_INVOKABLE bool start(const QString& networkId);
@@ -58,12 +63,16 @@ public:
 signals:
     void selectionChanged();
     void statusChanged();
+
+    void capabilitiesChanged();
     void errorOccurred(const QString &networkId,
                        IrcSession::ErrorKind kind,
                        const QString &message);
 
 private:
     void apply(const IrcEvent& event);
+    void handleCapabilities(const QString& networkId,
+                            IrcCapabilitySet capabilities);
     void echoLocal(IrcMessageKind kind, const QString& body);
     void handleMessage(const QString& networkId, const IrcMessage& message);
     void reloadModels();
@@ -78,6 +87,7 @@ private:
     MessageListModel m_messages;
     MemberListModel m_members;
     QHash<QString, QString> m_currentNicks;
+    QHash<QString, IrcCapabilitySet> m_capabilities;
     std::optional<IrcConversationKey> m_selected;
     QString m_selectedTarget;
     QString m_connectionStatus = QStringLiteral("Offline");

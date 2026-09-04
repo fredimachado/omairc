@@ -27,6 +27,11 @@ QString displayTarget(const IrcConversationKey& key, const QString& target)
 }
 }
 
+bool IrcMemberView::isAway() const noexcept
+{
+    return awayMessage.has_value();
+}
+
 bool IrcConversationState::isChannel() const noexcept
 {
     return std::holds_alternative<IrcChannelState>(detail);
@@ -99,6 +104,64 @@ const IrcConversationState *IrcEventReducer::find(
 {
     const auto found = m_conversations.find(key);
     return found == m_conversations.end() ? nullptr : &found->second;
+}
+
+std::optional<IrcMemberView> IrcEventReducer::memberView(
+    const IrcConversationKey& key, const QString& normalizedNick) const
+{
+    const IrcConversationState *conversation = find(key);
+    const IrcChannelState *channel = conversation ? conversation->channel() : nullptr;
+    if (!channel)
+        return std::nullopt;
+    const auto member = channel->members.find(normalizedNick);
+    if (member == channel->members.end())
+        return std::nullopt;
+
+    const auto presence = m_presence.find(key.networkId);
+    const IrcNickPresence facts = presence == m_presence.end()
+        ? IrcNickPresence{}
+        : presence->second.lookup(normalizedNick);
+    return IrcMemberView{member->second.nick, member->second.prefixModes,
+                         facts.awayMessage, facts.status};
+}
+
+void IrcEventReducer::clearPresenceFacts(const QString& networkId,
+                                         bool away,
+                                         bool status)
+{
+    const auto presence = m_presence.find(networkId);
+    if (presence == m_presence.end())
+        return;
+    if (away)
+        presence->second.clearAway();
+    if (status)
+        presence->second.clearStatus();
+}
+
+bool IrcEventReducer::isVisible(const QString& networkId,
+                                const QString& normalizedNick) const
+{
+    for (const auto& entry : m_conversations) {
+        const IrcConversationState& conversation = entry.second;
+        if (conversation.key.networkId != networkId)
+            continue;
+        const IrcChannelState *channel = conversation.channel();
+        if (channel && channel->members.count(normalizedNick) != 0)
+            return true;
+    }
+    return false;
+}
+
+void IrcEventReducer::forgetUnseen(const QString& networkId,
+                                   const QStringList& normalizedNicks)
+{
+    const auto presence = m_presence.find(networkId);
+    if (presence == m_presence.end())
+        return;
+    for (const QString& nick : normalizedNicks) {
+        if (presence->second.knows(nick) && !isVisible(networkId, nick))
+            presence->second.forget(nick);
+    }
 }
 
 IrcConversationState& IrcEventReducer::ensureConversation(
@@ -200,6 +263,7 @@ void IrcEventReducer::appendEvent(IrcConversationState& conversation,
 void IrcEventReducer::reduce(const IrcWelcomeEvent& event)
 {
     m_currentNicks[event.networkId] = event.currentNick;
+    m_presence[event.networkId].clear();
     for (auto& entry : m_conversations) {
         IrcConversationState& conversation = entry.second;
         if (conversation.key.networkId != event.networkId)
@@ -242,7 +306,7 @@ void IrcEventReducer::reduce(const IrcJoinEvent& event)
         return;
     const QString normalizedNick = normalize(event.networkId, event.nick);
     channel->members.insert_or_assign(
-        normalizedNick, IrcMemberState{event.nick, QString(), false});
+        normalizedNick, IrcMemberState{event.nick, QString()});
     if (isSelf(event.networkId, event.nick))
         channel->joined = true;
     appendEvent(conversation, event.nick + QStringLiteral(" joined"));
@@ -255,12 +319,16 @@ void IrcEventReducer::reduce(const IrcPartEvent& event)
     if (!conversation || !conversation->channel())
         return;
     IrcChannelState& channel = *conversation->channel();
-    channel.members.erase(normalize(event.networkId, event.nick));
+    QStringList departed{normalize(event.networkId, event.nick)};
+    channel.members.erase(departed.front());
     if (isSelf(event.networkId, event.nick)) {
         channel.joined = false;
+        for (const auto& member : channel.members)
+            departed.append(member.first);
         channel.members.clear();
         channel.namesSyncing = false;
     }
+    forgetUnseen(event.networkId, departed);
     appendEvent(*conversation, event.nick + QStringLiteral(" left"));
 }
 
@@ -276,6 +344,7 @@ void IrcEventReducer::reduce(const IrcQuitEvent& event)
             continue;
         appendEvent(conversation, event.nick + QStringLiteral(" quit"));
     }
+    forgetUnseen(event.networkId, {normalizedNick});
 }
 
 void IrcEventReducer::reduce(const IrcNickEvent& event)
@@ -284,6 +353,7 @@ void IrcEventReducer::reduce(const IrcNickEvent& event)
     const QString newNormalized = normalize(event.networkId, event.newNick);
     if (isSelf(event.networkId, event.oldNick))
         m_currentNicks[event.networkId] = event.newNick;
+    m_presence[event.networkId].rename(oldNormalized, newNormalized);
 
     for (auto& entry : m_conversations) {
         IrcConversationState& conversation = entry.second;
@@ -334,12 +404,16 @@ void IrcEventReducer::reduce(const IrcKickEvent& event)
     if (!conversation || !conversation->channel())
         return;
     IrcChannelState& channel = *conversation->channel();
-    channel.members.erase(normalize(event.networkId, event.target));
+    QStringList departed{normalize(event.networkId, event.target)};
+    channel.members.erase(departed.front());
     if (isSelf(event.networkId, event.target)) {
         channel.joined = false;
+        for (const auto& member : channel.members)
+            departed.append(member.first);
         channel.members.clear();
         channel.namesSyncing = false;
     }
+    forgetUnseen(event.networkId, departed);
     appendEvent(*conversation, event.target + QStringLiteral(" was kicked"));
 }
 
@@ -366,7 +440,7 @@ void IrcEventReducer::reduce(const IrcNamesEvent& event)
     for (const IrcName& name : event.names) {
         channel->members.insert_or_assign(
             normalize(event.networkId, name.nick),
-            IrcMemberState{name.nick, name.status, name.away});
+            IrcMemberState{name.nick, name.prefixModes});
     }
     if (event.complete)
         channel->namesSyncing = false;
@@ -380,5 +454,17 @@ void IrcEventReducer::reduce(const IrcModeEvent& event)
     IrcConversationState& conversation = ensureConversation(key, event.target);
     appendEvent(conversation, event.author + QStringLiteral(" set mode ")
                      + event.mode);
+}
+
+void IrcEventReducer::reduce(const IrcAwayEvent& event)
+{
+    m_presence[event.networkId].setAway(
+        normalize(event.networkId, event.nick), event.message);
+}
+
+void IrcEventReducer::reduce(const IrcMemberStatusEvent& event)
+{
+    m_presence[event.networkId].setStatus(
+        normalize(event.networkId, event.nick), event.status);
 }
 

@@ -30,6 +30,10 @@ private slots:
     void advertisedChannelTypesCreateChannels();
     void unreadMentionsRespectSelection();
     void welcomeResetsMembership();
+    void awayIsOneFactVisibleInEveryChannel();
+    void metadataStatusIsSeparateFromPrefixModes();
+    void presenceIsDroppedWithTheLastChannelAndOnWelcome();
+    void losingACapabilityClearsTheFactsItFed();
 };
 
 void ReducerTest::namesFillAndCompleteWithoutDuplicates()
@@ -40,15 +44,15 @@ void ReducerTest::namesFillAndCompleteWithoutDuplicates()
     reducer.apply(IrcNamesEvent{
         networkA,
         QStringLiteral("#room"),
-        {{QStringLiteral("Alice"), QStringLiteral("o"), false},
-         {QStringLiteral("Bob"), QString(), true}},
+        {{QStringLiteral("Alice"), QStringLiteral("o")},
+         {QStringLiteral("Bob"), QString()}},
         false,
     });
     reducer.apply(IrcNamesEvent{
         networkA,
         QStringLiteral("#room"),
-        {{QStringLiteral("ALICE"), QStringLiteral("o"), false},
-         {QStringLiteral("Carol"), QStringLiteral("v"), false}},
+        {{QStringLiteral("ALICE"), QStringLiteral("o")},
+         {QStringLiteral("Carol"), QStringLiteral("v")}},
         true,
     });
     reducer.apply(IrcJoinEvent{
@@ -60,8 +64,10 @@ void ReducerTest::namesFillAndCompleteWithoutDuplicates()
     QVERIFY(conversation->isChannel());
     QCOMPARE(conversation->peopleCount(), 3);
     QVERIFY(!conversation->channel()->namesSyncing);
-    QCOMPARE(conversation->channel()->members.at(QStringLiteral("alice")).status,
+    QCOMPARE(conversation->channel()->members.at(QStringLiteral("alice")).prefixModes,
              QStringLiteral("o"));
+    QCOMPARE(reducer.memberView(conversation->key, QStringLiteral("alice"))->status,
+             QString());
 }
 
 void ReducerTest::nickAndQuitStayNetworkScoped()
@@ -260,6 +266,118 @@ void ReducerTest::welcomeResetsMembership()
     welcome(reducer, networkA);
     QCOMPARE(conversation->peopleCount(), 0);
     QVERIFY(!conversation->channel()->joined);
+}
+
+void ReducerTest::awayIsOneFactVisibleInEveryChannel()
+{
+    IrcEventReducer reducer;
+    welcome(reducer, networkA);
+    const IrcConversationKey omarchy =
+        reducer.conversationKey(networkA, QStringLiteral("#omarchy"));
+    const IrcConversationKey desktop =
+        reducer.conversationKey(networkA, QStringLiteral("#desktop"));
+    reducer.apply(IrcJoinEvent{
+        networkA, QStringLiteral("#omarchy"), QStringLiteral("Alice")});
+    reducer.apply(IrcJoinEvent{
+        networkA, QStringLiteral("#desktop"), QStringLiteral("Alice")});
+
+    reducer.apply(IrcAwayEvent{networkA, QStringLiteral("alice"),
+                               QStringLiteral("lunch")});
+    reducer.apply(IrcAwayEvent{networkA, QStringLiteral("alice"),
+                               QStringLiteral("lunch")});
+    QVERIFY(reducer.memberView(omarchy, QStringLiteral("alice"))->isAway());
+    QVERIFY(reducer.memberView(desktop, QStringLiteral("alice"))->isAway());
+    QCOMPARE(*reducer.memberView(omarchy, QStringLiteral("alice"))->awayMessage,
+             QStringLiteral("lunch"));
+
+    reducer.apply(IrcNickEvent{
+        networkA, QStringLiteral("Alice"), QStringLiteral("Alicia")});
+    QVERIFY(reducer.memberView(omarchy, QStringLiteral("alicia"))->isAway());
+    QVERIFY(reducer.memberView(desktop, QStringLiteral("alicia"))->isAway());
+
+    reducer.apply(IrcAwayEvent{networkA, QStringLiteral("Alicia"), std::nullopt});
+    QVERIFY(!reducer.memberView(omarchy, QStringLiteral("alicia"))->isAway());
+    QVERIFY(!reducer.memberView(desktop, QStringLiteral("alicia"))->isAway());
+}
+
+void ReducerTest::metadataStatusIsSeparateFromPrefixModes()
+{
+    IrcEventReducer reducer;
+    welcome(reducer, networkA);
+    const IrcConversationKey room =
+        reducer.conversationKey(networkA, QStringLiteral("#room"));
+    reducer.apply(IrcNamesEvent{
+        networkA,
+        QStringLiteral("#room"),
+        {{QStringLiteral("Alice"), QStringLiteral("o")}},
+        true,
+    });
+
+    reducer.apply(IrcMemberStatusEvent{
+        networkA, QStringLiteral("Alice"), QStringLiteral("writing docs")});
+    const std::optional<IrcMemberView> member =
+        reducer.memberView(room, QStringLiteral("alice"));
+    QCOMPARE(member->status, QStringLiteral("writing docs"));
+    QCOMPARE(member->prefixModes, QStringLiteral("o"));
+    QVERIFY(!member->isAway());
+
+    reducer.apply(IrcMemberStatusEvent{networkA, QStringLiteral("Alice"), QString()});
+    QCOMPARE(reducer.memberView(room, QStringLiteral("alice"))->status, QString());
+}
+
+void ReducerTest::presenceIsDroppedWithTheLastChannelAndOnWelcome()
+{
+    IrcEventReducer reducer;
+    welcome(reducer, networkA);
+    const IrcConversationKey omarchy =
+        reducer.conversationKey(networkA, QStringLiteral("#omarchy"));
+    const IrcConversationKey desktop =
+        reducer.conversationKey(networkA, QStringLiteral("#desktop"));
+    reducer.apply(IrcJoinEvent{
+        networkA, QStringLiteral("#omarchy"), QStringLiteral("Alice")});
+    reducer.apply(IrcJoinEvent{
+        networkA, QStringLiteral("#desktop"), QStringLiteral("Alice")});
+    reducer.apply(IrcAwayEvent{networkA, QStringLiteral("Alice"),
+                               QStringLiteral("lunch")});
+
+    reducer.apply(IrcPartEvent{
+        networkA, QStringLiteral("#desktop"), QStringLiteral("Alice"), QString()});
+    QVERIFY(!reducer.memberView(desktop, QStringLiteral("alice")));
+    QVERIFY(reducer.memberView(omarchy, QStringLiteral("alice"))->isAway());
+
+    reducer.apply(IrcQuitEvent{networkA, QStringLiteral("Alice"), QString()});
+    reducer.apply(IrcJoinEvent{
+        networkA, QStringLiteral("#omarchy"), QStringLiteral("Alice")});
+    QVERIFY(!reducer.memberView(omarchy, QStringLiteral("alice"))->isAway());
+
+    reducer.apply(IrcAwayEvent{networkA, QStringLiteral("Alice"),
+                               QStringLiteral("lunch")});
+    welcome(reducer, networkA);
+    reducer.apply(IrcJoinEvent{
+        networkA, QStringLiteral("#omarchy"), QStringLiteral("Alice")});
+    QVERIFY(!reducer.memberView(omarchy, QStringLiteral("alice"))->isAway());
+}
+
+void ReducerTest::losingACapabilityClearsTheFactsItFed()
+{
+    IrcEventReducer reducer;
+    welcome(reducer, networkA);
+    const IrcConversationKey room =
+        reducer.conversationKey(networkA, QStringLiteral("#room"));
+    reducer.apply(IrcJoinEvent{
+        networkA, QStringLiteral("#room"), QStringLiteral("Alice")});
+    reducer.apply(IrcAwayEvent{networkA, QStringLiteral("Alice"),
+                               QStringLiteral("lunch")});
+    reducer.apply(IrcMemberStatusEvent{
+        networkA, QStringLiteral("Alice"), QStringLiteral("writing docs")});
+
+    reducer.clearPresenceFacts(networkA, true, false);
+    QVERIFY(!reducer.memberView(room, QStringLiteral("alice"))->isAway());
+    QCOMPARE(reducer.memberView(room, QStringLiteral("alice"))->status,
+             QStringLiteral("writing docs"));
+
+    reducer.clearPresenceFacts(networkA, false, true);
+    QCOMPARE(reducer.memberView(room, QStringLiteral("alice"))->status, QString());
 }
 
 int runReducerTests(int argc, char **argv)

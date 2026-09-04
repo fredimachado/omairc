@@ -5,6 +5,7 @@
 #include <QString>
 #include <QStringList>
 
+#include <optional>
 #include <variant>
 #include <vector>
 
@@ -117,8 +118,7 @@ struct IrcTopicEvent
 struct IrcName
 {
     QString nick;
-    QString status;
-    bool away = false;
+    QString prefixModes;
 };
 
 struct IrcNamesEvent
@@ -138,6 +138,22 @@ struct IrcModeEvent
     QStringList arguments;
 };
 
+/// From `AWAY` under away-notify and from the `352` H/G flag. Nick-scoped.
+struct IrcAwayEvent
+{
+    QString networkId;
+    QString nick;
+    std::optional<QString> message; ///< nullopt = back
+};
+
+/// From `METADATA`, `761` and `766` for the subscribed `status` key.
+struct IrcMemberStatusEvent
+{
+    QString networkId;
+    QString nick;
+    QString status; ///< empty = not set
+};
+
 using IrcEvent = std::variant<
     IrcWelcomeEvent,
     IrcMessageEvent,
@@ -150,4 +166,6 @@ using IrcEvent = std::variant<
     IrcKickEvent,
     IrcTopicEvent,
     IrcNamesEvent,
-    IrcModeEvent>;
+    IrcModeEvent,
+    IrcAwayEvent,
+    IrcMemberStatusEvent>;

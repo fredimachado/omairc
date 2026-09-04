@@ -18,24 +18,20 @@ QVariant MemberListModel::data(const QModelIndex& index, int role) const
     if (!index.isValid() || !m_selected || index.row() < 0 || index.row() >= m_nicks.size())
         return {};
 
-    const IrcConversationState *conversation = m_reducer.find(*m_selected);
-    const IrcChannelState *channel = conversation ? conversation->channel() : nullptr;
-    if (!channel)
-        return {};
-
-    const auto found = channel->members.find(m_nicks.at(index.row()));
-    if (found == channel->members.end())
+    const std::optional<IrcMemberView> member =
+        m_reducer.memberView(*m_selected, m_nicks.at(index.row()));
+    if (!member)
         return {};
 
     switch (role) {
     case NickRole:
-        return found->second.nick;
+        return member->nick;
     case StatusRole:
-        return found->second.status;
+        return member->status;
     case AwayRole:
-        return found->second.away;
+        return member->isAway();
     case NetworkIdRole:
-        return conversation->key.networkId;
+        return m_selected->networkId;
     default:
         return {};
     }

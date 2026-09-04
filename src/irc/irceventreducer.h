@@ -1,6 +1,7 @@
 #pragma once
 
 #include "ircevent.h"
+#include "ircpresence.h"
 #include "ircserverfeatures.h"
 
 #include <map>
@@ -27,9 +28,20 @@ struct IrcReducedMessage
 
 struct IrcMemberState
 {
+    QString nick;        ///< display spelling, last writer wins
+    QString prefixModes; ///< channel rank from 353; never shown as the subtitle
+};
+
+/// A channel member row joined with the network-scoped presence for the same
+/// nick. Computed on read, so neither store can go stale against the other.
+struct IrcMemberView
+{
     QString nick;
+    QString prefixModes;
+    std::optional<QString> awayMessage;
     QString status;
-    bool away = false;
+
+    bool isAway() const noexcept;
 };
 
 struct IrcChannelState
@@ -78,6 +90,15 @@ public:
     const Store& conversations() const noexcept;
     const IrcConversationState *find(const IrcConversationKey& key) const noexcept;
 
+    /// The member model's whole read surface. Empty when the conversation is
+    /// not a joined channel or the nick is not one of its members.
+    std::optional<IrcMemberView> memberView(const IrcConversationKey& key,
+                                            const QString& normalizedNick) const;
+
+    /// A capability we relied on left the enabled set, so the facts it fed can
+    /// no longer be trusted.
+    void clearPresenceFacts(const QString& networkId, bool away, bool status);
+
 private:
     IrcConversationState& ensureConversation(const IrcConversationKey& key,
                                              const QString& displayTarget);
@@ -108,9 +129,17 @@ private:
     void reduce(const IrcTopicEvent& event);
     void reduce(const IrcNamesEvent& event);
     void reduce(const IrcModeEvent& event);
+    void reduce(const IrcAwayEvent& event);
+    void reduce(const IrcMemberStatusEvent& event);
+
+    /// Presence is kept only for nicks visible in at least one channel on the
+    /// network. Called after a membership erase.
+    void forgetUnseen(const QString& networkId, const QStringList& normalizedNicks);
+    bool isVisible(const QString& networkId, const QString& normalizedNick) const;
 
     Store m_conversations;
     std::map<QString, IrcServerFeatures> m_features;
     std::map<QString, QString> m_currentNicks;
+    std::map<QString, IrcNetworkPresence> m_presence;
     std::optional<IrcConversationKey> m_selected;
 };

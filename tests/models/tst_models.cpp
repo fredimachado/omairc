@@ -44,6 +44,7 @@ class ModelTest : public QObject
 private slots:
     void roleNamesMatchQml();
     void joinNamesPrivmsgPopulateModels();
+    void memberStatusIsMetadataNotPrefixModes();
     void identicalChannelsStayDistinct();
     void selectingZerosUnread();
     void membersEmptyForDirectMessage();
@@ -100,11 +101,12 @@ void ModelTest::joinNamesPrivmsgPopulateModels()
     reducer.apply(IrcNamesEvent{
         networkA,
         QStringLiteral("#room"),
-        {{QStringLiteral("omairc"), QStringLiteral("o"), false},
-         {QStringLiteral("Alice"), QString(), false},
-         {QStringLiteral("Bob"), QStringLiteral("v"), true}},
+        {{QStringLiteral("omairc"), QStringLiteral("o")},
+         {QStringLiteral("Alice"), QString()},
+         {QStringLiteral("Bob"), QStringLiteral("v")}},
         true,
     });
+    reducer.apply(IrcAwayEvent{networkA, QStringLiteral("Bob"), QStringLiteral("brb")});
     reducer.apply(IrcMessageEvent{
         room, QStringLiteral("Alice"), QStringLiteral("hello"), timestamp,
         QStringLiteral("#room")});
@@ -147,11 +149,42 @@ void ModelTest::joinNamesPrivmsgPopulateModels()
     QCOMPARE(roleAt(members, 0, MemberListModel::StatusRole), QString());
     QCOMPARE(roleAt(members, 0, MemberListModel::AwayRole), false);
     QCOMPARE(roleAt(members, 1, MemberListModel::NickRole), QStringLiteral("Bob"));
-    QCOMPARE(roleAt(members, 1, MemberListModel::StatusRole), QStringLiteral("v"));
+    QCOMPARE(roleAt(members, 1, MemberListModel::StatusRole), QString());
     QCOMPARE(roleAt(members, 1, MemberListModel::AwayRole), true);
     QCOMPARE(roleAt(members, 2, MemberListModel::NickRole), QStringLiteral("omairc"));
-    QCOMPARE(roleAt(members, 2, MemberListModel::StatusRole), QStringLiteral("o"));
+    QCOMPARE(roleAt(members, 2, MemberListModel::StatusRole), QString());
     QCOMPARE(roleAt(members, 2, MemberListModel::NetworkIdRole), networkA);
+}
+
+void ModelTest::memberStatusIsMetadataNotPrefixModes()
+{
+    IrcEventReducer reducer;
+    MemberListModel members(reducer);
+    welcome(reducer, networkA);
+
+    const IrcConversationKey room =
+        reducer.conversationKey(networkA, QStringLiteral("#room"));
+    reducer.apply(IrcNamesEvent{
+        networkA,
+        QStringLiteral("#room"),
+        {{QStringLiteral("Alice"), QStringLiteral("o")},
+         {QStringLiteral("Bob"), QStringLiteral("v")}},
+        true,
+    });
+    reducer.apply(IrcMemberStatusEvent{
+        networkA, QStringLiteral("Alice"), QStringLiteral("writing docs")});
+    members.select(room);
+
+    QCOMPARE(roleAt(members, 0, MemberListModel::StatusRole),
+             QStringLiteral("writing docs"));
+    QCOMPARE(roleAt(members, 1, MemberListModel::StatusRole), QString());
+    for (int row = 0; row < members.rowCount(); ++row) {
+        const QString status =
+            roleAt(members, row, MemberListModel::StatusRole).toString();
+        QVERIFY(status != QStringLiteral("o"));
+        QVERIFY(status != QStringLiteral("v"));
+        QCOMPARE(roleAt(members, row, MemberListModel::AwayRole), false);
+    }
 }
 
 void ModelTest::identicalChannelsStayDistinct()
@@ -231,7 +264,7 @@ void ModelTest::membersEmptyForDirectMessage()
     reducer.apply(IrcNamesEvent{
         networkA,
         QStringLiteral("#room"),
-        {{QStringLiteral("Alice"), QString(), false}},
+        {{QStringLiteral("Alice"), QString()}},
         true,
     });
     reducer.apply(IrcMessageEvent{
