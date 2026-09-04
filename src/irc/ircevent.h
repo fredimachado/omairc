@@ -1,10 +1,13 @@
 #pragma once
 
+#include "ircpresence.h"
+
 #include <QChar>
 #include <QDateTime>
 #include <QString>
 #include <QStringList>
 
+#include <optional>
 #include <variant>
 #include <vector>
 
@@ -117,8 +120,7 @@ struct IrcTopicEvent
 struct IrcName
 {
     QString nick;
-    QString status;
-    bool away = false;
+    QString prefixModes;
 };
 
 struct IrcNamesEvent
@@ -138,6 +140,20 @@ struct IrcModeEvent
     QStringList arguments;
 };
 
+struct IrcAwayEvent
+{
+    QString networkId;
+    QString nick;
+    std::optional<IrcAway> away;
+};
+
+struct IrcMemberStatusEvent
+{
+    QString networkId;
+    QString nick;
+    QString status;
+};
+
 using IrcEvent = std::variant<
     IrcWelcomeEvent,
     IrcMessageEvent,
@@ -150,4 +166,6 @@ using IrcEvent = std::variant<
     IrcKickEvent,
     IrcTopicEvent,
     IrcNamesEvent,
-    IrcModeEvent>;
+    IrcModeEvent,
+    IrcAwayEvent,
+    IrcMemberStatusEvent>;

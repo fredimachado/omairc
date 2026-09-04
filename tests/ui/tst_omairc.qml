@@ -139,6 +139,8 @@ TestCase {
         property int peopleCount: 1
         property string connectionStatus: "Connected"
         property string lastError: ""
+        property bool hasAwayPresence: true
+        property bool hasMemberStatus: true
         property var conversations: liveConversations
         property var messages: liveMessages
         property var members: liveMembers
@@ -174,9 +176,46 @@ TestCase {
         property string connectionStatus: "Connected"
         property string lastError: ""
         property string currentNick: ""
+        property bool hasAwayPresence: true
+        property bool hasMemberStatus: true
         property var conversations: liveConversations
         property var messages: liveMessages
         property var members: liveMembers
+        property var statusConsole: liveConsole
+
+        function selectConversation() {
+        }
+
+        function openDirectMessage() {
+        }
+
+        function sendMessage() {
+            return false;
+        }
+    }
+
+    ListModel {
+        id: gatedMembers
+
+        ListElement { nick: "anna"; status: "writing docs"; away: true }
+    }
+
+    QtObject {
+        id: gatedIrc
+
+        property string currentNick: "live-nick"
+        property string selectedTarget: "#omarchy"
+        property string selectedNetworkId: "libera"
+        property string topic: "A cozy corner for Omarchy users and builders."
+        property bool isChannel: true
+        property int peopleCount: 1
+        property string connectionStatus: "Connected"
+        property string lastError: ""
+        property bool hasAwayPresence: false
+        property bool hasMemberStatus: false
+        property var conversations: liveConversations
+        property var messages: liveMessages
+        property var members: gatedMembers
         property var statusConsole: liveConsole
 
         function selectConversation() {
@@ -224,6 +263,15 @@ TestCase {
         Omairc.OmaircWindow {
             backend: fakeBackend
             irc: liveIrc
+        }
+    }
+
+    Component {
+        id: gatedWindowComponent
+
+        Omairc.OmaircWindow {
+            backend: fakeBackend
+            irc: gatedIrc
         }
     }
 
@@ -397,6 +445,41 @@ TestCase {
         tryCompare(window, "currentConversation", "#omarchy");
         compare(liveIrc.selectedNetworkId, "libera");
         compare(window.currentConversationIsChannel, true);
+        window.close();
+    }
+
+    function test_memberPresenceChromeFollowsCapabilities() {
+        liveConsole.open = false;
+        gatedIrc.hasAwayPresence = false;
+        gatedIrc.hasMemberStatus = false;
+        var window = createTemporaryObject(gatedWindowComponent, null);
+        verify(window !== null, "The gated window should load");
+        tryCompare(window, "visible", true);
+        waitForRendering(window.contentItem);
+
+        verify(findChild(window, "membersPanel").visible);
+        var members = findChild(window, "membersList");
+        verify(members !== null, "Could not find membersList");
+        var member = members.itemAtIndex(0);
+        verify(member !== null, "The anna member delegate should be rendered");
+        var dot = findChild(member, "presence-dot-anna");
+        var subtitle = findChild(member, "member-status-anna");
+        verify(dot !== null, "The presence dot should be rendered");
+        verify(subtitle !== null, "The status subtitle should be rendered");
+
+        compare(dot.visible, false);
+        compare(subtitle.visible, false);
+        compare(member.away, false);
+        compare(member.Accessible.description, "");
+
+        gatedIrc.hasAwayPresence = true;
+        gatedIrc.hasMemberStatus = true;
+
+        tryCompare(dot, "visible", true);
+        tryCompare(subtitle, "visible", true);
+        compare(subtitle.text, "writing docs");
+        compare(member.away, true);
+        compare(member.Accessible.description, "writing docs");
         window.close();
     }
 

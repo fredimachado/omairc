@@ -3,6 +3,7 @@
 
 #include "fakeirctransport.h"
 #include "irccontroller.h"
+#include "memberlistmodel.h"
 #include "networklogmodel.h"
 
 namespace
@@ -44,6 +45,7 @@ private slots:
     void reducesTrafficAndRoutesOutboundByNetwork();
     void liberaConnectCreatesChannelNotAuthDirect();
     void emptyNetworkIdDoesNotSwitch();
+    void presenceCapabilitiesGateAwayAndStatus();
 };
 
 void ControllerTest::reducesTrafficAndRoutesOutboundByNetwork()
@@ -180,6 +182,57 @@ void ControllerTest::emptyNetworkIdDoesNotSwitch()
 
     controller.selectConversation(QString(), QStringLiteral("AUTH"));
     QCOMPARE(controller.selectedTarget(), QStringLiteral("#omarchy"));
+}
+
+void ControllerTest::presenceCapabilitiesGateAwayAndStatus()
+{
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+                                                transport);
+    QVERIFY(session);
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    transport->completeConnect();
+    transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :away-notify batch draft/metadata-2\r\n"
+                          ":server CAP omairc ACK :away-notify batch draft/metadata-2\r\n"
+                          ":server 001 omairc :Welcome\r\n"
+                          ":server 005 omairc CHANTYPES=# PREFIX=(ov)@+ "
+                          ":are supported by this server\r\n"
+                          ":omairc!u@h JOIN :#omarchy\r\n"
+                          ":server 353 omairc = #omarchy :@omairc +Alice Bob\r\n"
+                          ":server 366 omairc #omarchy :End of NAMES\r\n"));
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    QVERIFY(controller.hasAwayPresence());
+    QVERIFY(controller.hasMemberStatus());
+
+    auto *members = qobject_cast<QAbstractItemModel *>(controller.members());
+    QCOMPARE(members->rowCount(), 3);
+    QCOMPARE(roleAt(members, 0, MemberListModel::NickRole), QStringLiteral("Alice"));
+    QCOMPARE(roleAt(members, 0, MemberListModel::StatusRole), QString());
+    QCOMPARE(roleAt(members, 0, MemberListModel::AwayRole), false);
+
+    transport->injectBytes(
+        QByteArrayLiteral(":server 352 omairc #omarchy u h server Alice G :0 real\r\n"
+                          ":server 761 omairc Alice status * :writing docs\r\n"));
+    QCOMPARE(roleAt(members, 0, MemberListModel::AwayRole), true);
+    QCOMPARE(roleAt(members, 0, MemberListModel::StatusRole),
+             QStringLiteral("writing docs"));
+
+    transport->injectBytes(QByteArrayLiteral(":Alice!u@h AWAY\r\n"));
+    QCOMPARE(roleAt(members, 0, MemberListModel::AwayRole), false);
+
+    transport->injectBytes(QByteArrayLiteral(":server 766 omairc Alice status :no key\r\n"));
+    QCOMPARE(roleAt(members, 0, MemberListModel::StatusRole), QString());
+
+    transport->injectBytes(
+        QByteArrayLiteral(":server 761 omairc Alice status * :writing docs\r\n"
+                          ":Alice!u@h AWAY :lunch\r\n"
+                          ":server CAP omairc DEL :away-notify draft/metadata-2\r\n"));
+    QVERIFY(!controller.hasAwayPresence());
+    QVERIFY(!controller.hasMemberStatus());
+    QCOMPARE(roleAt(members, 0, MemberListModel::AwayRole), false);
+    QCOMPARE(roleAt(members, 0, MemberListModel::StatusRole), QString());
 }
 
 int runControllerTests(int argc, char **argv)

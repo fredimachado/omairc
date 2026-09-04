@@ -1,6 +1,7 @@
 #pragma once
 
 #include "ircevent.h"
+#include "ircpresence.h"
 #include "ircserverfeatures.h"
 
 #include <map>
@@ -27,9 +28,18 @@ struct IrcReducedMessage
 
 struct IrcMemberState
 {
+    QString displayNick;
+    QString prefixModes;
+};
+
+struct IrcMemberView
+{
     QString nick;
+    QString prefixModes;
+    std::optional<IrcAway> away;
     QString status;
-    bool away = false;
+
+    bool isAway() const noexcept;
 };
 
 struct IrcChannelState
@@ -78,6 +88,11 @@ public:
     const Store& conversations() const noexcept;
     const IrcConversationState *find(const IrcConversationKey& key) const noexcept;
 
+    std::optional<IrcMemberView> memberView(const IrcConversationKey& key,
+                                            const QString& normalizedNick) const;
+
+    void clearPresenceFacts(const QString& networkId, bool away, bool status);
+
 private:
     IrcConversationState& ensureConversation(const IrcConversationKey& key,
                                              const QString& displayTarget);
@@ -108,9 +123,15 @@ private:
     void reduce(const IrcTopicEvent& event);
     void reduce(const IrcNamesEvent& event);
     void reduce(const IrcModeEvent& event);
+    void reduce(const IrcAwayEvent& event);
+    void reduce(const IrcMemberStatusEvent& event);
+
+    void forgetUnseen(const QString& networkId, const QStringList& normalizedNicks);
+    bool isVisible(const QString& networkId, const QString& normalizedNick) const;
 
     Store m_conversations;
     std::map<QString, IrcServerFeatures> m_features;
     std::map<QString, QString> m_currentNicks;
+    std::map<QString, IrcNetworkPresence> m_presence;
     std::optional<IrcConversationKey> m_selected;
 };

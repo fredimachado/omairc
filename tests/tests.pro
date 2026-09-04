@@ -18,6 +18,9 @@ HEADERS += \
     ../src/irc/irccommandbuilder.h \
     ../src/irc/irccasemapping.h \
     ../src/irc/ircserverfeatures.h \
+    ../src/irc/irccapability.h \
+    ../src/irc/irccapabilitynegotiation.h \
+    ../src/irc/ircpresence.h \
     ../src/irc/ircevent.h \
     ../src/irc/irceventtranslator.h \
     ../src/irc/irceventreducer.h \
@@ -48,6 +51,9 @@ SOURCES += \
     ../src/irc/irccommandbuilder.cpp \
     ../src/irc/irccasemapping.cpp \
     ../src/irc/ircserverfeatures.cpp \
+    ../src/irc/irccapability.cpp \
+    ../src/irc/irccapabilitynegotiation.cpp \
+    ../src/irc/ircpresence.cpp \
     ../src/irc/irceventtranslator.cpp \
     ../src/irc/irceventreducer.cpp \
     ../src/irc/ircstatusentry.cpp \
@@ -69,6 +75,7 @@ SOURCES += \
     integration/tst_qtirctransport.cpp \
     session/tst_transport.cpp \
     session/tst_session.cpp \
+    session/tst_capability.cpp \
     session/tst_profile.cpp \
     session/tst_connection.cpp \
     session/tst_controller.cpp \

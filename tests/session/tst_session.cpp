@@ -62,7 +62,8 @@ struct Fixture
     explicit Fixture(IrcSessionConfig sessionConfig = config())
         : transport(new FakeIrcTransport)
         , timer(new FakeReconnectTimer)
-        , session(new IrcSession(sessionConfig, transport, timer))
+        , capabilityTimer(new FakeReconnectTimer)
+        , session(new IrcSession(sessionConfig, transport, timer, capabilityTimer))
     {
     }
 
@@ -77,8 +78,14 @@ struct Fixture
         transport->completeConnect();
     }
 
+    bool wrote(const QByteArray& frame) const
+    {
+        return transport->writtenFrames().contains(frame);
+    }
+
     FakeIrcTransport *transport;
     FakeReconnectTimer *timer;
+    FakeReconnectTimer *capabilityTimer;
     IrcSession *session;
 };
 }
@@ -89,6 +96,10 @@ class SessionTest : public QObject
 
 private slots:
     void registersAndAutojoins();
+    void negotiatesPresenceCapabilities();
+    void refusedPresenceCapabilitiesStayOffWithoutFailing();
+    void unansweredPresenceRequestStillRegisters();
+    void withdrawnCapabilityIsPublished();
     void negotiatesSaslPlain();
     void sendsPassWhenSaslIsUnavailable();
     void registersWhenCapIsUnsupported();
@@ -128,6 +139,7 @@ void SessionTest::registersAndAutojoins()
                  QByteArrayLiteral("USER omairc 8 * :Omairc User\r\n"),
                  QByteArrayLiteral("CAP END\r\n"),
              }));
+    QVERIFY(fixture.session->capabilities().isEmpty());
 
     fixture.transport->injectBytes(
         QByteArrayLiteral(":server 001 omairc :Welcome\r\n"));
@@ -138,6 +150,115 @@ void SessionTest::registersAndAutojoins()
                  QByteArrayLiteral("JOIN #omarchy\r\n"),
                  QByteArrayLiteral("JOIN &local\r\n"),
              }));
+}
+
+void SessionTest::negotiatesPresenceCapabilities()
+{
+    IrcSessionConfig saslConfig = config();
+    saslConfig.password = QStringLiteral("secret");
+    Fixture fixture(saslConfig);
+    QSignalSpy capabilities(fixture.session, &IrcSession::capabilitiesChanged);
+
+    fixture.connectTls();
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS * :sasl=PLAIN away-notify\r\n"
+                          ":server CAP omairc LS :batch draft/metadata-2 multi-prefix\r\n"));
+    QCOMPARE(fixture.transport->writtenFrames(),
+             QByteArrayList({
+                 QByteArrayLiteral("CAP LS 302\r\n"),
+                 QByteArrayLiteral("CAP REQ :sasl\r\n"),
+                 QByteArrayLiteral("CAP REQ :away-notify batch draft/metadata-2\r\n"),
+                 QByteArrayLiteral("NICK omairc\r\n"),
+                 QByteArrayLiteral("USER omairc 8 * :Omairc User\r\n"),
+             }));
+
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc ACK :away-notify batch draft/metadata-2\r\n"));
+    QVERIFY(!fixture.wrote(QByteArrayLiteral("CAP END\r\n")));
+
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc ACK :sasl\r\n"
+                          "AUTHENTICATE +\r\n"
+                          ":server 903 omairc :SASL successful\r\n"));
+    QVERIFY(fixture.wrote(QByteArrayLiteral("CAP END\r\n")));
+
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(":server 001 omairc :Welcome\r\n"));
+    QVERIFY(fixture.wrote(QByteArrayLiteral("METADATA * SUB status\r\n")));
+
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(":server 366 omairc #omarchy :End of /NAMES\r\n"));
+    QVERIFY(fixture.wrote(QByteArrayLiteral("WHO #omarchy\r\n")));
+
+    const IrcCapabilitySet enabled = fixture.session->capabilities();
+    QVERIFY(enabled.contains(IrcCapability::AwayNotify));
+    QVERIFY(enabled.contains(IrcCapability::Batch));
+    QVERIFY(enabled.contains(IrcCapability::MemberMetadata));
+    QVERIFY(!capabilities.isEmpty());
+}
+
+void SessionTest::refusedPresenceCapabilitiesStayOffWithoutFailing()
+{
+    Fixture fixture;
+    QSignalSpy errors(fixture.session, &IrcSession::errorOccurred);
+
+    fixture.connectTls();
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :away-notify batch draft/metadata-2\r\n"));
+    QCOMPARE(fixture.transport->writtenFrames().mid(1),
+             QByteArrayList({
+                 QByteArrayLiteral("CAP REQ :away-notify batch draft/metadata-2\r\n"),
+                 QByteArrayLiteral("NICK omairc\r\n"),
+                 QByteArrayLiteral("USER omairc 8 * :Omairc User\r\n"),
+             }));
+
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc NAK :away-notify batch draft/metadata-2\r\n"));
+    QVERIFY(fixture.wrote(QByteArrayLiteral("CAP END\r\n")));
+    QCOMPARE(errors.size(), 0);
+    QVERIFY(fixture.session->capabilities().isEmpty());
+
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(":server 001 omairc :Welcome\r\n"
+                          ":server 366 omairc #omarchy :End of /NAMES\r\n"));
+    QCOMPARE(fixture.session->state(), IrcSession::State::Registered);
+    QVERIFY(!fixture.wrote(QByteArrayLiteral("METADATA * SUB status\r\n")));
+    QVERIFY(!fixture.wrote(QByteArrayLiteral("WHO #omarchy\r\n")));
+}
+
+void SessionTest::unansweredPresenceRequestStillRegisters()
+{
+    Fixture fixture;
+    fixture.connectTls();
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :away-notify\r\n"));
+    QVERIFY(fixture.capabilityTimer->active);
+    QVERIFY(!fixture.wrote(QByteArrayLiteral("CAP END\r\n")));
+
+    fixture.capabilityTimer->fire();
+    QVERIFY(fixture.wrote(QByteArrayLiteral("CAP END\r\n")));
+    QVERIFY(fixture.session->capabilities().isEmpty());
+}
+
+void SessionTest::withdrawnCapabilityIsPublished()
+{
+    Fixture fixture;
+    fixture.connectTls();
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :away-notify\r\n"
+                          ":server CAP omairc ACK :away-notify\r\n"
+                          ":server 001 omairc :Welcome\r\n"
+                          ":server 366 omairc #omarchy :End of /NAMES\r\n"));
+    QVERIFY(fixture.wrote(QByteArrayLiteral("WHO #omarchy\r\n")));
+    QVERIFY(fixture.session->capabilities().contains(IrcCapability::AwayNotify));
+
+    QSignalSpy capabilities(fixture.session, &IrcSession::capabilitiesChanged);
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc DEL :away-notify\r\n"
+                          ":server 366 omairc #desktop :End of /NAMES\r\n"));
+    QCOMPARE(capabilities.size(), 1);
+    QVERIFY(!fixture.session->capabilities().contains(IrcCapability::AwayNotify));
+    QVERIFY(!fixture.wrote(QByteArrayLiteral("WHO #desktop\r\n")));
 }
 
 void SessionTest::negotiatesSaslPlain()

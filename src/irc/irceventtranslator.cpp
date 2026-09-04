@@ -1,5 +1,7 @@
 #include "irceventtranslator.h"
 
+#include "ircpresence.h"
+
 #include <QByteArray>
 #include <QDateTime>
 
@@ -88,6 +90,38 @@ QStringList remainingParameters(const IrcMessage& message, std::size_t start)
         result.append(parameter(message, index));
     return result;
 }
+
+QString clampedMetadataValue(const QString& value)
+{
+    QString clamped = value;
+    while (clamped.toUtf8().size() > IrcMetadata::maximumValueBytes)
+        clamped.chop(1);
+    return clamped;
+}
+
+/// `<Target> <Key> <Visibility> [<Value>]`, the shape shared by `METADATA`,
+/// `761` and `766` once the numeric client parameter has been dropped.
+void appendMemberStatus(std::vector<IrcEvent>& events,
+                        const QString& networkId,
+                        const IrcMessage& message,
+                        std::size_t targetIndex,
+                        bool clearsValue,
+                        const IrcServerFeatures& features)
+{
+    const std::size_t required = clearsValue ? targetIndex + 2 : targetIndex + 3;
+    if (message.parameters.size() < required)
+        return;
+    const QString target = parameter(message, targetIndex);
+    const QString key = parameter(message, targetIndex + 1);
+    if (target.isEmpty() || features.isChannel(utf8(target)))
+        return;
+    if (key.compare(IrcMetadata::statusKey(), Qt::CaseInsensitive) != 0)
+        return;
+    const QString value = clearsValue
+        ? QString{}
+        : clampedMetadataValue(parameter(message, targetIndex + 3));
+    events.emplace_back(IrcMemberStatusEvent{networkId, target, value});
+}
 }
 
 std::vector<IrcEvent> IrcEventTranslator::translate(
@@ -156,7 +190,7 @@ std::vector<IrcEvent> IrcEventTranslator::translate(
                 statuses.append(text(status));
                 nick.remove(0, 1);
             }
-            names.push_back({nick, statuses.join(QLatin1Char(',')), false});
+            names.push_back({nick, statuses.join(QLatin1Char(','))});
         }
         events.emplace_back(IrcNamesEvent{
             networkId, parameter(message, 2), std::move(names), false});
@@ -167,6 +201,28 @@ std::vector<IrcEvent> IrcEventTranslator::translate(
         events.emplace_back(IrcModeEvent{
             networkId, parameter(message, 0), sender, parameter(message, 1),
             remainingParameters(message, 2)});
+    } else if (command == QStringLiteral("AWAY") && !sender.isEmpty()) {
+        events.emplace_back(IrcAwayEvent{
+            networkId,
+            sender,
+            message.parameters.empty()
+                ? std::nullopt
+                : std::optional<IrcAway>(IrcAway{parameter(message, 0)})});
+    } else if (command == QStringLiteral("352") && message.parameters.size() >= 7) {
+        const QString nick = parameter(message, 5);
+        const bool away = parameter(message, 6).startsWith(QLatin1Char('G'));
+        if (!nick.isEmpty()) {
+            events.emplace_back(IrcAwayEvent{
+                networkId,
+                nick,
+                away ? std::optional<IrcAway>(IrcAway{}) : std::nullopt});
+        }
+    } else if (command == QStringLiteral("METADATA")) {
+        appendMemberStatus(events, networkId, message, 0, false, features);
+    } else if (command == QStringLiteral("761")) {
+        appendMemberStatus(events, networkId, message, 1, false, features);
+    } else if (command == QStringLiteral("766")) {
+        appendMemberStatus(events, networkId, message, 1, true, features);
     }
 
     return events;

@@ -72,6 +72,8 @@ IrcSession *IrcController::addSession(const IrcSessionConfig& config,
     });
     connect(session, &IrcSession::messageReceived,
             this, &IrcController::handleMessage);
+    connect(session, &IrcSession::capabilitiesChanged,
+            this, &IrcController::handleCapabilities);
     connect(session, &IrcSession::stateChanged, this,
             [this, session](IrcSession::State) { updateStatus(session); });
     connect(session, &IrcSession::errorOccurred, this,
@@ -89,7 +91,9 @@ bool IrcController::discardSession(const QString &networkId)
     if (!m_sessions.findSession(networkId))
         return false;
     m_currentNicks.remove(networkId);
+    m_capabilities.remove(networkId);
     m_console.forget(networkId);
+    emit capabilitiesChanged();
     return m_sessions.discardSession(networkId);
 }
 
@@ -161,6 +165,41 @@ QString IrcController::currentNick() const
     return m_selected ? m_currentNicks.value(m_selected->networkId) : QString{};
 }
 
+bool IrcController::hasAwayPresence() const
+{
+    return m_selected
+        && m_capabilities.value(m_selected->networkId)
+               .contains(IrcCapability::AwayNotify);
+}
+
+bool IrcController::hasMemberStatus() const
+{
+    if (!m_selected)
+        return false;
+    const IrcCapabilitySet capabilities = m_capabilities.value(m_selected->networkId);
+    return capabilities.contains(IrcCapability::MemberMetadata)
+        && capabilities.contains(IrcCapability::Batch);
+}
+
+void IrcController::handleCapabilities(const QString& networkId,
+                                       IrcCapabilitySet capabilities)
+{
+    const IrcCapabilitySet previous = m_capabilities.value(networkId);
+    m_capabilities.insert(networkId, capabilities);
+
+    const auto dropped = [&](IrcCapability capability) {
+        return previous.contains(capability) && !capabilities.contains(capability);
+    };
+    const bool awayDropped = dropped(IrcCapability::AwayNotify);
+    const bool statusDropped = dropped(IrcCapability::MemberMetadata)
+        || dropped(IrcCapability::Batch);
+    if (awayDropped || statusDropped) {
+        m_reducer.clearPresenceFacts(networkId, awayDropped, statusDropped);
+        reloadModels();
+    }
+    emit capabilitiesChanged();
+}
+
 IrcStatusConsole *IrcController::console()
 {
     return &m_console;
@@ -195,6 +234,7 @@ void IrcController::selectConversation(const QString& networkId,
     if (IrcSession *session = m_sessions.findSession(networkId))
         updateStatus(session);
     emit selectionChanged();
+    emit capabilitiesChanged();
 }
 
 void IrcController::openDirectMessage(const QString& nick)

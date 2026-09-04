@@ -5,6 +5,8 @@
 #include <QStringList>
 #include <QTimer>
 
+#include "irccapability.h"
+#include "irccapabilitynegotiation.h"
 #include "ircframer.h"
 #include "ircstatusentry.h"
 #include "irctransport.h"
@@ -41,6 +43,7 @@ struct IrcSessionConfig
     int reconnectBaseDelayMilliseconds = 1000;
     int reconnectMaximumDelayMilliseconds = 30000;
     int reconnectMaximumAttempts = 5;
+    int capabilityTimeoutMilliseconds = 10000;
 };
 
 class IrcSession : public QObject
@@ -74,6 +77,7 @@ public:
     IrcSession(const IrcSessionConfig &config,
                IrcTransport *transport,
                IrcReconnectTimer *reconnectTimer = nullptr,
+               IrcReconnectTimer *capabilityTimer = nullptr,
                QObject *parent = nullptr);
     ~IrcSession() override;
 
@@ -81,6 +85,7 @@ public:
     QString nick() const;
     State state() const;
     int reconnectAttempt() const;
+    IrcCapabilitySet capabilities() const;
 
 public slots:
     void start();
@@ -104,10 +109,18 @@ signals:
                             int attempt);
     void messageReceived(const QString& networkId, const IrcMessage& message);
     void statusEntry(const IrcStatusEntry& entry);
+    void capabilitiesChanged(const QString& networkId,
+                             IrcCapabilitySet capabilities);
 
 private:
     void setState(State state);
     void beginCapabilityNegotiation();
+    void requestCapabilities();
+    void endCapabilityNegotiation();
+    void publishCapabilities();
+    void subscribeToMemberMetadata();
+    void probeChannelAway(const QString& channel);
+    void handleMetadataSyncLater(const IrcMessage &message);
     void sendRegistration();
     void sendLine(const QByteArray &line);
     void handleBytes(const QByteArray &bytes);
@@ -124,12 +137,16 @@ private:
     const IrcSessionConfig m_config;
     IrcTransport *m_transport;
     IrcReconnectTimer *m_reconnectTimer;
+    IrcReconnectTimer *m_capabilityTimer;
     IrcFramer m_framer;
+    IrcCapabilityNegotiation m_capabilities;
+    IrcCapabilitySet m_publishedCapabilities;
     State m_state = State::Idle;
     bool m_expectedDisconnect = false;
     bool m_reconnectAfterDisconnect = false;
     bool m_registrationSent = false;
     bool m_saslRequested = false;
-    QStringList m_advertisedCapabilities;
+    bool m_saslPending = false;
+    bool m_capabilityNegotiationEnded = false;
     int m_reconnectAttempt = 0;
 };

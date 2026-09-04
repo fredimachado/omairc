@@ -2,8 +2,10 @@
 
 #include "irccommandbuilder.h"
 #include "ircparser.h"
+#include "ircpresence.h"
 
 #include <QByteArray>
+#include <QTimer>
 #include <QtGlobal>
 
 #include <algorithm>
@@ -34,6 +36,19 @@ int parameterIndex(const IrcMessage &message, const QString &value)
     }
     return -1;
 }
+
+QStringList capabilityTokens(const IrcMessage &message, int subcommandIndex)
+{
+    if (message.parameters.size() <= std::size_t(subcommandIndex + 1))
+        return {};
+    return QString::fromStdString(message.parameters.back())
+        .split(QLatin1Char(' '), Qt::SkipEmptyParts);
+}
+
+QByteArray wireLine(const QString &command)
+{
+    return command.toUtf8() + QByteArrayLiteral("\r\n");
+}
 }
 
 IrcReconnectTimer::IrcReconnectTimer(QObject *parent)
@@ -56,11 +71,14 @@ void IrcReconnectTimer::cancel()
 IrcSession::IrcSession(const IrcSessionConfig &config,
                        IrcTransport *transport,
                        IrcReconnectTimer *reconnectTimer,
+                       IrcReconnectTimer *capabilityTimer,
                        QObject *parent)
     : QObject(parent)
     , m_config(config)
     , m_transport(transport)
     , m_reconnectTimer(reconnectTimer)
+    , m_capabilityTimer(capabilityTimer)
+    , m_capabilities(!config.password.isEmpty())
 {
     Q_ASSERT(m_transport);
     if (!m_transport->parent())
@@ -71,6 +89,20 @@ IrcSession::IrcSession(const IrcSessionConfig &config,
     } else if (!m_reconnectTimer->parent()) {
         m_reconnectTimer->setParent(this);
     }
+
+    if (!m_capabilityTimer) {
+        m_capabilityTimer = new IrcReconnectTimer(this);
+    } else if (!m_capabilityTimer->parent()) {
+        m_capabilityTimer->setParent(this);
+    }
+
+    connect(m_capabilityTimer, &IrcReconnectTimer::fired, this, [this] {
+        const IrcCapabilitySet abandoned = m_capabilities.abandonOutstanding();
+        if (abandoned.contains(IrcCapability::Sasl))
+            m_saslPending = false;
+        publishCapabilities();
+        endCapabilityNegotiation();
+    });
 
     connect(m_transport, &IrcTransport::connected, this, [this] {
         if (!m_config.tlsEnabled && m_state == State::Connecting)
@@ -119,6 +151,7 @@ IrcSession::~IrcSession()
     m_expectedDisconnect = true;
     m_reconnectAfterDisconnect = false;
     m_reconnectTimer->cancel();
+    m_capabilityTimer->cancel();
     m_transport->shutdown();
 }
 
@@ -140,6 +173,11 @@ IrcSession::State IrcSession::state() const
 int IrcSession::reconnectAttempt() const
 {
     return m_reconnectAttempt;
+}
+
+IrcCapabilitySet IrcSession::capabilities() const
+{
+    return m_capabilities.enabled();
 }
 
 void IrcSession::start()
@@ -168,6 +206,7 @@ void IrcSession::stop()
     m_expectedDisconnect = true;
     m_reconnectAfterDisconnect = false;
     m_reconnectTimer->cancel();
+    m_capabilityTimer->cancel();
     m_reconnectAttempt = 0;
 
     if (m_state == State::Idle)
@@ -251,6 +290,78 @@ void IrcSession::beginCapabilityNegotiation()
 {
     setState(State::CapLs);
     sendLine(QByteArrayLiteral("CAP LS 302\r\n"));
+}
+
+void IrcSession::requestCapabilities()
+{
+    const IrcCapabilityNegotiation::Request request = m_capabilities.takeRequest();
+    if (request.requestsSasl) {
+        m_saslRequested = true;
+        m_saslPending = true;
+    }
+
+    if (!request.lines.isEmpty()) {
+        if (!m_registrationSent)
+            setState(State::CapReq);
+        for (const QString &line : request.lines)
+            sendLine(wireLine(QStringLiteral("CAP REQ :%1").arg(line)));
+        m_capabilityTimer->start(std::max(0, m_config.capabilityTimeoutMilliseconds));
+    }
+
+    sendRegistration();
+    endCapabilityNegotiation();
+}
+
+void IrcSession::endCapabilityNegotiation()
+{
+    if (m_capabilityNegotiationEnded || m_state == State::Registered)
+        return;
+    if (!m_registrationSent || !m_capabilities.settled() || m_saslPending)
+        return;
+
+    m_capabilityNegotiationEnded = true;
+    m_capabilityTimer->cancel();
+    sendLine(QByteArrayLiteral("CAP END\r\n"));
+}
+
+void IrcSession::publishCapabilities()
+{
+    const IrcCapabilitySet enabled = m_capabilities.enabled();
+    if (enabled == m_publishedCapabilities)
+        return;
+    m_publishedCapabilities = enabled;
+    emit capabilitiesChanged(m_config.networkId, enabled);
+}
+
+void IrcSession::subscribeToMemberMetadata()
+{
+    const IrcCapabilitySet enabled = m_capabilities.enabled();
+    if (!enabled.contains(IrcCapability::MemberMetadata)
+        || !enabled.contains(IrcCapability::Batch)) {
+        return;
+    }
+    sendLine(wireLine(QStringLiteral("METADATA * SUB %1")
+                          .arg(IrcMetadata::subscribedKeys().join(QLatin1Char(' ')))));
+}
+
+void IrcSession::probeChannelAway(const QString& channel)
+{
+    if (channel.isEmpty()
+        || !m_capabilities.enabled().contains(IrcCapability::AwayNotify)) {
+        return;
+    }
+    sendCommand(QStringLiteral("WHO %1").arg(channel));
+}
+
+void IrcSession::handleMetadataSyncLater(const IrcMessage &message)
+{
+    const QString target = parameter(message, 1);
+    if (target.isEmpty())
+        return;
+    const int retryAfterSeconds = qBound(0, parameter(message, 2).toInt(), 60);
+    QTimer::singleShot(retryAfterSeconds * 1000, this, [this, target] {
+        sendCommand(QStringLiteral("METADATA %1 SYNC").arg(target));
+    });
 }
 
 void IrcSession::sendRegistration()
@@ -352,10 +463,15 @@ void IrcSession::handleMessage(const IrcMessage &message)
         return;
     }
     if (message.command == "903") {
-        if (m_state == State::Sasl) {
-            sendLine(QByteArrayLiteral("CAP END\r\n"));
+        if (m_saslPending) {
+            m_saslPending = false;
+            endCapabilityNegotiation();
             setState(State::Registering);
         }
+        return;
+    }
+    if (message.command == "774") {
+        handleMetadataSyncLater(message);
         return;
     }
     if (message.command == "904" || message.command == "905") {
@@ -367,6 +483,8 @@ void IrcSession::handleMessage(const IrcMessage &message)
     if (message.command == "421"
         && parameterIndex(message, QStringLiteral("CAP")) >= 0
         && m_state == State::CapLs) {
+        m_capabilityNegotiationEnded = true;
+        m_capabilityTimer->cancel();
         sendRegistration();
         return;
     }
@@ -394,6 +512,8 @@ void IrcSession::handleMessage(const IrcMessage &message)
              true);
         return;
     }
+    if (message.command == "366" && message.parameters.size() >= 2)
+        probeChannelAway(parameter(message, 1));
 
     emit messageReceived(m_config.networkId, message);
 }
@@ -402,56 +522,57 @@ void IrcSession::handleCap(const IrcMessage &message)
 {
     const int lsIndex = parameterIndex(message, QStringLiteral("LS"));
     if (lsIndex >= 0) {
-        if (message.parameters.size() > std::size_t(lsIndex + 1)) {
-            const QString capabilities = QString::fromStdString(message.parameters.back());
-            m_advertisedCapabilities.append(
-                capabilities.split(QLatin1Char(' '), Qt::SkipEmptyParts));
-        }
+        m_capabilities.advertise(capabilityTokens(message, lsIndex));
         const bool continuation = message.parameters.size() > std::size_t(lsIndex + 1)
             && parameter(message, std::size_t(lsIndex + 1)) == QStringLiteral("*");
         if (continuation)
             return;
+        requestCapabilities();
+        return;
+    }
 
-        const bool hasSasl = std::any_of(
-            m_advertisedCapabilities.cbegin(),
-            m_advertisedCapabilities.cend(),
-            [](const QString &capability) {
-                if (capability.section(QLatin1Char('='), 0, 0)
-                        .compare(QStringLiteral("sasl"), Qt::CaseInsensitive)
-                    != 0) {
-                    return false;
-                }
-                if (!capability.contains(QLatin1Char('=')))
-                    return true;
-                return capability.section(QLatin1Char('='), 1)
-                    .split(QLatin1Char(','), Qt::SkipEmptyParts)
-                    .contains(QStringLiteral("PLAIN"), Qt::CaseInsensitive);
-            });
-        if (!m_config.password.isEmpty() && hasSasl) {
-            m_saslRequested = true;
-            setState(State::CapReq);
-            sendLine(QByteArrayLiteral("CAP REQ :sasl\r\n"));
-            sendRegistration();
-            return;
-        }
+    const int newIndex = parameterIndex(message, QStringLiteral("NEW"));
+    if (newIndex >= 0) {
+        m_capabilities.advertise(capabilityTokens(message, newIndex));
+        requestCapabilities();
+        return;
+    }
 
-        sendRegistration();
-        sendLine(QByteArrayLiteral("CAP END\r\n"));
+    const int delIndex = parameterIndex(message, QStringLiteral("DEL"));
+    if (delIndex >= 0) {
+        m_capabilities.withdraw(capabilityTokens(message, delIndex));
+        publishCapabilities();
         return;
     }
 
     const int ackIndex = parameterIndex(message, QStringLiteral("ACK"));
-    if (ackIndex >= 0 && m_saslRequested) {
-        setState(State::Sasl);
-        sendLine(QByteArrayLiteral("AUTHENTICATE PLAIN\r\n"));
+    if (ackIndex >= 0) {
+        const IrcCapabilitySet granted =
+            m_capabilities.acknowledge(capabilityTokens(message, ackIndex));
+        publishCapabilities();
+        if (granted.contains(IrcCapability::Sasl)) {
+            setState(State::Sasl);
+            sendLine(QByteArrayLiteral("AUTHENTICATE PLAIN\r\n"));
+            return;
+        }
+        if (m_state == State::Registered)
+            subscribeToMemberMetadata();
+        endCapabilityNegotiation();
         return;
     }
 
     const int nakIndex = parameterIndex(message, QStringLiteral("NAK"));
-    if (nakIndex >= 0 && m_saslRequested) {
-        fail(ErrorKind::Authentication,
-             QStringLiteral("Server rejected the SASL capability"),
-             false);
+    if (nakIndex >= 0) {
+        const IrcCapabilitySet refused =
+            m_capabilities.reject(capabilityTokens(message, nakIndex));
+        if (refused.contains(IrcCapability::Sasl)) {
+            m_saslPending = false;
+            fail(ErrorKind::Authentication,
+                 QStringLiteral("Server rejected the SASL capability"),
+                 false);
+            return;
+        }
+        endCapabilityNegotiation();
     }
 }
 
@@ -493,8 +614,11 @@ void IrcSession::handleWelcome()
         return;
 
     m_reconnectAttempt = 0;
+    m_capabilityTimer->cancel();
+    m_capabilities.abandonOutstanding();
     setState(State::Registered);
     emit registered(m_config.networkId);
+    subscribeToMemberMetadata();
     for (const QString &channel : m_config.autojoinChannels) {
         const IrcBuildResult join = IrcCommandBuilder::line(
             QStringLiteral("JOIN %1").arg(channel).toStdString());
@@ -551,7 +675,11 @@ void IrcSession::resetForConnection()
     m_framer = IrcFramer{};
     m_registrationSent = false;
     m_saslRequested = false;
-    m_advertisedCapabilities.clear();
+    m_saslPending = false;
+    m_capabilityNegotiationEnded = false;
+    m_capabilityTimer->cancel();
+    m_capabilities.reset(!m_config.password.isEmpty());
+    publishCapabilities();
 }
 
 int IrcSession::reconnectDelay() const

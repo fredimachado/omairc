@@ -14,7 +14,7 @@ IrcSession *IrcSessionManager::createSession(const IrcSessionConfig &config,
         return nullptr;
     }
 
-    auto *session = new IrcSession(config, transport, reconnectTimer, this);
+    auto *session = new IrcSession(config, transport, reconnectTimer, nullptr, this);
     m_sessions.insert(config.networkId, session);
     connect(session, &IrcSession::stateChanged, this, [this, session](IrcSession::State state) {
         if (m_activeSession == session
