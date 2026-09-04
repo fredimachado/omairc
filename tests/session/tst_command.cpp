@@ -154,6 +154,15 @@ void CommandTest::catalogLookupAndScope()
             sawMe = true;
     }
     QVERIFY(sawMe);
+
+    const IrcCommand say = IrcCommand::parse(QStringLiteral("hello"));
+    QVERIFY(say.allowedOn(IrcComposerSurface::Conversation));
+    QVERIFY(!say.allowedOn(IrcComposerSurface::Status));
+    const IrcCommand action = IrcCommand::parse(QStringLiteral("/me waves"));
+    QVERIFY(action.allowedOn(IrcComposerSurface::Conversation));
+    QVERIFY(!action.allowedOn(IrcComposerSurface::Status));
+    QVERIFY(IrcCommand::parse(QStringLiteral("/join #x"))
+                .allowedOn(IrcComposerSurface::Status));
 }
 
 void CommandTest::conversationSendAndUnknown()

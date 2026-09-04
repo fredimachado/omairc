@@ -26,6 +26,7 @@ struct IrcCommand
 
     static IrcCommand parse(const QString& input);
     bool isLiveMessage() const;
+    bool allowedOn(IrcComposerSurface surface) const;
 };
 
 struct IrcVerbSpec

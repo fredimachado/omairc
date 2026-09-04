@@ -56,14 +56,13 @@ QString stateText(IrcSession::State state)
 
 IrcController::IrcController(QObject *parent)
     : QObject(parent)
-    , m_console(m_sessions)
+    , m_console(m_sessions, [this](const IrcCommand& command) {
+        return dispatch(command, IrcComposerSurface::Status);
+    })
     , m_conversations(m_reducer)
     , m_messages(m_reducer)
     , m_members(m_reducer)
 {
-    m_console.setDispatch([this](const IrcCommand& command) {
-        return dispatch(command, IrcComposerSurface::Status);
-    });
     m_typingRefresh.setSingleShot(true);
     connect(&m_typingRefresh, &QTimer::timeout, this, [this] {
         emit typingChanged();
@@ -339,14 +338,8 @@ IrcCommandOutcome IrcController::dispatch(const IrcCommand& command,
         return IrcCommandOutcome::Sent;
     if (command.verb == IrcCommand::Verb::Unknown)
         return IrcCommandOutcome::Unsupported;
-
-    const IrcVerbSpec *spec = IrcVerbTable::find(command.verb);
-    if (spec && !spec->allowedOn(surface))
+    if (!command.allowedOn(surface))
         return IrcCommandOutcome::WrongScope;
-    if (command.verb == IrcCommand::Verb::Say
-        && surface != IrcComposerSurface::Conversation) {
-        return IrcCommandOutcome::WrongScope;
-    }
 
     if (command.verb == IrcCommand::Verb::Say
         || command.verb == IrcCommand::Verb::Action) {

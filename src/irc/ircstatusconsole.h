@@ -23,7 +23,9 @@ class IrcStatusConsole : public QObject
 public:
     using Dispatch = std::function<IrcCommandOutcome(const IrcCommand&)>;
 
-    explicit IrcStatusConsole(IrcSessionManager& sessions, QObject *parent = nullptr);
+    explicit IrcStatusConsole(IrcSessionManager& sessions,
+                              Dispatch dispatch,
+                              QObject *parent = nullptr);
 
     QAbstractItemModel *lines();
     bool isOpen() const;
@@ -34,7 +36,6 @@ public:
     void forget(const QString& networkId);
     void setNetwork(const QString& networkId);
     void setOpen(bool open);
-    void setDispatch(Dispatch dispatch);
 
     Q_INVOKABLE bool submit(const QString& input);
     bool clearLog();

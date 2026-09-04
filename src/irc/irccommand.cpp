@@ -100,6 +100,14 @@ bool IrcCommand::isLiveMessage() const
     return verb == Verb::Say || verb == Verb::Action;
 }
 
+bool IrcCommand::allowedOn(IrcComposerSurface surface) const
+{
+    if (verb == Verb::Say)
+        return surface == IrcComposerSurface::Conversation;
+    const IrcVerbSpec *spec = IrcVerbTable::find(verb);
+    return spec ? spec->allowedOn(surface) : true;
+}
+
 QString ircCommandOutcomeText(IrcCommandOutcome outcome, const IrcCommand& command)
 {
     switch (outcome) {

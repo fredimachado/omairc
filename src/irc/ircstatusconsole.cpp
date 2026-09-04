@@ -61,10 +61,13 @@ QString stateText(IrcSession::State state)
 
 }
 
-IrcStatusConsole::IrcStatusConsole(IrcSessionManager& sessions, QObject *parent)
+IrcStatusConsole::IrcStatusConsole(IrcSessionManager& sessions,
+                                   Dispatch dispatch,
+                                   QObject *parent)
     : QObject(parent)
     , m_sessions(sessions)
     , m_lines(m_log)
+    , m_dispatch(std::move(dispatch))
 {
     connect(&m_log, &IrcNetworkLog::appended, this,
             [this](const QString& networkId, int) { noteLogChanged(networkId); });
@@ -166,20 +169,13 @@ void IrcStatusConsole::setOpen(bool open)
     emit alertsChanged();
 }
 
-void IrcStatusConsole::setDispatch(Dispatch dispatch)
-{
-    m_dispatch = std::move(dispatch);
-}
-
 bool IrcStatusConsole::submit(const QString& input)
 {
     const IrcCommand command = IrcCommand::parse(input);
     if (command.verb == IrcCommand::Verb::Empty)
         return false;
 
-    const IrcCommandOutcome outcome = m_dispatch
-        ? m_dispatch(command)
-        : IrcCommandOutcome::Refused;
+    const IrcCommandOutcome outcome = m_dispatch(command);
     if (outcome != IrcCommandOutcome::Sent && !m_networkId.isEmpty()) {
         m_log.append(IrcStatusEntry::outcome(
             m_networkId, ircCommandOutcomeText(outcome, command)));
