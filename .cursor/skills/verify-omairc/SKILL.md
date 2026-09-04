@@ -1,6 +1,6 @@
 ---
 name: verify-omairc
-description: Drive the Omairc Qt desktop prototype as a user would (isolated Xvfb + compiled binary). Use when proving the first-run Connect sheet, Status console, channel switching, sending local messages, the member panel, member presence, typing, the identity footer, keyboard shortcuts, or opening a direct message.
+description: Drive the Omairc Qt desktop prototype as a user would (isolated Xvfb + compiled binary). Use when proving the first-run Connect sheet, Status console, channel switching, sending local messages, the member panel, member presence, typing, the identity footer, keyboard shortcuts, closing a direct message, slash commands, or opening a direct message.
 ---
 
 # Verify Omairc
@@ -87,13 +87,15 @@ Use `control-omairc` against the isolated window. Stable handles:
 | Window title `{name} - Omairc` | Current conversation |
 | `click-conversation --name #desktop` | Mock sidebar channel or seeded DM (`#omarchy`, `#desktop`, `#ricing`, `#help`, `anna`, `dax`). Those rows are hidden when `irc` is bound. Use `control-omairc launch --mock` for the prototype. |
 | `click-member --name mira` | Member row while the panel is visible |
-| `click-people` | Header `12 PEOPLE` / `Hide members` / `Show members` control (channels only) |
+| `click-people` | Header `12 PEOPLE` / `Hide members` control while the member column is open (`908,36`) |
+| `click-people --hidden` | Same control after the column hides (`1124,36`) |
 | `click-network` | Sidebar network name. Opens Status. |
 | `click-edit` | Small `edit` control beside that name. Opens Connect. Hidden under `--mock`; `click-edit` refuses that window. |
 | `focus-composer` | `Ctrl+L` |
 | `send --text "..."` | Focus composer, type, `Enter` |
 | `key --key ctrl+shift+m` | Toggle members on a channel |
 | `key --key ctrl+shift+p` | Focus the member list on a channel. Reopens the panel if it was hidden. |
+| `key --key ctrl+w` | Close the selected direct message. No-op on a channel or Status. |
 | `key --key ctrl+slash` | Toggle the shortcuts overlay |
 | `key --key ctrl+grave` | Toggle Status. Does nothing useful on first-run Connect. |
 | `key --key alt+Down` | Next sidebar conversation (channels, then DMs). Status is not in this list. |
@@ -126,7 +128,7 @@ That click path needs the mock sidebar. Use `control-omairc launch --mock`. A de
 
 Inspect the matching feature file for the exact recipe and observables.
 
-When desktop tools are missing, drive the mapped feature through the suite. `qml-suite` runs `bin/test`, which opens the Connect sheet with a fake incomplete profile, then clicks `conversation-#desktop`, `messageComposer`, `membersPanel` / `Ctrl+Shift+M`, `member-mira`, and `networkHeaderButton` with real mouse and key events, then copies screenshots into `test-artifacts/verify/`. That covers every mapped feature except live PREFIX ranks and live typing, which need a completed Connect. It is not a pass on a skipped desktop entry point; say so in the proof notes.
+When desktop tools are missing, drive the mapped feature through the suite. `qml-suite` runs `bin/test`, which opens the Connect sheet with a fake incomplete profile, then clicks `conversation-#desktop`, `messageComposer`, `membersPanel` / `Ctrl+Shift+M`, `member-mira`, and `networkHeaderButton` with real mouse and key events, then copies screenshots into `test-artifacts/verify/`. That covers every mapped feature except live PREFIX ranks, live typing, and live slash dispatch, which need a completed Connect. It is not a pass on a skipped desktop entry point; say so in the proof notes.
 
 ## Evidence
 
@@ -161,7 +163,7 @@ launch [--mock] | doctor | title | wait-title --exact TITLE
 click --x N --y N
 click-conversation --name NAME
 click-member --name NICK
-click-people | click-network | click-edit | click-send | focus-composer
+click-people [--hidden] | click-network | click-edit | click-send | focus-composer
 type --text TEXT | key --key KEY | send --text TEXT
 screenshot --feature ID --name STEM
 compare --before PATH --after PATH
@@ -170,5 +172,6 @@ cleanup
 ```
 
 `click-send` assumes the member panel is open (channel, members visible, width >= 980). Prefer `send --text` / `Enter`.
+`click-people` assumes the member column is open. After it hides, use `click-people --hidden`.
 
 If Xvfb tools are missing, install `xorg-server-xvfb xorg-xauth xdotool imagemagick` before using this skill. `bin/test` can still run the offscreen QML suite without those packages.

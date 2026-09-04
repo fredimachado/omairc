@@ -27,7 +27,7 @@ Preconditions:
 - **Baseline panel.** Confirm the panel is open. Run `control-omairc screenshot --feature toggle-members --name members-open`. The right column shows `ONLINE - 12` and nicks including `anna`, and the people control reads `12 PEOPLE`.
 - **Shortcut hide.** Press `Ctrl+Shift+M`. Run `control-omairc key --key ctrl+shift+m` then `control-omairc screenshot --feature toggle-members --name members-hidden`. The right column is gone. Run `control-omairc compare --before test-artifacts/verify/toggle-members/members-open.png --after test-artifacts/verify/toggle-members/members-hidden.png`.
 - **Shortcut show.** Press `Ctrl+Shift+M` again. Run `control-omairc key --key ctrl+shift+m`. The member column returns with `ONLINE - 12`.
-- **People control.** Click the people control. Run `control-omairc click-people`. The panel hides again. Click it once more. Run `control-omairc click-people`. The panel returns.
+- **People control.** Click the people control. Run `control-omairc click-people`. The panel hides again. The control then sits at the far right of the header. Run `control-omairc click-people --hidden`. The panel returns.
 - **Channel count.** Switch to `#desktop` with the panel open. Run `control-omairc click-conversation --name "#desktop"` then `control-omairc wait-title --exact "#desktop - Omairc"`. The people control and `ONLINE -` heading both use `8`.
 - **Direct message.** Open `anna`. Run `control-omairc click-conversation --name anna` then `control-omairc wait-title --exact "anna - Omairc"`. The people control is absent and `Ctrl+Shift+M` does not open a member column. Run `control-omairc key --key ctrl+shift+m` then `control-omairc screenshot --feature toggle-members --name dm-no-members`.
 - **Proof.** Return to `#omarchy` with the panel visible. Run `control-omairc click-conversation --name "#omarchy"`, `control-omairc wait-title --exact "#omarchy - Omairc"`, and `control-omairc screenshot --feature toggle-members --name after-toggle`. The artifact shows `#omarchy`, `12 PEOPLE`, and `ONLINE - 12`.
@@ -38,5 +38,6 @@ Preconditions:
 - `Ctrl+Shift+M` is disabled on direct messages. A no-op there is correct, not a broken shortcut.
 - The panel also stays hidden when the window is narrower than 980 CSS pixels. Isolated launch stays at 1180 wide so this does not apply unless geometry isolation failed.
 - The people control label is the count plus ` PEOPLE`, not the words Hide/Show. Those names exist only as the control's accessible name.
+- `click-people` aims at `908,36` while the member column is open. After the column hides, use `click-people --hidden` (`1124,36`). The default click misses the shifted control.
 - Clicking `fred` in the member list does nothing. That is not a toggle.
 - Presence dots, away dimming, and status lines are member-presence, not this toggle.
