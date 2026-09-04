@@ -131,6 +131,7 @@ TestCase {
     QtObject {
         id: liveIrc
 
+        property string currentNick: "live-nick"
         property string selectedTarget: "#omarchy"
         property string selectedNetworkId: "libera"
         property string topic: "A cozy corner for Omarchy users and builders."
@@ -162,12 +163,77 @@ TestCase {
         }
     }
 
+    QtObject {
+        id: emptyNickIrc
+
+        property string selectedTarget: "#omarchy"
+        property string selectedNetworkId: "libera"
+        property string topic: ""
+        property bool isChannel: true
+        property int peopleCount: 1
+        property string connectionStatus: "Connected"
+        property string lastError: ""
+        property string currentNick: ""
+        property var conversations: liveConversations
+        property var messages: liveMessages
+        property var members: liveMembers
+        property var statusConsole: liveConsole
+
+        function selectConversation() {
+        }
+
+        function openDirectMessage() {
+        }
+
+        function sendMessage() {
+            return false;
+        }
+    }
+
+    QtObject {
+        id: namedConnection
+
+        property string host: "irc.libera.chat"
+        property int port: 6697
+        property bool tlsEnabled: true
+        property string nick: "sheet-nick"
+        property string username: ""
+        property string realname: ""
+        property string autojoin: "#omarchy"
+        property bool passwordSet: false
+        property string problem: ""
+        property bool dirty: false
+        property string displayName: "irc.libera.chat"
+        property bool setupRequired: false
+        property bool focusPassword: false
+
+        function setPassword() {
+        }
+
+        function apply() {
+            return false;
+        }
+
+        function discard() {
+        }
+    }
+
     Component {
         id: liveWindowComponent
 
         Omairc.OmaircWindow {
             backend: fakeBackend
             irc: liveIrc
+        }
+    }
+
+    Component {
+        id: fallbackWindowComponent
+
+        Omairc.OmaircWindow {
+            backend: fakeBackend
+            irc: emptyNickIrc
+            connection: namedConnection
         }
     }
 
@@ -376,6 +442,31 @@ TestCase {
         verify(list.visible);
         compare(list.model.get(0).text, "*** Looking up your hostname...");
         verify(!item("peopleButton").visible);
+    }
+
+    function test_mockIdentityFooterShowsFredAndDropsNotice() {
+        compare(item("selfNickLabel").text, "fred");
+        compare(findChild(appWindow, "mockNotice"), null);
+    }
+
+    function test_liveIdentityFooterShowsCurrentNick() {
+        var window = createTemporaryObject(liveWindowComponent, null);
+        verify(window !== null, "The live window should load");
+        tryCompare(window, "visible", true);
+        waitForRendering(window.contentItem);
+
+        compare(findChild(window, "selfNickLabel").text, "live-nick");
+        window.close();
+    }
+
+    function test_identityFooterFallsBackToConnectionNick() {
+        var window = createTemporaryObject(fallbackWindowComponent, null);
+        verify(window !== null, "The fallback window should load");
+        tryCompare(window, "visible", true);
+        waitForRendering(window.contentItem);
+
+        compare(findChild(window, "selfNickLabel").text, "sheet-nick");
+        window.close();
     }
 
     function test_openDirectMessageClearsModelUnreadState() {

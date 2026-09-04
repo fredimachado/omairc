@@ -66,6 +66,16 @@ ApplicationWindow {
         ? irc.isChannel : currentConversation.charAt(0) === "#"
     readonly property int currentPeopleCount: irc
         ? irc.peopleCount : peopleCountFor(currentConversation)
+    readonly property string selfNick: {
+        if (irc) {
+            var live = irc.currentNick
+            if (live && live.length > 0)
+                return live
+        }
+        if (connection && connection.nick && connection.nick.length > 0)
+            return connection.nick
+        return "fred"
+    }
 
     Material.theme: darkMode ? Material.Dark : Material.Light
     Material.accent: accentColor
@@ -1132,12 +1142,12 @@ ApplicationWindow {
                     width: win.scaledSize(34)
                     height: width
                     radius: width / 2
-                    color: win.mixColors(win.pageColor, win.nickColor("fred"), 0.24)
+                    color: win.mixColors(win.pageColor, win.nickColor(win.selfNick), 0.24)
 
                     Text {
                         anchors.centerIn: parent
-                        text: "F"
-                        color: win.nickColor("fred")
+                        text: win.initials(win.selfNick)
+                        color: win.nickColor(win.selfNick)
                         font.family: "iA Writer Mono S"
                         font.bold: true
                         font.pixelSize: win.scaledSize(14)
@@ -1162,7 +1172,8 @@ ApplicationWindow {
                     spacing: win.scaledSize(1)
 
                     Text {
-                        text: "fred"
+                        objectName: "selfNickLabel"
+                        text: win.selfNick
                         color: win.inkColor
                         font.family: "iA Writer Mono S"
                         font.bold: true
@@ -1870,7 +1881,7 @@ ApplicationWindow {
                 anchors.topMargin: win.scaledSize(14)
                 anchors.left: parent.left
                 anchors.right: parent.right
-                anchors.bottom: mockNotice.top
+                anchors.bottom: parent.bottom
                 anchors.bottomMargin: win.scaledSize(10)
                 clip: true
                 model: win.irc ? win.irc.members : win.currentPeopleCount
@@ -1891,7 +1902,7 @@ ApplicationWindow {
                     Accessible.description: status
                     Accessible.role: Accessible.Button
                     Accessible.onPressAction: {
-                        if (nick !== (win.irc ? win.irc.currentNick : "fred"))
+                        if (nick !== win.selfNick)
                             win.openDirectMessage(nick);
                     }
                     width: ListView.view.width
@@ -1953,7 +1964,7 @@ ApplicationWindow {
                             color: memberDelegate.away ? win.mutedColor : win.inkColor
                             elide: Text.ElideRight
                             font.family: "iA Writer Mono S"
-                            font.bold: memberDelegate.nick === "fred"
+                            font.bold: memberDelegate.nick === win.selfNick
                             font.pixelSize: win.scaledSize(12)
                         }
 
@@ -1971,52 +1982,10 @@ ApplicationWindow {
                     MouseArea {
                         id: memberMouse
                         anchors.fill: parent
-                        enabled: memberDelegate.nick !== (win.irc ? win.irc.currentNick : "fred")
+                        enabled: memberDelegate.nick !== win.selfNick
                         hoverEnabled: true
                         cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
                         onClicked: win.openDirectMessage(memberDelegate.nick)
-                    }
-                }
-            }
-
-            Rectangle {
-                id: mockNotice
-                anchors.left: parent.left
-                anchors.right: parent.right
-                anchors.bottom: parent.bottom
-                anchors.margins: win.scaledSize(14)
-                height: win.scaledSize(66)
-                radius: win.scaledSize(9)
-                color: win.raisedColor
-
-                Column {
-                    anchors.left: parent.left
-                    anchors.right: parent.right
-                    anchors.verticalCenter: parent.verticalCenter
-                    anchors.margins: win.scaledSize(12)
-                    spacing: win.scaledSize(4)
-
-                    Text {
-                        text: win.irc ? win.irc.connectionStatus.toUpperCase()
-                                      : "VISUAL PROTOTYPE"
-                        color: win.accentColor
-                        font.family: "iA Writer Mono S"
-                        font.bold: true
-                        font.pixelSize: win.scaledSize(9)
-                    }
-
-                    Text {
-                        width: parent.width
-                        text: win.irc
-                            ? (win.irc.lastError.length > 0
-                                ? win.irc.lastError
-                                : "IRC traffic stays inside configured sessions.")
-                            : "No network traffic. Everything here is local."
-                        color: win.mutedColor
-                        wrapMode: Text.Wrap
-                        font.family: "iA Writer Mono S"
-                        font.pixelSize: win.scaledSize(9)
-                        lineHeight: 1.2
                     }
                 }
             }
