@@ -44,4 +44,5 @@ Preconditions:
 - `Tab` completes a nick prefix in the composer. Prove it with `qml-suite` (`mi` → `mira: `).
 - Page Up / Page Down are disabled while Connect is visible.
 - Escape closes the sheet before Status. `Ctrl+/` toggles it.
+- `control-omairc` maps `ctrl+slash` to `Control_L+slash` and `ctrl+shift+p` to `Control_L+Shift_L+p`. xdotool's shorter tokens do not reach those Qt shortcuts on the isolated Xvfb.
 - Do not Apply on the compiled window to "get a conversation" for walk proof. That starts a real session.

@@ -384,6 +384,13 @@ cmd_key() {
     esac
   done
   [ -n "$key" ] || die "key requires --key"
+  # xdotool's ctrl+* / ctrl+shift+* tokens do not reach Qt ApplicationShortcuts
+  # on this isolated Xvfb. The explicit modifier keysyms do.
+  case $key in
+    ctrl+slash) key=Control_L+slash ;;
+    ctrl+shift+m) key=Control_L+Shift_L+m ;;
+    ctrl+shift+p) key=Control_L+Shift_L+p ;;
+  esac
   load_state
   xdotool windowfocus --sync "$WINDOW"
   xdotool key --window "$WINDOW" "$key"

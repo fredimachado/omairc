@@ -173,5 +173,6 @@ cleanup
 
 `click-send` assumes the member panel is open (channel, members visible, width >= 980). Prefer `send --text` / `Enter`.
 `click-people` assumes the member column is open. After it hides, use `click-people --hidden`.
+`key --key ctrl+slash` maps to `Control_L+slash`. `ctrl+shift+m` and `ctrl+shift+p` map to `Control_L+Shift_L+m` / `p`. xdotool's shorter tokens do not reach those Qt shortcuts on the isolated Xvfb.
 
 If Xvfb tools are missing, install `xorg-server-xvfb xorg-xauth xdotool imagemagick` before using this skill. `bin/test` can still run the offscreen QML suite without those packages.
