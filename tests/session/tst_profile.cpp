@@ -1,5 +1,7 @@
 #include <QCoreApplication>
+#ifndef Q_OS_WIN
 #include <QFile>
+#endif
 #include <QRegularExpression>
 #include <QSettings>
 #include <QTemporaryDir>
@@ -34,7 +36,9 @@ private slots:
     void storeRemoveDropsTheNetworkGroup();
 
 private:
+#ifndef Q_OS_WIN
     QString settingsFile() const;
+#endif
 
     std::unique_ptr<QTemporaryDir> m_dir;
 };
@@ -43,17 +47,24 @@ void ProfileTest::init()
 {
     m_dir = std::make_unique<QTemporaryDir>();
     QVERIFY(m_dir->isValid());
+#ifdef Q_OS_WIN
+    QSettings::setDefaultFormat(QSettings::IniFormat);
+    QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, m_dir->path());
+#else
     qputenv("XDG_CONFIG_HOME", m_dir->path().toUtf8());
     QSettings::setPath(QSettings::NativeFormat, QSettings::UserScope, m_dir->path());
+#endif
     QCoreApplication::setOrganizationName(QStringLiteral("omairc"));
     QCoreApplication::setApplicationName(QStringLiteral("omairc"));
 }
 
+#ifndef Q_OS_WIN
 QString ProfileTest::settingsFile() const
 {
     QSettings settings;
     return settings.fileName();
 }
+#endif
 
 void ProfileTest::createMintsElevenCharNetworkId()
 {
@@ -209,6 +220,7 @@ void ProfileTest::storeRoundTripsFieldsWithoutPassword()
     QCOMPARE(loaded.first(), profile);
     QCOMPARE(loaded.first().saslAccount(), QStringLiteral("joe/libera"));
 
+#ifndef Q_OS_WIN
     QFile file(settingsFile());
     QVERIFY(file.exists());
     QVERIFY(settingsFile().endsWith(QStringLiteral("/omairc/omairc.conf")));
@@ -223,6 +235,15 @@ void ProfileTest::storeRoundTripsFieldsWithoutPassword()
     QVERIFY(contents.contains(QLatin1String("bouncerNetwork=libera")));
     QVERIFY(!contents.contains(QLatin1String("password"), Qt::CaseInsensitive));
     QVERIFY(!contents.contains(QLatin1String("nick-secret")));
+#endif
+
+    QSettings stored;
+    QVERIFY(!stored.allKeys().isEmpty());
+    for (const QString &key : stored.allKeys()) {
+        QVERIFY(!key.contains(QLatin1String("password"), Qt::CaseInsensitive));
+        QVERIFY(!stored.value(key).toString().contains(QLatin1String("password"),
+                                                       Qt::CaseInsensitive));
+    }
 
     IrcNetworkProfile unnamed;
     unnamed.host = QStringLiteral("irc.example.net");

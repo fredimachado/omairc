@@ -1,7 +1,9 @@
 #pragma once
 
 #include <QFileSystemWatcher>
+#ifdef Q_OS_UNIX
 #include <QHash>
+#endif
 #include <QObject>
 #include <QString>
 #include <QVariantMap>
@@ -42,19 +44,25 @@ signals:
                                const QString &msgid);
 
 private slots:
+#ifdef Q_OS_UNIX
     void handleActionInvoked(uint id, const QString &actionKey);
+#endif
 
 private:
+#ifdef Q_OS_UNIX
     struct NotifyConversation {
         QString networkId;
         QString target;
         QString msgid;
     };
+#endif
 
     void loadOmarchyTheme();
     void watchOmarchyTheme();
+#ifdef Q_OS_UNIX
     void rememberNotifyId(const QString &networkId, const QString &target,
                           const QString &msgid, uint id);
+#endif
 
     bool m_darkMode = true;
     qreal m_textScale = 1.0;
@@ -63,6 +71,8 @@ private:
     QString m_themeAccent;
     QString m_themeSelection;
     QFileSystemWatcher m_themeWatcher;
+#ifdef Q_OS_UNIX
     QHash<QString, uint> m_conversationNotifyIds;
     QHash<uint, NotifyConversation> m_notifyById;
+#endif
 };

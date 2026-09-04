@@ -1,11 +1,13 @@
 #include <QCoreApplication>
+#include <QTest>
+
+#ifdef Q_OS_UNIX
 #include <QDBusAbstractAdaptor>
 #include <QDBusConnection>
 #include <QDBusMessage>
 #include <QProcess>
 #include <QSignalSpy>
 #include <QStringList>
-#include <QTest>
 #include <QVariantMap>
 #include <QVector>
 
@@ -262,11 +264,20 @@ void BackendNotifyTest::notifyDesktopAfterDisconnectDoesNotCrash()
     Backend backend;
     backend.notifyDesktop(QStringLiteral("alice"), QStringLiteral("hello"));
 }
+#endif
 
 int runBackendTests(int argc, char **argv)
 {
+#ifdef Q_OS_UNIX
     BackendNotifyTest test;
     return QTest::qExec(&test, argc, argv);
+#else
+    Q_UNUSED(argc);
+    Q_UNUSED(argv);
+    return 0;
+#endif
 }
 
+#ifdef Q_OS_UNIX
 #include "tst_backend.moc"
+#endif

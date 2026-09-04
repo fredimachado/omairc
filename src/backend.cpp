@@ -1,11 +1,13 @@
 #include "backend.h"
 
 #include <QColor>
+#ifdef Q_OS_UNIX
 #include <QDBusConnection>
 #include <QDBusMessage>
 #include <QDBusPendingCall>
 #include <QDBusPendingCallWatcher>
 #include <QDBusPendingReply>
+#endif
 #include <QDir>
 #include <QFile>
 #include <QRect>
@@ -17,10 +19,12 @@
 namespace {
 const auto windowGeometrySetting = QStringLiteral("window/geometry");
 
+#ifdef Q_OS_UNIX
 QString notifyConversationKey(const QString &networkId, const QString &target)
 {
     return networkId + QLatin1Char('\n') + target;
 }
+#endif
 }
 
 Backend::Backend(QObject *parent) : QObject(parent) {
@@ -36,6 +40,7 @@ Backend::Backend(QObject *parent) : QObject(parent) {
         watchOmarchyTheme();
     });
 
+#ifdef Q_OS_UNIX
     QDBusConnection bus = QDBusConnection::sessionBus();
     if (!bus.isConnected())
         return;
@@ -46,6 +51,7 @@ Backend::Backend(QObject *parent) : QObject(parent) {
                 QStringLiteral("us"),
                 this,
                 SLOT(handleActionInvoked(uint,QString)));
+#endif
 }
 
 QVariantMap Backend::windowGeometry() const {
@@ -71,6 +77,7 @@ void Backend::saveWindowGeometry(int x, int y, int width, int height, bool maxim
 void Backend::notifyDesktop(const QString &summary, const QString &body,
                             const QString &networkId, const QString &target,
                             const QString &msgid) {
+#ifdef Q_OS_UNIX
     QDBusConnection bus = QDBusConnection::sessionBus();
     if (!bus.isConnected())
         return;
@@ -104,8 +111,16 @@ void Backend::notifyDesktop(const QString &summary, const QString &body,
             return;
         rememberNotifyId(networkId, target, msgid, reply.value());
     });
+#else
+    Q_UNUSED(summary);
+    Q_UNUSED(body);
+    Q_UNUSED(networkId);
+    Q_UNUSED(target);
+    Q_UNUSED(msgid);
+#endif
 }
 
+#ifdef Q_OS_UNIX
 void Backend::rememberNotifyId(const QString &networkId, const QString &target,
                                const QString &msgid, uint id)
 {
@@ -128,6 +143,7 @@ void Backend::handleActionInvoked(uint id, const QString &actionKey)
         return;
     emit notificationActivated(found->networkId, found->target, found->msgid);
 }
+#endif
 
 void Backend::setDarkMode(bool darkMode) {
     if (m_darkMode == darkMode)

@@ -1,4 +1,5 @@
-QT += core gui network testlib dbus
+QT += core gui network testlib
+unix: QT += dbus
 
 include(../qtkeychain.pri)
 
@@ -11,8 +12,12 @@ greaterThan(QMAKE_GCC_MAJOR_VERSION, 15): QMAKE_CXXFLAGS += -Wno-sfinae-incomple
 
 INCLUDEPATH += ../src ../src/irc support
 include($$PWD/../version.pri)
-DEFINES += TEST_CERT_DIR=\\\"$$PWD/support/certs\\\"
-DEFINES += TEST_CORPUS_DIR=\\\"$$PWD/protocol/corpus\\\"
+TEST_CERT_DIR = $$PWD/support/certs
+TEST_CERT_DIR = $$replace(TEST_CERT_DIR, \\, /)
+TEST_CORPUS_DIR = $$PWD/protocol/corpus
+TEST_CORPUS_DIR = $$replace(TEST_CORPUS_DIR, \\, /)
+DEFINES += TEST_CERT_DIR=\\\"$$TEST_CERT_DIR\\\"
+DEFINES += TEST_CORPUS_DIR=\\\"$$TEST_CORPUS_DIR\\\"
 
 HEADERS += \
     ../src/singleinstance.h \
