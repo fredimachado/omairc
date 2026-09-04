@@ -73,11 +73,20 @@ IrcSession *IrcController::addSession(const IrcSessionConfig& config,
     connect(session, &IrcSession::stateChanged, this,
             [this, session](IrcSession::State) { updateStatus(session); });
     connect(session, &IrcSession::errorOccurred, this,
-            [this](const QString&, IrcSession::ErrorKind, const QString& message) {
+            [this](const QString& networkId, IrcSession::ErrorKind kind, const QString& message) {
         m_lastError = message;
         emit statusChanged();
+        emit errorOccurred(networkId, kind, message);
     });
     return session;
+}
+
+bool IrcController::discardSession(const QString &networkId)
+{
+    if (!m_sessions.findSession(networkId))
+        return false;
+    m_currentNicks.remove(networkId);
+    return m_sessions.discardSession(networkId);
 }
 
 QAbstractItemModel *IrcController::conversations()

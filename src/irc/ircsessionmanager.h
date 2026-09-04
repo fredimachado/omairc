@@ -17,9 +17,9 @@ public:
                               IrcReconnectTimer *reconnectTimer = nullptr);
     IrcSession *findSession(const QString &networkId) const;
 
-    // Refuses activation until the currently active network has stopped.
     bool activateSession(const QString &networkId);
     bool stopSession(const QString &networkId);
+    bool discardSession(const QString &networkId);
     QString activeNetworkId() const;
 
 signals:
