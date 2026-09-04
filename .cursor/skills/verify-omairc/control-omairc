@@ -18,7 +18,7 @@ Usage:
   control-omairc click --x <px> --y <px>
   control-omairc click-conversation --name <#channel|nick>
   control-omairc click-member --name <nick>
-  control-omairc click-people
+  control-omairc click-people [--hidden]
   control-omairc click-network
   control-omairc click-edit
   control-omairc click-send
@@ -319,8 +319,22 @@ cmd_click_member() {
 }
 
 cmd_click_people() {
+  hidden=
+  while [ $# -gt 0 ]; do
+    case $1 in
+      --hidden) hidden=1; shift ;;
+      *) die "unknown click-people argument: $1. Use click-people or click-people --hidden." ;;
+    esac
+  done
   load_state
-  click_xy 908 36
+  # The people control is right-anchored on the conversation header. The
+  # member column is 216 CSS px, so the control sits at 908 when that
+  # column is open and 1124 after it hides.
+  if [ "$hidden" = 1 ]; then
+    click_xy 1124 36
+  else
+    click_xy 908 36
+  fi
 }
 
 cmd_click_network() {
@@ -518,7 +532,7 @@ case $cmd in
   click) cmd_click "$@" ;;
   click-conversation) cmd_click_conversation "$@" ;;
   click-member) cmd_click_member "$@" ;;
-  click-people) cmd_click_people ;;
+  click-people) cmd_click_people "$@" ;;
   click-network) cmd_click_network ;;
   click-edit) cmd_click_edit ;;
   click-send) cmd_click_send ;;

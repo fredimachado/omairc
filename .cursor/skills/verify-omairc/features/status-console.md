@@ -25,7 +25,7 @@ Preconditions:
 
 - Handshake lines without a real server need the live QML fixture (`qml-suite`).
 - A default compiled launch (`control-omairc launch`) is titled `irc.libera.chat Status` with Connect on top of Status (`Offline`, no handshake). Finish Connect before looking for handshake lines on that window, or stay on the offscreen suite.
-- `control-omairc launch --mock` shows mock Status (`mock connected`) with no Connect overlay. The edit control is hidden; `click-edit` refuses that window.
+- `control-omairc launch --mock` starts on `#omarchy - Omairc` with no Connect overlay. The sidebar subtitle is already `mock connected`. Open Status with `click-network` or `Ctrl+``. The edit control is hidden; `click-edit` refuses that window.
 - After Connect, Status title is `{displayName} Status` or `Status`. Conversation titles stay `{conversation} - Omairc`.
 
 - **First-run Status.** After `control-omairc launch`, the title is `irc.libera.chat Status`. The sidebar name is `irc.libera.chat`, the subtitle is `Offline`, CHANNELS and DIRECT MESSAGES are empty, and Connect sits on top of Status. There are no handshake lines yet. Run `control-omairc screenshot --feature status-console --name first-run-under-connect`.
