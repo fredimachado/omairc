@@ -32,6 +32,7 @@ struct IrcViewNotify {
         notify.messages = true;
         notify.members = IrcMemberSurface::Reset;
         notify.selection = true;
+        notify.typing = true;
         notify.rearmTyping = true;
         return notify;
     }
@@ -41,6 +42,7 @@ struct IrcViewNotify {
         IrcViewNotify notify;
         notify.conversations = true;
         notify.messages = true;
+        notify.typing = true;
         notify.rearmTyping = true;
         return notify;
     }
@@ -49,6 +51,7 @@ struct IrcViewNotify {
     {
         IrcViewNotify notify;
         notify.selection = true;
+        notify.typing = true;
         notify.rearmTyping = true;
         return notify;
     }
@@ -66,13 +69,6 @@ struct IrcViewNotify {
         IrcViewNotify notify;
         notify.typing = true;
         notify.rearmTyping = true;
-        return notify;
-    }
-
-    IrcViewNotify withoutListResets() const
-    {
-        IrcViewNotify notify;
-        notify.typing = typing;
         return notify;
     }
 };
@@ -133,6 +129,7 @@ struct IrcViewClassifier {
         if (!event.complete)
             return IrcViewNotify::none();
         IrcViewNotify notify = IrcViewNotify::resetAll();
+        notify.typing = false;
         notify.rearmTyping = false;
         return notify;
     }
@@ -254,7 +251,10 @@ inline IrcViewNotify classifyViewNotify(
     const std::optional<IrcConversationKey>& selected)
 {
     IrcViewNotify notify = std::visit(IrcViewClassifier{reducer}, event);
-    if (channelNamesSyncing(reducer, viewConversationKey(event, reducer, selected)))
-        return notify.withoutListResets();
+    if (!channelNamesSyncing(reducer, viewConversationKey(event, reducer, selected)))
+        return notify;
+    if (notify.conversations || notify.messages || notify.selection
+        || notify.members != IrcMemberSurface::None)
+        return IrcViewNotify::none();
     return notify;
 }

@@ -714,11 +714,8 @@ void IrcController::apply(const IrcEvent& event)
     }
     const IrcViewNotify notify = classifyViewNotify(event, m_reducer, m_selected);
     publish(notify);
-    if (notify.rearmTyping) {
-        if (!notify.typing)
-            emit typingChanged();
+    if (notify.rearmTyping)
         armTypingRefresh();
-    }
     notifySelfAwayIfChanged(previousId, previousAway);
 }
 

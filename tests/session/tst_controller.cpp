@@ -1301,12 +1301,9 @@ void ControllerTest::largeChannelJoinDoesNotResetModelsPerNick()
     QCOMPARE(controller.peopleCount(), nickCount);
     QVERIFY(controller.hasAwayPresence());
     QVERIFY(transport->writtenFrames().contains(QByteArrayLiteral("WHO #big\r\n")));
-    QVERIFY2(memberResets.size() <= 3,
-             "NAMES must not reset the member model once per 353 line");
-    QVERIFY2(conversationResets.size() <= 3,
-             "NAMES must not reset the sidebar once per 353 line");
-    QVERIFY2(messageResets.size() <= 3,
-             "NAMES must not reset the transcript once per 353 line");
+    QCOMPARE(conversationResets.size(), 2);
+    QCOMPARE(messageResets.size(), 3);
+    QCOMPARE(memberResets.size(), 3);
 
     const int memberResetsAfterNames = memberResets.size();
     const int conversationResetsAfterNames = conversationResets.size();
