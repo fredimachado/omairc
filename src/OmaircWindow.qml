@@ -42,6 +42,7 @@ ApplicationWindow {
     property bool membersVisible: true
     property bool mockStatusOpen: false
     property bool shortcutsSheetEscapeGuard: false
+    readonly property bool shortcutOverlayOpen: shortcutsSheet.opened
     readonly property var networkConsole: irc
         ? (irc.statusConsole ? irc.statusConsole : irc.console)
         : null
@@ -62,6 +63,10 @@ ApplicationWindow {
     onCurrentConversationChanged: {
         resetNickComplete();
         resetComposerHistoryBrowse();
+        Qt.callLater(function() {
+            if (membersList)
+                membersList.currentIndex = 0;
+        });
     }
     readonly property string currentTopic: irc
         ? (irc.selectedTarget.length > 0
@@ -260,17 +265,18 @@ ApplicationWindow {
     function focusMembersList() {
         membersVisible = true;
         Qt.callLater(function() {
-            if (membersList.currentIndex < 0)
-                membersList.currentIndex = 0;
+            var last = memberCount() - 1;
+            if (membersList.currentIndex < 0 || membersList.currentIndex > last)
+                membersList.currentIndex = last < 0 ? -1 : 0;
             membersList.forceActiveFocus();
         });
     }
 
     function activateFocusedMember() {
-        var row = membersList.itemAtIndex(membersList.currentIndex);
-        if (!row || row.nick === win.selfNick)
+        var nick = memberNickAt(membersList.currentIndex);
+        if (nick.length === 0 || nick === win.selfNick)
             return;
-        win.openDirectMessage(row.nick);
+        win.openDirectMessage(nick);
     }
 
     function markDirectConversationRead(name) {
@@ -440,20 +446,14 @@ ApplicationWindow {
         nickCompleteOrigin = -1;
     }
 
-    function memberDisplayLabel(member) {
-        if (!member)
+    function liveMemberNick(model, row) {
+        if (!model)
             return "";
-        if (member.label && member.label.length > 0)
-            return member.label;
-        return member.nick || "";
-    }
-
-    function liveMemberLabel(model, row) {
-        if (typeof model.get === "function")
-            return memberDisplayLabel(model.get(row));
-        var nick = model.data(model.index(row, 0), Qt.UserRole + 1) || "";
-        var label = model.data(model.index(row, 0), Qt.UserRole + 2) || "";
-        return label.length > 0 ? label : nick;
+        if (typeof model.get === "function") {
+            var rowData = model.get(row);
+            return rowData && rowData.nick ? rowData.nick : "";
+        }
+        return model.data(model.index(row, 0), Qt.UserRole + 1) || "";
     }
 
     function liveMemberCount(model) {
@@ -464,30 +464,46 @@ ApplicationWindow {
         return model.rowCount();
     }
 
+    function memberCount() {
+        if (irc)
+            return liveMemberCount(irc.members);
+        return currentPeopleCount;
+    }
+
+    function memberNickAt(index) {
+        if (index < 0 || index >= memberCount())
+            return "";
+        if (irc)
+            return liveMemberNick(irc.members, index);
+        var mock = memberDataFor(index);
+        return mock && mock.nick ? mock.nick : "";
+    }
+
     function nickCompleteCandidates() {
         if (consoleVisible)
             return [];
         if (!currentConversationIsChannel)
             return currentConversation.length > 0 ? [currentConversation] : [];
 
-        var labels = [];
+        var nicks = [];
         if (irc) {
             var model = irc.members;
             var count = liveMemberCount(model);
             for (var row = 0; row < count; ++row) {
-                var liveLabel = liveMemberLabel(model, row);
-                if (liveLabel.length > 0)
-                    labels.push(liveLabel);
+                var liveNick = liveMemberNick(model, row);
+                if (liveNick.length > 0)
+                    nicks.push(liveNick);
             }
-            return labels;
+            return nicks;
         }
 
         for (var index = 0; index < currentPeopleCount; ++index) {
-            var mockLabel = memberDisplayLabel(memberDataFor(index));
-            if (mockLabel.length > 0)
-                labels.push(mockLabel);
+            var mock = memberDataFor(index);
+            var mockNick = mock && mock.nick ? mock.nick : "";
+            if (mockNick.length > 0)
+                nicks.push(mockNick);
         }
-        return labels;
+        return nicks;
     }
 
     function nickMatchesForPrefix(prefix) {
@@ -495,21 +511,21 @@ ApplicationWindow {
         var decorated = [];
         var candidates = nickCompleteCandidates();
         for (var index = 0; index < candidates.length; ++index) {
-            var label = candidates[index];
-            if (label.toLowerCase().indexOf(lower) !== 0)
+            var nick = candidates[index];
+            if (nick.toLowerCase().indexOf(lower) !== 0)
                 continue;
-            decorated.push({ label: label, order: index });
+            decorated.push({ nick: nick, order: index });
         }
         decorated.sort(function(left, right) {
-            if (left.label < right.label)
+            if (left.nick < right.nick)
                 return -1;
-            if (left.label > right.label)
+            if (left.nick > right.nick)
                 return 1;
             return left.order - right.order;
         });
         var matches = [];
         for (var match = 0; match < decorated.length; ++match)
-            matches.push(decorated[match].label);
+            matches.push(decorated[match].nick);
         return matches;
     }
 
@@ -550,10 +566,34 @@ ApplicationWindow {
             || event.modifiers === Qt.KeypadModifier;
     }
 
+    function transcriptIndexAt(list, y) {
+        var x = Math.max(1, list.width / 2);
+        var index = list.indexAt(x, y);
+        if (index >= 0)
+            return index;
+        return list.indexAt(x, y + 8);
+    }
+
     function scrollTranscript(direction) {
         var list = consoleVisible ? consoleList : messageList;
-        var maxY = Math.max(0, list.contentHeight - list.height);
-        list.contentY = Math.max(0, Math.min(maxY, list.contentY + direction * list.height * 0.8));
+        if (!list || list.count <= 0)
+            return;
+
+        var first = transcriptIndexAt(list, list.contentY + 1);
+        var last = transcriptIndexAt(list, list.contentY + Math.max(1, list.height - 1));
+        if (first < 0)
+            first = 0;
+        if (last < 0)
+            last = list.count - 1;
+        if (last < first)
+            last = first;
+
+        var page = Math.max(1, Math.round((last - first + 1) * 0.8));
+        if (direction < 0) {
+            list.positionViewAtIndex(Math.max(0, first - page), ListView.Beginning);
+            return;
+        }
+        list.positionViewAtIndex(Math.min(list.count - 1, last + page), ListView.End);
     }
 
     function sendMessage() {
@@ -619,20 +659,21 @@ ApplicationWindow {
     Shortcut {
         sequence: "Ctrl+L"
         context: Qt.ApplicationShortcut
+        enabled: !win.shortcutOverlayOpen
         onActivated: composer.forceActiveFocus()
     }
 
     Shortcut {
         sequence: "Ctrl+Shift+M"
         context: Qt.ApplicationShortcut
-        enabled: currentConversationIsChannel && !consoleVisible
+        enabled: currentConversationIsChannel && !consoleVisible && !win.shortcutOverlayOpen
         onActivated: membersVisible = !membersVisible
     }
 
     Shortcut {
         sequence: "Ctrl+Shift+P"
         context: Qt.ApplicationShortcut
-        enabled: currentConversationIsChannel && !consoleVisible
+        enabled: currentConversationIsChannel && !consoleVisible && !win.shortcutOverlayOpen
         onActivated: focusMembersList()
     }
 
@@ -650,6 +691,7 @@ ApplicationWindow {
     Shortcut {
         sequence: "Ctrl+`"
         context: Qt.ApplicationShortcut
+        enabled: !win.shortcutOverlayOpen
         onActivated: {
             if (win.irc)
                 win.networkConsole.open = !win.networkConsole.open;
@@ -661,39 +703,42 @@ ApplicationWindow {
     Shortcut {
         sequence: "Ctrl+,"
         context: Qt.ApplicationShortcut
-        enabled: win.connection !== null
+        enabled: win.connection !== null && !win.shortcutOverlayOpen
         onActivated: win.connectionSheetOpen = true
     }
 
     Shortcut {
         sequence: "Alt+Down"
         context: Qt.ApplicationShortcut
+        enabled: !win.shortcutOverlayOpen
         onActivated: stepConversation(1)
     }
 
     Shortcut {
         sequence: "Alt+Up"
         context: Qt.ApplicationShortcut
+        enabled: !win.shortcutOverlayOpen
         onActivated: stepConversation(-1)
     }
 
     Shortcut {
         sequence: "Alt+A"
         context: Qt.ApplicationShortcut
+        enabled: !win.shortcutOverlayOpen
         onActivated: jumpToNextUnread()
     }
 
     Shortcut {
         sequence: "PgUp"
         context: Qt.ApplicationShortcut
-        enabled: !win.connectionOverlayVisible
+        enabled: !win.connectionOverlayVisible && !win.shortcutOverlayOpen
         onActivated: scrollTranscript(-1)
     }
 
     Shortcut {
         sequence: "PgDown"
         context: Qt.ApplicationShortcut
-        enabled: !win.connectionOverlayVisible
+        enabled: !win.connectionOverlayVisible && !win.shortcutOverlayOpen
         onActivated: scrollTranscript(1)
     }
 
@@ -2363,13 +2408,16 @@ ApplicationWindow {
                     height: win.scaledSize(43)
 
                     Rectangle {
+                        objectName: "memberHighlight"
                         anchors.fill: parent
                         anchors.leftMargin: win.scaledSize(8)
                         anchors.rightMargin: win.scaledSize(8)
                         radius: win.scaledSize(7)
-                        color: memberMouse.containsMouse || ListView.isCurrentItem
-                            ? (memberMouse.containsMouse ? win.hoverColor : win.raisedColor)
-                            : "transparent"
+                        color: memberMouse.containsMouse
+                            ? win.hoverColor
+                            : (memberDelegate.ListView.isCurrentItem && membersList.activeFocus
+                                ? win.raisedColor
+                                : "transparent")
                     }
 
                     Rectangle {
@@ -2501,7 +2549,7 @@ ApplicationWindow {
         y: Math.round((win.height - height) / 2)
         width: win.scaledSize(348)
         padding: win.scaledSize(16)
-        modal: false
+        modal: true
         focus: true
         closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
         onOpened: shortcutsSheetEscapeGuard = true

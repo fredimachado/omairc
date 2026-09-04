@@ -218,6 +218,14 @@ TestCase {
         ListElement { nick: "anna"; label: "anna"; status: "writing docs"; away: true }
     }
 
+    ListModel {
+        id: prefixedMembers
+
+        ListElement { nick: "mira"; label: "@mira"; status: ""; away: false }
+        ListElement { nick: "sol"; label: "+sol"; status: ""; away: false }
+        ListElement { nick: "anna"; label: "anna"; status: ""; away: false }
+    }
+
     QtObject {
         id: gatedIrc
 
@@ -250,6 +258,44 @@ TestCase {
 
         function nickIsTyping(nick) {
             return hasTyping && typingNicks.indexOf(nick) !== -1;
+        }
+
+        function notifyComposerText() {
+        }
+    }
+
+    QtObject {
+        id: prefixedIrc
+
+        property string currentNick: "live-nick"
+        property string selectedTarget: "#omarchy"
+        property string selectedNetworkId: "libera"
+        property string topic: "A cozy corner for Omarchy users and builders."
+        property bool isChannel: true
+        property int peopleCount: 3
+        property string connectionStatus: "Connected"
+        property string lastError: ""
+        property bool hasAwayPresence: true
+        property bool hasMemberStatus: true
+        property bool hasTyping: false
+        property var typingNicks: []
+        property var conversations: liveConversations
+        property var messages: liveMessages
+        property var members: prefixedMembers
+        property var statusConsole: liveConsole
+
+        function selectConversation() {
+        }
+
+        function openDirectMessage() {
+        }
+
+        function sendMessage() {
+            return false;
+        }
+
+        function nickIsTyping(nick) {
+            return false;
         }
 
         function notifyComposerText() {
@@ -290,6 +336,15 @@ TestCase {
         Omairc.OmaircWindow {
             backend: fakeBackend
             irc: liveIrc
+        }
+    }
+
+    Component {
+        id: prefixedWindowComponent
+
+        Omairc.OmaircWindow {
+            backend: fakeBackend
+            irc: prefixedIrc
         }
     }
 
@@ -542,6 +597,31 @@ TestCase {
         verify(composer.activeFocus);
     }
 
+    function test_tabCompletesLiveNickIgnoringPrefixLabel() {
+        if (appWindow) {
+            appWindow.close();
+            appWindow = null;
+        }
+        var window = createTemporaryObject(prefixedWindowComponent, null);
+        verify(window !== null, "The prefixed-member window should load");
+        tryCompare(window, "visible", true);
+        waitForRendering(window.contentItem);
+        window.requestActivate();
+        tryCompare(window, "active", true);
+
+        var composer = findChild(window, "messageComposer");
+        verify(composer !== null, "Could not find messageComposer");
+        mouseClick(composer);
+        verify(composer.activeFocus);
+        typeText("mi");
+        keyClick(Qt.Key_Tab);
+
+        compare(composer.text, "mira: ");
+        verify(composer.text.indexOf("@") === -1);
+        verify(composer.activeFocus);
+        window.close();
+    }
+
     function test_tabCompletesNickAfterText() {
         var composer = item("messageComposer");
         mouseClick(composer);
@@ -611,6 +691,11 @@ TestCase {
 
         verify(list.contentY < before, "Page Up should scroll toward older lines");
         verify(composer.activeFocus);
+
+        var afterUp = list.contentY;
+        keyClick(Qt.Key_PageDown);
+        verify(list.contentY > afterUp, "Page Down should scroll toward newer lines");
+        verify(composer.activeFocus);
     }
 
     function test_toggleMembersWithShortcut() {
@@ -633,6 +718,31 @@ TestCase {
 
         tryCompare(panel, "visible", true);
         tryCompare(members, "activeFocus", true);
+    }
+
+    function test_memberHighlightOnlyWhileListFocused() {
+        var members = item("membersList");
+        members.positionViewAtIndex(0, ListView.Contain);
+        wait(0);
+        var anna = members.itemAtIndex(0);
+        verify(anna !== null, "The first member delegate should be rendered");
+        compare(anna.nick, "anna");
+        var highlight = findChild(anna, "memberHighlight");
+        verify(highlight !== null, "Could not find memberHighlight");
+        verify(!members.activeFocus);
+        compare(members.currentIndex, 0);
+        verify(Qt.colorEqual(highlight.color, "transparent"));
+
+        keyClick(Qt.Key_P, Qt.ControlModifier | Qt.ShiftModifier);
+        tryCompare(members, "activeFocus", true);
+        verify(Qt.colorEqual(highlight.color, appWindow.raisedColor),
+               "focused current member should use raisedColor");
+
+        keyClick(Qt.Key_L, Qt.ControlModifier);
+        tryCompare(item("messageComposer"), "activeFocus", true);
+        tryCompare(members, "activeFocus", false);
+        verify(Qt.colorEqual(highlight.color, "transparent"),
+               "unfocused member list should not keep a selection fill");
     }
 
     function test_focusMembersReopensHiddenPanel() {
@@ -664,6 +774,27 @@ TestCase {
         tryCompare(appWindow, "currentConversation", "mira");
     }
 
+    function test_memberEnterAfterSwitchingToSmallerChannel() {
+        var members = item("membersList");
+
+        keyClick(Qt.Key_P, Qt.ControlModifier | Qt.ShiftModifier);
+        tryCompare(members, "activeFocus", true);
+
+        var step = 0;
+        for (step = 0; step < 9; ++step)
+            keyClick(Qt.Key_Down);
+        tryCompare(members, "currentIndex", 9);
+
+        mouseClick(item("conversation-#help"));
+        tryCompare(appWindow, "currentConversation", "#help");
+        tryCompare(members, "currentIndex", 0);
+
+        keyClick(Qt.Key_P, Qt.ControlModifier | Qt.ShiftModifier);
+        tryCompare(members, "activeFocus", true);
+        keyClick(Qt.Key_Return);
+        tryCompare(appWindow, "currentConversation", "anna");
+    }
+
     function test_focusMembersShortcutIgnoredOnDirectMessage() {
         var anna = item("directConversationRepeater").itemAt(0);
         verify(anna !== null, "The anna direct-message delegate should be rendered");
@@ -688,6 +819,27 @@ TestCase {
         keyClick(Qt.Key_Escape);
         tryCompare(sheet, "opened", false);
         compare(appWindow.currentConversation, "#omarchy");
+    }
+
+    function test_shortcutsSheetBlocksWindowShortcuts() {
+        var sheet = item("shortcutsSheet");
+
+        keyClick(Qt.Key_Slash, Qt.ControlModifier);
+        tryCompare(sheet, "opened", true);
+        compare(appWindow.currentConversation, "#omarchy");
+        compare(appWindow.consoleVisible, false);
+
+        keyClick(Qt.Key_Down, Qt.AltModifier);
+        compare(appWindow.currentConversation, "#omarchy");
+        verify(sheet.opened);
+
+        keyClick(Qt.Key_QuoteLeft, Qt.ControlModifier);
+        compare(appWindow.consoleVisible, false);
+        verify(sheet.opened);
+
+        keyClick(Qt.Key_A, Qt.AltModifier);
+        compare(appWindow.currentConversation, "#omarchy");
+        verify(sheet.opened);
     }
 
     function test_shortcutsSheetEscapeDoesNotLeaveStatus() {
