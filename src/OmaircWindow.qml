@@ -80,6 +80,7 @@ ApplicationWindow {
         ? irc.peopleCount : peopleCountFor(currentConversation)
     readonly property bool memberStatusVisible: !irc || irc.hasMemberStatus
     readonly property bool awayPresenceVisible: !irc || irc.hasAwayPresence
+    readonly property bool selfAway: irc ? irc.selfAway : false
     readonly property bool typingVisible: !irc || irc.hasTyping
     readonly property var typingNicks: irc ? irc.typingNicks : mockTypingNicks()
     property int typingPulse: 0
@@ -1652,12 +1653,13 @@ ApplicationWindow {
                     }
 
                     Rectangle {
+                        objectName: "selfPresenceDot"
                         anchors.right: parent.right
                         anchors.bottom: parent.bottom
                         width: win.scaledSize(9)
                         height: width
                         radius: width / 2
-                        color: "#69b978"
+                        color: win.selfAway ? "#d6a552" : "#69b978"
                         border.width: win.scaledSize(2)
                         border.color: win.panelColor
                     }
@@ -1679,7 +1681,8 @@ ApplicationWindow {
                     }
 
                     Text {
-                        text: "available"
+                        objectName: "selfPresenceLabel"
+                        text: win.selfAway ? "away" : "available"
                         color: win.mutedColor
                         font.family: "iA Writer Mono S"
                         font.pixelSize: win.scaledSize(10)

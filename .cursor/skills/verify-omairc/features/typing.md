@@ -27,6 +27,6 @@ Preconditions:
 ## Gotchas
 
 - Presence dots, away dimming, and status lines are member-presence. This feature is only the ellipsis.
-- The identity footer always says `available`. It does not follow typing.
+- The identity footer does not follow typing. Live away chrome is identity-footer.
 - Mock typing is only `anna`, and only on `#omarchy` or the `anna` DM. `#desktop` has no typing overlay.
 - Do not claim live typing on first-run Connect. It is `verified-unreachable` until a session has completed Connect and received `message-tags`. The attempted compiled route is `control-omairc launch` (title `irc.libera.chat Status`, no members).

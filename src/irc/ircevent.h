@@ -149,6 +149,12 @@ struct IrcAwayEvent
     std::optional<IrcAway> away;
 };
 
+struct IrcSelfAwayEvent
+{
+    QString networkId;
+    bool away = false;
+};
+
 struct IrcMemberStatusEvent
 {
     QString networkId;
@@ -178,5 +184,6 @@ using IrcEvent = std::variant<
     IrcNamesEvent,
     IrcModeEvent,
     IrcAwayEvent,
+    IrcSelfAwayEvent,
     IrcMemberStatusEvent,
     IrcTypingEvent>;

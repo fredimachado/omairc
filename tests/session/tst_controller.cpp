@@ -69,6 +69,7 @@ private slots:
     void closeDirectMessageDropsAndSelectsNeighbor();
     void closeDirectMessageInvokableOnChannelIsSilent();
     void closeDirectMessageWhileDisconnected();
+    void selfAwayFollowsNumericsAndUnawaysAfterChat();
 };
 
 void ControllerTest::reducesTrafficAndRoutesOutboundByNetwork()
@@ -430,6 +431,56 @@ void ControllerTest::closeDirectMessageWhileDisconnected()
     auto *conversations =
         qobject_cast<QAbstractItemModel *>(controller.conversations());
     QCOMPARE(conversations->rowCount(), 0);
+}
+
+void ControllerTest::selfAwayFollowsNumericsAndUnawaysAfterChat()
+{
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+                                                transport);
+    QVERIFY(session);
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    transport->completeConnect();
+    transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
+                          ":server 001 omairc :Welcome\r\n"));
+    QVERIFY(!controller.selfAway());
+
+    transport->injectBytes(
+        QByteArrayLiteral(":server 306 omairc :You have been marked as being away\r\n"));
+    QVERIFY(controller.selfAway());
+
+    transport->injectBytes(
+        QByteArrayLiteral(":server 305 omairc :You are no longer marked as being away\r\n"));
+    QVERIFY(!controller.selfAway());
+
+    transport->injectBytes(
+        QByteArrayLiteral(":server 005 omairc CHANTYPES=# PREFIX=(ov)@+ "
+                          ":are supported by this server\r\n"
+                          ":omairc!u@h JOIN :#omarchy\r\n"
+                          ":server 353 omairc = #omarchy :@omairc\r\n"
+                          ":server 366 omairc #omarchy :End of NAMES\r\n"
+                          ":server 352 omairc #omarchy u h server omairc G :0 real\r\n"));
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    QVERIFY(!controller.selfAway());
+
+    transport->injectBytes(
+        QByteArrayLiteral(":server 306 omairc :You have been marked as being away\r\n"));
+    QVERIFY(controller.selfAway());
+
+    QVERIFY(controller.sendMessage(QStringLiteral("hello")));
+    QCOMPARE(transport->writtenFrames().at(transport->writtenFrames().size() - 2),
+             QByteArrayLiteral("PRIVMSG #omarchy :hello\r\n"));
+    QCOMPARE(transport->writtenFrames().last(), QByteArrayLiteral("AWAY\r\n"));
+    QVERIFY(controller.selfAway());
+
+    transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc NEW :away-notify\r\n"
+                          ":server CAP omairc ACK :away-notify\r\n"
+                          ":server CAP omairc DEL :away-notify\r\n"));
+    QVERIFY(!controller.hasAwayPresence());
+    QVERIFY(controller.selfAway());
 }
 
 int runControllerTests(int argc, char **argv)

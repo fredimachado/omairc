@@ -226,6 +226,10 @@ std::vector<IrcEvent> IrcEventTranslator::translate(
             message.parameters.empty()
                 ? std::nullopt
                 : std::optional<IrcAway>(IrcAway{parameter(message, 0)})});
+    } else if (command == QStringLiteral("306")) {
+        events.emplace_back(IrcSelfAwayEvent{networkId, true});
+    } else if (command == QStringLiteral("305")) {
+        events.emplace_back(IrcSelfAwayEvent{networkId, false});
     } else if (command == QStringLiteral("352") && message.parameters.size() >= 7) {
         const QString nick = parameter(message, 5);
         const bool away = parameter(message, 6).startsWith(QLatin1Char('G'));

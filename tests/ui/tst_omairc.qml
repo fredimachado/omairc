@@ -132,6 +132,7 @@ TestCase {
         id: liveIrc
 
         property string currentNick: "live-nick"
+        property bool selfAway: false
         property string selectedTarget: "#omarchy"
         property string selectedNetworkId: "libera"
         property string topic: "A cozy corner for Omarchy users and builders."
@@ -188,6 +189,7 @@ TestCase {
         property string connectionStatus: "Connected"
         property string lastError: ""
         property string currentNick: ""
+        property bool selfAway: false
         property bool hasAwayPresence: true
         property bool hasMemberStatus: true
         property bool hasTyping: false
@@ -236,6 +238,7 @@ TestCase {
         id: gatedIrc
 
         property string currentNick: "live-nick"
+        property bool selfAway: false
         property string selectedTarget: "#omarchy"
         property string selectedNetworkId: "libera"
         property string topic: "A cozy corner for Omarchy users and builders."
@@ -277,6 +280,7 @@ TestCase {
         id: prefixedIrc
 
         property string currentNick: "live-nick"
+        property bool selfAway: false
         property string selectedTarget: "#omarchy"
         property string selectedNetworkId: "libera"
         property string topic: "A cozy corner for Omarchy users and builders."
@@ -1094,6 +1098,11 @@ TestCase {
         compare(findChild(appWindow, "mockNotice"), null);
     }
 
+    function test_mockIdentityFooterShowsAvailable() {
+        compare(item("selfPresenceLabel").text, "available");
+        verify(Qt.colorEqual(item("selfPresenceDot").color, "#69b978"));
+    }
+
     function test_liveIdentityFooterShowsCurrentNick() {
         var window = createTemporaryObject(liveWindowComponent, null);
         verify(window !== null, "The live window should load");
@@ -1102,6 +1111,20 @@ TestCase {
 
         compare(findChild(window, "selfNickLabel").text, "live-nick");
         window.close();
+    }
+
+    function test_liveIdentityFooterShowsAwayWithoutMemberPresence() {
+        gatedIrc.selfAway = true;
+        gatedIrc.hasAwayPresence = false;
+        var window = createTemporaryObject(gatedWindowComponent, null);
+        verify(window !== null, "The gated away window should load");
+        tryCompare(window, "visible", true);
+        waitForRendering(window.contentItem);
+
+        compare(findChild(window, "selfPresenceLabel").text, "away");
+        verify(Qt.colorEqual(findChild(window, "selfPresenceDot").color, "#d6a552"));
+        window.close();
+        gatedIrc.selfAway = false;
     }
 
     function test_identityFooterFallsBackToConnectionNick() {

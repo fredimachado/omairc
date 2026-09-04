@@ -105,11 +105,16 @@ bool IrcController::discardSession(const QString &networkId)
 {
     if (!m_sessions.findSession(networkId))
         return false;
+    const QString previousId = identityNetworkId();
+    const bool previousAway = selfAway();
+    m_reducer.apply(IrcSelfAwayEvent{networkId, false});
     m_currentNicks.remove(networkId);
     m_capabilities.remove(networkId);
     m_console.forget(networkId);
     emit capabilitiesChanged();
-    return m_sessions.discardSession(networkId);
+    const bool discarded = m_sessions.discardSession(networkId);
+    notifySelfAwayIfChanged(previousId, previousAway);
+    return discarded;
 }
 
 QAbstractItemModel *IrcController::conversations()
@@ -178,6 +183,12 @@ QString IrcController::lastError() const
 QString IrcController::currentNick() const
 {
     return m_selected ? m_currentNicks.value(m_selected->networkId) : QString{};
+}
+
+bool IrcController::selfAway() const
+{
+    const QString networkId = identityNetworkId();
+    return !networkId.isEmpty() && m_reducer.selfAway(networkId);
 }
 
 bool IrcController::hasAwayPresence() const
@@ -281,10 +292,13 @@ bool IrcController::start(const QString& networkId)
         emit statusChanged();
         return false;
     }
+    const QString previousId = identityNetworkId();
+    const bool previousAway = selfAway();
     m_lastError.clear();
     m_console.setNetwork(networkId);
     const bool started = m_sessions.activateSession(networkId);
     updateStatus(session);
+    notifySelfAwayIfChanged(previousId, previousAway);
     return started;
 }
 
@@ -293,6 +307,8 @@ void IrcController::selectConversation(const QString& networkId,
 {
     if (networkId.isEmpty() || target.isEmpty())
         return;
+    const QString previousId = identityNetworkId();
+    const bool previousAway = selfAway();
     const IrcConversationKey key = m_reducer.conversationKey(networkId, target);
     const bool changed = !m_selected
         || m_selected->networkId != networkId
@@ -314,6 +330,7 @@ void IrcController::selectConversation(const QString& networkId,
     notifyComposerText(m_composerDraft);
     emit typingChanged();
     armTypingRefresh();
+    notifySelfAwayIfChanged(previousId, previousAway);
 }
 
 void IrcController::openDirectMessage(const QString& nick)
@@ -415,8 +432,11 @@ IrcCommandOutcome IrcController::dispatch(const IrcCommand& command,
             if (sent)
                 echoLocal(IrcMessageKind::Message, command.argument);
         }
-        if (sent)
+        if (sent) {
             m_typingTarget.clear();
+            if (selfAway())
+                session->sendAway();
+        }
         return sent ? IrcCommandOutcome::Sent : IrcCommandOutcome::Refused;
     }
 
@@ -483,8 +503,15 @@ void IrcController::echoLocal(IrcMessageKind kind, const QString& body)
 
 void IrcController::apply(const IrcEvent& event)
 {
+    const QString previousId = identityNetworkId();
+    const bool previousAway = selfAway();
     const bool typingOnly = std::holds_alternative<IrcTypingEvent>(event);
+    const bool selfAwayOnly = std::holds_alternative<IrcSelfAwayEvent>(event);
     m_reducer.apply(event);
+    if (selfAwayOnly) {
+        notifySelfAwayIfChanged(previousId, previousAway);
+        return;
+    }
     if (!m_selected && !m_reducer.conversations().empty() && !typingOnly) {
         const IrcConversationState& conversation =
             m_reducer.conversations().begin()->second;
@@ -503,6 +530,7 @@ void IrcController::apply(const IrcEvent& event)
     emit selectionChanged();
     emit typingChanged();
     armTypingRefresh();
+    notifySelfAwayIfChanged(previousId, previousAway);
 }
 
 void IrcController::handleMessage(const QString& networkId,
@@ -555,6 +583,19 @@ void IrcController::reloadModels()
 IrcSession *IrcController::selectedSession() const
 {
     return m_selected ? m_sessions.findSession(m_selected->networkId) : nullptr;
+}
+
+QString IrcController::identityNetworkId() const
+{
+    if (m_selected)
+        return m_selected->networkId;
+    return m_console.networkId();
+}
+
+void IrcController::notifySelfAwayIfChanged(const QString& previousId, bool previousAway)
+{
+    if (identityNetworkId() != previousId || selfAway() != previousAway)
+        emit selfAwayChanged();
 }
 
 void IrcController::armTypingRefresh()

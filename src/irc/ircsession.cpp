@@ -284,6 +284,11 @@ bool IrcSession::part(const QString& channel)
         && sendCommand(QStringLiteral("PART %1").arg(channel));
 }
 
+bool IrcSession::sendAway()
+{
+    return sendCommand(QStringLiteral("AWAY"));
+}
+
 bool IrcSession::changeNick(const QString& nick)
 {
     return !nick.isEmpty()
