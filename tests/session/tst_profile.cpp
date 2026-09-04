@@ -64,7 +64,10 @@ void ProfileTest::validateRefusesIncompleteAndUnsendable()
     profile.nick = QStringLiteral("omairc");
     QVERIFY(profile.isComplete());
 
-    profile.autojoinChannels = {QStringLiteral("omarchy"), QStringLiteral("&local")};
+    QCOMPARE(IrcNetworkProfile::parseAutojoin(QStringLiteral("omarchy, #desktop")),
+             QStringList({QStringLiteral("omarchy"), QStringLiteral("#desktop")}));
+    profile.autojoinChannels = IrcNetworkProfile::parseAutojoin(
+        QStringLiteral("omarchy &local"));
     QCOMPARE(profile.normalized().autojoinChannels,
              QStringList({QStringLiteral("#omarchy"), QStringLiteral("&local")}));
     QVERIFY(profile.isComplete());

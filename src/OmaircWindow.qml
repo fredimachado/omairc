@@ -1360,8 +1360,9 @@ ApplicationWindow {
                     border.color: win.dividerColor
 
                     MouseArea {
+                        id: sheetCardClickSink
                         anchors.fill: parent
-                        onClicked: {}
+                        onClicked: function(mouse) { mouse.accepted = true; }
                     }
 
                     Flickable {

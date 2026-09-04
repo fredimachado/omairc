@@ -25,6 +25,7 @@ struct IrcNetworkProfile
 
     static IrcNetworkProfile create();
     static IrcNetworkProfile suggested();
+    static QStringList parseAutojoin(const QString &channels);
     IrcNetworkProfile normalized() const;
     Problem validate() const;
     bool isComplete() const;

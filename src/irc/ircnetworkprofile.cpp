@@ -42,6 +42,16 @@ QStringList splitAutojoin(const QStringList &channels)
 }
 }
 
+QStringList IrcNetworkProfile::parseAutojoin(const QString &channels)
+{
+    QStringList result;
+    const QRegularExpression separators(QStringLiteral("[,\\s]+"));
+    const QStringList parts = channels.split(separators, Qt::SkipEmptyParts);
+    for (const QString &part : parts)
+        result.append(part.trimmed());
+    return result;
+}
+
 IrcNetworkProfile IrcNetworkProfile::create()
 {
     IrcNetworkProfile profile;

@@ -175,9 +175,10 @@ void IrcConnection::setRealname(const QString &realname)
 
 void IrcConnection::setAutojoin(const QString &channels)
 {
-    if (autojoin() == channels)
+    const QStringList next = IrcNetworkProfile::parseAutojoin(channels);
+    if (m_draft.autojoinChannels == next)
         return;
-    m_draft.autojoinChannels = QStringList{channels};
+    m_draft.autojoinChannels = next;
     emit draftChanged();
 }
 
