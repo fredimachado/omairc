@@ -30,7 +30,7 @@ void CapabilityTest::unwantedAdvertisementProducesNoRequest()
     IrcCapabilityNegotiation negotiation(false);
     negotiation.advertise(tokens(QStringLiteral("multi-prefix echo-message")));
 
-    const IrcCapabilityNegotiation::Request request = negotiation.beginRequest();
+    const IrcCapabilityNegotiation::Request request = negotiation.takeRequest();
     QVERIFY(request.lines.isEmpty());
     QVERIFY(!request.requestsSasl);
     QVERIFY(negotiation.settled());
@@ -43,7 +43,7 @@ void CapabilityTest::saslKeepsItsOwnLine()
     negotiation.advertise(tokens(
         QStringLiteral("sasl=PLAIN,EXTERNAL away-notify batch draft/metadata-2 multi-prefix")));
 
-    const IrcCapabilityNegotiation::Request request = negotiation.beginRequest();
+    const IrcCapabilityNegotiation::Request request = negotiation.takeRequest();
     QCOMPARE(request.lines,
              QStringList({QStringLiteral("sasl"),
                           QStringLiteral("away-notify batch draft/metadata-2")}));
@@ -55,26 +55,26 @@ void CapabilityTest::saslNeedsCredentialsAndPlain()
 {
     IrcCapabilityNegotiation withoutCredentials(false);
     withoutCredentials.advertise(tokens(QStringLiteral("sasl=PLAIN")));
-    QVERIFY(withoutCredentials.beginRequest().lines.isEmpty());
+    QVERIFY(withoutCredentials.takeRequest().lines.isEmpty());
 
     IrcCapabilityNegotiation externalOnly(true);
     externalOnly.advertise(tokens(QStringLiteral("sasl=EXTERNAL")));
-    QVERIFY(externalOnly.beginRequest().lines.isEmpty());
+    QVERIFY(externalOnly.takeRequest().lines.isEmpty());
 
     IrcCapabilityNegotiation bare(true);
     bare.advertise(tokens(QStringLiteral("sasl")));
-    QCOMPARE(bare.beginRequest().lines, QStringList{QStringLiteral("sasl")});
+    QCOMPARE(bare.takeRequest().lines, QStringList{QStringLiteral("sasl")});
 }
 
 void CapabilityTest::memberMetadataNeedsBatch()
 {
     IrcCapabilityNegotiation negotiation(false);
     negotiation.advertise(tokens(QStringLiteral("draft/metadata-2 away-notify")));
-    QCOMPARE(negotiation.beginRequest().lines,
+    QCOMPARE(negotiation.takeRequest().lines,
              QStringList{QStringLiteral("away-notify")});
 
     negotiation.advertise(tokens(QStringLiteral("batch")));
-    QCOMPARE(negotiation.beginRequest().lines,
+    QCOMPARE(negotiation.takeRequest().lines,
              QStringList{QStringLiteral("batch draft/metadata-2")});
 }
 
@@ -83,7 +83,7 @@ void CapabilityTest::acknowledgeAndRejectSettleIndependently()
     IrcCapabilityNegotiation negotiation(true);
     negotiation.advertise(tokens(
         QStringLiteral("sasl=PLAIN away-notify batch draft/metadata-2")));
-    negotiation.beginRequest();
+    negotiation.takeRequest();
 
     const IrcCapabilitySet refused =
         negotiation.reject(tokens(QStringLiteral("away-notify batch draft/metadata-2")));
@@ -104,7 +104,7 @@ void CapabilityTest::deletionWithdrawsAnEnabledCapability()
 {
     IrcCapabilityNegotiation negotiation(false);
     negotiation.advertise(tokens(QStringLiteral("away-notify batch draft/metadata-2")));
-    negotiation.beginRequest();
+    negotiation.takeRequest();
     negotiation.acknowledge(tokens(QStringLiteral("away-notify batch draft/metadata-2")));
     QVERIFY(negotiation.enabled().contains(IrcCapability::AwayNotify));
 
@@ -112,15 +112,14 @@ void CapabilityTest::deletionWithdrawsAnEnabledCapability()
     QVERIFY(!negotiation.enabled().contains(IrcCapability::AwayNotify));
     QVERIFY(negotiation.enabled().contains(IrcCapability::MemberMetadata));
 
-    // A withdrawn capability is no longer advertised, so it is not re-requested.
-    QVERIFY(negotiation.beginRequest().lines.isEmpty());
+    QVERIFY(negotiation.takeRequest().lines.isEmpty());
 }
 
 void CapabilityTest::timeoutAbandonsOutstandingRequests()
 {
     IrcCapabilityNegotiation negotiation(false);
     negotiation.advertise(tokens(QStringLiteral("away-notify batch")));
-    negotiation.beginRequest();
+    negotiation.takeRequest();
     QVERIFY(!negotiation.settled());
 
     const IrcCapabilitySet abandoned = negotiation.abandonOutstanding();
@@ -134,16 +133,16 @@ void CapabilityTest::requestIsIdempotentUntilSomethingNewIsAdvertised()
 {
     IrcCapabilityNegotiation negotiation(false);
     negotiation.advertise(tokens(QStringLiteral("away-notify")));
-    QCOMPARE(negotiation.beginRequest().lines,
+    QCOMPARE(negotiation.takeRequest().lines,
              QStringList{QStringLiteral("away-notify")});
-    QVERIFY(negotiation.beginRequest().lines.isEmpty());
+    QVERIFY(negotiation.takeRequest().lines.isEmpty());
 
     negotiation.acknowledge(tokens(QStringLiteral("away-notify")));
-    QVERIFY(negotiation.beginRequest().lines.isEmpty());
+    QVERIFY(negotiation.takeRequest().lines.isEmpty());
 
     negotiation.reset(false);
     QVERIFY(negotiation.enabled().isEmpty());
-    QVERIFY(negotiation.beginRequest().lines.isEmpty());
+    QVERIFY(negotiation.takeRequest().lines.isEmpty());
 }
 
 int runCapabilityTests(int argc, char **argv)

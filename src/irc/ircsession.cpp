@@ -294,7 +294,7 @@ void IrcSession::beginCapabilityNegotiation()
 
 void IrcSession::requestCapabilities()
 {
-    const IrcCapabilityNegotiation::Request request = m_capabilities.beginRequest();
+    const IrcCapabilityNegotiation::Request request = m_capabilities.takeRequest();
     if (request.requestsSasl) {
         m_saslRequested = true;
         m_saslPending = true;

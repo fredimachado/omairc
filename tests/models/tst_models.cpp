@@ -106,7 +106,8 @@ void ModelTest::joinNamesPrivmsgPopulateModels()
          {QStringLiteral("Bob"), QStringLiteral("v")}},
         true,
     });
-    reducer.apply(IrcAwayEvent{networkA, QStringLiteral("Bob"), QStringLiteral("brb")});
+    reducer.apply(IrcAwayEvent{networkA, QStringLiteral("Bob"),
+                               IrcAway{QStringLiteral("brb")}});
     reducer.apply(IrcMessageEvent{
         room, QStringLiteral("Alice"), QStringLiteral("hello"), timestamp,
         QStringLiteral("#room")});

@@ -1,5 +1,7 @@
 #pragma once
 
+#include "ircpresence.h"
+
 #include <QChar>
 #include <QDateTime>
 #include <QString>
@@ -138,20 +140,18 @@ struct IrcModeEvent
     QStringList arguments;
 };
 
-/// From `AWAY` under away-notify and from the `352` H/G flag. Nick-scoped.
 struct IrcAwayEvent
 {
     QString networkId;
     QString nick;
-    std::optional<QString> message; ///< nullopt = back
+    std::optional<IrcAway> away;
 };
 
-/// From `METADATA`, `761` and `766` for the subscribed `status` key.
 struct IrcMemberStatusEvent
 {
     QString networkId;
     QString nick;
-    QString status; ///< empty = not set
+    QString status;
 };
 
 using IrcEvent = std::variant<

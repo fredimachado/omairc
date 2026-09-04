@@ -14,7 +14,7 @@ QStringList subscribedKeys()
 
 bool IrcNickPresence::isDefault() const noexcept
 {
-    return !awayMessage.has_value() && status.isEmpty();
+    return !away.has_value() && status.isEmpty();
 }
 
 IrcNickPresence& IrcNetworkPresence::entry(const QString& normalizedNick)
@@ -22,7 +22,7 @@ IrcNickPresence& IrcNetworkPresence::entry(const QString& normalizedNick)
     return m_nicks[normalizedNick];
 }
 
-void IrcNetworkPresence::dropIfDefault(const QString& normalizedNick)
+void IrcNetworkPresence::eraseIfDefault(const QString& normalizedNick)
 {
     const auto found = m_nicks.find(normalizedNick);
     if (found != m_nicks.end() && found->second.isDefault())
@@ -30,12 +30,12 @@ void IrcNetworkPresence::dropIfDefault(const QString& normalizedNick)
 }
 
 void IrcNetworkPresence::setAway(const QString& normalizedNick,
-                                 std::optional<QString> message)
+                                 std::optional<IrcAway> away)
 {
     if (normalizedNick.isEmpty())
         return;
-    entry(normalizedNick).awayMessage = std::move(message);
-    dropIfDefault(normalizedNick);
+    entry(normalizedNick).away = std::move(away);
+    eraseIfDefault(normalizedNick);
 }
 
 void IrcNetworkPresence::setStatus(const QString& normalizedNick,
@@ -44,11 +44,11 @@ void IrcNetworkPresence::setStatus(const QString& normalizedNick,
     if (normalizedNick.isEmpty())
         return;
     entry(normalizedNick).status = status;
-    dropIfDefault(normalizedNick);
+    eraseIfDefault(normalizedNick);
 }
 
-void IrcNetworkPresence::rename(const QString& fromNormalized,
-                                const QString& toNormalized)
+void IrcNetworkPresence::rekey(const QString& fromNormalized,
+                               const QString& toNormalized)
 {
     if (fromNormalized == toNormalized)
         return;
@@ -74,7 +74,7 @@ void IrcNetworkPresence::clear() noexcept
 void IrcNetworkPresence::clearAway()
 {
     for (auto entry = m_nicks.begin(); entry != m_nicks.end();) {
-        entry->second.awayMessage.reset();
+        entry->second.away.reset();
         entry = entry->second.isDefault() ? m_nicks.erase(entry) : std::next(entry);
     }
 }

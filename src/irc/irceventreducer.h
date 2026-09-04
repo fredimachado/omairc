@@ -28,17 +28,15 @@ struct IrcReducedMessage
 
 struct IrcMemberState
 {
-    QString nick;        ///< display spelling, last writer wins
-    QString prefixModes; ///< channel rank from 353; never shown as the subtitle
+    QString displayNick;
+    QString prefixModes;
 };
 
-/// A channel member row joined with the network-scoped presence for the same
-/// nick. Computed on read, so neither store can go stale against the other.
 struct IrcMemberView
 {
     QString nick;
     QString prefixModes;
-    std::optional<QString> awayMessage;
+    std::optional<IrcAway> away;
     QString status;
 
     bool isAway() const noexcept;
@@ -90,13 +88,9 @@ public:
     const Store& conversations() const noexcept;
     const IrcConversationState *find(const IrcConversationKey& key) const noexcept;
 
-    /// The member model's whole read surface. Empty when the conversation is
-    /// not a joined channel or the nick is not one of its members.
     std::optional<IrcMemberView> memberView(const IrcConversationKey& key,
                                             const QString& normalizedNick) const;
 
-    /// A capability we relied on left the enabled set, so the facts it fed can
-    /// no longer be trusted.
     void clearPresenceFacts(const QString& networkId, bool away, bool status);
 
 private:
@@ -132,8 +126,6 @@ private:
     void reduce(const IrcAwayEvent& event);
     void reduce(const IrcMemberStatusEvent& event);
 
-    /// Presence is kept only for nicks visible in at least one channel on the
-    /// network. Called after a membership erase.
     void forgetUnseen(const QString& networkId, const QStringList& normalizedNicks);
     bool isVisible(const QString& networkId, const QString& normalizedNick) const;
 

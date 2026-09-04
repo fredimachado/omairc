@@ -282,12 +282,12 @@ void ReducerTest::awayIsOneFactVisibleInEveryChannel()
         networkA, QStringLiteral("#desktop"), QStringLiteral("Alice")});
 
     reducer.apply(IrcAwayEvent{networkA, QStringLiteral("alice"),
-                               QStringLiteral("lunch")});
+                               IrcAway{QStringLiteral("lunch")}});
     reducer.apply(IrcAwayEvent{networkA, QStringLiteral("alice"),
-                               QStringLiteral("lunch")});
+                               IrcAway{QStringLiteral("lunch")}});
     QVERIFY(reducer.memberView(omarchy, QStringLiteral("alice"))->isAway());
     QVERIFY(reducer.memberView(desktop, QStringLiteral("alice"))->isAway());
-    QCOMPARE(*reducer.memberView(omarchy, QStringLiteral("alice"))->awayMessage,
+    QCOMPARE(reducer.memberView(omarchy, QStringLiteral("alice"))->away->reason,
              QStringLiteral("lunch"));
 
     reducer.apply(IrcNickEvent{
@@ -338,7 +338,7 @@ void ReducerTest::presenceIsDroppedWithTheLastChannelAndOnWelcome()
     reducer.apply(IrcJoinEvent{
         networkA, QStringLiteral("#desktop"), QStringLiteral("Alice")});
     reducer.apply(IrcAwayEvent{networkA, QStringLiteral("Alice"),
-                               QStringLiteral("lunch")});
+                               IrcAway{QStringLiteral("lunch")}});
 
     reducer.apply(IrcPartEvent{
         networkA, QStringLiteral("#desktop"), QStringLiteral("Alice"), QString()});
@@ -351,7 +351,7 @@ void ReducerTest::presenceIsDroppedWithTheLastChannelAndOnWelcome()
     QVERIFY(!reducer.memberView(omarchy, QStringLiteral("alice"))->isAway());
 
     reducer.apply(IrcAwayEvent{networkA, QStringLiteral("Alice"),
-                               QStringLiteral("lunch")});
+                               IrcAway{QStringLiteral("lunch")}});
     welcome(reducer, networkA);
     reducer.apply(IrcJoinEvent{
         networkA, QStringLiteral("#omarchy"), QStringLiteral("Alice")});
@@ -367,7 +367,7 @@ void ReducerTest::losingACapabilityClearsTheFactsItFed()
     reducer.apply(IrcJoinEvent{
         networkA, QStringLiteral("#room"), QStringLiteral("Alice")});
     reducer.apply(IrcAwayEvent{networkA, QStringLiteral("Alice"),
-                               QStringLiteral("lunch")});
+                               IrcAway{QStringLiteral("lunch")}});
     reducer.apply(IrcMemberStatusEvent{
         networkA, QStringLiteral("Alice"), QStringLiteral("writing docs")});
 

@@ -118,7 +118,7 @@ bool IrcCapabilityNegotiation::isRequestable(const Wanted& wanted) const
     return true;
 }
 
-IrcCapabilityNegotiation::Request IrcCapabilityNegotiation::beginRequest()
+IrcCapabilityNegotiation::Request IrcCapabilityNegotiation::takeRequest()
 {
     Request request;
     QStringList presence;

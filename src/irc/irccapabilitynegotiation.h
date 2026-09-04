@@ -18,14 +18,10 @@ public:
 
     void reset(bool saslCredentialsAvailable);
 
-    /// CAP LS or CAP NEW tokens, still in their `name=value` wire form.
-    /// Repeated calls accumulate, so a 302 continuation needs no special case.
     void advertise(const QStringList& tokens);
     void withdraw(const QStringList& tokens);
 
-    /// Wanted, advertised, not yet enabled and not already asked for. Marks the
-    /// result outstanding, so a second call without a new advertisement is empty.
-    Request beginRequest();
+    Request takeRequest();
 
     IrcCapabilitySet acknowledge(const QStringList& tokens);
     IrcCapabilitySet reject(const QStringList& tokens);
@@ -34,7 +30,6 @@ public:
     bool settled() const noexcept;
     IrcCapabilitySet enabled() const noexcept;
 
-    /// Wire names, dependencies and preconditions for everything we may ask for.
     struct Wanted;
 
 private:

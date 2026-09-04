@@ -29,7 +29,7 @@ QString displayTarget(const IrcConversationKey& key, const QString& target)
 
 bool IrcMemberView::isAway() const noexcept
 {
-    return awayMessage.has_value();
+    return away.has_value();
 }
 
 bool IrcConversationState::isChannel() const noexcept
@@ -121,8 +121,8 @@ std::optional<IrcMemberView> IrcEventReducer::memberView(
     const IrcNickPresence facts = presence == m_presence.end()
         ? IrcNickPresence{}
         : presence->second.lookup(normalizedNick);
-    return IrcMemberView{member->second.nick, member->second.prefixModes,
-                         facts.awayMessage, facts.status};
+    return IrcMemberView{member->second.displayNick, member->second.prefixModes,
+                         facts.away, facts.status};
 }
 
 void IrcEventReducer::clearPresenceFacts(const QString& networkId,
@@ -353,7 +353,7 @@ void IrcEventReducer::reduce(const IrcNickEvent& event)
     const QString newNormalized = normalize(event.networkId, event.newNick);
     if (isSelf(event.networkId, event.oldNick))
         m_currentNicks[event.networkId] = event.newNick;
-    m_presence[event.networkId].rename(oldNormalized, newNormalized);
+    m_presence[event.networkId].rekey(oldNormalized, newNormalized);
 
     for (auto& entry : m_conversations) {
         IrcConversationState& conversation = entry.second;
@@ -366,7 +366,7 @@ void IrcEventReducer::reduce(const IrcNickEvent& event)
         if (member == channel->members.end())
             continue;
         IrcMemberState updated = member->second;
-        updated.nick = event.newNick;
+        updated.displayNick = event.newNick;
         channel->members.erase(member);
         channel->members.insert_or_assign(newNormalized, std::move(updated));
         appendEvent(conversation, event.oldNick + QStringLiteral(" is now ")
@@ -459,7 +459,7 @@ void IrcEventReducer::reduce(const IrcModeEvent& event)
 void IrcEventReducer::reduce(const IrcAwayEvent& event)
 {
     m_presence[event.networkId].setAway(
-        normalize(event.networkId, event.nick), event.message);
+        normalize(event.networkId, event.nick), event.away);
 }
 
 void IrcEventReducer::reduce(const IrcMemberStatusEvent& event)
