@@ -913,8 +913,9 @@ ApplicationWindow {
                     model: win.irc ? win.irc.conversations : null
 
                     delegate: ConversationRow {
-                        required property string conversation
+                        required property var model
 
+                        conversationName: model.conversation
                         unread: model.unread
                         mention: model.mention
                         direct: model.direct
@@ -922,7 +923,6 @@ ApplicationWindow {
                         visible: !model.direct
                         width: sidebar.width
                         height: visible ? win.scaledSize(36) : 0
-                        conversationName: conversation
                     }
                 }
 
@@ -967,8 +967,9 @@ ApplicationWindow {
                     model: win.irc ? win.irc.conversations : null
 
                     delegate: ConversationRow {
-                        required property string conversation
+                        required property var model
 
+                        conversationName: model.conversation
                         unread: model.unread
                         mention: model.mention
                         direct: model.direct
@@ -976,7 +977,6 @@ ApplicationWindow {
                         visible: model.direct
                         width: sidebar.width
                         height: visible ? win.scaledSize(36) : 0
-                        conversationName: conversation
                     }
                 }
             }
