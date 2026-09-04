@@ -1,3 +1,5 @@
+#include <QCoreApplication>
+#include <QEvent>
 #include <QPointer>
 #include <QSignalSpy>
 #include <QTest>
@@ -101,6 +103,8 @@ private slots:
     void authenticationFailureIsExplicit();
     void destructionWhileConnectingIsSafe();
     void managerRefusesSecondLiveNetwork();
+    void managerCreateStaysAddOnly();
+    void managerDiscardUnregistersImmediately();
 };
 
 void SessionTest::registersAndAutojoins()
@@ -377,6 +381,46 @@ void SessionTest::managerRefusesSecondLiveNetwork()
     QVERIFY(manager.stopSession(QStringLiteral("network-a")));
     QVERIFY(manager.activateSession(QStringLiteral("network-b")));
     QCOMPARE(manager.activeNetworkId(), QStringLiteral("network-b"));
+}
+
+void SessionTest::managerCreateStaysAddOnly()
+{
+    IrcSessionManager manager;
+    auto *firstTransport = new FakeIrcTransport;
+    auto *secondTransport = new FakeIrcTransport;
+    IrcSession *first = manager.createSession(
+        config(QStringLiteral("network-a")), firstTransport, new FakeReconnectTimer);
+    QVERIFY(first);
+    QVERIFY(!manager.createSession(
+        config(QStringLiteral("network-a")), secondTransport, new FakeReconnectTimer));
+    QCOMPARE(manager.findSession(QStringLiteral("network-a")), first);
+    delete secondTransport;
+}
+
+void SessionTest::managerDiscardUnregistersImmediately()
+{
+    IrcSessionManager manager;
+    auto *transport = new FakeIrcTransport;
+    IrcSession *session = manager.createSession(
+        config(QStringLiteral("network-a")), transport, new FakeReconnectTimer);
+    QVERIFY(session);
+    QPointer<IrcSession> guard(session);
+
+    QVERIFY(manager.activateSession(QStringLiteral("network-a")));
+    QVERIFY(manager.discardSession(QStringLiteral("network-a")));
+    QCOMPARE(manager.findSession(QStringLiteral("network-a")), nullptr);
+    QCOMPARE(manager.activeNetworkId(), QString());
+    QVERIFY(!manager.discardSession(QStringLiteral("network-a")));
+
+    auto *replacementTransport = new FakeIrcTransport;
+    IrcSession *replacement = manager.createSession(
+        config(QStringLiteral("network-a")), replacementTransport, new FakeReconnectTimer);
+    QVERIFY(replacement);
+    QVERIFY(replacement != session);
+
+    QVERIFY(!guard.isNull());
+    QCoreApplication::sendPostedEvents(session, QEvent::DeferredDelete);
+    QVERIFY(guard.isNull());
 }
 
 int runSessionTests(int argc, char **argv)

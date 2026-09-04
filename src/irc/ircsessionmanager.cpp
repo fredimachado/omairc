@@ -61,6 +61,19 @@ bool IrcSessionManager::stopSession(const QString &networkId)
     return true;
 }
 
+bool IrcSessionManager::discardSession(const QString &networkId)
+{
+    IrcSession *session = findSession(networkId);
+    if (!session)
+        return false;
+    session->stop();
+    m_sessions.remove(networkId);
+    if (m_activeSession == session)
+        m_activeSession = nullptr;
+    session->deleteLater();
+    return true;
+}
+
 QString IrcSessionManager::activeNetworkId() const
 {
     return m_activeSession ? m_activeSession->networkId() : QString{};
