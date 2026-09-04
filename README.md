@@ -47,6 +47,8 @@ and do not construct `IrcConnection`.
 - Switch between available channels and direct messages from the sidebar.
 - Click a channel member to open or create a direct message.
 - Send messages with `Enter`.
+- Toggle Status with `Ctrl+``.
+- Open Connect with `Ctrl+,`.
 - Toggle the channel member list with `Ctrl+Shift+M`.
 - Focus the message composer with `Ctrl+L`.
 - Quit with `Ctrl+Q`.

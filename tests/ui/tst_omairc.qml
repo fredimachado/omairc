@@ -351,6 +351,64 @@ TestCase {
         saveScreenshot("send-message");
     }
 
+    function test_toggleStatusWithShortcut() {
+        compare(appWindow.consoleVisible, false);
+
+        keyClick(Qt.Key_QuoteLeft, Qt.ControlModifier);
+
+        tryCompare(appWindow, "consoleVisible", true);
+        compare(appWindow.title, "Status");
+        var list = item("consoleList");
+        verify(list.visible);
+        verify(!item("peopleButton").visible);
+
+        keyClick(Qt.Key_QuoteLeft, Qt.ControlModifier);
+
+        tryCompare(appWindow, "consoleVisible", false);
+    }
+
+    function test_toggleStatusWithShortcutOnLiveWindow() {
+        liveConsole.open = false;
+        if (appWindow) {
+            appWindow.close();
+            appWindow = null;
+        }
+        var window = createTemporaryObject(liveWindowComponent, null);
+        verify(window !== null, "The live window should load");
+        tryCompare(window, "visible", true);
+        waitForRendering(window.contentItem);
+        window.requestActivate();
+        tryCompare(window, "active", true);
+
+        compare(liveConsole.open, false);
+
+        keyClick(Qt.Key_QuoteLeft, Qt.ControlModifier);
+
+        tryCompare(liveConsole, "open", true);
+
+        keyClick(Qt.Key_QuoteLeft, Qt.ControlModifier);
+
+        tryCompare(liveConsole, "open", false);
+        window.close();
+        liveConsole.open = false;
+    }
+
+    function test_openConnectSheetWithShortcut() {
+        var window = createTemporaryObject(fallbackWindowComponent, null);
+        verify(window !== null, "The fallback window should load");
+        tryCompare(window, "visible", true);
+        waitForRendering(window.contentItem);
+
+        var sheet = findChild(window, "connectionSheet");
+        verify(sheet !== null, "Could not find connectionSheet");
+        compare(sheet.visible, false);
+
+        keyClick(Qt.Key_Comma, Qt.ControlModifier);
+
+        tryCompare(sheet, "visible", true);
+        window.close();
+    }
+
     function test_toggleMembersWithShortcut() {
         var panel = item("membersPanel");
         verify(panel.visible);

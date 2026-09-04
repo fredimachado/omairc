@@ -302,7 +302,7 @@ ApplicationWindow {
     }
 
     Shortcut {
-        sequence: "Ctrl+Shift+S"
+        sequence: "Ctrl+`"
         context: Qt.ApplicationShortcut
         onActivated: {
             if (win.irc)
@@ -310,6 +310,13 @@ ApplicationWindow {
             else
                 win.mockStatusOpen = !win.mockStatusOpen;
         }
+    }
+
+    Shortcut {
+        sequence: "Ctrl+,"
+        context: Qt.ApplicationShortcut
+        enabled: win.connection !== null
+        onActivated: win.connectionSheetOpen = true
     }
 
     Shortcut {
