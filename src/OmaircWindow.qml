@@ -2415,7 +2415,7 @@ ApplicationWindow {
                         radius: win.scaledSize(7)
                         color: memberMouse.containsMouse
                             ? win.hoverColor
-                            : (ListView.isCurrentItem && membersList.activeFocus
+                            : (memberDelegate.ListView.isCurrentItem && membersList.activeFocus
                                 ? win.raisedColor
                                 : "transparent")
                     }

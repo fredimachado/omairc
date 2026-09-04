@@ -713,7 +713,11 @@ TestCase {
 
     function test_memberHighlightOnlyWhileListFocused() {
         var members = item("membersList");
-        var anna = item("member-anna");
+        members.positionViewAtIndex(0, ListView.Contain);
+        wait(0);
+        var anna = members.itemAtIndex(0);
+        verify(anna !== null, "The first member delegate should be rendered");
+        compare(anna.nick, "anna");
         var highlight = findChild(anna, "memberHighlight");
         verify(highlight !== null, "Could not find memberHighlight");
         verify(!members.activeFocus);
@@ -722,11 +726,14 @@ TestCase {
 
         keyClick(Qt.Key_P, Qt.ControlModifier | Qt.ShiftModifier);
         tryCompare(members, "activeFocus", true);
-        verify(Qt.colorEqual(highlight.color, appWindow.raisedColor));
+        verify(Qt.colorEqual(highlight.color, appWindow.raisedColor),
+               "focused current member should use raisedColor");
 
         keyClick(Qt.Key_L, Qt.ControlModifier);
         tryCompare(item("messageComposer"), "activeFocus", true);
-        verify(Qt.colorEqual(highlight.color, "transparent"));
+        tryCompare(members, "activeFocus", false);
+        verify(Qt.colorEqual(highlight.color, "transparent"),
+               "unfocused member list should not keep a selection fill");
     }
 
     function test_focusMembersReopensHiddenPanel() {
