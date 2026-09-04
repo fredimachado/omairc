@@ -10,6 +10,7 @@
 
 #include <map>
 #include <optional>
+#include <set>
 #include <variant>
 #include <vector>
 
@@ -104,6 +105,8 @@ public:
 
     void clearPresenceFacts(const QString& networkId, bool away, bool status);
 
+    bool selfAway(const QString& networkId) const noexcept;
+
 private:
     IrcConversationState& ensureConversation(const IrcConversationKey& key,
                                              const QString& displayTarget);
@@ -135,6 +138,7 @@ private:
     void reduce(const IrcNamesEvent& event);
     void reduce(const IrcModeEvent& event);
     void reduce(const IrcAwayEvent& event);
+    void reduce(const IrcSelfAwayEvent& event);
     void reduce(const IrcMemberStatusEvent& event);
     void reduce(const IrcTypingEvent& event);
 
@@ -156,5 +160,6 @@ private:
     std::map<QString, IrcServerFeatures> m_features;
     std::map<QString, QString> m_currentNicks;
     std::map<QString, IrcNetworkPresence> m_presence;
+    std::set<QString> m_selfAway;
     std::optional<IrcConversationKey> m_selected;
 };

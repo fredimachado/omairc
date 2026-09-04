@@ -158,6 +158,11 @@ void IrcEventReducer::clearPresenceFacts(const QString& networkId,
         presence->second.clearStatus();
 }
 
+bool IrcEventReducer::selfAway(const QString& networkId) const noexcept
+{
+    return m_selfAway.count(networkId) != 0;
+}
+
 QStringList IrcEventReducer::typingNicks(const IrcConversationKey& key,
                                          const QDateTime& now) const
 {
@@ -355,6 +360,7 @@ void IrcEventReducer::reduce(const IrcWelcomeEvent& event)
 {
     m_currentNicks[event.networkId] = event.currentNick;
     m_presence[event.networkId].clear();
+    m_selfAway.erase(event.networkId);
     for (auto& entry : m_conversations) {
         IrcConversationState& conversation = entry.second;
         if (conversation.key.networkId != event.networkId)
@@ -586,6 +592,14 @@ void IrcEventReducer::reduce(const IrcAwayEvent& event)
 {
     m_presence[event.networkId].setAway(
         normalize(event.networkId, event.nick), event.away);
+}
+
+void IrcEventReducer::reduce(const IrcSelfAwayEvent& event)
+{
+    if (event.away)
+        m_selfAway.insert(event.networkId);
+    else
+        m_selfAway.erase(event.networkId);
 }
 
 void IrcEventReducer::reduce(const IrcMemberStatusEvent& event)

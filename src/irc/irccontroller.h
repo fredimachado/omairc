@@ -9,6 +9,7 @@
 
 #include <QHash>
 #include <QObject>
+#include <QSet>
 #include <QStringList>
 #include <QTimer>
 
@@ -28,6 +29,7 @@ class IrcController : public QObject
     Q_PROPERTY(QString connectionStatus READ connectionStatus NOTIFY statusChanged)
     Q_PROPERTY(QString lastError READ lastError NOTIFY statusChanged)
     Q_PROPERTY(QString currentNick READ currentNick NOTIFY selectionChanged)
+    Q_PROPERTY(bool selfAway READ selfAway NOTIFY selfAwayChanged)
     Q_PROPERTY(bool hasAwayPresence READ hasAwayPresence NOTIFY capabilitiesChanged)
     Q_PROPERTY(bool hasMemberStatus READ hasMemberStatus NOTIFY capabilitiesChanged)
     Q_PROPERTY(bool hasTyping READ hasTyping NOTIFY capabilitiesChanged)
@@ -53,6 +55,7 @@ public:
     QString connectionStatus() const;
     QString lastError() const;
     QString currentNick() const;
+    bool selfAway() const;
 
     bool hasAwayPresence() const;
     bool hasMemberStatus() const;
@@ -72,6 +75,7 @@ public:
 signals:
     void selectionChanged();
     void statusChanged();
+    void selfAwayChanged();
 
     void capabilitiesChanged();
     void typingChanged();
@@ -93,6 +97,8 @@ private:
     void dropSelectedDirectAndReselect();
     void clearConversationSelection();
     IrcSession *selectedSession() const;
+    QString identityNetworkId() const;
+    void notifySelfAwayIfChanged(const QString& previousId, bool previousAway);
     void updateStatus(IrcSession *session);
     void armTypingRefresh();
 
@@ -104,6 +110,7 @@ private:
     MemberListModel m_members;
     QHash<QString, QString> m_currentNicks;
     QHash<QString, IrcCapabilitySet> m_capabilities;
+    QSet<QString> m_unawaySent;
     std::optional<IrcConversationKey> m_selected;
     QString m_selectedTarget;
     QString m_connectionStatus = QStringLiteral("Offline");

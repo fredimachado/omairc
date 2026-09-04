@@ -105,7 +105,7 @@ Use `control-omairc` against the isolated window. Stable handles:
 
 Named clicks are window-relative pixels for 1180x760 at textScale 1.0. They are invalid on a maximized window, a restored user geometry, or a portal text scale other than 1.0. That is why launch isolates XDG and DBus.
 
-QML object names used by `bin/test` (not visible to xdotool): `connectionSheet`, `connectionHost`, `connectionNick`, `conversation-#desktop`, `conversation-anna`, `messageComposer`, `sendButton`, `peopleButton`, `membersPanel`, `membersList`, `member-mira`, `messageList`, `directConversationRepeater`, `networkHeaderButton`, `networkEditButton`, `consoleList`, `selfNickLabel`, `presence-dot-anna`, `member-status-anna`, `shortcutsSheet`, `composer-typing`, `member-typing-anna`.
+QML object names used by `bin/test` (not visible to xdotool): `connectionSheet`, `connectionHost`, `connectionNick`, `conversation-#desktop`, `conversation-anna`, `messageComposer`, `sendButton`, `peopleButton`, `membersPanel`, `membersList`, `member-mira`, `messageList`, `directConversationRepeater`, `networkHeaderButton`, `networkEditButton`, `consoleList`, `selfNickLabel`, `selfPresenceDot`, `selfPresenceLabel`, `presence-dot-anna`, `member-status-anna`, `shortcutsSheet`, `composer-typing`, `member-typing-anna`.
 
 Typical drive:
 

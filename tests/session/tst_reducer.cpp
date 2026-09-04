@@ -43,6 +43,7 @@ private slots:
     void modeEditsExistingRowsOnly();
     void joinOfListedNickKeepsRanks();
     void dropDirectMessageErasesOnlyDirectRows();
+    void selfAwayIsNetworkMembershipNotMemberPresence();
 };
 
 void ReducerTest::namesFillAndCompleteWithoutDuplicates()
@@ -492,6 +493,44 @@ void ReducerTest::dropDirectMessageErasesOnlyDirectRows()
     const IrcConversationState *recreated = reducer.find(lena);
     QVERIFY(recreated);
     QCOMPARE(recreated->unread, 1);
+}
+
+void ReducerTest::selfAwayIsNetworkMembershipNotMemberPresence()
+{
+    IrcEventReducer reducer;
+    welcome(reducer, networkA);
+    const IrcConversationKey omarchy =
+        reducer.conversationKey(networkA, QStringLiteral("#omarchy"));
+    reducer.apply(IrcJoinEvent{
+        networkA, QStringLiteral("#omarchy"), QStringLiteral("omairc")});
+    reducer.apply(IrcJoinEvent{
+        networkA, QStringLiteral("#desktop"), QStringLiteral("omairc")});
+
+    reducer.apply(IrcAwayEvent{networkA, QStringLiteral("omairc"), IrcAway{}});
+    QVERIFY(!reducer.selfAway(networkA));
+    QVERIFY(reducer.memberView(omarchy, QStringLiteral("omairc"))->isAway());
+
+    reducer.apply(IrcSelfAwayEvent{networkA, true});
+    reducer.apply(IrcSelfAwayEvent{networkA, true});
+    QVERIFY(reducer.selfAway(networkA));
+
+    reducer.apply(IrcPartEvent{
+        networkA, QStringLiteral("#omarchy"), QStringLiteral("omairc"), QString()});
+    reducer.apply(IrcPartEvent{
+        networkA, QStringLiteral("#desktop"), QStringLiteral("omairc"), QString()});
+    QVERIFY(reducer.selfAway(networkA));
+
+    reducer.clearPresenceFacts(networkA, true, true);
+    QVERIFY(reducer.selfAway(networkA));
+
+    reducer.apply(IrcSelfAwayEvent{networkA, false});
+    reducer.apply(IrcSelfAwayEvent{networkA, false});
+    QVERIFY(!reducer.selfAway(networkA));
+
+    reducer.apply(IrcSelfAwayEvent{networkA, true});
+    welcome(reducer, networkA);
+    QVERIFY(!reducer.selfAway(networkA));
+    QVERIFY(!reducer.selfAway(networkB));
 }
 
 int runReducerTests(int argc, char **argv)
