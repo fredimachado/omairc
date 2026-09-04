@@ -909,6 +909,7 @@ ApplicationWindow {
                 }
 
                 Repeater {
+                    objectName: win.irc ? "channelConversationRepeater" : ""
                     model: win.irc ? win.irc.conversations : null
 
                     delegate: ConversationRow {

@@ -41,6 +41,8 @@ class ControllerTest : public QObject
 
 private slots:
     void reducesTrafficAndRoutesOutboundByNetwork();
+    void liberaConnectCreatesChannelNotAuthDirect();
+    void emptyNetworkIdDoesNotSwitch();
 };
 
 void ControllerTest::reducesTrafficAndRoutesOutboundByNetwork()
@@ -109,6 +111,75 @@ void ControllerTest::reducesTrafficAndRoutesOutboundByNetwork()
              QByteArrayLiteral("PRIVMSG #chan :second\r\n"));
     QVERIFY(transportA->writtenFrames().last()
             != QByteArrayLiteral("PRIVMSG #chan :second\r\n"));
+}
+
+void ControllerTest::liberaConnectCreatesChannelNotAuthDirect()
+{
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    IrcSessionConfig sessionConfig = config(QStringLiteral("libera"));
+    sessionConfig.autojoinChannels = {QStringLiteral("#omarchy")};
+    IrcSession *session = controller.addSession(sessionConfig, transport);
+    QVERIFY(session);
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    transport->completeConnect();
+    transport->injectBytes(
+        QByteArrayLiteral("NOTICE AUTH :*** Looking up your hostname...\r\n"
+                          "NOTICE AUTH :*** Checking Ident\r\n"
+                          "NOTICE AUTH :*** No Ident response\r\n"
+                          "NOTICE AUTH :*** Found your hostname\r\n"
+                          ":copper.libera.chat CAP omairc LS :multi-prefix\r\n"
+                          ":copper.libera.chat 001 omairc :Welcome\r\n"
+                          ":copper.libera.chat 005 omairc CHANTYPES=# PREFIX=(ov)@+ "
+                          "NETWORK=Libera.Chat :are supported by this server\r\n"
+                          ":omairc!u@h JOIN :#omarchy\r\n"
+                          ":copper.libera.chat 353 omairc = #omarchy :@omairc\r\n"
+                          ":copper.libera.chat 366 omairc #omarchy :End of NAMES\r\n"));
+
+    auto *conversations =
+        qobject_cast<QAbstractItemModel *>(controller.conversations());
+    QVERIFY(conversations);
+    QCOMPARE(conversations->rowCount(), 2);
+
+    const QString first =
+        roleAt(conversations, 0, ConversationListModel::ConversationRole).toString();
+    const QString second =
+        roleAt(conversations, 1, ConversationListModel::ConversationRole).toString();
+    const int omarchyRow = first == QStringLiteral("#omarchy") ? 0 : 1;
+    const int authRow = omarchyRow == 0 ? 1 : 0;
+    QCOMPARE(roleAt(conversations, omarchyRow, ConversationListModel::ConversationRole),
+             QStringLiteral("#omarchy"));
+    QCOMPARE(roleAt(conversations, omarchyRow, ConversationListModel::DirectRole), false);
+    QCOMPARE(roleAt(conversations, omarchyRow, ConversationListModel::NetworkIdRole),
+             QStringLiteral("libera"));
+    QCOMPARE(roleAt(conversations, authRow, ConversationListModel::ConversationRole),
+             QStringLiteral("AUTH"));
+    QCOMPARE(roleAt(conversations, authRow, ConversationListModel::DirectRole), true);
+
+    controller.selectConversation(
+        roleAt(conversations, omarchyRow, ConversationListModel::NetworkIdRole).toString(),
+        QStringLiteral("#omarchy"));
+    QCOMPARE(controller.selectedTarget(), QStringLiteral("#omarchy"));
+    QVERIFY(controller.isChannel());
+}
+
+void ControllerTest::emptyNetworkIdDoesNotSwitch()
+{
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+                                                transport);
+    QVERIFY(session);
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    transport->completeConnect();
+    transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
+                          ":server 001 omairc :Welcome\r\n"
+                          ":omairc!u@h JOIN :#omarchy\r\n"));
+    QCOMPARE(controller.selectedTarget(), QStringLiteral("#omarchy"));
+
+    controller.selectConversation(QString(), QStringLiteral("AUTH"));
+    QCOMPARE(controller.selectedTarget(), QStringLiteral("#omarchy"));
 }
 
 int runControllerTests(int argc, char **argv)
