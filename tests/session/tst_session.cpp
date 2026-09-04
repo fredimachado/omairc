@@ -120,6 +120,7 @@ private slots:
     void managerDiscardUnregistersImmediately();
     void pingAndWelcomeProduceStatusEntries();
     void configuredPasswordNeverAppearsInStatusEntries();
+    void setTopicIsSetOnly();
 };
 
 void SessionTest::registersAndAutojoins()
@@ -693,6 +694,28 @@ void SessionTest::configuredPasswordNeverAppearsInStatusEntries()
             QCOMPARE(entry.text(), entry.label() + QStringLiteral(" ***"));
         }
     }
+}
+
+void SessionTest::setTopicIsSetOnly()
+{
+    Fixture fixture;
+    fixture.connectTls();
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
+                          ":server 001 omairc :Welcome\r\n"));
+    QCOMPARE(fixture.session->state(), IrcSession::State::Registered);
+
+    const int before = fixture.transport->writtenFrames().size();
+    QVERIFY(!fixture.session->setTopic(QStringLiteral("#omarchy"), QString()));
+    QVERIFY(!fixture.session->setTopic(QString(), QStringLiteral("hello")));
+    QCOMPARE(fixture.transport->writtenFrames().size(), before);
+    for (const QByteArray& frame : fixture.transport->writtenFrames())
+        QVERIFY(!frame.contains(QByteArrayLiteral("TOPIC")));
+
+    QVERIFY(fixture.session->setTopic(QStringLiteral("#omarchy"),
+                                      QStringLiteral("hello")));
+    QCOMPARE(fixture.transport->writtenFrames().last(),
+             QByteArrayLiteral("TOPIC #omarchy :hello\r\n"));
 }
 
 int runSessionTests(int argc, char **argv)

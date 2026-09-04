@@ -45,6 +45,15 @@ bool logContains(QAbstractItemModel *lines, const QString& needle)
     }
     return false;
 }
+
+bool framesContain(const QByteArrayList& frames, const QByteArray& needle)
+{
+    for (const QByteArray& frame : frames) {
+        if (frame.contains(needle))
+            return true;
+    }
+    return false;
+}
 }
 
 class CommandTest : public QObject
@@ -58,6 +67,7 @@ private slots:
     void parseUnknown();
     void parseClose();
     void parseQuery();
+    void parseTopic();
     void catalogLookupAndScope();
     void closeWrongScopeUsesCatalogSentence();
     void conversationSendAndUnknown();
@@ -128,6 +138,9 @@ void CommandTest::parseUnknown()
 
     const IrcCommand notQuit = IrcCommand::parse(QStringLiteral("/q"));
     QCOMPARE(notQuit.verb, IrcCommand::Verb::Unknown);
+
+    const IrcCommand notTopic = IrcCommand::parse(QStringLiteral("/t"));
+    QCOMPARE(notTopic.verb, IrcCommand::Verb::Unknown);
 }
 
 void CommandTest::parseClose()
@@ -173,6 +186,29 @@ void CommandTest::parseQuery()
     QVERIFY(escapedMsg.isLiveMessage());
 }
 
+void CommandTest::parseTopic()
+{
+    const IrcCommand bare = IrcCommand::parse(QStringLiteral("/topic"));
+    QCOMPARE(bare.verb, IrcCommand::Verb::Topic);
+    QCOMPARE(bare.name, QStringLiteral("/topic"));
+    QVERIFY(bare.argument.isEmpty());
+    QVERIFY(!bare.isLiveMessage());
+    QVERIFY(bare.allowedOn(IrcComposerSurface::Conversation));
+    QVERIFY(!bare.allowedOn(IrcComposerSurface::Status));
+
+    const IrcCommand text = IrcCommand::parse(QStringLiteral("/TOPIC Hello world"));
+    QCOMPARE(text.verb, IrcCommand::Verb::Topic);
+    QCOMPARE(text.argument, QStringLiteral("Hello world"));
+    QCOMPARE(text.name, QStringLiteral("/TOPIC"));
+    QVERIFY(!text.isLiveMessage());
+
+    const IrcCommand hash = IrcCommand::parse(
+        QStringLiteral("/topic #omarchy is the place"));
+    QCOMPARE(hash.verb, IrcCommand::Verb::Topic);
+    QCOMPARE(hash.argument, QStringLiteral("#omarchy is the place"));
+    QVERIFY(!hash.isLiveMessage());
+}
+
 void CommandTest::catalogLookupAndScope()
 {
     const IrcVerbSpec *join = IrcVerbTable::lookup(QStringLiteral("J"));
@@ -191,7 +227,7 @@ void CommandTest::catalogLookupAndScope()
     QVERIFY(!IrcVerbTable::find(IrcCommand::Verb::Empty));
     QVERIFY(!IrcVerbTable::find(IrcCommand::Verb::Unknown));
 
-    QCOMPARE(IrcVerbTable::all().size(), 8);
+    QCOMPARE(IrcVerbTable::all().size(), 9);
     for (const IrcVerbSpec& row : IrcVerbTable::all())
         QVERIFY(row.name != QLatin1String("say"));
 
@@ -212,20 +248,30 @@ void CommandTest::catalogLookupAndScope()
     QCOMPARE(close->scope, IrcVerbScope::Conversation);
     QCOMPARE(close->wrongScopeText, QStringLiteral("Close applies to direct messages"));
 
+    const IrcVerbSpec *topic = IrcVerbTable::lookup(QStringLiteral("topic"));
+    QVERIFY(topic);
+    QCOMPARE(topic->verb, IrcCommand::Verb::Topic);
+    QCOMPARE(topic->usage, QStringLiteral("/topic [text]"));
+    QVERIFY(topic->aliases.isEmpty());
+    QCOMPARE(topic->scope, IrcVerbScope::Conversation);
+    QCOMPARE(topic->wrongScopeText, QStringLiteral("Topic applies to channels"));
+
     const QVector<IrcVerbSpec> status = IrcVerbTable::visibleOn(IrcComposerSurface::Status);
     QCOMPARE(status.size(), 6);
     for (const IrcVerbSpec& row : status) {
         QVERIFY(row.allowedOn(IrcComposerSurface::Status));
         QVERIFY(row.verb != IrcCommand::Verb::Action);
         QVERIFY(row.verb != IrcCommand::Verb::Close);
+        QVERIFY(row.verb != IrcCommand::Verb::Topic);
     }
 
     const QVector<IrcVerbSpec> conversation =
         IrcVerbTable::visibleOn(IrcComposerSurface::Conversation);
-    QCOMPARE(conversation.size(), 8);
+    QCOMPARE(conversation.size(), 9);
     bool sawMe = false;
     bool sawClose = false;
     bool sawQuery = false;
+    bool sawTopic = false;
     for (const IrcVerbSpec& row : conversation) {
         if (row.name == QLatin1String("me"))
             sawMe = true;
@@ -233,10 +279,13 @@ void CommandTest::catalogLookupAndScope()
             sawClose = true;
         if (row.name == QLatin1String("query"))
             sawQuery = true;
+        if (row.name == QLatin1String("topic"))
+            sawTopic = true;
     }
     QVERIFY(sawMe);
     QVERIFY(sawClose);
     QVERIFY(sawQuery);
+    QVERIFY(sawTopic);
 
     const IrcCommand say = IrcCommand::parse(QStringLiteral("hello"));
     QVERIFY(say.allowedOn(IrcComposerSurface::Conversation));
@@ -267,6 +316,9 @@ void CommandTest::closeWrongScopeUsesCatalogSentence()
     const IrcCommand query = IrcCommand::parse(QStringLiteral("/query lena"));
     QCOMPARE(ircCommandOutcomeText(IrcCommandOutcome::WrongScope, query),
              QStringLiteral("Select a connected conversation first"));
+    const IrcCommand topic = IrcCommand::parse(QStringLiteral("/topic hello"));
+    QCOMPARE(ircCommandOutcomeText(IrcCommandOutcome::WrongScope, topic),
+             QStringLiteral("Topic applies to channels"));
 }
 
 void CommandTest::conversationSendAndUnknown()
@@ -292,6 +344,29 @@ void CommandTest::conversationSendAndUnknown()
     QCOMPARE(transport->writtenFrames().last(),
              QByteArrayLiteral("JOIN #other\r\n"));
 
+    QVERIFY(controller.sendMessage(QStringLiteral("/topic new banner")));
+    QCOMPARE(transport->writtenFrames().last(),
+             QByteArrayLiteral("TOPIC #omarchy :new banner\r\n"));
+
+    const int beforeEmptyTopic = transport->writtenFrames().size();
+    QVERIFY(controller.sendMessage(QStringLiteral("/topic")));
+    QCOMPARE(transport->writtenFrames().size(), beforeEmptyTopic);
+    QVERIFY(!framesContain(transport->writtenFrames().mid(beforeEmptyTopic),
+                           QByteArrayLiteral("TOPIC")));
+
+    QVERIFY(controller.sendMessage(QStringLiteral("/topic #foo is the topic")));
+    QCOMPARE(transport->writtenFrames().last(),
+             QByteArrayLiteral("TOPIC #omarchy :#foo is the topic\r\n"));
+
+    transport->injectBytes(QByteArrayLiteral(":lena!u@h PRIVMSG omairc :hi\r\n"));
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("lena"));
+    const int beforeDmTopic = transport->writtenFrames().size();
+    QVERIFY(!controller.sendMessage(QStringLiteral("/topic hello")));
+    QCOMPARE(controller.lastError(), QStringLiteral("Topic applies to channels"));
+    QCOMPARE(transport->writtenFrames().size(), beforeDmTopic);
+    QVERIFY(!framesContain(transport->writtenFrames().mid(beforeDmTopic),
+                           QByteArrayLiteral("TOPIC")));
+
     IrcController lonely;
     QVERIFY(!lonely.sendMessage(QStringLiteral("/me waves")));
     QCOMPARE(lonely.lastError(),
@@ -302,6 +377,8 @@ void CommandTest::conversationSendAndUnknown()
     QVERIFY(!lonely.sendMessage(QStringLiteral("/clear")));
     QCOMPARE(lonely.lastError(),
              QStringLiteral("Select a connected conversation first"));
+    QVERIFY(!lonely.sendMessage(QStringLiteral("/topic hello")));
+    QCOMPARE(lonely.lastError(), QStringLiteral("Topic applies to channels"));
     QVERIFY(!lonely.sendMessage(QString()));
 }
 
@@ -329,6 +406,14 @@ void CommandTest::statusSubmitDoesNotSendAction()
     QVERIFY(console->submit(QStringLiteral("/close")));
     QVERIFY(logContains(console->lines(),
                         QStringLiteral("Close applies to direct messages")));
+
+    const int beforeTopic = transport->writtenFrames().size();
+    QVERIFY(console->submit(QStringLiteral("/topic hello")));
+    QCOMPARE(transport->writtenFrames().size(), beforeTopic);
+    QVERIFY(!framesContain(transport->writtenFrames().mid(beforeTopic),
+                           QByteArrayLiteral("TOPIC")));
+    QVERIFY(logContains(console->lines(),
+                        QStringLiteral("Topic applies to channels")));
 
     QVERIFY(console->submit(QStringLiteral("/nope")));
     QVERIFY(logContains(console->lines(), QStringLiteral("Unknown command: /nope")));

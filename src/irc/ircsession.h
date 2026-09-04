@@ -98,6 +98,7 @@ public slots:
     bool sendTyping(const QString& target, IrcTypingPhase phase);
     bool join(const QString& channel);
     bool part(const QString& channel);
+    bool setTopic(const QString& channel, const QString& topic);
     bool clearAway();
     bool changeNick(const QString& nick);
     bool quit(const QString& reason = {});

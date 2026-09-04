@@ -94,6 +94,7 @@ private:
                                IrcComposerSurface surface);
     QString queryNetworkId(IrcComposerSurface surface) const;
     IrcCommandOutcome sendSelectedMessage(const QString& body);
+    IrcCommandOutcome setSelectedTopic(const QString& topic);
     IrcCommandOutcome dispatchQuery(const IrcCommand& command,
                                     IrcComposerSurface surface);
     IrcCommandOutcome clearSurface(IrcComposerSurface surface);

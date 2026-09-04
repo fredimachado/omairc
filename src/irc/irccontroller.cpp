@@ -461,6 +461,9 @@ IrcCommandOutcome IrcController::dispatch(const IrcCommand& command,
         return IrcCommandOutcome::Sent;
     }
 
+    if (command.verb == IrcCommand::Verb::Topic)
+        return setSelectedTopic(command.argument);
+
     IrcSession *active = m_console.boundSession();
     if (!active || active->state() != IrcSession::State::Registered)
         return IrcCommandOutcome::NotConnected;
@@ -524,6 +527,20 @@ IrcCommandOutcome IrcController::sendSelectedMessage(const QString& body)
         }
     }
     return sent ? IrcCommandOutcome::Sent : IrcCommandOutcome::Refused;
+}
+
+IrcCommandOutcome IrcController::setSelectedTopic(const QString& topic)
+{
+    if (!m_selected || !isChannel())
+        return IrcCommandOutcome::WrongScope;
+    if (topic.isEmpty())
+        return IrcCommandOutcome::Sent;
+    IrcSession *session = selectedSession();
+    if (!session || session->state() != IrcSession::State::Registered)
+        return IrcCommandOutcome::NotConnected;
+    return session->setTopic(m_selectedTarget, topic)
+        ? IrcCommandOutcome::Sent
+        : IrcCommandOutcome::Refused;
 }
 
 IrcCommandOutcome IrcController::dispatchQuery(const IrcCommand& command,

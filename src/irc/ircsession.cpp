@@ -284,6 +284,12 @@ bool IrcSession::part(const QString& channel)
         && sendCommand(QStringLiteral("PART %1").arg(channel));
 }
 
+bool IrcSession::setTopic(const QString& channel, const QString& topic)
+{
+    return !channel.isEmpty() && !topic.isEmpty()
+        && sendCommand(QStringLiteral("TOPIC %1 :%2").arg(channel, topic));
+}
+
 bool IrcSession::clearAway()
 {
     return sendCommand(QStringLiteral("AWAY"));

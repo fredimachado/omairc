@@ -82,6 +82,9 @@ private slots:
     void partFromDirectIsWrongScope();
     void statusPartDefaultsToSelectedChannel();
     void partImplicitUsesSelectedSession();
+    void topicUsesSelectedSession();
+    void topicFromDirectIsWrongScope();
+    void emptyTopicDoesNotWrite();
     void closeDirectMessageDropsAndSelectsNeighbor();
     void closeDirectMessageInvokableOnChannelIsSilent();
     void closeDirectMessageWhileDisconnected();
@@ -457,6 +460,78 @@ void ControllerTest::partImplicitUsesSelectedSession()
     QCOMPARE(transportB->writtenFrames().last(),
              QByteArrayLiteral("PART #omarchy\r\n"));
     QVERIFY(!framesContain(transportA->writtenFrames(), QByteArrayLiteral("PART")));
+}
+
+void ControllerTest::topicUsesSelectedSession()
+{
+    IrcController controller;
+    auto *transportA = new FakeIrcTransport;
+    auto *transportB = new FakeIrcTransport;
+    IrcSession *sessionA = controller.addSession(config(QStringLiteral("network-a")),
+                                                 transportA);
+    IrcSession *sessionB = controller.addSession(config(QStringLiteral("network-b")),
+                                                 transportB);
+    QVERIFY(sessionA);
+    QVERIFY(sessionB);
+
+    QVERIFY(controller.start(QStringLiteral("network-a")));
+    registerSession(sessionA, transportA);
+    transportA->injectBytes(QByteArrayLiteral(":omairc!u@h JOIN :#omarchy\r\n"));
+
+    registerSession(sessionB, transportB);
+    transportB->injectBytes(QByteArrayLiteral(":omairc!u@h JOIN :#omarchy\r\n"));
+    controller.selectConversation(QStringLiteral("network-b"),
+                                  QStringLiteral("#omarchy"));
+
+    const QString topicBefore = controller.topic();
+    QVERIFY(controller.sendMessage(QStringLiteral("/topic from b")));
+    QCOMPARE(transportB->writtenFrames().last(),
+             QByteArrayLiteral("TOPIC #omarchy :from b\r\n"));
+    QVERIFY(!framesContain(transportA->writtenFrames(), QByteArrayLiteral("TOPIC")));
+    QCOMPARE(controller.topic(), topicBefore);
+
+    transportB->injectBytes(
+        QByteArrayLiteral(":omairc!u@h TOPIC #omarchy :from b\r\n"));
+    QCOMPARE(controller.topic(), QStringLiteral("from b"));
+}
+
+void ControllerTest::topicFromDirectIsWrongScope()
+{
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+                                                transport);
+    QVERIFY(session);
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    registerSession(session, transport);
+    transport->injectBytes(
+        QByteArrayLiteral(":omairc!u@h JOIN :#omarchy\r\n"
+                          ":lena!u@h PRIVMSG omairc :hi\r\n"));
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("lena"));
+    const int framesBefore = transport->writtenFrames().size();
+
+    QVERIFY(!controller.sendMessage(QStringLiteral("/topic hello")));
+    QCOMPARE(controller.lastError(), QStringLiteral("Topic applies to channels"));
+    QCOMPARE(transport->writtenFrames().size(), framesBefore);
+    QVERIFY(!framesContain(transport->writtenFrames(), QByteArrayLiteral("TOPIC")));
+}
+
+void ControllerTest::emptyTopicDoesNotWrite()
+{
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+                                                transport);
+    QVERIFY(session);
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    registerSession(session, transport);
+    transport->injectBytes(QByteArrayLiteral(":omairc!u@h JOIN :#omarchy\r\n"));
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    const int framesBefore = transport->writtenFrames().size();
+
+    QVERIFY(controller.sendMessage(QStringLiteral("/topic")));
+    QCOMPARE(transport->writtenFrames().size(), framesBefore);
+    QVERIFY(!framesContain(transport->writtenFrames(), QByteArrayLiteral("TOPIC")));
 }
 
 void ControllerTest::closeDirectMessageDropsAndSelectsNeighbor()

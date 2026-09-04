@@ -41,6 +41,9 @@ const QVector<IrcVerbSpec>& IrcVerbTable::all()
          QStringLiteral("Close applies to direct messages")},
         {IrcCommand::Verb::Query, QStringLiteral("query"), {QStringLiteral("msg")},
          QStringLiteral("/query <nick> [text]"), IrcVerbScope::Either, {}},
+        {IrcCommand::Verb::Topic, QStringLiteral("topic"), {},
+         QStringLiteral("/topic [text]"), IrcVerbScope::Conversation,
+         QStringLiteral("Topic applies to channels")},
     };
     return rows;
 }
