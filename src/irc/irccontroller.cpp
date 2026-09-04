@@ -2,6 +2,7 @@
 
 #include "irccommand.h"
 #include "irceventtranslator.h"
+#include "ircviewnotify.h"
 #include "irctyping.h"
 
 #include <QByteArray>
@@ -173,8 +174,7 @@ int IrcController::peopleCount() const
 {
     if (!m_selected)
         return 0;
-    const IrcConversationState *conversation = m_reducer.find(*m_selected);
-    return conversation ? conversation->peopleCount() : 0;
+    return m_members.rowCount();
 }
 
 QString IrcController::connectionStatus() const
@@ -648,9 +648,8 @@ void IrcController::echoNoticeIfPresent(IrcSession *session,
         m_reducer.conversationKey(session->networkId(), target);
     if (!m_reducer.find(key))
         return;
-    m_reducer.apply(IrcNoticeEvent{
+    apply(IrcNoticeEvent{
         key, session->nick(), body, QDateTime::currentDateTimeUtc(), target});
-    reloadModels();
 }
 
 IrcCommandOutcome IrcController::clearSurface(IrcComposerSurface surface)
@@ -708,19 +707,38 @@ void IrcController::apply(const IrcEvent& event)
         m_selected = conversation.key;
         m_selectedTarget = conversation.target;
         m_reducer.markSelected(conversation.key);
-        m_messages.select(conversation.key);
-        m_members.select(conversation.key);
+        m_messages.setSelected(conversation.key);
+        m_members.setSelected(conversation.key);
     }
-    if (typingOnly) {
-        emit typingChanged();
+    const bool releasedStale = m_reducer.releaseStaleNamesSync(
+        m_selected, QDateTime::currentDateTimeUtc());
+    IrcViewNotify notify = classifyViewNotify(event, m_reducer, m_selected);
+    if (releasedStale) {
+        notify.conversations = true;
+        notify.messages = true;
+        notify.members = IrcMemberSurface::Reset;
+        notify.selection = true;
+    }
+    publish(notify);
+    if (notify.rearmTyping)
         armTypingRefresh();
-        return;
-    }
-    reloadModels();
-    emit selectionChanged();
-    emit typingChanged();
-    armTypingRefresh();
     notifySelfAwayIfChanged(previousId, previousAway);
+}
+
+void IrcController::publish(const IrcViewNotify& notify)
+{
+    if (notify.conversations)
+        m_conversations.reload();
+    if (notify.messages)
+        m_messages.reload();
+    if (notify.members == IrcMemberSurface::Reset)
+        m_members.reload();
+    else if (notify.members == IrcMemberSurface::Row)
+        m_members.touch(notify.nick);
+    if (notify.selection)
+        emit selectionChanged();
+    if (notify.typing)
+        emit typingChanged();
 }
 
 void IrcController::handleMessage(const QString& networkId,
@@ -734,7 +752,6 @@ void IrcController::handleMessage(const QString& networkId,
             features.applyTokens(tokens);
             m_reducer.setServerFeatures(networkId, features);
             reloadModels();
-            emit selectionChanged();
         }
         return;
     }
@@ -765,9 +782,11 @@ void IrcController::handleMessage(const QString& networkId,
 
 void IrcController::reloadModels()
 {
-    m_conversations.reload();
-    m_messages.reload();
-    m_members.reload();
+    if (channelNamesSyncing(m_reducer, m_selected)) {
+        m_conversations.reload();
+        return;
+    }
+    publish(IrcViewNotify::resetAll());
 }
 
 IrcSession *IrcController::selectedSession() const

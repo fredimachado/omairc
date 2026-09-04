@@ -110,6 +110,14 @@ QHash<int, QByteArray> ConversationListModel::roleNames() const
 void ConversationListModel::reload()
 {
     QVector<IrcConversationKey> keys = ircSidebarOrder(m_reducer);
+    if (keys == m_keys) {
+        if (keys.isEmpty())
+            return;
+        emit dataChanged(index(0, 0),
+                         index(keys.size() - 1, 0),
+                         {Qt::DisplayRole, ConversationRole, UnreadRole, MentionRole});
+        return;
+    }
     beginResetModel();
     m_keys = std::move(keys);
     endResetModel();
