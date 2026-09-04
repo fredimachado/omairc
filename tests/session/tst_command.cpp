@@ -69,10 +69,12 @@ private slots:
     void parseQuery();
     void parseTopic();
     void parseNotice();
+    void parseAwayAndBack();
     void catalogLookupAndScope();
     void closeWrongScopeUsesCatalogSentence();
     void conversationSendAndUnknown();
     void statusSubmitDoesNotSendAction();
+    void awayAndBackWriteAwayFrames();
 };
 
 void CommandTest::parseEmptyAndSay()
@@ -232,6 +234,52 @@ void CommandTest::parseNotice()
     QVERIFY(escaped.isLiveMessage());
 }
 
+void CommandTest::parseAwayAndBack()
+{
+    const IrcCommand lunch = IrcCommand::parse(QStringLiteral("/away lunch"));
+    QCOMPARE(lunch.verb, IrcCommand::Verb::Away);
+    QCOMPARE(lunch.argument, QStringLiteral("lunch"));
+    QCOMPARE(lunch.name, QStringLiteral("/away"));
+    QVERIFY(!lunch.isLiveMessage());
+    QVERIFY(lunch.allowedOn(IrcComposerSurface::Conversation));
+    QVERIFY(lunch.allowedOn(IrcComposerSurface::Status));
+
+    const IrcCommand bareAway = IrcCommand::parse(QStringLiteral("/away"));
+    QCOMPARE(bareAway.verb, IrcCommand::Verb::Away);
+    QVERIFY(bareAway.argument.isEmpty());
+    QVERIFY(!bareAway.isLiveMessage());
+
+    const IrcCommand foldedAway = IrcCommand::parse(QStringLiteral("/AWAY lunch"));
+    QCOMPARE(foldedAway.verb, IrcCommand::Verb::Away);
+    QCOMPARE(foldedAway.argument, QStringLiteral("lunch"));
+    QCOMPARE(foldedAway.name, QStringLiteral("/AWAY"));
+    QVERIFY(!foldedAway.isLiveMessage());
+
+    const IrcCommand back = IrcCommand::parse(QStringLiteral("/back"));
+    QCOMPARE(back.verb, IrcCommand::Verb::Back);
+    QVERIFY(back.argument.isEmpty());
+    QCOMPARE(back.name, QStringLiteral("/back"));
+    QVERIFY(!back.isLiveMessage());
+    QVERIFY(back.allowedOn(IrcComposerSurface::Conversation));
+    QVERIFY(back.allowedOn(IrcComposerSurface::Status));
+
+    const IrcCommand leftover = IrcCommand::parse(QStringLiteral("/back leftover"));
+    QCOMPARE(leftover.verb, IrcCommand::Verb::Back);
+    QVERIFY(leftover.argument.isEmpty());
+    QVERIFY(!leftover.isLiveMessage());
+
+    const IrcCommand foldedBack = IrcCommand::parse(QStringLiteral("/BACK leftover"));
+    QCOMPARE(foldedBack.verb, IrcCommand::Verb::Back);
+    QVERIFY(foldedBack.argument.isEmpty());
+    QCOMPARE(foldedBack.name, QStringLiteral("/BACK"));
+    QVERIFY(!foldedBack.isLiveMessage());
+
+    const IrcCommand escaped = IrcCommand::parse(QStringLiteral("//away lunch"));
+    QCOMPARE(escaped.verb, IrcCommand::Verb::Say);
+    QCOMPARE(escaped.argument, QStringLiteral("/away lunch"));
+    QVERIFY(escaped.isLiveMessage());
+}
+
 void CommandTest::catalogLookupAndScope()
 {
     const IrcVerbSpec *join = IrcVerbTable::lookup(QStringLiteral("J"));
@@ -250,7 +298,7 @@ void CommandTest::catalogLookupAndScope()
     QVERIFY(!IrcVerbTable::find(IrcCommand::Verb::Empty));
     QVERIFY(!IrcVerbTable::find(IrcCommand::Verb::Unknown));
 
-    QCOMPARE(IrcVerbTable::all().size(), 10);
+    QCOMPARE(IrcVerbTable::all().size(), 12);
     for (const IrcVerbSpec& row : IrcVerbTable::all())
         QVERIFY(row.name != QLatin1String("say"));
 
@@ -288,8 +336,26 @@ void CommandTest::catalogLookupAndScope()
     QVERIFY(notice->wrongScopeText.isEmpty());
     QVERIFY(notice->aliases.isEmpty());
 
+    const IrcVerbSpec *away = IrcVerbTable::lookup(QStringLiteral("away"));
+    QVERIFY(away);
+    QCOMPARE(away->verb, IrcCommand::Verb::Away);
+    QCOMPARE(away->name, QStringLiteral("away"));
+    QCOMPARE(away->usage, QStringLiteral("/away [reason]"));
+    QCOMPARE(away->scope, IrcVerbScope::Either);
+    QVERIFY(away->wrongScopeText.isEmpty());
+    QVERIFY(away->aliases.isEmpty());
+
+    const IrcVerbSpec *back = IrcVerbTable::lookup(QStringLiteral("back"));
+    QVERIFY(back);
+    QCOMPARE(back->verb, IrcCommand::Verb::Back);
+    QCOMPARE(back->name, QStringLiteral("back"));
+    QCOMPARE(back->usage, QStringLiteral("/back"));
+    QCOMPARE(back->scope, IrcVerbScope::Either);
+    QVERIFY(back->wrongScopeText.isEmpty());
+    QVERIFY(back->aliases.isEmpty());
+
     const QVector<IrcVerbSpec> status = IrcVerbTable::visibleOn(IrcComposerSurface::Status);
-    QCOMPARE(status.size(), 7);
+    QCOMPARE(status.size(), 9);
     for (const IrcVerbSpec& row : status) {
         QVERIFY(row.allowedOn(IrcComposerSurface::Status));
         QVERIFY(row.verb != IrcCommand::Verb::Action);
@@ -299,12 +365,14 @@ void CommandTest::catalogLookupAndScope()
 
     const QVector<IrcVerbSpec> conversation =
         IrcVerbTable::visibleOn(IrcComposerSurface::Conversation);
-    QCOMPARE(conversation.size(), 10);
+    QCOMPARE(conversation.size(), 12);
     bool sawMe = false;
     bool sawClose = false;
     bool sawQuery = false;
     bool sawTopic = false;
     bool sawNotice = false;
+    bool sawAway = false;
+    bool sawBack = false;
     for (const IrcVerbSpec& row : conversation) {
         if (row.name == QLatin1String("me"))
             sawMe = true;
@@ -316,12 +384,18 @@ void CommandTest::catalogLookupAndScope()
             sawTopic = true;
         if (row.name == QLatin1String("notice"))
             sawNotice = true;
+        if (row.name == QLatin1String("away"))
+            sawAway = true;
+        if (row.name == QLatin1String("back"))
+            sawBack = true;
     }
     QVERIFY(sawMe);
     QVERIFY(sawClose);
     QVERIFY(sawQuery);
     QVERIFY(sawTopic);
     QVERIFY(sawNotice);
+    QVERIFY(sawAway);
+    QVERIFY(sawBack);
 
     const IrcCommand say = IrcCommand::parse(QStringLiteral("hello"));
     QVERIFY(say.allowedOn(IrcComposerSurface::Conversation));
@@ -456,6 +530,60 @@ void CommandTest::statusSubmitDoesNotSendAction()
 
     IrcController empty;
     QVERIFY(empty.console()->submit(QStringLiteral("/clear")));
+}
+
+void CommandTest::awayAndBackWriteAwayFrames()
+{
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    IrcSession *session = controller.addSession(config(), transport);
+    QVERIFY(session);
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    welcome(transport);
+    QCOMPARE(session->state(), IrcSession::State::Registered);
+    transport->injectBytes(QByteArrayLiteral(":omairc!u@h JOIN :#omarchy\r\n"));
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+
+    QVERIFY(controller.sendMessage(QStringLiteral("/away lunch")));
+    QCOMPARE(transport->writtenFrames().last(),
+             QByteArrayLiteral("AWAY :lunch\r\n"));
+    QVERIFY(!controller.selfAway());
+
+    QVERIFY(controller.sendMessage(QStringLiteral("/away")));
+    QCOMPARE(transport->writtenFrames().last(),
+             QByteArrayLiteral("AWAY\r\n"));
+
+    QVERIFY(controller.sendMessage(QStringLiteral("/back leftover")));
+    QCOMPARE(transport->writtenFrames().last(),
+             QByteArrayLiteral("AWAY\r\n"));
+
+    IrcStatusConsole *console = controller.console();
+    QVERIFY(console->submit(QStringLiteral("/away lunch")));
+    QCOMPARE(transport->writtenFrames().last(),
+             QByteArrayLiteral("AWAY :lunch\r\n"));
+    QVERIFY(console->submit(QStringLiteral("/away")));
+    QCOMPARE(transport->writtenFrames().last(),
+             QByteArrayLiteral("AWAY\r\n"));
+    QVERIFY(console->submit(QStringLiteral("/back leftover")));
+    QCOMPARE(transport->writtenFrames().last(),
+             QByteArrayLiteral("AWAY\r\n"));
+
+    transport->remoteClose();
+    QVERIFY(session->state() != IrcSession::State::Registered);
+    const int framesBefore = transport->writtenFrames().size();
+    QVERIFY(!controller.sendMessage(QStringLiteral("/away lunch")));
+    QCOMPARE(controller.lastError(), QStringLiteral("Not connected"));
+    QVERIFY(console->submit(QStringLiteral("/back")));
+    QVERIFY(logContains(console->lines(), QStringLiteral("Not connected")));
+    QCOMPARE(transport->writtenFrames().size(), framesBefore);
+    QVERIFY(!framesContain(transport->writtenFrames().mid(framesBefore),
+                           QByteArrayLiteral("AWAY")));
+
+    IrcController lonely;
+    QVERIFY(!lonely.sendMessage(QStringLiteral("/away lunch")));
+    QCOMPARE(lonely.lastError(), QStringLiteral("Not connected"));
+    QVERIFY(!lonely.sendMessage(QStringLiteral("/back")));
+    QCOMPARE(lonely.lastError(), QStringLiteral("Not connected"));
 }
 
 int runCommandTests(int argc, char **argv)

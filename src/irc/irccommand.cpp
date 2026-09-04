@@ -46,6 +46,10 @@ const QVector<IrcVerbSpec>& IrcVerbTable::all()
          QStringLiteral("Topic applies to channels")},
         {IrcCommand::Verb::Notice, QStringLiteral("notice"), {},
          QStringLiteral("/notice <target> <text>"), IrcVerbScope::Either, {}},
+        {IrcCommand::Verb::Away, QStringLiteral("away"), {},
+         QStringLiteral("/away [reason]"), IrcVerbScope::Either, {}},
+        {IrcCommand::Verb::Back, QStringLiteral("back"), {},
+         QStringLiteral("/back"), IrcVerbScope::Either, {}},
     };
     return rows;
 }
@@ -110,6 +114,8 @@ IrcCommand IrcCommand::parse(const QString& input)
 
     const IrcVerbSpec *spec = IrcVerbTable::lookup(command.name.mid(1));
     command.verb = spec ? spec->verb : Verb::Unknown;
+    if (command.verb == Verb::Back)
+        command.argument.clear();
     return command;
 }
 

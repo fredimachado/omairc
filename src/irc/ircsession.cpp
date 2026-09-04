@@ -297,9 +297,17 @@ bool IrcSession::setTopic(const QString& channel, const QString& topic)
         && sendCommand(QStringLiteral("TOPIC %1 :%2").arg(channel, topic));
 }
 
+bool IrcSession::setAway(const QString& reason)
+{
+    const QString trimmed = reason.trimmed();
+    return sendCommand(
+        trimmed.isEmpty() ? QStringLiteral("AWAY")
+                         : QStringLiteral("AWAY :%1").arg(trimmed));
+}
+
 bool IrcSession::clearAway()
 {
-    return sendCommand(QStringLiteral("AWAY"));
+    return setAway({});
 }
 
 bool IrcSession::changeNick(const QString& nick)

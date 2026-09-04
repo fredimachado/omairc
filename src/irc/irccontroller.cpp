@@ -501,6 +501,12 @@ IrcCommandOutcome IrcController::dispatch(const IrcCommand& command,
     case IrcCommand::Verb::Quit:
         sent = active->quit(command.argument);
         break;
+    case IrcCommand::Verb::Away:
+        sent = active->setAway(command.argument);
+        break;
+    case IrcCommand::Verb::Back:
+        sent = active->clearAway();
+        break;
     default:
         return IrcCommandOutcome::Unsupported;
     }

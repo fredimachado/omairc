@@ -121,6 +121,7 @@ private slots:
     void pingAndWelcomeProduceStatusEntries();
     void configuredPasswordNeverAppearsInStatusEntries();
     void setTopicIsSetOnly();
+    void setAwayEncodesOptionalReason();
 };
 
 void SessionTest::registersAndAutojoins()
@@ -716,6 +717,32 @@ void SessionTest::setTopicIsSetOnly()
                                       QStringLiteral("hello")));
     QCOMPARE(fixture.transport->writtenFrames().last(),
              QByteArrayLiteral("TOPIC #omarchy :hello\r\n"));
+}
+
+void SessionTest::setAwayEncodesOptionalReason()
+{
+    Fixture fixture;
+    fixture.connectTls();
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
+                          ":server 001 omairc :Welcome\r\n"));
+    QCOMPARE(fixture.session->state(), IrcSession::State::Registered);
+
+    QVERIFY(fixture.session->setAway(QStringLiteral("lunch")));
+    QCOMPARE(fixture.transport->writtenFrames().last(),
+             QByteArrayLiteral("AWAY :lunch\r\n"));
+
+    QVERIFY(fixture.session->setAway({}));
+    QCOMPARE(fixture.transport->writtenFrames().last(),
+             QByteArrayLiteral("AWAY\r\n"));
+
+    QVERIFY(fixture.session->setAway(QStringLiteral("   ")));
+    QCOMPARE(fixture.transport->writtenFrames().last(),
+             QByteArrayLiteral("AWAY\r\n"));
+
+    QVERIFY(fixture.session->clearAway());
+    QCOMPARE(fixture.transport->writtenFrames().last(),
+             QByteArrayLiteral("AWAY\r\n"));
 }
 
 int runSessionTests(int argc, char **argv)

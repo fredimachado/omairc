@@ -101,6 +101,7 @@ private slots:
     void statusNoticeMissingBodyStaysOpen();
     void disconnectedNoticeIsNotConnected();
     void noticeDoesNotUnaway();
+    void awayWaitsForNumericThenChatUnaways();
     void statusQueryClosesStatus();
     void statusQueryChannelStaysOpen();
     void disconnectedQuerySelectsBareNotText();
@@ -1021,6 +1022,45 @@ void ControllerTest::noticeDoesNotUnaway()
              QByteArrayLiteral("NOTICE lena :later\r\n"));
     QCOMPARE(transport->writtenFrames().count(QByteArrayLiteral("AWAY\r\n")),
              awayBefore);
+    QVERIFY(controller.selfAway());
+}
+
+void ControllerTest::awayWaitsForNumericThenChatUnaways()
+{
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+                                                transport);
+    QVERIFY(session);
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    transport->completeConnect();
+    transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
+                          ":server 001 omairc :Welcome\r\n"
+                          ":omairc!u@h JOIN :#omarchy\r\n"));
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    QVERIFY(!controller.selfAway());
+
+    QVERIFY(controller.sendMessage(QStringLiteral("/away lunch")));
+    QCOMPARE(transport->writtenFrames().last(),
+             QByteArrayLiteral("AWAY :lunch\r\n"));
+    QVERIFY(!controller.selfAway());
+
+    transport->injectBytes(
+        QByteArrayLiteral(":server 306 omairc :You have been marked as being away\r\n"));
+    QVERIFY(controller.selfAway());
+
+    QVERIFY(controller.sendMessage(QStringLiteral("hello")));
+    QCOMPARE(transport->writtenFrames().at(transport->writtenFrames().size() - 2),
+             QByteArrayLiteral("PRIVMSG #omarchy :hello\r\n"));
+    QCOMPARE(transport->writtenFrames().last(), QByteArrayLiteral("AWAY\r\n"));
+    QCOMPARE(transport->writtenFrames().count(QByteArrayLiteral("AWAY\r\n")), 1);
+    QVERIFY(controller.selfAway());
+
+    QVERIFY(controller.sendMessage(QStringLiteral("again")));
+    QCOMPARE(transport->writtenFrames().last(),
+             QByteArrayLiteral("PRIVMSG #omarchy :again\r\n"));
+    QCOMPARE(transport->writtenFrames().count(QByteArrayLiteral("AWAY\r\n")), 1);
     QVERIFY(controller.selfAway());
 }
 
