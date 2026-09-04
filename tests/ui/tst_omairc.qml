@@ -277,6 +277,8 @@ TestCase {
         property string lastError: ""
         property bool hasAwayPresence: true
         property bool hasMemberStatus: true
+        property bool hasTyping: false
+        property var typingNicks: []
         property var conversations: liveConversations
         property var messages: liveMessages
         property var members: prefixedMembers
@@ -290,6 +292,13 @@ TestCase {
 
         function sendMessage() {
             return false;
+        }
+
+        function nickIsTyping(nick) {
+            return false;
+        }
+
+        function notifyComposerText() {
         }
     }
 
