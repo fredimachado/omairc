@@ -141,6 +141,8 @@ TestCase {
         property string lastError: ""
         property bool hasAwayPresence: true
         property bool hasMemberStatus: true
+        property bool hasTyping: false
+        property var typingNicks: []
         property var conversations: liveConversations
         property var messages: liveMessages
         property var members: liveMembers
@@ -163,6 +165,13 @@ TestCase {
         function sendMessage(text) {
             return false;
         }
+
+        function nickIsTyping(nick) {
+            return false;
+        }
+
+        function notifyComposerText(text) {
+        }
     }
 
     QtObject {
@@ -178,6 +187,8 @@ TestCase {
         property string currentNick: ""
         property bool hasAwayPresence: true
         property bool hasMemberStatus: true
+        property bool hasTyping: false
+        property var typingNicks: []
         property var conversations: liveConversations
         property var messages: liveMessages
         property var members: liveMembers
@@ -191,6 +202,13 @@ TestCase {
 
         function sendMessage() {
             return false;
+        }
+
+        function nickIsTyping() {
+            return false;
+        }
+
+        function notifyComposerText() {
         }
     }
 
@@ -213,6 +231,8 @@ TestCase {
         property string lastError: ""
         property bool hasAwayPresence: false
         property bool hasMemberStatus: false
+        property bool hasTyping: false
+        property var typingNicks: ["anna"]
         property var conversations: liveConversations
         property var messages: liveMessages
         property var members: gatedMembers
@@ -226,6 +246,13 @@ TestCase {
 
         function sendMessage() {
             return false;
+        }
+
+        function nickIsTyping(nick) {
+            return hasTyping && typingNicks.indexOf(nick) !== -1;
+        }
+
+        function notifyComposerText() {
         }
     }
 
@@ -481,6 +508,59 @@ TestCase {
         compare(member.away, true);
         compare(member.Accessible.description, "writing docs");
         window.close();
+    }
+
+    function test_typingChromeFollowsCapabilities() {
+        liveConsole.open = false;
+        gatedIrc.hasTyping = false;
+        gatedIrc.isChannel = true;
+        gatedIrc.selectedTarget = "#omarchy";
+        var window = createTemporaryObject(gatedWindowComponent, null);
+        verify(window !== null, "The gated window should load");
+        tryCompare(window, "visible", true);
+        waitForRendering(window.contentItem);
+
+        verify(findChild(window, "membersPanel").visible);
+        var members = findChild(window, "membersList");
+        verify(members !== null, "Could not find membersList");
+        var member = members.itemAtIndex(0);
+        verify(member !== null, "The anna member delegate should be rendered");
+        var glyph = findChild(member, "member-typing-anna");
+        verify(glyph !== null, "The member typing glyph should be rendered");
+        compare(glyph.visible, false);
+
+        gatedIrc.hasTyping = true;
+        tryCompare(glyph, "visible", true);
+
+        gatedIrc.isChannel = false;
+        gatedIrc.selectedTarget = "anna";
+        waitForRendering(window.contentItem);
+        var overlay = findChild(window, "composer-typing");
+        verify(overlay !== null, "The composer typing overlay should exist");
+        tryCompare(overlay, "visible", true);
+        window.close();
+        gatedIrc.hasTyping = false;
+        gatedIrc.isChannel = true;
+        gatedIrc.selectedTarget = "#omarchy";
+    }
+
+    function test_mockTypingShowsMemberGlyphAndDmOverlay() {
+        var members = item("membersList");
+        verify(item("membersPanel").visible);
+        var anna = members.itemAtIndex(0);
+        verify(anna !== null, "The anna member delegate should be rendered");
+        var glyph = findChild(anna, "member-typing-anna");
+        verify(glyph !== null, "The member typing glyph should be rendered");
+        tryCompare(glyph, "visible", true);
+        saveScreenshot("typing-member-glyph");
+
+        mouseClick(anna);
+        tryCompare(appWindow, "currentConversation", "anna");
+        verify(!item("membersPanel").visible);
+        var overlay = item("composer-typing");
+        tryCompare(overlay, "visible", true);
+        compare(overlay.height, appWindow.scaledSize(12));
+        saveScreenshot("typing-dm-overlay");
     }
 
     function test_openStatusFromNetworkHeaderKeepsAuthOutOfDirects() {

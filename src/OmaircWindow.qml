@@ -68,6 +68,9 @@ ApplicationWindow {
         ? irc.peopleCount : peopleCountFor(currentConversation)
     readonly property bool memberStatusVisible: !irc || irc.hasMemberStatus
     readonly property bool awayPresenceVisible: !irc || irc.hasAwayPresence
+    readonly property bool typingVisible: !irc || irc.hasTyping
+    readonly property var typingNicks: irc ? irc.typingNicks : mockTypingNicks()
+    property int typingPulse: 0
     readonly property string selfNick: {
         if (irc) {
             var live = irc.currentNick
@@ -82,6 +85,34 @@ ApplicationWindow {
     Material.theme: darkMode ? Material.Dark : Material.Light
     Material.accent: accentColor
     color: pageColor
+
+    Timer {
+        interval: 320
+        repeat: true
+        running: win.typingVisible && win.typingNicks && win.typingNicks.length > 0
+        onTriggered: win.typingPulse = (win.typingPulse + 1) % 3
+    }
+
+    component TypingDots: Row {
+        id: dots
+
+        property color ink: win.mutedColor
+        property int pixelSize: win.scaledSize(12)
+
+        Accessible.ignored: true
+        spacing: 0
+
+        Repeater {
+            model: 3
+            Text {
+                text: "."
+                color: dots.ink
+                opacity: win.typingPulse === index ? 1 : 0.28
+                font.family: "iA Writer Mono S"
+                font.pixelSize: dots.pixelSize
+            }
+        }
+    }
 
     function scaledSize(pixels) {
         return Math.max(1, Math.round(pixels * textScale));
@@ -145,6 +176,12 @@ ApplicationWindow {
         if (currentConversation === "dax")
             return membersModel.get(index === 0 ? 1 : 4);
         return membersModel.get(index);
+    }
+
+    function mockTypingNicks() {
+        if (currentConversation === "#omarchy" || currentConversation === "anna")
+            return ["anna"];
+        return [];
     }
 
     function messagesFor(name) {
@@ -1525,6 +1562,23 @@ ApplicationWindow {
                 Component.onCompleted: positionViewAtEnd()
             }
 
+            Item {
+                objectName: "composer-typing"
+                visible: win.typingVisible && !win.currentConversationIsChannel
+                    && !win.consoleVisible && win.typingNicks && win.typingNicks.length > 0
+                height: win.scaledSize(12)
+                anchors.left: composerShell.left
+                anchors.right: composerShell.right
+                anchors.bottom: composerShell.top
+                z: 1
+
+                TypingDots {
+                    anchors.left: parent.left
+                    anchors.verticalCenter: parent.verticalCenter
+                    pixelSize: win.scaledSize(10)
+                }
+            }
+
             Rectangle {
                 id: composerShell
                 anchors.left: parent.left
@@ -1565,6 +1619,7 @@ ApplicationWindow {
                         (height - contentHeight) / 2)
                     bottomPadding: topPadding
                     background: Item {}
+                    onTextChanged: if (win.irc) win.irc.notifyComposerText(text)
 
                     Keys.onPressed: function(event) {
                         if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
@@ -1899,6 +1954,10 @@ ApplicationWindow {
                     readonly property string label: memberData.label
                     readonly property string status: memberData.status
                     readonly property bool away: win.awayPresenceVisible && memberData.away
+                    readonly property bool typing: win.typingVisible
+                        && (win.irc
+                            ? win.irc.nickIsTyping(memberDelegate.nick)
+                            : win.typingNicks.indexOf(memberDelegate.nick) !== -1)
 
                     objectName: "member-" + nick
                     Accessible.name: label
@@ -1963,14 +2022,29 @@ ApplicationWindow {
                         anchors.verticalCenter: parent.verticalCenter
                         spacing: 0
 
-                        Text {
+                        Row {
                             width: parent.width
-                            text: memberDelegate.label
-                            color: memberDelegate.away ? win.mutedColor : win.inkColor
-                            elide: Text.ElideRight
-                            font.family: "iA Writer Mono S"
-                            font.bold: memberDelegate.nick === win.selfNick
-                            font.pixelSize: win.scaledSize(12)
+                            spacing: win.scaledSize(4)
+
+                            Text {
+                                width: Math.max(0, parent.width
+                                    - (memberDelegate.typing
+                                        ? memberTypingGlyph.implicitWidth + parent.spacing
+                                        : 0))
+                                text: memberDelegate.label
+                                color: memberDelegate.away ? win.mutedColor : win.inkColor
+                                elide: Text.ElideRight
+                                font.family: "iA Writer Mono S"
+                                font.bold: memberDelegate.nick === win.selfNick
+                                font.pixelSize: win.scaledSize(12)
+                            }
+
+                            TypingDots {
+                                id: memberTypingGlyph
+                                objectName: "member-typing-" + memberDelegate.nick
+                                visible: memberDelegate.typing
+                                pixelSize: win.scaledSize(12)
+                            }
                         }
 
                         Text {
