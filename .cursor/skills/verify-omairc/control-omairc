@@ -441,7 +441,9 @@ cmd_qml_suite() {
     "$EVIDENCE_DIR/open-direct-message" \
     "$EVIDENCE_DIR/status-console" \
     "$EVIDENCE_DIR/member-presence" \
-    "$EVIDENCE_DIR/identity-footer"
+    "$EVIDENCE_DIR/identity-footer" \
+    "$EVIDENCE_DIR/keyboard" \
+    "$EVIDENCE_DIR/typing"
   for pair in \
     "connection-sheet.png:connect/first-run.png" \
     "switch-channel.png:switch-conversation/after-desktop.png" \
@@ -450,7 +452,9 @@ cmd_qml_suite() {
     "open-direct-message.png:open-direct-message/mira-dm.png" \
     "status-console.png:status-console/after-open.png" \
     "switch-channel.png:member-presence/after-desktop.png" \
-    "switch-channel.png:identity-footer/mock-fred.png"
+    "switch-channel.png:identity-footer/mock-fred.png" \
+    "typing-member-glyph.png:typing/member-glyph.png" \
+    "typing-dm-overlay.png:typing/dm-overlay.png"
   do
     src="$ROOT/test-artifacts/${pair%%:*}"
     dest="$EVIDENCE_DIR/${pair#*:}"

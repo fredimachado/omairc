@@ -15,6 +15,7 @@ Send a message lets a user add a local line to the current mock transcript from 
 - Click the composer, type, and press `Enter`.
 - Press `Ctrl+L`, type, and press `Enter`.
 - Type text and click `SEND`.
+- Press `Tab` to complete a nick, or `Up` / `Down` to recall sent lines. Those chords are keyboard.
 
 ## Driving it with control-omairc
 

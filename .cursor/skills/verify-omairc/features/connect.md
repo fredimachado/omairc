@@ -12,7 +12,7 @@ Connect is the first-run sheet that asks for a network profile before the compil
 ## How to get to it (user POV)
 
 - Launch Omairc with no saved complete profile. The sheet is already open.
-- After a profile exists, click the small `edit` control in the sidebar header to open it again. The network name opens Status.
+- After a profile exists, press `Ctrl+,` or click the small `edit` control in the sidebar header to open it again. The network name opens Status.
 
 ## Driving it with control-omairc
 
@@ -30,3 +30,4 @@ Preconditions:
 - Discard on first run restores the suggested Libera defaults. It does not close the sheet.
 - Apply on the compiled window starts a real IRC session. That is not this feature's proof, and it does not restore the mock `#omarchy` sidebar.
 - Mock conversation recipes need `qml-suite` (`irc` left null). They do not start from this sheet.
+- `qml-suite` overwrites `test-artifacts/verify/connect/first-run.png`. If this run also captured a compiled first-run, keep that file as `compiled-first-run.png` before running the suite.

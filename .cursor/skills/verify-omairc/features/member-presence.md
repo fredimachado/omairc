@@ -33,3 +33,4 @@ Preconditions:
 - Showing or hiding the whole panel is toggle-members. This feature is what the rows contain while the panel is open.
 - Clicking a member still opens a DM. That is open-direct-message, not presence.
 - Live rank glyphs replace the bare nick in the label (`@mira`). Mock rows stay `mira`.
+- Bouncing ellipsis beside a nick is typing, not presence.
