@@ -1,0 +1,8 @@
+These certificates and private keys are test-only fixtures for the live
+ircd harness. They must never be trusted by the production application.
+
+`live.pem` / `live.key` are a self-signed localhost certificate with
+`DNS:localhost` and `IP:127.0.0.1`. The key is world-readable on purpose:
+non-root ircd processes in Docker need to load it. Live tests inject
+`live.pem` as a CA into `QtIrcTransport(QSslConfiguration)`. That is not
+`IrcConnection`'s system-CA factory.

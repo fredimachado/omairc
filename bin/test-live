@@ -1,0 +1,192 @@
+#!/usr/bin/env sh
+set -eu
+
+ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
+LIVE="$ROOT/tests/live"
+COMPOSE_FILE="$LIVE/compose.yml"
+export COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME:-omairc-live-$$}"
+PROFILE="${OMAIRC_LIVE_PROFILE:-l1}"
+
+if ! command -v docker >/dev/null 2>&1; then
+  echo "Docker is required to run Omairc live ircd tests." >&2
+  echo "On Arch/Omarchy, install: docker docker-compose" >&2
+  exit 1
+fi
+if ! docker compose version >/dev/null 2>&1; then
+  echo "docker compose is required to run Omairc live ircd tests." >&2
+  exit 1
+fi
+
+if command -v qmake6 >/dev/null 2>&1; then
+  QMAKE=qmake6
+elif command -v qmake >/dev/null 2>&1 && qmake -query QT_VERSION | grep -q '^6\.'; then
+  QMAKE=qmake
+else
+  echo "A Qt 6 qmake (qmake6) is required to test omairc." >&2
+  exit 1
+fi
+
+JOBS="$(nproc 2>/dev/null || echo 1)"
+mkdir -p "$ROOT/build-live-tests"
+cd "$ROOT/build-live-tests"
+"$QMAKE" "$LIVE/live.pro"
+make -j"$JOBS"
+
+compose() {
+  docker compose -f "$COMPOSE_FILE" --profile "$PROFILE" "$@"
+}
+
+cleanup() {
+  compose down -v --remove-orphans >/dev/null 2>&1 || true
+}
+trap cleanup EXIT HUP INT TERM
+
+wait_irc() {
+  host=$1
+  port=$2
+  python3 - "$host" "$port" <<'PY'
+import socket, sys, time
+host, port = sys.argv[1], int(sys.argv[2])
+deadline = time.time() + 60
+last = b""
+while time.time() < deadline:
+    try:
+        with socket.create_connection((host, port), 2) as sock:
+            sock.settimeout(2)
+            sock.sendall(b"CAP LS 302\r\n")
+            buf = b""
+            end = time.time() + 6
+            while time.time() < end:
+                try:
+                    chunk = sock.recv(4096)
+                except socket.timeout:
+                    continue
+                if not chunk:
+                    break
+                buf += chunk
+                last = buf
+                if b"CAP" in buf.upper() or b" 001 " in buf:
+                    sys.exit(0)
+    except OSError:
+        pass
+    time.sleep(1)
+sys.stderr.write("no IRC banner from %s:%s last=%r\n" % (host, port, last))
+sys.exit(1)
+PY
+}
+
+published_port() {
+  service=$1
+  container_port=$2
+  compose port "$service" "$container_port" 2>/dev/null | awk -F: '{print $NF}'
+}
+
+service_defined() {
+  compose config --services 2>/dev/null | grep -qx "$1"
+}
+
+service_running() {
+  compose ps --status running --services 2>/dev/null | grep -qx "$1"
+}
+
+service_exited() {
+  compose ps -a --format '{{.Service}} {{.Status}}' 2>/dev/null \
+    | grep -E "^$1[[:space:]]+Exited" >/dev/null
+}
+
+wait_published() {
+  service=$1
+  container_port=$2
+  i=0
+  while [ "$i" -lt 80 ]; do
+    if service_exited "$service"; then
+      echo "Service $service exited before publishing port $container_port." >&2
+      compose logs "$service" >&2 || true
+      return 1
+    fi
+    if service_running "$service"; then
+      port="$(published_port "$service" "$container_port")"
+      case "$port" in
+        ''|*[!0-9]*) ;;
+        *)
+          echo "$port"
+          return 0
+          ;;
+      esac
+    fi
+    i=$((i + 1))
+    sleep 0.25
+  done
+  echo "Service $service did not publish port $container_port." >&2
+  compose logs "$service" >&2 || true
+  return 1
+}
+
+export_daemon() {
+  name=$1
+  plain_port=$2
+  tls_port=${3:-}
+  wait_irc "$HOST" "$plain_port"
+  case "$name" in
+    ergo)
+      export OMAIRC_LIVE_ERGO_PLAIN_PORT="$plain_port"
+      export OMAIRC_LIVE_ERGO_TLS_PORT="$tls_port"
+      ;;
+    solanum)
+      export OMAIRC_LIVE_SOLANUM_PLAIN_PORT="$plain_port"
+      export OMAIRC_LIVE_SOLANUM_TLS_PORT="$tls_port"
+      ;;
+    ngircd)
+      export OMAIRC_LIVE_NGIRCD_PLAIN_PORT="$plain_port"
+      ;;
+    *)
+      echo "Unknown live daemon $name." >&2
+      return 1
+      ;;
+  esac
+  DAEMONS="${DAEMONS:+$DAEMONS,}$name"
+}
+
+echo "Starting live ircd fixtures (project $COMPOSE_PROJECT_NAME, profile $PROFILE)..."
+compose up -d --build
+
+HOST=127.0.0.1
+export OMAIRC_LIVE_CERT_DIR="$LIVE/certs"
+export OMAIRC_LIVE_HOST="$HOST"
+DAEMONS=
+
+if service_defined ergo; then
+  ERGO_PLAIN="$(wait_published ergo 6667)"
+  ERGO_TLS="$(wait_published ergo 6697)"
+  export_daemon ergo "$ERGO_PLAIN" "$ERGO_TLS"
+fi
+
+if service_defined solanum; then
+  SOLANUM_PLAIN="$(wait_published solanum 6667)"
+  SOLANUM_TLS="$(wait_published solanum 6697)"
+  export_daemon solanum "$SOLANUM_PLAIN" "$SOLANUM_TLS"
+fi
+
+if service_defined ngircd; then
+  NGIRCD_PLAIN="$(wait_published ngircd 6667)"
+  export_daemon ngircd "$NGIRCD_PLAIN"
+fi
+
+if [ -z "$DAEMONS" ]; then
+  echo "No live ircd services started for profile $PROFILE." >&2
+  compose logs >&2 || true
+  exit 1
+fi
+
+export OMAIRC_LIVE_DAEMONS="$DAEMONS"
+echo "Live daemons: $DAEMONS"
+
+set +e
+"$ROOT/build-live-tests/live_tests"
+status=$?
+set -e
+if [ "$status" -ne 0 ]; then
+  echo "live_tests failed; compose logs follow." >&2
+  compose logs >&2 || true
+fi
+exit "$status"

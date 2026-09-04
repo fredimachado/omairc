@@ -46,10 +46,14 @@ conversations instead.
 ```sh
 bin/test
 bin/test-desktop
+bin/test-live
 ```
 
 `bin/test-desktop` is optional. On Arch/Omarchy it needs `xorg-server-xvfb`,
 `xorg-xauth`, `xdotool`, and `imagemagick`.
+
+`bin/test-live` is optional and needs Docker. It starts Ergo, Solanum, and
+ngIRCd on loopback and is not part of `bin/test`.
 
 ## Requirements
 
