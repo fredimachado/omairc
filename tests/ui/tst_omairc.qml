@@ -462,6 +462,48 @@ TestCase {
         compare(item("messageList").Accessible.name, "Messages in #desktop");
     }
 
+    function test_jumpToNextUnreadPrefersMention() {
+        compare(appWindow.currentConversation, "#omarchy");
+
+        keyClick(Qt.Key_A, Qt.AltModifier);
+
+        tryCompare(appWindow, "currentConversation", "#ricing");
+        compare(appWindow.currentTopic,
+                "Themes, type, wallpapers, and the tiny details.");
+        tryCompare(item("messageComposer"), "activeFocus", true);
+
+        keyClick(Qt.Key_A, Qt.AltModifier);
+
+        tryCompare(appWindow, "currentConversation", "anna");
+        compare(appWindow.currentTopic, "Direct message with anna");
+    }
+
+    function test_jumpToNextUnreadFromNonMentionPrefersMention() {
+        mouseClick(item("conversation-#desktop"));
+        tryCompare(appWindow, "currentConversation", "#desktop");
+
+        keyClick(Qt.Key_A, Qt.AltModifier);
+
+        tryCompare(appWindow, "currentConversation", "#ricing");
+    }
+
+    function test_jumpToNextUnreadFallsBackToUnread() {
+        mouseClick(item("conversation-#ricing"));
+        tryCompare(appWindow, "currentConversation", "#ricing");
+
+        var anna = item("directConversationRepeater").itemAt(0);
+        verify(anna !== null, "The anna direct-message delegate should be rendered");
+        mouseClick(anna);
+        tryCompare(appWindow, "currentConversation", "anna");
+
+        mouseClick(item("conversation-#omarchy"));
+        tryCompare(appWindow, "currentConversation", "#omarchy");
+
+        keyClick(Qt.Key_A, Qt.AltModifier);
+
+        tryCompare(appWindow, "currentConversation", "#desktop");
+    }
+
     function test_toggleMembersWithShortcut() {
         var panel = item("membersPanel");
         verify(panel.visible);

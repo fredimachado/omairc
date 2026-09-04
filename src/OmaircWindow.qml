@@ -280,6 +280,41 @@ ApplicationWindow {
         rows[nextIndex].activate();
     }
 
+    function jumpToNextUnread() {
+        var rows = sidebarConversationRows();
+        if (rows.length === 0)
+            return;
+
+        var current = -1;
+        for (var index = 0; index < rows.length; ++index) {
+            if (rows[index].conversationName === currentConversation) {
+                current = index;
+                break;
+            }
+        }
+
+        var start = current < 0 ? 0 : (current + 1) % rows.length;
+        var mentionRow = null;
+        var unreadRow = null;
+        for (var step = 0; step < rows.length; ++step) {
+            var rowIndex = (start + step) % rows.length;
+            if (rowIndex === current)
+                continue;
+
+            var row = rows[rowIndex];
+            if (mentionRow === null && row.mention === true)
+                mentionRow = row;
+            if (unreadRow === null && row.unread > 0)
+                unreadRow = row;
+            if (mentionRow)
+                break;
+        }
+
+        var target = mentionRow ? mentionRow : unreadRow;
+        if (target)
+            target.activate();
+    }
+
     function sendMessage() {
         var body = composer.text.trim();
         if (body.length === 0)
@@ -374,6 +409,12 @@ ApplicationWindow {
         sequence: "Alt+Up"
         context: Qt.ApplicationShortcut
         onActivated: stepConversation(-1)
+    }
+
+    Shortcut {
+        sequence: "Alt+A"
+        context: Qt.ApplicationShortcut
+        onActivated: jumpToNextUnread()
     }
 
     Shortcut {

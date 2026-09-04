@@ -45,6 +45,7 @@ and do not construct `IrcConnection`.
 ## Keyboard controls
 
 - Walk channels then direct messages with `Alt+Down` and `Alt+Up`. Click a sidebar row to jump.
+- Jump to the next unread with `Alt+A`, mentions first.
 - Click a channel member to open or create a direct message.
 - Send messages with `Enter`.
 - Toggle Status with `Ctrl+``.
