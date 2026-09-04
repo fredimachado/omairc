@@ -13,6 +13,7 @@ Open a direct message lets a user click another person in a channel member list 
 ## How to get to it (user POV)
 
 - In a channel with the member panel open, click a member who is not `fred`.
+- Press `Ctrl+Shift+P`, move with arrows, and press Enter on a member who is not `fred`.
 - Click an existing DIRECT MESSAGES row (`anna` or `dax`).
 
 ## Driving it with control-omairc

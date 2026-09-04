@@ -14,6 +14,7 @@ Toggle members lets a user hide or show the channel member list from the header 
 
 - Click the header people control (`12 PEOPLE` on `#omarchy`).
 - Press `Ctrl+Shift+M` while a channel is open.
+- Press `Ctrl+Shift+P` to focus the list (and reopen it if it was hidden). That focus path is keyboard.
 
 ## Driving it with control-omairc
 

@@ -14,6 +14,7 @@ Switch conversation lets a user leave the current mock chat and open another cha
 
 - Click `#omarchy`, `#desktop`, `#ricing`, or `#help` under CHANNELS.
 - Click `anna` or `dax` under DIRECT MESSAGES.
+- Press `Alt+Down` / `Alt+Up` to walk CHANNELS then DIRECT MESSAGES. Press `Alt+A` for the next unread (mentions first).
 
 ## Driving it with control-omairc
 
@@ -38,3 +39,4 @@ Preconditions:
 - Direct messages do not show a people count or member panel. Do not treat a missing panel as a toggle failure.
 - Sidebar labels render as `#  omarchy` without repeating the hash in the name string. Assert the window title (`#omarchy - Omairc`), not the clipped label text.
 - Clicking the CHANNELS `+` opens a toast about real IRC connectivity. That is not a conversation switch.
+- `Alt+Down` / `Alt+Up` / `Alt+A` are keyboard. Status is not in that walk. Prove those chords with `qml-suite`; a fresh compiled launch has no sidebar rows.

@@ -50,3 +50,5 @@ Keep implementation details out of the map. Name only user paths, stable handles
 - [Status console](./status-console.md) covers the network Status pane, header entry points, AUTH notices, and the shared composer.
 - [Member presence](./member-presence.md) covers presence dots, away dimming, status lines, capability gating, and live PREFIX ranks.
 - [Identity footer](./identity-footer.md) covers the sidebar nick footer (`fred` on first run, then the connection or live nick).
+- [Keyboard](./keyboard.md) covers conversation walk, unread jump, nick complete, history, member focus, the shortcut sheet, and `Ctrl+,`.
+- [Typing](./typing.md) covers bouncing ellipsis on channel members and in direct messages, plus the `message-tags` gate.
