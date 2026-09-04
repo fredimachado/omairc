@@ -422,18 +422,23 @@ cmd_qml_suite() {
   cmd_doctor_qml >/dev/null
   "$ROOT/bin/test"
   mkdir -p \
+    "$EVIDENCE_DIR/connect" \
     "$EVIDENCE_DIR/switch-conversation" \
     "$EVIDENCE_DIR/send-message" \
     "$EVIDENCE_DIR/toggle-members" \
     "$EVIDENCE_DIR/open-direct-message"
-  cp -f -- "$ROOT/test-artifacts/switch-channel.png" \
-    "$EVIDENCE_DIR/switch-conversation/after-desktop.png"
-  cp -f -- "$ROOT/test-artifacts/send-message.png" \
-    "$EVIDENCE_DIR/send-message/after-send.png"
-  cp -f -- "$ROOT/test-artifacts/toggle-members.png" \
-    "$EVIDENCE_DIR/toggle-members/members-hidden.png"
-  cp -f -- "$ROOT/test-artifacts/open-direct-message.png" \
-    "$EVIDENCE_DIR/open-direct-message/mira-dm.png"
+  for pair in \
+    "connection-sheet.png:connect/first-run.png" \
+    "switch-channel.png:switch-conversation/after-desktop.png" \
+    "send-message.png:send-message/after-send.png" \
+    "toggle-members.png:toggle-members/members-hidden.png" \
+    "open-direct-message.png:open-direct-message/mira-dm.png"
+  do
+    src="$ROOT/test-artifacts/${pair%%:*}"
+    dest="$EVIDENCE_DIR/${pair#*:}"
+    [ -s "$src" ] || die "qml-suite expected $src"
+    cp -f -- "$src" "$dest"
+  done
   echo "qml suite evidence copied to $EVIDENCE_DIR"
 }
 

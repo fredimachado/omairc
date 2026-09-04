@@ -19,8 +19,9 @@ Switch conversation lets a user leave the current mock chat and open another cha
 
 Preconditions:
 
-- Isolated Omairc is healthy and titled `#omarchy - Omairc`.
-- `control-omairc doctor` reports the disposable XDG directory and default-sized window.
+- Mock conversation UI is showing (`#omarchy - Omairc`, sidebar includes `#desktop` and `anna`). That is `qml-suite` (`irc` left null), not a fresh compiled launch.
+- A fresh compiled window is titled ` - Omairc` with Connect. Do not start this recipe there.
+- For a desktop instance that is already titled `#omarchy - Omairc`, `control-omairc doctor` must report the disposable XDG directory and default-sized window.
 
 - **Open #desktop.** Choose the `#desktop` channel. Run `control-omairc click-conversation --name "#desktop"` then `control-omairc wait-title --exact "#desktop - Omairc"`. The title is `#desktop - Omairc`, the header topic is `Desktops should feel personal, fast, and calm.`, and the people control reads `8 PEOPLE`.
 - **Open #ricing.** Choose the `#ricing` channel. Run `control-omairc click-conversation --name "#ricing"` then `control-omairc wait-title --exact "#ricing - Omairc"`. The topic is `Themes, type, wallpapers, and the tiny details.` and the people control reads `10 PEOPLE`.
@@ -29,7 +30,7 @@ Preconditions:
 - **Open anna.** Choose `anna` under DIRECT MESSAGES. Run `control-omairc click-conversation --name anna` then `control-omairc wait-title --exact "anna - Omairc"`. The topic is `Direct message with anna`. The people control and member panel are absent.
 - **Open dax.** Choose `dax`. Run `control-omairc click-conversation --name dax` then `control-omairc wait-title --exact "dax - Omairc"`. The topic is `Direct message with dax`.
 - **Proof.** Return to `#desktop` and capture the channel state. Run `control-omairc click-conversation --name "#desktop"`, `control-omairc wait-title --exact "#desktop - Omairc"`, and `control-omairc screenshot --feature switch-conversation --name after-desktop`. The screenshot shows `#desktop` selected, topic about desktops, `8 PEOPLE`, and the `#desktop` unread badge gone.
-- **Offscreen suite.** When Xvfb tools are missing, run `control-omairc doctor-qml` then `control-omairc qml-suite`. `bin/test` clicks `conversation-#desktop` and writes `test-artifacts/verify/switch-conversation/after-desktop.png`. The image must show `#desktop`, the desktop topic, and `8 PEOPLE`. This does not prove the compiled-window click path.
+- **Offscreen suite.** When Xvfb tools are missing, run `control-omairc doctor-qml` then `control-omairc qml-suite`. `bin/test` clicks `conversation-#desktop` and writes `test-artifacts/switch-channel.png`. `qml-suite` copies it to `test-artifacts/verify/switch-conversation/after-desktop.png`. The image must show `#desktop`, the desktop topic, and `8 PEOPLE`. This does not prove the compiled-window click path.
 
 ## Gotchas
 

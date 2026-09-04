@@ -19,9 +19,9 @@ Open a direct message lets a user click another person in a channel member list 
 
 Preconditions:
 
-- Isolated Omairc is healthy and titled `#omarchy - Omairc`.
-- The member panel is visible (`ONLINE - 12`).
-- This launch has not already created a `mira` sidebar row.
+- Mock conversation UI is showing (`#omarchy - Omairc`, members visible, no `mira` sidebar row). That is `qml-suite` (`irc` left null), not a fresh compiled launch.
+- A fresh compiled window is titled ` - Omairc` with Connect. Do not start this recipe there.
+- For a desktop instance, the member panel is visible (`ONLINE - 12`) and this launch has not already created a `mira` sidebar row.
 
 - **Open seeded anna.** Click `anna` in the member list. Run `control-omairc click-member --name anna` then `control-omairc wait-title --exact "anna - Omairc"`. The topic is `Direct message with anna`, the member panel is gone, and anna's unread badge is gone.
 - **Return to channel.** Choose `#omarchy`. Run `control-omairc click-conversation --name "#omarchy"` then `control-omairc wait-title --exact "#omarchy - Omairc"`.
@@ -29,6 +29,7 @@ Preconditions:
 - **Own history.** Send a line in mira's conversation. Run `control-omairc send --text "Hi mira from verify"`. Switch to `#omarchy` and back to mira. Run `control-omairc click-conversation --name "#omarchy"`, `control-omairc wait-title --exact "#omarchy - Omairc"`, `control-omairc click-member --name mira`, and `control-omairc wait-title --exact "mira - Omairc"`. The mira transcript still has `Hi mira from verify` and `#omarchy` does not.
 - **Ignore self.** Return to `#omarchy` and click `fred`. Run `control-omairc click-conversation --name "#omarchy"`, `control-omairc wait-title --exact "#omarchy - Omairc"`, and `control-omairc click-member --name fred`. The title stays `#omarchy - Omairc`.
 - **Proof.** Capture the created mira conversation. Run `control-omairc screenshot --feature open-direct-message --name mira-dm`. The screenshot shows title identity `mira`, a `mira` sidebar row, no member panel, and `Hi mira from verify`.
+- **Offscreen suite.** When Xvfb tools are missing, run `control-omairc doctor-qml` then `control-omairc qml-suite`. `bin/test` clicks `mira` and writes `test-artifacts/open-direct-message.png`. `qml-suite` copies it to `test-artifacts/verify/open-direct-message/mira-dm.png`. The image must show `mira` selected, the beginning line, and no member panel. This does not prove the compiled-window `click-member` path.
 
 ## Gotchas
 
