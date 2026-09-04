@@ -35,6 +35,24 @@ QVariant roleAt(const QAbstractItemModel *model, int row, int role)
 {
     return model->data(model->index(row, 0), role);
 }
+
+int rowForTarget(const QAbstractItemModel *model, const QString& target)
+{
+    for (int row = 0; row < model->rowCount(); ++row) {
+        if (roleAt(model, row, ConversationListModel::ConversationRole) == target)
+            return row;
+    }
+    return -1;
+}
+
+bool framesContain(const QByteArrayList& frames, const QByteArray& needle)
+{
+    for (const QByteArray& frame : frames) {
+        if (frame.contains(needle))
+            return true;
+    }
+    return false;
+}
 }
 
 class ControllerTest : public QObject
@@ -47,6 +65,10 @@ private slots:
     void emptyNetworkIdDoesNotSwitch();
     void presenceCapabilitiesGateAwayAndStatus();
     void defaultPrefixPaintsLabelNotNick();
+    void channelCloseSlashIsWrongScope();
+    void closeDirectMessageDropsAndSelectsNeighbor();
+    void closeDirectMessageInvokableOnChannelIsSilent();
+    void closeDirectMessageWhileDisconnected();
 };
 
 void ControllerTest::reducesTrafficAndRoutesOutboundByNetwork()
@@ -282,6 +304,132 @@ void ControllerTest::defaultPrefixPaintsLabelNotNick()
     QCOMPARE(members->rowCount(), 3);
     QCOMPARE(roleAt(members, 0, MemberListModel::NickRole), QStringLiteral("Alice"));
     QCOMPARE(roleAt(members, 0, MemberListModel::LabelRole), QStringLiteral("+Alice"));
+}
+
+void ControllerTest::channelCloseSlashIsWrongScope()
+{
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+                                                transport);
+    QVERIFY(session);
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    transport->completeConnect();
+    transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
+                          ":server 001 omairc :Welcome\r\n"
+                          ":omairc!u@h JOIN :#omarchy\r\n"));
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    QVERIFY(controller.sendMessage(QStringLiteral("hello")));
+    QCOMPARE(transport->writtenFrames().last(),
+             QByteArrayLiteral("PRIVMSG #omarchy :hello\r\n"));
+    const int framesBefore = transport->writtenFrames().size();
+
+    QVERIFY(!controller.sendMessage(QStringLiteral("/close")));
+    QCOMPARE(controller.lastError(),
+             QStringLiteral("Close applies to direct messages"));
+    QCOMPARE(controller.selectedTarget(), QStringLiteral("#omarchy"));
+    QCOMPARE(transport->writtenFrames().size(), framesBefore);
+    QVERIFY(!framesContain(transport->writtenFrames(), QByteArrayLiteral("PART")));
+    QVERIFY(!framesContain(transport->writtenFrames(), QByteArrayLiteral("QUIT")));
+}
+
+void ControllerTest::closeDirectMessageDropsAndSelectsNeighbor()
+{
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+                                                transport);
+    QVERIFY(session);
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    transport->completeConnect();
+    transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
+                          ":server 001 omairc :Welcome\r\n"
+                          ":omairc!u@h JOIN :#omarchy\r\n"
+                          ":omairc!u@h JOIN :#desktop\r\n"
+                          ":omairc!u@h PART #desktop\r\n"
+                          ":lena!u@h PRIVMSG omairc :hi\r\n"
+                          ":zed!u@h PRIVMSG omairc :later\r\n"));
+
+    auto *conversations =
+        qobject_cast<QAbstractItemModel *>(controller.conversations());
+    QVERIFY(conversations);
+    QCOMPARE(conversations->rowCount(), 4);
+    QCOMPARE(roleAt(conversations, 0, ConversationListModel::ConversationRole),
+             QStringLiteral("#omarchy"));
+    QCOMPARE(roleAt(conversations, 1, ConversationListModel::ConversationRole),
+             QStringLiteral("#desktop"));
+    QCOMPARE(roleAt(conversations, 2, ConversationListModel::ConversationRole),
+             QStringLiteral("lena"));
+    QCOMPARE(roleAt(conversations, 3, ConversationListModel::ConversationRole),
+             QStringLiteral("zed"));
+    QVERIFY(rowForTarget(conversations, QStringLiteral("#desktop")) >= 0);
+
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("lena"));
+    const int framesBeforeClose = transport->writtenFrames().size();
+    QVERIFY(controller.sendMessage(QStringLiteral("/close")));
+    QCOMPARE(controller.lastError(), QString());
+    QCOMPARE(controller.selectedTarget(), QStringLiteral("zed"));
+    QVERIFY(rowForTarget(conversations, QStringLiteral("lena")) < 0);
+    QVERIFY(rowForTarget(conversations, QStringLiteral("zed")) >= 0);
+    QVERIFY(rowForTarget(conversations, QStringLiteral("#desktop")) >= 0);
+    QCOMPARE(transport->writtenFrames().size(), framesBeforeClose);
+    QVERIFY(!framesContain(transport->writtenFrames(), QByteArrayLiteral("PART")));
+    QVERIFY(!framesContain(transport->writtenFrames(), QByteArrayLiteral("QUIT")));
+
+    QVERIFY(controller.sendMessage(QStringLiteral("/close")));
+    QCOMPARE(controller.selectedTarget(), QStringLiteral("#desktop"));
+    QVERIFY(rowForTarget(conversations, QStringLiteral("zed")) < 0);
+    QVERIFY(rowForTarget(conversations, QStringLiteral("#omarchy")) >= 0);
+    QVERIFY(rowForTarget(conversations, QStringLiteral("#desktop")) >= 0);
+}
+
+void ControllerTest::closeDirectMessageInvokableOnChannelIsSilent()
+{
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+                                                transport);
+    QVERIFY(session);
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    transport->completeConnect();
+    transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
+                          ":server 001 omairc :Welcome\r\n"
+                          ":omairc!u@h JOIN :#omarchy\r\n"));
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    QVERIFY(!controller.sendMessage(QStringLiteral("/nope")));
+    const QString errorBefore = controller.lastError();
+    QCOMPARE(errorBefore, QStringLiteral("Unknown command: /nope"));
+
+    controller.closeDirectMessage();
+    QCOMPARE(controller.lastError(), errorBefore);
+    QCOMPARE(controller.selectedTarget(), QStringLiteral("#omarchy"));
+}
+
+void ControllerTest::closeDirectMessageWhileDisconnected()
+{
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+                                                transport);
+    QVERIFY(session);
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    transport->completeConnect();
+    transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
+                          ":server 001 omairc :Welcome\r\n"
+                          ":lena!u@h PRIVMSG omairc :hi\r\n"));
+    QCOMPARE(controller.selectedTarget(), QStringLiteral("lena"));
+    transport->remoteClose();
+    QVERIFY(session->state() != IrcSession::State::Registered);
+
+    QVERIFY(controller.sendMessage(QStringLiteral("/close")));
+    QCOMPARE(controller.selectedTarget(), QString());
+    auto *conversations =
+        qobject_cast<QAbstractItemModel *>(controller.conversations());
+    QCOMPARE(conversations->rowCount(), 0);
 }
 
 int runControllerTests(int argc, char **argv)

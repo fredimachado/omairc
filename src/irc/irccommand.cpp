@@ -13,21 +13,31 @@ bool IrcVerbSpec::allowedOn(IrcComposerSurface surface) const
     return false;
 }
 
+QString IrcVerbSpec::wrongScopeMessage() const
+{
+    if (wrongScopeText.isEmpty())
+        return QStringLiteral("Select a connected conversation first");
+    return wrongScopeText;
+}
+
 const QVector<IrcVerbSpec>& IrcVerbTable::all()
 {
     static const QVector<IrcVerbSpec> rows = {
         {IrcCommand::Verb::Action, QStringLiteral("me"), {},
-         QStringLiteral("/me <text>"), IrcVerbScope::Conversation},
+         QStringLiteral("/me <text>"), IrcVerbScope::Conversation, {}},
         {IrcCommand::Verb::Join, QStringLiteral("join"), {QStringLiteral("j")},
-         QStringLiteral("/join <channel>"), IrcVerbScope::Either},
+         QStringLiteral("/join <channel>"), IrcVerbScope::Either, {}},
         {IrcCommand::Verb::Part, QStringLiteral("part"), {QStringLiteral("leave")},
-         QStringLiteral("/part <channel>"), IrcVerbScope::Either},
+         QStringLiteral("/part <channel>"), IrcVerbScope::Either, {}},
         {IrcCommand::Verb::Nick, QStringLiteral("nick"), {},
-         QStringLiteral("/nick <nickname>"), IrcVerbScope::Either},
+         QStringLiteral("/nick <nickname>"), IrcVerbScope::Either, {}},
         {IrcCommand::Verb::Quit, QStringLiteral("quit"), {},
-         QStringLiteral("/quit [reason]"), IrcVerbScope::Either},
+         QStringLiteral("/quit [reason]"), IrcVerbScope::Either, {}},
         {IrcCommand::Verb::Clear, QStringLiteral("clear"), {},
-         QStringLiteral("/clear"), IrcVerbScope::Either},
+         QStringLiteral("/clear"), IrcVerbScope::Either, {}},
+        {IrcCommand::Verb::Close, QStringLiteral("close"), {},
+         QStringLiteral("/close"), IrcVerbScope::Conversation,
+         QStringLiteral("Close applies to direct messages")},
     };
     return rows;
 }
@@ -121,8 +131,11 @@ QString ircCommandOutcomeText(IrcCommandOutcome outcome, const IrcCommand& comma
         return command.name.isEmpty()
             ? QStringLiteral("That command is not supported")
             : QStringLiteral("Unknown command: %1").arg(command.name);
-    case IrcCommandOutcome::WrongScope:
-        return QStringLiteral("Select a connected conversation first");
+    case IrcCommandOutcome::WrongScope: {
+        const IrcVerbSpec *spec = IrcVerbTable::find(command.verb);
+        return spec ? spec->wrongScopeMessage()
+                    : QStringLiteral("Select a connected conversation first");
+    }
     }
     return QStringLiteral("That command is not supported");
 }

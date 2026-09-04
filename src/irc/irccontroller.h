@@ -64,6 +64,7 @@ public:
     Q_INVOKABLE void selectConversation(const QString& networkId,
                                         const QString& target);
     Q_INVOKABLE void openDirectMessage(const QString& nick);
+    Q_INVOKABLE void closeDirectMessage();
     Q_INVOKABLE bool sendMessage(const QString& text);
     Q_INVOKABLE bool nickIsTyping(const QString& nick) const;
     Q_INVOKABLE void notifyComposerText(const QString& text);
@@ -88,6 +89,9 @@ private:
     IrcCommandOutcome dispatch(const IrcCommand& command,
                                IrcComposerSurface surface);
     bool report(IrcCommandOutcome outcome, const IrcCommand& command);
+    bool selectedIsCloseableDirect() const;
+    void dropSelectedDirectAndReselect();
+    void clearConversationSelection();
     IrcSession *selectedSession() const;
     void updateStatus(IrcSession *session);
     void armTypingRefresh();

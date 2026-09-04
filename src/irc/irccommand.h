@@ -19,7 +19,7 @@ enum class IrcVerbScope
 
 struct IrcCommand
 {
-    enum class Verb { Empty, Say, Action, Join, Part, Nick, Quit, Clear, Unknown };
+    enum class Verb { Empty, Say, Action, Join, Part, Nick, Quit, Clear, Close, Unknown };
     Verb verb = Verb::Empty;
     QString name;
     QString argument;
@@ -36,8 +36,10 @@ struct IrcVerbSpec
     QStringList aliases;
     QString usage;
     IrcVerbScope scope = IrcVerbScope::Either;
+    QString wrongScopeText;
 
     bool allowedOn(IrcComposerSurface surface) const;
+    QString wrongScopeMessage() const;
 };
 
 class IrcVerbTable

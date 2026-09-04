@@ -162,6 +162,9 @@ TestCase {
             selectConversation(selectedNetworkId, nick);
         }
 
+        function closeDirectMessage() {
+        }
+
         function sendMessage(text) {
             return false;
         }
@@ -198,6 +201,9 @@ TestCase {
         }
 
         function openDirectMessage() {
+        }
+
+        function closeDirectMessage() {
         }
 
         function sendMessage() {
@@ -252,6 +258,9 @@ TestCase {
         function openDirectMessage() {
         }
 
+        function closeDirectMessage() {
+        }
+
         function sendMessage() {
             return false;
         }
@@ -288,6 +297,9 @@ TestCase {
         }
 
         function openDirectMessage() {
+        }
+
+        function closeDirectMessage() {
         }
 
         function sendMessage() {
@@ -1116,5 +1128,105 @@ TestCase {
         compare(directConversations.model.get(0).directMention, false);
         compare(anna.unread, 0);
         compare(anna.mention, false);
+    }
+
+    function test_channelCtrlWIsNoOp() {
+        compare(appWindow.currentConversation, "#omarchy");
+        var dms = item("directConversationRepeater");
+        compare(dms.count, 2);
+
+        keyClick(Qt.Key_W, Qt.ControlModifier);
+
+        compare(appWindow.currentConversation, "#omarchy");
+        compare(appWindow.consoleVisible, false);
+        compare(dms.count, 2);
+
+        appWindow.closeDirectMessage();
+        compare(appWindow.currentConversation, "#omarchy");
+        compare(dms.count, 2);
+        compare(dms.itemAt(0).conversationName, "anna");
+        compare(dms.itemAt(1).conversationName, "dax");
+    }
+
+    function test_closeDirectMessageSelectsNext() {
+        var dms = item("directConversationRepeater");
+        var anna = dms.itemAt(0);
+        verify(anna !== null, "The anna direct-message delegate should be rendered");
+        mouseClick(anna);
+        tryCompare(appWindow, "currentConversation", "anna");
+
+        keyClick(Qt.Key_W, Qt.ControlModifier);
+
+        tryCompare(appWindow, "currentConversation", "dax");
+        compare(appWindow.consoleVisible, false);
+        compare(dms.count, 1);
+        compare(dms.itemAt(0).conversationName, "dax");
+        compare(findChild(appWindow, "conversation-anna"), null);
+        compare(item("messageList").Accessible.name, "Messages in dax");
+    }
+
+    function test_closeDirectMessageSelectsPreviousWithoutWrapping() {
+        var dms = item("directConversationRepeater");
+        var dax = dms.itemAt(1);
+        verify(dax !== null, "The dax direct-message delegate should be rendered");
+        mouseClick(dax);
+        tryCompare(appWindow, "currentConversation", "dax");
+
+        keyClick(Qt.Key_W, Qt.ControlModifier);
+
+        tryCompare(appWindow, "currentConversation", "anna");
+        compare(appWindow.consoleVisible, false);
+        compare(dms.count, 1);
+        compare(dms.itemAt(0).conversationName, "anna");
+
+        keyClick(Qt.Key_W, Qt.ControlModifier);
+
+        tryCompare(appWindow, "currentConversation", "#help");
+        compare(appWindow.consoleVisible, false);
+        compare(dms.count, 0);
+        compare(findChild(appWindow, "conversation-anna"), null);
+        compare(findChild(appWindow, "conversation-dax"), null);
+    }
+
+    function test_statusShortcutsUntouchedByClose() {
+        var dms = item("directConversationRepeater");
+        var anna = dms.itemAt(0);
+        verify(anna !== null, "The anna direct-message delegate should be rendered");
+        mouseClick(anna);
+        tryCompare(appWindow, "currentConversation", "anna");
+
+        keyClick(Qt.Key_QuoteLeft, Qt.ControlModifier);
+        tryCompare(appWindow, "consoleVisible", true);
+
+        keyClick(Qt.Key_W, Qt.ControlModifier);
+        compare(appWindow.consoleVisible, true);
+        compare(appWindow.currentConversation, "anna");
+        compare(item("directConversationRepeater").count, 2);
+
+        keyClick(Qt.Key_Escape);
+        tryCompare(appWindow, "consoleVisible", false);
+        compare(appWindow.currentConversation, "anna");
+
+        keyClick(Qt.Key_QuoteLeft, Qt.ControlModifier);
+        tryCompare(appWindow, "consoleVisible", true);
+        keyClick(Qt.Key_QuoteLeft, Qt.ControlModifier);
+        tryCompare(appWindow, "consoleVisible", false);
+        compare(appWindow.currentConversation, "anna");
+    }
+
+    function test_typedCloseStaysChatLine() {
+        var composer = item("messageComposer");
+        var messages = item("messageList");
+        var previousCount = messages.model.count;
+        mouseClick(composer);
+        typeText("/close");
+        compare(composer.text, "/close");
+        keyClick(Qt.Key_Return);
+
+        tryCompare(messages.model, "count", previousCount + 1);
+        compare(messages.model.get(previousCount).body, "/close");
+        compare(composer.text, "");
+        compare(appWindow.currentConversation, "#omarchy");
+        compare(item("directConversationRepeater").count, 2);
     }
 }

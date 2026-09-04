@@ -55,6 +55,7 @@ and do not construct `IrcConnection`.
 | `Ctrl+,` | Open Connect |
 | `Ctrl+Shift+M` | Toggle the channel member list |
 | `Ctrl+Shift+P` | Focus the member list (reopens the panel if it was hidden) |
+| `Ctrl+W` | Close the selected direct message |
 | `Enter` | Send, or open a DM from a focused member |
 | `Page Up` / `Page Down` | Scroll the visible transcript (composer stays focused) |
 | `Tab` | Complete a nick in the composer |

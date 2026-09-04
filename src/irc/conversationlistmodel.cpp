@@ -15,6 +15,46 @@ int groupRank(const IrcConversationState *conversation)
 }
 }
 
+QVector<IrcConversationKey> ircSidebarOrder(const IrcEventReducer& reducer)
+{
+    QVector<IrcConversationKey> keys;
+    keys.reserve(int(reducer.conversations().size()));
+    for (const auto& entry : reducer.conversations())
+        keys.append(entry.first);
+
+    std::sort(keys.begin(), keys.end(), [&reducer](const IrcConversationKey& left,
+                                                   const IrcConversationKey& right) {
+        const IrcConversationState *leftState = reducer.find(left);
+        const IrcConversationState *rightState = reducer.find(right);
+        const int leftGroup = groupRank(leftState);
+        const int rightGroup = groupRank(rightState);
+        if (leftGroup != rightGroup)
+            return leftGroup < rightGroup;
+        const QString leftTarget = leftState ? leftState->target : left.normalizedTarget;
+        const QString rightTarget = rightState ? rightState->target : right.normalizedTarget;
+        const int name = QString::compare(leftTarget, rightTarget, Qt::CaseInsensitive);
+        if (name != 0)
+            return name < 0;
+        return left < right;
+    });
+    return keys;
+}
+
+std::optional<IrcConversationKey> ircNeighborAfterDrop(
+    const QVector<IrcConversationKey>& ordered,
+    const IrcConversationKey& dropping)
+{
+    const int n = ordered.size();
+    const int i = ordered.indexOf(dropping);
+    if (i >= 0 && i + 1 < n)
+        return ordered.at(i + 1);
+    if (i >= 0 && i > 0)
+        return ordered.at(i - 1);
+    if (i < 0 && n > 0)
+        return ordered.last();
+    return std::nullopt;
+}
+
 ConversationListModel::ConversationListModel(IrcEventReducer& reducer,
                                              QObject *parent)
     : QAbstractListModel(parent)
@@ -69,27 +109,7 @@ QHash<int, QByteArray> ConversationListModel::roleNames() const
 
 void ConversationListModel::reload()
 {
-    QVector<IrcConversationKey> keys;
-    keys.reserve(int(m_reducer.conversations().size()));
-    for (const auto& entry : m_reducer.conversations())
-        keys.append(entry.first);
-
-    std::sort(keys.begin(), keys.end(), [this](const IrcConversationKey& left,
-                                               const IrcConversationKey& right) {
-        const IrcConversationState *leftState = m_reducer.find(left);
-        const IrcConversationState *rightState = m_reducer.find(right);
-        const int leftGroup = groupRank(leftState);
-        const int rightGroup = groupRank(rightState);
-        if (leftGroup != rightGroup)
-            return leftGroup < rightGroup;
-        const QString leftTarget = leftState ? leftState->target : left.normalizedTarget;
-        const QString rightTarget = rightState ? rightState->target : right.normalizedTarget;
-        const int name = QString::compare(leftTarget, rightTarget, Qt::CaseInsensitive);
-        if (name != 0)
-            return name < 0;
-        return left < right;
-    });
-
+    QVector<IrcConversationKey> keys = ircSidebarOrder(m_reducer);
     beginResetModel();
     m_keys = std::move(keys);
     endResetModel();

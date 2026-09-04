@@ -323,6 +323,65 @@ void IrcController::openDirectMessage(const QString& nick)
     selectConversation(m_selected->networkId, nick);
 }
 
+void IrcController::closeDirectMessage()
+{
+    if (!selectedIsCloseableDirect())
+        return;
+    dropSelectedDirectAndReselect();
+    if (m_lastError.isEmpty())
+        return;
+    m_lastError.clear();
+    emit statusChanged();
+}
+
+bool IrcController::selectedIsCloseableDirect() const
+{
+    if (!m_selected)
+        return false;
+    const IrcConversationState *conversation = m_reducer.find(*m_selected);
+    return !conversation || !conversation->isChannel();
+}
+
+void IrcController::dropSelectedDirectAndReselect()
+{
+    if (!m_selected)
+        return;
+    const IrcConversationKey dropping = *m_selected;
+    const QVector<IrcConversationKey> ordered = ircSidebarOrder(m_reducer);
+    const std::optional<IrcConversationKey> next =
+        ircNeighborAfterDrop(ordered, dropping);
+    QString nextNetworkId;
+    QString nextTarget;
+    if (next) {
+        nextNetworkId = next->networkId;
+        const IrcConversationState *neighbor = m_reducer.find(*next);
+        nextTarget = neighbor ? neighbor->target : next->normalizedTarget;
+    }
+    m_reducer.dropDirectMessage(dropping);
+    reloadModels();
+    if (!nextTarget.isEmpty())
+        selectConversation(nextNetworkId, nextTarget);
+    else
+        clearConversationSelection();
+}
+
+void IrcController::clearConversationSelection()
+{
+    if (!m_typingTarget.isEmpty()) {
+        if (IrcSession *previous = selectedSession())
+            previous->sendTyping(m_typingTarget, IrcTypingPhase::Done);
+        m_typingTarget.clear();
+    }
+    m_selected.reset();
+    m_selectedTarget.clear();
+    m_reducer.clearSelection();
+    m_messages.clearSelection();
+    m_members.clearSelection();
+    emit selectionChanged();
+    emit capabilitiesChanged();
+    emit typingChanged();
+}
+
 bool IrcController::sendMessage(const QString& text)
 {
     const IrcCommand command = IrcCommand::parse(text);
@@ -364,6 +423,13 @@ IrcCommandOutcome IrcController::dispatch(const IrcCommand& command,
     if (command.verb == IrcCommand::Verb::Clear)
         return m_console.clearLog() ? IrcCommandOutcome::Sent
                                     : IrcCommandOutcome::Refused;
+
+    if (command.verb == IrcCommand::Verb::Close) {
+        if (!selectedIsCloseableDirect())
+            return IrcCommandOutcome::WrongScope;
+        dropSelectedDirectAndReselect();
+        return IrcCommandOutcome::Sent;
+    }
 
     IrcSession *active = m_console.boundSession();
     if (!active || active->state() != IrcSession::State::Registered)

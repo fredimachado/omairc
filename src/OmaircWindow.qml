@@ -262,6 +262,51 @@ ApplicationWindow {
         selectConversation(nick);
     }
 
+    function closeDirectMessage() {
+        if (irc) {
+            irc.closeDirectMessage();
+            Qt.callLater(function() {
+                messageList.positionViewAtEnd();
+                composer.forceActiveFocus();
+            });
+            return;
+        }
+        if (currentConversation.length === 0 || currentConversation.charAt(0) === "#")
+            return;
+
+        var rows = sidebarConversationRows();
+        var current = -1;
+        for (var index = 0; index < rows.length; ++index) {
+            if (rows[index].conversationName === currentConversation) {
+                current = index;
+                break;
+            }
+        }
+
+        var nextName = "";
+        if (current >= 0 && current + 1 < rows.length)
+            nextName = rows[current + 1].conversationName;
+        else if (current > 0)
+            nextName = rows[current - 1].conversationName;
+        else if (current < 0 && rows.length > 0)
+            nextName = rows[rows.length - 1].conversationName;
+
+        var closing = currentConversation;
+        for (var removeIndex = 0; removeIndex < directConversations.count; ++removeIndex) {
+            if (directConversations.get(removeIndex).conversation === closing) {
+                directConversations.remove(removeIndex);
+                break;
+            }
+        }
+
+        if (nextName.length > 0) {
+            selectConversation(nextName);
+            return;
+        }
+        mockStatusOpen = true;
+        mockCurrentConversation = "";
+    }
+
     function focusMembersList() {
         membersVisible = true;
         Qt.callLater(function() {
@@ -675,6 +720,13 @@ ApplicationWindow {
         context: Qt.ApplicationShortcut
         enabled: currentConversationIsChannel && !consoleVisible && !win.shortcutOverlayOpen
         onActivated: focusMembersList()
+    }
+
+    Shortcut {
+        sequence: "Ctrl+W"
+        context: Qt.ApplicationShortcut
+        enabled: !currentConversationIsChannel && !consoleVisible && !win.shortcutOverlayOpen
+        onActivated: win.closeDirectMessage()
     }
 
     Shortcut {
@@ -2573,6 +2625,7 @@ ApplicationWindow {
                     { keys: "Ctrl+,", action: "Connect" },
                     { keys: "Ctrl+Shift+M", action: "members panel" },
                     { keys: "Ctrl+Shift+P", action: "focus members" },
+                    { keys: "Ctrl+W", action: "close direct message" },
                     { keys: "Ctrl+L", action: "composer" },
                     { keys: "Enter", action: "send" },
                     { keys: "Page Up / Page Down", action: "scroll" },

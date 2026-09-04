@@ -56,7 +56,9 @@ private slots:
     void parseSlashEscape();
     void parseVerbsAndAliases();
     void parseUnknown();
+    void parseClose();
     void catalogLookupAndScope();
+    void closeWrongScopeUsesCatalogSentence();
     void conversationSendAndUnknown();
     void statusSubmitDoesNotSendAction();
 };
@@ -119,6 +121,22 @@ void CommandTest::parseUnknown()
     QCOMPARE(notQuit.verb, IrcCommand::Verb::Unknown);
 }
 
+void CommandTest::parseClose()
+{
+    const IrcCommand close = IrcCommand::parse(QStringLiteral("/close"));
+    QCOMPARE(close.verb, IrcCommand::Verb::Close);
+    QCOMPARE(close.name, QStringLiteral("/close"));
+    QVERIFY(close.argument.isEmpty());
+    QVERIFY(!close.isLiveMessage());
+    QVERIFY(close.allowedOn(IrcComposerSurface::Conversation));
+    QVERIFY(!close.allowedOn(IrcComposerSurface::Status));
+
+    const IrcCommand escaped = IrcCommand::parse(QStringLiteral("//close"));
+    QCOMPARE(escaped.verb, IrcCommand::Verb::Say);
+    QCOMPARE(escaped.argument, QStringLiteral("/close"));
+    QVERIFY(escaped.isLiveMessage());
+}
+
 void CommandTest::catalogLookupAndScope()
 {
     const IrcVerbSpec *join = IrcVerbTable::lookup(QStringLiteral("J"));
@@ -134,26 +152,39 @@ void CommandTest::catalogLookupAndScope()
     QVERIFY(!IrcVerbTable::find(IrcCommand::Verb::Empty));
     QVERIFY(!IrcVerbTable::find(IrcCommand::Verb::Unknown));
 
-    QCOMPARE(IrcVerbTable::all().size(), 6);
+    QCOMPARE(IrcVerbTable::all().size(), 7);
     for (const IrcVerbSpec& row : IrcVerbTable::all())
         QVERIFY(row.name != QLatin1String("say"));
+
+    const IrcVerbSpec *close = IrcVerbTable::lookup(QStringLiteral("close"));
+    QVERIFY(close);
+    QCOMPARE(close->verb, IrcCommand::Verb::Close);
+    QCOMPARE(close->usage, QStringLiteral("/close"));
+    QVERIFY(close->aliases.isEmpty());
+    QCOMPARE(close->scope, IrcVerbScope::Conversation);
+    QCOMPARE(close->wrongScopeText, QStringLiteral("Close applies to direct messages"));
 
     const QVector<IrcVerbSpec> status = IrcVerbTable::visibleOn(IrcComposerSurface::Status);
     QCOMPARE(status.size(), 5);
     for (const IrcVerbSpec& row : status) {
         QVERIFY(row.allowedOn(IrcComposerSurface::Status));
         QVERIFY(row.verb != IrcCommand::Verb::Action);
+        QVERIFY(row.verb != IrcCommand::Verb::Close);
     }
 
     const QVector<IrcVerbSpec> conversation =
         IrcVerbTable::visibleOn(IrcComposerSurface::Conversation);
-    QCOMPARE(conversation.size(), 6);
+    QCOMPARE(conversation.size(), 7);
     bool sawMe = false;
+    bool sawClose = false;
     for (const IrcVerbSpec& row : conversation) {
         if (row.name == QLatin1String("me"))
             sawMe = true;
+        if (row.name == QLatin1String("close"))
+            sawClose = true;
     }
     QVERIFY(sawMe);
+    QVERIFY(sawClose);
 
     const IrcCommand say = IrcCommand::parse(QStringLiteral("hello"));
     QVERIFY(say.allowedOn(IrcComposerSurface::Conversation));
@@ -163,6 +194,20 @@ void CommandTest::catalogLookupAndScope()
     QVERIFY(!action.allowedOn(IrcComposerSurface::Status));
     QVERIFY(IrcCommand::parse(QStringLiteral("/join #x"))
                 .allowedOn(IrcComposerSurface::Status));
+}
+
+void CommandTest::closeWrongScopeUsesCatalogSentence()
+{
+    const IrcCommand close = IrcCommand::parse(QStringLiteral("/close"));
+    QCOMPARE(ircCommandOutcomeText(IrcCommandOutcome::WrongScope, close),
+             QStringLiteral("Close applies to direct messages"));
+
+    const IrcCommand action = IrcCommand::parse(QStringLiteral("/me waves"));
+    QCOMPARE(ircCommandOutcomeText(IrcCommandOutcome::WrongScope, action),
+             QStringLiteral("Select a connected conversation first"));
+    const IrcCommand say = IrcCommand::parse(QStringLiteral("hello"));
+    QCOMPARE(ircCommandOutcomeText(IrcCommandOutcome::WrongScope, say),
+             QStringLiteral("Select a connected conversation first"));
 }
 
 void CommandTest::conversationSendAndUnknown()
@@ -215,6 +260,10 @@ void CommandTest::statusSubmitDoesNotSendAction()
         QVERIFY(!transport->writtenFrames().at(i).contains("ACTION"));
     QVERIFY(logContains(console->lines(),
                         QStringLiteral("Select a connected conversation first")));
+
+    QVERIFY(console->submit(QStringLiteral("/close")));
+    QVERIFY(logContains(console->lines(),
+                        QStringLiteral("Close applies to direct messages")));
 
     QVERIFY(console->submit(QStringLiteral("/nope")));
     QVERIFY(logContains(console->lines(), QStringLiteral("Unknown command: /nope")));

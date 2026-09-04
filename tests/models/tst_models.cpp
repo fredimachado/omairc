@@ -56,6 +56,7 @@ private slots:
     void membersEmptyForDirectMessage();
     void messageKinds();
     void conversationsOrderChannelsThenDirect();
+    void neighborAfterDropNextPreviousGhostAndOnly();
 };
 
 void ModelTest::roleNamesMatchQml()
@@ -360,6 +361,45 @@ void ModelTest::conversationsOrderChannelsThenDirect()
     QCOMPARE(roleAt(conversations, 3, ConversationListModel::ConversationRole),
              QStringLiteral("zed"));
     QCOMPARE(roleAt(conversations, 3, ConversationListModel::DirectRole), true);
+}
+
+void ModelTest::neighborAfterDropNextPreviousGhostAndOnly()
+{
+    IrcEventReducer reducer;
+    welcome(reducer, networkA);
+    const IrcConversationKey zed =
+        reducer.conversationKey(networkA, QStringLiteral("zed"));
+    const IrcConversationKey alice =
+        reducer.conversationKey(networkA, QStringLiteral("alice"));
+    reducer.apply(IrcMessageEvent{
+        zed, QStringLiteral("zed"), QStringLiteral("later"), timestamp,
+        QStringLiteral("zed")});
+    reducer.apply(IrcJoinEvent{
+        networkA, QStringLiteral("#idle"), QStringLiteral("Alice")});
+    reducer.apply(IrcJoinEvent{
+        networkA, QStringLiteral("#active"), QStringLiteral("omairc")});
+    reducer.apply(IrcMessageEvent{
+        alice, QStringLiteral("alice"), QStringLiteral("first"), timestamp,
+        QStringLiteral("alice")});
+
+    const QVector<IrcConversationKey> ordered = ircSidebarOrder(reducer);
+    QCOMPARE(ordered.size(), 4);
+    const IrcConversationKey active = ordered.at(0);
+    const IrcConversationKey idle = ordered.at(1);
+    QCOMPARE(alice, ordered.at(2));
+    QCOMPARE(zed, ordered.at(3));
+
+    QCOMPARE(*ircNeighborAfterDrop(ordered, active), idle);
+    QCOMPARE(*ircNeighborAfterDrop(ordered, alice), zed);
+    QCOMPARE(*ircNeighborAfterDrop(ordered, zed), alice);
+    QVERIFY(ircNeighborAfterDrop(ordered, zed) != ordered.first());
+
+    const IrcConversationKey ghost{networkA, QStringLiteral("missing")};
+    QCOMPARE(*ircNeighborAfterDrop(ordered, ghost), zed);
+
+    const QVector<IrcConversationKey> only{alice};
+    QVERIFY(!ircNeighborAfterDrop(only, alice).has_value());
+    QVERIFY(!ircNeighborAfterDrop({}, ghost).has_value());
 }
 
 int runModelTests(int argc, char **argv)

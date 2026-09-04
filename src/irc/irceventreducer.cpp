@@ -97,6 +97,17 @@ void IrcEventReducer::apply(const IrcEvent& event)
     std::visit([this](const auto& value) { reduce(value); }, event);
 }
 
+bool IrcEventReducer::dropDirectMessage(const IrcConversationKey& key)
+{
+    const auto found = m_conversations.find(key);
+    if (found == m_conversations.end() || found->second.isChannel())
+        return false;
+    if (m_selected == key)
+        m_selected.reset();
+    m_conversations.erase(found);
+    return true;
+}
+
 const IrcEventReducer::Store& IrcEventReducer::conversations() const noexcept
 {
     return m_conversations;

@@ -9,10 +9,17 @@
 #include <QVariant>
 #include <QVector>
 
+#include <optional>
+
 inline QString ircConversationId(const IrcConversationKey& key)
 {
     return key.networkId + QLatin1Char('\n') + key.normalizedTarget;
 }
+
+QVector<IrcConversationKey> ircSidebarOrder(const IrcEventReducer& reducer);
+std::optional<IrcConversationKey> ircNeighborAfterDrop(
+    const QVector<IrcConversationKey>& ordered,
+    const IrcConversationKey& dropping);
 
 class ConversationListModel : public QAbstractListModel
 {
