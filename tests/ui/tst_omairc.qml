@@ -706,6 +706,24 @@ TestCase {
         tryCompare(members, "activeFocus", true);
     }
 
+    function test_memberHighlightOnlyWhileListFocused() {
+        var members = item("membersList");
+        var anna = item("member-anna");
+        var highlight = findChild(anna, "memberHighlight");
+        verify(highlight !== null, "Could not find memberHighlight");
+        verify(!members.activeFocus);
+        compare(members.currentIndex, 0);
+        verify(Qt.colorEqual(highlight.color, "transparent"));
+
+        keyClick(Qt.Key_P, Qt.ControlModifier | Qt.ShiftModifier);
+        tryCompare(members, "activeFocus", true);
+        verify(Qt.colorEqual(highlight.color, appWindow.raisedColor));
+
+        keyClick(Qt.Key_L, Qt.ControlModifier);
+        tryCompare(item("messageComposer"), "activeFocus", true);
+        verify(Qt.colorEqual(highlight.color, "transparent"));
+    }
+
     function test_focusMembersReopensHiddenPanel() {
         var panel = item("membersPanel");
         var members = item("membersList");

@@ -2358,13 +2358,16 @@ ApplicationWindow {
                     height: win.scaledSize(43)
 
                     Rectangle {
+                        objectName: "memberHighlight"
                         anchors.fill: parent
                         anchors.leftMargin: win.scaledSize(8)
                         anchors.rightMargin: win.scaledSize(8)
                         radius: win.scaledSize(7)
-                        color: memberMouse.containsMouse || ListView.isCurrentItem
-                            ? (memberMouse.containsMouse ? win.hoverColor : win.raisedColor)
-                            : "transparent"
+                        color: memberMouse.containsMouse
+                            ? win.hoverColor
+                            : (ListView.isCurrentItem && membersList.activeFocus
+                                ? win.raisedColor
+                                : "transparent")
                     }
 
                     Rectangle {
