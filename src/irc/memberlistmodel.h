@@ -33,6 +33,7 @@ public:
     QHash<int, QByteArray> roleNames() const override;
 
     void reload();
+    void setSelected(const IrcConversationKey& key);
     void select(const IrcConversationKey& key);
     void clearSelection();
     void touch(const QString& normalizedNick);

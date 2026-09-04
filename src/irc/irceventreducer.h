@@ -54,6 +54,7 @@ struct IrcChannelState
     QString topic;
     bool joined = false;
     bool namesSyncing = false;
+    QDateTime namesSyncStarted;
 };
 
 struct IrcDirectMessageState
@@ -90,7 +91,11 @@ public:
     void markSelected(const IrcConversationKey& key);
     void clearSelection();
 
+    static constexpr qint64 kStaleNamesSyncMs = 30000;
+
     void apply(const IrcEvent& event);
+    bool releaseStaleNamesSync(const std::optional<IrcConversationKey>& key,
+                               const QDateTime& now);
     bool dropDirectMessage(const IrcConversationKey& key);
     void clearMessages(const IrcConversationKey& key);
 

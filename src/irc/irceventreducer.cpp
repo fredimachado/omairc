@@ -28,6 +28,19 @@ QString displayTarget(const IrcConversationKey& key, const QString& target)
 {
     return target.isEmpty() ? key.normalizedTarget : target;
 }
+
+void startNamesSync(IrcChannelState& channel)
+{
+    channel.members.clear();
+    channel.namesSyncing = true;
+    channel.namesSyncStarted = QDateTime::currentDateTimeUtc();
+}
+
+void stopNamesSync(IrcChannelState& channel)
+{
+    channel.namesSyncing = false;
+    channel.namesSyncStarted = {};
+}
 }
 
 bool IrcMemberView::isAway() const noexcept
@@ -95,6 +108,21 @@ void IrcEventReducer::clearSelection()
 void IrcEventReducer::apply(const IrcEvent& event)
 {
     std::visit([this](const auto& value) { reduce(value); }, event);
+}
+
+bool IrcEventReducer::releaseStaleNamesSync(const std::optional<IrcConversationKey>& key,
+                                            const QDateTime& now)
+{
+    if (!key)
+        return false;
+    IrcConversationState *conversation = findMutable(*key);
+    IrcChannelState *channel = conversation ? conversation->channel() : nullptr;
+    if (!channel || !channel->namesSyncing)
+        return false;
+    if (channel->namesSyncStarted.msecsTo(now) < kStaleNamesSyncMs)
+        return false;
+    stopNamesSync(*channel);
+    return true;
 }
 
 bool IrcEventReducer::dropDirectMessage(const IrcConversationKey& key)
@@ -376,7 +404,7 @@ void IrcEventReducer::reduce(const IrcWelcomeEvent& event)
         if (IrcChannelState *channel = conversation.channel()) {
             channel->members.clear();
             channel->joined = false;
-            channel->namesSyncing = false;
+            stopNamesSync(*channel);
         }
         conversation.typing.clear();
     }
@@ -436,7 +464,7 @@ void IrcEventReducer::reduce(const IrcPartEvent& event)
         for (const auto& member : channel.members)
             departed.append(member.first);
         channel.members.clear();
-        channel.namesSyncing = false;
+        stopNamesSync(channel);
     }
     forgetUnseen(event.networkId, departed);
     appendEvent(*conversation, event.nick + QStringLiteral(" left"));
@@ -530,7 +558,7 @@ void IrcEventReducer::reduce(const IrcKickEvent& event)
         for (const auto& member : channel.members)
             departed.append(member.first);
         channel.members.clear();
-        channel.namesSyncing = false;
+        stopNamesSync(channel);
     }
     forgetUnseen(event.networkId, departed);
     appendEvent(*conversation, event.target + QStringLiteral(" was kicked"));
@@ -556,17 +584,15 @@ void IrcEventReducer::reduce(const IrcNamesEvent& event)
     if (!channel)
         return;
 
-    if (!channel->namesSyncing) {
-        channel->members.clear();
-        channel->namesSyncing = true;
-    }
+    if (!channel->namesSyncing)
+        startNamesSync(*channel);
     for (const IrcName& name : event.names) {
         channel->members.insert_or_assign(
             normalize(event.networkId, name.nick),
             IrcMemberState{name.nick, name.ranks});
     }
     if (event.complete)
-        channel->namesSyncing = false;
+        stopNamesSync(*channel);
 }
 
 void IrcEventReducer::reduce(const IrcModeEvent& event)

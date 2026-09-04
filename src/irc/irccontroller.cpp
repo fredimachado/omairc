@@ -174,8 +174,7 @@ int IrcController::peopleCount() const
 {
     if (!m_selected)
         return 0;
-    const IrcConversationState *conversation = m_reducer.find(*m_selected);
-    return conversation ? conversation->peopleCount() : 0;
+    return m_members.rowCount();
 }
 
 QString IrcController::connectionStatus() const
@@ -708,10 +707,18 @@ void IrcController::apply(const IrcEvent& event)
         m_selected = conversation.key;
         m_selectedTarget = conversation.target;
         m_reducer.markSelected(conversation.key);
-        m_messages.select(conversation.key);
-        m_members.select(conversation.key);
+        m_messages.setSelected(conversation.key);
+        m_members.setSelected(conversation.key);
     }
-    const IrcViewNotify notify = classifyViewNotify(event, m_reducer, m_selected);
+    const bool releasedStale = m_reducer.releaseStaleNamesSync(
+        m_selected, QDateTime::currentDateTimeUtc());
+    IrcViewNotify notify = classifyViewNotify(event, m_reducer, m_selected);
+    if (releasedStale) {
+        notify.conversations = true;
+        notify.messages = true;
+        notify.members = IrcMemberSurface::Reset;
+        notify.selection = true;
+    }
     publish(notify);
     if (notify.rearmTyping)
         armTypingRefresh();

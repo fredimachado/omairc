@@ -86,9 +86,14 @@ void MemberListModel::touch(const QString& normalizedNick)
     emit dataChanged(row, row, {AwayRole, StatusRole, LabelRole});
 }
 
-void MemberListModel::select(const IrcConversationKey& key)
+void MemberListModel::setSelected(const IrcConversationKey& key)
 {
     m_selected = key;
+}
+
+void MemberListModel::select(const IrcConversationKey& key)
+{
+    setSelected(key);
     reload();
 }
 

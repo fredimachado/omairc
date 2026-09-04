@@ -45,6 +45,7 @@ private slots:
     void dropDirectMessageErasesOnlyDirectRows();
     void clearMessagesWipesTranscriptKeepsRow();
     void selfAwayIsNetworkMembershipNotMemberPresence();
+    void staleNamesSyncReleasesAfterThirtySeconds();
 };
 
 void ReducerTest::namesFillAndCompleteWithoutDuplicates()
@@ -598,6 +599,33 @@ void ReducerTest::selfAwayIsNetworkMembershipNotMemberPresence()
     welcome(reducer, networkA);
     QVERIFY(!reducer.selfAway(networkA));
     QVERIFY(!reducer.selfAway(networkB));
+}
+
+void ReducerTest::staleNamesSyncReleasesAfterThirtySeconds()
+{
+    IrcEventReducer reducer;
+    welcome(reducer, networkA);
+    reducer.apply(IrcNamesEvent{
+        networkA,
+        QStringLiteral("#room"),
+        {parsedName("Alice")},
+        false,
+    });
+    const IrcConversationKey key =
+        reducer.conversationKey(networkA, QStringLiteral("#room"));
+    const IrcConversationState *conversation = reducer.find(key);
+    QVERIFY(conversation);
+    const IrcChannelState *channel = conversation->channel();
+    QVERIFY(channel);
+    QVERIFY(channel->namesSyncing);
+    QVERIFY(channel->namesSyncStarted.isValid());
+    const QDateTime started = channel->namesSyncStarted;
+
+    QVERIFY(!reducer.releaseStaleNamesSync(key, started.addSecs(29)));
+    QVERIFY(channel->namesSyncing);
+
+    QVERIFY(reducer.releaseStaleNamesSync(key, started.addSecs(31)));
+    QVERIFY(!channel->namesSyncing);
 }
 
 int runReducerTests(int argc, char **argv)

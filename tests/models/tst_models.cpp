@@ -1,4 +1,5 @@
 #include <QAbstractItemModel>
+#include <QSignalSpy>
 #include <QTest>
 
 #include "conversationlistmodel.h"
@@ -57,6 +58,7 @@ private slots:
     void messageKinds();
     void conversationsOrderChannelsThenDirect();
     void neighborAfterDropNextPreviousGhostAndOnly();
+    void reloadUnchangedKeysEmitsDataChangedNotReset();
 };
 
 void ModelTest::roleNamesMatchQml()
@@ -400,6 +402,38 @@ void ModelTest::neighborAfterDropNextPreviousGhostAndOnly()
     const QVector<IrcConversationKey> only{alice};
     QVERIFY(!ircNeighborAfterDrop(only, alice).has_value());
     QVERIFY(!ircNeighborAfterDrop({}, ghost).has_value());
+}
+
+void ModelTest::reloadUnchangedKeysEmitsDataChangedNotReset()
+{
+    IrcEventReducer reducer;
+    ConversationListModel conversations(reducer);
+    welcome(reducer, networkA);
+
+    reducer.apply(IrcJoinEvent{
+        networkA, QStringLiteral("#room"), QStringLiteral("omairc")});
+    conversations.reload();
+    QCOMPARE(conversations.rowCount(), 1);
+
+    QSignalSpy resets(&conversations, &QAbstractItemModel::modelReset);
+    QSignalSpy changes(&conversations, &QAbstractItemModel::dataChanged);
+    reducer.apply(IrcMessageEvent{
+        reducer.conversationKey(networkA, QStringLiteral("#room")),
+        QStringLiteral("Alice"),
+        QStringLiteral("hello"),
+        timestamp,
+        QStringLiteral("#room"),
+    });
+    conversations.reload();
+    QCOMPARE(resets.size(), 0);
+    QCOMPARE(changes.size(), 1);
+    QCOMPARE(roleAt(conversations, 0, ConversationListModel::UnreadRole), 1);
+
+    reducer.apply(IrcJoinEvent{
+        networkA, QStringLiteral("#other"), QStringLiteral("omairc")});
+    conversations.reload();
+    QCOMPARE(resets.size(), 1);
+    QCOMPARE(conversations.rowCount(), 2);
 }
 
 int runModelTests(int argc, char **argv)

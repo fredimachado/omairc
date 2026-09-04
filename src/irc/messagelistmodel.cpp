@@ -89,9 +89,14 @@ void MessageListModel::reload()
     endResetModel();
 }
 
-void MessageListModel::select(const IrcConversationKey& key)
+void MessageListModel::setSelected(const IrcConversationKey& key)
 {
     m_selected = key;
+}
+
+void MessageListModel::select(const IrcConversationKey& key)
+{
+    setSelected(key);
     reload();
 }
 

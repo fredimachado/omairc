@@ -174,7 +174,6 @@ inline IrcViewNotify classifyViewNotify(
     IrcViewNotify notify = std::visit(IrcViewClassifier{reducer}, event);
     if (!channelNamesSyncing(reducer, selected))
         return notify;
-    notify.messages = false;
     notify.members = IrcMemberSurface::None;
     notify.selection = false;
     notify.nick.clear();

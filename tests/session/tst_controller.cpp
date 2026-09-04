@@ -148,6 +148,7 @@ private slots:
     void largeChannelJoinDoesNotResetModelsPerNick();
     void otherChannelNamesDoesNotSnapshotJoiningMembers();
     void namesBurstFlushesTypingClearedByChat();
+    void chatDuringNamesUpdatesMessagesWithoutMemberReset();
 };
 
 void ControllerTest::reducesTrafficAndRoutesOutboundByNetwork()
@@ -1294,6 +1295,7 @@ void ControllerTest::largeChannelJoinDoesNotResetModelsPerNick()
     auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
     auto *members = qobject_cast<QAbstractItemModel *>(controller.members());
     QSignalSpy conversationResets(conversations, &QAbstractItemModel::modelReset);
+    QSignalSpy conversationDataChanges(conversations, &QAbstractItemModel::dataChanged);
     QSignalSpy messageResets(messages, &QAbstractItemModel::modelReset);
     QSignalSpy memberResets(members, &QAbstractItemModel::modelReset);
     QSignalSpy memberDataChanges(members, &QAbstractItemModel::dataChanged);
@@ -1301,11 +1303,13 @@ void ControllerTest::largeChannelJoinDoesNotResetModelsPerNick()
     transport->injectBytes(namesBurst(nickCount, perLine));
     QCOMPARE(members->rowCount(), nickCount);
     QCOMPARE(controller.peopleCount(), nickCount);
+    QCOMPARE(controller.peopleCount(), members->rowCount());
     QVERIFY(controller.hasAwayPresence());
     QVERIFY(transport->writtenFrames().contains(QByteArrayLiteral("WHO #big\r\n")));
-    QCOMPARE(conversationResets.size(), 2);
-    QCOMPARE(messageResets.size(), 3);
-    QCOMPARE(memberResets.size(), 3);
+    QCOMPARE(conversationResets.size(), 1);
+    QCOMPARE(conversationDataChanges.size(), 1);
+    QCOMPARE(messageResets.size(), 2);
+    QCOMPARE(memberResets.size(), 2);
 
     const int memberResetsAfterNames = memberResets.size();
     const int conversationResetsAfterNames = conversationResets.size();
@@ -1313,10 +1317,11 @@ void ControllerTest::largeChannelJoinDoesNotResetModelsPerNick()
     memberDataChanges.clear();
     transport->injectBytes(whoBurst(nickCount));
     QCOMPARE(roleAt(members, 0, MemberListModel::AwayRole), true);
+    QCOMPARE(roleAt(members, nickCount - 1, MemberListModel::AwayRole), true);
     QCOMPARE(memberResets.size(), memberResetsAfterNames);
     QCOMPARE(conversationResets.size(), conversationResetsAfterNames);
     QCOMPARE(messageResets.size(), messageResetsAfterNames);
-    QVERIFY(memberDataChanges.size() >= 1);
+    QCOMPARE(memberDataChanges.size(), nickCount);
 }
 
 void ControllerTest::otherChannelNamesDoesNotSnapshotJoiningMembers()
@@ -1334,10 +1339,12 @@ void ControllerTest::otherChannelNamesDoesNotSnapshotJoiningMembers()
                           ":server 001 omairc :Welcome\r\n"));
 
     auto *members = qobject_cast<QAbstractItemModel *>(controller.members());
+    auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
     transport->injectBytes(QByteArrayLiteral(":omairc!u@h JOIN :#big\r\n"));
     QCOMPARE(controller.selectedTarget(), QStringLiteral("#big"));
     QCOMPARE(members->rowCount(), 1);
     QCOMPARE(controller.peopleCount(), 1);
+    QCOMPARE(controller.peopleCount(), members->rowCount());
     QCOMPARE(roleAt(members, 0, MemberListModel::NickRole), QStringLiteral("omairc"));
 
     QSignalSpy memberResets(members, &QAbstractItemModel::modelReset);
@@ -1349,13 +1356,24 @@ void ControllerTest::otherChannelNamesDoesNotSnapshotJoiningMembers()
                           ":server 366 omairc #other :End of NAMES\r\n"));
 
     QCOMPARE(members->rowCount(), 1);
+    QCOMPARE(controller.peopleCount(), members->rowCount());
+    QCOMPARE(controller.peopleCount(), 1);
     QCOMPARE(selection.size(), 0);
+    QCOMPARE(memberResets.size(), 0);
+
+    transport->injectBytes(
+        QByteArrayLiteral(":n0000!u@h PRIVMSG #big :while-other-ended\r\n"));
+    QCOMPARE(roleAt(messages, messages->rowCount() - 1, MessageListModel::BodyRole),
+             QStringLiteral("while-other-ended"));
+    QCOMPARE(members->rowCount(), 1);
+    QCOMPARE(controller.peopleCount(), members->rowCount());
     QCOMPARE(memberResets.size(), 0);
 
     transport->injectBytes(
         QByteArrayLiteral(":server 366 omairc #big :End of NAMES\r\n"));
     QCOMPARE(members->rowCount(), 2);
     QCOMPARE(controller.peopleCount(), 2);
+    QCOMPARE(controller.peopleCount(), members->rowCount());
     QCOMPARE(memberResets.size(), 1);
     QVERIFY(selection.size() >= 1);
 }
@@ -1381,16 +1399,67 @@ void ControllerTest::namesBurstFlushesTypingClearedByChat()
                           "@+typing=active :alice!u@h TAGMSG #big\r\n"));
     QCOMPARE(controller.typingNicks(), QStringList{QStringLiteral("alice")});
     QVERIFY(typing.size() >= 1);
-    const int typingAfterTag = typing.size();
 
     transport->injectBytes(
         QByteArrayLiteral(":alice!u@h PRIVMSG #big :hello\r\n"));
     QVERIFY(controller.typingNicks().isEmpty());
+    const int typingBeforeNamesEnd = typing.size();
 
     transport->injectBytes(
         QByteArrayLiteral(":server 366 omairc #big :End of NAMES\r\n"));
     QVERIFY(controller.typingNicks().isEmpty());
-    QVERIFY(typing.size() > typingAfterTag);
+    QVERIFY(typing.size() > typingBeforeNamesEnd);
+}
+
+void ControllerTest::chatDuringNamesUpdatesMessagesWithoutMemberReset()
+{
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+                                                transport);
+    QVERIFY(session);
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    transport->completeConnect();
+    transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :away-notify\r\n"
+                          ":server CAP omairc ACK :away-notify\r\n"
+                          ":server 001 omairc :Welcome\r\n"));
+
+    auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
+    auto *members = qobject_cast<QAbstractItemModel *>(controller.members());
+    transport->injectBytes(QByteArrayLiteral(":omairc!u@h JOIN :#big\r\n"));
+    QCOMPARE(controller.peopleCount(), members->rowCount());
+    QCOMPARE(members->rowCount(), 1);
+
+    QSignalSpy memberResets(members, &QAbstractItemModel::modelReset);
+    transport->injectBytes(
+        QByteArrayLiteral(":server 353 omairc = #big :omairc n0000 n0001 alice\r\n"));
+    QCOMPARE(controller.peopleCount(), members->rowCount());
+    QCOMPARE(members->rowCount(), 1);
+    QCOMPARE(memberResets.size(), 0);
+
+    const int rowsAfterJoin = messages->rowCount();
+    transport->injectBytes(
+        QByteArrayLiteral(":alice!u@h PRIVMSG #big :during-names\r\n"));
+    QCOMPARE(messages->rowCount(), rowsAfterJoin + 1);
+    QCOMPARE(roleAt(messages, messages->rowCount() - 1, MessageListModel::BodyRole),
+             QStringLiteral("during-names"));
+    QCOMPARE(controller.peopleCount(), members->rowCount());
+    QCOMPARE(memberResets.size(), 0);
+
+    QVERIFY(controller.sendMessage(QStringLiteral("local-during-names")));
+    QCOMPARE(messages->rowCount(), rowsAfterJoin + 2);
+    QCOMPARE(roleAt(messages, messages->rowCount() - 1, MessageListModel::BodyRole),
+             QStringLiteral("local-during-names"));
+    QCOMPARE(controller.peopleCount(), members->rowCount());
+    QCOMPARE(memberResets.size(), 0);
+
+    transport->injectBytes(
+        QByteArrayLiteral(":server 366 omairc #big :End of NAMES\r\n"));
+    QCOMPARE(members->rowCount(), 4);
+    QCOMPARE(controller.peopleCount(), 4);
+    QCOMPARE(controller.peopleCount(), members->rowCount());
+    QCOMPARE(memberResets.size(), 1);
 }
 
 int runControllerTests(int argc, char **argv)
