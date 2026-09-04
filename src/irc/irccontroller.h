@@ -92,6 +92,11 @@ private:
     void reloadModels();
     IrcCommandOutcome dispatch(const IrcCommand& command,
                                IrcComposerSurface surface);
+    QString queryNetworkId(IrcComposerSurface surface) const;
+    IrcCommandOutcome sendSelectedMessage(const QString& body);
+    IrcCommandOutcome dispatchQuery(const IrcCommand& command,
+                                    IrcComposerSurface surface);
+    IrcCommandOutcome clearSurface(IrcComposerSurface surface);
     bool report(IrcCommandOutcome outcome, const IrcCommand& command);
     bool selectedIsCloseableDirect() const;
     void dropSelectedDirectAndReselect();

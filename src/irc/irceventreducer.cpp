@@ -108,6 +108,14 @@ bool IrcEventReducer::dropDirectMessage(const IrcConversationKey& key)
     return true;
 }
 
+void IrcEventReducer::clearMessages(const IrcConversationKey& key)
+{
+    IrcConversationState *conversation = findMutable(key);
+    if (!conversation)
+        return;
+    conversation->messages.clear();
+}
+
 const IrcEventReducer::Store& IrcEventReducer::conversations() const noexcept
 {
     return m_conversations;

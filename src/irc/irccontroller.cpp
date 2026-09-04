@@ -16,6 +16,12 @@ QString firstToken(const QString& argument)
     return space < 0 ? argument : argument.left(space);
 }
 
+QString restAfterFirstToken(const QString& argument)
+{
+    const int space = argument.indexOf(QLatin1Char(' '));
+    return space < 0 ? QString() : argument.mid(space + 1).trimmed();
+}
+
 QString parameter(const IrcMessage& message, std::size_t index)
 {
     if (index >= message.parameters.size())
@@ -308,6 +314,7 @@ void IrcController::selectConversation(const QString& networkId,
 {
     if (networkId.isEmpty() || target.isEmpty())
         return;
+    m_console.setOpen(false);
     const QString previousId = identityNetworkId();
     const bool previousAway = selfAway();
     const IrcConversationKey key = m_reducer.conversationKey(networkId, target);
@@ -421,22 +428,16 @@ IrcCommandOutcome IrcController::dispatch(const IrcCommand& command,
     if (!command.allowedOn(surface))
         return IrcCommandOutcome::WrongScope;
 
-    if (command.verb == IrcCommand::Verb::Say
-        || command.verb == IrcCommand::Verb::Action) {
+    if (command.verb == IrcCommand::Verb::Say)
+        return sendSelectedMessage(command.argument);
+
+    if (command.verb == IrcCommand::Verb::Action) {
         IrcSession *session = selectedSession();
         if (!session || !m_selected)
             return IrcCommandOutcome::WrongScope;
-        bool sent = false;
-        if (command.verb == IrcCommand::Verb::Action) {
-            sent = session->sendAction(m_selectedTarget, command.argument);
-            if (sent)
-                echoLocal(IrcMessageKind::Action, command.argument);
-        } else {
-            sent = session->sendPrivmsg(m_selectedTarget, command.argument);
-            if (sent)
-                echoLocal(IrcMessageKind::Message, command.argument);
-        }
+        const bool sent = session->sendAction(m_selectedTarget, command.argument);
         if (sent) {
+            echoLocal(IrcMessageKind::Action, command.argument);
             m_typingTarget.clear();
             const QString networkId = session->networkId();
             if (selfAway() && !m_unawaySent.contains(networkId)) {
@@ -447,9 +448,11 @@ IrcCommandOutcome IrcController::dispatch(const IrcCommand& command,
         return sent ? IrcCommandOutcome::Sent : IrcCommandOutcome::Refused;
     }
 
+    if (command.verb == IrcCommand::Verb::Query)
+        return dispatchQuery(command, surface);
+
     if (command.verb == IrcCommand::Verb::Clear)
-        return m_console.clearLog() ? IrcCommandOutcome::Sent
-                                    : IrcCommandOutcome::Refused;
+        return clearSurface(surface);
 
     if (command.verb == IrcCommand::Verb::Close) {
         if (!selectedIsCloseableDirect())
@@ -496,6 +499,73 @@ IrcCommandOutcome IrcController::dispatch(const IrcCommand& command,
         return IrcCommandOutcome::Unsupported;
     }
     return sent ? IrcCommandOutcome::Sent : IrcCommandOutcome::Refused;
+}
+
+QString IrcController::queryNetworkId(IrcComposerSurface surface) const
+{
+    if (surface == IrcComposerSurface::Status)
+        return m_console.networkId();
+    return m_selected ? m_selected->networkId : QString{};
+}
+
+IrcCommandOutcome IrcController::sendSelectedMessage(const QString& body)
+{
+    IrcSession *session = selectedSession();
+    if (!session || !m_selected)
+        return IrcCommandOutcome::WrongScope;
+    const bool sent = session->sendPrivmsg(m_selectedTarget, body);
+    if (sent) {
+        echoLocal(IrcMessageKind::Message, body);
+        m_typingTarget.clear();
+        const QString networkId = session->networkId();
+        if (selfAway() && !m_unawaySent.contains(networkId)) {
+            if (session->clearAway())
+                m_unawaySent.insert(networkId);
+        }
+    }
+    return sent ? IrcCommandOutcome::Sent : IrcCommandOutcome::Refused;
+}
+
+IrcCommandOutcome IrcController::dispatchQuery(const IrcCommand& command,
+                                               IrcComposerSurface surface)
+{
+    const QString nick = firstToken(command.argument);
+    const QString rest = restAfterFirstToken(command.argument);
+    if (nick.isEmpty())
+        return IrcCommandOutcome::Refused;
+
+    const QString networkId = queryNetworkId(surface);
+    if (networkId.isEmpty()) {
+        if (surface == IrcComposerSurface::Conversation)
+            return IrcCommandOutcome::WrongScope;
+        return IrcCommandOutcome::Refused;
+    }
+
+    if (m_reducer.serverFeatures(networkId).isChannel(utf8(nick)))
+        return IrcCommandOutcome::Refused;
+
+    if (!rest.isEmpty()) {
+        IrcSession *session = m_sessions.findSession(networkId);
+        if (!session || session->state() != IrcSession::State::Registered)
+            return IrcCommandOutcome::NotConnected;
+    }
+
+    selectConversation(networkId, nick);
+    if (rest.isEmpty())
+        return IrcCommandOutcome::Sent;
+    return sendSelectedMessage(rest);
+}
+
+IrcCommandOutcome IrcController::clearSurface(IrcComposerSurface surface)
+{
+    if (surface == IrcComposerSurface::Status)
+        return m_console.clearLog() ? IrcCommandOutcome::Sent
+                                    : IrcCommandOutcome::Refused;
+    if (!m_selected)
+        return IrcCommandOutcome::WrongScope;
+    m_reducer.clearMessages(*m_selected);
+    m_messages.reload();
+    return IrcCommandOutcome::Sent;
 }
 
 bool IrcController::report(IrcCommandOutcome outcome, const IrcCommand& command)

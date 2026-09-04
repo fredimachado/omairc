@@ -92,6 +92,7 @@ public:
 
     void apply(const IrcEvent& event);
     bool dropDirectMessage(const IrcConversationKey& key);
+    void clearMessages(const IrcConversationKey& key);
 
     const Store& conversations() const noexcept;
     const IrcConversationState *find(const IrcConversationKey& key) const noexcept;

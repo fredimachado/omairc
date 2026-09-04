@@ -57,6 +57,7 @@ private slots:
     void parseVerbsAndAliases();
     void parseUnknown();
     void parseClose();
+    void parseQuery();
     void catalogLookupAndScope();
     void closeWrongScopeUsesCatalogSentence();
     void conversationSendAndUnknown();
@@ -145,6 +146,33 @@ void CommandTest::parseClose()
     QVERIFY(escaped.isLiveMessage());
 }
 
+void CommandTest::parseQuery()
+{
+    const IrcCommand query = IrcCommand::parse(QStringLiteral("/query lena hi"));
+    QCOMPARE(query.verb, IrcCommand::Verb::Query);
+    QCOMPARE(query.argument, QStringLiteral("lena hi"));
+    QCOMPARE(query.name, QStringLiteral("/query"));
+    QVERIFY(!query.isLiveMessage());
+    QVERIFY(query.allowedOn(IrcComposerSurface::Conversation));
+    QVERIFY(query.allowedOn(IrcComposerSurface::Status));
+
+    const IrcCommand msg = IrcCommand::parse(QStringLiteral("/MSG lena"));
+    QCOMPARE(msg.verb, IrcCommand::Verb::Query);
+    QCOMPARE(msg.argument, QStringLiteral("lena"));
+    QCOMPARE(msg.name, QStringLiteral("/MSG"));
+    QVERIFY(!msg.isLiveMessage());
+
+    const IrcCommand escapedQuery = IrcCommand::parse(QStringLiteral("//query"));
+    QCOMPARE(escapedQuery.verb, IrcCommand::Verb::Say);
+    QCOMPARE(escapedQuery.argument, QStringLiteral("/query"));
+    QVERIFY(escapedQuery.isLiveMessage());
+
+    const IrcCommand escapedMsg = IrcCommand::parse(QStringLiteral("//msg hi"));
+    QCOMPARE(escapedMsg.verb, IrcCommand::Verb::Say);
+    QCOMPARE(escapedMsg.argument, QStringLiteral("/msg hi"));
+    QVERIFY(escapedMsg.isLiveMessage());
+}
+
 void CommandTest::catalogLookupAndScope()
 {
     const IrcVerbSpec *join = IrcVerbTable::lookup(QStringLiteral("J"));
@@ -163,9 +191,18 @@ void CommandTest::catalogLookupAndScope()
     QVERIFY(!IrcVerbTable::find(IrcCommand::Verb::Empty));
     QVERIFY(!IrcVerbTable::find(IrcCommand::Verb::Unknown));
 
-    QCOMPARE(IrcVerbTable::all().size(), 7);
+    QCOMPARE(IrcVerbTable::all().size(), 8);
     for (const IrcVerbSpec& row : IrcVerbTable::all())
         QVERIFY(row.name != QLatin1String("say"));
+
+    const IrcVerbSpec *query = IrcVerbTable::lookup(QStringLiteral("msg"));
+    QVERIFY(query);
+    QCOMPARE(query->verb, IrcCommand::Verb::Query);
+    QCOMPARE(query->name, QStringLiteral("query"));
+    QCOMPARE(query->usage, QStringLiteral("/query <nick> [text]"));
+    QCOMPARE(query->scope, IrcVerbScope::Either);
+    QVERIFY(query->wrongScopeText.isEmpty());
+    QVERIFY(query->aliases.contains(QStringLiteral("msg")));
 
     const IrcVerbSpec *close = IrcVerbTable::lookup(QStringLiteral("close"));
     QVERIFY(close);
@@ -176,7 +213,7 @@ void CommandTest::catalogLookupAndScope()
     QCOMPARE(close->wrongScopeText, QStringLiteral("Close applies to direct messages"));
 
     const QVector<IrcVerbSpec> status = IrcVerbTable::visibleOn(IrcComposerSurface::Status);
-    QCOMPARE(status.size(), 5);
+    QCOMPARE(status.size(), 6);
     for (const IrcVerbSpec& row : status) {
         QVERIFY(row.allowedOn(IrcComposerSurface::Status));
         QVERIFY(row.verb != IrcCommand::Verb::Action);
@@ -185,17 +222,21 @@ void CommandTest::catalogLookupAndScope()
 
     const QVector<IrcVerbSpec> conversation =
         IrcVerbTable::visibleOn(IrcComposerSurface::Conversation);
-    QCOMPARE(conversation.size(), 7);
+    QCOMPARE(conversation.size(), 8);
     bool sawMe = false;
     bool sawClose = false;
+    bool sawQuery = false;
     for (const IrcVerbSpec& row : conversation) {
         if (row.name == QLatin1String("me"))
             sawMe = true;
         if (row.name == QLatin1String("close"))
             sawClose = true;
+        if (row.name == QLatin1String("query"))
+            sawQuery = true;
     }
     QVERIFY(sawMe);
     QVERIFY(sawClose);
+    QVERIFY(sawQuery);
 
     const IrcCommand say = IrcCommand::parse(QStringLiteral("hello"));
     QVERIFY(say.allowedOn(IrcComposerSurface::Conversation));
@@ -222,6 +263,9 @@ void CommandTest::closeWrongScopeUsesCatalogSentence()
              QStringLiteral("Select a connected conversation first"));
     const IrcCommand say = IrcCommand::parse(QStringLiteral("hello"));
     QCOMPARE(ircCommandOutcomeText(IrcCommandOutcome::WrongScope, say),
+             QStringLiteral("Select a connected conversation first"));
+    const IrcCommand query = IrcCommand::parse(QStringLiteral("/query lena"));
+    QCOMPARE(ircCommandOutcomeText(IrcCommandOutcome::WrongScope, query),
              QStringLiteral("Select a connected conversation first"));
 }
 
@@ -250,6 +294,12 @@ void CommandTest::conversationSendAndUnknown()
 
     IrcController lonely;
     QVERIFY(!lonely.sendMessage(QStringLiteral("/me waves")));
+    QCOMPARE(lonely.lastError(),
+             QStringLiteral("Select a connected conversation first"));
+    QVERIFY(!lonely.sendMessage(QStringLiteral("/query lena")));
+    QCOMPARE(lonely.lastError(),
+             QStringLiteral("Select a connected conversation first"));
+    QVERIFY(!lonely.sendMessage(QStringLiteral("/clear")));
     QCOMPARE(lonely.lastError(),
              QStringLiteral("Select a connected conversation first"));
     QVERIFY(!lonely.sendMessage(QString()));
