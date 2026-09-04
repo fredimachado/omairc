@@ -41,6 +41,7 @@ ApplicationWindow {
     property var mockActiveMessages: omarchyMessages
     property bool membersVisible: true
     property bool mockStatusOpen: false
+    property bool shortcutsSheetEscapeGuard: false
     readonly property var networkConsole: irc
         ? (irc.statusConsole ? irc.statusConsole : irc.console)
         : null
@@ -217,6 +218,22 @@ ApplicationWindow {
             directMention: false
         });
         selectConversation(nick);
+    }
+
+    function focusMembersList() {
+        membersVisible = true;
+        Qt.callLater(function() {
+            if (membersList.currentIndex < 0)
+                membersList.currentIndex = 0;
+            membersList.forceActiveFocus();
+        });
+    }
+
+    function activateFocusedMember() {
+        var row = membersList.itemAtIndex(membersList.currentIndex);
+        if (!row || row.nick === win.selfNick)
+            return;
+        win.openDirectMessage(row.nick);
     }
 
     function markDirectConversationRead(name) {
@@ -576,6 +593,24 @@ ApplicationWindow {
     }
 
     Shortcut {
+        sequence: "Ctrl+Shift+P"
+        context: Qt.ApplicationShortcut
+        enabled: currentConversationIsChannel && !consoleVisible
+        onActivated: focusMembersList()
+    }
+
+    Shortcut {
+        sequence: "Ctrl+/"
+        context: Qt.ApplicationShortcut
+        onActivated: {
+            if (shortcutsSheet.opened)
+                shortcutsSheet.close();
+            else
+                shortcutsSheet.open();
+        }
+    }
+
+    Shortcut {
         sequence: "Ctrl+`"
         context: Qt.ApplicationShortcut
         onActivated: {
@@ -627,7 +662,10 @@ ApplicationWindow {
 
     Shortcut {
         sequence: "Escape"
+        context: Qt.ApplicationShortcut
         enabled: {
+            if (shortcutsSheet.opened || shortcutsSheetEscapeGuard)
+                return true;
             if (win.connection && win.connection.setupRequired)
                 return false;
             if (win.connection && win.connectionSheetOpen)
@@ -639,6 +677,11 @@ ApplicationWindow {
             return win.mockCurrentConversation.length > 0;
         }
         onActivated: {
+            if (shortcutsSheet.opened || shortcutsSheetEscapeGuard) {
+                shortcutsSheet.close();
+                shortcutsSheetEscapeGuard = false;
+                return;
+            }
             if (win.connection && win.connectionSheetOpen) {
                 win.connectionSheetOpen = false;
                 return;
@@ -2226,6 +2269,17 @@ ApplicationWindow {
                 clip: true
                 model: win.irc ? win.irc.members : win.currentPeopleCount
                 boundsBehavior: Flickable.StopAtBounds
+                keyNavigationEnabled: true
+                highlightFollowsCurrentItem: true
+                highlightMoveDuration: 0
+                currentIndex: 0
+
+                Keys.onPressed: function(event) {
+                    if (event.key !== Qt.Key_Return && event.key !== Qt.Key_Enter)
+                        return;
+                    win.activateFocusedMember();
+                    event.accepted = true;
+                }
 
                 delegate: Item {
                     id: memberDelegate
@@ -2254,7 +2308,9 @@ ApplicationWindow {
                         anchors.leftMargin: win.scaledSize(8)
                         anchors.rightMargin: win.scaledSize(8)
                         radius: win.scaledSize(7)
-                        color: memberMouse.containsMouse ? win.hoverColor : "transparent"
+                        color: memberMouse.containsMouse || ListView.isCurrentItem
+                            ? (memberMouse.containsMouse ? win.hoverColor : win.raisedColor)
+                            : "transparent"
                     }
 
                     Rectangle {
@@ -2361,6 +2417,70 @@ ApplicationWindow {
             font.family: "iA Writer Mono S"
             font.pixelSize: win.scaledSize(10)
             lineHeight: 1.35
+        }
+    }
+
+    Popup {
+        id: shortcutsSheet
+        objectName: "shortcutsSheet"
+        x: Math.round((win.width - width) / 2)
+        y: Math.round((win.height - height) / 2)
+        width: win.scaledSize(348)
+        padding: win.scaledSize(16)
+        modal: false
+        focus: true
+        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+        onOpened: shortcutsSheetEscapeGuard = true
+        onClosed: Qt.callLater(function() { shortcutsSheetEscapeGuard = false })
+
+        background: Rectangle {
+            color: win.raisedColor
+            border.width: 1
+            border.color: win.dividerColor
+            radius: win.scaledSize(9)
+        }
+
+        contentItem: Column {
+            spacing: win.scaledSize(4)
+
+            Repeater {
+                model: [
+                    { keys: "Alt+Down / Alt+Up", action: "walk conversations" },
+                    { keys: "Alt+A", action: "next unread" },
+                    { keys: "Ctrl+`", action: "Status" },
+                    { keys: "Ctrl+,", action: "Connect" },
+                    { keys: "Ctrl+Shift+M", action: "members panel" },
+                    { keys: "Ctrl+Shift+P", action: "focus members" },
+                    { keys: "Ctrl+L", action: "composer" },
+                    { keys: "Enter", action: "send" },
+                    { keys: "Page Up / Page Down", action: "scroll" },
+                    { keys: "Tab", action: "nick complete" },
+                    { keys: "Up / Down", action: "history" },
+                    { keys: "Escape", action: "dismiss" },
+                    { keys: "Ctrl+/", action: "this sheet" },
+                    { keys: "Ctrl+Q", action: "quit" }
+                ]
+
+                Row {
+                    spacing: win.scaledSize(12)
+                    width: parent.width
+
+                    Text {
+                        width: win.scaledSize(168)
+                        text: modelData.keys
+                        color: win.inkColor
+                        font.family: "iA Writer Mono S"
+                        font.pixelSize: win.scaledSize(11)
+                    }
+
+                    Text {
+                        text: modelData.action
+                        color: win.mutedColor
+                        font.family: "iA Writer Mono S"
+                        font.pixelSize: win.scaledSize(11)
+                    }
+                }
+            }
         }
     }
 

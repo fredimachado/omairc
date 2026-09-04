@@ -46,7 +46,7 @@ and do not construct `IrcConnection`.
 
 - Walk channels then direct messages with `Alt+Down` and `Alt+Up`. Click a sidebar row to jump.
 - Jump to the next unread with `Alt+A`, mentions first.
-- Click a channel member to open or create a direct message.
+- Click a channel member, or press Enter on a focused member, to open or create a direct message.
 - Send messages with `Enter`.
 - Scroll the transcript with `Page Up` and `Page Down`. The composer stays focused.
 - Complete a nick with `Tab` in the composer.
@@ -54,7 +54,10 @@ and do not construct `IrcConnection`.
 - Toggle Status with `Ctrl+``.
 - Open Connect with `Ctrl+,`.
 - Toggle the channel member list with `Ctrl+Shift+M`.
+- Focus the channel member list with `Ctrl+Shift+P`. The panel reopens if it was hidden.
 - Focus the message composer with `Ctrl+L`.
+- List these shortcuts with `Ctrl+/`.
+- Dismiss Status, Connect, or the shortcut list with Escape.
 - Quit with `Ctrl+Q`.
 
 Colors follow the current Omarchy theme

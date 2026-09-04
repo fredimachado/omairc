@@ -597,6 +597,89 @@ TestCase {
         saveScreenshot("toggle-members");
     }
 
+    function test_focusMembersWithShortcut() {
+        var panel = item("membersPanel");
+        var members = item("membersList");
+        verify(panel.visible);
+
+        keyClick(Qt.Key_P, Qt.ControlModifier | Qt.ShiftModifier);
+
+        tryCompare(panel, "visible", true);
+        tryCompare(members, "activeFocus", true);
+    }
+
+    function test_focusMembersReopensHiddenPanel() {
+        var panel = item("membersPanel");
+        var members = item("membersList");
+        verify(panel.visible);
+
+        keyClick(Qt.Key_M, Qt.ControlModifier | Qt.ShiftModifier);
+        tryCompare(panel, "visible", false);
+
+        keyClick(Qt.Key_P, Qt.ControlModifier | Qt.ShiftModifier);
+
+        tryCompare(panel, "visible", true);
+        tryCompare(members, "activeFocus", true);
+    }
+
+    function test_memberListEnterOpensDirectMessage() {
+        var members = item("membersList");
+
+        keyClick(Qt.Key_P, Qt.ControlModifier | Qt.ShiftModifier);
+        tryCompare(members, "activeFocus", true);
+        tryCompare(members, "currentIndex", 0);
+
+        keyClick(Qt.Key_Down);
+        keyClick(Qt.Key_Down);
+        tryCompare(members, "currentIndex", 2);
+
+        keyClick(Qt.Key_Return);
+        tryCompare(appWindow, "currentConversation", "mira");
+    }
+
+    function test_focusMembersShortcutIgnoredOnDirectMessage() {
+        var anna = item("directConversationRepeater").itemAt(0);
+        verify(anna !== null, "The anna direct-message delegate should be rendered");
+        mouseClick(anna);
+        tryCompare(appWindow, "currentConversation", "anna");
+        verify(!item("membersPanel").visible);
+
+        keyClick(Qt.Key_P, Qt.ControlModifier | Qt.ShiftModifier);
+
+        verify(!item("membersPanel").visible);
+        compare(appWindow.currentConversation, "anna");
+    }
+
+    function test_shortcutsSheetTogglesAndEscapeKeepsConversation() {
+        var sheet = item("shortcutsSheet");
+        verify(!sheet.opened);
+        verify(!sheet.visible);
+
+        keyClick(Qt.Key_Slash, Qt.ControlModifier);
+        tryCompare(sheet, "opened", true);
+
+        keyClick(Qt.Key_Escape);
+        tryCompare(sheet, "opened", false);
+        compare(appWindow.currentConversation, "#omarchy");
+    }
+
+    function test_shortcutsSheetEscapeDoesNotLeaveStatus() {
+        var sheet = item("shortcutsSheet");
+
+        keyClick(Qt.Key_QuoteLeft, Qt.ControlModifier);
+        tryCompare(appWindow, "consoleVisible", true);
+
+        keyClick(Qt.Key_Slash, Qt.ControlModifier);
+        tryCompare(sheet, "opened", true);
+
+        keyClick(Qt.Key_Escape);
+        tryCompare(sheet, "opened", false);
+        compare(appWindow.consoleVisible, true);
+
+        keyClick(Qt.Key_Escape);
+        tryCompare(appWindow, "consoleVisible", false);
+    }
+
     function test_openDirectMessageFromMember() {
         var members = item("membersList");
         var directConversations = item("directConversationRepeater");
