@@ -1,6 +1,7 @@
 #pragma once
 
 #include "ircpresence.h"
+#include "ircserverfeatures.h"
 
 #include <QChar>
 #include <QDateTime>
@@ -120,7 +121,7 @@ struct IrcTopicEvent
 struct IrcName
 {
     QString nick;
-    QString prefixModes;
+    IrcPrefixSet ranks;
 };
 
 struct IrcNamesEvent

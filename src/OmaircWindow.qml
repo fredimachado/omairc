@@ -816,18 +816,18 @@ ApplicationWindow {
 
     ListModel {
         id: membersModel
-        ListElement { nick: "anna"; status: "writing docs"; away: false }
-        ListElement { nick: "dax"; status: "on #desktop"; away: false }
-        ListElement { nick: "mira"; status: "making tea"; away: false }
-        ListElement { nick: "sol"; status: "new here"; away: false }
-        ListElement { nick: "fred"; status: "building Omairc"; away: false }
-        ListElement { nick: "kai"; status: ""; away: false }
-        ListElement { nick: "nora"; status: ""; away: false }
-        ListElement { nick: "teo"; status: ""; away: true }
-        ListElement { nick: "lena"; status: ""; away: true }
-        ListElement { nick: "sam"; status: ""; away: true }
-        ListElement { nick: "ivy"; status: ""; away: true }
-        ListElement { nick: "max"; status: ""; away: true }
+        ListElement { nick: "anna"; label: "anna"; status: "writing docs"; away: false }
+        ListElement { nick: "dax"; label: "dax"; status: "on #desktop"; away: false }
+        ListElement { nick: "mira"; label: "mira"; status: "making tea"; away: false }
+        ListElement { nick: "sol"; label: "sol"; status: "new here"; away: false }
+        ListElement { nick: "fred"; label: "fred"; status: "building Omairc"; away: false }
+        ListElement { nick: "kai"; label: "kai"; status: ""; away: false }
+        ListElement { nick: "nora"; label: "nora"; status: ""; away: false }
+        ListElement { nick: "teo"; label: "teo"; status: ""; away: true }
+        ListElement { nick: "lena"; label: "lena"; status: ""; away: true }
+        ListElement { nick: "sam"; label: "sam"; status: ""; away: true }
+        ListElement { nick: "ivy"; label: "ivy"; status: ""; away: true }
+        ListElement { nick: "max"; label: "max"; status: ""; away: true }
     }
 
     RowLayout {
@@ -1893,14 +1893,15 @@ ApplicationWindow {
                     id: memberDelegate
 
                     readonly property var memberData: win.irc
-                        ? ({nick: model.nick, status: model.status, away: model.away})
+                        ? ({nick: model.nick, label: model.label, status: model.status, away: model.away})
                         : win.memberDataFor(index)
                     readonly property string nick: memberData.nick
+                    readonly property string label: memberData.label
                     readonly property string status: memberData.status
                     readonly property bool away: win.awayPresenceVisible && memberData.away
 
                     objectName: "member-" + nick
-                    Accessible.name: nick
+                    Accessible.name: label
                     Accessible.description: win.memberStatusVisible ? status : ""
                     Accessible.role: Accessible.Button
                     Accessible.onPressAction: {
@@ -1964,7 +1965,7 @@ ApplicationWindow {
 
                         Text {
                             width: parent.width
-                            text: memberDelegate.nick
+                            text: memberDelegate.label
                             color: memberDelegate.away ? win.mutedColor : win.inkColor
                             elide: Text.ElideRight
                             font.family: "iA Writer Mono S"

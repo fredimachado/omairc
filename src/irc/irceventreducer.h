@@ -29,13 +29,14 @@ struct IrcReducedMessage
 struct IrcMemberState
 {
     QString displayNick;
-    QString prefixModes;
+    IrcPrefixSet ranks;
 };
 
 struct IrcMemberView
 {
     QString nick;
-    QString prefixModes;
+    QString label;
+    IrcPrefixSet ranks;
     std::optional<IrcAway> away;
     QString status;
 
