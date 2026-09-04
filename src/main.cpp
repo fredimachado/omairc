@@ -1,3 +1,4 @@
+#include <QCommandLineParser>
 #include <QFile>
 #include <QFont>
 #include <QFontDatabase>
@@ -21,14 +22,29 @@ int main(int argc, char *argv[]) {
     app.setWindowIcon(QIcon::fromTheme(QStringLiteral("omairc")));
     app.setOrganizationName(QStringLiteral("omairc"));
 
+    QCommandLineParser parser;
+    parser.setApplicationDescription(
+        QStringLiteral("A dead-simple IRC client for Omarchy."));
+    parser.addHelpOption();
+    const QCommandLineOption mockOption(
+        QStringLiteral("mock"),
+        QStringLiteral("Open the local prototype UI without connecting."));
+    parser.addOption(mockOption);
+    parser.process(app);
+    const bool mockMode = parser.isSet(mockOption);
+
     QFontDatabase::addApplicationFont(QStringLiteral(":/fonts/iAWriterMonoS-Regular.ttf"));
     QFontDatabase::addApplicationFont(QStringLiteral(":/fonts/iAWriterMonoS-Bold.ttf"));
 
     QQuickStyle::setStyle(QStringLiteral("Material"));
 
     Backend backend(&app);
-    IrcController ircController(&app);
-    IrcConnection ircConnection(ircController, &app);
+    IrcController *ircController = nullptr;
+    IrcConnection *ircConnection = nullptr;
+    if (!mockMode) {
+        ircController = new IrcController(&app);
+        ircConnection = new IrcConnection(*ircController, &app);
+    }
     SystemTheme systemTheme(&app);
     backend.setDarkMode(systemTheme.darkMode());
 
@@ -61,16 +77,17 @@ int main(int argc, char *argv[]) {
     });
     engine.rootContext()->setContextProperty(QStringLiteral("appBackend"), &backend);
     engine.rootContext()->setContextProperty(
-        QStringLiteral("ircController"), &ircController);
+        QStringLiteral("ircController"), ircController);
     engine.rootContext()->setContextProperty(
-        QStringLiteral("ircConnection"), &ircConnection);
+        QStringLiteral("ircConnection"), ircConnection);
     engine.load(QUrl(QStringLiteral("qrc:/Main.qml")));
     if (engine.rootObjects().isEmpty()) {
         qCritical() << "Could not load the Omairc interface; resource available:"
                     << QFile::exists(QStringLiteral(":/Main.qml"));
         return -1;
     }
-    ircConnection.activate();
+    if (ircConnection)
+        ircConnection->activate();
 
     return app.exec();
 }

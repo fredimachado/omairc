@@ -4,7 +4,8 @@
 
 - Keep Omairc dead-simple, keyboard-friendly, and visually native to Omarchy.
 - Conversations may be live through `IrcController`. UI tests may still use
-  the mock path when the `irc` property is null.
+  the mock path when the `irc` property is null. `./build/omairc --mock` opens
+  that same prototype in the compiled window, without Connect or a session.
 - Prefer a small, calm interface over adding controls for hypothetical future
   features.
 

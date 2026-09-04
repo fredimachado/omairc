@@ -32,7 +32,9 @@ The first release does not include:
 
 The first launch opens a connection sheet with Liberachat defaults. Enter a
 nick, change the host if you want a different network, and type a server
-password only if that network needs one. Apply starts the session.
+password only if that network needs one. Apply starts the session. Pass
+`--mock` to skip Connect and any saved profile, and open the bundled prototype
+conversations instead.
 
 Omairc remembers host, port, TLS, nick, username, real name, and autojoin in
 `$XDG_CONFIG_HOME/omairc/omairc.conf` under `networks/<id>/`. It does not write
@@ -76,6 +78,7 @@ follows the desktop text size.
 ```sh
 bin/build
 ./build/omairc
+./build/omairc --mock
 ```
 
 ## Test

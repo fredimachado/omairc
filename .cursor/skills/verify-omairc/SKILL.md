@@ -81,7 +81,7 @@ Use `control-omairc` against the isolated window. Stable handles:
 | Handle | Meaning |
 |---|---|
 | Window title `{name} - Omairc` | Current conversation |
-| `click-conversation --name #desktop` | Mock sidebar channel or seeded DM (`#omarchy`, `#desktop`, `#ricing`, `#help`, `anna`, `dax`). Those rows are hidden on a compiled window with `irc` bound. |
+| `click-conversation --name #desktop` | Mock sidebar channel or seeded DM (`#omarchy`, `#desktop`, `#ricing`, `#help`, `anna`, `dax`). Those rows are hidden on a compiled window with `irc` bound. Launch `build/omairc --mock` to open that prototype without Connect. |
 | `click-member --name mira` | Member row while the panel is visible |
 | `click-people` | Header `12 PEOPLE` / `Hide members` / `Show members` control (channels only) |
 | `click-network` | Sidebar network name. Opens Status. |
