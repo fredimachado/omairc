@@ -35,7 +35,7 @@ nick, change the host if you want a different network, and type a server
 password only if that network needs one. Apply starts the session.
 
 Omairc remembers host, port, TLS, nick, username, real name, and autojoin in
-`$XDG_CONFIG_HOME/Omacom/omairc.conf` under `networks/<id>/`. It does not write
+`$XDG_CONFIG_HOME/omairc/omairc.conf` under `networks/<id>/`. It does not write
 the password. Type the password again on the next launch if the server asks for
 it. Click the sidebar network name to reopen the sheet.
 

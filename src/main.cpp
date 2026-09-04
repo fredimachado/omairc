@@ -19,8 +19,7 @@ int main(int argc, char *argv[]) {
     app.setApplicationName(QStringLiteral("omairc"));
     app.setDesktopFileName(QStringLiteral("omairc"));
     app.setWindowIcon(QIcon::fromTheme(QStringLiteral("omairc")));
-    app.setOrganizationName(QStringLiteral("Omacom"));
-    app.setOrganizationDomain(QStringLiteral("omacom.io"));
+    app.setOrganizationName(QStringLiteral("omairc"));
 
     QFontDatabase::addApplicationFont(QStringLiteral(":/fonts/iAWriterMonoS-Regular.ttf"));
     QFontDatabase::addApplicationFont(QStringLiteral(":/fonts/iAWriterMonoS-Bold.ttf"));

@@ -32,7 +32,7 @@ void ProfileTest::init()
     QVERIFY(m_dir->isValid());
     qputenv("XDG_CONFIG_HOME", m_dir->path().toUtf8());
     QSettings::setPath(QSettings::NativeFormat, QSettings::UserScope, m_dir->path());
-    QCoreApplication::setOrganizationName(QStringLiteral("Omacom"));
+    QCoreApplication::setOrganizationName(QStringLiteral("omairc"));
     QCoreApplication::setApplicationName(QStringLiteral("omairc"));
 }
 
@@ -120,6 +120,7 @@ void ProfileTest::storeRoundTripsSevenFieldsWithoutPassword()
 
     QFile file(settingsFile());
     QVERIFY(file.exists());
+    QVERIFY(settingsFile().endsWith(QStringLiteral("/omairc/omairc.conf")));
     QVERIFY(file.open(QIODevice::ReadOnly | QIODevice::Text));
     const QString contents = QString::fromUtf8(file.readAll());
     QVERIFY(contents.contains(profile.networkId));

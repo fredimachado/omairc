@@ -38,7 +38,7 @@ void ConnectionTest::init()
     QVERIFY(m_dir->isValid());
     qputenv("XDG_CONFIG_HOME", m_dir->path().toUtf8());
     QSettings::setPath(QSettings::NativeFormat, QSettings::UserScope, m_dir->path());
-    QCoreApplication::setOrganizationName(QStringLiteral("Omacom"));
+    QCoreApplication::setOrganizationName(QStringLiteral("omairc"));
     QCoreApplication::setApplicationName(QStringLiteral("omairc"));
     m_transports.clear();
 }
