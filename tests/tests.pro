@@ -83,6 +83,7 @@ SOURCES += \
     session/tst_profile.cpp \
     session/tst_connection.cpp \
     session/tst_controller.cpp \
+    session/tst_command.cpp \
     session/tst_typing.cpp \
     session/tst_reducer.cpp \
     models/tst_models.cpp

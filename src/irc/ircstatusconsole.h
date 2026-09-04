@@ -4,6 +4,8 @@
 #include "ircnetworklog.h"
 #include "networklogmodel.h"
 
+#include <functional>
+
 #include <QObject>
 #include <QSet>
 #include <QString>
@@ -19,6 +21,8 @@ class IrcStatusConsole : public QObject
     Q_PROPERTY(int alerts READ alerts NOTIFY alertsChanged)
     Q_PROPERTY(QString networkId READ networkId NOTIFY networkChanged)
 public:
+    using Dispatch = std::function<IrcCommandOutcome(const IrcCommand&)>;
+
     explicit IrcStatusConsole(IrcSessionManager& sessions, QObject *parent = nullptr);
 
     QAbstractItemModel *lines();
@@ -30,9 +34,11 @@ public:
     void forget(const QString& networkId);
     void setNetwork(const QString& networkId);
     void setOpen(bool open);
+    void setDispatch(Dispatch dispatch);
 
     Q_INVOKABLE bool submit(const QString& input);
-    IrcCommandOutcome run(const IrcCommand& command);
+    bool clearLog();
+    IrcSession *boundSession() const;
 
 signals:
     void openChanged();
@@ -42,12 +48,12 @@ signals:
 private:
     void recordLifecycle(IrcSession *session);
     void noteLogChanged(const QString& networkId);
-    IrcSession *session() const;
 
     IrcSessionManager& m_sessions;
     IrcNetworkLog m_log;
     NetworkLogModel m_lines;
     QSet<QString> m_observed;
     QString m_networkId;
+    Dispatch m_dispatch;
     bool m_open = false;
 };

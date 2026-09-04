@@ -85,6 +85,8 @@ private:
     void echoLocal(IrcMessageKind kind, const QString& body);
     void handleMessage(const QString& networkId, const IrcMessage& message);
     void reloadModels();
+    IrcCommandOutcome dispatch(const IrcCommand& command,
+                               IrcComposerSurface surface);
     bool report(IrcCommandOutcome outcome, const IrcCommand& command);
     IrcSession *selectedSession() const;
     void updateStatus(IrcSession *session);

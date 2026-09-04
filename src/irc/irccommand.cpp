@@ -1,5 +1,72 @@
 #include "irccommand.h"
 
+bool IrcVerbSpec::allowedOn(IrcComposerSurface surface) const
+{
+    switch (scope) {
+    case IrcVerbScope::Conversation:
+        return surface == IrcComposerSurface::Conversation;
+    case IrcVerbScope::Status:
+        return surface == IrcComposerSurface::Status;
+    case IrcVerbScope::Either:
+        return true;
+    }
+    return false;
+}
+
+const QVector<IrcVerbSpec>& IrcVerbTable::all()
+{
+    static const QVector<IrcVerbSpec> rows = {
+        {IrcCommand::Verb::Action, QStringLiteral("me"), {},
+         QStringLiteral("/me <text>"), IrcVerbScope::Conversation},
+        {IrcCommand::Verb::Join, QStringLiteral("join"), {QStringLiteral("j")},
+         QStringLiteral("/join <channel>"), IrcVerbScope::Either},
+        {IrcCommand::Verb::Part, QStringLiteral("part"), {QStringLiteral("leave")},
+         QStringLiteral("/part <channel>"), IrcVerbScope::Either},
+        {IrcCommand::Verb::Nick, QStringLiteral("nick"), {},
+         QStringLiteral("/nick <nickname>"), IrcVerbScope::Either},
+        {IrcCommand::Verb::Quit, QStringLiteral("quit"), {},
+         QStringLiteral("/quit [reason]"), IrcVerbScope::Either},
+        {IrcCommand::Verb::Clear, QStringLiteral("clear"), {},
+         QStringLiteral("/clear"), IrcVerbScope::Either},
+    };
+    return rows;
+}
+
+const IrcVerbSpec *IrcVerbTable::lookup(const QString& token)
+{
+    const QString folded = token.toLower();
+    for (const IrcVerbSpec& row : all()) {
+        if (row.name == folded)
+            return &row;
+        if (row.aliases.contains(folded))
+            return &row;
+    }
+    return nullptr;
+}
+
+const IrcVerbSpec *IrcVerbTable::find(IrcCommand::Verb verb)
+{
+    if (verb == IrcCommand::Verb::Empty || verb == IrcCommand::Verb::Say
+        || verb == IrcCommand::Verb::Unknown) {
+        return nullptr;
+    }
+    for (const IrcVerbSpec& row : all()) {
+        if (row.verb == verb)
+            return &row;
+    }
+    return nullptr;
+}
+
+QVector<IrcVerbSpec> IrcVerbTable::visibleOn(IrcComposerSurface surface)
+{
+    QVector<IrcVerbSpec> rows;
+    for (const IrcVerbSpec& row : all()) {
+        if (row.allowedOn(surface))
+            rows.append(row);
+    }
+    return rows;
+}
+
 IrcCommand IrcCommand::parse(const QString& input)
 {
     IrcCommand command;
@@ -23,25 +90,12 @@ IrcCommand IrcCommand::parse(const QString& input)
     command.name = space < 0 ? trimmed : trimmed.left(space);
     command.argument = space < 0 ? QString() : trimmed.mid(space + 1).trimmed();
 
-    const QString verb = command.name.mid(1).toLower();
-    if (verb == QLatin1String("me"))
-        command.verb = Verb::Action;
-    else if (verb == QLatin1String("join"))
-        command.verb = Verb::Join;
-    else if (verb == QLatin1String("part"))
-        command.verb = Verb::Part;
-    else if (verb == QLatin1String("nick"))
-        command.verb = Verb::Nick;
-    else if (verb == QLatin1String("quit"))
-        command.verb = Verb::Quit;
-    else if (verb == QLatin1String("clear"))
-        command.verb = Verb::Clear;
-    else
-        command.verb = Verb::Unknown;
+    const IrcVerbSpec *spec = IrcVerbTable::lookup(command.name.mid(1));
+    command.verb = spec ? spec->verb : Verb::Unknown;
     return command;
 }
 
-bool IrcCommand::needsConversation() const
+bool IrcCommand::isLiveMessage() const
 {
     return verb == Verb::Say || verb == Verb::Action;
 }

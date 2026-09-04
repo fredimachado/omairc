@@ -10,6 +10,12 @@
 
 namespace
 {
+QString firstToken(const QString& argument)
+{
+    const int space = argument.indexOf(QLatin1Char(' '));
+    return space < 0 ? argument : argument.left(space);
+}
+
 QString parameter(const IrcMessage& message, std::size_t index)
 {
     if (index >= message.parameters.size())
@@ -55,6 +61,9 @@ IrcController::IrcController(QObject *parent)
     , m_messages(m_reducer)
     , m_members(m_reducer)
 {
+    m_console.setDispatch([this](const IrcCommand& command) {
+        return dispatch(command, IrcComposerSurface::Status);
+    });
     m_typingRefresh.setSingleShot(true);
     connect(&m_typingRefresh, &QTimer::timeout, this, [this] {
         emit typingChanged();
@@ -225,8 +234,7 @@ void IrcController::notifyComposerText(const QString& text)
 
     const IrcCommand command = IrcCommand::parse(text);
     const QString target = m_selectedTarget;
-    if (command.verb == IrcCommand::Verb::Say
-        || command.verb == IrcCommand::Verb::Action) {
+    if (command.isLiveMessage()) {
         session->sendTyping(target, IrcTypingPhase::Active);
         m_typingTarget = target;
         return;
@@ -321,26 +329,75 @@ bool IrcController::sendMessage(const QString& text)
     const IrcCommand command = IrcCommand::parse(text);
     if (command.verb == IrcCommand::Verb::Empty)
         return false;
-    if (!command.needsConversation())
-        return report(m_console.run(command), command);
+    return report(dispatch(command, IrcComposerSurface::Conversation), command);
+}
 
-    IrcSession *session = selectedSession();
-    if (!session || !m_selected)
-        return report(IrcCommandOutcome::WrongScope, command);
+IrcCommandOutcome IrcController::dispatch(const IrcCommand& command,
+                                          IrcComposerSurface surface)
+{
+    if (command.verb == IrcCommand::Verb::Empty)
+        return IrcCommandOutcome::Sent;
+    if (command.verb == IrcCommand::Verb::Unknown)
+        return IrcCommandOutcome::Unsupported;
+
+    const IrcVerbSpec *spec = IrcVerbTable::find(command.verb);
+    if (spec && !spec->allowedOn(surface))
+        return IrcCommandOutcome::WrongScope;
+    if (command.verb == IrcCommand::Verb::Say
+        && surface != IrcComposerSurface::Conversation) {
+        return IrcCommandOutcome::WrongScope;
+    }
+
+    if (command.verb == IrcCommand::Verb::Say
+        || command.verb == IrcCommand::Verb::Action) {
+        IrcSession *session = selectedSession();
+        if (!session || !m_selected)
+            return IrcCommandOutcome::WrongScope;
+        bool sent = false;
+        if (command.verb == IrcCommand::Verb::Action) {
+            sent = session->sendAction(m_selectedTarget, command.argument);
+            if (sent)
+                echoLocal(IrcMessageKind::Action, command.argument);
+        } else {
+            sent = session->sendPrivmsg(m_selectedTarget, command.argument);
+            if (sent)
+                echoLocal(IrcMessageKind::Message, command.argument);
+        }
+        if (sent)
+            m_typingTarget.clear();
+        return sent ? IrcCommandOutcome::Sent : IrcCommandOutcome::Refused;
+    }
+
+    if (command.verb == IrcCommand::Verb::Clear)
+        return m_console.clearLog() ? IrcCommandOutcome::Sent
+                                    : IrcCommandOutcome::Refused;
+
+    IrcSession *active = m_console.boundSession();
+    if (!active || active->state() != IrcSession::State::Registered)
+        return IrcCommandOutcome::NotConnected;
 
     bool sent = false;
-    if (command.verb == IrcCommand::Verb::Action) {
-        sent = session->sendAction(m_selectedTarget, command.argument);
-        if (sent)
-            echoLocal(IrcMessageKind::Action, command.argument);
-    } else {
-        sent = session->sendPrivmsg(m_selectedTarget, command.argument);
-        if (sent)
-            echoLocal(IrcMessageKind::Message, command.argument);
+    switch (command.verb) {
+    case IrcCommand::Verb::Join: {
+        const QString channel = firstToken(command.argument);
+        sent = !channel.isEmpty() && active->join(channel);
+        break;
     }
-    if (sent)
-        m_typingTarget.clear();
-    return report(sent ? IrcCommandOutcome::Sent : IrcCommandOutcome::Refused, command);
+    case IrcCommand::Verb::Part: {
+        const QString channel = firstToken(command.argument);
+        sent = !channel.isEmpty() && active->part(channel);
+        break;
+    }
+    case IrcCommand::Verb::Nick:
+        sent = !command.argument.isEmpty() && active->changeNick(command.argument);
+        break;
+    case IrcCommand::Verb::Quit:
+        sent = active->quit(command.argument);
+        break;
+    default:
+        return IrcCommandOutcome::Unsupported;
+    }
+    return sent ? IrcCommandOutcome::Sent : IrcCommandOutcome::Refused;
 }
 
 bool IrcController::report(IrcCommandOutcome outcome, const IrcCommand& command)

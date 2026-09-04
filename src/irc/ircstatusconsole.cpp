@@ -3,6 +3,8 @@
 #include "ircsession.h"
 #include "ircsessionmanager.h"
 
+#include <utility>
+
 namespace
 {
 QString stateLabel(IrcSession::State state)
@@ -57,11 +59,6 @@ QString stateText(IrcSession::State state)
     return QStringLiteral("Disconnected");
 }
 
-QString firstToken(const QString& argument)
-{
-    const int space = argument.indexOf(QLatin1Char(' '));
-    return space < 0 ? argument : argument.left(space);
-}
 }
 
 IrcStatusConsole::IrcStatusConsole(IrcSessionManager& sessions, QObject *parent)
@@ -169,13 +166,20 @@ void IrcStatusConsole::setOpen(bool open)
     emit alertsChanged();
 }
 
+void IrcStatusConsole::setDispatch(Dispatch dispatch)
+{
+    m_dispatch = std::move(dispatch);
+}
+
 bool IrcStatusConsole::submit(const QString& input)
 {
     const IrcCommand command = IrcCommand::parse(input);
     if (command.verb == IrcCommand::Verb::Empty)
         return false;
 
-    const IrcCommandOutcome outcome = run(command);
+    const IrcCommandOutcome outcome = m_dispatch
+        ? m_dispatch(command)
+        : IrcCommandOutcome::Refused;
     if (outcome != IrcCommandOutcome::Sent && !m_networkId.isEmpty()) {
         m_log.append(IrcStatusEntry::outcome(
             m_networkId, ircCommandOutcomeText(outcome, command)));
@@ -183,54 +187,17 @@ bool IrcStatusConsole::submit(const QString& input)
     return true;
 }
 
-IrcCommandOutcome IrcStatusConsole::run(const IrcCommand& command)
+bool IrcStatusConsole::clearLog()
 {
-    switch (command.verb) {
-    case IrcCommand::Verb::Empty:
-        return IrcCommandOutcome::Sent;
-    case IrcCommand::Verb::Say:
-    case IrcCommand::Verb::Action:
-        return IrcCommandOutcome::WrongScope;
-    case IrcCommand::Verb::Unknown:
-        return IrcCommandOutcome::Unsupported;
-    case IrcCommand::Verb::Clear:
-        if (m_networkId.isEmpty())
-            return IrcCommandOutcome::Refused;
-        m_log.clear(m_networkId);
-        return IrcCommandOutcome::Sent;
-    case IrcCommand::Verb::Join:
-    case IrcCommand::Verb::Part:
-    case IrcCommand::Verb::Nick:
-    case IrcCommand::Verb::Quit:
-        break;
-    }
+    if (m_networkId.isEmpty())
+        return false;
+    m_log.clear(m_networkId);
+    return true;
+}
 
-    IrcSession *active = session();
-    if (!active || active->state() != IrcSession::State::Registered)
-        return IrcCommandOutcome::NotConnected;
-
-    bool sent = false;
-    switch (command.verb) {
-    case IrcCommand::Verb::Join: {
-        const QString channel = firstToken(command.argument);
-        sent = !channel.isEmpty() && active->join(channel);
-        break;
-    }
-    case IrcCommand::Verb::Part: {
-        const QString channel = firstToken(command.argument);
-        sent = !channel.isEmpty() && active->part(channel);
-        break;
-    }
-    case IrcCommand::Verb::Nick:
-        sent = !command.argument.isEmpty() && active->changeNick(command.argument);
-        break;
-    case IrcCommand::Verb::Quit:
-        sent = active->quit(command.argument);
-        break;
-    default:
-        return IrcCommandOutcome::Unsupported;
-    }
-    return sent ? IrcCommandOutcome::Sent : IrcCommandOutcome::Refused;
+IrcSession *IrcStatusConsole::boundSession() const
+{
+    return m_sessions.findSession(m_networkId);
 }
 
 void IrcStatusConsole::recordLifecycle(IrcSession *session)
@@ -255,7 +222,3 @@ void IrcStatusConsole::noteLogChanged(const QString& networkId)
     emit alertsChanged();
 }
 
-IrcSession *IrcStatusConsole::session() const
-{
-    return m_sessions.findSession(m_networkId);
-}

@@ -1,6 +1,21 @@
 #pragma once
 
 #include <QString>
+#include <QStringList>
+#include <QVector>
+
+enum class IrcComposerSurface
+{
+    Conversation,
+    Status,
+};
+
+enum class IrcVerbScope
+{
+    Conversation,
+    Status,
+    Either,
+};
 
 struct IrcCommand
 {
@@ -10,7 +25,27 @@ struct IrcCommand
     QString argument;
 
     static IrcCommand parse(const QString& input);
-    bool needsConversation() const;
+    bool isLiveMessage() const;
+};
+
+struct IrcVerbSpec
+{
+    IrcCommand::Verb verb = IrcCommand::Verb::Unknown;
+    QString name;
+    QStringList aliases;
+    QString usage;
+    IrcVerbScope scope = IrcVerbScope::Either;
+
+    bool allowedOn(IrcComposerSurface surface) const;
+};
+
+class IrcVerbTable
+{
+public:
+    static const IrcVerbSpec *lookup(const QString& token);
+    static const IrcVerbSpec *find(IrcCommand::Verb verb);
+    static const QVector<IrcVerbSpec>& all();
+    static QVector<IrcVerbSpec> visibleOn(IrcComposerSurface surface);
 };
 
 enum class IrcCommandOutcome { Sent, NotConnected, Refused, Unsupported, WrongScope };
