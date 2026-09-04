@@ -3,6 +3,7 @@
 
 #include "fakeirctransport.h"
 #include "irccontroller.h"
+#include "networklogmodel.h"
 
 namespace
 {
@@ -139,28 +140,27 @@ void ControllerTest::liberaConnectCreatesChannelNotAuthDirect()
     auto *conversations =
         qobject_cast<QAbstractItemModel *>(controller.conversations());
     QVERIFY(conversations);
-    QCOMPARE(conversations->rowCount(), 2);
-
-    const QString first =
-        roleAt(conversations, 0, ConversationListModel::ConversationRole).toString();
-    const QString second =
-        roleAt(conversations, 1, ConversationListModel::ConversationRole).toString();
-    const int omarchyRow = first == QStringLiteral("#omarchy") ? 0 : 1;
-    const int authRow = omarchyRow == 0 ? 1 : 0;
-    QCOMPARE(roleAt(conversations, omarchyRow, ConversationListModel::ConversationRole),
+    QCOMPARE(conversations->rowCount(), 1);
+    QCOMPARE(roleAt(conversations, 0, ConversationListModel::ConversationRole),
              QStringLiteral("#omarchy"));
-    QCOMPARE(roleAt(conversations, omarchyRow, ConversationListModel::DirectRole), false);
-    QCOMPARE(roleAt(conversations, omarchyRow, ConversationListModel::NetworkIdRole),
+    QCOMPARE(roleAt(conversations, 0, ConversationListModel::DirectRole), false);
+    QCOMPARE(roleAt(conversations, 0, ConversationListModel::NetworkIdRole),
              QStringLiteral("libera"));
-    QCOMPARE(roleAt(conversations, authRow, ConversationListModel::ConversationRole),
-             QStringLiteral("AUTH"));
-    QCOMPARE(roleAt(conversations, authRow, ConversationListModel::DirectRole), true);
 
-    controller.selectConversation(
-        roleAt(conversations, omarchyRow, ConversationListModel::NetworkIdRole).toString(),
-        QStringLiteral("#omarchy"));
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
     QCOMPARE(controller.selectedTarget(), QStringLiteral("#omarchy"));
     QVERIFY(controller.isChannel());
+
+    auto *lines = controller.console()->lines();
+    QVERIFY(lines);
+    bool authNotice = false;
+    for (int row = 0; row < lines->rowCount(); ++row) {
+        const QString text =
+            lines->data(lines->index(row, 0), NetworkLogModel::TextRole).toString();
+        if (text.contains(QStringLiteral("Looking up your hostname")))
+            authNotice = true;
+    }
+    QVERIFY(authNotice);
 }
 
 void ControllerTest::emptyNetworkIdDoesNotSwitch()

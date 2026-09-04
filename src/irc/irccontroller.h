@@ -3,6 +3,7 @@
 #include "conversationlistmodel.h"
 #include "irceventreducer.h"
 #include "ircsessionmanager.h"
+#include "ircstatusconsole.h"
 #include "memberlistmodel.h"
 #include "messagelistmodel.h"
 
@@ -25,6 +26,7 @@ class IrcController : public QObject
     Q_PROPERTY(QString connectionStatus READ connectionStatus NOTIFY statusChanged)
     Q_PROPERTY(QString lastError READ lastError NOTIFY statusChanged)
     Q_PROPERTY(QString currentNick READ currentNick NOTIFY selectionChanged)
+    Q_PROPERTY(IrcStatusConsole* console READ console CONSTANT)
 
 public:
     explicit IrcController(QObject *parent = nullptr);
@@ -45,6 +47,7 @@ public:
     QString connectionStatus() const;
     QString lastError() const;
     QString currentNick() const;
+    IrcStatusConsole *console();
 
     Q_INVOKABLE bool start(const QString& networkId);
     Q_INVOKABLE void selectConversation(const QString& networkId,
@@ -64,10 +67,12 @@ private:
     void echoLocal(IrcMessageKind kind, const QString& body);
     void handleMessage(const QString& networkId, const IrcMessage& message);
     void reloadModels();
+    bool report(IrcCommandOutcome outcome, const IrcCommand& command);
     IrcSession *selectedSession() const;
     void updateStatus(IrcSession *session);
 
     IrcSessionManager m_sessions;
+    IrcStatusConsole m_console;
     IrcEventReducer m_reducer;
     ConversationListModel m_conversations;
     MessageListModel m_messages;

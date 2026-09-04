@@ -20,7 +20,7 @@ Send a message lets a user add a local line to the current mock transcript from 
 
 Preconditions:
 
-- Mock conversation UI is showing. That is `qml-suite` (`irc` left null), not a fresh compiled launch.
+- Mock conversation UI is showing. That is `qml-suite` (`irc` left null), not a fresh compiled launch titled `irc.libera.chat Status`.
 - For the desktop recipe below, the current conversation is `#desktop` (`control-omairc wait-title --exact "#desktop - Omairc"`).
 - No prior verify line `Hello from verify` is already in this session's `#desktop` transcript.
 

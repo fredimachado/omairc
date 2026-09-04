@@ -105,6 +105,8 @@ private slots:
     void managerRefusesSecondLiveNetwork();
     void managerCreateStaysAddOnly();
     void managerDiscardUnregistersImmediately();
+    void pingAndWelcomeProduceStatusEntries();
+    void configuredPasswordNeverAppearsInStatusEntries();
 };
 
 void SessionTest::registersAndAutojoins()
@@ -421,6 +423,100 @@ void SessionTest::managerDiscardUnregistersImmediately()
     QVERIFY(!guard.isNull());
     QCoreApplication::sendPostedEvents(session, QEvent::DeferredDelete);
     QVERIFY(guard.isNull());
+}
+
+namespace
+{
+struct StatusCollector
+{
+    explicit StatusCollector(IrcSession *session)
+    {
+        QObject::connect(session, &IrcSession::statusEntry, session,
+                         [this](const IrcStatusEntry& entry) {
+            entries.append(entry);
+        });
+    }
+
+    bool hasLabel(const QString& label) const
+    {
+        for (const IrcStatusEntry& entry : entries) {
+            if (entry.label() == label)
+                return true;
+        }
+        return false;
+    }
+
+    bool anyFieldContains(const QString& needle) const
+    {
+        for (const IrcStatusEntry& entry : entries) {
+            if (entry.text().contains(needle)
+                || entry.label().contains(needle)
+                || entry.networkId().contains(needle)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    QList<IrcStatusEntry> entries;
+};
+}
+
+void SessionTest::pingAndWelcomeProduceStatusEntries()
+{
+    Fixture fixture;
+    StatusCollector status(fixture.session);
+
+    fixture.connectTls();
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
+                          "PING :abc\r\n"
+                          ":server 001 omairc :Welcome\r\n"));
+
+    QVERIFY(status.hasLabel(QStringLiteral("PING")));
+    QVERIFY(status.hasLabel(QStringLiteral("001")));
+}
+
+void SessionTest::configuredPasswordNeverAppearsInStatusEntries()
+{
+    IrcSessionConfig passwordConfig = config();
+    passwordConfig.password = QStringLiteral("hunter2");
+    Fixture passFixture(passwordConfig);
+    StatusCollector passStatus(passFixture.session);
+
+    passFixture.connectTls();
+    passFixture.transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
+                          "PING :abc\r\n"
+                          ":server 001 omairc :Welcome\r\n"));
+
+    QVERIFY(passStatus.hasLabel(QStringLiteral("PING")));
+    QVERIFY(passStatus.hasLabel(QStringLiteral("001")));
+    QVERIFY(passStatus.hasLabel(QStringLiteral("PASS")));
+    QVERIFY(!passStatus.anyFieldContains(QStringLiteral("hunter2")));
+
+    IrcSessionConfig saslConfig = config(QStringLiteral("network-sasl"));
+    saslConfig.password = QStringLiteral("hunter2");
+    Fixture saslFixture(saslConfig);
+    StatusCollector saslStatus(saslFixture.session);
+
+    saslFixture.connectTls();
+    saslFixture.transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :sasl=PLAIN\r\n"
+                          ":server CAP omairc ACK :sasl\r\n"
+                          "AUTHENTICATE +\r\n"
+                          ":server 903 omairc :SASL successful\r\n"
+                          ":server 001 omairc :Welcome\r\n"));
+
+    QVERIFY(saslStatus.hasLabel(QStringLiteral("AUTHENTICATE")));
+    QVERIFY(saslStatus.hasLabel(QStringLiteral("001")));
+    QVERIFY(!saslStatus.anyFieldContains(QStringLiteral("hunter2")));
+    for (const IrcStatusEntry& entry : saslStatus.entries) {
+        if (entry.label() == QStringLiteral("AUTHENTICATE")
+            || entry.label() == QStringLiteral("PASS")) {
+            QCOMPARE(entry.text(), entry.label() + QStringLiteral(" ***"));
+        }
+    }
 }
 
 int runSessionTests(int argc, char **argv)

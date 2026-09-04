@@ -20,7 +20,7 @@ Switch conversation lets a user leave the current mock chat and open another cha
 Preconditions:
 
 - Mock conversation UI is showing (`#omarchy - Omairc`, sidebar includes `#desktop` and `anna`). That is `qml-suite` (`irc` left null), not a fresh compiled launch.
-- A fresh compiled window is titled ` - Omairc` with Connect. Do not start this recipe there.
+- A fresh compiled window is titled `irc.libera.chat Status` with Connect. Do not start this recipe there.
 - For a desktop instance that is already titled `#omarchy - Omairc`, `control-omairc doctor` must report the disposable XDG directory and default-sized window.
 
 - **Open #desktop.** Choose the `#desktop` channel. Run `control-omairc click-conversation --name "#desktop"` then `control-omairc wait-title --exact "#desktop - Omairc"`. The title is `#desktop - Omairc`, the header topic is `Desktops should feel personal, fast, and calm.`, and the people control reads `8 PEOPLE`.

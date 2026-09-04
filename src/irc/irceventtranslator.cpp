@@ -3,6 +3,8 @@
 #include <QByteArray>
 #include <QDateTime>
 
+#include <optional>
+
 namespace
 {
 QString text(const std::string& value)
@@ -47,14 +49,36 @@ bool same(const QString& left,
     return features.caseMapping().equals(utf8(left), utf8(right));
 }
 
-QString chatTarget(const QString& target,
-                   const QString& sender,
-                   const QString& currentNick,
-                   const IrcServerFeatures& features)
+bool hasUserPrefix(const IrcMessage& message)
+{
+    return message.prefix.has_value()
+        && !message.prefix->nick.empty()
+        && !message.prefix->user.empty();
+}
+
+bool isNetworkNoticeTarget(const QString& target)
+{
+    return target.isEmpty()
+        || target == QLatin1String("*")
+        || target.compare(QLatin1String("AUTH"), Qt::CaseInsensitive) == 0;
+}
+
+std::optional<IrcConversationKey> conversationFor(const QString& networkId,
+                                                  const QString& target,
+                                                  const IrcMessage& message,
+                                                  const QString& currentNick,
+                                                  const IrcServerFeatures& features)
 {
     if (features.isChannel(utf8(target)))
-        return target;
-    return same(target, currentNick, features) ? sender : target;
+        return key(networkId, target, features);
+    if (isNetworkNoticeTarget(target) || !hasUserPrefix(message)
+        || !same(target, currentNick, features)) {
+        return std::nullopt;
+    }
+    const QString sender = author(message);
+    if (sender.isEmpty())
+        return std::nullopt;
+    return key(networkId, sender, features);
 }
 
 QStringList remainingParameters(const IrcMessage& message, std::size_t start)
@@ -80,20 +104,25 @@ std::vector<IrcEvent> IrcEventTranslator::translate(
     if ((command == QStringLiteral("PRIVMSG") || command == QStringLiteral("NOTICE"))
         && message.parameters.size() >= 2) {
         const QString wireTarget = parameter(message, 0);
-        const QString target = chatTarget(wireTarget, sender, currentNick, features);
+        const std::optional<IrcConversationKey> conversation = conversationFor(
+            networkId, wireTarget, message, currentNick, features);
+        if (!conversation)
+            return events;
         const QString body = parameter(message, 1);
-        const IrcConversationKey conversation = key(networkId, target, features);
+        const QString displayTarget = features.isChannel(utf8(wireTarget))
+            ? wireTarget
+            : sender;
         if (command == QStringLiteral("PRIVMSG")
             && body.startsWith(QStringLiteral("\x01ACTION "))
             && body.endsWith(QChar(1))) {
             events.emplace_back(IrcActionEvent{
-                conversation, sender, body.mid(8, body.size() - 9), now, target});
+                *conversation, sender, body.mid(8, body.size() - 9), now, displayTarget});
         } else if (command == QStringLiteral("NOTICE")) {
             events.emplace_back(IrcNoticeEvent{
-                conversation, sender, body, now, target});
+                *conversation, sender, body, now, displayTarget});
         } else {
             events.emplace_back(IrcMessageEvent{
-                conversation, sender, body, now, target});
+                *conversation, sender, body, now, displayTarget});
         }
     } else if (command == QStringLiteral("JOIN") && !message.parameters.empty()) {
         events.emplace_back(IrcJoinEvent{networkId, parameter(message, 0), sender});
@@ -138,12 +167,6 @@ std::vector<IrcEvent> IrcEventTranslator::translate(
         events.emplace_back(IrcModeEvent{
             networkId, parameter(message, 0), sender, parameter(message, 1),
             remainingParameters(message, 2)});
-    } else if (command == QStringLiteral("ERROR")) {
-        events.emplace_back(IrcServerErrorEvent{
-            networkId, command,
-            message.parameters.empty()
-                ? QStringLiteral("IRC server reported an error")
-                : parameter(message, message.parameters.size() - 1)});
     }
 
     return events;

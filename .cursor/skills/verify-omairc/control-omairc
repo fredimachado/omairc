@@ -184,7 +184,7 @@ cmd_launch() {
   attempt=0
   WINDOW=
   while [ -z "$WINDOW" ]; do
-    WINDOW="$(xdotool search --onlyvisible --pid "$APP_PID" --name 'Omairc' 2>/dev/null | head -1 || true)"
+    WINDOW="$(xdotool search --onlyvisible --pid "$APP_PID" 2>/dev/null | head -1 || true)"
     attempt=$((attempt + 1))
     if [ "$attempt" -ge 50 ] || ! process_alive "$APP_PID"; then
       die "Omairc did not open; see $STATE_DIR/logs/omairc.log"
@@ -208,11 +208,11 @@ cmd_doctor() {
   process_alive "$APP_PID" || die "Omairc pid $APP_PID is not running"
   [ -x "$BINARY" ] || die "binary missing: $BINARY"
   [ -e "/tmp/.X11-unix/X${DISPLAY#:}" ] || die "display $DISPLAY is gone"
-  found="$(xdotool search --onlyvisible --pid "$APP_PID" --name 'Omairc' 2>/dev/null | head -1 || true)"
+  found="$(xdotool search --onlyvisible --pid "$APP_PID" 2>/dev/null | head -1 || true)"
   [ "$found" = "$WINDOW" ] || die "window $WINDOW is not the Omairc window for pid $APP_PID"
   title="$(window_title)"
   case $title in
-    *" - Omairc") ;;
+    *" - Omairc"|*" Status"|Status) ;;
     *) die "unexpected window title '$title'" ;;
   esac
   echo "ok isolated Omairc"
@@ -426,13 +426,15 @@ cmd_qml_suite() {
     "$EVIDENCE_DIR/switch-conversation" \
     "$EVIDENCE_DIR/send-message" \
     "$EVIDENCE_DIR/toggle-members" \
-    "$EVIDENCE_DIR/open-direct-message"
+    "$EVIDENCE_DIR/open-direct-message" \
+    "$EVIDENCE_DIR/status-console"
   for pair in \
     "connection-sheet.png:connect/first-run.png" \
     "switch-channel.png:switch-conversation/after-desktop.png" \
     "send-message.png:send-message/after-send.png" \
     "toggle-members.png:toggle-members/members-hidden.png" \
-    "open-direct-message.png:open-direct-message/mira-dm.png"
+    "open-direct-message.png:open-direct-message/mira-dm.png" \
+    "status-console.png:status-console/after-open.png"
   do
     src="$ROOT/test-artifacts/${pair%%:*}"
     dest="$EVIDENCE_DIR/${pair#*:}"

@@ -87,12 +87,36 @@ TestCase {
             direct: false
             networkId: "libera"
         }
+    }
+
+    ListModel {
+        id: liveConsoleLines
         ListElement {
-            conversation: "AUTH"
-            unread: 1
-            mention: false
-            direct: true
-            networkId: "libera"
+            time: "12:00:01"
+            label: "NOTICE"
+            text: "*** Looking up your hostname..."
+            source: "server"
+            severity: "info"
+        }
+        ListElement {
+            time: "12:00:02"
+            label: "001"
+            text: "Welcome to Libera"
+            source: "server"
+            severity: "info"
+        }
+    }
+
+    QtObject {
+        id: liveConsole
+
+        property var lines: liveConsoleLines
+        property bool open: false
+        property int alerts: 0
+        property string networkId: "libera"
+
+        function submit(input) {
+            return input.length > 0;
         }
     }
 
@@ -107,16 +131,17 @@ TestCase {
     QtObject {
         id: liveIrc
 
-        property string selectedTarget: "AUTH"
+        property string selectedTarget: "#omarchy"
         property string selectedNetworkId: "libera"
-        property string topic: "Ident notices"
-        property bool isChannel: false
-        property int peopleCount: 0
+        property string topic: "A cozy corner for Omarchy users and builders."
+        property bool isChannel: true
+        property int peopleCount: 1
         property string connectionStatus: "Connected"
         property string lastError: ""
         property var conversations: liveConversations
         property var messages: liveMessages
         property var members: liveMembers
+        property var statusConsole: liveConsole
 
         function selectConversation(networkId, name) {
             if (!networkId || !name)
@@ -261,21 +286,30 @@ TestCase {
         window.close();
     }
 
-    function test_liveSidebarClickSwitchesFromAuthToChannel() {
+    function liveDirectNames(window) {
+        var dms = findChild(window, "directConversationRepeater");
+        verify(dms !== null, "Live direct-message repeater should be named");
+        var names = [];
+        var index = 0;
+        for (index = 0; index < dms.count; ++index) {
+            var directRow = dms.itemAt(index);
+            if (directRow && directRow.visible)
+                names.push(directRow.conversationName);
+        }
+        return names;
+    }
+
+    function test_liveSidebarClickSwitchesChannel() {
         var window = createTemporaryObject(liveWindowComponent, null);
         verify(window !== null, "The live window should load");
         tryCompare(window, "visible", true);
         waitForRendering(window.contentItem);
 
-        compare(window.currentConversation, "AUTH");
+        compare(window.currentConversation, "#omarchy");
         var channels = findChild(window, "channelConversationRepeater");
         verify(channels !== null, "Live channel repeater should be named");
-        var dms = findChild(window, "directConversationRepeater");
-        verify(dms !== null, "Live direct-message repeater should be named");
 
         var channel = null;
-        var channelInDirects = false;
-        var authInDirects = false;
         var index = 0;
         for (index = 0; index < channels.count; ++index) {
             var channelRow = channels.itemAt(index);
@@ -283,21 +317,14 @@ TestCase {
                     && channelRow.conversationName === "#omarchy")
                 channel = channelRow;
         }
-        for (index = 0; index < dms.count; ++index) {
-            var directRow = dms.itemAt(index);
-            if (!directRow || !directRow.visible)
-                continue;
-            if (directRow.conversationName === "#omarchy")
-                channelInDirects = true;
-            if (directRow.conversationName === "AUTH")
-                authInDirects = true;
-        }
 
         verify(channel !== null, "Live #omarchy row should render under Channels");
         compare(channel.networkId, "libera");
         compare(channel.direct, false);
-        verify(!channelInDirects, "#omarchy must stay out of Direct Messages");
-        verify(authInDirects, "AUTH belongs under Direct Messages");
+        verify(liveDirectNames(window).indexOf("#omarchy") === -1,
+               "#omarchy must stay out of Direct Messages");
+        verify(liveDirectNames(window).indexOf("AUTH") === -1,
+               "AUTH must not appear under Direct Messages");
 
         mouseClick(channel);
 
@@ -305,6 +332,50 @@ TestCase {
         compare(liveIrc.selectedNetworkId, "libera");
         compare(window.currentConversationIsChannel, true);
         window.close();
+    }
+
+    function test_openStatusFromNetworkHeaderKeepsAuthOutOfDirects() {
+        liveConsole.open = false;
+        var window = createTemporaryObject(liveWindowComponent, null);
+        verify(window !== null, "The live window should load");
+        tryCompare(window, "visible", true);
+        waitForRendering(window.contentItem);
+
+        compare(window.consoleVisible, false);
+        verify(liveDirectNames(window).indexOf("AUTH") === -1,
+               "AUTH must not appear under Direct Messages");
+
+        var header = findChild(window, "networkHeaderButton");
+        verify(header !== null, "Could not find networkHeaderButton");
+        mouseClick(header);
+
+        tryCompare(window, "consoleVisible", true);
+        compare(window.title, "Status");
+        var list = findChild(window, "consoleList");
+        verify(list !== null, "Could not find consoleList");
+        verify(list.visible);
+        compare(list.model.count, 2);
+        compare(list.model.get(0).text, "*** Looking up your hostname...");
+        verify(liveDirectNames(window).indexOf("AUTH") === -1,
+               "Opening Status must not create an AUTH direct message");
+        verify(!findChild(window, "peopleButton").visible);
+        try {
+            grabImage(window.contentItem).save(artifactDirectory + "status-console.png");
+        } catch (error) {
+            fail("Failed to save screenshot 'status-console': " + error);
+        }
+        window.close();
+        liveConsole.open = false;
+    }
+
+    function test_mockStatusOpensFromNetworkHeader() {
+        mouseClick(item("networkHeaderButton"));
+        tryCompare(appWindow, "consoleVisible", true);
+        compare(appWindow.title, "Status");
+        var list = item("consoleList");
+        verify(list.visible);
+        compare(list.model.get(0).text, "*** Looking up your hostname...");
+        verify(!item("peopleButton").visible);
     }
 
     function test_openDirectMessageClearsModelUnreadState() {

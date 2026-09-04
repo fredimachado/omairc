@@ -20,7 +20,7 @@ Prefer a private X server and the compiled binary when `Xvfb`, `xauth`, `xdotool
 .cursor/skills/verify-omairc/control-omairc launch
 ```
 
-Ready when stdout includes a title ending in ` - Omairc` and `doctor` exits 0. First run is ` - Omairc` with the connection sheet. After a conversation exists the title is `{conversation} - Omairc`.
+Ready when stdout includes a title ending in ` - Omairc` or ` Status`, and `doctor` exits 0. First run is `{displayName} Status` (often `irc.libera.chat Status`) with the connection sheet. After a conversation exists the title is `{conversation} - Omairc`. Status itself uses `{displayName} Status` or `Status`.
 
 This launch:
 
@@ -61,7 +61,7 @@ Require all of:
 - `binary=` is `$ROOT/build/omairc`
 - `display=` is the isolated Xvfb from launch, not the user's session
 - `app_pid=` and `xvfb_pid=` are alive
-- `title=` ends with ` - Omairc`
+- `title=` ends with ` - Omairc` or ` Status`
 - `xdg=` is the disposable state directory from this run
 
 If doctor fails, cleanup, then launch again. Do not continue against a shared or stale instance.
@@ -91,7 +91,7 @@ Use `control-omairc` against the isolated window. Stable handles:
 
 Named clicks are window-relative pixels for 1180x760 at textScale 1.0. They are invalid on a maximized window, a restored user geometry, or a portal text scale other than 1.0. That is why launch isolates XDG and DBus.
 
-QML object names used by `bin/test` (not visible to xdotool): `connectionSheet`, `connectionHost`, `connectionNick`, `conversation-#desktop`, `conversation-anna`, `messageComposer`, `sendButton`, `peopleButton`, `membersPanel`, `membersList`, `member-mira`, `messageList`, `directConversationRepeater`.
+QML object names used by `bin/test` (not visible to xdotool): `connectionSheet`, `connectionHost`, `connectionNick`, `conversation-#desktop`, `conversation-anna`, `messageComposer`, `sendButton`, `peopleButton`, `membersPanel`, `membersList`, `member-mira`, `messageList`, `directConversationRepeater`, `networkHeaderButton`, `networkEditButton`, `consoleList`.
 
 Typical drive:
 
@@ -103,7 +103,7 @@ Typical drive:
 .cursor/skills/verify-omairc/control-omairc screenshot --feature switch-conversation --name after-desktop
 ```
 
-That click path needs the mock sidebar. A fresh compiled launch is Connect with title ` - Omairc`; use the Connect feature file first.
+That click path needs the mock sidebar. A fresh compiled launch is Connect with title `{displayName} Status`; use the Connect feature file first.
 
 Inspect the matching feature file for the exact recipe and observables.
 
