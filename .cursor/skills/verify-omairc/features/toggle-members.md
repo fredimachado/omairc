@@ -20,8 +20,8 @@ Toggle members lets a user hide or show the channel member list from the header 
 
 Preconditions:
 
-- Mock conversation UI is showing (`#omarchy - Omairc`, members visible). That is `qml-suite` (`irc` left null), not a fresh compiled launch.
-- A fresh compiled window is titled `irc.libera.chat Status` with Connect. Do not start this recipe there.
+- Mock conversation UI is showing (`#omarchy - Omairc`, members visible). Use `control-omairc launch --mock`, or `qml-suite` (`irc` left null).
+- `control-omairc launch` without `--mock` is first-run Connect titled `irc.libera.chat Status`. Do not start this recipe there.
 - For a desktop instance, the window is the isolated 1180x760 default, so the panel can appear (`width >= 980`).
 
 - **Baseline panel.** Confirm the panel is open. Run `control-omairc screenshot --feature toggle-members --name members-open`. The right column shows `ONLINE - 12` and nicks including `anna`, and the people control reads `12 PEOPLE`.

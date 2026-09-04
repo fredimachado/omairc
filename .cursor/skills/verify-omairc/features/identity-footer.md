@@ -17,8 +17,8 @@ The sidebar footer always shows who this window is. It is the initials chip, the
 
 Preconditions:
 
-- A fresh compiled launch shows `fred` / `available` because Nick is still empty.
-- Mock and live-fixture nicks and chrome are proven by `qml-suite`. Do not type a nick and Apply on the compiled window; that starts a real session.
+- A default compiled launch shows `fred` / `available` because Nick is still empty.
+- Mock chrome is also on `control-omairc launch --mock`. Live-fixture nicks are proven by `qml-suite`. Do not type a nick and Apply on the compiled window; that starts a real session.
 
 - **First-run fallback.** After `control-omairc launch`, run `control-omairc screenshot --feature identity-footer --name first-run-fred`. The footer nick is `fred` and the line under it is `available`.
 - **Offscreen suite.** When proving the mock and live labels, run `control-omairc doctor-qml` then `control-omairc qml-suite`. `bin/test` asserts `selfNickLabel` is `fred` on the mock window and `live-nick` on the live fixture. The mock `selfPresenceLabel` is `available` and `selfPresenceDot` is `#69b978`. A live fixture with `selfAway` true and `hasAwayPresence` false shows `away` and `#d6a552`. `qml-suite` copies the `#desktop` grab to `test-artifacts/verify/identity-footer/mock-fred.png`. That image must show `fred` / `available` in the sidebar footer. This does not prove the compiled-window first-run footer.

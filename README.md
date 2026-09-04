@@ -32,7 +32,9 @@ The first release does not include:
 
 The first launch opens a connection sheet with Liberachat defaults. Enter a
 nick, change the host if you want a different network, and type a server
-password only if that network needs one. Apply starts the session.
+password only if that network needs one. Apply starts the session. Pass
+`--mock` to skip Connect and any saved profile, and open the bundled prototype
+conversations instead.
 
 Omairc remembers host, port, TLS, nick, username, real name, and autojoin in
 `$XDG_CONFIG_HOME/omairc/omairc.conf` under `networks/<id>/`. It does not write
@@ -76,6 +78,7 @@ follows the desktop text size.
 ```sh
 bin/build
 ./build/omairc
+./build/omairc --mock
 ```
 
 ## Test
@@ -102,8 +105,8 @@ run:
 bin/test-desktop
 ```
 
-This starts an access-controlled virtual display, launches the real
-`build/omairc` executable with temporary settings and no host desktop portal,
+This starts an access-controlled virtual display, launches
+`build/omairc --mock` with temporary settings and no host desktop portal,
 and drives it using external mouse and keyboard events. It never sends input
 to the active desktop. The runner checks visible changes between screenshots;
 logs and screenshots are written to `test-artifacts/desktop/`.

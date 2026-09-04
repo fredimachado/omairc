@@ -65,7 +65,7 @@ XDG_CACHE_HOME="$TEST_STATE/cache" \
 XDG_DATA_HOME="$TEST_STATE/data" \
 DBUS_SESSION_BUS_ADDRESS="unix:path=$TEST_STATE/no-session-bus" \
 QT_QPA_PLATFORM=xcb \
-"$ROOT/build/omairc" >"$ROOT/test-artifacts/desktop/omairc.log" 2>&1 &
+"$ROOT/build/omairc" --mock >"$ROOT/test-artifacts/desktop/omairc.log" 2>&1 &
 APP_PID=$!
 
 attempt=0
@@ -109,6 +109,7 @@ assert_images_differ() {
 }
 
 xdotool windowfocus --sync "$window"
+wait_for_title "#omarchy - Omairc"
 
 # Switch to #desktop through the second channel row.
 xdotool mousemove --window "$window" 120 160 click 1
@@ -133,7 +134,9 @@ capture "open-direct-message"
 xdotool mousemove --window "$window" 120 160 click 1
 wait_for_title "#desktop - Omairc"
 capture "members-before-toggle"
-xdotool key --window "$window" ctrl+shift+m
+xdotool windowfocus --sync "$window"
+xdotool key --clearmodifiers ctrl+shift+m
+sleep 0.2
 capture "toggle-members"
 assert_images_differ \
   "$ROOT/test-artifacts/desktop/members-before-toggle.png" \

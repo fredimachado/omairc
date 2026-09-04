@@ -4,7 +4,8 @@
 
 - Keep Omairc dead-simple, keyboard-friendly, and visually native to Omarchy.
 - Conversations may be live through `IrcController`. UI tests may still use
-  the mock path when the `irc` property is null.
+  the mock path when the `irc` property is null. `./build/omairc --mock` opens
+  that same prototype in the compiled window, without Connect or a session.
 - Prefer a small, calm interface over adding controls for hypothetical future
   features.
 
@@ -53,6 +54,7 @@ bin/build
 bin/test
 bin/test-desktop
 QT_QPA_PLATFORM=offscreen timeout 3 ./build/omairc
+QT_QPA_PLATFORM=offscreen timeout 3 ./build/omairc --mock
 ```
 
 The timeout is expected for the startup smoke check because the GUI event loop
@@ -63,4 +65,5 @@ write screenshots to `test-artifacts/`; inspect the relevant screenshot when
 changing layout or presentation.
 Use `bin/test-desktop` when the optional Xvfb, Xauthority, xdotool, and
 ImageMagick dependencies are available to verify the compiled executable as a
-black box without interacting with the user's active desktop.
+black box without interacting with the user's active desktop. That runner
+launches `./build/omairc --mock`.
