@@ -4,9 +4,13 @@
 #include <QSignalSpy>
 #include <QTest>
 
+#include <string_view>
+
 #include "fakeirctransport.h"
+#include "ircparser.h"
 #include "ircsession.h"
 #include "ircsessionmanager.h"
+#include "ircstatusentry.h"
 
 class FakeReconnectTimer : public IrcReconnectTimer
 {
@@ -88,6 +92,14 @@ struct Fixture
     FakeReconnectTimer *capabilityTimer;
     IrcSession *session;
 };
+
+IrcMessage mustParse(std::string_view line)
+{
+    const IrcParseResult parsed = IrcParser::parse(line);
+    if (!parsed)
+        qFatal("failed to parse IRC line");
+    return *parsed.value;
+}
 }
 
 class SessionTest : public QObject
@@ -122,6 +134,8 @@ private slots:
     void configuredPasswordNeverAppearsInStatusEntries();
     void setTopicIsSetOnly();
     void setAwayEncodesOptionalReason();
+    void whoisWritesDoubledNick();
+    void whoisStatusLinesFormatKnownNumerics();
 };
 
 void SessionTest::registersAndAutojoins()
@@ -743,6 +757,110 @@ void SessionTest::setAwayEncodesOptionalReason()
     QVERIFY(fixture.session->clearAway());
     QCOMPARE(fixture.transport->writtenFrames().last(),
              QByteArrayLiteral("AWAY\r\n"));
+}
+
+void SessionTest::whoisWritesDoubledNick()
+{
+    Fixture fixture;
+    fixture.connectTls();
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
+                          ":server 001 omairc :Welcome\r\n"));
+    QCOMPARE(fixture.session->state(), IrcSession::State::Registered);
+
+    QVERIFY(fixture.session->whois(QStringLiteral("lena")));
+    QCOMPARE(fixture.transport->writtenFrames().last(),
+             QByteArrayLiteral("WHOIS lena lena\r\n"));
+
+    const int before = fixture.transport->writtenFrames().size();
+    QVERIFY(!fixture.session->whois(QString()));
+    QVERIFY(!fixture.session->whois(QStringLiteral("   ")));
+    QCOMPARE(fixture.transport->writtenFrames().size(), before);
+}
+
+void SessionTest::whoisStatusLinesFormatKnownNumerics()
+{
+    const IrcStatusEntry user = IrcStatusEntry::incoming(
+        QStringLiteral("libera"),
+        mustParse(":irc 311 omairc lena ~lena user/host * :Lena"));
+    QCOMPARE(user.label(), QStringLiteral("whois"));
+    QCOMPARE(user.text(), QStringLiteral("lena is ~lena@user/host (Lena)"));
+    QCOMPARE(user.severity(), IrcLogSeverity::Info);
+
+    const IrcStatusEntry channels = IrcStatusEntry::incoming(
+        QStringLiteral("libera"),
+        mustParse(":irc 319 omairc lena :#omarchy #desktop"));
+    QCOMPARE(channels.label(), QStringLiteral("whois"));
+    QCOMPARE(channels.text(), QStringLiteral("lena is on #omarchy #desktop"));
+
+    const IrcStatusEntry server = IrcStatusEntry::incoming(
+        QStringLiteral("libera"),
+        mustParse(":irc 312 omairc lena copper.libera.chat :London, UK"));
+    QCOMPARE(server.label(), QStringLiteral("whois"));
+    QCOMPARE(server.text(),
+             QStringLiteral("lena using copper.libera.chat (London, UK)"));
+
+    const IrcStatusEntry away = IrcStatusEntry::incoming(
+        QStringLiteral("libera"),
+        mustParse(":irc 301 omairc lena :gone fishing"));
+    QCOMPARE(away.label(), QStringLiteral("whois"));
+    QCOMPARE(away.text(), QStringLiteral("lena is away: gone fishing"));
+
+    const IrcStatusEntry idle = IrcStatusEntry::incoming(
+        QStringLiteral("libera"),
+        mustParse(":irc 317 omairc lena 84 :seconds idle"));
+    QCOMPARE(idle.label(), QStringLiteral("whois"));
+    QCOMPARE(idle.text(), QStringLiteral("lena idle 84s"));
+
+    const IrcStatusEntry idleSignon = IrcStatusEntry::incoming(
+        QStringLiteral("libera"),
+        mustParse(":irc 317 omairc lena 84 1700000000 :seconds idle"));
+    QCOMPARE(idleSignon.label(), QStringLiteral("whois"));
+    QCOMPARE(idleSignon.text(), QStringLiteral("lena idle 84s, signon 1700000000"));
+
+    const IrcStatusEntry end = IrcStatusEntry::incoming(
+        QStringLiteral("libera"),
+        mustParse(":irc 318 omairc lena :End of /WHOIS list."));
+    QCOMPARE(end.label(), QStringLiteral("whois"));
+    QCOMPARE(end.text(), QStringLiteral("End of WHOIS for lena"));
+
+    const IrcStatusEntry account = IrcStatusEntry::incoming(
+        QStringLiteral("libera"),
+        mustParse(":irc 330 omairc lena pinkieval :is logged in as"));
+    QCOMPARE(account.label(), QStringLiteral("whois"));
+    QCOMPARE(account.text(), QStringLiteral("lena is logged in as pinkieval"));
+
+    const IrcStatusEntry secure = IrcStatusEntry::incoming(
+        QStringLiteral("libera"),
+        mustParse(":irc 671 omairc lena :is using a secure connection"));
+    QCOMPARE(secure.label(), QStringLiteral("whois"));
+    QCOMPARE(secure.text(),
+             QStringLiteral("lena is using a secure connection"));
+
+    const IrcStatusEntry unknown = IrcStatusEntry::incoming(
+        QStringLiteral("libera"),
+        mustParse(":irc 335 omairc lena :bot"));
+    QCOMPARE(unknown.label(), QStringLiteral("335"));
+    QCOMPARE(unknown.text(), QStringLiteral("lena bot"));
+
+    const IrcStatusEntry shortUser = IrcStatusEntry::incoming(
+        QStringLiteral("libera"),
+        mustParse(":irc 311 omairc lena"));
+    QCOMPARE(shortUser.label(), QStringLiteral("311"));
+    QCOMPARE(shortUser.text(), QStringLiteral("lena"));
+
+    const IrcStatusEntry missing = IrcStatusEntry::incoming(
+        QStringLiteral("libera"),
+        mustParse(":irc 401 omairc lena :No such nick/channel"));
+    QCOMPARE(missing.label(), QStringLiteral("401"));
+    QCOMPARE(missing.text(), QStringLiteral("No such nick: lena"));
+    QCOMPARE(missing.severity(), IrcLogSeverity::Alert);
+
+    const IrcStatusEntry welcome = IrcStatusEntry::incoming(
+        QStringLiteral("libera"),
+        mustParse(":server 001 omairc :Welcome"));
+    QCOMPARE(welcome.label(), QStringLiteral("001"));
+    QCOMPARE(welcome.text(), QStringLiteral("Welcome"));
 }
 
 int runSessionTests(int argc, char **argv)

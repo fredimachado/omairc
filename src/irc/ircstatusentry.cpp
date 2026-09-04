@@ -2,6 +2,8 @@
 
 #include <QStringList>
 
+#include <optional>
+
 namespace
 {
 QString fromUtf8(const std::string& value)
@@ -74,6 +76,170 @@ QString incomingText(const IrcMessage& message, const QString& command)
     return parts.join(QLatin1Char(' '));
 }
 
+enum class IrcWhoisLayout {
+    User,
+    Channels,
+    Server,
+    Away,
+    Idle,
+    End,
+    NickRest,
+    Account,
+    NoSuchNick,
+    NoSuchServer,
+};
+
+struct IrcWhoisNumericSpec
+{
+    int code = 0;
+    const char *label = nullptr;
+    IrcWhoisLayout layout = IrcWhoisLayout::NickRest;
+};
+
+struct FormattedWhois
+{
+    QString label;
+    QString text;
+};
+
+constexpr IrcWhoisNumericSpec kWhoisNumerics[] = {
+    {311, "whois", IrcWhoisLayout::User},
+    {319, "whois", IrcWhoisLayout::Channels},
+    {312, "whois", IrcWhoisLayout::Server},
+    {301, "whois", IrcWhoisLayout::Away},
+    {317, "whois", IrcWhoisLayout::Idle},
+    {318, "whois", IrcWhoisLayout::End},
+    {276, "whois", IrcWhoisLayout::NickRest},
+    {307, "whois", IrcWhoisLayout::NickRest},
+    {313, "whois", IrcWhoisLayout::NickRest},
+    {320, "whois", IrcWhoisLayout::NickRest},
+    {330, "whois", IrcWhoisLayout::Account},
+    {338, "whois", IrcWhoisLayout::NickRest},
+    {378, "whois", IrcWhoisLayout::NickRest},
+    {379, "whois", IrcWhoisLayout::NickRest},
+    {671, "whois", IrcWhoisLayout::NickRest},
+    {401, nullptr, IrcWhoisLayout::NoSuchNick},
+    {402, nullptr, IrcWhoisLayout::NoSuchServer},
+};
+
+QString parameterAt(const QStringList& params, int index)
+{
+    if (index < 0 || index >= params.size())
+        return {};
+    return params.at(index);
+}
+
+const IrcWhoisNumericSpec *whoisSpecFor(int code)
+{
+    for (const IrcWhoisNumericSpec& row : kWhoisNumerics) {
+        if (row.code == code)
+            return &row;
+    }
+    return nullptr;
+}
+
+std::optional<FormattedWhois> formatWhois(const IrcMessage& message)
+{
+    const QString command = commandOf(message);
+    if (command.size() != 3)
+        return std::nullopt;
+    bool ok = false;
+    const int code = command.toInt(&ok);
+    if (!ok)
+        return std::nullopt;
+    const IrcWhoisNumericSpec *spec = whoisSpecFor(code);
+    if (!spec)
+        return std::nullopt;
+
+    QStringList params;
+    params.reserve(int(message.parameters.size()));
+    for (const std::string& parameter : message.parameters)
+        params.append(fromUtf8(parameter));
+
+    QString text;
+    switch (spec->layout) {
+    case IrcWhoisLayout::User: {
+        if (params.size() < 6)
+            return std::nullopt;
+        const QString nick = parameterAt(params, 1);
+        const QString user = parameterAt(params, 2);
+        const QString host = parameterAt(params, 3);
+        const QString realname = parameterAt(params, 5);
+        text = QStringLiteral("%1 is %2@%3 (%4)").arg(nick, user, host, realname);
+        break;
+    }
+    case IrcWhoisLayout::Channels: {
+        if (params.size() < 3)
+            return std::nullopt;
+        text = QStringLiteral("%1 is on %2")
+                   .arg(parameterAt(params, 1), parameterAt(params, 2));
+        break;
+    }
+    case IrcWhoisLayout::Server: {
+        if (params.size() < 4)
+            return std::nullopt;
+        text = QStringLiteral("%1 using %2 (%3)")
+                   .arg(parameterAt(params, 1),
+                        parameterAt(params, 2),
+                        parameterAt(params, 3));
+        break;
+    }
+    case IrcWhoisLayout::Away: {
+        if (params.size() < 3)
+            return std::nullopt;
+        text = QStringLiteral("%1 is away: %2")
+                   .arg(parameterAt(params, 1), parameterAt(params, 2));
+        break;
+    }
+    case IrcWhoisLayout::Idle: {
+        if (params.size() < 3)
+            return std::nullopt;
+        text = QStringLiteral("%1 idle %2s")
+                   .arg(parameterAt(params, 1), parameterAt(params, 2));
+        if (params.size() >= 5 && !parameterAt(params, 3).isEmpty())
+            text += QStringLiteral(", signon %1").arg(parameterAt(params, 3));
+        break;
+    }
+    case IrcWhoisLayout::End: {
+        if (params.size() < 2)
+            return std::nullopt;
+        text = QStringLiteral("End of WHOIS for %1").arg(parameterAt(params, 1));
+        break;
+    }
+    case IrcWhoisLayout::NickRest: {
+        if (params.size() < 3)
+            return std::nullopt;
+        text = parameterAt(params, 1) + QLatin1Char(' ')
+            + params.mid(2).join(QLatin1Char(' '));
+        break;
+    }
+    case IrcWhoisLayout::Account: {
+        if (params.size() < 3)
+            return std::nullopt;
+        text = QStringLiteral("%1 is logged in as %2")
+                   .arg(parameterAt(params, 1), parameterAt(params, 2));
+        break;
+    }
+    case IrcWhoisLayout::NoSuchNick: {
+        if (params.size() < 2)
+            return std::nullopt;
+        text = QStringLiteral("No such nick: %1").arg(parameterAt(params, 1));
+        break;
+    }
+    case IrcWhoisLayout::NoSuchServer: {
+        if (params.size() < 2)
+            return std::nullopt;
+        text = QStringLiteral("No such server: %1").arg(parameterAt(params, 1));
+        break;
+    }
+    }
+
+    return FormattedWhois{
+        spec->label ? QString::fromLatin1(spec->label) : command,
+        text,
+    };
+}
+
 QString firstToken(QStringView line)
 {
     const QStringView trimmed = line.trimmed();
@@ -102,6 +268,14 @@ IrcStatusEntry::IrcStatusEntry(QString networkId,
 IrcStatusEntry IrcStatusEntry::incoming(const QString& networkId, const IrcMessage& message)
 {
     const QString command = commandOf(message);
+    if (const auto formatted = formatWhois(message)) {
+        return IrcStatusEntry(networkId,
+                              QDateTime::currentDateTimeUtc(),
+                              IrcLogSource::Server,
+                              severityFor(command),
+                              formatted->label,
+                              formatted->text);
+    }
     return IrcStatusEntry(networkId,
                           QDateTime::currentDateTimeUtc(),
                           IrcLogSource::Server,

@@ -454,6 +454,9 @@ IrcCommandOutcome IrcController::dispatch(const IrcCommand& command,
     if (command.verb == IrcCommand::Verb::Notice)
         return dispatchNotice(command, surface);
 
+    if (command.verb == IrcCommand::Verb::Whois)
+        return dispatchWhois(command, surface);
+
     if (command.verb == IrcCommand::Verb::Clear)
         return clearSurface(surface);
 
@@ -604,6 +607,37 @@ IrcCommandOutcome IrcController::dispatchNotice(const IrcCommand& command,
         return IrcCommandOutcome::Refused;
     echoNoticeIfPresent(session, target, body);
     return IrcCommandOutcome::Sent;
+}
+
+IrcCommandOutcome IrcController::dispatchWhois(const IrcCommand& command,
+                                               IrcComposerSurface surface)
+{
+    QString nick = firstToken(command.argument);
+    IrcSession *session = nullptr;
+    if (nick.isEmpty()) {
+        if (selectedIsCloseableDirect()) {
+            nick = m_selectedTarget;
+            session = selectedSession();
+        } else if (m_selected) {
+            return IrcCommandOutcome::WrongScope;
+        } else {
+            return IrcCommandOutcome::Refused;
+        }
+    } else {
+        const QString networkId = queryNetworkId(surface);
+        if (networkId.isEmpty()) {
+            if (surface == IrcComposerSurface::Conversation)
+                return IrcCommandOutcome::WrongScope;
+            return IrcCommandOutcome::Refused;
+        }
+        session = m_sessions.findSession(networkId);
+    }
+    if (nick.isEmpty())
+        return IrcCommandOutcome::Refused;
+    if (!session || session->state() != IrcSession::State::Registered)
+        return IrcCommandOutcome::NotConnected;
+    return session->whois(nick) ? IrcCommandOutcome::Sent
+                                : IrcCommandOutcome::Refused;
 }
 
 void IrcController::echoNoticeIfPresent(IrcSession *session,

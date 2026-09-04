@@ -70,11 +70,13 @@ private slots:
     void parseTopic();
     void parseNotice();
     void parseAwayAndBack();
+    void parseWhois();
     void catalogLookupAndScope();
     void closeWrongScopeUsesCatalogSentence();
     void conversationSendAndUnknown();
     void statusSubmitDoesNotSendAction();
     void awayAndBackWriteAwayFrames();
+    void whoisSendsAndDefaults();
 };
 
 void CommandTest::parseEmptyAndSay()
@@ -280,6 +282,33 @@ void CommandTest::parseAwayAndBack()
     QVERIFY(escaped.isLiveMessage());
 }
 
+void CommandTest::parseWhois()
+{
+    const IrcCommand whois = IrcCommand::parse(QStringLiteral("/whois lena"));
+    QCOMPARE(whois.verb, IrcCommand::Verb::Whois);
+    QCOMPARE(whois.argument, QStringLiteral("lena"));
+    QCOMPARE(whois.name, QStringLiteral("/whois"));
+    QVERIFY(!whois.isLiveMessage());
+    QVERIFY(whois.allowedOn(IrcComposerSurface::Conversation));
+    QVERIFY(whois.allowedOn(IrcComposerSurface::Status));
+
+    const IrcCommand folded = IrcCommand::parse(QStringLiteral("/WHOIS"));
+    QCOMPARE(folded.verb, IrcCommand::Verb::Whois);
+    QVERIFY(folded.argument.isEmpty());
+    QCOMPARE(folded.name, QStringLiteral("/WHOIS"));
+    QVERIFY(!folded.isLiveMessage());
+
+    const IrcCommand empty = IrcCommand::parse(QStringLiteral("/whois"));
+    QCOMPARE(empty.verb, IrcCommand::Verb::Whois);
+    QVERIFY(empty.argument.isEmpty());
+    QVERIFY(!empty.isLiveMessage());
+
+    const IrcCommand escapedWhois = IrcCommand::parse(QStringLiteral("//whois lena"));
+    QCOMPARE(escapedWhois.verb, IrcCommand::Verb::Say);
+    QCOMPARE(escapedWhois.argument, QStringLiteral("/whois lena"));
+    QVERIFY(escapedWhois.isLiveMessage());
+}
+
 void CommandTest::catalogLookupAndScope()
 {
     const IrcVerbSpec *join = IrcVerbTable::lookup(QStringLiteral("J"));
@@ -298,7 +327,7 @@ void CommandTest::catalogLookupAndScope()
     QVERIFY(!IrcVerbTable::find(IrcCommand::Verb::Empty));
     QVERIFY(!IrcVerbTable::find(IrcCommand::Verb::Unknown));
 
-    QCOMPARE(IrcVerbTable::all().size(), 12);
+    QCOMPARE(IrcVerbTable::all().size(), 13);
     for (const IrcVerbSpec& row : IrcVerbTable::all())
         QVERIFY(row.name != QLatin1String("say"));
 
@@ -354,8 +383,17 @@ void CommandTest::catalogLookupAndScope()
     QVERIFY(back->wrongScopeText.isEmpty());
     QVERIFY(back->aliases.isEmpty());
 
+    const IrcVerbSpec *whois = IrcVerbTable::lookup(QStringLiteral("whois"));
+    QVERIFY(whois);
+    QCOMPARE(whois->verb, IrcCommand::Verb::Whois);
+    QCOMPARE(whois->name, QStringLiteral("whois"));
+    QCOMPARE(whois->usage, QStringLiteral("/whois [nick]"));
+    QCOMPARE(whois->scope, IrcVerbScope::Either);
+    QCOMPARE(whois->wrongScopeText, QStringLiteral("Whois applies to direct messages"));
+    QVERIFY(whois->aliases.isEmpty());
+
     const QVector<IrcVerbSpec> status = IrcVerbTable::visibleOn(IrcComposerSurface::Status);
-    QCOMPARE(status.size(), 9);
+    QCOMPARE(status.size(), 10);
     for (const IrcVerbSpec& row : status) {
         QVERIFY(row.allowedOn(IrcComposerSurface::Status));
         QVERIFY(row.verb != IrcCommand::Verb::Action);
@@ -365,7 +403,7 @@ void CommandTest::catalogLookupAndScope()
 
     const QVector<IrcVerbSpec> conversation =
         IrcVerbTable::visibleOn(IrcComposerSurface::Conversation);
-    QCOMPARE(conversation.size(), 12);
+    QCOMPARE(conversation.size(), 13);
     bool sawMe = false;
     bool sawClose = false;
     bool sawQuery = false;
@@ -373,6 +411,7 @@ void CommandTest::catalogLookupAndScope()
     bool sawNotice = false;
     bool sawAway = false;
     bool sawBack = false;
+    bool sawWhois = false;
     for (const IrcVerbSpec& row : conversation) {
         if (row.name == QLatin1String("me"))
             sawMe = true;
@@ -388,6 +427,8 @@ void CommandTest::catalogLookupAndScope()
             sawAway = true;
         if (row.name == QLatin1String("back"))
             sawBack = true;
+        if (row.name == QLatin1String("whois"))
+            sawWhois = true;
     }
     QVERIFY(sawMe);
     QVERIFY(sawClose);
@@ -396,6 +437,7 @@ void CommandTest::catalogLookupAndScope()
     QVERIFY(sawNotice);
     QVERIFY(sawAway);
     QVERIFY(sawBack);
+    QVERIFY(sawWhois);
 
     const IrcCommand say = IrcCommand::parse(QStringLiteral("hello"));
     QVERIFY(say.allowedOn(IrcComposerSurface::Conversation));
@@ -429,6 +471,9 @@ void CommandTest::closeWrongScopeUsesCatalogSentence()
     const IrcCommand topic = IrcCommand::parse(QStringLiteral("/topic hello"));
     QCOMPARE(ircCommandOutcomeText(IrcCommandOutcome::WrongScope, topic),
              QStringLiteral("Topic applies to channels"));
+    const IrcCommand whois = IrcCommand::parse(QStringLiteral("/whois"));
+    QCOMPARE(ircCommandOutcomeText(IrcCommandOutcome::WrongScope, whois),
+             QStringLiteral("Whois applies to direct messages"));
 }
 
 void CommandTest::conversationSendAndUnknown()
@@ -584,6 +629,74 @@ void CommandTest::awayAndBackWriteAwayFrames()
     QCOMPARE(lonely.lastError(), QStringLiteral("Not connected"));
     QVERIFY(!lonely.sendMessage(QStringLiteral("/back")));
     QCOMPARE(lonely.lastError(), QStringLiteral("Not connected"));
+}
+
+void CommandTest::whoisSendsAndDefaults()
+{
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    IrcSession *session = controller.addSession(config(), transport);
+    QVERIFY(session);
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    welcome(transport);
+    QCOMPARE(session->state(), IrcSession::State::Registered);
+    transport->injectBytes(QByteArrayLiteral(":omairc!u@h JOIN :#omarchy\r\n"));
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+
+    QVERIFY(controller.sendMessage(QStringLiteral("/whois lena")));
+    QCOMPARE(transport->writtenFrames().last(),
+             QByteArrayLiteral("WHOIS lena lena\r\n"));
+
+    IrcStatusConsole *console = controller.console();
+    QVERIFY(console->submit(QStringLiteral("/whois lena")));
+    QCOMPARE(transport->writtenFrames().last(),
+             QByteArrayLiteral("WHOIS lena lena\r\n"));
+
+    QVERIFY(controller.sendMessage(QStringLiteral("/whois #omarchy")));
+    QCOMPARE(transport->writtenFrames().last(),
+             QByteArrayLiteral("WHOIS #omarchy #omarchy\r\n"));
+
+    const int beforeChannelEmpty = transport->writtenFrames().size();
+    QVERIFY(!controller.sendMessage(QStringLiteral("/whois")));
+    QCOMPARE(controller.lastError(),
+             QStringLiteral("Whois applies to direct messages"));
+    QCOMPARE(transport->writtenFrames().size(), beforeChannelEmpty);
+    QVERIFY(!framesContain(transport->writtenFrames().mid(beforeChannelEmpty),
+                           QByteArrayLiteral("WHOIS")));
+
+    transport->injectBytes(QByteArrayLiteral(":lena!u@h PRIVMSG omairc :hi\r\n"));
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("lena"));
+    QVERIFY(controller.sendMessage(QStringLiteral("/whois")));
+    QCOMPARE(transport->writtenFrames().last(),
+             QByteArrayLiteral("WHOIS lena lena\r\n"));
+    QVERIFY(console->submit(QStringLiteral("/whois")));
+    QCOMPARE(transport->writtenFrames().last(),
+             QByteArrayLiteral("WHOIS lena lena\r\n"));
+
+    IrcController statusOnly;
+    auto *statusTransport = new FakeIrcTransport;
+    IrcSession *statusSession = statusOnly.addSession(config(), statusTransport);
+    QVERIFY(statusSession);
+    QVERIFY(statusOnly.start(QStringLiteral("libera")));
+    welcome(statusTransport);
+    QCOMPARE(statusSession->state(), IrcSession::State::Registered);
+    QVERIFY(statusOnly.selectedTarget().isEmpty());
+    IrcStatusConsole *statusConsole = statusOnly.console();
+    const int beforeStatusEmpty = statusTransport->writtenFrames().size();
+    QVERIFY(statusConsole->submit(QStringLiteral("/whois")));
+    QVERIFY(logContains(statusConsole->lines(), QStringLiteral("Command was refused")));
+    QCOMPARE(statusTransport->writtenFrames().size(), beforeStatusEmpty);
+    QVERIFY(!framesContain(statusTransport->writtenFrames().mid(beforeStatusEmpty),
+                           QByteArrayLiteral("WHOIS")));
+
+    transport->remoteClose();
+    QVERIFY(session->state() != IrcSession::State::Registered);
+    const int framesBefore = transport->writtenFrames().size();
+    QVERIFY(!controller.sendMessage(QStringLiteral("/whois lena")));
+    QCOMPARE(controller.lastError(), QStringLiteral("Not connected"));
+    QCOMPARE(transport->writtenFrames().size(), framesBefore);
+    QVERIFY(!framesContain(transport->writtenFrames().mid(framesBefore),
+                           QByteArrayLiteral("WHOIS")));
 }
 
 int runCommandTests(int argc, char **argv)

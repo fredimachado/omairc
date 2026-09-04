@@ -326,6 +326,14 @@ bool IrcSession::quit(const QString& reason)
     return sent;
 }
 
+bool IrcSession::whois(const QString& nick)
+{
+    const QString trimmed = nick.trimmed();
+    if (trimmed.isEmpty())
+        return false;
+    return sendCommand(QStringLiteral("WHOIS %1 %1").arg(trimmed));
+}
+
 void IrcSession::setState(State state)
 {
     if (m_state == state)

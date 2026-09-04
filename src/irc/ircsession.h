@@ -104,6 +104,7 @@ public slots:
     bool clearAway();
     bool changeNick(const QString& nick);
     bool quit(const QString& reason = {});
+    bool whois(const QString& nick);
 
 signals:
     void stateChanged(IrcSession::State state);

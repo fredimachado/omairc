@@ -50,6 +50,9 @@ const QVector<IrcVerbSpec>& IrcVerbTable::all()
          QStringLiteral("/away [reason]"), IrcVerbScope::Either, {}},
         {IrcCommand::Verb::Back, QStringLiteral("back"), {},
          QStringLiteral("/back"), IrcVerbScope::Either, {}},
+        {IrcCommand::Verb::Whois, QStringLiteral("whois"), {},
+         QStringLiteral("/whois [nick]"), IrcVerbScope::Either,
+         QStringLiteral("Whois applies to direct messages")},
     };
     return rows;
 }
