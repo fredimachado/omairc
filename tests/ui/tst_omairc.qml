@@ -753,6 +753,27 @@ TestCase {
         tryCompare(appWindow, "currentConversation", "mira");
     }
 
+    function test_memberEnterAfterSwitchingToSmallerChannel() {
+        var members = item("membersList");
+
+        keyClick(Qt.Key_P, Qt.ControlModifier | Qt.ShiftModifier);
+        tryCompare(members, "activeFocus", true);
+
+        var step = 0;
+        for (step = 0; step < 9; ++step)
+            keyClick(Qt.Key_Down);
+        tryCompare(members, "currentIndex", 9);
+
+        mouseClick(item("conversation-#help"));
+        tryCompare(appWindow, "currentConversation", "#help");
+        tryCompare(members, "currentIndex", 0);
+
+        keyClick(Qt.Key_P, Qt.ControlModifier | Qt.ShiftModifier);
+        tryCompare(members, "activeFocus", true);
+        keyClick(Qt.Key_Return);
+        tryCompare(appWindow, "currentConversation", "anna");
+    }
+
     function test_focusMembersShortcutIgnoredOnDirectMessage() {
         var anna = item("directConversationRepeater").itemAt(0);
         verify(anna !== null, "The anna direct-message delegate should be rendered");

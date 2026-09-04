@@ -62,6 +62,10 @@ ApplicationWindow {
     onCurrentConversationChanged: {
         resetNickComplete();
         resetComposerHistoryBrowse();
+        Qt.callLater(function() {
+            if (membersList)
+                membersList.currentIndex = 0;
+        });
     }
     readonly property string currentTopic: irc
         ? (irc.selectedTarget.length > 0
@@ -260,17 +264,18 @@ ApplicationWindow {
     function focusMembersList() {
         membersVisible = true;
         Qt.callLater(function() {
-            if (membersList.currentIndex < 0)
-                membersList.currentIndex = 0;
+            var last = memberCount() - 1;
+            if (membersList.currentIndex < 0 || membersList.currentIndex > last)
+                membersList.currentIndex = last < 0 ? -1 : 0;
             membersList.forceActiveFocus();
         });
     }
 
     function activateFocusedMember() {
-        var row = membersList.itemAtIndex(membersList.currentIndex);
-        if (!row || row.nick === win.selfNick)
+        var nick = memberNickAt(membersList.currentIndex);
+        if (nick.length === 0 || nick === win.selfNick)
             return;
-        win.openDirectMessage(row.nick);
+        win.openDirectMessage(nick);
     }
 
     function markDirectConversationRead(name) {
@@ -456,6 +461,21 @@ ApplicationWindow {
         if (model.count !== undefined)
             return model.count;
         return model.rowCount();
+    }
+
+    function memberCount() {
+        if (irc)
+            return liveMemberCount(irc.members);
+        return currentPeopleCount;
+    }
+
+    function memberNickAt(index) {
+        if (index < 0 || index >= memberCount())
+            return "";
+        if (irc)
+            return liveMemberNick(irc.members, index);
+        var mock = memberDataFor(index);
+        return mock && mock.nick ? mock.nick : "";
     }
 
     function nickCompleteCandidates() {
