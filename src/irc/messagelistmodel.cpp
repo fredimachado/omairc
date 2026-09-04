@@ -13,8 +13,9 @@ QString kindString(IrcMessageKind kind)
     case IrcMessageKind::Error:
         return QStringLiteral("event");
     case IrcMessageKind::Message:
-    case IrcMessageKind::Notice:
         return QStringLiteral("message");
+    case IrcMessageKind::Notice:
+        return QStringLiteral("notice");
     }
     return QStringLiteral("message");
 }

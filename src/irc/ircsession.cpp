@@ -248,6 +248,13 @@ bool IrcSession::sendPrivmsg(const QString& target, const QString& body)
     return sent;
 }
 
+bool IrcSession::sendNotice(const QString& target, const QString& body)
+{
+    if (target.isEmpty() || body.isEmpty())
+        return false;
+    return sendCommand(QStringLiteral("NOTICE %1 :%2").arg(target, body));
+}
+
 bool IrcSession::sendAction(const QString& target, const QString& body)
 {
     if (target.isEmpty() || body.isEmpty())

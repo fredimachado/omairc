@@ -94,6 +94,7 @@ public slots:
     void stop();
     void cancelReconnect();
     bool sendPrivmsg(const QString& target, const QString& body);
+    bool sendNotice(const QString& target, const QString& body);
     bool sendAction(const QString& target, const QString& body);
     bool sendTyping(const QString& target, IrcTypingPhase phase);
     bool join(const QString& channel);

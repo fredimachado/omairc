@@ -44,6 +44,8 @@ const QVector<IrcVerbSpec>& IrcVerbTable::all()
         {IrcCommand::Verb::Topic, QStringLiteral("topic"), {},
          QStringLiteral("/topic [text]"), IrcVerbScope::Conversation,
          QStringLiteral("Topic applies to channels")},
+        {IrcCommand::Verb::Notice, QStringLiteral("notice"), {},
+         QStringLiteral("/notice <target> <text>"), IrcVerbScope::Either, {}},
     };
     return rows;
 }

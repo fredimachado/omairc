@@ -97,6 +97,11 @@ private:
     IrcCommandOutcome setSelectedTopic(const QString& topic);
     IrcCommandOutcome dispatchQuery(const IrcCommand& command,
                                     IrcComposerSurface surface);
+    IrcCommandOutcome dispatchNotice(const IrcCommand& command,
+                                     IrcComposerSurface surface);
+    void echoNoticeIfPresent(IrcSession *session,
+                             const QString& target,
+                             const QString& body);
     IrcCommandOutcome clearSurface(IrcComposerSurface surface);
     bool report(IrcCommandOutcome outcome, const IrcCommand& command);
     bool selectedIsCloseableDirect() const;

@@ -451,6 +451,9 @@ IrcCommandOutcome IrcController::dispatch(const IrcCommand& command,
     if (command.verb == IrcCommand::Verb::Query)
         return dispatchQuery(command, surface);
 
+    if (command.verb == IrcCommand::Verb::Notice)
+        return dispatchNotice(command, surface);
+
     if (command.verb == IrcCommand::Verb::Clear)
         return clearSurface(surface);
 
@@ -571,6 +574,43 @@ IrcCommandOutcome IrcController::dispatchQuery(const IrcCommand& command,
     if (rest.isEmpty())
         return IrcCommandOutcome::Sent;
     return sendSelectedMessage(rest);
+}
+
+IrcCommandOutcome IrcController::dispatchNotice(const IrcCommand& command,
+                                                IrcComposerSurface surface)
+{
+    const QString target = firstToken(command.argument);
+    const QString body = restAfterFirstToken(command.argument);
+    if (target.isEmpty() || body.isEmpty())
+        return IrcCommandOutcome::Refused;
+
+    const QString networkId = queryNetworkId(surface);
+    if (networkId.isEmpty()) {
+        if (surface == IrcComposerSurface::Conversation)
+            return IrcCommandOutcome::WrongScope;
+        return IrcCommandOutcome::Refused;
+    }
+
+    IrcSession *session = m_sessions.findSession(networkId);
+    if (!session || session->state() != IrcSession::State::Registered)
+        return IrcCommandOutcome::NotConnected;
+    if (!session->sendNotice(target, body))
+        return IrcCommandOutcome::Refused;
+    echoNoticeIfPresent(session, target, body);
+    return IrcCommandOutcome::Sent;
+}
+
+void IrcController::echoNoticeIfPresent(IrcSession *session,
+                                        const QString& target,
+                                        const QString& body)
+{
+    const IrcConversationKey key =
+        m_reducer.conversationKey(session->networkId(), target);
+    if (!m_reducer.find(key))
+        return;
+    m_reducer.apply(IrcNoticeEvent{
+        key, session->nick(), body, QDateTime::currentDateTimeUtc(), target});
+    reloadModels();
 }
 
 IrcCommandOutcome IrcController::clearSurface(IrcComposerSurface surface)

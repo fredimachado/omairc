@@ -68,6 +68,7 @@ private slots:
     void parseClose();
     void parseQuery();
     void parseTopic();
+    void parseNotice();
     void catalogLookupAndScope();
     void closeWrongScopeUsesCatalogSentence();
     void conversationSendAndUnknown();
@@ -209,6 +210,28 @@ void CommandTest::parseTopic()
     QVERIFY(!hash.isLiveMessage());
 }
 
+void CommandTest::parseNotice()
+{
+    const IrcCommand notice = IrcCommand::parse(QStringLiteral("/notice lena later"));
+    QCOMPARE(notice.verb, IrcCommand::Verb::Notice);
+    QCOMPARE(notice.argument, QStringLiteral("lena later"));
+    QCOMPARE(notice.name, QStringLiteral("/notice"));
+    QVERIFY(!notice.isLiveMessage());
+    QVERIFY(notice.allowedOn(IrcComposerSurface::Conversation));
+    QVERIFY(notice.allowedOn(IrcComposerSurface::Status));
+
+    const IrcCommand channel = IrcCommand::parse(QStringLiteral("/NOTICE #omarchy hi"));
+    QCOMPARE(channel.verb, IrcCommand::Verb::Notice);
+    QCOMPARE(channel.argument, QStringLiteral("#omarchy hi"));
+    QCOMPARE(channel.name, QStringLiteral("/NOTICE"));
+    QVERIFY(!channel.isLiveMessage());
+
+    const IrcCommand escaped = IrcCommand::parse(QStringLiteral("//notice hi"));
+    QCOMPARE(escaped.verb, IrcCommand::Verb::Say);
+    QCOMPARE(escaped.argument, QStringLiteral("/notice hi"));
+    QVERIFY(escaped.isLiveMessage());
+}
+
 void CommandTest::catalogLookupAndScope()
 {
     const IrcVerbSpec *join = IrcVerbTable::lookup(QStringLiteral("J"));
@@ -227,7 +250,7 @@ void CommandTest::catalogLookupAndScope()
     QVERIFY(!IrcVerbTable::find(IrcCommand::Verb::Empty));
     QVERIFY(!IrcVerbTable::find(IrcCommand::Verb::Unknown));
 
-    QCOMPARE(IrcVerbTable::all().size(), 9);
+    QCOMPARE(IrcVerbTable::all().size(), 10);
     for (const IrcVerbSpec& row : IrcVerbTable::all())
         QVERIFY(row.name != QLatin1String("say"));
 
@@ -256,8 +279,17 @@ void CommandTest::catalogLookupAndScope()
     QCOMPARE(topic->scope, IrcVerbScope::Conversation);
     QCOMPARE(topic->wrongScopeText, QStringLiteral("Topic applies to channels"));
 
+    const IrcVerbSpec *notice = IrcVerbTable::lookup(QStringLiteral("notice"));
+    QVERIFY(notice);
+    QCOMPARE(notice->verb, IrcCommand::Verb::Notice);
+    QCOMPARE(notice->name, QStringLiteral("notice"));
+    QCOMPARE(notice->usage, QStringLiteral("/notice <target> <text>"));
+    QCOMPARE(notice->scope, IrcVerbScope::Either);
+    QVERIFY(notice->wrongScopeText.isEmpty());
+    QVERIFY(notice->aliases.isEmpty());
+
     const QVector<IrcVerbSpec> status = IrcVerbTable::visibleOn(IrcComposerSurface::Status);
-    QCOMPARE(status.size(), 6);
+    QCOMPARE(status.size(), 7);
     for (const IrcVerbSpec& row : status) {
         QVERIFY(row.allowedOn(IrcComposerSurface::Status));
         QVERIFY(row.verb != IrcCommand::Verb::Action);
@@ -267,11 +299,12 @@ void CommandTest::catalogLookupAndScope()
 
     const QVector<IrcVerbSpec> conversation =
         IrcVerbTable::visibleOn(IrcComposerSurface::Conversation);
-    QCOMPARE(conversation.size(), 9);
+    QCOMPARE(conversation.size(), 10);
     bool sawMe = false;
     bool sawClose = false;
     bool sawQuery = false;
     bool sawTopic = false;
+    bool sawNotice = false;
     for (const IrcVerbSpec& row : conversation) {
         if (row.name == QLatin1String("me"))
             sawMe = true;
@@ -281,11 +314,14 @@ void CommandTest::catalogLookupAndScope()
             sawQuery = true;
         if (row.name == QLatin1String("topic"))
             sawTopic = true;
+        if (row.name == QLatin1String("notice"))
+            sawNotice = true;
     }
     QVERIFY(sawMe);
     QVERIFY(sawClose);
     QVERIFY(sawQuery);
     QVERIFY(sawTopic);
+    QVERIFY(sawNotice);
 
     const IrcCommand say = IrcCommand::parse(QStringLiteral("hello"));
     QVERIFY(say.allowedOn(IrcComposerSurface::Conversation));

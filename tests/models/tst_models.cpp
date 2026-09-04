@@ -319,7 +319,7 @@ void ModelTest::messageKinds()
     QCOMPARE(roleAt(messages, 1, MessageListModel::KindRole),
              QStringLiteral("message"));
     QCOMPARE(roleAt(messages, 2, MessageListModel::KindRole),
-             QStringLiteral("message"));
+             QStringLiteral("notice"));
     QCOMPARE(roleAt(messages, 3, MessageListModel::KindRole),
              QStringLiteral("action"));
     QCOMPARE(roleAt(messages, 3, MessageListModel::BodyRole),
