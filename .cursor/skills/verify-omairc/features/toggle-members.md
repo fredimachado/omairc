@@ -38,3 +38,4 @@ Preconditions:
 - The panel also stays hidden when the window is narrower than 980 CSS pixels. Isolated launch stays at 1180 wide so this does not apply unless geometry isolation failed.
 - The people control label is the count plus ` PEOPLE`, not the words Hide/Show. Those names exist only as the control's accessible name.
 - Clicking `fred` in the member list does nothing. That is not a toggle.
+- Presence dots, away dimming, and status lines are member-presence, not this toggle.
