@@ -9,6 +9,7 @@
 
 #include <QHash>
 #include <QObject>
+#include <QSet>
 #include <QStringList>
 #include <QTimer>
 
@@ -109,6 +110,7 @@ private:
     MemberListModel m_members;
     QHash<QString, QString> m_currentNicks;
     QHash<QString, IrcCapabilitySet> m_capabilities;
+    QSet<QString> m_unawaySent;
     std::optional<IrcConversationKey> m_selected;
     QString m_selectedTarget;
     QString m_connectionStatus = QStringLiteral("Offline");

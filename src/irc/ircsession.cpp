@@ -284,7 +284,7 @@ bool IrcSession::part(const QString& channel)
         && sendCommand(QStringLiteral("PART %1").arg(channel));
 }
 
-bool IrcSession::sendAway()
+bool IrcSession::clearAway()
 {
     return sendCommand(QStringLiteral("AWAY"));
 }

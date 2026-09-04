@@ -108,6 +108,7 @@ bool IrcController::discardSession(const QString &networkId)
     const QString previousId = identityNetworkId();
     const bool previousAway = selfAway();
     m_reducer.apply(IrcSelfAwayEvent{networkId, false});
+    m_unawaySent.remove(networkId);
     m_currentNicks.remove(networkId);
     m_capabilities.remove(networkId);
     m_console.forget(networkId);
@@ -384,6 +385,8 @@ void IrcController::dropSelectedDirectAndReselect()
 
 void IrcController::clearConversationSelection()
 {
+    const QString previousId = identityNetworkId();
+    const bool previousAway = selfAway();
     if (!m_typingTarget.isEmpty()) {
         if (IrcSession *previous = selectedSession())
             previous->sendTyping(m_typingTarget, IrcTypingPhase::Done);
@@ -397,6 +400,7 @@ void IrcController::clearConversationSelection()
     emit selectionChanged();
     emit capabilitiesChanged();
     emit typingChanged();
+    notifySelfAwayIfChanged(previousId, previousAway);
 }
 
 bool IrcController::sendMessage(const QString& text)
@@ -434,8 +438,11 @@ IrcCommandOutcome IrcController::dispatch(const IrcCommand& command,
         }
         if (sent) {
             m_typingTarget.clear();
-            if (selfAway())
-                session->sendAway();
+            const QString networkId = session->networkId();
+            if (selfAway() && !m_unawaySent.contains(networkId)) {
+                if (session->clearAway())
+                    m_unawaySent.insert(networkId);
+            }
         }
         return sent ? IrcCommandOutcome::Sent : IrcCommandOutcome::Refused;
     }
@@ -507,6 +514,10 @@ void IrcController::apply(const IrcEvent& event)
     const bool previousAway = selfAway();
     const bool typingOnly = std::holds_alternative<IrcTypingEvent>(event);
     const bool selfAwayOnly = std::holds_alternative<IrcSelfAwayEvent>(event);
+    if (const auto *welcome = std::get_if<IrcWelcomeEvent>(&event))
+        m_unawaySent.remove(welcome->networkId);
+    else if (const auto *selfAway = std::get_if<IrcSelfAwayEvent>(&event))
+        m_unawaySent.remove(selfAway->networkId);
     m_reducer.apply(event);
     if (selfAwayOnly) {
         notifySelfAwayIfChanged(previousId, previousAway);
