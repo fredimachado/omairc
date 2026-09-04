@@ -10,6 +10,7 @@
 #include <QUrl>
 
 #include "backend.h"
+#include "irc/ircconnection.h"
 #include "irc/irccontroller.h"
 #include "systemtheme.h"
 
@@ -28,6 +29,7 @@ int main(int argc, char *argv[]) {
 
     Backend backend(&app);
     IrcController ircController(&app);
+    IrcConnection ircConnection(ircController, &app);
     SystemTheme systemTheme(&app);
     backend.setDarkMode(systemTheme.darkMode());
 
@@ -61,12 +63,15 @@ int main(int argc, char *argv[]) {
     engine.rootContext()->setContextProperty(QStringLiteral("appBackend"), &backend);
     engine.rootContext()->setContextProperty(
         QStringLiteral("ircController"), &ircController);
+    engine.rootContext()->setContextProperty(
+        QStringLiteral("ircConnection"), &ircConnection);
     engine.load(QUrl(QStringLiteral("qrc:/Main.qml")));
     if (engine.rootObjects().isEmpty()) {
         qCritical() << "Could not load the Omairc interface; resource available:"
                     << QFile::exists(QStringLiteral(":/Main.qml"));
         return -1;
     }
+    ircConnection.activate();
 
     return app.exec();
 }

@@ -33,11 +33,48 @@ TestCase {
         }
     }
 
+    QtObject {
+        id: fakeConnection
+
+        property string host: "irc.libera.chat"
+        property int port: 6697
+        property bool tlsEnabled: true
+        property string nick: ""
+        property string username: ""
+        property string realname: ""
+        property string autojoin: "#omarchy"
+        property bool passwordSet: false
+        property string problem: "Nick is required"
+        property bool dirty: true
+        property string displayName: "irc.libera.chat"
+        property bool setupRequired: true
+        property bool focusPassword: false
+
+        function setPassword(password) {
+        }
+
+        function apply() {
+            return false;
+        }
+
+        function discard() {
+        }
+    }
+
     Component {
         id: windowComponent
 
         Omairc.OmaircWindow {
             backend: fakeBackend
+        }
+    }
+
+    Component {
+        id: setupWindowComponent
+
+        Omairc.OmaircWindow {
+            backend: fakeBackend
+            connection: fakeConnection
         }
     }
 
@@ -133,6 +170,22 @@ TestCase {
         compare(directConversations.count, previousCount + 1);
         verify(!item("membersPanel").visible);
         saveScreenshot("open-direct-message");
+    }
+
+    function test_connectionSheetOpensWhenSetupRequired() {
+        var window = createTemporaryObject(setupWindowComponent, null);
+        verify(window !== null, "The setup window should load");
+        tryCompare(window, "visible", true);
+        waitForRendering(window.contentItem);
+
+        var sheet = findChild(window, "connectionSheet");
+        verify(sheet !== null, "Could not find connectionSheet");
+        verify(sheet.visible);
+        compare(findChild(window, "connectionHost").text, "irc.libera.chat");
+        compare(findChild(window, "connectionNick").text, "");
+        compare(findChild(window, "connectionAutojoin").text, "#omarchy");
+        compare(findChild(window, "connectionProblem").text, "Nick is required");
+        window.close();
     }
 
     function test_openDirectMessageClearsModelUnreadState() {

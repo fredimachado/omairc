@@ -9,6 +9,8 @@ ApplicationWindow {
 
     required property var backend
     property var irc: null
+    property var connection: null
+    property bool connectionSheetOpen: false
 
     objectName: "omaircWindow"
     width: 1180
@@ -245,6 +247,86 @@ ApplicationWindow {
         context: Qt.ApplicationShortcut
         enabled: currentConversationIsChannel
         onActivated: membersVisible = !membersVisible
+    }
+
+    Shortcut {
+        sequence: "Escape"
+        enabled: connection && connectionSheetOpen && !connection.setupRequired
+        onActivated: connectionSheetOpen = false
+    }
+
+    component ConnectionField: Column {
+        id: field
+
+        property string label
+        property alias fieldObjectName: input.objectName
+        property alias text: input.text
+        property bool secret: false
+
+        signal textEdited(string text)
+
+        function focusInput() {
+            input.forceActiveFocus();
+        }
+
+        width: parent ? parent.width : 0
+        spacing: win.scaledSize(4)
+
+        Text {
+            text: field.label
+            color: win.mutedColor
+            font.family: "iA Writer Mono S"
+            font.pixelSize: win.scaledSize(10)
+        }
+
+        Rectangle {
+            width: parent.width
+            height: win.scaledSize(36)
+            radius: win.scaledSize(7)
+            color: win.panelColor
+            border.width: 1
+            border.color: input.activeFocus ? win.accentColor : win.dividerColor
+
+            TextField {
+                id: input
+                anchors.fill: parent
+                echoMode: field.secret ? TextInput.Password : TextInput.Normal
+                color: win.inkColor
+                selectionColor: win.selectionColor
+                selectedTextColor: "#ffffff"
+                font.family: "iA Writer Mono S"
+                font.pixelSize: win.scaledSize(12)
+                leftPadding: win.scaledSize(10)
+                rightPadding: win.scaledSize(10)
+                verticalAlignment: TextInput.AlignVCenter
+                background: Item {}
+                onTextEdited: field.textEdited(text)
+                Keys.onPressed: function(event) {
+                    if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
+                        win.submitConnection();
+                        event.accepted = true;
+                    }
+                }
+            }
+        }
+    }
+
+    function submitConnection() {
+        if (!connection)
+            return;
+        connection.setPassword(connectionPassword.text);
+        if (connection.apply() && !connection.setupRequired)
+            connectionSheetOpen = false;
+    }
+
+    Connections {
+        target: win.connection
+        function onFocusPasswordChanged() {
+            if (win.connection && win.connection.focusPassword) {
+                win.connectionSheetOpen = true;
+                connectionPassword.focusInput();
+            }
+        }
     }
 
     component ConversationRow: Item {
@@ -668,10 +750,20 @@ ApplicationWindow {
 
             Item {
                 id: networkHeader
+                objectName: "networkHeader"
                 anchors.top: parent.top
                 anchors.left: parent.left
                 anchors.right: parent.right
                 height: win.scaledSize(72)
+
+                MouseArea {
+                    z: 1
+                    anchors.fill: parent
+                    enabled: win.connection
+                    hoverEnabled: true
+                    cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                    onClicked: win.connectionSheetOpen = true
+                }
 
                 Rectangle {
                     anchors.left: parent.left
@@ -702,7 +794,7 @@ ApplicationWindow {
 
                     Text {
                         width: parent.width
-                        text: "Omarchy IRC"
+                        text: win.connection ? win.connection.displayName : "Omarchy IRC"
                         color: win.inkColor
                         elide: Text.ElideRight
                         font.family: "iA Writer Mono S"
@@ -1238,6 +1330,219 @@ ApplicationWindow {
                         hoverEnabled: true
                         cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
                         onClicked: win.sendMessage()
+                    }
+                }
+            }
+
+            Rectangle {
+                id: connectionSheet
+                objectName: "connectionSheet"
+                anchors.fill: parent
+                visible: win.connection && (win.connection.setupRequired || win.connectionSheetOpen)
+                color: win.mixColors(win.pageColor, win.inkColor, win.darkMode ? 0.18 : 0.12)
+
+                MouseArea {
+                    anchors.fill: parent
+                    onClicked: {
+                        if (win.connection && !win.connection.setupRequired)
+                            win.connectionSheetOpen = false;
+                    }
+                }
+
+                Rectangle {
+                    anchors.centerIn: parent
+                    width: Math.min(win.scaledSize(420), parent.width - win.scaledSize(40))
+                    height: sheetColumn.implicitHeight + win.scaledSize(36)
+                    radius: win.scaledSize(10)
+                    color: win.raisedColor
+                    border.width: 1
+                    border.color: win.dividerColor
+
+                    MouseArea {
+                        anchors.fill: parent
+                        onClicked: {}
+                    }
+
+                    Column {
+                        id: sheetColumn
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        anchors.top: parent.top
+                        anchors.margins: win.scaledSize(18)
+                        spacing: win.scaledSize(10)
+
+                        Text {
+                            text: "Connect"
+                            color: win.inkColor
+                            font.family: "iA Writer Mono S"
+                            font.bold: true
+                            font.pixelSize: win.scaledSize(15)
+                        }
+
+                        ConnectionField {
+                            label: "Host"
+                            fieldObjectName: "connectionHost"
+                            text: win.connection ? win.connection.host : ""
+                            onTextEdited: function(value) {
+                                if (win.connection)
+                                    win.connection.host = value;
+                            }
+                        }
+
+                        Row {
+                            width: parent.width
+                            spacing: win.scaledSize(12)
+
+                            ConnectionField {
+                                width: parent.width - win.scaledSize(120)
+                                label: "Port"
+                                fieldObjectName: "connectionPort"
+                                text: win.connection ? String(win.connection.port) : "6697"
+                                onTextEdited: function(value) {
+                                    if (win.connection)
+                                        win.connection.port = Number(value) || 0;
+                                }
+                            }
+
+                            Column {
+                                anchors.bottom: parent.bottom
+                                spacing: win.scaledSize(4)
+
+                                Text {
+                                    text: "TLS"
+                                    color: win.mutedColor
+                                    font.family: "iA Writer Mono S"
+                                    font.pixelSize: win.scaledSize(10)
+                                }
+
+                                Switch {
+                                    id: connectionTls
+                                    objectName: "connectionTls"
+                                    checked: win.connection ? win.connection.tlsEnabled : true
+                                    onToggled: {
+                                        if (win.connection)
+                                            win.connection.tlsEnabled = checked;
+                                    }
+                                }
+                            }
+                        }
+
+                        ConnectionField {
+                            label: "Nick"
+                            fieldObjectName: "connectionNick"
+                            text: win.connection ? win.connection.nick : ""
+                            onTextEdited: function(value) {
+                                if (win.connection)
+                                    win.connection.nick = value;
+                            }
+                        }
+
+                        ConnectionField {
+                            label: "Username"
+                            fieldObjectName: "connectionUsername"
+                            text: win.connection ? win.connection.username : ""
+                            onTextEdited: function(value) {
+                                if (win.connection)
+                                    win.connection.username = value;
+                            }
+                        }
+
+                        ConnectionField {
+                            label: "Real name"
+                            fieldObjectName: "connectionRealname"
+                            text: win.connection ? win.connection.realname : ""
+                            onTextEdited: function(value) {
+                                if (win.connection)
+                                    win.connection.realname = value;
+                            }
+                        }
+
+                        ConnectionField {
+                            label: "Autojoin"
+                            fieldObjectName: "connectionAutojoin"
+                            text: win.connection ? win.connection.autojoin : ""
+                            onTextEdited: function(value) {
+                                if (win.connection)
+                                    win.connection.autojoin = value;
+                            }
+                        }
+
+                        ConnectionField {
+                            id: connectionPassword
+                            label: "Password"
+                            fieldObjectName: "connectionPassword"
+                            secret: true
+                        }
+
+                        Text {
+                            objectName: "connectionProblem"
+                            width: parent.width
+                            visible: win.connection && win.connection.problem.length > 0
+                            text: win.connection ? win.connection.problem : ""
+                            color: win.accentColor
+                            wrapMode: Text.Wrap
+                            font.family: "iA Writer Mono S"
+                            font.pixelSize: win.scaledSize(11)
+                        }
+
+                        Row {
+                            anchors.right: parent.right
+                            spacing: win.scaledSize(8)
+
+                            Rectangle {
+                                objectName: "connectionDiscard"
+                                width: win.scaledSize(88)
+                                height: win.scaledSize(30)
+                                radius: win.scaledSize(7)
+                                color: discardMouse.containsMouse ? win.hoverColor : "transparent"
+                                border.width: 1
+                                border.color: win.dividerColor
+
+                                Text {
+                                    anchors.centerIn: parent
+                                    text: "Discard"
+                                    color: win.mutedColor
+                                    font.family: "iA Writer Mono S"
+                                    font.pixelSize: win.scaledSize(11)
+                                }
+
+                                MouseArea {
+                                    id: discardMouse
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: {
+                                        if (!win.connection)
+                                            return;
+                                        win.connection.discard();
+                                        connectionPassword.text = "";
+                                    }
+                                }
+                            }
+
+                            Rectangle {
+                                objectName: "connectionApply"
+                                width: win.scaledSize(88)
+                                height: win.scaledSize(30)
+                                radius: win.scaledSize(7)
+                                color: win.accentColor
+
+                                Text {
+                                    anchors.centerIn: parent
+                                    text: "Apply"
+                                    color: "#ffffff"
+                                    font.family: "iA Writer Mono S"
+                                    font.bold: true
+                                    font.pixelSize: win.scaledSize(11)
+                                }
+
+                                MouseArea {
+                                    anchors.fill: parent
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: win.submitConnection()
+                                }
+                            }
+                        }
                     }
                 }
             }

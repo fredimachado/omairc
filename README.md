@@ -30,10 +30,17 @@ The first release does not include:
 
 ## Configuration
 
-The compiled application starts with the IRC controller in the `Offline` state.
-It does not provide a network settings interface yet. A caller must add an
-`IrcSession` to `IrcController` and call `start()`. The automated tests inject
-sessions directly.
+The first launch opens a connection sheet with Liberachat defaults. Enter a
+nick, change the host if you want a different network, and type a server
+password only if that network needs one. Apply starts the session.
+
+Omairc remembers host, port, TLS, nick, username, real name, and autojoin in
+`$XDG_CONFIG_HOME/Omacom/omairc.conf` under `networks/<id>/`. It does not write
+the password. Type the password again on the next launch if the server asks for
+it. Click the sidebar network name to reopen the sheet.
+
+Automated tests still inject an `IrcSession` through `IrcController::addSession()`
+and do not construct `IrcConnection`.
 
 ## Keyboard controls
 
