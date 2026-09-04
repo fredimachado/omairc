@@ -89,12 +89,22 @@ Use `control-omairc` against the isolated window. Stable handles:
 | `focus-composer` | `Ctrl+L` |
 | `send --text "..."` | Focus composer, type, `Enter` |
 | `key --key ctrl+shift+m` | Toggle members on a channel |
-| `key --key ctrl+shift+s` | Toggle Status. Does nothing useful on first-run Connect. |
+| `key --key ctrl+shift+p` | Focus the member list on a channel. Reopens the panel if it was hidden. |
+| `key --key ctrl+slash` | Toggle the shortcuts overlay |
+| `key --key ctrl+grave` | Toggle Status. Does nothing useful on first-run Connect. |
+| `key --key alt+Down` | Next sidebar conversation (channels, then DMs). Status is not in this list. |
+| `key --key alt+Up` | Previous sidebar conversation |
+| `key --key alt+a` | Next unread conversation, mentions first |
+| `key --key Page_Up` | Scroll the visible transcript toward older lines. Composer stays focused. Disabled while Connect is visible. |
+| `key --key Page_Down` | Scroll the visible transcript toward newer lines. |
+| `key --key Tab` | Complete the nick prefix in the composer after `focus-composer`. |
+| `key --key Up` | Previous sent line for the visible conversation or Status. |
+| `key --key Down` | Newer sent line, or restore the stashed draft. |
 | `key --key ctrl+q` | Quit |
 
 Named clicks are window-relative pixels for 1180x760 at textScale 1.0. They are invalid on a maximized window, a restored user geometry, or a portal text scale other than 1.0. That is why launch isolates XDG and DBus.
 
-QML object names used by `bin/test` (not visible to xdotool): `connectionSheet`, `connectionHost`, `connectionNick`, `conversation-#desktop`, `conversation-anna`, `messageComposer`, `sendButton`, `peopleButton`, `membersPanel`, `membersList`, `member-mira`, `messageList`, `directConversationRepeater`, `networkHeaderButton`, `networkEditButton`, `consoleList`, `selfNickLabel`, `presence-dot-anna`, `member-status-anna`.
+QML object names used by `bin/test` (not visible to xdotool): `connectionSheet`, `connectionHost`, `connectionNick`, `conversation-#desktop`, `conversation-anna`, `messageComposer`, `sendButton`, `peopleButton`, `membersPanel`, `membersList`, `member-mira`, `messageList`, `directConversationRepeater`, `networkHeaderButton`, `networkEditButton`, `consoleList`, `selfNickLabel`, `presence-dot-anna`, `member-status-anna`, `shortcutsSheet`.
 
 Typical drive:
 

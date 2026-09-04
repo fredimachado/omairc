@@ -37,19 +37,34 @@ password only if that network needs one. Apply starts the session.
 Omairc remembers host, port, TLS, nick, username, real name, and autojoin in
 `$XDG_CONFIG_HOME/omairc/omairc.conf` under `networks/<id>/`. It does not write
 the password. Type the password again on the next launch if the server asks for
-it. Click the sidebar network name to reopen the sheet.
+it. Press `Ctrl+,` or click `edit` beside the network name to reopen the sheet.
+The network name itself opens Status.
 
 Automated tests still inject an `IrcSession` through `IrcController::addSession()`
 and do not construct `IrcConnection`.
 
 ## Keyboard controls
 
-- Switch between available channels and direct messages from the sidebar.
-- Click a channel member to open or create a direct message.
-- Send messages with `Enter`.
-- Toggle the channel member list with `Ctrl+Shift+M`.
-- Focus the message composer with `Ctrl+L`.
-- Quit with `Ctrl+Q`.
+`Ctrl+/` shows this list in the app.
+
+| Shortcut | Action |
+|---|---|
+| `Alt+Down` / `Alt+Up` | Next / previous conversation (channels, then DMs) |
+| `Alt+A` | Next unread, mentions first |
+| ``Ctrl+` `` | Toggle Status |
+| `Ctrl+,` | Open Connect |
+| `Ctrl+Shift+M` | Toggle the channel member list |
+| `Ctrl+Shift+P` | Focus the member list (reopens the panel if it was hidden) |
+| `Enter` | Send, or open a DM from a focused member |
+| `Page Up` / `Page Down` | Scroll the visible transcript (composer stays focused) |
+| `Tab` | Complete a nick in the composer |
+| `Up` / `Down` | Recall sent lines in the composer |
+| `Ctrl+L` | Focus the composer |
+| `Escape` | Dismiss Status, Connect, or this shortcut list |
+| `Ctrl+/` | Toggle the shortcut list |
+| `Ctrl+Q` | Quit |
+
+Sidebar rows and member names still work with a click. Status is not a sidebar row.
 
 Colors follow the current Omarchy theme
 (`~/.local/state/omarchy/current/theme/colors.toml`) and update live. Text

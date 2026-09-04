@@ -41,6 +41,7 @@ ApplicationWindow {
     property var mockActiveMessages: omarchyMessages
     property bool membersVisible: true
     property bool mockStatusOpen: false
+    property bool shortcutsSheetEscapeGuard: false
     readonly property var networkConsole: irc
         ? (irc.statusConsole ? irc.statusConsole : irc.console)
         : null
@@ -48,6 +49,8 @@ ApplicationWindow {
         ? (networkConsole.open || irc.selectedTarget.length === 0)
         : mockStatusOpen
     onConsoleVisibleChanged: {
+        resetNickComplete();
+        resetComposerHistoryBrowse();
         if (!consoleVisible)
             return;
         Qt.callLater(function() {
@@ -56,6 +59,10 @@ ApplicationWindow {
         });
     }
     readonly property string currentConversation: irc ? irc.selectedTarget : mockCurrentConversation
+    onCurrentConversationChanged: {
+        resetNickComplete();
+        resetComposerHistoryBrowse();
+    }
     readonly property string currentTopic: irc
         ? (irc.selectedTarget.length > 0
             ? irc.topic
@@ -78,6 +85,16 @@ ApplicationWindow {
             return connection.nick
         return "fred"
     }
+    readonly property bool connectionOverlayVisible: connection
+        && (connection.setupRequired || connectionSheetOpen)
+
+    property var composerHistories: ({})
+    property int composerHistoryIndex: -1
+    property string composerHistoryDraft: ""
+    property string nickCompletePrefix: ""
+    property var nickCompleteMatches: []
+    property int nickCompleteIndex: -1
+    property int nickCompleteOrigin: -1
 
     Material.theme: darkMode ? Material.Dark : Material.Light
     Material.accent: accentColor
@@ -203,6 +220,22 @@ ApplicationWindow {
         selectConversation(nick);
     }
 
+    function focusMembersList() {
+        membersVisible = true;
+        Qt.callLater(function() {
+            if (membersList.currentIndex < 0)
+                membersList.currentIndex = 0;
+            membersList.forceActiveFocus();
+        });
+    }
+
+    function activateFocusedMember() {
+        var row = membersList.itemAtIndex(membersList.currentIndex);
+        if (!row || row.nick === win.selfNick)
+            return;
+        win.openDirectMessage(row.nick);
+    }
+
     function markDirectConversationRead(name) {
         for (var index = 0; index < directConversations.count; ++index) {
             if (directConversations.get(index).conversation === name) {
@@ -235,38 +268,295 @@ ApplicationWindow {
         });
     }
 
+    function sidebarConversationRows() {
+        var rows = [];
+
+        function appendVisible(item) {
+            if (item && item.visible)
+                rows.push(item);
+        }
+
+        function appendRepeater(repeater) {
+            for (var index = 0; index < repeater.count; ++index)
+                appendVisible(repeater.itemAt(index));
+        }
+
+        if (irc) {
+            appendRepeater(channelConversationRepeater);
+            appendRepeater(liveDirectConversationRepeater);
+        } else {
+            appendVisible(mockOmarchyRow);
+            appendVisible(mockDesktopRow);
+            appendVisible(mockRicingRow);
+            appendVisible(mockHelpRow);
+            appendRepeater(directConversationRepeater);
+        }
+        return rows;
+    }
+
+    function stepConversation(delta) {
+        var rows = sidebarConversationRows();
+        if (rows.length === 0)
+            return;
+
+        var current = -1;
+        for (var index = 0; index < rows.length; ++index) {
+            if (rows[index].conversationName === currentConversation) {
+                current = index;
+                break;
+            }
+        }
+
+        var nextIndex = current < 0
+            ? (delta > 0 ? 0 : rows.length - 1)
+            : (current + delta + rows.length) % rows.length;
+        rows[nextIndex].activate();
+    }
+
+    function jumpToNextUnread() {
+        var rows = sidebarConversationRows();
+        if (rows.length === 0)
+            return;
+
+        var current = -1;
+        for (var index = 0; index < rows.length; ++index) {
+            if (rows[index].conversationName === currentConversation) {
+                current = index;
+                break;
+            }
+        }
+
+        var start = current < 0 ? 0 : (current + 1) % rows.length;
+        var mentionRow = null;
+        var unreadRow = null;
+        for (var step = 0; step < rows.length; ++step) {
+            var rowIndex = (start + step) % rows.length;
+            if (rowIndex === current)
+                continue;
+
+            var row = rows[rowIndex];
+            if (mentionRow === null && row.mention === true)
+                mentionRow = row;
+            if (unreadRow === null && row.unread > 0)
+                unreadRow = row;
+            if (mentionRow)
+                break;
+        }
+
+        var target = mentionRow ? mentionRow : unreadRow;
+        if (target)
+            target.activate();
+    }
+
+    function composerHistoryKey() {
+        return consoleVisible ? "status" : currentConversation;
+    }
+
+    function resetComposerHistoryBrowse() {
+        composerHistoryIndex = -1;
+        composerHistoryDraft = "";
+    }
+
+    function rememberSentComposerLine(text) {
+        resetNickComplete();
+        resetComposerHistoryBrowse();
+        var key = composerHistoryKey();
+        var lines = (composerHistories[key] || []).slice();
+        lines.push(text);
+        if (lines.length > 50)
+            lines.shift();
+        composerHistories[key] = lines;
+    }
+
+    function recallComposerHistory(delta) {
+        var lines = composerHistories[composerHistoryKey()] || [];
+        if (composer.text.length === 0 && lines.length === 0)
+            return false;
+
+        if (composerHistoryIndex < 0) {
+            if (delta > 0 || lines.length === 0)
+                return false;
+            composerHistoryDraft = composer.text;
+            composerHistoryIndex = lines.length;
+        }
+
+        var next = composerHistoryIndex + delta;
+        if (next < 0)
+            next = 0;
+        if (next >= lines.length) {
+            composer.text = composerHistoryDraft;
+            composer.cursorPosition = composer.text.length;
+            resetComposerHistoryBrowse();
+            return true;
+        }
+
+        composerHistoryIndex = next;
+        composer.text = lines[next];
+        composer.cursorPosition = composer.text.length;
+        return true;
+    }
+
+    function resetNickComplete() {
+        nickCompletePrefix = "";
+        nickCompleteMatches = [];
+        nickCompleteIndex = -1;
+        nickCompleteOrigin = -1;
+    }
+
+    function memberDisplayLabel(member) {
+        if (!member)
+            return "";
+        if (member.label && member.label.length > 0)
+            return member.label;
+        return member.nick || "";
+    }
+
+    function liveMemberLabel(model, row) {
+        if (typeof model.get === "function")
+            return memberDisplayLabel(model.get(row));
+        var nick = model.data(model.index(row, 0), Qt.UserRole + 1) || "";
+        var label = model.data(model.index(row, 0), Qt.UserRole + 2) || "";
+        return label.length > 0 ? label : nick;
+    }
+
+    function liveMemberCount(model) {
+        if (!model)
+            return 0;
+        if (model.count !== undefined)
+            return model.count;
+        return model.rowCount();
+    }
+
+    function nickCompleteCandidates() {
+        if (consoleVisible)
+            return [];
+        if (!currentConversationIsChannel)
+            return currentConversation.length > 0 ? [currentConversation] : [];
+
+        var labels = [];
+        if (irc) {
+            var model = irc.members;
+            var count = liveMemberCount(model);
+            for (var row = 0; row < count; ++row) {
+                var liveLabel = liveMemberLabel(model, row);
+                if (liveLabel.length > 0)
+                    labels.push(liveLabel);
+            }
+            return labels;
+        }
+
+        for (var index = 0; index < currentPeopleCount; ++index) {
+            var mockLabel = memberDisplayLabel(memberDataFor(index));
+            if (mockLabel.length > 0)
+                labels.push(mockLabel);
+        }
+        return labels;
+    }
+
+    function nickMatchesForPrefix(prefix) {
+        var lower = prefix.toLowerCase();
+        var decorated = [];
+        var candidates = nickCompleteCandidates();
+        for (var index = 0; index < candidates.length; ++index) {
+            var label = candidates[index];
+            if (label.toLowerCase().indexOf(lower) !== 0)
+                continue;
+            decorated.push({ label: label, order: index });
+        }
+        decorated.sort(function(left, right) {
+            if (left.label < right.label)
+                return -1;
+            if (left.label > right.label)
+                return 1;
+            return left.order - right.order;
+        });
+        var matches = [];
+        for (var match = 0; match < decorated.length; ++match)
+            matches.push(decorated[match].label);
+        return matches;
+    }
+
+    function applyNickComplete() {
+        var nick = nickCompleteMatches[nickCompleteIndex];
+        var insertion = nick + (nickCompleteOrigin === 0 ? ": " : " ");
+        var after = composer.text.substring(composer.cursorPosition);
+        composer.text = composer.text.substring(0, nickCompleteOrigin) + insertion + after;
+        composer.cursorPosition = nickCompleteOrigin + insertion.length;
+    }
+
+    function completeNick() {
+        if (nickCompleteMatches.length > 0 && nickCompleteIndex >= 0) {
+            nickCompleteIndex = (nickCompleteIndex + 1) % nickCompleteMatches.length;
+            applyNickComplete();
+            return;
+        }
+
+        var cursor = composer.cursorPosition;
+        var origin = composer.text.substring(0, cursor).lastIndexOf(" ") + 1;
+        var token = composer.text.substring(origin, cursor);
+        if (token.length === 0)
+            return;
+
+        var matches = nickMatchesForPrefix(token);
+        if (matches.length === 0)
+            return;
+
+        nickCompletePrefix = token;
+        nickCompleteMatches = matches;
+        nickCompleteIndex = 0;
+        nickCompleteOrigin = origin;
+        applyNickComplete();
+    }
+
+    function composerHasPlainModifier(event) {
+        return event.modifiers === Qt.NoModifier
+            || event.modifiers === Qt.KeypadModifier;
+    }
+
+    function scrollTranscript(direction) {
+        var list = consoleVisible ? consoleList : messageList;
+        var maxY = Math.max(0, list.contentHeight - list.height);
+        list.contentY = Math.max(0, Math.min(maxY, list.contentY + direction * list.height * 0.8));
+    }
+
     function sendMessage() {
-        var body = composer.text.trim();
-        if (body.length === 0)
+        var original = composer.text.trim();
+        if (original.length === 0)
             return;
 
         if (consoleVisible) {
             if (irc) {
-                if (networkConsole.submit(body))
+                if (networkConsole.submit(original)) {
+                    rememberSentComposerLine(original);
                     composer.clear();
+                }
                 consoleList.positionViewAtEnd();
                 return;
             }
             mockStatusMessages.append({
                 time: Qt.formatTime(new Date(), "hh:mm:ss"),
                 label: "command",
-                text: body,
+                text: original,
                 source: "local",
                 severity: "info"
             });
+            rememberSentComposerLine(original);
             composer.clear();
             consoleList.positionViewAtEnd();
             return;
         }
 
         if (irc) {
-            if (irc.sendMessage(body))
+            if (irc.sendMessage(original)) {
+                rememberSentComposerLine(original);
                 composer.clear();
+            }
             messageList.positionViewAtEnd();
             return;
         }
 
         var kind = "message";
+        var body = original;
         if (body.indexOf("/me ") === 0) {
             body = "fred " + body.substring(4);
             kind = "action";
@@ -278,6 +568,7 @@ ApplicationWindow {
             body: body,
             kind: kind
         });
+        rememberSentComposerLine(original);
         composer.clear();
         messageList.positionViewAtEnd();
     }
@@ -302,7 +593,25 @@ ApplicationWindow {
     }
 
     Shortcut {
-        sequence: "Ctrl+Shift+S"
+        sequence: "Ctrl+Shift+P"
+        context: Qt.ApplicationShortcut
+        enabled: currentConversationIsChannel && !consoleVisible
+        onActivated: focusMembersList()
+    }
+
+    Shortcut {
+        sequence: "Ctrl+/"
+        context: Qt.ApplicationShortcut
+        onActivated: {
+            if (shortcutsSheet.opened)
+                shortcutsSheet.close();
+            else
+                shortcutsSheet.open();
+        }
+    }
+
+    Shortcut {
+        sequence: "Ctrl+`"
         context: Qt.ApplicationShortcut
         onActivated: {
             if (win.irc)
@@ -313,8 +622,50 @@ ApplicationWindow {
     }
 
     Shortcut {
+        sequence: "Ctrl+,"
+        context: Qt.ApplicationShortcut
+        enabled: win.connection !== null
+        onActivated: win.connectionSheetOpen = true
+    }
+
+    Shortcut {
+        sequence: "Alt+Down"
+        context: Qt.ApplicationShortcut
+        onActivated: stepConversation(1)
+    }
+
+    Shortcut {
+        sequence: "Alt+Up"
+        context: Qt.ApplicationShortcut
+        onActivated: stepConversation(-1)
+    }
+
+    Shortcut {
+        sequence: "Alt+A"
+        context: Qt.ApplicationShortcut
+        onActivated: jumpToNextUnread()
+    }
+
+    Shortcut {
+        sequence: "PgUp"
+        context: Qt.ApplicationShortcut
+        enabled: !win.connectionOverlayVisible
+        onActivated: scrollTranscript(-1)
+    }
+
+    Shortcut {
+        sequence: "PgDown"
+        context: Qt.ApplicationShortcut
+        enabled: !win.connectionOverlayVisible
+        onActivated: scrollTranscript(1)
+    }
+
+    Shortcut {
         sequence: "Escape"
+        context: Qt.ApplicationShortcut
         enabled: {
+            if (shortcutsSheet.opened || shortcutsSheetEscapeGuard)
+                return true;
             if (win.connection && win.connection.setupRequired)
                 return false;
             if (win.connection && win.connectionSheetOpen)
@@ -326,6 +677,11 @@ ApplicationWindow {
             return win.mockCurrentConversation.length > 0;
         }
         onActivated: {
+            if (shortcutsSheet.opened || shortcutsSheetEscapeGuard) {
+                shortcutsSheet.close();
+                shortcutsSheetEscapeGuard = false;
+                return;
+            }
             if (win.connection && win.connectionSheetOpen) {
                 win.connectionSheetOpen = false;
                 return;
@@ -1015,6 +1371,7 @@ ApplicationWindow {
                 }
 
                 ConversationRow {
+                    id: mockOmarchyRow
                     visible: !win.irc
                     height: visible ? win.scaledSize(36) : 0
                     width: sidebar.width
@@ -1024,6 +1381,7 @@ ApplicationWindow {
                 }
 
                 ConversationRow {
+                    id: mockDesktopRow
                     visible: !win.irc
                     height: visible ? win.scaledSize(36) : 0
                     width: sidebar.width
@@ -1033,6 +1391,7 @@ ApplicationWindow {
                 }
 
                 ConversationRow {
+                    id: mockRicingRow
                     visible: !win.irc
                     height: visible ? win.scaledSize(36) : 0
                     width: sidebar.width
@@ -1042,6 +1401,7 @@ ApplicationWindow {
                 }
 
                 ConversationRow {
+                    id: mockHelpRow
                     visible: !win.irc
                     height: visible ? win.scaledSize(36) : 0
                     width: sidebar.width
@@ -1051,6 +1411,7 @@ ApplicationWindow {
                 }
 
                 Repeater {
+                    id: channelConversationRepeater
                     objectName: win.irc ? "channelConversationRepeater" : ""
                     model: win.irc ? win.irc.conversations : null
 
@@ -1105,6 +1466,7 @@ ApplicationWindow {
                 }
 
                 Repeater {
+                    id: liveDirectConversationRepeater
                     objectName: win.irc ? "directConversationRepeater" : ""
                     model: win.irc ? win.irc.conversations : null
 
@@ -1567,9 +1929,28 @@ ApplicationWindow {
                     background: Item {}
 
                     Keys.onPressed: function(event) {
+                        if (event.key === Qt.Key_Tab && win.composerHasPlainModifier(event)) {
+                            win.completeNick();
+                            event.accepted = true;
+                            return;
+                        }
+
+                        win.resetNickComplete();
+
                         if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
                             win.sendMessage();
                             event.accepted = true;
+                            return;
+                        }
+
+                        if (event.key === Qt.Key_Up && win.composerHasPlainModifier(event)) {
+                            event.accepted = win.recallComposerHistory(-1);
+                            return;
+                        }
+
+                        if (event.key === Qt.Key_Down && win.composerHasPlainModifier(event)) {
+                            event.accepted = win.recallComposerHistory(1);
+                            return;
                         }
                     }
                 }
@@ -1888,6 +2269,17 @@ ApplicationWindow {
                 clip: true
                 model: win.irc ? win.irc.members : win.currentPeopleCount
                 boundsBehavior: Flickable.StopAtBounds
+                keyNavigationEnabled: true
+                highlightFollowsCurrentItem: true
+                highlightMoveDuration: 0
+                currentIndex: 0
+
+                Keys.onPressed: function(event) {
+                    if (event.key !== Qt.Key_Return && event.key !== Qt.Key_Enter)
+                        return;
+                    win.activateFocusedMember();
+                    event.accepted = true;
+                }
 
                 delegate: Item {
                     id: memberDelegate
@@ -1916,7 +2308,9 @@ ApplicationWindow {
                         anchors.leftMargin: win.scaledSize(8)
                         anchors.rightMargin: win.scaledSize(8)
                         radius: win.scaledSize(7)
-                        color: memberMouse.containsMouse ? win.hoverColor : "transparent"
+                        color: memberMouse.containsMouse || ListView.isCurrentItem
+                            ? (memberMouse.containsMouse ? win.hoverColor : win.raisedColor)
+                            : "transparent"
                     }
 
                     Rectangle {
@@ -2023,6 +2417,70 @@ ApplicationWindow {
             font.family: "iA Writer Mono S"
             font.pixelSize: win.scaledSize(10)
             lineHeight: 1.35
+        }
+    }
+
+    Popup {
+        id: shortcutsSheet
+        objectName: "shortcutsSheet"
+        x: Math.round((win.width - width) / 2)
+        y: Math.round((win.height - height) / 2)
+        width: win.scaledSize(348)
+        padding: win.scaledSize(16)
+        modal: false
+        focus: true
+        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+        onOpened: shortcutsSheetEscapeGuard = true
+        onClosed: Qt.callLater(function() { shortcutsSheetEscapeGuard = false })
+
+        background: Rectangle {
+            color: win.raisedColor
+            border.width: 1
+            border.color: win.dividerColor
+            radius: win.scaledSize(9)
+        }
+
+        contentItem: Column {
+            spacing: win.scaledSize(4)
+
+            Repeater {
+                model: [
+                    { keys: "Alt+Down / Alt+Up", action: "walk conversations" },
+                    { keys: "Alt+A", action: "next unread" },
+                    { keys: "Ctrl+`", action: "Status" },
+                    { keys: "Ctrl+,", action: "Connect" },
+                    { keys: "Ctrl+Shift+M", action: "members panel" },
+                    { keys: "Ctrl+Shift+P", action: "focus members" },
+                    { keys: "Ctrl+L", action: "composer" },
+                    { keys: "Enter", action: "send" },
+                    { keys: "Page Up / Page Down", action: "scroll" },
+                    { keys: "Tab", action: "nick complete" },
+                    { keys: "Up / Down", action: "history" },
+                    { keys: "Escape", action: "dismiss" },
+                    { keys: "Ctrl+/", action: "this sheet" },
+                    { keys: "Ctrl+Q", action: "quit" }
+                ]
+
+                Row {
+                    spacing: win.scaledSize(12)
+                    width: parent.width
+
+                    Text {
+                        width: win.scaledSize(168)
+                        text: modelData.keys
+                        color: win.inkColor
+                        font.family: "iA Writer Mono S"
+                        font.pixelSize: win.scaledSize(11)
+                    }
+
+                    Text {
+                        text: modelData.action
+                        color: win.mutedColor
+                        font.family: "iA Writer Mono S"
+                        font.pixelSize: win.scaledSize(11)
+                    }
+                }
+            }
         }
     }
 

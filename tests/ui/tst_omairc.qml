@@ -351,6 +351,241 @@ TestCase {
         saveScreenshot("send-message");
     }
 
+    function test_toggleStatusWithShortcut() {
+        compare(appWindow.consoleVisible, false);
+
+        keyClick(Qt.Key_QuoteLeft, Qt.ControlModifier);
+
+        tryCompare(appWindow, "consoleVisible", true);
+        compare(appWindow.title, "Status");
+        var list = item("consoleList");
+        verify(list.visible);
+        verify(!item("peopleButton").visible);
+
+        keyClick(Qt.Key_QuoteLeft, Qt.ControlModifier);
+
+        tryCompare(appWindow, "consoleVisible", false);
+    }
+
+    function test_toggleStatusWithShortcutOnLiveWindow() {
+        liveConsole.open = false;
+        if (appWindow) {
+            appWindow.close();
+            appWindow = null;
+        }
+        var window = createTemporaryObject(liveWindowComponent, null);
+        verify(window !== null, "The live window should load");
+        tryCompare(window, "visible", true);
+        waitForRendering(window.contentItem);
+        window.requestActivate();
+        tryCompare(window, "active", true);
+
+        compare(liveConsole.open, false);
+
+        keyClick(Qt.Key_QuoteLeft, Qt.ControlModifier);
+
+        tryCompare(liveConsole, "open", true);
+
+        keyClick(Qt.Key_QuoteLeft, Qt.ControlModifier);
+
+        tryCompare(liveConsole, "open", false);
+        window.close();
+        liveConsole.open = false;
+    }
+
+    function test_openConnectSheetWithShortcut() {
+        var window = createTemporaryObject(fallbackWindowComponent, null);
+        verify(window !== null, "The fallback window should load");
+        tryCompare(window, "visible", true);
+        waitForRendering(window.contentItem);
+
+        var sheet = findChild(window, "connectionSheet");
+        verify(sheet !== null, "Could not find connectionSheet");
+        compare(sheet.visible, false);
+
+        keyClick(Qt.Key_Comma, Qt.ControlModifier);
+
+        tryCompare(sheet, "visible", true);
+        window.close();
+    }
+
+    function test_walkConversationsWithShortcut() {
+        compare(appWindow.currentConversation, "#omarchy");
+
+        keyClick(Qt.Key_Down, Qt.AltModifier);
+
+        tryCompare(appWindow, "currentConversation", "#desktop");
+        compare(appWindow.currentTopic,
+                "Desktops should feel personal, fast, and calm.");
+        compare(appWindow.currentPeopleCount, 8);
+        compare(item("messageList").Accessible.name, "Messages in #desktop");
+        tryCompare(item("messageComposer"), "activeFocus", true);
+
+        keyClick(Qt.Key_Down, Qt.AltModifier);
+
+        tryCompare(appWindow, "currentConversation", "#ricing");
+        compare(appWindow.currentTopic,
+                "Themes, type, wallpapers, and the tiny details.");
+        compare(appWindow.currentPeopleCount, 10);
+        compare(item("messageList").Accessible.name, "Messages in #ricing");
+    }
+
+    function test_walkConversationsWrapsToLast() {
+        compare(appWindow.currentConversation, "#omarchy");
+
+        keyClick(Qt.Key_Up, Qt.AltModifier);
+
+        tryCompare(appWindow, "currentConversation", "dax");
+        compare(appWindow.currentTopic, "Direct message with dax");
+        compare(item("messageList").Accessible.name, "Messages in dax");
+    }
+
+    function test_walkConversationsFromChannelToDirect() {
+        mouseClick(item("conversation-#help"));
+        tryCompare(appWindow, "currentConversation", "#help");
+
+        keyClick(Qt.Key_Down, Qt.AltModifier);
+
+        tryCompare(appWindow, "currentConversation", "anna");
+        compare(appWindow.currentTopic, "Direct message with anna");
+        compare(item("messageList").Accessible.name, "Messages in anna");
+    }
+
+    function test_walkConversationsClosesStatus() {
+        keyClick(Qt.Key_QuoteLeft, Qt.ControlModifier);
+        tryCompare(appWindow, "consoleVisible", true);
+
+        keyClick(Qt.Key_Down, Qt.AltModifier);
+
+        tryCompare(appWindow, "consoleVisible", false);
+        compare(appWindow.currentConversation, "#desktop");
+        compare(item("messageList").Accessible.name, "Messages in #desktop");
+    }
+
+    function test_jumpToNextUnreadPrefersMention() {
+        compare(appWindow.currentConversation, "#omarchy");
+
+        keyClick(Qt.Key_A, Qt.AltModifier);
+
+        tryCompare(appWindow, "currentConversation", "#ricing");
+        compare(appWindow.currentTopic,
+                "Themes, type, wallpapers, and the tiny details.");
+        tryCompare(item("messageComposer"), "activeFocus", true);
+
+        keyClick(Qt.Key_A, Qt.AltModifier);
+
+        tryCompare(appWindow, "currentConversation", "anna");
+        compare(appWindow.currentTopic, "Direct message with anna");
+    }
+
+    function test_jumpToNextUnreadFromNonMentionPrefersMention() {
+        mouseClick(item("conversation-#desktop"));
+        tryCompare(appWindow, "currentConversation", "#desktop");
+
+        keyClick(Qt.Key_A, Qt.AltModifier);
+
+        tryCompare(appWindow, "currentConversation", "#ricing");
+    }
+
+    function test_jumpToNextUnreadFallsBackToUnread() {
+        mouseClick(item("conversation-#ricing"));
+        tryCompare(appWindow, "currentConversation", "#ricing");
+
+        var anna = item("directConversationRepeater").itemAt(0);
+        verify(anna !== null, "The anna direct-message delegate should be rendered");
+        mouseClick(anna);
+        tryCompare(appWindow, "currentConversation", "anna");
+
+        mouseClick(item("conversation-#omarchy"));
+        tryCompare(appWindow, "currentConversation", "#omarchy");
+
+        keyClick(Qt.Key_A, Qt.AltModifier);
+
+        tryCompare(appWindow, "currentConversation", "#desktop");
+    }
+
+    function test_tabCompletesChannelNick() {
+        var composer = item("messageComposer");
+        mouseClick(composer);
+        verify(composer.activeFocus);
+        typeText("mi");
+        keyClick(Qt.Key_Tab);
+
+        compare(composer.text, "mira: ");
+        verify(composer.activeFocus);
+    }
+
+    function test_tabCompletesNickAfterText() {
+        var composer = item("messageComposer");
+        mouseClick(composer);
+        verify(composer.activeFocus);
+        typeText("hello s");
+        keyClick(Qt.Key_Tab);
+
+        verify(composer.text !== "hello s");
+        verify(composer.text.indexOf("hello ") === 0);
+        verify(composer.text.charAt(composer.text.length - 1) === " ");
+        var nick = composer.text.substring(6, composer.text.length - 1);
+        verify(nick.length > 0);
+        compare(nick.charAt(0).toLowerCase(), "s");
+        verify(composer.activeFocus);
+    }
+
+    function test_composerHistoryRecallsSentLines() {
+        var composer = item("messageComposer");
+        mouseClick(composer);
+        verify(composer.activeFocus);
+
+        typeText("alpha");
+        keyClick(Qt.Key_Return);
+        compare(composer.text, "");
+
+        typeText("beta");
+        keyClick(Qt.Key_Return);
+        compare(composer.text, "");
+
+        keyClick(Qt.Key_Up);
+        compare(composer.text, "beta");
+        keyClick(Qt.Key_Up);
+        compare(composer.text, "alpha");
+        keyClick(Qt.Key_Down);
+        compare(composer.text, "beta");
+        keyClick(Qt.Key_Down);
+        compare(composer.text, "");
+
+        typeText("draft");
+        compare(composer.text, "draft");
+        keyClick(Qt.Key_Up);
+        compare(composer.text, "beta");
+        keyClick(Qt.Key_Down);
+        compare(composer.text, "draft");
+    }
+
+    function test_pageUpScrollsTranscript() {
+        var composer = item("messageComposer");
+        var list = item("messageList");
+        mouseClick(composer);
+        verify(composer.activeFocus);
+
+        var index = 0;
+        for (index = 0; index < 12; ++index) {
+            typeText("scroll line " + index);
+            keyClick(Qt.Key_Return);
+        }
+        waitForRendering(appWindow.contentItem);
+        list.positionViewAtEnd();
+        waitForRendering(appWindow.contentItem);
+
+        verify(list.contentHeight > list.height);
+        var before = list.contentY;
+        verify(before > 0);
+
+        keyClick(Qt.Key_PageUp);
+
+        verify(list.contentY < before, "Page Up should scroll toward older lines");
+        verify(composer.activeFocus);
+    }
+
     function test_toggleMembersWithShortcut() {
         var panel = item("membersPanel");
         verify(panel.visible);
@@ -360,6 +595,89 @@ TestCase {
         tryCompare(panel, "visible", false);
         compare(item("peopleButton").Accessible.name, "Show members");
         saveScreenshot("toggle-members");
+    }
+
+    function test_focusMembersWithShortcut() {
+        var panel = item("membersPanel");
+        var members = item("membersList");
+        verify(panel.visible);
+
+        keyClick(Qt.Key_P, Qt.ControlModifier | Qt.ShiftModifier);
+
+        tryCompare(panel, "visible", true);
+        tryCompare(members, "activeFocus", true);
+    }
+
+    function test_focusMembersReopensHiddenPanel() {
+        var panel = item("membersPanel");
+        var members = item("membersList");
+        verify(panel.visible);
+
+        keyClick(Qt.Key_M, Qt.ControlModifier | Qt.ShiftModifier);
+        tryCompare(panel, "visible", false);
+
+        keyClick(Qt.Key_P, Qt.ControlModifier | Qt.ShiftModifier);
+
+        tryCompare(panel, "visible", true);
+        tryCompare(members, "activeFocus", true);
+    }
+
+    function test_memberListEnterOpensDirectMessage() {
+        var members = item("membersList");
+
+        keyClick(Qt.Key_P, Qt.ControlModifier | Qt.ShiftModifier);
+        tryCompare(members, "activeFocus", true);
+        tryCompare(members, "currentIndex", 0);
+
+        keyClick(Qt.Key_Down);
+        keyClick(Qt.Key_Down);
+        tryCompare(members, "currentIndex", 2);
+
+        keyClick(Qt.Key_Return);
+        tryCompare(appWindow, "currentConversation", "mira");
+    }
+
+    function test_focusMembersShortcutIgnoredOnDirectMessage() {
+        var anna = item("directConversationRepeater").itemAt(0);
+        verify(anna !== null, "The anna direct-message delegate should be rendered");
+        mouseClick(anna);
+        tryCompare(appWindow, "currentConversation", "anna");
+        verify(!item("membersPanel").visible);
+
+        keyClick(Qt.Key_P, Qt.ControlModifier | Qt.ShiftModifier);
+
+        verify(!item("membersPanel").visible);
+        compare(appWindow.currentConversation, "anna");
+    }
+
+    function test_shortcutsSheetTogglesAndEscapeKeepsConversation() {
+        var sheet = item("shortcutsSheet");
+        verify(!sheet.opened);
+        verify(!sheet.visible);
+
+        keyClick(Qt.Key_Slash, Qt.ControlModifier);
+        tryCompare(sheet, "opened", true);
+
+        keyClick(Qt.Key_Escape);
+        tryCompare(sheet, "opened", false);
+        compare(appWindow.currentConversation, "#omarchy");
+    }
+
+    function test_shortcutsSheetEscapeDoesNotLeaveStatus() {
+        var sheet = item("shortcutsSheet");
+
+        keyClick(Qt.Key_QuoteLeft, Qt.ControlModifier);
+        tryCompare(appWindow, "consoleVisible", true);
+
+        keyClick(Qt.Key_Slash, Qt.ControlModifier);
+        tryCompare(sheet, "opened", true);
+
+        keyClick(Qt.Key_Escape);
+        tryCompare(sheet, "opened", false);
+        compare(appWindow.consoleVisible, true);
+
+        keyClick(Qt.Key_Escape);
+        tryCompare(appWindow, "consoleVisible", false);
     }
 
     function test_openDirectMessageFromMember() {
