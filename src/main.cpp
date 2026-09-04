@@ -13,6 +13,7 @@
 #include "backend.h"
 #include "irc/ircconnection.h"
 #include "irc/irccontroller.h"
+#include "irc/ircslashcomplete.h"
 #include "systemtheme.h"
 
 int main(int argc, char *argv[]) {
@@ -39,6 +40,7 @@ int main(int argc, char *argv[]) {
     QQuickStyle::setStyle(QStringLiteral("Material"));
 
     Backend backend(&app);
+    IrcSlashSession slashSession(&app);
     IrcController *ircController = nullptr;
     IrcConnection *ircConnection = nullptr;
     if (!mockMode) {
@@ -80,6 +82,8 @@ int main(int argc, char *argv[]) {
         QStringLiteral("ircController"), ircController);
     engine.rootContext()->setContextProperty(
         QStringLiteral("ircConnection"), ircConnection);
+    engine.rootContext()->setContextProperty(
+        QStringLiteral("slashSession"), &slashSession);
     engine.load(QUrl(QStringLiteral("qrc:/Main.qml")));
     if (engine.rootObjects().isEmpty()) {
         qCritical() << "Could not load the Omairc interface; resource available:"

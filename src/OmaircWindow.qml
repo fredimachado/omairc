@@ -10,6 +10,7 @@ ApplicationWindow {
     required property var backend
     property var irc: null
     property var connection: null
+    property var slashCommands: null
     property bool connectionSheetOpen: false
 
     objectName: "omaircWindow"
@@ -52,6 +53,8 @@ ApplicationWindow {
     onConsoleVisibleChanged: {
         resetNickComplete();
         resetComposerHistoryBrowse();
+        if (win.slashCommands)
+            win.slashCommands.sync(composer.text, consoleVisible);
         if (!consoleVisible)
             return;
         Qt.callLater(function() {
@@ -473,9 +476,10 @@ ApplicationWindow {
         if (next < 0)
             next = 0;
         if (next >= lines.length) {
-            composer.text = composerHistoryDraft;
-            composer.cursorPosition = composer.text.length;
+            var draft = composerHistoryDraft;
             resetComposerHistoryBrowse();
+            composer.text = draft;
+            composer.cursorPosition = composer.text.length;
             return true;
         }
 
@@ -799,6 +803,8 @@ ApplicationWindow {
         sequence: "Escape"
         context: Qt.ApplicationShortcut
         enabled: {
+            if (win.slashCommands && win.slashCommands.open)
+                return true;
             if (shortcutsSheet.opened || shortcutsSheetEscapeGuard)
                 return true;
             if (win.connection && win.connection.setupRequired)
@@ -812,6 +818,10 @@ ApplicationWindow {
             return win.mockCurrentConversation.length > 0;
         }
         onActivated: {
+            if (win.slashCommands && win.slashCommands.open) {
+                win.slashCommands.dismiss();
+                return;
+            }
             if (shortcutsSheet.opened || shortcutsSheetEscapeGuard) {
                 shortcutsSheet.close();
                 shortcutsSheetEscapeGuard = false;
@@ -2081,9 +2091,34 @@ ApplicationWindow {
                         (height - contentHeight) / 2)
                     bottomPadding: topPadding
                     background: Item {}
-                    onTextChanged: if (win.irc) win.irc.notifyComposerText(text)
+                    onTextChanged: {
+                        if (win.slashCommands) {
+                            if (win.composerHistoryIndex >= 0)
+                                win.slashCommands.dismiss();
+                            else
+                                win.slashCommands.sync(text, win.consoleVisible);
+                        }
+                        if (win.irc)
+                            win.irc.notifyComposerText(text);
+                    }
 
                     Keys.onPressed: function(event) {
+                        var historyArrow = (event.key === Qt.Key_Up
+                            || event.key === Qt.Key_Down)
+                            && win.composerHasPlainModifier(event)
+                            && win.composerHistoryIndex >= 0;
+                        if (win.slashCommands && !historyArrow) {
+                            var routed = win.slashCommands.routeKey(event.key, event.modifiers);
+                            if (routed.accepted) {
+                                if (routed.insertion.length > 0) {
+                                    composer.text = routed.insertion;
+                                    composer.cursorPosition = routed.insertion.length;
+                                }
+                                event.accepted = true;
+                                return;
+                            }
+                        }
+
                         if (event.key === Qt.Key_Tab && win.composerHasPlainModifier(event)) {
                             win.completeNick();
                             event.accepted = true;
@@ -2147,6 +2182,97 @@ ApplicationWindow {
                         hoverEnabled: true
                         cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
                         onClicked: win.sendMessage()
+                    }
+                }
+            }
+
+            Rectangle {
+                id: slashCompleteList
+                objectName: "slashCompleteList"
+                visible: win.slashCommands && win.slashCommands.open
+                z: 2
+                anchors.left: composerShell.left
+                anchors.right: composerShell.right
+                anchors.bottom: composerShell.top
+                anchors.bottomMargin: win.scaledSize(6)
+                height: slashHitColumn.implicitHeight + win.scaledSize(12)
+                radius: win.scaledSize(10)
+                color: win.raisedColor
+                border.width: 1
+                border.color: win.dividerColor
+
+                Column {
+                    id: slashHitColumn
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.top: parent.top
+                    anchors.margins: win.scaledSize(6)
+                    spacing: win.scaledSize(2)
+
+                    Repeater {
+                        model: win.slashCommands ? win.slashCommands.matches : []
+                        delegate: Rectangle {
+                            objectName: "slashHit-" + String(modelData.label).slice(1)
+                            width: slashHitColumn.width
+                            height: win.scaledSize(28)
+                            radius: win.scaledSize(7)
+                            color: {
+                                if (index === win.slashCommands.selectedIndex)
+                                    return win.mixColors(win.selectionColor, win.raisedColor,
+                                                         win.darkMode ? 0.45 : 0.35);
+                                if (hitMouse.containsMouse)
+                                    return win.hoverColor;
+                                return "transparent";
+                            }
+
+                            Row {
+                                anchors.fill: parent
+                                anchors.leftMargin: win.scaledSize(8)
+                                anchors.rightMargin: win.scaledSize(8)
+                                spacing: win.scaledSize(12)
+
+                                Text {
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    text: modelData.label
+                                    color: win.inkColor
+                                    font.family: "iA Writer Mono S"
+                                    font.pixelSize: win.scaledSize(12)
+                                }
+
+                                Text {
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    visible: usageHint.trim().length > 0
+                                    width: Math.max(0, parent.width - x)
+                                    text: usageHint
+                                    elide: Text.ElideRight
+                                    color: win.mutedColor
+                                    font.family: "iA Writer Mono S"
+                                    font.pixelSize: win.scaledSize(12)
+
+                                    readonly property string usageHint: {
+                                        var usage = String(modelData.usage)
+                                        var label = String(modelData.label)
+                                        if (usage.indexOf(label) === 0)
+                                            return usage.substring(label.length)
+                                        return usage
+                                    }
+                                }
+                            }
+
+                            MouseArea {
+                                id: hitMouse
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                onEntered: win.slashCommands.selectedIndex = index
+                                onClicked: {
+                                    var replacement = win.slashCommands.activate(index);
+                                    if (replacement.length > 0) {
+                                        composer.text = replacement;
+                                        composer.cursorPosition = replacement.length;
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }

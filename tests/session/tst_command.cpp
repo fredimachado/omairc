@@ -5,6 +5,7 @@
 #include "irccommand.h"
 #include "irccontroller.h"
 #include "ircsession.h"
+#include "ircslashcomplete.h"
 #include "networklogmodel.h"
 
 namespace
@@ -77,6 +78,9 @@ private slots:
     void statusSubmitDoesNotSendAction();
     void awayAndBackWriteAwayFrames();
     void whoisSendsAndDefaults();
+    void slashProjectClosed();
+    void slashProjectOpen();
+    void slashSessionKeys();
 };
 
 void CommandTest::parseEmptyAndSay()
@@ -697,6 +701,127 @@ void CommandTest::whoisSendsAndDefaults()
     QCOMPARE(transport->writtenFrames().size(), framesBefore);
     QVERIFY(!framesContain(transport->writtenFrames().mid(framesBefore),
                            QByteArrayLiteral("WHOIS")));
+}
+
+void CommandTest::slashProjectClosed()
+{
+    const QStringList closedInputs = {
+        QString(),
+        QStringLiteral("/"),
+        QStringLiteral("/ "),
+        QStringLiteral("//hi"),
+        QStringLiteral("///x"),
+        QStringLiteral("/join #omarchy"),
+        QStringLiteral("hello"),
+    };
+    for (const QString& input : closedInputs) {
+        QVERIFY2(!IrcSlashComplete::project(input, IrcComposerSurface::Conversation).isOpen(),
+                 qPrintable(input));
+    }
+
+    const auto doubled = IrcSlashComplete::project(
+        QStringLiteral("//join"), IrcComposerSurface::Conversation);
+    QVERIFY(!doubled.isOpen());
+    QCOMPARE(IrcCommand::parse(QStringLiteral("//join")).verb, IrcCommand::Verb::Say);
+    QCOMPARE(IrcCommand::parse(QStringLiteral("//hi")).verb, IrcCommand::Verb::Say);
+    QCOMPARE(IrcCommand::parse(QStringLiteral("///x")).verb, IrcCommand::Verb::Say);
+}
+
+void CommandTest::slashProjectOpen()
+{
+    const auto join = IrcSlashComplete::project(
+        QStringLiteral("/jo"), IrcComposerSurface::Conversation);
+    QVERIFY(join.isOpen());
+    QCOMPARE(join.hits().first().label, QStringLiteral("/join"));
+    QCOMPARE(join.hits().first().usage, QStringLiteral("/join <channel>"));
+
+    const auto alias = IrcSlashComplete::project(
+        QStringLiteral("/j"), IrcComposerSurface::Conversation);
+    QVERIFY(alias.isOpen());
+    QCOMPARE(alias.hits().first().label, QStringLiteral("/join"));
+
+    const auto meStatus = IrcSlashComplete::project(
+        QStringLiteral("/me"), IrcComposerSurface::Status);
+    QVERIFY(!meStatus.isOpen());
+    const auto meConversation = IrcSlashComplete::project(
+        QStringLiteral("/me"), IrcComposerSurface::Conversation);
+    QVERIFY(meConversation.isOpen());
+    QCOMPARE(meConversation.hits().first().label, QStringLiteral("/me"));
+
+    const auto leave = IrcSlashComplete::project(
+        QStringLiteral("/LEAVE"), IrcComposerSurface::Conversation);
+    QVERIFY(leave.isOpen());
+    QCOMPARE(leave.hits().first().label, QStringLiteral("/part"));
+
+    const auto msg = IrcSlashComplete::project(
+        QStringLiteral("/msg"), IrcComposerSurface::Conversation);
+    QVERIFY(msg.isOpen());
+    QCOMPARE(msg.hits().first().label, QStringLiteral("/query"));
+
+    const auto statusTopic = IrcSlashComplete::project(
+        QStringLiteral("/t"), IrcComposerSurface::Status);
+    QVERIFY(!statusTopic.containsLabel(QStringLiteral("/topic")));
+    QVERIFY(!statusTopic.isOpen());
+    const auto conversationTopic = IrcSlashComplete::project(
+        QStringLiteral("/t"), IrcComposerSurface::Conversation);
+    QVERIFY(conversationTopic.isOpen());
+    QCOMPARE(conversationTopic.hits().first().label, QStringLiteral("/topic"));
+    QVERIFY(!conversationTopic.containsLabel(QStringLiteral("/notice")));
+}
+
+void CommandTest::slashSessionKeys()
+{
+    IrcSlashSession session;
+
+    session.sync(QStringLiteral("/j"), false);
+    QVERIFY(session.open());
+    QCOMPARE(session.selectedIndex(), 0);
+    const auto tab = session.routeKey(int(Qt::Key_Tab), int(Qt::NoModifier));
+    QVERIFY(tab.accepted);
+    QCOMPARE(tab.insertion, QStringLiteral("/join "));
+    session.sync(tab.insertion, false);
+    QVERIFY(!session.open());
+
+    session.sync(QStringLiteral("/close"), false);
+    QVERIFY(session.open());
+    const auto enterClose = session.routeKey(int(Qt::Key_Return), int(Qt::NoModifier));
+    QVERIFY(!enterClose.accepted);
+    QVERIFY(enterClose.insertion.isEmpty());
+
+    session.sync(QStringLiteral("/j"), false);
+    QVERIFY(session.open());
+    const auto enterAlias = session.routeKey(int(Qt::Key_Enter), int(Qt::NoModifier));
+    QVERIFY(!enterAlias.accepted);
+
+    session.sync(QStringLiteral("/jo"), false);
+    QVERIFY(session.open());
+    const auto enterPrefix = session.routeKey(int(Qt::Key_Return), int(Qt::NoModifier));
+    QVERIFY(enterPrefix.accepted);
+    QCOMPARE(enterPrefix.insertion, QStringLiteral("/join "));
+
+    session.sync(QStringLiteral("  /jo"), false);
+    QVERIFY(session.open());
+    QCOMPARE(session.activate(0), QStringLiteral("  /join "));
+
+    session.sync(QStringLiteral("/jo"), false);
+    QVERIFY(session.open());
+    const auto escape = session.routeKey(int(Qt::Key_Escape), int(Qt::NoModifier));
+    QVERIFY(escape.accepted);
+    QVERIFY(!session.open());
+    session.sync(QStringLiteral("/jo"), false);
+    QVERIFY(!session.open());
+    session.sync(QStringLiteral("/j"), false);
+    QVERIFY(session.open());
+    session.sync(QStringLiteral("/"), false);
+    QVERIFY(!session.open());
+    session.sync(QStringLiteral("/jo"), false);
+    QVERIFY(session.open());
+
+    session.sync(QStringLiteral("//"), false);
+    QVERIFY(!session.open());
+    const auto doubled = session.routeKey(int(Qt::Key_Tab), int(Qt::NoModifier));
+    QVERIFY(!doubled.accepted);
+    QVERIFY(doubled.insertion.isEmpty());
 }
 
 int runCommandTests(int argc, char **argv)
