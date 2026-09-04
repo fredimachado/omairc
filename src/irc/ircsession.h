@@ -6,6 +6,7 @@
 #include <QTimer>
 
 #include "ircframer.h"
+#include "ircstatusentry.h"
 #include "irctransport.h"
 
 class IrcReconnectTimer : public QObject
@@ -102,6 +103,7 @@ signals:
                             int delayMilliseconds,
                             int attempt);
     void messageReceived(const QString& networkId, const IrcMessage& message);
+    void statusEntry(const IrcStatusEntry& entry);
 
 private:
     void setState(State state);

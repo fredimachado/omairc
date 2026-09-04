@@ -283,8 +283,10 @@ void IrcSession::sendRegistration()
 
 void IrcSession::sendLine(const QByteArray &line)
 {
-    if (!line.isEmpty())
-        m_transport->write(line);
+    if (line.isEmpty())
+        return;
+    emit statusEntry(IrcStatusEntry::outgoing(m_config.networkId, line));
+    m_transport->write(line);
 }
 
 bool IrcSession::sendCommand(const QString& command)
@@ -323,6 +325,8 @@ void IrcSession::handleBytes(const QByteArray &bytes)
 
 void IrcSession::handleMessage(const IrcMessage &message)
 {
+    emit statusEntry(IrcStatusEntry::incoming(m_config.networkId, message));
+
     if (message.command == "PING") {
         if (message.parameters.empty()) {
             emit errorOccurred(m_config.networkId,

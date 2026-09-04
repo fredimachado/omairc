@@ -1,5 +1,6 @@
 #include "irccontroller.h"
 
+#include "irccommand.h"
 #include "irceventtranslator.h"
 
 #include <QByteArray>
@@ -47,6 +48,7 @@ QString stateText(IrcSession::State state)
 
 IrcController::IrcController(QObject *parent)
     : QObject(parent)
+    , m_console(m_sessions)
     , m_conversations(m_reducer)
     , m_messages(m_reducer)
     , m_members(m_reducer)
@@ -78,6 +80,7 @@ IrcSession *IrcController::addSession(const IrcSessionConfig& config,
         emit statusChanged();
         emit errorOccurred(networkId, kind, message);
     });
+    m_console.observe(session);
     return session;
 }
 
@@ -86,6 +89,7 @@ bool IrcController::discardSession(const QString &networkId)
     if (!m_sessions.findSession(networkId))
         return false;
     m_currentNicks.remove(networkId);
+    m_console.forget(networkId);
     return m_sessions.discardSession(networkId);
 }
 
@@ -157,6 +161,11 @@ QString IrcController::currentNick() const
     return m_selected ? m_currentNicks.value(m_selected->networkId) : QString{};
 }
 
+IrcStatusConsole *IrcController::console()
+{
+    return &m_console;
+}
+
 bool IrcController::start(const QString& networkId)
 {
     IrcSession *session = m_sessions.findSession(networkId);
@@ -166,6 +175,7 @@ bool IrcController::start(const QString& networkId)
         return false;
     }
     m_lastError.clear();
+    m_console.setNetwork(networkId);
     const bool started = m_sessions.activateSession(networkId);
     updateStatus(session);
     return started;
@@ -196,43 +206,36 @@ void IrcController::openDirectMessage(const QString& nick)
 
 bool IrcController::sendMessage(const QString& text)
 {
-    const QString input = text.trimmed();
-    IrcSession *session = selectedSession();
-    if (!session || !m_selected || input.isEmpty()) {
-        m_lastError = QStringLiteral("Select a connected conversation first");
-        emit statusChanged();
+    const IrcCommand command = IrcCommand::parse(text);
+    if (command.verb == IrcCommand::Verb::Empty)
         return false;
-    }
+    if (!command.needsConversation())
+        return report(m_console.run(command), command);
+
+    IrcSession *session = selectedSession();
+    if (!session || !m_selected)
+        return report(IrcCommandOutcome::WrongScope, command);
 
     bool sent = false;
-    if (input.startsWith(QStringLiteral("/me "))) {
-        const QString action = input.mid(4).trimmed();
-        sent = session->sendAction(m_selectedTarget, action);
+    if (command.verb == IrcCommand::Verb::Action) {
+        sent = session->sendAction(m_selectedTarget, command.argument);
         if (sent)
-            echoLocal(IrcMessageKind::Action, action);
-    } else if (input.startsWith(QStringLiteral("/join "))) {
-        sent = session->join(input.mid(6).trimmed());
-    } else if (input == QStringLiteral("/part")) {
-        sent = isChannel() && session->part(m_selectedTarget);
-    } else if (input.startsWith(QStringLiteral("/nick "))) {
-        sent = session->changeNick(input.mid(6).trimmed());
-    } else if (input == QStringLiteral("/quit")) {
-        sent = session->quit();
-    } else if (input.startsWith(QStringLiteral("/quit "))) {
-        sent = session->quit(input.mid(6).trimmed());
-    } else if (input.startsWith(QLatin1Char('/'))) {
-        m_lastError = QStringLiteral("That command is not supported");
-        emit statusChanged();
-        return false;
+            echoLocal(IrcMessageKind::Action, command.argument);
     } else {
-        sent = session->sendPrivmsg(m_selectedTarget, input);
+        sent = session->sendPrivmsg(m_selectedTarget, command.argument);
         if (sent)
-            echoLocal(IrcMessageKind::Message, input);
+            echoLocal(IrcMessageKind::Message, command.argument);
     }
+    return report(sent ? IrcCommandOutcome::Sent : IrcCommandOutcome::Refused, command);
+}
 
-    m_lastError = sent ? QString{} : QStringLiteral("Message was not sent");
+bool IrcController::report(IrcCommandOutcome outcome, const IrcCommand& command)
+{
+    m_lastError = outcome == IrcCommandOutcome::Sent
+        ? QString{}
+        : ircCommandOutcomeText(outcome, command);
     emit statusChanged();
-    return sent;
+    return outcome == IrcCommandOutcome::Sent;
 }
 
 void IrcController::echoLocal(IrcMessageKind kind, const QString& body)

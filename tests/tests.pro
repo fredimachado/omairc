@@ -22,6 +22,11 @@ HEADERS += \
     ../src/irc/irceventtranslator.h \
     ../src/irc/irceventreducer.h \
     ../src/irc/irctransport.h \
+    ../src/irc/ircstatusentry.h \
+    ../src/irc/ircnetworklog.h \
+    ../src/irc/networklogmodel.h \
+    ../src/irc/irccommand.h \
+    ../src/irc/ircstatusconsole.h \
     ../src/irc/ircsession.h \
     ../src/irc/ircsessionmanager.h \
     ../src/irc/conversationlistmodel.h \
@@ -45,6 +50,11 @@ SOURCES += \
     ../src/irc/ircserverfeatures.cpp \
     ../src/irc/irceventtranslator.cpp \
     ../src/irc/irceventreducer.cpp \
+    ../src/irc/ircstatusentry.cpp \
+    ../src/irc/ircnetworklog.cpp \
+    ../src/irc/networklogmodel.cpp \
+    ../src/irc/irccommand.cpp \
+    ../src/irc/ircstatusconsole.cpp \
     ../src/irc/ircsession.cpp \
     ../src/irc/ircsessionmanager.cpp \
     ../src/irc/conversationlistmodel.cpp \

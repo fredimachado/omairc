@@ -138,13 +138,6 @@ struct IrcModeEvent
     QStringList arguments;
 };
 
-struct IrcServerErrorEvent
-{
-    QString networkId;
-    QString code;
-    QString message;
-};
-
 using IrcEvent = std::variant<
     IrcWelcomeEvent,
     IrcMessageEvent,
@@ -157,5 +150,4 @@ using IrcEvent = std::variant<
     IrcKickEvent,
     IrcTopicEvent,
     IrcNamesEvent,
-    IrcModeEvent,
-    IrcServerErrorEvent>;
+    IrcModeEvent>;

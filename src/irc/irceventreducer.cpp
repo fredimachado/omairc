@@ -101,16 +101,6 @@ const IrcConversationState *IrcEventReducer::find(
     return found == m_conversations.end() ? nullptr : &found->second;
 }
 
-const std::vector<IrcServerErrorEvent>& IrcEventReducer::serverErrors(
-    const QString& networkId) const noexcept
-{
-    const auto found = m_serverErrors.find(networkId);
-    if (found != m_serverErrors.end())
-        return found->second;
-    static const std::vector<IrcServerErrorEvent> empty;
-    return empty;
-}
-
 IrcConversationState& IrcEventReducer::ensureConversation(
     const IrcConversationKey& key, const QString& displayTarget)
 {
@@ -392,7 +382,3 @@ void IrcEventReducer::reduce(const IrcModeEvent& event)
                      + event.mode);
 }
 
-void IrcEventReducer::reduce(const IrcServerErrorEvent& event)
-{
-    m_serverErrors[event.networkId].push_back(event);
-}

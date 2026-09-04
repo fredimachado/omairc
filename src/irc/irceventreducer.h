@@ -77,8 +77,6 @@ public:
 
     const Store& conversations() const noexcept;
     const IrcConversationState *find(const IrcConversationKey& key) const noexcept;
-    const std::vector<IrcServerErrorEvent>& serverErrors(
-        const QString& networkId) const noexcept;
 
 private:
     IrcConversationState& ensureConversation(const IrcConversationKey& key,
@@ -110,11 +108,9 @@ private:
     void reduce(const IrcTopicEvent& event);
     void reduce(const IrcNamesEvent& event);
     void reduce(const IrcModeEvent& event);
-    void reduce(const IrcServerErrorEvent& event);
 
     Store m_conversations;
     std::map<QString, IrcServerFeatures> m_features;
     std::map<QString, QString> m_currentNicks;
-    std::map<QString, std::vector<IrcServerErrorEvent>> m_serverErrors;
     std::optional<IrcConversationKey> m_selected;
 };
