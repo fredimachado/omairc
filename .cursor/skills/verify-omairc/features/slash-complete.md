@@ -21,12 +21,12 @@ Slash complete shows matching commands above the composer after `/` plus a non-s
 Preconditions:
 
 - The compiled list needs `slashCommands` bound (`control-omairc launch --mock`). Default Connect also binds it, but the composer sits under the sheet.
-- `qml-suite` covers open, Tab, Escape, and Up/Down with a JS stand-in. Existing nick-complete and history cases omit `slashCommands` and stay on today's Tab / Up / Down paths.
+- `qml-suite` covers open, Tab, Escape, Up/Down, and history walk past a bare `/j` with a JS stand-in. Existing nick-complete and history cases omit `slashCommands` and stay on today's Tab / Up / Down paths.
 - There is no chord for this feature. Do not look for it on the `Ctrl+/` sheet. Tab there still says nick complete.
 
 - **List for `/j`.** Run `control-omairc launch --mock`, then `control-omairc doctor`, `control-omairc focus-composer`, `control-omairc type --text "/j"`, and `control-omairc screenshot --feature slash-complete --name after-slash-j`. The list sits above the composer and includes `/join`.
 - **Tab insert.** From that composer, run `control-omairc key --key Tab` and `control-omairc screenshot --feature slash-complete --name after-tab`. The composer is `/join ` and the list is gone.
-- **Offscreen suite.** Run `control-omairc doctor-qml` then `control-omairc qml-suite`. That run covers `test_slashCompleteListAppearsForSlashJ`, `test_slashCompleteTabInsertsCanonicalVerb`, `test_slashCompleteEscapeDismisses`, and `test_slashCompleteUpDownMoveSelection`. It does not prove the compiled C++ catalog in the QML window.
+- **Offscreen suite.** Run `control-omairc doctor-qml` then `control-omairc qml-suite`. That run covers `test_slashCompleteListAppearsForSlashJ`, `test_slashCompleteTabInsertsCanonicalVerb`, `test_slashCompleteEscapeDismisses`, `test_slashCompleteUpDownMoveSelection`, and `test_slashCompleteHistoryUpWalksPastBareCommand`. It does not prove the compiled C++ catalog in the QML window.
 
 ## Gotchas
 
@@ -35,3 +35,4 @@ Preconditions:
 - Tab still nick-completes `mi` when the composer is not a slash query.
 - Escape dismisses the list before the shortcuts sheet, Connect, or Status.
 - Enter on an exact name or alias (`/close`, `/j`) sends. Enter on a partial (`/jo`) inserts `/join `.
+- Recalling a sent line keeps the list closed so Up/Down keep walking history. The list can open again after you leave history browse.

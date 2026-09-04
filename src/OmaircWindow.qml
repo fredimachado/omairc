@@ -476,9 +476,10 @@ ApplicationWindow {
         if (next < 0)
             next = 0;
         if (next >= lines.length) {
-            composer.text = composerHistoryDraft;
-            composer.cursorPosition = composer.text.length;
+            var draft = composerHistoryDraft;
             resetComposerHistoryBrowse();
+            composer.text = draft;
+            composer.cursorPosition = composer.text.length;
             return true;
         }
 
@@ -2091,14 +2092,22 @@ ApplicationWindow {
                     bottomPadding: topPadding
                     background: Item {}
                     onTextChanged: {
-                        if (win.slashCommands)
-                            win.slashCommands.sync(text, win.consoleVisible);
+                        if (win.slashCommands) {
+                            if (win.composerHistoryIndex >= 0)
+                                win.slashCommands.dismiss();
+                            else
+                                win.slashCommands.sync(text, win.consoleVisible);
+                        }
                         if (win.irc)
                             win.irc.notifyComposerText(text);
                     }
 
                     Keys.onPressed: function(event) {
-                        if (win.slashCommands) {
+                        var historyArrow = (event.key === Qt.Key_Up
+                            || event.key === Qt.Key_Down)
+                            && win.composerHasPlainModifier(event)
+                            && win.composerHistoryIndex >= 0;
+                        if (win.slashCommands && !historyArrow) {
                             var routed = win.slashCommands.routeKey(event.key, event.modifiers);
                             if (routed.accepted) {
                                 if (routed.insertion.length > 0) {

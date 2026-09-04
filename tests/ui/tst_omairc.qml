@@ -1440,4 +1440,33 @@ TestCase {
         window.close();
         slashFake.reset();
     }
+
+    function test_slashCompleteHistoryUpWalksPastBareCommand() {
+        var window = openSlashWindow();
+        var composer = findChild(window, "messageComposer");
+        verify(composer !== null, "Could not find messageComposer");
+        mouseClick(composer);
+        verify(composer.activeFocus);
+
+        typeText("hello");
+        keyClick(Qt.Key_Return);
+        compare(composer.text, "");
+
+        typeText("/j");
+        tryCompare(findChild(window, "slashCompleteList"), "visible", true);
+        mouseClick(findChild(window, "sendButton"));
+        compare(composer.text, "");
+        tryCompare(findChild(window, "slashCompleteList"), "visible", false);
+
+        keyClick(Qt.Key_Up);
+        compare(composer.text, "/j");
+        tryCompare(findChild(window, "slashCompleteList"), "visible", false);
+        compare(slashFake.selectedIndex, 0);
+
+        keyClick(Qt.Key_Up);
+        compare(composer.text, "hello");
+        compare(findChild(window, "slashCompleteList").visible, false);
+        window.close();
+        slashFake.reset();
+    }
 }
