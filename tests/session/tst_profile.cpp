@@ -64,6 +64,11 @@ void ProfileTest::validateRefusesIncompleteAndUnsendable()
     profile.nick = QStringLiteral("omairc");
     QVERIFY(profile.isComplete());
 
+    profile.autojoinChannels = {QStringLiteral("omarchy"), QStringLiteral("&local")};
+    QCOMPARE(profile.normalized().autojoinChannels,
+             QStringList({QStringLiteral("#omarchy"), QStringLiteral("&local")}));
+    QVERIFY(profile.isComplete());
+
     profile.host.clear();
     QCOMPARE(profile.validate(), IrcNetworkProfile::Problem::MissingHost);
 
@@ -118,6 +123,12 @@ void ProfileTest::storeRoundTripsSevenFieldsWithoutPassword()
     QVERIFY(contents.contains(profile.host));
     QVERIFY(contents.contains(QLatin1String("networks")));
     QVERIFY(!contents.contains(QLatin1String("password"), Qt::CaseInsensitive));
+
+    IrcNetworkProfile unnamed;
+    unnamed.host = QStringLiteral("irc.example.net");
+    unnamed.nick = QStringLiteral("omairc");
+    store.save(unnamed);
+    QCOMPARE(IrcProfileStore().profiles().size(), 1);
 }
 
 void ProfileTest::usernameAndRealnameStayAsTyped()

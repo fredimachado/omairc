@@ -13,14 +13,30 @@ std::string utf8(const QString &value)
     return std::string(bytes.constData(), std::size_t(bytes.size()));
 }
 
+QString prefixChannel(QString channel)
+{
+    channel = channel.trimmed();
+    if (channel.isEmpty())
+        return {};
+    const QChar mark = channel.front();
+    if (mark == QLatin1Char('#') || mark == QLatin1Char('&')
+        || mark == QLatin1Char('+') || mark == QLatin1Char('!')) {
+        return channel;
+    }
+    return QLatin1Char('#') + channel;
+}
+
 QStringList splitAutojoin(const QStringList &channels)
 {
     QStringList result;
     const QRegularExpression separators(QStringLiteral("[,\\s]+"));
     for (const QString &entry : channels) {
         const QStringList parts = entry.split(separators, Qt::SkipEmptyParts);
-        for (const QString &part : parts)
-            result.append(part.trimmed());
+        for (const QString &part : parts) {
+            const QString channel = prefixChannel(part);
+            if (!channel.isEmpty())
+                result.append(channel);
+        }
     }
     return result;
 }

@@ -5,7 +5,10 @@ description: Drive the Omairc Qt desktop prototype as a user would (isolated Xvf
 
 # Verify Omairc
 
-Omairc is a Qt 6 Quick desktop app. Networks, channels, people, and messages are mocked locally. There is no IRC socket, web UI, or public API. The user-facing surface is the compiled `build/omairc` window.
+Omairc is a Qt 6 Quick desktop app. The compiled window binds a live IRC
+controller and a connection sheet. UI tests may still leave `irc` null and
+exercise mock conversations. There is no web UI or public API. The
+user-facing surface is the compiled `build/omairc` window.
 
 Read `features/README.md` before driving. Drive the mapped entry points for the feature under proof. A convenient path that skips listed entry points is incomplete.
 
@@ -17,7 +20,7 @@ Prefer a private X server and the compiled binary when `Xvfb`, `xauth`, `xdotool
 .cursor/skills/verify-omairc/control-omairc launch
 ```
 
-Ready when stdout includes `title=#omarchy - Omairc` and `doctor` exits 0. The window title is always `{conversation} - Omairc`.
+Ready when stdout includes a title ending in ` - Omairc` and `doctor` exits 0. First run is ` - Omairc` with the connection sheet. After a conversation exists the title is `{conversation} - Omairc`.
 
 This launch:
 

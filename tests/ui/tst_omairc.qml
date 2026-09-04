@@ -185,6 +185,11 @@ TestCase {
         compare(findChild(window, "connectionNick").text, "");
         compare(findChild(window, "connectionAutojoin").text, "#omarchy");
         compare(findChild(window, "connectionProblem").text, "Nick is required");
+        try {
+            grabImage(window.contentItem).save(artifactDirectory + "connection-sheet.png");
+        } catch (error) {
+            fail("Failed to save screenshot 'connection-sheet': " + error);
+        }
         window.close();
     }
 

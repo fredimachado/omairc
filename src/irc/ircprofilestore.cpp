@@ -42,6 +42,9 @@ QList<IrcNetworkProfile> IrcProfileStore::profiles() const
 
 void IrcProfileStore::save(const IrcNetworkProfile &profile)
 {
+    if (profile.networkId.isEmpty())
+        return;
+
     QSettings settings;
     settings.beginGroup(networksGroup);
     settings.beginGroup(profile.networkId);

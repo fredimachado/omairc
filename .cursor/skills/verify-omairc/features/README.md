@@ -5,11 +5,11 @@ This directory is the maintained source for verifying the user-facing behavior o
 ## Baseline preconditions
 
 - Prefer `.cursor/skills/verify-omairc/control-omairc launch` when Xvfb and xdotool are installed.
-- Require `control-omairc doctor` to report `ok isolated Omairc`, display owned by this run, and title `#omarchy - Omairc`.
+- Require `control-omairc doctor` to report `ok isolated Omairc`, display owned by this run, and a title that ends with ` - Omairc`.
+- A fresh compiled window opens the connection sheet. Title is ` - Omairc` until a conversation exists. Conversation recipes that assume `#omarchy` must use `qml-suite` (irc left null) or seed a profile in the disposable XDG tree.
 - If desktop tools are missing, require `control-omairc doctor-qml` and drive with `control-omairc qml-suite`. Do not send input to the user's live window.
 - Start every desktop recipe from that baseline unless its preconditions say otherwise.
 - Never drive a window that this run did not start. The user's interactive `./build/omairc` is off limits.
-- Conversations are mocked and local. There is no network traffic to observe.
 
 ## Driving conventions
 

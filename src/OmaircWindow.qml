@@ -1352,7 +1352,8 @@ ApplicationWindow {
                 Rectangle {
                     anchors.centerIn: parent
                     width: Math.min(win.scaledSize(420), parent.width - win.scaledSize(40))
-                    height: sheetColumn.implicitHeight + win.scaledSize(36)
+                    height: Math.min(sheetColumn.implicitHeight + win.scaledSize(36),
+                                     parent.height - win.scaledSize(40))
                     radius: win.scaledSize(10)
                     color: win.raisedColor
                     border.width: 1
@@ -1363,12 +1364,18 @@ ApplicationWindow {
                         onClicked: {}
                     }
 
+                    Flickable {
+                        id: sheetFlick
+                        anchors.fill: parent
+                        anchors.margins: win.scaledSize(18)
+                        contentWidth: width
+                        contentHeight: sheetColumn.implicitHeight
+                        clip: true
+                        boundsBehavior: Flickable.StopAtBounds
+
                     Column {
                         id: sheetColumn
-                        anchors.left: parent.left
-                        anchors.right: parent.right
-                        anchors.top: parent.top
-                        anchors.margins: win.scaledSize(18)
+                        width: sheetFlick.width
                         spacing: win.scaledSize(10)
 
                         Text {
@@ -1525,12 +1532,14 @@ ApplicationWindow {
                                 width: win.scaledSize(88)
                                 height: win.scaledSize(30)
                                 radius: win.scaledSize(7)
-                                color: win.accentColor
+                                color: win.connection && win.connection.problem.length === 0
+                                    ? win.accentColor : win.raisedColor
 
                                 Text {
                                     anchors.centerIn: parent
                                     text: "Apply"
-                                    color: "#ffffff"
+                                    color: win.connection && win.connection.problem.length === 0
+                                        ? "#ffffff" : win.mutedColor
                                     font.family: "iA Writer Mono S"
                                     font.bold: true
                                     font.pixelSize: win.scaledSize(11)
@@ -1538,11 +1547,13 @@ ApplicationWindow {
 
                                 MouseArea {
                                     anchors.fill: parent
-                                    cursorShape: Qt.PointingHandCursor
+                                    enabled: win.connection && win.connection.problem.length === 0
+                                    cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
                                     onClicked: win.submitConnection()
                                 }
                             }
                         }
+                    }
                     }
                 }
             }
