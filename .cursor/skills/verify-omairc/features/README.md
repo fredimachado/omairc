@@ -14,7 +14,7 @@ This directory is the maintained source for verifying the user-facing behavior o
 ## Driving conventions
 
 - Treat every command as literal. Keep quoted names and flags unchanged.
-- Prefer named helper targets (`click-conversation`, `click-member`, `focus-composer`) over raw `--x/--y`.
+- Prefer named helper targets (`click-conversation`, `click-member`, `click-network`, `click-edit`, `focus-composer`) over raw `--x/--y`.
 - Window title `{conversation} - Omairc` is the conversation identity.
 - Named clicks assume the isolated 1180x760 window at textScale 1.0.
 - Restore the baseline conversation (`#omarchy`) after a mutation if another recipe will reuse the instance.
@@ -48,3 +48,5 @@ Keep implementation details out of the map. Name only user paths, stable handles
 - [Toggle members](./toggle-members.md) covers the people control, `Ctrl+Shift+M`, and hiding the panel on direct messages.
 - [Open a direct message](./open-direct-message.md) covers opening or creating a DM from a member row and clearing unread state.
 - [Status console](./status-console.md) covers the network Status pane, header entry points, AUTH notices, and the shared composer.
+- [Member presence](./member-presence.md) covers presence dots, away dimming, status lines, capability gating, and live PREFIX ranks.
+- [Identity footer](./identity-footer.md) covers the sidebar nick footer (`fred` on first run, then the connection or live nick).

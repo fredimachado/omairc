@@ -1,6 +1,6 @@
 ---
 name: verify-omairc
-description: Drive the Omairc Qt desktop prototype as a user would (isolated Xvfb + compiled binary). Use when proving the first-run Connect sheet, channel switching, sending local messages, the member panel, or opening a direct message.
+description: Drive the Omairc Qt desktop prototype as a user would (isolated Xvfb + compiled binary). Use when proving the first-run Connect sheet, Status console, channel switching, sending local messages, the member panel, member presence, the identity footer, or opening a direct message.
 ---
 
 # Verify Omairc
@@ -84,14 +84,17 @@ Use `control-omairc` against the isolated window. Stable handles:
 | `click-conversation --name #desktop` | Mock sidebar channel or seeded DM (`#omarchy`, `#desktop`, `#ricing`, `#help`, `anna`, `dax`). Those rows are hidden on a compiled window with `irc` bound. |
 | `click-member --name mira` | Member row while the panel is visible |
 | `click-people` | Header `12 PEOPLE` / `Hide members` / `Show members` control (channels only) |
+| `click-network` | Sidebar network name. Opens Status. |
+| `click-edit` | Small `edit` control beside that name. Opens Connect. |
 | `focus-composer` | `Ctrl+L` |
 | `send --text "..."` | Focus composer, type, `Enter` |
 | `key --key ctrl+shift+m` | Toggle members on a channel |
+| `key --key ctrl+shift+s` | Toggle Status. Does nothing useful on first-run Connect. |
 | `key --key ctrl+q` | Quit |
 
 Named clicks are window-relative pixels for 1180x760 at textScale 1.0. They are invalid on a maximized window, a restored user geometry, or a portal text scale other than 1.0. That is why launch isolates XDG and DBus.
 
-QML object names used by `bin/test` (not visible to xdotool): `connectionSheet`, `connectionHost`, `connectionNick`, `conversation-#desktop`, `conversation-anna`, `messageComposer`, `sendButton`, `peopleButton`, `membersPanel`, `membersList`, `member-mira`, `messageList`, `directConversationRepeater`, `networkHeaderButton`, `networkEditButton`, `consoleList`.
+QML object names used by `bin/test` (not visible to xdotool): `connectionSheet`, `connectionHost`, `connectionNick`, `conversation-#desktop`, `conversation-anna`, `messageComposer`, `sendButton`, `peopleButton`, `membersPanel`, `membersList`, `member-mira`, `messageList`, `directConversationRepeater`, `networkHeaderButton`, `networkEditButton`, `consoleList`, `selfNickLabel`, `presence-dot-anna`, `member-status-anna`.
 
 Typical drive:
 
@@ -107,7 +110,7 @@ That click path needs the mock sidebar. A fresh compiled launch is Connect with 
 
 Inspect the matching feature file for the exact recipe and observables.
 
-When desktop tools are missing, drive the mapped feature through the suite. `qml-suite` runs `bin/test`, which opens the Connect sheet with a fake incomplete profile, then clicks `conversation-#desktop`, `messageComposer`, `membersPanel` / `Ctrl+Shift+M`, and `member-mira` with real mouse and key events, then copies screenshots into `test-artifacts/verify/`. That covers the five mapped features. It is not a pass on a skipped desktop entry point; say so in the proof notes.
+When desktop tools are missing, drive the mapped feature through the suite. `qml-suite` runs `bin/test`, which opens the Connect sheet with a fake incomplete profile, then clicks `conversation-#desktop`, `messageComposer`, `membersPanel` / `Ctrl+Shift+M`, `member-mira`, and `networkHeaderButton` with real mouse and key events, then copies screenshots into `test-artifacts/verify/`. That covers every mapped feature except live PREFIX ranks, which need a completed Connect. It is not a pass on a skipped desktop entry point; say so in the proof notes.
 
 ## Evidence
 
@@ -120,7 +123,7 @@ Standards:
 - Window title is the conversation identity. A screenshot must show the sidebar selection, header name, topic, and (for channels) people count together.
 - Messages are local only. Persistence proof is the same session: the row stays after sending, and switching away and back still shows it. There is no server or database.
 - `control-omairc compare --before <a> --after <b>` requires a visible pixel change (ImageMagick AE > 100).
-- `bin/test` writes `test-artifacts/{connection-sheet,switch-channel,send-message,toggle-members,open-direct-message}.png`. Treat those as QML-suite evidence, not desktop-window evidence. `qml-suite` copies them into `test-artifacts/verify/<feature-id>/`.
+- `bin/test` writes `test-artifacts/{connection-sheet,switch-channel,send-message,toggle-members,open-direct-message,status-console}.png`. Treat those as QML-suite evidence, not desktop-window evidence. `qml-suite` copies them into `test-artifacts/verify/<feature-id>/`, and reuses `switch-channel.png` for member-presence and identity-footer.
 - Record the feature ID and entry point on every artifact name.
 
 ## Cleanup
@@ -142,7 +145,7 @@ launch | doctor | title | wait-title --exact TITLE
 click --x N --y N
 click-conversation --name NAME
 click-member --name NICK
-click-people | click-send | focus-composer
+click-people | click-network | click-edit | click-send | focus-composer
 type --text TEXT | key --key KEY | send --text TEXT
 screenshot --feature ID --name STEM
 compare --before PATH --after PATH

@@ -19,6 +19,8 @@ Usage:
   control-omairc click-conversation --name <#channel|nick>
   control-omairc click-member --name <nick>
   control-omairc click-people
+  control-omairc click-network
+  control-omairc click-edit
   control-omairc click-send
   control-omairc focus-composer
   control-omairc type --text "<text>"
@@ -298,6 +300,16 @@ cmd_click_people() {
   click_xy 908 36
 }
 
+cmd_click_network() {
+  load_state
+  click_xy 120 36
+}
+
+cmd_click_edit() {
+  load_state
+  click_xy 220 36
+}
+
 cmd_click_send() {
   load_state
   click_xy 909 717
@@ -427,14 +439,18 @@ cmd_qml_suite() {
     "$EVIDENCE_DIR/send-message" \
     "$EVIDENCE_DIR/toggle-members" \
     "$EVIDENCE_DIR/open-direct-message" \
-    "$EVIDENCE_DIR/status-console"
+    "$EVIDENCE_DIR/status-console" \
+    "$EVIDENCE_DIR/member-presence" \
+    "$EVIDENCE_DIR/identity-footer"
   for pair in \
     "connection-sheet.png:connect/first-run.png" \
     "switch-channel.png:switch-conversation/after-desktop.png" \
     "send-message.png:send-message/after-send.png" \
     "toggle-members.png:toggle-members/members-hidden.png" \
     "open-direct-message.png:open-direct-message/mira-dm.png" \
-    "status-console.png:status-console/after-open.png"
+    "status-console.png:status-console/after-open.png" \
+    "switch-channel.png:member-presence/after-desktop.png" \
+    "switch-channel.png:identity-footer/mock-fred.png"
   do
     src="$ROOT/test-artifacts/${pair%%:*}"
     dest="$EVIDENCE_DIR/${pair#*:}"
@@ -473,6 +489,8 @@ case $cmd in
   click-conversation) cmd_click_conversation "$@" ;;
   click-member) cmd_click_member "$@" ;;
   click-people) cmd_click_people ;;
+  click-network) cmd_click_network ;;
+  click-edit) cmd_click_edit ;;
   click-send) cmd_click_send ;;
   focus-composer) cmd_focus_composer ;;
   type) cmd_type "$@" ;;
