@@ -3,6 +3,10 @@
 #include "ircevent.h"
 #include "ircpresence.h"
 #include "ircserverfeatures.h"
+#include "irctyping.h"
+
+#include <QDateTime>
+#include <QStringList>
 
 #include <map>
 #include <optional>
@@ -61,6 +65,7 @@ struct IrcConversationState
     QString target;
     std::vector<IrcReducedMessage> messages;
     std::variant<IrcChannelState, IrcDirectMessageState> detail;
+    std::map<QString, IrcTypingHint> typing;
     int unread = 0;
     int mentions = 0;
 
@@ -91,6 +96,10 @@ public:
 
     std::optional<IrcMemberView> memberView(const IrcConversationKey& key,
                                             const QString& normalizedNick) const;
+
+    QStringList typingNicks(const IrcConversationKey& key,
+                            const QDateTime& now) const;
+    void clearTypingFacts(const QString& networkId);
 
     void clearPresenceFacts(const QString& networkId, bool away, bool status);
 
@@ -126,6 +135,18 @@ private:
     void reduce(const IrcModeEvent& event);
     void reduce(const IrcAwayEvent& event);
     void reduce(const IrcMemberStatusEvent& event);
+    void reduce(const IrcTypingEvent& event);
+
+    void clearTyping(IrcConversationState& conversation,
+                     const QString& normalizedNick);
+    void clearTypingEverywhere(const QString& networkId,
+                               const QString& normalizedNick);
+    void rekeyTyping(const QString& networkId,
+                     const QString& oldNormalized,
+                     const QString& newNormalized,
+                     const QString& newDisplay);
+    void pruneExpiredTyping(IrcConversationState& conversation,
+                            const QDateTime& now);
 
     void forgetUnseen(const QString& networkId, const QStringList& normalizedNicks);
     bool isVisible(const QString& networkId, const QString& normalizedNick) const;

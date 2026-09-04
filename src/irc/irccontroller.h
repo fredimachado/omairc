@@ -9,6 +9,8 @@
 
 #include <QHash>
 #include <QObject>
+#include <QStringList>
+#include <QTimer>
 
 #include <optional>
 
@@ -28,6 +30,8 @@ class IrcController : public QObject
     Q_PROPERTY(QString currentNick READ currentNick NOTIFY selectionChanged)
     Q_PROPERTY(bool hasAwayPresence READ hasAwayPresence NOTIFY capabilitiesChanged)
     Q_PROPERTY(bool hasMemberStatus READ hasMemberStatus NOTIFY capabilitiesChanged)
+    Q_PROPERTY(bool hasTyping READ hasTyping NOTIFY capabilitiesChanged)
+    Q_PROPERTY(QStringList typingNicks READ typingNicks NOTIFY typingChanged)
     Q_PROPERTY(IrcStatusConsole* console READ console CONSTANT)
 
 public:
@@ -52,6 +56,8 @@ public:
 
     bool hasAwayPresence() const;
     bool hasMemberStatus() const;
+    bool hasTyping() const;
+    QStringList typingNicks() const;
     IrcStatusConsole *console();
 
     Q_INVOKABLE bool start(const QString& networkId);
@@ -59,12 +65,15 @@ public:
                                         const QString& target);
     Q_INVOKABLE void openDirectMessage(const QString& nick);
     Q_INVOKABLE bool sendMessage(const QString& text);
+    Q_INVOKABLE bool nickIsTyping(const QString& nick) const;
+    Q_INVOKABLE void notifyComposerText(const QString& text);
 
 signals:
     void selectionChanged();
     void statusChanged();
 
     void capabilitiesChanged();
+    void typingChanged();
     void errorOccurred(const QString &networkId,
                        IrcSession::ErrorKind kind,
                        const QString &message);
@@ -79,6 +88,7 @@ private:
     bool report(IrcCommandOutcome outcome, const IrcCommand& command);
     IrcSession *selectedSession() const;
     void updateStatus(IrcSession *session);
+    void armTypingRefresh();
 
     IrcSessionManager m_sessions;
     IrcStatusConsole m_console;
@@ -92,4 +102,7 @@ private:
     QString m_selectedTarget;
     QString m_connectionStatus = QStringLiteral("Offline");
     QString m_lastError;
+    QTimer m_typingRefresh;
+    QString m_composerDraft;
+    QString m_typingTarget;
 };

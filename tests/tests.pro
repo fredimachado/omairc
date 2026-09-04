@@ -20,6 +20,8 @@ HEADERS += \
     ../src/irc/ircserverfeatures.h \
     ../src/irc/irccapability.h \
     ../src/irc/irccapabilitynegotiation.h \
+    ../src/irc/irctyping.h \
+    ../src/irc/irctypingpublisher.h \
     ../src/irc/ircpresence.h \
     ../src/irc/ircevent.h \
     ../src/irc/irceventtranslator.h \
@@ -53,6 +55,8 @@ SOURCES += \
     ../src/irc/ircserverfeatures.cpp \
     ../src/irc/irccapability.cpp \
     ../src/irc/irccapabilitynegotiation.cpp \
+    ../src/irc/irctyping.cpp \
+    ../src/irc/irctypingpublisher.cpp \
     ../src/irc/ircpresence.cpp \
     ../src/irc/irceventtranslator.cpp \
     ../src/irc/irceventreducer.cpp \
@@ -79,5 +83,6 @@ SOURCES += \
     session/tst_profile.cpp \
     session/tst_connection.cpp \
     session/tst_controller.cpp \
+    session/tst_typing.cpp \
     session/tst_reducer.cpp \
     models/tst_models.cpp

@@ -97,7 +97,9 @@ class SessionTest : public QObject
 private slots:
     void registersAndAutojoins();
     void negotiatesPresenceCapabilities();
+    void negotiatesMessageTagsOnOwnLine();
     void refusedPresenceCapabilitiesStayOffWithoutFailing();
+    void refusedMessageTagsStayOffWithoutFailing();
     void unansweredPresenceRequestStillRegisters();
     void withdrawnCapabilityIsPublished();
     void negotiatesSaslPlain();
@@ -197,6 +199,27 @@ void SessionTest::negotiatesPresenceCapabilities()
     QVERIFY(!capabilities.isEmpty());
 }
 
+void SessionTest::negotiatesMessageTagsOnOwnLine()
+{
+    IrcSessionConfig saslConfig = config();
+    saslConfig.password = QStringLiteral("secret");
+    Fixture fixture(saslConfig);
+
+    fixture.connectTls();
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :sasl=PLAIN message-tags "
+                          "away-notify batch draft/metadata-2\r\n"));
+    QCOMPARE(fixture.transport->writtenFrames(),
+             QByteArrayList({
+                 QByteArrayLiteral("CAP LS 302\r\n"),
+                 QByteArrayLiteral("CAP REQ :sasl\r\n"),
+                 QByteArrayLiteral("CAP REQ :message-tags\r\n"),
+                 QByteArrayLiteral("CAP REQ :away-notify batch draft/metadata-2\r\n"),
+                 QByteArrayLiteral("NICK omairc\r\n"),
+                 QByteArrayLiteral("USER omairc 8 * :Omairc User\r\n"),
+             }));
+}
+
 void SessionTest::refusedPresenceCapabilitiesStayOffWithoutFailing()
 {
     Fixture fixture;
@@ -224,6 +247,38 @@ void SessionTest::refusedPresenceCapabilitiesStayOffWithoutFailing()
     QCOMPARE(fixture.session->state(), IrcSession::State::Registered);
     QVERIFY(!fixture.wrote(QByteArrayLiteral("METADATA * SUB status\r\n")));
     QVERIFY(!fixture.wrote(QByteArrayLiteral("WHO #omarchy\r\n")));
+}
+
+void SessionTest::refusedMessageTagsStayOffWithoutFailing()
+{
+    Fixture fixture;
+    QSignalSpy errors(fixture.session, &IrcSession::errorOccurred);
+
+    fixture.connectTls();
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :message-tags away-notify\r\n"));
+    QCOMPARE(fixture.transport->writtenFrames().mid(1),
+             QByteArrayList({
+                 QByteArrayLiteral("CAP REQ :message-tags\r\n"),
+                 QByteArrayLiteral("CAP REQ :away-notify\r\n"),
+                 QByteArrayLiteral("NICK omairc\r\n"),
+                 QByteArrayLiteral("USER omairc 8 * :Omairc User\r\n"),
+             }));
+
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc NAK :message-tags\r\n"));
+    QVERIFY(!fixture.wrote(QByteArrayLiteral("CAP END\r\n")));
+    QCOMPARE(errors.size(), 0);
+    QVERIFY(!fixture.session->capabilities().contains(IrcCapability::MessageTags));
+
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc ACK :away-notify\r\n"));
+    QVERIFY(fixture.wrote(QByteArrayLiteral("CAP END\r\n")));
+
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(":server 001 omairc :Welcome\r\n"));
+    QVERIFY(fixture.session->capabilities().contains(IrcCapability::AwayNotify));
+    QVERIFY(!fixture.session->capabilities().contains(IrcCapability::MessageTags));
 }
 
 void SessionTest::unansweredPresenceRequestStillRegisters()

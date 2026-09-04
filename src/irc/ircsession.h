@@ -10,6 +10,8 @@
 #include "ircframer.h"
 #include "ircstatusentry.h"
 #include "irctransport.h"
+#include "irctyping.h"
+#include "irctypingpublisher.h"
 
 class IrcReconnectTimer : public QObject
 {
@@ -93,6 +95,7 @@ public slots:
     void cancelReconnect();
     bool sendPrivmsg(const QString& target, const QString& body);
     bool sendAction(const QString& target, const QString& body);
+    bool sendTyping(const QString& target, IrcTypingPhase phase);
     bool join(const QString& channel);
     bool part(const QString& channel);
     bool changeNick(const QString& nick);
@@ -141,6 +144,7 @@ private:
     IrcFramer m_framer;
     IrcCapabilityNegotiation m_capabilities;
     IrcCapabilitySet m_publishedCapabilities;
+    IrcTypingPublisher m_typing;
     State m_state = State::Idle;
     bool m_expectedDisconnect = false;
     bool m_reconnectAfterDisconnect = false;

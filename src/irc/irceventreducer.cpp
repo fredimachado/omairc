@@ -147,6 +147,76 @@ void IrcEventReducer::clearPresenceFacts(const QString& networkId,
         presence->second.clearStatus();
 }
 
+QStringList IrcEventReducer::typingNicks(const IrcConversationKey& key,
+                                         const QDateTime& now) const
+{
+    QStringList nicks;
+    const IrcConversationState *conversation = find(key);
+    if (!conversation)
+        return nicks;
+    for (const auto& entry : conversation->typing) {
+        if (isSelf(key.networkId, entry.second.displayNick))
+            continue;
+        if (!ircIsTyping(entry.second, now))
+            continue;
+        nicks.append(entry.second.displayNick);
+    }
+    return nicks;
+}
+
+void IrcEventReducer::clearTypingFacts(const QString& networkId)
+{
+    for (auto& entry : m_conversations) {
+        if (entry.second.key.networkId == networkId)
+            entry.second.typing.clear();
+    }
+}
+
+void IrcEventReducer::clearTyping(IrcConversationState& conversation,
+                                  const QString& normalizedNick)
+{
+    conversation.typing.erase(normalizedNick);
+}
+
+void IrcEventReducer::clearTypingEverywhere(const QString& networkId,
+                                            const QString& normalizedNick)
+{
+    for (auto& entry : m_conversations) {
+        if (entry.second.key.networkId == networkId)
+            clearTyping(entry.second, normalizedNick);
+    }
+}
+
+void IrcEventReducer::rekeyTyping(const QString& networkId,
+                                  const QString& oldNormalized,
+                                  const QString& newNormalized,
+                                  const QString& newDisplay)
+{
+    for (auto& entry : m_conversations) {
+        if (entry.second.key.networkId != networkId)
+            continue;
+        auto& typing = entry.second.typing;
+        const auto found = typing.find(oldNormalized);
+        if (found == typing.end())
+            continue;
+        IrcTypingHint hint = found->second;
+        hint.displayNick = newDisplay;
+        typing.erase(found);
+        typing.insert_or_assign(newNormalized, std::move(hint));
+    }
+}
+
+void IrcEventReducer::pruneExpiredTyping(IrcConversationState& conversation,
+                                         const QDateTime& now)
+{
+    for (auto it = conversation.typing.begin(); it != conversation.typing.end(); ) {
+        if (!ircIsTyping(it->second, now))
+            it = conversation.typing.erase(it);
+        else
+            ++it;
+    }
+}
+
 bool IrcEventReducer::isVisible(const QString& networkId,
                                 const QString& normalizedNick) const
 {
@@ -251,6 +321,7 @@ void IrcEventReducer::appendChat(const IrcConversationKey& key,
     IrcConversationState& conversation =
         ensureConversation(key, displayTarget);
     conversation.messages.push_back({author, body, timestamp, kind});
+    clearTyping(conversation, normalize(key.networkId, author));
 
     if (isSelf(key.networkId, author) || (m_selected && *m_selected == key))
         return;
@@ -282,6 +353,7 @@ void IrcEventReducer::reduce(const IrcWelcomeEvent& event)
             channel->joined = false;
             channel->namesSyncing = false;
         }
+        conversation.typing.clear();
     }
 }
 
@@ -343,6 +415,10 @@ void IrcEventReducer::reduce(const IrcPartEvent& event)
     }
     forgetUnseen(event.networkId, departed);
     appendEvent(*conversation, event.nick + QStringLiteral(" left"));
+    if (isSelf(event.networkId, event.nick))
+        conversation->typing.clear();
+    else
+        clearTyping(*conversation, departed.front());
 }
 
 void IrcEventReducer::reduce(const IrcQuitEvent& event)
@@ -358,6 +434,7 @@ void IrcEventReducer::reduce(const IrcQuitEvent& event)
         appendEvent(conversation, event.nick + QStringLiteral(" quit"));
     }
     forgetUnseen(event.networkId, {normalizedNick});
+    clearTypingEverywhere(event.networkId, normalizedNick);
 }
 
 void IrcEventReducer::reduce(const IrcNickEvent& event)
@@ -367,6 +444,7 @@ void IrcEventReducer::reduce(const IrcNickEvent& event)
     if (isSelf(event.networkId, event.oldNick))
         m_currentNicks[event.networkId] = event.newNick;
     m_presence[event.networkId].rekey(oldNormalized, newNormalized);
+    rekeyTyping(event.networkId, oldNormalized, newNormalized, event.newNick);
 
     for (auto& entry : m_conversations) {
         IrcConversationState& conversation = entry.second;
@@ -404,6 +482,9 @@ void IrcEventReducer::reduce(const IrcNickEvent& event)
                                              moved.messages.end());
             existing->second.unread += moved.unread;
             existing->second.mentions += moved.mentions;
+            for (auto& hint : moved.typing)
+                existing->second.typing.insert_or_assign(hint.first,
+                                                         std::move(hint.second));
         }
         if (m_selected && *m_selected == oldKey)
             m_selected = newKey;
@@ -428,6 +509,10 @@ void IrcEventReducer::reduce(const IrcKickEvent& event)
     }
     forgetUnseen(event.networkId, departed);
     appendEvent(*conversation, event.target + QStringLiteral(" was kicked"));
+    if (isSelf(event.networkId, event.target))
+        conversation->typing.clear();
+    else
+        clearTyping(*conversation, departed.front());
 }
 
 void IrcEventReducer::reduce(const IrcTopicEvent& event)
@@ -496,5 +581,25 @@ void IrcEventReducer::reduce(const IrcMemberStatusEvent& event)
 {
     m_presence[event.networkId].setStatus(
         normalize(event.networkId, event.nick), event.status);
+}
+
+void IrcEventReducer::reduce(const IrcTypingEvent& event)
+{
+    IrcConversationState *conversation = findMutable(event.conversation);
+    const QString normalizedNick =
+        normalize(event.conversation.networkId, event.nick);
+    if (!conversation || isSelf(event.conversation.networkId, event.nick)) {
+        if (conversation)
+            clearTyping(*conversation, normalizedNick);
+        return;
+    }
+    const std::optional<IrcTypingHint> hint =
+        IrcTypingHint::stored(event.phase, event.receivedAt, event.nick);
+    if (!hint) {
+        clearTyping(*conversation, normalizedNick);
+        return;
+    }
+    pruneExpiredTyping(*conversation, event.receivedAt);
+    conversation->typing.insert_or_assign(normalizedNick, *hint);
 }
 

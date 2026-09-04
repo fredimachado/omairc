@@ -1,6 +1,7 @@
 #include "irceventtranslator.h"
 
 #include "ircpresence.h"
+#include "irctyping.h"
 
 #include <QByteArray>
 #include <QDateTime>
@@ -99,6 +100,15 @@ QString clampedMetadataValue(const QString& value)
     return clamped;
 }
 
+std::optional<QString> tagValue(const IrcMessage& message, const char *name)
+{
+    for (const IrcTag& tag : message.tags) {
+        if (tag.name == name && tag.value)
+            return text(*tag.value);
+    }
+    return std::nullopt;
+}
+
 /// `<Target> <Key> <Visibility> [<Value>]`, the shape shared by `METADATA`,
 /// `761` and `766` once the numeric client parameter has been dropped.
 void appendMemberStatus(std::vector<IrcEvent>& events,
@@ -158,6 +168,19 @@ std::vector<IrcEvent> IrcEventTranslator::translate(
             events.emplace_back(IrcMessageEvent{
                 *conversation, sender, body, now, displayTarget});
         }
+    } else if (command == QStringLiteral("TAGMSG") && !message.parameters.empty()) {
+        const std::optional<QString> value = tagValue(message, "+typing");
+        if (!value || sender.isEmpty())
+            return events;
+        const std::optional<IrcTypingPhase> phase = ircTypingPhaseFromTag(*value);
+        if (!phase)
+            return events;
+        const QString wireTarget = parameter(message, 0);
+        const std::optional<IrcConversationKey> conversation = conversationFor(
+            networkId, wireTarget, message, currentNick, features);
+        if (!conversation)
+            return events;
+        events.emplace_back(IrcTypingEvent{*conversation, sender, *phase, now});
     } else if (command == QStringLiteral("JOIN") && !message.parameters.empty()) {
         events.emplace_back(IrcJoinEvent{networkId, parameter(message, 0), sender});
     } else if (command == QStringLiteral("PART") && !message.parameters.empty()) {

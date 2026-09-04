@@ -17,6 +17,7 @@ class CapabilityTest : public QObject
 private slots:
     void unwantedAdvertisementProducesNoRequest();
     void saslKeepsItsOwnLine();
+    void messageTagsKeepsItsOwnLine();
     void saslNeedsCredentialsAndPlain();
     void memberMetadataNeedsBatch();
     void acknowledgeAndRejectSettleIndependently();
@@ -48,6 +49,26 @@ void CapabilityTest::saslKeepsItsOwnLine()
              QStringList({QStringLiteral("sasl"),
                           QStringLiteral("away-notify batch draft/metadata-2")}));
     QVERIFY(request.requestsSasl);
+    QVERIFY(!negotiation.settled());
+}
+
+void CapabilityTest::messageTagsKeepsItsOwnLine()
+{
+    IrcCapabilityNegotiation negotiation(true);
+    negotiation.advertise(tokens(
+        QStringLiteral("sasl=PLAIN message-tags away-notify batch draft/metadata-2")));
+
+    const IrcCapabilityNegotiation::Request request = negotiation.takeRequest();
+    QCOMPARE(request.lines,
+             QStringList({QStringLiteral("sasl"),
+                          QStringLiteral("message-tags"),
+                          QStringLiteral("away-notify batch draft/metadata-2")}));
+    QVERIFY(request.requestsSasl);
+
+    const IrcCapabilitySet refused =
+        negotiation.reject(tokens(QStringLiteral("message-tags")));
+    QVERIFY(refused.contains(IrcCapability::MessageTags));
+    QVERIFY(!negotiation.enabled().contains(IrcCapability::MessageTags));
     QVERIFY(!negotiation.settled());
 }
 

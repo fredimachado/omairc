@@ -44,6 +44,7 @@ private slots:
     void rejectsMalformedMessages();
     void classifiesPrefixes();
     void parsesTags();
+    void parsesClientOnlyTypingTag();
     void preservesUtf8();
     void framesFragmentedAndCoalescedInput();
     void rejectsNulAndRecovers();
@@ -143,6 +144,18 @@ void ProtocolTest::parsesTags()
     QCOMPARE(text(*message.value->tags[3].value), QString::fromLatin1("one\rtwo\nthree"));
     QVERIFY(!message.value->tags[4].value.has_value());
     QCOMPARE(text(message.value->command), QStringLiteral("PRIVMSG"));
+}
+
+void ProtocolTest::parsesClientOnlyTypingTag()
+{
+    const auto message = IrcParser::parse(
+        "@+typing=active :n!u@h TAGMSG #c");
+    QVERIFY(message);
+    QCOMPARE(message.value->tags.size(), std::size_t(1));
+    QCOMPARE(text(message.value->tags[0].name), QStringLiteral("+typing"));
+    QVERIFY(message.value->tags[0].value.has_value());
+    QCOMPARE(text(*message.value->tags[0].value), QStringLiteral("active"));
+    QCOMPARE(text(message.value->command), QStringLiteral("TAGMSG"));
 }
 
 void ProtocolTest::preservesUtf8()

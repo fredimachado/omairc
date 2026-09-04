@@ -3,8 +3,10 @@
 #include "irccommandbuilder.h"
 #include "ircparser.h"
 #include "ircpresence.h"
+#include "irctyping.h"
 
 #include <QByteArray>
+#include <QDateTime>
 #include <QTimer>
 #include <QtGlobal>
 
@@ -240,7 +242,10 @@ bool IrcSession::sendPrivmsg(const QString& target, const QString& body)
 {
     if (target.isEmpty() || body.isEmpty())
         return false;
-    return sendCommand(QStringLiteral("PRIVMSG %1 :%2").arg(target, body));
+    const bool sent = sendCommand(QStringLiteral("PRIVMSG %1 :%2").arg(target, body));
+    if (sent)
+        m_typing.noteMessageSent(target);
+    return sent;
 }
 
 bool IrcSession::sendAction(const QString& target, const QString& body)
@@ -248,6 +253,23 @@ bool IrcSession::sendAction(const QString& target, const QString& body)
     if (target.isEmpty() || body.isEmpty())
         return false;
     return sendPrivmsg(target, QChar(1) + QStringLiteral("ACTION ") + body + QChar(1));
+}
+
+bool IrcSession::sendTyping(const QString& target, IrcTypingPhase phase)
+{
+    if (m_state != State::Registered)
+        return false;
+    if (!capabilities().contains(IrcCapability::MessageTags))
+        return false;
+    const QDateTime now = QDateTime::currentDateTimeUtc();
+    if (!m_typing.shouldSend(target, phase, now))
+        return false;
+    const QByteArray line = ircTypingTagmsg(target, phase);
+    if (line.isEmpty())
+        return false;
+    m_transport->write(line);
+    m_typing.recordSent(target, phase, now);
+    return true;
 }
 
 bool IrcSession::join(const QString& channel)
@@ -679,6 +701,7 @@ void IrcSession::resetForConnection()
     m_capabilityNegotiationEnded = false;
     m_capabilityTimer->cancel();
     m_capabilities.reset(!m_config.password.isEmpty());
+    m_typing.reset();
     publishCapabilities();
 }
 

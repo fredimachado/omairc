@@ -2,6 +2,7 @@
 
 #include "ircpresence.h"
 #include "ircserverfeatures.h"
+#include "irctyping.h"
 
 #include <QChar>
 #include <QDateTime>
@@ -155,6 +156,14 @@ struct IrcMemberStatusEvent
     QString status;
 };
 
+struct IrcTypingEvent
+{
+    IrcConversationKey conversation;
+    QString nick;
+    IrcTypingPhase phase = IrcTypingPhase::Active;
+    QDateTime receivedAt;
+};
+
 using IrcEvent = std::variant<
     IrcWelcomeEvent,
     IrcMessageEvent,
@@ -169,4 +178,5 @@ using IrcEvent = std::variant<
     IrcNamesEvent,
     IrcModeEvent,
     IrcAwayEvent,
-    IrcMemberStatusEvent>;
+    IrcMemberStatusEvent,
+    IrcTypingEvent>;

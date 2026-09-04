@@ -54,6 +54,8 @@ const Wanted wantedTable[] = {
      std::nullopt, false, acceptsAnyValue},
     {IrcCapability::MemberMetadata, QLatin1String("draft/metadata-2"),
      IrcCapability::Batch, false, acceptsAnyValue},
+    {IrcCapability::MessageTags, QLatin1String("message-tags"),
+     std::nullopt, false, acceptsAnyValue},
 };
 
 const Wanted *wantedFor(const QString& name)
@@ -126,11 +128,13 @@ IrcCapabilityNegotiation::Request IrcCapabilityNegotiation::takeRequest()
     for (const Wanted& wanted : wantedTable) {
         if (!isRequestable(wanted))
             continue;
-        // SASL keeps a line to itself so that a server refusing the presence
-        // line as a whole cannot take authentication down with it.
+        // SASL and message-tags each keep a line so a NAK of one cannot
+        // refuse the other or the presence bundle.
         if (wanted.capability == IrcCapability::Sasl) {
             request.lines.append(wanted.token);
             request.requestsSasl = true;
+        } else if (wanted.capability == IrcCapability::MessageTags) {
+            request.lines.append(wanted.token);
         } else {
             presence.append(wanted.token);
         }

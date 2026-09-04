@@ -2,9 +2,11 @@
 
 #include "irccommand.h"
 #include "irceventtranslator.h"
+#include "irctyping.h"
 
 #include <QByteArray>
 #include <QDateTime>
+#include <variant>
 
 namespace
 {
@@ -53,6 +55,11 @@ IrcController::IrcController(QObject *parent)
     , m_messages(m_reducer)
     , m_members(m_reducer)
 {
+    m_typingRefresh.setSingleShot(true);
+    connect(&m_typingRefresh, &QTimer::timeout, this, [this] {
+        emit typingChanged();
+        armTypingRefresh();
+    });
 }
 
 IrcSession *IrcController::addSession(const IrcSessionConfig& config,
@@ -181,6 +188,55 @@ bool IrcController::hasMemberStatus() const
         && capabilities.contains(IrcCapability::Batch);
 }
 
+bool IrcController::hasTyping() const
+{
+    return m_selected
+        && m_capabilities.value(m_selected->networkId)
+               .contains(IrcCapability::MessageTags);
+}
+
+QStringList IrcController::typingNicks() const
+{
+    if (!m_selected)
+        return {};
+    return m_reducer.typingNicks(*m_selected, QDateTime::currentDateTimeUtc());
+}
+
+bool IrcController::nickIsTyping(const QString& nick) const
+{
+    if (!m_selected || nick.isEmpty())
+        return false;
+    const auto& features = m_reducer.serverFeatures(m_selected->networkId);
+    for (const QString& typing : typingNicks()) {
+        if (features.caseMapping().equals(utf8(typing), utf8(nick)))
+            return true;
+    }
+    return false;
+}
+
+void IrcController::notifyComposerText(const QString& text)
+{
+    m_composerDraft = text;
+    if (m_console.isOpen())
+        return;
+    IrcSession *session = selectedSession();
+    if (!session || !m_selected || !hasTyping())
+        return;
+
+    const IrcCommand command = IrcCommand::parse(text);
+    const QString target = m_selectedTarget;
+    if (command.verb == IrcCommand::Verb::Say
+        || command.verb == IrcCommand::Verb::Action) {
+        session->sendTyping(target, IrcTypingPhase::Active);
+        m_typingTarget = target;
+        return;
+    }
+    if (m_typingTarget != target)
+        return;
+    session->sendTyping(target, IrcTypingPhase::Done);
+    m_typingTarget.clear();
+}
+
 void IrcController::handleCapabilities(const QString& networkId,
                                        IrcCapabilitySet capabilities)
 {
@@ -196,6 +252,11 @@ void IrcController::handleCapabilities(const QString& networkId,
     if (awayDropped || statusDropped) {
         m_reducer.clearPresenceFacts(networkId, awayDropped, statusDropped);
         reloadModels();
+    }
+    if (dropped(IrcCapability::MessageTags)) {
+        m_reducer.clearTypingFacts(networkId);
+        emit typingChanged();
+        armTypingRefresh();
     }
     emit capabilitiesChanged();
 }
@@ -226,6 +287,14 @@ void IrcController::selectConversation(const QString& networkId,
     if (networkId.isEmpty() || target.isEmpty())
         return;
     const IrcConversationKey key = m_reducer.conversationKey(networkId, target);
+    const bool changed = !m_selected
+        || m_selected->networkId != networkId
+        || m_selected->normalizedTarget != key.normalizedTarget;
+    if (changed && !m_typingTarget.isEmpty()) {
+        if (IrcSession *previous = selectedSession())
+            previous->sendTyping(m_typingTarget, IrcTypingPhase::Done);
+        m_typingTarget.clear();
+    }
     m_selected = key;
     m_selectedTarget = target;
     m_conversations.select(key);
@@ -235,6 +304,9 @@ void IrcController::selectConversation(const QString& networkId,
         updateStatus(session);
     emit selectionChanged();
     emit capabilitiesChanged();
+    notifyComposerText(m_composerDraft);
+    emit typingChanged();
+    armTypingRefresh();
 }
 
 void IrcController::openDirectMessage(const QString& nick)
@@ -266,6 +338,8 @@ bool IrcController::sendMessage(const QString& text)
         if (sent)
             echoLocal(IrcMessageKind::Message, command.argument);
     }
+    if (sent)
+        m_typingTarget.clear();
     return report(sent ? IrcCommandOutcome::Sent : IrcCommandOutcome::Refused, command);
 }
 
@@ -293,8 +367,9 @@ void IrcController::echoLocal(IrcMessageKind kind, const QString& body)
 
 void IrcController::apply(const IrcEvent& event)
 {
+    const bool typingOnly = std::holds_alternative<IrcTypingEvent>(event);
     m_reducer.apply(event);
-    if (!m_selected && !m_reducer.conversations().empty()) {
+    if (!m_selected && !m_reducer.conversations().empty() && !typingOnly) {
         const IrcConversationState& conversation =
             m_reducer.conversations().begin()->second;
         m_selected = conversation.key;
@@ -303,8 +378,15 @@ void IrcController::apply(const IrcEvent& event)
         m_messages.select(conversation.key);
         m_members.select(conversation.key);
     }
+    if (typingOnly) {
+        emit typingChanged();
+        armTypingRefresh();
+        return;
+    }
     reloadModels();
     emit selectionChanged();
+    emit typingChanged();
+    armTypingRefresh();
 }
 
 void IrcController::handleMessage(const QString& networkId,
@@ -357,6 +439,30 @@ void IrcController::reloadModels()
 IrcSession *IrcController::selectedSession() const
 {
     return m_selected ? m_sessions.findSession(m_selected->networkId) : nullptr;
+}
+
+void IrcController::armTypingRefresh()
+{
+    m_typingRefresh.stop();
+    if (!m_selected)
+        return;
+    const QDateTime now = QDateTime::currentDateTimeUtc();
+    if (m_reducer.typingNicks(*m_selected, now).isEmpty())
+        return;
+    const IrcConversationState *conversation = m_reducer.find(*m_selected);
+    if (!conversation)
+        return;
+    QDateTime soonest;
+    for (const auto& entry : conversation->typing) {
+        if (!ircIsTyping(entry.second, now))
+            continue;
+        const QDateTime expires = ircTypingExpiresAt(entry.second);
+        if (!soonest.isValid() || expires < soonest)
+            soonest = expires;
+    }
+    if (!soonest.isValid())
+        return;
+    m_typingRefresh.start(int(qMax(now.msecsTo(soonest), qint64(0))));
 }
 
 void IrcController::updateStatus(IrcSession *session)

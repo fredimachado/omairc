@@ -9,6 +9,7 @@ enum class IrcCapability {
     AwayNotify,
     Batch,
     MemberMetadata,
+    MessageTags,
 };
 
 class IrcCapabilitySet
