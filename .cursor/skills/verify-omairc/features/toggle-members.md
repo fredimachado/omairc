@@ -36,6 +36,7 @@ Preconditions:
 ## Gotchas
 
 - `Ctrl+Shift+M` is disabled on direct messages. A no-op there is correct, not a broken shortcut.
+- `control-omairc key --key ctrl+shift+m` maps to `Control_L+Shift_L+m`. xdotool's `ctrl+shift+m` token does not reach the Qt shortcut on the isolated Xvfb.
 - The panel also stays hidden when the window is narrower than 980 CSS pixels. Isolated launch stays at 1180 wide so this does not apply unless geometry isolation failed.
 - The people control label is the count plus ` PEOPLE`, not the words Hide/Show. Those names exist only as the control's accessible name.
 - `click-people` aims at `908,36` while the member column is open. After the column hides, use `click-people --hidden` (`1124,36`). The default click misses the shifted control.
