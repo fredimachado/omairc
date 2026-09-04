@@ -6,9 +6,10 @@ description: Drive the Omairc Qt desktop prototype as a user would (isolated Xvf
 # Verify Omairc
 
 Omairc is a Qt 6 Quick desktop app. The compiled window binds a live IRC
-controller and a connection sheet. UI tests may still leave `irc` null and
-exercise mock conversations. There is no web UI or public API. The
-user-facing surface is the compiled `build/omairc` window.
+controller and a connection sheet unless launched with `--mock`, which leaves
+`irc` unset and shows the bundled prototype conversations. UI tests may still
+leave `irc` null and exercise that same mock path. There is no web UI or public
+API. The user-facing surface is the compiled `build/omairc` window.
 
 Read `features/README.md` before driving. Drive the mapped entry points for the feature under proof. A convenient path that skips listed entry points is incomplete.
 
@@ -18,9 +19,10 @@ Prefer a private X server and the compiled binary when `Xvfb`, `xauth`, `xdotool
 
 ```sh
 .cursor/skills/verify-omairc/control-omairc launch
+.cursor/skills/verify-omairc/control-omairc launch --mock
 ```
 
-Ready when stdout includes a title ending in ` - Omairc` or ` Status`, and `doctor` exits 0. First run is `{displayName} Status` (often `irc.libera.chat Status`) with the connection sheet. After a conversation exists the title is `{conversation} - Omairc`. Status itself uses `{displayName} Status` or `Status`.
+Ready when stdout includes a title ending in ` - Omairc` or ` Status`, and `doctor` exits 0. Default launch is `{displayName} Status` (often `irc.libera.chat Status`) with the connection sheet. `--mock` is `#omarchy - Omairc` with the prototype sidebar. After a live conversation exists the title is `{conversation} - Omairc`. Status itself uses `{displayName} Status` or `Status`.
 
 This launch:
 
@@ -28,6 +30,7 @@ This launch:
 - picks the next free X display from `:110`
 - uses a disposable `XDG_*` tree so window geometry is the default 1180x760
 - points `DBUS_SESSION_BUS_ADDRESS` at a missing socket so portal text-scale stays 1.0
+- passes `--mock` to the binary when requested
 - writes run state to `/tmp/omairc-verify-$USER/state`
 
 Two isolated instances can run if they get different displays. Never attach to a window you did not start. Never send `xdotool` to the session `$DISPLAY`.
@@ -63,6 +66,7 @@ Require all of:
 - `app_pid=` and `xvfb_pid=` are alive
 - `title=` ends with ` - Omairc` or ` Status`
 - `xdg=` is the disposable state directory from this run
+- `mock=yes` after `launch --mock`, otherwise `mock=no`
 
 If doctor fails, cleanup, then launch again. Do not continue against a shared or stale instance.
 
@@ -81,11 +85,11 @@ Use `control-omairc` against the isolated window. Stable handles:
 | Handle | Meaning |
 |---|---|
 | Window title `{name} - Omairc` | Current conversation |
-| `click-conversation --name #desktop` | Mock sidebar channel or seeded DM (`#omarchy`, `#desktop`, `#ricing`, `#help`, `anna`, `dax`). Those rows are hidden on a compiled window with `irc` bound. Launch `build/omairc --mock` to open that prototype without Connect. |
+| `click-conversation --name #desktop` | Mock sidebar channel or seeded DM (`#omarchy`, `#desktop`, `#ricing`, `#help`, `anna`, `dax`). Those rows are hidden when `irc` is bound. Use `control-omairc launch --mock` for the prototype. |
 | `click-member --name mira` | Member row while the panel is visible |
 | `click-people` | Header `12 PEOPLE` / `Hide members` / `Show members` control (channels only) |
 | `click-network` | Sidebar network name. Opens Status. |
-| `click-edit` | Small `edit` control beside that name. Opens Connect. |
+| `click-edit` | Small `edit` control beside that name. Opens Connect. Hidden under `--mock`; `click-edit` refuses that window. |
 | `focus-composer` | `Ctrl+L` |
 | `send --text "..."` | Focus composer, type, `Enter` |
 | `key --key ctrl+shift+m` | Toggle members on a channel |
@@ -110,6 +114,7 @@ QML object names used by `bin/test` (not visible to xdotool): `connectionSheet`,
 Typical drive:
 
 ```sh
+.cursor/skills/verify-omairc/control-omairc launch --mock
 .cursor/skills/verify-omairc/control-omairc doctor
 .cursor/skills/verify-omairc/control-omairc title
 .cursor/skills/verify-omairc/control-omairc click-conversation --name "#desktop"
@@ -117,7 +122,7 @@ Typical drive:
 .cursor/skills/verify-omairc/control-omairc screenshot --feature switch-conversation --name after-desktop
 ```
 
-That click path needs the mock sidebar. A fresh compiled launch is Connect with title `{displayName} Status`; use the Connect feature file first.
+That click path needs the mock sidebar. Use `control-omairc launch --mock`. A default compiled launch is Connect with title `{displayName} Status`; use the Connect feature file first.
 
 Inspect the matching feature file for the exact recipe and observables.
 
@@ -152,7 +157,7 @@ After cleanup, confirm the proof files still exist at `test-artifacts/verify/<fe
 `control-omairc` is executable. Invoke it from the repo root as shown above. Commands:
 
 ```text
-launch | doctor | title | wait-title --exact TITLE
+launch [--mock] | doctor | title | wait-title --exact TITLE
 click --x N --y N
 click-conversation --name NAME
 click-member --name NICK

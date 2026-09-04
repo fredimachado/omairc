@@ -11,7 +11,7 @@ usage() {
 control-omairc - isolated driver for the compiled Omairc desktop app
 
 Usage:
-  control-omairc launch
+  control-omairc launch [--mock]
   control-omairc doctor
   control-omairc title
   control-omairc wait-title --exact "<title>"
@@ -55,7 +55,7 @@ require_tools() {
 }
 
 load_state() {
-  [ -f "$STATE_FILE" ] || die "no active instance. Run: $SCRIPT_DIR/control-omairc launch"
+  [ -f "$STATE_FILE" ] || die "no active instance. Run: $SCRIPT_DIR/control-omairc launch [--mock]"
   # shellcheck disable=SC1090
   . "$STATE_FILE"
   [ -n "${DISPLAY:-}" ] || die "state file is missing DISPLAY"
@@ -78,6 +78,7 @@ XVFB_PID=$XVFB_PID
 APP_PID=$APP_PID
 WINDOW=$WINDOW
 BINARY=$BINARY
+MOCK=$MOCK
 EOF
 }
 
@@ -135,6 +136,14 @@ click_xy() {
 }
 
 cmd_launch() {
+  MOCK=
+  while [ $# -gt 0 ]; do
+    case $1 in
+      --mock) MOCK=1; shift ;;
+      *) die "unknown launch argument: $1. Use launch or launch --mock." ;;
+    esac
+  done
+
   require_tools
   if [ -f "$STATE_FILE" ]; then
     if "$0" doctor >/dev/null 2>&1; then
@@ -175,12 +184,16 @@ cmd_launch() {
     sleep 0.1
   done
 
-  XDG_CONFIG_HOME="$STATE_DIR/config" \
-  XDG_CACHE_HOME="$STATE_DIR/cache" \
-  XDG_DATA_HOME="$STATE_DIR/data" \
-  DBUS_SESSION_BUS_ADDRESS="unix:path=$STATE_DIR/no-session-bus" \
-  QT_QPA_PLATFORM=xcb \
-  "$BINARY" >"$STATE_DIR/logs/omairc.log" 2>&1 &
+  export XDG_CONFIG_HOME="$STATE_DIR/config"
+  export XDG_CACHE_HOME="$STATE_DIR/cache"
+  export XDG_DATA_HOME="$STATE_DIR/data"
+  export DBUS_SESSION_BUS_ADDRESS="unix:path=$STATE_DIR/no-session-bus"
+  export QT_QPA_PLATFORM=xcb
+  if [ "$MOCK" = 1 ]; then
+    "$BINARY" --mock >"$STATE_DIR/logs/omairc.log" 2>&1 &
+  else
+    "$BINARY" >"$STATE_DIR/logs/omairc.log" 2>&1 &
+  fi
   APP_PID=$!
 
   attempt=0
@@ -197,6 +210,11 @@ cmd_launch() {
   write_state
   xdotool windowfocus --sync "$WINDOW"
   echo "launched isolated Omairc"
+  if [ "$MOCK" = 1 ]; then
+    echo "mock=yes"
+  else
+    echo "mock=no"
+  fi
   echo "display=$DISPLAY"
   echo "pid=$APP_PID"
   echo "window=$WINDOW"
@@ -226,6 +244,11 @@ cmd_doctor() {
   echo "title=$title"
   echo "xdg=$STATE_DIR"
   echo "evidence=$EVIDENCE_DIR"
+  if [ "${MOCK:-}" = 1 ]; then
+    echo "mock=yes"
+  else
+    echo "mock=no"
+  fi
 }
 
 cmd_title() {
@@ -307,6 +330,9 @@ cmd_click_network() {
 
 cmd_click_edit() {
   load_state
+  if [ "${MOCK:-}" = 1 ]; then
+    die "click-edit needs a live connection. Relaunch without --mock. Under --mock the edit control is hidden and that click toggles Status."
+  fi
   click_xy 220 36
 }
 
@@ -485,7 +511,7 @@ if [ -n "$cmd" ]; then
 fi
 
 case $cmd in
-  launch) cmd_launch ;;
+  launch) cmd_launch "$@" ;;
   doctor) cmd_doctor ;;
   title) cmd_title ;;
   wait-title) cmd_wait_title "$@" ;;

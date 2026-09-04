@@ -26,8 +26,8 @@ Keyboard is the window chord map: walk conversations, jump unread, complete nick
 
 Preconditions:
 
-- Conversation walk, unread jump, nick complete, history, member focus, and the sheet's Escape-vs-Status behavior need mock UI (`qml-suite`, `irc` left null).
-- A fresh compiled window is titled `irc.libera.chat Status` with Connect. `Ctrl+/` still opens the sheet on that window. `Alt+Down` has nowhere to walk until a conversation exists.
+- Conversation walk, unread jump, nick complete, history, member focus, and the sheet's Escape-vs-Status behavior need mock UI (`control-omairc launch --mock` or `qml-suite`, `irc` left null).
+- A default compiled window is titled `irc.libera.chat Status` with Connect. `Ctrl+/` still opens the sheet on that window. `Alt+Down` has nowhere to walk until a conversation exists.
 - `Ctrl+,` is a no-op on the mock window (`connection` is null). Prove it with `qml-suite` (`test_openConnectSheetWithShortcut`) or a compiled window that already has a connection.
 
 - **Shortcut sheet on first run.** After `control-omairc launch`, run `control-omairc key --key ctrl+slash` then `control-omairc screenshot --feature keyboard --name after-ctrl-slash`. The sheet lists walk, unread, Status, Connect, members, composer, send, scroll, nick complete, history, Escape, this sheet, and quit. If the first send lands in a Connect field, send `ctrl+slash` again. Run `control-omairc key --key Escape`. Connect stays open.

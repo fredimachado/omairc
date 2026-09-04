@@ -18,7 +18,8 @@ Connect is the first-run sheet that asks for a network profile before the compil
 
 Preconditions:
 
-- A fresh compiled launch (`control-omairc launch`) is titled `irc.libera.chat Status` and shows Connect. That is the desktop entry point.
+- A default compiled launch (`control-omairc launch`) is titled `irc.libera.chat Status` and shows Connect. That is the desktop entry point.
+- `control-omairc launch --mock` skips Connect and shows the prototype sidebar. Do not start this recipe there.
 - When Xvfb tools are missing, use `control-omairc doctor-qml` then `control-omairc qml-suite`. Do not send input to the user's live window.
 
 - **First-run sheet.** After an isolated launch, run `control-omairc title` then `control-omairc screenshot --feature connect --name first-run`. The title is `irc.libera.chat Status`. The overlay heading is `Connect`. Host is `irc.libera.chat`, port is `6697`, TLS is on, Autojoin is `#omarchy`, Nick is empty, the problem line is `Nick is required`, and Apply is muted.
@@ -29,5 +30,5 @@ Preconditions:
 - First run cannot be dismissed. Escape and a click outside the card only work after a complete profile already exists.
 - Discard on first run restores the suggested Libera defaults. It does not close the sheet.
 - Apply on the compiled window starts a real IRC session. That is not this feature's proof, and it does not restore the mock `#omarchy` sidebar.
-- Mock conversation recipes need `qml-suite` (`irc` left null). They do not start from this sheet.
+- Mock conversation recipes need `control-omairc launch --mock` or `qml-suite` (`irc` left null). They do not start from this sheet.
 - `qml-suite` overwrites `test-artifacts/verify/connect/first-run.png`. If this run also captured a compiled first-run, keep that file as `compiled-first-run.png` before running the suite.

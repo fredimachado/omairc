@@ -19,8 +19,8 @@ Member presence is what each channel member row shows besides the nick: a presen
 
 Preconditions:
 
-- Mock conversation UI is showing (`#omarchy - Omairc` or `#desktop - Omairc`, members visible). That is `qml-suite` (`irc` left null), not a fresh compiled launch.
-- A fresh compiled window is titled `irc.libera.chat Status` with Connect and no member list. Do not start this recipe there.
+- Mock conversation UI is showing (`#omarchy - Omairc` or `#desktop - Omairc`, members visible). Use `control-omairc launch --mock`, or `qml-suite` (`irc` left null).
+- `control-omairc launch` without `--mock` is first-run Connect titled `irc.libera.chat Status` with no member list. Do not start this recipe there.
 - `presence-prefix` and live `presence-caps` need a completed Connect and a real session. That is not this recipe.
 
 - **Channel chrome.** From the suite `#desktop` grab, confirm `ONLINE - 8` and rows for `anna` / `writing docs`, `dax` / `on #desktop`, and `teo` with the amber away mark. Run `control-omairc doctor-qml` then `control-omairc qml-suite`. `qml-suite` copies `test-artifacts/switch-channel.png` to `test-artifacts/verify/member-presence/after-desktop.png`.

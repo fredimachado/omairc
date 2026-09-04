@@ -105,8 +105,8 @@ run:
 bin/test-desktop
 ```
 
-This starts an access-controlled virtual display, launches the real
-`build/omairc` executable with temporary settings and no host desktop portal,
+This starts an access-controlled virtual display, launches
+`build/omairc --mock` with temporary settings and no host desktop portal,
 and drives it using external mouse and keyboard events. It never sends input
 to the active desktop. The runner checks visible changes between screenshots;
 logs and screenshots are written to `test-artifacts/desktop/`.

@@ -54,6 +54,7 @@ bin/build
 bin/test
 bin/test-desktop
 QT_QPA_PLATFORM=offscreen timeout 3 ./build/omairc
+QT_QPA_PLATFORM=offscreen timeout 3 ./build/omairc --mock
 ```
 
 The timeout is expected for the startup smoke check because the GUI event loop
@@ -64,4 +65,5 @@ write screenshots to `test-artifacts/`; inspect the relevant screenshot when
 changing layout or presentation.
 Use `bin/test-desktop` when the optional Xvfb, Xauthority, xdotool, and
 ImageMagick dependencies are available to verify the compiled executable as a
-black box without interacting with the user's active desktop.
+black box without interacting with the user's active desktop. That runner
+launches `./build/omairc --mock`.
