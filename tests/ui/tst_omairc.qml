@@ -383,6 +383,101 @@ TestCase {
         }
     }
 
+    QtObject {
+        id: slashFake
+
+        property bool open: false
+        property var matches: []
+        property int selectedIndex: 0
+        property string syncedText: ""
+
+        function reset() {
+            open = false;
+            matches = [];
+            selectedIndex = 0;
+            syncedText = "";
+        }
+
+        function sync(text, statusConsole) {
+            syncedText = text;
+            var start = 0;
+            while (start < text.length && " \t".indexOf(text.charAt(start)) !== -1)
+                start += 1;
+            var rest = text.substring(start);
+            if (rest.length < 2 || rest.charAt(0) !== "/" || rest.charAt(1) === "/"
+                    || rest.indexOf(" ") !== -1) {
+                open = false;
+                matches = [];
+                selectedIndex = 0;
+                return;
+            }
+            var needle = rest.substring(1).toLowerCase();
+            if (needle.charAt(0) !== "j") {
+                open = false;
+                matches = [];
+                selectedIndex = 0;
+                return;
+            }
+            var keepSelection = open;
+            open = true;
+            matches = [
+                { label: "/join", usage: "/join <channel>" },
+                { label: "/nick", usage: "/nick <nickname>" }
+            ];
+            if (!keepSelection)
+                selectedIndex = 0;
+            else if (selectedIndex < 0 || selectedIndex >= matches.length)
+                selectedIndex = 0;
+        }
+
+        function routeKey(key, modifiers) {
+            if (modifiers !== Qt.NoModifier && modifiers !== Qt.KeypadModifier)
+                return { accepted: false, insertion: "" };
+            if (!open)
+                return { accepted: false, insertion: "" };
+            if (key === Qt.Key_Escape) {
+                dismiss();
+                return { accepted: true, insertion: "" };
+            }
+            if (key === Qt.Key_Down) {
+                selectedIndex = (selectedIndex + 1) % matches.length;
+                return { accepted: true, insertion: "" };
+            }
+            if (key === Qt.Key_Up) {
+                selectedIndex = (selectedIndex + matches.length - 1) % matches.length;
+                return { accepted: true, insertion: "" };
+            }
+            if (key === Qt.Key_Tab || key === Qt.Key_Return || key === Qt.Key_Enter) {
+                return { accepted: true, insertion: activate(selectedIndex) };
+            }
+            return { accepted: false, insertion: "" };
+        }
+
+        function activate(index) {
+            if (!open || index < 0 || index >= matches.length)
+                return "";
+            selectedIndex = index;
+            var start = 0;
+            while (start < syncedText.length && " \t".indexOf(syncedText.charAt(start)) !== -1)
+                start += 1;
+            return syncedText.substring(0, start) + matches[index].label + " ";
+        }
+
+        function dismiss() {
+            open = false;
+            selectedIndex = 0;
+        }
+    }
+
+    Component {
+        id: slashWindowComponent
+
+        Omairc.OmaircWindow {
+            backend: fakeBackend
+            slashCommands: slashFake
+        }
+    }
+
     function init() {
         appWindow = createTemporaryObject(windowComponent, null);
         verify(appWindow !== null, "The production Omairc window should load");
@@ -394,6 +489,7 @@ TestCase {
         if (appWindow)
             appWindow.close();
         appWindow = null;
+        slashFake.reset();
     }
 
     function item(objectName) {
@@ -1251,5 +1347,97 @@ TestCase {
         compare(composer.text, "");
         compare(appWindow.currentConversation, "#omarchy");
         compare(item("directConversationRepeater").count, 2);
+    }
+
+    function openSlashWindow() {
+        if (appWindow) {
+            appWindow.close();
+            appWindow = null;
+        }
+        slashFake.reset();
+        var window = createTemporaryObject(slashWindowComponent, null);
+        verify(window !== null, "The slash-complete window should load");
+        tryCompare(window, "visible", true);
+        waitForRendering(window.contentItem);
+        window.requestActivate();
+        tryCompare(window, "active", true);
+        return window;
+    }
+
+    function test_slashCompleteListAppearsForSlashJ() {
+        var window = openSlashWindow();
+        var composer = findChild(window, "messageComposer");
+        verify(composer !== null, "Could not find messageComposer");
+        mouseClick(composer);
+        verify(composer.activeFocus);
+        typeText("/j");
+
+        var list = findChild(window, "slashCompleteList");
+        verify(list !== null, "Could not find slashCompleteList");
+        tryCompare(list, "visible", true);
+        waitForRendering(window.contentItem);
+        var joinHit = findChild(list, "slashHit-join");
+        verify(joinHit !== null, "Could not find slashHit-join");
+        verify(joinHit.visible);
+        compare(slashFake.selectedIndex, 0);
+        window.close();
+        slashFake.reset();
+    }
+
+    function test_slashCompleteTabInsertsCanonicalVerb() {
+        var window = openSlashWindow();
+        var composer = findChild(window, "messageComposer");
+        verify(composer !== null, "Could not find messageComposer");
+        mouseClick(composer);
+        verify(composer.activeFocus);
+        typeText("/j");
+        tryCompare(findChild(window, "slashCompleteList"), "visible", true);
+        keyClick(Qt.Key_Tab);
+
+        compare(composer.text, "/join ");
+        tryCompare(findChild(window, "slashCompleteList"), "visible", false);
+        verify(composer.activeFocus);
+        window.close();
+        slashFake.reset();
+    }
+
+    function test_slashCompleteEscapeDismisses() {
+        var window = openSlashWindow();
+        var composer = findChild(window, "messageComposer");
+        verify(composer !== null, "Could not find messageComposer");
+        mouseClick(composer);
+        verify(composer.activeFocus);
+        typeText("/j");
+        tryCompare(findChild(window, "slashCompleteList"), "visible", true);
+        keyClick(Qt.Key_Escape);
+
+        tryCompare(findChild(window, "slashCompleteList"), "visible", false);
+        compare(composer.text, "/j");
+        compare(window.consoleVisible, false);
+        verify(composer.activeFocus);
+        window.close();
+        slashFake.reset();
+    }
+
+    function test_slashCompleteUpDownMoveSelection() {
+        var window = openSlashWindow();
+        var composer = findChild(window, "messageComposer");
+        verify(composer !== null, "Could not find messageComposer");
+        mouseClick(composer);
+        verify(composer.activeFocus);
+        typeText("/j");
+        tryCompare(findChild(window, "slashCompleteList"), "visible", true);
+        compare(slashFake.selectedIndex, 0);
+
+        keyClick(Qt.Key_Down);
+        compare(slashFake.selectedIndex, 1);
+        keyClick(Qt.Key_Up);
+        compare(slashFake.selectedIndex, 0);
+        keyClick(Qt.Key_Up);
+        compare(slashFake.selectedIndex, 1);
+        compare(composer.text, "/j");
+        verify(findChild(window, "slashCompleteList").visible);
+        window.close();
+        slashFake.reset();
     }
 }
