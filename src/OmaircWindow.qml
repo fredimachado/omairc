@@ -566,10 +566,34 @@ ApplicationWindow {
             || event.modifiers === Qt.KeypadModifier;
     }
 
+    function transcriptIndexAt(list, y) {
+        var x = Math.max(1, list.width / 2);
+        var index = list.indexAt(x, y);
+        if (index >= 0)
+            return index;
+        return list.indexAt(x, y + 8);
+    }
+
     function scrollTranscript(direction) {
         var list = consoleVisible ? consoleList : messageList;
-        var maxY = Math.max(0, list.contentHeight - list.height);
-        list.contentY = Math.max(0, Math.min(maxY, list.contentY + direction * list.height * 0.8));
+        if (!list || list.count <= 0)
+            return;
+
+        var first = transcriptIndexAt(list, list.contentY + 1);
+        var last = transcriptIndexAt(list, list.contentY + Math.max(1, list.height - 1));
+        if (first < 0)
+            first = 0;
+        if (last < 0)
+            last = list.count - 1;
+        if (last < first)
+            last = first;
+
+        var page = Math.max(1, Math.round((last - first + 1) * 0.8));
+        if (direction < 0) {
+            list.positionViewAtIndex(Math.max(0, first - page), ListView.Beginning);
+            return;
+        }
+        list.positionViewAtIndex(Math.min(list.count - 1, last + page), ListView.End);
     }
 
     function sendMessage() {

@@ -682,6 +682,11 @@ TestCase {
 
         verify(list.contentY < before, "Page Up should scroll toward older lines");
         verify(composer.activeFocus);
+
+        var afterUp = list.contentY;
+        keyClick(Qt.Key_PageDown);
+        verify(list.contentY > afterUp, "Page Down should scroll toward newer lines");
+        verify(composer.activeFocus);
     }
 
     function test_toggleMembersWithShortcut() {
