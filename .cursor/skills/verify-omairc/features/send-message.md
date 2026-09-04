@@ -20,8 +20,8 @@ Send a message lets a user add a local line to the current mock transcript from 
 
 Preconditions:
 
-- Isolated Omairc is healthy.
-- The current conversation is `#desktop` (`control-omairc wait-title --exact "#desktop - Omairc"`).
+- Mock conversation UI is showing. That is `qml-suite` (`irc` left null), not a fresh compiled launch.
+- For the desktop recipe below, the current conversation is `#desktop` (`control-omairc wait-title --exact "#desktop - Omairc"`).
 - No prior verify line `Hello from verify` is already in this session's `#desktop` transcript.
 
 - **Keyboard focus.** Press `Ctrl+L`. Run `control-omairc focus-composer`. The composer ring uses the accent color.
@@ -31,6 +31,7 @@ Preconditions:
 - **Action line.** Send `/me waves`. Run `control-omairc send --text "/me waves"`. The last line is an italic action whose body is `fred waves`.
 - **Confirm persistence.** Switch to `#omarchy` and back. Run `control-omairc click-conversation --name "#omarchy"`, `control-omairc wait-title --exact "#omarchy - Omairc"`, `control-omairc click-conversation --name "#desktop"`, and `control-omairc wait-title --exact "#desktop - Omairc"`. `#desktop` still shows the three sent lines.
 - **Proof.** Capture the populated transcript. Run `control-omairc screenshot --feature send-message --name after-send` and `control-omairc screenshot --feature send-message --name after-return`. Both images show `Hello from verify` in `#desktop`.
+- **Offscreen suite.** When Xvfb tools are missing, run `control-omairc doctor-qml` then `control-omairc qml-suite`. `bin/test` sends from `#omarchy` (not `#desktop`) and writes `test-artifacts/send-message.png`. The last line is `fred` / `Hello from the UI test`. `qml-suite` copies it to `test-artifacts/verify/send-message/after-send.png`. This does not prove the compiled-window composer path.
 
 ## Gotchas
 

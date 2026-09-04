@@ -1,6 +1,6 @@
 ---
 name: verify-omairc
-description: Drive the Omairc Qt desktop prototype as a user would (isolated Xvfb + compiled binary). Use when proving channel switching, sending local messages, the member panel, or opening a direct message.
+description: Drive the Omairc Qt desktop prototype as a user would (isolated Xvfb + compiled binary). Use when proving the first-run Connect sheet, channel switching, sending local messages, the member panel, or opening a direct message.
 ---
 
 # Verify Omairc
@@ -81,7 +81,7 @@ Use `control-omairc` against the isolated window. Stable handles:
 | Handle | Meaning |
 |---|---|
 | Window title `{name} - Omairc` | Current conversation |
-| `click-conversation --name #desktop` | Sidebar channel or seeded DM (`#omarchy`, `#desktop`, `#ricing`, `#help`, `anna`, `dax`) |
+| `click-conversation --name #desktop` | Mock sidebar channel or seeded DM (`#omarchy`, `#desktop`, `#ricing`, `#help`, `anna`, `dax`). Those rows are hidden on a compiled window with `irc` bound. |
 | `click-member --name mira` | Member row while the panel is visible |
 | `click-people` | Header `12 PEOPLE` / `Hide members` / `Show members` control (channels only) |
 | `focus-composer` | `Ctrl+L` |
@@ -91,7 +91,7 @@ Use `control-omairc` against the isolated window. Stable handles:
 
 Named clicks are window-relative pixels for 1180x760 at textScale 1.0. They are invalid on a maximized window, a restored user geometry, or a portal text scale other than 1.0. That is why launch isolates XDG and DBus.
 
-QML object names used by `bin/test` (not visible to xdotool): `conversation-#desktop`, `conversation-anna`, `messageComposer`, `sendButton`, `peopleButton`, `membersPanel`, `membersList`, `member-mira`, `messageList`, `directConversationRepeater`.
+QML object names used by `bin/test` (not visible to xdotool): `connectionSheet`, `connectionHost`, `connectionNick`, `conversation-#desktop`, `conversation-anna`, `messageComposer`, `sendButton`, `peopleButton`, `membersPanel`, `membersList`, `member-mira`, `messageList`, `directConversationRepeater`.
 
 Typical drive:
 
@@ -103,9 +103,11 @@ Typical drive:
 .cursor/skills/verify-omairc/control-omairc screenshot --feature switch-conversation --name after-desktop
 ```
 
+That click path needs the mock sidebar. A fresh compiled launch is Connect with title ` - Omairc`; use the Connect feature file first.
+
 Inspect the matching feature file for the exact recipe and observables.
 
-When desktop tools are missing, drive the mapped feature through the suite. `qml-suite` runs `bin/test`, which clicks `conversation-#desktop`, `messageComposer`, `membersPanel` / `Ctrl+Shift+M`, and `member-mira` with real mouse and key events, then copies screenshots into `test-artifacts/verify/`. That covers the four mapped features. It is not a pass on a skipped desktop entry point; say so in the proof notes.
+When desktop tools are missing, drive the mapped feature through the suite. `qml-suite` runs `bin/test`, which opens the Connect sheet with a fake incomplete profile, then clicks `conversation-#desktop`, `messageComposer`, `membersPanel` / `Ctrl+Shift+M`, and `member-mira` with real mouse and key events, then copies screenshots into `test-artifacts/verify/`. That covers the five mapped features. It is not a pass on a skipped desktop entry point; say so in the proof notes.
 
 ## Evidence
 
@@ -118,7 +120,7 @@ Standards:
 - Window title is the conversation identity. A screenshot must show the sidebar selection, header name, topic, and (for channels) people count together.
 - Messages are local only. Persistence proof is the same session: the row stays after sending, and switching away and back still shows it. There is no server or database.
 - `control-omairc compare --before <a> --after <b>` requires a visible pixel change (ImageMagick AE > 100).
-- `bin/test` writes `test-artifacts/{switch-channel,send-message,toggle-members,open-direct-message}.png`. Treat those as QML-suite evidence, not desktop-window evidence.
+- `bin/test` writes `test-artifacts/{connection-sheet,switch-channel,send-message,toggle-members,open-direct-message}.png`. Treat those as QML-suite evidence, not desktop-window evidence. `qml-suite` copies them into `test-artifacts/verify/<feature-id>/`.
 - Record the feature ID and entry point on every artifact name.
 
 ## Cleanup
