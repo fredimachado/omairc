@@ -19,6 +19,7 @@ HEADERS += \
     src/irc/irctypingpublisher.h \
     src/irc/ircpresence.h \
     src/irc/ircevent.h \
+    src/irc/ircviewnotify.h \
     src/irc/irceventtranslator.h \
     src/irc/irceventreducer.h \
     src/irc/irctransport.h \

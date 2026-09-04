@@ -15,6 +15,8 @@
 
 #include <optional>
 
+struct IrcViewNotify;
+
 class IrcController : public QObject
 {
     Q_OBJECT
@@ -85,6 +87,7 @@ signals:
 
 private:
     void apply(const IrcEvent& event);
+    void publish(const IrcViewNotify& notify);
     void handleCapabilities(const QString& networkId,
                             IrcCapabilitySet capabilities);
     void echoLocal(IrcMessageKind kind, const QString& body);

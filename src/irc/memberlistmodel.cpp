@@ -65,7 +65,25 @@ void MemberListModel::reload()
 
     beginResetModel();
     m_nicks = std::move(nicks);
+    rebuildRowIndex();
     endResetModel();
+}
+
+void MemberListModel::rebuildRowIndex()
+{
+    m_rowByNick.clear();
+    m_rowByNick.reserve(m_nicks.size());
+    for (int row = 0; row < m_nicks.size(); ++row)
+        m_rowByNick.insert(m_nicks.at(row), row);
+}
+
+void MemberListModel::touch(const QString& normalizedNick)
+{
+    const auto found = m_rowByNick.constFind(normalizedNick);
+    if (found == m_rowByNick.cend())
+        return;
+    const QModelIndex row = index(*found, 0);
+    emit dataChanged(row, row, {AwayRole, StatusRole, LabelRole});
 }
 
 void MemberListModel::select(const IrcConversationKey& key)

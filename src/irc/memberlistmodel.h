@@ -35,9 +35,13 @@ public:
     void reload();
     void select(const IrcConversationKey& key);
     void clearSelection();
+    void touch(const QString& normalizedNick);
 
 private:
+    void rebuildRowIndex();
+
     IrcEventReducer& m_reducer;
     std::optional<IrcConversationKey> m_selected;
     QVector<QString> m_nicks;
+    QHash<QString, int> m_rowByNick;
 };

@@ -2,6 +2,7 @@
 
 #include "irccommand.h"
 #include "irceventtranslator.h"
+#include "ircviewnotify.h"
 #include "irctyping.h"
 
 #include <QByteArray>
@@ -711,16 +712,30 @@ void IrcController::apply(const IrcEvent& event)
         m_messages.select(conversation.key);
         m_members.select(conversation.key);
     }
-    if (typingOnly) {
-        emit typingChanged();
+    const IrcViewNotify notify = classifyViewNotify(event, m_reducer, m_selected);
+    publish(notify);
+    if (notify.rearmTyping) {
+        if (!notify.typing)
+            emit typingChanged();
         armTypingRefresh();
-        return;
     }
-    reloadModels();
-    emit selectionChanged();
-    emit typingChanged();
-    armTypingRefresh();
     notifySelfAwayIfChanged(previousId, previousAway);
+}
+
+void IrcController::publish(const IrcViewNotify& notify)
+{
+    if (notify.conversations)
+        m_conversations.reload();
+    if (notify.messages)
+        m_messages.reload();
+    if (notify.members == IrcMemberSurface::Reset)
+        m_members.reload();
+    else if (notify.members == IrcMemberSurface::Row)
+        m_members.touch(notify.nick);
+    if (notify.selection)
+        emit selectionChanged();
+    if (notify.typing)
+        emit typingChanged();
 }
 
 void IrcController::handleMessage(const QString& networkId,
@@ -765,9 +780,7 @@ void IrcController::handleMessage(const QString& networkId,
 
 void IrcController::reloadModels()
 {
-    m_conversations.reload();
-    m_messages.reload();
-    m_members.reload();
+    publish(IrcViewNotify::resetAll());
 }
 
 IrcSession *IrcController::selectedSession() const
