@@ -504,6 +504,88 @@ TestCase {
         tryCompare(appWindow, "currentConversation", "#desktop");
     }
 
+    function test_tabCompletesChannelNick() {
+        var composer = item("messageComposer");
+        mouseClick(composer);
+        verify(composer.activeFocus);
+        typeText("mi");
+        keyClick(Qt.Key_Tab);
+
+        compare(composer.text, "mira: ");
+        verify(composer.activeFocus);
+    }
+
+    function test_tabCompletesNickAfterText() {
+        var composer = item("messageComposer");
+        mouseClick(composer);
+        verify(composer.activeFocus);
+        typeText("hello s");
+        keyClick(Qt.Key_Tab);
+
+        verify(composer.text !== "hello s");
+        verify(composer.text.indexOf("hello ") === 0);
+        verify(composer.text.charAt(composer.text.length - 1) === " ");
+        var nick = composer.text.substring(6, composer.text.length - 1);
+        verify(nick.length > 0);
+        compare(nick.charAt(0).toLowerCase(), "s");
+        verify(composer.activeFocus);
+    }
+
+    function test_composerHistoryRecallsSentLines() {
+        var composer = item("messageComposer");
+        mouseClick(composer);
+        verify(composer.activeFocus);
+
+        typeText("alpha");
+        keyClick(Qt.Key_Return);
+        compare(composer.text, "");
+
+        typeText("beta");
+        keyClick(Qt.Key_Return);
+        compare(composer.text, "");
+
+        keyClick(Qt.Key_Up);
+        compare(composer.text, "beta");
+        keyClick(Qt.Key_Up);
+        compare(composer.text, "alpha");
+        keyClick(Qt.Key_Down);
+        compare(composer.text, "beta");
+        keyClick(Qt.Key_Down);
+        compare(composer.text, "");
+
+        typeText("draft");
+        compare(composer.text, "draft");
+        keyClick(Qt.Key_Up);
+        compare(composer.text, "beta");
+        keyClick(Qt.Key_Down);
+        compare(composer.text, "draft");
+    }
+
+    function test_pageUpScrollsTranscript() {
+        var composer = item("messageComposer");
+        var list = item("messageList");
+        mouseClick(composer);
+        verify(composer.activeFocus);
+
+        var index = 0;
+        for (index = 0; index < 12; ++index) {
+            typeText("scroll line " + index);
+            keyClick(Qt.Key_Return);
+        }
+        waitForRendering(appWindow.contentItem);
+        list.positionViewAtEnd();
+        waitForRendering(appWindow.contentItem);
+
+        verify(list.contentHeight > list.height);
+        var before = list.contentY;
+        verify(before > 0);
+
+        keyClick(Qt.Key_PageUp);
+
+        verify(list.contentY < before, "Page Up should scroll toward older lines");
+        verify(composer.activeFocus);
+    }
+
     function test_toggleMembersWithShortcut() {
         var panel = item("membersPanel");
         verify(panel.visible);

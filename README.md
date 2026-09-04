@@ -48,6 +48,9 @@ and do not construct `IrcConnection`.
 - Jump to the next unread with `Alt+A`, mentions first.
 - Click a channel member to open or create a direct message.
 - Send messages with `Enter`.
+- Scroll the transcript with `Page Up` and `Page Down`. The composer stays focused.
+- Complete a nick with `Tab` in the composer.
+- Recall sent lines with `Up` and `Down` in the composer.
 - Toggle Status with `Ctrl+``.
 - Open Connect with `Ctrl+,`.
 - Toggle the channel member list with `Ctrl+Shift+M`.

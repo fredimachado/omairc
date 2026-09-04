@@ -48,6 +48,8 @@ ApplicationWindow {
         ? (networkConsole.open || irc.selectedTarget.length === 0)
         : mockStatusOpen
     onConsoleVisibleChanged: {
+        resetNickComplete();
+        resetComposerHistoryBrowse();
         if (!consoleVisible)
             return;
         Qt.callLater(function() {
@@ -56,6 +58,10 @@ ApplicationWindow {
         });
     }
     readonly property string currentConversation: irc ? irc.selectedTarget : mockCurrentConversation
+    onCurrentConversationChanged: {
+        resetNickComplete();
+        resetComposerHistoryBrowse();
+    }
     readonly property string currentTopic: irc
         ? (irc.selectedTarget.length > 0
             ? irc.topic
@@ -78,6 +84,16 @@ ApplicationWindow {
             return connection.nick
         return "fred"
     }
+    readonly property bool connectionOverlayVisible: connection
+        && (connection.setupRequired || connectionSheetOpen)
+
+    property var composerHistories: ({})
+    property int composerHistoryIndex: -1
+    property string composerHistoryDraft: ""
+    property string nickCompletePrefix: ""
+    property var nickCompleteMatches: []
+    property int nickCompleteIndex: -1
+    property int nickCompleteOrigin: -1
 
     Material.theme: darkMode ? Material.Dark : Material.Light
     Material.accent: accentColor
@@ -315,38 +331,215 @@ ApplicationWindow {
             target.activate();
     }
 
+    function composerHistoryKey() {
+        return consoleVisible ? "status" : currentConversation;
+    }
+
+    function resetComposerHistoryBrowse() {
+        composerHistoryIndex = -1;
+        composerHistoryDraft = "";
+    }
+
+    function rememberSentComposerLine(text) {
+        resetNickComplete();
+        resetComposerHistoryBrowse();
+        var key = composerHistoryKey();
+        var lines = (composerHistories[key] || []).slice();
+        lines.push(text);
+        if (lines.length > 50)
+            lines.shift();
+        composerHistories[key] = lines;
+    }
+
+    function recallComposerHistory(delta) {
+        var lines = composerHistories[composerHistoryKey()] || [];
+        if (composer.text.length === 0 && lines.length === 0)
+            return false;
+
+        if (composerHistoryIndex < 0) {
+            if (delta > 0 || lines.length === 0)
+                return false;
+            composerHistoryDraft = composer.text;
+            composerHistoryIndex = lines.length;
+        }
+
+        var next = composerHistoryIndex + delta;
+        if (next < 0)
+            next = 0;
+        if (next >= lines.length) {
+            composer.text = composerHistoryDraft;
+            composer.cursorPosition = composer.text.length;
+            resetComposerHistoryBrowse();
+            return true;
+        }
+
+        composerHistoryIndex = next;
+        composer.text = lines[next];
+        composer.cursorPosition = composer.text.length;
+        return true;
+    }
+
+    function resetNickComplete() {
+        nickCompletePrefix = "";
+        nickCompleteMatches = [];
+        nickCompleteIndex = -1;
+        nickCompleteOrigin = -1;
+    }
+
+    function memberDisplayLabel(member) {
+        if (!member)
+            return "";
+        if (member.label && member.label.length > 0)
+            return member.label;
+        return member.nick || "";
+    }
+
+    function liveMemberLabel(model, row) {
+        if (typeof model.get === "function")
+            return memberDisplayLabel(model.get(row));
+        var nick = model.data(model.index(row, 0), Qt.UserRole + 1) || "";
+        var label = model.data(model.index(row, 0), Qt.UserRole + 2) || "";
+        return label.length > 0 ? label : nick;
+    }
+
+    function liveMemberCount(model) {
+        if (!model)
+            return 0;
+        if (model.count !== undefined)
+            return model.count;
+        return model.rowCount();
+    }
+
+    function nickCompleteCandidates() {
+        if (consoleVisible)
+            return [];
+        if (!currentConversationIsChannel)
+            return currentConversation.length > 0 ? [currentConversation] : [];
+
+        var labels = [];
+        if (irc) {
+            var model = irc.members;
+            var count = liveMemberCount(model);
+            for (var row = 0; row < count; ++row) {
+                var liveLabel = liveMemberLabel(model, row);
+                if (liveLabel.length > 0)
+                    labels.push(liveLabel);
+            }
+            return labels;
+        }
+
+        for (var index = 0; index < currentPeopleCount; ++index) {
+            var mockLabel = memberDisplayLabel(memberDataFor(index));
+            if (mockLabel.length > 0)
+                labels.push(mockLabel);
+        }
+        return labels;
+    }
+
+    function nickMatchesForPrefix(prefix) {
+        var lower = prefix.toLowerCase();
+        var decorated = [];
+        var candidates = nickCompleteCandidates();
+        for (var index = 0; index < candidates.length; ++index) {
+            var label = candidates[index];
+            if (label.toLowerCase().indexOf(lower) !== 0)
+                continue;
+            decorated.push({ label: label, order: index });
+        }
+        decorated.sort(function(left, right) {
+            if (left.label < right.label)
+                return -1;
+            if (left.label > right.label)
+                return 1;
+            return left.order - right.order;
+        });
+        var matches = [];
+        for (var match = 0; match < decorated.length; ++match)
+            matches.push(decorated[match].label);
+        return matches;
+    }
+
+    function applyNickComplete() {
+        var nick = nickCompleteMatches[nickCompleteIndex];
+        var insertion = nick + (nickCompleteOrigin === 0 ? ": " : " ");
+        var after = composer.text.substring(composer.cursorPosition);
+        composer.text = composer.text.substring(0, nickCompleteOrigin) + insertion + after;
+        composer.cursorPosition = nickCompleteOrigin + insertion.length;
+    }
+
+    function completeNick() {
+        if (nickCompleteMatches.length > 0 && nickCompleteIndex >= 0) {
+            nickCompleteIndex = (nickCompleteIndex + 1) % nickCompleteMatches.length;
+            applyNickComplete();
+            return;
+        }
+
+        var cursor = composer.cursorPosition;
+        var origin = composer.text.substring(0, cursor).lastIndexOf(" ") + 1;
+        var token = composer.text.substring(origin, cursor);
+        if (token.length === 0)
+            return;
+
+        var matches = nickMatchesForPrefix(token);
+        if (matches.length === 0)
+            return;
+
+        nickCompletePrefix = token;
+        nickCompleteMatches = matches;
+        nickCompleteIndex = 0;
+        nickCompleteOrigin = origin;
+        applyNickComplete();
+    }
+
+    function composerHasPlainModifier(event) {
+        return event.modifiers === Qt.NoModifier
+            || event.modifiers === Qt.KeypadModifier;
+    }
+
+    function scrollTranscript(direction) {
+        var list = consoleVisible ? consoleList : messageList;
+        var maxY = Math.max(0, list.contentHeight - list.height);
+        list.contentY = Math.max(0, Math.min(maxY, list.contentY + direction * list.height * 0.8));
+    }
+
     function sendMessage() {
-        var body = composer.text.trim();
-        if (body.length === 0)
+        var original = composer.text.trim();
+        if (original.length === 0)
             return;
 
         if (consoleVisible) {
             if (irc) {
-                if (networkConsole.submit(body))
+                if (networkConsole.submit(original)) {
+                    rememberSentComposerLine(original);
                     composer.clear();
+                }
                 consoleList.positionViewAtEnd();
                 return;
             }
             mockStatusMessages.append({
                 time: Qt.formatTime(new Date(), "hh:mm:ss"),
                 label: "command",
-                text: body,
+                text: original,
                 source: "local",
                 severity: "info"
             });
+            rememberSentComposerLine(original);
             composer.clear();
             consoleList.positionViewAtEnd();
             return;
         }
 
         if (irc) {
-            if (irc.sendMessage(body))
+            if (irc.sendMessage(original)) {
+                rememberSentComposerLine(original);
                 composer.clear();
+            }
             messageList.positionViewAtEnd();
             return;
         }
 
         var kind = "message";
+        var body = original;
         if (body.indexOf("/me ") === 0) {
             body = "fred " + body.substring(4);
             kind = "action";
@@ -358,6 +551,7 @@ ApplicationWindow {
             body: body,
             kind: kind
         });
+        rememberSentComposerLine(original);
         composer.clear();
         messageList.positionViewAtEnd();
     }
@@ -415,6 +609,20 @@ ApplicationWindow {
         sequence: "Alt+A"
         context: Qt.ApplicationShortcut
         onActivated: jumpToNextUnread()
+    }
+
+    Shortcut {
+        sequence: "PgUp"
+        context: Qt.ApplicationShortcut
+        enabled: !win.connectionOverlayVisible
+        onActivated: scrollTranscript(-1)
+    }
+
+    Shortcut {
+        sequence: "PgDown"
+        context: Qt.ApplicationShortcut
+        enabled: !win.connectionOverlayVisible
+        onActivated: scrollTranscript(1)
     }
 
     Shortcut {
@@ -1678,9 +1886,28 @@ ApplicationWindow {
                     background: Item {}
 
                     Keys.onPressed: function(event) {
+                        if (event.key === Qt.Key_Tab && win.composerHasPlainModifier(event)) {
+                            win.completeNick();
+                            event.accepted = true;
+                            return;
+                        }
+
+                        win.resetNickComplete();
+
                         if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
                             win.sendMessage();
                             event.accepted = true;
+                            return;
+                        }
+
+                        if (event.key === Qt.Key_Up && win.composerHasPlainModifier(event)) {
+                            event.accepted = win.recallComposerHistory(-1);
+                            return;
+                        }
+
+                        if (event.key === Qt.Key_Down && win.composerHasPlainModifier(event)) {
+                            event.accepted = win.recallComposerHistory(1);
+                            return;
                         }
                     }
                 }

@@ -93,6 +93,11 @@ Use `control-omairc` against the isolated window. Stable handles:
 | `key --key alt+Down` | Next sidebar conversation (channels, then DMs). Status is not in this list. |
 | `key --key alt+Up` | Previous sidebar conversation |
 | `key --key alt+a` | Next unread conversation, mentions first |
+| `key --key Page_Up` | Scroll the visible transcript toward older lines. Composer stays focused. Disabled while Connect is visible. |
+| `key --key Page_Down` | Scroll the visible transcript toward newer lines. |
+| `key --key Tab` | Complete the nick prefix in the composer after `focus-composer`. |
+| `key --key Up` | Previous sent line for the visible conversation or Status. |
+| `key --key Down` | Newer sent line, or restore the stashed draft. |
 | `key --key ctrl+q` | Quit |
 
 Named clicks are window-relative pixels for 1180x760 at textScale 1.0. They are invalid on a maximized window, a restored user geometry, or a portal text scale other than 1.0. That is why launch isolates XDG and DBus.
