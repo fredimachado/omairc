@@ -440,20 +440,14 @@ ApplicationWindow {
         nickCompleteOrigin = -1;
     }
 
-    function memberDisplayLabel(member) {
-        if (!member)
+    function liveMemberNick(model, row) {
+        if (!model)
             return "";
-        if (member.label && member.label.length > 0)
-            return member.label;
-        return member.nick || "";
-    }
-
-    function liveMemberLabel(model, row) {
-        if (typeof model.get === "function")
-            return memberDisplayLabel(model.get(row));
-        var nick = model.data(model.index(row, 0), Qt.UserRole + 1) || "";
-        var label = model.data(model.index(row, 0), Qt.UserRole + 2) || "";
-        return label.length > 0 ? label : nick;
+        if (typeof model.get === "function") {
+            var rowData = model.get(row);
+            return rowData && rowData.nick ? rowData.nick : "";
+        }
+        return model.data(model.index(row, 0), Qt.UserRole + 1) || "";
     }
 
     function liveMemberCount(model) {
@@ -470,24 +464,25 @@ ApplicationWindow {
         if (!currentConversationIsChannel)
             return currentConversation.length > 0 ? [currentConversation] : [];
 
-        var labels = [];
+        var nicks = [];
         if (irc) {
             var model = irc.members;
             var count = liveMemberCount(model);
             for (var row = 0; row < count; ++row) {
-                var liveLabel = liveMemberLabel(model, row);
-                if (liveLabel.length > 0)
-                    labels.push(liveLabel);
+                var liveNick = liveMemberNick(model, row);
+                if (liveNick.length > 0)
+                    nicks.push(liveNick);
             }
-            return labels;
+            return nicks;
         }
 
         for (var index = 0; index < currentPeopleCount; ++index) {
-            var mockLabel = memberDisplayLabel(memberDataFor(index));
-            if (mockLabel.length > 0)
-                labels.push(mockLabel);
+            var mock = memberDataFor(index);
+            var mockNick = mock && mock.nick ? mock.nick : "";
+            if (mockNick.length > 0)
+                nicks.push(mockNick);
         }
-        return labels;
+        return nicks;
     }
 
     function nickMatchesForPrefix(prefix) {
@@ -495,21 +490,21 @@ ApplicationWindow {
         var decorated = [];
         var candidates = nickCompleteCandidates();
         for (var index = 0; index < candidates.length; ++index) {
-            var label = candidates[index];
-            if (label.toLowerCase().indexOf(lower) !== 0)
+            var nick = candidates[index];
+            if (nick.toLowerCase().indexOf(lower) !== 0)
                 continue;
-            decorated.push({ label: label, order: index });
+            decorated.push({ nick: nick, order: index });
         }
         decorated.sort(function(left, right) {
-            if (left.label < right.label)
+            if (left.nick < right.nick)
                 return -1;
-            if (left.label > right.label)
+            if (left.nick > right.nick)
                 return 1;
             return left.order - right.order;
         });
         var matches = [];
         for (var match = 0; match < decorated.length; ++match)
-            matches.push(decorated[match].label);
+            matches.push(decorated[match].nick);
         return matches;
     }
 

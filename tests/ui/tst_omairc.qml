@@ -218,6 +218,14 @@ TestCase {
         ListElement { nick: "anna"; label: "anna"; status: "writing docs"; away: true }
     }
 
+    ListModel {
+        id: prefixedMembers
+
+        ListElement { nick: "mira"; label: "@mira"; status: ""; away: false }
+        ListElement { nick: "sol"; label: "+sol"; status: ""; away: false }
+        ListElement { nick: "anna"; label: "anna"; status: ""; away: false }
+    }
+
     QtObject {
         id: gatedIrc
 
@@ -257,6 +265,35 @@ TestCase {
     }
 
     QtObject {
+        id: prefixedIrc
+
+        property string currentNick: "live-nick"
+        property string selectedTarget: "#omarchy"
+        property string selectedNetworkId: "libera"
+        property string topic: "A cozy corner for Omarchy users and builders."
+        property bool isChannel: true
+        property int peopleCount: 3
+        property string connectionStatus: "Connected"
+        property string lastError: ""
+        property bool hasAwayPresence: true
+        property bool hasMemberStatus: true
+        property var conversations: liveConversations
+        property var messages: liveMessages
+        property var members: prefixedMembers
+        property var statusConsole: liveConsole
+
+        function selectConversation() {
+        }
+
+        function openDirectMessage() {
+        }
+
+        function sendMessage() {
+            return false;
+        }
+    }
+
+    QtObject {
         id: namedConnection
 
         property string host: "irc.libera.chat"
@@ -290,6 +327,15 @@ TestCase {
         Omairc.OmaircWindow {
             backend: fakeBackend
             irc: liveIrc
+        }
+    }
+
+    Component {
+        id: prefixedWindowComponent
+
+        Omairc.OmaircWindow {
+            backend: fakeBackend
+            irc: prefixedIrc
         }
     }
 
@@ -540,6 +586,31 @@ TestCase {
 
         compare(composer.text, "mira: ");
         verify(composer.activeFocus);
+    }
+
+    function test_tabCompletesLiveNickIgnoringPrefixLabel() {
+        if (appWindow) {
+            appWindow.close();
+            appWindow = null;
+        }
+        var window = createTemporaryObject(prefixedWindowComponent, null);
+        verify(window !== null, "The prefixed-member window should load");
+        tryCompare(window, "visible", true);
+        waitForRendering(window.contentItem);
+        window.requestActivate();
+        tryCompare(window, "active", true);
+
+        var composer = findChild(window, "messageComposer");
+        verify(composer !== null, "Could not find messageComposer");
+        mouseClick(composer);
+        verify(composer.activeFocus);
+        typeText("mi");
+        keyClick(Qt.Key_Tab);
+
+        compare(composer.text, "mira: ");
+        verify(composer.text.indexOf("@") === -1);
+        verify(composer.activeFocus);
+        window.close();
     }
 
     function test_tabCompletesNickAfterText() {
