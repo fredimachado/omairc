@@ -470,7 +470,19 @@ IrcCommandOutcome IrcController::dispatch(const IrcCommand& command,
         break;
     }
     case IrcCommand::Verb::Part: {
-        const QString channel = firstToken(command.argument);
+        QString channel = firstToken(command.argument);
+        if (channel.isEmpty()) {
+            if (m_selected && !isChannel())
+                return IrcCommandOutcome::WrongScope;
+            IrcSession *selected = selectedSession();
+            if (!selected)
+                break;
+            if (selected->state() != IrcSession::State::Registered)
+                return IrcCommandOutcome::NotConnected;
+            channel = m_selectedTarget;
+            sent = !channel.isEmpty() && selected->part(channel);
+            break;
+        }
         sent = !channel.isEmpty() && active->part(channel);
         break;
     }

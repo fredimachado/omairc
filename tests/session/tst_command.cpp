@@ -102,6 +102,14 @@ void CommandTest::parseVerbsAndAliases()
     QCOMPARE(part.verb, IrcCommand::Verb::Part);
     QCOMPARE(part.argument, QStringLiteral("#omarchy"));
 
+    const IrcCommand barePart = IrcCommand::parse(QStringLiteral("/part"));
+    QCOMPARE(barePart.verb, IrcCommand::Verb::Part);
+    QVERIFY(barePart.argument.isEmpty());
+
+    const IrcCommand bareLeave = IrcCommand::parse(QStringLiteral("/leave"));
+    QCOMPARE(bareLeave.verb, IrcCommand::Verb::Part);
+    QVERIFY(bareLeave.argument.isEmpty());
+
     const IrcCommand bareJoin = IrcCommand::parse(QStringLiteral("/join"));
     QCOMPARE(bareJoin.verb, IrcCommand::Verb::Join);
     QVERIFY(bareJoin.argument.isEmpty());
@@ -147,6 +155,9 @@ void CommandTest::catalogLookupAndScope()
     const IrcVerbSpec *leave = IrcVerbTable::lookup(QStringLiteral("leave"));
     QVERIFY(leave);
     QCOMPARE(leave->verb, IrcCommand::Verb::Part);
+    QCOMPARE(leave->usage, QStringLiteral("/part [channel]"));
+    QCOMPARE(leave->scope, IrcVerbScope::Either);
+    QCOMPARE(leave->wrongScopeText, QStringLiteral("Part applies to channels"));
 
     QVERIFY(!IrcVerbTable::find(IrcCommand::Verb::Say));
     QVERIFY(!IrcVerbTable::find(IrcCommand::Verb::Empty));
@@ -201,6 +212,10 @@ void CommandTest::closeWrongScopeUsesCatalogSentence()
     const IrcCommand close = IrcCommand::parse(QStringLiteral("/close"));
     QCOMPARE(ircCommandOutcomeText(IrcCommandOutcome::WrongScope, close),
              QStringLiteral("Close applies to direct messages"));
+
+    const IrcCommand part = IrcCommand::parse(QStringLiteral("/part"));
+    QCOMPARE(ircCommandOutcomeText(IrcCommandOutcome::WrongScope, part),
+             QStringLiteral("Part applies to channels"));
 
     const IrcCommand action = IrcCommand::parse(QStringLiteral("/me waves"));
     QCOMPARE(ircCommandOutcomeText(IrcCommandOutcome::WrongScope, action),

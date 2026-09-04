@@ -66,6 +66,10 @@ private slots:
     void presenceCapabilitiesGateAwayAndStatus();
     void defaultPrefixPaintsLabelNotNick();
     void channelCloseSlashIsWrongScope();
+    void partDefaultsToSelectedChannel();
+    void partFromDirectIsWrongScope();
+    void statusPartDefaultsToSelectedChannel();
+    void partImplicitUsesSelectedSession();
     void closeDirectMessageDropsAndSelectsNeighbor();
     void closeDirectMessageInvokableOnChannelIsSilent();
     void closeDirectMessageWhileDisconnected();
@@ -334,6 +338,103 @@ void ControllerTest::channelCloseSlashIsWrongScope()
     QCOMPARE(transport->writtenFrames().size(), framesBefore);
     QVERIFY(!framesContain(transport->writtenFrames(), QByteArrayLiteral("PART")));
     QVERIFY(!framesContain(transport->writtenFrames(), QByteArrayLiteral("QUIT")));
+}
+
+void ControllerTest::partDefaultsToSelectedChannel()
+{
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+                                                transport);
+    QVERIFY(session);
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    registerSession(session, transport);
+    QVERIFY(!controller.sendMessage(QStringLiteral("/part")));
+    QCOMPARE(controller.lastError(), QStringLiteral("Command was refused"));
+
+    transport->injectBytes(QByteArrayLiteral(":omairc!u@h JOIN :#omarchy\r\n"));
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+
+    QVERIFY(controller.sendMessage(QStringLiteral("/part")));
+    QCOMPARE(transport->writtenFrames().last(),
+             QByteArrayLiteral("PART #omarchy\r\n"));
+
+    QVERIFY(controller.sendMessage(QStringLiteral("/leave")));
+    QCOMPARE(transport->writtenFrames().last(),
+             QByteArrayLiteral("PART #omarchy\r\n"));
+
+    QVERIFY(controller.sendMessage(QStringLiteral("/part #desktop leftover")));
+    QCOMPARE(transport->writtenFrames().last(),
+             QByteArrayLiteral("PART #desktop\r\n"));
+}
+
+void ControllerTest::partFromDirectIsWrongScope()
+{
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+                                                transport);
+    QVERIFY(session);
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    registerSession(session, transport);
+    transport->injectBytes(
+        QByteArrayLiteral(":omairc!u@h JOIN :#omarchy\r\n"
+                          ":lena!u@h PRIVMSG omairc :hi\r\n"));
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("lena"));
+    const int framesBefore = transport->writtenFrames().size();
+
+    QVERIFY(!controller.sendMessage(QStringLiteral("/part")));
+    QCOMPARE(controller.lastError(), QStringLiteral("Part applies to channels"));
+    QCOMPARE(transport->writtenFrames().size(), framesBefore);
+    QVERIFY(!framesContain(transport->writtenFrames(), QByteArrayLiteral("PART")));
+
+    QVERIFY(controller.sendMessage(QStringLiteral("/part #omarchy")));
+    QCOMPARE(transport->writtenFrames().last(),
+             QByteArrayLiteral("PART #omarchy\r\n"));
+}
+
+void ControllerTest::statusPartDefaultsToSelectedChannel()
+{
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+                                                transport);
+    QVERIFY(session);
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    registerSession(session, transport);
+    transport->injectBytes(QByteArrayLiteral(":omairc!u@h JOIN :#omarchy\r\n"));
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+
+    QVERIFY(controller.console()->submit(QStringLiteral("/part")));
+    QCOMPARE(transport->writtenFrames().last(),
+             QByteArrayLiteral("PART #omarchy\r\n"));
+}
+
+void ControllerTest::partImplicitUsesSelectedSession()
+{
+    IrcController controller;
+    auto *transportA = new FakeIrcTransport;
+    auto *transportB = new FakeIrcTransport;
+    IrcSession *sessionA = controller.addSession(config(QStringLiteral("network-a")),
+                                                 transportA);
+    IrcSession *sessionB = controller.addSession(config(QStringLiteral("network-b")),
+                                                 transportB);
+    QVERIFY(sessionA);
+    QVERIFY(sessionB);
+
+    QVERIFY(controller.start(QStringLiteral("network-a")));
+    registerSession(sessionA, transportA);
+    transportA->injectBytes(QByteArrayLiteral(":omairc!u@h JOIN :#omarchy\r\n"));
+
+    registerSession(sessionB, transportB);
+    transportB->injectBytes(QByteArrayLiteral(":omairc!u@h JOIN :#omarchy\r\n"));
+    controller.selectConversation(QStringLiteral("network-b"),
+                                  QStringLiteral("#omarchy"));
+
+    QVERIFY(controller.sendMessage(QStringLiteral("/part")));
+    QCOMPARE(transportB->writtenFrames().last(),
+             QByteArrayLiteral("PART #omarchy\r\n"));
+    QVERIFY(!framesContain(transportA->writtenFrames(), QByteArrayLiteral("PART")));
 }
 
 void ControllerTest::closeDirectMessageDropsAndSelectsNeighbor()
