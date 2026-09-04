@@ -1,4 +1,5 @@
-QT += core gui qml quick quickcontrols2 dbus network
+QT += core gui qml quick quickcontrols2 network
+unix: QT += dbus
 
 CONFIG += c++17 release
 TARGET = omairc

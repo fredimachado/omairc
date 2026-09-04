@@ -9,7 +9,9 @@ TARGET = protocol_tests
 greaterThan(QMAKE_GCC_MAJOR_VERSION, 15): QMAKE_CXXFLAGS += -Wno-sfinae-incomplete
 
 INCLUDEPATH += ../src/irc support
-DEFINES += TEST_CERT_DIR=\\\"$$PWD/support/certs\\\"
+TEST_CERT_DIR = $$PWD/support/certs
+TEST_CERT_DIR = $$replace(TEST_CERT_DIR, \\, /)
+DEFINES += TEST_CERT_DIR=\\\"$$TEST_CERT_DIR\\\"
 
 HEADERS += \
     ../src/irc/ircmessage.h \

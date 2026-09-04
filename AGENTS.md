@@ -71,3 +71,10 @@ launches `./build/omairc --mock`.
 Use `bin/test-live` when Docker is available to drive the real transport
 against Ergo, Solanum, and ngIRCd. It is not part of `bin/test` and fails
 loudly if `docker` or `docker compose` is missing.
+
+On Windows, open `omairc.pro` in Qt Creator, or from a shadow directory run
+`qmake ..\omairc.pro` and then nmake, jom, or mingw32-make. `bin/build`,
+`bin/test`, `bin/test-desktop`, and `bin/test-live` stay Unix scripts. The C++
+suite still builds from `tests/tests.pro` with the same kit. Portal text-scale
+stays 1.0, the window icon stays empty, and the Omarchy `colors.toml` watch
+does nothing when that file is missing.

@@ -157,7 +157,7 @@ std::vector<IrcEvent> IrcEventTranslator::translate(
             ? wireTarget
             : sender;
         if (command == QStringLiteral("PRIVMSG")
-            && body.startsWith(QStringLiteral("\x01ACTION "))
+            && body.startsWith(QStringLiteral("\x01" "ACTION "))
             && body.endsWith(QChar(1))) {
             events.emplace_back(IrcActionEvent{
                 *conversation, sender, body.mid(8, body.size() - 9), now, displayTarget});

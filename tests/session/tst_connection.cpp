@@ -1,5 +1,4 @@
 #include <QCoreApplication>
-#include <QFile>
 #include <QSettings>
 #include <QTemporaryDir>
 #include <QTest>
@@ -36,8 +35,13 @@ void ConnectionTest::init()
 {
     m_dir = std::make_unique<QTemporaryDir>();
     QVERIFY(m_dir->isValid());
+#ifdef Q_OS_WIN
+    QSettings::setDefaultFormat(QSettings::IniFormat);
+    QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, m_dir->path());
+#else
     qputenv("XDG_CONFIG_HOME", m_dir->path().toUtf8());
     QSettings::setPath(QSettings::NativeFormat, QSettings::UserScope, m_dir->path());
+#endif
     QCoreApplication::setOrganizationName(QStringLiteral("omairc"));
     QCoreApplication::setApplicationName(QStringLiteral("omairc"));
     m_transports.clear();
@@ -154,11 +158,13 @@ void ConnectionTest::applyDoesNotWritePassword()
     QVERIFY(connection.apply());
 
     QSettings settings;
-    QFile file(settings.fileName());
-    QVERIFY(file.open(QIODevice::ReadOnly | QIODevice::Text));
-    const QString contents = QString::fromUtf8(file.readAll());
-    QVERIFY(!contents.contains(QLatin1String("password"), Qt::CaseInsensitive));
-    QVERIFY(!contents.contains(QLatin1String("super-secret")));
+    QVERIFY(!settings.allKeys().isEmpty());
+    for (const QString &key : settings.allKeys()) {
+        QVERIFY(!key.contains(QLatin1String("password"), Qt::CaseInsensitive));
+        const QString value = settings.value(key).toString();
+        QVERIFY(!value.contains(QLatin1String("password"), Qt::CaseInsensitive));
+        QVERIFY(!value.contains(QLatin1String("super-secret")));
+    }
 }
 
 int runConnectionTests(int argc, char **argv)
