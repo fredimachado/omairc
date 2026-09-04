@@ -20,7 +20,7 @@ Open a direct message lets a user click another person in a channel member list 
 Preconditions:
 
 - Mock conversation UI is showing (`#omarchy - Omairc`, members visible, no `mira` sidebar row). That is `qml-suite` (`irc` left null), not a fresh compiled launch.
-- A fresh compiled window is titled ` - Omairc` with Connect. Do not start this recipe there.
+- A fresh compiled window is titled `irc.libera.chat Status` with Connect. Do not start this recipe there.
 - For a desktop instance, the member panel is visible (`ONLINE - 12`) and this launch has not already created a `mira` sidebar row.
 
 - **Open seeded anna.** Click `anna` in the member list. Run `control-omairc click-member --name anna` then `control-omairc wait-title --exact "anna - Omairc"`. The topic is `Direct message with anna`, the member panel is gone, and anna's unread badge is gone.

@@ -18,7 +18,11 @@ ApplicationWindow {
     minimumWidth: 760
     minimumHeight: 540
     visible: true
-    title: currentConversation + " - Omairc"
+    title: consoleVisible
+        ? ((connection && connection.displayName.length > 0)
+            ? connection.displayName + " Status"
+            : "Status")
+        : currentConversation + " - Omairc"
 
     readonly property bool darkMode: backend.darkMode
     readonly property real textScale: backend.textScale
@@ -36,6 +40,21 @@ ApplicationWindow {
     property string mockCurrentTopic: "A cozy corner for Omarchy users and builders."
     property var mockActiveMessages: omarchyMessages
     property bool membersVisible: true
+    property bool mockStatusOpen: false
+    readonly property var networkConsole: irc
+        ? (irc.statusConsole ? irc.statusConsole : irc.console)
+        : null
+    readonly property bool consoleVisible: networkConsole
+        ? (networkConsole.open || irc.selectedTarget.length === 0)
+        : mockStatusOpen
+    onConsoleVisibleChanged: {
+        if (!consoleVisible)
+            return;
+        Qt.callLater(function() {
+            consoleList.positionViewAtEnd();
+            composer.forceActiveFocus();
+        });
+    }
     readonly property string currentConversation: irc ? irc.selectedTarget : mockCurrentConversation
     readonly property string currentTopic: irc
         ? (irc.selectedTarget.length > 0
@@ -184,6 +203,7 @@ ApplicationWindow {
 
     function selectConversation(name, networkId) {
         if (irc) {
+            networkConsole.open = false;
             irc.selectConversation(networkId, name);
             Qt.callLater(function() {
                 messageList.positionViewAtEnd();
@@ -191,6 +211,7 @@ ApplicationWindow {
             });
             return;
         }
+        mockStatusOpen = false;
         if (name.charAt(0) !== "#")
             markDirectConversationRead(name);
         mockCurrentConversation = name;
@@ -206,6 +227,25 @@ ApplicationWindow {
         var body = composer.text.trim();
         if (body.length === 0)
             return;
+
+        if (consoleVisible) {
+            if (irc) {
+                if (networkConsole.submit(body))
+                    composer.clear();
+                consoleList.positionViewAtEnd();
+                return;
+            }
+            mockStatusMessages.append({
+                time: Qt.formatTime(new Date(), "hh:mm:ss"),
+                label: "command",
+                text: body,
+                source: "local",
+                severity: "info"
+            });
+            composer.clear();
+            consoleList.positionViewAtEnd();
+            return;
+        }
 
         if (irc) {
             if (irc.sendMessage(body))
@@ -245,14 +285,44 @@ ApplicationWindow {
     Shortcut {
         sequence: "Ctrl+Shift+M"
         context: Qt.ApplicationShortcut
-        enabled: currentConversationIsChannel
+        enabled: currentConversationIsChannel && !consoleVisible
         onActivated: membersVisible = !membersVisible
     }
 
     Shortcut {
+        sequence: "Ctrl+Shift+S"
+        context: Qt.ApplicationShortcut
+        onActivated: {
+            if (win.irc)
+                win.networkConsole.open = !win.networkConsole.open;
+            else
+                win.mockStatusOpen = !win.mockStatusOpen;
+        }
+    }
+
+    Shortcut {
         sequence: "Escape"
-        enabled: connection && connectionSheetOpen && !connection.setupRequired
-        onActivated: connectionSheetOpen = false
+        enabled: {
+            if (win.connection && win.connection.setupRequired)
+                return false;
+            if (win.connection && win.connectionSheetOpen)
+                return true;
+            if (!win.consoleVisible)
+                return false;
+            if (win.irc)
+                return win.irc.selectedTarget.length > 0;
+            return win.mockCurrentConversation.length > 0;
+        }
+        onActivated: {
+            if (win.connection && win.connectionSheetOpen) {
+                win.connectionSheetOpen = false;
+                return;
+            }
+            if (win.irc)
+                win.networkConsole.open = false;
+            else
+                win.mockStatusOpen = false;
+        }
     }
 
     component ConnectionField: Column {
@@ -715,6 +785,24 @@ ApplicationWindow {
     }
 
     ListModel {
+        id: mockStatusMessages
+        ListElement {
+            time: "12:00:01"
+            label: "NOTICE"
+            text: "*** Looking up your hostname..."
+            source: "server"
+            severity: "info"
+        }
+        ListElement {
+            time: "12:00:02"
+            label: "001"
+            text: "Welcome to the mock network"
+            source: "server"
+            severity: "info"
+        }
+    }
+
+    ListModel {
         id: membersModel
         ListElement { nick: "anna"; status: "writing docs"; away: false }
         ListElement { nick: "dax"; status: "on #desktop"; away: false }
@@ -757,12 +845,21 @@ ApplicationWindow {
                 height: win.scaledSize(72)
 
                 MouseArea {
+                    id: networkHeaderButton
+                    objectName: "networkHeaderButton"
                     z: 1
-                    anchors.fill: parent
-                    enabled: win.connection
+                    anchors.left: parent.left
+                    anchors.right: networkEditButton.left
+                    anchors.top: parent.top
+                    anchors.bottom: parent.bottom
                     hoverEnabled: true
-                    cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
-                    onClicked: win.connectionSheetOpen = true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: {
+                        if (win.irc)
+                            win.networkConsole.open = true;
+                        else
+                            win.mockStatusOpen = true;
+                    }
                 }
 
                 Rectangle {
@@ -784,11 +881,42 @@ ApplicationWindow {
                     }
                 }
 
+                Item {
+                    id: networkEditButton
+                    objectName: "networkEditButton"
+                    z: 2
+                    visible: win.connection !== null
+                    anchors.right: parent.right
+                    anchors.rightMargin: win.scaledSize(10)
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: visible ? win.scaledSize(28) : 0
+                    height: win.scaledSize(28)
+                    Accessible.name: "Edit connection"
+                    Accessible.role: Accessible.Button
+                    Accessible.onPressAction: win.connectionSheetOpen = true
+
+                    Text {
+                        anchors.centerIn: parent
+                        text: "edit"
+                        color: editMouse.containsMouse ? win.inkColor : win.mutedColor
+                        font.family: "iA Writer Mono S"
+                        font.pixelSize: win.scaledSize(9)
+                    }
+
+                    MouseArea {
+                        id: editMouse
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: win.connectionSheetOpen = true
+                    }
+                }
+
                 Column {
                     anchors.left: parent.left
                     anchors.leftMargin: win.scaledSize(64)
-                    anchors.right: parent.right
-                    anchors.rightMargin: win.scaledSize(12)
+                    anchors.right: networkEditButton.left
+                    anchors.rightMargin: win.scaledSize(8)
                     anchors.verticalCenter: parent.verticalCenter
                     spacing: win.scaledSize(2)
 
@@ -810,10 +938,12 @@ ApplicationWindow {
                             width: win.scaledSize(7)
                             height: width
                             radius: width / 2
-                            color: win.irc
-                                ? (win.irc.connectionStatus === "Connected"
-                                    ? "#69b978" : win.mutedColor)
-                                : "#69b978"
+                            color: win.networkConsole && win.networkConsole.alerts > 0
+                                ? win.accentColor
+                                : (win.irc
+                                    ? (win.irc.connectionStatus === "Connected"
+                                        ? "#69b978" : win.mutedColor)
+                                    : "#69b978")
                         }
 
                         Text {
@@ -1056,10 +1186,11 @@ ApplicationWindow {
 
             Item {
                 id: conversationHeader
+                visible: !win.consoleVisible
                 anchors.top: parent.top
                 anchors.left: parent.left
                 anchors.right: parent.right
-                height: win.scaledSize(72)
+                height: visible ? win.scaledSize(72) : 0
 
                 Column {
                     anchors.left: parent.left
@@ -1095,7 +1226,7 @@ ApplicationWindow {
                     Accessible.name: win.membersVisible ? "Hide members" : "Show members"
                     Accessible.role: Accessible.Button
                     Accessible.onPressAction: win.membersVisible = !win.membersVisible
-                    visible: win.currentConversationIsChannel
+                    visible: win.currentConversationIsChannel && !win.consoleVisible
                     anchors.right: parent.right
                     anchors.rightMargin: win.scaledSize(19)
                     anchors.verticalCenter: parent.verticalCenter
@@ -1133,9 +1264,59 @@ ApplicationWindow {
                 }
             }
 
+            Item {
+                id: consoleHeader
+                visible: win.consoleVisible
+                anchors.top: parent.top
+                anchors.left: parent.left
+                anchors.right: parent.right
+                height: visible ? win.scaledSize(72) : 0
+
+                Column {
+                    anchors.left: parent.left
+                    anchors.leftMargin: win.scaledSize(24)
+                    anchors.right: parent.right
+                    anchors.rightMargin: win.scaledSize(24)
+                    anchors.verticalCenter: parent.verticalCenter
+                    spacing: win.scaledSize(3)
+
+                    Text {
+                        width: parent.width
+                        text: win.connection && win.connection.displayName.length > 0
+                            ? win.connection.displayName + " Status"
+                            : "Status"
+                        color: win.inkColor
+                        elide: Text.ElideRight
+                        font.family: "iA Writer Mono S"
+                        font.bold: true
+                        font.pixelSize: win.scaledSize(17)
+                    }
+
+                    Text {
+                        width: parent.width
+                        text: win.irc
+                            ? (win.irc.lastError.length > 0
+                                ? win.irc.lastError : win.irc.connectionStatus)
+                            : "mock connected"
+                        color: win.mutedColor
+                        elide: Text.ElideRight
+                        font.family: "iA Writer Mono S"
+                        font.pixelSize: win.scaledSize(11)
+                    }
+                }
+
+                Rectangle {
+                    anchors.bottom: parent.bottom
+                    width: parent.width
+                    height: 1
+                    color: win.dividerColor
+                }
+            }
+
             ListView {
                 id: messageList
                 objectName: "messageList"
+                visible: !win.consoleVisible
                 Accessible.name: "Messages in " + win.currentConversation
                 anchors.top: conversationHeader.bottom
                 anchors.left: parent.left
@@ -1247,6 +1428,90 @@ ApplicationWindow {
                 Component.onCompleted: positionViewAtEnd()
             }
 
+            ListView {
+                id: consoleList
+                objectName: "consoleList"
+                visible: win.consoleVisible
+                Accessible.name: "Status"
+                anchors.top: consoleHeader.bottom
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.bottom: composerShell.top
+                anchors.bottomMargin: win.scaledSize(12)
+                clip: true
+                spacing: 0
+                model: win.networkConsole ? win.networkConsole.lines : mockStatusMessages
+                boundsBehavior: Flickable.StopAtBounds
+
+                ScrollBar.vertical: ScrollBar {
+                    policy: ScrollBar.AsNeeded
+                }
+
+                delegate: Item {
+                    id: consoleDelegate
+
+                    required property string time
+                    required property string label
+                    required property string text
+                    required property string source
+                    required property string severity
+
+                    width: consoleList.width
+                    height: Math.max(win.scaledSize(22), consoleText.implicitHeight + win.scaledSize(8))
+
+                    readonly property color labelColor: consoleDelegate.severity === "alert"
+                        ? win.accentColor
+                        : (consoleDelegate.severity === "trace"
+                            ? win.mutedColor
+                            : win.mixColors(win.pageColor, win.inkColor, 0.62))
+                    readonly property color bodyColor: consoleDelegate.severity === "trace"
+                        ? win.mutedColor
+                        : win.inkColor
+                    readonly property string glyph: consoleDelegate.source === "client"
+                        ? ">>"
+                        : (consoleDelegate.source === "local" ? "--" : "<<")
+
+                    Text {
+                        anchors.left: parent.left
+                        anchors.leftMargin: win.scaledSize(24)
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: win.scaledSize(68)
+                        text: consoleDelegate.time
+                        color: win.mutedColor
+                        font.family: "iA Writer Mono S"
+                        font.pixelSize: win.scaledSize(10)
+                    }
+
+                    Text {
+                        anchors.left: parent.left
+                        anchors.leftMargin: win.scaledSize(96)
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: win.scaledSize(88)
+                        text: consoleDelegate.glyph + " " + consoleDelegate.label
+                        color: consoleDelegate.labelColor
+                        elide: Text.ElideRight
+                        font.family: "iA Writer Mono S"
+                        font.pixelSize: win.scaledSize(10)
+                    }
+
+                    Text {
+                        id: consoleText
+                        anchors.left: parent.left
+                        anchors.leftMargin: win.scaledSize(192)
+                        anchors.right: parent.right
+                        anchors.rightMargin: win.scaledSize(24)
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: consoleDelegate.text
+                        color: consoleDelegate.bodyColor
+                        wrapMode: Text.Wrap
+                        font.family: "iA Writer Mono S"
+                        font.pixelSize: win.scaledSize(12)
+                    }
+                }
+
+                Component.onCompleted: positionViewAtEnd()
+            }
+
             Rectangle {
                 id: composerShell
                 anchors.left: parent.left
@@ -1266,7 +1531,9 @@ ApplicationWindow {
                     id: composer
                     objectName: "messageComposer"
                     Accessible.name: "Message composer"
-                    Accessible.description: "Write a message to " + win.currentConversation
+                    Accessible.description: win.consoleVisible
+                        ? "Command for " + (win.connection ? win.connection.displayName : "Status")
+                        : "Write a message to " + win.currentConversation
                     anchors.left: parent.left
                     anchors.right: sendButton.left
                     anchors.top: parent.top
@@ -1568,6 +1835,7 @@ ApplicationWindow {
             Accessible.name: "Members of " + win.currentConversation
             visible: win.currentConversationIsChannel
                 && win.membersVisible
+                && !win.consoleVisible
                 && win.width >= win.scaledSize(980)
             Layout.preferredWidth: visible ? win.scaledSize(216) : 0
             Layout.minimumWidth: visible ? win.scaledSize(196) : 0

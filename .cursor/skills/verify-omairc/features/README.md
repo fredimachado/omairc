@@ -5,8 +5,8 @@ This directory is the maintained source for verifying the user-facing behavior o
 ## Baseline preconditions
 
 - Prefer `.cursor/skills/verify-omairc/control-omairc launch` when Xvfb and xdotool are installed.
-- Require `control-omairc doctor` to report `ok isolated Omairc`, display owned by this run, and a title that ends with ` - Omairc`.
-- A fresh compiled window opens the connection sheet. Title is ` - Omairc` until a conversation exists. Conversation recipes that assume mock `#omarchy` must use `qml-suite` (`irc` left null). Seeding a profile starts a live session; it does not restore the mock sidebar.
+- Require `control-omairc doctor` to report `ok isolated Omairc`, display owned by this run, and a title that ends with ` - Omairc` or ` Status`.
+- A fresh compiled window opens the connection sheet. Title is `{displayName} Status` until a conversation exists. Conversation recipes that assume mock `#omarchy` must use `qml-suite` (`irc` left null). Seeding a profile starts a live session; it does not restore the mock sidebar.
 - If desktop tools are missing, require `control-omairc doctor-qml` and drive with `control-omairc qml-suite`. Do not send input to the user's live window.
 - Start every desktop recipe from that baseline unless its preconditions say otherwise.
 - Never drive a window that this run did not start. The user's interactive `./build/omairc` is off limits.
@@ -47,3 +47,4 @@ Keep implementation details out of the map. Name only user paths, stable handles
 - [Send a message](./send-message.md) covers composer focus, Enter, SEND, empty input, and `/me` actions.
 - [Toggle members](./toggle-members.md) covers the people control, `Ctrl+Shift+M`, and hiding the panel on direct messages.
 - [Open a direct message](./open-direct-message.md) covers opening or creating a DM from a member row and clearing unread state.
+- [Status console](./status-console.md) covers the network Status pane, header entry points, AUTH notices, and the shared composer.
