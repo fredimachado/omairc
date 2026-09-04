@@ -146,6 +146,8 @@ private slots:
     void ghostClearIsSent();
     void statusClearLeavesConversationMessages();
     void largeChannelJoinDoesNotResetModelsPerNick();
+    void otherChannelNamesDoesNotSnapshotJoiningMembers();
+    void namesBurstFlushesTypingClearedByChat();
 };
 
 void ControllerTest::reducesTrafficAndRoutesOutboundByNetwork()
@@ -1315,6 +1317,80 @@ void ControllerTest::largeChannelJoinDoesNotResetModelsPerNick()
     QCOMPARE(conversationResets.size(), conversationResetsAfterNames);
     QCOMPARE(messageResets.size(), messageResetsAfterNames);
     QVERIFY(memberDataChanges.size() >= 1);
+}
+
+void ControllerTest::otherChannelNamesDoesNotSnapshotJoiningMembers()
+{
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+                                                transport);
+    QVERIFY(session);
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    transport->completeConnect();
+    transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :away-notify\r\n"
+                          ":server CAP omairc ACK :away-notify\r\n"
+                          ":server 001 omairc :Welcome\r\n"));
+
+    auto *members = qobject_cast<QAbstractItemModel *>(controller.members());
+    transport->injectBytes(QByteArrayLiteral(":omairc!u@h JOIN :#big\r\n"));
+    QCOMPARE(controller.selectedTarget(), QStringLiteral("#big"));
+    QCOMPARE(members->rowCount(), 1);
+    QCOMPARE(controller.peopleCount(), 1);
+    QCOMPARE(roleAt(members, 0, MemberListModel::NickRole), QStringLiteral("omairc"));
+
+    QSignalSpy memberResets(members, &QAbstractItemModel::modelReset);
+    QSignalSpy selection(&controller, &IrcController::selectionChanged);
+    transport->injectBytes(
+        QByteArrayLiteral(":server 353 omairc = #big :n0000 n0001\r\n"
+                          ":omairc!u@h JOIN :#other\r\n"
+                          ":server 353 omairc = #other :omairc\r\n"
+                          ":server 366 omairc #other :End of NAMES\r\n"));
+
+    QCOMPARE(members->rowCount(), 1);
+    QCOMPARE(selection.size(), 0);
+    QCOMPARE(memberResets.size(), 0);
+
+    transport->injectBytes(
+        QByteArrayLiteral(":server 366 omairc #big :End of NAMES\r\n"));
+    QCOMPARE(members->rowCount(), 2);
+    QCOMPARE(controller.peopleCount(), 2);
+    QCOMPARE(memberResets.size(), 1);
+    QVERIFY(selection.size() >= 1);
+}
+
+void ControllerTest::namesBurstFlushesTypingClearedByChat()
+{
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+                                                transport);
+    QVERIFY(session);
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    transport->completeConnect();
+    transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :message-tags\r\n"
+                          ":server CAP omairc ACK :message-tags\r\n"
+                          ":server 001 omairc :Welcome\r\n"));
+
+    QSignalSpy typing(&controller, &IrcController::typingChanged);
+    transport->injectBytes(
+        QByteArrayLiteral(":omairc!u@h JOIN :#big\r\n"
+                          ":server 353 omairc = #big :alice\r\n"
+                          "@+typing=active :alice!u@h TAGMSG #big\r\n"));
+    QCOMPARE(controller.typingNicks(), QStringList{QStringLiteral("alice")});
+    QVERIFY(typing.size() >= 1);
+    const int typingAfterTag = typing.size();
+
+    transport->injectBytes(
+        QByteArrayLiteral(":alice!u@h PRIVMSG #big :hello\r\n"));
+    QVERIFY(controller.typingNicks().isEmpty());
+
+    transport->injectBytes(
+        QByteArrayLiteral(":server 366 omairc #big :End of NAMES\r\n"));
+    QVERIFY(controller.typingNicks().isEmpty());
+    QVERIFY(typing.size() > typingAfterTag);
 }
 
 int runControllerTests(int argc, char **argv)

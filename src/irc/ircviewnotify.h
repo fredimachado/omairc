@@ -129,7 +129,6 @@ struct IrcViewClassifier {
         if (!event.complete)
             return IrcViewNotify::none();
         IrcViewNotify notify = IrcViewNotify::resetAll();
-        notify.typing = false;
         notify.rearmTyping = false;
         return notify;
     }
@@ -157,84 +156,6 @@ struct IrcViewClassifier {
     }
 };
 
-struct IrcViewConversationKey {
-    const IrcEventReducer& reducer;
-    const std::optional<IrcConversationKey>& selected;
-
-    std::optional<IrcConversationKey> operator()(const IrcWelcomeEvent&) const
-    {
-        return selected;
-    }
-    std::optional<IrcConversationKey> operator()(const IrcMessageEvent& event) const
-    {
-        return event.conversation;
-    }
-    std::optional<IrcConversationKey> operator()(const IrcNoticeEvent& event) const
-    {
-        return event.conversation;
-    }
-    std::optional<IrcConversationKey> operator()(const IrcActionEvent& event) const
-    {
-        return event.conversation;
-    }
-    std::optional<IrcConversationKey> operator()(const IrcJoinEvent& event) const
-    {
-        return reducer.conversationKey(event.networkId, event.channel);
-    }
-    std::optional<IrcConversationKey> operator()(const IrcPartEvent& event) const
-    {
-        return reducer.conversationKey(event.networkId, event.channel);
-    }
-    std::optional<IrcConversationKey> operator()(const IrcQuitEvent&) const
-    {
-        return selected;
-    }
-    std::optional<IrcConversationKey> operator()(const IrcNickEvent&) const
-    {
-        return selected;
-    }
-    std::optional<IrcConversationKey> operator()(const IrcKickEvent& event) const
-    {
-        return reducer.conversationKey(event.networkId, event.channel);
-    }
-    std::optional<IrcConversationKey> operator()(const IrcTopicEvent& event) const
-    {
-        return reducer.conversationKey(event.networkId, event.channel);
-    }
-    std::optional<IrcConversationKey> operator()(const IrcNamesEvent& event) const
-    {
-        return reducer.conversationKey(event.networkId, event.channel);
-    }
-    std::optional<IrcConversationKey> operator()(const IrcModeEvent& event) const
-    {
-        return reducer.conversationKey(event.networkId, event.target);
-    }
-    std::optional<IrcConversationKey> operator()(const IrcAwayEvent&) const
-    {
-        return selected;
-    }
-    std::optional<IrcConversationKey> operator()(const IrcSelfAwayEvent&) const
-    {
-        return selected;
-    }
-    std::optional<IrcConversationKey> operator()(const IrcMemberStatusEvent&) const
-    {
-        return selected;
-    }
-    std::optional<IrcConversationKey> operator()(const IrcTypingEvent& event) const
-    {
-        return event.conversation;
-    }
-};
-
-inline std::optional<IrcConversationKey> viewConversationKey(
-    const IrcEvent& event,
-    const IrcEventReducer& reducer,
-    const std::optional<IrcConversationKey>& selected)
-{
-    return std::visit(IrcViewConversationKey{reducer, selected}, event);
-}
-
 inline bool channelNamesSyncing(const IrcEventReducer& reducer,
                                 const std::optional<IrcConversationKey>& key)
 {
@@ -251,10 +172,11 @@ inline IrcViewNotify classifyViewNotify(
     const std::optional<IrcConversationKey>& selected)
 {
     IrcViewNotify notify = std::visit(IrcViewClassifier{reducer}, event);
-    if (!channelNamesSyncing(reducer, viewConversationKey(event, reducer, selected)))
+    if (!channelNamesSyncing(reducer, selected))
         return notify;
-    if (notify.conversations || notify.messages || notify.selection
-        || notify.members != IrcMemberSurface::None)
-        return IrcViewNotify::none();
+    notify.messages = false;
+    notify.members = IrcMemberSurface::None;
+    notify.selection = false;
+    notify.nick.clear();
     return notify;
 }

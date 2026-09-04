@@ -649,9 +649,8 @@ void IrcController::echoNoticeIfPresent(IrcSession *session,
         m_reducer.conversationKey(session->networkId(), target);
     if (!m_reducer.find(key))
         return;
-    m_reducer.apply(IrcNoticeEvent{
+    apply(IrcNoticeEvent{
         key, session->nick(), body, QDateTime::currentDateTimeUtc(), target});
-    reloadModels();
 }
 
 IrcCommandOutcome IrcController::clearSurface(IrcComposerSurface surface)
@@ -746,7 +745,6 @@ void IrcController::handleMessage(const QString& networkId,
             features.applyTokens(tokens);
             m_reducer.setServerFeatures(networkId, features);
             reloadModels();
-            emit selectionChanged();
         }
         return;
     }
@@ -777,6 +775,10 @@ void IrcController::handleMessage(const QString& networkId,
 
 void IrcController::reloadModels()
 {
+    if (channelNamesSyncing(m_reducer, m_selected)) {
+        m_conversations.reload();
+        return;
+    }
     publish(IrcViewNotify::resetAll());
 }
 
