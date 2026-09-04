@@ -66,6 +66,8 @@ ApplicationWindow {
         ? irc.isChannel : currentConversation.charAt(0) === "#"
     readonly property int currentPeopleCount: irc
         ? irc.peopleCount : peopleCountFor(currentConversation)
+    readonly property bool memberStatusVisible: !irc || irc.hasMemberStatus
+    readonly property bool awayPresenceVisible: !irc || irc.hasAwayPresence
     readonly property string selfNick: {
         if (irc) {
             var live = irc.currentNick
@@ -1895,11 +1897,11 @@ ApplicationWindow {
                         : win.memberDataFor(index)
                     readonly property string nick: memberData.nick
                     readonly property string status: memberData.status
-                    readonly property bool away: memberData.away
+                    readonly property bool away: win.awayPresenceVisible && memberData.away
 
                     objectName: "member-" + nick
                     Accessible.name: nick
-                    Accessible.description: status
+                    Accessible.description: win.memberStatusVisible ? status : ""
                     Accessible.role: Accessible.Button
                     Accessible.onPressAction: {
                         if (nick !== win.selfNick)
@@ -1939,6 +1941,8 @@ ApplicationWindow {
                         }
 
                         Rectangle {
+                            objectName: "presence-dot-" + memberDelegate.nick
+                            visible: win.awayPresenceVisible
                             anchors.right: parent.right
                             anchors.bottom: parent.bottom
                             width: win.scaledSize(7)
@@ -1969,7 +1973,9 @@ ApplicationWindow {
                         }
 
                         Text {
-                            visible: memberDelegate.status.length > 0
+                            objectName: "member-status-" + memberDelegate.nick
+                            visible: win.memberStatusVisible
+                                && memberDelegate.status.length > 0
                             width: parent.width
                             text: memberDelegate.status
                             color: win.mutedColor
