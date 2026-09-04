@@ -3,6 +3,7 @@
 int runProtocolTests(int argc, char **argv);
 int runCaseMappingTests(int argc, char **argv);
 int runTransportTests(int argc, char **argv);
+int runCapabilityTests(int argc, char **argv);
 int runSessionTests(int argc, char **argv);
 int runControllerTests(int argc, char **argv);
 int runProfileTests(int argc, char **argv);
@@ -17,6 +18,7 @@ int main(int argc, char **argv)
     const int protocolStatus = runProtocolTests(argc, argv);
     const int caseMappingStatus = runCaseMappingTests(argc, argv);
     const int transportStatus = runTransportTests(argc, argv);
+    const int capabilityStatus = runCapabilityTests(argc, argv);
     const int sessionStatus = runSessionTests(argc, argv);
     const int controllerStatus = runControllerTests(argc, argv);
     const int profileStatus = runProfileTests(argc, argv);
@@ -28,6 +30,7 @@ int main(int argc, char **argv)
         protocolStatus,
         caseMappingStatus,
         transportStatus,
+        capabilityStatus,
         sessionStatus,
         controllerStatus,
         profileStatus,
