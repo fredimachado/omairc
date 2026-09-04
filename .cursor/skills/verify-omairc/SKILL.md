@@ -90,6 +90,8 @@ Use `control-omairc` against the isolated window. Stable handles:
 | `send --text "..."` | Focus composer, type, `Enter` |
 | `key --key ctrl+shift+m` | Toggle members on a channel |
 | `key --key ctrl+grave` | Toggle Status. Does nothing useful on first-run Connect. |
+| `key --key alt+Down` | Next sidebar conversation (channels, then DMs). Status is not in this list. |
+| `key --key alt+Up` | Previous sidebar conversation |
 | `key --key ctrl+q` | Quit |
 
 Named clicks are window-relative pixels for 1180x760 at textScale 1.0. They are invalid on a maximized window, a restored user geometry, or a portal text scale other than 1.0. That is why launch isolates XDG and DBus.

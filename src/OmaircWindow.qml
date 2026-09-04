@@ -235,6 +235,51 @@ ApplicationWindow {
         });
     }
 
+    function sidebarConversationRows() {
+        var rows = [];
+
+        function appendVisible(item) {
+            if (item && item.visible)
+                rows.push(item);
+        }
+
+        function appendRepeater(repeater) {
+            for (var index = 0; index < repeater.count; ++index)
+                appendVisible(repeater.itemAt(index));
+        }
+
+        if (irc) {
+            appendRepeater(channelConversationRepeater);
+            appendRepeater(liveDirectConversationRepeater);
+        } else {
+            appendVisible(mockOmarchyRow);
+            appendVisible(mockDesktopRow);
+            appendVisible(mockRicingRow);
+            appendVisible(mockHelpRow);
+            appendRepeater(directConversationRepeater);
+        }
+        return rows;
+    }
+
+    function stepConversation(delta) {
+        var rows = sidebarConversationRows();
+        if (rows.length === 0)
+            return;
+
+        var current = -1;
+        for (var index = 0; index < rows.length; ++index) {
+            if (rows[index].conversationName === currentConversation) {
+                current = index;
+                break;
+            }
+        }
+
+        var nextIndex = current < 0
+            ? (delta > 0 ? 0 : rows.length - 1)
+            : (current + delta + rows.length) % rows.length;
+        rows[nextIndex].activate();
+    }
+
     function sendMessage() {
         var body = composer.text.trim();
         if (body.length === 0)
@@ -317,6 +362,18 @@ ApplicationWindow {
         context: Qt.ApplicationShortcut
         enabled: win.connection !== null
         onActivated: win.connectionSheetOpen = true
+    }
+
+    Shortcut {
+        sequence: "Alt+Down"
+        context: Qt.ApplicationShortcut
+        onActivated: stepConversation(1)
+    }
+
+    Shortcut {
+        sequence: "Alt+Up"
+        context: Qt.ApplicationShortcut
+        onActivated: stepConversation(-1)
     }
 
     Shortcut {
@@ -1022,6 +1079,7 @@ ApplicationWindow {
                 }
 
                 ConversationRow {
+                    id: mockOmarchyRow
                     visible: !win.irc
                     height: visible ? win.scaledSize(36) : 0
                     width: sidebar.width
@@ -1031,6 +1089,7 @@ ApplicationWindow {
                 }
 
                 ConversationRow {
+                    id: mockDesktopRow
                     visible: !win.irc
                     height: visible ? win.scaledSize(36) : 0
                     width: sidebar.width
@@ -1040,6 +1099,7 @@ ApplicationWindow {
                 }
 
                 ConversationRow {
+                    id: mockRicingRow
                     visible: !win.irc
                     height: visible ? win.scaledSize(36) : 0
                     width: sidebar.width
@@ -1049,6 +1109,7 @@ ApplicationWindow {
                 }
 
                 ConversationRow {
+                    id: mockHelpRow
                     visible: !win.irc
                     height: visible ? win.scaledSize(36) : 0
                     width: sidebar.width
@@ -1058,6 +1119,7 @@ ApplicationWindow {
                 }
 
                 Repeater {
+                    id: channelConversationRepeater
                     objectName: win.irc ? "channelConversationRepeater" : ""
                     model: win.irc ? win.irc.conversations : null
 
@@ -1112,6 +1174,7 @@ ApplicationWindow {
                 }
 
                 Repeater {
+                    id: liveDirectConversationRepeater
                     objectName: win.irc ? "directConversationRepeater" : ""
                     model: win.irc ? win.irc.conversations : null
 

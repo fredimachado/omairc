@@ -409,6 +409,59 @@ TestCase {
         window.close();
     }
 
+    function test_walkConversationsWithShortcut() {
+        compare(appWindow.currentConversation, "#omarchy");
+
+        keyClick(Qt.Key_Down, Qt.AltModifier);
+
+        tryCompare(appWindow, "currentConversation", "#desktop");
+        compare(appWindow.currentTopic,
+                "Desktops should feel personal, fast, and calm.");
+        compare(appWindow.currentPeopleCount, 8);
+        compare(item("messageList").Accessible.name, "Messages in #desktop");
+        tryCompare(item("messageComposer"), "activeFocus", true);
+
+        keyClick(Qt.Key_Down, Qt.AltModifier);
+
+        tryCompare(appWindow, "currentConversation", "#ricing");
+        compare(appWindow.currentTopic,
+                "Themes, type, wallpapers, and the tiny details.");
+        compare(appWindow.currentPeopleCount, 10);
+        compare(item("messageList").Accessible.name, "Messages in #ricing");
+    }
+
+    function test_walkConversationsWrapsToLast() {
+        compare(appWindow.currentConversation, "#omarchy");
+
+        keyClick(Qt.Key_Up, Qt.AltModifier);
+
+        tryCompare(appWindow, "currentConversation", "dax");
+        compare(appWindow.currentTopic, "Direct message with dax");
+        compare(item("messageList").Accessible.name, "Messages in dax");
+    }
+
+    function test_walkConversationsFromChannelToDirect() {
+        mouseClick(item("conversation-#help"));
+        tryCompare(appWindow, "currentConversation", "#help");
+
+        keyClick(Qt.Key_Down, Qt.AltModifier);
+
+        tryCompare(appWindow, "currentConversation", "anna");
+        compare(appWindow.currentTopic, "Direct message with anna");
+        compare(item("messageList").Accessible.name, "Messages in anna");
+    }
+
+    function test_walkConversationsClosesStatus() {
+        keyClick(Qt.Key_QuoteLeft, Qt.ControlModifier);
+        tryCompare(appWindow, "consoleVisible", true);
+
+        keyClick(Qt.Key_Down, Qt.AltModifier);
+
+        tryCompare(appWindow, "consoleVisible", false);
+        compare(appWindow.currentConversation, "#desktop");
+        compare(item("messageList").Accessible.name, "Messages in #desktop");
+    }
+
     function test_toggleMembersWithShortcut() {
         var panel = item("membersPanel");
         verify(panel.visible);

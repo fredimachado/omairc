@@ -44,7 +44,7 @@ and do not construct `IrcConnection`.
 
 ## Keyboard controls
 
-- Switch between available channels and direct messages from the sidebar.
+- Walk channels then direct messages with `Alt+Down` and `Alt+Up`. Click a sidebar row to jump.
 - Click a channel member to open or create a direct message.
 - Send messages with `Enter`.
 - Toggle Status with `Ctrl+``.
