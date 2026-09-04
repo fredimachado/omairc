@@ -5,15 +5,42 @@ A dead-simple IRC client for Omarchy, built with Qt Quick and C++.
 ![Omairc interface](omairc.png)
 
 Omairc currently runs as an interactive visual prototype. Networks, channels,
-people, and conversations are mocked locally; it does not open a socket or
-connect to an IRC server yet.
+people, and conversations can be supplied by the IRC subsystem through
+`IrcController`. The transport supports plain TCP and TLS.
 
-## Prototype interactions
+## First-release IRC scope
 
-- Switch between channels and direct messages from the sidebar.
-- Click a channel member to open or create a local direct message.
-- Send local messages with `Enter`.
-- In channels, toggle the member list with `Ctrl+Shift+M`.
+The first release supports one configured network at a time. TLS is enabled by
+default. A network profile contains the nick, username, real name, and optional
+server password. IRCv3 capability negotiation and optional SASL PLAIN
+authentication are supported.
+
+Sessions support joining and leaving channels, channel and direct messages,
+`/me` actions, topics, member lists, nick changes, joins, parts, quits, kicks,
+basic mode events, actionable connection errors, and controlled reconnection.
+
+The first release does not include:
+
+- Multiple simultaneous networks.
+- DCC, file transfer, voice, or video.
+- Bouncer-specific history synchronization.
+- Plugins or scripts.
+- A comprehensive raw-command interface.
+- Persistent local message history.
+
+## Configuration
+
+The compiled application starts with the IRC controller in the `Offline` state.
+It does not provide a network settings interface yet. A caller must add an
+`IrcSession` to `IrcController` and call `start()`. The automated tests inject
+sessions directly.
+
+## Keyboard controls
+
+- Switch between available channels and direct messages from the sidebar.
+- Click a channel member to open or create a direct message.
+- Send messages with `Enter`.
+- Toggle the channel member list with `Ctrl+Shift+M`.
 - Focus the message composer with `Ctrl+L`.
 - Quit with `Ctrl+Q`.
 
@@ -33,6 +60,9 @@ bin/build
 ```sh
 bin/test
 ```
+
+`bin/test` builds and runs the C++ protocol, session, model, and loopback
+transport suites. It also runs the UI suite.
 
 The UI suite loads the production QML in an isolated temporary environment,
 renders it with Qt's offscreen software backend, and controls it with real

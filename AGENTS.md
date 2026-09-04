@@ -3,17 +3,19 @@
 ## Product boundary
 
 - Keep Omairc dead-simple, keyboard-friendly, and visually native to Omarchy.
-- The current app is a visual prototype. Keep all conversations local and
-  mocked until IRC connectivity is explicitly introduced.
+- Conversations may be live through `IrcController`. UI tests may still use
+  the mock path when the `irc` property is null.
 - Prefer a small, calm interface over adding controls for hypothetical future
   features.
 
 ## Architecture
 
 - This is a Qt 6 Quick application built with qmake and C++17.
-- Keep mock conversation state and presentation logic in `src/Main.qml`.
+- Keep mock conversation state and presentation logic in
+  `src/OmaircWindow.qml`.
 - Keep `Backend` limited to desktop integration: Omarchy theme colors, live
   theme watching, text scale, and window geometry.
+- Keep IRC networking, protocol, session, and model code in `src/irc/`.
 - Keep system light/dark mode and portal text-scale detection in
   `SystemTheme`.
 - Use the bundled `iA Writer Mono S` font for all custom interface text.

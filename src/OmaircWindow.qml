@@ -8,6 +8,7 @@ ApplicationWindow {
     id: win
 
     required property var backend
+    property var irc: null
 
     objectName: "omaircWindow"
     width: 1180
@@ -29,12 +30,21 @@ ApplicationWindow {
     readonly property color dividerColor: mixColors(pageColor, inkColor, darkMode ? 0.13 : 0.11)
     readonly property color mutedColor: mixColors(pageColor, inkColor, darkMode ? 0.52 : 0.47)
 
-    property string currentConversation: "#omarchy"
-    property string currentTopic: "A cozy corner for Omarchy users and builders."
-    property var activeMessages: omarchyMessages
+    property string mockCurrentConversation: "#omarchy"
+    property string mockCurrentTopic: "A cozy corner for Omarchy users and builders."
+    property var mockActiveMessages: omarchyMessages
     property bool membersVisible: true
-    readonly property bool currentConversationIsChannel: currentConversation.charAt(0) === "#"
-    readonly property int currentPeopleCount: peopleCountFor(currentConversation)
+    readonly property string currentConversation: irc ? irc.selectedTarget : mockCurrentConversation
+    readonly property string currentTopic: irc
+        ? (irc.selectedTarget.length > 0
+            ? irc.topic
+            : (irc.lastError.length > 0 ? irc.lastError : irc.connectionStatus))
+        : mockCurrentTopic
+    readonly property var activeMessages: irc ? irc.messages : mockActiveMessages
+    readonly property bool currentConversationIsChannel: irc
+        ? irc.isChannel : currentConversation.charAt(0) === "#"
+    readonly property int currentPeopleCount: irc
+        ? irc.peopleCount : peopleCountFor(currentConversation)
 
     Material.theme: darkMode ? Material.Dark : Material.Light
     Material.accent: accentColor
@@ -137,6 +147,14 @@ ApplicationWindow {
     }
 
     function openDirectMessage(nick) {
+        if (irc) {
+            irc.openDirectMessage(nick);
+            Qt.callLater(function() {
+                messageList.positionViewAtEnd();
+                composer.forceActiveFocus();
+            });
+            return;
+        }
         for (var index = 0; index < directConversations.count; ++index) {
             if (directConversations.get(index).conversation === nick) {
                 selectConversation(nick);
@@ -162,12 +180,20 @@ ApplicationWindow {
         }
     }
 
-    function selectConversation(name) {
+    function selectConversation(name, networkId) {
+        if (irc) {
+            irc.selectConversation(networkId, name);
+            Qt.callLater(function() {
+                messageList.positionViewAtEnd();
+                composer.forceActiveFocus();
+            });
+            return;
+        }
         if (name.charAt(0) !== "#")
             markDirectConversationRead(name);
-        currentConversation = name;
-        currentTopic = topicFor(name);
-        activeMessages = messagesFor(name);
+        mockCurrentConversation = name;
+        mockCurrentTopic = topicFor(name);
+        mockActiveMessages = messagesFor(name);
         Qt.callLater(function() {
             messageList.positionViewAtEnd();
             composer.forceActiveFocus();
@@ -178,6 +204,13 @@ ApplicationWindow {
         var body = composer.text.trim();
         if (body.length === 0)
             return;
+
+        if (irc) {
+            if (irc.sendMessage(body))
+                composer.clear();
+            messageList.positionViewAtEnd();
+            return;
+        }
 
         var kind = "message";
         if (body.indexOf("/me ") === 0) {
@@ -221,6 +254,7 @@ ApplicationWindow {
         required property int unread
         required property bool mention
         property bool direct: false
+        property string networkId: ""
 
         objectName: "conversation-" + conversationName
         Accessible.name: conversationName
@@ -230,11 +264,12 @@ ApplicationWindow {
         height: win.scaledSize(36)
 
         function activate() {
-            if (!conversationRow.direct) {
+            if (!win.irc && !conversationRow.direct) {
                 conversationRow.unread = 0;
                 conversationRow.mention = false;
             }
-            win.selectConversation(conversationRow.conversationName);
+            win.selectConversation(conversationRow.conversationName,
+                                   conversationRow.networkId);
         }
 
         Rectangle {
@@ -683,11 +718,17 @@ ApplicationWindow {
                             width: win.scaledSize(7)
                             height: width
                             radius: width / 2
-                            color: "#69b978"
+                            color: win.irc
+                                ? (win.irc.connectionStatus === "Connected"
+                                    ? "#69b978" : win.mutedColor)
+                                : "#69b978"
                         }
 
                         Text {
-                            text: "mock connected"
+                            text: win.irc
+                                ? (win.irc.lastError.length > 0
+                                    ? win.irc.lastError : win.irc.connectionStatus)
+                                : "mock connected"
                             color: win.mutedColor
                             font.family: "iA Writer Mono S"
                             font.pixelSize: win.scaledSize(10)
@@ -740,6 +781,8 @@ ApplicationWindow {
                 }
 
                 ConversationRow {
+                    visible: !win.irc
+                    height: visible ? win.scaledSize(36) : 0
                     width: sidebar.width
                     conversationName: "#omarchy"
                     unread: 0
@@ -747,6 +790,8 @@ ApplicationWindow {
                 }
 
                 ConversationRow {
+                    visible: !win.irc
+                    height: visible ? win.scaledSize(36) : 0
                     width: sidebar.width
                     conversationName: "#desktop"
                     unread: 3
@@ -754,6 +799,8 @@ ApplicationWindow {
                 }
 
                 ConversationRow {
+                    visible: !win.irc
+                    height: visible ? win.scaledSize(36) : 0
                     width: sidebar.width
                     conversationName: "#ricing"
                     unread: 12
@@ -761,10 +808,29 @@ ApplicationWindow {
                 }
 
                 ConversationRow {
+                    visible: !win.irc
+                    height: visible ? win.scaledSize(36) : 0
                     width: sidebar.width
                     conversationName: "#help"
                     unread: 0
                     mention: false
+                }
+
+                Repeater {
+                    model: win.irc ? win.irc.conversations : null
+
+                    delegate: ConversationRow {
+                        required property string conversation
+
+                        unread: model.unread
+                        mention: model.mention
+                        direct: model.direct
+                        networkId: model.networkId
+                        visible: !model.direct
+                        width: sidebar.width
+                        height: visible ? win.scaledSize(36) : 0
+                        conversationName: conversation
+                    }
                 }
 
                 Item {
@@ -787,8 +853,8 @@ ApplicationWindow {
 
                 Repeater {
                     id: directConversationRepeater
-                    objectName: "directConversationRepeater"
-                    model: directConversations
+                    objectName: win.irc ? "" : "directConversationRepeater"
+                    model: win.irc ? null : directConversations
 
                     delegate: ConversationRow {
                         required property string conversation
@@ -800,6 +866,24 @@ ApplicationWindow {
                         unread: directUnread
                         mention: directMention
                         direct: true
+                    }
+                }
+
+                Repeater {
+                    objectName: win.irc ? "directConversationRepeater" : ""
+                    model: win.irc ? win.irc.conversations : null
+
+                    delegate: ConversationRow {
+                        required property string conversation
+
+                        unread: model.unread
+                        mention: model.mention
+                        direct: model.direct
+                        networkId: model.networkId
+                        visible: model.direct
+                        width: sidebar.width
+                        height: visible ? win.scaledSize(36) : 0
+                        conversationName: conversation
                     }
                 }
             }
@@ -1203,13 +1287,15 @@ ApplicationWindow {
                 anchors.bottom: mockNotice.top
                 anchors.bottomMargin: win.scaledSize(10)
                 clip: true
-                model: win.currentPeopleCount
+                model: win.irc ? win.irc.members : win.currentPeopleCount
                 boundsBehavior: Flickable.StopAtBounds
 
                 delegate: Item {
                     id: memberDelegate
 
-                    readonly property var memberData: win.memberDataFor(index)
+                    readonly property var memberData: win.irc
+                        ? ({nick: model.nick, status: model.status, away: model.away})
+                        : win.memberDataFor(index)
                     readonly property string nick: memberData.nick
                     readonly property string status: memberData.status
                     readonly property bool away: memberData.away
@@ -1219,7 +1305,7 @@ ApplicationWindow {
                     Accessible.description: status
                     Accessible.role: Accessible.Button
                     Accessible.onPressAction: {
-                        if (nick !== "fred")
+                        if (nick !== (win.irc ? win.irc.currentNick : "fred"))
                             win.openDirectMessage(nick);
                     }
                     width: ListView.view.width
@@ -1299,7 +1385,7 @@ ApplicationWindow {
                     MouseArea {
                         id: memberMouse
                         anchors.fill: parent
-                        enabled: memberDelegate.nick !== "fred"
+                        enabled: memberDelegate.nick !== (win.irc ? win.irc.currentNick : "fred")
                         hoverEnabled: true
                         cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
                         onClicked: win.openDirectMessage(memberDelegate.nick)
@@ -1325,7 +1411,8 @@ ApplicationWindow {
                     spacing: win.scaledSize(4)
 
                     Text {
-                        text: "VISUAL PROTOTYPE"
+                        text: win.irc ? win.irc.connectionStatus.toUpperCase()
+                                      : "VISUAL PROTOTYPE"
                         color: win.accentColor
                         font.family: "iA Writer Mono S"
                         font.bold: true
@@ -1334,7 +1421,11 @@ ApplicationWindow {
 
                     Text {
                         width: parent.width
-                        text: "No network traffic. Everything here is local."
+                        text: win.irc
+                            ? (win.irc.lastError.length > 0
+                                ? win.irc.lastError
+                                : "IRC traffic stays inside configured sessions.")
+                            : "No network traffic. Everything here is local."
                         color: win.mutedColor
                         wrapMode: Text.Wrap
                         font.family: "iA Writer Mono S"
