@@ -37,28 +37,34 @@ password only if that network needs one. Apply starts the session.
 Omairc remembers host, port, TLS, nick, username, real name, and autojoin in
 `$XDG_CONFIG_HOME/omairc/omairc.conf` under `networks/<id>/`. It does not write
 the password. Type the password again on the next launch if the server asks for
-it. Click the sidebar network name to reopen the sheet.
+it. Press `Ctrl+,` or click `edit` beside the network name to reopen the sheet.
+The network name itself opens Status.
 
 Automated tests still inject an `IrcSession` through `IrcController::addSession()`
 and do not construct `IrcConnection`.
 
 ## Keyboard controls
 
-- Walk channels then direct messages with `Alt+Down` and `Alt+Up`. Click a sidebar row to jump.
-- Jump to the next unread with `Alt+A`, mentions first.
-- Click a channel member, or press Enter on a focused member, to open or create a direct message.
-- Send messages with `Enter`.
-- Scroll the transcript with `Page Up` and `Page Down`. The composer stays focused.
-- Complete a nick with `Tab` in the composer.
-- Recall sent lines with `Up` and `Down` in the composer.
-- Toggle Status with `Ctrl+``.
-- Open Connect with `Ctrl+,`.
-- Toggle the channel member list with `Ctrl+Shift+M`.
-- Focus the channel member list with `Ctrl+Shift+P`. The panel reopens if it was hidden.
-- Focus the message composer with `Ctrl+L`.
-- List these shortcuts with `Ctrl+/`.
-- Dismiss Status, Connect, or the shortcut list with Escape.
-- Quit with `Ctrl+Q`.
+`Ctrl+/` shows this list in the app.
+
+| Shortcut | Action |
+|---|---|
+| `Alt+Down` / `Alt+Up` | Next / previous conversation (channels, then DMs) |
+| `Alt+A` | Next unread, mentions first |
+| ``Ctrl+` `` | Toggle Status |
+| `Ctrl+,` | Open Connect |
+| `Ctrl+Shift+M` | Toggle the channel member list |
+| `Ctrl+Shift+P` | Focus the member list (reopens the panel if it was hidden) |
+| `Enter` | Send, or open a DM from a focused member |
+| `Page Up` / `Page Down` | Scroll the visible transcript (composer stays focused) |
+| `Tab` | Complete a nick in the composer |
+| `Up` / `Down` | Recall sent lines in the composer |
+| `Ctrl+L` | Focus the composer |
+| `Escape` | Dismiss Status, Connect, or this shortcut list |
+| `Ctrl+/` | Toggle the shortcut list |
+| `Ctrl+Q` | Quit |
+
+Sidebar rows and member names still work with a click. Status is not a sidebar row.
 
 Colors follow the current Omarchy theme
 (`~/.local/state/omarchy/current/theme/colors.toml`) and update live. Text
