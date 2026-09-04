@@ -78,6 +78,74 @@ TestCase {
         }
     }
 
+    ListModel {
+        id: liveConversations
+        ListElement {
+            conversation: "#omarchy"
+            unread: 0
+            mention: false
+            direct: false
+            networkId: "libera"
+        }
+        ListElement {
+            conversation: "AUTH"
+            unread: 1
+            mention: false
+            direct: true
+            networkId: "libera"
+        }
+    }
+
+    ListModel {
+        id: liveMessages
+    }
+
+    ListModel {
+        id: liveMembers
+    }
+
+    QtObject {
+        id: liveIrc
+
+        property string selectedTarget: "AUTH"
+        property string selectedNetworkId: "libera"
+        property string topic: "Ident notices"
+        property bool isChannel: false
+        property int peopleCount: 0
+        property string connectionStatus: "Connected"
+        property string lastError: ""
+        property var conversations: liveConversations
+        property var messages: liveMessages
+        property var members: liveMembers
+
+        function selectConversation(networkId, name) {
+            if (!networkId || !name)
+                return;
+            selectedNetworkId = networkId;
+            selectedTarget = name;
+            isChannel = name.charAt(0) === "#";
+            topic = isChannel ? "" : "Direct message with " + name;
+            peopleCount = isChannel ? 1 : 0;
+        }
+
+        function openDirectMessage(nick) {
+            selectConversation(selectedNetworkId, nick);
+        }
+
+        function sendMessage(text) {
+            return false;
+        }
+    }
+
+    Component {
+        id: liveWindowComponent
+
+        Omairc.OmaircWindow {
+            backend: fakeBackend
+            irc: liveIrc
+        }
+    }
+
     function init() {
         appWindow = createTemporaryObject(windowComponent, null);
         verify(appWindow !== null, "The production Omairc window should load");
@@ -190,6 +258,52 @@ TestCase {
         } catch (error) {
             fail("Failed to save screenshot 'connection-sheet': " + error);
         }
+        window.close();
+    }
+
+    function test_liveSidebarClickSwitchesFromAuthToChannel() {
+        var window = createTemporaryObject(liveWindowComponent, null);
+        verify(window !== null, "The live window should load");
+        tryCompare(window, "visible", true);
+        waitForRendering(window.contentItem);
+
+        compare(window.currentConversation, "AUTH");
+        var channels = findChild(window, "channelConversationRepeater");
+        verify(channels !== null, "Live channel repeater should be named");
+        var dms = findChild(window, "directConversationRepeater");
+        verify(dms !== null, "Live direct-message repeater should be named");
+
+        var channel = null;
+        var channelInDirects = false;
+        var authInDirects = false;
+        var index = 0;
+        for (index = 0; index < channels.count; ++index) {
+            var channelRow = channels.itemAt(index);
+            if (channelRow && channelRow.visible
+                    && channelRow.conversationName === "#omarchy")
+                channel = channelRow;
+        }
+        for (index = 0; index < dms.count; ++index) {
+            var directRow = dms.itemAt(index);
+            if (!directRow || !directRow.visible)
+                continue;
+            if (directRow.conversationName === "#omarchy")
+                channelInDirects = true;
+            if (directRow.conversationName === "AUTH")
+                authInDirects = true;
+        }
+
+        verify(channel !== null, "Live #omarchy row should render under Channels");
+        compare(channel.networkId, "libera");
+        compare(channel.direct, false);
+        verify(!channelInDirects, "#omarchy must stay out of Direct Messages");
+        verify(authInDirects, "AUTH belongs under Direct Messages");
+
+        mouseClick(channel);
+
+        tryCompare(window, "currentConversation", "#omarchy");
+        compare(liveIrc.selectedNetworkId, "libera");
+        compare(window.currentConversationIsChannel, true);
         window.close();
     }
 
