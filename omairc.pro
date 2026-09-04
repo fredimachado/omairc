@@ -25,7 +25,8 @@ HEADERS += \
     src/irc/memberlistmodel.h \
     src/irc/irccontroller.h \
     src/irc/ircnetworkprofile.h \
-    src/irc/ircprofilestore.h
+    src/irc/ircprofilestore.h \
+    src/irc/ircconnection.h
 
 SOURCES += \
     src/main.cpp \
@@ -46,6 +47,7 @@ SOURCES += \
     src/irc/memberlistmodel.cpp \
     src/irc/irccontroller.cpp \
     src/irc/ircnetworkprofile.cpp \
-    src/irc/ircprofilestore.cpp
+    src/irc/ircprofilestore.cpp \
+    src/irc/ircconnection.cpp
 
 RESOURCES += src/resources.qrc

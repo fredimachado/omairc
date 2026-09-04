@@ -30,6 +30,7 @@ HEADERS += \
     ../src/irc/irccontroller.h \
     ../src/irc/ircnetworkprofile.h \
     ../src/irc/ircprofilestore.h \
+    ../src/irc/ircconnection.h \
     ../src/irc/qtirctransport.h \
     support/fakeirctransport.h
 
@@ -52,12 +53,14 @@ SOURCES += \
     ../src/irc/irccontroller.cpp \
     ../src/irc/ircnetworkprofile.cpp \
     ../src/irc/ircprofilestore.cpp \
+    ../src/irc/ircconnection.cpp \
     ../src/irc/qtirctransport.cpp \
     support/fakeirctransport.cpp \
     integration/tst_qtirctransport.cpp \
     session/tst_transport.cpp \
     session/tst_session.cpp \
     session/tst_profile.cpp \
+    session/tst_connection.cpp \
     session/tst_controller.cpp \
     session/tst_reducer.cpp \
     models/tst_models.cpp

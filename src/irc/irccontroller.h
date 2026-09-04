@@ -32,6 +32,7 @@ public:
     IrcSession *addSession(const IrcSessionConfig& config,
                            IrcTransport *transport,
                            IrcReconnectTimer *reconnectTimer = nullptr);
+    bool discardSession(const QString &networkId);
 
     QAbstractItemModel *conversations();
     QAbstractItemModel *messages();
@@ -54,6 +55,9 @@ public:
 signals:
     void selectionChanged();
     void statusChanged();
+    void errorOccurred(const QString &networkId,
+                       IrcSession::ErrorKind kind,
+                       const QString &message);
 
 private:
     void apply(const IrcEvent& event);
