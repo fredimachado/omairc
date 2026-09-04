@@ -181,16 +181,11 @@ std::vector<IrcEvent> IrcEventTranslator::translate(
         std::vector<IrcName> names;
         const QStringList entries =
             parameter(message, 3).split(QLatin1Char(' '), Qt::SkipEmptyParts);
-        for (QString nick : entries) {
-            QStringList statuses;
-            while (!nick.isEmpty()) {
-                const std::string status = features.statusForPrefix(nick.front().toLatin1());
-                if (status.empty())
-                    break;
-                statuses.append(text(status));
-                nick.remove(0, 1);
-            }
-            names.push_back({nick, statuses.join(QLatin1Char(','))});
+        for (const QString& token : entries) {
+            const auto parsed = features.parseNamesToken(utf8(token));
+            if (!parsed)
+                continue;
+            names.push_back({QString::fromStdString(parsed->nick), parsed->ranks});
         }
         events.emplace_back(IrcNamesEvent{
             networkId, parameter(message, 2), std::move(names), false});

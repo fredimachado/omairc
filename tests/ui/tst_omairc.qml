@@ -197,7 +197,7 @@ TestCase {
     ListModel {
         id: gatedMembers
 
-        ListElement { nick: "anna"; status: "writing docs"; away: true }
+        ListElement { nick: "anna"; label: "anna"; status: "writing docs"; away: true }
     }
 
     QtObject {

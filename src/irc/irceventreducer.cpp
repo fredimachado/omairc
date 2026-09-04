@@ -2,6 +2,9 @@
 
 #include <QByteArray>
 
+#include <string>
+#include <vector>
+
 namespace
 {
 std::string utf8(const QString& value)
@@ -121,8 +124,14 @@ std::optional<IrcMemberView> IrcEventReducer::memberView(
     const IrcNickPresence facts = presence == m_presence.end()
         ? IrcNickPresence{}
         : presence->second.lookup(normalizedNick);
-    return IrcMemberView{member->second.displayNick, member->second.prefixModes,
-                         facts.away, facts.status};
+    const IrcServerFeatures& features = serverFeatures(key.networkId);
+    return IrcMemberView{
+        member->second.displayNick,
+        QString::fromStdString(features.memberLabel(
+            member->second.ranks, utf8(member->second.displayNick))),
+        member->second.ranks,
+        facts.away,
+        facts.status};
 }
 
 void IrcEventReducer::clearPresenceFacts(const QString& networkId,
@@ -305,8 +314,12 @@ void IrcEventReducer::reduce(const IrcJoinEvent& event)
     if (!channel)
         return;
     const QString normalizedNick = normalize(event.networkId, event.nick);
+    IrcPrefixSet ranks;
+    const auto existing = channel->members.find(normalizedNick);
+    if (existing != channel->members.end())
+        ranks = existing->second.ranks;
     channel->members.insert_or_assign(
-        normalizedNick, IrcMemberState{event.nick, QString()});
+        normalizedNick, IrcMemberState{event.nick, ranks});
     if (isSelf(event.networkId, event.nick))
         channel->joined = true;
     appendEvent(conversation, event.nick + QStringLiteral(" joined"));
@@ -440,7 +453,7 @@ void IrcEventReducer::reduce(const IrcNamesEvent& event)
     for (const IrcName& name : event.names) {
         channel->members.insert_or_assign(
             normalize(event.networkId, name.nick),
-            IrcMemberState{name.nick, name.prefixModes});
+            IrcMemberState{name.nick, name.ranks});
     }
     if (event.complete)
         channel->namesSyncing = false;
@@ -449,11 +462,28 @@ void IrcEventReducer::reduce(const IrcNamesEvent& event)
 void IrcEventReducer::reduce(const IrcModeEvent& event)
 {
     const IrcConversationKey key = conversationKey(event.networkId, event.target);
-    if (!serverFeatures(event.networkId).isChannel(utf8(key.normalizedTarget)))
+    const IrcServerFeatures& features = serverFeatures(event.networkId);
+    if (!features.isChannel(utf8(key.normalizedTarget)))
         return;
     IrcConversationState& conversation = ensureConversation(key, event.target);
     appendEvent(conversation, event.author + QStringLiteral(" set mode ")
                      + event.mode);
+    IrcChannelState *channel = conversation.channel();
+    if (!channel)
+        return;
+
+    std::vector<std::string> arguments;
+    arguments.reserve(static_cast<std::size_t>(event.arguments.size()));
+    for (const QString& argument : event.arguments)
+        arguments.push_back(utf8(argument));
+    for (const IrcPrefixChange& change :
+         features.prefixChanges(utf8(event.mode), arguments)) {
+        const auto member = channel->members.find(
+            normalize(event.networkId, fromUtf8(change.nick())));
+        if (member == channel->members.end())
+            continue;
+        member->second.ranks = features.apply(member->second.ranks, change);
+    }
 }
 
 void IrcEventReducer::reduce(const IrcAwayEvent& event)

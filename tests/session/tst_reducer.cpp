@@ -15,6 +15,12 @@ void welcome(IrcEventReducer& reducer,
 {
     reducer.apply(IrcWelcomeEvent{network, nick});
 }
+
+IrcName parsedName(std::string_view token)
+{
+    const auto parsed = IrcServerFeatures().parseNamesToken(token);
+    return {QString::fromStdString(parsed->nick), parsed->ranks};
+}
 }
 
 class ReducerTest : public QObject
@@ -34,6 +40,8 @@ private slots:
     void metadataStatusIsSeparateFromPrefixModes();
     void presenceIsDroppedWithTheLastChannelAndOnWelcome();
     void losingACapabilityClearsTheFactsItFed();
+    void modeEditsExistingRowsOnly();
+    void joinOfListedNickKeepsRanks();
 };
 
 void ReducerTest::namesFillAndCompleteWithoutDuplicates()
@@ -44,15 +52,13 @@ void ReducerTest::namesFillAndCompleteWithoutDuplicates()
     reducer.apply(IrcNamesEvent{
         networkA,
         QStringLiteral("#room"),
-        {{QStringLiteral("Alice"), QStringLiteral("o")},
-         {QStringLiteral("Bob"), QString()}},
+        {parsedName("@Alice"), parsedName("Bob")},
         false,
     });
     reducer.apply(IrcNamesEvent{
         networkA,
         QStringLiteral("#room"),
-        {{QStringLiteral("ALICE"), QStringLiteral("o")},
-         {QStringLiteral("Carol"), QStringLiteral("v")}},
+        {parsedName("@ALICE"), parsedName("+Carol")},
         true,
     });
     reducer.apply(IrcJoinEvent{
@@ -64,8 +70,10 @@ void ReducerTest::namesFillAndCompleteWithoutDuplicates()
     QVERIFY(conversation->isChannel());
     QCOMPARE(conversation->peopleCount(), 3);
     QVERIFY(!conversation->channel()->namesSyncing);
-    QCOMPARE(conversation->channel()->members.at(QStringLiteral("alice")).prefixModes,
-             QStringLiteral("o"));
+    QCOMPARE(conversation->channel()->members.at(QStringLiteral("alice")).ranks,
+             parsedName("@Alice").ranks);
+    QCOMPARE(reducer.memberView(conversation->key, QStringLiteral("alice"))->label,
+             QStringLiteral("@ALICE"));
     QCOMPARE(reducer.memberView(conversation->key, QStringLiteral("alice"))->status,
              QString());
 }
@@ -309,7 +317,7 @@ void ReducerTest::metadataStatusIsSeparateFromPrefixModes()
     reducer.apply(IrcNamesEvent{
         networkA,
         QStringLiteral("#room"),
-        {{QStringLiteral("Alice"), QStringLiteral("o")}},
+        {parsedName("@Alice")},
         true,
     });
 
@@ -318,7 +326,8 @@ void ReducerTest::metadataStatusIsSeparateFromPrefixModes()
     const std::optional<IrcMemberView> member =
         reducer.memberView(room, QStringLiteral("alice"));
     QCOMPARE(member->status, QStringLiteral("writing docs"));
-    QCOMPARE(member->prefixModes, QStringLiteral("o"));
+    QCOMPARE(member->label, QStringLiteral("@Alice"));
+    QCOMPARE(member->ranks, parsedName("@Alice").ranks);
     QVERIFY(!member->isAway());
 
     reducer.apply(IrcMemberStatusEvent{networkA, QStringLiteral("Alice"), QString()});
@@ -378,6 +387,76 @@ void ReducerTest::losingACapabilityClearsTheFactsItFed()
 
     reducer.clearPresenceFacts(networkA, false, true);
     QCOMPARE(reducer.memberView(room, QStringLiteral("alice"))->status, QString());
+}
+
+void ReducerTest::modeEditsExistingRowsOnly()
+{
+    IrcEventReducer reducer;
+    welcome(reducer, networkA);
+    const IrcConversationKey room =
+        reducer.conversationKey(networkA, QStringLiteral("#room"));
+    reducer.apply(IrcNamesEvent{
+        networkA,
+        QStringLiteral("#room"),
+        {parsedName("Alice")},
+        true,
+    });
+
+    reducer.apply(IrcModeEvent{
+        networkA, QStringLiteral("#room"), QStringLiteral("op"),
+        QStringLiteral("+o"), {QStringLiteral("alice")}});
+    QCOMPARE(reducer.memberView(room, QStringLiteral("alice"))->label,
+             QStringLiteral("@Alice"));
+
+    reducer.apply(IrcModeEvent{
+        networkA, QStringLiteral("#room"), QStringLiteral("op"),
+        QStringLiteral("+o"), {QStringLiteral("alice")}});
+    QCOMPARE(reducer.memberView(room, QStringLiteral("alice"))->label,
+             QStringLiteral("@Alice"));
+
+    reducer.apply(IrcModeEvent{
+        networkA, QStringLiteral("#room"), QStringLiteral("op"),
+        QStringLiteral("+v"), {QStringLiteral("alice")}});
+    QCOMPARE(reducer.memberView(room, QStringLiteral("alice"))->label,
+             QStringLiteral("@Alice"));
+
+    reducer.apply(IrcModeEvent{
+        networkA, QStringLiteral("#room"), QStringLiteral("op"),
+        QStringLiteral("-o"), {QStringLiteral("alice")}});
+    QCOMPARE(reducer.memberView(room, QStringLiteral("alice"))->label,
+             QStringLiteral("+Alice"));
+
+    reducer.apply(IrcModeEvent{
+        networkA, QStringLiteral("#room"), QStringLiteral("op"),
+        QStringLiteral("-v"), {QStringLiteral("alice")}});
+    QCOMPARE(reducer.memberView(room, QStringLiteral("alice"))->label,
+             QStringLiteral("Alice"));
+
+    reducer.apply(IrcModeEvent{
+        networkA, QStringLiteral("#room"), QStringLiteral("op"),
+        QStringLiteral("+o"), {QStringLiteral("ghost")}});
+    QVERIFY(!reducer.memberView(room, QStringLiteral("ghost")));
+    QCOMPARE(reducer.find(room)->peopleCount(), 1);
+}
+
+void ReducerTest::joinOfListedNickKeepsRanks()
+{
+    IrcEventReducer reducer;
+    welcome(reducer, networkA);
+    const IrcConversationKey room =
+        reducer.conversationKey(networkA, QStringLiteral("#room"));
+    reducer.apply(IrcNamesEvent{
+        networkA,
+        QStringLiteral("#room"),
+        {parsedName("@+Alice")},
+        true,
+    });
+    reducer.apply(IrcJoinEvent{
+        networkA, QStringLiteral("#room"), QStringLiteral("alice")});
+    QCOMPARE(reducer.memberView(room, QStringLiteral("alice"))->label,
+             QStringLiteral("@alice"));
+    QCOMPARE(reducer.memberView(room, QStringLiteral("alice"))->nick,
+             QStringLiteral("alice"));
 }
 
 int runReducerTests(int argc, char **argv)

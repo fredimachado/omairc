@@ -20,6 +20,7 @@ class MemberListModel : public QAbstractListModel
 public:
     enum Role {
         NickRole = Qt::UserRole + 1,
+        LabelRole,
         StatusRole,
         AwayRole,
         NetworkIdRole,

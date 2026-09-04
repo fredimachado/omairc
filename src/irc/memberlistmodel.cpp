@@ -26,6 +26,8 @@ QVariant MemberListModel::data(const QModelIndex& index, int role) const
     switch (role) {
     case NickRole:
         return member->nick;
+    case LabelRole:
+        return member->label;
     case StatusRole:
         return member->status;
     case AwayRole:
@@ -41,6 +43,7 @@ QHash<int, QByteArray> MemberListModel::roleNames() const
 {
     return {
         {NickRole, "nick"},
+        {LabelRole, "label"},
         {StatusRole, "status"},
         {AwayRole, "away"},
         {NetworkIdRole, "networkId"},
