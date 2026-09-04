@@ -7,3 +7,5 @@ qrc_*.cpp
 .qmake.stash
 Makefile
 test-artifacts/
+.audit/
+.worktrees/
