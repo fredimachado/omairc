@@ -42,6 +42,7 @@ ApplicationWindow {
     property bool membersVisible: true
     property bool mockStatusOpen: false
     property bool shortcutsSheetEscapeGuard: false
+    readonly property bool shortcutOverlayOpen: shortcutsSheet.opened
     readonly property var networkConsole: irc
         ? (irc.statusConsole ? irc.statusConsole : irc.console)
         : null
@@ -634,20 +635,21 @@ ApplicationWindow {
     Shortcut {
         sequence: "Ctrl+L"
         context: Qt.ApplicationShortcut
+        enabled: !win.shortcutOverlayOpen
         onActivated: composer.forceActiveFocus()
     }
 
     Shortcut {
         sequence: "Ctrl+Shift+M"
         context: Qt.ApplicationShortcut
-        enabled: currentConversationIsChannel && !consoleVisible
+        enabled: currentConversationIsChannel && !consoleVisible && !win.shortcutOverlayOpen
         onActivated: membersVisible = !membersVisible
     }
 
     Shortcut {
         sequence: "Ctrl+Shift+P"
         context: Qt.ApplicationShortcut
-        enabled: currentConversationIsChannel && !consoleVisible
+        enabled: currentConversationIsChannel && !consoleVisible && !win.shortcutOverlayOpen
         onActivated: focusMembersList()
     }
 
@@ -665,6 +667,7 @@ ApplicationWindow {
     Shortcut {
         sequence: "Ctrl+`"
         context: Qt.ApplicationShortcut
+        enabled: !win.shortcutOverlayOpen
         onActivated: {
             if (win.irc)
                 win.networkConsole.open = !win.networkConsole.open;
@@ -676,39 +679,42 @@ ApplicationWindow {
     Shortcut {
         sequence: "Ctrl+,"
         context: Qt.ApplicationShortcut
-        enabled: win.connection !== null
+        enabled: win.connection !== null && !win.shortcutOverlayOpen
         onActivated: win.connectionSheetOpen = true
     }
 
     Shortcut {
         sequence: "Alt+Down"
         context: Qt.ApplicationShortcut
+        enabled: !win.shortcutOverlayOpen
         onActivated: stepConversation(1)
     }
 
     Shortcut {
         sequence: "Alt+Up"
         context: Qt.ApplicationShortcut
+        enabled: !win.shortcutOverlayOpen
         onActivated: stepConversation(-1)
     }
 
     Shortcut {
         sequence: "Alt+A"
         context: Qt.ApplicationShortcut
+        enabled: !win.shortcutOverlayOpen
         onActivated: jumpToNextUnread()
     }
 
     Shortcut {
         sequence: "PgUp"
         context: Qt.ApplicationShortcut
-        enabled: !win.connectionOverlayVisible
+        enabled: !win.connectionOverlayVisible && !win.shortcutOverlayOpen
         onActivated: scrollTranscript(-1)
     }
 
     Shortcut {
         sequence: "PgDown"
         context: Qt.ApplicationShortcut
-        enabled: !win.connectionOverlayVisible
+        enabled: !win.connectionOverlayVisible && !win.shortcutOverlayOpen
         onActivated: scrollTranscript(1)
     }
 
@@ -2519,7 +2525,7 @@ ApplicationWindow {
         y: Math.round((win.height - height) / 2)
         width: win.scaledSize(348)
         padding: win.scaledSize(16)
-        modal: false
+        modal: true
         focus: true
         closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
         onOpened: shortcutsSheetEscapeGuard = true

@@ -800,6 +800,27 @@ TestCase {
         compare(appWindow.currentConversation, "#omarchy");
     }
 
+    function test_shortcutsSheetBlocksWindowShortcuts() {
+        var sheet = item("shortcutsSheet");
+
+        keyClick(Qt.Key_Slash, Qt.ControlModifier);
+        tryCompare(sheet, "opened", true);
+        compare(appWindow.currentConversation, "#omarchy");
+        compare(appWindow.consoleVisible, false);
+
+        keyClick(Qt.Key_Down, Qt.AltModifier);
+        compare(appWindow.currentConversation, "#omarchy");
+        verify(sheet.opened);
+
+        keyClick(Qt.Key_QuoteLeft, Qt.ControlModifier);
+        compare(appWindow.consoleVisible, false);
+        verify(sheet.opened);
+
+        keyClick(Qt.Key_A, Qt.AltModifier);
+        compare(appWindow.currentConversation, "#omarchy");
+        verify(sheet.opened);
+    }
+
     function test_shortcutsSheetEscapeDoesNotLeaveStatus() {
         var sheet = item("shortcutsSheet");
 
