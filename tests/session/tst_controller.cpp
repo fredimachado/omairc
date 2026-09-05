@@ -150,6 +150,8 @@ private slots:
     void otherChannelNamesDoesNotSnapshotJoiningMembers();
     void namesBurstFlushesTypingClearedByChat();
     void chatDuringNamesUpdatesMessagesWithoutMemberReset();
+    void incomingNickRetargetsSelectedDirect();
+    void incomingNickCaseOnlyRetargetsDirect();
 };
 
 void ControllerTest::reducesTrafficAndRoutesOutboundByNetwork()
@@ -1505,6 +1507,81 @@ void ControllerTest::chatDuringNamesUpdatesMessagesWithoutMemberReset()
     QCOMPARE(controller.peopleCount(), 4);
     QCOMPARE(controller.peopleCount(), members->rowCount());
     QCOMPARE(memberResets.size(), 1);
+}
+
+void ControllerTest::incomingNickRetargetsSelectedDirect()
+{
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+                                                transport);
+    QVERIFY(session);
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    transport->completeConnect();
+    transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
+                          ":server 001 omairc :Welcome\r\n"
+                          ":omairc!u@h JOIN :#omarchy\r\n"
+                          ":server 353 omairc = #omarchy :omairc Alice\r\n"
+                          ":server 366 omairc #omarchy :End of NAMES\r\n"
+                          ":Alice!u@h PRIVMSG omairc :hi\r\n"));
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("Alice"));
+    QCOMPARE(controller.selectedTarget(), QStringLiteral("Alice"));
+    QCOMPARE(controller.currentNick(), QStringLiteral("omairc"));
+
+    transport->injectBytes(QByteArrayLiteral(":Alice!u@h NICK :Alicia\r\n"));
+
+    auto *conversations =
+        qobject_cast<QAbstractItemModel *>(controller.conversations());
+    auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
+    QCOMPARE(controller.selectedTarget(), QStringLiteral("Alicia"));
+    QVERIFY(rowForTarget(conversations, QStringLiteral("Alice")) < 0);
+    QVERIFY(rowForTarget(conversations, QStringLiteral("Alicia")) >= 0);
+    QCOMPARE(messages->rowCount(), 2);
+    QCOMPARE(roleAt(messages, messages->rowCount() - 1, MessageListModel::KindRole),
+             QStringLiteral("event"));
+    QCOMPARE(roleAt(messages, messages->rowCount() - 1, MessageListModel::BodyRole),
+             QStringLiteral("Alice is now Alicia"));
+
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    auto *members = qobject_cast<QAbstractItemModel *>(controller.members());
+    QCOMPARE(roleAt(members, 0, MemberListModel::NickRole), QStringLiteral("Alicia"));
+    QCOMPARE(roleAt(messages, messages->rowCount() - 1, MessageListModel::BodyRole),
+             QStringLiteral("Alice is now Alicia"));
+
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("Alicia"));
+    QVERIFY(controller.sendMessage(QStringLiteral("hello")));
+    QCOMPARE(transport->writtenFrames().last(),
+             QByteArrayLiteral("PRIVMSG Alicia :hello\r\n"));
+
+    transport->injectBytes(QByteArrayLiteral(":omairc!u@h NICK :fred\r\n"));
+    QCOMPARE(controller.currentNick(), QStringLiteral("fred"));
+}
+
+void ControllerTest::incomingNickCaseOnlyRetargetsDirect()
+{
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+                                                transport);
+    QVERIFY(session);
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    transport->completeConnect();
+    transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
+                          ":server 001 omairc :Welcome\r\n"
+                          ":Alice!u@h PRIVMSG omairc :hi\r\n"));
+    QCOMPARE(controller.selectedTarget(), QStringLiteral("Alice"));
+
+    transport->injectBytes(QByteArrayLiteral(":Alice!u@h NICK :ALICE\r\n"));
+
+    auto *conversations =
+        qobject_cast<QAbstractItemModel *>(controller.conversations());
+    QCOMPARE(controller.selectedTarget(), QStringLiteral("ALICE"));
+    QVERIFY(rowForTarget(conversations, QStringLiteral("ALICE")) >= 0);
+    QVERIFY(controller.sendMessage(QStringLiteral("hello")));
+    QCOMPARE(transport->writtenFrames().last(),
+             QByteArrayLiteral("PRIVMSG ALICE :hello\r\n"));
 }
 
 int runControllerTests(int argc, char **argv)

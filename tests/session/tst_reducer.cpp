@@ -32,6 +32,8 @@ private slots:
     void nickAndQuitStayNetworkScoped();
     void selfMembershipControlsChannelLifecycle();
     void directMessagesUseCompositeKeys();
+    void nickAppendsEventToDirectMessage();
+    void nickCaseOnlyUpdatesDirectDisplayNick();
     void identicalChannelsStayIsolated();
     void advertisedChannelTypesCreateChannels();
     void unreadMentionsRespectSelection();
@@ -170,6 +172,48 @@ void ReducerTest::directMessagesUseCompositeKeys()
         reducer.conversationKey(networkA, QStringLiteral("alicia")));
     QVERIFY(renamed);
     QCOMPARE(renamed->target, QStringLiteral("Alicia"));
+}
+
+void ReducerTest::nickAppendsEventToDirectMessage()
+{
+    IrcEventReducer reducer;
+    welcome(reducer, networkA);
+    const IrcConversationKey alice =
+        reducer.conversationKey(networkA, QStringLiteral("Alice"));
+    reducer.apply(IrcMessageEvent{
+        alice, QStringLiteral("Alice"), QStringLiteral("hello"), timestamp,
+        QStringLiteral("Alice")});
+
+    reducer.apply(IrcNickEvent{
+        networkA, QStringLiteral("Alice"), QStringLiteral("Alicia")});
+
+    const IrcConversationState *renamed = reducer.find(
+        reducer.conversationKey(networkA, QStringLiteral("Alicia")));
+    QVERIFY(renamed);
+    QCOMPARE(renamed->target, QStringLiteral("Alicia"));
+    QCOMPARE(renamed->messages.size(), std::size_t(2));
+    QCOMPARE(renamed->messages.back().kind, IrcMessageKind::Event);
+    QCOMPARE(renamed->messages.back().body, QStringLiteral("Alice is now Alicia"));
+}
+
+void ReducerTest::nickCaseOnlyUpdatesDirectDisplayNick()
+{
+    IrcEventReducer reducer;
+    welcome(reducer, networkA);
+    const IrcConversationKey alice =
+        reducer.conversationKey(networkA, QStringLiteral("Alice"));
+    reducer.apply(IrcMessageEvent{
+        alice, QStringLiteral("Alice"), QStringLiteral("hello"), timestamp,
+        QStringLiteral("Alice")});
+
+    reducer.apply(IrcNickEvent{
+        networkA, QStringLiteral("Alice"), QStringLiteral("ALICE")});
+
+    const IrcConversationState *same = reducer.find(alice);
+    QVERIFY(same);
+    QCOMPARE(same->target, QStringLiteral("ALICE"));
+    QCOMPARE(same->messages.size(), std::size_t(2));
+    QCOMPARE(same->messages.back().body, QStringLiteral("Alice is now ALICE"));
 }
 
 void ReducerTest::identicalChannelsStayIsolated()
