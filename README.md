@@ -34,7 +34,7 @@ icon stays empty.
 
 ## Build
 
-Linux:
+Linux, from the repo root:
 
 ```sh
 bin/build
@@ -45,21 +45,24 @@ bin/build
 `--mock` skips Connect and any saved profile, and opens the bundled prototype
 conversations instead.
 
-Windows uses a Qt 6 kit with Quick, Quick Controls 2, and Network. DBus is not
-linked. Open `omairc.pro` in Qt Creator, or from a shadow directory:
+Windows, from the repo root:
 
 ```bat
-qmake ..\omairc.pro
-nmake
-rem or jom, or mingw32-make
+bin\build.bat
+build\release\omairc.exe
+build\release\omairc.exe --mock
 ```
 
-Run `omairc.exe --mock` and `omairc.exe` from that directory. Qt Creator puts
-Qt on `PATH`. For a copied tree, run `windeployqt omairc.exe`, then copy
-OpenSSL next to the exe (`libssl-3-x64.dll` / `libcrypto-3-x64.dll` from the
-Qt OpenSSL tools, matching the kit) so `tls/qopensslbackend.dll` can load.
-Libera Chat on 6697 needs that when the kit is OpenSSL-backed (typical MinGW,
-and also when Schannel is absent).
+`bin\build.bat` finds a Qt 6 kit (MSVC preferred, then MinGW), loads the
+MSVC toolchain when needed, builds into `build\release\`, and runs
+`windeployqt` so the exe starts without Qt on `PATH`. Set `QMAKE` to a
+specific `qmake.exe` to pick a kit. Opening `omairc.pro` in Qt Creator still
+works.
+
+For a copied tree, also copy OpenSSL next to the exe (`libssl-3-x64.dll` /
+`libcrypto-3-x64.dll` from the Qt OpenSSL tools, matching the kit) so
+`tls\qopensslbackend.dll` can load. Libera Chat on 6697 needs that when the
+kit is OpenSSL-backed (typical MinGW, and also when Schannel is absent).
 
 ## Test
 
