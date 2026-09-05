@@ -2,11 +2,15 @@
 #include <QTest>
 
 #include "fakeirctransport.h"
+#include "ircchannelmode.h"
 #include "irccommand.h"
 #include "irccontroller.h"
+#include "ircserverfeatures.h"
 #include "ircsession.h"
 #include "ircslashcomplete.h"
 #include "networklogmodel.h"
+
+#include <type_traits>
 
 namespace
 {
@@ -31,11 +35,6 @@ void welcome(FakeIrcTransport *transport)
                           ":server 001 omairc :Welcome\r\n"));
 }
 
-QVariant roleAt(const QAbstractItemModel *model, int row, int role)
-{
-    return model->data(model->index(row, 0), role);
-}
-
 bool logContains(QAbstractItemModel *lines, const QString& needle)
 {
     for (int row = 0; row < lines->rowCount(); ++row) {
@@ -55,6 +54,34 @@ bool framesContain(const QByteArrayList& frames, const QByteArray& needle)
     }
     return false;
 }
+
+struct ParsedChannelMode {
+    bool ok = false;
+    bool query = false;
+    QString channel;
+    QString modes;
+    QStringList parameters;
+};
+
+ParsedChannelMode parsedChannelMode(const QString& argument)
+{
+    ParsedChannelMode result;
+    const auto request = IrcChannelModeRequest::parse(argument, IrcServerFeatures());
+    if (!request)
+        return result;
+    result.ok = true;
+    result.channel = request->channel();
+    request->visit([&](const auto& payload) {
+        using T = std::decay_t<decltype(payload)>;
+        if constexpr (std::is_same_v<T, IrcChannelModeRequest::Query>) {
+            result.query = true;
+        } else {
+            result.modes = payload.modes;
+            result.parameters = payload.parameters;
+        }
+    });
+    return result;
+}
 }
 
 class CommandTest : public QObject
@@ -72,12 +99,15 @@ private slots:
     void parseNotice();
     void parseAwayAndBack();
     void parseWhois();
+    void parseMode();
+    void parseChannelModeRequest();
     void catalogLookupAndScope();
     void closeWrongScopeUsesCatalogSentence();
     void conversationSendAndUnknown();
     void statusSubmitDoesNotSendAction();
     void awayAndBackWriteAwayFrames();
     void whoisSendsAndDefaults();
+    void modeSendsAndRefuses();
     void slashProjectClosed();
     void slashProjectOpen();
     void slashSessionKeys();
@@ -313,6 +343,92 @@ void CommandTest::parseWhois()
     QVERIFY(escapedWhois.isLiveMessage());
 }
 
+void CommandTest::parseMode()
+{
+    const IrcCommand mode = IrcCommand::parse(QStringLiteral("/mode #omarchy +o lena"));
+    QCOMPARE(mode.verb, IrcCommand::Verb::Mode);
+    QCOMPARE(mode.argument, QStringLiteral("#omarchy +o lena"));
+    QCOMPARE(mode.name, QStringLiteral("/mode"));
+    QVERIFY(!mode.isLiveMessage());
+    QVERIFY(mode.allowedOn(IrcComposerSurface::Conversation));
+    QVERIFY(mode.allowedOn(IrcComposerSurface::Status));
+
+    const IrcCommand folded = IrcCommand::parse(QStringLiteral("/MODE #omarchy"));
+    QCOMPARE(folded.verb, IrcCommand::Verb::Mode);
+    QCOMPARE(folded.argument, QStringLiteral("#omarchy"));
+    QCOMPARE(folded.name, QStringLiteral("/MODE"));
+    QVERIFY(!folded.isLiveMessage());
+
+    const IrcCommand empty = IrcCommand::parse(QStringLiteral("/mode"));
+    QCOMPARE(empty.verb, IrcCommand::Verb::Mode);
+    QVERIFY(empty.argument.isEmpty());
+    QVERIFY(!empty.isLiveMessage());
+
+    const IrcCommand escaped = IrcCommand::parse(QStringLiteral("//mode #omarchy"));
+    QCOMPARE(escaped.verb, IrcCommand::Verb::Say);
+    QCOMPARE(escaped.argument, QStringLiteral("/mode #omarchy"));
+    QVERIFY(escaped.isLiveMessage());
+}
+
+void CommandTest::parseChannelModeRequest()
+{
+    const ParsedChannelMode query = parsedChannelMode(QStringLiteral("#omarchy"));
+    QVERIFY(query.ok);
+    QVERIFY(query.query);
+    QCOMPARE(query.channel, QStringLiteral("#omarchy"));
+
+    const ParsedChannelMode plusO = parsedChannelMode(QStringLiteral("#omarchy +o lena"));
+    QVERIFY(plusO.ok);
+    QVERIFY(!plusO.query);
+    QCOMPARE(plusO.channel, QStringLiteral("#omarchy"));
+    QCOMPARE(plusO.modes, QStringLiteral("+o"));
+    QCOMPARE(plusO.parameters, QStringList{QStringLiteral("lena")});
+
+    const ParsedChannelMode plusOoo =
+        parsedChannelMode(QStringLiteral("#omarchy +ooo n1 n2 n3"));
+    QVERIFY(plusOoo.ok);
+    QVERIFY(!plusOoo.query);
+    QCOMPARE(plusOoo.channel, QStringLiteral("#omarchy"));
+    QCOMPARE(plusOoo.modes, QStringLiteral("+ooo"));
+    QCOMPARE(plusOoo.parameters,
+             (QStringList{QStringLiteral("n1"), QStringLiteral("n2"), QStringLiteral("n3")}));
+
+    const ParsedChannelMode minusO = parsedChannelMode(QStringLiteral("#omarchy -o lena"));
+    QVERIFY(minusO.ok);
+    QVERIFY(!minusO.query);
+    QCOMPARE(minusO.channel, QStringLiteral("#omarchy"));
+    QCOMPARE(minusO.modes, QStringLiteral("-o"));
+    QCOMPARE(minusO.parameters, QStringList{QStringLiteral("lena")});
+
+    const ParsedChannelMode plusB =
+        parsedChannelMode(QStringLiteral("#omarchy +b *!*@*.example"));
+    QVERIFY(plusB.ok);
+    QVERIFY(!plusB.query);
+    QCOMPARE(plusB.channel, QStringLiteral("#omarchy"));
+    QCOMPARE(plusB.modes, QStringLiteral("+b"));
+    QCOMPARE(plusB.parameters, QStringList{QStringLiteral("*!*@*.example")});
+
+    const ParsedChannelMode plusNt = parsedChannelMode(QStringLiteral("#omarchy +nt"));
+    QVERIFY(plusNt.ok);
+    QVERIFY(!plusNt.query);
+    QCOMPARE(plusNt.channel, QStringLiteral("#omarchy"));
+    QCOMPARE(plusNt.modes, QStringLiteral("+nt"));
+    QVERIFY(plusNt.parameters.isEmpty());
+
+    const ParsedChannelMode mixed =
+        parsedChannelMode(QStringLiteral("#omarchy +o +v a b"));
+    QVERIFY(mixed.ok);
+    QVERIFY(!mixed.query);
+    QCOMPARE(mixed.modes, QStringLiteral("+o"));
+    QCOMPARE(mixed.parameters,
+             (QStringList{QStringLiteral("+v"), QStringLiteral("a"), QStringLiteral("b")}));
+
+    QVERIFY(!parsedChannelMode(QString()).ok);
+    QVERIFY(!parsedChannelMode(QStringLiteral("lena +i")).ok);
+    QVERIFY(!parsedChannelMode(QStringLiteral("+o lena")).ok);
+    QVERIFY(!parsedChannelMode(QStringLiteral("#omarchy +\r o")).ok);
+}
+
 void CommandTest::catalogLookupAndScope()
 {
     const IrcVerbSpec *join = IrcVerbTable::lookup(QStringLiteral("J"));
@@ -331,7 +447,7 @@ void CommandTest::catalogLookupAndScope()
     QVERIFY(!IrcVerbTable::find(IrcCommand::Verb::Empty));
     QVERIFY(!IrcVerbTable::find(IrcCommand::Verb::Unknown));
 
-    QCOMPARE(IrcVerbTable::all().size(), 13);
+    QCOMPARE(IrcVerbTable::all().size(), 14);
     for (const IrcVerbSpec& row : IrcVerbTable::all())
         QVERIFY(row.name != QLatin1String("say"));
 
@@ -396,8 +512,17 @@ void CommandTest::catalogLookupAndScope()
     QCOMPARE(whois->wrongScopeText, QStringLiteral("Whois applies to direct messages"));
     QVERIFY(whois->aliases.isEmpty());
 
+    const IrcVerbSpec *mode = IrcVerbTable::lookup(QStringLiteral("mode"));
+    QVERIFY(mode);
+    QCOMPARE(mode->verb, IrcCommand::Verb::Mode);
+    QCOMPARE(mode->name, QStringLiteral("mode"));
+    QCOMPARE(mode->usage, QStringLiteral("/mode <channel> [[+|-]modechars [parameters]]"));
+    QCOMPARE(mode->scope, IrcVerbScope::Either);
+    QVERIFY(mode->wrongScopeText.isEmpty());
+    QVERIFY(mode->aliases.isEmpty());
+
     const QVector<IrcVerbSpec> status = IrcVerbTable::visibleOn(IrcComposerSurface::Status);
-    QCOMPARE(status.size(), 10);
+    QCOMPARE(status.size(), 11);
     for (const IrcVerbSpec& row : status) {
         QVERIFY(row.allowedOn(IrcComposerSurface::Status));
         QVERIFY(row.verb != IrcCommand::Verb::Action);
@@ -407,7 +532,7 @@ void CommandTest::catalogLookupAndScope()
 
     const QVector<IrcVerbSpec> conversation =
         IrcVerbTable::visibleOn(IrcComposerSurface::Conversation);
-    QCOMPARE(conversation.size(), 13);
+    QCOMPARE(conversation.size(), 14);
     bool sawMe = false;
     bool sawClose = false;
     bool sawQuery = false;
@@ -416,6 +541,7 @@ void CommandTest::catalogLookupAndScope()
     bool sawAway = false;
     bool sawBack = false;
     bool sawWhois = false;
+    bool sawMode = false;
     for (const IrcVerbSpec& row : conversation) {
         if (row.name == QLatin1String("me"))
             sawMe = true;
@@ -433,6 +559,8 @@ void CommandTest::catalogLookupAndScope()
             sawBack = true;
         if (row.name == QLatin1String("whois"))
             sawWhois = true;
+        if (row.name == QLatin1String("mode"))
+            sawMode = true;
     }
     QVERIFY(sawMe);
     QVERIFY(sawClose);
@@ -442,6 +570,7 @@ void CommandTest::catalogLookupAndScope()
     QVERIFY(sawAway);
     QVERIFY(sawBack);
     QVERIFY(sawWhois);
+    QVERIFY(sawMode);
 
     const IrcCommand say = IrcCommand::parse(QStringLiteral("hello"));
     QVERIFY(say.allowedOn(IrcComposerSurface::Conversation));
@@ -703,6 +832,87 @@ void CommandTest::whoisSendsAndDefaults()
                            QByteArrayLiteral("WHOIS")));
 }
 
+void CommandTest::modeSendsAndRefuses()
+{
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    IrcSession *session = controller.addSession(config(), transport);
+    QVERIFY(session);
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    welcome(transport);
+    QCOMPARE(session->state(), IrcSession::State::Registered);
+    transport->injectBytes(QByteArrayLiteral(":omairc!u@h JOIN :#omarchy\r\n"));
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+
+    QVERIFY(controller.sendMessage(QStringLiteral("/mode #omarchy +o lena")));
+    QCOMPARE(transport->writtenFrames().last(),
+             QByteArrayLiteral("MODE #omarchy +o lena\r\n"));
+
+    QVERIFY(controller.sendMessage(QStringLiteral("/mode #omarchy +ooo n1 n2 n3")));
+    QCOMPARE(transport->writtenFrames().last(),
+             QByteArrayLiteral("MODE #omarchy +ooo n1 n2 n3\r\n"));
+
+    QVERIFY(controller.sendMessage(QStringLiteral("/mode #omarchy -o lena")));
+    QCOMPARE(transport->writtenFrames().last(),
+             QByteArrayLiteral("MODE #omarchy -o lena\r\n"));
+
+    QVERIFY(controller.sendMessage(QStringLiteral("/mode #omarchy +b *!*@*.example")));
+    QCOMPARE(transport->writtenFrames().last(),
+             QByteArrayLiteral("MODE #omarchy +b *!*@*.example\r\n"));
+
+    QVERIFY(controller.sendMessage(QStringLiteral("/mode #omarchy")));
+    QCOMPARE(transport->writtenFrames().last(),
+             QByteArrayLiteral("MODE #omarchy\r\n"));
+
+    const int beforeNick = transport->writtenFrames().size();
+    QVERIFY(!controller.sendMessage(QStringLiteral("/mode lena +i")));
+    QCOMPARE(controller.lastError(), QStringLiteral("Command was refused"));
+    QCOMPARE(transport->writtenFrames().size(), beforeNick);
+    QVERIFY(!framesContain(transport->writtenFrames().mid(beforeNick),
+                           QByteArrayLiteral("MODE")));
+
+    const int beforeEmpty = transport->writtenFrames().size();
+    QVERIFY(!controller.sendMessage(QStringLiteral("/mode")));
+    QCOMPARE(controller.lastError(), QStringLiteral("Command was refused"));
+    QCOMPARE(transport->writtenFrames().size(), beforeEmpty);
+    QVERIFY(!framesContain(transport->writtenFrames().mid(beforeEmpty),
+                           QByteArrayLiteral("MODE")));
+
+    IrcStatusConsole *console = controller.console();
+    QVERIFY(console->submit(QStringLiteral("/mode #omarchy +o lena")));
+    QCOMPARE(transport->writtenFrames().last(),
+             QByteArrayLiteral("MODE #omarchy +o lena\r\n"));
+
+    IrcController lonely;
+    QVERIFY(!lonely.sendMessage(QStringLiteral("/mode")));
+    QCOMPARE(lonely.lastError(), QStringLiteral("Command was refused"));
+
+    IrcController unselected;
+    auto *unselectedTransport = new FakeIrcTransport;
+    IrcSession *unselectedSession = unselected.addSession(config(), unselectedTransport);
+    QVERIFY(unselectedSession);
+    QVERIFY(unselected.start(QStringLiteral("libera")));
+    welcome(unselectedTransport);
+    QCOMPARE(unselectedSession->state(), IrcSession::State::Registered);
+    QVERIFY(unselected.selectedTarget().isEmpty());
+    const int beforeUnselected = unselectedTransport->writtenFrames().size();
+    QVERIFY(!unselected.sendMessage(QStringLiteral("/mode #omarchy")));
+    QCOMPARE(unselected.lastError(),
+             QStringLiteral("Select a connected conversation first"));
+    QCOMPARE(unselectedTransport->writtenFrames().size(), beforeUnselected);
+    QVERIFY(!framesContain(unselectedTransport->writtenFrames().mid(beforeUnselected),
+                           QByteArrayLiteral("MODE")));
+
+    transport->remoteClose();
+    QVERIFY(session->state() != IrcSession::State::Registered);
+    const int beforeOffline = transport->writtenFrames().size();
+    QVERIFY(!controller.sendMessage(QStringLiteral("/mode #omarchy +o lena")));
+    QCOMPARE(controller.lastError(), QStringLiteral("Not connected"));
+    QCOMPARE(transport->writtenFrames().size(), beforeOffline);
+    QVERIFY(!framesContain(transport->writtenFrames().mid(beforeOffline),
+                           QByteArrayLiteral("MODE")));
+}
+
 void CommandTest::slashProjectClosed()
 {
     const QStringList closedInputs = {
@@ -742,7 +952,9 @@ void CommandTest::slashProjectOpen()
 
     const auto meStatus = IrcSlashComplete::project(
         QStringLiteral("/me"), IrcComposerSurface::Status);
-    QVERIFY(!meStatus.isOpen());
+    QVERIFY(meStatus.isOpen());
+    QCOMPARE(meStatus.hits().first().label, QStringLiteral("/mode"));
+    QVERIFY(!meStatus.containsLabel(QStringLiteral("/me")));
     const auto meConversation = IrcSlashComplete::project(
         QStringLiteral("/me"), IrcComposerSurface::Conversation);
     QVERIFY(meConversation.isOpen());

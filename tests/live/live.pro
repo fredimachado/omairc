@@ -31,6 +31,7 @@ HEADERS += \
     ../../src/irc/ircnetworklog.h \
     ../../src/irc/networklogmodel.h \
     ../../src/irc/irccommand.h \
+    ../../src/irc/ircchannelmode.h \
     ../../src/irc/ircslashcomplete.h \
     ../../src/irc/ircstatusconsole.h \
     ../../src/irc/ircsession.h \
@@ -64,6 +65,7 @@ SOURCES += \
     ../../src/irc/ircnetworklog.cpp \
     ../../src/irc/networklogmodel.cpp \
     ../../src/irc/irccommand.cpp \
+    ../../src/irc/ircchannelmode.cpp \
     ../../src/irc/ircslashcomplete.cpp \
     ../../src/irc/ircstatusconsole.cpp \
     ../../src/irc/ircsession.cpp \

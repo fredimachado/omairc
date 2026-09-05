@@ -53,6 +53,9 @@ const QVector<IrcVerbSpec>& IrcVerbTable::all()
         {IrcCommand::Verb::Whois, QStringLiteral("whois"), {},
          QStringLiteral("/whois [nick]"), IrcVerbScope::Either,
          QStringLiteral("Whois applies to direct messages")},
+        {IrcCommand::Verb::Mode, QStringLiteral("mode"), {},
+         QStringLiteral("/mode <channel> [[+|-]modechars [parameters]]"),
+         IrcVerbScope::Either, {}},
     };
     return rows;
 }
