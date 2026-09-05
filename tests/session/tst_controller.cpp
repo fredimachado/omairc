@@ -138,6 +138,15 @@ private slots:
     void statusNoticeMissingBodyStaysOpen();
     void disconnectedNoticeIsNotConnected();
     void noticeDoesNotUnaway();
+    void msgSendsWithoutSelecting();
+    void msgEchoesExistingDirect();
+    void msgDoesNotFocusExistingDirect();
+    void msgEchoesSelectedGhostQuery();
+    void msgMissingTokensAreRefused();
+    void msgChannelIsRefused();
+    void statusMsgStaysOpen();
+    void disconnectedMsgIsNotConnected();
+    void msgClearsAway();
     void awayWaitsForNumericThenChatUnaways();
     void statusQueryClosesStatus();
     void statusQueryChannelStaysOpen();
@@ -850,7 +859,7 @@ void ControllerTest::queryWithTextSendsPrivmsg()
                           ":omairc!u@h JOIN :#omarchy\r\n"));
     controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
 
-    QVERIFY(controller.sendMessage(QStringLiteral("/msg lena hello")));
+    QVERIFY(controller.sendMessage(QStringLiteral("/query lena hello")));
     QCOMPARE(controller.selectedTarget(), QStringLiteral("lena"));
     QCOMPARE(transport->writtenFrames().last(),
              QByteArrayLiteral("PRIVMSG lena :hello\r\n"));
@@ -1109,6 +1118,255 @@ void ControllerTest::noticeDoesNotUnaway()
              QByteArrayLiteral("NOTICE lena :later\r\n"));
     QCOMPARE(transport->writtenFrames().count(QByteArrayLiteral("AWAY\r\n")),
              awayBefore);
+    QVERIFY(controller.selfAway());
+}
+
+void ControllerTest::msgSendsWithoutSelecting()
+{
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+                                                transport);
+    QVERIFY(session);
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    transport->completeConnect();
+    transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
+                          ":server 001 omairc :Welcome\r\n"
+                          ":omairc!u@h JOIN :#omarchy\r\n"));
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+
+    auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
+    QVERIFY(messages);
+    const int selectedRows = messages->rowCount();
+
+    QVERIFY(controller.sendMessage(QStringLiteral("/msg lena hello")));
+    QCOMPARE(transport->writtenFrames().last(),
+             QByteArrayLiteral("PRIVMSG lena :hello\r\n"));
+    QCOMPARE(controller.selectedTarget(), QStringLiteral("#omarchy"));
+
+    auto *conversations =
+        qobject_cast<QAbstractItemModel *>(controller.conversations());
+    QVERIFY(conversations);
+    QCOMPARE(rowForTarget(conversations, QStringLiteral("lena")), -1);
+    QVERIFY(logContains(controller.console()->lines(),
+                        QStringLiteral("PRIVMSG lena")));
+    QCOMPARE(messages->rowCount(), selectedRows);
+    for (int row = 0; row < messages->rowCount(); ++row) {
+        QVERIFY(roleAt(messages, row, MessageListModel::BodyRole)
+                != QStringLiteral("hello"));
+    }
+}
+
+void ControllerTest::msgEchoesExistingDirect()
+{
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+                                                transport);
+    QVERIFY(session);
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    transport->completeConnect();
+    transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
+                          ":server 001 omairc :Welcome\r\n"
+                          ":omairc!u@h JOIN :#omarchy\r\n"
+                          ":lena!u@h PRIVMSG omairc :hi\r\n"));
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+
+    QVERIFY(controller.sendMessage(QStringLiteral("/msg lena later")));
+    QCOMPARE(controller.selectedTarget(), QStringLiteral("#omarchy"));
+    QCOMPARE(transport->writtenFrames().last(),
+             QByteArrayLiteral("PRIVMSG lena :later\r\n"));
+
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("lena"));
+    auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
+    QVERIFY(messages);
+    QVERIFY(messages->rowCount() > 0);
+    QCOMPARE(roleAt(messages, messages->rowCount() - 1, MessageListModel::BodyRole),
+             QStringLiteral("later"));
+    QCOMPARE(roleAt(messages, messages->rowCount() - 1, MessageListModel::KindRole),
+             QStringLiteral("message"));
+}
+
+void ControllerTest::msgDoesNotFocusExistingDirect()
+{
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+                                                transport);
+    QVERIFY(session);
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    transport->completeConnect();
+    transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
+                          ":server 001 omairc :Welcome\r\n"
+                          ":omairc!u@h JOIN :#omarchy\r\n"
+                          ":lena!u@h PRIVMSG omairc :hi\r\n"));
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+
+    QVERIFY(controller.sendMessage(QStringLiteral("/msg lena later")));
+    QCOMPARE(controller.selectedTarget(), QStringLiteral("#omarchy"));
+}
+
+void ControllerTest::msgEchoesSelectedGhostQuery()
+{
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+                                                transport);
+    QVERIFY(session);
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    transport->completeConnect();
+    transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
+                          ":server 001 omairc :Welcome\r\n"
+                          ":omairc!u@h JOIN :#omarchy\r\n"));
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+
+    QVERIFY(controller.sendMessage(QStringLiteral("/query lena")));
+    QCOMPARE(controller.selectedTarget(), QStringLiteral("lena"));
+
+    QVERIFY(controller.sendMessage(QStringLiteral("/msg lena hello")));
+    QCOMPARE(transport->writtenFrames().last(),
+             QByteArrayLiteral("PRIVMSG lena :hello\r\n"));
+    QCOMPARE(controller.selectedTarget(), QStringLiteral("lena"));
+
+    auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
+    QVERIFY(messages);
+    QVERIFY(messages->rowCount() > 0);
+    QCOMPARE(roleAt(messages, messages->rowCount() - 1, MessageListModel::BodyRole),
+             QStringLiteral("hello"));
+    QCOMPARE(roleAt(messages, messages->rowCount() - 1, MessageListModel::KindRole),
+             QStringLiteral("message"));
+}
+
+void ControllerTest::msgMissingTokensAreRefused()
+{
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+                                                transport);
+    QVERIFY(session);
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    transport->completeConnect();
+    transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
+                          ":server 001 omairc :Welcome\r\n"
+                          ":omairc!u@h JOIN :#omarchy\r\n"));
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    const int framesBefore = transport->writtenFrames().size();
+
+    QVERIFY(!controller.sendMessage(QStringLiteral("/msg")));
+    QCOMPARE(controller.lastError(), QStringLiteral("Command was refused"));
+    QCOMPARE(controller.selectedTarget(), QStringLiteral("#omarchy"));
+    QVERIFY(!framesContain(transport->writtenFrames().mid(framesBefore),
+                           QByteArrayLiteral("PRIVMSG")));
+
+    QVERIFY(!controller.sendMessage(QStringLiteral("/msg lena")));
+    QCOMPARE(controller.lastError(), QStringLiteral("Command was refused"));
+    QCOMPARE(controller.selectedTarget(), QStringLiteral("#omarchy"));
+    QVERIFY(!framesContain(transport->writtenFrames().mid(framesBefore),
+                           QByteArrayLiteral("PRIVMSG")));
+}
+
+void ControllerTest::msgChannelIsRefused()
+{
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+                                                transport);
+    QVERIFY(session);
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    transport->completeConnect();
+    transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
+                          ":server 001 omairc :Welcome\r\n"
+                          ":omairc!u@h JOIN :#omarchy\r\n"));
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    const int framesBefore = transport->writtenFrames().size();
+
+    QVERIFY(!controller.sendMessage(QStringLiteral("/msg #omarchy hello")));
+    QCOMPARE(controller.lastError(), QStringLiteral("Command was refused"));
+    QCOMPARE(controller.selectedTarget(), QStringLiteral("#omarchy"));
+    QCOMPARE(transport->writtenFrames().size(), framesBefore);
+    QVERIFY(!framesContain(transport->writtenFrames().mid(framesBefore),
+                           QByteArrayLiteral("PRIVMSG")));
+}
+
+void ControllerTest::statusMsgStaysOpen()
+{
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+                                                transport);
+    QVERIFY(session);
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    transport->completeConnect();
+    transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
+                          ":server 001 omairc :Welcome\r\n"
+                          ":omairc!u@h JOIN :#omarchy\r\n"));
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+
+    IrcStatusConsole *console = controller.console();
+    console->setOpen(true);
+    QVERIFY(console->submit(QStringLiteral("/msg NickServ help")));
+    QVERIFY(console->isOpen());
+    QCOMPARE(controller.selectedTarget(), QStringLiteral("#omarchy"));
+    QVERIFY(logContains(console->lines(), QStringLiteral("PRIVMSG NickServ")));
+}
+
+void ControllerTest::disconnectedMsgIsNotConnected()
+{
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+                                                transport);
+    QVERIFY(session);
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    transport->completeConnect();
+    transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
+                          ":server 001 omairc :Welcome\r\n"
+                          ":omairc!u@h JOIN :#omarchy\r\n"));
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    transport->remoteClose();
+    QVERIFY(session->state() != IrcSession::State::Registered);
+    const int framesBefore = transport->writtenFrames().size();
+
+    QVERIFY(!controller.sendMessage(QStringLiteral("/msg lena hello")));
+    QCOMPARE(controller.lastError(), QStringLiteral("Not connected"));
+    QCOMPARE(controller.selectedTarget(), QStringLiteral("#omarchy"));
+    QCOMPARE(transport->writtenFrames().size(), framesBefore);
+    QVERIFY(!framesContain(transport->writtenFrames().mid(framesBefore),
+                           QByteArrayLiteral("PRIVMSG")));
+}
+
+void ControllerTest::msgClearsAway()
+{
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+                                                transport);
+    QVERIFY(session);
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    transport->completeConnect();
+    transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
+                          ":server 001 omairc :Welcome\r\n"
+                          ":omairc!u@h JOIN :#omarchy\r\n"
+                          ":server 306 omairc :You have been marked as being away\r\n"));
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    QVERIFY(controller.selfAway());
+    const int awayBefore = transport->writtenFrames().count(QByteArrayLiteral("AWAY\r\n"));
+
+    QVERIFY(controller.sendMessage(QStringLiteral("/msg lena hello")));
+    QCOMPARE(transport->writtenFrames().at(transport->writtenFrames().size() - 2),
+             QByteArrayLiteral("PRIVMSG lena :hello\r\n"));
+    QCOMPARE(transport->writtenFrames().last(), QByteArrayLiteral("AWAY\r\n"));
+    QCOMPARE(transport->writtenFrames().count(QByteArrayLiteral("AWAY\r\n")),
+             awayBefore + 1);
     QVERIFY(controller.selfAway());
 }
 

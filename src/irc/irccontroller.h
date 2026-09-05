@@ -87,6 +87,14 @@ signals:
                        const QString &message);
 
 private:
+    enum class QuietWire { Privmsg, Notice };
+    enum class QuietTarget { Nick, Any };
+    struct QuietSend {
+        QuietWire wire;
+        QuietTarget target;
+    };
+    static std::optional<QuietSend> quietSendFor(IrcCommand::Verb verb);
+
     void apply(const IrcEvent& event);
     void adoptReducerSelection();
     void publish(const IrcViewNotify& notify);
@@ -102,15 +110,17 @@ private:
     IrcCommandOutcome setSelectedTopic(const QString& topic);
     IrcCommandOutcome dispatchQuery(const IrcCommand& command,
                                     IrcComposerSurface surface);
-    IrcCommandOutcome dispatchNotice(const IrcCommand& command,
-                                     IrcComposerSurface surface);
+    IrcCommandOutcome dispatchQuietSend(const IrcCommand& command,
+                                        IrcComposerSurface surface);
     IrcCommandOutcome dispatchMode(const IrcCommand& command,
                                    IrcComposerSurface surface);
     IrcCommandOutcome dispatchWhois(const IrcCommand& command,
                                     IrcComposerSurface surface);
-    void echoNoticeIfPresent(IrcSession *session,
-                             const QString& target,
-                             const QString& body);
+    void echoIfPresent(IrcSession *session,
+                       const QString& target,
+                       const QString& body,
+                       QuietWire wire);
+    void unawayAfterChat(IrcSession *session);
     IrcCommandOutcome clearSurface(IrcComposerSurface surface);
     bool report(IrcCommandOutcome outcome, const IrcCommand& command);
     bool selectedIsCloseableDirect() const;
