@@ -208,11 +208,19 @@ void CommandTest::parseQuery()
     QVERIFY(query.allowedOn(IrcComposerSurface::Conversation));
     QVERIFY(query.allowedOn(IrcComposerSurface::Status));
 
-    const IrcCommand msg = IrcCommand::parse(QStringLiteral("/MSG lena"));
-    QCOMPARE(msg.verb, IrcCommand::Verb::Query);
-    QCOMPARE(msg.argument, QStringLiteral("lena"));
-    QCOMPARE(msg.name, QStringLiteral("/MSG"));
+    const IrcCommand foldedMsg = IrcCommand::parse(QStringLiteral("/MSG lena"));
+    QCOMPARE(foldedMsg.verb, IrcCommand::Verb::Msg);
+    QCOMPARE(foldedMsg.argument, QStringLiteral("lena"));
+    QCOMPARE(foldedMsg.name, QStringLiteral("/MSG"));
+    QVERIFY(!foldedMsg.isLiveMessage());
+
+    const IrcCommand msg = IrcCommand::parse(QStringLiteral("/msg lena hi"));
+    QCOMPARE(msg.verb, IrcCommand::Verb::Msg);
+    QCOMPARE(msg.argument, QStringLiteral("lena hi"));
+    QCOMPARE(msg.name, QStringLiteral("/msg"));
     QVERIFY(!msg.isLiveMessage());
+    QVERIFY(msg.allowedOn(IrcComposerSurface::Conversation));
+    QVERIFY(msg.allowedOn(IrcComposerSurface::Status));
 
     const IrcCommand escapedQuery = IrcCommand::parse(QStringLiteral("//query"));
     QCOMPARE(escapedQuery.verb, IrcCommand::Verb::Say);
@@ -447,18 +455,27 @@ void CommandTest::catalogLookupAndScope()
     QVERIFY(!IrcVerbTable::find(IrcCommand::Verb::Empty));
     QVERIFY(!IrcVerbTable::find(IrcCommand::Verb::Unknown));
 
-    QCOMPARE(IrcVerbTable::all().size(), 14);
+    QCOMPARE(IrcVerbTable::all().size(), 15);
     for (const IrcVerbSpec& row : IrcVerbTable::all())
         QVERIFY(row.name != QLatin1String("say"));
 
-    const IrcVerbSpec *query = IrcVerbTable::lookup(QStringLiteral("msg"));
+    const IrcVerbSpec *query = IrcVerbTable::lookup(QStringLiteral("query"));
     QVERIFY(query);
     QCOMPARE(query->verb, IrcCommand::Verb::Query);
     QCOMPARE(query->name, QStringLiteral("query"));
     QCOMPARE(query->usage, QStringLiteral("/query <nick> [text]"));
     QCOMPARE(query->scope, IrcVerbScope::Either);
     QVERIFY(query->wrongScopeText.isEmpty());
-    QVERIFY(query->aliases.contains(QStringLiteral("msg")));
+    QVERIFY(!query->aliases.contains(QStringLiteral("msg")));
+
+    const IrcVerbSpec *msg = IrcVerbTable::lookup(QStringLiteral("msg"));
+    QVERIFY(msg);
+    QCOMPARE(msg->verb, IrcCommand::Verb::Msg);
+    QCOMPARE(msg->name, QStringLiteral("msg"));
+    QCOMPARE(msg->usage, QStringLiteral("/msg <nick> <text>"));
+    QCOMPARE(msg->scope, IrcVerbScope::Either);
+    QVERIFY(msg->wrongScopeText.isEmpty());
+    QVERIFY(msg->aliases.isEmpty());
 
     const IrcVerbSpec *close = IrcVerbTable::lookup(QStringLiteral("close"));
     QVERIFY(close);
@@ -522,7 +539,7 @@ void CommandTest::catalogLookupAndScope()
     QVERIFY(mode->aliases.isEmpty());
 
     const QVector<IrcVerbSpec> status = IrcVerbTable::visibleOn(IrcComposerSurface::Status);
-    QCOMPARE(status.size(), 11);
+    QCOMPARE(status.size(), 12);
     for (const IrcVerbSpec& row : status) {
         QVERIFY(row.allowedOn(IrcComposerSurface::Status));
         QVERIFY(row.verb != IrcCommand::Verb::Action);
@@ -532,10 +549,11 @@ void CommandTest::catalogLookupAndScope()
 
     const QVector<IrcVerbSpec> conversation =
         IrcVerbTable::visibleOn(IrcComposerSurface::Conversation);
-    QCOMPARE(conversation.size(), 14);
+    QCOMPARE(conversation.size(), 15);
     bool sawMe = false;
     bool sawClose = false;
     bool sawQuery = false;
+    bool sawMsg = false;
     bool sawTopic = false;
     bool sawNotice = false;
     bool sawAway = false;
@@ -549,6 +567,8 @@ void CommandTest::catalogLookupAndScope()
             sawClose = true;
         if (row.name == QLatin1String("query"))
             sawQuery = true;
+        if (row.name == QLatin1String("msg"))
+            sawMsg = true;
         if (row.name == QLatin1String("topic"))
             sawTopic = true;
         if (row.name == QLatin1String("notice"))
@@ -565,6 +585,7 @@ void CommandTest::catalogLookupAndScope()
     QVERIFY(sawMe);
     QVERIFY(sawClose);
     QVERIFY(sawQuery);
+    QVERIFY(sawMsg);
     QVERIFY(sawTopic);
     QVERIFY(sawNotice);
     QVERIFY(sawAway);
@@ -968,7 +989,8 @@ void CommandTest::slashProjectOpen()
     const auto msg = IrcSlashComplete::project(
         QStringLiteral("/msg"), IrcComposerSurface::Conversation);
     QVERIFY(msg.isOpen());
-    QCOMPARE(msg.hits().first().label, QStringLiteral("/query"));
+    QCOMPARE(msg.hits().first().label, QStringLiteral("/msg"));
+    QCOMPARE(msg.hits().first().usage, QStringLiteral("/msg <nick> <text>"));
 
     const auto statusTopic = IrcSlashComplete::project(
         QStringLiteral("/t"), IrcComposerSurface::Status);
