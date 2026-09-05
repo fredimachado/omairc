@@ -706,7 +706,6 @@ void IrcController::echoIfPresent(IrcSession *session,
 {
     const IrcConversationKey key =
         m_reducer.conversationKey(session->networkId(), target);
-    // Bare /query can select a nick the reducer has not stored yet.
     if (!m_reducer.find(key) && !(m_selected && *m_selected == key))
         return;
     const QDateTime now = QDateTime::currentDateTimeUtc();
