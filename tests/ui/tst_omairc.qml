@@ -564,8 +564,12 @@ TestCase {
     function test_toggleStatusWithShortcutOnLiveWindow() {
         liveConsole.open = false;
         if (appWindow) {
-            appWindow.close();
+            // Destroy rather than hide: a closed-but-alive window keeps its
+            // Ctrl+` Qt.ApplicationShortcut registered, which would be
+            // ambiguous with the live window's shortcut and fire neither.
+            appWindow.destroy();
             appWindow = null;
+            wait(0);
         }
         var window = createTemporaryObject(liveWindowComponent, null);
         verify(window !== null, "The live window should load");
