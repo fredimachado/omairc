@@ -1302,7 +1302,7 @@ ApplicationWindow {
         ListElement {
             time: "12:00:01"
             label: "NOTICE"
-            text: "*** Looking up your hostname..."
+            text: "-AUTH- *** Looking up your hostname..."
             source: "server"
             severity: "info"
         }

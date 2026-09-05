@@ -148,6 +148,10 @@ QString IrcController::selectedNetworkId() const
 
 QString IrcController::selectedTarget() const
 {
+    if (m_selected) {
+        if (const IrcConversationState *conversation = m_reducer.find(*m_selected))
+            return conversation->target;
+    }
     return m_selectedTarget;
 }
 
@@ -168,7 +172,7 @@ bool IrcController::isChannel() const
     if (!m_selected)
         return false;
     return m_reducer.serverFeatures(m_selected->networkId)
-        .isChannel(utf8(m_selectedTarget));
+        .isChannel(utf8(selectedTarget()));
 }
 
 int IrcController::peopleCount() const
@@ -251,7 +255,7 @@ void IrcController::notifyComposerText(const QString& text)
         return;
 
     const IrcCommand command = IrcCommand::parse(text);
-    const QString target = m_selectedTarget;
+    const QString target = selectedTarget();
     if (command.isLiveMessage()) {
         session->sendTyping(target, IrcTypingPhase::Active);
         m_typingTarget = target;
@@ -441,7 +445,7 @@ IrcCommandOutcome IrcController::dispatch(const IrcCommand& command,
         IrcSession *session = selectedSession();
         if (!session || !m_selected)
             return IrcCommandOutcome::WrongScope;
-        const bool sent = session->sendAction(m_selectedTarget, command.argument);
+        const bool sent = session->sendAction(selectedTarget(), command.argument);
         if (sent) {
             echoLocal(IrcMessageKind::Action, command.argument);
             m_typingTarget.clear();
@@ -500,7 +504,7 @@ IrcCommandOutcome IrcController::dispatch(const IrcCommand& command,
                 break;
             if (selected->state() != IrcSession::State::Registered)
                 return IrcCommandOutcome::NotConnected;
-            channel = m_selectedTarget;
+            channel = selectedTarget();
             sent = !channel.isEmpty() && selected->part(channel);
             break;
         }
@@ -537,7 +541,7 @@ IrcCommandOutcome IrcController::sendSelectedMessage(const QString& body)
     IrcSession *session = selectedSession();
     if (!session || !m_selected)
         return IrcCommandOutcome::WrongScope;
-    const bool sent = session->sendPrivmsg(m_selectedTarget, body);
+    const bool sent = session->sendPrivmsg(selectedTarget(), body);
     if (sent) {
         echoLocal(IrcMessageKind::Message, body);
         m_typingTarget.clear();
@@ -559,7 +563,7 @@ IrcCommandOutcome IrcController::setSelectedTopic(const QString& topic)
     IrcSession *session = selectedSession();
     if (!session || session->state() != IrcSession::State::Registered)
         return IrcCommandOutcome::NotConnected;
-    return session->setTopic(m_selectedTarget, topic)
+    return session->setTopic(selectedTarget(), topic)
         ? IrcCommandOutcome::Sent
         : IrcCommandOutcome::Refused;
 }
@@ -650,7 +654,7 @@ IrcCommandOutcome IrcController::dispatchWhois(const IrcCommand& command,
     IrcSession *session = nullptr;
     if (nick.isEmpty()) {
         if (selectedIsCloseableDirect()) {
-            nick = m_selectedTarget;
+            nick = selectedTarget();
             session = selectedSession();
         } else if (m_selected) {
             return IrcCommandOutcome::WrongScope;
@@ -714,10 +718,20 @@ void IrcController::echoLocal(IrcMessageKind kind, const QString& body)
     const QDateTime now = QDateTime::currentDateTimeUtc();
     const QString nick = currentNick();
     if (kind == IrcMessageKind::Action) {
-        apply(IrcActionEvent{*m_selected, nick, body, now, m_selectedTarget});
+        apply(IrcActionEvent{*m_selected, nick, body, now, selectedTarget()});
         return;
     }
-    apply(IrcMessageEvent{*m_selected, nick, body, now, m_selectedTarget});
+    apply(IrcMessageEvent{*m_selected, nick, body, now, selectedTarget()});
+}
+
+void IrcController::adoptReducerSelection()
+{
+    const std::optional<IrcConversationKey> key = m_reducer.selected();
+    if (!key)
+        return;
+    m_selected = *key;
+    m_messages.setSelected(*key);
+    m_members.setSelected(*key);
 }
 
 void IrcController::apply(const IrcEvent& event)
@@ -744,6 +758,7 @@ void IrcController::apply(const IrcEvent& event)
         m_messages.setSelected(conversation.key);
         m_members.setSelected(conversation.key);
     }
+    adoptReducerSelection();
     const bool releasedStale = m_reducer.releaseStaleNamesSync(
         m_selected, QDateTime::currentDateTimeUtc());
     IrcViewNotify notify = classifyViewNotify(event, m_reducer, m_selected);

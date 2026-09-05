@@ -88,6 +88,7 @@ signals:
 
 private:
     void apply(const IrcEvent& event);
+    void adoptReducerSelection();
     void publish(const IrcViewNotify& notify);
     void handleCapabilities(const QString& networkId,
                             IrcCapabilitySet capabilities);

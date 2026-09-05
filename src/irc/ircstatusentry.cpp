@@ -45,7 +45,7 @@ IrcLogSeverity severityFor(const QString& command)
 
 bool trailingBodyOnly(const QString& command)
 {
-    if (command == QStringLiteral("NOTICE") || command == QStringLiteral("PRIVMSG")
+    if (command == QStringLiteral("PRIVMSG")
         || command == QStringLiteral("PING") || command == QStringLiteral("PONG")
         || command == QStringLiteral("ERROR")) {
         return true;
@@ -240,6 +240,121 @@ std::optional<FormattedWhois> formatWhois(const IrcMessage& message)
     };
 }
 
+class IrcNoticeSpeaker
+{
+public:
+    static std::optional<IrcNoticeSpeaker> tryMake(QString token)
+    {
+        const QString trimmed = token.trimmed();
+        if (trimmed.isEmpty())
+            return std::nullopt;
+        if (trimmed.compare(QLatin1String("*"), Qt::CaseInsensitive) == 0)
+            return std::nullopt;
+        return IrcNoticeSpeaker(trimmed);
+    }
+
+    const QString& token() const
+    {
+        return m_token;
+    }
+
+private:
+    explicit IrcNoticeSpeaker(QString token)
+        : m_token(std::move(token))
+    {
+    }
+
+    QString m_token;
+};
+
+enum class IrcNoticeCopyKind {
+    Wrapped,
+    Bare,
+};
+
+struct IrcNoticeStatusCopy
+{
+    QString label;
+    IrcNoticeCopyKind kind = IrcNoticeCopyKind::Bare;
+    std::optional<IrcNoticeSpeaker> speaker;
+    QString body;
+
+    QString text() const
+    {
+        if (kind == IrcNoticeCopyKind::Wrapped && speaker.has_value())
+            return QStringLiteral("-%1- %2").arg(speaker->token(), body);
+        return body;
+    }
+};
+
+IrcNoticeStatusCopy wrappedNotice(IrcNoticeSpeaker speaker, QString body)
+{
+    return IrcNoticeStatusCopy{
+        QStringLiteral("NOTICE"),
+        IrcNoticeCopyKind::Wrapped,
+        std::move(speaker),
+        std::move(body),
+    };
+}
+
+IrcNoticeStatusCopy bareNotice(QString body)
+{
+    return IrcNoticeStatusCopy{
+        QStringLiteral("NOTICE"),
+        IrcNoticeCopyKind::Bare,
+        std::nullopt,
+        std::move(body),
+    };
+}
+
+struct IrcNoticeWireParts
+{
+    std::optional<QString> prefixNick;
+    std::optional<QString> prefixRaw;
+    QString target;
+    QString body;
+};
+
+std::optional<IrcNoticeSpeaker> resolveIncomingNoticeSpeaker(const IrcNoticeWireParts& parts)
+{
+    if (parts.prefixNick) {
+        if (auto speaker = IrcNoticeSpeaker::tryMake(*parts.prefixNick))
+            return speaker;
+    }
+    if (parts.prefixRaw) {
+        if (auto speaker = IrcNoticeSpeaker::tryMake(*parts.prefixRaw))
+            return speaker;
+    }
+    return IrcNoticeSpeaker::tryMake(parts.target);
+}
+
+std::optional<IrcNoticeWireParts> parseIncomingNotice(const IrcMessage& message)
+{
+    if (commandOf(message) != QStringLiteral("NOTICE"))
+        return std::nullopt;
+    if (message.parameters.empty())
+        return std::nullopt;
+
+    IrcNoticeWireParts parts;
+    if (message.prefix) {
+        if (!message.prefix->nick.empty())
+            parts.prefixNick = fromUtf8(message.prefix->nick);
+        if (!message.prefix->raw.empty())
+            parts.prefixRaw = fromUtf8(message.prefix->raw);
+    }
+    parts.target = fromUtf8(message.parameters.front());
+    if (message.parameters.size() >= 2)
+        parts.body = fromUtf8(message.parameters.back());
+    return parts;
+}
+
+IrcNoticeStatusCopy presentIncomingNotice(const IrcNoticeWireParts& parts)
+{
+    if (auto speaker = resolveIncomingNoticeSpeaker(parts))
+        return wrappedNotice(std::move(*speaker), parts.body);
+    return bareNotice(parts.body);
+}
+
 QString firstToken(QStringView line)
 {
     const QStringView trimmed = line.trimmed();
@@ -275,6 +390,15 @@ IrcStatusEntry IrcStatusEntry::incoming(const QString& networkId, const IrcMessa
                               severityFor(command),
                               formatted->label,
                               formatted->text);
+    }
+    if (const auto parts = parseIncomingNotice(message)) {
+        const IrcNoticeStatusCopy copy = presentIncomingNotice(*parts);
+        return IrcStatusEntry(networkId,
+                              QDateTime::currentDateTimeUtc(),
+                              IrcLogSource::Server,
+                              severityFor(command),
+                              copy.label,
+                              copy.text());
     }
     return IrcStatusEntry(networkId,
                           QDateTime::currentDateTimeUtc(),
