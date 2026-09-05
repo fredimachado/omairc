@@ -135,32 +135,125 @@ bool waitUntil(const std::function<bool()> &predicate, int timeoutMs)
     return predicate();
 }
 
+namespace
+{
+QString fromUtf8(const std::string &value)
+{
+    return QString::fromUtf8(value.data(), qsizetype(value.size()));
+}
+
+bool commandIs(const IrcMessage &message, const QString &command)
+{
+    return fromUtf8(message.command).compare(command, Qt::CaseInsensitive) == 0;
+}
+
+QString lastParam(const IrcMessage &message)
+{
+    if (message.parameters.empty())
+        return {};
+    return fromUtf8(message.parameters.back());
+}
+
+QString nickOf(const IrcMessage &message)
+{
+    if (!message.prefix)
+        return {};
+    return fromUtf8(message.prefix->nick);
+}
+
+QString channelOf(const IrcMessage &message)
+{
+    if (commandIs(message, QStringLiteral("332"))) {
+        if (message.parameters.size() < 2)
+            return {};
+        return fromUtf8(message.parameters[1]);
+    }
+    if (message.parameters.empty())
+        return {};
+    return fromUtf8(message.parameters.front());
+}
+}
+
 bool messageHasCommand(const QVector<IrcMessage> &messages, const QString &command)
 {
     for (const IrcMessage &message : messages) {
-        if (QString::fromStdString(message.command)
-                .compare(command, Qt::CaseInsensitive)
-            == 0) {
+        if (commandIs(message, command))
             return true;
-        }
     }
     return false;
 }
 
-QString isupportValue(const QVector<IrcMessage> &messages, const QString &name)
+int messageCommandCount(const QVector<IrcMessage> &messages, const QString &command)
 {
+    int count = 0;
     for (const IrcMessage &message : messages) {
-        if (message.command != "005" || message.parameters.size() < 3)
-            continue;
-        for (std::size_t i = 1; i + 1 < message.parameters.size(); ++i) {
-            const QString token = QString::fromStdString(message.parameters[i]);
-            if (token == name)
-                return QStringLiteral("");
-            if (token.startsWith(name + QLatin1Char('=')))
-                return token.section(QLatin1Char('='), 1);
-        }
+        if (commandIs(message, command))
+            ++count;
     }
-    return {};
+    return count;
+}
+
+QString liveClassicGap(const QVector<IrcMessage> &incoming,
+                       const LiveClassicSighting &want)
+{
+    bool sawPrivmsg = false;
+    bool sawNotice = false;
+    bool sawAction = false;
+    bool sawTopic = false;
+    bool sawPart = false;
+    const QString actionTrailing = QChar(1) + QLatin1String("ACTION ") + want.action
+        + QChar(1);
+    QStringList seen;
+
+    for (const IrcMessage &message : incoming) {
+        const QString command = fromUtf8(message.command);
+        if (seen.size() < 24 && !seen.contains(command))
+            seen.append(command);
+        const bool sameChannel = channelOf(message).compare(want.channel, Qt::CaseInsensitive)
+            == 0;
+        const bool sameNick = nickOf(message).compare(want.otherNick, Qt::CaseInsensitive)
+            == 0;
+        if (commandIs(message, QStringLiteral("PRIVMSG")) && sameChannel) {
+            const QString trailing = lastParam(message);
+            if (trailing == want.privmsg)
+                sawPrivmsg = true;
+            if (trailing == actionTrailing)
+                sawAction = true;
+        }
+        if (commandIs(message, QStringLiteral("NOTICE")) && sameChannel
+            && lastParam(message) == want.notice) {
+            sawNotice = true;
+        }
+        if ((commandIs(message, QStringLiteral("TOPIC"))
+             || commandIs(message, QStringLiteral("332")))
+            && sameChannel && lastParam(message) == want.topic) {
+            sawTopic = true;
+        }
+        if (commandIs(message, QStringLiteral("PART")) && sameNick && sameChannel)
+            sawPart = true;
+    }
+
+    QStringList missing;
+    if (!sawPrivmsg)
+        missing.append(QStringLiteral("privmsg"));
+    if (!sawNotice)
+        missing.append(QStringLiteral("notice"));
+    if (!sawAction)
+        missing.append(QStringLiteral("action"));
+    if (!sawTopic)
+        missing.append(QStringLiteral("topic"));
+    if (!sawPart)
+        missing.append(QStringLiteral("part"));
+    if (missing.isEmpty())
+        return {};
+    return missing.join(QLatin1Char(' ')) + QLatin1String(" seen=")
+        + seen.join(QLatin1Char(','));
+}
+
+bool liveClassicComplete(const QVector<IrcMessage> &incoming,
+                         const LiveClassicSighting &want)
+{
+    return liveClassicGap(incoming, want).isEmpty();
 }
 
 LiveClient::LiveClient(const LiveDaemonInfo &daemon,
@@ -195,8 +288,13 @@ LiveClient::LiveClient(const LiveDaemonInfo &daemon,
                      [this](const QString &, const IrcMessage &message) {
                          incoming.append(message);
                      });
+    QObject::connect(session, &IrcSession::statusEntry, session,
+                     [this](const IrcStatusEntry &entry) {
+                         status.append(entry);
+                     });
     QObject::connect(session, &IrcSession::errorOccurred, session,
-                     [this](const QString &, IrcSession::ErrorKind, const QString &message) {
+                     [this](const QString &, IrcSession::ErrorKind kind, const QString &message) {
+                         lastErrorKind = kind;
                          lastError = message;
                      });
     controller.start(config.networkId);
@@ -220,6 +318,25 @@ bool LiveClient::waitFailed(int timeoutMs)
     return waitUntil([this] {
         return session && session->state() == IrcSession::State::Failed;
     }, timeoutMs);
+}
+
+bool LiveClient::hasServerLabel(const QString &label) const
+{
+    for (const IrcStatusEntry &entry : status) {
+        if (entry.source() == IrcLogSource::Server && entry.label() == label)
+            return true;
+    }
+    return false;
+}
+
+bool LiveClient::waitServerLabel(const QString &label, int timeoutMs)
+{
+    return waitUntil([this, label] { return hasServerLabel(label); }, timeoutMs);
+}
+
+const IrcServerFeatures &LiveClient::features() const
+{
+    return controller.serverFeatures(config.networkId);
 }
 
 void LiveClient::selectChannel(const QString &channel)

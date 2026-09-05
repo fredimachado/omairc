@@ -291,6 +291,11 @@ IrcStatusConsole *IrcController::console()
     return &m_console;
 }
 
+const IrcServerFeatures &IrcController::serverFeatures(const QString &networkId) const
+{
+    return m_reducer.serverFeatures(networkId);
+}
+
 bool IrcController::start(const QString& networkId)
 {
     IrcSession *session = m_sessions.findSession(networkId);

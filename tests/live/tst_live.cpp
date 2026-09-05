@@ -135,14 +135,13 @@ void LiveIrcdTest::isupport()
     QVERIFY(daemon);
     LiveClient client(*daemon, uniqueNick(daemon->nickLength), daemon->plainPort == 0);
     QVERIFY(client.waitRegistered());
-    const QString mapping = isupportValue(client.incoming, QStringLiteral("CASEMAPPING")).toLower();
-    if (daemon->mapping == IrcCaseMapping::Kind::Ascii)
-        QCOMPARE(mapping, QStringLiteral("ascii"));
-    else
-        QVERIFY(mapping == QStringLiteral("rfc1459") || mapping.isEmpty());
-    QVERIFY(!isupportValue(client.incoming, QStringLiteral("PREFIX")).isEmpty());
-    const QString types = isupportValue(client.incoming, QStringLiteral("CHANTYPES"));
-    QVERIFY(types.isEmpty() || types.contains(QLatin1Char('#')));
+    QVERIFY(waitUntil([&] { return client.features().nickLength().has_value(); }));
+    const IrcServerFeatures &features = client.features();
+    QCOMPARE(features.caseMapping().kind(), daemon->mapping);
+    QVERIFY(!features.prefixModes().empty());
+    QVERIFY(!features.prefixSymbols().empty());
+    QVERIFY(features.isChannel("#live"));
+    QVERIFY(*features.nickLength() > 0);
 }
 
 void LiveIrcdTest::classicTraffic_data()
@@ -156,18 +155,33 @@ void LiveIrcdTest::classicTraffic()
     QFETCH(QString, daemonName);
     const LiveDaemonInfo *daemon = liveDaemon(daemonName);
     QVERIFY(daemon);
-    LiveClient client(*daemon, uniqueNick(daemon->nickLength), daemon->plainPort == 0);
+    const bool tls = daemon->plainPort == 0;
+    const quint16 port = tls ? daemon->tlsPort : daemon->plainPort;
+    LiveClient client(*daemon, uniqueNick(daemon->nickLength), tls);
     QVERIFY(client.waitRegistered());
+    RawIrcPeer peer(liveHost(), port, tls, liveSslConfiguration(),
+                    uniqueNick(daemon->nickLength));
+    QVERIFY(peer.waitRegistered());
     const QString channel = uniqueChannel();
     QVERIFY(client.session->join(channel));
-    QVERIFY(client.session->setTopic(channel, QStringLiteral("live topic")));
-    QVERIFY(client.session->sendPrivmsg(channel, QStringLiteral("hello live")));
-    QVERIFY(client.session->sendNotice(channel, QStringLiteral("notice live")));
-    QVERIFY(client.session->sendAction(channel, QStringLiteral("waves")));
     QVERIFY(waitUntil([&] {
-        return messageHasCommand(client.incoming, QStringLiteral("332"))
-            || messageHasCommand(client.incoming, QStringLiteral("TOPIC"));
+        return messageHasCommand(client.incoming, QStringLiteral("366"));
     }));
+    QVERIFY(peer.join(channel));
+    LiveClassicSighting want;
+    want.channel = channel;
+    want.otherNick = client.session->nick();
+    want.privmsg = QStringLiteral("hello live");
+    want.notice = QStringLiteral("notice live");
+    want.action = QStringLiteral("waves");
+    want.topic = QStringLiteral("live topic");
+    QVERIFY(client.session->setTopic(channel, want.topic));
+    QVERIFY(client.session->sendPrivmsg(channel, want.privmsg));
+    QVERIFY(client.session->sendNotice(channel, want.notice));
+    QVERIFY(client.session->sendAction(channel, want.action));
+    QVERIFY(client.session->part(channel));
+    QVERIFY2(waitUntil([&] { return liveClassicComplete(peer.incoming, want); }),
+             qPrintable(liveClassicGap(peer.incoming, want)));
 }
 
 void LiveIrcdTest::nickInUse_data()
@@ -187,6 +201,10 @@ void LiveIrcdTest::nickInUse()
     LiveClient second(*daemon, nick, daemon->plainPort == 0);
     QVERIFY2(second.waitFailed(),
              qPrintable(daemonName + QLatin1Char(' ') + second.lastError));
+    QVERIFY(second.lastErrorKind.has_value());
+    QCOMPARE(*second.lastErrorKind, IrcSession::ErrorKind::Registration);
+    QVERIFY(second.hasServerLabel(QStringLiteral("433"))
+            || second.lastError.contains(QLatin1String("433")));
 }
 
 void LiveIrcdTest::nickLength_data()
@@ -354,17 +372,17 @@ void LiveIrcdTest::saslPlain()
     {
         LiveClient guest(*daemon, nick, daemon->plainPort == 0);
         QVERIFY(guest.waitRegistered());
+        const int notices = messageCommandCount(guest.incoming, QStringLiteral("NOTICE"));
         QVERIFY(guest.session->sendPrivmsg(
             QStringLiteral("NickServ"),
             QStringLiteral("REGISTER %1 live@omairc.test").arg(password)));
         QVERIFY(waitUntil([&] {
-            return messageHasCommand(guest.incoming, QStringLiteral("NOTICE"));
+            return messageCommandCount(guest.incoming, QStringLiteral("NOTICE")) > notices;
         }));
     }
     LiveClient authed(*daemon, nick, daemon->plainPort == 0, password);
+    QVERIFY(authed.waitServerLabel(QStringLiteral("903")));
     QVERIFY2(authed.waitRegistered(), qPrintable(authed.lastError));
-    QVERIFY2(authed.session->capabilities().contains(IrcCapability::Sasl),
-             "SASL PLAIN should be ACKed before 001");
 }
 
 void LiveIrcdTest::foldedNickCollision_data()

@@ -3,9 +3,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         ca-certificates git meson ninja-build gcc g++ pkg-config \
         libssl-dev libsqlite3-dev libltdl-dev python3 flex bison \
     && rm -rf /var/lib/apt/lists/*
-ARG SOLANUM_REF=30f74b2
+ARG SOLANUM_REF=30f74b2cfa70aff2bad65c8afc62956d95699639
 WORKDIR /src
-RUN git clone --depth 1 https://github.com/solanum-ircd/solanum.git .
+RUN git init \
+    && git remote add origin https://github.com/solanum-ircd/solanum.git \
+    && git fetch --depth 1 origin ${SOLANUM_REF} \
+    && git checkout --detach FETCH_HEAD
 RUN meson setup build -Dprefix=/opt/solanum -Dopenssl=enabled \
     && meson compile -C build \
     && meson install -C build

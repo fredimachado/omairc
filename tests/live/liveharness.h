@@ -3,7 +3,9 @@
 #include "irccasemapping.h"
 #include "irccontroller.h"
 #include "ircmessage.h"
+#include "ircserverfeatures.h"
 #include "ircsession.h"
+#include "ircstatusentry.h"
 #include "qtirctransport.h"
 
 #include <QSslConfiguration>
@@ -13,6 +15,7 @@
 #include <QVector>
 
 #include <functional>
+#include <optional>
 
 struct LiveDaemonInfo
 {
@@ -36,7 +39,22 @@ QVector<LiveDaemonInfo> liveDaemons();
 const LiveDaemonInfo *liveDaemon(const QString& name);
 bool waitUntil(const std::function<bool()> &predicate, int timeoutMs = 20000);
 bool messageHasCommand(const QVector<IrcMessage> &messages, const QString &command);
-QString isupportValue(const QVector<IrcMessage> &messages, const QString &name);
+int messageCommandCount(const QVector<IrcMessage> &messages, const QString &command);
+
+struct LiveClassicSighting
+{
+    QString channel;
+    QString otherNick;
+    QString privmsg;
+    QString notice;
+    QString action;
+    QString topic;
+};
+
+bool liveClassicComplete(const QVector<IrcMessage> &incoming,
+                         const LiveClassicSighting &want);
+QString liveClassicGap(const QVector<IrcMessage> &incoming,
+                       const LiveClassicSighting &want);
 
 class LiveClient
 {
@@ -52,6 +70,9 @@ public:
 
     bool waitRegistered(int timeoutMs = 20000);
     bool waitFailed(int timeoutMs = 20000);
+    bool hasServerLabel(const QString &label) const;
+    bool waitServerLabel(const QString &label, int timeoutMs = 20000);
+    const IrcServerFeatures &features() const;
     void selectChannel(const QString &channel);
     QVariant memberRole(const QString &nick, int role);
 
@@ -59,5 +80,7 @@ public:
     IrcSession *session = nullptr;
     IrcSessionConfig config;
     QVector<IrcMessage> incoming;
+    QVector<IrcStatusEntry> status;
     QString lastError;
+    std::optional<IrcSession::ErrorKind> lastErrorKind;
 };
