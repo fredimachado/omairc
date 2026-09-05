@@ -93,7 +93,7 @@ That installs the local CLI skill for this user (Cursor, Claude Code, Codex, and
 
 ## Build
 
-Linux:
+Linux, from the repo root:
 
 ```sh
 bin/build
@@ -111,15 +111,24 @@ Control commands need a running window. With exactly one connection, `--network`
 
 Set `OMAIRC_ALLOW_MULTI=1` if you need more than one normal process while debugging.
 
-Windows uses a Qt 6 kit with Quick, Quick Controls 2, Network, and QtKeychain. DBus is not linked. Open `omairc.pro` in Qt Creator, or from a shadow directory:
+Windows, from the repo root:
 
 ```bat
-qmake ..\omairc.pro
-nmake
-rem or jom, or mingw32-make
+bin\build.bat
+build\release\omairc.exe
+build\release\omairc.exe --demo-server
 ```
 
-Run `omairc.exe --demo-server` and `omairc.exe` from that directory. Qt Creator puts Qt on `PATH`. For a copied tree, run `windeployqt omairc.exe`, then copy OpenSSL next to the exe (`libssl-3-x64.dll` / `libcrypto-3-x64.dll` from the Qt OpenSSL tools, matching the kit) so `tls/qopensslbackend.dll` can load. Libera Chat on 6697 needs that when the kit is OpenSSL-backed (typical MinGW, and also when Schannel is absent).
+`bin\build.bat` finds a Qt 6 kit (MSVC preferred, then MinGW), loads the
+MSVC toolchain when needed, builds into `build\release\`, and runs
+`windeployqt` so the exe starts without Qt on `PATH`. Set `QMAKE` to a
+specific `qmake.exe` to pick a kit. Opening `omairc.pro` in Qt Creator still
+works. DBus is not linked; QtKeychain is required for saved passwords.
+
+For a copied tree, also copy OpenSSL next to the exe (`libssl-3-x64.dll` /
+`libcrypto-3-x64.dll` from the Qt OpenSSL tools, matching the kit) so
+`tls\qopensslbackend.dll` can load. Libera Chat on 6697 needs that when the
+kit is OpenSSL-backed (typical MinGW, and also when Schannel is absent).
 
 ## Test
 

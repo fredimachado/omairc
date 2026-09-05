@@ -106,9 +106,10 @@ is missing.
 For visual changes, inspect the running window and the screenshots under
 `test-artifacts/`.
 
-On Windows, open `omairc.pro` in Qt Creator, or from a shadow directory run
-`qmake ..\omairc.pro` and then nmake, jom, or mingw32-make. `bin/build`,
-`bin/test`, `bin/test-desktop`, and `bin/test-live` stay Unix scripts. The C++
-suite still builds from `tests/tests.pro` with the same kit. Portal text-scale
-stays 1.0, the window icon stays empty, and the Omarchy `colors.toml` watch
-does nothing when that file is missing.
+On Windows, `bin\build.bat` finds a Qt 6 kit, runs qmake and nmake (or jom,
+or mingw32-make), and deploys Qt next to `build\release\omairc.exe`. Set
+`QMAKE` to pick a kit. `bin/build`, `bin/test`, `bin/test-desktop`, and
+`bin/test-live` stay Unix scripts. The C++ suite still builds from
+`tests/tests.pro` with the same kit. Portal text-scale stays 1.0, the window
+icon stays empty, and the Omarchy `colors.toml` watch does nothing when that
+file is missing.
