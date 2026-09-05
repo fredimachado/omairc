@@ -13,6 +13,8 @@
 #include "irctyping.h"
 #include "irctypingpublisher.h"
 
+class IrcChannelModeRequest;
+
 class IrcReconnectTimer : public QObject
 {
     Q_OBJECT
@@ -95,6 +97,7 @@ public slots:
     void cancelReconnect();
     bool sendPrivmsg(const QString& target, const QString& body);
     bool sendNotice(const QString& target, const QString& body);
+    bool sendChannelMode(const IrcChannelModeRequest& request);
     bool sendAction(const QString& target, const QString& body);
     bool sendTyping(const QString& target, IrcTypingPhase phase);
     bool join(const QString& channel);

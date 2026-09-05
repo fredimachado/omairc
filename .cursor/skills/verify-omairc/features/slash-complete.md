@@ -35,4 +35,5 @@ Preconditions:
 - Tab still nick-completes `mi` when the composer is not a slash query.
 - Escape dismisses the list before the shortcuts sheet, Connect, or Status.
 - Enter on an exact name or alias (`/close`, `/j`) sends. Enter on a partial (`/jo`) inserts `/join `.
+- On Status, `/me` is not in the catalog. The list can open on `/mode` because `mode` starts with `me`. Conversation `/me` still ranks `/me` first.
 - Recalling a sent line keeps the list closed so Up/Down keep walking history. The list can open again after you leave history browse.

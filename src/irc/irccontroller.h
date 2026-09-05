@@ -104,6 +104,8 @@ private:
                                     IrcComposerSurface surface);
     IrcCommandOutcome dispatchNotice(const IrcCommand& command,
                                      IrcComposerSurface surface);
+    IrcCommandOutcome dispatchMode(const IrcCommand& command,
+                                   IrcComposerSurface surface);
     IrcCommandOutcome dispatchWhois(const IrcCommand& command,
                                     IrcComposerSurface surface);
     void echoNoticeIfPresent(IrcSession *session,

@@ -1,5 +1,6 @@
 #include "irccontroller.h"
 
+#include "ircchannelmode.h"
 #include "irccommand.h"
 #include "irceventtranslator.h"
 #include "ircviewnotify.h"
@@ -463,6 +464,9 @@ IrcCommandOutcome IrcController::dispatch(const IrcCommand& command,
     if (command.verb == IrcCommand::Verb::Notice)
         return dispatchNotice(command, surface);
 
+    if (command.verb == IrcCommand::Verb::Mode)
+        return dispatchMode(command, surface);
+
     if (command.verb == IrcCommand::Verb::Whois)
         return dispatchWhois(command, surface);
 
@@ -616,6 +620,31 @@ IrcCommandOutcome IrcController::dispatchNotice(const IrcCommand& command,
         return IrcCommandOutcome::Refused;
     echoNoticeIfPresent(session, target, body);
     return IrcCommandOutcome::Sent;
+}
+
+IrcCommandOutcome IrcController::dispatchMode(const IrcCommand& command,
+                                              IrcComposerSurface surface)
+{
+    if (command.argument.isEmpty())
+        return IrcCommandOutcome::Refused;
+
+    const QString networkId = queryNetworkId(surface);
+    if (networkId.isEmpty()) {
+        if (surface == IrcComposerSurface::Conversation)
+            return IrcCommandOutcome::WrongScope;
+        return IrcCommandOutcome::Refused;
+    }
+
+    const std::optional<IrcChannelModeRequest> request =
+        IrcChannelModeRequest::parse(command.argument, serverFeatures(networkId));
+    if (!request)
+        return IrcCommandOutcome::Refused;
+
+    IrcSession *session = m_sessions.findSession(networkId);
+    if (!session || session->state() != IrcSession::State::Registered)
+        return IrcCommandOutcome::NotConnected;
+    return session->sendChannelMode(*request) ? IrcCommandOutcome::Sent
+                                              : IrcCommandOutcome::Refused;
 }
 
 IrcCommandOutcome IrcController::dispatchWhois(const IrcCommand& command,

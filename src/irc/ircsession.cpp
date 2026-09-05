@@ -1,5 +1,6 @@
 #include "ircsession.h"
 
+#include "ircchannelmode.h"
 #include "irccommandbuilder.h"
 #include "ircparser.h"
 #include "ircpresence.h"
@@ -13,6 +14,7 @@
 #include <algorithm>
 #include <limits>
 #include <string>
+#include <type_traits>
 
 namespace
 {
@@ -253,6 +255,20 @@ bool IrcSession::sendNotice(const QString& target, const QString& body)
     if (target.isEmpty() || body.isEmpty())
         return false;
     return sendCommand(QStringLiteral("NOTICE %1 :%2").arg(target, body));
+}
+
+bool IrcSession::sendChannelMode(const IrcChannelModeRequest& request)
+{
+    return request.visit([this](const auto& payload) {
+        using T = std::decay_t<decltype(payload)>;
+        if constexpr (std::is_same_v<T, IrcChannelModeRequest::Query>) {
+            return sendCommand(QStringLiteral("MODE %1").arg(payload.channel));
+        } else {
+            QStringList parts{QStringLiteral("MODE"), payload.channel, payload.modes};
+            parts.append(payload.parameters);
+            return sendCommand(parts.join(QLatin1Char(' ')));
+        }
+    });
 }
 
 bool IrcSession::sendAction(const QString& target, const QString& body)
