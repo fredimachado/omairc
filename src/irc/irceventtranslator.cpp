@@ -145,8 +145,10 @@ std::vector<IrcEvent> IrcEventTranslator::translate(
     const QString sender = author(message);
     const QDateTime now = QDateTime::currentDateTimeUtc();
 
-    if ((command == QStringLiteral("PRIVMSG") || command == QStringLiteral("NOTICE"))
-        && message.parameters.size() >= 2) {
+    if (command == QStringLiteral("NOTICE"))
+        return events;
+
+    if (command == QStringLiteral("PRIVMSG") && message.parameters.size() >= 2) {
         const QString wireTarget = parameter(message, 0);
         const std::optional<IrcConversationKey> conversation = conversationFor(
             networkId, wireTarget, message, currentNick, features);
@@ -156,14 +158,10 @@ std::vector<IrcEvent> IrcEventTranslator::translate(
         const QString displayTarget = features.isChannel(utf8(wireTarget))
             ? wireTarget
             : sender;
-        if (command == QStringLiteral("PRIVMSG")
-            && body.startsWith(QStringLiteral("\x01ACTION "))
+        if (body.startsWith(QStringLiteral("\x01ACTION "))
             && body.endsWith(QChar(1))) {
             events.emplace_back(IrcActionEvent{
                 *conversation, sender, body.mid(8, body.size() - 9), now, displayTarget});
-        } else if (command == QStringLiteral("NOTICE")) {
-            events.emplace_back(IrcNoticeEvent{
-                *conversation, sender, body, now, displayTarget});
         } else {
             events.emplace_back(IrcMessageEvent{
                 *conversation, sender, body, now, displayTarget});

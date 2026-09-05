@@ -94,7 +94,7 @@ TestCase {
         ListElement {
             time: "12:00:01"
             label: "NOTICE"
-            text: "*** Looking up your hostname..."
+            text: "-AUTH- *** Looking up your hostname..."
             source: "server"
             severity: "info"
         }
@@ -1166,7 +1166,7 @@ TestCase {
         verify(list !== null, "Could not find consoleList");
         verify(list.visible);
         compare(list.model.count, 2);
-        compare(list.model.get(0).text, "*** Looking up your hostname...");
+        compare(list.model.get(0).text, "-AUTH- *** Looking up your hostname...");
         verify(liveDirectNames(window).indexOf("AUTH") === -1,
                "Opening Status must not create an AUTH direct message");
         verify(!findChild(window, "peopleButton").visible);
@@ -1185,7 +1185,7 @@ TestCase {
         compare(appWindow.title, "Status");
         var list = item("consoleList");
         verify(list.visible);
-        compare(list.model.get(0).text, "*** Looking up your hostname...");
+        compare(list.model.get(0).text, "-AUTH- *** Looking up your hostname...");
         verify(!item("peopleButton").visible);
     }
 

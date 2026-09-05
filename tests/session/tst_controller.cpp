@@ -110,6 +110,7 @@ class ControllerTest : public QObject
 private slots:
     void reducesTrafficAndRoutesOutboundByNetwork();
     void liberaConnectCreatesChannelNotAuthDirect();
+    void incomingNoticeStaysOnStatus();
     void emptyNetworkIdDoesNotSwitch();
     void presenceCapabilitiesGateAwayAndStatus();
     void defaultPrefixPaintsLabelNotNick();
@@ -278,6 +279,50 @@ void ControllerTest::liberaConnectCreatesChannelNotAuthDirect()
             authNotice = true;
     }
     QVERIFY(authNotice);
+}
+
+void ControllerTest::incomingNoticeStaysOnStatus()
+{
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    IrcSessionConfig sessionConfig = config(QStringLiteral("libera"));
+    sessionConfig.autojoinChannels = {QStringLiteral("#omarchy")};
+    IrcSession *session = controller.addSession(sessionConfig, transport);
+    QVERIFY(session);
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    transport->completeConnect();
+    transport->injectBytes(
+        QByteArrayLiteral("NOTICE AUTH :*** Looking up your hostname...\r\n"
+                          ":server CAP omairc LS :multi-prefix\r\n"
+                          ":server 001 omairc :Welcome\r\n"
+                          ":server 005 omairc CHANTYPES=# PREFIX=(ov)@+ "
+                          ":are supported by this server\r\n"
+                          ":omairc!u@h JOIN :#omarchy\r\n"
+                          ":server 353 omairc = #omarchy :@omairc\r\n"
+                          ":server 366 omairc #omarchy :End of NAMES\r\n"
+                          ":NickServ!NickServ@services NOTICE omairc :Please identify\r\n"
+                          ":bot!u@h NOTICE #omarchy :heads up\r\n"));
+
+    auto *conversations =
+        qobject_cast<QAbstractItemModel *>(controller.conversations());
+    QVERIFY(conversations);
+    QCOMPARE(rowForTarget(conversations, QStringLiteral("NickServ")), -1);
+    QCOMPARE(rowForTarget(conversations, QStringLiteral("AUTH")), -1);
+
+    auto *lines = controller.console()->lines();
+    QVERIFY(lines);
+    QVERIFY(logContains(lines, QStringLiteral("-NickServ-")));
+    QVERIFY(logContains(lines, QStringLiteral("-AUTH-")));
+    QVERIFY(logContains(lines, QStringLiteral("-bot- heads up")));
+
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
+    QVERIFY(messages);
+    for (int row = 0; row < messages->rowCount(); ++row) {
+        const QString body =
+            roleAt(messages, row, MessageListModel::BodyRole).toString();
+        QVERIFY(!body.contains(QStringLiteral("heads up")));
+    }
 }
 
 void ControllerTest::emptyNetworkIdDoesNotSwitch()
