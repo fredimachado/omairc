@@ -53,6 +53,7 @@
 bin/build
 bin/test
 bin/test-desktop
+bin/test-live
 QT_QPA_PLATFORM=offscreen timeout 3 ./build/omairc
 QT_QPA_PLATFORM=offscreen timeout 3 ./build/omairc --mock
 ```
@@ -67,3 +68,6 @@ Use `bin/test-desktop` when the optional Xvfb, Xauthority, xdotool, and
 ImageMagick dependencies are available to verify the compiled executable as a
 black box without interacting with the user's active desktop. That runner
 launches `./build/omairc --mock`.
+Use `bin/test-live` when Docker is available to drive the real transport
+against Ergo, Solanum, and ngIRCd. It is not part of `bin/test` and fails
+loudly if `docker` or `docker compose` is missing.

@@ -1,0 +1,44 @@
+# L1 daemons: Ergo, Solanum, ngIRCd. InspIRCd and UnrealIRCd are L2.
+# Publish only on 127.0.0.1 with ephemeral host ports.
+name: omairc-live
+
+services:
+  ergo:
+    profiles: [l1, ergo]
+    image: ghcr.io/ergochat/ergo:stable
+    init: true
+    working_dir: /ircd
+    ports:
+      - "127.0.0.1::6667"
+      - "127.0.0.1::6697"
+    volumes:
+      - ./configs/ergo.yml:/ircd/ircd.yaml:ro
+      - ./certs/live.pem:/ircd/fullchain.pem:ro
+      - ./certs/live.key:/ircd/privkey.pem:ro
+    tmpfs:
+      - /tmp
+    # Skip the image entrypoint (it generates ircd.yaml and self-signed certs).
+    entrypoint: ["/bin/sh", "-c", "mkdir -p /tmp/ergo && exec /ircd-bin/ergo run"]
+
+  ngircd:
+    profiles: [l1, ngircd]
+    build:
+      context: .
+      dockerfile: docker/ngircd/Dockerfile
+    ports:
+      - "127.0.0.1::6667"
+    volumes:
+      - ./configs/ngircd.conf:/etc/ngircd/ngircd.conf:ro
+
+  solanum:
+    profiles: [l1, solanum]
+    build:
+      context: .
+      dockerfile: docker/solanum/Dockerfile
+    ports:
+      - "127.0.0.1::6667"
+      - "127.0.0.1::6697"
+    volumes:
+      - ./configs/solanum.conf:/opt/solanum/etc/ircd.conf:ro
+      - ./certs/live.pem:/opt/solanum/etc/ssl.pem:ro
+      - ./certs/live.key:/opt/solanum/etc/ssl.key:ro
