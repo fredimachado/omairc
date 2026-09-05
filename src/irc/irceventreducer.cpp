@@ -105,6 +105,11 @@ void IrcEventReducer::clearSelection()
     m_selected.reset();
 }
 
+std::optional<IrcConversationKey> IrcEventReducer::selected() const
+{
+    return m_selected;
+}
+
 void IrcEventReducer::apply(const IrcEvent& event)
 {
     std::visit([this](const auto& value) { reduce(value); }, event);
@@ -520,28 +525,35 @@ void IrcEventReducer::reduce(const IrcNickEvent& event)
     const IrcConversationKey oldKey{event.networkId, oldNormalized};
     const IrcConversationKey newKey{event.networkId, newNormalized};
     auto direct = m_conversations.find(oldKey);
-    if (direct != m_conversations.end() && !direct->second.isChannel()
-        && oldKey != newKey) {
-        IrcConversationState moved = std::move(direct->second);
-        m_conversations.erase(direct);
-        moved.key = newKey;
-        moved.target = event.newNick;
-        auto existing = m_conversations.find(newKey);
-        if (existing == m_conversations.end()) {
-            m_conversations.emplace(newKey, std::move(moved));
-        } else {
-            existing->second.messages.insert(existing->second.messages.end(),
-                                             moved.messages.begin(),
-                                             moved.messages.end());
-            existing->second.unread += moved.unread;
-            existing->second.mentions += moved.mentions;
-            for (auto& hint : moved.typing)
-                existing->second.typing.insert_or_assign(hint.first,
-                                                         std::move(hint.second));
-        }
-        if (m_selected && *m_selected == oldKey)
-            m_selected = newKey;
+    if (direct == m_conversations.end() || direct->second.isChannel())
+        return;
+
+    direct->second.target = event.newNick;
+    appendEvent(direct->second,
+                event.oldNick + QStringLiteral(" is now ") + event.newNick);
+    if (oldKey == newKey)
+        return;
+
+    IrcConversationState moved = std::move(direct->second);
+    m_conversations.erase(direct);
+    moved.key = newKey;
+    moved.target = event.newNick;
+    auto existing = m_conversations.find(newKey);
+    if (existing == m_conversations.end()) {
+        m_conversations.emplace(newKey, std::move(moved));
+    } else {
+        existing->second.messages.insert(existing->second.messages.end(),
+                                         moved.messages.begin(),
+                                         moved.messages.end());
+        existing->second.unread += moved.unread;
+        existing->second.mentions += moved.mentions;
+        for (auto& hint : moved.typing)
+            existing->second.typing.insert_or_assign(hint.first,
+                                                     std::move(hint.second));
+        existing->second.target = event.newNick;
     }
+    if (m_selected && *m_selected == oldKey)
+        m_selected = newKey;
 }
 
 void IrcEventReducer::reduce(const IrcKickEvent& event)

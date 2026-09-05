@@ -90,6 +90,7 @@ public:
                                        const QString& target) const;
     void markSelected(const IrcConversationKey& key);
     void clearSelection();
+    std::optional<IrcConversationKey> selected() const;
 
     static constexpr qint64 kStaleNamesSyncMs = 30000;
 
