@@ -7,7 +7,9 @@
 #include <string_view>
 
 #include "fakeirctransport.h"
+#include "irceventtranslator.h"
 #include "ircparser.h"
+#include "ircserverfeatures.h"
 #include "ircsession.h"
 #include "ircsessionmanager.h"
 #include "ircstatusentry.h"
@@ -136,6 +138,8 @@ private slots:
     void setAwayEncodesOptionalReason();
     void whoisWritesDoubledNick();
     void whoisStatusLinesFormatKnownNumerics();
+    void incomingNoticeStatusLinesWrapSpeaker();
+    void incomingNoticeDoesNotTranslateToEvents();
 };
 
 void SessionTest::registersAndAutojoins()
@@ -861,6 +865,65 @@ void SessionTest::whoisStatusLinesFormatKnownNumerics()
         mustParse(":server 001 omairc :Welcome"));
     QCOMPARE(welcome.label(), QStringLiteral("001"));
     QCOMPARE(welcome.text(), QStringLiteral("Welcome"));
+}
+
+void SessionTest::incomingNoticeStatusLinesWrapSpeaker()
+{
+    const IrcStatusEntry nickserv = IrcStatusEntry::incoming(
+        QStringLiteral("libera"),
+        mustParse(":NickServ!NickServ@services NOTICE omairc :Please identify"));
+    QCOMPARE(nickserv.label(), QStringLiteral("NOTICE"));
+    QCOMPARE(nickserv.text(), QStringLiteral("-NickServ- Please identify"));
+
+    const IrcStatusEntry auth = IrcStatusEntry::incoming(
+        QStringLiteral("libera"),
+        mustParse("NOTICE AUTH :*** Looking up your hostname..."));
+    QCOMPARE(auth.label(), QStringLiteral("NOTICE"));
+    QCOMPARE(auth.text(), QStringLiteral("-AUTH- *** Looking up your hostname..."));
+
+    const IrcStatusEntry server = IrcStatusEntry::incoming(
+        QStringLiteral("libera"),
+        mustParse(":copper.libera.chat NOTICE * :*** Found your hostname"));
+    QCOMPARE(server.label(), QStringLiteral("NOTICE"));
+    QCOMPARE(server.text(),
+             QStringLiteral("-copper.libera.chat- *** Found your hostname"));
+
+    const IrcStatusEntry channel = IrcStatusEntry::incoming(
+        QStringLiteral("libera"),
+        mustParse(":alice!u@h NOTICE #omarchy :heads up"));
+    QCOMPARE(channel.label(), QStringLiteral("NOTICE"));
+    QCOMPARE(channel.text(), QStringLiteral("-alice- heads up"));
+
+    const IrcStatusEntry bare = IrcStatusEntry::incoming(
+        QStringLiteral("libera"),
+        mustParse("NOTICE * :hello"));
+    QCOMPARE(bare.label(), QStringLiteral("NOTICE"));
+    QCOMPARE(bare.text(), QStringLiteral("hello"));
+    QVERIFY(!bare.text().startsWith(QStringLiteral("-- ")));
+
+    const IrcStatusEntry oneParam = IrcStatusEntry::incoming(
+        QStringLiteral("libera"),
+        mustParse("NOTICE AUTH"));
+    QCOMPARE(oneParam.label(), QStringLiteral("NOTICE"));
+    QCOMPARE(oneParam.text(), QStringLiteral("-AUTH- "));
+    QVERIFY(oneParam.text() != QStringLiteral("-AUTH- AUTH"));
+}
+
+void SessionTest::incomingNoticeDoesNotTranslateToEvents()
+{
+    const IrcServerFeatures features;
+    QVERIFY(IrcEventTranslator::translate(
+                QStringLiteral("libera"),
+                QStringLiteral("omairc"),
+                features,
+                mustParse(":NickServ!NickServ@services NOTICE omairc :Please identify"))
+                .empty());
+    QVERIFY(IrcEventTranslator::translate(
+                QStringLiteral("libera"),
+                QStringLiteral("omairc"),
+                features,
+                mustParse(":alice!u@h NOTICE #omarchy :heads up"))
+                .empty());
 }
 
 int runSessionTests(int argc, char **argv)
