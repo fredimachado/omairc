@@ -575,13 +575,16 @@ void IrcSession::handleMessage(const IrcMessage &message)
         return;
     }
     if (message.command == "432" || message.command == "433"
-        || message.command == "436" || message.command == "451"
-        || message.command == "462" || message.command == "465") {
-        fail(ErrorKind::Registration,
-             QStringLiteral("IRC registration was refused (%1)")
-                 .arg(QString::fromStdString(message.command)),
-             false);
-        return;
+        || message.command == "436" || message.command == "437"
+        || message.command == "451" || message.command == "462"
+        || message.command == "465") {
+        if (m_state != State::Registered) {
+            fail(ErrorKind::Registration,
+                 QStringLiteral("IRC registration was refused (%1)")
+                     .arg(QString::fromStdString(message.command)),
+                 false);
+            return;
+        }
     }
     if (message.command == "ERROR") {
         emit messageReceived(m_config.networkId, message);
