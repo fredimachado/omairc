@@ -170,6 +170,11 @@ ApplicationWindow {
         return nick.length > 0 ? nick.charAt(0).toUpperCase() : "?";
     }
 
+    function plainIrcText(text) {
+        return text.replace(/\x03(?:\d{1,2}(?:,\d{1,2})?)?/g, "")
+            .replace(/[\x02\x0f\x16\x1d\x1f]/g, "");
+    }
+
     function topicFor(name) {
         if (name === "#omarchy")
             return "A cozy corner for Omarchy users and builders.";
@@ -1908,8 +1913,9 @@ ApplicationWindow {
                         }
                     }
 
-                    Text {
+                    TextEdit {
                         id: messageBody
+                        objectName: "messageBody"
                         visible: messageDelegate.kind !== "event"
                         anchors.left: parent.left
                         anchors.leftMargin: win.scaledSize(70)
@@ -1917,13 +1923,21 @@ ApplicationWindow {
                         anchors.rightMargin: win.scaledSize(34)
                         anchors.top: parent.top
                         anchors.topMargin: win.scaledSize(29)
-                        text: messageDelegate.body
+                        text: win.plainIrcText(messageDelegate.body)
                         color: messageDelegate.kind === "action" ? win.mutedColor : win.inkColor
-                        wrapMode: Text.Wrap
+                        selectionColor: win.selectionColor
+                        selectedTextColor: "#ffffff"
+                        wrapMode: TextEdit.Wrap
+                        readOnly: true
+                        selectByMouse: true
+                        cursorVisible: false
+                        activeFocusOnPress: false
+                        activeFocusOnTab: false
+                        textFormat: TextEdit.PlainText
+                        padding: 0
                         font.family: "iA Writer Mono S"
                         font.italic: messageDelegate.kind === "action"
                         font.pixelSize: win.scaledSize(13)
-                        lineHeight: 1.35
                     }
                 }
 
@@ -1996,16 +2010,26 @@ ApplicationWindow {
                         font.pixelSize: win.scaledSize(10)
                     }
 
-                    Text {
+                    TextEdit {
                         id: consoleText
+                        objectName: "consoleText"
                         anchors.left: parent.left
                         anchors.leftMargin: win.scaledSize(192)
                         anchors.right: parent.right
                         anchors.rightMargin: win.scaledSize(24)
                         anchors.verticalCenter: parent.verticalCenter
-                        text: consoleDelegate.text
+                        text: win.plainIrcText(consoleDelegate.text)
                         color: consoleDelegate.bodyColor
-                        wrapMode: Text.Wrap
+                        selectionColor: win.selectionColor
+                        selectedTextColor: "#ffffff"
+                        wrapMode: TextEdit.Wrap
+                        readOnly: true
+                        selectByMouse: true
+                        cursorVisible: false
+                        activeFocusOnPress: false
+                        activeFocusOnTab: false
+                        textFormat: TextEdit.PlainText
+                        padding: 0
                         font.family: "iA Writer Mono S"
                         font.pixelSize: win.scaledSize(12)
                     }
