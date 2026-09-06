@@ -1045,11 +1045,11 @@ ApplicationWindow {
     component TranscriptList: ListView {
         id: list
 
-        enum Stick { Following, Detached }
-
-        property int stick: TranscriptList.Stick.Following
+        readonly property int stickFollowing: 0
+        readonly property int stickDetached: 1
+        property int stick: 0
         property int firstUnseenIndex: -1
-        readonly property bool jumpArmed: stick === TranscriptList.Stick.Detached
+        readonly property bool jumpArmed: stick === stickDetached
             && firstUnseenIndex >= 0
             && firstUnseenIndex < count
 
@@ -1072,7 +1072,7 @@ ApplicationWindow {
         }
 
         function pinToEnd() {
-            stick = TranscriptList.Stick.Following;
+            stick = stickFollowing;
             firstUnseenIndex = -1;
             pinning = true;
             trackedCount = count;
@@ -1093,7 +1093,7 @@ ApplicationWindow {
             if (viewportPinned())
                 pinToEnd();
             else
-                stick = TranscriptList.Stick.Detached;
+                stick = stickDetached;
         }
 
         function noteGrowth(previousCount, newCount) {
@@ -1111,7 +1111,7 @@ ApplicationWindow {
                 trackedCount = newCount;
                 return;
             }
-            if (stick === TranscriptList.Stick.Following) {
+            if (stick === stickFollowing) {
                 pinToEnd();
                 return;
             }
@@ -1128,7 +1128,7 @@ ApplicationWindow {
         }
 
         function restoreAnchor() {
-            if (stick === TranscriptList.Stick.Following) {
+            if (stick === stickFollowing) {
                 restoreIndex = -1;
                 pinToEnd();
                 return;
@@ -1173,7 +1173,7 @@ ApplicationWindow {
         onMovementEnded: adoptViewport()
         onFlickEnded: adoptViewport()
         onHeightChanged: {
-            if (stick === TranscriptList.Stick.Following)
+            if (stick === stickFollowing)
                 pinToEnd();
             else
                 adoptViewport();
@@ -1185,7 +1185,7 @@ ApplicationWindow {
             function onModelAboutToBeReset() {
                 list.resetPending = true;
                 list.resetSavedCount = list.count;
-                if (list.stick === TranscriptList.Stick.Detached)
+                if (list.stick === list.stickDetached)
                     list.snapshotAnchor();
             }
             function onModelReset() {
@@ -1199,7 +1199,7 @@ ApplicationWindow {
             }
             function onRowsRemoved(parent, first, last) {
                 if (first === 0
-                        && list.stick === TranscriptList.Stick.Detached
+                        && list.stick === list.stickDetached
                         && list.firstUnseenIndex >= 0) {
                     list.firstUnseenIndex -= (last - first + 1);
                     if (list.firstUnseenIndex < 0)
