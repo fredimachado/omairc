@@ -138,7 +138,7 @@ private:
     void handleMessage(const IrcMessage &message);
     void handleCap(const IrcMessage &message);
     void handleAuthenticate(const IrcMessage &message);
-    void handleWelcome();
+    void handleWelcome(const IrcMessage &message);
     bool sendCommand(const QString& command);
     void fail(ErrorKind kind, const QString &message, bool reconnect);
     void scheduleReconnect();
@@ -146,6 +146,7 @@ private:
     int reconnectDelay() const;
 
     const IrcSessionConfig m_config;
+    QString m_nick;
     IrcTransport *m_transport;
     IrcReconnectTimer *m_reconnectTimer;
     IrcReconnectTimer *m_capabilityTimer;
