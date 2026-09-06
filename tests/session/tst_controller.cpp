@@ -128,6 +128,7 @@ private slots:
     void selfAwayFollowsNumericsAndUnawaysAfterChat();
     void closeLastDirectKeepsSelfAway();
     void queryOpensDirectWithoutPrivmsg();
+    void queryAliceCreatesDirectRowWithoutPrivmsg();
     void queryWithTextSendsPrivmsg();
     void queryChannelAndEmptyAreRefused();
     void noticeSendsWithoutSelecting();
@@ -846,6 +847,38 @@ void ControllerTest::queryOpensDirectWithoutPrivmsg()
                            QByteArrayLiteral("PRIVMSG lena")));
 }
 
+void ControllerTest::queryAliceCreatesDirectRowWithoutPrivmsg()
+{
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+                                                transport);
+    QVERIFY(session);
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    transport->completeConnect();
+    transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
+                          ":server 001 omairc :Welcome\r\n"
+                          ":omairc!u@h JOIN :#omarchy\r\n"));
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+
+    QVERIFY(controller.sendMessage(QStringLiteral("/query alice")));
+    QCOMPARE(controller.selectedTarget(), QStringLiteral("alice"));
+    QVERIFY(!framesContain(transport->writtenFrames(),
+                           QByteArrayLiteral("PRIVMSG alice")));
+
+    auto *conversations =
+        qobject_cast<QAbstractItemModel *>(controller.conversations());
+    QVERIFY(conversations);
+    const int row = rowForTarget(conversations, QStringLiteral("alice"));
+    QVERIFY(row >= 0);
+    QCOMPARE(roleAt(conversations, row, ConversationListModel::DirectRole), true);
+
+    auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
+    QVERIFY(messages);
+    QCOMPARE(messages->rowCount(), 0);
+}
+
 void ControllerTest::queryWithTextSendsPrivmsg()
 {
     IrcController controller;
@@ -1546,12 +1579,13 @@ void ControllerTest::ghostClearIsSent()
     QCOMPARE(controller.selectedTarget(), QStringLiteral("ghost"));
     auto *conversations =
         qobject_cast<QAbstractItemModel *>(controller.conversations());
-    QVERIFY(rowForTarget(conversations, QStringLiteral("ghost")) < 0);
+    QVERIFY(conversations);
+    QVERIFY(rowForTarget(conversations, QStringLiteral("ghost")) >= 0);
 
     QVERIFY(controller.sendMessage(QStringLiteral("/clear")));
     QCOMPARE(controller.lastError(), QString());
     QCOMPARE(controller.selectedTarget(), QStringLiteral("ghost"));
-    QVERIFY(rowForTarget(conversations, QStringLiteral("ghost")) < 0);
+    QVERIFY(rowForTarget(conversations, QStringLiteral("ghost")) >= 0);
 }
 
 void ControllerTest::statusClearLeavesConversationMessages()
