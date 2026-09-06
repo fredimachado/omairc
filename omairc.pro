@@ -1,8 +1,12 @@
 QT += core gui qml quick quickcontrols2 dbus network
 
 CONFIG += c++17 release
+VERSION = 0.1.0
 TARGET = omairc
 TEMPLATE = app
+DEFINES += OMAIRC_VERSION=\\\"$$VERSION\\\"
+
+isEmpty(PREFIX): PREFIX = /usr/local
 
 HEADERS += \
     src/backend.h \
@@ -76,3 +80,18 @@ SOURCES += \
     src/irc/ircconnection.cpp
 
 RESOURCES += src/resources.qrc
+
+unix {
+    target.path = $$PREFIX/bin
+    desktop.path = $$PREFIX/share/applications
+    desktop.files = $$PWD/data/omairc.desktop
+    icon.path = $$PREFIX/share/icons/hicolor/scalable/apps
+    icon.files = $$PWD/data/omairc.svg
+    licenses.path = $$PREFIX/share/licenses/$$TARGET
+    licenses.extra = \
+        $(MKDIR) $(INSTALL_ROOT)$$licenses.path && \
+        $(QINSTALL) $$PWD/LICENSE $(INSTALL_ROOT)$$licenses.path/LICENSE && \
+        $(QINSTALL) $$PWD/src/irc/COPYING $(INSTALL_ROOT)$$licenses.path/COPYING-LGPL && \
+        $(QINSTALL) $$PWD/fonts/OFL.txt $(INSTALL_ROOT)$$licenses.path/OFL.txt
+    INSTALLS += target desktop icon licenses
+}

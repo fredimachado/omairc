@@ -36,10 +36,38 @@ desktop text size.
 bin/build
 ./build/omairc
 ./build/omairc --mock
+./build/omairc --version
 ```
 
 `--mock` skips Connect and any saved profile, and opens the bundled prototype
 conversations instead.
+
+`--version` prints `omairc 0.1.0` and exits without opening a window.
+
+## Install
+
+On Arch, once the AUR package is published:
+
+```sh
+yay -S omairc
+```
+
+That package depends on `qt6-base`, `qt6-declarative`, `qt6-svg`,
+`qt6-wayland`, and `xdg-desktop-portal`.
+
+Packagers stage with qmake `INSTALL_ROOT`, not `DESTDIR`:
+
+```sh
+qmake6 PREFIX=/usr
+make
+make INSTALL_ROOT="$pkgdir" install
+```
+
+Default `PREFIX` is `/usr/local`. Packagers pass `PREFIX=/usr`. Prove the
+staged tree with `bin/check-install`. That command does not write `./build`.
+
+Installed license texts are MIT (`LICENSE`), LGPL-3.0-or-later
+(`COPYING-LGPL`, from `src/irc/COPYING`), and OFL-1.1 (`OFL.txt`).
 
 ## Test
 
@@ -47,6 +75,7 @@ conversations instead.
 bin/test
 bin/test-desktop
 bin/test-live
+bin/check-install
 ```
 
 `bin/test-desktop` is optional. On Arch/Omarchy it needs `xorg-server-xvfb`,
@@ -57,8 +86,9 @@ ngIRCd on loopback and is not part of `bin/test`.
 
 ## Requirements
 
-- Qt 6: `qt6-base`, `qt6-declarative`
+- Qt 6: `qt6-base`, `qt6-declarative`, `qt6-svg`, `qt6-wayland`
 - `xdg-desktop-portal` and a portal backend
 
-The iA Writer Mono font is bundled under the SIL Open Font License 1.1; see
-`fonts/OFL.txt`.
+Omairc is MIT. See `LICENSE`. The IRC protocol code in `src/irc/` is
+LGPL-3.0-or-later. See `src/irc/COPYING`. The bundled iA Writer Mono font is
+OFL-1.1. See `fonts/OFL.txt`.

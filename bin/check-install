@@ -1,0 +1,122 @@
+#!/usr/bin/env sh
+set -eu
+
+ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
+VERSION="$(sed -n 's/^VERSION = //p' "$ROOT/omairc.pro")"
+[ -n "$VERSION" ] || {
+  echo "omairc.pro has no VERSION = line" >&2
+  exit 1
+}
+
+if command -v qmake6 >/dev/null 2>&1; then
+  QMAKE=qmake6
+elif command -v qmake >/dev/null 2>&1 && qmake -query QT_VERSION | grep -q '^6\.'; then
+  QMAKE=qmake
+else
+  echo "A Qt 6 qmake (qmake6) is required to check the omairc install." >&2
+  exit 1
+fi
+
+JOBS="$(nproc 2>/dev/null || echo 1)"
+BUILD_DIR="$ROOT/build-install"
+DEST="$(mktemp -d "${TMPDIR:-/tmp}/omairc-install.XXXXXX")"
+
+cleanup() {
+  rm -rf -- "$DEST"
+}
+trap cleanup EXIT HUP INT TERM
+
+expected="$(printf '%s\n' \
+  usr/bin/omairc \
+  usr/share/applications/omairc.desktop \
+  usr/share/icons/hicolor/scalable/apps/omairc.svg \
+  usr/share/licenses/omairc/LICENSE \
+  usr/share/licenses/omairc/COPYING-LGPL \
+  usr/share/licenses/omairc/OFL.txt | sort)"
+
+rm -rf -- "$BUILD_DIR"
+mkdir -p "$BUILD_DIR"
+cd "$BUILD_DIR"
+"$QMAKE" PREFIX=/usr "$ROOT/omairc.pro"
+make -j"$JOBS"
+make INSTALL_ROOT="$DEST" install
+
+list_dest() {
+  (CDPATH= cd -- "$DEST" && find . -type f | sed 's|^\./||' | sort)
+}
+
+hash_dest() {
+  (CDPATH= cd -- "$DEST" && find . -type f | sort | xargs -r sha256sum)
+}
+
+actual="$(list_dest)"
+if [ "$actual" != "$expected" ]; then
+  echo "dest files are not the closed set of six:" >&2
+  printf '%s\n' "$actual" >&2
+  exit 1
+fi
+
+if printf '%s\n' "$actual" | grep -q 'omairc.png'; then
+  echo "dest path contains omairc.png" >&2
+  exit 1
+fi
+
+svg="$DEST/usr/share/icons/hicolor/scalable/apps/omairc.svg"
+if grep -a -q $'\x89PNG' "$svg"; then
+  echo "SVG dest contains PNG magic" >&2
+  exit 1
+fi
+
+desktop="$DEST/usr/share/applications/omairc.desktop"
+if ! grep -qx 'Exec=omairc' "$desktop"; then
+  echo "desktop missing whole-line Exec=omairc" >&2
+  exit 1
+fi
+if ! grep -qx 'Icon=omairc' "$desktop"; then
+  echo "desktop missing whole-line Icon=omairc" >&2
+  exit 1
+fi
+if command -v desktop-file-validate >/dev/null 2>&1; then
+  desktop-file-validate "$desktop"
+fi
+
+lgpl="$DEST/usr/share/licenses/omairc/COPYING-LGPL"
+if ! grep -q 'GNU Lesser General Public License' "$lgpl"; then
+  echo "COPYING-LGPL missing GNU Lesser General Public License" >&2
+  exit 1
+fi
+
+first_hashes="$(hash_dest)"
+make INSTALL_ROOT="$DEST" install
+second_hashes="$(hash_dest)"
+if [ "$first_hashes" != "$second_hashes" ]; then
+  echo "second install changed dest file hashes" >&2
+  exit 1
+fi
+
+after="$(list_dest)"
+if [ "$after" != "$expected" ]; then
+  echo "second install dest files are not the closed set of six:" >&2
+  printf '%s\n' "$after" >&2
+  exit 1
+fi
+
+build_version="$("$BUILD_DIR/omairc" --version)"
+if [ "$build_version" != "omairc $VERSION" ]; then
+  echo "build-dir --version printed: $build_version" >&2
+  exit 1
+fi
+
+short_version="$("$BUILD_DIR/omairc" -v)"
+if [ "$short_version" != "omairc $VERSION" ]; then
+  echo "build-dir -v printed: $short_version" >&2
+  exit 1
+fi
+
+dest_version="$("$DEST/usr/bin/omairc" --version)"
+if [ "$dest_version" != "omairc $VERSION" ]; then
+  echo "dest --version printed: $dest_version" >&2
+  exit 1
+fi
+
+printf '%s\n' "$dest_version"
