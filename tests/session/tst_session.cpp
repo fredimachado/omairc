@@ -1039,9 +1039,6 @@ void SessionTest::incomingActionTranslatesToActionEvent()
         mustParse(":MetaNova!u@h PRIVMSG #omarchy :\x01"
                   "ACTION feeds jvaztap\x01"));
     QCOMPARE(events.size(), std::size_t(1));
-    if (const auto *message = std::get_if<IrcMessageEvent>(&events.front())) {
-        QCOMPARE(message->body, QStringLiteral("feeds jvaztap"));
-    }
     const auto *action = std::get_if<IrcActionEvent>(&events.front());
     QVERIFY(action);
     QCOMPARE(action->author, QStringLiteral("MetaNova"));
