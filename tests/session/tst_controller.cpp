@@ -1760,7 +1760,7 @@ void ControllerTest::largeChannelJoinDoesNotResetModelsPerNick()
     QVERIFY(transport->writtenFrames().contains(QByteArrayLiteral("WHO #big\r\n")));
     QCOMPARE(conversationResets.size(), 1);
     QCOMPARE(conversationDataChanges.size(), 1);
-    QCOMPARE(messageResets.size(), 2);
+    QCOMPARE(messageResets.size(), 1);
     QCOMPARE(memberResets.size(), 2);
 
     const int memberResetsAfterNames = memberResets.size();

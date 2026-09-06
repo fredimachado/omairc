@@ -39,5 +39,6 @@ public:
 private:
     IrcEventReducer& m_reducer;
     std::optional<IrcConversationKey> m_selected;
+    std::optional<IrcConversationKey> m_loaded;
     int m_count = 0;
 };

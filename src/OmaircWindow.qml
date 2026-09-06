@@ -1059,16 +1059,25 @@ ApplicationWindow {
         property int pinGeneration: 0
         property bool resetPending: false
         property int resetSavedCount: 0
+        property real previousContentHeight: 0
 
         boundsBehavior: Flickable.StopAtBounds
         clip: true
         spacing: 0
         highlightFollowsCurrentItem: false
 
+        function endContentY() {
+            return originY + Math.max(0, contentHeight - height);
+        }
+
         function viewportPinned() {
             if (count === 0 || contentHeight <= height || atYEnd)
                 return true;
-            return contentY >= contentHeight - height - 2;
+            return contentY >= endContentY() - 2;
+        }
+
+        function stickToEnd() {
+            contentY = endContentY();
         }
 
         function pinToEnd() {
@@ -1076,11 +1085,13 @@ ApplicationWindow {
             firstUnseenIndex = -1;
             pinning = true;
             trackedCount = count;
+            stickToEnd();
             positionViewAtEnd();
             var generation = ++pinGeneration;
             Qt.callLater(function() {
                 if (generation !== pinGeneration)
                     return;
+                stickToEnd();
                 positionViewAtEnd();
                 pinning = false;
                 trackedCount = count;
@@ -1112,7 +1123,8 @@ ApplicationWindow {
                 return;
             }
             if (stick === stickFollowing) {
-                pinToEnd();
+                trackedCount = newCount;
+                stickToEnd();
                 return;
             }
             if (firstUnseenIndex < 0)
@@ -1172,9 +1184,16 @@ ApplicationWindow {
 
         onMovementEnded: adoptViewport()
         onFlickEnded: adoptViewport()
+        onContentHeightChanged: {
+            var wasAtEnd = previousContentHeight <= height
+                || contentY + height >= originY + previousContentHeight - 2;
+            if (stick === stickFollowing && wasAtEnd)
+                stickToEnd();
+            previousContentHeight = contentHeight;
+        }
         onHeightChanged: {
             if (stick === stickFollowing)
-                pinToEnd();
+                stickToEnd();
             else
                 adoptViewport();
         }
