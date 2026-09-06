@@ -869,17 +869,46 @@ TestCase {
         verify(transcriptPinned(list));
     }
 
-    function fillMockConsoleUntilScrollable(list) {
+    function appendMockMessages(list, count, bodyPrefix) {
+        var start = list.model.count;
         var index = 0;
-        for (index = 0; index < 40; ++index) {
+        for (index = 0; index < count; ++index) {
+            list.model.append({
+                author: "anna",
+                time: "10:00",
+                body: bodyPrefix + " " + index,
+                kind: "message"
+            });
+        }
+        tryCompare(list.model, "count", start + count);
+    }
+
+    function appendMockConsoleLines(list, count, textPrefix) {
+        var start = list.model.count;
+        var index = 0;
+        for (index = 0; index < count; ++index) {
             list.model.append({
                 time: "12:00:03",
                 label: "PRIVMSG",
-                text: "console fill " + index,
+                text: textPrefix + " " + index,
                 source: "server",
                 severity: "info"
             });
         }
+        tryCompare(list.model, "count", start + count);
+    }
+
+    function unseenIsInView(list, unseen) {
+        if (firstVisibleIndex(list) === unseen)
+            return true;
+        var row = list.itemAtIndex(unseen);
+        if (!row)
+            return false;
+        return row.y + row.height > list.contentY && row.y < list.contentY + list.height;
+    }
+
+    function fillMockConsoleUntilScrollable(list) {
+        appendMockConsoleLines(list, 40, "console fill");
         waitForRendering(appWindow.contentItem);
         list.pinToEnd();
         waitForRendering(appWindow.contentItem);
@@ -930,20 +959,7 @@ TestCase {
 
         var frozenY = list.contentY;
         var previousCount = list.model.count;
-        list.model.append({
-            author: "anna",
-            time: "10:00",
-            body: "first unseen",
-            kind: "message"
-        });
-        tryCompare(list.model, "count", previousCount + 1);
-        list.model.append({
-            author: "dax",
-            time: "10:01",
-            body: "second unseen",
-            kind: "message"
-        });
-        tryCompare(list.model, "count", previousCount + 2);
+        appendMockMessages(list, 1, "first unseen");
         waitForRendering(appWindow.contentItem);
         wait(0);
 
@@ -952,6 +968,12 @@ TestCase {
         var jump = item("messageUnseenJump");
         tryCompare(jump, "visible", true);
 
+        appendMockMessages(list, 24, "later unseen");
+        waitForRendering(appWindow.contentItem);
+        wait(0);
+        fuzzyCompare(list.contentY, frozenY, 2);
+        compare(list.firstUnseenIndex, previousCount);
+
         var unseen = list.firstUnseenIndex;
         mouseClick(jump);
         waitForRendering(appWindow.contentItem);
@@ -959,8 +981,9 @@ TestCase {
         tryCompare(jump, "visible", false);
         compare(list.firstUnseenIndex, -1);
         tryVerify(function() {
-            return firstVisibleIndex(list) === unseen;
+            return unseenIsInView(list, unseen);
         });
+        compare(firstVisibleIndex(list), unseen);
     }
 
     function test_consoleDetachedArrivalKeepsViewportAndJumpsToFirstUnseen() {
@@ -978,22 +1001,7 @@ TestCase {
 
         var frozenY = list.contentY;
         var previousCount = list.model.count;
-        list.model.append({
-            time: "12:00:04",
-            label: "PRIVMSG",
-            text: "first unseen console",
-            source: "server",
-            severity: "info"
-        });
-        tryCompare(list.model, "count", previousCount + 1);
-        list.model.append({
-            time: "12:00:05",
-            label: "PRIVMSG",
-            text: "second unseen console",
-            source: "server",
-            severity: "info"
-        });
-        tryCompare(list.model, "count", previousCount + 2);
+        appendMockConsoleLines(list, 1, "first unseen console");
         waitForRendering(appWindow.contentItem);
         wait(0);
 
@@ -1002,6 +1010,12 @@ TestCase {
         var jump = item("consoleUnseenJump");
         tryCompare(jump, "visible", true);
 
+        appendMockConsoleLines(list, 40, "later unseen console");
+        waitForRendering(appWindow.contentItem);
+        wait(0);
+        fuzzyCompare(list.contentY, frozenY, 2);
+        compare(list.firstUnseenIndex, previousCount);
+
         var unseen = list.firstUnseenIndex;
         mouseClick(jump);
         waitForRendering(appWindow.contentItem);
@@ -1009,8 +1023,9 @@ TestCase {
         tryCompare(jump, "visible", false);
         compare(list.firstUnseenIndex, -1);
         tryVerify(function() {
-            return firstVisibleIndex(list) === unseen;
+            return unseenIsInView(list, unseen);
         });
+        compare(firstVisibleIndex(list), unseen);
     }
 
     function test_messageBodyIsSelectable() {
