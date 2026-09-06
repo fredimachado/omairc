@@ -1938,7 +1938,6 @@ ApplicationWindow {
                         font.family: "iA Writer Mono S"
                         font.italic: messageDelegate.kind === "action"
                         font.pixelSize: win.scaledSize(13)
-                        lineHeight: 1.35
                     }
                 }
 
