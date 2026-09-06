@@ -7,4 +7,3 @@ Icon=omairc
 Terminal=false
 Categories=Network;Chat;
 Keywords=IRC;Chat;
-StartupWMClass=omairc

@@ -64,7 +64,7 @@ make INSTALL_ROOT="$pkgdir" install
 ```
 
 Default `PREFIX` is `/usr/local`. Packagers pass `PREFIX=/usr`. Prove the
-staged tree with `bin/check-install`. That command does not write `./build`.
+staged tree with `bin/test-install`. That command does not write `./build`.
 
 Installed license texts are MIT (`LICENSE`), LGPL-3.0-or-later
 (`COPYING-LGPL`, from `src/irc/COPYING`), and OFL-1.1 (`OFL.txt`).
@@ -75,7 +75,7 @@ Installed license texts are MIT (`LICENSE`), LGPL-3.0-or-later
 bin/test
 bin/test-desktop
 bin/test-live
-bin/check-install
+bin/test-install
 ```
 
 `bin/test-desktop` is optional. On Arch/Omarchy it needs `xorg-server-xvfb`,
