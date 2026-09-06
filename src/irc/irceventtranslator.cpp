@@ -158,7 +158,7 @@ std::vector<IrcEvent> IrcEventTranslator::translate(
         const QString displayTarget = features.isChannel(utf8(wireTarget))
             ? wireTarget
             : sender;
-        if (body.startsWith(QStringLiteral("\x01ACTION "))
+        if (body.startsWith(QChar(1) + QStringLiteral("ACTION "))
             && body.endsWith(QChar(1))) {
             events.emplace_back(IrcActionEvent{
                 *conversation, sender, body.mid(8, body.size() - 9), now, displayTarget});
