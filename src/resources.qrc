@@ -4,6 +4,6 @@
         <file alias="OmaircWindow.qml">OmaircWindow.qml</file>
         <file alias="fonts/iAWriterMonoS-Regular.ttf">../fonts/iAWriterMonoS-Regular.ttf</file>
         <file alias="fonts/iAWriterMonoS-Bold.ttf">../fonts/iAWriterMonoS-Bold.ttf</file>
-        <file alias="icons/omairc.svg">../data/omairc.svg</file>
+        <file alias="icons/omairc.svg">../data/icons/hicolor/scalable/apps/omairc.svg</file>
     </qresource>
 </RCC>
