@@ -2,6 +2,7 @@
 
 #include "irccasemapping.h"
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <optional>
@@ -78,6 +79,10 @@ public:
     std::optional<std::size_t> nickLength() const noexcept;
     std::string_view prefixModes() const noexcept;
     std::string_view prefixSymbols() const noexcept;
+    std::string_view chanModesA() const noexcept;
+    std::string_view chanModesB() const noexcept;
+    std::string_view chanModesC() const noexcept;
+    std::string_view chanModesD() const noexcept;
 
     std::optional<IrcParsedName> parseNamesToken(std::string_view token) const;
     std::vector<IrcPrefixChange> prefixChanges(
@@ -88,9 +93,17 @@ public:
                             std::string_view nick) const;
 
 private:
+    enum class ModeParamRule : std::uint8_t {
+        Never = 0,
+        Always,
+        SetOnly,
+        Prefix,
+    };
+
     char letterForSymbol(char symbol) const;
-    char symbolForLetter(char mode) const;
+    ModeParamRule ruleFor(char raw) const;
     void rebuildPrefixDumps();
+    void rebuildModeRules();
 
     IrcCaseMapping m_caseMapping;
     std::string m_channelTypes;
@@ -98,4 +111,9 @@ private:
     std::string m_prefixModes;
     std::string m_prefixSymbols;
     std::optional<std::size_t> m_nickLength;
+    std::string m_chanModesA;
+    std::string m_chanModesB;
+    std::string m_chanModesC;
+    std::string m_chanModesD;
+    std::array<ModeParamRule, 256> m_modeRules{};
 };
