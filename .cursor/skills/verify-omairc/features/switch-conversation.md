@@ -38,5 +38,4 @@ Preconditions:
 - `#desktop` starts with unread `3` and `#ricing` with mention `12`. Opening the channel clears that row. Prove the badge is gone after the click, not before.
 - Direct messages do not show a people count or member panel. Do not treat a missing panel as a toggle failure.
 - Sidebar labels render as `#  omarchy` without repeating the hash in the name string. Assert the window title (`#omarchy - Omairc`), not the clipped label text.
-- Clicking the CHANNELS `+` opens a toast about real IRC connectivity. That is not a conversation switch.
 - `Alt+Down` / `Alt+Up` / `Alt+A` are keyboard. Status is not in that walk. Prove those chords with `qml-suite` or `launch --mock`; a default compiled launch has no sidebar rows.
