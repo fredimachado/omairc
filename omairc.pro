@@ -83,15 +83,30 @@ RESOURCES += src/resources.qrc
 
 unix {
     target.path = $$PREFIX/bin
+    INSTALLS += target
+
     desktop.path = $$PREFIX/share/applications
     desktop.files = $$PWD/data/omairc.desktop
+    INSTALLS += desktop
+
     icon.path = $$PREFIX/share/icons/hicolor/scalable/apps
-    icon.files = $$PWD/data/omairc.svg
-    licenses.path = $$PREFIX/share/licenses/$$TARGET
-    licenses.extra = \
-        $(MKDIR) $(INSTALL_ROOT)$$licenses.path && \
-        $(QINSTALL) $$PWD/LICENSE $(INSTALL_ROOT)$$licenses.path/LICENSE && \
-        $(QINSTALL) $$PWD/src/irc/COPYING $(INSTALL_ROOT)$$licenses.path/COPYING-LGPL && \
-        $(QINSTALL) $$PWD/fonts/OFL.txt $(INSTALL_ROOT)$$licenses.path/OFL.txt
-    INSTALLS += target desktop icon licenses
+    icon.files = $$PWD/data/icons/hicolor/scalable/apps/omairc.svg
+    INSTALLS += icon
+
+    license_mit.path = $$PREFIX/share/licenses/omairc
+    license_mit.files = $$PWD/LICENSE
+    INSTALLS += license_mit
+
+    license_ofl.path = $$PREFIX/share/licenses/omairc
+    license_ofl.files = $$PWD/fonts/OFL.txt
+    INSTALLS += license_ofl
+
+    license_lgpl.path = $$PREFIX/share/licenses/omairc
+    license_lgpl.extra = \
+        $(MKDIR) $(INSTALL_ROOT)$$license_lgpl.path && \
+        $(INSTALL_FILE) $$PWD/src/irc/COPYING \
+            $(INSTALL_ROOT)$$license_lgpl.path/COPYING-LGPL
+    license_lgpl.uninstall = \
+        $(DEL_FILE) $(INSTALL_ROOT)$$license_lgpl.path/COPYING-LGPL
+    INSTALLS += license_lgpl
 }

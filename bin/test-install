@@ -1,0 +1,109 @@
+#!/usr/bin/env sh
+set -eu
+
+ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
+BUILD_DIR="$ROOT/build-install"
+
+if command -v qmake6 >/dev/null 2>&1; then
+  QMAKE=qmake6
+elif command -v qmake >/dev/null 2>&1 && qmake -query QT_VERSION | grep -q '^6\.'; then
+  QMAKE=qmake
+else
+  echo "A Qt 6 qmake (qmake6) is required to build omairc." >&2
+  exit 1
+fi
+
+JOBS="$(nproc 2>/dev/null || echo 1)"
+VERSION="$(awk '/^VERSION / { print $3; exit }' "$ROOT/omairc.pro")"
+test -n "$VERSION" || {
+  echo "omairc.pro must set VERSION" >&2
+  exit 1
+}
+
+rel_tree() {
+  find "$1" | sed "s|^$1||; s|^/||" | sort
+}
+
+rel_files() {
+  find "$1" -type f | sed "s|^$1/||" | sort
+}
+
+dest="$(mktemp -d "${TMPDIR:-/tmp}/omairc-install.XXXXXX")"
+fresh="$(mktemp -d "${TMPDIR:-/tmp}/omairc-install.XXXXXX")"
+trap 'rm -rf -- "$dest" "$fresh"' EXIT HUP INT TERM
+
+rm -rf "$BUILD_DIR"
+mkdir -p "$BUILD_DIR"
+cd "$BUILD_DIR"
+
+"$QMAKE" PREFIX=/usr "$ROOT/omairc.pro"
+make -j"$JOBS"
+make INSTALL_ROOT="$dest" install
+make INSTALL_ROOT="$dest" install
+make INSTALL_ROOT="$fresh" install
+
+dest_tree="$(rel_tree "$dest")"
+fresh_tree="$(rel_tree "$fresh")"
+test "$dest_tree" = "$fresh_tree" || {
+  echo "repeat install and fresh install trees must match" >&2
+  printf '%s\n' "$dest_tree" >&2
+  printf '%s\n' "$fresh_tree" >&2
+  exit 1
+}
+
+expected="$(printf '%s\n' \
+  usr/bin/omairc \
+  usr/share/applications/omairc.desktop \
+  usr/share/icons/hicolor/scalable/apps/omairc.svg \
+  usr/share/licenses/omairc/LICENSE \
+  usr/share/licenses/omairc/COPYING-LGPL \
+  usr/share/licenses/omairc/OFL.txt | sort)"
+
+dest_files="$(rel_files "$dest")"
+test "$dest_files" = "$expected" || {
+  echo "dest files must be exactly the six packager paths" >&2
+  printf '%s\n' "$dest_files" >&2
+  exit 1
+}
+
+if find "$dest" | grep '\.png$'; then
+  echo "dest must not contain a .png path" >&2
+  exit 1
+fi
+
+svg="$dest/usr/share/icons/hicolor/scalable/apps/omairc.svg"
+sig="$(od -An -tx1 -N4 "$svg" | tr -d ' \n' | tr 'A-F' 'a-f')"
+test "$sig" != "89504e47" || {
+  echo "installed SVG must not start with PNG magic" >&2
+  exit 1
+}
+
+count="$(find "$dest" -type f | awk 'END { print NR }')"
+test "$count" = 6 || {
+  echo "dest file count must be 6" >&2
+  exit 1
+}
+
+desktop="$dest/usr/share/applications/omairc.desktop"
+grep -qx 'Exec=omairc' "$desktop" || {
+  echo "desktop Exec must be omairc" >&2
+  exit 1
+}
+grep -qx 'Icon=omairc' "$desktop" || {
+  echo "desktop Icon must be omairc" >&2
+  exit 1
+}
+
+if command -v desktop-file-validate >/dev/null 2>&1; then
+  desktop-file-validate "$desktop"
+fi
+
+got="$("$dest/usr/bin/omairc" --version)"
+want="omairc $VERSION"
+test "$got" = "$want" || {
+  echo "--version must print exactly $want" >&2
+  printf 'got: %s\n' "$got" >&2
+  exit 1
+}
+
+printf '%s\n' "$dest_files"

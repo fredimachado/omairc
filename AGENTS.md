@@ -52,7 +52,7 @@
 ```sh
 bin/build
 bin/test
-bin/check-install
+bin/test-install
 bin/test-desktop
 bin/test-live
 QT_QPA_PLATFORM=offscreen timeout 3 ./build/omairc
