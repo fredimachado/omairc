@@ -58,6 +58,9 @@ const QVector<IrcVerbSpec>& IrcVerbTable::all()
         {IrcCommand::Verb::Mode, QStringLiteral("mode"), {},
          QStringLiteral("/mode <channel> [[+|-]modechars [parameters]]"),
          IrcVerbScope::Either, {}},
+        {IrcCommand::Verb::Kick, QStringLiteral("kick"), {},
+         QStringLiteral("/kick [channel] <nick> [reason]"), IrcVerbScope::Either,
+         QStringLiteral("Kick applies to channels")},
     };
     return rows;
 }

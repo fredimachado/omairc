@@ -117,6 +117,8 @@ private slots:
     void channelCloseSlashIsWrongScope();
     void partDefaultsToSelectedChannel();
     void partFromDirectIsWrongScope();
+    void kickDefaultsToSelectedChannel();
+    void kickFromDirectIsWrongScope();
     void statusPartDefaultsToSelectedChannel();
     void partImplicitUsesSelectedSession();
     void topicUsesSelectedSession();
@@ -524,6 +526,72 @@ void ControllerTest::partFromDirectIsWrongScope()
     QVERIFY(controller.sendMessage(QStringLiteral("/part #omarchy")));
     QCOMPARE(transport->writtenFrames().last(),
              QByteArrayLiteral("PART #omarchy\r\n"));
+}
+
+void ControllerTest::kickDefaultsToSelectedChannel()
+{
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+                                                transport);
+    QVERIFY(session);
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    registerSession(session, transport);
+    QVERIFY(!controller.sendMessage(QStringLiteral("/kick")));
+    QCOMPARE(controller.lastError(), QStringLiteral("Command was refused"));
+    QVERIFY(!controller.sendMessage(QStringLiteral("/kick bob")));
+    QCOMPARE(controller.lastError(), QStringLiteral("Command was refused"));
+
+    transport->injectBytes(QByteArrayLiteral(":omairc!u@h JOIN :#omarchy\r\n"));
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+
+    QVERIFY(!controller.sendMessage(QStringLiteral("/kick")));
+    QCOMPARE(controller.lastError(), QStringLiteral("Command was refused"));
+    QVERIFY(!controller.sendMessage(QStringLiteral("/kick #omarchy")));
+    QCOMPARE(controller.lastError(), QStringLiteral("Command was refused"));
+
+    QVERIFY(controller.sendMessage(QStringLiteral("/kick bob")));
+    QCOMPARE(transport->writtenFrames().last(),
+             QByteArrayLiteral("KICK #omarchy bob\r\n"));
+
+    QVERIFY(controller.sendMessage(QStringLiteral("/kick bob spam")));
+    QCOMPARE(transport->writtenFrames().last(),
+             QByteArrayLiteral("KICK #omarchy bob :spam\r\n"));
+
+    QVERIFY(controller.sendMessage(QStringLiteral("/kick #desktop alice leftover")));
+    QCOMPARE(transport->writtenFrames().last(),
+             QByteArrayLiteral("KICK #desktop alice :leftover\r\n"));
+}
+
+void ControllerTest::kickFromDirectIsWrongScope()
+{
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+                                                transport);
+    QVERIFY(session);
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    registerSession(session, transport);
+    transport->injectBytes(
+        QByteArrayLiteral(":omairc!u@h JOIN :#omarchy\r\n"
+                          ":lena!u@h PRIVMSG omairc :hi\r\n"));
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("lena"));
+    const int framesBefore = transport->writtenFrames().size();
+
+    QVERIFY(!controller.sendMessage(QStringLiteral("/kick")));
+    QCOMPARE(controller.lastError(), QStringLiteral("Command was refused"));
+    QVERIFY(!controller.sendMessage(QStringLiteral("/kick bob")));
+    QCOMPARE(controller.lastError(), QStringLiteral("Kick applies to channels"));
+    QCOMPARE(transport->writtenFrames().size(), framesBefore);
+    QVERIFY(!framesContain(transport->writtenFrames(), QByteArrayLiteral("KICK")));
+
+    QVERIFY(controller.sendMessage(QStringLiteral("/kick #omarchy bob")));
+    QCOMPARE(transport->writtenFrames().last(),
+             QByteArrayLiteral("KICK #omarchy bob\r\n"));
+
+    QVERIFY(controller.sendMessage(QStringLiteral("/kick #omarchy bob spam")));
+    QCOMPARE(transport->writtenFrames().last(),
+             QByteArrayLiteral("KICK #omarchy bob :spam\r\n"));
 }
 
 void ControllerTest::statusPartDefaultsToSelectedChannel()

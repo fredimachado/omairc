@@ -19,7 +19,7 @@ enum class IrcVerbScope
 
 struct IrcCommand
 {
-    enum class Verb { Empty, Say, Action, Join, Part, Nick, Quit, Clear, Close, Query, Msg, Topic, Notice, Away, Back, Whois, Mode, Unknown };
+    enum class Verb { Empty, Say, Action, Join, Part, Nick, Quit, Clear, Close, Query, Msg, Topic, Notice, Away, Back, Whois, Mode, Kick, Unknown };
     Verb verb = Verb::Empty;
     QString name;
     QString argument;

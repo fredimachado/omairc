@@ -315,6 +315,15 @@ bool IrcSession::part(const QString& channel)
         && sendCommand(QStringLiteral("PART %1").arg(channel));
 }
 
+bool IrcSession::kick(const QString& channel, const QString& nick, const QString& reason)
+{
+    if (channel.isEmpty() || nick.isEmpty())
+        return false;
+    return sendCommand(
+        reason.isEmpty() ? QStringLiteral("KICK %1 %2").arg(channel, nick)
+                         : QStringLiteral("KICK %1 %2 :%3").arg(channel, nick, reason));
+}
+
 bool IrcSession::setTopic(const QString& channel, const QString& topic)
 {
     return !channel.isEmpty() && !topic.isEmpty()
