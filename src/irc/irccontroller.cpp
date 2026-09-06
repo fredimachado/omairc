@@ -355,6 +355,10 @@ void IrcController::openDirectMessage(const QString& nick)
 {
     if (!m_selected || nick.isEmpty())
         return;
+    const IrcConversationKey key =
+        m_reducer.conversationKey(m_selected->networkId, nick);
+    m_reducer.ensureConversation(key, nick);
+    m_conversations.reload();
     selectConversation(m_selected->networkId, nick);
 }
 
@@ -507,6 +511,31 @@ IrcCommandOutcome IrcController::dispatch(const IrcCommand& command,
         sent = !channel.isEmpty() && active->part(channel);
         break;
     }
+    case IrcCommand::Verb::Kick: {
+        const QString first = firstToken(command.argument);
+        if (first.isEmpty())
+            return IrcCommandOutcome::Refused;
+        const QString networkId = queryNetworkId(surface);
+        if (m_reducer.serverFeatures(networkId).isChannel(utf8(first))) {
+            const QString afterChannel = restAfterFirstToken(command.argument);
+            const QString nick = firstToken(afterChannel);
+            if (nick.isEmpty())
+                return IrcCommandOutcome::Refused;
+            sent = active->kick(first, nick, restAfterFirstToken(afterChannel));
+            break;
+        }
+        if (m_selected && !isChannel())
+            return IrcCommandOutcome::WrongScope;
+        IrcSession *selected = selectedSession();
+        if (!selected)
+            break;
+        if (selected->state() != IrcSession::State::Registered)
+            return IrcCommandOutcome::NotConnected;
+        const QString channel = selectedTarget();
+        sent = !channel.isEmpty()
+            && selected->kick(channel, first, restAfterFirstToken(command.argument));
+        break;
+    }
     case IrcCommand::Verb::Nick:
         sent = !command.argument.isEmpty() && active->changeNick(command.argument);
         break;
@@ -584,6 +613,9 @@ IrcCommandOutcome IrcController::dispatchQuery(const IrcCommand& command,
             return IrcCommandOutcome::NotConnected;
     }
 
+    const IrcConversationKey key = m_reducer.conversationKey(networkId, nick);
+    m_reducer.ensureConversation(key, nick);
+    m_conversations.reload();
     selectConversation(networkId, nick);
     if (rest.isEmpty())
         return IrcCommandOutcome::Sent;

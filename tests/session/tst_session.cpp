@@ -122,6 +122,9 @@ private slots:
     void tlsCertificateFailureIsExplicit();
     void answersPingImmediately();
     void registrationRefusalFailsVisibly();
+    void nickInUseAfterWelcomeKeepsSession();
+    void unavailableResourceAfterWelcomeKeepsSession();
+    void unavailableResourceBeforeWelcomeFails();
     void connectionTimeoutSchedulesReconnect();
     void remoteCloseSchedulesReconnect();
     void malformedInputSurfacesProtocolError();
@@ -135,6 +138,7 @@ private slots:
     void pingAndWelcomeProduceStatusEntries();
     void configuredPasswordNeverAppearsInStatusEntries();
     void setTopicIsSetOnly();
+    void kickWritesOptionalReason();
     void setAwayEncodesOptionalReason();
     void whoisWritesDoubledNick();
     void whoisStatusLinesFormatKnownNumerics();
@@ -449,6 +453,69 @@ void SessionTest::registrationRefusalFailsVisibly()
              IrcSession::ErrorKind::Registration);
 }
 
+void SessionTest::nickInUseAfterWelcomeKeepsSession()
+{
+    Fixture fixture;
+    QSignalSpy errors(fixture.session, &IrcSession::errorOccurred);
+    int received = 0;
+    QString lastCommand;
+    QObject::connect(fixture.session, &IrcSession::messageReceived, fixture.session,
+                     [&](const QString&, const IrcMessage& message) {
+        ++received;
+        lastCommand = QString::fromStdString(message.command);
+    });
+    fixture.connectTls();
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
+                          ":server 001 omairc :Welcome\r\n"));
+    QCOMPARE(fixture.session->state(), IrcSession::State::Registered);
+    QCOMPARE(errors.size(), 0);
+
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(":server 433 omairc othernick :Nickname is already in use\r\n"));
+
+    QCOMPARE(fixture.session->state(), IrcSession::State::Registered);
+    QCOMPARE(fixture.transport->connectionState(),
+             IrcTransport::ConnectionState::Encrypted);
+    QCOMPARE(errors.size(), 0);
+    QCOMPARE(received, 1);
+    QCOMPARE(lastCommand, QStringLiteral("433"));
+}
+
+void SessionTest::unavailableResourceAfterWelcomeKeepsSession()
+{
+    Fixture fixture;
+    QSignalSpy errors(fixture.session, &IrcSession::errorOccurred);
+    fixture.connectTls();
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
+                          ":server 001 omairc :Welcome\r\n"));
+    QCOMPARE(fixture.session->state(), IrcSession::State::Registered);
+    QCOMPARE(errors.size(), 0);
+
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(":server 437 omairc othernick :Nick/channel is temporarily unavailable\r\n"));
+
+    QCOMPARE(fixture.session->state(), IrcSession::State::Registered);
+    QCOMPARE(fixture.transport->connectionState(),
+             IrcTransport::ConnectionState::Encrypted);
+    QCOMPARE(errors.size(), 0);
+}
+
+void SessionTest::unavailableResourceBeforeWelcomeFails()
+{
+    Fixture fixture;
+    QSignalSpy errors(fixture.session, &IrcSession::errorOccurred);
+    fixture.connectTls();
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(":server 437 * omairc :Nick/channel is temporarily unavailable\r\n"));
+
+    QCOMPARE(fixture.session->state(), IrcSession::State::Failed);
+    QCOMPARE(errors.size(), 1);
+    QCOMPARE(qvariant_cast<IrcSession::ErrorKind>(errors.at(0).at(1)),
+             IrcSession::ErrorKind::Registration);
+}
+
 void SessionTest::connectionTimeoutSchedulesReconnect()
 {
     Fixture fixture;
@@ -739,6 +806,37 @@ void SessionTest::setTopicIsSetOnly()
                                       QStringLiteral("hello")));
     QCOMPARE(fixture.transport->writtenFrames().last(),
              QByteArrayLiteral("TOPIC #omarchy :hello\r\n"));
+}
+
+void SessionTest::kickWritesOptionalReason()
+{
+    Fixture fixture;
+    fixture.connectTls();
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
+                          ":server 001 omairc :Welcome\r\n"));
+    QCOMPARE(fixture.session->state(), IrcSession::State::Registered);
+
+    const int before = fixture.transport->writtenFrames().size();
+    QVERIFY(!fixture.session->kick(QString(), QStringLiteral("alice"),
+                                   QStringLiteral("spam")));
+    QVERIFY(!fixture.session->kick(QStringLiteral("#omarchy"), QString(),
+                                   QStringLiteral("spam")));
+    QCOMPARE(fixture.transport->writtenFrames().size(), before);
+    for (const QByteArray& frame : fixture.transport->writtenFrames())
+        QVERIFY(!frame.contains(QByteArrayLiteral("KICK")));
+
+    QVERIFY(fixture.session->kick(QStringLiteral("#omarchy"),
+                                  QStringLiteral("alice"),
+                                  QStringLiteral("spam")));
+    QCOMPARE(fixture.transport->writtenFrames().last(),
+             QByteArrayLiteral("KICK #omarchy alice :spam\r\n"));
+
+    QVERIFY(fixture.session->kick(QStringLiteral("#omarchy"),
+                                  QStringLiteral("alice"),
+                                  QString()));
+    QCOMPARE(fixture.transport->writtenFrames().last(),
+             QByteArrayLiteral("KICK #omarchy alice\r\n"));
 }
 
 void SessionTest::setAwayEncodesOptionalReason()

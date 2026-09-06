@@ -117,6 +117,8 @@ private slots:
     void channelCloseSlashIsWrongScope();
     void partDefaultsToSelectedChannel();
     void partFromDirectIsWrongScope();
+    void kickDefaultsToSelectedChannel();
+    void kickFromDirectIsWrongScope();
     void statusPartDefaultsToSelectedChannel();
     void partImplicitUsesSelectedSession();
     void topicUsesSelectedSession();
@@ -128,6 +130,7 @@ private slots:
     void selfAwayFollowsNumericsAndUnawaysAfterChat();
     void closeLastDirectKeepsSelfAway();
     void queryOpensDirectWithoutPrivmsg();
+    void queryAliceCreatesDirectRowWithoutPrivmsg();
     void queryWithTextSendsPrivmsg();
     void queryChannelAndEmptyAreRefused();
     void noticeSendsWithoutSelecting();
@@ -525,6 +528,72 @@ void ControllerTest::partFromDirectIsWrongScope()
              QByteArrayLiteral("PART #omarchy\r\n"));
 }
 
+void ControllerTest::kickDefaultsToSelectedChannel()
+{
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+                                                transport);
+    QVERIFY(session);
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    registerSession(session, transport);
+    QVERIFY(!controller.sendMessage(QStringLiteral("/kick")));
+    QCOMPARE(controller.lastError(), QStringLiteral("Command was refused"));
+    QVERIFY(!controller.sendMessage(QStringLiteral("/kick bob")));
+    QCOMPARE(controller.lastError(), QStringLiteral("Command was refused"));
+
+    transport->injectBytes(QByteArrayLiteral(":omairc!u@h JOIN :#omarchy\r\n"));
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+
+    QVERIFY(!controller.sendMessage(QStringLiteral("/kick")));
+    QCOMPARE(controller.lastError(), QStringLiteral("Command was refused"));
+    QVERIFY(!controller.sendMessage(QStringLiteral("/kick #omarchy")));
+    QCOMPARE(controller.lastError(), QStringLiteral("Command was refused"));
+
+    QVERIFY(controller.sendMessage(QStringLiteral("/kick bob")));
+    QCOMPARE(transport->writtenFrames().last(),
+             QByteArrayLiteral("KICK #omarchy bob\r\n"));
+
+    QVERIFY(controller.sendMessage(QStringLiteral("/kick bob spam")));
+    QCOMPARE(transport->writtenFrames().last(),
+             QByteArrayLiteral("KICK #omarchy bob :spam\r\n"));
+
+    QVERIFY(controller.sendMessage(QStringLiteral("/kick #desktop alice leftover")));
+    QCOMPARE(transport->writtenFrames().last(),
+             QByteArrayLiteral("KICK #desktop alice :leftover\r\n"));
+}
+
+void ControllerTest::kickFromDirectIsWrongScope()
+{
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+                                                transport);
+    QVERIFY(session);
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    registerSession(session, transport);
+    transport->injectBytes(
+        QByteArrayLiteral(":omairc!u@h JOIN :#omarchy\r\n"
+                          ":lena!u@h PRIVMSG omairc :hi\r\n"));
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("lena"));
+    const int framesBefore = transport->writtenFrames().size();
+
+    QVERIFY(!controller.sendMessage(QStringLiteral("/kick")));
+    QCOMPARE(controller.lastError(), QStringLiteral("Command was refused"));
+    QVERIFY(!controller.sendMessage(QStringLiteral("/kick bob")));
+    QCOMPARE(controller.lastError(), QStringLiteral("Kick applies to channels"));
+    QCOMPARE(transport->writtenFrames().size(), framesBefore);
+    QVERIFY(!framesContain(transport->writtenFrames(), QByteArrayLiteral("KICK")));
+
+    QVERIFY(controller.sendMessage(QStringLiteral("/kick #omarchy bob")));
+    QCOMPARE(transport->writtenFrames().last(),
+             QByteArrayLiteral("KICK #omarchy bob\r\n"));
+
+    QVERIFY(controller.sendMessage(QStringLiteral("/kick #omarchy bob spam")));
+    QCOMPARE(transport->writtenFrames().last(),
+             QByteArrayLiteral("KICK #omarchy bob :spam\r\n"));
+}
+
 void ControllerTest::statusPartDefaultsToSelectedChannel()
 {
     IrcController controller;
@@ -844,6 +913,38 @@ void ControllerTest::queryOpensDirectWithoutPrivmsg()
     QCOMPARE(controller.selectedTarget(), QStringLiteral("lena"));
     QVERIFY(!framesContain(transport->writtenFrames(),
                            QByteArrayLiteral("PRIVMSG lena")));
+}
+
+void ControllerTest::queryAliceCreatesDirectRowWithoutPrivmsg()
+{
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+                                                transport);
+    QVERIFY(session);
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    transport->completeConnect();
+    transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
+                          ":server 001 omairc :Welcome\r\n"
+                          ":omairc!u@h JOIN :#omarchy\r\n"));
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+
+    QVERIFY(controller.sendMessage(QStringLiteral("/query alice")));
+    QCOMPARE(controller.selectedTarget(), QStringLiteral("alice"));
+    QVERIFY(!framesContain(transport->writtenFrames(),
+                           QByteArrayLiteral("PRIVMSG alice")));
+
+    auto *conversations =
+        qobject_cast<QAbstractItemModel *>(controller.conversations());
+    QVERIFY(conversations);
+    const int row = rowForTarget(conversations, QStringLiteral("alice"));
+    QVERIFY(row >= 0);
+    QCOMPARE(roleAt(conversations, row, ConversationListModel::DirectRole), true);
+
+    auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
+    QVERIFY(messages);
+    QCOMPARE(messages->rowCount(), 0);
 }
 
 void ControllerTest::queryWithTextSendsPrivmsg()
@@ -1546,12 +1647,13 @@ void ControllerTest::ghostClearIsSent()
     QCOMPARE(controller.selectedTarget(), QStringLiteral("ghost"));
     auto *conversations =
         qobject_cast<QAbstractItemModel *>(controller.conversations());
-    QVERIFY(rowForTarget(conversations, QStringLiteral("ghost")) < 0);
+    QVERIFY(conversations);
+    QVERIFY(rowForTarget(conversations, QStringLiteral("ghost")) >= 0);
 
     QVERIFY(controller.sendMessage(QStringLiteral("/clear")));
     QCOMPARE(controller.lastError(), QString());
     QCOMPARE(controller.selectedTarget(), QStringLiteral("ghost"));
-    QVERIFY(rowForTarget(conversations, QStringLiteral("ghost")) < 0);
+    QVERIFY(rowForTarget(conversations, QStringLiteral("ghost")) >= 0);
 }
 
 void ControllerTest::statusClearLeavesConversationMessages()

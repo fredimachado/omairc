@@ -100,6 +100,7 @@ private slots:
     void parseAwayAndBack();
     void parseWhois();
     void parseMode();
+    void parseKick();
     void parseChannelModeRequest();
     void catalogLookupAndScope();
     void closeWrongScopeUsesCatalogSentence();
@@ -378,6 +379,33 @@ void CommandTest::parseMode()
     QVERIFY(escaped.isLiveMessage());
 }
 
+void CommandTest::parseKick()
+{
+    const IrcCommand kick = IrcCommand::parse(QStringLiteral("/kick bob spam"));
+    QCOMPARE(kick.verb, IrcCommand::Verb::Kick);
+    QCOMPARE(kick.argument, QStringLiteral("bob spam"));
+    QCOMPARE(kick.name, QStringLiteral("/kick"));
+    QVERIFY(!kick.isLiveMessage());
+    QVERIFY(kick.allowedOn(IrcComposerSurface::Conversation));
+    QVERIFY(kick.allowedOn(IrcComposerSurface::Status));
+
+    const IrcCommand folded = IrcCommand::parse(QStringLiteral("/KICK #omarchy bob"));
+    QCOMPARE(folded.verb, IrcCommand::Verb::Kick);
+    QCOMPARE(folded.argument, QStringLiteral("#omarchy bob"));
+    QCOMPARE(folded.name, QStringLiteral("/KICK"));
+    QVERIFY(!folded.isLiveMessage());
+
+    const IrcCommand empty = IrcCommand::parse(QStringLiteral("/kick"));
+    QCOMPARE(empty.verb, IrcCommand::Verb::Kick);
+    QVERIFY(empty.argument.isEmpty());
+    QVERIFY(!empty.isLiveMessage());
+
+    const IrcCommand escaped = IrcCommand::parse(QStringLiteral("//kick bob"));
+    QCOMPARE(escaped.verb, IrcCommand::Verb::Say);
+    QCOMPARE(escaped.argument, QStringLiteral("/kick bob"));
+    QVERIFY(escaped.isLiveMessage());
+}
+
 void CommandTest::parseChannelModeRequest()
 {
     const ParsedChannelMode query = parsedChannelMode(QStringLiteral("#omarchy"));
@@ -455,7 +483,7 @@ void CommandTest::catalogLookupAndScope()
     QVERIFY(!IrcVerbTable::find(IrcCommand::Verb::Empty));
     QVERIFY(!IrcVerbTable::find(IrcCommand::Verb::Unknown));
 
-    QCOMPARE(IrcVerbTable::all().size(), 15);
+    QCOMPARE(IrcVerbTable::all().size(), 16);
     for (const IrcVerbSpec& row : IrcVerbTable::all())
         QVERIFY(row.name != QLatin1String("say"));
 
@@ -538,8 +566,17 @@ void CommandTest::catalogLookupAndScope()
     QVERIFY(mode->wrongScopeText.isEmpty());
     QVERIFY(mode->aliases.isEmpty());
 
+    const IrcVerbSpec *kick = IrcVerbTable::lookup(QStringLiteral("kick"));
+    QVERIFY(kick);
+    QCOMPARE(kick->verb, IrcCommand::Verb::Kick);
+    QCOMPARE(kick->name, QStringLiteral("kick"));
+    QCOMPARE(kick->usage, QStringLiteral("/kick [channel] <nick> [reason]"));
+    QCOMPARE(kick->scope, IrcVerbScope::Either);
+    QCOMPARE(kick->wrongScopeText, QStringLiteral("Kick applies to channels"));
+    QVERIFY(kick->aliases.isEmpty());
+
     const QVector<IrcVerbSpec> status = IrcVerbTable::visibleOn(IrcComposerSurface::Status);
-    QCOMPARE(status.size(), 12);
+    QCOMPARE(status.size(), 13);
     for (const IrcVerbSpec& row : status) {
         QVERIFY(row.allowedOn(IrcComposerSurface::Status));
         QVERIFY(row.verb != IrcCommand::Verb::Action);
@@ -549,7 +586,7 @@ void CommandTest::catalogLookupAndScope()
 
     const QVector<IrcVerbSpec> conversation =
         IrcVerbTable::visibleOn(IrcComposerSurface::Conversation);
-    QCOMPARE(conversation.size(), 15);
+    QCOMPARE(conversation.size(), 16);
     bool sawMe = false;
     bool sawClose = false;
     bool sawQuery = false;
@@ -560,6 +597,7 @@ void CommandTest::catalogLookupAndScope()
     bool sawBack = false;
     bool sawWhois = false;
     bool sawMode = false;
+    bool sawKick = false;
     for (const IrcVerbSpec& row : conversation) {
         if (row.name == QLatin1String("me"))
             sawMe = true;
@@ -581,6 +619,8 @@ void CommandTest::catalogLookupAndScope()
             sawWhois = true;
         if (row.name == QLatin1String("mode"))
             sawMode = true;
+        if (row.name == QLatin1String("kick"))
+            sawKick = true;
     }
     QVERIFY(sawMe);
     QVERIFY(sawClose);
@@ -592,6 +632,7 @@ void CommandTest::catalogLookupAndScope()
     QVERIFY(sawBack);
     QVERIFY(sawWhois);
     QVERIFY(sawMode);
+    QVERIFY(sawKick);
 
     const IrcCommand say = IrcCommand::parse(QStringLiteral("hello"));
     QVERIFY(say.allowedOn(IrcComposerSurface::Conversation));

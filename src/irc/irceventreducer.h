@@ -99,6 +99,8 @@ public:
                                const QDateTime& now);
     bool dropDirectMessage(const IrcConversationKey& key);
     void clearMessages(const IrcConversationKey& key);
+    IrcConversationState& ensureConversation(const IrcConversationKey& key,
+                                             const QString& displayTarget);
 
     const Store& conversations() const noexcept;
     const IrcConversationState *find(const IrcConversationKey& key) const noexcept;
@@ -115,8 +117,6 @@ public:
     bool selfAway(const QString& networkId) const noexcept;
 
 private:
-    IrcConversationState& ensureConversation(const IrcConversationKey& key,
-                                             const QString& displayTarget);
     IrcConversationState *findMutable(const IrcConversationKey& key) noexcept;
     QString normalize(const QString& networkId, const QString& identifier) const;
     bool equals(const QString& networkId,

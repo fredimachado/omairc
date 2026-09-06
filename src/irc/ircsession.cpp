@@ -315,6 +315,15 @@ bool IrcSession::part(const QString& channel)
         && sendCommand(QStringLiteral("PART %1").arg(channel));
 }
 
+bool IrcSession::kick(const QString& channel, const QString& nick, const QString& reason)
+{
+    if (channel.isEmpty() || nick.isEmpty())
+        return false;
+    return sendCommand(
+        reason.isEmpty() ? QStringLiteral("KICK %1 %2").arg(channel, nick)
+                         : QStringLiteral("KICK %1 %2 :%3").arg(channel, nick, reason));
+}
+
 bool IrcSession::setTopic(const QString& channel, const QString& topic)
 {
     return !channel.isEmpty() && !topic.isEmpty()
@@ -575,13 +584,16 @@ void IrcSession::handleMessage(const IrcMessage &message)
         return;
     }
     if (message.command == "432" || message.command == "433"
-        || message.command == "436" || message.command == "451"
-        || message.command == "462" || message.command == "465") {
-        fail(ErrorKind::Registration,
-             QStringLiteral("IRC registration was refused (%1)")
-                 .arg(QString::fromStdString(message.command)),
-             false);
-        return;
+        || message.command == "436" || message.command == "437"
+        || message.command == "451" || message.command == "462"
+        || message.command == "465") {
+        if (m_state != State::Registered) {
+            fail(ErrorKind::Registration,
+                 QStringLiteral("IRC registration was refused (%1)")
+                     .arg(QString::fromStdString(message.command)),
+                 false);
+            return;
+        }
     }
     if (message.command == "ERROR") {
         emit messageReceived(m_config.networkId, message);
