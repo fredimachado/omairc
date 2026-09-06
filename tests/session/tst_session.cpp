@@ -144,6 +144,7 @@ private slots:
     void whoisStatusLinesFormatKnownNumerics();
     void incomingNoticeStatusLinesWrapSpeaker();
     void incomingNoticeDoesNotTranslateToEvents();
+    void incomingActionTranslatesToActionEvent();
     void welcomeAssignsNickFrom001();
     void emptyWelcomeKeepsConfigNick();
     void selfNickUpdatesSessionNick();
@@ -1026,6 +1027,24 @@ void SessionTest::incomingNoticeDoesNotTranslateToEvents()
                 features,
                 mustParse(":alice!u@h NOTICE #omarchy :heads up"))
                 .empty());
+}
+
+void SessionTest::incomingActionTranslatesToActionEvent()
+{
+    const IrcServerFeatures features;
+    const std::vector<IrcEvent> events = IrcEventTranslator::translate(
+        QStringLiteral("libera"),
+        QStringLiteral("omairc"),
+        features,
+        mustParse(":MetaNova!u@h PRIVMSG #omarchy :\x01"
+                  "ACTION feeds jvaztap\x01"));
+    QCOMPARE(events.size(), std::size_t(1));
+    const auto *action = std::get_if<IrcActionEvent>(&events.front());
+    QVERIFY(action);
+    QCOMPARE(action->author, QStringLiteral("MetaNova"));
+    QCOMPARE(action->body, QStringLiteral("feeds jvaztap"));
+    QVERIFY(!action->body.contains(QChar(1)));
+    QVERIFY(!action->body.contains(QStringLiteral("ACTION")));
 }
 
 void SessionTest::welcomeAssignsNickFrom001()
