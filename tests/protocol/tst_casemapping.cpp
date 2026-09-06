@@ -22,6 +22,8 @@ private slots:
     void prefixChangesWalkLettersAndApplyIdempotently();
     void laterPrefixRemapsGlyphsWithoutRewritingSets();
     void translator353UsesParseNamesToken();
+    void parsesChanModesFromIsupport();
+    void prefixChangesConsumeNonPrefixParameters();
 };
 
 void CaseMappingTest::normalizesAdvertisedMappings()
@@ -189,6 +191,69 @@ void CaseMappingTest::translator353UsesParseNamesToken()
     QVERIFY(names->names[2].ranks == features.parseNamesToken("+bob")->ranks);
     QCOMPARE(QString::fromStdString(features.memberLabel(names->names[0].ranks, "alice")),
              QStringLiteral("@alice"));
+}
+
+void CaseMappingTest::parsesChanModesFromIsupport()
+{
+    IrcServerFeatures features;
+    QCOMPARE(QString::fromStdString(std::string(features.chanModesA())),
+             QStringLiteral("b"));
+    QCOMPARE(QString::fromStdString(std::string(features.chanModesB())),
+             QStringLiteral("k"));
+    QCOMPARE(QString::fromStdString(std::string(features.chanModesC())),
+             QStringLiteral("l"));
+    QCOMPARE(QString::fromStdString(std::string(features.chanModesD())),
+             QStringLiteral("imnpst"));
+
+    features.applyToken("CHANMODES=eIbq,k,l,imnpst");
+    QCOMPARE(QString::fromStdString(std::string(features.chanModesA())),
+             QStringLiteral("eIbq"));
+    QCOMPARE(QString::fromStdString(std::string(features.chanModesB())),
+             QStringLiteral("k"));
+    QCOMPARE(QString::fromStdString(std::string(features.chanModesC())),
+             QStringLiteral("l"));
+    QCOMPARE(QString::fromStdString(std::string(features.chanModesD())),
+             QStringLiteral("imnpst"));
+
+    features.applyToken("CHANMODES=bad");
+    features.applyToken("-CHANMODES");
+    features.applyToken("CHANMODES");
+    QCOMPARE(QString::fromStdString(std::string(features.chanModesA())),
+             QStringLiteral("eIbq"));
+}
+
+void CaseMappingTest::prefixChangesConsumeNonPrefixParameters()
+{
+    IrcServerFeatures features;
+    const auto mixed = features.prefixChanges("+k+o", {"secret", "alice"});
+    QCOMPARE(mixed.size(), std::size_t(1));
+    QCOMPARE(QString::fromStdString(mixed.front().nick()), QStringLiteral("alice"));
+    const auto named = features.parseNamesToken("alice");
+    QVERIFY(named);
+    const IrcPrefixSet ranks = features.apply(named->ranks, mixed.front());
+    QCOMPARE(QString::fromStdString(features.memberLabel(ranks, "alice")),
+             QStringLiteral("@alice"));
+
+    const auto plusO = features.prefixChanges("+o", {"alice"});
+    QCOMPARE(plusO.size(), std::size_t(1));
+    QCOMPARE(QString::fromStdString(plusO.front().nick()), QStringLiteral("alice"));
+
+    QCOMPARE(features.prefixChanges("+b", {"mask"}).size(), std::size_t(0));
+    const auto banThenOp = features.prefixChanges("+b+o", {"mask", "alice"});
+    QCOMPARE(banThenOp.size(), std::size_t(1));
+    QCOMPARE(QString::fromStdString(banThenOp.front().nick()),
+             QStringLiteral("alice"));
+
+    features.applyToken("CHANMODES=eIbq,k,l,imnpst");
+    const auto advertised = features.prefixChanges("+k+o", {"secret", "alice"});
+    QCOMPARE(advertised.size(), std::size_t(1));
+    QCOMPARE(QString::fromStdString(advertised.front().nick()),
+             QStringLiteral("alice"));
+    QCOMPARE(features.prefixChanges("+b", {"mask"}).size(), std::size_t(0));
+    const auto limitThenOp = features.prefixChanges("+l+o", {"10", "alice"});
+    QCOMPARE(limitThenOp.size(), std::size_t(1));
+    QCOMPARE(QString::fromStdString(limitThenOp.front().nick()),
+             QStringLiteral("alice"));
 }
 
 int runCaseMappingTests(int argc, char **argv)

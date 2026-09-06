@@ -1,5 +1,6 @@
 #include "ircserverfeatures.h"
 
+#include <array>
 #include <charconv>
 
 namespace
@@ -17,11 +18,30 @@ std::uint32_t bitFor(char letter)
         return 0;
     return std::uint32_t{1} << (letter - 'a');
 }
+
+bool splitChanModes(std::string_view value, std::array<std::string_view, 4>& parts)
+{
+    std::size_t count = 0;
+    std::size_t start = 0;
+    for (std::size_t index = 0; index <= value.size(); ++index) {
+        if (index != value.size() && value[index] != ',')
+            continue;
+        if (count == 4)
+            return false;
+        parts[count++] = value.substr(start, index - start);
+        start = index + 1;
+    }
+    return count == 4;
+}
 }
 
 IrcServerFeatures::IrcServerFeatures()
     : m_channelTypes("#&")
     , m_prefixPairs{{'q', '~'}, {'a', '&'}, {'o', '@'}, {'h', '%'}, {'v', '+'}}
+    , m_chanModesA("b")
+    , m_chanModesB("k")
+    , m_chanModesC("l")
+    , m_chanModesD("imnpst")
 {
     rebuildPrefixDumps();
 }
@@ -35,6 +55,24 @@ void IrcServerFeatures::rebuildPrefixDumps()
     for (const auto& pair : m_prefixPairs) {
         m_prefixModes.push_back(pair.first);
         m_prefixSymbols.push_back(pair.second);
+    }
+    rebuildModeRules();
+}
+
+void IrcServerFeatures::rebuildModeRules()
+{
+    m_modeRules.fill(ModeParamRule::Never);
+    const auto assign = [this](std::string_view letters, ModeParamRule rule) {
+        for (char letter : letters)
+            m_modeRules[static_cast<unsigned char>(letter)] = rule;
+    };
+    assign(m_chanModesA, ModeParamRule::Always);
+    assign(m_chanModesB, ModeParamRule::Always);
+    assign(m_chanModesC, ModeParamRule::SetOnly);
+    assign(m_chanModesD, ModeParamRule::Never);
+    for (const auto& pair : m_prefixPairs) {
+        m_modeRules[static_cast<unsigned char>(pair.first)] =
+            ModeParamRule::Prefix;
     }
 }
 
@@ -75,6 +113,18 @@ void IrcServerFeatures::applyToken(std::string_view token)
         for (std::size_t index = 0; index < modes.size(); ++index)
             m_prefixPairs.emplace_back(asciiLower(modes[index]), symbols[index]);
         rebuildPrefixDumps();
+        return;
+    }
+
+    if (name == "CHANMODES") {
+        std::array<std::string_view, 4> parts{};
+        if (!splitChanModes(value, parts))
+            return;
+        m_chanModesA.assign(parts[0]);
+        m_chanModesB.assign(parts[1]);
+        m_chanModesC.assign(parts[2]);
+        m_chanModesD.assign(parts[3]);
+        rebuildModeRules();
         return;
     }
 
@@ -124,6 +174,26 @@ std::string_view IrcServerFeatures::prefixSymbols() const noexcept
     return m_prefixSymbols;
 }
 
+std::string_view IrcServerFeatures::chanModesA() const noexcept
+{
+    return m_chanModesA;
+}
+
+std::string_view IrcServerFeatures::chanModesB() const noexcept
+{
+    return m_chanModesB;
+}
+
+std::string_view IrcServerFeatures::chanModesC() const noexcept
+{
+    return m_chanModesC;
+}
+
+std::string_view IrcServerFeatures::chanModesD() const noexcept
+{
+    return m_chanModesD;
+}
+
 char IrcServerFeatures::letterForSymbol(char symbol) const
 {
     for (const auto& pair : m_prefixPairs) {
@@ -133,14 +203,13 @@ char IrcServerFeatures::letterForSymbol(char symbol) const
     return '\0';
 }
 
-char IrcServerFeatures::symbolForLetter(char mode) const
+IrcServerFeatures::ModeParamRule IrcServerFeatures::ruleFor(char raw) const
 {
-    const char letter = asciiLower(mode);
-    for (const auto& pair : m_prefixPairs) {
-        if (pair.first == letter)
-            return pair.second;
-    }
-    return '\0';
+    const ModeParamRule lowered =
+        m_modeRules[static_cast<unsigned char>(asciiLower(raw))];
+    if (lowered == ModeParamRule::Prefix)
+        return ModeParamRule::Prefix;
+    return m_modeRules[static_cast<unsigned char>(raw)];
 }
 
 std::optional<IrcParsedName> IrcServerFeatures::parseNamesToken(
@@ -177,11 +246,22 @@ std::vector<IrcPrefixChange> IrcServerFeatures::prefixChanges(
             continue;
         }
         const char letter = asciiLower(raw);
-        if (symbolForLetter(letter) == '\0')
+        const ModeParamRule rule = ruleFor(raw);
+        const bool consumes = rule == ModeParamRule::Always
+            || rule == ModeParamRule::Prefix
+            || (rule == ModeParamRule::SetOnly && grant);
+        if (rule == ModeParamRule::Prefix) {
+            if (argument >= arguments.size())
+                continue;
+            changes.emplace_back(
+                IrcPrefixChange(arguments[argument++], letter, grant));
+            continue;
+        }
+        if (!consumes)
             continue;
         if (argument >= arguments.size())
             continue;
-        changes.emplace_back(IrcPrefixChange(arguments[argument++], letter, grant));
+        ++argument;
     }
     return changes;
 }
