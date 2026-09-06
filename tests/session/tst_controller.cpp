@@ -158,6 +158,7 @@ private slots:
     void conversationClearWipesMessages();
     void ghostClearIsSent();
     void statusClearLeavesConversationMessages();
+    void selectedPrivmsgInsertsMessageRow();
     void largeChannelJoinDoesNotResetModelsPerNick();
     void otherChannelNamesDoesNotSnapshotJoiningMembers();
     void namesBurstFlushesTypingClearedByChat();
@@ -1681,6 +1682,48 @@ void ControllerTest::statusClearLeavesConversationMessages()
     QCOMPARE(console->lines()->rowCount(), 0);
     QCOMPARE(messages->rowCount(), conversationRows);
     QCOMPARE(controller.selectedTarget(), QStringLiteral("#omarchy"));
+}
+
+void ControllerTest::selectedPrivmsgInsertsMessageRow()
+{
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+                                                transport);
+    QVERIFY(session);
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    transport->completeConnect();
+    transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
+                          ":server 001 omairc :Welcome\r\n"
+                          ":omairc!u@h JOIN :#omarchy\r\n"
+                          ":server 353 omairc = #omarchy :omairc Alice\r\n"
+                          ":server 366 omairc #omarchy :End of NAMES\r\n"));
+
+    auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
+    QVERIFY(messages);
+    const int rowsAfterJoin = messages->rowCount();
+    QVERIFY(rowsAfterJoin > 0);
+
+    QSignalSpy resets(messages, &QAbstractItemModel::modelReset);
+    QSignalSpy inserts(messages, &QAbstractItemModel::rowsInserted);
+    transport->injectBytes(
+        QByteArrayLiteral(":Alice!u@h PRIVMSG #omarchy :hello\r\n"));
+
+    QCOMPARE(resets.size(), 0);
+    QCOMPARE(inserts.size(), 1);
+    QCOMPARE(inserts.at(0).at(1).toInt(), rowsAfterJoin);
+    QCOMPARE(inserts.at(0).at(2).toInt(), rowsAfterJoin);
+    QCOMPARE(messages->rowCount(), rowsAfterJoin + 1);
+    QCOMPARE(roleAt(messages, rowsAfterJoin, MessageListModel::BodyRole),
+             QStringLiteral("hello"));
+
+    QVERIFY(controller.sendMessage(QStringLiteral("own line")));
+    QCOMPARE(resets.size(), 0);
+    QCOMPARE(inserts.size(), 2);
+    QCOMPARE(messages->rowCount(), rowsAfterJoin + 2);
+    QCOMPARE(roleAt(messages, rowsAfterJoin + 1, MessageListModel::BodyRole),
+             QStringLiteral("own line"));
 }
 
 void ControllerTest::largeChannelJoinDoesNotResetModelsPerNick()

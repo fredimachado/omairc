@@ -59,6 +59,7 @@ private slots:
     void conversationsOrderChannelsThenDirect();
     void neighborAfterDropNextPreviousGhostAndOnly();
     void reloadUnchangedKeysEmitsDataChangedNotReset();
+    void selectedChatAppendInsertsInsteadOfReset();
 };
 
 void ModelTest::roleNamesMatchQml()
@@ -434,6 +435,53 @@ void ModelTest::reloadUnchangedKeysEmitsDataChangedNotReset()
     conversations.reload();
     QCOMPARE(resets.size(), 1);
     QCOMPARE(conversations.rowCount(), 2);
+}
+
+void ModelTest::selectedChatAppendInsertsInsteadOfReset()
+{
+    IrcEventReducer reducer;
+    MessageListModel messages(reducer);
+    welcome(reducer, networkA);
+
+    const IrcConversationKey room =
+        reducer.conversationKey(networkA, QStringLiteral("#room"));
+    reducer.apply(IrcJoinEvent{
+        networkA, QStringLiteral("#room"), QStringLiteral("omairc")});
+    messages.select(room);
+    QCOMPARE(messages.rowCount(), 1);
+
+    QSignalSpy resets(&messages, &QAbstractItemModel::modelReset);
+    QSignalSpy inserts(&messages, &QAbstractItemModel::rowsInserted);
+    reducer.apply(IrcMessageEvent{
+        room, QStringLiteral("Alice"), QStringLiteral("hello"), timestamp,
+        QStringLiteral("#room")});
+    messages.reload();
+
+    QCOMPARE(resets.size(), 0);
+    QCOMPARE(inserts.size(), 1);
+    QCOMPARE(inserts.at(0).at(1).toInt(), 1);
+    QCOMPARE(inserts.at(0).at(2).toInt(), 1);
+    QCOMPARE(messages.rowCount(), 2);
+    QCOMPARE(roleAt(messages, 1, MessageListModel::BodyRole),
+             QStringLiteral("hello"));
+
+    reducer.apply(IrcMessageEvent{
+        room, QStringLiteral("Bob"), QStringLiteral("second"), timestamp,
+        QStringLiteral("#room")});
+    messages.reload();
+    QCOMPARE(resets.size(), 0);
+    QCOMPARE(inserts.size(), 2);
+    QCOMPARE(messages.rowCount(), 3);
+    QCOMPARE(roleAt(messages, 2, MessageListModel::BodyRole),
+             QStringLiteral("second"));
+
+    const IrcConversationKey other =
+        reducer.conversationKey(networkA, QStringLiteral("#other"));
+    reducer.apply(IrcJoinEvent{
+        networkA, QStringLiteral("#other"), QStringLiteral("omairc")});
+    messages.select(other);
+    QCOMPARE(resets.size(), 1);
+    QCOMPARE(messages.rowCount(), 1);
 }
 
 int runModelTests(int argc, char **argv)

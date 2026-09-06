@@ -948,6 +948,42 @@ TestCase {
         compare(item("messageUnseenJump").visible, false);
     }
 
+    function test_followingAppendStaysPinnedThroughLayout() {
+        var list = item("messageList");
+        fillMockMessagesUntilScrollable(list);
+
+        var startY = list.contentY;
+        var unpinned = 0;
+        var rewind = 0;
+        function sample() {
+            if (!transcriptPinned(list))
+                unpinned += 1;
+            if (list.contentY + 2 < startY)
+                rewind += 1;
+        }
+        list.contentYChanged.connect(sample);
+        list.contentHeightChanged.connect(sample);
+        list.originYChanged.connect(sample);
+
+        var previousCount = list.model.count;
+        list.model.append({
+            author: "anna",
+            time: "10:00",
+            body: "incoming layout pin",
+            kind: "message"
+        });
+        tryCompare(list.model, "count", previousCount + 1);
+        waitForRendering(appWindow.contentItem);
+        wait(0);
+        waitForRendering(appWindow.contentItem);
+
+        compare(unpinned, 0, "Following growth must stay pinned while the new row lays out");
+        compare(rewind, 0, "Following growth must not jump toward older lines");
+        verify(transcriptPinned(list));
+        verify(list.contentY >= startY);
+        compare(item("messageUnseenJump").visible, false);
+    }
+
     function test_detachedArrivalKeepsViewportAndJumpsToFirstUnseen() {
         var list = item("messageList");
         fillMockMessagesUntilScrollable(list);
