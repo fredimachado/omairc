@@ -84,8 +84,20 @@ void MessageListModel::reload()
             count = int(conversation->messages.size());
     }
 
+    const bool sameConversation = m_selected.has_value() == m_loaded.has_value()
+        && (!m_selected || *m_selected == *m_loaded);
+    if (sameConversation && count > m_count) {
+        beginInsertRows(QModelIndex(), m_count, count - 1);
+        m_count = count;
+        endInsertRows();
+        return;
+    }
+    if (sameConversation && count == m_count)
+        return;
+
     beginResetModel();
     m_count = count;
+    m_loaded = m_selected;
     endResetModel();
 }
 
