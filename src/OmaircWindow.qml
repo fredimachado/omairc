@@ -58,7 +58,7 @@ ApplicationWindow {
         if (!consoleVisible)
             return;
         Qt.callLater(function() {
-            consoleList.positionViewAtEnd();
+            consoleList.pinToEnd();
             composer.forceActiveFocus();
         });
     }
@@ -251,7 +251,7 @@ ApplicationWindow {
         if (irc) {
             irc.openDirectMessage(nick);
             Qt.callLater(function() {
-                messageList.positionViewAtEnd();
+                messageList.pinToEnd();
                 composer.forceActiveFocus();
             });
             return;
@@ -275,7 +275,7 @@ ApplicationWindow {
         if (irc) {
             irc.closeDirectMessage();
             Qt.callLater(function() {
-                messageList.positionViewAtEnd();
+                messageList.pinToEnd();
                 composer.forceActiveFocus();
             });
             return;
@@ -348,7 +348,7 @@ ApplicationWindow {
             networkConsole.open = false;
             irc.selectConversation(networkId, name);
             Qt.callLater(function() {
-                messageList.positionViewAtEnd();
+                messageList.pinToEnd();
                 composer.forceActiveFocus();
             });
             return;
@@ -360,7 +360,7 @@ ApplicationWindow {
         mockCurrentTopic = topicFor(name);
         mockActiveMessages = messagesFor(name);
         Qt.callLater(function() {
-            messageList.positionViewAtEnd();
+            messageList.pinToEnd();
             composer.forceActiveFocus();
         });
     }
@@ -644,11 +644,11 @@ ApplicationWindow {
             last = first;
 
         var page = Math.max(1, Math.round((last - first + 1) * 0.8));
-        if (direction < 0) {
+        if (direction < 0)
             list.positionViewAtIndex(Math.max(0, first - page), ListView.Beginning);
-            return;
-        }
-        list.positionViewAtIndex(Math.min(list.count - 1, last + page), ListView.End);
+        else
+            list.positionViewAtIndex(Math.min(list.count - 1, last + page), ListView.End);
+        Qt.callLater(function() { list.adoptViewport(); });
     }
 
     function sendMessage() {
@@ -662,7 +662,7 @@ ApplicationWindow {
                     rememberSentComposerLine(original);
                     composer.clear();
                 }
-                consoleList.positionViewAtEnd();
+                consoleList.pinToEnd();
                 return;
             }
             mockStatusMessages.append({
@@ -674,7 +674,7 @@ ApplicationWindow {
             });
             rememberSentComposerLine(original);
             composer.clear();
-            consoleList.positionViewAtEnd();
+            consoleList.pinToEnd();
             return;
         }
 
@@ -683,7 +683,7 @@ ApplicationWindow {
                 rememberSentComposerLine(original);
                 composer.clear();
             }
-            messageList.positionViewAtEnd();
+            messageList.pinToEnd();
             return;
         }
 
@@ -702,7 +702,7 @@ ApplicationWindow {
         });
         rememberSentComposerLine(original);
         composer.clear();
-        messageList.positionViewAtEnd();
+        messageList.pinToEnd();
     }
 
     Shortcut {
@@ -1039,6 +1039,214 @@ ApplicationWindow {
             hoverEnabled: true
             cursorShape: Qt.PointingHandCursor
             onClicked: conversationRow.activate()
+        }
+    }
+
+    component TranscriptList: ListView {
+        id: list
+
+        readonly property int stickFollowing: 0
+        readonly property int stickDetached: 1
+        property int stick: 0
+        property int firstUnseenIndex: -1
+        readonly property bool jumpArmed: stick === stickDetached
+            && firstUnseenIndex >= 0
+            && firstUnseenIndex < count
+
+        property bool pinning: false
+        property int trackedCount: 0
+        property int restoreIndex: -1
+        property int pinGeneration: 0
+        property bool resetPending: false
+        property int resetSavedCount: 0
+
+        boundsBehavior: Flickable.StopAtBounds
+        clip: true
+        spacing: 0
+        highlightFollowsCurrentItem: false
+
+        function viewportPinned() {
+            if (count === 0 || contentHeight <= height || atYEnd)
+                return true;
+            return contentY >= contentHeight - height - 2;
+        }
+
+        function pinToEnd() {
+            stick = stickFollowing;
+            firstUnseenIndex = -1;
+            pinning = true;
+            trackedCount = count;
+            positionViewAtEnd();
+            var generation = ++pinGeneration;
+            Qt.callLater(function() {
+                if (generation !== pinGeneration)
+                    return;
+                positionViewAtEnd();
+                pinning = false;
+                trackedCount = count;
+            });
+        }
+
+        function adoptViewport() {
+            if (pinning)
+                return;
+            if (viewportPinned())
+                pinToEnd();
+            else
+                stick = stickDetached;
+        }
+
+        function noteGrowth(previousCount, newCount) {
+            if (newCount < previousCount) {
+                if (newCount <= 0) {
+                    pinToEnd();
+                    return;
+                }
+                if (firstUnseenIndex >= newCount)
+                    firstUnseenIndex = -1;
+                trackedCount = newCount;
+                return;
+            }
+            if (newCount <= previousCount) {
+                trackedCount = newCount;
+                return;
+            }
+            if (stick === stickFollowing) {
+                pinToEnd();
+                return;
+            }
+            if (firstUnseenIndex < 0)
+                firstUnseenIndex = previousCount;
+            trackedCount = newCount;
+        }
+
+        function snapshotAnchor() {
+            var index = indexAt(Math.max(1, width / 2), contentY + 1);
+            if (index < 0)
+                index = indexAt(Math.max(1, width / 2), contentY + 8);
+            restoreIndex = index >= 0 ? index : 0;
+        }
+
+        function restoreAnchor() {
+            if (stick === stickFollowing) {
+                restoreIndex = -1;
+                pinToEnd();
+                return;
+            }
+            var target = restoreIndex;
+            restoreIndex = -1;
+            pinning = true;
+            var generation = ++pinGeneration;
+            if (target >= 0 && target < count)
+                positionViewAtIndex(target, ListView.Beginning);
+            Qt.callLater(function() {
+                if (generation !== pinGeneration)
+                    return;
+                pinning = false;
+            });
+        }
+
+        function jumpToUnseen() {
+            if (!jumpArmed)
+                return;
+            var target = firstUnseenIndex;
+            firstUnseenIndex = -1;
+            pinning = true;
+            var generation = ++pinGeneration;
+            positionViewAtIndex(target, ListView.Beginning);
+            Qt.callLater(function() {
+                if (generation !== pinGeneration)
+                    return;
+                pinning = false;
+                adoptViewport();
+            });
+        }
+
+        onCountChanged: {
+            if (resetPending)
+                return;
+            noteGrowth(trackedCount, count);
+        }
+
+        onModelChanged: pinToEnd()
+
+        onMovementEnded: adoptViewport()
+        onFlickEnded: adoptViewport()
+        onHeightChanged: {
+            if (stick === stickFollowing)
+                pinToEnd();
+            else
+                adoptViewport();
+        }
+
+        Connections {
+            target: list.model
+            ignoreUnknownSignals: true
+            function onModelAboutToBeReset() {
+                list.resetPending = true;
+                list.resetSavedCount = list.count;
+                if (list.stick === list.stickDetached)
+                    list.snapshotAnchor();
+            }
+            function onModelReset() {
+                var previous = list.resetSavedCount;
+                list.resetPending = false;
+                list.noteGrowth(previous, list.count);
+                list.restoreAnchor();
+            }
+            function onRowsInserted(parent, first, last) {
+                list.noteGrowth(list.trackedCount, list.count);
+            }
+            function onRowsRemoved(parent, first, last) {
+                if (first === 0
+                        && list.stick === list.stickDetached
+                        && list.firstUnseenIndex >= 0) {
+                    list.firstUnseenIndex -= (last - first + 1);
+                    if (list.firstUnseenIndex < 0)
+                        list.firstUnseenIndex = -1;
+                }
+            }
+        }
+
+        Component.onCompleted: pinToEnd()
+    }
+
+    component UnseenJumpButton: Rectangle {
+        required property TranscriptList list
+
+        visible: list.visible && list.jumpArmed
+        width: win.scaledSize(36)
+        height: width
+        radius: width / 2
+        z: 2
+        anchors.right: list.right
+        anchors.bottom: list.bottom
+        anchors.rightMargin: win.scaledSize(16)
+        anchors.bottomMargin: win.scaledSize(16)
+        color: jumpMouse.containsMouse
+            ? win.mixColors(win.raisedColor, win.accentColor, win.darkMode ? 0.35 : 0.22)
+            : win.raisedColor
+        border.width: 1
+        border.color: win.dividerColor
+
+        Accessible.role: Accessible.Button
+        Accessible.name: "Jump to first new message"
+        Accessible.onPressAction: list.jumpToUnseen()
+
+        Text {
+            anchors.centerIn: parent
+            text: "\u2193"
+            color: win.inkColor
+            font.family: "iA Writer Mono S"
+            font.pixelSize: win.scaledSize(16)
+        }
+
+        MouseArea {
+            id: jumpMouse
+            anchors.fill: parent
+            hoverEnabled: true
+            cursorShape: Qt.PointingHandCursor
+            onClicked: list.jumpToUnseen()
         }
     }
 
@@ -1820,7 +2028,7 @@ ApplicationWindow {
                 }
             }
 
-            ListView {
+            TranscriptList {
                 id: messageList
                 objectName: "messageList"
                 visible: !win.consoleVisible
@@ -1830,13 +2038,14 @@ ApplicationWindow {
                 anchors.right: parent.right
                 anchors.bottom: composerShell.top
                 anchors.bottomMargin: win.scaledSize(12)
-                clip: true
-                spacing: 0
                 model: win.activeMessages
-                boundsBehavior: Flickable.StopAtBounds
 
                 ScrollBar.vertical: ScrollBar {
                     policy: ScrollBar.AsNeeded
+                    onPressedChanged: {
+                        if (!pressed)
+                            messageList.adoptViewport();
+                    }
                 }
 
                 delegate: Item {
@@ -1940,11 +2149,14 @@ ApplicationWindow {
                         font.pixelSize: win.scaledSize(13)
                     }
                 }
-
-                Component.onCompleted: positionViewAtEnd()
             }
 
-            ListView {
+            UnseenJumpButton {
+                list: messageList
+                objectName: "messageUnseenJump"
+            }
+
+            TranscriptList {
                 id: consoleList
                 objectName: "consoleList"
                 visible: win.consoleVisible
@@ -1954,13 +2166,14 @@ ApplicationWindow {
                 anchors.right: parent.right
                 anchors.bottom: composerShell.top
                 anchors.bottomMargin: win.scaledSize(12)
-                clip: true
-                spacing: 0
                 model: win.networkConsole ? win.networkConsole.lines : mockStatusMessages
-                boundsBehavior: Flickable.StopAtBounds
 
                 ScrollBar.vertical: ScrollBar {
                     policy: ScrollBar.AsNeeded
+                    onPressedChanged: {
+                        if (!pressed)
+                            consoleList.adoptViewport();
+                    }
                 }
 
                 delegate: Item {
@@ -2034,8 +2247,11 @@ ApplicationWindow {
                         font.pixelSize: win.scaledSize(12)
                     }
                 }
+            }
 
-                Component.onCompleted: positionViewAtEnd()
+            UnseenJumpButton {
+                list: consoleList
+                objectName: "consoleUnseenJump"
             }
 
             Item {
