@@ -355,6 +355,10 @@ void IrcController::openDirectMessage(const QString& nick)
 {
     if (!m_selected || nick.isEmpty())
         return;
+    const IrcConversationKey key =
+        m_reducer.conversationKey(m_selected->networkId, nick);
+    m_reducer.ensureConversation(key, nick);
+    m_conversations.reload();
     selectConversation(m_selected->networkId, nick);
 }
 
@@ -584,6 +588,9 @@ IrcCommandOutcome IrcController::dispatchQuery(const IrcCommand& command,
             return IrcCommandOutcome::NotConnected;
     }
 
+    const IrcConversationKey key = m_reducer.conversationKey(networkId, nick);
+    m_reducer.ensureConversation(key, nick);
+    m_conversations.reload();
     selectConversation(networkId, nick);
     if (rest.isEmpty())
         return IrcCommandOutcome::Sent;
