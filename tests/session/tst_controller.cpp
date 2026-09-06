@@ -111,6 +111,7 @@ private slots:
     void reducesTrafficAndRoutesOutboundByNetwork();
     void liberaConnectCreatesChannelNotAuthDirect();
     void incomingNoticeStaysOnStatus();
+    void incomingActionUsesActionKindAndStripsCtcp();
     void emptyNetworkIdDoesNotSwitch();
     void presenceCapabilitiesGateAwayAndStatus();
     void defaultPrefixPaintsLabelNotNick();
@@ -339,6 +340,41 @@ void ControllerTest::incomingNoticeStaysOnStatus()
             roleAt(messages, row, MessageListModel::BodyRole).toString();
         QVERIFY(!body.contains(QStringLiteral("heads up")));
     }
+}
+
+void ControllerTest::incomingActionUsesActionKindAndStripsCtcp()
+{
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    IrcSessionConfig sessionConfig = config(QStringLiteral("libera"));
+    sessionConfig.autojoinChannels = {QStringLiteral("#omarchy")};
+    IrcSession *session = controller.addSession(sessionConfig, transport);
+    QVERIFY(session);
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    transport->completeConnect();
+    transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
+                          ":server 001 omairc :Welcome\r\n"
+                          ":server 005 omairc CHANTYPES=# PREFIX=(ov)@+ "
+                          ":are supported by this server\r\n"
+                          ":omairc!u@h JOIN :#omarchy\r\n"
+                          ":server 353 omairc = #omarchy :@omairc MetaNova\r\n"
+                          ":server 366 omairc #omarchy :End of NAMES\r\n"));
+    transport->injectBytes(
+        QByteArray(":MetaNova!u@h PRIVMSG #omarchy :\x01"
+                   "ACTION feeds jvaztap\x01\r\n"));
+
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
+    QVERIFY(messages);
+    QVERIFY(messages->rowCount() > 0);
+    const int last = messages->rowCount() - 1;
+    QCOMPARE(roleAt(messages, last, MessageListModel::AuthorRole),
+             QStringLiteral("MetaNova"));
+    QCOMPARE(roleAt(messages, last, MessageListModel::BodyRole),
+             QStringLiteral("feeds jvaztap"));
+    QCOMPARE(roleAt(messages, last, MessageListModel::KindRole),
+             QStringLiteral("action"));
 }
 
 void ControllerTest::emptyNetworkIdDoesNotSwitch()
