@@ -32,6 +32,13 @@ QString parameter(const IrcMessage &message, std::size_t index)
     return QString::fromStdString(message.parameters[index]);
 }
 
+QString prefixNick(const IrcMessage &message)
+{
+    if (!message.prefix)
+        return {};
+    return QString::fromStdString(message.prefix->nick);
+}
+
 int parameterIndex(const IrcMessage &message, const QString &value)
 {
     for (std::size_t index = 0; index < message.parameters.size(); ++index) {
@@ -79,6 +86,7 @@ IrcSession::IrcSession(const IrcSessionConfig &config,
                        QObject *parent)
     : QObject(parent)
     , m_config(config)
+    , m_nick(config.nick)
     , m_transport(transport)
     , m_reconnectTimer(reconnectTimer)
     , m_capabilityTimer(capabilityTimer)
@@ -166,7 +174,7 @@ QString IrcSession::networkId() const
 
 QString IrcSession::nick() const
 {
-    return m_config.nick;
+    return m_nick;
 }
 
 IrcSession::State IrcSession::state() const
@@ -531,7 +539,7 @@ void IrcSession::handleMessage(const IrcMessage &message)
         return;
     }
     if (message.command == "001") {
-        handleWelcome();
+        handleWelcome(message);
         return;
     }
     if (message.command == "903") {
@@ -584,6 +592,15 @@ void IrcSession::handleMessage(const IrcMessage &message)
              true);
         return;
     }
+    if (message.command == "NICK") {
+        const QString oldNick = prefixNick(message);
+        const QString newNick = parameter(message, 0);
+        if (!oldNick.isEmpty() && !newNick.isEmpty()
+            && oldNick.compare(m_nick, Qt::CaseInsensitive) == 0) {
+            m_nick = newNick;
+        }
+    }
+
     if (message.command == "366" && message.parameters.size() >= 2)
         probeChannelAway(parameter(message, 1));
 
@@ -680,10 +697,14 @@ void IrcSession::handleAuthenticate(const IrcMessage &message)
              + QByteArrayLiteral("\r\n"));
 }
 
-void IrcSession::handleWelcome()
+void IrcSession::handleWelcome(const IrcMessage &message)
 {
     if (m_state == State::Registered)
         return;
+
+    const QString assigned = parameter(message, 0);
+    if (!assigned.isEmpty())
+        m_nick = assigned;
 
     m_reconnectAttempt = 0;
     m_capabilityTimer->cancel();
@@ -745,6 +766,7 @@ void IrcSession::scheduleReconnect()
 void IrcSession::resetForConnection()
 {
     m_framer = IrcFramer{};
+    m_nick = m_config.nick;
     m_registrationSent = false;
     m_saslRequested = false;
     m_saslPending = false;

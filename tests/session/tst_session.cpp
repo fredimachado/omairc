@@ -140,6 +140,9 @@ private slots:
     void whoisStatusLinesFormatKnownNumerics();
     void incomingNoticeStatusLinesWrapSpeaker();
     void incomingNoticeDoesNotTranslateToEvents();
+    void welcomeAssignsNickFrom001();
+    void emptyWelcomeKeepsConfigNick();
+    void selfNickUpdatesSessionNick();
 };
 
 void SessionTest::registersAndAutojoins()
@@ -166,6 +169,7 @@ void SessionTest::registersAndAutojoins()
     fixture.transport->injectBytes(
         QByteArrayLiteral(":server 001 omairc :Welcome\r\n"));
     QCOMPARE(fixture.session->state(), IrcSession::State::Registered);
+    QCOMPARE(fixture.session->nick(), QStringLiteral("omairc"));
     QCOMPARE(registered.size(), 1);
     QCOMPARE(fixture.transport->writtenFrames().mid(4),
              QByteArrayList({
@@ -924,6 +928,52 @@ void SessionTest::incomingNoticeDoesNotTranslateToEvents()
                 features,
                 mustParse(":alice!u@h NOTICE #omarchy :heads up"))
                 .empty());
+}
+
+void SessionTest::welcomeAssignsNickFrom001()
+{
+    IrcSessionConfig sessionConfig = config();
+    sessionConfig.nick = QStringLiteral("omairc-very-long-name");
+    Fixture fixture(sessionConfig);
+    QCOMPARE(fixture.session->nick(), QStringLiteral("omairc-very-long-name"));
+
+    fixture.connectTls();
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc-very-long-name LS :multi-prefix\r\n"
+                          ":server 001 omairc-truncated :Welcome\r\n"));
+    QCOMPARE(fixture.session->state(), IrcSession::State::Registered);
+    QCOMPARE(fixture.session->nick(), QStringLiteral("omairc-truncated"));
+}
+
+void SessionTest::emptyWelcomeKeepsConfigNick()
+{
+    Fixture fixture;
+    QCOMPARE(fixture.session->nick(), QStringLiteral("omairc"));
+
+    fixture.connectTls();
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
+                          ":server 001\r\n"));
+    QCOMPARE(fixture.session->state(), IrcSession::State::Registered);
+    QCOMPARE(fixture.session->nick(), QStringLiteral("omairc"));
+}
+
+void SessionTest::selfNickUpdatesSessionNick()
+{
+    IrcSessionConfig sessionConfig = config();
+    sessionConfig.nick = QStringLiteral("omairc-very-long-name");
+    Fixture fixture(sessionConfig);
+
+    fixture.connectTls();
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc-very-long-name LS :multi-prefix\r\n"
+                          ":server 001 omairc-truncated :Welcome\r\n"
+                          ":Alice!u@h NICK :Alicia\r\n"));
+    QCOMPARE(fixture.session->nick(), QStringLiteral("omairc-truncated"));
+
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(":omairc-truncated!u@h NICK :fred\r\n"));
+    QCOMPARE(fixture.session->nick(), QStringLiteral("fred"));
 }
 
 int runSessionTests(int argc, char **argv)

@@ -161,6 +161,8 @@ private slots:
     void chatDuringNamesUpdatesMessagesWithoutMemberReset();
     void incomingNickRetargetsSelectedDirect();
     void incomingNickCaseOnlyRetargetsDirect();
+    void welcomeAssignedNickRoutesDirectMessages();
+    void echoIfPresentUsesAssignedNick();
 };
 
 void ControllerTest::reducesTrafficAndRoutesOutboundByNetwork()
@@ -1813,6 +1815,7 @@ void ControllerTest::incomingNickRetargetsSelectedDirect()
              QByteArrayLiteral("PRIVMSG Alicia :hello\r\n"));
 
     transport->injectBytes(QByteArrayLiteral(":omairc!u@h NICK :fred\r\n"));
+    QCOMPARE(session->nick(), QStringLiteral("fred"));
     QCOMPARE(controller.currentNick(), QStringLiteral("fred"));
 }
 
@@ -1840,6 +1843,64 @@ void ControllerTest::incomingNickCaseOnlyRetargetsDirect()
     QVERIFY(controller.sendMessage(QStringLiteral("hello")));
     QCOMPARE(transport->writtenFrames().last(),
              QByteArrayLiteral("PRIVMSG ALICE :hello\r\n"));
+}
+
+void ControllerTest::welcomeAssignedNickRoutesDirectMessages()
+{
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    IrcSessionConfig sessionConfig = config(QStringLiteral("libera"));
+    sessionConfig.nick = QStringLiteral("omairc-very-long-name");
+    IrcSession *session = controller.addSession(sessionConfig, transport);
+    QVERIFY(session);
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    transport->completeConnect();
+    transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc-very-long-name LS :multi-prefix\r\n"
+                          ":server 001 omairc-truncated :Welcome\r\n"
+                          ":Alice!u@h PRIVMSG omairc-truncated :hi\r\n"
+                          ":Bob!u@h PRIVMSG omairc-very-long-name :nope\r\n"));
+    QCOMPARE(session->nick(), QStringLiteral("omairc-truncated"));
+    QCOMPARE(controller.currentNick(), QStringLiteral("omairc-truncated"));
+    QCOMPARE(controller.selectedTarget(), QStringLiteral("Alice"));
+
+    auto *conversations =
+        qobject_cast<QAbstractItemModel *>(controller.conversations());
+    QVERIFY(conversations);
+    QVERIFY(rowForTarget(conversations, QStringLiteral("Alice")) >= 0);
+    QCOMPARE(rowForTarget(conversations, QStringLiteral("Bob")), -1);
+}
+
+void ControllerTest::echoIfPresentUsesAssignedNick()
+{
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    IrcSessionConfig sessionConfig = config(QStringLiteral("libera"));
+    sessionConfig.nick = QStringLiteral("omairc-very-long-name");
+    IrcSession *session = controller.addSession(sessionConfig, transport);
+    QVERIFY(session);
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    transport->completeConnect();
+    transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc-very-long-name LS :multi-prefix\r\n"
+                          ":server 001 omairc-truncated :Welcome\r\n"
+                          ":omairc-truncated!u@h JOIN :#omarchy\r\n"
+                          ":lena!u@h PRIVMSG omairc-truncated :hi\r\n"));
+    QCOMPARE(session->nick(), QStringLiteral("omairc-truncated"));
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+
+    QVERIFY(controller.sendMessage(QStringLiteral("/msg lena later")));
+    QCOMPARE(transport->writtenFrames().last(),
+             QByteArrayLiteral("PRIVMSG lena :later\r\n"));
+
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("lena"));
+    auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
+    QVERIFY(messages);
+    QVERIFY(messages->rowCount() > 0);
+    QCOMPARE(roleAt(messages, messages->rowCount() - 1, MessageListModel::BodyRole),
+             QStringLiteral("later"));
+    QCOMPARE(roleAt(messages, messages->rowCount() - 1, MessageListModel::AuthorRole),
+             QStringLiteral("omairc-truncated"));
 }
 
 int runControllerTests(int argc, char **argv)
