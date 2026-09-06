@@ -135,6 +135,7 @@ private slots:
     void pingAndWelcomeProduceStatusEntries();
     void configuredPasswordNeverAppearsInStatusEntries();
     void setTopicIsSetOnly();
+    void kickWritesOptionalReason();
     void setAwayEncodesOptionalReason();
     void whoisWritesDoubledNick();
     void whoisStatusLinesFormatKnownNumerics();
@@ -739,6 +740,37 @@ void SessionTest::setTopicIsSetOnly()
                                       QStringLiteral("hello")));
     QCOMPARE(fixture.transport->writtenFrames().last(),
              QByteArrayLiteral("TOPIC #omarchy :hello\r\n"));
+}
+
+void SessionTest::kickWritesOptionalReason()
+{
+    Fixture fixture;
+    fixture.connectTls();
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
+                          ":server 001 omairc :Welcome\r\n"));
+    QCOMPARE(fixture.session->state(), IrcSession::State::Registered);
+
+    const int before = fixture.transport->writtenFrames().size();
+    QVERIFY(!fixture.session->kick(QString(), QStringLiteral("alice"),
+                                   QStringLiteral("spam")));
+    QVERIFY(!fixture.session->kick(QStringLiteral("#omarchy"), QString(),
+                                   QStringLiteral("spam")));
+    QCOMPARE(fixture.transport->writtenFrames().size(), before);
+    for (const QByteArray& frame : fixture.transport->writtenFrames())
+        QVERIFY(!frame.contains(QByteArrayLiteral("KICK")));
+
+    QVERIFY(fixture.session->kick(QStringLiteral("#omarchy"),
+                                  QStringLiteral("alice"),
+                                  QStringLiteral("spam")));
+    QCOMPARE(fixture.transport->writtenFrames().last(),
+             QByteArrayLiteral("KICK #omarchy alice :spam\r\n"));
+
+    QVERIFY(fixture.session->kick(QStringLiteral("#omarchy"),
+                                  QStringLiteral("alice"),
+                                  QString()));
+    QCOMPARE(fixture.transport->writtenFrames().last(),
+             QByteArrayLiteral("KICK #omarchy alice\r\n"));
 }
 
 void SessionTest::setAwayEncodesOptionalReason()
