@@ -516,6 +516,29 @@ TestCase {
         }
     }
 
+    function visibleListChild(listName, childName) {
+        var list = item(listName);
+        var index = 0;
+        for (index = 0; index < list.count; ++index) {
+            var row = list.itemAtIndex(index);
+            if (!row)
+                continue;
+            var child = findChild(row, childName);
+            if (child && child.visible)
+                return child;
+        }
+        fail("Could not find visible " + childName + " in " + listName);
+        return null;
+    }
+
+    function containsMirc(text) {
+        return /[\u0002\u0003\u000f\u0016\u001d\u001f]/.test(text);
+    }
+
+    function formattedIrcBody() {
+        return "\u0002bold\u000f / \u000304red";
+    }
+
     function test_switchChannel() {
         mouseClick(item("conversation-#desktop"));
 
@@ -812,6 +835,140 @@ TestCase {
         keyClick(Qt.Key_PageDown);
         verify(list.contentY > afterUp, "Page Down should scroll toward newer lines");
         verify(composer.activeFocus);
+    }
+
+    function test_messageBodyIsSelectable() {
+        var composer = item("messageComposer");
+        mouseClick(composer);
+        verify(composer.activeFocus);
+
+        var body = visibleListChild("messageList", "messageBody");
+        mouseClick(body);
+        verify(composer.activeFocus);
+
+        body.selectAll();
+        verify(body.selectedText.length > 0);
+        verify(!containsMirc(body.selectedText));
+
+        var members = item("membersList");
+        members.positionViewAtIndex(0, ListView.Contain);
+        wait(0);
+        var anna = members.itemAtIndex(0);
+        verify(anna !== null, "The first member delegate should be rendered");
+        mouseClick(anna);
+        tryCompare(appWindow, "currentConversation", "anna");
+        waitForRendering(appWindow.contentItem);
+
+        var dmBody = visibleListChild("messageList", "messageBody");
+        dmBody.selectAll();
+        verify(dmBody.selectedText.length > 0);
+        verify(!containsMirc(dmBody.selectedText));
+        verify(composer.activeFocus);
+    }
+
+    function test_consoleBodyIsSelectable() {
+        keyClick(Qt.Key_QuoteLeft, Qt.ControlModifier);
+        tryCompare(appWindow, "consoleVisible", true);
+
+        var body = visibleListChild("consoleList", "consoleText");
+        body.selectAll();
+        verify(body.selectedText.length > 0);
+        verify(!containsMirc(body.selectedText));
+        verify(item("messageComposer").activeFocus);
+    }
+
+    function test_consoleBodyStripsMircFormatting() {
+        var list = item("consoleList");
+        keyClick(Qt.Key_QuoteLeft, Qt.ControlModifier);
+        tryCompare(appWindow, "consoleVisible", true);
+
+        var previousCount = list.model.count;
+        list.model.append({
+            time: "12:00:03",
+            label: "PRIVMSG",
+            text: formattedIrcBody(),
+            source: "server",
+            severity: "info"
+        });
+        tryCompare(list.model, "count", previousCount + 1);
+        compare(list.model.get(previousCount).text, formattedIrcBody());
+
+        list.positionViewAtIndex(previousCount, ListView.Contain);
+        waitForRendering(appWindow.contentItem);
+
+        var row = list.itemAtIndex(previousCount);
+        verify(row !== null, "The formatted console line should be rendered");
+        var body = findChild(row, "consoleText");
+        verify(body !== null, "Could not find formatted consoleText");
+        compare(body.text, "bold / red");
+        body.selectAll();
+        compare(body.selectedText, "bold / red");
+        verify(!containsMirc(body.selectedText));
+    }
+
+    function test_messageBodyStripsMircFormatting() {
+        var list = item("messageList");
+        var previousCount = list.model.count;
+        list.model.append({
+            author: "anna",
+            time: "10:00",
+            body: formattedIrcBody(),
+            kind: "message"
+        });
+        tryCompare(list.model, "count", previousCount + 1);
+        compare(appWindow.plainIrcText(formattedIrcBody()), "bold / red");
+        compare(list.model.get(previousCount).body, formattedIrcBody());
+
+        list.positionViewAtIndex(previousCount, ListView.Contain);
+        waitForRendering(appWindow.contentItem);
+
+        var row = list.itemAtIndex(previousCount);
+        verify(row !== null, "The formatted mock message should be rendered");
+        var body = findChild(row, "messageBody");
+        verify(body !== null && body.visible, "Could not find formatted messageBody");
+        compare(body.text, "bold / red");
+        body.selectAll();
+        compare(body.selectedText, "bold / red");
+        verify(!containsMirc(body.selectedText));
+    }
+
+    function test_liveMessageBodyStripsMircFormatting() {
+        liveMessages.clear();
+        liveMessages.append({
+            author: "anna",
+            time: "10:00",
+            body: formattedIrcBody(),
+            kind: "message"
+        });
+        liveConsole.open = false;
+        if (appWindow) {
+            appWindow.destroy();
+            appWindow = null;
+            wait(0);
+        }
+        var window = createTemporaryObject(liveWindowComponent, null);
+        verify(window !== null, "The live window should load");
+        tryCompare(window, "visible", true);
+        waitForRendering(window.contentItem);
+
+        var list = findChild(window, "messageList");
+        verify(list !== null, "Could not find messageList");
+        list.positionViewAtIndex(0, ListView.Contain);
+        waitForRendering(window.contentItem);
+
+        var body = null;
+        var row = list.itemAtIndex(0);
+        verify(row !== null, "The formatted live message should be rendered");
+        body = findChild(row, "messageBody");
+        verify(body !== null && body.visible, "Could not find live messageBody");
+        compare(body.text, "bold / red");
+        body.selectAll();
+        compare(body.selectedText, "bold / red");
+        verify(!containsMirc(body.selectedText));
+
+        window.close();
+        liveMessages.clear();
+        liveConsole.open = false;
     }
 
     function test_toggleMembersWithShortcut() {
