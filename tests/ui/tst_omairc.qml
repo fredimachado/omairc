@@ -837,6 +837,182 @@ TestCase {
         verify(composer.activeFocus);
     }
 
+    function transcriptPinned(list) {
+        return list.count === 0
+            || list.contentHeight <= list.height
+            || list.atYEnd
+            || list.contentY >= list.contentHeight - list.height - 2;
+    }
+
+    function firstVisibleIndex(list) {
+        var x = Math.max(1, list.width / 2);
+        var index = list.indexAt(x, list.contentY + 1);
+        if (index >= 0)
+            return index;
+        return list.indexAt(x, list.contentY + 8);
+    }
+
+    function fillMockMessagesUntilScrollable(list) {
+        var composer = item("messageComposer");
+        mouseClick(composer);
+        verify(composer.activeFocus);
+        var index = 0;
+        for (index = 0; index < 12; ++index) {
+            typeText("scroll line " + index);
+            keyClick(Qt.Key_Return);
+        }
+        waitForRendering(appWindow.contentItem);
+        list.pinToEnd();
+        waitForRendering(appWindow.contentItem);
+        wait(0);
+        verify(list.contentHeight > list.height);
+        verify(transcriptPinned(list));
+    }
+
+    function fillMockConsoleUntilScrollable(list) {
+        var index = 0;
+        for (index = 0; index < 40; ++index) {
+            list.model.append({
+                time: "12:00:03",
+                label: "PRIVMSG",
+                text: "console fill " + index,
+                source: "server",
+                severity: "info"
+            });
+        }
+        waitForRendering(appWindow.contentItem);
+        list.pinToEnd();
+        waitForRendering(appWindow.contentItem);
+        wait(0);
+        verify(list.contentHeight > list.height);
+        verify(transcriptPinned(list));
+    }
+
+    function test_followingAppendAndSendKeepTranscriptPinned() {
+        var list = item("messageList");
+        fillMockMessagesUntilScrollable(list);
+
+        var previousCount = list.model.count;
+        var previousY = list.contentY;
+        list.model.append({
+            author: "anna",
+            time: "10:00",
+            body: "incoming while following",
+            kind: "message"
+        });
+        tryCompare(list.model, "count", previousCount + 1);
+        waitForRendering(appWindow.contentItem);
+        wait(0);
+        verify(transcriptPinned(list), "Incoming rows should keep a following list at the end");
+        verify(list.contentY >= previousY);
+        compare(item("messageUnseenJump").visible, false);
+
+        previousCount = list.model.count;
+        previousY = list.contentY;
+        typeText("sent while following");
+        keyClick(Qt.Key_Return);
+        tryCompare(list.model, "count", previousCount + 1);
+        waitForRendering(appWindow.contentItem);
+        wait(0);
+        verify(transcriptPinned(list), "Sending should keep the list pinned to the end");
+        verify(list.contentY >= previousY);
+        compare(item("messageUnseenJump").visible, false);
+    }
+
+    function test_detachedArrivalKeepsViewportAndJumpsToFirstUnseen() {
+        var list = item("messageList");
+        fillMockMessagesUntilScrollable(list);
+
+        keyClick(Qt.Key_PageUp);
+        waitForRendering(appWindow.contentItem);
+        tryCompare(list, "stick", 1);
+        verify(!transcriptPinned(list));
+
+        var frozenY = list.contentY;
+        var previousCount = list.model.count;
+        list.model.append({
+            author: "anna",
+            time: "10:00",
+            body: "first unseen",
+            kind: "message"
+        });
+        tryCompare(list.model, "count", previousCount + 1);
+        list.model.append({
+            author: "dax",
+            time: "10:01",
+            body: "second unseen",
+            kind: "message"
+        });
+        tryCompare(list.model, "count", previousCount + 2);
+        waitForRendering(appWindow.contentItem);
+        wait(0);
+
+        fuzzyCompare(list.contentY, frozenY, 2);
+        compare(list.firstUnseenIndex, previousCount);
+        var jump = item("messageUnseenJump");
+        tryCompare(jump, "visible", true);
+
+        var unseen = list.firstUnseenIndex;
+        mouseClick(jump);
+        waitForRendering(appWindow.contentItem);
+        wait(0);
+        tryCompare(jump, "visible", false);
+        compare(list.firstUnseenIndex, -1);
+        tryVerify(function() {
+            return firstVisibleIndex(list) === unseen;
+        });
+    }
+
+    function test_consoleDetachedArrivalKeepsViewportAndJumpsToFirstUnseen() {
+        keyClick(Qt.Key_QuoteLeft, Qt.ControlModifier);
+        tryCompare(appWindow, "consoleVisible", true);
+
+        var list = item("consoleList");
+        verify(list.visible);
+        fillMockConsoleUntilScrollable(list);
+
+        keyClick(Qt.Key_PageUp);
+        waitForRendering(appWindow.contentItem);
+        tryCompare(list, "stick", 1);
+        verify(!transcriptPinned(list));
+
+        var frozenY = list.contentY;
+        var previousCount = list.model.count;
+        list.model.append({
+            time: "12:00:04",
+            label: "PRIVMSG",
+            text: "first unseen console",
+            source: "server",
+            severity: "info"
+        });
+        tryCompare(list.model, "count", previousCount + 1);
+        list.model.append({
+            time: "12:00:05",
+            label: "PRIVMSG",
+            text: "second unseen console",
+            source: "server",
+            severity: "info"
+        });
+        tryCompare(list.model, "count", previousCount + 2);
+        waitForRendering(appWindow.contentItem);
+        wait(0);
+
+        fuzzyCompare(list.contentY, frozenY, 2);
+        compare(list.firstUnseenIndex, previousCount);
+        var jump = item("consoleUnseenJump");
+        tryCompare(jump, "visible", true);
+
+        var unseen = list.firstUnseenIndex;
+        mouseClick(jump);
+        waitForRendering(appWindow.contentItem);
+        wait(0);
+        tryCompare(jump, "visible", false);
+        compare(list.firstUnseenIndex, -1);
+        tryVerify(function() {
+            return firstVisibleIndex(list) === unseen;
+        });
+    }
+
     function test_messageBodyIsSelectable() {
         var composer = item("messageComposer");
         mouseClick(composer);
