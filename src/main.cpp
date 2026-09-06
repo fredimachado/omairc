@@ -10,17 +10,34 @@
 #include <QQuickStyle>
 #include <QUrl>
 
+#include <stdio.h>
+#include <string.h>
+
 #include "backend.h"
 #include "irc/ircconnection.h"
 #include "irc/irccontroller.h"
 #include "irc/ircslashcomplete.h"
 #include "systemtheme.h"
 
+#ifndef OMAIRC_VERSION
+#error "Build with omairc.pro so OMAIRC_VERSION is defined"
+#endif
+
 int main(int argc, char *argv[]) {
+    for (int i = 1; i < argc; ++i) {
+        if (strcmp(argv[i], "--version") == 0 || strcmp(argv[i], "-v") == 0) {
+            fputs("omairc " OMAIRC_VERSION "\n", stdout);
+            return 0;
+        }
+    }
+
     QGuiApplication app(argc, argv);
     app.setApplicationName(QStringLiteral("omairc"));
+    app.setApplicationVersion(QStringLiteral(OMAIRC_VERSION));
     app.setDesktopFileName(QStringLiteral("omairc"));
-    app.setWindowIcon(QIcon::fromTheme(QStringLiteral("omairc")));
+    app.setWindowIcon(QIcon::fromTheme(
+        QStringLiteral("omairc"),
+        QIcon(QStringLiteral(":/icons/omairc.svg"))));
     app.setOrganizationName(QStringLiteral("omairc"));
 
     QCommandLineParser parser;
