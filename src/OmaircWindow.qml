@@ -1493,26 +1493,6 @@ ApplicationWindow {
                         font.letterSpacing: win.scaledSize(0.8)
                         font.pixelSize: win.scaledSize(9)
                     }
-
-                    Text {
-                        anchors.right: parent.right
-                        anchors.rightMargin: win.scaledSize(20)
-                        anchors.verticalCenter: parent.verticalCenter
-                        text: "+"
-                        color: addChannelMouse.containsMouse ? win.inkColor : win.mutedColor
-                        font.family: "iA Writer Mono S"
-                        font.pixelSize: win.scaledSize(17)
-
-                        MouseArea {
-                            id: addChannelMouse
-                            anchors.centerIn: parent
-                            width: win.scaledSize(28)
-                            height: width
-                            hoverEnabled: true
-                            cursorShape: Qt.PointingHandCursor
-                            onClicked: mockToast.open()
-                        }
-                    }
                 }
 
                 ConversationRow {
@@ -2693,33 +2673,6 @@ ApplicationWindow {
                     }
                 }
             }
-        }
-    }
-
-    Popup {
-        id: mockToast
-        x: win.scaledSize(22)
-        y: win.scaledSize(116)
-        width: win.scaledSize(200)
-        height: win.scaledSize(58)
-        padding: 0
-        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
-
-        background: Rectangle {
-            color: win.raisedColor
-            border.width: 1
-            border.color: win.dividerColor
-            radius: win.scaledSize(9)
-        }
-
-        contentItem: Text {
-            horizontalAlignment: Text.AlignHCenter
-            verticalAlignment: Text.AlignVCenter
-            text: "Joining channels comes with\nreal IRC connectivity."
-            color: win.inkColor
-            font.family: "iA Writer Mono S"
-            font.pixelSize: win.scaledSize(10)
-            lineHeight: 1.35
         }
     }
 
