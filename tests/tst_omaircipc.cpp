@@ -298,7 +298,8 @@ void OmaircIpcTest::socketCommandRoundTrip()
     const QByteArray request = OmaircIpc::encodeRequest(raiseRequest) + '\n';
     QCOMPARE(client.write(request), qint64(request.size()));
     QVERIFY(client.waitForBytesWritten(1000));
-    QVERIFY(client.waitForReadyRead(1000));
+    // Reply may already be buffered from waitForBytesWritten's event processing.
+    QTRY_VERIFY(client.canReadLine());
     const QByteArray response = client.readLine().trimmed();
     QVERIFY(OmaircIpc::responseOk(response));
     QVERIFY(raised);
@@ -307,7 +308,7 @@ void OmaircIpcTest::socketCommandRoundTrip()
         QByteArrayLiteral("{\"cmd\":\"explode\"}\n");
     QCOMPARE(client.write(unknown), qint64(unknown.size()));
     QVERIFY(client.waitForBytesWritten(1000));
-    QVERIFY(client.waitForReadyRead(1000));
+    QTRY_VERIFY(client.canReadLine());
     const QByteArray err = client.readLine().trimmed();
     QVERIFY(!OmaircIpc::responseOk(err));
     QVERIFY(OmaircIpc::responseError(err).contains(QStringLiteral("Unknown")));
