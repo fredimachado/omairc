@@ -164,8 +164,10 @@ void SingleInstance::consumeSocketData(QLocalSocket *socket)
         if (OmaircIpc::isRaisePing(line)) {
             emit activationRequested();
             if (m_requestHandler) {
+                OmaircIpc::Request raiseRequest;
+                raiseRequest.command = OmaircIpc::Command::Raise;
                 const QByteArray response =
-                    m_requestHandler(OmaircIpc::encodeRequest({OmaircIpc::Command::Raise}));
+                    m_requestHandler(OmaircIpc::encodeRequest(raiseRequest));
                 socket->write(response + '\n');
                 socket->flush();
             }

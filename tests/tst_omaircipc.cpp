@@ -293,8 +293,9 @@ void OmaircIpcTest::socketCommandRoundTrip()
     QLocalSocket client;
     client.connectToServer(SingleInstance::socketPath());
     QVERIFY(client.waitForConnected(1000));
-    const QByteArray request =
-        OmaircIpc::encodeRequest({OmaircIpc::Command::Raise}) + '\n';
+    OmaircIpc::Request raiseRequest;
+    raiseRequest.command = OmaircIpc::Command::Raise;
+    const QByteArray request = OmaircIpc::encodeRequest(raiseRequest) + '\n';
     QCOMPARE(client.write(request), qint64(request.size()));
     QVERIFY(client.waitForBytesWritten(1000));
     QVERIFY(client.waitForReadyRead(1000));
