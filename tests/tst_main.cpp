@@ -1,5 +1,7 @@
 #include <QCoreApplication>
 
+#include "singleinstance.h"
+
 int runProtocolTests(int argc, char **argv);
 int runCaseMappingTests(int argc, char **argv);
 int runTransportTests(int argc, char **argv);
@@ -13,10 +15,16 @@ int runConnectionTests(int argc, char **argv);
 int runReducerTests(int argc, char **argv);
 int runModelTests(int argc, char **argv);
 int runQtIrcTransportIntegrationTests(int argc, char **argv);
+int runSingleInstanceTests(int argc, char **argv);
 
 int main(int argc, char **argv)
 {
     QCoreApplication app(argc, argv);
+    if (qEnvironmentVariableIsSet("OMAIRC_TEST_SI_SECONDARY")) {
+        SingleInstance secondary;
+        return secondary.acquireOrNotify() ? 1 : 0;
+    }
+
     const int protocolStatus = runProtocolTests(argc, argv);
     const int caseMappingStatus = runCaseMappingTests(argc, argv);
     const int transportStatus = runTransportTests(argc, argv);
@@ -30,6 +38,7 @@ int main(int argc, char **argv)
     const int reducerStatus = runReducerTests(argc, argv);
     const int modelStatus = runModelTests(argc, argv);
     const int integrationStatus = runQtIrcTransportIntegrationTests(argc, argv);
+    const int singleInstanceStatus = runSingleInstanceTests(argc, argv);
     const int statuses[] = {
         protocolStatus,
         caseMappingStatus,
@@ -44,6 +53,7 @@ int main(int argc, char **argv)
         reducerStatus,
         modelStatus,
         integrationStatus,
+        singleInstanceStatus,
     };
     for (const int status : statuses) {
         if (status != 0)

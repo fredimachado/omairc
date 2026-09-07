@@ -8,10 +8,11 @@ TARGET = protocol_tests
 # GCC 16 emits this diagnostic from Qt 6.11's own headers.
 greaterThan(QMAKE_GCC_MAJOR_VERSION, 15): QMAKE_CXXFLAGS += -Wno-sfinae-incomplete
 
-INCLUDEPATH += ../src/irc support
+INCLUDEPATH += ../src ../src/irc support
 DEFINES += TEST_CERT_DIR=\\\"$$PWD/support/certs\\\"
 
 HEADERS += \
+    ../src/singleinstance.h \
     ../src/irc/ircmessage.h \
     ../src/irc/ircparser.h \
     ../src/irc/ircframer.h \
@@ -49,6 +50,8 @@ HEADERS += \
 
 SOURCES += \
     tst_main.cpp \
+    tst_singleinstance.cpp \
+    ../src/singleinstance.cpp \
     protocol/tst_protocol.cpp \
     protocol/tst_casemapping.cpp \
     ../src/irc/ircparser.cpp \

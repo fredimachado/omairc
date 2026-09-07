@@ -10,6 +10,7 @@ isEmpty(PREFIX): PREFIX = /usr/local
 
 HEADERS += \
     src/backend.h \
+    src/singleinstance.h \
     src/systemtheme.h \
     src/irc/ircmessage.h \
     src/irc/ircparser.h \
@@ -48,6 +49,7 @@ HEADERS += \
 SOURCES += \
     src/main.cpp \
     src/backend.cpp \
+    src/singleinstance.cpp \
     src/systemtheme.cpp \
     src/irc/ircparser.cpp \
     src/irc/ircframer.cpp \
