@@ -9,6 +9,7 @@
 #include <QQmlError>
 #include <QQuickStyle>
 #include <QUrl>
+#include <QWindow>
 
 #include <stdio.h>
 #include <string.h>
@@ -17,11 +18,24 @@
 #include "irc/ircconnection.h"
 #include "irc/irccontroller.h"
 #include "irc/ircslashcomplete.h"
+#include "singleinstance.h"
 #include "systemtheme.h"
 
 #ifndef OMAIRC_VERSION
 #error "Build with omairc.pro so OMAIRC_VERSION is defined"
 #endif
+
+static void raiseOmaircWindow(QQmlApplicationEngine &engine)
+{
+    const auto roots = engine.rootObjects();
+    if (roots.isEmpty())
+        return;
+    if (auto *window = qobject_cast<QWindow *>(roots.constFirst())) {
+        window->show();
+        window->raise();
+        window->requestActivate();
+    }
+}
 
 int main(int argc, char *argv[]) {
     for (int i = 1; i < argc; ++i) {
@@ -50,6 +64,12 @@ int main(int argc, char *argv[]) {
     parser.addOption(mockOption);
     parser.process(app);
     const bool mockMode = parser.isSet(mockOption);
+
+    SingleInstance instance;
+    const bool guardProcess =
+        !mockMode && qEnvironmentVariableIsEmpty("OMAIRC_ALLOW_MULTI");
+    if (guardProcess && !instance.acquireOrNotify())
+        return 0;
 
     QFontDatabase::addApplicationFont(QStringLiteral(":/fonts/iAWriterMonoS-Regular.ttf"));
     QFontDatabase::addApplicationFont(QStringLiteral(":/fonts/iAWriterMonoS-Bold.ttf"));
@@ -94,6 +114,19 @@ int main(int argc, char *argv[]) {
         for (const QQmlError &warning : warnings)
             qWarning().noquote() << warning.toString();
     });
+
+    bool pendingRaise = false;
+    if (instance.isPrimary()) {
+        QObject::connect(&instance, &SingleInstance::activationRequested, &app,
+                         [&engine, &pendingRaise]() {
+            if (engine.rootObjects().isEmpty()) {
+                pendingRaise = true;
+                return;
+            }
+            raiseOmaircWindow(engine);
+        });
+    }
+
     engine.rootContext()->setContextProperty(QStringLiteral("appBackend"), &backend);
     engine.rootContext()->setContextProperty(
         QStringLiteral("ircController"), ircController);
@@ -107,6 +140,8 @@ int main(int argc, char *argv[]) {
                     << QFile::exists(QStringLiteral(":/Main.qml"));
         return -1;
     }
+    if (pendingRaise)
+        raiseOmaircWindow(engine);
     if (ircConnection)
         ircConnection->activate();
 

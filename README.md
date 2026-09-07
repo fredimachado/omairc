@@ -25,6 +25,7 @@ desktop text size.
 ## Limits
 
 - One network at a time.
+- One process. A second launch raises the existing window.
 - No saved message history.
 - No DCC, file transfer, voice, or video.
 - No plugins or scripts.
@@ -40,9 +41,13 @@ bin/build
 ```
 
 `--mock` skips Connect and any saved profile, and opens the bundled prototype
-conversations instead.
+conversations instead. Mock mode also skips the single-process guard so tests
+can run more than one window.
 
 `--version` prints `omairc 0.1.0` and exits without opening a window.
+
+Set `OMAIRC_ALLOW_MULTI=1` to allow more than one normal process while
+debugging.
 
 ## Install
 
