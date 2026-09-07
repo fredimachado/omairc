@@ -144,11 +144,6 @@ void SingleInstance::consumeSocketData(QLocalSocket *socket)
 {
     QByteArray buffer = socket->property("omaircBuffer").toByteArray();
     buffer += socket->readAll();
-    if (buffer.size() > kMaxIpcLineBytes) {
-        socket->setProperty("omaircBuffer", QByteArray());
-        socket->abort();
-        return;
-    }
 
     // Legacy secondary launch writes a bare "!" with no newline.
     if (OmaircIpc::isRaisePing(buffer) && !buffer.contains('\n')) {
@@ -159,8 +154,19 @@ void SingleInstance::consumeSocketData(QLocalSocket *socket)
 
     while (true) {
         const int newline = buffer.indexOf('\n');
-        if (newline < 0)
+        if (newline < 0) {
+            if (buffer.size() > kMaxIpcLineBytes) {
+                socket->setProperty("omaircBuffer", QByteArray());
+                socket->abort();
+                return;
+            }
             break;
+        }
+        if (newline > kMaxIpcLineBytes) {
+            socket->setProperty("omaircBuffer", QByteArray());
+            socket->abort();
+            return;
+        }
 
         QByteArray line = buffer.left(newline);
         buffer.remove(0, newline + 1);

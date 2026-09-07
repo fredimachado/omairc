@@ -67,6 +67,7 @@ private slots:
     void socketRaiseStillWorks();
     void socketCommandRoundTrip();
     void socketRejectsOversizedLine();
+    void socketAcceptsPipelinedSmallLines();
     void connectionsSortedById();
     void sendAllowsDashPrefixedText();
     void socketRaisePingWithHandlerRaisesOnce();
@@ -335,6 +336,38 @@ void OmaircIpcTest::socketRejectsOversizedLine()
     QCOMPARE(client.write(blob), qint64(blob.size()));
     QVERIFY(client.waitForBytesWritten(1000));
     QTRY_COMPARE(client.state(), QLocalSocket::UnconnectedState);
+}
+
+void OmaircIpcTest::socketAcceptsPipelinedSmallLines()
+{
+    int handled = 0;
+    SingleInstance primary;
+    QVERIFY(primary.acquireOrNotify());
+    primary.setRequestHandler([&handled](const QByteArray &line) {
+        ++handled;
+        Q_UNUSED(line);
+        return OmaircIpc::okResponse();
+    });
+
+    QLocalSocket client;
+    client.connectToServer(SingleInstance::socketPath());
+    QVERIFY(client.waitForConnected(1000));
+
+    const QByteArray line = QByteArrayLiteral("{\"cmd\":\"raise\"}\n");
+    const int count = (65 * 1024) / line.size() + 8;
+    QByteArray payload;
+    payload.reserve(count * line.size());
+    for (int i = 0; i < count; ++i)
+        payload += line;
+
+    QCOMPARE(client.write(payload), qint64(payload.size()));
+    QVERIFY(client.waitForBytesWritten(5000));
+    QTRY_COMPARE(handled, count);
+    QCOMPARE(client.state(), QLocalSocket::ConnectedState);
+    for (int i = 0; i < count; ++i) {
+        QTRY_VERIFY(client.canReadLine());
+        QVERIFY(OmaircIpc::responseOk(client.readLine().trimmed()));
+    }
 }
 
 void OmaircIpcTest::connectionsSortedById()
