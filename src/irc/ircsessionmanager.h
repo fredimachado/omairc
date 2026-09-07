@@ -4,6 +4,7 @@
 
 #include <QHash>
 #include <QObject>
+#include <QStringList>
 
 class IrcSessionManager : public QObject
 {
@@ -16,6 +17,7 @@ public:
                               IrcTransport *transport,
                               IrcReconnectTimer *reconnectTimer = nullptr);
     IrcSession *findSession(const QString &networkId) const;
+    QStringList networkIds() const;
 
     bool activateSession(const QString &networkId);
     bool stopSession(const QString &networkId);

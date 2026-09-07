@@ -26,6 +26,8 @@ desktop text size.
 
 - One network at a time.
 - One process. A second launch raises the existing window.
+- Local CLI control of the running client over the same runtime socket
+  (`connections`, `status`, `send`, `raise`). This is not a second IRC client.
 - No saved message history.
 - No DCC, file transfer, voice, or video.
 - No plugins or scripts.
@@ -38,6 +40,10 @@ bin/build
 ./build/omairc
 ./build/omairc --mock
 ./build/omairc --version
+./build/omairc connections
+./build/omairc status
+./build/omairc send --network <id> '#channel' hello
+./build/omairc raise
 ```
 
 `--mock` skips Connect and any saved profile, and opens the bundled prototype
@@ -45,6 +51,21 @@ conversations instead. Mock mode also skips the single-process guard so tests
 can run more than one window.
 
 `--version` prints `omairc 0.1.0` and exits without opening a window.
+
+While a normal Omairc window is running, the same binary can talk to it over
+`$XDG_RUNTIME_DIR/omairc.sock` (TempLocation fallback). Control commands print
+JSON on stdout and exit. They do not start a window. If nothing is listening,
+they exit non-zero with a clear error.
+
+`connections` (alias `list`) returns each session's stable `id` (`networkId`),
+host, port, tls, nick, state, and whether it is the UI-selected network.
+`status` and `send` take optional `--network <id>`. With exactly one
+connection, `--network` may be omitted. With zero or more than one, omit is an
+error and the message points at `connections`.
+
+`send` delivers to an explicit channel or nick on that network without
+changing the UI selection. `raise` activates the existing window (same effect
+as a plain second launch).
 
 Set `OMAIRC_ALLOW_MULTI=1` to allow more than one normal process while
 debugging.

@@ -172,6 +172,21 @@ QString IrcSession::networkId() const
     return m_config.networkId;
 }
 
+QString IrcSession::host() const
+{
+    return m_config.host;
+}
+
+quint16 IrcSession::port() const
+{
+    return m_config.port;
+}
+
+bool IrcSession::tlsEnabled() const
+{
+    return m_config.tlsEnabled;
+}
+
 QString IrcSession::nick() const
 {
     return m_nick;

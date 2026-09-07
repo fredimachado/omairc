@@ -75,6 +75,12 @@ public:
     Q_INVOKABLE bool nickIsTyping(const QString& nick) const;
     Q_INVOKABLE void notifyComposerText(const QString& text);
 
+    QStringList networkIds() const;
+    IrcSession *session(const QString &networkId) const;
+    bool sendToTarget(const QString &networkId,
+                      const QString &target,
+                      const QString &text);
+
 signals:
     void selectionChanged();
     void statusChanged();

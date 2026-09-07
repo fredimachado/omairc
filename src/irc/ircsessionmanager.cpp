@@ -35,6 +35,11 @@ IrcSession *IrcSessionManager::findSession(const QString &networkId) const
     return m_sessions.value(networkId, nullptr);
 }
 
+QStringList IrcSessionManager::networkIds() const
+{
+    return m_sessions.keys();
+}
+
 bool IrcSessionManager::activateSession(const QString &networkId)
 {
     IrcSession *session = findSession(networkId);

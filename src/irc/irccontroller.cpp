@@ -432,6 +432,53 @@ bool IrcController::sendMessage(const QString& text)
     return report(dispatch(command, IrcComposerSurface::Conversation), command);
 }
 
+QStringList IrcController::networkIds() const
+{
+    return m_sessions.networkIds();
+}
+
+IrcSession *IrcController::session(const QString &networkId) const
+{
+    return m_sessions.findSession(networkId);
+}
+
+bool IrcController::sendToTarget(const QString &networkId,
+                                 const QString &target,
+                                 const QString &text)
+{
+    // Explicit target path for local IPC/CLI. Does not change the UI selection.
+    if (networkId.isEmpty() || target.isEmpty() || text.isEmpty()) {
+        m_lastError = QStringLiteral("Missing network, target, or text");
+        emit statusChanged();
+        return false;
+    }
+
+    IrcSession *session = m_sessions.findSession(networkId);
+    if (!session) {
+        m_lastError = QStringLiteral("That network is not configured");
+        emit statusChanged();
+        return false;
+    }
+    if (session->state() != IrcSession::State::Registered) {
+        m_lastError = QStringLiteral("Not connected");
+        emit statusChanged();
+        return false;
+    }
+
+    const bool sent = session->sendPrivmsg(target, text);
+    if (!sent) {
+        m_lastError = QStringLiteral("Failed to send message");
+        emit statusChanged();
+        return false;
+    }
+
+    echoIfPresent(session, target, text, QuietWire::Privmsg);
+    unawayAfterChat(session);
+    m_lastError.clear();
+    emit statusChanged();
+    return true;
+}
+
 IrcCommandOutcome IrcController::dispatch(const IrcCommand& command,
                                           IrcComposerSurface surface)
 {

@@ -1,4 +1,5 @@
 #include <QCommandLineParser>
+#include <QCoreApplication>
 #include <QFile>
 #include <QFont>
 #include <QFontDatabase>
@@ -18,6 +19,8 @@
 #include "irc/ircconnection.h"
 #include "irc/irccontroller.h"
 #include "irc/ircslashcomplete.h"
+#include "omairccli.h"
+#include "omaircipchandler.h"
 #include "singleinstance.h"
 #include "systemtheme.h"
 
@@ -43,6 +46,13 @@ int main(int argc, char *argv[]) {
             fputs("omairc " OMAIRC_VERSION "\n", stdout);
             return 0;
         }
+    }
+
+    if (OmaircCli::looksLikeCommand(argc, argv)) {
+        QCoreApplication app(argc, argv);
+        app.setApplicationName(QStringLiteral("omairc"));
+        app.setApplicationVersion(QStringLiteral(OMAIRC_VERSION));
+        return OmaircCli::run(app);
     }
 
     QGuiApplication app(argc, argv);
@@ -116,15 +126,22 @@ int main(int argc, char *argv[]) {
     });
 
     bool pendingRaise = false;
+    OmaircIpcHandler ipcHandler(ircController);
     if (instance.isPrimary()) {
-        QObject::connect(&instance, &SingleInstance::activationRequested, &app,
-                         [&engine, &pendingRaise]() {
+        const auto raiseWindow = [&engine, &pendingRaise]() {
             if (engine.rootObjects().isEmpty()) {
                 pendingRaise = true;
                 return;
             }
             raiseOmaircWindow(engine);
-        });
+        };
+        ipcHandler.setRaiseFn(raiseWindow);
+        instance.setRequestHandler(
+            [&ipcHandler](const QByteArray &line) {
+                return ipcHandler.handleLine(line);
+            });
+        QObject::connect(&instance, &SingleInstance::activationRequested, &app,
+                         [raiseWindow]() { raiseWindow(); });
     }
 
     engine.rootContext()->setContextProperty(QStringLiteral("appBackend"), &backend);

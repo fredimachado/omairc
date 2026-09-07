@@ -11,6 +11,9 @@ isEmpty(PREFIX): PREFIX = /usr/local
 HEADERS += \
     src/backend.h \
     src/singleinstance.h \
+    src/omaircipc.h \
+    src/omaircipchandler.h \
+    src/omairccli.h \
     src/systemtheme.h \
     src/irc/ircmessage.h \
     src/irc/ircparser.h \
@@ -50,6 +53,9 @@ SOURCES += \
     src/main.cpp \
     src/backend.cpp \
     src/singleinstance.cpp \
+    src/omaircipc.cpp \
+    src/omaircipchandler.cpp \
+    src/omairccli.cpp \
     src/systemtheme.cpp \
     src/irc/ircparser.cpp \
     src/irc/ircframer.cpp \
