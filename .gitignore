@@ -13,3 +13,4 @@ test-artifacts/
 .worktrees/
 
 .arena-omairc-pacman/
+aqtinstall.log
