@@ -6,6 +6,7 @@ pkgdesc='Dead-simple IRC client for Omarchy'
 arch=('x86_64')
 url='https://github.com/fredimachado/omairc'
 license=('MIT' 'LGPL-3.0-or-later' 'OFL-1.1')
+options=(!debug)
 depends=(
   'qt6-base'
   'qt6-declarative'
