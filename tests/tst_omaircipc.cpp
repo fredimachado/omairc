@@ -65,6 +65,8 @@ private slots:
     void handlerConnectionsAndSend();
     void socketRaiseStillWorks();
     void socketCommandRoundTrip();
+    void socketRejectsOversizedLine();
+    void connectionsSortedById();
 };
 
 void OmaircIpcTest::parseRaisePing()
@@ -312,6 +314,46 @@ void OmaircIpcTest::socketCommandRoundTrip()
     const QByteArray err = client.readLine().trimmed();
     QVERIFY(!OmaircIpc::responseOk(err));
     QVERIFY(OmaircIpc::responseError(err).contains(QStringLiteral("Unknown")));
+}
+
+void OmaircIpcTest::socketRejectsOversizedLine()
+{
+    SingleInstance primary;
+    QVERIFY(primary.acquireOrNotify());
+    primary.setRequestHandler([](const QByteArray &) {
+        return OmaircIpc::okResponse();
+    });
+
+    QLocalSocket client;
+    client.connectToServer(SingleInstance::socketPath());
+    QVERIFY(client.waitForConnected(1000));
+
+    QByteArray blob(65 * 1024, 'x');
+    QCOMPARE(client.write(blob), qint64(blob.size()));
+    QVERIFY(client.waitForBytesWritten(1000));
+    QTRY_COMPARE(client.state(), QLocalSocket::UnconnectedState);
+}
+
+void OmaircIpcTest::connectionsSortedById()
+{
+    IrcController controller;
+    auto *transportB = new FakeIrcTransport;
+    auto *transportA = new FakeIrcTransport;
+    QVERIFY(controller.addSession(testConfig(QStringLiteral("net-b")), transportB));
+    QVERIFY(controller.addSession(testConfig(QStringLiteral("net-a")), transportA));
+    registerSession(controller.session(QStringLiteral("net-b")), transportB);
+    registerSession(controller.session(QStringLiteral("net-a")), transportA);
+
+    OmaircIpcHandler handler(&controller);
+    const QByteArray line =
+        handler.handleLine(QByteArrayLiteral("{\"cmd\":\"connections\"}"));
+    QVERIFY(OmaircIpc::responseOk(line));
+    const QJsonArray connections = OmaircIpc::responseConnections(line);
+    QCOMPARE(connections.size(), 2);
+    QCOMPARE(connections.at(0).toObject().value(QStringLiteral("id")).toString(),
+             QStringLiteral("net-a"));
+    QCOMPARE(connections.at(1).toObject().value(QStringLiteral("id")).toString(),
+             QStringLiteral("net-b"));
 }
 
 int runOmaircIpcTests(int argc, char **argv)

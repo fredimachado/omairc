@@ -97,6 +97,7 @@ bool SingleInstance::becomePrimary()
         return false;
 
     m_server = new QLocalServer(this);
+    m_server->setSocketOptions(QLocalServer::UserAccessOption);
     QLocalServer::removeServer(serverName());
     if (!m_server->listen(serverName())) {
         m_lock->unlock();
@@ -143,6 +144,11 @@ void SingleInstance::consumeSocketData(QLocalSocket *socket)
 {
     QByteArray buffer = socket->property("omaircBuffer").toByteArray();
     buffer += socket->readAll();
+    if (buffer.size() > kMaxIpcLineBytes) {
+        socket->setProperty("omaircBuffer", QByteArray());
+        socket->abort();
+        return;
+    }
 
     // Legacy secondary launch writes a bare "!" with no newline.
     if (OmaircIpc::isRaisePing(buffer) && !buffer.contains('\n')) {

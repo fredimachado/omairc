@@ -37,6 +37,8 @@ private:
     void listenForActivation();
     void consumeSocketData(QLocalSocket *socket);
 
+    static constexpr int kMaxIpcLineBytes = 64 * 1024;
+
     QLockFile *m_lock = nullptr;
     QLocalServer *m_server = nullptr;
     bool m_primary = false;

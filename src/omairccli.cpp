@@ -42,10 +42,10 @@ bool isFlag(const QString &arg)
 }
 
 std::optional<OmaircIpc::Request> parseArgs(const QStringList &args,
-                                            QString *error)
+                                            QString &error)
 {
     if (args.isEmpty()) {
-        *error = QStringLiteral("Missing command");
+        error = QStringLiteral("Missing command");
         return std::nullopt;
     }
 
@@ -54,7 +54,7 @@ std::optional<OmaircIpc::Request> parseArgs(const QStringList &args,
 
     if (command == QLatin1String("raise")) {
         if (args.size() != 1) {
-            *error = QStringLiteral("raise takes no arguments");
+            error = QStringLiteral("raise takes no arguments");
             return std::nullopt;
         }
         request.command = OmaircIpc::Command::Raise;
@@ -64,7 +64,7 @@ std::optional<OmaircIpc::Request> parseArgs(const QStringList &args,
     if (command == QLatin1String("connections")
         || command == QLatin1String("list")) {
         if (args.size() != 1) {
-            *error = QStringLiteral("%1 takes no arguments").arg(command);
+            error = QStringLiteral("%1 takes no arguments").arg(command);
             return std::nullopt;
         }
         request.command = OmaircIpc::Command::Connections;
@@ -77,13 +77,13 @@ std::optional<OmaircIpc::Request> parseArgs(const QStringList &args,
             const QString &arg = args.at(i);
             if (arg == QLatin1String("--network")) {
                 if (i + 1 >= args.size() || isFlag(args.at(i + 1))) {
-                    *error = QStringLiteral("--network requires an id");
+                    error = QStringLiteral("--network requires an id");
                     return std::nullopt;
                 }
                 request.networkId = args.at(++i);
                 continue;
             }
-            *error = QStringLiteral("Unexpected argument: %1").arg(arg);
+            error = QStringLiteral("Unexpected argument: %1").arg(arg);
             return std::nullopt;
         }
         return request;
@@ -96,24 +96,24 @@ std::optional<OmaircIpc::Request> parseArgs(const QStringList &args,
             const QString &arg = args.at(i);
             if (arg == QLatin1String("--network")) {
                 if (i + 1 >= args.size() || isFlag(args.at(i + 1))) {
-                    *error = QStringLiteral("--network requires an id");
+                    error = QStringLiteral("--network requires an id");
                     return std::nullopt;
                 }
                 request.networkId = args.at(++i);
                 continue;
             }
             if (isFlag(arg)) {
-                *error = QStringLiteral("Unknown option: %1").arg(arg);
+                error = QStringLiteral("Unknown option: %1").arg(arg);
                 return std::nullopt;
             }
             positional.append(arg);
         }
         if (positional.isEmpty()) {
-            *error = QStringLiteral("send requires a target and text");
+            error = QStringLiteral("send requires a target and text");
             return std::nullopt;
         }
         if (positional.size() < 2) {
-            *error = QStringLiteral("send requires text after the target");
+            error = QStringLiteral("send requires text after the target");
             return std::nullopt;
         }
         request.target = positional.takeFirst();
@@ -121,7 +121,7 @@ std::optional<OmaircIpc::Request> parseArgs(const QStringList &args,
         return request;
     }
 
-    *error = QStringLiteral("Unknown command: %1").arg(command);
+    error = QStringLiteral("Unknown command: %1").arg(command);
     return std::nullopt;
 }
 
@@ -177,7 +177,7 @@ int run(QCoreApplication &app)
 {
     QString error;
     const std::optional<OmaircIpc::Request> request =
-        parseArgs(app.arguments().mid(1), &error);
+        parseArgs(app.arguments().mid(1), error);
     if (!request)
         return fail(error);
     return sendRequest(*request);
