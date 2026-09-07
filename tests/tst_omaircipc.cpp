@@ -6,6 +6,7 @@
 
 #include "fakeirctransport.h"
 #include "irccontroller.h"
+#include "omairccli.h"
 #include "omaircipc.h"
 #include "omaircipchandler.h"
 #include "singleinstance.h"
@@ -67,6 +68,8 @@ private slots:
     void socketCommandRoundTrip();
     void socketRejectsOversizedLine();
     void connectionsSortedById();
+    void sendAllowsDashPrefixedText();
+    void socketRaisePingWithHandlerRaisesOnce();
 };
 
 void OmaircIpcTest::parseRaisePing()
@@ -354,6 +357,51 @@ void OmaircIpcTest::connectionsSortedById()
              QStringLiteral("net-a"));
     QCOMPARE(connections.at(1).toObject().value(QStringLiteral("id")).toString(),
              QStringLiteral("net-b"));
+}
+
+void OmaircIpcTest::sendAllowsDashPrefixedText()
+{
+    QString error;
+    const auto request = OmaircCli::parseArgs(
+        QStringList{QStringLiteral("send"), QStringLiteral("#chan"),
+                    QStringLiteral("-hello")},
+        error);
+    QVERIFY(request.has_value());
+    QCOMPARE(request->target, QStringLiteral("#chan"));
+    QCOMPARE(request->text, QStringLiteral("-hello"));
+
+    const auto withDashDash = OmaircCli::parseArgs(
+        QStringList{QStringLiteral("send"), QStringLiteral("--"),
+                    QStringLiteral("#chan"), QStringLiteral("--network"),
+                    QStringLiteral("not-an-option")},
+        error);
+    QVERIFY(withDashDash.has_value());
+    QCOMPARE(withDashDash->target, QStringLiteral("#chan"));
+    QCOMPARE(withDashDash->text, QStringLiteral("--network not-an-option"));
+    QVERIFY(withDashDash->networkId.isEmpty());
+}
+
+void OmaircIpcTest::socketRaisePingWithHandlerRaisesOnce()
+{
+    int raiseFnCount = 0;
+    OmaircIpcHandler handler(nullptr, [&raiseFnCount]() { ++raiseFnCount; });
+
+    SingleInstance primary;
+    QVERIFY(primary.acquireOrNotify());
+    primary.setRequestHandler(
+        [&handler](const QByteArray &line) { return handler.handleLine(line); });
+    QSignalSpy spy(&primary, &SingleInstance::activationRequested);
+
+    QLocalSocket client;
+    client.connectToServer(SingleInstance::socketPath());
+    QVERIFY(client.waitForConnected(1000));
+    const QByteArray ping = OmaircIpc::raisePing() + '\n';
+    QCOMPARE(client.write(ping), qint64(ping.size()));
+    QVERIFY(client.waitForBytesWritten(1000));
+    QTRY_COMPARE(spy.count(), 1);
+    QCOMPARE(raiseFnCount, 0);
+    QTRY_VERIFY(client.canReadLine());
+    QVERIFY(OmaircIpc::responseOk(client.readLine().trimmed()));
 }
 
 int runOmaircIpcTests(int argc, char **argv)

@@ -15,6 +15,7 @@ HEADERS += \
     ../src/singleinstance.h \
     ../src/omaircipc.h \
     ../src/omaircipchandler.h \
+    ../src/omairccli.h \
     ../src/irc/ircmessage.h \
     ../src/irc/ircparser.h \
     ../src/irc/ircframer.h \
@@ -57,6 +58,7 @@ SOURCES += \
     ../src/singleinstance.cpp \
     ../src/omaircipc.cpp \
     ../src/omaircipchandler.cpp \
+    ../src/omairccli.cpp \
     protocol/tst_protocol.cpp \
     protocol/tst_casemapping.cpp \
     ../src/irc/ircparser.cpp \

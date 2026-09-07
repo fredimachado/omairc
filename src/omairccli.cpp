@@ -41,8 +41,41 @@ bool isFlag(const QString &arg)
     return arg.startsWith(QLatin1Char('-'));
 }
 
-std::optional<OmaircIpc::Request> parseArgs(const QStringList &args,
-                                            QString &error)
+QByteArray readLine(QLocalSocket &socket)
+{
+    while (!socket.canReadLine()) {
+        if (!socket.waitForReadyRead(3000))
+            return {};
+    }
+    return socket.readLine().trimmed();
+}
+
+int sendRequest(const OmaircIpc::Request &request)
+{
+    QLocalSocket socket;
+    socket.connectToServer(SingleInstance::socketPath());
+    if (!socket.waitForConnected(1000)) {
+        return fail(QStringLiteral(
+            "Omairc is not running (no local socket). "
+            "Start the client first."));
+    }
+
+    const QByteArray payload = OmaircIpc::encodeRequest(request) + '\n';
+    if (socket.write(payload) != payload.size()
+        || !socket.waitForBytesWritten(1000)) {
+        return fail(QStringLiteral("Failed to write to Omairc socket"));
+    }
+
+    const QByteArray response = readLine(socket);
+    if (response.isEmpty())
+        return fail(QStringLiteral("No response from Omairc"));
+
+    writeStdout(response);
+    return OmaircIpc::responseOk(response) ? 0 : 1;
+}
+
+std::optional<OmaircIpc::Request> parseArgsImpl(const QStringList &args,
+                                                QString &error)
 {
     if (args.isEmpty()) {
         error = QStringLiteral("Missing command");
@@ -92,9 +125,14 @@ std::optional<OmaircIpc::Request> parseArgs(const QStringList &args,
     if (command == QLatin1String("send")) {
         request.command = OmaircIpc::Command::Send;
         QStringList positional;
+        bool acceptOptions = true;
         for (int i = 1; i < args.size(); ++i) {
             const QString &arg = args.at(i);
-            if (arg == QLatin1String("--network")) {
+            if (acceptOptions && arg == QLatin1String("--")) {
+                acceptOptions = false;
+                continue;
+            }
+            if (acceptOptions && arg == QLatin1String("--network")) {
                 if (i + 1 >= args.size() || isFlag(args.at(i + 1))) {
                     error = QStringLiteral("--network requires an id");
                     return std::nullopt;
@@ -102,11 +140,12 @@ std::optional<OmaircIpc::Request> parseArgs(const QStringList &args,
                 request.networkId = args.at(++i);
                 continue;
             }
-            if (isFlag(arg)) {
+            if (acceptOptions && isFlag(arg)) {
                 error = QStringLiteral("Unknown option: %1").arg(arg);
                 return std::nullopt;
             }
             positional.append(arg);
+            acceptOptions = false;
         }
         if (positional.isEmpty()) {
             error = QStringLiteral("send requires a target and text");
@@ -125,40 +164,13 @@ std::optional<OmaircIpc::Request> parseArgs(const QStringList &args,
     return std::nullopt;
 }
 
-QByteArray readLine(QLocalSocket &socket)
-{
-    while (!socket.canReadLine()) {
-        if (!socket.waitForReadyRead(3000))
-            return {};
-    }
-    return socket.readLine().trimmed();
-}
-
-int sendRequest(const OmaircIpc::Request &request)
-{
-    QLocalSocket socket;
-    socket.connectToServer(SingleInstance::socketPath());
-    if (!socket.waitForConnected(1000)) {
-        return fail(QStringLiteral(
-            "Omairc is not running (no local socket). "
-            "Start the client first."));
-    }
-
-    const QByteArray payload = OmaircIpc::encodeRequest(request) + '\n';
-    if (socket.write(payload) != payload.size()
-        || !socket.waitForBytesWritten(1000)) {
-        return fail(QStringLiteral("Failed to write to Omairc socket"));
-    }
-
-    const QByteArray response = readLine(socket);
-    if (response.isEmpty())
-        return fail(QStringLiteral("No response from Omairc"));
-
-    writeStdout(response);
-    return OmaircIpc::responseOk(response) ? 0 : 1;
-}
-
 } // namespace
+
+std::optional<OmaircIpc::Request> parseArgs(const QStringList &args,
+                                            QString &error)
+{
+    return parseArgsImpl(args, error);
+}
 
 bool looksLikeCommand(int argc, char **argv)
 {
