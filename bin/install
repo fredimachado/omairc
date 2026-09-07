@@ -1,0 +1,54 @@
+#!/usr/bin/env sh
+set -eu
+
+ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
+
+usage() {
+  cat <<'EOF'
+Usage: ./bin/install [makepkg options]
+
+Build and install Omairc as an Arch Linux package. Any options are passed to
+makepkg, for example:
+
+  ./bin/install --noconfirm
+EOF
+}
+
+case "${1:-}" in
+  -h|--help)
+    usage
+    exit 0
+    ;;
+esac
+
+for command in git makepkg tar; do
+  if ! command -v "$command" >/dev/null 2>&1; then
+    echo "$command is required to build and install the Omairc package." >&2
+    exit 1
+  fi
+done
+
+if [ "$(id -u)" -eq 0 ]; then
+  echo "Run bin/install as your regular user; makepkg will use sudo when needed." >&2
+  exit 1
+fi
+
+VERSION="$(awk '/^VERSION / { print $3; exit }' "$ROOT/omairc.pro")"
+test -n "$VERSION" || {
+  echo "omairc.pro must set VERSION" >&2
+  exit 1
+}
+
+WORK="$(mktemp -d "${TMPDIR:-/tmp}/omairc-package.XXXXXX")"
+trap 'rm -rf -- "$WORK"' EXIT HUP INT TERM
+
+git -C "$ROOT" ls-files -z |
+  tar -C "$ROOT" --null -T - \
+    --transform "s,^,omairc-$VERSION/," \
+    -czf "$WORK/omairc-$VERSION.tar.gz"
+
+cp "$ROOT/PKGBUILD" "$WORK/PKGBUILD"
+sed -i 's|^source=.*|source=("$pkgname-$pkgver.tar.gz")|' "$WORK/PKGBUILD"
+
+cd "$WORK"
+makepkg -fsi "$@"

@@ -20,6 +20,12 @@ test -n "$VERSION" || {
   exit 1
 }
 
+install_help="$("$ROOT/bin/install" --help)"
+printf '%s\n' "$install_help" | grep -q '^Usage: ./bin/install \[makepkg options\]$' || {
+  echo "bin/install --help must describe its usage" >&2
+  exit 1
+}
+
 rel_tree() {
   find "$1" | sed "s|^$1||; s|^/||" | sort
 }

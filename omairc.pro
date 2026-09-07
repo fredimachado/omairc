@@ -104,7 +104,7 @@ unix {
     license_lgpl.path = $$PREFIX/share/licenses/omairc
     license_lgpl.extra = \
         $(MKDIR) $(INSTALL_ROOT)$$license_lgpl.path && \
-        $(INSTALL_FILE) $$PWD/src/irc/COPYING \
+        /usr/bin/install -m 644 -p $$PWD/src/irc/COPYING \
             $(INSTALL_ROOT)$$license_lgpl.path/COPYING-LGPL
     license_lgpl.uninstall = \
         $(DEL_FILE) $(INSTALL_ROOT)$$license_lgpl.path/COPYING-LGPL
