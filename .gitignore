@@ -11,3 +11,5 @@ Makefile
 test-artifacts/
 .audit/
 .worktrees/
+
+.arena-omairc-pacman/

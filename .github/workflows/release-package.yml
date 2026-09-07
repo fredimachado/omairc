@@ -1,0 +1,98 @@
+name: Release package
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+concurrency:
+  group: release-package
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    container: archlinux:latest
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Bootstrap pacman
+        run: |
+          pacman-key --init
+          pacman-key --populate archlinux
+          pacman -Syu --noconfirm
+          pacman -S --noconfirm base-devel git github-cli sudo
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Create build user
+        run: |
+          useradd -m builder
+          echo 'builder ALL=(ALL) NOPASSWD: ALL' >/etc/sudoers.d/builder
+          chown -R builder:builder "$GITHUB_WORKSPACE"
+
+      - name: Assert versions
+        run: |
+          set -euo pipefail
+          PRO=$(awk '/^VERSION / { print $3; exit }' omairc.pro)
+          PKG=$(awk -F= '/^pkgver=/ { print $2; exit }' PKGBUILD)
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            TAG="${GITHUB_REF_NAME#v}"
+            test "$TAG" = "$PRO" -a "$TAG" = "$PKG"
+          else
+            test "$PRO" = "$PKG"
+          fi
+
+      - name: Prepare dry-build source
+        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+        run: |
+          set -euo pipefail
+          pkgver=$(awk -F= '/^pkgver=/ { print $2; exit }' PKGBUILD)
+          tar --exclude='.git' --exclude='.arena-omairc-pacman' \
+            -czf "omairc-${pkgver}.tar.gz" \
+            --transform "s,^\.,omairc-${pkgver}," .
+          sed -i "s|^source=.*|source=(\"omairc-${pkgver}.tar.gz\")|" PKGBUILD
+          chown builder:builder "omairc-${pkgver}.tar.gz" PKGBUILD
+
+      - name: makepkg
+        run: sudo -u builder makepkg -s --noconfirm
+
+      - name: Build ReleaseAssetSet
+        run: |
+          set -euo pipefail
+          sudo -u builder repo-add omairc.db.tar.zst omairc-*-x86_64.pkg.tar.zst
+          rm -f omairc.db omairc.files
+          cp omairc.db.tar.zst omairc.db
+          cp omairc.files.tar.zst omairc.files
+
+      - name: Publish GitHub Release assets
+        if: ${{ startsWith(github.ref, 'refs/tags/v') }}
+        run: |
+          set -euo pipefail
+          TAG="$GITHUB_REF_NAME"
+          PKG=$(ls omairc-*-x86_64.pkg.tar.zst)
+          PKG_BASE=$(basename "$PKG")
+
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            gh release create "$TAG" --generate-notes --title "$TAG"
+          fi
+
+          mapfile -t assets < <(gh release view "$TAG" --json assets --jq '.assets[].name' || true)
+          for asset in "${assets[@]}"; do
+            if [[ "$asset" == omairc-*-x86_64.pkg.tar.zst && "$asset" != "$PKG_BASE" ]]; then
+              gh release delete-asset "$TAG" "$asset" --yes
+            fi
+          done
+
+          gh release upload "$TAG" \
+            "$PKG" \
+            omairc.db \
+            omairc.db.tar.zst \
+            omairc.files \
+            omairc.files.tar.zst \
+            --clobber

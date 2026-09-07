@@ -46,10 +46,22 @@ conversations instead.
 
 ## Install
 
-On Arch, once the AUR package is published:
+Add the Omairc pacman repo, then install the package.
+
+```ini
+[omairc]
+SigLevel = Optional TrustAll
+Server = https://github.com/fredimachado/omairc/releases/latest/download
+```
 
 ```sh
-yay -S omairc
+sudo pacman -Sy omairc
+```
+
+On Omarchy:
+
+```sh
+omarchy pkg add omairc
 ```
 
 That package depends on `qt6-base`, `qt6-declarative`, `qt6-svg`,
