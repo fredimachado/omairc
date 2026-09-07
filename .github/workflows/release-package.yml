@@ -74,6 +74,7 @@ jobs:
         if: ${{ startsWith(github.ref, 'refs/tags/v') }}
         run: |
           set -euo pipefail
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
           TAG="$GITHUB_REF_NAME"
           PKG=$(ls omairc-*-x86_64.pkg.tar.zst)
           PKG_BASE=$(basename "$PKG")
