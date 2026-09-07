@@ -46,7 +46,19 @@ conversations instead.
 
 ## Install
 
-Add the Omairc pacman repo, then install the package.
+On Omarchy or any Arch-based system:
+
+```sh
+git clone https://github.com/fredimachado/omairc.git
+cd omairc
+./bin/install
+```
+
+Or grab the package from the
+[latest release](https://github.com/fredimachado/omairc/releases/latest)
+and run `sudo pacman -U omairc-*.pkg.tar.zst`.
+
+Or add the Omairc pacman repo, then install with pacman or Omarchy:
 
 ```ini
 [omairc]

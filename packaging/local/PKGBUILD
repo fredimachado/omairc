@@ -1,0 +1,50 @@
+# Maintainer: Fredi Machado
+# Local checkout package used by ./bin/install. The release PKGBUILD lives at the repo root.
+
+pkgname=omairc
+pkgver=0.1.0
+pkgrel=1
+pkgdesc='Dead-simple IRC client for Omarchy'
+arch=('x86_64')
+url='https://github.com/fredimachado/omairc'
+license=('MIT' 'LGPL-3.0-or-later' 'OFL-1.1')
+options=(!debug)
+depends=(
+  'qt6-base'
+  'qt6-declarative'
+  'qt6-svg'
+  'qt6-wayland'
+  'xdg-desktop-portal'
+)
+makedepends=(
+  'qt6-base'
+  'qt6-declarative'
+  'qt6-svg'
+  'qt6-wayland'
+  'base-devel'
+)
+source=()
+sha256sums=()
+
+build() {
+  cd "$startdir/../.."
+  if command -v qmake6 >/dev/null 2>&1; then
+    QMAKE=qmake6
+  elif command -v qmake >/dev/null 2>&1 && qmake -query QT_VERSION | grep -q '^6\.'; then
+    QMAKE=qmake
+  else
+    echo "A Qt 6 qmake (qmake6) is required to build omairc." >&2
+    exit 1
+  fi
+
+  rm -rf build-pkg
+  mkdir build-pkg
+  cd build-pkg
+  "$QMAKE" PREFIX=/usr "$startdir/../../omairc.pro"
+  make -j"$(nproc 2>/dev/null || echo 1)"
+}
+
+package() {
+  cd "$startdir/../../build-pkg"
+  make INSTALL_ROOT="$pkgdir" install
+}
