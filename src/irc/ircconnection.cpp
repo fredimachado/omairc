@@ -96,7 +96,7 @@ IrcConnection::IrcConnection(IrcController &controller,
                     m_passwordEdited = false;
                 }
             }
-            if (operation.removeKey && state == CredentialStore::State::Available) {
+            if (operation.removeKey && state == CredentialStore::State::Available && operation.revision == m_secretRevision) {
                 m_credentialOperations.prepend(
                     {CredentialOperation::Kind::Remove, *operation.removeKey,
                      {}, operation.revision, std::nullopt});
