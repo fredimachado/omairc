@@ -583,7 +583,7 @@ void IrcSession::handleMessage(const IrcMessage &message)
             } else if (request->command == QStringLiteral("VERSION")) {
                 sendNotice(sender, ctcpPayload({
                     QStringLiteral("VERSION"),
-                    QStringLiteral("Omairc %1").arg(QStringLiteral(OMAIRC_VERSION)),
+                    QStringLiteral("Omairc %1").arg(QString::fromLatin1(OMAIRC_VERSION)),
                 }));
             }
             return;

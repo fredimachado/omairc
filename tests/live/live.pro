@@ -4,6 +4,8 @@ QT -= gui
 CONFIG += c++17 console testcase
 TEMPLATE = app
 TARGET = live_tests
+VERSION = 0.1.0
+DEFINES += OMAIRC_VERSION=\\\"$$VERSION\\\"
 
 greaterThan(QMAKE_GCC_MAJOR_VERSION, 15): QMAKE_CXXFLAGS += -Wno-sfinae-incomplete
 
@@ -59,6 +61,7 @@ SOURCES += \
     ../../src/irc/irctyping.cpp \
     ../../src/irc/irctypingpublisher.cpp \
     ../../src/irc/ircpresence.cpp \
+    ../../src/irc/irctcp.cpp \
     ../../src/irc/irceventtranslator.cpp \
     ../../src/irc/irceventreducer.cpp \
     ../../src/irc/ircstatusentry.cpp \
