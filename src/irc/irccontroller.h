@@ -56,6 +56,7 @@ public:
     int peopleCount() const;
     QString connectionStatus() const;
     QString lastError() const;
+    QString lastErrorForNetwork(const QString& networkId) const;
     QString currentNick() const;
     bool selfAway() const;
 
@@ -136,6 +137,8 @@ private:
     QString identityNetworkId() const;
     void notifySelfAwayIfChanged(const QString& previousId, bool previousAway);
     void updateStatus(IrcSession *session);
+    void setLastError(const QString& networkId, const QString& message);
+    QString errorNetworkId(IrcComposerSurface surface) const;
     void armTypingRefresh();
 
     IrcSessionManager m_sessions;
@@ -145,12 +148,12 @@ private:
     MessageListModel m_messages;
     MemberListModel m_members;
     QHash<QString, QString> m_currentNicks;
+    QHash<QString, QString> m_lastErrors;
     QHash<QString, IrcCapabilitySet> m_capabilities;
     QSet<QString> m_unawaySent;
     std::optional<IrcConversationKey> m_selected;
     QString m_selectedTarget;
     QString m_connectionStatus = QStringLiteral("Offline");
-    QString m_lastError;
     QTimer m_typingRefresh;
     QString m_composerDraft;
     QString m_typingTarget;

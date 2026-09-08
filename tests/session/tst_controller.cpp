@@ -151,6 +151,8 @@ private slots:
     void statusMsgStaysOpen();
     void disconnectedMsgIsNotConnected();
     void msgClearsAway();
+    void explicitChatClearsAwayOnOriginNetwork();
+    void lastErrorIsolatedByNetwork();
     void awayWaitsForNumericThenChatUnaways();
     void statusQueryClosesStatus();
     void statusQueryChannelStaysOpen();
@@ -907,6 +909,54 @@ void ControllerTest::selfAwayFollowsNumericsAndUnawaysAfterChat()
                           ":server CAP omairc DEL :away-notify\r\n"));
     QVERIFY(!controller.hasAwayPresence());
     QVERIFY(controller.selfAway());
+}
+
+void ControllerTest::explicitChatClearsAwayOnOriginNetwork()
+{
+    IrcController controller;
+    auto *transportA = new FakeIrcTransport;
+    auto *transportB = new FakeIrcTransport;
+    IrcSession *sessionA = controller.addSession(config(QStringLiteral("network-a")),
+                                                 transportA);
+    IrcSession *sessionB = controller.addSession(config(QStringLiteral("network-b")),
+                                                 transportB);
+    QVERIFY(sessionA);
+    QVERIFY(sessionB);
+    QVERIFY(controller.start(QStringLiteral("network-a")));
+    registerSession(sessionA, transportA);
+    registerSession(sessionB, transportB);
+    transportA->injectBytes(
+        QByteArrayLiteral(":server 306 omairc :You have been marked as being away\r\n"));
+    QVERIFY(controller.selfAway());
+    controller.selectConversation(QStringLiteral("network-b"), QStringLiteral("bob"));
+
+    QVERIFY(controller.sendToTarget(QStringLiteral("network-a"),
+                                    QStringLiteral("bob"),
+                                    QStringLiteral("hello")));
+    QCOMPARE(transportA->writtenFrames().last(),
+             QByteArrayLiteral("AWAY\r\n"));
+}
+
+void ControllerTest::lastErrorIsolatedByNetwork()
+{
+    IrcController controller;
+    auto *transportA = new FakeIrcTransport;
+    auto *transportB = new FakeIrcTransport;
+    IrcSession *sessionA = controller.addSession(config(QStringLiteral("network-a")),
+                                                 transportA);
+    IrcSession *sessionB = controller.addSession(config(QStringLiteral("network-b")),
+                                                 transportB);
+    QVERIFY(sessionA);
+    QVERIFY(sessionB);
+    registerSession(sessionB, transportB);
+    controller.selectConversation(QStringLiteral("network-b"), QStringLiteral("bob"));
+
+    QVERIFY(!controller.sendToTarget(QStringLiteral("network-a"),
+                                     QStringLiteral("bob"),
+                                     QStringLiteral("hello")));
+    QCOMPARE(controller.lastErrorForNetwork(QStringLiteral("network-a")),
+             QStringLiteral("Not connected"));
+    QCOMPARE(controller.lastError(), QString());
 }
 
 void ControllerTest::closeLastDirectKeepsSelfAway()

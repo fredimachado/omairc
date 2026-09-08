@@ -142,8 +142,7 @@ ResolveResult resolveNetworkId(const QString &requested,
     ResolveResult result;
     if (!requested.isEmpty()) {
         if (!availableIds.contains(requested)) {
-            result.error = QStringLiteral(
-                "Unknown network id '%1'. Run `omairc connections`.")
+            result.error = QStringLiteral("Unknown network id '%1'.")
                                .arg(requested);
             return result;
         }
@@ -153,14 +152,12 @@ ResolveResult resolveNetworkId(const QString &requested,
     }
 
     if (availableIds.isEmpty()) {
-        result.error = QStringLiteral(
-            "No connections. Run `omairc connections` after connecting.");
+        result.error = QStringLiteral("No connections are available.");
         return result;
     }
     if (availableIds.size() > 1) {
         result.error = QStringLiteral(
-            "Multiple connections; pass --network <id>. "
-            "Run `omairc connections`.");
+            "Multiple connections are available; specify a network id.");
         return result;
     }
 

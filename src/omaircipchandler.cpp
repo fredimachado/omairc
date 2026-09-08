@@ -57,8 +57,7 @@ OmaircIpc::ConnectionInfo OmaircIpcHandler::infoFor(const QString &networkId) co
     info.state = OmaircIpc::stateLabel(
         QString::fromLatin1(meta.valueToKey(int(session->state()))));
     info.selected = m_controller->selectedNetworkId() == networkId;
-    if (info.selected || m_controller->networkIds().size() == 1)
-        info.lastError = m_controller->lastError();
+    info.lastError = m_controller->lastErrorForNetwork(networkId);
     return info;
 }
 
@@ -96,9 +95,9 @@ QByteArray OmaircIpcHandler::handle(const OmaircIpc::Request &request) const
             return OmaircIpc::errorResponse(resolved.error);
         if (!m_controller->sendToTarget(
                 resolved.networkId, request.target, request.text)) {
-            const QString error = m_controller->lastError().isEmpty()
+            const QString error = m_controller->lastErrorForNetwork(resolved.networkId).isEmpty()
                 ? QStringLiteral("Failed to send message")
-                : m_controller->lastError();
+                : m_controller->lastErrorForNetwork(resolved.networkId);
             return OmaircIpc::errorResponse(error);
         }
         return OmaircIpc::okResponse();
