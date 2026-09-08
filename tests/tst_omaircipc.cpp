@@ -67,6 +67,7 @@ private slots:
     void socketRaiseStillWorks();
     void socketCommandRoundTrip();
     void socketRejectsOversizedLine();
+    void socketRejectsOversizedResponse();
     void socketClosesAfterOneRequest();
     void connectionsSortedById();
     void sendAllowsDashPrefixedText();
@@ -332,6 +333,25 @@ void OmaircIpcTest::socketRejectsOversizedLine()
     QCOMPARE(client.write(blob), qint64(blob.size()));
     QVERIFY(client.waitForBytesWritten(1000));
     QTRY_COMPARE(client.state(), QLocalSocket::UnconnectedState);
+}
+
+void OmaircIpcTest::socketRejectsOversizedResponse()
+{
+    SingleInstance primary;
+    QVERIFY(primary.acquireOrNotify());
+    primary.setRequestHandler([](const QByteArray &) {
+        return QByteArray(64 * 1024, 'x');
+    });
+
+    QLocalSocket client;
+    client.connectToServer(SingleInstance::socketPath());
+    QVERIFY(client.waitForConnected(1000));
+
+    const QByteArray request = QByteArrayLiteral("{\"cmd\":\"raise\"}\n");
+    QCOMPARE(client.write(request), qint64(request.size()));
+    QVERIFY(client.waitForBytesWritten(1000));
+    QTRY_COMPARE(client.state(), QLocalSocket::UnconnectedState);
+    QVERIFY(!client.canReadLine());
 }
 
 void OmaircIpcTest::socketClosesAfterOneRequest()

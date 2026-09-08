@@ -164,12 +164,11 @@ void SingleInstance::consumeSocketData(QLocalSocket *socket)
 
     QByteArray buffer = socket->property("omaircBuffer").toByteArray();
     buffer += socket->readAll();
-    if (buffer.size() > kMaxIpcLineBytes + 1) {
+    if (buffer.size() > kMaxIpcInputBytes) {
         rejectSocket(socket);
         return;
     }
 
-    // Legacy secondary launch writes a bare "!" with no newline.
     if (buffer == OmaircIpc::raisePing() && socket->property("omaircPingReady").toBool()) {
         socket->setProperty("omaircBuffer", QByteArray());
         emit activationRequested();
@@ -212,7 +211,7 @@ void SingleInstance::consumeSocketData(QLocalSocket *socket)
     }
 
     const QByteArray response = m_requestHandler(line);
-    if (response.size() > kMaxIpcResponseBytes) {
+    if (response.size() + 1 > kMaxIpcResponseBytes) {
         rejectSocket(socket);
         return;
     }

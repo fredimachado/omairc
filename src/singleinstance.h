@@ -42,6 +42,7 @@ private:
     void expireSocket(QLocalSocket *socket);
 
     static constexpr int kMaxIpcLineBytes = 64 * 1024;
+    static constexpr int kMaxIpcInputBytes = 64 * 1024;
     static constexpr int kMaxIpcClients = 32;
     static constexpr int kIpcIdleTimeoutMs = 1000;
     static constexpr int kMaxIpcResponseBytes = 64 * 1024;
