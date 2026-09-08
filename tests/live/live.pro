@@ -4,7 +4,8 @@ QT -= gui
 CONFIG += c++17 console testcase
 TEMPLATE = app
 TARGET = live_tests
-DEFINES += OMAIRC_VERSION=\\\"0.1.0\\\"
+VERSION = 0.1.0
+DEFINES += OMAIRC_VERSION=\\\"$$VERSION\\\"
 
 greaterThan(QMAKE_GCC_MAJOR_VERSION, 15): QMAKE_CXXFLAGS += -Wno-sfinae-incomplete
 
