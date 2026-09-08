@@ -64,7 +64,6 @@ HEADERS += \
     src/irc/secretservicecredentialstore.h \
     src/irc/ircconnection.h
 
-
 SOURCES += \
     src/main.cpp \
     src/backend.cpp \

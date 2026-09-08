@@ -3,7 +3,6 @@ import QtQuick.Controls
 import QtQuick.Controls.Material
 import QtQuick.Layouts
 import QtQuick.Window
-import QtQuick.Accessibility
 
 ApplicationWindow {
     id: win

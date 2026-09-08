@@ -67,7 +67,6 @@ HEADERS += \
     ../src/irc/qtirctransport.h \
     support/fakeirctransport.h
 
-
 SOURCES += \
     tst_main.cpp \
     tst_singleinstance.cpp \

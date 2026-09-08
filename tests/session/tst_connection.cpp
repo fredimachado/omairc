@@ -380,6 +380,13 @@ void ConnectionTest::startupActivationWaitsForUsableCredentialState()
 
 void ConnectionTest::emptyPasswordDoesNotDeleteStoredCredential()
 {
+    {
+        IrcController seedController;
+        IrcConnection seed(seedController, capturingFactory());
+        fillCompleteDraft(seed);
+        QVERIFY(seed.apply());
+    }
+
     IrcController controller;
     auto *store = new FakeCredentialStore(CredentialStore::State::Available,
                                           QStringLiteral("stored-secret"));
