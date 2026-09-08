@@ -31,6 +31,7 @@ void SecretServiceCredentialStore::read(const CredentialKey &key)
         } else {
             emit readFinished(State::Unavailable, {}, job->errorString());
         }
+        job->deleteLater();
     });
     job->start();
 }
@@ -45,6 +46,7 @@ void SecretServiceCredentialStore::write(const CredentialKey &key,
         emit writeFinished(job->error() == QKeychain::NoError
                                ? State::Available : State::Unavailable,
                            job->errorString());
+        job->deleteLater();
     });
     job->start();
 }
@@ -58,6 +60,7 @@ void SecretServiceCredentialStore::remove(const CredentialKey &key)
                                || job->error() == QKeychain::EntryNotFound
                                ? State::Missing : State::Unavailable,
                            job->errorString());
+        job->deleteLater();
     });
     job->start();
 }

@@ -2704,6 +2704,25 @@ ApplicationWindow {
                         }
 
                         Text {
+                            objectName: "connectionForgetPassword"
+                            visible: win.connection
+                                && win.connection.credentialStatus === "password saved securely"
+                            text: "forget saved password"
+                            color: win.accentColor
+                            font.family: "iA Writer Mono S"
+                            font.pixelSize: win.scaledSize(10)
+                            MouseArea {
+                                anchors.fill: parent
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: {
+                                    win.connection.forgetPassword();
+                                    connectionPassword.text = "";
+                                    win.submitConnection();
+                                }
+                            }
+                        }
+
+                        Text {
                             objectName: "connectionProblem"
                             width: parent.width
                             visible: win.connection && win.connection.problem.length > 0

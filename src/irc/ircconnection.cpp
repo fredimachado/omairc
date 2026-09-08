@@ -81,7 +81,9 @@ IrcConnection::IrcConnection(IrcController &controller,
         });
         connect(m_credentialStore, &CredentialStore::writeFinished, this,
                 [this](CredentialStore::State state, const QString &message) {
-            m_credentialState = state;
+            m_credentialState = state == CredentialStore::State::Unavailable
+                    && !m_password.isEmpty()
+                ? CredentialStore::State::SessionOnly : state;
             m_credentialError = message;
             emit credentialStateChanged();
         });
@@ -278,6 +280,11 @@ void IrcConnection::setAutojoin(const QString &channels)
 
 void IrcConnection::setPassword(const QString &password)
 {
+    if (password.isEmpty() && !m_passwordEdited
+        && !m_password.isEmpty()
+        && m_credentialState == CredentialStore::State::Available) {
+        return;
+    }
     if (m_password == password)
         return;
     m_password = password;
@@ -297,6 +304,18 @@ void IrcConnection::setPassword(const QString &password)
     emit draftChanged();
 }
 
+void IrcConnection::forgetPassword()
+{
+    if (m_password.isEmpty() && m_credentialState == CredentialStore::State::Missing)
+        return;
+    m_password.clear();
+    m_passwordEdited = true;
+    m_credentialState = CredentialStore::State::Missing;
+    ++m_secretRevision;
+    emit credentialStateChanged();
+    emit draftChanged();
+}
+
 bool IrcConnection::apply()
 {
     const bool wasSetup = setupRequired();
@@ -311,11 +330,12 @@ bool IrcConnection::apply()
     m_stored = profile;
     m_draft = profile;
     emit draftChanged();
-    if (m_credentialStore) {
-        if (m_password.isEmpty())
+    if (m_credentialStore && m_passwordEdited) {
+        if (m_password.isEmpty()) {
             m_credentialStore->remove(credentialKey(profile));
-        else
+        } else {
             m_credentialStore->write(credentialKey(profile), m_password);
+        }
     }
     if (wasSetup)
         emit setupRequiredChanged();

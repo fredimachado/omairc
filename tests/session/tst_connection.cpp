@@ -28,6 +28,7 @@ private slots:
     void applyDoesNotWritePassword();
     void credentialStoreLoadsPasswordAsynchronously();
     void startupActivationWaitsForCredentialRead();
+    void emptyPasswordDoesNotDeleteStoredCredential();
     void unavailableCredentialStoreUsesSessionOnlyState();
 
 private:
@@ -60,6 +61,7 @@ public:
     void write(const CredentialKey &, const QString &password) override
     {
         m_writtenPassword = password;
+        ++m_writeCalls;
         QMetaObject::invokeMethod(this, [this]() {
             emit writeFinished(State::Available, {});
         }, Qt::QueuedConnection);
@@ -67,17 +69,22 @@ public:
 
     void remove(const CredentialKey &) override
     {
+        ++m_removeCalls;
         QMetaObject::invokeMethod(this, [this]() {
             emit writeFinished(State::Missing, {});
         }, Qt::QueuedConnection);
     }
 
     QString writtenPassword() const { return m_writtenPassword; }
+    int writeCalls() const { return m_writeCalls; }
+    int removeCalls() const { return m_removeCalls; }
 
 private:
     State m_readState;
     QString m_password;
     QString m_writtenPassword;
+    int m_writeCalls = 0;
+    int m_removeCalls = 0;
 };
 
 void ConnectionTest::init()
@@ -305,6 +312,27 @@ void ConnectionTest::startupActivationWaitsForCredentialRead()
     QCOMPARE(m_transports.size(), 0);
     QTRY_COMPARE(missingConnection.credentialState(), CredentialStore::State::Missing);
     QCOMPARE(m_transports.size(), 1);
+}
+
+void ConnectionTest::emptyPasswordDoesNotDeleteStoredCredential()
+{
+    IrcController controller;
+    auto *store = new FakeCredentialStore(CredentialStore::State::Available,
+                                          QStringLiteral("stored-secret"));
+    IrcConnection connection(controller, capturingFactory(),
+                             [store]() { return store; });
+    fillCompleteDraft(connection);
+    QTRY_COMPARE(connection.credentialState(), CredentialStore::State::Available);
+    QVERIFY(connection.apply());
+
+    connection.setPassword(QString());
+    QVERIFY(connection.apply());
+    QCOMPARE(store->writeCalls(), 0);
+    QCOMPARE(store->removeCalls(), 0);
+
+    connection.forgetPassword();
+    QVERIFY(connection.apply());
+    QCOMPARE(store->removeCalls(), 1);
 }
 
 void ConnectionTest::unavailableCredentialStoreUsesSessionOnlyState()
