@@ -27,6 +27,7 @@ private slots:
     void authenticationFailureFocusesPassword();
     void applyDoesNotWritePassword();
     void credentialStoreLoadsPasswordAsynchronously();
+    void startupActivationWaitsForCredentialRead();
     void unavailableCredentialStoreUsesSessionOnlyState();
 
 private:
@@ -270,6 +271,40 @@ void ConnectionTest::credentialStoreLoadsPasswordAsynchronously()
     QTRY_COMPARE(connection.credentialState(), CredentialStore::State::Available);
     QVERIFY(connection.passwordSet());
     QCOMPARE(connection.credentialStatus(), QStringLiteral("password saved securely"));
+}
+
+void ConnectionTest::startupActivationWaitsForCredentialRead()
+{
+    {
+        IrcController controller;
+        IrcConnection connection(controller, capturingFactory());
+        fillCompleteDraft(connection);
+        connection.setConnectOnStartup(true);
+        QVERIFY(connection.apply());
+    }
+    m_transports.clear();
+
+    IrcController controller;
+    auto *store = new FakeCredentialStore(CredentialStore::State::Available);
+    IrcConnection connection(controller, capturingFactory(),
+                             [store]() { return store; });
+    QCOMPARE(connection.credentialState(), CredentialStore::State::Loading);
+
+    connection.activateOnStartup();
+    QCOMPARE(m_transports.size(), 0);
+
+    QTRY_COMPARE(connection.credentialState(), CredentialStore::State::Available);
+    QCOMPARE(m_transports.size(), 1);
+
+    m_transports.clear();
+    IrcController missingController;
+    auto *missingStore = new FakeCredentialStore(CredentialStore::State::Missing);
+    IrcConnection missingConnection(missingController, capturingFactory(),
+                                    [missingStore]() { return missingStore; });
+    missingConnection.activateOnStartup();
+    QCOMPARE(m_transports.size(), 0);
+    QTRY_COMPARE(missingConnection.credentialState(), CredentialStore::State::Missing);
+    QCOMPARE(m_transports.size(), 1);
 }
 
 void ConnectionTest::unavailableCredentialStoreUsesSessionOnlyState()

@@ -158,7 +158,7 @@ int main(int argc, char *argv[]) {
     if (pendingRaise)
         raiseOmaircWindow(engine);
     if (ircConnection && ircConnection->connectOnStartup())
-        ircConnection->activate();
+        ircConnection->activateOnStartup();
 
     return app.exec();
 }

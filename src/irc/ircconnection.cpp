@@ -73,6 +73,11 @@ IrcConnection::IrcConnection(IrcController &controller,
             }
             emit credentialStateChanged();
             emit draftChanged();
+            if (m_startupActivationConnection && state != CredentialStore::State::Loading) {
+                QObject::disconnect(m_startupActivationConnection);
+                m_startupActivationConnection = {};
+                activate();
+            }
         });
         connect(m_credentialStore, &CredentialStore::writeFinished, this,
                 [this](CredentialStore::State state, const QString &message) {
@@ -325,11 +330,30 @@ void IrcConnection::discard()
 
 bool IrcConnection::activate()
 {
+    if (m_startupActivationConnection) {
+        QObject::disconnect(m_startupActivationConnection);
+        m_startupActivationConnection = {};
+    }
     if (!m_stored.isComplete())
         return false;
     m_draft = m_stored;
     emit draftChanged();
     return reconcile(m_stored);
+}
+
+void IrcConnection::activateOnStartup()
+{
+    if (m_startupActivationConnection)
+        return;
+    if (m_credentialState == CredentialStore::State::Loading) {
+        m_startupActivationConnection = connect(
+            this, &IrcConnection::credentialStateChanged, this, [this]() {
+                if (m_credentialState != CredentialStore::State::Loading)
+                    activate();
+            });
+        return;
+    }
+    activate();
 }
 
 void IrcConnection::restoreDraft()

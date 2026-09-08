@@ -80,6 +80,7 @@ public:
     Q_INVOKABLE bool apply();
     Q_INVOKABLE void discard();
     bool activate();
+    void activateOnStartup();
 
 signals:
     void draftChanged();
@@ -113,4 +114,5 @@ private:
     bool m_passwordEdited = false;
     CredentialStore::State m_credentialState = CredentialStore::State::Missing;
     QString m_credentialError;
+    QMetaObject::Connection m_startupActivationConnection;
 };
