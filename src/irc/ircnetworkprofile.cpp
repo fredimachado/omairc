@@ -138,6 +138,7 @@ bool operator==(const IrcNetworkProfile &left, const IrcNetworkProfile &right)
         && left.host == right.host
         && left.port == right.port
         && left.tlsEnabled == right.tlsEnabled
+        && left.connectOnStartup == right.connectOnStartup
         && left.nick == right.nick
         && left.username == right.username
         && left.realname == right.realname

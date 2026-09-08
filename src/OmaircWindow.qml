@@ -2657,6 +2657,29 @@ ApplicationWindow {
                             }
                         }
 
+                        Row {
+                            width: parent.width
+                            spacing: win.scaledSize(10)
+
+                            Switch {
+                                id: connectionConnectOnStartup
+                                objectName: "connectionConnectOnStartup"
+                                checked: win.connection ? win.connection.connectOnStartup : false
+                                onToggled: {
+                                    if (win.connection)
+                                        win.connection.connectOnStartup = checked;
+                                }
+                            }
+
+                            Text {
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: "Connect automatically on startup"
+                                color: win.inkColor
+                                font.family: "iA Writer Mono S"
+                                font.pixelSize: win.scaledSize(11)
+                            }
+                        }
+
                         ConnectionField {
                             id: connectionPassword
                             label: "Password"
