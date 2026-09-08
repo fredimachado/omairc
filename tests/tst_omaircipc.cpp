@@ -73,6 +73,7 @@ private slots:
     void sendAllowsDashPrefixedText();
     void socketRaisePingWithHandlerRaisesOnce();
     void socketAcceptsSplitRaisePing();
+    void socketAcceptsDisconnectedRaisePing();
     void socketExpiresIdleClient();
     void socketLimitsConcurrentClients();
 };
@@ -462,6 +463,21 @@ void OmaircIpcTest::socketAcceptsSplitRaisePing()
     QVERIFY(client.waitForBytesWritten(1000));
     QTRY_COMPARE(spy.count(), 1);
     QTRY_COMPARE(client.state(), QLocalSocket::UnconnectedState);
+}
+
+void OmaircIpcTest::socketAcceptsDisconnectedRaisePing()
+{
+    SingleInstance primary;
+    QVERIFY(primary.acquireOrNotify());
+    QSignalSpy spy(&primary, &SingleInstance::activationRequested);
+
+    QLocalSocket client;
+    client.connectToServer(SingleInstance::socketPath());
+    QVERIFY(client.waitForConnected(1000));
+    QCOMPARE(client.write(OmaircIpc::raisePing()), qint64(1));
+    QVERIFY(client.waitForBytesWritten(1000));
+    client.disconnectFromServer();
+    QTRY_COMPARE(spy.count(), 1);
 }
 
 void OmaircIpcTest::socketExpiresIdleClient()

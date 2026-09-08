@@ -148,6 +148,11 @@ void SingleInstance::listenForActivation()
             });
             QObject::connect(socket, &QLocalSocket::disconnected, this, [this, socket]() {
                 --m_activeClients;
+                if (!socket->property("omaircHandled").toBool()
+                    && socket->property("omaircBuffer").toByteArray()
+                           == OmaircIpc::raisePing()) {
+                    emit activationRequested();
+                }
                 socket->deleteLater();
             });
             idleTimer->start();
@@ -234,6 +239,7 @@ void SingleInstance::rejectSocket(QLocalSocket *socket)
     socket->setProperty("omaircBuffer", QByteArray());
     socket->setProperty("omaircHandled", true);
     socket->abort();
+    socket->deleteLater();
 }
 
 void SingleInstance::expireSocket(QLocalSocket *socket)
