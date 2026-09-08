@@ -2714,13 +2714,19 @@ ApplicationWindow {
                             Accessible.role: Accessible.Button
                             Accessible.name: "Forget saved password"
                             Accessible.description: "Remove the saved connection password"
+                            Accessible.onPressAction: {
+                                forgetSavedPassword();
+                            }
+                            function forgetSavedPassword() {
+                                win.connection.forgetPassword();
+                                connectionPassword.text = "";
+                                win.submitConnection();
+                            }
                             MouseArea {
                                 anchors.fill: parent
                                 cursorShape: Qt.PointingHandCursor
                                 onClicked: {
-                                    win.connection.forgetPassword();
-                                    connectionPassword.text = "";
-                                    win.submitConnection();
+                                    parent.forgetSavedPassword();
                                 }
                             }
                         }

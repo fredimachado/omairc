@@ -60,9 +60,8 @@ IrcConnection::IrcConnection(IrcController &controller,
         connect(m_credentialStore, &CredentialStore::readFinished, this,
                 [this](CredentialStore::State state, const QString &password,
                        const QString &message) {
-            const bool storageFailed = state == CredentialStore::State::Unavailable
-                || state == CredentialStore::State::Error;
-            m_credentialState = m_passwordEdited && storageFailed
+            m_credentialState = m_passwordEdited
+                && state == CredentialStore::State::Unavailable
                 ? CredentialStore::State::SessionOnly : state;
             m_credentialError = message;
             if (state == CredentialStore::State::Available && !m_passwordEdited) {
@@ -290,7 +289,9 @@ void IrcConnection::setAutojoin(const QString &channels)
 
 void IrcConnection::setPassword(const QString &password)
 {
-    if (password.isEmpty() && !m_password.isEmpty()) {
+    if (password.isEmpty() && !m_password.isEmpty()
+        && !m_passwordEdited
+        && m_credentialState == CredentialStore::State::Available) {
         return;
     }
     if (m_password == password)
