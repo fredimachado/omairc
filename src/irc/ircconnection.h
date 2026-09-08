@@ -11,7 +11,6 @@
 #include <cstddef>
 #include <functional>
 #include <optional>
-#include <optional>
 
 class IrcController;
 class IrcTransport;
