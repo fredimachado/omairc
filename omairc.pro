@@ -1,5 +1,14 @@
 QT += core gui qml quick quickcontrols2 dbus network
 
+qtkeychain_pri = /usr/lib/qt6/mkspecs/modules/qt_Qt6Keychain.pri
+exists($$PWD/.deps/usr/lib/qt6/mkspecs/modules/qt_Qt6Keychain.pri) {
+    qtkeychain_pri = $$PWD/.deps/usr/lib/qt6/mkspecs/modules/qt_Qt6Keychain.pri
+    INCLUDEPATH += $$PWD/.deps/usr/include
+    LIBS += -L$$PWD/.deps/usr/lib
+}
+include($$qtkeychain_pri)
+QT += Qt6Keychain
+
 CONFIG += c++17 release
 VERSION = 0.1.0
 TARGET = omairc
@@ -48,7 +57,10 @@ HEADERS += \
     src/irc/irccontroller.h \
     src/irc/ircnetworkprofile.h \
     src/irc/ircprofilestore.h \
+    src/irc/credentialstore.h \
+    src/irc/secretservicecredentialstore.h \
     src/irc/ircconnection.h
+
 
 SOURCES += \
     src/main.cpp \
@@ -87,6 +99,7 @@ SOURCES += \
     src/irc/irccontroller.cpp \
     src/irc/ircnetworkprofile.cpp \
     src/irc/ircprofilestore.cpp \
+    src/irc/secretservicecredentialstore.cpp \
     src/irc/ircconnection.cpp
 
 RESOURCES += src/resources.qrc

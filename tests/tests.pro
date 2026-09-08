@@ -1,4 +1,13 @@
 QT += core network testlib
+
+qtkeychain_pri = /usr/lib/qt6/mkspecs/modules/qt_Qt6Keychain.pri
+exists($$PWD/../.deps/usr/lib/qt6/mkspecs/modules/qt_Qt6Keychain.pri) {
+    qtkeychain_pri = $$PWD/../.deps/usr/lib/qt6/mkspecs/modules/qt_Qt6Keychain.pri
+    INCLUDEPATH += $$PWD/../.deps/usr/include
+    LIBS += -L$$PWD/../.deps/usr/lib
+}
+include($$qtkeychain_pri)
+QT += Qt6Keychain
 QT -= gui
 
 CONFIG += c++17 console testcase
@@ -49,9 +58,12 @@ HEADERS += \
     ../src/irc/irccontroller.h \
     ../src/irc/ircnetworkprofile.h \
     ../src/irc/ircprofilestore.h \
+    ../src/irc/credentialstore.h \
+    ../src/irc/secretservicecredentialstore.h \
     ../src/irc/ircconnection.h \
     ../src/irc/qtirctransport.h \
     support/fakeirctransport.h
+
 
 SOURCES += \
     tst_main.cpp \
@@ -91,6 +103,7 @@ SOURCES += \
     ../src/irc/irccontroller.cpp \
     ../src/irc/ircnetworkprofile.cpp \
     ../src/irc/ircprofilestore.cpp \
+    ../src/irc/secretservicecredentialstore.cpp \
     ../src/irc/ircconnection.cpp \
     ../src/irc/qtirctransport.cpp \
     support/fakeirctransport.cpp \

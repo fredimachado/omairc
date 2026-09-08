@@ -5,6 +5,7 @@
 #include <QTest>
 
 #include "fakeirctransport.h"
+#include "credentialstore.h"
 #include "ircconnection.h"
 #include "irccontroller.h"
 
@@ -25,6 +26,8 @@ private slots:
     void tlsSwitchLeavesPortAlone();
     void authenticationFailureFocusesPassword();
     void applyDoesNotWritePassword();
+    void credentialStoreLoadsPasswordAsynchronously();
+    void unavailableCredentialStoreUsesSessionOnlyState();
 
 private:
     IrcConnection::TransportFactory capturingFactory();
@@ -32,6 +35,41 @@ private:
 
     std::unique_ptr<QTemporaryDir> m_dir;
     QList<FakeIrcTransport *> m_transports;
+};
+
+class FakeCredentialStore final : public CredentialStore
+{
+public:
+    explicit FakeCredentialStore(State readState, QString password = {},
+                                 QObject *parent = nullptr)
+        : CredentialStore(parent)
+        , m_readState(readState)
+        , m_password(std::move(password))
+    {
+    }
+
+    void read(const CredentialKey &) override
+    {
+        emit readFinished(State::Loading, {}, {});
+        QMetaObject::invokeMethod(this, [this]() {
+            emit readFinished(m_readState, m_password, {});
+        }, Qt::QueuedConnection);
+    }
+
+    void write(const CredentialKey &, const QString &password) override
+    {
+        m_writtenPassword = password;
+        QMetaObject::invokeMethod(this, [this]() {
+            emit writeFinished(State::Available, {});
+        }, Qt::QueuedConnection);
+    }
+
+    QString writtenPassword() const { return m_writtenPassword; }
+
+private:
+    State m_readState;
+    QString m_password;
+    QString m_writtenPassword;
 };
 
 void ConnectionTest::init()
@@ -200,6 +238,52 @@ void ConnectionTest::applyDoesNotWritePassword()
     const QString contents = QString::fromUtf8(file.readAll());
     QVERIFY(!contents.contains(QLatin1String("password"), Qt::CaseInsensitive));
     QVERIFY(!contents.contains(QLatin1String("super-secret")));
+}
+
+void ConnectionTest::credentialStoreLoadsPasswordAsynchronously()
+{
+    {
+        IrcController controller;
+        IrcConnection connection(controller, capturingFactory(),
+                                 []() {
+            return new FakeCredentialStore(CredentialStore::State::Available,
+                                           QStringLiteral("stored-secret"));
+        });
+        fillCompleteDraft(connection);
+        QVERIFY(connection.apply());
+    }
+
+    IrcController controller;
+    auto *store = new FakeCredentialStore(CredentialStore::State::Available,
+                                          QStringLiteral("stored-secret"));
+    IrcConnection connection(controller, capturingFactory(),
+                             [store]() { return store; });
+    QVERIFY(connection.credentialState() == CredentialStore::State::Loading
+            || connection.credentialState() == CredentialStore::State::Available);
+    QTRY_COMPARE(connection.credentialState(), CredentialStore::State::Available);
+    QVERIFY(connection.passwordSet());
+    QCOMPARE(connection.credentialStatus(), QStringLiteral("password saved securely"));
+}
+
+void ConnectionTest::unavailableCredentialStoreUsesSessionOnlyState()
+{
+    {
+        IrcController controller;
+        IrcConnection connection(controller, capturingFactory());
+        fillCompleteDraft(connection);
+        QVERIFY(connection.apply());
+    }
+
+    IrcController controller;
+    IrcConnection connection(controller, capturingFactory(), []() {
+        return new FakeCredentialStore(CredentialStore::State::Unavailable);
+    });
+    QTRY_COMPARE(connection.credentialState(), CredentialStore::State::Unavailable);
+    QVERIFY(!connection.passwordSet());
+    QCOMPARE(connection.credentialStatus(),
+             QStringLiteral("secure storage unavailable; password is session-only"));
+    connection.setPassword(QStringLiteral("session-secret"));
+    QVERIFY(connection.passwordSet());
 }
 
 int runConnectionTests(int argc, char **argv)

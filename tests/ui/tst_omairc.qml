@@ -45,6 +45,9 @@ TestCase {
         property string realname: ""
         property string autojoin: "#omarchy"
         property bool passwordSet: false
+        property int credentialState: 2
+        property string credentialError: ""
+        property string credentialStatus: "secure storage unavailable; password is session-only"
         property string problem: "Nick is required"
         property bool dirty: true
         property string displayName: "irc.libera.chat"
@@ -1391,6 +1394,8 @@ TestCase {
         compare(findChild(window, "connectionAutojoin").text, "#omarchy");
         compare(findChild(window, "connectionConnectOnStartup").checked, false);
         compare(findChild(window, "connectionProblem").text, "Nick is required");
+        compare(findChild(window, "connectionCredentialStatus").text,
+                "secure storage unavailable; password is session-only");
         try {
             grabImage(window.contentItem).save(artifactDirectory + "connection-sheet.png");
         } catch (error) {

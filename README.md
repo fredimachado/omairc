@@ -13,9 +13,10 @@ by default. Omairc does not connect on its own by default; enable Connect
 automatically on startup when you want a session on launch.
 
 Omairc remembers host, port, TLS, nick, username, real name, and autojoin in
-`$XDG_CONFIG_HOME/omairc/`. Connect automatically on startup is off by
-default and can be enabled in the Connect sheet. Omairc does not write the
-password. Type the password again when you Apply if the server needs it.
+`$XDG_CONFIG_HOME/omairc/`. Passwords are stored through QtKeychain in the
+desktop Secret Service. If that service is unavailable, the password stays
+session-only and the connection sheet says so. Connect automatically on
+startup is off by default and can be enabled in the Connect sheet.
 Press `Ctrl+,` or click `edit` beside the network name to reopen the sheet.
 The network name itself opens Status.
 
@@ -114,7 +115,7 @@ omarchy pkg add omairc
 ```
 
 That package depends on `qt6-base`, `qt6-declarative`, `qt6-svg`,
-`qt6-wayland`, and `xdg-desktop-portal`.
+`qt6-wayland`, `qtkeychain-qt6`, and `xdg-desktop-portal`.
 
 Packagers stage with qmake `INSTALL_ROOT`, not `DESTDIR`:
 
@@ -147,7 +148,8 @@ ngIRCd on loopback and is not part of `bin/test`.
 
 ## Requirements
 
-- Qt 6: `qt6-base`, `qt6-declarative`, `qt6-svg`, `qt6-wayland`
+- Qt 6: `qt6-base`, `qt6-declarative`, `qt6-svg`, `qt6-wayland`,
+  `qtkeychain-qt6`
 - `xdg-desktop-portal` and a portal backend
 
 Omairc is MIT. See `LICENSE`. The IRC protocol code in `src/irc/` is

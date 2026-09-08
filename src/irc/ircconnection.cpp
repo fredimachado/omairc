@@ -2,12 +2,18 @@
 
 #include "irccontroller.h"
 #include "qtirctransport.h"
+#include "secretservicecredentialstore.h"
 
 namespace
 {
 IrcTransport *defaultTransport()
 {
     return new QtIrcTransport;
+}
+
+CredentialStore *defaultCredentialStore()
+{
+    return new SecretServiceCredentialStore;
 }
 
 IrcNetworkProfile firstStoredProfile(const QList<IrcNetworkProfile> &profiles)
@@ -30,18 +36,55 @@ IrcConnection::IrcConnection(IrcController &controller, QObject *parent)
 IrcConnection::IrcConnection(IrcController &controller,
                              TransportFactory transportFactory,
                              QObject *parent)
+    : IrcConnection(controller, std::move(transportFactory), {},
+                    parent)
+{
+}
+
+IrcConnection::IrcConnection(IrcController &controller,
+                             TransportFactory transportFactory,
+                             CredentialStoreFactory credentialStoreFactory,
+                             QObject *parent)
     : QObject(parent)
     , m_controller(controller)
     , m_transportFactory(std::move(transportFactory))
+    , m_credentialStoreFactory(std::move(credentialStoreFactory))
 {
     if (!m_transportFactory)
         m_transportFactory = defaultTransport;
+    if (!m_credentialStoreFactory)
+        m_credentialStoreFactory = defaultCredentialStore;
+    m_credentialStore = m_credentialStoreFactory();
+    if (m_credentialStore) {
+        m_credentialStore->setParent(this);
+        connect(m_credentialStore, &CredentialStore::readFinished, this,
+                [this](CredentialStore::State state, const QString &password,
+                       const QString &message) {
+            m_credentialState = state;
+            m_credentialError = message;
+            if (state == CredentialStore::State::Available)
+                m_password = password;
+            emit credentialStateChanged();
+            emit draftChanged();
+        });
+        connect(m_credentialStore, &CredentialStore::writeFinished, this,
+                [this](CredentialStore::State state, const QString &message) {
+            if (state == CredentialStore::State::Error
+                || state == CredentialStore::State::Unavailable) {
+                m_credentialState = state;
+                m_credentialError = message;
+                emit credentialStateChanged();
+            }
+        });
+    }
 
     m_stored = firstStoredProfile(m_store.profiles());
     if (m_stored.networkId.isEmpty())
         m_draft = IrcNetworkProfile::suggested();
     else
         m_draft = m_stored;
+    if (m_credentialStore && !m_stored.networkId.isEmpty())
+        m_credentialStore->read({m_stored.networkId, m_stored.nick, m_stored.host});
 
     connect(&m_controller, &IrcController::errorOccurred, this,
             [this](const QString &, IrcSession::ErrorKind kind, const QString &) {
@@ -95,6 +138,33 @@ QString IrcConnection::autojoin() const
 bool IrcConnection::passwordSet() const
 {
     return !m_password.isEmpty();
+}
+
+CredentialStore::State IrcConnection::credentialState() const
+{
+    return m_credentialState;
+}
+
+QString IrcConnection::credentialError() const
+{
+    return m_credentialError;
+}
+
+QString IrcConnection::credentialStatus() const
+{
+    switch (m_credentialState) {
+    case CredentialStore::State::Loading:
+        return QStringLiteral("checking secure storage");
+    case CredentialStore::State::Available:
+        return QStringLiteral("password saved securely");
+    case CredentialStore::State::Missing:
+        return QStringLiteral("password will be requested for this session");
+    case CredentialStore::State::Unavailable:
+        return QStringLiteral("secure storage unavailable; password is session-only");
+    case CredentialStore::State::Error:
+        return QStringLiteral("secure storage error; password is session-only");
+    }
+    return {};
 }
 
 QString IrcConnection::problem() const
@@ -200,6 +270,8 @@ void IrcConnection::setPassword(const QString &password)
     if (m_password == password)
         return;
     m_password = password;
+    m_credentialState = password.isEmpty()
+        ? CredentialStore::State::Missing : CredentialStore::State::Available;
     ++m_secretRevision;
     if (m_focusPassword) {
         m_focusPassword = false;
@@ -222,6 +294,9 @@ bool IrcConnection::apply()
     m_stored = profile;
     m_draft = profile;
     emit draftChanged();
+    if (m_credentialStore && !m_password.isEmpty())
+        m_credentialStore->write({profile.networkId, profile.nick, profile.host},
+                                 m_password);
     if (wasSetup)
         emit setupRequiredChanged();
     return reconcile(profile);

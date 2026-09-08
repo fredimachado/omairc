@@ -12,6 +12,7 @@ depends=(
   'qt6-declarative'
   'qt6-svg'
   'qt6-wayland'
+  'qtkeychain-qt6'
   'xdg-desktop-portal'
 )
 makedepends=(
@@ -19,6 +20,7 @@ makedepends=(
   'qt6-declarative'
   'qt6-svg'
   'qt6-wayland'
+  'qtkeychain-qt6'
   'base-devel'
 )
 source=("$pkgname-$pkgver.tar.gz::https://github.com/fredimachado/omairc/archive/refs/tags/v$pkgver.tar.gz")

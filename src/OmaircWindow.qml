@@ -2694,6 +2694,17 @@ ApplicationWindow {
                         }
 
                         Text {
+                            objectName: "connectionCredentialStatus"
+                            width: parent.width
+                            visible: win.connection && win.connection.credentialStatus.length > 0
+                            text: win.connection ? win.connection.credentialStatus : ""
+                            color: win.mutedColor
+                            wrapMode: Text.Wrap
+                            font.family: "iA Writer Mono S"
+                            font.pixelSize: win.scaledSize(10)
+                        }
+
+                        Text {
                             objectName: "connectionProblem"
                             width: parent.width
                             visible: win.connection && win.connection.problem.length > 0

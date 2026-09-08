@@ -2,6 +2,7 @@
 
 #include "ircnetworkprofile.h"
 #include "ircprofilestore.h"
+#include "credentialstore.h"
 
 #include <QObject>
 #include <QString>
@@ -25,6 +26,10 @@ class IrcConnection : public QObject
     Q_PROPERTY(QString realname READ realname WRITE setRealname NOTIFY draftChanged)
     Q_PROPERTY(QString autojoin READ autojoin WRITE setAutojoin NOTIFY draftChanged)
     Q_PROPERTY(bool passwordSet READ passwordSet NOTIFY draftChanged)
+    Q_PROPERTY(CredentialStore::State credentialState READ credentialState
+               NOTIFY credentialStateChanged)
+    Q_PROPERTY(QString credentialError READ credentialError NOTIFY credentialStateChanged)
+    Q_PROPERTY(QString credentialStatus READ credentialStatus NOTIFY credentialStateChanged)
     Q_PROPERTY(QString problem READ problem NOTIFY draftChanged)
     Q_PROPERTY(bool dirty READ dirty NOTIFY draftChanged)
     Q_PROPERTY(QString displayName READ displayName NOTIFY draftChanged)
@@ -33,10 +38,15 @@ class IrcConnection : public QObject
 
 public:
     using TransportFactory = std::function<IrcTransport *()>;
+    using CredentialStoreFactory = std::function<CredentialStore *()>;
 
     explicit IrcConnection(IrcController &controller, QObject *parent = nullptr);
     IrcConnection(IrcController &controller,
                   TransportFactory transportFactory,
+                  QObject *parent = nullptr);
+    IrcConnection(IrcController &controller,
+                  TransportFactory transportFactory,
+                  CredentialStoreFactory credentialStoreFactory,
                   QObject *parent = nullptr);
 
     QString host() const;
@@ -48,6 +58,9 @@ public:
     QString realname() const;
     QString autojoin() const;
     bool passwordSet() const;
+    CredentialStore::State credentialState() const;
+    QString credentialError() const;
+    QString credentialStatus() const;
     QString problem() const;
     bool dirty() const;
     QString displayName() const;
@@ -72,6 +85,7 @@ signals:
     void draftChanged();
     void setupRequiredChanged();
     void focusPasswordChanged();
+    void credentialStateChanged();
 
 private:
     void restoreDraft();
@@ -87,10 +101,14 @@ private:
     IrcController &m_controller;
     TransportFactory m_transportFactory;
     IrcProfileStore m_store;
+    CredentialStoreFactory m_credentialStoreFactory;
+    CredentialStore *m_credentialStore = nullptr;
     IrcNetworkProfile m_draft;
     IrcNetworkProfile m_stored;
     QString m_password;
     quint64 m_secretRevision = 0;
     std::optional<Applied> m_applied;
     bool m_focusPassword = false;
+    CredentialStore::State m_credentialState = CredentialStore::State::Missing;
+    QString m_credentialError;
 };
