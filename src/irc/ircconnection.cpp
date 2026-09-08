@@ -361,22 +361,29 @@ bool IrcConnection::apply()
         return false;
     }
 
+    const CredentialKey previousCredentialKey = credentialKey(m_stored);
+    const CredentialKey nextCredentialKey = credentialKey(profile);
     m_store.save(profile);
     m_stored = profile;
     m_draft = profile;
     emit draftChanged();
-    if (m_credentialStore && m_passwordEdited) {
+    const bool credentialKeyChanged = previousCredentialKey.networkId
+            != nextCredentialKey.networkId
+        || previousCredentialKey.username != nextCredentialKey.username
+        || previousCredentialKey.host != nextCredentialKey.host;
+    if (m_credentialStore && !m_password.isEmpty()
+        && (m_passwordEdited || credentialKeyChanged)) {
+        m_credentialWriteInFlight = true;
+        m_pendingCredentialRemoval = false;
+        m_credentialStore->write(nextCredentialKey, m_password);
+    } else if (m_credentialStore && m_passwordEdited) {
         if (m_password.isEmpty()) {
             if (m_credentialWriteInFlight) {
                 m_pendingCredentialRemoval = true;
             } else {
                 m_pendingCredentialRemoval = false;
-                m_credentialStore->remove(credentialKey(profile));
+                m_credentialStore->remove(nextCredentialKey);
             }
-        } else {
-            m_credentialWriteInFlight = true;
-            m_pendingCredentialRemoval = false;
-            m_credentialStore->write(credentialKey(profile), m_password);
         }
     }
     if (wasSetup)

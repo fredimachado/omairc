@@ -10,6 +10,7 @@
 #include "irccontroller.h"
 
 #include <memory>
+#include <utility>
 
 class ConnectionTest : public QObject
 {
@@ -21,6 +22,7 @@ private slots:
     void loadingStoredProfileDoesNotConnectUntilActivate();
     void connectOnStartupDraftAppliesAndDiscards();
     void applyIsIdempotentForTheSameSecret();
+    void profileKeyChangePersistsExistingPassword();
     void passwordChangeRebuildsTheSession();
     void discardRestoresStoredDraft();
     void tlsSwitchLeavesPortAlone();
@@ -186,6 +188,31 @@ void ConnectionTest::applyIsIdempotentForTheSameSecret()
     QVERIFY(connection.apply());
     QVERIFY(connection.apply());
     QCOMPARE(m_transports.size(), 1);
+}
+
+void ConnectionTest::profileKeyChangePersistsExistingPassword()
+{
+    {
+        IrcController seedController;
+        IrcConnection seed(seedController, capturingFactory());
+        fillCompleteDraft(seed);
+        QVERIFY(seed.apply());
+    }
+
+    IrcController controller;
+    auto *store = new FakeCredentialStore(CredentialStore::State::Available,
+                                          QStringLiteral("stored-secret"));
+    IrcConnection connection(controller, capturingFactory(),
+                             [store]() { return store; });
+    fillCompleteDraft(connection);
+    QTRY_COMPARE(connection.credentialState(), CredentialStore::State::Available);
+    QVERIFY(connection.apply());
+    QTRY_COMPARE(store->writeCalls(), 0);
+
+    connection.setHost(QStringLiteral("irc.changed"));
+    QVERIFY(connection.apply());
+    QTRY_COMPARE(store->writeCalls(), 1);
+    QCOMPARE(store->writtenPassword(), QStringLiteral("stored-secret"));
 }
 
 void ConnectionTest::passwordChangeRebuildsTheSession()
