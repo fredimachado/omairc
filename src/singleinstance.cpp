@@ -139,7 +139,8 @@ void SingleInstance::listenForActivation()
             auto *idleTimer = new QTimer(socket);
             idleTimer->setSingleShot(true);
             idleTimer->setInterval(kIpcIdleTimeoutMs);
-            socket->setProperty("omaircIdleTimer", QVariant::fromValue(idleTimer));
+            socket->setProperty("omaircIdleTimer", QVariant::fromValue(
+                                                       static_cast<QObject *>(idleTimer)));
             QObject::connect(idleTimer, &QTimer::timeout, socket, [this, socket]() {
                 expireSocket(socket);
             });
@@ -168,20 +169,26 @@ void SingleInstance::consumeSocketData(QLocalSocket *socket)
         return;
 
     QByteArray buffer = socket->property("omaircBuffer").toByteArray();
-    buffer += socket->readAll();
+    const QByteArray incoming = socket->readAll();
+    buffer += incoming;
+    if (!incoming.isEmpty()) {
+        if (auto *idleTimer = qobject_cast<QTimer *>(
+                socket->property("omaircIdleTimer").value<QObject *>())) {
+            idleTimer->start();
+        }
+    }
     if (buffer.size() > kMaxIpcInputBytes) {
         rejectSocket(socket);
         return;
     }
 
-    if (buffer == OmaircIpc::raisePing() && socket->property("omaircPingReady").toBool()) {
+    if (buffer == OmaircIpc::raisePing()) {
         socket->setProperty("omaircBuffer", QByteArray());
         emit activationRequested();
         socket->setProperty("omaircHandled", true);
         socket->disconnectFromServer();
         return;
     }
-    socket->setProperty("omaircPingReady", buffer == OmaircIpc::raisePing());
 
     const int newline = buffer.indexOf('\n');
     if (newline < 0) {
@@ -226,7 +233,8 @@ void SingleInstance::consumeSocketData(QLocalSocket *socket)
 void SingleInstance::finishSocket(QLocalSocket *socket, const QByteArray &response)
 {
     socket->setProperty("omaircHandled", true);
-    auto *idleTimer = socket->property("omaircIdleTimer").value<QTimer *>();
+    auto *idleTimer = qobject_cast<QTimer *>(
+        socket->property("omaircIdleTimer").value<QObject *>());
     if (idleTimer)
         idleTimer->stop();
     socket->write(response);
