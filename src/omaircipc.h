@@ -67,4 +67,4 @@ QJsonObject responseStatus(const QByteArray &line);
 
 QString stateLabel(const QString &sessionStateName);
 
-} // namespace OmaircIpc
+}

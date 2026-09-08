@@ -164,7 +164,7 @@ std::optional<OmaircIpc::Request> parseArgsImpl(const QStringList &args,
     return std::nullopt;
 }
 
-} // namespace
+}
 
 std::optional<OmaircIpc::Request> parseArgs(const QStringList &args,
                                             QString &error)
@@ -195,4 +195,4 @@ int run(QCoreApplication &app)
     return sendRequest(*request);
 }
 
-} // namespace OmaircCli
+}

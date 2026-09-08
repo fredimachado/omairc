@@ -10,7 +10,7 @@ QStringList subscribedKeys()
 {
     return {statusKey()};
 }
-} // namespace IrcMetadata
+}
 
 bool IrcNickPresence::isDefault() const noexcept
 {
