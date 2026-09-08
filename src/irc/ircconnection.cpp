@@ -288,6 +288,7 @@ void IrcConnection::setPassword(const QString &password)
         m_focusPassword = false;
         emit focusPasswordChanged();
     }
+    emit credentialStateChanged();
     emit draftChanged();
 }
 

@@ -2664,7 +2664,6 @@ ApplicationWindow {
                             Switch {
                                 id: connectionConnectOnStartup
                                 objectName: "connectionConnectOnStartup"
-                                checked: win.connection ? win.connection.connectOnStartup : false
                                 onToggled: {
                                     if (win.connection)
                                         win.connection.connectOnStartup = checked;

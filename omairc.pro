@@ -1,6 +1,6 @@
 QT += core gui qml quick quickcontrols2 dbus network
 
-qtkeychain_pri = /usr/lib/qt6/mkspecs/modules/qt_Qt6Keychain.pri
+qtkeychain_pri = $$[QT_INSTALL_ARCHDATA]/mkspecs/modules/qt_Qt6Keychain.pri
 exists($$PWD/.deps/usr/lib/qt6/mkspecs/modules/qt_Qt6Keychain.pri) {
     qtkeychain_pri = $$PWD/.deps/usr/lib/qt6/mkspecs/modules/qt_Qt6Keychain.pri
     INCLUDEPATH += $$PWD/.deps/usr/include
