@@ -6,6 +6,9 @@ exists($$PWD/../.deps/usr/lib/qt6/mkspecs/modules/qt_Qt6Keychain.pri) {
     INCLUDEPATH += $$PWD/../.deps/usr/include
     LIBS += -L$$PWD/../.deps/usr/lib
 }
+!exists($$qtkeychain_pri) {
+    error(QtKeychain Qt6 module not found. Install qtkeychain-qt6 or provide .deps/usr/lib/qt6/mkspecs/modules/qt_Qt6Keychain.pri.)
+}
 include($$qtkeychain_pri)
 QT += Qt6Keychain
 QT -= gui

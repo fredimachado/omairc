@@ -339,6 +339,14 @@ void ConnectionTest::emptyPasswordDoesNotDeleteStoredCredential()
 
 void ConnectionTest::editedPasswordShowsPendingSaveStatus()
 {
+    {
+        IrcController seedController;
+        IrcConnection seed(seedController, capturingFactory());
+        fillCompleteDraft(seed);
+        QVERIFY(seed.apply());
+    }
+    m_transports.clear();
+
     IrcController controller;
     auto *store = new FakeCredentialStore(CredentialStore::State::Available,
                                           QStringLiteral("stored-secret"));
@@ -353,6 +361,14 @@ void ConnectionTest::editedPasswordShowsPendingSaveStatus()
 
 void ConnectionTest::removingStoredPasswordDoesNotReconnect()
 {
+    {
+        IrcController seedController;
+        IrcConnection seed(seedController, capturingFactory());
+        fillCompleteDraft(seed);
+        QVERIFY(seed.apply());
+    }
+    m_transports.clear();
+
     IrcController controller;
     auto *store = new FakeCredentialStore(CredentialStore::State::Available,
                                           QStringLiteral("stored-secret"));

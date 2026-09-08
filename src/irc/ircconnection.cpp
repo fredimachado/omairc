@@ -60,8 +60,8 @@ IrcConnection::IrcConnection(IrcController &controller,
         connect(m_credentialStore, &CredentialStore::readFinished, this,
                 [this](CredentialStore::State state, const QString &password,
                        const QString &message) {
-            m_credentialState = m_passwordEdited
-                && state == CredentialStore::State::Unavailable
+            m_credentialState = state == CredentialStore::State::Unavailable
+                    && !m_password.isEmpty()
                 ? CredentialStore::State::SessionOnly : state;
             m_credentialError = message;
             if (state == CredentialStore::State::Available && !m_passwordEdited) {
