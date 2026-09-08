@@ -37,11 +37,19 @@ private:
     bool notifyPrimary();
     void listenForActivation();
     void consumeSocketData(QLocalSocket *socket);
+    void finishSocket(QLocalSocket *socket, const QByteArray &response);
+    void rejectSocket(QLocalSocket *socket);
+    void expireSocket(QLocalSocket *socket);
 
     static constexpr int kMaxIpcLineBytes = 64 * 1024;
+    static constexpr int kMaxIpcInputBytes = kMaxIpcLineBytes + 1;
+    static constexpr int kMaxIpcClients = 32;
+    static constexpr int kIpcIdleTimeoutMs = 1000;
+    static constexpr int kMaxIpcResponseBytes = 64 * 1024;
 
     QLockFile *m_lock = nullptr;
     QLocalServer *m_server = nullptr;
     bool m_primary = false;
     RequestHandler m_requestHandler;
+    int m_activeClients = 0;
 };
