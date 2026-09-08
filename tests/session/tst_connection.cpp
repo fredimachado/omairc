@@ -335,6 +335,19 @@ void ConnectionTest::startupActivationWaitsForUsableCredentialState()
     connection.activateOnStartup();
     QTRY_COMPARE(connection.credentialState(), CredentialStore::State::Error);
     QCOMPARE(m_transports.size(), 0);
+
+    m_transports.clear();
+    IrcController unavailableController;
+    auto *unavailableStore = new FakeCredentialStore(
+        CredentialStore::State::Unavailable);
+    IrcConnection unavailableConnection(unavailableController, capturingFactory(),
+                                        [unavailableStore]() {
+        return unavailableStore;
+    });
+    unavailableConnection.activateOnStartup();
+    QTRY_COMPARE(unavailableConnection.credentialState(),
+                 CredentialStore::State::Unavailable);
+    QCOMPARE(m_transports.size(), 1);
 }
 
 void ConnectionTest::emptyPasswordDoesNotDeleteStoredCredential()

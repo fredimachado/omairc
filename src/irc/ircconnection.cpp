@@ -43,6 +43,14 @@ IrcConnection::IrcConnection(IrcController &controller,
 
 IrcConnection::IrcConnection(IrcController &controller,
                              TransportFactory transportFactory,
+                             std::nullptr_t)
+    : IrcConnection(controller, std::move(transportFactory),
+                    static_cast<QObject *>(nullptr))
+{
+}
+
+IrcConnection::IrcConnection(IrcController &controller,
+                             TransportFactory transportFactory,
                              CredentialStoreFactory credentialStoreFactory,
                              QObject *parent)
     : QObject(parent)
@@ -404,6 +412,7 @@ void IrcConnection::activateOnStartup()
             this, &IrcConnection::credentialStateChanged, this, [this]() {
                 if (m_credentialState == CredentialStore::State::Available
                     || m_credentialState == CredentialStore::State::Missing
+                    || m_credentialState == CredentialStore::State::Unavailable
                     || m_credentialState == CredentialStore::State::SessionOnly) {
                     activate();
                 }

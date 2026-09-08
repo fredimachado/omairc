@@ -7,6 +7,7 @@
 #include <QObject>
 #include <QString>
 
+#include <cstddef>
 #include <functional>
 #include <optional>
 
@@ -46,6 +47,9 @@ public:
     IrcConnection(IrcController &controller,
                   TransportFactory transportFactory,
                   QObject *parent = nullptr);
+    IrcConnection(IrcController &controller,
+                  TransportFactory transportFactory,
+                  std::nullptr_t);
     IrcConnection(IrcController &controller,
                   TransportFactory transportFactory,
                   CredentialStoreFactory credentialStoreFactory,
