@@ -61,6 +61,17 @@ QByteArray wireLine(const QString &command)
 {
     return command.toUtf8() + QByteArrayLiteral("\r\n");
 }
+
+bool isValidPrivmsgTarget(const QString &target)
+{
+    if (target.isEmpty() || target.startsWith(QLatin1Char(':')))
+        return false;
+    for (const QChar character : target) {
+        if (character.isSpace() || character.category() == QChar::Other_Control)
+            return false;
+    }
+    return true;
+}
 }
 
 IrcReconnectTimer::IrcReconnectTimer(QObject *parent)
@@ -266,7 +277,7 @@ void IrcSession::cancelReconnect()
 
 bool IrcSession::sendPrivmsg(const QString& target, const QString& body)
 {
-    if (target.isEmpty() || body.isEmpty())
+    if (!isValidPrivmsgTarget(target) || body.isEmpty())
         return false;
     const bool sent = sendCommand(QStringLiteral("PRIVMSG %1 :%2").arg(target, body));
     if (sent)

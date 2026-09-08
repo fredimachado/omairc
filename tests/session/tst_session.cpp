@@ -138,6 +138,7 @@ private slots:
     void managerDiscardUnregistersImmediately();
     void pingAndWelcomeProduceStatusEntries();
     void configuredPasswordNeverAppearsInStatusEntries();
+    void sendPrivmsgValidatesTarget();
     void setTopicIsSetOnly();
     void kickWritesOptionalReason();
     void setAwayEncodesOptionalReason();
@@ -789,6 +790,40 @@ void SessionTest::configuredPasswordNeverAppearsInStatusEntries()
             QCOMPARE(entry.text(), entry.label() + QStringLiteral(" ***"));
         }
     }
+}
+
+void SessionTest::sendPrivmsgValidatesTarget()
+{
+    Fixture fixture;
+    fixture.connectTls();
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
+                          ":server 001 omairc :Welcome\r\n"));
+    QCOMPARE(fixture.session->state(), IrcSession::State::Registered);
+
+    QVERIFY(fixture.session->sendPrivmsg(QStringLiteral("#omarchy"),
+                                          QStringLiteral("hello")));
+    QVERIFY(fixture.session->sendPrivmsg(QStringLiteral("lena"),
+                                          QStringLiteral("hello")));
+    QCOMPARE(fixture.transport->writtenFrames().last(),
+             QByteArrayLiteral("PRIVMSG lena :hello\r\n"));
+    QVERIFY(fixture.transport->writtenFrames().contains(
+        QByteArrayLiteral("PRIVMSG #omarchy :hello\r\n")));
+
+    const int before = fixture.transport->writtenFrames().size();
+    const QStringList invalidTargets{
+        QString(),
+        QStringLiteral(" "),
+        QStringLiteral("lena smith"),
+        QStringLiteral("lena\t"),
+        QStringLiteral("lena\n"),
+        QStringLiteral("lena\r"),
+        QString(QChar(0x01)) + QStringLiteral("lena"),
+        QStringLiteral(":lena"),
+    };
+    for (const QString& target : invalidTargets)
+        QVERIFY(!fixture.session->sendPrivmsg(target, QStringLiteral("hello")));
+    QCOMPARE(fixture.transport->writtenFrames().size(), before);
 }
 
 void SessionTest::setTopicIsSetOnly()
