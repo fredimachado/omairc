@@ -516,8 +516,10 @@ void OmaircIpcTest::socketLimitsConcurrentClients()
         QCOMPARE(client->state(), QLocalSocket::ConnectedState);
     clients.append(rejected);
 
-    for (QLocalSocket *client : clients)
-        client->deleteLater();
+for (QLocalSocket *client : clients) {
+        client->disconnectFromServer();
+        delete client;
+    }
 }
 
 int runOmaircIpcTests(int argc, char **argv)
