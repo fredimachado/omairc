@@ -13,6 +13,7 @@
 #include "ircsession.h"
 #include "ircsessionmanager.h"
 #include "ircstatusentry.h"
+#include "irctcp.h"
 
 class FakeReconnectTimer : public IrcReconnectTimer
 {
@@ -145,6 +146,9 @@ private slots:
     void incomingNoticeStatusLinesWrapSpeaker();
     void incomingNoticeDoesNotTranslateToEvents();
     void incomingActionTranslatesToActionEvent();
+    void incomingCtcpRequestsAreNotConversationEvents();
+    void answersCtcpRequests();
+    void doesNotAnswerChannelCtcpRequests();
     void welcomeAssignsNickFrom001();
     void emptyWelcomeKeepsConfigNick();
     void selfNickUpdatesSessionNick();
@@ -1045,6 +1049,52 @@ void SessionTest::incomingActionTranslatesToActionEvent()
     QCOMPARE(action->body, QStringLiteral("feeds jvaztap"));
     QVERIFY(!action->body.contains(QChar(1)));
     QVERIFY(!action->body.contains(QStringLiteral("ACTION")));
+}
+
+void SessionTest::incomingCtcpRequestsAreNotConversationEvents()
+{
+    const IrcServerFeatures features;
+    const std::vector<IrcEvent> events = IrcEventTranslator::translate(
+        QStringLiteral("network-a"),
+        QStringLiteral("omairc"),
+        features,
+        mustParse(":MetaNova!u@h PRIVMSG omairc :\x01VERSION\x01"));
+    QVERIFY(events.empty());
+}
+
+void SessionTest::answersCtcpRequests()
+{
+    Fixture fixture;
+    fixture.connectTls();
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(":server 001 omairc :Welcome\r\n"));
+
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(":MetaNova!u@h PRIVMSG omairc :\x01PING token\x01\r\n"
+                          ":MetaNova!u@h PRIVMSG omairc :\x01TIME\x01\r\n"
+                          ":MetaNova!u@h PRIVMSG omairc :\x01VERSION\x01\r\n"));
+
+    QVERIFY(fixture.wrote(QByteArrayLiteral(
+        "NOTICE MetaNova :\x01PING token\x01\r\n")));
+    QVERIFY(fixture.transport->writtenFrames().last().startsWith(
+        QByteArrayLiteral("NOTICE MetaNova :\x01VERSION Omairc 0.1.0\x01\r\n")));
+    QVERIFY(fixture.transport->writtenFrames().at(
+        fixture.transport->writtenFrames().size() - 2).startsWith(
+        QByteArrayLiteral("NOTICE MetaNova :\x01TIME ")));
+}
+
+void SessionTest::doesNotAnswerChannelCtcpRequests()
+{
+    Fixture fixture;
+    fixture.connectTls();
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(":server 001 omairc :Welcome\r\n"));
+    const int before = fixture.transport->writtenFrames().size();
+
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(":MetaNova!u@h PRIVMSG #omarchy :\x01PING token\x01\r\n"));
+
+    QCOMPARE(fixture.transport->writtenFrames().size(), before);
 }
 
 void SessionTest::welcomeAssignsNickFrom001()

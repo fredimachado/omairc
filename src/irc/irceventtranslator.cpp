@@ -1,6 +1,7 @@
 #include "irceventtranslator.h"
 
 #include "ircpresence.h"
+#include "irctcp.h"
 #include "irctyping.h"
 
 #include <QByteArray>
@@ -155,6 +156,9 @@ std::vector<IrcEvent> IrcEventTranslator::translate(
         if (!conversation)
             return events;
         const QString body = parameter(message, 1);
+        const auto ctcp = parseCtcpRequest(body);
+        if (ctcp && ctcp->command != QStringLiteral("ACTION"))
+            return events;
         const QString displayTarget = features.isChannel(utf8(wireTarget))
             ? wireTarget
             : sender;

@@ -9,7 +9,8 @@ TARGET = protocol_tests
 greaterThan(QMAKE_GCC_MAJOR_VERSION, 15): QMAKE_CXXFLAGS += -Wno-sfinae-incomplete
 
 INCLUDEPATH += ../src ../src/irc support
-DEFINES += TEST_CERT_DIR=\\\"$$PWD/support/certs\\\"
+VERSION = 0.1.0
+DEFINES += TEST_CERT_DIR=\\\"$$PWD/support/certs\\\" OMAIRC_VERSION=\\\"$$VERSION\\\"
 
 HEADERS += \
     ../src/singleinstance.h \
@@ -24,6 +25,7 @@ HEADERS += \
     ../src/irc/irctyping.h \
     ../src/irc/irctypingpublisher.h \
     ../src/irc/ircpresence.h \
+    ../src/irc/irctcp.h \
     ../src/irc/ircevent.h \
     ../src/irc/ircviewnotify.h \
     ../src/irc/irceventtranslator.h \
@@ -64,6 +66,7 @@ SOURCES += \
     ../src/irc/irctyping.cpp \
     ../src/irc/irctypingpublisher.cpp \
     ../src/irc/ircpresence.cpp \
+    ../src/irc/irctcp.cpp \
     ../src/irc/irceventtranslator.cpp \
     ../src/irc/irceventreducer.cpp \
     ../src/irc/ircstatusentry.cpp \
