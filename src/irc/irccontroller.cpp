@@ -371,10 +371,11 @@ void IrcController::closeDirectMessage()
 {
     if (!selectedIsCloseableDirect())
         return;
+    const QString networkId = identityNetworkId();
     dropSelectedDirectAndReselect();
-    if (lastError().isEmpty())
+    if (lastErrorForNetwork(networkId).isEmpty())
         return;
-    setLastError(identityNetworkId(), {});
+    setLastError(networkId, {});
     emit statusChanged();
 }
 

@@ -153,6 +153,7 @@ private slots:
     void msgClearsAway();
     void explicitChatClearsAwayOnOriginNetwork();
     void lastErrorIsolatedByNetwork();
+    void closeDirectMessageClearsOriginNetworkError();
     void awayWaitsForNumericThenChatUnaways();
     void statusQueryClosesStatus();
     void statusQueryChannelStaysOpen();
@@ -957,6 +958,41 @@ void ControllerTest::lastErrorIsolatedByNetwork()
     QCOMPARE(controller.lastErrorForNetwork(QStringLiteral("network-a")),
              QStringLiteral("Not connected"));
     QCOMPARE(controller.lastError(), QString());
+}
+
+void ControllerTest::closeDirectMessageClearsOriginNetworkError()
+{
+    IrcController controller;
+    auto *transportA = new FakeIrcTransport;
+    auto *transportB = new FakeIrcTransport;
+    IrcSession *sessionA = controller.addSession(config(QStringLiteral("network-a")),
+                                                 transportA);
+    IrcSession *sessionB = controller.addSession(config(QStringLiteral("network-b")),
+                                                 transportB);
+    QVERIFY(sessionA);
+    QVERIFY(sessionB);
+    registerSession(sessionA, transportA);
+    registerSession(sessionB, transportB);
+    transportA->injectBytes(QByteArrayLiteral(":alice!u@h PRIVMSG omairc :hello\r\n"));
+    transportB->injectBytes(QByteArrayLiteral(":bob!u@h PRIVMSG omairc :hello\r\n"));
+
+    controller.selectConversation(QStringLiteral("network-b"), QStringLiteral("bob"));
+    QVERIFY(!controller.sendMessage(QStringLiteral("/part")));
+    QCOMPARE(controller.lastErrorForNetwork(QStringLiteral("network-b")),
+             QStringLiteral("Part applies to channels"));
+
+    controller.selectConversation(QStringLiteral("network-a"), QStringLiteral("alice"));
+    QVERIFY(!controller.sendMessage(QStringLiteral("/part")));
+    QCOMPARE(controller.lastErrorForNetwork(QStringLiteral("network-a")),
+             QStringLiteral("Not connected"));
+
+    controller.closeDirectMessage();
+    QCOMPARE(controller.selectedNetworkId(), QStringLiteral("network-b"));
+    QCOMPARE(controller.selectedTarget(), QStringLiteral("bob"));
+    QCOMPARE(controller.lastErrorForNetwork(QStringLiteral("network-a")),
+             QString());
+    QCOMPARE(controller.lastErrorForNetwork(QStringLiteral("network-b")),
+             QStringLiteral("Part applies to channels"));
 }
 
 void ControllerTest::closeLastDirectKeepsSelfAway()

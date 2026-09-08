@@ -166,7 +166,8 @@ void OmaircIpcTest::resolveNetworkRules()
     const QStringList many{QStringLiteral("a"), QStringLiteral("b")};
     auto ambiguous = OmaircIpc::resolveNetworkId(QString(), many);
     QVERIFY(!ambiguous.ok);
-    QVERIFY(ambiguous.error.contains(QStringLiteral("--network")));
+    QCOMPARE(ambiguous.error,
+             QStringLiteral("Multiple connections are available; specify a network id."));
 
     auto explicitId = OmaircIpc::resolveNetworkId(QStringLiteral("b"), many);
     QVERIFY(explicitId.ok);
