@@ -5,10 +5,12 @@
 #include "credentialstore.h"
 
 #include <QObject>
+#include <QList>
 #include <QString>
 
 #include <cstddef>
 #include <functional>
+#include <optional>
 #include <optional>
 
 class IrcController;
@@ -99,6 +101,10 @@ signals:
 
 private:
     void restoreDraft();
+    void processCredentialOperations();
+    void queueCredentialWrite(const CredentialKey &key, const QString &password,
+                              quint64 revision, const std::optional<CredentialKey> &removeKey = {});
+    void queueCredentialRemoval(const CredentialKey &key, quint64 revision);
     std::optional<IrcSessionConfig> sessionConfigFor(
         const IrcNetworkProfile &profile) const;
     bool reconcile(const IrcNetworkProfile &profile);
@@ -121,8 +127,20 @@ private:
     std::optional<Applied> m_applied;
     bool m_focusPassword = false;
     bool m_passwordEdited = false;
-    bool m_credentialWriteInFlight = false;
-    bool m_pendingCredentialRemoval = false;
+    struct CredentialOperation {
+        enum class Kind {
+            Write,
+            Remove,
+        };
+
+        Kind kind;
+        CredentialKey key;
+        QString password;
+        quint64 revision = 0;
+        std::optional<CredentialKey> removeKey;
+    };
+
+    QList<CredentialOperation> m_credentialOperations;
     CredentialStore::State m_credentialState = CredentialStore::State::Missing;
     QString m_credentialError;
     QMetaObject::Connection m_startupActivationConnection;

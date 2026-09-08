@@ -83,21 +83,25 @@ IrcConnection::IrcConnection(IrcController &controller,
         });
         connect(m_credentialStore, &CredentialStore::writeFinished, this,
                 [this](CredentialStore::State state, const QString &message) {
-            if (m_pendingCredentialRemoval && m_credentialWriteInFlight) {
-                m_pendingCredentialRemoval = false;
-                m_credentialWriteInFlight = false;
-                m_credentialStore->remove(credentialKey(m_stored));
+            if (m_credentialOperations.isEmpty())
                 return;
+            const CredentialOperation operation = m_credentialOperations.takeFirst();
+            if (operation.revision == m_secretRevision) {
+                m_credentialState = state == CredentialStore::State::Unavailable
+                        && !m_password.isEmpty()
+                    ? CredentialStore::State::SessionOnly : state;
+                m_credentialError = message;
+                if (state == CredentialStore::State::Available
+                    || state == CredentialStore::State::Missing) {
+                    m_passwordEdited = false;
+                }
             }
-            m_credentialWriteInFlight = false;
-            m_credentialState = state == CredentialStore::State::Unavailable
-                    && !m_password.isEmpty()
-                ? CredentialStore::State::SessionOnly : state;
-            m_credentialError = message;
-            if (state == CredentialStore::State::Available
-                || state == CredentialStore::State::Missing) {
-                m_passwordEdited = false;
+            if (operation.removeKey && state == CredentialStore::State::Available) {
+                m_credentialOperations.prepend(
+                    {CredentialOperation::Kind::Remove, *operation.removeKey,
+                     {}, operation.revision, std::nullopt});
             }
+            processCredentialOperations();
             emit credentialStateChanged();
         });
     }
@@ -343,12 +347,7 @@ void IrcConnection::removeStoredPassword()
 {
     if (!m_credentialStore || m_stored.networkId.isEmpty())
         return;
-    if (m_credentialWriteInFlight) {
-        m_pendingCredentialRemoval = true;
-    } else {
-        m_pendingCredentialRemoval = false;
-        m_credentialStore->remove(credentialKey(m_stored));
-    }
+    queueCredentialRemoval(credentialKey(m_stored), m_secretRevision);
 }
 
 bool IrcConnection::apply()
@@ -373,30 +372,49 @@ bool IrcConnection::apply()
         || previousCredentialKey.host != nextCredentialKey.host;
     if (m_credentialStore && !m_password.isEmpty()
         && (m_passwordEdited || credentialKeyChanged)) {
-        m_credentialWriteInFlight = true;
-        m_pendingCredentialRemoval = false;
-        if (credentialKeyChanged && !previousCredentialKey.networkId.isEmpty()) {
-            connect(m_credentialStore, &CredentialStore::writeFinished, this,
-                    [this, previousCredentialKey](CredentialStore::State state, const QString &) {
-                        if (state == CredentialStore::State::Available)
-                            m_credentialStore->remove(previousCredentialKey);
-                    },
-                    Qt::SingleShotConnection);
-        }
-        m_credentialStore->write(nextCredentialKey, m_password);
+        queueCredentialWrite(
+            nextCredentialKey, m_password, m_secretRevision,
+            credentialKeyChanged && !previousCredentialKey.networkId.isEmpty()
+                ? std::optional{previousCredentialKey} : std::nullopt);
     } else if (m_credentialStore && m_passwordEdited) {
         if (m_password.isEmpty()) {
-            if (m_credentialWriteInFlight) {
-                m_pendingCredentialRemoval = true;
-            } else {
-                m_pendingCredentialRemoval = false;
-                m_credentialStore->remove(nextCredentialKey);
-            }
+            queueCredentialRemoval(nextCredentialKey, m_secretRevision);
         }
     }
     if (wasSetup)
         emit setupRequiredChanged();
     return reconcile(profile);
+}
+
+void IrcConnection::processCredentialOperations()
+{
+    if (!m_credentialStore || m_credentialOperations.isEmpty())
+        return;
+    const CredentialOperation &operation = m_credentialOperations.first();
+    if (operation.kind == CredentialOperation::Kind::Write)
+        m_credentialStore->write(operation.key, operation.password);
+    else
+        m_credentialStore->remove(operation.key);
+}
+
+void IrcConnection::queueCredentialWrite(
+    const CredentialKey &key, const QString &password, quint64 revision,
+    const std::optional<CredentialKey> &removeKey)
+{
+    const bool wasEmpty = m_credentialOperations.isEmpty();
+    m_credentialOperations.append(
+        {CredentialOperation::Kind::Write, key, password, revision, removeKey});
+    if (wasEmpty)
+        processCredentialOperations();
+}
+
+void IrcConnection::queueCredentialRemoval(const CredentialKey &key, quint64 revision)
+{
+    const bool wasEmpty = m_credentialOperations.isEmpty();
+    m_credentialOperations.append(
+        {CredentialOperation::Kind::Remove, key, {}, revision, std::nullopt});
+    if (wasEmpty)
+        processCredentialOperations();
 }
 
 void IrcConnection::discard()
