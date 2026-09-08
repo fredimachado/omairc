@@ -32,6 +32,22 @@ fi
 JOBS="$(nproc 2>/dev/null || echo 1)"
 
 "$ROOT/bin/build"
+
+set +e
+CLI_OUTPUT="$("$ROOT/build/omairc" send '#channel' please use --version 2>&1)"
+CLI_STATUS=$?
+set -e
+case "$CLI_OUTPUT" in
+  "omairc "*)
+    echo "CLI treated message text as --version." >&2
+    exit 1
+    ;;
+esac
+if [ "$CLI_STATUS" -eq 0 ]; then
+  echo "CLI send invocation unexpectedly succeeded without a server." >&2
+  exit 1
+fi
+
 mkdir -p "$ROOT/build-tests"
 cd "$ROOT/build-tests"
 "$QMAKE" "$ROOT/tests/tests.pro"
