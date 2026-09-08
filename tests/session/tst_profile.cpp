@@ -17,7 +17,8 @@ private slots:
     void init();
     void suggestedPrefillsLiberachat();
     void validateRefusesIncompleteAndUnsendable();
-    void storeRoundTripsSevenFieldsWithoutPassword();
+    void storeRoundTripsEightFieldsWithoutPassword();
+    void missingConnectOnStartupDefaultsToFalse();
     void usernameAndRealnameStayAsTyped();
 
 private:
@@ -92,12 +93,13 @@ void ProfileTest::validateRefusesIncompleteAndUnsendable()
     QCOMPARE(profile.validate(), IrcNetworkProfile::Problem::UnsendableChannel);
 }
 
-void ProfileTest::storeRoundTripsSevenFieldsWithoutPassword()
+void ProfileTest::storeRoundTripsEightFieldsWithoutPassword()
 {
     IrcNetworkProfile profile = IrcNetworkProfile::create();
     profile.host = QStringLiteral("irc.example.net");
     profile.port = 6697;
     profile.tlsEnabled = true;
+    profile.connectOnStartup = true;
     profile.nick = QStringLiteral("omairc");
     profile.username = QStringLiteral("omaircuser");
     profile.realname = QStringLiteral("Omairc User");
@@ -112,6 +114,7 @@ void ProfileTest::storeRoundTripsSevenFieldsWithoutPassword()
     QCOMPARE(loaded.first().host, profile.host);
     QCOMPARE(loaded.first().port, profile.port);
     QCOMPARE(loaded.first().tlsEnabled, profile.tlsEnabled);
+    QCOMPARE(loaded.first().connectOnStartup, profile.connectOnStartup);
     QCOMPARE(loaded.first().nick, profile.nick);
     QCOMPARE(loaded.first().username, profile.username);
     QCOMPARE(loaded.first().realname, profile.realname);
@@ -133,6 +136,24 @@ void ProfileTest::storeRoundTripsSevenFieldsWithoutPassword()
     unnamed.nick = QStringLiteral("omairc");
     store.save(unnamed);
     QCOMPARE(IrcProfileStore().profiles().size(), 1);
+}
+
+void ProfileTest::missingConnectOnStartupDefaultsToFalse()
+{
+    IrcNetworkProfile profile = IrcNetworkProfile::create();
+    profile.host = QStringLiteral("irc.example.net");
+    profile.nick = QStringLiteral("omairc");
+    IrcProfileStore().save(profile);
+
+    QSettings settings;
+    settings.beginGroup(QStringLiteral("networks"));
+    settings.beginGroup(profile.networkId);
+    settings.remove(QStringLiteral("connectOnStartup"));
+    settings.endGroup();
+    settings.endGroup();
+    settings.sync();
+
+    QCOMPARE(IrcProfileStore().profiles().first().connectOnStartup, false);
 }
 
 void ProfileTest::usernameAndRealnameStayAsTyped()

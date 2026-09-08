@@ -67,6 +67,11 @@ bool IrcConnection::tlsEnabled() const
     return m_draft.tlsEnabled;
 }
 
+bool IrcConnection::connectOnStartup() const
+{
+    return m_draft.connectOnStartup;
+}
+
 QString IrcConnection::nick() const
 {
     return m_draft.nick;
@@ -146,6 +151,14 @@ void IrcConnection::setTlsEnabled(bool enabled)
     if (m_draft.tlsEnabled == enabled)
         return;
     m_draft.tlsEnabled = enabled;
+    emit draftChanged();
+}
+
+void IrcConnection::setConnectOnStartup(bool enabled)
+{
+    if (m_draft.connectOnStartup == enabled)
+        return;
+    m_draft.connectOnStartup = enabled;
     emit draftChanged();
 }
 

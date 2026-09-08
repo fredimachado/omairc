@@ -19,6 +19,7 @@ class IrcConnection : public QObject
     Q_PROPERTY(QString host READ host WRITE setHost NOTIFY draftChanged)
     Q_PROPERTY(int port READ port WRITE setPort NOTIFY draftChanged)
     Q_PROPERTY(bool tlsEnabled READ tlsEnabled WRITE setTlsEnabled NOTIFY draftChanged)
+    Q_PROPERTY(bool connectOnStartup READ connectOnStartup WRITE setConnectOnStartup NOTIFY draftChanged)
     Q_PROPERTY(QString nick READ nick WRITE setNick NOTIFY draftChanged)
     Q_PROPERTY(QString username READ username WRITE setUsername NOTIFY draftChanged)
     Q_PROPERTY(QString realname READ realname WRITE setRealname NOTIFY draftChanged)
@@ -41,6 +42,7 @@ public:
     QString host() const;
     int port() const;
     bool tlsEnabled() const;
+    bool connectOnStartup() const;
     QString nick() const;
     QString username() const;
     QString realname() const;
@@ -55,6 +57,7 @@ public:
     void setHost(const QString &host);
     void setPort(int port);
     void setTlsEnabled(bool enabled);
+    void setConnectOnStartup(bool enabled);
     void setNick(const QString &nick);
     void setUsername(const QString &username);
     void setRealname(const QString &realname);

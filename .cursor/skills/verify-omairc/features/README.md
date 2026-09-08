@@ -6,7 +6,7 @@ This directory is the maintained source for verifying the user-facing behavior o
 
 - Prefer `.cursor/skills/verify-omairc/control-omairc launch` for Connect, or `control-omairc launch --mock` for prototype conversations.
 - Require `control-omairc doctor` to report `ok isolated Omairc`, display owned by this run, and a title that ends with ` - Omairc` or ` Status`.
-- A default compiled window opens the connection sheet. Title is `{displayName} Status` until a conversation exists. `launch --mock` skips Connect and shows `#omarchy`. Conversation recipes that assume mock `#omarchy` use `launch --mock` or `qml-suite` (`irc` left null). Seeding a profile starts a live session; it does not restore the mock sidebar.
+- A default compiled window opens the connection sheet. Title is `{displayName} Status` until a conversation exists. `launch --mock` skips Connect and shows `#omarchy`. Conversation recipes that assume mock `#omarchy` use `launch --mock` or `qml-suite` (`irc` left null). Saved profiles do not connect unless `Connect automatically on startup` was enabled; Apply on the Connect sheet starts the live session. It does not restore the mock sidebar.
 - If desktop tools are missing, require `control-omairc doctor-qml` and drive with `control-omairc qml-suite`. Do not send input to the user's live window.
 - Start every desktop recipe from that baseline unless its preconditions say otherwise.
 - Never drive a window that this run did not start. The user's interactive `./build/omairc` is off limits.

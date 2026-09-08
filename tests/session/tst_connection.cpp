@@ -17,6 +17,8 @@ class ConnectionTest : public QObject
 private slots:
     void init();
     void setupRequiredUntilCompleteProfileIsSaved();
+    void loadingStoredProfileDoesNotConnectUntilActivate();
+    void connectOnStartupDraftAppliesAndDiscards();
     void applyIsIdempotentForTheSameSecret();
     void passwordChangeRebuildsTheSession();
     void discardRestoresStoredDraft();
@@ -79,6 +81,45 @@ void ConnectionTest::setupRequiredUntilCompleteProfileIsSaved()
     QCOMPARE(m_transports.size(), 1);
     QCOMPARE(m_transports.first()->connectionState(),
              IrcTransport::ConnectionState::Connecting);
+}
+
+void ConnectionTest::loadingStoredProfileDoesNotConnectUntilActivate()
+{
+    {
+        IrcController controller;
+        IrcConnection connection(controller, capturingFactory());
+        fillCompleteDraft(connection);
+        QVERIFY(connection.apply());
+    }
+    m_transports.clear();
+
+    IrcController controller;
+    IrcConnection connection(controller, capturingFactory());
+    QVERIFY(!connection.setupRequired());
+    QCOMPARE(connection.host(), QStringLiteral("irc.example"));
+    QCOMPARE(m_transports.size(), 0);
+
+    QVERIFY(connection.activate());
+    QCOMPARE(m_transports.size(), 1);
+    QCOMPARE(m_transports.first()->connectionState(),
+             IrcTransport::ConnectionState::Connecting);
+}
+
+void ConnectionTest::connectOnStartupDraftAppliesAndDiscards()
+{
+    IrcController controller;
+    IrcConnection connection(controller, capturingFactory());
+    fillCompleteDraft(connection);
+    QVERIFY(!connection.connectOnStartup());
+    connection.setConnectOnStartup(true);
+    QVERIFY(connection.apply());
+    QCOMPARE(connection.connectOnStartup(), true);
+
+    IrcConnection reloaded(controller, capturingFactory());
+    QCOMPARE(reloaded.connectOnStartup(), true);
+    reloaded.setConnectOnStartup(false);
+    reloaded.discard();
+    QCOMPARE(reloaded.connectOnStartup(), true);
 }
 
 void ConnectionTest::applyIsIdempotentForTheSameSecret()

@@ -39,6 +39,7 @@ TestCase {
         property string host: "irc.libera.chat"
         property int port: 6697
         property bool tlsEnabled: true
+        property bool connectOnStartup: false
         property string nick: ""
         property string username: ""
         property string realname: ""
@@ -1388,6 +1389,7 @@ TestCase {
         compare(findChild(window, "connectionHost").text, "irc.libera.chat");
         compare(findChild(window, "connectionNick").text, "");
         compare(findChild(window, "connectionAutojoin").text, "#omarchy");
+        compare(findChild(window, "connectionConnectOnStartup").checked, false);
         compare(findChild(window, "connectionProblem").text, "Nick is required");
         try {
             grabImage(window.contentItem).save(artifactDirectory + "connection-sheet.png");
