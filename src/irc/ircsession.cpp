@@ -4,6 +4,7 @@
 #include "irccommandbuilder.h"
 #include "ircparser.h"
 #include "ircpresence.h"
+#include "irctcp.h"
 #include "irctyping.h"
 
 #include <QByteArray>
@@ -537,6 +538,29 @@ void IrcSession::handleMessage(const IrcMessage &message)
         const QByteArray token = QByteArray::fromStdString(message.parameters.back());
         sendLine(QByteArrayLiteral("PONG :") + token + QByteArrayLiteral("\r\n"));
         return;
+    }
+
+    if (message.command == "PRIVMSG" && message.parameters.size() >= 2) {
+        const auto request = parseCtcpRequest(parameter(message, 1));
+        if (request && request->command != QStringLiteral("ACTION")) {
+            const QString sender = prefixNick(message);
+            if (sender.isEmpty())
+                return;
+            if (request->command == QStringLiteral("PING")) {
+                sendNotice(sender, ctcpPayload({QStringLiteral("PING"), request->argument}));
+            } else if (request->command == QStringLiteral("TIME")) {
+                sendNotice(sender, ctcpPayload({
+                    QStringLiteral("TIME"),
+                    QDateTime::currentDateTime().toString(Qt::RFC2822Date),
+                }));
+            } else if (request->command == QStringLiteral("VERSION")) {
+                sendNotice(sender, ctcpPayload({
+                    QStringLiteral("VERSION"),
+                    QStringLiteral("Omairc %1").arg(QStringLiteral(OMAIRC_VERSION)),
+                }));
+            }
+            return;
+        }
     }
 
     if (message.command == "CAP") {

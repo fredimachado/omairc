@@ -1,5 +1,7 @@
 #include "ircstatusentry.h"
 
+#include "irctcp.h"
+
 #include <QStringList>
 
 #include <optional>
@@ -383,6 +385,23 @@ IrcStatusEntry::IrcStatusEntry(QString networkId,
 IrcStatusEntry IrcStatusEntry::incoming(const QString& networkId, const IrcMessage& message)
 {
     const QString command = commandOf(message);
+    if (command == QStringLiteral("PRIVMSG") && message.parameters.size() >= 2) {
+        if (const auto request = parseCtcpRequest(
+                fromUtf8(message.parameters.back()))) {
+            const QString sender = message.prefix && !message.prefix->nick.empty()
+                ? fromUtf8(message.prefix->nick)
+                : QStringLiteral("unknown");
+            const QString text = request->argument.isEmpty()
+                ? request->command
+                : request->command + QLatin1Char(' ') + request->argument;
+            return IrcStatusEntry(networkId,
+                                  QDateTime::currentDateTimeUtc(),
+                                  IrcLogSource::Server,
+                                  IrcLogSeverity::Info,
+                                  QStringLiteral("CTCP"),
+                                  QStringLiteral("%1 from %2").arg(text, sender));
+        }
+    }
     if (const auto formatted = formatWhois(message)) {
         return IrcStatusEntry(networkId,
                               QDateTime::currentDateTimeUtc(),
