@@ -72,11 +72,6 @@ IrcConnection::IrcConnection(IrcController &controller,
             }
             emit credentialStateChanged();
             emit draftChanged();
-            if (m_startupActivationConnection && state != CredentialStore::State::Loading) {
-                QObject::disconnect(m_startupActivationConnection);
-                m_startupActivationConnection = {};
-                activate();
-            }
         });
         connect(m_credentialStore, &CredentialStore::writeFinished, this,
                 [this](CredentialStore::State state, const QString &message) {

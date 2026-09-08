@@ -48,6 +48,7 @@ TestCase {
         property int credentialState: 3
         property string credentialError: ""
         property string credentialStatus: "secure storage unavailable; password is session-only"
+        property bool canForgetPassword: false
         property string problem: "Nick is required"
         property bool dirty: true
         property string displayName: "irc.libera.chat"
@@ -55,6 +56,9 @@ TestCase {
         property bool focusPassword: false
 
         function setPassword(password) {
+        }
+
+        function forgetPassword() {
         }
 
         function apply() {

@@ -2714,6 +2714,15 @@ ApplicationWindow {
                             Accessible.role: Accessible.Button
                             Accessible.name: "Forget saved password"
                             Accessible.description: "Remove the saved connection password"
+                            activeFocusOnTab: true
+                            Keys.onPressed: function(event) {
+                                if (event.key === Qt.Key_Return
+                                    || event.key === Qt.Key_Enter
+                                    || event.key === Qt.Key_Space) {
+                                    forgetSavedPassword();
+                                    event.accepted = true;
+                                }
+                            }
                             Accessible.onPressAction: {
                                 forgetSavedPassword();
                             }
