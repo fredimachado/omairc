@@ -2664,11 +2664,17 @@ ApplicationWindow {
                             Switch {
                                 id: connectionConnectOnStartup
                                 objectName: "connectionConnectOnStartup"
-                                checked: win.connection ? win.connection.connectOnStartup : false
                                 onToggled: {
                                     if (win.connection)
                                         win.connection.connectOnStartup = checked;
                                 }
+                            }
+
+                            Binding {
+                                target: connectionConnectOnStartup
+                                property: "checked"
+                                value: win.connection ? win.connection.connectOnStartup : false
+                                restoreMode: Binding.RestoreBinding
                             }
 
                             Text {

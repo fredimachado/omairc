@@ -9,8 +9,8 @@ A dead-simple IRC client for Omarchy, built with Qt Quick and C++.
 The first launch opens a connection sheet with Libera Chat defaults. Enter a
 nick, change the host if you want a different network, and type a server
 password only if that network needs one. Apply starts the session. TLS is on
-by default. Omairc does not connect on its own; open Connect and Apply when
-you want a session.
+by default. Omairc does not connect on its own by default; enable Connect
+automatically on startup when you want a session on launch.
 
 Omairc remembers host, port, TLS, nick, username, real name, and autojoin in
 `$XDG_CONFIG_HOME/omairc/`. Connect automatically on startup is off by
