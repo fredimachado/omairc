@@ -117,6 +117,8 @@ private:
     std::optional<Applied> m_applied;
     bool m_focusPassword = false;
     bool m_passwordEdited = false;
+    bool m_credentialWriteInFlight = false;
+    bool m_pendingCredentialRemoval = false;
     CredentialStore::State m_credentialState = CredentialStore::State::Missing;
     QString m_credentialError;
     QMetaObject::Connection m_startupActivationConnection;

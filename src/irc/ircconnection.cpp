@@ -75,6 +75,13 @@ IrcConnection::IrcConnection(IrcController &controller,
         });
         connect(m_credentialStore, &CredentialStore::writeFinished, this,
                 [this](CredentialStore::State state, const QString &message) {
+            if (m_pendingCredentialRemoval && m_credentialWriteInFlight) {
+                m_pendingCredentialRemoval = false;
+                m_credentialWriteInFlight = false;
+                m_credentialStore->remove(credentialKey(m_stored));
+                return;
+            }
+            m_credentialWriteInFlight = false;
             m_credentialState = state == CredentialStore::State::Unavailable
                     && !m_password.isEmpty()
                 ? CredentialStore::State::SessionOnly : state;
@@ -328,7 +335,12 @@ void IrcConnection::removeStoredPassword()
 {
     if (!m_credentialStore || m_stored.networkId.isEmpty())
         return;
-    m_credentialStore->remove(credentialKey(m_stored));
+    if (m_credentialWriteInFlight) {
+        m_pendingCredentialRemoval = true;
+    } else {
+        m_pendingCredentialRemoval = false;
+        m_credentialStore->remove(credentialKey(m_stored));
+    }
 }
 
 bool IrcConnection::apply()
@@ -347,8 +359,15 @@ bool IrcConnection::apply()
     emit draftChanged();
     if (m_credentialStore && m_passwordEdited) {
         if (m_password.isEmpty()) {
-            m_credentialStore->remove(credentialKey(profile));
+            if (m_credentialWriteInFlight) {
+                m_pendingCredentialRemoval = true;
+            } else {
+                m_pendingCredentialRemoval = false;
+                m_credentialStore->remove(credentialKey(profile));
+            }
         } else {
+            m_credentialWriteInFlight = true;
+            m_pendingCredentialRemoval = false;
             m_credentialStore->write(credentialKey(profile), m_password);
         }
     }
@@ -383,8 +402,11 @@ void IrcConnection::activateOnStartup()
     if (m_credentialState == CredentialStore::State::Loading) {
         m_startupActivationConnection = connect(
             this, &IrcConnection::credentialStateChanged, this, [this]() {
-                if (m_credentialState != CredentialStore::State::Loading)
+                if (m_credentialState == CredentialStore::State::Available
+                    || m_credentialState == CredentialStore::State::Missing
+                    || m_credentialState == CredentialStore::State::SessionOnly) {
                     activate();
+                }
             });
         return;
     }

@@ -28,6 +28,7 @@ private slots:
     void applyDoesNotWritePassword();
     void credentialStoreLoadsPasswordAsynchronously();
     void startupActivationWaitsForCredentialRead();
+    void startupActivationWaitsForUsableCredentialState();
     void emptyPasswordDoesNotDeleteStoredCredential();
     void editedPasswordShowsPendingSaveStatus();
     void removingStoredPasswordDoesNotReconnect();
@@ -314,6 +315,26 @@ void ConnectionTest::startupActivationWaitsForCredentialRead()
     QCOMPARE(m_transports.size(), 0);
     QTRY_COMPARE(missingConnection.credentialState(), CredentialStore::State::Missing);
     QCOMPARE(m_transports.size(), 1);
+}
+
+void ConnectionTest::startupActivationWaitsForUsableCredentialState()
+{
+    {
+        IrcController seedController;
+        IrcConnection seed(seedController, capturingFactory());
+        fillCompleteDraft(seed);
+        seed.setConnectOnStartup(true);
+        QVERIFY(seed.apply());
+    }
+    m_transports.clear();
+
+    IrcController controller;
+    auto *store = new FakeCredentialStore(CredentialStore::State::Error);
+    IrcConnection connection(controller, capturingFactory(),
+                             [store]() { return store; });
+    connection.activateOnStartup();
+    QTRY_COMPARE(connection.credentialState(), CredentialStore::State::Error);
+    QCOMPARE(m_transports.size(), 0);
 }
 
 void ConnectionTest::emptyPasswordDoesNotDeleteStoredCredential()
