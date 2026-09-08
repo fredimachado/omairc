@@ -375,6 +375,14 @@ bool IrcConnection::apply()
         && (m_passwordEdited || credentialKeyChanged)) {
         m_credentialWriteInFlight = true;
         m_pendingCredentialRemoval = false;
+        if (credentialKeyChanged && !previousCredentialKey.networkId.isEmpty()) {
+            connect(m_credentialStore, &CredentialStore::writeFinished, this,
+                    [this, previousCredentialKey](CredentialStore::State state, const QString &) {
+                        if (state == CredentialStore::State::Available)
+                            m_credentialStore->remove(previousCredentialKey);
+                    },
+                    Qt::SingleShotConnection);
+        }
         m_credentialStore->write(nextCredentialKey, m_password);
     } else if (m_credentialStore && m_passwordEdited) {
         if (m_password.isEmpty()) {
