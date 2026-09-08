@@ -92,6 +92,7 @@ private:
     std::optional<IrcSessionConfig> sessionConfigFor(
         const IrcNetworkProfile &profile) const;
     bool reconcile(const IrcNetworkProfile &profile);
+    CredentialKey credentialKey(const IrcNetworkProfile &profile) const;
 
     struct Applied {
         IrcNetworkProfile profile;
@@ -109,6 +110,7 @@ private:
     quint64 m_secretRevision = 0;
     std::optional<Applied> m_applied;
     bool m_focusPassword = false;
+    bool m_passwordEdited = false;
     CredentialStore::State m_credentialState = CredentialStore::State::Missing;
     QString m_credentialError;
 };

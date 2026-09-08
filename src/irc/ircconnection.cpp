@@ -60,21 +60,25 @@ IrcConnection::IrcConnection(IrcController &controller,
         connect(m_credentialStore, &CredentialStore::readFinished, this,
                 [this](CredentialStore::State state, const QString &password,
                        const QString &message) {
-            m_credentialState = state;
+            const bool storageFailed = state == CredentialStore::State::Unavailable
+                || state == CredentialStore::State::Error;
+            m_credentialState = m_passwordEdited && storageFailed
+                ? CredentialStore::State::SessionOnly : state;
             m_credentialError = message;
-            if (state == CredentialStore::State::Available)
+            if (state == CredentialStore::State::Available && !m_passwordEdited) {
                 m_password = password;
+                ++m_secretRevision;
+                if (m_applied)
+                    reconcile(m_stored);
+            }
             emit credentialStateChanged();
             emit draftChanged();
         });
         connect(m_credentialStore, &CredentialStore::writeFinished, this,
                 [this](CredentialStore::State state, const QString &message) {
-            if (state == CredentialStore::State::Error
-                || state == CredentialStore::State::Unavailable) {
-                m_credentialState = state;
-                m_credentialError = message;
-                emit credentialStateChanged();
-            }
+            m_credentialState = state;
+            m_credentialError = message;
+            emit credentialStateChanged();
         });
     }
 
@@ -84,7 +88,7 @@ IrcConnection::IrcConnection(IrcController &controller,
     else
         m_draft = m_stored;
     if (m_credentialStore && !m_stored.networkId.isEmpty())
-        m_credentialStore->read({m_stored.networkId, m_stored.nick, m_stored.host});
+        m_credentialStore->read(credentialKey(m_stored));
 
     connect(&m_controller, &IrcController::errorOccurred, this,
             [this](const QString &, IrcSession::ErrorKind kind, const QString &) {
@@ -163,6 +167,8 @@ QString IrcConnection::credentialStatus() const
         return QStringLiteral("secure storage unavailable; password is session-only");
     case CredentialStore::State::Error:
         return QStringLiteral("secure storage error; password is session-only");
+    case CredentialStore::State::SessionOnly:
+        return QStringLiteral("secure storage unavailable; password is session-only");
     }
     return {};
 }
@@ -270,8 +276,13 @@ void IrcConnection::setPassword(const QString &password)
     if (m_password == password)
         return;
     m_password = password;
-    m_credentialState = password.isEmpty()
-        ? CredentialStore::State::Missing : CredentialStore::State::Available;
+    m_passwordEdited = true;
+    if (m_credentialState == CredentialStore::State::Unavailable
+        || m_credentialState == CredentialStore::State::Error) {
+        m_credentialState = CredentialStore::State::SessionOnly;
+    } else if (password.isEmpty()) {
+        m_credentialState = CredentialStore::State::Missing;
+    }
     ++m_secretRevision;
     if (m_focusPassword) {
         m_focusPassword = false;
@@ -294,9 +305,12 @@ bool IrcConnection::apply()
     m_stored = profile;
     m_draft = profile;
     emit draftChanged();
-    if (m_credentialStore && !m_password.isEmpty())
-        m_credentialStore->write({profile.networkId, profile.nick, profile.host},
-                                 m_password);
+    if (m_credentialStore) {
+        if (m_password.isEmpty())
+            m_credentialStore->remove(credentialKey(profile));
+        else
+            m_credentialStore->write(credentialKey(profile), m_password);
+    }
     if (wasSetup)
         emit setupRequiredChanged();
     return reconcile(profile);
@@ -370,4 +384,11 @@ bool IrcConnection::reconcile(const IrcNetworkProfile &profile)
 
     m_applied = candidate;
     return m_controller.start(profile.networkId);
+}
+
+CredentialKey IrcConnection::credentialKey(const IrcNetworkProfile &profile) const
+{
+    return {profile.networkId,
+            profile.username.isEmpty() ? profile.nick : profile.username,
+            profile.host};
 }

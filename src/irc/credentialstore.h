@@ -21,6 +21,7 @@ public:
         Missing,
         Unavailable,
         Error,
+        SessionOnly,
     };
     Q_ENUM(State)
 
@@ -29,6 +30,7 @@ public:
 
     virtual void read(const CredentialKey &key) = 0;
     virtual void write(const CredentialKey &key, const QString &password) = 0;
+    virtual void remove(const CredentialKey &key) = 0;
 
 signals:
     void readFinished(CredentialStore::State state, const QString &password,

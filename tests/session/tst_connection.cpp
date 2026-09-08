@@ -64,6 +64,13 @@ public:
         }, Qt::QueuedConnection);
     }
 
+    void remove(const CredentialKey &) override
+    {
+        QMetaObject::invokeMethod(this, [this]() {
+            emit writeFinished(State::Missing, {});
+        }, Qt::QueuedConnection);
+    }
+
     QString writtenPassword() const { return m_writtenPassword; }
 
 private:

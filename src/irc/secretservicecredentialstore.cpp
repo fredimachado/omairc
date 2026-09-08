@@ -48,3 +48,16 @@ void SecretServiceCredentialStore::write(const CredentialKey &key,
     });
     job->start();
 }
+
+void SecretServiceCredentialStore::remove(const CredentialKey &key)
+{
+    auto *job = new QKeychain::DeletePasswordJob(QStringLiteral("omairc"), this);
+    job->setKey(keyName(key));
+    connect(job, &QKeychain::Job::finished, this, [this, job]() {
+        emit writeFinished(job->error() == QKeychain::NoError
+                               || job->error() == QKeychain::EntryNotFound
+                               ? State::Missing : State::Unavailable,
+                           job->errorString());
+    });
+    job->start();
+}

@@ -45,7 +45,7 @@ TestCase {
         property string realname: ""
         property string autojoin: "#omarchy"
         property bool passwordSet: false
-        property int credentialState: 2
+        property int credentialState: 3
         property string credentialError: ""
         property string credentialStatus: "secure storage unavailable; password is session-only"
         property string problem: "Nick is required"
