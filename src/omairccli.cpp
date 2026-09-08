@@ -4,6 +4,7 @@
 #include "singleinstance.h"
 
 #include <QCoreApplication>
+#include <QElapsedTimer>
 #include <QLocalSocket>
 #include <QStringList>
 
@@ -13,6 +14,9 @@
 
 namespace OmaircCli {
 namespace {
+
+constexpr int kMaxIpcLineBytes = 64 * 1024;
+constexpr int kResponseTimeoutMs = 3000;
 
 void writeStdout(const QByteArray &line)
 {
@@ -41,13 +45,27 @@ bool isFlag(const QString &arg)
     return arg.startsWith(QLatin1Char('-'));
 }
 
-QByteArray readLine(QLocalSocket &socket)
+std::optional<QByteArray> readLine(QLocalSocket &socket)
 {
-    while (!socket.canReadLine()) {
-        if (!socket.waitForReadyRead(3000))
-            return {};
+    QElapsedTimer timer;
+    timer.start();
+    QByteArray buffer;
+    while (true) {
+        buffer += socket.readAll();
+        const qsizetype newline = buffer.indexOf('\n');
+        if (newline >= 0) {
+            if (newline > kMaxIpcLineBytes)
+                return std::nullopt;
+            return buffer.left(newline).trimmed();
+        }
+        if (buffer.size() > kMaxIpcLineBytes)
+            return std::nullopt;
+
+        const qint64 remaining = kResponseTimeoutMs - timer.elapsed();
+        if (remaining <= 0
+            || !socket.waitForReadyRead(int(qMin<qint64>(remaining, 100))))
+            return std::nullopt;
     }
-    return socket.readLine().trimmed();
 }
 
 int sendRequest(const OmaircIpc::Request &request)
@@ -66,12 +84,14 @@ int sendRequest(const OmaircIpc::Request &request)
         return fail(QStringLiteral("Failed to write to Omairc socket"));
     }
 
-    const QByteArray response = readLine(socket);
-    if (response.isEmpty())
+    const std::optional<QByteArray> response = readLine(socket);
+    if (!response)
+        return fail(QStringLiteral("Invalid or missing response from Omairc"));
+    if (response->isEmpty())
         return fail(QStringLiteral("No response from Omairc"));
 
-    writeStdout(response);
-    return OmaircIpc::responseOk(response) ? 0 : 1;
+    writeStdout(*response);
+    return OmaircIpc::responseOk(*response) ? 0 : 1;
 }
 
 std::optional<OmaircIpc::Request> parseArgsImpl(const QStringList &args,

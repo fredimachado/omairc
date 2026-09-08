@@ -41,11 +41,9 @@ static void raiseOmaircWindow(QQmlApplicationEngine &engine)
 }
 
 int main(int argc, char *argv[]) {
-    for (int i = 1; i < argc; ++i) {
-        if (strcmp(argv[i], "--version") == 0) {
-            fputs("omairc " OMAIRC_VERSION "\n", stdout);
-            return 0;
-        }
+    if (argc == 2 && strcmp(argv[1], "--version") == 0) {
+        fputs("omairc " OMAIRC_VERSION "\n", stdout);
+        return 0;
     }
 
     if (OmaircCli::looksLikeCommand(argc, argv)) {
