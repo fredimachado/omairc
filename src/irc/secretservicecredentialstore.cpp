@@ -56,10 +56,10 @@ void SecretServiceCredentialStore::remove(const CredentialKey &key)
     auto *job = new QKeychain::DeletePasswordJob(QStringLiteral("omairc"), this);
     job->setKey(keyName(key));
     connect(job, &QKeychain::Job::finished, this, [this, job]() {
-        emit writeFinished(job->error() == QKeychain::NoError
-                               || job->error() == QKeychain::EntryNotFound
-                               ? State::Missing : State::Error,
-                           job->errorString());
+        const bool missing = job->error() == QKeychain::NoError
+            || job->error() == QKeychain::EntryNotFound;
+        emit writeFinished(missing ? State::Missing : State::Error,
+                           missing ? QString() : job->errorString());
         job->deleteLater();
     });
     job->start();
