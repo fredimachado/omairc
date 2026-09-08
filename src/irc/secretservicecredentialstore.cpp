@@ -6,8 +6,14 @@ namespace
 {
 QString keyName(const CredentialKey &key)
 {
-    return QStringLiteral("%1/%2/%3").arg(
-        key.networkId, key.username, key.host);
+    const auto encode = [](const QString &value) {
+        const QString length = QString::number(value.toUtf8().size());
+        return length + QLatin1Char(':') + value;
+    };
+    return QStringLiteral("omairc/v1/")
+        + encode(key.networkId) + QLatin1Char('/')
+        + encode(key.username) + QLatin1Char('/')
+        + encode(key.host);
 }
 
 CredentialStore::State stateForError(const QKeychain::Error error)

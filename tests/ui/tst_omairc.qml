@@ -36,6 +36,7 @@ TestCase {
     QtObject {
         id: fakeConnection
 
+        readonly property int credentialStateUnavailable: 3
         property string host: "irc.libera.chat"
         property int port: 6697
         property bool tlsEnabled: true
@@ -45,7 +46,7 @@ TestCase {
         property string realname: ""
         property string autojoin: "#omarchy"
         property bool passwordSet: false
-        property int credentialState: 3
+        property int credentialState: credentialStateUnavailable
         property string credentialError: ""
         property string credentialStatus: "secure storage unavailable; password is session-only"
         property bool canForgetPassword: false
