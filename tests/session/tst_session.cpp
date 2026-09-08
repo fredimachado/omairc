@@ -148,6 +148,7 @@ private slots:
     void incomingActionTranslatesToActionEvent();
     void incomingCtcpRequestsAreNotConversationEvents();
     void answersCtcpRequests();
+    void doesNotAnswerChannelCtcpRequests();
     void welcomeAssignsNickFrom001();
     void emptyWelcomeKeepsConfigNick();
     void selfNickUpdatesSessionNick();
@@ -1080,6 +1081,20 @@ void SessionTest::answersCtcpRequests()
     QVERIFY(fixture.transport->writtenFrames().at(
         fixture.transport->writtenFrames().size() - 2).startsWith(
         QByteArrayLiteral("NOTICE MetaNova :\x01TIME ")));
+}
+
+void SessionTest::doesNotAnswerChannelCtcpRequests()
+{
+    Fixture fixture;
+    fixture.connectTls();
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(":server 001 omairc :Welcome\r\n"));
+    const int before = fixture.transport->writtenFrames().size();
+
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(":MetaNova!u@h PRIVMSG #omarchy :\x01PING token\x01\r\n"));
+
+    QCOMPARE(fixture.transport->writtenFrames().size(), before);
 }
 
 void SessionTest::welcomeAssignsNickFrom001()

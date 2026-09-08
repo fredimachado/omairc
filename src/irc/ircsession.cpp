@@ -540,7 +540,8 @@ void IrcSession::handleMessage(const IrcMessage &message)
         return;
     }
 
-    if (message.command == "PRIVMSG" && message.parameters.size() >= 2) {
+    if (message.command == "PRIVMSG" && message.parameters.size() >= 2
+        && parameter(message, 0).compare(m_nick, Qt::CaseInsensitive) == 0) {
         const auto request = parseCtcpRequest(parameter(message, 1));
         if (request && request->command != QStringLiteral("ACTION")) {
             const QString sender = prefixNick(message);

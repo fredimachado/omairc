@@ -9,7 +9,8 @@ TARGET = protocol_tests
 greaterThan(QMAKE_GCC_MAJOR_VERSION, 15): QMAKE_CXXFLAGS += -Wno-sfinae-incomplete
 
 INCLUDEPATH += ../src ../src/irc support
-DEFINES += TEST_CERT_DIR=\\\"$$PWD/support/certs\\\" OMAIRC_VERSION=\\\"0.1.0\\\"
+VERSION = 0.1.0
+DEFINES += TEST_CERT_DIR=\\\"$$PWD/support/certs\\\" OMAIRC_VERSION=\\\"$$VERSION\\\"
 
 HEADERS += \
     ../src/singleinstance.h \
