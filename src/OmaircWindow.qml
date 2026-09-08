@@ -3,6 +3,7 @@ import QtQuick.Controls
 import QtQuick.Controls.Material
 import QtQuick.Layouts
 import QtQuick.Window
+import QtQuick.Accessibility
 
 ApplicationWindow {
     id: win
@@ -2705,12 +2706,14 @@ ApplicationWindow {
 
                         Text {
                             objectName: "connectionForgetPassword"
-                            visible: win.connection
-                                && win.connection.credentialStatus === "password saved securely"
+                            visible: win.connection && win.connection.canForgetPassword
                             text: "forget saved password"
                             color: win.accentColor
                             font.family: "iA Writer Mono S"
                             font.pixelSize: win.scaledSize(10)
+                            Accessible.role: Accessible.Button
+                            Accessible.name: "Forget saved password"
+                            Accessible.description: "Remove the saved connection password"
                             MouseArea {
                                 anchors.fill: parent
                                 cursorShape: Qt.PointingHandCursor

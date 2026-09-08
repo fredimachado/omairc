@@ -85,6 +85,10 @@ IrcConnection::IrcConnection(IrcController &controller,
                     && !m_password.isEmpty()
                 ? CredentialStore::State::SessionOnly : state;
             m_credentialError = message;
+            if (state == CredentialStore::State::Available
+                || state == CredentialStore::State::Missing) {
+                m_passwordEdited = false;
+            }
             emit credentialStateChanged();
         });
     }
@@ -178,6 +182,12 @@ QString IrcConnection::credentialStatus() const
         return QStringLiteral("secure storage unavailable; password is session-only");
     }
     return {};
+}
+
+bool IrcConnection::canForgetPassword() const
+{
+    return m_credentialState == CredentialStore::State::Available
+        && !m_password.isEmpty();
 }
 
 QString IrcConnection::problem() const
@@ -280,9 +290,7 @@ void IrcConnection::setAutojoin(const QString &channels)
 
 void IrcConnection::setPassword(const QString &password)
 {
-    if (password.isEmpty() && !m_passwordEdited
-        && !m_password.isEmpty()
-        && m_credentialState == CredentialStore::State::Available) {
+    if (password.isEmpty() && !m_password.isEmpty()) {
         return;
     }
     if (m_password == password)

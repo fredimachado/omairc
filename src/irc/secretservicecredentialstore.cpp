@@ -29,7 +29,7 @@ void SecretServiceCredentialStore::read(const CredentialKey &key)
         } else if (job->error() == QKeychain::EntryNotFound) {
             emit readFinished(State::Missing, {}, {});
         } else {
-            emit readFinished(State::Unavailable, {}, job->errorString());
+            emit readFinished(State::Error, {}, job->errorString());
         }
         job->deleteLater();
     });
@@ -44,7 +44,7 @@ void SecretServiceCredentialStore::write(const CredentialKey &key,
     job->setTextData(password);
     connect(job, &QKeychain::Job::finished, this, [this, job]() {
         emit writeFinished(job->error() == QKeychain::NoError
-                               ? State::Available : State::Unavailable,
+                               ? State::Available : State::Error,
                            job->errorString());
         job->deleteLater();
     });
@@ -58,7 +58,7 @@ void SecretServiceCredentialStore::remove(const CredentialKey &key)
     connect(job, &QKeychain::Job::finished, this, [this, job]() {
         emit writeFinished(job->error() == QKeychain::NoError
                                || job->error() == QKeychain::EntryNotFound
-                               ? State::Missing : State::Unavailable,
+                               ? State::Missing : State::Error,
                            job->errorString());
         job->deleteLater();
     });

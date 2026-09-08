@@ -30,6 +30,8 @@ class IrcConnection : public QObject
                NOTIFY credentialStateChanged)
     Q_PROPERTY(QString credentialError READ credentialError NOTIFY credentialStateChanged)
     Q_PROPERTY(QString credentialStatus READ credentialStatus NOTIFY credentialStateChanged)
+    Q_PROPERTY(bool canForgetPassword READ canForgetPassword
+               NOTIFY credentialStateChanged)
     Q_PROPERTY(QString problem READ problem NOTIFY draftChanged)
     Q_PROPERTY(bool dirty READ dirty NOTIFY draftChanged)
     Q_PROPERTY(QString displayName READ displayName NOTIFY draftChanged)
@@ -61,6 +63,7 @@ public:
     CredentialStore::State credentialState() const;
     QString credentialError() const;
     QString credentialStatus() const;
+    bool canForgetPassword() const;
     QString problem() const;
     bool dirty() const;
     QString displayName() const;
