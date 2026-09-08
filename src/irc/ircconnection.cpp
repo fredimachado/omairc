@@ -442,6 +442,8 @@ void IrcConnection::activateOnStartup()
 {
     if (m_startupActivationConnection)
         return;
+    if (m_credentialState == CredentialStore::State::Error)
+        return;
     if (m_credentialState == CredentialStore::State::Loading) {
         m_startupActivationConnection = connect(
             this, &IrcConnection::credentialStateChanged, this, [this]() {

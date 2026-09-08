@@ -31,9 +31,11 @@ private slots:
     void credentialStoreLoadsPasswordAsynchronously();
     void startupActivationWaitsForCredentialRead();
     void startupActivationWaitsForUsableCredentialState();
+    void startupActivationDoesNotConnectAfterCredentialError();
     void emptyPasswordDoesNotDeleteStoredCredential();
     void editedPasswordShowsPendingSaveStatus();
     void removingStoredPasswordDoesNotReconnect();
+    void forgettingPasswordBeforeRemovingStoredPasswordReportsFailure();
     void missingStoredPasswordWithSessionPasswordIsNotReportedAsMissing();
     void unavailableCredentialStoreUsesSessionOnlyState();
 
@@ -49,10 +51,14 @@ class FakeCredentialStore final : public CredentialStore
 {
 public:
     explicit FakeCredentialStore(State readState, QString password = {},
+                                 State removeState = State::Missing,
+                                 QString removeMessage = {},
                                  QObject *parent = nullptr)
         : CredentialStore(parent)
         , m_readState(readState)
         , m_password(std::move(password))
+        , m_removeState(removeState)
+        , m_removeMessage(std::move(removeMessage))
     {
     }
 
@@ -77,7 +83,7 @@ public:
     {
         ++m_removeCalls;
         QMetaObject::invokeMethod(this, [this]() {
-            emit writeFinished(State::Missing, {});
+            emit writeFinished(m_removeState, m_removeMessage);
         }, Qt::QueuedConnection);
     }
 
@@ -89,6 +95,8 @@ private:
     State m_readState;
     QString m_password;
     QString m_writtenPassword;
+    State m_removeState;
+    QString m_removeMessage;
     int m_writeCalls = 0;
     int m_removeCalls = 0;
 };
@@ -378,6 +386,28 @@ void ConnectionTest::startupActivationWaitsForUsableCredentialState()
     QCOMPARE(m_transports.size(), 1);
 }
 
+void ConnectionTest::startupActivationDoesNotConnectAfterCredentialError()
+{
+    {
+        IrcController seedController;
+        IrcConnection seed(seedController, capturingFactory());
+        fillCompleteDraft(seed);
+        seed.setConnectOnStartup(true);
+        QVERIFY(seed.apply());
+    }
+    m_transports.clear();
+
+    IrcController controller;
+    auto *store = new FakeCredentialStore(CredentialStore::State::Error);
+    IrcConnection connection(controller, capturingFactory(),
+                             [store]() { return store; });
+    QTRY_COMPARE(connection.credentialState(), CredentialStore::State::Error);
+
+    connection.activateOnStartup();
+
+    QCOMPARE(m_transports.size(), 0);
+}
+
 void ConnectionTest::emptyPasswordDoesNotDeleteStoredCredential()
 {
     {
@@ -451,6 +481,31 @@ void ConnectionTest::removingStoredPasswordDoesNotReconnect()
     connection.removeStoredPassword();
     QCOMPARE(m_transports.size(), 1);
     QCOMPARE(store->removeCalls(), 1);
+}
+
+void ConnectionTest::forgettingPasswordBeforeRemovingStoredPasswordReportsFailure()
+{
+    {
+        IrcController seedController;
+        IrcConnection seed(seedController, capturingFactory());
+        fillCompleteDraft(seed);
+        QVERIFY(seed.apply());
+    }
+
+    IrcController controller;
+    auto *store = new FakeCredentialStore(CredentialStore::State::Available,
+                                          QStringLiteral("stored-secret"),
+                                          CredentialStore::State::Error,
+                                          QStringLiteral("remove failed"));
+    IrcConnection connection(controller, capturingFactory(),
+                             [store]() { return store; });
+    QTRY_COMPARE(connection.credentialState(), CredentialStore::State::Available);
+
+    connection.forgetPassword();
+    connection.removeStoredPassword();
+
+    QTRY_COMPARE(connection.credentialState(), CredentialStore::State::Error);
+    QCOMPARE(connection.credentialError(), QStringLiteral("remove failed"));
 }
 
 void ConnectionTest::missingStoredPasswordWithSessionPasswordIsNotReportedAsMissing()

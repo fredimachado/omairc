@@ -2726,9 +2726,9 @@ ApplicationWindow {
                                 forgetSavedPassword();
                             }
                             function forgetSavedPassword() {
-                                win.connection.removeStoredPassword();
                                 connectionPassword.text = "";
                                 win.connection.forgetPassword();
+                                win.connection.removeStoredPassword();
                             }
                             MouseArea {
                                 anchors.fill: parent
