@@ -14,6 +14,9 @@ DEFINES += TEST_CERT_DIR=\\\"$$PWD/support/certs\\\" OMAIRC_VERSION=\\\"$$VERSIO
 
 HEADERS += \
     ../src/singleinstance.h \
+    ../src/omaircipc.h \
+    ../src/omaircipchandler.h \
+    ../src/omairccli.h \
     ../src/irc/ircmessage.h \
     ../src/irc/ircparser.h \
     ../src/irc/ircframer.h \
@@ -53,7 +56,11 @@ HEADERS += \
 SOURCES += \
     tst_main.cpp \
     tst_singleinstance.cpp \
+    tst_omaircipc.cpp \
     ../src/singleinstance.cpp \
+    ../src/omaircipc.cpp \
+    ../src/omaircipchandler.cpp \
+    ../src/omairccli.cpp \
     protocol/tst_protocol.cpp \
     protocol/tst_casemapping.cpp \
     ../src/irc/ircparser.cpp \

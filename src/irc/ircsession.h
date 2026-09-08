@@ -86,6 +86,9 @@ public:
     ~IrcSession() override;
 
     QString networkId() const;
+    QString host() const;
+    quint16 port() const;
+    bool tlsEnabled() const;
     QString nick() const;
     State state() const;
     int reconnectAttempt() const;
