@@ -61,6 +61,9 @@ TestCase {
         function forgetPassword() {
         }
 
+        function removeStoredPassword() {
+        }
+
         function apply() {
             return false;
         }

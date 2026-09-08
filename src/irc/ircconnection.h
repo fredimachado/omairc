@@ -81,6 +81,7 @@ public:
 
     Q_INVOKABLE void setPassword(const QString &password);
     Q_INVOKABLE void forgetPassword();
+    Q_INVOKABLE void removeStoredPassword();
     Q_INVOKABLE bool apply();
     Q_INVOKABLE void discard();
     bool activate();

@@ -324,6 +324,13 @@ void IrcConnection::forgetPassword()
     emit draftChanged();
 }
 
+void IrcConnection::removeStoredPassword()
+{
+    if (!m_credentialStore || m_stored.networkId.isEmpty())
+        return;
+    m_credentialStore->remove(credentialKey(m_stored));
+}
+
 bool IrcConnection::apply()
 {
     const bool wasSetup = setupRequired();
