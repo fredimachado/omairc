@@ -7,6 +7,7 @@
 #include <QLocalSocket>
 #include <QLockFile>
 #include <QStandardPaths>
+#include <QTimer>
 
 SingleInstance::SingleInstance(QObject *parent)
     : QObject(parent)
@@ -98,6 +99,7 @@ bool SingleInstance::becomePrimary()
 
     m_server = new QLocalServer(this);
     m_server->setSocketOptions(QLocalServer::UserAccessOption);
+    listenForActivation();
     QLocalServer::removeServer(serverName());
     if (!m_server->listen(serverName())) {
         m_lock->unlock();
@@ -106,7 +108,6 @@ bool SingleInstance::becomePrimary()
         return false;
     }
 
-    listenForActivation();
     m_primary = true;
     return true;
 }
@@ -127,13 +128,29 @@ void SingleInstance::listenForActivation()
 {
     QObject::connect(m_server, &QLocalServer::newConnection, this, [this]() {
         while (QLocalSocket *socket = m_server->nextPendingConnection()) {
+            if (m_activeClients >= kMaxIpcClients) {
+                rejectSocket(socket);
+                continue;
+            }
+            ++m_activeClients;
             socket->setParent(this);
             socket->setProperty("omaircBuffer", QByteArray());
+            socket->setProperty("omaircHandled", false);
+            auto *idleTimer = new QTimer(socket);
+            idleTimer->setSingleShot(true);
+            idleTimer->setInterval(kIpcIdleTimeoutMs);
+            socket->setProperty("omaircIdleTimer", QVariant::fromValue(idleTimer));
+            QObject::connect(idleTimer, &QTimer::timeout, socket, [this, socket]() {
+                expireSocket(socket);
+            });
             QObject::connect(socket, &QLocalSocket::readyRead, this, [this, socket]() {
                 consumeSocketData(socket);
             });
-            QObject::connect(socket, &QLocalSocket::disconnected, socket,
-                             &QObject::deleteLater);
+            QObject::connect(socket, &QLocalSocket::disconnected, this, [this, socket]() {
+                --m_activeClients;
+                socket->deleteLater();
+            });
+            idleTimer->start();
             if (socket->bytesAvailable() > 0)
                 consumeSocketData(socket);
         }
@@ -142,55 +159,92 @@ void SingleInstance::listenForActivation()
 
 void SingleInstance::consumeSocketData(QLocalSocket *socket)
 {
+    if (socket->property("omaircHandled").toBool())
+        return;
+
     QByteArray buffer = socket->property("omaircBuffer").toByteArray();
     buffer += socket->readAll();
-
-    // Legacy secondary launch writes a bare "!" with no newline.
-    if (OmaircIpc::isRaisePing(buffer) && !buffer.contains('\n')) {
-        socket->setProperty("omaircBuffer", QByteArray());
-        emit activationRequested();
+    if (buffer.size() > kMaxIpcLineBytes + 1) {
+        rejectSocket(socket);
         return;
     }
 
-    while (true) {
-        const int newline = buffer.indexOf('\n');
-        if (newline < 0) {
-            if (buffer.size() > kMaxIpcLineBytes) {
-                socket->setProperty("omaircBuffer", QByteArray());
-                socket->abort();
-                return;
-            }
-            break;
-        }
-        if (newline > kMaxIpcLineBytes) {
-            socket->setProperty("omaircBuffer", QByteArray());
-            socket->abort();
-            return;
-        }
+    // Legacy secondary launch writes a bare "!" with no newline.
+    if (buffer == OmaircIpc::raisePing() && socket->property("omaircPingReady").toBool()) {
+        socket->setProperty("omaircBuffer", QByteArray());
+        emit activationRequested();
+        socket->setProperty("omaircHandled", true);
+        socket->disconnectFromServer();
+        return;
+    }
+    socket->setProperty("omaircPingReady", buffer == OmaircIpc::raisePing());
 
-        QByteArray line = buffer.left(newline);
-        buffer.remove(0, newline + 1);
-        if (line.endsWith('\r'))
-            line.chop(1);
-
-        if (OmaircIpc::isRaisePing(line)) {
-            emit activationRequested();
-            if (m_requestHandler) {
-                socket->write(OmaircIpc::okResponse() + '\n');
-                socket->flush();
-            }
-            continue;
-        }
-
-        if (!m_requestHandler) {
-            emit activationRequested();
-            continue;
-        }
-
-        const QByteArray response = m_requestHandler(line);
-        socket->write(response + '\n');
-        socket->flush();
+    const int newline = buffer.indexOf('\n');
+    if (newline < 0) {
+        socket->setProperty("omaircBuffer", buffer);
+        return;
+    }
+    if (newline > kMaxIpcLineBytes) {
+        rejectSocket(socket);
+        return;
     }
 
-    socket->setProperty("omaircBuffer", buffer);
+    QByteArray line = buffer.left(newline);
+    if (line.endsWith('\r'))
+        line.chop(1);
+
+    if (OmaircIpc::isRaisePing(line)) {
+        emit activationRequested();
+        if (m_requestHandler)
+            finishSocket(socket, OmaircIpc::okResponse() + '\n');
+        else {
+            socket->setProperty("omaircHandled", true);
+            socket->disconnectFromServer();
+        }
+        return;
+    }
+
+    if (!m_requestHandler) {
+        emit activationRequested();
+        finishSocket(socket, OmaircIpc::errorResponse(
+                                      QStringLiteral("Omairc is starting")) + '\n');
+        return;
+    }
+
+    const QByteArray response = m_requestHandler(line);
+    if (response.size() > kMaxIpcResponseBytes) {
+        rejectSocket(socket);
+        return;
+    }
+    finishSocket(socket, response + '\n');
+}
+
+void SingleInstance::finishSocket(QLocalSocket *socket, const QByteArray &response)
+{
+    socket->setProperty("omaircHandled", true);
+    auto *idleTimer = socket->property("omaircIdleTimer").value<QTimer *>();
+    if (idleTimer)
+        idleTimer->stop();
+    socket->write(response);
+    socket->flush();
+    socket->disconnectFromServer();
+}
+
+void SingleInstance::rejectSocket(QLocalSocket *socket)
+{
+    socket->setProperty("omaircBuffer", QByteArray());
+    socket->setProperty("omaircHandled", true);
+    socket->abort();
+}
+
+void SingleInstance::expireSocket(QLocalSocket *socket)
+{
+    const QByteArray buffer = socket->property("omaircBuffer").toByteArray();
+    if (buffer == OmaircIpc::raisePing()) {
+        emit activationRequested();
+        socket->setProperty("omaircHandled", true);
+        socket->abort();
+        return;
+    }
+    rejectSocket(socket);
 }

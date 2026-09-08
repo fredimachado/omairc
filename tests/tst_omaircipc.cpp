@@ -67,10 +67,13 @@ private slots:
     void socketRaiseStillWorks();
     void socketCommandRoundTrip();
     void socketRejectsOversizedLine();
-    void socketAcceptsPipelinedSmallLines();
+    void socketClosesAfterOneRequest();
     void connectionsSortedById();
     void sendAllowsDashPrefixedText();
     void socketRaisePingWithHandlerRaisesOnce();
+    void socketAcceptsSplitRaisePing();
+    void socketExpiresIdleClient();
+    void socketLimitsConcurrentClients();
 };
 
 void OmaircIpcTest::parseRaisePing()
@@ -310,14 +313,7 @@ void OmaircIpcTest::socketCommandRoundTrip()
     QVERIFY(OmaircIpc::responseOk(response));
     QVERIFY(raised);
 
-    const QByteArray unknown =
-        QByteArrayLiteral("{\"cmd\":\"explode\"}\n");
-    QCOMPARE(client.write(unknown), qint64(unknown.size()));
-    QVERIFY(client.waitForBytesWritten(1000));
-    QTRY_VERIFY(client.canReadLine());
-    const QByteArray err = client.readLine().trimmed();
-    QVERIFY(!OmaircIpc::responseOk(err));
-    QVERIFY(OmaircIpc::responseError(err).contains(QStringLiteral("Unknown")));
+    QTRY_COMPARE(client.state(), QLocalSocket::UnconnectedState);
 }
 
 void OmaircIpcTest::socketRejectsOversizedLine()
@@ -338,7 +334,7 @@ void OmaircIpcTest::socketRejectsOversizedLine()
     QTRY_COMPARE(client.state(), QLocalSocket::UnconnectedState);
 }
 
-void OmaircIpcTest::socketAcceptsPipelinedSmallLines()
+void OmaircIpcTest::socketClosesAfterOneRequest()
 {
     int handled = 0;
     SingleInstance primary;
@@ -354,20 +350,14 @@ void OmaircIpcTest::socketAcceptsPipelinedSmallLines()
     QVERIFY(client.waitForConnected(1000));
 
     const QByteArray line = QByteArrayLiteral("{\"cmd\":\"raise\"}\n");
-    const int count = (65 * 1024) / line.size() + 8;
-    QByteArray payload;
-    payload.reserve(count * line.size());
-    for (int i = 0; i < count; ++i)
-        payload += line;
+    const QByteArray payload = line + line;
 
     QCOMPARE(client.write(payload), qint64(payload.size()));
-    QVERIFY(client.waitForBytesWritten(5000));
-    QTRY_COMPARE(handled, count);
-    QCOMPARE(client.state(), QLocalSocket::ConnectedState);
-    for (int i = 0; i < count; ++i) {
-        QTRY_VERIFY(client.canReadLine());
-        QVERIFY(OmaircIpc::responseOk(client.readLine().trimmed()));
-    }
+    QVERIFY(client.waitForBytesWritten(1000));
+    QTRY_COMPARE(handled, 1);
+    QTRY_VERIFY(client.canReadLine());
+    QVERIFY(OmaircIpc::responseOk(client.readLine().trimmed()));
+    QTRY_COMPARE(client.state(), QLocalSocket::UnconnectedState);
 }
 
 void OmaircIpcTest::connectionsSortedById()
@@ -435,6 +425,52 @@ void OmaircIpcTest::socketRaisePingWithHandlerRaisesOnce()
     QCOMPARE(raiseFnCount, 0);
     QTRY_VERIFY(client.canReadLine());
     QVERIFY(OmaircIpc::responseOk(client.readLine().trimmed()));
+}
+
+void OmaircIpcTest::socketAcceptsSplitRaisePing()
+{
+    SingleInstance primary;
+    QVERIFY(primary.acquireOrNotify());
+    QSignalSpy spy(&primary, &SingleInstance::activationRequested);
+
+    QLocalSocket client;
+    client.connectToServer(SingleInstance::socketPath());
+    QVERIFY(client.waitForConnected(1000));
+    QCOMPARE(client.write(QByteArrayLiteral("!")), qint64(1));
+    QVERIFY(client.waitForBytesWritten(1000));
+    QCOMPARE(client.write(QByteArrayLiteral("\n")), qint64(1));
+    QVERIFY(client.waitForBytesWritten(1000));
+    QTRY_COMPARE(spy.count(), 1);
+    QTRY_COMPARE(client.state(), QLocalSocket::UnconnectedState);
+}
+
+void OmaircIpcTest::socketExpiresIdleClient()
+{
+    SingleInstance primary;
+    QVERIFY(primary.acquireOrNotify());
+
+    QLocalSocket client;
+    client.connectToServer(SingleInstance::socketPath());
+    QVERIFY(client.waitForConnected(1000));
+    QTRY_COMPARE(client.state(), QLocalSocket::UnconnectedState);
+}
+
+void OmaircIpcTest::socketLimitsConcurrentClients()
+{
+    SingleInstance primary;
+    QVERIFY(primary.acquireOrNotify());
+
+    QVector<QLocalSocket *> clients;
+    for (int i = 0; i < 33; ++i) {
+        auto *client = new QLocalSocket;
+        client->connectToServer(SingleInstance::socketPath());
+        QVERIFY(client->waitForConnected(1000));
+        clients.append(client);
+    }
+
+    QTRY_COMPARE(clients.constLast()->state(), QLocalSocket::UnconnectedState);
+    for (QLocalSocket *client : clients)
+        client->deleteLater();
 }
 
 int runOmaircIpcTests(int argc, char **argv)
