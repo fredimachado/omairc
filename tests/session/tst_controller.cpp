@@ -981,6 +981,7 @@ void ControllerTest::closeDirectMessageClearsOriginNetworkError()
     QCOMPARE(controller.lastErrorForNetwork(QStringLiteral("network-b")),
              QStringLiteral("Part applies to channels"));
 
+    transportA->remoteClose();
     controller.selectConversation(QStringLiteral("network-a"), QStringLiteral("alice"));
     QVERIFY(!controller.sendMessage(QStringLiteral("/part")));
     QCOMPARE(controller.lastErrorForNetwork(QStringLiteral("network-a")),

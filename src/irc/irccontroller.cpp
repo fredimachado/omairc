@@ -550,9 +550,12 @@ IrcCommandOutcome IrcController::dispatch(const IrcCommand& command,
     case IrcCommand::Verb::Part: {
         QString channel = firstToken(command.argument);
         if (channel.isEmpty()) {
+            IrcSession *selected = selectedSession();
+            if (m_selected && selected
+                && selected->state() != IrcSession::State::Registered)
+                return IrcCommandOutcome::NotConnected;
             if (m_selected && !isChannel())
                 return IrcCommandOutcome::WrongScope;
-            IrcSession *selected = selectedSession();
             if (!selected)
                 break;
             if (selected->state() != IrcSession::State::Registered)
@@ -577,9 +580,12 @@ IrcCommandOutcome IrcController::dispatch(const IrcCommand& command,
             sent = active->kick(first, nick, restAfterFirstToken(afterChannel));
             break;
         }
+        IrcSession *selected = selectedSession();
+        if (m_selected && selected
+            && selected->state() != IrcSession::State::Registered)
+            return IrcCommandOutcome::NotConnected;
         if (m_selected && !isChannel())
             return IrcCommandOutcome::WrongScope;
-        IrcSession *selected = selectedSession();
         if (!selected)
             break;
         if (selected->state() != IrcSession::State::Registered)
@@ -977,7 +983,8 @@ void IrcController::setLastError(const QString& networkId, const QString& messag
 
 QString IrcController::errorNetworkId(IrcComposerSurface surface) const
 {
-    return queryNetworkId(surface);
+    const QString networkId = queryNetworkId(surface);
+    return networkId.isEmpty() ? identityNetworkId() : networkId;
 }
 
 QString IrcController::identityNetworkId() const
