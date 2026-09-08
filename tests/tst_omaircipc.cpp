@@ -497,15 +497,25 @@ void OmaircIpcTest::socketLimitsConcurrentClients()
     QVERIFY(primary.acquireOrNotify());
 
     QVector<QLocalSocket *> clients;
-    for (int i = 0; i < 33; ++i) {
+    for (int i = 0; i < 32; ++i) {
         auto *client = new QLocalSocket;
         client->connectToServer(SingleInstance::socketPath());
-        if (i < 32)
-            QVERIFY(client->waitForConnected(1000));
+        QVERIFY(client->waitForConnected(1000));
         clients.append(client);
     }
 
-    QTRY_COMPARE(clients.constLast()->state(), QLocalSocket::UnconnectedState);
+    for (QLocalSocket *client : clients)
+        QCOMPARE(client->state(), QLocalSocket::ConnectedState);
+
+    auto *rejected = new QLocalSocket;
+    rejected->connectToServer(SingleInstance::socketPath());
+    const bool connected = rejected->waitForConnected(1000);
+    Q_UNUSED(connected);
+    QTRY_COMPARE(rejected->state(), QLocalSocket::UnconnectedState);
+    for (QLocalSocket *client : clients)
+        QCOMPARE(client->state(), QLocalSocket::ConnectedState);
+    clients.append(rejected);
+
     for (QLocalSocket *client : clients)
         client->deleteLater();
 }

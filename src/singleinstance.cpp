@@ -169,7 +169,13 @@ void SingleInstance::consumeSocketData(QLocalSocket *socket)
         return;
 
     QByteArray buffer = socket->property("omaircBuffer").toByteArray();
-    const QByteArray incoming = socket->readAll();
+    if (buffer.size() > kMaxIpcInputBytes
+        || socket->bytesAvailable() > kMaxIpcInputBytes - buffer.size()) {
+        rejectSocket(socket);
+        return;
+    }
+
+    const QByteArray incoming = socket->read(kMaxIpcInputBytes - buffer.size());
     buffer += incoming;
     if (!incoming.isEmpty()) {
         if (auto *idleTimer = qobject_cast<QTimer *>(
@@ -208,10 +214,8 @@ void SingleInstance::consumeSocketData(QLocalSocket *socket)
         emit activationRequested();
         if (m_requestHandler)
             finishSocket(socket, OmaircIpc::okResponse() + '\n');
-        else {
-            socket->setProperty("omaircHandled", true);
-            socket->disconnectFromServer();
-        }
+        else
+            finishSocket(socket, QByteArray());
         return;
     }
 
