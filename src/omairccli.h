@@ -16,4 +16,4 @@ int run(QCoreApplication &app);
 std::optional<OmaircIpc::Request> parseArgs(const QStringList &args,
                                             QString &error);
 
-} // namespace OmaircCli
+}

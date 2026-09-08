@@ -45,7 +45,7 @@ QByteArray framesJoin(const QByteArrayList &frames)
     return joined;
 }
 
-} // namespace
+}
 
 class OmaircIpcTest : public QObject
 {

@@ -39,7 +39,7 @@ QJsonObject connectionObject(const ConnectionInfo &info)
     return object;
 }
 
-} // namespace
+}
 
 QByteArray raisePing()
 {
@@ -253,4 +253,4 @@ QString stateLabel(const QString &sessionStateName)
     return QStringLiteral("Offline");
 }
 
-} // namespace OmaircIpc
+}
