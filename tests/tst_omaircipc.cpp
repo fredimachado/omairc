@@ -60,6 +60,7 @@ private slots:
     void parseUnknownCommand();
     void parseSendMissingFields();
     void resolveNetworkRules();
+    void resolveErrorsAreInterfaceNeutral();
     void connectionsResponseShape();
     void handlerRaiseAndUnknown();
     void handlerStatusResolve();
@@ -69,6 +70,7 @@ private slots:
     void socketRejectsOversizedLine();
     void socketAcceptsPipelinedSmallLines();
     void connectionsSortedById();
+    void handlerUsesNetworkScopedErrors();
     void sendAllowsDashPrefixedText();
     void socketRaisePingWithHandlerRaisesOnce();
 };
@@ -164,7 +166,8 @@ void OmaircIpcTest::resolveNetworkRules()
     const QStringList many{QStringLiteral("a"), QStringLiteral("b")};
     auto ambiguous = OmaircIpc::resolveNetworkId(QString(), many);
     QVERIFY(!ambiguous.ok);
-    QVERIFY(ambiguous.error.contains(QStringLiteral("--network")));
+    QCOMPARE(ambiguous.error,
+             QStringLiteral("Multiple connections are available; specify a network id."));
 
     auto explicitId = OmaircIpc::resolveNetworkId(QStringLiteral("b"), many);
     QVERIFY(explicitId.ok);
@@ -173,6 +176,20 @@ void OmaircIpcTest::resolveNetworkRules()
     auto missing = OmaircIpc::resolveNetworkId(QStringLiteral("z"), many);
     QVERIFY(!missing.ok);
     QVERIFY(missing.error.contains(QStringLiteral("Unknown network")));
+}
+
+void OmaircIpcTest::resolveErrorsAreInterfaceNeutral()
+{
+    const auto ambiguous = OmaircIpc::resolveNetworkId(
+        QString(), {QStringLiteral("a"), QStringLiteral("b")});
+    QVERIFY(!ambiguous.ok);
+    QVERIFY(!ambiguous.error.contains(QStringLiteral("--network")));
+    QVERIFY(!ambiguous.error.contains(QStringLiteral("omairc")));
+
+    const auto missing = OmaircIpc::resolveNetworkId(
+        QStringLiteral("z"), {QStringLiteral("a")});
+    QVERIFY(!missing.ok);
+    QVERIFY(!missing.error.contains(QStringLiteral("omairc")));
 }
 
 void OmaircIpcTest::connectionsResponseShape()
@@ -270,6 +287,29 @@ void OmaircIpcTest::handlerConnectionsAndSend()
     QVERIFY(OmaircIpc::responseOk(sendLine));
     QVERIFY(framesJoin(transport->writtenFrames().mid(framesBefore))
                 .contains(QByteArrayLiteral("PRIVMSG #omarchy :hello agents")));
+}
+
+void OmaircIpcTest::handlerUsesNetworkScopedErrors()
+{
+    IrcController controller;
+    auto *transportA = new FakeIrcTransport;
+    auto *transportB = new FakeIrcTransport;
+    QVERIFY(controller.addSession(testConfig(QStringLiteral("net-a")), transportA));
+    auto *sessionB = controller.addSession(testConfig(QStringLiteral("net-b")), transportB);
+    QVERIFY(sessionB);
+    registerSession(sessionB, transportB);
+
+    OmaircIpcHandler handler(&controller);
+    const QByteArray response = handler.handleLine(QByteArrayLiteral(
+        "{\"cmd\":\"send\",\"network\":\"net-a\",\"target\":\"#chan\",\"text\":\"hello\"}"));
+    QVERIFY(!OmaircIpc::responseOk(response));
+    QCOMPARE(OmaircIpc::responseError(response), QStringLiteral("Not connected"));
+
+    const QByteArray status = handler.handleLine(QByteArrayLiteral(
+        "{\"cmd\":\"status\",\"network\":\"net-b\"}"));
+    QVERIFY(OmaircIpc::responseOk(status));
+    QVERIFY(!OmaircIpc::responseStatus(status)
+                 .contains(QStringLiteral("lastError")));
 }
 
 void OmaircIpcTest::socketRaiseStillWorks()

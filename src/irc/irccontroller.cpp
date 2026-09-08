@@ -101,7 +101,7 @@ IrcSession *IrcController::addSession(const IrcSessionConfig& config,
             [this, session](IrcSession::State) { updateStatus(session); });
     connect(session, &IrcSession::errorOccurred, this,
             [this](const QString& networkId, IrcSession::ErrorKind kind, const QString& message) {
-        m_lastError = message;
+        setLastError(networkId, message);
         emit statusChanged();
         emit errorOccurred(networkId, kind, message);
     });
@@ -189,7 +189,12 @@ QString IrcController::connectionStatus() const
 
 QString IrcController::lastError() const
 {
-    return m_lastError;
+    return lastErrorForNetwork(identityNetworkId());
+}
+
+QString IrcController::lastErrorForNetwork(const QString& networkId) const
+{
+    return m_lastErrors.value(networkId);
 }
 
 QString IrcController::currentNick() const
@@ -305,13 +310,13 @@ bool IrcController::start(const QString& networkId)
 {
     IrcSession *session = m_sessions.findSession(networkId);
     if (!session) {
-        m_lastError = QStringLiteral("That network is not configured");
+        setLastError(networkId, QStringLiteral("That network is not configured"));
         emit statusChanged();
         return false;
     }
     const QString previousId = identityNetworkId();
     const bool previousAway = selfAway();
-    m_lastError.clear();
+    setLastError(networkId, {});
     m_console.setNetwork(networkId);
     const bool started = m_sessions.activateSession(networkId);
     updateStatus(session);
@@ -366,10 +371,11 @@ void IrcController::closeDirectMessage()
 {
     if (!selectedIsCloseableDirect())
         return;
+    const QString networkId = identityNetworkId();
     dropSelectedDirectAndReselect();
-    if (m_lastError.isEmpty())
+    if (lastErrorForNetwork(networkId).isEmpty())
         return;
-    m_lastError.clear();
+    setLastError(networkId, {});
     emit statusChanged();
 }
 
@@ -448,33 +454,33 @@ bool IrcController::sendToTarget(const QString &networkId,
 {
     // Explicit target path for local IPC/CLI. Does not change the UI selection.
     if (networkId.isEmpty() || target.isEmpty() || text.isEmpty()) {
-        m_lastError = QStringLiteral("Missing network, target, or text");
+        setLastError(networkId, QStringLiteral("Missing network, target, or text"));
         emit statusChanged();
         return false;
     }
 
     IrcSession *session = m_sessions.findSession(networkId);
     if (!session) {
-        m_lastError = QStringLiteral("That network is not configured");
+        setLastError(networkId, QStringLiteral("That network is not configured"));
         emit statusChanged();
         return false;
     }
     if (session->state() != IrcSession::State::Registered) {
-        m_lastError = QStringLiteral("Not connected");
+        setLastError(networkId, QStringLiteral("Not connected"));
         emit statusChanged();
         return false;
     }
 
     const bool sent = session->sendPrivmsg(target, text);
     if (!sent) {
-        m_lastError = QStringLiteral("Failed to send message");
+        setLastError(networkId, QStringLiteral("Failed to send message"));
         emit statusChanged();
         return false;
     }
 
     echoIfPresent(session, target, text, QuietWire::Privmsg);
     unawayAfterChat(session);
-    m_lastError.clear();
+    setLastError(networkId, {});
     emit statusChanged();
     return true;
 }
@@ -799,7 +805,7 @@ void IrcController::echoIfPresent(IrcSession *session,
 void IrcController::unawayAfterChat(IrcSession *session)
 {
     const QString networkId = session->networkId();
-    if (selfAway() && !m_unawaySent.contains(networkId)) {
+    if (m_reducer.selfAway(networkId) && !m_unawaySent.contains(networkId)) {
         if (session->clearAway())
             m_unawaySent.insert(networkId);
     }
@@ -819,9 +825,12 @@ IrcCommandOutcome IrcController::clearSurface(IrcComposerSurface surface)
 
 bool IrcController::report(IrcCommandOutcome outcome, const IrcCommand& command)
 {
-    m_lastError = outcome == IrcCommandOutcome::Sent
+    const QString networkId = errorNetworkId(
+        m_console.isOpen() ? IrcComposerSurface::Status
+                           : IrcComposerSurface::Conversation);
+    setLastError(networkId, outcome == IrcCommandOutcome::Sent
         ? QString{}
-        : ircCommandOutcomeText(outcome, command);
+        : ircCommandOutcomeText(outcome, command));
     emit statusChanged();
     return outcome == IrcCommandOutcome::Sent;
 }
@@ -956,6 +965,19 @@ void IrcController::reloadModels()
 IrcSession *IrcController::selectedSession() const
 {
     return m_selected ? m_sessions.findSession(m_selected->networkId) : nullptr;
+}
+
+void IrcController::setLastError(const QString& networkId, const QString& message)
+{
+    if (message.isEmpty())
+        m_lastErrors.remove(networkId);
+    else
+        m_lastErrors.insert(networkId, message);
+}
+
+QString IrcController::errorNetworkId(IrcComposerSurface surface) const
+{
+    return queryNetworkId(surface);
 }
 
 QString IrcController::identityNetworkId() const
