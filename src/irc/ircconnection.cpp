@@ -166,6 +166,11 @@ QString IrcConnection::credentialError() const
 
 QString IrcConnection::credentialStatus() const
 {
+    if (m_passwordEdited && !m_password.isEmpty()
+        && (m_credentialState == CredentialStore::State::Available
+            || m_credentialState == CredentialStore::State::Missing)) {
+        return QStringLiteral("password changed; apply to save securely");
+    }
     switch (m_credentialState) {
     case CredentialStore::State::Loading:
         return QStringLiteral("checking secure storage");
@@ -298,8 +303,7 @@ void IrcConnection::setPassword(const QString &password)
         return;
     m_password = password;
     m_passwordEdited = true;
-    if (m_credentialState == CredentialStore::State::Unavailable
-        || m_credentialState == CredentialStore::State::Error) {
+    if (m_credentialState == CredentialStore::State::Unavailable) {
         m_credentialState = CredentialStore::State::SessionOnly;
     } else if (password.isEmpty()) {
         m_credentialState = CredentialStore::State::Missing;

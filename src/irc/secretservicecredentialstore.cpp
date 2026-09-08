@@ -9,6 +9,14 @@ QString keyName(const CredentialKey &key)
     return QStringLiteral("%1/%2/%3").arg(
         key.networkId, key.username, key.host);
 }
+
+CredentialStore::State stateForError(const QKeychain::Error error)
+{
+    return error == QKeychain::NoBackendAvailable
+            || error == QKeychain::NotImplemented
+        ? CredentialStore::State::Unavailable
+        : CredentialStore::State::Error;
+}
 }
 
 SecretServiceCredentialStore::SecretServiceCredentialStore(QObject *parent)
@@ -29,7 +37,7 @@ void SecretServiceCredentialStore::read(const CredentialKey &key)
         } else if (job->error() == QKeychain::EntryNotFound) {
             emit readFinished(State::Missing, {}, {});
         } else {
-            emit readFinished(State::Error, {}, job->errorString());
+            emit readFinished(stateForError(job->error()), {}, job->errorString());
         }
         job->deleteLater();
     });
@@ -43,9 +51,9 @@ void SecretServiceCredentialStore::write(const CredentialKey &key,
     job->setKey(keyName(key));
     job->setTextData(password);
     connect(job, &QKeychain::Job::finished, this, [this, job]() {
-        emit writeFinished(job->error() == QKeychain::NoError
-                               ? State::Available : State::Error,
-                           job->errorString());
+        const bool success = job->error() == QKeychain::NoError;
+        emit writeFinished(success ? State::Available : stateForError(job->error()),
+                           success ? QString() : job->errorString());
         job->deleteLater();
     });
     job->start();
@@ -58,7 +66,7 @@ void SecretServiceCredentialStore::remove(const CredentialKey &key)
     connect(job, &QKeychain::Job::finished, this, [this, job]() {
         const bool missing = job->error() == QKeychain::NoError
             || job->error() == QKeychain::EntryNotFound;
-        emit writeFinished(missing ? State::Missing : State::Error,
+        emit writeFinished(missing ? State::Missing : stateForError(job->error()),
                            missing ? QString() : job->errorString());
         job->deleteLater();
     });
