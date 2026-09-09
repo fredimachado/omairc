@@ -3,6 +3,7 @@
 #include <QTest>
 
 #include "fakeirctransport.h"
+#include "irccapability.h"
 #include "irccontroller.h"
 #include "memberlistmodel.h"
 #include "messagelistmodel.h"
@@ -171,6 +172,10 @@ private slots:
     void incomingNickCaseOnlyRetargetsDirect();
     void welcomeAssignedNickRoutesDirectMessages();
     void echoIfPresentUsesAssignedNick();
+    void echoMessageAckSkipsLocalPrivmsg();
+    void echoMessageAbsentStillEchoesLocally();
+    void echoMessageAckSkipsMsgEcho();
+    void chghostLeavesMemberNickAndRanks();
 };
 
 void ControllerTest::reducesTrafficAndRoutesOutboundByNetwork()
@@ -2169,6 +2174,145 @@ void ControllerTest::echoIfPresentUsesAssignedNick()
              QStringLiteral("later"));
     QCOMPARE(roleAt(messages, messages->rowCount() - 1, MessageListModel::AuthorRole),
              QStringLiteral("omairc-truncated"));
+}
+
+void ControllerTest::echoMessageAckSkipsLocalPrivmsg()
+{
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+                                                transport);
+    QVERIFY(session);
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    transport->completeConnect();
+    transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :echo-message\r\n"
+                          ":server CAP omairc ACK :echo-message\r\n"
+                          ":server 001 omairc :Welcome\r\n"
+                          ":omairc!u@h JOIN :#omarchy\r\n"
+                          ":server 353 omairc = #omarchy :omairc Alice\r\n"
+                          ":server 366 omairc #omarchy :End of NAMES\r\n"));
+    QVERIFY(session->capabilities().contains(IrcCapability::EchoMessage));
+
+    auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
+    QVERIFY(messages);
+    const int rowsAfterJoin = messages->rowCount();
+    QVERIFY(rowsAfterJoin > 0);
+
+    QVERIFY(controller.sendMessage(QStringLiteral("hello")));
+    QCOMPARE(transport->writtenFrames().last(),
+             QByteArrayLiteral("PRIVMSG #omarchy :hello\r\n"));
+    QCOMPARE(messages->rowCount(), rowsAfterJoin);
+
+    QVERIFY(controller.sendMessage(QStringLiteral("/me waves")));
+    QCOMPARE(transport->writtenFrames().last(),
+             QByteArray("PRIVMSG #omarchy :\x01" "ACTION waves\x01\r\n"));
+    QCOMPARE(messages->rowCount(), rowsAfterJoin);
+
+    transport->injectBytes(
+        QByteArrayLiteral(":omairc!u@h PRIVMSG #omarchy :hello\r\n"));
+    QCOMPARE(messages->rowCount(), rowsAfterJoin + 1);
+    QCOMPARE(roleAt(messages, rowsAfterJoin, MessageListModel::BodyRole),
+             QStringLiteral("hello"));
+    QCOMPARE(roleAt(messages, rowsAfterJoin, MessageListModel::AuthorRole),
+             QStringLiteral("omairc"));
+}
+
+void ControllerTest::echoMessageAbsentStillEchoesLocally()
+{
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+                                                transport);
+    QVERIFY(session);
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    transport->completeConnect();
+    transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :echo-message\r\n"
+                          ":server 001 omairc :Welcome\r\n"
+                          ":omairc!u@h JOIN :#omarchy\r\n"
+                          ":server 353 omairc = #omarchy :omairc Alice\r\n"
+                          ":server 366 omairc #omarchy :End of NAMES\r\n"));
+    QVERIFY(!session->capabilities().contains(IrcCapability::EchoMessage));
+
+    auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
+    QVERIFY(messages);
+    const int rowsAfterJoin = messages->rowCount();
+
+    QVERIFY(controller.sendMessage(QStringLiteral("hello")));
+    QCOMPARE(messages->rowCount(), rowsAfterJoin + 1);
+    QCOMPARE(roleAt(messages, rowsAfterJoin, MessageListModel::BodyRole),
+             QStringLiteral("hello"));
+    QCOMPARE(roleAt(messages, rowsAfterJoin, MessageListModel::AuthorRole),
+             QStringLiteral("omairc"));
+}
+
+void ControllerTest::echoMessageAckSkipsMsgEcho()
+{
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+                                                transport);
+    QVERIFY(session);
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    transport->completeConnect();
+    transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :echo-message\r\n"
+                          ":server CAP omairc ACK :echo-message\r\n"
+                          ":server 001 omairc :Welcome\r\n"
+                          ":omairc!u@h JOIN :#omarchy\r\n"
+                          ":lena!u@h PRIVMSG omairc :hi\r\n"));
+    QVERIFY(session->capabilities().contains(IrcCapability::EchoMessage));
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+
+    auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
+    QVERIFY(messages);
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("lena"));
+    const int rowsBeforeMsg = messages->rowCount();
+
+    QVERIFY(controller.sendMessage(QStringLiteral("/msg lena later")));
+    QCOMPARE(transport->writtenFrames().last(),
+             QByteArrayLiteral("PRIVMSG lena :later\r\n"));
+    QCOMPARE(messages->rowCount(), rowsBeforeMsg);
+
+    transport->injectBytes(
+        QByteArrayLiteral(":omairc!u@h PRIVMSG lena :later\r\n"));
+    QCOMPARE(messages->rowCount(), rowsBeforeMsg + 1);
+    QCOMPARE(roleAt(messages, messages->rowCount() - 1, MessageListModel::BodyRole),
+             QStringLiteral("later"));
+}
+
+void ControllerTest::chghostLeavesMemberNickAndRanks()
+{
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+                                                transport);
+    QVERIFY(session);
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    transport->completeConnect();
+    transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :chghost\r\n"
+                          ":server CAP omairc ACK :chghost\r\n"
+                          ":server 001 omairc :Welcome\r\n"
+                          ":server 005 omairc CHANTYPES=# PREFIX=(ov)@+ "
+                          ":are supported by this server\r\n"
+                          ":omairc!u@h JOIN :#omarchy\r\n"
+                          ":server 353 omairc = #omarchy :@omairc +Alice\r\n"
+                          ":server 366 omairc #omarchy :End of NAMES\r\n"));
+
+    auto *members = qobject_cast<QAbstractItemModel *>(controller.members());
+    QVERIFY(members);
+    QCOMPARE(members->rowCount(), 2);
+    QCOMPARE(roleAt(members, 0, MemberListModel::NickRole), QStringLiteral("Alice"));
+    QCOMPARE(roleAt(members, 0, MemberListModel::LabelRole), QStringLiteral("+Alice"));
+
+    transport->injectBytes(
+        QByteArrayLiteral(":Alice!olduser@oldhost CHGHOST newuser newhost\r\n"
+                          ":Alice!newuser@newhost CHGHOST\r\n"));
+    QCOMPARE(members->rowCount(), 2);
+    QCOMPARE(roleAt(members, 0, MemberListModel::NickRole), QStringLiteral("Alice"));
+    QCOMPARE(roleAt(members, 0, MemberListModel::LabelRole), QStringLiteral("+Alice"));
 }
 
 int runControllerTests(int argc, char **argv)

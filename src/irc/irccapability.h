@@ -10,6 +10,10 @@ enum class IrcCapability {
     Batch,
     MemberMetadata,
     MessageTags,
+    MultiPrefix,
+    Chghost,
+    CapNotify,
+    EchoMessage,
 };
 
 class IrcCapabilitySet

@@ -795,6 +795,10 @@ void IrcController::echoIfPresent(IrcSession *session,
                                   const QString& body,
                                   QuietWire wire)
 {
+    if (wire == QuietWire::Privmsg
+        && session->capabilities().contains(IrcCapability::EchoMessage)) {
+        return;
+    }
     const IrcConversationKey key =
         m_reducer.conversationKey(session->networkId(), target);
     if (!m_reducer.find(key) && !(m_selected && *m_selected == key))
@@ -845,6 +849,10 @@ void IrcController::echoLocal(IrcMessageKind kind, const QString& body)
 {
     if (!m_selected || body.isEmpty())
         return;
+    if (m_capabilities.value(m_selected->networkId)
+            .contains(IrcCapability::EchoMessage)) {
+        return;
+    }
     const QDateTime now = QDateTime::currentDateTimeUtc();
     const QString nick = currentNick();
     if (kind == IrcMessageKind::Action) {
