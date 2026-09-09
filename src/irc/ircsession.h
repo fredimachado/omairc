@@ -139,6 +139,7 @@ private:
     void probeChannelAway(const QString& channel);
     void handleMetadataSyncLater(const IrcMessage &message);
     void sendRegistration();
+    bool tryRegistrationNickFallback();
     void sendLine(const QByteArray &line);
     void handleBytes(const QByteArray &bytes);
     void handleMessage(const IrcMessage &message);
@@ -161,6 +162,12 @@ private:
         Probing,
     };
 
+    enum class RegistrationNick {
+        Configured,
+        Underscore,
+        Digit,
+    };
+
     const IrcSessionConfig m_config;
     QString m_nick;
     IrcTransport *m_transport;
@@ -176,6 +183,7 @@ private:
     bool m_expectedDisconnect = false;
     bool m_reconnectAfterDisconnect = false;
     bool m_registrationSent = false;
+    RegistrationNick m_registrationNick = RegistrationNick::Configured;
     bool m_saslRequested = false;
     bool m_saslPending = false;
     bool m_capabilityNegotiationEnded = false;
