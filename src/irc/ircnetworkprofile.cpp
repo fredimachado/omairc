@@ -52,6 +52,11 @@ QStringList IrcNetworkProfile::parseAutojoin(const QString &channels)
     return result;
 }
 
+QStringList IrcNetworkProfile::canonicalizeChannels(const QString &channels)
+{
+    return splitAutojoin(parseAutojoin(channels));
+}
+
 IrcNetworkProfile IrcNetworkProfile::create()
 {
     IrcNetworkProfile profile;

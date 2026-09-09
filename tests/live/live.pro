@@ -42,6 +42,7 @@ HEADERS += \
     ../../src/irc/messagelistmodel.h \
     ../../src/irc/memberlistmodel.h \
     ../../src/irc/irccontroller.h \
+    ../../src/irc/ircnetworkprofile.h \
     ../../src/irc/qtirctransport.h \
     liveharness.h \
     livepeer.h
@@ -77,4 +78,5 @@ SOURCES += \
     ../../src/irc/messagelistmodel.cpp \
     ../../src/irc/memberlistmodel.cpp \
     ../../src/irc/irccontroller.cpp \
+    ../../src/irc/ircnetworkprofile.cpp \
     ../../src/irc/qtirctransport.cpp

@@ -3,6 +3,7 @@
 #include "ircchannelmode.h"
 #include "irccommand.h"
 #include "irceventtranslator.h"
+#include "ircnetworkprofile.h"
 #include "ircviewnotify.h"
 #include "irctyping.h"
 
@@ -543,8 +544,11 @@ IrcCommandOutcome IrcController::dispatch(const IrcCommand& command,
     bool sent = false;
     switch (command.verb) {
     case IrcCommand::Verb::Join: {
-        const QString channel = firstToken(command.argument);
-        sent = !channel.isEmpty() && active->join(channel);
+        const QStringList channels =
+            IrcNetworkProfile::canonicalizeChannels(command.argument);
+        sent = !channels.isEmpty();
+        for (const QString &channel : channels)
+            sent = active->join(channel) && sent;
         break;
     }
     case IrcCommand::Verb::Part: {

@@ -26,7 +26,7 @@ const QVector<IrcVerbSpec>& IrcVerbTable::all()
         {IrcCommand::Verb::Action, QStringLiteral("me"), {},
          QStringLiteral("/me <text>"), IrcVerbScope::Conversation, {}},
         {IrcCommand::Verb::Join, QStringLiteral("join"), {QStringLiteral("j")},
-         QStringLiteral("/join <channel>"), IrcVerbScope::Either, {}},
+         QStringLiteral("/join <channel>[, channel...]"), IrcVerbScope::Either, {}},
         {IrcCommand::Verb::Part, QStringLiteral("part"), {QStringLiteral("leave")},
          QStringLiteral("/part [channel]"), IrcVerbScope::Either,
          QStringLiteral("Part applies to channels")},

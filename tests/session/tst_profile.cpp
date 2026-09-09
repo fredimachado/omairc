@@ -71,6 +71,10 @@ void ProfileTest::validateRefusesIncompleteAndUnsendable()
         QStringLiteral("omarchy &local"));
     QCOMPARE(profile.normalized().autojoinChannels,
              QStringList({QStringLiteral("#omarchy"), QStringLiteral("&local")}));
+    QCOMPARE(IrcNetworkProfile::canonicalizeChannels(
+                 QStringLiteral("omarchy, #desktop  ricing")),
+             QStringList({QStringLiteral("#omarchy"), QStringLiteral("#desktop"),
+                          QStringLiteral("#ricing")}));
     QVERIFY(profile.isComplete());
 
     profile.host.clear();

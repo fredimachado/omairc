@@ -41,6 +41,8 @@ private slots:
     void foldedNickCollision();
     void incomingDirectReply_data();
     void incomingDirectReply();
+    void joinMultipleChannels_data();
+    void joinMultipleChannels();
 };
 
 namespace
@@ -517,6 +519,40 @@ void LiveIrcdTest::incomingDirectReply()
     }),
              qPrintable(daemonName + QLatin1Char(' ')
                         + QStringLiteral("peer did not receive DM reply")));
+}
+
+void LiveIrcdTest::joinMultipleChannels_data()
+{
+    QTest::addColumn<QString>("daemonName");
+    fillDaemonRows();
+}
+
+void LiveIrcdTest::joinMultipleChannels()
+{
+    QFETCH(QString, daemonName);
+    const LiveDaemonInfo *daemon = liveDaemon(daemonName);
+    QVERIFY(daemon);
+    LiveClient client(*daemon, uniqueNick(daemon->nickLength), daemon->plainPort == 0);
+    QVERIFY(client.waitRegistered());
+    const QString first = uniqueChannel();
+    const QString second = uniqueChannel();
+    QVERIFY(client.controller.sendMessage(
+        QStringLiteral("/join %1, %2").arg(first, second.mid(1))));
+
+    QVERIFY(waitUntil([&] {
+        int ends = 0;
+        for (const IrcMessage &message : client.incoming) {
+            if (message.command != "366" || message.parameters.size() < 2)
+                continue;
+            const QString channel = messageText(message.parameters[1]);
+            if (sameFolded(channel, first) || sameFolded(channel, second))
+                ++ends;
+        }
+        return ends >= 2;
+    }));
+    auto *conversations = client.controller.conversations();
+    QVERIFY(conversationRow(conversations, first) >= 0);
+    QVERIFY(conversationRow(conversations, second) >= 0);
 }
 
 int runLiveIrcdTests(int argc, char **argv)
