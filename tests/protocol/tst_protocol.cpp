@@ -15,16 +15,24 @@
  * Omairc adapted the protocol behavior and tests from IRCClient.
  */
 
-#include <QTest>
+#include <QDate>
+#include <QDateTime>
 #include <QString>
+#include <QTest>
+#include <QTime>
+#include <QTimeZone>
 
 #include "irccommandbuilder.h"
+#include "ircevent.h"
+#include "irceventtranslator.h"
 #include "ircframer.h"
 #include "ircparser.h"
+#include "ircserverfeatures.h"
 #include "ircwiretext.h"
 
 #include <string>
 #include <string_view>
+#include <variant>
 #include <vector>
 
 namespace
@@ -32,6 +40,25 @@ namespace
 QString text(const std::string& value)
 {
     return QString::fromUtf8(value.data(), static_cast<qsizetype>(value.size()));
+}
+
+std::vector<IrcEvent> translate(const IrcMessage& message)
+{
+    const IrcServerFeatures features;
+    return IrcEventTranslator::translate(
+        QStringLiteral("net"), QStringLiteral("me"), features, message);
+}
+
+QDateTime exampleServerTime()
+{
+    return QDateTime(QDate(2011, 10, 19), QTime(16, 40, 51, 620), QTimeZone::UTC);
+}
+
+bool isNearCurrentUtc(const QDateTime& value)
+{
+    if (!value.isValid())
+        return false;
+    return qAbs(value.toUTC().msecsTo(QDateTime::currentDateTimeUtc())) < 5000;
 }
 }
 
@@ -61,6 +88,10 @@ private slots:
     void rejectsInvalidRegistration();
     void rejectsOutboundInjection();
     void enforcesOutboundBoundary();
+    void privmsgUsesIrcv3TimeTag();
+    void privmsgWithoutTimeUsesCurrentUtc();
+    void privmsgInvalidTimeUsesCurrentUtc();
+    void actionAndTypingUseIrcv3TimeTag();
 };
 
 void ProtocolTest::parsesTrailingParameters()
@@ -366,6 +397,73 @@ void ProtocolTest::enforcesOutboundBoundary()
 
     result = IrcCommandBuilder::line(std::string(511, 'A'));
     QVERIFY(!result);
+}
+
+void ProtocolTest::privmsgUsesIrcv3TimeTag()
+{
+    const auto parsed = IrcParser::parse(
+        "@time=2011-10-19T16:40:51.620Z :n!u@h PRIVMSG #c :hello");
+    QVERIFY(parsed);
+    const std::vector<IrcEvent> events = translate(*parsed.value);
+    QCOMPARE(events.size(), std::size_t(1));
+    const auto *message = std::get_if<IrcMessageEvent>(&events.front());
+    QVERIFY(message);
+    QCOMPARE(message->body, QStringLiteral("hello"));
+    QCOMPARE(message->timestamp.toUTC().toMSecsSinceEpoch(),
+             exampleServerTime().toMSecsSinceEpoch());
+}
+
+void ProtocolTest::privmsgWithoutTimeUsesCurrentUtc()
+{
+    const auto parsed = IrcParser::parse(":n!u@h PRIVMSG #c :hello");
+    QVERIFY(parsed);
+    const std::vector<IrcEvent> events = translate(*parsed.value);
+    QCOMPARE(events.size(), std::size_t(1));
+    const auto *message = std::get_if<IrcMessageEvent>(&events.front());
+    QVERIFY(message);
+    QVERIFY(isNearCurrentUtc(message->timestamp));
+    QVERIFY(message->timestamp.toUTC().toMSecsSinceEpoch()
+            != exampleServerTime().toMSecsSinceEpoch());
+}
+
+void ProtocolTest::privmsgInvalidTimeUsesCurrentUtc()
+{
+    const auto parsed = IrcParser::parse(
+        "@time=not-a-timestamp :n!u@h PRIVMSG #c :hello");
+    QVERIFY(parsed);
+    const std::vector<IrcEvent> events = translate(*parsed.value);
+    QCOMPARE(events.size(), std::size_t(1));
+    const auto *message = std::get_if<IrcMessageEvent>(&events.front());
+    QVERIFY(message);
+    QVERIFY(isNearCurrentUtc(message->timestamp));
+    QVERIFY(message->timestamp.toUTC().toMSecsSinceEpoch()
+            != exampleServerTime().toMSecsSinceEpoch());
+}
+
+void ProtocolTest::actionAndTypingUseIrcv3TimeTag()
+{
+    const auto action = IrcParser::parse(
+        "@time=2011-10-19T16:40:51.620Z :n!u@h PRIVMSG #c :\x01"
+        "ACTION waves\x01");
+    QVERIFY(action);
+    const std::vector<IrcEvent> actionEvents = translate(*action.value);
+    QCOMPARE(actionEvents.size(), std::size_t(1));
+    const auto *actionEvent = std::get_if<IrcActionEvent>(&actionEvents.front());
+    QVERIFY(actionEvent);
+    QCOMPARE(actionEvent->body, QStringLiteral("waves"));
+    QCOMPARE(actionEvent->timestamp.toUTC().toMSecsSinceEpoch(),
+             exampleServerTime().toMSecsSinceEpoch());
+
+    const auto typing = IrcParser::parse(
+        "@time=2011-10-19T16:40:51.620Z;+typing=active :n!u@h TAGMSG #c");
+    QVERIFY(typing);
+    const std::vector<IrcEvent> typingEvents = translate(*typing.value);
+    QCOMPARE(typingEvents.size(), std::size_t(1));
+    const auto *typingEvent = std::get_if<IrcTypingEvent>(&typingEvents.front());
+    QVERIFY(typingEvent);
+    QCOMPARE(typingEvent->phase, IrcTypingPhase::Active);
+    QCOMPARE(typingEvent->receivedAt.toUTC().toMSecsSinceEpoch(),
+             exampleServerTime().toMSecsSinceEpoch());
 }
 
 int runProtocolTests(int argc, char **argv)
