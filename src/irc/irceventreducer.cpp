@@ -143,6 +143,7 @@ void IrcEventReducer::clearMessages(const IrcConversationKey& key)
     IrcConversationState *conversation = findMutable(key);
     if (!conversation)
         return;
+    conversation->trimmed += int(conversation->messages.size());
     conversation->messages.clear();
 }
 
@@ -375,6 +376,7 @@ void IrcEventReducer::appendChat(const IrcConversationKey& key,
     IrcConversationState& conversation =
         ensureConversation(key, displayTarget);
     conversation.messages.push_back({author, body, timestamp, kind});
+    capMessages(conversation);
     clearTyping(conversation, normalize(key.networkId, author));
 
     if (isSelf(key.networkId, author) || (m_selected && *m_selected == key))
@@ -392,6 +394,17 @@ void IrcEventReducer::appendEvent(IrcConversationState& conversation,
 {
     conversation.messages.push_back(
         {QString(), body, QDateTime(), IrcMessageKind::Event});
+    capMessages(conversation);
+}
+
+void IrcEventReducer::capMessages(IrcConversationState& conversation)
+{
+    auto& messages = conversation.messages;
+    const int extra = int(messages.size()) - kMaxMessages;
+    if (extra <= 0)
+        return;
+    messages.erase(messages.begin(), messages.begin() + extra);
+    conversation.trimmed += extra;
 }
 
 void IrcEventReducer::reduce(const IrcWelcomeEvent& event)
@@ -542,6 +555,7 @@ void IrcEventReducer::reduce(const IrcNickEvent& event)
         existing->second.messages.insert(existing->second.messages.end(),
                                          moved.messages.begin(),
                                          moved.messages.end());
+        capMessages(existing->second);
         existing->second.unread += moved.unread;
         existing->second.mentions += moved.mentions;
         for (auto& hint : moved.typing)

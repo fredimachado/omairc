@@ -70,6 +70,7 @@ struct IrcConversationState
     std::map<QString, IrcTypingHint> typing;
     int unread = 0;
     int mentions = 0;
+    int trimmed = 0;
 
     bool isChannel() const noexcept;
     const IrcChannelState *channel() const noexcept;
@@ -93,6 +94,7 @@ public:
     std::optional<IrcConversationKey> selected() const;
 
     static constexpr qint64 kStaleNamesSyncMs = 30000;
+    static constexpr int kMaxMessages = 2000;
 
     void apply(const IrcEvent& event);
     bool releaseStaleNamesSync(const std::optional<IrcConversationKey>& key,
@@ -131,6 +133,7 @@ private:
                     const QDateTime& timestamp,
                     IrcMessageKind kind);
     void appendEvent(IrcConversationState& conversation, const QString& body);
+    void capMessages(IrcConversationState& conversation);
 
     void reduce(const IrcWelcomeEvent& event);
     void reduce(const IrcMessageEvent& event);

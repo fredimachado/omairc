@@ -46,6 +46,8 @@ private slots:
     void joinOfListedNickKeepsRanks();
     void dropDirectMessageErasesOnlyDirectRows();
     void clearMessagesWipesTranscriptKeepsRow();
+    void messagesCapAtTwoThousandFifo();
+    void clearMessagesEmptiesAfterCap();
     void selfAwayIsNetworkMembershipNotMemberPresence();
     void staleNamesSyncReleasesAfterThirtySeconds();
 };
@@ -605,6 +607,57 @@ void ReducerTest::clearMessagesWipesTranscriptKeepsRow()
     QVERIFY(!reducer.dropDirectMessage(channel));
     QVERIFY(reducer.find(channel));
     QCOMPARE(reducer.conversations().size(), std::size_t(1));
+}
+
+void ReducerTest::messagesCapAtTwoThousandFifo()
+{
+    IrcEventReducer reducer;
+    welcome(reducer, networkA);
+    const IrcConversationKey room =
+        reducer.conversationKey(networkA, QStringLiteral("#room"));
+
+    for (int i = 0; i < 2001; ++i) {
+        reducer.apply(IrcMessageEvent{
+            room, QStringLiteral("Alice"), QString::number(i), timestamp,
+            QStringLiteral("#room")});
+    }
+
+    const IrcConversationState *conversation = reducer.find(room);
+    QVERIFY(conversation);
+    QCOMPARE(conversation->messages.size(), std::size_t(2000));
+    QCOMPARE(conversation->messages.front().body, QStringLiteral("1"));
+    QCOMPARE(conversation->messages.back().body, QStringLiteral("2000"));
+    QCOMPARE(conversation->trimmed, 1);
+
+    reducer.apply(IrcJoinEvent{
+        networkA, QStringLiteral("#room"), QStringLiteral("Bob")});
+    QCOMPARE(conversation->messages.size(), std::size_t(2000));
+    QCOMPARE(conversation->messages.front().body, QStringLiteral("2"));
+    QCOMPARE(conversation->messages.back().body, QStringLiteral("Bob joined"));
+    QCOMPARE(conversation->messages.back().kind, IrcMessageKind::Event);
+    QCOMPARE(conversation->trimmed, 2);
+}
+
+void ReducerTest::clearMessagesEmptiesAfterCap()
+{
+    IrcEventReducer reducer;
+    welcome(reducer, networkA);
+    const IrcConversationKey room =
+        reducer.conversationKey(networkA, QStringLiteral("#room"));
+
+    for (int i = 0; i < 2001; ++i) {
+        reducer.apply(IrcMessageEvent{
+            room, QStringLiteral("Alice"), QString::number(i), timestamp,
+            QStringLiteral("#room")});
+    }
+
+    const IrcConversationState *conversation = reducer.find(room);
+    QVERIFY(conversation);
+    QCOMPARE(conversation->messages.size(), std::size_t(2000));
+    reducer.clearMessages(room);
+    QCOMPARE(conversation->messages.size(), std::size_t(0));
+    QCOMPARE(conversation->trimmed, 2001);
+    QVERIFY(reducer.find(room));
 }
 
 void ReducerTest::selfAwayIsNetworkMembershipNotMemberPresence()

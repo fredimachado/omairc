@@ -79,25 +79,42 @@ QHash<int, QByteArray> MessageListModel::roleNames() const
 void MessageListModel::reload()
 {
     int count = 0;
+    int trimmed = 0;
     if (m_selected) {
-        if (const IrcConversationState *conversation = m_reducer.find(*m_selected))
+        if (const IrcConversationState *conversation = m_reducer.find(*m_selected)) {
             count = int(conversation->messages.size());
+            trimmed = conversation->trimmed;
+        }
     }
 
     const bool sameConversation = m_selected.has_value() == m_loaded.has_value()
         && (!m_selected || *m_selected == *m_loaded);
-    if (sameConversation && count > m_count) {
-        beginInsertRows(QModelIndex(), m_count, count - 1);
-        m_count = count;
-        endInsertRows();
-        return;
+    if (sameConversation) {
+        int removed = trimmed - m_trimmed;
+        if (removed < 0)
+            removed = 0;
+        if (removed > m_count)
+            removed = m_count;
+        if (removed > 0) {
+            beginRemoveRows(QModelIndex(), 0, removed - 1);
+            m_count -= removed;
+            m_trimmed = trimmed;
+            endRemoveRows();
+        }
+        if (count > m_count) {
+            beginInsertRows(QModelIndex(), m_count, count - 1);
+            m_count = count;
+            endInsertRows();
+            return;
+        }
+        if (count == m_count)
+            return;
     }
-    if (sameConversation && count == m_count)
-        return;
 
     beginResetModel();
     m_count = count;
     m_loaded = m_selected;
+    m_trimmed = trimmed;
     endResetModel();
 }
 
