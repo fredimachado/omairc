@@ -28,6 +28,7 @@ public:
 
     Q_INVOKABLE QVariantMap windowGeometry() const;
     Q_INVOKABLE void saveWindowGeometry(int x, int y, int width, int height, bool maximized);
+    Q_INVOKABLE void notifyDesktop(const QString &summary, const QString &body);
 
 signals:
     void darkModeChanged();

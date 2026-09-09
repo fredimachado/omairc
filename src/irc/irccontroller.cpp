@@ -916,6 +916,8 @@ void IrcController::apply(const IrcEvent& event)
     if (notify.rearmTyping)
         armTypingRefresh();
     notifySelfAwayIfChanged(previousId, previousAway);
+    if (std::optional<IrcMentionArrival> mention = m_reducer.takeMentionArrival())
+        emit mentionArrived(mention->author, mention->body);
 }
 
 void IrcController::publish(const IrcViewNotify& notify)

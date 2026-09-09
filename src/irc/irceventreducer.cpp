@@ -125,7 +125,15 @@ std::optional<IrcConversationKey> IrcEventReducer::selected() const
 
 void IrcEventReducer::apply(const IrcEvent& event)
 {
+    m_mentionArrival.reset();
     std::visit([this](const auto& value) { reduce(value); }, event);
+}
+
+std::optional<IrcMentionArrival> IrcEventReducer::takeMentionArrival()
+{
+    std::optional<IrcMentionArrival> mention = m_mentionArrival;
+    m_mentionArrival.reset();
+    return mention;
 }
 
 bool IrcEventReducer::releaseStaleNamesSync(const std::optional<IrcConversationKey>& key,
@@ -395,14 +403,19 @@ void IrcEventReducer::appendChat(const IrcConversationKey& key,
     capMessages(conversation);
     clearTyping(conversation, normalize(key.networkId, author));
 
-    if (isSelf(key.networkId, author) || (m_selected && *m_selected == key))
+    const bool self = isSelf(key.networkId, author);
+    const bool mentionKind = kind == IrcMessageKind::Message
+        || kind == IrcMessageKind::Action;
+    const bool mentioned = !self && mentionKind && isMention(key.networkId, body);
+    if (mentioned)
+        m_mentionArrival = IrcMentionArrival{author, body};
+
+    if (self || (m_selected && *m_selected == key))
         return;
 
     ++conversation.unread;
-    if ((kind == IrcMessageKind::Message || kind == IrcMessageKind::Action)
-        && isMention(key.networkId, body)) {
+    if (mentioned)
         ++conversation.mentions;
-    }
 }
 
 void IrcEventReducer::appendEvent(IrcConversationState& conversation,

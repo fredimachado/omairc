@@ -79,6 +79,12 @@ struct IrcConversationState
     int peopleCount() const noexcept;
 };
 
+struct IrcMentionArrival
+{
+    QString author;
+    QString body;
+};
+
 class IrcEventReducer
 {
 public:
@@ -118,6 +124,8 @@ public:
     void clearPresenceFacts(const QString& networkId, bool away, bool status);
 
     bool selfAway(const QString& networkId) const noexcept;
+
+    std::optional<IrcMentionArrival> takeMentionArrival();
 
 private:
     IrcConversationState *findMutable(const IrcConversationKey& key) noexcept;
@@ -175,4 +183,5 @@ private:
     std::map<QString, IrcNetworkPresence> m_presence;
     std::set<QString> m_selfAway;
     std::optional<IrcConversationKey> m_selected;
+    std::optional<IrcMentionArrival> m_mentionArrival;
 };
