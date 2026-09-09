@@ -11,6 +11,7 @@
 
 #include <QByteArray>
 #include <QDateTime>
+#include <QNetworkInformation>
 #include <QTimer>
 #include <QtGlobal>
 
@@ -82,6 +83,49 @@ bool isValidPrivmsgTarget(const QString &target)
     }
     return true;
 }
+
+bool loadReachabilityBackend()
+{
+    using Feature = QNetworkInformation::Feature;
+    if (QNetworkInformation::loadBackendByFeatures(Feature::Reachability))
+        return true;
+    return QNetworkInformation::loadDefaultBackend();
+}
+
+bool isReachable(QNetworkInformation::Reachability reachability)
+{
+    switch (reachability) {
+    case QNetworkInformation::Reachability::Local:
+    case QNetworkInformation::Reachability::Site:
+    case QNetworkInformation::Reachability::Online:
+        return true;
+    case QNetworkInformation::Reachability::Unknown:
+    case QNetworkInformation::Reachability::Disconnected:
+        return false;
+    }
+    return false;
+}
+
+class QtReachabilitySource : public IrcReachabilitySource
+{
+public:
+    explicit QtReachabilitySource(QObject *parent = nullptr)
+        : IrcReachabilitySource(parent)
+    {
+        if (!loadReachabilityBackend())
+            return;
+        QNetworkInformation *information = QNetworkInformation::instance();
+        if (!information)
+            return;
+        connect(information,
+                &QNetworkInformation::reachabilityChanged,
+                this,
+                [this](QNetworkInformation::Reachability reachability) {
+            if (isReachable(reachability))
+                emit reachable();
+        });
+    }
+};
 }
 
 IrcReconnectTimer::IrcReconnectTimer(QObject *parent)
@@ -101,12 +145,18 @@ void IrcReconnectTimer::cancel()
     m_timer.stop();
 }
 
+IrcReachabilitySource::IrcReachabilitySource(QObject *parent)
+    : QObject(parent)
+{
+}
+
 IrcSession::IrcSession(const IrcSessionConfig &config,
                        IrcTransport *transport,
                        IrcReconnectTimer *reconnectTimer,
                        IrcReconnectTimer *capabilityTimer,
                        QObject *parent,
-                       IrcReconnectTimer *pingTimer)
+                       IrcReconnectTimer *pingTimer,
+                       IrcReachabilitySource *reachability)
     : QObject(parent)
     , m_config(config)
     , m_nick(config.nick)
@@ -114,6 +164,7 @@ IrcSession::IrcSession(const IrcSessionConfig &config,
     , m_reconnectTimer(reconnectTimer)
     , m_capabilityTimer(capabilityTimer)
     , m_pingTimer(pingTimer)
+    , m_reachability(reachability)
     , m_capabilities(!config.password.isEmpty())
 {
     Q_ASSERT(m_transport);
@@ -136,6 +187,12 @@ IrcSession::IrcSession(const IrcSessionConfig &config,
         m_pingTimer = new IrcReconnectTimer(this);
     } else if (!m_pingTimer->parent()) {
         m_pingTimer->setParent(this);
+    }
+
+    if (!m_reachability) {
+        m_reachability = new QtReachabilitySource(this);
+    } else if (!m_reachability->parent()) {
+        m_reachability->setParent(this);
     }
 
     connect(m_capabilityTimer, &IrcReconnectTimer::fired, this, [this] {
@@ -179,13 +236,10 @@ IrcSession::IrcSession(const IrcSessionConfig &config,
                            QStringLiteral("Connection closed by the server"));
         scheduleReconnect();
     });
-    connect(m_reconnectTimer, &IrcReconnectTimer::fired, this, [this] {
-        if (m_state != State::Reconnecting)
-            return;
-        resetForConnection();
-        setState(State::Connecting);
-        m_transport->connectToHost(m_config.host, m_config.port, m_config.tlsEnabled);
-    });
+    connect(m_reconnectTimer, &IrcReconnectTimer::fired,
+            this, &IrcSession::beginReconnectAttempt);
+    connect(m_reachability, &IrcReachabilitySource::reachable,
+            this, &IrcSession::beginReconnectAttempt);
     connect(m_pingTimer, &IrcReconnectTimer::fired, this, &IrcSession::onPingWatchdogFired);
 }
 
@@ -891,6 +945,16 @@ void IrcSession::scheduleReconnect()
     setState(State::Reconnecting);
     m_reconnectTimer->start(delay);
     emit reconnectScheduled(m_config.networkId, delay, m_reconnectAttempt);
+}
+
+void IrcSession::beginReconnectAttempt()
+{
+    if (m_state != State::Reconnecting)
+        return;
+    m_reconnectTimer->cancel();
+    resetForConnection();
+    setState(State::Connecting);
+    m_transport->connectToHost(m_config.host, m_config.port, m_config.tlsEnabled);
 }
 
 void IrcSession::resetForConnection()
