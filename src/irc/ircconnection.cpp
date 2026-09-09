@@ -68,6 +68,8 @@ IrcConnection::IrcConnection(IrcController &controller,
         connect(m_credentialStore, &CredentialStore::readFinished, this,
                 [this](CredentialStore::State state, const QString &password,
                        const QString &message) {
+            if (state != CredentialStore::State::Loading)
+                m_credentialReadInFlight = false;
             m_credentialState = state == CredentialStore::State::Unavailable
                     && !m_password.isEmpty()
                 ? CredentialStore::State::SessionOnly : state;
@@ -75,6 +77,18 @@ IrcConnection::IrcConnection(IrcController &controller,
             if (state == CredentialStore::State::Available && !m_passwordEdited) {
                 m_password = password;
                 ++m_secretRevision;
+                if (m_pendingCredentialMigration) {
+                    const CredentialKey nextKey = credentialKey(m_stored);
+                    const std::optional<CredentialKey> removeKey =
+                        nextKey.networkId == m_pendingCredentialMigration->networkId
+                            && nextKey.username == m_pendingCredentialMigration->username
+                            && nextKey.host == m_pendingCredentialMigration->host
+                        ? std::nullopt
+                        : std::move(m_pendingCredentialMigration);
+                    queueCredentialWrite(nextKey, m_password, m_secretRevision,
+                                         removeKey);
+                    m_pendingCredentialMigration.reset();
+                }
                 if (m_applied)
                     reconcile(m_stored);
             }
@@ -86,14 +100,28 @@ IrcConnection::IrcConnection(IrcController &controller,
             if (m_credentialOperations.isEmpty())
                 return;
             const CredentialOperation operation = m_credentialOperations.takeFirst();
+            const CredentialKey currentKey = credentialKey(m_stored);
+            const bool removingPreviousKey =
+                operation.kind == CredentialOperation::Kind::Remove
+                && (operation.key.networkId != currentKey.networkId
+                    || operation.key.username != currentKey.username
+                    || operation.key.host != currentKey.host)
+                && !m_password.isEmpty();
             if (operation.revision == m_secretRevision) {
-                m_credentialState = state == CredentialStore::State::Unavailable
-                        && !m_password.isEmpty()
-                    ? CredentialStore::State::SessionOnly : state;
-                m_credentialError = message;
-                if (state == CredentialStore::State::Available
-                    || state == CredentialStore::State::Missing) {
-                    m_passwordEdited = false;
+                if (removingPreviousKey) {
+                    if (state != CredentialStore::State::Missing
+                        && state != CredentialStore::State::Available) {
+                        m_credentialError = message;
+                    }
+                } else {
+                    m_credentialState = state == CredentialStore::State::Unavailable
+                            && !m_password.isEmpty()
+                        ? CredentialStore::State::SessionOnly : state;
+                    m_credentialError = message;
+                    if (state == CredentialStore::State::Available
+                        || state == CredentialStore::State::Missing) {
+                        m_passwordEdited = false;
+                    }
                 }
             }
             if (operation.removeKey && state == CredentialStore::State::Available && operation.revision == m_secretRevision) {
@@ -111,8 +139,10 @@ IrcConnection::IrcConnection(IrcController &controller,
         m_draft = IrcNetworkProfile::suggested();
     else
         m_draft = m_stored;
-    if (m_credentialStore && !m_stored.networkId.isEmpty())
+    if (m_credentialStore && !m_stored.networkId.isEmpty()) {
+        m_credentialReadInFlight = true;
         m_credentialStore->read(credentialKey(m_stored));
+    }
 
     connect(&m_controller, &IrcController::errorOccurred, this,
             [this](const QString &, IrcSession::ErrorKind kind, const QString &) {
@@ -197,7 +227,9 @@ QString IrcConnection::credentialStatus() const
     case CredentialStore::State::Unavailable:
         return QStringLiteral("secure storage unavailable; password is session-only");
     case CredentialStore::State::Error:
-        return QStringLiteral("secure storage error; password is session-only");
+        if (!m_password.isEmpty())
+            return QStringLiteral("secure storage error; password is session-only");
+        return QStringLiteral("secure storage error; password is not saved");
     case CredentialStore::State::SessionOnly:
         return QStringLiteral("secure storage unavailable; password is session-only");
     }
@@ -378,10 +410,16 @@ bool IrcConnection::apply()
             nextCredentialKey, m_password, m_secretRevision,
             credentialKeyChanged && !previousCredentialKey.networkId.isEmpty()
                 ? std::optional{previousCredentialKey} : std::nullopt);
+        m_pendingCredentialMigration.reset();
     } else if (m_credentialStore && m_passwordEdited) {
         if (m_password.isEmpty()) {
             queueCredentialRemoval(nextCredentialKey, m_secretRevision);
         }
+        m_pendingCredentialMigration.reset();
+    } else if (m_credentialStore && credentialKeyChanged
+               && !previousCredentialKey.networkId.isEmpty()
+               && m_credentialReadInFlight) {
+        m_pendingCredentialMigration = previousCredentialKey;
     }
     if (wasSetup)
         emit setupRequiredChanged();
@@ -442,8 +480,6 @@ void IrcConnection::activateOnStartup()
 {
     if (m_startupActivationConnection)
         return;
-    if (m_credentialState == CredentialStore::State::Error)
-        return;
     if (m_credentialState == CredentialStore::State::Loading) {
         m_startupActivationConnection = connect(
             this, &IrcConnection::credentialStateChanged, this, [this]() {
@@ -452,10 +488,15 @@ void IrcConnection::activateOnStartup()
                     || m_credentialState == CredentialStore::State::Unavailable
                     || m_credentialState == CredentialStore::State::SessionOnly) {
                     activate();
+                } else if (m_credentialState == CredentialStore::State::Error) {
+                    QObject::disconnect(m_startupActivationConnection);
+                    m_startupActivationConnection = {};
                 }
             });
         return;
     }
+    if (m_credentialState == CredentialStore::State::Error)
+        return;
     activate();
 }
 

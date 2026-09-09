@@ -119,6 +119,7 @@ private:
     IrcProfileStore m_store;
     CredentialStoreFactory m_credentialStoreFactory;
     CredentialStore *m_credentialStore = nullptr;
+    bool m_credentialReadInFlight = false;
     IrcNetworkProfile m_draft;
     IrcNetworkProfile m_stored;
     QString m_password;
@@ -143,4 +144,5 @@ private:
     CredentialStore::State m_credentialState = CredentialStore::State::Missing;
     QString m_credentialError;
     QMetaObject::Connection m_startupActivationConnection;
+    std::optional<CredentialKey> m_pendingCredentialMigration;
 };
