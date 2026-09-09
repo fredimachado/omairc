@@ -52,6 +52,8 @@ ApplicationWindow {
         : mockStatusOpen
     onConsoleVisibleChanged: {
         resetNickComplete();
+        stashComposerDraft();
+        restoreComposerDraft();
         resetComposerHistoryBrowse();
         if (win.slashCommands)
             win.slashCommands.sync(composer.text, consoleVisible);
@@ -65,6 +67,8 @@ ApplicationWindow {
     readonly property string currentConversation: irc ? irc.selectedTarget : mockCurrentConversation
     onCurrentConversationChanged: {
         resetNickComplete();
+        stashComposerDraft();
+        restoreComposerDraft();
         resetComposerHistoryBrowse();
         Qt.callLater(function() {
             if (membersList)
@@ -101,6 +105,8 @@ ApplicationWindow {
         && (connection.setupRequired || connectionSheetOpen)
 
     property var composerHistories: ({})
+    property var composerDrafts: ({})
+    property string composerDraftKey: ""
     property int composerHistoryIndex: -1
     property string composerHistoryDraft: ""
     property string nickCompletePrefix: ""
@@ -447,6 +453,28 @@ ApplicationWindow {
 
     function composerHistoryKey() {
         return consoleVisible ? "status" : currentConversation;
+    }
+
+    function unsentComposerText() {
+        if (composerHistoryIndex >= 0)
+            return composerHistoryDraft;
+        return composer.text;
+    }
+
+    function stashComposerDraft() {
+        if (!composer)
+            return;
+        var key = composerDraftKey.length > 0 ? composerDraftKey : composerHistoryKey();
+        composerDrafts[key] = unsentComposerText();
+    }
+
+    function restoreComposerDraft() {
+        if (!composer)
+            return;
+        var key = composerHistoryKey();
+        composerDraftKey = key;
+        composer.text = composerDrafts[key] || "";
+        composer.cursorPosition = composer.text.length;
     }
 
     function resetComposerHistoryBrowse() {
@@ -3050,6 +3078,7 @@ ApplicationWindow {
     }
 
     Component.onCompleted: {
+        composerDraftKey = composerHistoryKey();
         var geometry = backend.windowGeometry();
         if (geometry.valid) {
             x = geometry.x;
