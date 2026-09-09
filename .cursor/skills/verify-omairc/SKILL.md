@@ -9,7 +9,9 @@ Omairc is a Qt 6 Quick desktop app. The compiled window binds a live IRC
 controller and a connection sheet unless launched with `--mock`, which leaves
 `irc` unset and shows the bundled prototype conversations. UI tests may still
 leave `irc` null and exercise that same mock path. There is no web UI or public
-API. The user-facing surface is the compiled `build/omairc` window.
+API. This skill drives the compiled `build/omairc` window. The local CLI
+(`connections`, `status`, `send`, `raise`) is a separate binary path and is
+not a mapped feature here.
 
 Read `features/README.md` before driving. Drive the mapped entry points for the feature under proof. A convenient path that skips listed entry points is incomplete.
 

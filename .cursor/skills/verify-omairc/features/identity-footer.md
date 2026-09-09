@@ -28,4 +28,5 @@ Preconditions:
 - The mock footer stays `available`. Live chrome follows `irc.selfAway` only.
 - Member dots still gate on `hasAwayPresence`. The footer mark does not.
 - An empty first-run Nick still shows `fred`. That is the fallback, not a saved profile.
+- `irc.currentNick` is empty when no conversation is selected. Status and first-run then show the Connect nick draft (`connection.nick`) if you typed one without Apply.
 - The network name and `edit` control are the Status / Connect entry points. Clicking the footer does nothing.

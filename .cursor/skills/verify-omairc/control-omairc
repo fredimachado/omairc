@@ -394,6 +394,7 @@ cmd_key() {
   load_state
   xdotool windowfocus --sync "$WINDOW"
   xdotool key --window "$WINDOW" "$key"
+  sleep 0.2
 }
 
 cmd_send() {
@@ -443,10 +444,11 @@ cmd_compare() {
   [ -s "$before" ] || die "missing before image: $before"
   [ -s "$after" ] || die "missing after image: $after"
   difference="$(magick compare -metric AE "$before" "$after" null: 2>&1 || true)"
-  if ! awk -v difference="$difference" 'BEGIN { exit !(difference > 100) }'; then
+  ae="$(printf '%s\n' "$difference" | awk '{ print $1; exit }')"
+  if ! awk -v ae="$ae" 'BEGIN { exit !(ae + 0 > 100) }'; then
     die "expected a visible UI change between $before and $after (AE=$difference)"
   fi
-  echo "changed AE=$difference"
+  echo "changed AE=$ae"
 }
 
 find_qmltestrunner() {
