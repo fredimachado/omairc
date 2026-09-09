@@ -5,6 +5,7 @@
 #include "ircchannelmode.h"
 #include "irccommand.h"
 #include "irccontroller.h"
+#include "ircjointarget.h"
 #include "ircserverfeatures.h"
 #include "ircsession.h"
 #include "ircslashcomplete.h"
@@ -102,9 +103,11 @@ private slots:
     void parseMode();
     void parseKick();
     void parseChannelModeRequest();
+    void parseJoinTargets();
     void catalogLookupAndScope();
     void closeWrongScopeUsesCatalogSentence();
     void conversationSendAndUnknown();
+    void joinSendsKeyedFrames();
     void statusSubmitDoesNotSendAction();
     void awayAndBackWriteAwayFrames();
     void whoisSendsAndDefaults();
@@ -465,12 +468,61 @@ void CommandTest::parseChannelModeRequest()
     QVERIFY(!parsedChannelMode(QStringLiteral("#omarchy +\r o")).ok);
 }
 
+void CommandTest::parseJoinTargets()
+{
+    const auto keyed = ircParseJoinTargets(QStringLiteral("#a pword, #b, c"));
+    QVERIFY(keyed);
+    QCOMPARE(keyed->size(), 3);
+    QCOMPARE(keyed->at(0).channel(), QStringLiteral("#a"));
+    QVERIFY(keyed->at(0).hasKey());
+    QCOMPARE(*keyed->at(0).key(), QStringLiteral("pword"));
+    QCOMPARE(keyed->at(1).channel(), QStringLiteral("#b"));
+    QVERIFY(!keyed->at(1).hasKey());
+    QCOMPARE(keyed->at(2).channel(), QStringLiteral("#c"));
+    QVERIFY(!keyed->at(2).hasKey());
+
+    const auto lastKeyed = ircParseJoinTargets(QStringLiteral("#a, #b, #c pworddd"));
+    QVERIFY(lastKeyed);
+    QCOMPARE(lastKeyed->size(), 3);
+    QVERIFY(!lastKeyed->at(0).hasKey());
+    QVERIFY(!lastKeyed->at(1).hasKey());
+    QCOMPARE(lastKeyed->at(2).channel(), QStringLiteral("#c"));
+    QCOMPARE(*lastKeyed->at(2).key(), QStringLiteral("pworddd"));
+
+    const auto packed = ircParseJoinTargets(QStringLiteral("#a,b,#c"));
+    QVERIFY(packed);
+    QCOMPARE(packed->size(), 3);
+    QCOMPARE(packed->at(0).channel(), QStringLiteral("#a"));
+    QCOMPARE(packed->at(1).channel(), QStringLiteral("#b"));
+    QCOMPARE(packed->at(2).channel(), QStringLiteral("#c"));
+    QVERIFY(!packed->at(0).hasKey());
+    QVERIFY(!packed->at(1).hasKey());
+    QVERIFY(!packed->at(2).hasKey());
+
+    const auto local = ircParseJoinTargets(QStringLiteral("&local secret"));
+    QVERIFY(local);
+    QCOMPARE(local->size(), 1);
+    QCOMPARE(local->at(0).channel(), QStringLiteral("&local"));
+    QCOMPARE(*local->at(0).key(), QStringLiteral("secret"));
+
+    const auto trailingComma = ircParseJoinTargets(QStringLiteral("#a,#b,"));
+    QVERIFY(trailingComma);
+    QCOMPARE(trailingComma->size(), 2);
+    QCOMPARE(trailingComma->at(0).channel(), QStringLiteral("#a"));
+    QCOMPARE(trailingComma->at(1).channel(), QStringLiteral("#b"));
+
+    QVERIFY(!ircParseJoinTargets(QStringLiteral("#a b c")));
+    QVERIFY(!ircParseJoinTargets(QString()));
+    QVERIFY(!ircParseJoinTargets(QStringLiteral(" , ")));
+    QVERIFY(!ircParseJoinTargets(QStringLiteral("#")));
+}
+
 void CommandTest::catalogLookupAndScope()
 {
     const IrcVerbSpec *join = IrcVerbTable::lookup(QStringLiteral("J"));
     QVERIFY(join);
     QCOMPARE(join->verb, IrcCommand::Verb::Join);
-    QCOMPARE(join->usage, QStringLiteral("/join <channel>[, channel...]"));
+    QCOMPARE(join->usage, QStringLiteral("/join <channel> [key][, ...]"));
 
     const IrcVerbSpec *leave = IrcVerbTable::lookup(QStringLiteral("leave"));
     QVERIFY(leave);
@@ -695,12 +747,10 @@ void CommandTest::conversationSendAndUnknown()
              QByteArrayLiteral("JOIN #other\r\n"));
 
     QVERIFY(controller.sendMessage(QStringLiteral("/join #alpha,#beta desktop")));
-    QCOMPARE(transport->writtenFrames().at(transport->writtenFrames().size() - 3),
-             QByteArrayLiteral("JOIN #alpha\r\n"));
     QCOMPARE(transport->writtenFrames().at(transport->writtenFrames().size() - 2),
-             QByteArrayLiteral("JOIN #beta\r\n"));
+             QByteArrayLiteral("JOIN #alpha\r\n"));
     QCOMPARE(transport->writtenFrames().last(),
-             QByteArrayLiteral("JOIN #desktop\r\n"));
+             QByteArrayLiteral("JOIN #beta desktop\r\n"));
 
     QVERIFY(controller.sendMessage(QStringLiteral("/topic new banner")));
     QCOMPARE(transport->writtenFrames().last(),
@@ -738,6 +788,74 @@ void CommandTest::conversationSendAndUnknown()
     QVERIFY(!lonely.sendMessage(QStringLiteral("/topic hello")));
     QCOMPARE(lonely.lastError(), QStringLiteral("Topic applies to channels"));
     QVERIFY(!lonely.sendMessage(QString()));
+}
+
+void CommandTest::joinSendsKeyedFrames()
+{
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    IrcSession *session = controller.addSession(config(), transport);
+    QVERIFY(session);
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    welcome(transport);
+    QCOMPARE(session->state(), IrcSession::State::Registered);
+    transport->injectBytes(QByteArrayLiteral(":omairc!u@h JOIN :#omarchy\r\n"));
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+
+    QVERIFY(controller.sendMessage(QStringLiteral("/join #a pword, #b, c")));
+    QCOMPARE(transport->writtenFrames().mid(transport->writtenFrames().size() - 3),
+             QByteArrayList({
+                 QByteArrayLiteral("JOIN #a pword\r\n"),
+                 QByteArrayLiteral("JOIN #b\r\n"),
+                 QByteArrayLiteral("JOIN #c\r\n"),
+             }));
+
+    QVERIFY(controller.sendMessage(QStringLiteral("/join #a, #b, #c pworddd")));
+    QCOMPARE(transport->writtenFrames().mid(transport->writtenFrames().size() - 3),
+             QByteArrayList({
+                 QByteArrayLiteral("JOIN #a\r\n"),
+                 QByteArrayLiteral("JOIN #b\r\n"),
+                 QByteArrayLiteral("JOIN #c pworddd\r\n"),
+             }));
+
+    QVERIFY(controller.sendMessage(QStringLiteral("/join #a,b,#c")));
+    QCOMPARE(transport->writtenFrames().mid(transport->writtenFrames().size() - 3),
+             QByteArrayList({
+                 QByteArrayLiteral("JOIN #a\r\n"),
+                 QByteArrayLiteral("JOIN #b\r\n"),
+                 QByteArrayLiteral("JOIN #c\r\n"),
+             }));
+
+    IrcStatusConsole *console = controller.console();
+    QVERIFY(!logContains(console->lines(), QStringLiteral("JOIN #c pworddd")));
+    QVERIFY(logContains(console->lines(), QStringLiteral("JOIN #c ***")));
+    QVERIFY(!logContains(console->lines(), QStringLiteral("JOIN #a pword")));
+    QVERIFY(logContains(console->lines(), QStringLiteral("JOIN #a ***")));
+    QVERIFY(logContains(console->lines(), QStringLiteral("JOIN #b")));
+    QVERIFY(!logContains(console->lines(), QStringLiteral("pworddd")));
+    QVERIFY(!logContains(console->lines(), QStringLiteral("pword")));
+
+    QVERIFY(controller.sendMessage(QStringLiteral("/join #secretchan hunter2")));
+    QCOMPARE(transport->writtenFrames().last(),
+             QByteArrayLiteral("JOIN #secretchan hunter2\r\n"));
+    QVERIFY(logContains(console->lines(), QStringLiteral("JOIN #secretchan ***")));
+    QVERIFY(!logContains(console->lines(), QStringLiteral("hunter2")));
+
+    QVERIFY(console->submit(QStringLiteral("/join #fromstatus deskkey")));
+    QCOMPARE(transport->writtenFrames().last(),
+             QByteArrayLiteral("JOIN #fromstatus deskkey\r\n"));
+    QVERIFY(logContains(console->lines(), QStringLiteral("JOIN #fromstatus ***")));
+    QVERIFY(!logContains(console->lines(), QStringLiteral("deskkey")));
+
+    const int beforeBad = transport->writtenFrames().size();
+    QVERIFY(!controller.sendMessage(QStringLiteral("/join #a b c")));
+    QCOMPARE(controller.lastError(), QStringLiteral("Command was refused"));
+    QVERIFY(!controller.sendMessage(QStringLiteral("/join")));
+    QVERIFY(!controller.sendMessage(QStringLiteral("/join #")));
+    QVERIFY(!controller.sendMessage(QStringLiteral("/join , ,")));
+    QCOMPARE(transport->writtenFrames().size(), beforeBad);
+    QVERIFY(!framesContain(transport->writtenFrames().mid(beforeBad),
+                           QByteArrayLiteral("JOIN")));
 }
 
 void CommandTest::statusSubmitDoesNotSendAction()
@@ -1013,7 +1131,7 @@ void CommandTest::slashProjectOpen()
         QStringLiteral("/jo"), IrcComposerSurface::Conversation);
     QVERIFY(join.isOpen());
     QCOMPARE(join.hits().first().label, QStringLiteral("/join"));
-    QCOMPARE(join.hits().first().usage, QStringLiteral("/join <channel>[, channel...]"));
+    QCOMPARE(join.hits().first().usage, QStringLiteral("/join <channel> [key][, ...]"));
 
     const auto alias = IrcSlashComplete::project(
         QStringLiteral("/j"), IrcComposerSurface::Conversation);

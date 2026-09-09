@@ -3,7 +3,7 @@
 #include "ircchannelmode.h"
 #include "irccommand.h"
 #include "irceventtranslator.h"
-#include "ircnetworkprofile.h"
+#include "ircjointarget.h"
 #include "ircviewnotify.h"
 #include "irctyping.h"
 #include "ircwiretext.h"
@@ -544,11 +544,13 @@ IrcCommandOutcome IrcController::dispatch(const IrcCommand& command,
     bool sent = false;
     switch (command.verb) {
     case IrcCommand::Verb::Join: {
-        const QStringList channels =
-            IrcNetworkProfile::canonicalizeChannels(command.argument);
-        sent = !channels.isEmpty();
-        for (const QString &channel : channels)
-            sent = active->join(channel) && sent;
+        const std::optional<QVector<IrcJoinTarget>> targets =
+            ircParseJoinTargets(command.argument);
+        if (!targets)
+            return IrcCommandOutcome::Refused;
+        sent = true;
+        for (const IrcJoinTarget& target : *targets)
+            sent = active->join(target) && sent;
         break;
     }
     case IrcCommand::Verb::Part: {

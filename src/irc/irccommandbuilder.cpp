@@ -17,6 +17,8 @@
 
 #include "irccommandbuilder.h"
 
+#include <QString>
+
 #include <string>
 
 namespace
@@ -37,6 +39,20 @@ bool isSingleField(std::string_view field)
 IrcBuildResult invalidField()
 {
     return IrcBuildResult::failure(IrcError::InvalidField);
+}
+
+bool isJoinField(std::string_view field)
+{
+    if (field.empty() || field.front() == ':')
+        return false;
+    const QString text = QString::fromUtf8(field.data(), qsizetype(field.size()));
+    if (text.isEmpty())
+        return false;
+    for (const QChar ch : text) {
+        if (ch.isSpace() || ch == QLatin1Char(',') || ch == QChar(u'\0'))
+            return false;
+    }
+    return true;
 }
 }
 
@@ -73,6 +89,17 @@ IrcBuildResult IrcCommandBuilder::pass(std::string_view password)
     if (!isSingleField(password))
         return invalidField();
     return line("PASS " + std::string(password));
+}
+
+IrcBuildResult IrcCommandBuilder::join(std::string_view channel, std::string_view key)
+{
+    if (!isJoinField(channel))
+        return invalidField();
+    if (key.empty())
+        return line("JOIN " + std::string(channel));
+    if (!isJoinField(key))
+        return invalidField();
+    return line("JOIN " + std::string(channel) + " " + std::string(key));
 }
 
 IrcBuildResult IrcCommandBuilder::registration(std::string_view nickname,

@@ -34,6 +34,7 @@ HEADERS += \
     ../../src/irc/networklogmodel.h \
     ../../src/irc/irccommand.h \
     ../../src/irc/ircchannelmode.h \
+    ../../src/irc/ircjointarget.h \
     ../../src/irc/ircslashcomplete.h \
     ../../src/irc/ircstatusconsole.h \
     ../../src/irc/ircsession.h \
@@ -42,7 +43,6 @@ HEADERS += \
     ../../src/irc/messagelistmodel.h \
     ../../src/irc/memberlistmodel.h \
     ../../src/irc/irccontroller.h \
-    ../../src/irc/ircnetworkprofile.h \
     ../../src/irc/qtirctransport.h \
     liveharness.h \
     livepeer.h
@@ -70,6 +70,7 @@ SOURCES += \
     ../../src/irc/networklogmodel.cpp \
     ../../src/irc/irccommand.cpp \
     ../../src/irc/ircchannelmode.cpp \
+    ../../src/irc/ircjointarget.cpp \
     ../../src/irc/ircslashcomplete.cpp \
     ../../src/irc/ircstatusconsole.cpp \
     ../../src/irc/ircsession.cpp \
@@ -78,5 +79,4 @@ SOURCES += \
     ../../src/irc/messagelistmodel.cpp \
     ../../src/irc/memberlistmodel.cpp \
     ../../src/irc/irccontroller.cpp \
-    ../../src/irc/ircnetworkprofile.cpp \
     ../../src/irc/qtirctransport.cpp

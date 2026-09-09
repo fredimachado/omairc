@@ -46,6 +46,14 @@ const IrcStandardReplyVerb *standardReplyVerb(const QString& command)
     return nullptr;
 }
 
+QString redactedOutgoingJoin(const QString& display)
+{
+    const QStringList parts = display.split(QLatin1Char(' '), Qt::SkipEmptyParts);
+    if (parts.size() <= 2)
+        return display;
+    return QStringLiteral("JOIN %1 ***").arg(parts.at(1));
+}
+
 IrcLogSeverity severityFor(const QString& command)
 {
     if (command == QStringLiteral("PING")
@@ -460,12 +468,17 @@ IrcStatusEntry IrcStatusEntry::outgoing(const QString& networkId, const QByteArr
     const QString display = ircWireText(
         std::string_view(wire.constData(), std::size_t(wire.size())));
     const QString verb = firstToken(QStringView(display));
+    QString text = display;
+    if (isSecretVerb(verb))
+        text = redactedSecret(verb);
+    else if (verb == QStringLiteral("JOIN"))
+        text = redactedOutgoingJoin(display);
     return IrcStatusEntry(networkId,
                           QDateTime::currentDateTimeUtc(),
                           IrcLogSource::Client,
                           severityFor(verb),
                           verb,
-                          isSecretVerb(verb) ? redactedSecret(verb) : display);
+                          std::move(text));
 }
 
 IrcStatusEntry IrcStatusEntry::lifecycle(const QString& networkId,
