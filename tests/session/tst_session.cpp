@@ -71,7 +71,9 @@ struct Fixture
         : transport(new FakeIrcTransport)
         , timer(new FakeReconnectTimer)
         , capabilityTimer(new FakeReconnectTimer)
-        , session(new IrcSession(sessionConfig, transport, timer, capabilityTimer))
+        , pingTimer(new FakeReconnectTimer)
+        , session(new IrcSession(sessionConfig, transport, timer, capabilityTimer,
+                                 nullptr, pingTimer))
     {
     }
 
@@ -86,6 +88,14 @@ struct Fixture
         transport->completeConnect();
     }
 
+    void registerWithWelcome()
+    {
+        connectTls();
+        transport->injectBytes(
+            QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
+                              ":server 001 omairc :Welcome\r\n"));
+    }
+
     bool wrote(const QByteArray& frame) const
     {
         return transport->writtenFrames().contains(frame);
@@ -94,6 +104,7 @@ struct Fixture
     FakeIrcTransport *transport;
     FakeReconnectTimer *timer;
     FakeReconnectTimer *capabilityTimer;
+    FakeReconnectTimer *pingTimer;
     IrcSession *session;
 };
 
@@ -123,6 +134,10 @@ private slots:
     void registersWhenCapIsUnsupported();
     void tlsCertificateFailureIsExplicit();
     void answersPingImmediately();
+    void silentSocketAfterWelcomeSendsClientPing();
+    void unansweredClientPingReconnects();
+    void matchingPongKeepsSessionRegistered();
+    void answersServerPingAfterWelcome();
     void registrationRefusalFailsVisibly();
     void nickInUseAfterWelcomeKeepsSession();
     void unavailableResourceAfterWelcomeKeepsSession();
@@ -448,6 +463,80 @@ void SessionTest::answersPingImmediately()
     fixture.transport->injectBytes(QByteArrayLiteral("PING :server-token\r\n"));
     QCOMPARE(fixture.transport->writtenFrames().last(),
              QByteArrayLiteral("PONG :server-token\r\n"));
+    QVERIFY(!fixture.pingTimer->active);
+}
+
+void SessionTest::silentSocketAfterWelcomeSendsClientPing()
+{
+    Fixture fixture;
+    fixture.registerWithWelcome();
+    QCOMPARE(fixture.session->state(), IrcSession::State::Registered);
+    QVERIFY(fixture.pingTimer->active);
+    QCOMPARE(fixture.pingTimer->delays, QList<int>{60000});
+
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(":bob!u@h PRIVMSG #omarchy :hi\r\n"));
+    QCOMPARE(fixture.pingTimer->delays, QList<int>({60000, 60000}));
+
+    const int writtenBeforeProbe = fixture.transport->writtenFrames().size();
+    fixture.pingTimer->fire();
+
+    QCOMPARE(fixture.session->state(), IrcSession::State::Registered);
+    QCOMPARE(fixture.transport->writtenFrames().mid(writtenBeforeProbe),
+             QByteArrayList({QByteArrayLiteral("PING :omairc-watchdog\r\n")}));
+    QVERIFY(fixture.pingTimer->active);
+}
+
+void SessionTest::unansweredClientPingReconnects()
+{
+    Fixture fixture;
+    QSignalSpy errors(fixture.session, &IrcSession::errorOccurred);
+    QSignalSpy scheduled(fixture.session, &IrcSession::reconnectScheduled);
+    fixture.registerWithWelcome();
+    fixture.pingTimer->fire();
+    QCOMPARE(fixture.transport->writtenFrames().last(),
+             QByteArrayLiteral("PING :omairc-watchdog\r\n"));
+
+    fixture.pingTimer->fire();
+
+    QCOMPARE(qvariant_cast<IrcSession::ErrorKind>(errors.last().at(1)),
+             IrcSession::ErrorKind::Network);
+    QCOMPARE(errors.last().at(2).toString(), QStringLiteral("Ping timeout"));
+    QCOMPARE(fixture.session->state(), IrcSession::State::Reconnecting);
+    QCOMPARE(scheduled.size(), 1);
+    QVERIFY(!fixture.pingTimer->active);
+}
+
+void SessionTest::matchingPongKeepsSessionRegistered()
+{
+    Fixture fixture;
+    QSignalSpy errors(fixture.session, &IrcSession::errorOccurred);
+    fixture.registerWithWelcome();
+    fixture.pingTimer->fire();
+
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(":server PONG irc.example :omairc-watchdog\r\n"));
+    QCOMPARE(fixture.session->state(), IrcSession::State::Registered);
+    QCOMPARE(errors.size(), 0);
+    QVERIFY(fixture.pingTimer->active);
+
+    const int writtenBeforeSecondProbe = fixture.transport->writtenFrames().size();
+    fixture.pingTimer->fire();
+    QCOMPARE(fixture.session->state(), IrcSession::State::Registered);
+    QCOMPARE(fixture.transport->writtenFrames().mid(writtenBeforeSecondProbe),
+             QByteArrayList({QByteArrayLiteral("PING :omairc-watchdog\r\n")}));
+    QCOMPARE(errors.size(), 0);
+}
+
+void SessionTest::answersServerPingAfterWelcome()
+{
+    Fixture fixture;
+    fixture.registerWithWelcome();
+    fixture.transport->injectBytes(QByteArrayLiteral("PING :server-token\r\n"));
+    QCOMPARE(fixture.transport->writtenFrames().last(),
+             QByteArrayLiteral("PONG :server-token\r\n"));
+    QCOMPARE(fixture.session->state(), IrcSession::State::Registered);
+    QVERIFY(!fixture.wrote(QByteArrayLiteral("PING :omairc-watchdog\r\n")));
 }
 
 void SessionTest::registrationRefusalFailsVisibly()
