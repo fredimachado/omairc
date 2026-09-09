@@ -4,7 +4,7 @@ name: omairc-live
 
 services:
   ergo:
-    profiles: [l1, ergo]
+    profiles: [l1, ergo, ui-multi]
     image: ghcr.io/ergochat/ergo:stable
     init: true
     working_dir: /ircd
@@ -31,7 +31,7 @@ services:
       - ./configs/ngircd.conf:/etc/ngircd/ngircd.conf:ro
 
   solanum:
-    profiles: [l1, solanum]
+    profiles: [l1, solanum, ui-multi]
     build:
       context: .
       dockerfile: docker/solanum/Dockerfile

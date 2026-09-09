@@ -87,6 +87,8 @@ void ModelTest::roleNamesMatchQml()
              QByteArray("networkId"));
     QCOMPARE(conversations.roleNames()[ConversationListModel::ConversationIdRole],
              QByteArray("conversationId"));
+    QCOMPARE(conversations.roleNames()[ConversationListModel::ConversationNameRole],
+             QByteArray("conversationName"));
 
     QCOMPARE(messages.roleNames()[MessageListModel::AuthorRole], QByteArray("author"));
     QCOMPARE(messages.roleNames()[MessageListModel::TimeRole], QByteArray("time"));

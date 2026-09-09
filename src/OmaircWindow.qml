@@ -1358,7 +1358,6 @@ ApplicationWindow {
 
         property string networkId
         property string displayName
-        readonly property string sectionNetworkId: networkId
         property string statusText: "mock connected"
         property int alerts: 0
         property int unread: 0
@@ -1545,9 +1544,9 @@ ApplicationWindow {
     component ConversationRow: Item {
         id: conversationRow
 
-        required property string conversationName
-        required property int unread
-        required property bool mention
+        property string conversationName
+        property int unread: 0
+        property bool mention: false
         property bool direct: false
         property string networkId: win.mockOmarchyId
         property string conversationId: networkId + "\n" + conversationName
@@ -2333,13 +2332,21 @@ ApplicationWindow {
                         id: liveNetworkRepeater
                         model: win.irc && win.connection ? win.connection.networks : null
 
-                        NetworkSection {
+                        Column {
+                            id: liveNet
                             required property int index
                             required property string networkId
                             required property string displayName
-                            preserveLegacyNames: index === 0
-                            unread: 0
-                            mention: false
+                            width: parent ? parent.width : 0
+                            spacing: 0
+
+                            NetworkSection {
+                                networkId: liveNet.networkId
+                                displayName: liveNet.displayName
+                                preserveLegacyNames: liveNet.index === 0
+                                unread: 0
+                                mention: false
+                            }
 
                             Item {
                                 width: parent.width
@@ -2358,8 +2365,9 @@ ApplicationWindow {
                             }
 
                             Repeater {
-                                objectName: index === 0 ? "channelConversationRepeater"
-                                                        : "channelConversationRepeater-" + networkId
+                                objectName: liveNet.index === 0
+                                    ? "channelConversationRepeater"
+                                    : "channelConversationRepeater-" + liveNet.networkId
                                 model: win.irc ? win.irc.conversations : null
                                 delegate: ConversationRow {
                                     required property var model
@@ -2369,7 +2377,8 @@ ApplicationWindow {
                                     mention: model.mention
                                     direct: model.direct
                                     networkId: model.networkId
-                                    visible: !model.direct && model.networkId === sectionNetworkId
+                                    visible: !model.direct
+                                        && model.networkId === liveNet.networkId
                                     width: sidebar.width
                                     height: visible ? win.scaledSize(36) : 0
                                 }
@@ -2377,7 +2386,8 @@ ApplicationWindow {
 
                             Item {
                                 width: parent.width
-                                height: win.sectionHasDirects(networkId) ? win.scaledSize(36) : 0
+                                height: win.sectionHasDirects(liveNet.networkId)
+                                    ? win.scaledSize(36) : 0
                                 visible: height > 0
                                 Text {
                                     anchors.left: parent.left
@@ -2394,8 +2404,9 @@ ApplicationWindow {
                             }
 
                             Repeater {
-                                objectName: index === 0 ? "directConversationRepeater"
-                                                        : "directConversationRepeater-" + networkId
+                                objectName: liveNet.index === 0
+                                    ? "directConversationRepeater"
+                                    : "directConversationRepeater-" + liveNet.networkId
                                 model: win.irc ? win.irc.conversations : null
                                 delegate: ConversationRow {
                                     required property var model
@@ -2405,7 +2416,8 @@ ApplicationWindow {
                                     mention: model.mention
                                     direct: model.direct
                                     networkId: model.networkId
-                                    visible: model.direct && model.networkId === sectionNetworkId
+                                    visible: model.direct
+                                        && model.networkId === liveNet.networkId
                                     width: sidebar.width
                                     height: visible ? win.scaledSize(36) : 0
                                 }

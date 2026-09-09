@@ -3,6 +3,7 @@
 /build-tests/
 /build-tests-san/
 /build-live-tests/
+/build-live-ui-tests/
 *.o
 *.moc
 moc_*.cpp

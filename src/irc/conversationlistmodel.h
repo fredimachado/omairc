@@ -51,6 +51,7 @@ public:
         DirectRole,
         NetworkIdRole,
         ConversationIdRole,
+        ConversationNameRole,
     };
 
     explicit ConversationListModel(IrcEventReducer& reducer,

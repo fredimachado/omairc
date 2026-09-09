@@ -146,7 +146,8 @@ bin/test-install
 `xorg-xauth`, `xdotool`, and `imagemagick`.
 
 `bin/test-live` is optional and needs Docker. It starts Ergo, Solanum, and
-ngIRCd on loopback and is not part of `bin/test`.
+ngIRCd on loopback, runs the protocol suite, then the dual-network
+production-QML proof. It is not part of `bin/test`.
 
 ## Requirements
 

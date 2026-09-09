@@ -112,6 +112,7 @@ QVariant ConversationListModel::data(const QModelIndex& index, int role) const
 
     switch (role) {
     case ConversationRole:
+    case ConversationNameRole:
     case Qt::DisplayRole:
         return conversation->target;
     case UnreadRole:
@@ -138,6 +139,7 @@ QHash<int, QByteArray> ConversationListModel::roleNames() const
         {DirectRole, "direct"},
         {NetworkIdRole, "networkId"},
         {ConversationIdRole, "conversationId"},
+        {ConversationNameRole, "conversationName"},
     };
 }
 
