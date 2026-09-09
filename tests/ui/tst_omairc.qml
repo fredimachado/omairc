@@ -808,6 +808,72 @@ TestCase {
         compare(composer.text, "draft");
     }
 
+    function test_composerDraftsStayWithConversation() {
+        var composer = item("messageComposer");
+        mouseClick(composer);
+        verify(composer.activeFocus);
+        compare(appWindow.currentConversation, "#omarchy");
+
+        typeText("omarchy draft");
+        compare(composer.text, "omarchy draft");
+
+        mouseClick(item("conversation-#desktop"));
+        tryCompare(appWindow, "currentConversation", "#desktop");
+        compare(composer.text, "");
+
+        typeText("desktop draft");
+        compare(composer.text, "desktop draft");
+
+        mouseClick(item("conversation-#omarchy"));
+        tryCompare(appWindow, "currentConversation", "#omarchy");
+        compare(composer.text, "omarchy draft");
+
+        mouseClick(item("conversation-#desktop"));
+        tryCompare(appWindow, "currentConversation", "#desktop");
+        compare(composer.text, "desktop draft");
+
+        keyClick(Qt.Key_QuoteLeft, Qt.ControlModifier);
+        tryCompare(appWindow, "consoleVisible", true);
+        compare(composer.text, "");
+
+        typeText("status draft");
+        compare(composer.text, "status draft");
+
+        keyClick(Qt.Key_QuoteLeft, Qt.ControlModifier);
+        tryCompare(appWindow, "consoleVisible", false);
+        compare(appWindow.currentConversation, "#desktop");
+        compare(composer.text, "desktop draft");
+
+        keyClick(Qt.Key_QuoteLeft, Qt.ControlModifier);
+        tryCompare(appWindow, "consoleVisible", true);
+        compare(composer.text, "status draft");
+
+        keyClick(Qt.Key_Escape);
+        tryCompare(appWindow, "consoleVisible", false);
+        compare(composer.text, "desktop draft");
+
+        mouseClick(item("conversation-#omarchy"));
+        tryCompare(appWindow, "currentConversation", "#omarchy");
+        compare(composer.text, "omarchy draft");
+
+        var messages = item("messageList");
+        var previousCount = messages.model.count;
+        keyClick(Qt.Key_Return);
+        compare(composer.text, "");
+        tryCompare(messages.model, "count", previousCount + 1);
+        compare(messages.model.get(previousCount).author, "fred");
+        compare(messages.model.get(previousCount).body, "omarchy draft");
+
+        keyClick(Qt.Key_Up);
+        compare(composer.text, "omarchy draft");
+        keyClick(Qt.Key_Down);
+        compare(composer.text, "");
+
+        mouseClick(item("conversation-#desktop"));
+        tryCompare(appWindow, "currentConversation", "#desktop");
+        compare(composer.text, "desktop draft");
+    }
+
     function test_pageUpScrollsTranscript() {
         var composer = item("messageComposer");
         var list = item("messageList");
