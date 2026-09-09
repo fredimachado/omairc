@@ -72,14 +72,16 @@ std::optional<IrcConversationKey> conversationFor(const QString& networkId,
 {
     if (features.isChannel(utf8(target)))
         return key(networkId, target, features);
-    if (isNetworkNoticeTarget(target) || !hasUserPrefix(message)
-        || !same(target, currentNick, features)) {
+    if (isNetworkNoticeTarget(target) || !hasUserPrefix(message))
         return std::nullopt;
-    }
     const QString sender = author(message);
     if (sender.isEmpty())
         return std::nullopt;
-    return key(networkId, sender, features);
+    if (same(target, currentNick, features))
+        return key(networkId, sender, features);
+    if (same(sender, currentNick, features))
+        return key(networkId, target, features);
+    return std::nullopt;
 }
 
 QStringList remainingParameters(const IrcMessage& message, std::size_t start)
@@ -171,7 +173,7 @@ std::vector<IrcEvent> IrcEventTranslator::translate(
             return events;
         const QString displayTarget = features.isChannel(utf8(wireTarget))
             ? wireTarget
-            : sender;
+            : (same(sender, currentNick, features) ? wireTarget : sender);
         const QString actionPrefix = QChar(1) + QStringLiteral("ACTION ");
         if (body.startsWith(actionPrefix) && body.endsWith(QChar(1))) {
             events.emplace_back(IrcActionEvent{
