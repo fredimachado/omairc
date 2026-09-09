@@ -1,0 +1,21 @@
+_omairc()
+{
+    local cur
+    cur="${COMP_WORDS[COMP_CWORD]}"
+
+    if [ "$COMP_CWORD" -eq 1 ]; then
+        COMPREPLY=( $(compgen -W "connections list status send raise --help --version --mock -h" -- "$cur") )
+        return 0
+    fi
+
+    case "${COMP_WORDS[1]}" in
+        connections|list|raise)
+            COMPREPLY=( $(compgen -W "--help -h" -- "$cur") )
+            ;;
+        status|send)
+            COMPREPLY=( $(compgen -W "--network --help -h" -- "$cur") )
+            ;;
+    esac
+}
+
+complete -F _omairc omairc

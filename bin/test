@@ -33,6 +33,108 @@ JOBS="$(nproc 2>/dev/null || echo 1)"
 
 "$ROOT/bin/build"
 
+assert_not_version_line() {
+  first_line=$(printf '%s\n' "$1" | head -n 1)
+  case "$first_line" in
+    omairc\ [0-9]*)
+      echo "$2 printed the version line." >&2
+      exit 1
+      ;;
+  esac
+}
+
+is_json_object() {
+  case "$1" in
+    \{*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+set +e
+HELP_OUTPUT="$(DISPLAY= "$ROOT/build/omairc" --help 2>&1)"
+HELP_STATUS=$?
+set -e
+if [ "$HELP_STATUS" -ne 0 ]; then
+  echo "omairc --help failed." >&2
+  exit 1
+fi
+assert_not_version_line "$HELP_OUTPUT" "omairc --help"
+if is_json_object "$HELP_OUTPUT"; then
+  echo "omairc --help must not print JSON." >&2
+  exit 1
+fi
+for token in connections list status send raise --mock --version; do
+  printf '%s\n' "$HELP_OUTPUT" | grep -Fq -- "$token" || {
+    echo "omairc --help must mention $token" >&2
+    exit 1
+  }
+done
+
+for command in connections list status send raise; do
+  set +e
+  COMMAND_HELP="$(DISPLAY= "$ROOT/build/omairc" "$command" --help 2>&1)"
+  COMMAND_STATUS=$?
+  set -e
+  if [ "$COMMAND_STATUS" -ne 0 ]; then
+    echo "omairc $command --help failed." >&2
+    exit 1
+  fi
+  if is_json_object "$COMMAND_HELP"; then
+    echo "omairc $command --help must not print JSON." >&2
+    exit 1
+  fi
+done
+
+set +e
+SEND_HELP="$(DISPLAY= "$ROOT/build/omairc" send --help 2>&1)"
+SEND_HELP_STATUS=$?
+set -e
+if [ "$SEND_HELP_STATUS" -ne 0 ]; then
+  echo "omairc send --help failed." >&2
+  exit 1
+fi
+assert_not_version_line "$SEND_HELP" "omairc send --help"
+if is_json_object "$SEND_HELP"; then
+  echo "omairc send --help must not print JSON." >&2
+  exit 1
+fi
+printf '%s\n' "$SEND_HELP" | grep -Fq -- "Usage: omairc send" || {
+  echo "omairc send --help must print send usage." >&2
+  exit 1
+}
+
+set +e
+SEND_TEXT="$(DISPLAY= "$ROOT/build/omairc" send '#c' --help 2>&1)"
+set -e
+printf '%s\n' "$SEND_TEXT" | grep -Fq -- "Usage: omairc send" && {
+  echo "omairc send '#c' --help must not print the send help page." >&2
+  exit 1
+}
+
+COMPLETION="$ROOT/data/bash-completion/omairc"
+COMPREPLY_TEXT="$(bash -c '
+  source "$1"
+  COMP_WORDS=(omairc "")
+  COMP_CWORD=1
+  _omairc
+  printf "%s\n" "${COMPREPLY[@]}"
+' bash "$COMPLETION")"
+printf '%s\n' "$COMPREPLY_TEXT" | grep -Fxq send || {
+  echo "bash completion at the first token must include send." >&2
+  exit 1
+}
+printf '%s\n' "$COMPREPLY_TEXT" | grep -Fxq -- --help || {
+  echo "bash completion at the first token must include --help." >&2
+  exit 1
+}
+for token in connections list status send raise; do
+  printf '%s\n' "$HELP_OUTPUT" | grep -Fq -- "$token" || continue
+  grep -Fq -- "$token" "$COMPLETION" || {
+    echo "completion file must mention control verb $token from --help." >&2
+    exit 1
+  }
+done
+
 set +e
 CLI_OUTPUT="$("$ROOT/build/omairc" send '#channel' please use --version 2>&1)"
 CLI_STATUS=$?

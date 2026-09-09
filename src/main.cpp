@@ -1,4 +1,3 @@
-#include <QCommandLineParser>
 #include <QCoreApplication>
 #include <QFile>
 #include <QFont>
@@ -13,7 +12,7 @@
 #include <QWindow>
 
 #include <stdio.h>
-#include <string.h>
+#include <variant>
 
 #include "backend.h"
 #include "irc/ircconnection.h"
@@ -40,18 +39,32 @@ static void raiseOmaircWindow(QQmlApplicationEngine &engine)
     }
 }
 
-int main(int argc, char *argv[]) {
-    if (argc == 2 && strcmp(argv[1], "--version") == 0) {
-        fputs("omairc " OMAIRC_VERSION "\n", stdout);
-        return 0;
-    }
+static int writeTerminal(const OmaircCli::TerminalExit &finished)
+{
+    fwrite(finished.standardOutput.constData(), 1,
+           size_t(finished.standardOutput.size()), stdout);
+    fflush(stdout);
+    fwrite(finished.standardError.constData(), 1,
+           size_t(finished.standardError.size()), stderr);
+    fflush(stderr);
+    return finished.code;
+}
 
-    if (OmaircCli::looksLikeCommand(argc, argv)) {
+int main(int argc, char *argv[]) {
+    const OmaircCli::StartupPlan plan =
+        OmaircCli::plan(argc, argv, OMAIRC_VERSION);
+
+    if (const auto *finished = std::get_if<OmaircCli::TerminalExit>(&plan))
+        return writeTerminal(*finished);
+
+    if (const auto *control = std::get_if<OmaircCli::ControlRequest>(&plan)) {
         QCoreApplication app(argc, argv);
         app.setApplicationName(QStringLiteral("omairc"));
         app.setApplicationVersion(QStringLiteral(OMAIRC_VERSION));
-        return OmaircCli::run(app);
+        return OmaircCli::execute(*control);
     }
+
+    const bool mockMode = std::get<OmaircCli::GuiLaunch>(plan).mockMode;
 
     QGuiApplication app(argc, argv);
     app.setApplicationName(QStringLiteral("omairc"));
@@ -61,17 +74,6 @@ int main(int argc, char *argv[]) {
         QStringLiteral("omairc"),
         QIcon(QStringLiteral(":/icons/omairc.svg"))));
     app.setOrganizationName(QStringLiteral("omairc"));
-
-    QCommandLineParser parser;
-    parser.setApplicationDescription(
-        QStringLiteral("A dead-simple IRC client for Omarchy."));
-    parser.addHelpOption();
-    const QCommandLineOption mockOption(
-        QStringLiteral("mock"),
-        QStringLiteral("Open the local prototype UI without connecting."));
-    parser.addOption(mockOption);
-    parser.process(app);
-    const bool mockMode = parser.isSet(mockOption);
 
     SingleInstance instance;
     const bool guardProcess =

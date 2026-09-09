@@ -2,18 +2,29 @@
 
 #include "omaircipc.h"
 
-#include <QString>
-#include <QStringList>
+#include <QByteArray>
 
-#include <optional>
-
-class QCoreApplication;
+#include <variant>
 
 namespace OmaircCli {
 
-bool looksLikeCommand(int argc, char **argv);
-int run(QCoreApplication &app);
-std::optional<OmaircIpc::Request> parseArgs(const QStringList &args,
-                                            QString &error);
+struct GuiLaunch {
+    bool mockMode = false;
+};
+
+struct TerminalExit {
+    QByteArray standardOutput;
+    QByteArray standardError;
+    int code = 0;
+};
+
+struct ControlRequest {
+    OmaircIpc::Request request;
+};
+
+using StartupPlan = std::variant<GuiLaunch, TerminalExit, ControlRequest>;
+
+StartupPlan plan(int argc, char *const argv[], const char *version);
+int execute(const ControlRequest &control);
 
 }
