@@ -22,6 +22,7 @@
 #include "omairccli.h"
 #include "omaircipchandler.h"
 #include "singleinstance.h"
+#include "storage/secretservicecredentialstore.h"
 #include "systemtheme.h"
 
 #ifndef OMAIRC_VERSION
@@ -90,7 +91,8 @@ int main(int argc, char *argv[]) {
     IrcConnection *ircConnection = nullptr;
     if (!mockMode) {
         ircController = new IrcController(&app);
-        ircConnection = new IrcConnection(*ircController, &app);
+        auto *credentialStore = new SecretServiceCredentialStore(&app);
+        ircConnection = new IrcConnection(*ircController, *credentialStore, &app);
     }
     SystemTheme systemTheme(&app);
     backend.setDarkMode(systemTheme.darkMode());

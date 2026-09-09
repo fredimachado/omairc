@@ -51,8 +51,8 @@ HEADERS += \
     ../src/irc/irccontroller.h \
     ../src/irc/ircnetworkprofile.h \
     ../src/irc/ircprofilestore.h \
-    ../src/irc/credentialstore.h \
-    ../src/irc/secretservicecredentialstore.h \
+    ../src/storage/credentialstore.h \
+    ../src/storage/secretservicecredentialstore.h \
     ../src/irc/ircconnection.h \
     ../src/irc/qtirctransport.h \
     support/fakeirctransport.h
@@ -95,7 +95,7 @@ SOURCES += \
     ../src/irc/irccontroller.cpp \
     ../src/irc/ircnetworkprofile.cpp \
     ../src/irc/ircprofilestore.cpp \
-    ../src/irc/secretservicecredentialstore.cpp \
+    ../src/storage/secretservicecredentialstore.cpp \
     ../src/irc/ircconnection.cpp \
     ../src/irc/qtirctransport.cpp \
     support/fakeirctransport.cpp \

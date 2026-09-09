@@ -12,5 +12,4 @@ public:
     void read(const CredentialKey &key) override;
     void write(const CredentialKey &key, const QString &password) override;
     void remove(const CredentialKey &key) override;
-
 };

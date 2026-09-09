@@ -2,18 +2,12 @@
 
 #include "irccontroller.h"
 #include "qtirctransport.h"
-#include "secretservicecredentialstore.h"
 
 namespace
 {
 IrcTransport *defaultTransport()
 {
     return new QtIrcTransport;
-}
-
-CredentialStore *defaultCredentialStore()
-{
-    return new SecretServiceCredentialStore;
 }
 
 IrcNetworkProfile firstStoredProfile(const QList<IrcNetworkProfile> &profiles)
@@ -28,44 +22,25 @@ IrcNetworkProfile firstStoredProfile(const QList<IrcNetworkProfile> &profiles)
 }
 }
 
-IrcConnection::IrcConnection(IrcController &controller, QObject *parent)
-    : IrcConnection(controller, defaultTransport, parent)
-{
-}
-
 IrcConnection::IrcConnection(IrcController &controller,
-                             TransportFactory transportFactory,
+                             CredentialStore &credentialStore,
                              QObject *parent)
-    : IrcConnection(controller, std::move(transportFactory), {},
-                    parent)
+    : IrcConnection(controller, defaultTransport, credentialStore, parent)
 {
 }
 
 IrcConnection::IrcConnection(IrcController &controller,
                              TransportFactory transportFactory,
-                             std::nullptr_t)
-    : IrcConnection(controller, std::move(transportFactory),
-                    static_cast<QObject *>(nullptr))
-{
-}
-
-IrcConnection::IrcConnection(IrcController &controller,
-                             TransportFactory transportFactory,
-                             CredentialStoreFactory credentialStoreFactory,
+                             CredentialStore &credentialStore,
                              QObject *parent)
     : QObject(parent)
     , m_controller(controller)
     , m_transportFactory(std::move(transportFactory))
-    , m_credentialStoreFactory(std::move(credentialStoreFactory))
+    , m_credentialStore(credentialStore)
 {
     if (!m_transportFactory)
         m_transportFactory = defaultTransport;
-    if (!m_credentialStoreFactory)
-        m_credentialStoreFactory = defaultCredentialStore;
-    m_credentialStore = m_credentialStoreFactory();
-    if (m_credentialStore) {
-        m_credentialStore->setParent(this);
-        connect(m_credentialStore, &CredentialStore::readFinished, this,
+    connect(&m_credentialStore, &CredentialStore::readFinished, this,
                 [this](CredentialStore::State state, const QString &password,
                        const QString &message) {
             if (state != CredentialStore::State::Loading)
@@ -95,7 +70,7 @@ IrcConnection::IrcConnection(IrcController &controller,
             emit credentialStateChanged();
             emit draftChanged();
         });
-        connect(m_credentialStore, &CredentialStore::writeFinished, this,
+    connect(&m_credentialStore, &CredentialStore::writeFinished, this,
                 [this](CredentialStore::State state, const QString &message) {
             if (m_credentialOperations.isEmpty())
                 return;
@@ -132,16 +107,14 @@ IrcConnection::IrcConnection(IrcController &controller,
             processCredentialOperations();
             emit credentialStateChanged();
         });
-    }
-
     m_stored = firstStoredProfile(m_store.profiles());
     if (m_stored.networkId.isEmpty())
         m_draft = IrcNetworkProfile::suggested();
     else
         m_draft = m_stored;
-    if (m_credentialStore && !m_stored.networkId.isEmpty()) {
+    if (!m_stored.networkId.isEmpty()) {
         m_credentialReadInFlight = true;
-        m_credentialStore->read(credentialKey(m_stored));
+        m_credentialStore.read(credentialKey(m_stored));
     }
 
     connect(&m_controller, &IrcController::errorOccurred, this,
@@ -379,7 +352,7 @@ void IrcConnection::forgetPassword()
 
 void IrcConnection::removeStoredPassword()
 {
-    if (!m_credentialStore || m_stored.networkId.isEmpty())
+    if (m_stored.networkId.isEmpty())
         return;
     queueCredentialRemoval(credentialKey(m_stored), m_secretRevision);
 }
@@ -404,19 +377,19 @@ bool IrcConnection::apply()
             != nextCredentialKey.networkId
         || previousCredentialKey.username != nextCredentialKey.username
         || previousCredentialKey.host != nextCredentialKey.host;
-    if (m_credentialStore && !m_password.isEmpty()
+    if (!m_password.isEmpty()
         && (m_passwordEdited || credentialKeyChanged)) {
         queueCredentialWrite(
             nextCredentialKey, m_password, m_secretRevision,
             credentialKeyChanged && !previousCredentialKey.networkId.isEmpty()
                 ? std::optional{previousCredentialKey} : std::nullopt);
         m_pendingCredentialMigration.reset();
-    } else if (m_credentialStore && m_passwordEdited) {
+    } else if (m_passwordEdited) {
         if (m_password.isEmpty()) {
             queueCredentialRemoval(nextCredentialKey, m_secretRevision);
         }
         m_pendingCredentialMigration.reset();
-    } else if (m_credentialStore && credentialKeyChanged
+    } else if (credentialKeyChanged
                && !previousCredentialKey.networkId.isEmpty()
                && m_credentialReadInFlight) {
         m_pendingCredentialMigration = previousCredentialKey;
@@ -428,13 +401,13 @@ bool IrcConnection::apply()
 
 void IrcConnection::processCredentialOperations()
 {
-    if (!m_credentialStore || m_credentialOperations.isEmpty())
+    if (m_credentialOperations.isEmpty())
         return;
     const CredentialOperation &operation = m_credentialOperations.first();
     if (operation.kind == CredentialOperation::Kind::Write)
-        m_credentialStore->write(operation.key, operation.password);
+        m_credentialStore.write(operation.key, operation.password);
     else
-        m_credentialStore->remove(operation.key);
+        m_credentialStore.remove(operation.key);
 }
 
 void IrcConnection::queueCredentialWrite(

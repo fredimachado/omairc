@@ -2,7 +2,7 @@
 
 #include "ircnetworkprofile.h"
 #include "ircprofilestore.h"
-#include "credentialstore.h"
+#include "../storage/credentialstore.h"
 
 #include <QObject>
 #include <QList>
@@ -42,18 +42,12 @@ class IrcConnection : public QObject
 
 public:
     using TransportFactory = std::function<IrcTransport *()>;
-    using CredentialStoreFactory = std::function<CredentialStore *()>;
 
-    explicit IrcConnection(IrcController &controller, QObject *parent = nullptr);
-    IrcConnection(IrcController &controller,
-                  TransportFactory transportFactory,
+    IrcConnection(IrcController &controller, CredentialStore &credentialStore,
                   QObject *parent = nullptr);
     IrcConnection(IrcController &controller,
                   TransportFactory transportFactory,
-                  std::nullptr_t);
-    IrcConnection(IrcController &controller,
-                  TransportFactory transportFactory,
-                  CredentialStoreFactory credentialStoreFactory,
+                  CredentialStore &credentialStore,
                   QObject *parent = nullptr);
 
     QString host() const;
@@ -117,8 +111,7 @@ private:
     IrcController &m_controller;
     TransportFactory m_transportFactory;
     IrcProfileStore m_store;
-    CredentialStoreFactory m_credentialStoreFactory;
-    CredentialStore *m_credentialStore = nullptr;
+    CredentialStore &m_credentialStore;
     bool m_credentialReadInFlight = false;
     IrcNetworkProfile m_draft;
     IrcNetworkProfile m_stored;
