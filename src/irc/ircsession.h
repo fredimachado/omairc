@@ -1,5 +1,7 @@
 #pragma once
 
+#include <QElapsedTimer>
+#include <QHash>
 #include <QObject>
 #include <QString>
 #include <QStringList>
@@ -156,6 +158,7 @@ private:
     void sendLine(const QByteArray &line);
     void handleBytes(const QByteArray &bytes);
     void handleMessage(const IrcMessage &message);
+    bool allowCtcpReply(const QString &nick);
     void handleCap(const IrcMessage &message);
     void handleAuthenticate(const IrcMessage &message);
     void handleWelcome(const IrcMessage &message);
@@ -194,6 +197,7 @@ private:
     IrcCapabilityNegotiation m_capabilities;
     IrcCapabilitySet m_publishedCapabilities;
     IrcTypingPublisher m_typing;
+    QHash<QString, QElapsedTimer> m_ctcpReplyClock;
     State m_state = State::Idle;
     bool m_expectedDisconnect = false;
     bool m_reconnectAfterDisconnect = false;

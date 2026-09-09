@@ -23,6 +23,8 @@
 namespace
 {
 constexpr char kPingWatchdogToken[] = "omairc-watchdog";
+constexpr qsizetype kCtcpPingPayloadMaxBytes = 32;
+constexpr qint64 kCtcpReplyIntervalMs = 5000;
 
 QByteArray builtLine(const IrcBuildResult &result)
 {
@@ -665,6 +667,16 @@ void IrcSession::handleBytes(const QByteArray &bytes)
     }
 }
 
+bool IrcSession::allowCtcpReply(const QString &nick)
+{
+    const QString key = nick.toCaseFolded();
+    QElapsedTimer &clock = m_ctcpReplyClock[key];
+    if (clock.isValid() && clock.elapsed() < kCtcpReplyIntervalMs)
+        return false;
+    clock.start();
+    return true;
+}
+
 void IrcSession::handleMessage(const IrcMessage &message)
 {
     emit statusEntry(IrcStatusEntry::incoming(m_config.networkId, message));
@@ -693,19 +705,27 @@ void IrcSession::handleMessage(const IrcMessage &message)
             const QString sender = prefixNick(message);
             if (sender.isEmpty())
                 return;
+            QString payload;
             if (request->command == QStringLiteral("PING")) {
-                sendNotice(sender, ctcpPayload({QStringLiteral("PING"), request->argument}));
+                if (request->argument.toUtf8().size() > kCtcpPingPayloadMaxBytes)
+                    return;
+                payload = ctcpPayload({QStringLiteral("PING"), request->argument});
             } else if (request->command == QStringLiteral("TIME")) {
-                sendNotice(sender, ctcpPayload({
+                payload = ctcpPayload({
                     QStringLiteral("TIME"),
                     QDateTime::currentDateTime().toString(Qt::RFC2822Date),
-                }));
+                });
             } else if (request->command == QStringLiteral("VERSION")) {
-                sendNotice(sender, ctcpPayload({
+                payload = ctcpPayload({
                     QStringLiteral("VERSION"),
                     QStringLiteral("Omairc %1").arg(QString::fromLatin1(OMAIRC_VERSION)),
-                }));
+                });
+            } else {
+                return;
             }
+            if (!allowCtcpReply(sender))
+                return;
+            sendNotice(sender, payload);
             return;
         }
     }
