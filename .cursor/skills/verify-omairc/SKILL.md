@@ -1,6 +1,6 @@
 ---
 name: verify-omairc
-description: Drive the Omairc Qt desktop prototype as a user would (isolated Xvfb + compiled binary). Use when proving the first-run Connect sheet, Status console, channel switching, sending local messages, the member panel, member presence, typing, the identity footer, keyboard shortcuts, closing a direct message, slash commands, slash-command complete, or opening a direct message.
+description: Drive the Omairc Qt desktop prototype as a user would (isolated Xvfb + compiled binary). Use when proving the first-run Connect sheet, Status console, channel switching, sending local messages, the member panel, member presence, typing, the identity footer, keyboard shortcuts, closing a direct message, slash commands, slash-command complete, opening a direct message, unfocused mention notifications, or http(s) links in transcripts.
 ---
 
 # Verify Omairc
@@ -87,7 +87,7 @@ Use `control-omairc` against the isolated window. Stable handles:
 | Handle | Meaning |
 |---|---|
 | Window title `{name} - Omairc` | Current conversation |
-| `click-conversation --name #desktop` | Mock sidebar channel or seeded DM (`#omarchy`, `#desktop`, `#ricing`, `#help`, `anna`, `dax`). Those rows are hidden when `irc` is bound. Use `control-omairc launch --mock` for the prototype. |
+| `click-conversation --name #desktop` | Mock sidebar channel or seeded DM (`#omarchy`, `#desktop`, `#ricing`, `#help`, `anna`, `dax`). Created DMs such as `mira` are not in that list; open them with `click-member` from a channel. Those rows are hidden when `irc` is bound. Use `control-omairc launch --mock` for the prototype. |
 | `click-member --name mira` | Member row while the panel is visible |
 | `click-people` | Header `12 PEOPLE` / `Hide members` control while the member column is open (`908,36`) |
 | `click-people --hidden` | Same control after the column hides (`1124,36`) |
@@ -113,7 +113,7 @@ Use `control-omairc` against the isolated window. Stable handles:
 
 Named clicks are window-relative pixels for 1180x760 at textScale 1.0. They are invalid on a maximized window, a restored user geometry, or a portal text scale other than 1.0. That is why launch isolates XDG and DBus.
 
-QML object names used by `bin/test` (not visible to xdotool): `connectionSheet`, `connectionHost`, `connectionNick`, `conversation-#desktop`, `conversation-anna`, `messageComposer`, `sendButton`, `peopleButton`, `membersPanel`, `membersList`, `member-mira`, `messageList`, `directConversationRepeater`, `networkHeaderButton`, `networkEditButton`, `consoleList`, `selfNickLabel`, `selfPresenceDot`, `selfPresenceLabel`, `presence-dot-anna`, `member-status-anna`, `shortcutsSheet`, `composer-typing`, `member-typing-anna`, `slashCompleteList`, `slashHit-join`.
+QML object names used by `bin/test` (not visible to xdotool): `connectionSheet`, `connectionHost`, `connectionNick`, `conversation-#desktop`, `conversation-anna`, `messageComposer`, `sendButton`, `peopleButton`, `membersPanel`, `membersList`, `member-mira`, `messageList`, `messageBody`, `urlHit`, `directConversationRepeater`, `networkHeaderButton`, `networkEditButton`, `consoleList`, `selfNickLabel`, `selfPresenceDot`, `selfPresenceLabel`, `presence-dot-anna`, `member-status-anna`, `shortcutsSheet`, `composer-typing`, `member-typing-anna`, `slashCompleteList`, `slashHit-join`.
 
 Typical drive:
 
@@ -130,7 +130,7 @@ That click path needs the mock sidebar. Use `control-omairc launch --mock`. A de
 
 Inspect the matching feature file for the exact recipe and observables.
 
-When desktop tools are missing, drive the mapped feature through the suite. `qml-suite` runs `bin/test`, which opens the Connect sheet with a fake incomplete profile, then clicks `conversation-#desktop`, `messageComposer`, `membersPanel` / `Ctrl+Shift+M`, `member-mira`, and `networkHeaderButton` with real mouse and key events, then copies screenshots into `test-artifacts/verify/`. That covers every mapped feature except live PREFIX ranks, live typing, and live slash dispatch, which need a completed Connect. It is not a pass on a skipped desktop entry point; say so in the proof notes.
+When desktop tools are missing, drive the mapped feature through the suite. `qml-suite` runs `bin/test`, which opens the Connect sheet with a fake incomplete profile, then clicks `conversation-#desktop`, `messageComposer`, `membersPanel` / `Ctrl+Shift+M`, `member-mira`, and `networkHeaderButton` with real mouse and key events, then copies screenshots into `test-artifacts/verify/`. That covers every mapped feature except live PREFIX ranks, live typing, live slash dispatch, and a real unfocused desktop mention, which need a completed Connect (and, for mentions, an unfocused window). It is not a pass on a skipped desktop entry point; say so in the proof notes.
 
 ## Evidence
 

@@ -34,7 +34,7 @@ Preconditions:
 
 ## Gotchas
 
-- Seeded DMs are only `anna` and `dax`. `mira` and the other nicks are created on first member click.
+- Seeded DMs are only `anna` and `dax`. `mira` and the other nicks are created on first member click. `click-conversation` cannot target a created row; return to `mira` with `click-member` from a channel.
 - Clicking `fred` is ignored. Do not treat a still-open channel as a failed DM open unless the click was on someone else.
 - Opening a DM hides the member panel because the conversation is no longer a channel. Re-open a channel before proving another member click.
 - `click-member` coordinates assume the panel is visible on the right of the 1180-wide window. If the panel is closed, open it with `Ctrl+Shift+M` first.
