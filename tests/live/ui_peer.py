@@ -49,10 +49,11 @@ def main():
             if not chunk:
                 break
             buf += chunk
-            text = buf.decode("utf-8", "replace")
-            for line in text.split("\r\n"):
+            chunk_text = chunk.decode("utf-8", "replace")
+            for line in chunk_text.split("\r\n"):
                 if line.startswith("PING"):
                     send(sock, "PONG " + line[5:])
+            text = buf.decode("utf-8", "replace")
             if "dm reply from ui" in text:
                 print("PEER_GOT_REPLY", flush=True)
                 break
