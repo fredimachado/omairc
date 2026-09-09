@@ -131,14 +131,21 @@ ApplicationWindow {
     component PlainUrlHit: MouseArea {
         required property Item edit
 
+        objectName: "urlHit"
         anchors.fill: parent
         hoverEnabled: true
-        acceptedButtons: hitUrl.length > 0 ? Qt.LeftButton : Qt.NoButton
-        cursorShape: hitUrl.length > 0 ? Qt.PointingHandCursor : Qt.IBeamCursor
-        readonly property string hitUrl: edit
-            ? win.httpUrlAt(edit.text, edit.positionAt(mouseX, mouseY))
-            : ""
-        onClicked: win.openAllowedUrl(hitUrl)
+        acceptedButtons: Qt.LeftButton
+        cursorShape: win.httpUrlAt(edit.text, edit.positionAt(mouseX, mouseY)).length > 0
+            ? Qt.PointingHandCursor
+            : Qt.IBeamCursor
+        onPressed: function(mouse) {
+            var url = win.httpUrlAt(edit.text, edit.positionAt(mouse.x, mouse.y));
+            if (url.length === 0)
+                mouse.accepted = false;
+        }
+        onClicked: function(mouse) {
+            win.openAllowedUrl(win.httpUrlAt(edit.text, edit.positionAt(mouse.x, mouse.y)));
+        }
     }
 
     component TypingDots: Row {

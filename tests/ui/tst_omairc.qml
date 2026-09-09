@@ -1310,7 +1310,9 @@ TestCase {
         appWindow.lastOpenedUrl = "";
         var start = body.text.indexOf("https://example.com");
         var rect = body.positionToRectangle(start + 4);
-        mouseClick(body, rect.x + Math.max(1, rect.width / 2), rect.y + rect.height / 2);
+        var hit = findChild(body, "urlHit");
+        verify(hit !== null, "Could not find message urlHit");
+        mouseClick(hit, rect.x + Math.max(1, rect.width / 2), rect.y + rect.height / 2);
         compare(appWindow.lastOpenedUrl, "https://example.com");
     }
 
@@ -1344,7 +1346,9 @@ TestCase {
         appWindow.lastOpenedUrl = "";
         var start = body.text.indexOf("http://example.com");
         var rect = body.positionToRectangle(start + 4);
-        mouseClick(body, rect.x + Math.max(1, rect.width / 2), rect.y + rect.height / 2);
+        var hit = findChild(body, "urlHit");
+        verify(hit !== null, "Could not find console urlHit");
+        mouseClick(hit, rect.x + Math.max(1, rect.width / 2), rect.y + rect.height / 2);
         compare(appWindow.lastOpenedUrl, "http://example.com");
     }
 
