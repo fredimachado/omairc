@@ -171,6 +171,7 @@ private slots:
     void incomingNickCaseOnlyRetargetsDirect();
     void welcomeAssignedNickRoutesDirectMessages();
     void echoIfPresentUsesAssignedNick();
+    void incomingDirectReplySendsToPeerNick();
 };
 
 void ControllerTest::reducesTrafficAndRoutesOutboundByNetwork()
@@ -2169,6 +2170,44 @@ void ControllerTest::echoIfPresentUsesAssignedNick()
              QStringLiteral("later"));
     QCOMPARE(roleAt(messages, messages->rowCount() - 1, MessageListModel::AuthorRole),
              QStringLiteral("omairc-truncated"));
+}
+
+void ControllerTest::incomingDirectReplySendsToPeerNick()
+{
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+                                                transport);
+    QVERIFY(session);
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    transport->completeConnect();
+    transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
+                          ":server 001 omairc :Welcome\r\n"
+                          ":omairc!u@h JOIN :#omarchy\r\n"
+                          ":server 353 omairc = #omarchy :omairc lena\r\n"
+                          ":server 366 omairc #omarchy :End of NAMES\r\n"));
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    QCOMPARE(controller.selectedTarget(), QStringLiteral("#omarchy"));
+
+    transport->injectBytes(QByteArrayLiteral(":lena!u@h PRIVMSG omairc :hi\r\n"));
+    QCOMPARE(controller.selectedTarget(), QStringLiteral("#omarchy"));
+    auto *conversations =
+        qobject_cast<QAbstractItemModel *>(controller.conversations());
+    QVERIFY(rowForTarget(conversations, QStringLiteral("lena")) >= 0);
+
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("lena"));
+    QCOMPARE(controller.selectedTarget(), QStringLiteral("lena"));
+    QVERIFY(!controller.isChannel());
+    QVERIFY(controller.sendMessage(QStringLiteral("hello")));
+    QCOMPARE(controller.lastError(), QString());
+    QCOMPARE(transport->writtenFrames().last(),
+             QByteArrayLiteral("PRIVMSG lena :hello\r\n"));
+
+    auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
+    QVERIFY(messages);
+    QCOMPARE(roleAt(messages, messages->rowCount() - 1, MessageListModel::BodyRole),
+             QStringLiteral("hello"));
 }
 
 int runControllerTests(int argc, char **argv)
