@@ -16,6 +16,7 @@ class CapabilityTest : public QObject
 
 private slots:
     void unwantedAdvertisementProducesNoRequest();
+    void quietCapsRequestWhenAdvertised();
     void saslKeepsItsOwnLine();
     void messageTagsKeepsItsOwnLine();
     void saslNeedsCredentialsAndPlain();
@@ -29,13 +30,35 @@ private slots:
 void CapabilityTest::unwantedAdvertisementProducesNoRequest()
 {
     IrcCapabilityNegotiation negotiation(false);
-    negotiation.advertise(tokens(QStringLiteral("multi-prefix echo-message")));
+    negotiation.advertise(tokens(QStringLiteral("account-notify invite-notify")));
 
     const IrcCapabilityNegotiation::Request request = negotiation.takeRequest();
     QVERIFY(request.lines.isEmpty());
     QVERIFY(!request.requestsSasl);
     QVERIFY(negotiation.settled());
     QVERIFY(negotiation.enabled().isEmpty());
+}
+
+void CapabilityTest::quietCapsRequestWhenAdvertised()
+{
+    IrcCapabilityNegotiation negotiation(false);
+    negotiation.advertise(tokens(QStringLiteral(
+        "multi-prefix chghost cap-notify echo-message account-notify")));
+
+    const IrcCapabilityNegotiation::Request request = negotiation.takeRequest();
+    QCOMPARE(request.lines,
+             QStringList{QStringLiteral(
+                 "multi-prefix chghost cap-notify echo-message")});
+    QVERIFY(!request.requestsSasl);
+    QVERIFY(!negotiation.settled());
+
+    const IrcCapabilitySet granted = negotiation.acknowledge(tokens(
+        QStringLiteral("multi-prefix chghost cap-notify echo-message")));
+    QVERIFY(granted.contains(IrcCapability::MultiPrefix));
+    QVERIFY(granted.contains(IrcCapability::Chghost));
+    QVERIFY(granted.contains(IrcCapability::CapNotify));
+    QVERIFY(granted.contains(IrcCapability::EchoMessage));
+    QVERIFY(negotiation.settled());
 }
 
 void CapabilityTest::saslKeepsItsOwnLine()
@@ -47,7 +70,8 @@ void CapabilityTest::saslKeepsItsOwnLine()
     const IrcCapabilityNegotiation::Request request = negotiation.takeRequest();
     QCOMPARE(request.lines,
              QStringList({QStringLiteral("sasl"),
-                          QStringLiteral("away-notify batch draft/metadata-2")}));
+                          QStringLiteral(
+                              "away-notify batch draft/metadata-2 multi-prefix")}));
     QVERIFY(request.requestsSasl);
     QVERIFY(!negotiation.settled());
 }

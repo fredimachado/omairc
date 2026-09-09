@@ -186,22 +186,33 @@ void SessionTest::registersAndAutojoins()
              QByteArrayList{QByteArrayLiteral("CAP LS 302\r\n")});
 
     fixture.transport->injectBytes(
-        QByteArrayLiteral(":server CAP omairc LS :multi-prefix echo-message\r\n"));
+        QByteArrayLiteral(
+            ":server CAP omairc LS :multi-prefix chghost cap-notify echo-message\r\n"));
     QCOMPARE(fixture.session->state(), IrcSession::State::Registering);
     QCOMPARE(fixture.transport->writtenFrames().mid(1),
              QByteArrayList({
+                 QByteArrayLiteral(
+                     "CAP REQ :multi-prefix chghost cap-notify echo-message\r\n"),
                  QByteArrayLiteral("NICK omairc\r\n"),
                  QByteArrayLiteral("USER omairc 8 * :Omairc User\r\n"),
-                 QByteArrayLiteral("CAP END\r\n"),
              }));
     QVERIFY(fixture.session->capabilities().isEmpty());
+
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(
+            ":server CAP omairc ACK :multi-prefix chghost cap-notify echo-message\r\n"));
+    QVERIFY(fixture.wrote(QByteArrayLiteral("CAP END\r\n")));
+    QVERIFY(fixture.session->capabilities().contains(IrcCapability::MultiPrefix));
+    QVERIFY(fixture.session->capabilities().contains(IrcCapability::Chghost));
+    QVERIFY(fixture.session->capabilities().contains(IrcCapability::CapNotify));
+    QVERIFY(fixture.session->capabilities().contains(IrcCapability::EchoMessage));
 
     fixture.transport->injectBytes(
         QByteArrayLiteral(":server 001 omairc :Welcome\r\n"));
     QCOMPARE(fixture.session->state(), IrcSession::State::Registered);
     QCOMPARE(fixture.session->nick(), QStringLiteral("omairc"));
     QCOMPARE(registered.size(), 1);
-    QCOMPARE(fixture.transport->writtenFrames().mid(4),
+    QCOMPARE(fixture.transport->writtenFrames().mid(5),
              QByteArrayList({
                  QByteArrayLiteral("JOIN #omarchy\r\n"),
                  QByteArrayLiteral("JOIN &local\r\n"),
@@ -223,13 +234,15 @@ void SessionTest::negotiatesPresenceCapabilities()
              QByteArrayList({
                  QByteArrayLiteral("CAP LS 302\r\n"),
                  QByteArrayLiteral("CAP REQ :sasl\r\n"),
-                 QByteArrayLiteral("CAP REQ :away-notify batch draft/metadata-2\r\n"),
+                 QByteArrayLiteral(
+                     "CAP REQ :away-notify batch draft/metadata-2 multi-prefix\r\n"),
                  QByteArrayLiteral("NICK omairc\r\n"),
                  QByteArrayLiteral("USER omairc 8 * :Omairc User\r\n"),
              }));
 
     fixture.transport->injectBytes(
-        QByteArrayLiteral(":server CAP omairc ACK :away-notify batch draft/metadata-2\r\n"));
+        QByteArrayLiteral(
+            ":server CAP omairc ACK :away-notify batch draft/metadata-2 multi-prefix\r\n"));
     QVERIFY(!fixture.wrote(QByteArrayLiteral("CAP END\r\n")));
 
     fixture.transport->injectBytes(
@@ -378,7 +391,7 @@ void SessionTest::negotiatesSaslPlain()
 
     fixture.connectTls();
     fixture.transport->injectBytes(
-        QByteArrayLiteral(":server CAP omairc LS :sasl=PLAIN,EXTERNAL multi-prefix\r\n"));
+        QByteArrayLiteral(":server CAP omairc LS :sasl=PLAIN,EXTERNAL\r\n"));
     QCOMPARE(fixture.transport->writtenFrames(),
              QByteArrayList({
                  QByteArrayLiteral("CAP LS 302\r\n"),
@@ -416,7 +429,7 @@ void SessionTest::sendsPassWhenSaslIsUnavailable()
 
     fixture.connectTls();
     fixture.transport->injectBytes(
-        QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"));
+        QByteArrayLiteral(":server CAP omairc LS :account-notify\r\n"));
     QCOMPARE(fixture.transport->writtenFrames().mid(1),
              QByteArrayList({
                  QByteArrayLiteral("PASS secret\r\n"),

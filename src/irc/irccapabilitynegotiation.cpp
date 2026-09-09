@@ -56,6 +56,14 @@ const Wanted wantedTable[] = {
      IrcCapability::Batch, false, acceptsAnyValue},
     {IrcCapability::MessageTags, QLatin1String("message-tags"),
      std::nullopt, false, acceptsAnyValue},
+    {IrcCapability::MultiPrefix, QLatin1String("multi-prefix"),
+     std::nullopt, false, acceptsAnyValue},
+    {IrcCapability::Chghost, QLatin1String("chghost"),
+     std::nullopt, false, acceptsAnyValue},
+    {IrcCapability::CapNotify, QLatin1String("cap-notify"),
+     std::nullopt, false, acceptsAnyValue},
+    {IrcCapability::EchoMessage, QLatin1String("echo-message"),
+     std::nullopt, false, acceptsAnyValue},
 };
 
 const Wanted *wantedFor(const QString& name)

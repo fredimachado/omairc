@@ -253,6 +253,8 @@ std::vector<IrcEvent> IrcEventTranslator::translate(
                 nick,
                 away ? std::optional<IrcAway>(IrcAway{}) : std::nullopt});
         }
+    } else if (command == QStringLiteral("CHGHOST")) {
+        // Members store nick plus ranks. User and host are not modeled.
     } else if (command == QStringLiteral("METADATA")) {
         appendMemberStatus(events, networkId, message, 0, false, features);
     } else if (command == QStringLiteral("761")) {
