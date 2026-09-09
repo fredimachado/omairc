@@ -876,6 +876,117 @@ TestCase {
         compare(composer.text, "desktop draft");
     }
 
+    function visibleMatchIndex(list, needle) {
+        var lower = needle.toLowerCase();
+        var first = firstVisibleIndex(list);
+        if (first < 0)
+            return -1;
+        var last = list.indexAt(Math.max(1, list.width / 2),
+            list.contentY + Math.max(1, list.height - 1));
+        if (last < 0)
+            last = list.count - 1;
+        if (last < first)
+            last = first;
+        var index = 0;
+        for (index = first; index <= last; ++index) {
+            var row = list.model.get(index);
+            var hay = ((row && (row.body || row.text)) || "").toLowerCase();
+            if (hay.indexOf(lower) >= 0)
+                return index;
+        }
+        return -1;
+    }
+
+    function test_ctrlFFindsTextInConversation() {
+        var composer = item("messageComposer");
+        var list = item("messageList");
+        fillMockMessagesUntilScrollable(list);
+        appendMockMessages(list, 24, "find filler");
+        waitForRendering(appWindow.contentItem);
+        list.pinToEnd();
+        waitForRendering(appWindow.contentItem);
+        wait(0);
+        var pinnedY = list.contentY;
+        verify(pinnedY > 0);
+
+        typeText("keep me");
+        compare(composer.text, "keep me");
+        keyClick(Qt.Key_F, Qt.ControlModifier);
+        tryCompare(appWindow, "findActive", true);
+        compare(composer.text, "keep me");
+        verify(composer.activeFocus);
+
+        typeText("omarchy");
+        compare(composer.text, "omarchy");
+        tryVerify(function() {
+            return list.contentY < pinnedY;
+        }, 1000, "Ctrl+F should jump the list to the match");
+        var first = visibleMatchIndex(list, "omarchy");
+        verify(first >= 0, "The first omarchy row should be in view");
+        verify(list.model.get(first).body.toLowerCase().indexOf("omarchy") >= 0);
+
+        var countBefore = list.model.count;
+        keyClick(Qt.Key_Return);
+        compare(list.model.count, countBefore);
+        waitForRendering(appWindow.contentItem);
+        wait(0);
+        var second = visibleMatchIndex(list, "omarchy");
+        verify(second > first, "Enter in find should go to the next match");
+        compare(composer.text, "omarchy");
+
+        var current = second;
+        var hops = 0;
+        while (current !== first) {
+            keyClick(Qt.Key_F, Qt.ControlModifier);
+            waitForRendering(appWindow.contentItem);
+            wait(0);
+            current = visibleMatchIndex(list, "omarchy");
+            hops += 1;
+            verify(hops < list.count, "Find should wrap back to the first match");
+        }
+        verify(hops >= 1);
+        compare(list.model.count, countBefore);
+
+        keyClick(Qt.Key_Escape);
+        tryCompare(appWindow, "findActive", false);
+        compare(composer.text, "keep me");
+        verify(composer.activeFocus);
+
+        keyClick(Qt.Key_Return);
+        compare(composer.text, "");
+        tryCompare(list.model, "count", countBefore + 1);
+        compare(list.model.get(countBefore).body, "keep me");
+    }
+
+    function test_ctrlFFindsTextInStatus() {
+        var composer = item("messageComposer");
+        var list = item("consoleList");
+        keyClick(Qt.Key_QuoteLeft, Qt.ControlModifier);
+        tryCompare(appWindow, "consoleVisible", true);
+        fillMockConsoleUntilScrollable(list);
+        var pinnedY = list.contentY;
+        verify(pinnedY > 0);
+
+        mouseClick(composer);
+        verify(composer.activeFocus);
+        typeText("hostname");
+        keyClick(Qt.Key_F, Qt.ControlModifier);
+        tryCompare(appWindow, "findActive", true);
+        waitForRendering(appWindow.contentItem);
+        wait(0);
+
+        verify(list.contentY < pinnedY, "Ctrl+F should jump Status to the match");
+        var match = visibleMatchIndex(list, "hostname");
+        verify(match >= 0, "The hostname Status line should be in view");
+        verify(list.model.get(match).text.toLowerCase().indexOf("hostname") >= 0);
+        compare(composer.text, "hostname");
+
+        keyClick(Qt.Key_Escape);
+        tryCompare(appWindow, "findActive", false);
+        compare(composer.text, "hostname");
+        compare(appWindow.consoleVisible, true);
+    }
+
     function test_pageUpScrollsTranscript() {
         var composer = item("messageComposer");
         var list = item("messageList");
