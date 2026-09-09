@@ -1,3 +1,4 @@
+#include <QCommandLineParser>
 #include <QCoreApplication>
 #include <QFile>
 #include <QFont>
@@ -39,32 +40,25 @@ static void raiseOmaircWindow(QQmlApplicationEngine &engine)
     }
 }
 
-static int writeTerminal(const OmaircCli::TerminalExit &finished)
-{
-    fwrite(finished.standardOutput.constData(), 1,
-           size_t(finished.standardOutput.size()), stdout);
-    fflush(stdout);
-    fwrite(finished.standardError.constData(), 1,
-           size_t(finished.standardError.size()), stderr);
-    fflush(stderr);
-    return finished.code;
-}
-
 int main(int argc, char *argv[]) {
-    const OmaircCli::StartupPlan plan =
-        OmaircCli::plan(argc, argv, OMAIRC_VERSION);
+    QStringList args;
+    for (int i = 1; i < argc; ++i)
+        args.append(QString::fromLocal8Bit(argv[i]));
 
-    if (const auto *finished = std::get_if<OmaircCli::TerminalExit>(&plan))
-        return writeTerminal(*finished);
-
-    if (const auto *control = std::get_if<OmaircCli::ControlRequest>(&plan)) {
-        QCoreApplication app(argc, argv);
-        app.setApplicationName(QStringLiteral("omairc"));
-        app.setApplicationVersion(QStringLiteral(OMAIRC_VERSION));
-        return OmaircCli::execute(*control);
+    const bool headless = !args.isEmpty()
+        && (args.constFirst() == QLatin1String("--help")
+            || args.constFirst() == QLatin1String("--version")
+            || OmaircCli::looksLikeCommand(argc, argv));
+    if (headless) {
+        const OmaircCli::ParseOutcome outcome = OmaircCli::parseArgs(args);
+        if (const auto *request = std::get_if<OmaircIpc::Request>(&outcome)) {
+            QCoreApplication app(argc, argv);
+            app.setApplicationName(QStringLiteral("omairc"));
+            app.setApplicationVersion(QStringLiteral(OMAIRC_VERSION));
+            return OmaircCli::runRequest(app, *request);
+        }
+        return OmaircCli::printOutcome(outcome);
     }
-
-    const bool mockMode = std::get<OmaircCli::GuiLaunch>(plan).mockMode;
 
     QGuiApplication app(argc, argv);
     app.setApplicationName(QStringLiteral("omairc"));
@@ -74,6 +68,16 @@ int main(int argc, char *argv[]) {
         QStringLiteral("omairc"),
         QIcon(QStringLiteral(":/icons/omairc.svg"))));
     app.setOrganizationName(QStringLiteral("omairc"));
+
+    QCommandLineParser parser;
+    parser.setApplicationDescription(
+        QStringLiteral("A dead-simple IRC client for Omarchy."));
+    const QCommandLineOption mockOption(
+        QStringLiteral("mock"),
+        QStringLiteral("Open the local prototype UI without connecting."));
+    parser.addOption(mockOption);
+    parser.process(app);
+    const bool mockMode = parser.isSet(mockOption);
 
     SingleInstance instance;
     const bool guardProcess =

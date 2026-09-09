@@ -4,8 +4,11 @@
 #include <QSignalSpy>
 #include <QTest>
 
+#include <variant>
+
 #include "fakeirctransport.h"
 #include "irccontroller.h"
+#include "omairccli.h"
 #include "omaircipc.h"
 #include "omaircipchandler.h"
 #include "singleinstance.h"
@@ -71,6 +74,7 @@ private slots:
     void socketClosesAfterOneRequest();
     void connectionsSortedById();
     void handlerUsesNetworkScopedErrors();
+    void sendAllowsDashPrefixedText();
     void socketRaisePingWithHandlerRaisesOnce();
     void socketAcceptsSplitRaisePing();
     void socketAcceptsDisconnectedRaisePing();
@@ -439,6 +443,26 @@ void OmaircIpcTest::connectionsSortedById()
              QStringLiteral("net-a"));
     QCOMPARE(connections.at(1).toObject().value(QStringLiteral("id")).toString(),
              QStringLiteral("net-b"));
+}
+
+void OmaircIpcTest::sendAllowsDashPrefixedText()
+{
+    const auto request = OmaircCli::parseArgs(
+        {QStringLiteral("send"), QStringLiteral("#chan"),
+         QStringLiteral("-hello")});
+    QVERIFY(std::holds_alternative<OmaircIpc::Request>(request));
+    QCOMPARE(std::get<OmaircIpc::Request>(request).target,
+             QStringLiteral("#chan"));
+    QCOMPARE(std::get<OmaircIpc::Request>(request).text,
+             QStringLiteral("-hello"));
+
+    const auto withDashDash = OmaircCli::parseArgs(
+        {QStringLiteral("send"), QStringLiteral("--"),
+         QStringLiteral("#chan"), QStringLiteral("--network"),
+         QStringLiteral("not-an-option")});
+    QVERIFY(std::holds_alternative<OmaircIpc::Request>(withDashDash));
+    QCOMPARE(std::get<OmaircIpc::Request>(withDashDash).text,
+             QStringLiteral("--network not-an-option"));
 }
 
 void OmaircIpcTest::socketRaisePingWithHandlerRaisesOnce()

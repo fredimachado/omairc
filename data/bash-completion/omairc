@@ -4,16 +4,16 @@ _omairc()
     cur="${COMP_WORDS[COMP_CWORD]}"
 
     if [ "$COMP_CWORD" -eq 1 ]; then
-        COMPREPLY=( $(compgen -W "connections list status send raise --help --version --mock -h" -- "$cur") )
+        COMPREPLY=( $(compgen -W "connections list status send raise help --help --version --mock" -- "$cur") )
         return 0
     fi
 
     case "${COMP_WORDS[1]}" in
-        connections|list|raise)
-            COMPREPLY=( $(compgen -W "--help -h" -- "$cur") )
+        connections|list|raise|help)
+            COMPREPLY=( $(compgen -W "--help" -- "$cur") )
             ;;
         status|send)
-            COMPREPLY=( $(compgen -W "--network --help -h" -- "$cur") )
+            COMPREPLY=( $(compgen -W "--network --help" -- "$cur") )
             ;;
     esac
 }

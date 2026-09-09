@@ -3,128 +3,131 @@
 #include "omaircipc.h"
 #include "singleinstance.h"
 
+#ifndef OMAIRC_VERSION
+#error "Build with omairc.pro so OMAIRC_VERSION is defined"
+#endif
+
+#include <QCoreApplication>
 #include <QElapsedTimer>
 #include <QLocalSocket>
-#include <QString>
 #include <QStringList>
-#include <QStringView>
 
-#include <array>
 #include <optional>
 #include <stdio.h>
-#include <variant>
 
 namespace OmaircCli {
 namespace {
 
 constexpr int kMaxIpcLineBytes = 64 * 1024;
 constexpr int kResponseTimeoutMs = 3000;
-
-enum class NetworkOption {
-    Forbidden,
-    Optional,
-};
-
-enum class OperandShape {
-    None,
-    SendTargetAndText,
-};
-
-enum class OptionBoundary {
-    AllArguments,
-    FirstOperand,
-};
-
-struct CommandGrammar {
-    NetworkOption network;
-    OperandShape operands;
-    OptionBoundary optionBoundary;
-    bool acceptsDoubleDash;
-};
+constexpr int kOverviewUsageWidth = 33;
 
 struct CommandSpec {
-    OmaircIpc::Command ipcCommand;
-    const char *canonicalName;
-    const char *alias;
-    const char *summary;
-    CommandGrammar grammar;
+    CommandId id;
+    const char *primaryName;
+    const char *aliasName;
+    const char *usage;
+    const char *summaryLine;
+    const char *detailText;
 };
 
-struct RootOptionSpec {
-    const char *spelling;
-    const char *alias;
-    const char *description;
+const CommandSpec kCommands[] = {
+    {
+        CommandId::Help,
+        "help",
+        nullptr,
+        "omairc help [command]",
+        "Show this help",
+        "",
+    },
+    {
+        CommandId::Connections,
+        "connections",
+        "list",
+        "omairc connections",
+        "List connections as JSON (alias: list)",
+        "Usage: omairc connections\n"
+        "\n"
+        "List connections as JSON. list is an alias.\n"
+        "\n"
+        "Each row has id, host, port, tls, nick, state, and selected.\n",
+    },
+    {
+        CommandId::Status,
+        "status",
+        nullptr,
+        "omairc status [--network ID]",
+        "Show one connection as JSON",
+        "Usage: omairc status [--network ID]\n"
+        "\n"
+        "Show one connection as JSON.\n"
+        "\n"
+        "  --network ID   Connection to use. See connections.\n"
+        "\n"
+        "With one connection, --network may be omitted.\n",
+    },
+    {
+        CommandId::Send,
+        "send",
+        nullptr,
+        "omairc send [--network ID] TARGET TEXT...",
+        "Send a message without changing UI selection",
+        "Usage: omairc send [--network ID] TARGET TEXT...\n"
+        "\n"
+        "Send a message to a channel or nick without changing the UI selection.\n"
+        "\n"
+        "  --network ID   Connection to use. See connections.\n"
+        "  --             End options. Later args are the target and text.\n"
+        "\n"
+        "Examples:\n"
+        "  omairc send '#channel' hello\n"
+        "  omairc send --network abc '#channel' hello\n"
+        "  omairc send '#channel' --help\n"
+        "  omairc send -- '#channel' --version\n",
+    },
+    {
+        CommandId::Raise,
+        "raise",
+        nullptr,
+        "omairc raise",
+        "Activate the existing window",
+        "Usage: omairc raise\n"
+        "\n"
+        "Activate the existing Omairc window.\n",
+    },
 };
 
-struct CliSchema {
-    const char *programName;
-    const char *description;
-    std::array<RootOptionSpec, 3> rootOptions;
-    std::array<CommandSpec, 4> commands;
-};
+const CommandSpec *findCommandSpec(const QString &token)
+{
+    for (const CommandSpec &spec : kCommands) {
+        if (token == QLatin1String(spec.primaryName))
+            return &spec;
+        if (spec.aliasName && token == QLatin1String(spec.aliasName))
+            return &spec;
+    }
+    return nullptr;
+}
 
-constexpr CliSchema kSchema{
-    "omairc",
-    "A dead-simple IRC client for Omarchy.",
-    {{
-        {"--mock", nullptr,
-         "Open the local prototype UI without connecting."},
-        {"--help", "-h", "Show this help."},
-        {"--version", nullptr, "Show the version."},
-    }},
-    {{
-        {
-            OmaircIpc::Command::Connections,
-            "connections",
-            "list",
-            "List IRC connections.",
-            {NetworkOption::Forbidden, OperandShape::None,
-             OptionBoundary::AllArguments, false},
-        },
-        {
-            OmaircIpc::Command::Status,
-            "status",
-            nullptr,
-            "Show connection status.",
-            {NetworkOption::Optional, OperandShape::None,
-             OptionBoundary::AllArguments, false},
-        },
-        {
-            OmaircIpc::Command::Send,
-            "send",
-            nullptr,
-            "Send a message to a channel or nick.",
-            {NetworkOption::Optional, OperandShape::SendTargetAndText,
-             OptionBoundary::FirstOperand, true},
-        },
-        {
-            OmaircIpc::Command::Raise,
-            "raise",
-            nullptr,
-            "Raise the running Omairc window.",
-            {NetworkOption::Forbidden, OperandShape::None,
-             OptionBoundary::AllArguments, false},
-        },
-    }},
-};
+const CommandSpec *findCommandSpec(CommandId id)
+{
+    for (const CommandSpec &spec : kCommands) {
+        if (spec.id == id)
+            return &spec;
+    }
+    return nullptr;
+}
 
-struct ParsedFields {
-    QString networkId;
-    QStringList operands;
-};
-
-struct HelpRequested {};
-
-struct ParseFailure {
-    QString message;
-};
-
-using ScanResult = std::variant<HelpRequested, ParsedFields, ParseFailure>;
-
-void writeStdout(const QByteArray &line)
+void writeStdoutLine(const QByteArray &line)
 {
     fwrite(line.constData(), 1, size_t(line.size()), stdout);
     fputc('\n', stdout);
+    fflush(stdout);
+}
+
+void writeStdoutRaw(const QString &text)
+{
+    const QByteArray bytes = text.toUtf8();
+    fwrite(bytes.constData(), 1, size_t(bytes.size()), stdout);
     fflush(stdout);
 }
 
@@ -138,7 +141,7 @@ void writeStderr(const QString &message)
 
 int fail(const QString &message, int code = 1)
 {
-    writeStdout(OmaircIpc::errorResponse(message));
+    writeStdoutLine(OmaircIpc::errorResponse(message));
     writeStderr(message);
     return code;
 }
@@ -148,238 +151,100 @@ bool isFlag(const QString &arg)
     return arg.startsWith(QLatin1Char('-'));
 }
 
-bool isHelpToken(const QString &arg)
+bool isHelpFlag(const QString &arg)
 {
-    return arg == QLatin1String("-h") || arg == QLatin1String("--help");
+    return arg == QLatin1String("--help");
 }
 
-bool isRootOptionToken(const QString &arg)
+CliError unexpectedArgument(const QString &arg)
 {
-    return arg == QLatin1String("--mock")
-        || arg == QLatin1String("--version") || isHelpToken(arg);
+    return {QStringLiteral("Unexpected argument: %1").arg(arg)};
 }
 
-QStringList decodeArguments(int argc, char *const argv[])
+ParseOutcome parseHelpCommand(const QStringList &args)
 {
-    QStringList args;
-    args.reserve(argc);
-    for (int i = 0; i < argc; ++i) {
-        if (argv && argv[i])
-            args.append(QString::fromLocal8Bit(argv[i]));
-        else
-            args.append(QString());
-    }
-    return args;
+    if (args.size() == 1)
+        return HelpTopic{HelpScope::Overview};
+    if (args.size() > 2)
+        return CliError{QStringLiteral("help takes at most one argument")};
+
+    const QString &name = args.at(1);
+    if (isHelpFlag(name) || name == QLatin1String("help"))
+        return HelpTopic{HelpScope::Overview};
+
+    const CommandSpec *spec = findCommandSpec(name);
+    if (!spec || spec->id == CommandId::Help)
+        return CliError{QStringLiteral("Unknown command: %1").arg(name)};
+    return HelpTopic{HelpScope::Command, spec->id};
 }
 
-const CommandSpec *findCommand(QStringView spelling)
+ParseOutcome parseNoArgCommand(const QStringList &args, CommandId id,
+                               OmaircIpc::Command ipc)
 {
-    for (const CommandSpec &spec : kSchema.commands) {
-        if (spelling == QLatin1String(spec.canonicalName))
-            return &spec;
-        if (spec.alias && spelling == QLatin1String(spec.alias))
-            return &spec;
+    if (args.size() == 1) {
+        OmaircIpc::Request request;
+        request.command = ipc;
+        return request;
     }
-    return nullptr;
+    if (args.size() == 2 && isHelpFlag(args.at(1)))
+        return HelpTopic{HelpScope::Command, id};
+    return CliError{QStringLiteral("%1 takes no arguments").arg(args.constFirst())};
 }
 
-QString commandSynopsis(const CommandSpec &spec)
-{
-    QString line = QLatin1String(kSchema.programName);
-    line += QLatin1Char(' ');
-    line += QLatin1String(spec.canonicalName);
-    if (spec.grammar.network == NetworkOption::Optional)
-        line += QStringLiteral(" [--network ID]");
-    if (spec.grammar.acceptsDoubleDash)
-        line += QStringLiteral(" [--]");
-    if (spec.grammar.operands == OperandShape::SendTargetAndText)
-        line += QStringLiteral(" TARGET TEXT...");
-    return line;
-}
-
-QString optionDisplayName(const RootOptionSpec &option)
-{
-    if (option.alias) {
-        return QLatin1String(option.alias) + QStringLiteral(", ")
-            + QLatin1String(option.spelling);
-    }
-    return QLatin1String(option.spelling);
-}
-
-QString commandDisplayName(const CommandSpec &spec)
-{
-    if (spec.alias) {
-        return QLatin1String(spec.canonicalName) + QStringLiteral(", ")
-            + QLatin1String(spec.alias);
-    }
-    return QLatin1String(spec.canonicalName);
-}
-
-QByteArray renderColumns(const QStringList &labels, const QStringList &texts)
-{
-    int width = 0;
-    for (const QString &label : labels)
-        width = qMax(width, int(label.size()));
-
-    QByteArray out;
-    for (int i = 0; i < labels.size(); ++i) {
-        out += "  ";
-        out += labels.at(i).toUtf8();
-        out += QByteArray(width - int(labels.at(i).size()) + 2, ' ');
-        out += texts.at(i).toUtf8();
-        out += '\n';
-    }
-    return out;
-}
-
-QByteArray renderRootHelp(const CliSchema &schema)
-{
-    QByteArray out = "Usage: ";
-    out += schema.programName;
-    for (const RootOptionSpec &option : schema.rootOptions) {
-        out += " [";
-        out += option.spelling;
-        out += ']';
-    }
-    out += " [command]\n\n";
-    out += schema.description;
-    out += "\n\nOptions:\n";
-
-    QStringList optionLabels;
-    QStringList optionTexts;
-    for (const RootOptionSpec &option : schema.rootOptions) {
-        optionLabels.append(optionDisplayName(option));
-        optionTexts.append(QLatin1String(option.description));
-    }
-    out += renderColumns(optionLabels, optionTexts);
-
-    out += "\nCommands:\n";
-    QStringList commandLabels;
-    QStringList commandTexts;
-    for (const CommandSpec &spec : schema.commands) {
-        commandLabels.append(commandDisplayName(spec));
-        commandTexts.append(QLatin1String(spec.summary));
-    }
-    out += renderColumns(commandLabels, commandTexts);
-    out += "\nRun 'omairc <command> --help' for command help.\n";
-    return out;
-}
-
-QByteArray renderCommandHelp(const CommandSpec &spec)
-{
-    QByteArray out = "Usage: ";
-    out += commandSynopsis(spec).toUtf8();
-    out += "\n\n";
-    out += spec.summary;
-    out += "\n\nOptions:\n";
-
-    QStringList labels;
-    QStringList texts;
-    if (spec.grammar.network == NetworkOption::Optional) {
-        labels.append(QStringLiteral("--network ID"));
-        texts.append(QStringLiteral("Select a connection by id."));
-    }
-    labels.append(QStringLiteral("-h, --help"));
-    texts.append(QStringLiteral("Show this help."));
-    if (spec.grammar.acceptsDoubleDash) {
-        labels.append(QStringLiteral("--"));
-        texts.append(QStringLiteral("End option processing."));
-    }
-    out += renderColumns(labels, texts);
-    return out;
-}
-
-ScanResult scanCommand(const CommandSpec &spec,
-                       const QStringList &arguments,
-                       const QString &invokedName)
-{
-    ParsedFields fields;
-    bool optionsAccepted = true;
-    for (int i = 0; i < arguments.size(); ++i) {
-        const QString &arg = arguments.at(i);
-        if (optionsAccepted && isHelpToken(arg))
-            return HelpRequested{};
-        if (optionsAccepted && arg == QLatin1String("--")) {
-            if (!spec.grammar.acceptsDoubleDash)
-                return ParseFailure{QStringLiteral("Unknown option: --")};
-            optionsAccepted = false;
-            continue;
-        }
-        if (optionsAccepted && arg == QLatin1String("--network")) {
-            if (spec.grammar.network == NetworkOption::Forbidden)
-                return ParseFailure{QStringLiteral("Unknown option: --network")};
-            if (i + 1 >= arguments.size() || isFlag(arguments.at(i + 1))) {
-                return ParseFailure{QStringLiteral("--network requires an id")};
-            }
-            fields.networkId = arguments.at(++i);
-            continue;
-        }
-        if (optionsAccepted && isFlag(arg))
-            return ParseFailure{QStringLiteral("Unknown option: %1").arg(arg)};
-        fields.operands.append(arg);
-        if (spec.grammar.optionBoundary == OptionBoundary::FirstOperand)
-            optionsAccepted = false;
-    }
-
-    if (spec.grammar.operands == OperandShape::None) {
-        if (!fields.operands.isEmpty()) {
-            return ParseFailure{
-                QStringLiteral("%1 takes no arguments").arg(invokedName)};
-        }
-        return fields;
-    }
-
-    if (fields.operands.isEmpty())
-        return ParseFailure{QStringLiteral("send requires a target and text")};
-    if (fields.operands.size() < 2) {
-        return ParseFailure{
-            QStringLiteral("send requires text after the target")};
-    }
-    return fields;
-}
-
-OmaircIpc::Request makeRequest(const CommandSpec &spec, ParsedFields fields)
+ParseOutcome parseStatusCommand(const QStringList &args)
 {
     OmaircIpc::Request request;
-    request.command = spec.ipcCommand;
-    request.networkId = fields.networkId;
-    if (spec.grammar.operands == OperandShape::SendTargetAndText) {
-        request.target = fields.operands.takeFirst();
-        request.text = fields.operands.join(QLatin1Char(' '));
+    request.command = OmaircIpc::Command::Status;
+    for (int i = 1; i < args.size(); ++i) {
+        const QString &arg = args.at(i);
+        if (isHelpFlag(arg))
+            return HelpTopic{HelpScope::Command, CommandId::Status};
+        if (arg == QLatin1String("--network")) {
+            if (i + 1 >= args.size() || isFlag(args.at(i + 1))) {
+                return CliError{QStringLiteral("--network requires an id")};
+            }
+            request.networkId = args.at(++i);
+            continue;
+        }
+        return unexpectedArgument(arg);
     }
     return request;
 }
 
-TerminalExit successfulText(QByteArray text)
+ParseOutcome parseSendCommand(const QStringList &args)
 {
-    if (!text.endsWith('\n'))
-        text += '\n';
-    TerminalExit finished;
-    finished.standardOutput = text;
-    finished.code = 0;
-    return finished;
-}
-
-TerminalExit usageFailure(const QString &message)
-{
-    TerminalExit finished;
-    finished.standardOutput = OmaircIpc::errorResponse(message) + '\n';
-    finished.standardError = message.toUtf8() + '\n';
-    finished.code = 1;
-    return finished;
-}
-
-StartupPlan planCommand(const CommandSpec &spec,
-                        const QStringList &arguments,
-                        const QString &invokedName)
-{
-    const ScanResult scan = scanCommand(spec, arguments, invokedName);
-    if (std::holds_alternative<HelpRequested>(scan))
-        return successfulText(renderCommandHelp(spec));
-    if (const auto *failure = std::get_if<ParseFailure>(&scan))
-        return usageFailure(failure->message);
-    return ControlRequest{
-        makeRequest(spec, std::get<ParsedFields>(scan))};
+    OmaircIpc::Request request;
+    request.command = OmaircIpc::Command::Send;
+    QStringList positional;
+    bool acceptOptions = true;
+    for (int i = 1; i < args.size(); ++i) {
+        const QString &arg = args.at(i);
+        if (acceptOptions && arg == QLatin1String("--")) {
+            acceptOptions = false;
+            continue;
+        }
+        if (acceptOptions && arg == QLatin1String("--network")) {
+            if (i + 1 >= args.size() || isFlag(args.at(i + 1))) {
+                return CliError{QStringLiteral("--network requires an id")};
+            }
+            request.networkId = args.at(++i);
+            continue;
+        }
+        // --help is help only in the option window. After a target or -- it is text.
+        if (acceptOptions && isHelpFlag(arg))
+            return HelpTopic{HelpScope::Command, CommandId::Send};
+        if (acceptOptions && isFlag(arg))
+            return CliError{QStringLiteral("Unknown option: %1").arg(arg)};
+        positional.append(arg);
+        acceptOptions = false;
+    }
+    if (positional.isEmpty())
+        return CliError{QStringLiteral("send requires a target and text")};
+    if (positional.size() < 2)
+        return CliError{QStringLiteral("send requires text after the target")};
+    request.target = positional.takeFirst();
+    request.text = positional.join(QLatin1Char(' '));
+    return request;
 }
 
 std::optional<QByteArray> readLine(QLocalSocket &socket)
@@ -427,56 +292,122 @@ int sendRequest(const OmaircIpc::Request &request)
     if (response->isEmpty())
         return fail(QStringLiteral("No response from Omairc"));
 
-    writeStdout(*response);
+    writeStdoutLine(*response);
     return OmaircIpc::responseOk(*response) ? 0 : 1;
 }
 
 }
 
-StartupPlan plan(int argc, char *const argv[], const char *version)
+ParseOutcome parseArgs(const QStringList &args)
 {
-    const QStringList decoded = decodeArguments(argc, argv);
-    const QStringList tokens =
-        decoded.size() > 0 ? decoded.mid(1) : QStringList();
+    if (args.isEmpty())
+        return CliError{QStringLiteral("Missing command")};
 
-    if (tokens.isEmpty())
-        return GuiLaunch{false};
+    const QString &first = args.constFirst();
+    if (first == QLatin1String("--help")) {
+        if (args.size() != 1)
+            return unexpectedArgument(args.at(1));
+        return HelpTopic{HelpScope::Overview};
+    }
+    if (first == QLatin1String("--version")) {
+        if (args.size() != 1)
+            return unexpectedArgument(args.at(1));
+        return VersionRequest{};
+    }
 
-    if (const CommandSpec *spec = findCommand(tokens.constFirst()))
-        return planCommand(*spec, tokens.mid(1), tokens.constFirst());
+    const CommandSpec *spec = findCommandSpec(first);
+    if (!spec)
+        return CliError{QStringLiteral("Unknown command: %1").arg(first)};
 
-    bool mock = false;
-    bool help = false;
-    bool onlyRootOptions = true;
-    for (const QString &token : tokens) {
-        if (token == QLatin1String("--mock"))
-            mock = true;
-        else if (isHelpToken(token))
-            help = true;
-        else if (!isRootOptionToken(token))
-            onlyRootOptions = false;
+    switch (spec->id) {
+    case CommandId::Help:
+        return parseHelpCommand(args);
+    case CommandId::Connections:
+        return parseNoArgCommand(args, spec->id, OmaircIpc::Command::Connections);
+    case CommandId::Status:
+        return parseStatusCommand(args);
+    case CommandId::Send:
+        return parseSendCommand(args);
+    case CommandId::Raise:
+        return parseNoArgCommand(args, spec->id, OmaircIpc::Command::Raise);
     }
-    if (onlyRootOptions && help)
-        return successfulText(renderRootHelp(kSchema));
-    if (tokens.size() == 1
-        && tokens.constFirst() == QLatin1String("--version")) {
-        QByteArray text = QByteArrayLiteral("omairc ");
-        if (version)
-            text += version;
-        text += '\n';
-        return successfulText(text);
-    }
-    if (isHelpToken(tokens.constFirst()) ||
-        tokens.constFirst() == QLatin1String("--version")) {
-        return usageFailure(
-            QStringLiteral("Unexpected argument: %1").arg(tokens.at(1)));
-    }
-    return GuiLaunch{mock};
+    return CliError{QStringLiteral("Unknown command: %1").arg(first)};
 }
 
-int execute(const ControlRequest &control)
+QString formatHelp(const HelpTopic &topic)
 {
-    return sendRequest(control.request);
+    if (topic.scope == HelpScope::Overview) {
+        QString text = QStringLiteral(
+            "A dead-simple IRC client for Omarchy.\n"
+            "\n"
+            "Usage:\n"
+            "  omairc [--mock]                 Open the client window\n"
+            "  omairc --help                   List commands and GUI flags\n"
+            "  omairc --version                Print version and exit\n"
+            "\n"
+            "Control commands (require a running client):\n");
+        for (const CommandSpec &spec : kCommands) {
+            if (spec.id == CommandId::Help)
+                continue;
+            const QString usage = QString::fromUtf8(spec.usage);
+            const QString summary = QString::fromUtf8(spec.summaryLine);
+            text += QLatin1String("  ");
+            if (usage.size() <= kOverviewUsageWidth) {
+                text += QStringLiteral("%1").arg(usage, -kOverviewUsageWidth);
+                text += summary;
+                text += QLatin1Char('\n');
+            } else {
+                text += usage;
+                text += QLatin1Char('\n');
+                text += QLatin1String("  ");
+                text += QString(kOverviewUsageWidth, QLatin1Char(' '));
+                text += summary;
+                text += QLatin1Char('\n');
+            }
+        }
+        text += QStringLiteral(
+            "\n"
+            "Run 'omairc <command> --help' for command detail.\n");
+        return text;
+    }
+
+    const CommandSpec *spec = findCommandSpec(topic.command);
+    if (!spec || spec->id == CommandId::Help)
+        return formatHelp(HelpTopic{HelpScope::Overview});
+    return QString::fromUtf8(spec->detailText);
+}
+
+QString formatVersion()
+{
+    return QStringLiteral("omairc ") + QLatin1String(OMAIRC_VERSION)
+        + QLatin1Char('\n');
+}
+
+int printOutcome(const ParseOutcome &outcome)
+{
+    if (const auto *help = std::get_if<HelpTopic>(&outcome)) {
+        writeStdoutRaw(formatHelp(*help));
+        return 0;
+    }
+    if (std::holds_alternative<VersionRequest>(outcome)) {
+        writeStdoutRaw(formatVersion());
+        return 0;
+    }
+    if (const auto *error = std::get_if<CliError>(&outcome))
+        return fail(error->message);
+    return 1;
+}
+
+bool looksLikeCommand(int argc, char **argv)
+{
+    if (argc < 2 || !argv[1])
+        return false;
+    return findCommandSpec(QString::fromLocal8Bit(argv[1])) != nullptr;
+}
+
+int runRequest(QCoreApplication &, const OmaircIpc::Request &request)
+{
+    return sendRequest(request);
 }
 
 }
