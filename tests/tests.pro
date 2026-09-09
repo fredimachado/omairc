@@ -11,6 +11,7 @@ greaterThan(QMAKE_GCC_MAJOR_VERSION, 15): QMAKE_CXXFLAGS += -Wno-sfinae-incomple
 INCLUDEPATH += ../src ../src/irc support
 VERSION = 0.1.0
 DEFINES += TEST_CERT_DIR=\\\"$$PWD/support/certs\\\" OMAIRC_VERSION=\\\"$$VERSION\\\"
+DEFINES += TEST_CORPUS_DIR=\\\"$$PWD/protocol/corpus\\\"
 
 HEADERS += \
     ../src/singleinstance.h \
@@ -64,6 +65,7 @@ SOURCES += \
     ../src/omairccli.cpp \
     protocol/tst_protocol.cpp \
     protocol/tst_casemapping.cpp \
+    protocol/tst_corpus.cpp \
     ../src/irc/ircparser.cpp \
     ../src/irc/ircframer.cpp \
     ../src/irc/ircwiretext.cpp \
