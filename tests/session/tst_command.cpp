@@ -470,7 +470,7 @@ void CommandTest::catalogLookupAndScope()
     const IrcVerbSpec *join = IrcVerbTable::lookup(QStringLiteral("J"));
     QVERIFY(join);
     QCOMPARE(join->verb, IrcCommand::Verb::Join);
-    QCOMPARE(join->usage, QStringLiteral("/join <channel>"));
+    QCOMPARE(join->usage, QStringLiteral("/join <channel>[, channel...]"));
 
     const IrcVerbSpec *leave = IrcVerbTable::lookup(QStringLiteral("leave"));
     QVERIFY(leave);
@@ -693,6 +693,14 @@ void CommandTest::conversationSendAndUnknown()
     QVERIFY(controller.sendMessage(QStringLiteral("/join #other")));
     QCOMPARE(transport->writtenFrames().last(),
              QByteArrayLiteral("JOIN #other\r\n"));
+
+    QVERIFY(controller.sendMessage(QStringLiteral("/join #alpha,#beta desktop")));
+    QCOMPARE(transport->writtenFrames().at(transport->writtenFrames().size() - 3),
+             QByteArrayLiteral("JOIN #alpha\r\n"));
+    QCOMPARE(transport->writtenFrames().at(transport->writtenFrames().size() - 2),
+             QByteArrayLiteral("JOIN #beta\r\n"));
+    QCOMPARE(transport->writtenFrames().last(),
+             QByteArrayLiteral("JOIN #desktop\r\n"));
 
     QVERIFY(controller.sendMessage(QStringLiteral("/topic new banner")));
     QCOMPARE(transport->writtenFrames().last(),
@@ -1005,7 +1013,7 @@ void CommandTest::slashProjectOpen()
         QStringLiteral("/jo"), IrcComposerSurface::Conversation);
     QVERIFY(join.isOpen());
     QCOMPARE(join.hits().first().label, QStringLiteral("/join"));
-    QCOMPARE(join.hits().first().usage, QStringLiteral("/join <channel>"));
+    QCOMPARE(join.hits().first().usage, QStringLiteral("/join <channel>[, channel...]"));
 
     const auto alias = IrcSlashComplete::project(
         QStringLiteral("/j"), IrcComposerSurface::Conversation);
