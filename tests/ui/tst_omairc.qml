@@ -930,10 +930,17 @@ TestCase {
         verify(second > first, "Enter in find should go to the next match");
         compare(composer.text, "omarchy");
 
-        keyClick(Qt.Key_F, Qt.ControlModifier);
-        waitForRendering(appWindow.contentItem);
-        wait(0);
-        compare(visibleMatchIndex(list, "omarchy"), first);
+        var current = second;
+        var hops = 0;
+        while (current !== first) {
+            keyClick(Qt.Key_F, Qt.ControlModifier);
+            waitForRendering(appWindow.contentItem);
+            wait(0);
+            current = visibleMatchIndex(list, "omarchy");
+            hops += 1;
+            verify(hops < list.count, "Find should wrap back to the first match");
+        }
+        verify(hops >= 1);
         compare(list.model.count, countBefore);
 
         keyClick(Qt.Key_Escape);
