@@ -9,8 +9,11 @@ _omairc()
     fi
 
     case "${COMP_WORDS[1]}" in
-        connections|list|raise|help)
+        connections|list|raise)
             COMPREPLY=( $(compgen -W "--help" -- "$cur") )
+            ;;
+        help)
+            COMPREPLY=( $(compgen -W "connections list status send raise --help" -- "$cur") )
             ;;
         status|send)
             COMPREPLY=( $(compgen -W "--network --help" -- "$cur") )
