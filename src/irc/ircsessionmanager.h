@@ -22,15 +22,9 @@ public:
     bool activateSession(const QString &networkId);
     bool stopSession(const QString &networkId);
     bool discardSession(const QString &networkId);
-    QString activeNetworkId() const;
-
-signals:
-    void activationRefused(const QString &networkId,
-                           const QString &activeNetworkId);
 
 private:
     bool isLive(const IrcSession *session) const;
 
     QHash<QString, IrcSession *> m_sessions;
-    IrcSession *m_activeSession = nullptr;
 };

@@ -162,6 +162,24 @@ bool IrcEventReducer::dropDirectMessage(const IrcConversationKey& key)
     return true;
 }
 
+void IrcEventReducer::forgetNetwork(const QString& networkId)
+{
+    if (networkId.isEmpty())
+        return;
+    for (auto it = m_conversations.begin(); it != m_conversations.end(); ) {
+        if (it->first.networkId == networkId)
+            it = m_conversations.erase(it);
+        else
+            ++it;
+    }
+    m_features.erase(networkId);
+    m_currentNicks.erase(networkId);
+    m_presence.erase(networkId);
+    m_selfAway.erase(networkId);
+    if (m_selected && m_selected->networkId == networkId)
+        m_selected.reset();
+}
+
 void IrcEventReducer::clearMessages(const IrcConversationKey& key)
 {
     IrcConversationState *conversation = findMutable(key);

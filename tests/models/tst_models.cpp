@@ -57,7 +57,10 @@ private slots:
     void membersEmptyForDirectMessage();
     void messageKinds();
     void conversationsOrderChannelsThenDirect();
+    void twoNetworksFollowRosterThenChannelRank();
+    void parseConversationIdRejectsBareAndDoubleSeparators();
     void neighborAfterDropNextPreviousGhostAndOnly();
+    void neighborAfterDropPrefersSameNetwork();
     void reloadUnchangedKeysEmitsDataChangedNotReset();
     void selectedChatAppendInsertsInsteadOfReset();
     void reloadTrimEmitsRemovesWhenCountUnchanged();
@@ -369,6 +372,61 @@ void ModelTest::conversationsOrderChannelsThenDirect()
     QCOMPARE(roleAt(conversations, 3, ConversationListModel::DirectRole), true);
 }
 
+void ModelTest::twoNetworksFollowRosterThenChannelRank()
+{
+    IrcEventReducer reducer;
+    ConversationListModel conversations(reducer);
+    welcome(reducer, networkA);
+    welcome(reducer, networkB);
+
+    reducer.apply(IrcJoinEvent{
+        networkA, QStringLiteral("#alpha"), QStringLiteral("omairc")});
+    reducer.apply(IrcJoinEvent{
+        networkB, QStringLiteral("#zed"), QStringLiteral("omairc")});
+    reducer.apply(IrcMessageEvent{
+        reducer.conversationKey(networkA, QStringLiteral("alice")),
+        QStringLiteral("alice"), QStringLiteral("hi"), timestamp,
+        QStringLiteral("alice")});
+    reducer.apply(IrcMessageEvent{
+        reducer.conversationKey(networkB, QStringLiteral("bob")),
+        QStringLiteral("bob"), QStringLiteral("yo"), timestamp,
+        QStringLiteral("bob")});
+
+    conversations.setNetworkOrder({networkB, networkA});
+    conversations.reload();
+    QCOMPARE(conversations.rowCount(), 4);
+    QCOMPARE(roleAt(conversations, 0, ConversationListModel::ConversationIdRole),
+             QStringLiteral("network-b\n#zed"));
+    QCOMPARE(roleAt(conversations, 1, ConversationListModel::ConversationIdRole),
+             QStringLiteral("network-b\nbob"));
+    QCOMPARE(roleAt(conversations, 2, ConversationListModel::ConversationIdRole),
+             QStringLiteral("network-a\n#alpha"));
+    QCOMPARE(roleAt(conversations, 3, ConversationListModel::ConversationIdRole),
+             QStringLiteral("network-a\nalice"));
+
+    const QVector<IrcConversationKey> ordered =
+        ircSidebarOrder(reducer, {networkB, networkA});
+    QCOMPARE(ordered.size(), 4);
+    QCOMPARE(ircConversationId(ordered.at(0)), QStringLiteral("network-b\n#zed"));
+    QCOMPARE(ircConversationId(ordered.at(3)), QStringLiteral("network-a\nalice"));
+}
+
+void ModelTest::parseConversationIdRejectsBareAndDoubleSeparators()
+{
+    const std::optional<IrcConversationKey> parsed =
+        ircParseConversationId(QStringLiteral("network-a\n#room"));
+    QVERIFY(parsed.has_value());
+    QCOMPARE(parsed->networkId, QStringLiteral("network-a"));
+    QCOMPARE(parsed->normalizedTarget, QStringLiteral("#room"));
+    QCOMPARE(ircConversationId(*parsed), QStringLiteral("network-a\n#room"));
+
+    QVERIFY(!ircParseConversationId(QStringLiteral("#room")).has_value());
+    QVERIFY(!ircParseConversationId(QStringLiteral("network-a")).has_value());
+    QVERIFY(!ircParseConversationId(QStringLiteral("network-a\n#room\nextra")).has_value());
+    QVERIFY(!ircParseConversationId(QStringLiteral("\n#room")).has_value());
+    QVERIFY(!ircParseConversationId(QStringLiteral("network-a\n")).has_value());
+}
+
 void ModelTest::neighborAfterDropNextPreviousGhostAndOnly()
 {
     IrcEventReducer reducer;
@@ -406,6 +464,33 @@ void ModelTest::neighborAfterDropNextPreviousGhostAndOnly()
     const QVector<IrcConversationKey> only{alice};
     QVERIFY(!ircNeighborAfterDrop(only, alice).has_value());
     QVERIFY(!ircNeighborAfterDrop({}, ghost).has_value());
+}
+
+void ModelTest::neighborAfterDropPrefersSameNetwork()
+{
+    IrcEventReducer reducer;
+    welcome(reducer, networkA);
+    welcome(reducer, networkB);
+    reducer.apply(IrcJoinEvent{
+        networkA, QStringLiteral("#one"), QStringLiteral("omairc")});
+    reducer.apply(IrcMessageEvent{
+        reducer.conversationKey(networkA, QStringLiteral("alice")),
+        QStringLiteral("alice"), QStringLiteral("hi"), timestamp,
+        QStringLiteral("alice")});
+    reducer.apply(IrcJoinEvent{
+        networkB, QStringLiteral("#one"), QStringLiteral("omairc")});
+
+    const QVector<IrcConversationKey> ordered =
+        ircSidebarOrder(reducer, {networkA, networkB});
+    QCOMPARE(ordered.size(), 3);
+    QCOMPARE(ircConversationId(ordered.at(0)), QStringLiteral("network-a\n#one"));
+    QCOMPARE(ircConversationId(ordered.at(1)), QStringLiteral("network-a\nalice"));
+    QCOMPARE(ircConversationId(ordered.at(2)), QStringLiteral("network-b\n#one"));
+
+    QCOMPARE(ircConversationId(*ircNeighborAfterDrop(ordered, ordered.at(1))),
+             QStringLiteral("network-a\n#one"));
+    QCOMPARE(ircConversationId(*ircNeighborAfterDrop(ordered, ordered.at(0))),
+             QStringLiteral("network-a\nalice"));
 }
 
 void ModelTest::reloadUnchangedKeysEmitsDataChangedNotReset()

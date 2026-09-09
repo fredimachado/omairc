@@ -177,6 +177,11 @@ private slots:
     void echoMessageAckSkipsMsgEcho();
     void mentionArrivedOnSelectedBuffer();
     void chghostLeavesMemberNickAndRanks();
+    void twoSessionsStartTogether();
+    void startingBackgroundNetworkDoesNotStealStatus();
+    void statusJoinUsesConsoleNetwork();
+    void selectConversationByIdUsesCompositeKey();
+    void forgetNetworkDropsGhostRowsAndLog();
 };
 
 void ControllerTest::reducesTrafficAndRoutesOutboundByNetwork()
@@ -2352,6 +2357,135 @@ void ControllerTest::chghostLeavesMemberNickAndRanks()
     QCOMPARE(members->rowCount(), 2);
     QCOMPARE(roleAt(members, 0, MemberListModel::NickRole), QStringLiteral("Alice"));
     QCOMPARE(roleAt(members, 0, MemberListModel::LabelRole), QStringLiteral("+Alice"));
+}
+
+void ControllerTest::twoSessionsStartTogether()
+{
+    IrcController controller;
+    auto *transportA = new FakeIrcTransport;
+    auto *transportB = new FakeIrcTransport;
+    QVERIFY(controller.addSession(config(QStringLiteral("network-a")), transportA));
+    QVERIFY(controller.addSession(config(QStringLiteral("network-b")), transportB));
+    QVERIFY(controller.start(QStringLiteral("network-a")));
+    QVERIFY(controller.start(QStringLiteral("network-b")));
+    QCOMPARE(transportA->connectionState(), IrcTransport::ConnectionState::Connecting);
+    QCOMPARE(transportB->connectionState(), IrcTransport::ConnectionState::Connecting);
+
+    registerSession(controller.session(QStringLiteral("network-a")), transportA);
+    registerSession(controller.session(QStringLiteral("network-b")), transportB);
+    transportA->injectBytes(QByteArrayLiteral(":omairc!u@h JOIN :#alpha\r\n"));
+    transportB->injectBytes(QByteArrayLiteral(":omairc!u@h JOIN :#lab\r\n"));
+
+    auto *conversations =
+        qobject_cast<QAbstractItemModel *>(controller.conversations());
+    QVERIFY(conversations);
+    QCOMPARE(conversations->rowCount(), 2);
+    QCOMPARE(controller.session(QStringLiteral("network-a"))->state(),
+             IrcSession::State::Registered);
+    QCOMPARE(controller.session(QStringLiteral("network-b"))->state(),
+             IrcSession::State::Registered);
+}
+
+void ControllerTest::startingBackgroundNetworkDoesNotStealStatus()
+{
+    IrcController controller;
+    auto *transportA = new FakeIrcTransport;
+    auto *transportB = new FakeIrcTransport;
+    QVERIFY(controller.addSession(config(QStringLiteral("network-a")), transportA));
+    QVERIFY(controller.addSession(config(QStringLiteral("network-b")), transportB));
+    QVERIFY(controller.start(QStringLiteral("network-a")));
+    registerSession(controller.session(QStringLiteral("network-a")), transportA);
+    transportA->injectBytes(QByteArrayLiteral(":omairc!u@h JOIN :#chan\r\n"));
+    controller.selectConversation(QStringLiteral("network-a"), QStringLiteral("#chan"));
+    controller.openStatus(QStringLiteral("network-a"));
+    QCOMPARE(controller.focusedNetworkId(), QStringLiteral("network-a"));
+    QCOMPARE(controller.console()->networkId(), QStringLiteral("network-a"));
+    QVERIFY(controller.console()->isOpen());
+
+    QVERIFY(controller.start(QStringLiteral("network-b")));
+    QCOMPARE(controller.focusedNetworkId(), QStringLiteral("network-a"));
+    QCOMPARE(controller.console()->networkId(), QStringLiteral("network-a"));
+    QVERIFY(controller.console()->isOpen());
+    QCOMPARE(controller.selectedTarget(), QStringLiteral("#chan"));
+    QCOMPARE(controller.selectedNetworkId(), QStringLiteral("network-a"));
+}
+
+void ControllerTest::statusJoinUsesConsoleNetwork()
+{
+    IrcController controller;
+    auto *transportA = new FakeIrcTransport;
+    auto *transportB = new FakeIrcTransport;
+    QVERIFY(controller.addSession(config(QStringLiteral("network-a")), transportA));
+    QVERIFY(controller.addSession(config(QStringLiteral("network-b")), transportB));
+    registerSession(controller.session(QStringLiteral("network-a")), transportA);
+    registerSession(controller.session(QStringLiteral("network-b")), transportB);
+    transportA->injectBytes(QByteArrayLiteral(":omairc!u@h JOIN :#chan\r\n"));
+    controller.selectConversation(QStringLiteral("network-a"), QStringLiteral("#chan"));
+    controller.openStatus(QStringLiteral("network-b"));
+    QCOMPARE(controller.focusedNetworkId(), QStringLiteral("network-b"));
+    QCOMPARE(controller.selectedNetworkId(), QStringLiteral("network-a"));
+
+    QVERIFY(controller.console()->submit(QStringLiteral("/join #lab")));
+    QCOMPARE(transportB->writtenFrames().last(),
+             QByteArrayLiteral("JOIN #lab\r\n"));
+    QVERIFY(!framesContain(transportA->writtenFrames(),
+                           QByteArrayLiteral("JOIN #lab")));
+}
+
+void ControllerTest::selectConversationByIdUsesCompositeKey()
+{
+    IrcController controller;
+    auto *transportA = new FakeIrcTransport;
+    auto *transportB = new FakeIrcTransport;
+    QVERIFY(controller.addSession(config(QStringLiteral("network-a")), transportA));
+    QVERIFY(controller.addSession(config(QStringLiteral("network-b")), transportB));
+    registerSession(controller.session(QStringLiteral("network-a")), transportA);
+    registerSession(controller.session(QStringLiteral("network-b")), transportB);
+    transportA->injectBytes(QByteArrayLiteral(":omairc!u@h JOIN :#chan\r\n"));
+    transportB->injectBytes(QByteArrayLiteral(":omairc!u@h JOIN :#chan\r\n"));
+
+    controller.selectConversationById(QStringLiteral("network-b\n#chan"));
+    QCOMPARE(controller.selectedNetworkId(), QStringLiteral("network-b"));
+    QCOMPARE(controller.selectedTarget(), QStringLiteral("#chan"));
+    QCOMPARE(controller.selectedConversationId(), QStringLiteral("network-b\n#chan"));
+    QVERIFY(!controller.console()->isOpen());
+
+    controller.selectConversationById(QStringLiteral("#chan"));
+    QCOMPARE(controller.selectedNetworkId(), QStringLiteral("network-b"));
+    QCOMPARE(controller.selectedConversationId(), QStringLiteral("network-b\n#chan"));
+}
+
+void ControllerTest::forgetNetworkDropsGhostRowsAndLog()
+{
+    IrcController controller;
+    auto *transportA = new FakeIrcTransport;
+    auto *transportB = new FakeIrcTransport;
+    QVERIFY(controller.addSession(config(QStringLiteral("network-a")), transportA));
+    QVERIFY(controller.addSession(config(QStringLiteral("network-b")), transportB));
+    registerSession(controller.session(QStringLiteral("network-a")), transportA);
+    registerSession(controller.session(QStringLiteral("network-b")), transportB);
+    transportA->injectBytes(QByteArrayLiteral(":omairc!u@h JOIN :#alpha\r\n"));
+    transportB->injectBytes(
+        QByteArrayLiteral(":omairc!u@h JOIN :#lab\r\n"
+                          "NOTICE AUTH :*** Looking up your hostname...\r\n"));
+    controller.selectConversation(QStringLiteral("network-b"), QStringLiteral("#lab"));
+    controller.openStatus(QStringLiteral("network-b"));
+    QVERIFY(logContains(controller.console()->lines(),
+                        QStringLiteral("Looking up your hostname")));
+
+    QVERIFY(controller.discardSession(QStringLiteral("network-b")));
+    controller.forgetNetworkState(QStringLiteral("network-b"));
+    QCOMPARE(controller.session(QStringLiteral("network-b")), nullptr);
+
+    auto *conversations =
+        qobject_cast<QAbstractItemModel *>(controller.conversations());
+    QVERIFY(conversations);
+    QCOMPARE(conversations->rowCount(), 1);
+    QCOMPARE(roleAt(conversations, 0, ConversationListModel::ConversationIdRole),
+             QStringLiteral("network-a\n#alpha"));
+    QCOMPARE(controller.selectedTarget(), QString());
+    QVERIFY(!logContains(controller.console()->lines(),
+                         QStringLiteral("Looking up your hostname")));
 }
 
 int runControllerTests(int argc, char **argv)

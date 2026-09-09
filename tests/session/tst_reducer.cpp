@@ -55,6 +55,7 @@ private slots:
     void privmsgBreaksJoinCollapse();
     void kickAndModeStaySeparateFromJoinLine();
     void mixedJoinPartQuitNickCollapse();
+    void forgetNetworkLeavesTheOtherNetwork();
 };
 
 void ReducerTest::namesFillAndCompleteWithoutDuplicates()
@@ -872,6 +873,29 @@ void ReducerTest::mixedJoinPartQuitNickCollapse()
     QCOMPARE(conversation->messages.size(), std::size_t(1));
     QCOMPARE(conversation->messages.back().body,
              QStringLiteral("Alice, Bob joined, Alice left, Bob quit, Carol joined, Carol is now Caroline"));
+}
+
+void ReducerTest::forgetNetworkLeavesTheOtherNetwork()
+{
+    IrcEventReducer reducer;
+    welcome(reducer, networkA);
+    welcome(reducer, networkB);
+    reducer.apply(IrcJoinEvent{
+        networkA, QStringLiteral("#alpha"), QStringLiteral("omairc")});
+    reducer.apply(IrcJoinEvent{
+        networkB, QStringLiteral("#lab"), QStringLiteral("omairc")});
+    reducer.apply(IrcMessageEvent{
+        reducer.conversationKey(networkB, QStringLiteral("rio")),
+        QStringLiteral("rio"), QStringLiteral("ping"), timestamp,
+        QStringLiteral("rio")});
+    reducer.markSelected(reducer.conversationKey(networkB, QStringLiteral("#lab")));
+
+    reducer.forgetNetwork(networkB);
+    QVERIFY(reducer.find(reducer.conversationKey(networkA, QStringLiteral("#alpha"))));
+    QVERIFY(!reducer.find(reducer.conversationKey(networkB, QStringLiteral("#lab"))));
+    QVERIFY(!reducer.find(reducer.conversationKey(networkB, QStringLiteral("rio"))));
+    QVERIFY(!reducer.selected().has_value());
+    QCOMPARE(reducer.conversations().size(), std::size_t(1));
 }
 
 int runReducerTests(int argc, char **argv)

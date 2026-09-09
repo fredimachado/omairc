@@ -6,6 +6,7 @@
 #include <QByteArray>
 #include <QHash>
 #include <QString>
+#include <QStringList>
 #include <QVariant>
 #include <QVector>
 
@@ -16,7 +17,24 @@ inline QString ircConversationId(const IrcConversationKey& key)
     return key.networkId + QLatin1Char('\n') + key.normalizedTarget;
 }
 
+inline std::optional<IrcConversationKey> ircParseConversationId(const QString& id)
+{
+    const int sep = id.indexOf(QLatin1Char('\n'));
+    if (sep <= 0 || sep + 1 >= id.size())
+        return std::nullopt;
+    if (id.indexOf(QLatin1Char('\n'), sep + 1) >= 0)
+        return std::nullopt;
+    IrcConversationKey key;
+    key.networkId = id.left(sep);
+    key.normalizedTarget = id.mid(sep + 1);
+    if (key.networkId.isEmpty() || key.normalizedTarget.isEmpty())
+        return std::nullopt;
+    return key;
+}
+
 QVector<IrcConversationKey> ircSidebarOrder(const IrcEventReducer& reducer);
+QVector<IrcConversationKey> ircSidebarOrder(const IrcEventReducer& reducer,
+                                            const QStringList& networkOrder);
 std::optional<IrcConversationKey> ircNeighborAfterDrop(
     const QVector<IrcConversationKey>& ordered,
     const IrcConversationKey& dropping);
@@ -44,8 +62,10 @@ public:
 
     void reload();
     void select(const IrcConversationKey& key);
+    void setNetworkOrder(const QStringList& networkOrder);
 
 private:
     IrcEventReducer& m_reducer;
+    QStringList m_networkOrder;
     QVector<IrcConversationKey> m_keys;
 };

@@ -12,6 +12,8 @@ ApplicationWindow {
     property var connection: null
     property var slashCommands: null
     property bool connectionSheetOpen: false
+    property bool connectionRemoveArmed: false
+    property bool connectionPasswordEdited: false
 
     objectName: "omaircWindow"
     width: 1180
@@ -19,12 +21,10 @@ ApplicationWindow {
     minimumWidth: 760
     minimumHeight: 540
     visible: true
-    title: consoleVisible
-        ? ((connection && connection.displayName.length > 0)
-            ? connection.displayName + " Status"
-            : "Status")
-        : currentConversation + " - Omairc"
+    title: consoleVisible ? statusTitleText() : conversationTitleText()
 
+    readonly property string mockOmarchyId: "mock-omarchy"
+    readonly property string mockOftcId: "mock-oftc"
     readonly property bool darkMode: backend.darkMode
     readonly property real textScale: backend.textScale
     readonly property color pageColor: backend.themeBackground
@@ -38,10 +38,12 @@ ApplicationWindow {
     readonly property color mutedColor: mixColors(pageColor, inkColor, darkMode ? 0.52 : 0.47)
 
     property string mockCurrentConversation: "#omarchy"
+    property string mockSelectedNetworkId: mockOmarchyId
     property string mockCurrentTopic: "A cozy corner for Omarchy users and builders."
     property var mockActiveMessages: omarchyMessages
     property bool membersVisible: true
     property bool mockStatusOpen: false
+    property string mockStatusNetworkId: mockOmarchyId
     property bool shortcutsSheetEscapeGuard: false
     readonly property bool shortcutOverlayOpen: shortcutsSheet.opened
     readonly property var networkConsole: irc
@@ -66,12 +68,22 @@ ApplicationWindow {
         });
     }
     readonly property string currentConversation: irc ? irc.selectedTarget : mockCurrentConversation
-    onCurrentConversationChanged: {
+    readonly property string currentNetworkId: irc
+        ? irc.focusedNetworkId
+        : (consoleVisible ? mockStatusNetworkId : mockSelectedNetworkId)
+    readonly property string currentConversationId: irc
+        ? irc.selectedConversationId
+        : (mockCurrentConversation.length > 0
+            ? mockSelectedNetworkId + "\n" + mockCurrentConversation
+            : "")
+    onCurrentConversationIdChanged: {
         resetNickComplete();
         if (!abandonFind())
             stashComposerDraft();
         restoreComposerDraft();
         resetComposerHistoryBrowse();
+    }
+    onCurrentConversationChanged: {
         Qt.callLater(function() {
             if (membersList)
                 membersList.currentIndex = 0;
@@ -86,7 +98,7 @@ ApplicationWindow {
     readonly property bool currentConversationIsChannel: irc
         ? irc.isChannel : currentConversation.charAt(0) === "#"
     readonly property int currentPeopleCount: irc
-        ? irc.peopleCount : peopleCountFor(currentConversation)
+        ? irc.peopleCount : peopleCountFor(currentConversation, mockSelectedNetworkId)
     readonly property bool memberStatusVisible: !irc || irc.hasMemberStatus
     readonly property bool awayPresenceVisible: !irc || irc.hasAwayPresence
     readonly property bool selfAway: irc ? irc.selfAway : false
@@ -98,9 +110,12 @@ ApplicationWindow {
             var live = irc.currentNick
             if (live && live.length > 0)
                 return live
+            if (connection && connection.nick && connection.nick.length > 0)
+                return connection.nick
+            return ""
         }
-        if (connection && connection.nick && connection.nick.length > 0)
-            return connection.nick
+        if (currentNetworkId === mockOftcId)
+            return "oak"
         return "fred"
     }
     readonly property bool connectionOverlayVisible: connection
@@ -187,6 +202,59 @@ ApplicationWindow {
             1);
     }
 
+    function focusedNetworkDisplayName() {
+        if (!irc) {
+            if (currentNetworkId === mockOftcId)
+                return "irc.oftc.net";
+            return "Omarchy IRC";
+        }
+        if (connection && connection.networks) {
+            var model = connection.networks;
+            var id = currentNetworkId;
+            for (var row = 0; row < model.rowCount(); ++row) {
+                var idx = model.index(row, 0);
+                if (model.data(idx, Qt.UserRole + 1) === id)
+                    return model.data(idx, Qt.UserRole + 2) || "";
+            }
+        }
+        if (connection && connection.displayName
+                && connection.selectedNetworkId === currentNetworkId)
+            return connection.displayName;
+        return "";
+    }
+
+    function duplicateTargetName(name) {
+        if (name.length === 0)
+            return false;
+        var rows = sidebarConversationRows();
+        var seen = 0;
+        for (var index = 0; index < rows.length; ++index) {
+            if (rows[index].conversationName === name)
+                seen += 1;
+            if (seen > 1)
+                return true;
+        }
+        return false;
+    }
+
+    function conversationTitleText() {
+        if (currentConversation.length === 0)
+            return "Omairc";
+        var networkName = focusedNetworkDisplayName();
+        if (duplicateTargetName(currentConversation) && networkName.length > 0)
+            return currentConversation + " · " + networkName + " - Omairc";
+        return currentConversation + " - Omairc";
+    }
+
+    function statusTitleText() {
+        var networkName = focusedNetworkDisplayName();
+        if (networkName.length > 0)
+            return networkName + " Status";
+        if (connection && connection.displayName.length > 0)
+            return connection.displayName + " Status";
+        return "Status";
+    }
+
     function nickColor(nick) {
         var palette = [
             accentColor,
@@ -267,7 +335,19 @@ ApplicationWindow {
         backend.notifyDesktop(author, text);
     }
 
-    function topicFor(name) {
+    function topicFor(name, networkId) {
+        var id = networkId || mockSelectedNetworkId;
+        if (id === mockOftcId) {
+            if (name === "#omarchy")
+                return "A different #omarchy, hosted on OFTC.";
+            if (name === "#lab")
+                return "Build lab for packaging and CI.";
+            if (name === "#build")
+                return "Nightly builds and failing tests.";
+            if (name.charAt(0) !== "#")
+                return "Direct message with " + name;
+            return "A local mock conversation.";
+        }
         if (name === "#omarchy")
             return "A cozy corner for Omarchy users and builders.";
         if (name === "#desktop")
@@ -281,7 +361,17 @@ ApplicationWindow {
         return "A local mock conversation.";
     }
 
-    function peopleCountFor(name) {
+    function peopleCountFor(name, networkId) {
+        var id = networkId || mockSelectedNetworkId;
+        if (id === mockOftcId) {
+            if (name === "#omarchy")
+                return 4;
+            if (name === "#lab")
+                return 6;
+            if (name === "#build")
+                return 3;
+            return 2;
+        }
         if (name === "#omarchy")
             return 12;
         if (name === "#desktop")
@@ -294,6 +384,8 @@ ApplicationWindow {
     }
 
     function memberDataFor(index) {
+        if (mockSelectedNetworkId === mockOftcId)
+            return oftcMembersModel.get(index);
         if (currentConversation === "anna")
             return membersModel.get(index === 0 ? 0 : 4);
         if (currentConversation === "dax")
@@ -302,12 +394,24 @@ ApplicationWindow {
     }
 
     function mockTypingNicks() {
+        if (mockSelectedNetworkId === mockOftcId)
+            return [];
         if (currentConversation === "#omarchy" || currentConversation === "anna")
             return ["anna"];
         return [];
     }
 
-    function messagesFor(name) {
+    function messagesFor(name, networkId) {
+        var id = networkId || mockSelectedNetworkId;
+        if (id === mockOftcId) {
+            if (name === "#lab")
+                return labMessages;
+            if (name === "#build")
+                return buildMessages;
+            if (name === "rio")
+                return rioMessages;
+            return oftcOmarchyMessages;
+        }
         if (name === "#desktop")
             return desktopMessages;
         if (name === "#ricing")
@@ -349,18 +453,20 @@ ApplicationWindow {
             return;
         }
         for (var index = 0; index < directConversations.count; ++index) {
-            if (directConversations.get(index).conversation === nick) {
-                selectConversation(nick);
+            if (directConversations.get(index).conversation === nick
+                    && directConversations.get(index).networkId === mockSelectedNetworkId) {
+                selectConversation(nick, mockSelectedNetworkId);
                 return;
             }
         }
 
         directConversations.append({
             conversation: nick,
+            networkId: mockSelectedNetworkId,
             directUnread: 0,
             directMention: false
         });
-        selectConversation(nick);
+        selectConversation(nick, mockSelectedNetworkId);
     }
 
     function closeDirectMessage() {
@@ -378,33 +484,30 @@ ApplicationWindow {
         var rows = sidebarConversationRows();
         var current = -1;
         for (var index = 0; index < rows.length; ++index) {
-            if (rows[index].conversationName === currentConversation) {
+            if (rows[index].conversationId === currentConversationId) {
                 current = index;
                 break;
             }
         }
 
-        var nextName = "";
-        if (current >= 0 && current + 1 < rows.length)
-            nextName = rows[current + 1].conversationName;
-        else if (current > 0)
-            nextName = rows[current - 1].conversationName;
-        else if (current < 0 && rows.length > 0)
-            nextName = rows[rows.length - 1].conversationName;
+        var nextRow = neighborAfterDrop(rows, current);
 
         var closing = currentConversation;
+        var closingNetwork = mockSelectedNetworkId;
         for (var removeIndex = 0; removeIndex < directConversations.count; ++removeIndex) {
-            if (directConversations.get(removeIndex).conversation === closing) {
+            if (directConversations.get(removeIndex).conversation === closing
+                    && directConversations.get(removeIndex).networkId === closingNetwork) {
                 directConversations.remove(removeIndex);
                 break;
             }
         }
 
-        if (nextName.length > 0) {
-            selectConversation(nextName);
+        if (nextRow) {
+            selectConversation(nextRow.conversationName, rowNetworkId(nextRow));
             return;
         }
         mockStatusOpen = true;
+        mockStatusNetworkId = closingNetwork;
         mockCurrentConversation = "";
     }
 
@@ -425,9 +528,11 @@ ApplicationWindow {
         win.openDirectMessage(nick);
     }
 
-    function markDirectConversationRead(name) {
+    function markDirectConversationRead(name, networkId) {
+        var id = networkId || mockSelectedNetworkId;
         for (var index = 0; index < directConversations.count; ++index) {
-            if (directConversations.get(index).conversation === name) {
+            if (directConversations.get(index).conversation === name
+                    && directConversations.get(index).networkId === id) {
                 directConversations.setProperty(index, "directUnread", 0);
                 directConversations.setProperty(index, "directMention", false);
                 return;
@@ -436,9 +541,11 @@ ApplicationWindow {
     }
 
     function selectConversation(name, networkId) {
+        var id = networkId && networkId.length
+            ? networkId
+            : (irc ? irc.selectedNetworkId : mockSelectedNetworkId);
         if (irc) {
-            networkConsole.open = false;
-            irc.selectConversation(networkId, name);
+            irc.selectConversation(id, name);
             Qt.callLater(function() {
                 messageList.pinToEnd();
                 composer.forceActiveFocus();
@@ -446,13 +553,31 @@ ApplicationWindow {
             return;
         }
         mockStatusOpen = false;
+        mockSelectedNetworkId = id;
         if (name.charAt(0) !== "#")
-            markDirectConversationRead(name);
+            markDirectConversationRead(name, id);
         mockCurrentConversation = name;
-        mockCurrentTopic = topicFor(name);
-        mockActiveMessages = messagesFor(name);
+        mockCurrentTopic = topicFor(name, id);
+        mockActiveMessages = messagesFor(name, id);
         Qt.callLater(function() {
             messageList.pinToEnd();
+            composer.forceActiveFocus();
+        });
+    }
+
+    function openNetworkStatus(networkId) {
+        if (irc) {
+            irc.openStatus(networkId);
+            Qt.callLater(function() {
+                consoleList.pinToEnd();
+                composer.forceActiveFocus();
+            });
+            return;
+        }
+        mockStatusNetworkId = networkId;
+        mockStatusOpen = true;
+        Qt.callLater(function() {
+            consoleList.pinToEnd();
             composer.forceActiveFocus();
         });
     }
@@ -460,27 +585,46 @@ ApplicationWindow {
     function sidebarConversationRows() {
         var rows = [];
 
-        function appendVisible(item) {
-            if (item && item.visible)
-                rows.push(item);
+        function appendSection(section) {
+            if (!section || section.visible === false)
+                return;
+            var kids = section.children;
+            for (var index = 0; index < kids.length; ++index) {
+                var child = kids[index];
+                if (child && child.conversationName !== undefined && child.activate
+                        && child.visible && child.height > 0)
+                    rows.push(child);
+            }
         }
 
-        function appendRepeater(repeater) {
-            for (var index = 0; index < repeater.count; ++index)
-                appendVisible(repeater.itemAt(index));
-        }
-
-        if (irc) {
-            appendRepeater(channelConversationRepeater);
-            appendRepeater(liveDirectConversationRepeater);
+        if (irc && connection) {
+            for (var liveIndex = 0; liveIndex < liveNetworkRepeater.count; ++liveIndex)
+                appendSection(liveNetworkRepeater.itemAt(liveIndex));
+        } else if (irc) {
+            appendSection(liveFallbackSection);
         } else {
-            appendVisible(mockOmarchyRow);
-            appendVisible(mockDesktopRow);
-            appendVisible(mockRicingRow);
-            appendVisible(mockHelpRow);
-            appendRepeater(directConversationRepeater);
+            appendSection(mockOmarchySection);
+            appendSection(mockOftcSection);
         }
         return rows;
+    }
+
+    function sectionHasDirects(networkId) {
+        if (!irc) {
+            if (networkId === mockOftcId)
+                return true;
+            return directConversations.count > 0;
+        }
+        var model = irc.conversations;
+        if (!model)
+            return false;
+        for (var row = 0; row < model.rowCount(); ++row) {
+            var idx = model.index(row, 0);
+            if (model.data(idx, Qt.UserRole + 4) === true
+                    && model.data(idx, Qt.UserRole + 5) === networkId)
+                return true;
+        }
+        return false;
     }
 
     function stepConversation(delta) {
@@ -490,7 +634,7 @@ ApplicationWindow {
 
         var current = -1;
         for (var index = 0; index < rows.length; ++index) {
-            if (rows[index].conversationName === currentConversation) {
+            if (rows[index].conversationId === currentConversationId) {
                 current = index;
                 break;
             }
@@ -509,7 +653,7 @@ ApplicationWindow {
 
         var current = -1;
         for (var index = 0; index < rows.length; ++index) {
-            if (rows[index].conversationName === currentConversation) {
+            if (rows[index].conversationId === currentConversationId) {
                 current = index;
                 break;
             }
@@ -538,7 +682,11 @@ ApplicationWindow {
     }
 
     function composerHistoryKey() {
-        return consoleVisible ? "status" : currentConversation;
+        if (consoleVisible) {
+            var statusNetwork = irc ? irc.focusedNetworkId : mockStatusNetworkId;
+            return "status\n" + statusNetwork;
+        }
+        return currentConversationId;
     }
 
     function unsentComposerText() {
@@ -547,11 +695,42 @@ ApplicationWindow {
         return composer.text;
     }
 
+    function rowNetworkId(row) {
+        if (!row)
+            return "";
+        var id = row.conversationId || "";
+        var sep = id.indexOf("\n");
+        if (sep > 0)
+            return id.substring(0, sep);
+        return row.networkId || "";
+    }
+
+    function neighborAfterDrop(rows, current) {
+        if (current < 0)
+            return rows.length > 0 ? rows[rows.length - 1] : null;
+        var network = rowNetworkId(rows[current]);
+        var index;
+        for (index = current + 1; index < rows.length; ++index) {
+            if (rowNetworkId(rows[index]) === network)
+                return rows[index];
+        }
+        for (index = current - 1; index >= 0; --index) {
+            if (rowNetworkId(rows[index]) === network)
+                return rows[index];
+        }
+        if (current + 1 < rows.length)
+            return rows[current + 1];
+        if (current > 0)
+            return rows[current - 1];
+        return null;
+    }
+
     function stashComposerDraft() {
         if (!composer)
             return;
-        var key = composerDraftKey.length > 0 ? composerDraftKey : composerHistoryKey();
-        composerDrafts[key] = unsentComposerText();
+        if (composerDraftKey.length === 0)
+            return;
+        composerDrafts[composerDraftKey] = unsentComposerText();
     }
 
     function restoreComposerDraft() {
@@ -615,8 +794,6 @@ ApplicationWindow {
         var list = consoleVisible ? consoleList : messageList;
         if (!list)
             return;
-        // Detach before the row lays out. A following list resticks to the
-        // end when contentHeight changes, which swallows the jump.
         list.stick = list.stickDetached;
         list.pinning = true;
         var generation = ++list.pinGeneration;
@@ -875,7 +1052,9 @@ ApplicationWindow {
                 consoleList.pinToEnd();
                 return;
             }
-            mockStatusMessages.append({
+            var statusLog = mockStatusNetworkId === mockOftcId
+                ? oftcStatusMessages : mockStatusMessages;
+            statusLog.append({
                 time: Qt.formatTime(new Date(), "hh:mm:ss"),
                 label: "command",
                 text: original,
@@ -972,10 +1151,18 @@ ApplicationWindow {
         context: Qt.ApplicationShortcut
         enabled: !win.shortcutOverlayOpen
         onActivated: {
-            if (win.irc)
-                win.networkConsole.open = !win.networkConsole.open;
-            else
-                win.mockStatusOpen = !win.mockStatusOpen;
+            if (win.consoleVisible) {
+                if (win.irc)
+                    win.networkConsole.open = false;
+                else
+                    win.mockStatusOpen = false;
+                return;
+            }
+            var id = win.irc
+                ? (win.irc.focusedNetworkId || win.irc.selectedNetworkId)
+                : win.mockSelectedNetworkId;
+            if (id && id.length > 0)
+                win.openNetworkStatus(id);
         }
     }
 
@@ -983,7 +1170,12 @@ ApplicationWindow {
         sequence: "Ctrl+,"
         context: Qt.ApplicationShortcut
         enabled: win.connection !== null && !win.shortcutOverlayOpen
-        onActivated: win.connectionSheetOpen = true
+        onActivated: {
+            var id = win.irc ? win.irc.focusedNetworkId : "";
+            if (id.length > 0)
+                win.connection.select(id);
+            win.connectionSheetOpen = true;
+        }
     }
 
     Shortcut {
@@ -1125,9 +1317,22 @@ ApplicationWindow {
     function submitConnection() {
         if (!connection)
             return;
-        connection.setPassword(connectionPassword.text);
-        if (connection.apply() && !connection.setupRequired)
+        if (connectionPasswordEdited)
+            connection.setPassword(connectionPassword.text);
+        if (connection.apply() && !connection.setupRequired) {
             connectionSheetOpen = false;
+            connectionRemoveArmed = false;
+            connectionPasswordEdited = false;
+        }
+    }
+
+    function selectSheetNetwork(networkId) {
+        if (!connection)
+            return;
+        connection.select(networkId);
+        connectionPassword.text = "";
+        connectionPasswordEdited = false;
+        connectionRemoveArmed = false;
     }
 
     Connections {
@@ -1148,6 +1353,195 @@ ApplicationWindow {
         }
     }
 
+    component NetworkSection: Column {
+        id: section
+
+        property string networkId
+        property string displayName
+        readonly property string sectionNetworkId: networkId
+        property string statusText: "mock connected"
+        property int alerts: 0
+        property int unread: 0
+        property bool mention: false
+        property bool preserveLegacyNames: false
+        property bool showEdit: win.connection !== null
+
+        width: parent ? parent.width : 0
+        spacing: 0
+
+        readonly property color statusPulse: win.irc ? win.mixColors(win.pageColor, win.accentColor, 0) : "transparent"
+        readonly property string liveStatus: {
+            var pulse = win.irc ? win.irc.connectionStatus : "";
+            if (!win.irc)
+                return section.statusText;
+            var error = win.irc.lastErrorFor ? win.irc.lastErrorFor(section.networkId) : "";
+            if (error && error.length > 0)
+                return error;
+            return win.irc.connectionStatusFor
+                ? win.irc.connectionStatusFor(section.networkId)
+                : pulse;
+        }
+        readonly property int liveUnread: {
+            var pulse = win.irc ? win.irc.connectionStatus : "";
+            if (!win.irc)
+                return section.unread;
+            return win.irc.unreadCountFor ? win.irc.unreadCountFor(section.networkId) : 0;
+        }
+        readonly property bool liveMention: {
+            var pulse = win.irc ? win.irc.connectionStatus : "";
+            if (!win.irc)
+                return section.mention;
+            return win.irc.mentionFor ? win.irc.mentionFor(section.networkId) : false;
+        }
+        readonly property int liveAlerts: {
+            var pulse = win.networkConsole ? win.networkConsole.alerts : 0;
+            if (!win.networkConsole)
+                return section.alerts;
+            return win.networkConsole.alertsFor
+                ? win.networkConsole.alertsFor(section.networkId)
+                : pulse;
+        }
+
+        Item {
+            id: networkHeader
+            objectName: section.preserveLegacyNames ? "networkHeader"
+                                                    : "networkHeader-" + section.networkId
+            width: parent.width
+            height: win.scaledSize(64)
+
+            MouseArea {
+                id: networkHeaderButton
+                objectName: section.preserveLegacyNames ? "networkHeaderButton"
+                                                        : "networkHeaderButton-" + section.networkId
+                z: 1
+                anchors.left: parent.left
+                anchors.right: networkEditButton.left
+                anchors.top: parent.top
+                anchors.bottom: parent.bottom
+                hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
+                onClicked: win.openNetworkStatus(section.networkId)
+            }
+
+            Rectangle {
+                anchors.left: parent.left
+                anchors.leftMargin: win.scaledSize(18)
+                anchors.verticalCenter: parent.verticalCenter
+                width: win.scaledSize(28)
+                height: width
+                radius: win.scaledSize(8)
+                color: win.accentColor
+
+                Text {
+                    anchors.centerIn: parent
+                    text: section.displayName.length > 0
+                        ? section.displayName.charAt(0).toUpperCase()
+                        : "?"
+                    color: "#ffffff"
+                    font.family: "iA Writer Mono S"
+                    font.bold: true
+                    font.pixelSize: win.scaledSize(14)
+                }
+            }
+
+            Item {
+                id: networkEditButton
+                objectName: section.preserveLegacyNames ? "networkEditButton"
+                                                        : "networkEditButton-" + section.networkId
+                z: 2
+                visible: section.showEdit
+                anchors.right: parent.right
+                anchors.rightMargin: win.scaledSize(10)
+                anchors.verticalCenter: parent.verticalCenter
+                width: visible ? win.scaledSize(28) : 0
+                height: win.scaledSize(28)
+                Accessible.name: "Edit connection"
+                Accessible.role: Accessible.Button
+                Accessible.onPressAction: {
+                    if (win.connection)
+                        win.connection.select(section.networkId);
+                    win.connectionSheetOpen = true;
+                }
+
+                Text {
+                    anchors.centerIn: parent
+                    text: "edit"
+                    color: editMouse.containsMouse ? win.inkColor : win.mutedColor
+                    font.family: "iA Writer Mono S"
+                    font.pixelSize: win.scaledSize(9)
+                }
+
+                MouseArea {
+                    id: editMouse
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: {
+                        if (win.connection)
+                            win.connection.select(section.networkId);
+                        win.connectionSheetOpen = true;
+                    }
+                }
+            }
+
+            Column {
+                anchors.left: parent.left
+                anchors.leftMargin: win.scaledSize(56)
+                anchors.right: networkEditButton.left
+                anchors.rightMargin: win.scaledSize(8)
+                anchors.verticalCenter: parent.verticalCenter
+                spacing: win.scaledSize(2)
+
+                Row {
+                    width: parent.width
+                    spacing: win.scaledSize(6)
+
+                    Text {
+                        width: Math.max(0, parent.width - (unreadMark.visible ? unreadMark.width + parent.spacing : 0))
+                        text: section.displayName
+                        color: win.inkColor
+                        elide: Text.ElideRight
+                        font.family: "iA Writer Mono S"
+                        font.bold: true
+                        font.pixelSize: win.scaledSize(13)
+                    }
+
+                    Rectangle {
+                        id: unreadMark
+                        visible: section.liveUnread > 0 || section.liveMention
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: win.scaledSize(7)
+                        height: width
+                        radius: width / 2
+                        color: section.liveMention ? win.accentColor : win.inkColor
+                    }
+                }
+
+                Row {
+                    spacing: win.scaledSize(6)
+
+                    Rectangle {
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: win.scaledSize(7)
+                        height: width
+                        radius: width / 2
+                        color: section.liveAlerts > 0
+                            ? win.accentColor
+                            : (section.liveStatus === "Connected" || section.liveStatus === "mock connected"
+                                ? "#69b978" : win.mutedColor)
+                    }
+
+                    Text {
+                        text: section.liveStatus
+                        color: win.mutedColor
+                        font.family: "iA Writer Mono S"
+                        font.pixelSize: win.scaledSize(10)
+                    }
+                }
+            }
+        }
+    }
+
     component ConversationRow: Item {
         id: conversationRow
 
@@ -1155,14 +1549,22 @@ ApplicationWindow {
         required property int unread
         required property bool mention
         property bool direct: false
-        property string networkId: ""
+        property string networkId: win.mockOmarchyId
+        property string conversationId: networkId + "\n" + conversationName
 
-        objectName: "conversation-" + conversationName
+        objectName: networkId === win.mockOftcId
+            ? "conversation-oftc-" + conversationName
+            : (win.irc && networkId.length > 0 && win.connection
+                ? "conversation-" + networkId + "-" + conversationName
+                : "conversation-" + conversationName)
         Accessible.name: conversationName
         Accessible.role: Accessible.Button
         Accessible.onPressAction: activate()
         width: parent ? parent.width : 0
         height: win.scaledSize(36)
+
+        readonly property bool current: conversationId === win.currentConversationId
+            && !win.consoleVisible
 
         function activate() {
             if (!win.irc && !conversationRow.direct) {
@@ -1178,13 +1580,13 @@ ApplicationWindow {
             anchors.leftMargin: win.scaledSize(8)
             anchors.rightMargin: win.scaledSize(8)
             radius: win.scaledSize(7)
-            color: conversationRow.conversationName === win.currentConversation
+            color: conversationRow.current
                 ? win.raisedColor
                 : rowMouse.containsMouse ? win.hoverColor : "transparent"
         }
 
         Rectangle {
-            visible: conversationRow.conversationName === win.currentConversation
+            visible: conversationRow.current
             anchors.left: parent.left
             anchors.leftMargin: win.scaledSize(8)
             anchors.verticalCenter: parent.verticalCenter
@@ -1232,12 +1634,12 @@ ApplicationWindow {
             anchors.rightMargin: win.scaledSize(8)
             anchors.verticalCenter: parent.verticalCenter
             text: (conversationRow.direct ? "" : "#  ") + conversationRow.conversationName.replace("#", "")
-            color: conversationRow.conversationName === win.currentConversation
+            color: conversationRow.current
                 ? win.inkColor
                 : conversationRow.unread > 0 ? win.inkColor : win.mutedColor
             elide: Text.ElideRight
             font.family: "iA Writer Mono S"
-            font.bold: conversationRow.conversationName === win.currentConversation
+            font.bold: conversationRow.current
                        || conversationRow.unread > 0
             font.pixelSize: win.scaledSize(13)
         }
@@ -1750,11 +2152,13 @@ ApplicationWindow {
         id: directConversations
         ListElement {
             conversation: "anna"
+            networkId: "mock-omarchy"
             directUnread: 1
             directMention: true
         }
         ListElement {
             conversation: "dax"
+            networkId: "mock-omarchy"
             directUnread: 0
             directMention: false
         }
@@ -1776,6 +2180,101 @@ ApplicationWindow {
             source: "server"
             severity: "info"
         }
+    }
+
+    ListModel {
+        id: oftcOmarchyMessages
+        ListElement { author: ""; time: ""; body: "Today"; kind: "event" }
+        ListElement {
+            author: "rio"
+            time: "11:02"
+            body: "This #omarchy is the OFTC one. Different people, same name."
+            kind: "message"
+        }
+        ListElement {
+            author: "oak"
+            time: "11:04"
+            body: "Good. If the sidebar mixed them, we would already be lost."
+            kind: "message"
+        }
+    }
+
+    ListModel {
+        id: labMessages
+        ListElement { author: ""; time: ""; body: "Today"; kind: "event" }
+        ListElement {
+            author: "ness"
+            time: "10:18"
+            body: "Package build is green on the new runner."
+            kind: "message"
+        }
+        ListElement {
+            author: "rio"
+            time: "10:21"
+            body: "Leave the log in #build if it fails after sunset."
+            kind: "message"
+        }
+    }
+
+    ListModel {
+        id: buildMessages
+        ListElement { author: ""; time: ""; body: "Today"; kind: "event" }
+        ListElement {
+            author: "ness"
+            time: "09:05"
+            body: "Nightly failed on missing qt6keychain. Looking."
+            kind: "message"
+        }
+        ListElement {
+            author: "oak"
+            time: "09:12"
+            body: "Patched. Waiting on the next image."
+            kind: "message"
+        }
+    }
+
+    ListModel {
+        id: rioMessages
+        ListElement {
+            author: ""
+            time: ""
+            body: "This is the beginning of your conversation with rio."
+            kind: "event"
+        }
+        ListElement {
+            author: "rio"
+            time: "11:40"
+            body: "Ping me on OFTC, not Libera."
+            kind: "message"
+        }
+    }
+
+    ListModel {
+        id: oftcStatusMessages
+        ListElement {
+            time: "12:10:01"
+            label: "NOTICE"
+            text: "-AUTH- *** Looking up your hostname..."
+            source: "server"
+            severity: "info"
+        }
+        ListElement {
+            time: "12:10:02"
+            label: "001"
+            text: "Welcome to the mock OFTC network"
+            source: "server"
+            severity: "info"
+        }
+    }
+
+    ListModel {
+        id: oftcMembersModel
+        ListElement { nick: "rio"; label: "rio"; status: "on #lab"; away: false }
+        ListElement { nick: "ness"; label: "ness"; status: "watching CI"; away: false }
+        ListElement { nick: "oak"; label: "oak"; status: "building Omairc"; away: false }
+        ListElement { nick: "pip"; label: "pip"; status: ""; away: true }
+        ListElement { nick: "jules"; label: "jules"; status: ""; away: false }
+        ListElement { nick: "remy"; label: "remy"; status: ""; away: false }
     }
 
     ListModel {
@@ -1812,268 +2311,366 @@ ApplicationWindow {
                 color: win.dividerColor
             }
 
-            Item {
-                id: networkHeader
-                objectName: "networkHeader"
+            Flickable {
+                id: sidebarScroll
+                objectName: "sidebarList"
                 anchors.top: parent.top
                 anchors.left: parent.left
                 anchors.right: parent.right
-                height: win.scaledSize(72)
-
-                MouseArea {
-                    id: networkHeaderButton
-                    objectName: "networkHeaderButton"
-                    z: 1
-                    anchors.left: parent.left
-                    anchors.right: networkEditButton.left
-                    anchors.top: parent.top
-                    anchors.bottom: parent.bottom
-                    hoverEnabled: true
-                    cursorShape: Qt.PointingHandCursor
-                    onClicked: {
-                        if (win.irc)
-                            win.networkConsole.open = true;
-                        else
-                            win.mockStatusOpen = true;
-                    }
-                }
-
-                Rectangle {
-                    anchors.left: parent.left
-                    anchors.leftMargin: win.scaledSize(18)
-                    anchors.verticalCenter: parent.verticalCenter
-                    width: win.scaledSize(34)
-                    height: width
-                    radius: win.scaledSize(10)
-                    color: win.accentColor
-
-                    Text {
-                        anchors.centerIn: parent
-                        text: "O"
-                        color: "#ffffff"
-                        font.family: "iA Writer Mono S"
-                        font.bold: true
-                        font.pixelSize: win.scaledSize(17)
-                    }
-                }
-
-                Item {
-                    id: networkEditButton
-                    objectName: "networkEditButton"
-                    z: 2
-                    visible: win.connection !== null
-                    anchors.right: parent.right
-                    anchors.rightMargin: win.scaledSize(10)
-                    anchors.verticalCenter: parent.verticalCenter
-                    width: visible ? win.scaledSize(28) : 0
-                    height: win.scaledSize(28)
-                    Accessible.name: "Edit connection"
-                    Accessible.role: Accessible.Button
-                    Accessible.onPressAction: win.connectionSheetOpen = true
-
-                    Text {
-                        anchors.centerIn: parent
-                        text: "edit"
-                        color: editMouse.containsMouse ? win.inkColor : win.mutedColor
-                        font.family: "iA Writer Mono S"
-                        font.pixelSize: win.scaledSize(9)
-                    }
-
-                    MouseArea {
-                        id: editMouse
-                        anchors.fill: parent
-                        hoverEnabled: true
-                        cursorShape: Qt.PointingHandCursor
-                        onClicked: win.connectionSheetOpen = true
-                    }
-                }
+                anchors.bottom: identityFooter.top
+                clip: true
+                contentWidth: width
+                contentHeight: sidebarColumn.implicitHeight
+                boundsBehavior: Flickable.StopAtBounds
+                ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
 
                 Column {
-                    anchors.left: parent.left
-                    anchors.leftMargin: win.scaledSize(64)
-                    anchors.right: networkEditButton.left
-                    anchors.rightMargin: win.scaledSize(8)
-                    anchors.verticalCenter: parent.verticalCenter
-                    spacing: win.scaledSize(2)
+                    id: sidebarColumn
+                    width: sidebarScroll.width
+                    spacing: 0
 
-                    Text {
-                        width: parent.width
-                        text: win.connection ? win.connection.displayName : "Omarchy IRC"
-                        color: win.inkColor
-                        elide: Text.ElideRight
-                        font.family: "iA Writer Mono S"
-                        font.bold: true
-                        font.pixelSize: win.scaledSize(14)
+                    Repeater {
+                        id: liveNetworkRepeater
+                        model: win.irc && win.connection ? win.connection.networks : null
+
+                        NetworkSection {
+                            required property int index
+                            required property string networkId
+                            required property string displayName
+                            preserveLegacyNames: index === 0
+                            unread: 0
+                            mention: false
+
+                            Item {
+                                width: parent.width
+                                height: win.scaledSize(28)
+                                Text {
+                                    anchors.left: parent.left
+                                    anchors.leftMargin: win.scaledSize(19)
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    text: "CHANNELS"
+                                    color: win.mutedColor
+                                    font.family: "iA Writer Mono S"
+                                    font.bold: true
+                                    font.letterSpacing: win.scaledSize(0.8)
+                                    font.pixelSize: win.scaledSize(9)
+                                }
+                            }
+
+                            Repeater {
+                                objectName: index === 0 ? "channelConversationRepeater"
+                                                        : "channelConversationRepeater-" + networkId
+                                model: win.irc ? win.irc.conversations : null
+                                delegate: ConversationRow {
+                                    required property var model
+                                    conversationName: model.conversation
+                                    conversationId: model.conversationId
+                                    unread: model.unread
+                                    mention: model.mention
+                                    direct: model.direct
+                                    networkId: model.networkId
+                                    visible: !model.direct && model.networkId === sectionNetworkId
+                                    width: sidebar.width
+                                    height: visible ? win.scaledSize(36) : 0
+                                }
+                            }
+
+                            Item {
+                                width: parent.width
+                                height: win.sectionHasDirects(networkId) ? win.scaledSize(36) : 0
+                                visible: height > 0
+                                Text {
+                                    anchors.left: parent.left
+                                    anchors.leftMargin: win.scaledSize(19)
+                                    anchors.bottom: parent.bottom
+                                    anchors.bottomMargin: win.scaledSize(8)
+                                    text: "DIRECT MESSAGES"
+                                    color: win.mutedColor
+                                    font.family: "iA Writer Mono S"
+                                    font.bold: true
+                                    font.letterSpacing: win.scaledSize(0.8)
+                                    font.pixelSize: win.scaledSize(9)
+                                }
+                            }
+
+                            Repeater {
+                                objectName: index === 0 ? "directConversationRepeater"
+                                                        : "directConversationRepeater-" + networkId
+                                model: win.irc ? win.irc.conversations : null
+                                delegate: ConversationRow {
+                                    required property var model
+                                    conversationName: model.conversation
+                                    conversationId: model.conversationId
+                                    unread: model.unread
+                                    mention: model.mention
+                                    direct: model.direct
+                                    networkId: model.networkId
+                                    visible: model.direct && model.networkId === sectionNetworkId
+                                    width: sidebar.width
+                                    height: visible ? win.scaledSize(36) : 0
+                                }
+                            }
+                        }
                     }
 
-                    Row {
-                        spacing: win.scaledSize(6)
+                    NetworkSection {
+                        id: liveFallbackSection
+                        visible: win.irc && !win.connection
+                        height: visible ? implicitHeight : 0
+                        networkId: win.irc ? win.irc.selectedNetworkId : ""
+                        displayName: win.irc && win.irc.selectedNetworkId.length > 0
+                            ? win.irc.selectedNetworkId : "Network"
+                        preserveLegacyNames: visible
+                        showEdit: false
 
-                        Rectangle {
-                            anchors.verticalCenter: parent.verticalCenter
-                            width: win.scaledSize(7)
-                            height: width
-                            radius: width / 2
-                            color: win.networkConsole && win.networkConsole.alerts > 0
-                                ? win.accentColor
-                                : (win.irc
-                                    ? (win.irc.connectionStatus === "Connected"
-                                        ? "#69b978" : win.mutedColor)
-                                    : "#69b978")
+                        Item {
+                            width: parent.width
+                            height: win.scaledSize(28)
+                            Text {
+                                anchors.left: parent.left
+                                anchors.leftMargin: win.scaledSize(19)
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: "CHANNELS"
+                                color: win.mutedColor
+                                font.family: "iA Writer Mono S"
+                                font.bold: true
+                                font.letterSpacing: win.scaledSize(0.8)
+                                font.pixelSize: win.scaledSize(9)
+                            }
                         }
 
-                        Text {
-                            text: win.irc
-                                ? (win.irc.lastError.length > 0
-                                    ? win.irc.lastError : win.irc.connectionStatus)
-                                : "mock connected"
-                            color: win.mutedColor
-                            font.family: "iA Writer Mono S"
-                            font.pixelSize: win.scaledSize(10)
+                        Repeater {
+                            id: channelConversationRepeater
+                            objectName: win.irc && !win.connection ? "channelConversationRepeater" : ""
+                            model: win.irc && !win.connection ? win.irc.conversations : null
+                            delegate: ConversationRow {
+                                required property var model
+                                conversationName: model.conversation
+                                conversationId: model.conversationId
+                                unread: model.unread
+                                mention: model.mention
+                                direct: model.direct
+                                networkId: model.networkId
+                                visible: !model.direct
+                                width: sidebar.width
+                                height: visible ? win.scaledSize(36) : 0
+                            }
+                        }
+
+                        Item {
+                            width: parent.width
+                            height: win.scaledSize(36)
+                            Text {
+                                anchors.left: parent.left
+                                anchors.leftMargin: win.scaledSize(19)
+                                anchors.bottom: parent.bottom
+                                anchors.bottomMargin: win.scaledSize(8)
+                                text: "DIRECT MESSAGES"
+                                color: win.mutedColor
+                                font.family: "iA Writer Mono S"
+                                font.bold: true
+                                font.letterSpacing: win.scaledSize(0.8)
+                                font.pixelSize: win.scaledSize(9)
+                            }
+                        }
+
+                        Repeater {
+                            id: liveDirectConversationRepeater
+                            objectName: win.irc && !win.connection ? "directConversationRepeater" : ""
+                            model: win.irc && !win.connection ? win.irc.conversations : null
+                            delegate: ConversationRow {
+                                required property var model
+                                conversationName: model.conversation
+                                conversationId: model.conversationId
+                                unread: model.unread
+                                mention: model.mention
+                                direct: model.direct
+                                networkId: model.networkId
+                                visible: model.direct
+                                width: sidebar.width
+                                height: visible ? win.scaledSize(36) : 0
+                            }
                         }
                     }
-                }
-            }
 
-            Column {
-                anchors.top: networkHeader.bottom
-                anchors.left: parent.left
-                anchors.right: parent.right
-                spacing: 0
+                    NetworkSection {
+                        id: mockOmarchySection
+                        visible: !win.irc
+                        height: visible ? implicitHeight : 0
+                        networkId: win.mockOmarchyId
+                        displayName: "Omarchy IRC"
+                        statusText: "mock connected"
+                        unread: 16
+                        mention: true
+                        preserveLegacyNames: true
+                        showEdit: false
 
-                Item {
-                    width: parent.width
-                    height: win.scaledSize(34)
+                        Item {
+                            width: parent.width
+                            height: win.scaledSize(28)
+                            Text {
+                                anchors.left: parent.left
+                                anchors.leftMargin: win.scaledSize(19)
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: "CHANNELS"
+                                color: win.mutedColor
+                                font.family: "iA Writer Mono S"
+                                font.bold: true
+                                font.letterSpacing: win.scaledSize(0.8)
+                                font.pixelSize: win.scaledSize(9)
+                            }
+                        }
 
-                    Text {
-                        anchors.left: parent.left
-                        anchors.leftMargin: win.scaledSize(19)
-                        anchors.verticalCenter: parent.verticalCenter
-                        text: "CHANNELS"
-                        color: win.mutedColor
-                        font.family: "iA Writer Mono S"
-                        font.bold: true
-                        font.letterSpacing: win.scaledSize(0.8)
-                        font.pixelSize: win.scaledSize(9)
+                        ConversationRow {
+                            id: mockOmarchyRow
+                            conversationName: "#omarchy"
+                            networkId: win.mockOmarchyId
+                            unread: 0
+                            mention: false
+                        }
+
+                        ConversationRow {
+                            id: mockDesktopRow
+                            conversationName: "#desktop"
+                            networkId: win.mockOmarchyId
+                            unread: 3
+                            mention: false
+                        }
+
+                        ConversationRow {
+                            id: mockRicingRow
+                            conversationName: "#ricing"
+                            networkId: win.mockOmarchyId
+                            unread: 12
+                            mention: true
+                        }
+
+                        ConversationRow {
+                            id: mockHelpRow
+                            conversationName: "#help"
+                            networkId: win.mockOmarchyId
+                            unread: 0
+                            mention: false
+                        }
+
+                        Item {
+                            width: parent.width
+                            height: win.scaledSize(36)
+                            Text {
+                                anchors.left: parent.left
+                                anchors.leftMargin: win.scaledSize(19)
+                                anchors.bottom: parent.bottom
+                                anchors.bottomMargin: win.scaledSize(8)
+                                text: "DIRECT MESSAGES"
+                                color: win.mutedColor
+                                font.family: "iA Writer Mono S"
+                                font.bold: true
+                                font.letterSpacing: win.scaledSize(0.8)
+                                font.pixelSize: win.scaledSize(9)
+                            }
+                        }
+
+                        Repeater {
+                            id: directConversationRepeater
+                            objectName: win.irc ? "" : "directConversationRepeater"
+                            model: win.irc ? null : directConversations
+                            delegate: ConversationRow {
+                                required property string conversation
+                                required property string networkId
+                                required property int directUnread
+                                required property bool directMention
+                                width: sidebar.width
+                                conversationName: conversation
+                                unread: directUnread
+                                mention: directMention
+                                direct: true
+                            }
+                        }
                     }
-                }
 
-                ConversationRow {
-                    id: mockOmarchyRow
-                    visible: !win.irc
-                    height: visible ? win.scaledSize(36) : 0
-                    width: sidebar.width
-                    conversationName: "#omarchy"
-                    unread: 0
-                    mention: false
-                }
+                    NetworkSection {
+                        id: mockOftcSection
+                        visible: !win.irc
+                        height: visible ? implicitHeight : 0
+                        networkId: win.mockOftcId
+                        displayName: "irc.oftc.net"
+                        statusText: "mock connected"
+                        unread: 2
+                        mention: false
+                        preserveLegacyNames: false
+                        showEdit: false
 
-                ConversationRow {
-                    id: mockDesktopRow
-                    visible: !win.irc
-                    height: visible ? win.scaledSize(36) : 0
-                    width: sidebar.width
-                    conversationName: "#desktop"
-                    unread: 3
-                    mention: false
-                }
+                        Item {
+                            width: parent.width
+                            height: win.scaledSize(28)
+                            Text {
+                                anchors.left: parent.left
+                                anchors.leftMargin: win.scaledSize(19)
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: "CHANNELS"
+                                color: win.mutedColor
+                                font.family: "iA Writer Mono S"
+                                font.bold: true
+                                font.letterSpacing: win.scaledSize(0.8)
+                                font.pixelSize: win.scaledSize(9)
+                            }
+                        }
 
-                ConversationRow {
-                    id: mockRicingRow
-                    visible: !win.irc
-                    height: visible ? win.scaledSize(36) : 0
-                    width: sidebar.width
-                    conversationName: "#ricing"
-                    unread: 12
-                    mention: true
-                }
+                        ConversationRow {
+                            id: mockOftcOmarchyRow
+                            conversationName: "#omarchy"
+                            networkId: win.mockOftcId
+                            unread: 0
+                            mention: false
+                        }
 
-                ConversationRow {
-                    id: mockHelpRow
-                    visible: !win.irc
-                    height: visible ? win.scaledSize(36) : 0
-                    width: sidebar.width
-                    conversationName: "#help"
-                    unread: 0
-                    mention: false
-                }
+                        ConversationRow {
+                            id: mockLabRow
+                            conversationName: "#lab"
+                            networkId: win.mockOftcId
+                            unread: 0
+                            mention: false
+                        }
 
-                Repeater {
-                    id: channelConversationRepeater
-                    objectName: win.irc ? "channelConversationRepeater" : ""
-                    model: win.irc ? win.irc.conversations : null
+                        ConversationRow {
+                            id: mockBuildRow
+                            conversationName: "#build"
+                            networkId: win.mockOftcId
+                            unread: 2
+                            mention: false
+                        }
 
-                    delegate: ConversationRow {
-                        required property var model
+                        Item {
+                            width: parent.width
+                            height: win.scaledSize(36)
+                            Text {
+                                anchors.left: parent.left
+                                anchors.leftMargin: win.scaledSize(19)
+                                anchors.bottom: parent.bottom
+                                anchors.bottomMargin: win.scaledSize(8)
+                                text: "DIRECT MESSAGES"
+                                color: win.mutedColor
+                                font.family: "iA Writer Mono S"
+                                font.bold: true
+                                font.letterSpacing: win.scaledSize(0.8)
+                                font.pixelSize: win.scaledSize(9)
+                            }
+                        }
 
-                        conversationName: model.conversation
-                        unread: model.unread
-                        mention: model.mention
-                        direct: model.direct
-                        networkId: model.networkId
-                        visible: !model.direct
-                        width: sidebar.width
-                        height: visible ? win.scaledSize(36) : 0
-                    }
-                }
-
-                Item {
-                    width: parent.width
-                    height: win.scaledSize(44)
-
-                    Text {
-                        anchors.left: parent.left
-                        anchors.leftMargin: win.scaledSize(19)
-                        anchors.bottom: parent.bottom
-                        anchors.bottomMargin: win.scaledSize(9)
-                        text: "DIRECT MESSAGES"
-                        color: win.mutedColor
-                        font.family: "iA Writer Mono S"
-                        font.bold: true
-                        font.letterSpacing: win.scaledSize(0.8)
-                        font.pixelSize: win.scaledSize(9)
-                    }
-                }
-
-                Repeater {
-                    id: directConversationRepeater
-                    objectName: win.irc ? "" : "directConversationRepeater"
-                    model: win.irc ? null : directConversations
-
-                    delegate: ConversationRow {
-                        required property string conversation
-                        required property int directUnread
-                        required property bool directMention
-
-                        width: sidebar.width
-                        conversationName: conversation
-                        unread: directUnread
-                        mention: directMention
-                        direct: true
-                    }
-                }
-
-                Repeater {
-                    id: liveDirectConversationRepeater
-                    objectName: win.irc ? "directConversationRepeater" : ""
-                    model: win.irc ? win.irc.conversations : null
-
-                    delegate: ConversationRow {
-                        required property var model
-
-                        conversationName: model.conversation
-                        unread: model.unread
-                        mention: model.mention
-                        direct: model.direct
-                        networkId: model.networkId
-                        visible: model.direct
-                        width: sidebar.width
-                        height: visible ? win.scaledSize(36) : 0
+                        ConversationRow {
+                            id: mockRioRow
+                            conversationName: "rio"
+                            networkId: win.mockOftcId
+                            unread: 0
+                            mention: false
+                            direct: true
+                        }
                     }
                 }
             }
 
             Rectangle {
+                id: identityFooter
                 anchors.left: parent.left
                 anchors.right: parent.right
                 anchors.bottom: parent.bottom
@@ -2167,7 +2764,14 @@ ApplicationWindow {
 
                     Text {
                         width: parent.width
-                        text: win.currentConversation
+                        text: {
+                            if (win.duplicateTargetName(win.currentConversation)) {
+                                var network = win.focusedNetworkDisplayName();
+                                if (network.length > 0)
+                                    return win.currentConversation + " · " + network;
+                            }
+                            return win.currentConversation;
+                        }
                         color: win.inkColor
                         elide: Text.ElideRight
                         font.family: "iA Writer Mono S"
@@ -2248,9 +2852,7 @@ ApplicationWindow {
 
                     Text {
                         width: parent.width
-                        text: win.connection && win.connection.displayName.length > 0
-                            ? win.connection.displayName + " Status"
-                            : "Status"
+                        text: win.statusTitleText()
                         color: win.inkColor
                         elide: Text.ElideRight
                         font.family: "iA Writer Mono S"
@@ -2420,7 +3022,9 @@ ApplicationWindow {
                 anchors.right: parent.right
                 anchors.bottom: composerShell.top
                 anchors.bottomMargin: win.scaledSize(12)
-                model: win.networkConsole ? win.networkConsole.lines : mockStatusMessages
+                model: win.networkConsole ? win.networkConsole.lines
+                    : (win.mockStatusNetworkId === win.mockOftcId
+                        ? oftcStatusMessages : mockStatusMessages)
 
                 ScrollBar.vertical: ScrollBar {
                     policy: ScrollBar.AsNeeded
@@ -2547,7 +3151,7 @@ ApplicationWindow {
                     objectName: "messageComposer"
                     Accessible.name: "Message composer"
                     Accessible.description: win.consoleVisible
-                        ? "Command for " + (win.connection ? win.connection.displayName : "Status")
+                        ? "Command for " + win.statusTitleText().replace(" Status", "")
                         : "Write a message to " + win.currentConversation
                     anchors.left: parent.left
                     anchors.right: sendButton.left
@@ -2785,9 +3389,8 @@ ApplicationWindow {
 
                 Rectangle {
                     anchors.centerIn: parent
-                    width: Math.min(win.scaledSize(420), parent.width - win.scaledSize(40))
-                    height: Math.min(sheetColumn.implicitHeight + win.scaledSize(36),
-                                     parent.height - win.scaledSize(40))
+                    width: Math.min(win.scaledSize(700), parent.width - win.scaledSize(40))
+                    height: Math.min(win.scaledSize(560), parent.height - win.scaledSize(40))
                     radius: win.scaledSize(10)
                     color: win.raisedColor
                     border.width: 1
@@ -2799,10 +3402,112 @@ ApplicationWindow {
                         onClicked: function(mouse) { mouse.accepted = true; }
                     }
 
-                    Flickable {
-                        id: sheetFlick
+                    Row {
                         anchors.fill: parent
                         anchors.margins: win.scaledSize(18)
+                        spacing: win.scaledSize(16)
+
+                        Column {
+                            id: networkRail
+                            objectName: "networkChoiceList"
+                            width: win.scaledSize(170)
+                            height: parent.height
+                            spacing: win.scaledSize(6)
+
+                            Text {
+                                text: "Networks"
+                                color: win.mutedColor
+                                font.family: "iA Writer Mono S"
+                                font.bold: true
+                                font.pixelSize: win.scaledSize(10)
+                            }
+
+                            Repeater {
+                                id: networkChoiceRepeater
+                                objectName: "networkChoiceRepeater"
+                                model: win.connection && win.connection.networks
+                                    ? win.connection.networks : null
+                                delegate: Rectangle {
+                                    required property string networkId
+                                    required property string displayName
+                                    required property bool selected
+                                    width: networkRail.width
+                                    height: win.scaledSize(32)
+                                    radius: win.scaledSize(6)
+                                    color: selected
+                                        ? win.mixColors(win.selectionColor, win.raisedColor,
+                                                        win.darkMode ? 0.45 : 0.35)
+                                        : (choiceMouse.containsMouse ? win.hoverColor : "transparent")
+                                    objectName: "networkChoice-" + networkId
+
+                                    Text {
+                                        anchors.fill: parent
+                                        anchors.leftMargin: win.scaledSize(8)
+                                        anchors.rightMargin: win.scaledSize(8)
+                                        text: displayName
+                                        color: win.inkColor
+                                        elide: Text.ElideRight
+                                        verticalAlignment: Text.AlignVCenter
+                                        font.family: "iA Writer Mono S"
+                                        font.pixelSize: win.scaledSize(11)
+                                    }
+
+                                    MouseArea {
+                                        id: choiceMouse
+                                        anchors.fill: parent
+                                        hoverEnabled: true
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: win.selectSheetNetwork(networkId)
+                                    }
+                                }
+                            }
+
+                            Rectangle {
+                                objectName: "connectionAddNetwork"
+                                width: networkRail.width
+                                height: win.scaledSize(28)
+                                radius: win.scaledSize(6)
+                                visible: win.connection ? win.connection.canAdd : false
+                                color: addNetworkMouse.containsMouse ? win.hoverColor : "transparent"
+
+                                Text {
+                                    anchors.centerIn: parent
+                                    text: "Add network"
+                                    color: win.mutedColor
+                                    font.family: "iA Writer Mono S"
+                                    font.pixelSize: win.scaledSize(11)
+                                }
+
+                                MouseArea {
+                                    id: addNetworkMouse
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: {
+                                        if (!win.connection || !win.connection.add())
+                                            return;
+                                        connectionPassword.text = "";
+                                        win.connectionPasswordEdited = false;
+                                        win.connectionRemoveArmed = false;
+                                    }
+                                }
+                            }
+
+                            Item { width: 1; height: 1 }
+                        }
+
+                        Item {
+                            width: parent.width - networkRail.width - parent.spacing
+                            height: parent.height
+
+                        Flickable {
+                        id: sheetFlick
+                        objectName: "sheetFlick"
+                        anchors.top: parent.top
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        anchors.bottom: sheetActions.top
+                        anchors.bottomMargin: win.scaledSize(10)
                         contentWidth: width
                         contentHeight: sheetColumn.implicitHeight
                         clip: true
@@ -2943,6 +3648,9 @@ ApplicationWindow {
                             label: "Password"
                             fieldObjectName: "connectionPassword"
                             secret: true
+                            onTextEdited: function(value) {
+                                win.connectionPasswordEdited = true;
+                            }
                         }
 
                         Text {
@@ -2955,10 +3663,62 @@ ApplicationWindow {
                             font.family: "iA Writer Mono S"
                             font.pixelSize: win.scaledSize(11)
                         }
+                    }
+                    }
 
-                        Row {
-                            anchors.right: parent.right
-                            spacing: win.scaledSize(8)
+                    Row {
+                        id: sheetActions
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        anchors.bottom: parent.bottom
+                        spacing: win.scaledSize(8)
+
+                            Rectangle {
+                                objectName: "connectionRemove"
+                                visible: win.connection ? win.connection.canRemove : false
+                                width: visible ? win.scaledSize(win.connectionRemoveArmed ? 148 : 88) : 0
+                                height: win.scaledSize(30)
+                                radius: win.scaledSize(7)
+                                color: removeMouse.containsMouse ? win.hoverColor : "transparent"
+                                border.width: 1
+                                border.color: win.dividerColor
+
+                                Text {
+                                    anchors.centerIn: parent
+                                    text: win.connectionRemoveArmed
+                                        ? "Remove " + (win.connection ? win.connection.displayName : "") + "?"
+                                        : "Remove"
+                                    color: win.accentColor
+                                    elide: Text.ElideRight
+                                    width: parent.width - win.scaledSize(8)
+                                    horizontalAlignment: Text.AlignHCenter
+                                    font.family: "iA Writer Mono S"
+                                    font.pixelSize: win.scaledSize(11)
+                                }
+
+                                MouseArea {
+                                    id: removeMouse
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: {
+                                        if (!win.connection || !win.connection.canRemove)
+                                            return;
+                                        if (!win.connectionRemoveArmed) {
+                                            win.connectionRemoveArmed = true;
+                                            return;
+                                        }
+                                        win.connection.removeSelected();
+                                        connectionPassword.text = "";
+                                        win.connectionPasswordEdited = false;
+                                        win.connectionRemoveArmed = false;
+                                        if (win.connection.setupRequired)
+                                            win.connectionSheetOpen = true;
+                                    }
+                                }
+                            }
+
+                            Item { width: 1; height: 1 }
 
                             Rectangle {
                                 objectName: "connectionDiscard"
@@ -2987,6 +3747,8 @@ ApplicationWindow {
                                             return;
                                         win.connection.discard();
                                         connectionPassword.text = "";
+                                        win.connectionPasswordEdited = false;
+                                        win.connectionRemoveArmed = false;
                                     }
                                 }
                             }

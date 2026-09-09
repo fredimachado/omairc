@@ -77,6 +77,16 @@ IrcController::IrcController(QObject *parent)
         emit typingChanged();
         armTypingRefresh();
     });
+    connect(&m_console, &IrcStatusConsole::openChanged, this, [this] {
+        emit selectionChanged();
+        emit statusChanged();
+    });
+    connect(&m_console, &IrcStatusConsole::networkChanged, this, [this] {
+        emit selectionChanged();
+        emit statusChanged();
+    });
+    connect(&m_console, &IrcStatusConsole::alertsChanged, this,
+            &IrcController::statusChanged);
 }
 
 IrcSession *IrcController::addSession(const IrcSessionConfig& config,
@@ -124,7 +134,35 @@ bool IrcController::discardSession(const QString &networkId)
     emit capabilitiesChanged();
     const bool discarded = m_sessions.discardSession(networkId);
     notifySelfAwayIfChanged(previousId, previousAway);
+    emit statusChanged();
     return discarded;
+}
+
+void IrcController::forgetNetworkState(const QString &networkId)
+{
+    if (networkId.isEmpty())
+        return;
+    const QString previousId = identityNetworkId();
+    const bool previousAway = selfAway();
+    m_reducer.forgetNetwork(networkId);
+    m_unawaySent.remove(networkId);
+    m_currentNicks.remove(networkId);
+    m_capabilities.remove(networkId);
+    m_lastErrors.remove(networkId);
+    if (m_selected && m_selected->networkId == networkId)
+        clearConversationSelection();
+    reloadModels();
+    emit capabilitiesChanged();
+    emit statusChanged();
+    notifySelfAwayIfChanged(previousId, previousAway);
+}
+
+void IrcController::setNetworkOrder(const QStringList &networkOrder)
+{
+    if (m_networkOrder == networkOrder)
+        return;
+    m_networkOrder = networkOrder;
+    m_conversations.setNetworkOrder(networkOrder);
 }
 
 QAbstractItemModel *IrcController::conversations()
@@ -156,6 +194,20 @@ QString IrcController::selectedTarget() const
     return m_selectedTarget;
 }
 
+QString IrcController::selectedConversationId() const
+{
+    return m_selected ? ircConversationId(*m_selected) : QString{};
+}
+
+QString IrcController::focusedNetworkId() const
+{
+    if (m_console.isOpen())
+        return m_console.networkId();
+    if (m_selected)
+        return m_selected->networkId;
+    return m_console.networkId();
+}
+
 QString IrcController::topic() const
 {
     if (!m_selected)
@@ -185,7 +237,7 @@ int IrcController::peopleCount() const
 
 QString IrcController::connectionStatus() const
 {
-    return m_connectionStatus;
+    return connectionStatusFor(focusedNetworkId());
 }
 
 QString IrcController::lastError() const
@@ -198,9 +250,44 @@ QString IrcController::lastErrorForNetwork(const QString& networkId) const
     return m_lastErrors.value(networkId);
 }
 
+QString IrcController::lastErrorFor(const QString& networkId) const
+{
+    return lastErrorForNetwork(networkId);
+}
+
+QString IrcController::connectionStatusFor(const QString& networkId) const
+{
+    if (IrcSession *session = m_sessions.findSession(networkId))
+        return stateText(session->state());
+    return networkId.isEmpty() ? m_connectionStatus : QStringLiteral("Offline");
+}
+
+int IrcController::unreadCountFor(const QString& networkId) const
+{
+    if (networkId.isEmpty())
+        return 0;
+    int total = 0;
+    for (const auto& entry : m_reducer.conversations()) {
+        if (entry.first.networkId == networkId)
+            total += entry.second.unread;
+    }
+    return total;
+}
+
+bool IrcController::mentionFor(const QString& networkId) const
+{
+    if (networkId.isEmpty())
+        return false;
+    for (const auto& entry : m_reducer.conversations()) {
+        if (entry.first.networkId == networkId && entry.second.mentions > 0)
+            return true;
+    }
+    return false;
+}
+
 QString IrcController::currentNick() const
 {
-    return m_selected ? m_currentNicks.value(m_selected->networkId) : QString{};
+    return m_currentNicks.value(focusedNetworkId());
 }
 
 bool IrcController::selfAway() const
@@ -318,7 +405,6 @@ bool IrcController::start(const QString& networkId)
     const QString previousId = identityNetworkId();
     const bool previousAway = selfAway();
     setLastError(networkId, {});
-    m_console.setNetwork(networkId);
     const bool started = m_sessions.activateSession(networkId);
     updateStatus(session);
     notifySelfAwayIfChanged(previousId, previousAway);
@@ -330,6 +416,7 @@ void IrcController::selectConversation(const QString& networkId,
 {
     if (networkId.isEmpty() || target.isEmpty())
         return;
+    m_console.setNetwork(networkId);
     m_console.setOpen(false);
     const QString previousId = identityNetworkId();
     const bool previousAway = selfAway();
@@ -354,6 +441,30 @@ void IrcController::selectConversation(const QString& networkId,
     notifyComposerText(m_composerDraft);
     emit typingChanged();
     armTypingRefresh();
+    notifySelfAwayIfChanged(previousId, previousAway);
+}
+
+void IrcController::selectConversationById(const QString& conversationId)
+{
+    const std::optional<IrcConversationKey> key = ircParseConversationId(conversationId);
+    if (!key)
+        return;
+    const IrcConversationState *conversation = m_reducer.find(*key);
+    selectConversation(key->networkId,
+                       conversation ? conversation->target : key->normalizedTarget);
+}
+
+void IrcController::openStatus(const QString& networkId)
+{
+    if (networkId.isEmpty())
+        return;
+    const QString previousId = identityNetworkId();
+    const bool previousAway = selfAway();
+    m_console.setNetwork(networkId);
+    m_console.setOpen(true);
+    if (IrcSession *session = m_sessions.findSession(networkId))
+        updateStatus(session);
+    emit selectionChanged();
     notifySelfAwayIfChanged(previousId, previousAway);
 }
 
@@ -393,7 +504,7 @@ void IrcController::dropSelectedDirectAndReselect()
     if (!m_selected)
         return;
     const IrcConversationKey dropping = *m_selected;
-    const QVector<IrcConversationKey> ordered = ircSidebarOrder(m_reducer);
+    const QVector<IrcConversationKey> ordered = ircSidebarOrder(m_reducer, m_networkOrder);
     const std::optional<IrcConversationKey> next =
         ircNeighborAfterDrop(ordered, dropping);
     QString nextNetworkId;
@@ -453,7 +564,6 @@ bool IrcController::sendToTarget(const QString &networkId,
                                  const QString &target,
                                  const QString &text)
 {
-    // Explicit target path for local IPC/CLI. Does not change the UI selection.
     if (networkId.isEmpty() || target.isEmpty() || text.isEmpty()) {
         setLastError(networkId, QStringLiteral("Missing network, target, or text"));
         emit statusChanged();
@@ -537,8 +647,14 @@ IrcCommandOutcome IrcController::dispatch(const IrcCommand& command,
     if (command.verb == IrcCommand::Verb::Topic)
         return setSelectedTopic(command.argument);
 
-    IrcSession *active = m_console.boundSession();
-    if (!active || active->state() != IrcSession::State::Registered)
+    IrcSession *active = sessionFor(surface);
+    if (!active) {
+        if (surface == IrcComposerSurface::Conversation && !m_selected
+                && !m_sessions.networkIds().isEmpty())
+            return IrcCommandOutcome::Refused;
+        return IrcCommandOutcome::NotConnected;
+    }
+    if (active->state() != IrcSession::State::Registered)
         return IrcCommandOutcome::NotConnected;
 
     bool sent = false;
@@ -624,6 +740,11 @@ QString IrcController::queryNetworkId(IrcComposerSurface surface) const
     if (surface == IrcComposerSurface::Status)
         return m_console.networkId();
     return m_selected ? m_selected->networkId : QString{};
+}
+
+IrcSession *IrcController::sessionFor(IrcComposerSurface surface) const
+{
+    return m_sessions.findSession(queryNetworkId(surface));
 }
 
 IrcCommandOutcome IrcController::sendSelectedMessage(const QString& body)
@@ -1005,9 +1126,7 @@ QString IrcController::errorNetworkId(IrcComposerSurface surface) const
 
 QString IrcController::identityNetworkId() const
 {
-    if (m_selected)
-        return m_selected->networkId;
-    return m_console.networkId();
+    return focusedNetworkId();
 }
 
 void IrcController::notifySelfAwayIfChanged(const QString& previousId, bool previousAway)
@@ -1044,9 +1163,6 @@ void IrcController::updateStatus(IrcSession *session)
 {
     if (!session)
         return;
-    if (!m_selected || m_selected->networkId == session->networkId()
-        || m_connectionStatus == QStringLiteral("Offline")) {
-        m_connectionStatus = stateText(session->state());
-        emit statusChanged();
-    }
+    m_connectionStatus = stateText(session->state());
+    emit statusChanged();
 }

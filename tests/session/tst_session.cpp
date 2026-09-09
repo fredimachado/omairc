@@ -167,7 +167,7 @@ private slots:
     void reconnectDelayIsBoundedExponential();
     void authenticationFailureIsExplicit();
     void destructionWhileConnectingIsSafe();
-    void managerRefusesSecondLiveNetwork();
+    void managerStartsTwoLiveNetworks();
     void managerCreateStaysAddOnly();
     void managerDiscardUnregistersImmediately();
     void pingAndWelcomeProduceStatusEntries();
@@ -861,10 +861,9 @@ void SessionTest::destructionWhileConnectingIsSafe()
     QVERIFY(transportGuard.isNull());
 }
 
-void SessionTest::managerRefusesSecondLiveNetwork()
+void SessionTest::managerStartsTwoLiveNetworks()
 {
     IrcSessionManager manager;
-    QSignalSpy refused(&manager, &IrcSessionManager::activationRefused);
     auto *firstTransport = new FakeIrcTransport;
     auto *secondTransport = new FakeIrcTransport;
     IrcSession *first = manager.createSession(
@@ -876,15 +875,16 @@ void SessionTest::managerRefusesSecondLiveNetwork()
     QVERIFY(second);
     QCOMPARE(manager.findSession(QStringLiteral("network-a")), first);
     QVERIFY(manager.activateSession(QStringLiteral("network-a")));
-    QVERIFY(!manager.activateSession(QStringLiteral("network-b")));
-    QCOMPARE(refused.size(), 1);
-    QCOMPARE(manager.activeNetworkId(), QStringLiteral("network-a"));
+    QVERIFY(manager.activateSession(QStringLiteral("network-b")));
+    QCOMPARE(first->state(), IrcSession::State::Connecting);
+    QCOMPARE(second->state(), IrcSession::State::Connecting);
+    QCOMPARE(firstTransport->connectionState(),
+             IrcTransport::ConnectionState::Connecting);
     QCOMPARE(secondTransport->connectionState(),
-             IrcTransport::ConnectionState::Idle);
+             IrcTransport::ConnectionState::Connecting);
 
     QVERIFY(manager.stopSession(QStringLiteral("network-a")));
-    QVERIFY(manager.activateSession(QStringLiteral("network-b")));
-    QCOMPARE(manager.activeNetworkId(), QStringLiteral("network-b"));
+    QCOMPARE(second->state(), IrcSession::State::Connecting);
 }
 
 void SessionTest::managerCreateStaysAddOnly()
@@ -913,7 +913,6 @@ void SessionTest::managerDiscardUnregistersImmediately()
     QVERIFY(manager.activateSession(QStringLiteral("network-a")));
     QVERIFY(manager.discardSession(QStringLiteral("network-a")));
     QCOMPARE(manager.findSession(QStringLiteral("network-a")), nullptr);
-    QCOMPARE(manager.activeNetworkId(), QString());
     QVERIFY(!manager.discardSession(QStringLiteral("network-a")));
 
     auto *replacementTransport = new FakeIrcTransport;

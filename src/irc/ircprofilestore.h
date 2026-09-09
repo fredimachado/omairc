@@ -10,4 +10,5 @@ public:
     IrcProfileStore();
     QList<IrcNetworkProfile> profiles() const;
     void save(const IrcNetworkProfile &profile);
+    bool remove(const QString &networkId);
 };

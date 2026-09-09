@@ -36,6 +36,26 @@ TestCase {
         }
     }
 
+    ListModel {
+        id: setupNetworks
+        ListElement {
+            networkId: "setup-id"
+            displayName: "irc.libera.chat"
+            stored: false
+            selected: true
+        }
+    }
+
+    ListModel {
+        id: namedNetworks
+        ListElement {
+            networkId: "libera"
+            displayName: "irc.libera.chat"
+            stored: true
+            selected: true
+        }
+    }
+
     QtObject {
         id: fakeConnection
 
@@ -53,6 +73,10 @@ TestCase {
         property string displayName: "irc.libera.chat"
         property bool setupRequired: true
         property bool focusPassword: false
+        property var networks: setupNetworks
+        property string selectedNetworkId: "setup-id"
+        property bool canAdd: false
+        property bool canRemove: false
 
         function setPassword(password) {
         }
@@ -62,6 +86,18 @@ TestCase {
         }
 
         function discard() {
+        }
+
+        function select(networkId) {
+            selectedNetworkId = networkId;
+        }
+
+        function add() {
+            return false;
+        }
+
+        function removeSelected() {
+            return false;
         }
     }
 
@@ -90,6 +126,7 @@ TestCase {
             mention: false
             direct: false
             networkId: "libera"
+            conversationId: "libera\n#omarchy"
         }
     }
 
@@ -122,6 +159,10 @@ TestCase {
         function submit(input) {
             return input.length > 0;
         }
+
+        function alertsFor(networkId) {
+            return alerts;
+        }
     }
 
     ListModel {
@@ -152,15 +193,48 @@ TestCase {
         property var messages: liveMessages
         property var members: liveMembers
         property var statusConsole: liveConsole
+        property string selectedConversationId: "libera\n#omarchy"
+        property string focusedNetworkId: liveConsole.open ? liveConsole.networkId : selectedNetworkId
+
+        function connectionStatusFor(networkId) {
+            return connectionStatus;
+        }
+
+        function lastErrorFor(networkId) {
+            return lastError;
+        }
+
+        function unreadCountFor(networkId) {
+            return 0;
+        }
+
+        function mentionFor(networkId) {
+            return false;
+        }
+
+        function openStatus(networkId) {
+            liveConsole.networkId = networkId;
+            liveConsole.open = true;
+        }
+
+        function selectConversationById(conversationId) {
+            var sep = conversationId.indexOf("\n");
+            if (sep <= 0)
+                return;
+            selectConversation(conversationId.substring(0, sep),
+                               conversationId.substring(sep + 1));
+        }
 
         function selectConversation(networkId, name) {
             if (!networkId || !name)
                 return;
             selectedNetworkId = networkId;
             selectedTarget = name;
+            selectedConversationId = networkId + "\n" + name;
             isChannel = name.charAt(0) === "#";
             topic = isChannel ? "" : "Direct message with " + name;
             peopleCount = isChannel ? 1 : 0;
+            liveConsole.open = false;
         }
 
         function openDirectMessage(nick) {
@@ -202,6 +276,32 @@ TestCase {
         property var messages: liveMessages
         property var members: liveMembers
         property var statusConsole: liveConsole
+        property string selectedConversationId: selectedNetworkId + "\n" + selectedTarget
+        property string focusedNetworkId: selectedNetworkId
+
+        function connectionStatusFor(networkId) {
+            return connectionStatus;
+        }
+
+        function lastErrorFor(networkId) {
+            return lastError;
+        }
+
+        function unreadCountFor(networkId) {
+            return 0;
+        }
+
+        function mentionFor(networkId) {
+            return false;
+        }
+
+        function openStatus(networkId) {
+            liveConsole.networkId = networkId;
+            liveConsole.open = true;
+        }
+
+        function selectConversationById(conversationId) {
+        }
 
         function selectConversation() {
         }
@@ -258,6 +358,32 @@ TestCase {
         property var messages: liveMessages
         property var members: gatedMembers
         property var statusConsole: liveConsole
+        property string selectedConversationId: selectedNetworkId + "\n" + selectedTarget
+        property string focusedNetworkId: liveConsole.open ? liveConsole.networkId : selectedNetworkId
+
+        function connectionStatusFor(networkId) {
+            return connectionStatus;
+        }
+
+        function lastErrorFor(networkId) {
+            return lastError;
+        }
+
+        function unreadCountFor(networkId) {
+            return 0;
+        }
+
+        function mentionFor(networkId) {
+            return false;
+        }
+
+        function openStatus(networkId) {
+            liveConsole.networkId = networkId;
+            liveConsole.open = true;
+        }
+
+        function selectConversationById(conversationId) {
+        }
 
         function selectConversation() {
         }
@@ -300,6 +426,32 @@ TestCase {
         property var messages: liveMessages
         property var members: prefixedMembers
         property var statusConsole: liveConsole
+        property string selectedConversationId: selectedNetworkId + "\n" + selectedTarget
+        property string focusedNetworkId: liveConsole.open ? liveConsole.networkId : selectedNetworkId
+
+        function connectionStatusFor(networkId) {
+            return connectionStatus;
+        }
+
+        function lastErrorFor(networkId) {
+            return lastError;
+        }
+
+        function unreadCountFor(networkId) {
+            return 0;
+        }
+
+        function mentionFor(networkId) {
+            return false;
+        }
+
+        function openStatus(networkId) {
+            liveConsole.networkId = networkId;
+            liveConsole.open = true;
+        }
+
+        function selectConversationById(conversationId) {
+        }
 
         function selectConversation() {
         }
@@ -338,8 +490,16 @@ TestCase {
         property string displayName: "irc.libera.chat"
         property bool setupRequired: false
         property bool focusPassword: false
+        property var networks: namedNetworks
+        property string selectedNetworkId: "libera"
+        property bool canAdd: true
+        property bool canRemove: true
+        property int passwordSetCalls: 0
+        property string lastPassword: ""
 
-        function setPassword() {
+        function setPassword(password) {
+            passwordSetCalls += 1;
+            lastPassword = password;
         }
 
         function apply() {
@@ -347,6 +507,44 @@ TestCase {
         }
 
         function discard() {
+        }
+
+        function select(networkId) {
+            selectedNetworkId = networkId;
+            for (var row = 0; row < namedNetworks.count; ++row)
+                namedNetworks.setProperty(row, "selected",
+                    namedNetworks.get(row).networkId === networkId);
+        }
+
+        function add() {
+            for (var row = 0; row < namedNetworks.count; ++row)
+                namedNetworks.setProperty(row, "selected", false);
+            namedNetworks.append({
+                networkId: "new-id",
+                displayName: "New network",
+                stored: false,
+                selected: true
+            });
+            selectedNetworkId = "new-id";
+            displayName = "New network";
+            host = "";
+            nick = "";
+            return true;
+        }
+
+        function removeSelected() {
+            for (var row = 0; row < namedNetworks.count; ++row) {
+                if (namedNetworks.get(row).networkId === selectedNetworkId) {
+                    namedNetworks.remove(row);
+                    break;
+                }
+            }
+            if (namedNetworks.count > 0) {
+                selectedNetworkId = namedNetworks.get(0).networkId;
+                namedNetworks.setProperty(0, "selected", true);
+                displayName = namedNetworks.get(0).displayName;
+            }
+            return true;
         }
     }
 
@@ -498,6 +696,34 @@ TestCase {
             appWindow.close();
         appWindow = null;
         slashFake.reset();
+        liveConsole.open = false;
+        liveConsole.networkId = "libera";
+    }
+
+    function restoreNamedConnection() {
+        namedNetworks.clear();
+        namedNetworks.append({
+            networkId: "libera",
+            displayName: "irc.libera.chat",
+            stored: true,
+            selected: true
+        });
+        namedConnection.selectedNetworkId = "libera";
+        namedConnection.displayName = "irc.libera.chat";
+        namedConnection.host = "irc.libera.chat";
+        namedConnection.nick = "sheet-nick";
+        namedConnection.passwordSetCalls = 0;
+        namedConnection.lastPassword = "";
+    }
+
+    function repeaterItemByName(repeater, objectName) {
+        var index = 0;
+        for (index = 0; index < repeater.count; ++index) {
+            var row = repeater.itemAt(index);
+            if (row && row.objectName === objectName)
+                return row;
+        }
+        return null;
     }
 
     function item(objectName) {
@@ -582,7 +808,7 @@ TestCase {
         keyClick(Qt.Key_QuoteLeft, Qt.ControlModifier);
 
         tryCompare(appWindow, "consoleVisible", true);
-        compare(appWindow.title, "Status");
+        compare(appWindow.title, "Omarchy IRC Status");
         var list = item("consoleList");
         verify(list.visible);
         verify(!item("peopleButton").visible);
@@ -664,9 +890,9 @@ TestCase {
 
         keyClick(Qt.Key_Up, Qt.AltModifier);
 
-        tryCompare(appWindow, "currentConversation", "dax");
-        compare(appWindow.currentTopic, "Direct message with dax");
-        compare(item("messageList").Accessible.name, "Messages in dax");
+        tryCompare(appWindow, "currentConversation", "rio");
+        compare(appWindow.currentTopic, "Direct message with rio");
+        compare(item("messageList").Accessible.name, "Messages in rio");
     }
 
     function test_walkConversationsFromChannelToDirect() {
@@ -1698,6 +1924,9 @@ TestCase {
         compare(findChild(window, "connectionAutojoin").text, "#omarchy");
         compare(findChild(window, "connectionConnectOnStartup").checked, false);
         compare(findChild(window, "connectionProblem").text, "Nick is required");
+        compare(findChild(window, "networkChoiceList") !== null, true);
+        compare(findChild(window, "connectionAddNetwork").visible, false);
+        compare(findChild(window, "connectionRemove").visible, false);
         try {
             grabImage(window.contentItem).save(artifactDirectory + "connection-sheet.png");
         } catch (error) {
@@ -1879,7 +2108,7 @@ TestCase {
     function test_mockStatusOpensFromNetworkHeader() {
         mouseClick(item("networkHeaderButton"));
         tryCompare(appWindow, "consoleVisible", true);
-        compare(appWindow.title, "Status");
+        compare(appWindow.title, "Omarchy IRC Status");
         var list = item("consoleList");
         verify(list.visible);
         compare(list.model.get(0).text, "-AUTH- *** Looking up your hostname...");
@@ -2165,5 +2394,151 @@ TestCase {
         compare(findChild(window, "slashCompleteList").visible, false);
         window.close();
         slashFake.reset();
+    }
+
+    function test_mockTwoNetworkSectionsStaySeparated() {
+        var omarchyHeader = item("networkHeader");
+        var oftcHeader = item("networkHeader-mock-oftc");
+        verify(omarchyHeader.visible);
+        verify(oftcHeader.visible);
+        verify(item("networkHeaderButton").visible);
+        verify(item("networkHeaderButton-mock-oftc").visible);
+        compare(item("conversation-#omarchy").conversationName, "#omarchy");
+        compare(item("conversation-oftc-#omarchy").conversationName, "#omarchy");
+        compare(item("conversation-oftc-#lab").conversationName, "#lab");
+        compare(item("conversation-oftc-rio").conversationName, "rio");
+        compare(item("conversation-#omarchy").current, true);
+        compare(item("conversation-oftc-#omarchy").current, false);
+        saveScreenshot("two-networks");
+    }
+
+    function test_duplicateOmarchyHighlightsIndependently() {
+        mouseClick(item("conversation-oftc-#omarchy"));
+        tryCompare(appWindow, "currentConversation", "#omarchy");
+        compare(appWindow.currentConversationId, "mock-oftc\n#omarchy");
+        compare(appWindow.currentTopic, "A different #omarchy, hosted on OFTC.");
+        compare(appWindow.currentPeopleCount, 4);
+        compare(item("selfNickLabel").text, "oak");
+        compare(item("conversation-oftc-#omarchy").current, true);
+        compare(item("conversation-#omarchy").current, false);
+        compare(appWindow.title, "#omarchy · irc.oftc.net - Omairc");
+
+        mouseClick(item("conversation-#omarchy"));
+        tryCompare(appWindow, "currentConversationId", "mock-omarchy\n#omarchy");
+        compare(appWindow.currentTopic,
+                "A cozy corner for Omarchy users and builders.");
+        compare(appWindow.currentPeopleCount, 12);
+        compare(item("selfNickLabel").text, "fred");
+        compare(item("conversation-#omarchy").current, true);
+        compare(item("conversation-oftc-#omarchy").current, false);
+        compare(appWindow.title, "#omarchy · Omarchy IRC - Omairc");
+    }
+
+    function test_altWalkSkipsNetworkHeaders() {
+        mouseClick(item("conversation-#help"));
+        tryCompare(appWindow, "currentConversation", "#help");
+        keyClick(Qt.Key_Down, Qt.AltModifier);
+        tryCompare(appWindow, "currentConversation", "anna");
+        keyClick(Qt.Key_Down, Qt.AltModifier);
+        tryCompare(appWindow, "currentConversation", "dax");
+        keyClick(Qt.Key_Down, Qt.AltModifier);
+        tryCompare(appWindow, "currentConversation", "#omarchy");
+        compare(appWindow.currentConversationId, "mock-oftc\n#omarchy");
+        compare(appWindow.currentTopic, "A different #omarchy, hosted on OFTC.");
+    }
+
+    function test_connectionSheetAddSelectRemoveSurface() {
+        var window = createTemporaryObject(fallbackWindowComponent, null);
+        verify(window !== null, "The fallback window should load");
+        tryCompare(window, "visible", true);
+        waitForRendering(window.contentItem);
+        window.requestActivate();
+        tryCompare(window, "active", true);
+
+        try {
+            var sheet = findChild(window, "connectionSheet");
+            verify(sheet !== null, "Could not find connectionSheet");
+            compare(sheet.visible, false);
+            keyClick(Qt.Key_Comma, Qt.ControlModifier);
+            tryCompare(sheet, "visible", true);
+
+            var addButton = findChild(window, "connectionAddNetwork");
+            verify(addButton.visible);
+            var removeButton = findChild(window, "connectionRemove");
+            verify(removeButton.visible);
+            compare(removeButton.width > 0, true);
+            var discardButton = findChild(window, "connectionDiscard");
+            verify(discardButton !== null);
+            compare(findChild(window, "connectionApply") !== null, true);
+            compare(namedNetworks.count, 1);
+
+            mouseClick(addButton);
+            compare(namedNetworks.count, 2);
+            compare(namedConnection.selectedNetworkId, "new-id");
+            compare(findChild(window, "connectionHost").text, "");
+            namedNetworks.setProperty(1, "displayName", "irc.oftc.net");
+            namedConnection.displayName = "irc.oftc.net";
+            namedConnection.host = "irc.oftc.net";
+            namedConnection.nick = "oak";
+            waitForRendering(window.contentItem);
+
+            var choices = findChild(window, "networkChoiceRepeater");
+            verify(choices !== null, "Could not find networkChoiceRepeater");
+            tryCompare(choices, "count", 2);
+            try {
+                grabImage(window.contentItem).save(artifactDirectory + "connection-sheet-rail.png");
+            } catch (error) {
+                fail("Failed to save screenshot 'connection-sheet-rail': " + error);
+            }
+            var liberaChoice = repeaterItemByName(choices, "networkChoice-libera");
+            verify(liberaChoice !== null, "Could not find networkChoice-libera");
+            compare(liberaChoice.displayName, "irc.libera.chat");
+            mouseClick(liberaChoice);
+            compare(namedConnection.selectedNetworkId, "libera");
+
+            mouseClick(removeButton);
+            compare(window.connectionRemoveArmed, true);
+            mouseClick(removeButton);
+            compare(namedNetworks.count, 1);
+            window.close();
+        } finally {
+            restoreNamedConnection();
+        }
+    }
+
+    function test_untouchedPasswordIsNotClearedOnApply() {
+        restoreNamedConnection();
+        var window = createTemporaryObject(fallbackWindowComponent, null);
+        verify(window !== null, "The password-preservation window should load");
+        tryCompare(window, "visible", true);
+        waitForRendering(window.contentItem);
+
+        keyClick(Qt.Key_Comma, Qt.ControlModifier);
+        var applyButton = findChild(window, "connectionApply");
+        verify(applyButton !== null, "Could not find connectionApply");
+        mouseClick(applyButton);
+        compare(namedConnection.passwordSetCalls, 0);
+
+        var password = findChild(window, "connectionPassword");
+        verify(password !== null, "Could not find connectionPassword");
+        mouseClick(password);
+        keyClick(Qt.Key_S);
+        keyClick(Qt.Key_E);
+        keyClick(Qt.Key_C);
+        keyClick(Qt.Key_R);
+        keyClick(Qt.Key_E);
+        keyClick(Qt.Key_T);
+        mouseClick(applyButton);
+        compare(namedConnection.passwordSetCalls, 1);
+        compare(namedConnection.lastPassword, "secret");
+        window.close();
+        restoreNamedConnection();
+    }
+
+    function test_mockStatusTitleIdentifiesNetwork() {
+        mouseClick(item("networkHeaderButton-mock-oftc"));
+        tryCompare(appWindow, "consoleVisible", true);
+        compare(appWindow.title, "irc.oftc.net Status");
+        compare(item("selfNickLabel").text, "oak");
     }
 }
