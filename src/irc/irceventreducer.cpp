@@ -38,6 +38,22 @@ void stopNamesSync(IrcChannelState& channel)
     channel.namesSyncing = false;
     channel.namesSyncStarted = {};
 }
+
+QString collapseEventBody(const QString& existing, const QString& incoming)
+{
+    static const QString suffixes[] = {
+        QStringLiteral(" joined"),
+        QStringLiteral(" left"),
+        QStringLiteral(" quit"),
+    };
+    for (const QString& suffix : suffixes) {
+        if (existing.endsWith(suffix) && incoming.endsWith(suffix)) {
+            return existing.chopped(suffix.size()) + QStringLiteral(", ")
+                + incoming.chopped(suffix.size()) + suffix;
+        }
+    }
+    return existing + QStringLiteral(", ") + incoming;
+}
 }
 
 bool IrcMemberView::isAway() const noexcept
@@ -390,10 +406,18 @@ void IrcEventReducer::appendChat(const IrcConversationKey& key,
 }
 
 void IrcEventReducer::appendEvent(IrcConversationState& conversation,
-                                  const QString& body)
+                                  const QString& body,
+                                  bool collapsible)
 {
+    if (collapsible && !conversation.messages.empty()) {
+        IrcReducedMessage& last = conversation.messages.back();
+        if (last.kind == IrcMessageKind::Event && last.collapsible) {
+            last.body = collapseEventBody(last.body, body);
+            return;
+        }
+    }
     conversation.messages.push_back(
-        {QString(), body, QDateTime(), IrcMessageKind::Event});
+        {QString(), body, QDateTime(), IrcMessageKind::Event, collapsible});
     capMessages(conversation);
 }
 
@@ -462,7 +486,7 @@ void IrcEventReducer::reduce(const IrcJoinEvent& event)
         normalizedNick, IrcMemberState{event.nick, ranks});
     if (isSelf(event.networkId, event.nick))
         channel->joined = true;
-    appendEvent(conversation, event.nick + QStringLiteral(" joined"));
+    appendEvent(conversation, event.nick + QStringLiteral(" joined"), true);
 }
 
 void IrcEventReducer::reduce(const IrcPartEvent& event)
@@ -482,7 +506,7 @@ void IrcEventReducer::reduce(const IrcPartEvent& event)
         stopNamesSync(channel);
     }
     forgetUnseen(event.networkId, departed);
-    appendEvent(*conversation, event.nick + QStringLiteral(" left"));
+    appendEvent(*conversation, event.nick + QStringLiteral(" left"), true);
     if (isSelf(event.networkId, event.nick))
         conversation->typing.clear();
     else
@@ -499,7 +523,7 @@ void IrcEventReducer::reduce(const IrcQuitEvent& event)
         IrcChannelState *channel = conversation.channel();
         if (!channel || channel->members.erase(normalizedNick) == 0)
             continue;
-        appendEvent(conversation, event.nick + QStringLiteral(" quit"));
+        appendEvent(conversation, event.nick + QStringLiteral(" quit"), true);
     }
     forgetUnseen(event.networkId, {normalizedNick});
     clearTypingEverywhere(event.networkId, normalizedNick);
@@ -529,7 +553,7 @@ void IrcEventReducer::reduce(const IrcNickEvent& event)
         channel->members.erase(member);
         channel->members.insert_or_assign(newNormalized, std::move(updated));
         appendEvent(conversation, event.oldNick + QStringLiteral(" is now ")
-                         + event.newNick);
+                         + event.newNick, true);
     }
 
     const IrcConversationKey oldKey{event.networkId, oldNormalized};
@@ -540,7 +564,8 @@ void IrcEventReducer::reduce(const IrcNickEvent& event)
 
     direct->second.target = event.newNick;
     appendEvent(direct->second,
-                event.oldNick + QStringLiteral(" is now ") + event.newNick);
+                event.oldNick + QStringLiteral(" is now ") + event.newNick,
+                true);
     if (oldKey == newKey)
         return;
 

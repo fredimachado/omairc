@@ -29,6 +29,7 @@ struct IrcReducedMessage
     QString body;
     QDateTime timestamp;
     IrcMessageKind kind = IrcMessageKind::Message;
+    bool collapsible = false;
 };
 
 struct IrcMemberState
@@ -132,7 +133,9 @@ private:
                     const QString& body,
                     const QDateTime& timestamp,
                     IrcMessageKind kind);
-    void appendEvent(IrcConversationState& conversation, const QString& body);
+    void appendEvent(IrcConversationState& conversation,
+                     const QString& body,
+                     bool collapsible = false);
     void capMessages(IrcConversationState& conversation);
 
     void reduce(const IrcWelcomeEvent& event);
