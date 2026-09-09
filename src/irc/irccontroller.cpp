@@ -550,7 +550,7 @@ IrcCommandOutcome IrcController::dispatch(const IrcCommand& command,
             return IrcCommandOutcome::Refused;
         sent = true;
         for (const IrcJoinTarget& target : *targets)
-            sent = active->join(target) && sent;
+            sent = sent && active->join(target);
         break;
     }
     case IrcCommand::Verb::Part: {
