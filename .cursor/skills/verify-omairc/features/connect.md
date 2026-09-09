@@ -29,7 +29,7 @@ Preconditions:
 ## Gotchas
 
 - First run cannot be dismissed. Escape and a click outside the card only work after a complete profile already exists.
-- Discard on first run restores the suggested Libera defaults. It does not close the sheet.
+- Discard on first run restores the suggested Libera defaults. It does not close the sheet. An incomplete saved profile still opens Connect, but the fields follow that stored draft, not `suggested()`. Isolated `control-omairc launch` uses empty XDG, so it is first-run suggested values.
 - Apply on the compiled window starts a real IRC session. That is not this feature's proof, and it does not restore the mock `#omarchy` sidebar.
 - Mock conversation recipes need `control-omairc launch --mock` or `qml-suite` (`irc` left null). They do not start from this sheet.
 - `qml-suite` overwrites `test-artifacts/verify/connect/first-run.png`. If this run also captured a compiled first-run, keep that file as `compiled-first-run.png` before running the suite.
