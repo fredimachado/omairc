@@ -216,27 +216,26 @@ ParseOutcome parseSendCommand(const QStringList &args)
     OmaircIpc::Request request;
     request.command = OmaircIpc::Command::Send;
     QStringList positional;
-    bool acceptOptions = true;
+    bool beforeTarget = true;
     for (int i = 1; i < args.size(); ++i) {
         const QString &arg = args.at(i);
-        if (acceptOptions && arg == QLatin1String("--")) {
-            acceptOptions = false;
+        if (beforeTarget && arg == QLatin1String("--")) {
+            beforeTarget = false;
             continue;
         }
-        if (acceptOptions && arg == QLatin1String("--network")) {
+        if (beforeTarget && arg == QLatin1String("--network")) {
             if (i + 1 >= args.size() || isFlag(args.at(i + 1))) {
                 return CliError{QStringLiteral("--network requires an id")};
             }
             request.networkId = args.at(++i);
             continue;
         }
-        // --help is help only in the option window. After a target or -- it is text.
-        if (acceptOptions && isHelpFlag(arg))
+        if (beforeTarget && isHelpFlag(arg))
             return HelpTopic{HelpScope::Command, CommandId::Send};
-        if (acceptOptions && isFlag(arg))
+        if (beforeTarget && isFlag(arg))
             return CliError{QStringLiteral("Unknown option: %1").arg(arg)};
         positional.append(arg);
-        acceptOptions = false;
+        beforeTarget = false;
     }
     if (positional.isEmpty())
         return CliError{QStringLiteral("send requires a target and text")};
