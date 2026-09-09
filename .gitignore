@@ -1,6 +1,7 @@
 /build/
 /build-install/
 /build-tests/
+/build-tests-san/
 /build-live-tests/
 *.o
 *.moc
