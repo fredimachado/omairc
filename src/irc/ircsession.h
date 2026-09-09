@@ -33,6 +33,17 @@ private:
     QTimer m_timer;
 };
 
+class IrcReachabilitySource : public QObject
+{
+    Q_OBJECT
+
+public:
+    explicit IrcReachabilitySource(QObject *parent = nullptr);
+
+signals:
+    void reachable();
+};
+
 struct IrcSessionConfig
 {
     QString networkId;
@@ -85,7 +96,8 @@ public:
                IrcReconnectTimer *reconnectTimer = nullptr,
                IrcReconnectTimer *capabilityTimer = nullptr,
                QObject *parent = nullptr,
-               IrcReconnectTimer *pingTimer = nullptr);
+               IrcReconnectTimer *pingTimer = nullptr,
+               IrcReachabilitySource *reachability = nullptr);
     ~IrcSession() override;
 
     QString networkId() const;
@@ -150,6 +162,7 @@ private:
     bool sendCommand(const QString& command);
     void fail(ErrorKind kind, const QString &message, bool reconnect);
     void scheduleReconnect();
+    void beginReconnectAttempt();
     void resetForConnection();
     void armPingWatchdog();
     void cancelPingWatchdog();
@@ -175,6 +188,7 @@ private:
     IrcReconnectTimer *m_reconnectTimer;
     IrcReconnectTimer *m_capabilityTimer;
     IrcReconnectTimer *m_pingTimer;
+    IrcReachabilitySource *m_reachability;
     PingWatchdog m_pingWatchdog = PingWatchdog::Off;
     IrcFramer m_framer;
     IrcCapabilityNegotiation m_capabilities;

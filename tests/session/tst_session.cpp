@@ -47,6 +47,17 @@ public:
     int cancelCount = 0;
 };
 
+class FakeReachabilitySource : public IrcReachabilitySource
+{
+public:
+    using IrcReachabilitySource::IrcReachabilitySource;
+
+    void becomeReachable()
+    {
+        emit reachable();
+    }
+};
+
 namespace
 {
 IrcSessionConfig config(const QString &networkId = QStringLiteral("network-a"))
@@ -73,8 +84,9 @@ struct Fixture
         , timer(new FakeReconnectTimer)
         , capabilityTimer(new FakeReconnectTimer)
         , pingTimer(new FakeReconnectTimer)
+        , reachability(new FakeReachabilitySource)
         , session(new IrcSession(sessionConfig, transport, timer, capabilityTimer,
-                                 nullptr, pingTimer))
+                                 nullptr, pingTimer, reachability))
     {
     }
 
@@ -106,6 +118,7 @@ struct Fixture
     FakeReconnectTimer *timer;
     FakeReconnectTimer *capabilityTimer;
     FakeReconnectTimer *pingTimer;
+    FakeReachabilitySource *reachability;
     IrcSession *session;
 };
 
@@ -147,6 +160,8 @@ private slots:
     void unavailableResourceBeforeWelcomeFails();
     void connectionTimeoutSchedulesReconnect();
     void remoteCloseSchedulesReconnect();
+    void reachabilityStartsReconnectWithoutWaiting();
+    void reachabilityIgnoredUnlessReconnecting();
     void malformedInputSurfacesProtocolError();
     void reconnectCanBeCancelled();
     void reconnectDelayIsBoundedExponential();
@@ -710,6 +725,50 @@ void SessionTest::remoteCloseSchedulesReconnect()
     QCOMPARE(fixture.session->state(), IrcSession::State::Reconnecting);
     QCOMPARE(scheduled.size(), 1);
     QCOMPARE(scheduled.at(0).at(1).toInt(), 250);
+}
+
+void SessionTest::reachabilityStartsReconnectWithoutWaiting()
+{
+    Fixture fixture;
+    QSignalSpy scheduled(fixture.session, &IrcSession::reconnectScheduled);
+    fixture.connectTls();
+    fixture.transport->remoteClose();
+
+    QCOMPARE(fixture.session->state(), IrcSession::State::Reconnecting);
+    QCOMPARE(fixture.timer->delays, QList<int>{250});
+    QVERIFY(fixture.timer->active);
+    QCOMPARE(fixture.session->reconnectAttempt(), 1);
+
+    fixture.reachability->becomeReachable();
+
+    QCOMPARE(fixture.session->state(), IrcSession::State::Connecting);
+    QVERIFY(!fixture.timer->active);
+    QCOMPARE(fixture.transport->connectionState(),
+             IrcTransport::ConnectionState::Connecting);
+    QCOMPARE(scheduled.size(), 1);
+    QCOMPARE(fixture.session->reconnectAttempt(), 1);
+    QCOMPARE(fixture.timer->delays, QList<int>{250});
+}
+
+void SessionTest::reachabilityIgnoredUnlessReconnecting()
+{
+    Fixture fixture;
+    fixture.registerWithWelcome();
+    QCOMPARE(fixture.session->state(), IrcSession::State::Registered);
+
+    fixture.reachability->becomeReachable();
+
+    QCOMPARE(fixture.session->state(), IrcSession::State::Registered);
+    QCOMPARE(fixture.transport->connectionState(),
+             IrcTransport::ConnectionState::Encrypted);
+
+    fixture.transport->remoteClose();
+    fixture.session->cancelReconnect();
+    fixture.reachability->becomeReachable();
+
+    QCOMPARE(fixture.session->state(), IrcSession::State::Idle);
+    QCOMPARE(fixture.transport->connectionState(),
+             IrcTransport::ConnectionState::Disconnected);
 }
 
 void SessionTest::malformedInputSurfacesProtocolError()
