@@ -113,6 +113,9 @@ ApplicationWindow {
     property var nickCompleteMatches: []
     property int nickCompleteIndex: -1
     property int nickCompleteOrigin: -1
+    property string lastOpenedUrl: ""
+    property bool suppressExternalUrlOpen: false
+    property var allowedUrlSchemes: ({ "http": true, "https": true })
 
     Material.theme: darkMode ? Material.Dark : Material.Light
     Material.accent: accentColor
@@ -123,6 +126,19 @@ ApplicationWindow {
         repeat: true
         running: win.typingVisible && win.typingNicks && win.typingNicks.length > 0
         onTriggered: win.typingPulse = (win.typingPulse + 1) % 3
+    }
+
+    component PlainUrlHit: MouseArea {
+        required property Item edit
+
+        anchors.fill: parent
+        hoverEnabled: true
+        acceptedButtons: hitUrl.length > 0 ? Qt.LeftButton : Qt.NoButton
+        cursorShape: hitUrl.length > 0 ? Qt.PointingHandCursor : Qt.IBeamCursor
+        readonly property string hitUrl: edit
+            ? win.httpUrlAt(edit.text, edit.positionAt(mouseX, mouseY))
+            : ""
+        onClicked: win.openAllowedUrl(hitUrl)
     }
 
     component TypingDots: Row {
@@ -179,6 +195,53 @@ ApplicationWindow {
     function plainIrcText(text) {
         return text.replace(/\x03(?:\d{1,2}(?:,\d{1,2})?)?/g, "")
             .replace(/[\x02\x0f\x16\x1d\x1f]/g, "");
+    }
+
+    function isAllowedHttpUrl(url) {
+        if (!url)
+            return false;
+        var colon = url.indexOf(":");
+        if (colon <= 0)
+            return false;
+        var scheme = url.substring(0, colon).toLowerCase();
+        if (!allowedUrlSchemes[scheme])
+            return false;
+        if (url.substring(colon, colon + 3) !== "://")
+            return false;
+        var rest = url.substring(colon + 3);
+        if (rest.length === 0)
+            return false;
+        if (url.indexOf("\n") >= 0 || url.indexOf("\r") >= 0 || url.indexOf(" ") >= 0)
+            return false;
+        return true;
+    }
+
+    function httpUrlAt(text, index) {
+        if (!text || index < 0 || index >= text.length)
+            return "";
+        var re = /https?:\/\/[^\s<>"']+/gi;
+        var match;
+        while ((match = re.exec(text)) !== null) {
+            var start = match.index;
+            var raw = match[0].replace(/[.,;:!?)\]>]+$/, "");
+            var end = start + raw.length;
+            if (index >= start && index < end && isAllowedHttpUrl(raw))
+                return raw;
+        }
+        return "";
+    }
+
+    function openAllowedUrl(url) {
+        if (!isAllowedHttpUrl(url))
+            return false;
+        lastOpenedUrl = url;
+        if (!suppressExternalUrlOpen)
+            Qt.openUrlExternally(url);
+        return true;
+    }
+
+    function openHttpUrlAt(text, index) {
+        return openAllowedUrl(httpUrlAt(text, index));
     }
 
     function topicFor(name) {
@@ -1973,8 +2036,9 @@ ApplicationWindow {
                     }
 
                     Text {
+                        objectName: "conversationTopic"
                         width: parent.width
-                        text: win.currentTopic
+                        text: win.plainIrcText(win.currentTopic)
                         color: win.mutedColor
                         elide: Text.ElideRight
                         font.family: "iA Writer Mono S"
@@ -2109,11 +2173,12 @@ ApplicationWindow {
                         : Math.max(win.scaledSize(58), messageBody.implicitHeight + win.scaledSize(39))
 
                     Text {
+                        objectName: "messageEvent"
                         visible: messageDelegate.kind === "event"
                         anchors.centerIn: parent
                         width: parent.width - win.scaledSize(48)
                         horizontalAlignment: Text.AlignHCenter
-                        text: messageDelegate.body
+                        text: win.plainIrcText(messageDelegate.body)
                         color: win.mutedColor
                         elide: Text.ElideRight
                         font.family: "iA Writer Mono S"
@@ -2194,6 +2259,8 @@ ApplicationWindow {
                         font.family: "iA Writer Mono S"
                         font.italic: messageDelegate.kind === "action"
                         font.pixelSize: win.scaledSize(13)
+
+                        PlainUrlHit { edit: messageBody }
                     }
                 }
             }
@@ -2292,6 +2359,8 @@ ApplicationWindow {
                         padding: 0
                         font.family: "iA Writer Mono S"
                         font.pixelSize: win.scaledSize(12)
+
+                        PlainUrlHit { edit: consoleText }
                     }
                 }
             }
