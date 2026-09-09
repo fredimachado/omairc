@@ -14,6 +14,7 @@ Keyboard is the window chord map: walk conversations, jump unread, complete nick
 - `keyboard-sheet` toggles the shortcut list with `Ctrl+/`. Escape closes the sheet before Status. The list includes `Ctrl+W`.
 - `keyboard-connect` opens Connect with `Ctrl+,` when a connection exists.
 - `keyboard-scroll` pages the visible transcript with `Page Up` / `Page Down` while the composer stays focused.
+- `keyboard-find` finds text in the current conversation or Status with `Ctrl+F`. The composer holds the query. Enter or another `Ctrl+F` goes to the next match and wraps. Escape leaves find and restores the unsent draft.
 
 ## How to get to it (user POV)
 

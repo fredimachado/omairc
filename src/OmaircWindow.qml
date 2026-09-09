@@ -52,7 +52,8 @@ ApplicationWindow {
         : mockStatusOpen
     onConsoleVisibleChanged: {
         resetNickComplete();
-        stashComposerDraft();
+        if (!abandonFind())
+            stashComposerDraft();
         restoreComposerDraft();
         resetComposerHistoryBrowse();
         if (win.slashCommands)
@@ -67,7 +68,8 @@ ApplicationWindow {
     readonly property string currentConversation: irc ? irc.selectedTarget : mockCurrentConversation
     onCurrentConversationChanged: {
         resetNickComplete();
-        stashComposerDraft();
+        if (!abandonFind())
+            stashComposerDraft();
         restoreComposerDraft();
         resetComposerHistoryBrowse();
         Qt.callLater(function() {
@@ -107,6 +109,8 @@ ApplicationWindow {
     property var composerHistories: ({})
     property var composerDrafts: ({})
     property string composerDraftKey: ""
+    property bool findActive: false
+    property int findIndex: -1
     property int composerHistoryIndex: -1
     property string composerHistoryDraft: ""
     property string nickCompletePrefix: ""
@@ -547,6 +551,87 @@ ApplicationWindow {
         composer.cursorPosition = composer.text.length;
     }
 
+    function abandonFind() {
+        if (!findActive)
+            return false;
+        findActive = false;
+        findIndex = -1;
+        return true;
+    }
+
+    function leaveFind() {
+        if (!abandonFind())
+            return;
+        restoreComposerDraft();
+        composer.forceActiveFocus();
+    }
+
+    function transcriptRowText(model, row) {
+        if (!model || row < 0)
+            return "";
+        if (typeof model.get === "function") {
+            var rowData = model.get(row);
+            if (!rowData)
+                return "";
+            if (consoleVisible)
+                return rowData.text || "";
+            return rowData.body || "";
+        }
+        return model.data(model.index(row, 0), Qt.UserRole + 3) || "";
+    }
+
+    function findNextMatch(fromStart) {
+        var query = composer.text;
+        if (query.length === 0)
+            return -1;
+        var list = consoleVisible ? consoleList : messageList;
+        if (!list || list.count <= 0)
+            return -1;
+        var needle = query.toLowerCase();
+        var start = fromStart ? -1 : findIndex;
+        var count = list.count;
+        for (var step = 1; step <= count; ++step) {
+            var index = (start + step) % count;
+            var hay = plainIrcText(transcriptRowText(list.model, index)).toLowerCase();
+            if (hay.indexOf(needle) >= 0)
+                return index;
+        }
+        return -1;
+    }
+
+    function revealFindMatch(index) {
+        var list = consoleVisible ? consoleList : messageList;
+        if (!list)
+            return;
+        list.positionViewAtIndex(index, ListView.Beginning);
+        Qt.callLater(function() { list.adoptViewport(); });
+    }
+
+    function advanceFind(fromStart) {
+        if (composer.text.length === 0) {
+            findIndex = -1;
+            return;
+        }
+        var index = findNextMatch(fromStart);
+        if (index < 0)
+            return;
+        findIndex = index;
+        revealFindMatch(index);
+    }
+
+    function beginOrAdvanceFind() {
+        composer.forceActiveFocus();
+        if (!findActive) {
+            stashComposerDraft();
+            findActive = true;
+            findIndex = -1;
+            composer.selectAll();
+            advanceFind(true);
+            return;
+        }
+        advanceFind(false);
+    }
+
     function resetComposerHistoryBrowse() {
         composerHistoryIndex = -1;
         composerHistoryDraft = "";
@@ -750,6 +835,11 @@ ApplicationWindow {
     }
 
     function sendMessage() {
+        if (findActive) {
+            advanceFind(false);
+            return;
+        }
+
         var original = composer.text.trim();
         if (original.length === 0)
             return;
@@ -814,6 +904,13 @@ ApplicationWindow {
         context: Qt.ApplicationShortcut
         enabled: !win.shortcutOverlayOpen
         onActivated: composer.forceActiveFocus()
+    }
+
+    Shortcut {
+        sequence: "Ctrl+F"
+        context: Qt.ApplicationShortcut
+        enabled: !win.connectionOverlayVisible && !win.shortcutOverlayOpen
+        onActivated: win.beginOrAdvanceFind()
     }
 
     Shortcut {
@@ -914,6 +1011,8 @@ ApplicationWindow {
                 return false;
             if (win.connection && win.connectionSheetOpen)
                 return true;
+            if (win.findActive)
+                return true;
             if (!win.consoleVisible)
                 return false;
             if (win.irc)
@@ -932,6 +1031,10 @@ ApplicationWindow {
             }
             if (win.connection && win.connectionSheetOpen) {
                 win.connectionSheetOpen = false;
+                return;
+            }
+            if (win.findActive) {
+                win.leaveFind();
                 return;
             }
             if (win.irc)
@@ -2435,6 +2538,12 @@ ApplicationWindow {
                     bottomPadding: topPadding
                     background: Item {}
                     onTextChanged: {
+                        if (win.findActive) {
+                            if (win.slashCommands)
+                                win.slashCommands.dismiss();
+                            win.advanceFind(true);
+                            return;
+                        }
                         if (win.slashCommands) {
                             if (win.composerHistoryIndex >= 0)
                                 win.slashCommands.dismiss();
@@ -2446,11 +2555,20 @@ ApplicationWindow {
                     }
 
                     Keys.onPressed: function(event) {
+                        if (win.findActive) {
+                            if (event.key === Qt.Key_Tab
+                                || ((event.key === Qt.Key_Up || event.key === Qt.Key_Down)
+                                    && win.composerHasPlainModifier(event))) {
+                                event.accepted = true;
+                                return;
+                            }
+                        }
+
                         var historyArrow = (event.key === Qt.Key_Up
                             || event.key === Qt.Key_Down)
                             && win.composerHasPlainModifier(event)
                             && win.composerHistoryIndex >= 0;
-                        if (win.slashCommands && !historyArrow) {
+                        if (!win.findActive && win.slashCommands && !historyArrow) {
                             var routed = win.slashCommands.routeKey(event.key, event.modifiers);
                             if (routed.accepted) {
                                 if (routed.insertion.length > 0) {
@@ -3101,6 +3219,7 @@ ApplicationWindow {
                     { keys: "Ctrl+Shift+P", action: "focus members" },
                     { keys: "Ctrl+W", action: "close direct message" },
                     { keys: "Ctrl+L", action: "composer" },
+                    { keys: "Ctrl+F", action: "find" },
                     { keys: "Enter", action: "send" },
                     { keys: "Page Up / Page Down", action: "scroll" },
                     { keys: "Tab", action: "nick complete" },
