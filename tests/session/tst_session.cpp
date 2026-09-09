@@ -147,6 +147,7 @@ private slots:
     void incomingNoticeStatusLinesWrapSpeaker();
     void incomingNoticeDoesNotTranslateToEvents();
     void incomingActionTranslatesToActionEvent();
+    void latin1PrivmsgBodyIsEAcuteAndNextLineTranslates();
     void incomingCtcpRequestsAreNotConversationEvents();
     void answersCtcpRequests();
     void doesNotAnswerChannelCtcpRequests();
@@ -1084,6 +1085,43 @@ void SessionTest::incomingActionTranslatesToActionEvent()
     QCOMPARE(action->body, QStringLiteral("feeds jvaztap"));
     QVERIFY(!action->body.contains(QChar(1)));
     QVERIFY(!action->body.contains(QStringLiteral("ACTION")));
+}
+
+void SessionTest::latin1PrivmsgBodyIsEAcuteAndNextLineTranslates()
+{
+    const IrcServerFeatures features;
+    std::string latin1 = ":alice!u@h PRIVMSG #omarchy :";
+    latin1.push_back('\xe9');
+    const std::vector<IrcEvent> first = IrcEventTranslator::translate(
+        QStringLiteral("libera"),
+        QStringLiteral("omairc"),
+        features,
+        mustParse(latin1));
+    QCOMPARE(first.size(), std::size_t(1));
+    const auto *latin1Message = std::get_if<IrcMessageEvent>(&first.front());
+    QVERIFY(latin1Message);
+    QCOMPARE(latin1Message->body, QString(QChar(0x00E9)));
+    QVERIFY(!latin1Message->body.contains(QChar(0xFFFD)));
+
+    const std::vector<IrcEvent> utf8 = IrcEventTranslator::translate(
+        QStringLiteral("libera"),
+        QStringLiteral("omairc"),
+        features,
+        mustParse(":alice!u@h PRIVMSG #omarchy :\xc3\xa9"));
+    QCOMPARE(utf8.size(), std::size_t(1));
+    const auto *utf8Message = std::get_if<IrcMessageEvent>(&utf8.front());
+    QVERIFY(utf8Message);
+    QCOMPARE(utf8Message->body, QString(QChar(0x00E9)));
+
+    const std::vector<IrcEvent> following = IrcEventTranslator::translate(
+        QStringLiteral("libera"),
+        QStringLiteral("omairc"),
+        features,
+        mustParse(":bob!u@h PRIVMSG #omarchy :ok"));
+    QCOMPARE(following.size(), std::size_t(1));
+    const auto *followingMessage = std::get_if<IrcMessageEvent>(&following.front());
+    QVERIFY(followingMessage);
+    QCOMPARE(followingMessage->body, QStringLiteral("ok"));
 }
 
 void SessionTest::incomingCtcpRequestsAreNotConversationEvents()

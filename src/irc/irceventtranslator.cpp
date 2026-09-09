@@ -3,6 +3,7 @@
 #include "ircpresence.h"
 #include "irctcp.h"
 #include "irctyping.h"
+#include "ircwiretext.h"
 
 #include <QByteArray>
 #include <QDateTime>
@@ -11,14 +12,10 @@
 
 namespace
 {
-QString text(const std::string& value)
-{
-    return QString::fromUtf8(value.data(), qsizetype(value.size()));
-}
-
 QString parameter(const IrcMessage& message, std::size_t index)
 {
-    return index < message.parameters.size() ? text(message.parameters[index]) : QString{};
+    return index < message.parameters.size() ? ircWireText(message.parameters[index])
+                                             : QString{};
 }
 
 QString author(const IrcMessage& message)
@@ -26,8 +23,8 @@ QString author(const IrcMessage& message)
     if (!message.prefix)
         return {};
     if (!message.prefix->nick.empty())
-        return text(message.prefix->nick);
-    const QString raw = text(message.prefix->raw);
+        return ircWireText(message.prefix->nick);
+    const QString raw = ircWireText(message.prefix->raw);
     if (raw.contains(QLatin1Char('.')))
         return {};
     return raw;
@@ -43,7 +40,7 @@ IrcConversationKey key(const QString& networkId,
                        const QString& target,
                        const IrcServerFeatures& features)
 {
-    return {networkId, text(features.caseMapping().normalize(utf8(target)))};
+    return {networkId, ircWireText(features.caseMapping().normalize(utf8(target)))};
 }
 
 bool same(const QString& left,
@@ -105,7 +102,7 @@ std::optional<QString> tagValue(const IrcMessage& message, const char *name)
 {
     for (const IrcTag& tag : message.tags) {
         if (tag.name == name && tag.value)
-            return text(*tag.value);
+            return ircWireText(*tag.value);
     }
     return std::nullopt;
 }
@@ -142,7 +139,7 @@ std::vector<IrcEvent> IrcEventTranslator::translate(
     const IrcMessage& message)
 {
     std::vector<IrcEvent> events;
-    const QString command = text(message.command).toUpper();
+    const QString command = ircWireText(message.command).toUpper();
     const QString sender = author(message);
     const QDateTime now = QDateTime::currentDateTimeUtc();
 
@@ -212,7 +209,7 @@ std::vector<IrcEvent> IrcEventTranslator::translate(
             const auto parsed = features.parseNamesToken(utf8(token));
             if (!parsed)
                 continue;
-            names.push_back({QString::fromStdString(parsed->nick), parsed->ranks});
+            names.push_back({ircWireText(parsed->nick), parsed->ranks});
         }
         events.emplace_back(IrcNamesEvent{
             networkId, parameter(message, 2), std::move(names), false});
