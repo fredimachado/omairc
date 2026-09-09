@@ -484,6 +484,8 @@ TestCase {
         verify(appWindow !== null, "The production Omairc window should load");
         tryCompare(appWindow, "visible", true);
         waitForRendering(appWindow.contentItem);
+        appWindow.suppressExternalUrlOpen = true;
+        appWindow.lastOpenedUrl = "";
     }
 
     function cleanup() {
@@ -1263,6 +1265,118 @@ TestCase {
         window.close();
         liveMessages.clear();
         liveConsole.open = false;
+    }
+
+    function test_httpUrlAllowlist() {
+        compare(appWindow.httpUrlAt("see https://example.com now", 6), "https://example.com");
+        compare(appWindow.httpUrlAt("see http://example.com now", 6), "http://example.com");
+        compare(appWindow.httpUrlAt("see javascript:alert(1) now", 6), "");
+        compare(appWindow.httpUrlAt("see file:///etc/passwd now", 6), "");
+        compare(appWindow.httpUrlAt("see https://example.com now", 0), "");
+        compare(appWindow.lastOpenedUrl, "");
+        verify(!appWindow.openAllowedUrl("javascript:alert(1)"));
+        compare(appWindow.lastOpenedUrl, "");
+        verify(!appWindow.openAllowedUrl("file:///tmp/x"));
+        compare(appWindow.lastOpenedUrl, "");
+        verify(appWindow.openAllowedUrl("https://example.com"));
+        compare(appWindow.lastOpenedUrl, "https://example.com");
+        verify(appWindow.openAllowedUrl("http://example.com"));
+        compare(appWindow.lastOpenedUrl, "http://example.com");
+    }
+
+    function test_messageBodyClickOpensHttpsUrl() {
+        var list = item("messageList");
+        var previousCount = list.model.count;
+        list.model.append({
+            author: "anna",
+            time: "10:00",
+            body: "read https://example.com thanks",
+            kind: "message"
+        });
+        tryCompare(list.model, "count", previousCount + 1);
+        list.positionViewAtIndex(previousCount, ListView.Contain);
+        waitForRendering(appWindow.contentItem);
+
+        var row = list.itemAtIndex(previousCount);
+        verify(row !== null, "The linked mock message should be rendered");
+        var body = findChild(row, "messageBody");
+        verify(body !== null && body.visible, "Could not find linked messageBody");
+        compare(body.textFormat, TextEdit.PlainText);
+        compare(body.text, "read https://example.com thanks");
+        body.selectAll();
+        compare(body.selectedText, "read https://example.com thanks");
+        body.deselect();
+
+        appWindow.lastOpenedUrl = "";
+        var start = body.text.indexOf("https://example.com");
+        var rect = body.positionToRectangle(start + 4);
+        var hit = findChild(body, "urlHit");
+        verify(hit !== null, "Could not find message urlHit");
+        mouseClick(hit, rect.x + Math.max(1, rect.width / 2), rect.y + rect.height / 2);
+        compare(appWindow.lastOpenedUrl, "https://example.com");
+    }
+
+    function test_consoleBodyClickOpensHttpUrl() {
+        var list = item("consoleList");
+        keyClick(Qt.Key_QuoteLeft, Qt.ControlModifier);
+        tryCompare(appWindow, "consoleVisible", true);
+
+        var previousCount = list.model.count;
+        list.model.append({
+            time: "12:00:03",
+            label: "PRIVMSG",
+            text: "motd http://example.com end",
+            source: "server",
+            severity: "info"
+        });
+        tryCompare(list.model, "count", previousCount + 1);
+        list.positionViewAtIndex(previousCount, ListView.Contain);
+        waitForRendering(appWindow.contentItem);
+
+        var row = list.itemAtIndex(previousCount);
+        verify(row !== null, "The linked console line should be rendered");
+        var body = findChild(row, "consoleText");
+        verify(body !== null, "Could not find linked consoleText");
+        compare(body.textFormat, TextEdit.PlainText);
+        compare(body.text, "motd http://example.com end");
+        body.selectAll();
+        compare(body.selectedText, "motd http://example.com end");
+        body.deselect();
+
+        appWindow.lastOpenedUrl = "";
+        var start = body.text.indexOf("http://example.com");
+        var rect = body.positionToRectangle(start + 4);
+        var hit = findChild(body, "urlHit");
+        verify(hit !== null, "Could not find console urlHit");
+        mouseClick(hit, rect.x + Math.max(1, rect.width / 2), rect.y + rect.height / 2);
+        compare(appWindow.lastOpenedUrl, "http://example.com");
+    }
+
+    function test_eventRowAndTopicStripMirc() {
+        appWindow.mockCurrentTopic = formattedIrcBody();
+        compare(appWindow.currentTopic, formattedIrcBody());
+        var topic = item("conversationTopic");
+        compare(topic.text, "bold / red");
+        verify(!containsMirc(topic.text));
+
+        var list = item("messageList");
+        var previousCount = list.model.count;
+        list.model.append({
+            author: "",
+            time: "",
+            body: formattedIrcBody(),
+            kind: "event"
+        });
+        tryCompare(list.model, "count", previousCount + 1);
+        list.positionViewAtIndex(previousCount, ListView.Contain);
+        waitForRendering(appWindow.contentItem);
+
+        var row = list.itemAtIndex(previousCount);
+        verify(row !== null, "The formatted event row should be rendered");
+        var eventText = findChild(row, "messageEvent");
+        verify(eventText !== null && eventText.visible, "Could not find messageEvent");
+        compare(eventText.text, "bold / red");
+        verify(!containsMirc(eventText.text));
     }
 
     function test_toggleMembersWithShortcut() {
