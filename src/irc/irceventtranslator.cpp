@@ -107,6 +107,19 @@ std::optional<QString> tagValue(const IrcMessage& message, const char *name)
     return std::nullopt;
 }
 
+QDateTime timestampFor(const IrcMessage& message)
+{
+    const std::optional<QString> raw = tagValue(message, "time");
+    if (!raw)
+        return QDateTime::currentDateTimeUtc();
+    QDateTime parsed = QDateTime::fromString(*raw, Qt::ISODateWithMs);
+    if (!parsed.isValid())
+        parsed = QDateTime::fromString(*raw, Qt::ISODate);
+    if (!parsed.isValid())
+        return QDateTime::currentDateTimeUtc();
+    return parsed.toUTC();
+}
+
 /// `<Target> <Key> <Visibility> [<Value>]`, the shape shared by `METADATA`,
 /// `761` and `766` once the numeric client parameter has been dropped.
 void appendMemberStatus(std::vector<IrcEvent>& events,
@@ -141,7 +154,7 @@ std::vector<IrcEvent> IrcEventTranslator::translate(
     std::vector<IrcEvent> events;
     const QString command = ircWireText(message.command).toUpper();
     const QString sender = author(message);
-    const QDateTime now = QDateTime::currentDateTimeUtc();
+    const QDateTime timestamp = timestampFor(message);
 
     if (command == QStringLiteral("NOTICE"))
         return events;
@@ -164,10 +177,10 @@ std::vector<IrcEvent> IrcEventTranslator::translate(
             events.emplace_back(IrcActionEvent{
                 *conversation, sender,
                 body.mid(actionPrefix.size(), body.size() - actionPrefix.size() - 1),
-                now, displayTarget});
+                timestamp, displayTarget});
         } else {
             events.emplace_back(IrcMessageEvent{
-                *conversation, sender, body, now, displayTarget});
+                *conversation, sender, body, timestamp, displayTarget});
         }
     } else if (command == QStringLiteral("TAGMSG") && !message.parameters.empty()) {
         const std::optional<QString> value = tagValue(message, "+typing");
@@ -181,7 +194,7 @@ std::vector<IrcEvent> IrcEventTranslator::translate(
             networkId, wireTarget, message, currentNick, features);
         if (!conversation)
             return events;
-        events.emplace_back(IrcTypingEvent{*conversation, sender, *phase, now});
+        events.emplace_back(IrcTypingEvent{*conversation, sender, *phase, timestamp});
     } else if (command == QStringLiteral("JOIN") && !message.parameters.empty()) {
         events.emplace_back(IrcJoinEvent{networkId, parameter(message, 0), sender});
     } else if (command == QStringLiteral("PART") && !message.parameters.empty()) {
