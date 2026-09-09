@@ -107,8 +107,13 @@ void MessageListModel::reload()
             endInsertRows();
             return;
         }
-        if (count == m_count)
+        if (count == m_count) {
+            if (count > 0) {
+                const QModelIndex last = index(count - 1);
+                emit dataChanged(last, last);
+            }
             return;
+        }
     }
 
     beginResetModel();

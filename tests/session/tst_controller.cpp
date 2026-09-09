@@ -2080,7 +2080,7 @@ void ControllerTest::incomingNickRetargetsSelectedDirect()
     auto *members = qobject_cast<QAbstractItemModel *>(controller.members());
     QCOMPARE(roleAt(members, 0, MemberListModel::NickRole), QStringLiteral("Alicia"));
     QCOMPARE(roleAt(messages, messages->rowCount() - 1, MessageListModel::BodyRole),
-             QStringLiteral("Alice is now Alicia"));
+             QStringLiteral("omairc joined, Alice is now Alicia"));
 
     controller.selectConversation(QStringLiteral("libera"), QStringLiteral("Alicia"));
     QVERIFY(controller.sendMessage(QStringLiteral("hello")));
