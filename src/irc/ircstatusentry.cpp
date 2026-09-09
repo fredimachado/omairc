@@ -25,6 +25,27 @@ QString redactedSecret(const QString& verb)
     return verb + QStringLiteral(" ***");
 }
 
+struct IrcStandardReplyVerb
+{
+    const char *command = nullptr;
+    IrcLogSeverity severity = IrcLogSeverity::Info;
+};
+
+constexpr IrcStandardReplyVerb kStandardReplyVerbs[] = {
+    {"FAIL", IrcLogSeverity::Alert},
+    {"WARN", IrcLogSeverity::Info},
+    {"NOTE", IrcLogSeverity::Info},
+};
+
+const IrcStandardReplyVerb *standardReplyVerb(const QString& command)
+{
+    for (const IrcStandardReplyVerb& row : kStandardReplyVerbs) {
+        if (command == QLatin1String(row.command))
+            return &row;
+    }
+    return nullptr;
+}
+
 IrcLogSeverity severityFor(const QString& command)
 {
     if (command == QStringLiteral("PING")
@@ -33,6 +54,8 @@ IrcLogSeverity severityFor(const QString& command)
         || command == QStringLiteral("AUTHENTICATE")) {
         return IrcLogSeverity::Trace;
     }
+    if (const auto *reply = standardReplyVerb(command))
+        return reply->severity;
     if (command == QStringLiteral("ERROR"))
         return IrcLogSeverity::Alert;
     if (command.size() == 3 && command[0].isDigit()
@@ -44,6 +67,8 @@ IrcLogSeverity severityFor(const QString& command)
 
 bool trailingBodyOnly(const QString& command)
 {
+    if (standardReplyVerb(command))
+        return true;
     if (command == QStringLiteral("PRIVMSG")
         || command == QStringLiteral("PING") || command == QStringLiteral("PONG")
         || command == QStringLiteral("ERROR")) {

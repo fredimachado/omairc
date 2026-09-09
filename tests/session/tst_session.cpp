@@ -147,6 +147,9 @@ private slots:
     void whoisStatusLinesFormatKnownNumerics();
     void incomingNoticeStatusLinesWrapSpeaker();
     void incomingNoticeDoesNotTranslateToEvents();
+    void incomingStandardRepliesShowDescriptionOnStatus();
+    void incomingStandardRepliesDoNotTranslateToEvents();
+    void inboundFailDoesNotFailTheSession();
     void incomingActionTranslatesToActionEvent();
     void latin1PrivmsgBodyIsEAcuteAndNextLineTranslates();
     void incomingCtcpRequestsAreNotConversationEvents();
@@ -1068,6 +1071,93 @@ void SessionTest::incomingNoticeDoesNotTranslateToEvents()
                 features,
                 mustParse(":alice!u@h NOTICE #omarchy :heads up"))
                 .empty());
+}
+
+void SessionTest::incomingStandardRepliesShowDescriptionOnStatus()
+{
+    const IrcStatusEntry fail = IrcStatusEntry::incoming(
+        QStringLiteral("libera"),
+        mustParse("FAIL * NEED_REGISTRATION :You need to be registered to continue"));
+    QCOMPARE(fail.label(), QStringLiteral("FAIL"));
+    QCOMPARE(fail.text(), QStringLiteral("You need to be registered to continue"));
+    QCOMPARE(fail.severity(), IrcLogSeverity::Alert);
+    QCOMPARE(fail.source(), IrcLogSource::Server);
+
+    const IrcStatusEntry failWithContext = IrcStatusEntry::incoming(
+        QStringLiteral("libera"),
+        mustParse("FAIL ACC REG_INVALID_CALLBACK REGISTER :Email address is not valid"));
+    QCOMPARE(failWithContext.label(), QStringLiteral("FAIL"));
+    QCOMPARE(failWithContext.text(), QStringLiteral("Email address is not valid"));
+    QCOMPARE(failWithContext.severity(), IrcLogSeverity::Alert);
+
+    const IrcStatusEntry warn = IrcStatusEntry::incoming(
+        QStringLiteral("libera"),
+        mustParse("WARN REHASH CERTS_EXPIRED :Certificate has expired"));
+    QCOMPARE(warn.label(), QStringLiteral("WARN"));
+    QCOMPARE(warn.text(), QStringLiteral("Certificate has expired"));
+    QCOMPARE(warn.severity(), IrcLogSeverity::Info);
+
+    const IrcStatusEntry note = IrcStatusEntry::incoming(
+        QStringLiteral("libera"),
+        mustParse("NOTE * OPER_MESSAGE :Registering new accounts has been disabled"));
+    QCOMPARE(note.label(), QStringLiteral("NOTE"));
+    QCOMPARE(note.text(), QStringLiteral("Registering new accounts has been disabled"));
+    QCOMPARE(note.severity(), IrcLogSeverity::Info);
+}
+
+void SessionTest::incomingStandardRepliesDoNotTranslateToEvents()
+{
+    const IrcServerFeatures features;
+    QVERIFY(IrcEventTranslator::translate(
+                QStringLiteral("libera"),
+                QStringLiteral("omairc"),
+                features,
+                mustParse("FAIL * NEED_REGISTRATION :You need to be registered to continue"))
+                .empty());
+    QVERIFY(IrcEventTranslator::translate(
+                QStringLiteral("libera"),
+                QStringLiteral("omairc"),
+                features,
+                mustParse("WARN REHASH CERTS_EXPIRED :Certificate has expired"))
+                .empty());
+    QVERIFY(IrcEventTranslator::translate(
+                QStringLiteral("libera"),
+                QStringLiteral("omairc"),
+                features,
+                mustParse("NOTE * OPER_MESSAGE :Registering new accounts has been disabled"))
+                .empty());
+}
+
+void SessionTest::inboundFailDoesNotFailTheSession()
+{
+    Fixture fixture;
+    StatusCollector status(fixture.session);
+    QSignalSpy errors(fixture.session, &IrcSession::errorOccurred);
+    fixture.connectTls();
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
+                          ":server 001 omairc :Welcome\r\n"));
+    QCOMPARE(fixture.session->state(), IrcSession::State::Registered);
+    QCOMPARE(errors.size(), 0);
+
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(
+            "FAIL JOIN ACCOUNT_REQUIRED #omarchy :You must be logged in\r\n"));
+
+    QCOMPARE(fixture.session->state(), IrcSession::State::Registered);
+    QCOMPARE(fixture.transport->connectionState(),
+             IrcTransport::ConnectionState::Encrypted);
+    QCOMPARE(errors.size(), 0);
+
+    bool sawFail = false;
+    for (const IrcStatusEntry& entry : status.entries) {
+        if (entry.label() != QStringLiteral("FAIL"))
+            continue;
+        sawFail = true;
+        QCOMPARE(entry.text(), QStringLiteral("You must be logged in"));
+        QCOMPARE(entry.severity(), IrcLogSeverity::Alert);
+    }
+    QVERIFY(sawFail);
 }
 
 void SessionTest::incomingActionTranslatesToActionEvent()
