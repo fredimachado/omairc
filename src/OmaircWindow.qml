@@ -3390,7 +3390,7 @@ ApplicationWindow {
                 Rectangle {
                     anchors.centerIn: parent
                     width: Math.min(win.scaledSize(700), parent.width - win.scaledSize(40))
-                    height: Math.min(win.scaledSize(560), parent.height - win.scaledSize(40))
+                    height: Math.min(win.scaledSize(620), parent.height - win.scaledSize(40))
                     radius: win.scaledSize(10)
                     color: win.raisedColor
                     border.width: 1

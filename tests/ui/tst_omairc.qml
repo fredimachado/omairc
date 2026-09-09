@@ -1927,6 +1927,11 @@ TestCase {
         compare(findChild(window, "networkChoiceList") !== null, true);
         compare(findChild(window, "connectionAddNetwork").visible, false);
         compare(findChild(window, "connectionRemove").visible, false);
+        var password = findChild(window, "connectionPassword");
+        var formViewport = findChild(window, "sheetFlick");
+        verify(password.mapToItem(sheet, 0, password.height).y
+               <= formViewport.mapToItem(sheet, 0, formViewport.height).y,
+               "Password field should be visible without scrolling");
         try {
             grabImage(window.contentItem).save(artifactDirectory + "connection-sheet.png");
         } catch (error) {
