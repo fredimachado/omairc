@@ -422,7 +422,7 @@ TestCase {
             var keepSelection = open;
             open = true;
             matches = [
-                { label: "/join", usage: "/join <channel>" },
+                { label: "/join", usage: "/join <channel> [key][, ...]" },
                 { label: "/nick", usage: "/nick <nickname>" }
             ];
             if (!keepSelection)

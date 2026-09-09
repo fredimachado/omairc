@@ -1,8 +1,11 @@
 #include "liveharness.h"
 #include "livepeer.h"
+#include "conversationlistmodel.h"
 #include "irccapability.h"
+#include "ircjointarget.h"
 #include "memberlistmodel.h"
 
+#include <QAbstractItemModel>
 #include <QTest>
 
 class LiveIrcdTest : public QObject
@@ -36,6 +39,8 @@ private slots:
     void saslPlain();
     void foldedNickCollision_data();
     void foldedNickCollision();
+    void joinMultipleChannels_data();
+    void joinMultipleChannels();
 };
 
 namespace
@@ -44,6 +49,74 @@ void fillDaemonRows()
 {
     for (const LiveDaemonInfo &daemon : liveDaemons())
         QTest::newRow(qPrintable(daemon.name)) << daemon.name;
+}
+
+QString messageText(const std::string &value)
+{
+    return QString::fromUtf8(value.data(), qsizetype(value.size()));
+}
+
+bool sameFolded(const QString &left, const QString &right)
+{
+    return left.compare(right, Qt::CaseInsensitive) == 0;
+}
+
+int conversationRow(QAbstractItemModel *model, const QString &target)
+{
+    if (!model)
+        return -1;
+    for (int row = 0; row < model->rowCount(); ++row) {
+        if (sameFolded(model->index(row, 0).data(ConversationListModel::ConversationRole)
+                           .toString(),
+                       target)) {
+            return row;
+        }
+    }
+    return -1;
+}
+
+bool joinChannel(LiveClient &client, const QString &channel)
+{
+    const std::optional<IrcJoinTarget> target = IrcJoinTarget::make(channel);
+    return target && client.session->join(*target);
+}
+
+int namesEndCount(const QVector<IrcMessage> &incoming, const QString &channel)
+{
+    int ends = 0;
+    for (const IrcMessage &message : incoming) {
+        if (message.command != "366" || message.parameters.size() < 2)
+            continue;
+        if (sameFolded(messageText(message.parameters[1]), channel))
+            ++ends;
+    }
+    return ends;
+}
+
+bool sawChannelModeKey(const QVector<IrcMessage> &incoming, const QString &channel)
+{
+    for (const IrcMessage &message : incoming) {
+        if (message.command != "MODE" || message.parameters.size() < 2)
+            continue;
+        if (!sameFolded(messageText(message.parameters[0]), channel))
+            continue;
+        for (std::size_t index = 1; index < message.parameters.size(); ++index) {
+            if (messageText(message.parameters[index]).contains(QLatin1Char('k')))
+                return true;
+        }
+    }
+    return false;
+}
+
+bool sawPart(const QVector<IrcMessage> &incoming, const QString &channel)
+{
+    for (const IrcMessage &message : incoming) {
+        if (message.command != "PART" || message.parameters.empty())
+            continue;
+        if (sameFolded(messageText(message.parameters[0]), channel))
+            return true;
+    }
+    return false;
 }
 }
 
@@ -107,7 +180,7 @@ void LiveIrcdTest::capabilityFlags()
     LiveClient client(*daemon, uniqueNick(daemon->nickLength), daemon->plainPort == 0);
     QVERIFY(client.waitRegistered());
     const QString channel = uniqueChannel();
-    QVERIFY(client.session->join(channel));
+    QVERIFY(joinChannel(client, channel));
     QVERIFY(waitUntil([&] {
         return messageHasCommand(client.incoming, QStringLiteral("366"));
     }));
@@ -163,7 +236,7 @@ void LiveIrcdTest::classicTraffic()
                     uniqueNick(daemon->nickLength));
     QVERIFY(peer.waitRegistered());
     const QString channel = uniqueChannel();
-    QVERIFY(client.session->join(channel));
+    QVERIFY(joinChannel(client, channel));
     QVERIFY(waitUntil([&] {
         return messageHasCommand(client.incoming, QStringLiteral("366"));
     }));
@@ -245,7 +318,7 @@ void LiveIrcdTest::whoSnapshot()
     LiveClient client(*daemon, uniqueNick(daemon->nickLength), daemon->plainPort == 0);
     QVERIFY(client.waitRegistered());
     const QString channel = uniqueChannel();
-    QVERIFY(client.session->join(channel));
+    QVERIFY(joinChannel(client, channel));
     QVERIFY(waitUntil([&] {
         return messageHasCommand(client.incoming, QStringLiteral("352"));
     }));
@@ -272,7 +345,7 @@ void LiveIrcdTest::peerAway()
     LiveClient client(*daemon, uniqueNick(daemon->nickLength), tls);
     QVERIFY(client.waitRegistered());
     const QString channel = uniqueChannel();
-    QVERIFY(client.session->join(channel));
+    QVERIFY(joinChannel(client, channel));
     QVERIFY(waitUntil([&] {
         return messageHasCommand(client.incoming, QStringLiteral("366"));
     }));
@@ -310,7 +383,7 @@ void LiveIrcdTest::peerTyping()
     LiveClient client(*daemon, uniqueNick(daemon->nickLength), tls);
     QVERIFY(client.waitRegistered());
     const QString channel = uniqueChannel();
-    QVERIFY(client.session->join(channel));
+    QVERIFY(joinChannel(client, channel));
     QVERIFY(waitUntil([&] {
         return messageHasCommand(client.incoming, QStringLiteral("366"));
     }));
@@ -342,7 +415,7 @@ void LiveIrcdTest::peerMetadata()
         return client.session->capabilities().contains(IrcCapability::MemberMetadata);
     }));
     const QString channel = uniqueChannel();
-    QVERIFY(client.session->join(channel));
+    QVERIFY(joinChannel(client, channel));
     QVERIFY(waitUntil([&] {
         return messageHasCommand(client.incoming, QStringLiteral("366"));
     }));
@@ -410,6 +483,53 @@ void LiveIrcdTest::foldedNickCollision()
     } else {
         QVERIFY(b.waitRegistered());
     }
+}
+
+void LiveIrcdTest::joinMultipleChannels_data()
+{
+    QTest::addColumn<QString>("daemonName");
+    fillDaemonRows();
+}
+
+void LiveIrcdTest::joinMultipleChannels()
+{
+    QFETCH(QString, daemonName);
+    const LiveDaemonInfo *daemon = liveDaemon(daemonName);
+    QVERIFY(daemon);
+    LiveClient client(*daemon, uniqueNick(daemon->nickLength), daemon->plainPort == 0);
+    QVERIFY(client.waitRegistered());
+    const QString first = uniqueChannel();
+    const QString second = uniqueChannel();
+    QVERIFY(client.controller.sendMessage(
+        QStringLiteral("/join %1, %2").arg(first, second.mid(1))));
+
+    QVERIFY(waitUntil([&] {
+        int ends = 0;
+        for (const IrcMessage &message : client.incoming) {
+            if (message.command != "366" || message.parameters.size() < 2)
+                continue;
+            const QString channel = messageText(message.parameters[1]);
+            if (sameFolded(channel, first) || sameFolded(channel, second))
+                ++ends;
+        }
+        return ends >= 2;
+    }));
+    auto *conversations = client.controller.conversations();
+    QVERIFY(conversationRow(conversations, first) >= 0);
+    QVERIFY(conversationRow(conversations, second) >= 0);
+
+    const QString keyed = uniqueChannel();
+    QVERIFY(joinChannel(client, keyed));
+    QVERIFY(waitUntil([&] { return namesEndCount(client.incoming, keyed) >= 1; }));
+    client.selectChannel(keyed);
+    QVERIFY(client.controller.sendMessage(
+        QStringLiteral("/mode %1 +k s3cret").arg(keyed)));
+    QVERIFY(waitUntil([&] { return sawChannelModeKey(client.incoming, keyed); }));
+    QVERIFY(client.controller.sendMessage(QStringLiteral("/part %1").arg(keyed)));
+    QVERIFY(waitUntil([&] { return sawPart(client.incoming, keyed); }));
+    QVERIFY(client.controller.sendMessage(
+        QStringLiteral("/join %1 s3cret").arg(keyed)));
+    QVERIFY(waitUntil([&] { return namesEndCount(client.incoming, keyed) >= 2; }));
 }
 
 int runLiveIrcdTests(int argc, char **argv)
