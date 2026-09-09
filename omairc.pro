@@ -4,6 +4,10 @@ CONFIG += c++17 release
 VERSION = 0.1.0
 TARGET = omairc
 TEMPLATE = app
+
+# GCC 16 emits this diagnostic from Qt 6.11's own headers.
+greaterThan(QMAKE_GCC_MAJOR_VERSION, 15): QMAKE_CXXFLAGS += -Wno-sfinae-incomplete
+
 DEFINES += OMAIRC_VERSION=\\\"$$VERSION\\\"
 
 isEmpty(PREFIX): PREFIX = /usr/local
