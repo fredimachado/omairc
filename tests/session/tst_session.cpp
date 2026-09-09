@@ -140,6 +140,8 @@ private slots:
     void matchingPongKeepsSessionRegistered();
     void answersServerPingAfterWelcome();
     void registrationRefusalFailsVisibly();
+    void nickInUseBeforeWelcomeRetriesThenRegisters();
+    void nickInUseFallbacksExhaustedFails();
     void nickInUseAfterWelcomeKeepsSession();
     void unavailableResourceAfterWelcomeKeepsSession();
     void unavailableResourceBeforeWelcomeFails();
@@ -560,12 +562,66 @@ void SessionTest::registrationRefusalFailsVisibly()
     QSignalSpy errors(fixture.session, &IrcSession::errorOccurred);
     fixture.connectTls();
     fixture.transport->injectBytes(
-        QByteArrayLiteral(":server 433 * omairc :Nickname in use\r\n"));
+        QByteArrayLiteral(":server 432 * omairc :Erroneous nickname\r\n"));
 
     QCOMPARE(fixture.session->state(), IrcSession::State::Failed);
     QCOMPARE(errors.size(), 1);
     QCOMPARE(qvariant_cast<IrcSession::ErrorKind>(errors.at(0).at(1)),
              IrcSession::ErrorKind::Registration);
+}
+
+void SessionTest::nickInUseBeforeWelcomeRetriesThenRegisters()
+{
+    Fixture fixture;
+    QSignalSpy errors(fixture.session, &IrcSession::errorOccurred);
+    fixture.connectTls();
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"));
+    QCOMPARE(fixture.session->state(), IrcSession::State::Registering);
+    QVERIFY(fixture.wrote(QByteArrayLiteral("NICK omairc\r\n")));
+
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(":server 433 * omairc :Nickname in use\r\n"));
+    QCOMPARE(fixture.session->state(), IrcSession::State::Registering);
+    QCOMPARE(errors.size(), 0);
+    QCOMPARE(fixture.transport->writtenFrames().last(),
+             QByteArrayLiteral("NICK omairc_\r\n"));
+    QCOMPARE(fixture.session->nick(), QStringLiteral("omairc_"));
+
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(":server 433 * omairc_ :Nickname in use\r\n"));
+    QCOMPARE(fixture.session->state(), IrcSession::State::Registering);
+    QCOMPARE(errors.size(), 0);
+    QCOMPARE(fixture.transport->writtenFrames().last(),
+             QByteArrayLiteral("NICK omairc2\r\n"));
+    QCOMPARE(fixture.session->nick(), QStringLiteral("omairc2"));
+
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(":server 001 omairc2 :Welcome\r\n"));
+    QCOMPARE(fixture.session->state(), IrcSession::State::Registered);
+    QCOMPARE(fixture.session->nick(), QStringLiteral("omairc2"));
+    QCOMPARE(errors.size(), 0);
+}
+
+void SessionTest::nickInUseFallbacksExhaustedFails()
+{
+    Fixture fixture;
+    QSignalSpy errors(fixture.session, &IrcSession::errorOccurred);
+    fixture.connectTls();
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"));
+
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(":server 433 * omairc :Nickname in use\r\n"
+                          ":server 433 * omairc_ :Nickname in use\r\n"
+                          ":server 433 * omairc2 :Nickname in use\r\n"));
+
+    QCOMPARE(fixture.session->state(), IrcSession::State::Failed);
+    QCOMPARE(errors.size(), 1);
+    QCOMPARE(qvariant_cast<IrcSession::ErrorKind>(errors.at(0).at(1)),
+             IrcSession::ErrorKind::Registration);
+    QCOMPARE(fixture.transport->writtenFrames().last(),
+             QByteArrayLiteral("NICK omairc2\r\n"));
 }
 
 void SessionTest::nickInUseAfterWelcomeKeepsSession()

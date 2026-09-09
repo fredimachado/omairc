@@ -268,16 +268,16 @@ void LiveIrcdTest::nickInUse()
     QFETCH(QString, daemonName);
     const LiveDaemonInfo *daemon = liveDaemon(daemonName);
     QVERIFY(daemon);
-    const QString nick = uniqueNick(daemon->nickLength);
+    const QString nick = uniqueNick(qMax(1, daemon->nickLength - 1));
     LiveClient first(*daemon, nick, daemon->plainPort == 0);
     QVERIFY(first.waitRegistered());
     LiveClient second(*daemon, nick, daemon->plainPort == 0);
-    QVERIFY2(second.waitFailed(),
+    QVERIFY2(second.waitRegistered(),
              qPrintable(daemonName + QLatin1Char(' ') + second.lastError));
-    QVERIFY(second.lastErrorKind.has_value());
-    QCOMPARE(*second.lastErrorKind, IrcSession::ErrorKind::Registration);
-    QVERIFY(second.hasServerLabel(QStringLiteral("433"))
-            || second.lastError.contains(QLatin1String("433")));
+    const QString assigned = second.session->nick();
+    QVERIFY(assigned.compare(nick + QLatin1Char('_'), Qt::CaseInsensitive) == 0
+            || assigned.compare(nick + QLatin1Char('2'), Qt::CaseInsensitive) == 0);
+    QVERIFY(second.hasServerLabel(QStringLiteral("433")));
 }
 
 void LiveIrcdTest::nickLength_data()

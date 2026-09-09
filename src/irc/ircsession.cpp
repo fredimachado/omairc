@@ -536,6 +536,36 @@ void IrcSession::sendRegistration()
     setState(State::Registering);
 }
 
+bool IrcSession::tryRegistrationNickFallback()
+{
+    if (!m_registrationSent)
+        return false;
+
+    QString fallback;
+    RegistrationNick next = RegistrationNick::Digit;
+    switch (m_registrationNick) {
+    case RegistrationNick::Configured:
+        fallback = m_config.nick + QLatin1Char('_');
+        next = RegistrationNick::Underscore;
+        break;
+    case RegistrationNick::Underscore:
+        fallback = m_config.nick + QLatin1Char('2');
+        next = RegistrationNick::Digit;
+        break;
+    case RegistrationNick::Digit:
+        return false;
+    }
+
+    const QByteArray line = builtLine(IrcCommandBuilder::nick(fallback.toStdString()));
+    if (line.isEmpty())
+        return false;
+
+    m_registrationNick = next;
+    m_nick = fallback;
+    sendLine(line);
+    return true;
+}
+
 void IrcSession::sendLine(const QByteArray &line)
 {
     if (line.isEmpty())
@@ -675,6 +705,8 @@ void IrcSession::handleMessage(const IrcMessage &message)
         || message.command == "451" || message.command == "462"
         || message.command == "465") {
         if (m_state != State::Registered) {
+            if (message.command == "433" && tryRegistrationNickFallback())
+                return;
             fail(ErrorKind::Registration,
                  QStringLiteral("IRC registration was refused (%1)")
                      .arg(ircWireText(message.command)),
@@ -866,6 +898,7 @@ void IrcSession::resetForConnection()
     m_framer = IrcFramer{};
     m_nick = m_config.nick;
     m_registrationSent = false;
+    m_registrationNick = RegistrationNick::Configured;
     m_saslRequested = false;
     m_saslPending = false;
     m_capabilityNegotiationEnded = false;
