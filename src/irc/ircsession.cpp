@@ -6,6 +6,7 @@
 #include "ircpresence.h"
 #include "irctcp.h"
 #include "irctyping.h"
+#include "ircwiretext.h"
 
 #include <QByteArray>
 #include <QDateTime>
@@ -30,14 +31,14 @@ QString parameter(const IrcMessage &message, std::size_t index)
 {
     if (index >= message.parameters.size())
         return {};
-    return QString::fromStdString(message.parameters[index]);
+    return ircWireText(message.parameters[index]);
 }
 
 QString prefixNick(const IrcMessage &message)
 {
     if (!message.prefix)
         return {};
-    return QString::fromStdString(message.prefix->nick);
+    return ircWireText(message.prefix->nick);
 }
 
 int parameterIndex(const IrcMessage &message, const QString &value)
@@ -53,7 +54,7 @@ QStringList capabilityTokens(const IrcMessage &message, int subcommandIndex)
 {
     if (message.parameters.size() <= std::size_t(subcommandIndex + 1))
         return {};
-    return QString::fromStdString(message.parameters.back())
+    return ircWireText(message.parameters.back())
         .split(QLatin1Char(' '), Qt::SkipEmptyParts);
 }
 
@@ -641,7 +642,7 @@ void IrcSession::handleMessage(const IrcMessage &message)
         if (m_state != State::Registered) {
             fail(ErrorKind::Registration,
                  QStringLiteral("IRC registration was refused (%1)")
-                     .arg(QString::fromStdString(message.command)),
+                     .arg(ircWireText(message.command)),
                  false);
             return;
         }
@@ -651,7 +652,7 @@ void IrcSession::handleMessage(const IrcMessage &message)
         fail(ErrorKind::Network,
              message.parameters.empty()
                  ? QStringLiteral("IRC server reported an error")
-                 : QString::fromStdString(message.parameters.back()),
+                 : ircWireText(message.parameters.back()),
              true);
         return;
     }

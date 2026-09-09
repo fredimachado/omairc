@@ -1,5 +1,7 @@
 #include "irceventreducer.h"
 
+#include "ircwiretext.h"
+
 #include <QByteArray>
 
 #include <string>
@@ -11,11 +13,6 @@ std::string utf8(const QString& value)
 {
     const QByteArray encoded = value.toUtf8();
     return std::string(encoded.constData(), static_cast<std::size_t>(encoded.size()));
-}
-
-QString fromUtf8(const std::string& value)
-{
-    return QString::fromUtf8(value.data(), static_cast<qsizetype>(value.size()));
 }
 
 bool isIdentifierCharacter(QChar character)
@@ -179,7 +176,7 @@ std::optional<IrcMemberView> IrcEventReducer::memberView(
     const IrcServerFeatures& features = serverFeatures(key.networkId);
     return IrcMemberView{
         member->second.displayNick,
-        QString::fromStdString(features.memberLabel(
+        ircWireText(features.memberLabel(
             member->second.ranks, utf8(member->second.displayNick))),
         member->second.ranks,
         facts.away,
@@ -327,7 +324,7 @@ IrcConversationState *IrcEventReducer::findMutable(
 QString IrcEventReducer::normalize(const QString& networkId,
                                    const QString& identifier) const
 {
-    return fromUtf8(serverFeatures(networkId).caseMapping().normalize(
+    return ircWireText(serverFeatures(networkId).caseMapping().normalize(
         utf8(identifier)));
 }
 
@@ -627,7 +624,7 @@ void IrcEventReducer::reduce(const IrcModeEvent& event)
     for (const IrcPrefixChange& change :
          features.prefixChanges(utf8(event.mode), arguments)) {
         const auto member = channel->members.find(
-            normalize(event.networkId, fromUtf8(change.nick())));
+            normalize(event.networkId, ircWireText(change.nick())));
         if (member == channel->members.end())
             continue;
         member->second.ranks = features.apply(member->second.ranks, change);

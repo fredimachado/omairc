@@ -5,6 +5,7 @@
 #include "irceventtranslator.h"
 #include "ircviewnotify.h"
 #include "irctyping.h"
+#include "ircwiretext.h"
 
 #include <QByteArray>
 #include <QDateTime>
@@ -28,8 +29,7 @@ QString parameter(const IrcMessage& message, std::size_t index)
 {
     if (index >= message.parameters.size())
         return {};
-    return QString::fromUtf8(message.parameters[index].data(),
-                             qsizetype(message.parameters[index].size()));
+    return ircWireText(message.parameters[index]);
 }
 
 std::string utf8(const QString& value)

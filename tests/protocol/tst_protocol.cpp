@@ -21,8 +21,10 @@
 #include "irccommandbuilder.h"
 #include "ircframer.h"
 #include "ircparser.h"
+#include "ircwiretext.h"
 
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace
@@ -46,6 +48,9 @@ private slots:
     void parsesTags();
     void parsesClientOnlyTypingTag();
     void preservesUtf8();
+    void decodesValidUtf8WireText();
+    void decodesInvalidUtf8AsLatin1();
+    void framesLatin1ThenUtf8();
     void framesFragmentedAndCoalescedInput();
     void rejectsNulAndRecovers();
     void rejectsOverlongAndRecovers();
@@ -164,6 +169,50 @@ void ProtocolTest::preservesUtf8()
     const auto message = IrcParser::parse(payload);
     QVERIFY(message);
     QCOMPARE(message.value->parameters[1], payload.substr(payload.find(':') + 1));
+}
+
+void ProtocolTest::decodesValidUtf8WireText()
+{
+    QCOMPARE(ircWireText({}), QString());
+    QCOMPARE(ircWireText("hello"), QStringLiteral("hello"));
+    QCOMPARE(ircWireText("\xc3\xa9"), QString(QChar(0x00E9)));
+    QCOMPARE(ircWireText("h\xc3\xa9llo \xf0\x9f\xa5\x94"),
+             QStringLiteral(u"h\u00e9llo \U0001F954"));
+}
+
+void ProtocolTest::decodesInvalidUtf8AsLatin1()
+{
+    const char acute = '\xe9';
+    const QString latin1 = ircWireText(std::string_view(&acute, 1));
+    QCOMPARE(latin1, QString(QChar(0x00E9)));
+    QVERIFY(!latin1.contains(QChar(0xFFFD)));
+
+    const char incomplete = '\xc3';
+    const QString loneLead = ircWireText(std::string_view(&incomplete, 1));
+    QCOMPARE(loneLead, QString(QChar(0x00C3)));
+    QVERIFY(!loneLead.contains(QChar(0xFFFD)));
+
+    const char cafe[] = {'c', 'a', 'f', '\xe9'};
+    QCOMPARE(ircWireText(std::string_view(cafe, 4)),
+             QStringLiteral("caf") + QChar(0x00E9));
+}
+
+void ProtocolTest::framesLatin1ThenUtf8()
+{
+    IrcFramer framer;
+    std::string wire = ":a!u@h PRIVMSG #c :";
+    wire.push_back('\xe9');
+    wire += "\r\n:b!u@h PRIVMSG #c :ok\r\n";
+    const auto result = framer.feed(wire);
+    QCOMPARE(result.errors.size(), std::size_t(0));
+    QCOMPARE(result.frames.size(), std::size_t(2));
+
+    const auto first = IrcParser::parse(result.frames[0]);
+    const auto second = IrcParser::parse(result.frames[1]);
+    QVERIFY(first);
+    QVERIFY(second);
+    QCOMPARE(first.value->parameters[1], std::string(1, '\xe9'));
+    QCOMPARE(second.value->parameters[1], std::string("ok"));
 }
 
 void ProtocolTest::framesFragmentedAndCoalescedInput()
