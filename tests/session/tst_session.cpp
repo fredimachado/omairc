@@ -188,6 +188,8 @@ private slots:
     void latin1PrivmsgBodyIsEAcuteAndNextLineTranslates();
     void incomingCtcpRequestsAreNotConversationEvents();
     void answersCtcpRequests();
+    void rateLimitsCtcpVersionRepliesPerNick();
+    void dropsOversizedCtcpPingPayload();
     void doesNotAnswerChannelCtcpRequests();
     void welcomeAssignsNickFrom001();
     void emptyWelcomeKeepsConfigNick();
@@ -1482,16 +1484,93 @@ void SessionTest::answersCtcpRequests()
 
     fixture.transport->injectBytes(
         QByteArrayLiteral(":MetaNova!u@h PRIVMSG omairc :\x01PING token\x01\r\n"
-                          ":MetaNova!u@h PRIVMSG omairc :\x01TIME\x01\r\n"
-                          ":MetaNova!u@h PRIVMSG omairc :\x01VERSION\x01\r\n"));
+                          ":alice!u@h PRIVMSG omairc :\x01TIME\x01\r\n"
+                          ":bob!u@h PRIVMSG omairc :\x01VERSION\x01\r\n"));
 
     QVERIFY(fixture.wrote(QByteArrayLiteral(
         "NOTICE MetaNova :\x01PING token\x01\r\n")));
-    QVERIFY(fixture.transport->writtenFrames().last().startsWith(
-        QByteArrayLiteral("NOTICE MetaNova :\x01VERSION Omairc 0.1.0\x01\r\n")));
-    QVERIFY(fixture.transport->writtenFrames().at(
-        fixture.transport->writtenFrames().size() - 2).startsWith(
-        QByteArrayLiteral("NOTICE MetaNova :\x01TIME ")));
+    QVERIFY(fixture.wrote(QByteArrayLiteral(
+        "NOTICE bob :\x01VERSION Omairc 0.1.0\x01\r\n")));
+    bool wroteTime = false;
+    for (const QByteArray &frame : fixture.transport->writtenFrames()) {
+        if (frame.startsWith(QByteArrayLiteral("NOTICE alice :\x01TIME ")))
+            wroteTime = true;
+    }
+    QVERIFY(wroteTime);
+}
+
+void SessionTest::rateLimitsCtcpVersionRepliesPerNick()
+{
+    Fixture fixture;
+    StatusCollector status(fixture.session);
+    fixture.connectTls();
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(":server 001 omairc :Welcome\r\n"));
+
+    const QByteArray probe =
+        QByteArrayLiteral(":MetaNova!u@h PRIVMSG omairc :\x01VERSION\x01\r\n");
+    const QByteArray reply =
+        QByteArrayLiteral("NOTICE MetaNova :\x01VERSION Omairc 0.1.0\x01\r\n");
+    const QByteArray otherProbe =
+        QByteArrayLiteral(":alice!u@h PRIVMSG omairc :\x01VERSION\x01\r\n");
+    const QByteArray otherReply =
+        QByteArrayLiteral("NOTICE alice :\x01VERSION Omairc 0.1.0\x01\r\n");
+
+    fixture.transport->injectBytes(probe + probe);
+    QCOMPARE(fixture.transport->writtenFrames().count(reply), 1);
+
+    fixture.transport->injectBytes(otherProbe);
+    QCOMPARE(fixture.transport->writtenFrames().count(otherReply), 1);
+
+    int ctcpEntries = 0;
+    for (const IrcStatusEntry &entry : status.entries) {
+        if (entry.label() == QStringLiteral("CTCP"))
+            ++ctcpEntries;
+    }
+    QCOMPARE(ctcpEntries, 3);
+
+    QTest::qWait(5500);
+    fixture.transport->injectBytes(probe);
+    QCOMPARE(fixture.transport->writtenFrames().count(reply), 2);
+    ctcpEntries = 0;
+    for (const IrcStatusEntry &entry : status.entries) {
+        if (entry.label() == QStringLiteral("CTCP"))
+            ++ctcpEntries;
+    }
+    QCOMPARE(ctcpEntries, 4);
+}
+
+void SessionTest::dropsOversizedCtcpPingPayload()
+{
+    Fixture fixture;
+    StatusCollector status(fixture.session);
+    fixture.connectTls();
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(":server 001 omairc :Welcome\r\n"));
+
+    const QByteArray tooLong(33, 'x');
+    const QByteArray exact(32, 'y');
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(":MetaNova!u@h PRIVMSG omairc :\x01PING ")
+        + tooLong
+        + QByteArrayLiteral("\x01\r\n"));
+
+    QVERIFY(!fixture.wrote(
+        QByteArrayLiteral("NOTICE MetaNova :\x01PING ") + tooLong
+        + QByteArrayLiteral("\x01\r\n")));
+    QVERIFY(!fixture.wrote(
+        QByteArrayLiteral("NOTICE MetaNova :\x01PING ") + QByteArray(32, 'x')
+        + QByteArrayLiteral("\x01\r\n")));
+    QVERIFY(status.hasLabel(QStringLiteral("CTCP")));
+    QVERIFY(status.anyFieldContains(QStringLiteral("PING")));
+
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(":MetaNova!u@h PRIVMSG omairc :\x01PING ")
+        + exact
+        + QByteArrayLiteral("\x01\r\n"));
+    QVERIFY(fixture.wrote(
+        QByteArrayLiteral("NOTICE MetaNova :\x01PING ") + exact
+        + QByteArrayLiteral("\x01\r\n")));
 }
 
 void SessionTest::doesNotAnswerChannelCtcpRequests()
