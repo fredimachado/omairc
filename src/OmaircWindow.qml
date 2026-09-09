@@ -603,8 +603,18 @@ ApplicationWindow {
         var list = consoleVisible ? consoleList : messageList;
         if (!list)
             return;
+        // Detach before the row lays out. A following list resticks to the
+        // end when contentHeight changes, which swallows the jump.
+        list.stick = list.stickDetached;
+        list.pinning = true;
+        var generation = ++list.pinGeneration;
         list.positionViewAtIndex(index, ListView.Beginning);
-        Qt.callLater(function() { list.adoptViewport(); });
+        Qt.callLater(function() {
+            if (generation !== list.pinGeneration)
+                return;
+            list.pinning = false;
+            list.adoptViewport();
+        });
     }
 
     function advanceFind(fromStart) {

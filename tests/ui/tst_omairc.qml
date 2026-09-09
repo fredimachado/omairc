@@ -901,6 +901,11 @@ TestCase {
         var composer = item("messageComposer");
         var list = item("messageList");
         fillMockMessagesUntilScrollable(list);
+        appendMockMessages(list, 24, "find filler");
+        waitForRendering(appWindow.contentItem);
+        list.pinToEnd();
+        waitForRendering(appWindow.contentItem);
+        wait(0);
         var pinnedY = list.contentY;
         verify(pinnedY > 0);
 
@@ -913,10 +918,9 @@ TestCase {
 
         typeText("omarchy");
         compare(composer.text, "omarchy");
-        waitForRendering(appWindow.contentItem);
-        wait(0);
-
-        verify(list.contentY < pinnedY, "Ctrl+F should jump the list to the match");
+        tryVerify(function() {
+            return list.contentY < pinnedY;
+        }, 1000, "Ctrl+F should jump the list to the match");
         var first = visibleMatchIndex(list, "omarchy");
         verify(first >= 0, "The first omarchy row should be in view");
         verify(list.model.get(first).body.toLowerCase().indexOf("omarchy") >= 0);
