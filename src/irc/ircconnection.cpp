@@ -223,7 +223,7 @@ QString IrcConnection::credentialStatus() const
     case CredentialStore::State::Missing:
         if (!m_password.isEmpty())
             return QStringLiteral("password is session-only until applied");
-        return QStringLiteral("password will be requested for this session");
+        return {};
     case CredentialStore::State::Unavailable:
         return QStringLiteral("secure storage unavailable; password is session-only");
     case CredentialStore::State::Error:

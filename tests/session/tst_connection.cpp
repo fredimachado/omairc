@@ -37,6 +37,7 @@ private slots:
     void removingStoredPasswordDoesNotReconnect();
     void forgettingPasswordBeforeRemovingStoredPasswordReportsFailure();
     void missingStoredPasswordWithSessionPasswordIsNotReportedAsMissing();
+    void missingPasswordDoesNotShowCredentialStatus();
     void unavailableCredentialStoreUsesSessionOnlyState();
     void applyDuringCredentialReadMigratesLoadedPassword();
     void startupActivationRecoversAfterCredentialError();
@@ -535,6 +536,24 @@ void ConnectionTest::missingStoredPasswordWithSessionPasswordIsNotReportedAsMiss
     QVERIFY(connection.passwordSet());
     QCOMPARE(connection.credentialStatus(),
              QStringLiteral("password is session-only until applied"));
+}
+
+void ConnectionTest::missingPasswordDoesNotShowCredentialStatus()
+{
+    {
+        IrcController seedController;
+        IrcConnection seed(seedController, capturingFactory());
+        fillCompleteDraft(seed);
+        QVERIFY(seed.apply());
+    }
+
+    IrcController controller;
+    auto *store = new FakeCredentialStore(CredentialStore::State::Missing);
+    IrcConnection connection(controller, capturingFactory(),
+                            [store]() { return store; });
+    QTRY_COMPARE(connection.credentialState(), CredentialStore::State::Missing);
+    QVERIFY(!connection.passwordSet());
+    QCOMPARE(connection.credentialStatus(), QString());
 }
 
 void ConnectionTest::unavailableCredentialStoreUsesSessionOnlyState()

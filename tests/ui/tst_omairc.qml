@@ -1415,6 +1415,21 @@ TestCase {
         window.close();
     }
 
+    function test_forgetPasswordShowsKeyboardFocus() {
+        fakeConnection.canForgetPassword = true;
+        var window = createTemporaryObject(setupWindowComponent, null);
+        verify(window !== null, "The setup window should load");
+        tryCompare(window, "visible", true);
+
+        var forgetPassword = findChild(window, "connectionForgetPassword");
+        verify(forgetPassword !== null, "Could not find connectionForgetPassword");
+        forgetPassword.forceActiveFocus();
+        tryCompare(forgetPassword, "activeFocus", true);
+        verify(forgetPassword.font.underline);
+        window.close();
+        fakeConnection.canForgetPassword = false;
+    }
+
     function liveDirectNames(window) {
         var dms = findChild(window, "directConversationRepeater");
         verify(dms !== null, "Live direct-message repeater should be named");

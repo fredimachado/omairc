@@ -2710,6 +2710,7 @@ ApplicationWindow {
                             color: win.accentColor
                             font.family: "iA Writer Mono S"
                             font.pixelSize: win.scaledSize(10)
+                            font.underline: activeFocus
                             Accessible.role: Accessible.Button
                             Accessible.name: "Forget saved password"
                             Accessible.description: "Remove the saved connection password"
