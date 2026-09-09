@@ -14,6 +14,7 @@
 #include "irctypingpublisher.h"
 
 class IrcChannelModeRequest;
+class IrcJoinTarget;
 
 class IrcReconnectTimer : public QObject
 {
@@ -103,7 +104,7 @@ public slots:
     bool sendChannelMode(const IrcChannelModeRequest& request);
     bool sendAction(const QString& target, const QString& body);
     bool sendTyping(const QString& target, IrcTypingPhase phase);
-    bool join(const QString& channel);
+    bool join(const IrcJoinTarget& target);
     bool part(const QString& channel);
     bool kick(const QString& channel, const QString& nick, const QString& reason = {});
     bool setTopic(const QString& channel, const QString& topic);

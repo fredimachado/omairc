@@ -56,6 +56,8 @@ private slots:
     void rejectsInvalidRegistration();
     void rejectsOutboundInjection();
     void enforcesOutboundBoundary();
+    void buildsJoin();
+    void rejectsInvalidJoin();
 };
 
 void ProtocolTest::parsesTrailingParameters()
@@ -317,6 +319,57 @@ void ProtocolTest::enforcesOutboundBoundary()
 
     result = IrcCommandBuilder::line(std::string(511, 'A'));
     QVERIFY(!result);
+}
+
+void ProtocolTest::buildsJoin()
+{
+    auto result = IrcCommandBuilder::join("#a");
+    QVERIFY(result);
+    QCOMPARE(text(*result.value), QStringLiteral("JOIN #a\r\n"));
+
+    result = IrcCommandBuilder::join("#a", "pword");
+    QVERIFY(result);
+    QCOMPARE(text(*result.value), QStringLiteral("JOIN #a pword\r\n"));
+
+    result = IrcCommandBuilder::join("&local", "secret");
+    QVERIFY(result);
+    QCOMPARE(text(*result.value), QStringLiteral("JOIN &local secret\r\n"));
+}
+
+void ProtocolTest::rejectsInvalidJoin()
+{
+    QVERIFY(!IrcCommandBuilder::join(""));
+    QVERIFY(!IrcCommandBuilder::join("#a b"));
+    QVERIFY(!IrcCommandBuilder::join("#a,b"));
+    QVERIFY(!IrcCommandBuilder::join("#a", "p word"));
+    QVERIFY(!IrcCommandBuilder::join("#a", "x,y"));
+
+    auto unkeyedEmpty = IrcCommandBuilder::join("#a", {});
+    QVERIFY(unkeyedEmpty);
+    QCOMPARE(text(*unkeyedEmpty.value), QStringLiteral("JOIN #a\r\n"));
+
+    std::string withCr = "#a";
+    withCr.push_back('\r');
+    QVERIFY(!IrcCommandBuilder::join(withCr));
+
+    std::string withLf = "#a";
+    withLf.push_back('\n');
+    QVERIFY(!IrcCommandBuilder::join(withLf));
+
+    std::string withNul = "#a";
+    withNul.push_back('\0');
+    QVERIFY(!IrcCommandBuilder::join(withNul));
+
+    std::string keyWithNul = "k";
+    keyWithNul.push_back('\0');
+    keyWithNul += "ey";
+    QVERIFY(!IrcCommandBuilder::join("#a", keyWithNul));
+
+    QVERIFY(!IrcCommandBuilder::join(":chan"));
+    QVERIFY(!IrcCommandBuilder::join("#ok", ":key"));
+
+    const auto tooLong = IrcCommandBuilder::join(std::string(508, 'A'));
+    QVERIFY(!tooLong);
 }
 
 int runProtocolTests(int argc, char **argv)

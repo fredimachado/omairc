@@ -5,7 +5,7 @@ Slash commands let a live session send catalog verbs from the same single-line c
 ## Sub-features
 
 - `slash-mock-chat` posts `/close`, `/away`, `/whois`, and the rest as a `fred` line on `--mock`.
-- `slash-live-dispatch` sends `/me`, `/join`, `/part`, `/nick`, `/quit`, `/clear`, `/close`, `/query`, `/msg`, `/topic`, `/notice`, `/away`, `/back`, `/whois`, and `/mode` when `irc` is bound. `/join` accepts comma- or whitespace-separated channels.
+- `slash-live-dispatch` sends `/me`, `/join`, `/part`, `/nick`, `/quit`, `/clear`, `/close`, `/query`, `/msg`, `/topic`, `/notice`, `/away`, `/back`, `/whois`, and `/mode` when `irc` is bound. `/join` takes comma-separated channels. Whitespace inside one entry is an optional key.
 - `slash-scope` keeps conversation-only verbs off Status (`/me`, `/close`, `/topic`) and refuses empty `/whois` on a channel.
 
 ## How to get to it (user POV)

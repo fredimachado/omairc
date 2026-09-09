@@ -22,6 +22,7 @@ public:
     static IrcBuildResult nick(std::string_view nickname);
     static IrcBuildResult user(std::string_view username, std::string_view realname);
     static IrcBuildResult pass(std::string_view password);
+    static IrcBuildResult join(std::string_view channel, std::string_view key = {});
     static IrcBuildResult registration(std::string_view nickname,
                                        std::string_view username,
                                        std::string_view realname,
