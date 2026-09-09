@@ -4,6 +4,7 @@
 #include <QSignalSpy>
 #include <QTest>
 
+#include <string>
 #include <string_view>
 
 #include "fakeirctransport.h"
