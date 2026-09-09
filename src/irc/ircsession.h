@@ -48,6 +48,7 @@ struct IrcSessionConfig
     int reconnectMaximumDelayMilliseconds = 30000;
     int reconnectMaximumAttempts = 5;
     int capabilityTimeoutMilliseconds = 10000;
+    int pingTimeoutMilliseconds = 60000;
 };
 
 class IrcSession : public QObject
@@ -82,7 +83,8 @@ public:
                IrcTransport *transport,
                IrcReconnectTimer *reconnectTimer = nullptr,
                IrcReconnectTimer *capabilityTimer = nullptr,
-               QObject *parent = nullptr);
+               QObject *parent = nullptr,
+               IrcReconnectTimer *pingTimer = nullptr);
     ~IrcSession() override;
 
     QString networkId() const;
@@ -147,13 +149,25 @@ private:
     void fail(ErrorKind kind, const QString &message, bool reconnect);
     void scheduleReconnect();
     void resetForConnection();
+    void armPingWatchdog();
+    void cancelPingWatchdog();
+    void onPingWatchdogFired();
+    bool pongMatchesWatchdog(const IrcMessage &message) const;
     int reconnectDelay() const;
+
+    enum class PingWatchdog {
+        Off,
+        Watching,
+        Probing,
+    };
 
     const IrcSessionConfig m_config;
     QString m_nick;
     IrcTransport *m_transport;
     IrcReconnectTimer *m_reconnectTimer;
     IrcReconnectTimer *m_capabilityTimer;
+    IrcReconnectTimer *m_pingTimer;
+    PingWatchdog m_pingWatchdog = PingWatchdog::Off;
     IrcFramer m_framer;
     IrcCapabilityNegotiation m_capabilities;
     IrcCapabilitySet m_publishedCapabilities;
