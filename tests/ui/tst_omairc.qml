@@ -59,13 +59,22 @@ TestCase {
         property bool setupRequired: true
         property bool focusPassword: false
 
+        property int setPasswordCalls: 0
+        property string lastSetPassword: ""
+        property int forgetPasswordCalls: 0
+        property int removeStoredPasswordCalls: 0
+
         function setPassword(password) {
+            setPasswordCalls += 1;
+            lastSetPassword = password;
         }
 
         function forgetPassword() {
+            forgetPasswordCalls += 1;
         }
 
         function removeStoredPassword() {
+            removeStoredPasswordCalls += 1;
         }
 
         function apply() {
@@ -1428,6 +1437,40 @@ TestCase {
         verify(forgetPassword.font.underline);
         window.close();
         fakeConnection.canForgetPassword = false;
+    }
+
+    function test_forgetPasswordRemovesStoredCredential() {
+        fakeConnection.canForgetPassword = true;
+        fakeConnection.forgetPasswordCalls = 0;
+        fakeConnection.removeStoredPasswordCalls = 0;
+        var window = createTemporaryObject(setupWindowComponent, null);
+        verify(window !== null, "The setup window should load");
+        tryCompare(window, "visible", true);
+
+        var forgetPassword = findChild(window, "connectionForgetPassword");
+        verify(forgetPassword !== null, "Could not find connectionForgetPassword");
+        mouseClick(forgetPassword);
+        compare(fakeConnection.forgetPasswordCalls, 1);
+        compare(fakeConnection.removeStoredPasswordCalls, 1);
+        window.close();
+        fakeConnection.canForgetPassword = false;
+    }
+
+    function test_incompleteProfileEnterDoesNotCommitPassword() {
+        fakeConnection.setPasswordCalls = 0;
+        fakeConnection.lastSetPassword = "";
+        var window = createTemporaryObject(setupWindowComponent, null);
+        verify(window !== null, "The setup window should load");
+        tryCompare(window, "visible", true);
+
+        var password = findChild(window, "connectionPassword");
+        verify(password !== null, "Could not find connectionPassword");
+        password.forceActiveFocus();
+        password.text = "typed-secret";
+        keyClick(Qt.Key_Return);
+        compare(fakeConnection.setPasswordCalls, 0);
+        compare(fakeConnection.lastSetPassword, "");
+        window.close();
     }
 
     function liveDirectNames(window) {

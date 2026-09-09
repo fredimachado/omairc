@@ -900,7 +900,7 @@ ApplicationWindow {
     }
 
     function submitConnection() {
-        if (!connection)
+        if (!connection || connection.problem.length > 0)
             return;
         connection.setPassword(connectionPassword.text);
         if (connection.apply() && !connection.setupRequired)
@@ -2733,6 +2733,7 @@ ApplicationWindow {
                             }
                             MouseArea {
                                 anchors.fill: parent
+                                hoverEnabled: true
                                 cursorShape: Qt.PointingHandCursor
                                 onClicked: {
                                     parent.forgetSavedPassword();

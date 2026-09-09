@@ -43,8 +43,19 @@ IrcConnection::IrcConnection(IrcController &controller,
     connect(&m_credentialStore, &CredentialStore::readFinished, this,
                 [this](CredentialStore::State state, const QString &password,
                        const QString &message) {
-            if (state != CredentialStore::State::Loading)
+            if (state != CredentialStore::State::Loading) {
                 m_credentialReadInFlight = false;
+                if (m_secretRevision != m_credentialReadRevision) {
+                    if (m_credentialState == CredentialStore::State::Loading) {
+                        m_credentialState = m_password.isEmpty()
+                            ? CredentialStore::State::Missing
+                            : CredentialStore::State::SessionOnly;
+                        emit credentialStateChanged();
+                        emit draftChanged();
+                    }
+                    return;
+                }
+            }
             m_credentialState = state == CredentialStore::State::Unavailable
                     && !m_password.isEmpty()
                 ? CredentialStore::State::SessionOnly : state;
@@ -99,10 +110,15 @@ IrcConnection::IrcConnection(IrcController &controller,
                     }
                 }
             }
-            if (operation.removeKey && state == CredentialStore::State::Available && operation.revision == m_secretRevision) {
-                m_credentialOperations.prepend(
-                    {CredentialOperation::Kind::Remove, *operation.removeKey,
-                     {}, operation.revision, std::nullopt});
+            if (operation.removeKey && state == CredentialStore::State::Available) {
+                const CredentialKey previousKey = *operation.removeKey;
+                if (previousKey.networkId != currentKey.networkId
+                    || previousKey.username != currentKey.username
+                    || previousKey.host != currentKey.host) {
+                    m_credentialOperations.prepend(
+                        {CredentialOperation::Kind::Remove, previousKey,
+                         {}, operation.revision, std::nullopt});
+                }
             }
             processCredentialOperations();
             emit credentialStateChanged();
@@ -114,6 +130,7 @@ IrcConnection::IrcConnection(IrcController &controller,
         m_draft = m_stored;
     if (!m_stored.networkId.isEmpty()) {
         m_credentialReadInFlight = true;
+        m_credentialReadRevision = m_secretRevision;
         m_credentialStore.read(credentialKey(m_stored));
     }
 

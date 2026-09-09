@@ -113,6 +113,7 @@ private:
     IrcProfileStore m_store;
     CredentialStore &m_credentialStore;
     bool m_credentialReadInFlight = false;
+    quint64 m_credentialReadRevision = 0;
     IrcNetworkProfile m_draft;
     IrcNetworkProfile m_stored;
     QString m_password;
