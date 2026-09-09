@@ -1,0 +1,28 @@
+#!/usr/bin/env sh
+set -eu
+
+ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
+
+if command -v qmake6 >/dev/null 2>&1; then
+  QMAKE=qmake6
+elif command -v qmake >/dev/null 2>&1 && qmake -query QT_VERSION | grep -q '^6\.'; then
+  QMAKE=qmake
+else
+  echo "A Qt 6 qmake (qmake6) is required to test omairc." >&2
+  exit 1
+fi
+
+JOBS="$(nproc 2>/dev/null || echo 1)"
+
+mkdir -p "$ROOT/build-tests-san"
+cd "$ROOT/build-tests-san"
+"$QMAKE" "$ROOT/tests/tests.pro" \
+  "QMAKE_CXXFLAGS+=-fsanitize=address,undefined -fno-omit-frame-pointer" \
+  "QMAKE_LFLAGS+=-fsanitize=address,undefined"
+make -j"$JOBS"
+
+# Uninstrumented Qt can report allocator noise as leaks. Fail on real ASan and UBSan hits.
+ASAN_OPTIONS="${ASAN_OPTIONS:-abort_on_error=1:detect_leaks=0}"
+UBSAN_OPTIONS="${UBSAN_OPTIONS:-halt_on_error=1:print_stacktrace=1}"
+export ASAN_OPTIONS UBSAN_OPTIONS
+./protocol_tests
