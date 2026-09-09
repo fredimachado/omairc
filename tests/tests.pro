@@ -1,16 +1,6 @@
 QT += core network testlib
 
-qtkeychain_pri = $$[QT_INSTALL_ARCHDATA]/mkspecs/modules/qt_Qt6Keychain.pri
-exists($$PWD/../.deps/usr/lib/qt6/mkspecs/modules/qt_Qt6Keychain.pri) {
-    qtkeychain_pri = $$PWD/../.deps/usr/lib/qt6/mkspecs/modules/qt_Qt6Keychain.pri
-    INCLUDEPATH += $$PWD/../.deps/usr/include
-    LIBS += -L$$PWD/../.deps/usr/lib
-}
-!exists($$qtkeychain_pri) {
-    error(QtKeychain Qt6 module not found. Install qtkeychain-qt6 or provide .deps/usr/lib/qt6/mkspecs/modules/qt_Qt6Keychain.pri.)
-}
-include($$qtkeychain_pri)
-QT += Qt6Keychain
+include(../qtkeychain.pri)
 QT -= gui
 
 CONFIG += c++17 console testcase

@@ -36,6 +36,9 @@ TestCase {
     QtObject {
         id: fakeConnection
 
+        // Numeric mirror of CredentialStore::State (src/irc/credentialstore.h):
+        // Loading=0, Available=1, Missing=2, Unavailable=3, Error=4,
+        // SessionOnly=5. Keep in sync when the enum changes.
         readonly property int credentialStateUnavailable: 3
         property string host: "irc.libera.chat"
         property int port: 6697
