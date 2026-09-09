@@ -37,6 +37,7 @@ private slots:
     void identicalChannelsStayIsolated();
     void advertisedChannelTypesCreateChannels();
     void unreadMentionsRespectSelection();
+    void mentionArrivalSurvivesSelection();
     void welcomeResetsMembership();
     void awayIsOneFactVisibleInEveryChannel();
     void metadataStatusIsSeparateFromPrefixModes();
@@ -309,6 +310,48 @@ void ReducerTest::unreadMentionsRespectSelection()
     reducer.markSelected(background);
     QCOMPARE(backgroundState->unread, 0);
     QCOMPARE(backgroundState->mentions, 0);
+}
+
+void ReducerTest::mentionArrivalSurvivesSelection()
+{
+    IrcEventReducer reducer;
+    welcome(reducer, networkA);
+    const IrcConversationKey selected =
+        reducer.conversationKey(networkA, QStringLiteral("#selected"));
+    reducer.markSelected(selected);
+
+    reducer.apply(IrcMessageEvent{
+        selected,
+        QStringLiteral("Alice"),
+        QStringLiteral("omairc: ping"),
+        timestamp,
+        QStringLiteral("#selected"),
+    });
+
+    const std::optional<IrcMentionArrival> mention = reducer.takeMentionArrival();
+    QVERIFY(mention.has_value());
+    QCOMPARE(mention->author, QStringLiteral("Alice"));
+    QCOMPARE(mention->body, QStringLiteral("omairc: ping"));
+    QCOMPARE(reducer.find(selected)->mentions, 0);
+    QVERIFY(!reducer.takeMentionArrival().has_value());
+
+    reducer.apply(IrcMessageEvent{
+        selected,
+        QStringLiteral("Alice"),
+        QStringLiteral("no nick here"),
+        timestamp,
+        QStringLiteral("#selected"),
+    });
+    QVERIFY(!reducer.takeMentionArrival().has_value());
+
+    reducer.apply(IrcMessageEvent{
+        selected,
+        QStringLiteral("omairc"),
+        QStringLiteral("omairc: self"),
+        timestamp,
+        QStringLiteral("#selected"),
+    });
+    QVERIFY(!reducer.takeMentionArrival().has_value());
 }
 
 void ReducerTest::welcomeResetsMembership()

@@ -1,11 +1,16 @@
 #include "backend.h"
 
 #include <QColor>
+#include <QDBusConnection>
+#include <QDBusMessage>
+#include <QDBusPendingCall>
 #include <QDir>
 #include <QFile>
 #include <QRect>
 #include <QSettings>
+#include <QStringList>
 #include <QTextStream>
+#include <QVariantMap>
 
 namespace {
 const auto windowGeometrySetting = QStringLiteral("window/geometry");
@@ -43,6 +48,25 @@ void Backend::saveWindowGeometry(int x, int y, int width, int height, bool maxim
     QSettings settings;
     settings.setValue(windowGeometrySetting, QRect(x, y, width, height));
     settings.setValue(QStringLiteral("window/maximized"), maximized);
+}
+
+void Backend::notifyDesktop(const QString &summary, const QString &body) {
+    QDBusMessage call = QDBusMessage::createMethodCall(
+        QStringLiteral("org.freedesktop.Notifications"),
+        QStringLiteral("/org/freedesktop/Notifications"),
+        QStringLiteral("org.freedesktop.Notifications"),
+        QStringLiteral("Notify"));
+    call.setArguments({
+        QStringLiteral("Omairc"),
+        uint(0),
+        QStringLiteral("omairc"),
+        summary,
+        body,
+        QStringList{},
+        QVariantMap{},
+        int(-1),
+    });
+    QDBusConnection::sessionBus().asyncCall(call);
 }
 
 void Backend::setDarkMode(bool darkMode) {

@@ -31,6 +31,9 @@ TestCase {
 
         function saveWindowGeometry(x, y, width, height, maximized) {
         }
+
+        function notifyDesktop(summary, body) {
+        }
     }
 
     QtObject {
@@ -486,6 +489,8 @@ TestCase {
         waitForRendering(appWindow.contentItem);
         appWindow.suppressExternalUrlOpen = true;
         appWindow.lastOpenedUrl = "";
+        appWindow.suppressDesktopNotification = true;
+        appWindow.lastNotification = null;
     }
 
     function cleanup() {
@@ -1393,6 +1398,17 @@ TestCase {
         compare(appWindow.lastOpenedUrl, "https://example.com");
         verify(appWindow.openAllowedUrl("http://example.com"));
         compare(appWindow.lastOpenedUrl, "http://example.com");
+    }
+
+    function test_unfocusedMentionNotifiesOnce() {
+        appWindow.lastNotification = null;
+        appWindow.notifyMentionIfUnfocused(false, "alice", "hey \x02fred");
+        compare(appWindow.lastNotification.author, "alice");
+        compare(appWindow.lastNotification.body, "hey fred");
+
+        appWindow.lastNotification = null;
+        appWindow.notifyMentionIfUnfocused(true, "alice", "hey fred");
+        compare(appWindow.lastNotification, null);
     }
 
     function test_messageBodyClickOpensHttpsUrl() {

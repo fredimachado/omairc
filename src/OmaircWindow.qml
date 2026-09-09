@@ -119,6 +119,8 @@ ApplicationWindow {
     property int nickCompleteOrigin: -1
     property string lastOpenedUrl: ""
     property bool suppressExternalUrlOpen: false
+    property var lastNotification: null
+    property bool suppressDesktopNotification: false
     property var allowedUrlSchemes: ({ "http": true, "https": true })
 
     Material.theme: darkMode ? Material.Dark : Material.Light
@@ -253,6 +255,16 @@ ApplicationWindow {
 
     function openHttpUrlAt(text, index) {
         return openAllowedUrl(httpUrlAt(text, index));
+    }
+
+    function notifyMentionIfUnfocused(windowActive, author, body) {
+        if (windowActive)
+            return;
+        var text = plainIrcText(body);
+        lastNotification = { author: author, body: text };
+        if (suppressDesktopNotification)
+            return;
+        backend.notifyDesktop(author, text);
     }
 
     function topicFor(name) {
@@ -1125,6 +1137,14 @@ ApplicationWindow {
                 win.connectionSheetOpen = true;
                 connectionPassword.focusInput();
             }
+        }
+    }
+
+    Connections {
+        target: win.irc
+        ignoreUnknownSignals: true
+        function onMentionArrived(author, body) {
+            win.notifyMentionIfUnfocused(win.active, author, body);
         }
     }
 
