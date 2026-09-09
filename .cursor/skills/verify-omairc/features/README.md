@@ -54,3 +54,4 @@ Keep implementation details out of the map. Name only user paths, stable handles
 - [Slash complete](./slash-complete.md) covers the composer slash-command list for `/` plus a character, Tab insert, Escape dismiss, and Up/Down.
 - [Typing](./typing.md) covers bouncing ellipsis on channel members and in direct messages, plus the `message-tags` gate.
 - [Slash commands](./slash-commands.md) covers live catalog verbs from the composer. Mock treats them as chat except `/me `.
+- [Incoming direct reply](./incoming-direct-reply.md) covers a live inbound DM, opening that chat, and a composer reply the peer receives.
