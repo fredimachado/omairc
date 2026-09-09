@@ -681,6 +681,11 @@ void IrcSession::handleMessage(const IrcMessage &message)
 {
     emit statusEntry(IrcStatusEntry::incoming(m_config.networkId, message));
 
+    if (message.command == "BATCH") {
+        handleBatch(message);
+        return;
+    }
+
     if (message.command == "PING") {
         if (message.parameters.empty()) {
             emit errorOccurred(m_config.networkId,
@@ -810,6 +815,20 @@ void IrcSession::handleMessage(const IrcMessage &message)
         probeChannelAway(parameter(message, 1));
 
     emit messageReceived(m_config.networkId, message);
+}
+
+void IrcSession::handleBatch(const IrcMessage &message)
+{
+    if (message.parameters.empty())
+        return;
+    const QString token = parameter(message, 0);
+    if (token.size() < 2)
+        return;
+    const QString reference = token.mid(1);
+    if (token.startsWith(QLatin1Char('+')))
+        m_openBatches.insert(reference);
+    else if (token.startsWith(QLatin1Char('-')))
+        m_openBatches.remove(reference);
 }
 
 void IrcSession::handleCap(const IrcMessage &message)
@@ -980,6 +999,7 @@ void IrcSession::beginReconnectAttempt()
 void IrcSession::resetForConnection()
 {
     m_framer = IrcFramer{};
+    m_openBatches.clear();
     m_nick = m_config.nick;
     m_registrationSent = false;
     m_registrationNick = RegistrationNick::Configured;

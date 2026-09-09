@@ -3,6 +3,7 @@
 #include <QElapsedTimer>
 #include <QHash>
 #include <QObject>
+#include <QSet>
 #include <QString>
 #include <QStringList>
 #include <QTimer>
@@ -158,6 +159,7 @@ private:
     void sendLine(const QByteArray &line);
     void handleBytes(const QByteArray &bytes);
     void handleMessage(const IrcMessage &message);
+    void handleBatch(const IrcMessage &message);
     bool allowCtcpReply(const QString &nick);
     void handleCap(const IrcMessage &message);
     void handleAuthenticate(const IrcMessage &message);
@@ -197,6 +199,7 @@ private:
     IrcCapabilityNegotiation m_capabilities;
     IrcCapabilitySet m_publishedCapabilities;
     IrcTypingPublisher m_typing;
+    QSet<QString> m_openBatches;
     QHash<QString, QElapsedTimer> m_ctcpReplyClock;
     State m_state = State::Idle;
     bool m_expectedDisconnect = false;

@@ -194,6 +194,9 @@ private slots:
     void welcomeAssignsNickFrom001();
     void emptyWelcomeKeepsConfigNick();
     void selfNickUpdatesSessionNick();
+    void batchOpenAndCloseDoNotEmitBatchLines();
+    void nestedBatchesDoNotFailTheSession();
+    void unknownBatchTypeAndCloseStayRegistered();
 };
 
 void SessionTest::registersAndAutojoins()
@@ -1631,6 +1634,77 @@ void SessionTest::selfNickUpdatesSessionNick()
     fixture.transport->injectBytes(
         QByteArrayLiteral(":omairc-truncated!u@h NICK :fred\r\n"));
     QCOMPARE(fixture.session->nick(), QStringLiteral("fred"));
+}
+
+void SessionTest::batchOpenAndCloseDoNotEmitBatchLines()
+{
+    Fixture fixture;
+    StatusCollector status(fixture.session);
+    QStringList commands;
+    QObject::connect(fixture.session, &IrcSession::messageReceived, fixture.session,
+                     [&](const QString&, const IrcMessage& message) {
+        commands.append(QString::fromStdString(message.command));
+    });
+    fixture.registerWithWelcome();
+
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(
+            ":irc.host BATCH +ns netsplit irc.example irc.other\r\n"
+            "@batch=ns :alice!u@h PRIVMSG #omarchy :still here\r\n"
+            ":irc.host BATCH -ns\r\n"));
+
+    QCOMPARE(commands, QStringList{QStringLiteral("PRIVMSG")});
+    QVERIFY(status.hasLabel(QStringLiteral("BATCH")));
+    QCOMPARE(fixture.session->state(), IrcSession::State::Registered);
+}
+
+void SessionTest::nestedBatchesDoNotFailTheSession()
+{
+    Fixture fixture;
+    QSignalSpy errors(fixture.session, &IrcSession::errorOccurred);
+    QStringList commands;
+    QObject::connect(fixture.session, &IrcSession::messageReceived, fixture.session,
+                     [&](const QString&, const IrcMessage& message) {
+        commands.append(QString::fromStdString(message.command));
+    });
+    fixture.registerWithWelcome();
+
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(
+            ":irc.host BATCH +outer netsplit irc.a irc.b\r\n"
+            "@batch=outer :irc.host BATCH +inner netjoin irc.a irc.b\r\n"
+            "@batch=inner :alice!u@h PRIVMSG #omarchy :Hi\r\n"
+            "@batch=outer :irc.host BATCH -inner\r\n"
+            ":irc.host BATCH -outer\r\n"));
+
+    QCOMPARE(errors.size(), 0);
+    QCOMPARE(commands, QStringList{QStringLiteral("PRIVMSG")});
+    QCOMPARE(fixture.session->state(), IrcSession::State::Registered);
+}
+
+void SessionTest::unknownBatchTypeAndCloseStayRegistered()
+{
+    Fixture fixture;
+    QSignalSpy errors(fixture.session, &IrcSession::errorOccurred);
+    QStringList commands;
+    QObject::connect(fixture.session, &IrcSession::messageReceived, fixture.session,
+                     [&](const QString&, const IrcMessage& message) {
+        commands.append(QString::fromStdString(message.command));
+    });
+    fixture.registerWithWelcome();
+
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(
+            ":irc.host BATCH +x unknown.example/foo\r\n"
+            "@batch=x :alice!u@h PRIVMSG #omarchy :delivered\r\n"
+            ":irc.host BATCH -x\r\n"
+            ":irc.host BATCH -missing\r\n"
+            ":bob!u@h PRIVMSG #omarchy :after\r\n"));
+
+    QCOMPARE(errors.size(), 0);
+    QCOMPARE(commands, QStringList({QStringLiteral("PRIVMSG"),
+                                    QStringLiteral("PRIVMSG")}));
+    QCOMPARE(fixture.session->state(), IrcSession::State::Registered);
 }
 
 int runSessionTests(int argc, char **argv)
