@@ -41,4 +41,5 @@ private:
     std::optional<IrcConversationKey> m_selected;
     std::optional<IrcConversationKey> m_loaded;
     int m_count = 0;
+    int m_trimmed = 0;
 };
