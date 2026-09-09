@@ -1,0 +1,176 @@
+#!/usr/bin/env sh
+set -eu
+
+ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
+CTRL="$ROOT/.cursor/skills/verify-omairc/control-omairc"
+COMPOSE_FILE="$ROOT/tests/live/compose.yml"
+export COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME:-omairc-ui-dm-$$}"
+NICK=omau
+PEER=uireply
+FEATURE=incoming-direct-reply
+PEER_LOG="$ROOT/test-artifacts/verify/$FEATURE/peer.log"
+PEER_PID=
+
+compose() {
+  docker compose -f "$COMPOSE_FILE" --profile ergo "$@"
+}
+
+cleanup() {
+  if [ -n "$PEER_PID" ] && kill -0 "$PEER_PID" 2>/dev/null; then
+    kill "$PEER_PID" 2>/dev/null || true
+    wait "$PEER_PID" 2>/dev/null || true
+  fi
+  "$CTRL" cleanup >/dev/null 2>&1 || true
+  compose down -v --remove-orphans >/dev/null 2>&1 || true
+}
+trap cleanup EXIT HUP INT TERM
+
+die() {
+  echo "$1" >&2
+  "$CTRL" screenshot --feature "$FEATURE" --name failed 2>/dev/null || true
+  exit 1
+}
+
+wait_title() {
+  expected=$1
+  attempt=0
+  while [ "$attempt" -lt 40 ]; do
+    title="$("$CTRL" title 2>/dev/null || true)"
+    if [ "$title" = "$expected" ]; then
+      echo "$title"
+      return 0
+    fi
+    attempt=$((attempt + 1))
+    sleep 0.25
+  done
+  die "expected title '$expected', got '$title'"
+}
+
+published_port() {
+  i=0
+  while [ "$i" -lt 80 ]; do
+    port="$(compose port ergo 6667 2>/dev/null | awk -F: '{print $NF}' || true)"
+    case "$port" in
+      ''|*[!0-9]*) ;;
+      *)
+        echo "$port"
+        return 0
+        ;;
+    esac
+    i=$((i + 1))
+    sleep 0.25
+  done
+  die "Ergo did not publish port 6667"
+}
+
+wait_irc() {
+  host=$1
+  port=$2
+  python3 - "$host" "$port" <<'PY' || die "no IRC banner from $1:$2"
+import socket, sys, time
+host, port = sys.argv[1], int(sys.argv[2])
+deadline = time.time() + 60
+while time.time() < deadline:
+    try:
+        with socket.create_connection((host, port), 2) as sock:
+            sock.settimeout(2)
+            sock.sendall(b"CAP LS 302\r\n")
+            buf = b""
+            end = time.time() + 6
+            while time.time() < end:
+                try:
+                    chunk = sock.recv(4096)
+                except socket.timeout:
+                    continue
+                if not chunk:
+                    break
+                buf += chunk
+                if b"CAP" in buf.upper() or b" 001 " in buf:
+                    sys.exit(0)
+    except OSError:
+        pass
+    time.sleep(1)
+sys.exit(1)
+PY
+}
+
+command -v docker >/dev/null 2>&1 || die "Docker is required to run the live UI DM test."
+docker compose version >/dev/null 2>&1 || die "docker compose is required to run the live UI DM test."
+[ -x "$CTRL" ] || die "missing $CTRL"
+
+mkdir -p "$ROOT/test-artifacts/verify/$FEATURE"
+
+echo "Starting Ergo (project $COMPOSE_PROJECT_NAME)..."
+compose up -d
+PORT="$(published_port)"
+HOST=127.0.0.1
+wait_irc "$HOST" "$PORT"
+
+export OMAIRC_ALLOW_MULTI=1
+"$CTRL" cleanup >/dev/null 2>&1 || true
+"$CTRL" launch >/dev/null
+"$CTRL" doctor >/dev/null
+
+"$CTRL" screenshot --feature "$FEATURE" --name first-run
+"$CTRL" click --x 590 --y 165
+"$CTRL" key --key ctrl+a
+"$CTRL" type --text "$HOST"
+"$CTRL" key --key Tab
+"$CTRL" key --key ctrl+a
+"$CTRL" type --text "$PORT"
+"$CTRL" key --key Tab
+"$CTRL" key --key space
+"$CTRL" key --key Tab
+"$CTRL" type --text "$NICK"
+"$CTRL" screenshot --feature "$FEATURE" --name form-ready
+"$CTRL" click --x 857 --y 637
+wait_title "#omarchy - Omairc"
+"$CTRL" screenshot --feature "$FEATURE" --name after-connect
+
+python3 -u "$ROOT/tests/live/ui_peer.py" "$HOST" "$PORT" "$PEER" "$NICK" \
+  >"$PEER_LOG" 2>&1 &
+PEER_PID=$!
+
+python3 - "$PEER_LOG" <<'PY'
+import sys, time
+path = sys.argv[1]
+deadline = time.time() + 12
+while time.time() < deadline:
+    try:
+        text = open(path, encoding="utf-8", errors="replace").read()
+    except OSError:
+        time.sleep(0.2)
+        continue
+    if "PEER_SENT_DM" in text:
+        sys.exit(0)
+    time.sleep(0.2)
+sys.stderr.write("peer did not send the inbound DM\n")
+sys.exit(1)
+PY
+
+sleep 0.4
+"$CTRL" screenshot --feature "$FEATURE" --name after-dm
+"$CTRL" key --key alt+Down
+wait_title "$PEER - Omairc"
+"$CTRL" screenshot --feature "$FEATURE" --name after-select
+"$CTRL" send --text "dm reply from ui"
+"$CTRL" screenshot --feature "$FEATURE" --name after-send
+
+python3 - "$PEER_LOG" <<'PY'
+import sys, time
+path = sys.argv[1]
+deadline = time.time() + 10
+while time.time() < deadline:
+    text = open(path, encoding="utf-8", errors="replace").read()
+    if "PEER_GOT_REPLY" in text:
+        sys.exit(0)
+    time.sleep(0.2)
+sys.stderr.write(open(path, encoding="utf-8", errors="replace").read())
+sys.stderr.write("peer did not receive the UI reply\n")
+sys.exit(1)
+PY
+
+"$CTRL" compare --before "$ROOT/test-artifacts/verify/$FEATURE/after-select.png" \
+  --after "$ROOT/test-artifacts/verify/$FEATURE/after-send.png"
+
+echo "Live UI incoming DM reply passed. Screenshots: test-artifacts/verify/$FEATURE/"

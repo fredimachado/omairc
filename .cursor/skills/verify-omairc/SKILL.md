@@ -1,6 +1,6 @@
 ---
 name: verify-omairc
-description: Drive the Omairc Qt desktop prototype as a user would (isolated Xvfb + compiled binary). Use when proving the first-run Connect sheet, Status console, channel switching, sending local messages, the member panel, member presence, typing, the identity footer, keyboard shortcuts, closing a direct message, slash commands, slash-command complete, or opening a direct message.
+description: Drive the Omairc Qt desktop prototype as a user would (isolated Xvfb + compiled binary). Use when proving the first-run Connect sheet, Status console, channel switching, sending local messages, the member panel, member presence, typing, the identity footer, keyboard shortcuts, closing a direct message, slash commands, slash-command complete, opening a direct message, or replying to an incoming live DM.
 ---
 
 # Verify Omairc
@@ -174,5 +174,7 @@ cleanup
 `click-send` assumes the member panel is open (channel, members visible, width >= 980). Prefer `send --text` / `Enter`.
 `click-people` assumes the member column is open. After it hides, use `click-people --hidden`.
 `key --key ctrl+slash` maps to `Control_L+slash`. `ctrl+shift+m` and `ctrl+shift+p` map to `Control_L+Shift_L+m` / `p`. xdotool's shorter tokens do not reach those Qt shortcuts on the isolated Xvfb.
+
+A live inbound DM reply against Ergo is `bin/test-live-ui`. That runner launches the compiled window through `control-omairc`, so do not start a second isolated instance first.
 
 If Xvfb tools are missing, install `xorg-server-xvfb xorg-xauth xdotool imagemagick` before using this skill. `bin/test` can still run the offscreen QML suite without those packages.
