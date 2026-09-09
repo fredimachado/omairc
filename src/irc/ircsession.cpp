@@ -2,6 +2,7 @@
 
 #include "ircchannelmode.h"
 #include "irccommandbuilder.h"
+#include "ircjointarget.h"
 #include "ircparser.h"
 #include "ircpresence.h"
 #include "irctcp.h"
@@ -24,6 +25,12 @@ QByteArray builtLine(const IrcBuildResult &result)
     if (!result)
         return {};
     return QByteArray(result.value->data(), qsizetype(result.value->size()));
+}
+
+std::string utf8(const QString &value)
+{
+    const QByteArray bytes = value.toUtf8();
+    return std::string(bytes.constData(), std::size_t(bytes.size()));
 }
 
 QString parameter(const IrcMessage &message, std::size_t index)
@@ -330,10 +337,17 @@ bool IrcSession::sendTyping(const QString& target, IrcTypingPhase phase)
     return true;
 }
 
-bool IrcSession::join(const QString& channel)
+bool IrcSession::join(const IrcJoinTarget& target)
 {
-    return !channel.isEmpty()
-        && sendCommand(QStringLiteral("JOIN %1").arg(channel));
+    if (m_state != State::Registered)
+        return false;
+    const std::string channel = utf8(target.channel());
+    const std::string key = target.hasKey() ? utf8(*target.key()) : std::string();
+    const QByteArray line = builtLine(IrcCommandBuilder::join(channel, key));
+    if (line.isEmpty())
+        return false;
+    sendLine(line);
+    return true;
 }
 
 bool IrcSession::part(const QString& channel)
@@ -776,15 +790,12 @@ void IrcSession::handleWelcome(const IrcMessage &message)
     emit registered(m_config.networkId);
     subscribeToMemberMetadata();
     for (const QString &channel : m_config.autojoinChannels) {
-        const IrcBuildResult join = IrcCommandBuilder::line(
-            QStringLiteral("JOIN %1").arg(channel).toStdString());
-        if (!join) {
+        const std::optional<IrcJoinTarget> target = IrcJoinTarget::make(channel);
+        if (!target || !join(*target)) {
             emit errorOccurred(m_config.networkId,
                                ErrorKind::Protocol,
                                QStringLiteral("Invalid autojoin channel"));
-            continue;
         }
-        sendLine(builtLine(join));
     }
 }
 

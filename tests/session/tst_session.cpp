@@ -8,6 +8,7 @@
 
 #include "fakeirctransport.h"
 #include "irceventtranslator.h"
+#include "ircjointarget.h"
 #include "ircparser.h"
 #include "ircserverfeatures.h"
 #include "ircsession.h"
@@ -138,6 +139,7 @@ private slots:
     void managerDiscardUnregistersImmediately();
     void pingAndWelcomeProduceStatusEntries();
     void configuredPasswordNeverAppearsInStatusEntries();
+    void keyedJoinIsRedactedInStatusEntries();
     void sendPrivmsgValidatesTarget();
     void setTopicIsSetOnly();
     void kickWritesOptionalReason();
@@ -790,6 +792,34 @@ void SessionTest::configuredPasswordNeverAppearsInStatusEntries()
             QCOMPARE(entry.text(), entry.label() + QStringLiteral(" ***"));
         }
     }
+}
+
+void SessionTest::keyedJoinIsRedactedInStatusEntries()
+{
+    Fixture fixture;
+    StatusCollector status(fixture.session);
+    fixture.connectTls();
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
+                          ":server 001 omairc :Welcome\r\n"));
+
+    const auto target = IrcJoinTarget::make(QStringLiteral("#secret"),
+                                            QStringLiteral("hunter2"));
+    QVERIFY(target);
+    QVERIFY(fixture.session->join(*target));
+    QCOMPARE(fixture.transport->writtenFrames().last(),
+             QByteArrayLiteral("JOIN #secret hunter2\r\n"));
+    QVERIFY(status.anyFieldContains(QStringLiteral("JOIN #secret ***")));
+    QVERIFY(!status.anyFieldContains(QStringLiteral("hunter2")));
+
+    const IrcStatusEntry unkeyed = IrcStatusEntry::outgoing(
+        QStringLiteral("network-a"), QByteArrayLiteral("JOIN #omarchy\r\n"));
+    QCOMPARE(unkeyed.text(), QStringLiteral("JOIN #omarchy"));
+
+    const IrcStatusEntry keyed = IrcStatusEntry::outgoing(
+        QStringLiteral("network-a"), QByteArrayLiteral("JOIN #secret hunter2\r\n"));
+    QCOMPARE(keyed.text(), QStringLiteral("JOIN #secret ***"));
+    QVERIFY(!keyed.text().contains(QStringLiteral("hunter2")));
 }
 
 void SessionTest::sendPrivmsgValidatesTarget()
