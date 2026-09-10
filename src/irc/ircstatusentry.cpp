@@ -132,6 +132,8 @@ struct FormattedWhois
 {
     QString label;
     QString text;
+    QString nick;
+    bool terminal = false;
 };
 
 constexpr IrcWhoisNumericSpec kWhoisNumerics[] = {
@@ -269,6 +271,8 @@ std::optional<FormattedWhois> formatWhois(const IrcMessage& message)
     return FormattedWhois{
         spec->label ? QString::fromLatin1(spec->label) : command,
         text,
+        parameterAt(params, 1),
+        spec->code == 318 || spec->code == 401 || spec->code == 402,
     };
 }
 
@@ -397,18 +401,47 @@ QString firstToken(QStringView line)
 }
 }
 
+IrcWhoisLine::IrcWhoisLine(QString nick, QString text, Progress progress)
+    : m_nick(std::move(nick))
+    , m_text(std::move(text))
+    , m_progress(progress)
+{
+}
+
+const QString& IrcWhoisLine::nick() const noexcept
+{
+    return m_nick;
+}
+
+const QString& IrcWhoisLine::text() const noexcept
+{
+    return m_text;
+}
+
+IrcWhoisLine::Progress IrcWhoisLine::progress() const noexcept
+{
+    return m_progress;
+}
+
+bool IrcWhoisLine::terminal() const noexcept
+{
+    return m_progress == Progress::Terminal;
+}
+
 IrcStatusEntry::IrcStatusEntry(QString networkId,
                                QDateTime timestamp,
                                IrcLogSource source,
                                IrcLogSeverity severity,
                                QString label,
-                               QString text)
+                               QString text,
+                               std::optional<IrcWhoisLine> whoisLine)
     : m_networkId(std::move(networkId))
     , m_timestamp(std::move(timestamp))
     , m_source(source)
     , m_severity(severity)
     , m_label(std::move(label))
     , m_text(std::move(text))
+    , m_whoisLine(std::move(whoisLine))
 {
 }
 
@@ -433,12 +466,21 @@ IrcStatusEntry IrcStatusEntry::incoming(const QString& networkId, const IrcMessa
         }
     }
     if (const auto formatted = formatWhois(message)) {
+        std::optional<IrcWhoisLine> line;
+        if (!formatted->nick.isEmpty() && !formatted->text.isEmpty()) {
+            line = IrcWhoisLine(
+                formatted->nick,
+                formatted->text,
+                formatted->terminal ? IrcWhoisLine::Progress::Terminal
+                                    : IrcWhoisLine::Progress::Detail);
+        }
         return IrcStatusEntry(networkId,
                               QDateTime::currentDateTimeUtc(),
                               IrcLogSource::Server,
                               severityFor(command),
                               formatted->label,
-                              formatted->text);
+                              formatted->text,
+                              std::move(line));
     }
     if (const auto parts = parseIncomingNotice(message)) {
         const IrcNoticeStatusCopy copy = presentIncomingNotice(*parts);
@@ -532,4 +574,9 @@ QString IrcStatusEntry::label() const
 QString IrcStatusEntry::text() const
 {
     return m_text;
+}
+
+const IrcWhoisLine *IrcStatusEntry::whoisLine() const noexcept
+{
+    return m_whoisLine ? &*m_whoisLine : nullptr;
 }
