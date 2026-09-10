@@ -137,6 +137,11 @@ private:
     };
     struct IrcWhoisStatusOnly {};
     using IrcWhoisDestination = std::variant<IrcWhoisStatusOnly, IrcConversationKey>;
+    struct IrcWhoisWatch
+    {
+        IrcWhoisDestination destination;
+        bool deliveryErrorPending = false;
+    };
 
     void apply(const IrcEvent& event);
     void adoptReducerSelection();
@@ -167,6 +172,7 @@ private:
     bool sendWhois(IrcSession& session,
                    const QString& nick,
                    IrcWhoisDestination destination);
+    void noteNickDelivery(const QString& networkId, const QString& target);
     void handleStatusEntry(const IrcStatusEntry& entry);
     void routeWhoisLine(const QString& networkId, const IrcWhoisLine& line);
     void forgetWhoisWatches(const QString& networkId);
@@ -207,5 +213,5 @@ private:
     QTimer m_typingRefresh;
     QString m_composerDraft;
     QString m_typingTarget;
-    std::map<IrcWhoisWatchKey, IrcWhoisDestination> m_whoisWatches;
+    std::map<IrcWhoisWatchKey, IrcWhoisWatch> m_whoisWatches;
 };

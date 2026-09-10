@@ -266,6 +266,7 @@ private slots:
     void emptyChannelWhoisNamesANick();
     void emptyDirectWhoisDefaultsAndRoutes();
     void terminalWhoisClearsWatch();
+    void failedPrivmsgDoesNotStealWhoisWatch();
     void closedDirectWhoisDoesNotResurrect();
     void whoisEventDoesNotCollapseWithJoin();
 };
@@ -3061,6 +3062,41 @@ void ControllerTest::terminalWhoisClearsWatch()
     QCOMPARE(selectedBodies(messages), after402);
     QVERIFY(logContains(controller.console()->lines(),
                         QStringLiteral("ghost is ~g@h (Ghost)")));
+}
+
+void ControllerTest::failedPrivmsgDoesNotStealWhoisWatch()
+{
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+                                                 transport);
+    QVERIFY(session);
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    transport->completeConnect();
+    transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
+                          ":server 001 omairc :Welcome\r\n"
+                          ":omairc!u@h JOIN :#omarchy\r\n"));
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
+    QVERIFY(messages);
+
+    QVERIFY(controller.sendMessage(QStringLiteral("/whois lena")));
+    QVERIFY(controller.sendMessage(QStringLiteral("/msg lena hello")));
+    QCOMPARE(transport->writtenFrames().last(),
+             QByteArrayLiteral("PRIVMSG lena :hello\r\n"));
+
+    transport->injectBytes(
+        QByteArrayLiteral(":irc 401 omairc lena :No such nick/channel\r\n"));
+    QVERIFY(!selectedBodiesContain(messages, QStringLiteral("No such nick: lena")));
+    QVERIFY(logContains(controller.console()->lines(),
+                        QStringLiteral("No such nick: lena")));
+
+    transport->injectBytes(
+        QByteArrayLiteral(":irc 311 omairc lena ~lena user/host * :Lena\r\n"
+                          ":irc 318 omairc lena :End of /WHOIS list.\r\n"));
+    QVERIFY(hasWhoisBody(messages, QStringLiteral("lena is ~lena@user/host (Lena)")));
+    QVERIFY(hasWhoisBody(messages, QStringLiteral("End of WHOIS for lena")));
 }
 
 void ControllerTest::closedDirectWhoisDoesNotResurrect()

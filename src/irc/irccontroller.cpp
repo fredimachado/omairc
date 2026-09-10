@@ -622,6 +622,7 @@ bool IrcController::sendToTarget(const QString &networkId,
         return false;
     }
 
+    noteNickDelivery(networkId, target);
     echoIfPresent(session, target, text, QuietWire::Privmsg);
     unawayAfterChat(session);
     setLastError(networkId, {});
@@ -648,6 +649,7 @@ IrcCommandOutcome IrcController::dispatch(const IrcCommand& command,
             return IrcCommandOutcome::WrongScope;
         const bool sent = session->sendAction(selectedTarget(), command.argument);
         if (sent) {
+            noteNickDelivery(session->networkId(), selectedTarget());
             echoLocal(IrcMessageKind::Action, command.argument);
             m_typingTarget.clear();
             unawayAfterChat(session);
@@ -782,6 +784,7 @@ IrcCommandOutcome IrcController::sendSelectedMessage(const QString& body)
         return IrcCommandOutcome::WrongScope;
     const bool sent = session->sendPrivmsg(selectedTarget(), body);
     if (sent) {
+        noteNickDelivery(session->networkId(), selectedTarget());
         echoLocal(IrcMessageKind::Message, body);
         m_typingTarget.clear();
         unawayAfterChat(session);
@@ -927,6 +930,7 @@ IrcCommandOutcome IrcController::dispatchQuietSend(const IrcCommand& command,
     if (!sent)
         return IrcCommandOutcome::Refused;
 
+    noteNickDelivery(networkId, target);
     echoIfPresent(session, target, body, spec->wire);
     if (spec->wire == QuietWire::Privmsg)
         unawayAfterChat(session);
@@ -1023,8 +1027,21 @@ bool IrcController::sendWhois(IrcSession& session,
 
     if (!session.whois(nick))
         return false;
-    m_whoisWatches.insert_or_assign(*key, std::move(destination));
+    m_whoisWatches.insert_or_assign(*key, IrcWhoisWatch{std::move(destination)});
     return true;
+}
+
+void IrcController::noteNickDelivery(const QString& networkId, const QString& target)
+{
+    if (m_reducer.serverFeatures(networkId).isChannel(utf8(target)))
+        return;
+    const std::optional<IrcWhoisWatchKey> key = whoisWatchKey(networkId, target);
+    if (!key)
+        return;
+    auto found = m_whoisWatches.find(*key);
+    if (found == m_whoisWatches.end())
+        return;
+    found->second.deliveryErrorPending = true;
 }
 
 void IrcController::handleStatusEntry(const IrcStatusEntry& entry)
@@ -1042,7 +1059,13 @@ void IrcController::routeWhoisLine(const QString& networkId, const IrcWhoisLine&
     if (found == m_whoisWatches.end())
         return;
 
-    const IrcWhoisDestination destination = found->second;
+    if (line.progress() == IrcWhoisLine::Progress::Failed
+        && found->second.deliveryErrorPending) {
+        found->second.deliveryErrorPending = false;
+        return;
+    }
+
+    const IrcWhoisDestination destination = found->second.destination;
     if (line.terminal())
         m_whoisWatches.erase(found);
 

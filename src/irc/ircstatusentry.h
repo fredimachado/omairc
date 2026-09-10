@@ -13,7 +13,7 @@ enum class IrcLogSeverity { Trace, Info, Alert };
 class IrcWhoisLine final
 {
 public:
-    enum class Progress { Detail, Terminal };
+    enum class Progress { Detail, Terminal, Failed };
 
     const QString& nick() const noexcept;
     const QString& text() const noexcept;

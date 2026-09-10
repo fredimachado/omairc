@@ -133,7 +133,7 @@ struct FormattedWhois
     QString label;
     QString text;
     QString nick;
-    bool terminal = false;
+    IrcWhoisLine::Progress progress = IrcWhoisLine::Progress::Detail;
 };
 
 constexpr IrcWhoisNumericSpec kWhoisNumerics[] = {
@@ -268,11 +268,17 @@ std::optional<FormattedWhois> formatWhois(const IrcMessage& message)
     }
     }
 
+    IrcWhoisLine::Progress progress = IrcWhoisLine::Progress::Detail;
+    if (spec->code == 318)
+        progress = IrcWhoisLine::Progress::Terminal;
+    else if (spec->code == 401 || spec->code == 402)
+        progress = IrcWhoisLine::Progress::Failed;
+
     return FormattedWhois{
         spec->label ? QString::fromLatin1(spec->label) : command,
         text,
         parameterAt(params, 1),
-        spec->code == 318 || spec->code == 401 || spec->code == 402,
+        progress,
     };
 }
 
@@ -425,7 +431,7 @@ IrcWhoisLine::Progress IrcWhoisLine::progress() const noexcept
 
 bool IrcWhoisLine::terminal() const noexcept
 {
-    return m_progress == Progress::Terminal;
+    return m_progress != Progress::Detail;
 }
 
 IrcStatusEntry::IrcStatusEntry(QString networkId,
@@ -469,10 +475,7 @@ IrcStatusEntry IrcStatusEntry::incoming(const QString& networkId, const IrcMessa
         std::optional<IrcWhoisLine> line;
         if (!formatted->nick.isEmpty() && !formatted->text.isEmpty()) {
             line = IrcWhoisLine(
-                formatted->nick,
-                formatted->text,
-                formatted->terminal ? IrcWhoisLine::Progress::Terminal
-                                    : IrcWhoisLine::Progress::Detail);
+                formatted->nick, formatted->text, formatted->progress);
         }
         return IrcStatusEntry(networkId,
                               QDateTime::currentDateTimeUtc(),
