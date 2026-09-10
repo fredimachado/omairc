@@ -212,6 +212,7 @@ private slots:
     void incomingNickservPrivmsgDoesNotOpenDirect();
     void statusMsgNickservIdentifyDoesNotOpenDirect();
     void mentionArrivedOnSelectedBuffer();
+    void mentionArrivedOnDirectMessageWithoutNick();
     void chghostLeavesMemberNickAndRanks();
     void twoSessionsStartTogether();
     void startingBackgroundNetworkDoesNotStealStatus();
@@ -2475,6 +2476,40 @@ void ControllerTest::mentionArrivedOnSelectedBuffer()
     QCOMPARE(spy.count(), 2);
     QCOMPARE(spy.at(1).at(0).toString(), QStringLiteral("Alice"));
     QCOMPARE(spy.at(1).at(1).toString(), QStringLiteral("pokes omairc"));
+}
+
+void ControllerTest::mentionArrivedOnDirectMessageWithoutNick()
+{
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+                                                transport);
+    QVERIFY(session);
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    transport->completeConnect();
+    transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
+                          ":server 001 omairc :Welcome\r\n"
+                          ":omairc!u@h JOIN :#omarchy\r\n"));
+    QCOMPARE(controller.selectedTarget(), QStringLiteral("#omarchy"));
+
+    QSignalSpy spy(&controller, &IrcController::mentionArrived);
+    transport->injectBytes(
+        QByteArrayLiteral(":Alice!u@h PRIVMSG omairc :hello\r\n"));
+    QCOMPARE(spy.count(), 1);
+    QCOMPARE(spy.at(0).at(0).toString(), QStringLiteral("Alice"));
+    QCOMPARE(spy.at(0).at(1).toString(), QStringLiteral("hello"));
+
+    transport->injectBytes(
+        QByteArrayLiteral(":Alice!u@h PRIVMSG #omarchy :hello\r\n"));
+    QCOMPARE(spy.count(), 1);
+
+    transport->injectBytes(
+        QByteArray(":Alice!u@h PRIVMSG omairc :\x01"
+                   "ACTION waves\x01\r\n"));
+    QCOMPARE(spy.count(), 2);
+    QCOMPARE(spy.at(1).at(0).toString(), QStringLiteral("Alice"));
+    QCOMPARE(spy.at(1).at(1).toString(), QStringLiteral("waves"));
 }
 
 void ControllerTest::chghostLeavesMemberNickAndRanks()

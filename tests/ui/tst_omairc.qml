@@ -1775,6 +1775,10 @@ TestCase {
         appWindow.lastNotification = null;
         appWindow.notifyMentionIfUnfocused(true, "alice", "hey fred");
         compare(appWindow.lastNotification, null);
+
+        appWindow.notifyMentionIfUnfocused(false, "alice", "hello");
+        compare(appWindow.lastNotification.author, "alice");
+        compare(appWindow.lastNotification.body, "hello");
     }
 
     function test_messageBodyClickOpensHttpsUrl() {
