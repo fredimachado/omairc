@@ -1,6 +1,6 @@
 # Typing
 
-Typing is the bouncing ellipsis that shows someone is composing. On a channel it sits beside that member's nick. On a direct message it sits above the composer. Mock UI always shows it for `anna`. A live session hides it unless the server granted `message-tags`.
+Typing is the bouncing ellipsis that shows someone is composing. On a channel it sits beside that member's nick. On a direct message it sits above the composer. Mock UI shows it for `anna` on `#omarchy` and the `anna` DM. A live session hides it unless the server granted `message-tags`.
 
 ## Sub-features
 

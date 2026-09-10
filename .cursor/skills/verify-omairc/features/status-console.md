@@ -23,14 +23,13 @@ Status is the network's server window. It shows handshake traffic, errors, notic
 
 Preconditions:
 
-- Handshake lines without a real server need the live QML fixture (`qml-suite`).
-- A default compiled launch (`control-omairc launch`) is titled `irc.libera.chat Status` with Connect on top of Status (`Offline`, no handshake). Finish Connect before looking for handshake lines on that window, or stay on the offscreen suite.
-- `control-omairc launch --mock` starts on `#omarchy - Omairc` with no Connect overlay. The sidebar subtitle is already `mock connected`. Open Status with `click-network` or `Ctrl+``. The edit control is hidden; `click-edit` refuses that window.
-- After Connect, Status title is `{displayName} Status` or `Status`. Conversation titles stay `{conversation} - Omairc`.
+- A default compiled launch (`control-omairc launch`) is titled `irc.libera.chat Status` with Connect on top of Status (`Offline`, no handshake). Finish Connect before looking for handshake lines on that window.
+- `control-omairc launch --mock` starts on `#omarchy - Omairc` with no Connect overlay. The sidebar subtitle is already `mock connected`. Open Status with `click-network` or `Ctrl+``. Mock Status already includes `-AUTH- *** Looking up your hostname...`. The edit control is hidden; `click-edit` refuses that window.
+- After Connect, the window title and center header are `{displayName} Status`. On `--mock` and the live QML fixture (`connection` null), both read `Status`. Conversation titles stay `{conversation} - Omairc`.
 
 - **First-run Status.** After `control-omairc launch`, the title is `irc.libera.chat Status`. The sidebar name is `irc.libera.chat`, the subtitle is `Offline`, CHANNELS and DIRECT MESSAGES are empty, and Connect sits on top of Status. There are no handshake lines yet. Run `control-omairc screenshot --feature status-console --name first-run-under-connect`.
 - **Toggle with no conversation.** Run `control-omairc key --key ctrl+grave`. The title stays `irc.libera.chat Status`. Status cannot close while nothing is selected.
-- **Open Status from the header.** After a conversation exists, click the network name. Run `control-omairc click-network`. In the suite this is `networkHeaderButton`. The center header reads Status, the people control is gone, and the list shows server lines such as `-AUTH- *** Looking up your hostname...`.
+- **Open Status from the header.** After a conversation exists, click the network name. Run `control-omairc click-network`. In the suite this is `networkHeaderButton`. The people control is gone, and the list shows server lines such as `-AUTH- *** Looking up your hostname...`. On `--mock` the center header reads `Status`. After Connect it reads `{displayName} Status`.
 - **Keep AUTH out of DIRECT MESSAGES.** After opening Status, the sidebar still has no `AUTH` row under DIRECT MESSAGES.
 - **Escape.** With a conversation already selected and Connect not required, press Escape. Run `control-omairc key --key Escape`. Status closes and the last conversation returns.
 - **Edit control.** Click `edit`. Run `control-omairc click-edit`. The connection sheet opens. Setup-required still opens that sheet on its own. Skip this step on `launch --mock`.

@@ -4,6 +4,8 @@
 #include <QSignalSpy>
 #include <QTest>
 
+#include <variant>
+
 #include "fakeirctransport.h"
 #include "irccontroller.h"
 #include "omairccli.h"
@@ -445,24 +447,22 @@ void OmaircIpcTest::connectionsSortedById()
 
 void OmaircIpcTest::sendAllowsDashPrefixedText()
 {
-    QString error;
     const auto request = OmaircCli::parseArgs(
-        QStringList{QStringLiteral("send"), QStringLiteral("#chan"),
-                    QStringLiteral("-hello")},
-        error);
-    QVERIFY(request.has_value());
-    QCOMPARE(request->target, QStringLiteral("#chan"));
-    QCOMPARE(request->text, QStringLiteral("-hello"));
+        {QStringLiteral("send"), QStringLiteral("#chan"),
+         QStringLiteral("-hello")});
+    QVERIFY(std::holds_alternative<OmaircIpc::Request>(request));
+    QCOMPARE(std::get<OmaircIpc::Request>(request).target,
+             QStringLiteral("#chan"));
+    QCOMPARE(std::get<OmaircIpc::Request>(request).text,
+             QStringLiteral("-hello"));
 
     const auto withDashDash = OmaircCli::parseArgs(
-        QStringList{QStringLiteral("send"), QStringLiteral("--"),
-                    QStringLiteral("#chan"), QStringLiteral("--network"),
-                    QStringLiteral("not-an-option")},
-        error);
-    QVERIFY(withDashDash.has_value());
-    QCOMPARE(withDashDash->target, QStringLiteral("#chan"));
-    QCOMPARE(withDashDash->text, QStringLiteral("--network not-an-option"));
-    QVERIFY(withDashDash->networkId.isEmpty());
+        {QStringLiteral("send"), QStringLiteral("--"),
+         QStringLiteral("#chan"), QStringLiteral("--network"),
+         QStringLiteral("not-an-option")});
+    QVERIFY(std::holds_alternative<OmaircIpc::Request>(withDashDash));
+    QCOMPARE(std::get<OmaircIpc::Request>(withDashDash).text,
+             QStringLiteral("--network not-an-option"));
 }
 
 void OmaircIpcTest::socketRaisePingWithHandlerRaisesOnce()

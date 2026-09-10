@@ -4,6 +4,10 @@ CONFIG += c++17 release
 VERSION = 0.1.0
 TARGET = omairc
 TEMPLATE = app
+
+# GCC 16 emits this diagnostic from Qt 6.11's own headers.
+greaterThan(QMAKE_GCC_MAJOR_VERSION, 15): QMAKE_CXXFLAGS += -Wno-sfinae-incomplete
+
 DEFINES += OMAIRC_VERSION=\\\"$$VERSION\\\"
 
 isEmpty(PREFIX): PREFIX = /usr/local
@@ -123,4 +127,8 @@ unix {
     license_lgpl.uninstall = \
         $(DEL_FILE) $(INSTALL_ROOT)$$license_lgpl.path/COPYING-LGPL
     INSTALLS += license_lgpl
+
+    bash_completion.path = $$PREFIX/share/bash-completion/completions
+    bash_completion.files = $$PWD/data/bash-completion/omairc
+    INSTALLS += bash_completion
 }
