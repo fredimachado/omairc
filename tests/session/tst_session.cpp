@@ -847,6 +847,30 @@ void SessionTest::overlongFrameLogsPreviewWithoutSecrets()
     QVERIFY(joinPreview.contains(QStringLiteral("too many bytes")));
     QVERIFY(joinPreview.contains(QStringLiteral("JOIN #secret ***")));
     QVERIFY(!joinPreview.contains(QStringLiteral("hunter2")));
+
+    QByteArray identify = QByteArrayLiteral("PRIVMSG nickserv :identify my_nick s3cret ");
+    identify.append(int(IrcFramer::kMaxInboundClassicFrameBytes) - identify.size() - 1,
+                    'x');
+    identify.append("\r\nPING :ok\r\n");
+    fixture.transport->injectBytes(identify);
+
+    QCOMPARE(errors.size(), 4);
+    const QString identifyPreview = errors.at(3).at(2).toString();
+    QVERIFY(identifyPreview.contains(QStringLiteral("too many bytes")));
+    QVERIFY(identifyPreview.contains(QStringLiteral("PRIVMSG nickserv :IDENTIFY ***")));
+    QVERIFY(!identifyPreview.contains(QStringLiteral("s3cret")));
+
+    QByteArray keyedMode = QByteArrayLiteral("MODE #omarchy +k s3cret ");
+    keyedMode.append(int(IrcFramer::kMaxInboundClassicFrameBytes) - keyedMode.size() - 1,
+                     'x');
+    keyedMode.append("\r\nPING :ok\r\n");
+    fixture.transport->injectBytes(keyedMode);
+
+    QCOMPARE(errors.size(), 5);
+    const QString modePreview = errors.at(4).at(2).toString();
+    QVERIFY(modePreview.contains(QStringLiteral("too many bytes")));
+    QVERIFY(modePreview.contains(QStringLiteral("MODE #omarchy +k ***")));
+    QVERIFY(!modePreview.contains(QStringLiteral("s3cret")));
 }
 
 void SessionTest::reconnectCanBeCancelled()
@@ -1116,6 +1140,12 @@ void SessionTest::serviceIdentifyIsRedactedInStatusEntries()
         QByteArrayLiteral("PRIVMSG nickserv :identify my_nick s3cret\r\n"));
     QCOMPARE(identify.text(), QStringLiteral("PRIVMSG nickserv :IDENTIFY ***"));
     QVERIFY(!identify.text().contains(QStringLiteral("s3cret")));
+
+    const IrcStatusEntry identifyTabs = IrcStatusEntry::outgoing(
+        QStringLiteral("network-a"),
+        QByteArrayLiteral("PRIVMSG nickserv :identify\tmy_nick\ts3cret\r\n"));
+    QCOMPARE(identifyTabs.text(), QStringLiteral("PRIVMSG nickserv :IDENTIFY ***"));
+    QVERIFY(!identifyTabs.text().contains(QStringLiteral("s3cret")));
 
     const IrcStatusEntry ghost = IrcStatusEntry::outgoing(
         QStringLiteral("network-a"),

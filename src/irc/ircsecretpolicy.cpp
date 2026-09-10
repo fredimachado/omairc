@@ -244,14 +244,20 @@ bool hasServiceTarget(QStringView targets)
     return false;
 }
 
+QStringList serviceBodyTokens(const QString& body)
+{
+    QString normalized = body;
+    normalized.replace(QLatin1Char('\t'), QLatin1Char(' '));
+    return normalized.split(QLatin1Char(' '), Qt::SkipEmptyParts);
+}
+
 std::optional<IrcWireCommand> maskServiceRequestBody(const IrcWireCommand& command)
 {
     if (command.parameters.size() != 2)
         return std::nullopt;
     if (!hasServiceTarget(command.parameters.at(0)))
         return std::nullopt;
-    const QStringList tokens =
-        command.parameters.at(1).split(QLatin1Char(' '), Qt::SkipEmptyParts);
+    const QStringList tokens = serviceBodyTokens(command.parameters.at(1));
     if (tokens.size() < 2)
         return std::nullopt;
     const QString word = tokens.at(0).toUpper();
