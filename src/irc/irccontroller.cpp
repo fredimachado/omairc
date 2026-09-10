@@ -1041,7 +1041,7 @@ void IrcController::noteNickDelivery(const QString& networkId, const QString& ta
     auto found = m_whoisWatches.find(*key);
     if (found == m_whoisWatches.end())
         return;
-    found->second.deliveryErrorPending = true;
+    found->second.failedIsAmbiguous = true;
 }
 
 void IrcController::handleStatusEntry(const IrcStatusEntry& entry)
@@ -1060,10 +1060,8 @@ void IrcController::routeWhoisLine(const QString& networkId, const IrcWhoisLine&
         return;
 
     if (line.progress() == IrcWhoisLine::Progress::Failed
-        && found->second.deliveryErrorPending) {
-        found->second.deliveryErrorPending = false;
+        && found->second.failedIsAmbiguous)
         return;
-    }
 
     const IrcWhoisDestination destination = found->second.destination;
     if (line.terminal())

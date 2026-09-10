@@ -140,7 +140,7 @@ private:
     struct IrcWhoisWatch
     {
         IrcWhoisDestination destination;
-        bool deliveryErrorPending = false;
+        bool failedIsAmbiguous = false;
     };
 
     void apply(const IrcEvent& event);
