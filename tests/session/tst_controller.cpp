@@ -68,6 +68,17 @@ bool logContains(QAbstractItemModel *lines, const QString& needle)
     return false;
 }
 
+bool selectedBodiesContain(QAbstractItemModel *messages, const QString& needle)
+{
+    if (!messages)
+        return false;
+    for (int row = 0; row < messages->rowCount(); ++row) {
+        if (roleAt(messages, row, MessageListModel::BodyRole).toString().contains(needle))
+            return true;
+    }
+    return false;
+}
+
 QByteArray namesBurst(int nickCount, int perLine)
 {
     QByteArray bytes = QByteArrayLiteral(":omairc!u@h JOIN :#big\r\n");
@@ -176,6 +187,8 @@ private slots:
     void echoMessageAbsentStillEchoesLocally();
     void echoMessageAckSkipsMsgEcho();
     void msgEchoDoesNotOpenMissingDirect();
+    void incomingNickservPrivmsgDoesNotOpenDirect();
+    void statusMsgNickservIdentifyDoesNotOpenDirect();
     void mentionArrivedOnSelectedBuffer();
     void chghostLeavesMemberNickAndRanks();
     void twoSessionsStartTogether();
@@ -2329,6 +2342,85 @@ void ControllerTest::msgEchoDoesNotOpenMissingDirect()
         QVERIFY(roleAt(messages, row, MessageListModel::BodyRole)
                 != QStringLiteral("hello"));
     }
+}
+
+void ControllerTest::incomingNickservPrivmsgDoesNotOpenDirect()
+{
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+                                                transport);
+    QVERIFY(session);
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    transport->completeConnect();
+    transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
+                          ":server 001 omairc :Welcome\r\n"
+                          ":omairc!u@h JOIN :#omarchy\r\n"
+                          ":NickServ!NickServ@services PRIVMSG omairc "
+                          ":This nickname is registered.\r\n"));
+
+    auto *conversations =
+        qobject_cast<QAbstractItemModel *>(controller.conversations());
+    QVERIFY(conversations);
+    QCOMPARE(rowForTarget(conversations, QStringLiteral("NickServ")), -1);
+    QCOMPARE(rowForTarget(conversations, QStringLiteral("nickserv")), -1);
+    QVERIFY(logContains(controller.console()->lines(),
+                        QStringLiteral("This nickname is registered.")));
+}
+
+void ControllerTest::statusMsgNickservIdentifyDoesNotOpenDirect()
+{
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+                                                transport);
+    QVERIFY(session);
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    transport->completeConnect();
+    transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :echo-message\r\n"
+                          ":server CAP omairc ACK :echo-message\r\n"
+                          ":server 001 omairc :Welcome\r\n"
+                          ":omairc!u@h JOIN :#omarchy\r\n"));
+    QVERIFY(session->capabilities().contains(IrcCapability::EchoMessage));
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+
+    IrcStatusConsole *console = controller.console();
+    console->setOpen(true);
+    QVERIFY(console->submit(
+        QStringLiteral("/msg nickserv identify my_nick s3cret")));
+    QCOMPARE(transport->writtenFrames().last(),
+             QByteArrayLiteral("PRIVMSG nickserv :identify my_nick s3cret\r\n"));
+    QVERIFY(console->isOpen());
+    QCOMPARE(controller.selectedTarget(), QStringLiteral("#omarchy"));
+
+    transport->injectBytes(
+        QByteArrayLiteral(":NickServ!NickServ@services PRIVMSG omairc "
+                          ":You are now identified for my_nick.\r\n"
+                          ":omairc!u@h PRIVMSG nickserv :identify my_nick s3cret\r\n"));
+
+    QVERIFY(console->isOpen());
+    QCOMPARE(controller.selectedTarget(), QStringLiteral("#omarchy"));
+
+    auto *conversations =
+        qobject_cast<QAbstractItemModel *>(controller.conversations());
+    QVERIFY(conversations);
+    const int nickservRow = rowForTarget(conversations, QStringLiteral("NickServ"));
+    if (nickservRow >= 0) {
+        controller.selectConversation(QStringLiteral("libera"), QStringLiteral("NickServ"));
+        auto *direct = qobject_cast<QAbstractItemModel *>(controller.messages());
+        QVERIFY(!selectedBodiesContain(direct, QStringLiteral("s3cret")));
+        QVERIFY(!selectedBodiesContain(direct, QStringLiteral("identify my_nick")));
+    }
+    QCOMPARE(nickservRow, -1);
+    QCOMPARE(rowForTarget(conversations, QStringLiteral("nickserv")), -1);
+
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
+    QVERIFY(!selectedBodiesContain(messages, QStringLiteral("s3cret")));
+    QVERIFY(!selectedBodiesContain(messages, QStringLiteral("identify my_nick")));
+    QVERIFY(logContains(console->lines(), QStringLiteral("PRIVMSG nickserv")));
 }
 
 void ControllerTest::mentionArrivedOnSelectedBuffer()

@@ -190,6 +190,7 @@ private slots:
     void whoisStatusLinesFormatKnownNumerics();
     void incomingNoticeStatusLinesWrapSpeaker();
     void incomingNoticeDoesNotTranslateToEvents();
+    void incomingNickservPrivmsgDoesNotTranslateToEvents();
     void incomingStandardRepliesShowDescriptionOnStatus();
     void incomingStandardRepliesDoNotTranslateToEvents();
     void inboundFailDoesNotFailTheSession();
@@ -1365,6 +1366,25 @@ void SessionTest::incomingNoticeDoesNotTranslateToEvents()
                 QStringLiteral("omairc"),
                 features,
                 mustParse(":alice!u@h NOTICE #omarchy :heads up"))
+                .empty());
+}
+
+void SessionTest::incomingNickservPrivmsgDoesNotTranslateToEvents()
+{
+    const IrcServerFeatures features;
+    QVERIFY(IrcEventTranslator::translate(
+                QStringLiteral("libera"),
+                QStringLiteral("omairc"),
+                features,
+                mustParse(":NickServ!NickServ@services PRIVMSG omairc "
+                          ":This nickname is registered."))
+                .empty());
+    QVERIFY(IrcEventTranslator::translate(
+                QStringLiteral("libera"),
+                QStringLiteral("omairc"),
+                features,
+                mustParse(":ChanServ!ChanServ@services.libera.chat PRIVMSG omairc "
+                          ":[#omarchy] You are not on that channel."))
                 .empty());
 }
 
