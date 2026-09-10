@@ -1731,7 +1731,12 @@ ApplicationWindow {
 
             TypingDots {
                 id: rowTyping
-                objectName: "conversation-typing-" + conversationRow.conversationName
+                objectName: conversationRow.networkId === win.mockOftcId
+                    ? "conversation-typing-oftc-" + conversationRow.conversationName
+                    : (win.irc && conversationRow.networkId.length > 0 && win.connection
+                        ? "conversation-typing-" + conversationRow.networkId
+                            + "-" + conversationRow.conversationName
+                        : "conversation-typing-" + conversationRow.conversationName)
                 visible: conversationRow.visible
                     && conversationRow.direct
                     && conversationRow.typing
@@ -2430,6 +2435,7 @@ ApplicationWindow {
 
                     Repeater {
                         id: liveNetworkRepeater
+                        objectName: "liveNetworkRepeater"
                         model: win.irc && win.connection ? win.connection.networks : null
 
                         Column {

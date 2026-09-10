@@ -125,9 +125,20 @@ TestCase {
             unread: 0
             mention: false
             direct: false
-            typing: false
             networkId: "libera"
             conversationId: "libera\n#omarchy"
+            conversationName: "#omarchy"
+            typing: false
+        }
+        ListElement {
+            conversation: "anna"
+            unread: 0
+            mention: false
+            direct: true
+            networkId: "libera"
+            conversationId: "libera\nanna"
+            conversationName: "anna"
+            typing: true
         }
     }
 
@@ -2005,6 +2016,46 @@ TestCase {
         compare(liveIrc.selectedNetworkId, "libera");
         compare(window.currentConversationIsChannel, true);
         window.close();
+    }
+
+    function test_liveDmTypingIndicatorUsesBothProductionDelegates() {
+        var fallback = createTemporaryObject(liveWindowComponent, null);
+        verify(fallback !== null, "The fallback live window should load");
+        tryCompare(fallback, "visible", true);
+        waitForRendering(fallback.contentItem);
+
+        var fallbackDms = findChild(fallback, "directConversationRepeater");
+        verify(fallbackDms !== null, "The fallback direct-message repeater should exist");
+        compare(fallbackDms.count, 2);
+        var fallbackRow = fallbackDms.itemAt(1);
+        verify(fallbackRow !== null, "The fallback DM row should be rendered");
+        compare(fallbackRow.conversationName, "anna");
+        tryCompare(fallbackRow, "visible", true);
+        var fallbackDots = findChild(fallbackRow, "conversation-typing-anna");
+        verify(fallbackDots !== null, "The fallback DM typing indicator should exist");
+        tryCompare(fallbackDots, "visible", true);
+        fallback.close();
+
+        var connected = createTemporaryObject(fallbackWindowComponent, null);
+        verify(connected !== null, "The connected live window should load");
+        tryCompare(connected, "visible", true);
+        waitForRendering(connected.contentItem);
+
+        var networks = findChild(connected, "liveNetworkRepeater");
+        verify(networks !== null, "The live network repeater should exist");
+        var network = networks.itemAt(0);
+        verify(network !== null, "The connected network section should be rendered");
+        var connectedDms = findChild(network, "directConversationRepeater");
+        verify(connectedDms !== null, "The connected direct-message repeater should exist");
+        compare(connectedDms.count, 2);
+        var connectedRow = connectedDms.itemAt(1);
+        verify(connectedRow !== null, "The connected DM row should be rendered");
+        compare(connectedRow.conversationName, "anna");
+        tryCompare(connectedRow, "visible", true);
+        var connectedDots = findChild(connectedRow, "conversation-typing-libera-anna");
+        verify(connectedDots !== null, "The connected DM typing indicator should exist");
+        tryCompare(connectedDots, "visible", true);
+        connected.close();
     }
 
     function test_memberPresenceChromeFollowsCapabilities() {
