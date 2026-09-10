@@ -415,13 +415,16 @@ void IrcEventReducer::appendChat(const IrcConversationKey& key,
                                  const QDateTime& timestamp,
                                  IrcMessageKind kind)
 {
+    const bool self = isSelf(key.networkId, author);
+    if (self && !find(key) && !(m_selected && *m_selected == key))
+        return;
+
     IrcConversationState& conversation =
         ensureConversation(key, displayTarget);
     conversation.messages.push_back({author, body, timestamp, kind});
     capMessages(conversation);
     clearTyping(conversation, normalize(key.networkId, author));
 
-    const bool self = isSelf(key.networkId, author);
     const bool mentionKind = kind == IrcMessageKind::Message
         || kind == IrcMessageKind::Action;
     const bool mentioned = !self && mentionKind && isMention(key.networkId, body);
