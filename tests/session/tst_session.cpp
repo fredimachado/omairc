@@ -1388,6 +1388,13 @@ void SessionTest::serviceIdentifyIsRedactedInStatusEntries()
     QCOMPARE(identify.text(), QStringLiteral("PRIVMSG nickserv :IDENTIFY ***"));
     QVERIFY(!identify.text().contains(QStringLiteral("s3cret")));
 
+    const IrcStatusEntry alias = IrcStatusEntry::outgoing(
+        QStringLiteral("network-a"),
+        QByteArrayLiteral("PRIVMSG NS :IDENTIFY account hunter2\r\n"),
+        QStringLiteral("#&"));
+    QCOMPARE(alias.text(), QStringLiteral("PRIVMSG NS :IDENTIFY ***"));
+    QVERIFY(!alias.text().contains(QStringLiteral("hunter2")));
+
     const IrcStatusEntry identifyTabs = IrcStatusEntry::outgoing(
         QStringLiteral("network-a"),
         QByteArrayLiteral("PRIVMSG nickserv :identify\tmy_nick\ts3cret\r\n"));
@@ -1580,6 +1587,13 @@ void SessionTest::channelTalkAboutServicesStaysReadable()
         QByteArrayLiteral("PRIVMSG #serv :identify my_nick s3cret\r\n"));
     QCOMPARE(channel.text(),
              QStringLiteral("PRIVMSG #serv :identify my_nick s3cret"));
+
+    const IrcStatusEntry channelWithAt = IrcStatusEntry::outgoing(
+        QStringLiteral("network-a"),
+        QByteArrayLiteral("PRIVMSG #help@services :IDENTIFY examples stay visible\r\n"),
+        QStringLiteral("#&"));
+    QCOMPARE(channelWithAt.text(),
+             QStringLiteral("PRIVMSG #help@services :IDENTIFY examples stay visible"));
 
     const IrcStatusEntry tildeChannel = IrcStatusEntry::outgoing(
         QStringLiteral("network-a"),
