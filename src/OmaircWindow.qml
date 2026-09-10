@@ -1626,6 +1626,7 @@ ApplicationWindow {
                 ? "conversation-" + networkId + "-" + conversationName
                 : "conversation-" + conversationName)
         Accessible.name: conversationName
+        Accessible.description: typing ? "Typing" : ""
         Accessible.role: Accessible.Button
         Accessible.onPressAction: activate()
         width: parent ? parent.width : 0
@@ -1731,7 +1732,9 @@ ApplicationWindow {
             TypingDots {
                 id: rowTyping
                 objectName: "conversation-typing-" + conversationRow.conversationName
-                visible: conversationRow.direct && conversationRow.typing
+                visible: conversationRow.visible
+                    && conversationRow.direct
+                    && conversationRow.typing
                 anchors.right: unreadBadge.visible ? unreadBadge.left : parent.right
                 anchors.rightMargin: unreadBadge.visible ? win.scaledSize(6) : 0
                 anchors.verticalCenter: parent.verticalCenter

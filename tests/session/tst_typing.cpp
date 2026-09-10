@@ -551,6 +551,29 @@ void TypingTest::controllerSidebarTypingForExistingDirect()
         QByteArrayLiteral(":alice!u@h PRIVMSG omairc :here\r\n"));
     QCOMPARE(roleAt(conversations, aliceRow, ConversationListModel::TypingRole),
              false);
+
+    transport->injectBytes(
+        QByteArrayLiteral("@+typing=active :alice!u@h TAGMSG omairc\r\n"));
+    QCOMPARE(roleAt(conversations, aliceRow, ConversationListModel::TypingRole),
+             true);
+    changes.clear();
+    transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc DEL :message-tags\r\n"));
+    QCOMPARE(roleAt(conversations, aliceRow, ConversationListModel::TypingRole),
+             false);
+    QVERIFY(!changes.isEmpty());
+    QCOMPARE(changes.last().at(2).value<QList<int>>(),
+             QList<int>{ConversationListModel::TypingRole});
+
+    registerWithTags(session, transport);
+    transport->injectBytes(
+        QByteArrayLiteral("@+typing=active :alice!u@h TAGMSG omairc\r\n"));
+    QCOMPARE(roleAt(conversations, aliceRow, ConversationListModel::TypingRole),
+             true);
+    QTRY_COMPARE_WITH_TIMEOUT(
+        roleAt(conversations, aliceRow, ConversationListModel::TypingRole),
+        QVariant(false),
+        7000);
 }
 
 int runTypingTests(int argc, char **argv)
