@@ -163,6 +163,7 @@ private slots:
     void reachabilityStartsReconnectWithoutWaiting();
     void reachabilityIgnoredUnlessReconnecting();
     void malformedInputSurfacesProtocolError();
+    void overlongFrameLogsPreviewWithoutSecrets();
     void reconnectCanBeCancelled();
     void reconnectDelayIsBoundedExponential();
     void authenticationFailureIsExplicit();
@@ -786,7 +787,41 @@ void SessionTest::malformedInputSurfacesProtocolError()
     QCOMPARE(errors.size(), 1);
     QCOMPARE(qvariant_cast<IrcSession::ErrorKind>(errors.at(0).at(1)),
              IrcSession::ErrorKind::Protocol);
+    const QString message = errors.at(0).at(2).toString();
+    QVERIFY(message.contains(QStringLiteral("invalid character")));
+    QVERIFY(message.contains(QStringLiteral("Preview:")));
+    QVERIFY(message.contains(QStringLiteral("BAD")));
     QCOMPARE(fixture.session->state(), IrcSession::State::CapLs);
+}
+
+void SessionTest::overlongFrameLogsPreviewWithoutSecrets()
+{
+    Fixture fixture;
+    QSignalSpy errors(fixture.session, &IrcSession::errorOccurred);
+    fixture.connectTls();
+
+    QByteArray overlong = QByteArrayLiteral("PING :");
+    overlong.append(int(IrcFramer::kMaxInboundClassicFrameBytes) - overlong.size() - 1, 'z');
+    overlong.append("\r\n");
+    fixture.transport->injectBytes(overlong);
+
+    QCOMPARE(errors.size(), 1);
+    const QString message = errors.at(0).at(2).toString();
+    QVERIFY(message.contains(QStringLiteral("too many bytes")));
+    QVERIFY(message.contains(
+        QStringLiteral("%1 bytes").arg(IrcFramer::kMaxInboundClassicFrameBytes - 1)));
+    QVERIFY(message.contains(QStringLiteral("Preview: PING :")));
+
+    QByteArray secret = QByteArrayLiteral("PASS hunter2 ");
+    secret.append(int(IrcFramer::kMaxInboundClassicFrameBytes) - secret.size() - 1, 'x');
+    secret.append("\r\nPING :ok\r\n");
+    fixture.transport->injectBytes(secret);
+
+    QCOMPARE(errors.size(), 2);
+    const QString redacted = errors.at(1).at(2).toString();
+    QVERIFY(redacted.contains(QStringLiteral("too many bytes")));
+    QVERIFY(redacted.contains(QStringLiteral("PASS ***")));
+    QVERIFY(!redacted.contains(QStringLiteral("hunter2")));
 }
 
 void SessionTest::reconnectCanBeCancelled()

@@ -17,6 +17,8 @@
 namespace IrcProtocol
 {
 inline constexpr std::size_t maxClassicFrameBytes = 512;
+// Servers prepend prefixes and emit long 005 lines. Keep a receive ceiling.
+inline constexpr std::size_t maxInboundClassicFrameBytes = 4096;
 // IRCv3 message-tags: 8191 bytes of tag payload, excluding '@' and the trailing space.
 inline constexpr std::size_t maxTagSectionBytes = 8191;
 }
@@ -32,6 +34,29 @@ enum class IrcError
     TooManyBytes,
     InvalidField
 };
+
+inline const char *ircErrorName(IrcError error) noexcept
+{
+    switch (error) {
+    case IrcError::None:
+        return "none";
+    case IrcError::EmptyInput:
+        return "empty input";
+    case IrcError::InvalidCharacter:
+        return "invalid character";
+    case IrcError::InvalidTags:
+        return "invalid tags";
+    case IrcError::InvalidPrefix:
+        return "invalid prefix";
+    case IrcError::InvalidCommand:
+        return "invalid command";
+    case IrcError::TooManyBytes:
+        return "too many bytes";
+    case IrcError::InvalidField:
+        return "invalid field";
+    }
+    return "unknown";
+}
 
 template<typename T>
 struct IrcResult

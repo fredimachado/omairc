@@ -1581,6 +1581,7 @@ ApplicationWindow {
                 }
 
                 Row {
+                    width: parent.width
                     spacing: win.scaledSize(6)
 
                     Rectangle {
@@ -1595,8 +1596,10 @@ ApplicationWindow {
                     }
 
                     Text {
+                        width: Math.max(0, parent.width - win.scaledSize(13))
                         text: section.liveStatus
                         color: win.mutedColor
+                        elide: Text.ElideRight
                         font.family: "iA Writer Mono S"
                         font.pixelSize: win.scaledSize(10)
                     }
