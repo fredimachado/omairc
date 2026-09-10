@@ -1942,6 +1942,13 @@ void SessionTest::selfJoinRequestsChatHistoryOnceUntilPart()
     QVERIFY(writesWhenJoinEmitted >= 0);
     QVERIFY(!fixture.transport->writtenFrames().mid(0, writesWhenJoinEmitted)
                  .contains(QByteArrayLiteral("CHATHISTORY LATEST #omarchy * 100\r\n")));
+    QVERIFY(fixture.session->historyPending());
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(
+            ":irc.host BATCH +hx chathistory #omarchy\r\n"
+            "@batch=hx :alice!u@h PRIVMSG #omarchy :older\r\n"
+            ":irc.host BATCH -hx\r\n"));
+    QVERIFY(!fixture.session->historyPending());
     const int afterFirst = fixture.transport->writtenFrames().size();
 
     fixture.transport->injectBytes(

@@ -510,6 +510,19 @@ bool LiveUiWorld::waitReady()
         m_fail = QStringLiteral("sidebar or Connected missing");
         return false;
     }
+
+    const auto historyQuiet = [&] {
+        auto pending = [&](const LiveUiSeat &seat) {
+            IrcSession *session = m_controller->session(seat.networkId);
+            return session && session->historyPending();
+        };
+        return !pending(m_left) && !pending(m_right);
+    };
+    if (!waitUntil(historyQuiet)) {
+        m_fail = QStringLiteral("history still pending");
+        return false;
+    }
+    QCoreApplication::processEvents();
     return true;
 }
 
@@ -674,24 +687,30 @@ bool LiveUiWorld::clickSettled(const LiveUiId &id) const
 
 bool LiveUiWorld::click(const LiveUiId &id)
 {
-    QQuickItem *target = nullptr;
-    if (!waitUntil([&] {
-            target = id.kind() == LiveUiKind::Status
-                ? findStatusHeader(id.networkId())
-                : findConversationRow(id);
-            return target && target->isVisible() && target->height() > 0;
-        })) {
-        m_fail = QStringLiteral("no click target for %1").arg(id.wire());
-        return false;
+    bool sawTarget = false;
+    for (int attempt = 0; attempt < 8; ++attempt) {
+        QQuickItem *target = nullptr;
+        if (!waitUntil(
+                [&] {
+                    target = id.kind() == LiveUiKind::Status
+                        ? findStatusHeader(id.networkId())
+                        : findConversationRow(id);
+                    return target && target->isVisible() && target->height() > 0;
+                },
+                2000)) {
+            continue;
+        }
+        sawTarget = true;
+        if (!bringIntoView(target))
+            continue;
+        QCoreApplication::processEvents();
+        mouseClick(target);
+        if (waitUntil([&] { return clickSettled(id); }, 1500))
+            return true;
     }
-    if (!bringIntoView(target))
-        return false;
-    mouseClick(target);
-    if (!waitUntil([&] { return clickSettled(id); })) {
-        m_fail = QStringLiteral("click did not select %1").arg(id.wire());
-        return false;
-    }
-    return true;
+    m_fail = sawTarget ? QStringLiteral("click did not select %1").arg(id.wire())
+                       : QStringLiteral("no click target for %1").arg(id.wire());
+    return false;
 }
 
 bool LiveUiWorld::clickMember(const QString &nick)

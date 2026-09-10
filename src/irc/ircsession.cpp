@@ -362,6 +362,11 @@ IrcCapabilitySet IrcSession::capabilities() const
     return m_capabilities.enabled();
 }
 
+bool IrcSession::historyPending() const
+{
+    return !m_historyPending.isEmpty();
+}
+
 void IrcSession::start()
 {
     if (m_state != State::Idle && m_state != State::Failed)
@@ -938,8 +943,10 @@ void IrcSession::closeBatch(const QString& reference)
         else
             ++it;
     }
-    if (frame.replayRoot == reference && !frame.collected.target.isEmpty())
+    if (frame.replayRoot == reference && !frame.collected.target.isEmpty()) {
+        m_historyPending.remove(frame.collected.target.toCaseFolded());
         emit historyBatchReceived(m_config.networkId, frame.collected);
+    }
 }
 
 bool IrcSession::captureInBatch(const IrcMessage& message)
@@ -990,6 +997,7 @@ void IrcSession::requestChannelHistory(const QString& channel)
     if (m_historyAsked.contains(key))
         return;
     m_historyAsked.insert(key);
+    m_historyPending.insert(key);
     sendCommand(QStringLiteral("CHATHISTORY LATEST %1 * %2")
                     .arg(channel)
                     .arg(kHistoryLimit));
@@ -997,7 +1005,9 @@ void IrcSession::requestChannelHistory(const QString& channel)
 
 void IrcSession::forgetChannelHistory(const QString& channel)
 {
-    m_historyAsked.remove(channel.toCaseFolded());
+    const QString folded = channel.toCaseFolded();
+    m_historyAsked.remove(folded);
+    m_historyPending.remove(folded);
     dropHistoryBatches(channel);
 }
 
@@ -1200,6 +1210,7 @@ void IrcSession::resetForConnection()
     m_framer = IrcFramer{};
     m_openBatches.clear();
     m_historyAsked.clear();
+    m_historyPending.clear();
     m_nick = m_config.nick;
     m_registrationSent = false;
     m_registrationNick = RegistrationNick::Configured;

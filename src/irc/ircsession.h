@@ -124,6 +124,7 @@ public:
     State state() const;
     int reconnectAttempt() const;
     IrcCapabilitySet capabilities() const;
+    bool historyPending() const;
 
     using IgnoreFilter = std::function<bool(const IrcMessage&, const QString&)>;
     void setIgnoreFilter(IgnoreFilter filter);
@@ -232,6 +233,7 @@ private:
     };
     QHash<QString, OpenBatch> m_openBatches;
     QSet<QString> m_historyAsked;
+    QSet<QString> m_historyPending;
     static constexpr int kHistoryLimit = 100;
     static constexpr int kHistoryBufferCeiling = 256;
     static constexpr int kMaxOpenBatches = 16;
