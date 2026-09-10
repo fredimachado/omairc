@@ -8,8 +8,6 @@
 #include <QStringList>
 #include <QTimer>
 
-#include <optional>
-
 #include "irccapability.h"
 #include "irccapabilitynegotiation.h"
 #include "ircframer.h"
@@ -210,5 +208,5 @@ private:
     bool m_saslPending = false;
     bool m_capabilityNegotiationEnded = false;
     int m_reconnectAttempt = 0;
-    std::optional<ErrorKind> m_reportedRetryError;
+    quint32 m_reportedRetryErrors = 0;
 };

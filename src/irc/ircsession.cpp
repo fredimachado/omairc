@@ -357,7 +357,7 @@ void IrcSession::start()
     m_expectedDisconnect = false;
     m_reconnectAfterDisconnect = false;
     m_reconnectAttempt = 0;
-    m_reportedRetryError.reset();
+    m_reportedRetryErrors = 0;
     resetForConnection();
     setState(State::Connecting);
     m_transport->connectToHost(m_config.host, m_config.port, m_config.tlsEnabled);
@@ -371,7 +371,7 @@ void IrcSession::stop()
     m_capabilityTimer->cancel();
     cancelPingWatchdog();
     m_reconnectAttempt = 0;
-    m_reportedRetryError.reset();
+    m_reportedRetryErrors = 0;
 
     if (m_state == State::Idle)
         return;
@@ -502,8 +502,11 @@ bool IrcSession::quit(const QString& reason)
     if (m_state == State::Idle)
         return false;
     if (m_state == State::Registered) {
-        sendCommand(reason.isEmpty() ? QStringLiteral("QUIT")
-                                     : QStringLiteral("QUIT :%1").arg(reason));
+        const bool sent = sendCommand(
+            reason.isEmpty() ? QStringLiteral("QUIT")
+                             : QStringLiteral("QUIT :%1").arg(reason));
+        if (!sent)
+            return false;
     }
     stop();
     return true;
@@ -970,7 +973,7 @@ void IrcSession::handleWelcome(const IrcMessage &message)
         m_nick = assigned;
 
     m_reconnectAttempt = 0;
-    m_reportedRetryError.reset();
+    m_reportedRetryErrors = 0;
     m_capabilityTimer->cancel();
     m_capabilities.abandonOutstanding();
     setState(State::Registered);
@@ -991,8 +994,9 @@ void IrcSession::fail(ErrorKind kind, const QString &message, bool reconnect)
 {
     cancelPingWatchdog();
     if (reconnect) {
-        if (m_reportedRetryError != kind) {
-            m_reportedRetryError = kind;
+        const quint32 bit = quint32(1) << int(kind);
+        if ((m_reportedRetryErrors & bit) == 0) {
+            m_reportedRetryErrors |= bit;
             emit errorOccurred(m_config.networkId, kind, message);
         }
         const IrcTransport::ConnectionState transportState = m_transport->connectionState();

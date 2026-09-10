@@ -193,6 +193,8 @@ private slots:
     void reconnectKeepsRetryingUntilStop();
     void quitStopsReconnectWait();
     void retryableNetworkErrorIsEmittedOnceUntilWelcome();
+    void retryableErrorsStayDedupedAcrossKindsUntilWelcome();
+    void quitRejectsInvalidReasonWhileRegistered();
     void authenticationFailureIsExplicit();
     void destructionWhileConnectingIsSafe();
     void managerStartsTwoLiveNetworks();
@@ -967,6 +969,52 @@ void SessionTest::retryableNetworkErrorIsEmittedOnceUntilWelcome()
     QCOMPARE(errors.size(), 2);
     QCOMPARE(qvariant_cast<IrcSession::ErrorKind>(errors.at(1).at(1)),
              IrcSession::ErrorKind::Network);
+}
+
+void SessionTest::retryableErrorsStayDedupedAcrossKindsUntilWelcome()
+{
+    Fixture fixture;
+    QSignalSpy errors(fixture.session, &IrcSession::errorOccurred);
+    fixture.connectTls();
+    fixture.transport->remoteClose();
+
+    QCOMPARE(errors.size(), 1);
+    QCOMPARE(qvariant_cast<IrcSession::ErrorKind>(errors.at(0).at(1)),
+             IrcSession::ErrorKind::Network);
+
+    fixture.timer->fire();
+    fixture.transport->failConnect(QStringLiteral("TLS handshake failed"));
+
+    QCOMPARE(errors.size(), 2);
+    QCOMPARE(qvariant_cast<IrcSession::ErrorKind>(errors.at(1).at(1)),
+             IrcSession::ErrorKind::Tls);
+    QCOMPARE(fixture.session->state(), IrcSession::State::Reconnecting);
+
+    fixture.timer->fire();
+    fixture.transport->completeConnect();
+    fixture.transport->remoteClose();
+
+    QCOMPARE(errors.size(), 2);
+    QCOMPARE(qvariant_cast<IrcSession::ErrorKind>(errors.at(0).at(1)),
+             IrcSession::ErrorKind::Network);
+    QCOMPARE(qvariant_cast<IrcSession::ErrorKind>(errors.at(1).at(1)),
+             IrcSession::ErrorKind::Tls);
+}
+
+void SessionTest::quitRejectsInvalidReasonWhileRegistered()
+{
+    Fixture fixture;
+    fixture.registerWithWelcome();
+    QCOMPARE(fixture.session->state(), IrcSession::State::Registered);
+
+    QVERIFY(!fixture.session->quit(QStringLiteral("bad\nreason")));
+    QCOMPARE(fixture.session->state(), IrcSession::State::Registered);
+    QVERIFY(!fixture.wrote(QByteArrayLiteral("QUIT :bad\nreason\r\n")));
+
+    fixture.transport->remoteClose();
+    QCOMPARE(fixture.session->state(), IrcSession::State::Reconnecting);
+    QVERIFY(fixture.session->quit());
+    QCOMPARE(fixture.session->state(), IrcSession::State::Idle);
 }
 
 void SessionTest::authenticationFailureIsExplicit()
