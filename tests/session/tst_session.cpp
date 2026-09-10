@@ -1136,6 +1136,31 @@ void SessionTest::serviceIdentifyIsRedactedInStatusEntries()
     const IrcStatusEntry opMode = IrcStatusEntry::outgoing(
         QStringLiteral("network-a"), QByteArrayLiteral("MODE #omarchy +o alice\r\n"));
     QCOMPARE(opMode.text(), QStringLiteral("MODE #omarchy +o alice"));
+
+    const IrcStatusEntry commaTargets = IrcStatusEntry::outgoing(
+        QStringLiteral("network-a"),
+        QByteArrayLiteral("PRIVMSG nickserv,#discuss :identify my_nick s3cret\r\n"));
+    QCOMPARE(commaTargets.text(),
+             QStringLiteral("PRIVMSG nickserv,#discuss :IDENTIFY ***"));
+    QVERIFY(!commaTargets.text().contains(QStringLiteral("s3cret")));
+
+    const IrcStatusEntry commaSecond = IrcStatusEntry::outgoing(
+        QStringLiteral("network-a"),
+        QByteArrayLiteral("PRIVMSG #discuss,nickserv :identify my_nick s3cret\r\n"));
+    QCOMPARE(commaSecond.text(),
+             QStringLiteral("PRIVMSG #discuss,nickserv :IDENTIFY ***"));
+    QVERIFY(!commaSecond.text().contains(QStringLiteral("s3cret")));
+
+    const IrcStatusEntry keyedModes = IrcStatusEntry::incoming(
+        QStringLiteral("network-a"),
+        mustParse(":irc 324 omairc #omarchy +k s3cret"));
+    QCOMPARE(keyedModes.text(), QStringLiteral("#omarchy +k ***"));
+    QVERIFY(!keyedModes.text().contains(QStringLiteral("s3cret")));
+
+    const IrcStatusEntry listedModes = IrcStatusEntry::incoming(
+        QStringLiteral("network-a"),
+        mustParse(":irc 324 omairc #omarchy +nt"));
+    QCOMPARE(listedModes.text(), QStringLiteral("#omarchy +nt"));
 }
 
 void SessionTest::channelTalkAboutServicesStaysReadable()

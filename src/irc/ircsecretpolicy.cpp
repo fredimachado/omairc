@@ -28,6 +28,7 @@ constexpr IrcSecretRule kSecretMap[] = {
     {"OPER", IrcSecretShape::TailAfterParameters, 1},
     {"JOIN", IrcSecretShape::TailAfterParameters, 1},
     {"MODE", IrcSecretShape::KeyedModeTail, 2},
+    {"324", IrcSecretShape::KeyedModeTail, 3},
     {"PRIVMSG", IrcSecretShape::ServiceRequestBody, 1},
     {"NOTICE", IrcSecretShape::ServiceRequestBody, 1},
 };
@@ -73,7 +74,7 @@ constexpr bool secretMapIsWellFormed()
                 return false;
             break;
         case IrcSecretShape::KeyedModeTail:
-            if (row.visibleParameters != 2)
+            if (row.visibleParameters < 2)
                 return false;
             break;
         case IrcSecretShape::TailAfterParameters:
@@ -211,24 +212,43 @@ std::optional<IrcWireCommand> maskTailAfterParameters(const IrcWireCommand& comm
     return masked;
 }
 
-std::optional<IrcWireCommand> maskKeyedModeTail(const IrcWireCommand& command)
+std::optional<IrcWireCommand> maskKeyedModeTail(const IrcWireCommand& command,
+                                                int visibleParameters)
 {
-    if (command.parameters.size() < 3)
+    if (visibleParameters < 2 || command.parameters.size() <= visibleParameters)
         return std::nullopt;
+    const int modeIndex = visibleParameters - 1;
     // RFC channel key is 'k'; 'K' is a different letter and must stay visible.
-    if (!command.parameters.at(1).contains(QLatin1Char('k')))
+    if (!command.parameters.at(modeIndex).contains(QLatin1Char('k')))
         return std::nullopt;
     IrcWireCommand masked = command;
-    masked.parameters = command.parameters.mid(0, 2);
+    masked.parameters = command.parameters.mid(0, visibleParameters);
     masked.parameters.append(QStringLiteral("***"));
     return masked;
+}
+
+bool hasServiceTarget(QStringView targets)
+{
+    qsizetype start = 0;
+    while (start <= targets.size()) {
+        const qsizetype comma = targets.indexOf(QLatin1Char(','), start);
+        const QStringView piece = comma < 0
+            ? targets.mid(start)
+            : targets.mid(start, comma - start);
+        if (ircIsServiceIdentity(piece, QStringView()))
+            return true;
+        if (comma < 0)
+            break;
+        start = comma + 1;
+    }
+    return false;
 }
 
 std::optional<IrcWireCommand> maskServiceRequestBody(const IrcWireCommand& command)
 {
     if (command.parameters.size() != 2)
         return std::nullopt;
-    if (!ircIsServiceIdentity(command.parameters.at(0), QStringView()))
+    if (!hasServiceTarget(command.parameters.at(0)))
         return std::nullopt;
     const QStringList tokens =
         command.parameters.at(1).split(QLatin1Char(' '), Qt::SkipEmptyParts);
@@ -251,7 +271,7 @@ std::optional<IrcWireCommand> mask(const IrcWireCommand& command)
     case IrcSecretShape::TailAfterParameters:
         return maskTailAfterParameters(command, rule->visibleParameters);
     case IrcSecretShape::KeyedModeTail:
-        return maskKeyedModeTail(command);
+        return maskKeyedModeTail(command, rule->visibleParameters);
     case IrcSecretShape::ServiceRequestBody:
         return maskServiceRequestBody(command);
     }
