@@ -1876,6 +1876,41 @@ TestCase {
         verify(!containsMirc(eventText.text));
     }
 
+    function test_whoisRowWrapsLongBody() {
+        var list = item("messageList");
+        var previousCount = list.model.count;
+        var chunk = "lena is ~lena@user/host (Lena) is on #omarchy #help #omairc ";
+        var body = chunk + chunk + chunk + chunk + chunk + chunk +
+                   chunk + chunk + "End of WHOIS for lena";
+        list.model.append({
+            author: "",
+            time: "",
+            body: body,
+            kind: "whois"
+        });
+        tryCompare(list.model, "count", previousCount + 1);
+        list.positionViewAtIndex(previousCount, ListView.Contain);
+        waitForRendering(appWindow.contentItem);
+
+        var row = list.itemAtIndex(previousCount);
+        verify(row !== null, "The long whois row should be rendered");
+        var whoisText = findChild(row, "messageWhois");
+        verify(whoisText !== null && whoisText.visible, "Could not find messageWhois");
+        compare(whoisText.wrapMode, Text.Wrap);
+        compare(whoisText.textFormat, Text.PlainText);
+        compare(whoisText.text, body);
+        tryVerify(function () { return whoisText.lineCount > 1; },
+                  1000, "The WHOIS row should wrap");
+        tryVerify(function () {
+            return row.height > appWindow.scaledSize(22);
+        }, 1000, "A wrapped whois row should grow past the single-line height");
+        compare(findChild(row, "messageEvent").visible, false);
+        compare(findChild(row, "messageAvatar").visible, false);
+        compare(findChild(row, "messageHeader").visible, false);
+        compare(findChild(row, "messageBody").visible, false);
+        saveScreenshot("wrapped-whois-row");
+    }
+
     function test_toggleMembersWithShortcut() {
         var panel = item("membersPanel");
         verify(panel.visible);

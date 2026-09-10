@@ -71,6 +71,13 @@ struct IrcViewNotify {
         notify.rearmTyping = true;
         return notify;
     }
+
+    static IrcViewNotify transcript()
+    {
+        IrcViewNotify notify;
+        notify.messages = true;
+        return notify;
+    }
 };
 
 struct IrcViewClassifier {
@@ -153,6 +160,11 @@ struct IrcViewClassifier {
     IrcViewNotify operator()(const IrcTypingEvent&) const
     {
         return IrcViewNotify::typingOnly();
+    }
+
+    IrcViewNotify operator()(const IrcWhoisTranscriptEvent&) const
+    {
+        return IrcViewNotify::transcript();
     }
 };
 

@@ -12,6 +12,8 @@ QString kindString(IrcMessageKind kind)
     case IrcMessageKind::Event:
     case IrcMessageKind::Error:
         return QStringLiteral("event");
+    case IrcMessageKind::Whois:
+        return QStringLiteral("whois");
     case IrcMessageKind::Message:
         return QStringLiteral("message");
     case IrcMessageKind::Notice:
@@ -22,7 +24,9 @@ QString kindString(IrcMessageKind kind)
 
 QString displayTime(const IrcReducedMessage& message)
 {
-    if (message.kind == IrcMessageKind::Event || !message.timestamp.isValid())
+    if (message.kind == IrcMessageKind::Event
+        || message.kind == IrcMessageKind::Whois
+        || !message.timestamp.isValid())
         return {};
     return message.timestamp.toUTC().toString(QStringLiteral("HH:mm"));
 }

@@ -5,6 +5,7 @@
 #include "ircignore.h"
 #include "ircsessionmanager.h"
 #include "ircstatusconsole.h"
+#include "ircstatusentry.h"
 #include "memberlistmodel.h"
 #include "messagelistmodel.h"
 
@@ -14,7 +15,9 @@
 #include <QStringList>
 #include <QTimer>
 
+#include <map>
 #include <optional>
+#include <variant>
 
 struct IrcViewNotify;
 
@@ -119,6 +122,27 @@ private:
     };
     static std::optional<QuietSend> quietSendFor(IrcCommand::Verb verb);
 
+    struct IrcWhoisWatchKey
+    {
+        QString networkId;
+        QString normalizedNick;
+
+        friend bool operator<(const IrcWhoisWatchKey& left,
+                              const IrcWhoisWatchKey& right)
+        {
+            if (left.networkId != right.networkId)
+                return left.networkId < right.networkId;
+            return left.normalizedNick < right.normalizedNick;
+        }
+    };
+    struct IrcWhoisStatusOnly {};
+    using IrcWhoisDestination = std::variant<IrcWhoisStatusOnly, IrcConversationKey>;
+    struct IrcWhoisWatch
+    {
+        IrcWhoisDestination destination;
+        bool failedIsAmbiguous = false;
+    };
+
     void apply(const IrcEvent& event);
     void adoptReducerSelection();
     void publish(const IrcViewNotify& notify);
@@ -143,6 +167,15 @@ private:
                                     IrcComposerSurface surface);
     IrcCommandOutcome dispatchIgnore(const IrcCommand& command,
                                      IrcComposerSurface surface);
+    std::optional<IrcWhoisWatchKey> whoisWatchKey(const QString& networkId,
+                                                  const QString& nick) const;
+    bool sendWhois(IrcSession& session,
+                   const QString& nick,
+                   IrcWhoisDestination destination);
+    void noteNickDelivery(const QString& networkId, const QString& target);
+    void handleStatusEntry(const IrcStatusEntry& entry);
+    void routeWhoisLine(const QString& networkId, const IrcWhoisLine& line);
+    void forgetWhoisWatches(const QString& networkId);
     void echoIfPresent(IrcSession *session,
                        const QString& target,
                        const QString& body,
@@ -180,4 +213,5 @@ private:
     QTimer m_typingRefresh;
     QString m_composerDraft;
     QString m_typingTarget;
+    std::map<IrcWhoisWatchKey, IrcWhoisWatch> m_whoisWatches;
 };

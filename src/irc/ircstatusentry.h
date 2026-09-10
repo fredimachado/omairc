@@ -6,8 +6,29 @@
 #include <QString>
 #include <QStringView>
 
+#include <optional>
+
 enum class IrcLogSource { Server, Client, Local };
 enum class IrcLogSeverity { Trace, Info, Alert };
+
+class IrcWhoisLine final
+{
+public:
+    enum class Progress { Detail, Terminal, Failed };
+
+    const QString& nick() const noexcept;
+    const QString& text() const noexcept;
+    Progress progress() const noexcept;
+    bool terminal() const noexcept;
+
+private:
+    friend class IrcStatusEntry;
+    IrcWhoisLine(QString nick, QString text, Progress progress);
+
+    QString m_nick;
+    QString m_text;
+    Progress m_progress = Progress::Detail;
+};
 
 class IrcStatusEntry
 {
@@ -32,6 +53,7 @@ public:
     IrcLogSeverity severity() const;
     QString label() const;
     QString text() const;
+    const IrcWhoisLine *whoisLine() const noexcept;
 
 private:
     explicit IrcStatusEntry(QString networkId,
@@ -39,7 +61,8 @@ private:
                             IrcLogSource source,
                             IrcLogSeverity severity,
                             QString label,
-                            QString text);
+                            QString text,
+                            std::optional<IrcWhoisLine> whoisLine = {});
 
     QString m_networkId;
     QDateTime m_timestamp;
@@ -47,4 +70,5 @@ private:
     IrcLogSeverity m_severity;
     QString m_label;
     QString m_text;
+    std::optional<IrcWhoisLine> m_whoisLine;
 };
