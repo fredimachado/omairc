@@ -2033,10 +2033,18 @@ void SessionTest::deletingStableChatHistoryRequestsDraftToken()
 
 void SessionTest::historyBatchSwallowsInnerPrivmsg()
 {
-    Fixture fixture;
+    IrcSessionConfig sessionConfig = config();
+    sessionConfig.autojoinChannels = {};
+    Fixture fixture(sessionConfig);
     StatusCollector status(fixture.session);
     QStringList commands;
     QList<IrcHistoryBatch> batches;
+    fixture.connectTls();
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :batch chathistory\r\n"
+                          ":server CAP omairc ACK :batch chathistory\r\n"
+                          ":server 001 omairc :Welcome\r\n"
+                          ":omairc!u@h JOIN :#omarchy\r\n"));
     QObject::connect(fixture.session, &IrcSession::messageReceived, fixture.session,
                      [&](const QString&, const IrcMessage& message) {
         commands.append(QString::fromStdString(message.command));
@@ -2045,7 +2053,6 @@ void SessionTest::historyBatchSwallowsInnerPrivmsg()
                      [&](const QString&, const IrcHistoryBatch& batch) {
         batches.append(batch);
     });
-    fixture.registerWithWelcome();
 
     fixture.transport->injectBytes(
         QByteArrayLiteral(
@@ -2073,9 +2080,17 @@ void SessionTest::historyBatchSwallowsInnerPrivmsg()
 
 void SessionTest::draftHistoryBatchSwallowsInnerPrivmsg()
 {
-    Fixture fixture;
+    IrcSessionConfig sessionConfig = config();
+    sessionConfig.autojoinChannels = {};
+    Fixture fixture(sessionConfig);
     QStringList commands;
     QList<IrcHistoryBatch> batches;
+    fixture.connectTls();
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :batch draft/chathistory\r\n"
+                          ":server CAP omairc ACK :batch draft/chathistory\r\n"
+                          ":server 001 omairc :Welcome\r\n"
+                          ":omairc!u@h JOIN :#omarchy\r\n"));
     QObject::connect(fixture.session, &IrcSession::messageReceived, fixture.session,
                      [&](const QString&, const IrcMessage& message) {
         commands.append(QString::fromStdString(message.command));
@@ -2084,7 +2099,6 @@ void SessionTest::draftHistoryBatchSwallowsInnerPrivmsg()
                      [&](const QString&, const IrcHistoryBatch& batch) {
         batches.append(batch);
     });
-    fixture.registerWithWelcome();
 
     fixture.transport->injectBytes(
         QByteArrayLiteral(
