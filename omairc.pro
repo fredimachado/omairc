@@ -17,6 +17,7 @@ HEADERS += \
     src/omaircipc.h \
     src/omaircipchandler.h \
     src/omairccli.h \
+    src/omaircfilelog.h \
     src/systemtheme.h \
     src/irc/ircmessage.h \
     src/irc/ircparser.h \
@@ -62,6 +63,7 @@ SOURCES += \
     src/omaircipc.cpp \
     src/omaircipchandler.cpp \
     src/omairccli.cpp \
+    src/omaircfilelog.cpp \
     src/systemtheme.cpp \
     src/irc/ircparser.cpp \
     src/irc/ircframer.cpp \
