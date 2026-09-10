@@ -37,7 +37,7 @@ QString previewWire(std::string_view bytes, std::size_t byteCount)
     spaced.reserve(bytes.size());
     stripped.reserve(bytes.size());
     for (unsigned char c : bytes) {
-        if (c == '\t' || c >= 0x20) {
+        if (c == '\t' || (c >= 0x20 && c < 0x7F)) {
             display.push_back(char(c));
             spaced.push_back(char(c));
             stripped.push_back(char(c));
@@ -48,12 +48,12 @@ QString previewWire(std::string_view bytes, std::size_t byteCount)
     }
     QString preview = ircWireText(display);
     const QString strippedText = ircWireText(stripped);
-    if (const auto safe = IrcSecretPolicy::redactWireLine(QStringView(strippedText))) {
+    if (const auto safe = IrcSecretPolicy::redactPreviewLine(QStringView(strippedText))) {
         preview = *safe;
     } else {
         const QString spacedText = ircWireText(spaced);
         if (const auto safeSpaced =
-                IrcSecretPolicy::redactWireLine(QStringView(spacedText))) {
+                IrcSecretPolicy::redactPreviewLine(QStringView(spacedText))) {
             preview = *safeSpaced;
         }
     }

@@ -9,8 +9,8 @@ bool looksLikeChannel(QStringView target)
     if (target.isEmpty())
         return false;
     const QChar mark = target.front();
-    return mark == QLatin1Char('#') || mark == QLatin1Char('&')
-        || mark == QLatin1Char('+') || mark == QLatin1Char('!');
+    return !((mark >= QLatin1Char('A') && mark <= QLatin1Char('Z'))
+             || (mark >= QLatin1Char('a') && mark <= QLatin1Char('z')));
 }
 }
 

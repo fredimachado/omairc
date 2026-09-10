@@ -5,7 +5,9 @@
 
 #include <QStringList>
 
+#include <algorithm>
 #include <string>
+#include <vector>
 
 namespace
 {
@@ -236,16 +238,51 @@ bool modeLetterConsumesParam(QChar letter, bool adding)
     return letter == QLatin1Char('l') && adding;
 }
 
+bool isRfcDefaultModeLetter(QChar letter, bool adding)
+{
+    if (modeLetterConsumesParam(letter, adding))
+        return true;
+    return letter == QLatin1Char('i') || letter == QLatin1Char('m')
+        || letter == QLatin1Char('n') || letter == QLatin1Char('p')
+        || letter == QLatin1Char('s') || letter == QLatin1Char('t');
+}
+
 std::optional<IrcWireCommand> maskKeyedModeTail(const IrcWireCommand& command,
                                                 int visibleParameters)
 {
     if (visibleParameters < 2 || command.parameters.size() <= visibleParameters)
         return std::nullopt;
     const QString modes = command.parameters.at(visibleParameters - 1);
-    IrcWireCommand masked = command;
     bool adding = true;
+    bool hasKey = false;
+    bool ambiguous = false;
+    for (const QChar letter : modes) {
+        if (letter == QLatin1Char('+')) {
+            adding = true;
+            continue;
+        }
+        if (letter == QLatin1Char('-')) {
+            adding = false;
+            continue;
+        }
+        if (letter == QLatin1Char('k'))
+            hasKey = true;
+        else if (!isRfcDefaultModeLetter(letter, adding))
+            ambiguous = true;
+    }
+    if (!hasKey)
+        return std::nullopt;
+    if (ambiguous) {
+        IrcWireCommand masked = command;
+        masked.parameters = command.parameters.mid(0, visibleParameters);
+        masked.parameters.append(QStringLiteral("***"));
+        return masked;
+    }
+
+    IrcWireCommand masked = command;
     bool maskedKey = false;
     int argument = visibleParameters;
+    adding = true;
     for (const QChar letter : modes) {
         if (letter == QLatin1Char('+')) {
             adding = true;
@@ -289,11 +326,12 @@ bool hasServiceTarget(QStringView targets)
 
 QStringList serviceBodyTokens(const QString& body)
 {
-    QString normalized = body;
+    QString normalized = body.trimmed();
     if (!normalized.isEmpty() && normalized.front() == QChar(1))
         normalized.remove(0, 1);
     if (!normalized.isEmpty() && normalized.back() == QChar(1))
         normalized.chop(1);
+    normalized = normalized.trimmed();
     normalized.replace(QLatin1Char('\t'), QLatin1Char(' '));
     return normalized.split(QLatin1Char(' '), Qt::SkipEmptyParts);
 }
@@ -343,6 +381,65 @@ std::optional<IrcWireCommand> mask(const IrcWireCommand& command)
     }
     return std::nullopt;
 }
+
+QString lettersOnlyUpper(const QString& token)
+{
+    QString letters;
+    letters.reserve(token.size());
+    for (const QChar ch : token) {
+        if (ch >= QLatin1Char('A') && ch <= QLatin1Char('Z'))
+            letters.append(ch);
+        else if (ch >= QLatin1Char('a') && ch <= QLatin1Char('z'))
+            letters.append(ch.toUpper());
+    }
+    return letters;
+}
+
+int letterDistance(const QString& left, const QString& right)
+{
+    const int rows = left.size();
+    const int cols = right.size();
+    if (rows == 0)
+        return cols;
+    if (cols == 0)
+        return rows;
+    std::vector<int> previous(std::size_t(cols + 1));
+    std::vector<int> current(std::size_t(cols + 1));
+    for (int column = 0; column <= cols; ++column)
+        previous[std::size_t(column)] = column;
+    for (int row = 1; row <= rows; ++row) {
+        current[0] = row;
+        for (int column = 1; column <= cols; ++column) {
+            const int cost = left.at(row - 1) == right.at(column - 1) ? 0 : 1;
+            current[std::size_t(column)] = std::min({current[std::size_t(column - 1)] + 1,
+                                                     previous[std::size_t(column)] + 1,
+                                                     previous[std::size_t(column - 1)] + cost});
+        }
+        previous.swap(current);
+    }
+    return previous[std::size_t(cols)];
+}
+
+const IrcSecretRule *nearestSecretRule(const QString& verb)
+{
+    const QString letters = lettersOnlyUpper(verb);
+    if (letters.size() < 3)
+        return nullptr;
+    const IrcSecretRule *best = nullptr;
+    int bestDistance = 2;
+    for (const IrcSecretRule& row : kSecretMap) {
+        const int distance = letterDistance(letters, QLatin1String(row.verb));
+        if (distance < bestDistance) {
+            bestDistance = distance;
+            best = &row;
+        } else if (distance == bestDistance) {
+            best = nullptr;
+        }
+    }
+    if (bestDistance != 1)
+        return nullptr;
+    return best;
+}
 }
 
 std::optional<QString> IrcSecretPolicy::redactWireLine(QStringView line)
@@ -351,6 +448,24 @@ std::optional<QString> IrcSecretPolicy::redactWireLine(QStringView line)
     if (!parsed)
         return std::nullopt;
     const std::optional<IrcWireCommand> masked = mask(*parsed);
+    if (!masked)
+        return std::nullopt;
+    return formatLine(*masked);
+}
+
+std::optional<QString> IrcSecretPolicy::redactPreviewLine(QStringView line)
+{
+    if (const auto safe = redactWireLine(line))
+        return safe;
+    const std::optional<IrcWireCommand> parsed = tokenize(line);
+    if (!parsed || parsed->parameters.isEmpty())
+        return std::nullopt;
+    const IrcSecretRule *rule = nearestSecretRule(parsed->verb);
+    if (!rule)
+        return std::nullopt;
+    IrcWireCommand canonical = *parsed;
+    canonical.verb = QLatin1String(rule->verb);
+    const std::optional<IrcWireCommand> masked = mask(canonical);
     if (!masked)
         return std::nullopt;
     return formatLine(*masked);
