@@ -483,10 +483,23 @@ void ReducerTest::welcomeResetsMembership()
         reducer.conversationKey(networkA, QStringLiteral("#room")));
     QCOMPARE(conversation->peopleCount(), 2);
     QVERIFY(conversation->channel()->joined);
+    QVERIFY(conversation->channel()->historyAnchor);
 
     welcome(reducer, networkA);
     QCOMPARE(conversation->peopleCount(), 0);
     QVERIFY(!conversation->channel()->joined);
+    QVERIFY(!conversation->channel()->historyAnchor);
+
+    const IrcConversationKey room =
+        reducer.conversationKey(networkA, QStringLiteral("#room"));
+    reducer.apply(IrcHistoryEvent{
+        room,
+        QStringLiteral("#room"),
+        {replayLine(QStringLiteral("alice"), QStringLiteral("stale"),
+                    QStringLiteral("id-welcome"))},
+    });
+    QCOMPARE(conversation->messages.size(), std::size_t(1));
+    QCOMPARE(conversation->messages[0].body, QStringLiteral("omairc joined"));
 }
 
 void ReducerTest::awayIsOneFactVisibleInEveryChannel()

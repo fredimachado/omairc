@@ -530,6 +530,7 @@ void IrcEventReducer::reduce(const IrcWelcomeEvent& event)
         if (IrcChannelState *channel = conversation.channel()) {
             channel->members.clear();
             channel->joined = false;
+            channel->historyAnchor.reset();
             stopNamesSync(*channel);
         }
         conversation.typing.clear();

@@ -897,14 +897,23 @@ void IrcSession::handleMessage(const IrcMessage &message)
     emit messageReceived(m_config.networkId, message);
 
     if (message.command == "JOIN" && selfPrefixed(message)) {
-        bumpHistoryGeneration(parameter(message, 0));
-        requestChannelHistory(parameter(message, 0));
+        const QString channel = parameter(message, 0);
+        if (!channel.isEmpty()) {
+            bumpHistoryGeneration(channel);
+            requestChannelHistory(channel);
+        }
     } else if (message.command == "PART" && selfPrefixed(message)) {
-        bumpHistoryGeneration(parameter(message, 0));
-        forgetChannelHistory(parameter(message, 0));
+        const QString channel = parameter(message, 0);
+        if (!channel.isEmpty()) {
+            bumpHistoryGeneration(channel);
+            forgetChannelHistory(channel);
+        }
     } else if (message.command == "KICK" && selfIs(parameter(message, 1))) {
-        bumpHistoryGeneration(parameter(message, 0));
-        forgetChannelHistory(parameter(message, 0));
+        const QString channel = parameter(message, 0);
+        if (!channel.isEmpty()) {
+            bumpHistoryGeneration(channel);
+            forgetChannelHistory(channel);
+        }
     }
 }
 
@@ -923,14 +932,17 @@ void IrcSession::handleBatch(const IrcMessage &message)
         const QString type = parameter(message, 1);
         if (m_openBatches.contains(reference))
             return;
+        const bool overOpenCap = m_openBatches.size() >= kMaxOpenBatches;
         if (m_ignoredBatches.contains(reference)
             || (!parent.isEmpty() && m_ignoredBatches.contains(parent))
-            || m_openBatches.size() >= kMaxOpenBatches) {
+            || (overOpenCap && isHistoryBatch(type, parent))) {
             ignoreBatch(reference);
             if (isChatHistoryBatchType(type))
                 clearHistoryPending(parameter(message, 2));
             return;
         }
+        if (overOpenCap)
+            return;
         OpenBatch frame;
         frame.type = type;
         frame.parent = parent;
@@ -1020,6 +1032,8 @@ bool IrcSession::selfIs(const QString& nick) const
 
 void IrcSession::requestChannelHistory(const QString& channel)
 {
+    if (channel.isEmpty())
+        return;
     const IrcCapabilitySet enabled = m_capabilities.enabled();
     if (!enabled.contains(IrcCapability::ChatHistory)
         || !enabled.contains(IrcCapability::Batch)) {
@@ -1127,8 +1141,19 @@ bool IrcSession::swallowUnknownBatch(const QString& reference) const
 {
     if (reference.isEmpty() || m_openBatches.contains(reference))
         return false;
-    return m_openBatches.size() >= kMaxOpenBatches
-        || m_ignoredBatches.size() >= kMaxIgnoredBatches;
+    return m_ignoredBatches.size() >= kMaxIgnoredBatches;
+}
+
+bool IrcSession::isHistoryBatch(const QString& type, const QString& parent) const
+{
+    if (isChatHistoryBatchType(type))
+        return true;
+    if (parent.isEmpty())
+        return false;
+    if (m_ignoredBatches.contains(parent))
+        return true;
+    const auto found = m_openBatches.constFind(parent);
+    return found != m_openBatches.cend() && !found.value().replayRoot.isEmpty();
 }
 
 void IrcSession::handleChatHistoryFail(const IrcMessage& message)

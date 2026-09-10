@@ -191,6 +191,7 @@ private:
     void clearHistoryPending(const QString& channel);
     bool nicksEqual(const QString& left, const QString& right) const;
     bool swallowUnknownBatch(const QString& reference) const;
+    bool isHistoryBatch(const QString& type, const QString& parent) const;
     void handleChatHistoryFail(const IrcMessage& message);
     static bool isChatHistoryBatchType(const QString& type) noexcept;
     bool selfPrefixed(const IrcMessage& message) const;
