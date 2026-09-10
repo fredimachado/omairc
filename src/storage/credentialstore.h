@@ -10,6 +10,18 @@ struct CredentialKey
     QString host;
 };
 
+inline bool operator==(const CredentialKey &left, const CredentialKey &right)
+{
+    return left.networkId == right.networkId
+        && left.username == right.username
+        && left.host == right.host;
+}
+
+inline bool operator!=(const CredentialKey &left, const CredentialKey &right)
+{
+    return !(left == right);
+}
+
 class CredentialStore : public QObject
 {
     Q_OBJECT

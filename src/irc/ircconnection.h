@@ -95,8 +95,10 @@ signals:
 private:
     void restoreDraft();
     void processCredentialOperations();
+    void rememberObsoleteKey(const CredentialKey &key);
+    void flushObsoleteKeys(quint64 revision);
     void queueCredentialWrite(const CredentialKey &key, const QString &password,
-                              quint64 revision, const std::optional<CredentialKey> &removeKey = {});
+                              quint64 revision);
     void queueCredentialRemoval(const CredentialKey &key, quint64 revision);
     std::optional<IrcSessionConfig> sessionConfigFor(
         const IrcNetworkProfile &profile) const;
@@ -131,12 +133,13 @@ private:
         CredentialKey key;
         QString password;
         quint64 revision = 0;
-        std::optional<CredentialKey> removeKey;
     };
 
     QList<CredentialOperation> m_credentialOperations;
+    QList<CredentialKey> m_obsoleteKeys;
     CredentialStore::State m_credentialState = CredentialStore::State::Missing;
     QString m_credentialError;
     QMetaObject::Connection m_startupActivationConnection;
-    std::optional<CredentialKey> m_pendingCredentialMigration;
+    bool m_secretMayBeStored = false;
+    bool m_reconcileWhenReadSettles = false;
 };

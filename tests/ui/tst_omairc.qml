@@ -39,9 +39,6 @@ TestCase {
     QtObject {
         id: fakeConnection
 
-        // Numeric mirror of CredentialStore::State (src/irc/credentialstore.h):
-        // Loading=0, Available=1, Missing=2, Unavailable=3, Error=4,
-        // SessionOnly=5. Keep in sync when the enum changes.
         readonly property int credentialStateUnavailable: 3
         property string host: "irc.libera.chat"
         property int port: 6697
@@ -54,7 +51,7 @@ TestCase {
         property bool passwordSet: false
         property int credentialState: credentialStateUnavailable
         property string credentialError: ""
-        property string credentialStatus: "secure storage unavailable; password is session-only"
+        property string credentialStatus: "secure storage unavailable"
         property bool canForgetPassword: false
         property string problem: "Nick is required"
         property bool dirty: true
@@ -1722,7 +1719,7 @@ TestCase {
         compare(findChild(window, "connectionConnectOnStartup").checked, false);
         compare(findChild(window, "connectionProblem").text, "Nick is required");
         compare(findChild(window, "connectionCredentialStatus").text,
-                "secure storage unavailable; password is session-only");
+                "secure storage unavailable");
         try {
             grabImage(window.contentItem).save(artifactDirectory + "connection-sheet.png");
         } catch (error) {
