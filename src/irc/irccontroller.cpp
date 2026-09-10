@@ -128,6 +128,8 @@ IrcSession *IrcController::addSession(const IrcSessionConfig& config,
     });
     connect(session, &IrcSession::messageReceived,
             this, &IrcController::handleMessage);
+    connect(session, &IrcSession::historyBatchReceived,
+            this, &IrcController::handleHistoryBatch);
     connect(session, &IrcSession::capabilitiesChanged,
             this, &IrcController::handleCapabilities);
     connect(session, &IrcSession::stateChanged, this,
@@ -1168,6 +1170,16 @@ void IrcController::handleMessage(const QString& networkId,
         }
         apply(event);
     }
+}
+
+void IrcController::handleHistoryBatch(const QString& networkId,
+                                       const IrcHistoryBatch& batch)
+{
+    const auto event = IrcEventTranslator::translateHistory(
+        networkId, m_currentNicks.value(networkId),
+        m_reducer.serverFeatures(networkId), batch);
+    if (event)
+        apply(*event);
 }
 
 void IrcController::reloadModels()

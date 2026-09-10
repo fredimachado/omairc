@@ -106,8 +106,10 @@ TranscriptRowChrome chromeFromRow(QQuickItem *row)
     QQuickItem *body = directNamed(row, QStringLiteral("messageBody"));
     if (event && event->property("visible").toBool())
         chrome.body = event->property("text").toString();
-    else if (body)
+    else if (body) {
         chrome.body = body->property("text").toString();
+        chrome.bodyColor = body->property("color").value<QColor>();
+    }
     return chrome;
 }
 

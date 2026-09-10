@@ -2,6 +2,7 @@
 
 #include "irccapability.h"
 
+#include <QSet>
 #include <QString>
 #include <QStringList>
 
@@ -38,5 +39,6 @@ private:
     IrcCapabilitySet m_advertised;
     IrcCapabilitySet m_enabled;
     IrcCapabilitySet m_outstanding;
+    QSet<QString> m_advertisedTokens;
     bool m_saslCredentialsAvailable = false;
 };

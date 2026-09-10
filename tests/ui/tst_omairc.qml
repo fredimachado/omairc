@@ -1615,6 +1615,34 @@ TestCase {
         compare(dmList.model.get(dmStart).body, "dm continuation");
     }
 
+    function test_replayAndLiveSameAuthorMinuteDoNotGroup() {
+        var list = item("messageList");
+        var start = list.model.count;
+        list.model.append({
+            author: "anna",
+            time: "16:40",
+            body: "replayed line",
+            kind: "message",
+            origin: "replay"
+        });
+        list.model.append({
+            author: "anna",
+            time: "16:40",
+            body: "live line",
+            kind: "message",
+            origin: "live"
+        });
+        tryCompare(list.model, "count", start + 2);
+
+        var replay = renderedMessageRow(list, start);
+        var live = renderedMessageRow(list, start + 1);
+        assertMessageChrome(replay, true, "replayed line");
+        assertMessageChrome(live, true, "live line");
+        var replayBody = findChild(replay, "messageBody");
+        compare(replayBody.color, appWindow.mutedColor);
+        saveScreenshot("replay-live-ungrouped");
+    }
+
     function test_messageBodyIsSelectable() {
         var composer = item("messageComposer");
         mouseClick(composer);

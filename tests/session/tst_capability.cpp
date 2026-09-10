@@ -25,6 +25,10 @@ private slots:
     void deletionWithdrawsAnEnabledCapability();
     void timeoutAbandonsOutstandingRequests();
     void requestIsIdempotentUntilSomethingNewIsAdvertised();
+    void dualChatHistoryOfferRequestsStableToken();
+    void draftOnlyChatHistoryRequestsDraftToken();
+    void chatHistoryWithoutBatchIsNotRequested();
+    void deletingStableChatHistoryKeepsDraftAdvertised();
 };
 
 void CapabilityTest::unwantedAdvertisementProducesNoRequest()
@@ -188,6 +192,50 @@ void CapabilityTest::requestIsIdempotentUntilSomethingNewIsAdvertised()
     negotiation.reset(false);
     QVERIFY(negotiation.enabled().isEmpty());
     QVERIFY(negotiation.takeRequest().lines.isEmpty());
+}
+
+void CapabilityTest::dualChatHistoryOfferRequestsStableToken()
+{
+    IrcCapabilityNegotiation negotiation(false);
+    negotiation.advertise(tokens(QStringLiteral(
+        "batch chathistory draft/chathistory")));
+
+    const IrcCapabilityNegotiation::Request request = negotiation.takeRequest();
+    QCOMPARE(request.lines, QStringList{QStringLiteral("batch chathistory")});
+    QVERIFY(!request.lines.join(QLatin1Char(' ')).contains(
+        QLatin1String("draft/chathistory")));
+}
+
+void CapabilityTest::draftOnlyChatHistoryRequestsDraftToken()
+{
+    IrcCapabilityNegotiation negotiation(false);
+    negotiation.advertise(tokens(QStringLiteral("batch draft/chathistory")));
+
+    const IrcCapabilityNegotiation::Request request = negotiation.takeRequest();
+    QCOMPARE(request.lines, QStringList{QStringLiteral("batch draft/chathistory")});
+}
+
+void CapabilityTest::chatHistoryWithoutBatchIsNotRequested()
+{
+    IrcCapabilityNegotiation negotiation(false);
+    negotiation.advertise(tokens(QStringLiteral("chathistory draft/chathistory")));
+
+    const IrcCapabilityNegotiation::Request request = negotiation.takeRequest();
+    QVERIFY(request.lines.isEmpty());
+}
+
+void CapabilityTest::deletingStableChatHistoryKeepsDraftAdvertised()
+{
+    IrcCapabilityNegotiation negotiation(false);
+    negotiation.advertise(tokens(QStringLiteral(
+        "batch chathistory draft/chathistory")));
+    negotiation.takeRequest();
+    negotiation.acknowledge(tokens(QStringLiteral("batch chathistory")));
+    QVERIFY(negotiation.enabled().contains(IrcCapability::ChatHistory));
+
+    negotiation.withdraw(tokens(QStringLiteral("chathistory")));
+    QCOMPARE(negotiation.takeRequest().lines,
+             QStringList{QStringLiteral("draft/chathistory")});
 }
 
 int runCapabilityTests(int argc, char **argv)

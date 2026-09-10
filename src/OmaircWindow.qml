@@ -312,11 +312,13 @@ ApplicationWindow {
         }
         if (typeof model.data !== "function" || typeof model.index !== "function")
             return "";
-        // MessageListModel roles are UserRole+1..+4: author, time, body, kind.
+        // MessageListModel roles are UserRole+1..+6: author, time, body, kind,
+        // networkId, origin.
         var offset = name === "author" ? 1
             : name === "time" ? 2
             : name === "body" ? 3
             : name === "kind" ? 4
+            : name === "origin" ? 6
             : -1;
         if (offset < 0)
             return "";
@@ -324,11 +326,13 @@ ApplicationWindow {
         return value == null ? "" : String(value);
     }
 
-    function continuesMessageGroup(model, row, author, time, kind) {
+    function continuesMessageGroup(model, row, author, time, kind, origin) {
         if (kind === "event" || row <= 0 || author.length === 0 || time.length === 0)
             return false;
         var previousKind = transcriptField(model, row - 1, "kind");
         if (previousKind === "event" || previousKind.length === 0)
+            return false;
+        if (transcriptField(model, row - 1, "origin") !== origin)
             return false;
         return transcriptField(model, row - 1, "author") === author
             && transcriptField(model, row - 1, "time") === time;
@@ -3117,8 +3121,10 @@ ApplicationWindow {
                     required property string time
                     required property string body
                     required property string kind
+                    readonly property string origin: win.transcriptField(messageList.model, index, "origin")
+                    readonly property bool replayed: origin === "replay"
                     readonly property bool grouped: win.continuesMessageGroup(
-                        messageList.model, index, author, time, kind)
+                        messageList.model, index, author, time, kind, origin)
 
                     width: messageList.width
                     height: kind === "event"
@@ -3152,7 +3158,9 @@ ApplicationWindow {
                         radius: width / 2
                         color: win.mixColors(
                             win.pageColor,
-                            win.nickColor(messageDelegate.author),
+                            messageDelegate.replayed
+                                ? win.mutedColor
+                                : win.nickColor(messageDelegate.author),
                             win.darkMode ? 0.23 : 0.16)
 
                         Text {
@@ -3176,7 +3184,7 @@ ApplicationWindow {
 
                         Text {
                             text: messageDelegate.author
-                            color: win.nickColor(messageDelegate.author)
+                            color: messageDelegate.replayed ? win.mutedColor : win.nickColor(messageDelegate.author)
                             font.family: "iA Writer Mono S"
                             font.bold: true
                             font.pixelSize: win.scaledSize(12)
@@ -3204,7 +3212,8 @@ ApplicationWindow {
                             ? win.scaledSize(4)
                             : win.scaledSize(29)
                         text: win.plainIrcText(messageDelegate.body)
-                        color: messageDelegate.kind === "action" ? win.mutedColor : win.inkColor
+                        color: (messageDelegate.replayed || messageDelegate.kind === "action")
+                            ? win.mutedColor : win.inkColor
                         selectionColor: win.selectionColor
                         selectedTextColor: "#ffffff"
                         wrapMode: TextEdit.Wrap

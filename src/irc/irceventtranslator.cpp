@@ -1,6 +1,7 @@
 #include "irceventtranslator.h"
 
 #include "ircpresence.h"
+#include "ircsession.h"
 #include "irctcp.h"
 #include "irctyping.h"
 #include "ircwiretext.h"
@@ -187,15 +188,16 @@ std::vector<IrcEvent> IrcEventTranslator::translate(
         const QString displayTarget = features.isChannel(utf8(wireTarget))
             ? wireTarget
             : (same(sender, currentNick, features) ? wireTarget : sender);
+        const IrcMsgId msgid{tagValue(message, "msgid").value_or(QString{})};
         const QString actionPrefix = QChar(1) + QStringLiteral("ACTION ");
         if (body.startsWith(actionPrefix) && body.endsWith(QChar(1))) {
             events.emplace_back(IrcActionEvent{
                 *conversation, sender,
                 body.mid(actionPrefix.size(), body.size() - actionPrefix.size() - 1),
-                timestamp, displayTarget});
+                timestamp, displayTarget, msgid});
         } else {
             events.emplace_back(IrcMessageEvent{
-                *conversation, sender, body, timestamp, displayTarget});
+                *conversation, sender, body, timestamp, displayTarget, msgid});
         }
     } else if (command == QStringLiteral("TAGMSG") && !message.parameters.empty()) {
         const std::optional<QString> value = tagValue(message, "+typing");
@@ -279,4 +281,34 @@ std::vector<IrcEvent> IrcEventTranslator::translate(
     }
 
     return events;
+}
+
+std::optional<IrcHistoryEvent> IrcEventTranslator::translateHistory(
+    const QString& networkId,
+    const QString& currentNick,
+    const IrcServerFeatures& features,
+    const IrcHistoryBatch& batch)
+{
+    if (batch.target.isEmpty() || !features.isChannel(utf8(batch.target)))
+        return std::nullopt;
+    const IrcConversationKey conversation = key(networkId, batch.target, features);
+    IrcHistoryEvent event{conversation, batch.target, {}};
+    event.lines.reserve(batch.lines.size());
+    for (const IrcMessage& line : batch.lines) {
+        for (const IrcEvent& translated :
+             translate(networkId, currentNick, features, line)) {
+            if (const auto *message = std::get_if<IrcMessageEvent>(&translated)) {
+                if (message->conversation != conversation)
+                    continue;
+                event.lines.push_back({message->author, message->body, message->timestamp,
+                                       IrcMessageKindTag::Chat, message->msgid});
+            } else if (const auto *action = std::get_if<IrcActionEvent>(&translated)) {
+                if (action->conversation != conversation)
+                    continue;
+                event.lines.push_back({action->author, action->body, action->timestamp,
+                                       IrcMessageKindTag::Emote, action->msgid});
+            }
+        }
+    }
+    return event;
 }

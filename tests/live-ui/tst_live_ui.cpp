@@ -7,6 +7,7 @@
 #include "liveuiworld.h"
 #include "messagelistmodel.h"
 
+#include <QColor>
 #include <QCoreApplication>
 #include <QDebug>
 #include <QDir>
@@ -102,6 +103,7 @@ private slots:
     void inboundSameNickDirectsStayIsolated();
     void outboundSameNickDirectsStayIsolated();
     void consecutiveSameAuthorMinuteGroupsThroughIrcEvent();
+    void replayAndLiveSameAuthorMinuteDoNotGroupThroughIrcEvent();
 
 private:
     bool check(bool ok) const;
@@ -394,6 +396,98 @@ void LiveUiTest::consecutiveSameAuthorMinuteGroupsThroughIrcEvent()
     QVERIFY2(after.avatarVisible && after.headerVisible, qPrintable(describeChrome(rows)));
     QVERIFY2(saveFixtureShot(window, QStringLiteral("live-ui-grouped-messages")),
              "grouped screenshot");
+}
+
+void LiveUiTest::replayAndLiveSameAuthorMinuteDoNotGroupThroughIrcEvent()
+{
+    std::unique_ptr<QTemporaryDir> xdg;
+    if (!m_live) {
+        xdg = std::make_unique<QTemporaryDir>();
+        QVERIFY(xdg->isValid());
+        const QString root = xdg->path();
+        const QString config = root + QLatin1String("/config");
+        QDir().mkpath(config);
+        QDir().mkpath(root + QLatin1String("/cache"));
+        QDir().mkpath(root + QLatin1String("/data"));
+        qputenv("XDG_CONFIG_HOME", config.toUtf8());
+        qputenv("XDG_CACHE_HOME", (root + QLatin1String("/cache")).toUtf8());
+        qputenv("XDG_DATA_HOME", (root + QLatin1String("/data")).toUtf8());
+        QSettings::setPath(QSettings::NativeFormat, QSettings::UserScope, config);
+    }
+
+    Backend backend;
+    IrcSlashSession slash;
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    IrcSession *session = controller.addSession(fixtureConfig(), transport);
+    QVERIFY(session);
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    transport->completeConnect();
+    transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :batch chathistory\r\n"
+                          ":server CAP omairc ACK :batch chathistory\r\n"
+                          ":server 001 omairc :Welcome\r\n"
+                          ":server 005 omairc CHANTYPES=# PREFIX=(ov)@+ "
+                          ":are supported by this server\r\n"
+                          ":omairc!u@h JOIN :#omarchy\r\n"
+                          ":server 353 omairc = #omarchy :omairc anna\r\n"
+                          ":server 366 omairc #omarchy :End of NAMES\r\n"));
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+
+    QQmlApplicationEngine engine;
+    QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/OmaircWindow.qml")));
+    QVERIFY2(component.status() != QQmlComponent::Error, qPrintable(component.errorString()));
+    QVariantMap properties;
+    properties.insert(QStringLiteral("backend"), QVariant::fromValue(&backend));
+    properties.insert(QStringLiteral("irc"), QVariant::fromValue(&controller));
+    properties.insert(QStringLiteral("slashCommands"), QVariant::fromValue(&slash));
+    std::unique_ptr<QObject> root(component.createWithInitialProperties(properties));
+    QVERIFY2(root.get(), qPrintable(component.errorString()));
+    auto *window = qobject_cast<QQuickWindow *>(root.get());
+    QVERIFY(window);
+    QVERIFY(QTest::qWaitForWindowExposed(window));
+    window->setWidth(1180);
+    window->setHeight(760);
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    QCoreApplication::processEvents();
+
+    QVERIFY(waitUntil([&] {
+        QQuickItem *list = window->findChild<QQuickItem *>(QStringLiteral("messageList"));
+        return list && list->isVisible() && list->height() > 0
+            && !window->property("consoleVisible").toBool();
+    }));
+    QVERIFY(qobject_cast<MessageListModel *>(
+        window->findChild<QQuickItem *>(QStringLiteral("messageList"))
+            ->property("model")
+            .value<QObject *>()));
+
+    transport->injectBytes(
+        QByteArrayLiteral(
+            ":irc.host BATCH +empty chathistory #omarchy\r\n"
+            ":irc.host BATCH -empty\r\n"
+            ":irc.host BATCH +hx chathistory #omarchy\r\n"
+            "@batch=hx;time=2011-10-19T16:40:51.620Z;msgid=old :anna!u@h PRIVMSG #omarchy :replayed line\r\n"
+            ":irc.host BATCH -hx\r\n"
+            "@time=2011-10-19T16:40:51.620Z :anna!u@h PRIVMSG #omarchy :live line\r\n"));
+    QVERIFY2(waitUntil([&] {
+                    return chromeIndex(collectTranscriptChrome(window),
+                                       QStringLiteral("live line"))
+                        >= 0;
+                }),
+             qPrintable(describeChrome(collectTranscriptChrome(window))));
+
+    const QVector<TranscriptRowChrome> rows = collectTranscriptChrome(window);
+    const int replayAt = chromeIndex(rows, QStringLiteral("replayed line"));
+    const int liveAt = chromeIndex(rows, QStringLiteral("live line"));
+    QVERIFY2(replayAt >= 0 && liveAt == replayAt + 1, qPrintable(describeChrome(rows)));
+    QVERIFY2(rows.at(replayAt).avatarVisible && rows.at(replayAt).headerVisible,
+             qPrintable(describeChrome(rows)));
+    QVERIFY2(rows.at(liveAt).avatarVisible && rows.at(liveAt).headerVisible,
+             qPrintable(describeChrome(rows)));
+    const QColor muted = window->property("mutedColor").value<QColor>();
+    QCOMPARE(rows.at(replayAt).bodyColor, muted);
+    QVERIFY2(saveFixtureShot(window, QStringLiteral("live-ui-replay-history")),
+             "replay screenshot");
 }
 
 int runLiveUiTests(int argc, char **argv)

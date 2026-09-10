@@ -2,6 +2,7 @@
 
 #include <QElapsedTimer>
 #include <QHash>
+#include <QMetaType>
 #include <QObject>
 #include <QSet>
 #include <QString>
@@ -13,10 +14,13 @@
 #include "irccapability.h"
 #include "irccapabilitynegotiation.h"
 #include "ircframer.h"
+#include "ircmessage.h"
 #include "ircstatusentry.h"
 #include "irctransport.h"
 #include "irctyping.h"
 #include "irctypingpublisher.h"
+
+#include <vector>
 
 class IrcChannelModeRequest;
 class IrcJoinTarget;
@@ -66,6 +70,14 @@ struct IrcSessionConfig
     int capabilityTimeoutMilliseconds = 10000;
     int pingTimeoutMilliseconds = 60000;
 };
+
+struct IrcHistoryBatch
+{
+    QString target;
+    std::vector<IrcMessage> lines;
+    bool truncated = false;
+};
+Q_DECLARE_METATYPE(IrcHistoryBatch)
 
 class IrcSession : public QObject
 {
@@ -144,6 +156,7 @@ signals:
                             int delayMilliseconds,
                             int attempt);
     void messageReceived(const QString& networkId, const IrcMessage& message);
+    void historyBatchReceived(const QString& networkId, const IrcHistoryBatch& batch);
     void statusEntry(const IrcStatusEntry& entry);
     void capabilitiesChanged(const QString& networkId,
                              IrcCapabilitySet capabilities);
@@ -163,6 +176,13 @@ private:
     void handleBytes(const QByteArray &bytes);
     void handleMessage(const IrcMessage &message);
     void handleBatch(const IrcMessage &message);
+    bool captureInBatch(const IrcMessage &message);
+    void closeBatch(const QString& reference);
+    void requestChannelHistory(const QString& channel);
+    void forgetChannelHistory(const QString& channel);
+    static bool isChatHistoryBatchType(const QString& type) noexcept;
+    bool selfPrefixed(const IrcMessage& message) const;
+    bool selfIs(const QString& nick) const;
     bool allowCtcpReply(const QString &nick);
     void handleCap(const IrcMessage &message);
     void handleAuthenticate(const IrcMessage &message);
@@ -202,7 +222,18 @@ private:
     IrcCapabilityNegotiation m_capabilities;
     IrcCapabilitySet m_publishedCapabilities;
     IrcTypingPublisher m_typing;
-    QSet<QString> m_openBatches;
+    struct OpenBatch
+    {
+        QString type;
+        QString parent;
+        QString replayRoot;
+        IrcHistoryBatch collected;
+    };
+    QHash<QString, OpenBatch> m_openBatches;
+    QSet<QString> m_historyAsked;
+    static constexpr int kHistoryLimit = 100;
+    static constexpr int kHistoryBufferCeiling = 256;
+    static constexpr int kMaxOpenBatches = 16;
     QHash<QString, QElapsedTimer> m_ctcpReplyClock;
     IgnoreFilter m_ignoreFilter;
     State m_state = State::Idle;

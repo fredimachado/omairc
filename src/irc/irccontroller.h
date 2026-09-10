@@ -126,6 +126,7 @@ private:
                             IrcCapabilitySet capabilities);
     void echoLocal(IrcMessageKind kind, const QString& body);
     void handleMessage(const QString& networkId, const IrcMessage& message);
+    void handleHistoryBatch(const QString& networkId, const IrcHistoryBatch& batch);
     void reloadModels();
     IrcCommandOutcome dispatch(const IrcCommand& command,
                                IrcComposerSurface surface);

@@ -23,6 +23,8 @@ enum class IrcMessageKind
     Error,
 };
 
+enum class IrcOrigin { Live, Replay };
+
 struct IrcReducedMessage
 {
     QString author;
@@ -30,6 +32,8 @@ struct IrcReducedMessage
     QDateTime timestamp;
     IrcMessageKind kind = IrcMessageKind::Message;
     bool collapsible = false;
+    IrcOrigin origin = IrcOrigin::Live;
+    IrcMsgId msgid;
 };
 
 struct IrcMemberState
@@ -49,6 +53,11 @@ struct IrcMemberView
     bool isAway() const noexcept;
 };
 
+struct IrcTranscriptAnchor
+{
+    qint64 sequence = 0;
+};
+
 struct IrcChannelState
 {
     std::map<QString, IrcMemberState> members;
@@ -56,6 +65,7 @@ struct IrcChannelState
     bool joined = false;
     bool namesSyncing = false;
     QDateTime namesSyncStarted;
+    std::optional<IrcTranscriptAnchor> historyAnchor;
 };
 
 struct IrcDirectMessageState
@@ -72,6 +82,8 @@ struct IrcConversationState
     int unread = 0;
     int mentions = 0;
     int trimmed = 0;
+    std::set<IrcMsgId> messageIds;
+    int spliceEpoch = 0;
 
     bool isChannel() const noexcept;
     const IrcChannelState *channel() const noexcept;
@@ -143,11 +155,14 @@ private:
                     const QString& author,
                     const QString& body,
                     const QDateTime& timestamp,
-                    IrcMessageKind kind);
+                    IrcMessageKind kind,
+                    const IrcMsgId& msgid);
     void appendEvent(IrcConversationState& conversation,
                      const QString& body,
                      bool collapsible = false);
     void capMessages(IrcConversationState& conversation);
+    std::size_t spliceIndexFor(const IrcConversationState& conversation,
+                               const IrcChannelState& channel) const noexcept;
 
     void reduce(const IrcWelcomeEvent& event);
     void reduce(const IrcMessageEvent& event);
@@ -165,6 +180,7 @@ private:
     void reduce(const IrcSelfAwayEvent& event);
     void reduce(const IrcMemberStatusEvent& event);
     void reduce(const IrcTypingEvent& event);
+    void reduce(const IrcHistoryEvent& event);
 
     void clearTyping(IrcConversationState& conversation,
                      const QString& normalizedNick);

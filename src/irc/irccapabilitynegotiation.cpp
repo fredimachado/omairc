@@ -64,6 +64,10 @@ const Wanted wantedTable[] = {
      std::nullopt, false, acceptsAnyValue},
     {IrcCapability::EchoMessage, QLatin1String("echo-message"),
      std::nullopt, false, acceptsAnyValue},
+    {IrcCapability::ChatHistory, QLatin1String("chathistory"),
+     IrcCapability::Batch, false, acceptsAnyValue},
+    {IrcCapability::ChatHistory, QLatin1String("draft/chathistory"),
+     IrcCapability::Batch, false, acceptsAnyValue},
 };
 
 const Wanted *wantedFor(const QString& name)
@@ -86,6 +90,7 @@ void IrcCapabilityNegotiation::reset(bool saslCredentialsAvailable)
     m_advertised = {};
     m_enabled = {};
     m_outstanding = {};
+    m_advertisedTokens.clear();
     m_saslCredentialsAvailable = saslCredentialsAvailable;
 }
 
@@ -96,6 +101,7 @@ void IrcCapabilityNegotiation::advertise(const QStringList& tokens)
         if (!wanted || !wanted->acceptsValue(tokenValue(token)))
             continue;
         m_advertised.insert(wanted->capability);
+        m_advertisedTokens.insert(tokenName(token).toCaseFolded());
     }
 }
 
@@ -105,7 +111,18 @@ void IrcCapabilityNegotiation::withdraw(const QStringList& tokens)
         const Wanted *wanted = wantedFor(tokenName(token));
         if (!wanted)
             continue;
-        m_advertised.remove(wanted->capability);
+        m_advertisedTokens.remove(tokenName(token).toCaseFolded());
+        bool stillAdvertised = false;
+        for (const Wanted& row : wantedTable) {
+            if (row.capability != wanted->capability)
+                continue;
+            if (m_advertisedTokens.contains(QString(row.token).toCaseFolded())) {
+                stillAdvertised = true;
+                break;
+            }
+        }
+        if (!stillAdvertised)
+            m_advertised.remove(wanted->capability);
         m_enabled.remove(wanted->capability);
         m_outstanding.remove(wanted->capability);
     }
@@ -113,6 +130,8 @@ void IrcCapabilityNegotiation::withdraw(const QStringList& tokens)
 
 bool IrcCapabilityNegotiation::isRequestable(const Wanted& wanted) const
 {
+    if (!m_advertisedTokens.contains(QString(wanted.token).toCaseFolded()))
+        return false;
     if (!m_advertised.contains(wanted.capability))
         return false;
     if (m_enabled.contains(wanted.capability)

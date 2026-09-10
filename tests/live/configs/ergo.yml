@@ -1075,7 +1075,7 @@ history:
     # across server restarts. however, you may want to understand how message
     # history interacts with the GDPR and/or any data privacy laws that apply
     # in your country and the countries of your users.
-    enabled: false
+    enabled: true
 
     # if the in-memory backend is enabled for a channel, how many channel-specific events
     # (messages, joins, parts) should be retained?

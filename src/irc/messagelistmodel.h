@@ -23,6 +23,7 @@ public:
         BodyRole,
         KindRole,
         NetworkIdRole,
+        OriginRole,
     };
 
     explicit MessageListModel(IrcEventReducer& reducer, QObject *parent = nullptr);
@@ -42,4 +43,5 @@ private:
     std::optional<IrcConversationKey> m_loaded;
     int m_count = 0;
     int m_trimmed = 0;
+    int m_spliceEpoch = 0;
 };

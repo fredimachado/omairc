@@ -2,6 +2,7 @@
 
 #include "conversationlistmodel.h"
 
+#include <QColor>
 #include <QHash>
 #include <QPointer>
 #include <QSet>
@@ -20,6 +21,7 @@ struct TranscriptRowChrome
     bool avatarVisible = false;
     bool headerVisible = false;
     qreal height = 0;
+    QColor bodyColor;
 };
 
 QVector<TranscriptRowChrome> collectTranscriptChrome(QQuickWindow *window);
