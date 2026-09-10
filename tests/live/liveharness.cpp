@@ -366,11 +366,3 @@ QVariant LiveClient::transcriptRole(int row, int role)
         return {};
     return model->index(row, 0).data(role);
 }
-
-QVariant LiveClient::transcriptRole(int row, int role)
-{
-    QAbstractItemModel *model = controller.messages();
-    if (!model || row < 0 || row >= model->rowCount())
-        return {};
-    return model->index(row, 0).data(role);
-}
