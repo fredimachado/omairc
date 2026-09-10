@@ -305,14 +305,14 @@ void LiveUiTest::consecutiveSameAuthorMinuteGroupsThroughIrcEvent()
         QSKIP("FakeIrcTransport grouping runs under bin/test, not the compose world.");
     std::unique_ptr<QTemporaryDir> xdg = std::make_unique<QTemporaryDir>();
     QVERIFY(xdg->isValid());
-    const QString root = xdg->path();
-    const QString config = root + QLatin1String("/config");
+    const QString xdgRoot = xdg->path();
+    const QString config = xdgRoot + QLatin1String("/config");
     QDir().mkpath(config);
-    QDir().mkpath(root + QLatin1String("/cache"));
-    QDir().mkpath(root + QLatin1String("/data"));
+    QDir().mkpath(xdgRoot + QLatin1String("/cache"));
+    QDir().mkpath(xdgRoot + QLatin1String("/data"));
     qputenv("XDG_CONFIG_HOME", config.toUtf8());
-    qputenv("XDG_CACHE_HOME", (root + QLatin1String("/cache")).toUtf8());
-    qputenv("XDG_DATA_HOME", (root + QLatin1String("/data")).toUtf8());
+    qputenv("XDG_CACHE_HOME", (xdgRoot + QLatin1String("/cache")).toUtf8());
+    qputenv("XDG_DATA_HOME", (xdgRoot + QLatin1String("/data")).toUtf8());
     QSettings::setPath(QSettings::NativeFormat, QSettings::UserScope, config);
 
     Backend backend;
@@ -403,14 +403,14 @@ void LiveUiTest::replayAndLiveSameAuthorMinuteDoNotGroupThroughIrcEvent()
         QSKIP("FakeIrcTransport grouping runs under bin/test, not the compose world.");
     std::unique_ptr<QTemporaryDir> xdg = std::make_unique<QTemporaryDir>();
     QVERIFY(xdg->isValid());
-    const QString root = xdg->path();
-    const QString config = root + QLatin1String("/config");
+    const QString xdgRoot = xdg->path();
+    const QString config = xdgRoot + QLatin1String("/config");
     QDir().mkpath(config);
-    QDir().mkpath(root + QLatin1String("/cache"));
-    QDir().mkpath(root + QLatin1String("/data"));
+    QDir().mkpath(xdgRoot + QLatin1String("/cache"));
+    QDir().mkpath(xdgRoot + QLatin1String("/data"));
     qputenv("XDG_CONFIG_HOME", config.toUtf8());
-    qputenv("XDG_CACHE_HOME", (root + QLatin1String("/cache")).toUtf8());
-    qputenv("XDG_DATA_HOME", (root + QLatin1String("/data")).toUtf8());
+    qputenv("XDG_CACHE_HOME", (xdgRoot + QLatin1String("/cache")).toUtf8());
+    qputenv("XDG_DATA_HOME", (xdgRoot + QLatin1String("/data")).toUtf8());
     QSettings::setPath(QSettings::NativeFormat, QSettings::UserScope, config);
 
     Backend backend;
