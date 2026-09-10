@@ -1,5 +1,7 @@
 #include "conversationlistmodel.h"
 
+#include <QDateTime>
+
 #include <algorithm>
 
 namespace
@@ -125,6 +127,9 @@ QVariant ConversationListModel::data(const QModelIndex& index, int role) const
         return conversation->key.networkId;
     case ConversationIdRole:
         return ircConversationId(conversation->key);
+    case TypingRole:
+        return m_reducer.directPeerIsTyping(conversation->key,
+                                            QDateTime::currentDateTimeUtc());
     default:
         return {};
     }
@@ -140,6 +145,7 @@ QHash<int, QByteArray> ConversationListModel::roleNames() const
         {NetworkIdRole, "networkId"},
         {ConversationIdRole, "conversationId"},
         {ConversationNameRole, "conversationName"},
+        {TypingRole, "typing"},
     };
 }
 
@@ -151,12 +157,22 @@ void ConversationListModel::reload()
             return;
         emit dataChanged(index(0, 0),
                          index(keys.size() - 1, 0),
-                         {Qt::DisplayRole, ConversationRole, UnreadRole, MentionRole});
+                         {Qt::DisplayRole, ConversationRole, UnreadRole, MentionRole,
+                          TypingRole});
         return;
     }
     beginResetModel();
     m_keys = std::move(keys);
     endResetModel();
+}
+
+void ConversationListModel::invalidateTyping()
+{
+    if (m_keys.isEmpty())
+        return;
+    emit dataChanged(index(0, 0),
+                     index(m_keys.size() - 1, 0),
+                     {TypingRole});
 }
 
 void ConversationListModel::select(const IrcConversationKey& key)

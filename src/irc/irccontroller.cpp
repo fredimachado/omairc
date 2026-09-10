@@ -75,6 +75,7 @@ IrcController::IrcController(QObject *parent)
     m_typingRefresh.setSingleShot(true);
     connect(&m_typingRefresh, &QTimer::timeout, this, [this] {
         emit typingChanged();
+        m_conversations.invalidateTyping();
         armTypingRefresh();
     });
     connect(&m_console, &IrcStatusConsole::openChanged, this, [this] {
@@ -384,6 +385,7 @@ void IrcController::handleCapabilities(const QString& networkId,
     if (dropped(IrcCapability::MessageTags)) {
         m_reducer.clearTypingFacts(networkId);
         emit typingChanged();
+        m_conversations.invalidateTyping();
         armTypingRefresh();
     }
     emit capabilitiesChanged();
@@ -1049,8 +1051,11 @@ void IrcController::publish(const IrcViewNotify& notify)
         m_members.touch(notify.nick);
     if (notify.selection)
         emit selectionChanged();
-    if (notify.typing)
+    if (notify.typing) {
         emit typingChanged();
+        if (!notify.conversations)
+            m_conversations.invalidateTyping();
+    }
 }
 
 void IrcController::handleMessage(const QString& networkId,
@@ -1134,21 +1139,16 @@ void IrcController::notifySelfAwayIfChanged(const QString& previousId, bool prev
 void IrcController::armTypingRefresh()
 {
     m_typingRefresh.stop();
-    if (!m_selected)
-        return;
     const QDateTime now = QDateTime::currentDateTimeUtc();
-    if (m_reducer.typingNicks(*m_selected, now).isEmpty())
-        return;
-    const IrcConversationState *conversation = m_reducer.find(*m_selected);
-    if (!conversation)
-        return;
     QDateTime soonest;
-    for (const auto& entry : conversation->typing) {
-        if (!ircIsTyping(entry.second, now))
-            continue;
-        const QDateTime expires = ircTypingExpiresAt(entry.second);
-        if (!soonest.isValid() || expires < soonest)
-            soonest = expires;
+    for (const auto& conversation : m_reducer.conversations()) {
+        for (const auto& entry : conversation.second.typing) {
+            if (!ircIsTyping(entry.second, now))
+                continue;
+            const QDateTime expires = ircTypingExpiresAt(entry.second);
+            if (!soonest.isValid() || expires < soonest)
+                soonest = expires;
+        }
     }
     if (!soonest.isValid())
         return;

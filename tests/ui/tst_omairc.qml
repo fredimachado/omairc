@@ -125,6 +125,7 @@ TestCase {
             unread: 0
             mention: false
             direct: false
+            typing: false
             networkId: "libera"
             conversationId: "libera\n#omarchy"
         }
@@ -2092,6 +2093,24 @@ TestCase {
         tryCompare(overlay, "visible", true);
         compare(overlay.height, appWindow.scaledSize(12));
         saveScreenshot("typing-dm-overlay");
+    }
+
+    function test_mockBackgroundDmTypingIndicatorPulses() {
+        compare(appWindow.currentConversation, "#omarchy");
+        var dms = item("directConversationRepeater");
+        var anna = dms.itemAt(0);
+        verify(anna !== null, "The anna direct-message delegate should be rendered");
+        compare(anna.conversationName, "anna");
+        compare(anna.direct, true);
+        compare(anna.current, false);
+        compare(anna.typing, true);
+        var dots = findChild(anna, "conversation-typing-anna");
+        verify(dots !== null, "The background DM typing indicator should be rendered");
+        tryCompare(dots, "visible", true);
+        saveScreenshot("typing-sidebar-dm");
+        var pulse = dots.pulse;
+        wait(320);
+        tryCompare(dots, "pulse", (pulse + 1) % 3);
     }
 
     function test_openStatusFromNetworkHeaderKeepsAuthOutOfDirects() {

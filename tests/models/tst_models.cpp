@@ -1,9 +1,12 @@
 #include <QAbstractItemModel>
+#include <QDateTime>
+#include <QList>
 #include <QSignalSpy>
 #include <QTest>
 
 #include "conversationlistmodel.h"
 #include "irceventreducer.h"
+#include "irctyping.h"
 #include "memberlistmodel.h"
 #include "messagelistmodel.h"
 
@@ -62,6 +65,7 @@ private slots:
     void neighborAfterDropNextPreviousGhostAndOnly();
     void neighborAfterDropPrefersSameNetwork();
     void reloadUnchangedKeysEmitsDataChangedNotReset();
+    void typingRoleDerivesFromExistingDirectAndInvalidates();
     void selectedChatAppendInsertsInsteadOfReset();
     void reloadTrimEmitsRemovesWhenCountUnchanged();
     void reloadClearAfterCapEmitsRemoves();
@@ -89,6 +93,8 @@ void ModelTest::roleNamesMatchQml()
              QByteArray("conversationId"));
     QCOMPARE(conversations.roleNames()[ConversationListModel::ConversationNameRole],
              QByteArray("conversationName"));
+    QCOMPARE(conversations.roleNames()[ConversationListModel::TypingRole],
+             QByteArray("typing"));
 
     QCOMPARE(messages.roleNames()[MessageListModel::AuthorRole], QByteArray("author"));
     QCOMPARE(messages.roleNames()[MessageListModel::TimeRole], QByteArray("time"));
@@ -518,6 +524,8 @@ void ModelTest::reloadUnchangedKeysEmitsDataChangedNotReset()
     conversations.reload();
     QCOMPARE(resets.size(), 0);
     QCOMPARE(changes.size(), 1);
+    QVERIFY(changes.at(0).at(2).value<QList<int>>().contains(
+        ConversationListModel::TypingRole));
     QCOMPARE(roleAt(conversations, 0, ConversationListModel::UnreadRole), 1);
 
     reducer.apply(IrcJoinEvent{
@@ -525,6 +533,72 @@ void ModelTest::reloadUnchangedKeysEmitsDataChangedNotReset()
     conversations.reload();
     QCOMPARE(resets.size(), 1);
     QCOMPARE(conversations.rowCount(), 2);
+}
+
+void ModelTest::typingRoleDerivesFromExistingDirectAndInvalidates()
+{
+    IrcEventReducer reducer;
+    ConversationListModel conversations(reducer);
+    welcome(reducer, networkA);
+    reducer.apply(IrcJoinEvent{
+        networkA, QStringLiteral("#room"), QStringLiteral("omairc")});
+    const IrcConversationKey room =
+        reducer.conversationKey(networkA, QStringLiteral("#room"));
+    const IrcConversationKey alice =
+        reducer.conversationKey(networkA, QStringLiteral("Alice"));
+    const IrcConversationKey ghost =
+        reducer.conversationKey(networkA, QStringLiteral("ghost"));
+    reducer.apply(IrcMessageEvent{
+        alice, QStringLiteral("Alice"), QStringLiteral("hi"), timestamp,
+        QStringLiteral("Alice")});
+    conversations.select(room);
+    const int aliceRow = rowFor(conversations, ircConversationId(alice));
+    const int roomRow = rowFor(conversations, ircConversationId(room));
+    QVERIFY(aliceRow >= 0);
+    QVERIFY(roomRow >= 0);
+    QCOMPARE(roleAt(conversations, aliceRow, ConversationListModel::TypingRole),
+             false);
+    QCOMPARE(roleAt(conversations, roomRow, ConversationListModel::TypingRole),
+             false);
+
+    const QDateTime now = QDateTime::currentDateTimeUtc();
+    reducer.apply(IrcTypingEvent{alice, QStringLiteral("Alice"),
+                                 IrcTypingPhase::Active, now});
+    reducer.apply(IrcTypingEvent{ghost, QStringLiteral("ghost"),
+                                 IrcTypingPhase::Active, now});
+    QVERIFY(!reducer.find(ghost));
+    QCOMPARE(conversations.rowCount(), 2);
+
+    QSignalSpy changes(&conversations, &QAbstractItemModel::dataChanged);
+    conversations.invalidateTyping();
+    QCOMPARE(changes.size(), 1);
+    QCOMPARE(changes.at(0).at(2).value<QList<int>>(),
+             QList<int>{ConversationListModel::TypingRole});
+    QCOMPARE(roleAt(conversations, aliceRow, ConversationListModel::TypingRole),
+             true);
+    QCOMPARE(roleAt(conversations, roomRow, ConversationListModel::TypingRole),
+             false);
+    QVERIFY(reducer.directPeerIsTyping(alice, now));
+    QVERIFY(!reducer.directPeerIsTyping(room, now));
+    QVERIFY(!reducer.directPeerIsTyping(ghost, now));
+
+    reducer.apply(IrcTypingEvent{alice, QStringLiteral("Alice"),
+                                 IrcTypingPhase::Done, now});
+    conversations.invalidateTyping();
+    QCOMPARE(roleAt(conversations, aliceRow, ConversationListModel::TypingRole),
+             false);
+
+    reducer.apply(IrcTypingEvent{alice, QStringLiteral("Alice"),
+                                 IrcTypingPhase::Active, now});
+    conversations.invalidateTyping();
+    QCOMPARE(roleAt(conversations, aliceRow, ConversationListModel::TypingRole),
+             true);
+    reducer.apply(IrcMessageEvent{
+        alice, QStringLiteral("Alice"), QStringLiteral("here"), timestamp,
+        QStringLiteral("Alice")});
+    conversations.invalidateTyping();
+    QCOMPARE(roleAt(conversations, aliceRow, ConversationListModel::TypingRole),
+             false);
 }
 
 void ModelTest::selectedChatAppendInsertsInsteadOfReset()
