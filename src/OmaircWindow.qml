@@ -3131,7 +3131,8 @@ ApplicationWindow {
                         id: messageEvent
                         objectName: "messageEvent"
                         visible: messageDelegate.kind === "event"
-                        anchors.centerIn: parent
+                        x: win.scaledSize(24)
+                        y: Math.round((parent.height - implicitHeight) / 2)
                         width: parent.width - win.scaledSize(48)
                         horizontalAlignment: Text.AlignHCenter
                         text: win.plainIrcText(messageDelegate.body)

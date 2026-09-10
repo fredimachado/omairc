@@ -1896,9 +1896,11 @@ TestCase {
         verify(eventText !== null && eventText.visible, "Could not find messageEvent");
         compare(eventText.wrapMode, Text.Wrap);
         compare(eventText.text, body);
-        verify(eventText.lineCount > 1, "The WHOIS event should wrap");
-        verify(row.height > appWindow.scaledSize(42),
-               "A wrapped event row should grow past the single-line height");
+        tryVerify(function () { return eventText.lineCount > 1; },
+                  1000, "The WHOIS event should wrap");
+        tryVerify(function () {
+            return row.height > appWindow.scaledSize(42);
+        }, 1000, "A wrapped event row should grow past the single-line height");
         saveScreenshot("wrapped-whois-event");
     }
 
