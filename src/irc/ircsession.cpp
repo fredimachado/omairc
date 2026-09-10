@@ -973,13 +973,18 @@ void IrcSession::closeBatch(const QString& reference)
         return;
     const OpenBatch frame = found.value();
     m_openBatches.erase(found);
+    QSet<QString> children;
     auto it = m_openBatches.begin();
     while (it != m_openBatches.end()) {
-        if (it.value().replayRoot == reference)
+        if (it.value().replayRoot == reference) {
+            children.insert(it.key());
             it = m_openBatches.erase(it);
-        else
+        } else {
             ++it;
+        }
     }
+    for (const QString& child : children)
+        ignoreBatch(child);
     if (frame.replayRoot == reference && !frame.collected.target.isEmpty()) {
         const QString folded = foldChannel(frame.collected.target);
         const bool currentMembership =
@@ -1043,7 +1048,7 @@ void IrcSession::requestChannelHistory(const QString& channel)
     if (m_historyAsked.contains(key))
         return;
     m_historyAsked.insert(key);
-    m_historyPending.insert(key);
+    m_historyPending.insert(key, historyGeneration(channel));
     sendCommand(QStringLiteral("CHATHISTORY LATEST %1 * %2")
                     .arg(channel)
                     .arg(kHistoryLimit));
@@ -1120,8 +1125,10 @@ void IrcSession::ignoreBatch(const QString& reference)
     if (reference.isEmpty())
         return;
     m_openBatches.remove(reference);
-    if (m_ignoredBatches.contains(reference)
-        || m_ignoredBatches.size() >= kMaxIgnoredBatches) {
+    if (m_ignoredBatches.contains(reference))
+        return;
+    if (m_ignoredBatches.size() >= kMaxIgnoredBatches) {
+        m_ignoredBatchOverflow = true;
         return;
     }
     m_ignoredBatches.insert(reference);
@@ -1141,7 +1148,23 @@ bool IrcSession::swallowUnknownBatch(const QString& reference) const
 {
     if (reference.isEmpty() || m_openBatches.contains(reference))
         return false;
-    return m_ignoredBatches.size() >= kMaxIgnoredBatches;
+    return m_ignoredBatchOverflow
+        || m_ignoredBatches.size() >= kMaxIgnoredBatches;
+}
+
+bool IrcSession::hasOpenCurrentHistoryBatch(const QString& channel) const
+{
+    const QString folded = foldChannel(channel);
+    const int generation = historyGeneration(channel);
+    for (auto it = m_openBatches.constBegin(); it != m_openBatches.constEnd(); ++it) {
+        if (it.value().replayRoot != it.key())
+            continue;
+        if (foldChannel(it.value().collected.target) != folded)
+            continue;
+        if (it.value().generation == generation)
+            return true;
+    }
+    return false;
 }
 
 bool IrcSession::isHistoryBatch(const QString& type, const QString& parent) const
@@ -1163,13 +1186,17 @@ void IrcSession::handleChatHistoryFail(const IrcMessage& message)
         != 0) {
         return;
     }
-    bool cleared = false;
     for (std::size_t index = 1; index < message.parameters.size(); ++index) {
-        if (m_historyPending.remove(foldChannel(parameter(message, index))))
-            cleared = true;
+        const QString channel = parameter(message, index);
+        const QString folded = foldChannel(channel);
+        if (!m_historyPending.contains(folded))
+            continue;
+        if (m_historyPending.value(folded) != historyGeneration(channel))
+            continue;
+        if (hasOpenCurrentHistoryBatch(channel))
+            continue;
+        m_historyPending.remove(folded);
     }
-    if (!cleared)
-        m_historyPending.clear();
 }
 
 void IrcSession::handleCap(const IrcMessage &message)
@@ -1353,6 +1380,7 @@ void IrcSession::resetForConnection()
     m_historyAsked.clear();
     m_historyPending.clear();
     m_historyGeneration.clear();
+    m_ignoredBatchOverflow = false;
     m_caseMapping = IrcCaseMapping{IrcCaseMapping::Kind::Rfc1459};
     m_nick = m_config.nick;
     m_registrationSent = false;

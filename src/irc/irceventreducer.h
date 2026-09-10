@@ -161,8 +161,6 @@ private:
                      const QString& body,
                      bool collapsible = false);
     void capMessages(IrcConversationState& conversation);
-    std::size_t spliceIndexFor(const IrcConversationState& conversation,
-                               const IrcChannelState& channel) const noexcept;
 
     void reduce(const IrcWelcomeEvent& event);
     void reduce(const IrcMessageEvent& event);

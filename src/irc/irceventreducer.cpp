@@ -4,7 +4,6 @@
 
 #include <QByteArray>
 
-#include <algorithm>
 #include <cstddef>
 #include <string>
 #include <vector>
@@ -516,6 +515,12 @@ void IrcEventReducer::capMessages(IrcConversationState& conversation)
     }
     messages.erase(messages.begin(), messages.begin() + extra);
     conversation.trimmed += extra;
+    if (IrcChannelState *channel = conversation.channel()) {
+        if (channel->historyAnchor
+            && channel->historyAnchor->sequence < conversation.trimmed) {
+            channel->historyAnchor.reset();
+        }
+    }
 }
 
 void IrcEventReducer::reduce(const IrcWelcomeEvent& event)
@@ -806,19 +811,6 @@ void IrcEventReducer::reduce(const IrcTypingEvent& event)
     conversation->typing.insert_or_assign(normalizedNick, *hint);
 }
 
-std::size_t IrcEventReducer::spliceIndexFor(
-    const IrcConversationState& conversation,
-    const IrcChannelState& channel) const noexcept
-{
-    if (!channel.historyAnchor)
-        return conversation.messages.size();
-    const qint64 index = std::clamp<qint64>(
-        channel.historyAnchor->sequence - conversation.trimmed,
-        0,
-        qint64(conversation.messages.size()));
-    return std::size_t(index);
-}
-
 void IrcEventReducer::reduce(const IrcHistoryEvent& event)
 {
     IrcConversationState *conversation = findMutable(event.conversation);
@@ -827,8 +819,13 @@ void IrcEventReducer::reduce(const IrcHistoryEvent& event)
     IrcChannelState *channel = conversation->channel();
     if (!channel || !channel->historyAnchor)
         return;
+    const qint64 index = channel->historyAnchor->sequence - conversation->trimmed;
+    if (index < 0 || index > qint64(conversation->messages.size())) {
+        channel->historyAnchor.reset();
+        return;
+    }
     const std::size_t previousSize = conversation->messages.size();
-    const std::size_t at = spliceIndexFor(*conversation, *channel);
+    const std::size_t at = std::size_t(index);
     channel->historyAnchor.reset();
 
     std::vector<IrcReducedMessage> run;

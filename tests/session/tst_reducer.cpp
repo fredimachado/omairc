@@ -85,6 +85,7 @@ private slots:
     void partThenJoinSplicesAboveThisJoin();
     void historicJoinInBatchDoesNotChangePeopleCount();
     void historyAfterPartDoesNotSplice();
+    void historyAfterCapDoesNotSplice();
     void clearMessagesDropsPendingHistory();
     void nickCollisionMergesMessageIds();
 };
@@ -1179,6 +1180,40 @@ void ReducerTest::historyAfterPartDoesNotSplice()
     QCOMPARE(conversation->messages.size(), std::size_t(2));
     QCOMPARE(conversation->messages[0].body, QStringLiteral("omairc joined"));
     QCOMPARE(conversation->messages[1].body, QStringLiteral("omairc left"));
+}
+
+void ReducerTest::historyAfterCapDoesNotSplice()
+{
+    IrcEventReducer reducer;
+    welcome(reducer, networkA);
+    const IrcConversationKey room =
+        reducer.conversationKey(networkA, QStringLiteral("#omarchy"));
+    reducer.apply(IrcJoinEvent{
+        networkA, QStringLiteral("#omarchy"), QStringLiteral("omairc")});
+    QVERIFY(reducer.find(room)->channel()->historyAnchor);
+
+    for (int index = 0; index < 2000; ++index) {
+        reducer.apply(IrcMessageEvent{
+            room, QStringLiteral("alice"), QString::number(index), timestamp,
+            QStringLiteral("#omarchy")});
+    }
+
+    const IrcConversationState *conversation = reducer.find(room);
+    QVERIFY(conversation);
+    QCOMPARE(conversation->messages.size(), std::size_t(2000));
+    QVERIFY(!conversation->channel()->historyAnchor);
+    QCOMPARE(conversation->messages.front().body, QStringLiteral("0"));
+    QCOMPARE(conversation->messages.front().origin, IrcOrigin::Live);
+
+    reducer.apply(IrcHistoryEvent{
+        room,
+        QStringLiteral("#omarchy"),
+        {replayLine(QStringLiteral("alice"), QStringLiteral("stale"),
+                    QStringLiteral("id-cap"))},
+    });
+    QCOMPARE(conversation->messages.size(), std::size_t(2000));
+    QCOMPARE(conversation->messages.front().body, QStringLiteral("0"));
+    QCOMPARE(conversation->messages.front().origin, IrcOrigin::Live);
 }
 
 void ReducerTest::clearMessagesDropsPendingHistory()

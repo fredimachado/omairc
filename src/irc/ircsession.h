@@ -192,6 +192,7 @@ private:
     bool nicksEqual(const QString& left, const QString& right) const;
     bool swallowUnknownBatch(const QString& reference) const;
     bool isHistoryBatch(const QString& type, const QString& parent) const;
+    bool hasOpenCurrentHistoryBatch(const QString& channel) const;
     void handleChatHistoryFail(const IrcMessage& message);
     static bool isChatHistoryBatchType(const QString& type) noexcept;
     bool selfPrefixed(const IrcMessage& message) const;
@@ -247,7 +248,8 @@ private:
     QSet<QString> m_ignoredBatches;
     QHash<QString, int> m_historyGeneration;
     QSet<QString> m_historyAsked;
-    QSet<QString> m_historyPending;
+    QHash<QString, int> m_historyPending;
+    bool m_ignoredBatchOverflow = false;
     IrcCaseMapping m_caseMapping{IrcCaseMapping::Kind::Rfc1459};
     static constexpr int kHistoryLimit = 100;
     static constexpr int kHistoryBufferCeiling = 256;
