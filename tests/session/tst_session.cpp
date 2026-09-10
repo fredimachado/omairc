@@ -248,6 +248,9 @@ private slots:
     void overflowedHistoryLineStillSwallowedAfterIgnoredClose();
     void chatHistoryFailClearsPending();
     void delayedChatHistoryFailAfterRejoinKeepsPending();
+    void chatHistoryFailDescriptionDoesNotClearOtherChannel();
+    void deletingRequiredHistoryCapClearsPending();
+    void deletingUnusedDraftChatHistoryKeepsPending();
     void unsolicitedHistoryBatchStillEmits();
 };
 
@@ -2486,6 +2489,81 @@ void SessionTest::delayedChatHistoryFailAfterRejoinKeepsPending()
     fixture.transport->injectBytes(
         QByteArrayLiteral(":irc.host BATCH -hx\r\n"));
     QVERIFY(!fixture.session->historyPending());
+}
+
+void SessionTest::chatHistoryFailDescriptionDoesNotClearOtherChannel()
+{
+    IrcSessionConfig sessionConfig = config();
+    sessionConfig.autojoinChannels = {};
+    Fixture fixture(sessionConfig);
+    fixture.connectTls();
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :batch chathistory\r\n"
+                          ":server CAP omairc ACK :batch chathistory\r\n"
+                          ":server 001 omairc :Welcome\r\n"
+                          ":omairc!u@h JOIN :#omarchy\r\n"
+                          ":omairc!u@h JOIN :#desktop\r\n"));
+    QVERIFY(fixture.session->historyPending());
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(
+            ":server FAIL CHATHISTORY INVALID_TARGET #omarchy :also #desktop\r\n"));
+    QVERIFY(fixture.session->historyPending());
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(":irc.host BATCH +hx chathistory #desktop\r\n"
+                          ":irc.host BATCH -hx\r\n"));
+    QVERIFY(!fixture.session->historyPending());
+}
+
+void SessionTest::deletingRequiredHistoryCapClearsPending()
+{
+    IrcSessionConfig sessionConfig = config();
+    sessionConfig.autojoinChannels = {};
+    Fixture fixture(sessionConfig);
+    QStringList privmsgs;
+    QList<IrcHistoryBatch> batches;
+    QObject::connect(fixture.session, &IrcSession::messageReceived, fixture.session,
+                     [&](const QString&, const IrcMessage& message) {
+        if (message.command == "PRIVMSG" && !message.parameters.empty())
+            privmsgs.append(QString::fromStdString(message.parameters.back()));
+    });
+    QObject::connect(fixture.session, &IrcSession::historyBatchReceived, fixture.session,
+                     [&](const QString&, const IrcHistoryBatch& batch) {
+        batches.append(batch);
+    });
+    fixture.connectTls();
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :batch chathistory\r\n"
+                          ":server CAP omairc ACK :batch chathistory\r\n"
+                          ":server 001 omairc :Welcome\r\n"
+                          ":omairc!u@h JOIN :#omarchy\r\n"
+                          ":irc.host BATCH +hx chathistory #omarchy\r\n"
+                          "@batch=hx :alice!u@h PRIVMSG #omarchy :old\r\n"));
+    QVERIFY(fixture.session->historyPending());
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc DEL :batch\r\n"
+                          "@batch=hx :alice!u@h PRIVMSG #omarchy :late\r\n"
+                          ":irc.host BATCH -hx\r\n"
+                          ":bob!u@h PRIVMSG #omarchy :after\r\n"));
+    QVERIFY(!fixture.session->historyPending());
+    QCOMPARE(privmsgs, QStringList({QStringLiteral("after")}));
+    QVERIFY(batches.isEmpty());
+}
+
+void SessionTest::deletingUnusedDraftChatHistoryKeepsPending()
+{
+    IrcSessionConfig sessionConfig = config();
+    sessionConfig.autojoinChannels = {};
+    Fixture fixture(sessionConfig);
+    fixture.connectTls();
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :batch chathistory draft/chathistory\r\n"
+                          ":server CAP omairc ACK :batch chathistory\r\n"
+                          ":server 001 omairc :Welcome\r\n"
+                          ":omairc!u@h JOIN :#omarchy\r\n"));
+    QVERIFY(fixture.session->historyPending());
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc DEL :draft/chathistory\r\n"));
+    QVERIFY(fixture.session->historyPending());
 }
 
 void SessionTest::unsolicitedHistoryBatchStillEmits()

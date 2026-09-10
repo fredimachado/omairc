@@ -899,6 +899,7 @@ void IrcSession::handleMessage(const IrcMessage &message)
     if (message.command == "JOIN" && selfPrefixed(message)) {
         const QString channel = parameter(message, 0);
         if (!channel.isEmpty()) {
+            m_historySuspended = false;
             bumpHistoryGeneration(channel);
             requestChannelHistory(channel);
         }
@@ -932,6 +933,10 @@ void IrcSession::handleBatch(const IrcMessage &message)
         const QString type = parameter(message, 1);
         if (m_openBatches.contains(reference))
             return;
+        if (m_historySuspended && isHistoryBatch(type, parent)) {
+            ignoreBatch(reference);
+            return;
+        }
         const bool overOpenCap = m_openBatches.size() >= kMaxOpenBatches;
         if (m_ignoredBatches.contains(reference)
             || (!parent.isEmpty() && m_ignoredBatches.contains(parent))
@@ -1167,6 +1172,28 @@ bool IrcSession::hasOpenCurrentHistoryBatch(const QString& channel) const
     return false;
 }
 
+bool IrcSession::historyCapabilitiesEnabled() const
+{
+    const IrcCapabilitySet enabled = m_capabilities.enabled();
+    return enabled.contains(IrcCapability::ChatHistory)
+        && enabled.contains(IrcCapability::Batch);
+}
+
+void IrcSession::abandonHistoryRequests()
+{
+    QSet<QString> targets;
+    for (auto it = m_openBatches.constBegin(); it != m_openBatches.constEnd(); ++it) {
+        if (it.value().replayRoot == it.key()
+            && !it.value().collected.target.isEmpty()) {
+            targets.insert(it.value().collected.target);
+        }
+    }
+    for (const QString& target : targets)
+        dropHistoryBatches(target);
+    m_historyPending.clear();
+    m_historySuspended = true;
+}
+
 bool IrcSession::isHistoryBatch(const QString& type, const QString& parent) const
 {
     if (isChatHistoryBatchType(type))
@@ -1186,17 +1213,17 @@ void IrcSession::handleChatHistoryFail(const IrcMessage& message)
         != 0) {
         return;
     }
-    for (std::size_t index = 1; index < message.parameters.size(); ++index) {
-        const QString channel = parameter(message, index);
-        const QString folded = foldChannel(channel);
-        if (!m_historyPending.contains(folded))
-            continue;
-        if (m_historyPending.value(folded) != historyGeneration(channel))
-            continue;
-        if (hasOpenCurrentHistoryBatch(channel))
-            continue;
-        m_historyPending.remove(folded);
-    }
+    if (message.parameters.size() < 4)
+        return;
+    const QString channel = parameter(message, 2);
+    const QString folded = foldChannel(channel);
+    if (!m_historyPending.contains(folded))
+        return;
+    if (m_historyPending.value(folded) != historyGeneration(channel))
+        return;
+    if (hasOpenCurrentHistoryBatch(channel))
+        return;
+    m_historyPending.remove(folded);
 }
 
 void IrcSession::handleCap(const IrcMessage &message)
@@ -1223,6 +1250,8 @@ void IrcSession::handleCap(const IrcMessage &message)
     if (delIndex >= 0) {
         m_capabilities.withdraw(capabilityTokens(message, delIndex));
         publishCapabilities();
+        if (!historyCapabilitiesEnabled())
+            abandonHistoryRequests();
         requestCapabilities();
         return;
     }
@@ -1381,6 +1410,7 @@ void IrcSession::resetForConnection()
     m_historyPending.clear();
     m_historyGeneration.clear();
     m_ignoredBatchOverflow = false;
+    m_historySuspended = false;
     m_caseMapping = IrcCaseMapping{IrcCaseMapping::Kind::Rfc1459};
     m_nick = m_config.nick;
     m_registrationSent = false;
