@@ -33,21 +33,22 @@ if [ "$(id -u)" -eq 0 ]; then
   exit 1
 fi
 
-VERSION="$(awk '/^VERSION / { print $3; exit }' "$ROOT/omairc.pro")"
-test -n "$VERSION" || {
-  echo "omairc.pro must set VERSION" >&2
-  exit 1
-}
+VERSION="$("$ROOT/bin/version")"
 
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/omairc-package.XXXXXX")"
 trap 'rm -rf -- "$WORK"' EXIT HUP INT TERM
 
-git -C "$ROOT" ls-files -z |
-  tar -C "$ROOT" --null -T - \
+{
+  git -C "$ROOT" ls-files -z
+  if ! git -C "$ROOT" ls-files --error-unmatch version.pri >/dev/null 2>&1; then
+    printf '%s\0' version.pri
+  fi
+} | tar -C "$ROOT" --null -T - \
     --transform "s,^,omairc-$VERSION/," \
     -czf "$WORK/omairc-$VERSION.tar.gz"
 
 cp "$ROOT/PKGBUILD" "$WORK/PKGBUILD"
+cp "$ROOT/version.pri" "$WORK/version.pri"
 sed -i 's|^source=.*|source=("$pkgname-$pkgver.tar.gz")|' "$WORK/PKGBUILD"
 
 cd "$WORK"

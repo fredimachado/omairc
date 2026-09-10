@@ -60,6 +60,14 @@ public:
 
 namespace
 {
+QByteArray ctcpVersionReply(const QByteArray &nick)
+{
+    return QByteArrayLiteral("NOTICE ") + nick
+        + QByteArrayLiteral(" :\x01VERSION Omairc ")
+        + OMAIRC_VERSION
+        + QByteArrayLiteral("\x01\r\n");
+}
+
 IrcSessionConfig config(const QString &networkId = QStringLiteral("network-a"))
 {
     IrcSessionConfig value;
@@ -1527,8 +1535,7 @@ void SessionTest::answersCtcpRequests()
 
     QVERIFY(fixture.wrote(QByteArrayLiteral(
         "NOTICE MetaNova :\x01PING token\x01\r\n")));
-    QVERIFY(fixture.wrote(QByteArrayLiteral(
-        "NOTICE bob :\x01VERSION Omairc 0.1.0\x01\r\n")));
+    QVERIFY(fixture.wrote(ctcpVersionReply(QByteArrayLiteral("bob"))));
     bool wroteTime = false;
     for (const QByteArray &frame : fixture.transport->writtenFrames()) {
         if (frame.startsWith(QByteArrayLiteral("NOTICE alice :\x01TIME ")))
@@ -1547,12 +1554,10 @@ void SessionTest::rateLimitsCtcpVersionRepliesPerNick()
 
     const QByteArray probe =
         QByteArrayLiteral(":MetaNova!u@h PRIVMSG omairc :\x01VERSION\x01\r\n");
-    const QByteArray reply =
-        QByteArrayLiteral("NOTICE MetaNova :\x01VERSION Omairc 0.1.0\x01\r\n");
+    const QByteArray reply = ctcpVersionReply(QByteArrayLiteral("MetaNova"));
     const QByteArray otherProbe =
         QByteArrayLiteral(":alice!u@h PRIVMSG omairc :\x01VERSION\x01\r\n");
-    const QByteArray otherReply =
-        QByteArrayLiteral("NOTICE alice :\x01VERSION Omairc 0.1.0\x01\r\n");
+    const QByteArray otherReply = ctcpVersionReply(QByteArrayLiteral("alice"));
 
     fixture.transport->injectBytes(probe + probe);
     QCOMPARE(fixture.transport->writtenFrames().count(reply), 1);
