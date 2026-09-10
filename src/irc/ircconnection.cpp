@@ -491,10 +491,18 @@ void IrcConnection::discard()
 {
     restoreDraft();
     if (m_password != m_persistedPassword || m_passwordEdited) {
+        const bool compensatePendingStore = !m_credentialOperations.isEmpty();
         m_password = m_persistedPassword;
         m_passwordEdited = false;
         m_credentialState = overlayState(m_backendState);
         ++m_secretRevision;
+        if (compensatePendingStore) {
+            const CredentialKey key = credentialKey(m_stored);
+            if (m_password.isEmpty())
+                queueCredentialRemoval(key, m_secretRevision);
+            else
+                queueCredentialWrite(key, m_password, m_secretRevision);
+        }
         emit credentialStateChanged();
     }
     emit draftChanged();
