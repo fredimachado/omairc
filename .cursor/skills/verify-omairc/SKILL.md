@@ -1,6 +1,6 @@
 ---
 name: verify-omairc
-description: Drive the Omairc Qt desktop prototype as a user would (isolated Xvfb + compiled binary). Use when proving the first-run Connect sheet, Status console, channel switching, sending local messages, the member panel, member presence, typing, the identity footer, keyboard shortcuts, closing a direct message, slash commands, slash-command complete, opening a direct message, unfocused mention notifications, or http(s) links in transcripts.
+description: Drive the Omairc Qt desktop prototype as a user would (isolated Xvfb + compiled binary). Use when proving the first-run Connect sheet, Status console, channel switching, sending local messages, the member panel, member presence, typing, the identity footer, keyboard shortcuts, closing a direct message, slash commands, slash-command complete, opening a direct message, unfocused mention or direct-message notifications, or http(s) links in transcripts.
 ---
 
 # Verify Omairc

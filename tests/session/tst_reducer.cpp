@@ -59,6 +59,7 @@ private slots:
     void advertisedChannelTypesCreateChannels();
     void unreadMentionsRespectSelection();
     void mentionArrivalSurvivesSelection();
+    void mentionArrivalOnDirectMessage();
     void welcomeResetsMembership();
     void awayIsOneFactVisibleInEveryChannel();
     void metadataStatusIsSeparateFromPrefixModes();
@@ -381,6 +382,90 @@ void ReducerTest::mentionArrivalSurvivesSelection()
         QStringLiteral("omairc: self"),
         timestamp,
         QStringLiteral("#selected"),
+    });
+    QVERIFY(!reducer.takeMentionArrival().has_value());
+}
+
+void ReducerTest::mentionArrivalOnDirectMessage()
+{
+    IrcEventReducer reducer;
+    welcome(reducer, networkA);
+    const IrcConversationKey dm =
+        reducer.conversationKey(networkA, QStringLiteral("Alice"));
+    const IrcConversationKey room =
+        reducer.conversationKey(networkA, QStringLiteral("#room"));
+
+    reducer.apply(IrcMessageEvent{
+        dm,
+        QStringLiteral("Alice"),
+        QStringLiteral("hello"),
+        timestamp,
+        QStringLiteral("Alice"),
+    });
+    const std::optional<IrcMentionArrival> unselected =
+        reducer.takeMentionArrival();
+    QVERIFY(unselected.has_value());
+    QCOMPARE(unselected->author, QStringLiteral("Alice"));
+    QCOMPARE(unselected->body, QStringLiteral("hello"));
+    QCOMPARE(reducer.find(dm)->mentions, 0);
+    QCOMPARE(reducer.find(dm)->unread, 1);
+
+    reducer.markSelected(dm);
+    reducer.apply(IrcMessageEvent{
+        dm,
+        QStringLiteral("Alice"),
+        QStringLiteral("hello"),
+        timestamp,
+        QStringLiteral("Alice"),
+    });
+    QVERIFY(reducer.takeMentionArrival().has_value());
+    QCOMPARE(reducer.find(dm)->mentions, 0);
+    QCOMPARE(reducer.find(dm)->unread, 0);
+
+    reducer.apply(IrcMessageEvent{
+        room,
+        QStringLiteral("Alice"),
+        QStringLiteral("hello"),
+        timestamp,
+        QStringLiteral("#room"),
+    });
+    QVERIFY(!reducer.takeMentionArrival().has_value());
+
+    reducer.clearSelection();
+    reducer.apply(IrcMessageEvent{
+        dm,
+        QStringLiteral("Alice"),
+        QStringLiteral("hey omairc"),
+        timestamp,
+        QStringLiteral("Alice"),
+    });
+    QVERIFY(reducer.takeMentionArrival().has_value());
+    QCOMPARE(reducer.find(dm)->mentions, 1);
+
+    reducer.apply(IrcActionEvent{
+        dm,
+        QStringLiteral("Alice"),
+        QStringLiteral("waves"),
+        timestamp,
+        QStringLiteral("Alice"),
+    });
+    QVERIFY(reducer.takeMentionArrival().has_value());
+
+    reducer.apply(IrcNoticeEvent{
+        dm,
+        QStringLiteral("Alice"),
+        QStringLiteral("hello"),
+        timestamp,
+        QStringLiteral("Alice"),
+    });
+    QVERIFY(!reducer.takeMentionArrival().has_value());
+
+    reducer.apply(IrcMessageEvent{
+        dm,
+        QStringLiteral("omairc"),
+        QStringLiteral("hello"),
+        timestamp,
+        QStringLiteral("Alice"),
     });
     QVERIFY(!reducer.takeMentionArrival().has_value());
 }
