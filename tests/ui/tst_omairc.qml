@@ -1872,7 +1872,7 @@ TestCase {
         verify(!containsMirc(eventText.text));
     }
 
-    function test_eventRowWrapsLongWhoisBody() {
+    function test_whoisRowWrapsLongBody() {
         var list = item("messageList");
         var previousCount = list.model.count;
         var chunk = "lena is ~lena@user/host (Lena) is on #omarchy #help #omairc ";
@@ -1893,6 +1893,7 @@ TestCase {
         var whoisText = findChild(row, "messageWhois");
         verify(whoisText !== null && whoisText.visible, "Could not find messageWhois");
         compare(whoisText.wrapMode, Text.Wrap);
+        compare(whoisText.textFormat, Text.PlainText);
         compare(whoisText.text, body);
         tryVerify(function () { return whoisText.lineCount > 1; },
                   1000, "The WHOIS row should wrap");
@@ -1903,7 +1904,7 @@ TestCase {
         compare(findChild(row, "messageAvatar").visible, false);
         compare(findChild(row, "messageHeader").visible, false);
         compare(findChild(row, "messageBody").visible, false);
-        saveScreenshot("wrapped-whois-event");
+        saveScreenshot("wrapped-whois-row");
     }
 
     function test_toggleMembersWithShortcut() {

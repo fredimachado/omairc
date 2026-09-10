@@ -3162,6 +3162,7 @@ ApplicationWindow {
                             : win.scaledSize(8)
                         horizontalAlignment: Text.AlignLeft
                         text: win.plainIrcText(messageDelegate.body)
+                        textFormat: Text.PlainText
                         color: win.mutedColor
                         wrapMode: Text.Wrap
                         font.family: "iA Writer Mono S"
