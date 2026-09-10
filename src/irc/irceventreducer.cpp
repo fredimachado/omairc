@@ -758,3 +758,11 @@ void IrcEventReducer::reduce(const IrcTypingEvent& event)
     conversation->typing.insert_or_assign(normalizedNick, *hint);
 }
 
+void IrcEventReducer::reduce(const IrcWhoisTranscriptEvent& event)
+{
+    IrcConversationState *conversation = findMutable(event.destination);
+    if (!conversation)
+        return;
+    appendEvent(*conversation, event.formattedBody);
+}
+

@@ -138,6 +138,8 @@ IrcSession *IrcController::addSession(const IrcSessionConfig& config,
         emit statusChanged();
         emit errorOccurred(networkId, kind, message);
     });
+    connect(session, &IrcSession::statusEntry,
+            this, &IrcController::handleStatusEntry);
     m_console.observe(session);
     return session;
 }
@@ -146,6 +148,7 @@ bool IrcController::discardSession(const QString &networkId)
 {
     if (!m_sessions.findSession(networkId))
         return false;
+    forgetWhoisWatches(networkId);
     const QString previousId = identityNetworkId();
     const bool previousAway = selfAway();
     m_reducer.apply(IrcSelfAwayEvent{networkId, false});
@@ -164,6 +167,7 @@ void IrcController::forgetNetworkState(const QString &networkId)
 {
     if (networkId.isEmpty())
         return;
+    forgetWhoisWatches(networkId);
     const QString previousId = identityNetworkId();
     const bool previousAway = selfAway();
     m_reducer.forgetNetwork(networkId);
@@ -981,8 +985,85 @@ IrcCommandOutcome IrcController::dispatchWhois(const IrcCommand& command,
         return IrcCommandOutcome::Refused;
     if (!session || session->state() != IrcSession::State::Registered)
         return IrcCommandOutcome::NotConnected;
-    return session->whois(nick) ? IrcCommandOutcome::Sent
-                                : IrcCommandOutcome::Refused;
+    IrcWhoisDestination destination{IrcWhoisStatusOnly{}};
+    if (surface == IrcComposerSurface::Conversation) {
+        if (!m_selected)
+            return IrcCommandOutcome::WrongScope;
+        destination = *m_selected;
+    }
+    return sendWhois(*session, nick, std::move(destination))
+        ? IrcCommandOutcome::Sent
+        : IrcCommandOutcome::Refused;
+}
+
+std::optional<IrcController::IrcWhoisWatchKey>
+IrcController::whoisWatchKey(const QString& networkId, const QString& nick) const
+{
+    const QString trimmed = nick.trimmed();
+    if (networkId.isEmpty() || trimmed.isEmpty())
+        return std::nullopt;
+    return IrcWhoisWatchKey{
+        networkId,
+        m_reducer.conversationKey(networkId, trimmed).normalizedTarget,
+    };
+}
+
+bool IrcController::sendWhois(IrcSession& session,
+                              const QString& nick,
+                              IrcWhoisDestination destination)
+{
+    const std::optional<IrcWhoisWatchKey> key =
+        whoisWatchKey(session.networkId(), nick);
+    if (!key)
+        return false;
+    if (const auto *conversation = std::get_if<IrcConversationKey>(&destination)) {
+        if (conversation->networkId != session.networkId())
+            return false;
+    }
+
+    if (!session.whois(nick))
+        return false;
+    m_whoisWatches.insert_or_assign(*key, std::move(destination));
+    return true;
+}
+
+void IrcController::handleStatusEntry(const IrcStatusEntry& entry)
+{
+    if (const IrcWhoisLine *line = entry.whoisLine())
+        routeWhoisLine(entry.networkId(), *line);
+}
+
+void IrcController::routeWhoisLine(const QString& networkId, const IrcWhoisLine& line)
+{
+    const std::optional<IrcWhoisWatchKey> key = whoisWatchKey(networkId, line.nick());
+    if (!key)
+        return;
+    auto found = m_whoisWatches.find(*key);
+    if (found == m_whoisWatches.end())
+        return;
+
+    const IrcWhoisDestination destination = found->second;
+    if (line.terminal())
+        m_whoisWatches.erase(found);
+
+    if (std::holds_alternative<IrcWhoisStatusOnly>(destination))
+        return;
+    apply(IrcWhoisTranscriptEvent{
+        std::get<IrcConversationKey>(destination),
+        line.text(),
+    });
+}
+
+void IrcController::forgetWhoisWatches(const QString& networkId)
+{
+    if (networkId.isEmpty())
+        return;
+    for (auto it = m_whoisWatches.begin(); it != m_whoisWatches.end(); ) {
+        if (it->first.networkId == networkId)
+            it = m_whoisWatches.erase(it);
+        else
+            ++it;
+    }
 }
 
 void IrcController::echoIfPresent(IrcSession *session,
@@ -1073,10 +1154,12 @@ void IrcController::apply(const IrcEvent& event)
     const bool previousAway = selfAway();
     const bool typingOnly = std::holds_alternative<IrcTypingEvent>(event);
     const bool selfAwayOnly = std::holds_alternative<IrcSelfAwayEvent>(event);
-    if (const auto *welcome = std::get_if<IrcWelcomeEvent>(&event))
+    if (const auto *welcome = std::get_if<IrcWelcomeEvent>(&event)) {
         m_unawaySent.remove(welcome->networkId);
-    else if (const auto *selfAway = std::get_if<IrcSelfAwayEvent>(&event))
+        forgetWhoisWatches(welcome->networkId);
+    } else if (const auto *selfAway = std::get_if<IrcSelfAwayEvent>(&event)) {
         m_unawaySent.remove(selfAway->networkId);
+    }
     m_reducer.apply(event);
     if (selfAwayOnly) {
         notifySelfAwayIfChanged(previousId, previousAway);

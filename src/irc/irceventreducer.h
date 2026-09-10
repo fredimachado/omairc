@@ -165,6 +165,7 @@ private:
     void reduce(const IrcSelfAwayEvent& event);
     void reduce(const IrcMemberStatusEvent& event);
     void reduce(const IrcTypingEvent& event);
+    void reduce(const IrcWhoisTranscriptEvent& event);
 
     void clearTyping(IrcConversationState& conversation,
                      const QString& normalizedNick);
