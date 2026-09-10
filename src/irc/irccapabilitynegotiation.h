@@ -2,9 +2,12 @@
 
 #include "irccapability.h"
 
-#include <QSet>
+#include <QHash>
 #include <QString>
 #include <QStringList>
+
+#include <initializer_list>
+#include <optional>
 
 class IrcCapabilityNegotiation
 {
@@ -34,14 +37,21 @@ public:
     struct Wanted;
 
 private:
-    bool isRequestable(const Wanted& wanted) const;
-    bool hasToken(const QSet<QString>& tokens, IrcCapability capability) const;
+    // A token the server offered and what we have done with it since. One
+    // capability can have several spellings, so the token is what the wire
+    // names and the capability is derived from it.
+    enum class TokenState {
+        Advertised,
+        Requested,
+        Enabled,
+        Refused,
+    };
 
-    IrcCapabilitySet m_advertised;
-    IrcCapabilitySet m_enabled;
-    IrcCapabilitySet m_outstanding;
-    QSet<QString> m_advertisedTokens;
-    QSet<QString> m_enabledTokens;
-    QSet<QString> m_outstandingTokens;
+    bool isRequestable(const Wanted& wanted) const;
+    bool anyToken(IrcCapability capability,
+                  std::initializer_list<TokenState> states) const;
+    std::optional<TokenState> stateOf(const QString& foldedToken) const;
+
+    QHash<QString, TokenState> m_tokens;
     bool m_saslCredentialsAvailable = false;
 };
