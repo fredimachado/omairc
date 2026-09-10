@@ -35,9 +35,7 @@ QString previewWire(std::string_view bytes, std::size_t byteCount)
     display.reserve(bytes.size());
     policy.reserve(bytes.size());
     for (unsigned char c : bytes) {
-        if (c == 1 || c == '\t' || c >= 0x20) {
-            display.push_back(char(c));
-            policy.push_back(char(c));
+        if (c == '\t' || c >= 0x20) {
         } else {
             display.push_back('?');
             policy.push_back(' ');
