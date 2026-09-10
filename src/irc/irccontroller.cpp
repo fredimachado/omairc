@@ -808,7 +808,9 @@ IrcCommandOutcome IrcController::dispatchIgnore(const IrcCommand& command,
             return IrcCommandOutcome::WrongScope;
         return IrcCommandOutcome::Refused;
     }
-    if (!sessionFor(surface))
+    IrcSession *session = sessionFor(surface);
+    if (!session || session->state() == IrcSession::State::Idle
+        || session->state() == IrcSession::State::Failed)
         return IrcCommandOutcome::NotConnected;
 
     const IrcServerFeatures& features = m_reducer.serverFeatures(networkId);
