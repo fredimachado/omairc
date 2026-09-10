@@ -81,6 +81,19 @@ QHash<int, QByteArray> MessageListModel::roleNames() const
     };
 }
 
+QString MessageListModel::field(int row, const QString& name) const
+{
+    const QByteArray key = name.toUtf8();
+    const QHash<int, QByteArray> names = roleNames();
+    for (auto it = names.cbegin(); it != names.cend(); ++it) {
+        if (it.value() != key)
+            continue;
+        const QVariant value = data(index(row, 0), it.key());
+        return value.isValid() ? value.toString() : QString{};
+    }
+    return {};
+}
+
 void MessageListModel::reload()
 {
     int count = 0;

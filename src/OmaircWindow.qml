@@ -310,20 +310,9 @@ ApplicationWindow {
             var value = item[name];
             return value == null ? "" : String(value);
         }
-        if (typeof model.data !== "function" || typeof model.index !== "function")
+        if (typeof model.field !== "function")
             return "";
-        var roleOffset = {
-            author: 1,
-            time: 2,
-            body: 3,
-            kind: 4,
-            networkId: 5,
-            origin: 6
-        };
-        var offset = roleOffset[name];
-        if (offset === undefined)
-            return "";
-        var value = model.data(model.index(row, 0), Qt.UserRole + offset);
+        var value = model.field(row, name);
         return value == null ? "" : String(value);
     }
 

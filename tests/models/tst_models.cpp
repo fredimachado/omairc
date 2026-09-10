@@ -768,6 +768,12 @@ void ModelTest::originRoleNameAndValues()
     messages.select(room);
 
     QCOMPARE(messages.roleNames()[MessageListModel::OriginRole], QByteArray("origin"));
+    QCOMPARE(messages.field(0, QStringLiteral("origin")), QStringLiteral("replay"));
+    QCOMPARE(messages.field(0, QStringLiteral("body")), QStringLiteral("older"));
+    QCOMPARE(messages.field(0, QStringLiteral("author")), QStringLiteral("alice"));
+    QCOMPARE(messages.field(1, QStringLiteral("origin")), QStringLiteral("live"));
+    QCOMPARE(messages.field(1, QStringLiteral("body")), QStringLiteral("omairc joined"));
+    QCOMPARE(messages.field(0, QStringLiteral("no-such-role")), QString());
     QCOMPARE(roleAt(messages, 0, MessageListModel::OriginRole),
              QStringLiteral("replay"));
     QCOMPARE(roleAt(messages, 0, MessageListModel::BodyRole),
