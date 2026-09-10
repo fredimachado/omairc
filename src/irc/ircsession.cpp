@@ -6,6 +6,7 @@
 #include "ircjointarget.h"
 #include "ircparser.h"
 #include "ircpresence.h"
+#include "ircsecretpolicy.h"
 #include "irctcp.h"
 #include "irctyping.h"
 #include "ircwiretext.h"
@@ -29,47 +30,50 @@ constexpr char kPingWatchdogToken[] = "omairc-watchdog";
 constexpr qsizetype kCtcpPingPayloadMaxBytes = 32;
 constexpr qint64 kCtcpReplyIntervalMs = 5000;
 
-QString firstWireTokenUpper(std::string_view bytes)
+QString previewWire(std::string_view bytes, std::size_t byteCount, QStringView channelTypes)
 {
-    std::string verb;
+    std::string display;
+    std::string spaced;
+    std::string stripped;
+    display.reserve(bytes.size());
+    spaced.reserve(bytes.size());
+    stripped.reserve(bytes.size());
     for (unsigned char c : bytes) {
-        if (c == ' ' || c == '\r' || c == '\n')
-            break;
-        if (c >= 'a' && c <= 'z')
-            c = static_cast<unsigned char>(c - 'a' + 'A');
-        verb.push_back(char(c));
+        if (c == '\t' || (c >= 0x20 && c < 0x7F)) {
+            display.push_back(char(c));
+            spaced.push_back(char(c));
+            stripped.push_back(char(c));
+        } else {
+            display.push_back('?');
+            spaced.push_back(' ');
+        }
     }
-    return QString::fromLatin1(verb.data(), qsizetype(verb.size()));
-}
-
-QString previewWire(std::string_view bytes, std::size_t byteCount)
-{
-    const QString verb = firstWireTokenUpper(bytes);
-    if (verb == QLatin1String("PASS") || verb == QLatin1String("AUTHENTICATE"))
-        return verb + QStringLiteral(" ***");
-
-    std::string sanitized;
-    sanitized.reserve(bytes.size());
-    for (unsigned char c : bytes) {
-        if (c == 0 || (c < 0x20 && c != '\t'))
-            sanitized.push_back('?');
-        else
-            sanitized.push_back(char(c));
+    QString preview = ircWireText(display);
+    const QString strippedText = ircWireText(stripped);
+    if (const auto safe =
+            IrcSecretPolicy::redactPreviewLine(QStringView(strippedText), channelTypes)) {
+        preview = *safe;
+    } else {
+        const QString spacedText = ircWireText(spaced);
+        if (const auto safeSpaced =
+                IrcSecretPolicy::redactPreviewLine(QStringView(spacedText), channelTypes)) {
+            preview = *safeSpaced;
+        }
     }
-    QString preview = ircWireText(sanitized);
     if (byteCount > bytes.size())
         preview += QChar(0x2026);
     return preview;
 }
 
 QString describeMalformed(const char *kind, IrcError error,
-                          std::string_view preview, std::size_t byteCount)
+                          std::string_view preview, std::size_t byteCount,
+                          QStringView channelTypes)
 {
     QString text = QStringLiteral("Malformed IRC %1: %2 (%3 bytes)")
                        .arg(QLatin1String(kind),
                             QString::fromLatin1(ircErrorName(error)),
                             QString::number(byteCount));
-    const QString shown = previewWire(preview, byteCount);
+    const QString shown = previewWire(preview, byteCount, channelTypes);
     if (shown.isEmpty())
         return text;
     return text + QStringLiteral(". Preview: ") + shown;
@@ -694,7 +698,7 @@ void IrcSession::sendLine(const QByteArray &line)
 {
     if (line.isEmpty())
         return;
-    emit statusEntry(IrcStatusEntry::outgoing(m_config.networkId, line));
+    emit statusEntry(IrcStatusEntry::outgoing(m_config.networkId, line, m_channelTypes));
     m_transport->write(line);
 }
 
@@ -720,7 +724,7 @@ void IrcSession::handleBytes(const QByteArray &bytes)
         emit errorOccurred(m_config.networkId,
                            ErrorKind::Protocol,
                            describeMalformed("frame", fault.error, fault.preview,
-                                             fault.byteCount));
+                                             fault.byteCount, m_channelTypes));
     }
 
     for (const std::string &frame : result.frames) {
@@ -729,7 +733,7 @@ void IrcSession::handleBytes(const QByteArray &bytes)
             emit errorOccurred(m_config.networkId,
                                ErrorKind::Protocol,
                                describeMalformed("message", parsed.error, frame,
-                                                 frame.size()));
+                                                 frame.size(), m_channelTypes));
             continue;
         }
         handleMessage(*parsed.value);
@@ -751,7 +755,8 @@ void IrcSession::handleMessage(const IrcMessage &message)
     if (m_ignoreFilter && m_ignoreFilter(message, m_nick))
         return;
 
-    emit statusEntry(IrcStatusEntry::incoming(m_config.networkId, message));
+    emit statusEntry(IrcStatusEntry::incoming(m_config.networkId, message, m_channelTypes));
+    applyIsupport(message);
 
     if (message.command == "BATCH") {
         handleBatch(message);
@@ -1319,6 +1324,19 @@ void IrcSession::handleAuthenticate(const IrcMessage &message)
              + QByteArrayLiteral("\r\n"));
 }
 
+void IrcSession::applyIsupport(const IrcMessage &message)
+{
+    if (message.command != "005" || message.parameters.size() <= 2)
+        return;
+    constexpr QLatin1String prefix("CHANTYPES=");
+    const auto last = message.parameters.end() - 1;
+    for (auto it = message.parameters.begin() + 1; it != last; ++it) {
+        const QString token = ircWireText(*it);
+        if (token.startsWith(prefix))
+            m_channelTypes = token.mid(prefix.size());
+    }
+}
+
 void IrcSession::handleWelcome(const IrcMessage &message)
 {
     if (m_state == State::Registered)
@@ -1418,6 +1436,7 @@ void IrcSession::resetForConnection()
     m_saslRequested = false;
     m_saslPending = false;
     m_capabilityNegotiationEnded = false;
+    m_channelTypes.clear();
     m_capabilityTimer->cancel();
     cancelPingWatchdog();
     m_capabilities.reset(!m_config.password.isEmpty());

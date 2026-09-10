@@ -34,6 +34,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Desktop notification for a mention when the window is unfocused.
 - Typing indicator on an existing direct-message row when that peer is typing in the background.
 - Multi-channel `/join` with optional keys. Bare names get a `#` prefix. Keys stay out of Status and logs.
+- Status hides service IDENTIFY, OPER, and MODE keys the same way as PASS and JOIN. The wire still carries the real bytes.
 - Direct CTCP `VERSION`, `PING`, and `TIME` replies (NOTICE), shown on Status. Channel broadcasts are not answered. Replies are rate-limited to once per nick per 5 seconds.
 - Nick-in-use fallback during registration: on `433` before welcome, try `nick_` then `nick2` before failing the session.
 - Reconnect as soon as the network is reachable again while waiting on the backoff timer.

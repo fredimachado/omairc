@@ -203,6 +203,7 @@ private:
     void handleCap(const IrcMessage &message);
     void handleAuthenticate(const IrcMessage &message);
     void handleWelcome(const IrcMessage &message);
+    void applyIsupport(const IrcMessage &message);
     bool sendCommand(const QString& command);
     void fail(ErrorKind kind, const QString &message, bool reconnect);
     void scheduleReconnect();
@@ -268,6 +269,7 @@ private:
     bool m_saslRequested = false;
     bool m_saslPending = false;
     bool m_capabilityNegotiationEnded = false;
+    QString m_channelTypes;
     int m_reconnectAttempt = 0;
     quint32 m_reportedRetryErrors = 0;
 };

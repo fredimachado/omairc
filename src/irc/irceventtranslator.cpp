@@ -1,6 +1,7 @@
 #include "irceventtranslator.h"
 
 #include "ircpresence.h"
+#include "ircservicenick.h"
 #include "ircsession.h"
 #include "irctcp.h"
 #include "irctyping.h"
@@ -10,6 +11,7 @@
 #include <QDateTime>
 
 #include <optional>
+#include <string_view>
 
 namespace
 {
@@ -65,17 +67,14 @@ bool isNetworkNoticeTarget(const QString& target)
         || target.compare(QLatin1String("AUTH"), Qt::CaseInsensitive) == 0;
 }
 
-bool isServiceUser(const IrcMessage& message)
+bool isServiceUser(const IrcMessage& message, const IrcServerFeatures& features)
 {
     if (!message.prefix)
         return false;
-    if (ircWireText(message.prefix->nick)
-            .endsWith(QStringLiteral("serv"), Qt::CaseInsensitive)) {
-        return true;
-    }
-    const QString folded = ircWireText(message.prefix->host).toCaseFolded();
-    return folded == QLatin1String("services")
-        || folded.startsWith(QLatin1String("services."));
+    const std::string_view types = features.channelTypes();
+    return ircIsServiceIdentity(ircWireText(message.prefix->nick),
+                                ircWireText(message.prefix->host),
+                                QString::fromLatin1(types.data(), qsizetype(types.size())));
 }
 
 std::optional<IrcConversationKey> conversationFor(const QString& networkId,
@@ -86,7 +85,8 @@ std::optional<IrcConversationKey> conversationFor(const QString& networkId,
 {
     if (features.isChannel(utf8(target)))
         return key(networkId, target, features);
-    if (isNetworkNoticeTarget(target) || !hasUserPrefix(message) || isServiceUser(message))
+    if (isNetworkNoticeTarget(target) || !hasUserPrefix(message)
+        || isServiceUser(message, features))
         return std::nullopt;
     const QString sender = author(message);
     if (sender.isEmpty())
