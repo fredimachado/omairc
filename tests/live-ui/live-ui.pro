@@ -7,7 +7,7 @@ include($$PWD/../../version.pri)
 
 greaterThan(QMAKE_GCC_MAJOR_VERSION, 15): QMAKE_CXXFLAGS += -Wno-sfinae-incomplete
 
-INCLUDEPATH += ../../src ../../src/irc ../live
+INCLUDEPATH += ../../src ../../src/irc ../live ../support
 DEFINES += LIVE_CERT_DIR=\\\"$$PWD/../live/certs\\\"
 
 HEADERS += \
@@ -49,6 +49,7 @@ HEADERS += \
     ../../src/irc/qtirctransport.h \
     ../live/liveharness.h \
     ../live/livepeer.h \
+    ../support/fakeirctransport.h \
     liveuiworld.h
 
 SOURCES += \
@@ -57,6 +58,7 @@ SOURCES += \
     liveuiworld.cpp \
     ../live/liveharness.cpp \
     ../live/livepeer.cpp \
+    ../support/fakeirctransport.cpp \
     ../../src/backend.cpp \
     ../../src/irc/ircparser.cpp \
     ../../src/irc/ircframer.cpp \

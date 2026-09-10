@@ -290,6 +290,50 @@ ApplicationWindow {
             .replace(/[\x02\x0f\x16\x1d\x1f]/g, "");
     }
 
+    function transcriptRowCount(model) {
+        if (!model)
+            return 0;
+        if (typeof model.count === "number")
+            return model.count;
+        if (typeof model.rowCount === "function")
+            return model.rowCount();
+        return 0;
+    }
+
+    function transcriptField(model, row, name) {
+        if (!model || row < 0 || row >= transcriptRowCount(model))
+            return "";
+        if (typeof model.get === "function") {
+            var item = model.get(row);
+            if (!item)
+                return "";
+            var value = item[name];
+            return value == null ? "" : String(value);
+        }
+        if (typeof model.data !== "function" || typeof model.index !== "function")
+            return "";
+        // MessageListModel roles are UserRole+1..+4: author, time, body, kind.
+        var offset = name === "author" ? 1
+            : name === "time" ? 2
+            : name === "body" ? 3
+            : name === "kind" ? 4
+            : -1;
+        if (offset < 0)
+            return "";
+        var value = model.data(model.index(row, 0), Qt.UserRole + offset);
+        return value == null ? "" : String(value);
+    }
+
+    function continuesMessageGroup(model, row, author, time, kind) {
+        if (kind === "event" || row <= 0 || author.length === 0 || time.length === 0)
+            return false;
+        var previousKind = transcriptField(model, row - 1, "kind");
+        if (previousKind === "event" || previousKind.length === 0)
+            return false;
+        return transcriptField(model, row - 1, "author") === author
+            && transcriptField(model, row - 1, "time") === time;
+    }
+
     function isAllowedHttpUrl(url) {
         if (!url)
             return false;
@@ -3020,15 +3064,20 @@ ApplicationWindow {
                 delegate: Item {
                     id: messageDelegate
 
+                    required property int index
                     required property string author
                     required property string time
                     required property string body
                     required property string kind
+                    readonly property bool grouped: win.continuesMessageGroup(
+                        messageList.model, index, author, time, kind)
 
                     width: messageList.width
                     height: kind === "event"
                         ? win.scaledSize(42)
-                        : Math.max(win.scaledSize(58), messageBody.implicitHeight + win.scaledSize(39))
+                        : (grouped
+                            ? Math.max(win.scaledSize(22), messageBody.implicitHeight + win.scaledSize(8))
+                            : Math.max(win.scaledSize(58), messageBody.implicitHeight + win.scaledSize(39)))
 
                     Text {
                         objectName: "messageEvent"
@@ -3044,7 +3093,8 @@ ApplicationWindow {
                     }
 
                     Rectangle {
-                        visible: messageDelegate.kind !== "event"
+                        objectName: "messageAvatar"
+                        visible: messageDelegate.kind !== "event" && !messageDelegate.grouped
                         anchors.left: parent.left
                         anchors.leftMargin: win.scaledSize(24)
                         anchors.top: parent.top
@@ -3068,7 +3118,8 @@ ApplicationWindow {
                     }
 
                     Row {
-                        visible: messageDelegate.kind !== "event"
+                        objectName: "messageHeader"
+                        visible: messageDelegate.kind !== "event" && !messageDelegate.grouped
                         anchors.left: parent.left
                         anchors.leftMargin: win.scaledSize(70)
                         anchors.top: parent.top
@@ -3101,7 +3152,9 @@ ApplicationWindow {
                         anchors.right: parent.right
                         anchors.rightMargin: win.scaledSize(34)
                         anchors.top: parent.top
-                        anchors.topMargin: win.scaledSize(29)
+                        anchors.topMargin: messageDelegate.grouped
+                            ? win.scaledSize(4)
+                            : win.scaledSize(29)
                         text: win.plainIrcText(messageDelegate.body)
                         color: messageDelegate.kind === "action" ? win.mutedColor : win.inkColor
                         selectionColor: win.selectionColor

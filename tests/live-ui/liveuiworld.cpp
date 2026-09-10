@@ -32,6 +32,7 @@
 #include <QTest>
 #include <QVariant>
 
+#include <algorithm>
 #include <functional>
 #include <utility>
 
@@ -78,6 +79,79 @@ bool alreadyChosen(const QVector<LiveDaemonInfo> &chosen, const QString &name)
     }
     return false;
 }
+
+QQuickItem *directNamed(QQuickItem *parent, const QString &name)
+{
+    if (!parent)
+        return nullptr;
+    const QList<QQuickItem *> children = parent->childItems();
+    for (QQuickItem *child : children) {
+        if (child->objectName() == name)
+            return child;
+    }
+    return nullptr;
+}
+
+TranscriptRowChrome chromeFromRow(QQuickItem *row)
+{
+    TranscriptRowChrome chrome;
+    if (!row)
+        return chrome;
+    chrome.height = row->height();
+    if (QQuickItem *avatar = directNamed(row, QStringLiteral("messageAvatar")))
+        chrome.avatarVisible = avatar->property("visible").toBool();
+    if (QQuickItem *header = directNamed(row, QStringLiteral("messageHeader")))
+        chrome.headerVisible = header->property("visible").toBool();
+    QQuickItem *event = directNamed(row, QStringLiteral("messageEvent"));
+    QQuickItem *body = directNamed(row, QStringLiteral("messageBody"));
+    if (event && event->property("visible").toBool())
+        chrome.body = event->property("text").toString();
+    else if (body)
+        chrome.body = body->property("text").toString();
+    return chrome;
+}
+
+QQuickItem *findMessageList(QQuickWindow *window)
+{
+    if (!window)
+        return nullptr;
+    if (QQuickItem *named = window->findChild<QQuickItem *>(QStringLiteral("messageList")))
+        return named;
+    QQuickItem *found = nullptr;
+    walkItems(window->contentItem(), [&](QQuickItem *item) {
+        if (!found && item->objectName() == QStringLiteral("messageList"))
+            found = item;
+    });
+    return found;
+}
+}
+
+QVector<TranscriptRowChrome> collectTranscriptChrome(QQuickWindow *window)
+{
+    QVector<TranscriptRowChrome> rows;
+    QQuickItem *list = findMessageList(window);
+    if (!list)
+        return rows;
+    list->setProperty("cacheBuffer", 100000);
+    QMetaObject::invokeMethod(list, "positionViewAtEnd");
+    QCoreApplication::processEvents();
+
+    QQuickItem *content = list->property("contentItem").value<QQuickItem *>();
+    if (!content)
+        return rows;
+    QVector<QQuickItem *> delegates;
+    const QList<QQuickItem *> children = content->childItems();
+    for (QQuickItem *child : children) {
+        if (directNamed(child, QStringLiteral("messageAvatar")))
+            delegates.append(child);
+    }
+    std::sort(delegates.begin(), delegates.end(), [](QQuickItem *left, QQuickItem *right) {
+        return left->y() < right->y();
+    });
+    rows.reserve(delegates.size());
+    for (QQuickItem *row : delegates)
+        rows.append(chromeFromRow(row));
+    return rows;
 }
 
 LiveUiId::LiveUiId(LiveUiKind kind, QString networkId, QString target)
@@ -760,6 +834,11 @@ QStringList LiveUiWorld::collectNamedTexts(QQuickItem *list, const QString &obje
     return texts;
 }
 
+QVector<TranscriptRowChrome> LiveUiWorld::transcriptChrome() const
+{
+    return collectTranscriptChrome(m_window);
+}
+
 QStringList LiveUiWorld::visibleBodies() const
 {
     QQuickItem *list = findNamed(QStringLiteral("messageList"));
@@ -879,5 +958,13 @@ QString LiveUiWorld::dump() const
                  .arg(m_namesEndCounts.value(m_right.networkId));
     lines << QStringLiteral("peer=%1").arg(m_peerCommands.join(QLatin1Char('|')));
     lines << QStringLiteral("shot=%1").arg(m_lastShot);
+    QStringList chrome;
+    for (const TranscriptRowChrome &row : transcriptChrome()) {
+        chrome.append(QStringLiteral("%1 a=%2 h=%3")
+                          .arg(row.body)
+                          .arg(row.avatarVisible)
+                          .arg(row.headerVisible));
+    }
+    lines << QStringLiteral("chrome=%1").arg(chrome.join(QLatin1Char('|')));
     return lines.join(QLatin1Char('\n'));
 }

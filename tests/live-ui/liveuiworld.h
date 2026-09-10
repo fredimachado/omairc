@@ -7,8 +7,22 @@
 #include <QSet>
 #include <QString>
 #include <QStringList>
+#include <QtGlobal>
+#include <QVector>
 
 #include <memory>
+
+class QQuickWindow;
+
+struct TranscriptRowChrome
+{
+    QString body;
+    bool avatarVisible = false;
+    bool headerVisible = false;
+    qreal height = 0;
+};
+
+QVector<TranscriptRowChrome> collectTranscriptChrome(QQuickWindow *window);
 
 enum class LiveUiKind { Channel, Direct, Status };
 
@@ -89,6 +103,7 @@ public:
     QString visiblePeopleHeading() const;
     QStringList visibleMemberNicks() const;
     QStringList visibleBodies() const;
+    QVector<TranscriptRowChrome> transcriptChrome() const;
     QStringList visibleConsoleTexts() const;
     QString visibleStatusNetworkId() const;
     QString windowTitle() const;
