@@ -2947,8 +2947,10 @@ ApplicationWindow {
                         Text {
                             objectName: "connectionCredentialStatus"
                             width: parent.width
-                            visible: win.connection && win.connection.credentialStatus.length > 0
-                            text: win.connection ? win.connection.credentialStatus : ""
+                            visible: !!(win.connection && win.connection.credentialStatus)
+                            height: visible ? implicitHeight : 0
+                            text: (win.connection && win.connection.credentialStatus)
+                                  ? win.connection.credentialStatus : ""
                             color: win.mutedColor
                             wrapMode: Text.Wrap
                             font.family: "iA Writer Mono S"
@@ -2957,7 +2959,8 @@ ApplicationWindow {
 
                         Text {
                             objectName: "connectionForgetPassword"
-                            visible: win.connection && win.connection.canForgetPassword
+                            visible: !!(win.connection && win.connection.canForgetPassword)
+                            height: visible ? implicitHeight : 0
                             text: "forget saved password"
                             color: win.accentColor
                             font.family: "iA Writer Mono S"
@@ -2996,8 +2999,10 @@ ApplicationWindow {
                         Text {
                             objectName: "connectionProblem"
                             width: parent.width
-                            visible: win.connection && win.connection.problem.length > 0
-                            text: win.connection ? win.connection.problem : ""
+                            visible: !!(win.connection && win.connection.problem)
+                            height: visible ? implicitHeight : 0
+                            text: (win.connection && win.connection.problem)
+                                  ? win.connection.problem : ""
                             color: win.accentColor
                             wrapMode: Text.Wrap
                             font.family: "iA Writer Mono S"

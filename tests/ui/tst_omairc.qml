@@ -1718,6 +1718,10 @@ TestCase {
         compare(findChild(window, "connectionProblem").text, "Nick is required");
         compare(findChild(window, "connectionCredentialStatus").text,
                 "secure storage unavailable");
+        var forgetPassword = findChild(window, "connectionForgetPassword");
+        verify(forgetPassword !== null, "Could not find connectionForgetPassword");
+        compare(forgetPassword.visible, false);
+        compare(forgetPassword.height, 0);
         try {
             grabImage(window.contentItem).save(artifactDirectory + "connection-sheet.png");
         } catch (error) {
