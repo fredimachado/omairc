@@ -871,6 +871,17 @@ void SessionTest::overlongFrameLogsPreviewWithoutSecrets()
     QVERIFY(modePreview.contains(QStringLiteral("too many bytes")));
     QVERIFY(modePreview.contains(QStringLiteral("MODE #omarchy +k ***")));
     QVERIFY(!modePreview.contains(QStringLiteral("s3cret")));
+
+    QByteArray tabPass = QByteArrayLiteral("PASS\thunter2 ");
+    tabPass.append(int(IrcFramer::kMaxInboundClassicFrameBytes) - tabPass.size() - 1, 'x');
+    tabPass.append("\r\nPING :ok\r\n");
+    fixture.transport->injectBytes(tabPass);
+
+    QCOMPARE(errors.size(), 6);
+    const QString tabPreview = errors.at(5).at(2).toString();
+    QVERIFY(tabPreview.contains(QStringLiteral("too many bytes")));
+    QVERIFY(tabPreview.contains(QStringLiteral("PASS ***")));
+    QVERIFY(!tabPreview.contains(QStringLiteral("hunter2")));
 }
 
 void SessionTest::reconnectCanBeCancelled()
@@ -1147,6 +1158,23 @@ void SessionTest::serviceIdentifyIsRedactedInStatusEntries()
     QCOMPARE(identifyTabs.text(), QStringLiteral("PRIVMSG nickserv :IDENTIFY ***"));
     QVERIFY(!identifyTabs.text().contains(QStringLiteral("s3cret")));
 
+    const IrcStatusEntry identifyMiddles = IrcStatusEntry::outgoing(
+        QStringLiteral("network-a"),
+        QByteArrayLiteral("PRIVMSG nickserv IDENTIFY my_nick s3cret\r\n"));
+    QCOMPARE(identifyMiddles.text(), QStringLiteral("PRIVMSG nickserv :IDENTIFY ***"));
+    QVERIFY(!identifyMiddles.text().contains(QStringLiteral("s3cret")));
+
+    const IrcStatusEntry identifyCtcp = IrcStatusEntry::outgoing(
+        QStringLiteral("network-a"),
+        QByteArrayLiteral("PRIVMSG nickserv :\x01identify my_nick s3cret\x01\r\n"));
+    QCOMPARE(identifyCtcp.text(), QStringLiteral("PRIVMSG nickserv :IDENTIFY ***"));
+    QVERIFY(!identifyCtcp.text().contains(QStringLiteral("s3cret")));
+
+    const IrcStatusEntry passTabs = IrcStatusEntry::outgoing(
+        QStringLiteral("network-a"), QByteArrayLiteral("PASS\thunter2\r\n"));
+    QCOMPARE(passTabs.text(), QStringLiteral("PASS ***"));
+    QVERIFY(!passTabs.text().contains(QStringLiteral("hunter2")));
+
     const IrcStatusEntry ghost = IrcStatusEntry::outgoing(
         QStringLiteral("network-a"),
         QByteArrayLiteral("NOTICE NickServ :ghost old_nick s3cret\r\n"));
@@ -1234,6 +1262,19 @@ void SessionTest::selfEchoToServiceIsRedacted()
         mustParse(":myserv!u@h PRIVMSG nickserv :identify my_nick s3cret"));
     QCOMPARE(servNick.text(), QStringLiteral("IDENTIFY ***"));
     QVERIFY(!servNick.text().contains(QStringLiteral("s3cret")));
+
+    const IrcStatusEntry middles = IrcStatusEntry::incoming(
+        QStringLiteral("libera"),
+        mustParse(":me!u@h PRIVMSG nickserv IDENTIFY my_nick s3cret"));
+    QCOMPARE(middles.text(), QStringLiteral("IDENTIFY ***"));
+    QVERIFY(!middles.text().contains(QStringLiteral("s3cret")));
+
+    const IrcStatusEntry ctcp = IrcStatusEntry::incoming(
+        QStringLiteral("libera"),
+        mustParse(":me!u@h PRIVMSG nickserv :\x01IDENTIFY my_nick s3cret\x01"));
+    QCOMPARE(ctcp.text(), QStringLiteral("IDENTIFY ***"));
+    QVERIFY(!ctcp.text().contains(QStringLiteral("s3cret")));
+    QCOMPARE(ctcp.label(), QStringLiteral("PRIVMSG"));
 }
 
 void SessionTest::sendPrivmsgValidatesTarget()

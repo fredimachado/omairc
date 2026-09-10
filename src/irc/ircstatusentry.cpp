@@ -410,23 +410,6 @@ IrcStatusEntry::IrcStatusEntry(QString networkId,
 IrcStatusEntry IrcStatusEntry::incoming(const QString& networkId, const IrcMessage& message)
 {
     const QString command = commandOf(message);
-    if (command == QStringLiteral("PRIVMSG") && message.parameters.size() >= 2) {
-        if (const auto request = parseCtcpRequest(
-                ircWireText(message.parameters.back()))) {
-            const QString sender = message.prefix && !message.prefix->nick.empty()
-                ? ircWireText(message.prefix->nick)
-                : QStringLiteral("unknown");
-            const QString text = request->argument.isEmpty()
-                ? request->command
-                : request->command + QLatin1Char(' ') + request->argument;
-            return IrcStatusEntry(networkId,
-                                  QDateTime::currentDateTimeUtc(),
-                                  IrcLogSource::Server,
-                                  IrcLogSeverity::Info,
-                                  QStringLiteral("CTCP"),
-                                  QStringLiteral("%1 from %2").arg(text, sender));
-        }
-    }
     if (const auto formatted = formatWhois(message)) {
         return IrcStatusEntry(networkId,
                               QDateTime::currentDateTimeUtc(),
@@ -442,6 +425,23 @@ IrcStatusEntry IrcStatusEntry::incoming(const QString& networkId, const IrcMessa
         display.parameters.reserve(std::size_t(masked->parameters.size()));
         for (const QString& parameter : masked->parameters)
             display.parameters.push_back(utf8(parameter));
+    }
+    if (commandOf(display) == QStringLiteral("PRIVMSG") && display.parameters.size() >= 2) {
+        if (const auto request = parseCtcpRequest(
+                ircWireText(display.parameters.back()))) {
+            const QString sender = display.prefix && !display.prefix->nick.empty()
+                ? ircWireText(display.prefix->nick)
+                : QStringLiteral("unknown");
+            const QString text = request->argument.isEmpty()
+                ? request->command
+                : request->command + QLatin1Char(' ') + request->argument;
+            return IrcStatusEntry(networkId,
+                                  QDateTime::currentDateTimeUtc(),
+                                  IrcLogSource::Server,
+                                  IrcLogSeverity::Info,
+                                  QStringLiteral("CTCP"),
+                                  QStringLiteral("%1 from %2").arg(text, sender));
+        }
     }
     if (const auto parts = parseIncomingNotice(display)) {
         const IrcNoticeStatusCopy copy = presentIncomingNotice(*parts);

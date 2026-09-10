@@ -115,56 +115,68 @@ struct IrcWireCommand
     QStringList parameters;
 };
 
-QStringView skipSpaces(QStringView text)
+QStringView skipFieldSpaces(QStringView text)
 {
-    while (!text.isEmpty() && text.front() == QLatin1Char(' '))
+    while (!text.isEmpty()
+           && (text.front() == QLatin1Char(' ') || text.front() == QLatin1Char('\t'))) {
         text = text.mid(1);
+    }
     return text;
+}
+
+qsizetype fieldBreak(QStringView text)
+{
+    for (qsizetype index = 0; index < text.size(); ++index) {
+        const QChar ch = text.at(index);
+        if (ch == QLatin1Char(' ') || ch == QLatin1Char('\t'))
+            return index;
+    }
+    return -1;
 }
 
 std::optional<IrcWireCommand> tokenize(QStringView line)
 {
-    QStringView rest = skipSpaces(line);
+    QStringView rest = skipFieldSpaces(line);
     if (rest.isEmpty())
         return std::nullopt;
 
     if (rest.startsWith(QLatin1Char('@'))) {
-        const qsizetype space = rest.indexOf(QLatin1Char(' '));
+        const qsizetype space = fieldBreak(rest);
         if (space < 0)
             return std::nullopt;
-        rest = skipSpaces(rest.mid(space + 1));
+        rest = skipFieldSpaces(rest.mid(space + 1));
         if (rest.isEmpty())
             return std::nullopt;
     }
 
     if (rest.startsWith(QLatin1Char(':'))) {
-        const qsizetype space = rest.indexOf(QLatin1Char(' '));
+        const qsizetype space = fieldBreak(rest);
         if (space < 0)
             return std::nullopt;
-        rest = skipSpaces(rest.mid(space + 1));
+        rest = skipFieldSpaces(rest.mid(space + 1));
         if (rest.isEmpty())
             return std::nullopt;
     }
 
-    const qsizetype verbEnd = rest.indexOf(QLatin1Char(' '));
+    const qsizetype verbEnd = fieldBreak(rest);
     IrcWireCommand command;
     command.verb = (verbEnd < 0 ? rest : rest.left(verbEnd)).toString().toUpper();
     if (command.verb.isEmpty())
         return std::nullopt;
-    rest = verbEnd < 0 ? QStringView() : skipSpaces(rest.mid(verbEnd + 1));
+    rest = verbEnd < 0 ? QStringView() : skipFieldSpaces(rest.mid(verbEnd + 1));
 
     while (!rest.isEmpty()) {
         if (rest.startsWith(QLatin1Char(':'))) {
             command.parameters.append(rest.mid(1).toString());
             break;
         }
-        const qsizetype space = rest.indexOf(QLatin1Char(' '));
+        const qsizetype space = fieldBreak(rest);
         if (space < 0) {
             command.parameters.append(rest.toString());
             break;
         }
         command.parameters.append(rest.left(space).toString());
-        rest = skipSpaces(rest.mid(space + 1));
+        rest = skipFieldSpaces(rest.mid(space + 1));
     }
     return command;
 }
@@ -247,24 +259,30 @@ bool hasServiceTarget(QStringView targets)
 QStringList serviceBodyTokens(const QString& body)
 {
     QString normalized = body;
+    if (normalized.size() >= 2 && normalized.front() == QChar(1)
+        && normalized.back() == QChar(1)) {
+        normalized = normalized.mid(1, normalized.size() - 2);
+    }
     normalized.replace(QLatin1Char('\t'), QLatin1Char(' '));
     return normalized.split(QLatin1Char(' '), Qt::SkipEmptyParts);
 }
 
 std::optional<IrcWireCommand> maskServiceRequestBody(const IrcWireCommand& command)
 {
-    if (command.parameters.size() != 2)
+    if (command.parameters.size() < 2)
         return std::nullopt;
     if (!hasServiceTarget(command.parameters.at(0)))
         return std::nullopt;
-    const QStringList tokens = serviceBodyTokens(command.parameters.at(1));
+    const QString body = command.parameters.mid(1).join(QLatin1Char(' '));
+    const QStringList tokens = serviceBodyTokens(body);
     if (tokens.size() < 2)
         return std::nullopt;
     const QString word = tokens.at(0).toUpper();
     if (!isServicePasswordCommand(word))
         return std::nullopt;
     IrcWireCommand masked = command;
-    masked.parameters[1] = word + QStringLiteral(" ***");
+    masked.parameters = QStringList{command.parameters.at(0),
+                                    word + QStringLiteral(" ***")};
     return masked;
 }
 
