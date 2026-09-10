@@ -463,23 +463,24 @@ void LiveUiTest::replayAndLiveSameAuthorMinuteDoNotGroupThroughIrcEvent()
 
     transport->injectBytes(
         QByteArrayLiteral(
-            ":irc.host BATCH +empty chathistory #omarchy\r\n"
-            ":irc.host BATCH -empty\r\n"
             ":irc.host BATCH +hx chathistory #omarchy\r\n"
             "@batch=hx;time=2011-10-19T16:40:51.620Z;msgid=old :anna!u@h PRIVMSG #omarchy :replayed line\r\n"
             ":irc.host BATCH -hx\r\n"
             "@time=2011-10-19T16:40:51.620Z :anna!u@h PRIVMSG #omarchy :live line\r\n"));
     QVERIFY2(waitUntil([&] {
-                    return chromeIndex(collectTranscriptChrome(window),
-                                       QStringLiteral("live line"))
-                        >= 0;
+                    const QVector<TranscriptRowChrome> rows =
+                        collectTranscriptChrome(window);
+                    return chromeIndex(rows, QStringLiteral("replayed line")) >= 0
+                        && chromeIndex(rows, QStringLiteral("live line")) >= 0;
                 }),
              qPrintable(describeChrome(collectTranscriptChrome(window))));
 
     const QVector<TranscriptRowChrome> rows = collectTranscriptChrome(window);
     const int replayAt = chromeIndex(rows, QStringLiteral("replayed line"));
+    const int joinAt = chromeIndex(rows, QStringLiteral("omairc joined"));
     const int liveAt = chromeIndex(rows, QStringLiteral("live line"));
-    QVERIFY2(replayAt >= 0 && liveAt == replayAt + 1, qPrintable(describeChrome(rows)));
+    QVERIFY2(replayAt >= 0 && joinAt == replayAt + 1 && liveAt == joinAt + 1,
+             qPrintable(describeChrome(rows)));
     QVERIFY2(rows.at(replayAt).avatarVisible && rows.at(replayAt).headerVisible,
              qPrintable(describeChrome(rows)));
     QVERIFY2(rows.at(liveAt).avatarVisible && rows.at(liveAt).headerVisible,

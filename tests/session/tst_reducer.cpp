@@ -83,6 +83,8 @@ private slots:
     void msgidDedupSkipsReplayThenLive();
     void partThenJoinSplicesAboveThisJoin();
     void historicJoinInBatchDoesNotChangePeopleCount();
+    void historyAfterPartDoesNotSplice();
+    void clearMessagesDropsPendingHistory();
 };
 
 void ReducerTest::namesFillAndCompleteWithoutDuplicates()
@@ -1053,6 +1055,54 @@ void ReducerTest::partThenJoinSplicesAboveThisJoin()
     QCOMPARE(conversation->messages[2].origin, IrcOrigin::Replay);
     QCOMPARE(conversation->messages[3].body, QStringLiteral("omairc joined"));
     QVERIFY(!conversation->messages[3].collapsible);
+}
+
+void ReducerTest::historyAfterPartDoesNotSplice()
+{
+    IrcEventReducer reducer;
+    welcome(reducer, networkA);
+    const IrcConversationKey room =
+        reducer.conversationKey(networkA, QStringLiteral("#omarchy"));
+    reducer.apply(IrcJoinEvent{
+        networkA, QStringLiteral("#omarchy"), QStringLiteral("omairc")});
+    reducer.apply(IrcPartEvent{
+        networkA, QStringLiteral("#omarchy"), QStringLiteral("omairc"), QString()});
+    reducer.apply(IrcHistoryEvent{
+        room,
+        QStringLiteral("#omarchy"),
+        {replayLine(QStringLiteral("alice"), QStringLiteral("stale"),
+                    QStringLiteral("id-stale"))},
+    });
+
+    const IrcConversationState *conversation = reducer.find(room);
+    QVERIFY(conversation);
+    QCOMPARE(conversation->messages.size(), std::size_t(2));
+    QCOMPARE(conversation->messages[0].body, QStringLiteral("omairc joined"));
+    QCOMPARE(conversation->messages[1].body, QStringLiteral("omairc left"));
+}
+
+void ReducerTest::clearMessagesDropsPendingHistory()
+{
+    IrcEventReducer reducer;
+    welcome(reducer, networkA);
+    const IrcConversationKey room =
+        reducer.conversationKey(networkA, QStringLiteral("#omarchy"));
+    reducer.apply(IrcJoinEvent{
+        networkA, QStringLiteral("#omarchy"), QStringLiteral("omairc")});
+    reducer.clearMessages(room);
+    reducer.apply(IrcHistoryEvent{
+        room,
+        QStringLiteral("#omarchy"),
+        {replayLine(QStringLiteral("alice"), QStringLiteral("older"),
+                    QStringLiteral("id-clear"))},
+    });
+
+    const IrcConversationState *conversation = reducer.find(room);
+    QVERIFY(conversation);
+    QCOMPARE(conversation->messages.size(), std::size_t(0));
+    QCOMPARE(conversation->peopleCount(), 1);
+    QVERIFY(conversation->isChannel());
+    QVERIFY(!conversation->channel()->historyAnchor);
 }
 
 void ReducerTest::historicJoinInBatchDoesNotChangePeopleCount()

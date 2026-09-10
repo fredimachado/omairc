@@ -191,6 +191,8 @@ void IrcEventReducer::clearMessages(const IrcConversationKey& key)
     conversation->messages.clear();
     conversation->messageIds.clear();
     ++conversation->spliceEpoch;
+    if (IrcChannelState *channel = conversation->channel())
+        channel->historyAnchor.reset();
 }
 
 const IrcEventReducer::Store& IrcEventReducer::conversations() const noexcept
@@ -798,7 +800,7 @@ void IrcEventReducer::reduce(const IrcHistoryEvent& event)
     if (!conversation)
         return;
     IrcChannelState *channel = conversation->channel();
-    if (!channel)
+    if (!channel || !channel->historyAnchor)
         return;
     const std::size_t previousSize = conversation->messages.size();
     const std::size_t at = spliceIndexFor(*conversation, *channel);
