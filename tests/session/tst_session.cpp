@@ -1341,6 +1341,26 @@ void SessionTest::serviceIdentifyIsRedactedInStatusEntries()
              QStringLiteral("PRIVMSG #discuss,nickserv :IDENTIFY ***"));
     QVERIFY(!commaSecond.text().contains(QStringLiteral("s3cret")));
 
+    const IrcStatusEntry atHost = IrcStatusEntry::outgoing(
+        QStringLiteral("network-a"),
+        QByteArrayLiteral("PRIVMSG NickServ@services :identify my_nick s3cret\r\n"));
+    QCOMPARE(atHost.text(), QStringLiteral("PRIVMSG NickServ@services :IDENTIFY ***"));
+    QVERIFY(!atHost.text().contains(QStringLiteral("s3cret")));
+
+    const IrcStatusEntry fullMask = IrcStatusEntry::outgoing(
+        QStringLiteral("network-a"),
+        QByteArrayLiteral("PRIVMSG NickServ!ns@services :identify my_nick s3cret\r\n"));
+    QCOMPARE(fullMask.text(),
+             QStringLiteral("PRIVMSG NickServ!ns@services :IDENTIFY ***"));
+    QVERIFY(!fullMask.text().contains(QStringLiteral("s3cret")));
+
+    const IrcStatusEntry hostOnly = IrcStatusEntry::outgoing(
+        QStringLiteral("network-a"),
+        QByteArrayLiteral("PRIVMSG helper!u@services :identify my_nick s3cret\r\n"));
+    QCOMPARE(hostOnly.text(),
+             QStringLiteral("PRIVMSG helper!u@services :IDENTIFY ***"));
+    QVERIFY(!hostOnly.text().contains(QStringLiteral("s3cret")));
+
     const IrcStatusEntry keyedModes = IrcStatusEntry::incoming(
         QStringLiteral("network-a"),
         mustParse(":irc 324 omairc #omarchy +k s3cret"));
@@ -1368,6 +1388,17 @@ void SessionTest::serviceIdentifyIsRedactedInStatusEntries()
         QStringLiteral("network-a"),
         mustParse(":alice!u@h JOIN #omarchy alice :Alice"));
     QCOMPARE(extendedJoin.text(), QStringLiteral("#omarchy alice Alice"));
+
+    const IrcStatusEntry literalStar = IrcStatusEntry::incoming(
+        QStringLiteral("network-a"),
+        mustParse(":irc MODE ***"));
+    QCOMPARE(literalStar.text(), QStringLiteral("***"));
+
+    const IrcStatusEntry incomingPass = IrcStatusEntry::incoming(
+        QStringLiteral("network-a"),
+        mustParse("PASS hunter2"));
+    QCOMPARE(incomingPass.text(), QStringLiteral("PASS ***"));
+    QVERIFY(!incomingPass.text().contains(QStringLiteral("hunter2")));
 }
 
 void SessionTest::channelTalkAboutServicesStaysReadable()

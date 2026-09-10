@@ -81,11 +81,11 @@ bool trailingBodyOnly(const QString& command)
         || code == 422;
 }
 
-QString incomingText(const IrcMessage& message, const QString& command)
+QString incomingText(const IrcMessage& message, const QString& command, bool redacted)
 {
     if (message.parameters.empty())
         return command;
-    if (message.parameters.size() == 1
+    if (redacted && message.parameters.size() == 1
         && ircWireText(message.parameters.front()) == QLatin1String("***")
         && !trailingBodyOnly(command)) {
         return command + QStringLiteral(" ***");
@@ -467,7 +467,7 @@ IrcStatusEntry IrcStatusEntry::incoming(const QString& networkId, const IrcMessa
                           IrcLogSource::Server,
                           severityFor(command),
                           command,
-                          incomingText(*display, commandOf(*display)));
+                          incomingText(*display, commandOf(*display), overlay.has_value()));
 }
 
 IrcStatusEntry IrcStatusEntry::outgoing(const QString& networkId, const QByteArray& line)

@@ -368,6 +368,30 @@ std::optional<IrcWireCommand> maskKeyedModeTail(const IrcWireCommand& command,
     return masked;
 }
 
+struct IrcTargetMask
+{
+    QStringView nick;
+    QStringView host;
+};
+
+IrcTargetMask splitTargetMask(QStringView target)
+{
+    IrcTargetMask parts;
+    const qsizetype bang = target.indexOf(QLatin1Char('!'));
+    const qsizetype at = target.indexOf(QLatin1Char('@'), bang < 0 ? 0 : bang + 1);
+    if (bang >= 0) {
+        parts.nick = target.left(bang);
+        if (at >= 0)
+            parts.host = target.mid(at + 1);
+    } else if (at >= 0) {
+        parts.nick = target.left(at);
+        parts.host = target.mid(at + 1);
+    } else {
+        parts.nick = target;
+    }
+    return parts;
+}
+
 bool hasServiceTarget(QStringView targets)
 {
     qsizetype start = 0;
@@ -376,7 +400,8 @@ bool hasServiceTarget(QStringView targets)
         const QStringView piece = comma < 0
             ? targets.mid(start)
             : targets.mid(start, comma - start);
-        if (ircIsServiceIdentity(piece, QStringView()))
+        const IrcTargetMask mask = splitTargetMask(piece);
+        if (ircIsServiceIdentity(mask.nick, mask.host))
             return true;
         if (comma < 0)
             break;
