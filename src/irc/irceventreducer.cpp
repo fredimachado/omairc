@@ -684,11 +684,16 @@ void IrcEventReducer::reduce(const IrcNickEvent& event)
     if (existing == m_conversations.end()) {
         m_conversations.emplace(newKey, std::move(moved));
     } else {
-        existing->second.messages.insert(existing->second.messages.end(),
-                                         moved.messages.begin(),
-                                         moved.messages.end());
-        existing->second.messageIds.insert(moved.messageIds.begin(),
-                                           moved.messageIds.end());
+        // Both sides may already hold the same msgid. Admitting a duplicate row
+        // would leave one id covering two messages, and trimming either one
+        // would then let a third copy through.
+        for (IrcReducedMessage& message : moved.messages) {
+            if (!message.msgid.isEmpty()) {
+                if (!existing->second.messageIds.insert(message.msgid).second)
+                    continue;
+            }
+            existing->second.messages.push_back(std::move(message));
+        }
         capMessages(existing->second);
         existing->second.unread += moved.unread;
         existing->second.mentions += moved.mentions;
