@@ -5,6 +5,7 @@
 #include "ircjointarget.h"
 #include "ircparser.h"
 #include "ircpresence.h"
+#include "ircsecretpolicy.h"
 #include "irctcp.h"
 #include "irctyping.h"
 #include "ircwiretext.h"
@@ -27,25 +28,8 @@ constexpr char kPingWatchdogToken[] = "omairc-watchdog";
 constexpr qsizetype kCtcpPingPayloadMaxBytes = 32;
 constexpr qint64 kCtcpReplyIntervalMs = 5000;
 
-QString firstWireTokenUpper(std::string_view bytes)
-{
-    std::string verb;
-    for (unsigned char c : bytes) {
-        if (c == ' ' || c == '\r' || c == '\n')
-            break;
-        if (c >= 'a' && c <= 'z')
-            c = static_cast<unsigned char>(c - 'a' + 'A');
-        verb.push_back(char(c));
-    }
-    return QString::fromLatin1(verb.data(), qsizetype(verb.size()));
-}
-
 QString previewWire(std::string_view bytes, std::size_t byteCount)
 {
-    const QString verb = firstWireTokenUpper(bytes);
-    if (verb == QLatin1String("PASS") || verb == QLatin1String("AUTHENTICATE"))
-        return verb + QStringLiteral(" ***");
-
     std::string sanitized;
     sanitized.reserve(bytes.size());
     for (unsigned char c : bytes) {
@@ -55,6 +39,8 @@ QString previewWire(std::string_view bytes, std::size_t byteCount)
             sanitized.push_back(char(c));
     }
     QString preview = ircWireText(sanitized);
+    if (const auto safe = IrcSecretPolicy::redactWireLine(QStringView(preview)))
+        preview = *safe;
     if (byteCount > bytes.size())
         preview += QChar(0x2026);
     return preview;

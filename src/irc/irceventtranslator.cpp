@@ -1,6 +1,7 @@
 #include "irceventtranslator.h"
 
 #include "ircpresence.h"
+#include "ircservicenick.h"
 #include "irctcp.h"
 #include "irctyping.h"
 #include "ircwiretext.h"
@@ -68,13 +69,8 @@ bool isServiceUser(const IrcMessage& message)
 {
     if (!message.prefix)
         return false;
-    if (ircWireText(message.prefix->nick)
-            .endsWith(QStringLiteral("serv"), Qt::CaseInsensitive)) {
-        return true;
-    }
-    const QString folded = ircWireText(message.prefix->host).toCaseFolded();
-    return folded == QLatin1String("services")
-        || folded.startsWith(QLatin1String("services."));
+    return ircIsServiceIdentity(ircWireText(message.prefix->nick),
+                                ircWireText(message.prefix->host));
 }
 
 std::optional<IrcConversationKey> conversationFor(const QString& networkId,

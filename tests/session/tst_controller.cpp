@@ -2413,7 +2413,10 @@ void ControllerTest::statusMsgNickservIdentifyDoesNotOpenDirect()
     auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
     QVERIFY(!selectedBodiesContain(messages, QStringLiteral("s3cret")));
     QVERIFY(!selectedBodiesContain(messages, QStringLiteral("identify my_nick")));
-    QVERIFY(logContains(console->lines(), QStringLiteral("PRIVMSG nickserv")));
+    QVERIFY(logContains(console->lines(),
+                        QStringLiteral("PRIVMSG nickserv :IDENTIFY ***")));
+    QVERIFY(logContains(console->lines(), QStringLiteral("IDENTIFY ***")));
+    QVERIFY(!logContains(console->lines(), QStringLiteral("s3cret")));
 }
 
 void ControllerTest::mentionArrivedOnSelectedBuffer()
