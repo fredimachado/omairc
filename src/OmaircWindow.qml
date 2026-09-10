@@ -3122,12 +3122,13 @@ ApplicationWindow {
 
                     width: messageList.width
                     height: kind === "event"
-                        ? win.scaledSize(42)
+                        ? Math.max(win.scaledSize(42), messageEvent.implicitHeight + win.scaledSize(8))
                         : (grouped
                             ? Math.max(win.scaledSize(22), messageBody.implicitHeight + win.scaledSize(8))
                             : Math.max(win.scaledSize(58), messageBody.implicitHeight + win.scaledSize(39)))
 
                     Text {
+                        id: messageEvent
                         objectName: "messageEvent"
                         visible: messageDelegate.kind === "event"
                         anchors.centerIn: parent
@@ -3135,7 +3136,7 @@ ApplicationWindow {
                         horizontalAlignment: Text.AlignHCenter
                         text: win.plainIrcText(messageDelegate.body)
                         color: win.mutedColor
-                        elide: Text.ElideRight
+                        wrapMode: Text.Wrap
                         font.family: "iA Writer Mono S"
                         font.pixelSize: win.scaledSize(10)
                     }
