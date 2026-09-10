@@ -512,6 +512,39 @@ std::optional<QString> conservativePreviewMask(QStringView line)
         return std::nullopt;
     return QLatin1String(best->verb) + QStringLiteral(" ***");
 }
+
+std::optional<QString> previewMaskAt(QStringView slice, QStringView channelTypes)
+{
+    if (const auto parsed = tokenize(slice)) {
+        if (const auto masked = mask(*parsed, channelTypes))
+            return formatLine(*masked);
+        if (!parsed->parameters.isEmpty()) {
+            if (const IrcSecretRule *rule = nearestSecretRule(parsed->verb)) {
+                IrcWireCommand canonical = *parsed;
+                canonical.verb = QLatin1String(rule->verb);
+                if (const auto masked = mask(canonical, channelTypes))
+                    return formatLine(*masked);
+            }
+        }
+    }
+    return conservativePreviewMask(slice);
+}
+
+std::optional<QString> laterCommandPreviewMask(QStringView line, QStringView channelTypes)
+{
+    QStringView rest = skipFieldSpaces(line);
+    while (!rest.isEmpty()) {
+        const qsizetype breakAt = fieldBreak(rest);
+        if (breakAt < 0)
+            break;
+        rest = skipFieldSpaces(rest.mid(breakAt + 1));
+        if (rest.isEmpty())
+            break;
+        if (const auto safe = previewMaskAt(rest, channelTypes))
+            return safe;
+    }
+    return std::nullopt;
+}
 }
 
 std::optional<QString> IrcSecretPolicy::redactWireLine(QStringView line,
@@ -541,6 +574,8 @@ std::optional<QString> IrcSecretPolicy::redactPreviewLine(QStringView line,
                 return formatLine(*masked);
         }
     }
+    if (const auto later = laterCommandPreviewMask(line, channelTypes))
+        return later;
     return conservativePreviewMask(line);
 }
 

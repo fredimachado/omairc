@@ -897,6 +897,13 @@ void SessionTest::malformedInputSurfacesProtocolError()
     QVERIFY(splitSecret.contains(QStringLiteral("invalid character")));
     QVERIFY(splitSecret.contains(QStringLiteral("PASS ***")));
     QVERIFY(!splitSecret.contains(QStringLiteral("hunter2")));
+
+    fixture.transport->injectBytes(
+        QByteArrayLiteral("@bad tag=foo PRIVMSG nickserv :identify my_nick s3cret\r\n"));
+    QCOMPARE(errors.size(), 12);
+    const QString taggedIdentify = errors.at(11).at(2).toString();
+    QVERIFY(taggedIdentify.contains(QStringLiteral("IDENTIFY ***")));
+    QVERIFY(!taggedIdentify.contains(QStringLiteral("s3cret")));
 }
 
 void SessionTest::overlongFrameLogsPreviewWithoutSecrets()
@@ -1612,6 +1619,17 @@ void SessionTest::negotiatedChannelTypesClassifyDollarTargets()
 
     fixture.transport->injectBytes(
         QByteArrayLiteral(":server 005 omairc CHANTYPES=# PREFIX=(ov)@+ :are supported\r\n"));
+    QVERIFY(fixture.session->sendPrivmsg(QStringLiteral("$serv"),
+                                          QStringLiteral("identify my_nick s3cret")));
+    for (const IrcStatusEntry& entry : status.entries) {
+        if (entry.text().startsWith(QStringLiteral("PRIVMSG $serv")))
+            lastDollar = entry.text();
+    }
+    QCOMPARE(lastDollar, QStringLiteral("PRIVMSG $serv :IDENTIFY ***"));
+    QVERIFY(!lastDollar.contains(QStringLiteral("s3cret")));
+
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(":server 005 omairc AWAYLEN=200 :CHANTYPES=$ are supported\r\n"));
     QVERIFY(fixture.session->sendPrivmsg(QStringLiteral("$serv"),
                                           QStringLiteral("identify my_nick s3cret")));
     for (const IrcStatusEntry& entry : status.entries) {

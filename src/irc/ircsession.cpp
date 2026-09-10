@@ -978,11 +978,12 @@ void IrcSession::handleAuthenticate(const IrcMessage &message)
 
 void IrcSession::applyIsupport(const IrcMessage &message)
 {
-    if (message.command != "005")
+    if (message.command != "005" || message.parameters.size() <= 2)
         return;
     constexpr QLatin1String prefix("CHANTYPES=");
-    for (const std::string& raw : message.parameters) {
-        const QString token = ircWireText(raw);
+    const auto last = message.parameters.end() - 1;
+    for (auto it = message.parameters.begin() + 1; it != last; ++it) {
+        const QString token = ircWireText(*it);
         if (token.startsWith(prefix))
             m_channelTypes = token.mid(prefix.size());
     }
