@@ -30,18 +30,22 @@ constexpr qint64 kCtcpReplyIntervalMs = 5000;
 
 QString previewWire(std::string_view bytes, std::size_t byteCount)
 {
-    std::string sanitized;
-    sanitized.reserve(bytes.size());
+    std::string display;
+    std::string policy;
+    display.reserve(bytes.size());
+    policy.reserve(bytes.size());
     for (unsigned char c : bytes) {
-        if (c == 1)
-            sanitized.push_back(char(c));
-        else if (c == 0 || (c < 0x20 && c != '\t'))
-            sanitized.push_back('?');
-        else
-            sanitized.push_back(char(c));
+        if (c == 1 || c == '\t' || c >= 0x20) {
+            display.push_back(char(c));
+            policy.push_back(char(c));
+        } else {
+            display.push_back('?');
+            policy.push_back(' ');
+        }
     }
-    QString preview = ircWireText(sanitized);
-    if (const auto safe = IrcSecretPolicy::redactWireLine(QStringView(preview)))
+    QString preview = ircWireText(display);
+    const QString policyText = ircWireText(policy);
+    if (const auto safe = IrcSecretPolicy::redactWireLine(QStringView(policyText)))
         preview = *safe;
     preview.replace(QChar(1), QLatin1Char('?'));
     if (byteCount > bytes.size())

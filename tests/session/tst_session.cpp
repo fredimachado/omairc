@@ -805,6 +805,20 @@ void SessionTest::malformedInputSurfacesProtocolError()
     QVERIFY(message.contains(QStringLiteral("Preview:")));
     QVERIFY(message.contains(QStringLiteral("BAD")));
     QCOMPARE(fixture.session->state(), IrcSession::State::CapLs);
+
+    fixture.transport->injectBytes(QByteArray("\0PASS hunter2\r\n", 15));
+    QCOMPARE(errors.size(), 2);
+    const QString leadingNul = errors.at(1).at(2).toString();
+    QVERIFY(leadingNul.contains(QStringLiteral("invalid character")));
+    QVERIFY(leadingNul.contains(QStringLiteral("PASS ***")));
+    QVERIFY(!leadingNul.contains(QStringLiteral("hunter2")));
+
+    fixture.transport->injectBytes(QByteArray("PASS\0hunter2\r\n", 14));
+    QCOMPARE(errors.size(), 3);
+    const QString infixNul = errors.at(2).at(2).toString();
+    QVERIFY(infixNul.contains(QStringLiteral("invalid character")));
+    QVERIFY(infixNul.contains(QStringLiteral("PASS ***")));
+    QVERIFY(!infixNul.contains(QStringLiteral("hunter2")));
 }
 
 void SessionTest::overlongFrameLogsPreviewWithoutSecrets()
