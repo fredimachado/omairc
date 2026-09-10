@@ -416,7 +416,9 @@ void IrcEventReducer::appendChat(const IrcConversationKey& key,
                                  IrcMessageKind kind)
 {
     const bool self = isSelf(key.networkId, author);
-    if (self && !find(key) && !(m_selected && *m_selected == key))
+    const bool conversationExists =
+        find(key) || (m_selected && *m_selected == key);
+    if (self && !conversationExists)
         return;
 
     IrcConversationState& conversation =
