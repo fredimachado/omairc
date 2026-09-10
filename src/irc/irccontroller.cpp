@@ -3,8 +3,10 @@
 #include "ircchannelmode.h"
 #include "irccommand.h"
 #include "irceventtranslator.h"
+#include "ircjointarget.h"
 #include "ircviewnotify.h"
 #include "irctyping.h"
+#include "ircwiretext.h"
 
 #include <QByteArray>
 #include <QDateTime>
@@ -28,8 +30,7 @@ QString parameter(const IrcMessage& message, std::size_t index)
 {
     if (index >= message.parameters.size())
         return {};
-    return QString::fromUtf8(message.parameters[index].data(),
-                             qsizetype(message.parameters[index].size()));
+    return ircWireText(message.parameters[index]);
 }
 
 std::string utf8(const QString& value)
@@ -543,8 +544,13 @@ IrcCommandOutcome IrcController::dispatch(const IrcCommand& command,
     bool sent = false;
     switch (command.verb) {
     case IrcCommand::Verb::Join: {
-        const QString channel = firstToken(command.argument);
-        sent = !channel.isEmpty() && active->join(channel);
+        const std::optional<QVector<IrcJoinTarget>> targets =
+            ircParseJoinTargets(command.argument);
+        if (!targets)
+            return IrcCommandOutcome::Refused;
+        sent = true;
+        for (const IrcJoinTarget& target : *targets)
+            sent = sent && active->join(target);
         break;
     }
     case IrcCommand::Verb::Part: {
@@ -795,6 +801,10 @@ void IrcController::echoIfPresent(IrcSession *session,
                                   const QString& body,
                                   QuietWire wire)
 {
+    if (wire == QuietWire::Privmsg
+        && session->capabilities().contains(IrcCapability::EchoMessage)) {
+        return;
+    }
     const IrcConversationKey key =
         m_reducer.conversationKey(session->networkId(), target);
     if (!m_reducer.find(key) && !(m_selected && *m_selected == key))
@@ -845,6 +855,10 @@ void IrcController::echoLocal(IrcMessageKind kind, const QString& body)
 {
     if (!m_selected || body.isEmpty())
         return;
+    if (m_capabilities.value(m_selected->networkId)
+            .contains(IrcCapability::EchoMessage)) {
+        return;
+    }
     const QDateTime now = QDateTime::currentDateTimeUtc();
     const QString nick = currentNick();
     if (kind == IrcMessageKind::Action) {
@@ -902,6 +916,8 @@ void IrcController::apply(const IrcEvent& event)
     if (notify.rearmTyping)
         armTypingRefresh();
     notifySelfAwayIfChanged(previousId, previousAway);
+    if (std::optional<IrcMentionArrival> mention = m_reducer.takeMentionArrival())
+        emit mentionArrived(mention->author, mention->body);
 }
 
 void IrcController::publish(const IrcViewNotify& notify)

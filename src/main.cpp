@@ -13,7 +13,7 @@
 #include <QWindow>
 
 #include <stdio.h>
-#include <string.h>
+#include <variant>
 
 #include "backend.h"
 #include "irc/ircconnection.h"
@@ -42,16 +42,23 @@ static void raiseOmaircWindow(QQmlApplicationEngine &engine)
 }
 
 int main(int argc, char *argv[]) {
-    if (argc == 2 && strcmp(argv[1], "--version") == 0) {
-        fputs("omairc " OMAIRC_VERSION "\n", stdout);
-        return 0;
-    }
+    QStringList args;
+    for (int i = 1; i < argc; ++i)
+        args.append(QString::fromLocal8Bit(argv[i]));
 
-    if (OmaircCli::looksLikeCommand(argc, argv)) {
-        QCoreApplication app(argc, argv);
-        app.setApplicationName(QStringLiteral("omairc"));
-        app.setApplicationVersion(QStringLiteral(OMAIRC_VERSION));
-        return OmaircCli::run(app);
+    const bool headless = !args.isEmpty()
+        && (args.constFirst() == QLatin1String("--help")
+            || args.constFirst() == QLatin1String("--version")
+            || OmaircCli::looksLikeCommand(argc, argv));
+    if (headless) {
+        const OmaircCli::ParseOutcome outcome = OmaircCli::parseArgs(args);
+        if (const auto *request = std::get_if<OmaircIpc::Request>(&outcome)) {
+            QCoreApplication app(argc, argv);
+            app.setApplicationName(QStringLiteral("omairc"));
+            app.setApplicationVersion(QStringLiteral(OMAIRC_VERSION));
+            return OmaircCli::runRequest(app, *request);
+        }
+        return OmaircCli::printOutcome(outcome);
     }
 
     QGuiApplication app(argc, argv);
@@ -66,7 +73,6 @@ int main(int argc, char *argv[]) {
     QCommandLineParser parser;
     parser.setApplicationDescription(
         QStringLiteral("A dead-simple IRC client for Omarchy."));
-    parser.addHelpOption();
     const QCommandLineOption mockOption(
         QStringLiteral("mock"),
         QStringLiteral("Open the local prototype UI without connecting."));

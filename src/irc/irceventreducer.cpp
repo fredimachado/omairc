@@ -1,5 +1,7 @@
 #include "irceventreducer.h"
 
+#include "ircwiretext.h"
+
 #include <QByteArray>
 
 #include <string>
@@ -11,11 +13,6 @@ std::string utf8(const QString& value)
 {
     const QByteArray encoded = value.toUtf8();
     return std::string(encoded.constData(), static_cast<std::size_t>(encoded.size()));
-}
-
-QString fromUtf8(const std::string& value)
-{
-    return QString::fromUtf8(value.data(), static_cast<qsizetype>(value.size()));
 }
 
 bool isIdentifierCharacter(QChar character)
@@ -40,6 +37,22 @@ void stopNamesSync(IrcChannelState& channel)
 {
     channel.namesSyncing = false;
     channel.namesSyncStarted = {};
+}
+
+QString collapseEventBody(const QString& existing, const QString& incoming)
+{
+    static const QString suffixes[] = {
+        QStringLiteral(" joined"),
+        QStringLiteral(" left"),
+        QStringLiteral(" quit"),
+    };
+    for (const QString& suffix : suffixes) {
+        if (existing.endsWith(suffix) && incoming.endsWith(suffix)) {
+            return existing.chopped(suffix.size()) + QStringLiteral(", ")
+                + incoming.chopped(suffix.size()) + suffix;
+        }
+    }
+    return existing + QStringLiteral(", ") + incoming;
 }
 }
 
@@ -112,7 +125,15 @@ std::optional<IrcConversationKey> IrcEventReducer::selected() const
 
 void IrcEventReducer::apply(const IrcEvent& event)
 {
+    m_mentionArrival.reset();
     std::visit([this](const auto& value) { reduce(value); }, event);
+}
+
+std::optional<IrcMentionArrival> IrcEventReducer::takeMentionArrival()
+{
+    std::optional<IrcMentionArrival> mention = m_mentionArrival;
+    m_mentionArrival.reset();
+    return mention;
 }
 
 bool IrcEventReducer::releaseStaleNamesSync(const std::optional<IrcConversationKey>& key,
@@ -146,6 +167,7 @@ void IrcEventReducer::clearMessages(const IrcConversationKey& key)
     IrcConversationState *conversation = findMutable(key);
     if (!conversation)
         return;
+    conversation->trimmed += int(conversation->messages.size());
     conversation->messages.clear();
 }
 
@@ -179,7 +201,7 @@ std::optional<IrcMemberView> IrcEventReducer::memberView(
     const IrcServerFeatures& features = serverFeatures(key.networkId);
     return IrcMemberView{
         member->second.displayNick,
-        QString::fromStdString(features.memberLabel(
+        ircWireText(features.memberLabel(
             member->second.ranks, utf8(member->second.displayNick))),
         member->second.ranks,
         facts.away,
@@ -327,7 +349,7 @@ IrcConversationState *IrcEventReducer::findMutable(
 QString IrcEventReducer::normalize(const QString& networkId,
                                    const QString& identifier) const
 {
-    return fromUtf8(serverFeatures(networkId).caseMapping().normalize(
+    return ircWireText(serverFeatures(networkId).caseMapping().normalize(
         utf8(identifier)));
 }
 
@@ -378,23 +400,48 @@ void IrcEventReducer::appendChat(const IrcConversationKey& key,
     IrcConversationState& conversation =
         ensureConversation(key, displayTarget);
     conversation.messages.push_back({author, body, timestamp, kind});
+    capMessages(conversation);
     clearTyping(conversation, normalize(key.networkId, author));
 
-    if (isSelf(key.networkId, author) || (m_selected && *m_selected == key))
+    const bool self = isSelf(key.networkId, author);
+    const bool mentionKind = kind == IrcMessageKind::Message
+        || kind == IrcMessageKind::Action;
+    const bool mentioned = !self && mentionKind && isMention(key.networkId, body);
+    if (mentioned)
+        m_mentionArrival = IrcMentionArrival{author, body};
+
+    if (self || (m_selected && *m_selected == key))
         return;
 
     ++conversation.unread;
-    if ((kind == IrcMessageKind::Message || kind == IrcMessageKind::Action)
-        && isMention(key.networkId, body)) {
+    if (mentioned)
         ++conversation.mentions;
-    }
 }
 
 void IrcEventReducer::appendEvent(IrcConversationState& conversation,
-                                  const QString& body)
+                                  const QString& body,
+                                  bool collapsible)
 {
+    if (collapsible && !conversation.messages.empty()) {
+        IrcReducedMessage& last = conversation.messages.back();
+        if (last.kind == IrcMessageKind::Event && last.collapsible) {
+            last.body = collapseEventBody(last.body, body);
+            return;
+        }
+    }
     conversation.messages.push_back(
-        {QString(), body, QDateTime(), IrcMessageKind::Event});
+        {QString(), body, QDateTime(), IrcMessageKind::Event, collapsible});
+    capMessages(conversation);
+}
+
+void IrcEventReducer::capMessages(IrcConversationState& conversation)
+{
+    auto& messages = conversation.messages;
+    const int extra = int(messages.size()) - kMaxMessages;
+    if (extra <= 0)
+        return;
+    messages.erase(messages.begin(), messages.begin() + extra);
+    conversation.trimmed += extra;
 }
 
 void IrcEventReducer::reduce(const IrcWelcomeEvent& event)
@@ -452,7 +499,7 @@ void IrcEventReducer::reduce(const IrcJoinEvent& event)
         normalizedNick, IrcMemberState{event.nick, ranks});
     if (isSelf(event.networkId, event.nick))
         channel->joined = true;
-    appendEvent(conversation, event.nick + QStringLiteral(" joined"));
+    appendEvent(conversation, event.nick + QStringLiteral(" joined"), true);
 }
 
 void IrcEventReducer::reduce(const IrcPartEvent& event)
@@ -472,7 +519,7 @@ void IrcEventReducer::reduce(const IrcPartEvent& event)
         stopNamesSync(channel);
     }
     forgetUnseen(event.networkId, departed);
-    appendEvent(*conversation, event.nick + QStringLiteral(" left"));
+    appendEvent(*conversation, event.nick + QStringLiteral(" left"), true);
     if (isSelf(event.networkId, event.nick))
         conversation->typing.clear();
     else
@@ -489,7 +536,7 @@ void IrcEventReducer::reduce(const IrcQuitEvent& event)
         IrcChannelState *channel = conversation.channel();
         if (!channel || channel->members.erase(normalizedNick) == 0)
             continue;
-        appendEvent(conversation, event.nick + QStringLiteral(" quit"));
+        appendEvent(conversation, event.nick + QStringLiteral(" quit"), true);
     }
     forgetUnseen(event.networkId, {normalizedNick});
     clearTypingEverywhere(event.networkId, normalizedNick);
@@ -519,7 +566,7 @@ void IrcEventReducer::reduce(const IrcNickEvent& event)
         channel->members.erase(member);
         channel->members.insert_or_assign(newNormalized, std::move(updated));
         appendEvent(conversation, event.oldNick + QStringLiteral(" is now ")
-                         + event.newNick);
+                         + event.newNick, true);
     }
 
     const IrcConversationKey oldKey{event.networkId, oldNormalized};
@@ -530,7 +577,8 @@ void IrcEventReducer::reduce(const IrcNickEvent& event)
 
     direct->second.target = event.newNick;
     appendEvent(direct->second,
-                event.oldNick + QStringLiteral(" is now ") + event.newNick);
+                event.oldNick + QStringLiteral(" is now ") + event.newNick,
+                true);
     if (oldKey == newKey)
         return;
 
@@ -545,6 +593,7 @@ void IrcEventReducer::reduce(const IrcNickEvent& event)
         existing->second.messages.insert(existing->second.messages.end(),
                                          moved.messages.begin(),
                                          moved.messages.end());
+        capMessages(existing->second);
         existing->second.unread += moved.unread;
         existing->second.mentions += moved.mentions;
         for (auto& hint : moved.typing)
@@ -627,7 +676,7 @@ void IrcEventReducer::reduce(const IrcModeEvent& event)
     for (const IrcPrefixChange& change :
          features.prefixChanges(utf8(event.mode), arguments)) {
         const auto member = channel->members.find(
-            normalize(event.networkId, fromUtf8(change.nick())));
+            normalize(event.networkId, ircWireText(change.nick())));
         if (member == channel->members.end())
             continue;
         member->second.ranks = features.apply(member->second.ranks, change);

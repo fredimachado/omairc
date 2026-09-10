@@ -92,6 +92,7 @@ signals:
     void errorOccurred(const QString &networkId,
                        IrcSession::ErrorKind kind,
                        const QString &message);
+    void mentionArrived(const QString &author, const QString &body);
 
 private:
     enum class QuietWire { Privmsg, Notice };

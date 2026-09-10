@@ -22,7 +22,7 @@ Send a message lets a user add a local line to the current mock transcript from 
 Preconditions:
 
 - Mock conversation UI is showing. Use `control-omairc launch --mock`, or `qml-suite` (`irc` left null). A default compiled launch is titled `irc.libera.chat Status`.
-- For the desktop recipe below, the current conversation is `#desktop` (`control-omairc wait-title --exact "#desktop - Omairc"`).
+- For the desktop recipe below, switch to `#desktop` first. Run `control-omairc click-conversation --name "#desktop"` then `control-omairc wait-title --exact "#desktop - Omairc"`. `launch --mock` starts on `#omarchy`.
 - No prior verify line `Hello from verify` is already in this session's `#desktop` transcript.
 
 - **Keyboard focus.** Press `Ctrl+L`. Run `control-omairc focus-composer`. The composer ring uses the accent color.

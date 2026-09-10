@@ -100,9 +100,7 @@ IrcNetworkProfile::Problem IrcNetworkProfile::validate() const
             return Problem::UnsendableIdentity;
     }
     for (const QString &channel : profile.autojoinChannels) {
-        const IrcBuildResult join = IrcCommandBuilder::line(
-            QStringLiteral("JOIN %1").arg(channel).toStdString());
-        if (!join)
+        if (!IrcCommandBuilder::join(utf8(channel)))
             return Problem::UnsendableChannel;
     }
     return Problem::None;

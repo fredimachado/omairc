@@ -52,6 +52,9 @@ ApplicationWindow {
         : mockStatusOpen
     onConsoleVisibleChanged: {
         resetNickComplete();
+        if (!abandonFind())
+            stashComposerDraft();
+        restoreComposerDraft();
         resetComposerHistoryBrowse();
         if (win.slashCommands)
             win.slashCommands.sync(composer.text, consoleVisible);
@@ -65,6 +68,9 @@ ApplicationWindow {
     readonly property string currentConversation: irc ? irc.selectedTarget : mockCurrentConversation
     onCurrentConversationChanged: {
         resetNickComplete();
+        if (!abandonFind())
+            stashComposerDraft();
+        restoreComposerDraft();
         resetComposerHistoryBrowse();
         Qt.callLater(function() {
             if (membersList)
@@ -101,12 +107,21 @@ ApplicationWindow {
         && (connection.setupRequired || connectionSheetOpen)
 
     property var composerHistories: ({})
+    property var composerDrafts: ({})
+    property string composerDraftKey: ""
+    property bool findActive: false
+    property int findIndex: -1
     property int composerHistoryIndex: -1
     property string composerHistoryDraft: ""
     property string nickCompletePrefix: ""
     property var nickCompleteMatches: []
     property int nickCompleteIndex: -1
     property int nickCompleteOrigin: -1
+    property string lastOpenedUrl: ""
+    property bool suppressExternalUrlOpen: false
+    property var lastNotification: null
+    property bool suppressDesktopNotification: false
+    property var allowedUrlSchemes: ({ "http": true, "https": true })
 
     Material.theme: darkMode ? Material.Dark : Material.Light
     Material.accent: accentColor
@@ -117,6 +132,26 @@ ApplicationWindow {
         repeat: true
         running: win.typingVisible && win.typingNicks && win.typingNicks.length > 0
         onTriggered: win.typingPulse = (win.typingPulse + 1) % 3
+    }
+
+    component PlainUrlHit: MouseArea {
+        required property Item edit
+
+        objectName: "urlHit"
+        anchors.fill: parent
+        hoverEnabled: true
+        acceptedButtons: Qt.LeftButton
+        cursorShape: win.httpUrlAt(edit.text, edit.positionAt(mouseX, mouseY)).length > 0
+            ? Qt.PointingHandCursor
+            : Qt.IBeamCursor
+        onPressed: function(mouse) {
+            var url = win.httpUrlAt(edit.text, edit.positionAt(mouse.x, mouse.y));
+            if (url.length === 0)
+                mouse.accepted = false;
+        }
+        onClicked: function(mouse) {
+            win.openAllowedUrl(win.httpUrlAt(edit.text, edit.positionAt(mouse.x, mouse.y)));
+        }
     }
 
     component TypingDots: Row {
@@ -173,6 +208,63 @@ ApplicationWindow {
     function plainIrcText(text) {
         return text.replace(/\x03(?:\d{1,2}(?:,\d{1,2})?)?/g, "")
             .replace(/[\x02\x0f\x16\x1d\x1f]/g, "");
+    }
+
+    function isAllowedHttpUrl(url) {
+        if (!url)
+            return false;
+        var colon = url.indexOf(":");
+        if (colon <= 0)
+            return false;
+        var scheme = url.substring(0, colon).toLowerCase();
+        if (!allowedUrlSchemes[scheme])
+            return false;
+        if (url.substring(colon, colon + 3) !== "://")
+            return false;
+        var rest = url.substring(colon + 3);
+        if (rest.length === 0)
+            return false;
+        if (url.indexOf("\n") >= 0 || url.indexOf("\r") >= 0 || url.indexOf(" ") >= 0)
+            return false;
+        return true;
+    }
+
+    function httpUrlAt(text, index) {
+        if (!text || index < 0 || index >= text.length)
+            return "";
+        var re = /https?:\/\/[^\s<>"']+/gi;
+        var match;
+        while ((match = re.exec(text)) !== null) {
+            var start = match.index;
+            var raw = match[0].replace(/[.,;:!?)\]>]+$/, "");
+            var end = start + raw.length;
+            if (index >= start && index < end && isAllowedHttpUrl(raw))
+                return raw;
+        }
+        return "";
+    }
+
+    function openAllowedUrl(url) {
+        if (!isAllowedHttpUrl(url))
+            return false;
+        lastOpenedUrl = url;
+        if (!suppressExternalUrlOpen)
+            Qt.openUrlExternally(url);
+        return true;
+    }
+
+    function openHttpUrlAt(text, index) {
+        return openAllowedUrl(httpUrlAt(text, index));
+    }
+
+    function notifyMentionIfUnfocused(windowActive, author, body) {
+        if (windowActive)
+            return;
+        var text = plainIrcText(body);
+        lastNotification = { author: author, body: text };
+        if (suppressDesktopNotification)
+            return;
+        backend.notifyDesktop(author, text);
     }
 
     function topicFor(name) {
@@ -449,6 +541,119 @@ ApplicationWindow {
         return consoleVisible ? "status" : currentConversation;
     }
 
+    function unsentComposerText() {
+        if (composerHistoryIndex >= 0)
+            return composerHistoryDraft;
+        return composer.text;
+    }
+
+    function stashComposerDraft() {
+        if (!composer)
+            return;
+        var key = composerDraftKey.length > 0 ? composerDraftKey : composerHistoryKey();
+        composerDrafts[key] = unsentComposerText();
+    }
+
+    function restoreComposerDraft() {
+        if (!composer)
+            return;
+        var key = composerHistoryKey();
+        composerDraftKey = key;
+        composer.text = composerDrafts[key] || "";
+        composer.cursorPosition = composer.text.length;
+    }
+
+    function abandonFind() {
+        if (!findActive)
+            return false;
+        findActive = false;
+        findIndex = -1;
+        return true;
+    }
+
+    function leaveFind() {
+        if (!abandonFind())
+            return;
+        restoreComposerDraft();
+        composer.forceActiveFocus();
+    }
+
+    function transcriptRowText(model, row) {
+        if (!model || row < 0)
+            return "";
+        if (typeof model.get === "function") {
+            var rowData = model.get(row);
+            if (!rowData)
+                return "";
+            if (consoleVisible)
+                return rowData.text || "";
+            return rowData.body || "";
+        }
+        return model.data(model.index(row, 0), Qt.UserRole + 3) || "";
+    }
+
+    function findNextMatch(fromStart) {
+        var query = composer.text;
+        if (query.length === 0)
+            return -1;
+        var list = consoleVisible ? consoleList : messageList;
+        if (!list || list.count <= 0)
+            return -1;
+        var needle = query.toLowerCase();
+        var start = fromStart ? -1 : findIndex;
+        var count = list.count;
+        for (var step = 1; step <= count; ++step) {
+            var index = (start + step) % count;
+            var hay = plainIrcText(transcriptRowText(list.model, index)).toLowerCase();
+            if (hay.indexOf(needle) >= 0)
+                return index;
+        }
+        return -1;
+    }
+
+    function revealFindMatch(index) {
+        var list = consoleVisible ? consoleList : messageList;
+        if (!list)
+            return;
+        // Detach before the row lays out. A following list resticks to the
+        // end when contentHeight changes, which swallows the jump.
+        list.stick = list.stickDetached;
+        list.pinning = true;
+        var generation = ++list.pinGeneration;
+        list.positionViewAtIndex(index, ListView.Beginning);
+        Qt.callLater(function() {
+            if (generation !== list.pinGeneration)
+                return;
+            list.pinning = false;
+            list.adoptViewport();
+        });
+    }
+
+    function advanceFind(fromStart) {
+        if (composer.text.length === 0) {
+            findIndex = -1;
+            return;
+        }
+        var index = findNextMatch(fromStart);
+        if (index < 0)
+            return;
+        findIndex = index;
+        revealFindMatch(index);
+    }
+
+    function beginOrAdvanceFind() {
+        composer.forceActiveFocus();
+        if (!findActive) {
+            stashComposerDraft();
+            findActive = true;
+            findIndex = -1;
+            composer.selectAll();
+            advanceFind(true);
+            return;
+        }
+        advanceFind(false);
+    }
+
     function resetComposerHistoryBrowse() {
         composerHistoryIndex = -1;
         composerHistoryDraft = "";
@@ -652,6 +857,11 @@ ApplicationWindow {
     }
 
     function sendMessage() {
+        if (findActive) {
+            advanceFind(false);
+            return;
+        }
+
         var original = composer.text.trim();
         if (original.length === 0)
             return;
@@ -716,6 +926,13 @@ ApplicationWindow {
         context: Qt.ApplicationShortcut
         enabled: !win.shortcutOverlayOpen
         onActivated: composer.forceActiveFocus()
+    }
+
+    Shortcut {
+        sequence: "Ctrl+F"
+        context: Qt.ApplicationShortcut
+        enabled: !win.connectionOverlayVisible && !win.shortcutOverlayOpen
+        onActivated: win.beginOrAdvanceFind()
     }
 
     Shortcut {
@@ -816,6 +1033,8 @@ ApplicationWindow {
                 return false;
             if (win.connection && win.connectionSheetOpen)
                 return true;
+            if (win.findActive)
+                return true;
             if (!win.consoleVisible)
                 return false;
             if (win.irc)
@@ -834,6 +1053,10 @@ ApplicationWindow {
             }
             if (win.connection && win.connectionSheetOpen) {
                 win.connectionSheetOpen = false;
+                return;
+            }
+            if (win.findActive) {
+                win.leaveFind();
                 return;
             }
             if (win.irc)
@@ -914,6 +1137,14 @@ ApplicationWindow {
                 win.connectionSheetOpen = true;
                 connectionPassword.focusInput();
             }
+        }
+    }
+
+    Connections {
+        target: win.irc
+        ignoreUnknownSignals: true
+        function onMentionArrived(author, body) {
+            win.notifyMentionIfUnfocused(win.active, author, body);
         }
     }
 
@@ -1945,8 +2176,9 @@ ApplicationWindow {
                     }
 
                     Text {
+                        objectName: "conversationTopic"
                         width: parent.width
-                        text: win.currentTopic
+                        text: win.plainIrcText(win.currentTopic)
                         color: win.mutedColor
                         elide: Text.ElideRight
                         font.family: "iA Writer Mono S"
@@ -2081,11 +2313,12 @@ ApplicationWindow {
                         : Math.max(win.scaledSize(58), messageBody.implicitHeight + win.scaledSize(39))
 
                     Text {
+                        objectName: "messageEvent"
                         visible: messageDelegate.kind === "event"
                         anchors.centerIn: parent
                         width: parent.width - win.scaledSize(48)
                         horizontalAlignment: Text.AlignHCenter
-                        text: messageDelegate.body
+                        text: win.plainIrcText(messageDelegate.body)
                         color: win.mutedColor
                         elide: Text.ElideRight
                         font.family: "iA Writer Mono S"
@@ -2166,6 +2399,8 @@ ApplicationWindow {
                         font.family: "iA Writer Mono S"
                         font.italic: messageDelegate.kind === "action"
                         font.pixelSize: win.scaledSize(13)
+
+                        PlainUrlHit { edit: messageBody }
                     }
                 }
             }
@@ -2264,6 +2499,8 @@ ApplicationWindow {
                         padding: 0
                         font.family: "iA Writer Mono S"
                         font.pixelSize: win.scaledSize(12)
+
+                        PlainUrlHit { edit: consoleText }
                     }
                 }
             }
@@ -2331,6 +2568,12 @@ ApplicationWindow {
                     bottomPadding: topPadding
                     background: Item {}
                     onTextChanged: {
+                        if (win.findActive) {
+                            if (win.slashCommands)
+                                win.slashCommands.dismiss();
+                            win.advanceFind(true);
+                            return;
+                        }
                         if (win.slashCommands) {
                             if (win.composerHistoryIndex >= 0)
                                 win.slashCommands.dismiss();
@@ -2342,11 +2585,20 @@ ApplicationWindow {
                     }
 
                     Keys.onPressed: function(event) {
+                        if (win.findActive) {
+                            if (event.key === Qt.Key_Tab
+                                || ((event.key === Qt.Key_Up || event.key === Qt.Key_Down)
+                                    && win.composerHasPlainModifier(event))) {
+                                event.accepted = true;
+                                return;
+                            }
+                        }
+
                         var historyArrow = (event.key === Qt.Key_Up
                             || event.key === Qt.Key_Down)
                             && win.composerHasPlainModifier(event)
                             && win.composerHistoryIndex >= 0;
-                        if (win.slashCommands && !historyArrow) {
+                        if (!win.findActive && win.slashCommands && !historyArrow) {
                             var routed = win.slashCommands.routeKey(event.key, event.modifiers);
                             if (routed.accepted) {
                                 if (routed.insertion.length > 0) {
@@ -3045,6 +3297,7 @@ ApplicationWindow {
                     { keys: "Ctrl+Shift+P", action: "focus members" },
                     { keys: "Ctrl+W", action: "close direct message" },
                     { keys: "Ctrl+L", action: "composer" },
+                    { keys: "Ctrl+F", action: "find" },
                     { keys: "Enter", action: "send" },
                     { keys: "Page Up / Page Down", action: "scroll" },
                     { keys: "Tab", action: "nick complete" },
@@ -3098,6 +3351,7 @@ ApplicationWindow {
     }
 
     Component.onCompleted: {
+        composerDraftKey = composerHistoryKey();
         var geometry = backend.windowGeometry();
         if (geometry.valid) {
             x = geometry.x;

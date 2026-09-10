@@ -13,6 +13,7 @@ greaterThan(QMAKE_GCC_MAJOR_VERSION, 15): QMAKE_CXXFLAGS += -Wno-sfinae-incomple
 INCLUDEPATH += ../src ../src/irc support
 VERSION = 0.1.0
 DEFINES += TEST_CERT_DIR=\\\"$$PWD/support/certs\\\" OMAIRC_VERSION=\\\"$$VERSION\\\"
+DEFINES += TEST_CORPUS_DIR=\\\"$$PWD/protocol/corpus\\\"
 
 HEADERS += \
     ../src/singleinstance.h \
@@ -22,6 +23,7 @@ HEADERS += \
     ../src/irc/ircmessage.h \
     ../src/irc/ircparser.h \
     ../src/irc/ircframer.h \
+    ../src/irc/ircwiretext.h \
     ../src/irc/irccommandbuilder.h \
     ../src/irc/irccasemapping.h \
     ../src/irc/ircserverfeatures.h \
@@ -41,6 +43,7 @@ HEADERS += \
     ../src/irc/networklogmodel.h \
     ../src/irc/irccommand.h \
     ../src/irc/ircchannelmode.h \
+    ../src/irc/ircjointarget.h \
     ../src/irc/ircslashcomplete.h \
     ../src/irc/ircstatusconsole.h \
     ../src/irc/ircsession.h \
@@ -61,14 +64,17 @@ SOURCES += \
     tst_main.cpp \
     tst_singleinstance.cpp \
     tst_omaircipc.cpp \
+    tst_omairccli.cpp \
     ../src/singleinstance.cpp \
     ../src/omaircipc.cpp \
     ../src/omaircipchandler.cpp \
     ../src/omairccli.cpp \
     protocol/tst_protocol.cpp \
     protocol/tst_casemapping.cpp \
+    protocol/tst_corpus.cpp \
     ../src/irc/ircparser.cpp \
     ../src/irc/ircframer.cpp \
+    ../src/irc/ircwiretext.cpp \
     ../src/irc/irccommandbuilder.cpp \
     ../src/irc/irccasemapping.cpp \
     ../src/irc/ircserverfeatures.cpp \
@@ -85,6 +91,7 @@ SOURCES += \
     ../src/irc/networklogmodel.cpp \
     ../src/irc/irccommand.cpp \
     ../src/irc/ircchannelmode.cpp \
+    ../src/irc/ircjointarget.cpp \
     ../src/irc/ircslashcomplete.cpp \
     ../src/irc/ircstatusconsole.cpp \
     ../src/irc/ircsession.cpp \

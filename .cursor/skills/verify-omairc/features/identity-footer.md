@@ -5,7 +5,7 @@ The sidebar footer always shows who this window is. It is the initials chip, the
 ## Sub-features
 
 - `identity-fallback-fred` shows `fred` / `available` when no nick is set yet.
-- `identity-connection-nick` shows the Connect nick once a profile nick exists.
+- `identity-connection-nick` shows the Connect nick draft as soon as Nick is non-empty, including before Apply.
 - `identity-live-nick` shows the live session nick when one is present.
 - `identity-self-away` paints the footer mark amber `#d6a552` and the word `away` when live `irc.selfAway` is true. Otherwise the mark is green `#69b978` and the word is `available`. The nick is not dimmed.
 
@@ -28,4 +28,5 @@ Preconditions:
 - The mock footer stays `available`. Live chrome follows `irc.selfAway` only.
 - Member dots still gate on `hasAwayPresence`. The footer mark does not.
 - An empty first-run Nick still shows `fred`. That is the fallback, not a saved profile.
+- `irc.currentNick` is empty only when nothing is selected. First-run (empty selection) then shows the Connect nick draft if you typed one without Apply. Opening Status over a selected conversation keeps the live nick.
 - The network name and `edit` control are the Status / Connect entry points. Clicking the footer does nothing.

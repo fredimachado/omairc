@@ -6,6 +6,10 @@ CONFIG += c++17 release
 VERSION = 0.1.0
 TARGET = omairc
 TEMPLATE = app
+
+# GCC 16 emits this diagnostic from Qt 6.11's own headers.
+greaterThan(QMAKE_GCC_MAJOR_VERSION, 15): QMAKE_CXXFLAGS += -Wno-sfinae-incomplete
+
 DEFINES += OMAIRC_VERSION=\\\"$$VERSION\\\"
 
 isEmpty(PREFIX): PREFIX = /usr/local
@@ -20,6 +24,7 @@ HEADERS += \
     src/irc/ircmessage.h \
     src/irc/ircparser.h \
     src/irc/ircframer.h \
+    src/irc/ircwiretext.h \
     src/irc/irccommandbuilder.h \
     src/irc/irccasemapping.h \
     src/irc/ircserverfeatures.h \
@@ -40,6 +45,7 @@ HEADERS += \
     src/irc/networklogmodel.h \
     src/irc/irccommand.h \
     src/irc/ircchannelmode.h \
+    src/irc/ircjointarget.h \
     src/irc/ircslashcomplete.h \
     src/irc/ircstatusconsole.h \
     src/irc/ircsession.h \
@@ -64,6 +70,7 @@ SOURCES += \
     src/systemtheme.cpp \
     src/irc/ircparser.cpp \
     src/irc/ircframer.cpp \
+    src/irc/ircwiretext.cpp \
     src/irc/irccommandbuilder.cpp \
     src/irc/irccasemapping.cpp \
     src/irc/ircserverfeatures.cpp \
@@ -81,6 +88,7 @@ SOURCES += \
     src/irc/networklogmodel.cpp \
     src/irc/irccommand.cpp \
     src/irc/ircchannelmode.cpp \
+    src/irc/ircjointarget.cpp \
     src/irc/ircslashcomplete.cpp \
     src/irc/ircstatusconsole.cpp \
     src/irc/ircsession.cpp \
@@ -124,4 +132,8 @@ unix {
     license_lgpl.uninstall = \
         $(DEL_FILE) $(INSTALL_ROOT)$$license_lgpl.path/COPYING-LGPL
     INSTALLS += license_lgpl
+
+    bash_completion.path = $$PREFIX/share/bash-completion/completions
+    bash_completion.files = $$PWD/data/bash-completion/omairc
+    INSTALLS += bash_completion
 }

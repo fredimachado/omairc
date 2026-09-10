@@ -2,13 +2,16 @@
 
 #include "ircchannelmode.h"
 #include "irccommandbuilder.h"
+#include "ircjointarget.h"
 #include "ircparser.h"
 #include "ircpresence.h"
 #include "irctcp.h"
 #include "irctyping.h"
+#include "ircwiretext.h"
 
 #include <QByteArray>
 #include <QDateTime>
+#include <QNetworkInformation>
 #include <QTimer>
 #include <QtGlobal>
 
@@ -19,6 +22,10 @@
 
 namespace
 {
+constexpr char kPingWatchdogToken[] = "omairc-watchdog";
+constexpr qsizetype kCtcpPingPayloadMaxBytes = 32;
+constexpr qint64 kCtcpReplyIntervalMs = 5000;
+
 QByteArray builtLine(const IrcBuildResult &result)
 {
     if (!result)
@@ -26,18 +33,24 @@ QByteArray builtLine(const IrcBuildResult &result)
     return QByteArray(result.value->data(), qsizetype(result.value->size()));
 }
 
+std::string utf8(const QString &value)
+{
+    const QByteArray bytes = value.toUtf8();
+    return std::string(bytes.constData(), std::size_t(bytes.size()));
+}
+
 QString parameter(const IrcMessage &message, std::size_t index)
 {
     if (index >= message.parameters.size())
         return {};
-    return QString::fromStdString(message.parameters[index]);
+    return ircWireText(message.parameters[index]);
 }
 
 QString prefixNick(const IrcMessage &message)
 {
     if (!message.prefix)
         return {};
-    return QString::fromStdString(message.prefix->nick);
+    return ircWireText(message.prefix->nick);
 }
 
 int parameterIndex(const IrcMessage &message, const QString &value)
@@ -53,7 +66,7 @@ QStringList capabilityTokens(const IrcMessage &message, int subcommandIndex)
 {
     if (message.parameters.size() <= std::size_t(subcommandIndex + 1))
         return {};
-    return QString::fromStdString(message.parameters.back())
+    return ircWireText(message.parameters.back())
         .split(QLatin1Char(' '), Qt::SkipEmptyParts);
 }
 
@@ -72,6 +85,49 @@ bool isValidPrivmsgTarget(const QString &target)
     }
     return true;
 }
+
+bool loadReachabilityBackend()
+{
+    using Feature = QNetworkInformation::Feature;
+    if (QNetworkInformation::loadBackendByFeatures(Feature::Reachability))
+        return true;
+    return QNetworkInformation::loadDefaultBackend();
+}
+
+bool isReachable(QNetworkInformation::Reachability reachability)
+{
+    switch (reachability) {
+    case QNetworkInformation::Reachability::Local:
+    case QNetworkInformation::Reachability::Site:
+    case QNetworkInformation::Reachability::Online:
+        return true;
+    case QNetworkInformation::Reachability::Unknown:
+    case QNetworkInformation::Reachability::Disconnected:
+        return false;
+    }
+    return false;
+}
+
+class QtReachabilitySource : public IrcReachabilitySource
+{
+public:
+    explicit QtReachabilitySource(QObject *parent = nullptr)
+        : IrcReachabilitySource(parent)
+    {
+        if (!loadReachabilityBackend())
+            return;
+        QNetworkInformation *information = QNetworkInformation::instance();
+        if (!information)
+            return;
+        connect(information,
+                &QNetworkInformation::reachabilityChanged,
+                this,
+                [this](QNetworkInformation::Reachability reachability) {
+            if (isReachable(reachability))
+                emit reachable();
+        });
+    }
+};
 }
 
 IrcReconnectTimer::IrcReconnectTimer(QObject *parent)
@@ -91,17 +147,26 @@ void IrcReconnectTimer::cancel()
     m_timer.stop();
 }
 
+IrcReachabilitySource::IrcReachabilitySource(QObject *parent)
+    : QObject(parent)
+{
+}
+
 IrcSession::IrcSession(const IrcSessionConfig &config,
                        IrcTransport *transport,
                        IrcReconnectTimer *reconnectTimer,
                        IrcReconnectTimer *capabilityTimer,
-                       QObject *parent)
+                       QObject *parent,
+                       IrcReconnectTimer *pingTimer,
+                       IrcReachabilitySource *reachability)
     : QObject(parent)
     , m_config(config)
     , m_nick(config.nick)
     , m_transport(transport)
     , m_reconnectTimer(reconnectTimer)
     , m_capabilityTimer(capabilityTimer)
+    , m_pingTimer(pingTimer)
+    , m_reachability(reachability)
     , m_capabilities(!config.password.isEmpty())
 {
     Q_ASSERT(m_transport);
@@ -118,6 +183,18 @@ IrcSession::IrcSession(const IrcSessionConfig &config,
         m_capabilityTimer = new IrcReconnectTimer(this);
     } else if (!m_capabilityTimer->parent()) {
         m_capabilityTimer->setParent(this);
+    }
+
+    if (!m_pingTimer) {
+        m_pingTimer = new IrcReconnectTimer(this);
+    } else if (!m_pingTimer->parent()) {
+        m_pingTimer->setParent(this);
+    }
+
+    if (!m_reachability) {
+        m_reachability = new QtReachabilitySource(this);
+    } else if (!m_reachability->parent()) {
+        m_reachability->setParent(this);
     }
 
     connect(m_capabilityTimer, &IrcReconnectTimer::fired, this, [this] {
@@ -161,13 +238,11 @@ IrcSession::IrcSession(const IrcSessionConfig &config,
                            QStringLiteral("Connection closed by the server"));
         scheduleReconnect();
     });
-    connect(m_reconnectTimer, &IrcReconnectTimer::fired, this, [this] {
-        if (m_state != State::Reconnecting)
-            return;
-        resetForConnection();
-        setState(State::Connecting);
-        m_transport->connectToHost(m_config.host, m_config.port, m_config.tlsEnabled);
-    });
+    connect(m_reconnectTimer, &IrcReconnectTimer::fired,
+            this, &IrcSession::beginReconnectAttempt);
+    connect(m_reachability, &IrcReachabilitySource::reachable,
+            this, &IrcSession::beginReconnectAttempt);
+    connect(m_pingTimer, &IrcReconnectTimer::fired, this, &IrcSession::onPingWatchdogFired);
 }
 
 IrcSession::~IrcSession()
@@ -176,6 +251,7 @@ IrcSession::~IrcSession()
     m_reconnectAfterDisconnect = false;
     m_reconnectTimer->cancel();
     m_capabilityTimer->cancel();
+    cancelPingWatchdog();
     m_transport->shutdown();
 }
 
@@ -246,6 +322,7 @@ void IrcSession::stop()
     m_reconnectAfterDisconnect = false;
     m_reconnectTimer->cancel();
     m_capabilityTimer->cancel();
+    cancelPingWatchdog();
     m_reconnectAttempt = 0;
 
     if (m_state == State::Idle)
@@ -330,10 +407,17 @@ bool IrcSession::sendTyping(const QString& target, IrcTypingPhase phase)
     return true;
 }
 
-bool IrcSession::join(const QString& channel)
+bool IrcSession::join(const IrcJoinTarget& target)
 {
-    return !channel.isEmpty()
-        && sendCommand(QStringLiteral("JOIN %1").arg(channel));
+    if (m_state != State::Registered)
+        return false;
+    const std::string channel = utf8(target.channel());
+    const std::string key = target.hasKey() ? utf8(*target.key()) : std::string();
+    const QByteArray line = builtLine(IrcCommandBuilder::join(channel, key));
+    if (line.isEmpty())
+        return false;
+    sendLine(line);
+    return true;
 }
 
 bool IrcSession::part(const QString& channel)
@@ -508,6 +592,36 @@ void IrcSession::sendRegistration()
     setState(State::Registering);
 }
 
+bool IrcSession::tryRegistrationNickFallback()
+{
+    if (!m_registrationSent)
+        return false;
+
+    QString fallback;
+    RegistrationNick next = RegistrationNick::Digit;
+    switch (m_registrationNick) {
+    case RegistrationNick::Configured:
+        fallback = m_config.nick + QLatin1Char('_');
+        next = RegistrationNick::Underscore;
+        break;
+    case RegistrationNick::Underscore:
+        fallback = m_config.nick + QLatin1Char('2');
+        next = RegistrationNick::Digit;
+        break;
+    case RegistrationNick::Digit:
+        return false;
+    }
+
+    const QByteArray line = builtLine(IrcCommandBuilder::nick(fallback.toStdString()));
+    if (line.isEmpty())
+        return false;
+
+    m_registrationNick = next;
+    m_nick = fallback;
+    sendLine(line);
+    return true;
+}
+
 void IrcSession::sendLine(const QByteArray &line)
 {
     if (line.isEmpty())
@@ -529,6 +643,9 @@ bool IrcSession::sendCommand(const QString& command)
 
 void IrcSession::handleBytes(const QByteArray &bytes)
 {
+    if (m_pingWatchdog == PingWatchdog::Watching)
+        armPingWatchdog();
+
     const IrcFrameResult result = m_framer.feed(
         std::string_view(bytes.constData(), std::size_t(bytes.size())));
     for (IrcError error : result.errors) {
@@ -550,9 +667,24 @@ void IrcSession::handleBytes(const QByteArray &bytes)
     }
 }
 
+bool IrcSession::allowCtcpReply(const QString &nick)
+{
+    const QString key = nick.toCaseFolded();
+    QElapsedTimer &clock = m_ctcpReplyClock[key];
+    if (clock.isValid() && clock.elapsed() < kCtcpReplyIntervalMs)
+        return false;
+    clock.start();
+    return true;
+}
+
 void IrcSession::handleMessage(const IrcMessage &message)
 {
     emit statusEntry(IrcStatusEntry::incoming(m_config.networkId, message));
+
+    if (message.command == "BATCH") {
+        handleBatch(message);
+        return;
+    }
 
     if (message.command == "PING") {
         if (message.parameters.empty()) {
@@ -566,6 +698,11 @@ void IrcSession::handleMessage(const IrcMessage &message)
         return;
     }
 
+    if (message.command == "PONG" && pongMatchesWatchdog(message)) {
+        armPingWatchdog();
+        return;
+    }
+
     if (message.command == "PRIVMSG" && message.parameters.size() >= 2
         && parameter(message, 0).compare(m_nick, Qt::CaseInsensitive) == 0) {
         const auto request = parseCtcpRequest(parameter(message, 1));
@@ -573,19 +710,27 @@ void IrcSession::handleMessage(const IrcMessage &message)
             const QString sender = prefixNick(message);
             if (sender.isEmpty())
                 return;
+            QString payload;
             if (request->command == QStringLiteral("PING")) {
-                sendNotice(sender, ctcpPayload({QStringLiteral("PING"), request->argument}));
+                if (request->argument.toUtf8().size() > kCtcpPingPayloadMaxBytes)
+                    return;
+                payload = ctcpPayload({QStringLiteral("PING"), request->argument});
             } else if (request->command == QStringLiteral("TIME")) {
-                sendNotice(sender, ctcpPayload({
+                payload = ctcpPayload({
                     QStringLiteral("TIME"),
                     QDateTime::currentDateTime().toString(Qt::RFC2822Date),
-                }));
+                });
             } else if (request->command == QStringLiteral("VERSION")) {
-                sendNotice(sender, ctcpPayload({
+                payload = ctcpPayload({
                     QStringLiteral("VERSION"),
                     QStringLiteral("Omairc %1").arg(QString::fromLatin1(OMAIRC_VERSION)),
-                }));
+                });
+            } else {
+                return;
             }
+            if (!allowCtcpReply(sender))
+                return;
+            sendNotice(sender, payload);
             return;
         }
     }
@@ -639,9 +784,11 @@ void IrcSession::handleMessage(const IrcMessage &message)
         || message.command == "451" || message.command == "462"
         || message.command == "465") {
         if (m_state != State::Registered) {
+            if (message.command == "433" && tryRegistrationNickFallback())
+                return;
             fail(ErrorKind::Registration,
                  QStringLiteral("IRC registration was refused (%1)")
-                     .arg(QString::fromStdString(message.command)),
+                     .arg(ircWireText(message.command)),
                  false);
             return;
         }
@@ -651,7 +798,7 @@ void IrcSession::handleMessage(const IrcMessage &message)
         fail(ErrorKind::Network,
              message.parameters.empty()
                  ? QStringLiteral("IRC server reported an error")
-                 : QString::fromStdString(message.parameters.back()),
+                 : ircWireText(message.parameters.back()),
              true);
         return;
     }
@@ -668,6 +815,20 @@ void IrcSession::handleMessage(const IrcMessage &message)
         probeChannelAway(parameter(message, 1));
 
     emit messageReceived(m_config.networkId, message);
+}
+
+void IrcSession::handleBatch(const IrcMessage &message)
+{
+    if (message.parameters.empty())
+        return;
+    const QString token = parameter(message, 0);
+    if (token.size() < 2)
+        return;
+    const QString reference = token.mid(1);
+    if (token.startsWith(QLatin1Char('+')))
+        m_openBatches.insert(reference);
+    else if (token.startsWith(QLatin1Char('-')))
+        m_openBatches.remove(reference);
 }
 
 void IrcSession::handleCap(const IrcMessage &message)
@@ -774,22 +935,21 @@ void IrcSession::handleWelcome(const IrcMessage &message)
     m_capabilities.abandonOutstanding();
     setState(State::Registered);
     emit registered(m_config.networkId);
+    armPingWatchdog();
     subscribeToMemberMetadata();
     for (const QString &channel : m_config.autojoinChannels) {
-        const IrcBuildResult join = IrcCommandBuilder::line(
-            QStringLiteral("JOIN %1").arg(channel).toStdString());
-        if (!join) {
+        const std::optional<IrcJoinTarget> target = IrcJoinTarget::make(channel);
+        if (!target || !join(*target)) {
             emit errorOccurred(m_config.networkId,
                                ErrorKind::Protocol,
                                QStringLiteral("Invalid autojoin channel"));
-            continue;
         }
-        sendLine(builtLine(join));
     }
 }
 
 void IrcSession::fail(ErrorKind kind, const QString &message, bool reconnect)
 {
+    cancelPingWatchdog();
     emit errorOccurred(m_config.networkId, kind, message);
     if (reconnect) {
         const IrcTransport::ConnectionState transportState = m_transport->connectionState();
@@ -826,18 +986,67 @@ void IrcSession::scheduleReconnect()
     emit reconnectScheduled(m_config.networkId, delay, m_reconnectAttempt);
 }
 
+void IrcSession::beginReconnectAttempt()
+{
+    if (m_state != State::Reconnecting)
+        return;
+    m_reconnectTimer->cancel();
+    resetForConnection();
+    setState(State::Connecting);
+    m_transport->connectToHost(m_config.host, m_config.port, m_config.tlsEnabled);
+}
+
 void IrcSession::resetForConnection()
 {
     m_framer = IrcFramer{};
+    m_openBatches.clear();
     m_nick = m_config.nick;
     m_registrationSent = false;
+    m_registrationNick = RegistrationNick::Configured;
     m_saslRequested = false;
     m_saslPending = false;
     m_capabilityNegotiationEnded = false;
     m_capabilityTimer->cancel();
+    cancelPingWatchdog();
     m_capabilities.reset(!m_config.password.isEmpty());
     m_typing.reset();
     publishCapabilities();
+}
+
+void IrcSession::armPingWatchdog()
+{
+    if (m_state != State::Registered)
+        return;
+    m_pingWatchdog = PingWatchdog::Watching;
+    m_pingTimer->start(std::max(0, m_config.pingTimeoutMilliseconds));
+}
+
+void IrcSession::cancelPingWatchdog()
+{
+    m_pingWatchdog = PingWatchdog::Off;
+    m_pingTimer->cancel();
+}
+
+void IrcSession::onPingWatchdogFired()
+{
+    if (m_state != State::Registered)
+        return;
+    if (m_pingWatchdog == PingWatchdog::Watching) {
+        m_pingWatchdog = PingWatchdog::Probing;
+        sendLine(QByteArrayLiteral("PING :") + kPingWatchdogToken + QByteArrayLiteral("\r\n"));
+        m_pingTimer->start(std::max(0, m_config.pingTimeoutMilliseconds));
+        return;
+    }
+    if (m_pingWatchdog == PingWatchdog::Probing) {
+        fail(ErrorKind::Network, QStringLiteral("Ping timeout"), true);
+    }
+}
+
+bool IrcSession::pongMatchesWatchdog(const IrcMessage &message) const
+{
+    if (m_pingWatchdog != PingWatchdog::Probing || message.parameters.empty())
+        return false;
+    return message.parameters.back() == kPingWatchdogToken;
 }
 
 int IrcSession::reconnectDelay() const

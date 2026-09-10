@@ -15,14 +15,24 @@
  * Omairc adapted the protocol behavior and tests from IRCClient.
  */
 
-#include <QTest>
+#include <QDate>
+#include <QDateTime>
 #include <QString>
+#include <QTest>
+#include <QTime>
+#include <QTimeZone>
 
 #include "irccommandbuilder.h"
+#include "ircevent.h"
+#include "irceventtranslator.h"
 #include "ircframer.h"
 #include "ircparser.h"
+#include "ircserverfeatures.h"
+#include "ircwiretext.h"
 
 #include <string>
+#include <string_view>
+#include <variant>
 #include <vector>
 
 namespace
@@ -30,6 +40,25 @@ namespace
 QString text(const std::string& value)
 {
     return QString::fromUtf8(value.data(), static_cast<qsizetype>(value.size()));
+}
+
+std::vector<IrcEvent> translate(const IrcMessage& message)
+{
+    const IrcServerFeatures features;
+    return IrcEventTranslator::translate(
+        QStringLiteral("net"), QStringLiteral("me"), features, message);
+}
+
+QDateTime exampleServerTime()
+{
+    return QDateTime(QDate(2011, 10, 19), QTime(16, 40, 51, 620), QTimeZone::UTC);
+}
+
+bool isNearCurrentUtc(const QDateTime& value)
+{
+    if (!value.isValid())
+        return false;
+    return qAbs(value.toUTC().msecsTo(QDateTime::currentDateTimeUtc())) < 5000;
 }
 }
 
@@ -46,6 +75,9 @@ private slots:
     void parsesTags();
     void parsesClientOnlyTypingTag();
     void preservesUtf8();
+    void decodesValidUtf8WireText();
+    void decodesInvalidUtf8AsLatin1();
+    void framesLatin1ThenUtf8();
     void framesFragmentedAndCoalescedInput();
     void rejectsNulAndRecovers();
     void rejectsOverlongAndRecovers();
@@ -56,6 +88,12 @@ private slots:
     void rejectsInvalidRegistration();
     void rejectsOutboundInjection();
     void enforcesOutboundBoundary();
+    void privmsgUsesIrcv3TimeTag();
+    void privmsgWithoutTimeUsesCurrentUtc();
+    void privmsgInvalidTimeUsesCurrentUtc();
+    void actionAndTypingUseIrcv3TimeTag();
+    void buildsJoin();
+    void rejectsInvalidJoin();
 };
 
 void ProtocolTest::parsesTrailingParameters()
@@ -164,6 +202,50 @@ void ProtocolTest::preservesUtf8()
     const auto message = IrcParser::parse(payload);
     QVERIFY(message);
     QCOMPARE(message.value->parameters[1], payload.substr(payload.find(':') + 1));
+}
+
+void ProtocolTest::decodesValidUtf8WireText()
+{
+    QCOMPARE(ircWireText({}), QString());
+    QCOMPARE(ircWireText("hello"), QStringLiteral("hello"));
+    QCOMPARE(ircWireText("\xc3\xa9"), QString(QChar(0x00E9)));
+    QCOMPARE(ircWireText("h\xc3\xa9llo \xf0\x9f\xa5\x94"),
+             QStringLiteral(u"h\u00e9llo \U0001F954"));
+}
+
+void ProtocolTest::decodesInvalidUtf8AsLatin1()
+{
+    const char acute = '\xe9';
+    const QString latin1 = ircWireText(std::string_view(&acute, 1));
+    QCOMPARE(latin1, QString(QChar(0x00E9)));
+    QVERIFY(!latin1.contains(QChar(0xFFFD)));
+
+    const char incomplete = '\xc3';
+    const QString loneLead = ircWireText(std::string_view(&incomplete, 1));
+    QCOMPARE(loneLead, QString(QChar(0x00C3)));
+    QVERIFY(!loneLead.contains(QChar(0xFFFD)));
+
+    const char cafe[] = {'c', 'a', 'f', '\xe9'};
+    QCOMPARE(ircWireText(std::string_view(cafe, 4)),
+             QStringLiteral("caf") + QChar(0x00E9));
+}
+
+void ProtocolTest::framesLatin1ThenUtf8()
+{
+    IrcFramer framer;
+    std::string wire = ":a!u@h PRIVMSG #c :";
+    wire.push_back('\xe9');
+    wire += "\r\n:b!u@h PRIVMSG #c :ok\r\n";
+    const auto result = framer.feed(wire);
+    QCOMPARE(result.errors.size(), std::size_t(0));
+    QCOMPARE(result.frames.size(), std::size_t(2));
+
+    const auto first = IrcParser::parse(result.frames[0]);
+    const auto second = IrcParser::parse(result.frames[1]);
+    QVERIFY(first);
+    QVERIFY(second);
+    QCOMPARE(first.value->parameters[1], std::string(1, '\xe9'));
+    QCOMPARE(second.value->parameters[1], std::string("ok"));
 }
 
 void ProtocolTest::framesFragmentedAndCoalescedInput()
@@ -317,6 +399,124 @@ void ProtocolTest::enforcesOutboundBoundary()
 
     result = IrcCommandBuilder::line(std::string(511, 'A'));
     QVERIFY(!result);
+}
+
+void ProtocolTest::privmsgUsesIrcv3TimeTag()
+{
+    const auto parsed = IrcParser::parse(
+        "@time=2011-10-19T16:40:51.620Z :n!u@h PRIVMSG #c :hello");
+    QVERIFY(parsed);
+    const std::vector<IrcEvent> events = translate(*parsed.value);
+    QCOMPARE(events.size(), std::size_t(1));
+    const auto *message = std::get_if<IrcMessageEvent>(&events.front());
+    QVERIFY(message);
+    QCOMPARE(message->body, QStringLiteral("hello"));
+    QCOMPARE(message->timestamp.toUTC().toMSecsSinceEpoch(),
+             exampleServerTime().toMSecsSinceEpoch());
+}
+
+void ProtocolTest::privmsgWithoutTimeUsesCurrentUtc()
+{
+    const auto parsed = IrcParser::parse(":n!u@h PRIVMSG #c :hello");
+    QVERIFY(parsed);
+    const std::vector<IrcEvent> events = translate(*parsed.value);
+    QCOMPARE(events.size(), std::size_t(1));
+    const auto *message = std::get_if<IrcMessageEvent>(&events.front());
+    QVERIFY(message);
+    QVERIFY(isNearCurrentUtc(message->timestamp));
+    QVERIFY(message->timestamp.toUTC().toMSecsSinceEpoch()
+            != exampleServerTime().toMSecsSinceEpoch());
+}
+
+void ProtocolTest::privmsgInvalidTimeUsesCurrentUtc()
+{
+    const auto parsed = IrcParser::parse(
+        "@time=not-a-timestamp :n!u@h PRIVMSG #c :hello");
+    QVERIFY(parsed);
+    const std::vector<IrcEvent> events = translate(*parsed.value);
+    QCOMPARE(events.size(), std::size_t(1));
+    const auto *message = std::get_if<IrcMessageEvent>(&events.front());
+    QVERIFY(message);
+    QVERIFY(isNearCurrentUtc(message->timestamp));
+    QVERIFY(message->timestamp.toUTC().toMSecsSinceEpoch()
+            != exampleServerTime().toMSecsSinceEpoch());
+}
+
+void ProtocolTest::actionAndTypingUseIrcv3TimeTag()
+{
+    const auto action = IrcParser::parse(
+        "@time=2011-10-19T16:40:51.620Z :n!u@h PRIVMSG #c :\x01"
+        "ACTION waves\x01");
+    QVERIFY(action);
+    const std::vector<IrcEvent> actionEvents = translate(*action.value);
+    QCOMPARE(actionEvents.size(), std::size_t(1));
+    const auto *actionEvent = std::get_if<IrcActionEvent>(&actionEvents.front());
+    QVERIFY(actionEvent);
+    QCOMPARE(actionEvent->body, QStringLiteral("waves"));
+    QCOMPARE(actionEvent->timestamp.toUTC().toMSecsSinceEpoch(),
+             exampleServerTime().toMSecsSinceEpoch());
+
+    const auto typing = IrcParser::parse(
+        "@time=2011-10-19T16:40:51.620Z;+typing=active :n!u@h TAGMSG #c");
+    QVERIFY(typing);
+    const std::vector<IrcEvent> typingEvents = translate(*typing.value);
+    QCOMPARE(typingEvents.size(), std::size_t(1));
+    const auto *typingEvent = std::get_if<IrcTypingEvent>(&typingEvents.front());
+    QVERIFY(typingEvent);
+    QCOMPARE(typingEvent->phase, IrcTypingPhase::Active);
+    QCOMPARE(typingEvent->receivedAt.toUTC().toMSecsSinceEpoch(),
+             exampleServerTime().toMSecsSinceEpoch());
+}
+
+void ProtocolTest::buildsJoin()
+{
+    auto result = IrcCommandBuilder::join("#a");
+    QVERIFY(result);
+    QCOMPARE(text(*result.value), QStringLiteral("JOIN #a\r\n"));
+
+    result = IrcCommandBuilder::join("#a", "pword");
+    QVERIFY(result);
+    QCOMPARE(text(*result.value), QStringLiteral("JOIN #a pword\r\n"));
+
+    result = IrcCommandBuilder::join("&local", "secret");
+    QVERIFY(result);
+    QCOMPARE(text(*result.value), QStringLiteral("JOIN &local secret\r\n"));
+}
+
+void ProtocolTest::rejectsInvalidJoin()
+{
+    QVERIFY(!IrcCommandBuilder::join(""));
+    QVERIFY(!IrcCommandBuilder::join("#a b"));
+    QVERIFY(!IrcCommandBuilder::join("#a,b"));
+    QVERIFY(!IrcCommandBuilder::join("#a", "p word"));
+    QVERIFY(!IrcCommandBuilder::join("#a", "x,y"));
+
+    auto unkeyedEmpty = IrcCommandBuilder::join("#a", {});
+    QVERIFY(unkeyedEmpty);
+    QCOMPARE(text(*unkeyedEmpty.value), QStringLiteral("JOIN #a\r\n"));
+
+    std::string withCr = "#a";
+    withCr.push_back('\r');
+    QVERIFY(!IrcCommandBuilder::join(withCr));
+
+    std::string withLf = "#a";
+    withLf.push_back('\n');
+    QVERIFY(!IrcCommandBuilder::join(withLf));
+
+    std::string withNul = "#a";
+    withNul.push_back('\0');
+    QVERIFY(!IrcCommandBuilder::join(withNul));
+
+    std::string keyWithNul = "k";
+    keyWithNul.push_back('\0');
+    keyWithNul += "ey";
+    QVERIFY(!IrcCommandBuilder::join("#a", keyWithNul));
+
+    QVERIFY(!IrcCommandBuilder::join(":chan"));
+    QVERIFY(!IrcCommandBuilder::join("#ok", ":key"));
+
+    const auto tooLong = IrcCommandBuilder::join(std::string(508, 'A'));
+    QVERIFY(!tooLong);
 }
 
 int runProtocolTests(int argc, char **argv)

@@ -29,6 +29,7 @@ struct IrcReducedMessage
     QString body;
     QDateTime timestamp;
     IrcMessageKind kind = IrcMessageKind::Message;
+    bool collapsible = false;
 };
 
 struct IrcMemberState
@@ -70,11 +71,18 @@ struct IrcConversationState
     std::map<QString, IrcTypingHint> typing;
     int unread = 0;
     int mentions = 0;
+    int trimmed = 0;
 
     bool isChannel() const noexcept;
     const IrcChannelState *channel() const noexcept;
     IrcChannelState *channel() noexcept;
     int peopleCount() const noexcept;
+};
+
+struct IrcMentionArrival
+{
+    QString author;
+    QString body;
 };
 
 class IrcEventReducer
@@ -93,6 +101,7 @@ public:
     std::optional<IrcConversationKey> selected() const;
 
     static constexpr qint64 kStaleNamesSyncMs = 30000;
+    static constexpr int kMaxMessages = 2000;
 
     void apply(const IrcEvent& event);
     bool releaseStaleNamesSync(const std::optional<IrcConversationKey>& key,
@@ -116,6 +125,8 @@ public:
 
     bool selfAway(const QString& networkId) const noexcept;
 
+    std::optional<IrcMentionArrival> takeMentionArrival();
+
 private:
     IrcConversationState *findMutable(const IrcConversationKey& key) noexcept;
     QString normalize(const QString& networkId, const QString& identifier) const;
@@ -130,7 +141,10 @@ private:
                     const QString& body,
                     const QDateTime& timestamp,
                     IrcMessageKind kind);
-    void appendEvent(IrcConversationState& conversation, const QString& body);
+    void appendEvent(IrcConversationState& conversation,
+                     const QString& body,
+                     bool collapsible = false);
+    void capMessages(IrcConversationState& conversation);
 
     void reduce(const IrcWelcomeEvent& event);
     void reduce(const IrcMessageEvent& event);
@@ -169,4 +183,5 @@ private:
     std::map<QString, IrcNetworkPresence> m_presence;
     std::set<QString> m_selfAway;
     std::optional<IrcConversationKey> m_selected;
+    std::optional<IrcMentionArrival> m_mentionArrival;
 };

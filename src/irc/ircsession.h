@@ -1,6 +1,9 @@
 #pragma once
 
+#include <QElapsedTimer>
+#include <QHash>
 #include <QObject>
+#include <QSet>
 #include <QString>
 #include <QStringList>
 #include <QTimer>
@@ -14,6 +17,7 @@
 #include "irctypingpublisher.h"
 
 class IrcChannelModeRequest;
+class IrcJoinTarget;
 
 class IrcReconnectTimer : public QObject
 {
@@ -32,6 +36,17 @@ private:
     QTimer m_timer;
 };
 
+class IrcReachabilitySource : public QObject
+{
+    Q_OBJECT
+
+public:
+    explicit IrcReachabilitySource(QObject *parent = nullptr);
+
+signals:
+    void reachable();
+};
+
 struct IrcSessionConfig
 {
     QString networkId;
@@ -48,6 +63,7 @@ struct IrcSessionConfig
     int reconnectMaximumDelayMilliseconds = 30000;
     int reconnectMaximumAttempts = 5;
     int capabilityTimeoutMilliseconds = 10000;
+    int pingTimeoutMilliseconds = 60000;
 };
 
 class IrcSession : public QObject
@@ -82,7 +98,9 @@ public:
                IrcTransport *transport,
                IrcReconnectTimer *reconnectTimer = nullptr,
                IrcReconnectTimer *capabilityTimer = nullptr,
-               QObject *parent = nullptr);
+               QObject *parent = nullptr,
+               IrcReconnectTimer *pingTimer = nullptr,
+               IrcReachabilitySource *reachability = nullptr);
     ~IrcSession() override;
 
     QString networkId() const;
@@ -103,7 +121,7 @@ public slots:
     bool sendChannelMode(const IrcChannelModeRequest& request);
     bool sendAction(const QString& target, const QString& body);
     bool sendTyping(const QString& target, IrcTypingPhase phase);
-    bool join(const QString& channel);
+    bool join(const IrcJoinTarget& target);
     bool part(const QString& channel);
     bool kick(const QString& channel, const QString& nick, const QString& reason = {});
     bool setTopic(const QString& channel, const QString& topic);
@@ -137,31 +155,57 @@ private:
     void probeChannelAway(const QString& channel);
     void handleMetadataSyncLater(const IrcMessage &message);
     void sendRegistration();
+    bool tryRegistrationNickFallback();
     void sendLine(const QByteArray &line);
     void handleBytes(const QByteArray &bytes);
     void handleMessage(const IrcMessage &message);
+    void handleBatch(const IrcMessage &message);
+    bool allowCtcpReply(const QString &nick);
     void handleCap(const IrcMessage &message);
     void handleAuthenticate(const IrcMessage &message);
     void handleWelcome(const IrcMessage &message);
     bool sendCommand(const QString& command);
     void fail(ErrorKind kind, const QString &message, bool reconnect);
     void scheduleReconnect();
+    void beginReconnectAttempt();
     void resetForConnection();
+    void armPingWatchdog();
+    void cancelPingWatchdog();
+    void onPingWatchdogFired();
+    bool pongMatchesWatchdog(const IrcMessage &message) const;
     int reconnectDelay() const;
+
+    enum class PingWatchdog {
+        Off,
+        Watching,
+        Probing,
+    };
+
+    enum class RegistrationNick {
+        Configured,
+        Underscore,
+        Digit,
+    };
 
     const IrcSessionConfig m_config;
     QString m_nick;
     IrcTransport *m_transport;
     IrcReconnectTimer *m_reconnectTimer;
     IrcReconnectTimer *m_capabilityTimer;
+    IrcReconnectTimer *m_pingTimer;
+    IrcReachabilitySource *m_reachability;
+    PingWatchdog m_pingWatchdog = PingWatchdog::Off;
     IrcFramer m_framer;
     IrcCapabilityNegotiation m_capabilities;
     IrcCapabilitySet m_publishedCapabilities;
     IrcTypingPublisher m_typing;
+    QSet<QString> m_openBatches;
+    QHash<QString, QElapsedTimer> m_ctcpReplyClock;
     State m_state = State::Idle;
     bool m_expectedDisconnect = false;
     bool m_reconnectAfterDisconnect = false;
     bool m_registrationSent = false;
+    RegistrationNick m_registrationNick = RegistrationNick::Configured;
     bool m_saslRequested = false;
     bool m_saslPending = false;
     bool m_capabilityNegotiationEnded = false;

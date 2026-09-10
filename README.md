@@ -42,9 +42,11 @@ desktop text size.
 bin/build
 ./build/omairc
 ./build/omairc --mock
+./build/omairc --help
 ./build/omairc --version
 ./build/omairc connections
 ./build/omairc status
+./build/omairc send --help
 ./build/omairc send --network <id> '#channel' hello
 ./build/omairc raise
 ```
@@ -52,6 +54,10 @@ bin/build
 `--mock` skips Connect and any saved profile, and opens the bundled prototype
 conversations instead. Mock mode also skips the single-process guard so tests
 can run more than one window.
+
+`--help` lists the GUI flags and control commands. `<command> --help` prints
+that command's usage. Both write plain text and exit without a window or a
+socket. After the send target, `--help` and `--version` are message text.
 
 `--version` prints `omairc 0.1.0` and exits without opening a window.
 
@@ -127,6 +133,8 @@ make INSTALL_ROOT="$pkgdir" install
 
 Default `PREFIX` is `/usr/local`. Packagers pass `PREFIX=/usr`. Prove the
 staged tree with `bin/test-install`. That command does not write `./build`.
+Install also ships bash completion at
+`share/bash-completion/completions/omairc`.
 
 Installed license texts are MIT (`LICENSE`), LGPL-3.0-or-later
 (`COPYING-LGPL`, from `src/irc/COPYING`), and OFL-1.1 (`OFL.txt`).

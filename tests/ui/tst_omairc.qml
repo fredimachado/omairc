@@ -31,6 +31,9 @@ TestCase {
 
         function saveWindowGeometry(x, y, width, height, maximized) {
         }
+
+        function notifyDesktop(summary, body) {
+        }
     }
 
     QtObject {
@@ -445,7 +448,7 @@ TestCase {
             var keepSelection = open;
             open = true;
             matches = [
-                { label: "/join", usage: "/join <channel>" },
+                { label: "/join", usage: "/join <channel> [key][, ...]" },
                 { label: "/nick", usage: "/nick <nickname>" }
             ];
             if (!keepSelection)
@@ -507,6 +510,10 @@ TestCase {
         verify(appWindow !== null, "The production Omairc window should load");
         tryCompare(appWindow, "visible", true);
         waitForRendering(appWindow.contentItem);
+        appWindow.suppressExternalUrlOpen = true;
+        appWindow.lastOpenedUrl = "";
+        appWindow.suppressDesktopNotification = true;
+        appWindow.lastNotification = null;
     }
 
     function cleanup() {
@@ -829,6 +836,183 @@ TestCase {
         compare(composer.text, "beta");
         keyClick(Qt.Key_Down);
         compare(composer.text, "draft");
+    }
+
+    function test_composerDraftsStayWithConversation() {
+        var composer = item("messageComposer");
+        mouseClick(composer);
+        verify(composer.activeFocus);
+        compare(appWindow.currentConversation, "#omarchy");
+
+        typeText("omarchy draft");
+        compare(composer.text, "omarchy draft");
+
+        mouseClick(item("conversation-#desktop"));
+        tryCompare(appWindow, "currentConversation", "#desktop");
+        compare(composer.text, "");
+
+        typeText("desktop draft");
+        compare(composer.text, "desktop draft");
+
+        mouseClick(item("conversation-#omarchy"));
+        tryCompare(appWindow, "currentConversation", "#omarchy");
+        compare(composer.text, "omarchy draft");
+
+        mouseClick(item("conversation-#desktop"));
+        tryCompare(appWindow, "currentConversation", "#desktop");
+        compare(composer.text, "desktop draft");
+
+        keyClick(Qt.Key_QuoteLeft, Qt.ControlModifier);
+        tryCompare(appWindow, "consoleVisible", true);
+        compare(composer.text, "");
+
+        typeText("status draft");
+        compare(composer.text, "status draft");
+
+        keyClick(Qt.Key_QuoteLeft, Qt.ControlModifier);
+        tryCompare(appWindow, "consoleVisible", false);
+        compare(appWindow.currentConversation, "#desktop");
+        compare(composer.text, "desktop draft");
+
+        keyClick(Qt.Key_QuoteLeft, Qt.ControlModifier);
+        tryCompare(appWindow, "consoleVisible", true);
+        compare(composer.text, "status draft");
+
+        keyClick(Qt.Key_Escape);
+        tryCompare(appWindow, "consoleVisible", false);
+        compare(composer.text, "desktop draft");
+
+        mouseClick(item("conversation-#omarchy"));
+        tryCompare(appWindow, "currentConversation", "#omarchy");
+        compare(composer.text, "omarchy draft");
+
+        var messages = item("messageList");
+        var previousCount = messages.model.count;
+        keyClick(Qt.Key_Return);
+        compare(composer.text, "");
+        tryCompare(messages.model, "count", previousCount + 1);
+        compare(messages.model.get(previousCount).author, "fred");
+        compare(messages.model.get(previousCount).body, "omarchy draft");
+
+        keyClick(Qt.Key_Up);
+        compare(composer.text, "omarchy draft");
+        keyClick(Qt.Key_Down);
+        compare(composer.text, "");
+
+        mouseClick(item("conversation-#desktop"));
+        tryCompare(appWindow, "currentConversation", "#desktop");
+        compare(composer.text, "desktop draft");
+    }
+
+    function visibleMatchIndex(list, needle) {
+        var lower = needle.toLowerCase();
+        var first = firstVisibleIndex(list);
+        if (first < 0)
+            return -1;
+        var last = list.indexAt(Math.max(1, list.width / 2),
+            list.contentY + Math.max(1, list.height - 1));
+        if (last < 0)
+            last = list.count - 1;
+        if (last < first)
+            last = first;
+        var index = 0;
+        for (index = first; index <= last; ++index) {
+            var row = list.model.get(index);
+            var hay = ((row && (row.body || row.text)) || "").toLowerCase();
+            if (hay.indexOf(lower) >= 0)
+                return index;
+        }
+        return -1;
+    }
+
+    function test_ctrlFFindsTextInConversation() {
+        var composer = item("messageComposer");
+        var list = item("messageList");
+        fillMockMessagesUntilScrollable(list);
+        appendMockMessages(list, 24, "find filler");
+        waitForRendering(appWindow.contentItem);
+        list.pinToEnd();
+        waitForRendering(appWindow.contentItem);
+        wait(0);
+        var pinnedY = list.contentY;
+        verify(pinnedY > 0);
+
+        typeText("keep me");
+        compare(composer.text, "keep me");
+        keyClick(Qt.Key_F, Qt.ControlModifier);
+        tryCompare(appWindow, "findActive", true);
+        compare(composer.text, "keep me");
+        verify(composer.activeFocus);
+
+        typeText("omarchy");
+        compare(composer.text, "omarchy");
+        tryVerify(function() {
+            return list.contentY < pinnedY;
+        }, 1000, "Ctrl+F should jump the list to the match");
+        var first = visibleMatchIndex(list, "omarchy");
+        verify(first >= 0, "The first omarchy row should be in view");
+        verify(list.model.get(first).body.toLowerCase().indexOf("omarchy") >= 0);
+
+        var countBefore = list.model.count;
+        keyClick(Qt.Key_Return);
+        compare(list.model.count, countBefore);
+        waitForRendering(appWindow.contentItem);
+        wait(0);
+        var second = visibleMatchIndex(list, "omarchy");
+        verify(second > first, "Enter in find should go to the next match");
+        compare(composer.text, "omarchy");
+
+        var current = second;
+        var hops = 0;
+        while (current !== first) {
+            keyClick(Qt.Key_F, Qt.ControlModifier);
+            waitForRendering(appWindow.contentItem);
+            wait(0);
+            current = visibleMatchIndex(list, "omarchy");
+            hops += 1;
+            verify(hops < list.count, "Find should wrap back to the first match");
+        }
+        verify(hops >= 1);
+        compare(list.model.count, countBefore);
+
+        keyClick(Qt.Key_Escape);
+        tryCompare(appWindow, "findActive", false);
+        compare(composer.text, "keep me");
+        verify(composer.activeFocus);
+
+        keyClick(Qt.Key_Return);
+        compare(composer.text, "");
+        tryCompare(list.model, "count", countBefore + 1);
+        compare(list.model.get(countBefore).body, "keep me");
+    }
+
+    function test_ctrlFFindsTextInStatus() {
+        var composer = item("messageComposer");
+        var list = item("consoleList");
+        keyClick(Qt.Key_QuoteLeft, Qt.ControlModifier);
+        tryCompare(appWindow, "consoleVisible", true);
+        fillMockConsoleUntilScrollable(list);
+        var pinnedY = list.contentY;
+        verify(pinnedY > 0);
+
+        mouseClick(composer);
+        verify(composer.activeFocus);
+        typeText("hostname");
+        keyClick(Qt.Key_F, Qt.ControlModifier);
+        tryCompare(appWindow, "findActive", true);
+        waitForRendering(appWindow.contentItem);
+        wait(0);
+
+        verify(list.contentY < pinnedY, "Ctrl+F should jump Status to the match");
+        var match = visibleMatchIndex(list, "hostname");
+        verify(match >= 0, "The hostname Status line should be in view");
+        verify(list.model.get(match).text.toLowerCase().indexOf("hostname") >= 0);
+        compare(composer.text, "hostname");
+
+        keyClick(Qt.Key_Escape);
+        tryCompare(appWindow, "findActive", false);
+        compare(composer.text, "hostname");
+        compare(appWindow.consoleVisible, true);
     }
 
     function test_pageUpScrollsTranscript() {
@@ -1220,6 +1404,129 @@ TestCase {
         window.close();
         liveMessages.clear();
         liveConsole.open = false;
+    }
+
+    function test_httpUrlAllowlist() {
+        compare(appWindow.httpUrlAt("see https://example.com now", 6), "https://example.com");
+        compare(appWindow.httpUrlAt("see http://example.com now", 6), "http://example.com");
+        compare(appWindow.httpUrlAt("see javascript:alert(1) now", 6), "");
+        compare(appWindow.httpUrlAt("see file:///etc/passwd now", 6), "");
+        compare(appWindow.httpUrlAt("see https://example.com now", 0), "");
+        compare(appWindow.lastOpenedUrl, "");
+        verify(!appWindow.openAllowedUrl("javascript:alert(1)"));
+        compare(appWindow.lastOpenedUrl, "");
+        verify(!appWindow.openAllowedUrl("file:///tmp/x"));
+        compare(appWindow.lastOpenedUrl, "");
+        verify(appWindow.openAllowedUrl("https://example.com"));
+        compare(appWindow.lastOpenedUrl, "https://example.com");
+        verify(appWindow.openAllowedUrl("http://example.com"));
+        compare(appWindow.lastOpenedUrl, "http://example.com");
+    }
+
+    function test_unfocusedMentionNotifiesOnce() {
+        appWindow.lastNotification = null;
+        appWindow.notifyMentionIfUnfocused(false, "alice", "hey \x02fred");
+        compare(appWindow.lastNotification.author, "alice");
+        compare(appWindow.lastNotification.body, "hey fred");
+
+        appWindow.lastNotification = null;
+        appWindow.notifyMentionIfUnfocused(true, "alice", "hey fred");
+        compare(appWindow.lastNotification, null);
+    }
+
+    function test_messageBodyClickOpensHttpsUrl() {
+        var list = item("messageList");
+        var previousCount = list.model.count;
+        list.model.append({
+            author: "anna",
+            time: "10:00",
+            body: "read https://example.com thanks",
+            kind: "message"
+        });
+        tryCompare(list.model, "count", previousCount + 1);
+        list.positionViewAtIndex(previousCount, ListView.Contain);
+        waitForRendering(appWindow.contentItem);
+
+        var row = list.itemAtIndex(previousCount);
+        verify(row !== null, "The linked mock message should be rendered");
+        var body = findChild(row, "messageBody");
+        verify(body !== null && body.visible, "Could not find linked messageBody");
+        compare(body.textFormat, TextEdit.PlainText);
+        compare(body.text, "read https://example.com thanks");
+        body.selectAll();
+        compare(body.selectedText, "read https://example.com thanks");
+        body.deselect();
+
+        appWindow.lastOpenedUrl = "";
+        var start = body.text.indexOf("https://example.com");
+        var rect = body.positionToRectangle(start + 4);
+        var hit = findChild(body, "urlHit");
+        verify(hit !== null, "Could not find message urlHit");
+        mouseClick(hit, rect.x + Math.max(1, rect.width / 2), rect.y + rect.height / 2);
+        compare(appWindow.lastOpenedUrl, "https://example.com");
+    }
+
+    function test_consoleBodyClickOpensHttpUrl() {
+        var list = item("consoleList");
+        keyClick(Qt.Key_QuoteLeft, Qt.ControlModifier);
+        tryCompare(appWindow, "consoleVisible", true);
+
+        var previousCount = list.model.count;
+        list.model.append({
+            time: "12:00:03",
+            label: "PRIVMSG",
+            text: "motd http://example.com end",
+            source: "server",
+            severity: "info"
+        });
+        tryCompare(list.model, "count", previousCount + 1);
+        list.positionViewAtIndex(previousCount, ListView.Contain);
+        waitForRendering(appWindow.contentItem);
+
+        var row = list.itemAtIndex(previousCount);
+        verify(row !== null, "The linked console line should be rendered");
+        var body = findChild(row, "consoleText");
+        verify(body !== null, "Could not find linked consoleText");
+        compare(body.textFormat, TextEdit.PlainText);
+        compare(body.text, "motd http://example.com end");
+        body.selectAll();
+        compare(body.selectedText, "motd http://example.com end");
+        body.deselect();
+
+        appWindow.lastOpenedUrl = "";
+        var start = body.text.indexOf("http://example.com");
+        var rect = body.positionToRectangle(start + 4);
+        var hit = findChild(body, "urlHit");
+        verify(hit !== null, "Could not find console urlHit");
+        mouseClick(hit, rect.x + Math.max(1, rect.width / 2), rect.y + rect.height / 2);
+        compare(appWindow.lastOpenedUrl, "http://example.com");
+    }
+
+    function test_eventRowAndTopicStripMirc() {
+        appWindow.mockCurrentTopic = formattedIrcBody();
+        compare(appWindow.currentTopic, formattedIrcBody());
+        var topic = item("conversationTopic");
+        compare(topic.text, "bold / red");
+        verify(!containsMirc(topic.text));
+
+        var list = item("messageList");
+        var previousCount = list.model.count;
+        list.model.append({
+            author: "",
+            time: "",
+            body: formattedIrcBody(),
+            kind: "event"
+        });
+        tryCompare(list.model, "count", previousCount + 1);
+        list.positionViewAtIndex(previousCount, ListView.Contain);
+        waitForRendering(appWindow.contentItem);
+
+        var row = list.itemAtIndex(previousCount);
+        verify(row !== null, "The formatted event row should be rendered");
+        var eventText = findChild(row, "messageEvent");
+        verify(eventText !== null && eventText.visible, "Could not find messageEvent");
+        compare(eventText.text, "bold / red");
+        verify(!containsMirc(eventText.text));
     }
 
     function test_toggleMembersWithShortcut() {

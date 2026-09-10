@@ -4,6 +4,7 @@
 
 int runProtocolTests(int argc, char **argv);
 int runCaseMappingTests(int argc, char **argv);
+int runCorpusTests(int argc, char **argv);
 int runTransportTests(int argc, char **argv);
 int runCapabilityTests(int argc, char **argv);
 int runSessionTests(int argc, char **argv);
@@ -17,6 +18,7 @@ int runModelTests(int argc, char **argv);
 int runQtIrcTransportIntegrationTests(int argc, char **argv);
 int runSingleInstanceTests(int argc, char **argv);
 int runOmaircIpcTests(int argc, char **argv);
+int runOmaircCliTests(int argc, char **argv);
 
 int main(int argc, char **argv)
 {
@@ -28,6 +30,7 @@ int main(int argc, char **argv)
 
     const int protocolStatus = runProtocolTests(argc, argv);
     const int caseMappingStatus = runCaseMappingTests(argc, argv);
+    const int corpusStatus = runCorpusTests(argc, argv);
     const int transportStatus = runTransportTests(argc, argv);
     const int capabilityStatus = runCapabilityTests(argc, argv);
     const int sessionStatus = runSessionTests(argc, argv);
@@ -41,9 +44,11 @@ int main(int argc, char **argv)
     const int integrationStatus = runQtIrcTransportIntegrationTests(argc, argv);
     const int singleInstanceStatus = runSingleInstanceTests(argc, argv);
     const int ipcStatus = runOmaircIpcTests(argc, argv);
+    const int cliStatus = runOmaircCliTests(argc, argv);
     const int statuses[] = {
         protocolStatus,
         caseMappingStatus,
+        corpusStatus,
         transportStatus,
         capabilityStatus,
         sessionStatus,
@@ -57,6 +62,7 @@ int main(int argc, char **argv)
         integrationStatus,
         singleInstanceStatus,
         ipcStatus,
+        cliStatus,
     };
     for (const int status : statuses) {
         if (status != 0)

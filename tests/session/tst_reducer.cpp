@@ -37,6 +37,7 @@ private slots:
     void identicalChannelsStayIsolated();
     void advertisedChannelTypesCreateChannels();
     void unreadMentionsRespectSelection();
+    void mentionArrivalSurvivesSelection();
     void welcomeResetsMembership();
     void awayIsOneFactVisibleInEveryChannel();
     void metadataStatusIsSeparateFromPrefixModes();
@@ -46,8 +47,14 @@ private slots:
     void joinOfListedNickKeepsRanks();
     void dropDirectMessageErasesOnlyDirectRows();
     void clearMessagesWipesTranscriptKeepsRow();
+    void messagesCapAtTwoThousandFifo();
+    void clearMessagesEmptiesAfterCap();
     void selfAwayIsNetworkMembershipNotMemberPresence();
     void staleNamesSyncReleasesAfterThirtySeconds();
+    void consecutiveJoinsCollapseIntoOneEvent();
+    void privmsgBreaksJoinCollapse();
+    void kickAndModeStaySeparateFromJoinLine();
+    void mixedJoinPartQuitNickCollapse();
 };
 
 void ReducerTest::namesFillAndCompleteWithoutDuplicates()
@@ -303,6 +310,48 @@ void ReducerTest::unreadMentionsRespectSelection()
     reducer.markSelected(background);
     QCOMPARE(backgroundState->unread, 0);
     QCOMPARE(backgroundState->mentions, 0);
+}
+
+void ReducerTest::mentionArrivalSurvivesSelection()
+{
+    IrcEventReducer reducer;
+    welcome(reducer, networkA);
+    const IrcConversationKey selected =
+        reducer.conversationKey(networkA, QStringLiteral("#selected"));
+    reducer.markSelected(selected);
+
+    reducer.apply(IrcMessageEvent{
+        selected,
+        QStringLiteral("Alice"),
+        QStringLiteral("omairc: ping"),
+        timestamp,
+        QStringLiteral("#selected"),
+    });
+
+    const std::optional<IrcMentionArrival> mention = reducer.takeMentionArrival();
+    QVERIFY(mention.has_value());
+    QCOMPARE(mention->author, QStringLiteral("Alice"));
+    QCOMPARE(mention->body, QStringLiteral("omairc: ping"));
+    QCOMPARE(reducer.find(selected)->mentions, 0);
+    QVERIFY(!reducer.takeMentionArrival().has_value());
+
+    reducer.apply(IrcMessageEvent{
+        selected,
+        QStringLiteral("Alice"),
+        QStringLiteral("no nick here"),
+        timestamp,
+        QStringLiteral("#selected"),
+    });
+    QVERIFY(!reducer.takeMentionArrival().has_value());
+
+    reducer.apply(IrcMessageEvent{
+        selected,
+        QStringLiteral("omairc"),
+        QStringLiteral("omairc: self"),
+        timestamp,
+        QStringLiteral("#selected"),
+    });
+    QVERIFY(!reducer.takeMentionArrival().has_value());
 }
 
 void ReducerTest::welcomeResetsMembership()
@@ -607,6 +656,57 @@ void ReducerTest::clearMessagesWipesTranscriptKeepsRow()
     QCOMPARE(reducer.conversations().size(), std::size_t(1));
 }
 
+void ReducerTest::messagesCapAtTwoThousandFifo()
+{
+    IrcEventReducer reducer;
+    welcome(reducer, networkA);
+    const IrcConversationKey room =
+        reducer.conversationKey(networkA, QStringLiteral("#room"));
+
+    for (int i = 0; i < 2001; ++i) {
+        reducer.apply(IrcMessageEvent{
+            room, QStringLiteral("Alice"), QString::number(i), timestamp,
+            QStringLiteral("#room")});
+    }
+
+    const IrcConversationState *conversation = reducer.find(room);
+    QVERIFY(conversation);
+    QCOMPARE(conversation->messages.size(), std::size_t(2000));
+    QCOMPARE(conversation->messages.front().body, QStringLiteral("1"));
+    QCOMPARE(conversation->messages.back().body, QStringLiteral("2000"));
+    QCOMPARE(conversation->trimmed, 1);
+
+    reducer.apply(IrcJoinEvent{
+        networkA, QStringLiteral("#room"), QStringLiteral("Bob")});
+    QCOMPARE(conversation->messages.size(), std::size_t(2000));
+    QCOMPARE(conversation->messages.front().body, QStringLiteral("2"));
+    QCOMPARE(conversation->messages.back().body, QStringLiteral("Bob joined"));
+    QCOMPARE(conversation->messages.back().kind, IrcMessageKind::Event);
+    QCOMPARE(conversation->trimmed, 2);
+}
+
+void ReducerTest::clearMessagesEmptiesAfterCap()
+{
+    IrcEventReducer reducer;
+    welcome(reducer, networkA);
+    const IrcConversationKey room =
+        reducer.conversationKey(networkA, QStringLiteral("#room"));
+
+    for (int i = 0; i < 2001; ++i) {
+        reducer.apply(IrcMessageEvent{
+            room, QStringLiteral("Alice"), QString::number(i), timestamp,
+            QStringLiteral("#room")});
+    }
+
+    const IrcConversationState *conversation = reducer.find(room);
+    QVERIFY(conversation);
+    QCOMPARE(conversation->messages.size(), std::size_t(2000));
+    reducer.clearMessages(room);
+    QCOMPARE(conversation->messages.size(), std::size_t(0));
+    QCOMPARE(conversation->trimmed, 2001);
+    QVERIFY(reducer.find(room));
+}
+
 void ReducerTest::selfAwayIsNetworkMembershipNotMemberPresence()
 {
     IrcEventReducer reducer;
@@ -670,6 +770,108 @@ void ReducerTest::staleNamesSyncReleasesAfterThirtySeconds()
 
     QVERIFY(reducer.releaseStaleNamesSync(key, started.addSecs(31)));
     QVERIFY(!channel->namesSyncing);
+}
+
+void ReducerTest::consecutiveJoinsCollapseIntoOneEvent()
+{
+    IrcEventReducer reducer;
+    welcome(reducer, networkA);
+    reducer.apply(IrcJoinEvent{
+        networkA, QStringLiteral("#room"), QStringLiteral("Alice")});
+    reducer.apply(IrcJoinEvent{
+        networkA, QStringLiteral("#room"), QStringLiteral("Bob")});
+
+    const IrcConversationState *conversation = reducer.find(
+        reducer.conversationKey(networkA, QStringLiteral("#room")));
+    QVERIFY(conversation);
+    QCOMPARE(conversation->messages.size(), std::size_t(1));
+    QCOMPARE(conversation->messages.back().kind, IrcMessageKind::Event);
+    QCOMPARE(conversation->messages.back().body, QStringLiteral("Alice, Bob joined"));
+    QCOMPARE(conversation->trimmed, 0);
+}
+
+void ReducerTest::privmsgBreaksJoinCollapse()
+{
+    IrcEventReducer reducer;
+    welcome(reducer, networkA);
+    const IrcConversationKey room =
+        reducer.conversationKey(networkA, QStringLiteral("#room"));
+    reducer.apply(IrcJoinEvent{
+        networkA, QStringLiteral("#room"), QStringLiteral("Alice")});
+    reducer.apply(IrcMessageEvent{
+        room, QStringLiteral("Alice"), QStringLiteral("hello"), timestamp,
+        QStringLiteral("#room")});
+    reducer.apply(IrcJoinEvent{
+        networkA, QStringLiteral("#room"), QStringLiteral("Bob")});
+
+    const IrcConversationState *conversation = reducer.find(room);
+    QVERIFY(conversation);
+    QCOMPARE(conversation->messages.size(), std::size_t(3));
+    QCOMPARE(conversation->messages[0].body, QStringLiteral("Alice joined"));
+    QCOMPARE(conversation->messages[1].kind, IrcMessageKind::Message);
+    QCOMPARE(conversation->messages[1].body, QStringLiteral("hello"));
+    QCOMPARE(conversation->messages[2].body, QStringLiteral("Bob joined"));
+}
+
+void ReducerTest::kickAndModeStaySeparateFromJoinLine()
+{
+    IrcEventReducer reducer;
+    welcome(reducer, networkA);
+    reducer.apply(IrcJoinEvent{
+        networkA, QStringLiteral("#room"), QStringLiteral("Alice")});
+    reducer.apply(IrcKickEvent{
+        networkA,
+        QStringLiteral("#room"),
+        QStringLiteral("Alice"),
+        QStringLiteral("op"),
+        QStringLiteral("bye"),
+    });
+    reducer.apply(IrcJoinEvent{
+        networkA, QStringLiteral("#room"), QStringLiteral("Bob")});
+    reducer.apply(IrcModeEvent{
+        networkA,
+        QStringLiteral("#room"),
+        QStringLiteral("op"),
+        QStringLiteral("+v"),
+        {QStringLiteral("Bob")},
+    });
+    reducer.apply(IrcJoinEvent{
+        networkA, QStringLiteral("#room"), QStringLiteral("Carol")});
+
+    const IrcConversationState *conversation = reducer.find(
+        reducer.conversationKey(networkA, QStringLiteral("#room")));
+    QVERIFY(conversation);
+    QCOMPARE(conversation->messages.size(), std::size_t(5));
+    QCOMPARE(conversation->messages[0].body, QStringLiteral("Alice joined"));
+    QCOMPARE(conversation->messages[1].body, QStringLiteral("Alice was kicked"));
+    QCOMPARE(conversation->messages[2].body, QStringLiteral("Bob joined"));
+    QCOMPARE(conversation->messages[3].body, QStringLiteral("op set mode +v"));
+    QCOMPARE(conversation->messages[4].body, QStringLiteral("Carol joined"));
+}
+
+void ReducerTest::mixedJoinPartQuitNickCollapse()
+{
+    IrcEventReducer reducer;
+    welcome(reducer, networkA);
+    reducer.apply(IrcJoinEvent{
+        networkA, QStringLiteral("#room"), QStringLiteral("Alice")});
+    reducer.apply(IrcJoinEvent{
+        networkA, QStringLiteral("#room"), QStringLiteral("Bob")});
+    reducer.apply(IrcPartEvent{
+        networkA, QStringLiteral("#room"), QStringLiteral("Alice"), QString()});
+    reducer.apply(IrcQuitEvent{
+        networkA, QStringLiteral("Bob"), QStringLiteral("gone")});
+    reducer.apply(IrcJoinEvent{
+        networkA, QStringLiteral("#room"), QStringLiteral("Carol")});
+    reducer.apply(IrcNickEvent{
+        networkA, QStringLiteral("Carol"), QStringLiteral("Caroline")});
+
+    const IrcConversationState *conversation = reducer.find(
+        reducer.conversationKey(networkA, QStringLiteral("#room")));
+    QVERIFY(conversation);
+    QCOMPARE(conversation->messages.size(), std::size_t(1));
+    QCOMPARE(conversation->messages.back().body,
+             QStringLiteral("Alice, Bob joined, Alice left, Bob quit, Carol joined, Carol is now Caroline"));
 }
 
 int runReducerTests(int argc, char **argv)

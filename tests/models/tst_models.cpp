@@ -60,6 +60,9 @@ private slots:
     void neighborAfterDropNextPreviousGhostAndOnly();
     void reloadUnchangedKeysEmitsDataChangedNotReset();
     void selectedChatAppendInsertsInsteadOfReset();
+    void reloadTrimEmitsRemovesWhenCountUnchanged();
+    void reloadClearAfterCapEmitsRemoves();
+    void collapsedJoinRewritesLastRow();
 };
 
 void ModelTest::roleNamesMatchQml()
@@ -482,6 +485,105 @@ void ModelTest::selectedChatAppendInsertsInsteadOfReset()
     messages.select(other);
     QCOMPARE(resets.size(), 1);
     QCOMPARE(messages.rowCount(), 1);
+}
+
+void ModelTest::reloadTrimEmitsRemovesWhenCountUnchanged()
+{
+    IrcEventReducer reducer;
+    MessageListModel messages(reducer);
+    welcome(reducer, networkA);
+
+    const IrcConversationKey room =
+        reducer.conversationKey(networkA, QStringLiteral("#room"));
+    for (int i = 0; i < 2000; ++i) {
+        reducer.apply(IrcMessageEvent{
+            room, QStringLiteral("Alice"), QString::number(i), timestamp,
+            QStringLiteral("#room")});
+    }
+    messages.select(room);
+    QCOMPARE(messages.rowCount(), 2000);
+    QCOMPARE(roleAt(messages, 0, MessageListModel::BodyRole), QStringLiteral("0"));
+    QCOMPARE(roleAt(messages, 1999, MessageListModel::BodyRole),
+             QStringLiteral("1999"));
+
+    QSignalSpy resets(&messages, &QAbstractItemModel::modelReset);
+    QSignalSpy removes(&messages, &QAbstractItemModel::rowsRemoved);
+    QSignalSpy inserts(&messages, &QAbstractItemModel::rowsInserted);
+    reducer.apply(IrcMessageEvent{
+        room, QStringLiteral("Alice"), QStringLiteral("2000"), timestamp,
+        QStringLiteral("#room")});
+    messages.reload();
+
+    QCOMPARE(resets.size(), 0);
+    QCOMPARE(removes.size(), 1);
+    QCOMPARE(removes.at(0).at(1).toInt(), 0);
+    QCOMPARE(removes.at(0).at(2).toInt(), 0);
+    QCOMPARE(inserts.size(), 1);
+    QCOMPARE(inserts.at(0).at(1).toInt(), 1999);
+    QCOMPARE(inserts.at(0).at(2).toInt(), 1999);
+    QCOMPARE(messages.rowCount(), 2000);
+    QCOMPARE(roleAt(messages, 0, MessageListModel::BodyRole), QStringLiteral("1"));
+    QCOMPARE(roleAt(messages, 1999, MessageListModel::BodyRole),
+             QStringLiteral("2000"));
+}
+
+void ModelTest::reloadClearAfterCapEmitsRemoves()
+{
+    IrcEventReducer reducer;
+    MessageListModel messages(reducer);
+    welcome(reducer, networkA);
+
+    const IrcConversationKey room =
+        reducer.conversationKey(networkA, QStringLiteral("#room"));
+    for (int i = 0; i < 2001; ++i) {
+        reducer.apply(IrcMessageEvent{
+            room, QStringLiteral("Alice"), QString::number(i), timestamp,
+            QStringLiteral("#room")});
+    }
+    messages.select(room);
+    QCOMPARE(messages.rowCount(), 2000);
+
+    QSignalSpy resets(&messages, &QAbstractItemModel::modelReset);
+    QSignalSpy removes(&messages, &QAbstractItemModel::rowsRemoved);
+    reducer.clearMessages(room);
+    messages.reload();
+
+    QCOMPARE(resets.size(), 0);
+    QCOMPARE(removes.size(), 1);
+    QCOMPARE(removes.at(0).at(1).toInt(), 0);
+    QCOMPARE(removes.at(0).at(2).toInt(), 1999);
+    QCOMPARE(messages.rowCount(), 0);
+}
+
+void ModelTest::collapsedJoinRewritesLastRow()
+{
+    IrcEventReducer reducer;
+    MessageListModel messages(reducer);
+    welcome(reducer, networkA);
+
+    const IrcConversationKey room =
+        reducer.conversationKey(networkA, QStringLiteral("#room"));
+    reducer.apply(IrcJoinEvent{
+        networkA, QStringLiteral("#room"), QStringLiteral("Alice")});
+    messages.select(room);
+    QCOMPARE(messages.rowCount(), 1);
+    QCOMPARE(roleAt(messages, 0, MessageListModel::BodyRole),
+             QStringLiteral("Alice joined"));
+
+    QSignalSpy resets(&messages, &QAbstractItemModel::modelReset);
+    QSignalSpy inserts(&messages, &QAbstractItemModel::rowsInserted);
+    QSignalSpy changes(&messages, &QAbstractItemModel::dataChanged);
+    reducer.apply(IrcJoinEvent{
+        networkA, QStringLiteral("#room"), QStringLiteral("Bob")});
+    messages.reload();
+
+    QCOMPARE(resets.size(), 0);
+    QCOMPARE(inserts.size(), 0);
+    QCOMPARE(changes.size(), 1);
+    QCOMPARE(changes.at(0).at(0).toModelIndex().row(), 0);
+    QCOMPARE(messages.rowCount(), 1);
+    QCOMPARE(roleAt(messages, 0, MessageListModel::BodyRole),
+             QStringLiteral("Alice, Bob joined"));
 }
 
 int runModelTests(int argc, char **argv)

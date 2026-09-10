@@ -3,6 +3,7 @@
 #include "ircpresence.h"
 #include "irctcp.h"
 #include "irctyping.h"
+#include "ircwiretext.h"
 
 #include <QByteArray>
 #include <QDateTime>
@@ -11,14 +12,10 @@
 
 namespace
 {
-QString text(const std::string& value)
-{
-    return QString::fromUtf8(value.data(), qsizetype(value.size()));
-}
-
 QString parameter(const IrcMessage& message, std::size_t index)
 {
-    return index < message.parameters.size() ? text(message.parameters[index]) : QString{};
+    return index < message.parameters.size() ? ircWireText(message.parameters[index])
+                                             : QString{};
 }
 
 QString author(const IrcMessage& message)
@@ -26,8 +23,8 @@ QString author(const IrcMessage& message)
     if (!message.prefix)
         return {};
     if (!message.prefix->nick.empty())
-        return text(message.prefix->nick);
-    const QString raw = text(message.prefix->raw);
+        return ircWireText(message.prefix->nick);
+    const QString raw = ircWireText(message.prefix->raw);
     if (raw.contains(QLatin1Char('.')))
         return {};
     return raw;
@@ -43,7 +40,7 @@ IrcConversationKey key(const QString& networkId,
                        const QString& target,
                        const IrcServerFeatures& features)
 {
-    return {networkId, text(features.caseMapping().normalize(utf8(target)))};
+    return {networkId, ircWireText(features.caseMapping().normalize(utf8(target)))};
 }
 
 bool same(const QString& left,
@@ -75,14 +72,16 @@ std::optional<IrcConversationKey> conversationFor(const QString& networkId,
 {
     if (features.isChannel(utf8(target)))
         return key(networkId, target, features);
-    if (isNetworkNoticeTarget(target) || !hasUserPrefix(message)
-        || !same(target, currentNick, features)) {
+    if (isNetworkNoticeTarget(target) || !hasUserPrefix(message))
         return std::nullopt;
-    }
     const QString sender = author(message);
     if (sender.isEmpty())
         return std::nullopt;
-    return key(networkId, sender, features);
+    if (same(target, currentNick, features))
+        return key(networkId, sender, features);
+    if (same(sender, currentNick, features))
+        return key(networkId, target, features);
+    return std::nullopt;
 }
 
 QStringList remainingParameters(const IrcMessage& message, std::size_t start)
@@ -105,9 +104,22 @@ std::optional<QString> tagValue(const IrcMessage& message, const char *name)
 {
     for (const IrcTag& tag : message.tags) {
         if (tag.name == name && tag.value)
-            return text(*tag.value);
+            return ircWireText(*tag.value);
     }
     return std::nullopt;
+}
+
+QDateTime timestampFor(const IrcMessage& message)
+{
+    const std::optional<QString> raw = tagValue(message, "time");
+    if (!raw)
+        return QDateTime::currentDateTimeUtc();
+    QDateTime parsed = QDateTime::fromString(*raw, Qt::ISODateWithMs);
+    if (!parsed.isValid())
+        parsed = QDateTime::fromString(*raw, Qt::ISODate);
+    if (!parsed.isValid())
+        return QDateTime::currentDateTimeUtc();
+    return parsed.toUTC();
 }
 
 /// `<Target> <Key> <Visibility> [<Value>]`, the shape shared by `METADATA`,
@@ -142,9 +154,9 @@ std::vector<IrcEvent> IrcEventTranslator::translate(
     const IrcMessage& message)
 {
     std::vector<IrcEvent> events;
-    const QString command = text(message.command).toUpper();
+    const QString command = ircWireText(message.command).toUpper();
     const QString sender = author(message);
-    const QDateTime now = QDateTime::currentDateTimeUtc();
+    const QDateTime timestamp = timestampFor(message);
 
     if (command == QStringLiteral("NOTICE"))
         return events;
@@ -161,16 +173,16 @@ std::vector<IrcEvent> IrcEventTranslator::translate(
             return events;
         const QString displayTarget = features.isChannel(utf8(wireTarget))
             ? wireTarget
-            : sender;
+            : (same(sender, currentNick, features) ? wireTarget : sender);
         const QString actionPrefix = QChar(1) + QStringLiteral("ACTION ");
         if (body.startsWith(actionPrefix) && body.endsWith(QChar(1))) {
             events.emplace_back(IrcActionEvent{
                 *conversation, sender,
                 body.mid(actionPrefix.size(), body.size() - actionPrefix.size() - 1),
-                now, displayTarget});
+                timestamp, displayTarget});
         } else {
             events.emplace_back(IrcMessageEvent{
-                *conversation, sender, body, now, displayTarget});
+                *conversation, sender, body, timestamp, displayTarget});
         }
     } else if (command == QStringLiteral("TAGMSG") && !message.parameters.empty()) {
         const std::optional<QString> value = tagValue(message, "+typing");
@@ -184,7 +196,7 @@ std::vector<IrcEvent> IrcEventTranslator::translate(
             networkId, wireTarget, message, currentNick, features);
         if (!conversation)
             return events;
-        events.emplace_back(IrcTypingEvent{*conversation, sender, *phase, now});
+        events.emplace_back(IrcTypingEvent{*conversation, sender, *phase, timestamp});
     } else if (command == QStringLiteral("JOIN") && !message.parameters.empty()) {
         events.emplace_back(IrcJoinEvent{networkId, parameter(message, 0), sender});
     } else if (command == QStringLiteral("PART") && !message.parameters.empty()) {
@@ -212,7 +224,7 @@ std::vector<IrcEvent> IrcEventTranslator::translate(
             const auto parsed = features.parseNamesToken(utf8(token));
             if (!parsed)
                 continue;
-            names.push_back({QString::fromStdString(parsed->nick), parsed->ranks});
+            names.push_back({ircWireText(parsed->nick), parsed->ranks});
         }
         events.emplace_back(IrcNamesEvent{
             networkId, parameter(message, 2), std::move(names), false});
@@ -243,6 +255,8 @@ std::vector<IrcEvent> IrcEventTranslator::translate(
                 nick,
                 away ? std::optional<IrcAway>(IrcAway{}) : std::nullopt});
         }
+    } else if (command == QStringLiteral("CHGHOST")) {
+        // Members store nick plus ranks. User and host are not modeled.
     } else if (command == QStringLiteral("METADATA")) {
         appendMemberStatus(events, networkId, message, 0, false, features);
     } else if (command == QStringLiteral("761")) {

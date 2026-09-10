@@ -24,9 +24,9 @@ Preconditions:
 - `qml-suite` covers open, Tab, Escape, Up/Down, and history walk past a bare `/j` with a JS stand-in. Existing nick-complete and history cases omit `slashCommands` and stay on today's Tab / Up / Down paths.
 - There is no chord for this feature. Do not look for it on the `Ctrl+/` sheet. Tab there still says nick complete.
 
-- **List for `/j`.** Run `control-omairc launch --mock`, then `control-omairc doctor`, `control-omairc focus-composer`, `control-omairc type --text "/j"`, and `control-omairc screenshot --feature slash-complete --name after-slash-j`. The list sits above the composer and includes `/join`.
-- **Tab insert.** From that composer, run `control-omairc key --key Tab` and `control-omairc screenshot --feature slash-complete --name after-tab`. The composer is `/join ` and the list is gone.
-- **Offscreen suite.** Run `control-omairc doctor-qml` then `control-omairc qml-suite`. That run covers `test_slashCompleteListAppearsForSlashJ`, `test_slashCompleteTabInsertsCanonicalVerb`, `test_slashCompleteEscapeDismisses`, `test_slashCompleteUpDownMoveSelection`, and `test_slashCompleteHistoryUpWalksPastBareCommand`. It does not prove the compiled C++ catalog in the QML window.
+- **List for `/j`.** Run `control-omairc launch --mock`, then `control-omairc doctor`, `control-omairc focus-composer`, `control-omairc type --text "/j"`, and `control-omairc screenshot --feature slash-complete --name after-slash-j`. The compiled list sits above the composer with one row, `/join`. Down and Up wrap on that row and do not change the highlight.
+- **Tab insert.** From `/j`, type `o` if Escape already dismissed the list, then run `control-omairc key --key Tab` and `control-omairc screenshot --feature slash-complete --name after-tab`. The composer is `/join ` and the list is gone.
+- **Offscreen suite.** Run `control-omairc doctor-qml` then `control-omairc qml-suite`. That run covers `test_slashCompleteListAppearsForSlashJ`, `test_slashCompleteTabInsertsCanonicalVerb`, `test_slashCompleteEscapeDismisses`, `test_slashCompleteUpDownMoveSelection`, and `test_slashCompleteHistoryUpWalksPastBareCommand`. The Up/Down test uses a two-row JS fake (`/join` and `/nick`). It does not prove the compiled C++ catalog.
 
 ## Gotchas
 
@@ -37,3 +37,4 @@ Preconditions:
 - Enter on an exact name or alias (`/close`, `/j`) sends. Enter on a partial (`/jo`) inserts `/join `.
 - On Status, `/me` is not in the catalog. The list can open on `/mode` because `mode` starts with `me`. Conversation `/me` still ranks `/me` first.
 - Recalling a sent line keeps the list closed so Up/Down keep walking history. The list can open again after you leave history browse.
+- Compiled `/j` ranks only `/join` (the `j` alias). Down and Up wrap on that one row. The qml-suite Up/Down case uses a two-row fake and is not this compiled list.

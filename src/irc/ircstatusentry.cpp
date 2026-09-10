@@ -1,21 +1,18 @@
 #include "ircstatusentry.h"
 
 #include "irctcp.h"
+#include "ircwiretext.h"
 
 #include <QStringList>
 
 #include <optional>
+#include <string_view>
 
 namespace
 {
-QString fromUtf8(const std::string& value)
-{
-    return QString::fromUtf8(value.data(), qsizetype(value.size()));
-}
-
 QString commandOf(const IrcMessage& message)
 {
-    return fromUtf8(message.command).toUpper();
+    return ircWireText(message.command).toUpper();
 }
 
 bool isSecretVerb(const QString& verb)
@@ -28,6 +25,35 @@ QString redactedSecret(const QString& verb)
     return verb + QStringLiteral(" ***");
 }
 
+struct IrcStandardReplyVerb
+{
+    const char *command = nullptr;
+    IrcLogSeverity severity = IrcLogSeverity::Info;
+};
+
+constexpr IrcStandardReplyVerb kStandardReplyVerbs[] = {
+    {"FAIL", IrcLogSeverity::Alert},
+    {"WARN", IrcLogSeverity::Info},
+    {"NOTE", IrcLogSeverity::Info},
+};
+
+const IrcStandardReplyVerb *standardReplyVerb(const QString& command)
+{
+    for (const IrcStandardReplyVerb& row : kStandardReplyVerbs) {
+        if (command == QLatin1String(row.command))
+            return &row;
+    }
+    return nullptr;
+}
+
+QString redactedOutgoingJoin(const QString& display)
+{
+    const QStringList parts = display.split(QLatin1Char(' '), Qt::SkipEmptyParts);
+    if (parts.size() <= 2)
+        return display;
+    return QStringLiteral("JOIN %1 ***").arg(parts.at(1));
+}
+
 IrcLogSeverity severityFor(const QString& command)
 {
     if (command == QStringLiteral("PING")
@@ -36,6 +62,8 @@ IrcLogSeverity severityFor(const QString& command)
         || command == QStringLiteral("AUTHENTICATE")) {
         return IrcLogSeverity::Trace;
     }
+    if (const auto *reply = standardReplyVerb(command))
+        return reply->severity;
     if (command == QStringLiteral("ERROR"))
         return IrcLogSeverity::Alert;
     if (command.size() == 3 && command[0].isDigit()
@@ -47,6 +75,8 @@ IrcLogSeverity severityFor(const QString& command)
 
 bool trailingBodyOnly(const QString& command)
 {
+    if (standardReplyVerb(command))
+        return true;
     if (command == QStringLiteral("PRIVMSG")
         || command == QStringLiteral("PING") || command == QStringLiteral("PONG")
         || command == QStringLiteral("ERROR")) {
@@ -67,12 +97,12 @@ QString incomingText(const IrcMessage& message, const QString& command)
         return command;
 
     if (trailingBodyOnly(command))
-        return fromUtf8(message.parameters.back());
+        return ircWireText(message.parameters.back());
 
     QStringList parts;
     parts.reserve(int(message.parameters.size()));
     for (const std::string& parameter : message.parameters)
-        parts.append(fromUtf8(parameter));
+        parts.append(ircWireText(parameter));
     if (command[0].isDigit() && parts.size() >= 2)
         parts.removeFirst();
     return parts.join(QLatin1Char(' '));
@@ -156,7 +186,7 @@ std::optional<FormattedWhois> formatWhois(const IrcMessage& message)
     QStringList params;
     params.reserve(int(message.parameters.size()));
     for (const std::string& parameter : message.parameters)
-        params.append(fromUtf8(parameter));
+        params.append(ircWireText(parameter));
 
     QString text;
     switch (spec->layout) {
@@ -340,13 +370,13 @@ std::optional<IrcNoticeWireParts> parseIncomingNotice(const IrcMessage& message)
     IrcNoticeWireParts parts;
     if (message.prefix) {
         if (!message.prefix->nick.empty())
-            parts.prefixNick = fromUtf8(message.prefix->nick);
+            parts.prefixNick = ircWireText(message.prefix->nick);
         if (!message.prefix->raw.empty())
-            parts.prefixRaw = fromUtf8(message.prefix->raw);
+            parts.prefixRaw = ircWireText(message.prefix->raw);
     }
-    parts.target = fromUtf8(message.parameters.front());
+    parts.target = ircWireText(message.parameters.front());
     if (message.parameters.size() >= 2)
-        parts.body = fromUtf8(message.parameters.back());
+        parts.body = ircWireText(message.parameters.back());
     return parts;
 }
 
@@ -387,9 +417,9 @@ IrcStatusEntry IrcStatusEntry::incoming(const QString& networkId, const IrcMessa
     const QString command = commandOf(message);
     if (command == QStringLiteral("PRIVMSG") && message.parameters.size() >= 2) {
         if (const auto request = parseCtcpRequest(
-                fromUtf8(message.parameters.back()))) {
+                ircWireText(message.parameters.back()))) {
             const QString sender = message.prefix && !message.prefix->nick.empty()
-                ? fromUtf8(message.prefix->nick)
+                ? ircWireText(message.prefix->nick)
                 : QStringLiteral("unknown");
             const QString text = request->argument.isEmpty()
                 ? request->command
@@ -435,14 +465,20 @@ IrcStatusEntry IrcStatusEntry::outgoing(const QString& networkId, const QByteArr
     else if (wire.endsWith('\n'))
         wire.chop(1);
 
-    const QString display = QString::fromUtf8(wire);
+    const QString display = ircWireText(
+        std::string_view(wire.constData(), std::size_t(wire.size())));
     const QString verb = firstToken(QStringView(display));
+    QString text = display;
+    if (isSecretVerb(verb))
+        text = redactedSecret(verb);
+    else if (verb == QStringLiteral("JOIN"))
+        text = redactedOutgoingJoin(display);
     return IrcStatusEntry(networkId,
                           QDateTime::currentDateTimeUtc(),
                           IrcLogSource::Client,
                           severityFor(verb),
                           verb,
-                          isSecretVerb(verb) ? redactedSecret(verb) : display);
+                          std::move(text));
 }
 
 IrcStatusEntry IrcStatusEntry::lifecycle(const QString& networkId,
