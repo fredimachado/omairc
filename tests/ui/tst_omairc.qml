@@ -783,6 +783,28 @@ TestCase {
         return null;
     }
 
+    function renderedMessageRow(list, index) {
+        list.positionViewAtIndex(index, ListView.Contain);
+        waitForRendering(appWindow.contentItem);
+        var row = list.itemAtIndex(index);
+        verify(row !== null, "Message row " + index + " should be rendered");
+        return row;
+    }
+
+    function assertMessageChrome(row, headerVisible, bodyText) {
+        var avatar = findChild(row, "messageAvatar");
+        var header = findChild(row, "messageHeader");
+        var body = findChild(row, "messageBody");
+        verify(avatar !== null, "Could not find messageAvatar");
+        verify(header !== null, "Could not find messageHeader");
+        verify(body !== null, "Could not find messageBody");
+        compare(avatar.visible, headerVisible);
+        compare(header.visible, headerVisible);
+        compare(body.visible, true);
+        compare(body.text, bodyText);
+        return body;
+    }
+
     function containsMirc(text) {
         return /[\u0002\u0003\u000f\u0016\u001d\u001f]/.test(text);
     }
@@ -1491,6 +1513,94 @@ TestCase {
             return unseenIsInView(list, unseen);
         });
         compare(firstVisibleIndex(list), unseen);
+    }
+
+    function test_consecutiveSameAuthorMinuteGroupsTranscriptRows() {
+        var list = item("messageList");
+        var start = list.model.count;
+        var fixture = [
+            { author: "anna", time: "11:11", body: "group lead", kind: "message" },
+            { author: "anna", time: "11:11", body: "group continuation", kind: "message" },
+            { author: "anna", time: "11:12", body: "changed minute", kind: "message" },
+            { author: "dax", time: "11:12", body: "changed sender", kind: "message" },
+            { author: "", time: "", body: "event break", kind: "event" },
+            { author: "dax", time: "11:12", body: "after event", kind: "message" }
+        ];
+        var index = 0;
+        for (index = 0; index < fixture.length; ++index)
+            list.model.append(fixture[index]);
+        tryCompare(list.model, "count", start + fixture.length);
+
+        compare(list.model.get(start + 1).author, "anna");
+        compare(list.model.get(start + 1).time, "11:11");
+        compare(list.model.get(start + 1).body, "group continuation");
+        compare(list.model.get(start + 1).kind, "message");
+
+        var lead = renderedMessageRow(list, start);
+        var grouped = renderedMessageRow(list, start + 1);
+        var newMinute = renderedMessageRow(list, start + 2);
+        var newSender = renderedMessageRow(list, start + 3);
+        var eventRow = renderedMessageRow(list, start + 4);
+        var afterEvent = renderedMessageRow(list, start + 5);
+
+        assertMessageChrome(lead, true, "group lead");
+        assertMessageChrome(grouped, false, "group continuation");
+        verify(grouped.height < lead.height, "Grouped rows should use tighter vertical spacing");
+        verify(grouped.height < appWindow.scaledSize(58));
+        verify(lead.height >= appWindow.scaledSize(58));
+        var groupedBody = findChild(grouped, "messageBody");
+        compare(groupedBody.anchors.topMargin, appWindow.scaledSize(4));
+        compare(findChild(lead, "messageBody").anchors.topMargin, appWindow.scaledSize(29));
+
+        assertMessageChrome(newMinute, true, "changed minute");
+        assertMessageChrome(newSender, true, "changed sender");
+
+        var eventText = findChild(eventRow, "messageEvent");
+        verify(eventText !== null && eventText.visible, "Events should keep their own row");
+        compare(eventText.text, "event break");
+        compare(findChild(eventRow, "messageAvatar").visible, false);
+        compare(findChild(eventRow, "messageHeader").visible, false);
+        compare(findChild(eventRow, "messageBody").visible, false);
+
+        assertMessageChrome(afterEvent, true, "after event");
+        saveScreenshot("grouped-messages");
+
+        var dms = item("directConversationRepeater");
+        var anna = dms.itemAt(0);
+        verify(anna !== null, "The anna direct-message delegate should be rendered");
+        mouseClick(anna);
+        tryCompare(appWindow, "currentConversation", "anna");
+        waitForRendering(appWindow.contentItem);
+
+        var dmList = item("messageList");
+        compare(dmList.Accessible.name, "Messages in anna");
+        var dmStart = dmList.model.count;
+        compare(dmList.model.get(dmStart - 1).author, "anna");
+        compare(dmList.model.get(dmStart - 1).time, "10:12");
+        dmList.model.append({
+            author: "anna",
+            time: "10:12",
+            body: "dm continuation",
+            kind: "message"
+        });
+        dmList.model.append({
+            author: "anna",
+            time: "10:13",
+            body: "dm new minute",
+            kind: "message"
+        });
+        tryCompare(dmList.model, "count", dmStart + 2);
+
+        var dmExisting = renderedMessageRow(dmList, dmStart - 1);
+        var dmGrouped = renderedMessageRow(dmList, dmStart);
+        var dmLead = renderedMessageRow(dmList, dmStart + 1);
+        assertMessageChrome(dmExisting, true, "The prototype already feels at home. Nice work.");
+        assertMessageChrome(dmGrouped, false, "dm continuation");
+        assertMessageChrome(dmLead, true, "dm new minute");
+        verify(dmGrouped.height < dmExisting.height);
+        compare(dmList.model.get(dmStart).author, "anna");
+        compare(dmList.model.get(dmStart).time, "10:12");
+        compare(dmList.model.get(dmStart).body, "dm continuation");
     }
 
     function test_messageBodyIsSelectable() {
