@@ -10,6 +10,7 @@ int runCapabilityTests(int argc, char **argv);
 int runSessionTests(int argc, char **argv);
 int runControllerTests(int argc, char **argv);
 int runCommandTests(int argc, char **argv);
+int runIgnoreTests(int argc, char **argv);
 int runTypingTests(int argc, char **argv);
 int runProfileTests(int argc, char **argv);
 int runConnectionTests(int argc, char **argv);
@@ -37,6 +38,7 @@ int main(int argc, char **argv)
     const int sessionStatus = runSessionTests(argc, argv);
     const int controllerStatus = runControllerTests(argc, argv);
     const int commandStatus = runCommandTests(argc, argv);
+    const int ignoreStatus = runIgnoreTests(argc, argv);
     const int typingStatus = runTypingTests(argc, argv);
     const int profileStatus = runProfileTests(argc, argv);
     const int connectionStatus = runConnectionTests(argc, argv);
@@ -56,6 +58,7 @@ int main(int argc, char **argv)
         sessionStatus,
         controllerStatus,
         commandStatus,
+        ignoreStatus,
         typingStatus,
         profileStatus,
         connectionStatus,

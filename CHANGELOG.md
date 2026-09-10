@@ -5,6 +5,17 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- `/ignore <nick>`, `/unignore <nick>`, and `/ignored`. Each network keeps its own list. Private messages, notices, and invites from those nicks stay off Status and do not open a direct message. Channel text stays visible. Clearing the network drops its list.
+- Desktop notification for a direct message when the window is unfocused, even when the body has no nick.
+
+### Changed
+
+- A network drop keeps the session reconnecting with the existing backoff until `/quit` or Connect stops it. Status stays reconnecting.
+
 ## [0.2.0] - 2026-09-10
 
 ### Added
@@ -62,5 +73,6 @@ First public release: a dead-simple IRC client for Omarchy.
 - Keyboard map, slash-command complete, selectable transcript, and follow-unseen.
 - qmake Unix install tree and a GitHub Releases pacman repository.
 
+[Unreleased]: https://github.com/fredimachado/omairc/compare/v0.2.0...HEAD
 [0.2.0]: https://github.com/fredimachado/omairc/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/fredimachado/omairc/releases/tag/v0.1.0

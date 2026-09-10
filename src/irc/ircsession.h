@@ -8,6 +8,8 @@
 #include <QStringList>
 #include <QTimer>
 
+#include <functional>
+
 #include "irccapability.h"
 #include "irccapabilitynegotiation.h"
 #include "ircframer.h"
@@ -61,7 +63,6 @@ struct IrcSessionConfig
     bool reconnectEnabled = true;
     int reconnectBaseDelayMilliseconds = 1000;
     int reconnectMaximumDelayMilliseconds = 30000;
-    int reconnectMaximumAttempts = 5;
     int capabilityTimeoutMilliseconds = 10000;
     int pingTimeoutMilliseconds = 60000;
 };
@@ -112,10 +113,12 @@ public:
     int reconnectAttempt() const;
     IrcCapabilitySet capabilities() const;
 
+    using IgnoreFilter = std::function<bool(const IrcMessage&, const QString&)>;
+    void setIgnoreFilter(IgnoreFilter filter);
+
 public slots:
     void start();
     void stop();
-    void cancelReconnect();
     bool sendPrivmsg(const QString& target, const QString& body);
     bool sendNotice(const QString& target, const QString& body);
     bool sendChannelMode(const IrcChannelModeRequest& request);
@@ -202,6 +205,7 @@ private:
     IrcTypingPublisher m_typing;
     QSet<QString> m_openBatches;
     QHash<QString, QElapsedTimer> m_ctcpReplyClock;
+    IgnoreFilter m_ignoreFilter;
     State m_state = State::Idle;
     bool m_expectedDisconnect = false;
     bool m_reconnectAfterDisconnect = false;
@@ -212,4 +216,5 @@ private:
     bool m_capabilityNegotiationEnded = false;
     QString m_channelTypes;
     int m_reconnectAttempt = 0;
+    quint32 m_reportedRetryErrors = 0;
 };

@@ -54,6 +54,29 @@ QString collapseEventBody(const QString& existing, const QString& incoming)
     }
     return existing + QStringLiteral(", ") + incoming;
 }
+
+enum class ChatLineReason
+{
+    NickMention,
+    DirectMessage,
+};
+
+std::optional<ChatLineReason> classifyChatLine(
+    const IrcConversationState& conversation,
+    IrcMessageKind kind,
+    bool self,
+    bool nickHit)
+{
+    if (kind != IrcMessageKind::Message && kind != IrcMessageKind::Action)
+        return std::nullopt;
+    if (self)
+        return std::nullopt;
+    if (nickHit)
+        return ChatLineReason::NickMention;
+    if (!conversation.isChannel())
+        return ChatLineReason::DirectMessage;
+    return std::nullopt;
+}
 }
 
 bool IrcMemberView::isAway() const noexcept
@@ -439,17 +462,16 @@ void IrcEventReducer::appendChat(const IrcConversationKey& key,
     capMessages(conversation);
     clearTyping(conversation, normalize(key.networkId, author));
 
-    const bool mentionKind = kind == IrcMessageKind::Message
-        || kind == IrcMessageKind::Action;
-    const bool mentioned = !self && mentionKind && isMention(key.networkId, body);
-    if (mentioned)
+    const std::optional<ChatLineReason> reason = classifyChatLine(
+        conversation, kind, self, isMention(key.networkId, body));
+    if (reason)
         m_mentionArrival = IrcMentionArrival{author, body};
 
     if (self || (m_selected && *m_selected == key))
         return;
 
     ++conversation.unread;
-    if (mentioned)
+    if (reason == ChatLineReason::NickMention)
         ++conversation.mentions;
 }
 

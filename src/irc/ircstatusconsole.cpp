@@ -200,6 +200,11 @@ bool IrcStatusConsole::clearLog()
     return true;
 }
 
+void IrcStatusConsole::record(const IrcStatusEntry& entry)
+{
+    m_log.append(entry);
+}
+
 IrcSession *IrcStatusConsole::boundSession() const
 {
     return m_sessions.findSession(m_networkId);

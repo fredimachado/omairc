@@ -24,6 +24,8 @@ HEADERS += \
     ../../src/irc/irctyping.h \
     ../../src/irc/irctypingpublisher.h \
     ../../src/irc/ircpresence.h \
+    ../../src/irc/irctcp.h \
+    ../../src/irc/ircignore.h \
     ../../src/irc/ircevent.h \
     ../../src/irc/ircviewnotify.h \
     ../../src/irc/irceventtranslator.h \
@@ -66,6 +68,7 @@ SOURCES += \
     ../../src/irc/irctypingpublisher.cpp \
     ../../src/irc/ircpresence.cpp \
     ../../src/irc/irctcp.cpp \
+    ../../src/irc/ircignore.cpp \
     ../../src/irc/irceventtranslator.cpp \
     ../../src/irc/irceventreducer.cpp \
     ../../src/irc/ircstatusentry.cpp \
