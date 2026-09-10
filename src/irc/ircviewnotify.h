@@ -166,6 +166,11 @@ struct IrcViewClassifier {
     {
         return IrcViewNotify::transcript();
     }
+
+    IrcViewNotify operator()(const IrcWhoisTranscriptEvent&) const
+    {
+        return IrcViewNotify::transcript();
+    }
 };
 
 inline bool channelNamesSyncing(const IrcEventReducer& reducer,

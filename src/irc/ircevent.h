@@ -208,6 +208,12 @@ struct IrcHistoryEvent
     std::vector<IrcReplayLine> lines;
 };
 
+struct IrcWhoisTranscriptEvent
+{
+    IrcConversationKey destination;
+    QString formattedBody;
+};
+
 using IrcEvent = std::variant<
     IrcWelcomeEvent,
     IrcMessageEvent,
@@ -225,4 +231,5 @@ using IrcEvent = std::variant<
     IrcSelfAwayEvent,
     IrcMemberStatusEvent,
     IrcTypingEvent,
-    IrcHistoryEvent>;
+    IrcHistoryEvent,
+    IrcWhoisTranscriptEvent>;

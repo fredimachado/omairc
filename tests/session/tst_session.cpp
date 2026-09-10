@@ -1436,6 +1436,8 @@ void SessionTest::whoisStatusLinesFormatKnownNumerics()
         mustParse(":irc 318 omairc lena :End of /WHOIS list."));
     QCOMPARE(end.label(), QStringLiteral("whois"));
     QCOMPARE(end.text(), QStringLiteral("End of WHOIS for lena"));
+    QVERIFY(end.whoisLine());
+    QCOMPARE(end.whoisLine()->progress(), IrcWhoisLine::Progress::Terminal);
 
     const IrcStatusEntry account = IrcStatusEntry::incoming(
         QStringLiteral("libera"),
@@ -1468,6 +1470,8 @@ void SessionTest::whoisStatusLinesFormatKnownNumerics()
     QCOMPARE(missing.label(), QStringLiteral("401"));
     QCOMPARE(missing.text(), QStringLiteral("No such nick: lena"));
     QCOMPARE(missing.severity(), IrcLogSeverity::Alert);
+    QVERIFY(missing.whoisLine());
+    QCOMPARE(missing.whoisLine()->progress(), IrcWhoisLine::Progress::Failed);
 
     const IrcStatusEntry welcome = IrcStatusEntry::incoming(
         QStringLiteral("libera"),

@@ -102,9 +102,12 @@ TranscriptRowChrome chromeFromRow(QQuickItem *row)
         chrome.avatarVisible = avatar->property("visible").toBool();
     if (QQuickItem *header = directNamed(row, QStringLiteral("messageHeader")))
         chrome.headerVisible = header->property("visible").toBool();
+    QQuickItem *whois = directNamed(row, QStringLiteral("messageWhois"));
     QQuickItem *event = directNamed(row, QStringLiteral("messageEvent"));
     QQuickItem *body = directNamed(row, QStringLiteral("messageBody"));
-    if (event && event->property("visible").toBool())
+    if (whois && whois->property("visible").toBool())
+        chrome.body = whois->property("text").toString();
+    else if (event && event->property("visible").toBool())
         chrome.body = event->property("text").toString();
     else if (body) {
         chrome.body = body->property("text").toString();
@@ -870,6 +873,7 @@ QStringList LiveUiWorld::visibleBodies() const
     }
     QStringList bodies = collectNamedTexts(list, QStringLiteral("messageBody"));
     bodies += collectNamedTexts(list, QStringLiteral("messageEvent"));
+    bodies += collectNamedTexts(list, QStringLiteral("messageWhois"));
     if (auto *model = qobject_cast<QAbstractItemModel *>(
             list ? list->property("model").value<QObject *>() : nullptr)) {
         for (int row = 0; row < model->rowCount(); ++row) {

@@ -317,10 +317,12 @@ ApplicationWindow {
     }
 
     function continuesMessageGroup(model, row, author, time, kind, origin) {
-        if (kind === "event" || row <= 0 || author.length === 0 || time.length === 0)
+        if (kind === "event" || kind === "whois"
+            || row <= 0 || author.length === 0 || time.length === 0)
             return false;
         var previousKind = transcriptField(model, row - 1, "kind");
-        if (previousKind === "event" || previousKind.length === 0)
+        if (previousKind === "event" || previousKind === "whois"
+            || previousKind.length === 0)
             return false;
         if (transcriptField(model, row - 1, "origin") !== origin)
             return false;
@@ -3113,32 +3115,59 @@ ApplicationWindow {
                     required property string kind
                     readonly property string origin: win.transcriptField(messageList.model, index, "origin")
                     readonly property bool replayed: origin === "replay"
+                    readonly property bool isChat: kind !== "event" && kind !== "whois"
                     readonly property bool grouped: win.continuesMessageGroup(
                         messageList.model, index, author, time, kind, origin)
 
                     width: messageList.width
                     height: kind === "event"
-                        ? win.scaledSize(42)
-                        : (grouped
-                            ? Math.max(win.scaledSize(22), messageBody.implicitHeight + win.scaledSize(8))
-                            : Math.max(win.scaledSize(58), messageBody.implicitHeight + win.scaledSize(39)))
+                        ? Math.max(win.scaledSize(42), messageEvent.implicitHeight + win.scaledSize(8))
+                        : (kind === "whois"
+                            ? Math.max(win.scaledSize(22), messageWhois.implicitHeight + win.scaledSize(8))
+                            : (grouped
+                                ? Math.max(win.scaledSize(22), messageBody.implicitHeight + win.scaledSize(8))
+                                : Math.max(win.scaledSize(58), messageBody.implicitHeight + win.scaledSize(39))))
 
                     Text {
+                        id: messageEvent
                         objectName: "messageEvent"
                         visible: messageDelegate.kind === "event"
-                        anchors.centerIn: parent
+                        x: win.scaledSize(24)
+                        y: Math.round((parent.height - implicitHeight) / 2)
                         width: parent.width - win.scaledSize(48)
                         horizontalAlignment: Text.AlignHCenter
                         text: win.plainIrcText(messageDelegate.body)
                         color: win.mutedColor
-                        elide: Text.ElideRight
+                        wrapMode: Text.Wrap
                         font.family: "iA Writer Mono S"
                         font.pixelSize: win.scaledSize(10)
                     }
 
+                    Text {
+                        id: messageWhois
+                        objectName: "messageWhois"
+                        visible: messageDelegate.kind === "whois"
+                        anchors.left: parent.left
+                        anchors.leftMargin: win.scaledSize(70)
+                        anchors.right: parent.right
+                        anchors.rightMargin: win.scaledSize(34)
+                        anchors.top: parent.top
+                        anchors.topMargin: win.transcriptField(
+                            messageList.model, messageDelegate.index - 1, "kind") === "whois"
+                            ? win.scaledSize(4)
+                            : win.scaledSize(8)
+                        horizontalAlignment: Text.AlignLeft
+                        text: win.plainIrcText(messageDelegate.body)
+                        textFormat: Text.PlainText
+                        color: win.mutedColor
+                        wrapMode: Text.Wrap
+                        font.family: "iA Writer Mono S"
+                        font.pixelSize: win.scaledSize(12)
+                    }
+
                     Rectangle {
                         objectName: "messageAvatar"
-                        visible: messageDelegate.kind !== "event" && !messageDelegate.grouped
+                        visible: messageDelegate.isChat && !messageDelegate.grouped
                         anchors.left: parent.left
                         anchors.leftMargin: win.scaledSize(24)
                         anchors.top: parent.top
@@ -3165,7 +3194,7 @@ ApplicationWindow {
 
                     Row {
                         objectName: "messageHeader"
-                        visible: messageDelegate.kind !== "event" && !messageDelegate.grouped
+                        visible: messageDelegate.isChat && !messageDelegate.grouped
                         anchors.left: parent.left
                         anchors.leftMargin: win.scaledSize(70)
                         anchors.top: parent.top
@@ -3192,7 +3221,7 @@ ApplicationWindow {
                     TextEdit {
                         id: messageBody
                         objectName: "messageBody"
-                        visible: messageDelegate.kind !== "event"
+                        visible: messageDelegate.isChat
                         anchors.left: parent.left
                         anchors.leftMargin: win.scaledSize(70)
                         anchors.right: parent.right

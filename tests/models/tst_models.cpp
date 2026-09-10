@@ -333,9 +333,11 @@ void ModelTest::messageKinds()
     reducer.apply(IrcActionEvent{
         room, QStringLiteral("Alice"), QStringLiteral("waves"), timestamp,
         QStringLiteral("#room")});
+    reducer.apply(IrcWhoisTranscriptEvent{
+        room, QStringLiteral("lena is ~lena@h (Lena)")});
 
     messages.select(room);
-    QCOMPARE(messages.rowCount(), 4);
+    QCOMPARE(messages.rowCount(), 5);
     QCOMPARE(roleAt(messages, 0, MessageListModel::KindRole),
              QStringLiteral("event"));
     QCOMPARE(roleAt(messages, 1, MessageListModel::KindRole),
@@ -346,6 +348,10 @@ void ModelTest::messageKinds()
              QStringLiteral("action"));
     QCOMPARE(roleAt(messages, 3, MessageListModel::BodyRole),
              QStringLiteral("waves"));
+    QCOMPARE(roleAt(messages, 4, MessageListModel::KindRole),
+             QStringLiteral("whois"));
+    QCOMPARE(roleAt(messages, 4, MessageListModel::AuthorRole), QString());
+    QCOMPARE(roleAt(messages, 4, MessageListModel::TimeRole), QString());
 }
 
 void ModelTest::conversationsOrderChannelsThenDirect()
