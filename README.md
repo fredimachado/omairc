@@ -8,16 +8,18 @@ A dead-simple IRC client for Omarchy, built with Qt Quick and C++.
 
 The first launch opens a connection sheet with Libera Chat defaults. Enter a
 nick, change the host if you want a different network, and type a server
-password only if that network needs one. Apply starts the session. TLS is on
-by default. Omairc does not connect on its own by default; enable Connect
-automatically on startup when you want a session on launch.
+password only if that network needs one. Apply starts the session. Add more
+networks from the list on the left side of the sheet. Each network keeps its
+own channels, direct messages, nick, and connection state in the sidebar.
+TLS is on by default. Omairc does not connect on its own by default. Enable
+Connect automatically on startup for each session that you want on launch.
 
 Omairc remembers host, port, TLS, nick, username, real name, and autojoin in
 `$XDG_CONFIG_HOME/omairc/`. Connect automatically on startup is off by
-default and can be enabled in the Connect sheet. Omairc does not write the
-password. Type the password again when you Apply if the server needs it.
-Press `Ctrl+,` or click `edit` beside the network name to reopen the sheet.
-The network name itself opens Status.
+default and can be enabled in the Connect sheet. Omairc does not write
+passwords to disk. Enter each password again after you restart Omairc.
+Press `Ctrl+,` or click `edit` beside a network name to reopen the sheet.
+The network name opens Status for that network.
 
 Press `Ctrl+/` for keyboard shortcuts.
 
@@ -26,7 +28,8 @@ desktop text size.
 
 ## Limits
 
-- One network at a time.
+- Network sections stay expanded. Scroll the sidebar when they exceed the
+  available height.
 - One process. A second launch raises the existing window.
 - Local CLI control of the running client over the same runtime socket
   (`connections`, `status`, `send`, `raise`). This is not a second IRC client.
@@ -151,7 +154,8 @@ bin/test-install
 `xorg-xauth`, `xdotool`, and `imagemagick`.
 
 `bin/test-live` is optional and needs Docker. It starts Ergo, Solanum, and
-ngIRCd on loopback and is not part of `bin/test`.
+ngIRCd on loopback, runs the protocol suite, then the dual-network
+production-QML proof. It is not part of `bin/test`.
 
 ## Requirements
 

@@ -1,18 +1,18 @@
-QT += core network testlib
-QT -= gui
+QT += core gui qml quick quickcontrols2 network testlib dbus
 
-CONFIG += c++17 console testcase
+CONFIG += c++17 testcase
 TEMPLATE = app
-TARGET = live_tests
+TARGET = live_ui_tests
 VERSION = 0.1.0
 DEFINES += OMAIRC_VERSION=\\\"$$VERSION\\\"
 
 greaterThan(QMAKE_GCC_MAJOR_VERSION, 15): QMAKE_CXXFLAGS += -Wno-sfinae-incomplete
 
-INCLUDEPATH += ../../src/irc
-DEFINES += LIVE_CERT_DIR=\\\"$$PWD/certs\\\"
+INCLUDEPATH += ../../src ../../src/irc ../live
+DEFINES += LIVE_CERT_DIR=\\\"$$PWD/../live/certs\\\"
 
 HEADERS += \
+    ../../src/backend.h \
     ../../src/irc/ircmessage.h \
     ../../src/irc/ircparser.h \
     ../../src/irc/ircframer.h \
@@ -44,15 +44,21 @@ HEADERS += \
     ../../src/irc/messagelistmodel.h \
     ../../src/irc/memberlistmodel.h \
     ../../src/irc/irccontroller.h \
+    ../../src/irc/ircnetworkprofile.h \
+    ../../src/irc/ircprofilestore.h \
+    ../../src/irc/ircconnection.h \
     ../../src/irc/qtirctransport.h \
-    liveharness.h \
-    livepeer.h
+    ../live/liveharness.h \
+    ../live/livepeer.h \
+    liveuiworld.h
 
 SOURCES += \
     tst_main.cpp \
-    tst_live.cpp \
-    liveharness.cpp \
-    livepeer.cpp \
+    tst_live_ui.cpp \
+    liveuiworld.cpp \
+    ../live/liveharness.cpp \
+    ../live/livepeer.cpp \
+    ../../src/backend.cpp \
     ../../src/irc/ircparser.cpp \
     ../../src/irc/ircframer.cpp \
     ../../src/irc/ircwiretext.cpp \
@@ -81,4 +87,9 @@ SOURCES += \
     ../../src/irc/messagelistmodel.cpp \
     ../../src/irc/memberlistmodel.cpp \
     ../../src/irc/irccontroller.cpp \
+    ../../src/irc/ircnetworkprofile.cpp \
+    ../../src/irc/ircprofilestore.cpp \
+    ../../src/irc/ircconnection.cpp \
     ../../src/irc/qtirctransport.cpp
+
+RESOURCES += ../../src/resources.qrc

@@ -25,11 +25,14 @@ class IrcController : public QObject
     Q_PROPERTY(QAbstractItemModel* members READ members CONSTANT)
     Q_PROPERTY(QString selectedNetworkId READ selectedNetworkId NOTIFY selectionChanged)
     Q_PROPERTY(QString selectedTarget READ selectedTarget NOTIFY selectionChanged)
+    Q_PROPERTY(QString selectedConversationId READ selectedConversationId NOTIFY selectionChanged)
+    Q_PROPERTY(QString focusedNetworkId READ focusedNetworkId NOTIFY selectionChanged)
     Q_PROPERTY(QString topic READ topic NOTIFY selectionChanged)
     Q_PROPERTY(bool isChannel READ isChannel NOTIFY selectionChanged)
     Q_PROPERTY(int peopleCount READ peopleCount NOTIFY selectionChanged)
     Q_PROPERTY(QString connectionStatus READ connectionStatus NOTIFY statusChanged)
     Q_PROPERTY(QString lastError READ lastError NOTIFY statusChanged)
+    Q_PROPERTY(int conversationEpoch READ conversationEpoch NOTIFY conversationStateChanged)
     Q_PROPERTY(QString currentNick READ currentNick NOTIFY selectionChanged)
     Q_PROPERTY(bool selfAway READ selfAway NOTIFY selfAwayChanged)
     Q_PROPERTY(bool hasAwayPresence READ hasAwayPresence NOTIFY capabilitiesChanged)
@@ -45,18 +48,27 @@ public:
                            IrcTransport *transport,
                            IrcReconnectTimer *reconnectTimer = nullptr);
     bool discardSession(const QString &networkId);
+    void forgetNetworkState(const QString &networkId);
+    void setNetworkOrder(const QStringList &networkOrder);
 
     QAbstractItemModel *conversations();
     QAbstractItemModel *messages();
     QAbstractItemModel *members();
     QString selectedNetworkId() const;
     QString selectedTarget() const;
+    QString selectedConversationId() const;
+    QString focusedNetworkId() const;
     QString topic() const;
     bool isChannel() const;
     int peopleCount() const;
     QString connectionStatus() const;
     QString lastError() const;
+    int conversationEpoch() const;
     QString lastErrorForNetwork(const QString& networkId) const;
+    Q_INVOKABLE QString lastErrorFor(const QString& networkId) const;
+    Q_INVOKABLE QString connectionStatusFor(const QString& networkId) const;
+    Q_INVOKABLE int unreadCountFor(const QString& networkId) const;
+    Q_INVOKABLE bool mentionFor(const QString& networkId) const;
     QString currentNick() const;
     bool selfAway() const;
 
@@ -70,6 +82,8 @@ public:
     Q_INVOKABLE bool start(const QString& networkId);
     Q_INVOKABLE void selectConversation(const QString& networkId,
                                         const QString& target);
+    Q_INVOKABLE void selectConversationById(const QString& conversationId);
+    Q_INVOKABLE void openStatus(const QString& networkId);
     Q_INVOKABLE void openDirectMessage(const QString& nick);
     Q_INVOKABLE void closeDirectMessage();
     Q_INVOKABLE bool sendMessage(const QString& text);
@@ -85,6 +99,7 @@ public:
 signals:
     void selectionChanged();
     void statusChanged();
+    void conversationStateChanged();
     void selfAwayChanged();
 
     void capabilitiesChanged();
@@ -114,6 +129,7 @@ private:
     IrcCommandOutcome dispatch(const IrcCommand& command,
                                IrcComposerSurface surface);
     QString queryNetworkId(IrcComposerSurface surface) const;
+    IrcSession *sessionFor(IrcComposerSurface surface) const;
     IrcCommandOutcome sendSelectedMessage(const QString& body);
     IrcCommandOutcome setSelectedTopic(const QString& topic);
     IrcCommandOutcome dispatchQuery(const IrcCommand& command,
@@ -154,7 +170,9 @@ private:
     QSet<QString> m_unawaySent;
     std::optional<IrcConversationKey> m_selected;
     QString m_selectedTarget;
+    QStringList m_networkOrder;
     QString m_connectionStatus = QStringLiteral("Offline");
+    int m_conversationEpoch = 0;
     QTimer m_typingRefresh;
     QString m_composerDraft;
     QString m_typingTarget;

@@ -15,23 +15,33 @@
 #include <string_view>
 #include <vector>
 
+struct IrcFrameFault
+{
+    IrcError error = IrcError::None;
+    std::string preview;
+    std::size_t byteCount = 0;
+};
+
 struct IrcFrameResult
 {
     std::vector<std::string> frames;
-    std::vector<IrcError> errors;
+    std::vector<IrcFrameFault> faults;
 };
 
 class IrcFramer
 {
 public:
-    static constexpr std::size_t kMaxClassicFrameBytes = IrcProtocol::maxClassicFrameBytes;
+    static constexpr std::size_t kMaxInboundClassicFrameBytes =
+        IrcProtocol::maxInboundClassicFrameBytes;
     static constexpr std::size_t kMaxTagSectionBytes = IrcProtocol::maxTagSectionBytes;
+    static constexpr std::size_t kFaultPreviewBytes = 160;
 
     IrcFrameResult feed(std::string_view bytes);
 
 private:
     bool pendingFrameIsOverlong() const;
     bool completeFrameIsValid(std::size_t delimiter) const;
+    void recordFault(IrcFrameResult& result, IrcError error, std::string_view bytes);
     void beginDiscard(IrcFrameResult& result, IrcError error);
 
     std::string buffer_;

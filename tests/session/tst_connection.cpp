@@ -7,6 +7,8 @@
 #include "fakeirctransport.h"
 #include "ircconnection.h"
 #include "irccontroller.h"
+#include "conversationlistmodel.h"
+#include "ircprofilestore.h"
 
 #include <memory>
 
@@ -25,10 +27,16 @@ private slots:
     void tlsSwitchLeavesPortAlone();
     void authenticationFailureFocusesPassword();
     void applyDoesNotWritePassword();
+    void twoProfilesApplyIndependently();
+    void removeSelectedDropsSessionAndStore();
+    void activateStartupStartsEveryMarkedProfile();
+    void passwordsStayIsolatedPerNetwork();
+    void authenticationFailureDoesNotReplaceDirtyDraft();
 
 private:
     IrcConnection::TransportFactory capturingFactory();
-    void fillCompleteDraft(IrcConnection &connection);
+    void fillCompleteDraft(IrcConnection &connection,
+                           const QString &host = QStringLiteral("irc.example"));
 
     std::unique_ptr<QTemporaryDir> m_dir;
     QList<FakeIrcTransport *> m_transports;
@@ -54,9 +62,9 @@ IrcConnection::TransportFactory ConnectionTest::capturingFactory()
     };
 }
 
-void ConnectionTest::fillCompleteDraft(IrcConnection &connection)
+void ConnectionTest::fillCompleteDraft(IrcConnection &connection, const QString &host)
 {
-    connection.setHost(QStringLiteral("irc.example"));
+    connection.setHost(host);
     connection.setPort(6697);
     connection.setTlsEnabled(true);
     connection.setNick(QStringLiteral("omairc"));
@@ -200,6 +208,149 @@ void ConnectionTest::applyDoesNotWritePassword()
     const QString contents = QString::fromUtf8(file.readAll());
     QVERIFY(!contents.contains(QLatin1String("password"), Qt::CaseInsensitive));
     QVERIFY(!contents.contains(QLatin1String("super-secret")));
+}
+
+void ConnectionTest::twoProfilesApplyIndependently()
+{
+    IrcController controller;
+    IrcConnection connection(controller, capturingFactory());
+    fillCompleteDraft(connection, QStringLiteral("irc.example"));
+    QVERIFY(connection.apply());
+    QCOMPARE(m_transports.size(), 1);
+    FakeIrcTransport *first = m_transports.first();
+
+    QVERIFY(connection.canAdd());
+    QVERIFY(connection.add());
+    fillCompleteDraft(connection, QStringLiteral("irc.oftc.net"));
+    connection.setNick(QStringLiteral("oak"));
+    QVERIFY(connection.apply());
+    QCOMPARE(m_transports.size(), 2);
+    QCOMPARE(m_transports.first(), first);
+    QCOMPARE(first->connectionState(), IrcTransport::ConnectionState::Connecting);
+    QCOMPARE(m_transports.last()->connectionState(),
+             IrcTransport::ConnectionState::Connecting);
+    QCOMPARE(connection.networks()->rowCount(), 2);
+}
+
+void ConnectionTest::removeSelectedDropsSessionAndStore()
+{
+    IrcController controller;
+    IrcConnection connection(controller, capturingFactory());
+    fillCompleteDraft(connection, QStringLiteral("irc.example"));
+    QVERIFY(connection.apply());
+    QVERIFY(connection.add());
+    fillCompleteDraft(connection, QStringLiteral("irc.oftc.net"));
+    connection.setNick(QStringLiteral("oak"));
+    QVERIFY(connection.apply());
+
+    const QString oftcId = connection.selectedNetworkId();
+    QCOMPARE(m_transports.size(), 2);
+    m_transports.at(0)->completeConnect();
+    m_transports.at(0)->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
+                          ":server 001 omairc :Welcome\r\n"
+                          ":omairc!u@h JOIN :#chan\r\n"));
+    m_transports.at(1)->completeConnect();
+    m_transports.at(1)->injectBytes(
+        QByteArrayLiteral(":server CAP oak LS :multi-prefix\r\n"
+                          ":server 001 oak :Welcome\r\n"
+                          ":oak!u@h JOIN :#lab\r\n"));
+    controller.selectConversation(oftcId, QStringLiteral("#lab"));
+    QCOMPARE(controller.conversations()->rowCount(), 2);
+
+    QVERIFY(connection.removeSelected());
+    QCOMPARE(connection.networks()->rowCount(), 1);
+    QCOMPARE(controller.session(oftcId), nullptr);
+    QCOMPARE(controller.conversations()->rowCount(), 1);
+    QCOMPARE(controller.conversations()->data(
+                 controller.conversations()->index(0, 0),
+                 ConversationListModel::ConversationRole),
+             QStringLiteral("#chan"));
+    QCOMPARE(IrcProfileStore().profiles().size(), 1);
+    QCOMPARE(IrcProfileStore().profiles().first().host,
+             QStringLiteral("irc.example"));
+}
+
+void ConnectionTest::activateStartupStartsEveryMarkedProfile()
+{
+    {
+        IrcController controller;
+        IrcConnection connection(controller, capturingFactory());
+        fillCompleteDraft(connection, QStringLiteral("irc.example"));
+        connection.setConnectOnStartup(true);
+        QVERIFY(connection.apply());
+        QVERIFY(connection.add());
+        fillCompleteDraft(connection, QStringLiteral("irc.oftc.net"));
+        connection.setNick(QStringLiteral("oak"));
+        connection.setConnectOnStartup(true);
+        QVERIFY(connection.apply());
+        QVERIFY(connection.add());
+        fillCompleteDraft(connection, QStringLiteral("irc.libera.chat"));
+        connection.setNick(QStringLiteral("leaf"));
+        connection.setConnectOnStartup(false);
+        QVERIFY(connection.apply());
+    }
+    m_transports.clear();
+
+    IrcController controller;
+    IrcConnection connection(controller, capturingFactory());
+    QVERIFY(connection.activateStartup());
+    QCOMPARE(m_transports.size(), 2);
+}
+
+void ConnectionTest::passwordsStayIsolatedPerNetwork()
+{
+    IrcController controller;
+    IrcConnection connection(controller, capturingFactory());
+    fillCompleteDraft(connection, QStringLiteral("irc.example"));
+    connection.setPassword(QStringLiteral("alpha-secret"));
+    QVERIFY(connection.apply());
+    QVERIFY(connection.passwordSet());
+
+    QVERIFY(connection.add());
+    fillCompleteDraft(connection, QStringLiteral("irc.oftc.net"));
+    connection.setNick(QStringLiteral("oak"));
+    QVERIFY(!connection.passwordSet());
+    connection.setPassword(QStringLiteral("beta-secret"));
+    QVERIFY(connection.apply());
+    QVERIFY(connection.passwordSet());
+
+    connection.select(IrcProfileStore().profiles().first().networkId);
+    QVERIFY(connection.passwordSet());
+}
+
+void ConnectionTest::authenticationFailureDoesNotReplaceDirtyDraft()
+{
+    IrcController controller;
+    IrcConnection connection(controller, capturingFactory());
+    fillCompleteDraft(connection, QStringLiteral("irc.example"));
+    connection.setPassword(QStringLiteral("alpha-secret"));
+    QVERIFY(connection.apply());
+    const QString firstId = connection.selectedNetworkId();
+
+    QVERIFY(connection.add());
+    fillCompleteDraft(connection, QStringLiteral("irc.oftc.net"));
+    connection.setNick(QStringLiteral("oak"));
+    connection.setPassword(QStringLiteral("beta-secret"));
+    QVERIFY(connection.apply());
+
+    connection.select(firstId);
+    QCOMPARE(connection.selectedNetworkId(), firstId);
+    connection.setHost(QStringLiteral("irc.changed"));
+    QVERIFY(connection.dirty());
+    QVERIFY(!connection.focusPassword());
+
+    QCOMPARE(m_transports.size(), 2);
+    m_transports.at(1)->completeConnect();
+    m_transports.at(1)->injectBytes(
+        QByteArrayLiteral(":server CAP oak LS :sasl\r\n"
+                          ":server CAP oak ACK :sasl\r\n"
+                          ":server 904 oak :SASL failed\r\n"));
+
+    QCOMPARE(connection.selectedNetworkId(), firstId);
+    QCOMPARE(connection.host(), QStringLiteral("irc.changed"));
+    QVERIFY(connection.dirty());
+    QVERIFY(!connection.focusPassword());
 }
 
 int runConnectionTests(int argc, char **argv)

@@ -18,6 +18,7 @@
 #include <algorithm>
 #include <limits>
 #include <string>
+#include <string_view>
 #include <type_traits>
 
 namespace
@@ -25,6 +26,52 @@ namespace
 constexpr char kPingWatchdogToken[] = "omairc-watchdog";
 constexpr qsizetype kCtcpPingPayloadMaxBytes = 32;
 constexpr qint64 kCtcpReplyIntervalMs = 5000;
+
+QString firstWireTokenUpper(std::string_view bytes)
+{
+    std::string verb;
+    for (unsigned char c : bytes) {
+        if (c == ' ' || c == '\r' || c == '\n')
+            break;
+        if (c >= 'a' && c <= 'z')
+            c = static_cast<unsigned char>(c - 'a' + 'A');
+        verb.push_back(char(c));
+    }
+    return QString::fromLatin1(verb.data(), qsizetype(verb.size()));
+}
+
+QString previewWire(std::string_view bytes, std::size_t byteCount)
+{
+    const QString verb = firstWireTokenUpper(bytes);
+    if (verb == QLatin1String("PASS") || verb == QLatin1String("AUTHENTICATE"))
+        return verb + QStringLiteral(" ***");
+
+    std::string sanitized;
+    sanitized.reserve(bytes.size());
+    for (unsigned char c : bytes) {
+        if (c == 0 || (c < 0x20 && c != '\t'))
+            sanitized.push_back('?');
+        else
+            sanitized.push_back(char(c));
+    }
+    QString preview = ircWireText(sanitized);
+    if (byteCount > bytes.size())
+        preview += QChar(0x2026);
+    return preview;
+}
+
+QString describeMalformed(const char *kind, IrcError error,
+                          std::string_view preview, std::size_t byteCount)
+{
+    QString text = QStringLiteral("Malformed IRC %1: %2 (%3 bytes)")
+                       .arg(QLatin1String(kind),
+                            QString::fromLatin1(ircErrorName(error)),
+                            QString::number(byteCount));
+    const QString shown = previewWire(preview, byteCount);
+    if (shown.isEmpty())
+        return text;
+    return text + QStringLiteral(". Preview: ") + shown;
+}
 
 QByteArray builtLine(const IrcBuildResult &result)
 {
@@ -648,10 +695,11 @@ void IrcSession::handleBytes(const QByteArray &bytes)
 
     const IrcFrameResult result = m_framer.feed(
         std::string_view(bytes.constData(), std::size_t(bytes.size())));
-    for (IrcError error : result.errors) {
+    for (const IrcFrameFault& fault : result.faults) {
         emit errorOccurred(m_config.networkId,
                            ErrorKind::Protocol,
-                           QStringLiteral("Malformed IRC frame (%1)").arg(int(error)));
+                           describeMalformed("frame", fault.error, fault.preview,
+                                             fault.byteCount));
     }
 
     for (const std::string &frame : result.frames) {
@@ -659,8 +707,8 @@ void IrcSession::handleBytes(const QByteArray &bytes)
         if (!parsed) {
             emit errorOccurred(m_config.networkId,
                                ErrorKind::Protocol,
-                               QStringLiteral("Malformed IRC message (%1)")
-                                   .arg(int(parsed.error)));
+                               describeMalformed("message", parsed.error, frame,
+                                                 frame.size()));
             continue;
         }
         handleMessage(*parsed.value);

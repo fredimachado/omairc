@@ -3,19 +3,52 @@
 #include "ircnetworkprofile.h"
 #include "ircprofilestore.h"
 
+#include <QAbstractListModel>
+#include <QHash>
+#include <QList>
 #include <QObject>
 #include <QString>
+#include <QVector>
 
 #include <functional>
 #include <optional>
 
+class IrcConnection;
 class IrcController;
 class IrcTransport;
 struct IrcSessionConfig;
 
+class NetworkListModel : public QAbstractListModel
+{
+    Q_OBJECT
+
+public:
+    enum Role {
+        NetworkIdRole = Qt::UserRole + 1,
+        DisplayNameRole,
+        StoredRole,
+        SelectedRole,
+    };
+
+    explicit NetworkListModel(IrcConnection &owner, QObject *parent = nullptr);
+
+    int rowCount(const QModelIndex &parent = QModelIndex()) const override;
+    QVariant data(const QModelIndex &index, int role) const override;
+    QHash<int, QByteArray> roleNames() const override;
+
+    void resetRows();
+
+private:
+    IrcConnection &m_owner;
+};
+
 class IrcConnection : public QObject
 {
     Q_OBJECT
+    Q_PROPERTY(QAbstractItemModel* networks READ networks CONSTANT)
+    Q_PROPERTY(QString selectedNetworkId READ selectedNetworkId NOTIFY selectedNetworkChanged)
+    Q_PROPERTY(bool canAdd READ canAdd NOTIFY draftChanged)
+    Q_PROPERTY(bool canRemove READ canRemove NOTIFY selectedNetworkChanged)
     Q_PROPERTY(QString host READ host WRITE setHost NOTIFY draftChanged)
     Q_PROPERTY(int port READ port WRITE setPort NOTIFY draftChanged)
     Q_PROPERTY(bool tlsEnabled READ tlsEnabled WRITE setTlsEnabled NOTIFY draftChanged)
@@ -38,6 +71,11 @@ public:
     IrcConnection(IrcController &controller,
                   TransportFactory transportFactory,
                   QObject *parent = nullptr);
+
+    QAbstractItemModel *networks();
+    QString selectedNetworkId() const;
+    bool canAdd() const;
+    bool canRemove() const;
 
     QString host() const;
     int port() const;
@@ -63,34 +101,66 @@ public:
     void setRealname(const QString &realname);
     void setAutojoin(const QString &channels);
 
+    Q_INVOKABLE void select(const QString &networkId);
+    Q_INVOKABLE bool add();
     Q_INVOKABLE void setPassword(const QString &password);
     Q_INVOKABLE bool apply();
     Q_INVOKABLE void discard();
+    Q_INVOKABLE bool removeSelected();
     bool activate();
+    bool activateStartup();
 
 signals:
+    void selectedNetworkChanged();
+    void networksChanged();
     void draftChanged();
     void setupRequiredChanged();
     void focusPasswordChanged();
 
 private:
-    void restoreDraft();
-    std::optional<IrcSessionConfig> sessionConfigFor(
-        const IrcNetworkProfile &profile) const;
-    bool reconcile(const IrcNetworkProfile &profile);
+    friend class NetworkListModel;
 
-    struct Applied {
+    struct IrcDraftSecret {
+        QString password;
+        quint64 revision = 0;
+    };
+
+    struct IrcAppliedSession {
         IrcNetworkProfile profile;
         quint64 secretRevision = 0;
     };
 
+    struct RosterRow {
+        QString networkId;
+        QString displayName;
+        bool stored = false;
+        bool selected = false;
+    };
+
+    void restoreDraft();
+    std::optional<IrcSessionConfig> sessionConfigFor(
+        const IrcNetworkProfile &profile) const;
+    bool reconcile(const IrcNetworkProfile &profile);
+    void loadStored();
+    void sortStored();
+    void selectStored(const QString &networkId);
+    void pushNetworkOrder();
+    void refreshRoster();
+    bool isStored(const QString &networkId) const;
+    IrcNetworkProfile storedProfile(const QString &networkId) const;
+    QString rosterDisplayName(const IrcNetworkProfile &profile) const;
+    QVector<RosterRow> rosterRows() const;
+    const IrcDraftSecret &secretFor(const QString &networkId) const;
+    IrcDraftSecret &secretFor(const QString &networkId);
+
     IrcController &m_controller;
     TransportFactory m_transportFactory;
     IrcProfileStore m_store;
+    QList<IrcNetworkProfile> m_stored;
     IrcNetworkProfile m_draft;
-    IrcNetworkProfile m_stored;
-    QString m_password;
-    quint64 m_secretRevision = 0;
-    std::optional<Applied> m_applied;
+    QString m_selectedNetworkId;
+    QHash<QString, IrcDraftSecret> m_secrets;
+    QHash<QString, IrcAppliedSession> m_applied;
+    NetworkListModel m_networks;
     bool m_focusPassword = false;
 };

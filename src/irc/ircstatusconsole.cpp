@@ -89,9 +89,18 @@ bool IrcStatusConsole::isOpen() const
 
 int IrcStatusConsole::alerts() const
 {
-    if (m_open || m_networkId.isEmpty())
+    if (m_open)
         return 0;
-    return m_log.alertsSinceSeen(m_networkId);
+    return alertsFor(m_networkId);
+}
+
+int IrcStatusConsole::alertsFor(const QString &networkId) const
+{
+    if (networkId.isEmpty())
+        return 0;
+    if (m_open && m_networkId == networkId)
+        return 0;
+    return m_log.alertsSinceSeen(networkId);
 }
 
 QString IrcStatusConsole::networkId() const
@@ -211,9 +220,7 @@ void IrcStatusConsole::recordLifecycle(IrcSession *session)
 
 void IrcStatusConsole::noteLogChanged(const QString& networkId)
 {
-    if (networkId != m_networkId)
-        return;
-    if (m_open)
+    if (m_open && networkId == m_networkId)
         m_log.markSeen(m_networkId);
     emit alertsChanged();
 }
