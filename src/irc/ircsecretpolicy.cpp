@@ -1,6 +1,5 @@
 #include "ircsecretpolicy.h"
 
-#include "ircservicenick.h"
 #include "ircwiretext.h"
 
 #include <QStringList>
@@ -365,31 +364,37 @@ std::optional<IrcWireCommand> maskKeyedModeTail(const IrcWireCommand& command,
     return masked;
 }
 
-struct IrcTargetMask
+enum class IrcRecipientKind
 {
-    QStringView nick;
-    QStringView host;
+    Channel,
+    Private,
 };
 
-IrcTargetMask splitTargetMask(QStringView target)
+bool canStartPrivateRecipient(QChar mark)
 {
-    IrcTargetMask parts;
-    const qsizetype bang = target.indexOf(QLatin1Char('!'));
-    const qsizetype at = target.indexOf(QLatin1Char('@'), bang < 0 ? 0 : bang + 1);
-    if (bang >= 0) {
-        parts.nick = target.left(bang);
-        if (at >= 0)
-            parts.host = target.mid(at + 1);
-    } else if (at >= 0) {
-        parts.nick = target.left(at);
-        parts.host = target.mid(at + 1);
-    } else {
-        parts.nick = target;
+    if ((mark >= QLatin1Char('A') && mark <= QLatin1Char('Z'))
+        || (mark >= QLatin1Char('a') && mark <= QLatin1Char('z'))) {
+        return true;
     }
-    return parts;
+    return mark == QLatin1Char('-') || mark == QLatin1Char('[')
+        || mark == QLatin1Char(']') || mark == QLatin1Char('\\')
+        || mark == QLatin1Char('`') || mark == QLatin1Char('_')
+        || mark == QLatin1Char('^') || mark == QLatin1Char('{')
+        || mark == QLatin1Char('|') || mark == QLatin1Char('}');
 }
 
-bool hasServiceTarget(QStringView targets, QStringView channelTypes)
+IrcRecipientKind classifyRecipient(QStringView target, QStringView channelTypes)
+{
+    if (target.isEmpty())
+        return IrcRecipientKind::Private;
+    const QChar mark = target.front();
+    const bool isChannel = channelTypes.isEmpty()
+        ? !canStartPrivateRecipient(mark)
+        : channelTypes.contains(mark);
+    return isChannel ? IrcRecipientKind::Channel : IrcRecipientKind::Private;
+}
+
+bool hasPrivateRecipient(QStringView targets, QStringView channelTypes)
 {
     qsizetype start = 0;
     while (start <= targets.size()) {
@@ -397,8 +402,7 @@ bool hasServiceTarget(QStringView targets, QStringView channelTypes)
         const QStringView piece = comma < 0
             ? targets.mid(start)
             : targets.mid(start, comma - start);
-        const IrcTargetMask mask = splitTargetMask(piece);
-        if (ircIsServiceIdentity(mask.nick, mask.host, channelTypes))
+        if (classifyRecipient(piece, channelTypes) == IrcRecipientKind::Private)
             return true;
         if (comma < 0)
             break;
@@ -444,7 +448,7 @@ std::optional<IrcWireCommand> maskServiceRequestBody(const IrcWireCommand& comma
 {
     if (command.parameters.size() < 2)
         return std::nullopt;
-    if (!hasServiceTarget(command.parameters.at(0), channelTypes))
+    if (!hasPrivateRecipient(command.parameters.at(0), channelTypes))
         return std::nullopt;
     const QString body = command.parameters.mid(1).join(QLatin1Char(' '));
     const QString word = matchedServiceCommand(serviceBodyTokens(body));
@@ -586,7 +590,7 @@ std::optional<IrcMaskedCommand> IrcSecretPolicy::redactMessage(const IrcMessage&
     if (rule->shape == IrcSecretShape::ServiceRequestBody) {
         if (message.parameters.size() < 2)
             return std::nullopt;
-        if (!hasServiceTarget(ircWireText(message.parameters.front()), channelTypes))
+        if (!hasPrivateRecipient(ircWireText(message.parameters.front()), channelTypes))
             return std::nullopt;
     } else if (verb == QLatin1String("JOIN")) {
         return std::nullopt;
