@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - `/ignore <nick>`, `/unignore <nick>`, and `/ignored`. Each network keeps its own list. Private messages, notices, and invites from those nicks stay off Status and do not open a direct message. Channel text stays visible. Clearing the network drops its list.
+- IRCv3 CHATHISTORY on channel join. After a successful self JOIN, Omairc sends `CHATHISTORY LATEST` when the server advertised `chathistory` or `draft/chathistory` plus `batch`. Replayed lines keep their original times and stay unread. The body uses muted text. A server that never offers the cap still starts empty.
 
 ### Changed
 
@@ -41,7 +42,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - IRCv3 standard replies on Status: `FAIL` is Alert, `WARN` and `NOTE` are Info. They do not drop the session.
 - Quiet IRCv3 capabilities when the server advertises them: `multi-prefix`, `chghost`, `cap-notify`, and `echo-message`.
 - IRCv3 `BATCH` open and close. The `BATCH` line itself is swallowed; unknown batch types still pass inner messages through.
-- IRCv3 CHATHISTORY on channel join.
 
 ### Changed
 

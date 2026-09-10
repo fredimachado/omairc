@@ -34,7 +34,8 @@ desktop text size.
 - One process. A second launch raises the existing window.
 - Local CLI control of the running client over the same runtime socket
   (`connections`, `status`, `send`, `raise`). This is not a second IRC client.
-- No saved message history. Joining a channel can show the server's last 100 lines when the server offers CHATHISTORY.
+- No saved message history.
+- A server that advertises CHATHISTORY can fill a joined channel with its last 100 lines.
 - No DCC, file transfer, voice, or video.
 - No plugins or scripts.
 - No bouncer-specific history synchronization.
