@@ -498,8 +498,9 @@ void ReducerTest::welcomeResetsMembership()
         {replayLine(QStringLiteral("alice"), QStringLiteral("stale"),
                     QStringLiteral("id-welcome"))},
     });
-    QCOMPARE(conversation->messages.size(), std::size_t(1));
+    QCOMPARE(conversation->messages.size(), std::size_t(2));
     QCOMPARE(conversation->messages[0].body, QStringLiteral("omairc joined"));
+    QCOMPARE(conversation->messages[1].body, QStringLiteral("Alice joined"));
 }
 
 void ReducerTest::awayIsOneFactVisibleInEveryChannel()
