@@ -1872,6 +1872,36 @@ TestCase {
         verify(!containsMirc(eventText.text));
     }
 
+    function test_eventRowWrapsLongWhoisBody() {
+        var list = item("messageList");
+        var previousCount = list.model.count;
+        var body = "lena is ~lena@user/host (Lena) " +
+                   "lena is on #omarchy #help #omairc #linux #archlinux " +
+                   "lena is using irc.libera.chat (Stockholm, SE) " +
+                   "lena has been idle 12s, signed on Thu Sep 10 10:00:00 2026 " +
+                   "End of WHOIS for lena";
+        list.model.append({
+            author: "",
+            time: "",
+            body: body,
+            kind: "event"
+        });
+        tryCompare(list.model, "count", previousCount + 1);
+        list.positionViewAtIndex(previousCount, ListView.Contain);
+        waitForRendering(appWindow.contentItem);
+
+        var row = list.itemAtIndex(previousCount);
+        verify(row !== null, "The long event row should be rendered");
+        var eventText = findChild(row, "messageEvent");
+        verify(eventText !== null && eventText.visible, "Could not find messageEvent");
+        compare(eventText.wrapMode, Text.Wrap);
+        compare(eventText.text, body);
+        verify(eventText.lineCount > 1, "The WHOIS event should wrap");
+        verify(row.height > appWindow.scaledSize(42),
+               "A wrapped event row should grow past the single-line height");
+        saveScreenshot("wrapped-whois-event");
+    }
+
     function test_toggleMembersWithShortcut() {
         var panel = item("membersPanel");
         verify(panel.visible);
