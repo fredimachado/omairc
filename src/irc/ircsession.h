@@ -188,6 +188,10 @@ private:
     QString foldChannel(const QString& channel) const;
     void applyIsupport(const IrcMessage& message);
     void ignoreBatch(const QString& reference);
+    void clearHistoryPending(const QString& channel);
+    bool nicksEqual(const QString& left, const QString& right) const;
+    bool swallowUnknownBatch(const QString& reference) const;
+    void handleChatHistoryFail(const IrcMessage& message);
     static bool isChatHistoryBatchType(const QString& type) noexcept;
     bool selfPrefixed(const IrcMessage& message) const;
     bool selfIs(const QString& nick) const;
@@ -247,6 +251,7 @@ private:
     static constexpr int kHistoryLimit = 100;
     static constexpr int kHistoryBufferCeiling = 256;
     static constexpr int kMaxOpenBatches = 16;
+    static constexpr int kMaxIgnoredBatches = 32;
     QHash<QString, QElapsedTimer> m_ctcpReplyClock;
     IgnoreFilter m_ignoreFilter;
     State m_state = State::Idle;
