@@ -85,6 +85,7 @@ private slots:
     void historicJoinInBatchDoesNotChangePeopleCount();
     void historyAfterPartDoesNotSplice();
     void clearMessagesDropsPendingHistory();
+    void nickCollisionMergesMessageIds();
 };
 
 void ReducerTest::namesFillAndCompleteWithoutDuplicates()
@@ -1130,6 +1131,44 @@ void ReducerTest::historicJoinInBatchDoesNotChangePeopleCount()
     QVERIFY(conversation);
     QCOMPARE(conversation->peopleCount(), 1);
     QCOMPARE(conversation->messages[0].body, QStringLiteral("from history"));
+}
+
+void ReducerTest::nickCollisionMergesMessageIds()
+{
+    IrcEventReducer reducer;
+    welcome(reducer, networkA);
+    const IrcConversationKey alice =
+        reducer.conversationKey(networkA, QStringLiteral("Alice"));
+    const IrcConversationKey alicia =
+        reducer.conversationKey(networkA, QStringLiteral("Alicia"));
+    reducer.apply(IrcMessageEvent{
+        alice, QStringLiteral("Alice"), QStringLiteral("from alice"), timestamp,
+        QStringLiteral("Alice"), IrcMsgId{QStringLiteral("id-a")}});
+    reducer.apply(IrcMessageEvent{
+        alicia, QStringLiteral("Alicia"), QStringLiteral("from alicia"), timestamp,
+        QStringLiteral("Alicia"), IrcMsgId{QStringLiteral("id-b")}});
+
+    reducer.apply(IrcNickEvent{
+        networkA, QStringLiteral("Alice"), QStringLiteral("Alicia")});
+
+    const IrcConversationState *merged = reducer.find(alicia);
+    QVERIFY(merged);
+    const std::size_t afterMerge = merged->messages.size();
+    QVERIFY(afterMerge >= std::size_t(2));
+
+    reducer.apply(IrcMessageEvent{
+        alicia, QStringLiteral("Alicia"), QStringLiteral("repeat a"), timestamp,
+        QStringLiteral("Alicia"), IrcMsgId{QStringLiteral("id-a")}});
+    reducer.apply(IrcMessageEvent{
+        alicia, QStringLiteral("Alicia"), QStringLiteral("repeat b"), timestamp,
+        QStringLiteral("Alicia"), IrcMsgId{QStringLiteral("id-b")}});
+    QCOMPARE(reducer.find(alicia)->messages.size(), afterMerge);
+
+    reducer.apply(IrcMessageEvent{
+        alicia, QStringLiteral("Alicia"), QStringLiteral("fresh"), timestamp,
+        QStringLiteral("Alicia"), IrcMsgId{QStringLiteral("id-c")}});
+    QCOMPARE(reducer.find(alicia)->messages.size(), afterMerge + 1);
+    QCOMPARE(reducer.find(alicia)->messages.back().body, QStringLiteral("fresh"));
 }
 
 int runReducerTests(int argc, char **argv)

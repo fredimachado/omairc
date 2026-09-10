@@ -650,6 +650,8 @@ void IrcEventReducer::reduce(const IrcNickEvent& event)
         existing->second.messages.insert(existing->second.messages.end(),
                                          moved.messages.begin(),
                                          moved.messages.end());
+        existing->second.messageIds.insert(moved.messageIds.begin(),
+                                           moved.messageIds.end());
         capMessages(existing->second);
         existing->second.unread += moved.unread;
         existing->second.mentions += moved.mentions;

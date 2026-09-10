@@ -221,8 +221,11 @@ IrcCapabilitySet IrcCapabilityNegotiation::reject(const QStringList& tokens)
         if (!m_outstandingTokens.contains(name))
             continue;
         m_outstandingTokens.remove(name);
+        m_advertisedTokens.remove(name);
         if (!hasToken(m_outstandingTokens, wanted->capability))
             m_outstanding.remove(wanted->capability);
+        if (!hasToken(m_advertisedTokens, wanted->capability))
+            m_advertised.remove(wanted->capability);
         refused.insert(wanted->capability);
     }
     return refused;

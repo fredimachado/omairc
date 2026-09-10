@@ -13,6 +13,7 @@
 
 #include "irccapability.h"
 #include "irccapabilitynegotiation.h"
+#include "irccasemapping.h"
 #include "ircframer.h"
 #include "ircmessage.h"
 #include "ircstatusentry.h"
@@ -182,6 +183,11 @@ private:
     void requestChannelHistory(const QString& channel);
     void forgetChannelHistory(const QString& channel);
     void dropHistoryBatches(const QString& channel);
+    void bumpHistoryGeneration(const QString& channel);
+    int historyGeneration(const QString& channel) const;
+    QString foldChannel(const QString& channel) const;
+    void applyIsupport(const IrcMessage& message);
+    void ignoreBatch(const QString& reference);
     static bool isChatHistoryBatchType(const QString& type) noexcept;
     bool selfPrefixed(const IrcMessage& message) const;
     bool selfIs(const QString& nick) const;
@@ -230,10 +236,14 @@ private:
         QString parent;
         QString replayRoot;
         IrcHistoryBatch collected;
+        int generation = 0;
     };
     QHash<QString, OpenBatch> m_openBatches;
+    QSet<QString> m_ignoredBatches;
+    QHash<QString, int> m_historyGeneration;
     QSet<QString> m_historyAsked;
     QSet<QString> m_historyPending;
+    IrcCaseMapping m_caseMapping{IrcCaseMapping::Kind::Rfc1459};
     static constexpr int kHistoryLimit = 100;
     static constexpr int kHistoryBufferCeiling = 256;
     static constexpr int kMaxOpenBatches = 16;
