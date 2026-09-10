@@ -8,6 +8,8 @@
 #include <QStringList>
 #include <QTimer>
 
+#include <functional>
+
 #include "irccapability.h"
 #include "irccapabilitynegotiation.h"
 #include "ircframer.h"
@@ -111,6 +113,9 @@ public:
     int reconnectAttempt() const;
     IrcCapabilitySet capabilities() const;
 
+    using IgnoreFilter = std::function<bool(const IrcMessage&, const QString&)>;
+    void setIgnoreFilter(IgnoreFilter filter);
+
 public slots:
     void start();
     void stop();
@@ -199,6 +204,7 @@ private:
     IrcTypingPublisher m_typing;
     QSet<QString> m_openBatches;
     QHash<QString, QElapsedTimer> m_ctcpReplyClock;
+    IgnoreFilter m_ignoreFilter;
     State m_state = State::Idle;
     bool m_expectedDisconnect = false;
     bool m_reconnectAfterDisconnect = false;

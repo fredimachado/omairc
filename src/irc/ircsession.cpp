@@ -326,6 +326,11 @@ QString IrcSession::nick() const
     return m_nick;
 }
 
+void IrcSession::setIgnoreFilter(IgnoreFilter filter)
+{
+    m_ignoreFilter = std::move(filter);
+}
+
 IrcSession::State IrcSession::state() const
 {
     return m_state;
@@ -721,6 +726,9 @@ bool IrcSession::allowCtcpReply(const QString &nick)
 
 void IrcSession::handleMessage(const IrcMessage &message)
 {
+    if (m_ignoreFilter && m_ignoreFilter(message, m_nick))
+        return;
+
     emit statusEntry(IrcStatusEntry::incoming(m_config.networkId, message));
 
     if (message.command == "BATCH") {

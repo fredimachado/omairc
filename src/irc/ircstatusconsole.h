@@ -40,6 +40,7 @@ public:
 
     Q_INVOKABLE bool submit(const QString& input);
     bool clearLog();
+    void record(const IrcStatusEntry& entry);
     IrcSession *boundSession() const;
 
 signals:
