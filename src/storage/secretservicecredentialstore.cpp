@@ -16,18 +16,20 @@ QString keyName(const CredentialKey &key)
         + encode(key.host);
 }
 
-CredentialStore::State stateForError(const QKeychain::Error error)
-{
-    return error == QKeychain::NoBackendAvailable
-            || error == QKeychain::NotImplemented
-        ? CredentialStore::State::Unavailable
-        : CredentialStore::State::Error;
-}
 }
 
 SecretServiceCredentialStore::SecretServiceCredentialStore(QObject *parent)
     : CredentialStore(parent)
 {
+}
+
+CredentialStore::State SecretServiceCredentialStore::stateForError(
+    QKeychain::Error error)
+{
+    return error == QKeychain::NoBackendAvailable
+            || error == QKeychain::NotImplemented
+        ? State::Unavailable
+        : State::Error;
 }
 
 void SecretServiceCredentialStore::read(const CredentialKey &key)

@@ -112,6 +112,7 @@ SOURCES += \
     session/tst_capability.cpp \
     session/tst_profile.cpp \
     session/tst_connection.cpp \
+    storage/tst_secretservice.cpp \
     session/tst_controller.cpp \
     session/tst_command.cpp \
     session/tst_typing.cpp \

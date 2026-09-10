@@ -119,6 +119,7 @@ private:
     IrcNetworkProfile m_draft;
     IrcNetworkProfile m_stored;
     QString m_password;
+    QString m_persistedPassword;
     quint64 m_secretRevision = 0;
     std::optional<Applied> m_applied;
     bool m_focusPassword = false;

@@ -46,14 +46,26 @@ IrcConnection::IrcConnection(IrcController &controller,
             if (state != CredentialStore::State::Loading) {
                 m_credentialReadInFlight = false;
                 if (m_secretRevision != m_credentialReadRevision) {
-                    if (m_credentialState == CredentialStore::State::Loading
-                        && !m_passwordEdited) {
-                        m_credentialState = m_password.isEmpty()
-                            ? CredentialStore::State::Missing
-                            : CredentialStore::State::SessionOnly;
-                        emit credentialStateChanged();
-                        emit draftChanged();
+                    if (!m_passwordEdited) {
+                        if (m_credentialState == CredentialStore::State::Loading) {
+                            m_credentialState = m_password.isEmpty()
+                                ? CredentialStore::State::Missing
+                                : CredentialStore::State::SessionOnly;
+                        }
+                    } else {
+                        m_credentialError = message;
+                        if (state == CredentialStore::State::Unavailable
+                            && !m_password.isEmpty()) {
+                            m_credentialState = CredentialStore::State::SessionOnly;
+                        } else if (state == CredentialStore::State::Available
+                                   || state == CredentialStore::State::Missing) {
+                            m_credentialState = CredentialStore::State::Missing;
+                        } else {
+                            m_credentialState = state;
+                        }
                     }
+                    emit credentialStateChanged();
+                    emit draftChanged();
                     if (m_reconcileWhenReadSettles) {
                         m_reconcileWhenReadSettles = false;
                         reconcile(m_stored);
@@ -67,6 +79,7 @@ IrcConnection::IrcConnection(IrcController &controller,
             m_credentialError = message;
             if (state == CredentialStore::State::Available && !m_passwordEdited) {
                 m_password = password;
+                m_persistedPassword = password;
                 m_secretMayBeStored = true;
                 ++m_secretRevision;
                 if (!m_obsoleteKeys.isEmpty())
@@ -91,11 +104,12 @@ IrcConnection::IrcConnection(IrcController &controller,
             const bool removingObsoleteKey =
                 operation.kind == CredentialOperation::Kind::Remove
                 && operation.key != currentKey;
-            if (removingObsoleteKey
-                && state != CredentialStore::State::Missing
-                && state != CredentialStore::State::Available) {
-                rememberObsoleteKey(operation.key);
-                m_credentialError = message;
+            if (removingObsoleteKey) {
+                if (state != CredentialStore::State::Missing
+                    && state != CredentialStore::State::Available) {
+                    rememberObsoleteKey(operation.key);
+                    m_credentialError = message;
+                }
             } else if (operation.revision == m_secretRevision) {
                 m_credentialState = state == CredentialStore::State::Unavailable
                         && !m_password.isEmpty()
@@ -104,13 +118,17 @@ IrcConnection::IrcConnection(IrcController &controller,
                 if (state == CredentialStore::State::Available
                     || state == CredentialStore::State::Missing) {
                     m_passwordEdited = false;
+                } else if (operation.kind == CredentialOperation::Kind::Write) {
+                    m_passwordEdited = true;
                 }
                 if (operation.kind == CredentialOperation::Kind::Write
                     && state == CredentialStore::State::Available) {
                     m_secretMayBeStored = true;
+                    m_persistedPassword = operation.password;
                 } else if (operation.kind == CredentialOperation::Kind::Remove
                            && state == CredentialStore::State::Missing) {
                     m_secretMayBeStored = false;
+                    m_persistedPassword.clear();
                 }
             }
             if ((operation.kind == CredentialOperation::Kind::Write
@@ -462,6 +480,18 @@ void IrcConnection::queueCredentialRemoval(const CredentialKey &key, quint64 rev
 void IrcConnection::discard()
 {
     restoreDraft();
+    if (m_password != m_persistedPassword || m_passwordEdited) {
+        m_password = m_persistedPassword;
+        m_passwordEdited = false;
+        if (m_persistedPassword.isEmpty())
+            m_credentialState = CredentialStore::State::Missing;
+        else if (m_secretMayBeStored)
+            m_credentialState = CredentialStore::State::Available;
+        else
+            m_credentialState = CredentialStore::State::SessionOnly;
+        ++m_secretRevision;
+        emit credentialStateChanged();
+    }
     emit draftChanged();
 }
 
