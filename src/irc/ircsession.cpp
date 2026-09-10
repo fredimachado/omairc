@@ -31,21 +31,32 @@ constexpr qint64 kCtcpReplyIntervalMs = 5000;
 QString previewWire(std::string_view bytes, std::size_t byteCount)
 {
     std::string display;
-    std::string policy;
+    std::string spaced;
+    std::string stripped;
     display.reserve(bytes.size());
-    policy.reserve(bytes.size());
+    spaced.reserve(bytes.size());
+    stripped.reserve(bytes.size());
     for (unsigned char c : bytes) {
         if (c == '\t' || c >= 0x20) {
+            display.push_back(char(c));
+            spaced.push_back(char(c));
+            stripped.push_back(char(c));
         } else {
             display.push_back('?');
-            policy.push_back(' ');
+            spaced.push_back(' ');
         }
     }
     QString preview = ircWireText(display);
-    const QString policyText = ircWireText(policy);
-    if (const auto safe = IrcSecretPolicy::redactWireLine(QStringView(policyText)))
+    const QString strippedText = ircWireText(stripped);
+    if (const auto safe = IrcSecretPolicy::redactWireLine(QStringView(strippedText))) {
         preview = *safe;
-    preview.replace(QChar(1), QLatin1Char('?'));
+    } else {
+        const QString spacedText = ircWireText(spaced);
+        if (const auto safeSpaced =
+                IrcSecretPolicy::redactWireLine(QStringView(spacedText))) {
+            preview = *safeSpaced;
+        }
+    }
     if (byteCount > bytes.size())
         preview += QChar(0x2026);
     return preview;

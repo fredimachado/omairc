@@ -819,6 +819,20 @@ void SessionTest::malformedInputSurfacesProtocolError()
     QVERIFY(infixNul.contains(QStringLiteral("invalid character")));
     QVERIFY(infixNul.contains(QStringLiteral("PASS ***")));
     QVERIFY(!infixNul.contains(QStringLiteral("hunter2")));
+
+    fixture.transport->injectBytes(QByteArray("P\0ASS hunter2\r\n", 15));
+    QCOMPARE(errors.size(), 4);
+    const QString splitVerb = errors.at(3).at(2).toString();
+    QVERIFY(splitVerb.contains(QStringLiteral("invalid character")));
+    QVERIFY(splitVerb.contains(QStringLiteral("PASS ***")));
+    QVERIFY(!splitVerb.contains(QStringLiteral("hunter2")));
+
+    fixture.transport->injectBytes(QByteArray("\x01PASS hunter2\r\n", 15));
+    QCOMPARE(errors.size(), 5);
+    const QString sohPass = errors.at(4).at(2).toString();
+    QVERIFY(sohPass.contains(QStringLiteral("invalid command")));
+    QVERIFY(sohPass.contains(QStringLiteral("PASS ***")));
+    QVERIFY(!sohPass.contains(QStringLiteral("hunter2")));
 }
 
 void SessionTest::overlongFrameLogsPreviewWithoutSecrets()
@@ -1232,6 +1246,18 @@ void SessionTest::serviceIdentifyIsRedactedInStatusEntries()
     QCOMPARE(keyedMode.text(), QStringLiteral("MODE #omarchy +k ***"));
     QVERIFY(!keyedMode.text().contains(QStringLiteral("s3cret")));
 
+    const IrcStatusEntry opThenKey = IrcStatusEntry::outgoing(
+        QStringLiteral("network-a"),
+        QByteArrayLiteral("MODE #omarchy +ok alice s3cret\r\n"));
+    QCOMPARE(opThenKey.text(), QStringLiteral("MODE #omarchy +ok alice ***"));
+    QVERIFY(!opThenKey.text().contains(QStringLiteral("s3cret")));
+
+    const IrcStatusEntry keyThenOp = IrcStatusEntry::outgoing(
+        QStringLiteral("network-a"),
+        QByteArrayLiteral("MODE #omarchy +ko s3cret alice\r\n"));
+    QCOMPARE(keyThenOp.text(), QStringLiteral("MODE #omarchy +ko *** alice"));
+    QVERIFY(!keyThenOp.text().contains(QStringLiteral("s3cret")));
+
     const IrcStatusEntry opMode = IrcStatusEntry::outgoing(
         QStringLiteral("network-a"), QByteArrayLiteral("MODE #omarchy +o alice\r\n"));
     QCOMPARE(opMode.text(), QStringLiteral("MODE #omarchy +o alice"));
@@ -1256,10 +1282,27 @@ void SessionTest::serviceIdentifyIsRedactedInStatusEntries()
     QCOMPARE(keyedModes.text(), QStringLiteral("#omarchy +k ***"));
     QVERIFY(!keyedModes.text().contains(QStringLiteral("s3cret")));
 
+    const IrcStatusEntry listedKeyLimit = IrcStatusEntry::incoming(
+        QStringLiteral("network-a"),
+        mustParse(":irc 324 omairc #omarchy +kl s3cret 40"));
+    QCOMPARE(listedKeyLimit.text(), QStringLiteral("#omarchy +kl *** 40"));
+    QVERIFY(!listedKeyLimit.text().contains(QStringLiteral("s3cret")));
+
+    const IrcStatusEntry listedLimitKey = IrcStatusEntry::incoming(
+        QStringLiteral("network-a"),
+        mustParse(":irc 324 omairc #omarchy +lk 40 s3cret"));
+    QCOMPARE(listedLimitKey.text(), QStringLiteral("#omarchy +lk 40 ***"));
+    QVERIFY(!listedLimitKey.text().contains(QStringLiteral("s3cret")));
+
     const IrcStatusEntry listedModes = IrcStatusEntry::incoming(
         QStringLiteral("network-a"),
         mustParse(":irc 324 omairc #omarchy +nt"));
     QCOMPARE(listedModes.text(), QStringLiteral("#omarchy +nt"));
+
+    const IrcStatusEntry extendedJoin = IrcStatusEntry::incoming(
+        QStringLiteral("network-a"),
+        mustParse(":alice!u@h JOIN #omarchy alice :Alice"));
+    QCOMPARE(extendedJoin.text(), QStringLiteral("#omarchy alice Alice"));
 }
 
 void SessionTest::channelTalkAboutServicesStaysReadable()

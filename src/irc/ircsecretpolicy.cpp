@@ -224,18 +224,49 @@ std::optional<IrcWireCommand> maskTailAfterParameters(const IrcWireCommand& comm
     return masked;
 }
 
+bool modeLetterConsumesParam(QChar letter, bool adding)
+{
+    if (letter == QLatin1Char('k') || letter == QLatin1Char('o')
+        || letter == QLatin1Char('v') || letter == QLatin1Char('h')
+        || letter == QLatin1Char('a') || letter == QLatin1Char('q')
+        || letter == QLatin1Char('b') || letter == QLatin1Char('e')
+        || letter == QLatin1Char('I')) {
+        return true;
+    }
+    return letter == QLatin1Char('l') && adding;
+}
+
 std::optional<IrcWireCommand> maskKeyedModeTail(const IrcWireCommand& command,
                                                 int visibleParameters)
 {
     if (visibleParameters < 2 || command.parameters.size() <= visibleParameters)
         return std::nullopt;
-    const int modeIndex = visibleParameters - 1;
-    // RFC channel key is 'k'; 'K' is a different letter and must stay visible.
-    if (!command.parameters.at(modeIndex).contains(QLatin1Char('k')))
-        return std::nullopt;
+    const QString modes = command.parameters.at(visibleParameters - 1);
     IrcWireCommand masked = command;
-    masked.parameters = command.parameters.mid(0, visibleParameters);
-    masked.parameters.append(QStringLiteral("***"));
+    bool adding = true;
+    bool maskedKey = false;
+    int argument = visibleParameters;
+    for (const QChar letter : modes) {
+        if (letter == QLatin1Char('+')) {
+            adding = true;
+            continue;
+        }
+        if (letter == QLatin1Char('-')) {
+            adding = false;
+            continue;
+        }
+        if (!modeLetterConsumesParam(letter, adding))
+            continue;
+        if (argument >= masked.parameters.size())
+            break;
+        if (letter == QLatin1Char('k')) {
+            masked.parameters[argument] = QStringLiteral("***");
+            maskedKey = true;
+        }
+        ++argument;
+    }
+    if (!maskedKey)
+        return std::nullopt;
     return masked;
 }
 
@@ -336,6 +367,8 @@ std::optional<IrcMaskedCommand> IrcSecretPolicy::redactMessage(const IrcMessage&
             return std::nullopt;
         if (!hasServiceTarget(ircWireText(message.parameters.front())))
             return std::nullopt;
+    } else if (verb == QLatin1String("JOIN")) {
+        return std::nullopt;
     } else if (int(message.parameters.size()) <= rule->visibleParameters) {
         return std::nullopt;
     }
