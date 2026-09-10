@@ -3208,6 +3208,7 @@ ApplicationWindow {
                             win.darkMode ? 0.23 : 0.16)
 
                         Text {
+                            objectName: "messageAvatarInitial"
                             anchors.centerIn: parent
                             text: win.initials(messageDelegate.author)
                             color: messageDelegate.replayed
