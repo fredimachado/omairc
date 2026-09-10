@@ -175,6 +175,7 @@ private slots:
     void echoMessageAckSkipsLocalPrivmsg();
     void echoMessageAbsentStillEchoesLocally();
     void echoMessageAckSkipsMsgEcho();
+    void msgEchoDoesNotOpenMissingDirect();
     void mentionArrivedOnSelectedBuffer();
     void chghostLeavesMemberNickAndRanks();
     void twoSessionsStartTogether();
@@ -2289,6 +2290,45 @@ void ControllerTest::echoMessageAckSkipsMsgEcho()
     QCOMPARE(messages->rowCount(), rowsBeforeMsg + 1);
     QCOMPARE(roleAt(messages, messages->rowCount() - 1, MessageListModel::BodyRole),
              QStringLiteral("later"));
+}
+
+void ControllerTest::msgEchoDoesNotOpenMissingDirect()
+{
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+                                                transport);
+    QVERIFY(session);
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    transport->completeConnect();
+    transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :echo-message\r\n"
+                          ":server CAP omairc ACK :echo-message\r\n"
+                          ":server 001 omairc :Welcome\r\n"
+                          ":omairc!u@h JOIN :#omarchy\r\n"));
+    QVERIFY(session->capabilities().contains(IrcCapability::EchoMessage));
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+
+    QVERIFY(controller.sendMessage(QStringLiteral("/msg lena hello")));
+    QCOMPARE(transport->writtenFrames().last(),
+             QByteArrayLiteral("PRIVMSG lena :hello\r\n"));
+    QCOMPARE(controller.selectedTarget(), QStringLiteral("#omarchy"));
+
+    transport->injectBytes(
+        QByteArrayLiteral(":omairc!u@h PRIVMSG lena :hello\r\n"));
+    QCOMPARE(controller.selectedTarget(), QStringLiteral("#omarchy"));
+
+    auto *conversations =
+        qobject_cast<QAbstractItemModel *>(controller.conversations());
+    QVERIFY(conversations);
+    QCOMPARE(rowForTarget(conversations, QStringLiteral("lena")), -1);
+
+    auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
+    QVERIFY(messages);
+    for (int row = 0; row < messages->rowCount(); ++row) {
+        QVERIFY(roleAt(messages, row, MessageListModel::BodyRole)
+                != QStringLiteral("hello"));
+    }
 }
 
 void ControllerTest::mentionArrivedOnSelectedBuffer()
