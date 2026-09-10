@@ -884,7 +884,10 @@ void SessionTest::malformedInputSurfacesProtocolError()
     QVERIFY(mangledModes.contains(QStringLiteral("+k ***")));
     QVERIFY(!mangledModes.contains(QStringLiteral("s3cret")));
 
-    fixture.transport->injectBytes(QByteArray("PRIVMSG nickserv :identif\0 my_nick s3cret\r\n", 43));
+    QByteArray splitIdentifyFrame = QByteArrayLiteral("PRIVMSG nickserv :identif");
+    splitIdentifyFrame.append('\0');
+    splitIdentifyFrame.append(QByteArrayLiteral(" my_nick s3cret\r\n"));
+    fixture.transport->injectBytes(splitIdentifyFrame);
     QCOMPARE(errors.size(), 10);
     const QString splitIdentify = errors.at(9).at(2).toString();
     QVERIFY(splitIdentify.contains(QStringLiteral("invalid character")));
@@ -1479,6 +1482,12 @@ void SessionTest::serviceIdentifyIsRedactedInStatusEntries()
         QByteArrayLiteral("MODE #omarchy +fk 10 s3cret\r\n"));
     QCOMPARE(unknownThenKey.text(), QStringLiteral("MODE #omarchy +fk ***"));
     QVERIFY(!unknownThenKey.text().contains(QStringLiteral("s3cret")));
+
+    const IrcStatusEntry adminThenKey = IrcStatusEntry::outgoing(
+        QStringLiteral("network-a"),
+        QByteArrayLiteral("MODE #omarchy +ak s3cret\r\n"));
+    QCOMPARE(adminThenKey.text(), QStringLiteral("MODE #omarchy +ak ***"));
+    QVERIFY(!adminThenKey.text().contains(QStringLiteral("s3cret")));
 
     const IrcStatusEntry opMode = IrcStatusEntry::outgoing(
         QStringLiteral("network-a"), QByteArrayLiteral("MODE #omarchy +o alice\r\n"));

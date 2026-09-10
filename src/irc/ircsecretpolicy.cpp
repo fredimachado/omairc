@@ -290,10 +290,7 @@ std::optional<IrcWireCommand> maskTailAfterParameters(const IrcWireCommand& comm
 bool modeLetterConsumesParam(QChar letter, bool adding)
 {
     if (letter == QLatin1Char('k') || letter == QLatin1Char('o')
-        || letter == QLatin1Char('v') || letter == QLatin1Char('h')
-        || letter == QLatin1Char('a') || letter == QLatin1Char('q')
-        || letter == QLatin1Char('b') || letter == QLatin1Char('e')
-        || letter == QLatin1Char('I')) {
+        || letter == QLatin1Char('v') || letter == QLatin1Char('b')) {
         return true;
     }
     return letter == QLatin1Char('l') && adding;
