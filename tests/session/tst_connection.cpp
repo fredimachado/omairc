@@ -31,6 +31,7 @@ private slots:
     void removeSelectedDropsSessionAndStore();
     void activateStartupStartsEveryMarkedProfile();
     void passwordsStayIsolatedPerNetwork();
+    void authenticationFailureDoesNotReplaceDirtyDraft();
 
 private:
     IrcConnection::TransportFactory capturingFactory();
@@ -316,6 +317,40 @@ void ConnectionTest::passwordsStayIsolatedPerNetwork()
 
     connection.select(IrcProfileStore().profiles().first().networkId);
     QVERIFY(connection.passwordSet());
+}
+
+void ConnectionTest::authenticationFailureDoesNotReplaceDirtyDraft()
+{
+    IrcController controller;
+    IrcConnection connection(controller, capturingFactory());
+    fillCompleteDraft(connection, QStringLiteral("irc.example"));
+    connection.setPassword(QStringLiteral("alpha-secret"));
+    QVERIFY(connection.apply());
+    const QString firstId = connection.selectedNetworkId();
+
+    QVERIFY(connection.add());
+    fillCompleteDraft(connection, QStringLiteral("irc.oftc.net"));
+    connection.setNick(QStringLiteral("oak"));
+    connection.setPassword(QStringLiteral("beta-secret"));
+    QVERIFY(connection.apply());
+
+    connection.select(firstId);
+    QCOMPARE(connection.selectedNetworkId(), firstId);
+    connection.setHost(QStringLiteral("irc.changed"));
+    QVERIFY(connection.dirty());
+    QVERIFY(!connection.focusPassword());
+
+    QCOMPARE(m_transports.size(), 2);
+    m_transports.at(1)->completeConnect();
+    m_transports.at(1)->injectBytes(
+        QByteArrayLiteral(":server CAP oak LS :sasl\r\n"
+                          ":server CAP oak ACK :sasl\r\n"
+                          ":server 904 oak :SASL failed\r\n"));
+
+    QCOMPARE(connection.selectedNetworkId(), firstId);
+    QCOMPARE(connection.host(), QStringLiteral("irc.changed"));
+    QVERIFY(connection.dirty());
+    QVERIFY(!connection.focusPassword());
 }
 
 int runConnectionTests(int argc, char **argv)

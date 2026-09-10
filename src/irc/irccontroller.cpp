@@ -245,6 +245,11 @@ QString IrcController::lastError() const
     return lastErrorForNetwork(identityNetworkId());
 }
 
+int IrcController::conversationEpoch() const
+{
+    return m_conversationEpoch;
+}
+
 QString IrcController::lastErrorForNetwork(const QString& networkId) const
 {
     return m_lastErrors.value(networkId);
@@ -1043,8 +1048,11 @@ void IrcController::apply(const IrcEvent& event)
 
 void IrcController::publish(const IrcViewNotify& notify)
 {
-    if (notify.conversations)
+    if (notify.conversations) {
         m_conversations.reload();
+        ++m_conversationEpoch;
+        emit conversationStateChanged();
+    }
     if (notify.messages)
         m_messages.reload();
     if (notify.members == IrcMemberSurface::Reset)

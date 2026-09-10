@@ -111,8 +111,11 @@ IrcConnection::IrcConnection(IrcController &controller,
             [this](const QString &networkId, IrcSession::ErrorKind kind, const QString &) {
         if (kind != IrcSession::ErrorKind::Authentication)
             return;
-        if (!networkId.isEmpty() && networkId != m_selectedNetworkId)
+        if (!networkId.isEmpty() && networkId != m_selectedNetworkId) {
+            if (dirty())
+                return;
             selectStored(networkId);
+        }
         if (m_focusPassword)
             return;
         m_focusPassword = true;

@@ -452,12 +452,9 @@ ApplicationWindow {
             });
             return;
         }
-        for (var index = 0; index < directConversations.count; ++index) {
-            if (directConversations.get(index).conversation === nick
-                    && directConversations.get(index).networkId === mockSelectedNetworkId) {
-                selectConversation(nick, mockSelectedNetworkId);
-                return;
-            }
+        if (mockDirectExists(nick, mockSelectedNetworkId)) {
+            selectConversation(nick, mockSelectedNetworkId);
+            return;
         }
 
         directConversations.append({
@@ -609,11 +606,26 @@ ApplicationWindow {
         return rows;
     }
 
+    function mockDirectExists(nick, networkId) {
+        if (networkId === mockOftcId && nick === "rio")
+            return true;
+        for (var index = 0; index < directConversations.count; ++index) {
+            if (directConversations.get(index).conversation === nick
+                    && directConversations.get(index).networkId === networkId)
+                return true;
+        }
+        return false;
+    }
+
     function sectionHasDirects(networkId) {
         if (!irc) {
             if (networkId === mockOftcId)
                 return true;
-            return directConversations.count > 0;
+            for (var mockIndex = 0; mockIndex < directConversations.count; ++mockIndex) {
+                if (directConversations.get(mockIndex).networkId === networkId)
+                    return true;
+            }
+            return false;
         }
         var model = irc.conversations;
         if (!model)
@@ -1314,6 +1326,11 @@ ApplicationWindow {
         }
     }
 
+    function clearConnectionPassword() {
+        connectionPassword.text = "";
+        connectionPasswordEdited = false;
+    }
+
     function submitConnection() {
         if (!connection)
             return;
@@ -1322,7 +1339,7 @@ ApplicationWindow {
         if (connection.apply() && !connection.setupRequired) {
             connectionSheetOpen = false;
             connectionRemoveArmed = false;
-            connectionPasswordEdited = false;
+            clearConnectionPassword();
         }
     }
 
@@ -1330,13 +1347,15 @@ ApplicationWindow {
         if (!connection)
             return;
         connection.select(networkId);
-        connectionPassword.text = "";
-        connectionPasswordEdited = false;
         connectionRemoveArmed = false;
     }
 
     Connections {
         target: win.connection
+        ignoreUnknownSignals: true
+        function onSelectedNetworkChanged() {
+            win.clearConnectionPassword();
+        }
         function onFocusPasswordChanged() {
             if (win.connection && win.connection.focusPassword) {
                 win.connectionSheetOpen = true;
@@ -1381,12 +1400,14 @@ ApplicationWindow {
                 : pulse;
         }
         readonly property int liveUnread: {
+            var epoch = win.irc ? win.irc.conversationEpoch : 0;
             var pulse = win.irc ? win.irc.connectionStatus : "";
             if (!win.irc)
                 return section.unread;
             return win.irc.unreadCountFor ? win.irc.unreadCountFor(section.networkId) : 0;
         }
         readonly property bool liveMention: {
+            var epoch = win.irc ? win.irc.conversationEpoch : 0;
             var pulse = win.irc ? win.irc.connectionStatus : "";
             if (!win.irc)
                 return section.mention;
@@ -1458,7 +1479,7 @@ ApplicationWindow {
                 Accessible.role: Accessible.Button
                 Accessible.onPressAction: {
                     if (win.connection)
-                        win.connection.select(section.networkId);
+                        win.selectSheetNetwork(section.networkId);
                     win.connectionSheetOpen = true;
                 }
 
@@ -1477,7 +1498,7 @@ ApplicationWindow {
                     cursorShape: Qt.PointingHandCursor
                     onClicked: {
                         if (win.connection)
-                            win.connection.select(section.networkId);
+                            win.selectSheetNetwork(section.networkId);
                         win.connectionSheetOpen = true;
                     }
                 }
@@ -1507,6 +1528,8 @@ ApplicationWindow {
 
                     Rectangle {
                         id: unreadMark
+                        objectName: section.preserveLegacyNames ? "networkUnreadMark"
+                                                                : "networkUnreadMark-" + section.networkId
                         visible: section.liveUnread > 0 || section.liveMention
                         anchors.verticalCenter: parent.verticalCenter
                         width: win.scaledSize(7)
@@ -2386,8 +2409,11 @@ ApplicationWindow {
 
                             Item {
                                 width: parent.width
-                                height: win.sectionHasDirects(liveNet.networkId)
-                                    ? win.scaledSize(36) : 0
+                                height: {
+                                    var epoch = win.irc ? win.irc.conversationEpoch : 0;
+                                    return win.sectionHasDirects(liveNet.networkId)
+                                        ? win.scaledSize(36) : 0;
+                                }
                                 visible: height > 0
                                 Text {
                                     anchors.left: parent.left
@@ -2596,6 +2622,8 @@ ApplicationWindow {
                                 unread: directUnread
                                 mention: directMention
                                 direct: true
+                                visible: networkId === win.mockOmarchyId
+                                height: visible ? win.scaledSize(36) : 0
                             }
                         }
                     }
@@ -2676,6 +2704,24 @@ ApplicationWindow {
                             unread: 0
                             mention: false
                             direct: true
+                        }
+
+                        Repeater {
+                            objectName: "directConversationRepeater-mock-oftc"
+                            model: win.irc ? null : directConversations
+                            delegate: ConversationRow {
+                                required property string conversation
+                                required property string networkId
+                                required property int directUnread
+                                required property bool directMention
+                                width: sidebar.width
+                                conversationName: conversation
+                                unread: directUnread
+                                mention: directMention
+                                direct: true
+                                visible: networkId === win.mockOftcId
+                                height: visible ? win.scaledSize(36) : 0
+                            }
                         }
                     }
                 }

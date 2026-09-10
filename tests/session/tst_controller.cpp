@@ -182,6 +182,7 @@ private slots:
     void statusJoinUsesConsoleNetwork();
     void selectConversationByIdUsesCompositeKey();
     void forgetNetworkDropsGhostRowsAndLog();
+    void backgroundChatBumpsConversationEpoch();
 };
 
 void ControllerTest::reducesTrafficAndRoutesOutboundByNetwork()
@@ -2486,6 +2487,38 @@ void ControllerTest::forgetNetworkDropsGhostRowsAndLog()
     QCOMPARE(controller.selectedTarget(), QString());
     QVERIFY(!logContains(controller.console()->lines(),
                          QStringLiteral("Looking up your hostname")));
+}
+
+void ControllerTest::backgroundChatBumpsConversationEpoch()
+{
+    IrcController controller;
+    auto *transportA = new FakeIrcTransport;
+    auto *transportB = new FakeIrcTransport;
+    QVERIFY(controller.addSession(config(QStringLiteral("network-a")), transportA));
+    QVERIFY(controller.addSession(config(QStringLiteral("network-b")), transportB));
+    QVERIFY(controller.start(QStringLiteral("network-a")));
+    registerSession(controller.session(QStringLiteral("network-a")), transportA);
+    transportA->injectBytes(QByteArrayLiteral(":omairc!u@h JOIN :#alpha\r\n"));
+    controller.selectConversation(QStringLiteral("network-a"), QStringLiteral("#alpha"));
+
+    QVERIFY(controller.start(QStringLiteral("network-b")));
+    registerSession(controller.session(QStringLiteral("network-b")), transportB);
+    transportB->injectBytes(
+        QByteArrayLiteral(":omairc!u@h JOIN :#lab\r\n"
+                          ":server 353 omairc = #lab :@omairc\r\n"
+                          ":server 366 omairc #lab :End of NAMES\r\n"));
+
+    const int epoch = controller.conversationEpoch();
+    QCOMPARE(controller.unreadCountFor(QStringLiteral("network-b")), 0);
+    QSignalSpy spy(&controller, &IrcController::conversationStateChanged);
+
+    transportB->injectBytes(
+        QByteArrayLiteral(":zed!u@h PRIVMSG #lab :ping\r\n"));
+
+    QVERIFY(controller.conversationEpoch() > epoch);
+    QVERIFY(spy.count() >= 1);
+    QCOMPARE(controller.unreadCountFor(QStringLiteral("network-b")), 1);
+    QVERIFY(!controller.mentionFor(QStringLiteral("network-b")));
 }
 
 int runControllerTests(int argc, char **argv)

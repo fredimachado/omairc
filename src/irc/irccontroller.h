@@ -32,6 +32,7 @@ class IrcController : public QObject
     Q_PROPERTY(int peopleCount READ peopleCount NOTIFY selectionChanged)
     Q_PROPERTY(QString connectionStatus READ connectionStatus NOTIFY statusChanged)
     Q_PROPERTY(QString lastError READ lastError NOTIFY statusChanged)
+    Q_PROPERTY(int conversationEpoch READ conversationEpoch NOTIFY conversationStateChanged)
     Q_PROPERTY(QString currentNick READ currentNick NOTIFY selectionChanged)
     Q_PROPERTY(bool selfAway READ selfAway NOTIFY selfAwayChanged)
     Q_PROPERTY(bool hasAwayPresence READ hasAwayPresence NOTIFY capabilitiesChanged)
@@ -62,6 +63,7 @@ public:
     int peopleCount() const;
     QString connectionStatus() const;
     QString lastError() const;
+    int conversationEpoch() const;
     QString lastErrorForNetwork(const QString& networkId) const;
     Q_INVOKABLE QString lastErrorFor(const QString& networkId) const;
     Q_INVOKABLE QString connectionStatusFor(const QString& networkId) const;
@@ -97,6 +99,7 @@ public:
 signals:
     void selectionChanged();
     void statusChanged();
+    void conversationStateChanged();
     void selfAwayChanged();
 
     void capabilitiesChanged();
@@ -169,6 +172,7 @@ private:
     QString m_selectedTarget;
     QStringList m_networkOrder;
     QString m_connectionStatus = QStringLiteral("Offline");
+    int m_conversationEpoch = 0;
     QTimer m_typingRefresh;
     QString m_composerDraft;
     QString m_typingTarget;

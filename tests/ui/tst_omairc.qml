@@ -185,6 +185,8 @@ TestCase {
         property int peopleCount: 1
         property string connectionStatus: "Connected"
         property string lastError: ""
+        property int conversationEpoch: 0
+        property var unreadSink: [0, false]
         property bool hasAwayPresence: true
         property bool hasMemberStatus: true
         property bool hasTyping: false
@@ -205,11 +207,11 @@ TestCase {
         }
 
         function unreadCountFor(networkId) {
-            return 0;
+            return unreadSink[0];
         }
 
         function mentionFor(networkId) {
-            return false;
+            return unreadSink[1];
         }
 
         function openStatus(networkId) {
@@ -266,6 +268,7 @@ TestCase {
         property int peopleCount: 1
         property string connectionStatus: "Connected"
         property string lastError: ""
+        property int conversationEpoch: 0
         property string currentNick: ""
         property bool selfAway: false
         property bool hasAwayPresence: true
@@ -350,6 +353,7 @@ TestCase {
         property int peopleCount: 1
         property string connectionStatus: "Connected"
         property string lastError: ""
+        property int conversationEpoch: 0
         property bool hasAwayPresence: false
         property bool hasMemberStatus: false
         property bool hasTyping: false
@@ -418,6 +422,7 @@ TestCase {
         property int peopleCount: 3
         property string connectionStatus: "Connected"
         property string lastError: ""
+        property int conversationEpoch: 0
         property bool hasAwayPresence: true
         property bool hasMemberStatus: true
         property bool hasTyping: false
@@ -497,6 +502,8 @@ TestCase {
         property int passwordSetCalls: 0
         property string lastPassword: ""
 
+        signal selectedNetworkChanged()
+
         function setPassword(password) {
             passwordSetCalls += 1;
             lastPassword = password;
@@ -510,10 +517,19 @@ TestCase {
         }
 
         function select(networkId) {
+            if (dirty && networkId !== selectedNetworkId)
+                return;
+            if (selectedNetworkId === networkId) {
+                for (var same = 0; same < namedNetworks.count; ++same)
+                    namedNetworks.setProperty(same, "selected",
+                        namedNetworks.get(same).networkId === networkId);
+                return;
+            }
             selectedNetworkId = networkId;
             for (var row = 0; row < namedNetworks.count; ++row)
                 namedNetworks.setProperty(row, "selected",
                     namedNetworks.get(row).networkId === networkId);
+            selectedNetworkChanged();
         }
 
         function add() {
@@ -527,6 +543,7 @@ TestCase {
             });
             selectedNetworkId = "new-id";
             displayName = "New network";
+            selectedNetworkChanged();
             host = "";
             nick = "";
             return true;
@@ -714,6 +731,7 @@ TestCase {
         namedConnection.nick = "sheet-nick";
         namedConnection.passwordSetCalls = 0;
         namedConnection.lastPassword = "";
+        namedConnection.dirty = false;
     }
 
     function repeaterItemByName(repeater, objectName) {
@@ -2545,5 +2563,153 @@ TestCase {
         tryCompare(appWindow, "consoleVisible", true);
         compare(appWindow.title, "irc.oftc.net Status");
         compare(item("selfNickLabel").text, "oak");
+    }
+
+    function test_rejectedNetworkSelectKeepsPassword() {
+        restoreNamedConnection();
+        namedNetworks.append({
+            networkId: "oftc",
+            displayName: "irc.oftc.net",
+            stored: true,
+            selected: false
+        });
+        namedConnection.dirty = true;
+        var window = createTemporaryObject(fallbackWindowComponent, null);
+        verify(window !== null, "The rejected-select window should load");
+        tryCompare(window, "visible", true);
+        waitForRendering(window.contentItem);
+
+        keyClick(Qt.Key_Comma, Qt.ControlModifier);
+        var password = findChild(window, "connectionPassword");
+        verify(password !== null, "Could not find connectionPassword");
+        mouseClick(password);
+        keyClick(Qt.Key_S);
+        keyClick(Qt.Key_E);
+        keyClick(Qt.Key_C);
+        compare(window.connectionPasswordEdited, true);
+        compare(password.text, "sec");
+
+        var oftcChoice = repeaterItemByName(findChild(window, "networkChoiceRepeater"),
+                                            "networkChoice-oftc");
+        verify(oftcChoice !== null, "Could not find networkChoice-oftc");
+        mouseClick(oftcChoice);
+        compare(namedConnection.selectedNetworkId, "libera");
+        compare(password.text, "sec");
+        compare(window.connectionPasswordEdited, true);
+
+        mouseClick(findChild(window, "connectionApply"));
+        compare(namedConnection.passwordSetCalls, 1);
+        compare(namedConnection.lastPassword, "sec");
+        window.close();
+        restoreNamedConnection();
+    }
+
+    function test_networkSwitchClearsPendingPassword() {
+        restoreNamedConnection();
+        var window = createTemporaryObject(fallbackWindowComponent, null);
+        verify(window !== null, "The password-clear window should load");
+        tryCompare(window, "visible", true);
+        waitForRendering(window.contentItem);
+
+        keyClick(Qt.Key_Comma, Qt.ControlModifier);
+        var password = findChild(window, "connectionPassword");
+        mouseClick(password);
+        keyClick(Qt.Key_S);
+        keyClick(Qt.Key_E);
+        keyClick(Qt.Key_C);
+        compare(window.connectionPasswordEdited, true);
+
+        namedConnection.add();
+        waitForRendering(window.contentItem);
+        compare(namedConnection.selectedNetworkId, "new-id");
+        compare(password.text, "");
+        compare(window.connectionPasswordEdited, false);
+
+        mouseClick(findChild(window, "connectionApply"));
+        compare(namedConnection.passwordSetCalls, 0);
+        window.close();
+        restoreNamedConnection();
+    }
+
+    function test_openingRioDoesNotDuplicate() {
+        mouseClick(item("conversation-oftc-#lab"));
+        tryCompare(appWindow, "currentConversation", "#lab");
+        var members = item("membersList");
+        members.positionViewAtIndex(0, ListView.Contain);
+        wait(0);
+        var rio = members.itemAtIndex(0);
+        verify(rio !== null, "The rio member delegate should be rendered");
+        mouseClick(rio);
+        tryCompare(appWindow, "currentConversation", "rio");
+        compare(item("directConversationRepeater").count, 2);
+        compare(findChild(appWindow, "conversation-oftc-rio").conversationName, "rio");
+        var extras = item("directConversationRepeater-mock-oftc");
+        var extraRio = 0;
+        var extraIndex = 0;
+        for (extraIndex = 0; extraIndex < extras.count; ++extraIndex) {
+            if (extras.itemAt(extraIndex).visible
+                    && extras.itemAt(extraIndex).conversationName === "rio")
+                extraRio += 1;
+        }
+        compare(extraRio, 0);
+        mouseClick(item("conversation-#omarchy"));
+        tryCompare(appWindow, "currentConversationId", "mock-omarchy\n#omarchy");
+    }
+
+    function test_mockDirectStaysOnItsNetwork() {
+        mouseClick(item("conversation-oftc-#lab"));
+        tryCompare(appWindow, "currentConversationId", "mock-oftc\n#lab");
+        appWindow.openDirectMessage("kai");
+        tryCompare(appWindow, "currentConversation", "kai");
+        compare(appWindow.currentConversationId, "mock-oftc\nkai");
+        var omarchy = item("directConversationRepeater");
+        var shown = 0;
+        var index = 0;
+        for (index = 0; index < omarchy.count; ++index) {
+            if (omarchy.itemAt(index).visible
+                    && omarchy.itemAt(index).conversationName === "kai")
+                shown += 1;
+        }
+        compare(shown, 0);
+        var oftc = item("directConversationRepeater-mock-oftc");
+        var kai = 0;
+        for (index = 0; index < oftc.count; ++index) {
+            if (oftc.itemAt(index).visible
+                    && oftc.itemAt(index).conversationName === "kai")
+                kai += 1;
+        }
+        compare(kai, 1);
+        var model = omarchy.model;
+        var remove = model.count - 1;
+        for (; remove >= 0; --remove) {
+            if (model.get(remove).conversation === "kai")
+                model.remove(remove);
+        }
+        mouseClick(item("conversation-#omarchy"));
+        tryCompare(appWindow, "currentConversationId", "mock-omarchy\n#omarchy");
+    }
+
+    function test_liveUnreadFollowsConversationEpoch() {
+        liveIrc.unreadSink = [0, false];
+        liveIrc.conversationEpoch = 0;
+        var window = createTemporaryObject(liveWindowComponent, null);
+        verify(window !== null, "The live unread window should load");
+        tryCompare(window, "visible", true);
+        waitForRendering(window.contentItem);
+
+        var mark = findChild(window, "networkUnreadMark");
+        verify(mark !== null, "Could not find networkUnreadMark");
+        compare(mark.visible, false);
+
+        liveIrc.unreadSink[0] = 4;
+        liveIrc.unreadSink[1] = true;
+        waitForRendering(window.contentItem);
+        compare(mark.visible, false);
+
+        liveIrc.conversationEpoch = 1;
+        tryCompare(mark, "visible", true);
+        window.close();
+        liveIrc.unreadSink = [0, false];
+        liveIrc.conversationEpoch = 0;
     }
 }
