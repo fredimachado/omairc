@@ -2406,14 +2406,7 @@ void ControllerTest::statusMsgNickservIdentifyDoesNotOpenDirect()
     auto *conversations =
         qobject_cast<QAbstractItemModel *>(controller.conversations());
     QVERIFY(conversations);
-    const int nickservRow = rowForTarget(conversations, QStringLiteral("NickServ"));
-    if (nickservRow >= 0) {
-        controller.selectConversation(QStringLiteral("libera"), QStringLiteral("NickServ"));
-        auto *direct = qobject_cast<QAbstractItemModel *>(controller.messages());
-        QVERIFY(!selectedBodiesContain(direct, QStringLiteral("s3cret")));
-        QVERIFY(!selectedBodiesContain(direct, QStringLiteral("identify my_nick")));
-    }
-    QCOMPARE(nickservRow, -1);
+    QCOMPARE(rowForTarget(conversations, QStringLiteral("NickServ")), -1);
     QCOMPARE(rowForTarget(conversations, QStringLiteral("nickserv")), -1);
 
     controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
