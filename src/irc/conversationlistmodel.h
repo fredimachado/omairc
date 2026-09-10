@@ -52,6 +52,7 @@ public:
         NetworkIdRole,
         ConversationIdRole,
         ConversationNameRole,
+        TypingRole,
     };
 
     explicit ConversationListModel(IrcEventReducer& reducer,
@@ -62,6 +63,7 @@ public:
     QHash<int, QByteArray> roleNames() const override;
 
     void reload();
+    void invalidateTyping();
     void select(const IrcConversationKey& key);
     void setNetworkOrder(const QStringList& networkOrder);
 

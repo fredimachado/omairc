@@ -1,5 +1,7 @@
 #include <QAbstractItemModel>
+#include <QList>
 #include <QObject>
+#include <QSignalSpy>
 #include <QTest>
 
 #include "conversationlistmodel.h"
@@ -68,6 +70,15 @@ QVariant roleAt(const QAbstractItemModel *model, int row, int role)
 {
     return model->data(model->index(row, 0), role);
 }
+
+int rowForTarget(const QAbstractItemModel *model, const QString& target)
+{
+    for (int row = 0; row < model->rowCount(); ++row) {
+        if (roleAt(model, row, ConversationListModel::ConversationRole) == target)
+            return row;
+    }
+    return -1;
+}
 }
 
 class TypingTest : public QObject
@@ -86,8 +97,10 @@ private slots:
     void reducerRemapsNickIncludingDirectMessage();
     void reducerMergesTypingWhenDirectMessageNicksCollide();
     void reducerHidesSelfAndSkipsMissingConversation();
+    void reducerDirectPeerIsTypingForExistingDirectOnly();
     void controllerNotifyComposerTextThrottles();
     void controllerDoesNotOpenConversationFromTypingOnly();
+    void controllerSidebarTypingForExistingDirect();
 };
 
 void TypingTest::publisherThrottlesPerTarget()
@@ -336,6 +349,49 @@ void TypingTest::reducerHidesSelfAndSkipsMissingConversation()
     QVERIFY(reducer.typingNicks(missing, t0).isEmpty());
 }
 
+void TypingTest::reducerDirectPeerIsTypingForExistingDirectOnly()
+{
+    IrcEventReducer reducer;
+    reducer.apply(IrcWelcomeEvent{network, QStringLiteral("omairc")});
+    reducer.apply(IrcJoinEvent{network, QStringLiteral("#omarchy"),
+                               QStringLiteral("omairc")});
+    const IrcConversationKey channel =
+        reducer.conversationKey(network, QStringLiteral("#omarchy"));
+    const IrcConversationKey aliceDm =
+        reducer.conversationKey(network, QStringLiteral("Alice"));
+    const IrcConversationKey ghost =
+        reducer.conversationKey(network, QStringLiteral("ghost"));
+    reducer.apply(IrcMessageEvent{aliceDm, QStringLiteral("Alice"),
+                                  QStringLiteral("hi"), t0, QStringLiteral("Alice")});
+
+    QVERIFY(!reducer.directPeerIsTyping(channel, t0));
+    QVERIFY(!reducer.directPeerIsTyping(aliceDm, t0));
+    QVERIFY(!reducer.directPeerIsTyping(ghost, t0));
+    QVERIFY(!reducer.find(ghost));
+
+    reducer.apply(IrcTypingEvent{aliceDm, QStringLiteral("alice"),
+                                 IrcTypingPhase::Active, t0});
+    reducer.apply(IrcTypingEvent{channel, QStringLiteral("alice"),
+                                 IrcTypingPhase::Active, t0});
+    reducer.apply(IrcTypingEvent{ghost, QStringLiteral("ghost"),
+                                 IrcTypingPhase::Active, t0});
+    QVERIFY(reducer.directPeerIsTyping(aliceDm, t0));
+    QVERIFY(!reducer.directPeerIsTyping(channel, t0));
+    QVERIFY(!reducer.directPeerIsTyping(ghost, t0));
+    QVERIFY(!reducer.find(ghost));
+
+    reducer.apply(IrcTypingEvent{aliceDm, QStringLiteral("Alice"),
+                                 IrcTypingPhase::Done, t0});
+    QVERIFY(!reducer.directPeerIsTyping(aliceDm, t0));
+
+    reducer.apply(IrcTypingEvent{aliceDm, QStringLiteral("Alice"),
+                                 IrcTypingPhase::Active, t0});
+    QVERIFY(reducer.directPeerIsTyping(aliceDm, t0));
+    reducer.apply(IrcMessageEvent{aliceDm, QStringLiteral("Alice"),
+                                  QStringLiteral("here"), t0, QStringLiteral("Alice")});
+    QVERIFY(!reducer.directPeerIsTyping(aliceDm, t0));
+}
+
 void TypingTest::controllerNotifyComposerTextThrottles()
 {
     IrcController controller;
@@ -440,6 +496,84 @@ void TypingTest::controllerDoesNotOpenConversationFromTypingOnly()
     transport->injectBytes(
         QByteArrayLiteral(":server CAP omairc DEL :message-tags\r\n"));
     QVERIFY(!controller.hasTyping());
+}
+
+void TypingTest::controllerSidebarTypingForExistingDirect()
+{
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    IrcSession *session = controller.addSession(sessionConfig(), transport);
+    QVERIFY(session);
+    QVERIFY(controller.start(network));
+    registerWithTags(session, transport);
+    transport->injectBytes(
+        QByteArrayLiteral(":omairc!u@h JOIN :#omarchy\r\n"
+                          ":alice!u@h JOIN :#omarchy\r\n"
+                          ":alice!u@h PRIVMSG omairc :hi\r\n"));
+    controller.selectConversation(network, QStringLiteral("#omarchy"));
+
+    auto *conversations =
+        qobject_cast<QAbstractItemModel *>(controller.conversations());
+    QVERIFY(conversations);
+    const int conversationCount = conversations->rowCount();
+    const int aliceRow = rowForTarget(conversations, QStringLiteral("alice"));
+    QVERIFY(aliceRow >= 0);
+    QCOMPARE(roleAt(conversations, aliceRow, ConversationListModel::TypingRole),
+             false);
+    QCOMPARE(controller.selectedTarget(), QStringLiteral("#omarchy"));
+
+    QSignalSpy changes(conversations, &QAbstractItemModel::dataChanged);
+    transport->injectBytes(
+        QByteArrayLiteral("@+typing=active :alice!u@h TAGMSG omairc\r\n"
+                          "@+typing=active :bob!u@h TAGMSG omairc\r\n"));
+    QCOMPARE(conversations->rowCount(), conversationCount);
+    QVERIFY(rowForTarget(conversations, QStringLiteral("bob")) < 0);
+    QCOMPARE(roleAt(conversations, aliceRow, ConversationListModel::TypingRole),
+             true);
+    QCOMPARE(roleAt(conversations,
+                    rowForTarget(conversations, QStringLiteral("#omarchy")),
+                    ConversationListModel::TypingRole),
+             false);
+    QVERIFY(!changes.isEmpty());
+    QCOMPARE(changes.last().at(2).value<QList<int>>(),
+             QList<int>{ConversationListModel::TypingRole});
+
+    transport->injectBytes(
+        QByteArrayLiteral("@+typing=done :alice!u@h TAGMSG omairc\r\n"));
+    QCOMPARE(roleAt(conversations, aliceRow, ConversationListModel::TypingRole),
+             false);
+
+    transport->injectBytes(
+        QByteArrayLiteral("@+typing=active :alice!u@h TAGMSG omairc\r\n"));
+    QCOMPARE(roleAt(conversations, aliceRow, ConversationListModel::TypingRole),
+             true);
+    transport->injectBytes(
+        QByteArrayLiteral(":alice!u@h PRIVMSG omairc :here\r\n"));
+    QCOMPARE(roleAt(conversations, aliceRow, ConversationListModel::TypingRole),
+             false);
+
+    transport->injectBytes(
+        QByteArrayLiteral("@+typing=active :alice!u@h TAGMSG omairc\r\n"));
+    QCOMPARE(roleAt(conversations, aliceRow, ConversationListModel::TypingRole),
+             true);
+    changes.clear();
+    transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc DEL :message-tags\r\n"));
+    QCOMPARE(roleAt(conversations, aliceRow, ConversationListModel::TypingRole),
+             false);
+    QVERIFY(!changes.isEmpty());
+    QCOMPARE(changes.last().at(2).value<QList<int>>(),
+             QList<int>{ConversationListModel::TypingRole});
+
+    registerWithTags(session, transport);
+    transport->injectBytes(
+        QByteArrayLiteral("@+typing=active :alice!u@h TAGMSG omairc\r\n"));
+    QCOMPARE(roleAt(conversations, aliceRow, ConversationListModel::TypingRole),
+             true);
+    QTRY_COMPARE_WITH_TIMEOUT(
+        roleAt(conversations, aliceRow, ConversationListModel::TypingRole),
+        QVariant(false),
+        7000);
 }
 
 int runTypingTests(int argc, char **argv)

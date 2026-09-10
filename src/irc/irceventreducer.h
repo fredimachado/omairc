@@ -120,6 +120,8 @@ public:
 
     QStringList typingNicks(const IrcConversationKey& key,
                             const QDateTime& now) const;
+    bool directPeerIsTyping(const IrcConversationKey& key,
+                            const QDateTime& now) const;
     void clearTypingFacts(const QString& networkId);
 
     void clearPresenceFacts(const QString& networkId, bool away, bool status);

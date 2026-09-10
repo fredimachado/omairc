@@ -115,7 +115,6 @@ ApplicationWindow {
     readonly property bool selfAway: irc ? irc.selfAway : false
     readonly property bool typingVisible: !irc || irc.hasTyping
     readonly property var typingNicks: irc ? irc.typingNicks : mockTypingNicks()
-    property int typingPulse: 0
     readonly property string selfNick: {
         if (irc) {
             var live = irc.currentNick
@@ -154,13 +153,6 @@ ApplicationWindow {
     Material.accent: accentColor
     color: pageColor
 
-    Timer {
-        interval: 320
-        repeat: true
-        running: win.typingVisible && win.typingNicks && win.typingNicks.length > 0
-        onTriggered: win.typingPulse = (win.typingPulse + 1) % 3
-    }
-
     component PlainUrlHit: MouseArea {
         required property Item edit
 
@@ -186,16 +178,24 @@ ApplicationWindow {
 
         property color ink: win.mutedColor
         property int pixelSize: win.scaledSize(12)
+        property int pulse: 0
 
         Accessible.ignored: true
         spacing: 0
+
+        Timer {
+            interval: 320
+            repeat: true
+            running: dots.visible
+            onTriggered: dots.pulse = (dots.pulse + 1) % 3
+        }
 
         Repeater {
             model: 3
             Text {
                 text: "."
                 color: dots.ink
-                opacity: win.typingPulse === index ? 1 : 0.28
+                opacity: dots.pulse === index ? 1 : 0.28
                 font.family: "iA Writer Mono S"
                 font.pixelSize: dots.pixelSize
             }
@@ -519,7 +519,8 @@ ApplicationWindow {
             conversation: nick,
             networkId: mockSelectedNetworkId,
             directUnread: 0,
-            directMention: false
+            directMention: false,
+            typing: false
         });
         selectConversation(nick, mockSelectedNetworkId);
     }
@@ -1659,6 +1660,7 @@ ApplicationWindow {
         property int unread: 0
         property bool mention: false
         property bool direct: false
+        property bool typing: false
         property string networkId: win.mockOmarchyId
         property string conversationId: networkId + "\n" + conversationName
 
@@ -1668,6 +1670,7 @@ ApplicationWindow {
                 ? "conversation-" + networkId + "-" + conversationName
                 : "conversation-" + conversationName)
         Accessible.name: conversationName
+        Accessible.description: typing ? "Typing" : ""
         Accessible.role: Accessible.Button
         Accessible.onPressAction: activate()
         width: parent ? parent.width : 0
@@ -1743,7 +1746,7 @@ ApplicationWindow {
         Text {
             anchors.left: parent.left
             anchors.leftMargin: conversationRow.direct ? win.scaledSize(49) : win.scaledSize(20)
-            anchors.right: unreadBadge.left
+            anchors.right: rowTrail.left
             anchors.rightMargin: win.scaledSize(8)
             anchors.verticalCenter: parent.verticalCenter
             text: (conversationRow.direct ? "" : "#  ") + conversationRow.conversationName.replace("#", "")
@@ -1757,25 +1760,55 @@ ApplicationWindow {
             font.pixelSize: win.scaledSize(13)
         }
 
-        Rectangle {
-            id: unreadBadge
-            visible: conversationRow.unread > 0
+        Item {
+            id: rowTrail
             anchors.right: parent.right
             anchors.rightMargin: win.scaledSize(17)
             anchors.verticalCenter: parent.verticalCenter
-            width: Math.max(win.scaledSize(19), badgeText.implicitWidth + win.scaledSize(10))
             height: win.scaledSize(19)
-            radius: height / 2
-            color: conversationRow.mention ? win.accentColor : win.raisedColor
+            width: {
+                var badge = unreadBadge.visible ? unreadBadge.width : 0;
+                var dots = rowTyping.visible ? rowTyping.implicitWidth : 0;
+                var gap = (badge > 0 && dots > 0) ? win.scaledSize(6) : 0;
+                return badge + dots + gap;
+            }
 
-            Text {
-                id: badgeText
-                anchors.centerIn: parent
-                text: conversationRow.unread
-                color: conversationRow.mention ? "#ffffff" : win.inkColor
-                font.family: "iA Writer Mono S"
-                font.bold: true
-                font.pixelSize: win.scaledSize(10)
+            TypingDots {
+                id: rowTyping
+                objectName: conversationRow.networkId === win.mockOftcId
+                    ? "conversation-typing-oftc-" + conversationRow.conversationName
+                    : (win.irc && conversationRow.networkId.length > 0 && win.connection
+                        ? "conversation-typing-" + conversationRow.networkId
+                            + "-" + conversationRow.conversationName
+                        : "conversation-typing-" + conversationRow.conversationName)
+                visible: conversationRow.visible
+                    && conversationRow.direct
+                    && conversationRow.typing
+                anchors.right: unreadBadge.visible ? unreadBadge.left : parent.right
+                anchors.rightMargin: unreadBadge.visible ? win.scaledSize(6) : 0
+                anchors.verticalCenter: parent.verticalCenter
+                pixelSize: win.scaledSize(12)
+            }
+
+            Rectangle {
+                id: unreadBadge
+                visible: conversationRow.unread > 0
+                anchors.right: parent.right
+                anchors.verticalCenter: parent.verticalCenter
+                width: Math.max(win.scaledSize(19), badgeText.implicitWidth + win.scaledSize(10))
+                height: win.scaledSize(19)
+                radius: height / 2
+                color: conversationRow.mention ? win.accentColor : win.raisedColor
+
+                Text {
+                    id: badgeText
+                    anchors.centerIn: parent
+                    text: conversationRow.unread
+                    color: conversationRow.mention ? "#ffffff" : win.inkColor
+                    font.family: "iA Writer Mono S"
+                    font.bold: true
+                    font.pixelSize: win.scaledSize(10)
+                }
             }
         }
 
@@ -2268,12 +2301,14 @@ ApplicationWindow {
             networkId: "mock-omarchy"
             directUnread: 1
             directMention: true
+            typing: true
         }
         ListElement {
             conversation: "dax"
             networkId: "mock-omarchy"
             directUnread: 0
             directMention: false
+            typing: false
         }
     }
 
@@ -2444,6 +2479,7 @@ ApplicationWindow {
 
                     Repeater {
                         id: liveNetworkRepeater
+                        objectName: "liveNetworkRepeater"
                         model: win.irc && win.connection ? win.connection.networks : null
 
                         Column {
@@ -2490,6 +2526,7 @@ ApplicationWindow {
                                     unread: model.unread
                                     mention: model.mention
                                     direct: model.direct
+                                    typing: model.typing
                                     networkId: model.networkId
                                     visible: !model.direct
                                         && model.networkId === liveNet.networkId
@@ -2532,6 +2569,7 @@ ApplicationWindow {
                                     unread: model.unread
                                     mention: model.mention
                                     direct: model.direct
+                                    typing: model.typing
                                     networkId: model.networkId
                                     visible: model.direct
                                         && model.networkId === liveNet.networkId
@@ -2579,6 +2617,7 @@ ApplicationWindow {
                                 unread: model.unread
                                 mention: model.mention
                                 direct: model.direct
+                                typing: model.typing
                                 networkId: model.networkId
                                 visible: !model.direct
                                 width: sidebar.width
@@ -2614,6 +2653,7 @@ ApplicationWindow {
                                 unread: model.unread
                                 mention: model.mention
                                 direct: model.direct
+                                typing: model.typing
                                 networkId: model.networkId
                                 visible: model.direct
                                 width: sidebar.width
@@ -2717,6 +2757,10 @@ ApplicationWindow {
                                 unread: directUnread
                                 mention: directMention
                                 direct: true
+                                typing: {
+                                    var row = directConversations.get(index);
+                                    return row ? row.typing : false;
+                                }
                                 visible: networkId === win.mockOmarchyId
                                 objectName: visible ? "conversation-" + conversation : ""
                                 height: visible ? win.scaledSize(36) : 0
@@ -2819,6 +2863,10 @@ ApplicationWindow {
                                 unread: directUnread
                                 mention: directMention
                                 direct: true
+                                typing: {
+                                    var row = directConversations.get(index);
+                                    return row ? row.typing : false;
+                                }
                                 visible: networkId === win.mockOftcId
                                 objectName: visible
                                     ? "conversation-oftc-" + conversation : ""
@@ -3294,6 +3342,7 @@ ApplicationWindow {
                 z: 1
 
                 TypingDots {
+                    visible: parent.visible
                     anchors.left: parent.left
                     anchors.verticalCenter: parent.verticalCenter
                     pixelSize: win.scaledSize(10)

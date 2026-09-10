@@ -261,6 +261,18 @@ QStringList IrcEventReducer::typingNicks(const IrcConversationKey& key,
     return nicks;
 }
 
+bool IrcEventReducer::directPeerIsTyping(const IrcConversationKey& key,
+                                         const QDateTime& now) const
+{
+    const IrcConversationState *conversation = find(key);
+    if (!conversation || conversation->isChannel())
+        return false;
+    const auto found = conversation->typing.find(key.normalizedTarget);
+    if (found == conversation->typing.end())
+        return false;
+    return ircIsTyping(found->second, now);
+}
+
 void IrcEventReducer::clearTypingFacts(const QString& networkId)
 {
     for (auto& entry : m_conversations) {
