@@ -73,7 +73,7 @@ QVariant MessageListModel::data(const QModelIndex& index, int role) const
     }
 }
 
-QHash<int, QByteArray> MessageListModel::roleNames() const
+QHash<int, QByteArray> MessageListModel::staticRoleNames()
 {
     return {
         {AuthorRole, "author"},
@@ -85,17 +85,25 @@ QHash<int, QByteArray> MessageListModel::roleNames() const
     };
 }
 
+QHash<int, QByteArray> MessageListModel::roleNames() const
+{
+    return staticRoleNames();
+}
+
 QString MessageListModel::field(int row, const QString& name) const
 {
-    const QByteArray key = name.toUtf8();
-    const QHash<int, QByteArray> names = roleNames();
-    for (auto it = names.cbegin(); it != names.cend(); ++it) {
-        if (it.value() != key)
-            continue;
-        const QVariant value = data(index(row, 0), it.key());
-        return value.isValid() ? value.toString() : QString{};
-    }
-    return {};
+    static const QHash<QString, int> roles = [] {
+        QHash<QString, int> byName;
+        const QHash<int, QByteArray> names = MessageListModel::staticRoleNames();
+        for (auto it = names.cbegin(); it != names.cend(); ++it)
+            byName.insert(QString::fromUtf8(it.value()), it.key());
+        return byName;
+    }();
+    const auto role = roles.constFind(name);
+    if (role == roles.cend())
+        return {};
+    const QVariant value = data(index(row, 0), role.value());
+    return value.isValid() ? value.toString() : QString{};
 }
 
 void MessageListModel::reload()

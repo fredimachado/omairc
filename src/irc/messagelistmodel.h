@@ -26,6 +26,8 @@ public:
         OriginRole,
     };
 
+    static QHash<int, QByteArray> staticRoleNames();
+
     explicit MessageListModel(IrcEventReducer& reducer, QObject *parent = nullptr);
 
     int rowCount(const QModelIndex& parent = QModelIndex()) const override;
