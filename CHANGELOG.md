@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `/ignore <nick>`, `/unignore <nick>`, and `/ignored`. Each network keeps its own list. Private messages, notices, and invites from those nicks stay off Status and do not open a direct message. Channel text stays visible. Clearing the network drops its list.
+
 ### Changed
 
 - A network drop keeps the session reconnecting with the existing backoff until `/quit` or Connect stops it. Status stays reconnecting.

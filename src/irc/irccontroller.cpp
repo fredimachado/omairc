@@ -3,6 +3,7 @@
 #include "ircchannelmode.h"
 #include "irccommand.h"
 #include "irceventtranslator.h"
+#include "ircignore.h"
 #include "ircjointarget.h"
 #include "ircviewnotify.h"
 #include "irctyping.h"
@@ -37,6 +38,19 @@ std::string utf8(const QString& value)
 {
     const QByteArray bytes = value.toUtf8();
     return std::string(bytes.constData(), std::size_t(bytes.size()));
+}
+
+bool ignoreNickIsUsable(const QString& nick, const IrcServerFeatures& features)
+{
+    if (nick.isEmpty())
+        return false;
+    if (features.isChannel(utf8(nick)))
+        return false;
+    if (nick.contains(QLatin1Char('!')) || nick.contains(QLatin1Char('@'))
+        || nick.contains(QLatin1Char('*')) || nick.contains(QLatin1Char(','))) {
+        return false;
+    }
+    return true;
 }
 
 QString stateText(IrcSession::State state)
@@ -99,6 +113,13 @@ IrcSession *IrcController::addSession(const IrcSessionConfig& config,
         return nullptr;
 
     m_currentNicks.insert(config.networkId, config.nick);
+    session->setIgnoreFilter(
+        [this, networkId = config.networkId](const IrcMessage& message,
+                                             const QString& selfNick) {
+            return ircIgnoreDropsInbound(
+                message, selfNick, m_ignores.nicks(networkId),
+                m_reducer.serverFeatures(networkId));
+        });
     connect(session, &IrcSession::registered, this,
             [this, session](const QString& networkId) {
         m_currentNicks[networkId] = session->nick();
@@ -150,6 +171,7 @@ void IrcController::forgetNetworkState(const QString &networkId)
     m_currentNicks.remove(networkId);
     m_capabilities.remove(networkId);
     m_lastErrors.remove(networkId);
+    m_ignores.forget(networkId);
     if (m_selected && m_selected->networkId == networkId)
         clearConversationSelection();
     reloadModels();
@@ -654,6 +676,12 @@ IrcCommandOutcome IrcController::dispatch(const IrcCommand& command,
     if (command.verb == IrcCommand::Verb::Topic)
         return setSelectedTopic(command.argument);
 
+    if (command.verb == IrcCommand::Verb::Ignore
+        || command.verb == IrcCommand::Verb::Unignore
+        || command.verb == IrcCommand::Verb::Ignored) {
+        return dispatchIgnore(command, surface);
+    }
+
     IrcSession *active = sessionFor(surface);
     if (!active) {
         if (surface == IrcComposerSurface::Conversation && !m_selected
@@ -769,6 +797,46 @@ IrcCommandOutcome IrcController::setSelectedTopic(const QString& topic)
     return session->setTopic(selectedTarget(), topic)
         ? IrcCommandOutcome::Sent
         : IrcCommandOutcome::Refused;
+}
+
+IrcCommandOutcome IrcController::dispatchIgnore(const IrcCommand& command,
+                                                IrcComposerSurface surface)
+{
+    const QString networkId = queryNetworkId(surface);
+    if (networkId.isEmpty()) {
+        if (surface == IrcComposerSurface::Conversation && !m_selected)
+            return IrcCommandOutcome::WrongScope;
+        return IrcCommandOutcome::Refused;
+    }
+
+    const IrcServerFeatures& features = m_reducer.serverFeatures(networkId);
+    const IrcCaseMapping& mapping = features.caseMapping();
+    QString text;
+    if (command.verb == IrcCommand::Verb::Ignored) {
+        if (!command.argument.isEmpty())
+            return IrcCommandOutcome::Refused;
+        const QStringList nicks = m_ignores.listed(networkId, mapping);
+        text = nicks.isEmpty()
+            ? QStringLiteral("Not ignoring anyone")
+            : QStringLiteral("Ignoring: %1").arg(nicks.join(QStringLiteral(", ")));
+    } else {
+        const QString nick = firstToken(command.argument);
+        if (!restAfterFirstToken(command.argument).isEmpty()
+            || !ignoreNickIsUsable(nick, features)) {
+            return IrcCommandOutcome::Refused;
+        }
+        if (command.verb == IrcCommand::Verb::Ignore) {
+            const bool added = m_ignores.add(networkId, nick, mapping);
+            text = added ? QStringLiteral("Ignoring %1").arg(nick)
+                         : QStringLiteral("Already ignoring %1").arg(nick);
+        } else {
+            const bool removed = m_ignores.remove(networkId, nick, mapping);
+            text = removed ? QStringLiteral("No longer ignoring %1").arg(nick)
+                           : QStringLiteral("Not ignoring %1").arg(nick);
+        }
+    }
+    m_console.record(IrcStatusEntry::outcome(networkId, text));
+    return IrcCommandOutcome::Sent;
 }
 
 IrcCommandOutcome IrcController::dispatchQuery(const IrcCommand& command,

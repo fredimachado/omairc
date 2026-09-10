@@ -2,6 +2,7 @@
 
 #include "conversationlistmodel.h"
 #include "irceventreducer.h"
+#include "ircignore.h"
 #include "ircsessionmanager.h"
 #include "ircstatusconsole.h"
 #include "memberlistmodel.h"
@@ -140,6 +141,8 @@ private:
                                    IrcComposerSurface surface);
     IrcCommandOutcome dispatchWhois(const IrcCommand& command,
                                     IrcComposerSurface surface);
+    IrcCommandOutcome dispatchIgnore(const IrcCommand& command,
+                                     IrcComposerSurface surface);
     void echoIfPresent(IrcSession *session,
                        const QString& target,
                        const QString& body,
@@ -161,6 +164,7 @@ private:
     IrcSessionManager m_sessions;
     IrcStatusConsole m_console;
     IrcEventReducer m_reducer;
+    IrcIgnoreStore m_ignores;
     ConversationListModel m_conversations;
     MessageListModel m_messages;
     MemberListModel m_members;

@@ -61,6 +61,12 @@ const QVector<IrcVerbSpec>& IrcVerbTable::all()
         {IrcCommand::Verb::Kick, QStringLiteral("kick"), {},
          QStringLiteral("/kick [channel] <nick> [reason]"), IrcVerbScope::Either,
          QStringLiteral("Kick applies to channels")},
+        {IrcCommand::Verb::Ignore, QStringLiteral("ignore"), {},
+         QStringLiteral("/ignore <nick>"), IrcVerbScope::Either, {}},
+        {IrcCommand::Verb::Unignore, QStringLiteral("unignore"), {},
+         QStringLiteral("/unignore <nick>"), IrcVerbScope::Either, {}},
+        {IrcCommand::Verb::Ignored, QStringLiteral("ignored"), {},
+         QStringLiteral("/ignored"), IrcVerbScope::Either, {}},
     };
     return rows;
 }

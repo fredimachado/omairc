@@ -5,7 +5,7 @@ Slash commands let a live session send catalog verbs from the same single-line c
 ## Sub-features
 
 - `slash-mock-chat` posts `/close`, `/away`, `/whois`, and the rest as a `fred` line on `--mock`.
-- `slash-live-dispatch` sends `/me`, `/join`, `/part`, `/nick`, `/quit`, `/clear`, `/close`, `/query`, `/msg`, `/topic`, `/notice`, `/away`, `/back`, `/whois`, `/mode`, and `/kick` when `irc` is bound. `/msg` sends without opening or selecting a DM. `/join` also matches `/j`, accepts comma-separated channels, and supports an optional key after whitespace. `/part` also matches `/leave`.
+- `slash-live-dispatch` sends `/me`, `/join`, `/part`, `/nick`, `/quit`, `/clear`, `/close`, `/query`, `/msg`, `/topic`, `/notice`, `/away`, `/back`, `/whois`, `/mode`, `/kick`, `/ignore`, `/unignore`, and `/ignored` when `irc` is bound. `/msg` sends without opening or selecting a DM. `/join` also matches `/j`, accepts comma-separated channels, and supports an optional key after whitespace. `/part` also matches `/leave`. `/ignore` hides private messages, notices, and invites from that nick. Channel text stays visible. `/ignored` lists the nicks on Status.
 - `slash-scope` keeps conversation-only verbs off Status (`/me`, `/close`, `/topic`) and refuses empty `/whois` on a channel.
 
 ## How to get to it (user POV)
@@ -24,7 +24,7 @@ Preconditions:
 
 - **Mock stays chat.** On `#omarchy`, run `control-omairc send --text "/close"`. Use the full verb. The last line is `fred` / `/close`. DIRECT MESSAGES still has `anna` and `dax`.
 - **Offscreen suite.** When Xvfb tools are missing, run `control-omairc doctor-qml` then `control-omairc qml-suite`. `test_typedCloseStaysChatLine` is that mock path. There is no compiled-window screenshot for live dispatch.
-- **Live catalog.** Do not claim `/away`, `/whois`, `/topic`, `/query`, `/msg`, `/notice`, `/part`, `/kick`, or `/close` on first-run Connect. It is `verified-unreachable` until a session has completed Connect. The attempted compiled route is `control-omairc launch` (title `irc.libera.chat Status`, Apply would start a real network).
+- **Live catalog.** Do not claim `/away`, `/whois`, `/topic`, `/query`, `/msg`, `/notice`, `/part`, `/kick`, `/close`, `/ignore`, `/unignore`, or `/ignored` on first-run Connect. It is `verified-unreachable` until a session has completed Connect. The attempted compiled route is `control-omairc launch` (title `irc.libera.chat Status`, Apply would start a real network).
 
 ## Gotchas
 
