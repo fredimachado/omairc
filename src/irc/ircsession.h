@@ -15,6 +15,7 @@
 #include "irccapabilitynegotiation.h"
 #include "irccasemapping.h"
 #include "ircframer.h"
+#include "irchistorybatch.h"
 #include "ircmessage.h"
 #include "ircstatusentry.h"
 #include "irctransport.h"
@@ -71,14 +72,6 @@ struct IrcSessionConfig
     int capabilityTimeoutMilliseconds = 10000;
     int pingTimeoutMilliseconds = 60000;
 };
-
-struct IrcHistoryBatch
-{
-    QString target;
-    std::vector<IrcMessage> lines;
-    bool truncated = false;
-};
-Q_DECLARE_METATYPE(IrcHistoryBatch)
 
 class IrcSession : public QObject
 {
@@ -186,12 +179,11 @@ private:
     void bumpHistoryGeneration(const QString& channel);
     int historyGeneration(const QString& channel) const;
     QString foldChannel(const QString& channel) const;
-    void applyIsupport(const IrcMessage& message);
     void ignoreBatch(const QString& reference);
     void clearHistoryPending(const QString& channel);
     bool nicksEqual(const QString& left, const QString& right) const;
-    bool swallowUnknownBatch(const QString& reference) const;
     bool isHistoryBatch(const QString& type, const QString& parent) const;
+    bool answersPendingHistory(const QString& channel) const;
     bool hasOpenCurrentHistoryBatch(const QString& channel) const;
     bool historyCapabilitiesEnabled() const;
     void abandonHistoryRequests();
@@ -252,10 +244,9 @@ private:
     QHash<QString, int> m_historyGeneration;
     QSet<QString> m_historyAsked;
     QHash<QString, int> m_historyPending;
-    bool m_ignoredBatchOverflow = false;
-    bool m_historySuspended = false;
     IrcCaseMapping m_caseMapping{IrcCaseMapping::Kind::Rfc1459};
     static constexpr int kHistoryLimit = 100;
+    int m_historyLimit = kHistoryLimit;
     static constexpr int kHistoryBufferCeiling = 256;
     static constexpr int kMaxOpenBatches = 16;
     static constexpr int kMaxIgnoredBatches = 32;
@@ -269,6 +260,7 @@ private:
     bool m_saslRequested = false;
     bool m_saslPending = false;
     bool m_capabilityNegotiationEnded = false;
+    bool m_capabilityListSeen = false;
     QString m_channelTypes;
     int m_reconnectAttempt = 0;
     quint32 m_reportedRetryErrors = 0;

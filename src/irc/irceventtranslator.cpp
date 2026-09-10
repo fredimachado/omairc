@@ -1,8 +1,8 @@
 #include "irceventtranslator.h"
 
+#include "irchistorybatch.h"
 #include "ircpresence.h"
 #include "ircservicenick.h"
-#include "ircsession.h"
 #include "irctcp.h"
 #include "irctyping.h"
 #include "ircwiretext.h"

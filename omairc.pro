@@ -49,6 +49,7 @@ HEADERS += \
     src/irc/ircjointarget.h \
     src/irc/ircslashcomplete.h \
     src/irc/ircstatusconsole.h \
+    src/irc/irchistorybatch.h \
     src/irc/ircsession.h \
     src/irc/ircsessionmanager.h \
     src/irc/conversationlistmodel.h \
