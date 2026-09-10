@@ -60,6 +60,7 @@ test "$dest_tree" = "$fresh_tree" || {
 expected="$(printf '%s\n' \
   usr/bin/omairc \
   usr/share/applications/omairc.desktop \
+  usr/share/bash-completion/completions/omairc \
   usr/share/icons/hicolor/scalable/apps/omairc.svg \
   usr/share/licenses/omairc/LICENSE \
   usr/share/licenses/omairc/COPYING-LGPL \
@@ -67,7 +68,7 @@ expected="$(printf '%s\n' \
 
 dest_files="$(rel_files "$dest")"
 test "$dest_files" = "$expected" || {
-  echo "dest files must be exactly the six packager paths" >&2
+  echo "dest files must be exactly the seven packager paths" >&2
   printf '%s\n' "$dest_files" >&2
   exit 1
 }
@@ -85,8 +86,8 @@ test "$sig" != "89504e47" || {
 }
 
 count="$(find "$dest" -type f | awk 'END { print NR }')"
-test "$count" = 6 || {
-  echo "dest file count must be 6" >&2
+test "$count" = 7 || {
+  echo "dest file count must be 7" >&2
   exit 1
 }
 

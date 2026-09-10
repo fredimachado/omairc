@@ -127,4 +127,8 @@ unix {
     license_lgpl.uninstall = \
         $(DEL_FILE) $(INSTALL_ROOT)$$license_lgpl.path/COPYING-LGPL
     INSTALLS += license_lgpl
+
+    bash_completion.path = $$PREFIX/share/bash-completion/completions
+    bash_completion.files = $$PWD/data/bash-completion/omairc
+    INSTALLS += bash_completion
 }

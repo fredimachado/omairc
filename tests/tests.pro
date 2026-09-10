@@ -60,6 +60,7 @@ SOURCES += \
     tst_main.cpp \
     tst_singleinstance.cpp \
     tst_omaircipc.cpp \
+    tst_omairccli.cpp \
     ../src/singleinstance.cpp \
     ../src/omaircipc.cpp \
     ../src/omaircipchandler.cpp \
