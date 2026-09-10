@@ -99,6 +99,7 @@ private slots:
     void controllerForgetsWithTheNetwork();
     void discardSessionKeepsTheList();
     void refusesBadNicks();
+    void offlineIgnoreIsNotConnected();
 
 private:
     QString settingsFile() const;
@@ -216,6 +217,15 @@ void IgnoreTest::filterDropsPrivateNoticeInviteAndKeepsChannel()
     QVERIFY(ircIgnoreDropsInbound(
         mustParse(":Nick[!u@h PRIVMSG omairc :hi"), QStringLiteral("omairc"),
         QStringList{QStringLiteral("nick{")}, features));
+    QVERIFY(ircIgnoreDropsInbound(
+        mustParse(":lena PRIVMSG omairc :hi"), QStringLiteral("omairc"), nicks,
+        features));
+    QVERIFY(ircIgnoreDropsInbound(
+        mustParse(":lena NOTICE omairc :psst"), QStringLiteral("omairc"), nicks,
+        features));
+    QVERIFY(!ircIgnoreDropsInbound(
+        mustParse(":irc.example.net PRIVMSG omairc :hi"), QStringLiteral("omairc"),
+        nicks, features));
 }
 
 void IgnoreTest::parseAndCatalog()
@@ -254,6 +264,7 @@ void IgnoreTest::controllerMutesPrivateTrafficAndListsOnStatus()
 
     transport->injectBytes(
         QByteArrayLiteral(":lena!u@h PRIVMSG omairc :secret\r\n"
+                          ":lena PRIVMSG omairc :bare\r\n"
                           ":lena!u@h NOTICE omairc :psst\r\n"
                           ":lena!u@h NOTICE #omarchy :heads up\r\n"
                           ":lena!u@h INVITE omairc :#spam\r\n"
@@ -268,6 +279,7 @@ void IgnoreTest::controllerMutesPrivateTrafficAndListsOnStatus()
     QVERIFY(rowForTarget(conversations, QStringLiteral("bob")) >= 0);
     QVERIFY(rowForTarget(conversations, QStringLiteral("#omarchy")) >= 0);
     QVERIFY(!logContains(controller.console()->lines(), QStringLiteral("secret")));
+    QVERIFY(!logContains(controller.console()->lines(), QStringLiteral("bare")));
     QVERIFY(!logContains(controller.console()->lines(), QStringLiteral("-lena-")));
     QVERIFY(!logContains(controller.console()->lines(), QStringLiteral("heads up")));
     QVERIFY(!logContains(controller.console()->lines(), QStringLiteral("#spam")));
@@ -359,6 +371,28 @@ void IgnoreTest::refusesBadNicks()
     QVERIFY(!controller.sendMessage(QStringLiteral("/ignore lena!u@h")));
     QVERIFY(!controller.sendMessage(QStringLiteral("/ignored extra")));
     QVERIFY(!controller.sendMessage(QStringLiteral("/unignore *")));
+}
+
+void IgnoreTest::offlineIgnoreIsNotConnected()
+{
+    IrcController controller;
+    QVERIFY(!controller.sendMessage(QStringLiteral("/ignore lena")));
+    QCOMPARE(controller.lastError(),
+             QStringLiteral("Select a connected conversation first"));
+    QVERIFY(!IrcIgnoreStore().contains(
+        QStringLiteral("libera"), QStringLiteral("lena"), IrcCaseMapping()));
+
+    controller.openStatus(QStringLiteral("libera"));
+    QVERIFY(controller.console()->submit(QStringLiteral("/ignore lena")));
+    QVERIFY(logContains(controller.console()->lines(), QStringLiteral("Not connected")));
+    QVERIFY(!IrcIgnoreStore().contains(
+        QStringLiteral("libera"), QStringLiteral("lena"), IrcCaseMapping()));
+
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    QVERIFY(!controller.sendMessage(QStringLiteral("/ignore lena")));
+    QCOMPARE(controller.lastError(), QStringLiteral("Not connected"));
+    QVERIFY(!IrcIgnoreStore().contains(
+        QStringLiteral("libera"), QStringLiteral("lena"), IrcCaseMapping()));
 }
 
 int runIgnoreTests(int argc, char **argv)

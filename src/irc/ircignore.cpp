@@ -22,7 +22,12 @@ QString prefixNick(const IrcMessage& message)
 {
     if (!message.prefix)
         return {};
-    return ircWireText(message.prefix->nick);
+    if (!message.prefix->nick.empty())
+        return ircWireText(message.prefix->nick);
+    const QString raw = ircWireText(message.prefix->raw);
+    if (raw.contains(QLatin1Char('.')))
+        return {};
+    return raw;
 }
 
 QString parameter(const IrcMessage& message, std::size_t index)

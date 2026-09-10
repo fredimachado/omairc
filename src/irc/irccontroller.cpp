@@ -808,6 +808,8 @@ IrcCommandOutcome IrcController::dispatchIgnore(const IrcCommand& command,
             return IrcCommandOutcome::WrongScope;
         return IrcCommandOutcome::Refused;
     }
+    if (!sessionFor(surface))
+        return IrcCommandOutcome::NotConnected;
 
     const IrcServerFeatures& features = m_reducer.serverFeatures(networkId);
     const IrcCaseMapping& mapping = features.caseMapping();
