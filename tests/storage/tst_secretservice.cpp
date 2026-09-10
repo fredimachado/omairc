@@ -9,7 +9,8 @@ class SecretServiceTest : public QObject
 private slots:
     void noBackendIsUnavailable();
     void notImplementedIsUnavailable();
-    void otherErrorsAreError();
+    void otherErrorIsUnavailable();
+    void accessDeniedIsError();
 };
 
 void SecretServiceTest::noBackendIsUnavailable()
@@ -24,13 +25,17 @@ void SecretServiceTest::notImplementedIsUnavailable()
              CredentialStore::State::Unavailable);
 }
 
-void SecretServiceTest::otherErrorsAreError()
+void SecretServiceTest::otherErrorIsUnavailable()
 {
     QCOMPARE(SecretServiceCredentialStore::stateForError(QKeychain::OtherError),
+             CredentialStore::State::Unavailable);
+}
+
+void SecretServiceTest::accessDeniedIsError()
+{
+    QCOMPARE(SecretServiceCredentialStore::stateForError(QKeychain::AccessDenied),
              CredentialStore::State::Error);
     QCOMPARE(SecretServiceCredentialStore::stateForError(QKeychain::EntryNotFound),
-             CredentialStore::State::Error);
-    QCOMPARE(SecretServiceCredentialStore::stateForError(QKeychain::AccessDenied),
              CredentialStore::State::Error);
 }
 

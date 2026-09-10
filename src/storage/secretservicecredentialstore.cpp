@@ -28,6 +28,7 @@ CredentialStore::State SecretServiceCredentialStore::stateForError(
 {
     return error == QKeychain::NoBackendAvailable
             || error == QKeychain::NotImplemented
+            || error == QKeychain::OtherError
         ? State::Unavailable
         : State::Error;
 }

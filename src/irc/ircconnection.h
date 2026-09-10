@@ -97,6 +97,8 @@ private:
     void processCredentialOperations();
     void rememberObsoleteKey(const CredentialKey &key);
     void flushObsoleteKeys(quint64 revision);
+    CredentialStore::State overlayState(CredentialStore::State backend) const;
+    void adoptBackendState(CredentialStore::State state, const QString &message);
     void queueCredentialWrite(const CredentialKey &key, const QString &password,
                               quint64 revision);
     void queueCredentialRemoval(const CredentialKey &key, quint64 revision);
@@ -138,6 +140,7 @@ private:
 
     QList<CredentialOperation> m_credentialOperations;
     QList<CredentialKey> m_obsoleteKeys;
+    CredentialStore::State m_backendState = CredentialStore::State::Missing;
     CredentialStore::State m_credentialState = CredentialStore::State::Missing;
     QString m_credentialError;
     QMetaObject::Connection m_startupActivationConnection;
