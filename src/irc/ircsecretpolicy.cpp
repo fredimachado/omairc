@@ -111,6 +111,67 @@ bool isServicePasswordCommand(const QString& word)
     return false;
 }
 
+QString alnumOnlyUpper(const QString& token)
+{
+    QString alnum;
+    alnum.reserve(token.size());
+    for (const QChar ch : token) {
+        if (ch >= QLatin1Char('A') && ch <= QLatin1Char('Z'))
+            alnum.append(ch);
+        else if (ch >= QLatin1Char('a') && ch <= QLatin1Char('z'))
+            alnum.append(ch.toUpper());
+        else if (ch >= QLatin1Char('0') && ch <= QLatin1Char('9'))
+            alnum.append(ch);
+    }
+    return alnum;
+}
+
+int letterDistance(const QString& left, const QString& right)
+{
+    const int rows = left.size();
+    const int cols = right.size();
+    if (rows == 0)
+        return cols;
+    if (cols == 0)
+        return rows;
+    std::vector<int> previous(std::size_t(cols + 1));
+    std::vector<int> current(std::size_t(cols + 1));
+    for (int column = 0; column <= cols; ++column)
+        previous[std::size_t(column)] = column;
+    for (int row = 1; row <= rows; ++row) {
+        current[0] = row;
+        for (int column = 1; column <= cols; ++column) {
+            const int cost = left.at(row - 1) == right.at(column - 1) ? 0 : 1;
+            current[std::size_t(column)] = std::min({current[std::size_t(column - 1)] + 1,
+                                                     previous[std::size_t(column)] + 1,
+                                                     previous[std::size_t(column - 1)] + cost});
+        }
+        previous.swap(current);
+    }
+    return previous[std::size_t(cols)];
+}
+
+QString nearestServicePassword(const QString& word)
+{
+    const QString alnum = alnumOnlyUpper(word);
+    if (alnum.size() < 4)
+        return {};
+    const char *best = nullptr;
+    int bestDistance = 2;
+    for (const char *command : kServicePasswordCommands) {
+        const int distance = letterDistance(alnum, QLatin1String(command));
+        if (distance < bestDistance) {
+            bestDistance = distance;
+            best = command;
+        } else if (distance == bestDistance) {
+            best = nullptr;
+        }
+    }
+    if (!best || bestDistance > 1)
+        return {};
+    return QLatin1String(best);
+}
+
 struct IrcWireCommand
 {
     QString verb;
@@ -343,9 +404,15 @@ QString matchedServiceCommand(const QStringList& tokens)
     const QString first = tokens.at(0).toUpper();
     if (isServicePasswordCommand(first))
         return first;
-    if (tokens.size() >= 3 && first == QLatin1String("SET")
-        && tokens.at(1).compare(QLatin1String("PASSWORD"), Qt::CaseInsensitive) == 0) {
-        return QStringLiteral("SET PASSWORD");
+    const QString near = nearestServicePassword(first);
+    if (!near.isEmpty())
+        return near;
+    if (tokens.size() >= 3 && first == QLatin1String("SET")) {
+        const QString second = alnumOnlyUpper(tokens.at(1));
+        if (second == QLatin1String("PASSWORD")
+            || letterDistance(second, QLatin1String("PASSWORD")) == 1) {
+            return QStringLiteral("SET PASSWORD");
+        }
     }
     return {};
 }
@@ -382,53 +449,15 @@ std::optional<IrcWireCommand> mask(const IrcWireCommand& command)
     return std::nullopt;
 }
 
-QString lettersOnlyUpper(const QString& token)
-{
-    QString letters;
-    letters.reserve(token.size());
-    for (const QChar ch : token) {
-        if (ch >= QLatin1Char('A') && ch <= QLatin1Char('Z'))
-            letters.append(ch);
-        else if (ch >= QLatin1Char('a') && ch <= QLatin1Char('z'))
-            letters.append(ch.toUpper());
-    }
-    return letters;
-}
-
-int letterDistance(const QString& left, const QString& right)
-{
-    const int rows = left.size();
-    const int cols = right.size();
-    if (rows == 0)
-        return cols;
-    if (cols == 0)
-        return rows;
-    std::vector<int> previous(std::size_t(cols + 1));
-    std::vector<int> current(std::size_t(cols + 1));
-    for (int column = 0; column <= cols; ++column)
-        previous[std::size_t(column)] = column;
-    for (int row = 1; row <= rows; ++row) {
-        current[0] = row;
-        for (int column = 1; column <= cols; ++column) {
-            const int cost = left.at(row - 1) == right.at(column - 1) ? 0 : 1;
-            current[std::size_t(column)] = std::min({current[std::size_t(column - 1)] + 1,
-                                                     previous[std::size_t(column)] + 1,
-                                                     previous[std::size_t(column - 1)] + cost});
-        }
-        previous.swap(current);
-    }
-    return previous[std::size_t(cols)];
-}
-
 const IrcSecretRule *nearestSecretRule(const QString& verb)
 {
-    const QString letters = lettersOnlyUpper(verb);
-    if (letters.size() < 3)
+    const QString alnum = alnumOnlyUpper(verb);
+    if (alnum.size() < 3)
         return nullptr;
     const IrcSecretRule *best = nullptr;
     int bestDistance = 2;
     for (const IrcSecretRule& row : kSecretMap) {
-        const int distance = letterDistance(letters, QLatin1String(row.verb));
+        const int distance = letterDistance(alnum, QLatin1String(row.verb));
         if (distance < bestDistance) {
             bestDistance = distance;
             best = &row;
@@ -436,7 +465,7 @@ const IrcSecretRule *nearestSecretRule(const QString& verb)
             best = nullptr;
         }
     }
-    if (bestDistance != 1)
+    if (!best || bestDistance > 1)
         return nullptr;
     return best;
 }

@@ -847,6 +847,27 @@ void SessionTest::malformedInputSurfacesProtocolError()
     QVERIFY(mangledPass.contains(QStringLiteral("invalid command")));
     QVERIFY(mangledPass.contains(QStringLiteral("PASS ***")));
     QVERIFY(!mangledPass.contains(QStringLiteral("hunter2")));
+
+    fixture.transport->injectBytes(QByteArrayLiteral("PA@SS hunter2\r\n"));
+    QCOMPARE(errors.size(), 8);
+    const QString punctPass = errors.at(7).at(2).toString();
+    QVERIFY(punctPass.contains(QStringLiteral("invalid command")));
+    QVERIFY(punctPass.contains(QStringLiteral("PASS ***")));
+    QVERIFY(!punctPass.contains(QStringLiteral("hunter2")));
+
+    fixture.transport->injectBytes(QByteArrayLiteral("32@4 omairc #omarchy +k s3cret\r\n"));
+    QCOMPARE(errors.size(), 9);
+    const QString mangledModes = errors.at(8).at(2).toString();
+    QVERIFY(mangledModes.contains(QStringLiteral("invalid command")));
+    QVERIFY(mangledModes.contains(QStringLiteral("+k ***")));
+    QVERIFY(!mangledModes.contains(QStringLiteral("s3cret")));
+
+    fixture.transport->injectBytes(QByteArray("PRIVMSG nickserv :identif\0 my_nick s3cret\r\n", 43));
+    QCOMPARE(errors.size(), 10);
+    const QString splitIdentify = errors.at(9).at(2).toString();
+    QVERIFY(splitIdentify.contains(QStringLiteral("invalid character")));
+    QVERIFY(splitIdentify.contains(QStringLiteral("IDENTIFY ***")));
+    QVERIFY(!splitIdentify.contains(QStringLiteral("s3cret")));
 }
 
 void SessionTest::overlongFrameLogsPreviewWithoutSecrets()
@@ -1230,6 +1251,24 @@ void SessionTest::serviceIdentifyIsRedactedInStatusEntries()
         QByteArrayLiteral("PRIVMSG nickserv : \x01identify my_nick s3cret\x01 \r\n"));
     QCOMPARE(identifyCtcpPadded.text(), QStringLiteral("PRIVMSG nickserv :IDENTIFY ***"));
     QVERIFY(!identifyCtcpPadded.text().contains(QStringLiteral("s3cret")));
+
+    const IrcStatusEntry identifTypo = IrcStatusEntry::outgoing(
+        QStringLiteral("network-a"),
+        QByteArrayLiteral("PRIVMSG nickserv :identif my_nick s3cret\r\n"));
+    QCOMPARE(identifTypo.text(), QStringLiteral("PRIVMSG nickserv :IDENTIFY ***"));
+    QVERIFY(!identifTypo.text().contains(QStringLiteral("s3cret")));
+
+    const IrcStatusEntry dashServ = IrcStatusEntry::outgoing(
+        QStringLiteral("network-a"),
+        QByteArrayLiteral("PRIVMSG -serv :identify my_nick s3cret\r\n"));
+    QCOMPARE(dashServ.text(), QStringLiteral("PRIVMSG -serv :IDENTIFY ***"));
+    QVERIFY(!dashServ.text().contains(QStringLiteral("s3cret")));
+
+    const IrcStatusEntry bracketServ = IrcStatusEntry::outgoing(
+        QStringLiteral("network-a"),
+        QByteArrayLiteral("PRIVMSG [serv :identify my_nick s3cret\r\n"));
+    QCOMPARE(bracketServ.text(), QStringLiteral("PRIVMSG [serv :IDENTIFY ***"));
+    QVERIFY(!bracketServ.text().contains(QStringLiteral("s3cret")));
 
     const IrcStatusEntry setPassword = IrcStatusEntry::outgoing(
         QStringLiteral("network-a"),
