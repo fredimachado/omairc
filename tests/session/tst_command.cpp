@@ -606,7 +606,7 @@ void CommandTest::catalogLookupAndScope()
     QCOMPARE(whois->name, QStringLiteral("whois"));
     QCOMPARE(whois->usage, QStringLiteral("/whois [nick]"));
     QCOMPARE(whois->scope, IrcVerbScope::Either);
-    QCOMPARE(whois->wrongScopeText, QStringLiteral("Whois applies to direct messages"));
+    QCOMPARE(whois->wrongScopeText, QStringLiteral("Name a nick"));
     QVERIFY(whois->aliases.isEmpty());
 
     const IrcVerbSpec *mode = IrcVerbTable::lookup(QStringLiteral("mode"));
@@ -755,7 +755,7 @@ void CommandTest::closeWrongScopeUsesCatalogSentence()
              QStringLiteral("Topic applies to channels"));
     const IrcCommand whois = IrcCommand::parse(QStringLiteral("/whois"));
     QCOMPARE(ircCommandOutcomeText(IrcCommandOutcome::WrongScope, whois),
-             QStringLiteral("Whois applies to direct messages"));
+             QStringLiteral("Name a nick"));
 }
 
 void CommandTest::conversationSendAndUnknown()
@@ -1015,7 +1015,7 @@ void CommandTest::whoisSendsAndDefaults()
     const int beforeChannelEmpty = transport->writtenFrames().size();
     QVERIFY(!controller.sendMessage(QStringLiteral("/whois")));
     QCOMPARE(controller.lastError(),
-             QStringLiteral("Whois applies to direct messages"));
+             QStringLiteral("Name a nick"));
     QCOMPARE(transport->writtenFrames().size(), beforeChannelEmpty);
     QVERIFY(!framesContain(transport->writtenFrames().mid(beforeChannelEmpty),
                            QByteArrayLiteral("WHOIS")));

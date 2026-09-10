@@ -170,6 +170,12 @@ struct IrcTypingEvent
     QDateTime receivedAt;
 };
 
+struct IrcWhoisTranscriptEvent
+{
+    IrcConversationKey destination;
+    QString formattedBody;
+};
+
 using IrcEvent = std::variant<
     IrcWelcomeEvent,
     IrcMessageEvent,
@@ -186,4 +192,5 @@ using IrcEvent = std::variant<
     IrcAwayEvent,
     IrcSelfAwayEvent,
     IrcMemberStatusEvent,
-    IrcTypingEvent>;
+    IrcTypingEvent,
+    IrcWhoisTranscriptEvent>;
