@@ -64,6 +64,19 @@ bool isNetworkNoticeTarget(const QString& target)
         || target.compare(QLatin1String("AUTH"), Qt::CaseInsensitive) == 0;
 }
 
+bool isServiceUser(const IrcMessage& message)
+{
+    if (!message.prefix)
+        return false;
+    if (ircWireText(message.prefix->nick)
+            .endsWith(QStringLiteral("serv"), Qt::CaseInsensitive)) {
+        return true;
+    }
+    const QString folded = ircWireText(message.prefix->host).toCaseFolded();
+    return folded == QLatin1String("services")
+        || folded.startsWith(QLatin1String("services."));
+}
+
 std::optional<IrcConversationKey> conversationFor(const QString& networkId,
                                                   const QString& target,
                                                   const IrcMessage& message,
@@ -72,7 +85,7 @@ std::optional<IrcConversationKey> conversationFor(const QString& networkId,
 {
     if (features.isChannel(utf8(target)))
         return key(networkId, target, features);
-    if (isNetworkNoticeTarget(target) || !hasUserPrefix(message))
+    if (isNetworkNoticeTarget(target) || !hasUserPrefix(message) || isServiceUser(message))
         return std::nullopt;
     const QString sender = author(message);
     if (sender.isEmpty())
