@@ -33,7 +33,9 @@ QString previewWire(std::string_view bytes, std::size_t byteCount)
     std::string sanitized;
     sanitized.reserve(bytes.size());
     for (unsigned char c : bytes) {
-        if (c == 0 || (c < 0x20 && c != '\t'))
+        if (c == 1)
+            sanitized.push_back(char(c));
+        else if (c == 0 || (c < 0x20 && c != '\t'))
             sanitized.push_back('?');
         else
             sanitized.push_back(char(c));
@@ -41,6 +43,7 @@ QString previewWire(std::string_view bytes, std::size_t byteCount)
     QString preview = ircWireText(sanitized);
     if (const auto safe = IrcSecretPolicy::redactWireLine(QStringView(preview)))
         preview = *safe;
+    preview.replace(QChar(1), QLatin1Char('?'));
     if (byteCount > bytes.size())
         preview += QChar(0x2026);
     return preview;

@@ -259,12 +259,26 @@ bool hasServiceTarget(QStringView targets)
 QStringList serviceBodyTokens(const QString& body)
 {
     QString normalized = body;
-    if (normalized.size() >= 2 && normalized.front() == QChar(1)
-        && normalized.back() == QChar(1)) {
-        normalized = normalized.mid(1, normalized.size() - 2);
-    }
+    if (!normalized.isEmpty() && normalized.front() == QChar(1))
+        normalized.remove(0, 1);
+    if (!normalized.isEmpty() && normalized.back() == QChar(1))
+        normalized.chop(1);
     normalized.replace(QLatin1Char('\t'), QLatin1Char(' '));
     return normalized.split(QLatin1Char(' '), Qt::SkipEmptyParts);
+}
+
+QString matchedServiceCommand(const QStringList& tokens)
+{
+    if (tokens.size() < 2)
+        return {};
+    const QString first = tokens.at(0).toUpper();
+    if (isServicePasswordCommand(first))
+        return first;
+    if (tokens.size() >= 3 && first == QLatin1String("SET")
+        && tokens.at(1).compare(QLatin1String("PASSWORD"), Qt::CaseInsensitive) == 0) {
+        return QStringLiteral("SET PASSWORD");
+    }
+    return {};
 }
 
 std::optional<IrcWireCommand> maskServiceRequestBody(const IrcWireCommand& command)
@@ -274,11 +288,8 @@ std::optional<IrcWireCommand> maskServiceRequestBody(const IrcWireCommand& comma
     if (!hasServiceTarget(command.parameters.at(0)))
         return std::nullopt;
     const QString body = command.parameters.mid(1).join(QLatin1Char(' '));
-    const QStringList tokens = serviceBodyTokens(body);
-    if (tokens.size() < 2)
-        return std::nullopt;
-    const QString word = tokens.at(0).toUpper();
-    if (!isServicePasswordCommand(word))
+    const QString word = matchedServiceCommand(serviceBodyTokens(body));
+    if (word.isEmpty())
         return std::nullopt;
     IrcWireCommand masked = command;
     masked.parameters = QStringList{command.parameters.at(0),

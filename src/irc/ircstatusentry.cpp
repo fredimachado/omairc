@@ -387,8 +387,15 @@ QString firstToken(QStringView line)
     const QStringView trimmed = line.trimmed();
     if (trimmed.isEmpty())
         return {};
-    const qsizetype space = trimmed.indexOf(QLatin1Char(' '));
-    return (space < 0 ? trimmed : trimmed.left(space)).toString().toUpper();
+    qsizetype end = trimmed.size();
+    for (qsizetype index = 0; index < trimmed.size(); ++index) {
+        const QChar ch = trimmed.at(index);
+        if (ch == QLatin1Char(' ') || ch == QLatin1Char('\t')) {
+            end = index;
+            break;
+        }
+    }
+    return trimmed.left(end).toString().toUpper();
 }
 }
 
