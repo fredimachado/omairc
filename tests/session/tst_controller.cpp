@@ -9,6 +9,28 @@
 #include "messagelistmodel.h"
 #include "networklogmodel.h"
 
+class FakeReconnectTimer : public IrcReconnectTimer
+{
+public:
+    using IrcReconnectTimer::IrcReconnectTimer;
+
+    void start(int delayMilliseconds) override
+    {
+        active = true;
+        delays.append(delayMilliseconds);
+    }
+
+    void cancel() override
+    {
+        active = false;
+        ++cancelCount;
+    }
+
+    QList<int> delays;
+    bool active = false;
+    int cancelCount = 0;
+};
+
 namespace
 {
 IrcSessionConfig config(const QString& networkId)
@@ -193,6 +215,7 @@ private slots:
     void chghostLeavesMemberNickAndRanks();
     void twoSessionsStartTogether();
     void startingBackgroundNetworkDoesNotStealStatus();
+    void quitWhileReconnecting();
     void statusJoinUsesConsoleNetwork();
     void implicitStatusPartStaysOnFocusedNetwork();
     void implicitStatusKickStaysOnFocusedNetwork();
@@ -2536,6 +2559,29 @@ void ControllerTest::startingBackgroundNetworkDoesNotStealStatus()
     QVERIFY(controller.console()->isOpen());
     QCOMPARE(controller.selectedTarget(), QStringLiteral("#chan"));
     QCOMPARE(controller.selectedNetworkId(), QStringLiteral("network-a"));
+}
+
+void ControllerTest::quitWhileReconnecting()
+{
+    IrcController controller;
+    IrcSessionConfig sessionConfig = config(QStringLiteral("libera"));
+    sessionConfig.reconnectEnabled = true;
+    auto *transport = new FakeIrcTransport;
+    auto *timer = new FakeReconnectTimer;
+    IrcSession *session = controller.addSession(sessionConfig, transport, timer);
+    QVERIFY(session);
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    registerSession(session, transport);
+    transport->injectBytes(QByteArrayLiteral(":omairc!u@h JOIN :#omarchy\r\n"));
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+
+    transport->remoteClose();
+    QCOMPARE(session->state(), IrcSession::State::Reconnecting);
+    QVERIFY(timer->active);
+
+    QVERIFY(controller.sendMessage(QStringLiteral("/quit")));
+    QCOMPARE(session->state(), IrcSession::State::Idle);
+    QVERIFY(!timer->active);
 }
 
 void ControllerTest::statusJoinUsesConsoleNetwork()

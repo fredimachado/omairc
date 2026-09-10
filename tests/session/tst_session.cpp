@@ -4,6 +4,7 @@
 #include <QSignalSpy>
 #include <QTest>
 
+#include <optional>
 #include <string>
 #include <string_view>
 
@@ -81,13 +82,18 @@ IrcSessionConfig config(const QString &networkId = QStringLiteral("network-a"))
     value.autojoinChannels = {QStringLiteral("#omarchy"), QStringLiteral("&local")};
     value.reconnectBaseDelayMilliseconds = 250;
     value.reconnectMaximumDelayMilliseconds = 1000;
-    value.reconnectMaximumAttempts = 3;
     return value;
 }
 
+struct FixtureOptions
+{
+    std::optional<int> stopAfterScheduledReconnects;
+};
+
 struct Fixture
 {
-    explicit Fixture(IrcSessionConfig sessionConfig = config())
+    explicit Fixture(IrcSessionConfig sessionConfig = config(),
+                     FixtureOptions options = {})
         : transport(new FakeIrcTransport)
         , timer(new FakeReconnectTimer)
         , capabilityTimer(new FakeReconnectTimer)
@@ -96,6 +102,15 @@ struct Fixture
         , session(new IrcSession(sessionConfig, transport, timer, capabilityTimer,
                                  nullptr, pingTimer, reachability))
     {
+        if (!options.stopAfterScheduledReconnects
+            || *options.stopAfterScheduledReconnects <= 0)
+            return;
+        const int limit = *options.stopAfterScheduledReconnects;
+        QObject::connect(session, &IrcSession::reconnectScheduled, session,
+                         [this, limit] {
+            if (++scheduledReconnects >= limit)
+                session->stop();
+        });
     }
 
     ~Fixture()
@@ -128,6 +143,7 @@ struct Fixture
     FakeReconnectTimer *pingTimer;
     FakeReachabilitySource *reachability;
     IrcSession *session;
+    int scheduledReconnects = 0;
 };
 
 IrcMessage mustParse(std::string_view line)
@@ -174,6 +190,9 @@ private slots:
     void overlongFrameLogsPreviewWithoutSecrets();
     void reconnectCanBeCancelled();
     void reconnectDelayIsBoundedExponential();
+    void reconnectKeepsRetryingUntilStop();
+    void quitStopsReconnectWait();
+    void retryableNetworkErrorIsEmittedOnceUntilWelcome();
     void authenticationFailureIsExplicit();
     void destructionWhileConnectingIsSafe();
     void managerStartsTwoLiveNetworks();
@@ -778,7 +797,7 @@ void SessionTest::reachabilityIgnoredUnlessReconnecting()
              IrcTransport::ConnectionState::Encrypted);
 
     fixture.transport->remoteClose();
-    fixture.session->cancelReconnect();
+    fixture.session->stop();
     fixture.reachability->becomeReachable();
 
     QCOMPARE(fixture.session->state(), IrcSession::State::Idle);
@@ -840,7 +859,7 @@ void SessionTest::reconnectCanBeCancelled()
     fixture.transport->remoteClose();
     QVERIFY(fixture.timer->active);
 
-    fixture.session->cancelReconnect();
+    fixture.session->stop();
     QCOMPARE(fixture.session->state(), IrcSession::State::Idle);
     QVERIFY(!fixture.timer->active);
     const int connectCount = fixture.timer->delays.size();
@@ -852,7 +871,7 @@ void SessionTest::reconnectCanBeCancelled()
 
 void SessionTest::reconnectDelayIsBoundedExponential()
 {
-    Fixture fixture;
+    Fixture fixture(config(), FixtureOptions{3});
     fixture.connectTls();
     fixture.transport->remoteClose();
     QCOMPARE(fixture.timer->delays, QList<int>{250});
@@ -868,11 +887,86 @@ void SessionTest::reconnectDelayIsBoundedExponential()
     fixture.transport->completeConnect();
     fixture.transport->remoteClose();
     QCOMPARE(fixture.timer->delays, QList<int>({250, 500, 1000}));
+    QCOMPARE(fixture.session->state(), IrcSession::State::Idle);
+    QVERIFY(!fixture.timer->active);
+}
+
+void SessionTest::reconnectKeepsRetryingUntilStop()
+{
+    Fixture fixture;
+    fixture.connectTls();
+    fixture.transport->remoteClose();
 
     fixture.timer->fire();
     fixture.transport->completeConnect();
     fixture.transport->remoteClose();
-    QCOMPARE(fixture.session->state(), IrcSession::State::Failed);
+
+    fixture.timer->fire();
+    fixture.transport->completeConnect();
+    fixture.transport->remoteClose();
+
+    fixture.timer->fire();
+    fixture.transport->completeConnect();
+    fixture.transport->remoteClose();
+
+    QCOMPARE(fixture.session->state(), IrcSession::State::Reconnecting);
+    QVERIFY(fixture.timer->delays.size() > 3);
+    QCOMPARE(fixture.timer->delays.last(), 1000);
+
+    fixture.session->stop();
+    QCOMPARE(fixture.session->state(), IrcSession::State::Idle);
+    QVERIFY(!fixture.timer->active);
+}
+
+void SessionTest::quitStopsReconnectWait()
+{
+    Fixture fixture;
+    fixture.connectTls();
+    fixture.transport->remoteClose();
+    QCOMPARE(fixture.session->state(), IrcSession::State::Reconnecting);
+    QVERIFY(fixture.timer->active);
+
+    QVERIFY(fixture.session->quit());
+    QCOMPARE(fixture.session->state(), IrcSession::State::Idle);
+    QVERIFY(!fixture.timer->active);
+    const int connectCount = fixture.transport->writtenFrames().size();
+    fixture.timer->fire();
+    QCOMPARE(fixture.session->state(), IrcSession::State::Idle);
+    QCOMPARE(fixture.transport->writtenFrames().size(), connectCount);
+    QCOMPARE(fixture.transport->connectionState(),
+             IrcTransport::ConnectionState::Disconnected);
+}
+
+void SessionTest::retryableNetworkErrorIsEmittedOnceUntilWelcome()
+{
+    Fixture fixture;
+    QSignalSpy errors(fixture.session, &IrcSession::errorOccurred);
+    fixture.connectTls();
+    fixture.transport->remoteClose();
+
+    fixture.timer->fire();
+    fixture.transport->completeConnect();
+    fixture.transport->remoteClose();
+
+    fixture.timer->fire();
+    fixture.transport->completeConnect();
+    fixture.transport->remoteClose();
+
+    QCOMPARE(errors.size(), 1);
+    QCOMPARE(qvariant_cast<IrcSession::ErrorKind>(errors.at(0).at(1)),
+             IrcSession::ErrorKind::Network);
+
+    fixture.timer->fire();
+    fixture.transport->completeConnect();
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
+                          ":server 001 omairc :Welcome\r\n"));
+    QCOMPARE(fixture.session->state(), IrcSession::State::Registered);
+
+    fixture.transport->remoteClose();
+    QCOMPARE(errors.size(), 2);
+    QCOMPARE(qvariant_cast<IrcSession::ErrorKind>(errors.at(1).at(1)),
+             IrcSession::ErrorKind::Network);
 }
 
 void SessionTest::authenticationFailureIsExplicit()
