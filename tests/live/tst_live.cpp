@@ -452,7 +452,10 @@ void LiveIrcdTest::chatHistoryOnJoin()
     QVERIFY(peer.waitRegistered());
     QVERIFY(peer.join(channel));
     peer.writeLine(QStringLiteral("PRIVMSG %1 :%2").arg(channel, seed));
-    QTest::qWait(250);
+    // The server answers in the order it received, so its PONG proves the seed
+    // above is already in the channel's history.
+    peer.writeLine(QStringLiteral("PING :history-seed"));
+    QVERIFY(peer.waitForCommand(QStringLiteral("PONG")));
 
     LiveClient client(*daemon, uniqueNick(daemon->nickLength), tls);
     QVERIFY(client.waitRegistered());

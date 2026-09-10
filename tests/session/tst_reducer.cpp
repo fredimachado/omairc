@@ -82,6 +82,7 @@ private slots:
     void historyDoesNotMarkUnreadOrMention();
     void msgidDedupSkipsLiveThenReplay();
     void msgidDedupSkipsReplayThenLive();
+    void nickMergeDropsDuplicateMsgids();
     void partThenJoinSplicesAboveThisJoin();
     void historicJoinInBatchDoesNotChangePeopleCount();
     void historyAfterPartDoesNotSplice();
@@ -1126,6 +1127,37 @@ void ReducerTest::msgidDedupSkipsReplayThenLive()
     QCOMPARE(conversation->messages[0].body, QStringLiteral("first"));
     QCOMPARE(conversation->messages[0].origin, IrcOrigin::Replay);
     QCOMPARE(conversation->messages[1].body, QStringLiteral("omairc joined"));
+}
+
+void ReducerTest::nickMergeDropsDuplicateMsgids()
+{
+    IrcEventReducer reducer;
+    welcome(reducer, networkA);
+    const IrcConversationKey alice =
+        reducer.conversationKey(networkA, QStringLiteral("Alice"));
+    const IrcConversationKey alicia =
+        reducer.conversationKey(networkA, QStringLiteral("Alicia"));
+    reducer.apply(IrcMessageEvent{
+        alice, QStringLiteral("Alice"), QStringLiteral("shared"), timestamp,
+        QStringLiteral("Alice"), IrcMsgId{QStringLiteral("same")}});
+    reducer.apply(IrcMessageEvent{
+        alicia, QStringLiteral("Alicia"), QStringLiteral("shared"), timestamp,
+        QStringLiteral("Alicia"), IrcMsgId{QStringLiteral("same")}});
+    reducer.apply(IrcMessageEvent{
+        alicia, QStringLiteral("Alicia"), QStringLiteral("only here"), timestamp,
+        QStringLiteral("Alicia")});
+
+    reducer.apply(IrcNickEvent{
+        networkA, QStringLiteral("Alice"), QStringLiteral("Alicia")});
+
+    const IrcConversationState *merged = reducer.find(alicia);
+    QVERIFY(merged);
+    QStringList bodies;
+    for (const IrcReducedMessage& message : merged->messages)
+        bodies.append(message.body);
+    QCOMPARE(bodies,
+             QStringList({QStringLiteral("shared"), QStringLiteral("only here"),
+                          QStringLiteral("Alice is now Alicia")}));
 }
 
 void ReducerTest::partThenJoinSplicesAboveThisJoin()
