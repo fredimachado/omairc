@@ -29,7 +29,8 @@ $SUDO apt-get update -y
 # (Xvfb/xauth/xdotool/imagemagick) used by bin/test-desktop, and python venv
 # tooling for aqtinstall.
 $SUDO apt-get install -y --no-install-recommends \
-  build-essential ca-certificates \
+  build-essential ca-certificates git \
+  cmake ninja-build pkg-config libsecret-1-dev libdbus-1-dev \
   python3 python3-venv python3-pip \
   libgl1-mesa-dev libegl1-mesa-dev \
   libfontconfig1 libxkbcommon0 libxkbcommon-x11-0 libdbus-1-3 \
@@ -80,10 +81,20 @@ esac
 EOF
 $SUDO chmod +x /usr/local/bin/magick
 
-log "Building Omairc to validate the toolchain"
+log "Installing QtKeychain against ${QT_ROOT} (if missing)"
 # shellcheck disable=SC1090
 . "${PROFILE_SCRIPT}"
 ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
+if [ ! -f "${QT_ROOT}/mkspecs/modules/qt_Qt6Keychain.pri" ]; then
+  if [ ! -w "${QT_ROOT}" ]; then
+    $SUDO chown -R "$(id -u):$(id -g)" "${QT_ROOT}"
+  fi
+  "${ROOT}/bin/install-qtkeychain" "${QT_ROOT}"
+else
+  echo "QtKeychain already present at ${QT_ROOT}"
+fi
+
+log "Building Omairc to validate the toolchain"
 "${ROOT}/bin/build"
 
 log "Setup complete"
