@@ -18,6 +18,7 @@ private slots:
     void secondWriteAppends();
     void defaultPathUsesXdgStateHome();
     void constructWithoutWriteLeavesPathMissing();
+    void writeTightensExistingWorldReadableFile();
 
 private:
     std::unique_ptr<QTemporaryDir> m_dir;
@@ -93,6 +94,37 @@ void OmaircFileLogTest::constructWithoutWriteLeavesPathMissing()
         QCOMPARE(log.path(), path);
     }
     QVERIFY(!QFileInfo::exists(path));
+}
+
+void OmaircFileLogTest::writeTightensExistingWorldReadableFile()
+{
+    m_dir = std::make_unique<QTemporaryDir>();
+    QVERIFY(m_dir->isValid());
+    const QString path = m_dir->filePath(QStringLiteral("omairc.log"));
+    QFile seed(path);
+    QVERIFY(seed.open(QIODevice::WriteOnly | QIODevice::Text));
+    QVERIFY(seed.write("old\n") == 4);
+    seed.close();
+    QVERIFY(QFile::setPermissions(
+        path,
+        QFileDevice::ReadOwner | QFileDevice::WriteOwner
+            | QFileDevice::ReadGroup | QFileDevice::ReadOther));
+
+    OmaircFileLog log(path);
+    DiagnosticRecord record;
+    record.when = QDateTime::fromString(
+        QStringLiteral("2026-09-10T04:29:00.000Z"), Qt::ISODateWithMs);
+    record.severity = DiagnosticSeverity::Warning;
+    record.text = QStringLiteral("tightened");
+    log.write(record);
+
+    const QFileDevice::Permissions bits = QFileInfo(path).permissions();
+    QVERIFY(bits & QFileDevice::ReadOwner);
+    QVERIFY(bits & QFileDevice::WriteOwner);
+    QVERIFY(!(bits & QFileDevice::ReadGroup));
+    QVERIFY(!(bits & QFileDevice::ReadOther));
+    QVERIFY(!(bits & QFileDevice::WriteGroup));
+    QVERIFY(!(bits & QFileDevice::WriteOther));
 }
 
 int runOmaircFileLogTests(int argc, char **argv)

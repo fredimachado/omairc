@@ -5,11 +5,14 @@
 #include <QFileInfo>
 #include <QMutex>
 #include <QMutexLocker>
+#include <QReadWriteLock>
 #include <QStandardPaths>
 
 namespace {
 
-OmaircFileLog *g_installed = nullptr;
+QReadWriteLock g_handlerLock;
+OmaircFileLog *g_occupant = nullptr;
+QString g_path;
 QtMessageHandler g_previous = nullptr;
 QMutex g_writeMutex;
 thread_local bool t_inWrite = false;
@@ -38,12 +41,11 @@ bool appendLine(const QString &path, const QByteArray &line)
     if (!QDir().mkpath(dir))
         return false;
 
-    const bool created = !QFileInfo::exists(path);
     QFile file(path);
     if (!file.open(QIODevice::WriteOnly | QIODevice::Append))
         return false;
-    if (created)
-        file.setPermissions(QFileDevice::ReadOwner | QFileDevice::WriteOwner);
+    if (!file.setPermissions(QFileDevice::ReadOwner | QFileDevice::WriteOwner))
+        return false;
     return file.write(line) == line.size();
 }
 
@@ -68,13 +70,26 @@ bool recordFromQt(QtMsgType type, const QString &message, DiagnosticRecord *out)
 
 void qtHandler(QtMsgType type, const QMessageLogContext &context, const QString &message)
 {
-    if (g_installed) {
-        DiagnosticRecord record;
-        if (recordFromQt(type, message, &record))
-            g_installed->write(record);
+    QString path;
+    QtMessageHandler previous = nullptr;
+    {
+        QReadLocker locker(&g_handlerLock);
+        path = g_path;
+        previous = g_previous;
     }
-    if (g_previous)
-        g_previous(type, context, message);
+    if (!path.isEmpty() && !t_inWrite) {
+        DiagnosticRecord record;
+        if (recordFromQt(type, message, &record)) {
+            t_inWrite = true;
+            {
+                QMutexLocker locker(&g_writeMutex);
+                appendLine(path, formatLine(record));
+            }
+            t_inWrite = false;
+        }
+    }
+    if (previous)
+        previous(type, context, message);
 }
 
 }
@@ -122,19 +137,25 @@ void OmaircFileLog::write(const DiagnosticRecord &record)
 
 void OmaircFileLog::install()
 {
-    if (g_installed == this)
+    QWriteLocker locker(&g_handlerLock);
+    if (g_occupant)
         return;
-    if (g_installed)
-        return;
+    g_path = m_path;
     g_previous = qInstallMessageHandler(qtHandler);
-    g_installed = this;
+    g_occupant = this;
 }
 
 void OmaircFileLog::uninstall()
 {
-    if (g_installed != this)
-        return;
-    qInstallMessageHandler(g_previous);
-    g_installed = nullptr;
-    g_previous = nullptr;
+    QtMessageHandler previous = nullptr;
+    {
+        QWriteLocker locker(&g_handlerLock);
+        if (g_occupant != this)
+            return;
+        previous = g_previous;
+        g_occupant = nullptr;
+        g_previous = nullptr;
+        g_path.clear();
+    }
+    qInstallMessageHandler(previous);
 }
