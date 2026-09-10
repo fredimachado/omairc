@@ -7,7 +7,6 @@
 #include <QIcon>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
-#include <QQmlError>
 #include <QQuickStyle>
 #include <QUrl>
 #include <QWindow>
@@ -20,6 +19,7 @@
 #include "irc/irccontroller.h"
 #include "irc/ircslashcomplete.h"
 #include "omairccli.h"
+#include "omaircfilelog.h"
 #include "omaircipchandler.h"
 #include "singleinstance.h"
 #include "systemtheme.h"
@@ -85,6 +85,9 @@ int main(int argc, char *argv[]) {
     if (guardProcess && !instance.acquireOrNotify())
         return 0;
 
+    OmaircFileLog appLog;
+    appLog.install();
+
     QFontDatabase::addApplicationFont(QStringLiteral(":/fonts/iAWriterMonoS-Regular.ttf"));
     QFontDatabase::addApplicationFont(QStringLiteral(":/fonts/iAWriterMonoS-Bold.ttf"));
 
@@ -123,11 +126,6 @@ int main(int argc, char *argv[]) {
     });
 
     QQmlApplicationEngine engine;
-    QObject::connect(&engine, &QQmlApplicationEngine::warnings, &app,
-                     [](const QList<QQmlError> &warnings) {
-        for (const QQmlError &warning : warnings)
-            qWarning().noquote() << warning.toString();
-    });
 
     bool pendingRaise = false;
     OmaircIpcHandler ipcHandler(ircController);

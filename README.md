@@ -15,7 +15,8 @@ TLS is on by default. Omairc does not connect on its own by default. Enable
 Connect automatically on startup for each session that you want on launch.
 
 Omairc remembers host, port, TLS, nick, username, real name, and autojoin in
-`$XDG_CONFIG_HOME/omairc/`. Connect automatically on startup is off by
+`$XDG_CONFIG_HOME/omairc/`. Errors and warnings go to
+`$XDG_STATE_HOME/omairc/omairc.log`. Connect automatically on startup is off by
 default and can be enabled in the Connect sheet. Omairc does not write
 passwords to disk. Enter each password again after you restart Omairc.
 Press `Ctrl+,` or click `edit` beside a network name to reopen the sheet.

@@ -186,12 +186,15 @@ bool LiveUiWorld::open()
     const QString config = root + QLatin1String("/config");
     const QString cache = root + QLatin1String("/cache");
     const QString data = root + QLatin1String("/data");
+    const QString state = root + QLatin1String("/state");
     QDir().mkpath(config);
     QDir().mkpath(cache);
     QDir().mkpath(data);
+    QDir().mkpath(state);
     qputenv("XDG_CONFIG_HOME", config.toUtf8());
     qputenv("XDG_CACHE_HOME", cache.toUtf8());
     qputenv("XDG_DATA_HOME", data.toUtf8());
+    qputenv("XDG_STATE_HOME", state.toUtf8());
     QSettings::setPath(QSettings::NativeFormat, QSettings::UserScope, config);
 
     if (!writeProfiles())

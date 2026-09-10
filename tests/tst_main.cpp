@@ -19,6 +19,7 @@ int runQtIrcTransportIntegrationTests(int argc, char **argv);
 int runSingleInstanceTests(int argc, char **argv);
 int runOmaircIpcTests(int argc, char **argv);
 int runOmaircCliTests(int argc, char **argv);
+int runOmaircFileLogTests(int argc, char **argv);
 
 int main(int argc, char **argv)
 {
@@ -45,6 +46,7 @@ int main(int argc, char **argv)
     const int singleInstanceStatus = runSingleInstanceTests(argc, argv);
     const int ipcStatus = runOmaircIpcTests(argc, argv);
     const int cliStatus = runOmaircCliTests(argc, argv);
+    const int fileLogStatus = runOmaircFileLogTests(argc, argv);
     const int statuses[] = {
         protocolStatus,
         caseMappingStatus,
@@ -63,6 +65,7 @@ int main(int argc, char **argv)
         singleInstanceStatus,
         ipcStatus,
         cliStatus,
+        fileLogStatus,
     };
     for (const int status : statuses) {
         if (status != 0)

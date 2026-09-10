@@ -187,6 +187,7 @@ cmd_launch() {
   export XDG_CONFIG_HOME="$STATE_DIR/config"
   export XDG_CACHE_HOME="$STATE_DIR/cache"
   export XDG_DATA_HOME="$STATE_DIR/data"
+  export XDG_STATE_HOME="$STATE_DIR/state"
   export DBUS_SESSION_BUS_ADDRESS="unix:path=$STATE_DIR/no-session-bus"
   export QT_QPA_PLATFORM=xcb
   if [ "$MOCK" = 1 ]; then
