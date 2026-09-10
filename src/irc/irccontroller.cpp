@@ -677,21 +677,15 @@ IrcCommandOutcome IrcController::dispatch(const IrcCommand& command,
     case IrcCommand::Verb::Part: {
         QString channel = firstToken(command.argument);
         if (channel.isEmpty()) {
-            IrcSession *selected = selectedSession();
-            if (m_selected && selected
-                && selected->state() != IrcSession::State::Registered)
-                return IrcCommandOutcome::NotConnected;
-            if (m_selected && !isChannel())
+            if (!m_selected || !isChannel())
                 return IrcCommandOutcome::WrongScope;
-            if (!selected)
-                break;
-            if (selected->state() != IrcSession::State::Registered)
-                return IrcCommandOutcome::NotConnected;
+            if (m_selected->networkId != queryNetworkId(surface))
+                return IrcCommandOutcome::Refused;
             channel = selectedTarget();
-            sent = !channel.isEmpty() && selected->part(channel);
+            sent = !channel.isEmpty() && active->part(channel);
             break;
         }
-        sent = !channel.isEmpty() && active->part(channel);
+        sent = active->part(channel);
         break;
     }
     case IrcCommand::Verb::Kick: {
@@ -707,19 +701,13 @@ IrcCommandOutcome IrcController::dispatch(const IrcCommand& command,
             sent = active->kick(first, nick, restAfterFirstToken(afterChannel));
             break;
         }
-        IrcSession *selected = selectedSession();
-        if (m_selected && selected
-            && selected->state() != IrcSession::State::Registered)
-            return IrcCommandOutcome::NotConnected;
-        if (m_selected && !isChannel())
+        if (!m_selected || !isChannel())
             return IrcCommandOutcome::WrongScope;
-        if (!selected)
-            break;
-        if (selected->state() != IrcSession::State::Registered)
-            return IrcCommandOutcome::NotConnected;
+        if (m_selected->networkId != networkId)
+            return IrcCommandOutcome::Refused;
         const QString channel = selectedTarget();
         sent = !channel.isEmpty()
-            && selected->kick(channel, first, restAfterFirstToken(command.argument));
+            && active->kick(channel, first, restAfterFirstToken(command.argument));
         break;
     }
     case IrcCommand::Verb::Nick:

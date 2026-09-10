@@ -180,6 +180,8 @@ private slots:
     void twoSessionsStartTogether();
     void startingBackgroundNetworkDoesNotStealStatus();
     void statusJoinUsesConsoleNetwork();
+    void implicitStatusPartStaysOnFocusedNetwork();
+    void implicitStatusKickStaysOnFocusedNetwork();
     void selectConversationByIdUsesCompositeKey();
     void forgetNetworkDropsGhostRowsAndLog();
     void backgroundChatBumpsConversationEpoch();
@@ -2431,6 +2433,54 @@ void ControllerTest::statusJoinUsesConsoleNetwork()
              QByteArrayLiteral("JOIN #lab\r\n"));
     QVERIFY(!framesContain(transportA->writtenFrames(),
                            QByteArrayLiteral("JOIN #lab")));
+}
+
+void ControllerTest::implicitStatusPartStaysOnFocusedNetwork()
+{
+    IrcController controller;
+    auto *transportA = new FakeIrcTransport;
+    auto *transportB = new FakeIrcTransport;
+    QVERIFY(controller.addSession(config(QStringLiteral("network-a")), transportA));
+    QVERIFY(controller.addSession(config(QStringLiteral("network-b")), transportB));
+    registerSession(controller.session(QStringLiteral("network-a")), transportA);
+    registerSession(controller.session(QStringLiteral("network-b")), transportB);
+    transportA->injectBytes(QByteArrayLiteral(":omairc!u@h JOIN :#chan\r\n"));
+    transportB->injectBytes(QByteArrayLiteral(":omairc!u@h JOIN :#lab\r\n"));
+    controller.selectConversation(QStringLiteral("network-a"), QStringLiteral("#chan"));
+    controller.openStatus(QStringLiteral("network-b"));
+
+    QVERIFY(controller.console()->submit(QStringLiteral("/part")));
+    QVERIFY(!framesContain(transportA->writtenFrames(), QByteArrayLiteral("PART")));
+    QVERIFY(!framesContain(transportB->writtenFrames(), QByteArrayLiteral("PART")));
+
+    QVERIFY(controller.console()->submit(QStringLiteral("/part #lab")));
+    QCOMPARE(transportB->writtenFrames().last(),
+             QByteArrayLiteral("PART #lab\r\n"));
+    QVERIFY(!framesContain(transportA->writtenFrames(), QByteArrayLiteral("PART")));
+}
+
+void ControllerTest::implicitStatusKickStaysOnFocusedNetwork()
+{
+    IrcController controller;
+    auto *transportA = new FakeIrcTransport;
+    auto *transportB = new FakeIrcTransport;
+    QVERIFY(controller.addSession(config(QStringLiteral("network-a")), transportA));
+    QVERIFY(controller.addSession(config(QStringLiteral("network-b")), transportB));
+    registerSession(controller.session(QStringLiteral("network-a")), transportA);
+    registerSession(controller.session(QStringLiteral("network-b")), transportB);
+    transportA->injectBytes(QByteArrayLiteral(":omairc!u@h JOIN :#chan\r\n"));
+    transportB->injectBytes(QByteArrayLiteral(":omairc!u@h JOIN :#lab\r\n"));
+    controller.selectConversation(QStringLiteral("network-a"), QStringLiteral("#chan"));
+    controller.openStatus(QStringLiteral("network-b"));
+
+    QVERIFY(controller.console()->submit(QStringLiteral("/kick bob")));
+    QVERIFY(!framesContain(transportA->writtenFrames(), QByteArrayLiteral("KICK")));
+    QVERIFY(!framesContain(transportB->writtenFrames(), QByteArrayLiteral("KICK")));
+
+    QVERIFY(controller.console()->submit(QStringLiteral("/kick #lab bob")));
+    QCOMPARE(transportB->writtenFrames().last(),
+             QByteArrayLiteral("KICK #lab bob\r\n"));
+    QVERIFY(!framesContain(transportA->writtenFrames(), QByteArrayLiteral("KICK")));
 }
 
 void ControllerTest::selectConversationByIdUsesCompositeKey()

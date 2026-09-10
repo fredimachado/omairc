@@ -16,8 +16,10 @@ IrcSession *IrcSessionManager::createSession(const IrcSessionConfig &config,
 
     auto *session = new IrcSession(config, transport, reconnectTimer, nullptr, this);
     m_sessions.insert(config.networkId, session);
-    connect(session, &QObject::destroyed, this, [this, networkId = config.networkId] {
-        m_sessions.remove(networkId);
+    connect(session, &QObject::destroyed, this,
+            [this, session, networkId = config.networkId] {
+        if (m_sessions.value(networkId) == session)
+            m_sessions.remove(networkId);
     });
     return session;
 }

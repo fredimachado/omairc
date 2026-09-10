@@ -83,6 +83,17 @@ ApplicationWindow {
         restoreComposerDraft();
         resetComposerHistoryBrowse();
     }
+    onCurrentNetworkIdChanged: {
+        if (!consoleVisible)
+            return;
+        resetNickComplete();
+        if (!abandonFind())
+            stashComposerDraft();
+        restoreComposerDraft();
+        resetComposerHistoryBrowse();
+        if (win.slashCommands)
+            win.slashCommands.sync(composer.text, consoleVisible);
+    }
     onCurrentConversationChanged: {
         Qt.callLater(function() {
             if (membersList)
@@ -124,6 +135,7 @@ ApplicationWindow {
     property var composerHistories: ({})
     property var composerDrafts: ({})
     property string composerDraftKey: ""
+    property var mockDirectMessageModels: ({})
     property bool findActive: false
     property int findIndex: -1
     property int composerHistoryIndex: -1
@@ -410,7 +422,9 @@ ApplicationWindow {
                 return buildMessages;
             if (name === "rio")
                 return rioMessages;
-            return oftcOmarchyMessages;
+            if (name.charAt(0) === "#")
+                return oftcOmarchyMessages;
+            return mockDirectMessages(name, id);
         }
         if (name === "#desktop")
             return desktopMessages;
@@ -656,6 +670,33 @@ ApplicationWindow {
             ? (delta > 0 ? 0 : rows.length - 1)
             : (current + delta + rows.length) % rows.length;
         rows[nextIndex].activate();
+    }
+
+    function revealSidebarRow(row) {
+        if (!row || !sidebarScroll)
+            return;
+        var mapped = row.mapToItem(sidebarScroll.contentItem, 0, 0);
+        var top = mapped.y;
+        var bottom = top + row.height;
+        if (top < sidebarScroll.contentY)
+            sidebarScroll.contentY = Math.max(0, top);
+        else if (bottom > sidebarScroll.contentY + sidebarScroll.height)
+            sidebarScroll.contentY = Math.max(0, bottom - sidebarScroll.height);
+    }
+
+    function mockDirectMessages(nick, networkId) {
+        var key = networkId + "\n" + nick;
+        if (mockDirectMessageModels[key])
+            return mockDirectMessageModels[key];
+        var model = Qt.createQmlObject("import QtQuick; ListModel {}", win);
+        model.append({
+            author: "",
+            time: "",
+            body: "This is the beginning of your conversation with " + nick + ".",
+            kind: "event"
+        });
+        mockDirectMessageModels[key] = model;
+        return model;
     }
 
     function jumpToNextUnread() {
@@ -1091,12 +1132,12 @@ ApplicationWindow {
         var kind = "message";
         var body = original;
         if (body.indexOf("/me ") === 0) {
-            body = "fred " + body.substring(4);
+            body = win.selfNick + " " + body.substring(4);
             kind = "action";
         }
 
         activeMessages.append({
-            author: "fred",
+            author: win.selfNick,
             time: Qt.formatTime(new Date(), "hh:mm"),
             body: body,
             kind: kind
@@ -1595,6 +1636,9 @@ ApplicationWindow {
             }
             win.selectConversation(conversationRow.conversationName,
                                    conversationRow.networkId);
+            Qt.callLater(function() {
+                win.revealSidebarRow(conversationRow);
+            });
         }
 
         Rectangle {
@@ -2614,15 +2658,20 @@ ApplicationWindow {
                             model: win.irc ? null : directConversations
                             delegate: ConversationRow {
                                 required property string conversation
-                                required property string networkId
+                                required property int index
                                 required property int directUnread
                                 required property bool directMention
                                 width: sidebar.width
                                 conversationName: conversation
+                                networkId: {
+                                    var row = directConversations.get(index);
+                                    return row ? row.networkId : win.mockOmarchyId;
+                                }
                                 unread: directUnread
                                 mention: directMention
                                 direct: true
                                 visible: networkId === win.mockOmarchyId
+                                objectName: visible ? "conversation-" + conversation : ""
                                 height: visible ? win.scaledSize(36) : 0
                             }
                         }
@@ -2711,15 +2760,21 @@ ApplicationWindow {
                             model: win.irc ? null : directConversations
                             delegate: ConversationRow {
                                 required property string conversation
-                                required property string networkId
+                                required property int index
                                 required property int directUnread
                                 required property bool directMention
                                 width: sidebar.width
                                 conversationName: conversation
+                                networkId: {
+                                    var row = directConversations.get(index);
+                                    return row ? row.networkId : win.mockOftcId;
+                                }
                                 unread: directUnread
                                 mention: directMention
                                 direct: true
                                 visible: networkId === win.mockOftcId
+                                objectName: visible
+                                    ? "conversation-oftc-" + conversation : ""
                                 height: visible ? win.scaledSize(36) : 0
                             }
                         }
@@ -3465,7 +3520,7 @@ ApplicationWindow {
                         anchors.margins: win.scaledSize(18)
                         spacing: win.scaledSize(16)
 
-                        Column {
+                        ColumnLayout {
                             id: networkRail
                             objectName: "networkChoiceList"
                             width: win.scaledSize(170)
@@ -3473,6 +3528,8 @@ ApplicationWindow {
                             spacing: win.scaledSize(6)
 
                             Text {
+                                id: networkRailLabel
+                                Layout.fillWidth: true
                                 text: "Networks"
                                 color: win.mutedColor
                                 font.family: "iA Writer Mono S"
@@ -3480,50 +3537,86 @@ ApplicationWindow {
                                 font.pixelSize: win.scaledSize(10)
                             }
 
-                            Repeater {
-                                id: networkChoiceRepeater
-                                objectName: "networkChoiceRepeater"
-                                model: win.connection && win.connection.networks
-                                    ? win.connection.networks : null
-                                delegate: Rectangle {
-                                    required property string networkId
-                                    required property string displayName
-                                    required property bool selected
-                                    width: networkRail.width
-                                    height: win.scaledSize(32)
-                                    radius: win.scaledSize(6)
-                                    color: selected
-                                        ? win.mixColors(win.selectionColor, win.raisedColor,
-                                                        win.darkMode ? 0.45 : 0.35)
-                                        : (choiceMouse.containsMouse ? win.hoverColor : "transparent")
-                                    objectName: "networkChoice-" + networkId
+                            Flickable {
+                                id: networkChoiceScroll
+                                Layout.fillWidth: true
+                                Layout.fillHeight: true
+                                Layout.minimumHeight: win.scaledSize(32)
+                                clip: true
+                                contentWidth: width
+                                contentHeight: networkChoiceColumn.implicitHeight
+                                boundsBehavior: Flickable.StopAtBounds
+                                ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
 
-                                    Text {
-                                        anchors.fill: parent
-                                        anchors.leftMargin: win.scaledSize(8)
-                                        anchors.rightMargin: win.scaledSize(8)
-                                        text: displayName
-                                        color: win.inkColor
-                                        elide: Text.ElideRight
-                                        verticalAlignment: Text.AlignVCenter
-                                        font.family: "iA Writer Mono S"
-                                        font.pixelSize: win.scaledSize(11)
-                                    }
+                                Column {
+                                    id: networkChoiceColumn
+                                    width: networkChoiceScroll.width
+                                    spacing: win.scaledSize(6)
 
-                                    MouseArea {
-                                        id: choiceMouse
-                                        anchors.fill: parent
-                                        hoverEnabled: true
-                                        cursorShape: Qt.PointingHandCursor
-                                        onClicked: win.selectSheetNetwork(networkId)
+                                    Repeater {
+                                        id: networkChoiceRepeater
+                                        objectName: "networkChoiceRepeater"
+                                        model: win.connection && win.connection.networks
+                                            ? win.connection.networks : null
+                                        delegate: Rectangle {
+                                            required property string networkId
+                                            required property string displayName
+                                            required property bool selected
+                                            width: networkRail.width
+                                            height: win.scaledSize(32)
+                                            radius: win.scaledSize(6)
+                                            color: selected
+                                                ? win.mixColors(win.selectionColor, win.raisedColor,
+                                                                win.darkMode ? 0.45 : 0.35)
+                                                : (choiceMouse.containsMouse
+                                                    || activeFocus
+                                                    ? win.hoverColor : "transparent")
+                                            objectName: "networkChoice-" + networkId
+                                            activeFocusOnTab: true
+                                            Accessible.role: Accessible.Button
+                                            Accessible.name: displayName
+                                            Accessible.onPressAction: win.selectSheetNetwork(networkId)
+                                            Keys.onReturnPressed: function(event) {
+                                                win.selectSheetNetwork(networkId);
+                                                event.accepted = true;
+                                            }
+                                            Keys.onSpacePressed: function(event) {
+                                                win.selectSheetNetwork(networkId);
+                                                event.accepted = true;
+                                            }
+
+                                            Text {
+                                                anchors.fill: parent
+                                                anchors.leftMargin: win.scaledSize(8)
+                                                anchors.rightMargin: win.scaledSize(8)
+                                                text: displayName
+                                                color: win.inkColor
+                                                elide: Text.ElideRight
+                                                verticalAlignment: Text.AlignVCenter
+                                                font.family: "iA Writer Mono S"
+                                                font.pixelSize: win.scaledSize(11)
+                                            }
+
+                                            MouseArea {
+                                                id: choiceMouse
+                                                anchors.fill: parent
+                                                hoverEnabled: true
+                                                cursorShape: Qt.PointingHandCursor
+                                                onClicked: {
+                                                    win.selectSheetNetwork(networkId);
+                                                    parent.forceActiveFocus();
+                                                }
+                                            }
+                                        }
                                     }
                                 }
                             }
 
                             Rectangle {
+                                id: connectionAddNetwork
                                 objectName: "connectionAddNetwork"
-                                width: networkRail.width
-                                height: win.scaledSize(28)
+                                Layout.fillWidth: true
+                                Layout.preferredHeight: win.scaledSize(28)
                                 radius: win.scaledSize(6)
                                 visible: win.connection ? win.connection.canAdd : false
                                 color: addNetworkMouse.containsMouse ? win.hoverColor : "transparent"
@@ -3550,8 +3643,6 @@ ApplicationWindow {
                                     }
                                 }
                             }
-
-                            Item { width: 1; height: 1 }
                         }
 
                         Item {

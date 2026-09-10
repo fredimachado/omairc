@@ -924,6 +924,7 @@ void SessionTest::managerDiscardUnregistersImmediately()
     QVERIFY(!guard.isNull());
     QCoreApplication::sendPostedEvents(session, QEvent::DeferredDelete);
     QVERIFY(guard.isNull());
+    QCOMPARE(manager.findSession(QStringLiteral("network-a")), replacement);
 }
 
 namespace

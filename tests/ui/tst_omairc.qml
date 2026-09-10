@@ -2712,4 +2712,159 @@ TestCase {
         liveIrc.unreadSink = [0, false];
         liveIrc.conversationEpoch = 0;
     }
+
+    function test_statusDraftsStayWithNetwork() {
+        var composer = item("messageComposer");
+        mouseClick(item("networkHeaderButton"));
+        tryCompare(appWindow, "consoleVisible", true);
+        mouseClick(composer);
+        typeText("omarchy status");
+        compare(composer.text, "omarchy status");
+
+        mouseClick(item("networkHeaderButton-mock-oftc"));
+        tryCompare(appWindow, "consoleVisible", true);
+        compare(appWindow.currentNetworkId, appWindow.mockOftcId);
+        compare(composer.text, "");
+
+        typeText("oftc status");
+        compare(composer.text, "oftc status");
+
+        mouseClick(item("networkHeaderButton"));
+        tryCompare(appWindow, "currentNetworkId", appWindow.mockOmarchyId);
+        compare(composer.text, "omarchy status");
+
+        mouseClick(item("networkHeaderButton-mock-oftc"));
+        compare(composer.text, "oftc status");
+        keyClick(Qt.Key_Escape);
+        tryCompare(appWindow, "consoleVisible", false);
+        mouseClick(item("conversation-#omarchy"));
+    }
+
+    function test_mockSendUsesSelfNick() {
+        mouseClick(item("conversation-oftc-#lab"));
+        tryCompare(appWindow, "currentConversationId", "mock-oftc\n#lab");
+        var messages = item("messageList");
+        var previousCount = messages.model.count;
+        var composer = item("messageComposer");
+        mouseClick(composer);
+        typeText("hello oak");
+        keyClick(Qt.Key_Return);
+        tryCompare(messages.model, "count", previousCount + 1);
+        compare(messages.model.get(previousCount).author, "oak");
+        compare(messages.model.get(previousCount).body, "hello oak");
+        mouseClick(item("conversation-#omarchy"));
+    }
+
+    function test_oftcDirectHasOwnHistory() {
+        mouseClick(item("conversation-oftc-#lab"));
+        tryCompare(appWindow, "currentConversationId", "mock-oftc\n#lab");
+        appWindow.openDirectMessage("ness");
+        tryCompare(appWindow, "currentConversation", "ness");
+        tryCompare(appWindow, "currentConversationId", "mock-oftc\nness");
+        waitForRendering(appWindow.contentItem);
+        var messages = item("messageList");
+        var previousCount = messages.model.count;
+        mouseClick(item("messageComposer"));
+        typeText("secret to ness");
+        keyClick(Qt.Key_Return);
+        tryCompare(messages.model, "count", previousCount + 1);
+
+        mouseClick(item("conversation-oftc-#omarchy"));
+        tryCompare(appWindow, "currentConversationId", "mock-oftc\n#omarchy");
+        var bodies = [];
+        var row = 0;
+        for (; row < item("messageList").model.count; ++row)
+            bodies.push(item("messageList").model.get(row).body);
+        compare(bodies.indexOf("secret to ness"), -1);
+
+        var oftcDirects = item("directConversationRepeater-mock-oftc");
+        var nessRow = null;
+        for (row = 0; row < oftcDirects.count; ++row) {
+            var candidate = oftcDirects.itemAt(row);
+            if (candidate && candidate.visible && candidate.conversationName === "ness")
+                nessRow = candidate;
+        }
+        verify(nessRow !== null, "ness sidebar row should exist on OFTC");
+        mouseClick(nessRow);
+        tryCompare(appWindow, "currentConversation", "ness");
+        compare(item("messageList").model.get(item("messageList").model.count - 1).body,
+                "secret to ness");
+        keyClick(Qt.Key_W, Qt.ControlModifier);
+        mouseClick(item("conversation-#omarchy"));
+    }
+
+    function test_keyboardNavigationRevealsSidebarRow() {
+        mouseClick(item("conversation-#omarchy"));
+        tryCompare(appWindow, "currentConversationId", "mock-omarchy\n#omarchy");
+        var extra = 0;
+        for (; extra < 16; ++extra)
+            appWindow.openDirectMessage("bulk" + extra);
+        mouseClick(item("conversation-#omarchy"));
+        tryCompare(appWindow, "currentConversation", "#omarchy");
+        waitForRendering(appWindow.contentItem);
+
+        var repeater = item("directConversationRepeater");
+        var row = null;
+        var index = 0;
+        for (; index < repeater.count; ++index) {
+            var candidate = repeater.itemAt(index);
+            if (candidate && candidate.visible && candidate.conversationName === "bulk15")
+                row = candidate;
+        }
+        verify(row !== null, "bulk15 sidebar row should exist");
+
+        var list = item("sidebarList");
+        list.contentY = 0;
+        waitForRendering(appWindow.contentItem);
+
+        var hops = 0;
+        for (; hops < 40; ++hops) {
+            keyClick(Qt.Key_Down, Qt.AltModifier);
+            if (appWindow.currentConversation === "bulk15")
+                break;
+        }
+        compare(appWindow.currentConversation, "bulk15");
+        waitForRendering(appWindow.contentItem);
+        var mapped = row.mapToItem(list, 0, 0);
+        verify(mapped.y >= -1, "selected row should not sit above the sidebar");
+        verify(mapped.y + row.height <= list.height + 2,
+               "selected row should sit inside the sidebar");
+
+        var model = item("directConversationRepeater").model;
+        var remove = model.count - 1;
+        for (; remove >= 0; --remove) {
+            if (String(model.get(remove).conversation).indexOf("bulk") === 0)
+                model.remove(remove);
+        }
+        mouseClick(item("conversation-#omarchy"));
+    }
+
+    function test_networkChoiceIsKeyboardAccessible() {
+        restoreNamedConnection();
+        namedNetworks.append({
+            networkId: "oftc",
+            displayName: "irc.oftc.net",
+            stored: true,
+            selected: false
+        });
+        var window = createTemporaryObject(fallbackWindowComponent, null);
+        verify(window !== null, "The accessible rail window should load");
+        tryCompare(window, "visible", true);
+        waitForRendering(window.contentItem);
+        keyClick(Qt.Key_Comma, Qt.ControlModifier);
+        var libera = repeaterItemByName(findChild(window, "networkChoiceRepeater"),
+                                        "networkChoice-libera");
+        var oftc = repeaterItemByName(findChild(window, "networkChoiceRepeater"),
+                                      "networkChoice-oftc");
+        verify(libera !== null, "Could not find networkChoice-libera");
+        verify(oftc !== null, "Could not find networkChoice-oftc");
+        compare(libera.Accessible.role, Accessible.Button);
+        compare(oftc.Accessible.role, Accessible.Button);
+        oftc.forceActiveFocus();
+        tryCompare(oftc, "activeFocus", true);
+        keyClick(Qt.Key_Return);
+        compare(namedConnection.selectedNetworkId, "oftc");
+        window.close();
+        restoreNamedConnection();
+    }
 }
