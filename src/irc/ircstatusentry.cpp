@@ -425,19 +425,22 @@ IrcStatusEntry IrcStatusEntry::incoming(const QString& networkId, const IrcMessa
                               formatted->label,
                               formatted->text);
     }
-    IrcMessage display = message;
+    std::optional<IrcMessage> overlay;
+    const IrcMessage *display = &message;
     if (const auto masked = IrcSecretPolicy::redactMessage(message)) {
-        display.command = utf8(masked->verb);
-        display.parameters.clear();
-        display.parameters.reserve(std::size_t(masked->parameters.size()));
+        overlay = message;
+        overlay->command = utf8(masked->verb);
+        overlay->parameters.clear();
+        overlay->parameters.reserve(std::size_t(masked->parameters.size()));
         for (const QString& parameter : masked->parameters)
-            display.parameters.push_back(utf8(parameter));
+            overlay->parameters.push_back(utf8(parameter));
+        display = &*overlay;
     }
-    if (commandOf(display) == QStringLiteral("PRIVMSG") && display.parameters.size() >= 2) {
+    if (commandOf(*display) == QStringLiteral("PRIVMSG") && display->parameters.size() >= 2) {
         if (const auto request = parseCtcpRequest(
-                ircWireText(display.parameters.back()))) {
-            const QString sender = display.prefix && !display.prefix->nick.empty()
-                ? ircWireText(display.prefix->nick)
+                ircWireText(display->parameters.back()))) {
+            const QString sender = display->prefix && !display->prefix->nick.empty()
+                ? ircWireText(display->prefix->nick)
                 : QStringLiteral("unknown");
             const QString text = request->argument.isEmpty()
                 ? request->command
@@ -450,7 +453,7 @@ IrcStatusEntry IrcStatusEntry::incoming(const QString& networkId, const IrcMessa
                                   QStringLiteral("%1 from %2").arg(text, sender));
         }
     }
-    if (const auto parts = parseIncomingNotice(display)) {
+    if (const auto parts = parseIncomingNotice(*display)) {
         const IrcNoticeStatusCopy copy = presentIncomingNotice(*parts);
         return IrcStatusEntry(networkId,
                               QDateTime::currentDateTimeUtc(),
@@ -464,7 +467,7 @@ IrcStatusEntry IrcStatusEntry::incoming(const QString& networkId, const IrcMessa
                           IrcLogSource::Server,
                           severityFor(command),
                           command,
-                          incomingText(display, commandOf(display)));
+                          incomingText(*display, commandOf(*display)));
 }
 
 IrcStatusEntry IrcStatusEntry::outgoing(const QString& networkId, const QByteArray& line)

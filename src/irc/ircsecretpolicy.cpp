@@ -327,6 +327,18 @@ std::optional<QString> IrcSecretPolicy::redactWireLine(QStringView line)
 
 std::optional<IrcMaskedCommand> IrcSecretPolicy::redactMessage(const IrcMessage& message)
 {
+    const QString verb = ircWireText(message.command).toUpper();
+    const IrcSecretRule *rule = ruleFor(verb);
+    if (!rule)
+        return std::nullopt;
+    if (rule->shape == IrcSecretShape::ServiceRequestBody) {
+        if (message.parameters.size() < 2)
+            return std::nullopt;
+        if (!hasServiceTarget(ircWireText(message.parameters.front())))
+            return std::nullopt;
+    } else if (int(message.parameters.size()) <= rule->visibleParameters) {
+        return std::nullopt;
+    }
     const std::optional<IrcWireCommand> masked = mask(viewOf(message));
     if (!masked)
         return std::nullopt;
