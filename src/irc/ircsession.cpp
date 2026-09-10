@@ -608,7 +608,6 @@ void IrcSession::sendRegistration()
     if (m_registrationSent)
         return;
 
-    // SASL uses the same in-memory secret. Do not also send PASS.
     const QByteArray pass = (m_config.password.isEmpty() || m_saslRequested)
         ? QByteArray{}
         : builtLine(IrcCommandBuilder::pass(m_config.password.toStdString()));
