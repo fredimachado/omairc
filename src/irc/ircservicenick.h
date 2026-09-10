@@ -2,4 +2,6 @@
 
 #include <QStringView>
 
-bool ircIsServiceIdentity(QStringView nick, QStringView host);
+bool ircIsServiceIdentity(QStringView nick,
+                          QStringView host,
+                          QStringView channelTypes = {});

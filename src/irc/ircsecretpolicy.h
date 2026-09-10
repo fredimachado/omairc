@@ -16,7 +16,8 @@ struct IrcMaskedCommand
 
 namespace IrcSecretPolicy
 {
-std::optional<QString> redactWireLine(QStringView line);
-std::optional<QString> redactPreviewLine(QStringView line);
-std::optional<IrcMaskedCommand> redactMessage(const IrcMessage& message);
+std::optional<QString> redactWireLine(QStringView line, QStringView channelTypes = {});
+std::optional<QString> redactPreviewLine(QStringView line, QStringView channelTypes = {});
+std::optional<IrcMaskedCommand> redactMessage(const IrcMessage& message,
+                                              QStringView channelTypes = {});
 }

@@ -184,6 +184,7 @@ private slots:
     void keyedJoinIsRedactedInStatusEntries();
     void serviceIdentifyIsRedactedInStatusEntries();
     void channelTalkAboutServicesStaysReadable();
+    void negotiatedChannelTypesClassifyDollarTargets();
     void serviceRepliesStayReadable();
     void selfEchoToServiceIsRedacted();
     void sendPrivmsgValidatesTarget();
@@ -868,6 +869,13 @@ void SessionTest::malformedInputSurfacesProtocolError()
     QVERIFY(splitIdentify.contains(QStringLiteral("invalid character")));
     QVERIFY(splitIdentify.contains(QStringLiteral("IDENTIFY ***")));
     QVERIFY(!splitIdentify.contains(QStringLiteral("s3cret")));
+
+    fixture.transport->injectBytes(QByteArray("P\0ASS\0hunter2\r\n", 15));
+    QCOMPARE(errors.size(), 11);
+    const QString splitSecret = errors.at(10).at(2).toString();
+    QVERIFY(splitSecret.contains(QStringLiteral("invalid character")));
+    QVERIFY(splitSecret.contains(QStringLiteral("PASS ***")));
+    QVERIFY(!splitSecret.contains(QStringLiteral("hunter2")));
 }
 
 void SessionTest::overlongFrameLogsPreviewWithoutSecrets()
@@ -1420,6 +1428,56 @@ void SessionTest::channelTalkAboutServicesStaysReadable()
         QByteArrayLiteral("PRIVMSG ~serv :identify my_nick s3cret\r\n"));
     QCOMPARE(tildeChannel.text(),
              QStringLiteral("PRIVMSG ~serv :identify my_nick s3cret"));
+
+    const QByteArray dollarLine =
+        QByteArrayLiteral("PRIVMSG $serv :identify my_nick s3cret\r\n");
+    const IrcStatusEntry dollarChannel = IrcStatusEntry::outgoing(
+        QStringLiteral("network-a"), dollarLine);
+    QCOMPARE(dollarChannel.text(),
+             QStringLiteral("PRIVMSG $serv :identify my_nick s3cret"));
+
+    const IrcStatusEntry dollarTyped = IrcStatusEntry::outgoing(
+        QStringLiteral("network-a"), dollarLine, QStringLiteral("$"));
+    QCOMPARE(dollarTyped.text(),
+             QStringLiteral("PRIVMSG $serv :identify my_nick s3cret"));
+
+    const IrcStatusEntry dollarAsNick = IrcStatusEntry::outgoing(
+        QStringLiteral("network-a"), dollarLine, QStringLiteral("#"));
+    QCOMPARE(dollarAsNick.text(), QStringLiteral("PRIVMSG $serv :IDENTIFY ***"));
+    QVERIFY(!dollarAsNick.text().contains(QStringLiteral("s3cret")));
+}
+
+void SessionTest::negotiatedChannelTypesClassifyDollarTargets()
+{
+    Fixture fixture;
+    StatusCollector status(fixture.session);
+    fixture.connectTls();
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
+                          ":server 001 omairc :Welcome\r\n"
+                          ":server 005 omairc CHANTYPES=$ PREFIX=(ov)@+ :are supported\r\n"));
+    QVERIFY(fixture.session->sendPrivmsg(QStringLiteral("$serv"),
+                                          QStringLiteral("identify my_nick s3cret")));
+    QCOMPARE(fixture.transport->writtenFrames().last(),
+             QByteArrayLiteral("PRIVMSG $serv :identify my_nick s3cret\r\n"));
+
+    QString lastDollar;
+    for (const IrcStatusEntry& entry : status.entries) {
+        if (entry.text().startsWith(QStringLiteral("PRIVMSG $serv")))
+            lastDollar = entry.text();
+    }
+    QCOMPARE(lastDollar, QStringLiteral("PRIVMSG $serv :identify my_nick s3cret"));
+
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(":server 005 omairc CHANTYPES=# PREFIX=(ov)@+ :are supported\r\n"));
+    QVERIFY(fixture.session->sendPrivmsg(QStringLiteral("$serv"),
+                                          QStringLiteral("identify my_nick s3cret")));
+    for (const IrcStatusEntry& entry : status.entries) {
+        if (entry.text().startsWith(QStringLiteral("PRIVMSG $serv")))
+            lastDollar = entry.text();
+    }
+    QCOMPARE(lastDollar, QStringLiteral("PRIVMSG $serv :IDENTIFY ***"));
+    QVERIFY(!lastDollar.contains(QStringLiteral("s3cret")));
 }
 
 void SessionTest::serviceRepliesStayReadable()

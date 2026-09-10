@@ -414,7 +414,9 @@ IrcStatusEntry::IrcStatusEntry(QString networkId,
 {
 }
 
-IrcStatusEntry IrcStatusEntry::incoming(const QString& networkId, const IrcMessage& message)
+IrcStatusEntry IrcStatusEntry::incoming(const QString& networkId,
+                                       const IrcMessage& message,
+                                       QStringView channelTypes)
 {
     const QString command = commandOf(message);
     if (const auto formatted = formatWhois(message)) {
@@ -427,7 +429,7 @@ IrcStatusEntry IrcStatusEntry::incoming(const QString& networkId, const IrcMessa
     }
     std::optional<IrcMessage> overlay;
     const IrcMessage *display = &message;
-    if (const auto masked = IrcSecretPolicy::redactMessage(message)) {
+    if (const auto masked = IrcSecretPolicy::redactMessage(message, channelTypes)) {
         overlay = message;
         overlay->command = utf8(masked->verb);
         overlay->parameters.clear();
@@ -470,7 +472,9 @@ IrcStatusEntry IrcStatusEntry::incoming(const QString& networkId, const IrcMessa
                           incomingText(*display, commandOf(*display), overlay.has_value()));
 }
 
-IrcStatusEntry IrcStatusEntry::outgoing(const QString& networkId, const QByteArray& line)
+IrcStatusEntry IrcStatusEntry::outgoing(const QString& networkId,
+                                       const QByteArray& line,
+                                       QStringView channelTypes)
 {
     QByteArray wire = line;
     if (wire.endsWith("\r\n"))
@@ -482,7 +486,7 @@ IrcStatusEntry IrcStatusEntry::outgoing(const QString& networkId, const QByteArr
         std::string_view(wire.constData(), std::size_t(wire.size())));
     const QString verb = firstToken(QStringView(display));
     QString text = display;
-    if (const auto safe = IrcSecretPolicy::redactWireLine(QStringView(display)))
+    if (const auto safe = IrcSecretPolicy::redactWireLine(QStringView(display), channelTypes))
         text = *safe;
     return IrcStatusEntry(networkId,
                           QDateTime::currentDateTimeUtc(),

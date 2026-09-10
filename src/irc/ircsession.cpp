@@ -28,7 +28,7 @@ constexpr char kPingWatchdogToken[] = "omairc-watchdog";
 constexpr qsizetype kCtcpPingPayloadMaxBytes = 32;
 constexpr qint64 kCtcpReplyIntervalMs = 5000;
 
-QString previewWire(std::string_view bytes, std::size_t byteCount)
+QString previewWire(std::string_view bytes, std::size_t byteCount, QStringView channelTypes)
 {
     std::string display;
     std::string spaced;
@@ -48,12 +48,13 @@ QString previewWire(std::string_view bytes, std::size_t byteCount)
     }
     QString preview = ircWireText(display);
     const QString strippedText = ircWireText(stripped);
-    if (const auto safe = IrcSecretPolicy::redactPreviewLine(QStringView(strippedText))) {
+    if (const auto safe =
+            IrcSecretPolicy::redactPreviewLine(QStringView(strippedText), channelTypes)) {
         preview = *safe;
     } else {
         const QString spacedText = ircWireText(spaced);
         if (const auto safeSpaced =
-                IrcSecretPolicy::redactPreviewLine(QStringView(spacedText))) {
+                IrcSecretPolicy::redactPreviewLine(QStringView(spacedText), channelTypes)) {
             preview = *safeSpaced;
         }
     }
@@ -63,13 +64,14 @@ QString previewWire(std::string_view bytes, std::size_t byteCount)
 }
 
 QString describeMalformed(const char *kind, IrcError error,
-                          std::string_view preview, std::size_t byteCount)
+                          std::string_view preview, std::size_t byteCount,
+                          QStringView channelTypes)
 {
     QString text = QStringLiteral("Malformed IRC %1: %2 (%3 bytes)")
                        .arg(QLatin1String(kind),
                             QString::fromLatin1(ircErrorName(error)),
                             QString::number(byteCount));
-    const QString shown = previewWire(preview, byteCount);
+    const QString shown = previewWire(preview, byteCount, channelTypes);
     if (shown.isEmpty())
         return text;
     return text + QStringLiteral(". Preview: ") + shown;
@@ -675,7 +677,7 @@ void IrcSession::sendLine(const QByteArray &line)
 {
     if (line.isEmpty())
         return;
-    emit statusEntry(IrcStatusEntry::outgoing(m_config.networkId, line));
+    emit statusEntry(IrcStatusEntry::outgoing(m_config.networkId, line, m_channelTypes));
     m_transport->write(line);
 }
 
@@ -701,7 +703,7 @@ void IrcSession::handleBytes(const QByteArray &bytes)
         emit errorOccurred(m_config.networkId,
                            ErrorKind::Protocol,
                            describeMalformed("frame", fault.error, fault.preview,
-                                             fault.byteCount));
+                                             fault.byteCount, m_channelTypes));
     }
 
     for (const std::string &frame : result.frames) {
@@ -710,7 +712,7 @@ void IrcSession::handleBytes(const QByteArray &bytes)
             emit errorOccurred(m_config.networkId,
                                ErrorKind::Protocol,
                                describeMalformed("message", parsed.error, frame,
-                                                 frame.size()));
+                                                 frame.size(), m_channelTypes));
             continue;
         }
         handleMessage(*parsed.value);
@@ -729,7 +731,8 @@ bool IrcSession::allowCtcpReply(const QString &nick)
 
 void IrcSession::handleMessage(const IrcMessage &message)
 {
-    emit statusEntry(IrcStatusEntry::incoming(m_config.networkId, message));
+    emit statusEntry(IrcStatusEntry::incoming(m_config.networkId, message, m_channelTypes));
+    applyIsupport(message);
 
     if (message.command == "BATCH") {
         handleBatch(message);
@@ -971,6 +974,18 @@ void IrcSession::handleAuthenticate(const IrcMessage &message)
              + QByteArrayLiteral("\r\n"));
 }
 
+void IrcSession::applyIsupport(const IrcMessage &message)
+{
+    if (message.command != "005")
+        return;
+    constexpr QLatin1String prefix("CHANTYPES=");
+    for (const std::string& raw : message.parameters) {
+        const QString token = ircWireText(raw);
+        if (token.startsWith(prefix))
+            m_channelTypes = token.mid(prefix.size());
+    }
+}
+
 void IrcSession::handleWelcome(const IrcMessage &message)
 {
     if (m_state == State::Registered)
@@ -1056,6 +1071,7 @@ void IrcSession::resetForConnection()
     m_saslRequested = false;
     m_saslPending = false;
     m_capabilityNegotiationEnded = false;
+    m_channelTypes.clear();
     m_capabilityTimer->cancel();
     cancelPingWatchdog();
     m_capabilities.reset(!m_config.password.isEmpty());

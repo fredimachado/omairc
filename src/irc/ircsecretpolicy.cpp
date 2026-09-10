@@ -392,7 +392,7 @@ IrcTargetMask splitTargetMask(QStringView target)
     return parts;
 }
 
-bool hasServiceTarget(QStringView targets)
+bool hasServiceTarget(QStringView targets, QStringView channelTypes)
 {
     qsizetype start = 0;
     while (start <= targets.size()) {
@@ -401,7 +401,7 @@ bool hasServiceTarget(QStringView targets)
             ? targets.mid(start)
             : targets.mid(start, comma - start);
         const IrcTargetMask mask = splitTargetMask(piece);
-        if (ircIsServiceIdentity(mask.nick, mask.host))
+        if (ircIsServiceIdentity(mask.nick, mask.host, channelTypes))
             return true;
         if (comma < 0)
             break;
@@ -442,11 +442,12 @@ QString matchedServiceCommand(const QStringList& tokens)
     return {};
 }
 
-std::optional<IrcWireCommand> maskServiceRequestBody(const IrcWireCommand& command)
+std::optional<IrcWireCommand> maskServiceRequestBody(const IrcWireCommand& command,
+                                                     QStringView channelTypes)
 {
     if (command.parameters.size() < 2)
         return std::nullopt;
-    if (!hasServiceTarget(command.parameters.at(0)))
+    if (!hasServiceTarget(command.parameters.at(0), channelTypes))
         return std::nullopt;
     const QString body = command.parameters.mid(1).join(QLatin1Char(' '));
     const QString word = matchedServiceCommand(serviceBodyTokens(body));
@@ -458,7 +459,7 @@ std::optional<IrcWireCommand> maskServiceRequestBody(const IrcWireCommand& comma
     return masked;
 }
 
-std::optional<IrcWireCommand> mask(const IrcWireCommand& command)
+std::optional<IrcWireCommand> mask(const IrcWireCommand& command, QStringView channelTypes)
 {
     const IrcSecretRule *rule = ruleFor(command.verb);
     if (!rule)
@@ -469,7 +470,7 @@ std::optional<IrcWireCommand> mask(const IrcWireCommand& command)
     case IrcSecretShape::KeyedModeTail:
         return maskKeyedModeTail(command, rule->visibleParameters);
     case IrcSecretShape::ServiceRequestBody:
-        return maskServiceRequestBody(command);
+        return maskServiceRequestBody(command, channelTypes);
     }
     return std::nullopt;
 }
@@ -494,38 +495,57 @@ const IrcSecretRule *nearestSecretRule(const QString& verb)
         return nullptr;
     return best;
 }
+
+std::optional<QString> conservativePreviewMask(QStringView line)
+{
+    const QString alnum = alnumOnlyUpper(line.toString());
+    const IrcSecretRule *best = nullptr;
+    int bestLength = 0;
+    for (const IrcSecretRule& row : kSecretMap) {
+        const QString verb = QLatin1String(row.verb);
+        if (verb.size() >= 3 && alnum.startsWith(verb) && verb.size() > bestLength) {
+            best = &row;
+            bestLength = verb.size();
+        }
+    }
+    if (!best || alnum.size() <= bestLength)
+        return std::nullopt;
+    return QLatin1String(best->verb) + QStringLiteral(" ***");
+}
 }
 
-std::optional<QString> IrcSecretPolicy::redactWireLine(QStringView line)
+std::optional<QString> IrcSecretPolicy::redactWireLine(QStringView line,
+                                                       QStringView channelTypes)
 {
     const std::optional<IrcWireCommand> parsed = tokenize(line);
     if (!parsed)
         return std::nullopt;
-    const std::optional<IrcWireCommand> masked = mask(*parsed);
+    const std::optional<IrcWireCommand> masked = mask(*parsed, channelTypes);
     if (!masked)
         return std::nullopt;
     return formatLine(*masked);
 }
 
-std::optional<QString> IrcSecretPolicy::redactPreviewLine(QStringView line)
+std::optional<QString> IrcSecretPolicy::redactPreviewLine(QStringView line,
+                                                         QStringView channelTypes)
 {
-    if (const auto safe = redactWireLine(line))
+    if (const auto safe = redactWireLine(line, channelTypes))
         return safe;
     const std::optional<IrcWireCommand> parsed = tokenize(line);
-    if (!parsed || parsed->parameters.isEmpty())
-        return std::nullopt;
-    const IrcSecretRule *rule = nearestSecretRule(parsed->verb);
-    if (!rule)
-        return std::nullopt;
-    IrcWireCommand canonical = *parsed;
-    canonical.verb = QLatin1String(rule->verb);
-    const std::optional<IrcWireCommand> masked = mask(canonical);
-    if (!masked)
-        return std::nullopt;
-    return formatLine(*masked);
+    if (parsed && !parsed->parameters.isEmpty()) {
+        const IrcSecretRule *rule = nearestSecretRule(parsed->verb);
+        if (rule) {
+            IrcWireCommand canonical = *parsed;
+            canonical.verb = QLatin1String(rule->verb);
+            if (const auto masked = mask(canonical, channelTypes))
+                return formatLine(*masked);
+        }
+    }
+    return conservativePreviewMask(line);
 }
 
-std::optional<IrcMaskedCommand> IrcSecretPolicy::redactMessage(const IrcMessage& message)
+std::optional<IrcMaskedCommand> IrcSecretPolicy::redactMessage(const IrcMessage& message,
+                                                              QStringView channelTypes)
 {
     const QString verb = ircWireText(message.command).toUpper();
     const IrcSecretRule *rule = ruleFor(verb);
@@ -534,14 +554,14 @@ std::optional<IrcMaskedCommand> IrcSecretPolicy::redactMessage(const IrcMessage&
     if (rule->shape == IrcSecretShape::ServiceRequestBody) {
         if (message.parameters.size() < 2)
             return std::nullopt;
-        if (!hasServiceTarget(ircWireText(message.parameters.front())))
+        if (!hasServiceTarget(ircWireText(message.parameters.front()), channelTypes))
             return std::nullopt;
     } else if (verb == QLatin1String("JOIN")) {
         return std::nullopt;
     } else if (int(message.parameters.size()) <= rule->visibleParameters) {
         return std::nullopt;
     }
-    const std::optional<IrcWireCommand> masked = mask(viewOf(message));
+    const std::optional<IrcWireCommand> masked = mask(viewOf(message), channelTypes);
     if (!masked)
         return std::nullopt;
     return IrcMaskedCommand{masked->verb, masked->parameters};

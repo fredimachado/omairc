@@ -4,20 +4,33 @@
 
 namespace
 {
-bool looksLikeChannel(QStringView target)
+bool canStartNick(QChar mark)
+{
+    if ((mark >= QLatin1Char('A') && mark <= QLatin1Char('Z'))
+        || (mark >= QLatin1Char('a') && mark <= QLatin1Char('z'))) {
+        return true;
+    }
+    return mark == QLatin1Char('-') || mark == QLatin1Char('[')
+        || mark == QLatin1Char(']') || mark == QLatin1Char('\\')
+        || mark == QLatin1Char('`') || mark == QLatin1Char('_')
+        || mark == QLatin1Char('^') || mark == QLatin1Char('{')
+        || mark == QLatin1Char('|') || mark == QLatin1Char('}');
+}
+
+bool looksLikeChannel(QStringView target, QStringView channelTypes)
 {
     if (target.isEmpty())
         return false;
     const QChar mark = target.front();
-    return mark == QLatin1Char('#') || mark == QLatin1Char('&')
-        || mark == QLatin1Char('+') || mark == QLatin1Char('!')
-        || mark == QLatin1Char('~');
+    if (!channelTypes.isEmpty())
+        return channelTypes.contains(mark);
+    return !canStartNick(mark);
 }
 }
 
-bool ircIsServiceIdentity(QStringView nick, QStringView host)
+bool ircIsServiceIdentity(QStringView nick, QStringView host, QStringView channelTypes)
 {
-    if (!nick.isEmpty() && !looksLikeChannel(nick)
+    if (!nick.isEmpty() && !looksLikeChannel(nick, channelTypes)
         && nick.endsWith(QLatin1String("serv"), Qt::CaseInsensitive)) {
         return true;
     }

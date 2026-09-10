@@ -4,6 +4,7 @@
 
 #include <QDateTime>
 #include <QString>
+#include <QStringView>
 
 enum class IrcLogSource { Server, Client, Local };
 enum class IrcLogSeverity { Trace, Info, Alert };
@@ -11,8 +12,12 @@ enum class IrcLogSeverity { Trace, Info, Alert };
 class IrcStatusEntry
 {
 public:
-    static IrcStatusEntry incoming(const QString& networkId, const IrcMessage& message);
-    static IrcStatusEntry outgoing(const QString& networkId, const QByteArray& line);
+    static IrcStatusEntry incoming(const QString& networkId,
+                                  const IrcMessage& message,
+                                  QStringView channelTypes = {});
+    static IrcStatusEntry outgoing(const QString& networkId,
+                                  const QByteArray& line,
+                                  QStringView channelTypes = {});
     static IrcStatusEntry lifecycle(const QString& networkId,
                                     IrcLogSeverity severity,
                                     const QString& label,
