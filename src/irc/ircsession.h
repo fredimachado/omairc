@@ -61,7 +61,6 @@ struct IrcSessionConfig
     bool reconnectEnabled = true;
     int reconnectBaseDelayMilliseconds = 1000;
     int reconnectMaximumDelayMilliseconds = 30000;
-    int reconnectMaximumAttempts = 5;
     int capabilityTimeoutMilliseconds = 10000;
     int pingTimeoutMilliseconds = 60000;
 };
@@ -115,7 +114,6 @@ public:
 public slots:
     void start();
     void stop();
-    void cancelReconnect();
     bool sendPrivmsg(const QString& target, const QString& body);
     bool sendNotice(const QString& target, const QString& body);
     bool sendChannelMode(const IrcChannelModeRequest& request);
@@ -210,4 +208,5 @@ private:
     bool m_saslPending = false;
     bool m_capabilityNegotiationEnded = false;
     int m_reconnectAttempt = 0;
+    quint32 m_reportedRetryErrors = 0;
 };

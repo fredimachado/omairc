@@ -661,7 +661,8 @@ IrcCommandOutcome IrcController::dispatch(const IrcCommand& command,
             return IrcCommandOutcome::Refused;
         return IrcCommandOutcome::NotConnected;
     }
-    if (active->state() != IrcSession::State::Registered)
+    if (active->state() != IrcSession::State::Registered
+            && command.verb != IrcCommand::Verb::Quit)
         return IrcCommandOutcome::NotConnected;
 
     bool sent = false;

@@ -280,10 +280,9 @@ IrcSession::IrcSession(const IrcSessionConfig &config,
                 setState(State::Idle);
             return;
         }
-        emit errorOccurred(m_config.networkId,
-                           ErrorKind::Network,
-                           QStringLiteral("Connection closed by the server"));
-        scheduleReconnect();
+        fail(ErrorKind::Network,
+             QStringLiteral("Connection closed by the server"),
+             true);
     });
     connect(m_reconnectTimer, &IrcReconnectTimer::fired,
             this, &IrcSession::beginReconnectAttempt);
@@ -358,6 +357,7 @@ void IrcSession::start()
     m_expectedDisconnect = false;
     m_reconnectAfterDisconnect = false;
     m_reconnectAttempt = 0;
+    m_reportedRetryErrors = 0;
     resetForConnection();
     setState(State::Connecting);
     m_transport->connectToHost(m_config.host, m_config.port, m_config.tlsEnabled);
@@ -371,6 +371,7 @@ void IrcSession::stop()
     m_capabilityTimer->cancel();
     cancelPingWatchdog();
     m_reconnectAttempt = 0;
+    m_reportedRetryErrors = 0;
 
     if (m_state == State::Idle)
         return;
@@ -386,17 +387,6 @@ void IrcSession::stop()
         || m_transport->connectionState() == IrcTransport::ConnectionState::Failed) {
         setState(State::Idle);
     }
-}
-
-void IrcSession::cancelReconnect()
-{
-    if (m_state != State::Reconnecting)
-        return;
-    m_expectedDisconnect = true;
-    m_reconnectAfterDisconnect = false;
-    m_reconnectTimer->cancel();
-    m_reconnectAttempt = 0;
-    setState(State::Idle);
 }
 
 bool IrcSession::sendPrivmsg(const QString& target, const QString& body)
@@ -509,12 +499,17 @@ bool IrcSession::changeNick(const QString& nick)
 
 bool IrcSession::quit(const QString& reason)
 {
-    const bool sent = sendCommand(
-        reason.isEmpty() ? QStringLiteral("QUIT")
-                         : QStringLiteral("QUIT :%1").arg(reason));
-    if (sent)
-        stop();
-    return sent;
+    if (m_state == State::Idle)
+        return false;
+    if (m_state == State::Registered) {
+        const bool sent = sendCommand(
+            reason.isEmpty() ? QStringLiteral("QUIT")
+                             : QStringLiteral("QUIT :%1").arg(reason));
+        if (!sent)
+            return false;
+    }
+    stop();
+    return true;
 }
 
 bool IrcSession::whois(const QString& nick)
@@ -616,7 +611,6 @@ void IrcSession::sendRegistration()
     if (m_registrationSent)
         return;
 
-    // SASL uses the same in-memory secret. Do not also send PASS.
     const QByteArray pass = (m_config.password.isEmpty() || m_saslRequested)
         ? QByteArray{}
         : builtLine(IrcCommandBuilder::pass(m_config.password.toStdString()));
@@ -979,6 +973,7 @@ void IrcSession::handleWelcome(const IrcMessage &message)
         m_nick = assigned;
 
     m_reconnectAttempt = 0;
+    m_reportedRetryErrors = 0;
     m_capabilityTimer->cancel();
     m_capabilities.abandonOutstanding();
     setState(State::Registered);
@@ -998,8 +993,12 @@ void IrcSession::handleWelcome(const IrcMessage &message)
 void IrcSession::fail(ErrorKind kind, const QString &message, bool reconnect)
 {
     cancelPingWatchdog();
-    emit errorOccurred(m_config.networkId, kind, message);
     if (reconnect) {
+        const quint32 bit = quint32(1) << int(kind);
+        if ((m_reportedRetryErrors & bit) == 0) {
+            m_reportedRetryErrors |= bit;
+            emit errorOccurred(m_config.networkId, kind, message);
+        }
         const IrcTransport::ConnectionState transportState = m_transport->connectionState();
         if (transportState == IrcTransport::ConnectionState::Connecting
             || transportState == IrcTransport::ConnectionState::Connected
@@ -1013,6 +1012,7 @@ void IrcSession::fail(ErrorKind kind, const QString &message, bool reconnect)
         return;
     }
 
+    emit errorOccurred(m_config.networkId, kind, message);
     m_expectedDisconnect = true;
     m_reconnectTimer->cancel();
     setState(State::Failed);
@@ -1021,11 +1021,12 @@ void IrcSession::fail(ErrorKind kind, const QString &message, bool reconnect)
 
 void IrcSession::scheduleReconnect()
 {
-    if (!m_config.reconnectEnabled
-        || m_reconnectAttempt >= std::max(0, m_config.reconnectMaximumAttempts)) {
+    if (!m_config.reconnectEnabled) {
         setState(State::Failed);
         return;
     }
+    if (m_state == State::Reconnecting)
+        return;
 
     ++m_reconnectAttempt;
     const int delay = reconnectDelay();
