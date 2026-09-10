@@ -312,15 +312,16 @@ ApplicationWindow {
         }
         if (typeof model.data !== "function" || typeof model.index !== "function")
             return "";
-        // MessageListModel roles are UserRole+1..+6: author, time, body, kind,
-        // networkId, origin.
-        var offset = name === "author" ? 1
-            : name === "time" ? 2
-            : name === "body" ? 3
-            : name === "kind" ? 4
-            : name === "origin" ? 6
-            : -1;
-        if (offset < 0)
+        var roleOffset = {
+            author: 1,
+            time: 2,
+            body: 3,
+            kind: 4,
+            networkId: 5,
+            origin: 6
+        };
+        var offset = roleOffset[name];
+        if (offset === undefined)
             return "";
         var value = model.data(model.index(row, 0), Qt.UserRole + offset);
         return value == null ? "" : String(value);

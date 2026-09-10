@@ -72,7 +72,7 @@ struct IrcMessageEvent
     QString body;
     QDateTime timestamp;
     QString target;
-    IrcMsgId msgid;
+    IrcMsgId msgid{};
 };
 
 struct IrcNoticeEvent
@@ -82,7 +82,7 @@ struct IrcNoticeEvent
     QString body;
     QDateTime timestamp;
     QString target;
-    IrcMsgId msgid;
+    IrcMsgId msgid{};
 };
 
 struct IrcActionEvent
@@ -92,7 +92,7 @@ struct IrcActionEvent
     QString body;
     QDateTime timestamp;
     QString target;
-    IrcMsgId msgid;
+    IrcMsgId msgid{};
 };
 
 struct IrcJoinEvent
@@ -198,7 +198,7 @@ struct IrcReplayLine
     QString body;
     QDateTime timestamp;
     IrcMessageKindTag kind = IrcMessageKindTag::Chat;
-    IrcMsgId msgid;
+    IrcMsgId msgid{};
 };
 
 struct IrcHistoryEvent

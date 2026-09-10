@@ -1003,10 +1003,10 @@ void IrcController::echoIfPresent(IrcSession *session,
     const QDateTime now = QDateTime::currentDateTimeUtc();
     const QString nick = session->nick();
     if (wire == QuietWire::Notice) {
-        apply(IrcNoticeEvent{key, nick, body, now, target});
+        apply(IrcNoticeEvent{key, nick, body, now, target, {}});
         return;
     }
-    apply(IrcMessageEvent{key, nick, body, now, target});
+    apply(IrcMessageEvent{key, nick, body, now, target, {}});
 }
 
 void IrcController::unawayAfterChat(IrcSession *session)
@@ -1053,10 +1053,10 @@ void IrcController::echoLocal(IrcMessageKind kind, const QString& body)
     const QDateTime now = QDateTime::currentDateTimeUtc();
     const QString nick = currentNick();
     if (kind == IrcMessageKind::Action) {
-        apply(IrcActionEvent{*m_selected, nick, body, now, selectedTarget()});
+        apply(IrcActionEvent{*m_selected, nick, body, now, selectedTarget(), {}});
         return;
     }
-    apply(IrcMessageEvent{*m_selected, nick, body, now, selectedTarget()});
+    apply(IrcMessageEvent{*m_selected, nick, body, now, selectedTarget(), {}});
 }
 
 void IrcController::adoptReducerSelection()

@@ -33,7 +33,7 @@ struct IrcReducedMessage
     IrcMessageKind kind = IrcMessageKind::Message;
     bool collapsible = false;
     IrcOrigin origin = IrcOrigin::Live;
-    IrcMsgId msgid;
+    IrcMsgId msgid{};
 };
 
 struct IrcMemberState
