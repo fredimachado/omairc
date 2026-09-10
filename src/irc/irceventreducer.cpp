@@ -469,6 +469,14 @@ void IrcEventReducer::appendEvent(IrcConversationState& conversation,
     capMessages(conversation);
 }
 
+void IrcEventReducer::appendWhois(IrcConversationState& conversation,
+                                  const QString& body)
+{
+    conversation.messages.push_back(
+        {QString(), body, QDateTime(), IrcMessageKind::Whois, false});
+    capMessages(conversation);
+}
+
 void IrcEventReducer::capMessages(IrcConversationState& conversation)
 {
     auto& messages = conversation.messages;
@@ -763,6 +771,6 @@ void IrcEventReducer::reduce(const IrcWhoisTranscriptEvent& event)
     IrcConversationState *conversation = findMutable(event.destination);
     if (!conversation)
         return;
-    appendEvent(*conversation, event.formattedBody);
+    appendWhois(*conversation, event.formattedBody);
 }
 

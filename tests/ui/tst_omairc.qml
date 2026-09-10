@@ -1882,23 +1882,27 @@ TestCase {
             author: "",
             time: "",
             body: body,
-            kind: "event"
+            kind: "whois"
         });
         tryCompare(list.model, "count", previousCount + 1);
         list.positionViewAtIndex(previousCount, ListView.Contain);
         waitForRendering(appWindow.contentItem);
 
         var row = list.itemAtIndex(previousCount);
-        verify(row !== null, "The long event row should be rendered");
-        var eventText = findChild(row, "messageEvent");
-        verify(eventText !== null && eventText.visible, "Could not find messageEvent");
-        compare(eventText.wrapMode, Text.Wrap);
-        compare(eventText.text, body);
-        tryVerify(function () { return eventText.lineCount > 1; },
-                  1000, "The WHOIS event should wrap");
+        verify(row !== null, "The long whois row should be rendered");
+        var whoisText = findChild(row, "messageWhois");
+        verify(whoisText !== null && whoisText.visible, "Could not find messageWhois");
+        compare(whoisText.wrapMode, Text.Wrap);
+        compare(whoisText.text, body);
+        tryVerify(function () { return whoisText.lineCount > 1; },
+                  1000, "The WHOIS row should wrap");
         tryVerify(function () {
-            return row.height > appWindow.scaledSize(42);
-        }, 1000, "A wrapped event row should grow past the single-line height");
+            return row.height > appWindow.scaledSize(22);
+        }, 1000, "A wrapped whois row should grow past the single-line height");
+        compare(findChild(row, "messageEvent").visible, false);
+        compare(findChild(row, "messageAvatar").visible, false);
+        compare(findChild(row, "messageHeader").visible, false);
+        compare(findChild(row, "messageBody").visible, false);
         saveScreenshot("wrapped-whois-event");
     }
 

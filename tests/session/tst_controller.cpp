@@ -130,6 +130,14 @@ bool hasEventBody(const QAbstractItemModel *messages, const QString& body)
             == QStringLiteral("event");
 }
 
+bool hasWhoisBody(const QAbstractItemModel *messages, const QString& body)
+{
+    const int row = bodyRow(messages, body);
+    return row >= 0
+        && roleAt(messages, row, MessageListModel::KindRole).toString()
+            == QStringLiteral("whois");
+}
+
 QByteArray namesBurst(int nickCount, int perLine)
 {
     QByteArray bytes = QByteArrayLiteral(":omairc!u@h JOIN :#big\r\n");
@@ -2814,7 +2822,7 @@ void ControllerTest::whoisFromChannelCopiesStatusLinesAsEvents()
     QCOMPARE(selectedBodies(messages).mid(selectedBodies(messages).size() - 3),
              expected);
     for (const QString& body : expected) {
-        QVERIFY(hasEventBody(messages, body));
+        QVERIFY(hasWhoisBody(messages, body));
         QVERIFY(logContains(controller.console()->lines(), body));
     }
 }
@@ -2850,13 +2858,13 @@ void ControllerTest::whoisInterleavesByAskingBuffer()
     QCOMPARE(controller.unreadCountFor(QStringLiteral("libera")), 0);
 
     controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
-    QVERIFY(hasEventBody(messages, QStringLiteral("lena is ~l@h (Lena)")));
-    QVERIFY(hasEventBody(messages, QStringLiteral("End of WHOIS for lena")));
+    QVERIFY(hasWhoisBody(messages, QStringLiteral("lena is ~l@h (Lena)")));
+    QVERIFY(hasWhoisBody(messages, QStringLiteral("End of WHOIS for lena")));
     QVERIFY(!selectedBodiesContain(messages, QStringLiteral("sam")));
 
     controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#help"));
-    QVERIFY(hasEventBody(messages, QStringLiteral("sam is ~s@h (Sam)")));
-    QVERIFY(hasEventBody(messages, QStringLiteral("End of WHOIS for sam")));
+    QVERIFY(hasWhoisBody(messages, QStringLiteral("sam is ~s@h (Sam)")));
+    QVERIFY(hasWhoisBody(messages, QStringLiteral("End of WHOIS for sam")));
     QVERIFY(!selectedBodiesContain(messages, QStringLiteral("lena")));
 
     auto *lines = controller.console()->lines();
@@ -2998,8 +3006,8 @@ void ControllerTest::emptyDirectWhoisDefaultsAndRoutes()
 
     auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
     QVERIFY(messages);
-    QVERIFY(hasEventBody(messages, QStringLiteral("lena is ~lena@user/host (Lena)")));
-    QVERIFY(hasEventBody(messages, QStringLiteral("End of WHOIS for lena")));
+    QVERIFY(hasWhoisBody(messages, QStringLiteral("lena is ~lena@user/host (Lena)")));
+    QVERIFY(hasWhoisBody(messages, QStringLiteral("End of WHOIS for lena")));
     QVERIFY(logContains(controller.console()->lines(),
                         QStringLiteral("lena is ~lena@user/host (Lena)")));
 }
@@ -3024,7 +3032,7 @@ void ControllerTest::terminalWhoisClearsWatch()
     QVERIFY(controller.sendMessage(QStringLiteral("/whois lena")));
     transport->injectBytes(
         QByteArrayLiteral(":irc 318 omairc lena :End of /WHOIS list.\r\n"));
-    QVERIFY(hasEventBody(messages, QStringLiteral("End of WHOIS for lena")));
+    QVERIFY(hasWhoisBody(messages, QStringLiteral("End of WHOIS for lena")));
     const QStringList after318 = selectedBodies(messages);
     transport->injectBytes(
         QByteArrayLiteral(":irc 311 omairc lena ~lena user/host * :Lena\r\n"));
@@ -3035,7 +3043,7 @@ void ControllerTest::terminalWhoisClearsWatch()
     QVERIFY(controller.sendMessage(QStringLiteral("/whois missing")));
     transport->injectBytes(
         QByteArrayLiteral(":irc 401 omairc missing :No such nick/channel\r\n"));
-    QVERIFY(hasEventBody(messages, QStringLiteral("No such nick: missing")));
+    QVERIFY(hasWhoisBody(messages, QStringLiteral("No such nick: missing")));
     const QStringList after401 = selectedBodies(messages);
     transport->injectBytes(
         QByteArrayLiteral(":irc 311 omairc missing ~m h * :Missing\r\n"));
@@ -3046,7 +3054,7 @@ void ControllerTest::terminalWhoisClearsWatch()
     QVERIFY(controller.sendMessage(QStringLiteral("/whois ghost")));
     transport->injectBytes(
         QByteArrayLiteral(":irc 402 omairc ghost :No such server\r\n"));
-    QVERIFY(hasEventBody(messages, QStringLiteral("No such server: ghost")));
+    QVERIFY(hasWhoisBody(messages, QStringLiteral("No such server: ghost")));
     const QStringList after402 = selectedBodies(messages);
     transport->injectBytes(
         QByteArrayLiteral(":irc 311 omairc ghost ~g h * :Ghost\r\n"));
@@ -3115,8 +3123,8 @@ void ControllerTest::whoisEventDoesNotCollapseWithJoin()
 
     auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
     QVERIFY(messages);
-    QVERIFY(hasEventBody(messages, QStringLiteral("lena is ~lena@user/host (Lena)")));
-    QVERIFY(hasEventBody(messages, QStringLiteral("End of WHOIS for lena")));
+    QVERIFY(hasWhoisBody(messages, QStringLiteral("lena is ~lena@user/host (Lena)")));
+    QVERIFY(hasWhoisBody(messages, QStringLiteral("End of WHOIS for lena")));
     QVERIFY(hasEventBody(messages, QStringLiteral("alice joined")));
     QVERIFY(!selectedBodiesContain(messages, QStringLiteral("End of WHOIS for lena, alice joined")));
     QCOMPARE(bodyRow(messages, QStringLiteral("End of WHOIS for lena")) + 1,

@@ -21,6 +21,7 @@ enum class IrcMessageKind
     Action,
     Event,
     Error,
+    Whois,
 };
 
 struct IrcReducedMessage
@@ -147,6 +148,7 @@ private:
     void appendEvent(IrcConversationState& conversation,
                      const QString& body,
                      bool collapsible = false);
+    void appendWhois(IrcConversationState& conversation, const QString& body);
     void capMessages(IrcConversationState& conversation);
 
     void reduce(const IrcWelcomeEvent& event);
