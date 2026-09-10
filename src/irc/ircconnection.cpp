@@ -43,49 +43,7 @@ IrcConnection::IrcConnection(IrcController &controller,
     connect(&m_credentialStore, &CredentialStore::readFinished, this,
                 [this](CredentialStore::State state, const QString &password,
                        const QString &message) {
-            if (state != CredentialStore::State::Loading) {
-                m_credentialReadInFlight = false;
-                if (m_secretRevision != m_credentialReadRevision) {
-                    if (!m_passwordEdited) {
-                        if (m_credentialState == CredentialStore::State::Loading) {
-                            m_credentialState = m_password.isEmpty()
-                                ? CredentialStore::State::Missing
-                                : CredentialStore::State::SessionOnly;
-                        }
-                    } else {
-                        const auto terminal =
-                            (state == CredentialStore::State::Available
-                             || state == CredentialStore::State::Missing)
-                            ? CredentialStore::State::Missing : state;
-                        adoptBackendState(terminal, message);
-                    }
-                    emit credentialStateChanged();
-                    emit draftChanged();
-                    if (m_reconcileWhenReadSettles) {
-                        m_reconcileWhenReadSettles = false;
-                        reconcile(m_stored);
-                    }
-                    return;
-                }
-            }
-            adoptBackendState(state, message);
-            if (state == CredentialStore::State::Available && !m_passwordEdited) {
-                m_password = password;
-                m_persistedPassword = password;
-                m_secretMayBeStored = true;
-                ++m_secretRevision;
-                if (!m_obsoleteKeys.isEmpty())
-                    queueCredentialWrite(credentialKey(m_stored), m_password,
-                                         m_secretRevision);
-            } else if (state == CredentialStore::State::Missing) {
-                m_secretMayBeStored = false;
-            }
-            if (m_reconcileWhenReadSettles) {
-                m_reconcileWhenReadSettles = false;
-                reconcile(m_stored);
-            }
-            emit credentialStateChanged();
-            emit draftChanged();
+            handleCredentialRead(state, password, message);
         });
     connect(&m_credentialStore, &CredentialStore::writeFinished, this,
                 [this](CredentialStore::State state, const QString &message) {
@@ -100,7 +58,9 @@ IrcConnection::IrcConnection(IrcController &controller,
                 if (state != CredentialStore::State::Missing
                     && state != CredentialStore::State::Available) {
                     rememberObsoleteKey(operation.key);
-                    m_credentialError = message;
+                    m_obsoleteRemovalError = message;
+                } else if (m_obsoleteKeys.isEmpty()) {
+                    m_obsoleteRemovalError.clear();
                 }
             } else if (operation.revision == m_secretRevision) {
                 adoptBackendState(state, message);
@@ -201,12 +161,14 @@ CredentialStore::State IrcConnection::credentialState() const
 
 QString IrcConnection::credentialError() const
 {
+    if (!m_obsoleteRemovalError.isEmpty())
+        return m_obsoleteRemovalError;
     return m_credentialError;
 }
 
 QString IrcConnection::credentialStatus() const
 {
-    if (!m_obsoleteKeys.isEmpty() && !m_credentialError.isEmpty())
+    if (!m_obsoleteKeys.isEmpty() && !m_obsoleteRemovalError.isEmpty())
         return QStringLiteral("could not remove the previous saved password");
     if (m_passwordEdited && !m_password.isEmpty()
         && (m_credentialState == CredentialStore::State::Available
@@ -397,8 +359,10 @@ bool IrcConnection::apply()
     m_draft = profile;
     emit draftChanged();
     const bool credentialKeyChanged = previousCredentialKey != nextCredentialKey;
-    if (credentialKeyChanged)
+    if (credentialKeyChanged) {
         rememberObsoleteKey(previousCredentialKey);
+        m_secretMayBeStored = false;
+    }
     if (!m_password.isEmpty()
         && (m_passwordEdited || credentialKeyChanged || !m_secretMayBeStored)) {
         queueCredentialWrite(nextCredentialKey, m_password, m_secretRevision);
@@ -455,6 +419,76 @@ void IrcConnection::adoptBackendState(CredentialStore::State state,
     m_credentialState = overlayState(m_backendState);
 }
 
+void IrcConnection::handleCredentialRead(CredentialStore::State state,
+                                         const QString &password,
+                                         const QString &message)
+{
+    if (state == CredentialStore::State::Loading) {
+        adoptBackendState(state, message);
+        emit credentialStateChanged();
+        emit draftChanged();
+        return;
+    }
+    m_credentialReadInFlight = false;
+    const bool stale = m_secretRevision != m_credentialReadRevision;
+    if (stale && m_passwordEdited) {
+        const bool keepWriteResult =
+            m_backendState == CredentialStore::State::Error
+            || m_backendState == CredentialStore::State::Unavailable;
+        if (!keepWriteResult) {
+            const auto terminal =
+                (state == CredentialStore::State::Available
+                 || state == CredentialStore::State::Missing)
+                ? CredentialStore::State::Missing : state;
+            adoptBackendState(terminal, message);
+        }
+    } else if (stale && !m_persistedPassword.isEmpty()) {
+        if (m_restoreStoreAfterRead) {
+            m_restoreStoreAfterRead = false;
+            compensatePersistedSecret();
+        }
+    } else {
+        settleCredentialRead(state, password, message);
+    }
+    emit credentialStateChanged();
+    emit draftChanged();
+    if (m_reconcileWhenReadSettles) {
+        m_reconcileWhenReadSettles = false;
+        reconcile(m_stored);
+    }
+}
+
+void IrcConnection::settleCredentialRead(CredentialStore::State state,
+                                         const QString &password,
+                                         const QString &message)
+{
+    adoptBackendState(state, message);
+    if (state == CredentialStore::State::Available && !m_passwordEdited) {
+        m_password = password;
+        m_persistedPassword = password;
+        m_secretMayBeStored = true;
+        ++m_secretRevision;
+        if (!m_obsoleteKeys.isEmpty())
+            queueCredentialWrite(credentialKey(m_stored), m_password,
+                                 m_secretRevision);
+    } else if (state == CredentialStore::State::Missing) {
+        m_secretMayBeStored = false;
+    }
+    if (m_restoreStoreAfterRead) {
+        m_restoreStoreAfterRead = false;
+        compensatePersistedSecret();
+    }
+}
+
+void IrcConnection::compensatePersistedSecret()
+{
+    const CredentialKey key = credentialKey(m_stored);
+    if (m_password.isEmpty())
+        queueCredentialRemoval(key, m_secretRevision);
+    else
+        queueCredentialWrite(key, m_password, m_secretRevision);
+}
+
 void IrcConnection::flushObsoleteKeys(quint64 revision)
 {
     const CredentialKey currentKey = credentialKey(m_stored);
@@ -497,11 +531,10 @@ void IrcConnection::discard()
         m_credentialState = overlayState(m_backendState);
         ++m_secretRevision;
         if (compensatePendingStore) {
-            const CredentialKey key = credentialKey(m_stored);
-            if (m_password.isEmpty())
-                queueCredentialRemoval(key, m_secretRevision);
+            if (m_credentialReadInFlight)
+                m_restoreStoreAfterRead = true;
             else
-                queueCredentialWrite(key, m_password, m_secretRevision);
+                compensatePersistedSecret();
         }
         emit credentialStateChanged();
     }

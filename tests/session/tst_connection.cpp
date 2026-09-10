@@ -63,6 +63,10 @@ private slots:
     void discardCompensatesPendingPasswordWrite();
     void discardCompensatesPendingFirstPasswordWrite();
     void discardCompensatesPendingMigrationWrite();
+    void staleWriteErrorIsNotOverwrittenByRead();
+    void discardDuringLoadAdoptsStoredPassword();
+    void discardDuringReadDoesNotDeleteStoredPassword();
+    void failedMigrationDiscardRetriesWriteBeforeObsoleteDelete();
 
 private:
     IrcConnection::TransportFactory capturingFactory();
@@ -926,6 +930,8 @@ void ConnectionTest::obsoleteKeyRemovalFailureIsRetriedOnApply()
     QTRY_COMPARE(store->removeCalls(), 2);
     QCOMPARE(store->removedKeys().constLast().host, QStringLiteral("irc.example"));
     QCOMPARE(store->writeCalls(), 1);
+    QTRY_COMPARE(connection.credentialError(), QString());
+    QCOMPARE(connection.credentialStatus(), QStringLiteral("password saved securely"));
 }
 
 void ConnectionTest::failedWriteEmptyApplyKeepsSessionPassword()
@@ -1027,6 +1033,8 @@ void ConnectionTest::failedMigrationWriteRetriesBeforeObsoleteDelete()
     QTRY_COMPARE(store->writeCalls(), 1);
     QCOMPARE(store->removeCalls(), 0);
     QVERIFY(connection.passwordSet());
+    QTRY_COMPARE(connection.credentialStatus(),
+                 QStringLiteral("secure storage error; password is session-only"));
 
     store->setWriteResult(CredentialStore::State::Available);
     QVERIFY(connection.apply());
@@ -1173,6 +1181,135 @@ void ConnectionTest::discardCompensatesPendingMigrationWrite()
     QCOMPARE(store->writtenPassword(), QStringLiteral("stored-secret"));
     QCOMPARE(store->writtenKeys().constLast().host, QStringLiteral("irc.changed"));
     QTRY_COMPARE(store->removeCalls(), 1);
+    QCOMPARE(store->removedKeys().constLast().host, QStringLiteral("irc.example"));
+}
+
+void ConnectionTest::staleWriteErrorIsNotOverwrittenByRead()
+{
+    {
+        IrcController seedController;
+        IrcConnection seed(seedController, capturingFactory(), credentialStore());
+        fillCompleteDraft(seed);
+        QVERIFY(seed.apply());
+    }
+
+    IrcController controller;
+    auto store = std::make_unique<FakeCredentialStore>(
+        CredentialStore::State::Available, QStringLiteral("stored-secret"));
+    store->setHoldRead(true);
+    store->setWriteResult(CredentialStore::State::Error,
+                          QStringLiteral("write failed"));
+    IrcConnection connection(controller, capturingFactory(), *store);
+    QCOMPARE(connection.credentialState(), CredentialStore::State::Loading);
+
+    connection.setPassword(QStringLiteral("new-secret"));
+    QVERIFY(connection.apply());
+    QTRY_COMPARE(connection.credentialState(), CredentialStore::State::Error);
+    QCOMPARE(connection.credentialError(), QStringLiteral("write failed"));
+
+    store->completeHeldRead();
+    QTRY_COMPARE(connection.credentialState(), CredentialStore::State::Error);
+    QCOMPARE(connection.credentialError(), QStringLiteral("write failed"));
+    QCOMPARE(connection.credentialStatus(),
+             QStringLiteral("secure storage error; password is session-only"));
+}
+
+void ConnectionTest::discardDuringLoadAdoptsStoredPassword()
+{
+    {
+        IrcController seedController;
+        IrcConnection seed(seedController, capturingFactory(), credentialStore());
+        fillCompleteDraft(seed);
+        QVERIFY(seed.apply());
+    }
+
+    IrcController controller;
+    auto store = std::make_unique<FakeCredentialStore>(
+        CredentialStore::State::Available, QStringLiteral("stored-secret"));
+    store->setHoldRead(true);
+    IrcConnection connection(controller, capturingFactory(), *store);
+    QCOMPARE(connection.credentialState(), CredentialStore::State::Loading);
+
+    connection.setPassword(QStringLiteral("typed-secret"));
+    QVERIFY(connection.passwordSet());
+    connection.discard();
+    QVERIFY(!connection.passwordSet());
+
+    store->completeHeldRead();
+    QTRY_COMPARE(connection.credentialState(), CredentialStore::State::Available);
+    QVERIFY(connection.passwordSet());
+    QCOMPARE(connection.credentialStatus(), QStringLiteral("password saved securely"));
+    QCOMPARE(store->writeCalls(), 0);
+}
+
+void ConnectionTest::discardDuringReadDoesNotDeleteStoredPassword()
+{
+    {
+        IrcController seedController;
+        IrcConnection seed(seedController, capturingFactory(), credentialStore());
+        fillCompleteDraft(seed);
+        QVERIFY(seed.apply());
+    }
+
+    IrcController controller;
+    auto store = std::make_unique<FakeCredentialStore>(
+        CredentialStore::State::Available, QStringLiteral("stored-secret"));
+    store->setHoldRead(true);
+    store->setHoldWrite(true);
+    IrcConnection connection(controller, capturingFactory(), *store);
+    QCOMPARE(connection.credentialState(), CredentialStore::State::Loading);
+
+    connection.setPassword(QStringLiteral("discarded-secret"));
+    QVERIFY(connection.apply());
+    QCOMPARE(store->writeCalls(), 1);
+    QCOMPARE(store->writtenPassword(), QStringLiteral("discarded-secret"));
+
+    connection.discard();
+    QCOMPARE(store->removeCalls(), 0);
+
+    store->completeHeldWrite();
+    QCOMPARE(store->removeCalls(), 0);
+
+    store->completeHeldRead();
+    QTRY_COMPARE(store->writeCalls(), 2);
+    QCOMPARE(store->writtenPassword(), QStringLiteral("stored-secret"));
+    QCOMPARE(store->removeCalls(), 0);
+    QTRY_COMPARE(connection.credentialState(), CredentialStore::State::Available);
+    QVERIFY(connection.passwordSet());
+}
+
+void ConnectionTest::failedMigrationDiscardRetriesWriteBeforeObsoleteDelete()
+{
+    {
+        IrcController seedController;
+        IrcConnection seed(seedController, capturingFactory(), credentialStore());
+        fillCompleteDraft(seed);
+        QVERIFY(seed.apply());
+    }
+
+    IrcController controller;
+    auto store = std::make_unique<FakeCredentialStore>(
+        CredentialStore::State::Available, QStringLiteral("stored-secret"));
+    store->setWriteResult(CredentialStore::State::Error,
+                          QStringLiteral("write failed"));
+    IrcConnection connection(controller, capturingFactory(), *store);
+    fillCompleteDraft(connection);
+    QTRY_COMPARE(connection.credentialState(), CredentialStore::State::Available);
+
+    connection.setHost(QStringLiteral("irc.changed"));
+    QVERIFY(connection.apply());
+    QTRY_COMPARE(store->writeCalls(), 1);
+    QCOMPARE(store->removeCalls(), 0);
+    QTRY_COMPARE(connection.credentialStatus(),
+                 QStringLiteral("secure storage error; password is session-only"));
+
+    connection.discard();
+    store->setWriteResult(CredentialStore::State::Available);
+    QVERIFY(connection.apply());
+    QTRY_COMPARE(store->writeCalls(), 2);
+    QTRY_COMPARE(store->removeCalls(), 1);
+    QCOMPARE(store->writtenKeys().constLast().host, QStringLiteral("irc.changed"));
+    QCOMPARE(store->writtenPassword(), QStringLiteral("stored-secret"));
     QCOMPARE(store->removedKeys().constLast().host, QStringLiteral("irc.example"));
 }
 

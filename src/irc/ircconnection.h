@@ -99,6 +99,11 @@ private:
     void flushObsoleteKeys(quint64 revision);
     CredentialStore::State overlayState(CredentialStore::State backend) const;
     void adoptBackendState(CredentialStore::State state, const QString &message);
+    void handleCredentialRead(CredentialStore::State state, const QString &password,
+                              const QString &message);
+    void settleCredentialRead(CredentialStore::State state, const QString &password,
+                              const QString &message);
+    void compensatePersistedSecret();
     void queueCredentialWrite(const CredentialKey &key, const QString &password,
                               quint64 revision);
     void queueCredentialRemoval(const CredentialKey &key, quint64 revision);
@@ -143,7 +148,9 @@ private:
     CredentialStore::State m_backendState = CredentialStore::State::Missing;
     CredentialStore::State m_credentialState = CredentialStore::State::Missing;
     QString m_credentialError;
+    QString m_obsoleteRemovalError;
     QMetaObject::Connection m_startupActivationConnection;
     bool m_secretMayBeStored = false;
     bool m_reconcileWhenReadSettles = false;
+    bool m_restoreStoreAfterRead = false;
 };
