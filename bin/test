@@ -33,6 +33,14 @@ JOBS="$(nproc 2>/dev/null || echo 1)"
 
 "$ROOT/bin/build"
 
+VERSION="$("$ROOT/bin/version")"
+got="$(DISPLAY= "$ROOT/build/omairc" --version)"
+test "$got" = "omairc $VERSION" || {
+  echo "--version must print exactly omairc $VERSION" >&2
+  printf 'got: %s\n' "$got" >&2
+  exit 1
+}
+
 assert_not_version_line() {
   first_line=$(printf '%s\n' "$1" | head -n 1)
   case "$first_line" in

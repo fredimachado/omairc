@@ -3,8 +3,7 @@ QT += core gui qml quick quickcontrols2 network testlib dbus
 CONFIG += c++17 testcase
 TEMPLATE = app
 TARGET = live_ui_tests
-VERSION = 0.1.0
-DEFINES += OMAIRC_VERSION=\\\"$$VERSION\\\"
+include($$PWD/../../version.pri)
 
 greaterThan(QMAKE_GCC_MAJOR_VERSION, 15): QMAKE_CXXFLAGS += -Wno-sfinae-incomplete
 

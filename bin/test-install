@@ -14,9 +14,11 @@ else
 fi
 
 JOBS="$(nproc 2>/dev/null || echo 1)"
-VERSION="$(awk '/^VERSION / { print $3; exit }' "$ROOT/omairc.pro")"
-test -n "$VERSION" || {
-  echo "omairc.pro must set VERSION" >&2
+VERSION="$("$ROOT/bin/version")"
+pkgver_got="$(cd "$ROOT" && bash -c 'source ./PKGBUILD && printf %s "$pkgver"')"
+test "$pkgver_got" = "$VERSION" || {
+  echo "PKGBUILD pkgver must resolve to $VERSION from version.pri" >&2
+  printf 'got: %s\n' "$pkgver_got" >&2
   exit 1
 }
 

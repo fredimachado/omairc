@@ -61,7 +61,8 @@ can run more than one window.
 that command's usage. Both write plain text and exit without a window or a
 socket. After the send target, `--help` and `--version` are message text.
 
-`--version` prints `omairc 0.1.0` and exits without opening a window.
+`--version` prints `omairc` and the version from `version.pri`, then exits
+without opening a window.
 
 While a normal Omairc window is running, the same binary can talk to it over
 `$XDG_RUNTIME_DIR/omairc.sock` (TempLocation fallback). Control commands print
@@ -140,6 +141,14 @@ Install also ships bash completion at
 
 Installed license texts are MIT (`LICENSE`), LGPL-3.0-or-later
 (`COPYING-LGPL`, from `src/irc/COPYING`), and OFL-1.1 (`OFL.txt`).
+
+## Version
+
+`version.pri` is the only version string. Tag a release as `v` plus that
+value, for example `v0.2.0alpha`. Arch `pkgver` cannot contain hyphens, so
+pre-releases use `0.2.0alpha` rather than `0.2.0-alpha`. Letter suffixes
+such as `alpha`, `beta`, and `rc` compare older than the final `0.2.0`, and
+the package workflow publishes those tags as GitHub pre-releases.
 
 ## Test
 
