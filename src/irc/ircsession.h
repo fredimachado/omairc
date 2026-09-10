@@ -180,6 +180,7 @@ private:
     void closeBatch(const QString& reference);
     void requestChannelHistory(const QString& channel);
     void forgetChannelHistory(const QString& channel);
+    void dropHistoryBatches(const QString& channel);
     static bool isChatHistoryBatchType(const QString& type) noexcept;
     bool selfPrefixed(const IrcMessage& message) const;
     bool selfIs(const QString& nick) const;

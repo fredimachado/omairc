@@ -98,7 +98,12 @@ QString prefixNick(const IrcMessage &message)
 {
     if (!message.prefix)
         return {};
-    return ircWireText(message.prefix->nick);
+    if (!message.prefix->nick.empty())
+        return ircWireText(message.prefix->nick);
+    const QString raw = ircWireText(message.prefix->raw);
+    if (raw.contains(QLatin1Char('.')))
+        return {};
+    return raw;
 }
 
 int parameterIndex(const IrcMessage &message, const QString &value)
@@ -976,8 +981,11 @@ bool IrcSession::selfIs(const QString& nick) const
 
 void IrcSession::requestChannelHistory(const QString& channel)
 {
-    if (!m_capabilities.enabled().contains(IrcCapability::ChatHistory))
+    const IrcCapabilitySet enabled = m_capabilities.enabled();
+    if (!enabled.contains(IrcCapability::ChatHistory)
+        || !enabled.contains(IrcCapability::Batch)) {
         return;
+    }
     const QString key = channel.toCaseFolded();
     if (m_historyAsked.contains(key))
         return;
@@ -990,6 +998,28 @@ void IrcSession::requestChannelHistory(const QString& channel)
 void IrcSession::forgetChannelHistory(const QString& channel)
 {
     m_historyAsked.remove(channel.toCaseFolded());
+    dropHistoryBatches(channel);
+}
+
+void IrcSession::dropHistoryBatches(const QString& channel)
+{
+    const QString folded = channel.toCaseFolded();
+    QSet<QString> roots;
+    for (auto it = m_openBatches.constBegin(); it != m_openBatches.constEnd(); ++it) {
+        if (it.value().replayRoot == it.key()
+            && it.value().collected.target.toCaseFolded() == folded) {
+            roots.insert(it.key());
+        }
+    }
+    if (roots.isEmpty())
+        return;
+    auto it = m_openBatches.begin();
+    while (it != m_openBatches.end()) {
+        if (roots.contains(it.key()) || roots.contains(it.value().replayRoot))
+            it = m_openBatches.erase(it);
+        else
+            ++it;
+    }
 }
 
 void IrcSession::handleCap(const IrcMessage &message)
@@ -1016,6 +1046,7 @@ void IrcSession::handleCap(const IrcMessage &message)
     if (delIndex >= 0) {
         m_capabilities.withdraw(capabilityTokens(message, delIndex));
         publishCapabilities();
+        requestCapabilities();
         return;
     }
 

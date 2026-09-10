@@ -91,6 +91,8 @@ void IrcCapabilityNegotiation::reset(bool saslCredentialsAvailable)
     m_enabled = {};
     m_outstanding = {};
     m_advertisedTokens.clear();
+    m_enabledTokens.clear();
+    m_outstandingTokens.clear();
     m_saslCredentialsAvailable = saslCredentialsAvailable;
 }
 
@@ -111,21 +113,29 @@ void IrcCapabilityNegotiation::withdraw(const QStringList& tokens)
         const Wanted *wanted = wantedFor(tokenName(token));
         if (!wanted)
             continue;
-        m_advertisedTokens.remove(tokenName(token).toCaseFolded());
-        bool stillAdvertised = false;
-        for (const Wanted& row : wantedTable) {
-            if (row.capability != wanted->capability)
-                continue;
-            if (m_advertisedTokens.contains(QString(row.token).toCaseFolded())) {
-                stillAdvertised = true;
-                break;
-            }
-        }
-        if (!stillAdvertised)
+        const QString name = tokenName(token).toCaseFolded();
+        m_advertisedTokens.remove(name);
+        m_enabledTokens.remove(name);
+        m_outstandingTokens.remove(name);
+        if (!hasToken(m_advertisedTokens, wanted->capability))
             m_advertised.remove(wanted->capability);
-        m_enabled.remove(wanted->capability);
-        m_outstanding.remove(wanted->capability);
+        if (!hasToken(m_enabledTokens, wanted->capability))
+            m_enabled.remove(wanted->capability);
+        if (!hasToken(m_outstandingTokens, wanted->capability))
+            m_outstanding.remove(wanted->capability);
     }
+}
+
+bool IrcCapabilityNegotiation::hasToken(const QSet<QString>& tokens,
+                                       IrcCapability capability) const
+{
+    for (const Wanted& row : wantedTable) {
+        if (row.capability != capability)
+            continue;
+        if (tokens.contains(QString(row.token).toCaseFolded()))
+            return true;
+    }
+    return false;
 }
 
 bool IrcCapabilityNegotiation::isRequestable(const Wanted& wanted) const
@@ -166,6 +176,7 @@ IrcCapabilityNegotiation::Request IrcCapabilityNegotiation::takeRequest()
             presence.append(wanted.token);
         }
         m_outstanding.insert(wanted.capability);
+        m_outstandingTokens.insert(QString(wanted.token).toCaseFolded());
     }
 
     if (!presence.isEmpty())
@@ -180,11 +191,17 @@ IrcCapabilitySet IrcCapabilityNegotiation::acknowledge(const QStringList& tokens
         const Wanted *wanted = wantedFor(tokenName(token));
         if (!wanted)
             continue;
-        m_outstanding.remove(wanted->capability);
+        const QString name = tokenName(token).toCaseFolded();
+        m_outstandingTokens.remove(name);
+        if (!hasToken(m_outstandingTokens, wanted->capability))
+            m_outstanding.remove(wanted->capability);
         if (token.startsWith(QLatin1Char('-'))) {
-            m_enabled.remove(wanted->capability);
+            m_enabledTokens.remove(name);
+            if (!hasToken(m_enabledTokens, wanted->capability))
+                m_enabled.remove(wanted->capability);
             continue;
         }
+        m_enabledTokens.insert(name);
         if (m_enabled.contains(wanted->capability))
             continue;
         m_enabled.insert(wanted->capability);
@@ -198,9 +215,14 @@ IrcCapabilitySet IrcCapabilityNegotiation::reject(const QStringList& tokens)
     IrcCapabilitySet refused;
     for (const QString& token : tokens) {
         const Wanted *wanted = wantedFor(tokenName(token));
-        if (!wanted || !m_outstanding.contains(wanted->capability))
+        if (!wanted)
             continue;
-        m_outstanding.remove(wanted->capability);
+        const QString name = tokenName(token).toCaseFolded();
+        if (!m_outstandingTokens.contains(name))
+            continue;
+        m_outstandingTokens.remove(name);
+        if (!hasToken(m_outstandingTokens, wanted->capability))
+            m_outstanding.remove(wanted->capability);
         refused.insert(wanted->capability);
     }
     return refused;
@@ -210,6 +232,7 @@ IrcCapabilitySet IrcCapabilityNegotiation::abandonOutstanding()
 {
     const IrcCapabilitySet abandoned = m_outstanding;
     m_outstanding = {};
+    m_outstandingTokens.clear();
     return abandoned;
 }
 

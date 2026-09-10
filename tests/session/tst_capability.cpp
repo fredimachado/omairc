@@ -29,6 +29,7 @@ private slots:
     void draftOnlyChatHistoryRequestsDraftToken();
     void chatHistoryWithoutBatchIsNotRequested();
     void deletingStableChatHistoryKeepsDraftAdvertised();
+    void deletingUnusedDraftChatHistoryKeepsStableEnabled();
 };
 
 void CapabilityTest::unwantedAdvertisementProducesNoRequest()
@@ -236,6 +237,20 @@ void CapabilityTest::deletingStableChatHistoryKeepsDraftAdvertised()
     negotiation.withdraw(tokens(QStringLiteral("chathistory")));
     QCOMPARE(negotiation.takeRequest().lines,
              QStringList{QStringLiteral("draft/chathistory")});
+}
+
+void CapabilityTest::deletingUnusedDraftChatHistoryKeepsStableEnabled()
+{
+    IrcCapabilityNegotiation negotiation(false);
+    negotiation.advertise(tokens(QStringLiteral(
+        "batch chathistory draft/chathistory")));
+    negotiation.takeRequest();
+    negotiation.acknowledge(tokens(QStringLiteral("batch chathistory")));
+    QVERIFY(negotiation.enabled().contains(IrcCapability::ChatHistory));
+
+    negotiation.withdraw(tokens(QStringLiteral("draft/chathistory")));
+    QVERIFY(negotiation.enabled().contains(IrcCapability::ChatHistory));
+    QVERIFY(negotiation.takeRequest().lines.isEmpty());
 }
 
 int runCapabilityTests(int argc, char **argv)

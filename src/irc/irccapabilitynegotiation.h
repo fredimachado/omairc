@@ -35,10 +35,13 @@ public:
 
 private:
     bool isRequestable(const Wanted& wanted) const;
+    bool hasToken(const QSet<QString>& tokens, IrcCapability capability) const;
 
     IrcCapabilitySet m_advertised;
     IrcCapabilitySet m_enabled;
     IrcCapabilitySet m_outstanding;
     QSet<QString> m_advertisedTokens;
+    QSet<QString> m_enabledTokens;
+    QSet<QString> m_outstandingTokens;
     bool m_saslCredentialsAvailable = false;
 };
