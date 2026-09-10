@@ -1875,11 +1875,9 @@ TestCase {
     function test_eventRowWrapsLongWhoisBody() {
         var list = item("messageList");
         var previousCount = list.model.count;
-        var body = "lena is ~lena@user/host (Lena) " +
-                   "lena is on #omarchy #help #omairc #linux #archlinux " +
-                   "lena is using irc.libera.chat (Stockholm, SE) " +
-                   "lena has been idle 12s, signed on Thu Sep 10 10:00:00 2026 " +
-                   "End of WHOIS for lena";
+        var chunk = "lena is ~lena@user/host (Lena) is on #omarchy #help #omairc ";
+        var body = chunk + chunk + chunk + chunk + chunk + chunk +
+                   chunk + chunk + "End of WHOIS for lena";
         list.model.append({
             author: "",
             time: "",
