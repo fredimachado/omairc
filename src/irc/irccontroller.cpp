@@ -509,7 +509,8 @@ void IrcController::openDirectMessage(const QString& nick)
         return;
     const IrcConversationKey key =
         m_reducer.conversationKey(m_selected->networkId, nick);
-    m_reducer.ensureConversation(key, nick);
+    if (!m_reducer.ensureConversation(key, nick, IrcConversationCause::UserOpen))
+        return;
     m_conversations.reload();
     selectConversation(m_selected->networkId, nick);
 }
@@ -624,6 +625,8 @@ bool IrcController::sendToTarget(const QString &networkId,
         return false;
     }
 
+    const IrcConversationKey key = m_reducer.conversationKey(networkId, target);
+    m_reducer.ensureConversation(key, target, IrcConversationCause::QuietSend);
     noteNickDelivery(networkId, target);
     echoIfPresent(session, target, text, QuietWire::Privmsg);
     unawayAfterChat(session);
@@ -878,7 +881,8 @@ IrcCommandOutcome IrcController::dispatchQuery(const IrcCommand& command,
     }
 
     const IrcConversationKey key = m_reducer.conversationKey(networkId, nick);
-    m_reducer.ensureConversation(key, nick);
+    if (!m_reducer.ensureConversation(key, nick, IrcConversationCause::UserOpen))
+        return IrcCommandOutcome::Refused;
     m_conversations.reload();
     selectConversation(networkId, nick);
     if (rest.isEmpty())
@@ -934,6 +938,8 @@ IrcCommandOutcome IrcController::dispatchQuietSend(const IrcCommand& command,
         return IrcCommandOutcome::Refused;
 
     noteNickDelivery(networkId, target);
+    const IrcConversationKey key = m_reducer.conversationKey(networkId, target);
+    m_reducer.ensureConversation(key, target, IrcConversationCause::QuietSend);
     echoIfPresent(session, target, body, spec->wire);
     if (spec->wire == QuietWire::Privmsg)
         unawayAfterChat(session);
@@ -1101,7 +1107,7 @@ void IrcController::echoIfPresent(IrcSession *session,
     }
     const IrcConversationKey key =
         m_reducer.conversationKey(session->networkId(), target);
-    if (!m_reducer.find(key) && !(m_selected && *m_selected == key))
+    if (!m_reducer.find(key))
         return;
     const QDateTime now = QDateTime::currentDateTimeUtc();
     const QString nick = session->nick();

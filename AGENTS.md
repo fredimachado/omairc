@@ -53,11 +53,11 @@
 `bin/check-conventions` already gates the mechanical repeats. These still
 need judgment.
 
-- Put a product rule in one place. `/msg` must not open a DM was gated in
-  the controller, then the reducer, then the translator (#23, #85, #88). A
-  new inbound or echo path that calls `ensureConversation` must cover
-  `/msg` with `echo-message`, incoming NickServ PRIVMSG, and incoming human
-  PRIVMSG in the same test matrix.
+- Inventing a conversation requires `IrcConversationCause` on
+  `ensureConversation`. QuietSend and InboundSelf never invent; UserOpen
+  invents DMs; ChannelState invents channels; InboundOther invents
+  channels and non-service DMs. Cover `/msg` with `echo-message`, incoming
+  NickServ PRIVMSG, and incoming human PRIVMSG in the same test matrix.
 - Do not hard-code CHANTYPES, CHANMODES, or PREFIX. Call
   `IrcServerFeatures`.
 - Fail closed when redacting secrets for Status or error previews. Do not
