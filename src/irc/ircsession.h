@@ -10,6 +10,7 @@
 #include <QTimer>
 
 #include <functional>
+#include <optional>
 
 #include "irccapability.h"
 #include "irccapabilitynegotiation.h"
@@ -188,10 +189,17 @@ private:
     bool isHistoryBatch(const QString& type, const QString& parent) const;
     bool answersPendingHistory(const QString& channel) const;
     bool hasOpenCurrentHistoryBatch(const QString& channel) const;
-    bool historyCapabilitiesEnabled() const;
     void abandonHistoryRequests();
     void handleChatHistoryFail(const IrcMessage& message);
-    static bool isChatHistoryBatchType(const QString& type) noexcept;
+
+    enum class ReplayKind {
+        ChatHistory,      // an answer to a CHATHISTORY we sent
+        BouncerPlayback,  // volunteered by the bouncer on attach
+    };
+
+    static std::optional<ReplayKind> replayKindFor(const QString& batchType) noexcept;
+    bool replayEnabled(ReplayKind kind) const;
+
     bool selfPrefixed(const IrcMessage& message) const;
     bool selfIs(const QString& nick) const;
     bool allowCtcpReply(const QString &nick);
@@ -239,6 +247,7 @@ private:
         QString type;
         QString parent;
         QString replayRoot;
+        std::optional<ReplayKind> kind;
         IrcHistoryBatch collected;
         int generation = 0;
     };
