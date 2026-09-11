@@ -1313,6 +1313,13 @@ TestCase {
         return -1;
     }
 
+    function findMatchAt(list, index) {
+        var row = list.itemAtIndex(index);
+        if (!row)
+            return null;
+        return findChild(row, "findMatch");
+    }
+
     function test_ctrlFFindsTextInConversation() {
         var composer = item("messageComposer");
         var list = item("messageList");
@@ -1324,6 +1331,15 @@ TestCase {
         wait(0);
         var pinnedY = list.contentY;
         verify(pinnedY > 0);
+
+        compare(composer.text, "");
+        keyClick(Qt.Key_F, Qt.ControlModifier);
+        tryCompare(appWindow, "findActive", true);
+        compare(composer.placeholderText, "Find");
+        compare(appWindow.findIndex, -1);
+        keyClick(Qt.Key_Escape);
+        tryCompare(appWindow, "findActive", false);
+        compare(composer.text, "");
 
         typeText("keep me");
         compare(composer.text, "keep me");
@@ -1340,6 +1356,9 @@ TestCase {
         var first = visibleMatchIndex(list, "omarchy");
         verify(first >= 0, "The first omarchy row should be in view");
         verify(list.model.get(first).body.toLowerCase().indexOf("omarchy") >= 0);
+        compare(appWindow.findIndex, first);
+        var firstMark = findMatchAt(list, first);
+        verify(firstMark && firstMark.visible, "The current match row should highlight");
 
         var countBefore = list.model.count;
         keyClick(Qt.Key_Return);
@@ -1363,6 +1382,16 @@ TestCase {
         verify(hops >= 1);
         compare(list.model.count, countBefore);
 
+        composer.selectAll();
+        typeText("kai");
+        tryVerify(function() {
+            var index = appWindow.findIndex;
+            return index >= 0 && list.model.get(index).author === "kai";
+        }, 1000, "Find should match an author nick that is not in the body");
+        verify(list.model.get(appWindow.findIndex).body.toLowerCase().indexOf("kai") < 0);
+        var authorMark = findMatchAt(list, appWindow.findIndex);
+        verify(authorMark && authorMark.visible);
+
         keyClick(Qt.Key_Escape);
         tryCompare(appWindow, "findActive", false);
         compare(composer.text, "keep me");
@@ -1385,6 +1414,14 @@ TestCase {
 
         mouseClick(composer);
         verify(composer.activeFocus);
+        compare(composer.text, "");
+        keyClick(Qt.Key_F, Qt.ControlModifier);
+        tryCompare(appWindow, "findActive", true);
+        compare(composer.placeholderText, "Find");
+        compare(appWindow.findIndex, -1);
+        keyClick(Qt.Key_Escape);
+        tryCompare(appWindow, "findActive", false);
+
         typeText("hostname");
         keyClick(Qt.Key_F, Qt.ControlModifier);
         tryCompare(appWindow, "findActive", true);
@@ -1396,6 +1433,17 @@ TestCase {
         verify(match >= 0, "The hostname Status line should be in view");
         verify(list.model.get(match).text.toLowerCase().indexOf("hostname") >= 0);
         compare(composer.text, "hostname");
+        compare(appWindow.findIndex, match);
+        var statusMark = findMatchAt(list, match);
+        verify(statusMark && statusMark.visible);
+
+        composer.selectAll();
+        typeText("NOTICE");
+        tryCompare(appWindow, "findIndex", 0);
+        compare(list.model.get(0).label, "NOTICE");
+        verify(list.model.get(0).text.indexOf("NOTICE") < 0);
+        var labelMark = findMatchAt(list, 0);
+        verify(labelMark && labelMark.visible);
 
         keyClick(Qt.Key_Escape);
         tryCompare(appWindow, "findActive", false);

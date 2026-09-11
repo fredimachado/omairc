@@ -6,9 +6,12 @@
 
 #include "conversationlistmodel.h"
 #include "irceventreducer.h"
+#include "ircnetworklog.h"
+#include "ircstatusentry.h"
 #include "irctyping.h"
 #include "memberlistmodel.h"
 #include "messagelistmodel.h"
+#include "networklogmodel.h"
 
 namespace
 {
@@ -71,6 +74,7 @@ private slots:
     void reloadClearAfterCapEmitsRemoves();
     void collapsedJoinRewritesLastRow();
     void originRoleNameAndValues();
+    void networkLogFieldLooksUpRolesByName();
     void spliceResetsSelectedConversation();
 };
 
@@ -788,6 +792,25 @@ void ModelTest::originRoleNameAndValues()
              QStringLiteral("live"));
     QCOMPARE(roleAt(messages, 1, MessageListModel::BodyRole),
              QStringLiteral("omairc joined"));
+}
+
+void ModelTest::networkLogFieldLooksUpRolesByName()
+{
+    IrcNetworkLog log;
+    NetworkLogModel lines(log);
+    log.append(IrcStatusEntry::lifecycle(
+        networkA, IrcLogSeverity::Info, QStringLiteral("NOTICE"),
+        QStringLiteral("Looking up your hostname")));
+    lines.show(networkA);
+
+    QCOMPARE(lines.roleNames()[NetworkLogModel::LabelRole], QByteArray("label"));
+    QCOMPARE(lines.roleNames()[NetworkLogModel::TextRole], QByteArray("text"));
+    QCOMPARE(lines.field(0, QStringLiteral("label")), QStringLiteral("NOTICE"));
+    QCOMPARE(lines.field(0, QStringLiteral("text")),
+             QStringLiteral("Looking up your hostname"));
+    QCOMPARE(lines.field(0, QStringLiteral("source")), QStringLiteral("local"));
+    QCOMPARE(lines.field(0, QStringLiteral("no-such-role")), QString());
+    QCOMPARE(roleAt(lines, 0, NetworkLogModel::LabelRole), QStringLiteral("NOTICE"));
 }
 
 void ModelTest::spliceResetsSelectedConversation()

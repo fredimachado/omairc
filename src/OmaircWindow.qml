@@ -1025,17 +1025,11 @@ ApplicationWindow {
     }
 
     function transcriptRowText(model, row) {
-        if (!model || row < 0)
-            return "";
-        if (typeof model.get === "function") {
-            var rowData = model.get(row);
-            if (!rowData)
-                return "";
-            if (consoleVisible)
-                return rowData.text || "";
-            return rowData.body || "";
-        }
-        return model.data(model.index(row, 0), Qt.UserRole + 3) || "";
+        if (consoleVisible)
+            return transcriptField(model, row, "label")
+                + " " + transcriptField(model, row, "text");
+        return transcriptField(model, row, "author")
+            + " " + transcriptField(model, row, "body");
     }
 
     function findNextMatch(fromStart) {
@@ -3467,6 +3461,8 @@ ApplicationWindow {
                     readonly property bool isChat: kind !== "event" && kind !== "whois"
                     readonly property bool grouped: win.continuesMessageGroup(
                         messageList.model, index, author, time, kind, origin)
+                    readonly property bool findMatch: win.findActive
+                        && win.findIndex === index
 
                     width: messageList.width
                     height: kind === "event"
@@ -3476,6 +3472,13 @@ ApplicationWindow {
                             : (grouped
                                 ? Math.max(win.scaledSize(22), messageBody.implicitHeight + win.scaledSize(8))
                                 : Math.max(win.scaledSize(58), messageBody.implicitHeight + win.scaledSize(39))))
+
+                    Rectangle {
+                        objectName: "findMatch"
+                        anchors.fill: parent
+                        visible: messageDelegate.findMatch
+                        color: win.mixColors(win.pageColor, win.selectionColor, 0.42)
+                    }
 
                     Text {
                         id: messageEvent
@@ -3627,11 +3630,14 @@ ApplicationWindow {
                 delegate: Item {
                     id: consoleDelegate
 
+                    required property int index
                     required property string time
                     required property string label
                     required property string text
                     required property string source
                     required property string severity
+                    readonly property bool findMatch: win.findActive
+                        && win.findIndex === index
 
                     width: consoleList.width
                     height: Math.max(win.scaledSize(22), consoleText.implicitHeight + win.scaledSize(8))
@@ -3647,6 +3653,13 @@ ApplicationWindow {
                     readonly property string glyph: consoleDelegate.source === "client"
                         ? ">>"
                         : (consoleDelegate.source === "local" ? "--" : "<<")
+
+                    Rectangle {
+                        objectName: "findMatch"
+                        anchors.fill: parent
+                        visible: consoleDelegate.findMatch
+                        color: win.mixColors(win.pageColor, win.selectionColor, 0.42)
+                    }
 
                     Text {
                         anchors.left: parent.left
@@ -3740,10 +3753,12 @@ ApplicationWindow {
                 TextField {
                     id: composer
                     objectName: "messageComposer"
-                    Accessible.name: "Message composer"
-                    Accessible.description: win.consoleVisible
-                        ? "Command for " + win.statusTitleText().replace(" Status", "")
-                        : "Write a message to " + win.currentConversation
+                    Accessible.name: win.findActive ? "Find" : "Message composer"
+                    Accessible.description: win.findActive
+                        ? "Find in the current transcript"
+                        : (win.consoleVisible
+                            ? "Command for " + win.statusTitleText().replace(" Status", "")
+                            : "Write a message to " + win.currentConversation)
                     anchors.left: parent.left
                     anchors.right: sendButton.left
                     anchors.top: parent.top
@@ -3756,6 +3771,8 @@ ApplicationWindow {
                     selectedTextColor: "#ffffff"
                     font.family: "iA Writer Mono S"
                     font.pixelSize: win.scaledSize(13)
+                    placeholderText: win.findActive ? "Find" : ""
+                    placeholderTextColor: win.mutedColor
                     activeFocusOnTab: !win.connectionOverlayVisible
                     leftPadding: win.scaledSize(8)
                     rightPadding: win.scaledSize(8)

@@ -6,6 +6,7 @@
 #include "liveharness.h"
 #include "liveuiworld.h"
 #include "messagelistmodel.h"
+#include "networklogmodel.h"
 
 #include <QColor>
 #include <QCoreApplication>
@@ -86,6 +87,31 @@ bool saveFixtureShot(QQuickWindow *window, const QString &stem)
     const QString path = dir + QLatin1Char('/') + stem + QLatin1String(".png");
     return image.save(path) && QFileInfo(path).size() > 0;
 }
+
+bool findMarkVisible(QQuickItem *list, int row)
+{
+    if (!list || row < 0)
+        return false;
+    QQuickItem *content = list->property("contentItem").value<QQuickItem *>();
+    if (!content)
+        return false;
+    const QList<QQuickItem *> children = content->childItems();
+    for (QQuickItem *child : children) {
+        if (child->property("index").toInt() != row)
+            continue;
+        if (QQuickItem *mark = child->findChild<QQuickItem *>(QStringLiteral("findMatch")))
+            return mark->isVisible();
+    }
+    return false;
+}
+
+void typeIntoComposer(QQuickWindow *window, const QString &text)
+{
+    QTest::keyClick(window, Qt::Key_A, Qt::ControlModifier);
+    QTest::keyClick(window, Qt::Key_Backspace);
+    for (const QChar ch : text)
+        QTest::keyClick(window, ch.toLatin1(), Qt::NoModifier, 0);
+}
 }
 
 class LiveUiTest : public QObject
@@ -104,6 +130,7 @@ private slots:
     void outboundSameNickDirectsStayIsolated();
     void consecutiveSameAuthorMinuteGroupsThroughIrcEvent();
     void replayAndLiveSameAuthorMinuteDoNotGroupThroughIrcEvent();
+    void ctrlFFindsLiveTranscriptAndStatus();
 
 private:
     bool check(bool ok) const;
@@ -487,6 +514,157 @@ void LiveUiTest::replayAndLiveSameAuthorMinuteDoNotGroupThroughIrcEvent()
     QCOMPARE(rows.at(replayAt).bodyColor, muted);
     QVERIFY2(saveFixtureShot(window, QStringLiteral("live-ui-replay-history")),
              "replay screenshot");
+}
+
+void LiveUiTest::ctrlFFindsLiveTranscriptAndStatus()
+{
+    if (m_live)
+        QSKIP("FakeIrcTransport find runs under bin/test, not the compose world.");
+    std::unique_ptr<QTemporaryDir> xdg = std::make_unique<QTemporaryDir>();
+    QVERIFY(xdg->isValid());
+    const QString xdgRoot = xdg->path();
+    const QString config = xdgRoot + QLatin1String("/config");
+    QDir().mkpath(config);
+    QDir().mkpath(xdgRoot + QLatin1String("/cache"));
+    QDir().mkpath(xdgRoot + QLatin1String("/data"));
+    qputenv("XDG_CONFIG_HOME", config.toUtf8());
+    qputenv("XDG_CACHE_HOME", (xdgRoot + QLatin1String("/cache")).toUtf8());
+    qputenv("XDG_DATA_HOME", (xdgRoot + QLatin1String("/data")).toUtf8());
+    QSettings::setPath(QSettings::NativeFormat, QSettings::UserScope, config);
+
+    Backend backend;
+    IrcSlashSession slash;
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    IrcSession *session = controller.addSession(fixtureConfig(), transport);
+    QVERIFY(session);
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    transport->completeConnect();
+    transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
+                          ":server 001 omairc :Welcome\r\n"
+                          ":server 005 omairc CHANTYPES=# PREFIX=(ov)@+ "
+                          ":are supported by this server\r\n"
+                          ":omairc!u@h JOIN :#omarchy\r\n"
+                          ":server 353 omairc = #omarchy :omairc anna rio\r\n"
+                          ":server 366 omairc #omarchy :End of NAMES\r\n"
+                          ":zed!u@h PRIVMSG #omarchy :older unique body needle-xyz\r\n"
+                          ":uniqnick!u@h PRIVMSG #omarchy :no nick in this line\r\n"
+                          ":anna!u@h PRIVMSG #omarchy :later filler\r\n"
+                          ":server 998 omairc :status body without the numeric\r\n"));
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+
+    QQmlApplicationEngine engine;
+    QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/OmaircWindow.qml")));
+    QVERIFY2(component.status() != QQmlComponent::Error, qPrintable(component.errorString()));
+    QVariantMap properties;
+    properties.insert(QStringLiteral("backend"), QVariant::fromValue(&backend));
+    properties.insert(QStringLiteral("irc"), QVariant::fromValue(&controller));
+    properties.insert(QStringLiteral("slashCommands"), QVariant::fromValue(&slash));
+    std::unique_ptr<QObject> root(component.createWithInitialProperties(properties));
+    QVERIFY2(root.get(), qPrintable(component.errorString()));
+    auto *window = qobject_cast<QQuickWindow *>(root.get());
+    QVERIFY(window);
+    QVERIFY(QTest::qWaitForWindowExposed(window));
+    window->setWidth(1180);
+    window->setHeight(760);
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    QCoreApplication::processEvents();
+
+    QVERIFY(waitUntil([&] {
+        QQuickItem *list = window->findChild<QQuickItem *>(QStringLiteral("messageList"));
+        return list && list->isVisible() && list->height() > 0
+            && !window->property("consoleVisible").toBool();
+    }));
+    QQuickItem *list = window->findChild<QQuickItem *>(QStringLiteral("messageList"));
+    QVERIFY(list);
+    auto *messages = qobject_cast<MessageListModel *>(list->property("model").value<QObject *>());
+    QVERIFY(messages);
+    QVERIFY2(waitUntil([&] {
+                    return messages->field(0, QStringLiteral("body")).contains(QStringLiteral("joined"))
+                        && chromeIndex(collectTranscriptChrome(window),
+                                       QStringLiteral("older unique body needle-xyz"))
+                        >= 0;
+                }),
+             qPrintable(describeChrome(collectTranscriptChrome(window))));
+
+    QQuickItem *composer = window->findChild<QQuickItem *>(QStringLiteral("messageComposer"));
+    QVERIFY(composer);
+    composer->forceActiveFocus();
+    QVERIFY(waitUntil([&] { return composer->hasActiveFocus(); }));
+    QCOMPARE(composer->property("text").toString(), QString());
+
+    QTest::keyClick(window, Qt::Key_F, Qt::ControlModifier);
+    QVERIFY(waitUntil([&] { return window->property("findActive").toBool(); }));
+    QCOMPARE(composer->property("placeholderText").toString(), QStringLiteral("Find"));
+    QCOMPARE(window->property("findIndex").toInt(), -1);
+    QTest::keyClick(window, Qt::Key_Escape);
+    QVERIFY(waitUntil([&] { return !window->property("findActive").toBool(); }));
+    QCOMPARE(composer->property("text").toString(), QString());
+
+    typeIntoComposer(window, QStringLiteral("keep-draft"));
+    QCOMPARE(composer->property("text").toString(), QStringLiteral("keep-draft"));
+    QTest::keyClick(window, Qt::Key_F, Qt::ControlModifier);
+    QVERIFY(waitUntil([&] { return window->property("findActive").toBool(); }));
+    typeIntoComposer(window, QStringLiteral("needle-xyz"));
+    QVERIFY(waitUntil([&] {
+        const int index = window->property("findIndex").toInt();
+        return index >= 0
+            && messages->field(index, QStringLiteral("body"))
+                == QStringLiteral("older unique body needle-xyz");
+    }));
+    QVERIFY(findMarkVisible(list, window->property("findIndex").toInt()));
+
+    const int beforeCount = messages->rowCount();
+    typeIntoComposer(window, QStringLiteral("uniqnick"));
+    QVERIFY(waitUntil([&] {
+        const int index = window->property("findIndex").toInt();
+        return index >= 0
+            && messages->field(index, QStringLiteral("author")) == QStringLiteral("uniqnick");
+    }));
+    QVERIFY(!messages->field(window->property("findIndex").toInt(), QStringLiteral("body"))
+                 .contains(QStringLiteral("uniqnick")));
+    QVERIFY(findMarkVisible(list, window->property("findIndex").toInt()));
+
+    QTest::keyClick(window, Qt::Key_Return);
+    QCOMPARE(messages->rowCount(), beforeCount);
+    QCOMPARE(composer->property("text").toString(), QStringLiteral("uniqnick"));
+
+    QTest::keyClick(window, Qt::Key_Escape);
+    QVERIFY(waitUntil([&] { return !window->property("findActive").toBool(); }));
+    QCOMPARE(composer->property("text").toString(), QStringLiteral("keep-draft"));
+
+    controller.openStatus(QStringLiteral("libera"));
+    QVERIFY(waitUntil([&] {
+        QQuickItem *console = window->findChild<QQuickItem *>(QStringLiteral("consoleList"));
+        return window->property("consoleVisible").toBool() && console && console->isVisible();
+    }));
+    QQuickItem *console = window->findChild<QQuickItem *>(QStringLiteral("consoleList"));
+    QVERIFY(console);
+    auto *log = qobject_cast<NetworkLogModel *>(console->property("model").value<QObject *>());
+    QVERIFY(log);
+    QVERIFY(waitUntil([&] {
+        for (int row = 0; row < log->rowCount(); ++row) {
+            if (log->field(row, QStringLiteral("label")) == QStringLiteral("998"))
+                return true;
+        }
+        return false;
+    }));
+
+    composer->forceActiveFocus();
+    QVERIFY(waitUntil([&] { return composer->hasActiveFocus(); }));
+    QTest::keyClick(window, Qt::Key_F, Qt::ControlModifier);
+    QVERIFY(waitUntil([&] { return window->property("findActive").toBool(); }));
+    QCOMPARE(composer->property("placeholderText").toString(), QStringLiteral("Find"));
+    typeIntoComposer(window, QStringLiteral("998"));
+    QVERIFY(waitUntil([&] {
+        const int index = window->property("findIndex").toInt();
+        return index >= 0 && log->field(index, QStringLiteral("label")) == QStringLiteral("998");
+    }));
+    QVERIFY(!log->field(window->property("findIndex").toInt(), QStringLiteral("text"))
+                 .contains(QStringLiteral("998")));
+    QVERIFY(findMarkVisible(console, window->property("findIndex").toInt()));
+    QVERIFY2(saveFixtureShot(window, QStringLiteral("live-ui-find")), "find screenshot");
 }
 
 int runLiveUiTests(int argc, char **argv)
