@@ -1,6 +1,7 @@
 #include "irceventtranslator.h"
 
 #include "irchistorybatch.h"
+#include "ircprefixnick.h"
 #include "ircpresence.h"
 #include "ircservicenick.h"
 #include "irctcp.h"
@@ -23,14 +24,7 @@ QString parameter(const IrcMessage& message, std::size_t index)
 
 QString author(const IrcMessage& message)
 {
-    if (!message.prefix)
-        return {};
-    if (!message.prefix->nick.empty())
-        return ircWireText(message.prefix->nick);
-    const QString raw = ircWireText(message.prefix->raw);
-    if (raw.contains(QLatin1Char('.')))
-        return {};
-    return raw;
+    return ircPrefixNick(message);
 }
 
 std::string utf8(const QString& value)

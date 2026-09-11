@@ -5,6 +5,7 @@
 #include "irccasemapping.h"
 #include "ircjointarget.h"
 #include "ircparser.h"
+#include "ircprefixnick.h"
 #include "ircpresence.h"
 #include "ircsecretpolicy.h"
 #include "irctcp.h"
@@ -103,13 +104,6 @@ QString parameter(const IrcMessage &message, std::size_t index)
     if (index >= message.parameters.size())
         return {};
     return ircWireText(message.parameters[index]);
-}
-
-QString prefixNick(const IrcMessage &message)
-{
-    if (!message.prefix)
-        return {};
-    return ircWireText(message.prefix->nick);
 }
 
 // Some servers omit user@host on a self JOIN or a NICK change. The bare token
@@ -801,7 +795,7 @@ void IrcSession::handleMessage(const IrcMessage &message)
         && nicksEqual(parameter(message, 0), m_nick)) {
         const auto request = parseCtcpRequest(parameter(message, 1));
         if (request && request->command != QStringLiteral("ACTION")) {
-            const QString sender = prefixNick(message);
+            const QString sender = ircPrefixNick(message);
             if (sender.isEmpty())
                 return;
             QString payload;
