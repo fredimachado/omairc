@@ -2350,6 +2350,15 @@ ApplicationWindow {
         }
 
         Component.onCompleted: pinToEnd()
+
+        ScrollBar.vertical: ScrollBar {
+            policy: list.contentHeight > list.height
+                ? ScrollBar.AlwaysOn : ScrollBar.AlwaysOff
+            onPressedChanged: {
+                if (!pressed)
+                    list.adoptViewport();
+            }
+        }
     }
 
     component UnseenJumpButton: Rectangle {
@@ -3445,14 +3454,6 @@ ApplicationWindow {
                 anchors.bottomMargin: win.scaledSize(12)
                 model: win.activeMessages
 
-                ScrollBar.vertical: ScrollBar {
-                    policy: ScrollBar.AsNeeded
-                    onPressedChanged: {
-                        if (!pressed)
-                            messageList.adoptViewport();
-                    }
-                }
-
                 delegate: Item {
                     id: messageDelegate
 
@@ -3622,14 +3623,6 @@ ApplicationWindow {
                 model: win.networkConsole ? win.networkConsole.lines
                     : (win.mockStatusNetworkId === win.mockOftcId
                         ? oftcStatusMessages : mockStatusMessages)
-
-                ScrollBar.vertical: ScrollBar {
-                    policy: ScrollBar.AsNeeded
-                    onPressedChanged: {
-                        if (!pressed)
-                            consoleList.adoptViewport();
-                    }
-                }
 
                 delegate: Item {
                     id: consoleDelegate
