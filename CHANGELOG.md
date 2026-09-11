@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `Ctrl+F` find works on live conversation and Status transcripts. Empty first press enters find and waits. The composer shows Find. Matches include author and body, or Status label and text. The current row uses the selection color.
+
 ## [0.3.0alpha] - 2026-09-11
 
 ### Added

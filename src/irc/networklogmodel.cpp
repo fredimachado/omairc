@@ -67,7 +67,7 @@ QVariant NetworkLogModel::data(const QModelIndex& index, int role) const
     }
 }
 
-QHash<int, QByteArray> NetworkLogModel::roleNames() const
+QHash<int, QByteArray> NetworkLogModel::staticRoleNames()
 {
     return {
         {TimeRole, "time"},
@@ -76,6 +76,27 @@ QHash<int, QByteArray> NetworkLogModel::roleNames() const
         {SourceRole, "source"},
         {SeverityRole, "severity"},
     };
+}
+
+QHash<int, QByteArray> NetworkLogModel::roleNames() const
+{
+    return staticRoleNames();
+}
+
+QString NetworkLogModel::field(int row, const QString& name) const
+{
+    static const QHash<QString, int> roles = [] {
+        QHash<QString, int> byName;
+        const QHash<int, QByteArray> names = NetworkLogModel::staticRoleNames();
+        for (auto it = names.cbegin(); it != names.cend(); ++it)
+            byName.insert(QString::fromUtf8(it.value()), it.key());
+        return byName;
+    }();
+    const auto role = roles.constFind(name);
+    if (role == roles.cend())
+        return {};
+    const QVariant value = data(index(row, 0), role.value());
+    return value.isValid() ? value.toString() : QString{};
 }
 
 void NetworkLogModel::show(const QString& networkId)

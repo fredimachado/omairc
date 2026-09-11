@@ -1,8 +1,10 @@
 #pragma once
 
 #include <QAbstractListModel>
+#include <QByteArray>
 #include <QHash>
 #include <QString>
+#include <QVariant>
 
 class IrcNetworkLog;
 
@@ -18,11 +20,14 @@ public:
         SeverityRole,
     };
 
+    static QHash<int, QByteArray> staticRoleNames();
+
     explicit NetworkLogModel(IrcNetworkLog& log, QObject *parent = nullptr);
 
     int rowCount(const QModelIndex& parent = {}) const override;
     QVariant data(const QModelIndex& index, int role) const override;
     QHash<int, QByteArray> roleNames() const override;
+    Q_INVOKABLE QString field(int row, const QString& name) const;
     void show(const QString& networkId);
 
 private:

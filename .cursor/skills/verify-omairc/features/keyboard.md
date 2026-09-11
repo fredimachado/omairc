@@ -16,7 +16,7 @@ Keyboard is the window chord map: walk conversations, walk network headers, jump
 - `keyboard-sheet` toggles the shortcut list with `Ctrl+/`. Escape closes the sheet before Status. The list includes `Ctrl+W`, `Ctrl+F`, and `Ctrl+K`.
 - `keyboard-connect` opens Connect with `Ctrl+,` when a connection exists.
 - `keyboard-scroll` pages the visible transcript with `Page Up` / `Page Down` while the composer stays focused.
-- `keyboard-find` finds text in the current conversation or Status with `Ctrl+F`. The composer holds the query. Enter or another `Ctrl+F` goes to the next match and wraps. Escape leaves find and restores the unsent draft.
+- `keyboard-find` finds text in the current conversation or Status with `Ctrl+F`. Empty first press enters find and waits. The composer shows Find and holds the query. Matches include author and body, or Status label and text. The current row uses the selection color. Enter or another `Ctrl+F` goes to the next match and wraps. Escape leaves find and restores the unsent draft.
 
 ## How to get to it (user POV)
 
@@ -52,7 +52,7 @@ Preconditions:
 - `Ctrl+W` is disabled on channels and Status. On `--mock`, typed `/close` stays a chat line. Live `/close` is slash-commands.
 - `Tab` completes a nick prefix in the composer. Prove it with `qml-suite` (`mi` → `mira: `).
 - Page Up / Page Down are disabled while Connect is visible.
-- `Ctrl+F` jumps the current transcript to the match and leaves follow-the-end so the match stays put. Escape restores the draft, not the old scroll position.
+- `Ctrl+F` enters find even with an empty composer. It jumps the current transcript to the match and leaves follow-the-end so the match stays put. Escape restores the draft, not the old scroll position.
 - Escape closes the sheet before Status. `Ctrl+/` toggles it.
 - `Ctrl+K` is disabled while Connect is visible, the same rule as `Ctrl+F`. Duplicate channel names show the network display name.
 - `control-omairc` maps `ctrl+slash` to `Control_L+slash` and `ctrl+shift+p` to `Control_L+Shift_L+p`. xdotool's shorter tokens do not reach those Qt shortcuts on the isolated Xvfb.
