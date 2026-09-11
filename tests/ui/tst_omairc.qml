@@ -2801,6 +2801,43 @@ TestCase {
         restoreNamedConnection();
     }
 
+    function test_connectionSheetEnterFromSwitchesAppliesAndCloses() {
+        restoreNamedConnection();
+        namedConnection.applySucceeds = true;
+        namedConnection.applyCalls = 0;
+        var window = createTemporaryObject(fallbackWindowComponent, null);
+        verify(window !== null, "The switch-enter window should load");
+        tryCompare(window, "visible", true);
+        waitForRendering(window.contentItem);
+        window.requestActivate();
+        tryCompare(window, "active", true);
+
+        keyClick(Qt.Key_Comma, Qt.ControlModifier);
+        var sheet = findChild(window, "connectionSheet");
+        tryCompare(sheet, "visible", true);
+
+        var tls = findChild(window, "connectionTls");
+        verify(tls !== null, "Could not find connectionTls");
+        tls.forceActiveFocus();
+        tryCompare(tls, "activeFocus", true);
+        keyClick(Qt.Key_Return);
+        compare(namedConnection.applyCalls, 1);
+        compare(sheet.visible, false);
+
+        namedConnection.applyCalls = 0;
+        keyClick(Qt.Key_Comma, Qt.ControlModifier);
+        tryCompare(sheet, "visible", true);
+        var startup = findChild(window, "connectionConnectOnStartup");
+        verify(startup !== null, "Could not find connectionConnectOnStartup");
+        startup.forceActiveFocus();
+        tryCompare(startup, "activeFocus", true);
+        keyClick(Qt.Key_Return);
+        compare(namedConnection.applyCalls, 1);
+        compare(sheet.visible, false);
+        window.close();
+        restoreNamedConnection();
+    }
+
     function test_connectionSheetApplyDiscardReachableByTab() {
         restoreNamedConnection();
         var window = createTemporaryObject(fallbackWindowComponent, null);
