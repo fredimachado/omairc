@@ -2885,9 +2885,6 @@ TestCase {
     }
 
     function test_emptyNetworkHeaderIsAKeyboardStop() {
-        if (appWindow)
-            appWindow.close();
-        appWindow = null;
         restoreNamedConnection();
         namedNetworks.append({
             networkId: "oftc",
@@ -2912,7 +2909,10 @@ TestCase {
             verify(oftcSection !== null, "empty OFTC section should stay in the sidebar");
             var oftcHeader = findChild(oftcSection, "networkHeader-oftc");
             verify(oftcHeader !== null, "empty OFTC header should stay in the sidebar");
+            compare(window.sidebarNetworkSections().length, 2);
 
+            window.requestActivate();
+            tryCompare(window, "active", true);
             keyClick(Qt.Key_Right, Qt.AltModifier);
             compare(window.sidebarNetworkFocusId, "oftc");
             compare(window.currentConversation, "#omarchy");
