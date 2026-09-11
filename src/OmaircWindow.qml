@@ -23,6 +23,10 @@ ApplicationWindow {
     minimumHeight: 540
     visible: true
     title: consoleVisible ? statusTitleText() : conversationTitleText()
+    onActiveChanged: {
+        if (active)
+            Qt.callLater(focusConnectionSheetStart);
+    }
 
     readonly property string mockOmarchyId: "mock-omarchy"
     readonly property string mockOftcId: "mock-oftc"
@@ -1467,10 +1471,17 @@ ApplicationWindow {
     }
 
     function focusConnectionSheetStart() {
-        if (!connectionOverlayVisible)
+        if (!connectionOverlayVisible || !win.active)
             return;
         if (connection && (connection.focusPassword || connection.focusNickServ))
             return;
+        var focused = win.activeFocusItem;
+        while (focused) {
+            if (focused.objectName && focused.objectName.indexOf("connection") === 0
+                    && focused.objectName !== "connectionSheet")
+                return;
+            focused = focused.parent;
+        }
         if (connection && connection.nick.length === 0)
             connectionNickField.focusInput();
         else
