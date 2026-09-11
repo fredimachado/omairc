@@ -885,9 +885,9 @@ void ControllerTest::inviteDefaultsToSelectedChannel()
     QVERIFY(controller.start(QStringLiteral("libera")));
     registerSession(session, transport);
     QVERIFY(!controller.sendMessage(QStringLiteral("/invite")));
-    QCOMPARE(controller.lastError(), QStringLiteral("Invite applies to channels"));
+    QCOMPARE(controller.lastError(), QStringLiteral("Command was refused"));
     QVERIFY(!controller.sendMessage(QStringLiteral("/invite bob")));
-    QCOMPARE(controller.lastError(), QStringLiteral("Invite applies to channels"));
+    QCOMPARE(controller.lastError(), QStringLiteral("Command was refused"));
 
     transport->injectBytes(QByteArrayLiteral(":omairc!u@h JOIN :#omarchy\r\n"));
     controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
