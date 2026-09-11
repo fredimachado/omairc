@@ -278,6 +278,7 @@ private slots:
     void bouncerAttachOpensOnlyPeerAuthoredDirects();
     void bouncerQueryReplayDirectAppearsInConversationModel();
     void pseudoClientPrivmsgOpensNoConversation();
+    void pseudoClientReplayBatchOpensNoConversation();
     void routableNicksOpenDirectsAndPseudoClientsDoNot();
     void statusMsgNickservIdentifyDoesNotOpenDirect();
     void automaticIdentifyDoesNotOpenNickServDirect();
@@ -2608,6 +2609,39 @@ void ControllerTest::pseudoClientPrivmsgOpensNoConversation()
     QCOMPARE(rowForTarget(conversations, QStringLiteral("*status")), -1);
     QVERIFY(logContains(controller.console()->lines(),
                         QStringLiteral("You have 1 network attached")));
+}
+
+void ControllerTest::pseudoClientReplayBatchOpensNoConversation()
+{
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+                                                transport);
+    QVERIFY(session);
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    transport->completeConnect();
+    transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :batch echo-message\r\n"
+                          ":server CAP omairc ACK :batch echo-message\r\n"
+                          ":server 001 omairc :Welcome\r\n"));
+
+    // A bouncer keeps a query buffer for its own module, and our own commands
+    // to it are echoed back inside that buffer. The sender guard cannot drop
+    // those lines, because we are a routable sender, so creation has to fail
+    // on the missing peer author instead.
+    transport->injectBytes(
+        QByteArrayLiteral(":znc.in BATCH +s znc.in/playback *status\r\n"
+                          "@batch=s :omairc!u@h PRIVMSG *status :listnetworks\r\n"
+                          "@batch=s :*status!znc@znc.in PRIVMSG omairc :Network: libera\r\n"
+                          ":znc.in BATCH -s\r\n"));
+
+    auto *conversations =
+        qobject_cast<QAbstractItemModel *>(controller.conversations());
+    QVERIFY(conversations);
+    QCOMPARE(rowForTarget(conversations, QStringLiteral("*status")), -1);
+    QCOMPARE(conversations->rowCount(), 0);
+    QVERIFY(logContains(controller.console()->lines(),
+                        QStringLiteral("Network: libera")));
 }
 
 void ControllerTest::routableNicksOpenDirectsAndPseudoClientsDoNot()
