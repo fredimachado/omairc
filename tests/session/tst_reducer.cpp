@@ -89,6 +89,9 @@ private slots:
     void historyAfterCapDoesNotSplice();
     void clearMessagesDropsPendingHistory();
     void nickCollisionMergesMessageIds();
+    void conversationCauseInsertTable();
+    void ensureConversationHonorsCause();
+    void nickShapedJoinDoesNotInventDirect();
 };
 
 void ReducerTest::namesFillAndCompleteWithoutDuplicates()
@@ -1335,6 +1338,115 @@ void ReducerTest::nickCollisionMergesMessageIds()
         QStringLiteral("Alicia"), IrcMsgId{QStringLiteral("id-c")}});
     QCOMPARE(reducer.find(alicia)->messages.size(), afterMerge + 1);
     QCOMPARE(reducer.find(alicia)->messages.back().body, QStringLiteral("fresh"));
+}
+
+void ReducerTest::conversationCauseInsertTable()
+{
+    QVERIFY(ircConversationCauseInserts(
+        IrcConversationCause::UserOpen, false, false));
+    QVERIFY(ircConversationCauseInserts(
+        IrcConversationCause::UserOpen, false, true));
+    QVERIFY(!ircConversationCauseInserts(
+        IrcConversationCause::UserOpen, true, false));
+    QVERIFY(ircConversationCauseInserts(
+        IrcConversationCause::ChannelState, true, false));
+    QVERIFY(!ircConversationCauseInserts(
+        IrcConversationCause::ChannelState, false, false));
+    QVERIFY(ircConversationCauseInserts(
+        IrcConversationCause::InboundOther, true, false));
+    QVERIFY(ircConversationCauseInserts(
+        IrcConversationCause::InboundOther, false, false));
+    QVERIFY(!ircConversationCauseInserts(
+        IrcConversationCause::InboundOther, false, true));
+    QVERIFY(!ircConversationCauseInserts(
+        IrcConversationCause::InboundSelf, false, false));
+    QVERIFY(!ircConversationCauseInserts(
+        IrcConversationCause::InboundSelf, true, false));
+    QVERIFY(!ircConversationCauseInserts(
+        IrcConversationCause::QuietSend, false, false));
+    QVERIFY(!ircConversationCauseInserts(
+        IrcConversationCause::QuietSend, true, false));
+}
+
+void ReducerTest::ensureConversationHonorsCause()
+{
+    IrcEventReducer reducer;
+    welcome(reducer, networkA);
+    const IrcConversationKey lena =
+        reducer.conversationKey(networkA, QStringLiteral("lena"));
+    const IrcConversationKey nickserv =
+        reducer.conversationKey(networkA, QStringLiteral("NickServ"));
+    const IrcConversationKey room =
+        reducer.conversationKey(networkA, QStringLiteral("#room"));
+    const IrcConversationKey ghost =
+        reducer.conversationKey(networkA, QStringLiteral("ghost"));
+
+    QVERIFY(!reducer.ensureConversation(
+        lena, QStringLiteral("lena"), IrcConversationCause::QuietSend));
+    QVERIFY(!reducer.find(lena));
+    QVERIFY(!reducer.ensureConversation(
+        lena, QStringLiteral("lena"), IrcConversationCause::InboundSelf));
+    QVERIFY(!reducer.find(lena));
+
+    reducer.markSelected(ghost);
+    QVERIFY(!reducer.ensureConversation(
+        ghost, QStringLiteral("ghost"), IrcConversationCause::InboundSelf));
+    QVERIFY(!reducer.find(ghost));
+
+    IrcConversationState *human = reducer.ensureConversation(
+        lena, QStringLiteral("lena"), IrcConversationCause::InboundOther);
+    QVERIFY(human);
+    QVERIFY(!human->isChannel());
+
+    QVERIFY(!reducer.ensureConversation(
+        nickserv, QStringLiteral("NickServ"), IrcConversationCause::InboundOther));
+    QVERIFY(!reducer.find(nickserv));
+    IrcConversationState *queried = reducer.ensureConversation(
+        nickserv, QStringLiteral("NickServ"), IrcConversationCause::UserOpen);
+    QVERIFY(queried);
+    QVERIFY(!queried->isChannel());
+
+    QVERIFY(!reducer.ensureConversation(
+        room, QStringLiteral("#room"), IrcConversationCause::UserOpen));
+    QVERIFY(!reducer.find(room));
+    IrcConversationState *channel = reducer.ensureConversation(
+        room, QStringLiteral("#room"), IrcConversationCause::ChannelState);
+    QVERIFY(channel);
+    QVERIFY(channel->isChannel());
+
+    QVERIFY(reducer.ensureConversation(
+        lena, QStringLiteral("lena"), IrcConversationCause::QuietSend));
+    QVERIFY(reducer.ensureConversation(
+        lena, QStringLiteral("lena"), IrcConversationCause::InboundSelf));
+
+    reducer.apply(IrcMessageEvent{
+        lena, QStringLiteral("omairc"), QStringLiteral("hello"), timestamp,
+        QStringLiteral("lena")});
+    QCOMPARE(human->messages.size(), std::size_t(1));
+    QCOMPARE(human->messages.back().body, QStringLiteral("hello"));
+
+    IrcEventReducer inbound;
+    welcome(inbound, networkA);
+    inbound.apply(IrcMessageEvent{
+        nickserv, QStringLiteral("NickServ"), QStringLiteral("identify"), timestamp,
+        QStringLiteral("NickServ")});
+    QVERIFY(!inbound.find(nickserv));
+    inbound.apply(IrcMessageEvent{
+        lena, QStringLiteral("lena"), QStringLiteral("hi"), timestamp,
+        QStringLiteral("lena")});
+    const IrcConversationState *opened = inbound.find(lena);
+    QVERIFY(opened);
+    QVERIFY(!opened->isChannel());
+    QCOMPARE(opened->messages.size(), std::size_t(1));
+}
+
+void ReducerTest::nickShapedJoinDoesNotInventDirect()
+{
+    IrcEventReducer reducer;
+    welcome(reducer, networkA);
+    reducer.apply(IrcJoinEvent{
+        networkA, QStringLiteral("lena"), QStringLiteral("omairc")});
+    QVERIFY(!reducer.find(reducer.conversationKey(networkA, QStringLiteral("lena"))));
 }
 
 int runReducerTests(int argc, char **argv)

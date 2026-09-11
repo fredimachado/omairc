@@ -1,11 +1,13 @@
 #include "irceventreducer.h"
 
+#include "ircservicenick.h"
 #include "ircwiretext.h"
 
 #include <QByteArray>
 
 #include <cstddef>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace
@@ -380,21 +382,32 @@ void IrcEventReducer::forgetUnseen(const QString& networkId,
     }
 }
 
-IrcConversationState& IrcEventReducer::ensureConversation(
-    const IrcConversationKey& key, const QString& displayTarget)
+IrcConversationState *IrcEventReducer::ensureConversation(
+    const IrcConversationKey& key,
+    const QString& displayTarget,
+    IrcConversationCause cause)
 {
-    const auto found = m_conversations.find(key);
-    if (found != m_conversations.end())
-        return found->second;
+    if (IrcConversationState *found = findMutable(key))
+        return found;
+
+    const IrcServerFeatures& features = serverFeatures(key.networkId);
+    const bool targetIsChannel = features.isChannel(utf8(key.normalizedTarget));
+    const std::string_view types = features.channelTypes();
+    const bool targetLooksLikeService = ircIsServiceIdentity(
+        displayTarget,
+        QStringView{},
+        QString::fromLatin1(types.data(), qsizetype(types.size())));
+    if (!ircConversationCauseInserts(cause, targetIsChannel, targetLooksLikeService))
+        return nullptr;
 
     IrcConversationState conversation;
     conversation.key = key;
     conversation.target = displayTarget;
-    if (serverFeatures(key.networkId).isChannel(utf8(key.normalizedTarget)))
+    if (targetIsChannel)
         conversation.detail = IrcChannelState{};
     else
         conversation.detail = IrcDirectMessageState{};
-    return m_conversations.emplace(key, std::move(conversation)).first->second;
+    return &m_conversations.emplace(key, std::move(conversation)).first->second;
 }
 
 IrcConversationState *IrcEventReducer::findMutable(
@@ -457,33 +470,33 @@ void IrcEventReducer::appendChat(const IrcConversationKey& key,
                                  const IrcMsgId& msgid)
 {
     const bool self = isSelf(key.networkId, author);
-    const bool conversationExists =
-        find(key) || (m_selected && *m_selected == key);
-    if (self && !conversationExists)
+    IrcConversationState *conversation = ensureConversation(
+        key,
+        displayTarget,
+        self ? IrcConversationCause::InboundSelf
+             : IrcConversationCause::InboundOther);
+    if (!conversation)
         return;
-
-    IrcConversationState& conversation =
-        ensureConversation(key, displayTarget);
-    if (!msgid.isEmpty() && conversation.messageIds.count(msgid))
+    if (!msgid.isEmpty() && conversation->messageIds.count(msgid))
         return;
     if (!msgid.isEmpty())
-        conversation.messageIds.insert(msgid);
-    conversation.messages.push_back({author, body, timestamp, kind, false,
+        conversation->messageIds.insert(msgid);
+    conversation->messages.push_back({author, body, timestamp, kind, false,
                                      IrcOrigin::Live, msgid});
-    capMessages(conversation);
-    clearTyping(conversation, normalize(key.networkId, author));
+    capMessages(*conversation);
+    clearTyping(*conversation, normalize(key.networkId, author));
 
     const std::optional<ChatLineReason> reason = classifyChatLine(
-        conversation, kind, self, isMention(key.networkId, body));
+        *conversation, kind, self, isMention(key.networkId, body));
     if (reason)
         m_mentionArrival = IrcMentionArrival{author, body};
 
     if (self || (m_selected && *m_selected == key))
         return;
 
-    ++conversation.unread;
+    ++conversation->unread;
     if (reason == ChatLineReason::NickMention)
-        ++conversation.mentions;
+        ++conversation->mentions;
 }
 
 void IrcEventReducer::appendEvent(IrcConversationState& conversation,
@@ -575,8 +588,11 @@ void IrcEventReducer::reduce(const IrcActionEvent& event)
 void IrcEventReducer::reduce(const IrcJoinEvent& event)
 {
     const IrcConversationKey key = conversationKey(event.networkId, event.channel);
-    IrcConversationState& conversation = ensureConversation(key, event.channel);
-    IrcChannelState *channel = conversation.channel();
+    IrcConversationState *conversation =
+        ensureConversation(key, event.channel, IrcConversationCause::ChannelState);
+    if (!conversation)
+        return;
+    IrcChannelState *channel = conversation->channel();
     if (!channel)
         return;
     const QString normalizedNick = normalize(event.networkId, event.nick);
@@ -590,9 +606,9 @@ void IrcEventReducer::reduce(const IrcJoinEvent& event)
     if (self) {
         channel->joined = true;
         channel->historyAnchor = IrcTranscriptAnchor{
-            conversation.trimmed + qint64(conversation.messages.size())};
+            conversation->trimmed + qint64(conversation->messages.size())};
     }
-    appendEvent(conversation, event.nick + QStringLiteral(" joined"), !self);
+    appendEvent(*conversation, event.nick + QStringLiteral(" joined"), !self);
 }
 
 void IrcEventReducer::reduce(const IrcPartEvent& event)
@@ -734,16 +750,22 @@ void IrcEventReducer::reduce(const IrcKickEvent& event)
 void IrcEventReducer::reduce(const IrcTopicEvent& event)
 {
     const IrcConversationKey key = conversationKey(event.networkId, event.channel);
-    IrcConversationState& conversation = ensureConversation(key, event.channel);
-    if (IrcChannelState *channel = conversation.channel())
+    IrcConversationState *conversation =
+        ensureConversation(key, event.channel, IrcConversationCause::ChannelState);
+    if (!conversation)
+        return;
+    if (IrcChannelState *channel = conversation->channel())
         channel->topic = event.topic;
 }
 
 void IrcEventReducer::reduce(const IrcNamesEvent& event)
 {
     const IrcConversationKey key = conversationKey(event.networkId, event.channel);
-    IrcConversationState& conversation = ensureConversation(key, event.channel);
-    IrcChannelState *channel = conversation.channel();
+    IrcConversationState *conversation =
+        ensureConversation(key, event.channel, IrcConversationCause::ChannelState);
+    if (!conversation)
+        return;
+    IrcChannelState *channel = conversation->channel();
     if (!channel)
         return;
 
@@ -764,10 +786,13 @@ void IrcEventReducer::reduce(const IrcModeEvent& event)
     const IrcServerFeatures& features = serverFeatures(event.networkId);
     if (!features.isChannel(utf8(key.normalizedTarget)))
         return;
-    IrcConversationState& conversation = ensureConversation(key, event.target);
-    appendEvent(conversation, event.author + QStringLiteral(" set mode ")
+    IrcConversationState *conversation =
+        ensureConversation(key, event.target, IrcConversationCause::ChannelState);
+    if (!conversation)
+        return;
+    appendEvent(*conversation, event.author + QStringLiteral(" set mode ")
                      + event.mode);
-    IrcChannelState *channel = conversation.channel();
+    IrcChannelState *channel = conversation->channel();
     if (!channel)
         return;
 

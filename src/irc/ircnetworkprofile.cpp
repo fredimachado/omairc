@@ -1,6 +1,7 @@
 #include "ircnetworkprofile.h"
 
 #include "irccommandbuilder.h"
+#include "ircserverfeatures.h"
 
 #include <QRegularExpression>
 #include <QUuid>
@@ -18,11 +19,9 @@ QString prefixChannel(QString channel)
     channel = channel.trimmed();
     if (channel.isEmpty())
         return {};
-    const QChar mark = channel.front();
-    if (mark == QLatin1Char('#') || mark == QLatin1Char('&')
-        || mark == QLatin1Char('+') || mark == QLatin1Char('!')) {
+    const IrcServerFeatures features;
+    if (features.isChannel(utf8(channel)))
         return channel;
-    }
     return QLatin1Char('#') + channel;
 }
 

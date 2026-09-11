@@ -42,6 +42,7 @@ HEADERS += \
     ../src/irc/irctransport.h \
     ../src/irc/ircstatusentry.h \
     ../src/irc/ircservicenick.h \
+    ../src/irc/ircprefixnick.h \
     ../src/irc/ircsecretpolicy.h \
     ../src/irc/ircnetworklog.h \
     ../src/irc/networklogmodel.h \
@@ -96,6 +97,7 @@ SOURCES += \
     ../src/irc/irceventreducer.cpp \
     ../src/irc/ircstatusentry.cpp \
     ../src/irc/ircservicenick.cpp \
+    ../src/irc/ircprefixnick.cpp \
     ../src/irc/ircsecretpolicy.cpp \
     ../src/irc/ircnetworklog.cpp \
     ../src/irc/networklogmodel.cpp \
