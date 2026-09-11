@@ -70,6 +70,8 @@ private slots:
     void reloadTrimEmitsRemovesWhenCountUnchanged();
     void reloadClearAfterCapEmitsRemoves();
     void collapsedJoinRewritesLastRow();
+    void originRoleNameAndValues();
+    void spliceResetsSelectedConversation();
 };
 
 void ModelTest::roleNamesMatchQml()
@@ -102,6 +104,7 @@ void ModelTest::roleNamesMatchQml()
     QCOMPARE(messages.roleNames()[MessageListModel::KindRole], QByteArray("kind"));
     QCOMPARE(messages.roleNames()[MessageListModel::NetworkIdRole],
              QByteArray("networkId"));
+    QCOMPARE(messages.roleNames()[MessageListModel::OriginRole], QByteArray("origin"));
 
     QCOMPARE(members.roleNames()[MemberListModel::NickRole], QByteArray("nick"));
     QCOMPARE(members.roleNames()[MemberListModel::LabelRole], QByteArray("label"));
@@ -167,6 +170,8 @@ void ModelTest::joinNamesPrivmsgPopulateModels()
     QCOMPARE(roleAt(messages, 1, MessageListModel::TimeRole),
              QStringLiteral("00:00"));
     QCOMPARE(roleAt(messages, 1, MessageListModel::NetworkIdRole), networkA);
+    QCOMPARE(roleAt(messages, 1, MessageListModel::OriginRole),
+             QStringLiteral("live"));
 
     QCOMPARE(members.rowCount(), 3);
     QCOMPARE(roleAt(members, 0, MemberListModel::NickRole), QStringLiteral("Alice"));
@@ -715,10 +720,8 @@ void ModelTest::reloadClearAfterCapEmitsRemoves()
     reducer.clearMessages(room);
     messages.reload();
 
-    QCOMPARE(resets.size(), 0);
-    QCOMPARE(removes.size(), 1);
-    QCOMPARE(removes.at(0).at(1).toInt(), 0);
-    QCOMPARE(removes.at(0).at(2).toInt(), 1999);
+    QCOMPARE(resets.size(), 1);
+    QCOMPARE(removes.size(), 0);
     QCOMPARE(messages.rowCount(), 0);
 }
 
@@ -751,6 +754,73 @@ void ModelTest::collapsedJoinRewritesLastRow()
     QCOMPARE(messages.rowCount(), 1);
     QCOMPARE(roleAt(messages, 0, MessageListModel::BodyRole),
              QStringLiteral("Alice, Bob joined"));
+}
+
+void ModelTest::originRoleNameAndValues()
+{
+    IrcEventReducer reducer;
+    MessageListModel messages(reducer);
+    welcome(reducer, networkA);
+    const IrcConversationKey room =
+        reducer.conversationKey(networkA, QStringLiteral("#room"));
+    reducer.apply(IrcJoinEvent{
+        networkA, QStringLiteral("#room"), QStringLiteral("omairc")});
+    reducer.apply(IrcHistoryEvent{
+        room,
+        QStringLiteral("#room"),
+        {{QStringLiteral("alice"), QStringLiteral("older"), timestamp,
+          IrcMessageKindTag::Chat, IrcMsgId{QStringLiteral("id-1")}}},
+    });
+    messages.select(room);
+
+    QCOMPARE(messages.roleNames()[MessageListModel::OriginRole], QByteArray("origin"));
+    QCOMPARE(messages.field(0, QStringLiteral("origin")), QStringLiteral("replay"));
+    QCOMPARE(messages.field(0, QStringLiteral("body")), QStringLiteral("older"));
+    QCOMPARE(messages.field(0, QStringLiteral("author")), QStringLiteral("alice"));
+    QCOMPARE(messages.field(1, QStringLiteral("origin")), QStringLiteral("live"));
+    QCOMPARE(messages.field(1, QStringLiteral("body")), QStringLiteral("omairc joined"));
+    QCOMPARE(messages.field(0, QStringLiteral("no-such-role")), QString());
+    QCOMPARE(roleAt(messages, 0, MessageListModel::OriginRole),
+             QStringLiteral("replay"));
+    QCOMPARE(roleAt(messages, 0, MessageListModel::BodyRole),
+             QStringLiteral("older"));
+    QCOMPARE(roleAt(messages, 1, MessageListModel::OriginRole),
+             QStringLiteral("live"));
+    QCOMPARE(roleAt(messages, 1, MessageListModel::BodyRole),
+             QStringLiteral("omairc joined"));
+}
+
+void ModelTest::spliceResetsSelectedConversation()
+{
+    IrcEventReducer reducer;
+    MessageListModel messages(reducer);
+    welcome(reducer, networkA);
+    const IrcConversationKey room =
+        reducer.conversationKey(networkA, QStringLiteral("#room"));
+    reducer.apply(IrcJoinEvent{
+        networkA, QStringLiteral("#room"), QStringLiteral("omairc")});
+    messages.select(room);
+    QCOMPARE(messages.rowCount(), 1);
+
+    QSignalSpy resets(&messages, &QAbstractItemModel::modelReset);
+    QSignalSpy inserts(&messages, &QAbstractItemModel::rowsInserted);
+    reducer.apply(IrcHistoryEvent{
+        room,
+        QStringLiteral("#room"),
+        {{QStringLiteral("alice"), QStringLiteral("older"), timestamp,
+          IrcMessageKindTag::Chat, IrcMsgId{QStringLiteral("id-1")}}},
+    });
+    messages.reload();
+
+    QCOMPARE(resets.size(), 1);
+    QCOMPARE(inserts.size(), 0);
+    QCOMPARE(messages.rowCount(), 2);
+    QCOMPARE(roleAt(messages, 0, MessageListModel::BodyRole),
+             QStringLiteral("older"));
+    QCOMPARE(roleAt(messages, 0, MessageListModel::OriginRole),
+             QStringLiteral("replay"));
+    QCOMPARE(roleAt(messages, 1, MessageListModel::BodyRole),
+             QStringLiteral("omairc joined"));
 }
 
 int runModelTests(int argc, char **argv)

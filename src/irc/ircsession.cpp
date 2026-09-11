@@ -2,6 +2,7 @@
 
 #include "ircchannelmode.h"
 #include "irccommandbuilder.h"
+#include "irccasemapping.h"
 #include "ircjointarget.h"
 #include "ircparser.h"
 #include "ircpresence.h"
@@ -12,6 +13,7 @@
 
 #include <QByteArray>
 #include <QDateTime>
+#include <QMetaType>
 #include <QNetworkInformation>
 #include <QTimer>
 #include <QtGlobal>
@@ -104,6 +106,18 @@ QString prefixNick(const IrcMessage &message)
     return ircWireText(message.prefix->nick);
 }
 
+// Some servers omit user@host on a self JOIN or a NICK change. The bare token
+// is ambiguous with a server name, so only compare it against a nick we
+// already know. Never treat it as an arbitrary sender.
+QString claimedNick(const IrcMessage &message)
+{
+    if (!message.prefix)
+        return {};
+    if (!message.prefix->nick.empty())
+        return ircWireText(message.prefix->nick);
+    return ircWireText(message.prefix->raw);
+}
+
 int parameterIndex(const IrcMessage &message, const QString &value)
 {
     for (std::size_t index = 0; index < message.parameters.size(); ++index) {
@@ -119,6 +133,15 @@ QStringList capabilityTokens(const IrcMessage &message, int subcommandIndex)
         return {};
     return ircWireText(message.parameters.back())
         .split(QLatin1Char(' '), Qt::SkipEmptyParts);
+}
+
+QString tagValue(const IrcMessage& message, const char *name)
+{
+    for (const IrcTag& tag : message.tags) {
+        if (tag.name == name && tag.value)
+            return ircWireText(*tag.value);
+    }
+    return {};
 }
 
 QByteArray wireLine(const QString &command)
@@ -220,6 +243,7 @@ IrcSession::IrcSession(const IrcSessionConfig &config,
     , m_reachability(reachability)
     , m_capabilities(!config.password.isEmpty())
 {
+    qRegisterMetaType<IrcHistoryBatch>();
     Q_ASSERT(m_transport);
     if (!m_transport->parent())
         m_transport->setParent(this);
@@ -348,6 +372,11 @@ int IrcSession::reconnectAttempt() const
 IrcCapabilitySet IrcSession::capabilities() const
 {
     return m_capabilities.enabled();
+}
+
+bool IrcSession::historyPending() const
+{
+    return !m_historyPending.isEmpty();
 }
 
 void IrcSession::start()
@@ -740,6 +769,8 @@ void IrcSession::handleMessage(const IrcMessage &message)
         handleBatch(message);
         return;
     }
+    if (captureInBatch(message))
+        return;
 
     if (message.command == "PING") {
         if (message.parameters.empty()) {
@@ -759,7 +790,7 @@ void IrcSession::handleMessage(const IrcMessage &message)
     }
 
     if (message.command == "PRIVMSG" && message.parameters.size() >= 2
-        && parameter(message, 0).compare(m_nick, Qt::CaseInsensitive) == 0) {
+        && nicksEqual(parameter(message, 0), m_nick)) {
         const auto request = parseCtcpRequest(parameter(message, 1));
         if (request && request->command != QStringLiteral("ACTION")) {
             const QString sender = prefixNick(message);
@@ -858,18 +889,41 @@ void IrcSession::handleMessage(const IrcMessage &message)
         return;
     }
     if (message.command == "NICK") {
-        const QString oldNick = prefixNick(message);
+        const QString oldNick = claimedNick(message);
         const QString newNick = parameter(message, 0);
         if (!oldNick.isEmpty() && !newNick.isEmpty()
-            && oldNick.compare(m_nick, Qt::CaseInsensitive) == 0) {
+            && nicksEqual(oldNick, m_nick)) {
             m_nick = newNick;
         }
     }
+
+    if (message.command == "FAIL")
+        handleChatHistoryFail(message);
 
     if (message.command == "366" && message.parameters.size() >= 2)
         probeChannelAway(parameter(message, 1));
 
     emit messageReceived(m_config.networkId, message);
+
+    if (message.command == "JOIN" && selfPrefixed(message)) {
+        const QString channel = parameter(message, 0);
+        if (!channel.isEmpty()) {
+            bumpHistoryGeneration(channel);
+            requestChannelHistory(channel);
+        }
+    } else if (message.command == "PART" && selfPrefixed(message)) {
+        const QString channel = parameter(message, 0);
+        if (!channel.isEmpty()) {
+            bumpHistoryGeneration(channel);
+            forgetChannelHistory(channel);
+        }
+    } else if (message.command == "KICK" && selfIs(parameter(message, 1))) {
+        const QString channel = parameter(message, 0);
+        if (!channel.isEmpty()) {
+            bumpHistoryGeneration(channel);
+            forgetChannelHistory(channel);
+        }
+    }
 }
 
 void IrcSession::handleBatch(const IrcMessage &message)
@@ -880,16 +934,305 @@ void IrcSession::handleBatch(const IrcMessage &message)
     if (token.size() < 2)
         return;
     const QString reference = token.mid(1);
-    if (token.startsWith(QLatin1Char('+')))
-        m_openBatches.insert(reference);
-    else if (token.startsWith(QLatin1Char('-')))
-        m_openBatches.remove(reference);
+    if (reference.isEmpty())
+        return;
+    if (token.startsWith(QLatin1Char('+'))) {
+        const QString parent = tagValue(message, "batch");
+        const QString type = parameter(message, 1);
+        if (m_openBatches.contains(reference))
+            return;
+        if (!historyCapabilitiesEnabled() && isHistoryBatch(type, parent)) {
+            ignoreBatch(reference);
+            return;
+        }
+        // A history batch that answers a request we are still waiting on is
+        // never crowded out. Everything else shares the open-batch budget, so
+        // a server cannot make us hold state for batches we did not ask for.
+        const bool solicited = isChatHistoryBatchType(type)
+            && answersPendingHistory(parameter(message, 2));
+        const bool overOpenCap =
+            !solicited && m_openBatches.size() >= kMaxOpenBatches;
+        if (m_ignoredBatches.contains(reference)
+            || (!parent.isEmpty() && m_ignoredBatches.contains(parent))
+            || (overOpenCap && isHistoryBatch(type, parent))) {
+            ignoreBatch(reference);
+            if (isChatHistoryBatchType(type))
+                clearHistoryPending(parameter(message, 2));
+            return;
+        }
+        if (overOpenCap)
+            return;
+        OpenBatch frame;
+        frame.type = type;
+        frame.parent = parent;
+        const QString parentRoot = m_openBatches.contains(frame.parent)
+            ? m_openBatches.value(frame.parent).replayRoot
+            : QString{};
+        if (!parentRoot.isEmpty())
+            frame.replayRoot = parentRoot;
+        else if (isChatHistoryBatchType(frame.type))
+            frame.replayRoot = reference;
+        if (frame.replayRoot == reference) {
+            frame.collected.target = parameter(message, 2);
+            frame.generation = historyGeneration(frame.collected.target);
+        }
+        m_openBatches.insert(reference, frame);
+        return;
+    }
+    if (token.startsWith(QLatin1Char('-')))
+        closeBatch(reference);
+}
+
+void IrcSession::closeBatch(const QString& reference)
+{
+    if (m_ignoredBatches.remove(reference))
+        return;
+    const auto found = m_openBatches.find(reference);
+    if (found == m_openBatches.end())
+        return;
+    const OpenBatch frame = found.value();
+    m_openBatches.erase(found);
+    QSet<QString> children;
+    auto it = m_openBatches.begin();
+    while (it != m_openBatches.end()) {
+        if (it.value().replayRoot == reference) {
+            children.insert(it.key());
+            it = m_openBatches.erase(it);
+        } else {
+            ++it;
+        }
+    }
+    for (const QString& child : children)
+        ignoreBatch(child);
+    if (frame.replayRoot == reference && !frame.collected.target.isEmpty()) {
+        const QString folded = foldChannel(frame.collected.target);
+        const bool currentMembership =
+            frame.generation == historyGeneration(frame.collected.target);
+        if (currentMembership)
+            m_historyPending.remove(folded);
+        if (!currentMembership)
+            return;
+        emit historyBatchReceived(m_config.networkId, frame.collected);
+    }
+}
+
+bool IrcSession::captureInBatch(const IrcMessage& message)
+{
+    const QString batch = tagValue(message, "batch");
+    if (batch.isEmpty())
+        return false;
+    if (m_ignoredBatches.contains(batch))
+        return true;
+    const auto found = m_openBatches.constFind(batch);
+    if (found == m_openBatches.cend())
+        return false;
+    if (found.value().replayRoot.isEmpty())
+        return false;
+    const auto root = m_openBatches.find(found.value().replayRoot);
+    if (root == m_openBatches.end())
+        return false;
+    if (int(root.value().collected.lines.size()) < kHistoryBufferCeiling)
+        root.value().collected.lines.push_back(message);
+    return true;
+}
+
+bool IrcSession::isChatHistoryBatchType(const QString& type) noexcept
+{
+    return type.compare(QLatin1String("chathistory"), Qt::CaseInsensitive) == 0
+        || type.compare(QLatin1String("draft/chathistory"), Qt::CaseInsensitive) == 0;
+}
+
+bool IrcSession::selfPrefixed(const IrcMessage& message) const
+{
+    return selfIs(claimedNick(message));
+}
+
+bool IrcSession::selfIs(const QString& nick) const
+{
+    return !nick.isEmpty() && nicksEqual(nick, m_nick);
+}
+
+void IrcSession::requestChannelHistory(const QString& channel)
+{
+    if (channel.isEmpty())
+        return;
+    const IrcCapabilitySet enabled = m_capabilities.enabled();
+    if (!enabled.contains(IrcCapability::ChatHistory)
+        || !enabled.contains(IrcCapability::Batch)) {
+        return;
+    }
+    const QString key = foldChannel(channel);
+    if (m_historyAsked.contains(key))
+        return;
+    m_historyAsked.insert(key);
+    m_historyPending.insert(key, historyGeneration(channel));
+    // Both placeholders are filled in one pass. Chaining arg() would let a
+    // channel name containing %2 swallow the limit.
+    sendCommand(QStringLiteral("CHATHISTORY LATEST %1 * %2")
+                    .arg(channel, QString::number(m_historyLimit)));
+}
+
+void IrcSession::forgetChannelHistory(const QString& channel)
+{
+    const QString folded = foldChannel(channel);
+    m_historyAsked.remove(folded);
+    m_historyPending.remove(folded);
+    dropHistoryBatches(channel);
+}
+
+void IrcSession::dropHistoryBatches(const QString& channel)
+{
+    const QString folded = foldChannel(channel);
+    QSet<QString> roots;
+    for (auto it = m_openBatches.constBegin(); it != m_openBatches.constEnd(); ++it) {
+        if (it.value().replayRoot == it.key()
+            && foldChannel(it.value().collected.target) == folded) {
+            roots.insert(it.key());
+        }
+    }
+    if (roots.isEmpty())
+        return;
+    QSet<QString> gone;
+    auto it = m_openBatches.begin();
+    while (it != m_openBatches.end()) {
+        if (roots.contains(it.key()) || roots.contains(it.value().replayRoot)) {
+            gone.insert(it.key());
+            it = m_openBatches.erase(it);
+        } else {
+            ++it;
+        }
+    }
+    for (const QString& reference : gone)
+        ignoreBatch(reference);
+}
+
+void IrcSession::bumpHistoryGeneration(const QString& channel)
+{
+    const QString folded = foldChannel(channel);
+    m_historyGeneration[folded] = historyGeneration(channel) + 1;
+}
+
+int IrcSession::historyGeneration(const QString& channel) const
+{
+    return m_historyGeneration.value(foldChannel(channel), 0);
+}
+
+QString IrcSession::foldChannel(const QString& channel) const
+{
+    return ircWireText(m_caseMapping.normalize(utf8(channel)));
+}
+
+void IrcSession::ignoreBatch(const QString& reference)
+{
+    if (reference.isEmpty())
+        return;
+    m_openBatches.remove(reference);
+    if (m_ignoredBatches.contains(reference))
+        return;
+    // At the ceiling we stop remembering references rather than start
+    // discarding tagged lines we cannot account for. A stray replay line
+    // showing up live is a smaller failure than dropping live traffic.
+    if (m_ignoredBatches.size() >= kMaxIgnoredBatches)
+        return;
+    m_ignoredBatches.insert(reference);
+}
+
+void IrcSession::clearHistoryPending(const QString& channel)
+{
+    m_historyPending.remove(foldChannel(channel));
+}
+
+bool IrcSession::nicksEqual(const QString& left, const QString& right) const
+{
+    return m_caseMapping.equals(utf8(left), utf8(right));
+}
+
+bool IrcSession::answersPendingHistory(const QString& channel) const
+{
+    if (channel.isEmpty())
+        return false;
+    const QString folded = foldChannel(channel);
+    const auto pending = m_historyPending.constFind(folded);
+    return pending != m_historyPending.cend()
+        && pending.value() == historyGeneration(channel)
+        && !hasOpenCurrentHistoryBatch(channel);
+}
+
+bool IrcSession::hasOpenCurrentHistoryBatch(const QString& channel) const
+{
+    const QString folded = foldChannel(channel);
+    const int generation = historyGeneration(channel);
+    for (auto it = m_openBatches.constBegin(); it != m_openBatches.constEnd(); ++it) {
+        if (it.value().replayRoot != it.key())
+            continue;
+        if (foldChannel(it.value().collected.target) != folded)
+            continue;
+        if (it.value().generation == generation)
+            return true;
+    }
+    return false;
+}
+
+bool IrcSession::historyCapabilitiesEnabled() const
+{
+    const IrcCapabilitySet enabled = m_capabilities.enabled();
+    return enabled.contains(IrcCapability::ChatHistory)
+        && enabled.contains(IrcCapability::Batch);
+}
+
+void IrcSession::abandonHistoryRequests()
+{
+    QSet<QString> targets;
+    for (auto it = m_openBatches.constBegin(); it != m_openBatches.constEnd(); ++it) {
+        if (it.value().replayRoot == it.key()
+            && !it.value().collected.target.isEmpty()) {
+            targets.insert(it.value().collected.target);
+        }
+    }
+    for (const QString& target : targets)
+        dropHistoryBatches(target);
+    m_historyPending.clear();
+}
+
+bool IrcSession::isHistoryBatch(const QString& type, const QString& parent) const
+{
+    if (isChatHistoryBatchType(type))
+        return true;
+    if (parent.isEmpty())
+        return false;
+    if (m_ignoredBatches.contains(parent))
+        return true;
+    const auto found = m_openBatches.constFind(parent);
+    return found != m_openBatches.cend() && !found.value().replayRoot.isEmpty();
+}
+
+void IrcSession::handleChatHistoryFail(const IrcMessage& message)
+{
+    if (parameter(message, 0).compare(QLatin1String("CHATHISTORY"),
+                                      Qt::CaseInsensitive)
+        != 0) {
+        return;
+    }
+    if (message.parameters.size() < 4)
+        return;
+    // FAIL CHATHISTORY <code> <subcommand> [<target>] [<context>] :description.
+    // The target's position moves with the code, so look for the request this
+    // answers instead of indexing. The trailing description is skipped so a
+    // channel named in prose cannot cancel a different request.
+    for (std::size_t index = 2; index + 1 < message.parameters.size(); ++index) {
+        const QString channel = parameter(message, index);
+        if (!answersPendingHistory(channel))
+            continue;
+        m_historyPending.remove(foldChannel(channel));
+        return;
+    }
 }
 
 void IrcSession::handleCap(const IrcMessage &message)
 {
     const int lsIndex = parameterIndex(message, QStringLiteral("LS"));
     if (lsIndex >= 0) {
+        m_capabilityListSeen = true;
         m_capabilities.advertise(capabilityTokens(message, lsIndex));
         const bool continuation = message.parameters.size() > std::size_t(lsIndex + 1)
             && parameter(message, std::size_t(lsIndex + 1)) == QStringLiteral("*");
@@ -898,6 +1241,11 @@ void IrcSession::handleCap(const IrcMessage &message)
         requestCapabilities();
         return;
     }
+
+    // Every other CAP subcommand answers a negotiation we started. Acting on
+    // one before CAP LS would register the connection with nothing agreed.
+    if (!m_capabilityListSeen)
+        return;
 
     const int newIndex = parameterIndex(message, QStringLiteral("NEW"));
     if (newIndex >= 0) {
@@ -910,6 +1258,9 @@ void IrcSession::handleCap(const IrcMessage &message)
     if (delIndex >= 0) {
         m_capabilities.withdraw(capabilityTokens(message, delIndex));
         publishCapabilities();
+        if (!historyCapabilitiesEnabled())
+            abandonHistoryRequests();
+        requestCapabilities();
         return;
     }
 
@@ -940,7 +1291,7 @@ void IrcSession::handleCap(const IrcMessage &message)
                  false);
             return;
         }
-        endCapabilityNegotiation();
+        requestCapabilities();
     }
 }
 
@@ -980,12 +1331,29 @@ void IrcSession::applyIsupport(const IrcMessage &message)
 {
     if (message.command != "005" || message.parameters.size() <= 2)
         return;
-    constexpr QLatin1String prefix("CHANTYPES=");
+    constexpr QLatin1String channelTypes("CHANTYPES=");
+    constexpr QLatin1String caseMapping("CASEMAPPING=");
+    constexpr QLatin1String historyLimit("CHATHISTORY=");
     const auto last = message.parameters.end() - 1;
     for (auto it = message.parameters.begin() + 1; it != last; ++it) {
         const QString token = ircWireText(*it);
-        if (token.startsWith(prefix))
-            m_channelTypes = token.mid(prefix.size());
+        if (token.startsWith(channelTypes)) {
+            m_channelTypes = token.mid(channelTypes.size());
+        } else if (token.startsWith(caseMapping)) {
+            const QString name = token.mid(caseMapping.size());
+            if (const auto mapping = IrcCaseMapping::fromName(utf8(name)))
+                m_caseMapping = *mapping;
+        } else if (token.startsWith(historyLimit)) {
+            bool parsed = false;
+            const int maximum = token.mid(historyLimit.size()).toInt(&parsed);
+            if (parsed) {
+                // The token is the server's per-command maximum. Zero means it
+                // does not impose one.
+                m_historyLimit = maximum > 0
+                    ? std::min(kHistoryLimit, maximum)
+                    : kHistoryLimit;
+            }
+        }
     }
 }
 
@@ -1075,12 +1443,19 @@ void IrcSession::resetForConnection()
 {
     m_framer = IrcFramer{};
     m_openBatches.clear();
+    m_ignoredBatches.clear();
+    m_historyAsked.clear();
+    m_historyPending.clear();
+    m_historyGeneration.clear();
+    m_historyLimit = kHistoryLimit;
+    m_caseMapping = IrcCaseMapping{IrcCaseMapping::Kind::Rfc1459};
     m_nick = m_config.nick;
     m_registrationSent = false;
     m_registrationNick = RegistrationNick::Configured;
     m_saslRequested = false;
     m_saslPending = false;
     m_capabilityNegotiationEnded = false;
+    m_capabilityListSeen = false;
     m_channelTypes.clear();
     m_capabilityTimer->cancel();
     cancelPingWatchdog();

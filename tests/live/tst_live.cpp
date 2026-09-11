@@ -4,6 +4,7 @@
 #include "irccapability.h"
 #include "ircjointarget.h"
 #include "memberlistmodel.h"
+#include "messagelistmodel.h"
 
 #include <QAbstractItemModel>
 #include <QTest>
@@ -36,6 +37,7 @@ private slots:
     void peerTyping_data();
     void peerTyping();
     void peerMetadata();
+    void chatHistoryOnJoin();
     void saslPlain();
     void foldedNickCollision_data();
     void foldedNickCollision();
@@ -433,6 +435,73 @@ void LiveIrcdTest::peerMetadata()
         return client.memberRole(peer.nick, MemberListModel::StatusRole).toString()
             == QStringLiteral("wave");
     }));
+}
+
+void LiveIrcdTest::chatHistoryOnJoin()
+{
+    const LiveDaemonInfo *daemon = liveDaemon(QStringLiteral("ergo"));
+    if (!daemon)
+        QSKIP("Ergo is not in this live profile");
+    const bool tls = daemon->plainPort == 0;
+    const quint16 port = tls ? daemon->tlsPort : daemon->plainPort;
+    const QString channel = uniqueChannel();
+    const QString seed = QStringLiteral("history-seed-%1").arg(channel);
+
+    RawIrcPeer peer(liveHost(), port, tls, liveSslConfiguration(),
+                    uniqueNick(daemon->nickLength));
+    QVERIFY(peer.waitRegistered());
+    QVERIFY(peer.join(channel));
+    peer.writeLine(QStringLiteral("PRIVMSG %1 :%2").arg(channel, seed));
+    // The server answers in the order it received, so its PONG proves the seed
+    // above is already in the channel's history.
+    peer.writeLine(QStringLiteral("PING :history-seed"));
+    QVERIFY(peer.waitForCommand(QStringLiteral("PONG")));
+
+    LiveClient client(*daemon, uniqueNick(daemon->nickLength), tls);
+    QVERIFY(client.waitRegistered());
+    QVERIFY(client.session->capabilities().contains(IrcCapability::ChatHistory)
+            || waitUntil([&] {
+                   return client.session->capabilities().contains(
+                       IrcCapability::ChatHistory);
+               }));
+    QVERIFY(joinChannel(client, channel));
+    QVERIFY(waitUntil([&] {
+        for (const IrcStatusEntry &entry : client.status) {
+            if (entry.label() == QLatin1String("CHATHISTORY"))
+                return true;
+        }
+        return false;
+    }));
+    client.selectChannel(channel);
+    QVERIFY(waitUntil([&] {
+        QAbstractItemModel *messages = client.controller.messages();
+        for (int row = 0; row < messages->rowCount(); ++row) {
+            if (messages->index(row, 0).data(MessageListModel::BodyRole).toString()
+                == seed) {
+                return true;
+            }
+        }
+        return false;
+    }));
+
+    int seedRow = -1;
+    QAbstractItemModel *messages = client.controller.messages();
+    for (int row = 0; row < messages->rowCount(); ++row) {
+        if (messages->index(row, 0).data(MessageListModel::BodyRole).toString()
+            == seed) {
+            seedRow = row;
+            break;
+        }
+    }
+    QVERIFY(seedRow >= 0);
+    QCOMPARE(client.transcriptRole(seedRow, MessageListModel::BodyRole).toString(),
+             seed);
+    QCOMPARE(client.transcriptRole(seedRow, MessageListModel::OriginRole).toString(),
+             QStringLiteral("replay"));
+    const QString time = client.transcriptRole(seedRow, MessageListModel::TimeRole)
+                             .toString();
+    QVERIFY(!time.isEmpty());
+    QCOMPARE(client.controller.unreadCountFor(client.config.networkId), 0);
 }
 
 void LiveIrcdTest::saslPlain()

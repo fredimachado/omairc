@@ -75,6 +75,7 @@ public:
     const IrcServerFeatures &features() const;
     void selectChannel(const QString &channel);
     QVariant memberRole(const QString &nick, int role);
+    QVariant transcriptRole(int row, int role);
 
     IrcController controller;
     IrcSession *session = nullptr;

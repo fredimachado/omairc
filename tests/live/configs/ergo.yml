@@ -1,7 +1,8 @@
 # Omairc live-test Ergo config, derived from ghcr.io/ergochat/ergo:stable
 # /ircd-bin/default.yaml. Listeners already bind :6667 and :6697.
 # Datastore lives under /tmp/ergo so the bind-mounted /ircd dir stays read-only.
-# History, fakelag, nick reservation, and throttles are off so tests stay local.
+# Fakelag, nick reservation, and throttles are off so tests stay local.
+# In-memory history is on for CHATHISTORY. Autoreplay on join stays 0.
 
 # This is the default config file for Ergo.
 # It contains recommended defaults for all settings, including some behaviors
@@ -1075,7 +1076,7 @@ history:
     # across server restarts. however, you may want to understand how message
     # history interacts with the GDPR and/or any data privacy laws that apply
     # in your country and the countries of your users.
-    enabled: false
+    enabled: true
 
     # if the in-memory backend is enabled for a channel, how many channel-specific events
     # (messages, joins, parts) should be retained?

@@ -208,7 +208,7 @@ make -j"$JOBS"
 UI_STATE="$(mktemp -d "${TMPDIR:-/tmp}/omairc-live-ui.XXXXXX")"
 ARTIFACTS="$ROOT/test-artifacts/live-ui"
 mkdir -p "$ARTIFACTS"
-SHOTS="live-ui-ready live-ui-channel-left live-ui-channel-right live-ui-status-left live-ui-status-right live-ui-dm-in-left live-ui-dm-in-right live-ui-dm-out-left live-ui-dm-out-right live-ui-grouped-messages"
+SHOTS="live-ui-ready live-ui-channel-left live-ui-channel-right live-ui-status-left live-ui-status-right live-ui-dm-in-left live-ui-dm-in-right live-ui-dm-out-left live-ui-dm-out-right"
 for shot in $SHOTS; do
   rm -f -- "$ARTIFACTS/$shot.png"
 done

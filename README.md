@@ -35,6 +35,7 @@ desktop text size.
 - Local CLI control of the running client over the same runtime socket
   (`connections`, `status`, `send`, `raise`). This is not a second IRC client.
 - No saved message history.
+- A server that advertises CHATHISTORY and BATCH can fill a joined channel with its last 100 lines.
 - No DCC, file transfer, voice, or video.
 - No plugins or scripts.
 - No bouncer-specific history synchronization.

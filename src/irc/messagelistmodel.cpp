@@ -64,12 +64,16 @@ QVariant MessageListModel::data(const QModelIndex& index, int role) const
         return kindString(message.kind);
     case NetworkIdRole:
         return conversation->key.networkId;
+    case OriginRole:
+        return message.origin == IrcOrigin::Replay
+            ? QStringLiteral("replay")
+            : QStringLiteral("live");
     default:
         return {};
     }
 }
 
-QHash<int, QByteArray> MessageListModel::roleNames() const
+QHash<int, QByteArray> MessageListModel::staticRoleNames()
 {
     return {
         {AuthorRole, "author"},
@@ -77,22 +81,47 @@ QHash<int, QByteArray> MessageListModel::roleNames() const
         {BodyRole, "body"},
         {KindRole, "kind"},
         {NetworkIdRole, "networkId"},
+        {OriginRole, "origin"},
     };
+}
+
+QHash<int, QByteArray> MessageListModel::roleNames() const
+{
+    return staticRoleNames();
+}
+
+QString MessageListModel::field(int row, const QString& name) const
+{
+    static const QHash<QString, int> roles = [] {
+        QHash<QString, int> byName;
+        const QHash<int, QByteArray> names = MessageListModel::staticRoleNames();
+        for (auto it = names.cbegin(); it != names.cend(); ++it)
+            byName.insert(QString::fromUtf8(it.value()), it.key());
+        return byName;
+    }();
+    const auto role = roles.constFind(name);
+    if (role == roles.cend())
+        return {};
+    const QVariant value = data(index(row, 0), role.value());
+    return value.isValid() ? value.toString() : QString{};
 }
 
 void MessageListModel::reload()
 {
     int count = 0;
     int trimmed = 0;
+    int spliceEpoch = 0;
     if (m_selected) {
         if (const IrcConversationState *conversation = m_reducer.find(*m_selected)) {
             count = int(conversation->messages.size());
             trimmed = conversation->trimmed;
+            spliceEpoch = conversation->spliceEpoch;
         }
     }
 
     const bool sameConversation = m_selected.has_value() == m_loaded.has_value()
-        && (!m_selected || *m_selected == *m_loaded);
+        && (!m_selected || *m_selected == *m_loaded)
+        && spliceEpoch == m_spliceEpoch;
     if (sameConversation) {
         int removed = trimmed - m_trimmed;
         if (removed < 0)
@@ -124,6 +153,7 @@ void MessageListModel::reload()
     m_count = count;
     m_loaded = m_selected;
     m_trimmed = trimmed;
+    m_spliceEpoch = spliceEpoch;
     endResetModel();
 }
 

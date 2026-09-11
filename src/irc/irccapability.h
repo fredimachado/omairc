@@ -14,6 +14,7 @@ enum class IrcCapability {
     Chghost,
     CapNotify,
     EchoMessage,
+    ChatHistory,
 };
 
 class IrcCapabilitySet

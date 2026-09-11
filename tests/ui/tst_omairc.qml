@@ -1615,6 +1615,103 @@ TestCase {
         compare(dmList.model.get(dmStart).body, "dm continuation");
     }
 
+    function test_replayAndLiveSameAuthorMinuteDoNotGroup() {
+        var list = item("messageList");
+        var start = list.model.count;
+        list.model.append({
+            author: "anna",
+            time: "16:40",
+            body: "replayed line",
+            kind: "message",
+            origin: "replay"
+        });
+        list.model.append({
+            author: "anna",
+            time: "16:40",
+            body: "live line",
+            kind: "message",
+            origin: "live"
+        });
+        tryCompare(list.model, "count", start + 2);
+
+        var replay = renderedMessageRow(list, start);
+        var live = renderedMessageRow(list, start + 1);
+        assertMessageChrome(replay, true, "replayed line");
+        assertMessageChrome(live, true, "live line");
+        var replayBody = findChild(replay, "messageBody");
+        compare(replayBody.color, appWindow.mutedColor);
+
+        var replayInitial = findChild(replay, "messageAvatarInitial");
+        var liveInitial = findChild(live, "messageAvatarInitial");
+        verify(replayInitial !== null, "Could not find messageAvatarInitial");
+        verify(liveInitial !== null, "Could not find messageAvatarInitial");
+        compare(replayInitial.color.toString(), appWindow.mutedColor.toString());
+        compare(liveInitial.color.toString(),
+                Qt.color(appWindow.nickColor("anna")).toString());
+        verify(liveInitial.color.toString() !== appWindow.mutedColor.toString());
+        saveScreenshot("replay-live-ungrouped");
+    }
+
+    function prependMockReplay(list, count) {
+        var index = 0;
+        for (index = 0; index < count; ++index) {
+            list.model.insert(0, {
+                author: "anna",
+                time: "09:00",
+                body: "replayed " + index,
+                kind: "message",
+                origin: "replay"
+            });
+        }
+        tryCompare(list.model, "count", list.count);
+    }
+
+    function test_historySpliceKeepsTheReaderOnTheSameMessage() {
+        var list = item("messageList");
+        fillMockMessagesUntilScrollable(list);
+
+        keyClick(Qt.Key_PageUp);
+        waitForRendering(appWindow.contentItem);
+        tryCompare(list, "stick", 1);
+        verify(!transcriptPinned(list));
+
+        var anchorBody = list.model.get(firstVisibleIndex(list)).body;
+        list.snapshotAnchor();
+        prependMockReplay(list, 9);
+        waitForRendering(appWindow.contentItem);
+        list.restoreAnchor();
+        waitForRendering(appWindow.contentItem);
+        wait(0);
+
+        compare(list.model.get(firstVisibleIndex(list)).body, anchorBody);
+        saveScreenshot("history-splice-anchor");
+    }
+
+    function test_historySpliceMovesTheUnseenMarkerWithItsRow() {
+        var list = item("messageList");
+        fillMockMessagesUntilScrollable(list);
+
+        keyClick(Qt.Key_PageUp);
+        waitForRendering(appWindow.contentItem);
+        tryCompare(list, "stick", 1);
+
+        var previousCount = list.model.count;
+        appendMockMessages(list, 1, "first unseen");
+        waitForRendering(appWindow.contentItem);
+        wait(0);
+        compare(list.firstUnseenIndex, previousCount);
+        var unseenBody = list.model.get(list.firstUnseenIndex).body;
+
+        var beforeSplice = list.model.count;
+        prependMockReplay(list, 9);
+        list.noteSplice(beforeSplice, list.count);
+        compare(list.model.get(list.firstUnseenIndex).body, unseenBody);
+
+        list.firstUnseenIndex = -1;
+        list.noteSplice(list.count, list.count + 9);
+        compare(list.firstUnseenIndex, -1);
+    }
+
     function test_messageBodyIsSelectable() {
         var composer = item("messageComposer");
         mouseClick(composer);

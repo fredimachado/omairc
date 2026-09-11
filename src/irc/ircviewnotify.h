@@ -162,6 +162,11 @@ struct IrcViewClassifier {
         return IrcViewNotify::typingOnly();
     }
 
+    IrcViewNotify operator()(const IrcHistoryEvent&) const
+    {
+        return IrcViewNotify::transcript();
+    }
+
     IrcViewNotify operator()(const IrcWhoisTranscriptEvent&) const
     {
         return IrcViewNotify::transcript();

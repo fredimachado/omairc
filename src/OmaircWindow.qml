@@ -310,27 +310,21 @@ ApplicationWindow {
             var value = item[name];
             return value == null ? "" : String(value);
         }
-        if (typeof model.data !== "function" || typeof model.index !== "function")
+        if (typeof model.field !== "function")
             return "";
-        // MessageListModel roles are UserRole+1..+4: author, time, body, kind.
-        var offset = name === "author" ? 1
-            : name === "time" ? 2
-            : name === "body" ? 3
-            : name === "kind" ? 4
-            : -1;
-        if (offset < 0)
-            return "";
-        var value = model.data(model.index(row, 0), Qt.UserRole + offset);
+        var value = model.field(row, name);
         return value == null ? "" : String(value);
     }
 
-    function continuesMessageGroup(model, row, author, time, kind) {
+    function continuesMessageGroup(model, row, author, time, kind, origin) {
         if (kind === "event" || kind === "whois"
             || row <= 0 || author.length === 0 || time.length === 0)
             return false;
         var previousKind = transcriptField(model, row - 1, "kind");
         if (previousKind === "event" || previousKind === "whois"
             || previousKind.length === 0)
+            return false;
+        if (transcriptField(model, row - 1, "origin") !== origin)
             return false;
         return transcriptField(model, row - 1, "author") === author
             && transcriptField(model, row - 1, "time") === time;
@@ -1836,7 +1830,7 @@ ApplicationWindow {
 
         property bool pinning: false
         property int trackedCount: 0
-        property int restoreIndex: -1
+        property int restoreOffset: -1
         property int pinGeneration: 0
         property bool resetPending: false
         property int resetSavedCount: 0
@@ -1913,24 +1907,49 @@ ApplicationWindow {
             trackedCount = newCount;
         }
 
+        function noteSplice(previousCount, newCount) {
+            trackedCount = newCount;
+            if (newCount <= 0) {
+                pinToEnd();
+                return;
+            }
+            if (stick === stickFollowing) {
+                stickToEnd();
+                return;
+            }
+            // Replay rows land above the reader, so nothing new arrived at the
+            // bottom. Carry an armed marker along with its row rather than
+            // arming a fresh one over backfilled history.
+            if (firstUnseenIndex >= 0) {
+                firstUnseenIndex += newCount - previousCount;
+                if (firstUnseenIndex < 0 || firstUnseenIndex >= newCount)
+                    firstUnseenIndex = -1;
+            }
+        }
+
         function snapshotAnchor() {
             var index = indexAt(Math.max(1, width / 2), contentY + 1);
             if (index < 0)
                 index = indexAt(Math.max(1, width / 2), contentY + 8);
-            restoreIndex = index >= 0 ? index : 0;
+            if (index < 0)
+                index = 0;
+            // A history splice inserts replay rows above the reader and may trim
+            // the front, so a raw index names a different message afterwards.
+            // Distance from the last row survives both.
+            restoreOffset = count - index;
         }
 
         function restoreAnchor() {
+            var offset = restoreOffset;
+            restoreOffset = -1;
             if (stick === stickFollowing) {
-                restoreIndex = -1;
                 pinToEnd();
                 return;
             }
-            var target = restoreIndex;
-            restoreIndex = -1;
             pinning = true;
             var generation = ++pinGeneration;
-            if (target >= 0 && target < count)
+            var target = count - offset;
+            if (offset >= 0 && target >= 0 && target < count)
                 positionViewAtIndex(target, ListView.Beginning);
             Qt.callLater(function() {
                 if (generation !== pinGeneration)
@@ -1991,7 +2010,7 @@ ApplicationWindow {
             function onModelReset() {
                 var previous = list.resetSavedCount;
                 list.resetPending = false;
-                list.noteGrowth(previous, list.count);
+                list.noteSplice(previous, list.count);
                 list.restoreAnchor();
             }
             function onRowsInserted(parent, first, last) {
@@ -3119,9 +3138,11 @@ ApplicationWindow {
                     required property string time
                     required property string body
                     required property string kind
+                    readonly property string origin: win.transcriptField(messageList.model, index, "origin")
+                    readonly property bool replayed: origin === "replay"
                     readonly property bool isChat: kind !== "event" && kind !== "whois"
                     readonly property bool grouped: win.continuesMessageGroup(
-                        messageList.model, index, author, time, kind)
+                        messageList.model, index, author, time, kind, origin)
 
                     width: messageList.width
                     height: kind === "event"
@@ -3181,13 +3202,18 @@ ApplicationWindow {
                         radius: width / 2
                         color: win.mixColors(
                             win.pageColor,
-                            win.nickColor(messageDelegate.author),
+                            messageDelegate.replayed
+                                ? win.mutedColor
+                                : win.nickColor(messageDelegate.author),
                             win.darkMode ? 0.23 : 0.16)
 
                         Text {
+                            objectName: "messageAvatarInitial"
                             anchors.centerIn: parent
                             text: win.initials(messageDelegate.author)
-                            color: win.nickColor(messageDelegate.author)
+                            color: messageDelegate.replayed
+                                ? win.mutedColor
+                                : win.nickColor(messageDelegate.author)
                             font.family: "iA Writer Mono S"
                             font.bold: true
                             font.pixelSize: win.scaledSize(13)
@@ -3205,7 +3231,7 @@ ApplicationWindow {
 
                         Text {
                             text: messageDelegate.author
-                            color: win.nickColor(messageDelegate.author)
+                            color: messageDelegate.replayed ? win.mutedColor : win.nickColor(messageDelegate.author)
                             font.family: "iA Writer Mono S"
                             font.bold: true
                             font.pixelSize: win.scaledSize(12)
@@ -3233,7 +3259,8 @@ ApplicationWindow {
                             ? win.scaledSize(4)
                             : win.scaledSize(29)
                         text: win.plainIrcText(messageDelegate.body)
-                        color: messageDelegate.kind === "action" ? win.mutedColor : win.inkColor
+                        color: (messageDelegate.replayed || messageDelegate.kind === "action")
+                            ? win.mutedColor : win.inkColor
                         selectionColor: win.selectionColor
                         selectedTextColor: "#ffffff"
                         wrapMode: TextEdit.Wrap

@@ -128,6 +128,8 @@ IrcSession *IrcController::addSession(const IrcSessionConfig& config,
     });
     connect(session, &IrcSession::messageReceived,
             this, &IrcController::handleMessage);
+    connect(session, &IrcSession::historyBatchReceived,
+            this, &IrcController::handleHistoryBatch);
     connect(session, &IrcSession::capabilitiesChanged,
             this, &IrcController::handleCapabilities);
     connect(session, &IrcSession::stateChanged, this,
@@ -1103,10 +1105,10 @@ void IrcController::echoIfPresent(IrcSession *session,
     const QDateTime now = QDateTime::currentDateTimeUtc();
     const QString nick = session->nick();
     if (wire == QuietWire::Notice) {
-        apply(IrcNoticeEvent{key, nick, body, now, target});
+        apply(IrcNoticeEvent{key, nick, body, now, target, {}});
         return;
     }
-    apply(IrcMessageEvent{key, nick, body, now, target});
+    apply(IrcMessageEvent{key, nick, body, now, target, {}});
 }
 
 void IrcController::unawayAfterChat(IrcSession *session)
@@ -1153,10 +1155,10 @@ void IrcController::echoLocal(IrcMessageKind kind, const QString& body)
     const QDateTime now = QDateTime::currentDateTimeUtc();
     const QString nick = currentNick();
     if (kind == IrcMessageKind::Action) {
-        apply(IrcActionEvent{*m_selected, nick, body, now, selectedTarget()});
+        apply(IrcActionEvent{*m_selected, nick, body, now, selectedTarget(), {}});
         return;
     }
-    apply(IrcMessageEvent{*m_selected, nick, body, now, selectedTarget()});
+    apply(IrcMessageEvent{*m_selected, nick, body, now, selectedTarget(), {}});
 }
 
 void IrcController::adoptReducerSelection()
@@ -1272,6 +1274,16 @@ void IrcController::handleMessage(const QString& networkId,
         }
         apply(event);
     }
+}
+
+void IrcController::handleHistoryBatch(const QString& networkId,
+                                       const IrcHistoryBatch& batch)
+{
+    const auto event = IrcEventTranslator::translateHistory(
+        networkId, m_currentNicks.value(networkId),
+        m_reducer.serverFeatures(networkId), batch);
+    if (event)
+        apply(*event);
 }
 
 void IrcController::reloadModels()

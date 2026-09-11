@@ -260,6 +260,7 @@ private slots:
     void selectConversationByIdUsesCompositeKey();
     void forgetNetworkDropsGhostRowsAndLog();
     void backgroundChatBumpsConversationEpoch();
+    void chatHistoryBatchShowsBodyAndTime();
     void whoisFromChannelCopiesStatusLinesAsEvents();
     void whoisInterleavesByAskingBuffer();
     void statusWhoisSupersedesConversationWatch();
@@ -2175,7 +2176,10 @@ void ControllerTest::incomingNickRetargetsSelectedDirect()
     auto *members = qobject_cast<QAbstractItemModel *>(controller.members());
     QCOMPARE(roleAt(members, 0, MemberListModel::NickRole), QStringLiteral("Alicia"));
     QCOMPARE(roleAt(messages, messages->rowCount() - 1, MessageListModel::BodyRole),
-             QStringLiteral("omairc joined, Alice is now Alicia"));
+             QStringLiteral("Alice is now Alicia"));
+    QCOMPARE(messages->rowCount(), 2);
+    QCOMPARE(roleAt(messages, 0, MessageListModel::BodyRole),
+             QStringLiteral("omairc joined"));
 
     controller.selectConversation(QStringLiteral("libera"), QStringLiteral("Alicia"));
     QVERIFY(controller.sendMessage(QStringLiteral("hello")));
@@ -2826,6 +2830,41 @@ void ControllerTest::backgroundChatBumpsConversationEpoch()
     QVERIFY(spy.count() >= 1);
     QCOMPARE(controller.unreadCountFor(QStringLiteral("network-b")), 1);
     QVERIFY(!controller.mentionFor(QStringLiteral("network-b")));
+}
+
+void ControllerTest::chatHistoryBatchShowsBodyAndTime()
+{
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+                                                transport);
+    QVERIFY(session);
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    transport->completeConnect();
+    transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :batch chathistory\r\n"
+                          ":server CAP omairc ACK :batch chathistory\r\n"
+                          ":server 001 omairc :Welcome\r\n"
+                          ":omairc!u@h JOIN :#omarchy\r\n"));
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+
+    transport->injectBytes(
+        QByteArrayLiteral(
+            ":irc.host BATCH +hx chathistory #omarchy\r\n"
+            "@batch=hx;time=2011-10-19T16:40:51.620Z;msgid=old :alice!u@h PRIVMSG #omarchy :older\r\n"
+            ":irc.host BATCH -hx\r\n"));
+
+    auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
+    QVERIFY(messages);
+    QCOMPARE(roleAt(messages, 0, MessageListModel::BodyRole),
+             QStringLiteral("older"));
+    QCOMPARE(roleAt(messages, 0, MessageListModel::TimeRole),
+             QStringLiteral("16:40"));
+    QCOMPARE(roleAt(messages, 0, MessageListModel::OriginRole),
+             QStringLiteral("replay"));
+    QCOMPARE(roleAt(messages, 1, MessageListModel::BodyRole),
+             QStringLiteral("omairc joined"));
+    QCOMPARE(controller.unreadCountFor(QStringLiteral("libera")), 0);
 }
 
 void ControllerTest::whoisFromChannelCopiesStatusLinesAsEvents()
