@@ -4,6 +4,7 @@
 
 #include <QByteArray>
 
+#include <cstddef>
 #include <string>
 #include <vector>
 
@@ -53,6 +54,29 @@ QString collapseEventBody(const QString& existing, const QString& incoming)
         }
     }
     return existing + QStringLiteral(", ") + incoming;
+}
+
+enum class ChatLineReason
+{
+    NickMention,
+    DirectMessage,
+};
+
+std::optional<ChatLineReason> classifyChatLine(
+    const IrcConversationState& conversation,
+    IrcMessageKind kind,
+    bool self,
+    bool nickHit)
+{
+    if (kind != IrcMessageKind::Message && kind != IrcMessageKind::Action)
+        return std::nullopt;
+    if (self)
+        return std::nullopt;
+    if (nickHit)
+        return ChatLineReason::NickMention;
+    if (!conversation.isChannel())
+        return ChatLineReason::DirectMessage;
+    return std::nullopt;
 }
 }
 
@@ -162,6 +186,24 @@ bool IrcEventReducer::dropDirectMessage(const IrcConversationKey& key)
     return true;
 }
 
+void IrcEventReducer::forgetNetwork(const QString& networkId)
+{
+    if (networkId.isEmpty())
+        return;
+    for (auto it = m_conversations.begin(); it != m_conversations.end(); ) {
+        if (it->first.networkId == networkId)
+            it = m_conversations.erase(it);
+        else
+            ++it;
+    }
+    m_features.erase(networkId);
+    m_currentNicks.erase(networkId);
+    m_presence.erase(networkId);
+    m_selfAway.erase(networkId);
+    if (m_selected && m_selected->networkId == networkId)
+        m_selected.reset();
+}
+
 void IrcEventReducer::clearMessages(const IrcConversationKey& key)
 {
     IrcConversationState *conversation = findMutable(key);
@@ -169,6 +211,10 @@ void IrcEventReducer::clearMessages(const IrcConversationKey& key)
         return;
     conversation->trimmed += int(conversation->messages.size());
     conversation->messages.clear();
+    conversation->messageIds.clear();
+    ++conversation->spliceEpoch;
+    if (IrcChannelState *channel = conversation->channel())
+        channel->historyAnchor.reset();
 }
 
 const IrcEventReducer::Store& IrcEventReducer::conversations() const noexcept
@@ -241,6 +287,18 @@ QStringList IrcEventReducer::typingNicks(const IrcConversationKey& key,
         nicks.append(entry.second.displayNick);
     }
     return nicks;
+}
+
+bool IrcEventReducer::directPeerIsTyping(const IrcConversationKey& key,
+                                         const QDateTime& now) const
+{
+    const IrcConversationState *conversation = find(key);
+    if (!conversation || conversation->isChannel())
+        return false;
+    const auto found = conversation->typing.find(key.normalizedTarget);
+    if (found == conversation->typing.end())
+        return false;
+    return ircIsTyping(found->second, now);
 }
 
 void IrcEventReducer::clearTypingFacts(const QString& networkId)
@@ -395,26 +453,36 @@ void IrcEventReducer::appendChat(const IrcConversationKey& key,
                                  const QString& author,
                                  const QString& body,
                                  const QDateTime& timestamp,
-                                 IrcMessageKind kind)
+                                 IrcMessageKind kind,
+                                 const IrcMsgId& msgid)
 {
+    const bool self = isSelf(key.networkId, author);
+    const bool conversationExists =
+        find(key) || (m_selected && *m_selected == key);
+    if (self && !conversationExists)
+        return;
+
     IrcConversationState& conversation =
         ensureConversation(key, displayTarget);
-    conversation.messages.push_back({author, body, timestamp, kind});
+    if (!msgid.isEmpty() && conversation.messageIds.count(msgid))
+        return;
+    if (!msgid.isEmpty())
+        conversation.messageIds.insert(msgid);
+    conversation.messages.push_back({author, body, timestamp, kind, false,
+                                     IrcOrigin::Live, msgid});
     capMessages(conversation);
     clearTyping(conversation, normalize(key.networkId, author));
 
-    const bool self = isSelf(key.networkId, author);
-    const bool mentionKind = kind == IrcMessageKind::Message
-        || kind == IrcMessageKind::Action;
-    const bool mentioned = !self && mentionKind && isMention(key.networkId, body);
-    if (mentioned)
+    const std::optional<ChatLineReason> reason = classifyChatLine(
+        conversation, kind, self, isMention(key.networkId, body));
+    if (reason)
         m_mentionArrival = IrcMentionArrival{author, body};
 
     if (self || (m_selected && *m_selected == key))
         return;
 
     ++conversation.unread;
-    if (mentioned)
+    if (reason == ChatLineReason::NickMention)
         ++conversation.mentions;
 }
 
@@ -430,7 +498,17 @@ void IrcEventReducer::appendEvent(IrcConversationState& conversation,
         }
     }
     conversation.messages.push_back(
-        {QString(), body, QDateTime(), IrcMessageKind::Event, collapsible});
+        {QString(), body, QDateTime(), IrcMessageKind::Event, collapsible,
+         IrcOrigin::Live, IrcMsgId{}});
+    capMessages(conversation);
+}
+
+void IrcEventReducer::appendWhois(IrcConversationState& conversation,
+                                  const QString& body)
+{
+    conversation.messages.push_back(
+        {QString(), body, QDateTime(), IrcMessageKind::Whois, false,
+         IrcOrigin::Live, IrcMsgId{}});
     capMessages(conversation);
 }
 
@@ -440,8 +518,18 @@ void IrcEventReducer::capMessages(IrcConversationState& conversation)
     const int extra = int(messages.size()) - kMaxMessages;
     if (extra <= 0)
         return;
+    for (int index = 0; index < extra; ++index) {
+        if (!messages[std::size_t(index)].msgid.isEmpty())
+            conversation.messageIds.erase(messages[std::size_t(index)].msgid);
+    }
     messages.erase(messages.begin(), messages.begin() + extra);
     conversation.trimmed += extra;
+    if (IrcChannelState *channel = conversation.channel()) {
+        if (channel->historyAnchor
+            && channel->historyAnchor->sequence < conversation.trimmed) {
+            channel->historyAnchor.reset();
+        }
+    }
 }
 
 void IrcEventReducer::reduce(const IrcWelcomeEvent& event)
@@ -456,6 +544,7 @@ void IrcEventReducer::reduce(const IrcWelcomeEvent& event)
         if (IrcChannelState *channel = conversation.channel()) {
             channel->members.clear();
             channel->joined = false;
+            channel->historyAnchor.reset();
             stopNamesSync(*channel);
         }
         conversation.typing.clear();
@@ -466,21 +555,21 @@ void IrcEventReducer::reduce(const IrcMessageEvent& event)
 {
     appendChat(event.conversation, displayTarget(event.conversation, event.target),
                event.author, event.body,
-               event.timestamp, IrcMessageKind::Message);
+               event.timestamp, IrcMessageKind::Message, event.msgid);
 }
 
 void IrcEventReducer::reduce(const IrcNoticeEvent& event)
 {
     appendChat(event.conversation, displayTarget(event.conversation, event.target),
                event.author, event.body,
-               event.timestamp, IrcMessageKind::Notice);
+               event.timestamp, IrcMessageKind::Notice, event.msgid);
 }
 
 void IrcEventReducer::reduce(const IrcActionEvent& event)
 {
     appendChat(event.conversation, displayTarget(event.conversation, event.target),
                event.author, event.body,
-               event.timestamp, IrcMessageKind::Action);
+               event.timestamp, IrcMessageKind::Action, event.msgid);
 }
 
 void IrcEventReducer::reduce(const IrcJoinEvent& event)
@@ -497,9 +586,13 @@ void IrcEventReducer::reduce(const IrcJoinEvent& event)
         ranks = existing->second.ranks;
     channel->members.insert_or_assign(
         normalizedNick, IrcMemberState{event.nick, ranks});
-    if (isSelf(event.networkId, event.nick))
+    const bool self = isSelf(event.networkId, event.nick);
+    if (self) {
         channel->joined = true;
-    appendEvent(conversation, event.nick + QStringLiteral(" joined"), true);
+        channel->historyAnchor = IrcTranscriptAnchor{
+            conversation.trimmed + qint64(conversation.messages.size())};
+    }
+    appendEvent(conversation, event.nick + QStringLiteral(" joined"), !self);
 }
 
 void IrcEventReducer::reduce(const IrcPartEvent& event)
@@ -513,6 +606,7 @@ void IrcEventReducer::reduce(const IrcPartEvent& event)
     channel.members.erase(departed.front());
     if (isSelf(event.networkId, event.nick)) {
         channel.joined = false;
+        channel.historyAnchor.reset();
         for (const auto& member : channel.members)
             departed.append(member.first);
         channel.members.clear();
@@ -590,9 +684,16 @@ void IrcEventReducer::reduce(const IrcNickEvent& event)
     if (existing == m_conversations.end()) {
         m_conversations.emplace(newKey, std::move(moved));
     } else {
-        existing->second.messages.insert(existing->second.messages.end(),
-                                         moved.messages.begin(),
-                                         moved.messages.end());
+        // Both sides may already hold the same msgid. Admitting a duplicate row
+        // would leave one id covering two messages, and trimming either one
+        // would then let a third copy through.
+        for (IrcReducedMessage& message : moved.messages) {
+            if (!message.msgid.isEmpty()) {
+                if (!existing->second.messageIds.insert(message.msgid).second)
+                    continue;
+            }
+            existing->second.messages.push_back(std::move(message));
+        }
         capMessages(existing->second);
         existing->second.unread += moved.unread;
         existing->second.mentions += moved.mentions;
@@ -616,6 +717,7 @@ void IrcEventReducer::reduce(const IrcKickEvent& event)
     channel.members.erase(departed.front());
     if (isSelf(event.networkId, event.target)) {
         channel.joined = false;
+        channel.historyAnchor.reset();
         for (const auto& member : channel.members)
             departed.append(member.first);
         channel.members.clear();
@@ -721,5 +823,54 @@ void IrcEventReducer::reduce(const IrcTypingEvent& event)
     }
     pruneExpiredTyping(*conversation, event.receivedAt);
     conversation->typing.insert_or_assign(normalizedNick, *hint);
+}
+
+void IrcEventReducer::reduce(const IrcHistoryEvent& event)
+{
+    IrcConversationState *conversation = findMutable(event.conversation);
+    if (!conversation)
+        return;
+    IrcChannelState *channel = conversation->channel();
+    if (!channel || !channel->historyAnchor)
+        return;
+    const qint64 index = channel->historyAnchor->sequence - conversation->trimmed;
+    if (index < 0 || index > qint64(conversation->messages.size())) {
+        channel->historyAnchor.reset();
+        return;
+    }
+    const std::size_t previousSize = conversation->messages.size();
+    const std::size_t at = std::size_t(index);
+    channel->historyAnchor.reset();
+
+    std::vector<IrcReducedMessage> run;
+    run.reserve(event.lines.size());
+    for (const IrcReplayLine& line : event.lines) {
+        if (!line.msgid.isEmpty() && conversation->messageIds.count(line.msgid))
+            continue;
+        const IrcMessageKind kind = line.kind == IrcMessageKindTag::Emote
+            ? IrcMessageKind::Action
+            : IrcMessageKind::Message;
+        if (!line.msgid.isEmpty())
+            conversation->messageIds.insert(line.msgid);
+        run.push_back({line.author, line.body, line.timestamp, kind, false,
+                       IrcOrigin::Replay, line.msgid});
+    }
+    if (run.empty())
+        return;
+    conversation->messages.insert(
+        conversation->messages.begin() + std::ptrdiff_t(at),
+        run.begin(),
+        run.end());
+    if (at != previousSize)
+        ++conversation->spliceEpoch;
+    capMessages(*conversation);
+}
+
+void IrcEventReducer::reduce(const IrcWhoisTranscriptEvent& event)
+{
+    IrcConversationState *conversation = findMutable(event.destination);
+    if (!conversation)
+        return;
+    appendWhois(*conversation, event.formattedBody);
 }
 

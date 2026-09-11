@@ -8,17 +8,20 @@ A dead-simple IRC client for Omarchy, built with Qt Quick and C++.
 
 The first launch opens a connection sheet with Libera Chat defaults. Enter a
 nick, change the host if you want a different network, and type a server
-password only if that network needs one. Apply starts the session. TLS is on
-by default. Omairc does not connect on its own by default; enable Connect
-automatically on startup when you want a session on launch.
+password only if that network needs one. Apply starts the session. Add more
+networks from the list on the left side of the sheet. Each network keeps its
+own channels, direct messages, nick, and connection state in the sidebar.
+TLS is on by default. Omairc does not connect on its own by default. Enable
+Connect automatically on startup for each session that you want on launch.
 
 Omairc remembers host, port, TLS, nick, username, real name, and autojoin in
 `$XDG_CONFIG_HOME/omairc/`. Passwords are stored through QtKeychain in the
 desktop Secret Service. If that service is unavailable, the password stays
-session-only and the connection sheet says so. Connect automatically on
-startup is off by default and can be enabled in the Connect sheet.
-Press `Ctrl+,` or click `edit` beside the network name to reopen the sheet.
-The network name itself opens Status.
+session-only and the connection sheet says so. Errors and warnings go to
+`$XDG_STATE_HOME/omairc/omairc.log`. Connect automatically on startup is off
+by default and can be enabled in the Connect sheet.
+Press `Ctrl+,` or click `edit` beside a network name to reopen the sheet.
+The network name opens Status for that network.
 
 Press `Ctrl+/` for keyboard shortcuts.
 
@@ -27,11 +30,13 @@ desktop text size.
 
 ## Limits
 
-- One network at a time.
+- Network sections stay expanded. Scroll the sidebar when they exceed the
+  available height.
 - One process. A second launch raises the existing window.
 - Local CLI control of the running client over the same runtime socket
   (`connections`, `status`, `send`, `raise`). This is not a second IRC client.
 - No saved message history.
+- A server that advertises CHATHISTORY and BATCH can fill a joined channel with its last 100 lines.
 - No DCC, file transfer, voice, or video.
 - No plugins or scripts.
 - No bouncer-specific history synchronization.
@@ -59,7 +64,8 @@ can run more than one window.
 that command's usage. Both write plain text and exit without a window or a
 socket. After the send target, `--help` and `--version` are message text.
 
-`--version` prints `omairc 0.1.0` and exits without opening a window.
+`--version` prints `omairc` and the version from `version.pri`, then exits
+without opening a window.
 
 While a normal Omairc window is running, the same binary can talk to it over
 `$XDG_RUNTIME_DIR/omairc.sock` (TempLocation fallback). Control commands print
@@ -139,6 +145,14 @@ Install also ships bash completion at
 Installed license texts are MIT (`LICENSE`), LGPL-3.0-or-later
 (`COPYING-LGPL`, from `src/irc/COPYING`), and OFL-1.1 (`OFL.txt`).
 
+## Version
+
+`version.pri` is the only version string. Tag a release as `v` plus that
+value, for example `v0.2.0alpha`. Arch `pkgver` cannot contain hyphens, so
+pre-releases use `0.2.0alpha` rather than `0.2.0-alpha`. Letter suffixes
+such as `alpha`, `beta`, and `rc` compare older than the final `0.2.0`, and
+the package workflow publishes those tags as GitHub pre-releases.
+
 ## Test
 
 ```sh
@@ -152,7 +166,8 @@ bin/test-install
 `xorg-xauth`, `xdotool`, and `imagemagick`.
 
 `bin/test-live` is optional and needs Docker. It starts Ergo, Solanum, and
-ngIRCd on loopback and is not part of `bin/test`.
+ngIRCd on loopback, runs the protocol suite, then the dual-network
+production-QML proof. It is not part of `bin/test`.
 
 ## Requirements
 

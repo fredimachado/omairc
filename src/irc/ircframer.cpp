@@ -20,22 +20,22 @@
 bool IrcFramer::completeFrameIsValid(std::size_t delimiter) const
 {
     if (buffer_.empty() || buffer_.front() != '@')
-        return delimiter + 2 <= kMaxClassicFrameBytes;
+        return delimiter + 2 <= kMaxInboundClassicFrameBytes;
 
     const std::size_t space = buffer_.find(' ');
     if (space == std::string::npos || space >= delimiter)
-        return delimiter + 2 <= kMaxClassicFrameBytes;
+        return delimiter + 2 <= kMaxInboundClassicFrameBytes;
 
     const std::size_t tagPayloadBytes = space - 1;
     const std::size_t classicFrameBytes = delimiter - space - 1 + 2;
     return tagPayloadBytes <= kMaxTagSectionBytes
-        && classicFrameBytes <= kMaxClassicFrameBytes;
+        && classicFrameBytes <= kMaxInboundClassicFrameBytes;
 }
 
 bool IrcFramer::pendingFrameIsOverlong() const
 {
     if (buffer_.empty() || buffer_.front() != '@')
-        return buffer_.size() >= kMaxClassicFrameBytes;
+        return buffer_.size() >= kMaxInboundClassicFrameBytes;
 
     const std::size_t space = buffer_.find(' ');
     if (space == std::string::npos)
@@ -43,12 +43,23 @@ bool IrcFramer::pendingFrameIsOverlong() const
     if (space > 0 && space - 1 > kMaxTagSectionBytes)
         return true;
 
-    return buffer_.size() - space - 1 >= kMaxClassicFrameBytes;
+    return buffer_.size() - space - 1 >= kMaxInboundClassicFrameBytes;
+}
+
+void IrcFramer::recordFault(IrcFrameResult& result, IrcError error, std::string_view bytes)
+{
+    IrcFrameFault fault;
+    fault.error = error;
+    fault.byteCount = bytes.size();
+    const std::size_t take = bytes.size() < kFaultPreviewBytes
+        ? bytes.size() : kFaultPreviewBytes;
+    fault.preview.assign(bytes.data(), take);
+    result.faults.push_back(std::move(fault));
 }
 
 void IrcFramer::beginDiscard(IrcFrameResult& result, IrcError error)
 {
-    result.errors.push_back(error);
+    recordFault(result, error, buffer_);
     discarding_ = true;
     const bool keepCarriageReturn = !buffer_.empty() && buffer_.back() == '\r';
     buffer_.clear();
@@ -80,12 +91,14 @@ IrcFrameResult IrcFramer::feed(std::string_view bytes)
         if (delimiter != std::string::npos) {
             const std::size_t nul = buffer_.find('\0');
             if (nul < delimiter) {
-                result.errors.push_back(IrcError::InvalidCharacter);
+                recordFault(result, IrcError::InvalidCharacter,
+                            std::string_view(buffer_.data(), delimiter));
                 buffer_.erase(0, delimiter + 2);
                 continue;
             }
             if (!completeFrameIsValid(delimiter)) {
-                result.errors.push_back(IrcError::TooManyBytes);
+                recordFault(result, IrcError::TooManyBytes,
+                            std::string_view(buffer_.data(), delimiter));
                 buffer_.erase(0, delimiter + 2);
                 continue;
             }

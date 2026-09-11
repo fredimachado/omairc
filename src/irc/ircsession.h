@@ -2,19 +2,27 @@
 
 #include <QElapsedTimer>
 #include <QHash>
+#include <QMetaType>
 #include <QObject>
 #include <QSet>
 #include <QString>
 #include <QStringList>
 #include <QTimer>
 
+#include <functional>
+
 #include "irccapability.h"
 #include "irccapabilitynegotiation.h"
+#include "irccasemapping.h"
 #include "ircframer.h"
+#include "irchistorybatch.h"
+#include "ircmessage.h"
 #include "ircstatusentry.h"
 #include "irctransport.h"
 #include "irctyping.h"
 #include "irctypingpublisher.h"
+
+#include <vector>
 
 class IrcChannelModeRequest;
 class IrcJoinTarget;
@@ -61,7 +69,6 @@ struct IrcSessionConfig
     bool reconnectEnabled = true;
     int reconnectBaseDelayMilliseconds = 1000;
     int reconnectMaximumDelayMilliseconds = 30000;
-    int reconnectMaximumAttempts = 5;
     int capabilityTimeoutMilliseconds = 10000;
     int pingTimeoutMilliseconds = 60000;
 };
@@ -111,11 +118,14 @@ public:
     State state() const;
     int reconnectAttempt() const;
     IrcCapabilitySet capabilities() const;
+    bool historyPending() const;
+
+    using IgnoreFilter = std::function<bool(const IrcMessage&, const QString&)>;
+    void setIgnoreFilter(IgnoreFilter filter);
 
 public slots:
     void start();
     void stop();
-    void cancelReconnect();
     bool sendPrivmsg(const QString& target, const QString& body);
     bool sendNotice(const QString& target, const QString& body);
     bool sendChannelMode(const IrcChannelModeRequest& request);
@@ -141,6 +151,7 @@ signals:
                             int delayMilliseconds,
                             int attempt);
     void messageReceived(const QString& networkId, const IrcMessage& message);
+    void historyBatchReceived(const QString& networkId, const IrcHistoryBatch& batch);
     void statusEntry(const IrcStatusEntry& entry);
     void capabilitiesChanged(const QString& networkId,
                              IrcCapabilitySet capabilities);
@@ -160,10 +171,31 @@ private:
     void handleBytes(const QByteArray &bytes);
     void handleMessage(const IrcMessage &message);
     void handleBatch(const IrcMessage &message);
+    bool captureInBatch(const IrcMessage &message);
+    void closeBatch(const QString& reference);
+    void requestChannelHistory(const QString& channel);
+    void forgetChannelHistory(const QString& channel);
+    void dropHistoryBatches(const QString& channel);
+    void bumpHistoryGeneration(const QString& channel);
+    int historyGeneration(const QString& channel) const;
+    QString foldChannel(const QString& channel) const;
+    void ignoreBatch(const QString& reference);
+    void clearHistoryPending(const QString& channel);
+    bool nicksEqual(const QString& left, const QString& right) const;
+    bool isHistoryBatch(const QString& type, const QString& parent) const;
+    bool answersPendingHistory(const QString& channel) const;
+    bool hasOpenCurrentHistoryBatch(const QString& channel) const;
+    bool historyCapabilitiesEnabled() const;
+    void abandonHistoryRequests();
+    void handleChatHistoryFail(const IrcMessage& message);
+    static bool isChatHistoryBatchType(const QString& type) noexcept;
+    bool selfPrefixed(const IrcMessage& message) const;
+    bool selfIs(const QString& nick) const;
     bool allowCtcpReply(const QString &nick);
     void handleCap(const IrcMessage &message);
     void handleAuthenticate(const IrcMessage &message);
     void handleWelcome(const IrcMessage &message);
+    void applyIsupport(const IrcMessage &message);
     bool sendCommand(const QString& command);
     void fail(ErrorKind kind, const QString &message, bool reconnect);
     void scheduleReconnect();
@@ -199,8 +231,27 @@ private:
     IrcCapabilityNegotiation m_capabilities;
     IrcCapabilitySet m_publishedCapabilities;
     IrcTypingPublisher m_typing;
-    QSet<QString> m_openBatches;
+    struct OpenBatch
+    {
+        QString type;
+        QString parent;
+        QString replayRoot;
+        IrcHistoryBatch collected;
+        int generation = 0;
+    };
+    QHash<QString, OpenBatch> m_openBatches;
+    QSet<QString> m_ignoredBatches;
+    QHash<QString, int> m_historyGeneration;
+    QSet<QString> m_historyAsked;
+    QHash<QString, int> m_historyPending;
+    IrcCaseMapping m_caseMapping{IrcCaseMapping::Kind::Rfc1459};
+    static constexpr int kHistoryLimit = 100;
+    int m_historyLimit = kHistoryLimit;
+    static constexpr int kHistoryBufferCeiling = 256;
+    static constexpr int kMaxOpenBatches = 16;
+    static constexpr int kMaxIgnoredBatches = 32;
     QHash<QString, QElapsedTimer> m_ctcpReplyClock;
+    IgnoreFilter m_ignoreFilter;
     State m_state = State::Idle;
     bool m_expectedDisconnect = false;
     bool m_reconnectAfterDisconnect = false;
@@ -209,5 +260,8 @@ private:
     bool m_saslRequested = false;
     bool m_saslPending = false;
     bool m_capabilityNegotiationEnded = false;
+    bool m_capabilityListSeen = false;
+    QString m_channelTypes;
     int m_reconnectAttempt = 0;
+    quint32 m_reportedRetryErrors = 0;
 };

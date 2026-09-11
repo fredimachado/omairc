@@ -1,9 +1,12 @@
 #include <QAbstractItemModel>
+#include <QDateTime>
+#include <QList>
 #include <QSignalSpy>
 #include <QTest>
 
 #include "conversationlistmodel.h"
 #include "irceventreducer.h"
+#include "irctyping.h"
 #include "memberlistmodel.h"
 #include "messagelistmodel.h"
 
@@ -57,12 +60,18 @@ private slots:
     void membersEmptyForDirectMessage();
     void messageKinds();
     void conversationsOrderChannelsThenDirect();
+    void twoNetworksFollowRosterThenChannelRank();
+    void parseConversationIdRejectsBareAndDoubleSeparators();
     void neighborAfterDropNextPreviousGhostAndOnly();
+    void neighborAfterDropPrefersSameNetwork();
     void reloadUnchangedKeysEmitsDataChangedNotReset();
+    void typingRoleDerivesFromExistingDirectAndInvalidates();
     void selectedChatAppendInsertsInsteadOfReset();
     void reloadTrimEmitsRemovesWhenCountUnchanged();
     void reloadClearAfterCapEmitsRemoves();
     void collapsedJoinRewritesLastRow();
+    void originRoleNameAndValues();
+    void spliceResetsSelectedConversation();
 };
 
 void ModelTest::roleNamesMatchQml()
@@ -84,6 +93,10 @@ void ModelTest::roleNamesMatchQml()
              QByteArray("networkId"));
     QCOMPARE(conversations.roleNames()[ConversationListModel::ConversationIdRole],
              QByteArray("conversationId"));
+    QCOMPARE(conversations.roleNames()[ConversationListModel::ConversationNameRole],
+             QByteArray("conversationName"));
+    QCOMPARE(conversations.roleNames()[ConversationListModel::TypingRole],
+             QByteArray("typing"));
 
     QCOMPARE(messages.roleNames()[MessageListModel::AuthorRole], QByteArray("author"));
     QCOMPARE(messages.roleNames()[MessageListModel::TimeRole], QByteArray("time"));
@@ -91,6 +104,7 @@ void ModelTest::roleNamesMatchQml()
     QCOMPARE(messages.roleNames()[MessageListModel::KindRole], QByteArray("kind"));
     QCOMPARE(messages.roleNames()[MessageListModel::NetworkIdRole],
              QByteArray("networkId"));
+    QCOMPARE(messages.roleNames()[MessageListModel::OriginRole], QByteArray("origin"));
 
     QCOMPARE(members.roleNames()[MemberListModel::NickRole], QByteArray("nick"));
     QCOMPARE(members.roleNames()[MemberListModel::LabelRole], QByteArray("label"));
@@ -156,6 +170,8 @@ void ModelTest::joinNamesPrivmsgPopulateModels()
     QCOMPARE(roleAt(messages, 1, MessageListModel::TimeRole),
              QStringLiteral("00:00"));
     QCOMPARE(roleAt(messages, 1, MessageListModel::NetworkIdRole), networkA);
+    QCOMPARE(roleAt(messages, 1, MessageListModel::OriginRole),
+             QStringLiteral("live"));
 
     QCOMPARE(members.rowCount(), 3);
     QCOMPARE(roleAt(members, 0, MemberListModel::NickRole), QStringLiteral("Alice"));
@@ -317,9 +333,11 @@ void ModelTest::messageKinds()
     reducer.apply(IrcActionEvent{
         room, QStringLiteral("Alice"), QStringLiteral("waves"), timestamp,
         QStringLiteral("#room")});
+    reducer.apply(IrcWhoisTranscriptEvent{
+        room, QStringLiteral("lena is ~lena@h (Lena)")});
 
     messages.select(room);
-    QCOMPARE(messages.rowCount(), 4);
+    QCOMPARE(messages.rowCount(), 5);
     QCOMPARE(roleAt(messages, 0, MessageListModel::KindRole),
              QStringLiteral("event"));
     QCOMPARE(roleAt(messages, 1, MessageListModel::KindRole),
@@ -330,6 +348,10 @@ void ModelTest::messageKinds()
              QStringLiteral("action"));
     QCOMPARE(roleAt(messages, 3, MessageListModel::BodyRole),
              QStringLiteral("waves"));
+    QCOMPARE(roleAt(messages, 4, MessageListModel::KindRole),
+             QStringLiteral("whois"));
+    QCOMPARE(roleAt(messages, 4, MessageListModel::AuthorRole), QString());
+    QCOMPARE(roleAt(messages, 4, MessageListModel::TimeRole), QString());
 }
 
 void ModelTest::conversationsOrderChannelsThenDirect()
@@ -367,6 +389,61 @@ void ModelTest::conversationsOrderChannelsThenDirect()
     QCOMPARE(roleAt(conversations, 3, ConversationListModel::ConversationRole),
              QStringLiteral("zed"));
     QCOMPARE(roleAt(conversations, 3, ConversationListModel::DirectRole), true);
+}
+
+void ModelTest::twoNetworksFollowRosterThenChannelRank()
+{
+    IrcEventReducer reducer;
+    ConversationListModel conversations(reducer);
+    welcome(reducer, networkA);
+    welcome(reducer, networkB);
+
+    reducer.apply(IrcJoinEvent{
+        networkA, QStringLiteral("#alpha"), QStringLiteral("omairc")});
+    reducer.apply(IrcJoinEvent{
+        networkB, QStringLiteral("#zed"), QStringLiteral("omairc")});
+    reducer.apply(IrcMessageEvent{
+        reducer.conversationKey(networkA, QStringLiteral("alice")),
+        QStringLiteral("alice"), QStringLiteral("hi"), timestamp,
+        QStringLiteral("alice")});
+    reducer.apply(IrcMessageEvent{
+        reducer.conversationKey(networkB, QStringLiteral("bob")),
+        QStringLiteral("bob"), QStringLiteral("yo"), timestamp,
+        QStringLiteral("bob")});
+
+    conversations.setNetworkOrder({networkB, networkA});
+    conversations.reload();
+    QCOMPARE(conversations.rowCount(), 4);
+    QCOMPARE(roleAt(conversations, 0, ConversationListModel::ConversationIdRole),
+             QStringLiteral("network-b\n#zed"));
+    QCOMPARE(roleAt(conversations, 1, ConversationListModel::ConversationIdRole),
+             QStringLiteral("network-b\nbob"));
+    QCOMPARE(roleAt(conversations, 2, ConversationListModel::ConversationIdRole),
+             QStringLiteral("network-a\n#alpha"));
+    QCOMPARE(roleAt(conversations, 3, ConversationListModel::ConversationIdRole),
+             QStringLiteral("network-a\nalice"));
+
+    const QVector<IrcConversationKey> ordered =
+        ircSidebarOrder(reducer, {networkB, networkA});
+    QCOMPARE(ordered.size(), 4);
+    QCOMPARE(ircConversationId(ordered.at(0)), QStringLiteral("network-b\n#zed"));
+    QCOMPARE(ircConversationId(ordered.at(3)), QStringLiteral("network-a\nalice"));
+}
+
+void ModelTest::parseConversationIdRejectsBareAndDoubleSeparators()
+{
+    const std::optional<IrcConversationKey> parsed =
+        ircParseConversationId(QStringLiteral("network-a\n#room"));
+    QVERIFY(parsed.has_value());
+    QCOMPARE(parsed->networkId, QStringLiteral("network-a"));
+    QCOMPARE(parsed->normalizedTarget, QStringLiteral("#room"));
+    QCOMPARE(ircConversationId(*parsed), QStringLiteral("network-a\n#room"));
+
+    QVERIFY(!ircParseConversationId(QStringLiteral("#room")).has_value());
+    QVERIFY(!ircParseConversationId(QStringLiteral("network-a")).has_value());
+    QVERIFY(!ircParseConversationId(QStringLiteral("network-a\n#room\nextra")).has_value());
+    QVERIFY(!ircParseConversationId(QStringLiteral("\n#room")).has_value());
+    QVERIFY(!ircParseConversationId(QStringLiteral("network-a\n")).has_value());
 }
 
 void ModelTest::neighborAfterDropNextPreviousGhostAndOnly()
@@ -408,6 +485,33 @@ void ModelTest::neighborAfterDropNextPreviousGhostAndOnly()
     QVERIFY(!ircNeighborAfterDrop({}, ghost).has_value());
 }
 
+void ModelTest::neighborAfterDropPrefersSameNetwork()
+{
+    IrcEventReducer reducer;
+    welcome(reducer, networkA);
+    welcome(reducer, networkB);
+    reducer.apply(IrcJoinEvent{
+        networkA, QStringLiteral("#one"), QStringLiteral("omairc")});
+    reducer.apply(IrcMessageEvent{
+        reducer.conversationKey(networkA, QStringLiteral("alice")),
+        QStringLiteral("alice"), QStringLiteral("hi"), timestamp,
+        QStringLiteral("alice")});
+    reducer.apply(IrcJoinEvent{
+        networkB, QStringLiteral("#one"), QStringLiteral("omairc")});
+
+    const QVector<IrcConversationKey> ordered =
+        ircSidebarOrder(reducer, {networkA, networkB});
+    QCOMPARE(ordered.size(), 3);
+    QCOMPARE(ircConversationId(ordered.at(0)), QStringLiteral("network-a\n#one"));
+    QCOMPARE(ircConversationId(ordered.at(1)), QStringLiteral("network-a\nalice"));
+    QCOMPARE(ircConversationId(ordered.at(2)), QStringLiteral("network-b\n#one"));
+
+    QCOMPARE(ircConversationId(*ircNeighborAfterDrop(ordered, ordered.at(1))),
+             QStringLiteral("network-a\n#one"));
+    QCOMPARE(ircConversationId(*ircNeighborAfterDrop(ordered, ordered.at(0))),
+             QStringLiteral("network-a\nalice"));
+}
+
 void ModelTest::reloadUnchangedKeysEmitsDataChangedNotReset()
 {
     IrcEventReducer reducer;
@@ -431,6 +535,8 @@ void ModelTest::reloadUnchangedKeysEmitsDataChangedNotReset()
     conversations.reload();
     QCOMPARE(resets.size(), 0);
     QCOMPARE(changes.size(), 1);
+    QVERIFY(changes.at(0).at(2).value<QList<int>>().contains(
+        ConversationListModel::TypingRole));
     QCOMPARE(roleAt(conversations, 0, ConversationListModel::UnreadRole), 1);
 
     reducer.apply(IrcJoinEvent{
@@ -438,6 +544,72 @@ void ModelTest::reloadUnchangedKeysEmitsDataChangedNotReset()
     conversations.reload();
     QCOMPARE(resets.size(), 1);
     QCOMPARE(conversations.rowCount(), 2);
+}
+
+void ModelTest::typingRoleDerivesFromExistingDirectAndInvalidates()
+{
+    IrcEventReducer reducer;
+    ConversationListModel conversations(reducer);
+    welcome(reducer, networkA);
+    reducer.apply(IrcJoinEvent{
+        networkA, QStringLiteral("#room"), QStringLiteral("omairc")});
+    const IrcConversationKey room =
+        reducer.conversationKey(networkA, QStringLiteral("#room"));
+    const IrcConversationKey alice =
+        reducer.conversationKey(networkA, QStringLiteral("Alice"));
+    const IrcConversationKey ghost =
+        reducer.conversationKey(networkA, QStringLiteral("ghost"));
+    reducer.apply(IrcMessageEvent{
+        alice, QStringLiteral("Alice"), QStringLiteral("hi"), timestamp,
+        QStringLiteral("Alice")});
+    conversations.select(room);
+    const int aliceRow = rowFor(conversations, ircConversationId(alice));
+    const int roomRow = rowFor(conversations, ircConversationId(room));
+    QVERIFY(aliceRow >= 0);
+    QVERIFY(roomRow >= 0);
+    QCOMPARE(roleAt(conversations, aliceRow, ConversationListModel::TypingRole),
+             false);
+    QCOMPARE(roleAt(conversations, roomRow, ConversationListModel::TypingRole),
+             false);
+
+    const QDateTime now = QDateTime::currentDateTimeUtc();
+    reducer.apply(IrcTypingEvent{alice, QStringLiteral("Alice"),
+                                 IrcTypingPhase::Active, now});
+    reducer.apply(IrcTypingEvent{ghost, QStringLiteral("ghost"),
+                                 IrcTypingPhase::Active, now});
+    QVERIFY(!reducer.find(ghost));
+    QCOMPARE(conversations.rowCount(), 2);
+
+    QSignalSpy changes(&conversations, &QAbstractItemModel::dataChanged);
+    conversations.invalidateTyping();
+    QCOMPARE(changes.size(), 1);
+    QCOMPARE(changes.at(0).at(2).value<QList<int>>(),
+             QList<int>{ConversationListModel::TypingRole});
+    QCOMPARE(roleAt(conversations, aliceRow, ConversationListModel::TypingRole),
+             true);
+    QCOMPARE(roleAt(conversations, roomRow, ConversationListModel::TypingRole),
+             false);
+    QVERIFY(reducer.directPeerIsTyping(alice, now));
+    QVERIFY(!reducer.directPeerIsTyping(room, now));
+    QVERIFY(!reducer.directPeerIsTyping(ghost, now));
+
+    reducer.apply(IrcTypingEvent{alice, QStringLiteral("Alice"),
+                                 IrcTypingPhase::Done, now});
+    conversations.invalidateTyping();
+    QCOMPARE(roleAt(conversations, aliceRow, ConversationListModel::TypingRole),
+             false);
+
+    reducer.apply(IrcTypingEvent{alice, QStringLiteral("Alice"),
+                                 IrcTypingPhase::Active, now});
+    conversations.invalidateTyping();
+    QCOMPARE(roleAt(conversations, aliceRow, ConversationListModel::TypingRole),
+             true);
+    reducer.apply(IrcMessageEvent{
+        alice, QStringLiteral("Alice"), QStringLiteral("here"), timestamp,
+        QStringLiteral("Alice")});
+    conversations.invalidateTyping();
+    QCOMPARE(roleAt(conversations, aliceRow, ConversationListModel::TypingRole),
+             false);
 }
 
 void ModelTest::selectedChatAppendInsertsInsteadOfReset()
@@ -548,10 +720,8 @@ void ModelTest::reloadClearAfterCapEmitsRemoves()
     reducer.clearMessages(room);
     messages.reload();
 
-    QCOMPARE(resets.size(), 0);
-    QCOMPARE(removes.size(), 1);
-    QCOMPARE(removes.at(0).at(1).toInt(), 0);
-    QCOMPARE(removes.at(0).at(2).toInt(), 1999);
+    QCOMPARE(resets.size(), 1);
+    QCOMPARE(removes.size(), 0);
     QCOMPARE(messages.rowCount(), 0);
 }
 
@@ -584,6 +754,73 @@ void ModelTest::collapsedJoinRewritesLastRow()
     QCOMPARE(messages.rowCount(), 1);
     QCOMPARE(roleAt(messages, 0, MessageListModel::BodyRole),
              QStringLiteral("Alice, Bob joined"));
+}
+
+void ModelTest::originRoleNameAndValues()
+{
+    IrcEventReducer reducer;
+    MessageListModel messages(reducer);
+    welcome(reducer, networkA);
+    const IrcConversationKey room =
+        reducer.conversationKey(networkA, QStringLiteral("#room"));
+    reducer.apply(IrcJoinEvent{
+        networkA, QStringLiteral("#room"), QStringLiteral("omairc")});
+    reducer.apply(IrcHistoryEvent{
+        room,
+        QStringLiteral("#room"),
+        {{QStringLiteral("alice"), QStringLiteral("older"), timestamp,
+          IrcMessageKindTag::Chat, IrcMsgId{QStringLiteral("id-1")}}},
+    });
+    messages.select(room);
+
+    QCOMPARE(messages.roleNames()[MessageListModel::OriginRole], QByteArray("origin"));
+    QCOMPARE(messages.field(0, QStringLiteral("origin")), QStringLiteral("replay"));
+    QCOMPARE(messages.field(0, QStringLiteral("body")), QStringLiteral("older"));
+    QCOMPARE(messages.field(0, QStringLiteral("author")), QStringLiteral("alice"));
+    QCOMPARE(messages.field(1, QStringLiteral("origin")), QStringLiteral("live"));
+    QCOMPARE(messages.field(1, QStringLiteral("body")), QStringLiteral("omairc joined"));
+    QCOMPARE(messages.field(0, QStringLiteral("no-such-role")), QString());
+    QCOMPARE(roleAt(messages, 0, MessageListModel::OriginRole),
+             QStringLiteral("replay"));
+    QCOMPARE(roleAt(messages, 0, MessageListModel::BodyRole),
+             QStringLiteral("older"));
+    QCOMPARE(roleAt(messages, 1, MessageListModel::OriginRole),
+             QStringLiteral("live"));
+    QCOMPARE(roleAt(messages, 1, MessageListModel::BodyRole),
+             QStringLiteral("omairc joined"));
+}
+
+void ModelTest::spliceResetsSelectedConversation()
+{
+    IrcEventReducer reducer;
+    MessageListModel messages(reducer);
+    welcome(reducer, networkA);
+    const IrcConversationKey room =
+        reducer.conversationKey(networkA, QStringLiteral("#room"));
+    reducer.apply(IrcJoinEvent{
+        networkA, QStringLiteral("#room"), QStringLiteral("omairc")});
+    messages.select(room);
+    QCOMPARE(messages.rowCount(), 1);
+
+    QSignalSpy resets(&messages, &QAbstractItemModel::modelReset);
+    QSignalSpy inserts(&messages, &QAbstractItemModel::rowsInserted);
+    reducer.apply(IrcHistoryEvent{
+        room,
+        QStringLiteral("#room"),
+        {{QStringLiteral("alice"), QStringLiteral("older"), timestamp,
+          IrcMessageKindTag::Chat, IrcMsgId{QStringLiteral("id-1")}}},
+    });
+    messages.reload();
+
+    QCOMPARE(resets.size(), 1);
+    QCOMPARE(inserts.size(), 0);
+    QCOMPARE(messages.rowCount(), 2);
+    QCOMPARE(roleAt(messages, 0, MessageListModel::BodyRole),
+             QStringLiteral("older"));
+    QCOMPARE(roleAt(messages, 0, MessageListModel::OriginRole),
+             QStringLiteral("replay"));
+    QCOMPARE(roleAt(messages, 1, MessageListModel::BodyRole),
+             QStringLiteral("omairc joined"));
 }
 
 int runModelTests(int argc, char **argv)

@@ -3,14 +3,13 @@ QT += core gui qml quick quickcontrols2 dbus network
 include(qtkeychain.pri)
 
 CONFIG += c++17 release
-VERSION = 0.1.0
 TARGET = omairc
 TEMPLATE = app
 
+include($$PWD/version.pri)
+
 # GCC 16 emits this diagnostic from Qt 6.11's own headers.
 greaterThan(QMAKE_GCC_MAJOR_VERSION, 15): QMAKE_CXXFLAGS += -Wno-sfinae-incomplete
-
-DEFINES += OMAIRC_VERSION=\\\"$$VERSION\\\"
 
 isEmpty(PREFIX): PREFIX = /usr/local
 
@@ -20,6 +19,7 @@ HEADERS += \
     src/omaircipc.h \
     src/omaircipchandler.h \
     src/omairccli.h \
+    src/omaircfilelog.h \
     src/systemtheme.h \
     src/irc/ircmessage.h \
     src/irc/ircparser.h \
@@ -34,6 +34,7 @@ HEADERS += \
     src/irc/irctypingpublisher.h \
     src/irc/ircpresence.h \
     src/irc/irctcp.h \
+    src/irc/ircignore.h \
     src/irc/ircevent.h \
     src/irc/ircviewnotify.h \
     src/irc/irceventtranslator.h \
@@ -41,6 +42,8 @@ HEADERS += \
     src/irc/irctransport.h \
     src/irc/qtirctransport.h \
     src/irc/ircstatusentry.h \
+    src/irc/ircservicenick.h \
+    src/irc/ircsecretpolicy.h \
     src/irc/ircnetworklog.h \
     src/irc/networklogmodel.h \
     src/irc/irccommand.h \
@@ -48,6 +51,7 @@ HEADERS += \
     src/irc/ircjointarget.h \
     src/irc/ircslashcomplete.h \
     src/irc/ircstatusconsole.h \
+    src/irc/irchistorybatch.h \
     src/irc/ircsession.h \
     src/irc/ircsessionmanager.h \
     src/irc/conversationlistmodel.h \
@@ -67,6 +71,7 @@ SOURCES += \
     src/omaircipc.cpp \
     src/omaircipchandler.cpp \
     src/omairccli.cpp \
+    src/omaircfilelog.cpp \
     src/systemtheme.cpp \
     src/irc/ircparser.cpp \
     src/irc/ircframer.cpp \
@@ -80,10 +85,13 @@ SOURCES += \
     src/irc/irctypingpublisher.cpp \
     src/irc/ircpresence.cpp \
     src/irc/irctcp.cpp \
+    src/irc/ircignore.cpp \
     src/irc/irceventtranslator.cpp \
     src/irc/irceventreducer.cpp \
     src/irc/qtirctransport.cpp \
     src/irc/ircstatusentry.cpp \
+    src/irc/ircservicenick.cpp \
+    src/irc/ircsecretpolicy.cpp \
     src/irc/ircnetworklog.cpp \
     src/irc/networklogmodel.cpp \
     src/irc/irccommand.cpp \

@@ -1,6 +1,7 @@
 #include "liveharness.h"
 
 #include "memberlistmodel.h"
+#include "messagelistmodel.h"
 
 #include <QAbstractItemModel>
 #include <QCoreApplication>
@@ -356,4 +357,12 @@ QVariant LiveClient::memberRole(const QString &nick, int role)
         }
     }
     return {};
+}
+
+QVariant LiveClient::transcriptRole(int row, int role)
+{
+    QAbstractItemModel *model = controller.messages();
+    if (!model || row < 0 || row >= model->rowCount())
+        return {};
+    return model->index(row, 0).data(role);
 }

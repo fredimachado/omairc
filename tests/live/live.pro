@@ -4,8 +4,7 @@ QT -= gui
 CONFIG += c++17 console testcase
 TEMPLATE = app
 TARGET = live_tests
-VERSION = 0.1.0
-DEFINES += OMAIRC_VERSION=\\\"$$VERSION\\\"
+include($$PWD/../../version.pri)
 
 greaterThan(QMAKE_GCC_MAJOR_VERSION, 15): QMAKE_CXXFLAGS += -Wno-sfinae-incomplete
 
@@ -16,6 +15,7 @@ HEADERS += \
     ../../src/irc/ircmessage.h \
     ../../src/irc/ircparser.h \
     ../../src/irc/ircframer.h \
+    ../../src/irc/ircwiretext.h \
     ../../src/irc/irccommandbuilder.h \
     ../../src/irc/irccasemapping.h \
     ../../src/irc/ircserverfeatures.h \
@@ -24,12 +24,16 @@ HEADERS += \
     ../../src/irc/irctyping.h \
     ../../src/irc/irctypingpublisher.h \
     ../../src/irc/ircpresence.h \
+    ../../src/irc/irctcp.h \
+    ../../src/irc/ircignore.h \
     ../../src/irc/ircevent.h \
     ../../src/irc/ircviewnotify.h \
     ../../src/irc/irceventtranslator.h \
     ../../src/irc/irceventreducer.h \
     ../../src/irc/irctransport.h \
     ../../src/irc/ircstatusentry.h \
+    ../../src/irc/ircservicenick.h \
+    ../../src/irc/ircsecretpolicy.h \
     ../../src/irc/ircnetworklog.h \
     ../../src/irc/networklogmodel.h \
     ../../src/irc/irccommand.h \
@@ -37,6 +41,7 @@ HEADERS += \
     ../../src/irc/ircjointarget.h \
     ../../src/irc/ircslashcomplete.h \
     ../../src/irc/ircstatusconsole.h \
+    ../../src/irc/irchistorybatch.h \
     ../../src/irc/ircsession.h \
     ../../src/irc/ircsessionmanager.h \
     ../../src/irc/conversationlistmodel.h \
@@ -54,6 +59,7 @@ SOURCES += \
     livepeer.cpp \
     ../../src/irc/ircparser.cpp \
     ../../src/irc/ircframer.cpp \
+    ../../src/irc/ircwiretext.cpp \
     ../../src/irc/irccommandbuilder.cpp \
     ../../src/irc/irccasemapping.cpp \
     ../../src/irc/ircserverfeatures.cpp \
@@ -63,9 +69,12 @@ SOURCES += \
     ../../src/irc/irctypingpublisher.cpp \
     ../../src/irc/ircpresence.cpp \
     ../../src/irc/irctcp.cpp \
+    ../../src/irc/ircignore.cpp \
     ../../src/irc/irceventtranslator.cpp \
     ../../src/irc/irceventreducer.cpp \
     ../../src/irc/ircstatusentry.cpp \
+    ../../src/irc/ircservicenick.cpp \
+    ../../src/irc/ircsecretpolicy.cpp \
     ../../src/irc/ircnetworklog.cpp \
     ../../src/irc/networklogmodel.cpp \
     ../../src/irc/irccommand.cpp \

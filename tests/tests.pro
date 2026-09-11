@@ -11,8 +11,8 @@ TARGET = protocol_tests
 greaterThan(QMAKE_GCC_MAJOR_VERSION, 15): QMAKE_CXXFLAGS += -Wno-sfinae-incomplete
 
 INCLUDEPATH += ../src ../src/irc support
-VERSION = 0.1.0
-DEFINES += TEST_CERT_DIR=\\\"$$PWD/support/certs\\\" OMAIRC_VERSION=\\\"$$VERSION\\\"
+include($$PWD/../version.pri)
+DEFINES += TEST_CERT_DIR=\\\"$$PWD/support/certs\\\"
 DEFINES += TEST_CORPUS_DIR=\\\"$$PWD/protocol/corpus\\\"
 
 HEADERS += \
@@ -20,6 +20,7 @@ HEADERS += \
     ../src/omaircipc.h \
     ../src/omaircipchandler.h \
     ../src/omairccli.h \
+    ../src/omaircfilelog.h \
     ../src/irc/ircmessage.h \
     ../src/irc/ircparser.h \
     ../src/irc/ircframer.h \
@@ -33,12 +34,15 @@ HEADERS += \
     ../src/irc/irctypingpublisher.h \
     ../src/irc/ircpresence.h \
     ../src/irc/irctcp.h \
+    ../src/irc/ircignore.h \
     ../src/irc/ircevent.h \
     ../src/irc/ircviewnotify.h \
     ../src/irc/irceventtranslator.h \
     ../src/irc/irceventreducer.h \
     ../src/irc/irctransport.h \
     ../src/irc/ircstatusentry.h \
+    ../src/irc/ircservicenick.h \
+    ../src/irc/ircsecretpolicy.h \
     ../src/irc/ircnetworklog.h \
     ../src/irc/networklogmodel.h \
     ../src/irc/irccommand.h \
@@ -46,6 +50,7 @@ HEADERS += \
     ../src/irc/ircjointarget.h \
     ../src/irc/ircslashcomplete.h \
     ../src/irc/ircstatusconsole.h \
+    ../src/irc/irchistorybatch.h \
     ../src/irc/ircsession.h \
     ../src/irc/ircsessionmanager.h \
     ../src/irc/conversationlistmodel.h \
@@ -65,10 +70,12 @@ SOURCES += \
     tst_singleinstance.cpp \
     tst_omaircipc.cpp \
     tst_omairccli.cpp \
+    tst_omaircfilelog.cpp \
     ../src/singleinstance.cpp \
     ../src/omaircipc.cpp \
     ../src/omaircipchandler.cpp \
     ../src/omairccli.cpp \
+    ../src/omaircfilelog.cpp \
     protocol/tst_protocol.cpp \
     protocol/tst_casemapping.cpp \
     protocol/tst_corpus.cpp \
@@ -84,9 +91,12 @@ SOURCES += \
     ../src/irc/irctypingpublisher.cpp \
     ../src/irc/ircpresence.cpp \
     ../src/irc/irctcp.cpp \
+    ../src/irc/ircignore.cpp \
     ../src/irc/irceventtranslator.cpp \
     ../src/irc/irceventreducer.cpp \
     ../src/irc/ircstatusentry.cpp \
+    ../src/irc/ircservicenick.cpp \
+    ../src/irc/ircsecretpolicy.cpp \
     ../src/irc/ircnetworklog.cpp \
     ../src/irc/networklogmodel.cpp \
     ../src/irc/irccommand.cpp \
@@ -115,6 +125,7 @@ SOURCES += \
     storage/tst_secretservice.cpp \
     session/tst_controller.cpp \
     session/tst_command.cpp \
+    session/tst_ignore.cpp \
     session/tst_typing.cpp \
     session/tst_reducer.cpp \
     models/tst_models.cpp

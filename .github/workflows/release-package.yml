@@ -43,25 +43,24 @@ jobs:
       - name: Assert versions
         run: |
           set -euo pipefail
-          PRO=$(awk '/^VERSION / { print $3; exit }' omairc.pro)
-          PKG=$(awk -F= '/^pkgver=/ { print $2; exit }' PKGBUILD)
+          VER=$(./bin/version)
+          PKG=$(bash -c 'source ./PKGBUILD && printf %s "$pkgver"')
+          test "$PKG" = "$VER"
           if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
             TAG="${GITHUB_REF_NAME#v}"
-            test "$TAG" = "$PRO" -a "$TAG" = "$PKG"
-          else
-            test "$PRO" = "$PKG"
+            test "$TAG" = "$VER"
           fi
 
       - name: Prepare dry-build source
         if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
         run: |
           set -euo pipefail
-          pkgver=$(awk -F= '/^pkgver=/ { print $2; exit }' PKGBUILD)
+          pkgver=$(./bin/version)
           tar --exclude='.git' --exclude='.arena-omairc-pacman' \
             -czf "omairc-${pkgver}.tar.gz" \
             --transform "s,^\.,omairc-${pkgver}," .
           sed -i "s|^source=.*|source=(\"omairc-${pkgver}.tar.gz\")|" PKGBUILD
-          chown builder:builder "omairc-${pkgver}.tar.gz" PKGBUILD
+          chown builder:builder "omairc-${pkgver}.tar.gz" PKGBUILD version.pri
 
       - name: makepkg
         run: sudo -u builder makepkg -s --noconfirm
@@ -89,8 +88,16 @@ jobs:
           PKG="${pkgs[0]}"
           PKG_BASE=$(basename "$PKG")
 
+          VER="${TAG#v}"
+          case "$VER" in
+            *alpha*|*beta*|*rc*|*pre*) PRE_ARGS=(--prerelease) ;;
+            *) PRE_ARGS=(--latest) ;;
+          esac
+
           if ! gh release view "$TAG" >/dev/null 2>&1; then
-            gh release create "$TAG" --generate-notes --title "$TAG"
+            gh release create "$TAG" --generate-notes --title "$TAG" "${PRE_ARGS[@]}"
+          else
+            gh release edit "$TAG" "${PRE_ARGS[@]}"
           fi
 
           mapfile -t assets < <(gh release view "$TAG" --json assets --jq '.assets[].name' || true)

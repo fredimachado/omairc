@@ -237,7 +237,7 @@ void ProtocolTest::framesLatin1ThenUtf8()
     wire.push_back('\xe9');
     wire += "\r\n:b!u@h PRIVMSG #c :ok\r\n";
     const auto result = framer.feed(wire);
-    QCOMPARE(result.errors.size(), std::size_t(0));
+    QCOMPARE(result.faults.size(), std::size_t(0));
     QCOMPARE(result.frames.size(), std::size_t(2));
 
     const auto first = IrcParser::parse(result.frames[0]);
@@ -271,7 +271,9 @@ void ProtocolTest::rejectsNulAndRecovers()
     wire.push_back('\0');
     wire += "lo\r\nPING :ok\r\n";
     const auto result = framer.feed(wire);
-    QCOMPARE(result.errors.size(), std::size_t(1));
+    QCOMPARE(result.faults.size(), std::size_t(1));
+    QCOMPARE(result.faults[0].error, IrcError::InvalidCharacter);
+    QCOMPARE(result.faults[0].byteCount, std::size_t(18));
     QCOMPARE(result.frames.size(), std::size_t(1));
     QCOMPARE(text(result.frames[0]), QStringLiteral("PING :ok"));
 }
@@ -279,15 +281,19 @@ void ProtocolTest::rejectsNulAndRecovers()
 void ProtocolTest::rejectsOverlongAndRecovers()
 {
     IrcFramer framer;
-    std::string wire(513, 'X');
+    const std::size_t overlongBytes = IrcFramer::kMaxInboundClassicFrameBytes - 1;
+    std::string wire(overlongBytes, 'X');
     wire += "\r\nPING :complete\r\n";
     auto result = framer.feed(wire);
-    QCOMPARE(result.errors.size(), std::size_t(1));
+    QCOMPARE(result.faults.size(), std::size_t(1));
+    QCOMPARE(result.faults[0].error, IrcError::TooManyBytes);
+    QCOMPARE(result.faults[0].byteCount, overlongBytes);
+    QCOMPARE(text(result.faults[0].preview), QString(160, QLatin1Char('X')));
     QCOMPARE(result.frames.size(), std::size_t(1));
     QCOMPARE(text(result.frames[0]), QStringLiteral("PING :complete"));
 
-    result = framer.feed(std::string(512, 'Y'));
-    QCOMPARE(result.errors.size(), std::size_t(1));
+    result = framer.feed(std::string(IrcFramer::kMaxInboundClassicFrameBytes, 'Y'));
+    QCOMPARE(result.faults.size(), std::size_t(1));
     QVERIFY(result.frames.empty());
     result = framer.feed("tail\r\nPING :after\r\n");
     QCOMPARE(result.frames.size(), std::size_t(1));
@@ -297,18 +303,38 @@ void ProtocolTest::rejectsOverlongAndRecovers()
 void ProtocolTest::enforcesClassicFrameBoundary()
 {
     IrcFramer framer;
-    std::string exact = "PING :";
-    exact.append(504, 'z');
-    exact += "\r\n";
-    QCOMPARE(exact.size(), IrcFramer::kMaxClassicFrameBytes);
-    auto result = framer.feed(exact);
+    std::string spec = "PING :";
+    spec.append(504, 'z');
+    spec += "\r\n";
+    QCOMPARE(spec.size(), IrcProtocol::maxClassicFrameBytes);
+    auto result = framer.feed(spec);
     QCOMPARE(result.frames.size(), std::size_t(1));
+    QVERIFY(result.faults.empty());
+
+    std::string overSpec = "PING :";
+    overSpec.append(505, 'z');
+    overSpec += "\r\n";
+    result = framer.feed(overSpec);
+    QCOMPARE(result.frames.size(), std::size_t(1));
+    QVERIFY(result.faults.empty());
+
+    std::string exact = "PING :";
+    exact.append(IrcFramer::kMaxInboundClassicFrameBytes - exact.size() - 2, 'z');
+    exact += "\r\n";
+    QCOMPARE(exact.size(), IrcFramer::kMaxInboundClassicFrameBytes);
+    result = framer.feed(exact);
+    QCOMPARE(result.frames.size(), std::size_t(1));
+    QVERIFY(result.faults.empty());
 
     std::string tooLong = "PING :";
-    tooLong.append(505, 'z');
+    tooLong.append(IrcFramer::kMaxInboundClassicFrameBytes - tooLong.size() - 1, 'z');
     tooLong += "\r\nPING :short\r\n";
     result = framer.feed(tooLong);
-    QCOMPARE(result.errors.size(), std::size_t(1));
+    QCOMPARE(result.faults.size(), std::size_t(1));
+    QCOMPARE(result.faults[0].error, IrcError::TooManyBytes);
+    QCOMPARE(result.faults[0].byteCount,
+             IrcFramer::kMaxInboundClassicFrameBytes - 1);
+    QVERIFY(text(result.faults[0].preview).startsWith(QStringLiteral("PING :")));
     QCOMPARE(result.frames.size(), std::size_t(1));
     QCOMPARE(text(result.frames[0]), QStringLiteral("PING :short"));
 }
@@ -321,7 +347,7 @@ void ProtocolTest::acceptsTaggedClassicFrame()
     tagged.append(504, 'z');
     tagged += "\r\n";
     const auto result = framer.feed(tagged);
-    QVERIFY(result.errors.empty());
+    QVERIFY(result.faults.empty());
     QCOMPARE(result.frames.size(), std::size_t(1));
     QVERIFY(IrcParser::parse(result.frames[0]));
 }
@@ -333,7 +359,7 @@ void ProtocolTest::enforcesTagSectionBoundary()
     exact.append(IrcFramer::kMaxTagSectionBytes, 'a');
     exact += " PING :ok\r\n";
     auto result = framer.feed(exact);
-    QVERIFY(result.errors.empty());
+    QVERIFY(result.faults.empty());
     QCOMPARE(result.frames.size(), std::size_t(1));
     QVERIFY(IrcParser::parse(result.frames[0]));
 
@@ -341,7 +367,7 @@ void ProtocolTest::enforcesTagSectionBoundary()
     tooLong.append(IrcFramer::kMaxTagSectionBytes + 1, 'a');
     tooLong += " PING :no\r\nPING :recovered\r\n";
     result = framer.feed(tooLong);
-    QCOMPARE(result.errors.size(), std::size_t(1));
+    QCOMPARE(result.faults.size(), std::size_t(1));
     QCOMPARE(result.frames.size(), std::size_t(1));
     QCOMPARE(text(result.frames[0]), QStringLiteral("PING :recovered"));
 }

@@ -535,7 +535,7 @@ void CommandTest::catalogLookupAndScope()
     QVERIFY(!IrcVerbTable::find(IrcCommand::Verb::Empty));
     QVERIFY(!IrcVerbTable::find(IrcCommand::Verb::Unknown));
 
-    QCOMPARE(IrcVerbTable::all().size(), 16);
+    QCOMPARE(IrcVerbTable::all().size(), 19);
     for (const IrcVerbSpec& row : IrcVerbTable::all())
         QVERIFY(row.name != QLatin1String("say"));
 
@@ -606,7 +606,7 @@ void CommandTest::catalogLookupAndScope()
     QCOMPARE(whois->name, QStringLiteral("whois"));
     QCOMPARE(whois->usage, QStringLiteral("/whois [nick]"));
     QCOMPARE(whois->scope, IrcVerbScope::Either);
-    QCOMPARE(whois->wrongScopeText, QStringLiteral("Whois applies to direct messages"));
+    QCOMPARE(whois->wrongScopeText, QStringLiteral("Name a nick"));
     QVERIFY(whois->aliases.isEmpty());
 
     const IrcVerbSpec *mode = IrcVerbTable::lookup(QStringLiteral("mode"));
@@ -627,8 +627,31 @@ void CommandTest::catalogLookupAndScope()
     QCOMPARE(kick->wrongScopeText, QStringLiteral("Kick applies to channels"));
     QVERIFY(kick->aliases.isEmpty());
 
+    const IrcVerbSpec *ignore = IrcVerbTable::lookup(QStringLiteral("ignore"));
+    QVERIFY(ignore);
+    QCOMPARE(ignore->verb, IrcCommand::Verb::Ignore);
+    QCOMPARE(ignore->name, QStringLiteral("ignore"));
+    QCOMPARE(ignore->usage, QStringLiteral("/ignore <nick>"));
+    QCOMPARE(ignore->scope, IrcVerbScope::Either);
+    QVERIFY(ignore->wrongScopeText.isEmpty());
+    QVERIFY(ignore->aliases.isEmpty());
+
+    const IrcVerbSpec *unignore = IrcVerbTable::lookup(QStringLiteral("unignore"));
+    QVERIFY(unignore);
+    QCOMPARE(unignore->verb, IrcCommand::Verb::Unignore);
+    QCOMPARE(unignore->usage, QStringLiteral("/unignore <nick>"));
+    QCOMPARE(unignore->scope, IrcVerbScope::Either);
+    QVERIFY(unignore->wrongScopeText.isEmpty());
+
+    const IrcVerbSpec *ignored = IrcVerbTable::lookup(QStringLiteral("ignored"));
+    QVERIFY(ignored);
+    QCOMPARE(ignored->verb, IrcCommand::Verb::Ignored);
+    QCOMPARE(ignored->usage, QStringLiteral("/ignored"));
+    QCOMPARE(ignored->scope, IrcVerbScope::Either);
+    QVERIFY(ignored->wrongScopeText.isEmpty());
+
     const QVector<IrcVerbSpec> status = IrcVerbTable::visibleOn(IrcComposerSurface::Status);
-    QCOMPARE(status.size(), 13);
+    QCOMPARE(status.size(), 16);
     for (const IrcVerbSpec& row : status) {
         QVERIFY(row.allowedOn(IrcComposerSurface::Status));
         QVERIFY(row.verb != IrcCommand::Verb::Action);
@@ -638,7 +661,7 @@ void CommandTest::catalogLookupAndScope()
 
     const QVector<IrcVerbSpec> conversation =
         IrcVerbTable::visibleOn(IrcComposerSurface::Conversation);
-    QCOMPARE(conversation.size(), 16);
+    QCOMPARE(conversation.size(), 19);
     bool sawMe = false;
     bool sawClose = false;
     bool sawQuery = false;
@@ -650,6 +673,9 @@ void CommandTest::catalogLookupAndScope()
     bool sawWhois = false;
     bool sawMode = false;
     bool sawKick = false;
+    bool sawIgnore = false;
+    bool sawUnignore = false;
+    bool sawIgnored = false;
     for (const IrcVerbSpec& row : conversation) {
         if (row.name == QLatin1String("me"))
             sawMe = true;
@@ -673,6 +699,12 @@ void CommandTest::catalogLookupAndScope()
             sawMode = true;
         if (row.name == QLatin1String("kick"))
             sawKick = true;
+        if (row.name == QLatin1String("ignore"))
+            sawIgnore = true;
+        if (row.name == QLatin1String("unignore"))
+            sawUnignore = true;
+        if (row.name == QLatin1String("ignored"))
+            sawIgnored = true;
     }
     QVERIFY(sawMe);
     QVERIFY(sawClose);
@@ -685,6 +717,9 @@ void CommandTest::catalogLookupAndScope()
     QVERIFY(sawWhois);
     QVERIFY(sawMode);
     QVERIFY(sawKick);
+    QVERIFY(sawIgnore);
+    QVERIFY(sawUnignore);
+    QVERIFY(sawIgnored);
 
     const IrcCommand say = IrcCommand::parse(QStringLiteral("hello"));
     QVERIFY(say.allowedOn(IrcComposerSurface::Conversation));
@@ -720,7 +755,7 @@ void CommandTest::closeWrongScopeUsesCatalogSentence()
              QStringLiteral("Topic applies to channels"));
     const IrcCommand whois = IrcCommand::parse(QStringLiteral("/whois"));
     QCOMPARE(ircCommandOutcomeText(IrcCommandOutcome::WrongScope, whois),
-             QStringLiteral("Whois applies to direct messages"));
+             QStringLiteral("Name a nick"));
 }
 
 void CommandTest::conversationSendAndUnknown()
@@ -980,7 +1015,7 @@ void CommandTest::whoisSendsAndDefaults()
     const int beforeChannelEmpty = transport->writtenFrames().size();
     QVERIFY(!controller.sendMessage(QStringLiteral("/whois")));
     QCOMPARE(controller.lastError(),
-             QStringLiteral("Whois applies to direct messages"));
+             QStringLiteral("Name a nick"));
     QCOMPARE(transport->writtenFrames().size(), beforeChannelEmpty);
     QVERIFY(!framesContain(transport->writtenFrames().mid(beforeChannelEmpty),
                            QByteArrayLiteral("WHOIS")));
@@ -1168,6 +1203,12 @@ void CommandTest::slashProjectOpen()
     QVERIFY(conversationTopic.isOpen());
     QCOMPARE(conversationTopic.hits().first().label, QStringLiteral("/topic"));
     QVERIFY(!conversationTopic.containsLabel(QStringLiteral("/notice")));
+
+    const auto ignore = IrcSlashComplete::project(
+        QStringLiteral("/ig"), IrcComposerSurface::Status);
+    QVERIFY(ignore.isOpen());
+    QCOMPARE(ignore.hits().first().label, QStringLiteral("/ignore"));
+    QVERIFY(ignore.containsLabel(QStringLiteral("/ignored")));
 }
 
 void CommandTest::slashSessionKeys()

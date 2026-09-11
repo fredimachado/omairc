@@ -54,13 +54,19 @@ const QVector<IrcVerbSpec>& IrcVerbTable::all()
          QStringLiteral("/back"), IrcVerbScope::Either, {}},
         {IrcCommand::Verb::Whois, QStringLiteral("whois"), {},
          QStringLiteral("/whois [nick]"), IrcVerbScope::Either,
-         QStringLiteral("Whois applies to direct messages")},
+         QStringLiteral("Name a nick")},
         {IrcCommand::Verb::Mode, QStringLiteral("mode"), {},
          QStringLiteral("/mode <channel> [[+|-]modechars [parameters]]"),
          IrcVerbScope::Either, {}},
         {IrcCommand::Verb::Kick, QStringLiteral("kick"), {},
          QStringLiteral("/kick [channel] <nick> [reason]"), IrcVerbScope::Either,
          QStringLiteral("Kick applies to channels")},
+        {IrcCommand::Verb::Ignore, QStringLiteral("ignore"), {},
+         QStringLiteral("/ignore <nick>"), IrcVerbScope::Either, {}},
+        {IrcCommand::Verb::Unignore, QStringLiteral("unignore"), {},
+         QStringLiteral("/unignore <nick>"), IrcVerbScope::Either, {}},
+        {IrcCommand::Verb::Ignored, QStringLiteral("ignored"), {},
+         QStringLiteral("/ignored"), IrcVerbScope::Either, {}},
     };
     return rows;
 }

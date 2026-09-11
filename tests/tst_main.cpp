@@ -10,6 +10,7 @@ int runCapabilityTests(int argc, char **argv);
 int runSessionTests(int argc, char **argv);
 int runControllerTests(int argc, char **argv);
 int runCommandTests(int argc, char **argv);
+int runIgnoreTests(int argc, char **argv);
 int runTypingTests(int argc, char **argv);
 int runProfileTests(int argc, char **argv);
 int runConnectionTests(int argc, char **argv);
@@ -19,6 +20,7 @@ int runQtIrcTransportIntegrationTests(int argc, char **argv);
 int runSingleInstanceTests(int argc, char **argv);
 int runOmaircIpcTests(int argc, char **argv);
 int runOmaircCliTests(int argc, char **argv);
+int runOmaircFileLogTests(int argc, char **argv);
 int runSecretServiceTests(int argc, char **argv);
 
 int main(int argc, char **argv)
@@ -37,6 +39,7 @@ int main(int argc, char **argv)
     const int sessionStatus = runSessionTests(argc, argv);
     const int controllerStatus = runControllerTests(argc, argv);
     const int commandStatus = runCommandTests(argc, argv);
+    const int ignoreStatus = runIgnoreTests(argc, argv);
     const int typingStatus = runTypingTests(argc, argv);
     const int profileStatus = runProfileTests(argc, argv);
     const int connectionStatus = runConnectionTests(argc, argv);
@@ -46,6 +49,7 @@ int main(int argc, char **argv)
     const int singleInstanceStatus = runSingleInstanceTests(argc, argv);
     const int ipcStatus = runOmaircIpcTests(argc, argv);
     const int cliStatus = runOmaircCliTests(argc, argv);
+    const int fileLogStatus = runOmaircFileLogTests(argc, argv);
     const int secretServiceStatus = runSecretServiceTests(argc, argv);
     const int statuses[] = {
         protocolStatus,
@@ -56,6 +60,7 @@ int main(int argc, char **argv)
         sessionStatus,
         controllerStatus,
         commandStatus,
+        ignoreStatus,
         typingStatus,
         profileStatus,
         connectionStatus,
@@ -65,6 +70,7 @@ int main(int argc, char **argv)
         singleInstanceStatus,
         ipcStatus,
         cliStatus,
+        fileLogStatus,
         secretServiceStatus,
     };
     for (const int status : statuses) {

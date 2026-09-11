@@ -2,6 +2,7 @@
 set -eu
 
 ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
+"$ROOT/bin/check-conventions"
 TEST_STATE="$(mktemp -d "${TMPDIR:-/tmp}/omairc-tests.XXXXXX")"
 
 cleanup() {
@@ -32,6 +33,14 @@ fi
 JOBS="$(nproc 2>/dev/null || echo 1)"
 
 "$ROOT/bin/build"
+
+VERSION="$("$ROOT/bin/version")"
+got="$(DISPLAY= "$ROOT/build/omairc" --version)"
+test "$got" = "omairc $VERSION" || {
+  echo "--version must print exactly omairc $VERSION" >&2
+  printf 'got: %s\n' "$got" >&2
+  exit 1
+}
 
 assert_not_version_line() {
   first_line=$(printf '%s\n' "$1" | head -n 1)
@@ -181,6 +190,7 @@ cd "$ROOT"
 XDG_CONFIG_HOME="$TEST_STATE/config" \
 XDG_CACHE_HOME="$TEST_STATE/cache" \
 XDG_DATA_HOME="$TEST_STATE/data" \
+XDG_STATE_HOME="$TEST_STATE/state" \
 QT_QPA_PLATFORM=offscreen \
 QT_QPA_PLATFORMTHEME= \
 QT_QUICK_BACKEND=software \
@@ -192,3 +202,31 @@ for screenshot in $SCREENSHOTS; do
     exit 1
   fi
 done
+
+mkdir -p "$ROOT/build-live-ui-tests"
+cd "$ROOT/build-live-ui-tests"
+"$QMAKE" "$ROOT/tests/live-ui/live-ui.pro"
+make -j"$JOBS"
+
+mkdir -p "$ROOT/test-artifacts/live-ui"
+rm -f -- "$ROOT/test-artifacts/live-ui/live-ui-grouped-messages.png"
+rm -f -- "$ROOT/test-artifacts/live-ui/live-ui-replay-history.png"
+
+cd "$ROOT"
+XDG_CONFIG_HOME="$TEST_STATE/config" \
+XDG_CACHE_HOME="$TEST_STATE/cache" \
+XDG_DATA_HOME="$TEST_STATE/data" \
+QT_QPA_PLATFORM=offscreen \
+QT_QPA_PLATFORMTHEME= \
+QT_QUICK_BACKEND=software \
+OMAIRC_LIVE_UI_ARTIFACTS="$ROOT/test-artifacts/live-ui" \
+"$ROOT/build-live-ui-tests/live_ui_tests" consecutiveSameAuthorMinuteGroupsThroughIrcEvent replayAndLiveSameAuthorMinuteDoNotGroupThroughIrcEvent
+
+if [ ! -s "$ROOT/test-artifacts/live-ui/live-ui-grouped-messages.png" ]; then
+  echo "live_ui_tests did not create test-artifacts/live-ui/live-ui-grouped-messages.png." >&2
+  exit 1
+fi
+if [ ! -s "$ROOT/test-artifacts/live-ui/live-ui-replay-history.png" ]; then
+  echo "live_ui_tests did not create test-artifacts/live-ui/live-ui-replay-history.png." >&2
+  exit 1
+fi

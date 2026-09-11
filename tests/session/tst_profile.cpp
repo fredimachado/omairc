@@ -20,6 +20,7 @@ private slots:
     void storeRoundTripsEightFieldsWithoutPassword();
     void missingConnectOnStartupDefaultsToFalse();
     void usernameAndRealnameStayAsTyped();
+    void storeRemoveDropsTheNetworkGroup();
 
 private:
     QString settingsFile() const;
@@ -172,6 +173,36 @@ void ProfileTest::usernameAndRealnameStayAsTyped()
     QVERIFY(loaded.username.isEmpty());
     QVERIFY(loaded.realname.isEmpty());
     QVERIFY(loaded.isComplete());
+}
+
+void ProfileTest::storeRemoveDropsTheNetworkGroup()
+{
+    IrcNetworkProfile keep = IrcNetworkProfile::create();
+    keep.host = QStringLiteral("irc.example.net");
+    keep.nick = QStringLiteral("omairc");
+    IrcNetworkProfile drop = IrcNetworkProfile::create();
+    drop.host = QStringLiteral("irc.oftc.net");
+    drop.nick = QStringLiteral("oak");
+
+    IrcProfileStore store;
+    store.save(keep);
+    store.save(drop);
+    QCOMPARE(IrcProfileStore().profiles().size(), 2);
+
+    QVERIFY(store.remove(drop.networkId));
+    QVERIFY(!store.remove(drop.networkId));
+
+    const QList<IrcNetworkProfile> loaded = IrcProfileStore().profiles();
+    QCOMPARE(loaded.size(), 1);
+    QCOMPARE(loaded.first().networkId, keep.networkId);
+    QCOMPARE(loaded.first().host, QStringLiteral("irc.example.net"));
+
+    QFile file(settingsFile());
+    QVERIFY(file.open(QIODevice::ReadOnly | QIODevice::Text));
+    const QString contents = QString::fromUtf8(file.readAll());
+    QVERIFY(contents.contains(keep.networkId));
+    QVERIFY(!contents.contains(drop.networkId));
+    QVERIFY(!contents.contains(QLatin1String("irc.oftc.net")));
 }
 
 int runProfileTests(int argc, char **argv)

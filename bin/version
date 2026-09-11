@@ -1,0 +1,25 @@
+#!/usr/bin/env sh
+set -eu
+
+ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
+VERSION="$(awk '/^VERSION / { print $3; exit }' "$ROOT/version.pri")"
+test -n "$VERSION" || {
+  echo "version.pri must set VERSION" >&2
+  exit 1
+}
+
+# makepkg rejects colons, slashes, hyphens, and whitespace in pkgver.
+case "$VERSION" in
+  *[[:space:]/:-]*)
+    echo "VERSION $VERSION is not a valid Arch pkgver (no hyphens, colons, slashes, or whitespace)." >&2
+    exit 1
+    ;;
+  [0-9]*)
+    ;;
+  *)
+    echo "VERSION $VERSION must start with a digit so package names stay omairc-<ver>-*." >&2
+    exit 1
+    ;;
+esac
+
+printf '%s\n' "$VERSION"

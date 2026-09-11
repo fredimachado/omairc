@@ -63,6 +63,7 @@ done
 XDG_CONFIG_HOME="$TEST_STATE/config" \
 XDG_CACHE_HOME="$TEST_STATE/cache" \
 XDG_DATA_HOME="$TEST_STATE/data" \
+XDG_STATE_HOME="$TEST_STATE/state" \
 DBUS_SESSION_BUS_ADDRESS="unix:path=$TEST_STATE/no-session-bus" \
 QT_QPA_PLATFORM=xcb \
 "$ROOT/build/omairc" --mock >"$ROOT/test-artifacts/desktop/omairc.log" 2>&1 &

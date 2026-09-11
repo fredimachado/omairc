@@ -31,6 +31,7 @@ public:
     bool isOpen() const;
     int alerts() const;
     QString networkId() const;
+    Q_INVOKABLE int alertsFor(const QString &networkId) const;
 
     void observe(IrcSession *session);
     void forget(const QString& networkId);
@@ -39,6 +40,7 @@ public:
 
     Q_INVOKABLE bool submit(const QString& input);
     bool clearLog();
+    void record(const IrcStatusEntry& entry);
     IrcSession *boundSession() const;
 
 signals:

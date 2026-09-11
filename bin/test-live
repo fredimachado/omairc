@@ -188,5 +188,54 @@ set -e
 if [ "$status" -ne 0 ]; then
   echo "live_tests failed; compose logs follow." >&2
   compose logs >&2 || true
+  exit "$status"
 fi
-exit "$status"
+
+plain=0
+[ -n "${OMAIRC_LIVE_ERGO_PLAIN_PORT:-}" ] && plain=$((plain + 1))
+[ -n "${OMAIRC_LIVE_SOLANUM_PLAIN_PORT:-}" ] && plain=$((plain + 1))
+[ -n "${OMAIRC_LIVE_NGIRCD_PLAIN_PORT:-}" ] && plain=$((plain + 1))
+if [ "$plain" -lt 2 ]; then
+  echo "Skipping live_ui_tests: need two plain-port daemons."
+  exit 0
+fi
+
+mkdir -p "$ROOT/build-live-ui-tests"
+cd "$ROOT/build-live-ui-tests"
+"$QMAKE" "$ROOT/tests/live-ui/live-ui.pro"
+make -j"$JOBS"
+
+UI_STATE="$(mktemp -d "${TMPDIR:-/tmp}/omairc-live-ui.XXXXXX")"
+ARTIFACTS="$ROOT/test-artifacts/live-ui"
+mkdir -p "$ARTIFACTS"
+SHOTS="live-ui-ready live-ui-channel-left live-ui-channel-right live-ui-status-left live-ui-status-right live-ui-dm-in-left live-ui-dm-in-right live-ui-dm-out-left live-ui-dm-out-right"
+for shot in $SHOTS; do
+  rm -f -- "$ARTIFACTS/$shot.png"
+done
+
+set +e
+XDG_CONFIG_HOME="$UI_STATE/config" \
+XDG_CACHE_HOME="$UI_STATE/cache" \
+XDG_DATA_HOME="$UI_STATE/data" \
+XDG_STATE_HOME="$UI_STATE/state" \
+QT_QPA_PLATFORM=offscreen \
+QT_QPA_PLATFORMTHEME= \
+QT_QUICK_BACKEND=software \
+OMAIRC_ALLOW_MULTI=1 \
+OMAIRC_LIVE_UI_ARTIFACTS="$ARTIFACTS" \
+"$ROOT/build-live-ui-tests/live_ui_tests"
+ui_status=$?
+set -e
+rm -rf -- "$UI_STATE"
+if [ "$ui_status" -ne 0 ]; then
+  echo "live_ui_tests failed; compose logs follow." >&2
+  compose logs >&2 || true
+  exit "$ui_status"
+fi
+
+for shot in $SHOTS; do
+  if [ ! -s "$ARTIFACTS/$shot.png" ]; then
+    echo "live_ui_tests did not create test-artifacts/live-ui/$shot.png." >&2
+    exit 1
+  fi
+done

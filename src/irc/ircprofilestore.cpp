@@ -63,3 +63,20 @@ void IrcProfileStore::save(const IrcNetworkProfile &profile)
     settings.endGroup();
     settings.sync();
 }
+
+bool IrcProfileStore::remove(const QString &networkId)
+{
+    if (networkId.isEmpty())
+        return false;
+
+    QSettings settings;
+    settings.beginGroup(networksGroup);
+    if (!settings.childGroups().contains(networkId)) {
+        settings.endGroup();
+        return false;
+    }
+    settings.remove(networkId);
+    settings.endGroup();
+    settings.sync();
+    return true;
+}

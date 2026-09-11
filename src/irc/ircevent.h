@@ -40,6 +40,25 @@ struct IrcConversationKey
     }
 };
 
+struct IrcMsgId
+{
+    QString value;
+    bool isEmpty() const noexcept { return value.isEmpty(); }
+    friend bool operator==(const IrcMsgId& left, const IrcMsgId& right) noexcept
+    {
+        return left.value == right.value;
+    }
+    friend bool operator<(const IrcMsgId& left, const IrcMsgId& right) noexcept
+    {
+        return left.value < right.value;
+    }
+};
+
+enum class IrcMessageKindTag {
+    Chat,
+    Emote,
+};
+
 struct IrcWelcomeEvent
 {
     QString networkId;
@@ -53,6 +72,7 @@ struct IrcMessageEvent
     QString body;
     QDateTime timestamp;
     QString target;
+    IrcMsgId msgid{};
 };
 
 struct IrcNoticeEvent
@@ -62,6 +82,7 @@ struct IrcNoticeEvent
     QString body;
     QDateTime timestamp;
     QString target;
+    IrcMsgId msgid{};
 };
 
 struct IrcActionEvent
@@ -71,6 +92,7 @@ struct IrcActionEvent
     QString body;
     QDateTime timestamp;
     QString target;
+    IrcMsgId msgid{};
 };
 
 struct IrcJoinEvent
@@ -170,6 +192,28 @@ struct IrcTypingEvent
     QDateTime receivedAt;
 };
 
+struct IrcReplayLine
+{
+    QString author;
+    QString body;
+    QDateTime timestamp;
+    IrcMessageKindTag kind = IrcMessageKindTag::Chat;
+    IrcMsgId msgid{};
+};
+
+struct IrcHistoryEvent
+{
+    IrcConversationKey conversation;
+    QString target;
+    std::vector<IrcReplayLine> lines;
+};
+
+struct IrcWhoisTranscriptEvent
+{
+    IrcConversationKey destination;
+    QString formattedBody;
+};
+
 using IrcEvent = std::variant<
     IrcWelcomeEvent,
     IrcMessageEvent,
@@ -186,4 +230,6 @@ using IrcEvent = std::variant<
     IrcAwayEvent,
     IrcSelfAwayEvent,
     IrcMemberStatusEvent,
-    IrcTypingEvent>;
+    IrcTypingEvent,
+    IrcHistoryEvent,
+    IrcWhoisTranscriptEvent>;
