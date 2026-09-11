@@ -1437,6 +1437,58 @@ ApplicationWindow {
         connectionRemoveArmed = false;
     }
 
+    function addSheetNetwork() {
+        if (!connection || !connection.add())
+            return;
+        clearConnectionPassword();
+        connectionRemoveArmed = false;
+    }
+
+    function discardSheetConnection() {
+        if (!connection)
+            return;
+        connection.discard();
+        clearConnectionPassword();
+        connectionRemoveArmed = false;
+    }
+
+    function removeSheetNetwork() {
+        if (!connection || !connection.canRemove)
+            return;
+        if (!connectionRemoveArmed) {
+            connectionRemoveArmed = true;
+            return;
+        }
+        connection.removeSelected();
+        clearConnectionPassword();
+        connectionRemoveArmed = false;
+        if (connection.setupRequired)
+            connectionSheetOpen = true;
+    }
+
+    function focusConnectionSheetStart() {
+        if (!connectionOverlayVisible)
+            return;
+        if (connection && (connection.focusPassword || connection.focusNickServ))
+            return;
+        var focused = win.activeFocusItem;
+        while (focused) {
+            if (focused === connectionSheet)
+                return;
+            focused = focused.parent;
+        }
+        var first = networkChoiceRepeater.itemAt(0);
+        if (first)
+            first.forceActiveFocus();
+    }
+
+    function applyFromSheetKey(event) {
+        if (event.key !== Qt.Key_Return && event.key !== Qt.Key_Enter)
+            return;
+        submitConnection();
+        event.accepted = true;
+    }
+
     Connections {
         target: win.connection
         ignoreUnknownSignals: true
@@ -3452,6 +3504,7 @@ ApplicationWindow {
                     selectedTextColor: "#ffffff"
                     font.family: "iA Writer Mono S"
                     font.pixelSize: win.scaledSize(13)
+                    activeFocusOnTab: !win.connectionOverlayVisible
                     leftPadding: win.scaledSize(8)
                     rightPadding: win.scaledSize(8)
                     topPadding: Math.max(win.scaledSize(8),
@@ -3665,6 +3718,10 @@ ApplicationWindow {
                 anchors.fill: parent
                 visible: win.connection && (win.connection.setupRequired || win.connectionSheetOpen)
                 color: win.mixColors(win.pageColor, win.inkColor, win.darkMode ? 0.18 : 0.12)
+                onVisibleChanged: {
+                    if (visible)
+                        Qt.callLater(win.focusConnectionSheetStart);
+                }
 
                 MouseArea {
                     anchors.fill: parent
@@ -3713,6 +3770,7 @@ ApplicationWindow {
 
                             Flickable {
                                 id: networkChoiceScroll
+                                objectName: "networkChoiceScroll"
                                 Layout.fillWidth: true
                                 Layout.fillHeight: true
                                 Layout.minimumHeight: win.scaledSize(32)
@@ -3720,7 +3778,11 @@ ApplicationWindow {
                                 contentWidth: width
                                 contentHeight: networkChoiceColumn.implicitHeight
                                 boundsBehavior: Flickable.StopAtBounds
-                                ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+                                ScrollBar.vertical: ScrollBar {
+                                    objectName: "networkChoiceScrollBar"
+                                    policy: networkChoiceScroll.contentHeight > networkChoiceScroll.height
+                                        ? ScrollBar.AlwaysOn : ScrollBar.AlwaysOff
+                                }
 
                                 Column {
                                     id: networkChoiceColumn
@@ -3736,6 +3798,7 @@ ApplicationWindow {
                                             required property string networkId
                                             required property string displayName
                                             required property bool selected
+                                            property bool applyArmed: false
                                             width: networkRail.width
                                             height: win.scaledSize(32)
                                             radius: win.scaledSize(6)
@@ -3750,12 +3813,30 @@ ApplicationWindow {
                                             Accessible.role: Accessible.Button
                                             Accessible.name: displayName
                                             Accessible.onPressAction: win.selectSheetNetwork(networkId)
-                                            Keys.onReturnPressed: function(event) {
-                                                win.selectSheetNetwork(networkId);
-                                                event.accepted = true;
+                                            onActiveFocusChanged: {
+                                                if (!activeFocus)
+                                                    applyArmed = false;
                                             }
-                                            Keys.onSpacePressed: function(event) {
-                                                win.selectSheetNetwork(networkId);
+                                            Keys.onPressed: function(event) {
+                                                if (event.key === Qt.Key_Space) {
+                                                    win.selectSheetNetwork(networkId);
+                                                    event.accepted = true;
+                                                    return;
+                                                }
+                                                if (event.key !== Qt.Key_Return
+                                                        && event.key !== Qt.Key_Enter)
+                                                    return;
+                                                if (event.modifiers & Qt.ControlModifier) {
+                                                    win.submitConnection();
+                                                    event.accepted = true;
+                                                    return;
+                                                }
+                                                if (selected && applyArmed)
+                                                    win.submitConnection();
+                                                else {
+                                                    win.selectSheetNetwork(networkId);
+                                                    applyArmed = true;
+                                                }
                                                 event.accepted = true;
                                             }
 
@@ -3793,7 +3874,22 @@ ApplicationWindow {
                                 Layout.preferredHeight: win.scaledSize(28)
                                 radius: win.scaledSize(6)
                                 visible: win.connection ? win.connection.canAdd : false
-                                color: addNetworkMouse.containsMouse ? win.hoverColor : "transparent"
+                                activeFocusOnTab: visible
+                                Accessible.role: Accessible.Button
+                                Accessible.name: "Add network"
+                                Accessible.onPressAction: win.addSheetNetwork()
+                                color: addNetworkMouse.containsMouse || activeFocus
+                                    ? win.hoverColor : "transparent"
+                                border.width: activeFocus ? 1 : 0
+                                border.color: win.accentColor
+                                Keys.onPressed: function(event) {
+                                    if (event.key === Qt.Key_Return
+                                            || event.key === Qt.Key_Enter
+                                            || event.key === Qt.Key_Space) {
+                                        win.addSheetNetwork();
+                                        event.accepted = true;
+                                    }
+                                }
 
                                 Text {
                                     anchors.centerIn: parent
@@ -3809,10 +3905,8 @@ ApplicationWindow {
                                     hoverEnabled: true
                                     cursorShape: Qt.PointingHandCursor
                                     onClicked: {
-                                        if (!win.connection || !win.connection.add())
-                                            return;
-                                        win.clearConnectionPassword();
-                                        win.connectionRemoveArmed = false;
+                                        win.addSheetNetwork();
+                                        parent.forceActiveFocus();
                                     }
                                 }
                             }
@@ -3834,6 +3928,11 @@ ApplicationWindow {
                         contentHeight: sheetColumn.implicitHeight
                         clip: true
                         boundsBehavior: Flickable.StopAtBounds
+                        ScrollBar.vertical: ScrollBar {
+                            objectName: "sheetFlickScrollBar"
+                            policy: sheetFlick.contentHeight > sheetFlick.height
+                                ? ScrollBar.AlwaysOn : ScrollBar.AlwaysOff
+                        }
 
                     Column {
                         id: sheetColumn
@@ -3888,6 +3987,7 @@ ApplicationWindow {
                                     id: connectionTls
                                     objectName: "connectionTls"
                                     checked: win.connection ? win.connection.tlsEnabled : true
+                                    Keys.onPressed: win.applyFromSheetKey(event)
                                     onToggled: {
                                         if (win.connection)
                                             win.connection.tlsEnabled = checked;
@@ -3943,6 +4043,7 @@ ApplicationWindow {
                             Switch {
                                 id: connectionConnectOnStartup
                                 objectName: "connectionConnectOnStartup"
+                                Keys.onPressed: win.applyFromSheetKey(event)
                                 onToggled: {
                                     if (win.connection)
                                         win.connection.connectOnStartup = checked;
@@ -4009,7 +4110,7 @@ ApplicationWindow {
                             Accessible.role: Accessible.Button
                             Accessible.name: "Forget saved password"
                             Accessible.description: "Remove the saved connection password"
-                            activeFocusOnTab: true
+                            activeFocusOnTab: visible
                             Keys.onPressed: function(event) {
                                 if (event.key === Qt.Key_Return
                                     || event.key === Qt.Key_Enter
@@ -4048,7 +4149,7 @@ ApplicationWindow {
                             Accessible.role: Accessible.Button
                             Accessible.name: "Forget saved NickServ"
                             Accessible.description: "Remove the saved NickServ password"
-                            activeFocusOnTab: true
+                            activeFocusOnTab: visible
                             Keys.onPressed: function(event) {
                                 if (event.key === Qt.Key_Return
                                     || event.key === Qt.Key_Enter
@@ -4103,9 +4204,24 @@ ApplicationWindow {
                                 width: visible ? win.scaledSize(win.connectionRemoveArmed ? 148 : 88) : 0
                                 height: win.scaledSize(30)
                                 radius: win.scaledSize(7)
-                                color: removeMouse.containsMouse ? win.hoverColor : "transparent"
+                                activeFocusOnTab: visible
+                                Accessible.role: Accessible.Button
+                                Accessible.name: win.connectionRemoveArmed
+                                    ? "Confirm remove " + (win.connection ? win.connection.displayName : "")
+                                    : "Remove"
+                                Accessible.onPressAction: win.removeSheetNetwork()
+                                color: removeMouse.containsMouse || activeFocus
+                                    ? win.hoverColor : "transparent"
                                 border.width: 1
-                                border.color: win.dividerColor
+                                border.color: activeFocus ? win.accentColor : win.dividerColor
+                                Keys.onPressed: function(event) {
+                                    if (event.key === Qt.Key_Return
+                                            || event.key === Qt.Key_Enter
+                                            || event.key === Qt.Key_Space) {
+                                        win.removeSheetNetwork();
+                                        event.accepted = true;
+                                    }
+                                }
 
                                 Text {
                                     anchors.centerIn: parent
@@ -4126,17 +4242,8 @@ ApplicationWindow {
                                     hoverEnabled: true
                                     cursorShape: Qt.PointingHandCursor
                                     onClicked: {
-                                        if (!win.connection || !win.connection.canRemove)
-                                            return;
-                                        if (!win.connectionRemoveArmed) {
-                                            win.connectionRemoveArmed = true;
-                                            return;
-                                        }
-                                        win.connection.removeSelected();
-                                        win.clearConnectionPassword();
-                                        win.connectionRemoveArmed = false;
-                                        if (win.connection.setupRequired)
-                                            win.connectionSheetOpen = true;
+                                        win.removeSheetNetwork();
+                                        parent.forceActiveFocus();
                                     }
                                 }
                             }
@@ -4148,9 +4255,22 @@ ApplicationWindow {
                                 width: win.scaledSize(88)
                                 height: win.scaledSize(30)
                                 radius: win.scaledSize(7)
-                                color: discardMouse.containsMouse ? win.hoverColor : "transparent"
+                                activeFocusOnTab: true
+                                Accessible.role: Accessible.Button
+                                Accessible.name: "Discard"
+                                Accessible.onPressAction: win.discardSheetConnection()
+                                color: discardMouse.containsMouse || activeFocus
+                                    ? win.hoverColor : "transparent"
                                 border.width: 1
-                                border.color: win.dividerColor
+                                border.color: activeFocus ? win.accentColor : win.dividerColor
+                                Keys.onPressed: function(event) {
+                                    if (event.key === Qt.Key_Return
+                                            || event.key === Qt.Key_Enter
+                                            || event.key === Qt.Key_Space) {
+                                        win.discardSheetConnection();
+                                        event.accepted = true;
+                                    }
+                                }
 
                                 Text {
                                     anchors.centerIn: parent
@@ -4166,11 +4286,8 @@ ApplicationWindow {
                                     hoverEnabled: true
                                     cursorShape: Qt.PointingHandCursor
                                     onClicked: {
-                                        if (!win.connection)
-                                            return;
-                                        win.connection.discard();
-                                        win.clearConnectionPassword();
-                                        win.connectionRemoveArmed = false;
+                                        win.discardSheetConnection();
+                                        parent.forceActiveFocus();
                                     }
                                 }
                             }
@@ -4180,8 +4297,25 @@ ApplicationWindow {
                                 width: win.scaledSize(88)
                                 height: win.scaledSize(30)
                                 radius: win.scaledSize(7)
+                                activeFocusOnTab: true
+                                Accessible.role: Accessible.Button
+                                Accessible.name: "Apply"
+                                Accessible.onPressAction: win.submitConnection()
                                 color: win.connection && win.connection.problem.length === 0
                                     ? win.accentColor : win.raisedColor
+                                border.width: 1
+                                border.color: activeFocus
+                                    ? (win.connection && win.connection.problem.length === 0
+                                        ? win.inkColor : win.accentColor)
+                                    : "transparent"
+                                Keys.onPressed: function(event) {
+                                    if (event.key === Qt.Key_Return
+                                            || event.key === Qt.Key_Enter
+                                            || event.key === Qt.Key_Space) {
+                                        win.submitConnection();
+                                        event.accepted = true;
+                                    }
+                                }
 
                                 Text {
                                     anchors.centerIn: parent
@@ -4195,9 +4329,12 @@ ApplicationWindow {
 
                                 MouseArea {
                                     anchors.fill: parent
-                                    enabled: win.connection && win.connection.problem.length === 0
-                                    cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
-                                    onClicked: win.submitConnection()
+                                    cursorShape: win.connection && win.connection.problem.length === 0
+                                        ? Qt.PointingHandCursor : Qt.ArrowCursor
+                                    onClicked: {
+                                        parent.forceActiveFocus();
+                                        win.submitConnection();
+                                    }
                                 }
                             }
                         }
