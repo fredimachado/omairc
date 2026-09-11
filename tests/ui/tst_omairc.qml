@@ -2384,7 +2384,8 @@ TestCase {
         window.requestActivate();
         tryCompare(window, "active", true);
 
-        var network = findChild(window, "networkChoice-setup-id");
+        var network = repeaterItemByName(findChild(window, "networkChoiceRepeater"),
+                                         "networkChoice-setup-id");
         verify(network !== null, "Could not find networkChoice-setup-id");
         network.forceActiveFocus();
         tryCompare(network, "activeFocus", true);
@@ -2531,7 +2532,8 @@ TestCase {
         var sheet = findChild(window, "connectionSheet");
         tryCompare(sheet, "visible", true);
 
-        var row = findChild(window, "networkChoice-libera");
+        var row = repeaterItemByName(findChild(window, "networkChoiceRepeater"),
+                                     "networkChoice-libera");
         verify(row !== null, "Could not find networkChoice-libera");
         row.forceActiveFocus();
         tryCompare(row, "activeFocus", true);
@@ -2562,7 +2564,9 @@ TestCase {
         var sheet = findChild(window, "connectionSheet");
         tryCompare(sheet, "visible", true);
 
-        var row = findChild(window, "networkChoice-libera");
+        var row = repeaterItemByName(findChild(window, "networkChoiceRepeater"),
+                                     "networkChoice-libera");
+        verify(row !== null, "Could not find networkChoice-libera");
         row.forceActiveFocus();
         tryCompare(row, "activeFocus", true);
         keyClick(Qt.Key_Return, Qt.ControlModifier);
