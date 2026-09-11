@@ -7,6 +7,7 @@
 #include "ircparser.h"
 #include "ircprefixnick.h"
 #include "ircpresence.h"
+#include "ircservicenick.h"
 #include "ircsecretpolicy.h"
 #include "irctcp.h"
 #include "irctyping.h"
@@ -35,6 +36,17 @@ QString saslSecret(const IrcSessionConfig &config)
 {
     return config.nickServPassword.isEmpty() ? config.password
                                              : config.nickServPassword;
+}
+
+QString ctcpReplyHost(const IrcMessage &message)
+{
+    if (!message.prefix)
+        return {};
+    if (!message.prefix->host.empty())
+        return ircWireText(message.prefix->host);
+    if (message.prefix->nick.empty())
+        return ircWireText(message.prefix->raw);
+    return {};
 }
 
 QString previewWire(std::string_view bytes, std::size_t byteCount, QStringView channelTypes)
@@ -796,8 +808,10 @@ void IrcSession::handleMessage(const IrcMessage &message)
         const auto request = parseCtcpRequest(parameter(message, 1));
         if (request && request->command != QStringLiteral("ACTION")) {
             const QString sender = ircPrefixNick(message);
-            if (sender.isEmpty())
+            if (sender.isEmpty()
+                || ircIsServiceIdentity(sender, ctcpReplyHost(message), m_channelTypes)) {
                 return;
+            }
             QString payload;
             if (request->command == QStringLiteral("PING")) {
                 if (request->argument.toUtf8().size() > kCtcpPingPayloadMaxBytes)

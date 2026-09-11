@@ -528,8 +528,12 @@ void SessionTest::ctcpFromServerPrefixGetsNoReply()
         QByteArrayLiteral(":server 001 omairc :Welcome\r\n"));
 
     fixture.transport->injectBytes(
-        QByteArrayLiteral(":services.example.net PRIVMSG omairc :\x01VERSION\x01\r\n"));
+        QByteArrayLiteral(":services.example.net PRIVMSG omairc :\x01VERSION\x01\r\n"
+                          ":services PRIVMSG omairc :\x01VERSION\x01\r\n"
+                          ":NickServ!NickServ@services PRIVMSG omairc :\x01VERSION\x01\r\n"));
     QVERIFY(!fixture.wrote(ctcpVersionReply(QByteArrayLiteral("services.example.net"))));
+    QVERIFY(!fixture.wrote(ctcpVersionReply(QByteArrayLiteral("services"))));
+    QVERIFY(!fixture.wrote(ctcpVersionReply(QByteArrayLiteral("NickServ"))));
 }
 
 void SessionTest::ctcpToFoldedSelfNickIsAnswered()
