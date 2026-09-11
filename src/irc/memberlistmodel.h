@@ -39,10 +39,13 @@ public:
     void touch(const QString& normalizedNick);
 
 private:
+    QVector<QString> collectNicks() const;
+    bool syncRows(const QVector<QString>& nicks);
     void rebuildRowIndex();
 
     IrcEventReducer& m_reducer;
     std::optional<IrcConversationKey> m_selected;
+    std::optional<IrcConversationKey> m_loaded;
     QVector<QString> m_nicks;
     QHash<QString, int> m_rowByNick;
 };
