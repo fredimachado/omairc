@@ -278,6 +278,7 @@ private slots:
     void statusClearLeavesConversationMessages();
     void selectedPrivmsgInsertsMessageRow();
     void largeChannelJoinDoesNotResetModelsPerNick();
+    void isupportBurstDoesNotResetModels();
     void otherChannelNamesDoesNotSnapshotJoiningMembers();
     void namesBurstFlushesTypingClearedByChat();
     void chatDuringNamesUpdatesMessagesWithoutMemberReset();
@@ -2216,7 +2217,7 @@ void ControllerTest::largeChannelJoinDoesNotResetModelsPerNick()
     QCOMPARE(conversationResets.size(), 1);
     QCOMPARE(conversationDataChanges.size(), 1);
     QCOMPARE(messageResets.size(), 1);
-    QCOMPARE(memberResets.size(), 2);
+    QCOMPARE(memberResets.size(), 1);
 
     const int memberResetsAfterNames = memberResets.size();
     const int conversationResetsAfterNames = conversationResets.size();
@@ -2229,6 +2230,81 @@ void ControllerTest::largeChannelJoinDoesNotResetModelsPerNick()
     QCOMPARE(conversationResets.size(), conversationResetsAfterNames);
     QCOMPARE(messageResets.size(), messageResetsAfterNames);
     QCOMPARE(memberDataChanges.size(), nickCount);
+
+    QSignalSpy memberInserts(members, &QAbstractItemModel::rowsInserted);
+    QSignalSpy memberRemoves(members, &QAbstractItemModel::rowsRemoved);
+    transport->injectBytes(QByteArrayLiteral(":zoe!u@h JOIN :#big\r\n"));
+    QCOMPARE(members->rowCount(), nickCount + 1);
+    QCOMPARE(controller.peopleCount(), nickCount + 1);
+    QCOMPARE(memberResets.size(), memberResetsAfterNames);
+    QCOMPARE(conversationResets.size(), conversationResetsAfterNames);
+    QCOMPARE(messageResets.size(), messageResetsAfterNames);
+    QCOMPARE(memberInserts.size(), 1);
+    QCOMPARE(roleAt(members, memberInserts.at(0).at(1).toInt(),
+                    MemberListModel::NickRole),
+             QStringLiteral("zoe"));
+
+    transport->injectBytes(QByteArrayLiteral(":zoe!u@h PART #big\r\n"));
+    QCOMPARE(members->rowCount(), nickCount);
+    QCOMPARE(controller.peopleCount(), nickCount);
+    QCOMPARE(memberResets.size(), memberResetsAfterNames);
+    QCOMPARE(memberRemoves.size(), 1);
+}
+
+void ControllerTest::isupportBurstDoesNotResetModels()
+{
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+                                                transport);
+    QVERIFY(session);
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    transport->completeConnect();
+    transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
+                          ":server 001 omairc :Welcome\r\n"
+                          ":omairc!u@h JOIN :#omarchy\r\n"
+                          ":server 353 omairc = #omarchy :omairc Alice\r\n"
+                          ":server 366 omairc #omarchy :End of NAMES\r\n"));
+    QCOMPARE(controller.selectedTarget(), QStringLiteral("#omarchy"));
+    QVERIFY(controller.isChannel());
+
+    auto *conversations =
+        qobject_cast<QAbstractItemModel *>(controller.conversations());
+    auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
+    auto *members = qobject_cast<QAbstractItemModel *>(controller.members());
+    QSignalSpy conversationResets(conversations, &QAbstractItemModel::modelReset);
+    QSignalSpy messageResets(messages, &QAbstractItemModel::modelReset);
+    QSignalSpy memberResets(members, &QAbstractItemModel::modelReset);
+
+    transport->injectBytes(
+        QByteArrayLiteral(":server 005 omairc CHANTYPES=# PREFIX=(v)+ "
+                          ":are supported by this server\r\n"
+                          ":server 005 omairc CHANMODES=eIbq,k,flj,CFL "
+                          ":are supported by this server\r\n"
+                          ":server 005 omairc NICKLEN=16 "
+                          ":are supported by this server\r\n"));
+    QCOMPARE(conversationResets.size(), 0);
+    QCOMPARE(messageResets.size(), 0);
+    QCOMPARE(memberResets.size(), 0);
+
+    transport->injectBytes(QByteArrayLiteral(":op!u@h MODE #omarchy +o Alice\r\n"));
+    QCOMPARE(memberResets.size(), 0);
+    QCOMPARE(roleAt(members, 0, MemberListModel::NickRole), QStringLiteral("Alice"));
+    QCOMPARE(roleAt(members, 0, MemberListModel::LabelRole), QStringLiteral("Alice"));
+
+    transport->injectBytes(
+        QByteArrayLiteral(":server 005 omairc CHANTYPES=$ "
+                          ":are supported by this server\r\n"));
+    QCOMPARE(conversationResets.size(), 0);
+    QCOMPARE(messageResets.size(), 0);
+    QCOMPARE(memberResets.size(), 0);
+    QVERIFY(!controller.isChannel());
+
+    transport->injectBytes(QByteArrayLiteral(":omairc!u@h JOIN :$odd\r\n"));
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("$odd"));
+    QCOMPARE(controller.selectedTarget(), QStringLiteral("$odd"));
+    QVERIFY(controller.isChannel());
 }
 
 void ControllerTest::otherChannelNamesDoesNotSnapshotJoiningMembers()
@@ -2281,7 +2357,7 @@ void ControllerTest::otherChannelNamesDoesNotSnapshotJoiningMembers()
     QCOMPARE(members->rowCount(), 2);
     QCOMPARE(controller.peopleCount(), 2);
     QCOMPARE(controller.peopleCount(), members->rowCount());
-    QCOMPARE(memberResets.size(), 1);
+    QCOMPARE(memberResets.size(), 0);
     QVERIFY(selection.size() >= 1);
 }
 
@@ -2366,7 +2442,7 @@ void ControllerTest::chatDuringNamesUpdatesMessagesWithoutMemberReset()
     QCOMPARE(members->rowCount(), 4);
     QCOMPARE(controller.peopleCount(), 4);
     QCOMPARE(controller.peopleCount(), members->rowCount());
-    QCOMPARE(memberResets.size(), 1);
+    QCOMPARE(memberResets.size(), 0);
 }
 
 void ControllerTest::incomingNickRetargetsSelectedDirect()

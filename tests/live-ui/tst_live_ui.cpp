@@ -5,6 +5,7 @@
 #include "ircslashcomplete.h"
 #include "liveharness.h"
 #include "liveuiworld.h"
+#include "memberlistmodel.h"
 #include "messagelistmodel.h"
 #include "networklogmodel.h"
 
@@ -14,7 +15,9 @@
 #include <QDir>
 #include <QFileInfo>
 #include <QImage>
+#include <QAbstractItemModel>
 #include <QQmlApplicationEngine>
+#include <QSignalSpy>
 #include <QQmlComponent>
 #include <QQuickItem>
 #include <QQuickWindow>
@@ -64,6 +67,29 @@ QString describeChrome(const QVector<TranscriptRowChrome> &rows)
                          .arg(row.height));
     }
     return parts.join(QLatin1Char('|'));
+}
+
+void walkItems(QQuickItem *item, const std::function<void(QQuickItem *)> &visit)
+{
+    if (!item)
+        return;
+    visit(item);
+    for (QQuickItem *child : item->childItems())
+        walkItems(child, visit);
+}
+
+QQuickItem *findNamedItem(QQuickWindow *window, const QString &name)
+{
+    if (!window)
+        return nullptr;
+    if (QQuickItem *named = window->findChild<QQuickItem *>(name))
+        return named;
+    QQuickItem *found = nullptr;
+    walkItems(window->contentItem(), [&](QQuickItem *item) {
+        if (!found && item->objectName() == name)
+            found = item;
+    });
+    return found;
 }
 
 void walkSidebarItems(QQuickItem *item, const std::function<void(QQuickItem *)> &visit)
@@ -160,6 +186,7 @@ private slots:
     void inboundSameNickDirectsStayIsolated();
     void outboundSameNickDirectsStayIsolated();
     void consecutiveSameAuthorMinuteGroupsThroughIrcEvent();
+    void memberJoinPartModeUpdatesWithoutReset();
     void replayAndLiveSameAuthorMinuteDoNotGroupThroughIrcEvent();
     void bouncerQueryReplayRendersDirectMessageInSidebar();
     void ctrlFFindsLiveTranscriptAndStatus();
@@ -454,6 +481,113 @@ void LiveUiTest::consecutiveSameAuthorMinuteGroupsThroughIrcEvent()
     QVERIFY2(after.avatarVisible && after.headerVisible, qPrintable(describeChrome(rows)));
     QVERIFY2(saveFixtureShot(window, QStringLiteral("live-ui-grouped-messages")),
              "grouped screenshot");
+}
+
+void LiveUiTest::memberJoinPartModeUpdatesWithoutReset()
+{
+    if (m_live)
+        QSKIP("FakeIrcTransport member updates run under bin/test, not the compose world.");
+    std::unique_ptr<QTemporaryDir> xdg = std::make_unique<QTemporaryDir>();
+    QVERIFY(xdg->isValid());
+    const QString xdgRoot = xdg->path();
+    const QString config = xdgRoot + QLatin1String("/config");
+    QDir().mkpath(config);
+    QDir().mkpath(xdgRoot + QLatin1String("/cache"));
+    QDir().mkpath(xdgRoot + QLatin1String("/data"));
+    qputenv("XDG_CONFIG_HOME", config.toUtf8());
+    qputenv("XDG_CACHE_HOME", (xdgRoot + QLatin1String("/cache")).toUtf8());
+    qputenv("XDG_DATA_HOME", (xdgRoot + QLatin1String("/data")).toUtf8());
+    QSettings::setPath(QSettings::NativeFormat, QSettings::UserScope, config);
+
+    Backend backend;
+    IrcSlashSession slash;
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    IrcSession *session = controller.addSession(fixtureConfig(), transport);
+    QVERIFY(session);
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    transport->completeConnect();
+    transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
+                          ":server 001 omairc :Welcome\r\n"
+                          ":server 005 omairc CHANTYPES=# PREFIX=(ov)@+ "
+                          ":are supported by this server\r\n"
+                          ":omairc!u@h JOIN :#omarchy\r\n"
+                          ":server 353 omairc = #omarchy :omairc anna rio\r\n"
+                          ":server 366 omairc #omarchy :End of NAMES\r\n"));
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+
+    QQmlApplicationEngine engine;
+    QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/OmaircWindow.qml")));
+    QVERIFY2(component.status() != QQmlComponent::Error, qPrintable(component.errorString()));
+    QVariantMap properties;
+    properties.insert(QStringLiteral("backend"), QVariant::fromValue(&backend));
+    properties.insert(QStringLiteral("irc"), QVariant::fromValue(&controller));
+    properties.insert(QStringLiteral("slashCommands"), QVariant::fromValue(&slash));
+    std::unique_ptr<QObject> root(component.createWithInitialProperties(properties));
+    QVERIFY2(root.get(), qPrintable(component.errorString()));
+    auto *window = qobject_cast<QQuickWindow *>(root.get());
+    QVERIFY(window);
+    QVERIFY(QTest::qWaitForWindowExposed(window));
+    window->setWidth(1180);
+    window->setHeight(760);
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    QCoreApplication::processEvents();
+
+    QVERIFY(waitUntil([&] {
+        QQuickItem *messages = window->findChild<QQuickItem *>(QStringLiteral("messageList"));
+        return messages && messages->isVisible() && messages->height() > 0
+            && !window->property("consoleVisible").toBool();
+    }));
+    window->setProperty("membersVisible", true);
+    QCoreApplication::processEvents();
+    QVERIFY2(waitUntil([&] {
+                    QQuickItem *panel = findNamedItem(window, QStringLiteral("membersPanel"));
+                    QQuickItem *anna = findNamedItem(window, QStringLiteral("member-anna"));
+                    return panel && panel->isVisible() && anna
+                        && window->property("currentPeopleCount").toInt() == 3;
+                }),
+             qPrintable(QStringLiteral("people=%1 console=%2 members=%3 channel=%4")
+                            .arg(window->property("currentPeopleCount").toInt())
+                            .arg(window->property("consoleVisible").toBool())
+                            .arg(window->property("membersVisible").toBool())
+                            .arg(window->property("currentConversationIsChannel").toBool())));
+
+    auto *members = qobject_cast<QAbstractItemModel *>(controller.members());
+    QVERIFY(members);
+    QSignalSpy memberResets(members, &QAbstractItemModel::modelReset);
+    QSignalSpy memberInserts(members, &QAbstractItemModel::rowsInserted);
+    QSignalSpy memberRemoves(members, &QAbstractItemModel::rowsRemoved);
+    QQuickItem *anna = findNamedItem(window, QStringLiteral("member-anna"));
+    QVERIFY(anna);
+
+    transport->injectBytes(QByteArrayLiteral(":zoe!u@h JOIN :#omarchy\r\n"));
+    QVERIFY(waitUntil([&] {
+        return window->property("currentPeopleCount").toInt() == 4
+            && findNamedItem(window, QStringLiteral("member-zoe"));
+    }));
+    QCOMPARE(memberResets.size(), 0);
+    QCOMPARE(memberInserts.size(), 1);
+    QCOMPARE(findNamedItem(window, QStringLiteral("member-anna")), anna);
+    QCOMPARE(window->property("currentPeopleCount").toInt(), 4);
+
+    transport->injectBytes(QByteArrayLiteral(":rio!u@h PART #omarchy\r\n"));
+    QVERIFY(waitUntil([&] {
+        return window->property("currentPeopleCount").toInt() == 3
+            && !findNamedItem(window, QStringLiteral("member-rio"));
+    }));
+    QCOMPARE(memberResets.size(), 0);
+    QCOMPARE(memberRemoves.size(), 1);
+    QCOMPARE(findNamedItem(window, QStringLiteral("member-anna")), anna);
+
+    transport->injectBytes(QByteArrayLiteral(":op!u@h MODE #omarchy +o anna\r\n"));
+    QVERIFY(waitUntil([&] {
+        QQuickItem *row = findNamedItem(window, QStringLiteral("member-anna"));
+        return row && row->property("label").toString() == QStringLiteral("@anna");
+    }));
+    QCOMPARE(memberResets.size(), 0);
+    QCOMPARE(findNamedItem(window, QStringLiteral("member-anna")), anna);
+    QCOMPARE(anna->property("label").toString(), QStringLiteral("@anna"));
 }
 
 void LiveUiTest::replayAndLiveSameAuthorMinuteDoNotGroupThroughIrcEvent()

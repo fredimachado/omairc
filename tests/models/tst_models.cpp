@@ -70,6 +70,7 @@ private slots:
     void reloadUnchangedKeysEmitsDataChangedNotReset();
     void typingRoleDerivesFromExistingDirectAndInvalidates();
     void selectedChatAppendInsertsInsteadOfReset();
+    void selectedMemberJoinInsertsInsteadOfReset();
     void reloadTrimEmitsRemovesWhenCountUnchanged();
     void reloadClearAfterCapEmitsRemoves();
     void collapsedJoinRewritesLastRow();
@@ -661,6 +662,75 @@ void ModelTest::selectedChatAppendInsertsInsteadOfReset()
     messages.select(other);
     QCOMPARE(resets.size(), 1);
     QCOMPARE(messages.rowCount(), 1);
+}
+
+void ModelTest::selectedMemberJoinInsertsInsteadOfReset()
+{
+    IrcEventReducer reducer;
+    MemberListModel members(reducer);
+    welcome(reducer, networkA);
+
+    const IrcConversationKey room =
+        reducer.conversationKey(networkA, QStringLiteral("#room"));
+    reducer.apply(IrcJoinEvent{
+        networkA, QStringLiteral("#room"), QStringLiteral("omairc")});
+    reducer.apply(IrcNamesEvent{
+        networkA,
+        QStringLiteral("#room"),
+        {parsedName("@omairc"), parsedName("Alice")},
+        true,
+    });
+    members.select(room);
+    QCOMPARE(members.rowCount(), 2);
+    QCOMPARE(roleAt(members, 0, MemberListModel::NickRole), QStringLiteral("Alice"));
+    QCOMPARE(roleAt(members, 1, MemberListModel::NickRole), QStringLiteral("omairc"));
+
+    QSignalSpy resets(&members, &QAbstractItemModel::modelReset);
+    QSignalSpy inserts(&members, &QAbstractItemModel::rowsInserted);
+    QSignalSpy removes(&members, &QAbstractItemModel::rowsRemoved);
+    QSignalSpy changes(&members, &QAbstractItemModel::dataChanged);
+
+    reducer.apply(IrcJoinEvent{
+        networkA, QStringLiteral("#room"), QStringLiteral("Bob")});
+    members.reload();
+    QCOMPARE(resets.size(), 0);
+    QCOMPARE(inserts.size(), 1);
+    QCOMPARE(inserts.at(0).at(1).toInt(), 1);
+    QCOMPARE(members.rowCount(), 3);
+    QCOMPARE(roleAt(members, 1, MemberListModel::NickRole), QStringLiteral("Bob"));
+
+    reducer.apply(IrcPartEvent{
+        networkA, QStringLiteral("#room"), QStringLiteral("Bob"), {}});
+    members.reload();
+    QCOMPARE(resets.size(), 0);
+    QCOMPARE(removes.size(), 1);
+    QCOMPARE(members.rowCount(), 2);
+    QCOMPARE(roleAt(members, 0, MemberListModel::NickRole), QStringLiteral("Alice"));
+
+    reducer.apply(IrcModeEvent{
+        networkA, QStringLiteral("#room"), QStringLiteral("op"),
+        QStringLiteral("+o"), {QStringLiteral("Alice")}});
+    members.reload();
+    QCOMPARE(resets.size(), 0);
+    QVERIFY(changes.size() >= 1);
+    QCOMPARE(roleAt(members, 0, MemberListModel::LabelRole), QStringLiteral("@Alice"));
+
+    reducer.apply(IrcNickEvent{
+        networkA, QStringLiteral("Alice"), QStringLiteral("Alicia")});
+    members.reload();
+    QCOMPARE(resets.size(), 0);
+    QCOMPARE(removes.size(), 2);
+    QCOMPARE(inserts.size(), 2);
+    QCOMPARE(members.rowCount(), 2);
+    QCOMPARE(roleAt(members, 0, MemberListModel::NickRole), QStringLiteral("Alicia"));
+
+    const IrcConversationKey other =
+        reducer.conversationKey(networkA, QStringLiteral("#other"));
+    reducer.apply(IrcJoinEvent{
+        networkA, QStringLiteral("#other"), QStringLiteral("omairc")});
+    members.select(other);
+    QCOMPARE(resets.size(), 1);
+    QCOMPARE(members.rowCount(), 1);
 }
 
 void ModelTest::reloadTrimEmitsRemovesWhenCountUnchanged()

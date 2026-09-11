@@ -1278,7 +1278,6 @@ void IrcController::handleMessage(const QString& networkId,
                 message.parameters.begin() + 1, message.parameters.end() - 1);
             features.applyTokens(tokens);
             m_reducer.setServerFeatures(networkId, features);
-            reloadModels();
         }
         return;
     }
