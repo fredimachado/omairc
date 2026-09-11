@@ -1403,6 +1403,40 @@ TestCase {
         compare(appWindow.consoleVisible, true);
     }
 
+    function verticalScrollBar(list) {
+        var bar = list.Controls.ScrollBar.vertical;
+        verify(bar !== null && bar !== undefined,
+               "The list should attach a vertical scrollbar");
+        return bar;
+    }
+
+    function waitForScrollbarThumb(list, shown) {
+        var bar = verticalScrollBar(list);
+        var thumb = bar.contentItem;
+        verify(thumb !== null, "The scrollbar should have a thumb");
+        if (shown) {
+            verify(list.contentHeight > list.height);
+            tryVerify(function() {
+                return thumb.opacity > 0.5 && bar.size < 1;
+            }, 1000, "An overflowing transcript should show a scrollbar thumb");
+        } else {
+            tryVerify(function() {
+                return thumb.opacity < 0.1 || bar.size >= 1;
+            }, 1000, "A short transcript should not show a scrollbar thumb");
+        }
+        return bar;
+    }
+
+    function pageTranscriptToEnd(list) {
+        var hops = 0;
+        while (!transcriptPinned(list)) {
+            keyClick(Qt.Key_PageDown);
+            waitForRendering(appWindow.contentItem);
+            hops += 1;
+            verify(hops < 40, "Page Down should reach the end of the transcript");
+        }
+    }
+
     function test_pageUpScrollsTranscript() {
         var composer = item("messageComposer");
         var list = item("messageList");
@@ -1421,16 +1455,61 @@ TestCase {
         verify(list.contentHeight > list.height);
         var before = list.contentY;
         verify(before > 0);
+        var bar = waitForScrollbarThumb(list, true);
+        var endPosition = bar.position;
 
         keyClick(Qt.Key_PageUp);
 
         verify(list.contentY < before, "Page Up should scroll toward older lines");
         verify(composer.activeFocus);
+        waitForScrollbarThumb(list, true);
+        verify(bar.position < endPosition, "Page Up should move the thumb up");
 
         var afterUp = list.contentY;
         keyClick(Qt.Key_PageDown);
         verify(list.contentY > afterUp, "Page Down should scroll toward newer lines");
         verify(composer.activeFocus);
+
+        pageTranscriptToEnd(list);
+        waitForScrollbarThumb(list, true);
+        fuzzyCompare(bar.position + bar.size, 1, 0.05);
+        verify(composer.activeFocus);
+    }
+
+    function test_pageUpShowsStatusScrollbar() {
+        var composer = item("messageComposer");
+        var list = item("consoleList");
+        keyClick(Qt.Key_QuoteLeft, Qt.ControlModifier);
+        tryCompare(appWindow, "consoleVisible", true);
+        fillMockConsoleUntilScrollable(list);
+        mouseClick(composer);
+        verify(composer.activeFocus);
+
+        var before = list.contentY;
+        var bar = waitForScrollbarThumb(list, true);
+        var endPosition = bar.position;
+
+        keyClick(Qt.Key_PageUp);
+        verify(list.contentY < before, "Page Up should scroll Status toward older lines");
+        verify(composer.activeFocus);
+        waitForScrollbarThumb(list, true);
+        verify(bar.position < endPosition, "Page Up should move the Status thumb up");
+
+        pageTranscriptToEnd(list);
+        waitForScrollbarThumb(list, true);
+        fuzzyCompare(bar.position + bar.size, 1, 0.05);
+        verify(composer.activeFocus);
+        compare(appWindow.consoleVisible, true);
+    }
+
+    function test_shortTranscriptHidesScrollbar() {
+        mouseClick(item("conversation-#help"));
+        tryCompare(appWindow, "currentConversation", "#help");
+        var list = item("messageList");
+        waitForRendering(appWindow.contentItem);
+        verify(list.contentHeight <= list.height);
+        waitForScrollbarThumb(list, false);
+        verify(item("messageComposer").activeFocus);
     }
 
     function transcriptPinned(list) {
