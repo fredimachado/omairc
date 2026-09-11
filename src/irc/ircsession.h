@@ -66,6 +66,8 @@ struct IrcSessionConfig
     QString realname;
     QString password;
     QString nickServPassword;
+    QString saslAccount;  // empty falls back to nick
+
     QStringList autojoinChannels;
     bool reconnectEnabled = true;
     int reconnectBaseDelayMilliseconds = 1000;

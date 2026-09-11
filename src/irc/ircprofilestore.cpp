@@ -14,6 +14,8 @@ const auto nickServSavedKey = QStringLiteral("nickServSaved");
 const auto nickKey = QStringLiteral("nick");
 const auto usernameKey = QStringLiteral("username");
 const auto realnameKey = QStringLiteral("realname");
+const auto accountKey = QStringLiteral("account");
+const auto bouncerNetworkKey = QStringLiteral("bouncerNetwork");
 const auto autojoinKey = QStringLiteral("autojoin");
 }
 
@@ -38,6 +40,8 @@ QList<IrcNetworkProfile> IrcProfileStore::profiles() const
         profile.nick = settings.value(nickKey).toString();
         profile.username = settings.value(usernameKey).toString();
         profile.realname = settings.value(realnameKey).toString();
+        profile.account = settings.value(accountKey).toString();
+        profile.bouncerNetwork = settings.value(bouncerNetworkKey).toString();
         profile.autojoinChannels = settings.value(autojoinKey).toStringList();
         settings.endGroup();
         result.append(profile);
@@ -64,6 +68,8 @@ void IrcProfileStore::save(const IrcNetworkProfile &profile)
     settings.setValue(nickKey, profile.nick);
     settings.setValue(usernameKey, profile.username);
     settings.setValue(realnameKey, profile.realname);
+    settings.setValue(accountKey, profile.account);
+    settings.setValue(bouncerNetworkKey, profile.bouncerNetwork);
     settings.setValue(autojoinKey, profile.autojoinChannels);
     settings.endGroup();
     settings.endGroup();

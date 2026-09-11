@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Desktop notification for a direct message when the window is unfocused, even when the body has no nick.
 - Walk sidebar network headers with `Alt+Left` / `Alt+Right`. Enter opens that network's Status. `Ctrl+,` opens Connect for the focused header, including a network with no conversations.
 - IRCv3 `server-time`. Omairc requests the capability whenever the server advertises it, so a server that gates the `time` message tag behind it now sends real timestamps instead of folding them into the message body.
+- Optional Account and Bouncer network fields in the Connect sheet. SASL PLAIN logs in with the account when it is set and falls back to the nick, and a bouncer network is appended after a slash so the bouncer attaches the right upstream network. Neither field is a secret, so both are saved with the profile.
 
 ### Changed
 

@@ -26,6 +26,15 @@ QString prefixChannel(QString channel)
     return QLatin1Char('#') + channel;
 }
 
+bool fitsOneLoginField(const QString &value)
+{
+    for (const QChar mark : value) {
+        if (mark.isSpace() || mark == QChar(u'\0') || mark == QLatin1Char('/'))
+            return false;
+    }
+    return true;
+}
+
 QStringList splitAutojoin(const QStringList &channels)
 {
     QStringList result;
@@ -76,8 +85,19 @@ IrcNetworkProfile IrcNetworkProfile::normalized() const
     profile.nick = nick.trimmed();
     profile.username = username.trimmed();
     profile.realname = realname.trimmed();
+    profile.account = account.trimmed();
+    profile.bouncerNetwork = bouncerNetwork.trimmed();
     profile.autojoinChannels = splitAutojoin(autojoinChannels);
     return profile;
+}
+
+QString IrcNetworkProfile::saslAccount() const
+{
+    const IrcNetworkProfile profile = normalized();
+    const QString name = profile.account.isEmpty() ? profile.nick : profile.account;
+    if (profile.bouncerNetwork.isEmpty())
+        return name;
+    return name + QLatin1Char('/') + profile.bouncerNetwork;
 }
 
 IrcNetworkProfile::Problem IrcNetworkProfile::validate() const
@@ -99,6 +119,10 @@ IrcNetworkProfile::Problem IrcNetworkProfile::validate() const
         if (!IrcCommandBuilder::user(utf8(userField), utf8(realField)))
             return Problem::UnsendableIdentity;
     }
+    if (!fitsOneLoginField(profile.account))
+        return Problem::UnsendableAccount;
+    if (!fitsOneLoginField(profile.bouncerNetwork))
+        return Problem::UnsendableBouncerNetwork;
     for (const QString &channel : profile.autojoinChannels) {
         if (!IrcCommandBuilder::join(utf8(channel)))
             return Problem::UnsendableChannel;
@@ -124,6 +148,10 @@ QString IrcNetworkProfile::problemText(Problem problem)
         return QStringLiteral("Port is required");
     case Problem::UnsendableIdentity:
         return QStringLiteral("Nick, username, or real name cannot be sent");
+    case Problem::UnsendableAccount:
+        return QStringLiteral("Account cannot contain a space or a slash");
+    case Problem::UnsendableBouncerNetwork:
+        return QStringLiteral("Bouncer network cannot contain a space or a slash");
     case Problem::UnsendableChannel:
         return QStringLiteral("An autojoin channel cannot be sent");
     }
@@ -142,6 +170,8 @@ bool operator==(const IrcNetworkProfile &left, const IrcNetworkProfile &right)
         && left.nick == right.nick
         && left.username == right.username
         && left.realname == right.realname
+        && left.account == right.account
+        && left.bouncerNetwork == right.bouncerNetwork
         && left.autojoinChannels == right.autojoinChannels;
 }
 

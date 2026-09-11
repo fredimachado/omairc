@@ -18,6 +18,16 @@
 
 class FakeCredentialStore;
 
+namespace
+{
+QByteArray decodedSaslPayload(const QByteArray &frame)
+{
+    const qsizetype prefix = qsizetype(sizeof("AUTHENTICATE ") - 1);
+    const qsizetype trailer = qsizetype(sizeof("\r\n") - 1);
+    return QByteArray::fromBase64(frame.mid(prefix, frame.size() - prefix - trailer));
+}
+}
+
 class ConnectionTest : public QObject
 {
     Q_OBJECT
@@ -74,6 +84,7 @@ private slots:
     void discardDuringLoadAdoptsStoredPassword();
     void discardDuringReadDoesNotDeleteStoredPassword();
     void failedMigrationDiscardRetriesWriteBeforeObsoleteDelete();
+    void accountAndBouncerNetworkLoginAsOneName();
     void twoProfilesApplyIndependently();
     void removeSelectedDropsSessionAndStore();
     void removeSelectedDeletesStoredSecret();
@@ -1473,6 +1484,38 @@ void ConnectionTest::failedMigrationDiscardRetriesWriteBeforeObsoleteDelete()
     QCOMPARE(store->writtenKeys().constLast().host, QStringLiteral("irc.changed"));
     QCOMPARE(store->writtenPassword(), QStringLiteral("stored-secret"));
     QCOMPARE(store->removedKeys().constLast().host, QStringLiteral("irc.example"));
+}
+
+void ConnectionTest::accountAndBouncerNetworkLoginAsOneName()
+{
+    IrcController controller;
+    IrcConnection connection(controller, capturingFactory());
+    fillCompleteDraft(connection);
+    connection.setAccount(QStringLiteral("joe"));
+    connection.setBouncerNetwork(QStringLiteral("libera"));
+    connection.setPassword(QStringLiteral("super-secret"));
+    QVERIFY(connection.apply());
+    QCOMPARE(m_transports.size(), 1);
+
+    m_transports.last()->completeConnect();
+    m_transports.last()->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :sasl=PLAIN\r\n"
+                          ":server CAP omairc ACK :sasl\r\n"
+                          "AUTHENTICATE +\r\n"));
+    QCOMPARE(decodedSaslPayload(m_transports.last()->writtenFrames().last()),
+             QByteArray("joe/libera\0joe/libera\0super-secret", 34));
+
+    const IrcNetworkProfile stored = IrcProfileStore().profiles().first();
+    QCOMPARE(stored.account, QStringLiteral("joe"));
+    QCOMPARE(stored.bouncerNetwork, QStringLiteral("libera"));
+    QCOMPARE(stored.saslAccount(), QStringLiteral("joe/libera"));
+
+    QSettings settings;
+    QFile file(settings.fileName());
+    QVERIFY(file.open(QIODevice::ReadOnly | QIODevice::Text));
+    const QString contents = QString::fromUtf8(file.readAll());
+    QVERIFY(!contents.contains(QLatin1String("password"), Qt::CaseInsensitive));
+    QVERIFY(!contents.contains(QLatin1String("super-secret")));
 }
 
 void ConnectionTest::twoProfilesApplyIndependently()

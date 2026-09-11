@@ -154,6 +154,13 @@ struct Fixture
     int scheduledReconnects = 0;
 };
 
+QByteArray decodedSaslPayload(const QByteArray& frame)
+{
+    const qsizetype prefix = qsizetype(sizeof("AUTHENTICATE ") - 1);
+    const qsizetype trailer = qsizetype(sizeof("\r\n") - 1);
+    return QByteArray::fromBase64(frame.mid(prefix, frame.size() - prefix - trailer));
+}
+
 IrcMessage mustParse(std::string_view line)
 {
     const IrcParseResult parsed = IrcParser::parse(line);
@@ -176,6 +183,8 @@ private slots:
     void unansweredPresenceRequestStillRegisters();
     void withdrawnCapabilityIsPublished();
     void negotiatesSaslPlain();
+    void saslAccountAuthenticatesAsTheBouncerName();
+    void emptySaslAccountAuthenticatesAsTheNick();
     void sendsPassWhenSaslIsUnavailable();
     void nickServOnlySaslPlainUsesNickServSecret();
     void nickServOnlyWithoutSaslIdentifiesBeforeJoin();
@@ -218,6 +227,7 @@ private slots:
     void managerDiscardUnregistersImmediately();
     void pingAndWelcomeProduceStatusEntries();
     void configuredPasswordNeverAppearsInStatusEntries();
+    void saslAccountNeverAppearsInStatusEntries();
     void keyedJoinIsRedactedInStatusEntries();
     void serviceIdentifyIsRedactedInStatusEntries();
     void channelTalkAboutServicesStaysReadable();
@@ -605,6 +615,41 @@ void SessionTest::negotiatesSaslPlain()
         QByteArrayLiteral(":server 903 omairc :SASL successful\r\n"));
     QCOMPARE(fixture.transport->writtenFrames().last(),
              QByteArrayLiteral("CAP END\r\n"));
+}
+
+void SessionTest::saslAccountAuthenticatesAsTheBouncerName()
+{
+    IrcSessionConfig saslConfig = config();
+    saslConfig.saslAccount = QStringLiteral("joe/libera");
+    saslConfig.password = QStringLiteral("secret");
+    Fixture fixture(saslConfig);
+
+    fixture.connectTls();
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :sasl=PLAIN\r\n"
+                          ":server CAP omairc ACK :sasl\r\n"
+                          "AUTHENTICATE +\r\n"));
+
+    QCOMPARE(decodedSaslPayload(fixture.transport->writtenFrames().last()),
+             QByteArray("joe/libera\0joe/libera\0secret", 28));
+    QCOMPARE(fixture.session->nick(), QStringLiteral("omairc"));
+}
+
+void SessionTest::emptySaslAccountAuthenticatesAsTheNick()
+{
+    IrcSessionConfig saslConfig = config();
+    saslConfig.password = QStringLiteral("secret");
+    QVERIFY(saslConfig.saslAccount.isEmpty());
+    Fixture fixture(saslConfig);
+
+    fixture.connectTls();
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :sasl=PLAIN\r\n"
+                          ":server CAP omairc ACK :sasl\r\n"
+                          "AUTHENTICATE +\r\n"));
+
+    QCOMPARE(decodedSaslPayload(fixture.transport->writtenFrames().last()),
+             QByteArray("omairc\0omairc\0secret", 20));
 }
 
 void SessionTest::sendsPassWhenSaslIsUnavailable()
@@ -1651,6 +1696,32 @@ void SessionTest::automaticIdentifyDoesNotAppearInStatusAsSecret()
                           ":server 001 omairc :Welcome\r\n"));
     QVERIFY(status.anyFieldContains(QStringLiteral("PRIVMSG NickServ :IDENTIFY ***")));
     QVERIFY(!status.anyFieldContains(QStringLiteral("nick-secret")));
+}
+
+void SessionTest::saslAccountNeverAppearsInStatusEntries()
+{
+    IrcSessionConfig saslConfig = config();
+    saslConfig.saslAccount = QStringLiteral("joe/libera");
+    saslConfig.password = QStringLiteral("hunter2");
+    Fixture fixture(saslConfig);
+    StatusCollector status(fixture.session);
+
+    fixture.connectTls();
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :sasl=PLAIN\r\n"
+                          ":server CAP omairc ACK :sasl\r\n"
+                          "AUTHENTICATE +\r\n"
+                          ":server 903 omairc :SASL successful\r\n"));
+
+    QVERIFY(status.hasLabel(QStringLiteral("AUTHENTICATE")));
+    QVERIFY(!status.anyFieldContains(QStringLiteral("hunter2")));
+    QVERIFY(!status.anyFieldContains(QStringLiteral("joe/libera")));
+    QVERIFY(!status.anyFieldContains(QString::fromUtf8(
+        QByteArray("joe/libera\0joe/libera\0hunter2", 29).toBase64())));
+    for (const IrcStatusEntry& entry : status.entries) {
+        if (entry.label() == QStringLiteral("AUTHENTICATE"))
+            QCOMPARE(entry.text(), QStringLiteral("AUTHENTICATE ***"));
+    }
 }
 
 void SessionTest::keyedJoinIsRedactedInStatusEntries()

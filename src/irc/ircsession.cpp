@@ -1317,13 +1317,15 @@ void IrcSession::handleAuthenticate(const IrcMessage &message)
     if (message.parameters.front() != "+")
         return;
 
-    const QByteArray nick = m_config.nick.toUtf8();
+    const QByteArray account = m_config.saslAccount.isEmpty()
+        ? m_config.nick.toUtf8()
+        : m_config.saslAccount.toUtf8();
     const QByteArray secret = saslSecret(m_config).toUtf8();
     QByteArray plain;
-    plain.reserve(nick.size() * 2 + secret.size() + 2);
-    plain.append(nick);
+    plain.reserve(account.size() * 2 + secret.size() + 2);
+    plain.append(account);
     plain.append('\0');
-    plain.append(nick);
+    plain.append(account);
     plain.append('\0');
     plain.append(secret);
     const QByteArray encoded = plain.toBase64();
