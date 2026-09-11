@@ -1,0 +1,154 @@
+#!/usr/bin/env python3
+
+import re
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+
+
+def sources(*patterns):
+    seen = set()
+    for pattern in patterns:
+        for path in sorted(ROOT.glob(pattern)):
+            relative = path.relative_to(ROOT)
+            if relative.parts[0].startswith((".", "build")) or relative in seen:
+                continue
+            seen.add(relative)
+            yield relative, path.read_text(encoding="utf-8", errors="replace")
+
+
+BYTE_ARRAY = re.compile(r'QByteArray\s*\(\s*"((?:[^"\\]|\\.)*)"\s*,\s*(\d+)\s*\)')
+SIMPLE_ESCAPES = set('0abtnvfre"\'?\\')
+
+
+def cpp_literal_body_bytes(text):
+    count = 0
+    index = 0
+    while index < len(text):
+        if text[index] != "\\":
+            count += len(text[index].encode("utf-8"))
+            index += 1
+            continue
+        index += 1
+        if index >= len(text):
+            raise ValueError("trailing backslash")
+        mark = text[index]
+        if mark == "x":
+            index += 1
+            start = index
+            while index < len(text) and text[index] in "0123456789abcdefABCDEF":
+                index += 1
+            if index == start:
+                raise ValueError("empty hex escape")
+        elif mark in "01234567":
+            digits = 0
+            while index < len(text) and text[index] in "01234567" and digits < 3:
+                index += 1
+                digits += 1
+        elif mark in SIMPLE_ESCAPES:
+            index += 1
+        else:
+            raise ValueError(f"unknown escape \\{mark}")
+        count += 1
+    return count
+
+
+def check_byte_array_lengths():
+    problems = []
+    for relative, source in sources("src/**/*.cpp", "src/**/*.h",
+                                    "tests/**/*.cpp", "tests/**/*.h"):
+        for number, line in enumerate(source.splitlines(), 1):
+            for body, declared in BYTE_ARRAY.findall(line):
+                try:
+                    actual = cpp_literal_body_bytes(body)
+                except ValueError as error:
+                    problems.append(f"{relative}:{number}: cannot measure literal ({error})")
+                    continue
+                if actual != int(declared):
+                    problems.append(
+                        f"{relative}:{number}: QByteArray declares {declared} bytes, "
+                        f"the literal is {actual}")
+    return problems
+
+
+def text_blocks(source):
+    lines = source.splitlines()
+    for index, line in enumerate(lines):
+        if not re.match(r"\s*Text\s*\{\s*$", line):
+            continue
+        depth = 1
+        body = []
+        for follower in lines[index + 1:]:
+            depth += follower.count("{") - follower.count("}")
+            if depth <= 0:
+                break
+            body.append(follower)
+        yield index + 1, "\n".join(body)
+
+
+def check_qml_text_plain_format():
+    problems = []
+    for relative, source in sources("src/**/*.qml"):
+        for number, body in text_blocks(source):
+            if "plainIrcText(" not in body:
+                continue
+            if "textFormat: Text.PlainText" in body:
+                continue
+            name = re.search(r'objectName:\s*"([^"]+)"', body)
+            label = name.group(1) if name else "unnamed Text"
+            problems.append(
+                f"{relative}:{number}: {label} renders plainIrcText() without "
+                f"textFormat: Text.PlainText")
+    return problems
+
+
+def check_socket_reads():
+    problems = []
+    for relative, source in sources("src/singleinstance.cpp", "src/omairccli.cpp"):
+        for number, line in enumerate(source.splitlines(), 1):
+            if "readAll()" in line:
+                problems.append(
+                    f"{relative}:{number}: readAll() on an IPC socket reads before "
+                    f"the size cap; use read(remaining)")
+    return problems
+
+
+def check_version_source():
+    problems = []
+    for relative, source in sources("**/*.pro", "**/*.pri"):
+        if relative.name == "version.pri":
+            continue
+        for number, line in enumerate(source.splitlines(), 1):
+            if re.match(r"\s*VERSION\s*=", line) or "OMAIRC_VERSION=" in line:
+                problems.append(
+                    f"{relative}:{number}: set the version in version.pri and "
+                    f"include it, do not repeat it here")
+    return problems
+
+
+CHECKS = (
+    ("QByteArray literal lengths", check_byte_array_lengths),
+    ("PlainText on server-controlled QML text", check_qml_text_plain_format),
+    ("bounded IPC socket reads", check_socket_reads),
+    ("single version source", check_version_source),
+)
+
+
+def main():
+    failed = False
+    for title, check in CHECKS:
+        problems = check()
+        if problems:
+            failed = True
+            print(f"{title}:", file=sys.stderr)
+            for problem in problems:
+                print(f"  {problem}", file=sys.stderr)
+    if failed:
+        return 1
+    print(f"conventions: {len(CHECKS)} checks passed")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
