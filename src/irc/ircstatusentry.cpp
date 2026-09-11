@@ -1,6 +1,7 @@
 #include "ircstatusentry.h"
 
 #include "irceventtranslator.h"
+#include "ircprefixnick.h"
 #include "ircsecretpolicy.h"
 #include "ircservicenick.h"
 #include "ircserverfeatures.h"
@@ -395,6 +396,19 @@ IrcNoticeStatusCopy presentIncomingNotice(const IrcNoticeWireParts& parts)
     return bareNotice(parts.body);
 }
 
+std::optional<QString> presentIncomingInvite(const IrcMessage& message)
+{
+    if (commandOf(message) != QStringLiteral("INVITE"))
+        return std::nullopt;
+    if (message.parameters.size() < 2)
+        return std::nullopt;
+    const QString nick = ircPrefixNick(message);
+    const QString channel = ircWireText(message.parameters.back());
+    if (nick.isEmpty() || channel.isEmpty())
+        return std::nullopt;
+    return QStringLiteral("%1 invited you to %2").arg(nick, channel);
+}
+
 QString firstToken(QStringView line)
 {
     const QStringView trimmed = line.trimmed();
@@ -710,6 +724,14 @@ IrcStatusEntry IrcStatusEntry::incoming(const QString& networkId,
                               severityFor(command),
                               copy.label,
                               copy.text());
+    }
+    if (const auto invite = presentIncomingInvite(*display)) {
+        return IrcStatusEntry(networkId,
+                              QDateTime::currentDateTimeUtc(),
+                              IrcLogSource::Server,
+                              severityFor(command),
+                              QStringLiteral("INVITE"),
+                              *invite);
     }
     return IrcStatusEntry(networkId,
                           QDateTime::currentDateTimeUtc(),

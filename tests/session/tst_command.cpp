@@ -103,6 +103,7 @@ private slots:
     void parseWhois();
     void parseMode();
     void parseKick();
+    void parseInvite();
     void parseChannelModeRequest();
     void parseJoinTargets();
     void catalogLookupAndScope();
@@ -410,6 +411,33 @@ void CommandTest::parseKick()
     QVERIFY(escaped.isLiveMessage());
 }
 
+void CommandTest::parseInvite()
+{
+    const IrcCommand invite = IrcCommand::parse(QStringLiteral("/invite bob #lab"));
+    QCOMPARE(invite.verb, IrcCommand::Verb::Invite);
+    QCOMPARE(invite.argument, QStringLiteral("bob #lab"));
+    QCOMPARE(invite.name, QStringLiteral("/invite"));
+    QVERIFY(!invite.isLiveMessage());
+    QVERIFY(invite.allowedOn(IrcComposerSurface::Conversation));
+    QVERIFY(invite.allowedOn(IrcComposerSurface::Status));
+
+    const IrcCommand folded = IrcCommand::parse(QStringLiteral("/INVITE bob"));
+    QCOMPARE(folded.verb, IrcCommand::Verb::Invite);
+    QCOMPARE(folded.argument, QStringLiteral("bob"));
+    QCOMPARE(folded.name, QStringLiteral("/INVITE"));
+    QVERIFY(!folded.isLiveMessage());
+
+    const IrcCommand empty = IrcCommand::parse(QStringLiteral("/invite"));
+    QCOMPARE(empty.verb, IrcCommand::Verb::Invite);
+    QVERIFY(empty.argument.isEmpty());
+    QVERIFY(!empty.isLiveMessage());
+
+    const IrcCommand escaped = IrcCommand::parse(QStringLiteral("//invite bob"));
+    QCOMPARE(escaped.verb, IrcCommand::Verb::Say);
+    QCOMPARE(escaped.argument, QStringLiteral("/invite bob"));
+    QVERIFY(escaped.isLiveMessage());
+}
+
 void CommandTest::parseChannelModeRequest()
 {
     const ParsedChannelMode query = parsedChannelMode(QStringLiteral("#omarchy"));
@@ -548,7 +576,7 @@ void CommandTest::catalogLookupAndScope()
     QVERIFY(!IrcVerbTable::find(IrcCommand::Verb::Empty));
     QVERIFY(!IrcVerbTable::find(IrcCommand::Verb::Unknown));
 
-    QCOMPARE(IrcVerbTable::all().size(), 19);
+    QCOMPARE(IrcVerbTable::all().size(), 20);
     for (const IrcVerbSpec& row : IrcVerbTable::all())
         QVERIFY(row.name != QLatin1String("say"));
 
@@ -640,6 +668,15 @@ void CommandTest::catalogLookupAndScope()
     QCOMPARE(kick->wrongScopeText, QStringLiteral("Kick applies to channels"));
     QVERIFY(kick->aliases.isEmpty());
 
+    const IrcVerbSpec *invite = IrcVerbTable::lookup(QStringLiteral("invite"));
+    QVERIFY(invite);
+    QCOMPARE(invite->verb, IrcCommand::Verb::Invite);
+    QCOMPARE(invite->name, QStringLiteral("invite"));
+    QCOMPARE(invite->usage, QStringLiteral("/invite <nick> [channel]"));
+    QCOMPARE(invite->scope, IrcVerbScope::Either);
+    QCOMPARE(invite->wrongScopeText, QStringLiteral("Invite applies to channels"));
+    QVERIFY(invite->aliases.isEmpty());
+
     const IrcVerbSpec *ignore = IrcVerbTable::lookup(QStringLiteral("ignore"));
     QVERIFY(ignore);
     QCOMPARE(ignore->verb, IrcCommand::Verb::Ignore);
@@ -664,7 +701,7 @@ void CommandTest::catalogLookupAndScope()
     QVERIFY(ignored->wrongScopeText.isEmpty());
 
     const QVector<IrcVerbSpec> status = IrcVerbTable::visibleOn(IrcComposerSurface::Status);
-    QCOMPARE(status.size(), 16);
+    QCOMPARE(status.size(), 17);
     for (const IrcVerbSpec& row : status) {
         QVERIFY(row.allowedOn(IrcComposerSurface::Status));
         QVERIFY(row.verb != IrcCommand::Verb::Action);
@@ -674,7 +711,7 @@ void CommandTest::catalogLookupAndScope()
 
     const QVector<IrcVerbSpec> conversation =
         IrcVerbTable::visibleOn(IrcComposerSurface::Conversation);
-    QCOMPARE(conversation.size(), 19);
+    QCOMPARE(conversation.size(), 20);
     bool sawMe = false;
     bool sawClose = false;
     bool sawQuery = false;
@@ -686,6 +723,7 @@ void CommandTest::catalogLookupAndScope()
     bool sawWhois = false;
     bool sawMode = false;
     bool sawKick = false;
+    bool sawInvite = false;
     bool sawIgnore = false;
     bool sawUnignore = false;
     bool sawIgnored = false;
@@ -712,6 +750,8 @@ void CommandTest::catalogLookupAndScope()
             sawMode = true;
         if (row.name == QLatin1String("kick"))
             sawKick = true;
+        if (row.name == QLatin1String("invite"))
+            sawInvite = true;
         if (row.name == QLatin1String("ignore"))
             sawIgnore = true;
         if (row.name == QLatin1String("unignore"))
@@ -730,6 +770,7 @@ void CommandTest::catalogLookupAndScope()
     QVERIFY(sawWhois);
     QVERIFY(sawMode);
     QVERIFY(sawKick);
+    QVERIFY(sawInvite);
     QVERIFY(sawIgnore);
     QVERIFY(sawUnignore);
     QVERIFY(sawIgnored);
@@ -1228,6 +1269,12 @@ void CommandTest::slashProjectOpen()
     QVERIFY(ignore.isOpen());
     QCOMPARE(ignore.hits().first().label, QStringLiteral("/ignore"));
     QVERIFY(ignore.containsLabel(QStringLiteral("/ignored")));
+
+    const auto invite = IrcSlashComplete::project(
+        QStringLiteral("/inv"), IrcComposerSurface::Conversation);
+    QVERIFY(invite.isOpen());
+    QVERIFY(invite.containsLabel(QStringLiteral("/invite")));
+    QCOMPARE(invite.hits().first().label, QStringLiteral("/invite"));
 }
 
 void CommandTest::slashSessionKeys()

@@ -753,6 +753,30 @@ IrcCommandOutcome IrcController::dispatch(const IrcCommand& command,
             && active->kick(channel, first, restAfterFirstToken(command.argument));
         break;
     }
+    case IrcCommand::Verb::Invite: {
+        const QString nick = firstToken(command.argument);
+        if (nick.isEmpty())
+            return IrcCommandOutcome::WrongScope;
+        const QString networkId = queryNetworkId(surface);
+        const IrcServerFeatures& features = m_reducer.serverFeatures(networkId);
+        if (features.isChannel(utf8(nick)))
+            return IrcCommandOutcome::Refused;
+        const QString rest = restAfterFirstToken(command.argument);
+        QString channel;
+        if (rest.isEmpty()) {
+            if (surface == IrcComposerSurface::Status || !m_selected || !isChannel())
+                return IrcCommandOutcome::WrongScope;
+            if (m_selected->networkId != networkId)
+                return IrcCommandOutcome::Refused;
+            channel = selectedTarget();
+        } else {
+            channel = firstToken(rest);
+            if (!features.isChannel(utf8(channel)) || !restAfterFirstToken(rest).isEmpty())
+                return IrcCommandOutcome::Refused;
+        }
+        sent = !channel.isEmpty() && active->invite(nick, channel);
+        break;
+    }
     case IrcCommand::Verb::Nick:
         sent = !command.argument.isEmpty() && active->changeNick(command.argument);
         break;

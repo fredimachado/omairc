@@ -234,10 +234,13 @@ private slots:
     void channelTalkAboutServicesStaysReadable();
     void negotiatedChannelTypesClassifyDollarTargets();
     void serviceRepliesStayReadable();
+    void incomingInviteNamesNickAndChannel();
+    void incomingInviteDoesNotTranslateToEvents();
     void selfEchoToServiceIsRedacted();
     void sendPrivmsgValidatesTarget();
     void setTopicIsSetOnly();
     void kickWritesOptionalReason();
+    void inviteWritesNickThenChannel();
     void setAwayEncodesOptionalReason();
     void whoisWritesDoubledNick();
     void whoisStatusLinesFormatKnownNumerics();
@@ -1664,6 +1667,7 @@ void SessionTest::statusKeepListOmitsProtocolDump()
     QVERIFY(status.hasLabel(QStringLiteral("376")));
     QVERIFY(status.anyFieldContains(QStringLiteral("-NickServ- Please identify")));
     QVERIFY(status.hasLabel(QStringLiteral("INVITE")));
+    QVERIFY(status.anyFieldContains(QStringLiteral("lena invited you to #lab")));
     QVERIFY(status.hasLabel(QStringLiteral("404")));
     QVERIFY(!status.hasLabel(QStringLiteral("PING")));
     QVERIFY(!status.hasLabel(QStringLiteral("PONG")));
@@ -2112,6 +2116,31 @@ void SessionTest::serviceRepliesStayReadable()
     QCOMPARE(privmsg.text(), QStringLiteral("This nickname is registered."));
 }
 
+void SessionTest::incomingInviteNamesNickAndChannel()
+{
+    const IrcStatusEntry invite = IrcStatusEntry::incoming(
+        QStringLiteral("libera"),
+        mustParse(":alice!u@h INVITE omairc :#lab"));
+    QCOMPARE(invite.label(), QStringLiteral("INVITE"));
+    QCOMPARE(invite.text(), QStringLiteral("alice invited you to #lab"));
+
+    const IrcStatusEntry bare = IrcStatusEntry::incoming(
+        QStringLiteral("libera"),
+        mustParse("INVITE omairc :#lab"));
+    QCOMPARE(bare.text(), QStringLiteral("omairc #lab"));
+}
+
+void SessionTest::incomingInviteDoesNotTranslateToEvents()
+{
+    const IrcServerFeatures features;
+    QVERIFY(IrcEventTranslator::translate(
+                QStringLiteral("libera"),
+                QStringLiteral("omairc"),
+                features,
+                mustParse(":alice!u@h INVITE omairc :#lab"))
+                .empty());
+}
+
 void SessionTest::selfEchoToServiceIsRedacted()
 {
     const IrcStatusEntry echo = IrcStatusEntry::incoming(
@@ -2236,6 +2265,27 @@ void SessionTest::kickWritesOptionalReason()
                                   QString()));
     QCOMPARE(fixture.transport->writtenFrames().last(),
              QByteArrayLiteral("KICK #omarchy alice\r\n"));
+}
+
+void SessionTest::inviteWritesNickThenChannel()
+{
+    Fixture fixture;
+    fixture.connectTls();
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
+                          ":server 001 omairc :Welcome\r\n"));
+    QCOMPARE(fixture.session->state(), IrcSession::State::Registered);
+
+    const int before = fixture.transport->writtenFrames().size();
+    QVERIFY(!fixture.session->invite(QString(), QStringLiteral("#lab")));
+    QVERIFY(!fixture.session->invite(QStringLiteral("bob"), QString()));
+    QCOMPARE(fixture.transport->writtenFrames().size(), before);
+    for (const QByteArray& frame : fixture.transport->writtenFrames())
+        QVERIFY(!frame.contains(QByteArrayLiteral("INVITE")));
+
+    QVERIFY(fixture.session->invite(QStringLiteral("bob"), QStringLiteral("#lab")));
+    QCOMPARE(fixture.transport->writtenFrames().last(),
+             QByteArrayLiteral("INVITE bob #lab\r\n"));
 }
 
 void SessionTest::setAwayEncodesOptionalReason()
