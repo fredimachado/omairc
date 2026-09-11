@@ -2,9 +2,12 @@
 
 #include <qt6keychain/keychain.h>
 
-namespace
+SecretServiceCredentialStore::SecretServiceCredentialStore(QObject *parent)
+    : CredentialStore(parent)
 {
-QString keyName(const CredentialKey &key)
+}
+
+QString SecretServiceCredentialStore::keyName(const CredentialKey &key)
 {
     const auto encode = [](const QString &value) {
         const QString length = QString::number(value.toUtf8().size());
@@ -16,19 +19,11 @@ QString keyName(const CredentialKey &key)
         + encode(key.host);
 }
 
-}
-
-SecretServiceCredentialStore::SecretServiceCredentialStore(QObject *parent)
-    : CredentialStore(parent)
-{
-}
-
 CredentialStore::State SecretServiceCredentialStore::stateForError(
     QKeychain::Error error)
 {
     return error == QKeychain::NoBackendAvailable
             || error == QKeychain::NotImplemented
-            || error == QKeychain::OtherError
         ? State::Unavailable
         : State::Error;
 }

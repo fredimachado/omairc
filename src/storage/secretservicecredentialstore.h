@@ -15,5 +15,6 @@ public:
     void write(const CredentialKey &key, const QString &password) override;
     void remove(const CredentialKey &key) override;
 
+    static QString keyName(const CredentialKey &key);
     static State stateForError(QKeychain::Error error);
 };
