@@ -22,7 +22,7 @@ BYTE_ARRAY = re.compile(r'QByteArray\s*\(\s*"((?:[^"\\]|\\.)*)"\s*,\s*(\d+)\s*\)
 SIMPLE_ESCAPES = set('0abtnvfre"\'?\\')
 
 
-def literal_length(text):
+def cpp_literal_body_bytes(text):
     count = 0
     index = 0
     while index < len(text):
@@ -61,7 +61,7 @@ def check_byte_array_lengths():
         for number, line in enumerate(source.splitlines(), 1):
             for body, declared in BYTE_ARRAY.findall(line):
                 try:
-                    actual = literal_length(body)
+                    actual = cpp_literal_body_bytes(body)
                 except ValueError as error:
                     problems.append(f"{relative}:{number}: cannot measure literal ({error})")
                     continue
@@ -87,13 +87,13 @@ def text_blocks(source):
         yield index + 1, "\n".join(body)
 
 
-def check_plain_text():
+def check_qml_text_plain_format():
     problems = []
     for relative, source in sources("src/**/*.qml"):
         for number, body in text_blocks(source):
             if "plainIrcText(" not in body:
                 continue
-            if "textFormat:" in body:
+            if "textFormat: Text.PlainText" in body:
                 continue
             name = re.search(r'objectName:\s*"([^"]+)"', body)
             label = name.group(1) if name else "unnamed Text"
@@ -129,7 +129,7 @@ def check_version_source():
 
 CHECKS = (
     ("QByteArray literal lengths", check_byte_array_lengths),
-    ("PlainText on server-controlled QML text", check_plain_text),
+    ("PlainText on server-controlled QML text", check_qml_text_plain_format),
     ("bounded IPC socket reads", check_socket_reads),
     ("single version source", check_version_source),
 )
