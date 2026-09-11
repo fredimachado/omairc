@@ -88,6 +88,10 @@ private slots:
     void historyAfterPartDoesNotSplice();
     void historyAfterCapDoesNotSplice();
     void clearMessagesDropsPendingHistory();
+    void queryReplayFromPeerOpensDirectMessage();
+    void selfOnlyQueryReplayDoesNotOpenDirectMessageForMsg();
+    void queryReplayAppendsAtTailOfExistingDirectMessage();
+    void channelReplayWithoutConversationCreatesNothing();
     void nickCollisionMergesMessageIds();
     void conversationCauseInsertTable();
     void ensureConversationHonorsCause();
@@ -1273,6 +1277,103 @@ void ReducerTest::clearMessagesDropsPendingHistory()
     QCOMPARE(conversation->peopleCount(), 1);
     QVERIFY(conversation->isChannel());
     QVERIFY(!conversation->channel()->historyAnchor);
+}
+
+void ReducerTest::queryReplayFromPeerOpensDirectMessage()
+{
+    IrcEventReducer reducer;
+    welcome(reducer, networkA);
+    const IrcConversationKey lena =
+        reducer.conversationKey(networkA, QStringLiteral("lena"));
+    QVERIFY(!reducer.find(lena));
+
+    reducer.apply(IrcHistoryEvent{
+        lena,
+        QStringLiteral("lena"),
+        {replayLine(QStringLiteral("lena"), QStringLiteral("are you there"),
+                    QStringLiteral("id-peer")),
+         replayLine(QStringLiteral("omairc"), QStringLiteral("just got back"),
+                    QStringLiteral("id-self"))},
+    });
+
+    const IrcConversationState *conversation = reducer.find(lena);
+    QVERIFY(conversation);
+    QVERIFY(!conversation->isChannel());
+    QCOMPARE(conversation->target, QStringLiteral("lena"));
+    QCOMPARE(conversation->messages.size(), std::size_t(2));
+    QCOMPARE(conversation->messages[0].author, QStringLiteral("lena"));
+    QCOMPARE(conversation->messages[0].body, QStringLiteral("are you there"));
+    QCOMPARE(conversation->messages[0].origin, IrcOrigin::Replay);
+    QCOMPARE(conversation->messages[1].author, QStringLiteral("omairc"));
+    QCOMPARE(conversation->messages[1].body, QStringLiteral("just got back"));
+    QCOMPARE(conversation->messages[1].origin, IrcOrigin::Replay);
+    QCOMPARE(conversation->unread, 0);
+    QCOMPARE(conversation->mentions, 0);
+    QCOMPARE(conversation->spliceEpoch, 0);
+    QVERIFY(!reducer.takeMentionArrival());
+}
+
+void ReducerTest::selfOnlyQueryReplayDoesNotOpenDirectMessageForMsg()
+{
+    IrcEventReducer reducer;
+    welcome(reducer, networkA);
+    const IrcConversationKey lena =
+        reducer.conversationKey(networkA, QStringLiteral("lena"));
+
+    reducer.apply(IrcHistoryEvent{
+        lena,
+        QStringLiteral("lena"),
+        {replayLine(QStringLiteral("omairc"), QStringLiteral("hi"),
+                    QStringLiteral("id-msg"))},
+    });
+
+    QVERIFY(!reducer.find(lena));
+    QCOMPARE(reducer.conversations().size(), std::size_t(0));
+}
+
+void ReducerTest::queryReplayAppendsAtTailOfExistingDirectMessage()
+{
+    IrcEventReducer reducer;
+    welcome(reducer, networkA);
+    const IrcConversationKey lena =
+        reducer.conversationKey(networkA, QStringLiteral("lena"));
+    reducer.apply(IrcMessageEvent{
+        lena, QStringLiteral("lena"), QStringLiteral("live first"), timestamp,
+        QStringLiteral("lena"), IrcMsgId{QStringLiteral("id-live")}});
+
+    reducer.apply(IrcHistoryEvent{
+        lena,
+        QStringLiteral("lena"),
+        {replayLine(QStringLiteral("lena"), QStringLiteral("backlog"),
+                    QStringLiteral("id-backlog"))},
+    });
+
+    const IrcConversationState *conversation = reducer.find(lena);
+    QVERIFY(conversation);
+    QCOMPARE(conversation->messages.size(), std::size_t(2));
+    QCOMPARE(conversation->messages[0].body, QStringLiteral("live first"));
+    QCOMPARE(conversation->messages[0].origin, IrcOrigin::Live);
+    QCOMPARE(conversation->messages[1].body, QStringLiteral("backlog"));
+    QCOMPARE(conversation->messages[1].origin, IrcOrigin::Replay);
+    QCOMPARE(conversation->spliceEpoch, 0);
+}
+
+void ReducerTest::channelReplayWithoutConversationCreatesNothing()
+{
+    IrcEventReducer reducer;
+    welcome(reducer, networkA);
+    const IrcConversationKey room =
+        reducer.conversationKey(networkA, QStringLiteral("#omarchy"));
+
+    reducer.apply(IrcHistoryEvent{
+        room,
+        QStringLiteral("#omarchy"),
+        {replayLine(QStringLiteral("alice"), QStringLiteral("older"),
+                    QStringLiteral("id-room"))},
+    });
+
+    QVERIFY(!reducer.find(room));
+    QCOMPARE(reducer.conversations().size(), std::size_t(0));
 }
 
 void ReducerTest::historicJoinInBatchDoesNotChangePeopleCount()

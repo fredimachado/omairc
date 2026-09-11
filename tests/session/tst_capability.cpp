@@ -19,6 +19,7 @@ private slots:
     void quietCapsRequestWhenAdvertised();
     void saslKeepsItsOwnLine();
     void messageTagsKeepsItsOwnLine();
+    void serverTimeKeepsItsOwnLine();
     void saslNeedsCredentialsAndPlain();
     void memberMetadataNeedsBatch();
     void acknowledgeAndRejectSettleIndependently();
@@ -104,6 +105,30 @@ void CapabilityTest::messageTagsKeepsItsOwnLine()
     QVERIFY(refused.contains(IrcCapability::MessageTags));
     QVERIFY(!negotiation.enabled().contains(IrcCapability::MessageTags));
     QVERIFY(!negotiation.settled());
+}
+
+void CapabilityTest::serverTimeKeepsItsOwnLine()
+{
+    IrcCapabilityNegotiation negotiation(false);
+    negotiation.advertise(tokens(QStringLiteral("server-time batch multi-prefix")));
+
+    const IrcCapabilityNegotiation::Request request = negotiation.takeRequest();
+    QCOMPARE(request.lines,
+             QStringList({QStringLiteral("server-time"),
+                          QStringLiteral("batch multi-prefix")}));
+
+    const IrcCapabilitySet refused =
+        negotiation.reject(tokens(QStringLiteral("server-time")));
+    QVERIFY(refused.contains(IrcCapability::ServerTime));
+    QVERIFY(!negotiation.enabled().contains(IrcCapability::ServerTime));
+    QVERIFY(!negotiation.settled());
+
+    const IrcCapabilitySet granted =
+        negotiation.acknowledge(tokens(QStringLiteral("batch multi-prefix")));
+    QVERIFY(granted.contains(IrcCapability::Batch));
+    QVERIFY(granted.contains(IrcCapability::MultiPrefix));
+    QVERIFY(!negotiation.enabled().contains(IrcCapability::ServerTime));
+    QVERIFY(negotiation.settled());
 }
 
 void CapabilityTest::saslNeedsCredentialsAndPlain()

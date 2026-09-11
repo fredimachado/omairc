@@ -20,10 +20,12 @@
 #include <QQuickWindow>
 #include <QSet>
 #include <QSettings>
+#include <QStringList>
 #include <QTemporaryDir>
 #include <QTest>
 #include <QVariantMap>
 
+#include <functional>
 #include <memory>
 
 namespace
@@ -62,6 +64,35 @@ QString describeChrome(const QVector<TranscriptRowChrome> &rows)
                          .arg(row.height));
     }
     return parts.join(QLatin1Char('|'));
+}
+
+void walkSidebarItems(QQuickItem *item, const std::function<void(QQuickItem *)> &visit)
+{
+    if (!item)
+        return;
+    visit(item);
+    for (QQuickItem *child : item->childItems())
+        walkSidebarItems(child, visit);
+}
+
+QStringList visibleDirectRowLabels(QQuickWindow *window)
+{
+    QStringList labels;
+    if (!window)
+        return labels;
+    walkSidebarItems(window->contentItem(), [&](QQuickItem *item) {
+        if (item->property("conversationName").toString().isEmpty()
+            || !item->property("direct").toBool()
+            || !item->isVisible() || item->height() <= 0) {
+            return;
+        }
+        auto *label =
+            item->findChild<QQuickItem *>(QStringLiteral("conversationLabel"));
+        labels.append(label && label->isVisible()
+                          ? label->property("text").toString()
+                          : QString());
+    });
+    return labels;
 }
 
 QString fixtureArtifactDir()
@@ -130,6 +161,7 @@ private slots:
     void outboundSameNickDirectsStayIsolated();
     void consecutiveSameAuthorMinuteGroupsThroughIrcEvent();
     void replayAndLiveSameAuthorMinuteDoNotGroupThroughIrcEvent();
+    void bouncerQueryReplayRendersDirectMessageInSidebar();
     void ctrlFFindsLiveTranscriptAndStatus();
 
 private:
@@ -514,6 +546,94 @@ void LiveUiTest::replayAndLiveSameAuthorMinuteDoNotGroupThroughIrcEvent()
     QCOMPARE(rows.at(replayAt).bodyColor, muted);
     QVERIFY2(saveFixtureShot(window, QStringLiteral("live-ui-replay-history")),
              "replay screenshot");
+}
+
+void LiveUiTest::bouncerQueryReplayRendersDirectMessageInSidebar()
+{
+    if (m_live)
+        QSKIP("FakeIrcTransport playback runs under bin/test, not the compose world.");
+    std::unique_ptr<QTemporaryDir> xdg = std::make_unique<QTemporaryDir>();
+    QVERIFY(xdg->isValid());
+    const QString xdgRoot = xdg->path();
+    const QString config = xdgRoot + QLatin1String("/config");
+    QDir().mkpath(config);
+    QDir().mkpath(xdgRoot + QLatin1String("/cache"));
+    QDir().mkpath(xdgRoot + QLatin1String("/data"));
+    qputenv("XDG_CONFIG_HOME", config.toUtf8());
+    qputenv("XDG_CACHE_HOME", (xdgRoot + QLatin1String("/cache")).toUtf8());
+    qputenv("XDG_DATA_HOME", (xdgRoot + QLatin1String("/data")).toUtf8());
+    QSettings::setPath(QSettings::NativeFormat, QSettings::UserScope, config);
+
+    Backend backend;
+    IrcSlashSession slash;
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    IrcSession *session = controller.addSession(fixtureConfig(), transport);
+    QVERIFY(session);
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    transport->completeConnect();
+    transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :batch echo-message\r\n"
+                          ":server CAP omairc ACK :batch echo-message\r\n"
+                          ":server 001 omairc :Welcome\r\n"
+                          ":server 005 omairc CHANTYPES=# PREFIX=(ov)@+ "
+                          ":are supported by this server\r\n"
+                          ":omairc!u@h JOIN :#omarchy\r\n"
+                          ":server 353 omairc = #omarchy :omairc anna\r\n"
+                          ":server 366 omairc #omarchy :End of NAMES\r\n"));
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+
+    QQmlApplicationEngine engine;
+    QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/OmaircWindow.qml")));
+    QVERIFY2(component.status() != QQmlComponent::Error, qPrintable(component.errorString()));
+    QVariantMap properties;
+    properties.insert(QStringLiteral("backend"), QVariant::fromValue(&backend));
+    properties.insert(QStringLiteral("irc"), QVariant::fromValue(&controller));
+    properties.insert(QStringLiteral("slashCommands"), QVariant::fromValue(&slash));
+    std::unique_ptr<QObject> root(component.createWithInitialProperties(properties));
+    QVERIFY2(root.get(), qPrintable(component.errorString()));
+    auto *window = qobject_cast<QQuickWindow *>(root.get());
+    QVERIFY(window);
+    QVERIFY(QTest::qWaitForWindowExposed(window));
+    window->setWidth(1180);
+    window->setHeight(760);
+    QCoreApplication::processEvents();
+
+    QVERIFY(waitUntil([&] {
+        QQuickItem *list = window->findChild<QQuickItem *>(QStringLiteral("sidebarList"));
+        return list && list->isVisible() && list->height() > 0;
+    }));
+    QCOMPARE(visibleDirectRowLabels(window), QStringList());
+
+    transport->injectBytes(
+        QByteArrayLiteral(
+            ":znc.in BATCH +q1 znc.in/playback lena\r\n"
+            "@batch=q1;time=2026-09-10T11:11:00.000Z :omairc!u@h PRIVMSG lena :hi\r\n"
+            ":znc.in BATCH -q1\r\n"
+            ":znc.in BATCH +q2 znc.in/playback dana\r\n"
+            "@batch=q2;time=2026-09-10T11:12:00.000Z :dana!u@h PRIVMSG omairc :morning\r\n"
+            ":znc.in BATCH -q2\r\n"));
+
+    QVERIFY2(waitUntil([&] {
+                    return visibleDirectRowLabels(window)
+                        == QStringList({QStringLiteral("dana")});
+                }),
+             qPrintable(visibleDirectRowLabels(window).join(QLatin1Char('|'))));
+
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("dana"));
+    QVERIFY2(waitUntil([&] {
+                    return chromeIndex(collectTranscriptChrome(window),
+                                       QStringLiteral("morning")) >= 0;
+                }),
+             qPrintable(describeChrome(collectTranscriptChrome(window))));
+
+    const QVector<TranscriptRowChrome> rows = collectTranscriptChrome(window);
+    const int replayAt = chromeIndex(rows, QStringLiteral("morning"));
+    QCOMPARE(replayAt, 0);
+    const QColor muted = window->property("mutedColor").value<QColor>();
+    QCOMPARE(rows.at(replayAt).bodyColor, muted);
+    QVERIFY2(saveFixtureShot(window, QStringLiteral("live-ui-bouncer-direct")),
+             "bouncer direct screenshot");
 }
 
 void LiveUiTest::ctrlFFindsLiveTranscriptAndStatus()

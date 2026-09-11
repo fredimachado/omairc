@@ -17,6 +17,8 @@ private slots:
     void init();
     void suggestedPrefillsLiberachat();
     void validateRefusesIncompleteAndUnsendable();
+    void validateRefusesUnsendableAccountAndBouncerNetwork();
+    void saslAccountFallsBackToNickAndAppendsBouncerNetwork();
     void storeRoundTripsFieldsWithoutPassword();
     void missingConnectOnStartupDefaultsToFalse();
     void missingSecretSavedDefaultsToFalse();
@@ -100,6 +102,57 @@ void ProfileTest::validateRefusesIncompleteAndUnsendable()
     QCOMPARE(profile.validate(), IrcNetworkProfile::Problem::UnsendableChannel);
 }
 
+void ProfileTest::validateRefusesUnsendableAccountAndBouncerNetwork()
+{
+    IrcNetworkProfile profile = IrcNetworkProfile::suggested();
+    profile.nick = QStringLiteral("omairc");
+    QVERIFY(profile.account.isEmpty());
+    QVERIFY(profile.bouncerNetwork.isEmpty());
+    QCOMPARE(profile.validate(), IrcNetworkProfile::Problem::None);
+    QVERIFY(profile.isComplete());
+
+    profile.account = QStringLiteral("joe/libera");
+    QCOMPARE(profile.validate(), IrcNetworkProfile::Problem::UnsendableAccount);
+    QCOMPARE(IrcNetworkProfile::problemText(profile.validate()),
+             QStringLiteral("Account cannot contain a space or a slash"));
+
+    profile.account = QStringLiteral("joe libera");
+    QCOMPARE(profile.validate(), IrcNetworkProfile::Problem::UnsendableAccount);
+
+    profile.account = QStringLiteral("joe");
+    profile.bouncerNetwork = QStringLiteral("libera/extra");
+    QCOMPARE(profile.validate(), IrcNetworkProfile::Problem::UnsendableBouncerNetwork);
+    QCOMPARE(IrcNetworkProfile::problemText(profile.validate()),
+             QStringLiteral("Bouncer network cannot contain a space or a slash"));
+
+    profile.bouncerNetwork = QStringLiteral("libera chat");
+    QCOMPARE(profile.validate(), IrcNetworkProfile::Problem::UnsendableBouncerNetwork);
+
+    profile.bouncerNetwork = QStringLiteral("libera");
+    QVERIFY(profile.isComplete());
+}
+
+void ProfileTest::saslAccountFallsBackToNickAndAppendsBouncerNetwork()
+{
+    IrcNetworkProfile profile = IrcNetworkProfile::create();
+    profile.host = QStringLiteral("irc.example.net");
+    profile.nick = QStringLiteral("omairc");
+    QCOMPARE(profile.saslAccount(), QStringLiteral("omairc"));
+
+    profile.account = QStringLiteral("joe");
+    QCOMPARE(profile.saslAccount(), QStringLiteral("joe"));
+
+    profile.bouncerNetwork = QStringLiteral("libera");
+    QCOMPARE(profile.saslAccount(), QStringLiteral("joe/libera"));
+
+    profile.account.clear();
+    QCOMPARE(profile.saslAccount(), QStringLiteral("omairc/libera"));
+
+    profile.account = QStringLiteral("  joe  ");
+    profile.bouncerNetwork = QStringLiteral("  libera  ");
+    QCOMPARE(profile.saslAccount(), QStringLiteral("joe/libera"));
+}
+
 void ProfileTest::storeRoundTripsFieldsWithoutPassword()
 {
     IrcNetworkProfile profile = IrcNetworkProfile::create();
@@ -112,6 +165,8 @@ void ProfileTest::storeRoundTripsFieldsWithoutPassword()
     profile.nick = QStringLiteral("omairc");
     profile.username = QStringLiteral("omaircuser");
     profile.realname = QStringLiteral("Omairc User");
+    profile.account = QStringLiteral("joe");
+    profile.bouncerNetwork = QStringLiteral("libera");
     profile.autojoinChannels = {QStringLiteral("#omarchy"), QStringLiteral("#desktop")};
 
     IrcProfileStore store;
@@ -129,8 +184,11 @@ void ProfileTest::storeRoundTripsFieldsWithoutPassword()
     QCOMPARE(loaded.first().nick, profile.nick);
     QCOMPARE(loaded.first().username, profile.username);
     QCOMPARE(loaded.first().realname, profile.realname);
+    QCOMPARE(loaded.first().account, profile.account);
+    QCOMPARE(loaded.first().bouncerNetwork, profile.bouncerNetwork);
     QCOMPARE(loaded.first().autojoinChannels, profile.autojoinChannels);
     QCOMPARE(loaded.first(), profile);
+    QCOMPARE(loaded.first().saslAccount(), QStringLiteral("joe/libera"));
 
     QFile file(settingsFile());
     QVERIFY(file.exists());
@@ -142,6 +200,8 @@ void ProfileTest::storeRoundTripsFieldsWithoutPassword()
     QVERIFY(contents.contains(QLatin1String("networks")));
     QVERIFY(contents.contains(QLatin1String("secretSaved")));
     QVERIFY(contents.contains(QLatin1String("nickServSaved")));
+    QVERIFY(contents.contains(QLatin1String("account=joe")));
+    QVERIFY(contents.contains(QLatin1String("bouncerNetwork=libera")));
     QVERIFY(!contents.contains(QLatin1String("password"), Qt::CaseInsensitive));
     QVERIFY(!contents.contains(QLatin1String("nick-secret")));
 

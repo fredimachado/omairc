@@ -958,14 +958,15 @@ void IrcSession::handleBatch(const IrcMessage &message)
         const QString type = parameter(message, 1);
         if (m_openBatches.contains(reference))
             return;
-        if (!historyCapabilitiesEnabled() && isHistoryBatch(type, parent)) {
+        const std::optional<ReplayKind> kind = replayKindFor(type);
+        if (kind && !replayEnabled(*kind)) {
             ignoreBatch(reference);
             return;
         }
         // A history batch that answers a request we are still waiting on is
         // never crowded out. Everything else shares the open-batch budget, so
         // a server cannot make us hold state for batches we did not ask for.
-        const bool solicited = isChatHistoryBatchType(type)
+        const bool solicited = kind == ReplayKind::ChatHistory
             && answersPendingHistory(parameter(message, 2));
         const bool overOpenCap =
             !solicited && m_openBatches.size() >= kMaxOpenBatches;
@@ -973,7 +974,7 @@ void IrcSession::handleBatch(const IrcMessage &message)
             || (!parent.isEmpty() && m_ignoredBatches.contains(parent))
             || (overOpenCap && isHistoryBatch(type, parent))) {
             ignoreBatch(reference);
-            if (isChatHistoryBatchType(type))
+            if (kind == ReplayKind::ChatHistory)
                 clearHistoryPending(parameter(message, 2));
             return;
         }
@@ -987,9 +988,10 @@ void IrcSession::handleBatch(const IrcMessage &message)
             : QString{};
         if (!parentRoot.isEmpty())
             frame.replayRoot = parentRoot;
-        else if (isChatHistoryBatchType(frame.type))
+        else if (kind)
             frame.replayRoot = reference;
         if (frame.replayRoot == reference) {
+            frame.kind = kind;
             frame.collected.target = parameter(message, 2);
             frame.generation = historyGeneration(frame.collected.target);
         }
@@ -1022,11 +1024,10 @@ void IrcSession::closeBatch(const QString& reference)
     for (const QString& child : children)
         ignoreBatch(child);
     if (frame.replayRoot == reference && !frame.collected.target.isEmpty()) {
-        const QString folded = foldChannel(frame.collected.target);
         const bool currentMembership =
             frame.generation == historyGeneration(frame.collected.target);
-        if (currentMembership)
-            m_historyPending.remove(folded);
+        if (currentMembership && frame.kind == ReplayKind::ChatHistory)
+            m_historyPending.remove(foldChannel(frame.collected.target));
         if (!currentMembership)
             return;
         emit historyBatchReceived(m_config.networkId, frame.collected);
@@ -1053,10 +1054,30 @@ bool IrcSession::captureInBatch(const IrcMessage& message)
     return true;
 }
 
-bool IrcSession::isChatHistoryBatchType(const QString& type) noexcept
+std::optional<IrcSession::ReplayKind> IrcSession::replayKindFor(
+    const QString& batchType) noexcept
 {
-    return type.compare(QLatin1String("chathistory"), Qt::CaseInsensitive) == 0
-        || type.compare(QLatin1String("draft/chathistory"), Qt::CaseInsensitive) == 0;
+    static const struct { QLatin1String token; ReplayKind kind; } kReplayBatchTypes[] = {
+        {QLatin1String("chathistory"),       ReplayKind::ChatHistory},
+        {QLatin1String("draft/chathistory"), ReplayKind::ChatHistory},
+        {QLatin1String("znc.in/playback"),   ReplayKind::BouncerPlayback},
+    };
+    for (const auto& row : kReplayBatchTypes) {
+        if (batchType.compare(row.token, Qt::CaseInsensitive) == 0)
+            return row.kind;
+    }
+    return std::nullopt;
+}
+
+// Bouncer playback must not require `chathistory`. ZNC batches its buffer
+// replay behind `batch` alone and never advertises `chathistory`.
+bool IrcSession::replayEnabled(ReplayKind kind) const
+{
+    const IrcCapabilitySet enabled = m_capabilities.enabled();
+    if (!enabled.contains(IrcCapability::Batch))
+        return false;
+    return kind != ReplayKind::ChatHistory
+        || enabled.contains(IrcCapability::ChatHistory);
 }
 
 bool IrcSession::selfPrefixed(const IrcMessage& message) const
@@ -1071,13 +1092,8 @@ bool IrcSession::selfIs(const QString& nick) const
 
 void IrcSession::requestChannelHistory(const QString& channel)
 {
-    if (channel.isEmpty())
+    if (channel.isEmpty() || !replayEnabled(ReplayKind::ChatHistory))
         return;
-    const IrcCapabilitySet enabled = m_capabilities.enabled();
-    if (!enabled.contains(IrcCapability::ChatHistory)
-        || !enabled.contains(IrcCapability::Batch)) {
-        return;
-    }
     const QString key = foldChannel(channel);
     if (m_historyAsked.contains(key))
         return;
@@ -1182,19 +1198,17 @@ bool IrcSession::hasOpenCurrentHistoryBatch(const QString& channel) const
     for (auto it = m_openBatches.constBegin(); it != m_openBatches.constEnd(); ++it) {
         if (it.value().replayRoot != it.key())
             continue;
+        // Only a batch we asked for can be the answer we are waiting on. An
+        // open bouncer batch for the same channel must not make a pending
+        // CHATHISTORY request look unsolicited.
+        if (it.value().kind != ReplayKind::ChatHistory)
+            continue;
         if (foldChannel(it.value().collected.target) != folded)
             continue;
         if (it.value().generation == generation)
             return true;
     }
     return false;
-}
-
-bool IrcSession::historyCapabilitiesEnabled() const
-{
-    const IrcCapabilitySet enabled = m_capabilities.enabled();
-    return enabled.contains(IrcCapability::ChatHistory)
-        && enabled.contains(IrcCapability::Batch);
 }
 
 void IrcSession::abandonHistoryRequests()
@@ -1213,7 +1227,7 @@ void IrcSession::abandonHistoryRequests()
 
 bool IrcSession::isHistoryBatch(const QString& type, const QString& parent) const
 {
-    if (isChatHistoryBatchType(type))
+    if (replayKindFor(type))
         return true;
     if (parent.isEmpty())
         return false;
@@ -1275,7 +1289,7 @@ void IrcSession::handleCap(const IrcMessage &message)
     if (delIndex >= 0) {
         m_capabilities.withdraw(capabilityTokens(message, delIndex));
         publishCapabilities();
-        if (!historyCapabilitiesEnabled())
+        if (!replayEnabled(ReplayKind::ChatHistory))
             abandonHistoryRequests();
         requestCapabilities();
         return;
@@ -1325,13 +1339,15 @@ void IrcSession::handleAuthenticate(const IrcMessage &message)
     if (message.parameters.front() != "+")
         return;
 
-    const QByteArray nick = m_config.nick.toUtf8();
+    const QByteArray account = m_config.saslAccount.isEmpty()
+        ? m_config.nick.toUtf8()
+        : m_config.saslAccount.toUtf8();
     const QByteArray secret = saslSecret(m_config).toUtf8();
     QByteArray plain;
-    plain.reserve(nick.size() * 2 + secret.size() + 2);
-    plain.append(nick);
+    plain.reserve(account.size() * 2 + secret.size() + 2);
+    plain.append(account);
     plain.append('\0');
-    plain.append(nick);
+    plain.append(account);
     plain.append('\0');
     plain.append(secret);
     const QByteArray encoded = plain.toBase64();

@@ -207,6 +207,16 @@ QString IrcConnection::realname() const
     return m_draft.realname;
 }
 
+QString IrcConnection::account() const
+{
+    return m_draft.account;
+}
+
+QString IrcConnection::bouncerNetwork() const
+{
+    return m_draft.bouncerNetwork;
+}
+
 QString IrcConnection::autojoin() const
 {
     return m_draft.autojoinChannels.join(QLatin1Char(' '));
@@ -455,6 +465,22 @@ void IrcConnection::setRealname(const QString &realname)
     if (m_draft.realname == realname)
         return;
     m_draft.realname = realname;
+    emit draftChanged();
+}
+
+void IrcConnection::setAccount(const QString &account)
+{
+    if (m_draft.account == account)
+        return;
+    m_draft.account = account;
+    emit draftChanged();
+}
+
+void IrcConnection::setBouncerNetwork(const QString &network)
+{
+    if (m_draft.bouncerNetwork == network)
+        return;
+    m_draft.bouncerNetwork = network;
     emit draftChanged();
 }
 
@@ -1208,6 +1234,7 @@ std::optional<IrcSessionConfig> IrcConnection::sessionConfigFor(
     config.realname = profile.realname.isEmpty() ? profile.nick : profile.realname;
     config.password = secretFor(profile.networkId).password;
     config.nickServPassword = nickServSecretFor(profile.networkId).password;
+    config.saslAccount = profile.saslAccount();
     config.autojoinChannels = profile.autojoinChannels;
     return config;
 }

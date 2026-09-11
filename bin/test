@@ -211,6 +211,7 @@ make -j"$JOBS"
 mkdir -p "$ROOT/test-artifacts/live-ui"
 rm -f -- "$ROOT/test-artifacts/live-ui/live-ui-grouped-messages.png"
 rm -f -- "$ROOT/test-artifacts/live-ui/live-ui-replay-history.png"
+rm -f -- "$ROOT/test-artifacts/live-ui/live-ui-bouncer-direct.png"
 rm -f -- "$ROOT/test-artifacts/live-ui/live-ui-find.png"
 
 cd "$ROOT"
@@ -221,7 +222,7 @@ QT_QPA_PLATFORM=offscreen \
 QT_QPA_PLATFORMTHEME= \
 QT_QUICK_BACKEND=software \
 OMAIRC_LIVE_UI_ARTIFACTS="$ROOT/test-artifacts/live-ui" \
-"$ROOT/build-live-ui-tests/live_ui_tests" consecutiveSameAuthorMinuteGroupsThroughIrcEvent replayAndLiveSameAuthorMinuteDoNotGroupThroughIrcEvent ctrlFFindsLiveTranscriptAndStatus
+"$ROOT/build-live-ui-tests/live_ui_tests" consecutiveSameAuthorMinuteGroupsThroughIrcEvent replayAndLiveSameAuthorMinuteDoNotGroupThroughIrcEvent bouncerQueryReplayRendersDirectMessageInSidebar ctrlFFindsLiveTranscriptAndStatus
 
 if [ ! -s "$ROOT/test-artifacts/live-ui/live-ui-grouped-messages.png" ]; then
   echo "live_ui_tests did not create test-artifacts/live-ui/live-ui-grouped-messages.png." >&2
@@ -229,6 +230,10 @@ if [ ! -s "$ROOT/test-artifacts/live-ui/live-ui-grouped-messages.png" ]; then
 fi
 if [ ! -s "$ROOT/test-artifacts/live-ui/live-ui-replay-history.png" ]; then
   echo "live_ui_tests did not create test-artifacts/live-ui/live-ui-replay-history.png." >&2
+  exit 1
+fi
+if [ ! -s "$ROOT/test-artifacts/live-ui/live-ui-bouncer-direct.png" ]; then
+  echo "live_ui_tests did not create test-artifacts/live-ui/live-ui-bouncer-direct.png." >&2
   exit 1
 fi
 if [ ! -s "$ROOT/test-artifacts/live-ui/live-ui-find.png" ]; then
