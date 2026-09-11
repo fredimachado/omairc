@@ -1953,6 +1953,7 @@ ApplicationWindow {
         }
 
         Text {
+            objectName: "conversationLabel"
             anchors.left: parent.left
             anchors.leftMargin: conversationRow.direct ? win.scaledSize(49) : win.scaledSize(20)
             anchors.right: rowTrail.left

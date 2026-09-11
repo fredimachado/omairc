@@ -83,6 +83,12 @@ std::optional<IrcConversationKey> conversationFor(const QString& networkId,
                                                   const QString& currentNick,
                                                   const IrcServerFeatures& features)
 {
+    // A bouncer addresses its playback markers to the channel, so the sender is
+    // read before the target is classified.
+    if (message.prefix && !message.prefix->nick.empty()
+        && !ircNickIsRoutable(ircWireText(message.prefix->nick))) {
+        return std::nullopt;
+    }
     if (features.isChannel(utf8(target)))
         return key(networkId, target, features);
     if (isNetworkNoticeTarget(target) || !hasUserPrefix(message)
@@ -289,7 +295,7 @@ std::optional<IrcHistoryEvent> IrcEventTranslator::translateHistory(
     const IrcServerFeatures& features,
     const IrcHistoryBatch& batch)
 {
-    if (batch.target.isEmpty() || !features.isChannel(utf8(batch.target)))
+    if (batch.target.isEmpty())
         return std::nullopt;
     const IrcConversationKey conversation = key(networkId, batch.target, features);
     IrcHistoryEvent event{conversation, batch.target, {}};

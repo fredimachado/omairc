@@ -275,6 +275,10 @@ private slots:
     void echoMessageAckSkipsMsgEcho();
     void msgEchoDoesNotOpenMissingDirect();
     void incomingNickservPrivmsgDoesNotOpenDirect();
+    void bouncerAttachOpensOnlyPeerAuthoredDirects();
+    void bouncerQueryReplayDirectAppearsInConversationModel();
+    void pseudoClientPrivmsgOpensNoConversation();
+    void routableNicksOpenDirectsAndPseudoClientsDoNot();
     void statusMsgNickservIdentifyDoesNotOpenDirect();
     void automaticIdentifyDoesNotOpenNickServDirect();
     void mentionArrivedOnSelectedBuffer();
@@ -2473,6 +2477,177 @@ void ControllerTest::incomingNickservPrivmsgDoesNotOpenDirect()
     QCOMPARE(rowForTarget(conversations, QStringLiteral("nickserv")), -1);
     QVERIFY(logContains(controller.console()->lines(),
                         QStringLiteral("This nickname is registered.")));
+}
+
+void ControllerTest::bouncerAttachOpensOnlyPeerAuthoredDirects()
+{
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+                                                transport);
+    QVERIFY(session);
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    transport->completeConnect();
+    transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :batch echo-message\r\n"
+                          ":server CAP omairc ACK :batch echo-message\r\n"
+                          ":server 001 omairc :Welcome\r\n"
+                          ":omairc!u@h JOIN :#omarchy\r\n"));
+    QVERIFY(session->capabilities().contains(IrcCapability::Batch));
+    QVERIFY(session->capabilities().contains(IrcCapability::EchoMessage));
+    QVERIFY(!session->capabilities().contains(IrcCapability::ChatHistory));
+
+    IrcStatusConsole *console = controller.console();
+    console->setOpen(true);
+    QVERIFY(console->submit(QStringLiteral("/msg lena hi")));
+    transport->injectBytes(
+        QByteArrayLiteral(":omairc!u@h PRIVMSG lena :hi\r\n"
+                          ":NickServ!NickServ@services PRIVMSG omairc "
+                          ":This nickname is registered.\r\n"));
+
+    auto *conversations =
+        qobject_cast<QAbstractItemModel *>(controller.conversations());
+    QVERIFY(conversations);
+    QCOMPARE(rowForTarget(conversations, QStringLiteral("lena")), -1);
+    QCOMPARE(rowForTarget(conversations, QStringLiteral("NickServ")), -1);
+
+    transport->injectBytes(
+        QByteArrayLiteral(":znc.in BATCH +q1 znc.in/playback lena\r\n"
+                          "@batch=q1 :omairc!u@h PRIVMSG lena :hi\r\n"
+                          ":znc.in BATCH -q1\r\n"));
+    QCOMPARE(rowForTarget(conversations, QStringLiteral("lena")), -1);
+
+    transport->injectBytes(
+        QByteArrayLiteral(":znc.in BATCH +q2 znc.in/playback dana\r\n"
+                          "@batch=q2 :dana!u@h PRIVMSG omairc :morning\r\n"
+                          "@batch=q2 :omairc!u@h PRIVMSG dana :morning back\r\n"
+                          ":znc.in BATCH -q2\r\n"));
+    QVERIFY(rowForTarget(conversations, QStringLiteral("dana")) >= 0);
+
+    transport->injectBytes(
+        QByteArrayLiteral(":rio!u@h PRIVMSG omairc :live hello\r\n"));
+    QVERIFY(rowForTarget(conversations, QStringLiteral("rio")) >= 0);
+
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("dana"));
+    auto *danaMessages = qobject_cast<QAbstractItemModel *>(controller.messages());
+    QCOMPARE(selectedBodies(danaMessages),
+             QStringList({QStringLiteral("morning"),
+                          QStringLiteral("morning back")}));
+    QCOMPARE(roleAt(danaMessages, 0, MessageListModel::OriginRole).toString(),
+             QStringLiteral("replay"));
+    QCOMPARE(roleAt(danaMessages, 1, MessageListModel::OriginRole).toString(),
+             QStringLiteral("replay"));
+
+    transport->injectBytes(
+        QByteArrayLiteral(
+            ":znc.in BATCH +c znc.in/playback #omarchy\r\n"
+            "@batch=c :***!znc@znc.in PRIVMSG #omarchy :Buffer Playback...\r\n"
+            "@batch=c :lena!u@h PRIVMSG #omarchy :yesterday\r\n"
+            "@batch=c :***!znc@znc.in PRIVMSG #omarchy :Playback Complete.\r\n"
+            ":znc.in BATCH -c\r\n"));
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    auto *roomMessages = qobject_cast<QAbstractItemModel *>(controller.messages());
+    QCOMPARE(selectedBodies(roomMessages),
+             QStringList({QStringLiteral("yesterday"),
+                          QStringLiteral("omairc joined")}));
+}
+
+void ControllerTest::bouncerQueryReplayDirectAppearsInConversationModel()
+{
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+                                                transport);
+    QVERIFY(session);
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    transport->completeConnect();
+    transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :batch\r\n"
+                          ":server CAP omairc ACK :batch\r\n"
+                          ":server 001 omairc :Welcome\r\n"));
+
+    auto *conversations =
+        qobject_cast<QAbstractItemModel *>(controller.conversations());
+    QVERIFY(conversations);
+    QCOMPARE(conversations->rowCount(), 0);
+
+    transport->injectBytes(
+        QByteArrayLiteral(":znc.in BATCH +q znc.in/playback dana\r\n"
+                          "@batch=q :dana!u@h PRIVMSG omairc :morning\r\n"
+                          ":znc.in BATCH -q\r\n"));
+
+    const int row = rowForTarget(conversations, QStringLiteral("dana"));
+    QVERIFY(row >= 0);
+    QCOMPARE(roleAt(conversations, row, ConversationListModel::ConversationRole)
+                 .toString(),
+             QStringLiteral("dana"));
+    QCOMPARE(roleAt(conversations, row, ConversationListModel::DirectRole).toBool(),
+             true);
+    QCOMPARE(roleAt(conversations, row, ConversationListModel::UnreadRole).toInt(), 0);
+}
+
+void ControllerTest::pseudoClientPrivmsgOpensNoConversation()
+{
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+                                                transport);
+    QVERIFY(session);
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    transport->completeConnect();
+    transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
+                          ":server 001 omairc :Welcome\r\n"
+                          ":*status!znc@znc.in PRIVMSG omairc "
+                          ":You have 1 network attached\r\n"));
+
+    auto *conversations =
+        qobject_cast<QAbstractItemModel *>(controller.conversations());
+    QVERIFY(conversations);
+    QCOMPARE(conversations->rowCount(), 0);
+    QCOMPARE(rowForTarget(conversations, QStringLiteral("*status")), -1);
+    QVERIFY(logContains(controller.console()->lines(),
+                        QStringLiteral("You have 1 network attached")));
+}
+
+void ControllerTest::routableNicksOpenDirectsAndPseudoClientsDoNot()
+{
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+                                                transport);
+    QVERIFY(session);
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    transport->completeConnect();
+    transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
+                          ":server 001 omairc :Welcome\r\n"
+                          ":server 005 omairc CHANTYPES=# "
+                          ":are supported by this server\r\n"
+                          ":0day!u@h PRIVMSG omairc :one\r\n"
+                          ":[bob]!u@h PRIVMSG omairc :two\r\n"
+                          ":nick_!u@h PRIVMSG omairc :three\r\n"
+                          ":{x}!u@h PRIVMSG omairc :four\r\n"
+                          ":|away!u@h PRIVMSG omairc :five\r\n"
+                          ":^bob^!u@h PRIVMSG omairc :six\r\n"
+                          ":*status!znc@znc.in PRIVMSG omairc :seven\r\n"
+                          ":*playback!znc@znc.in PRIVMSG omairc :eight\r\n"
+                          ":***!znc@znc.in PRIVMSG omairc :nine\r\n"));
+
+    auto *conversations =
+        qobject_cast<QAbstractItemModel *>(controller.conversations());
+    QVERIFY(conversations);
+    QStringList opened;
+    for (int row = 0; row < conversations->rowCount(); ++row) {
+        opened.append(
+            roleAt(conversations, row, ConversationListModel::ConversationRole)
+                .toString());
+    }
+    opened.sort();
+    QCOMPARE(opened,
+             QStringList({QStringLiteral("0day"), QStringLiteral("[bob]"),
+                          QStringLiteral("^bob^"), QStringLiteral("nick_"),
+                          QStringLiteral("{x}"), QStringLiteral("|away")}));
 }
 
 void ControllerTest::statusMsgNickservIdentifyDoesNotOpenDirect()

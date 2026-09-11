@@ -40,3 +40,14 @@ bool ircIsServiceIdentity(QStringView nick, QStringView host, QStringView channe
     return folded == QLatin1String("services")
         || folded.startsWith(QLatin1String("services."));
 }
+
+bool ircNickIsRoutable(QStringView nick) noexcept
+{
+    if (nick.isEmpty())
+        return false;
+    for (const QChar mark : nick) {
+        if (mark.unicode() < 0x20 || QStringView(u" ,*?!@.$:").contains(mark))
+            return false;
+    }
+    return true;
+}

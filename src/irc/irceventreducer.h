@@ -163,6 +163,7 @@ private:
                      bool collapsible = false);
     void appendWhois(IrcConversationState& conversation, const QString& body);
     void capMessages(IrcConversationState& conversation);
+    std::optional<std::size_t> takeSpliceIndex(IrcConversationState& conversation);
 
     void reduce(const IrcWelcomeEvent& event);
     void reduce(const IrcMessageEvent& event);
