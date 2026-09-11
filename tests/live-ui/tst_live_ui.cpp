@@ -666,6 +666,8 @@ void LiveUiTest::ctrlFFindsLiveTranscriptAndStatus()
     QVERIFY(findMarkVisible(console, window->property("findIndex").toInt()));
     QVERIFY2(saveFixtureShot(window, QStringLiteral("live-ui-find")), "find screenshot");
 }
+
+int runLiveUiTests(int argc, char **argv)
 {
     LiveUiTest test;
     return QTest::qExec(&test, argc, argv);
