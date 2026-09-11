@@ -17,9 +17,11 @@ Connect automatically on startup for each session that you want on launch.
 Omairc remembers host, port, TLS, nick, username, real name, and autojoin in
 `$XDG_CONFIG_HOME/omairc/`. Passwords are stored through QtKeychain in the
 desktop Secret Service. If that service is unavailable, the password stays
-session-only and the connection sheet says so. Errors and warnings go to
-`$XDG_STATE_HOME/omairc/omairc.log`. Connect automatically on startup is off
-by default and can be enabled in the Connect sheet.
+session-only and the connection sheet says so. If a password was saved and
+secure storage cannot return it, Connect automatically on startup leaves
+that network disconnected and focuses the password field. Errors and
+warnings go to `$XDG_STATE_HOME/omairc/omairc.log`. Connect automatically on
+startup is off by default and can be enabled in the Connect sheet.
 Press `Ctrl+,` or click `edit` beside a network name to reopen the sheet.
 The network name opens Status for that network.
 

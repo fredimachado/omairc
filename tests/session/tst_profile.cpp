@@ -17,8 +17,9 @@ private slots:
     void init();
     void suggestedPrefillsLiberachat();
     void validateRefusesIncompleteAndUnsendable();
-    void storeRoundTripsEightFieldsWithoutPassword();
+    void storeRoundTripsFieldsWithoutPassword();
     void missingConnectOnStartupDefaultsToFalse();
+    void missingSecretSavedDefaultsToFalse();
     void usernameAndRealnameStayAsTyped();
     void storeRemoveDropsTheNetworkGroup();
 
@@ -94,13 +95,14 @@ void ProfileTest::validateRefusesIncompleteAndUnsendable()
     QCOMPARE(profile.validate(), IrcNetworkProfile::Problem::UnsendableChannel);
 }
 
-void ProfileTest::storeRoundTripsEightFieldsWithoutPassword()
+void ProfileTest::storeRoundTripsFieldsWithoutPassword()
 {
     IrcNetworkProfile profile = IrcNetworkProfile::create();
     profile.host = QStringLiteral("irc.example.net");
     profile.port = 6697;
     profile.tlsEnabled = true;
     profile.connectOnStartup = true;
+    profile.secretSaved = true;
     profile.nick = QStringLiteral("omairc");
     profile.username = QStringLiteral("omaircuser");
     profile.realname = QStringLiteral("Omairc User");
@@ -116,6 +118,7 @@ void ProfileTest::storeRoundTripsEightFieldsWithoutPassword()
     QCOMPARE(loaded.first().port, profile.port);
     QCOMPARE(loaded.first().tlsEnabled, profile.tlsEnabled);
     QCOMPARE(loaded.first().connectOnStartup, profile.connectOnStartup);
+    QCOMPARE(loaded.first().secretSaved, true);
     QCOMPARE(loaded.first().nick, profile.nick);
     QCOMPARE(loaded.first().username, profile.username);
     QCOMPARE(loaded.first().realname, profile.realname);
@@ -130,6 +133,7 @@ void ProfileTest::storeRoundTripsEightFieldsWithoutPassword()
     QVERIFY(contents.contains(profile.networkId));
     QVERIFY(contents.contains(profile.host));
     QVERIFY(contents.contains(QLatin1String("networks")));
+    QVERIFY(contents.contains(QLatin1String("secretSaved")));
     QVERIFY(!contents.contains(QLatin1String("password"), Qt::CaseInsensitive));
 
     IrcNetworkProfile unnamed;
@@ -155,6 +159,24 @@ void ProfileTest::missingConnectOnStartupDefaultsToFalse()
     settings.sync();
 
     QCOMPARE(IrcProfileStore().profiles().first().connectOnStartup, false);
+}
+
+void ProfileTest::missingSecretSavedDefaultsToFalse()
+{
+    IrcNetworkProfile profile = IrcNetworkProfile::create();
+    profile.host = QStringLiteral("irc.example.net");
+    profile.nick = QStringLiteral("omairc");
+    IrcProfileStore().save(profile);
+
+    QSettings settings;
+    settings.beginGroup(QStringLiteral("networks"));
+    settings.beginGroup(profile.networkId);
+    settings.remove(QStringLiteral("secretSaved"));
+    settings.endGroup();
+    settings.endGroup();
+    settings.sync();
+
+    QCOMPARE(IrcProfileStore().profiles().first().secretSaved, false);
 }
 
 void ProfileTest::usernameAndRealnameStayAsTyped()

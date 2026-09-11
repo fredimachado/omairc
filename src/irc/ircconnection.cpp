@@ -616,10 +616,12 @@ void IrcConnection::handleCredentialWrite(CredentialStore::State state,
             && state == CredentialStore::State::Available) {
             secret.mayBeStored = true;
             secret.persistedPassword = operation.password;
+            persistSecretSaved(operation.key.networkId, true);
         } else if (operation.kind == CredentialOperation::Kind::Remove
                    && state == CredentialStore::State::Missing) {
             secret.mayBeStored = false;
             secret.persistedPassword.clear();
+            persistSecretSaved(operation.key.networkId, false);
         }
     }
     if ((operation.kind == CredentialOperation::Kind::Write
@@ -644,6 +646,7 @@ void IrcConnection::settleCredentialRead(IrcDraftSecret &secret,
         secret.password = password;
         secret.persistedPassword = password;
         secret.mayBeStored = true;
+        persistSecretSaved(profile.networkId, true);
         ++secret.revision;
         if (!secret.obsoleteKeys.isEmpty())
             queueCredentialWrite(credentialKey(profile), secret.password,
@@ -825,26 +828,32 @@ void IrcConnection::activateOnStartup()
 {
     if (m_startupActivationConnection)
         return;
+    const IrcNetworkProfile profile = storedProfile(m_selectedNetworkId);
     const IrcDraftSecret &secret = selectedSecret();
     if (secret.credentialState == CredentialStore::State::Loading
         || secret.readInFlight) {
         m_startupActivationConnection = connect(
             this, &IrcConnection::credentialStateChanged, this, [this]() {
+                const IrcNetworkProfile currentProfile =
+                    storedProfile(m_selectedNetworkId);
                 const IrcDraftSecret &current = selectedSecret();
-                if (current.credentialState == CredentialStore::State::Available
-                    || current.credentialState == CredentialStore::State::Missing
-                    || current.credentialState == CredentialStore::State::Unavailable
-                    || current.credentialState == CredentialStore::State::SessionOnly) {
-                    activate();
-                } else if (current.credentialState == CredentialStore::State::Error) {
-                    QObject::disconnect(m_startupActivationConnection);
-                    m_startupActivationConnection = {};
+                if (current.credentialState == CredentialStore::State::Loading
+                    || current.readInFlight) {
+                    return;
                 }
+                QObject::disconnect(m_startupActivationConnection);
+                m_startupActivationConnection = {};
+                if (startupConnectAllowed(currentProfile))
+                    activate();
+                else
+                    requestStartupPassword(currentProfile);
             });
         return;
     }
-    if (secret.credentialState == CredentialStore::State::Error)
+    if (!startupConnectAllowed(profile)) {
+        requestStartupPassword(profile);
         return;
+    }
     activate();
 }
 
@@ -862,14 +871,59 @@ bool IrcConnection::startupCredentialsPending() const
     return false;
 }
 
+bool IrcConnection::startupConnectAllowed(const IrcNetworkProfile &profile) const
+{
+    const CredentialStore::State state = secretFor(profile.networkId).credentialState;
+    if (state == CredentialStore::State::Loading
+        || state == CredentialStore::State::Error) {
+        return false;
+    }
+    if (profile.secretSaved
+        && (state == CredentialStore::State::Missing
+            || state == CredentialStore::State::Unavailable
+            || state == CredentialStore::State::SessionOnly)) {
+        return false;
+    }
+    return true;
+}
+
+void IrcConnection::requestStartupPassword(const IrcNetworkProfile &profile)
+{
+    if (profile.networkId != m_selectedNetworkId || !profile.secretSaved)
+        return;
+    if (m_focusPassword)
+        return;
+    m_focusPassword = true;
+    emit focusPasswordChanged();
+}
+
+void IrcConnection::persistSecretSaved(const QString &networkId, bool saved)
+{
+    if (networkId.isEmpty())
+        return;
+    for (IrcNetworkProfile &profile : m_stored) {
+        if (profile.networkId != networkId)
+            continue;
+        if (profile.secretSaved == saved)
+            return;
+        profile.secretSaved = saved;
+        m_store.save(profile);
+        if (m_draft.networkId == networkId)
+            m_draft.secretSaved = saved;
+        return;
+    }
+}
+
 bool IrcConnection::startMarkedStartupProfiles()
 {
     bool started = false;
     for (const IrcNetworkProfile &profile : m_stored) {
         if (!profile.connectOnStartup || !profile.isComplete())
             continue;
-        if (secretFor(profile.networkId).credentialState == CredentialStore::State::Error)
+        if (!startupConnectAllowed(profile)) {
+            requestStartupPassword(profile);
             continue;
+        }
         started = reconcile(profile) || started;
     }
     return started;

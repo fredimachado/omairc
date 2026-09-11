@@ -204,6 +204,9 @@ private:
     bool reconcile(const IrcNetworkProfile &profile);
     CredentialKey credentialKey(const IrcNetworkProfile &profile) const;
     bool startupCredentialsPending() const;
+    bool startupConnectAllowed(const IrcNetworkProfile &profile) const;
+    void requestStartupPassword(const IrcNetworkProfile &profile);
+    void persistSecretSaved(const QString &networkId, bool saved);
     bool startMarkedStartupProfiles();
     void loadStored();
     void sortStored();

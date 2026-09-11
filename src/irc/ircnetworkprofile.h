@@ -19,6 +19,7 @@ struct IrcNetworkProfile
     quint16 port = 6697;
     bool tlsEnabled = true;
     bool connectOnStartup = false;
+    bool secretSaved = false;
     QString nick;
     QString username;
     QString realname;
