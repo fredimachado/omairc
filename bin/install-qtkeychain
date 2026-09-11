@@ -22,8 +22,13 @@ trap cleanup EXIT HUP INT TERM
 
 git clone --depth 1 --branch "$VERSION" \
   https://github.com/frankosterfeld/qtkeychain.git "$SRC"
+# The official Qt 6 gcc_64 build and Omairc itself are compiled with GCC, so
+# QtKeychain has to match. CMake would otherwise take /usr/bin/c++, which on
+# Ubuntu 24.04 is Clang and selects a GCC 14 toolchain that build-essential
+# does not install, leaving the link without -lstdc++.
 cmake -S "$SRC" -B "$BUILD" -G Ninja \
   -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_CXX_COMPILER="${CXX:-g++}" \
   -DCMAKE_PREFIX_PATH="$QT_PREFIX" \
   -DCMAKE_INSTALL_PREFIX="$QT_PREFIX" \
   -DBUILD_WITH_QT6=ON \
