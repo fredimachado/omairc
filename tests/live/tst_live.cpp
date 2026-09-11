@@ -499,7 +499,7 @@ void LiveIrcdTest::chatHistoryOnJoin()
         QVERIFY(entry.label() != QLatin1String("CHATHISTORY"));
         QVERIFY(entry.label() != QLatin1String("PING"));
         QVERIFY(entry.label() != QLatin1String("PONG"));
-        QVERIFY(entry.label() != QLatin1String("PRIVMSG"));
+        QVERIFY(entry.label() != QLatin1String("JOIN"));
         QVERIFY(!entry.text().contains(seed));
     }
 }
