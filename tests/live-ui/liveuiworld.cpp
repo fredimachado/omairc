@@ -318,7 +318,11 @@ bool LiveUiWorld::open()
 
     if (!loadWindow())
         return false;
-    if (!m_connection->activateStartup()) {
+    m_connection->activateStartup();
+    if (!waitUntil([&] {
+            return m_controller->session(m_left.networkId)
+                && m_controller->session(m_right.networkId);
+        })) {
         m_fail = QStringLiteral("activateStartup");
         return false;
     }
