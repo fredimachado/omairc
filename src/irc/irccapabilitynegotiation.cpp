@@ -73,7 +73,7 @@ const Wanted wantedTable[] = {
     {IrcCapability::EchoMessage, QLatin1String("echo-message"),
      std::nullopt, false, false, acceptsAnyValue},
     {IrcCapability::ServerTime, QLatin1String("server-time"),
-     std::nullopt, false, false, acceptsAnyValue},
+     std::nullopt, false, true, acceptsAnyValue},
     {IrcCapability::ChatHistory, QLatin1String("chathistory"),
      IrcCapability::Batch, false, false, acceptsAnyValue},
     {IrcCapability::ChatHistory, QLatin1String("draft/chathistory"),
