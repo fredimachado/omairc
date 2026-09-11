@@ -4393,7 +4393,6 @@ ApplicationWindow {
                             objectName: "connectionCredentialStatus"
                             width: parent.width
                             visible: !!(win.connection && win.connection.credentialStatus)
-                            height: visible ? implicitHeight : 0
                             text: (win.connection && win.connection.credentialStatus)
                                   ? win.connection.credentialStatus : ""
                             color: win.mutedColor
@@ -4405,7 +4404,6 @@ ApplicationWindow {
                         Text {
                             objectName: "connectionForgetPassword"
                             visible: !!(win.connection && win.connection.canForgetPassword)
-                            height: visible ? implicitHeight : 0
                             text: "forget saved password"
                             color: win.accentColor
                             font.family: "iA Writer Mono S"
@@ -4444,7 +4442,6 @@ ApplicationWindow {
                         Text {
                             objectName: "connectionForgetNickServ"
                             visible: !!(win.connection && win.connection.canForgetNickServ)
-                            height: visible ? implicitHeight : 0
                             text: "forget saved NickServ"
                             color: win.accentColor
                             font.family: "iA Writer Mono S"
@@ -4484,7 +4481,6 @@ ApplicationWindow {
                             objectName: "connectionProblem"
                             width: parent.width
                             visible: !!(win.connection && win.connection.problem)
-                            height: visible ? implicitHeight : 0
                             text: (win.connection && win.connection.problem)
                                   ? win.connection.problem : ""
                             color: win.accentColor

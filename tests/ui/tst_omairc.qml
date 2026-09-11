@@ -2593,7 +2593,6 @@ TestCase {
         var forgetPassword = findChild(window, "connectionForgetPassword");
         verify(forgetPassword !== null, "Could not find connectionForgetPassword");
         compare(forgetPassword.visible, false);
-        compare(forgetPassword.height, 0);
         compare(findChild(window, "networkChoiceList") !== null, true);
         compare(findChild(window, "connectionAddNetwork").visible, false);
         compare(findChild(window, "connectionRemove").visible, false);
