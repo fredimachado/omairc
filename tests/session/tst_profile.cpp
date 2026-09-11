@@ -20,6 +20,7 @@ private slots:
     void storeRoundTripsFieldsWithoutPassword();
     void missingConnectOnStartupDefaultsToFalse();
     void missingSecretSavedDefaultsToFalse();
+    void missingNickServSavedDefaultsToFalse();
     void usernameAndRealnameStayAsTyped();
     void storeRemoveDropsTheNetworkGroup();
 
@@ -103,6 +104,7 @@ void ProfileTest::storeRoundTripsFieldsWithoutPassword()
     profile.tlsEnabled = true;
     profile.connectOnStartup = true;
     profile.secretSaved = true;
+    profile.nickServSaved = true;
     profile.nick = QStringLiteral("omairc");
     profile.username = QStringLiteral("omaircuser");
     profile.realname = QStringLiteral("Omairc User");
@@ -119,6 +121,7 @@ void ProfileTest::storeRoundTripsFieldsWithoutPassword()
     QCOMPARE(loaded.first().tlsEnabled, profile.tlsEnabled);
     QCOMPARE(loaded.first().connectOnStartup, profile.connectOnStartup);
     QCOMPARE(loaded.first().secretSaved, true);
+    QCOMPARE(loaded.first().nickServSaved, true);
     QCOMPARE(loaded.first().nick, profile.nick);
     QCOMPARE(loaded.first().username, profile.username);
     QCOMPARE(loaded.first().realname, profile.realname);
@@ -134,7 +137,9 @@ void ProfileTest::storeRoundTripsFieldsWithoutPassword()
     QVERIFY(contents.contains(profile.host));
     QVERIFY(contents.contains(QLatin1String("networks")));
     QVERIFY(contents.contains(QLatin1String("secretSaved")));
+    QVERIFY(contents.contains(QLatin1String("nickServSaved")));
     QVERIFY(!contents.contains(QLatin1String("password"), Qt::CaseInsensitive));
+    QVERIFY(!contents.contains(QLatin1String("nick-secret")));
 
     IrcNetworkProfile unnamed;
     unnamed.host = QStringLiteral("irc.example.net");
@@ -177,6 +182,24 @@ void ProfileTest::missingSecretSavedDefaultsToFalse()
     settings.sync();
 
     QCOMPARE(IrcProfileStore().profiles().first().secretSaved, false);
+}
+
+void ProfileTest::missingNickServSavedDefaultsToFalse()
+{
+    IrcNetworkProfile profile = IrcNetworkProfile::create();
+    profile.host = QStringLiteral("irc.example.net");
+    profile.nick = QStringLiteral("omairc");
+    IrcProfileStore().save(profile);
+
+    QSettings settings;
+    settings.beginGroup(QStringLiteral("networks"));
+    settings.beginGroup(profile.networkId);
+    settings.remove(QStringLiteral("nickServSaved"));
+    settings.endGroup();
+    settings.endGroup();
+    settings.sync();
+
+    QCOMPARE(IrcProfileStore().profiles().first().nickServSaved, false);
 }
 
 void ProfileTest::usernameAndRealnameStayAsTyped()
