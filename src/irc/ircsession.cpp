@@ -1190,6 +1190,11 @@ bool IrcSession::hasOpenCurrentHistoryBatch(const QString& channel) const
     for (auto it = m_openBatches.constBegin(); it != m_openBatches.constEnd(); ++it) {
         if (it.value().replayRoot != it.key())
             continue;
+        // Only a batch we asked for can be the answer we are waiting on. An
+        // open bouncer batch for the same channel must not make a pending
+        // CHATHISTORY request look unsolicited.
+        if (it.value().kind != ReplayKind::ChatHistory)
+            continue;
         if (foldChannel(it.value().collected.target) != folded)
             continue;
         if (it.value().generation == generation)

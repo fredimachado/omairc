@@ -293,6 +293,7 @@ private slots:
     void unsolicitedBouncerPlaybackSharesTheOpenBatchBudget();
     void pseudoClientPrivmsgReachesStatus();
     void solicitedHistoryBatchSurvivesOpenBatchFlood();
+    void openPlaybackDoesNotMakePendingHistoryUnsolicited();
     void isupportChatHistoryLimitCapsTheRequest();
     void chatHistoryRequestFillsBothPlaceholdersAtOnce();
     void lateCapAckAfterTimeoutIsIgnored();
@@ -3732,6 +3733,54 @@ void SessionTest::solicitedHistoryBatchSurvivesOpenBatchFlood()
     QCOMPARE(batches.size(), 1);
     QCOMPARE(batches.front().target, QStringLiteral("#omarchy"));
     QCOMPARE(int(batches.front().lines.size()), 1);
+    QVERIFY(!fixture.session->historyPending());
+}
+
+void SessionTest::openPlaybackDoesNotMakePendingHistoryUnsolicited()
+{
+    IrcSessionConfig sessionConfig = config();
+    sessionConfig.autojoinChannels = {};
+    Fixture fixture(sessionConfig);
+    QList<IrcHistoryBatch> batches;
+    QObject::connect(fixture.session, &IrcSession::historyBatchReceived, fixture.session,
+                     [&](const QString&, const IrcHistoryBatch& batch) {
+        batches.append(batch);
+    });
+    fixture.connectTls();
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :batch chathistory\r\n"
+                          ":server CAP omairc ACK :batch chathistory\r\n"
+                          ":server 001 omairc :Welcome\r\n"
+                          ":omairc!u@h JOIN :#omarchy\r\n"));
+    QVERIFY(fixture.session->historyPending());
+
+    // A bouncer batch for the same channel stays open while the answer to our
+    // own request arrives behind a flood. Only a batch we asked for counts as
+    // the answer, so the request must still be exempt from the open budget.
+    QByteArray flood = QByteArrayLiteral(
+        ":znc.in BATCH +pb znc.in/playback #omarchy\r\n"
+        "@batch=pb :lena!u@h PRIVMSG #omarchy :from the bouncer\r\n");
+    for (int index = 0; index < 16; ++index) {
+        flood += QByteArrayLiteral(":irc.host BATCH +d")
+            + QByteArray::number(index)
+            + QByteArrayLiteral(" unknown.example/foo\r\n");
+    }
+    flood += QByteArrayLiteral(
+        ":irc.host BATCH +hx chathistory #omarchy\r\n"
+        "@batch=hx :alice!u@h PRIVMSG #omarchy :older\r\n"
+        ":irc.host BATCH -hx\r\n"
+        ":znc.in BATCH -pb\r\n");
+    fixture.transport->injectBytes(flood);
+
+    QCOMPARE(batches.size(), 2);
+    QCOMPARE(batches.at(0).target, QStringLiteral("#omarchy"));
+    QCOMPARE(int(batches.at(0).lines.size()), 1);
+    QCOMPARE(QString::fromStdString(batches.at(0).lines.front().parameters.back()),
+             QStringLiteral("older"));
+    QCOMPARE(batches.at(1).target, QStringLiteral("#omarchy"));
+    QCOMPARE(int(batches.at(1).lines.size()), 1);
+    QCOMPARE(QString::fromStdString(batches.at(1).lines.front().parameters.back()),
+             QStringLiteral("from the bouncer"));
     QVERIFY(!fixture.session->historyPending());
 }
 
