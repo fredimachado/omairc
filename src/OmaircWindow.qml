@@ -1826,7 +1826,8 @@ ApplicationWindow {
             win.selectConversation(conversationRow.conversationName,
                                    conversationRow.networkId);
             Qt.callLater(function() {
-                win.revealSidebarRow(conversationRow);
+                if (win)
+                    win.revealSidebarRow(conversationRow);
             });
         }
 

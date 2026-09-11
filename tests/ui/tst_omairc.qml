@@ -2953,6 +2953,7 @@ TestCase {
 
             window.stepConversation(1);
             tryCompare(window, "currentConversation", "#lab");
+            waitForRendering(window.contentItem);
 
             window.close();
         } finally {
