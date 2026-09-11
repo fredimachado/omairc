@@ -57,6 +57,8 @@ class IrcConnection : public QObject
     Q_PROPERTY(QString nick READ nick WRITE setNick NOTIFY draftChanged)
     Q_PROPERTY(QString username READ username WRITE setUsername NOTIFY draftChanged)
     Q_PROPERTY(QString realname READ realname WRITE setRealname NOTIFY draftChanged)
+    Q_PROPERTY(QString account READ account WRITE setAccount NOTIFY draftChanged)
+    Q_PROPERTY(QString bouncerNetwork READ bouncerNetwork WRITE setBouncerNetwork NOTIFY draftChanged)
     Q_PROPERTY(QString autojoin READ autojoin WRITE setAutojoin NOTIFY draftChanged)
     Q_PROPERTY(bool passwordSet READ passwordSet NOTIFY draftChanged)
     Q_PROPERTY(bool nickServSet READ nickServSet NOTIFY draftChanged)
@@ -97,6 +99,8 @@ public:
     QString nick() const;
     QString username() const;
     QString realname() const;
+    QString account() const;
+    QString bouncerNetwork() const;
     QString autojoin() const;
     bool passwordSet() const;
     bool nickServSet() const;
@@ -119,6 +123,8 @@ public:
     void setNick(const QString &nick);
     void setUsername(const QString &username);
     void setRealname(const QString &realname);
+    void setAccount(const QString &account);
+    void setBouncerNetwork(const QString &network);
     void setAutojoin(const QString &channels);
 
     Q_INVOKABLE void select(const QString &networkId);

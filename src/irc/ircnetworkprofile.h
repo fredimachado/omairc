@@ -11,6 +11,8 @@ struct IrcNetworkProfile
         MissingNick,
         InvalidPort,
         UnsendableIdentity,
+        UnsendableAccount,
+        UnsendableBouncerNetwork,
         UnsendableChannel,
     };
 
@@ -24,12 +26,16 @@ struct IrcNetworkProfile
     QString nick;
     QString username;
     QString realname;
+    QString account;
+    QString bouncerNetwork;
     QStringList autojoinChannels;
 
     static IrcNetworkProfile create();
     static IrcNetworkProfile suggested();
     static QStringList parseAutojoin(const QString &channels);
     IrcNetworkProfile normalized() const;
+    // Bouncers select the upstream network from the account name, after a slash.
+    QString saslAccount() const;
     Problem validate() const;
     bool isComplete() const;
     static QString problemText(Problem problem);

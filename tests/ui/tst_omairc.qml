@@ -67,6 +67,8 @@ TestCase {
         property string nick: ""
         property string username: ""
         property string realname: ""
+        property string account: ""
+        property string bouncerNetwork: ""
         property string autojoin: "#omarchy"
         property bool passwordSet: false
         property bool nickServSet: false
@@ -542,6 +544,8 @@ TestCase {
         property string nick: "sheet-nick"
         property string username: ""
         property string realname: ""
+        property string account: ""
+        property string bouncerNetwork: ""
         property string autojoin: "#omarchy"
         property bool passwordSet: false
         property string problem: ""
@@ -839,6 +843,8 @@ TestCase {
         namedConnection.setupRequired = false;
         namedConnection.canAdd = true;
         namedConnection.canRemove = true;
+        namedConnection.account = "";
+        namedConnection.bouncerNetwork = "";
     }
 
     function repeaterItemByName(repeater, objectName) {
@@ -2577,6 +2583,8 @@ TestCase {
         verify(sheet.visible);
         compare(findChild(window, "connectionHost").text, "irc.libera.chat");
         compare(findChild(window, "connectionNick").text, "");
+        compare(findChild(window, "connectionAccount").text, "");
+        compare(findChild(window, "connectionBouncerNetwork").text, "");
         compare(findChild(window, "connectionAutojoin").text, "#omarchy");
         compare(findChild(window, "connectionConnectOnStartup").checked, false);
         compare(findChild(window, "connectionProblem").text, "Nick is required");
@@ -2711,6 +2719,8 @@ TestCase {
             "connectionTls",
             "connectionNick",
             "connectionUsername",
+            "connectionAccount",
+            "connectionBouncerNetwork",
             "connectionRealname",
             "connectionAutojoin",
             "connectionConnectOnStartup",
@@ -3863,6 +3873,35 @@ TestCase {
         mouseClick(applyButton);
         compare(namedConnection.passwordSetCalls, 1);
         compare(namedConnection.lastPassword, "secret");
+        window.close();
+        restoreNamedConnection();
+    }
+
+    function test_accountAndBouncerNetworkAreEditable() {
+        restoreNamedConnection();
+        var window = createTemporaryObject(fallbackWindowComponent, null);
+        verify(window !== null, "The bouncer-login window should load");
+        tryCompare(window, "visible", true);
+        waitForRendering(window.contentItem);
+
+        keyClick(Qt.Key_Comma, Qt.ControlModifier);
+        var account = findChild(window, "connectionAccount");
+        verify(account !== null, "Could not find connectionAccount");
+        mouseClick(account);
+        keyClick(Qt.Key_J);
+        keyClick(Qt.Key_O);
+        keyClick(Qt.Key_E);
+        compare(namedConnection.account, "joe");
+
+        var bouncerNetwork = findChild(window, "connectionBouncerNetwork");
+        verify(bouncerNetwork !== null, "Could not find connectionBouncerNetwork");
+        mouseClick(bouncerNetwork);
+        keyClick(Qt.Key_L);
+        keyClick(Qt.Key_I);
+        keyClick(Qt.Key_B);
+        compare(namedConnection.bouncerNetwork, "lib");
+        compare(account.text, "joe");
+
         window.close();
         restoreNamedConnection();
     }

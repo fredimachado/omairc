@@ -2056,6 +2056,7 @@ ApplicationWindow {
         }
 
         Text {
+            objectName: "conversationLabel"
             anchors.left: parent.left
             anchors.leftMargin: conversationRow.direct ? win.scaledSize(49) : win.scaledSize(20)
             anchors.right: rowTrail.left
@@ -4008,7 +4009,7 @@ ApplicationWindow {
                 Rectangle {
                     anchors.centerIn: parent
                     width: Math.min(win.scaledSize(700), parent.width - win.scaledSize(40))
-                    height: Math.min(win.scaledSize(620), parent.height - win.scaledSize(40))
+                    height: Math.min(win.scaledSize(700), parent.height - win.scaledSize(40))
                     radius: win.scaledSize(10)
                     color: win.raisedColor
                     border.width: 1
@@ -4289,6 +4290,33 @@ ApplicationWindow {
                             onTextEdited: function(value) {
                                 if (win.connection)
                                     win.connection.username = value;
+                            }
+                        }
+
+                        Row {
+                            width: parent.width
+                            spacing: win.scaledSize(12)
+
+                            ConnectionField {
+                                width: (parent.width - win.scaledSize(12)) / 2
+                                label: "Account"
+                                fieldObjectName: "connectionAccount"
+                                text: win.connection ? win.connection.account : ""
+                                onTextEdited: function(value) {
+                                    if (win.connection)
+                                        win.connection.account = value;
+                                }
+                            }
+
+                            ConnectionField {
+                                width: (parent.width - win.scaledSize(12)) / 2
+                                label: "Bouncer network"
+                                fieldObjectName: "connectionBouncerNetwork"
+                                text: win.connection ? win.connection.bouncerNetwork : ""
+                                onTextEdited: function(value) {
+                                    if (win.connection)
+                                        win.connection.bouncerNetwork = value;
+                                }
                             }
                         }
 

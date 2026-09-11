@@ -162,9 +162,13 @@ struct IrcViewClassifier {
         return IrcViewNotify::typingOnly();
     }
 
+    // A query replay batch can open the direct message it belongs to, and a
+    // transcript-only refresh would leave that conversation out of the sidebar.
     IrcViewNotify operator()(const IrcHistoryEvent&) const
     {
-        return IrcViewNotify::transcript();
+        IrcViewNotify notify = IrcViewNotify::transcript();
+        notify.conversations = true;
+        return notify;
     }
 
     IrcViewNotify operator()(const IrcWhoisTranscriptEvent&) const

@@ -154,6 +154,13 @@ struct Fixture
     int scheduledReconnects = 0;
 };
 
+QByteArray decodedSaslPayload(const QByteArray& frame)
+{
+    const qsizetype prefix = qsizetype(sizeof("AUTHENTICATE ") - 1);
+    const qsizetype trailer = qsizetype(sizeof("\r\n") - 1);
+    return QByteArray::fromBase64(frame.mid(prefix, frame.size() - prefix - trailer));
+}
+
 IrcMessage mustParse(std::string_view line)
 {
     const IrcParseResult parsed = IrcParser::parse(line);
@@ -176,6 +183,8 @@ private slots:
     void unansweredPresenceRequestStillRegisters();
     void withdrawnCapabilityIsPublished();
     void negotiatesSaslPlain();
+    void saslAccountAuthenticatesAsTheBouncerName();
+    void emptySaslAccountAuthenticatesAsTheNick();
     void sendsPassWhenSaslIsUnavailable();
     void nickServOnlySaslPlainUsesNickServSecret();
     void nickServOnlyWithoutSaslIdentifiesBeforeJoin();
@@ -219,6 +228,7 @@ private slots:
     void pingAndWelcomeProduceStatusEntries();
     void statusKeepListOmitsProtocolDump();
     void configuredPasswordNeverAppearsInStatusEntries();
+    void saslAccountNeverAppearsInStatusEntries();
     void keyedJoinIsRedactedInStatusEntries();
     void serviceIdentifyIsRedactedInStatusEntries();
     void channelTalkAboutServicesStaysReadable();
@@ -278,7 +288,14 @@ private slots:
     void deletingUnusedDraftChatHistoryKeepsPending();
     void unsolicitedHistoryBatchStillEmits();
     void historyBatchWithoutCapabilityIsIgnored();
+    void bouncerPlaybackBatchNeedsOnlyTheBatchCapability();
+    void bouncerQueryPlaybackBatchCollectsUnderThePeerNick();
+    void bouncerBatchPlaybackTypeIsNotReplay();
+    void chatHistoryBatchWithBatchAloneIsIgnored();
+    void unsolicitedBouncerPlaybackSharesTheOpenBatchBudget();
+    void pseudoClientPrivmsgReachesStatus();
     void solicitedHistoryBatchSurvivesOpenBatchFlood();
+    void openPlaybackDoesNotMakePendingHistoryUnsolicited();
     void isupportChatHistoryLimitCapsTheRequest();
     void chatHistoryRequestFillsBothPlaceholdersAtOnce();
     void lateCapAckAfterTimeoutIsIgnored();
@@ -611,6 +628,41 @@ void SessionTest::negotiatesSaslPlain()
         QByteArrayLiteral(":server 903 omairc :SASL successful\r\n"));
     QCOMPARE(fixture.transport->writtenFrames().last(),
              QByteArrayLiteral("CAP END\r\n"));
+}
+
+void SessionTest::saslAccountAuthenticatesAsTheBouncerName()
+{
+    IrcSessionConfig saslConfig = config();
+    saslConfig.saslAccount = QStringLiteral("joe/libera");
+    saslConfig.password = QStringLiteral("secret");
+    Fixture fixture(saslConfig);
+
+    fixture.connectTls();
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :sasl=PLAIN\r\n"
+                          ":server CAP omairc ACK :sasl\r\n"
+                          "AUTHENTICATE +\r\n"));
+
+    QCOMPARE(decodedSaslPayload(fixture.transport->writtenFrames().last()),
+             QByteArray("joe/libera\0joe/libera\0secret", 28));
+    QCOMPARE(fixture.session->nick(), QStringLiteral("omairc"));
+}
+
+void SessionTest::emptySaslAccountAuthenticatesAsTheNick()
+{
+    IrcSessionConfig saslConfig = config();
+    saslConfig.password = QStringLiteral("secret");
+    QVERIFY(saslConfig.saslAccount.isEmpty());
+    Fixture fixture(saslConfig);
+
+    fixture.connectTls();
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :sasl=PLAIN\r\n"
+                          ":server CAP omairc ACK :sasl\r\n"
+                          "AUTHENTICATE +\r\n"));
+
+    QCOMPARE(decodedSaslPayload(fixture.transport->writtenFrames().last()),
+             QByteArray("omairc\0omairc\0secret", 20));
 }
 
 void SessionTest::sendsPassWhenSaslIsUnavailable()
@@ -1715,6 +1767,30 @@ void SessionTest::automaticIdentifyDoesNotAppearInStatusAsSecret()
         QStringLiteral("network-a"),
         QByteArrayLiteral("PRIVMSG NickServ :IDENTIFY nick-secret\r\n"));
     QCOMPARE(identify.text(), QStringLiteral("PRIVMSG NickServ :IDENTIFY ***"));
+}
+
+void SessionTest::saslAccountNeverAppearsInStatusEntries()
+{
+    IrcSessionConfig saslConfig = config();
+    saslConfig.saslAccount = QStringLiteral("joe/libera");
+    saslConfig.password = QStringLiteral("hunter2");
+    Fixture fixture(saslConfig);
+    StatusCollector status(fixture.session);
+
+    fixture.connectTls();
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :sasl=PLAIN\r\n"
+                          ":server CAP omairc ACK :sasl\r\n"
+                          "AUTHENTICATE +\r\n"
+                          ":server 903 omairc :SASL successful\r\n"));
+
+    QVERIFY(!status.hasLabel(QStringLiteral("AUTHENTICATE")));
+    QVERIFY(!status.anyFieldContains(QStringLiteral("AUTHENTICATE")));
+    QVERIFY(status.hasLabel(QStringLiteral("903")));
+    QVERIFY(!status.anyFieldContains(QStringLiteral("hunter2")));
+    QVERIFY(!status.anyFieldContains(QStringLiteral("joe/libera")));
+    QVERIFY(!status.anyFieldContains(QString::fromUtf8(
+        QByteArray("joe/libera\0joe/libera\0hunter2", 29).toBase64())));
 }
 
 void SessionTest::keyedJoinIsRedactedInStatusEntries()
@@ -3490,6 +3566,209 @@ void SessionTest::historyBatchWithoutCapabilityIsIgnored()
     QCOMPARE(bodies, QStringList({QStringLiteral("after")}));
 }
 
+void SessionTest::bouncerPlaybackBatchNeedsOnlyTheBatchCapability()
+{
+    IrcSessionConfig sessionConfig = config();
+    sessionConfig.autojoinChannels = {};
+    Fixture fixture(sessionConfig);
+    QStringList bodies;
+    QList<IrcHistoryBatch> batches;
+    QObject::connect(fixture.session, &IrcSession::messageReceived, fixture.session,
+                     [&](const QString&, const IrcMessage& message) {
+        if (message.command == "PRIVMSG" && !message.parameters.empty())
+            bodies.append(QString::fromStdString(message.parameters.back()));
+    });
+    QObject::connect(fixture.session, &IrcSession::historyBatchReceived, fixture.session,
+                     [&](const QString&, const IrcHistoryBatch& batch) {
+        batches.append(batch);
+    });
+    fixture.connectTls();
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :batch\r\n"
+                          ":server CAP omairc ACK :batch\r\n"
+                          ":server 001 omairc :Welcome\r\n"
+                          ":omairc!u@h JOIN :#omarchy\r\n"));
+    QVERIFY(fixture.session->capabilities().contains(IrcCapability::Batch));
+    QVERIFY(!fixture.session->capabilities().contains(IrcCapability::ChatHistory));
+
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(
+            ":znc.in BATCH +pb znc.in/playback #omarchy\r\n"
+            "@batch=pb :lena!u@h PRIVMSG #omarchy :yesterday\r\n"
+            ":znc.in BATCH -pb\r\n"
+            ":bob!u@h PRIVMSG #omarchy :after\r\n"));
+
+    QCOMPARE(batches.size(), 1);
+    QCOMPARE(batches.front().target, QStringLiteral("#omarchy"));
+    QCOMPARE(int(batches.front().lines.size()), 1);
+    QCOMPARE(QString::fromStdString(batches.front().lines.front().command),
+             QStringLiteral("PRIVMSG"));
+    QCOMPARE(QString::fromStdString(batches.front().lines.front().parameters.back()),
+             QStringLiteral("yesterday"));
+    QCOMPARE(bodies, QStringList({QStringLiteral("after")}));
+}
+
+void SessionTest::bouncerQueryPlaybackBatchCollectsUnderThePeerNick()
+{
+    IrcSessionConfig sessionConfig = config();
+    sessionConfig.autojoinChannels = {};
+    Fixture fixture(sessionConfig);
+    QList<IrcHistoryBatch> batches;
+    QObject::connect(fixture.session, &IrcSession::historyBatchReceived, fixture.session,
+                     [&](const QString&, const IrcHistoryBatch& batch) {
+        batches.append(batch);
+    });
+    fixture.connectTls();
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :batch echo-message\r\n"
+                          ":server CAP omairc ACK :batch echo-message\r\n"
+                          ":server 001 omairc :Welcome\r\n"));
+
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(
+            ":znc.in BATCH +q znc.in/playback lena\r\n"
+            "@batch=q :lena!u@h PRIVMSG omairc :are you there\r\n"
+            "@batch=q :omairc!u@h PRIVMSG lena :just got back\r\n"
+            ":znc.in BATCH -q\r\n"));
+
+    QCOMPARE(batches.size(), 1);
+    QCOMPARE(batches.front().target, QStringLiteral("lena"));
+    QCOMPARE(int(batches.front().lines.size()), 2);
+    QCOMPARE(QString::fromStdString(batches.front().lines.front().parameters.back()),
+             QStringLiteral("are you there"));
+    QCOMPARE(QString::fromStdString(batches.front().lines.back().parameters.back()),
+             QStringLiteral("just got back"));
+}
+
+void SessionTest::bouncerBatchPlaybackTypeIsNotReplay()
+{
+    IrcSessionConfig sessionConfig = config();
+    sessionConfig.autojoinChannels = {};
+    Fixture fixture(sessionConfig);
+    QStringList bodies;
+    QList<IrcHistoryBatch> batches;
+    QObject::connect(fixture.session, &IrcSession::messageReceived, fixture.session,
+                     [&](const QString&, const IrcMessage& message) {
+        if (message.command == "PRIVMSG" && !message.parameters.empty())
+            bodies.append(QString::fromStdString(message.parameters.back()));
+    });
+    QObject::connect(fixture.session, &IrcSession::historyBatchReceived, fixture.session,
+                     [&](const QString&, const IrcHistoryBatch& batch) {
+        batches.append(batch);
+    });
+    fixture.connectTls();
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :batch\r\n"
+                          ":server CAP omairc ACK :batch\r\n"
+                          ":server 001 omairc :Welcome\r\n"));
+
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(
+            ":znc.in BATCH +q znc.in/batch/playback lena\r\n"
+            "@batch=q :lena!u@h PRIVMSG omairc :are you there\r\n"
+            ":znc.in BATCH -q\r\n"));
+
+    QVERIFY(batches.isEmpty());
+    QCOMPARE(bodies, QStringList({QStringLiteral("are you there")}));
+}
+
+void SessionTest::chatHistoryBatchWithBatchAloneIsIgnored()
+{
+    IrcSessionConfig sessionConfig = config();
+    sessionConfig.autojoinChannels = {};
+    Fixture fixture(sessionConfig);
+    QStringList bodies;
+    QList<IrcHistoryBatch> batches;
+    QObject::connect(fixture.session, &IrcSession::messageReceived, fixture.session,
+                     [&](const QString&, const IrcMessage& message) {
+        if (message.command == "PRIVMSG" && !message.parameters.empty())
+            bodies.append(QString::fromStdString(message.parameters.back()));
+    });
+    QObject::connect(fixture.session, &IrcSession::historyBatchReceived, fixture.session,
+                     [&](const QString&, const IrcHistoryBatch& batch) {
+        batches.append(batch);
+    });
+    fixture.connectTls();
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :batch\r\n"
+                          ":server CAP omairc ACK :batch\r\n"
+                          ":server 001 omairc :Welcome\r\n"
+                          ":omairc!u@h JOIN :#omarchy\r\n"));
+    QVERIFY(!fixture.session->historyPending());
+
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(
+            ":irc.host BATCH +hx chathistory #omarchy\r\n"
+            "@batch=hx :alice!u@h PRIVMSG #omarchy :older\r\n"
+            ":irc.host BATCH -hx\r\n"
+            ":bob!u@h PRIVMSG #omarchy :after\r\n"));
+
+    QVERIFY(batches.isEmpty());
+    QCOMPARE(bodies, QStringList({QStringLiteral("after")}));
+}
+
+void SessionTest::unsolicitedBouncerPlaybackSharesTheOpenBatchBudget()
+{
+    IrcSessionConfig sessionConfig = config();
+    sessionConfig.autojoinChannels = {};
+    Fixture fixture(sessionConfig);
+    QList<IrcHistoryBatch> batches;
+    QObject::connect(fixture.session, &IrcSession::historyBatchReceived, fixture.session,
+                     [&](const QString&, const IrcHistoryBatch& batch) {
+        batches.append(batch);
+    });
+    fixture.connectTls();
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :batch chathistory\r\n"
+                          ":server CAP omairc ACK :batch chathistory\r\n"
+                          ":server 001 omairc :Welcome\r\n"
+                          ":omairc!u@h JOIN :#omarchy\r\n"));
+    QVERIFY(fixture.session->historyPending());
+
+    QByteArray fill;
+    for (int index = 0; index < 16; ++index) {
+        fill += QByteArrayLiteral(":irc.host BATCH +d")
+            + QByteArray::number(index)
+            + QByteArrayLiteral(" unknown.example/foo\r\n");
+    }
+    fill += QByteArrayLiteral(
+        ":znc.in BATCH +pb znc.in/playback #omarchy\r\n"
+        "@batch=pb :lena!u@h PRIVMSG #omarchy :crowded out\r\n"
+        ":znc.in BATCH -pb\r\n"
+        ":irc.host BATCH +hx chathistory #omarchy\r\n"
+        "@batch=hx :alice!u@h PRIVMSG #omarchy :asked for\r\n"
+        ":irc.host BATCH -hx\r\n");
+    fixture.transport->injectBytes(fill);
+
+    QCOMPARE(batches.size(), 1);
+    QCOMPARE(batches.front().target, QStringLiteral("#omarchy"));
+    QCOMPARE(int(batches.front().lines.size()), 1);
+    QCOMPARE(QString::fromStdString(batches.front().lines.front().parameters.back()),
+             QStringLiteral("asked for"));
+    QVERIFY(!fixture.session->historyPending());
+}
+
+void SessionTest::pseudoClientPrivmsgReachesStatus()
+{
+    IrcSessionConfig sessionConfig = config();
+    sessionConfig.autojoinChannels = {};
+    Fixture fixture(sessionConfig);
+    StatusCollector status(fixture.session);
+    fixture.registerWithWelcome();
+
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(":*status!znc@znc.in PRIVMSG omairc "
+                          ":You have 1 network attached\r\n"));
+
+    QStringList privmsgTexts;
+    for (const IrcStatusEntry& entry : status.entries) {
+        if (entry.label() == QStringLiteral("PRIVMSG"))
+            privmsgTexts.append(entry.text());
+    }
+    QCOMPARE(privmsgTexts,
+             QStringList({QStringLiteral("You have 1 network attached")}));
+}
+
 void SessionTest::solicitedHistoryBatchSurvivesOpenBatchFlood()
 {
     IrcSessionConfig sessionConfig = config();
@@ -3523,6 +3802,54 @@ void SessionTest::solicitedHistoryBatchSurvivesOpenBatchFlood()
     QCOMPARE(batches.size(), 1);
     QCOMPARE(batches.front().target, QStringLiteral("#omarchy"));
     QCOMPARE(int(batches.front().lines.size()), 1);
+    QVERIFY(!fixture.session->historyPending());
+}
+
+void SessionTest::openPlaybackDoesNotMakePendingHistoryUnsolicited()
+{
+    IrcSessionConfig sessionConfig = config();
+    sessionConfig.autojoinChannels = {};
+    Fixture fixture(sessionConfig);
+    QList<IrcHistoryBatch> batches;
+    QObject::connect(fixture.session, &IrcSession::historyBatchReceived, fixture.session,
+                     [&](const QString&, const IrcHistoryBatch& batch) {
+        batches.append(batch);
+    });
+    fixture.connectTls();
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :batch chathistory\r\n"
+                          ":server CAP omairc ACK :batch chathistory\r\n"
+                          ":server 001 omairc :Welcome\r\n"
+                          ":omairc!u@h JOIN :#omarchy\r\n"));
+    QVERIFY(fixture.session->historyPending());
+
+    // A bouncer batch for the same channel stays open while the answer to our
+    // own request arrives behind a flood. Only a batch we asked for counts as
+    // the answer, so the request must still be exempt from the open budget.
+    QByteArray flood = QByteArrayLiteral(
+        ":znc.in BATCH +pb znc.in/playback #omarchy\r\n"
+        "@batch=pb :lena!u@h PRIVMSG #omarchy :from the bouncer\r\n");
+    for (int index = 0; index < 16; ++index) {
+        flood += QByteArrayLiteral(":irc.host BATCH +d")
+            + QByteArray::number(index)
+            + QByteArrayLiteral(" unknown.example/foo\r\n");
+    }
+    flood += QByteArrayLiteral(
+        ":irc.host BATCH +hx chathistory #omarchy\r\n"
+        "@batch=hx :alice!u@h PRIVMSG #omarchy :older\r\n"
+        ":irc.host BATCH -hx\r\n"
+        ":znc.in BATCH -pb\r\n");
+    fixture.transport->injectBytes(flood);
+
+    QCOMPARE(batches.size(), 2);
+    QCOMPARE(batches.at(0).target, QStringLiteral("#omarchy"));
+    QCOMPARE(int(batches.at(0).lines.size()), 1);
+    QCOMPARE(QString::fromStdString(batches.at(0).lines.front().parameters.back()),
+             QStringLiteral("older"));
+    QCOMPARE(batches.at(1).target, QStringLiteral("#omarchy"));
+    QCOMPARE(int(batches.at(1).lines.size()), 1);
+    QCOMPARE(QString::fromStdString(batches.at(1).lines.front().parameters.back()),
+             QStringLiteral("from the bouncer"));
     QVERIFY(!fixture.session->historyPending());
 }
 

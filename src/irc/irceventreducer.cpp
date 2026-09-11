@@ -5,6 +5,7 @@
 
 #include <QByteArray>
 
+#include <algorithm>
 #include <cstddef>
 #include <string>
 #include <string_view>
@@ -545,6 +546,23 @@ void IrcEventReducer::capMessages(IrcConversationState& conversation)
     }
 }
 
+// A direct message has no join line to splice above, so its replay lands at
+// the tail.
+std::optional<std::size_t> IrcEventReducer::takeSpliceIndex(
+    IrcConversationState& conversation)
+{
+    IrcChannelState *channel = conversation.channel();
+    if (!channel)
+        return conversation.messages.size();
+    if (!channel->historyAnchor)
+        return std::nullopt;
+    const qint64 index = channel->historyAnchor->sequence - conversation.trimmed;
+    channel->historyAnchor.reset();
+    if (index < 0 || index > qint64(conversation.messages.size()))
+        return std::nullopt;
+    return std::size_t(index);
+}
+
 void IrcEventReducer::reduce(const IrcWelcomeEvent& event)
 {
     m_currentNicks[event.networkId] = event.currentNick;
@@ -853,19 +871,31 @@ void IrcEventReducer::reduce(const IrcTypingEvent& event)
 void IrcEventReducer::reduce(const IrcHistoryEvent& event)
 {
     IrcConversationState *conversation = findMutable(event.conversation);
-    if (!conversation)
-        return;
-    IrcChannelState *channel = conversation->channel();
-    if (!channel || !channel->historyAnchor)
-        return;
-    const qint64 index = channel->historyAnchor->sequence - conversation->trimmed;
-    if (index < 0 || index > qint64(conversation->messages.size())) {
-        channel->historyAnchor.reset();
-        return;
+    if (!conversation) {
+        // A join creates a channel, so replay must not resurrect one the user
+        // closed or parted. A query buffer proves nothing by existing. Our own
+        // outbound /msg creates one on the bouncer too, so only a line's
+        // author proves the peer spoke.
+        if (serverFeatures(event.conversation.networkId)
+                .isChannel(utf8(event.conversation.normalizedTarget))) {
+            return;
+        }
+        const auto fromPeer = [&](const IrcReplayLine& line) {
+            return !line.author.isEmpty()
+                && !isSelf(event.conversation.networkId, line.author);
+        };
+        if (std::none_of(event.lines.begin(), event.lines.end(), fromPeer))
+            return;
+        conversation = ensureConversation(event.conversation, event.target,
+                                          IrcConversationCause::InboundOther);
+        if (!conversation)
+            return;
     }
+    const std::optional<std::size_t> spliceIndex = takeSpliceIndex(*conversation);
+    if (!spliceIndex)
+        return;
     const std::size_t previousSize = conversation->messages.size();
-    const std::size_t at = std::size_t(index);
-    channel->historyAnchor.reset();
+    const std::size_t at = *spliceIndex;
 
     std::vector<IrcReducedMessage> run;
     run.reserve(event.lines.size());
