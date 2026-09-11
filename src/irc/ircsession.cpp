@@ -527,6 +527,12 @@ bool IrcSession::kick(const QString& channel, const QString& nick, const QString
                          : QStringLiteral("KICK %1 %2 :%3").arg(channel, nick, reason));
 }
 
+bool IrcSession::invite(const QString& nick, const QString& channel)
+{
+    return !nick.isEmpty() && !channel.isEmpty()
+        && sendCommand(QStringLiteral("INVITE %1 %2").arg(nick, channel));
+}
+
 bool IrcSession::setTopic(const QString& channel, const QString& topic)
 {
     return !channel.isEmpty() && !topic.isEmpty()

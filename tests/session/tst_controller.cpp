@@ -230,6 +230,10 @@ private slots:
     void partFromDirectIsWrongScope();
     void kickDefaultsToSelectedChannel();
     void kickFromDirectIsWrongScope();
+    void incomingInviteStaysOnStatusWithoutConversation();
+    void inviteDefaultsToSelectedChannel();
+    void inviteFromDirectAndStatusNeedsChannel();
+    void implicitStatusInviteStaysOnFocusedNetwork();
     void statusPartDefaultsToSelectedChannel();
     void partImplicitUsesSelectedSession();
     void topicUsesSelectedSession();
@@ -840,6 +844,128 @@ void ControllerTest::kickFromDirectIsWrongScope()
     QVERIFY(controller.sendMessage(QStringLiteral("/kick #omarchy bob spam")));
     QCOMPARE(transport->writtenFrames().last(),
              QByteArrayLiteral("KICK #omarchy bob :spam\r\n"));
+}
+
+void ControllerTest::incomingInviteStaysOnStatusWithoutConversation()
+{
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+                                                transport);
+    QVERIFY(session);
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    registerSession(session, transport);
+    transport->injectBytes(QByteArrayLiteral(":omairc!u@h JOIN :#omarchy\r\n"));
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+
+    transport->injectBytes(QByteArrayLiteral(":alice!u@h INVITE omairc :#lab\r\n"));
+
+    QVERIFY(logContains(controller.console()->lines(),
+                        QStringLiteral("alice invited you to #lab")));
+    auto *conversations =
+        qobject_cast<QAbstractItemModel *>(controller.conversations());
+    QVERIFY(conversations);
+    QCOMPARE(rowForTarget(conversations, QStringLiteral("#lab")), -1);
+    QVERIFY(rowForTarget(conversations, QStringLiteral("#omarchy")) >= 0);
+    QVERIFY(!framesContain(transport->writtenFrames(), QByteArrayLiteral("JOIN #lab")));
+
+    QVERIFY(controller.sendMessage(QStringLiteral("/join #lab")));
+    QCOMPARE(transport->writtenFrames().last(), QByteArrayLiteral("JOIN #lab\r\n"));
+    transport->injectBytes(QByteArrayLiteral(":omairc!u@h JOIN :#lab\r\n"));
+    QVERIFY(rowForTarget(conversations, QStringLiteral("#lab")) >= 0);
+}
+
+void ControllerTest::inviteDefaultsToSelectedChannel()
+{
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+                                                transport);
+    QVERIFY(session);
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    registerSession(session, transport);
+    QVERIFY(!controller.sendMessage(QStringLiteral("/invite")));
+    QCOMPARE(controller.lastError(), QStringLiteral("Invite applies to channels"));
+    QVERIFY(!controller.sendMessage(QStringLiteral("/invite bob")));
+    QCOMPARE(controller.lastError(), QStringLiteral("Invite applies to channels"));
+
+    transport->injectBytes(QByteArrayLiteral(":omairc!u@h JOIN :#omarchy\r\n"));
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+
+    QVERIFY(!controller.sendMessage(QStringLiteral("/invite")));
+    QCOMPARE(controller.lastError(), QStringLiteral("Invite applies to channels"));
+
+    QVERIFY(controller.sendMessage(QStringLiteral("/invite bob")));
+    QCOMPARE(transport->writtenFrames().last(),
+             QByteArrayLiteral("INVITE bob #omarchy\r\n"));
+
+    QVERIFY(controller.sendMessage(QStringLiteral("/invite bob #lab")));
+    QCOMPARE(transport->writtenFrames().last(),
+             QByteArrayLiteral("INVITE bob #lab\r\n"));
+
+    QVERIFY(!controller.sendMessage(QStringLiteral("/invite #lab")));
+    QCOMPARE(controller.lastError(), QStringLiteral("Command was refused"));
+    QVERIFY(!controller.sendMessage(QStringLiteral("/invite bob #lab extra")));
+    QCOMPARE(controller.lastError(), QStringLiteral("Command was refused"));
+}
+
+void ControllerTest::inviteFromDirectAndStatusNeedsChannel()
+{
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+                                                transport);
+    QVERIFY(session);
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    registerSession(session, transport);
+    transport->injectBytes(
+        QByteArrayLiteral(":omairc!u@h JOIN :#omarchy\r\n"
+                          ":lena!u@h PRIVMSG omairc :hi\r\n"));
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("lena"));
+    const int framesBefore = transport->writtenFrames().size();
+
+    QVERIFY(!controller.sendMessage(QStringLiteral("/invite")));
+    QCOMPARE(controller.lastError(), QStringLiteral("Invite applies to channels"));
+    QVERIFY(!controller.sendMessage(QStringLiteral("/invite bob")));
+    QCOMPARE(controller.lastError(), QStringLiteral("Invite applies to channels"));
+    QCOMPARE(transport->writtenFrames().size(), framesBefore);
+    QVERIFY(!framesContain(transport->writtenFrames(), QByteArrayLiteral("INVITE")));
+
+    QVERIFY(controller.sendMessage(QStringLiteral("/invite bob #lab")));
+    QCOMPARE(transport->writtenFrames().last(),
+             QByteArrayLiteral("INVITE bob #lab\r\n"));
+
+    controller.openStatus(QStringLiteral("libera"));
+    QVERIFY(controller.console()->submit(QStringLiteral("/invite bob")));
+    QVERIFY(logContains(controller.console()->lines(),
+                        QStringLiteral("Invite applies to channels")));
+    QVERIFY(controller.console()->submit(QStringLiteral("/invite bob #desktop")));
+    QCOMPARE(transport->writtenFrames().last(),
+             QByteArrayLiteral("INVITE bob #desktop\r\n"));
+}
+
+void ControllerTest::implicitStatusInviteStaysOnFocusedNetwork()
+{
+    IrcController controller;
+    auto *transportA = new FakeIrcTransport;
+    auto *transportB = new FakeIrcTransport;
+    QVERIFY(controller.addSession(config(QStringLiteral("network-a")), transportA));
+    QVERIFY(controller.addSession(config(QStringLiteral("network-b")), transportB));
+    registerSession(controller.session(QStringLiteral("network-a")), transportA);
+    registerSession(controller.session(QStringLiteral("network-b")), transportB);
+    transportA->injectBytes(QByteArrayLiteral(":omairc!u@h JOIN :#chan\r\n"));
+    transportB->injectBytes(QByteArrayLiteral(":omairc!u@h JOIN :#lab\r\n"));
+    controller.selectConversation(QStringLiteral("network-a"), QStringLiteral("#chan"));
+    controller.openStatus(QStringLiteral("network-b"));
+
+    QVERIFY(controller.console()->submit(QStringLiteral("/invite bob")));
+    QVERIFY(!framesContain(transportA->writtenFrames(), QByteArrayLiteral("INVITE")));
+    QVERIFY(!framesContain(transportB->writtenFrames(), QByteArrayLiteral("INVITE")));
+
+    QVERIFY(controller.console()->submit(QStringLiteral("/invite bob #lab")));
+    QCOMPARE(transportB->writtenFrames().last(),
+             QByteArrayLiteral("INVITE bob #lab\r\n"));
+    QVERIFY(!framesContain(transportA->writtenFrames(), QByteArrayLiteral("INVITE")));
 }
 
 void ControllerTest::statusPartDefaultsToSelectedChannel()

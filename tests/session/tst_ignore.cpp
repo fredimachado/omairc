@@ -238,9 +238,9 @@ void IgnoreTest::parseAndCatalog()
              IrcCommand::Verb::Ignored);
     QVERIFY(IrcCommand::parse(QStringLiteral("/ignore lena"))
                 .allowedOn(IrcComposerSurface::Status));
-    QCOMPARE(IrcVerbTable::all().size(), 19);
-    QCOMPARE(IrcVerbTable::visibleOn(IrcComposerSurface::Status).size(), 16);
-    QCOMPARE(IrcVerbTable::visibleOn(IrcComposerSurface::Conversation).size(), 19);
+    QCOMPARE(IrcVerbTable::all().size(), 20);
+    QCOMPARE(IrcVerbTable::visibleOn(IrcComposerSurface::Status).size(), 17);
+    QCOMPARE(IrcVerbTable::visibleOn(IrcComposerSurface::Conversation).size(), 20);
     const auto probe = IrcSlashComplete::project(
         QStringLiteral("/ig"), IrcComposerSurface::Conversation);
     QVERIFY(probe.isOpen());
@@ -283,6 +283,7 @@ void IgnoreTest::controllerMutesPrivateTrafficAndListsOnStatus()
     QVERIFY(!logContains(controller.console()->lines(), QStringLiteral("-lena-")));
     QVERIFY(!logContains(controller.console()->lines(), QStringLiteral("heads up")));
     QVERIFY(!logContains(controller.console()->lines(), QStringLiteral("#spam")));
+    QVERIFY(!logContains(controller.console()->lines(), QStringLiteral("invited you")));
     QVERIFY(!framesContain(transport->writtenFrames(),
                            QByteArrayLiteral("NOTICE lena :")));
     controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
