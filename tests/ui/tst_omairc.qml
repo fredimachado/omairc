@@ -2470,6 +2470,8 @@ TestCase {
             "connectionTls",
             "connectionNick",
             "connectionUsername",
+            "connectionAccount",
+            "connectionBouncerNetwork",
             "connectionRealname",
             "connectionAutojoin",
             "connectionConnectOnStartup",
