@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - IRCv3 CHATHISTORY on channel join. After a successful self JOIN, Omairc sends `CHATHISTORY LATEST` when the server advertised `chathistory` or `draft/chathistory` plus `batch`. Replayed lines keep their original times and stay unread. The body uses muted text. A server that never offers the cap still starts empty.
 - Desktop notification for a direct message when the window is unfocused, even when the body has no nick.
 - Walk sidebar network headers with `Alt+Left` / `Alt+Right`. Enter opens that network's Status. `Ctrl+,` opens Connect for the focused header, including a network with no conversations.
+- IRCv3 `server-time`. Omairc requests the capability whenever the server advertises it, so a server that gates the `time` message tag behind it now sends real timestamps instead of folding them into the message body.
 
 ### Changed
 

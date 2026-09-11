@@ -19,6 +19,7 @@ private slots:
     void quietCapsRequestWhenAdvertised();
     void saslKeepsItsOwnLine();
     void messageTagsKeepsItsOwnLine();
+    void serverTimeIsRequestedAndEnabled();
     void saslNeedsCredentialsAndPlain();
     void memberMetadataNeedsBatch();
     void acknowledgeAndRejectSettleIndependently();
@@ -104,6 +105,22 @@ void CapabilityTest::messageTagsKeepsItsOwnLine()
     QVERIFY(refused.contains(IrcCapability::MessageTags));
     QVERIFY(!negotiation.enabled().contains(IrcCapability::MessageTags));
     QVERIFY(!negotiation.settled());
+}
+
+void CapabilityTest::serverTimeIsRequestedAndEnabled()
+{
+    IrcCapabilityNegotiation negotiation(false);
+    negotiation.advertise(tokens(QStringLiteral("server-time multi-prefix")));
+
+    const IrcCapabilityNegotiation::Request request = negotiation.takeRequest();
+    QCOMPARE(request.lines,
+             QStringList{QStringLiteral("multi-prefix server-time")});
+
+    const IrcCapabilitySet granted =
+        negotiation.acknowledge(tokens(QStringLiteral("multi-prefix server-time")));
+    QVERIFY(granted.contains(IrcCapability::ServerTime));
+    QVERIFY(negotiation.enabled().contains(IrcCapability::ServerTime));
+    QVERIFY(negotiation.settled());
 }
 
 void CapabilityTest::saslNeedsCredentialsAndPlain()
