@@ -219,7 +219,10 @@ private:
                      const CredentialKey &nextKey, bool rememberEmptyObsolete);
     QString secretStatus(const IrcDraftSecret &secret, const QString &noun) const;
     bool secretIsIdle(const IrcDraftSecret &secret) const;
+    bool secretReadPending(const IrcDraftSecret &secret) const;
+    bool secretReadBlocksApply(const IrcDraftSecret &secret, bool tracked) const;
     bool secretUnreadable(const IrcDraftSecret &secret, bool saved) const;
+    void maybeReconcileAfterRead(const QString &networkId);
     void clearFocusPassword();
     void clearFocusNickServ();
     void requestStartupSecret(const IrcNetworkProfile &profile);

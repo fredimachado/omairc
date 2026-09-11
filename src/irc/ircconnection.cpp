@@ -224,6 +224,10 @@ bool IrcConnection::nickServSet() const
 
 CredentialStore::State IrcConnection::credentialState() const
 {
+    if (secretReadPending(selectedSecret())
+        || secretReadPending(selectedNickServSecret())) {
+        return CredentialStore::State::Loading;
+    }
     return selectedSecret().credentialState;
 }
 
@@ -276,8 +280,26 @@ QString IrcConnection::secretStatus(const IrcDraftSecret &secret,
 
 bool IrcConnection::secretIsIdle(const IrcDraftSecret &secret) const
 {
+    if (secret.credentialState == CredentialStore::State::Loading
+        || secret.credentialState == CredentialStore::State::Error
+        || secret.credentialState == CredentialStore::State::Unavailable
+        || secret.credentialState == CredentialStore::State::SessionOnly) {
+        return false;
+    }
     return secret.password.isEmpty() && !secret.edited && !secret.mayBeStored
         && secret.obsoleteKeys.isEmpty() && secret.obsoleteRemovalError.isEmpty();
+}
+
+bool IrcConnection::secretReadPending(const IrcDraftSecret &secret) const
+{
+    return secret.readInFlight
+        || secret.credentialState == CredentialStore::State::Loading;
+}
+
+bool IrcConnection::secretReadBlocksApply(const IrcDraftSecret &secret,
+                                          bool tracked) const
+{
+    return secret.readInFlight && !secret.edited && tracked;
 }
 
 QString IrcConnection::credentialStatus() const
@@ -592,14 +614,17 @@ bool IrcConnection::apply()
         emit setupRequiredChanged();
     refreshRoster();
     pushNetworkOrder();
-    const IrcDraftSecret &password = secretFor(profile.networkId);
-    const IrcDraftSecret &nickServ = nickServSecretFor(profile.networkId);
-    if ((password.readInFlight && !password.edited)
-        || (nickServ.readInFlight && !nickServ.edited)) {
-        if (password.readInFlight && !password.edited)
-            secretFor(profile.networkId).reconcileWhenReadSettles = true;
-        if (nickServ.readInFlight && !nickServ.edited)
-            nickServSecretFor(profile.networkId).reconcileWhenReadSettles = true;
+    IrcDraftSecret &password = secretFor(profile.networkId);
+    IrcDraftSecret &nickServ = nickServSecretFor(profile.networkId);
+    const bool passwordBlocks = secretReadBlocksApply(password, true);
+    const bool nickServBlocks = secretReadBlocksApply(
+        nickServ,
+        profile.nickServSaved || nickServ.mayBeStored || !nickServ.password.isEmpty());
+    if (passwordBlocks || nickServBlocks) {
+        if (passwordBlocks)
+            password.reconcileWhenReadSettles = true;
+        if (nickServBlocks)
+            nickServ.reconcileWhenReadSettles = true;
         return true;
     }
     return reconcile(profile);
@@ -716,11 +741,7 @@ void IrcConnection::handleCredentialRead(CredentialStore::State state,
     emit credentialStateChanged();
     if (selected)
         emit draftChanged();
-    if (secret.reconcileWhenReadSettles) {
-        secret.reconcileWhenReadSettles = false;
-        if (profile.isComplete())
-            reconcile(profile);
-    }
+    maybeReconcileAfterRead(key.networkId);
     if (!m_pendingReads.isEmpty())
         m_credentialStore.read(m_pendingReads.first());
 }
@@ -1038,6 +1059,25 @@ bool IrcConnection::startupCredentialsPending() const
         }
     }
     return false;
+}
+
+void IrcConnection::maybeReconcileAfterRead(const QString &networkId)
+{
+    IrcDraftSecret &password = secretFor(networkId);
+    IrcDraftSecret &nickServ = nickServSecretFor(networkId);
+    const IrcNetworkProfile profile = storedProfile(networkId);
+    const bool passwordBlocks = secretReadBlocksApply(password, true);
+    const bool nickServBlocks = secretReadBlocksApply(
+        nickServ,
+        profile.nickServSaved || nickServ.mayBeStored || !nickServ.password.isEmpty());
+    if (passwordBlocks || nickServBlocks)
+        return;
+    if (!password.reconcileWhenReadSettles && !nickServ.reconcileWhenReadSettles)
+        return;
+    password.reconcileWhenReadSettles = false;
+    nickServ.reconcileWhenReadSettles = false;
+    if (profile.isComplete())
+        reconcile(profile);
 }
 
 bool IrcConnection::secretUnreadable(const IrcDraftSecret &secret, bool saved) const

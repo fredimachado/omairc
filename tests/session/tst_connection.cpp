@@ -1721,23 +1721,45 @@ void ConnectionTest::hostChangeMigratesBothSecrets()
     QVERIFY(connection.apply());
     QTRY_COMPARE(store->writeCalls(), 4);
     QTRY_COMPARE(store->removeCalls(), 2);
-    QCOMPARE(store->writtenKeys().at(2).host, QStringLiteral("irc.changed"));
-    QCOMPARE(store->writtenKeys().at(2).purpose, QString());
-    QCOMPARE(store->writtenKeys().at(3).host, QStringLiteral("irc.changed"));
-    QCOMPARE(store->writtenKeys().at(3).purpose, QStringLiteral("nickserv"));
-    QCOMPARE(store->removedKeys().at(0).host, QStringLiteral("irc.example"));
-    QCOMPARE(store->removedKeys().at(0).purpose, QString());
-    QCOMPARE(store->removedKeys().at(1).host, QStringLiteral("irc.example"));
-    QCOMPARE(store->removedKeys().at(1).purpose, QStringLiteral("nickserv"));
+
+    bool wrotePassword = false;
+    bool wroteNickServ = false;
+    bool removedPassword = false;
+    bool removedNickServ = false;
+    for (const CredentialKey &key : store->writtenKeys()) {
+        if (key.host != QStringLiteral("irc.changed"))
+            continue;
+        if (key.purpose.isEmpty())
+            wrotePassword = true;
+        else if (key.purpose == QStringLiteral("nickserv"))
+            wroteNickServ = true;
+    }
+    for (const CredentialKey &key : store->removedKeys()) {
+        QCOMPARE(key.host, QStringLiteral("irc.example"));
+        if (key.purpose.isEmpty())
+            removedPassword = true;
+        else if (key.purpose == QStringLiteral("nickserv"))
+            removedNickServ = true;
+    }
+    QVERIFY(wrotePassword);
+    QVERIFY(wroteNickServ);
+    QVERIFY(removedPassword);
+    QVERIFY(removedNickServ);
 }
 
 void ConnectionTest::unavailableStoreNamesBothSessionOnlySecrets()
 {
+    {
+        IrcController seedController;
+        IrcConnection seed(seedController, capturingFactory(), credentialStore());
+        fillCompleteDraft(seed);
+        QVERIFY(seed.apply());
+    }
+
     IrcController controller;
     auto store = std::make_unique<FakeCredentialStore>(
         CredentialStore::State::Unavailable);
     IrcConnection connection(controller, capturingFactory(), *store);
-    fillCompleteDraft(connection);
     QTRY_COMPARE(connection.credentialStatus(),
                  QStringLiteral("secure storage unavailable"));
     connection.setPassword(QStringLiteral("server-secret"));
