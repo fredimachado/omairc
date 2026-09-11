@@ -1,15 +1,17 @@
 #include "ircjointarget.h"
 
+#include <QByteArray>
 #include <QRegularExpression>
 
+#include <string>
 #include <utility>
 
 namespace
 {
-bool isChannelPrefix(QChar mark)
+std::string utf8(const QString& value)
 {
-    return mark == QLatin1Char('#') || mark == QLatin1Char('&')
-        || mark == QLatin1Char('+') || mark == QLatin1Char('!');
+    const QByteArray bytes = value.toUtf8();
+    return std::string(bytes.constData(), std::size_t(bytes.size()));
 }
 
 bool hasFieldBreakers(const QString& token)
@@ -40,12 +42,13 @@ IrcJoinTarget::IrcJoinTarget(QString channel, std::optional<QString> key)
 }
 
 std::optional<IrcJoinTarget> IrcJoinTarget::make(const QString& channel,
-                                                 std::optional<QString> key)
+                                                 std::optional<QString> key,
+                                                 const IrcServerFeatures& features)
 {
     QString name = channel.trimmed();
     if (name.isEmpty())
         return std::nullopt;
-    if (!isChannelPrefix(name.front()))
+    if (!features.isChannel(utf8(name)))
         name.prepend(QLatin1Char('#'));
     if (name.size() < 2 || hasFieldBreakers(name))
         return std::nullopt;
@@ -70,7 +73,8 @@ bool operator!=(const IrcJoinTarget& left, const IrcJoinTarget& right) noexcept
     return !(left == right);
 }
 
-std::optional<QVector<IrcJoinTarget>> ircParseJoinTargets(const QString& argument)
+std::optional<QVector<IrcJoinTarget>> ircParseJoinTargets(
+    const QString& argument, const IrcServerFeatures& features)
 {
     QVector<IrcJoinTarget> targets;
     const QStringList entries = argument.split(QLatin1Char(','));
@@ -84,7 +88,8 @@ std::optional<QVector<IrcJoinTarget>> ircParseJoinTargets(const QString& argumen
         std::optional<QString> key;
         if (tokens.size() == 2)
             key = tokens.at(1);
-        const std::optional<IrcJoinTarget> target = IrcJoinTarget::make(tokens.at(0), key);
+        const std::optional<IrcJoinTarget> target =
+            IrcJoinTarget::make(tokens.at(0), key, features);
         if (!target)
             return std::nullopt;
         targets.append(*target);

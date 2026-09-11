@@ -29,7 +29,7 @@ sheet.
 Press `Ctrl+,` or click `edit` beside a network name to reopen the sheet.
 The network name opens Status for that network.
 
-Press `Ctrl+/` for keyboard shortcuts.
+Press `Ctrl+/` for keyboard shortcuts. Press `Ctrl+K` to jump to a conversation.
 
 Colors follow the current Omarchy theme and update live. Text follows the
 desktop text size.
@@ -154,9 +154,9 @@ Installed license texts are MIT (`LICENSE`), LGPL-3.0-or-later
 ## Version
 
 `version.pri` is the only version string. Tag a release as `v` plus that
-value, for example `v0.2.0alpha`. Arch `pkgver` cannot contain hyphens, so
-pre-releases use `0.2.0alpha` rather than `0.2.0-alpha`. Letter suffixes
-such as `alpha`, `beta`, and `rc` compare older than the final `0.2.0`, and
+value, for example `v0.3.0alpha`. Arch `pkgver` cannot contain hyphens, so
+pre-releases use `0.3.0alpha` rather than `0.3.0-alpha`. Letter suffixes
+such as `alpha`, `beta`, and `rc` compare older than the final `0.3.0`, and
 the package workflow publishes those tags as GitHub pre-releases.
 
 ## Test

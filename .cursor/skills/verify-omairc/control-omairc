@@ -389,6 +389,7 @@ cmd_key() {
   # on this isolated Xvfb. The explicit modifier keysyms do.
   case $key in
     ctrl+slash) key=Control_L+slash ;;
+    ctrl+k) key=Control_L+k ;;
     ctrl+shift+m) key=Control_L+Shift_L+m ;;
     ctrl+shift+p) key=Control_L+Shift_L+p ;;
   esac

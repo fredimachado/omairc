@@ -114,6 +114,22 @@ def check_socket_reads():
     return problems
 
 
+def check_hardcoded_chantypes():
+    problems = []
+    pattern = re.compile(
+        r"QLatin1Char\('#'\).{0,80}QLatin1Char\('&'\).{0,80}"
+        r"QLatin1Char\('\+'\).{0,80}QLatin1Char\('!'\)",
+        re.DOTALL,
+    )
+    for relative, source in sources("src/**/*.cpp", "src/**/*.h"):
+        if relative.name in ("ircserverfeatures.cpp", "ircserverfeatures.h"):
+            continue
+        if pattern.search(source):
+            problems.append(
+                f"{relative}: hard-coded CHANTYPES; call IrcServerFeatures")
+    return problems
+
+
 def check_version_source():
     problems = []
     for relative, source in sources("**/*.pro", "**/*.pri"):
@@ -132,6 +148,7 @@ CHECKS = (
     ("PlainText on server-controlled QML text", check_qml_text_plain_format),
     ("bounded IPC socket reads", check_socket_reads),
     ("single version source", check_version_source),
+    ("CHANTYPES via IrcServerFeatures", check_hardcoded_chantypes),
 )
 
 

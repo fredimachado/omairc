@@ -1,5 +1,7 @@
 #pragma once
 
+#include "ircserverfeatures.h"
+
 #include <QString>
 #include <QVector>
 
@@ -8,8 +10,10 @@
 class IrcJoinTarget
 {
 public:
-    static std::optional<IrcJoinTarget> make(const QString& channel,
-                                             std::optional<QString> key = std::nullopt);
+    static std::optional<IrcJoinTarget> make(
+        const QString& channel,
+        std::optional<QString> key = std::nullopt,
+        const IrcServerFeatures& features = {});
 
     const QString& channel() const noexcept { return m_channel; }
     const std::optional<QString>& key() const noexcept { return m_key; }
@@ -25,4 +29,5 @@ private:
     std::optional<QString> m_key;
 };
 
-std::optional<QVector<IrcJoinTarget>> ircParseJoinTargets(const QString& argument);
+std::optional<QVector<IrcJoinTarget>> ircParseJoinTargets(
+    const QString& argument, const IrcServerFeatures& features = {});

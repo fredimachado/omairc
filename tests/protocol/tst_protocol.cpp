@@ -27,6 +27,7 @@
 #include "irceventtranslator.h"
 #include "ircframer.h"
 #include "ircparser.h"
+#include "ircprefixnick.h"
 #include "ircserverfeatures.h"
 #include "ircwiretext.h"
 
@@ -72,6 +73,7 @@ private slots:
     void limitsParameters();
     void rejectsMalformedMessages();
     void classifiesPrefixes();
+    void recoversPrefixNick();
     void parsesTags();
     void parsesClientOnlyTypingTag();
     void preservesUtf8();
@@ -166,6 +168,21 @@ void ProtocolTest::classifiesPrefixes()
     QCOMPARE(text(message.value->prefix->nick), QStringLiteral("n"));
     QCOMPARE(text(message.value->prefix->user), QStringLiteral("u"));
     QCOMPARE(text(message.value->prefix->host), QStringLiteral("h"));
+}
+
+void ProtocolTest::recoversPrefixNick()
+{
+    auto message = IrcParser::parse(":alice PRIVMSG #room :hello");
+    QVERIFY(message);
+    QCOMPARE(ircPrefixNick(*message.value), QStringLiteral("alice"));
+
+    message = IrcParser::parse(":irc.example.net PRIVMSG #room :hello");
+    QVERIFY(message);
+    QVERIFY(ircPrefixNick(*message.value).isEmpty());
+
+    message = IrcParser::parse(":n!u@h PRIVMSG #room :hello");
+    QVERIFY(message);
+    QCOMPARE(ircPrefixNick(*message.value), QStringLiteral("n"));
 }
 
 void ProtocolTest::parsesTags()

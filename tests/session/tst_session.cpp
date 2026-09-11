@@ -250,6 +250,7 @@ private slots:
     void latin1PrivmsgBodyIsEAcuteAndNextLineTranslates();
     void incomingCtcpRequestsAreNotConversationEvents();
     void answersCtcpRequests();
+    void answersNickOnlyCtcpRequests();
     void rateLimitsCtcpVersionRepliesPerNick();
     void dropsOversizedCtcpPingPayload();
     void doesNotAnswerChannelCtcpRequests();
@@ -544,8 +545,12 @@ void SessionTest::ctcpFromServerPrefixGetsNoReply()
         QByteArrayLiteral(":server 001 omairc :Welcome\r\n"));
 
     fixture.transport->injectBytes(
-        QByteArrayLiteral(":services PRIVMSG omairc :\x01VERSION\x01\r\n"));
+        QByteArrayLiteral(":services.example.net PRIVMSG omairc :\x01VERSION\x01\r\n"
+                          ":services PRIVMSG omairc :\x01VERSION\x01\r\n"
+                          ":NickServ!NickServ@services PRIVMSG omairc :\x01VERSION\x01\r\n"));
+    QVERIFY(!fixture.wrote(ctcpVersionReply(QByteArrayLiteral("services.example.net"))));
     QVERIFY(!fixture.wrote(ctcpVersionReply(QByteArrayLiteral("services"))));
+    QVERIFY(!fixture.wrote(ctcpVersionReply(QByteArrayLiteral("NickServ"))));
 }
 
 void SessionTest::ctcpToFoldedSelfNickIsAnswered()
@@ -2567,6 +2572,18 @@ void SessionTest::answersCtcpRequests()
             wroteTime = true;
     }
     QVERIFY(wroteTime);
+}
+
+void SessionTest::answersNickOnlyCtcpRequests()
+{
+    Fixture fixture;
+    fixture.connectTls();
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(":server 001 omairc :Welcome\r\n"));
+
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(":lena PRIVMSG omairc :\x01VERSION\x01\r\n"));
+    QVERIFY(fixture.wrote(ctcpVersionReply(QByteArrayLiteral("lena"))));
 }
 
 void SessionTest::rateLimitsCtcpVersionRepliesPerNick()

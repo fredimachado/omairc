@@ -50,8 +50,10 @@ ApplicationWindow {
     property bool mockStatusOpen: false
     property string mockStatusNetworkId: mockOmarchyId
     property bool shortcutsSheetEscapeGuard: false
+    property bool jumpSheetEscapeGuard: false
     property string sidebarNetworkFocusId: ""
-    readonly property bool shortcutOverlayOpen: shortcutsSheet.opened
+    property int jumpSelectedIndex: 0
+    readonly property bool shortcutOverlayOpen: shortcutsSheet.opened || jumpSheet.opened
     readonly property var networkConsole: irc
         ? (irc.statusConsole ? irc.statusConsole : irc.console)
         : null
@@ -737,6 +739,92 @@ ApplicationWindow {
         return sections;
     }
 
+    function jumpTargetLabel(kind, name, networkName) {
+        if (kind === "status") {
+            if (networkName && networkName.length > 0)
+                return networkName + " Status";
+            return "Status";
+        }
+        if (duplicateTargetName(name) && networkName && networkName.length > 0)
+            return name + " · " + networkName;
+        return name;
+    }
+
+    function refreshJumpMatches() {
+        var query = jumpFilter ? jumpFilter.text.trim().toLowerCase() : "";
+        var rows = sidebarConversationRows();
+        var sections = sidebarNetworkSections();
+        jumpModel.clear();
+        for (var sectionIndex = 0; sectionIndex < sections.length; ++sectionIndex) {
+            var section = sections[sectionIndex];
+            var networkName = section.displayName || "";
+            var rowIndex;
+            for (rowIndex = 0; rowIndex < rows.length; ++rowIndex) {
+                if (rows[rowIndex].networkId !== section.networkId)
+                    continue;
+                var conversationLabel = jumpTargetLabel("conversation",
+                    rows[rowIndex].conversationName, networkName);
+                if (query.length === 0
+                        || conversationLabel.toLowerCase().indexOf(query) !== -1)
+                    jumpModel.append({
+                        kind: "conversation",
+                        name: rows[rowIndex].conversationName,
+                        networkId: rows[rowIndex].networkId,
+                        conversationId: rows[rowIndex].conversationId,
+                        label: conversationLabel
+                    });
+            }
+            var statusLabel = jumpTargetLabel("status", "Status", networkName);
+            if (query.length === 0
+                    || statusLabel.toLowerCase().indexOf(query) !== -1)
+                jumpModel.append({
+                    kind: "status",
+                    name: "Status",
+                    networkId: section.networkId,
+                    conversationId: "",
+                    label: statusLabel
+                });
+        }
+        if (jumpSelectedIndex >= jumpModel.count)
+            jumpSelectedIndex = Math.max(0, jumpModel.count - 1);
+    }
+
+    function openJumpSheet() {
+        jumpSelectedIndex = 0;
+        jumpSheet.open();
+    }
+
+    function stepJump(delta) {
+        if (jumpModel.count === 0)
+            return;
+        jumpSelectedIndex = (jumpSelectedIndex + delta + jumpModel.count) % jumpModel.count;
+        if (jumpList)
+            jumpList.positionViewAtIndex(jumpSelectedIndex, ListView.Contain);
+    }
+
+    function activateJumpSelection() {
+        if (jumpSelectedIndex < 0 || jumpSelectedIndex >= jumpModel.count)
+            return;
+        var target = jumpModel.get(jumpSelectedIndex);
+        var kind = target.kind;
+        var networkId = target.networkId;
+        var name = target.name;
+        var conversationId = target.conversationId;
+        jumpSheet.close();
+        if (kind === "status") {
+            openNetworkStatus(networkId);
+            return;
+        }
+        var rows = sidebarConversationRows();
+        for (var index = 0; index < rows.length; ++index) {
+            if (rows[index].conversationId === conversationId) {
+                rows[index].activate();
+                return;
+            }
+        }
+        selectConversation(name, networkId);
+    }
+
     function focusNetworkHeader(section) {
         if (!section)
             return;
@@ -937,17 +1025,11 @@ ApplicationWindow {
     }
 
     function transcriptRowText(model, row) {
-        if (!model || row < 0)
-            return "";
-        if (typeof model.get === "function") {
-            var rowData = model.get(row);
-            if (!rowData)
-                return "";
-            if (consoleVisible)
-                return rowData.text || "";
-            return rowData.body || "";
-        }
-        return model.data(model.index(row, 0), Qt.UserRole + 3) || "";
+        if (consoleVisible)
+            return transcriptField(model, row, "label")
+                + " " + transcriptField(model, row, "text");
+        return transcriptField(model, row, "author")
+            + " " + transcriptField(model, row, "body");
     }
 
     function findNextMatch(fromStart) {
@@ -1297,6 +1379,18 @@ ApplicationWindow {
     }
 
     Shortcut {
+        sequence: "Ctrl+K"
+        context: Qt.ApplicationShortcut
+        enabled: !win.connectionOverlayVisible && !shortcutsSheet.opened
+        onActivated: {
+            if (jumpSheet.opened)
+                jumpSheet.close();
+            else
+                win.openJumpSheet();
+        }
+    }
+
+    Shortcut {
         sequence: "Ctrl+Shift+M"
         context: Qt.ApplicationShortcut
         enabled: currentConversationIsChannel && !consoleVisible && !win.shortcutOverlayOpen
@@ -1321,6 +1415,8 @@ ApplicationWindow {
         sequence: "Ctrl+/"
         context: Qt.ApplicationShortcut
         onActivated: {
+            if (jumpSheet.opened)
+                return;
             if (shortcutsSheet.opened)
                 shortcutsSheet.close();
             else
@@ -1439,6 +1535,8 @@ ApplicationWindow {
                 return true;
             if (shortcutsSheet.opened || shortcutsSheetEscapeGuard)
                 return true;
+            if (jumpSheet.opened || jumpSheetEscapeGuard)
+                return true;
             if (win.connection && win.connection.setupRequired)
                 return false;
             if (win.connection && win.connectionSheetOpen)
@@ -1459,6 +1557,11 @@ ApplicationWindow {
             if (shortcutsSheet.opened || shortcutsSheetEscapeGuard) {
                 shortcutsSheet.close();
                 shortcutsSheetEscapeGuard = false;
+                return;
+            }
+            if (jumpSheet.opened || jumpSheetEscapeGuard) {
+                jumpSheet.close();
+                jumpSheetEscapeGuard = false;
                 return;
             }
             if (win.connection && win.connectionSheetOpen) {
@@ -2242,6 +2345,15 @@ ApplicationWindow {
         }
 
         Component.onCompleted: pinToEnd()
+
+        ScrollBar.vertical: ScrollBar {
+            policy: list.contentHeight > list.height
+                ? ScrollBar.AlwaysOn : ScrollBar.AlwaysOff
+            onPressedChanged: {
+                if (!pressed)
+                    list.adoptViewport();
+            }
+        }
     }
 
     component UnseenJumpButton: Rectangle {
@@ -3337,14 +3449,6 @@ ApplicationWindow {
                 anchors.bottomMargin: win.scaledSize(12)
                 model: win.activeMessages
 
-                ScrollBar.vertical: ScrollBar {
-                    policy: ScrollBar.AsNeeded
-                    onPressedChanged: {
-                        if (!pressed)
-                            messageList.adoptViewport();
-                    }
-                }
-
                 delegate: Item {
                     id: messageDelegate
 
@@ -3358,6 +3462,8 @@ ApplicationWindow {
                     readonly property bool isChat: kind !== "event" && kind !== "whois"
                     readonly property bool grouped: win.continuesMessageGroup(
                         messageList.model, index, author, time, kind, origin)
+                    readonly property bool findMatch: win.findActive
+                        && win.findIndex === index
 
                     width: messageList.width
                     height: kind === "event"
@@ -3367,6 +3473,13 @@ ApplicationWindow {
                             : (grouped
                                 ? Math.max(win.scaledSize(22), messageBody.implicitHeight + win.scaledSize(8))
                                 : Math.max(win.scaledSize(58), messageBody.implicitHeight + win.scaledSize(39))))
+
+                    Rectangle {
+                        objectName: "findMatch"
+                        anchors.fill: parent
+                        visible: messageDelegate.findMatch
+                        color: win.mixColors(win.pageColor, win.selectionColor, 0.42)
+                    }
 
                     Text {
                         id: messageEvent
@@ -3515,22 +3628,17 @@ ApplicationWindow {
                     : (win.mockStatusNetworkId === win.mockOftcId
                         ? oftcStatusMessages : mockStatusMessages)
 
-                ScrollBar.vertical: ScrollBar {
-                    policy: ScrollBar.AsNeeded
-                    onPressedChanged: {
-                        if (!pressed)
-                            consoleList.adoptViewport();
-                    }
-                }
-
                 delegate: Item {
                     id: consoleDelegate
 
+                    required property int index
                     required property string time
                     required property string label
                     required property string text
                     required property string source
                     required property string severity
+                    readonly property bool findMatch: win.findActive
+                        && win.findIndex === index
 
                     width: consoleList.width
                     height: Math.max(win.scaledSize(22), consoleText.implicitHeight + win.scaledSize(8))
@@ -3546,6 +3654,13 @@ ApplicationWindow {
                     readonly property string glyph: consoleDelegate.source === "client"
                         ? ">>"
                         : (consoleDelegate.source === "local" ? "--" : "<<")
+
+                    Rectangle {
+                        objectName: "findMatch"
+                        anchors.fill: parent
+                        visible: consoleDelegate.findMatch
+                        color: win.mixColors(win.pageColor, win.selectionColor, 0.42)
+                    }
 
                     Text {
                         anchors.left: parent.left
@@ -3639,10 +3754,12 @@ ApplicationWindow {
                 TextField {
                     id: composer
                     objectName: "messageComposer"
-                    Accessible.name: "Message composer"
-                    Accessible.description: win.consoleVisible
-                        ? "Command for " + win.statusTitleText().replace(" Status", "")
-                        : "Write a message to " + win.currentConversation
+                    Accessible.name: win.findActive ? "Find" : "Message composer"
+                    Accessible.description: win.findActive
+                        ? "Find in the current transcript"
+                        : (win.consoleVisible
+                            ? "Command for " + win.statusTitleText().replace(" Status", "")
+                            : "Write a message to " + win.currentConversation)
                     anchors.left: parent.left
                     anchors.right: sendButton.left
                     anchors.top: parent.top
@@ -3655,6 +3772,8 @@ ApplicationWindow {
                     selectedTextColor: "#ffffff"
                     font.family: "iA Writer Mono S"
                     font.pixelSize: win.scaledSize(13)
+                    placeholderText: win.findActive ? "Find" : ""
+                    placeholderTextColor: win.mutedColor
                     activeFocusOnTab: !win.connectionOverlayVisible
                     leftPadding: win.scaledSize(8)
                     rightPadding: win.scaledSize(8)
@@ -4749,6 +4868,7 @@ ApplicationWindow {
                 model: [
                     { keys: "Alt+Down / Alt+Up", action: "walk conversations" },
                     { keys: "Alt+Left / Alt+Right", action: "walk networks" },
+                    { keys: "Ctrl+K", action: "jump to conversation" },
                     { keys: "Alt+A", action: "next unread" },
                     { keys: "Ctrl+`", action: "Status" },
                     { keys: "Ctrl+,", action: "Connect" },
@@ -4783,6 +4903,140 @@ ApplicationWindow {
                         color: win.mutedColor
                         font.family: "iA Writer Mono S"
                         font.pixelSize: win.scaledSize(11)
+                    }
+                }
+            }
+        }
+    }
+
+    ListModel {
+        id: jumpModel
+        objectName: "jumpModel"
+    }
+
+    Popup {
+        id: jumpSheet
+        objectName: "jumpSheet"
+        x: Math.round((win.width - width) / 2)
+        y: Math.round((win.height - height) / 2)
+        width: win.scaledSize(348)
+        padding: win.scaledSize(16)
+        modal: true
+        focus: true
+        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+        onOpened: {
+            jumpSheetEscapeGuard = true;
+            jumpSelectedIndex = 0;
+            if (jumpFilter.text.length > 0)
+                jumpFilter.clear();
+            else
+                win.refreshJumpMatches();
+            jumpFilter.forceActiveFocus();
+        }
+        onClosed: {
+            Qt.callLater(function() {
+                jumpSheetEscapeGuard = false;
+                composer.forceActiveFocus();
+            });
+        }
+
+        background: Rectangle {
+            color: win.raisedColor
+            border.width: 1
+            border.color: win.dividerColor
+            radius: win.scaledSize(9)
+        }
+
+        contentItem: Column {
+            spacing: win.scaledSize(8)
+            width: jumpSheet.availableWidth
+
+            TextField {
+                id: jumpFilter
+                objectName: "jumpFilter"
+                Accessible.name: "Jump to conversation"
+                width: parent.width
+                height: win.scaledSize(32)
+                color: win.inkColor
+                selectionColor: win.selectionColor
+                selectedTextColor: "#ffffff"
+                font.family: "iA Writer Mono S"
+                font.pixelSize: win.scaledSize(13)
+                placeholderText: "Jump"
+                placeholderTextColor: win.mutedColor
+                leftPadding: win.scaledSize(8)
+                rightPadding: win.scaledSize(8)
+                background: Rectangle {
+                    color: win.panelColor
+                    border.width: 1
+                    border.color: jumpFilter.activeFocus ? win.accentColor : win.dividerColor
+                    radius: win.scaledSize(7)
+                }
+                Keys.onPressed: function(event) {
+                    if (event.key === Qt.Key_Down) {
+                        win.stepJump(1);
+                        event.accepted = true;
+                        return;
+                    }
+                    if (event.key === Qt.Key_Up) {
+                        win.stepJump(-1);
+                        event.accepted = true;
+                        return;
+                    }
+                    if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
+                        win.activateJumpSelection();
+                        event.accepted = true;
+                        return;
+                    }
+                    if (event.key === Qt.Key_Tab) {
+                        event.accepted = true;
+                    }
+                }
+                onTextChanged: {
+                    win.jumpSelectedIndex = 0;
+                    win.refreshJumpMatches();
+                }
+            }
+
+            ListView {
+                id: jumpList
+                objectName: "jumpList"
+                width: parent.width
+                height: Math.min(contentHeight, win.scaledSize(252))
+                clip: true
+                boundsBehavior: Flickable.StopAtBounds
+                model: jumpModel
+                currentIndex: win.jumpSelectedIndex
+                highlightFollowsCurrentItem: true
+
+                delegate: Item {
+                    id: jumpDelegate
+                    required property int index
+                    required property string label
+                    required property string name
+                    required property string kind
+                    required property string networkId
+                    width: jumpList.width
+                    height: win.scaledSize(28)
+                    readonly property bool current: index === win.jumpSelectedIndex
+
+                    Rectangle {
+                        anchors.fill: parent
+                        radius: win.scaledSize(7)
+                        color: jumpDelegate.current ? win.hoverColor : "transparent"
+                    }
+
+                    Text {
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        anchors.leftMargin: win.scaledSize(8)
+                        anchors.rightMargin: win.scaledSize(8)
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: jumpDelegate.label
+                        color: jumpDelegate.current ? win.inkColor : win.mutedColor
+                        elide: Text.ElideRight
+                        font.family: "iA Writer Mono S"
+                        font.pixelSize: win.scaledSize(12)
                     }
                 }
             }

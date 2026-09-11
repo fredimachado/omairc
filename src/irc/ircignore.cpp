@@ -1,5 +1,6 @@
 #include "ircignore.h"
 
+#include "ircprefixnick.h"
 #include "ircwiretext.h"
 
 #include <QByteArray>
@@ -16,18 +17,6 @@ std::string utf8(const QString& value)
 {
     const QByteArray bytes = value.toUtf8();
     return std::string(bytes.constData(), std::size_t(bytes.size()));
-}
-
-QString prefixNick(const IrcMessage& message)
-{
-    if (!message.prefix)
-        return {};
-    if (!message.prefix->nick.empty())
-        return ircWireText(message.prefix->nick);
-    const QString raw = ircWireText(message.prefix->raw);
-    if (raw.contains(QLatin1Char('.')))
-        return {};
-    return raw;
 }
 
 QString parameter(const IrcMessage& message, std::size_t index)
@@ -172,7 +161,7 @@ bool ircIgnoreDropsInbound(const IrcMessage& message,
                            const QStringList& nicks,
                            const IrcServerFeatures& features)
 {
-    const QString sender = prefixNick(message);
+    const QString sender = ircPrefixNick(message);
     if (sender.isEmpty() || nicks.isEmpty())
         return false;
     const IrcCaseMapping& mapping = features.caseMapping();

@@ -98,6 +98,32 @@ struct IrcMentionArrival
     QString body;
 };
 
+enum class IrcConversationCause {
+    UserOpen,
+    ChannelState,
+    InboundOther,
+    InboundSelf,
+    QuietSend,
+};
+
+inline bool ircConversationCauseInserts(IrcConversationCause cause,
+                                        bool targetIsChannel,
+                                        bool targetLooksLikeService) noexcept
+{
+    switch (cause) {
+    case IrcConversationCause::UserOpen:
+        return !targetIsChannel;
+    case IrcConversationCause::ChannelState:
+        return targetIsChannel;
+    case IrcConversationCause::InboundOther:
+        return targetIsChannel || !targetLooksLikeService;
+    case IrcConversationCause::InboundSelf:
+    case IrcConversationCause::QuietSend:
+        return false;
+    }
+    return false;
+}
+
 class IrcEventReducer
 {
 public:
@@ -122,8 +148,9 @@ public:
     bool dropDirectMessage(const IrcConversationKey& key);
     void forgetNetwork(const QString& networkId);
     void clearMessages(const IrcConversationKey& key);
-    IrcConversationState& ensureConversation(const IrcConversationKey& key,
-                                             const QString& displayTarget);
+    IrcConversationState *ensureConversation(const IrcConversationKey& key,
+                                             const QString& displayTarget,
+                                             IrcConversationCause cause);
 
     const Store& conversations() const noexcept;
     const IrcConversationState *find(const IrcConversationKey& key) const noexcept;

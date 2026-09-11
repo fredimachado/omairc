@@ -280,6 +280,7 @@ private slots:
     void pseudoClientPrivmsgOpensNoConversation();
     void pseudoClientReplayBatchOpensNoConversation();
     void routableNicksOpenDirectsAndPseudoClientsDoNot();
+    void conversationCreateMatrix();
     void statusMsgNickservIdentifyDoesNotOpenDirect();
     void automaticIdentifyDoesNotOpenNickServDirect();
     void mentionArrivedOnSelectedBuffer();
@@ -2682,6 +2683,58 @@ void ControllerTest::routableNicksOpenDirectsAndPseudoClientsDoNot()
              QStringList({QStringLiteral("0day"), QStringLiteral("[bob]"),
                           QStringLiteral("^bob^"), QStringLiteral("nick_"),
                           QStringLiteral("{x}"), QStringLiteral("|away")}));
+}
+
+void ControllerTest::conversationCreateMatrix()
+{
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+                                                transport);
+    QVERIFY(session);
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    transport->completeConnect();
+    transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :echo-message\r\n"
+                          ":server CAP omairc ACK :echo-message\r\n"
+                          ":server 001 omairc :Welcome\r\n"
+                          ":omairc!u@h JOIN :#omarchy\r\n"));
+    QVERIFY(session->capabilities().contains(IrcCapability::EchoMessage));
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+
+    auto *conversations =
+        qobject_cast<QAbstractItemModel *>(controller.conversations());
+    QVERIFY(conversations);
+
+    QVERIFY(controller.sendMessage(QStringLiteral("/msg lena hello")));
+    QCOMPARE(transport->writtenFrames().last(),
+             QByteArrayLiteral("PRIVMSG lena :hello\r\n"));
+    QCOMPARE(controller.selectedTarget(), QStringLiteral("#omarchy"));
+    QCOMPARE(rowForTarget(conversations, QStringLiteral("lena")), -1);
+
+    transport->injectBytes(
+        QByteArrayLiteral(":omairc!u@h PRIVMSG lena :hello\r\n"));
+    QCOMPARE(controller.selectedTarget(), QStringLiteral("#omarchy"));
+    QCOMPARE(rowForTarget(conversations, QStringLiteral("lena")), -1);
+
+    transport->injectBytes(
+        QByteArrayLiteral(":NickServ!NickServ@services PRIVMSG omairc "
+                          ":This nickname is registered.\r\n"));
+    QCOMPARE(rowForTarget(conversations, QStringLiteral("NickServ")), -1);
+    QCOMPARE(rowForTarget(conversations, QStringLiteral("nickserv")), -1);
+    QVERIFY(logContains(controller.console()->lines(),
+                        QStringLiteral("This nickname is registered.")));
+
+    transport->injectBytes(
+        QByteArrayLiteral(":alice!u@h PRIVMSG omairc :hi\r\n"));
+    QVERIFY(rowForTarget(conversations, QStringLiteral("alice")) >= 0);
+    QCOMPARE(controller.selectedTarget(), QStringLiteral("#omarchy"));
+
+    QVERIFY(controller.sendMessage(QStringLiteral("/query bob")));
+    QCOMPARE(controller.selectedTarget(), QStringLiteral("bob"));
+    QVERIFY(rowForTarget(conversations, QStringLiteral("bob")) >= 0);
+    QVERIFY(!framesContain(transport->writtenFrames(),
+                           QByteArrayLiteral("PRIVMSG bob")));
 }
 
 void ControllerTest::statusMsgNickservIdentifyDoesNotOpenDirect()

@@ -515,6 +515,18 @@ void CommandTest::parseJoinTargets()
     QVERIFY(!ircParseJoinTargets(QString()));
     QVERIFY(!ircParseJoinTargets(QStringLiteral(" , ")));
     QVERIFY(!ircParseJoinTargets(QStringLiteral("#")));
+
+    const auto plus = ircParseJoinTargets(QStringLiteral("+foo"));
+    QVERIFY(plus);
+    QCOMPARE(plus->size(), 1);
+    QCOMPARE(plus->at(0).channel(), QStringLiteral("#+foo"));
+
+    IrcServerFeatures dollar;
+    dollar.applyToken("CHANTYPES=$");
+    const auto custom = ircParseJoinTargets(QStringLiteral("$serv"), dollar);
+    QVERIFY(custom);
+    QCOMPARE(custom->size(), 1);
+    QCOMPARE(custom->at(0).channel(), QStringLiteral("$serv"));
 }
 
 void CommandTest::catalogLookupAndScope()
