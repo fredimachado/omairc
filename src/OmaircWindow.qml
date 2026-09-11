@@ -4263,7 +4263,7 @@ ApplicationWindow {
                                     id: connectionTls
                                     objectName: "connectionTls"
                                     checked: win.connection ? win.connection.tlsEnabled : true
-                                    Keys.onPressed: win.applyFromSheetKey(event)
+                                    Keys.onPressed: function(event) { win.applyFromSheetKey(event) }
                                     onToggled: {
                                         if (win.connection)
                                             win.connection.tlsEnabled = checked;
@@ -4347,7 +4347,7 @@ ApplicationWindow {
                             Switch {
                                 id: connectionConnectOnStartup
                                 objectName: "connectionConnectOnStartup"
-                                Keys.onPressed: win.applyFromSheetKey(event)
+                                Keys.onPressed: function(event) { win.applyFromSheetKey(event) }
                                 onToggled: {
                                     if (win.connection)
                                         win.connection.connectOnStartup = checked;
