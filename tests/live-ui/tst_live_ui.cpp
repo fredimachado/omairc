@@ -5,19 +5,23 @@
 #include "ircslashcomplete.h"
 #include "liveharness.h"
 #include "liveuiworld.h"
+#include "memberlistmodel.h"
 #include "messagelistmodel.h"
 #include "networklogmodel.h"
 
+#include <QAbstractItemModel>
 #include <QColor>
 #include <QCoreApplication>
 #include <QDebug>
 #include <QDir>
 #include <QFileInfo>
 #include <QImage>
+#include <QPointer>
 #include <QQmlApplicationEngine>
 #include <QQmlComponent>
 #include <QQuickItem>
 #include <QQuickWindow>
+#include <QSignalSpy>
 #include <QSet>
 #include <QSettings>
 #include <QStringList>
@@ -160,6 +164,7 @@ private slots:
     void inboundSameNickDirectsStayIsolated();
     void outboundSameNickDirectsStayIsolated();
     void consecutiveSameAuthorMinuteGroupsThroughIrcEvent();
+    void joinPartModeUpdatesMembersWithoutReset();
     void replayAndLiveSameAuthorMinuteDoNotGroupThroughIrcEvent();
     void bouncerQueryReplayRendersDirectMessageInSidebar();
     void ctrlFFindsLiveTranscriptAndStatus();
@@ -454,6 +459,114 @@ void LiveUiTest::consecutiveSameAuthorMinuteGroupsThroughIrcEvent()
     QVERIFY2(after.avatarVisible && after.headerVisible, qPrintable(describeChrome(rows)));
     QVERIFY2(saveFixtureShot(window, QStringLiteral("live-ui-grouped-messages")),
              "grouped screenshot");
+}
+
+void LiveUiTest::joinPartModeUpdatesMembersWithoutReset()
+{
+    if (m_live)
+        QSKIP("FakeIrcTransport member-list proof runs under bin/test, not the compose world.");
+    std::unique_ptr<QTemporaryDir> xdg = std::make_unique<QTemporaryDir>();
+    QVERIFY(xdg->isValid());
+    const QString xdgRoot = xdg->path();
+    const QString config = xdgRoot + QLatin1String("/config");
+    QDir().mkpath(config);
+    QDir().mkpath(xdgRoot + QLatin1String("/cache"));
+    QDir().mkpath(xdgRoot + QLatin1String("/data"));
+    qputenv("XDG_CONFIG_HOME", config.toUtf8());
+    qputenv("XDG_CACHE_HOME", (xdgRoot + QLatin1String("/cache")).toUtf8());
+    qputenv("XDG_DATA_HOME", (xdgRoot + QLatin1String("/data")).toUtf8());
+    QSettings::setPath(QSettings::NativeFormat, QSettings::UserScope, config);
+
+    Backend backend;
+    IrcSlashSession slash;
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    IrcSession *session = controller.addSession(fixtureConfig(), transport);
+    QVERIFY(session);
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    transport->completeConnect();
+    transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
+                          ":server 001 omairc :Welcome\r\n"
+                          ":server 005 omairc CHANTYPES=# PREFIX=(ov)@+ "
+                          ":are supported by this server\r\n"
+                          ":omairc!u@h JOIN :#omarchy\r\n"
+                          ":server 353 omairc = #omarchy :omairc anna rio\r\n"
+                          ":server 366 omairc #omarchy :End of NAMES\r\n"));
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    QCOMPARE(controller.peopleCount(), 3);
+
+    QQmlApplicationEngine engine;
+    QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/OmaircWindow.qml")));
+    QVERIFY2(component.status() != QQmlComponent::Error, qPrintable(component.errorString()));
+    QVariantMap properties;
+    properties.insert(QStringLiteral("backend"), QVariant::fromValue(&backend));
+    properties.insert(QStringLiteral("irc"), QVariant::fromValue(&controller));
+    properties.insert(QStringLiteral("slashCommands"), QVariant::fromValue(&slash));
+    std::unique_ptr<QObject> root(component.createWithInitialProperties(properties));
+    QVERIFY2(root.get(), qPrintable(component.errorString()));
+    auto *window = qobject_cast<QQuickWindow *>(root.get());
+    QVERIFY(window);
+    QVERIFY(QTest::qWaitForWindowExposed(window));
+    window->setWidth(1180);
+    window->setHeight(760);
+    window->setProperty("membersVisible", true);
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    QCoreApplication::processEvents();
+
+    QVERIFY(waitUntil([&] {
+        QQuickItem *panel = window->findChild<QQuickItem *>(QStringLiteral("membersPanel"));
+        QQuickItem *list = window->findChild<QQuickItem *>(QStringLiteral("membersList"));
+        return panel && panel->isVisible() && list && list->isVisible()
+            && window->findChild<QQuickItem *>(QStringLiteral("member-anna"))
+            && window->property("currentPeopleCount").toInt() == 3;
+    }));
+
+    auto *members = qobject_cast<QAbstractItemModel *>(controller.members());
+    QVERIFY(members);
+    QSignalSpy memberResets(members, &QAbstractItemModel::modelReset);
+    QSignalSpy memberInserts(members, &QAbstractItemModel::rowsInserted);
+    QSignalSpy memberRemoves(members, &QAbstractItemModel::rowsRemoved);
+
+    QQuickItem *anna = window->findChild<QQuickItem *>(QStringLiteral("member-anna"));
+    QVERIFY(anna);
+    const QPointer<QQuickItem> annaBefore = anna;
+
+    transport->injectBytes(QByteArrayLiteral(":carol!u@h JOIN :#omarchy\r\n"));
+    QVERIFY(waitUntil([&] {
+        return controller.peopleCount() == 4
+            && window->property("currentPeopleCount").toInt() == 4
+            && window->findChild<QQuickItem *>(QStringLiteral("member-carol"));
+    }));
+    QCOMPARE(memberResets.size(), 0);
+    QCOMPARE(memberInserts.size(), 1);
+    QCOMPARE(annaBefore.data(),
+             window->findChild<QQuickItem *>(QStringLiteral("member-anna")));
+    QCOMPARE(window->findChild<QQuickItem *>(QStringLiteral("member-carol"))
+                 ->property("nick")
+                 .toString(),
+             QStringLiteral("carol"));
+
+    transport->injectBytes(QByteArrayLiteral(":op!u@h MODE #omarchy +o carol\r\n"));
+    QVERIFY(waitUntil([&] {
+        QQuickItem *carol = window->findChild<QQuickItem *>(QStringLiteral("member-carol"));
+        return carol && carol->property("label").toString() == QStringLiteral("@carol");
+    }));
+    QCOMPARE(memberResets.size(), 0);
+    QCOMPARE(annaBefore.data(),
+             window->findChild<QQuickItem *>(QStringLiteral("member-anna")));
+
+    transport->injectBytes(QByteArrayLiteral(":rio!u@h PART #omarchy\r\n"));
+    QVERIFY(waitUntil([&] {
+        return controller.peopleCount() == 3
+            && window->property("currentPeopleCount").toInt() == 3
+            && !window->findChild<QQuickItem *>(QStringLiteral("member-rio"));
+    }));
+    QCOMPARE(memberResets.size(), 0);
+    QCOMPARE(memberRemoves.size(), 1);
+    QCOMPARE(annaBefore.data(),
+             window->findChild<QQuickItem *>(QStringLiteral("member-anna")));
+    QVERIFY(window->findChild<QQuickItem *>(QStringLiteral("member-carol")));
 }
 
 void LiveUiTest::replayAndLiveSameAuthorMinuteDoNotGroupThroughIrcEvent()

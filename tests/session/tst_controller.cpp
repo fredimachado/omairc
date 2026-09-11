@@ -8,9 +8,12 @@
 #include "fakeirctransport.h"
 #include "irccapability.h"
 #include "irccontroller.h"
+#include "ircserverfeatures.h"
 #include "memberlistmodel.h"
 #include "messagelistmodel.h"
 #include "networklogmodel.h"
+
+#include <optional>
 
 class FakeReconnectTimer : public IrcReconnectTimer
 {
@@ -263,6 +266,7 @@ private slots:
     void statusClearLeavesConversationMessages();
     void selectedPrivmsgInsertsMessageRow();
     void largeChannelJoinDoesNotResetModelsPerNick();
+    void registerIsupportBurstDoesNotResetModels();
     void otherChannelNamesDoesNotSnapshotJoiningMembers();
     void namesBurstFlushesTypingClearedByChat();
     void chatDuringNamesUpdatesMessagesWithoutMemberReset();
@@ -2010,6 +2014,8 @@ void ControllerTest::largeChannelJoinDoesNotResetModelsPerNick()
     QSignalSpy conversationDataChanges(conversations, &QAbstractItemModel::dataChanged);
     QSignalSpy messageResets(messages, &QAbstractItemModel::modelReset);
     QSignalSpy memberResets(members, &QAbstractItemModel::modelReset);
+    QSignalSpy memberInserts(members, &QAbstractItemModel::rowsInserted);
+    QSignalSpy memberRemoves(members, &QAbstractItemModel::rowsRemoved);
     QSignalSpy memberDataChanges(members, &QAbstractItemModel::dataChanged);
 
     transport->injectBytes(namesBurst(nickCount, perLine));
@@ -2034,6 +2040,70 @@ void ControllerTest::largeChannelJoinDoesNotResetModelsPerNick()
     QCOMPARE(conversationResets.size(), conversationResetsAfterNames);
     QCOMPARE(messageResets.size(), messageResetsAfterNames);
     QCOMPARE(memberDataChanges.size(), nickCount);
+
+    memberInserts.clear();
+    memberRemoves.clear();
+    transport->injectBytes(QByteArrayLiteral(":late!u@h JOIN :#big\r\n"));
+    QCOMPARE(members->rowCount(), nickCount + 1);
+    QCOMPARE(controller.peopleCount(), nickCount + 1);
+    QCOMPARE(roleAt(members, 0, MemberListModel::NickRole), QStringLiteral("late"));
+    QCOMPARE(memberResets.size(), memberResetsAfterNames);
+    QCOMPARE(messageResets.size(), messageResetsAfterNames);
+    QCOMPARE(memberInserts.size(), 1);
+    QCOMPARE(memberInserts.at(0).at(1).toInt(), 0);
+    QCOMPARE(memberInserts.at(0).at(2).toInt(), 0);
+
+    transport->injectBytes(QByteArrayLiteral(":late!u@h PART #big\r\n"));
+    QCOMPARE(members->rowCount(), nickCount);
+    QCOMPARE(controller.peopleCount(), nickCount);
+    QCOMPARE(memberResets.size(), memberResetsAfterNames);
+    QCOMPARE(memberRemoves.size(), 1);
+    QCOMPARE(memberRemoves.at(0).at(1).toInt(), 0);
+    QCOMPARE(memberRemoves.at(0).at(2).toInt(), 0);
+}
+
+void ControllerTest::registerIsupportBurstDoesNotResetModels()
+{
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+                                                transport);
+    QVERIFY(session);
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    transport->completeConnect();
+    transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
+                          ":server 001 omairc :Welcome\r\n"));
+
+    auto *conversations =
+        qobject_cast<QAbstractItemModel *>(controller.conversations());
+    auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
+    auto *members = qobject_cast<QAbstractItemModel *>(controller.members());
+    QSignalSpy conversationResets(conversations, &QAbstractItemModel::modelReset);
+    QSignalSpy messageResets(messages, &QAbstractItemModel::modelReset);
+    QSignalSpy memberResets(members, &QAbstractItemModel::modelReset);
+
+    transport->injectBytes(
+        QByteArrayLiteral(":server 005 omairc CHANTYPES=# PREFIX=(ov)@+ "
+                          ":are supported by this server\r\n"
+                          ":server 005 omairc CHANMODES=eIbq,k,l,imnpst "
+                          "NICKLEN=31 :are supported by this server\r\n"
+                          ":server 005 omairc CASEMAPPING=ascii "
+                          ":are supported by this server\r\n"));
+    QCOMPARE(conversationResets.size(), 0);
+    QCOMPARE(messageResets.size(), 0);
+    QCOMPARE(memberResets.size(), 0);
+
+    const IrcServerFeatures& features =
+        controller.serverFeatures(QStringLiteral("libera"));
+    QVERIFY(features.isChannel("#chan"));
+    QVERIFY(!features.isChannel("&local"));
+    QCOMPARE(QString::fromStdString(std::string(features.prefixModes())),
+             QStringLiteral("ov"));
+    QCOMPARE(QString::fromStdString(std::string(features.chanModesA())),
+             QStringLiteral("eIbq"));
+    QCOMPARE(features.caseMapping().kind(), IrcCaseMapping::Kind::Ascii);
+    QCOMPARE(features.nickLength(), std::optional<std::size_t>(31));
 }
 
 void ControllerTest::otherChannelNamesDoesNotSnapshotJoiningMembers()

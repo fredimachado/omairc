@@ -70,6 +70,7 @@ private slots:
     void reloadUnchangedKeysEmitsDataChangedNotReset();
     void typingRoleDerivesFromExistingDirectAndInvalidates();
     void selectedChatAppendInsertsInsteadOfReset();
+    void selectedMemberJoinPartMovesInsteadOfReset();
     void reloadTrimEmitsRemovesWhenCountUnchanged();
     void reloadClearAfterCapEmitsRemoves();
     void collapsedJoinRewritesLastRow();
@@ -661,6 +662,88 @@ void ModelTest::selectedChatAppendInsertsInsteadOfReset()
     messages.select(other);
     QCOMPARE(resets.size(), 1);
     QCOMPARE(messages.rowCount(), 1);
+}
+
+void ModelTest::selectedMemberJoinPartMovesInsteadOfReset()
+{
+    IrcEventReducer reducer;
+    MemberListModel members(reducer);
+    welcome(reducer, networkA);
+
+    const IrcConversationKey room =
+        reducer.conversationKey(networkA, QStringLiteral("#room"));
+    reducer.apply(IrcJoinEvent{
+        networkA, QStringLiteral("#room"), QStringLiteral("omairc")});
+    reducer.apply(IrcNamesEvent{
+        networkA,
+        QStringLiteral("#room"),
+        {parsedName("@omairc"), parsedName("Alice"), parsedName("Bob")},
+        true,
+    });
+    members.select(room);
+    QCOMPARE(members.rowCount(), 3);
+    QCOMPARE(roleAt(members, 0, MemberListModel::NickRole), QStringLiteral("Alice"));
+    QCOMPARE(roleAt(members, 1, MemberListModel::NickRole), QStringLiteral("Bob"));
+    QCOMPARE(roleAt(members, 2, MemberListModel::NickRole), QStringLiteral("omairc"));
+
+    QSignalSpy resets(&members, &QAbstractItemModel::modelReset);
+    QSignalSpy inserts(&members, &QAbstractItemModel::rowsInserted);
+    QSignalSpy removes(&members, &QAbstractItemModel::rowsRemoved);
+    QSignalSpy moves(&members, &QAbstractItemModel::rowsMoved);
+    QSignalSpy changes(&members, &QAbstractItemModel::dataChanged);
+
+    reducer.apply(IrcJoinEvent{
+        networkA, QStringLiteral("#room"), QStringLiteral("Carol")});
+    members.reload();
+    QCOMPARE(resets.size(), 0);
+    QCOMPARE(inserts.size(), 1);
+    QCOMPARE(inserts.at(0).at(1).toInt(), 2);
+    QCOMPARE(inserts.at(0).at(2).toInt(), 2);
+    QCOMPARE(members.rowCount(), 4);
+    QCOMPARE(roleAt(members, 2, MemberListModel::NickRole), QStringLiteral("Carol"));
+
+    reducer.apply(IrcPartEvent{
+        networkA, QStringLiteral("#room"), QStringLiteral("Bob"), QString()});
+    members.reload();
+    QCOMPARE(resets.size(), 0);
+    QCOMPARE(removes.size(), 1);
+    QCOMPARE(removes.at(0).at(1).toInt(), 1);
+    QCOMPARE(removes.at(0).at(2).toInt(), 1);
+    QCOMPARE(members.rowCount(), 3);
+    QCOMPARE(roleAt(members, 1, MemberListModel::NickRole), QStringLiteral("Carol"));
+
+    reducer.apply(IrcNickEvent{
+        networkA, QStringLiteral("Alice"), QStringLiteral("Zac")});
+    members.reload();
+    QCOMPARE(resets.size(), 0);
+    QCOMPARE(moves.size(), 1);
+    QCOMPARE(members.rowCount(), 3);
+    QCOMPARE(roleAt(members, 0, MemberListModel::NickRole), QStringLiteral("Carol"));
+    QCOMPARE(roleAt(members, 2, MemberListModel::NickRole), QStringLiteral("Zac"));
+
+    changes.clear();
+    reducer.apply(IrcModeEvent{
+        networkA, QStringLiteral("#room"), QStringLiteral("op"),
+        QStringLiteral("+o"), QStringList{QStringLiteral("Carol")}});
+    members.reload();
+    QCOMPARE(resets.size(), 0);
+    QVERIFY(changes.size() >= 1);
+    QCOMPARE(roleAt(members, 0, MemberListModel::LabelRole), QStringLiteral("@Carol"));
+
+    reducer.apply(IrcAwayEvent{
+        networkA, QStringLiteral("Carol"), IrcAway{QStringLiteral("brb")}});
+    members.touch(reducer.conversationKey(networkA, QStringLiteral("Carol"))
+                      .normalizedTarget);
+    QCOMPARE(resets.size(), 0);
+    QCOMPARE(roleAt(members, 0, MemberListModel::AwayRole), true);
+
+    const IrcConversationKey other =
+        reducer.conversationKey(networkA, QStringLiteral("#other"));
+    reducer.apply(IrcJoinEvent{
+        networkA, QStringLiteral("#other"), QStringLiteral("omairc")});
+    members.select(other);
+    QCOMPARE(resets.size(), 1);
+    QCOMPARE(members.rowCount(), 1);
 }
 
 void ModelTest::reloadTrimEmitsRemovesWhenCountUnchanged()
