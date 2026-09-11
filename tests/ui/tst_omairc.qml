@@ -2913,30 +2913,30 @@ TestCase {
 
             window.requestActivate();
             tryCompare(window, "active", true);
-            keyClick(Qt.Key_Right, Qt.AltModifier);
+            keyClick(window, Qt.Key_Right, Qt.AltModifier);
             compare(window.sidebarNetworkFocusId, "oftc");
             compare(window.currentConversation, "#omarchy");
             compare(window.consoleVisible, false);
 
-            keyClick(Qt.Key_Comma, Qt.ControlModifier);
+            keyClick(window, Qt.Key_Comma, Qt.ControlModifier);
             var sheet = findChild(window, "connectionSheet");
             tryCompare(sheet, "visible", true);
             compare(namedConnection.selectedNetworkId, "oftc");
 
-            keyClick(Qt.Key_Escape);
+            keyClick(window, Qt.Key_Escape);
             tryCompare(sheet, "visible", false);
             compare(window.sidebarNetworkFocusId, "oftc");
 
-            keyClick(Qt.Key_Return);
+            keyClick(window, Qt.Key_Return);
             tryCompare(window, "consoleVisible", true);
             compare(liveConsole.networkId, "oftc");
             compare(window.sidebarNetworkFocusId, "");
             compare(window.irc.focusedNetworkId, "oftc");
 
-            keyClick(Qt.Key_Escape);
+            keyClick(window, Qt.Key_Escape);
             tryCompare(window, "consoleVisible", false);
 
-            keyClick(Qt.Key_Down, Qt.AltModifier);
+            keyClick(window, Qt.Key_Down, Qt.AltModifier);
             tryCompare(window, "currentConversation", "anna");
             compare(window.sidebarNetworkFocusId, "");
 
@@ -2953,7 +2953,7 @@ TestCase {
             liveIrc.conversationEpoch += 1;
             waitForRendering(window.contentItem);
 
-            keyClick(Qt.Key_Down, Qt.AltModifier);
+            keyClick(window, Qt.Key_Down, Qt.AltModifier);
             tryCompare(window, "currentConversation", "#lab");
 
             window.close();
