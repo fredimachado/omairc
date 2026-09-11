@@ -221,12 +221,15 @@ private:
     bool secretIsIdle(const IrcDraftSecret &secret) const;
     bool secretReadPending(const IrcDraftSecret &secret) const;
     bool secretReadBlocksApply(const IrcDraftSecret &secret, bool tracked) const;
-    bool secretUnreadable(const IrcDraftSecret &secret, bool saved) const;
+    bool secretSlotTracked(const IrcDraftSecret &secret, bool saved) const;
+    bool secretUnreadable(const IrcDraftSecret &secret, bool saved,
+                          bool required = false) const;
     void maybeReconcileAfterRead(const QString &networkId);
     void clearFocusPassword();
     void clearFocusNickServ();
     void requestStartupSecret(const IrcNetworkProfile &profile);
     bool startupCredentialsPending() const;
+    bool startupCredentialsPending(const IrcNetworkProfile &profile) const;
     bool startupConnectAllowed(const IrcNetworkProfile &profile) const;
     void requestStartupPassword(const IrcNetworkProfile &profile);
     void persistSavedFlag(const CredentialKey &key, bool saved);

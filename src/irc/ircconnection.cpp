@@ -224,10 +224,6 @@ bool IrcConnection::nickServSet() const
 
 CredentialStore::State IrcConnection::credentialState() const
 {
-    if (secretReadPending(selectedSecret())
-        || secretReadPending(selectedNickServSecret())) {
-        return CredentialStore::State::Loading;
-    }
     return selectedSecret().credentialState;
 }
 
@@ -280,12 +276,6 @@ QString IrcConnection::secretStatus(const IrcDraftSecret &secret,
 
 bool IrcConnection::secretIsIdle(const IrcDraftSecret &secret) const
 {
-    if (secret.credentialState == CredentialStore::State::Loading
-        || secret.credentialState == CredentialStore::State::Error
-        || secret.credentialState == CredentialStore::State::Unavailable
-        || secret.credentialState == CredentialStore::State::SessionOnly) {
-        return false;
-    }
     return secret.password.isEmpty() && !secret.edited && !secret.mayBeStored
         && secret.obsoleteKeys.isEmpty() && secret.obsoleteRemovalError.isEmpty();
 }
@@ -300,6 +290,11 @@ bool IrcConnection::secretReadBlocksApply(const IrcDraftSecret &secret,
                                           bool tracked) const
 {
     return secret.readInFlight && !secret.edited && tracked;
+}
+
+bool IrcConnection::secretSlotTracked(const IrcDraftSecret &secret, bool saved) const
+{
+    return saved || secret.mayBeStored || secret.edited || !secret.password.isEmpty();
 }
 
 QString IrcConnection::credentialStatus() const
@@ -618,8 +613,7 @@ bool IrcConnection::apply()
     IrcDraftSecret &nickServ = nickServSecretFor(profile.networkId);
     const bool passwordBlocks = secretReadBlocksApply(password, true);
     const bool nickServBlocks = secretReadBlocksApply(
-        nickServ,
-        profile.nickServSaved || nickServ.mayBeStored || !nickServ.password.isEmpty());
+        nickServ, secretSlotTracked(nickServ, profile.nickServSaved));
     if (passwordBlocks || nickServBlocks) {
         if (passwordBlocks)
             password.reconcileWhenReadSettles = true;
@@ -1010,24 +1004,13 @@ void IrcConnection::activateOnStartup()
     if (m_startupActivationConnection)
         return;
     const IrcNetworkProfile profile = storedProfile(m_selectedNetworkId);
-    const IrcDraftSecret &secret = selectedSecret();
-    const IrcDraftSecret &nickServ = selectedNickServSecret();
-    if (secret.credentialState == CredentialStore::State::Loading
-        || secret.readInFlight
-        || nickServ.credentialState == CredentialStore::State::Loading
-        || nickServ.readInFlight) {
+    if (startupCredentialsPending(profile)) {
         m_startupActivationConnection = connect(
             this, &IrcConnection::credentialStateChanged, this, [this]() {
                 const IrcNetworkProfile currentProfile =
                     storedProfile(m_selectedNetworkId);
-                const IrcDraftSecret &current = selectedSecret();
-                const IrcDraftSecret &currentNickServ = selectedNickServSecret();
-                if (current.credentialState == CredentialStore::State::Loading
-                    || current.readInFlight
-                    || currentNickServ.credentialState == CredentialStore::State::Loading
-                    || currentNickServ.readInFlight) {
+                if (startupCredentialsPending(currentProfile))
                     return;
-                }
                 QObject::disconnect(m_startupActivationConnection);
                 m_startupActivationConnection = {};
                 if (startupConnectAllowed(currentProfile))
@@ -1049,16 +1032,20 @@ bool IrcConnection::startupCredentialsPending() const
     for (const IrcNetworkProfile &profile : m_stored) {
         if (!profile.connectOnStartup || !profile.isComplete())
             continue;
-        const IrcDraftSecret &secret = secretFor(profile.networkId);
-        const IrcDraftSecret &nickServ = nickServSecretFor(profile.networkId);
-        if (secret.readInFlight
-            || secret.credentialState == CredentialStore::State::Loading
-            || nickServ.readInFlight
-            || nickServ.credentialState == CredentialStore::State::Loading) {
+        if (startupCredentialsPending(profile))
             return true;
-        }
     }
     return false;
+}
+
+bool IrcConnection::startupCredentialsPending(const IrcNetworkProfile &profile) const
+{
+    const IrcDraftSecret &secret = secretFor(profile.networkId);
+    const IrcDraftSecret &nickServ = nickServSecretFor(profile.networkId);
+    if (secretReadPending(secret))
+        return true;
+    return secretSlotTracked(nickServ, profile.nickServSaved)
+        && secretReadPending(nickServ);
 }
 
 void IrcConnection::maybeReconcileAfterRead(const QString &networkId)
@@ -1068,8 +1055,7 @@ void IrcConnection::maybeReconcileAfterRead(const QString &networkId)
     const IrcNetworkProfile profile = storedProfile(networkId);
     const bool passwordBlocks = secretReadBlocksApply(password, true);
     const bool nickServBlocks = secretReadBlocksApply(
-        nickServ,
-        profile.nickServSaved || nickServ.mayBeStored || !nickServ.password.isEmpty());
+        nickServ, secretSlotTracked(nickServ, profile.nickServSaved));
     if (passwordBlocks || nickServBlocks)
         return;
     if (!password.reconcileWhenReadSettles && !nickServ.reconcileWhenReadSettles)
@@ -1080,11 +1066,13 @@ void IrcConnection::maybeReconcileAfterRead(const QString &networkId)
         reconcile(profile);
 }
 
-bool IrcConnection::secretUnreadable(const IrcDraftSecret &secret, bool saved) const
+bool IrcConnection::secretUnreadable(const IrcDraftSecret &secret, bool saved,
+                                    bool required) const
 {
+    const bool tracked = required || secretSlotTracked(secret, saved);
     if (secret.credentialState == CredentialStore::State::Loading
         || secret.credentialState == CredentialStore::State::Error) {
-        return true;
+        return tracked;
     }
     return saved
         && (secret.credentialState == CredentialStore::State::Missing
@@ -1094,7 +1082,7 @@ bool IrcConnection::secretUnreadable(const IrcDraftSecret &secret, bool saved) c
 
 bool IrcConnection::startupConnectAllowed(const IrcNetworkProfile &profile) const
 {
-    if (secretUnreadable(secretFor(profile.networkId), profile.secretSaved))
+    if (secretUnreadable(secretFor(profile.networkId), profile.secretSaved, true))
         return false;
     if (secretUnreadable(nickServSecretFor(profile.networkId), profile.nickServSaved))
         return false;

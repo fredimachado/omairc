@@ -108,6 +108,7 @@ public:
                                  QObject *parent = nullptr)
         : CredentialStore(parent)
         , m_readState(readState)
+        , m_nickServReadState(readState)
         , m_password(std::move(password))
         , m_removeState(removeState)
         , m_removeMessage(std::move(removeMessage))
