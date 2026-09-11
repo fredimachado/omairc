@@ -1765,9 +1765,9 @@ void ConnectionTest::unavailableStoreNamesBothSessionOnlySecrets()
                  QStringLiteral("secure storage unavailable"));
     connection.setPassword(QStringLiteral("server-secret"));
     connection.setNickServPassword(QStringLiteral("nickserv-secret"));
-    QCOMPARE(connection.credentialStatus(),
-             QStringLiteral(
-                 "secure storage unavailable; password and NickServ are session-only"));
+    QTRY_COMPARE(connection.credentialStatus(),
+                 QStringLiteral(
+                     "secure storage unavailable; password and NickServ are session-only"));
 }
 
 void ConnectionTest::startupSkipsWhenSavedNickServIsMissing()

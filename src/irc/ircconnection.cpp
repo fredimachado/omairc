@@ -297,6 +297,17 @@ bool IrcConnection::secretSlotTracked(const IrcDraftSecret &secret, bool saved) 
     return saved || secret.mayBeStored || secret.edited || !secret.password.isEmpty();
 }
 
+void IrcConnection::markSessionOnlyIfStoreUnavailable(IrcDraftSecret &secret,
+                                                     const IrcDraftSecret &other) const
+{
+    if (secret.credentialState == CredentialStore::State::Unavailable
+        || other.backendState == CredentialStore::State::Unavailable
+        || other.credentialState == CredentialStore::State::Unavailable
+        || other.credentialState == CredentialStore::State::SessionOnly) {
+        secret.credentialState = CredentialStore::State::SessionOnly;
+    }
+}
+
 QString IrcConnection::credentialStatus() const
 {
     const IrcDraftSecret &password = selectedSecret();
@@ -493,9 +504,9 @@ void IrcConnection::setPassword(const QString &password)
         return;
     secret.password = password;
     secret.edited = true;
-    if (secret.credentialState == CredentialStore::State::Unavailable) {
-        secret.credentialState = CredentialStore::State::SessionOnly;
-    } else if (password.isEmpty()) {
+    markSessionOnlyIfStoreUnavailable(secret, selectedNickServSecret());
+    if (password.isEmpty()
+        && secret.credentialState != CredentialStore::State::SessionOnly) {
         secret.credentialState = CredentialStore::State::Missing;
     }
     ++secret.revision;
@@ -513,9 +524,9 @@ void IrcConnection::setNickServPassword(const QString &password)
         return;
     secret.password = password;
     secret.edited = true;
-    if (secret.credentialState == CredentialStore::State::Unavailable) {
-        secret.credentialState = CredentialStore::State::SessionOnly;
-    } else if (password.isEmpty()) {
+    markSessionOnlyIfStoreUnavailable(secret, selectedSecret());
+    if (password.isEmpty()
+        && secret.credentialState != CredentialStore::State::SessionOnly) {
         secret.credentialState = CredentialStore::State::Missing;
     }
     ++secret.revision;

@@ -222,6 +222,8 @@ private:
     bool secretReadPending(const IrcDraftSecret &secret) const;
     bool secretReadBlocksApply(const IrcDraftSecret &secret, bool tracked) const;
     bool secretSlotTracked(const IrcDraftSecret &secret, bool saved) const;
+    void markSessionOnlyIfStoreUnavailable(IrcDraftSecret &secret,
+                                           const IrcDraftSecret &other) const;
     bool secretUnreadable(const IrcDraftSecret &secret, bool saved,
                           bool required = false) const;
     void maybeReconcileAfterRead(const QString &networkId);
