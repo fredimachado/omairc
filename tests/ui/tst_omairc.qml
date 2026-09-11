@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Controls as Controls
 import QtQuick.Window
 import QtTest
 import "../../src" as Omairc
@@ -119,7 +120,10 @@ TestCase {
             removeStoredNickServCalls += 1;
         }
 
+        property int applyCalls: 0
+
         function apply() {
+            applyCalls += 1;
             return false;
         }
 
@@ -551,6 +555,9 @@ TestCase {
         property bool canRemove: true
         property int passwordSetCalls: 0
         property string lastPassword: ""
+        property int applyCalls: 0
+        property bool applySucceeds: false
+        property int discardCalls: 0
 
         signal selectedNetworkChanged()
 
@@ -560,10 +567,12 @@ TestCase {
         }
 
         function apply() {
-            return false;
+            applyCalls += 1;
+            return applySucceeds && problem.length === 0;
         }
 
         function discard() {
+            discardCalls += 1;
         }
 
         function select(networkId) {
@@ -781,7 +790,14 @@ TestCase {
         namedConnection.nick = "sheet-nick";
         namedConnection.passwordSetCalls = 0;
         namedConnection.lastPassword = "";
+        namedConnection.applyCalls = 0;
+        namedConnection.applySucceeds = false;
+        namedConnection.discardCalls = 0;
         namedConnection.dirty = false;
+        namedConnection.problem = "";
+        namedConnection.setupRequired = false;
+        namedConnection.canAdd = true;
+        namedConnection.canRemove = true;
     }
 
     function repeaterItemByName(repeater, objectName) {
@@ -792,6 +808,16 @@ TestCase {
                 return row;
         }
         return null;
+    }
+
+    function focusObjectName(window) {
+        var item = window.activeFocusItem;
+        while (item) {
+            if (item.objectName && item.objectName.length > 0)
+                return item.objectName;
+            item = item.parent;
+        }
+        return "";
     }
 
     function item(objectName) {
@@ -2347,6 +2373,262 @@ TestCase {
         compare(fakeConnection.setPasswordCalls, 0);
         compare(fakeConnection.lastSetPassword, "");
         window.close();
+    }
+
+    function test_connectionSheetTabOrderReachesApply() {
+        fakeConnection.applyCalls = 0;
+        var window = createTemporaryObject(setupWindowComponent, null);
+        verify(window !== null, "The setup window should load");
+        tryCompare(window, "visible", true);
+        waitForRendering(window.contentItem);
+        window.requestActivate();
+        tryCompare(window, "active", true);
+
+        var network = repeaterItemByName(findChild(window, "networkChoiceRepeater"),
+                                         "networkChoice-setup-id");
+        verify(network !== null, "Could not find networkChoice-setup-id");
+        network.forceActiveFocus();
+        tryCompare(network, "activeFocus", true);
+
+        var expected = [
+            "networkChoice-setup-id",
+            "connectionHost",
+            "connectionPort",
+            "connectionTls",
+            "connectionNick",
+            "connectionUsername",
+            "connectionRealname",
+            "connectionAutojoin",
+            "connectionConnectOnStartup",
+            "connectionPassword",
+            "connectionNickServ",
+            "connectionDiscard",
+            "connectionApply"
+        ];
+        var names = [focusObjectName(window)];
+        var step = 0;
+        for (step = 1; step < expected.length; ++step) {
+            keyClick(Qt.Key_Tab);
+            wait(0);
+            names.push(focusObjectName(window));
+        }
+        compare(names, expected);
+
+        keyClick(Qt.Key_Tab);
+        wait(0);
+        compare(focusObjectName(window), "networkChoice-setup-id");
+
+        keyClick(Qt.Key_Tab, Qt.ShiftModifier);
+        wait(0);
+        compare(focusObjectName(window), "connectionApply");
+        keyClick(Qt.Key_Tab, Qt.ShiftModifier);
+        wait(0);
+        compare(focusObjectName(window), "connectionDiscard");
+        window.close();
+    }
+
+    function test_connectionSheetEnterFromHostKeepsNickProblem() {
+        fakeConnection.applyCalls = 0;
+        var window = createTemporaryObject(setupWindowComponent, null);
+        verify(window !== null, "The setup window should load");
+        tryCompare(window, "visible", true);
+        waitForRendering(window.contentItem);
+        window.requestActivate();
+        tryCompare(window, "active", true);
+
+        var host = findChild(window, "connectionHost");
+        verify(host !== null, "Could not find connectionHost");
+        host.forceActiveFocus();
+        tryCompare(host, "activeFocus", true);
+        keyClick(Qt.Key_Return);
+
+        compare(fakeConnection.applyCalls, 0);
+        compare(findChild(window, "connectionProblem").text, "Nick is required");
+        verify(findChild(window, "connectionProblem").visible);
+        verify(findChild(window, "connectionSheet").visible);
+        verify(host.activeFocus);
+        window.close();
+    }
+
+    function test_connectionSheetEnterFromNickAppliesAndCloses() {
+        restoreNamedConnection();
+        namedConnection.applySucceeds = true;
+        namedConnection.applyCalls = 0;
+        var window = createTemporaryObject(fallbackWindowComponent, null);
+        verify(window !== null, "The apply window should load");
+        tryCompare(window, "visible", true);
+        waitForRendering(window.contentItem);
+        window.requestActivate();
+        tryCompare(window, "active", true);
+
+        keyClick(Qt.Key_Comma, Qt.ControlModifier);
+        var sheet = findChild(window, "connectionSheet");
+        tryCompare(sheet, "visible", true);
+
+        var nick = findChild(window, "connectionNick");
+        verify(nick !== null, "Could not find connectionNick");
+        nick.forceActiveFocus();
+        tryCompare(nick, "activeFocus", true);
+        keyClick(Qt.Key_Return);
+
+        compare(namedConnection.applyCalls, 1);
+        compare(sheet.visible, false);
+        window.close();
+        restoreNamedConnection();
+    }
+
+    function test_connectionSheetApplyDiscardReachableByTab() {
+        restoreNamedConnection();
+        var window = createTemporaryObject(fallbackWindowComponent, null);
+        verify(window !== null, "The action-tab window should load");
+        tryCompare(window, "visible", true);
+        waitForRendering(window.contentItem);
+        window.requestActivate();
+        tryCompare(window, "active", true);
+
+        keyClick(Qt.Key_Comma, Qt.ControlModifier);
+        tryCompare(findChild(window, "connectionSheet"), "visible", true);
+
+        var addButton = findChild(window, "connectionAddNetwork");
+        addButton.forceActiveFocus();
+        tryCompare(addButton, "activeFocus", true);
+
+        var sawDiscard = false;
+        var sawApply = false;
+        var step = 0;
+        for (step = 0; step < 20; ++step) {
+            keyClick(Qt.Key_Tab);
+            wait(0);
+            var name = focusObjectName(window);
+            if (name === "connectionDiscard")
+                sawDiscard = true;
+            if (name === "connectionApply")
+                sawApply = true;
+        }
+        compare(sawDiscard, true);
+        compare(sawApply, true);
+
+        var discardButton = findChild(window, "connectionDiscard");
+        discardButton.forceActiveFocus();
+        tryCompare(discardButton, "activeFocus", true);
+        keyClick(Qt.Key_Return);
+        compare(namedConnection.discardCalls, 1);
+        window.close();
+        restoreNamedConnection();
+    }
+
+    function test_networkRowSecondEnterApplies() {
+        restoreNamedConnection();
+        namedConnection.applySucceeds = true;
+        namedConnection.applyCalls = 0;
+        var window = createTemporaryObject(fallbackWindowComponent, null);
+        verify(window !== null, "The network-enter window should load");
+        tryCompare(window, "visible", true);
+        waitForRendering(window.contentItem);
+        window.requestActivate();
+        tryCompare(window, "active", true);
+
+        keyClick(Qt.Key_Comma, Qt.ControlModifier);
+        var sheet = findChild(window, "connectionSheet");
+        tryCompare(sheet, "visible", true);
+
+        var row = repeaterItemByName(findChild(window, "networkChoiceRepeater"),
+                                     "networkChoice-libera");
+        verify(row !== null, "Could not find networkChoice-libera");
+        row.forceActiveFocus();
+        tryCompare(row, "activeFocus", true);
+        keyClick(Qt.Key_Return);
+        compare(namedConnection.applyCalls, 0);
+        verify(sheet.visible);
+        verify(row.activeFocus);
+
+        keyClick(Qt.Key_Return);
+        compare(namedConnection.applyCalls, 1);
+        compare(sheet.visible, false);
+        window.close();
+        restoreNamedConnection();
+    }
+
+    function test_networkRowCtrlReturnApplies() {
+        restoreNamedConnection();
+        namedConnection.applySucceeds = true;
+        namedConnection.applyCalls = 0;
+        var window = createTemporaryObject(fallbackWindowComponent, null);
+        verify(window !== null, "The network-ctrl-return window should load");
+        tryCompare(window, "visible", true);
+        waitForRendering(window.contentItem);
+        window.requestActivate();
+        tryCompare(window, "active", true);
+
+        keyClick(Qt.Key_Comma, Qt.ControlModifier);
+        var sheet = findChild(window, "connectionSheet");
+        tryCompare(sheet, "visible", true);
+
+        var row = repeaterItemByName(findChild(window, "networkChoiceRepeater"),
+                                     "networkChoice-libera");
+        verify(row !== null, "Could not find networkChoice-libera");
+        row.forceActiveFocus();
+        tryCompare(row, "activeFocus", true);
+        keyClick(Qt.Key_Return, Qt.ControlModifier);
+        compare(namedConnection.applyCalls, 1);
+        compare(sheet.visible, false);
+        window.close();
+        restoreNamedConnection();
+    }
+
+    function test_sheetFlickShowsScrollbarWhenFormOverflows() {
+        var window = createTemporaryObject(setupWindowComponent, null);
+        verify(window !== null, "The overflow window should load");
+        tryCompare(window, "visible", true);
+        waitForRendering(window.contentItem);
+
+        window.minimumHeight = 200;
+        window.height = 320;
+        waitForRendering(window.contentItem);
+        wait(0);
+
+        var flick = findChild(window, "sheetFlick");
+        verify(flick !== null, "Could not find sheetFlick");
+        verify(flick.contentHeight > flick.height);
+        var bar = findChild(window, "sheetFlickScrollBar");
+        verify(bar !== null, "Could not find sheetFlickScrollBar");
+        compare(bar.policy, Controls.ScrollBar.AlwaysOn);
+        compare(bar.visible, true);
+        verify(bar.size < 1.0);
+        window.close();
+    }
+
+    function test_networkListShowsScrollbarWhenItOverflows() {
+        restoreNamedConnection();
+        var extra = 0;
+        for (extra = 0; extra < 16; ++extra) {
+            namedNetworks.append({
+                networkId: "extra-" + extra,
+                displayName: "irc.extra" + extra + ".example",
+                stored: true,
+                selected: false
+            });
+        }
+        var window = createTemporaryObject(fallbackWindowComponent, null);
+        verify(window !== null, "The rail-overflow window should load");
+        tryCompare(window, "visible", true);
+        waitForRendering(window.contentItem);
+        window.requestActivate();
+        tryCompare(window, "active", true);
+
+        keyClick(Qt.Key_Comma, Qt.ControlModifier);
+        tryCompare(findChild(window, "connectionSheet"), "visible", true);
+        waitForRendering(window.contentItem);
+
+        var rail = findChild(window, "networkChoiceScroll");
+        verify(rail !== null, "Could not find networkChoiceScroll");
+        verify(rail.contentHeight > rail.height);
+        var bar = findChild(window, "networkChoiceScrollBar");
+        verify(bar !== null, "Could not find networkChoiceScrollBar");
+        compare(bar.policy, Controls.ScrollBar.AlwaysOn);
+        compare(bar.visible, true);
+        window.close();
+        restoreNamedConnection();
     }
 
     function liveDirectNames(window) {
