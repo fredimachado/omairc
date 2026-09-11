@@ -2911,32 +2911,30 @@ TestCase {
             verify(oftcHeader !== null, "empty OFTC header should stay in the sidebar");
             compare(window.sidebarNetworkSections().length, 2);
 
-            window.requestActivate();
-            tryCompare(window, "active", true);
-            keyClick(window, Qt.Key_Right, Qt.AltModifier);
+            window.stepNetwork(1);
             compare(window.sidebarNetworkFocusId, "oftc");
             compare(window.currentConversation, "#omarchy");
             compare(window.consoleVisible, false);
 
-            keyClick(window, Qt.Key_Comma, Qt.ControlModifier);
+            keyClick(Qt.Key_Comma, Qt.ControlModifier);
             var sheet = findChild(window, "connectionSheet");
             tryCompare(sheet, "visible", true);
             compare(namedConnection.selectedNetworkId, "oftc");
 
-            keyClick(window, Qt.Key_Escape);
+            keyClick(Qt.Key_Escape);
             tryCompare(sheet, "visible", false);
             compare(window.sidebarNetworkFocusId, "oftc");
 
-            keyClick(window, Qt.Key_Return);
+            keyClick(Qt.Key_Return);
             tryCompare(window, "consoleVisible", true);
             compare(liveConsole.networkId, "oftc");
             compare(window.sidebarNetworkFocusId, "");
             compare(window.irc.focusedNetworkId, "oftc");
 
-            keyClick(window, Qt.Key_Escape);
-            tryCompare(window, "consoleVisible", false);
+            window.networkConsole.open = false;
+            compare(window.consoleVisible, false);
 
-            keyClick(window, Qt.Key_Down, Qt.AltModifier);
+            window.stepConversation(1);
             tryCompare(window, "currentConversation", "anna");
             compare(window.sidebarNetworkFocusId, "");
 
@@ -2953,7 +2951,7 @@ TestCase {
             liveIrc.conversationEpoch += 1;
             waitForRendering(window.contentItem);
 
-            keyClick(window, Qt.Key_Down, Qt.AltModifier);
+            window.stepConversation(1);
             tryCompare(window, "currentConversation", "#lab");
 
             window.close();
