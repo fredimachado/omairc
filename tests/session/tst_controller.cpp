@@ -1,4 +1,5 @@
 #include <QAbstractItemModel>
+#include <QDateTime>
 #include <QSignalSpy>
 #include <QTest>
 
@@ -2915,8 +2916,10 @@ void ControllerTest::chatHistoryBatchShowsBodyAndTime()
     QVERIFY(messages);
     QCOMPARE(roleAt(messages, 0, MessageListModel::BodyRole),
              QStringLiteral("older"));
+    const QDateTime replayed = QDateTime::fromString(
+        QStringLiteral("2011-10-19T16:40:51.620Z"), Qt::ISODateWithMs);
     QCOMPARE(roleAt(messages, 0, MessageListModel::TimeRole),
-             QStringLiteral("16:40"));
+             replayed.toLocalTime().toString(QStringLiteral("HH:mm")));
     QCOMPARE(roleAt(messages, 0, MessageListModel::OriginRole),
              QStringLiteral("replay"));
     QCOMPARE(roleAt(messages, 1, MessageListModel::BodyRole),

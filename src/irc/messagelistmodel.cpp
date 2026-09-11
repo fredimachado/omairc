@@ -28,7 +28,7 @@ QString displayTime(const IrcReducedMessage& message)
         || message.kind == IrcMessageKind::Whois
         || !message.timestamp.isValid())
         return {};
-    return message.timestamp.toUTC().toString(QStringLiteral("HH:mm"));
+    return message.timestamp.toLocalTime().toString(QStringLiteral("HH:mm"));
 }
 }
 
