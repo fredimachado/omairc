@@ -2750,6 +2750,50 @@ TestCase {
         window.close();
     }
 
+    function test_connectionSheetOpenedFromComposerKeepsTabInsideSheet() {
+        restoreNamedConnection();
+        failOnWarning("QQuickItem: Cannot set activeFocusOnTab to false once item is the active focus item.");
+        var window = createTemporaryObject(fallbackWindowComponent, null);
+        verify(window !== null, "The composer-to-Connect window should load");
+        tryCompare(window, "visible", true);
+        waitForRendering(window.contentItem);
+        window.requestActivate();
+        tryCompare(window, "active", true);
+
+        var composer = findChild(window, "messageComposer");
+        verify(composer !== null, "Could not find messageComposer");
+        composer.forceActiveFocus();
+        tryCompare(composer, "activeFocus", true);
+
+        keyClick(Qt.Key_Comma, Qt.ControlModifier);
+        tryCompare(findChild(window, "connectionSheet"), "visible", true);
+        tryCompare(composer, "activeFocus", false);
+        tryCompare(findChild(window, "connectionHost"), "activeFocus", true);
+
+        var step = 0;
+        var name = "";
+        for (step = 0; step < 24; ++step) {
+            keyClick(Qt.Key_Tab);
+            wait(0);
+            name = focusObjectName(window);
+            verify(name !== "messageComposer",
+                   "Tab landed on messageComposer at step " + step);
+        }
+
+        var applyButton = findChild(window, "connectionApply");
+        applyButton.forceActiveFocus();
+        tryCompare(applyButton, "activeFocus", true);
+        for (step = 0; step < 24; ++step) {
+            keyClick(Qt.Key_Tab, Qt.ShiftModifier);
+            wait(0);
+            name = focusObjectName(window);
+            verify(name !== "messageComposer",
+                   "Shift+Tab landed on messageComposer at step " + step);
+        }
+        window.close();
+        restoreNamedConnection();
+    }
+
     function test_connectionSheetEnterFromHostKeepsNickProblem() {
         fakeConnection.applyCalls = 0;
         var window = createTemporaryObject(setupWindowComponent, null);
