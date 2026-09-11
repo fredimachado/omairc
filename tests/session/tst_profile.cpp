@@ -76,6 +76,10 @@ void ProfileTest::validateRefusesIncompleteAndUnsendable()
              QStringList({QStringLiteral("#omarchy"), QStringLiteral("&local")}));
     QVERIFY(profile.isComplete());
 
+    profile.autojoinChannels = {QStringLiteral("+plus")};
+    QCOMPARE(profile.normalized().autojoinChannels,
+             QStringList({QStringLiteral("#+plus")}));
+
     profile.host.clear();
     QCOMPARE(profile.validate(), IrcNetworkProfile::Problem::MissingHost);
 

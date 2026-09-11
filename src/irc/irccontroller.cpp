@@ -705,7 +705,8 @@ IrcCommandOutcome IrcController::dispatch(const IrcCommand& command,
     switch (command.verb) {
     case IrcCommand::Verb::Join: {
         const std::optional<QVector<IrcJoinTarget>> targets =
-            ircParseJoinTargets(command.argument);
+            ircParseJoinTargets(command.argument,
+                                m_reducer.serverFeatures(active->networkId()));
         if (!targets)
             return IrcCommandOutcome::Refused;
         sent = true;
