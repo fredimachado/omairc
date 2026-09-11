@@ -482,6 +482,7 @@ bool IrcConnection::add()
 {
     if (!canAdd())
         return false;
+    m_addedFromNetworkId = m_selectedNetworkId;
     m_draft = IrcNetworkProfile::create();
     m_draft.port = 6697;
     m_draft.tlsEnabled = true;
@@ -893,6 +894,26 @@ void IrcConnection::queueCredentialRemoval(const CredentialKey &key, quint64 rev
 
 void IrcConnection::discard()
 {
+    if (!isStored(m_selectedNetworkId)) {
+        const QString dropped = m_selectedNetworkId;
+        m_secrets.remove(dropped);
+        m_nickServSecrets.remove(dropped);
+        if (!m_stored.isEmpty()) {
+            const QString returnId = isStored(m_addedFromNetworkId)
+                ? m_addedFromNetworkId : m_stored.first().networkId;
+            m_addedFromNetworkId.clear();
+            selectStored(returnId);
+            return;
+        }
+        m_draft = IrcNetworkProfile::suggested();
+        m_draft.networkId = dropped;
+        clearFocusPassword();
+        clearFocusNickServ();
+        emit credentialStateChanged();
+        emit draftChanged();
+        refreshRoster();
+        return;
+    }
     restoreDraft();
     const IrcNetworkProfile stored = storedProfile(m_selectedNetworkId);
     const auto discardSecret = [this, &stored](IrcDraftSecret &secret,
@@ -1168,14 +1189,6 @@ bool IrcConnection::startMarkedStartupProfiles()
 
 void IrcConnection::restoreDraft()
 {
-    if (!isStored(m_selectedNetworkId)) {
-        const QString id = m_selectedNetworkId;
-        m_draft = IrcNetworkProfile::create();
-        m_draft.networkId = id;
-        m_draft.port = 6697;
-        m_draft.tlsEnabled = true;
-        return;
-    }
     m_draft = storedProfile(m_selectedNetworkId);
 }
 

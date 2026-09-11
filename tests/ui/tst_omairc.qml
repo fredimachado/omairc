@@ -558,6 +558,7 @@ TestCase {
         property int applyCalls: 0
         property bool applySucceeds: false
         property int discardCalls: 0
+        property var addedFromSnapshot: null
 
         signal selectedNetworkChanged()
 
@@ -573,6 +574,29 @@ TestCase {
 
         function discard() {
             discardCalls += 1;
+            if (!addedFromSnapshot)
+                return;
+            var row = namedNetworks.count - 1;
+            for (; row >= 0; --row) {
+                if (namedNetworks.get(row).networkId === "new-id") {
+                    namedNetworks.remove(row);
+                    break;
+                }
+            }
+            var snap = addedFromSnapshot;
+            addedFromSnapshot = null;
+            selectedNetworkId = snap.networkId;
+            host = snap.host;
+            nick = snap.nick;
+            displayName = snap.displayName;
+            dirty = false;
+            problem = "";
+            canAdd = true;
+            canRemove = true;
+            for (row = 0; row < namedNetworks.count; ++row)
+                namedNetworks.setProperty(row, "selected",
+                    namedNetworks.get(row).networkId === snap.networkId);
+            selectedNetworkChanged();
         }
 
         function select(networkId) {
@@ -592,6 +616,12 @@ TestCase {
         }
 
         function add() {
+            addedFromSnapshot = {
+                networkId: selectedNetworkId,
+                host: host,
+                nick: nick,
+                displayName: displayName
+            };
             for (var row = 0; row < namedNetworks.count; ++row)
                 namedNetworks.setProperty(row, "selected", false);
             namedNetworks.append({
@@ -793,6 +823,7 @@ TestCase {
         namedConnection.applyCalls = 0;
         namedConnection.applySucceeds = false;
         namedConnection.discardCalls = 0;
+        namedConnection.addedFromSnapshot = null;
         namedConnection.dirty = false;
         namedConnection.problem = "";
         namedConnection.setupRequired = false;
@@ -2572,6 +2603,117 @@ TestCase {
         keyClick(Qt.Key_Return, Qt.ControlModifier);
         compare(namedConnection.applyCalls, 1);
         compare(sheet.visible, false);
+        window.close();
+        restoreNamedConnection();
+    }
+
+    function test_connectionSheetFirstOpenFocusesNickWhenEmpty() {
+        fakeConnection.applyCalls = 0;
+        var window = createTemporaryObject(setupWindowComponent, null);
+        verify(window !== null, "The first-open setup window should load");
+        tryCompare(window, "visible", true);
+        waitForRendering(window.contentItem);
+        window.requestActivate();
+        tryCompare(window, "active", true);
+
+        var nick = findChild(window, "connectionNick");
+        verify(nick !== null, "Could not find connectionNick");
+        tryCompare(nick, "activeFocus", true);
+        compare(focusObjectName(window), "connectionNick");
+
+        keyClick(Qt.Key_Return);
+        compare(fakeConnection.applyCalls, 0);
+        compare(findChild(window, "connectionProblem").text, "Nick is required");
+        verify(findChild(window, "connectionProblem").visible);
+        verify(findChild(window, "connectionSheet").visible);
+        compare(fakeConnection.selectedNetworkId, "setup-id");
+        verify(nick.activeFocus);
+        window.close();
+    }
+
+    function test_connectionSheetFirstOpenEnterAppliesWithoutChangingNetwork() {
+        restoreNamedConnection();
+        namedNetworks.append({
+            networkId: "oftc",
+            displayName: "irc.oftc.net",
+            stored: true,
+            selected: false
+        });
+        namedConnection.applySucceeds = true;
+        namedConnection.applyCalls = 0;
+        var window = createTemporaryObject(fallbackWindowComponent, null);
+        verify(window !== null, "The first-open apply window should load");
+        tryCompare(window, "visible", true);
+        waitForRendering(window.contentItem);
+        window.requestActivate();
+        tryCompare(window, "active", true);
+
+        keyClick(Qt.Key_Comma, Qt.ControlModifier);
+        var sheet = findChild(window, "connectionSheet");
+        tryCompare(sheet, "visible", true);
+        waitForRendering(window.contentItem);
+
+        var host = findChild(window, "connectionHost");
+        verify(host !== null, "Could not find connectionHost");
+        tryCompare(host, "activeFocus", true);
+        compare(focusObjectName(window), "connectionHost");
+        compare(namedConnection.selectedNetworkId, "libera");
+
+        keyClick(Qt.Key_Return);
+        compare(namedConnection.applyCalls, 1);
+        compare(namedConnection.selectedNetworkId, "libera");
+        compare(sheet.visible, false);
+        window.close();
+        restoreNamedConnection();
+    }
+
+    function test_connectionSheetAddThenDiscardRestoresPriorNetwork() {
+        restoreNamedConnection();
+        namedNetworks.append({
+            networkId: "oftc",
+            displayName: "irc.oftc.net",
+            stored: true,
+            selected: false
+        });
+        var window = createTemporaryObject(fallbackWindowComponent, null);
+        verify(window !== null, "The add-then-discard window should load");
+        tryCompare(window, "visible", true);
+        waitForRendering(window.contentItem);
+        window.requestActivate();
+        tryCompare(window, "active", true);
+
+        keyClick(Qt.Key_Comma, Qt.ControlModifier);
+        var sheet = findChild(window, "connectionSheet");
+        tryCompare(sheet, "visible", true);
+
+        var addButton = findChild(window, "connectionAddNetwork");
+        var discardButton = findChild(window, "connectionDiscard");
+        verify(addButton !== null, "Could not find connectionAddNetwork");
+        verify(discardButton !== null, "Could not find connectionDiscard");
+
+        mouseClick(addButton);
+        compare(namedNetworks.count, 3);
+        compare(namedConnection.selectedNetworkId, "new-id");
+        compare(findChild(window, "connectionHost").text, "");
+
+        mouseClick(discardButton);
+        compare(namedConnection.discardCalls, 1);
+        compare(namedNetworks.count, 2);
+        compare(namedConnection.selectedNetworkId, "libera");
+        compare(namedConnection.host, "irc.libera.chat");
+        compare(findChild(window, "connectionHost").text, "irc.libera.chat");
+        compare(namedConnection.nick, "sheet-nick");
+
+        mouseClick(addButton);
+        compare(namedConnection.selectedNetworkId, "new-id");
+        discardButton.forceActiveFocus();
+        tryCompare(discardButton, "activeFocus", true);
+        keyClick(Qt.Key_Return);
+        compare(namedConnection.discardCalls, 2);
+        compare(namedNetworks.count, 2);
+        compare(namedConnection.selectedNetworkId, "libera");
+        compare(findChild(window, "connectionHost").text, "irc.libera.chat");
+        verify(sheet.visible);
         window.close();
         restoreNamedConnection();
     }

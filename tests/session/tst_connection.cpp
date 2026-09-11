@@ -31,6 +31,8 @@ private slots:
     void profileKeyChangePersistsExistingPassword();
     void passwordChangeRebuildsTheSession();
     void discardRestoresStoredDraft();
+    void discardAfterAddRestoresPreviousNetwork();
+    void discardOnFirstRunRestoresSuggested();
     void tlsSwitchLeavesPortAlone();
     void authenticationFailureFocusesPassword();
     void applyWritesPasswordToStoreNotSettings();
@@ -378,6 +380,51 @@ void ConnectionTest::discardRestoresStoredDraft()
     connection.discard();
     QCOMPARE(connection.host(), QStringLiteral("irc.example"));
     QVERIFY(!connection.dirty());
+}
+
+void ConnectionTest::discardAfterAddRestoresPreviousNetwork()
+{
+    IrcController controller;
+    IrcConnection connection(controller, capturingFactory(), credentialStore());
+    fillCompleteDraft(connection, QStringLiteral("irc.example"));
+    QVERIFY(connection.apply());
+    const QString firstId = connection.selectedNetworkId();
+
+    QVERIFY(connection.add());
+    fillCompleteDraft(connection, QStringLiteral("irc.oftc.net"));
+    connection.setNick(QStringLiteral("oak"));
+    QVERIFY(connection.apply());
+    QCOMPARE(connection.networks()->rowCount(), 2);
+
+    connection.select(firstId);
+    QCOMPARE(connection.selectedNetworkId(), firstId);
+    QVERIFY(connection.add());
+    QCOMPARE(connection.networks()->rowCount(), 3);
+    QCOMPARE(connection.host(), QString());
+    QVERIFY(connection.dirty());
+    QVERIFY(!connection.canAdd());
+
+    connection.discard();
+    QCOMPARE(connection.selectedNetworkId(), firstId);
+    QCOMPARE(connection.host(), QStringLiteral("irc.example"));
+    QCOMPARE(connection.nick(), QStringLiteral("omairc"));
+    QCOMPARE(connection.networks()->rowCount(), 2);
+    QVERIFY(!connection.dirty());
+    QVERIFY(connection.canAdd());
+}
+
+void ConnectionTest::discardOnFirstRunRestoresSuggested()
+{
+    IrcController controller;
+    IrcConnection connection(controller, capturingFactory(), credentialStore());
+    QVERIFY(connection.setupRequired());
+    QCOMPARE(connection.host(), QStringLiteral("irc.libera.chat"));
+    connection.setHost(QStringLiteral("irc.changed"));
+    connection.setAutojoin(QString());
+    connection.discard();
+    QCOMPARE(connection.host(), QStringLiteral("irc.libera.chat"));
+    QCOMPARE(connection.autojoin(), QStringLiteral("#omarchy"));
+    QVERIFY(connection.setupRequired());
 }
 
 void ConnectionTest::tlsSwitchLeavesPortAlone()

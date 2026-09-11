@@ -264,6 +264,7 @@ private:
     QList<IrcNetworkProfile> m_stored;
     IrcNetworkProfile m_draft;
     QString m_selectedNetworkId;
+    QString m_addedFromNetworkId;
     QHash<QString, IrcDraftSecret> m_secrets;
     QHash<QString, IrcDraftSecret> m_nickServSecrets;
     QHash<QString, IrcAppliedSession> m_applied;
