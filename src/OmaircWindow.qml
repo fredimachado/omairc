@@ -14,6 +14,7 @@ ApplicationWindow {
     property bool connectionSheetOpen: false
     property bool connectionRemoveArmed: false
     property bool connectionPasswordEdited: false
+    property bool connectionNickServEdited: false
 
     objectName: "omaircWindow"
     width: 1180
@@ -1411,6 +1412,8 @@ ApplicationWindow {
     function clearConnectionPassword() {
         connectionPassword.text = "";
         connectionPasswordEdited = false;
+        connectionNickServ.text = "";
+        connectionNickServEdited = false;
     }
 
     function submitConnection() {
@@ -1418,6 +1421,8 @@ ApplicationWindow {
             return;
         if (connectionPasswordEdited)
             connection.setPassword(connectionPassword.text);
+        if (connectionNickServEdited)
+            connection.setNickServPassword(connectionNickServ.text);
         if (connection.apply() && !connection.setupRequired) {
             connectionSheetOpen = false;
             connectionRemoveArmed = false;
@@ -1442,6 +1447,12 @@ ApplicationWindow {
             if (win.connection && win.connection.focusPassword) {
                 win.connectionSheetOpen = true;
                 connectionPassword.focusInput();
+            }
+        }
+        function onFocusNickServChanged() {
+            if (win.connection && win.connection.focusNickServ) {
+                win.connectionSheetOpen = true;
+                connectionNickServ.focusInput();
             }
         }
     }
@@ -3800,8 +3811,7 @@ ApplicationWindow {
                                     onClicked: {
                                         if (!win.connection || !win.connection.add())
                                             return;
-                                        connectionPassword.text = "";
-                                        win.connectionPasswordEdited = false;
+                                        win.clearConnectionPassword();
                                         win.connectionRemoveArmed = false;
                                     }
                                 }
@@ -3964,6 +3974,16 @@ ApplicationWindow {
                             }
                         }
 
+                        ConnectionField {
+                            id: connectionNickServ
+                            label: "NickServ"
+                            fieldObjectName: "connectionNickServ"
+                            secret: true
+                            onTextEdited: function(value) {
+                                win.connectionNickServEdited = true;
+                            }
+                        }
+
                         Text {
                             objectName: "connectionCredentialStatus"
                             width: parent.width
@@ -4012,6 +4032,45 @@ ApplicationWindow {
                                 cursorShape: Qt.PointingHandCursor
                                 onClicked: {
                                     parent.forgetSavedPassword();
+                                }
+                            }
+                        }
+
+                        Text {
+                            objectName: "connectionForgetNickServ"
+                            visible: !!(win.connection && win.connection.canForgetNickServ)
+                            height: visible ? implicitHeight : 0
+                            text: "forget saved NickServ"
+                            color: win.accentColor
+                            font.family: "iA Writer Mono S"
+                            font.pixelSize: win.scaledSize(10)
+                            font.underline: activeFocus
+                            Accessible.role: Accessible.Button
+                            Accessible.name: "Forget saved NickServ"
+                            Accessible.description: "Remove the saved NickServ password"
+                            activeFocusOnTab: true
+                            Keys.onPressed: function(event) {
+                                if (event.key === Qt.Key_Return
+                                    || event.key === Qt.Key_Enter
+                                    || event.key === Qt.Key_Space) {
+                                    forgetSavedNickServ();
+                                    event.accepted = true;
+                                }
+                            }
+                            Accessible.onPressAction: {
+                                forgetSavedNickServ();
+                            }
+                            function forgetSavedNickServ() {
+                                connectionNickServ.text = "";
+                                win.connection.forgetNickServ();
+                                win.connection.removeStoredNickServ();
+                            }
+                            MouseArea {
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: {
+                                    parent.forgetSavedNickServ();
                                 }
                             }
                         }
@@ -4074,8 +4133,7 @@ ApplicationWindow {
                                             return;
                                         }
                                         win.connection.removeSelected();
-                                        connectionPassword.text = "";
-                                        win.connectionPasswordEdited = false;
+                                        win.clearConnectionPassword();
                                         win.connectionRemoveArmed = false;
                                         if (win.connection.setupRequired)
                                             win.connectionSheetOpen = true;
@@ -4111,8 +4169,7 @@ ApplicationWindow {
                                         if (!win.connection)
                                             return;
                                         win.connection.discard();
-                                        connectionPassword.text = "";
-                                        win.connectionPasswordEdited = false;
+                                        win.clearConnectionPassword();
                                         win.connectionRemoveArmed = false;
                                     }
                                 }

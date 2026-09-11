@@ -13,6 +13,7 @@ private slots:
     void accessDeniedIsError();
     void keyNameIsLengthPrefixed();
     void keyNameDoesNotCollideOnSlashBoundaries();
+    void nickServKeyKeepsPasswordNameAndDoesNotCollide();
 };
 
 void SecretServiceTest::noBackendIsUnavailable()
@@ -58,6 +59,25 @@ void SecretServiceTest::keyNameDoesNotCollideOnSlashBoundaries()
     QVERIFY(splitHost != splitUser);
     QCOMPARE(splitHost, QStringLiteral("omairc/v1/2:id/1:a/3:b/c"));
     QCOMPARE(splitUser, QStringLiteral("omairc/v1/2:id/3:a/b/1:c"));
+}
+
+void SecretServiceTest::nickServKeyKeepsPasswordNameAndDoesNotCollide()
+{
+    const CredentialKey password{QStringLiteral("nid"), QStringLiteral("user"),
+                                 QStringLiteral("irc.example")};
+    CredentialKey nickServ = password;
+    nickServ.purpose = QStringLiteral("nickserv");
+    QCOMPARE(SecretServiceCredentialStore::keyName(password),
+             QStringLiteral("omairc/v1/3:nid/4:user/11:irc.example"));
+    QCOMPARE(SecretServiceCredentialStore::keyName(nickServ),
+             QStringLiteral("omairc/v1/3:nid/4:user/11:irc.example/8:nickserv"));
+
+    CredentialKey slashPurpose = password;
+    slashPurpose.purpose = QStringLiteral("nick/serv");
+    CredentialKey slashHost = password;
+    slashHost.host = QStringLiteral("irc.example/8:nickserv");
+    QVERIFY(SecretServiceCredentialStore::keyName(slashPurpose)
+            != SecretServiceCredentialStore::keyName(slashHost));
 }
 
 int runSecretServiceTests(int argc, char **argv)

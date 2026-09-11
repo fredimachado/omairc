@@ -13,10 +13,13 @@ QString SecretServiceCredentialStore::keyName(const CredentialKey &key)
         const QString length = QString::number(value.toUtf8().size());
         return length + QLatin1Char(':') + value;
     };
-    return QStringLiteral("omairc/v1/")
+    QString name = QStringLiteral("omairc/v1/")
         + encode(key.networkId) + QLatin1Char('/')
         + encode(key.username) + QLatin1Char('/')
         + encode(key.host);
+    if (!key.purpose.isEmpty())
+        name += QLatin1Char('/') + encode(key.purpose);
+    return name;
 }
 
 CredentialStore::State SecretServiceCredentialStore::stateForError(

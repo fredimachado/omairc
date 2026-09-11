@@ -248,6 +248,7 @@ private slots:
     void msgEchoDoesNotOpenMissingDirect();
     void incomingNickservPrivmsgDoesNotOpenDirect();
     void statusMsgNickservIdentifyDoesNotOpenDirect();
+    void automaticIdentifyDoesNotOpenNickServDirect();
     void mentionArrivedOnSelectedBuffer();
     void mentionArrivedOnDirectMessageWithoutNick();
     void chghostLeavesMemberNickAndRanks();
@@ -2493,6 +2494,34 @@ void ControllerTest::statusMsgNickservIdentifyDoesNotOpenDirect()
                         QStringLiteral("PRIVMSG nickserv :IDENTIFY ***")));
     QVERIFY(logContains(console->lines(), QStringLiteral("IDENTIFY ***")));
     QVERIFY(!logContains(console->lines(), QStringLiteral("s3cret")));
+}
+
+void ControllerTest::automaticIdentifyDoesNotOpenNickServDirect()
+{
+    IrcSessionConfig sessionConfig = config(QStringLiteral("libera"));
+    sessionConfig.nickServPassword = QStringLiteral("nick-secret");
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    IrcSession *session = controller.addSession(sessionConfig, transport);
+    QVERIFY(session);
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    transport->completeConnect();
+    transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :echo-message\r\n"
+                          ":server CAP omairc ACK :echo-message\r\n"
+                          ":server 001 omairc :Welcome\r\n"
+                          ":omairc!u@h JOIN :#omarchy\r\n"
+                          ":omairc!u@h PRIVMSG NickServ :IDENTIFY nick-secret\r\n"
+                          ":NickServ!NickServ@services NOTICE omairc "
+                          ":You are now identified.\r\n"));
+    QVERIFY(transport->writtenFrames().contains(
+        QByteArrayLiteral("PRIVMSG NickServ :IDENTIFY nick-secret\r\n")));
+    auto *conversations =
+        qobject_cast<QAbstractItemModel *>(controller.conversations());
+    QVERIFY(conversations);
+    QCOMPARE(rowForTarget(conversations, QStringLiteral("NickServ")), -1);
+    QVERIFY(!logContains(controller.console()->lines(),
+                         QStringLiteral("nick-secret")));
 }
 
 void ControllerTest::mentionArrivedOnSelectedBuffer()

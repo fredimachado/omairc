@@ -30,6 +30,12 @@ constexpr char kPingWatchdogToken[] = "omairc-watchdog";
 constexpr qsizetype kCtcpPingPayloadMaxBytes = 32;
 constexpr qint64 kCtcpReplyIntervalMs = 5000;
 
+QString saslSecret(const IrcSessionConfig &config)
+{
+    return config.nickServPassword.isEmpty() ? config.password
+                                             : config.nickServPassword;
+}
+
 QString previewWire(std::string_view bytes, std::size_t byteCount, QStringView channelTypes)
 {
     std::string display;
@@ -241,7 +247,7 @@ IrcSession::IrcSession(const IrcSessionConfig &config,
     , m_capabilityTimer(capabilityTimer)
     , m_pingTimer(pingTimer)
     , m_reachability(reachability)
-    , m_capabilities(!config.password.isEmpty())
+    , m_capabilities(!saslSecret(config).isEmpty())
 {
     qRegisterMetaType<IrcHistoryBatch>();
     Q_ASSERT(m_transport);
@@ -649,13 +655,15 @@ void IrcSession::sendRegistration()
     if (m_registrationSent)
         return;
 
-    const QByteArray pass = (m_config.password.isEmpty() || m_saslRequested)
-        ? QByteArray{}
-        : builtLine(IrcCommandBuilder::pass(m_config.password.toStdString()));
+    const bool sendPass = !m_config.password.isEmpty()
+        && (!m_saslRequested || !m_config.nickServPassword.isEmpty());
+    const QByteArray pass = sendPass
+        ? builtLine(IrcCommandBuilder::pass(m_config.password.toStdString()))
+        : QByteArray{};
     const QByteArray nick = builtLine(IrcCommandBuilder::nick(m_config.nick.toStdString()));
     const QByteArray user = builtLine(IrcCommandBuilder::user(
         m_config.username.toStdString(), m_config.realname.toStdString()));
-    if ((!m_config.password.isEmpty() && !m_saslRequested && pass.isEmpty())
+    if ((sendPass && pass.isEmpty())
         || nick.isEmpty() || user.isEmpty()) {
         fail(ErrorKind::Registration,
              QStringLiteral("IRC registration fields contain invalid characters"),
@@ -836,6 +844,7 @@ void IrcSession::handleMessage(const IrcMessage &message)
     if (message.command == "903") {
         if (m_saslPending) {
             m_saslPending = false;
+            m_saslSucceeded = true;
             endCapabilityNegotiation();
             setState(State::Registering);
         }
@@ -1309,13 +1318,14 @@ void IrcSession::handleAuthenticate(const IrcMessage &message)
         return;
 
     const QByteArray nick = m_config.nick.toUtf8();
+    const QByteArray secret = saslSecret(m_config).toUtf8();
     QByteArray plain;
-    plain.reserve(nick.size() * 2 + m_config.password.toUtf8().size() + 2);
+    plain.reserve(nick.size() * 2 + secret.size() + 2);
     plain.append(nick);
     plain.append('\0');
     plain.append(nick);
     plain.append('\0');
-    plain.append(m_config.password.toUtf8());
+    plain.append(secret);
     const QByteArray encoded = plain.toBase64();
     if (encoded.size() > 400) {
         fail(ErrorKind::Authentication,
@@ -1359,7 +1369,7 @@ void IrcSession::applyIsupport(const IrcMessage &message)
 
 void IrcSession::handleWelcome(const IrcMessage &message)
 {
-    if (m_state == State::Registered)
+    if (m_state == State::Registered || m_state == State::Failed)
         return;
 
     const QString assigned = parameter(message, 0);
@@ -1374,6 +1384,16 @@ void IrcSession::handleWelcome(const IrcMessage &message)
     emit registered(m_config.networkId);
     armPingWatchdog();
     subscribeToMemberMetadata();
+    if (!m_config.nickServPassword.isEmpty() && !m_saslSucceeded) {
+        if (!m_config.tlsEnabled) {
+            emit statusEntry(IrcStatusEntry::lifecycle(
+                m_config.networkId, IrcLogSeverity::Alert,
+                QStringLiteral("identify"),
+                QStringLiteral("NickServ identify will be sent in clear text")));
+        }
+        sendPrivmsg(QStringLiteral("NickServ"),
+                    QStringLiteral("IDENTIFY ") + m_config.nickServPassword);
+    }
     for (const QString &channel : m_config.autojoinChannels) {
         const std::optional<IrcJoinTarget> target = IrcJoinTarget::make(channel);
         if (!target || !join(*target)) {
@@ -1454,12 +1474,13 @@ void IrcSession::resetForConnection()
     m_registrationNick = RegistrationNick::Configured;
     m_saslRequested = false;
     m_saslPending = false;
+    m_saslSucceeded = false;
     m_capabilityNegotiationEnded = false;
     m_capabilityListSeen = false;
     m_channelTypes.clear();
     m_capabilityTimer->cancel();
     cancelPingWatchdog();
-    m_capabilities.reset(!m_config.password.isEmpty());
+    m_capabilities.reset(!saslSecret(m_config).isEmpty());
     m_typing.reset();
     publishCapabilities();
 }

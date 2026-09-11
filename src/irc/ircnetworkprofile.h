@@ -20,6 +20,7 @@ struct IrcNetworkProfile
     bool tlsEnabled = true;
     bool connectOnStartup = false;
     bool secretSaved = false;
+    bool nickServSaved = false;
     QString nick;
     QString username;
     QString realname;

@@ -69,6 +69,14 @@ QByteArray ctcpVersionReply(const QByteArray &nick)
         + QByteArrayLiteral("\x01\r\n");
 }
 
+QByteArray decodeAuthenticatePlain(const QByteArray &frame)
+{
+    const QByteArray encoded = frame.mid(
+        qsizetype(sizeof("AUTHENTICATE ") - 1),
+        frame.size() - qsizetype(sizeof("AUTHENTICATE ") - 1) - 2);
+    return QByteArray::fromBase64(encoded);
+}
+
 IrcSessionConfig config(const QString &networkId = QStringLiteral("network-a"))
 {
     IrcSessionConfig value;
@@ -169,6 +177,14 @@ private slots:
     void withdrawnCapabilityIsPublished();
     void negotiatesSaslPlain();
     void sendsPassWhenSaslIsUnavailable();
+    void nickServOnlySaslPlainUsesNickServSecret();
+    void nickServOnlyWithoutSaslIdentifiesBeforeJoin();
+    void bothSecretsSaslSendsPassAndPlainFromNickServ();
+    void bothSecretsWithoutSaslPassThenIdentifyBeforeJoin();
+    void saslSuccessDoesNotIdentify();
+    void saslFailureDoesNotFallThroughToIdentify();
+    void plaintextIdentifyEmitsOneStatusWarning();
+    void automaticIdentifyDoesNotAppearInStatusAsSecret();
     void registersWhenCapIsUnsupported();
     void tlsCertificateFailureIsExplicit();
     void answersPingImmediately();
@@ -607,6 +623,141 @@ void SessionTest::sendsPassWhenSaslIsUnavailable()
                  QByteArrayLiteral("USER omairc 8 * :Omairc User\r\n"),
                  QByteArrayLiteral("CAP END\r\n"),
              }));
+}
+
+void SessionTest::nickServOnlySaslPlainUsesNickServSecret()
+{
+    IrcSessionConfig sessionConfig = config();
+    sessionConfig.nickServPassword = QStringLiteral("nick-secret");
+    Fixture fixture(sessionConfig);
+    fixture.connectTls();
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :sasl=PLAIN\r\n"));
+    QCOMPARE(fixture.transport->writtenFrames(),
+             QByteArrayList({
+                 QByteArrayLiteral("CAP LS 302\r\n"),
+                 QByteArrayLiteral("CAP REQ :sasl\r\n"),
+                 QByteArrayLiteral("NICK omairc\r\n"),
+                 QByteArrayLiteral("USER omairc 8 * :Omairc User\r\n"),
+             }));
+    QVERIFY(!fixture.wrote(QByteArrayLiteral("PASS nick-secret\r\n")));
+
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc ACK :sasl\r\n"
+                          "AUTHENTICATE +\r\n"));
+    QCOMPARE(decodeAuthenticatePlain(fixture.transport->writtenFrames().last()),
+             QByteArray("omairc\0omairc\0nick-secret", 25));
+
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(":server 903 omairc :SASL successful\r\n"
+                          ":server 001 omairc :Welcome\r\n"));
+    QVERIFY(!fixture.wrote(QByteArrayLiteral(
+        "PRIVMSG NickServ :IDENTIFY nick-secret\r\n")));
+    QVERIFY(fixture.wrote(QByteArrayLiteral("JOIN #omarchy\r\n")));
+}
+
+void SessionTest::nickServOnlyWithoutSaslIdentifiesBeforeJoin()
+{
+    IrcSessionConfig sessionConfig = config();
+    sessionConfig.nickServPassword = QStringLiteral("nick-secret");
+    Fixture fixture(sessionConfig);
+    fixture.connectTls();
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :account-notify\r\n"
+                          ":server 001 omairc :Welcome\r\n"));
+    const QByteArrayList frames = fixture.transport->writtenFrames();
+    QVERIFY(!fixture.wrote(QByteArrayLiteral("PASS nick-secret\r\n")));
+    const int identify = frames.indexOf(
+        QByteArrayLiteral("PRIVMSG NickServ :IDENTIFY nick-secret\r\n"));
+    const int join = frames.indexOf(QByteArrayLiteral("JOIN #omarchy\r\n"));
+    QVERIFY(identify >= 0);
+    QVERIFY(join >= 0);
+    QVERIFY(identify < join);
+}
+
+void SessionTest::bothSecretsSaslSendsPassAndPlainFromNickServ()
+{
+    IrcSessionConfig sessionConfig = config();
+    sessionConfig.password = QStringLiteral("server-secret");
+    sessionConfig.nickServPassword = QStringLiteral("nick-secret");
+    Fixture fixture(sessionConfig);
+    fixture.connectTls();
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :sasl=PLAIN\r\n"));
+    QCOMPARE(fixture.transport->writtenFrames(),
+             QByteArrayList({
+                 QByteArrayLiteral("CAP LS 302\r\n"),
+                 QByteArrayLiteral("CAP REQ :sasl\r\n"),
+                 QByteArrayLiteral("PASS server-secret\r\n"),
+                 QByteArrayLiteral("NICK omairc\r\n"),
+                 QByteArrayLiteral("USER omairc 8 * :Omairc User\r\n"),
+             }));
+
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc ACK :sasl\r\n"
+                          "AUTHENTICATE +\r\n"));
+    const QByteArray plain =
+        decodeAuthenticatePlain(fixture.transport->writtenFrames().last());
+    QCOMPARE(plain, QByteArray("omairc\0omairc\0nick-secret", 25));
+    QVERIFY(!plain.contains("server-secret"));
+}
+
+void SessionTest::bothSecretsWithoutSaslPassThenIdentifyBeforeJoin()
+{
+    IrcSessionConfig sessionConfig = config();
+    sessionConfig.password = QStringLiteral("server-secret");
+    sessionConfig.nickServPassword = QStringLiteral("nick-secret");
+    Fixture fixture(sessionConfig);
+    fixture.connectTls();
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :account-notify\r\n"
+                          ":server 001 omairc :Welcome\r\n"));
+    const QByteArrayList frames = fixture.transport->writtenFrames();
+    QVERIFY(fixture.wrote(QByteArrayLiteral("PASS server-secret\r\n")));
+    const int identify = frames.indexOf(
+        QByteArrayLiteral("PRIVMSG NickServ :IDENTIFY nick-secret\r\n"));
+    const int join = frames.indexOf(QByteArrayLiteral("JOIN #omarchy\r\n"));
+    QVERIFY(identify >= 0);
+    QVERIFY(join >= 0);
+    QVERIFY(identify < join);
+}
+
+void SessionTest::saslSuccessDoesNotIdentify()
+{
+    IrcSessionConfig sessionConfig = config();
+    sessionConfig.password = QStringLiteral("server-secret");
+    sessionConfig.nickServPassword = QStringLiteral("nick-secret");
+    Fixture fixture(sessionConfig);
+    fixture.connectTls();
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :sasl=PLAIN\r\n"
+                          ":server CAP omairc ACK :sasl\r\n"
+                          "AUTHENTICATE +\r\n"
+                          ":server 903 omairc :SASL successful\r\n"
+                          ":server 001 omairc :Welcome\r\n"));
+    QVERIFY(!fixture.wrote(QByteArrayLiteral(
+        "PRIVMSG NickServ :IDENTIFY nick-secret\r\n")));
+    QVERIFY(fixture.wrote(QByteArrayLiteral("JOIN #omarchy\r\n")));
+}
+
+void SessionTest::saslFailureDoesNotFallThroughToIdentify()
+{
+    IrcSessionConfig sessionConfig = config();
+    sessionConfig.nickServPassword = QStringLiteral("nick-secret");
+    Fixture fixture(sessionConfig);
+    QSignalSpy failed(fixture.session, &IrcSession::errorOccurred);
+    fixture.connectTls();
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :sasl=PLAIN\r\n"
+                          ":server CAP omairc ACK :sasl\r\n"
+                          "AUTHENTICATE +\r\n"
+                          ":server 904 omairc :SASL failed\r\n"
+                          ":server 001 omairc :Welcome\r\n"));
+    QCOMPARE(failed.size(), 1);
+    QCOMPARE(fixture.session->state(), IrcSession::State::Failed);
+    QVERIFY(!fixture.wrote(QByteArrayLiteral(
+        "PRIVMSG NickServ :IDENTIFY nick-secret\r\n")));
+    QVERIFY(!fixture.wrote(QByteArrayLiteral("JOIN #omarchy\r\n")));
 }
 
 void SessionTest::tlsCertificateFailureIsExplicit()
@@ -1460,6 +1611,46 @@ void SessionTest::configuredPasswordNeverAppearsInStatusEntries()
             QCOMPARE(entry.text(), entry.label() + QStringLiteral(" ***"));
         }
     }
+}
+
+void SessionTest::plaintextIdentifyEmitsOneStatusWarning()
+{
+    IrcSessionConfig sessionConfig = config();
+    sessionConfig.tlsEnabled = false;
+    sessionConfig.nickServPassword = QStringLiteral("nick-secret");
+    Fixture fixture(sessionConfig);
+    StatusCollector status(fixture.session);
+    fixture.session->start();
+    fixture.transport->completeConnect();
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :account-notify\r\n"
+                          ":server 001 omairc :Welcome\r\n"));
+    int warnings = 0;
+    for (const IrcStatusEntry &entry : status.entries) {
+        if (entry.label() == QStringLiteral("identify")) {
+            ++warnings;
+            QCOMPARE(entry.text(),
+                     QStringLiteral("NickServ identify will be sent in clear text"));
+            QCOMPARE(entry.severity(), IrcLogSeverity::Alert);
+        }
+        QVERIFY(!entry.text().contains(QStringLiteral("nick-secret")));
+    }
+    QCOMPARE(warnings, 1);
+    QVERIFY(status.anyFieldContains(QStringLiteral("PRIVMSG NickServ :IDENTIFY ***")));
+}
+
+void SessionTest::automaticIdentifyDoesNotAppearInStatusAsSecret()
+{
+    IrcSessionConfig sessionConfig = config();
+    sessionConfig.nickServPassword = QStringLiteral("nick-secret");
+    Fixture fixture(sessionConfig);
+    StatusCollector status(fixture.session);
+    fixture.connectTls();
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :account-notify\r\n"
+                          ":server 001 omairc :Welcome\r\n"));
+    QVERIFY(status.anyFieldContains(QStringLiteral("PRIVMSG NickServ :IDENTIFY ***")));
+    QVERIFY(!status.anyFieldContains(QStringLiteral("nick-secret")));
 }
 
 void SessionTest::keyedJoinIsRedactedInStatusEntries()

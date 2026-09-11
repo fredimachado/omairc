@@ -59,17 +59,21 @@ class IrcConnection : public QObject
     Q_PROPERTY(QString realname READ realname WRITE setRealname NOTIFY draftChanged)
     Q_PROPERTY(QString autojoin READ autojoin WRITE setAutojoin NOTIFY draftChanged)
     Q_PROPERTY(bool passwordSet READ passwordSet NOTIFY draftChanged)
+    Q_PROPERTY(bool nickServSet READ nickServSet NOTIFY draftChanged)
     Q_PROPERTY(CredentialStore::State credentialState READ credentialState
                NOTIFY credentialStateChanged)
     Q_PROPERTY(QString credentialError READ credentialError NOTIFY credentialStateChanged)
     Q_PROPERTY(QString credentialStatus READ credentialStatus NOTIFY credentialStateChanged)
     Q_PROPERTY(bool canForgetPassword READ canForgetPassword
                NOTIFY credentialStateChanged)
+    Q_PROPERTY(bool canForgetNickServ READ canForgetNickServ
+               NOTIFY credentialStateChanged)
     Q_PROPERTY(QString problem READ problem NOTIFY draftChanged)
     Q_PROPERTY(bool dirty READ dirty NOTIFY draftChanged)
     Q_PROPERTY(QString displayName READ displayName NOTIFY draftChanged)
     Q_PROPERTY(bool setupRequired READ setupRequired NOTIFY setupRequiredChanged)
     Q_PROPERTY(bool focusPassword READ focusPassword NOTIFY focusPasswordChanged)
+    Q_PROPERTY(bool focusNickServ READ focusNickServ NOTIFY focusNickServChanged)
 
 public:
     using TransportFactory = std::function<IrcTransport *()>;
@@ -95,15 +99,18 @@ public:
     QString realname() const;
     QString autojoin() const;
     bool passwordSet() const;
+    bool nickServSet() const;
     CredentialStore::State credentialState() const;
     QString credentialError() const;
     QString credentialStatus() const;
     bool canForgetPassword() const;
+    bool canForgetNickServ() const;
     QString problem() const;
     bool dirty() const;
     QString displayName() const;
     bool setupRequired() const;
     bool focusPassword() const;
+    bool focusNickServ() const;
 
     void setHost(const QString &host);
     void setPort(int port);
@@ -117,8 +124,11 @@ public:
     Q_INVOKABLE void select(const QString &networkId);
     Q_INVOKABLE bool add();
     Q_INVOKABLE void setPassword(const QString &password);
+    Q_INVOKABLE void setNickServPassword(const QString &password);
     Q_INVOKABLE void forgetPassword();
+    Q_INVOKABLE void forgetNickServ();
     Q_INVOKABLE void removeStoredPassword();
+    Q_INVOKABLE void removeStoredNickServ();
     Q_INVOKABLE bool apply();
     Q_INVOKABLE void discard();
     Q_INVOKABLE bool removeSelected();
@@ -132,6 +142,7 @@ signals:
     void draftChanged();
     void setupRequiredChanged();
     void focusPasswordChanged();
+    void focusNickServChanged();
     void credentialStateChanged();
 
 private:
@@ -157,6 +168,7 @@ private:
     struct IrcAppliedSession {
         IrcNetworkProfile profile;
         quint64 secretRevision = 0;
+        quint64 nickServRevision = 0;
     };
 
     struct RosterRow {
@@ -191,10 +203,9 @@ private:
                               const QString &message);
     void handleCredentialWrite(CredentialStore::State state, const QString &message);
     void settleCredentialRead(IrcDraftSecret &secret, const IrcNetworkProfile &profile,
-                              CredentialStore::State state, const QString &password,
-                              const QString &message);
-    void compensatePersistedSecret(IrcDraftSecret &secret,
-                                   const IrcNetworkProfile &profile);
+                              const CredentialKey &key, CredentialStore::State state,
+                              const QString &password, const QString &message);
+    void compensatePersistedSecret(IrcDraftSecret &secret, const CredentialKey &key);
     void queueCredentialWrite(const CredentialKey &key, const QString &password,
                               quint64 revision);
     void queueCredentialRemoval(const CredentialKey &key, quint64 revision);
@@ -203,10 +214,19 @@ private:
         const IrcNetworkProfile &profile) const;
     bool reconcile(const IrcNetworkProfile &profile);
     CredentialKey credentialKey(const IrcNetworkProfile &profile) const;
+    CredentialKey nickServCredentialKey(const IrcNetworkProfile &profile) const;
+    void applySecret(IrcDraftSecret &secret, const CredentialKey &previousKey,
+                     const CredentialKey &nextKey, bool rememberEmptyObsolete);
+    QString secretStatus(const IrcDraftSecret &secret, const QString &noun) const;
+    bool secretIsIdle(const IrcDraftSecret &secret) const;
+    bool secretUnreadable(const IrcDraftSecret &secret, bool saved) const;
+    void clearFocusPassword();
+    void clearFocusNickServ();
+    void requestStartupSecret(const IrcNetworkProfile &profile);
     bool startupCredentialsPending() const;
     bool startupConnectAllowed(const IrcNetworkProfile &profile) const;
     void requestStartupPassword(const IrcNetworkProfile &profile);
-    void persistSecretSaved(const QString &networkId, bool saved);
+    void persistSavedFlag(const CredentialKey &key, bool saved);
     bool startMarkedStartupProfiles();
     void loadStored();
     void sortStored();
@@ -219,9 +239,15 @@ private:
     QVector<RosterRow> rosterRows() const;
     const IrcDraftSecret &secretFor(const QString &networkId) const;
     IrcDraftSecret &secretFor(const QString &networkId);
+    const IrcDraftSecret &nickServSecretFor(const QString &networkId) const;
+    IrcDraftSecret &nickServSecretFor(const QString &networkId);
     const IrcDraftSecret &selectedSecret() const;
     IrcDraftSecret &selectedSecret();
+    const IrcDraftSecret &selectedNickServSecret() const;
+    IrcDraftSecret &selectedNickServSecret();
+    IrcDraftSecret &secretForKey(const CredentialKey &key);
     bool hasQueuedOperationFor(const QString &networkId) const;
+    bool hasQueuedOperationFor(const CredentialKey &key) const;
 
     IrcController &m_controller;
     TransportFactory m_transportFactory;
@@ -231,9 +257,11 @@ private:
     IrcNetworkProfile m_draft;
     QString m_selectedNetworkId;
     QHash<QString, IrcDraftSecret> m_secrets;
+    QHash<QString, IrcDraftSecret> m_nickServSecrets;
     QHash<QString, IrcAppliedSession> m_applied;
     NetworkListModel m_networks;
     bool m_focusPassword = false;
+    bool m_focusNickServ = false;
     QList<CredentialOperation> m_credentialOperations;
     QList<CredentialKey> m_pendingReads;
     bool m_operationInFlight = false;

@@ -68,14 +68,17 @@ TestCase {
         property string realname: ""
         property string autojoin: "#omarchy"
         property bool passwordSet: false
+        property bool nickServSet: false
         property string credentialError: ""
         property string credentialStatus: "secure storage unavailable"
         property bool canForgetPassword: false
+        property bool canForgetNickServ: false
         property string problem: "Nick is required"
         property bool dirty: true
         property string displayName: "irc.libera.chat"
         property bool setupRequired: true
         property bool focusPassword: false
+        property bool focusNickServ: false
         property var networks: setupNetworks
         property string selectedNetworkId: "setup-id"
         property bool canAdd: false
@@ -85,18 +88,35 @@ TestCase {
         property string lastSetPassword: ""
         property int forgetPasswordCalls: 0
         property int removeStoredPasswordCalls: 0
+        property int setNickServPasswordCalls: 0
+        property string lastSetNickServPassword: ""
+        property int forgetNickServCalls: 0
+        property int removeStoredNickServCalls: 0
 
         function setPassword(password) {
             setPasswordCalls += 1;
             lastSetPassword = password;
         }
 
+        function setNickServPassword(password) {
+            setNickServPasswordCalls += 1;
+            lastSetNickServPassword = password;
+        }
+
         function forgetPassword() {
             forgetPasswordCalls += 1;
         }
 
+        function forgetNickServ() {
+            forgetNickServCalls += 1;
+        }
+
         function removeStoredPassword() {
             removeStoredPasswordCalls += 1;
+        }
+
+        function removeStoredNickServ() {
+            removeStoredNickServCalls += 1;
         }
 
         function apply() {
@@ -2272,6 +2292,44 @@ TestCase {
         compare(fakeConnection.removeStoredPasswordCalls, 1);
         window.close();
         fakeConnection.canForgetPassword = false;
+    }
+
+    function test_nickServFieldAndForgetAreIndependent() {
+        fakeConnection.canForgetNickServ = true;
+        fakeConnection.forgetNickServCalls = 0;
+        fakeConnection.removeStoredNickServCalls = 0;
+        fakeConnection.forgetPasswordCalls = 0;
+        var window = createTemporaryObject(setupWindowComponent, null);
+        verify(window !== null, "The setup window should load");
+        tryCompare(window, "visible", true);
+
+        var nickServ = findChild(window, "connectionNickServ");
+        verify(nickServ !== null, "Could not find connectionNickServ");
+        var forgetNickServ = findChild(window, "connectionForgetNickServ");
+        verify(forgetNickServ !== null, "Could not find connectionForgetNickServ");
+        compare(forgetNickServ.visible, true);
+        mouseClick(forgetNickServ);
+        compare(fakeConnection.forgetNickServCalls, 1);
+        compare(fakeConnection.removeStoredNickServCalls, 1);
+        compare(fakeConnection.forgetPasswordCalls, 0);
+        window.close();
+        fakeConnection.canForgetNickServ = false;
+    }
+
+    function test_focusNickServOpensSheetAndFocusesField() {
+        fakeConnection.focusNickServ = false;
+        var window = createTemporaryObject(setupWindowComponent, null);
+        verify(window !== null, "The setup window should load");
+        tryCompare(window, "visible", true);
+        window.connectionSheetOpen = false;
+
+        fakeConnection.focusNickServ = true;
+        tryCompare(window, "connectionSheetOpen", true);
+        var nickServ = findChild(window, "connectionNickServ");
+        verify(nickServ !== null, "Could not find connectionNickServ");
+        tryCompare(nickServ, "activeFocus", true);
+        window.close();
+        fakeConnection.focusNickServ = false;
     }
 
     function test_incompleteProfileEnterDoesNotCommitPassword() {

@@ -8,13 +8,15 @@ struct CredentialKey
     QString networkId;
     QString username;
     QString host;
+    QString purpose;
 };
 
 inline bool operator==(const CredentialKey &left, const CredentialKey &right)
 {
     return left.networkId == right.networkId
         && left.username == right.username
-        && left.host == right.host;
+        && left.host == right.host
+        && left.purpose == right.purpose;
 }
 
 inline bool operator!=(const CredentialKey &left, const CredentialKey &right)

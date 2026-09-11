@@ -8,20 +8,24 @@ A dead-simple IRC client for Omarchy, built with Qt Quick and C++.
 
 The first launch opens a connection sheet with Libera Chat defaults. Enter a
 nick, change the host if you want a different network, and type a server
-password only if that network needs one. Apply starts the session. Add more
-networks from the list on the left side of the sheet. Each network keeps its
-own channels, direct messages, nick, and connection state in the sidebar.
-TLS is on by default. Omairc does not connect on its own by default. Enable
-Connect automatically on startup for each session that you want on launch.
+password or NickServ password only if that network needs them. Password is
+the connection `PASS`. NickServ is the services account: SASL PLAIN when the
+server offers it, otherwise `IDENTIFY` after welcome. Apply starts the
+session. Add more networks from the list on the left side of the sheet. Each
+network keeps its own channels, direct messages, nick, and connection state
+in the sidebar. TLS is on by default. Omairc does not connect on its own by
+default. Enable Connect automatically on startup for each session that you
+want on launch.
 
 Omairc remembers host, port, TLS, nick, username, real name, and autojoin in
-`$XDG_CONFIG_HOME/omairc/`. Passwords are stored through QtKeychain in the
-desktop Secret Service. If that service is unavailable, the password stays
-session-only and the connection sheet says so. If a password was saved and
-secure storage cannot return it, Connect automatically on startup leaves
-that network disconnected and focuses the password field. Errors and
-warnings go to `$XDG_STATE_HOME/omairc/omairc.log`. Connect automatically on
-startup is off by default and can be enabled in the Connect sheet.
+`$XDG_CONFIG_HOME/omairc/`. Passwords and NickServ secrets are stored
+through QtKeychain in the desktop Secret Service. If that service is
+unavailable, those secrets stay session-only and the connection sheet says
+which one. If a saved secret cannot be returned, Connect automatically on
+startup leaves that network disconnected and focuses the missing field.
+Errors and warnings go to `$XDG_STATE_HOME/omairc/omairc.log`. Connect
+automatically on startup is off by default and can be enabled in the Connect
+sheet.
 Press `Ctrl+,` or click `edit` beside a network name to reopen the sheet.
 The network name opens Status for that network.
 

@@ -65,6 +65,7 @@ struct IrcSessionConfig
     QString username;
     QString realname;
     QString password;
+    QString nickServPassword;
     QStringList autojoinChannels;
     bool reconnectEnabled = true;
     int reconnectBaseDelayMilliseconds = 1000;
@@ -259,6 +260,7 @@ private:
     RegistrationNick m_registrationNick = RegistrationNick::Configured;
     bool m_saslRequested = false;
     bool m_saslPending = false;
+    bool m_saslSucceeded = false;
     bool m_capabilityNegotiationEnded = false;
     bool m_capabilityListSeen = false;
     QString m_channelTypes;
