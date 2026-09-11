@@ -465,13 +465,6 @@ void LiveIrcdTest::chatHistoryOnJoin()
                        IrcCapability::ChatHistory);
                }));
     QVERIFY(joinChannel(client, channel));
-    QVERIFY(waitUntil([&] {
-        for (const IrcStatusEntry &entry : client.status) {
-            if (entry.label() == QLatin1String("CHATHISTORY"))
-                return true;
-        }
-        return false;
-    }));
     client.selectChannel(channel);
     QVERIFY(waitUntil([&] {
         QAbstractItemModel *messages = client.controller.messages();
@@ -502,6 +495,13 @@ void LiveIrcdTest::chatHistoryOnJoin()
                              .toString();
     QVERIFY(!time.isEmpty());
     QCOMPARE(client.controller.unreadCountFor(client.config.networkId), 0);
+    for (const IrcStatusEntry &entry : client.status) {
+        QVERIFY(entry.label() != QLatin1String("CHATHISTORY"));
+        QVERIFY(entry.label() != QLatin1String("PING"));
+        QVERIFY(entry.label() != QLatin1String("PONG"));
+        QVERIFY(entry.label() != QLatin1String("PRIVMSG"));
+        QVERIFY(!entry.text().contains(seed));
+    }
 }
 
 void LiveIrcdTest::saslPlain()
