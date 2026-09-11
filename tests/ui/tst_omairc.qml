@@ -2752,7 +2752,7 @@ TestCase {
 
     function test_connectionSheetOpenedFromComposerKeepsTabInsideSheet() {
         restoreNamedConnection();
-        failOnWarning("QQuickItem: Cannot set activeFocusOnTab to false once item is the active focus item");
+        failOnWarning("QQuickItem: Cannot set activeFocusOnTab to false once item is the active focus item.");
         var window = createTemporaryObject(fallbackWindowComponent, null);
         verify(window !== null, "The composer-to-Connect window should load");
         tryCompare(window, "visible", true);

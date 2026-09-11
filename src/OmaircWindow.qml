@@ -3774,7 +3774,7 @@ ApplicationWindow {
                     font.pixelSize: win.scaledSize(13)
                     placeholderText: win.findActive ? "Find" : ""
                     placeholderTextColor: win.mutedColor
-                    activeFocusOnTab: !win.connectionOverlayVisible
+                    enabled: !win.connectionOverlayVisible
                     leftPadding: win.scaledSize(8)
                     rightPadding: win.scaledSize(8)
                     topPadding: Math.max(win.scaledSize(8),
