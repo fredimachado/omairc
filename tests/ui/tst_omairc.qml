@@ -887,6 +887,14 @@ TestCase {
         return texts;
     }
 
+    function openJumpSheet() {
+        keyClick(Qt.Key_K, Qt.ControlModifier);
+        var sheet = item("jumpSheet");
+        tryCompare(sheet, "opened", true);
+        tryCompare(item("jumpFilter"), "activeFocus", true);
+        return sheet;
+    }
+
     function saveScreenshot(name) {
         var image = grabImage(appWindow.contentItem);
         try {
@@ -2300,6 +2308,120 @@ TestCase {
         tryCompare(appWindow, "consoleVisible", false);
     }
 
+    function test_ctrlKJumpsToFilteredConversation() {
+        compare(appWindow.currentConversation, "#omarchy");
+        var composer = item("messageComposer");
+        var sheet = openJumpSheet();
+
+        keyClick(Qt.Key_Down, Qt.AltModifier);
+        compare(appWindow.currentConversation, "#omarchy");
+        verify(sheet.opened);
+
+        typeText("ric");
+        tryCompare(item("jumpFilter"), "text", "ric");
+        var model = item("jumpModel");
+        compare(model.count, 1);
+        compare(model.get(0).name, "#ricing");
+        compare(appWindow.jumpSelectedIndex, 0);
+
+        keyClick(Qt.Key_Return);
+        tryCompare(sheet, "opened", false);
+        tryCompare(appWindow, "currentConversation", "#ricing");
+        compare(appWindow.title, "#ricing - Omairc");
+        compare(appWindow.consoleVisible, false);
+        tryCompare(composer, "activeFocus", true);
+    }
+
+    function test_ctrlKJumpsFromStatus() {
+        keyClick(Qt.Key_QuoteLeft, Qt.ControlModifier);
+        tryCompare(appWindow, "consoleVisible", true);
+        compare(appWindow.title, "Omarchy IRC Status");
+
+        var sheet = openJumpSheet();
+        typeText("ric");
+        tryCompare(item("jumpFilter"), "text", "ric");
+        keyClick(Qt.Key_Return);
+
+        tryCompare(sheet, "opened", false);
+        tryCompare(appWindow, "consoleVisible", false);
+        compare(appWindow.currentConversation, "#ricing");
+        compare(appWindow.title, "#ricing - Omairc");
+        tryCompare(item("messageComposer"), "activeFocus", true);
+    }
+
+    function test_ctrlKEscapeKeepsConversationAndDraft() {
+        var composer = item("messageComposer");
+        mouseClick(composer);
+        verify(composer.activeFocus);
+        typeText("keep this draft");
+        compare(composer.text, "keep this draft");
+        compare(appWindow.currentConversation, "#omarchy");
+
+        var sheet = openJumpSheet();
+        keyClick(Qt.Key_Escape);
+        tryCompare(sheet, "opened", false);
+        compare(appWindow.currentConversation, "#omarchy");
+        compare(composer.text, "keep this draft");
+        tryCompare(composer, "activeFocus", true);
+
+        sheet = openJumpSheet();
+        typeText("ri");
+        tryCompare(item("jumpFilter"), "text", "ri");
+        keyClick(Qt.Key_Escape);
+        tryCompare(sheet, "opened", false);
+        compare(appWindow.currentConversation, "#omarchy");
+        compare(appWindow.title, "#omarchy · Omarchy IRC - Omairc");
+        compare(composer.text, "keep this draft");
+        tryCompare(composer, "activeFocus", true);
+    }
+
+    function test_ctrlKDisambiguatesDuplicateChannels() {
+        var sheet = openJumpSheet();
+        typeText("#omarchy");
+        tryCompare(item("jumpFilter"), "text", "#omarchy");
+        var model = item("jumpModel");
+        compare(model.count, 2);
+        compare(model.get(0).name, "#omarchy");
+        compare(model.get(0).networkId, appWindow.mockOmarchyId);
+        compare(model.get(0).label, "#omarchy · Omarchy IRC");
+        compare(model.get(1).name, "#omarchy");
+        compare(model.get(1).networkId, appWindow.mockOftcId);
+        compare(model.get(1).label, "#omarchy · irc.oftc.net");
+        compare(appWindow.jumpSelectedIndex, 0);
+
+        keyClick(Qt.Key_Down);
+        compare(appWindow.jumpSelectedIndex, 1);
+
+        keyClick(Qt.Key_Return);
+        tryCompare(sheet, "opened", false);
+        tryCompare(appWindow, "currentConversationId", "mock-oftc\n#omarchy");
+        compare(appWindow.currentConversation, "#omarchy");
+        compare(appWindow.title, "#omarchy · irc.oftc.net - Omairc");
+        tryCompare(item("messageComposer"), "activeFocus", true);
+    }
+
+    function test_ctrlKIsNoOpWhenConnectIsVisible() {
+        var window = createTemporaryObject(setupWindowComponent, null);
+        verify(window !== null, "The setup window should load");
+        tryCompare(window, "visible", true);
+        waitForRendering(window.contentItem);
+        window.requestActivate();
+        tryCompare(window, "active", true);
+
+        var connectSheet = findChild(window, "connectionSheet");
+        verify(connectSheet !== null, "Could not find connectionSheet");
+        verify(connectSheet.visible);
+        var jump = findChild(window, "jumpSheet");
+        verify(jump !== null, "Could not find jumpSheet");
+        compare(jump.opened, false);
+
+        keyClick(Qt.Key_K, Qt.ControlModifier);
+
+        compare(jump.opened, false);
+        verify(connectSheet.visible);
+        window.close();
+    }
+
     function test_openDirectMessageFromMember() {
         var members = item("membersList");
         var directConversations = item("directConversationRepeater");
@@ -3435,6 +3557,10 @@ TestCase {
                "shortcut sheet should list Alt+Left / Alt+Right");
         verify(texts.indexOf("walk networks") !== -1,
                "shortcut sheet should name walk networks");
+        verify(texts.indexOf("Ctrl+K") !== -1,
+               "shortcut sheet should list Ctrl+K");
+        verify(texts.indexOf("jump to conversation") !== -1,
+               "shortcut sheet should name jump to conversation");
         keyClick(Qt.Key_Escape);
         tryCompare(sheet, "opened", false);
     }
