@@ -41,8 +41,12 @@ public:
 private:
     void rebuildRowIndex();
 
+    void resetNicks(QVector<QString> nicks);
+    void syncNicks(QVector<QString> nicks);
+
     IrcEventReducer& m_reducer;
     std::optional<IrcConversationKey> m_selected;
+    std::optional<IrcConversationKey> m_loaded;
     QVector<QString> m_nicks;
     QHash<QString, int> m_rowByNick;
 };

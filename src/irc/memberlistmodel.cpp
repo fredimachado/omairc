@@ -63,10 +63,70 @@ void MemberListModel::reload()
         }
     }
 
+    const bool sameConversation = m_selected.has_value() == m_loaded.has_value()
+        && (!m_selected || *m_selected == *m_loaded);
+    if (!sameConversation) {
+        resetNicks(std::move(nicks));
+        return;
+    }
+    syncNicks(std::move(nicks));
+}
+
+void MemberListModel::resetNicks(QVector<QString> nicks)
+{
     beginResetModel();
     m_nicks = std::move(nicks);
     rebuildRowIndex();
+    m_loaded = m_selected;
     endResetModel();
+}
+
+void MemberListModel::syncNicks(QVector<QString> nicks)
+{
+    if (nicks == m_nicks) {
+        if (!m_nicks.isEmpty())
+            emit dataChanged(index(0, 0), index(m_nicks.size() - 1, 0),
+                             {LabelRole, StatusRole, AwayRole});
+        return;
+    }
+
+    int oldIndex = 0;
+    int newIndex = 0;
+    while (oldIndex < m_nicks.size() || newIndex < nicks.size()) {
+        if (oldIndex == m_nicks.size()) {
+            beginInsertRows(QModelIndex(), oldIndex, oldIndex);
+            m_nicks.insert(oldIndex, nicks.at(newIndex));
+            endInsertRows();
+            ++oldIndex;
+            ++newIndex;
+            continue;
+        }
+        if (newIndex == nicks.size()) {
+            beginRemoveRows(QModelIndex(), oldIndex, oldIndex);
+            m_nicks.removeAt(oldIndex);
+            endRemoveRows();
+            continue;
+        }
+        const QString& oldNick = m_nicks.at(oldIndex);
+        const QString& newNick = nicks.at(newIndex);
+        if (oldNick == newNick) {
+            ++oldIndex;
+            ++newIndex;
+            continue;
+        }
+        if (oldNick < newNick) {
+            beginRemoveRows(QModelIndex(), oldIndex, oldIndex);
+            m_nicks.removeAt(oldIndex);
+            endRemoveRows();
+            continue;
+        }
+        beginInsertRows(QModelIndex(), oldIndex, oldIndex);
+        m_nicks.insert(oldIndex, newNick);
+        endInsertRows();
+        ++oldIndex;
+        ++newIndex;
+    }
+    rebuildRowIndex();
 }
 
 void MemberListModel::rebuildRowIndex()

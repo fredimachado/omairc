@@ -78,6 +78,17 @@ struct IrcViewNotify {
         notify.messages = true;
         return notify;
     }
+
+    static IrcViewNotify membership()
+    {
+        IrcViewNotify notify;
+        notify.conversations = true;
+        notify.messages = true;
+        notify.members = IrcMemberSurface::Reset;
+        notify.selection = true;
+        notify.typing = true;
+        return notify;
+    }
 };
 
 struct IrcViewClassifier {
@@ -103,27 +114,27 @@ struct IrcViewClassifier {
 
     IrcViewNotify operator()(const IrcJoinEvent&) const
     {
-        return IrcViewNotify::resetAll();
+        return IrcViewNotify::membership();
     }
     IrcViewNotify operator()(const IrcPartEvent&) const
     {
-        return IrcViewNotify::resetAll();
+        return IrcViewNotify::membership();
     }
     IrcViewNotify operator()(const IrcQuitEvent&) const
     {
-        return IrcViewNotify::resetAll();
+        return IrcViewNotify::membership();
     }
     IrcViewNotify operator()(const IrcNickEvent&) const
     {
-        return IrcViewNotify::resetAll();
+        return IrcViewNotify::membership();
     }
     IrcViewNotify operator()(const IrcKickEvent&) const
     {
-        return IrcViewNotify::resetAll();
+        return IrcViewNotify::membership();
     }
     IrcViewNotify operator()(const IrcModeEvent&) const
     {
-        return IrcViewNotify::resetAll();
+        return IrcViewNotify::membership();
     }
 
     IrcViewNotify operator()(const IrcTopicEvent&) const
