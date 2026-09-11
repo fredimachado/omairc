@@ -6,6 +6,7 @@
 #include "ircnetworkprofile.h"
 #include "ircprofilestore.h"
 #include "ircsession.h"
+#include "storage/credentialstore.h"
 #include "ircslashcomplete.h"
 #include "ircstatusconsole.h"
 #include "liveharness.h"
@@ -13,6 +14,8 @@
 #include "memberlistmodel.h"
 #include "messagelistmodel.h"
 #include "networklogmodel.h"
+
+#include <memory>
 
 #include <QAbstractItemModel>
 #include <QCoreApplication>
@@ -231,6 +234,32 @@ QSet<QString> LiveUiSeat::channelMembers() const
     return {clientNick, peerNick, extraNick};
 }
 
+class MissingCredentialStore final : public CredentialStore
+{
+public:
+    void read(const CredentialKey &) override
+    {
+        emit readFinished(State::Loading, {}, {});
+        QMetaObject::invokeMethod(this, [this]() {
+            emit readFinished(State::Missing, {}, {});
+        }, Qt::QueuedConnection);
+    }
+
+    void write(const CredentialKey &, const QString &) override
+    {
+        QMetaObject::invokeMethod(this, [this]() {
+            emit writeFinished(State::Available, {});
+        }, Qt::QueuedConnection);
+    }
+
+    void remove(const CredentialKey &) override
+    {
+        QMetaObject::invokeMethod(this, [this]() {
+            emit writeFinished(State::Missing, {});
+        }, Qt::QueuedConnection);
+    }
+};
+
 LiveUiWorld::LiveUiWorld() = default;
 
 LiveUiWorld::~LiveUiWorld()
@@ -284,7 +313,8 @@ bool LiveUiWorld::open()
     m_backend = std::make_unique<Backend>();
     m_slash = std::make_unique<IrcSlashSession>();
     m_controller = std::make_unique<IrcController>();
-    m_connection = std::make_unique<IrcConnection>(*m_controller);
+    m_credentials = std::make_unique<MissingCredentialStore>();
+    m_connection = std::make_unique<IrcConnection>(*m_controller, *m_credentials);
 
     if (!loadWindow())
         return false;
@@ -306,6 +336,7 @@ void LiveUiWorld::close()
     m_window.clear();
     m_engine.reset();
     m_connection.reset();
+    m_credentials.reset();
     m_controller.reset();
     m_slash.reset();
     m_backend.reset();

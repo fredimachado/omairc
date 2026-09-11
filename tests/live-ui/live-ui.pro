@@ -50,6 +50,7 @@ HEADERS += \
     ../../src/irc/irccontroller.h \
     ../../src/irc/ircnetworkprofile.h \
     ../../src/irc/ircprofilestore.h \
+    ../../src/storage/credentialstore.h \
     ../../src/irc/ircconnection.h \
     ../../src/irc/qtirctransport.h \
     ../live/liveharness.h \
