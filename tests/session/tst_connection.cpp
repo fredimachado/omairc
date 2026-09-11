@@ -1489,7 +1489,7 @@ void ConnectionTest::failedMigrationDiscardRetriesWriteBeforeObsoleteDelete()
 void ConnectionTest::accountAndBouncerNetworkLoginAsOneName()
 {
     IrcController controller;
-    IrcConnection connection(controller, capturingFactory());
+    IrcConnection connection(controller, capturingFactory(), credentialStore());
     fillCompleteDraft(connection);
     connection.setAccount(QStringLiteral("joe"));
     connection.setBouncerNetwork(QStringLiteral("libera"));
