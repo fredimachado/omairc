@@ -13,9 +13,9 @@
 
 - This is a Qt 6 Quick application built with qmake and C++17.
 - Keep mock conversation state and presentation logic in
-  `src/OmaircWindow.qml`.
+  `src/OmaircWindow.qml`. That file is also the live window.
 - Keep `Backend` limited to desktop integration: Omarchy theme colors, live
-  theme watching, text scale, and window geometry.
+  theme watching, text scale, window geometry, and desktop notifications.
 - Keep IRC networking, protocol, session, and model code in `src/irc/`.
 - Keep system light/dark mode and portal text-scale detection in
   `SystemTheme`.
@@ -38,8 +38,9 @@
   empty strings in this interface even though the QML tree started without
   errors.
 - Dynamic direct-message navigation uses an unambiguous `conversation` role.
-  Test delegate boundaries directly and confirm rendered labels rather than
-  relying only on a clean startup.
+  Test the live `MessageListModel` and the compiled window, not only the mock
+  `ListModel`. Confirm rendered labels. A warning-free QML startup does not
+  prove that bindings render visible values.
 - Channel switching must update the topic, message model, people count, and
   member list together.
 - Show the people count, member toggle, and member panel only for channels.
@@ -47,29 +48,41 @@
   message with its own local message history.
 - Keep the composer single-line. `Enter` sends the message.
 
+## Review lessons
+
+`bin/check-conventions` already gates the mechanical repeats. These still
+need judgment.
+
+- Put a product rule in one place. `/msg` must not open a DM was gated in
+  the controller, then the reducer, then the translator (#23, #85, #88). A
+  new inbound or echo path that calls `ensureConversation` must cover
+  `/msg` with `echo-message`, incoming NickServ PRIVMSG, and incoming human
+  PRIVMSG in the same test matrix.
+- Do not hard-code CHANTYPES, CHANMODES, or PREFIX. Call
+  `IrcServerFeatures`.
+- Fail closed when redacting secrets for Status or error previews. Do not
+  enumerate one more well-formed bypass.
+
 ## Build and validation
 
+`bin/test` is the default gate. It runs `bin/check-conventions`, builds,
+checks CLI help and version, runs the C++ suite, and runs the offscreen QML
+tests. CI runs `bin/test`, `bin/test-san`, and `bin/test-live` on every pull
+request, and rejects a pull request whose base is not `master`.
+
 ```sh
-bin/build
 bin/test
+bin/test-san
 bin/test-install
 bin/test-desktop
 bin/test-live
-QT_QPA_PLATFORM=offscreen timeout 3 ./build/omairc
-QT_QPA_PLATFORM=offscreen timeout 3 ./build/omairc --mock
 ```
 
-The timeout is expected for the startup smoke check because the GUI event loop
-continues running. For visual changes, also inspect the running application;
-a warning-free QML startup does not prove that bindings render visible values.
-The UI tests exercise the production QML with mouse and keyboard input and
-write screenshots to `test-artifacts/`; inspect the relevant screenshot when
-changing layout or presentation.
-Use `bin/test-desktop` when the optional Xvfb, Xauthority, xdotool, and
-ImageMagick dependencies are available to verify the compiled executable as a
-black box without interacting with the user's active desktop. That runner
-launches `./build/omairc --mock`.
-Use `bin/test-live` when Docker is available to drive the real transport
-against Ergo, Solanum, and ngIRCd, then the dual-network production-QML
-proof. It is not part of `bin/test` and fails loudly if `docker` or
-`docker compose` is missing.
+`bin/test-desktop` needs Xvfb, Xauthority, xdotool, and ImageMagick. It
+launches `./build/omairc --mock` as a black box and is not in CI.
+`bin/test-live` needs Docker. It drives Ergo, Solanum, and ngIRCd, then the
+dual-network production-QML proof. It fails if `docker` or `docker compose`
+is missing.
+
+For visual changes, inspect the running window and the screenshots under
+`test-artifacts/`.

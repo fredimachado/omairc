@@ -16,6 +16,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - A network drop keeps the session reconnecting with the existing backoff until `/quit` or Connect stops it. Status stays reconnecting.
 
+### Fixed
+
+- Channel topics and join, part, quit, and nick event rows render as plain text. Server-controlled markup no longer becomes rich text.
+
 ## [0.2.0] - 2026-09-10
 
 ### Added

@@ -252,7 +252,7 @@ std::optional<QByteArray> readLine(QLocalSocket &socket)
     timer.start();
     QByteArray buffer;
     while (true) {
-        buffer += socket.readAll();
+        buffer += socket.read(kMaxIpcLineBytes + 1 - buffer.size());
         const qsizetype newline = buffer.indexOf('\n');
         if (newline >= 0) {
             if (newline > kMaxIpcLineBytes)

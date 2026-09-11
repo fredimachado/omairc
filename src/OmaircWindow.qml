@@ -2993,6 +2993,7 @@ ApplicationWindow {
                         objectName: "conversationTopic"
                         width: parent.width
                         text: win.plainIrcText(win.currentTopic)
+                        textFormat: Text.PlainText
                         color: win.mutedColor
                         elide: Text.ElideRight
                         font.family: "iA Writer Mono S"
@@ -3141,6 +3142,7 @@ ApplicationWindow {
                         width: parent.width - win.scaledSize(48)
                         horizontalAlignment: Text.AlignHCenter
                         text: win.plainIrcText(messageDelegate.body)
+                        textFormat: Text.PlainText
                         color: win.mutedColor
                         wrapMode: Text.Wrap
                         font.family: "iA Writer Mono S"

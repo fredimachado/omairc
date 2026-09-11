@@ -1854,6 +1854,7 @@ TestCase {
         compare(appWindow.currentTopic, formattedIrcBody());
         var topic = item("conversationTopic");
         compare(topic.text, "bold / red");
+        compare(topic.textFormat, Text.PlainText);
         verify(!containsMirc(topic.text));
 
         var list = item("messageList");
@@ -1873,6 +1874,7 @@ TestCase {
         var eventText = findChild(row, "messageEvent");
         verify(eventText !== null && eventText.visible, "Could not find messageEvent");
         compare(eventText.text, "bold / red");
+        compare(eventText.textFormat, Text.PlainText);
         verify(!containsMirc(eventText.text));
     }
 
