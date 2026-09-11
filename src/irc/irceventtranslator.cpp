@@ -71,33 +71,6 @@ bool isServiceUser(const IrcMessage& message, const IrcServerFeatures& features)
                                 QString::fromLatin1(types.data(), qsizetype(types.size())));
 }
 
-std::optional<IrcConversationKey> conversationFor(const QString& networkId,
-                                                  const QString& target,
-                                                  const IrcMessage& message,
-                                                  const QString& currentNick,
-                                                  const IrcServerFeatures& features)
-{
-    // A bouncer addresses its playback markers to the channel, so the sender is
-    // read before the target is classified.
-    if (message.prefix && !message.prefix->nick.empty()
-        && !ircNickIsRoutable(ircWireText(message.prefix->nick))) {
-        return std::nullopt;
-    }
-    if (features.isChannel(utf8(target)))
-        return key(networkId, target, features);
-    if (isNetworkNoticeTarget(target) || !hasUserPrefix(message)
-        || isServiceUser(message, features))
-        return std::nullopt;
-    const QString sender = author(message);
-    if (sender.isEmpty())
-        return std::nullopt;
-    if (same(target, currentNick, features))
-        return key(networkId, sender, features);
-    if (same(sender, currentNick, features))
-        return key(networkId, target, features);
-    return std::nullopt;
-}
-
 QStringList remainingParameters(const IrcMessage& message, std::size_t start)
 {
     QStringList result;
@@ -161,6 +134,34 @@ void appendMemberStatus(std::vector<IrcEvent>& events,
 }
 }
 
+std::optional<IrcConversationKey> ircConversationFor(
+    const QString& networkId,
+    const QString& target,
+    const IrcMessage& message,
+    const QString& currentNick,
+    const IrcServerFeatures& features)
+{
+    // A bouncer addresses its playback markers to the channel, so the sender is
+    // read before the target is classified.
+    if (message.prefix && !message.prefix->nick.empty()
+        && !ircNickIsRoutable(ircWireText(message.prefix->nick))) {
+        return std::nullopt;
+    }
+    if (features.isChannel(utf8(target)))
+        return key(networkId, target, features);
+    if (isNetworkNoticeTarget(target) || !hasUserPrefix(message)
+        || isServiceUser(message, features))
+        return std::nullopt;
+    const QString sender = author(message);
+    if (sender.isEmpty())
+        return std::nullopt;
+    if (same(target, currentNick, features))
+        return key(networkId, sender, features);
+    if (same(sender, currentNick, features))
+        return key(networkId, target, features);
+    return std::nullopt;
+}
+
 std::vector<IrcEvent> IrcEventTranslator::translate(
     const QString& networkId,
     const QString& currentNick,
@@ -177,7 +178,7 @@ std::vector<IrcEvent> IrcEventTranslator::translate(
 
     if (command == QStringLiteral("PRIVMSG") && message.parameters.size() >= 2) {
         const QString wireTarget = parameter(message, 0);
-        const std::optional<IrcConversationKey> conversation = conversationFor(
+        const std::optional<IrcConversationKey> conversation = ircConversationFor(
             networkId, wireTarget, message, currentNick, features);
         if (!conversation)
             return events;
@@ -207,7 +208,7 @@ std::vector<IrcEvent> IrcEventTranslator::translate(
         if (!phase)
             return events;
         const QString wireTarget = parameter(message, 0);
-        const std::optional<IrcConversationKey> conversation = conversationFor(
+        const std::optional<IrcConversationKey> conversation = ircConversationFor(
             networkId, wireTarget, message, currentNick, features);
         if (!conversation)
             return events;

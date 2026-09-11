@@ -226,6 +226,7 @@ private slots:
     void managerCreateStaysAddOnly();
     void managerDiscardUnregistersImmediately();
     void pingAndWelcomeProduceStatusEntries();
+    void statusKeepListOmitsProtocolDump();
     void configuredPasswordNeverAppearsInStatusEntries();
     void saslAccountNeverAppearsInStatusEntries();
     void keyedJoinIsRedactedInStatusEntries();
@@ -1624,8 +1625,57 @@ void SessionTest::pingAndWelcomeProduceStatusEntries()
                           "PING :abc\r\n"
                           ":server 001 omairc :Welcome\r\n"));
 
-    QVERIFY(status.hasLabel(QStringLiteral("PING")));
+    QVERIFY(!status.hasLabel(QStringLiteral("PING")));
+    QVERIFY(!status.hasLabel(QStringLiteral("CAP")));
     QVERIFY(status.hasLabel(QStringLiteral("001")));
+}
+
+void SessionTest::statusKeepListOmitsProtocolDump()
+{
+    IrcSessionConfig sessionConfig = config();
+    sessionConfig.autojoinChannels = {};
+    Fixture fixture(sessionConfig);
+    StatusCollector status(fixture.session);
+    fixture.connectTls();
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(
+            ":server CAP omairc LS :batch chathistory\r\n"
+            ":server CAP omairc ACK :batch chathistory\r\n"
+            ":server 001 omairc :Welcome\r\n"
+            ":server 372 omairc :- motd line\r\n"
+            ":server 376 omairc :End of MOTD\r\n"
+            ":omairc!u@h JOIN :#omarchy\r\n"
+            ":alice!u@h PRIVMSG #omarchy :hello there\r\n"
+            "PING :abc\r\n"
+            ":server PONG :abc\r\n"
+            ":server 353 omairc = #omarchy :@omairc alice\r\n"
+            ":server 366 omairc #omarchy :End of NAMES\r\n"
+            ":alice!u@h PRIVMSG #omarchy :\x01"
+            "ACTION waves\x01\r\n"
+            ":NickServ!NickServ@services NOTICE omairc :Please identify\r\n"
+            ":irc.host BATCH +hx chathistory #omarchy\r\n"
+            "@batch=hx :alice!u@h PRIVMSG #omarchy :older replay\r\n"
+            ":irc.host BATCH -hx\r\n"
+            ":lena!u@h INVITE omairc :#lab\r\n"
+            ":server 404 omairc #omarchy :Cannot send to channel\r\n"));
+
+    QVERIFY(status.hasLabel(QStringLiteral("001")));
+    QVERIFY(status.hasLabel(QStringLiteral("372")));
+    QVERIFY(status.hasLabel(QStringLiteral("376")));
+    QVERIFY(status.anyFieldContains(QStringLiteral("-NickServ- Please identify")));
+    QVERIFY(status.hasLabel(QStringLiteral("INVITE")));
+    QVERIFY(status.hasLabel(QStringLiteral("404")));
+    QVERIFY(!status.hasLabel(QStringLiteral("PING")));
+    QVERIFY(!status.hasLabel(QStringLiteral("PONG")));
+    QVERIFY(!status.hasLabel(QStringLiteral("JOIN")));
+    QVERIFY(!status.hasLabel(QStringLiteral("PRIVMSG")));
+    QVERIFY(!status.hasLabel(QStringLiteral("353")));
+    QVERIFY(!status.hasLabel(QStringLiteral("ACTION")));
+    QVERIFY(!status.hasLabel(QStringLiteral("CTCP")));
+    QVERIFY(!status.hasLabel(QStringLiteral("BATCH")));
+    QVERIFY(!status.anyFieldContains(QStringLiteral("hello there")));
+    QVERIFY(!status.anyFieldContains(QStringLiteral("older replay")));
+    QVERIFY(!status.anyFieldContains(QStringLiteral("ACTION waves")));
 }
 
 void SessionTest::configuredPasswordNeverAppearsInStatusEntries()
@@ -1641,7 +1691,8 @@ void SessionTest::configuredPasswordNeverAppearsInStatusEntries()
                           "PING :abc\r\n"
                           ":server 001 omairc :Welcome\r\n"));
 
-    QVERIFY(passStatus.hasLabel(QStringLiteral("PING")));
+    QVERIFY(!passStatus.hasLabel(QStringLiteral("PING")));
+    QVERIFY(!passStatus.hasLabel(QStringLiteral("CAP")));
     QVERIFY(passStatus.hasLabel(QStringLiteral("001")));
     QVERIFY(passStatus.hasLabel(QStringLiteral("PASS")));
     QVERIFY(!passStatus.anyFieldContains(QStringLiteral("hunter2")));
@@ -1659,14 +1710,14 @@ void SessionTest::configuredPasswordNeverAppearsInStatusEntries()
                           ":server 903 omairc :SASL successful\r\n"
                           ":server 001 omairc :Welcome\r\n"));
 
-    QVERIFY(saslStatus.hasLabel(QStringLiteral("AUTHENTICATE")));
+    QVERIFY(!saslStatus.hasLabel(QStringLiteral("AUTHENTICATE")));
+    QVERIFY(!saslStatus.anyFieldContains(QStringLiteral("AUTHENTICATE")));
+    QVERIFY(saslStatus.hasLabel(QStringLiteral("903")));
     QVERIFY(saslStatus.hasLabel(QStringLiteral("001")));
     QVERIFY(!saslStatus.anyFieldContains(QStringLiteral("hunter2")));
     for (const IrcStatusEntry& entry : saslStatus.entries) {
-        if (entry.label() == QStringLiteral("AUTHENTICATE")
-            || entry.label() == QStringLiteral("PASS")) {
-            QCOMPARE(entry.text(), entry.label() + QStringLiteral(" ***"));
-        }
+        if (entry.label() == QStringLiteral("PASS"))
+            QCOMPARE(entry.text(), QStringLiteral("PASS ***"));
     }
 }
 
@@ -1693,7 +1744,12 @@ void SessionTest::plaintextIdentifyEmitsOneStatusWarning()
         QVERIFY(!entry.text().contains(QStringLiteral("nick-secret")));
     }
     QCOMPARE(warnings, 1);
-    QVERIFY(status.anyFieldContains(QStringLiteral("PRIVMSG NickServ :IDENTIFY ***")));
+    QVERIFY(!status.anyFieldContains(QStringLiteral("PRIVMSG")));
+    const IrcStatusEntry identify = IrcStatusEntry::outgoing(
+        QStringLiteral("network-a"),
+        QByteArrayLiteral("PRIVMSG NickServ :IDENTIFY nick-secret\r\n"));
+    QCOMPARE(identify.text(), QStringLiteral("PRIVMSG NickServ :IDENTIFY ***"));
+    QVERIFY(!identify.text().contains(QStringLiteral("nick-secret")));
 }
 
 void SessionTest::automaticIdentifyDoesNotAppearInStatusAsSecret()
@@ -1706,8 +1762,12 @@ void SessionTest::automaticIdentifyDoesNotAppearInStatusAsSecret()
     fixture.transport->injectBytes(
         QByteArrayLiteral(":server CAP omairc LS :account-notify\r\n"
                           ":server 001 omairc :Welcome\r\n"));
-    QVERIFY(status.anyFieldContains(QStringLiteral("PRIVMSG NickServ :IDENTIFY ***")));
+    QVERIFY(!status.anyFieldContains(QStringLiteral("PRIVMSG")));
     QVERIFY(!status.anyFieldContains(QStringLiteral("nick-secret")));
+    const IrcStatusEntry identify = IrcStatusEntry::outgoing(
+        QStringLiteral("network-a"),
+        QByteArrayLiteral("PRIVMSG NickServ :IDENTIFY nick-secret\r\n"));
+    QCOMPARE(identify.text(), QStringLiteral("PRIVMSG NickServ :IDENTIFY ***"));
 }
 
 void SessionTest::saslAccountNeverAppearsInStatusEntries()
@@ -1725,15 +1785,13 @@ void SessionTest::saslAccountNeverAppearsInStatusEntries()
                           "AUTHENTICATE +\r\n"
                           ":server 903 omairc :SASL successful\r\n"));
 
-    QVERIFY(status.hasLabel(QStringLiteral("AUTHENTICATE")));
+    QVERIFY(!status.hasLabel(QStringLiteral("AUTHENTICATE")));
+    QVERIFY(!status.anyFieldContains(QStringLiteral("AUTHENTICATE")));
+    QVERIFY(status.hasLabel(QStringLiteral("903")));
     QVERIFY(!status.anyFieldContains(QStringLiteral("hunter2")));
     QVERIFY(!status.anyFieldContains(QStringLiteral("joe/libera")));
     QVERIFY(!status.anyFieldContains(QString::fromUtf8(
         QByteArray("joe/libera\0joe/libera\0hunter2", 29).toBase64())));
-    for (const IrcStatusEntry& entry : status.entries) {
-        if (entry.label() == QStringLiteral("AUTHENTICATE"))
-            QCOMPARE(entry.text(), QStringLiteral("AUTHENTICATE ***"));
-    }
 }
 
 void SessionTest::keyedJoinIsRedactedInStatusEntries()
@@ -1751,7 +1809,7 @@ void SessionTest::keyedJoinIsRedactedInStatusEntries()
     QVERIFY(fixture.session->join(*target));
     QCOMPARE(fixture.transport->writtenFrames().last(),
              QByteArrayLiteral("JOIN #secret hunter2\r\n"));
-    QVERIFY(status.anyFieldContains(QStringLiteral("JOIN #secret ***")));
+    QVERIFY(!status.hasLabel(QStringLiteral("JOIN")));
     QVERIFY(!status.anyFieldContains(QStringLiteral("hunter2")));
 
     const IrcStatusEntry unkeyed = IrcStatusEntry::outgoing(
@@ -2006,7 +2064,6 @@ void SessionTest::channelTalkAboutServicesStaysReadable()
 void SessionTest::negotiatedChannelTypesClassifyDollarTargets()
 {
     Fixture fixture;
-    StatusCollector status(fixture.session);
     fixture.connectTls();
     fixture.transport->injectBytes(
         QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
@@ -2016,35 +2073,30 @@ void SessionTest::negotiatedChannelTypesClassifyDollarTargets()
                                           QStringLiteral("identify my_nick s3cret")));
     QCOMPARE(fixture.transport->writtenFrames().last(),
              QByteArrayLiteral("PRIVMSG $serv :identify my_nick s3cret\r\n"));
-
-    QString lastDollar;
-    for (const IrcStatusEntry& entry : status.entries) {
-        if (entry.text().startsWith(QStringLiteral("PRIVMSG $serv")))
-            lastDollar = entry.text();
-    }
-    QCOMPARE(lastDollar, QStringLiteral("PRIVMSG $serv :identify my_nick s3cret"));
+    const QByteArray dollarLine =
+        QByteArrayLiteral("PRIVMSG $serv :identify my_nick s3cret\r\n");
+    QCOMPARE(IrcStatusEntry::outgoing(QStringLiteral("network-a"), dollarLine,
+                                      fixture.session->channelTypes())
+                 .text(),
+             QStringLiteral("PRIVMSG $serv :identify my_nick s3cret"));
 
     fixture.transport->injectBytes(
         QByteArrayLiteral(":server 005 omairc CHANTYPES=# PREFIX=(ov)@+ :are supported\r\n"));
     QVERIFY(fixture.session->sendPrivmsg(QStringLiteral("$serv"),
                                           QStringLiteral("identify my_nick s3cret")));
-    for (const IrcStatusEntry& entry : status.entries) {
-        if (entry.text().startsWith(QStringLiteral("PRIVMSG $serv")))
-            lastDollar = entry.text();
-    }
-    QCOMPARE(lastDollar, QStringLiteral("PRIVMSG $serv :IDENTIFY ***"));
-    QVERIFY(!lastDollar.contains(QStringLiteral("s3cret")));
+    const IrcStatusEntry asNick = IrcStatusEntry::outgoing(
+        QStringLiteral("network-a"), dollarLine, fixture.session->channelTypes());
+    QCOMPARE(asNick.text(), QStringLiteral("PRIVMSG $serv :IDENTIFY ***"));
+    QVERIFY(!asNick.text().contains(QStringLiteral("s3cret")));
 
     fixture.transport->injectBytes(
         QByteArrayLiteral(":server 005 omairc AWAYLEN=200 :CHANTYPES=$ are supported\r\n"));
     QVERIFY(fixture.session->sendPrivmsg(QStringLiteral("$serv"),
                                           QStringLiteral("identify my_nick s3cret")));
-    for (const IrcStatusEntry& entry : status.entries) {
-        if (entry.text().startsWith(QStringLiteral("PRIVMSG $serv")))
-            lastDollar = entry.text();
-    }
-    QCOMPARE(lastDollar, QStringLiteral("PRIVMSG $serv :IDENTIFY ***"));
-    QVERIFY(!lastDollar.contains(QStringLiteral("s3cret")));
+    const IrcStatusEntry stillNick = IrcStatusEntry::outgoing(
+        QStringLiteral("network-a"), dollarLine, fixture.session->channelTypes());
+    QCOMPARE(stillNick.text(), QStringLiteral("PRIVMSG $serv :IDENTIFY ***"));
+    QVERIFY(!stillNick.text().contains(QStringLiteral("s3cret")));
 }
 
 void SessionTest::serviceRepliesStayReadable()
@@ -2736,7 +2788,7 @@ void SessionTest::batchOpenAndCloseDoNotEmitBatchLines()
             ":irc.host BATCH -ns\r\n"));
 
     QCOMPARE(commands, QStringList{QStringLiteral("PRIVMSG")});
-    QVERIFY(status.hasLabel(QStringLiteral("BATCH")));
+    QVERIFY(!status.hasLabel(QStringLiteral("BATCH")));
     QCOMPARE(fixture.session->state(), IrcSession::State::Registered);
 }
 
@@ -2934,7 +2986,8 @@ void SessionTest::historyBatchSwallowsInnerPrivmsg()
     QCOMPARE(int(batches.front().lines.size()), 1);
     QCOMPARE(QString::fromStdString(batches.front().lines.front().command),
              QStringLiteral("PRIVMSG"));
-    QVERIFY(status.hasLabel(QStringLiteral("BATCH")));
+    QVERIFY(!status.hasLabel(QStringLiteral("BATCH")));
+    QVERIFY(!status.anyFieldContains(QStringLiteral("older")));
     QCOMPARE(fixture.session->state(), IrcSession::State::Registered);
 
     fixture.transport->injectBytes(

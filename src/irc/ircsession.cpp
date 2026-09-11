@@ -366,6 +366,11 @@ QString IrcSession::nick() const
     return m_nick;
 }
 
+QString IrcSession::channelTypes() const
+{
+    return m_channelTypes;
+}
+
 void IrcSession::setIgnoreFilter(IgnoreFilter filter)
 {
     m_ignoreFilter = std::move(filter);
@@ -719,7 +724,8 @@ void IrcSession::sendLine(const QByteArray &line)
 {
     if (line.isEmpty())
         return;
-    emit statusEntry(IrcStatusEntry::outgoing(m_config.networkId, line, m_channelTypes));
+    if (ircStatusKeepsOutgoing(line))
+        emit statusEntry(IrcStatusEntry::outgoing(m_config.networkId, line, m_channelTypes));
     m_transport->write(line);
 }
 
@@ -776,7 +782,8 @@ void IrcSession::handleMessage(const IrcMessage &message)
     if (m_ignoreFilter && m_ignoreFilter(message, m_nick))
         return;
 
-    emit statusEntry(IrcStatusEntry::incoming(m_config.networkId, message, m_channelTypes));
+    if (ircStatusKeepsIncoming(message, m_nick, m_channelTypes))
+        emit statusEntry(IrcStatusEntry::incoming(m_config.networkId, message, m_channelTypes));
     applyIsupport(message);
 
     if (message.command == "BATCH") {

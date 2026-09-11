@@ -9,6 +9,7 @@
 #include "ircserverfeatures.h"
 #include "ircsession.h"
 #include "ircslashcomplete.h"
+#include "ircstatusentry.h"
 #include "networklogmodel.h"
 
 #include <type_traits>
@@ -875,24 +876,30 @@ void CommandTest::joinSendsKeyedFrames()
 
     IrcStatusConsole *console = controller.console();
     QVERIFY(!logContains(console->lines(), QStringLiteral("JOIN #c pworddd")));
-    QVERIFY(logContains(console->lines(), QStringLiteral("JOIN #c ***")));
     QVERIFY(!logContains(console->lines(), QStringLiteral("JOIN #a pword")));
-    QVERIFY(logContains(console->lines(), QStringLiteral("JOIN #a ***")));
-    QVERIFY(logContains(console->lines(), QStringLiteral("JOIN #b")));
     QVERIFY(!logContains(console->lines(), QStringLiteral("pworddd")));
     QVERIFY(!logContains(console->lines(), QStringLiteral("pword")));
+    QVERIFY(!logContains(console->lines(), QStringLiteral("JOIN")));
 
     QVERIFY(controller.sendMessage(QStringLiteral("/join #secretchan hunter2")));
     QCOMPARE(transport->writtenFrames().last(),
              QByteArrayLiteral("JOIN #secretchan hunter2\r\n"));
-    QVERIFY(logContains(console->lines(), QStringLiteral("JOIN #secretchan ***")));
     QVERIFY(!logContains(console->lines(), QStringLiteral("hunter2")));
+    QCOMPARE(IrcStatusEntry::outgoing(
+                 QStringLiteral("libera"),
+                 QByteArrayLiteral("JOIN #secretchan hunter2\r\n"))
+                 .text(),
+             QStringLiteral("JOIN #secretchan ***"));
 
     QVERIFY(console->submit(QStringLiteral("/join #fromstatus deskkey")));
     QCOMPARE(transport->writtenFrames().last(),
              QByteArrayLiteral("JOIN #fromstatus deskkey\r\n"));
-    QVERIFY(logContains(console->lines(), QStringLiteral("JOIN #fromstatus ***")));
     QVERIFY(!logContains(console->lines(), QStringLiteral("deskkey")));
+    QCOMPARE(IrcStatusEntry::outgoing(
+                 QStringLiteral("libera"),
+                 QByteArrayLiteral("JOIN #fromstatus deskkey\r\n"))
+                 .text(),
+             QStringLiteral("JOIN #fromstatus ***"));
 
     const int beforeBad = transport->writtenFrames().size();
     QVERIFY(!controller.sendMessage(QStringLiteral("/join #a b c")));

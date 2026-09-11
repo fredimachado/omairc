@@ -11,6 +11,13 @@
 
 struct IrcHistoryBatch;
 
+std::optional<IrcConversationKey> ircConversationFor(
+    const QString& networkId,
+    const QString& target,
+    const IrcMessage& message,
+    const QString& currentNick,
+    const IrcServerFeatures& features);
+
 class IrcEventTranslator
 {
 public:
