@@ -140,6 +140,20 @@ bool findMarkVisible(QQuickItem *list, int row)
     return false;
 }
 
+QQuickItem *findMemberItem(QQuickWindow *window, const QString &nick)
+{
+    QQuickItem *found = nullptr;
+    if (!window)
+        return found;
+    walkSidebarItems(window->contentItem(), [&](QQuickItem *item) {
+        if (found)
+            return;
+        if (item->objectName() == QStringLiteral("member-%1").arg(nick))
+            found = item;
+    });
+    return found;
+}
+
 void typeIntoComposer(QQuickWindow *window, const QString &text)
 {
     QTest::keyClick(window, Qt::Key_A, Qt::ControlModifier);
@@ -515,12 +529,38 @@ void LiveUiTest::joinPartModeUpdatesMembersWithoutReset()
     QCoreApplication::processEvents();
 
     QVERIFY(waitUntil([&] {
+        QQuickItem *list = window->findChild<QQuickItem *>(QStringLiteral("messageList"));
+        return list && list->isVisible() && list->height() > 0
+            && !window->property("consoleVisible").toBool();
+    }));
+    window->setProperty("membersVisible", true);
+    window->setWidth(1180);
+    QCoreApplication::processEvents();
+
+    const auto memberDump = [&] {
         QQuickItem *panel = window->findChild<QQuickItem *>(QStringLiteral("membersPanel"));
         QQuickItem *list = window->findChild<QQuickItem *>(QStringLiteral("membersList"));
-        return panel && panel->isVisible() && list && list->isVisible()
-            && window->findChild<QQuickItem *>(QStringLiteral("member-anna"))
-            && window->property("currentPeopleCount").toInt() == 3;
-    }));
+        return QStringLiteral(
+                   "conv=%1 channel=%2 people=%3 console=%4 membersVisible=%5 "
+                   "width=%6 panel=%7 list=%8 anna=%9")
+            .arg(window->property("currentConversation").toString())
+            .arg(window->property("currentConversationIsChannel").toBool())
+            .arg(window->property("currentPeopleCount").toInt())
+            .arg(window->property("consoleVisible").toBool())
+            .arg(window->property("membersVisible").toBool())
+            .arg(window->width())
+            .arg(panel ? (panel->isVisible() ? "visible" : "hidden") : "missing")
+            .arg(list ? (list->isVisible() ? "visible" : "hidden") : "missing")
+            .arg(findMemberItem(window, QStringLiteral("anna")) ? "yes" : "no");
+    };
+    QVERIFY2(waitUntil([&] {
+                 QQuickItem *panel = window->findChild<QQuickItem *>(QStringLiteral("membersPanel"));
+                 QQuickItem *list = window->findChild<QQuickItem *>(QStringLiteral("membersList"));
+                 return panel && panel->isVisible() && list && list->isVisible()
+                     && findMemberItem(window, QStringLiteral("anna"))
+                     && window->property("currentPeopleCount").toInt() == 3;
+             }),
+             qPrintable(memberDump()));
 
     auto *members = qobject_cast<QAbstractItemModel *>(controller.members());
     QVERIFY(members);
@@ -528,45 +568,43 @@ void LiveUiTest::joinPartModeUpdatesMembersWithoutReset()
     QSignalSpy memberInserts(members, &QAbstractItemModel::rowsInserted);
     QSignalSpy memberRemoves(members, &QAbstractItemModel::rowsRemoved);
 
-    QQuickItem *anna = window->findChild<QQuickItem *>(QStringLiteral("member-anna"));
+    QQuickItem *anna = findMemberItem(window, QStringLiteral("anna"));
     QVERIFY(anna);
     const QPointer<QQuickItem> annaBefore = anna;
 
     transport->injectBytes(QByteArrayLiteral(":carol!u@h JOIN :#omarchy\r\n"));
-    QVERIFY(waitUntil([&] {
-        return controller.peopleCount() == 4
-            && window->property("currentPeopleCount").toInt() == 4
-            && window->findChild<QQuickItem *>(QStringLiteral("member-carol"));
-    }));
+    QVERIFY2(waitUntil([&] {
+                 return controller.peopleCount() == 4
+                     && window->property("currentPeopleCount").toInt() == 4
+                     && findMemberItem(window, QStringLiteral("carol"));
+             }),
+             qPrintable(memberDump()));
     QCOMPARE(memberResets.size(), 0);
     QCOMPARE(memberInserts.size(), 1);
-    QCOMPARE(annaBefore.data(),
-             window->findChild<QQuickItem *>(QStringLiteral("member-anna")));
-    QCOMPARE(window->findChild<QQuickItem *>(QStringLiteral("member-carol"))
-                 ->property("nick")
-                 .toString(),
+    QCOMPARE(annaBefore.data(), findMemberItem(window, QStringLiteral("anna")));
+    QCOMPARE(findMemberItem(window, QStringLiteral("carol"))->property("nick").toString(),
              QStringLiteral("carol"));
 
     transport->injectBytes(QByteArrayLiteral(":op!u@h MODE #omarchy +o carol\r\n"));
-    QVERIFY(waitUntil([&] {
-        QQuickItem *carol = window->findChild<QQuickItem *>(QStringLiteral("member-carol"));
-        return carol && carol->property("label").toString() == QStringLiteral("@carol");
-    }));
+    QVERIFY2(waitUntil([&] {
+                 QQuickItem *carol = findMemberItem(window, QStringLiteral("carol"));
+                 return carol && carol->property("label").toString() == QStringLiteral("@carol");
+             }),
+             qPrintable(memberDump()));
     QCOMPARE(memberResets.size(), 0);
-    QCOMPARE(annaBefore.data(),
-             window->findChild<QQuickItem *>(QStringLiteral("member-anna")));
+    QCOMPARE(annaBefore.data(), findMemberItem(window, QStringLiteral("anna")));
 
     transport->injectBytes(QByteArrayLiteral(":rio!u@h PART #omarchy\r\n"));
-    QVERIFY(waitUntil([&] {
-        return controller.peopleCount() == 3
-            && window->property("currentPeopleCount").toInt() == 3
-            && !window->findChild<QQuickItem *>(QStringLiteral("member-rio"));
-    }));
+    QVERIFY2(waitUntil([&] {
+                 return controller.peopleCount() == 3
+                     && window->property("currentPeopleCount").toInt() == 3
+                     && !findMemberItem(window, QStringLiteral("rio"));
+             }),
+             qPrintable(memberDump()));
     QCOMPARE(memberResets.size(), 0);
     QCOMPARE(memberRemoves.size(), 1);
-    QCOMPARE(annaBefore.data(),
-             window->findChild<QQuickItem *>(QStringLiteral("member-anna")));
-    QVERIFY(window->findChild<QQuickItem *>(QStringLiteral("member-carol")));
+    QCOMPARE(annaBefore.data(), findMemberItem(window, QStringLiteral("anna")));
+    QVERIFY(findMemberItem(window, QStringLiteral("carol")));
 }
 
 void LiveUiTest::replayAndLiveSameAuthorMinuteDoNotGroupThroughIrcEvent()
