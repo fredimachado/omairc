@@ -7,12 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0alpha] - 2026-09-11
+
 ### Added
 
-- Connect **NickServ** field beside Password. Password is connection `PASS` only, except the one-field SASL compatibility row. NickServ is SASL PLAIN when the server offers it, otherwise `IDENTIFY` after welcome and before autojoin. Both secrets use the existing Secret Service store. Forget and startup focus are independent.
+- Passwords stored through QtKeychain in the desktop Secret Service. If that service is unavailable, the secret stays session-only and Connect says so.
+- Connect **NickServ** field beside Password. Password is connection `PASS` only, except the one-field SASL compatibility row. NickServ is SASL PLAIN when the server offers it, otherwise `IDENTIFY` after welcome and before autojoin. Both secrets use the Secret Service store. Forget and startup focus are independent.
 - `/ignore <nick>`, `/unignore <nick>`, and `/ignored`. Each network keeps its own list. Private messages, notices, and invites from those nicks stay off Status and do not open a direct message. Channel text stays visible. Clearing the network drops its list.
 - IRCv3 CHATHISTORY on channel join. After a successful self JOIN, Omairc sends `CHATHISTORY LATEST` when the server advertised `chathistory` or `draft/chathistory` plus `batch`. Replayed lines keep their original times and stay unread. The body uses muted text. A server that never offers the cap still starts empty.
+- `/whois` replies copy into the asking conversation as wrapped event rows. A Status `/whois` stays on Status.
 - Desktop notification for a direct message when the window is unfocused, even when the body has no nick.
+- Connect sheet is keyboard-complete. Tab reaches Add network, Forget, Discard, and Apply. Enter Applies from fields, or from a selected network row on the second press. Overflowing lists show a scrollbar.
 - Jump to a channel, direct message, or Status with `Ctrl+K`. Type to filter, Up/Down to highlight, Enter to jump, Escape to dismiss. Disabled while Connect is visible.
 - Walk sidebar network headers with `Alt+Left` / `Alt+Right`. Enter opens that network's Status. `Ctrl+,` opens Connect for the focused header, including a network with no conversations.
 
@@ -25,6 +30,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Channel topics and join, part, quit, and nick event rows render as plain text. Server-controlled markup no longer becomes rich text.
 - QtKeychain `OtherError` is a storage error, not "unavailable".
 - Connect automatically on startup does not start a network whose saved secret cannot be read. The password field is focused instead.
+- First-open Connect focuses Nick or Host so Enter Applies. Discard undoes an unstored Add.
+- Chat, action, and playback clocks use local time.
+- Incoming NickServ PRIVMSG stays on Status and does not open a direct message.
 
 ## [0.2.0] - 2026-09-10
 
@@ -83,6 +91,7 @@ First public release: a dead-simple IRC client for Omarchy.
 - Keyboard map, slash-command complete, selectable transcript, and follow-unseen.
 - qmake Unix install tree and a GitHub Releases pacman repository.
 
-[Unreleased]: https://github.com/fredimachado/omairc/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/fredimachado/omairc/compare/v0.3.0alpha...HEAD
+[0.3.0alpha]: https://github.com/fredimachado/omairc/compare/v0.2.0...v0.3.0alpha
 [0.2.0]: https://github.com/fredimachado/omairc/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/fredimachado/omairc/releases/tag/v0.1.0
