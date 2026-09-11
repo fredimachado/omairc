@@ -551,7 +551,7 @@ void LiveUiTest::ctrlFFindsLiveTranscriptAndStatus()
                           ":zed!u@h PRIVMSG #omarchy :older unique body needle-xyz\r\n"
                           ":uniqnick!u@h PRIVMSG #omarchy :no nick in this line\r\n"
                           ":anna!u@h PRIVMSG #omarchy :later filler\r\n"
-                          ":server 998 omairc :status body without the numeric\r\n"));
+                          ":server 404 omairc #omarchy :status body without the numeric\r\n"));
     controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
 
     QQmlApplicationEngine engine;
@@ -645,7 +645,7 @@ void LiveUiTest::ctrlFFindsLiveTranscriptAndStatus()
     QVERIFY(log);
     QVERIFY(waitUntil([&] {
         for (int row = 0; row < log->rowCount(); ++row) {
-            if (log->field(row, QStringLiteral("label")) == QStringLiteral("998"))
+            if (log->field(row, QStringLiteral("label")) == QStringLiteral("404"))
                 return true;
         }
         return false;
@@ -656,13 +656,13 @@ void LiveUiTest::ctrlFFindsLiveTranscriptAndStatus()
     QTest::keyClick(window, Qt::Key_F, Qt::ControlModifier);
     QVERIFY(waitUntil([&] { return window->property("findActive").toBool(); }));
     QCOMPARE(composer->property("placeholderText").toString(), QStringLiteral("Find"));
-    typeIntoComposer(window, QStringLiteral("998"));
+    typeIntoComposer(window, QStringLiteral("404"));
     QVERIFY(waitUntil([&] {
         const int index = window->property("findIndex").toInt();
-        return index >= 0 && log->field(index, QStringLiteral("label")) == QStringLiteral("998");
+        return index >= 0 && log->field(index, QStringLiteral("label")) == QStringLiteral("404");
     }));
     QVERIFY(!log->field(window->property("findIndex").toInt(), QStringLiteral("text"))
-                 .contains(QStringLiteral("998")));
+                 .contains(QStringLiteral("404")));
     QVERIFY(findMarkVisible(console, window->property("findIndex").toInt()));
     QVERIFY2(saveFixtureShot(window, QStringLiteral("live-ui-find")), "find screenshot");
 }

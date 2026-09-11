@@ -2,6 +2,7 @@
 
 #include "ircmessage.h"
 
+#include <QByteArray>
 #include <QDateTime>
 #include <QString>
 #include <QStringView>
@@ -72,3 +73,8 @@ private:
     QString m_text;
     std::optional<IrcWhoisLine> m_whoisLine;
 };
+
+bool ircStatusKeepsIncoming(const IrcMessage& message,
+                            const QString& currentNick,
+                            QStringView channelTypes);
+bool ircStatusKeepsOutgoing(const QByteArray& line);

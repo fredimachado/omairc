@@ -118,6 +118,16 @@ bool logContains(QAbstractItemModel *lines, const QString& needle)
     return false;
 }
 
+bool logHasLabel(QAbstractItemModel *lines, const QString& label)
+{
+    for (int row = 0; row < lines->rowCount(); ++row) {
+        if (lines->data(lines->index(row, 0), NetworkLogModel::LabelRole).toString()
+            == label)
+            return true;
+    }
+    return false;
+}
+
 bool selectedBodiesContain(QAbstractItemModel *messages, const QString& needle)
 {
     if (!messages)
@@ -210,6 +220,7 @@ private slots:
     void reducesTrafficAndRoutesOutboundByNetwork();
     void liberaConnectCreatesChannelNotAuthDirect();
     void incomingNoticeStaysOnStatus();
+    void statusKeepListLeavesTranscriptIntact();
     void incomingActionUsesActionKindAndStripsCtcp();
     void emptyNetworkIdDoesNotSwitch();
     void presenceCapabilitiesGateAwayAndStatus();
@@ -476,6 +487,65 @@ void ControllerTest::incomingNoticeStaysOnStatus()
             roleAt(messages, row, MessageListModel::BodyRole).toString();
         QVERIFY(!body.contains(QStringLiteral("heads up")));
     }
+}
+
+void ControllerTest::statusKeepListLeavesTranscriptIntact()
+{
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    IrcSessionConfig sessionConfig = config(QStringLiteral("libera"));
+    sessionConfig.autojoinChannels = {};
+    IrcSession *session = controller.addSession(sessionConfig, transport);
+    QVERIFY(session);
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    transport->completeConnect();
+    transport->injectBytes(
+        QByteArrayLiteral(
+            ":server CAP omairc LS :batch chathistory\r\n"
+            ":server CAP omairc ACK :batch chathistory\r\n"
+            ":server 001 omairc :Welcome\r\n"
+            ":server 372 omairc :- motd line\r\n"
+            ":omairc!u@h JOIN :#omarchy\r\n"
+            ":alice!u@h JOIN :#omarchy\r\n"
+            ":alice!u@h PRIVMSG #omarchy :hello there\r\n"
+            "PING :abc\r\n"
+            ":server PONG :abc\r\n"
+            ":server 353 omairc = #omarchy :@omairc alice\r\n"
+            ":server 366 omairc #omarchy :End of NAMES\r\n"
+            ":alice!u@h PRIVMSG #omarchy :\x01ACTION waves\x01\r\n"
+            ":NickServ!NickServ@services NOTICE omairc :Please identify\r\n"
+            ":irc.host BATCH +hx chathistory #omarchy\r\n"
+            "@batch=hx :alice!u@h PRIVMSG #omarchy :older replay\r\n"
+            ":irc.host BATCH -hx\r\n"
+            ":alice!u@h PART #omarchy :bye\r\n"));
+
+    auto *lines = controller.console()->lines();
+    QVERIFY(lines);
+    QVERIFY(logContains(lines, QStringLiteral("Welcome")));
+    QVERIFY(logContains(lines, QStringLiteral("motd line")));
+    QVERIFY(logContains(lines, QStringLiteral("-NickServ- Please identify")));
+    QVERIFY(logHasLabel(lines, QStringLiteral("001")));
+    QVERIFY(logHasLabel(lines, QStringLiteral("372")));
+    QVERIFY(!logHasLabel(lines, QStringLiteral("PING")));
+    QVERIFY(!logHasLabel(lines, QStringLiteral("PONG")));
+    QVERIFY(!logHasLabel(lines, QStringLiteral("JOIN")));
+    QVERIFY(!logHasLabel(lines, QStringLiteral("PRIVMSG")));
+    QVERIFY(!logHasLabel(lines, QStringLiteral("353")));
+    QVERIFY(!logHasLabel(lines, QStringLiteral("ACTION")));
+    QVERIFY(!logHasLabel(lines, QStringLiteral("CTCP")));
+    QVERIFY(!logHasLabel(lines, QStringLiteral("BATCH")));
+    QVERIFY(!logContains(lines, QStringLiteral("hello there")));
+    QVERIFY(!logContains(lines, QStringLiteral("older replay")));
+
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
+    QVERIFY(messages);
+    QVERIFY(selectedBodiesContain(messages, QStringLiteral("hello there")));
+    QVERIFY(selectedBodiesContain(messages, QStringLiteral("waves")));
+    QVERIFY(selectedBodiesContain(messages, QStringLiteral("omairc joined")));
+    QVERIFY(selectedBodiesContain(messages, QStringLiteral("alice joined")));
+    QVERIFY(selectedBodiesContain(messages, QStringLiteral("alice left")));
+    QVERIFY(selectedBodiesContain(messages, QStringLiteral("older replay")));
 }
 
 void ControllerTest::incomingActionUsesActionKindAndStripsCtcp()
@@ -1285,8 +1355,7 @@ void ControllerTest::noticeSendsWithoutSelecting()
         qobject_cast<QAbstractItemModel *>(controller.conversations());
     QVERIFY(conversations);
     QCOMPARE(rowForTarget(conversations, QStringLiteral("lena")), -1);
-    QVERIFY(logContains(controller.console()->lines(),
-                        QStringLiteral("NOTICE lena")));
+    QCOMPARE(controller.selectedTarget(), QStringLiteral("#omarchy"));
 }
 
 void ControllerTest::noticeEchoesExistingDirect()
@@ -1508,8 +1577,6 @@ void ControllerTest::msgSendsWithoutSelecting()
         qobject_cast<QAbstractItemModel *>(controller.conversations());
     QVERIFY(conversations);
     QCOMPARE(rowForTarget(conversations, QStringLiteral("lena")), -1);
-    QVERIFY(logContains(controller.console()->lines(),
-                        QStringLiteral("PRIVMSG lena")));
     QCOMPARE(messages->rowCount(), selectedRows);
     for (int row = 0; row < messages->rowCount(); ++row) {
         QVERIFY(roleAt(messages, row, MessageListModel::BodyRole)
@@ -1673,7 +1740,8 @@ void ControllerTest::statusMsgStaysOpen()
     QVERIFY(console->submit(QStringLiteral("/msg NickServ help")));
     QVERIFY(console->isOpen());
     QCOMPARE(controller.selectedTarget(), QStringLiteral("#omarchy"));
-    QVERIFY(logContains(console->lines(), QStringLiteral("PRIVMSG NickServ")));
+    QCOMPARE(transport->writtenFrames().last(),
+             QByteArrayLiteral("PRIVMSG NickServ :help\r\n"));
 }
 
 void ControllerTest::disconnectedMsgIsNotConnected()
@@ -2572,8 +2640,6 @@ void ControllerTest::statusMsgNickservIdentifyDoesNotOpenDirect()
     auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
     QVERIFY(!selectedBodiesContain(messages, QStringLiteral("s3cret")));
     QVERIFY(!selectedBodiesContain(messages, QStringLiteral("identify my_nick")));
-    QVERIFY(logContains(console->lines(),
-                        QStringLiteral("PRIVMSG nickserv :IDENTIFY ***")));
     QVERIFY(logContains(console->lines(), QStringLiteral("IDENTIFY ***")));
     QVERIFY(!logContains(console->lines(), QStringLiteral("s3cret")));
 }

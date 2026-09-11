@@ -1,6 +1,9 @@
 #include "ircstatusentry.h"
 
+#include "irceventtranslator.h"
 #include "ircsecretpolicy.h"
+#include "ircservicenick.h"
+#include "ircserverfeatures.h"
 #include "irctcp.h"
 #include "ircwiretext.h"
 
@@ -407,6 +410,205 @@ QString firstToken(QStringView line)
     }
     return trimmed.left(end).toString().toUpper();
 }
+
+enum class IrcStatusKeep : quint8 {
+    Keep,
+    Drop,
+    IncomingPrivmsg,
+};
+
+struct IrcStatusKeepRow
+{
+    const char *command = nullptr;
+    IrcStatusKeep incoming = IrcStatusKeep::Drop;
+    IrcStatusKeep outgoing = IrcStatusKeep::Drop;
+};
+
+constexpr IrcStatusKeepRow kStatusKeep[] = {
+    {"PING", IrcStatusKeep::Drop, IrcStatusKeep::Drop},
+    {"PONG", IrcStatusKeep::Drop, IrcStatusKeep::Drop},
+    {"CAP", IrcStatusKeep::Drop, IrcStatusKeep::Drop},
+    {"AUTHENTICATE", IrcStatusKeep::Drop, IrcStatusKeep::Drop},
+    {"JOIN", IrcStatusKeep::Drop, IrcStatusKeep::Drop},
+    {"PART", IrcStatusKeep::Drop, IrcStatusKeep::Drop},
+    {"QUIT", IrcStatusKeep::Drop, IrcStatusKeep::Drop},
+    {"NICK", IrcStatusKeep::Drop, IrcStatusKeep::Drop},
+    {"KICK", IrcStatusKeep::Drop, IrcStatusKeep::Drop},
+    {"TOPIC", IrcStatusKeep::Drop, IrcStatusKeep::Drop},
+    {"MODE", IrcStatusKeep::Drop, IrcStatusKeep::Drop},
+    {"BATCH", IrcStatusKeep::Drop, IrcStatusKeep::Drop},
+    {"TAGMSG", IrcStatusKeep::Drop, IrcStatusKeep::Drop},
+    {"AWAY", IrcStatusKeep::Drop, IrcStatusKeep::Drop},
+    {"CHATHISTORY", IrcStatusKeep::Drop, IrcStatusKeep::Drop},
+    {"PRIVMSG", IrcStatusKeep::IncomingPrivmsg, IrcStatusKeep::Drop},
+    {"NOTICE", IrcStatusKeep::Keep, IrcStatusKeep::Drop},
+    {"FAIL", IrcStatusKeep::Keep, IrcStatusKeep::Drop},
+    {"WARN", IrcStatusKeep::Keep, IrcStatusKeep::Drop},
+    {"NOTE", IrcStatusKeep::Keep, IrcStatusKeep::Drop},
+    {"ERROR", IrcStatusKeep::Keep, IrcStatusKeep::Drop},
+    {"INVITE", IrcStatusKeep::Keep, IrcStatusKeep::Drop},
+    {"PASS", IrcStatusKeep::Drop, IrcStatusKeep::Keep},
+};
+
+constexpr bool verbsEqual(const char *left, const char *right)
+{
+    if (left == nullptr || right == nullptr)
+        return left == right;
+    while (*left != '\0' && *right != '\0') {
+        if (*left != *right)
+            return false;
+        ++left;
+        ++right;
+    }
+    return *left == *right;
+}
+
+constexpr bool statusKeepIsWellFormed()
+{
+    constexpr int count = int(sizeof(kStatusKeep) / sizeof(kStatusKeep[0]));
+    for (int index = 0; index < count; ++index) {
+        const char *verb = kStatusKeep[index].command;
+        if (verb == nullptr || verb[0] == '\0')
+            return false;
+        for (const char *cursor = verb; *cursor != '\0'; ++cursor) {
+            if (*cursor >= 'a' && *cursor <= 'z')
+                return false;
+        }
+        for (int earlier = 0; earlier < index; ++earlier) {
+            if (verbsEqual(kStatusKeep[earlier].command, verb))
+                return false;
+        }
+    }
+    return true;
+}
+
+static_assert(statusKeepIsWellFormed(),
+              "kStatusKeep rows must be uppercase and unique");
+
+const IrcStatusKeepRow *statusKeepRow(const QString& command)
+{
+    for (const IrcStatusKeepRow& row : kStatusKeep) {
+        if (command == QLatin1String(row.command))
+            return &row;
+    }
+    return nullptr;
+}
+
+IrcServerFeatures featuresForChannelTypes(QStringView channelTypes)
+{
+    IrcServerFeatures features;
+    if (channelTypes.isEmpty())
+        return features;
+    const QByteArray bytes = channelTypes.toUtf8();
+    std::string token("CHANTYPES=");
+    token.append(bytes.constData(), std::size_t(bytes.size()));
+    features.applyToken(token);
+    return features;
+}
+
+QString channelTypeString(const IrcServerFeatures& features)
+{
+    const std::string_view types = features.channelTypes();
+    return QString::fromLatin1(types.data(), qsizetype(types.size()));
+}
+
+bool keepsIncomingNumeric(const QString& command)
+{
+    if (command.size() != 3)
+        return false;
+    for (const QChar ch : command) {
+        if (!ch.isDigit())
+            return false;
+    }
+    bool ok = false;
+    const int code = command.toInt(&ok);
+    if (!ok)
+        return false;
+    if (code >= 1 && code <= 4)
+        return true;
+    switch (code) {
+    case 372:
+    case 375:
+    case 376:
+    case 422:
+    case 903:
+    case 904:
+    case 905:
+        return true;
+    default:
+        break;
+    }
+    if (whoisSpecFor(code))
+        return true;
+    return command[0] == QLatin1Char('4') || command[0] == QLatin1Char('5');
+}
+
+bool keepsIncomingPrivmsg(const IrcMessage& message,
+                          const QString& currentNick,
+                          QStringView channelTypes)
+{
+    if (message.parameters.size() >= 2) {
+        if (const auto request =
+                parseCtcpRequest(ircWireText(message.parameters.back()))) {
+            if (request->command != QStringLiteral("ACTION"))
+                return true;
+        }
+    }
+
+    const IrcServerFeatures features = featuresForChannelTypes(channelTypes);
+    const QString types = channelTypeString(features);
+    const QString target = message.parameters.empty()
+        ? QString()
+        : ircWireText(message.parameters.front());
+    const QString sender = message.prefix && !message.prefix->nick.empty()
+        ? ircWireText(message.prefix->nick)
+        : QString();
+    const QString host = message.prefix && !message.prefix->host.empty()
+        ? ircWireText(message.prefix->host)
+        : QString();
+    if (ircIsServiceIdentity(sender, host, types)
+        || ircIsServiceIdentity(target, QStringView{}, types)) {
+        return true;
+    }
+    return !ircConversationFor(
+        QString(), target, message, currentNick, features);
+}
+}
+
+bool ircStatusKeepsIncoming(const IrcMessage& message,
+                            const QString& currentNick,
+                            QStringView channelTypes)
+{
+    const QString command = commandOf(message);
+    if (const IrcStatusKeepRow *row = statusKeepRow(command)) {
+        switch (row->incoming) {
+        case IrcStatusKeep::Keep:
+            return true;
+        case IrcStatusKeep::Drop:
+            return false;
+        case IrcStatusKeep::IncomingPrivmsg:
+            return keepsIncomingPrivmsg(message, currentNick, channelTypes);
+        }
+        return false;
+    }
+    return keepsIncomingNumeric(command);
+}
+
+bool ircStatusKeepsOutgoing(const QByteArray& line)
+{
+    QByteArray wire = line;
+    if (wire.endsWith("\r\n"))
+        wire.chop(2);
+    else if (wire.endsWith('\n'))
+        wire.chop(1);
+    const QString display = ircWireText(
+        std::string_view(wire.constData(), std::size_t(wire.size())));
+    const QString verb = firstToken(QStringView(display));
+    if (verb.isEmpty())
+        return false;
+    if (const IrcStatusKeepRow *row = statusKeepRow(verb))
+        return row->outgoing == IrcStatusKeep::Keep;
+    return false;
 }
 
 IrcWhoisLine::IrcWhoisLine(QString nick, QString text, Progress progress)

@@ -427,12 +427,13 @@ void TypingTest::controllerNotifyComposerTextThrottles()
 
     transport->injectBytes(
         QByteArrayLiteral("@+typing=active :alice!u@h TAGMSG #omarchy\r\n"));
+    QCOMPARE(controller.typingNicks(), QStringList{QStringLiteral("alice")});
     bool inboundTagmsg = false;
     for (const IrcStatusEntry& entry : journal) {
         if (entry.label() == QStringLiteral("TAGMSG"))
             inboundTagmsg = true;
     }
-    QVERIFY(inboundTagmsg);
+    QVERIFY(!inboundTagmsg);
 
     controller.notifyComposerText(QStringLiteral("/join #other"));
     QCOMPARE(tagmsgCount(transport->writtenFrames()), firstCount);

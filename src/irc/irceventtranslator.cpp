@@ -155,6 +155,16 @@ void appendMemberStatus(std::vector<IrcEvent>& events,
 }
 }
 
+std::optional<IrcConversationKey> ircConversationFor(
+    const QString& networkId,
+    const QString& target,
+    const IrcMessage& message,
+    const QString& currentNick,
+    const IrcServerFeatures& features)
+{
+    return conversationFor(networkId, target, message, currentNick, features);
+}
+
 std::vector<IrcEvent> IrcEventTranslator::translate(
     const QString& networkId,
     const QString& currentNick,

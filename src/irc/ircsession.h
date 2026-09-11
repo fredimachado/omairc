@@ -116,6 +116,7 @@ public:
     quint16 port() const;
     bool tlsEnabled() const;
     QString nick() const;
+    QString channelTypes() const;
     State state() const;
     int reconnectAttempt() const;
     IrcCapabilitySet capabilities() const;
