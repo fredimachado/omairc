@@ -45,6 +45,7 @@ ApplicationWindow {
     property bool mockStatusOpen: false
     property string mockStatusNetworkId: mockOmarchyId
     property bool shortcutsSheetEscapeGuard: false
+    property string sidebarNetworkFocusId: ""
     readonly property bool shortcutOverlayOpen: shortcutsSheet.opened
     readonly property var networkConsole: irc
         ? (irc.statusConsole ? irc.statusConsole : irc.console)
@@ -593,6 +594,7 @@ ApplicationWindow {
     }
 
     function selectConversation(name, networkId) {
+        sidebarNetworkFocusId = "";
         var id = networkId && networkId.length
             ? networkId
             : (irc ? irc.selectedNetworkId : mockSelectedNetworkId);
@@ -618,6 +620,7 @@ ApplicationWindow {
     }
 
     function openNetworkStatus(networkId) {
+        sidebarNetworkFocusId = "";
         if (irc) {
             irc.openStatus(networkId);
             Qt.callLater(function() {
@@ -692,6 +695,83 @@ ApplicationWindow {
                 return true;
         }
         return false;
+    }
+
+    function sidebarNetworkSections() {
+        var sections = [];
+
+        function appendSection(section) {
+            if (!section || section.visible === false)
+                return;
+            if (section.networkId === undefined || section.networkId.length === 0)
+                return;
+            if (section.headerItem === undefined)
+                return;
+            sections.push(section);
+        }
+
+        if (irc && connection) {
+            for (var liveIndex = 0; liveIndex < liveNetworkRepeater.count; ++liveIndex) {
+                var column = liveNetworkRepeater.itemAt(liveIndex);
+                if (!column)
+                    continue;
+                var kids = column.children;
+                for (var child = 0; child < kids.length; ++child) {
+                    if (kids[child] && kids[child].headerItem !== undefined) {
+                        appendSection(kids[child]);
+                        break;
+                    }
+                }
+            }
+        } else if (irc) {
+            appendSection(liveFallbackSection);
+        } else {
+            appendSection(mockOmarchySection);
+            appendSection(mockOftcSection);
+        }
+        return sections;
+    }
+
+    function focusNetworkHeader(section) {
+        if (!section)
+            return;
+        sidebarNetworkFocusId = section.networkId;
+        revealSidebarRow(section.headerItem);
+    }
+
+    function activateFocusedNetworkHeader() {
+        var id = sidebarNetworkFocusId;
+        if (id.length === 0)
+            return;
+        openNetworkStatus(id);
+    }
+
+    function stepNetwork(delta) {
+        var sections = sidebarNetworkSections();
+        if (sections.length === 0)
+            return;
+
+        var current = -1;
+        var index;
+        for (index = 0; index < sections.length; ++index) {
+            if (sections[index].networkId === sidebarNetworkFocusId) {
+                current = index;
+                break;
+            }
+        }
+        if (current < 0) {
+            for (index = 0; index < sections.length; ++index) {
+                if (sections[index].networkId === currentNetworkId) {
+                    current = index;
+                    break;
+                }
+            }
+        }
+
+        var nextIndex = current < 0
+            ? (delta > 0 ? 0 : sections.length - 1)
+            : (current + delta + sections.length) % sections.length;
+        focusNetworkHeader(sections[nextIndex]);
     }
 
     function stepConversation(delta) {
@@ -1198,7 +1278,10 @@ ApplicationWindow {
         sequence: "Ctrl+L"
         context: Qt.ApplicationShortcut
         enabled: !win.shortcutOverlayOpen
-        onActivated: composer.forceActiveFocus()
+        onActivated: {
+            sidebarNetworkFocusId = "";
+            composer.forceActiveFocus();
+        }
     }
 
     Shortcut {
@@ -1265,9 +1348,11 @@ ApplicationWindow {
         context: Qt.ApplicationShortcut
         enabled: win.connection !== null && !win.shortcutOverlayOpen
         onActivated: {
-            var id = win.irc ? win.irc.focusedNetworkId : "";
+            var id = win.sidebarNetworkFocusId;
+            if (id.length === 0)
+                id = win.irc ? win.irc.focusedNetworkId : "";
             if (id.length > 0)
-                win.connection.select(id);
+                win.selectSheetNetwork(id);
             win.connectionSheetOpen = true;
         }
     }
@@ -1284,6 +1369,40 @@ ApplicationWindow {
         context: Qt.ApplicationShortcut
         enabled: !win.shortcutOverlayOpen
         onActivated: stepConversation(-1)
+    }
+
+    Shortcut {
+        sequence: "Alt+Right"
+        context: Qt.ApplicationShortcut
+        enabled: !win.shortcutOverlayOpen
+        onActivated: stepNetwork(1)
+    }
+
+    Shortcut {
+        sequence: "Alt+Left"
+        context: Qt.ApplicationShortcut
+        enabled: !win.shortcutOverlayOpen
+        onActivated: stepNetwork(-1)
+    }
+
+    Shortcut {
+        sequence: "Return"
+        context: Qt.ApplicationShortcut
+        enabled: win.sidebarNetworkFocusId.length > 0
+            && !win.findActive
+            && !win.connectionOverlayVisible
+            && !win.shortcutOverlayOpen
+        onActivated: activateFocusedNetworkHeader()
+    }
+
+    Shortcut {
+        sequence: "Enter"
+        context: Qt.ApplicationShortcut
+        enabled: win.sidebarNetworkFocusId.length > 0
+            && !win.findActive
+            && !win.connectionOverlayVisible
+            && !win.shortcutOverlayOpen
+        onActivated: activateFocusedNetworkHeader()
     }
 
     Shortcut {
@@ -1465,6 +1584,9 @@ ApplicationWindow {
         property bool mention: false
         property bool preserveLegacyNames: false
         property bool showEdit: win.connection !== null
+        property alias headerItem: networkHeader
+        readonly property bool headerFocused: section.networkId.length > 0
+            && section.networkId === win.sidebarNetworkFocusId
 
         width: parent ? parent.width : 0
         spacing: 0
@@ -1510,6 +1632,27 @@ ApplicationWindow {
                                                     : "networkHeader-" + section.networkId
             width: parent.width
             height: win.scaledSize(64)
+
+            Rectangle {
+                anchors.fill: parent
+                anchors.leftMargin: win.scaledSize(8)
+                anchors.rightMargin: win.scaledSize(8)
+                radius: win.scaledSize(7)
+                color: section.headerFocused
+                    ? win.raisedColor
+                    : networkHeaderButton.containsMouse ? win.hoverColor : "transparent"
+            }
+
+            Rectangle {
+                visible: section.headerFocused
+                anchors.left: parent.left
+                anchors.leftMargin: win.scaledSize(8)
+                anchors.verticalCenter: parent.verticalCenter
+                width: win.scaledSize(3)
+                height: win.scaledSize(18)
+                radius: width
+                color: win.accentColor
+            }
 
             MouseArea {
                 id: networkHeaderButton
@@ -3499,6 +3642,11 @@ ApplicationWindow {
                         win.resetNickComplete();
 
                         if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
+                            if (!win.findActive && win.sidebarNetworkFocusId.length > 0) {
+                                win.activateFocusedNetworkHeader();
+                                event.accepted = true;
+                                return;
+                            }
                             win.sendMessage();
                             event.accepted = true;
                             return;
@@ -4316,6 +4464,7 @@ ApplicationWindow {
             Repeater {
                 model: [
                     { keys: "Alt+Down / Alt+Up", action: "walk conversations" },
+                    { keys: "Alt+Left / Alt+Right", action: "walk networks" },
                     { keys: "Alt+A", action: "next unread" },
                     { keys: "Ctrl+`", action: "Status" },
                     { keys: "Ctrl+,", action: "Connect" },

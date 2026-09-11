@@ -614,6 +614,16 @@ TestCase {
         }
     }
 
+    Component {
+        id: liveNamedWindowComponent
+
+        Omairc.OmaircWindow {
+            backend: fakeBackend
+            irc: liveIrc
+            connection: namedConnection
+        }
+    }
+
     QtObject {
         id: slashFake
 
@@ -760,6 +770,26 @@ TestCase {
         var result = findChild(appWindow, objectName);
         verify(result !== null, "Could not find " + objectName);
         return result;
+    }
+
+    function shortcutSheetTexts(window) {
+        var sheet = window ? findChild(window, "shortcutsSheet") : item("shortcutsSheet");
+        var texts = [];
+        function walk(node) {
+            if (!node)
+                return;
+            if (node.text !== undefined && String(node.text).length > 0)
+                texts.push(String(node.text));
+            var kids = node.children;
+            if (kids) {
+                for (var index = 0; index < kids.length; ++index)
+                    walk(kids[index]);
+            }
+            if (node.contentItem)
+                walk(node.contentItem);
+        }
+        walk(sheet);
+        return texts;
     }
 
     function saveScreenshot(name) {
@@ -2152,6 +2182,10 @@ TestCase {
         keyClick(Qt.Key_A, Qt.AltModifier);
         compare(appWindow.currentConversation, "#omarchy");
         verify(sheet.opened);
+
+        keyClick(Qt.Key_Right, Qt.AltModifier);
+        compare(appWindow.sidebarNetworkFocusId, "");
+        verify(sheet.opened);
     }
 
     function test_shortcutsSheetEscapeDoesNotLeaveStatus() {
@@ -2786,6 +2820,150 @@ TestCase {
         tryCompare(appWindow, "currentConversation", "#omarchy");
         compare(appWindow.currentConversationId, "mock-oftc\n#omarchy");
         compare(appWindow.currentTopic, "A different #omarchy, hosted on OFTC.");
+    }
+
+    function test_walkNetworksWithShortcut() {
+        compare(appWindow.currentConversation, "#omarchy");
+        compare(appWindow.sidebarNetworkFocusId, "");
+
+        keyClick(Qt.Key_Right, Qt.AltModifier);
+
+        compare(appWindow.sidebarNetworkFocusId, appWindow.mockOftcId);
+        compare(appWindow.currentConversation, "#omarchy");
+        compare(appWindow.consoleVisible, false);
+        compare(item("networkHeader-mock-oftc").parent.headerFocused, true);
+        compare(item("networkHeader").parent.headerFocused, false);
+    }
+
+    function test_walkNetworksWraps() {
+        compare(appWindow.currentConversation, "#omarchy");
+
+        keyClick(Qt.Key_Left, Qt.AltModifier);
+
+        compare(appWindow.sidebarNetworkFocusId, appWindow.mockOftcId);
+
+        keyClick(Qt.Key_Left, Qt.AltModifier);
+
+        compare(appWindow.sidebarNetworkFocusId, appWindow.mockOmarchyId);
+        compare(item("networkHeader").parent.headerFocused, true);
+    }
+
+    function test_enterOnNetworkHeaderOpensStatus() {
+        keyClick(Qt.Key_Right, Qt.AltModifier);
+        compare(appWindow.sidebarNetworkFocusId, appWindow.mockOftcId);
+
+        keyClick(Qt.Key_Return);
+
+        tryCompare(appWindow, "consoleVisible", true);
+        compare(appWindow.mockStatusNetworkId, appWindow.mockOftcId);
+        compare(appWindow.sidebarNetworkFocusId, "");
+        compare(appWindow.title, "irc.oftc.net Status");
+    }
+
+    function test_altDownStaysConversationOnlyAfterNetworkWalk() {
+        keyClick(Qt.Key_Right, Qt.AltModifier);
+        compare(appWindow.sidebarNetworkFocusId, appWindow.mockOftcId);
+
+        keyClick(Qt.Key_Down, Qt.AltModifier);
+
+        tryCompare(appWindow, "currentConversation", "#desktop");
+        compare(appWindow.sidebarNetworkFocusId, "");
+        compare(appWindow.consoleVisible, false);
+    }
+
+    function test_shortcutsSheetListsNetworkWalk() {
+        var sheet = item("shortcutsSheet");
+        keyClick(Qt.Key_Slash, Qt.ControlModifier);
+        tryCompare(sheet, "opened", true);
+        var texts = shortcutSheetTexts();
+        verify(texts.indexOf("Alt+Left / Alt+Right") !== -1,
+               "shortcut sheet should list Alt+Left / Alt+Right");
+        verify(texts.indexOf("walk networks") !== -1,
+               "shortcut sheet should name walk networks");
+        keyClick(Qt.Key_Escape);
+        tryCompare(sheet, "opened", false);
+    }
+
+    function test_emptyNetworkHeaderIsAKeyboardStop() {
+        if (appWindow)
+            appWindow.close();
+        appWindow = null;
+        restoreNamedConnection();
+        namedNetworks.append({
+            networkId: "oftc",
+            displayName: "irc.oftc.net",
+            stored: true,
+            selected: false
+        });
+        var window = createTemporaryObject(liveNamedWindowComponent, null);
+        verify(window !== null, "The two-network window should load");
+        tryCompare(window, "visible", true);
+        waitForRendering(window.contentItem);
+        window.requestActivate();
+        tryCompare(window, "active", true);
+
+        try {
+            compare(window.currentConversation, "#omarchy");
+            verify(findChild(window, "networkHeader-oftc") !== null,
+                   "empty OFTC header should stay in the sidebar");
+
+            keyClick(Qt.Key_Right, Qt.AltModifier);
+            compare(window.sidebarNetworkFocusId, "oftc");
+            compare(window.currentConversation, "#omarchy");
+            compare(window.consoleVisible, false);
+
+            keyClick(Qt.Key_Comma, Qt.ControlModifier);
+            var sheet = findChild(window, "connectionSheet");
+            tryCompare(sheet, "visible", true);
+            compare(namedConnection.selectedNetworkId, "oftc");
+
+            keyClick(Qt.Key_Escape);
+            tryCompare(sheet, "visible", false);
+            compare(window.sidebarNetworkFocusId, "oftc");
+
+            keyClick(Qt.Key_Return);
+            tryCompare(window, "consoleVisible", true);
+            compare(liveConsole.networkId, "oftc");
+            compare(window.sidebarNetworkFocusId, "");
+            compare(window.irc.focusedNetworkId, "oftc");
+
+            keyClick(Qt.Key_Escape);
+            tryCompare(window, "consoleVisible", false);
+
+            keyClick(Qt.Key_Down, Qt.AltModifier);
+            tryCompare(window, "currentConversation", "anna");
+            compare(window.sidebarNetworkFocusId, "");
+
+            liveConversations.append({
+                conversation: "#lab",
+                unread: 0,
+                mention: false,
+                direct: false,
+                networkId: "oftc",
+                conversationId: "oftc\n#lab",
+                conversationName: "#lab",
+                typing: false
+            });
+            liveIrc.conversationEpoch += 1;
+            waitForRendering(window.contentItem);
+
+            keyClick(Qt.Key_Down, Qt.AltModifier);
+            tryCompare(window, "currentConversation", "#lab");
+
+            window.close();
+        } finally {
+            if (liveConversations.count > 2)
+                liveConversations.remove(liveConversations.count - 1);
+            liveIrc.selectedNetworkId = "libera";
+            liveIrc.selectedTarget = "#omarchy";
+            liveIrc.selectedConversationId = "libera\n#omarchy";
+            liveIrc.isChannel = true;
+            liveIrc.topic = "A cozy corner for Omarchy users and builders.";
+            liveIrc.peopleCount = 1;
+            liveConsole.open = false;
+            liveConsole.networkId = "libera";
+            restoreNamedConnection();
+        }
     }
 
     function test_connectionSheetAddSelectRemoveSurface() {
