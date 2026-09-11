@@ -29,7 +29,7 @@ sheet.
 Press `Ctrl+,` or click `edit` beside a network name to reopen the sheet.
 The network name opens Status for that network.
 
-Press `Ctrl+/` for keyboard shortcuts.
+Press `Ctrl+/` for keyboard shortcuts. Press `Ctrl+K` to jump to a conversation.
 
 Colors follow the current Omarchy theme and update live. Text follows the
 desktop text size.

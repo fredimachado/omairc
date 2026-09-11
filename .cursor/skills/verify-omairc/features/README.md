@@ -50,7 +50,7 @@ Keep implementation details out of the map. Name only user paths, stable handles
 - [Status console](./status-console.md) covers the network Status pane, header entry points, AUTH notices, and the shared composer.
 - [Member presence](./member-presence.md) covers presence dots, away dimming, status lines, capability gating, and live PREFIX ranks.
 - [Identity footer](./identity-footer.md) covers the sidebar nick footer (`fred` on first run, then the connection or live nick) and live available/away chrome.
-- [Keyboard](./keyboard.md) covers conversation walk, network-header walk, unread jump, nick complete, history, find, member focus, `Ctrl+W` close, the shortcut sheet, and `Ctrl+,`.
+- [Keyboard](./keyboard.md) covers conversation walk, network-header walk, unread jump, `Ctrl+K` jump, nick complete, history, find, member focus, `Ctrl+W` close, the shortcut sheet, and `Ctrl+,`.
 - [Slash complete](./slash-complete.md) covers the composer slash-command list for `/` plus a character, Tab insert, Escape dismiss, and Up/Down.
 - [Typing](./typing.md) covers bouncing ellipsis on channel members and in direct messages, plus the `message-tags` gate.
 - [Slash commands](./slash-commands.md) covers live catalog verbs from the composer, including `/kick` and `/ignore`. Mock treats them as chat except `/me `.
