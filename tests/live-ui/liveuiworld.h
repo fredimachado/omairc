@@ -69,6 +69,7 @@ struct LiveUiSeat
 };
 
 class Backend;
+class CredentialStore;
 class IrcConnection;
 class IrcController;
 class IrcSlashSession;
@@ -141,6 +142,7 @@ private:
     std::unique_ptr<Backend> m_backend;
     std::unique_ptr<IrcSlashSession> m_slash;
     std::unique_ptr<IrcController> m_controller;
+    std::unique_ptr<CredentialStore> m_credentials;
     std::unique_ptr<IrcConnection> m_connection;
     std::unique_ptr<QQmlApplicationEngine> m_engine;
     std::unique_ptr<RawIrcPeer> m_leftTwin;

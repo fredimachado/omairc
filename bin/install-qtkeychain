@@ -1,0 +1,39 @@
+#!/usr/bin/env sh
+set -eu
+
+if command -v qmake6 >/dev/null 2>&1; then
+  QMAKE=qmake6
+elif command -v qmake >/dev/null 2>&1 && qmake -query QT_VERSION | grep -q '^6\.'; then
+  QMAKE=qmake
+else
+  echo "A Qt 6 qmake (qmake6) is required to install QtKeychain." >&2
+  exit 1
+fi
+
+QT_PREFIX="${1:-$("$QMAKE" -query QT_INSTALL_PREFIX)}"
+VERSION="${QTKEYCHAIN_VERSION:-0.15.0}"
+SRC="${TMPDIR:-/tmp}/qtkeychain-src-$$"
+BUILD="${TMPDIR:-/tmp}/qtkeychain-build-$$"
+
+cleanup() {
+  rm -rf -- "$SRC" "$BUILD"
+}
+trap cleanup EXIT HUP INT TERM
+
+git clone --depth 1 --branch "$VERSION" \
+  https://github.com/frankosterfeld/qtkeychain.git "$SRC"
+cmake -S "$SRC" -B "$BUILD" -G Ninja \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_PREFIX_PATH="$QT_PREFIX" \
+  -DCMAKE_INSTALL_PREFIX="$QT_PREFIX" \
+  -DBUILD_WITH_QT6=ON \
+  -DBUILD_TRANSLATIONS=OFF \
+  -DBUILD_TEST_APPLICATION=OFF
+cmake --build "$BUILD"
+cmake --install "$BUILD"
+
+PRI="$("$QMAKE" -query QT_INSTALL_ARCHDATA)/mkspecs/modules/qt_Qt6Keychain.pri"
+if [ ! -f "$PRI" ]; then
+  echo "QtKeychain installed but $PRI is missing." >&2
+  exit 1
+fi

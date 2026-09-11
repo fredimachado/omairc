@@ -1,5 +1,7 @@
 QT += core gui qml quick quickcontrols2 dbus network
 
+include(qtkeychain.pri)
+
 CONFIG += c++17 release
 TARGET = omairc
 TEMPLATE = app
@@ -58,6 +60,8 @@ HEADERS += \
     src/irc/irccontroller.h \
     src/irc/ircnetworkprofile.h \
     src/irc/ircprofilestore.h \
+    src/storage/credentialstore.h \
+    src/storage/secretservicecredentialstore.h \
     src/irc/ircconnection.h
 
 SOURCES += \
@@ -103,6 +107,7 @@ SOURCES += \
     src/irc/irccontroller.cpp \
     src/irc/ircnetworkprofile.cpp \
     src/irc/ircprofilestore.cpp \
+    src/storage/secretservicecredentialstore.cpp \
     src/irc/ircconnection.cpp
 
 RESOURCES += src/resources.qrc

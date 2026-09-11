@@ -1414,7 +1414,7 @@ ApplicationWindow {
     }
 
     function submitConnection() {
-        if (!connection)
+        if (!connection || connection.problem.length > 0)
             return;
         if (connectionPasswordEdited)
             connection.setPassword(connectionPassword.text);
@@ -3945,7 +3945,6 @@ ApplicationWindow {
                                 value: win.connection ? win.connection.connectOnStartup : false
                                 restoreMode: Binding.RestoreBinding
                             }
-
                             Text {
                                 anchors.verticalCenter: parent.verticalCenter
                                 text: "Connect automatically on startup"
@@ -3966,10 +3965,64 @@ ApplicationWindow {
                         }
 
                         Text {
+                            objectName: "connectionCredentialStatus"
+                            width: parent.width
+                            visible: !!(win.connection && win.connection.credentialStatus)
+                            height: visible ? implicitHeight : 0
+                            text: (win.connection && win.connection.credentialStatus)
+                                  ? win.connection.credentialStatus : ""
+                            color: win.mutedColor
+                            wrapMode: Text.Wrap
+                            font.family: "iA Writer Mono S"
+                            font.pixelSize: win.scaledSize(10)
+                        }
+
+                        Text {
+                            objectName: "connectionForgetPassword"
+                            visible: !!(win.connection && win.connection.canForgetPassword)
+                            height: visible ? implicitHeight : 0
+                            text: "forget saved password"
+                            color: win.accentColor
+                            font.family: "iA Writer Mono S"
+                            font.pixelSize: win.scaledSize(10)
+                            font.underline: activeFocus
+                            Accessible.role: Accessible.Button
+                            Accessible.name: "Forget saved password"
+                            Accessible.description: "Remove the saved connection password"
+                            activeFocusOnTab: true
+                            Keys.onPressed: function(event) {
+                                if (event.key === Qt.Key_Return
+                                    || event.key === Qt.Key_Enter
+                                    || event.key === Qt.Key_Space) {
+                                    forgetSavedPassword();
+                                    event.accepted = true;
+                                }
+                            }
+                            Accessible.onPressAction: {
+                                forgetSavedPassword();
+                            }
+                            function forgetSavedPassword() {
+                                connectionPassword.text = "";
+                                win.connection.forgetPassword();
+                                win.connection.removeStoredPassword();
+                            }
+                            MouseArea {
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: {
+                                    parent.forgetSavedPassword();
+                                }
+                            }
+                        }
+
+                        Text {
                             objectName: "connectionProblem"
                             width: parent.width
-                            visible: win.connection && win.connection.problem.length > 0
-                            text: win.connection ? win.connection.problem : ""
+                            visible: !!(win.connection && win.connection.problem)
+                            height: visible ? implicitHeight : 0
+                            text: (win.connection && win.connection.problem)
+                                  ? win.connection.problem : ""
                             color: win.accentColor
                             wrapMode: Text.Wrap
                             font.family: "iA Writer Mono S"

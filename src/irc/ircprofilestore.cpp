@@ -9,6 +9,7 @@ const auto hostKey = QStringLiteral("host");
 const auto portKey = QStringLiteral("port");
 const auto tlsKey = QStringLiteral("tls");
 const auto connectOnStartupKey = QStringLiteral("connectOnStartup");
+const auto secretSavedKey = QStringLiteral("secretSaved");
 const auto nickKey = QStringLiteral("nick");
 const auto usernameKey = QStringLiteral("username");
 const auto realnameKey = QStringLiteral("realname");
@@ -31,6 +32,7 @@ QList<IrcNetworkProfile> IrcProfileStore::profiles() const
         profile.port = quint16(settings.value(portKey, 6697).toUInt());
         profile.tlsEnabled = settings.value(tlsKey, true).toBool();
         profile.connectOnStartup = settings.value(connectOnStartupKey, false).toBool();
+        profile.secretSaved = settings.value(secretSavedKey, false).toBool();
         profile.nick = settings.value(nickKey).toString();
         profile.username = settings.value(usernameKey).toString();
         profile.realname = settings.value(realnameKey).toString();
@@ -55,6 +57,7 @@ void IrcProfileStore::save(const IrcNetworkProfile &profile)
     settings.setValue(portKey, profile.port);
     settings.setValue(tlsKey, profile.tlsEnabled);
     settings.setValue(connectOnStartupKey, profile.connectOnStartup);
+    settings.setValue(secretSavedKey, profile.secretSaved);
     settings.setValue(nickKey, profile.nick);
     settings.setValue(usernameKey, profile.username);
     settings.setValue(realnameKey, profile.realname);

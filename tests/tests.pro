@@ -1,4 +1,6 @@
 QT += core network testlib
+
+include(../qtkeychain.pri)
 QT -= gui
 
 CONFIG += c++17 console testcase
@@ -57,6 +59,8 @@ HEADERS += \
     ../src/irc/irccontroller.h \
     ../src/irc/ircnetworkprofile.h \
     ../src/irc/ircprofilestore.h \
+    ../src/storage/credentialstore.h \
+    ../src/storage/secretservicecredentialstore.h \
     ../src/irc/ircconnection.h \
     ../src/irc/qtirctransport.h \
     support/fakeirctransport.h
@@ -108,6 +112,7 @@ SOURCES += \
     ../src/irc/irccontroller.cpp \
     ../src/irc/ircnetworkprofile.cpp \
     ../src/irc/ircprofilestore.cpp \
+    ../src/storage/secretservicecredentialstore.cpp \
     ../src/irc/ircconnection.cpp \
     ../src/irc/qtirctransport.cpp \
     support/fakeirctransport.cpp \
@@ -117,6 +122,7 @@ SOURCES += \
     session/tst_capability.cpp \
     session/tst_profile.cpp \
     session/tst_connection.cpp \
+    storage/tst_secretservice.cpp \
     session/tst_controller.cpp \
     session/tst_command.cpp \
     session/tst_ignore.cpp \

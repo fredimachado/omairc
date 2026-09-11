@@ -68,6 +68,9 @@ TestCase {
         property string realname: ""
         property string autojoin: "#omarchy"
         property bool passwordSet: false
+        property string credentialError: ""
+        property string credentialStatus: "secure storage unavailable"
+        property bool canForgetPassword: false
         property string problem: "Nick is required"
         property bool dirty: true
         property string displayName: "irc.libera.chat"
@@ -78,7 +81,22 @@ TestCase {
         property bool canAdd: false
         property bool canRemove: false
 
+        property int setPasswordCalls: 0
+        property string lastSetPassword: ""
+        property int forgetPasswordCalls: 0
+        property int removeStoredPasswordCalls: 0
+
         function setPassword(password) {
+            setPasswordCalls += 1;
+            lastSetPassword = password;
+        }
+
+        function forgetPassword() {
+            forgetPasswordCalls += 1;
+        }
+
+        function removeStoredPassword() {
+            removeStoredPasswordCalls += 1;
         }
 
         function apply() {
@@ -2202,6 +2220,12 @@ TestCase {
         compare(findChild(window, "connectionAutojoin").text, "#omarchy");
         compare(findChild(window, "connectionConnectOnStartup").checked, false);
         compare(findChild(window, "connectionProblem").text, "Nick is required");
+        compare(findChild(window, "connectionCredentialStatus").text,
+                "secure storage unavailable");
+        var forgetPassword = findChild(window, "connectionForgetPassword");
+        verify(forgetPassword !== null, "Could not find connectionForgetPassword");
+        compare(forgetPassword.visible, false);
+        compare(forgetPassword.height, 0);
         compare(findChild(window, "networkChoiceList") !== null, true);
         compare(findChild(window, "connectionAddNetwork").visible, false);
         compare(findChild(window, "connectionRemove").visible, false);
@@ -2215,6 +2239,55 @@ TestCase {
         } catch (error) {
             fail("Failed to save screenshot 'connection-sheet': " + error);
         }
+        window.close();
+    }
+
+    function test_forgetPasswordShowsKeyboardFocus() {
+        fakeConnection.canForgetPassword = true;
+        var window = createTemporaryObject(setupWindowComponent, null);
+        verify(window !== null, "The setup window should load");
+        tryCompare(window, "visible", true);
+
+        var forgetPassword = findChild(window, "connectionForgetPassword");
+        verify(forgetPassword !== null, "Could not find connectionForgetPassword");
+        forgetPassword.forceActiveFocus();
+        tryCompare(forgetPassword, "activeFocus", true);
+        verify(forgetPassword.font.underline);
+        window.close();
+        fakeConnection.canForgetPassword = false;
+    }
+
+    function test_forgetPasswordRemovesStoredCredential() {
+        fakeConnection.canForgetPassword = true;
+        fakeConnection.forgetPasswordCalls = 0;
+        fakeConnection.removeStoredPasswordCalls = 0;
+        var window = createTemporaryObject(setupWindowComponent, null);
+        verify(window !== null, "The setup window should load");
+        tryCompare(window, "visible", true);
+
+        var forgetPassword = findChild(window, "connectionForgetPassword");
+        verify(forgetPassword !== null, "Could not find connectionForgetPassword");
+        mouseClick(forgetPassword);
+        compare(fakeConnection.forgetPasswordCalls, 1);
+        compare(fakeConnection.removeStoredPasswordCalls, 1);
+        window.close();
+        fakeConnection.canForgetPassword = false;
+    }
+
+    function test_incompleteProfileEnterDoesNotCommitPassword() {
+        fakeConnection.setPasswordCalls = 0;
+        fakeConnection.lastSetPassword = "";
+        var window = createTemporaryObject(setupWindowComponent, null);
+        verify(window !== null, "The setup window should load");
+        tryCompare(window, "visible", true);
+
+        var password = findChild(window, "connectionPassword");
+        verify(password !== null, "Could not find connectionPassword");
+        password.forceActiveFocus();
+        password.text = "typed-secret";
+        keyClick(Qt.Key_Return);
+        compare(fakeConnection.setPasswordCalls, 0);
+        compare(fakeConnection.lastSetPassword, "");
         window.close();
     }
 

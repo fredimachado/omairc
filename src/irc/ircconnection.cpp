@@ -74,21 +74,35 @@ void NetworkListModel::resetRows()
     endResetModel();
 }
 
-IrcConnection::IrcConnection(IrcController &controller, QObject *parent)
-    : IrcConnection(controller, defaultTransport, parent)
+IrcConnection::IrcConnection(IrcController &controller,
+                             CredentialStore &credentialStore,
+                             QObject *parent)
+    : IrcConnection(controller, defaultTransport, credentialStore, parent)
 {
 }
 
 IrcConnection::IrcConnection(IrcController &controller,
                              TransportFactory transportFactory,
+                             CredentialStore &credentialStore,
                              QObject *parent)
     : QObject(parent)
     , m_controller(controller)
     , m_transportFactory(std::move(transportFactory))
+    , m_credentialStore(credentialStore)
     , m_networks(*this)
 {
     if (!m_transportFactory)
         m_transportFactory = defaultTransport;
+
+    connect(&m_credentialStore, &CredentialStore::readFinished, this,
+            [this](CredentialStore::State state, const QString &password,
+                   const QString &message) {
+        handleCredentialRead(state, password, message);
+    });
+    connect(&m_credentialStore, &CredentialStore::writeFinished, this,
+            [this](CredentialStore::State state, const QString &message) {
+        handleCredentialWrite(state, message);
+    });
 
     loadStored();
     if (!m_stored.isEmpty()) {
@@ -106,6 +120,12 @@ IrcConnection::IrcConnection(IrcController &controller,
         m_selectedNetworkId = m_draft.networkId;
     }
     pushNetworkOrder();
+
+    for (const IrcNetworkProfile &profile : m_stored) {
+        if (profile.networkId.isEmpty())
+            continue;
+        startCredentialRead(profile);
+    }
 
     connect(&m_controller, &IrcController::errorOccurred, this,
             [this](const QString &networkId, IrcSession::ErrorKind kind, const QString &) {
@@ -185,7 +205,59 @@ QString IrcConnection::autojoin() const
 
 bool IrcConnection::passwordSet() const
 {
-    return !secretFor(m_selectedNetworkId).password.isEmpty();
+    return !selectedSecret().password.isEmpty();
+}
+
+CredentialStore::State IrcConnection::credentialState() const
+{
+    return selectedSecret().credentialState;
+}
+
+QString IrcConnection::credentialError() const
+{
+    const IrcDraftSecret &secret = selectedSecret();
+    if (!secret.obsoleteRemovalError.isEmpty())
+        return secret.obsoleteRemovalError;
+    return secret.credentialError;
+}
+
+QString IrcConnection::credentialStatus() const
+{
+    const IrcDraftSecret &secret = selectedSecret();
+    if (!secret.obsoleteKeys.isEmpty() && !secret.obsoleteRemovalError.isEmpty())
+        return QStringLiteral("could not remove the previous saved password");
+    if (secret.edited && !secret.password.isEmpty()
+        && (secret.credentialState == CredentialStore::State::Available
+            || secret.credentialState == CredentialStore::State::Missing)) {
+        return QStringLiteral("password changed; apply to save securely");
+    }
+    switch (secret.credentialState) {
+    case CredentialStore::State::Loading:
+        return QStringLiteral("checking secure storage");
+    case CredentialStore::State::Available:
+        return QStringLiteral("password saved securely");
+    case CredentialStore::State::Missing:
+        if (!secret.password.isEmpty())
+            return QStringLiteral("password is session-only until applied");
+        return {};
+    case CredentialStore::State::Unavailable:
+        if (!secret.password.isEmpty())
+            return QStringLiteral("secure storage unavailable; password is session-only");
+        return QStringLiteral("secure storage unavailable");
+    case CredentialStore::State::Error:
+        if (!secret.password.isEmpty())
+            return QStringLiteral("secure storage error; password is session-only");
+        return QStringLiteral("secure storage error; password is not saved");
+    case CredentialStore::State::SessionOnly:
+        return QStringLiteral("secure storage unavailable; password is session-only");
+    }
+    return {};
+}
+
+bool IrcConnection::canForgetPassword() const
+{
+    const IrcDraftSecret &secret = selectedSecret();
+    return secret.mayBeStored || !secret.password.isEmpty();
 }
 
 QString IrcConnection::problem() const
@@ -312,6 +384,7 @@ bool IrcConnection::add()
         emit focusPasswordChanged();
     }
     emit selectedNetworkChanged();
+    emit credentialStateChanged();
     emit draftChanged();
     refreshRoster();
     return true;
@@ -319,16 +392,47 @@ bool IrcConnection::add()
 
 void IrcConnection::setPassword(const QString &password)
 {
-    IrcDraftSecret &secret = secretFor(m_selectedNetworkId);
+    IrcDraftSecret &secret = selectedSecret();
+    if (password.isEmpty() && !secret.password.isEmpty())
+        return;
     if (secret.password == password)
         return;
     secret.password = password;
+    secret.edited = true;
+    if (secret.credentialState == CredentialStore::State::Unavailable) {
+        secret.credentialState = CredentialStore::State::SessionOnly;
+    } else if (password.isEmpty()) {
+        secret.credentialState = CredentialStore::State::Missing;
+    }
     ++secret.revision;
     if (m_focusPassword) {
         m_focusPassword = false;
         emit focusPasswordChanged();
     }
+    emit credentialStateChanged();
     emit draftChanged();
+}
+
+void IrcConnection::forgetPassword()
+{
+    IrcDraftSecret &secret = selectedSecret();
+    if (secret.password.isEmpty()
+        && secret.credentialState == CredentialStore::State::Missing)
+        return;
+    secret.password.clear();
+    secret.edited = true;
+    secret.credentialState = CredentialStore::State::Missing;
+    ++secret.revision;
+    emit credentialStateChanged();
+    emit draftChanged();
+}
+
+void IrcConnection::removeStoredPassword()
+{
+    const IrcNetworkProfile stored = storedProfile(m_selectedNetworkId);
+    if (stored.networkId.isEmpty())
+        return;
+    queueCredentialRemoval(credentialKey(stored), selectedSecret().revision);
 }
 
 bool IrcConnection::apply()
@@ -341,6 +445,9 @@ bool IrcConnection::apply()
         return false;
     }
 
+    const CredentialKey previousCredentialKey =
+        credentialKey(storedProfile(m_selectedNetworkId));
+    const CredentialKey nextCredentialKey = credentialKey(profile);
     m_store.save(profile);
     bool found = false;
     for (IrcNetworkProfile &stored : m_stored) {
@@ -357,16 +464,275 @@ bool IrcConnection::apply()
     m_selectedNetworkId = profile.networkId;
     emit draftChanged();
     emit selectedNetworkChanged();
+
+    IrcDraftSecret &secret = secretFor(profile.networkId);
+    const bool credentialKeyChanged = previousCredentialKey != nextCredentialKey;
+    if (credentialKeyChanged) {
+        rememberObsoleteKey(secret, previousCredentialKey);
+        secret.mayBeStored = false;
+    }
+    if (!secret.password.isEmpty()
+        && (secret.edited || credentialKeyChanged || !secret.mayBeStored)) {
+        queueCredentialWrite(nextCredentialKey, secret.password, secret.revision);
+    } else if (secret.edited && secret.password.isEmpty()) {
+        queueCredentialRemoval(nextCredentialKey, secret.revision);
+    } else if (!secret.obsoleteKeys.isEmpty() && !secret.readInFlight) {
+        flushObsoleteKeys(secret, nextCredentialKey, secret.revision);
+        processCredentialOperations();
+    }
     if (wasSetup)
         emit setupRequiredChanged();
     refreshRoster();
     pushNetworkOrder();
+    if (secret.readInFlight && !secret.edited) {
+        secret.reconcileWhenReadSettles = true;
+        return true;
+    }
     return reconcile(profile);
+}
+
+void IrcConnection::processCredentialOperations()
+{
+    if (m_operationInFlight || m_credentialOperations.isEmpty())
+        return;
+    m_operationInFlight = true;
+    const CredentialOperation &operation = m_credentialOperations.first();
+    if (operation.kind == CredentialOperation::Kind::Write)
+        m_credentialStore.write(operation.key, operation.password);
+    else
+        m_credentialStore.remove(operation.key);
+}
+
+void IrcConnection::rememberObsoleteKey(IrcDraftSecret &secret, const CredentialKey &key)
+{
+    if (key.networkId.isEmpty() || secret.obsoleteKeys.contains(key))
+        return;
+    secret.obsoleteKeys.append(key);
+}
+
+CredentialStore::State IrcConnection::overlayState(
+    CredentialStore::State backend, const QString &password) const
+{
+    if (backend == CredentialStore::State::Unavailable && !password.isEmpty())
+        return CredentialStore::State::SessionOnly;
+    return backend;
+}
+
+void IrcConnection::adoptBackendState(IrcDraftSecret &secret,
+                                      CredentialStore::State state,
+                                      const QString &message)
+{
+    secret.credentialError = message;
+    if (state == CredentialStore::State::Loading) {
+        secret.credentialState = state;
+        return;
+    }
+    secret.backendState = state;
+    secret.credentialState = overlayState(secret.backendState, secret.password);
+}
+
+void IrcConnection::handleCredentialRead(CredentialStore::State state,
+                                         const QString &password,
+                                         const QString &message)
+{
+    if (m_pendingReads.isEmpty())
+        return;
+
+    const CredentialKey key = m_pendingReads.first();
+    IrcDraftSecret &secret = secretFor(key.networkId);
+    const IrcNetworkProfile profile = storedProfile(key.networkId);
+    const bool selected = key.networkId == m_selectedNetworkId;
+    if (state == CredentialStore::State::Loading) {
+        adoptBackendState(secret, state, message);
+        emit credentialStateChanged();
+        if (selected)
+            emit draftChanged();
+        return;
+    }
+
+    m_pendingReads.takeFirst();
+    secret.readInFlight = false;
+    const bool stale = secret.revision != secret.readRevision;
+    if (stale && secret.edited) {
+        const bool keepWriteResult =
+            secret.backendState == CredentialStore::State::Error
+            || secret.backendState == CredentialStore::State::Unavailable;
+        if (!keepWriteResult) {
+            const auto terminal =
+                (state == CredentialStore::State::Available
+                 || state == CredentialStore::State::Missing)
+                ? CredentialStore::State::Missing : state;
+            adoptBackendState(secret, terminal, message);
+        }
+    } else if (stale && !secret.persistedPassword.isEmpty()) {
+        if (secret.restoreStoreAfterRead) {
+            secret.restoreStoreAfterRead = false;
+            compensatePersistedSecret(secret, profile);
+        }
+    } else {
+        settleCredentialRead(secret, profile, state, password, message);
+    }
+    emit credentialStateChanged();
+    if (selected)
+        emit draftChanged();
+    if (secret.reconcileWhenReadSettles) {
+        secret.reconcileWhenReadSettles = false;
+        if (profile.isComplete())
+            reconcile(profile);
+    }
+    if (!m_pendingReads.isEmpty())
+        m_credentialStore.read(m_pendingReads.first());
+}
+
+void IrcConnection::handleCredentialWrite(CredentialStore::State state,
+                                          const QString &message)
+{
+    if (m_credentialOperations.isEmpty())
+        return;
+    const CredentialOperation operation = m_credentialOperations.takeFirst();
+    m_operationInFlight = false;
+    IrcDraftSecret &secret = secretFor(operation.key.networkId);
+    const CredentialKey currentKey =
+        credentialKey(storedProfile(operation.key.networkId));
+    const bool removingObsoleteKey =
+        operation.kind == CredentialOperation::Kind::Remove
+        && operation.key != currentKey;
+    if (removingObsoleteKey) {
+        if (state != CredentialStore::State::Missing
+            && state != CredentialStore::State::Available) {
+            rememberObsoleteKey(secret, operation.key);
+            secret.obsoleteRemovalError = message;
+        } else if (secret.obsoleteKeys.isEmpty()) {
+            secret.obsoleteRemovalError.clear();
+        }
+    } else if (operation.revision == secret.revision) {
+        adoptBackendState(secret, state, message);
+        if (state == CredentialStore::State::Available) {
+            secret.edited = false;
+        } else if (operation.kind == CredentialOperation::Kind::Write) {
+            secret.edited = true;
+        }
+        if (operation.kind == CredentialOperation::Kind::Write
+            && state == CredentialStore::State::Available) {
+            secret.mayBeStored = true;
+            secret.persistedPassword = operation.password;
+            persistSecretSaved(operation.key.networkId, true);
+        } else if (operation.kind == CredentialOperation::Kind::Remove
+                   && state == CredentialStore::State::Missing) {
+            secret.mayBeStored = false;
+            secret.persistedPassword.clear();
+            persistSecretSaved(operation.key.networkId, false);
+        }
+    }
+    if ((operation.kind == CredentialOperation::Kind::Write
+         && state == CredentialStore::State::Available)
+        || (operation.kind == CredentialOperation::Kind::Remove
+            && !removingObsoleteKey
+            && state == CredentialStore::State::Missing)) {
+        flushObsoleteKeys(secret, currentKey, operation.revision);
+    }
+    processCredentialOperations();
+    emit credentialStateChanged();
+}
+
+void IrcConnection::settleCredentialRead(IrcDraftSecret &secret,
+                                         const IrcNetworkProfile &profile,
+                                         CredentialStore::State state,
+                                         const QString &password,
+                                         const QString &message)
+{
+    adoptBackendState(secret, state, message);
+    if (state == CredentialStore::State::Available && !secret.edited) {
+        secret.password = password;
+        secret.persistedPassword = password;
+        secret.mayBeStored = true;
+        persistSecretSaved(profile.networkId, true);
+        ++secret.revision;
+        if (!secret.obsoleteKeys.isEmpty())
+            queueCredentialWrite(credentialKey(profile), secret.password,
+                                 secret.revision);
+    } else if (state == CredentialStore::State::Missing) {
+        secret.mayBeStored = false;
+    }
+    if (secret.restoreStoreAfterRead) {
+        secret.restoreStoreAfterRead = false;
+        compensatePersistedSecret(secret, profile);
+    }
+}
+
+void IrcConnection::compensatePersistedSecret(IrcDraftSecret &secret,
+                                             const IrcNetworkProfile &profile)
+{
+    const CredentialKey key = credentialKey(profile);
+    if (secret.password.isEmpty())
+        queueCredentialRemoval(key, secret.revision);
+    else
+        queueCredentialWrite(key, secret.password, secret.revision);
+}
+
+void IrcConnection::flushObsoleteKeys(IrcDraftSecret &secret,
+                                      const CredentialKey &currentKey,
+                                      quint64 revision)
+{
+    const QList<CredentialKey> obsolete = secret.obsoleteKeys;
+    secret.obsoleteKeys.clear();
+    for (const CredentialKey &key : obsolete) {
+        if (key == currentKey)
+            continue;
+        m_credentialOperations.append(
+            {CredentialOperation::Kind::Remove, key, {}, revision});
+    }
+}
+
+void IrcConnection::startCredentialRead(const IrcNetworkProfile &profile)
+{
+    IrcDraftSecret &secret = secretFor(profile.networkId);
+    secret.readInFlight = true;
+    secret.readRevision = secret.revision;
+    secret.credentialState = CredentialStore::State::Loading;
+    const CredentialKey key = credentialKey(profile);
+    m_pendingReads.append(key);
+    if (m_pendingReads.size() == 1)
+        m_credentialStore.read(key);
+}
+
+void IrcConnection::queueCredentialWrite(
+    const CredentialKey &key, const QString &password, quint64 revision)
+{
+    const bool wasEmpty = m_credentialOperations.isEmpty();
+    m_credentialOperations.append(
+        {CredentialOperation::Kind::Write, key, password, revision});
+    if (wasEmpty)
+        processCredentialOperations();
+}
+
+void IrcConnection::queueCredentialRemoval(const CredentialKey &key, quint64 revision)
+{
+    const bool wasEmpty = m_credentialOperations.isEmpty();
+    m_credentialOperations.append(
+        {CredentialOperation::Kind::Remove, key, {}, revision});
+    if (wasEmpty)
+        processCredentialOperations();
 }
 
 void IrcConnection::discard()
 {
     restoreDraft();
+    IrcDraftSecret &secret = selectedSecret();
+    if (secret.password != secret.persistedPassword || secret.edited) {
+        const bool compensatePendingStore = hasQueuedOperationFor(m_selectedNetworkId);
+        secret.password = secret.persistedPassword;
+        secret.edited = false;
+        secret.credentialState = overlayState(secret.backendState, secret.password);
+        ++secret.revision;
+        if (compensatePendingStore) {
+            if (secret.readInFlight)
+                secret.restoreStoreAfterRead = true;
+            else
+                compensatePersistedSecret(secret, storedProfile(m_selectedNetworkId));
+        }
+        emit credentialStateChanged();
+    }
     emit draftChanged();
     refreshRoster();
 }
@@ -378,6 +744,7 @@ bool IrcConnection::removeSelected()
 
     const bool wasSetup = setupRequired();
     const QString id = m_selectedNetworkId;
+    const IrcNetworkProfile removed = storedProfile(id);
     int removedIndex = 0;
     for (int i = 0; i < m_stored.size(); ++i) {
         if (m_stored.at(i).networkId == id) {
@@ -388,6 +755,8 @@ bool IrcConnection::removeSelected()
 
     m_controller.discardSession(id);
     m_controller.forgetNetworkState(id);
+    if (!removed.networkId.isEmpty())
+        queueCredentialRemoval(credentialKey(removed), secretFor(id).revision);
     m_secrets.remove(id);
     m_applied.remove(id);
     m_store.remove(id);
@@ -412,6 +781,7 @@ bool IrcConnection::removeSelected()
         emit focusPasswordChanged();
     }
     emit selectedNetworkChanged();
+    emit credentialStateChanged();
     emit draftChanged();
     if (wasSetup != setupRequired())
         emit setupRequiredChanged();
@@ -422,6 +792,10 @@ bool IrcConnection::removeSelected()
 
 bool IrcConnection::activate()
 {
+    if (m_startupActivationConnection) {
+        QObject::disconnect(m_startupActivationConnection);
+        m_startupActivationConnection = {};
+    }
     if (!isStored(m_selectedNetworkId))
         return false;
     const IrcNetworkProfile profile = storedProfile(m_selectedNetworkId);
@@ -434,10 +808,122 @@ bool IrcConnection::activate()
 
 bool IrcConnection::activateStartup()
 {
+    if (m_startupActivationConnection)
+        return false;
+    if (startupCredentialsPending()) {
+        m_startupActivationConnection = connect(
+            this, &IrcConnection::credentialStateChanged, this, [this]() {
+                if (startupCredentialsPending())
+                    return;
+                QObject::disconnect(m_startupActivationConnection);
+                m_startupActivationConnection = {};
+                startMarkedStartupProfiles();
+            });
+        return false;
+    }
+    return startMarkedStartupProfiles();
+}
+
+void IrcConnection::activateOnStartup()
+{
+    if (m_startupActivationConnection)
+        return;
+    const IrcNetworkProfile profile = storedProfile(m_selectedNetworkId);
+    const IrcDraftSecret &secret = selectedSecret();
+    if (secret.credentialState == CredentialStore::State::Loading
+        || secret.readInFlight) {
+        m_startupActivationConnection = connect(
+            this, &IrcConnection::credentialStateChanged, this, [this]() {
+                const IrcNetworkProfile currentProfile =
+                    storedProfile(m_selectedNetworkId);
+                const IrcDraftSecret &current = selectedSecret();
+                if (current.credentialState == CredentialStore::State::Loading
+                    || current.readInFlight) {
+                    return;
+                }
+                QObject::disconnect(m_startupActivationConnection);
+                m_startupActivationConnection = {};
+                if (startupConnectAllowed(currentProfile))
+                    activate();
+                else
+                    requestStartupPassword(currentProfile);
+            });
+        return;
+    }
+    if (!startupConnectAllowed(profile)) {
+        requestStartupPassword(profile);
+        return;
+    }
+    activate();
+}
+
+bool IrcConnection::startupCredentialsPending() const
+{
+    for (const IrcNetworkProfile &profile : m_stored) {
+        if (!profile.connectOnStartup || !profile.isComplete())
+            continue;
+        const IrcDraftSecret &secret = secretFor(profile.networkId);
+        if (secret.readInFlight
+            || secret.credentialState == CredentialStore::State::Loading) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool IrcConnection::startupConnectAllowed(const IrcNetworkProfile &profile) const
+{
+    const CredentialStore::State state = secretFor(profile.networkId).credentialState;
+    if (state == CredentialStore::State::Loading
+        || state == CredentialStore::State::Error) {
+        return false;
+    }
+    if (profile.secretSaved
+        && (state == CredentialStore::State::Missing
+            || state == CredentialStore::State::Unavailable
+            || state == CredentialStore::State::SessionOnly)) {
+        return false;
+    }
+    return true;
+}
+
+void IrcConnection::requestStartupPassword(const IrcNetworkProfile &profile)
+{
+    if (profile.networkId != m_selectedNetworkId || !profile.secretSaved)
+        return;
+    if (m_focusPassword)
+        return;
+    m_focusPassword = true;
+    emit focusPasswordChanged();
+}
+
+void IrcConnection::persistSecretSaved(const QString &networkId, bool saved)
+{
+    if (networkId.isEmpty())
+        return;
+    for (IrcNetworkProfile &profile : m_stored) {
+        if (profile.networkId != networkId)
+            continue;
+        if (profile.secretSaved == saved)
+            return;
+        profile.secretSaved = saved;
+        m_store.save(profile);
+        if (m_draft.networkId == networkId)
+            m_draft.secretSaved = saved;
+        return;
+    }
+}
+
+bool IrcConnection::startMarkedStartupProfiles()
+{
     bool started = false;
     for (const IrcNetworkProfile &profile : m_stored) {
         if (!profile.connectOnStartup || !profile.isComplete())
             continue;
+        if (!startupConnectAllowed(profile)) {
+            requestStartupPassword(profile);
+            continue;
+        }
         started = reconcile(profile) || started;
     }
     return started;
@@ -501,6 +987,13 @@ bool IrcConnection::reconcile(const IrcNetworkProfile &profile)
     return m_controller.start(profile.networkId);
 }
 
+CredentialKey IrcConnection::credentialKey(const IrcNetworkProfile &profile) const
+{
+    return {profile.networkId,
+            profile.username.isEmpty() ? profile.nick : profile.username,
+            profile.host};
+}
+
 void IrcConnection::loadStored()
 {
     m_stored = m_store.profiles();
@@ -522,6 +1015,7 @@ void IrcConnection::selectStored(const QString &networkId)
         emit focusPasswordChanged();
     }
     emit selectedNetworkChanged();
+    emit credentialStateChanged();
     emit draftChanged();
     refreshRoster();
 }
@@ -603,4 +1097,23 @@ const IrcConnection::IrcDraftSecret &IrcConnection::secretFor(const QString &net
 IrcConnection::IrcDraftSecret &IrcConnection::secretFor(const QString &networkId)
 {
     return m_secrets[networkId];
+}
+
+const IrcConnection::IrcDraftSecret &IrcConnection::selectedSecret() const
+{
+    return secretFor(m_selectedNetworkId);
+}
+
+IrcConnection::IrcDraftSecret &IrcConnection::selectedSecret()
+{
+    return secretFor(m_selectedNetworkId);
+}
+
+bool IrcConnection::hasQueuedOperationFor(const QString &networkId) const
+{
+    for (const CredentialOperation &operation : m_credentialOperations) {
+        if (operation.key.networkId == networkId)
+            return true;
+    }
+    return false;
 }

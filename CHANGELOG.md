@@ -20,6 +20,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Channel topics and join, part, quit, and nick event rows render as plain text. Server-controlled markup no longer becomes rich text.
+- QtKeychain `OtherError` is a storage error, not "unavailable".
+- Connect automatically on startup does not start a network whose saved secret cannot be read. The password field is focused instead.
 
 ## [0.2.0] - 2026-09-10
 
