@@ -2904,8 +2904,14 @@ TestCase {
 
         try {
             compare(window.currentConversation, "#omarchy");
-            verify(findChild(window, "networkHeader-oftc") !== null,
-                   "empty OFTC header should stay in the sidebar");
+            compare(namedNetworks.count, 2);
+            var networks = findChild(window, "liveNetworkRepeater");
+            verify(networks !== null, "The live network repeater should exist");
+            tryCompare(networks, "count", 2);
+            var oftcSection = networks.itemAt(1);
+            verify(oftcSection !== null, "empty OFTC section should stay in the sidebar");
+            var oftcHeader = findChild(oftcSection, "networkHeader-oftc");
+            verify(oftcHeader !== null, "empty OFTC header should stay in the sidebar");
 
             keyClick(Qt.Key_Right, Qt.AltModifier);
             compare(window.sidebarNetworkFocusId, "oftc");
