@@ -1,6 +1,9 @@
 #include <QAbstractItemModel>
+#include <QDateTime>
 #include <QSignalSpy>
 #include <QTest>
+
+#include <time.h>
 
 #include "fakeirctransport.h"
 #include "irccapability.h"
@@ -33,6 +36,31 @@ public:
 
 namespace
 {
+class ScopedTimeZone
+{
+public:
+    explicit ScopedTimeZone(const char *zone)
+        : m_hadTz(qEnvironmentVariableIsSet("TZ"))
+        , m_previous(qgetenv("TZ"))
+    {
+        qputenv("TZ", zone);
+        tzset();
+    }
+
+    ~ScopedTimeZone()
+    {
+        if (m_hadTz)
+            qputenv("TZ", m_previous);
+        else
+            qunsetenv("TZ");
+        tzset();
+    }
+
+private:
+    bool m_hadTz;
+    QByteArray m_previous;
+};
+
 IrcSessionConfig config(const QString& networkId)
 {
     IrcSessionConfig value;
@@ -262,6 +290,7 @@ private slots:
     void forgetNetworkDropsGhostRowsAndLog();
     void backgroundChatBumpsConversationEpoch();
     void chatHistoryBatchShowsBodyAndTime();
+    void chatHistoryAndLiveTimeUseLocalWallClock();
     void whoisFromChannelCopiesStatusLinesAsEvents();
     void whoisInterleavesByAskingBuffer();
     void statusWhoisSupersedesConversationWatch();
@@ -2887,13 +2916,58 @@ void ControllerTest::chatHistoryBatchShowsBodyAndTime()
     QVERIFY(messages);
     QCOMPARE(roleAt(messages, 0, MessageListModel::BodyRole),
              QStringLiteral("older"));
+    const QDateTime replayed = QDateTime::fromString(
+        QStringLiteral("2011-10-19T16:40:51.620Z"), Qt::ISODateWithMs);
     QCOMPARE(roleAt(messages, 0, MessageListModel::TimeRole),
-             QStringLiteral("16:40"));
+             replayed.toLocalTime().toString(QStringLiteral("HH:mm")));
     QCOMPARE(roleAt(messages, 0, MessageListModel::OriginRole),
              QStringLiteral("replay"));
     QCOMPARE(roleAt(messages, 1, MessageListModel::BodyRole),
              QStringLiteral("omairc joined"));
     QCOMPARE(controller.unreadCountFor(QStringLiteral("libera")), 0);
+}
+
+void ControllerTest::chatHistoryAndLiveTimeUseLocalWallClock()
+{
+    const ScopedTimeZone brisbane("Australia/Brisbane");
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+                                                transport);
+    QVERIFY(session);
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    transport->completeConnect();
+    transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :batch chathistory\r\n"
+                          ":server CAP omairc ACK :batch chathistory\r\n"
+                          ":server 001 omairc :Welcome\r\n"
+                          ":omairc!u@h JOIN :#omarchy\r\n"));
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+
+    transport->injectBytes(
+        QByteArrayLiteral(
+            ":irc.host BATCH +hx chathistory #omarchy\r\n"
+            "@batch=hx;time=2026-09-11T03:30:15.000Z;msgid=old "
+            ":alice!u@h PRIVMSG #omarchy :[13:30:15] hello\r\n"
+            ":irc.host BATCH -hx\r\n"
+            "@time=2026-09-11T03:30:15.000Z :bob!u@h PRIVMSG #omarchy :live now\r\n"));
+
+    auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
+    QVERIFY(messages);
+    QCOMPARE(roleAt(messages, 0, MessageListModel::BodyRole),
+             QStringLiteral("[13:30:15] hello"));
+    QCOMPARE(roleAt(messages, 0, MessageListModel::OriginRole),
+             QStringLiteral("replay"));
+    QCOMPARE(roleAt(messages, 0, MessageListModel::TimeRole),
+             QStringLiteral("13:30"));
+    QCOMPARE(roleAt(messages, 1, MessageListModel::BodyRole),
+             QStringLiteral("omairc joined"));
+    QCOMPARE(roleAt(messages, 2, MessageListModel::BodyRole),
+             QStringLiteral("live now"));
+    QCOMPARE(roleAt(messages, 2, MessageListModel::OriginRole),
+             QStringLiteral("live"));
+    QCOMPARE(roleAt(messages, 2, MessageListModel::TimeRole),
+             QStringLiteral("13:30"));
 }
 
 void ControllerTest::whoisFromChannelCopiesStatusLinesAsEvents()

@@ -168,7 +168,7 @@ void ModelTest::joinNamesPrivmsgPopulateModels()
     QCOMPARE(roleAt(messages, 1, MessageListModel::KindRole),
              QStringLiteral("message"));
     QCOMPARE(roleAt(messages, 1, MessageListModel::TimeRole),
-             QStringLiteral("00:00"));
+             timestamp.toLocalTime().toString(QStringLiteral("HH:mm")));
     QCOMPARE(roleAt(messages, 1, MessageListModel::NetworkIdRole), networkA);
     QCOMPARE(roleAt(messages, 1, MessageListModel::OriginRole),
              QStringLiteral("live"));
