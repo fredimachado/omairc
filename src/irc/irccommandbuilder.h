@@ -11,7 +11,9 @@
 #include "ircmessage.h"
 
 #include <cstddef>
+#include <string>
 #include <string_view>
+#include <vector>
 
 class IrcCommandBuilder
 {
@@ -19,6 +21,9 @@ public:
     static constexpr std::size_t kMaxFrameBytes = IrcProtocol::maxClassicFrameBytes;
 
     static IrcBuildResult line(std::string_view command);
+    static std::vector<std::string> splitTrailingParam(std::string_view prefix,
+                                                       std::string_view body,
+                                                       std::string_view suffix = {});
     static IrcBuildResult nick(std::string_view nickname);
     static IrcBuildResult user(std::string_view username, std::string_view realname);
     static IrcBuildResult pass(std::string_view password);

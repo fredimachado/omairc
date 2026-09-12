@@ -214,6 +214,9 @@ private:
     void handleWelcome(const IrcMessage &message);
     void applyIsupport(const IrcMessage &message);
     bool sendCommand(const QString& command);
+    bool sendTrailingBody(const QString& prefix,
+                          const QString& body,
+                          const QString& suffix = {});
     void fail(ErrorKind kind, const QString &message, bool reconnect);
     void scheduleReconnect();
     void beginReconnectAttempt();
