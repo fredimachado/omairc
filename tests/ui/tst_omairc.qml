@@ -1518,6 +1518,9 @@ TestCase {
         openSeededAppWindow();
         var composer = item("messageComposer");
         var list = item("messageList");
+        injectOmarchyChat("anna", "#omarchy", "unique-find one");
+        injectOmarchyChat("dax", "#omarchy", "unique-find two");
+        injectOmarchyChat("mira", "#omarchy", "unique-find three");
         fillTranscriptUntilScrollable(list);
         appendLiveMessages(list, 24, "find filler");
         waitForRendering(appWindow.contentItem);
@@ -1543,15 +1546,16 @@ TestCase {
         compare(composer.text, "keep me");
         verify(composer.activeFocus);
 
-        typeText("omarchy");
-        compare(composer.text, "omarchy");
+        typeText("unique-find");
+        compare(composer.text, "unique-find");
         tryVerify(function() {
             return list.contentY < pinnedY && appWindow.findIndex >= 0;
         }, 1000, "Ctrl+F should jump the list to the match");
         var first = appWindow.findIndex;
-        verify(first >= 0, "The first omarchy row should be current");
-        verify(field(list.model, first, "body").toLowerCase().indexOf("omarchy") >= 0);
-        verify(visibleMatchIndex(list, "omarchy") >= 0, "The first omarchy row should be in view");
+        verify(first >= 0, "The first unique-find row should be current");
+        verify(field(list.model, first, "body").toLowerCase().indexOf("unique-find") >= 0);
+        verify(visibleMatchIndex(list, "unique-find") >= 0,
+               "The first unique-find row should be in view");
         var firstMark = findMatchAt(list, first);
         verify(firstMark && firstMark.visible, "The current match row should highlight");
 
@@ -1563,7 +1567,7 @@ TestCase {
         var second = appWindow.findIndex;
         verify(second !== first, "Enter in find should go to the next match");
         verify(second > first, "Enter in find should go to a later match first");
-        compare(composer.text, "omarchy");
+        compare(composer.text, "unique-find");
 
         var current = second;
         var hops = 0;
