@@ -247,6 +247,7 @@ IrcSession::IrcSession(const IrcSessionConfig &config,
                        IrcReachabilitySource *reachability)
     : QObject(parent)
     , m_config(config)
+    , m_autojoinChannels(config.autojoinChannels)
     , m_nick(config.nick)
     , m_transport(transport)
     , m_reconnectTimer(reconnectTimer)
@@ -940,18 +941,21 @@ void IrcSession::handleMessage(const IrcMessage &message)
         if (!channel.isEmpty()) {
             bumpHistoryGeneration(channel);
             requestChannelHistory(channel);
+            recordAutojoin(channel, true);
         }
     } else if (message.command == "PART" && selfPrefixed(message)) {
         const QString channel = parameter(message, 0);
         if (!channel.isEmpty()) {
             bumpHistoryGeneration(channel);
             forgetChannelHistory(channel);
+            recordAutojoin(channel, false);
         }
     } else if (message.command == "KICK" && selfIs(parameter(message, 1))) {
         const QString channel = parameter(message, 0);
         if (!channel.isEmpty()) {
             bumpHistoryGeneration(channel);
             forgetChannelHistory(channel);
+            recordAutojoin(channel, false);
         }
     }
 }
@@ -1091,6 +1095,28 @@ bool IrcSession::replayEnabled(ReplayKind kind) const
         return false;
     return kind != ReplayKind::ChatHistory
         || enabled.contains(IrcCapability::ChatHistory);
+}
+
+void IrcSession::recordAutojoin(const QString &channel, bool joined)
+{
+    if (channel.isEmpty())
+        return;
+
+    auto &channels = m_autojoinChannels;
+    const auto found = std::find_if(channels.begin(), channels.end(),
+                                    [&](const QString &existing) {
+        return m_caseMapping.equals(utf8(existing), utf8(channel));
+    });
+    if (joined) {
+        if (found != channels.end())
+            return;
+        channels.append(channel);
+    } else {
+        if (found == channels.end())
+            return;
+        channels.erase(found);
+    }
+    emit autojoinChannelsChanged(m_config.networkId, channels);
 }
 
 bool IrcSession::selfPrefixed(const IrcMessage& message) const
@@ -1431,7 +1457,7 @@ void IrcSession::handleWelcome(const IrcMessage &message)
         sendPrivmsg(QStringLiteral("NickServ"),
                     QStringLiteral("IDENTIFY ") + m_config.nickServPassword);
     }
-    for (const QString &channel : m_config.autojoinChannels) {
+    for (const QString &channel : m_autojoinChannels) {
         const std::optional<IrcJoinTarget> target = IrcJoinTarget::make(channel);
         if (!target || !join(*target)) {
             emit errorOccurred(m_config.networkId,
