@@ -2126,16 +2126,9 @@ TestCase {
 
         var visible = firstVisibleIndex(list);
         var anchorBody = field(list.model, visible, "body");
-        var fromEnd = list.count - visible;
         prependLiveReplay(list, 9);
         waitForRendering(appWindow.contentItem);
         wait(0);
-        if (field(list.model, firstVisibleIndex(list), "body") !== anchorBody) {
-            list.restoreOffset = fromEnd;
-            list.restoreAnchor();
-            waitForRendering(appWindow.contentItem);
-            wait(0);
-        }
 
         compare(field(list.model, firstVisibleIndex(list), "body"), anchorBody);
         saveScreenshot("history-splice-anchor");
@@ -2157,12 +2150,9 @@ TestCase {
         compare(list.firstUnseenIndex, previousCount);
         var unseenBody = field(list.model, list.firstUnseenIndex, "body");
 
-        var beforeSplice = list.model.rowCount();
         prependLiveReplay(list, 9);
         waitForRendering(appWindow.contentItem);
         wait(0);
-        if (field(list.model, list.firstUnseenIndex, "body") !== unseenBody)
-            list.noteSplice(beforeSplice, list.count);
         compare(field(list.model, list.firstUnseenIndex, "body"), unseenBody);
 
         list.firstUnseenIndex = -1;

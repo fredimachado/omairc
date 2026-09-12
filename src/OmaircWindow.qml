@@ -2244,6 +2244,12 @@ ApplicationWindow {
             }
         }
 
+        function modelRowCount() {
+            if (model && typeof model.rowCount === "function")
+                return model.rowCount();
+            return count;
+        }
+
         function snapshotAnchor() {
             var index = indexAt(Math.max(1, width / 2), contentY + 1);
             if (index < 0)
@@ -2265,8 +2271,9 @@ ApplicationWindow {
             }
             pinning = true;
             var generation = ++pinGeneration;
-            var target = count - offset;
-            if (offset >= 0 && target >= 0 && target < count)
+            var total = modelRowCount();
+            var target = total - offset;
+            if (offset >= 0 && target >= 0 && target < total)
                 positionViewAtIndex(target, ListView.Beginning);
             Qt.callLater(function() {
                 if (generation !== pinGeneration)
@@ -2325,10 +2332,16 @@ ApplicationWindow {
                     list.snapshotAnchor();
             }
             function onModelReset() {
+                // ListView.count is still the pre-reset value here. The C++
+                // model already has the spliced rows, so growth after this
+                // handler would look like a bottom append.
                 var previous = list.resetSavedCount;
-                list.resetPending = false;
-                list.noteSplice(previous, list.count);
-                list.restoreAnchor();
+                var newCount = list.modelRowCount();
+                list.noteSplice(previous, newCount);
+                Qt.callLater(function() {
+                    list.resetPending = false;
+                    list.restoreAnchor();
+                });
             }
             function onRowsInserted(parent, first, last) {
                 list.noteGrowth(list.trackedCount, list.count);
