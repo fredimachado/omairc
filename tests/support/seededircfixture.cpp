@@ -319,8 +319,9 @@ SeedNetwork omarchyWorld()
     };
     const int ricingUnreadTarget = 12;
     const int ricingMentionLine = 1;
-    for (int index = 1; index <= ricingUnreadTarget - ricing.lines.size() - ricingMentionLine;
-         ++index) {
+    const int ricingPadCount =
+        ricingUnreadTarget - ricing.lines.size() - ricingMentionLine;
+    for (int index = 1; index <= ricingPadCount; ++index) {
         ricing.lines.append(chat(QStringLiteral("anna"),
                                  QStringLiteral("rice-pad-%1").arg(index),
                                  QStringLiteral("18:2%1").arg(index),
