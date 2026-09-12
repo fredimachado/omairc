@@ -940,18 +940,21 @@ void IrcSession::handleMessage(const IrcMessage &message)
         if (!channel.isEmpty()) {
             bumpHistoryGeneration(channel);
             requestChannelHistory(channel);
+            recordAutojoin(channel, true);
         }
     } else if (message.command == "PART" && selfPrefixed(message)) {
         const QString channel = parameter(message, 0);
         if (!channel.isEmpty()) {
             bumpHistoryGeneration(channel);
             forgetChannelHistory(channel);
+            recordAutojoin(channel, false);
         }
     } else if (message.command == "KICK" && selfIs(parameter(message, 1))) {
         const QString channel = parameter(message, 0);
         if (!channel.isEmpty()) {
             bumpHistoryGeneration(channel);
             forgetChannelHistory(channel);
+            recordAutojoin(channel, false);
         }
     }
 }
@@ -1091,6 +1094,28 @@ bool IrcSession::replayEnabled(ReplayKind kind) const
         return false;
     return kind != ReplayKind::ChatHistory
         || enabled.contains(IrcCapability::ChatHistory);
+}
+
+void IrcSession::recordAutojoin(const QString &channel, bool joined)
+{
+    if (channel.isEmpty())
+        return;
+
+    auto &channels = m_config.autojoinChannels;
+    const auto found = std::find_if(channels.begin(), channels.end(),
+                                    [&](const QString &existing) {
+        return m_caseMapping.equals(utf8(existing), utf8(channel));
+    });
+    if (joined) {
+        if (found != channels.end())
+            return;
+        channels.append(channel);
+    } else {
+        if (found == channels.end())
+            return;
+        channels.erase(found);
+    }
+    emit autojoinChannelsChanged(m_config.networkId, channels);
 }
 
 bool IrcSession::selfPrefixed(const IrcMessage& message) const

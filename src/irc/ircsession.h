@@ -161,6 +161,8 @@ signals:
     void statusEntry(const IrcStatusEntry& entry);
     void capabilitiesChanged(const QString& networkId,
                              IrcCapabilitySet capabilities);
+    void autojoinChannelsChanged(const QString &networkId,
+                                 const QStringList &channels);
 
 private:
     void setState(State state);
@@ -204,6 +206,7 @@ private:
 
     bool selfPrefixed(const IrcMessage& message) const;
     bool selfIs(const QString& nick) const;
+    void recordAutojoin(const QString &channel, bool joined);
     bool allowCtcpReply(const QString &nick);
     void handleCap(const IrcMessage &message);
     void handleAuthenticate(const IrcMessage &message);
@@ -232,7 +235,7 @@ private:
         Digit,
     };
 
-    const IrcSessionConfig m_config;
+    IrcSessionConfig m_config;
     QString m_nick;
     IrcTransport *m_transport;
     IrcReconnectTimer *m_reconnectTimer;

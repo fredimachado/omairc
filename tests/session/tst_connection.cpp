@@ -11,6 +11,9 @@
 #include "irccontroller.h"
 #include "conversationlistmodel.h"
 #include "ircprofilestore.h"
+#include "ircsession.h"
+#include "ircstatusentry.h"
+#include "networklogmodel.h"
 
 #include <memory>
 #include <utility>
@@ -25,6 +28,34 @@ QByteArray decodedSaslPayload(const QByteArray &frame)
     const qsizetype prefix = qsizetype(sizeof("AUTHENTICATE ") - 1);
     const qsizetype trailer = qsizetype(sizeof("\r\n") - 1);
     return QByteArray::fromBase64(frame.mid(prefix, frame.size() - prefix - trailer));
+}
+
+QStringList reloadedAutojoin()
+{
+    const QList<IrcNetworkProfile> profiles = IrcProfileStore().profiles();
+    if (profiles.isEmpty())
+        return {};
+    return profiles.first().autojoinChannels;
+}
+
+bool logContains(QAbstractItemModel *lines, const QString &needle)
+{
+    for (int row = 0; row < lines->rowCount(); ++row) {
+        const QString text =
+            lines->data(lines->index(row, 0), NetworkLogModel::TextRole).toString();
+        if (text.contains(needle))
+            return true;
+    }
+    return false;
+}
+
+bool framesContain(const QByteArrayList &frames, const QByteArray &needle)
+{
+    for (const QByteArray &frame : frames) {
+        if (frame.contains(needle))
+            return true;
+    }
+    return false;
 }
 }
 
@@ -100,12 +131,22 @@ private slots:
     void unavailableStoreNamesBothSessionOnlySecrets();
     void startupSkipsWhenSavedNickServIsMissing();
     void startupFocusesPasswordBeforeNickServWhenBothMissing();
+    void welcomeJoinKeepsExistingAutojoin();
+    void selfJoinRemembersChannelAndConnectField();
+    void selfPartForgetsChannel();
+    void selfKickForgetsChannel();
+    void thirdPartyJoinDoesNotWriteAutojoin();
+    void keyedJoinSavesChannelNameOnly();
+    void reconnectWelcomeJoinsRememberedChannels();
+    void bareJoinStoresPrefixedChannel();
+    void connectApplyOverridesRememberedAutojoin();
 
 private:
     IrcConnection::TransportFactory capturingFactory();
     CredentialStore &credentialStore();
     void fillCompleteDraft(IrcConnection &connection,
                            const QString &host = QStringLiteral("irc.example"));
+    bool welcomeOmarchy(IrcConnection &connection, IrcController &controller);
 
     std::unique_ptr<QTemporaryDir> m_dir;
     QList<FakeIrcTransport *> m_transports;
@@ -274,6 +315,22 @@ void ConnectionTest::fillCompleteDraft(IrcConnection &connection, const QString 
     connection.setUsername(QStringLiteral("omairc"));
     connection.setRealname(QStringLiteral("Omairc User"));
     connection.setAutojoin(QStringLiteral("#omarchy"));
+}
+
+bool ConnectionTest::welcomeOmarchy(IrcConnection &connection, IrcController &controller)
+{
+    fillCompleteDraft(connection);
+    if (!connection.apply() || m_transports.size() != 1)
+        return false;
+    FakeIrcTransport *transport = m_transports.last();
+    transport->completeConnect();
+    transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
+                          ":server 001 omairc :Welcome\r\n"
+                          ":omairc!u@h JOIN :#omarchy\r\n"));
+    controller.selectConversation(connection.selectedNetworkId(),
+                                  QStringLiteral("#omarchy"));
+    return true;
 }
 
 void ConnectionTest::setupRequiredUntilCompleteProfileIsSaved()
@@ -1900,6 +1957,217 @@ void ConnectionTest::startupFocusesPasswordBeforeNickServWhenBothMissing()
     QTRY_VERIFY(connection.focusPassword());
     QVERIFY(!connection.focusNickServ());
     QCOMPARE(m_transports.size(), 0);
+}
+
+void ConnectionTest::welcomeJoinKeepsExistingAutojoin()
+{
+    IrcController controller;
+    IrcConnection connection(controller, capturingFactory(), credentialStore());
+    QVERIFY(welcomeOmarchy(connection, controller));
+
+    QCOMPARE(reloadedAutojoin(), QStringList({QStringLiteral("#omarchy")}));
+    QCOMPARE(connection.autojoin(), QStringLiteral("#omarchy"));
+
+    m_transports.last()->injectBytes(
+        QByteArrayLiteral(":omairc!u@h JOIN :#omarchy\r\n"));
+    QCOMPARE(reloadedAutojoin(), QStringList({QStringLiteral("#omarchy")}));
+    QCOMPARE(connection.autojoin(), QStringLiteral("#omarchy"));
+}
+
+void ConnectionTest::selfJoinRemembersChannelAndConnectField()
+{
+    IrcController controller;
+    IrcConnection connection(controller, capturingFactory(), credentialStore());
+    QVERIFY(welcomeOmarchy(connection, controller));
+    connection.setRealname(QStringLiteral("Keep Me"));
+
+    QVERIFY(controller.sendMessage(QStringLiteral("/join #lab")));
+    QCOMPARE(m_transports.last()->writtenFrames().last(),
+             QByteArrayLiteral("JOIN #lab\r\n"));
+    QCOMPARE(reloadedAutojoin(), QStringList({QStringLiteral("#omarchy")}));
+    QCOMPARE(connection.autojoin(), QStringLiteral("#omarchy"));
+    QCOMPARE(connection.realname(), QStringLiteral("Keep Me"));
+
+    m_transports.last()->injectBytes(
+        QByteArrayLiteral(":omairc!u@h JOIN :#lab\r\n"));
+    QCOMPARE(reloadedAutojoin(),
+             QStringList({QStringLiteral("#omarchy"), QStringLiteral("#lab")}));
+    QCOMPARE(connection.autojoin(), QStringLiteral("#omarchy #lab"));
+    QCOMPARE(connection.realname(), QStringLiteral("Keep Me"));
+
+    connection.discard();
+    QCOMPARE(connection.realname(), QStringLiteral("Omairc User"));
+    QCOMPARE(connection.autojoin(), QStringLiteral("#omarchy #lab"));
+    QVERIFY(connection.apply());
+    QCOMPARE(m_transports.size(), 1);
+}
+
+void ConnectionTest::selfPartForgetsChannel()
+{
+    IrcController controller;
+    IrcConnection connection(controller, capturingFactory(), credentialStore());
+    QVERIFY(welcomeOmarchy(connection, controller));
+    QVERIFY(controller.sendMessage(QStringLiteral("/join #lab")));
+    m_transports.last()->injectBytes(
+        QByteArrayLiteral(":omairc!u@h JOIN :#lab\r\n"));
+    QCOMPARE(reloadedAutojoin(),
+             QStringList({QStringLiteral("#omarchy"), QStringLiteral("#lab")}));
+
+    QVERIFY(controller.sendMessage(QStringLiteral("/part #lab")));
+    QCOMPARE(m_transports.last()->writtenFrames().last(),
+             QByteArrayLiteral("PART #lab\r\n"));
+    QCOMPARE(reloadedAutojoin(),
+             QStringList({QStringLiteral("#omarchy"), QStringLiteral("#lab")}));
+
+    m_transports.last()->injectBytes(
+        QByteArrayLiteral(":omairc!u@h PART #lab\r\n"));
+    QCOMPARE(reloadedAutojoin(), QStringList({QStringLiteral("#omarchy")}));
+    QCOMPARE(connection.autojoin(), QStringLiteral("#omarchy"));
+}
+
+void ConnectionTest::selfKickForgetsChannel()
+{
+    IrcController controller;
+    IrcConnection connection(controller, capturingFactory(), credentialStore());
+    QVERIFY(welcomeOmarchy(connection, controller));
+    QVERIFY(controller.sendMessage(QStringLiteral("/join #lab")));
+    m_transports.last()->injectBytes(
+        QByteArrayLiteral(":omairc!u@h JOIN :#lab\r\n"));
+    QCOMPARE(reloadedAutojoin(),
+             QStringList({QStringLiteral("#omarchy"), QStringLiteral("#lab")}));
+
+    const int framesBefore = m_transports.last()->writtenFrames().size();
+    m_transports.last()->injectBytes(
+        QByteArrayLiteral(":op!u@h KICK #lab omairc :out\r\n"));
+    QCOMPARE(reloadedAutojoin(), QStringList({QStringLiteral("#omarchy")}));
+    QCOMPARE(connection.autojoin(), QStringLiteral("#omarchy"));
+    QVERIFY(!framesContain(m_transports.last()->writtenFrames().mid(framesBefore),
+                           QByteArrayLiteral("JOIN #lab")));
+}
+
+void ConnectionTest::thirdPartyJoinDoesNotWriteAutojoin()
+{
+    IrcController controller;
+    IrcConnection connection(controller, capturingFactory(), credentialStore());
+    QVERIFY(welcomeOmarchy(connection, controller));
+
+    m_transports.last()->injectBytes(
+        QByteArrayLiteral(":alice!u@h JOIN :#lab\r\n"
+                          ":alice!u@h JOIN :#omarchy\r\n"
+                          ":alice!u@h PART #omarchy\r\n"
+                          ":op!u@h KICK #omarchy alice :bye\r\n"));
+    QCOMPARE(reloadedAutojoin(), QStringList({QStringLiteral("#omarchy")}));
+    QCOMPARE(connection.autojoin(), QStringLiteral("#omarchy"));
+}
+
+void ConnectionTest::keyedJoinSavesChannelNameOnly()
+{
+    IrcController controller;
+    IrcConnection connection(controller, capturingFactory(), credentialStore());
+    QVERIFY(welcomeOmarchy(connection, controller));
+
+    QVERIFY(controller.sendMessage(QStringLiteral("/join #private hunter2")));
+    QCOMPARE(m_transports.last()->writtenFrames().last(),
+             QByteArrayLiteral("JOIN #private hunter2\r\n"));
+    QCOMPARE(IrcStatusEntry::outgoing(connection.selectedNetworkId(),
+                                      QByteArrayLiteral("JOIN #private hunter2\r\n"))
+                 .text(),
+             QStringLiteral("JOIN #private ***"));
+    QVERIFY(!logContains(controller.console()->lines(), QStringLiteral("hunter2")));
+    QCOMPARE(reloadedAutojoin(), QStringList({QStringLiteral("#omarchy")}));
+
+    m_transports.last()->injectBytes(
+        QByteArrayLiteral(":omairc!u@h JOIN :#private\r\n"));
+    QCOMPARE(reloadedAutojoin(),
+             QStringList({QStringLiteral("#omarchy"), QStringLiteral("#private")}));
+    QCOMPARE(connection.autojoin(), QStringLiteral("#omarchy #private"));
+
+    QSettings settings;
+    QFile file(settings.fileName());
+    QVERIFY(file.open(QIODevice::ReadOnly | QIODevice::Text));
+    const QString contents = QString::fromUtf8(file.readAll());
+    QVERIFY(!contents.contains(QLatin1String("hunter2")));
+    QVERIFY(contents.contains(QLatin1String("#private")));
+}
+
+void ConnectionTest::reconnectWelcomeJoinsRememberedChannels()
+{
+    IrcController controller;
+    IrcConnection connection(controller, capturingFactory(), credentialStore());
+    QVERIFY(welcomeOmarchy(connection, controller));
+    QVERIFY(controller.sendMessage(QStringLiteral("/join #lab")));
+    m_transports.last()->injectBytes(
+        QByteArrayLiteral(":omairc!u@h JOIN :#lab\r\n"));
+    QCOMPARE(reloadedAutojoin(),
+             QStringList({QStringLiteral("#omarchy"), QStringLiteral("#lab")}));
+
+    FakeIrcTransport *transport = m_transports.last();
+    IrcSession *session = controller.session(connection.selectedNetworkId());
+    QVERIFY(session);
+    transport->remoteClose();
+    QCOMPARE(session->state(), IrcSession::State::Reconnecting);
+    QCOMPARE(m_transports.size(), 1);
+    QTRY_COMPARE(transport->connectionState(),
+                 IrcTransport::ConnectionState::Connecting);
+
+    const int framesBefore = transport->writtenFrames().size();
+    transport->completeConnect();
+    transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
+                          ":server 001 omairc :Welcome\r\n"));
+    const QByteArrayList welcomeFrames = transport->writtenFrames().mid(framesBefore);
+    QByteArrayList joins;
+    for (const QByteArray &frame : welcomeFrames) {
+        if (frame.startsWith("JOIN "))
+            joins.append(frame);
+    }
+    QCOMPARE(joins,
+             QByteArrayList({QByteArrayLiteral("JOIN #omarchy\r\n"),
+                             QByteArrayLiteral("JOIN #lab\r\n")}));
+}
+
+void ConnectionTest::bareJoinStoresPrefixedChannel()
+{
+    IrcController controller;
+    IrcConnection connection(controller, capturingFactory(), credentialStore());
+    QVERIFY(welcomeOmarchy(connection, controller));
+
+    QVERIFY(controller.sendMessage(QStringLiteral("/join lab")));
+    QCOMPARE(m_transports.last()->writtenFrames().last(),
+             QByteArrayLiteral("JOIN #lab\r\n"));
+    QCOMPARE(reloadedAutojoin(), QStringList({QStringLiteral("#omarchy")}));
+
+    m_transports.last()->injectBytes(
+        QByteArrayLiteral(":omairc!u@h JOIN :#lab\r\n"));
+    QCOMPARE(reloadedAutojoin(),
+             QStringList({QStringLiteral("#omarchy"), QStringLiteral("#lab")}));
+    QCOMPARE(connection.autojoin(), QStringLiteral("#omarchy #lab"));
+}
+
+void ConnectionTest::connectApplyOverridesRememberedAutojoin()
+{
+    IrcController controller;
+    IrcConnection connection(controller, capturingFactory(), credentialStore());
+    QVERIFY(welcomeOmarchy(connection, controller));
+    QVERIFY(controller.sendMessage(QStringLiteral("/join #lab")));
+    m_transports.last()->injectBytes(
+        QByteArrayLiteral(":omairc!u@h JOIN :#lab\r\n"));
+    QCOMPARE(reloadedAutojoin(),
+             QStringList({QStringLiteral("#omarchy"), QStringLiteral("#lab")}));
+
+    connection.setAutojoin(QStringLiteral("#omarchy"));
+    QVERIFY(connection.apply());
+    QCOMPARE(reloadedAutojoin(), QStringList({QStringLiteral("#omarchy")}));
+    QCOMPARE(connection.autojoin(), QStringLiteral("#omarchy"));
+    QCOMPARE(m_transports.size(), 2);
+
+    FakeIrcTransport *fresh = m_transports.last();
+    fresh->completeConnect();
+    fresh->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
+                          ":server 001 omairc :Welcome\r\n"));
+    QVERIFY(fresh->writtenFrames().contains(QByteArrayLiteral("JOIN #omarchy\r\n")));
+    QVERIFY(!fresh->writtenFrames().contains(QByteArrayLiteral("JOIN #lab\r\n")));
 }
 
 int runConnectionTests(int argc, char **argv)

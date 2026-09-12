@@ -219,6 +219,7 @@ private:
     std::optional<IrcSessionConfig> sessionConfigFor(
         const IrcNetworkProfile &profile) const;
     bool reconcile(const IrcNetworkProfile &profile);
+    void persistAutojoin(const QString &networkId, const QStringList &channels);
     CredentialKey credentialKey(const IrcNetworkProfile &profile) const;
     CredentialKey nickServCredentialKey(const IrcNetworkProfile &profile) const;
     void applySecret(IrcDraftSecret &secret, const CredentialKey &previousKey,

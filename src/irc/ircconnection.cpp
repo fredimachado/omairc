@@ -1260,11 +1260,37 @@ bool IrcConnection::reconcile(const IrcNetworkProfile &profile)
     if (!transport)
         return false;
 
-    if (!m_controller.addSession(*config, transport))
+    IrcSession *session = m_controller.addSession(*config, transport);
+    if (!session)
         return false;
+
+    connect(session, &IrcSession::autojoinChannelsChanged,
+            this, &IrcConnection::persistAutojoin);
 
     m_applied.insert(profile.networkId, candidate);
     return m_controller.start(profile.networkId);
+}
+
+void IrcConnection::persistAutojoin(const QString &networkId,
+                                    const QStringList &channels)
+{
+    for (IrcNetworkProfile &profile : m_stored) {
+        if (profile.networkId != networkId)
+            continue;
+        if (profile.autojoinChannels == channels)
+            return;
+        profile.autojoinChannels = channels;
+        m_store.save(profile);
+        const auto applied = m_applied.find(networkId);
+        if (applied != m_applied.end())
+            applied->profile.autojoinChannels = channels;
+        if (m_draft.networkId == networkId
+            && m_draft.autojoinChannels != channels) {
+            m_draft.autojoinChannels = channels;
+            emit draftChanged();
+        }
+        return;
+    }
 }
 
 CredentialKey IrcConnection::credentialKey(const IrcNetworkProfile &profile) const
