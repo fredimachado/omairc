@@ -24,6 +24,7 @@
 #include <QDir>
 #include <QFileInfo>
 #include <QImage>
+#include <QMetaObject>
 #include <QAbstractItemModel>
 #include <QQmlApplicationEngine>
 #include <QSignalSpy>
