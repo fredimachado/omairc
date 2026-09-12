@@ -4,6 +4,9 @@
 #include "irccapability.h"
 #include "ircconnection.h"
 #include "irccontroller.h"
+#include "ircnetworkprofile.h"
+#include "ircprofilestore.h"
+#include "storage/credentialstore.h"
 #include "ircserverfeatures.h"
 #include "ircsession.h"
 #include "ircstatusconsole.h"
@@ -52,6 +55,50 @@ IrcSessionConfig fixtureConfig()
     value.autojoinChannels = {QStringLiteral("#omarchy")};
     value.reconnectEnabled = false;
     return value;
+}
+
+class MissingCredentialStore final : public CredentialStore
+{
+public:
+    void read(const CredentialKey &) override
+    {
+        emit readFinished(State::Loading, {}, {});
+        QMetaObject::invokeMethod(this, [this]() {
+            emit readFinished(State::Missing, {}, {});
+        }, Qt::QueuedConnection);
+    }
+
+    void write(const CredentialKey &, const QString &) override
+    {
+        QMetaObject::invokeMethod(this, [this]() {
+            emit writeFinished(State::Available, {});
+        }, Qt::QueuedConnection);
+    }
+
+    void remove(const CredentialKey &) override
+    {
+        QMetaObject::invokeMethod(this, [this]() {
+            emit writeFinished(State::Missing, {});
+        }, Qt::QueuedConnection);
+    }
+};
+
+bool writeLiberaProfile()
+{
+    IrcNetworkProfile profile;
+    profile.networkId = QStringLiteral("libera");
+    profile.host = QStringLiteral("irc.example");
+    profile.port = 6697;
+    profile.tlsEnabled = true;
+    profile.connectOnStartup = false;
+    profile.nick = QStringLiteral("omairc");
+    profile.username = QStringLiteral("omairc");
+    profile.realname = QStringLiteral("Omairc User");
+    profile.autojoinChannels = {QStringLiteral("#omarchy")};
+    if (!profile.isComplete())
+        return false;
+    IrcProfileStore().save(profile);
+    return true;
 }
 
 int chromeIndex(const QVector<TranscriptRowChrome> &rows, const QString &body)
@@ -509,6 +556,9 @@ void LiveUiTest::consecutiveSameAuthorMinuteGroupsThroughIrcEvent()
     Backend backend;
     IrcSlashSession slash;
     IrcController controller;
+    QVERIFY(writeLiberaProfile());
+    MissingCredentialStore credentials;
+    IrcConnection connection(controller, credentials);
     auto *transport = new FakeIrcTransport;
     IrcSession *session = controller.addSession(fixtureConfig(), transport);
     QVERIFY(session);
@@ -531,6 +581,7 @@ void LiveUiTest::consecutiveSameAuthorMinuteGroupsThroughIrcEvent()
     QVariantMap properties;
     properties.insert(QStringLiteral("backend"), QVariant::fromValue(&backend));
     properties.insert(QStringLiteral("irc"), QVariant::fromValue(&controller));
+    properties.insert(QStringLiteral("connection"), QVariant::fromValue(&connection));
     properties.insert(QStringLiteral("slashCommands"), QVariant::fromValue(&slash));
     std::unique_ptr<QObject> root(component.createWithInitialProperties(properties));
     QVERIFY2(root.get(), qPrintable(component.errorString()));
@@ -607,6 +658,9 @@ void LiveUiTest::memberJoinPartModeUpdatesWithoutReset()
     Backend backend;
     IrcSlashSession slash;
     IrcController controller;
+    QVERIFY(writeLiberaProfile());
+    MissingCredentialStore credentials;
+    IrcConnection connection(controller, credentials);
     auto *transport = new FakeIrcTransport;
     IrcSession *session = controller.addSession(fixtureConfig(), transport);
     QVERIFY(session);
@@ -628,6 +682,7 @@ void LiveUiTest::memberJoinPartModeUpdatesWithoutReset()
     QVariantMap properties;
     properties.insert(QStringLiteral("backend"), QVariant::fromValue(&backend));
     properties.insert(QStringLiteral("irc"), QVariant::fromValue(&controller));
+    properties.insert(QStringLiteral("connection"), QVariant::fromValue(&connection));
     properties.insert(QStringLiteral("slashCommands"), QVariant::fromValue(&slash));
     std::unique_ptr<QObject> root(component.createWithInitialProperties(properties));
     QVERIFY2(root.get(), qPrintable(component.errorString()));
@@ -714,6 +769,9 @@ void LiveUiTest::replayAndLiveSameAuthorMinuteDoNotGroupThroughIrcEvent()
     Backend backend;
     IrcSlashSession slash;
     IrcController controller;
+    QVERIFY(writeLiberaProfile());
+    MissingCredentialStore credentials;
+    IrcConnection connection(controller, credentials);
     auto *transport = new FakeIrcTransport;
     IrcSession *session = controller.addSession(fixtureConfig(), transport);
     QVERIFY(session);
@@ -736,6 +794,7 @@ void LiveUiTest::replayAndLiveSameAuthorMinuteDoNotGroupThroughIrcEvent()
     QVariantMap properties;
     properties.insert(QStringLiteral("backend"), QVariant::fromValue(&backend));
     properties.insert(QStringLiteral("irc"), QVariant::fromValue(&controller));
+    properties.insert(QStringLiteral("connection"), QVariant::fromValue(&connection));
     properties.insert(QStringLiteral("slashCommands"), QVariant::fromValue(&slash));
     std::unique_ptr<QObject> root(component.createWithInitialProperties(properties));
     QVERIFY2(root.get(), qPrintable(component.errorString()));
@@ -806,6 +865,9 @@ void LiveUiTest::bouncerQueryReplayRendersDirectMessageInSidebar()
     Backend backend;
     IrcSlashSession slash;
     IrcController controller;
+    QVERIFY(writeLiberaProfile());
+    MissingCredentialStore credentials;
+    IrcConnection connection(controller, credentials);
     auto *transport = new FakeIrcTransport;
     IrcSession *session = controller.addSession(fixtureConfig(), transport);
     QVERIFY(session);
@@ -828,6 +890,7 @@ void LiveUiTest::bouncerQueryReplayRendersDirectMessageInSidebar()
     QVariantMap properties;
     properties.insert(QStringLiteral("backend"), QVariant::fromValue(&backend));
     properties.insert(QStringLiteral("irc"), QVariant::fromValue(&controller));
+    properties.insert(QStringLiteral("connection"), QVariant::fromValue(&connection));
     properties.insert(QStringLiteral("slashCommands"), QVariant::fromValue(&slash));
     std::unique_ptr<QObject> root(component.createWithInitialProperties(properties));
     QVERIFY2(root.get(), qPrintable(component.errorString()));
@@ -894,6 +957,9 @@ void LiveUiTest::ctrlFFindsLiveTranscriptAndStatus()
     Backend backend;
     IrcSlashSession slash;
     IrcController controller;
+    QVERIFY(writeLiberaProfile());
+    MissingCredentialStore credentials;
+    IrcConnection connection(controller, credentials);
     auto *transport = new FakeIrcTransport;
     IrcSession *session = controller.addSession(fixtureConfig(), transport);
     QVERIFY(session);
@@ -919,6 +985,7 @@ void LiveUiTest::ctrlFFindsLiveTranscriptAndStatus()
     QVariantMap properties;
     properties.insert(QStringLiteral("backend"), QVariant::fromValue(&backend));
     properties.insert(QStringLiteral("irc"), QVariant::fromValue(&controller));
+    properties.insert(QStringLiteral("connection"), QVariant::fromValue(&connection));
     properties.insert(QStringLiteral("slashCommands"), QVariant::fromValue(&slash));
     std::unique_ptr<QObject> root(component.createWithInitialProperties(properties));
     QVERIFY2(root.get(), qPrintable(component.errorString()));
