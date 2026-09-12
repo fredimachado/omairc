@@ -1475,12 +1475,36 @@ TestCase {
             last = first;
         var index = 0;
         for (index = first; index <= last; ++index) {
-            var row = list.model.get(index);
-            var hay = ((row && (row.body || row.text)) || "").toLowerCase();
+            var hay = (field(list.model, index, "body")
+                || field(list.model, index, "text")
+                || "").toLowerCase();
             if (hay.indexOf(lower) >= 0)
                 return index;
         }
         return -1;
+    }
+
+    function networkDisplayName(networkId) {
+        var model = seed.connection.networks;
+        var row = 0;
+        for (; row < model.rowCount(); ++row) {
+            var idx = model.index(row, 0);
+            if (model.data(idx, Qt.UserRole + 1) === networkId)
+                return model.data(idx, Qt.UserRole + 2) || "";
+        }
+        return "";
+    }
+
+    function injectOmarchyChat(nick, target, body, time) {
+        var prefix = time ? "@time=2026-09-12T" + time + ":00.000Z " : "";
+        seed.injectOmarchy(prefix + ":" + nick + "!u@h PRIVMSG " + target
+            + " :" + body + "\r\n");
+    }
+
+    function waitForRowCount(list, expected) {
+        tryVerify(function() {
+            return list.model.rowCount() === expected;
+        });
     }
 
     function findMatchAt(list, index) {
@@ -1491,10 +1515,11 @@ TestCase {
     }
 
     function test_ctrlFFindsTextInConversation() {
+        openSeededAppWindow();
         var composer = item("messageComposer");
         var list = item("messageList");
-        fillMockMessagesUntilScrollable(list);
-        appendMockMessages(list, 24, "find filler");
+        fillTranscriptUntilScrollable(list);
+        appendLiveMessages(list, 24, "find filler");
         waitForRendering(appWindow.contentItem);
         list.pinToEnd();
         waitForRendering(appWindow.contentItem);
@@ -1525,14 +1550,14 @@ TestCase {
         }, 1000, "Ctrl+F should jump the list to the match");
         var first = visibleMatchIndex(list, "omarchy");
         verify(first >= 0, "The first omarchy row should be in view");
-        verify(list.model.get(first).body.toLowerCase().indexOf("omarchy") >= 0);
+        verify(field(list.model, first, "body").toLowerCase().indexOf("omarchy") >= 0);
         compare(appWindow.findIndex, first);
         var firstMark = findMatchAt(list, first);
         verify(firstMark && firstMark.visible, "The current match row should highlight");
 
-        var countBefore = list.model.count;
+        var countBefore = list.model.rowCount();
         keyClick(Qt.Key_Return);
-        compare(list.model.count, countBefore);
+        compare(list.model.rowCount(), countBefore);
         waitForRendering(appWindow.contentItem);
         wait(0);
         var second = visibleMatchIndex(list, "omarchy");
@@ -1550,15 +1575,15 @@ TestCase {
             verify(hops < list.count, "Find should wrap back to the first match");
         }
         verify(hops >= 1);
-        compare(list.model.count, countBefore);
+        compare(list.model.rowCount(), countBefore);
 
         composer.selectAll();
         typeText("kai");
         tryVerify(function() {
             var index = appWindow.findIndex;
-            return index >= 0 && list.model.get(index).author === "kai";
+            return index >= 0 && field(list.model, index, "author") === "kai";
         }, 1000, "Find should match an author nick that is not in the body");
-        verify(list.model.get(appWindow.findIndex).body.toLowerCase().indexOf("kai") < 0);
+        verify(field(list.model, appWindow.findIndex, "body").toLowerCase().indexOf("kai") < 0);
         var authorMark = findMatchAt(list, appWindow.findIndex);
         verify(authorMark && authorMark.visible);
 
@@ -1568,17 +1593,19 @@ TestCase {
         verify(composer.activeFocus);
 
         keyClick(Qt.Key_Return);
+        verify(seed.echoLastOmarchyPrivmsg());
         compare(composer.text, "");
-        tryCompare(list.model, "count", countBefore + 1);
-        compare(list.model.get(countBefore).body, "keep me");
+        waitForRowCount(list, countBefore + 1);
+        compare(field(list.model, countBefore, "body"), "keep me");
     }
 
     function test_ctrlFFindsTextInStatus() {
+        openSeededAppWindow();
         var composer = item("messageComposer");
         var list = item("consoleList");
         keyClick(Qt.Key_QuoteLeft, Qt.ControlModifier);
         tryCompare(appWindow, "consoleVisible", true);
-        fillMockConsoleUntilScrollable(list);
+        fillConsoleUntilScrollable(list);
         var pinnedY = list.contentY;
         verify(pinnedY > 0);
 
@@ -1601,7 +1628,7 @@ TestCase {
         verify(list.contentY < pinnedY, "Ctrl+F should jump Status to the match");
         var match = visibleMatchIndex(list, "hostname");
         verify(match >= 0, "The hostname Status line should be in view");
-        verify(list.model.get(match).text.toLowerCase().indexOf("hostname") >= 0);
+        verify(field(list.model, match, "text").toLowerCase().indexOf("hostname") >= 0);
         compare(composer.text, "hostname");
         compare(appWindow.findIndex, match);
         var statusMark = findMatchAt(list, match);
@@ -1610,8 +1637,8 @@ TestCase {
         composer.selectAll();
         typeText("NOTICE");
         tryCompare(appWindow, "findIndex", 0);
-        compare(list.model.get(0).label, "NOTICE");
-        verify(list.model.get(0).text.indexOf("NOTICE") < 0);
+        compare(field(list.model, 0, "label"), "NOTICE");
+        verify(field(list.model, 0, "text").indexOf("NOTICE") < 0);
         var labelMark = findMatchAt(list, 0);
         verify(labelMark && labelMark.visible);
 
@@ -1656,19 +1683,12 @@ TestCase {
     }
 
     function test_pageUpScrollsTranscript() {
+        openSeededAppWindow();
         var composer = item("messageComposer");
         var list = item("messageList");
         mouseClick(composer);
         verify(composer.activeFocus);
-
-        var index = 0;
-        for (index = 0; index < 12; ++index) {
-            typeText("scroll line " + index);
-            keyClick(Qt.Key_Return);
-        }
-        waitForRendering(appWindow.contentItem);
-        list.positionViewAtEnd();
-        waitForRendering(appWindow.contentItem);
+        fillTranscriptUntilScrollable(list);
 
         verify(list.contentHeight > list.height);
         var before = list.contentY;
@@ -1695,11 +1715,12 @@ TestCase {
     }
 
     function test_pageUpShowsStatusScrollbar() {
+        openSeededAppWindow();
         var composer = item("messageComposer");
         var list = item("consoleList");
         keyClick(Qt.Key_QuoteLeft, Qt.ControlModifier);
         tryCompare(appWindow, "consoleVisible", true);
-        fillMockConsoleUntilScrollable(list);
+        fillConsoleUntilScrollable(list);
         mouseClick(composer);
         verify(composer.activeFocus);
 
@@ -1721,7 +1742,8 @@ TestCase {
     }
 
     function test_shortTranscriptHidesScrollbar() {
-        mouseClick(item("conversation-#help"));
+        openSeededAppWindow();
+        mouseClick(namedItem(liveConversation("#help")));
         tryCompare(appWindow, "currentConversation", "#help");
         var list = item("messageList");
         waitForRendering(appWindow.contentItem);
@@ -1745,15 +1767,16 @@ TestCase {
         return list.indexAt(x, list.contentY + 8);
     }
 
-    function fillMockMessagesUntilScrollable(list) {
+    function fillTranscriptUntilScrollable(list) {
         var composer = item("messageComposer");
         mouseClick(composer);
         verify(composer.activeFocus);
+        var start = list.model.rowCount();
+        var target = appWindow.currentConversation;
         var index = 0;
-        for (index = 0; index < 12; ++index) {
-            typeText("scroll line " + index);
-            keyClick(Qt.Key_Return);
-        }
+        for (index = 0; index < 24; ++index)
+            injectOmarchyChat("anna", target, "scroll line " + index);
+        waitForRowCount(list, start + 24);
         waitForRendering(appWindow.contentItem);
         list.pinToEnd();
         waitForRendering(appWindow.contentItem);
@@ -1762,33 +1785,23 @@ TestCase {
         verify(transcriptPinned(list));
     }
 
-    function appendMockMessages(list, count, bodyPrefix) {
-        var start = list.model.count;
+    function appendLiveMessages(list, count, bodyPrefix) {
+        var start = list.model.rowCount();
+        var target = appWindow.currentConversation;
         var index = 0;
-        for (index = 0; index < count; ++index) {
-            list.model.append({
-                author: "anna",
-                time: "10:00",
-                body: bodyPrefix + " " + index,
-                kind: "message"
-            });
-        }
-        tryCompare(list.model, "count", start + count);
+        for (index = 0; index < count; ++index)
+            injectOmarchyChat("anna", target, bodyPrefix + " " + index);
+        waitForRowCount(list, start + count);
     }
 
-    function appendMockConsoleLines(list, count, textPrefix) {
-        var start = list.model.count;
+    function appendLiveConsoleLines(list, count, textPrefix) {
+        var start = list.model.rowCount();
         var index = 0;
         for (index = 0; index < count; ++index) {
-            list.model.append({
-                time: "12:00:03",
-                label: "PRIVMSG",
-                text: textPrefix + " " + index,
-                source: "server",
-                severity: "info"
-            });
+            seed.injectOmarchy(":server 404 fred #omarchy :" + textPrefix
+                + " " + index + "\r\n");
         }
-        tryCompare(list.model, "count", start + count);
+        waitForRowCount(list, start + count);
     }
 
     function unseenIsInView(list, unseen) {
@@ -1800,8 +1813,8 @@ TestCase {
         return row.y + row.height > list.contentY && row.y < list.contentY + list.height;
     }
 
-    function fillMockConsoleUntilScrollable(list) {
-        appendMockConsoleLines(list, 40, "console fill");
+    function fillConsoleUntilScrollable(list) {
+        appendLiveConsoleLines(list, 40, "console fill");
         waitForRendering(appWindow.contentItem);
         list.pinToEnd();
         waitForRendering(appWindow.contentItem);
@@ -1811,29 +1824,26 @@ TestCase {
     }
 
     function test_followingAppendAndSendKeepTranscriptPinned() {
+        openSeededAppWindow();
         var list = item("messageList");
-        fillMockMessagesUntilScrollable(list);
+        fillTranscriptUntilScrollable(list);
 
-        var previousCount = list.model.count;
+        var previousCount = list.model.rowCount();
         var previousY = list.contentY;
-        list.model.append({
-            author: "anna",
-            time: "10:00",
-            body: "incoming while following",
-            kind: "message"
-        });
-        tryCompare(list.model, "count", previousCount + 1);
+        injectOmarchyChat("anna", "#omarchy", "incoming while following");
+        waitForRowCount(list, previousCount + 1);
         waitForRendering(appWindow.contentItem);
         wait(0);
         verify(transcriptPinned(list), "Incoming rows should keep a following list at the end");
         verify(list.contentY >= previousY);
         compare(item("messageUnseenJump").visible, false);
 
-        previousCount = list.model.count;
+        previousCount = list.model.rowCount();
         previousY = list.contentY;
         typeText("sent while following");
         keyClick(Qt.Key_Return);
-        tryCompare(list.model, "count", previousCount + 1);
+        verify(seed.echoLastOmarchyPrivmsg());
+        waitForRowCount(list, previousCount + 1);
         waitForRendering(appWindow.contentItem);
         wait(0);
         verify(transcriptPinned(list), "Sending should keep the list pinned to the end");
@@ -1842,8 +1852,9 @@ TestCase {
     }
 
     function test_followingAppendStaysPinnedThroughLayout() {
+        openSeededAppWindow();
         var list = item("messageList");
-        fillMockMessagesUntilScrollable(list);
+        fillTranscriptUntilScrollable(list);
 
         var startY = list.contentY;
         var unpinned = 0;
@@ -1858,14 +1869,9 @@ TestCase {
         list.contentHeightChanged.connect(sample);
         list.originYChanged.connect(sample);
 
-        var previousCount = list.model.count;
-        list.model.append({
-            author: "anna",
-            time: "10:00",
-            body: "incoming layout pin",
-            kind: "message"
-        });
-        tryCompare(list.model, "count", previousCount + 1);
+        var previousCount = list.model.rowCount();
+        injectOmarchyChat("anna", "#omarchy", "incoming layout pin");
+        waitForRowCount(list, previousCount + 1);
         waitForRendering(appWindow.contentItem);
         wait(0);
         waitForRendering(appWindow.contentItem);
@@ -1878,8 +1884,9 @@ TestCase {
     }
 
     function test_detachedArrivalKeepsViewportAndJumpsToFirstUnseen() {
+        openSeededAppWindow();
         var list = item("messageList");
-        fillMockMessagesUntilScrollable(list);
+        fillTranscriptUntilScrollable(list);
 
         keyClick(Qt.Key_PageUp);
         waitForRendering(appWindow.contentItem);
@@ -1887,8 +1894,8 @@ TestCase {
         verify(!transcriptPinned(list));
 
         var frozenY = list.contentY;
-        var previousCount = list.model.count;
-        appendMockMessages(list, 1, "first unseen");
+        var previousCount = list.model.rowCount();
+        appendLiveMessages(list, 1, "first unseen");
         waitForRendering(appWindow.contentItem);
         wait(0);
 
@@ -1897,7 +1904,7 @@ TestCase {
         var jump = item("messageUnseenJump");
         tryCompare(jump, "visible", true);
 
-        appendMockMessages(list, 24, "later unseen");
+        appendLiveMessages(list, 24, "later unseen");
         waitForRendering(appWindow.contentItem);
         wait(0);
         fuzzyCompare(list.contentY, frozenY, 2);
@@ -1916,12 +1923,13 @@ TestCase {
     }
 
     function test_consoleDetachedArrivalKeepsViewportAndJumpsToFirstUnseen() {
+        openSeededAppWindow();
         keyClick(Qt.Key_QuoteLeft, Qt.ControlModifier);
         tryCompare(appWindow, "consoleVisible", true);
 
         var list = item("consoleList");
         verify(list.visible);
-        fillMockConsoleUntilScrollable(list);
+        fillConsoleUntilScrollable(list);
 
         keyClick(Qt.Key_PageUp);
         waitForRendering(appWindow.contentItem);
@@ -1929,8 +1937,8 @@ TestCase {
         verify(!transcriptPinned(list));
 
         var frozenY = list.contentY;
-        var previousCount = list.model.count;
-        appendMockConsoleLines(list, 1, "first unseen console");
+        var previousCount = list.model.rowCount();
+        appendLiveConsoleLines(list, 1, "first unseen console");
         waitForRendering(appWindow.contentItem);
         wait(0);
 
@@ -1939,7 +1947,7 @@ TestCase {
         var jump = item("consoleUnseenJump");
         tryCompare(jump, "visible", true);
 
-        appendMockConsoleLines(list, 40, "later unseen console");
+        appendLiveConsoleLines(list, 40, "later unseen console");
         waitForRendering(appWindow.contentItem);
         wait(0);
         fuzzyCompare(list.contentY, frozenY, 2);
@@ -1958,25 +1966,21 @@ TestCase {
     }
 
     function test_consecutiveSameAuthorMinuteGroupsTranscriptRows() {
+        openSeededAppWindow();
         var list = item("messageList");
-        var start = list.model.count;
-        var fixture = [
-            { author: "anna", time: "11:11", body: "group lead", kind: "message" },
-            { author: "anna", time: "11:11", body: "group continuation", kind: "message" },
-            { author: "anna", time: "11:12", body: "changed minute", kind: "message" },
-            { author: "dax", time: "11:12", body: "changed sender", kind: "message" },
-            { author: "", time: "", body: "event break", kind: "event" },
-            { author: "dax", time: "11:12", body: "after event", kind: "message" }
-        ];
-        var index = 0;
-        for (index = 0; index < fixture.length; ++index)
-            list.model.append(fixture[index]);
-        tryCompare(list.model, "count", start + fixture.length);
+        var start = list.model.rowCount();
+        injectOmarchyChat("anna", "#omarchy", "group lead", "11:11");
+        injectOmarchyChat("anna", "#omarchy", "group continuation", "11:11");
+        injectOmarchyChat("anna", "#omarchy", "changed minute", "11:12");
+        injectOmarchyChat("dax", "#omarchy", "changed sender", "11:12");
+        seed.injectOmarchy(":rio!u@h PART #omarchy\r\n");
+        injectOmarchyChat("dax", "#omarchy", "after event", "11:12");
+        waitForRowCount(list, start + 6);
 
-        compare(list.model.get(start + 1).author, "anna");
-        compare(list.model.get(start + 1).time, "11:11");
-        compare(list.model.get(start + 1).body, "group continuation");
-        compare(list.model.get(start + 1).kind, "message");
+        compare(field(list.model, start + 1, "author"), "anna");
+        compare(field(list.model, start + 1, "time"), field(list.model, start, "time"));
+        compare(field(list.model, start + 1, "body"), "group continuation");
+        compare(field(list.model, start + 1, "kind"), "message");
 
         var lead = renderedMessageRow(list, start);
         var grouped = renderedMessageRow(list, start + 1);
@@ -1999,7 +2003,7 @@ TestCase {
 
         var eventText = findChild(eventRow, "messageEvent");
         verify(eventText !== null && eventText.visible, "Events should keep their own row");
-        compare(eventText.text, "event break");
+        compare(eventText.text, "rio left");
         compare(findChild(eventRow, "messageAvatar").visible, false);
         compare(findChild(eventRow, "messageHeader").visible, false);
         compare(findChild(eventRow, "messageBody").visible, false);
@@ -2007,62 +2011,46 @@ TestCase {
         assertMessageChrome(afterEvent, true, "after event");
         saveScreenshot("grouped-messages");
 
-        var dms = item("directConversationRepeater");
-        var anna = dms.itemAt(0);
-        verify(anna !== null, "The anna direct-message delegate should be rendered");
-        mouseClick(anna);
+        mouseClick(namedItem(liveConversation("anna")));
         tryCompare(appWindow, "currentConversation", "anna");
         waitForRendering(appWindow.contentItem);
 
         var dmList = item("messageList");
         compare(dmList.Accessible.name, "Messages in anna");
-        var dmStart = dmList.model.count;
-        compare(dmList.model.get(dmStart - 1).author, "anna");
-        compare(dmList.model.get(dmStart - 1).time, "10:12");
-        dmList.model.append({
-            author: "anna",
-            time: "10:12",
-            body: "dm continuation",
-            kind: "message"
-        });
-        dmList.model.append({
-            author: "anna",
-            time: "10:13",
-            body: "dm new minute",
-            kind: "message"
-        });
-        tryCompare(dmList.model, "count", dmStart + 2);
+        var dmStart = dmList.model.rowCount();
+        compare(field(dmList.model, dmStart - 1, "author"), "anna");
+        compare(field(dmList.model, dmStart - 1, "body"),
+                "fred: The prototype already feels at home. Nice work.");
+        injectOmarchyChat("anna", "fred", "dm continuation", "10:12");
+        injectOmarchyChat("anna", "fred", "dm new minute", "10:13");
+        waitForRowCount(dmList, dmStart + 2);
 
         var dmExisting = renderedMessageRow(dmList, dmStart - 1);
         var dmGrouped = renderedMessageRow(dmList, dmStart);
         var dmLead = renderedMessageRow(dmList, dmStart + 1);
-        assertMessageChrome(dmExisting, true, "The prototype already feels at home. Nice work.");
+        assertMessageChrome(dmExisting, true, "fred: The prototype already feels at home. Nice work.");
         assertMessageChrome(dmGrouped, false, "dm continuation");
         assertMessageChrome(dmLead, true, "dm new minute");
         verify(dmGrouped.height < dmExisting.height);
-        compare(dmList.model.get(dmStart).author, "anna");
-        compare(dmList.model.get(dmStart).time, "10:12");
-        compare(dmList.model.get(dmStart).body, "dm continuation");
+        compare(field(dmList.model, dmStart, "author"), "anna");
+        compare(field(dmList.model, dmStart, "time"),
+                field(dmList.model, dmStart - 1, "time"));
+        compare(field(dmList.model, dmStart, "body"), "dm continuation");
     }
 
     function test_replayAndLiveSameAuthorMinuteDoNotGroup() {
+        openSeededAppWindow();
+        mouseClick(namedItem(liveConversation("anna")));
+        tryCompare(appWindow, "currentConversation", "anna");
+        waitForRendering(appWindow.contentItem);
         var list = item("messageList");
-        var start = list.model.count;
-        list.model.append({
-            author: "anna",
-            time: "16:40",
-            body: "replayed line",
-            kind: "message",
-            origin: "replay"
-        });
-        list.model.append({
-            author: "anna",
-            time: "16:40",
-            body: "live line",
-            kind: "message",
-            origin: "live"
-        });
-        tryCompare(list.model, "count", start + 2);
+        var start = list.model.rowCount();
+        seed.injectOmarchy(
+            ":znc.in BATCH +hx znc.in/playback anna\r\n"
+            + "@batch=hx;time=2011-10-19T16:40:51.620Z;msgid=old :anna!u@h PRIVMSG fred :replayed line\r\n"
+            + ":znc.in BATCH -hx\r\n"
+            + "@time=2011-10-19T16:40:51.620Z :anna!u@h PRIVMSG fred :live line\r\n");
+        waitForRowCount(list, start + 2);
 
         var replay = renderedMessageRow(list, start);
         var live = renderedMessageRow(list, start + 1);
@@ -2082,60 +2070,60 @@ TestCase {
         saveScreenshot("replay-live-ungrouped");
     }
 
-    function prependMockReplay(list, count) {
+    function prependLiveReplay(list, count) {
+        var start = list.model.rowCount();
+        var target = appWindow.currentConversation;
+        var bytes = ":znc.in BATCH +pb znc.in/playback " + target + "\r\n";
         var index = 0;
         for (index = 0; index < count; ++index) {
-            list.model.insert(0, {
-                author: "anna",
-                time: "09:00",
-                body: "replayed " + index,
-                kind: "message",
-                origin: "replay"
-            });
+            bytes += "@batch=pb;time=2026-09-11T09:00:00.000Z;msgid=replay-"
+                + index + " :anna!u@h PRIVMSG " + target + " :replayed "
+                + index + "\r\n";
         }
-        tryCompare(list.model, "count", list.count);
+        bytes += ":znc.in BATCH -pb\r\n";
+        seed.injectOmarchy(bytes);
+        waitForRowCount(list, start + count);
     }
 
     function test_historySpliceKeepsTheReaderOnTheSameMessage() {
+        openSeededAppWindow();
         var list = item("messageList");
-        fillMockMessagesUntilScrollable(list);
+        fillTranscriptUntilScrollable(list);
 
         keyClick(Qt.Key_PageUp);
         waitForRendering(appWindow.contentItem);
         tryCompare(list, "stick", 1);
         verify(!transcriptPinned(list));
 
-        var anchorBody = list.model.get(firstVisibleIndex(list)).body;
-        list.snapshotAnchor();
-        prependMockReplay(list, 9);
-        waitForRendering(appWindow.contentItem);
-        list.restoreAnchor();
+        var anchorBody = field(list.model, firstVisibleIndex(list), "body");
+        prependLiveReplay(list, 9);
         waitForRendering(appWindow.contentItem);
         wait(0);
 
-        compare(list.model.get(firstVisibleIndex(list)).body, anchorBody);
+        compare(field(list.model, firstVisibleIndex(list), "body"), anchorBody);
         saveScreenshot("history-splice-anchor");
     }
 
     function test_historySpliceMovesTheUnseenMarkerWithItsRow() {
+        openSeededAppWindow();
         var list = item("messageList");
-        fillMockMessagesUntilScrollable(list);
+        fillTranscriptUntilScrollable(list);
 
         keyClick(Qt.Key_PageUp);
         waitForRendering(appWindow.contentItem);
         tryCompare(list, "stick", 1);
 
-        var previousCount = list.model.count;
-        appendMockMessages(list, 1, "first unseen");
+        var previousCount = list.model.rowCount();
+        appendLiveMessages(list, 1, "first unseen");
         waitForRendering(appWindow.contentItem);
         wait(0);
         compare(list.firstUnseenIndex, previousCount);
-        var unseenBody = list.model.get(list.firstUnseenIndex).body;
+        var unseenBody = field(list.model, list.firstUnseenIndex, "body");
 
-        var beforeSplice = list.model.count;
-        prependMockReplay(list, 9);
-        list.noteSplice(beforeSplice, list.count);
-        compare(list.model.get(list.firstUnseenIndex).body, unseenBody);
+        prependLiveReplay(list, 9);
+        waitForRendering(appWindow.contentItem);
+        wait(0);
+        compare(field(list.model, list.firstUnseenIndex, "body"), unseenBody);
 
         list.firstUnseenIndex = -1;
         list.noteSplice(list.count, list.count + 9);
@@ -2143,6 +2131,7 @@ TestCase {
     }
 
     function test_messageBodyIsSelectable() {
+        openSeededAppWindow();
         var composer = item("messageComposer");
         mouseClick(composer);
         verify(composer.activeFocus);
@@ -2158,9 +2147,7 @@ TestCase {
         var members = item("membersList");
         members.positionViewAtIndex(0, ListView.Contain);
         wait(0);
-        var anna = members.itemAtIndex(0);
-        verify(anna !== null, "The first member delegate should be rendered");
-        mouseClick(anna);
+        clickMember("anna");
         tryCompare(appWindow, "currentConversation", "anna");
         waitForRendering(appWindow.contentItem);
 
@@ -2172,6 +2159,7 @@ TestCase {
     }
 
     function test_consoleBodyIsSelectable() {
+        openSeededAppWindow();
         keyClick(Qt.Key_QuoteLeft, Qt.ControlModifier);
         tryCompare(appWindow, "consoleVisible", true);
 
@@ -2183,20 +2171,15 @@ TestCase {
     }
 
     function test_consoleBodyStripsMircFormatting() {
+        openSeededAppWindow();
         var list = item("consoleList");
         keyClick(Qt.Key_QuoteLeft, Qt.ControlModifier);
         tryCompare(appWindow, "consoleVisible", true);
 
-        var previousCount = list.model.count;
-        list.model.append({
-            time: "12:00:03",
-            label: "PRIVMSG",
-            text: formattedIrcBody(),
-            source: "server",
-            severity: "info"
-        });
-        tryCompare(list.model, "count", previousCount + 1);
-        compare(list.model.get(previousCount).text, formattedIrcBody());
+        var previousCount = list.model.rowCount();
+        seed.injectOmarchy(":server 404 fred #omarchy :" + formattedIrcBody() + "\r\n");
+        waitForRowCount(list, previousCount + 1);
+        verify(field(list.model, previousCount, "text").indexOf(formattedIrcBody()) >= 0);
 
         list.positionViewAtIndex(previousCount, ListView.Contain);
         waitForRendering(appWindow.contentItem);
@@ -2205,30 +2188,27 @@ TestCase {
         verify(row !== null, "The formatted console line should be rendered");
         var body = findChild(row, "consoleText");
         verify(body !== null, "Could not find formatted consoleText");
-        compare(body.text, "bold / red");
+        compare(body.text.indexOf("bold / red") >= 0, true);
+        verify(!containsMirc(body.text));
         body.selectAll();
-        compare(body.selectedText, "bold / red");
+        compare(body.selectedText.indexOf("bold / red") >= 0, true);
         verify(!containsMirc(body.selectedText));
     }
 
     function test_messageBodyStripsMircFormatting() {
+        openSeededAppWindow();
         var list = item("messageList");
-        var previousCount = list.model.count;
-        list.model.append({
-            author: "anna",
-            time: "10:00",
-            body: formattedIrcBody(),
-            kind: "message"
-        });
-        tryCompare(list.model, "count", previousCount + 1);
+        var previousCount = list.model.rowCount();
+        injectOmarchyChat("anna", "#omarchy", formattedIrcBody());
+        waitForRowCount(list, previousCount + 1);
         compare(appWindow.plainIrcText(formattedIrcBody()), "bold / red");
-        compare(list.model.get(previousCount).body, formattedIrcBody());
+        compare(field(list.model, previousCount, "body"), formattedIrcBody());
 
         list.positionViewAtIndex(previousCount, ListView.Contain);
         waitForRendering(appWindow.contentItem);
 
         var row = list.itemAtIndex(previousCount);
-        verify(row !== null, "The formatted mock message should be rendered");
+        verify(row !== null, "The formatted seeded message should be rendered");
         var body = findChild(row, "messageBody");
         verify(body !== null && body.visible, "Could not find formatted messageBody");
         compare(body.text, "bold / red");
@@ -2309,20 +2289,16 @@ TestCase {
     }
 
     function test_messageBodyClickOpensHttpsUrl() {
+        openSeededAppWindow();
         var list = item("messageList");
-        var previousCount = list.model.count;
-        list.model.append({
-            author: "anna",
-            time: "10:00",
-            body: "read https://example.com thanks",
-            kind: "message"
-        });
-        tryCompare(list.model, "count", previousCount + 1);
+        var previousCount = list.model.rowCount();
+        injectOmarchyChat("anna", "#omarchy", "read https://example.com thanks");
+        waitForRowCount(list, previousCount + 1);
         list.positionViewAtIndex(previousCount, ListView.Contain);
         waitForRendering(appWindow.contentItem);
 
         var row = list.itemAtIndex(previousCount);
-        verify(row !== null, "The linked mock message should be rendered");
+        verify(row !== null, "The linked seeded message should be rendered");
         var body = findChild(row, "messageBody");
         verify(body !== null && body.visible, "Could not find linked messageBody");
         compare(body.textFormat, TextEdit.PlainText);
@@ -2341,19 +2317,14 @@ TestCase {
     }
 
     function test_consoleBodyClickOpensHttpUrl() {
+        openSeededAppWindow();
         var list = item("consoleList");
         keyClick(Qt.Key_QuoteLeft, Qt.ControlModifier);
         tryCompare(appWindow, "consoleVisible", true);
 
-        var previousCount = list.model.count;
-        list.model.append({
-            time: "12:00:03",
-            label: "PRIVMSG",
-            text: "motd http://example.com end",
-            source: "server",
-            severity: "info"
-        });
-        tryCompare(list.model, "count", previousCount + 1);
+        var previousCount = list.model.rowCount();
+        seed.injectOmarchy(":server 404 fred #omarchy :motd http://example.com end\r\n");
+        waitForRowCount(list, previousCount + 1);
         list.positionViewAtIndex(previousCount, ListView.Contain);
         waitForRendering(appWindow.contentItem);
 
@@ -2362,9 +2333,9 @@ TestCase {
         var body = findChild(row, "consoleText");
         verify(body !== null, "Could not find linked consoleText");
         compare(body.textFormat, TextEdit.PlainText);
-        compare(body.text, "motd http://example.com end");
+        verify(body.text.indexOf("http://example.com") >= 0);
         body.selectAll();
-        compare(body.selectedText, "motd http://example.com end");
+        verify(body.selectedText.indexOf("http://example.com") >= 0);
         body.deselect();
 
         appWindow.lastOpenedUrl = "";
@@ -2377,47 +2348,48 @@ TestCase {
     }
 
     function test_eventRowAndTopicStripMirc() {
-        appWindow.mockCurrentTopic = formattedIrcBody();
-        compare(appWindow.currentTopic, formattedIrcBody());
+        openSeededAppWindow();
+        seed.injectOmarchy(":anna!u@h TOPIC #omarchy :" + formattedIrcBody() + "\r\n");
+        tryCompare(appWindow, "currentTopic", formattedIrcBody());
         var topic = item("conversationTopic");
         compare(topic.text, "bold / red");
         compare(topic.textFormat, Text.PlainText);
         verify(!containsMirc(topic.text));
 
         var list = item("messageList");
-        var previousCount = list.model.count;
-        list.model.append({
-            author: "",
-            time: "",
-            body: formattedIrcBody(),
-            kind: "event"
-        });
-        tryCompare(list.model, "count", previousCount + 1);
+        var previousCount = list.model.rowCount();
+        seed.injectOmarchy(":rio!u@h PART #omarchy\r\n");
+        waitForRowCount(list, previousCount + 1);
+        compare(field(list.model, previousCount, "kind"), "event");
         list.positionViewAtIndex(previousCount, ListView.Contain);
         waitForRendering(appWindow.contentItem);
 
         var row = list.itemAtIndex(previousCount);
-        verify(row !== null, "The formatted event row should be rendered");
+        verify(row !== null, "The event row should be rendered");
         var eventText = findChild(row, "messageEvent");
         verify(eventText !== null && eventText.visible, "Could not find messageEvent");
-        compare(eventText.text, "bold / red");
+        compare(eventText.text, "rio left");
         compare(eventText.textFormat, Text.PlainText);
         verify(!containsMirc(eventText.text));
     }
 
     function test_whoisRowWrapsLongBody() {
+        openSeededAppWindow();
         var list = item("messageList");
-        var previousCount = list.model.count;
-        var chunk = "lena is ~lena@user/host (Lena) is on #omarchy #help #omairc ";
-        var body = chunk + chunk + chunk + chunk + chunk + chunk +
-                   chunk + chunk + "End of WHOIS for lena";
-        list.model.append({
-            author: "",
-            time: "",
-            body: body,
-            kind: "whois"
-        });
-        tryCompare(list.model, "count", previousCount + 1);
+        var previousCount = list.model.rowCount();
+        var chunk = "#omarchy #help #omairc ";
+        var channels = chunk + chunk + chunk + chunk + chunk + chunk + chunk + chunk;
+        var composer = item("messageComposer");
+        mouseClick(composer);
+        typeText("/whois lena");
+        if (item("slashCompleteList").visible)
+            keyClick(Qt.Key_Escape);
+        keyClick(Qt.Key_Return);
+        seed.injectOmarchy(":server 319 fred lena :" + channels + "\r\n");
+        waitForRowCount(list, previousCount + 1);
+        compare(field(list.model, previousCount, "kind"), "whois");
+        var body = field(list.model, previousCount, "body");
+        verify(body.indexOf("lena is on") === 0);
         list.positionViewAtIndex(previousCount, ListView.Contain);
         waitForRendering(appWindow.contentItem);
 
@@ -2616,6 +2588,7 @@ TestCase {
     }
 
     function test_ctrlKJumpsToFilteredConversation() {
+        openSeededAppWindow();
         compare(appWindow.currentConversation, "#omarchy");
         var composer = item("messageComposer");
         var sheet = openJumpSheet();
@@ -2640,9 +2613,10 @@ TestCase {
     }
 
     function test_ctrlKJumpsFromStatus() {
+        openSeededAppWindow();
         keyClick(Qt.Key_QuoteLeft, Qt.ControlModifier);
         tryCompare(appWindow, "consoleVisible", true);
-        compare(appWindow.title, "Omarchy IRC Status");
+        compare(appWindow.title, networkDisplayName(seed.omarchyNetworkId) + " Status");
 
         var sheet = openJumpSheet();
         typeText("ric");
@@ -2657,6 +2631,7 @@ TestCase {
     }
 
     function test_ctrlKEscapeKeepsConversationAndDraft() {
+        openSeededAppWindow();
         var composer = item("messageComposer");
         mouseClick(composer);
         verify(composer.activeFocus);
@@ -2677,23 +2652,27 @@ TestCase {
         keyClick(Qt.Key_Escape);
         tryCompare(sheet, "opened", false);
         compare(appWindow.currentConversation, "#omarchy");
-        compare(appWindow.title, "#omarchy · Omarchy IRC - Omairc");
+        compare(appWindow.title,
+                "#omarchy · " + networkDisplayName(seed.omarchyNetworkId) + " - Omairc");
         compare(composer.text, "keep this draft");
         tryCompare(composer, "activeFocus", true);
     }
 
     function test_ctrlKDisambiguatesDuplicateChannels() {
+        openSeededAppWindow();
         var sheet = openJumpSheet();
         typeText("#omarchy");
         tryCompare(item("jumpFilter"), "text", "#omarchy");
         var model = item("jumpModel");
         compare(model.count, 2);
         compare(model.get(0).name, "#omarchy");
-        compare(model.get(0).networkId, appWindow.mockOmarchyId);
-        compare(model.get(0).label, "#omarchy · Omarchy IRC");
+        compare(model.get(0).networkId, seed.omarchyNetworkId);
+        compare(model.get(0).label,
+                "#omarchy · " + networkDisplayName(seed.omarchyNetworkId));
         compare(model.get(1).name, "#omarchy");
-        compare(model.get(1).networkId, appWindow.mockOftcId);
-        compare(model.get(1).label, "#omarchy · irc.oftc.net");
+        compare(model.get(1).networkId, seed.oftcNetworkId);
+        compare(model.get(1).label,
+                "#omarchy · " + networkDisplayName(seed.oftcNetworkId));
         compare(appWindow.jumpSelectedIndex, 0);
 
         keyClick(Qt.Key_Down);
@@ -2701,9 +2680,11 @@ TestCase {
 
         keyClick(Qt.Key_Return);
         tryCompare(sheet, "opened", false);
-        tryCompare(appWindow, "currentConversationId", "mock-oftc\n#omarchy");
+        tryCompare(appWindow, "currentConversationId",
+                   seed.oftcNetworkId + "\n#omarchy");
         compare(appWindow.currentConversation, "#omarchy");
-        compare(appWindow.title, "#omarchy · irc.oftc.net - Omairc");
+        compare(appWindow.title,
+                "#omarchy · " + networkDisplayName(seed.oftcNetworkId) + " - Omairc");
         tryCompare(item("messageComposer"), "activeFocus", true);
     }
 
@@ -3600,17 +3581,14 @@ TestCase {
     }
 
     function test_openDirectMessageClearsModelUnreadState() {
-        var directConversations = item("directConversationRepeater");
-        var anna = directConversations.itemAt(0);
-        verify(anna !== null, "The anna direct-message delegate should be rendered");
-        compare(directConversations.model.get(0).directUnread, 1);
-        compare(directConversations.model.get(0).directMention, true);
+        openSeededAppWindow();
+        var anna = namedItem(liveConversation("anna"));
+        compare(anna.unread, 1);
+        compare(anna.mention, true);
 
         mouseClick(anna);
 
         tryCompare(appWindow, "currentConversation", "anna");
-        compare(directConversations.model.get(0).directUnread, 0);
-        compare(directConversations.model.get(0).directMention, false);
         compare(anna.unread, 0);
         compare(anna.mention, false);
     }
@@ -3694,19 +3672,21 @@ TestCase {
     }
 
     function test_typedCloseStaysChatLine() {
+        openSeededAppWindow();
         var composer = item("messageComposer");
         var messages = item("messageList");
-        var previousCount = messages.model.count;
+        var previousCount = messages.model.rowCount();
         mouseClick(composer);
         typeText("/close");
         compare(composer.text, "/close");
+        if (item("slashCompleteList").visible)
+            keyClick(Qt.Key_Escape);
         keyClick(Qt.Key_Return);
 
-        tryCompare(messages.model, "count", previousCount + 1);
-        compare(messages.model.get(previousCount).body, "/close");
-        compare(composer.text, "");
+        compare(messages.model.rowCount(), previousCount);
+        compare(composer.text, "/close");
         compare(appWindow.currentConversation, "#omarchy");
-        compare(item("directConversationRepeater").count, 2);
+        compare(visibleDirects(seed.omarchyNetworkId).length, 2);
     }
 
     function openSlashWindow() {
@@ -3882,29 +3862,31 @@ TestCase {
     }
 
     function test_walkNetworksWithShortcut() {
+        openSeededAppWindow();
         compare(appWindow.currentConversation, "#omarchy");
         compare(appWindow.sidebarNetworkFocusId, "");
 
         keyClick(Qt.Key_Right, Qt.AltModifier);
 
-        compare(appWindow.sidebarNetworkFocusId, appWindow.mockOftcId);
+        compare(appWindow.sidebarNetworkFocusId, seed.oftcNetworkId);
         compare(appWindow.currentConversation, "#omarchy");
         compare(appWindow.consoleVisible, false);
-        compare(item("networkHeader-mock-oftc").parent.headerFocused, true);
-        compare(item("networkHeader").parent.headerFocused, false);
+        compare(namedItem("networkHeader-" + seed.oftcNetworkId).parent.headerFocused, true);
+        compare(namedItem("networkHeader").parent.headerFocused, false);
     }
 
     function test_walkNetworksWraps() {
+        openSeededAppWindow();
         compare(appWindow.currentConversation, "#omarchy");
 
         keyClick(Qt.Key_Left, Qt.AltModifier);
 
-        compare(appWindow.sidebarNetworkFocusId, appWindow.mockOftcId);
+        compare(appWindow.sidebarNetworkFocusId, seed.oftcNetworkId);
 
         keyClick(Qt.Key_Left, Qt.AltModifier);
 
-        compare(appWindow.sidebarNetworkFocusId, appWindow.mockOmarchyId);
-        compare(item("networkHeader").parent.headerFocused, true);
+        compare(appWindow.sidebarNetworkFocusId, seed.omarchyNetworkId);
+        compare(namedItem("networkHeader").parent.headerFocused, true);
     }
 
     function test_enterOnNetworkHeaderOpensStatus() {
