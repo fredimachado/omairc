@@ -146,6 +146,7 @@ public slots:
     bool changeNick(const QString& nick);
     bool quit(const QString& reason = {});
     bool whois(const QString& nick);
+    bool sendRaw(const QString& line);
 
 signals:
     void stateChanged(IrcSession::State state);
