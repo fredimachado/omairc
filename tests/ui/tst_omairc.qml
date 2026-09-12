@@ -862,14 +862,10 @@ TestCase {
     }
 
     function liveHeader(networkId) {
-        if (networkId === seed.omarchyNetworkId)
-            return namedItem("networkHeader");
         return namedItem("networkHeader-" + networkId);
     }
 
     function liveHeaderButton(networkId) {
-        if (networkId === seed.omarchyNetworkId)
-            return namedItem("networkHeaderButton");
         return namedItem("networkHeaderButton-" + networkId);
     }
 
@@ -3550,8 +3546,8 @@ TestCase {
         verify(liveDirectNames(window).indexOf("AUTH") === -1,
                "AUTH must not appear under Direct Messages");
 
-        var header = findChild(window, "networkHeaderButton");
-        verify(header !== null, "Could not find networkHeaderButton");
+        var header = findChild(window, "networkHeaderButton-libera");
+        verify(header !== null, "Could not find networkHeaderButton-libera");
         mouseClick(header);
 
         tryCompare(window, "consoleVisible", true);
@@ -3929,8 +3925,8 @@ TestCase {
         compare(appWindow.sidebarNetworkFocusId, seed.oftcNetworkId);
         compare(appWindow.currentConversation, "#omarchy");
         compare(appWindow.consoleVisible, false);
-        compare(namedItem("networkHeader-" + seed.oftcNetworkId).parent.headerFocused, true);
-        compare(namedItem("networkHeader").parent.headerFocused, false);
+        compare(liveHeader(seed.oftcNetworkId).parent.headerFocused, true);
+        compare(liveHeader(seed.omarchyNetworkId).parent.headerFocused, false);
     }
 
     function test_walkNetworksWraps() {
@@ -3944,7 +3940,7 @@ TestCase {
         keyClick(Qt.Key_Left, Qt.AltModifier);
 
         compare(appWindow.sidebarNetworkFocusId, seed.omarchyNetworkId);
-        compare(namedItem("networkHeader").parent.headerFocused, true);
+        compare(liveHeader(seed.omarchyNetworkId).parent.headerFocused, true);
     }
 
     function test_enterOnNetworkHeaderOpensStatus() {
@@ -4307,8 +4303,8 @@ TestCase {
         tryCompare(window, "visible", true);
         waitForRendering(window.contentItem);
 
-        var mark = findChild(window, "networkUnreadMark");
-        verify(mark !== null, "Could not find networkUnreadMark");
+        var mark = findChild(window, "networkUnreadMark-libera");
+        verify(mark !== null, "Could not find networkUnreadMark-libera");
         compare(mark.visible, false);
 
         liveIrc.unreadSink[0] = 4;

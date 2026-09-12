@@ -2853,7 +2853,6 @@ ApplicationWindow {
                             NetworkSection {
                                 networkId: liveNet.networkId
                                 displayName: liveNet.displayName
-                                preserveLegacyNames: liveNet.index === 0
                                 unread: 0
                                 mention: false
                             }
@@ -2947,7 +2946,6 @@ ApplicationWindow {
                         networkId: win.irc ? win.irc.selectedNetworkId : ""
                         displayName: win.irc && win.irc.selectedNetworkId.length > 0
                             ? win.irc.selectedNetworkId : "Network"
-                        preserveLegacyNames: visible
                         showEdit: false
 
                         Item {
