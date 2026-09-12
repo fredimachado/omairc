@@ -4,6 +4,7 @@
 /build-tests-san/
 /build-live-tests/
 /build-live-ui-tests/
+/build-seeded-qml-tests/
 *.o
 *.moc
 moc_*.cpp

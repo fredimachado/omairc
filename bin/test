@@ -194,7 +194,22 @@ XDG_STATE_HOME="$TEST_STATE/state" \
 QT_QPA_PLATFORM=offscreen \
 QT_QPA_PLATFORMTHEME= \
 QT_QUICK_BACKEND=software \
-"$QMLTESTRUNNER" -input "$ROOT/tests/ui"
+"$QMLTESTRUNNER" -input "$ROOT/tests/ui/tst_omairc.qml"
+
+mkdir -p "$ROOT/build-seeded-qml-tests"
+cd "$ROOT/build-seeded-qml-tests"
+"$QMAKE" "$ROOT/tests/ui/seeded-qml.pro"
+make -j"$JOBS"
+
+cd "$ROOT"
+XDG_CONFIG_HOME="$TEST_STATE/config" \
+XDG_CACHE_HOME="$TEST_STATE/cache" \
+XDG_DATA_HOME="$TEST_STATE/data" \
+XDG_STATE_HOME="$TEST_STATE/state" \
+QT_QPA_PLATFORM=offscreen \
+QT_QPA_PLATFORMTHEME= \
+QT_QUICK_BACKEND=software \
+"$ROOT/build-seeded-qml-tests/seeded_qml_tests" -input "$ROOT/tests/ui/tst_seeded_window.qml"
 
 mkdir -p "$ROOT/build-live-ui-tests"
 cd "$ROOT/build-live-ui-tests"
