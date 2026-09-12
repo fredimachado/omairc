@@ -25,6 +25,7 @@ TestCase {
         Omairc.OmaircWindow {
             backend: world.backend
             irc: world.irc
+            connection: world.connection
             slashCommands: world.slash
         }
     }
@@ -52,6 +53,7 @@ TestCase {
         verify(world.open(), world.lastError);
         verify(world.backend);
         verify(world.irc);
+        verify(world.connection);
         verify(world.slash);
 
         appWindow = createTemporaryObject(seededWindowComponent, testCase);
@@ -68,6 +70,8 @@ TestCase {
         compare(appWindow.currentTopic,
                 "A cozy corner for Omarchy users and builders.");
         compare(appWindow.currentPeopleCount, 12);
+        compare(appWindow.sidebarConversationRows().length > 0, true);
+        verify(findChild(appWindow, "liveNetworkRepeater").count >= 2);
 
         var list = findChild(appWindow, "messageList");
         verify(list);
