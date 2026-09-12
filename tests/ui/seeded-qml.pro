@@ -1,14 +1,13 @@
 QT += core gui qml quick quickcontrols2 network testlib dbus
 
-CONFIG += c++17 testcase
+CONFIG += c++17 qmltestcase
 TEMPLATE = app
-TARGET = live_ui_tests
+TARGET = seeded_qml_tests
 include($$PWD/../../version.pri)
 
 greaterThan(QMAKE_GCC_MAJOR_VERSION, 15): QMAKE_CXXFLAGS += -Wno-sfinae-incomplete
 
-INCLUDEPATH += ../../src ../../src/irc ../live ../support
-DEFINES += LIVE_CERT_DIR=\\\"$$PWD/../live/certs\\\"
+INCLUDEPATH += ../../src ../../src/irc ../support
 
 HEADERS += \
     ../../src/backend.h \
@@ -57,18 +56,11 @@ HEADERS += \
     ../../src/storage/credentialstore.h \
     ../../src/irc/ircconnection.h \
     ../../src/irc/qtirctransport.h \
-    ../live/liveharness.h \
-    ../live/livepeer.h \
     ../support/fakeirctransport.h \
-    ../support/seededircfixture.h \
-    liveuiworld.h
+    ../support/seededircfixture.h
 
 SOURCES += \
     tst_main.cpp \
-    tst_live_ui.cpp \
-    liveuiworld.cpp \
-    ../live/liveharness.cpp \
-    ../live/livepeer.cpp \
     ../support/fakeirctransport.cpp \
     ../support/seededircfixture.cpp \
     ../../src/irc/ircloopbacktransport.cpp \

@@ -65,8 +65,9 @@ XDG_CACHE_HOME="$TEST_STATE/cache" \
 XDG_DATA_HOME="$TEST_STATE/data" \
 XDG_STATE_HOME="$TEST_STATE/state" \
 DBUS_SESSION_BUS_ADDRESS="unix:path=$TEST_STATE/no-session-bus" \
+OMAIRC_ALLOW_MULTI=1 \
 QT_QPA_PLATFORM=xcb \
-"$ROOT/build/omairc" --mock >"$ROOT/test-artifacts/desktop/omairc.log" 2>&1 &
+"$ROOT/build/omairc" --demo-server >"$ROOT/test-artifacts/desktop/omairc.log" 2>&1 &
 APP_PID=$!
 
 attempt=0
@@ -110,10 +111,10 @@ assert_images_differ() {
 }
 
 xdotool windowfocus --sync "$window"
-wait_for_title "#omarchy - Omairc"
+wait_for_title "#omarchy · irc.example · fred - Omairc"
 
-# Switch to #desktop through the second channel row.
-xdotool mousemove --window "$window" 120 160 click 1
+# Switch to #desktop through the first channel row.
+xdotool mousemove --window "$window" 120 124 click 1
 wait_for_title "#desktop - Omairc"
 capture "switch-channel"
 
@@ -126,13 +127,13 @@ assert_images_differ \
   "$ROOT/test-artifacts/desktop/switch-channel.png" \
   "$ROOT/test-artifacts/desktop/send-message.png"
 
-# Open mira's direct message from the third visible member row.
-xdotool mousemove --window "$window" 1070 155 click 1
+# Open mira's direct message from the alphabetical #desktop member list.
+xdotool mousemove --window "$window" 1070 243 click 1
 wait_for_title "mira - Omairc"
 capture "open-direct-message"
 
 # Return to a channel and verify the application shortcut changes the layout.
-xdotool mousemove --window "$window" 120 160 click 1
+xdotool mousemove --window "$window" 120 124 click 1
 wait_for_title "#desktop - Omairc"
 capture "members-before-toggle"
 xdotool windowfocus --sync "$window"

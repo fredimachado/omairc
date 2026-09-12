@@ -19,11 +19,11 @@ Mention notify is the desktop notification Omairc sends when a mention or a dire
 Preconditions:
 
 - Live `notify-unfocused` needs a completed Connect, a registered session, and an unfocused window. Do not Apply on the compiled first-run window for this proof.
-- `control-omairc launch` without `--mock` is first-run Connect titled `irc.libera.chat Status`. That window has no session and no mentions.
-- `--mock` has no live mentions. There is no compiled-window mock recipe.
+- `control-omairc launch` without `--demo-server` is first-run Connect titled `irc.libera.chat Status`. That window has no session and no mentions.
+- `--demo-server` has no new inbound mentions after launch. There is no compiled-window mention recipe there.
 
 - **Offscreen suite.** Run `control-omairc doctor-qml` then `control-omairc qml-suite`. `test_unfocusedMentionNotifiesOnce` calls `notifyMentionIfUnfocused(false, "alice", "hey \x02fred")` and expects `lastNotification` author `alice` / body `hey fred`, then the focused call leaves `lastNotification` null, then `notifyMentionIfUnfocused(false, "alice", "hello")` expects author `alice` / body `hello`. There is no compiled-window screenshot for that path.
-- **Live desktop mention.** Do not claim this on first-run Connect or `--mock`. It is `verified-unreachable` until a session has completed Connect and the isolated window is unfocused. The attempted compiled route is `control-omairc launch` (title `irc.libera.chat Status`, no traffic).
+- **Live desktop mention.** Do not claim this on first-run Connect or `--demo-server`. It is `verified-unreachable` until a session has completed Connect and the isolated window is unfocused. The attempted compiled route is `control-omairc launch` (title `irc.libera.chat Status`, no traffic).
 
 ## Gotchas
 

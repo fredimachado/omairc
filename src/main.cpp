@@ -1,5 +1,6 @@
 #include <QCommandLineParser>
 #include <QCoreApplication>
+#include <QDir>
 #include <QFile>
 #include <QFont>
 #include <QFontDatabase>
@@ -8,6 +9,8 @@
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
 #include <QQuickStyle>
+#include <QSettings>
+#include <QTemporaryDir>
 #include <QUrl>
 #include <QWindow>
 
@@ -17,6 +20,7 @@
 #include "backend.h"
 #include "irc/ircconnection.h"
 #include "irc/irccontroller.h"
+#include "irc/ircdemoserver.h"
 #include "irc/ircslashcomplete.h"
 #include "omairccli.h"
 #include "omaircfilelog.h"
@@ -73,16 +77,15 @@ int main(int argc, char *argv[]) {
     QCommandLineParser parser;
     parser.setApplicationDescription(
         QStringLiteral("A dead-simple IRC client for Omarchy."));
-    const QCommandLineOption mockOption(
-        QStringLiteral("mock"),
-        QStringLiteral("Open the local prototype UI without connecting."));
-    parser.addOption(mockOption);
+    const QCommandLineOption demoOption(
+        QStringLiteral("demo-server"),
+        QStringLiteral("Open a furnished in-process demo session."));
+    parser.addOption(demoOption);
     parser.process(app);
-    const bool mockMode = parser.isSet(mockOption);
+    const bool demoMode = parser.isSet(demoOption);
 
     SingleInstance instance;
-    const bool guardProcess =
-        !mockMode && qEnvironmentVariableIsEmpty("OMAIRC_ALLOW_MULTI");
+    const bool guardProcess = qEnvironmentVariableIsEmpty("OMAIRC_ALLOW_MULTI");
     if (guardProcess && !instance.acquireOrNotify())
         return 0;
 
@@ -96,12 +99,38 @@ int main(int argc, char *argv[]) {
 
     Backend backend(&app);
     IrcSlashSession slashSession(&app);
-    IrcController *ircController = nullptr;
-    IrcConnection *ircConnection = nullptr;
-    if (!mockMode) {
-        ircController = new IrcController(&app);
-        auto *credentialStore = new SecretServiceCredentialStore(&app);
-        ircConnection = new IrcConnection(*ircController, *credentialStore, &app);
+    QTemporaryDir demoXdg;
+    IrcDemoServer *demoServer = nullptr;
+    if (demoMode && qEnvironmentVariableIsEmpty("XDG_CONFIG_HOME")) {
+        if (!demoXdg.isValid()) {
+            qCritical() << "Could not create a temporary demo config directory";
+            return -1;
+        }
+        const QString root = demoXdg.path();
+        const QString config = root + QLatin1String("/config");
+        QDir().mkpath(config);
+        QDir().mkpath(root + QLatin1String("/cache"));
+        QDir().mkpath(root + QLatin1String("/data"));
+        qputenv("XDG_CONFIG_HOME", config.toUtf8());
+        qputenv("XDG_CACHE_HOME", (root + QLatin1String("/cache")).toUtf8());
+        qputenv("XDG_DATA_HOME", (root + QLatin1String("/data")).toUtf8());
+        QSettings::setPath(QSettings::NativeFormat, QSettings::UserScope, config);
+    }
+    if (demoMode) {
+        demoServer = new IrcDemoServer(&app);
+        if (!demoServer->writeProfiles()) {
+            qCritical() << "Could not write demo profiles:"
+                        << demoServer->lastError();
+            return -1;
+        }
+    }
+    auto *ircController = new IrcController(&app);
+    auto *credentialStore = new SecretServiceCredentialStore(&app);
+    auto *ircConnection = new IrcConnection(*ircController, *credentialStore, &app);
+    if (demoServer && !demoServer->attach(*ircController, true)) {
+        qCritical() << "Could not attach the demo session:"
+                    << demoServer->lastError();
+        return -1;
     }
     SystemTheme systemTheme(&app);
     backend.setDarkMode(systemTheme.darkMode());
@@ -163,7 +192,7 @@ int main(int argc, char *argv[]) {
     }
     if (pendingRaise)
         raiseOmaircWindow(engine);
-    if (ircConnection)
+    if (ircConnection && !demoMode)
         ircConnection->activateStartup();
 
     return app.exec();

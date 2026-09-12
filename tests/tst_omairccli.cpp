@@ -27,7 +27,7 @@ void OmaircCliTest::overviewHelp()
                  "A dead-simple IRC client for Omarchy.\n"
                  "\n"
                  "Usage:\n"
-                 "  omairc [--mock]                 Open the client window\n"
+                 "  omairc [--demo-server]          Open the client window\n"
                  "  omairc --help                   List commands and GUI flags\n"
                  "  omairc --version                Print version and exit\n"
                  "\n"

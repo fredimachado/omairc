@@ -20,7 +20,7 @@ Preconditions:
 
 - Proof is the offscreen suite. `qml-suite` clicks `urlHit` on `messageBody` and on a Status line, and asserts the allowlist without opening a system handler.
 - A compiled window would call `Qt.openUrlExternally` on a real click. Do not use that as proof on the isolated display.
-- `control-omairc launch` without `--mock` is first-run Connect titled `irc.libera.chat Status` with no transcript URLs. Do not start this recipe there.
+- `control-omairc launch` without `--demo-server` is first-run Connect titled `irc.libera.chat Status` with no transcript URLs. Do not start this recipe there.
 
 - **Message and Status clicks.** Run `control-omairc doctor-qml` then `control-omairc qml-suite`. `test_messageBodyClickOpensHttpsUrl` appends `read https://example.com thanks` and clicks the hit; `lastOpenedUrl` is `https://example.com`. `test_consoleBodyClickOpensHttpUrl` does the same for `http://example.com` on Status. `test_httpUrlAllowlist` keeps `file:` and `javascript:` closed. There is no compiled-window screenshot for that path.
 

@@ -3,17 +3,18 @@
 ## Product boundary
 
 - Keep Omairc dead-simple, keyboard-friendly, and visually native to Omarchy.
-- Conversations may be live through `IrcController`. UI tests may still use
-  the mock path when the `irc` property is null. `./build/omairc --mock` opens
-  that same prototype in the compiled window, without Connect or a session.
+- Conversations are live through `IrcController`. `OmaircWindow` requires
+  `irc`. Binding it to null does not load a prototype sidebar.
+  `./build/omairc --demo-server` seeds that controller in-process and skips
+  Connect. UI tests use `SeededIrcFixture` or a small fake controller.
 - Prefer a small, calm interface over adding controls for hypothetical future
   features.
 
 ## Architecture
 
 - This is a Qt 6 Quick application built with qmake and C++17.
-- Keep mock conversation state and presentation logic in
-  `src/OmaircWindow.qml`. That file is also the live window.
+- Keep window presentation logic in `src/OmaircWindow.qml`. Seed the demo
+  world from `IrcDemoServer`, not from QML `ListModel`s.
 - Keep `Backend` limited to desktop integration: Omarchy theme colors, live
   theme watching, text scale, window geometry, and desktop notifications.
 - Keep IRC networking, protocol, session, and model code in `src/irc/`.
@@ -33,14 +34,10 @@
 
 ## QML conventions
 
-- For fixed mock channel navigation, prefer explicit `ConversationRow`
-  instances. A `ListModel`/`Repeater` boundary using a `name` role resolved to
-  empty strings in this interface even though the QML tree started without
-  errors.
-- Dynamic direct-message navigation uses an unambiguous `conversation` role.
-  Test the live `MessageListModel` and the compiled window, not only the mock
-  `ListModel`. Confirm rendered labels. A warning-free QML startup does not
-  prove that bindings render visible values.
+- Dynamic conversation navigation uses an unambiguous `conversation` role.
+  Test the live `MessageListModel` and the compiled window. Confirm rendered
+  labels. A warning-free QML startup does not prove that bindings render
+  visible values.
 - Channel switching must update the topic, message model, people count, and
   member list together.
 - Show the people count, member toggle, and member panel only for channels.
@@ -79,7 +76,7 @@ bin/test-live
 ```
 
 `bin/test-desktop` needs Xvfb, Xauthority, xdotool, and ImageMagick. It
-launches `./build/omairc --mock` as a black box and is not in CI.
+launches `./build/omairc --demo-server` as a black box and is not in CI.
 `bin/test-live` needs Docker. It drives Ergo, Solanum, and ngIRCd, then the
 dual-network production-QML proof. It fails if `docker` or `docker compose`
 is missing.
