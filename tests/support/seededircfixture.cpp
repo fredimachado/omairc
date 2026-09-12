@@ -317,8 +317,10 @@ SeedNetwork omarchyWorld()
              QStringLiteral("18:20"),
              kYesterday),
     };
-    // Mock sidebar unread is 12 with a mention. The mock transcript is 3 lines.
-    for (int index = 1; index <= 8; ++index) {
+    const int ricingUnreadTarget = 12;
+    const int ricingMentionLine = 1;
+    for (int index = 1; index <= ricingUnreadTarget - ricing.lines.size() - ricingMentionLine;
+         ++index) {
         ricing.lines.append(chat(QStringLiteral("anna"),
                                  QStringLiteral("rice-pad-%1").arg(index),
                                  QStringLiteral("18:2%1").arg(index),
@@ -426,7 +428,6 @@ SeedNetwork oftcWorld()
         chat(QStringLiteral("oak"),
              QStringLiteral("Patched. Waiting on the next image."),
              QStringLiteral("09:12")),
-        // oak is self, so that line does not count as unread.
         chat(QStringLiteral("remy"),
              QStringLiteral("Image is cooking."),
              QStringLiteral("09:13")),
