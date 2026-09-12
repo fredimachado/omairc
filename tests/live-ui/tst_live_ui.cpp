@@ -1,13 +1,18 @@
 #include "backend.h"
+#include "conversationlistmodel.h"
 #include "fakeirctransport.h"
+#include "irccapability.h"
 #include "irccontroller.h"
+#include "ircserverfeatures.h"
 #include "ircsession.h"
+#include "ircstatusconsole.h"
 #include "ircslashcomplete.h"
 #include "liveharness.h"
 #include "liveuiworld.h"
 #include "memberlistmodel.h"
 #include "messagelistmodel.h"
 #include "networklogmodel.h"
+#include "seededircfixture.h"
 
 #include <QColor>
 #include <QCoreApplication>
@@ -30,6 +35,7 @@
 
 #include <functional>
 #include <memory>
+#include <string_view>
 
 namespace
 {
@@ -169,6 +175,70 @@ void typeIntoComposer(QQuickWindow *window, const QString &text)
     for (const QChar ch : text)
         QTest::keyClick(window, ch.toLatin1(), Qt::NoModifier, 0);
 }
+
+QVariant roleAt(const QAbstractItemModel *model, int row, int role)
+{
+    return model->data(model->index(row, 0), role);
+}
+
+int rowFor(const QAbstractItemModel *model,
+           const QString &networkId,
+           const QString &target)
+{
+    for (int row = 0; row < model->rowCount(); ++row) {
+        if (roleAt(model, row, ConversationListModel::NetworkIdRole) == networkId
+            && roleAt(model, row, ConversationListModel::ConversationRole) == target) {
+            return row;
+        }
+    }
+    return -1;
+}
+
+bool logContains(QAbstractItemModel *lines, const QString &needle)
+{
+    for (int row = 0; row < lines->rowCount(); ++row) {
+        const QString text =
+            lines->data(lines->index(row, 0), NetworkLogModel::TextRole).toString();
+        if (text.contains(needle))
+            return true;
+    }
+    return false;
+}
+
+QStringList selectedBodies(const QAbstractItemModel *messages)
+{
+    QStringList bodies;
+    if (!messages)
+        return bodies;
+    for (int row = 0; row < messages->rowCount(); ++row)
+        bodies.append(roleAt(messages, row, MessageListModel::BodyRole).toString());
+    return bodies;
+}
+
+QString featureText(std::string_view view)
+{
+    return QString::fromUtf8(view.data(), int(view.size()));
+}
+
+QString memberField(const QAbstractItemModel *members,
+                    const QString &nick,
+                    int role)
+{
+    for (int row = 0; row < members->rowCount(); ++row) {
+        if (roleAt(members, row, MemberListModel::NickRole) == nick)
+            return roleAt(members, row, role).toString();
+    }
+    return {};
+}
+
+bool memberAway(const QAbstractItemModel *members, const QString &nick)
+{
+    for (int row = 0; row < members->rowCount(); ++row) {
+        if (roleAt(members, row, MemberListModel::NickRole) == nick)
+            return roleAt(members, row, MemberListModel::AwayRole).toBool();
+    }
+    return false;
+}
 }
 
 class LiveUiTest : public QObject
@@ -190,6 +260,7 @@ private slots:
     void replayAndLiveSameAuthorMinuteDoNotGroupThroughIrcEvent();
     void bouncerQueryReplayRendersDirectMessageInSidebar();
     void ctrlFFindsLiveTranscriptAndStatus();
+    void seededIrcFixtureFurnishesMockWorld();
 
 private:
     bool check(bool ok) const;
@@ -919,6 +990,226 @@ void LiveUiTest::ctrlFFindsLiveTranscriptAndStatus()
                  .contains(QStringLiteral("404")));
     QVERIFY(findMarkVisible(console, window->property("findIndex").toInt()));
     QVERIFY2(saveFixtureShot(window, QStringLiteral("live-ui-find")), "find screenshot");
+}
+
+void LiveUiTest::seededIrcFixtureFurnishesMockWorld()
+{
+    if (m_live)
+        QSKIP("SeededIrcFixture runs under bin/test, not the compose world.");
+
+    SeededIrcFixture world;
+    QVERIFY2(world.open(), qPrintable(world.lastError()));
+
+    IrcController &controller = world.controller();
+    QCOMPARE(controller.networkIds(),
+             QStringList({QStringLiteral("oftc"), QStringLiteral("omarchy")}));
+    QCOMPARE(controller.selectedNetworkId(), SeededIrcFixture::omarchyNetworkId());
+    QCOMPARE(controller.selectedTarget(), QStringLiteral("#omarchy"));
+    QCOMPARE(controller.currentNick(), QStringLiteral("fred"));
+    QCOMPARE(controller.topic(),
+             QStringLiteral("A cozy corner for Omarchy users and builders."));
+    QCOMPARE(controller.peopleCount(), 12);
+    QVERIFY(controller.hasAwayPresence());
+    QVERIFY(controller.hasMemberStatus());
+    QVERIFY(controller.hasTyping());
+    QCOMPARE(controller.typingNicks(), QStringList({QStringLiteral("anna")}));
+    QVERIFY(controller.nickIsTyping(QStringLiteral("anna")));
+
+    const IrcServerFeatures &omarchyFeatures =
+        controller.serverFeatures(SeededIrcFixture::omarchyNetworkId());
+    QCOMPARE(featureText(omarchyFeatures.channelTypes()), QStringLiteral("#"));
+    QCOMPARE(featureText(omarchyFeatures.prefixModes()), QStringLiteral("ov"));
+    QCOMPARE(featureText(omarchyFeatures.prefixSymbols()), QStringLiteral("@+"));
+    const IrcServerFeatures &oftcFeatures =
+        controller.serverFeatures(SeededIrcFixture::oftcNetworkId());
+    QCOMPARE(featureText(oftcFeatures.channelTypes()), QStringLiteral("#"));
+    QCOMPARE(featureText(oftcFeatures.prefixSymbols()), QStringLiteral("@+"));
+
+    IrcSession *omarchySession =
+        controller.session(SeededIrcFixture::omarchyNetworkId());
+    QVERIFY(omarchySession);
+    QVERIFY(omarchySession->capabilities().contains(IrcCapability::EchoMessage));
+    QVERIFY(omarchySession->capabilities().contains(IrcCapability::MessageTags));
+
+    auto *conversations =
+        qobject_cast<QAbstractItemModel *>(controller.conversations());
+    QVERIFY(conversations);
+    const int omarchyRow = rowFor(conversations, SeededIrcFixture::omarchyNetworkId(),
+                                  QStringLiteral("#omarchy"));
+    const int desktopRow = rowFor(conversations, SeededIrcFixture::omarchyNetworkId(),
+                                  QStringLiteral("#desktop"));
+    const int ricingRow = rowFor(conversations, SeededIrcFixture::omarchyNetworkId(),
+                                 QStringLiteral("#ricing"));
+    const int helpRow = rowFor(conversations, SeededIrcFixture::omarchyNetworkId(),
+                               QStringLiteral("#help"));
+    const int annaRow = rowFor(conversations, SeededIrcFixture::omarchyNetworkId(),
+                               QStringLiteral("anna"));
+    const int daxRow = rowFor(conversations, SeededIrcFixture::omarchyNetworkId(),
+                              QStringLiteral("dax"));
+    const int oftcOmarchyRow = rowFor(conversations, SeededIrcFixture::oftcNetworkId(),
+                                      QStringLiteral("#omarchy"));
+    const int labRow = rowFor(conversations, SeededIrcFixture::oftcNetworkId(),
+                              QStringLiteral("#lab"));
+    const int buildRow = rowFor(conversations, SeededIrcFixture::oftcNetworkId(),
+                                QStringLiteral("#build"));
+    const int rioRow = rowFor(conversations, SeededIrcFixture::oftcNetworkId(),
+                              QStringLiteral("rio"));
+    QVERIFY(omarchyRow >= 0 && desktopRow >= 0 && ricingRow >= 0 && helpRow >= 0);
+    QVERIFY(annaRow >= 0 && daxRow >= 0);
+    QVERIFY(oftcOmarchyRow >= 0 && labRow >= 0 && buildRow >= 0 && rioRow >= 0);
+    QCOMPARE(rowFor(conversations, SeededIrcFixture::omarchyNetworkId(),
+                    QStringLiteral("NickServ")),
+             -1);
+
+    QCOMPARE(roleAt(conversations, omarchyRow, ConversationListModel::UnreadRole), 0);
+    QCOMPARE(roleAt(conversations, desktopRow, ConversationListModel::UnreadRole), 3);
+    QCOMPARE(roleAt(conversations, desktopRow, ConversationListModel::MentionRole), false);
+    QCOMPARE(roleAt(conversations, ricingRow, ConversationListModel::UnreadRole), 12);
+    QCOMPARE(roleAt(conversations, ricingRow, ConversationListModel::MentionRole), true);
+    QCOMPARE(roleAt(conversations, helpRow, ConversationListModel::UnreadRole), 0);
+    QCOMPARE(roleAt(conversations, annaRow, ConversationListModel::UnreadRole), 1);
+    QCOMPARE(roleAt(conversations, annaRow, ConversationListModel::MentionRole), true);
+    QCOMPARE(roleAt(conversations, annaRow, ConversationListModel::TypingRole), true);
+    QCOMPARE(roleAt(conversations, daxRow, ConversationListModel::UnreadRole), 0);
+    QCOMPARE(roleAt(conversations, oftcOmarchyRow, ConversationListModel::UnreadRole), 0);
+    QCOMPARE(roleAt(conversations, labRow, ConversationListModel::UnreadRole), 0);
+    QCOMPARE(roleAt(conversations, buildRow, ConversationListModel::UnreadRole), 2);
+    QCOMPARE(roleAt(conversations, rioRow, ConversationListModel::UnreadRole), 0);
+    QCOMPARE(controller.unreadCountFor(SeededIrcFixture::omarchyNetworkId()), 16);
+    QVERIFY(controller.mentionFor(SeededIrcFixture::omarchyNetworkId()));
+    QCOMPARE(controller.unreadCountFor(SeededIrcFixture::oftcNetworkId()), 2);
+    QVERIFY(!controller.mentionFor(SeededIrcFixture::oftcNetworkId()));
+
+    auto *members = qobject_cast<QAbstractItemModel *>(controller.members());
+    QVERIFY(members);
+    QCOMPARE(members->rowCount(), 12);
+    for (const QString &nick : {QStringLiteral("teo"), QStringLiteral("lena"),
+                                QStringLiteral("sam"), QStringLiteral("ivy"),
+                                QStringLiteral("max")}) {
+        QVERIFY2(memberAway(members, nick), qPrintable(nick));
+    }
+    for (const QString &nick : {QStringLiteral("anna"), QStringLiteral("dax"),
+                                QStringLiteral("mira"), QStringLiteral("sol"),
+                                QStringLiteral("fred"), QStringLiteral("kai"),
+                                QStringLiteral("nora")}) {
+        QVERIFY2(!memberAway(members, nick), qPrintable(nick));
+    }
+    QCOMPARE(memberField(members, QStringLiteral("anna"), MemberListModel::StatusRole),
+             QStringLiteral("writing docs"));
+    QCOMPARE(memberField(members, QStringLiteral("dax"), MemberListModel::StatusRole),
+             QStringLiteral("on #desktop"));
+
+    auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
+    QVERIFY(messages);
+    const QStringList omarchyBodies = selectedBodies(messages);
+    QVERIFY(omarchyBodies.contains(
+        QStringLiteral("Morning! Has anyone tried the new minimal install flow yet?")));
+    QVERIFY(omarchyBodies.contains(
+        QStringLiteral("Keep the member list optional and I am sold.")));
+    QVERIFY(omarchyBodies.contains(QStringLiteral("sol joined")));
+    QVERIFY(omarchyBodies.contains(QStringLiteral("nora joined")));
+
+    controller.console()->setNetwork(SeededIrcFixture::omarchyNetworkId());
+    QVERIFY(logContains(controller.console()->lines(),
+                        QStringLiteral("Looking up your hostname")));
+    QVERIFY(logContains(controller.console()->lines(),
+                        QStringLiteral("Welcome to the mock network")));
+    controller.console()->setNetwork(SeededIrcFixture::oftcNetworkId());
+    QVERIFY(logContains(controller.console()->lines(),
+                        QStringLiteral("Welcome to the mock OFTC network")));
+
+    QVERIFY2(world.createWindow(), qPrintable(world.lastError()));
+    QQuickWindow *window = world.window();
+    QVERIFY(window);
+    QVERIFY(waitUntil([&] {
+        QQuickItem *list = window->findChild<QQuickItem *>(QStringLiteral("messageList"));
+        return list && list->isVisible() && list->height() > 0
+            && !window->property("consoleVisible").toBool();
+    }));
+    QQuickItem *list = window->findChild<QQuickItem *>(QStringLiteral("messageList"));
+    QVERIFY(list);
+    QVERIFY(qobject_cast<MessageListModel *>(list->property("model").value<QObject *>()));
+    QCOMPARE(window->property("currentTopic").toString(),
+             QStringLiteral("A cozy corner for Omarchy users and builders."));
+    QVERIFY2(waitUntil([&] {
+                    return chromeIndex(collectTranscriptChrome(window),
+                                       QStringLiteral("Keep the member list optional and I am sold."))
+                        >= 0;
+                }),
+             qPrintable(describeChrome(collectTranscriptChrome(window))));
+    QVERIFY2(saveFixtureShot(window, QStringLiteral("live-ui-seeded-mock-world")),
+             "seeded screenshot");
+
+    controller.selectConversation(SeededIrcFixture::oftcNetworkId(),
+                                  QStringLiteral("#omarchy"));
+    QCOMPARE(controller.currentNick(), QStringLiteral("oak"));
+    QCOMPARE(controller.topic(),
+             QStringLiteral("A different #omarchy, hosted on OFTC."));
+    QCOMPARE(controller.peopleCount(), 4);
+    QVERIFY(selectedBodies(messages).contains(
+        QStringLiteral("This #omarchy is the OFTC one. Different people, same name.")));
+
+    controller.selectConversation(SeededIrcFixture::oftcNetworkId(),
+                                  QStringLiteral("#lab"));
+    QCOMPARE(controller.topic(),
+             QStringLiteral("Build lab for packaging and CI."));
+    QCOMPARE(controller.peopleCount(), 6);
+
+    controller.selectConversation(SeededIrcFixture::oftcNetworkId(),
+                                  QStringLiteral("#build"));
+    QCOMPARE(controller.topic(),
+             QStringLiteral("Nightly builds and failing tests."));
+    QCOMPARE(controller.peopleCount(), 3);
+
+    controller.selectConversation(SeededIrcFixture::omarchyNetworkId(),
+                                  QStringLiteral("#desktop"));
+    QCOMPARE(controller.topic(),
+             QStringLiteral("Desktops should feel personal, fast, and calm."));
+    QCOMPARE(controller.peopleCount(), 8);
+    QVERIFY(selectedBodies(messages).contains(
+        QStringLiteral("I finally moved every workspace rule into a small, readable file.")));
+
+    controller.selectConversation(SeededIrcFixture::omarchyNetworkId(),
+                                  QStringLiteral("#ricing"));
+    QVERIFY(selectedBodies(messages).contains(
+        QStringLiteral("Muted colors, one strong accent, and enough breathing room.")));
+    QVERIFY(selectedBodies(messages).contains(QStringLiteral("looks good, fred.")));
+
+    controller.selectConversation(SeededIrcFixture::omarchyNetworkId(),
+                                  QStringLiteral("anna"));
+    QVERIFY(selectedBodies(messages).contains(
+        QStringLiteral("fred: The prototype already feels at home. Nice work.")));
+
+    controller.selectConversation(SeededIrcFixture::omarchyNetworkId(),
+                                  QStringLiteral("#omarchy"));
+
+    QVERIFY(controller.sendMessage(QStringLiteral("/msg glen hello")));
+    QCOMPARE(world.omarchyTransport()->writtenFrames().last(),
+             QByteArrayLiteral("PRIVMSG glen :hello\r\n"));
+    QCOMPARE(rowFor(conversations, SeededIrcFixture::omarchyNetworkId(),
+                    QStringLiteral("glen")),
+             -1);
+    world.omarchyTransport()->injectBytes(
+        QByteArrayLiteral(":fred!u@h PRIVMSG glen :hello\r\n"));
+    QCOMPARE(rowFor(conversations, SeededIrcFixture::omarchyNetworkId(),
+                    QStringLiteral("glen")),
+             -1);
+
+    world.omarchyTransport()->injectBytes(
+        QByteArrayLiteral(":NickServ!NickServ@services PRIVMSG fred "
+                          ":This nickname is registered.\r\n"));
+    QCOMPARE(rowFor(conversations, SeededIrcFixture::omarchyNetworkId(),
+                    QStringLiteral("NickServ")),
+             -1);
+    controller.console()->setNetwork(SeededIrcFixture::omarchyNetworkId());
+    QVERIFY(logContains(controller.console()->lines(),
+                        QStringLiteral("This nickname is registered.")));
+
+    world.omarchyTransport()->injectBytes(
+        QByteArrayLiteral(":mira!u@h PRIVMSG fred :incoming human\r\n"));
+    QVERIFY(rowFor(conversations, SeededIrcFixture::omarchyNetworkId(),
+                   QStringLiteral("mira"))
+            >= 0);
 }
 
 int runLiveUiTests(int argc, char **argv)

@@ -58,6 +58,7 @@ HEADERS += \
     ../live/liveharness.h \
     ../live/livepeer.h \
     ../support/fakeirctransport.h \
+    ../support/seededircfixture.h \
     liveuiworld.h
 
 SOURCES += \
@@ -67,6 +68,7 @@ SOURCES += \
     ../live/liveharness.cpp \
     ../live/livepeer.cpp \
     ../support/fakeirctransport.cpp \
+    ../support/seededircfixture.cpp \
     ../../src/backend.cpp \
     ../../src/irc/ircparser.cpp \
     ../../src/irc/ircframer.cpp \
