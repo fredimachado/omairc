@@ -1,5 +1,7 @@
 #pragma once
 
+#include "ircloopbacktransport.h"
+
 #include <QObject>
 #include <QPointer>
 #include <QString>
@@ -11,7 +13,6 @@ class CredentialStore;
 class IrcConnection;
 class IrcController;
 class IrcDemoServer;
-class IrcLoopbackTransport;
 class IrcSlashSession;
 class QQmlApplicationEngine;
 class QQuickWindow;
