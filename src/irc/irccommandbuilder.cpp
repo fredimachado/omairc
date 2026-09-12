@@ -20,6 +20,7 @@
 #include <QString>
 
 #include <string>
+#include <vector>
 
 namespace
 {
@@ -68,6 +69,48 @@ IrcBuildResult IrcCommandBuilder::line(std::string_view command)
     std::string result(command);
     result += "\r\n";
     return IrcBuildResult::success(std::move(result));
+}
+
+std::vector<std::string> IrcCommandBuilder::splitTrailingParam(std::string_view prefix,
+                                                              std::string_view body,
+                                                              std::string_view suffix)
+{
+    if (body.empty() || containsForbidden(prefix) || containsForbidden(body)
+        || containsForbidden(suffix)) {
+        return {};
+    }
+    if (prefix.size() + suffix.size() + 3 > kMaxFrameBytes)
+        return {};
+    const std::size_t maxBody = kMaxFrameBytes - prefix.size() - suffix.size() - 2;
+
+    std::vector<std::string> chunks;
+    std::size_t offset = 0;
+    while (offset < body.size()) {
+        const std::size_t remaining = body.size() - offset;
+        if (remaining <= maxBody) {
+            chunks.emplace_back(body.substr(offset));
+            break;
+        }
+
+        const std::string_view window = body.substr(offset, maxBody);
+        const std::size_t lastSpace = window.rfind(' ');
+        if (lastSpace != std::string_view::npos && lastSpace > 0) {
+            chunks.emplace_back(window.substr(0, lastSpace));
+            offset += lastSpace + 1;
+            continue;
+        }
+
+        std::size_t take = maxBody;
+        while (take > 0
+               && (static_cast<unsigned char>(body[offset + take]) & 0xC0) == 0x80) {
+            --take;
+        }
+        if (take == 0)
+            return {};
+        chunks.emplace_back(body.substr(offset, take));
+        offset += take;
+    }
+    return chunks;
 }
 
 IrcBuildResult IrcCommandBuilder::nick(std::string_view nickname)

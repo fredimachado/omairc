@@ -238,6 +238,8 @@ private slots:
     void incomingInviteDoesNotTranslateToEvents();
     void selfEchoToServiceIsRedacted();
     void sendPrivmsgValidatesTarget();
+    void sendPrivmsgSplitsNearTwoFrames();
+    void sendPrivmsgSplitsEnormousToken();
     void setTopicIsSetOnly();
     void kickWritesOptionalReason();
     void inviteWritesNickThenChannel();
@@ -2212,6 +2214,53 @@ void SessionTest::sendPrivmsgValidatesTarget()
     for (const QString& target : invalidTargets)
         QVERIFY(!fixture.session->sendPrivmsg(target, QStringLiteral("hello")));
     QCOMPARE(fixture.transport->writtenFrames().size(), before);
+}
+
+void SessionTest::sendPrivmsgSplitsNearTwoFrames()
+{
+    Fixture fixture;
+    fixture.registerWithWelcome();
+    const int before = fixture.transport->writtenFrames().size();
+
+    const QByteArray prefix = QByteArrayLiteral("PRIVMSG #omarchy :");
+    const QByteArray first(400, 'a');
+    const QByteArray second(200, 'b');
+    QVERIFY(fixture.session->sendPrivmsg(
+        QStringLiteral("#omarchy"),
+        QString::fromLatin1(first) + QLatin1Char(' ') + QString::fromLatin1(second)));
+
+    const QByteArrayList frames = fixture.transport->writtenFrames().mid(before);
+    QCOMPARE(frames.size(), 2);
+    QCOMPARE(frames.at(0), prefix + first + QByteArrayLiteral("\r\n"));
+    QCOMPARE(frames.at(1), prefix + second + QByteArrayLiteral("\r\n"));
+    for (const QByteArray& frame : frames) {
+        QVERIFY(frame.endsWith("\r\n"));
+        QVERIFY(frame.size() <= int(IrcProtocol::maxClassicFrameBytes));
+    }
+}
+
+void SessionTest::sendPrivmsgSplitsEnormousToken()
+{
+    Fixture fixture;
+    fixture.registerWithWelcome();
+    const int before = fixture.transport->writtenFrames().size();
+
+    const QByteArray prefix = QByteArrayLiteral("PRIVMSG #omarchy :");
+    const int maxBody = int(IrcProtocol::maxClassicFrameBytes) - prefix.size() - 2;
+    const QByteArray token(maxBody * 2 + 16, 'x');
+    QVERIFY(fixture.session->sendPrivmsg(QStringLiteral("#omarchy"),
+                                          QString::fromLatin1(token)));
+
+    const QByteArrayList frames = fixture.transport->writtenFrames().mid(before);
+    QCOMPARE(frames.size(), 3);
+    QCOMPARE(frames.at(0), prefix + token.left(maxBody) + QByteArrayLiteral("\r\n"));
+    QCOMPARE(frames.at(1),
+             prefix + token.mid(maxBody, maxBody) + QByteArrayLiteral("\r\n"));
+    QCOMPARE(frames.at(2), prefix + token.mid(maxBody * 2) + QByteArrayLiteral("\r\n"));
+    for (const QByteArray& frame : frames) {
+        QVERIFY(frame.endsWith("\r\n"));
+        QVERIFY(frame.size() <= int(IrcProtocol::maxClassicFrameBytes));
+    }
 }
 
 void SessionTest::setTopicIsSetOnly()

@@ -449,7 +449,7 @@ bool IrcSession::sendPrivmsg(const QString& target, const QString& body)
 {
     if (!isValidPrivmsgTarget(target) || body.isEmpty())
         return false;
-    const bool sent = sendCommand(QStringLiteral("PRIVMSG %1 :%2").arg(target, body));
+    const bool sent = sendTrailingBody(QStringLiteral("PRIVMSG %1 :").arg(target), body);
     if (sent)
         m_typing.noteMessageSent(target);
     return sent;
@@ -459,7 +459,7 @@ bool IrcSession::sendNotice(const QString& target, const QString& body)
 {
     if (target.isEmpty() || body.isEmpty())
         return false;
-    return sendCommand(QStringLiteral("NOTICE %1 :%2").arg(target, body));
+    return sendTrailingBody(QStringLiteral("NOTICE %1 :").arg(target), body);
 }
 
 bool IrcSession::sendChannelMode(const IrcChannelModeRequest& request)
@@ -478,9 +478,15 @@ bool IrcSession::sendChannelMode(const IrcChannelModeRequest& request)
 
 bool IrcSession::sendAction(const QString& target, const QString& body)
 {
-    if (target.isEmpty() || body.isEmpty())
+    if (!isValidPrivmsgTarget(target) || body.isEmpty())
         return false;
-    return sendPrivmsg(target, QChar(1) + QStringLiteral("ACTION ") + body + QChar(1));
+    const bool sent = sendTrailingBody(
+        QStringLiteral("PRIVMSG %1 :").arg(target) + QChar(1) + QStringLiteral("ACTION "),
+        body,
+        QString(QChar(1)));
+    if (sent)
+        m_typing.noteMessageSent(target);
+    return sent;
 }
 
 bool IrcSession::sendTyping(const QString& target, IrcTypingPhase phase)
@@ -749,6 +755,24 @@ bool IrcSession::sendCommand(const QString& command)
     if (line.isEmpty())
         return false;
     sendLine(line);
+    return true;
+}
+
+bool IrcSession::sendTrailingBody(const QString& prefix,
+                                 const QString& body,
+                                 const QString& suffix)
+{
+    const std::vector<std::string> chunks = IrcCommandBuilder::splitTrailingParam(
+        utf8(prefix), utf8(body), utf8(suffix));
+    if (chunks.empty())
+        return false;
+    for (const std::string& chunk : chunks) {
+        if (!sendCommand(prefix
+                         + QString::fromUtf8(chunk.data(), qsizetype(chunk.size()))
+                         + suffix)) {
+            return false;
+        }
+    }
     return true;
 }
 

@@ -90,6 +90,8 @@ private slots:
     void rejectsInvalidRegistration();
     void rejectsOutboundInjection();
     void enforcesOutboundBoundary();
+    void splitsOutboundChatOnWordBoundary();
+    void splitsOutboundChatHardWhenTokenExceedsFrame();
     void privmsgUsesIrcv3TimeTag();
     void privmsgWithoutTimeUsesCurrentUtc();
     void privmsgInvalidTimeUsesCurrentUtc();
@@ -442,6 +444,58 @@ void ProtocolTest::enforcesOutboundBoundary()
 
     result = IrcCommandBuilder::line(std::string(511, 'A'));
     QVERIFY(!result);
+}
+
+void ProtocolTest::splitsOutboundChatOnWordBoundary()
+{
+    const std::string prefix = "PRIVMSG #omarchy :";
+    const std::string first(400, 'a');
+    const std::string second(200, 'b');
+    const std::vector<std::string> chunks =
+        IrcCommandBuilder::splitTrailingParam(prefix, first + " " + second);
+    QCOMPARE(chunks.size(), std::size_t(2));
+    QCOMPARE(chunks[0], first);
+    QCOMPARE(chunks[1], second);
+
+    const std::string firstLine = prefix + chunks[0];
+    const std::string secondLine = prefix + chunks[1];
+    QCOMPARE(text(firstLine),
+             QStringLiteral("PRIVMSG #omarchy :") + QString(400, QLatin1Char('a')));
+    QCOMPARE(text(secondLine),
+             QStringLiteral("PRIVMSG #omarchy :") + QString(200, QLatin1Char('b')));
+    QVERIFY(firstLine.size() + 2 <= IrcProtocol::maxClassicFrameBytes);
+    QVERIFY(secondLine.size() + 2 <= IrcProtocol::maxClassicFrameBytes);
+    QVERIFY(IrcCommandBuilder::line(firstLine));
+    QVERIFY(IrcCommandBuilder::line(secondLine));
+}
+
+void ProtocolTest::splitsOutboundChatHardWhenTokenExceedsFrame()
+{
+    const std::string prefix = "PRIVMSG #omarchy :";
+    const std::size_t maxBody = IrcProtocol::maxClassicFrameBytes - prefix.size() - 2;
+    const std::string token(maxBody * 2 + 16, 'x');
+    const std::vector<std::string> chunks =
+        IrcCommandBuilder::splitTrailingParam(prefix, token);
+    QCOMPARE(chunks.size(), std::size_t(3));
+    QCOMPARE(chunks[0], token.substr(0, maxBody));
+    QCOMPARE(chunks[1], token.substr(maxBody, maxBody));
+    QCOMPARE(chunks[2], token.substr(maxBody * 2));
+
+    for (const std::string& chunk : chunks) {
+        const std::string line = prefix + chunk;
+        QVERIFY(line.size() + 2 <= IrcProtocol::maxClassicFrameBytes);
+        const auto built = IrcCommandBuilder::line(line);
+        QVERIFY(built);
+        QCOMPARE(built.value->size(), line.size() + 2);
+    }
+
+    const std::string eAcute = "\xC3\xA9";
+    const std::string torn = std::string(maxBody - 1, 'x') + eAcute + std::string(10, 'y');
+    const std::vector<std::string> tornChunks =
+        IrcCommandBuilder::splitTrailingParam(prefix, torn);
+    QCOMPARE(tornChunks.size(), std::size_t(2));
+    QCOMPARE(tornChunks[0], std::string(maxBody - 1, 'x'));
+    QCOMPARE(tornChunks[1], eAcute + std::string(10, 'y'));
 }
 
 void ProtocolTest::privmsgUsesIrcv3TimeTag()
