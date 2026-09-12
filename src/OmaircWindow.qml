@@ -275,7 +275,7 @@ ApplicationWindow {
         return "Status";
     }
 
-    function nickColor(nick) {
+    function paletteColor(index) {
         var palette = [
             accentColor,
             darkMode ? "#c099ff" : "#7950b8",
@@ -283,10 +283,16 @@ ApplicationWindow {
             darkMode ? "#efb366" : "#a45f14",
             darkMode ? "#ed8f9d" : "#b44355"
         ];
+        if (index < 0 || index >= palette.length)
+            return accentColor;
+        return palette[index];
+    }
+
+    function nickColor(nick) {
         var hash = 0;
         for (var index = 0; index < nick.length; ++index)
-            hash = (hash + nick.charCodeAt(index)) % palette.length;
-        return palette[hash];
+            hash = (hash + nick.charCodeAt(index)) % 5;
+        return paletteColor(hash);
     }
 
     function initials(nick) {
@@ -1750,6 +1756,7 @@ ApplicationWindow {
 
         property string networkId
         property string displayName
+        property int iconColor: -1
         property string statusText: "mock connected"
         property int alerts: 0
         property int unread: 0
@@ -1841,13 +1848,16 @@ ApplicationWindow {
             }
 
             Rectangle {
+                objectName: section.preserveLegacyNames ? "networkIcon"
+                                                        : "networkIcon-" + section.networkId
                 anchors.left: parent.left
                 anchors.leftMargin: win.scaledSize(18)
                 anchors.verticalCenter: parent.verticalCenter
                 width: win.scaledSize(28)
                 height: width
                 radius: win.scaledSize(8)
-                color: win.accentColor
+                color: section.iconColor >= 0 ? win.paletteColor(section.iconColor)
+                                              : win.accentColor
 
                 Text {
                     anchors.centerIn: parent
@@ -2834,12 +2844,14 @@ ApplicationWindow {
                             required property int index
                             required property string networkId
                             required property string displayName
+                            required property int iconColor
                             width: parent ? parent.width : 0
                             spacing: 0
 
                             NetworkSection {
                                 networkId: liveNet.networkId
                                 displayName: liveNet.displayName
+                                iconColor: liveNet.iconColor
                                 preserveLegacyNames: liveNet.index === 0
                                 unread: 0
                                 mention: false
@@ -3015,6 +3027,7 @@ ApplicationWindow {
                         height: visible ? implicitHeight : 0
                         networkId: win.mockOmarchyId
                         displayName: "Omarchy IRC"
+                        iconColor: 1
                         statusText: "mock connected"
                         unread: 16
                         mention: true
@@ -3121,6 +3134,7 @@ ApplicationWindow {
                         height: visible ? implicitHeight : 0
                         networkId: win.mockOftcId
                         displayName: "irc.oftc.net"
+                        iconColor: 2
                         statusText: "mock connected"
                         unread: 2
                         mention: false

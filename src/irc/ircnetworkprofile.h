@@ -1,5 +1,6 @@
 #pragma once
 
+#include <QList>
 #include <QString>
 #include <QStringList>
 
@@ -29,10 +30,15 @@ struct IrcNetworkProfile
     QString account;
     QString bouncerNetwork;
     QStringList autojoinChannels;
+    static constexpr int iconColorCount = 5;
+    static constexpr int noIconColor = -1;
+    int iconColor = noIconColor;
 
     static IrcNetworkProfile create();
     static IrcNetworkProfile suggested();
     static QStringList parseAutojoin(const QString &channels);
+    static int pickIconColor(const QList<int> &used);
+    bool ensureIconColor(const QList<int> &used);
     IrcNetworkProfile normalized() const;
     // Bouncers select the upstream network from the account name, after a slash.
     QString saslAccount() const;

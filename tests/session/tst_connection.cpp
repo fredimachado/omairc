@@ -117,6 +117,8 @@ private slots:
     void failedMigrationDiscardRetriesWriteBeforeObsoleteDelete();
     void accountAndBouncerNetworkLoginAsOneName();
     void twoProfilesApplyIndependently();
+    void twoProfilesKeepDistinctIconColorsAcrossReload();
+    void missingIconColorIsAssignedOnce();
     void removeSelectedDropsSessionAndStore();
     void removeSelectedDeletesStoredSecret();
     void usernameChangePersistsExistingPassword();
@@ -1595,6 +1597,88 @@ void ConnectionTest::twoProfilesApplyIndependently()
     QCOMPARE(m_transports.last()->connectionState(),
              IrcTransport::ConnectionState::Connecting);
     QCOMPARE(connection.networks()->rowCount(), 2);
+}
+
+void ConnectionTest::twoProfilesKeepDistinctIconColorsAcrossReload()
+{
+    IrcController controller;
+    IrcConnection connection(controller, capturingFactory(), credentialStore());
+    fillCompleteDraft(connection, QStringLiteral("irc.example"));
+    QVERIFY(connection.apply());
+    QVERIFY(connection.add());
+    fillCompleteDraft(connection, QStringLiteral("irc.oftc.net"));
+    connection.setNick(QStringLiteral("oak"));
+    QVERIFY(connection.apply());
+
+    const QList<IrcNetworkProfile> saved = IrcProfileStore().profiles();
+    QCOMPARE(saved.size(), 2);
+    QVERIFY(saved.at(0).iconColor >= 0);
+    QVERIFY(saved.at(0).iconColor < IrcNetworkProfile::iconColorCount);
+    QVERIFY(saved.at(1).iconColor >= 0);
+    QVERIFY(saved.at(1).iconColor < IrcNetworkProfile::iconColorCount);
+    QVERIFY(saved.at(0).iconColor != saved.at(1).iconColor);
+
+    const int firstColor = saved.at(0).iconColor;
+    const int secondColor = saved.at(1).iconColor;
+    const QString firstId = saved.at(0).networkId;
+    const QString secondId = saved.at(1).networkId;
+
+    IrcController reloadedController;
+    IrcConnection reloaded(reloadedController, capturingFactory(), credentialStore());
+    const QList<IrcNetworkProfile> loaded = IrcProfileStore().profiles();
+    QCOMPARE(loaded.size(), 2);
+    QCOMPARE(loaded.at(0).networkId, firstId);
+    QCOMPARE(loaded.at(1).networkId, secondId);
+    QCOMPARE(loaded.at(0).iconColor, firstColor);
+    QCOMPARE(loaded.at(1).iconColor, secondColor);
+
+    const QAbstractItemModel *networks = reloaded.networks();
+    QCOMPARE(networks->roleNames().value(NetworkListModel::IconColorRole),
+             QByteArray("iconColor"));
+    QCOMPARE(networks->rowCount(), 2);
+    for (int row = 0; row < networks->rowCount(); ++row) {
+        const QString id = networks->data(networks->index(row, 0),
+                                         NetworkListModel::NetworkIdRole).toString();
+        const int color = networks->data(networks->index(row, 0),
+                                         NetworkListModel::IconColorRole).toInt();
+        if (id == firstId)
+            QCOMPARE(color, firstColor);
+        else
+            QCOMPARE(color, secondColor);
+    }
+}
+
+void ConnectionTest::missingIconColorIsAssignedOnce()
+{
+    IrcNetworkProfile profile = IrcNetworkProfile::create();
+    profile.host = QStringLiteral("irc.example.net");
+    profile.port = 6697;
+    profile.tlsEnabled = true;
+    profile.nick = QStringLiteral("omairc");
+    profile.username = QStringLiteral("omairc");
+    profile.realname = QStringLiteral("Omairc User");
+    profile.autojoinChannels = {QStringLiteral("#omarchy")};
+    IrcProfileStore().save(profile);
+    QCOMPARE(IrcProfileStore().profiles().first().iconColor,
+             IrcNetworkProfile::noIconColor);
+
+    IrcController controller;
+    IrcConnection connection(controller, capturingFactory(), credentialStore());
+    const QList<IrcNetworkProfile> assigned = IrcProfileStore().profiles();
+    QCOMPARE(assigned.size(), 1);
+    QVERIFY(assigned.first().iconColor >= 0);
+    QVERIFY(assigned.first().iconColor < IrcNetworkProfile::iconColorCount);
+    const int color = assigned.first().iconColor;
+    QCOMPARE(connection.networks()->data(connection.networks()->index(0, 0),
+                                         NetworkListModel::IconColorRole).toInt(),
+             color);
+
+    IrcController reloadedController;
+    IrcConnection reloaded(reloadedController, capturingFactory(), credentialStore());
+    QCOMPARE(IrcProfileStore().profiles().first().iconColor, color);
+    QCOMPARE(reloaded.networks()->data(reloaded.networks()->index(0, 0),
+                                       NetworkListModel::IconColorRole).toInt(),
+             color);
 }
 
 void ConnectionTest::removeSelectedDropsSessionAndStore()

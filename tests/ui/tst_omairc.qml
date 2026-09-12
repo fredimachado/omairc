@@ -44,6 +44,7 @@ TestCase {
             displayName: "irc.libera.chat"
             stored: false
             selected: true
+            iconColor: 1
         }
     }
 
@@ -54,6 +55,7 @@ TestCase {
             displayName: "irc.libera.chat"
             stored: true
             selected: true
+            iconColor: 1
         }
     }
 
@@ -3679,6 +3681,15 @@ TestCase {
         compare(item("conversation-#omarchy").current, true);
         compare(item("conversation-oftc-#omarchy").current, false);
         saveScreenshot("two-networks");
+    }
+
+    function test_mockNetworkIconsUseDistinctPaletteColors() {
+        var omarchy = item("networkIcon");
+        var oftc = item("networkIcon-mock-oftc");
+        compare(omarchy.color, Qt.color(appWindow.paletteColor(1)));
+        compare(oftc.color, Qt.color(appWindow.paletteColor(2)));
+        verify(omarchy.color.toString() !== oftc.color.toString());
+        saveScreenshot("network-icon-colors");
     }
 
     function test_duplicateOmarchyHighlightsIndependently() {
