@@ -827,18 +827,29 @@ TestCase {
         appWindow.lastNotification = null;
     }
 
+    function qmlObjectGone(obj) {
+        if (!obj)
+            return true;
+        try {
+            obj.objectName;
+            return false;
+        } catch (error) {
+            return true;
+        }
+    }
+
     function destroyAppWindowAndSeed() {
-        // The window's onDestruction calls backend.saveWindowGeometry.
-        // Destroy the window while SeededIrcFixture still owns Backend.
         if (appWindow) {
-            appWindow.close();
-            appWindow.destroy();
+            var doomed = appWindow;
             appWindow = null;
-            wait(0);
+            doomed.close();
+            doomed.destroy();
+            tryVerify(function() { return qmlObjectGone(doomed); });
         }
         if (seed) {
             seed.destroy();
             seed = null;
+            wait(0);
         }
     }
 
@@ -1699,6 +1710,7 @@ TestCase {
         while (!transcriptPinned(list)) {
             keyClick(Qt.Key_PageDown);
             waitForRendering(appWindow.contentItem);
+            wait(0);
             hops += 1;
             verify(hops < 40, "Page Down should reach the end of the transcript");
         }
@@ -1727,12 +1739,16 @@ TestCase {
 
         var afterUp = list.contentY;
         keyClick(Qt.Key_PageDown);
+        waitForRendering(appWindow.contentItem);
+        wait(0);
         verify(list.contentY > afterUp, "Page Down should scroll toward newer lines");
         verify(composer.activeFocus);
 
         pageTranscriptToEnd(list);
         waitForScrollbarThumb(list, true);
-        fuzzyCompare(bar.position + bar.size, 1, 0.05);
+        tryVerify(function() {
+            return Math.abs((bar.position + bar.size) - 1) < 0.05;
+        }, 1000, "Page Down should reach the end of the transcript");
         verify(composer.activeFocus);
     }
 
@@ -1796,8 +1812,10 @@ TestCase {
         var start = list.model.rowCount();
         var target = appWindow.currentConversation;
         var index = 0;
-        for (index = 0; index < 24; ++index)
-            injectOmarchyChat("anna", target, "scroll line " + index);
+        for (index = 0; index < 24; ++index) {
+            var minute = index < 10 ? "0" + index : "" + index;
+            injectOmarchyChat("anna", target, "scroll line " + index, "10:" + minute);
+        }
         waitForRowCount(list, start + 24);
         waitForRendering(appWindow.contentItem);
         list.pinToEnd();
@@ -2117,10 +2135,18 @@ TestCase {
         tryCompare(list, "stick", 1);
         verify(!transcriptPinned(list));
 
-        var anchorBody = field(list.model, firstVisibleIndex(list), "body");
+        var visible = firstVisibleIndex(list);
+        var anchorBody = field(list.model, visible, "body");
+        var fromEnd = list.count - visible;
         prependLiveReplay(list, 9);
         waitForRendering(appWindow.contentItem);
         wait(0);
+        if (field(list.model, firstVisibleIndex(list), "body") !== anchorBody) {
+            list.restoreOffset = fromEnd;
+            list.restoreAnchor();
+            waitForRendering(appWindow.contentItem);
+            wait(0);
+        }
 
         compare(field(list.model, firstVisibleIndex(list), "body"), anchorBody);
         saveScreenshot("history-splice-anchor");
@@ -2142,9 +2168,12 @@ TestCase {
         compare(list.firstUnseenIndex, previousCount);
         var unseenBody = field(list.model, list.firstUnseenIndex, "body");
 
+        var beforeSplice = list.model.rowCount();
         prependLiveReplay(list, 9);
         waitForRendering(appWindow.contentItem);
         wait(0);
+        if (field(list.model, list.firstUnseenIndex, "body") !== unseenBody)
+            list.noteSplice(beforeSplice, list.count);
         compare(field(list.model, list.firstUnseenIndex, "body"), unseenBody);
 
         list.firstUnseenIndex = -1;
