@@ -59,6 +59,7 @@ QString stateText(IrcSession::State state)
     case IrcSession::State::Idle:
         return QStringLiteral("Offline");
     case IrcSession::State::Connecting:
+    case IrcSession::State::StsUpgrading:
     case IrcSession::State::CapLs:
     case IrcSession::State::CapReq:
     case IrcSession::State::Sasl:
