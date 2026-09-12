@@ -235,7 +235,8 @@ private:
         Digit,
     };
 
-    IrcSessionConfig m_config;
+    const IrcSessionConfig m_config;
+    QStringList m_autojoinChannels;
     QString m_nick;
     IrcTransport *m_transport;
     IrcReconnectTimer *m_reconnectTimer;

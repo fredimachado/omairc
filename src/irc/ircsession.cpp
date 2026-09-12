@@ -247,6 +247,7 @@ IrcSession::IrcSession(const IrcSessionConfig &config,
                        IrcReachabilitySource *reachability)
     : QObject(parent)
     , m_config(config)
+    , m_autojoinChannels(config.autojoinChannels)
     , m_nick(config.nick)
     , m_transport(transport)
     , m_reconnectTimer(reconnectTimer)
@@ -1101,7 +1102,7 @@ void IrcSession::recordAutojoin(const QString &channel, bool joined)
     if (channel.isEmpty())
         return;
 
-    auto &channels = m_config.autojoinChannels;
+    auto &channels = m_autojoinChannels;
     const auto found = std::find_if(channels.begin(), channels.end(),
                                     [&](const QString &existing) {
         return m_caseMapping.equals(utf8(existing), utf8(channel));
@@ -1456,7 +1457,7 @@ void IrcSession::handleWelcome(const IrcMessage &message)
         sendPrivmsg(QStringLiteral("NickServ"),
                     QStringLiteral("IDENTIFY ") + m_config.nickServPassword);
     }
-    for (const QString &channel : m_config.autojoinChannels) {
+    for (const QString &channel : m_autojoinChannels) {
         const std::optional<IrcJoinTarget> target = IrcJoinTarget::make(channel);
         if (!target || !join(*target)) {
             emit errorOccurred(m_config.networkId,
