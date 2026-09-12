@@ -498,7 +498,10 @@ void markRead(IrcController &controller, const SeedNetwork &network)
 }
 }
 
-SeededIrcFixture::SeededIrcFixture() = default;
+SeededIrcFixture::SeededIrcFixture(QObject *parent)
+    : QObject(parent)
+{
+}
 
 SeededIrcFixture::~SeededIrcFixture()
 {
@@ -558,9 +561,40 @@ QString SeededIrcFixture::lastError() const
     return m_error;
 }
 
+QObject *SeededIrcFixture::backendObject() const
+{
+    return m_backend.get();
+}
+
+QObject *SeededIrcFixture::irc() const
+{
+    return m_controller.get();
+}
+
+QObject *SeededIrcFixture::slashObject() const
+{
+    return m_slash.get();
+}
+
+QObject *SeededIrcFixture::omarchyTransportObject() const
+{
+    return m_omarchyTransport;
+}
+
+QObject *SeededIrcFixture::oftcTransportObject() const
+{
+    return m_oftcTransport;
+}
+
+QObject *SeededIrcFixture::windowObject() const
+{
+    return m_window;
+}
+
 bool SeededIrcFixture::fail(const QString &why)
 {
     m_error = why;
+    emit lastErrorChanged();
     return false;
 }
 
@@ -633,6 +667,7 @@ bool SeededIrcFixture::open()
     markRead(*m_controller, oftc);
     m_controller->selectConversation(omarchy.networkId, QStringLiteral("#omarchy"));
     m_omarchyTransport->injectBytes(typingBytes(omarchy));
+    emit openedChanged();
     return true;
 }
 
@@ -664,5 +699,6 @@ bool SeededIrcFixture::createWindow()
     m_window->setHeight(760);
     m_controller->selectConversation(omarchyNetworkId(), QStringLiteral("#omarchy"));
     QCoreApplication::processEvents();
+    emit windowChanged();
     return true;
 }

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <QObject>
 #include <QPointer>
 #include <QString>
 
@@ -9,22 +10,31 @@ class Backend;
 class FakeIrcTransport;
 class IrcController;
 class IrcSlashSession;
-class QObject;
 class QQmlApplicationEngine;
 class QQuickWindow;
 class QTemporaryDir;
 
-class SeededIrcFixture
+class SeededIrcFixture : public QObject
 {
+    Q_OBJECT
+    Q_PROPERTY(QObject *backend READ backendObject NOTIFY openedChanged)
+    Q_PROPERTY(QObject *irc READ irc NOTIFY openedChanged)
+    Q_PROPERTY(QObject *controller READ irc NOTIFY openedChanged)
+    Q_PROPERTY(QObject *slash READ slashObject NOTIFY openedChanged)
+    Q_PROPERTY(QObject *omarchyTransport READ omarchyTransportObject NOTIFY openedChanged)
+    Q_PROPERTY(QObject *oftcTransport READ oftcTransportObject NOTIFY openedChanged)
+    Q_PROPERTY(QObject *window READ windowObject NOTIFY windowChanged)
+    Q_PROPERTY(QString lastError READ lastError NOTIFY lastErrorChanged)
+
 public:
-    SeededIrcFixture();
-    ~SeededIrcFixture();
+    explicit SeededIrcFixture(QObject *parent = nullptr);
+    ~SeededIrcFixture() override;
 
     SeededIrcFixture(const SeededIrcFixture &) = delete;
     SeededIrcFixture &operator=(const SeededIrcFixture &) = delete;
 
-    bool open();
-    bool createWindow();
+    Q_INVOKABLE bool open();
+    Q_INVOKABLE bool createWindow();
 
     Backend &backend();
     IrcSlashSession &slash();
@@ -34,8 +44,20 @@ public:
     QQuickWindow *window() const;
     QString lastError() const;
 
+    QObject *backendObject() const;
+    QObject *irc() const;
+    QObject *slashObject() const;
+    QObject *omarchyTransportObject() const;
+    QObject *oftcTransportObject() const;
+    QObject *windowObject() const;
+
     static QString omarchyNetworkId();
     static QString oftcNetworkId();
+
+signals:
+    void openedChanged();
+    void windowChanged();
+    void lastErrorChanged();
 
 private:
     bool fail(const QString &why);
