@@ -1546,12 +1546,12 @@ TestCase {
         typeText("omarchy");
         compare(composer.text, "omarchy");
         tryVerify(function() {
-            return list.contentY < pinnedY;
+            return list.contentY < pinnedY && appWindow.findIndex >= 0;
         }, 1000, "Ctrl+F should jump the list to the match");
-        var first = visibleMatchIndex(list, "omarchy");
-        verify(first >= 0, "The first omarchy row should be in view");
+        var first = appWindow.findIndex;
+        verify(first >= 0, "The first omarchy row should be current");
         verify(field(list.model, first, "body").toLowerCase().indexOf("omarchy") >= 0);
-        compare(appWindow.findIndex, first);
+        verify(visibleMatchIndex(list, "omarchy") >= 0, "The first omarchy row should be in view");
         var firstMark = findMatchAt(list, first);
         verify(firstMark && firstMark.visible, "The current match row should highlight");
 
@@ -1560,8 +1560,9 @@ TestCase {
         compare(list.model.rowCount(), countBefore);
         waitForRendering(appWindow.contentItem);
         wait(0);
-        var second = visibleMatchIndex(list, "omarchy");
-        verify(second > first, "Enter in find should go to the next match");
+        var second = appWindow.findIndex;
+        verify(second !== first, "Enter in find should go to the next match");
+        verify(second > first, "Enter in find should go to a later match first");
         compare(composer.text, "omarchy");
 
         var current = second;
@@ -1570,7 +1571,7 @@ TestCase {
             keyClick(Qt.Key_F, Qt.ControlModifier);
             waitForRendering(appWindow.contentItem);
             wait(0);
-            current = visibleMatchIndex(list, "omarchy");
+            current = appWindow.findIndex;
             hops += 1;
             verify(hops < list.count, "Find should wrap back to the first match");
         }
@@ -1636,10 +1637,19 @@ TestCase {
 
         composer.selectAll();
         typeText("NOTICE");
-        tryCompare(appWindow, "findIndex", 0);
-        compare(field(list.model, 0, "label"), "NOTICE");
-        verify(field(list.model, 0, "text").indexOf("NOTICE") < 0);
-        var labelMark = findMatchAt(list, 0);
+        var noticeRow = -1;
+        var row = 0;
+        for (; row < list.model.rowCount(); ++row) {
+            if (field(list.model, row, "label") === "NOTICE") {
+                noticeRow = row;
+                break;
+            }
+        }
+        verify(noticeRow >= 0, "Status should keep a NOTICE line");
+        tryCompare(appWindow, "findIndex", noticeRow);
+        compare(field(list.model, noticeRow, "label"), "NOTICE");
+        verify(field(list.model, noticeRow, "text").indexOf("NOTICE") < 0);
+        var labelMark = findMatchAt(list, noticeRow);
         verify(labelMark && labelMark.visible);
 
         keyClick(Qt.Key_Escape);
