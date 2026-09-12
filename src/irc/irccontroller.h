@@ -168,6 +168,13 @@ private:
                                     IrcComposerSurface surface);
     IrcCommandOutcome dispatchIgnore(const IrcCommand& command,
                                      IrcComposerSurface surface);
+    IrcCommandOutcome dispatchChannelModeWrapper(const IrcCommand& command,
+                                                IrcComposerSurface surface);
+    IrcCommandOutcome dispatchServiceMsg(const IrcCommand& command,
+                                         IrcComposerSurface surface);
+    IrcCommandOutcome dispatchRaw(const IrcCommand& command,
+                                  IrcComposerSurface surface);
+    IrcCommandOutcome dispatchHelp(IrcComposerSurface surface);
     std::optional<IrcWhoisWatchKey> whoisWatchKey(const QString& networkId,
                                                   const QString& nick) const;
     bool sendWhois(IrcSession& session,

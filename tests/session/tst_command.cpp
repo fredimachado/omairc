@@ -104,6 +104,7 @@ private slots:
     void parseMode();
     void parseKick();
     void parseInvite();
+    void parseWrappersAndHelp();
     void parseChannelModeRequest();
     void parseJoinTargets();
     void catalogLookupAndScope();
@@ -114,6 +115,7 @@ private slots:
     void awayAndBackWriteAwayFrames();
     void whoisSendsAndDefaults();
     void modeSendsAndRefuses();
+    void wrappersSendAndHelp();
     void slashProjectClosed();
     void slashProjectOpen();
     void slashSessionKeys();
@@ -438,6 +440,68 @@ void CommandTest::parseInvite()
     QVERIFY(escaped.isLiveMessage());
 }
 
+void CommandTest::parseWrappersAndHelp()
+{
+    const IrcCommand op = IrcCommand::parse(QStringLiteral("/op alice"));
+    QCOMPARE(op.verb, IrcCommand::Verb::Op);
+    QCOMPARE(op.argument, QStringLiteral("alice"));
+    QCOMPARE(op.name, QStringLiteral("/op"));
+    QVERIFY(!op.isLiveMessage());
+    QVERIFY(op.allowedOn(IrcComposerSurface::Conversation));
+    QVERIFY(!op.allowedOn(IrcComposerSurface::Status));
+
+    const IrcCommand deop = IrcCommand::parse(QStringLiteral("/DEOP alice"));
+    QCOMPARE(deop.verb, IrcCommand::Verb::Deop);
+    QCOMPARE(deop.argument, QStringLiteral("alice"));
+    QCOMPARE(deop.name, QStringLiteral("/DEOP"));
+
+    const IrcCommand voice = IrcCommand::parse(QStringLiteral("/voice bob"));
+    QCOMPARE(voice.verb, IrcCommand::Verb::Voice);
+    QCOMPARE(voice.argument, QStringLiteral("bob"));
+
+    const IrcCommand devoice = IrcCommand::parse(QStringLiteral("/devoice bob"));
+    QCOMPARE(devoice.verb, IrcCommand::Verb::Devoice);
+    QCOMPARE(devoice.argument, QStringLiteral("bob"));
+
+    const IrcCommand ban = IrcCommand::parse(QStringLiteral("/ban eve"));
+    QCOMPARE(ban.verb, IrcCommand::Verb::Ban);
+    QCOMPARE(ban.argument, QStringLiteral("eve"));
+    QVERIFY(ban.allowedOn(IrcComposerSurface::Conversation));
+    QVERIFY(!ban.allowedOn(IrcComposerSurface::Status));
+
+    const IrcCommand ns = IrcCommand::parse(QStringLiteral("/ns identify hunter2"));
+    QCOMPARE(ns.verb, IrcCommand::Verb::Ns);
+    QCOMPARE(ns.argument, QStringLiteral("identify hunter2"));
+    QVERIFY(ns.allowedOn(IrcComposerSurface::Conversation));
+    QVERIFY(ns.allowedOn(IrcComposerSurface::Status));
+
+    const IrcCommand cs = IrcCommand::parse(QStringLiteral("/CS help"));
+    QCOMPARE(cs.verb, IrcCommand::Verb::Cs);
+    QCOMPARE(cs.argument, QStringLiteral("help"));
+    QCOMPARE(cs.name, QStringLiteral("/CS"));
+
+    const IrcCommand raw = IrcCommand::parse(QStringLiteral("/raw PING :x"));
+    QCOMPARE(raw.verb, IrcCommand::Verb::Raw);
+    QCOMPARE(raw.argument, QStringLiteral("PING :x"));
+    QVERIFY(raw.allowedOn(IrcComposerSurface::Conversation));
+    QVERIFY(raw.allowedOn(IrcComposerSurface::Status));
+
+    const IrcCommand quote = IrcCommand::parse(QStringLiteral("/quote PING :x"));
+    QCOMPARE(quote.verb, IrcCommand::Verb::Raw);
+    QCOMPARE(quote.argument, QStringLiteral("PING :x"));
+    QCOMPARE(quote.name, QStringLiteral("/quote"));
+
+    const IrcCommand help = IrcCommand::parse(QStringLiteral("/help"));
+    QCOMPARE(help.verb, IrcCommand::Verb::Help);
+    QVERIFY(help.argument.isEmpty());
+    QVERIFY(help.allowedOn(IrcComposerSurface::Conversation));
+    QVERIFY(help.allowedOn(IrcComposerSurface::Status));
+
+    const IrcCommand escapedOp = IrcCommand::parse(QStringLiteral("//op alice"));
+    QCOMPARE(escapedOp.verb, IrcCommand::Verb::Say);
+    QCOMPARE(escapedOp.argument, QStringLiteral("/op alice"));
+}
+
 void CommandTest::parseChannelModeRequest()
 {
     const ParsedChannelMode query = parsedChannelMode(QStringLiteral("#omarchy"));
@@ -576,7 +640,7 @@ void CommandTest::catalogLookupAndScope()
     QVERIFY(!IrcVerbTable::find(IrcCommand::Verb::Empty));
     QVERIFY(!IrcVerbTable::find(IrcCommand::Verb::Unknown));
 
-    QCOMPARE(IrcVerbTable::all().size(), 20);
+    QCOMPARE(IrcVerbTable::all().size(), 29);
     for (const IrcVerbSpec& row : IrcVerbTable::all())
         QVERIFY(row.name != QLatin1String("say"));
 
@@ -700,18 +764,62 @@ void CommandTest::catalogLookupAndScope()
     QCOMPARE(ignored->scope, IrcVerbScope::Either);
     QVERIFY(ignored->wrongScopeText.isEmpty());
 
+    const IrcVerbSpec *op = IrcVerbTable::lookup(QStringLiteral("op"));
+    QVERIFY(op);
+    QCOMPARE(op->verb, IrcCommand::Verb::Op);
+    QCOMPARE(op->usage, QStringLiteral("/op <nick>"));
+    QCOMPARE(op->scope, IrcVerbScope::Conversation);
+    QCOMPARE(op->wrongScopeText, QStringLiteral("Op applies to channels"));
+
+    const IrcVerbSpec *ban = IrcVerbTable::lookup(QStringLiteral("ban"));
+    QVERIFY(ban);
+    QCOMPARE(ban->verb, IrcCommand::Verb::Ban);
+    QCOMPARE(ban->usage, QStringLiteral("/ban <mask>"));
+    QCOMPARE(ban->scope, IrcVerbScope::Conversation);
+    QCOMPARE(ban->wrongScopeText, QStringLiteral("Ban applies to channels"));
+
+    const IrcVerbSpec *ns = IrcVerbTable::lookup(QStringLiteral("ns"));
+    QVERIFY(ns);
+    QCOMPARE(ns->verb, IrcCommand::Verb::Ns);
+    QCOMPARE(ns->usage, QStringLiteral("/ns <text>"));
+    QCOMPARE(ns->scope, IrcVerbScope::Either);
+
+    const IrcVerbSpec *cs = IrcVerbTable::lookup(QStringLiteral("cs"));
+    QVERIFY(cs);
+    QCOMPARE(cs->verb, IrcCommand::Verb::Cs);
+    QCOMPARE(cs->scope, IrcVerbScope::Either);
+
+    const IrcVerbSpec *raw = IrcVerbTable::lookup(QStringLiteral("quote"));
+    QVERIFY(raw);
+    QCOMPARE(raw->verb, IrcCommand::Verb::Raw);
+    QCOMPARE(raw->name, QStringLiteral("raw"));
+    QCOMPARE(raw->usage, QStringLiteral("/raw <line>"));
+    QCOMPARE(raw->scope, IrcVerbScope::Either);
+    QVERIFY(raw->aliases.contains(QStringLiteral("quote")));
+
+    const IrcVerbSpec *help = IrcVerbTable::lookup(QStringLiteral("help"));
+    QVERIFY(help);
+    QCOMPARE(help->verb, IrcCommand::Verb::Help);
+    QCOMPARE(help->usage, QStringLiteral("/help"));
+    QCOMPARE(help->scope, IrcVerbScope::Either);
+
     const QVector<IrcVerbSpec> status = IrcVerbTable::visibleOn(IrcComposerSurface::Status);
-    QCOMPARE(status.size(), 17);
+    QCOMPARE(status.size(), 21);
     for (const IrcVerbSpec& row : status) {
         QVERIFY(row.allowedOn(IrcComposerSurface::Status));
         QVERIFY(row.verb != IrcCommand::Verb::Action);
         QVERIFY(row.verb != IrcCommand::Verb::Close);
         QVERIFY(row.verb != IrcCommand::Verb::Topic);
+        QVERIFY(row.verb != IrcCommand::Verb::Op);
+        QVERIFY(row.verb != IrcCommand::Verb::Deop);
+        QVERIFY(row.verb != IrcCommand::Verb::Voice);
+        QVERIFY(row.verb != IrcCommand::Verb::Devoice);
+        QVERIFY(row.verb != IrcCommand::Verb::Ban);
     }
 
     const QVector<IrcVerbSpec> conversation =
         IrcVerbTable::visibleOn(IrcComposerSurface::Conversation);
-    QCOMPARE(conversation.size(), 20);
+    QCOMPARE(conversation.size(), 29);
     bool sawMe = false;
     bool sawClose = false;
     bool sawQuery = false;
@@ -727,6 +835,10 @@ void CommandTest::catalogLookupAndScope()
     bool sawIgnore = false;
     bool sawUnignore = false;
     bool sawIgnored = false;
+    bool sawOp = false;
+    bool sawNs = false;
+    bool sawRaw = false;
+    bool sawHelp = false;
     for (const IrcVerbSpec& row : conversation) {
         if (row.name == QLatin1String("me"))
             sawMe = true;
@@ -758,6 +870,14 @@ void CommandTest::catalogLookupAndScope()
             sawUnignore = true;
         if (row.name == QLatin1String("ignored"))
             sawIgnored = true;
+        if (row.name == QLatin1String("op"))
+            sawOp = true;
+        if (row.name == QLatin1String("ns"))
+            sawNs = true;
+        if (row.name == QLatin1String("raw"))
+            sawRaw = true;
+        if (row.name == QLatin1String("help"))
+            sawHelp = true;
     }
     QVERIFY(sawMe);
     QVERIFY(sawClose);
@@ -774,6 +894,10 @@ void CommandTest::catalogLookupAndScope()
     QVERIFY(sawIgnore);
     QVERIFY(sawUnignore);
     QVERIFY(sawIgnored);
+    QVERIFY(sawOp);
+    QVERIFY(sawNs);
+    QVERIFY(sawRaw);
+    QVERIFY(sawHelp);
 
     const IrcCommand say = IrcCommand::parse(QStringLiteral("hello"));
     QVERIFY(say.allowedOn(IrcComposerSurface::Conversation));
@@ -807,6 +931,9 @@ void CommandTest::closeWrongScopeUsesCatalogSentence()
     const IrcCommand topic = IrcCommand::parse(QStringLiteral("/topic hello"));
     QCOMPARE(ircCommandOutcomeText(IrcCommandOutcome::WrongScope, topic),
              QStringLiteral("Topic applies to channels"));
+    const IrcCommand op = IrcCommand::parse(QStringLiteral("/op alice"));
+    QCOMPARE(ircCommandOutcomeText(IrcCommandOutcome::WrongScope, op),
+             QStringLiteral("Op applies to channels"));
     const IrcCommand whois = IrcCommand::parse(QStringLiteral("/whois"));
     QCOMPARE(ircCommandOutcomeText(IrcCommandOutcome::WrongScope, whois),
              QStringLiteral("Name a nick"));
@@ -1196,6 +1323,133 @@ void CommandTest::modeSendsAndRefuses()
                            QByteArrayLiteral("MODE")));
 }
 
+void CommandTest::wrappersSendAndHelp()
+{
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    IrcSession *session = controller.addSession(config(), transport);
+    QVERIFY(session);
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    welcome(transport);
+    QCOMPARE(session->state(), IrcSession::State::Registered);
+    transport->injectBytes(QByteArrayLiteral(":omairc!u@h JOIN :#omarchy\r\n"));
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+
+    QVERIFY(controller.sendMessage(QStringLiteral("/op alice")));
+    QCOMPARE(transport->writtenFrames().last(),
+             QByteArrayLiteral("MODE #omarchy +o alice\r\n"));
+
+    QVERIFY(controller.sendMessage(QStringLiteral("/deop alice")));
+    QCOMPARE(transport->writtenFrames().last(),
+             QByteArrayLiteral("MODE #omarchy -o alice\r\n"));
+
+    QVERIFY(controller.sendMessage(QStringLiteral("/voice bob")));
+    QCOMPARE(transport->writtenFrames().last(),
+             QByteArrayLiteral("MODE #omarchy +v bob\r\n"));
+
+    QVERIFY(controller.sendMessage(QStringLiteral("/devoice bob")));
+    QCOMPARE(transport->writtenFrames().last(),
+             QByteArrayLiteral("MODE #omarchy -v bob\r\n"));
+
+    QVERIFY(controller.sendMessage(QStringLiteral("/ban eve")));
+    QCOMPARE(transport->writtenFrames().last(),
+             QByteArrayLiteral("MODE #omarchy +b eve!*@*\r\n"));
+
+    QVERIFY(controller.sendMessage(QStringLiteral("/ban *!*@spam.host")));
+    QCOMPARE(transport->writtenFrames().last(),
+             QByteArrayLiteral("MODE #omarchy +b *!*@spam.host\r\n"));
+
+    const int beforeEmptyOp = transport->writtenFrames().size();
+    QVERIFY(!controller.sendMessage(QStringLiteral("/op")));
+    QCOMPARE(controller.lastError(), QStringLiteral("Command was refused"));
+    QVERIFY(!controller.sendMessage(QStringLiteral("/op alice extra")));
+    QCOMPARE(transport->writtenFrames().size(), beforeEmptyOp);
+    QVERIFY(!framesContain(transport->writtenFrames().mid(beforeEmptyOp),
+                           QByteArrayLiteral("MODE")));
+
+    QVERIFY(controller.sendMessage(QStringLiteral("/ns status")));
+    QCOMPARE(transport->writtenFrames().last(),
+             QByteArrayLiteral("PRIVMSG NickServ :status\r\n"));
+    QCOMPARE(controller.selectedTarget(), QStringLiteral("#omarchy"));
+
+    QVERIFY(controller.sendMessage(QStringLiteral("/cs info #omarchy")));
+    QCOMPARE(transport->writtenFrames().last(),
+             QByteArrayLiteral("PRIVMSG ChanServ :info #omarchy\r\n"));
+
+    QVERIFY(controller.sendMessage(QStringLiteral("/raw PING :x")));
+    QCOMPARE(transport->writtenFrames().last(),
+             QByteArrayLiteral("PING :x\r\n"));
+
+    QVERIFY(controller.sendMessage(QStringLiteral("/quote PING :y")));
+    QCOMPARE(transport->writtenFrames().last(),
+             QByteArrayLiteral("PING :y\r\n"));
+
+    const int beforeBadRaw = transport->writtenFrames().size();
+    QVERIFY(!controller.sendMessage(QStringLiteral("/raw")));
+    QCOMPARE(controller.lastError(), QStringLiteral("Command was refused"));
+    QVERIFY(!controller.sendMessage(QStringLiteral("/raw PING :x\nQUIT")));
+    QCOMPARE(controller.lastError(), QStringLiteral("Command was refused"));
+    QVERIFY(!controller.sendMessage(QStringLiteral("/raw ")
+                                    + QString(511, QLatin1Char('A'))));
+    QCOMPARE(transport->writtenFrames().size(), beforeBadRaw);
+
+    IrcStatusConsole *console = controller.console();
+    QVERIFY(controller.sendMessage(QStringLiteral("/help")));
+    QVERIFY(logContains(console->lines(), QStringLiteral("/op")));
+    QVERIFY(logContains(console->lines(), QStringLiteral("/invite")));
+    QVERIFY(logContains(console->lines(), QStringLiteral("/ns")));
+    QVERIFY(logContains(console->lines(), QStringLiteral("/cs")));
+    QVERIFY(logContains(console->lines(), QStringLiteral("/raw")));
+    QVERIFY(logContains(console->lines(), QStringLiteral("/help")));
+    QVERIFY(logContains(console->lines(), QStringLiteral("/ban")));
+
+    QVERIFY(console->submit(QStringLiteral("/help")));
+    QVERIFY(logContains(console->lines(), QStringLiteral("Commands:")));
+
+    QVERIFY(controller.sendMessage(QStringLiteral("/raw PASS :x")));
+    QCOMPARE(transport->writtenFrames().last(),
+             QByteArrayLiteral("PASS :x\r\n"));
+    QVERIFY(logContains(console->lines(), QStringLiteral("PASS ***")));
+    QVERIFY(!logContains(console->lines(), QStringLiteral("PASS :x")));
+
+    QVERIFY(controller.sendMessage(QStringLiteral("/raw AUTHENTICATE PLAIN")));
+    QCOMPARE(transport->writtenFrames().last(),
+             QByteArrayLiteral("AUTHENTICATE PLAIN\r\n"));
+    QVERIFY(!logContains(console->lines(), QStringLiteral("AUTHENTICATE")));
+
+    QVERIFY(controller.sendMessage(QStringLiteral("/raw OPER admin raw-oper-secret")));
+    QCOMPARE(transport->writtenFrames().last(),
+             QByteArrayLiteral("OPER admin raw-oper-secret\r\n"));
+    QVERIFY(!logContains(console->lines(), QStringLiteral("raw-oper-secret")));
+    QVERIFY(!logContains(console->lines(), QStringLiteral("OPER admin")));
+
+    QVERIFY(controller.sendMessage(QStringLiteral("/ns identify hunter2")));
+    QCOMPARE(transport->writtenFrames().last(),
+             QByteArrayLiteral("PRIVMSG NickServ :identify hunter2\r\n"));
+    QVERIFY(!logContains(console->lines(), QStringLiteral("hunter2")));
+
+    const int beforeStatusOp = transport->writtenFrames().size();
+    QVERIFY(console->submit(QStringLiteral("/op alice")));
+    QVERIFY(logContains(console->lines(), QStringLiteral("Op applies to channels")));
+    QCOMPARE(transport->writtenFrames().size(), beforeStatusOp);
+
+    transport->injectBytes(QByteArrayLiteral(":lena!u@h PRIVMSG omairc :hi\r\n"));
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("lena"));
+    const int beforeDmOp = transport->writtenFrames().size();
+    QVERIFY(!controller.sendMessage(QStringLiteral("/op alice")));
+    QCOMPARE(controller.lastError(), QStringLiteral("Op applies to channels"));
+    QVERIFY(!controller.sendMessage(QStringLiteral("/ban eve")));
+    QCOMPARE(controller.lastError(), QStringLiteral("Ban applies to channels"));
+    QCOMPARE(transport->writtenFrames().size(), beforeDmOp);
+
+    QVERIFY(controller.sendMessage(QStringLiteral("/ns help")));
+    QCOMPARE(transport->writtenFrames().last(),
+             QByteArrayLiteral("PRIVMSG NickServ :help\r\n"));
+    QVERIFY(console->submit(QStringLiteral("/cs help")));
+    QCOMPARE(transport->writtenFrames().last(),
+             QByteArrayLiteral("PRIVMSG ChanServ :help\r\n"));
+}
+
 void CommandTest::slashProjectClosed()
 {
     const QStringList closedInputs = {
@@ -1275,6 +1529,16 @@ void CommandTest::slashProjectOpen()
     QVERIFY(invite.isOpen());
     QVERIFY(invite.containsLabel(QStringLiteral("/invite")));
     QCOMPARE(invite.hits().first().label, QStringLiteral("/invite"));
+
+    const auto opConversation = IrcSlashComplete::project(
+        QStringLiteral("/o"), IrcComposerSurface::Conversation);
+    QVERIFY(opConversation.isOpen());
+    QVERIFY(opConversation.containsLabel(QStringLiteral("/op")));
+    QCOMPARE(opConversation.hits().first().label, QStringLiteral("/op"));
+    const auto opStatus = IrcSlashComplete::project(
+        QStringLiteral("/o"), IrcComposerSurface::Status);
+    QVERIFY(!opStatus.containsLabel(QStringLiteral("/op")));
+    QVERIFY(!opStatus.isOpen());
 }
 
 void CommandTest::slashSessionKeys()

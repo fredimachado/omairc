@@ -574,6 +574,11 @@ bool IrcSession::quit(const QString& reason)
     return true;
 }
 
+bool IrcSession::sendRaw(const QString& line)
+{
+    return sendCommand(line);
+}
+
 bool IrcSession::whois(const QString& nick)
 {
     const QString trimmed = nick.trimmed();

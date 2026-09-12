@@ -298,6 +298,7 @@ private slots:
     void routableNicksOpenDirectsAndPseudoClientsDoNot();
     void conversationCreateMatrix();
     void statusMsgNickservIdentifyDoesNotOpenDirect();
+    void nsIdentifyDoesNotOpenDirectOrLeakSecret();
     void automaticIdentifyDoesNotOpenNickServDirect();
     void mentionArrivedOnSelectedBuffer();
     void mentionArrivedOnDirectMessageWithoutNick();
@@ -3054,6 +3055,54 @@ void ControllerTest::statusMsgNickservIdentifyDoesNotOpenDirect()
     QVERIFY(!selectedBodiesContain(messages, QStringLiteral("identify my_nick")));
     QVERIFY(logContains(console->lines(), QStringLiteral("IDENTIFY ***")));
     QVERIFY(!logContains(console->lines(), QStringLiteral("s3cret")));
+}
+
+void ControllerTest::nsIdentifyDoesNotOpenDirectOrLeakSecret()
+{
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+                                                transport);
+    QVERIFY(session);
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    transport->completeConnect();
+    transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :echo-message\r\n"
+                          ":server CAP omairc ACK :echo-message\r\n"
+                          ":server 001 omairc :Welcome\r\n"
+                          ":omairc!u@h JOIN :#omarchy\r\n"));
+    QVERIFY(session->capabilities().contains(IrcCapability::EchoMessage));
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+
+    IrcStatusConsole *console = controller.console();
+    console->setOpen(true);
+    QVERIFY(controller.sendMessage(QStringLiteral("/ns identify hunter2")));
+    QCOMPARE(transport->writtenFrames().last(),
+             QByteArrayLiteral("PRIVMSG NickServ :identify hunter2\r\n"));
+    QCOMPARE(controller.selectedTarget(), QStringLiteral("#omarchy"));
+
+    transport->injectBytes(
+        QByteArrayLiteral(":NickServ!NickServ@services PRIVMSG omairc "
+                          ":You are now identified.\r\n"
+                          ":omairc!u@h PRIVMSG NickServ :identify hunter2\r\n"));
+
+    QVERIFY(console->submit(QStringLiteral("/cs identify hunter2")));
+    QCOMPARE(transport->writtenFrames().last(),
+             QByteArrayLiteral("PRIVMSG ChanServ :identify hunter2\r\n"));
+    transport->injectBytes(
+        QByteArrayLiteral(":omairc!u@h PRIVMSG ChanServ :identify hunter2\r\n"));
+
+    auto *conversations =
+        qobject_cast<QAbstractItemModel *>(controller.conversations());
+    QVERIFY(conversations);
+    QCOMPARE(rowForTarget(conversations, QStringLiteral("NickServ")), -1);
+    QCOMPARE(rowForTarget(conversations, QStringLiteral("ChanServ")), -1);
+    QCOMPARE(controller.selectedTarget(), QStringLiteral("#omarchy"));
+
+    auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
+    QVERIFY(!selectedBodiesContain(messages, QStringLiteral("hunter2")));
+    QVERIFY(logContains(console->lines(), QStringLiteral("IDENTIFY ***")));
+    QVERIFY(!logContains(console->lines(), QStringLiteral("hunter2")));
 }
 
 void ControllerTest::automaticIdentifyDoesNotOpenNickServDirect()

@@ -671,6 +671,22 @@ IrcCommandOutcome IrcController::dispatch(const IrcCommand& command,
     if (command.verb == IrcCommand::Verb::Mode)
         return dispatchMode(command, surface);
 
+    if (command.verb == IrcCommand::Verb::Op
+        || command.verb == IrcCommand::Verb::Deop
+        || command.verb == IrcCommand::Verb::Voice
+        || command.verb == IrcCommand::Verb::Devoice
+        || command.verb == IrcCommand::Verb::Ban) {
+        return dispatchChannelModeWrapper(command, surface);
+    }
+
+    if (command.verb == IrcCommand::Verb::Ns
+        || command.verb == IrcCommand::Verb::Cs) {
+        return dispatchServiceMsg(command, surface);
+    }
+
+    if (command.verb == IrcCommand::Verb::Raw)
+        return dispatchRaw(command, surface);
+
     if (command.verb == IrcCommand::Verb::Whois)
         return dispatchWhois(command, surface);
 
@@ -692,6 +708,9 @@ IrcCommandOutcome IrcController::dispatch(const IrcCommand& command,
         || command.verb == IrcCommand::Verb::Ignored) {
         return dispatchIgnore(command, surface);
     }
+
+    if (command.verb == IrcCommand::Verb::Help)
+        return dispatchHelp(surface);
 
     IrcSession *active = sessionFor(surface);
     if (!active) {
@@ -993,6 +1012,104 @@ IrcCommandOutcome IrcController::dispatchMode(const IrcCommand& command,
         return IrcCommandOutcome::NotConnected;
     return session->sendChannelMode(*request) ? IrcCommandOutcome::Sent
                                               : IrcCommandOutcome::Refused;
+}
+
+IrcCommandOutcome IrcController::dispatchChannelModeWrapper(
+    const IrcCommand& command, IrcComposerSurface surface)
+{
+    if (!m_selected || !isChannel())
+        return IrcCommandOutcome::WrongScope;
+    if (m_selected->networkId != queryNetworkId(surface))
+        return IrcCommandOutcome::Refused;
+
+    const QString token = firstToken(command.argument);
+    if (token.isEmpty() || !restAfterFirstToken(command.argument).isEmpty())
+        return IrcCommandOutcome::Refused;
+
+    QString modes;
+    switch (command.verb) {
+    case IrcCommand::Verb::Op:
+        modes = QStringLiteral("+o");
+        break;
+    case IrcCommand::Verb::Deop:
+        modes = QStringLiteral("-o");
+        break;
+    case IrcCommand::Verb::Voice:
+        modes = QStringLiteral("+v");
+        break;
+    case IrcCommand::Verb::Devoice:
+        modes = QStringLiteral("-v");
+        break;
+    case IrcCommand::Verb::Ban:
+        modes = QStringLiteral("+b");
+        break;
+    default:
+        return IrcCommandOutcome::Unsupported;
+    }
+
+    QString parameter = token;
+    if (command.verb == IrcCommand::Verb::Ban
+        && !token.contains(QLatin1Char('!'))
+        && !token.contains(QLatin1Char('@'))) {
+        parameter = token + QStringLiteral("!*@*");
+    }
+
+    IrcCommand mode;
+    mode.verb = IrcCommand::Verb::Mode;
+    mode.argument = QStringLiteral("%1 %2 %3")
+                        .arg(selectedTarget(), modes, parameter);
+    return dispatchMode(mode, surface);
+}
+
+IrcCommandOutcome IrcController::dispatchServiceMsg(const IrcCommand& command,
+                                                    IrcComposerSurface surface)
+{
+    const QString nick = command.verb == IrcCommand::Verb::Ns
+        ? QStringLiteral("NickServ")
+        : QStringLiteral("ChanServ");
+    IrcCommand msg = command;
+    msg.verb = IrcCommand::Verb::Msg;
+    msg.argument = command.argument.isEmpty()
+        ? nick
+        : nick + QLatin1Char(' ') + command.argument;
+    return dispatchQuietSend(msg, surface);
+}
+
+IrcCommandOutcome IrcController::dispatchRaw(const IrcCommand& command,
+                                             IrcComposerSurface surface)
+{
+    if (command.argument.isEmpty())
+        return IrcCommandOutcome::Refused;
+
+    const QString networkId = queryNetworkId(surface);
+    if (networkId.isEmpty()) {
+        if (surface == IrcComposerSurface::Conversation)
+            return IrcCommandOutcome::WrongScope;
+        return IrcCommandOutcome::Refused;
+    }
+
+    IrcSession *session = m_sessions.findSession(networkId);
+    if (!session || session->state() != IrcSession::State::Registered)
+        return IrcCommandOutcome::NotConnected;
+    return session->sendRaw(command.argument) ? IrcCommandOutcome::Sent
+                                              : IrcCommandOutcome::Refused;
+}
+
+IrcCommandOutcome IrcController::dispatchHelp(IrcComposerSurface surface)
+{
+    QString networkId = queryNetworkId(surface);
+    if (networkId.isEmpty())
+        networkId = m_console.networkId();
+    if (networkId.isEmpty())
+        return IrcCommandOutcome::Refused;
+
+    QStringList names;
+    for (const IrcVerbSpec& row : IrcVerbTable::all())
+        names.append(QLatin1Char('/') + row.name);
+    m_console.record(IrcStatusEntry::outcome(
+        networkId,
+        QStringLiteral("Commands: %1").arg(names.join(QStringLiteral(", ")))));
+    return IrcCommandOutcome::Sent;
 }
 
 IrcCommandOutcome IrcController::dispatchWhois(const IrcCommand& command,
