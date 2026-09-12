@@ -844,8 +844,6 @@ TestCase {
     }
 
     function destroyAppWindowAndSeed() {
-        // The window's onDestruction calls backend.saveWindowGeometry.
-        // Destroy the window while SeededIrcFixture still owns Backend.
         if (appWindow) {
             appWindow.close();
             appWindow.destroy();
@@ -889,8 +887,7 @@ TestCase {
         return networkDisplayName(networkId) + " Status";
     }
 
-    function findNamed(objectName) {
-        // TestCase.findChild does not see Repeater conversation rows with live names.
+    function findNamedIn(root, objectName) {
         var visible = null;
         var any = null;
         function walk(node) {
@@ -911,8 +908,12 @@ TestCase {
             if (node.contentItem)
                 walk(node.contentItem);
         }
-        walk(appWindow.contentItem);
+        walk(root.contentItem ? root.contentItem : root);
         return visible ? visible : any;
+    }
+
+    function findNamed(objectName) {
+        return findNamedIn(appWindow, objectName);
     }
 
     function namedItem(objectName) {
@@ -3362,15 +3363,25 @@ TestCase {
     }
 
     function liveDirectNames(window) {
-        var dms = findChild(window, "directConversationRepeater");
-        verify(dms !== null, "Live direct-message repeater should be named");
         var names = [];
-        var index = 0;
-        for (index = 0; index < dms.count; ++index) {
-            var directRow = dms.itemAt(index);
-            if (directRow && directRow.visible)
-                names.push(directRow.conversationName);
+        var seen = [];
+        function walk(node) {
+            if (!node || seen.indexOf(node) !== -1)
+                return;
+            seen.push(node);
+            if (node.direct === true && node.visible && node.height > 0
+                    && node.conversationName)
+                names.push(node.conversationName);
+            var kids = node.children;
+            if (kids) {
+                var index = 0;
+                for (; index < kids.length; ++index)
+                    walk(kids[index]);
+            }
+            if (node.contentItem)
+                walk(node.contentItem);
         }
+        walk(window.contentItem);
         return names;
     }
 
@@ -3407,18 +3418,7 @@ TestCase {
         waitForRendering(window.contentItem);
 
         compare(window.currentConversation, "#omarchy");
-        var channels = findChild(window, "channelConversationRepeater");
-        verify(channels !== null, "Live channel repeater should be named");
-
-        var channel = null;
-        var index = 0;
-        for (index = 0; index < channels.count; ++index) {
-            var channelRow = channels.itemAt(index);
-            if (channelRow && channelRow.visible
-                    && channelRow.conversationName === "#omarchy")
-                channel = channelRow;
-        }
-
+        var channel = findNamedIn(window, "conversation-libera-#omarchy");
         verify(channel !== null, "Live #omarchy row should render under Channels");
         compare(channel.networkId, "libera");
         compare(channel.direct, false);
@@ -3575,7 +3575,7 @@ TestCase {
         verify(liveDirectNames(window).indexOf("AUTH") === -1,
                "AUTH must not appear under Direct Messages");
 
-        var header = findChild(window, "networkHeaderButton-libera");
+        var header = findNamedIn(window, "networkHeaderButton-libera");
         verify(header !== null, "Could not find networkHeaderButton-libera");
         mouseClick(header);
 
@@ -4344,7 +4344,7 @@ TestCase {
         tryCompare(window, "visible", true);
         waitForRendering(window.contentItem);
 
-        var mark = findChild(window, "networkUnreadMark-libera");
+        var mark = findNamedIn(window, "networkUnreadMark-libera");
         verify(mark !== null, "Could not find networkUnreadMark-libera");
         compare(mark.visible, false);
 
