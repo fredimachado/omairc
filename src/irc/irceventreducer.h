@@ -185,6 +185,11 @@ private:
                     const QDateTime& timestamp,
                     IrcMessageKind kind,
                     const IrcMsgId& msgid);
+    void noteChatArrival(IrcConversationState& conversation,
+                         const IrcConversationKey& key,
+                         const QString& author,
+                         const QString& body,
+                         IrcMessageKind kind);
     void appendEvent(IrcConversationState& conversation,
                      const QString& body,
                      bool collapsible = false);
