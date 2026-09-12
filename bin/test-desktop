@@ -127,8 +127,8 @@ assert_images_differ \
   "$ROOT/test-artifacts/desktop/switch-channel.png" \
   "$ROOT/test-artifacts/desktop/send-message.png"
 
-# Open mira's direct message from the alphabetical member list.
-xdotool mousemove --window "$window" 1070 372 click 1
+# Open mira's direct message from the alphabetical #desktop member list.
+xdotool mousemove --window "$window" 1070 243 click 1
 wait_for_title "mira - Omairc"
 capture "open-direct-message"
 
