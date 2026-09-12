@@ -53,6 +53,7 @@ QString ProfileTest::settingsFile() const
 
 void ProfileTest::suggestedPrefillsLiberachat()
 {
+    QCOMPARE(IrcNetworkProfile::create().iconColor, IrcNetworkProfile::noIconColor);
     const IrcNetworkProfile profile = IrcNetworkProfile::suggested();
     QVERIFY(!profile.networkId.isEmpty());
     QCOMPARE(profile.iconColor, IrcNetworkProfile::noIconColor);
@@ -242,8 +243,8 @@ void ProfileTest::ensureIconColorAssignsOnce()
 
     IrcNetworkProfile invalid;
     invalid.iconColor = 99;
-    QVERIFY(invalid.ensureIconColor({0}));
-    QVERIFY(invalid.iconColor >= 1 && invalid.iconColor < IrcNetworkProfile::iconColorCount);
+    QVERIFY(invalid.ensureIconColor({0, 1, 2, 3}));
+    QCOMPARE(invalid.iconColor, 4);
 }
 
 void ProfileTest::missingIconColorDefaultsToNone()

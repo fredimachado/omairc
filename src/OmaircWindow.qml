@@ -283,8 +283,6 @@ ApplicationWindow {
             darkMode ? "#efb366" : "#a45f14",
             darkMode ? "#ed8f9d" : "#b44355"
         ];
-        if (index < 0 || index >= palette.length)
-            return accentColor;
         return palette[index];
     }
 

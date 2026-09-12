@@ -634,7 +634,8 @@ TestCase {
                 networkId: "new-id",
                 displayName: "New network",
                 stored: false,
-                selected: true
+                selected: true,
+                iconColor: 1
             });
             selectedNetworkId = "new-id";
             displayName = "New network";
@@ -828,7 +829,8 @@ TestCase {
             networkId: "libera",
             displayName: "irc.libera.chat",
             stored: true,
-            selected: true
+            selected: true,
+            iconColor: 1
         });
         namedConnection.selectedNetworkId = "libera";
         namedConnection.displayName = "irc.libera.chat";
@@ -3012,7 +3014,8 @@ TestCase {
             networkId: "oftc",
             displayName: "irc.oftc.net",
             stored: true,
-            selected: false
+            selected: false,
+            iconColor: 1
         });
         namedConnection.applySucceeds = true;
         namedConnection.applyCalls = 0;
@@ -3048,7 +3051,8 @@ TestCase {
             networkId: "oftc",
             displayName: "irc.oftc.net",
             stored: true,
-            selected: false
+            selected: false,
+            iconColor: 1
         });
         var window = createTemporaryObject(fallbackWindowComponent, null);
         verify(window !== null, "The add-then-discard window should load");
@@ -3123,7 +3127,8 @@ TestCase {
                 networkId: "extra-" + extra,
                 displayName: "irc.extra" + extra + ".example",
                 stored: true,
-                selected: false
+                selected: false,
+                iconColor: 1
             });
         }
         var window = createTemporaryObject(fallbackWindowComponent, null);
@@ -3799,7 +3804,8 @@ TestCase {
             networkId: "oftc",
             displayName: "irc.oftc.net",
             stored: true,
-            selected: false
+            selected: false,
+            iconColor: 1
         });
         var window = createTemporaryObject(liveNamedWindowComponent, null);
         verify(window !== null, "The two-network window should load");
@@ -4010,7 +4016,8 @@ TestCase {
             networkId: "oftc",
             displayName: "irc.oftc.net",
             stored: true,
-            selected: false
+            selected: false,
+            iconColor: 1
         });
         namedConnection.dirty = true;
         var window = createTemporaryObject(fallbackWindowComponent, null);
@@ -4284,7 +4291,8 @@ TestCase {
             networkId: "oftc",
             displayName: "irc.oftc.net",
             stored: true,
-            selected: false
+            selected: false,
+            iconColor: 1
         });
         var window = createTemporaryObject(fallbackWindowComponent, null);
         verify(window !== null, "The accessible rail window should load");

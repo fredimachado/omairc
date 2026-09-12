@@ -1658,7 +1658,16 @@ void ConnectionTest::missingIconColorIsAssignedOnce()
     profile.username = QStringLiteral("omairc");
     profile.realname = QStringLiteral("Omairc User");
     profile.autojoinChannels = {QStringLiteral("#omarchy")};
+    profile.iconColor = 2;
     IrcProfileStore().save(profile);
+
+    QSettings settings;
+    settings.beginGroup(QStringLiteral("networks"));
+    settings.beginGroup(profile.networkId);
+    settings.remove(QStringLiteral("iconColor"));
+    settings.endGroup();
+    settings.endGroup();
+    settings.sync();
     QCOMPARE(IrcProfileStore().profiles().first().iconColor,
              IrcNetworkProfile::noIconColor);
 
