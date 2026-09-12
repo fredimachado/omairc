@@ -14,7 +14,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Connect no longer shows Account or Bouncer network. Username stays on the sheet.
 - `--demo-server` seeds the real `IrcController` in-process. `--mock` and the
   QML prototype sidebar are gone. `OmaircWindow` requires `irc`; a null
   binding no longer loads mock conversations.
@@ -22,7 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- The Connect form scrollbar no longer covers the fields. The card width stays the same.
+- The Connect form scrollbar no longer covers the fields, and the card width stays the same.
 - `Ctrl+F` find works on live conversation and Status transcripts. Empty first press enters find and waits. The composer shows Find. Matches include author and body, or Status label and text. The current row uses the selection color.
 
 ## [0.3.0alpha] - 2026-09-11

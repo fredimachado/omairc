@@ -3020,7 +3020,6 @@ ApplicationWindow {
                 }
 
                 Rectangle {
-                    id: connectionSheetCard
                     objectName: "connectionSheetCard"
                     anchors.centerIn: parent
                     width: Math.min(win.scaledSize(700), parent.width - win.scaledSize(40))
@@ -3227,7 +3226,8 @@ ApplicationWindow {
 
                     Column {
                         id: sheetColumn
-                        width: sheetFlick.width - (sheetFlickScrollBar.visible
+                        width: sheetFlick.width - ((sheetFlickScrollBar.policy === ScrollBar.AlwaysOn
+                                || sheetFlickScrollBar.visible)
                             ? sheetFlickScrollBar.width : 0)
                         spacing: win.scaledSize(10)
 
