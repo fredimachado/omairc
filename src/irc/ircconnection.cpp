@@ -53,6 +53,8 @@ QVariant NetworkListModel::data(const QModelIndex &index, int role) const
         return row.stored;
     case SelectedRole:
         return row.selected;
+    case IconColorRole:
+        return row.iconColor;
     default:
         return {};
     }
@@ -65,6 +67,7 @@ QHash<int, QByteArray> NetworkListModel::roleNames() const
         {DisplayNameRole, "displayName"},
         {StoredRole, "stored"},
         {SelectedRole, "selected"},
+        {IconColorRole, "iconColor"},
     };
 }
 
@@ -105,6 +108,7 @@ IrcConnection::IrcConnection(IrcController &controller,
     });
 
     loadStored();
+    assignStoredIconColors();
     if (!m_stored.isEmpty()) {
         IrcNetworkProfile chosen = m_stored.first();
         for (const IrcNetworkProfile &profile : m_stored) {
@@ -118,6 +122,7 @@ IrcConnection::IrcConnection(IrcController &controller,
     } else {
         m_draft = IrcNetworkProfile::suggested();
         m_selectedNetworkId = m_draft.networkId;
+        assignIconColor(m_draft, false);
     }
     pushNetworkOrder();
 
@@ -512,6 +517,7 @@ bool IrcConnection::add()
     m_draft = IrcNetworkProfile::create();
     m_draft.port = 6697;
     m_draft.tlsEnabled = true;
+    assignIconColor(m_draft, false);
     m_selectedNetworkId = m_draft.networkId;
     clearFocusPassword();
     clearFocusNickServ();
@@ -610,6 +616,7 @@ void IrcConnection::removeStoredNickServ()
 bool IrcConnection::apply()
 {
     const bool wasSetup = setupRequired();
+    assignIconColor(m_draft, false);
     const IrcNetworkProfile profile = m_draft.normalized();
     if (!profile.isComplete()) {
         m_draft = profile;
@@ -933,6 +940,7 @@ void IrcConnection::discard()
         }
         m_draft = IrcNetworkProfile::suggested();
         m_draft.networkId = dropped;
+        assignIconColor(m_draft, false);
         clearFocusPassword();
         clearFocusNickServ();
         emit credentialStateChanged();
@@ -1010,6 +1018,7 @@ bool IrcConnection::removeSelected()
     } else {
         m_draft = IrcNetworkProfile::suggested();
         m_selectedNetworkId = m_draft.networkId;
+        assignIconColor(m_draft, false);
     }
     clearFocusPassword();
     clearFocusNickServ();
@@ -1313,6 +1322,32 @@ void IrcConnection::loadStored()
     sortStored();
 }
 
+QList<int> IrcConnection::usedIconColors(const QString &exceptId) const
+{
+    QList<int> used;
+    for (const IrcNetworkProfile &profile : m_stored) {
+        if (profile.networkId == exceptId)
+            continue;
+        if (profile.iconColor >= 0 && profile.iconColor < IrcNetworkProfile::iconColorCount)
+            used.append(profile.iconColor);
+    }
+    return used;
+}
+
+void IrcConnection::assignIconColor(IrcNetworkProfile &profile, bool persist)
+{
+    if (!profile.ensureIconColor(usedIconColors(profile.networkId)))
+        return;
+    if (persist && !profile.networkId.isEmpty())
+        m_store.save(profile);
+}
+
+void IrcConnection::assignStoredIconColors()
+{
+    for (IrcNetworkProfile &profile : m_stored)
+        assignIconColor(profile, true);
+}
+
 void IrcConnection::sortStored()
 {
     std::sort(m_stored.begin(), m_stored.end(), profileLess);
@@ -1390,10 +1425,11 @@ QVector<IrcConnection::RosterRow> IrcConnection::rosterRows() const
         const IrcNetworkProfile shown =
             profile.networkId == m_selectedNetworkId ? m_draft : profile;
         rows.append({profile.networkId, rosterDisplayName(shown), true,
-                     profile.networkId == m_selectedNetworkId});
+                     profile.networkId == m_selectedNetworkId, shown.iconColor});
     }
     if (!isStored(m_selectedNetworkId) && !m_selectedNetworkId.isEmpty()) {
-        rows.append({m_selectedNetworkId, rosterDisplayName(m_draft), false, true});
+        rows.append({m_selectedNetworkId, rosterDisplayName(m_draft), false, true,
+                     m_draft.iconColor});
     }
     return rows;
 }

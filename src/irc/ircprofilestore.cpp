@@ -17,6 +17,7 @@ const auto realnameKey = QStringLiteral("realname");
 const auto accountKey = QStringLiteral("account");
 const auto bouncerNetworkKey = QStringLiteral("bouncerNetwork");
 const auto autojoinKey = QStringLiteral("autojoin");
+const auto iconColorKey = QStringLiteral("iconColor");
 }
 
 IrcProfileStore::IrcProfileStore() = default;
@@ -43,6 +44,12 @@ QList<IrcNetworkProfile> IrcProfileStore::profiles() const
         profile.account = settings.value(accountKey).toString();
         profile.bouncerNetwork = settings.value(bouncerNetworkKey).toString();
         profile.autojoinChannels = settings.value(autojoinKey).toStringList();
+        bool iconOk = false;
+        const int iconColor = settings.value(iconColorKey).toInt(&iconOk);
+        profile.iconColor = (iconOk
+                             && iconColor >= 0
+                             && iconColor < IrcNetworkProfile::iconColorCount)
+            ? iconColor : IrcNetworkProfile::noIconColor;
         settings.endGroup();
         result.append(profile);
     }
@@ -71,6 +78,8 @@ void IrcProfileStore::save(const IrcNetworkProfile &profile)
     settings.setValue(accountKey, profile.account);
     settings.setValue(bouncerNetworkKey, profile.bouncerNetwork);
     settings.setValue(autojoinKey, profile.autojoinChannels);
+    if (profile.iconColor >= 0 && profile.iconColor < IrcNetworkProfile::iconColorCount)
+        settings.setValue(iconColorKey, profile.iconColor);
     settings.endGroup();
     settings.endGroup();
     settings.sync();
