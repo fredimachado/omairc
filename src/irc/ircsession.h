@@ -19,6 +19,7 @@
 #include "irchistorybatch.h"
 #include "ircmessage.h"
 #include "ircstatusentry.h"
+#include "ircsts.h"
 #include "irctransport.h"
 #include "irctyping.h"
 #include "irctypingpublisher.h"
@@ -210,6 +211,10 @@ private:
     void recordAutojoin(const QString &channel, bool joined);
     bool allowCtcpReply(const QString &nick);
     void handleCap(const IrcMessage &message);
+    void applyCachedSts();
+    bool handleStsAdvertisement(const std::optional<IrcStsAdvertisement> &advertisement);
+    void beginStsUpgrade(quint16 port);
+    void rescheduleStsExpiry();
     void handleAuthenticate(const IrcMessage &message);
     void handleWelcome(const IrcMessage &message);
     void applyIsupport(const IrcMessage &message);
@@ -240,6 +245,8 @@ private:
     };
 
     const IrcSessionConfig m_config;
+    quint16 m_port = 0;
+    bool m_tlsEnabled = true;
     QStringList m_autojoinChannels;
     QString m_nick;
     IrcTransport *m_transport;
@@ -250,6 +257,9 @@ private:
     PingWatchdog m_pingWatchdog = PingWatchdog::Off;
     IrcFramer m_framer;
     IrcCapabilityNegotiation m_capabilities;
+    IrcStsStore m_sts;
+    std::optional<IrcStsAdvertisement> m_pendingSts;
+    std::optional<qint64> m_stsDuration;
     IrcCapabilitySet m_publishedCapabilities;
     IrcTypingPublisher m_typing;
     struct OpenBatch
@@ -284,6 +294,7 @@ private:
     bool m_saslSucceeded = false;
     bool m_capabilityNegotiationEnded = false;
     bool m_capabilityListSeen = false;
+    bool m_stsUpgradePending = false;
     QString m_channelTypes;
     int m_reconnectAttempt = 0;
     quint32 m_reportedRetryErrors = 0;
