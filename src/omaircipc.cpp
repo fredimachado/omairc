@@ -235,6 +235,7 @@ QString stateLabel(const QString &sessionStateName)
         return QStringLiteral("Offline");
     }
     if (sessionStateName == QLatin1String("Connecting")
+        || sessionStateName == QLatin1String("StsUpgrading")
         || sessionStateName == QLatin1String("CapLs")
         || sessionStateName == QLatin1String("CapReq")
         || sessionStateName == QLatin1String("Sasl")

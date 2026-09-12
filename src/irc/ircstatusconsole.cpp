@@ -13,6 +13,7 @@ QString stateLabel(IrcSession::State state)
     case IrcSession::State::Idle:
         return QStringLiteral("offline");
     case IrcSession::State::Connecting:
+    case IrcSession::State::StsUpgrading:
         return QStringLiteral("connecting");
     case IrcSession::State::CapLs:
     case IrcSession::State::CapReq:
@@ -38,6 +39,7 @@ QString stateText(IrcSession::State state)
     case IrcSession::State::Idle:
         return QStringLiteral("Disconnected");
     case IrcSession::State::Connecting:
+    case IrcSession::State::StsUpgrading:
         return QStringLiteral("Connecting");
     case IrcSession::State::CapLs:
         return QStringLiteral("Capability discovery");
