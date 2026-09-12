@@ -1,9 +1,12 @@
 #include <QCoreApplication>
 #include <QEvent>
+#include <QFile>
 #include <QPointer>
 #include <QSignalSpy>
+#include <QTemporaryDir>
 #include <QTest>
 
+#include <memory>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -16,6 +19,7 @@
 #include "ircsession.h"
 #include "ircsessionmanager.h"
 #include "ircstatusentry.h"
+#include "ircsts.h"
 #include "irctcp.h"
 
 class FakeReconnectTimer : public IrcReconnectTimer
@@ -168,6 +172,43 @@ IrcMessage mustParse(std::string_view line)
         qFatal("failed to parse IRC line");
     return *parsed.value;
 }
+
+struct StsHome
+{
+    StsHome()
+        : dir(std::make_unique<QTemporaryDir>())
+    {
+        if (!dir->isValid())
+            qFatal("sts temp dir");
+        qputenv("XDG_CONFIG_HOME", dir->path().toUtf8());
+    }
+
+    QString cachePath() const
+    {
+        return dir->path() + QLatin1String("/omairc/sts");
+    }
+
+    std::unique_ptr<QTemporaryDir> dir;
+};
+
+IrcSessionConfig plaintextConfig()
+{
+    IrcSessionConfig value = config();
+    value.port = 6667;
+    value.tlsEnabled = false;
+    value.autojoinChannels = {};
+    return value;
+}
+
+int capLsCount(const QByteArrayList &frames)
+{
+    int count = 0;
+    for (const QByteArray &frame : frames) {
+        if (frame == QByteArrayLiteral("CAP LS 302\r\n"))
+            ++count;
+    }
+    return count;
+}
 }
 
 class SessionTest : public QObject
@@ -193,6 +234,13 @@ private slots:
     void saslSuccessDoesNotIdentify();
     void saslFailureDoesNotFallThroughToIdentify();
     void plaintextIdentifyEmitsOneStatusWarning();
+    void plaintextStsPortReconnectsWithTlsAndCachesOnSecureDuration();
+    void plaintextStsWithoutPortStaysPlaintext();
+    void plaintextCapNewStsPortReconnectsWithTls();
+    void tlsStsDurationRefreshesCacheWithoutReconnect();
+    void tlsStsDurationZeroClearsCache();
+    void cachedHostOpensTlsWhenProfileDisablesIt();
+    void capDelStsDoesNotClearCache();
     void automaticIdentifyDoesNotAppearInStatusAsSecret();
     void registersWhenCapIsUnsupported();
     void tlsCertificateFailureIsExplicit();
@@ -1723,6 +1771,144 @@ void SessionTest::configuredPasswordNeverAppearsInStatusEntries()
         if (entry.label() == QStringLiteral("PASS"))
             QCOMPARE(entry.text(), QStringLiteral("PASS ***"));
     }
+}
+
+void SessionTest::plaintextStsPortReconnectsWithTlsAndCachesOnSecureDuration()
+{
+    StsHome home;
+    Fixture fixture(plaintextConfig());
+    StatusCollector status(fixture.session);
+    fixture.session->start();
+    fixture.transport->completeConnect();
+    QVERIFY(!fixture.transport->tlsRequested());
+    QCOMPARE(fixture.transport->connectedPort(), quint16(6667));
+
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :sts=port=6697,duration=60 multi-prefix\r\n"
+                          ":server 001 omairc :should-not-register-plaintext\r\n"));
+
+    QVERIFY(fixture.transport->tlsRequested());
+    QCOMPARE(fixture.transport->connectedPort(), quint16(6697));
+    QCOMPARE(fixture.session->port(), quint16(6697));
+    QVERIFY(fixture.session->tlsEnabled());
+    QVERIFY(!fixture.wrote(QByteArrayLiteral("CAP REQ :multi-prefix\r\n")));
+    QVERIFY(!fixture.wrote(QByteArrayLiteral("NICK omairc\r\n")));
+    QVERIFY(status.hasLabel(QStringLiteral("sts")));
+    QVERIFY(status.anyFieldContains(QStringLiteral("Upgraded to TLS on port 6697")));
+    QVERIFY(!QFile::exists(home.cachePath()));
+
+    fixture.transport->completeConnect();
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :sts=duration=60\r\n"
+                          ":server 001 omairc :Welcome\r\n"));
+    QCOMPARE(capLsCount(fixture.transport->writtenFrames()), 2);
+    QVERIFY(QFile::exists(home.cachePath()));
+    IrcStsStore store;
+    const std::optional<IrcStsCached> cached = store.lookup(QStringLiteral("irc.example"));
+    QVERIFY(cached);
+    QCOMPARE(cached->port, quint16(6697));
+}
+
+void SessionTest::plaintextStsWithoutPortStaysPlaintext()
+{
+    StsHome home;
+    Fixture fixture(plaintextConfig());
+    fixture.session->start();
+    fixture.transport->completeConnect();
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :sts=duration=60\r\n"
+                          ":server 001 omairc :Welcome\r\n"));
+    QVERIFY(!fixture.transport->tlsRequested());
+    QCOMPARE(fixture.transport->connectedPort(), quint16(6667));
+    QVERIFY(fixture.wrote(QByteArrayLiteral("NICK omairc\r\n")));
+    QVERIFY(!QFile::exists(home.cachePath()));
+}
+
+void SessionTest::plaintextCapNewStsPortReconnectsWithTls()
+{
+    StsHome home;
+    Fixture fixture(plaintextConfig());
+    fixture.session->start();
+    fixture.transport->completeConnect();
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"));
+    QVERIFY(fixture.wrote(QByteArrayLiteral("CAP REQ :multi-prefix\r\n")));
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc NEW :sts=port=6697\r\n"));
+    QVERIFY(fixture.transport->tlsRequested());
+    QCOMPARE(fixture.transport->connectedPort(), quint16(6697));
+}
+
+void SessionTest::tlsStsDurationRefreshesCacheWithoutReconnect()
+{
+    StsHome home;
+    IrcSessionConfig sessionConfig = config();
+    sessionConfig.autojoinChannels = {};
+    Fixture fixture(sessionConfig);
+    fixture.connectTls();
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :sts=duration=86400\r\n"));
+    QCOMPARE(capLsCount(fixture.transport->writtenFrames()), 1);
+    QVERIFY(fixture.transport->tlsRequested());
+    QCOMPARE(fixture.transport->connectedPort(), quint16(6697));
+    IrcStsStore store;
+    const std::optional<IrcStsCached> cached = store.lookup(QStringLiteral("irc.example"));
+    QVERIFY(cached);
+    QCOMPARE(cached->port, quint16(6697));
+    QCOMPARE(cached->durationSeconds, qint64(86400));
+}
+
+void SessionTest::tlsStsDurationZeroClearsCache()
+{
+    StsHome home;
+    IrcStsStore primed;
+    primed.save(QStringLiteral("irc.example"), 6697, 60);
+    QVERIFY(primed.lookup(QStringLiteral("irc.example")));
+
+    IrcSessionConfig sessionConfig = config();
+    sessionConfig.autojoinChannels = {};
+    Fixture fixture(sessionConfig);
+    fixture.connectTls();
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :sts=duration=0\r\n"
+                          ":server 001 omairc :Welcome\r\n"));
+    QVERIFY(!IrcStsStore().lookup(QStringLiteral("irc.example")));
+
+    Fixture later(plaintextConfig());
+    later.session->start();
+    QVERIFY(!later.transport->tlsRequested());
+    QCOMPARE(later.transport->connectedPort(), quint16(6667));
+}
+
+void SessionTest::cachedHostOpensTlsWhenProfileDisablesIt()
+{
+    StsHome home;
+    IrcStsStore store;
+    store.save(QStringLiteral("irc.example"), 6697, 60);
+
+    Fixture fixture(plaintextConfig());
+    fixture.session->start();
+    QVERIFY(fixture.transport->tlsRequested());
+    QCOMPARE(fixture.transport->connectedPort(), quint16(6697));
+    QVERIFY(fixture.session->tlsEnabled());
+    QCOMPARE(fixture.session->port(), quint16(6697));
+}
+
+void SessionTest::capDelStsDoesNotClearCache()
+{
+    StsHome home;
+    IrcSessionConfig sessionConfig = config();
+    sessionConfig.autojoinChannels = {};
+    Fixture fixture(sessionConfig);
+    fixture.connectTls();
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :sts=duration=86400\r\n"
+                          ":server 001 omairc :Welcome\r\n"
+                          ":server CAP omairc DEL :sts\r\n"));
+    IrcStsStore store;
+    const std::optional<IrcStsCached> cached = store.lookup(QStringLiteral("irc.example"));
+    QVERIFY(cached);
+    QCOMPARE(cached->port, quint16(6697));
 }
 
 void SessionTest::plaintextIdentifyEmitsOneStatusWarning()

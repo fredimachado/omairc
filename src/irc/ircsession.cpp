@@ -247,6 +247,8 @@ IrcSession::IrcSession(const IrcSessionConfig &config,
                        IrcReachabilitySource *reachability)
     : QObject(parent)
     , m_config(config)
+    , m_port(config.port)
+    , m_tlsEnabled(config.tlsEnabled)
     , m_autojoinChannels(config.autojoinChannels)
     , m_nick(config.nick)
     , m_transport(transport)
@@ -294,11 +296,11 @@ IrcSession::IrcSession(const IrcSessionConfig &config,
     });
 
     connect(m_transport, &IrcTransport::connected, this, [this] {
-        if (!m_config.tlsEnabled && m_state == State::Connecting)
+        if (!m_tlsEnabled && m_state == State::Connecting)
             beginCapabilityNegotiation();
     });
     connect(m_transport, &IrcTransport::encrypted, this, [this] {
-        if (m_config.tlsEnabled && m_state == State::Connecting)
+        if (m_tlsEnabled && m_state == State::Connecting)
             beginCapabilityNegotiation();
     });
     connect(m_transport, &IrcTransport::bytesReceived,
@@ -311,6 +313,13 @@ IrcSession::IrcSession(const IrcSessionConfig &config,
         fail(tlsFailure ? ErrorKind::Tls : ErrorKind::Network, message, true);
     });
     connect(m_transport, &IrcTransport::disconnected, this, [this] {
+        if (m_stsUpgradePending) {
+            resetForConnection();
+            setState(State::Connecting);
+            m_transport->connectToHost(m_config.host, m_port, m_tlsEnabled);
+            return;
+        }
+        rescheduleStsExpiry();
         if (m_reconnectAfterDisconnect) {
             m_reconnectAfterDisconnect = false;
             scheduleReconnect();
@@ -334,6 +343,7 @@ IrcSession::IrcSession(const IrcSessionConfig &config,
 
 IrcSession::~IrcSession()
 {
+    m_stsUpgradePending = false;
     m_expectedDisconnect = true;
     m_reconnectAfterDisconnect = false;
     m_reconnectTimer->cancel();
@@ -354,12 +364,12 @@ QString IrcSession::host() const
 
 quint16 IrcSession::port() const
 {
-    return m_config.port;
+    return m_port;
 }
 
 bool IrcSession::tlsEnabled() const
 {
-    return m_config.tlsEnabled;
+    return m_tlsEnabled;
 }
 
 QString IrcSession::nick() const
@@ -412,15 +422,22 @@ void IrcSession::start()
 
     m_expectedDisconnect = false;
     m_reconnectAfterDisconnect = false;
+    m_stsUpgradePending = false;
+    m_stsDuration.reset();
     m_reconnectAttempt = 0;
     m_reportedRetryErrors = 0;
+    m_port = m_config.port;
+    m_tlsEnabled = m_config.tlsEnabled;
+    applyCachedSts();
     resetForConnection();
     setState(State::Connecting);
-    m_transport->connectToHost(m_config.host, m_config.port, m_config.tlsEnabled);
+    m_transport->connectToHost(m_config.host, m_port, m_tlsEnabled);
 }
 
 void IrcSession::stop()
 {
+    rescheduleStsExpiry();
+    m_stsUpgradePending = false;
     m_expectedDisconnect = true;
     m_reconnectAfterDisconnect = false;
     m_reconnectTimer->cancel();
@@ -597,6 +614,7 @@ void IrcSession::setState(State state)
 
 void IrcSession::beginCapabilityNegotiation()
 {
+    m_stsUpgradePending = false;
     setState(State::CapLs);
     sendLine(QByteArrayLiteral("CAP LS 302\r\n"));
 }
@@ -767,6 +785,8 @@ void IrcSession::handleBytes(const QByteArray &bytes)
     }
 
     for (const std::string &frame : result.frames) {
+        if (m_stsUpgradePending)
+            break;
         const IrcParseResult parsed = IrcParser::parse(frame);
         if (!parsed) {
             emit errorOccurred(m_config.networkId,
@@ -1308,10 +1328,15 @@ void IrcSession::handleCap(const IrcMessage &message)
     const int lsIndex = parameterIndex(message, QStringLiteral("LS"));
     if (lsIndex >= 0) {
         m_capabilityListSeen = true;
-        m_capabilities.advertise(capabilityTokens(message, lsIndex));
+        const QStringList tokens = capabilityTokens(message, lsIndex);
+        m_capabilities.advertise(tokens);
+        if (const auto advertisement = parseIrcStsAdvertisement(tokens))
+            m_pendingSts = advertisement;
         const bool continuation = message.parameters.size() > std::size_t(lsIndex + 1)
             && parameter(message, std::size_t(lsIndex + 1)) == QStringLiteral("*");
         if (continuation)
+            return;
+        if (handleStsAdvertisement(m_pendingSts))
             return;
         requestCapabilities();
         return;
@@ -1324,7 +1349,10 @@ void IrcSession::handleCap(const IrcMessage &message)
 
     const int newIndex = parameterIndex(message, QStringLiteral("NEW"));
     if (newIndex >= 0) {
-        m_capabilities.advertise(capabilityTokens(message, newIndex));
+        const QStringList tokens = capabilityTokens(message, newIndex);
+        m_capabilities.advertise(tokens);
+        if (handleStsAdvertisement(parseIrcStsAdvertisement(tokens)))
+            return;
         requestCapabilities();
         return;
     }
@@ -1453,7 +1481,7 @@ void IrcSession::handleWelcome(const IrcMessage &message)
     armPingWatchdog();
     subscribeToMemberMetadata();
     if (!m_config.nickServPassword.isEmpty() && !m_saslSucceeded) {
-        if (!m_config.tlsEnabled) {
+        if (!m_tlsEnabled) {
             emit statusEntry(IrcStatusEntry::lifecycle(
                 m_config.networkId, IrcLogSeverity::Alert,
                 QStringLiteral("identify"),
@@ -1472,8 +1500,60 @@ void IrcSession::handleWelcome(const IrcMessage &message)
     }
 }
 
+void IrcSession::applyCachedSts()
+{
+    const std::optional<IrcStsCached> cached = m_sts.lookup(m_config.host);
+    if (!cached)
+        return;
+    m_port = cached->port;
+    m_tlsEnabled = true;
+}
+
+bool IrcSession::handleStsAdvertisement(
+    const std::optional<IrcStsAdvertisement> &advertisement)
+{
+    if (!advertisement)
+        return false;
+    if (!m_tlsEnabled) {
+        if (!advertisement->port || m_stsUpgradePending)
+            return false;
+        beginStsUpgrade(*advertisement->port);
+        return true;
+    }
+    if (!advertisement->durationSeconds)
+        return false;
+    if (*advertisement->durationSeconds == 0) {
+        m_sts.clear(m_config.host);
+        m_stsDuration.reset();
+        return false;
+    }
+    m_sts.save(m_config.host, m_port, *advertisement->durationSeconds);
+    m_stsDuration = advertisement->durationSeconds;
+    return false;
+}
+
+void IrcSession::beginStsUpgrade(quint16 port)
+{
+    m_port = port;
+    m_tlsEnabled = true;
+    m_stsUpgradePending = true;
+    emit statusEntry(IrcStatusEntry::lifecycle(
+        m_config.networkId, IrcLogSeverity::Info,
+        QStringLiteral("sts"),
+        QStringLiteral("Upgraded to TLS on port %1").arg(port)));
+    m_transport->shutdown();
+}
+
+void IrcSession::rescheduleStsExpiry()
+{
+    if (!m_tlsEnabled || !m_stsDuration)
+        return;
+    m_sts.save(m_config.host, m_port, *m_stsDuration);
+}
+
 void IrcSession::fail(ErrorKind kind, const QString &message, bool reconnect)
 {
+    m_stsUpgradePending = false;
     cancelPingWatchdog();
     if (reconnect) {
         const quint32 bit = quint32(1) << int(kind);
@@ -1522,9 +1602,11 @@ void IrcSession::beginReconnectAttempt()
     if (m_state != State::Reconnecting)
         return;
     m_reconnectTimer->cancel();
+    m_stsUpgradePending = false;
+    applyCachedSts();
     resetForConnection();
     setState(State::Connecting);
-    m_transport->connectToHost(m_config.host, m_config.port, m_config.tlsEnabled);
+    m_transport->connectToHost(m_config.host, m_port, m_tlsEnabled);
 }
 
 void IrcSession::resetForConnection()
@@ -1545,6 +1627,7 @@ void IrcSession::resetForConnection()
     m_saslSucceeded = false;
     m_capabilityNegotiationEnded = false;
     m_capabilityListSeen = false;
+    m_pendingSts.reset();
     m_channelTypes.clear();
     m_capabilityTimer->cancel();
     cancelPingWatchdog();

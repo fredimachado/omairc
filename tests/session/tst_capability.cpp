@@ -36,6 +36,7 @@ private slots:
     void lateRejectAfterTimeoutIsIgnored();
     void acknowledgingEitherChatHistorySpellingSettles();
     void acknowledgedRemovalDisablesTheCapability();
+    void stsIsAdvertisedButNeverRequested();
 };
 
 void CapabilityTest::unwantedAdvertisementProducesNoRequest()
@@ -342,6 +343,18 @@ void CapabilityTest::acknowledgedRemovalDisablesTheCapability()
     negotiation.acknowledge(tokens(QStringLiteral("-chathistory")));
     QVERIFY(!negotiation.enabled().contains(IrcCapability::ChatHistory));
     QVERIFY(negotiation.enabled().contains(IrcCapability::Batch));
+}
+
+void CapabilityTest::stsIsAdvertisedButNeverRequested()
+{
+    IrcCapabilityNegotiation negotiation(false);
+    negotiation.advertise(tokens(
+        QStringLiteral("sts=port=6697,duration=60 multi-prefix cap-notify")));
+
+    const IrcCapabilityNegotiation::Request request = negotiation.takeRequest();
+    QCOMPARE(request.lines,
+             QStringList{QStringLiteral("multi-prefix cap-notify")});
+    QVERIFY(!negotiation.settled());
 }
 
 int runCapabilityTests(int argc, char **argv)
