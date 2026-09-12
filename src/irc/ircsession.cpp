@@ -296,11 +296,13 @@ IrcSession::IrcSession(const IrcSessionConfig &config,
     });
 
     connect(m_transport, &IrcTransport::connected, this, [this] {
-        if (!m_tlsEnabled && m_state == State::Connecting)
+        if (!m_tlsEnabled && (m_state == State::Connecting
+                              || m_state == State::StsUpgrading))
             beginCapabilityNegotiation();
     });
     connect(m_transport, &IrcTransport::encrypted, this, [this] {
-        if (m_tlsEnabled && m_state == State::Connecting)
+        if (m_tlsEnabled && (m_state == State::Connecting
+                             || m_state == State::StsUpgrading))
             beginCapabilityNegotiation();
     });
     connect(m_transport, &IrcTransport::bytesReceived,
@@ -315,7 +317,6 @@ IrcSession::IrcSession(const IrcSessionConfig &config,
     connect(m_transport, &IrcTransport::disconnected, this, [this] {
         if (shouldFinishStsUpgrade()) {
             resetForConnection();
-            setState(State::Connecting);
             m_transport->connectToHost(m_config.host, m_port, m_tlsEnabled);
             return;
         }
