@@ -79,7 +79,7 @@ private slots:
     void mixedJoinPartQuitNickCollapse();
     void forgetNetworkLeavesTheOtherNetwork();
     void historySplicesAboveSelfJoin();
-    void historyDoesNotMarkUnreadOrMention();
+    void historyMarksUnreadLikeLiveWhenUnselected();
     void msgidDedupSkipsLiveThenReplay();
     void msgidDedupSkipsReplayThenLive();
     void nickMergeDropsDuplicateMsgids();
@@ -1062,26 +1062,55 @@ void ReducerTest::historySplicesAboveSelfJoin()
     QVERIFY(!conversation->messages[1].collapsible);
 }
 
-void ReducerTest::historyDoesNotMarkUnreadOrMention()
+void ReducerTest::historyMarksUnreadLikeLiveWhenUnselected()
 {
     IrcEventReducer reducer;
     welcome(reducer, networkA);
     reducer.apply(IrcJoinEvent{
-        networkA, QStringLiteral("#omarchy"), QStringLiteral("omairc")});
-    const IrcConversationKey room =
-        reducer.conversationKey(networkA, QStringLiteral("#omarchy"));
+        networkA, QStringLiteral("#selected"), QStringLiteral("omairc")});
+    reducer.apply(IrcJoinEvent{
+        networkA, QStringLiteral("#background"), QStringLiteral("omairc")});
+    const IrcConversationKey selected =
+        reducer.conversationKey(networkA, QStringLiteral("#selected"));
+    const IrcConversationKey background =
+        reducer.conversationKey(networkA, QStringLiteral("#background"));
+    reducer.markSelected(selected);
+
     reducer.apply(IrcHistoryEvent{
-        room,
-        QStringLiteral("#omarchy"),
-        {replayLine(QStringLiteral("alice"), QStringLiteral("omairc: ping"),
-                    QStringLiteral("id-mention"))},
+        background,
+        QStringLiteral("#background"),
+        {replayLine(QStringLiteral("alice"), QStringLiteral("plain"),
+                    QStringLiteral("id-plain")),
+         replayLine(QStringLiteral("alice"), QStringLiteral("omairc: ping"),
+                    QStringLiteral("id-mention")),
+         replayLine(QStringLiteral("omairc"), QStringLiteral("my reply"),
+                    QStringLiteral("id-self"))},
     });
 
-    const IrcConversationState *conversation = reducer.find(room);
-    QVERIFY(conversation);
-    QCOMPARE(conversation->unread, 0);
-    QCOMPARE(conversation->mentions, 0);
-    QVERIFY(!reducer.takeMentionArrival());
+    const IrcConversationState *backgroundState = reducer.find(background);
+    QVERIFY(backgroundState);
+    QCOMPARE(backgroundState->unread, 2);
+    QCOMPARE(backgroundState->mentions, 1);
+    QCOMPARE(backgroundState->messages[0].origin, IrcOrigin::Replay);
+    QCOMPARE(backgroundState->messages[0].body, QStringLiteral("plain"));
+    const std::optional<IrcMentionArrival> mention = reducer.takeMentionArrival();
+    QVERIFY(mention.has_value());
+    QCOMPARE(mention->author, QStringLiteral("alice"));
+    QCOMPARE(mention->body, QStringLiteral("omairc: ping"));
+
+    reducer.apply(IrcHistoryEvent{
+        selected,
+        QStringLiteral("#selected"),
+        {replayLine(QStringLiteral("alice"), QStringLiteral("omairc: here"),
+                    QStringLiteral("id-focused"))},
+    });
+    QCOMPARE(reducer.find(selected)->unread, 0);
+    QCOMPARE(reducer.find(selected)->mentions, 0);
+    QCOMPARE(reducer.find(selected)->messages[0].origin, IrcOrigin::Replay);
+
+    reducer.markSelected(background);
+    QCOMPARE(backgroundState->unread, 0);
+    QCOMPARE(backgroundState->mentions, 0);
 }
 
 void ReducerTest::msgidDedupSkipsLiveThenReplay()
@@ -1307,10 +1336,13 @@ void ReducerTest::queryReplayFromPeerOpensDirectMessage()
     QCOMPARE(conversation->messages[1].author, QStringLiteral("omairc"));
     QCOMPARE(conversation->messages[1].body, QStringLiteral("just got back"));
     QCOMPARE(conversation->messages[1].origin, IrcOrigin::Replay);
-    QCOMPARE(conversation->unread, 0);
+    QCOMPARE(conversation->unread, 1);
     QCOMPARE(conversation->mentions, 0);
     QCOMPARE(conversation->spliceEpoch, 0);
-    QVERIFY(!reducer.takeMentionArrival());
+    const std::optional<IrcMentionArrival> mention = reducer.takeMentionArrival();
+    QVERIFY(mention.has_value());
+    QCOMPARE(mention->author, QStringLiteral("lena"));
+    QCOMPARE(mention->body, QStringLiteral("are you there"));
 }
 
 void ReducerTest::selfOnlyQueryReplayDoesNotOpenDirectMessageForMsg()

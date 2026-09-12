@@ -10,6 +10,7 @@
 #include "ircsession.h"
 #include "ircslashcomplete.h"
 #include "ircstatusentry.h"
+#include "messagelistmodel.h"
 #include "networklogmodel.h"
 
 #include <type_traits>
@@ -46,6 +47,35 @@ bool logContains(QAbstractItemModel *lines, const QString& needle)
             return true;
     }
     return false;
+}
+
+bool selectedBodiesContain(QAbstractItemModel *messages, const QString& needle)
+{
+    if (!messages)
+        return false;
+    for (int row = 0; row < messages->rowCount(); ++row) {
+        const QString body =
+            messages->data(messages->index(row, 0), MessageListModel::BodyRole)
+                .toString();
+        if (body.contains(needle))
+            return true;
+    }
+    return false;
+}
+
+int selectedBodyHits(QAbstractItemModel *messages, const QString& needle)
+{
+    int hits = 0;
+    if (!messages)
+        return hits;
+    for (int row = 0; row < messages->rowCount(); ++row) {
+        const QString body =
+            messages->data(messages->index(row, 0), MessageListModel::BodyRole)
+                .toString();
+        if (body.contains(needle))
+            ++hits;
+    }
+    return hits;
 }
 
 bool framesContain(const QByteArrayList& frames, const QByteArray& needle)
@@ -1394,17 +1424,26 @@ void CommandTest::wrappersSendAndHelp()
     QCOMPARE(transport->writtenFrames().size(), beforeBadRaw);
 
     IrcStatusConsole *console = controller.console();
+    auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
+    QVERIFY(messages);
+    const int statusRowsBeforeChannelHelp = console->lines()->rowCount();
     QVERIFY(controller.sendMessage(QStringLiteral("/help")));
-    QVERIFY(logContains(console->lines(), QStringLiteral("/op")));
-    QVERIFY(logContains(console->lines(), QStringLiteral("/invite")));
-    QVERIFY(logContains(console->lines(), QStringLiteral("/ns")));
-    QVERIFY(logContains(console->lines(), QStringLiteral("/cs")));
-    QVERIFY(logContains(console->lines(), QStringLiteral("/raw")));
-    QVERIFY(logContains(console->lines(), QStringLiteral("/help")));
-    QVERIFY(logContains(console->lines(), QStringLiteral("/ban")));
+    QCOMPARE(controller.selectedTarget(), QStringLiteral("#omarchy"));
+    QCOMPARE(console->lines()->rowCount(), statusRowsBeforeChannelHelp);
+    QVERIFY(!logContains(console->lines(), QStringLiteral("Commands:")));
+    QCOMPARE(selectedBodyHits(messages, QStringLiteral("Commands:")), 1);
+    QVERIFY(selectedBodiesContain(messages, QStringLiteral("/op")));
+    QVERIFY(selectedBodiesContain(messages, QStringLiteral("/invite")));
+    QVERIFY(selectedBodiesContain(messages, QStringLiteral("/ns")));
+    QVERIFY(selectedBodiesContain(messages, QStringLiteral("/cs")));
+    QVERIFY(selectedBodiesContain(messages, QStringLiteral("/raw")));
+    QVERIFY(selectedBodiesContain(messages, QStringLiteral("/help")));
+    QVERIFY(selectedBodiesContain(messages, QStringLiteral("/ban")));
 
     QVERIFY(console->submit(QStringLiteral("/help")));
     QVERIFY(logContains(console->lines(), QStringLiteral("Commands:")));
+    QCOMPARE(controller.selectedTarget(), QStringLiteral("#omarchy"));
+    QCOMPARE(selectedBodyHits(messages, QStringLiteral("Commands:")), 1);
 
     QVERIFY(controller.sendMessage(QStringLiteral("/raw PASS :x")));
     QCOMPARE(transport->writtenFrames().last(),
@@ -1434,6 +1473,15 @@ void CommandTest::wrappersSendAndHelp()
     QCOMPARE(transport->writtenFrames().size(), beforeStatusOp);
 
     transport->injectBytes(QByteArrayLiteral(":lena!u@h PRIVMSG omairc :hi\r\n"));
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("lena"));
+    const int statusRowsBeforeDmHelp = console->lines()->rowCount();
+    QVERIFY(controller.sendMessage(QStringLiteral("/help")));
+    QCOMPARE(controller.selectedTarget(), QStringLiteral("lena"));
+    QCOMPARE(console->lines()->rowCount(), statusRowsBeforeDmHelp);
+    QCOMPARE(selectedBodyHits(messages, QStringLiteral("Commands:")), 1);
+    QVERIFY(selectedBodiesContain(messages, QStringLiteral("/help")));
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    QCOMPARE(selectedBodyHits(messages, QStringLiteral("Commands:")), 1);
     controller.selectConversation(QStringLiteral("libera"), QStringLiteral("lena"));
     const int beforeDmOp = transport->writtenFrames().size();
     QVERIFY(!controller.sendMessage(QStringLiteral("/op alice")));

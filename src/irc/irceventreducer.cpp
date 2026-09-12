@@ -486,18 +486,25 @@ void IrcEventReducer::appendChat(const IrcConversationKey& key,
                                      IrcOrigin::Live, msgid});
     capMessages(*conversation);
     clearTyping(*conversation, normalize(key.networkId, author));
+    noteChatArrival(*conversation, key, author, body, kind);
+}
 
+void IrcEventReducer::noteChatArrival(IrcConversationState& conversation,
+                                      const IrcConversationKey& key,
+                                      const QString& author,
+                                      const QString& body,
+                                      IrcMessageKind kind)
+{
+    const bool self = isSelf(key.networkId, author);
     const std::optional<ChatLineReason> reason = classifyChatLine(
-        *conversation, kind, self, isMention(key.networkId, body));
+        conversation, kind, self, isMention(key.networkId, body));
     if (reason)
         m_mentionArrival = IrcMentionArrival{author, body};
-
     if (self || (m_selected && *m_selected == key))
         return;
-
-    ++conversation->unread;
+    ++conversation.unread;
     if (reason == ChatLineReason::NickMention)
-        ++conversation->mentions;
+        ++conversation.mentions;
 }
 
 void IrcEventReducer::appendEvent(IrcConversationState& conversation,
@@ -919,6 +926,10 @@ void IrcEventReducer::reduce(const IrcHistoryEvent& event)
     if (at != previousSize)
         ++conversation->spliceEpoch;
     capMessages(*conversation);
+    for (const IrcReducedMessage& message : run) {
+        noteChatArrival(*conversation, event.conversation, message.author,
+                        message.body, message.kind);
+    }
 }
 
 void IrcEventReducer::reduce(const IrcWhoisTranscriptEvent& event)

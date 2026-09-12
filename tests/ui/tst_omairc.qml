@@ -46,6 +46,7 @@ TestCase {
             displayName: "irc.libera.chat"
             stored: false
             selected: true
+            iconColor: 1
         }
     }
 
@@ -56,6 +57,7 @@ TestCase {
             displayName: "irc.libera.chat"
             stored: true
             selected: true
+            iconColor: 1
         }
     }
 
@@ -648,7 +650,8 @@ TestCase {
                 networkId: "new-id",
                 displayName: "New network",
                 stored: false,
-                selected: true
+                selected: true,
+                iconColor: 1
             });
             selectedNetworkId = "new-id";
             displayName = "New network";
@@ -990,7 +993,8 @@ TestCase {
             networkId: "libera",
             displayName: "irc.libera.chat",
             stored: true,
-            selected: true
+            selected: true,
+            iconColor: 1
         });
         namedConnection.selectedNetworkId = "libera";
         namedConnection.displayName = "irc.libera.chat";
@@ -3205,7 +3209,8 @@ TestCase {
             networkId: "oftc",
             displayName: "irc.oftc.net",
             stored: true,
-            selected: false
+            selected: false,
+            iconColor: 1
         });
         namedConnection.applySucceeds = true;
         namedConnection.applyCalls = 0;
@@ -3241,7 +3246,8 @@ TestCase {
             networkId: "oftc",
             displayName: "irc.oftc.net",
             stored: true,
-            selected: false
+            selected: false,
+            iconColor: 1
         });
         var window = createTemporaryObject(fallbackWindowComponent, null);
         verify(window !== null, "The add-then-discard window should load");
@@ -3316,7 +3322,8 @@ TestCase {
                 networkId: "extra-" + extra,
                 displayName: "irc.extra" + extra + ".example",
                 stored: true,
-                selected: false
+                selected: false,
+                iconColor: 1
             });
         }
         var window = createTemporaryObject(fallbackWindowComponent, null);
@@ -3871,6 +3878,15 @@ TestCase {
         saveScreenshot("two-networks");
     }
 
+    function test_mockNetworkIconsUseDistinctPaletteColors() {
+        var omarchy = item("networkIcon");
+        var oftc = item("networkIcon-mock-oftc");
+        compare(omarchy.color, Qt.color(appWindow.paletteColor(1)));
+        compare(oftc.color, Qt.color(appWindow.paletteColor(2)));
+        verify(omarchy.color.toString() !== oftc.color.toString());
+        saveScreenshot("network-icon-colors");
+    }
+
     function test_duplicateOmarchyHighlightsIndependently() {
         openSeededAppWindow();
         mouseClick(namedItem(liveOftcConversation("#omarchy")));
@@ -3992,7 +4008,8 @@ TestCase {
             networkId: "oftc",
             displayName: "irc.oftc.net",
             stored: true,
-            selected: false
+            selected: false,
+            iconColor: 1
         });
         var window = createTemporaryObject(liveNamedWindowComponent, null);
         verify(window !== null, "The two-network window should load");
@@ -4204,7 +4221,8 @@ TestCase {
             networkId: "oftc",
             displayName: "irc.oftc.net",
             stored: true,
-            selected: false
+            selected: false,
+            iconColor: 1
         });
         namedConnection.dirty = true;
         var window = createTemporaryObject(fallbackWindowComponent, null);
@@ -4438,7 +4456,8 @@ TestCase {
             networkId: "oftc",
             displayName: "irc.oftc.net",
             stored: true,
-            selected: false
+            selected: false,
+            iconColor: 1
         });
         var window = createTemporaryObject(fallbackWindowComponent, null);
         verify(window !== null, "The accessible rail window should load");

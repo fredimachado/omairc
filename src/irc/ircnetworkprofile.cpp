@@ -3,6 +3,7 @@
 #include "irccommandbuilder.h"
 #include "ircserverfeatures.h"
 
+#include <QRandomGenerator>
 #include <QRegularExpression>
 #include <QUuid>
 
@@ -75,6 +76,28 @@ IrcNetworkProfile IrcNetworkProfile::suggested()
     profile.tlsEnabled = true;
     profile.autojoinChannels = {QStringLiteral("#omarchy")};
     return profile;
+}
+
+int IrcNetworkProfile::pickIconColor(const QList<int> &used)
+{
+    QList<int> free;
+    for (int slot = 0; slot < iconColorCount; ++slot) {
+        if (!used.contains(slot))
+            free.append(slot);
+    }
+    if (free.isEmpty())
+        return int(QRandomGenerator::global()->bounded(iconColorCount));
+    if (free.size() == 1)
+        return free.first();
+    return free.at(int(QRandomGenerator::global()->bounded(free.size())));
+}
+
+bool IrcNetworkProfile::ensureIconColor(const QList<int> &used)
+{
+    if (iconColor >= 0 && iconColor < iconColorCount)
+        return false;
+    iconColor = pickIconColor(used);
+    return true;
 }
 
 IrcNetworkProfile IrcNetworkProfile::normalized() const
@@ -171,7 +194,8 @@ bool operator==(const IrcNetworkProfile &left, const IrcNetworkProfile &right)
         && left.realname == right.realname
         && left.account == right.account
         && left.bouncerNetwork == right.bouncerNetwork
-        && left.autojoinChannels == right.autojoinChannels;
+        && left.autojoinChannels == right.autojoinChannels
+        && left.iconColor == right.iconColor;
 }
 
 bool operator!=(const IrcNetworkProfile &left, const IrcNetworkProfile &right)

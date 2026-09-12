@@ -59,6 +59,7 @@ QString stateText(IrcSession::State state)
     case IrcSession::State::Idle:
         return QStringLiteral("Offline");
     case IrcSession::State::Connecting:
+    case IrcSession::State::StsUpgrading:
     case IrcSession::State::CapLs:
     case IrcSession::State::CapReq:
     case IrcSession::State::Sasl:
@@ -1106,9 +1107,15 @@ IrcCommandOutcome IrcController::dispatchHelp(IrcComposerSurface surface)
     QStringList names;
     for (const IrcVerbSpec& row : IrcVerbTable::all())
         names.append(QLatin1Char('/') + row.name);
-    m_console.record(IrcStatusEntry::outcome(
-        networkId,
-        QStringLiteral("Commands: %1").arg(names.join(QStringLiteral(", ")))));
+    const QString text =
+        QStringLiteral("Commands: %1").arg(names.join(QStringLiteral(", ")));
+    if (surface == IrcComposerSurface::Conversation) {
+        if (!m_selected)
+            return IrcCommandOutcome::WrongScope;
+        apply(IrcWhoisTranscriptEvent{*m_selected, text});
+        return IrcCommandOutcome::Sent;
+    }
+    m_console.record(IrcStatusEntry::outcome(networkId, text));
     return IrcCommandOutcome::Sent;
 }
 
