@@ -10,11 +10,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - IRCv3 `server-time`. Omairc requests the capability whenever the server advertises it, so a server that gates the `time` message tag behind it now sends real timestamps instead of folding them into the message body.
-- Optional Account and Bouncer network fields in the Connect sheet. SASL PLAIN logs in with the account when it is set and falls back to the nick, and a bouncer network is appended after a slash so the bouncer attaches the right upstream network. Neither field is a secret, so both are saved with the profile.
 - Bouncer buffer replay on attach. A `znc.in/playback` batch now lands as backlog in muted text instead of as live traffic, so reattaching after a day away no longer raises unread counts or announces yesterday's mentions as new desktop notifications. A channel buffer splices above the join line. A query buffer opens its direct message only when the backlog holds a line somebody else wrote, so an outbound `/msg` that the bouncer kept in a buffer still opens nothing. Replay needs only the `batch` capability, which is what a bouncer offers.
 
 ### Changed
 
+- Connect no longer shows Account or Bouncer network. Username stays on the sheet.
 - `--demo-server` seeds the real `IrcController` in-process. `--mock` and the
   QML prototype sidebar are gone. `OmaircWindow` requires `irc`; a null
   binding no longer loads mock conversations.
@@ -22,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The Connect form scrollbar no longer covers the fields. The card width stays the same.
 - `Ctrl+F` find works on live conversation and Status transcripts. Empty first press enters find and waits. The composer shows Find. Matches include author and body, or Status label and text. The current row uses the selection color.
 
 ## [0.3.0alpha] - 2026-09-11
