@@ -43,6 +43,7 @@ public:
     Q_INVOKABLE void injectOmarchy(const QString &bytes);
     Q_INVOKABLE void injectOftc(const QString &bytes);
     Q_INVOKABLE bool echoLastOmarchyPrivmsg();
+    Q_INVOKABLE bool echoLastOftcPrivmsg();
 
     Backend &backend();
     IrcSlashSession &slash();

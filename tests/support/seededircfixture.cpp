@@ -552,6 +552,21 @@ void injectClientEcho(FakeIrcTransport *transport, const QString &nick,
 {
     transport->injectBytes(":" + nick.toUtf8() + "!u@h " + frame);
 }
+
+bool echoLastPrivmsg(FakeIrcTransport *transport, const QString &nick)
+{
+    if (!transport || nick.isEmpty())
+        return false;
+    const QByteArrayList frames = transport->writtenFrames();
+    for (int index = frames.size() - 1; index >= 0; --index) {
+        const QByteArray &frame = frames.at(index);
+        if (!frame.startsWith("PRIVMSG "))
+            continue;
+        injectClientEcho(transport, nick, frame);
+        return true;
+    }
+    return false;
+}
 }
 
 SeededIrcFixture::SeededIrcFixture(QObject *parent)
@@ -799,18 +814,14 @@ void SeededIrcFixture::injectOftc(const QString &bytes)
 
 bool SeededIrcFixture::echoLastOmarchyPrivmsg()
 {
-    if (!m_omarchyTransport || !m_controller)
+    if (!m_controller)
         return false;
-    const QString nick = m_controller->currentNick();
-    if (nick.isEmpty())
+    return echoLastPrivmsg(m_omarchyTransport, m_controller->currentNick());
+}
+
+bool SeededIrcFixture::echoLastOftcPrivmsg()
+{
+    if (!m_controller)
         return false;
-    const QByteArrayList frames = m_omarchyTransport->writtenFrames();
-    for (int index = frames.size() - 1; index >= 0; --index) {
-        const QByteArray &frame = frames.at(index);
-        if (!frame.startsWith("PRIVMSG "))
-            continue;
-        injectClientEcho(m_omarchyTransport, nick, frame);
-        return true;
-    }
-    return false;
+    return echoLastPrivmsg(m_oftcTransport, m_controller->currentNick());
 }
