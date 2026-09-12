@@ -4,7 +4,7 @@ _omairc()
     cur="${COMP_WORDS[COMP_CWORD]}"
 
     if [ "$COMP_CWORD" -eq 1 ]; then
-        COMPREPLY=( $(compgen -W "connections list status send raise help --help --version --mock" -- "$cur") )
+        COMPREPLY=( $(compgen -W "connections list status send raise help --help --version --demo-server" -- "$cur") )
         return 0
     fi
 

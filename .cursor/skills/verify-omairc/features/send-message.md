@@ -21,8 +21,8 @@ Send a message lets a user add a local line to the current mock transcript from 
 
 Preconditions:
 
-- Mock conversation UI is showing. Use `control-omairc launch --mock`, or `qml-suite` (`irc` left null). A default compiled launch is titled `irc.libera.chat Status`.
-- For the desktop recipe below, switch to `#desktop` first. Run `control-omairc click-conversation --name "#desktop"` then `control-omairc wait-title --exact "#desktop - Omairc"`. `launch --mock` starts on `#omarchy`.
+- Seeded conversation UI is showing. Use `control-omairc launch --demo-server`, or `qml-suite` (seeded `IrcController`). A default compiled launch is titled `irc.libera.chat Status`.
+- For the desktop recipe below, switch to `#desktop` first. Run `control-omairc click-conversation --name "#desktop"` then `control-omairc wait-title --exact "#desktop - Omairc"`. `launch --demo-server` starts on `#omarchy`.
 - No prior verify line `Hello from verify` is already in this session's `#desktop` transcript.
 
 - **Keyboard focus.** Press `Ctrl+L`. Run `control-omairc focus-composer`. The composer ring uses the accent color.
@@ -38,6 +38,6 @@ Preconditions:
 
 - `Enter` sends. There is no multiline composer. Do not hold Shift+Enter expecting a newline.
 - Empty or whitespace-only input is ignored. A screenshot of an unchanged transcript is the empty-submit proof.
-- `/me ` (note the space) rewrites the body to `fred ...` and uses kind `action`. `/me` without a trailing space is a normal message. Other slashes stay chat on `--mock`. Live catalog verbs are slash-commands.
-- Messages are session-local. Relaunching the isolated instance resets the mock models. Prove persistence inside one launch.
+- `/me` is a live ACTION. Other catalog verbs are slash-commands. A rejected command such as `/close` on a channel stays in the composer.
+- Messages are session-local. Relaunching the isolated instance resets the seeded session. Prove persistence inside one launch.
 - `click-send` is only aimed while the member panel is visible. If the panel is closed, use `Enter`.

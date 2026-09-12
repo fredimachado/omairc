@@ -52,7 +52,7 @@ desktop text size.
 ```sh
 bin/build
 ./build/omairc
-./build/omairc --mock
+./build/omairc --demo-server
 ./build/omairc --help
 ./build/omairc --version
 ./build/omairc connections
@@ -62,9 +62,10 @@ bin/build
 ./build/omairc raise
 ```
 
-`--mock` skips Connect and any saved profile, and opens the bundled prototype
-conversations instead. Mock mode also skips the single-process guard so tests
-can run more than one window.
+`--demo-server` seeds an in-process `IrcController` with the furnished demo
+world and skips Connect. It still honors the single-process guard; tests that
+need a second window set `OMAIRC_ALLOW_MULTI=1`. When `XDG_CONFIG_HOME` is
+unset, the demo writes its profiles into a temporary config tree.
 
 `--help` lists the GUI flags and control commands. `<command> --help` prints
 that command's usage. Both write plain text and exit without a window or a

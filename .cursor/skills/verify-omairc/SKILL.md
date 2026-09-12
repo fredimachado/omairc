@@ -5,13 +5,13 @@ description: Drive the Omairc Qt desktop prototype as a user would (isolated Xvf
 
 # Verify Omairc
 
-Omairc is a Qt 6 Quick desktop app. The compiled window binds a live IRC
-controller and a connection sheet unless launched with `--mock`, which leaves
-`irc` unset and shows the bundled prototype conversations. UI tests may still
-leave `irc` null and exercise that same mock path. There is no web UI or public
-API. This skill drives the compiled `build/omairc` window. The local CLI
-(`connections`, `status`, `send`, `raise`) is a separate binary path and is
-not a mapped feature here.
+Omairc is a Qt 6 Quick desktop app. The compiled window always binds a live
+IRC controller. A default launch shows the connection sheet. `--demo-server`
+seeds that controller in-process and skips Connect. `OmaircWindow` requires
+`irc`; binding it to null does not load a prototype sidebar. There is no web
+UI or public API. This skill drives the compiled `build/omairc` window. The
+local CLI (`connections`, `status`, `send`, `raise`) is a separate binary path
+and is not a mapped feature here.
 
 Read `features/README.md` before driving. Drive the mapped entry points for the feature under proof. A convenient path that skips listed entry points is incomplete.
 
@@ -21,10 +21,10 @@ Prefer a private X server and the compiled binary when `Xvfb`, `xauth`, `xdotool
 
 ```sh
 .cursor/skills/verify-omairc/control-omairc launch
-.cursor/skills/verify-omairc/control-omairc launch --mock
+.cursor/skills/verify-omairc/control-omairc launch --demo-server
 ```
 
-Ready when stdout includes a title ending in ` - Omairc` or ` Status`, and `doctor` exits 0. Default launch is `{displayName} Status` (often `irc.libera.chat Status`) with the connection sheet. `--mock` is `#omarchy - Omairc` with the prototype sidebar. After a live conversation exists the title is `{conversation} - Omairc`. Status itself uses `{displayName} Status` or `Status`.
+Ready when stdout includes a title ending in ` - Omairc` or ` Status`, and `doctor` exits 0. Default launch is `{displayName} Status` (often `irc.libera.chat Status`) with the connection sheet. `--demo-server` is `#omarchy · irc.example · fred - Omairc` with the seeded sidebar. After a live conversation exists the title is `{conversation} - Omairc`, or `{conversation} · {displayName} - Omairc` when two conversations share a name. Status itself uses `{displayName} Status` or `Status`.
 
 This launch:
 
@@ -32,7 +32,8 @@ This launch:
 - picks the next free X display from `:110`
 - uses a disposable `XDG_*` tree so window geometry is the default 1180x760
 - points `DBUS_SESSION_BUS_ADDRESS` at a missing socket so portal text-scale stays 1.0
-- passes `--mock` to the binary when requested
+- sets `OMAIRC_ALLOW_MULTI=1` so the isolated window does not take the user socket
+- passes `--demo-server` to the binary when requested
 - writes run state to `/tmp/omairc-verify-$USER/state`
 
 Two isolated instances can run if they get different displays. Never attach to a window you did not start. Never send `xdotool` to the session `$DISPLAY`.
@@ -68,7 +69,7 @@ Require all of:
 - `app_pid=` and `xvfb_pid=` are alive
 - `title=` ends with ` - Omairc` or ` Status`
 - `xdg=` is the disposable state directory from this run
-- `mock=yes` after `launch --mock`, otherwise `mock=no`
+- `demo=yes` after `launch --demo-server`, otherwise `demo=no`
 
 If doctor fails, cleanup, then launch again. Do not continue against a shared or stale instance.
 
@@ -78,7 +79,7 @@ When using the offscreen suite:
 .cursor/skills/verify-omairc/control-omairc doctor-qml
 ```
 
-Require `ok qml suite`. `bin/test` runs `tst_omairc.qml` through `seeded_qml_tests` (`Omairc.Test 1.0`). Default-window tests may still use a fake `Backend`. It does not open the compiled `build/omairc` window.
+Require `ok qml suite`. `bin/test` runs `tst_omairc.qml` through `seeded_qml_tests` (`Omairc.Test 1.0`). Default-window tests bind a fake or seeded `IrcController`. It does not open the compiled `build/omairc` window.
 
 ## Drive
 
@@ -87,12 +88,12 @@ Use `control-omairc` against the isolated window. Stable handles:
 | Handle | Meaning |
 |---|---|
 | Window title `{name} - Omairc` | Current conversation |
-| `click-conversation --name #desktop` | Mock sidebar channel or seeded DM (`#omarchy`, `#desktop`, `#ricing`, `#help`, `anna`, `dax`). Created DMs such as `mira` are not in that list; open them with `click-member` from a channel. Those rows are hidden when `irc` is bound. Use `control-omairc launch --mock` for the prototype. |
-| `click-member --name mira` | Member row while the panel is visible |
+| `click-conversation --name #desktop` | Seeded sidebar channel or DM (`#desktop`, `#help`, `#omarchy`, `#ricing`, `anna`, `dax`) on `--demo-server`. Channels are alphabetical, then DMs. Created DMs such as `mira` are not in that list; open them with `click-member` from a channel. |
+| `click-member --name mira` | Member row while the panel is visible. Seeded `#omarchy` members are alphabetical. |
 | `click-people` | Header `12 PEOPLE` / `Hide members` control while the member column is open (`908,36`) |
 | `click-people --hidden` | Same control after the column hides (`1124,36`) |
 | `click-network` | Sidebar network name. Opens Status. |
-| `click-edit` | Small `edit` control beside that name. Opens Connect. Hidden under `--mock`; `click-edit` refuses that window. |
+| `click-edit` | Small `edit` control beside that name. Opens Connect. Visible whenever `connection` is bound, including `--demo-server`. |
 | `focus-composer` | `Ctrl+L` |
 | `send --text "..."` | Focus composer, type, `Enter` |
 | `key --key ctrl+shift+m` | Toggle members on a channel |
@@ -114,12 +115,12 @@ Use `control-omairc` against the isolated window. Stable handles:
 
 Named clicks are window-relative pixels for 1180x760 at textScale 1.0. They are invalid on a maximized window, a restored user geometry, or a portal text scale other than 1.0. That is why launch isolates XDG and DBus.
 
-QML object names used by `bin/test` (not visible to xdotool): `connectionSheet`, `connectionHost`, `connectionNick`, `conversation-#desktop`, `conversation-anna`, `messageComposer`, `sendButton`, `peopleButton`, `membersPanel`, `membersList`, `member-mira`, `messageList`, `messageBody`, `urlHit`, `directConversationRepeater`, `networkHeaderButton`, `networkEditButton`, `consoleList`, `selfNickLabel`, `selfPresenceDot`, `selfPresenceLabel`, `presence-dot-anna`, `member-status-anna`, `shortcutsSheet`, `jumpSheet`, `jumpFilter`, `jumpList`, `composer-typing`, `member-typing-anna`, `slashCompleteList`, `slashHit-join`.
+QML object names used by `bin/test` (not visible to xdotool): `connectionSheet`, `connectionHost`, `connectionNick`, `conversation-omarchy-#desktop`, `conversation-omarchy-anna`, `messageComposer`, `sendButton`, `peopleButton`, `membersPanel`, `membersList`, `member-mira`, `messageList`, `messageBody`, `urlHit`, `directConversationRepeater`, `networkHeaderButton-omarchy`, `networkEditButton-omarchy`, `consoleList`, `selfNickLabel`, `selfPresenceDot`, `selfPresenceLabel`, `presence-dot-anna`, `member-status-anna`, `shortcutsSheet`, `jumpSheet`, `jumpFilter`, `jumpList`, `composer-typing`, `member-typing-anna`, `slashCompleteList`, `slashHit-join`.
 
 Typical drive:
 
 ```sh
-.cursor/skills/verify-omairc/control-omairc launch --mock
+.cursor/skills/verify-omairc/control-omairc launch --demo-server
 .cursor/skills/verify-omairc/control-omairc doctor
 .cursor/skills/verify-omairc/control-omairc title
 .cursor/skills/verify-omairc/control-omairc click-conversation --name "#desktop"
@@ -127,11 +128,11 @@ Typical drive:
 .cursor/skills/verify-omairc/control-omairc screenshot --feature switch-conversation --name after-desktop
 ```
 
-That click path needs the mock sidebar. Use `control-omairc launch --mock`. A default compiled launch is Connect with title `{displayName} Status`; use the Connect feature file first.
+That click path needs the seeded sidebar. Use `control-omairc launch --demo-server`. A default compiled launch is Connect with title `{displayName} Status`; use the Connect feature file first.
 
 Inspect the matching feature file for the exact recipe and observables.
 
-When desktop tools are missing, drive the mapped feature through the suite. `qml-suite` runs `bin/test`, which opens the Connect sheet with a fake incomplete profile, then clicks `conversation-#desktop`, `messageComposer`, `membersPanel` / `Ctrl+Shift+M`, `member-mira`, and `networkHeaderButton` with real mouse and key events, then copies screenshots into `test-artifacts/verify/`. That covers every mapped feature except live PREFIX ranks, live typing, live slash dispatch, and a real unfocused desktop mention, which need a completed Connect (and, for mentions, an unfocused window). It is not a pass on a skipped desktop entry point; say so in the proof notes.
+When desktop tools are missing, drive the mapped feature through the suite. `qml-suite` runs `bin/test`, which opens the Connect sheet with a fake incomplete profile, then clicks seeded `conversation-omarchy-#desktop`, `messageComposer`, `membersPanel` / `Ctrl+Shift+M`, `member-mira`, and `networkHeaderButton-omarchy` with real mouse and key events, then copies screenshots into `test-artifacts/verify/`. That covers every mapped feature except live PREFIX ranks, live typing, live slash dispatch, and a real unfocused desktop mention, which need a completed Connect (and, for mentions, an unfocused window). It is not a pass on a skipped desktop entry point; say so in the proof notes.
 
 ## Evidence
 
@@ -139,10 +140,10 @@ Proof lives in `test-artifacts/verify/<feature-id>/`. Cleanup must not delete it
 
 Standards:
 
-- Exercise the real window the way a user does: sidebar click, member click, composer, shortcuts. Do not call QML functions or write the mock models from outside the UI.
+- Exercise the real window the way a user does: sidebar click, member click, composer, shortcuts. Do not call QML functions from outside the UI.
 - Capture the action and the resulting state. A final screenshot alone is not proof.
 - Window title is the conversation identity. A screenshot must show the sidebar selection, header name, topic, and (for channels) people count together.
-- Messages are local only. Persistence proof is the same session: the row stays after sending, and switching away and back still shows it. There is no server or database.
+- Messages are session-local. Persistence proof is the same session: the row stays after sending, and switching away and back still shows it.
 - `control-omairc compare --before <a> --after <b>` requires a visible pixel change (ImageMagick AE > 100).
 - `bin/test` writes `test-artifacts/{connection-sheet,switch-channel,send-message,toggle-members,open-direct-message,status-console,typing-member-glyph,typing-dm-overlay}.png`. Treat those as QML-suite evidence, not desktop-window evidence. `qml-suite` copies them into `test-artifacts/verify/<feature-id>/`, and reuses `switch-channel.png` for member-presence and identity-footer.
 - Record the feature ID and entry point on every artifact name.
@@ -162,7 +163,7 @@ After cleanup, confirm the proof files still exist at `test-artifacts/verify/<fe
 `control-omairc` is executable. Invoke it from the repo root as shown above. Commands:
 
 ```text
-launch [--mock] | doctor | title | wait-title --exact TITLE
+launch [--demo-server] | doctor | title | wait-title --exact TITLE
 click --x N --y N
 click-conversation --name NAME
 click-member --name NICK

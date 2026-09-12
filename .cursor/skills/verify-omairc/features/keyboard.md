@@ -35,12 +35,12 @@ Keyboard is the window chord map: walk conversations, walk network headers, jump
 
 Preconditions:
 
-- Conversation walk, unread jump, nick complete, history, member focus, `Ctrl+W` close, and the sheet's Escape-vs-Status behavior need mock UI (`control-omairc launch --mock` or `qml-suite`, `irc` left null).
+- Conversation walk, unread jump, nick complete, history, member focus, `Ctrl+W` close, and the sheet's Escape-vs-Status behavior need the seeded UI (`control-omairc launch --demo-server` or `qml-suite`, seeded `IrcController`).
 - A default compiled window is titled `irc.libera.chat Status` with Connect. `Ctrl+/` still opens the sheet on that window. `Alt+Down` has nowhere to walk until a conversation exists.
-- `Ctrl+,` is a no-op on the mock window (`connection` is null). Prove it with `qml-suite` (`test_openConnectSheetWithShortcut`) or a compiled window that already has a connection.
+- `Ctrl+,` opens Connect on `--demo-server` because a connection is bound. The suite also covers it with `test_openConnectSheetWithShortcut`.
 
 - **Shortcut sheet on first run.** After `control-omairc launch`, run `control-omairc key --key ctrl+slash` then `control-omairc screenshot --feature keyboard --name after-ctrl-slash`. The sheet lists walk conversations, walk networks, jump to conversation, unread, Status, Connect, members panel, focus members, close direct message, composer, find, send, scroll, nick complete, history, Escape, this sheet, and quit. If the first send does not open the sheet, send `ctrl+slash` again. Run `control-omairc key --key Escape`. Connect stays open.
-- **Walk, unread, complete, history, members, close.** Run `control-omairc doctor-qml` then `control-omairc qml-suite`. The suite covers `Alt+Down` / `Alt+Up` (including wrap and leaving Status), `Alt+Left` / `Alt+Right` (including an empty header, Enter → Status, and `Ctrl+,`), `Ctrl+K` jump (filter, Enter, Escape, duplicate `#omarchy`, Connect no-op), `Alt+A` (mention then unread), `Tab` on `mi` → `mira: `, Up/Down history, per-conversation composer drafts, `Ctrl+F` find, Page Up / Page Down, `Ctrl+Shift+P` plus Enter on `mira`, `Ctrl+W` closing a DM, and `Ctrl+/` Escape keeping the conversation and Status. The sheet lists `walk networks` and `Ctrl+K`. On a fresh `launch --mock`, `control-omairc key --key alt+a` jumps to `#ricing` (mention 12). A second `alt+a` jumps to `anna`, who is still a mention until that DM is opened. Create `mira` from her member row, then `control-omairc key --key ctrl+w`. The title becomes `dax - Omairc` and the `mira` sidebar row is gone. Do not `click-conversation --name mira`; that helper only knows seeded rows.
+- **Walk, unread, complete, history, members, close.** Run `control-omairc doctor-qml` then `control-omairc qml-suite`. The suite covers `Alt+Down` / `Alt+Up` (including wrap and leaving Status), `Alt+Left` / `Alt+Right` (including an empty header, Enter → Status, and `Ctrl+,`), `Ctrl+K` jump (filter, Enter, Escape, duplicate `#omarchy`, Connect no-op), `Alt+A` (mention then unread), `Tab` on `mi` → `mira: `, Up/Down history, per-conversation composer drafts, `Ctrl+F` find, Page Up / Page Down, `Ctrl+Shift+P` plus Enter on `mira`, `Ctrl+W` closing a DM, and `Ctrl+/` Escape keeping the conversation and Status. The sheet lists `walk networks` and `Ctrl+K`. On a fresh `launch --demo-server`, `control-omairc key --key alt+a` jumps to `#ricing` (mention 12). A second `alt+a` jumps to `anna`, who is still a mention until that DM is opened. Create `mira` from her member row, then `control-omairc key --key ctrl+w`. The title becomes `dax - Omairc` and the `mira` sidebar row is gone. Do not `click-conversation --name mira`; that helper only knows seeded rows.
 - **Connect chord.** The same suite run covers `Ctrl+,` on the fallback window with a connection. That does not prove the compiled-window chord after Apply.
 
 ## Gotchas
@@ -49,7 +49,7 @@ Preconditions:
 - `Alt+Left` / `Alt+Right` do not change the open conversation. Enter on a focused header opens Status. `Ctrl+L` clears header focus so Enter sends again.
 - Unsent composer text stays with the conversation or Status. Switching away and back restores it. Status uses its own key, not the conversation name.
 - `Ctrl+Shift+M` still toggles the panel. That is toggle-members. `Ctrl+Shift+P` focuses the list.
-- `Ctrl+W` is disabled on channels and Status. On `--mock`, typed `/close` stays a chat line. Live `/close` is slash-commands.
+- `Ctrl+W` is disabled on channels and Status. Typed `/close` on a channel is a rejected slash command and stays in the composer.
 - `Tab` completes a nick prefix in the composer. Prove it with `qml-suite` (`mi` → `mira: `).
 - Page Up / Page Down are disabled while Connect is visible.
 - `Ctrl+F` enters find even with an empty composer. It jumps the current transcript to the match and leaves follow-the-end so the match stays put. Escape restores the draft, not the old scroll position.

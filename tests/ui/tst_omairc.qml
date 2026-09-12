@@ -154,6 +154,7 @@ TestCase {
 
         Omairc.OmaircWindow {
             backend: fakeBackend
+            irc: liveIrc
         }
     }
 
@@ -176,6 +177,7 @@ TestCase {
 
         Omairc.OmaircWindow {
             backend: fakeBackend
+            irc: liveIrc
             connection: fakeConnection
         }
     }
@@ -815,6 +817,7 @@ TestCase {
 
         Omairc.OmaircWindow {
             backend: fakeBackend
+            irc: liveIrc
             slashCommands: slashFake
         }
     }
@@ -3879,8 +3882,9 @@ TestCase {
     }
 
     function test_mockNetworkIconsUseDistinctPaletteColors() {
-        var omarchy = item("networkIcon");
-        var oftc = item("networkIcon-mock-oftc");
+        openSeededAppWindow();
+        var omarchy = namedItem("networkIcon-" + seed.omarchyNetworkId);
+        var oftc = namedItem("networkIcon-" + seed.oftcNetworkId);
         compare(omarchy.color, Qt.color(appWindow.paletteColor(1)));
         compare(oftc.color, Qt.color(appWindow.paletteColor(2)));
         verify(omarchy.color.toString() !== oftc.color.toString());

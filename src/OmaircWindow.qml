@@ -8,7 +8,7 @@ ApplicationWindow {
     id: win
 
     required property var backend
-    property var irc: null
+    required property var irc
     property var connection: null
     property var slashCommands: null
     property bool connectionSheetOpen: false
@@ -28,8 +28,6 @@ ApplicationWindow {
             Qt.callLater(focusConnectionSheetStart);
     }
 
-    readonly property string mockOmarchyId: "mock-omarchy"
-    readonly property string mockOftcId: "mock-oftc"
     readonly property bool darkMode: backend.darkMode
     readonly property real textScale: backend.textScale
     readonly property color pageColor: backend.themeBackground
@@ -42,13 +40,7 @@ ApplicationWindow {
     readonly property color dividerColor: mixColors(pageColor, inkColor, darkMode ? 0.13 : 0.11)
     readonly property color mutedColor: mixColors(pageColor, inkColor, darkMode ? 0.52 : 0.47)
 
-    property string mockCurrentConversation: "#omarchy"
-    property string mockSelectedNetworkId: mockOmarchyId
-    property string mockCurrentTopic: "A cozy corner for Omarchy users and builders."
-    property var mockActiveMessages: omarchyMessages
     property bool membersVisible: true
-    property bool mockStatusOpen: false
-    property string mockStatusNetworkId: mockOmarchyId
     property bool shortcutsSheetEscapeGuard: false
     property bool jumpSheetEscapeGuard: false
     property string sidebarNetworkFocusId: ""
@@ -59,7 +51,7 @@ ApplicationWindow {
         : null
     readonly property bool consoleVisible: networkConsole
         ? (networkConsole.open || irc.selectedTarget.length === 0)
-        : mockStatusOpen
+        : false
     onConsoleVisibleChanged: {
         resetNickComplete();
         if (!abandonFind())
@@ -75,15 +67,9 @@ ApplicationWindow {
             composer.forceActiveFocus();
         });
     }
-    readonly property string currentConversation: irc ? irc.selectedTarget : mockCurrentConversation
-    readonly property string currentNetworkId: irc
-        ? irc.focusedNetworkId
-        : (consoleVisible ? mockStatusNetworkId : mockSelectedNetworkId)
-    readonly property string currentConversationId: irc
-        ? irc.selectedConversationId
-        : (mockCurrentConversation.length > 0
-            ? mockSelectedNetworkId + "\n" + mockCurrentConversation
-            : "")
+    readonly property string currentConversation: irc ? irc.selectedTarget : ""
+    readonly property string currentNetworkId: irc ? irc.focusedNetworkId : ""
+    readonly property string currentConversationId: irc ? irc.selectedConversationId : ""
     onCurrentConversationIdChanged: {
         resetNickComplete();
         if (!abandonFind())
@@ -112,17 +98,16 @@ ApplicationWindow {
         ? (irc.selectedTarget.length > 0
             ? irc.topic
             : (irc.lastError.length > 0 ? irc.lastError : irc.connectionStatus))
-        : mockCurrentTopic
-    readonly property var activeMessages: irc ? irc.messages : mockActiveMessages
+        : ""
+    readonly property var activeMessages: irc ? irc.messages : null
     readonly property bool currentConversationIsChannel: irc
         ? irc.isChannel : currentConversation.charAt(0) === "#"
-    readonly property int currentPeopleCount: irc
-        ? irc.peopleCount : peopleCountFor(currentConversation, mockSelectedNetworkId)
+    readonly property int currentPeopleCount: irc ? irc.peopleCount : 0
     readonly property bool memberStatusVisible: !irc || irc.hasMemberStatus
     readonly property bool awayPresenceVisible: !irc || irc.hasAwayPresence
     readonly property bool selfAway: irc ? irc.selfAway : false
     readonly property bool typingVisible: !irc || irc.hasTyping
-    readonly property var typingNicks: irc ? irc.typingNicks : mockTypingNicks()
+    readonly property var typingNicks: irc ? irc.typingNicks : []
     readonly property string selfNick: {
         if (irc) {
             var live = irc.currentNick
@@ -130,11 +115,8 @@ ApplicationWindow {
                 return live
             if (connection && connection.nick && connection.nick.length > 0)
                 return connection.nick
-            return ""
         }
-        if (currentNetworkId === mockOftcId)
-            return "oak"
-        return "fred"
+        return ""
     }
     readonly property bool connectionOverlayVisible: connection
         && (connection.setupRequired || connectionSheetOpen)
@@ -142,7 +124,6 @@ ApplicationWindow {
     property var composerHistories: ({})
     property var composerDrafts: ({})
     property string composerDraftKey: ""
-    property var mockDirectMessageModels: ({})
     property bool findActive: false
     property int findIndex: -1
     property int composerHistoryIndex: -1
@@ -223,11 +204,6 @@ ApplicationWindow {
     }
 
     function focusedNetworkDisplayName() {
-        if (!irc) {
-            if (currentNetworkId === mockOftcId)
-                return "irc.oftc.net";
-            return "Omarchy IRC";
-        }
         if (connection && connection.networks) {
             var model = connection.networks;
             var id = currentNetworkId;
@@ -399,180 +375,24 @@ ApplicationWindow {
         backend.notifyDesktop(author, text);
     }
 
-    function topicFor(name, networkId) {
-        var id = networkId || mockSelectedNetworkId;
-        if (id === mockOftcId) {
-            if (name === "#omarchy")
-                return "A different #omarchy, hosted on OFTC.";
-            if (name === "#lab")
-                return "Build lab for packaging and CI.";
-            if (name === "#build")
-                return "Nightly builds and failing tests.";
-            if (name.charAt(0) !== "#")
-                return "Direct message with " + name;
-            return "A local mock conversation.";
-        }
-        if (name === "#omarchy")
-            return "A cozy corner for Omarchy users and builders.";
-        if (name === "#desktop")
-            return "Desktops should feel personal, fast, and calm.";
-        if (name === "#ricing")
-            return "Themes, type, wallpapers, and the tiny details.";
-        if (name === "#help")
-            return "Ask a clear question. Share what you already tried.";
-        if (name.charAt(0) !== "#")
-            return "Direct message with " + name;
-        return "A local mock conversation.";
-    }
-
-    function peopleCountFor(name, networkId) {
-        var id = networkId || mockSelectedNetworkId;
-        if (id === mockOftcId) {
-            if (name === "#omarchy")
-                return 4;
-            if (name === "#lab")
-                return 6;
-            if (name === "#build")
-                return 3;
-            return 2;
-        }
-        if (name === "#omarchy")
-            return 12;
-        if (name === "#desktop")
-            return 8;
-        if (name === "#ricing")
-            return 10;
-        if (name === "#help")
-            return 5;
-        return 2;
-    }
-
-    function memberDataFor(index) {
-        if (mockSelectedNetworkId === mockOftcId)
-            return oftcMembersModel.get(index);
-        if (currentConversation === "anna")
-            return membersModel.get(index === 0 ? 0 : 4);
-        if (currentConversation === "dax")
-            return membersModel.get(index === 0 ? 1 : 4);
-        return membersModel.get(index);
-    }
-
-    function mockTypingNicks() {
-        if (mockSelectedNetworkId === mockOftcId)
-            return [];
-        if (currentConversation === "#omarchy" || currentConversation === "anna")
-            return ["anna"];
-        return [];
-    }
-
-    function messagesFor(name, networkId) {
-        var id = networkId || mockSelectedNetworkId;
-        if (id === mockOftcId) {
-            if (name === "#lab")
-                return labMessages;
-            if (name === "#build")
-                return buildMessages;
-            if (name === "rio")
-                return rioMessages;
-            if (name.charAt(0) === "#")
-                return oftcOmarchyMessages;
-            return mockDirectMessages(name, id);
-        }
-        if (name === "#desktop")
-            return desktopMessages;
-        if (name === "#ricing")
-            return ricingMessages;
-        if (name === "#help")
-            return helpMessages;
-        if (name === "anna")
-            return annaMessages;
-        if (name === "dax")
-            return daxMessages;
-        if (name === "mira")
-            return miraMessages;
-        if (name === "sol")
-            return solMessages;
-        if (name === "kai")
-            return kaiMessages;
-        if (name === "nora")
-            return noraMessages;
-        if (name === "teo")
-            return teoMessages;
-        if (name === "lena")
-            return lenaMessages;
-        if (name === "sam")
-            return samMessages;
-        if (name === "ivy")
-            return ivyMessages;
-        if (name === "max")
-            return maxMessages;
-        return omarchyMessages;
-    }
-
     function openDirectMessage(nick) {
-        if (irc) {
-            irc.openDirectMessage(nick);
-            Qt.callLater(function() {
-                messageList.pinToEnd();
-                composer.forceActiveFocus();
-            });
+        if (!irc)
             return;
-        }
-        if (mockDirectExists(nick, mockSelectedNetworkId)) {
-            selectConversation(nick, mockSelectedNetworkId);
-            return;
-        }
-
-        directConversations.append({
-            conversation: nick,
-            networkId: mockSelectedNetworkId,
-            directUnread: 0,
-            directMention: false,
-            typing: false
+        irc.openDirectMessage(nick);
+        Qt.callLater(function() {
+            messageList.pinToEnd();
+            composer.forceActiveFocus();
         });
-        selectConversation(nick, mockSelectedNetworkId);
     }
 
     function closeDirectMessage() {
-        if (irc) {
-            irc.closeDirectMessage();
-            Qt.callLater(function() {
-                messageList.pinToEnd();
-                composer.forceActiveFocus();
-            });
+        if (!irc)
             return;
-        }
-        if (currentConversation.length === 0 || currentConversation.charAt(0) === "#")
-            return;
-
-        var rows = sidebarConversationRows();
-        var current = -1;
-        for (var index = 0; index < rows.length; ++index) {
-            if (rows[index].conversationId === currentConversationId) {
-                current = index;
-                break;
-            }
-        }
-
-        var nextRow = neighborAfterDrop(rows, current);
-
-        var closing = currentConversation;
-        var closingNetwork = mockSelectedNetworkId;
-        for (var removeIndex = 0; removeIndex < directConversations.count; ++removeIndex) {
-            if (directConversations.get(removeIndex).conversation === closing
-                    && directConversations.get(removeIndex).networkId === closingNetwork) {
-                directConversations.remove(removeIndex);
-                break;
-            }
-        }
-
-        if (nextRow) {
-            selectConversation(nextRow.conversationName, rowNetworkId(nextRow));
-            return;
-        }
-        mockStatusOpen = true;
-        mockStatusNetworkId = closingNetwork;
-        mockCurrentConversation = "";
+        irc.closeDirectMessage();
+        Qt.callLater(function() {
+            messageList.pinToEnd();
+            composer.forceActiveFocus();
+        });
     }
 
     function focusMembersList() {
@@ -592,38 +412,12 @@ ApplicationWindow {
         win.openDirectMessage(nick);
     }
 
-    function markDirectConversationRead(name, networkId) {
-        var id = networkId || mockSelectedNetworkId;
-        for (var index = 0; index < directConversations.count; ++index) {
-            if (directConversations.get(index).conversation === name
-                    && directConversations.get(index).networkId === id) {
-                directConversations.setProperty(index, "directUnread", 0);
-                directConversations.setProperty(index, "directMention", false);
-                return;
-            }
-        }
-    }
-
     function selectConversation(name, networkId) {
         sidebarNetworkFocusId = "";
-        var id = networkId && networkId.length
-            ? networkId
-            : (irc ? irc.selectedNetworkId : mockSelectedNetworkId);
-        if (irc) {
-            irc.selectConversation(id, name);
-            Qt.callLater(function() {
-                messageList.pinToEnd();
-                composer.forceActiveFocus();
-            });
+        if (!irc)
             return;
-        }
-        mockStatusOpen = false;
-        mockSelectedNetworkId = id;
-        if (name.charAt(0) !== "#")
-            markDirectConversationRead(name, id);
-        mockCurrentConversation = name;
-        mockCurrentTopic = topicFor(name, id);
-        mockActiveMessages = messagesFor(name, id);
+        var id = networkId && networkId.length ? networkId : irc.selectedNetworkId;
+        irc.selectConversation(id, name);
         Qt.callLater(function() {
             messageList.pinToEnd();
             composer.forceActiveFocus();
@@ -632,16 +426,9 @@ ApplicationWindow {
 
     function openNetworkStatus(networkId) {
         sidebarNetworkFocusId = "";
-        if (irc) {
-            irc.openStatus(networkId);
-            Qt.callLater(function() {
-                consoleList.pinToEnd();
-                composer.forceActiveFocus();
-            });
+        if (!irc)
             return;
-        }
-        mockStatusNetworkId = networkId;
-        mockStatusOpen = true;
+        irc.openStatus(networkId);
         Qt.callLater(function() {
             consoleList.pinToEnd();
             composer.forceActiveFocus();
@@ -668,34 +455,13 @@ ApplicationWindow {
                 appendSection(liveNetworkRepeater.itemAt(liveIndex));
         } else if (irc) {
             appendSection(liveFallbackSection);
-        } else {
-            appendSection(mockOmarchySection);
-            appendSection(mockOftcSection);
         }
         return rows;
     }
 
-    function mockDirectExists(nick, networkId) {
-        if (networkId === mockOftcId && nick === "rio")
-            return true;
-        for (var index = 0; index < directConversations.count; ++index) {
-            if (directConversations.get(index).conversation === nick
-                    && directConversations.get(index).networkId === networkId)
-                return true;
-        }
-        return false;
-    }
-
     function sectionHasDirects(networkId) {
-        if (!irc) {
-            if (networkId === mockOftcId)
-                return true;
-            for (var mockIndex = 0; mockIndex < directConversations.count; ++mockIndex) {
-                if (directConversations.get(mockIndex).networkId === networkId)
-                    return true;
-            }
+        if (!irc)
             return false;
-        }
         var model = irc.conversations;
         if (!model)
             return false;
@@ -736,9 +502,6 @@ ApplicationWindow {
             }
         } else if (irc) {
             appendSection(liveFallbackSection);
-        } else {
-            appendSection(mockOmarchySection);
-            appendSection(mockOftcSection);
         }
         return sections;
     }
@@ -902,21 +665,6 @@ ApplicationWindow {
             sidebarScroll.contentY = Math.max(0, bottom - sidebarScroll.height);
     }
 
-    function mockDirectMessages(nick, networkId) {
-        var key = networkId + "\n" + nick;
-        if (mockDirectMessageModels[key])
-            return mockDirectMessageModels[key];
-        var model = Qt.createQmlObject("import QtQuick; ListModel {}", win);
-        model.append({
-            author: "",
-            time: "",
-            body: "This is the beginning of your conversation with " + nick + ".",
-            kind: "event"
-        });
-        mockDirectMessageModels[key] = model;
-        return model;
-    }
-
     function jumpToNextUnread() {
         var rows = sidebarConversationRows();
         if (rows.length === 0)
@@ -954,7 +702,7 @@ ApplicationWindow {
 
     function composerHistoryKey() {
         if (consoleVisible) {
-            var statusNetwork = irc ? irc.focusedNetworkId : mockStatusNetworkId;
+            var statusNetwork = irc ? irc.focusedNetworkId : "";
             return "status\n" + statusNetwork;
         }
         return currentConversationId;
@@ -1175,10 +923,9 @@ ApplicationWindow {
     function memberNickAt(index) {
         if (index < 0 || index >= memberCount())
             return "";
-        if (irc)
-            return liveMemberNick(irc.members, index);
-        var mock = memberDataFor(index);
-        return mock && mock.nick ? mock.nick : "";
+        if (!irc)
+            return "";
+        return liveMemberNick(irc.members, index);
     }
 
     function nickCompleteCandidates() {
@@ -1188,22 +935,14 @@ ApplicationWindow {
             return currentConversation.length > 0 ? [currentConversation] : [];
 
         var nicks = [];
-        if (irc) {
-            var model = irc.members;
-            var count = liveMemberCount(model);
-            for (var row = 0; row < count; ++row) {
-                var liveNick = liveMemberNick(model, row);
-                if (liveNick.length > 0)
-                    nicks.push(liveNick);
-            }
+        if (!irc)
             return nicks;
-        }
-
-        for (var index = 0; index < currentPeopleCount; ++index) {
-            var mock = memberDataFor(index);
-            var mockNick = mock && mock.nick ? mock.nick : "";
-            if (mockNick.length > 0)
-                nicks.push(mockNick);
+        var model = irc.members;
+        var count = liveMemberCount(model);
+        for (var row = 0; row < count; ++row) {
+            var liveNick = liveMemberNick(model, row);
+            if (liveNick.length > 0)
+                nicks.push(liveNick);
         }
         return nicks;
     }
@@ -1309,53 +1048,18 @@ ApplicationWindow {
             return;
 
         if (consoleVisible) {
-            if (irc) {
-                if (networkConsole.submit(original)) {
-                    rememberSentComposerLine(original);
-                    composer.clear();
-                }
-                consoleList.pinToEnd();
-                return;
+            if (irc && networkConsole.submit(original)) {
+                rememberSentComposerLine(original);
+                composer.clear();
             }
-            var statusLog = mockStatusNetworkId === mockOftcId
-                ? oftcStatusMessages : mockStatusMessages;
-            statusLog.append({
-                time: Qt.formatTime(new Date(), "hh:mm:ss"),
-                label: "command",
-                text: original,
-                source: "local",
-                severity: "info"
-            });
-            rememberSentComposerLine(original);
-            composer.clear();
             consoleList.pinToEnd();
             return;
         }
 
-        if (irc) {
-            if (irc.sendMessage(original)) {
-                rememberSentComposerLine(original);
-                composer.clear();
-            }
-            messageList.pinToEnd();
-            return;
+        if (irc && irc.sendMessage(original)) {
+            rememberSentComposerLine(original);
+            composer.clear();
         }
-
-        var kind = "message";
-        var body = original;
-        if (body.indexOf("/me ") === 0) {
-            body = win.selfNick + " " + body.substring(4);
-            kind = "action";
-        }
-
-        activeMessages.append({
-            author: win.selfNick,
-            time: Qt.formatTime(new Date(), "hh:mm"),
-            body: body,
-            kind: kind
-        });
-        rememberSentComposerLine(original);
-        composer.clear();
         messageList.pinToEnd();
     }
 
@@ -1434,15 +1138,13 @@ ApplicationWindow {
         enabled: !win.shortcutOverlayOpen
         onActivated: {
             if (win.consoleVisible) {
-                if (win.irc)
+                if (win.networkConsole)
                     win.networkConsole.open = false;
-                else
-                    win.mockStatusOpen = false;
                 return;
             }
             var id = win.irc
                 ? (win.irc.focusedNetworkId || win.irc.selectedNetworkId)
-                : win.mockSelectedNetworkId;
+                : "";
             if (id && id.length > 0)
                 win.openNetworkStatus(id);
         }
@@ -1549,9 +1251,7 @@ ApplicationWindow {
                 return true;
             if (!win.consoleVisible)
                 return false;
-            if (win.irc)
-                return win.irc.selectedTarget.length > 0;
-            return win.mockCurrentConversation.length > 0;
+            return win.irc && win.irc.selectedTarget.length > 0;
         }
         onActivated: {
             if (win.slashCommands && win.slashCommands.open) {
@@ -1576,10 +1276,8 @@ ApplicationWindow {
                 win.leaveFind();
                 return;
             }
-            if (win.irc)
+            if (win.networkConsole)
                 win.networkConsole.open = false;
-            else
-                win.mockStatusOpen = false;
         }
     }
 
@@ -1755,11 +1453,10 @@ ApplicationWindow {
         property string networkId
         property string displayName
         property int iconColor: -1
-        property string statusText: "mock connected"
+        property string statusText: ""
         property int alerts: 0
         property int unread: 0
         property bool mention: false
-        property bool preserveLegacyNames: false
         property bool showEdit: win.connection !== null
         property alias headerItem: networkHeader
         readonly property bool headerFocused: section.networkId.length > 0
@@ -1805,8 +1502,7 @@ ApplicationWindow {
 
         Item {
             id: networkHeader
-            objectName: section.preserveLegacyNames ? "networkHeader"
-                                                    : "networkHeader-" + section.networkId
+            objectName: "networkHeader-" + section.networkId
             width: parent.width
             height: win.scaledSize(64)
 
@@ -1833,8 +1529,7 @@ ApplicationWindow {
 
             MouseArea {
                 id: networkHeaderButton
-                objectName: section.preserveLegacyNames ? "networkHeaderButton"
-                                                        : "networkHeaderButton-" + section.networkId
+                objectName: "networkHeaderButton-" + section.networkId
                 z: 1
                 anchors.left: parent.left
                 anchors.right: networkEditButton.left
@@ -1846,8 +1541,7 @@ ApplicationWindow {
             }
 
             Rectangle {
-                objectName: section.preserveLegacyNames ? "networkIcon"
-                                                        : "networkIcon-" + section.networkId
+                objectName: "networkIcon-" + section.networkId
                 anchors.left: parent.left
                 anchors.leftMargin: win.scaledSize(18)
                 anchors.verticalCenter: parent.verticalCenter
@@ -1871,8 +1565,7 @@ ApplicationWindow {
 
             Item {
                 id: networkEditButton
-                objectName: section.preserveLegacyNames ? "networkEditButton"
-                                                        : "networkEditButton-" + section.networkId
+                objectName: "networkEditButton-" + section.networkId
                 z: 2
                 visible: section.showEdit
                 anchors.right: parent.right
@@ -1933,8 +1626,7 @@ ApplicationWindow {
 
                     Rectangle {
                         id: unreadMark
-                        objectName: section.preserveLegacyNames ? "networkUnreadMark"
-                                                                : "networkUnreadMark-" + section.networkId
+                        objectName: "networkUnreadMark-" + section.networkId
                         visible: section.liveUnread > 0 || section.liveMention
                         anchors.verticalCenter: parent.verticalCenter
                         width: win.scaledSize(7)
@@ -1955,7 +1647,7 @@ ApplicationWindow {
                         radius: width / 2
                         color: section.liveAlerts > 0
                             ? win.accentColor
-                            : (section.liveStatus === "Connected" || section.liveStatus === "mock connected"
+                            : (section.liveStatus === "Connected"
                                 ? "#69b978" : win.mutedColor)
                     }
 
@@ -1980,14 +1672,12 @@ ApplicationWindow {
         property bool mention: false
         property bool direct: false
         property bool typing: false
-        property string networkId: win.mockOmarchyId
+        property string networkId: ""
         property string conversationId: networkId + "\n" + conversationName
 
-        objectName: networkId === win.mockOftcId
-            ? "conversation-oftc-" + conversationName
-            : (win.irc && networkId.length > 0 && win.connection
-                ? "conversation-" + networkId + "-" + conversationName
-                : "conversation-" + conversationName)
+        objectName: win.irc && networkId.length > 0 && win.connection
+            ? "conversation-" + networkId + "-" + conversationName
+            : "conversation-" + conversationName
         Accessible.name: conversationName
         Accessible.description: typing ? "Typing" : ""
         Accessible.role: Accessible.Button
@@ -1999,10 +1689,6 @@ ApplicationWindow {
             && !win.consoleVisible
 
         function activate() {
-            if (!win.irc && !conversationRow.direct) {
-                conversationRow.unread = 0;
-                conversationRow.mention = false;
-            }
             win.selectConversation(conversationRow.conversationName,
                                    conversationRow.networkId);
             Qt.callLater(function() {
@@ -2096,12 +1782,10 @@ ApplicationWindow {
 
             TypingDots {
                 id: rowTyping
-                objectName: conversationRow.networkId === win.mockOftcId
-                    ? "conversation-typing-oftc-" + conversationRow.conversationName
-                    : (win.irc && conversationRow.networkId.length > 0 && win.connection
-                        ? "conversation-typing-" + conversationRow.networkId
-                            + "-" + conversationRow.conversationName
-                        : "conversation-typing-" + conversationRow.conversationName)
+                objectName: win.irc && conversationRow.networkId.length > 0 && win.connection
+                    ? "conversation-typing-" + conversationRow.networkId
+                        + "-" + conversationRow.conversationName
+                    : "conversation-typing-" + conversationRow.conversationName
                 visible: conversationRow.visible
                     && conversationRow.direct
                     && conversationRow.typing
@@ -2416,399 +2100,6 @@ ApplicationWindow {
         }
     }
 
-    ListModel {
-        id: omarchyMessages
-        ListElement {
-            author: ""
-            time: ""
-            body: "Today"
-            kind: "event"
-        }
-        ListElement {
-            author: "anna"
-            time: "09:41"
-            body: "Morning! Has anyone tried the new minimal install flow yet?"
-            kind: "message"
-        }
-        ListElement {
-            author: "dax"
-            time: "09:43"
-            body: "Yes. Fresh install on my Framework took about twelve minutes. The defaults feel really considered."
-            kind: "message"
-        }
-        ListElement {
-            author: "mira"
-            time: "09:46"
-            body: "The way the theme carries across the terminal and native apps is my favorite detail."
-            kind: "message"
-        }
-        ListElement {
-            author: ""
-            time: ""
-            body: "sol joined #omarchy"
-            kind: "event"
-        }
-        ListElement {
-            author: "sol"
-            time: "09:52"
-            body: "Hey all. Just landed here from Arch. This feels surprisingly calm."
-            kind: "message"
-        }
-        ListElement {
-            author: "anna"
-            time: "09:53"
-            body: "Welcome, sol. Calm is the whole idea."
-            kind: "message"
-        }
-        ListElement {
-            author: "dax"
-            time: "09:55"
-            body: "If you have not already, try the keyboard-first app launcher. It becomes muscle memory fast."
-            kind: "message"
-        }
-        ListElement {
-            author: "sol"
-            time: "09:56"
-            body: "I found it. The shortcuts sheet is a nice touch too."
-            kind: "message"
-        }
-        ListElement {
-            author: "mira"
-            time: "09:57"
-            body: "Most of the system makes sense once you learn three or four core bindings."
-            kind: "message"
-        }
-        ListElement {
-            author: "anna"
-            time: "09:58"
-            body: "And everything important is still plain text when you want to look underneath."
-            kind: "message"
-        }
-        ListElement {
-            author: "kai"
-            time: "09:59"
-            body: "That balance is hard to get right: friendly defaults without hiding the actual system."
-            kind: "message"
-        }
-        ListElement {
-            author: "dax"
-            time: "10:00"
-            body: "Exactly. Start simple, then make it yours one deliberate change at a time."
-            kind: "message"
-        }
-        ListElement {
-            author: ""
-            time: ""
-            body: "nora joined #omarchy"
-            kind: "event"
-        }
-        ListElement {
-            author: "nora"
-            time: "10:01"
-            body: "Good timing. I was just looking for a quiet place to ask about native Omarchy apps."
-            kind: "message"
-        }
-        ListElement {
-            author: "fred"
-            time: "10:02"
-            body: "I am sketching a tiny IRC client that belongs here. No browser chrome, no clutter."
-            kind: "message"
-        }
-        ListElement {
-            author: "mira"
-            time: "10:04"
-            body: "Keep the member list optional and I am sold."
-            kind: "message"
-        }
-    }
-
-    ListModel {
-        id: desktopMessages
-        ListElement { author: ""; time: ""; body: "Today"; kind: "event" }
-        ListElement {
-            author: "dax"
-            time: "08:22"
-            body: "I finally moved every workspace rule into a small, readable file."
-            kind: "message"
-        }
-        ListElement {
-            author: "mira"
-            time: "08:24"
-            body: "That is the dream. Configuration you can understand in one sitting."
-            kind: "message"
-        }
-        ListElement {
-            author: "sol"
-            time: "10:08"
-            body: "Does anyone use a vertical monitor alongside the main display?"
-            kind: "message"
-        }
-    }
-
-    ListModel {
-        id: ricingMessages
-        ListElement { author: ""; time: ""; body: "Yesterday"; kind: "event" }
-        ListElement {
-            author: "anna"
-            time: "18:10"
-            body: "Muted colors, one strong accent, and enough breathing room."
-            kind: "message"
-        }
-        ListElement {
-            author: "mira"
-            time: "18:13"
-            body: "Typography does more work than decoration ever will."
-            kind: "message"
-        }
-        ListElement {
-            author: "dax"
-            time: "18:20"
-            body: "Dropped a new warm theme in the usual place. It looks great after sunset."
-            kind: "message"
-        }
-    }
-
-    ListModel {
-        id: helpMessages
-        ListElement { author: ""; time: ""; body: "Today"; kind: "event" }
-        ListElement {
-            author: "mira"
-            time: "09:11"
-            body: "Tip: include the command output and the exact behavior you expected."
-            kind: "message"
-        }
-        ListElement {
-            author: "sol"
-            time: "09:15"
-            body: "That made my monitor issue much easier to diagnose. Thanks."
-            kind: "message"
-        }
-    }
-
-    ListModel {
-        id: annaMessages
-        ListElement {
-            author: ""
-            time: ""
-            body: "This is the beginning of your conversation with anna."
-            kind: "event"
-        }
-        ListElement {
-            author: "anna"
-            time: "10:12"
-            body: "The prototype already feels at home. Nice work."
-            kind: "message"
-        }
-    }
-
-    ListModel {
-        id: daxMessages
-        ListElement {
-            author: ""
-            time: ""
-            body: "This is the beginning of your conversation with dax."
-            kind: "event"
-        }
-        ListElement {
-            author: "dax"
-            time: "Yesterday"
-            body: "Send me the build when the mock is ready."
-            kind: "message"
-        }
-    }
-
-    ListModel {
-        id: miraMessages
-        ListElement { author: ""; time: ""; body: "This is the beginning of your conversation with mira."; kind: "event" }
-    }
-
-    ListModel {
-        id: solMessages
-        ListElement { author: ""; time: ""; body: "This is the beginning of your conversation with sol."; kind: "event" }
-    }
-
-    ListModel {
-        id: kaiMessages
-        ListElement { author: ""; time: ""; body: "This is the beginning of your conversation with kai."; kind: "event" }
-    }
-
-    ListModel {
-        id: noraMessages
-        ListElement { author: ""; time: ""; body: "This is the beginning of your conversation with nora."; kind: "event" }
-    }
-
-    ListModel {
-        id: teoMessages
-        ListElement { author: ""; time: ""; body: "This is the beginning of your conversation with teo."; kind: "event" }
-    }
-
-    ListModel {
-        id: lenaMessages
-        ListElement { author: ""; time: ""; body: "This is the beginning of your conversation with lena."; kind: "event" }
-    }
-
-    ListModel {
-        id: samMessages
-        ListElement { author: ""; time: ""; body: "This is the beginning of your conversation with sam."; kind: "event" }
-    }
-
-    ListModel {
-        id: ivyMessages
-        ListElement { author: ""; time: ""; body: "This is the beginning of your conversation with ivy."; kind: "event" }
-    }
-
-    ListModel {
-        id: maxMessages
-        ListElement { author: ""; time: ""; body: "This is the beginning of your conversation with max."; kind: "event" }
-    }
-
-    ListModel {
-        id: directConversations
-        ListElement {
-            conversation: "anna"
-            networkId: "mock-omarchy"
-            directUnread: 1
-            directMention: true
-            typing: true
-        }
-        ListElement {
-            conversation: "dax"
-            networkId: "mock-omarchy"
-            directUnread: 0
-            directMention: false
-            typing: false
-        }
-    }
-
-    ListModel {
-        id: mockStatusMessages
-        ListElement {
-            time: "12:00:01"
-            label: "NOTICE"
-            text: "-AUTH- *** Looking up your hostname..."
-            source: "server"
-            severity: "info"
-        }
-        ListElement {
-            time: "12:00:02"
-            label: "001"
-            text: "Welcome to the mock network"
-            source: "server"
-            severity: "info"
-        }
-    }
-
-    ListModel {
-        id: oftcOmarchyMessages
-        ListElement { author: ""; time: ""; body: "Today"; kind: "event" }
-        ListElement {
-            author: "rio"
-            time: "11:02"
-            body: "This #omarchy is the OFTC one. Different people, same name."
-            kind: "message"
-        }
-        ListElement {
-            author: "oak"
-            time: "11:04"
-            body: "Good. If the sidebar mixed them, we would already be lost."
-            kind: "message"
-        }
-    }
-
-    ListModel {
-        id: labMessages
-        ListElement { author: ""; time: ""; body: "Today"; kind: "event" }
-        ListElement {
-            author: "ness"
-            time: "10:18"
-            body: "Package build is green on the new runner."
-            kind: "message"
-        }
-        ListElement {
-            author: "rio"
-            time: "10:21"
-            body: "Leave the log in #build if it fails after sunset."
-            kind: "message"
-        }
-    }
-
-    ListModel {
-        id: buildMessages
-        ListElement { author: ""; time: ""; body: "Today"; kind: "event" }
-        ListElement {
-            author: "ness"
-            time: "09:05"
-            body: "Nightly failed on missing qt6keychain. Looking."
-            kind: "message"
-        }
-        ListElement {
-            author: "oak"
-            time: "09:12"
-            body: "Patched. Waiting on the next image."
-            kind: "message"
-        }
-    }
-
-    ListModel {
-        id: rioMessages
-        ListElement {
-            author: ""
-            time: ""
-            body: "This is the beginning of your conversation with rio."
-            kind: "event"
-        }
-        ListElement {
-            author: "rio"
-            time: "11:40"
-            body: "Ping me on OFTC, not Libera."
-            kind: "message"
-        }
-    }
-
-    ListModel {
-        id: oftcStatusMessages
-        ListElement {
-            time: "12:10:01"
-            label: "NOTICE"
-            text: "-AUTH- *** Looking up your hostname..."
-            source: "server"
-            severity: "info"
-        }
-        ListElement {
-            time: "12:10:02"
-            label: "001"
-            text: "Welcome to the mock OFTC network"
-            source: "server"
-            severity: "info"
-        }
-    }
-
-    ListModel {
-        id: oftcMembersModel
-        ListElement { nick: "rio"; label: "rio"; status: "on #lab"; away: false }
-        ListElement { nick: "ness"; label: "ness"; status: "watching CI"; away: false }
-        ListElement { nick: "oak"; label: "oak"; status: "building Omairc"; away: false }
-        ListElement { nick: "pip"; label: "pip"; status: ""; away: true }
-        ListElement { nick: "jules"; label: "jules"; status: ""; away: false }
-        ListElement { nick: "remy"; label: "remy"; status: ""; away: false }
-    }
-
-    ListModel {
-        id: membersModel
-        ListElement { nick: "anna"; label: "anna"; status: "writing docs"; away: false }
-        ListElement { nick: "dax"; label: "dax"; status: "on #desktop"; away: false }
-        ListElement { nick: "mira"; label: "mira"; status: "making tea"; away: false }
-        ListElement { nick: "sol"; label: "sol"; status: "new here"; away: false }
-        ListElement { nick: "fred"; label: "fred"; status: "building Omairc"; away: false }
-        ListElement { nick: "kai"; label: "kai"; status: ""; away: false }
-        ListElement { nick: "nora"; label: "nora"; status: ""; away: false }
-        ListElement { nick: "teo"; label: "teo"; status: ""; away: true }
-        ListElement { nick: "lena"; label: "lena"; status: ""; away: true }
-        ListElement { nick: "sam"; label: "sam"; status: ""; away: true }
-        ListElement { nick: "ivy"; label: "ivy"; status: ""; away: true }
-        ListElement { nick: "max"; label: "max"; status: ""; away: true }
-    }
-
     RowLayout {
         anchors.fill: parent
         spacing: 0
@@ -3030,220 +2321,6 @@ ApplicationWindow {
                         }
                     }
 
-                    NetworkSection {
-                        id: mockOmarchySection
-                        visible: !win.irc
-                        height: visible ? implicitHeight : 0
-                        networkId: win.mockOmarchyId
-                        displayName: "Omarchy IRC"
-                        iconColor: 1
-                        statusText: "mock connected"
-                        unread: 16
-                        mention: true
-                        preserveLegacyNames: true
-                        showEdit: false
-
-                        Item {
-                            width: parent.width
-                            height: win.scaledSize(28)
-                            Text {
-                                anchors.left: parent.left
-                                anchors.leftMargin: win.scaledSize(19)
-                                anchors.verticalCenter: parent.verticalCenter
-                                text: "CHANNELS"
-                                color: win.mutedColor
-                                font.family: "iA Writer Mono S"
-                                font.bold: true
-                                font.letterSpacing: win.scaledSize(0.8)
-                                font.pixelSize: win.scaledSize(9)
-                            }
-                        }
-
-                        ConversationRow {
-                            id: mockOmarchyRow
-                            conversationName: "#omarchy"
-                            networkId: win.mockOmarchyId
-                            unread: 0
-                            mention: false
-                        }
-
-                        ConversationRow {
-                            id: mockDesktopRow
-                            conversationName: "#desktop"
-                            networkId: win.mockOmarchyId
-                            unread: 3
-                            mention: false
-                        }
-
-                        ConversationRow {
-                            id: mockRicingRow
-                            conversationName: "#ricing"
-                            networkId: win.mockOmarchyId
-                            unread: 12
-                            mention: true
-                        }
-
-                        ConversationRow {
-                            id: mockHelpRow
-                            conversationName: "#help"
-                            networkId: win.mockOmarchyId
-                            unread: 0
-                            mention: false
-                        }
-
-                        Item {
-                            width: parent.width
-                            height: win.scaledSize(36)
-                            Text {
-                                anchors.left: parent.left
-                                anchors.leftMargin: win.scaledSize(19)
-                                anchors.bottom: parent.bottom
-                                anchors.bottomMargin: win.scaledSize(8)
-                                text: "DIRECT MESSAGES"
-                                color: win.mutedColor
-                                font.family: "iA Writer Mono S"
-                                font.bold: true
-                                font.letterSpacing: win.scaledSize(0.8)
-                                font.pixelSize: win.scaledSize(9)
-                            }
-                        }
-
-                        Repeater {
-                            id: directConversationRepeater
-                            objectName: win.irc ? "" : "directConversationRepeater"
-                            model: win.irc ? null : directConversations
-                            delegate: ConversationRow {
-                                required property string conversation
-                                required property int index
-                                required property int directUnread
-                                required property bool directMention
-                                width: sidebar.width
-                                conversationName: conversation
-                                networkId: {
-                                    var row = directConversations.get(index);
-                                    return row ? row.networkId : win.mockOmarchyId;
-                                }
-                                unread: directUnread
-                                mention: directMention
-                                direct: true
-                                typing: {
-                                    var row = directConversations.get(index);
-                                    return row ? row.typing : false;
-                                }
-                                visible: networkId === win.mockOmarchyId
-                                objectName: visible ? "conversation-" + conversation : ""
-                                height: visible ? win.scaledSize(36) : 0
-                            }
-                        }
-                    }
-
-                    NetworkSection {
-                        id: mockOftcSection
-                        visible: !win.irc
-                        height: visible ? implicitHeight : 0
-                        networkId: win.mockOftcId
-                        displayName: "irc.oftc.net"
-                        iconColor: 2
-                        statusText: "mock connected"
-                        unread: 2
-                        mention: false
-                        preserveLegacyNames: false
-                        showEdit: false
-
-                        Item {
-                            width: parent.width
-                            height: win.scaledSize(28)
-                            Text {
-                                anchors.left: parent.left
-                                anchors.leftMargin: win.scaledSize(19)
-                                anchors.verticalCenter: parent.verticalCenter
-                                text: "CHANNELS"
-                                color: win.mutedColor
-                                font.family: "iA Writer Mono S"
-                                font.bold: true
-                                font.letterSpacing: win.scaledSize(0.8)
-                                font.pixelSize: win.scaledSize(9)
-                            }
-                        }
-
-                        ConversationRow {
-                            id: mockOftcOmarchyRow
-                            conversationName: "#omarchy"
-                            networkId: win.mockOftcId
-                            unread: 0
-                            mention: false
-                        }
-
-                        ConversationRow {
-                            id: mockLabRow
-                            conversationName: "#lab"
-                            networkId: win.mockOftcId
-                            unread: 0
-                            mention: false
-                        }
-
-                        ConversationRow {
-                            id: mockBuildRow
-                            conversationName: "#build"
-                            networkId: win.mockOftcId
-                            unread: 2
-                            mention: false
-                        }
-
-                        Item {
-                            width: parent.width
-                            height: win.scaledSize(36)
-                            Text {
-                                anchors.left: parent.left
-                                anchors.leftMargin: win.scaledSize(19)
-                                anchors.bottom: parent.bottom
-                                anchors.bottomMargin: win.scaledSize(8)
-                                text: "DIRECT MESSAGES"
-                                color: win.mutedColor
-                                font.family: "iA Writer Mono S"
-                                font.bold: true
-                                font.letterSpacing: win.scaledSize(0.8)
-                                font.pixelSize: win.scaledSize(9)
-                            }
-                        }
-
-                        ConversationRow {
-                            id: mockRioRow
-                            conversationName: "rio"
-                            networkId: win.mockOftcId
-                            unread: 0
-                            mention: false
-                            direct: true
-                        }
-
-                        Repeater {
-                            objectName: "directConversationRepeater-mock-oftc"
-                            model: win.irc ? null : directConversations
-                            delegate: ConversationRow {
-                                required property string conversation
-                                required property int index
-                                required property int directUnread
-                                required property bool directMention
-                                width: sidebar.width
-                                conversationName: conversation
-                                networkId: {
-                                    var row = directConversations.get(index);
-                                    return row ? row.networkId : win.mockOftcId;
-                                }
-                                unread: directUnread
-                                mention: directMention
-                                direct: true
-                                typing: {
-                                    var row = directConversations.get(index);
-                                    return row ? row.typing : false;
-                                }
-                                visible: networkId === win.mockOftcId
-                                objectName: visible
-                                    ? "conversation-oftc-" + conversation : ""
-                                height: visible ? win.scaledSize(36) : 0
-                            }
-                        }
-                    }
                 }
             }
 
@@ -3444,7 +2521,7 @@ ApplicationWindow {
                         text: win.irc
                             ? (win.irc.lastError.length > 0
                                 ? win.irc.lastError : win.irc.connectionStatus)
-                            : "mock connected"
+                            : ""
                         color: win.mutedColor
                         elide: Text.ElideRight
                         font.family: "iA Writer Mono S"
@@ -3647,9 +2724,7 @@ ApplicationWindow {
                 anchors.right: parent.right
                 anchors.bottom: composerShell.top
                 anchors.bottomMargin: win.scaledSize(12)
-                model: win.networkConsole ? win.networkConsole.lines
-                    : (win.mockStatusNetworkId === win.mockOftcId
-                        ? oftcStatusMessages : mockStatusMessages)
+                model: win.networkConsole ? win.networkConsole.lines : null
 
                 delegate: Item {
                     id: consoleDelegate
@@ -4712,7 +3787,7 @@ ApplicationWindow {
                 anchors.bottom: parent.bottom
                 anchors.bottomMargin: win.scaledSize(10)
                 clip: true
-                model: win.irc ? win.irc.members : win.currentPeopleCount
+                model: win.irc ? win.irc.members : null
                 boundsBehavior: Flickable.StopAtBounds
                 keyNavigationEnabled: true
                 highlightFollowsCurrentItem: true
@@ -4731,7 +3806,7 @@ ApplicationWindow {
 
                     readonly property var memberData: win.irc
                         ? ({nick: model.nick, label: model.label, status: model.status, away: model.away})
-                        : win.memberDataFor(index)
+                        : ({nick: "", label: "", status: "", away: false})
                     readonly property string nick: memberData.nick
                     readonly property string label: memberData.label
                     readonly property string status: memberData.status

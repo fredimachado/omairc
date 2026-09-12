@@ -15,6 +15,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `--demo-server` seeds the real `IrcController` in-process. `--mock` and the
+  QML prototype sidebar are gone. `OmaircWindow` requires `irc`; a null
+  binding no longer loads mock conversations.
 - A sender Omairc could not reply to no longer opens a conversation or notifies. A bouncer's `*status` and its `***` playback markers stay on the Status console, where every inbound line is already logged. A nick starting with a digit is still a person and still opens a direct message.
 
 ### Fixed

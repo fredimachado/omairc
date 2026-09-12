@@ -11,7 +11,7 @@ usage() {
 control-omairc - isolated driver for the compiled Omairc desktop app
 
 Usage:
-  control-omairc launch [--mock]
+  control-omairc launch [--demo-server]
   control-omairc doctor
   control-omairc title
   control-omairc wait-title --exact "<title>"
@@ -55,7 +55,7 @@ require_tools() {
 }
 
 load_state() {
-  [ -f "$STATE_FILE" ] || die "no active instance. Run: $SCRIPT_DIR/control-omairc launch [--mock]"
+  [ -f "$STATE_FILE" ] || die "no active instance. Run: $SCRIPT_DIR/control-omairc launch [--demo-server]"
   # shellcheck disable=SC1090
   . "$STATE_FILE"
   [ -n "${DISPLAY:-}" ] || die "state file is missing DISPLAY"
@@ -78,7 +78,7 @@ XVFB_PID=$XVFB_PID
 APP_PID=$APP_PID
 WINDOW=$WINDOW
 BINARY=$BINARY
-MOCK=$MOCK
+DEMO=$DEMO
 EOF
 }
 
@@ -96,13 +96,13 @@ stop_pid() {
 
 conversation_y() {
   case $1 in
-    "#omarchy") echo 124 ;;
-    "#desktop") echo 160 ;;
-    "#ricing") echo 196 ;;
-    "#help") echo 232 ;;
+    "#desktop") echo 124 ;;
+    "#help") echo 160 ;;
+    "#omarchy") echo 196 ;;
+    "#ricing") echo 232 ;;
     anna) echo 312 ;;
     dax) echo 348 ;;
-    *) die "unknown conversation '$1'. Use #omarchy, #desktop, #ricing, #help, anna, or dax." ;;
+    *) die "unknown conversation '$1'. Use #desktop, #help, #omarchy, #ricing, anna, or dax." ;;
   esac
 }
 
@@ -110,16 +110,16 @@ member_y() {
   case $1 in
     anna) echo 71 ;;
     dax) echo 114 ;;
-    mira) echo 157 ;;
-    sol) echo 200 ;;
-    fred) echo 243 ;;
-    kai) echo 286 ;;
-    nora) echo 329 ;;
-    teo) echo 372 ;;
-    lena) echo 415 ;;
+    fred) echo 157 ;;
+    ivy) echo 200 ;;
+    kai) echo 243 ;;
+    lena) echo 286 ;;
+    max) echo 329 ;;
+    mira) echo 372 ;;
+    nora) echo 415 ;;
     sam) echo 458 ;;
-    ivy) echo 501 ;;
-    max) echo 544 ;;
+    sol) echo 501 ;;
+    teo) echo 544 ;;
     *) die "unknown member '$1'." ;;
   esac
 }
@@ -136,11 +136,11 @@ click_xy() {
 }
 
 cmd_launch() {
-  MOCK=
+  DEMO=
   while [ $# -gt 0 ]; do
     case $1 in
-      --mock) MOCK=1; shift ;;
-      *) die "unknown launch argument: $1. Use launch or launch --mock." ;;
+      --demo-server) DEMO=1; shift ;;
+      *) die "unknown launch argument: $1. Use launch or launch --demo-server." ;;
     esac
   done
 
@@ -190,8 +190,9 @@ cmd_launch() {
   export XDG_STATE_HOME="$STATE_DIR/state"
   export DBUS_SESSION_BUS_ADDRESS="unix:path=$STATE_DIR/no-session-bus"
   export QT_QPA_PLATFORM=xcb
-  if [ "$MOCK" = 1 ]; then
-    "$BINARY" --mock >"$STATE_DIR/logs/omairc.log" 2>&1 &
+  export OMAIRC_ALLOW_MULTI=1
+  if [ "$DEMO" = 1 ]; then
+    "$BINARY" --demo-server >"$STATE_DIR/logs/omairc.log" 2>&1 &
   else
     "$BINARY" >"$STATE_DIR/logs/omairc.log" 2>&1 &
   fi
@@ -211,10 +212,10 @@ cmd_launch() {
   write_state
   xdotool windowfocus --sync "$WINDOW"
   echo "launched isolated Omairc"
-  if [ "$MOCK" = 1 ]; then
-    echo "mock=yes"
+  if [ "$DEMO" = 1 ]; then
+    echo "demo=yes"
   else
-    echo "mock=no"
+    echo "demo=no"
   fi
   echo "display=$DISPLAY"
   echo "pid=$APP_PID"
@@ -245,10 +246,10 @@ cmd_doctor() {
   echo "title=$title"
   echo "xdg=$STATE_DIR"
   echo "evidence=$EVIDENCE_DIR"
-  if [ "${MOCK:-}" = 1 ]; then
-    echo "mock=yes"
+  if [ "${DEMO:-}" = 1 ]; then
+    echo "demo=yes"
   else
-    echo "mock=no"
+    echo "demo=no"
   fi
 }
 
@@ -345,9 +346,6 @@ cmd_click_network() {
 
 cmd_click_edit() {
   load_state
-  if [ "${MOCK:-}" = 1 ]; then
-    die "click-edit needs a live connection. Relaunch without --mock. Under --mock the edit control is hidden and that click toggles Status."
-  fi
   click_xy 220 36
 }
 

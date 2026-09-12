@@ -61,7 +61,7 @@ if is_json_object "$HELP_OUTPUT"; then
   echo "omairc --help must not print JSON." >&2
   exit 1
 fi
-for token in connections list status send raise --mock --version; do
+for token in connections list status send raise --demo-server --version; do
   printf '%s\n' "$HELP_OUTPUT" | grep -Fq -- "$token" || {
     echo "omairc --help must mention $token" >&2
     exit 1
