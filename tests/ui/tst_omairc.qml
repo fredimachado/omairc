@@ -827,29 +827,18 @@ TestCase {
         appWindow.lastNotification = null;
     }
 
-    function qmlObjectGone(obj) {
-        if (!obj)
-            return true;
-        try {
-            obj.objectName;
-            return false;
-        } catch (error) {
-            return true;
-        }
-    }
-
     function destroyAppWindowAndSeed() {
+        // The window's onDestruction calls backend.saveWindowGeometry.
+        // Destroy the window while SeededIrcFixture still owns Backend.
         if (appWindow) {
-            var doomed = appWindow;
+            appWindow.close();
+            appWindow.destroy();
             appWindow = null;
-            doomed.close();
-            doomed.destroy();
-            tryVerify(function() { return qmlObjectGone(doomed); });
+            wait(0);
         }
         if (seed) {
             seed.destroy();
             seed = null;
-            wait(0);
         }
     }
 
