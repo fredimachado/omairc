@@ -883,9 +883,11 @@ TestCase {
 
     function visibleDirects(networkId) {
         var names = [];
+        var seen = [];
         function walk(node) {
-            if (!node)
+            if (!node || seen.indexOf(node) !== -1)
                 return;
+            seen.push(node);
             if (node.direct === true && node.visible && node.height > 0
                     && node.conversationName
                     && node.networkId === networkId)
