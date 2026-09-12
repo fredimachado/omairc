@@ -166,10 +166,6 @@ TestCase {
         id: seededWindowComponent
 
         Omairc.OmaircWindow {
-            backend: seed.backend
-            irc: seed.irc
-            slashCommands: seed.slash
-            connection: seed.connection
         }
     }
 
@@ -849,6 +845,34 @@ TestCase {
         return "conversation-" + seed.omarchyNetworkId + "-" + name;
     }
 
+    function namedItem(objectName) {
+        // TestCase.findChild does not see Repeater conversation rows with live names.
+        var visible = null;
+        var any = null;
+        function walk(node) {
+            if (!node)
+                return;
+            if (node.objectName === objectName) {
+                if (!any)
+                    any = node;
+                if (!visible && node.visible && node.width > 0 && node.height > 0)
+                    visible = node;
+            }
+            var kids = node.children;
+            if (kids) {
+                var index = 0;
+                for (; index < kids.length; ++index)
+                    walk(kids[index]);
+            }
+            if (node.contentItem)
+                walk(node.contentItem);
+        }
+        walk(appWindow.contentItem);
+        var result = visible ? visible : any;
+        verify(result !== null, "Could not find " + objectName);
+        return result;
+    }
+
     function openSeededAppWindow() {
         if (appWindow) {
             appWindow.destroy();
@@ -859,7 +883,12 @@ TestCase {
         verify(seed !== null, "SeededIrcFixture should construct");
         verify(seed.open(), seed.lastError);
         verify(seed.connection, "seeded window needs a real IrcConnection");
-        appWindow = createTemporaryObject(seededWindowComponent, testCase);
+        appWindow = createTemporaryObject(seededWindowComponent, testCase, {
+            backend: seed.backend,
+            irc: seed.irc,
+            slashCommands: seed.slash,
+            connection: seed.connection
+        });
         verify(appWindow !== null, "The seeded Omairc window should load");
         tryCompare(appWindow, "visible", true);
         waitForRendering(appWindow.contentItem);
@@ -1035,7 +1064,7 @@ TestCase {
 
     function test_switchChannel() {
         openSeededAppWindow();
-        mouseClick(item(liveConversation("#desktop")));
+        mouseClick(namedItem(liveConversation("#desktop")));
 
         tryCompare(appWindow, "currentConversation", "#desktop");
         compare(appWindow.currentTopic,
@@ -2632,13 +2661,14 @@ TestCase {
 
     function test_openDirectMessageFromMember() {
         openSeededAppWindow();
-        var directConversations = item("directConversationRepeater");
-        var previousCount = directConversations.count;
+        var previousCount = appWindow.irc.conversations.rowCount();
         clickMember("mira");
 
         tryCompare(appWindow, "currentConversation", "mira");
         compare(appWindow.currentTopic, "Direct message with mira");
-        compare(directConversations.count, previousCount + 1);
+        tryVerify(function() {
+            return appWindow.irc.conversations.rowCount() === previousCount + 1;
+        });
         verify(!item("membersPanel").visible);
         saveScreenshot("open-direct-message");
     }
