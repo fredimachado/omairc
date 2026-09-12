@@ -323,7 +323,7 @@ TestCase {
         }
 
         function sendMessage(text) {
-            return false;
+            return text.length > 0;
         }
 
         function nickIsTyping(nick) {
