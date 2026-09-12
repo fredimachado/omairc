@@ -8,6 +8,7 @@
 #include "fakeirctransport.h"
 #include "irccapability.h"
 #include "irccontroller.h"
+#include "ircmessage.h"
 #include "memberlistmodel.h"
 #include "messagelistmodel.h"
 #include "networklogmodel.h"
@@ -289,6 +290,9 @@ private slots:
     void echoMessageAckSkipsLocalPrivmsg();
     void echoMessageAbsentStillEchoesLocally();
     void echoMessageAckSkipsMsgEcho();
+    void longMeAndNoticeSplitAcrossFrames();
+    void longTopicStillRefuses();
+    void echoMessageLongPrivmsgShowsEachChunkOnce();
     void msgEchoDoesNotOpenMissingDirect();
     void incomingNickservPrivmsgDoesNotOpenDirect();
     void bouncerAttachOpensOnlyPeerAuthoredDirects();
@@ -2687,6 +2691,124 @@ void ControllerTest::echoMessageAckSkipsMsgEcho()
     QCOMPARE(messages->rowCount(), rowsBeforeMsg + 1);
     QCOMPARE(roleAt(messages, messages->rowCount() - 1, MessageListModel::BodyRole),
              QStringLiteral("later"));
+}
+
+void ControllerTest::longMeAndNoticeSplitAcrossFrames()
+{
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+                                                transport);
+    QVERIFY(session);
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    transport->completeConnect();
+    transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
+                          ":server 001 omairc :Welcome\r\n"
+                          ":omairc!u@h JOIN :#omarchy\r\n"));
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+
+    const QString first(400, QLatin1Char('a'));
+    const QString second(200, QLatin1Char('b'));
+    const QString body = first + QLatin1Char(' ') + second;
+
+    const int beforeAction = transport->writtenFrames().size();
+    QVERIFY(controller.sendMessage(QStringLiteral("/me ") + body));
+    const QByteArrayList actionFrames =
+        transport->writtenFrames().mid(beforeAction);
+    QCOMPARE(actionFrames.size(), 2);
+    QCOMPARE(actionFrames.at(0),
+             QByteArray("PRIVMSG #omarchy :\x01" "ACTION ")
+                 + first.toLatin1() + QByteArray("\x01\r\n"));
+    QCOMPARE(actionFrames.at(1),
+             QByteArray("PRIVMSG #omarchy :\x01" "ACTION ")
+                 + second.toLatin1() + QByteArray("\x01\r\n"));
+    for (const QByteArray& frame : actionFrames) {
+        QVERIFY(frame.endsWith("\r\n"));
+        QVERIFY(frame.size() <= int(IrcProtocol::maxClassicFrameBytes));
+    }
+
+    const int beforeNotice = transport->writtenFrames().size();
+    QVERIFY(controller.sendMessage(QStringLiteral("/notice #omarchy ") + body));
+    const QByteArrayList noticeFrames =
+        transport->writtenFrames().mid(beforeNotice);
+    QCOMPARE(noticeFrames.size(), 2);
+    QCOMPARE(noticeFrames.at(0),
+             QByteArrayLiteral("NOTICE #omarchy :") + first.toLatin1()
+                 + QByteArrayLiteral("\r\n"));
+    QCOMPARE(noticeFrames.at(1),
+             QByteArrayLiteral("NOTICE #omarchy :") + second.toLatin1()
+                 + QByteArrayLiteral("\r\n"));
+    for (const QByteArray& frame : noticeFrames) {
+        QVERIFY(frame.endsWith("\r\n"));
+        QVERIFY(frame.size() <= int(IrcProtocol::maxClassicFrameBytes));
+    }
+}
+
+void ControllerTest::longTopicStillRefuses()
+{
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+                                                transport);
+    QVERIFY(session);
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    transport->completeConnect();
+    transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
+                          ":server 001 omairc :Welcome\r\n"
+                          ":omairc!u@h JOIN :#omarchy\r\n"));
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+
+    const int before = transport->writtenFrames().size();
+    QVERIFY(!controller.sendMessage(QStringLiteral("/topic ")
+                                    + QString(600, QLatin1Char('t'))));
+    QCOMPARE(controller.lastError(), QStringLiteral("Command was refused"));
+    QCOMPARE(transport->writtenFrames().size(), before);
+    QVERIFY(!framesContain(transport->writtenFrames().mid(before),
+                           QByteArrayLiteral("TOPIC")));
+}
+
+void ControllerTest::echoMessageLongPrivmsgShowsEachChunkOnce()
+{
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+                                                transport);
+    QVERIFY(session);
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    transport->completeConnect();
+    transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :echo-message\r\n"
+                          ":server CAP omairc ACK :echo-message\r\n"
+                          ":server 001 omairc :Welcome\r\n"
+                          ":omairc!u@h JOIN :#omarchy\r\n"
+                          ":server 353 omairc = #omarchy :omairc Alice\r\n"
+                          ":server 366 omairc #omarchy :End of NAMES\r\n"));
+    QVERIFY(session->capabilities().contains(IrcCapability::EchoMessage));
+
+    auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
+    QVERIFY(messages);
+    const int rowsAfterJoin = messages->rowCount();
+
+    const QString first(400, QLatin1Char('a'));
+    const QString second(200, QLatin1Char('b'));
+    const QString body = first + QLatin1Char(' ') + second;
+    QVERIFY(controller.sendMessage(body));
+    QCOMPARE(messages->rowCount(), rowsAfterJoin);
+
+    transport->injectBytes(
+        QByteArrayLiteral(":omairc!u@h PRIVMSG #omarchy :") + first.toLatin1()
+        + QByteArrayLiteral("\r\n")
+        + QByteArrayLiteral(":omairc!u@h PRIVMSG #omarchy :") + second.toLatin1()
+        + QByteArrayLiteral("\r\n"));
+    QCOMPARE(messages->rowCount(), rowsAfterJoin + 2);
+    QCOMPARE(roleAt(messages, rowsAfterJoin, MessageListModel::BodyRole), first);
+    QCOMPARE(roleAt(messages, rowsAfterJoin + 1, MessageListModel::BodyRole), second);
+    QCOMPARE(roleAt(messages, rowsAfterJoin, MessageListModel::AuthorRole),
+             QStringLiteral("omairc"));
+    QCOMPARE(roleAt(messages, rowsAfterJoin + 1, MessageListModel::AuthorRole),
+             QStringLiteral("omairc"));
 }
 
 void ControllerTest::msgEchoDoesNotOpenMissingDirect()

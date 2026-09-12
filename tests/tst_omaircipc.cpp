@@ -8,6 +8,7 @@
 
 #include "fakeirctransport.h"
 #include "irccontroller.h"
+#include "ircmessage.h"
 #include "omairccli.h"
 #include "omaircipc.h"
 #include "omaircipchandler.h"
@@ -67,6 +68,7 @@ private slots:
     void handlerRaiseAndUnknown();
     void handlerStatusResolve();
     void handlerConnectionsAndSend();
+    void handlerSendSplitsLongLine();
     void socketRaiseStillWorks();
     void socketCommandRoundTrip();
     void socketRejectsOversizedLine();
@@ -294,6 +296,39 @@ void OmaircIpcTest::handlerConnectionsAndSend()
     QVERIFY(OmaircIpc::responseOk(sendLine));
     QVERIFY(framesJoin(transport->writtenFrames().mid(framesBefore))
                 .contains(QByteArrayLiteral("PRIVMSG #omarchy :hello agents")));
+}
+
+void OmaircIpcTest::handlerSendSplitsLongLine()
+{
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    IrcSession *session =
+        controller.addSession(testConfig(QStringLiteral("net-1")), transport);
+    QVERIFY(session);
+    registerSession(session, transport);
+
+    OmaircIpcHandler handler(&controller);
+    const QByteArray first(400, 'a');
+    const QByteArray second(200, 'b');
+    const QByteArray text = first + ' ' + second;
+    const int framesBefore = transport->writtenFrames().size();
+    const QByteArray sendLine = handler.handleLine(
+        QByteArrayLiteral("{\"cmd\":\"send\",\"target\":\"#omarchy\",\"text\":\"")
+        + text + QByteArrayLiteral("\"}"));
+    QVERIFY(OmaircIpc::responseOk(sendLine));
+
+    const QByteArrayList frames = transport->writtenFrames().mid(framesBefore);
+    QCOMPARE(frames.size(), 2);
+    QCOMPARE(frames.at(0),
+             QByteArrayLiteral("PRIVMSG #omarchy :") + first
+                 + QByteArrayLiteral("\r\n"));
+    QCOMPARE(frames.at(1),
+             QByteArrayLiteral("PRIVMSG #omarchy :") + second
+                 + QByteArrayLiteral("\r\n"));
+    for (const QByteArray &frame : frames) {
+        QVERIFY(frame.endsWith("\r\n"));
+        QVERIFY(frame.size() <= int(IrcProtocol::maxClassicFrameBytes));
+    }
 }
 
 void OmaircIpcTest::handlerUsesNetworkScopedErrors()
