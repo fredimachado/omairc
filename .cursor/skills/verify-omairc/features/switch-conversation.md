@@ -31,7 +31,7 @@ Preconditions:
 - **Open anna.** Choose `anna` under DIRECT MESSAGES. Run `control-omairc click-conversation --name anna` then `control-omairc wait-title --exact "anna - Omairc"`. The topic is `Direct message with anna`. The people control and member panel are absent.
 - **Open dax.** Choose `dax`. Run `control-omairc click-conversation --name dax` then `control-omairc wait-title --exact "dax - Omairc"`. The topic is `Direct message with dax`.
 - **Proof.** Return to `#desktop` and capture the channel state. Run `control-omairc click-conversation --name "#desktop"`, `control-omairc wait-title --exact "#desktop - Omairc"`, and `control-omairc screenshot --feature switch-conversation --name after-desktop`. The screenshot shows `#desktop` selected, topic about desktops, `8 PEOPLE`, and the `#desktop` unread badge gone.
-- **Offscreen suite.** When Xvfb tools are missing, run `control-omairc doctor-qml` then `control-omairc qml-suite`. `bin/test` clicks `conversation-#desktop` and writes `test-artifacts/switch-channel.png`. `qml-suite` copies it to `test-artifacts/verify/switch-conversation/after-desktop.png`. The image must show `#desktop`, the desktop topic, and `8 PEOPLE`. This does not prove the compiled-window click path.
+- **Offscreen suite.** When Xvfb tools are missing, run `control-omairc doctor-qml` then `control-omairc qml-suite`. `bin/test` clicks `conversation-omarchy-#desktop` and writes `test-artifacts/switch-channel.png`. `qml-suite` copies it to `test-artifacts/verify/switch-conversation/after-desktop.png`. The image must show `#desktop`, the desktop topic, and `8 PEOPLE`. This does not prove the compiled-window click path.
 
 ## Gotchas
 

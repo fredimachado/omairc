@@ -231,6 +231,7 @@ bool SeededIrcFixture::createWindow()
     QVariantMap properties;
     properties.insert(QStringLiteral("backend"), QVariant::fromValue(m_backend.get()));
     properties.insert(QStringLiteral("irc"), QVariant::fromValue(m_controller.get()));
+    properties.insert(QStringLiteral("connection"), QVariant::fromValue(m_connection.get()));
     properties.insert(QStringLiteral("slashCommands"), QVariant::fromValue(m_slash.get()));
     m_root.reset(component.createWithInitialProperties(properties));
     if (!m_root)

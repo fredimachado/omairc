@@ -294,7 +294,7 @@ private slots:
     void replayAndLiveSameAuthorMinuteDoNotGroupThroughIrcEvent();
     void bouncerQueryReplayRendersDirectMessageInSidebar();
     void ctrlFFindsLiveTranscriptAndStatus();
-    void seededIrcFixtureFurnishesMockWorld();
+    void seededIrcFixtureFurnishesDemoWorld();
 
 private:
     bool check(bool ok) const;
@@ -1026,7 +1026,7 @@ void LiveUiTest::ctrlFFindsLiveTranscriptAndStatus()
     QVERIFY2(saveFixtureShot(window, QStringLiteral("live-ui-find")), "find screenshot");
 }
 
-void LiveUiTest::seededIrcFixtureFurnishesMockWorld()
+void LiveUiTest::seededIrcFixtureFurnishesDemoWorld()
 {
     if (m_live)
         QSKIP("SeededIrcFixture runs under bin/test, not the compose world.");
@@ -1149,10 +1149,10 @@ void LiveUiTest::seededIrcFixtureFurnishesMockWorld()
     QVERIFY(logContains(controller.console()->lines(),
                         QStringLiteral("Looking up your hostname")));
     QVERIFY(logContains(controller.console()->lines(),
-                        QStringLiteral("Welcome to the mock network")));
+                        QStringLiteral("Welcome to the demo network")));
     controller.console()->setNetwork(SeededIrcFixture::oftcNetworkId());
     QVERIFY(logContains(controller.console()->lines(),
-                        QStringLiteral("Welcome to the mock OFTC network")));
+                        QStringLiteral("Welcome to the demo OFTC network")));
 
     QVERIFY2(world.createWindow(), qPrintable(world.lastError()));
     QQuickWindow *window = world.window();
@@ -1173,7 +1173,7 @@ void LiveUiTest::seededIrcFixtureFurnishesMockWorld()
                         >= 0;
                 }),
              qPrintable(describeChrome(collectTranscriptChrome(window))));
-    QVERIFY2(saveFixtureShot(window, QStringLiteral("live-ui-seeded-mock-world")),
+    QVERIFY2(saveFixtureShot(window, QStringLiteral("live-ui-seeded-demo-world")),
              "seeded screenshot");
 
     const int sentBefore = selectedBodies(messages).size();
@@ -1188,7 +1188,10 @@ void LiveUiTest::seededIrcFixtureFurnishesMockWorld()
              "send-message screenshot");
 
     QQuickItem *desktopRowItem =
-        findNamedItem(window, QStringLiteral("conversation-#desktop"));
+        findNamedItem(
+            window,
+            QStringLiteral("conversation-%1-#desktop")
+                .arg(SeededIrcFixture::omarchyNetworkId()));
     QVERIFY(desktopRowItem);
     clickNamed(window, desktopRowItem);
     QVERIFY(waitUntil([&] {

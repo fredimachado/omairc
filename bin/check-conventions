@@ -114,6 +114,22 @@ def check_socket_reads():
     return problems
 
 
+def check_retired_mock_sidebar():
+    problems = []
+    banned = (
+        "liveFallbackSection",
+        "preserveLegacyNames",
+        "mockOmarchyId",
+        "mockOftcId",
+    )
+    for relative, source in sources("src/**/*.qml", "src/**/*.cpp", "src/**/*.h"):
+        for token in banned:
+            if token in source:
+                problems.append(
+                    f"{relative}: {token} is a retired mock sidebar path")
+    return problems
+
+
 def check_hardcoded_chantypes():
     problems = []
     pattern = re.compile(
@@ -149,6 +165,7 @@ CHECKS = (
     ("bounded IPC socket reads", check_socket_reads),
     ("single version source", check_version_source),
     ("CHANTYPES via IrcServerFeatures", check_hardcoded_chantypes),
+    ("retired mock sidebar tokens", check_retired_mock_sidebar),
 )
 
 

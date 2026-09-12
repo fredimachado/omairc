@@ -200,7 +200,7 @@ SeedNetwork omarchyWorld()
     SeedNetwork network;
     network.networkId = QStringLiteral("omarchy");
     network.nick = QStringLiteral("fred");
-    network.welcome = QStringLiteral("Welcome to the mock network");
+    network.welcome = QStringLiteral("Welcome to the demo network");
 
     SeedChannel omarchy;
     omarchy.name = QStringLiteral("#omarchy");
@@ -370,7 +370,7 @@ SeedNetwork oftcWorld()
     SeedNetwork network;
     network.networkId = QStringLiteral("oftc");
     network.nick = QStringLiteral("oak");
-    network.welcome = QStringLiteral("Welcome to the mock OFTC network");
+    network.welcome = QStringLiteral("Welcome to the demo OFTC network");
 
     SeedChannel omarchy;
     omarchy.name = QStringLiteral("#omarchy");

@@ -159,6 +159,15 @@ TestCase {
     }
 
     Component {
+        id: nullIrcWindowComponent
+
+        Omairc.OmaircWindow {
+            backend: fakeBackend
+            irc: null
+        }
+    }
+
+    Component {
         id: seedComponent
 
         SeededIrcFixture {
@@ -685,6 +694,7 @@ TestCase {
         Omairc.OmaircWindow {
             backend: fakeBackend
             irc: liveIrc
+            connection: namedConnection
         }
     }
 
@@ -3364,6 +3374,32 @@ TestCase {
         return names;
     }
 
+    function test_liveIrcWithoutConnectionHasNoSidebarConversations() {
+        var window = createTemporaryObject(windowComponent, null);
+        verify(window !== null, "A live window without connection should load");
+        tryCompare(window, "visible", true);
+        waitForRendering(window.contentItem);
+
+        compare(window.sidebarConversationRows().length, 0);
+        compare(findChild(window, "liveNetworkRepeater").count, 0);
+        compare(findChild(window, "conversation-#omarchy"), null);
+        compare(findChild(window, "conversation-libera-#omarchy"), null);
+        window.close();
+    }
+
+    function test_nullIrcHasNoSidebarConversations() {
+        var window = createTemporaryObject(nullIrcWindowComponent, null);
+        verify(window !== null, "A window with irc null should load");
+        tryCompare(window, "visible", true);
+        waitForRendering(window.contentItem);
+
+        compare(window.sidebarConversationRows().length, 0);
+        compare(findChild(window, "liveNetworkRepeater").count, 0);
+        compare(findChild(window, "conversation-#omarchy"), null);
+        compare(findChild(window, "conversation-libera-#omarchy"), null);
+        window.close();
+    }
+
     function test_liveSidebarClickSwitchesChannel() {
         var window = createTemporaryObject(liveWindowComponent, null);
         verify(window !== null, "The live window should load");
@@ -3399,44 +3435,27 @@ TestCase {
         window.close();
     }
 
-    function test_liveDmTypingIndicatorUsesBothProductionDelegates() {
-        var fallback = createTemporaryObject(liveWindowComponent, null);
-        verify(fallback !== null, "The fallback live window should load");
-        tryCompare(fallback, "visible", true);
-        waitForRendering(fallback.contentItem);
+    function test_liveDmTypingIndicatorUsesProductionDelegate() {
+        var window = createTemporaryObject(liveWindowComponent, null);
+        verify(window !== null, "The live window should load");
+        tryCompare(window, "visible", true);
+        waitForRendering(window.contentItem);
 
-        var fallbackDms = findChild(fallback, "directConversationRepeater");
-        verify(fallbackDms !== null, "The fallback direct-message repeater should exist");
-        compare(fallbackDms.count, 2);
-        var fallbackRow = fallbackDms.itemAt(1);
-        verify(fallbackRow !== null, "The fallback DM row should be rendered");
-        compare(fallbackRow.conversationName, "anna");
-        tryCompare(fallbackRow, "visible", true);
-        var fallbackDots = findChild(fallbackRow, "conversation-typing-anna");
-        verify(fallbackDots !== null, "The fallback DM typing indicator should exist");
-        tryCompare(fallbackDots, "visible", true);
-        fallback.close();
-
-        var connected = createTemporaryObject(fallbackWindowComponent, null);
-        verify(connected !== null, "The connected live window should load");
-        tryCompare(connected, "visible", true);
-        waitForRendering(connected.contentItem);
-
-        var networks = findChild(connected, "liveNetworkRepeater");
+        var networks = findChild(window, "liveNetworkRepeater");
         verify(networks !== null, "The live network repeater should exist");
         var network = networks.itemAt(0);
-        verify(network !== null, "The connected network section should be rendered");
-        var connectedDms = findChild(network, "directConversationRepeater");
-        verify(connectedDms !== null, "The connected direct-message repeater should exist");
-        compare(connectedDms.count, 2);
-        var connectedRow = connectedDms.itemAt(1);
-        verify(connectedRow !== null, "The connected DM row should be rendered");
-        compare(connectedRow.conversationName, "anna");
-        tryCompare(connectedRow, "visible", true);
-        var connectedDots = findChild(connectedRow, "conversation-typing-libera-anna");
-        verify(connectedDots !== null, "The connected DM typing indicator should exist");
-        tryCompare(connectedDots, "visible", true);
-        connected.close();
+        verify(network !== null, "The live network section should be rendered");
+        var dms = findChild(network, "directConversationRepeater");
+        verify(dms !== null, "The live direct-message repeater should exist");
+        compare(dms.count, 2);
+        var row = dms.itemAt(1);
+        verify(row !== null, "The live DM row should be rendered");
+        compare(row.conversationName, "anna");
+        tryCompare(row, "visible", true);
+        var dots = findChild(row, "conversation-typing-libera-anna");
+        verify(dots !== null, "The live DM typing indicator should exist");
+        tryCompare(dots, "visible", true);
+        window.close();
     }
 
     function test_memberPresenceChromeFollowsCapabilities() {
@@ -3561,7 +3580,7 @@ TestCase {
         mouseClick(header);
 
         tryCompare(window, "consoleVisible", true);
-        compare(window.title, "Status");
+        compare(window.title, "irc.libera.chat Status");
         var list = findChild(window, "consoleList");
         verify(list !== null, "Could not find consoleList");
         verify(list.visible);

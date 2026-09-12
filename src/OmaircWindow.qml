@@ -453,8 +453,6 @@ ApplicationWindow {
         if (irc && connection) {
             for (var liveIndex = 0; liveIndex < liveNetworkRepeater.count; ++liveIndex)
                 appendSection(liveNetworkRepeater.itemAt(liveIndex));
-        } else if (irc) {
-            appendSection(liveFallbackSection);
         }
         return rows;
     }
@@ -500,8 +498,6 @@ ApplicationWindow {
                     }
                 }
             }
-        } else if (irc) {
-            appendSection(liveFallbackSection);
         }
         return sections;
     }
@@ -1675,7 +1671,7 @@ ApplicationWindow {
         property string networkId: ""
         property string conversationId: networkId + "\n" + conversationName
 
-        objectName: win.irc && networkId.length > 0 && win.connection
+        objectName: networkId.length > 0
             ? "conversation-" + networkId + "-" + conversationName
             : "conversation-" + conversationName
         Accessible.name: conversationName
@@ -1782,7 +1778,7 @@ ApplicationWindow {
 
             TypingDots {
                 id: rowTyping
-                objectName: win.irc && conversationRow.networkId.length > 0 && win.connection
+                objectName: conversationRow.networkId.length > 0
                     ? "conversation-typing-" + conversationRow.networkId
                         + "-" + conversationRow.conversationName
                     : "conversation-typing-" + conversationRow.conversationName
@@ -2236,87 +2232,6 @@ ApplicationWindow {
                                     width: sidebar.width
                                     height: visible ? win.scaledSize(36) : 0
                                 }
-                            }
-                        }
-                    }
-
-                    NetworkSection {
-                        id: liveFallbackSection
-                        visible: win.irc && !win.connection
-                        height: visible ? implicitHeight : 0
-                        networkId: win.irc ? win.irc.selectedNetworkId : ""
-                        displayName: win.irc && win.irc.selectedNetworkId.length > 0
-                            ? win.irc.selectedNetworkId : "Network"
-                        showEdit: false
-
-                        Item {
-                            width: parent.width
-                            height: win.scaledSize(28)
-                            Text {
-                                anchors.left: parent.left
-                                anchors.leftMargin: win.scaledSize(19)
-                                anchors.verticalCenter: parent.verticalCenter
-                                text: "CHANNELS"
-                                color: win.mutedColor
-                                font.family: "iA Writer Mono S"
-                                font.bold: true
-                                font.letterSpacing: win.scaledSize(0.8)
-                                font.pixelSize: win.scaledSize(9)
-                            }
-                        }
-
-                        Repeater {
-                            id: channelConversationRepeater
-                            objectName: win.irc && !win.connection ? "channelConversationRepeater" : ""
-                            model: win.irc && !win.connection ? win.irc.conversations : null
-                            delegate: ConversationRow {
-                                required property var model
-                                conversationName: model.conversation
-                                conversationId: model.conversationId
-                                unread: model.unread
-                                mention: model.mention
-                                direct: model.direct
-                                typing: model.typing
-                                networkId: model.networkId
-                                visible: !model.direct
-                                width: sidebar.width
-                                height: visible ? win.scaledSize(36) : 0
-                            }
-                        }
-
-                        Item {
-                            width: parent.width
-                            height: win.scaledSize(36)
-                            Text {
-                                anchors.left: parent.left
-                                anchors.leftMargin: win.scaledSize(19)
-                                anchors.bottom: parent.bottom
-                                anchors.bottomMargin: win.scaledSize(8)
-                                text: "DIRECT MESSAGES"
-                                color: win.mutedColor
-                                font.family: "iA Writer Mono S"
-                                font.bold: true
-                                font.letterSpacing: win.scaledSize(0.8)
-                                font.pixelSize: win.scaledSize(9)
-                            }
-                        }
-
-                        Repeater {
-                            id: liveDirectConversationRepeater
-                            objectName: win.irc && !win.connection ? "directConversationRepeater" : ""
-                            model: win.irc && !win.connection ? win.irc.conversations : null
-                            delegate: ConversationRow {
-                                required property var model
-                                conversationName: model.conversation
-                                conversationId: model.conversationId
-                                unread: model.unread
-                                mention: model.mention
-                                direct: model.direct
-                                typing: model.typing
-                                networkId: model.networkId
-                                visible: model.direct
-                                width: sidebar.width
-                                height: visible ? win.scaledSize(36) : 0
                             }
                         }
                     }

@@ -210,7 +210,7 @@ rm -f -- "$ROOT/test-artifacts/live-ui/live-ui-grouped-messages.png"
 rm -f -- "$ROOT/test-artifacts/live-ui/live-ui-replay-history.png"
 rm -f -- "$ROOT/test-artifacts/live-ui/live-ui-bouncer-direct.png"
 rm -f -- "$ROOT/test-artifacts/live-ui/live-ui-find.png"
-rm -f -- "$ROOT/test-artifacts/live-ui/live-ui-seeded-mock-world.png"
+rm -f -- "$ROOT/test-artifacts/live-ui/live-ui-seeded-demo-world.png"
 for screenshot in $SCREENSHOTS; do
   rm -f -- "$ROOT/test-artifacts/$screenshot.png"
 done
@@ -224,7 +224,7 @@ QT_QPA_PLATFORMTHEME= \
 QT_QUICK_BACKEND=software \
 OMAIRC_LIVE_UI_ARTIFACTS="$ROOT/test-artifacts/live-ui" \
 OMAIRC_UI_ARTIFACTS="$ROOT/test-artifacts" \
-"$ROOT/build-live-ui-tests/live_ui_tests" consecutiveSameAuthorMinuteGroupsThroughIrcEvent memberJoinPartModeUpdatesWithoutReset replayAndLiveSameAuthorMinuteDoNotGroupThroughIrcEvent bouncerQueryReplayRendersDirectMessageInSidebar ctrlFFindsLiveTranscriptAndStatus seededIrcFixtureFurnishesMockWorld
+"$ROOT/build-live-ui-tests/live_ui_tests" consecutiveSameAuthorMinuteGroupsThroughIrcEvent memberJoinPartModeUpdatesWithoutReset replayAndLiveSameAuthorMinuteDoNotGroupThroughIrcEvent bouncerQueryReplayRendersDirectMessageInSidebar ctrlFFindsLiveTranscriptAndStatus seededIrcFixtureFurnishesDemoWorld
 
 if [ ! -s "$ROOT/test-artifacts/live-ui/live-ui-grouped-messages.png" ]; then
   echo "live_ui_tests did not create test-artifacts/live-ui/live-ui-grouped-messages.png." >&2
@@ -242,8 +242,8 @@ if [ ! -s "$ROOT/test-artifacts/live-ui/live-ui-find.png" ]; then
   echo "live_ui_tests did not create test-artifacts/live-ui/live-ui-find.png." >&2
   exit 1
 fi
-if [ ! -s "$ROOT/test-artifacts/live-ui/live-ui-seeded-mock-world.png" ]; then
-  echo "live_ui_tests did not create test-artifacts/live-ui/live-ui-seeded-mock-world.png." >&2
+if [ ! -s "$ROOT/test-artifacts/live-ui/live-ui-seeded-demo-world.png" ]; then
+  echo "live_ui_tests did not create test-artifacts/live-ui/live-ui-seeded-demo-world.png." >&2
   exit 1
 fi
 for screenshot in $SCREENSHOTS; do
