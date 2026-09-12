@@ -827,11 +827,23 @@ TestCase {
         appWindow.lastNotification = null;
     }
 
-    function cleanup() {
-        if (appWindow)
+    function destroyAppWindowAndSeed() {
+        // The window's onDestruction calls backend.saveWindowGeometry.
+        // Destroy the window while SeededIrcFixture still owns Backend.
+        if (appWindow) {
             appWindow.close();
-        appWindow = null;
-        seed = null;
+            appWindow.destroy();
+            appWindow = null;
+            wait(0);
+        }
+        if (seed) {
+            seed.destroy();
+            seed = null;
+        }
+    }
+
+    function cleanup() {
+        destroyAppWindowAndSeed();
         slashFake.reset();
         liveConsole.open = false;
         liveConsole.networkId = "libera";
@@ -920,11 +932,7 @@ TestCase {
     }
 
     function openSeededAppWindow() {
-        if (appWindow) {
-            appWindow.destroy();
-            appWindow = null;
-            wait(0);
-        }
+        destroyAppWindowAndSeed();
         seed = createTemporaryObject(seedComponent, testCase);
         verify(seed !== null, "SeededIrcFixture should construct");
         verify(seed.open(), seed.lastError);
