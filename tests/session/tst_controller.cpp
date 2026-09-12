@@ -316,6 +316,7 @@ private slots:
     void selectConversationByIdUsesCompositeKey();
     void forgetNetworkDropsGhostRowsAndLog();
     void backgroundChatBumpsConversationEpoch();
+    void backgroundPlaybackBumpsUnreadAndMention();
     void chatHistoryBatchShowsBodyAndTime();
     void chatHistoryAndLiveTimeUseLocalWallClock();
     void whoisFromChannelCopiesStatusLinesAsEvents();
@@ -3590,6 +3591,69 @@ void ControllerTest::backgroundChatBumpsConversationEpoch()
     QVERIFY(spy.count() >= 1);
     QCOMPARE(controller.unreadCountFor(QStringLiteral("network-b")), 1);
     QVERIFY(!controller.mentionFor(QStringLiteral("network-b")));
+}
+
+void ControllerTest::backgroundPlaybackBumpsUnreadAndMention()
+{
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+                                                transport);
+    QVERIFY(session);
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    transport->completeConnect();
+    transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :batch\r\n"
+                          ":server CAP omairc ACK :batch\r\n"
+                          ":server 001 omairc :Welcome\r\n"
+                          ":omairc!u@h JOIN :#omarchy\r\n"
+                          ":omairc!u@h JOIN :#lab\r\n"));
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+
+    auto *conversations =
+        qobject_cast<QAbstractItemModel *>(controller.conversations());
+    QVERIFY(conversations);
+    const int lab = rowForTarget(conversations, QStringLiteral("#lab"));
+    QVERIFY(lab >= 0);
+    QCOMPARE(roleAt(conversations, lab, ConversationListModel::UnreadRole).toInt(),
+             0);
+    QVERIFY(!controller.mentionFor(QStringLiteral("libera")));
+
+    transport->injectBytes(
+        QByteArrayLiteral(
+            ":znc.in BATCH +c znc.in/playback #lab\r\n"
+            "@batch=c :***!znc@znc.in PRIVMSG #lab :Buffer Playback...\r\n"
+            "@batch=c :lena!u@h PRIVMSG #lab :yesterday\r\n"
+            "@batch=c :zed!u@h PRIVMSG #lab :omairc: ping\r\n"
+            "@batch=c :***!znc@znc.in PRIVMSG #lab :Playback Complete.\r\n"
+            ":znc.in BATCH -c\r\n"));
+
+    QCOMPARE(roleAt(conversations, lab, ConversationListModel::UnreadRole).toInt(),
+             2);
+    QVERIFY(roleAt(conversations, lab, ConversationListModel::MentionRole).toBool());
+    QVERIFY(controller.mentionFor(QStringLiteral("libera")));
+    QCOMPARE(controller.unreadCountFor(QStringLiteral("libera")), 2);
+
+    transport->injectBytes(
+        QByteArrayLiteral(":rio!u@h PRIVMSG #lab :live now\r\n"));
+    QCOMPARE(roleAt(conversations, lab, ConversationListModel::UnreadRole).toInt(),
+             3);
+
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#lab"));
+    QCOMPARE(roleAt(conversations, lab, ConversationListModel::UnreadRole).toInt(),
+             0);
+    QVERIFY(!controller.mentionFor(QStringLiteral("libera")));
+
+    auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
+    QVERIFY(messages);
+    QCOMPARE(roleAt(messages, 0, MessageListModel::BodyRole),
+             QStringLiteral("yesterday"));
+    QCOMPARE(roleAt(messages, 0, MessageListModel::OriginRole),
+             QStringLiteral("replay"));
+    QCOMPARE(roleAt(messages, 1, MessageListModel::BodyRole),
+             QStringLiteral("omairc: ping"));
+    QCOMPARE(roleAt(messages, 1, MessageListModel::OriginRole),
+             QStringLiteral("replay"));
 }
 
 void ControllerTest::chatHistoryBatchShowsBodyAndTime()
