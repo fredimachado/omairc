@@ -453,25 +453,13 @@ cmd_compare() {
   echo "changed AE=$ae"
 }
 
-find_qmltestrunner() {
-  if command -v qmltestrunner6 >/dev/null 2>&1; then
-    command -v qmltestrunner6
-  elif command -v qmltestrunner >/dev/null 2>&1; then
-    command -v qmltestrunner
-  elif [ -x /usr/lib/qt6/bin/qmltestrunner ]; then
-    echo /usr/lib/qt6/bin/qmltestrunner
-  else
-    die "Qt 6 qmltestrunner is required for qml-suite. bin/test looks for qmltestrunner6, qmltestrunner, or /usr/lib/qt6/bin/qmltestrunner."
-  fi
-}
-
 cmd_doctor_qml() {
-  runner="$(find_qmltestrunner)"
   [ -x "$ROOT/bin/build" ] || die "missing $ROOT/bin/build"
   [ -x "$ROOT/bin/test" ] || die "missing $ROOT/bin/test"
   [ -f "$ROOT/tests/ui/tst_omairc.qml" ] || die "missing $ROOT/tests/ui/tst_omairc.qml"
+  [ -f "$ROOT/tests/ui/seeded-qml.pro" ] || die "missing $ROOT/tests/ui/seeded-qml.pro"
   echo "ok qml suite"
-  echo "qmltestrunner=$runner"
+  echo "host=$ROOT/tests/ui/seeded-qml.pro"
   echo "suite=$ROOT/tests/ui/tst_omairc.qml"
   echo "evidence=$EVIDENCE_DIR"
   if [ -x "$ROOT/build/omairc" ]; then

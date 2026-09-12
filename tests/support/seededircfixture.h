@@ -7,7 +7,9 @@
 #include <memory>
 
 class Backend;
+class CredentialStore;
 class FakeIrcTransport;
+class IrcConnection;
 class IrcController;
 class IrcSlashSession;
 class QQmlApplicationEngine;
@@ -20,11 +22,14 @@ class SeededIrcFixture : public QObject
     Q_PROPERTY(QObject *backend READ backendObject NOTIFY openedChanged)
     Q_PROPERTY(QObject *irc READ irc NOTIFY openedChanged)
     Q_PROPERTY(QObject *controller READ irc NOTIFY openedChanged)
+    Q_PROPERTY(QObject *connection READ connectionObject NOTIFY openedChanged)
     Q_PROPERTY(QObject *slash READ slashObject NOTIFY openedChanged)
     Q_PROPERTY(QObject *omarchyTransport READ omarchyTransportObject NOTIFY openedChanged)
     Q_PROPERTY(QObject *oftcTransport READ oftcTransportObject NOTIFY openedChanged)
     Q_PROPERTY(QObject *window READ windowObject NOTIFY windowChanged)
     Q_PROPERTY(QString lastError READ lastError NOTIFY lastErrorChanged)
+    Q_PROPERTY(QString omarchyNetworkId READ omarchyId CONSTANT)
+    Q_PROPERTY(QString oftcNetworkId READ oftcId CONSTANT)
 
 public:
     explicit SeededIrcFixture(QObject *parent = nullptr);
@@ -35,10 +40,14 @@ public:
 
     Q_INVOKABLE bool open();
     Q_INVOKABLE bool createWindow();
+    Q_INVOKABLE void injectOmarchy(const QString &bytes);
+    Q_INVOKABLE void injectOftc(const QString &bytes);
+    Q_INVOKABLE bool echoLastOmarchyPrivmsg();
 
     Backend &backend();
     IrcSlashSession &slash();
     IrcController &controller();
+    IrcConnection *connection() const;
     FakeIrcTransport *omarchyTransport() const;
     FakeIrcTransport *oftcTransport() const;
     QQuickWindow *window() const;
@@ -46,6 +55,7 @@ public:
 
     QObject *backendObject() const;
     QObject *irc() const;
+    QObject *connectionObject() const;
     QObject *slashObject() const;
     QObject *omarchyTransportObject() const;
     QObject *oftcTransportObject() const;
@@ -53,6 +63,8 @@ public:
 
     static QString omarchyNetworkId();
     static QString oftcNetworkId();
+    QString omarchyId() const;
+    QString oftcId() const;
 
 signals:
     void openedChanged();
@@ -71,6 +83,8 @@ private:
     std::unique_ptr<Backend> m_backend;
     std::unique_ptr<IrcSlashSession> m_slash;
     std::unique_ptr<IrcController> m_controller;
+    std::unique_ptr<CredentialStore> m_credentials;
+    std::unique_ptr<IrcConnection> m_connection;
     std::unique_ptr<QQmlApplicationEngine> m_engine;
     std::unique_ptr<QObject> m_root;
     QPointer<QQuickWindow> m_window;

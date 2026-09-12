@@ -2,6 +2,7 @@ import QtQuick
 import QtQuick.Controls as Controls
 import QtQuick.Window
 import QtTest
+import Omairc.Test 1.0
 import "../../src" as Omairc
 
 TestCase {
@@ -11,6 +12,7 @@ TestCase {
     when: windowShown
 
     property var appWindow
+    property var seed
     readonly property string artifactDirectory: {
         var url = Qt.resolvedUrl("../../test-artifacts/").toString();
         return decodeURIComponent(url.substring("file://".length));
@@ -150,6 +152,24 @@ TestCase {
 
         Omairc.OmaircWindow {
             backend: fakeBackend
+        }
+    }
+
+    Component {
+        id: seedComponent
+
+        SeededIrcFixture {
+        }
+    }
+
+    Component {
+        id: seededWindowComponent
+
+        Omairc.OmaircWindow {
+            backend: seed.backend
+            irc: seed.irc
+            slashCommands: seed.slash
+            connection: seed.connection
         }
     }
 
@@ -815,9 +835,58 @@ TestCase {
         if (appWindow)
             appWindow.close();
         appWindow = null;
+        seed = null;
         slashFake.reset();
         liveConsole.open = false;
         liveConsole.networkId = "libera";
+    }
+
+    function field(model, row, name) {
+        return model.field(row, name);
+    }
+
+    function liveConversation(name) {
+        return "conversation-" + seed.omarchyNetworkId + "-" + name;
+    }
+
+    function openSeededAppWindow() {
+        if (appWindow) {
+            appWindow.destroy();
+            appWindow = null;
+            wait(0);
+        }
+        seed = createTemporaryObject(seedComponent, testCase);
+        verify(seed !== null, "SeededIrcFixture should construct");
+        verify(seed.open(), seed.lastError);
+        verify(seed.connection, "seeded window needs a real IrcConnection");
+        appWindow = createTemporaryObject(seededWindowComponent, testCase);
+        verify(appWindow !== null, "The seeded Omairc window should load");
+        tryCompare(appWindow, "visible", true);
+        waitForRendering(appWindow.contentItem);
+        appWindow.suppressExternalUrlOpen = true;
+        appWindow.lastOpenedUrl = "";
+        appWindow.suppressDesktopNotification = true;
+        appWindow.lastNotification = null;
+        tryVerify(function() {
+            return appWindow.currentConversation === "#omarchy"
+                && !appWindow.consoleVisible
+                && !appWindow.connectionOverlayVisible;
+        });
+    }
+
+    function clickMember(nick) {
+        var members = item("membersList");
+        var row = 0;
+        for (; row < members.count; ++row) {
+            members.positionViewAtIndex(row, ListView.Contain);
+            waitForRendering(appWindow.contentItem);
+            var delegate = members.itemAtIndex(row);
+            if (delegate && delegate.objectName === "member-" + nick) {
+                mouseClick(delegate);
+                return;
+            }
+        }
+        fail("Could not find member-" + nick);
     }
 
     function restoreNamedConnection() {
@@ -965,7 +1034,8 @@ TestCase {
     }
 
     function test_switchChannel() {
-        mouseClick(item("conversation-#desktop"));
+        openSeededAppWindow();
+        mouseClick(item(liveConversation("#desktop")));
 
         tryCompare(appWindow, "currentConversation", "#desktop");
         compare(appWindow.currentTopic,
@@ -976,19 +1046,23 @@ TestCase {
     }
 
     function test_sendMessageWithKeyboard() {
+        openSeededAppWindow();
         var composer = item("messageComposer");
         var messages = item("messageList");
-        var previousCount = messages.model.count;
+        var previousCount = messages.model.rowCount();
 
         mouseClick(composer);
         verify(composer.activeFocus);
         typeText("Hello from the UI test");
         compare(composer.text, "Hello from the UI test");
         keyClick(Qt.Key_Return);
+        verify(seed.echoLastOmarchyPrivmsg());
 
-        tryCompare(messages.model, "count", previousCount + 1);
-        compare(messages.model.get(previousCount).author, "fred");
-        compare(messages.model.get(previousCount).body, "Hello from the UI test");
+        tryVerify(function() {
+            return messages.model.rowCount() === previousCount + 1;
+        });
+        compare(field(messages.model, previousCount, "author"), "fred");
+        compare(field(messages.model, previousCount, "body"), "Hello from the UI test");
         compare(composer.text, "");
         saveScreenshot("send-message");
     }
@@ -2277,6 +2351,7 @@ TestCase {
     }
 
     function test_toggleMembersWithShortcut() {
+        openSeededAppWindow();
         var panel = item("membersPanel");
         verify(panel.visible);
 
@@ -2556,14 +2631,10 @@ TestCase {
     }
 
     function test_openDirectMessageFromMember() {
-        var members = item("membersList");
+        openSeededAppWindow();
         var directConversations = item("directConversationRepeater");
         var previousCount = directConversations.count;
-        members.positionViewAtIndex(2, ListView.Contain);
-        wait(0);
-        var mira = members.itemAtIndex(2);
-        verify(mira !== null, "The mira member delegate should be rendered");
-        mouseClick(mira);
+        clickMember("mira");
 
         tryCompare(appWindow, "currentConversation", "mira");
         compare(appWindow.currentTopic, "Direct message with mira");

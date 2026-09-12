@@ -2,9 +2,13 @@
 
 #include "backend.h"
 #include "fakeirctransport.h"
+#include "ircconnection.h"
 #include "irccontroller.h"
+#include "ircnetworkprofile.h"
+#include "ircprofilestore.h"
 #include "ircsession.h"
 #include "ircslashcomplete.h"
+#include "storage/credentialstore.h"
 
 #include <QCoreApplication>
 #include <QDir>
@@ -15,6 +19,7 @@
 #include <QQuickWindow>
 #include <QSettings>
 #include <QTemporaryDir>
+#include <QMetaObject>
 #include <QTest>
 #include <QVariantMap>
 #include <QVector>
@@ -497,6 +502,56 @@ void markRead(IrcController &controller, const SeedNetwork &network)
             controller.selectConversation(network.networkId, direct.nick);
     }
 }
+
+class MissingCredentialStore final : public CredentialStore
+{
+public:
+    void read(const CredentialKey &) override
+    {
+        emit readFinished(State::Loading, {}, {});
+        QMetaObject::invokeMethod(this, [this]() {
+            emit readFinished(State::Missing, {}, {});
+        }, Qt::QueuedConnection);
+    }
+
+    void write(const CredentialKey &, const QString &) override
+    {
+        QMetaObject::invokeMethod(this, [this]() {
+            emit writeFinished(State::Available, {});
+        }, Qt::QueuedConnection);
+    }
+
+    void remove(const CredentialKey &) override
+    {
+        QMetaObject::invokeMethod(this, [this]() {
+            emit writeFinished(State::Missing, {});
+        }, Qt::QueuedConnection);
+    }
+};
+
+bool writeSeedProfile(const SeedNetwork &network)
+{
+    IrcNetworkProfile profile;
+    profile.networkId = network.networkId;
+    profile.host = QStringLiteral("irc.example");
+    profile.port = 6697;
+    profile.tlsEnabled = true;
+    profile.connectOnStartup = false;
+    profile.nick = network.nick;
+    profile.username = network.nick;
+    profile.realname = network.nick;
+    profile.autojoinChannels = autojoinNames(network);
+    if (!profile.isComplete())
+        return false;
+    IrcProfileStore().save(profile);
+    return true;
+}
+
+void injectClientEcho(FakeIrcTransport *transport, const QString &nick,
+                      const QByteArray &frame)
+{
+    transport->injectBytes(":" + nick.toUtf8() + "!u@h " + frame);
+}
 }
 
 SeededIrcFixture::SeededIrcFixture(QObject *parent)
@@ -509,6 +564,8 @@ SeededIrcFixture::~SeededIrcFixture()
     m_window.clear();
     m_root.reset();
     m_engine.reset();
+    m_connection.reset();
+    m_credentials.reset();
     m_controller.reset();
     m_omarchyTransport = nullptr;
     m_oftcTransport = nullptr;
@@ -527,6 +584,16 @@ QString SeededIrcFixture::oftcNetworkId()
     return QStringLiteral("oftc");
 }
 
+QString SeededIrcFixture::omarchyId() const
+{
+    return omarchyNetworkId();
+}
+
+QString SeededIrcFixture::oftcId() const
+{
+    return oftcNetworkId();
+}
+
 Backend &SeededIrcFixture::backend()
 {
     return *m_backend;
@@ -540,6 +607,11 @@ IrcSlashSession &SeededIrcFixture::slash()
 IrcController &SeededIrcFixture::controller()
 {
     return *m_controller;
+}
+
+IrcConnection *SeededIrcFixture::connection() const
+{
+    return m_connection.get();
 }
 
 FakeIrcTransport *SeededIrcFixture::omarchyTransport() const
@@ -570,6 +642,11 @@ QObject *SeededIrcFixture::backendObject() const
 QObject *SeededIrcFixture::irc() const
 {
     return m_controller.get();
+}
+
+QObject *SeededIrcFixture::connectionObject() const
+{
+    return m_connection.get();
 }
 
 QObject *SeededIrcFixture::slashObject() const
@@ -640,12 +717,16 @@ bool SeededIrcFixture::open()
     if (!installXdg())
         return false;
 
+    const SeedNetwork omarchy = omarchyWorld();
+    const SeedNetwork oftc = oftcWorld();
+    if (!writeSeedProfile(omarchy) || !writeSeedProfile(oftc))
+        return fail(QStringLiteral("write profiles"));
+
     m_backend = std::make_unique<Backend>();
     m_slash = std::make_unique<IrcSlashSession>();
     m_controller = std::make_unique<IrcController>();
-
-    const SeedNetwork omarchy = omarchyWorld();
-    const SeedNetwork oftc = oftcWorld();
+    m_credentials = std::make_unique<MissingCredentialStore>();
+    m_connection = std::make_unique<IrcConnection>(*m_controller, *m_credentials);
     if (!startNetwork(omarchy.networkId, omarchy.nick, autojoinNames(omarchy),
                       &m_omarchyTransport)) {
         return false;
@@ -702,4 +783,34 @@ bool SeededIrcFixture::createWindow()
     QCoreApplication::processEvents();
     emit windowChanged();
     return true;
+}
+
+void SeededIrcFixture::injectOmarchy(const QString &bytes)
+{
+    if (m_omarchyTransport)
+        m_omarchyTransport->injectBytes(bytes.toUtf8());
+}
+
+void SeededIrcFixture::injectOftc(const QString &bytes)
+{
+    if (m_oftcTransport)
+        m_oftcTransport->injectBytes(bytes.toUtf8());
+}
+
+bool SeededIrcFixture::echoLastOmarchyPrivmsg()
+{
+    if (!m_omarchyTransport || !m_controller)
+        return false;
+    const QString nick = m_controller->currentNick();
+    if (nick.isEmpty())
+        return false;
+    const QByteArrayList frames = m_omarchyTransport->writtenFrames();
+    for (int index = frames.size() - 1; index >= 0; --index) {
+        const QByteArray &frame = frames.at(index);
+        if (!frame.startsWith("PRIVMSG "))
+            continue;
+        injectClientEcho(m_omarchyTransport, nick, frame);
+        return true;
+    }
+    return false;
 }

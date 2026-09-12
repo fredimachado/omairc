@@ -2,6 +2,7 @@
 #include "conversationlistmodel.h"
 #include "fakeirctransport.h"
 #include "irccapability.h"
+#include "ircconnection.h"
 #include "irccontroller.h"
 #include "ircserverfeatures.h"
 #include "ircsession.h"
@@ -1034,6 +1035,8 @@ void LiveUiTest::seededIrcFixtureFurnishesMockWorld()
     QVERIFY2(world.open(), qPrintable(world.lastError()));
 
     IrcController &controller = world.controller();
+    QVERIFY(world.connection());
+    QCOMPARE(world.connection()->networks()->rowCount(), 2);
     QCOMPARE(controller.networkIds(),
              QStringList({QStringLiteral("oftc"), QStringLiteral("omarchy")}));
     QCOMPARE(controller.selectedNetworkId(), SeededIrcFixture::omarchyNetworkId());

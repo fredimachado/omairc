@@ -10,17 +10,6 @@ cleanup() {
 }
 trap cleanup EXIT HUP INT TERM
 
-if command -v qmltestrunner6 >/dev/null 2>&1; then
-  QMLTESTRUNNER=qmltestrunner6
-elif command -v qmltestrunner >/dev/null 2>&1; then
-  QMLTESTRUNNER=qmltestrunner
-elif [ -x /usr/lib/qt6/bin/qmltestrunner ]; then
-  QMLTESTRUNNER=/usr/lib/qt6/bin/qmltestrunner
-else
-  echo "Qt 6 qmltestrunner is required to test omairc." >&2
-  exit 1
-fi
-
 if command -v qmake6 >/dev/null 2>&1; then
   QMAKE=qmake6
 elif command -v qmake >/dev/null 2>&1 && qmake -query QT_VERSION | grep -q '^6\.'; then
@@ -180,6 +169,11 @@ cd "$ROOT/build-tests"
 make -j"$JOBS"
 ./protocol_tests
 
+mkdir -p "$ROOT/build-seeded-qml-tests"
+cd "$ROOT/build-seeded-qml-tests"
+"$QMAKE" "$ROOT/tests/ui/seeded-qml.pro"
+make -j"$JOBS"
+
 mkdir -p "$ROOT/test-artifacts"
 SCREENSHOTS="switch-channel send-message toggle-members open-direct-message"
 for screenshot in $SCREENSHOTS; do
@@ -194,12 +188,7 @@ XDG_STATE_HOME="$TEST_STATE/state" \
 QT_QPA_PLATFORM=offscreen \
 QT_QPA_PLATFORMTHEME= \
 QT_QUICK_BACKEND=software \
-"$QMLTESTRUNNER" -input "$ROOT/tests/ui/tst_omairc.qml"
-
-mkdir -p "$ROOT/build-seeded-qml-tests"
-cd "$ROOT/build-seeded-qml-tests"
-"$QMAKE" "$ROOT/tests/ui/seeded-qml.pro"
-make -j"$JOBS"
+"$ROOT/build-seeded-qml-tests/seeded_qml_tests" -input "$ROOT/tests/ui/tst_omairc.qml"
 
 cd "$ROOT"
 XDG_CONFIG_HOME="$TEST_STATE/config" \

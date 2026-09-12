@@ -78,7 +78,7 @@ When using the offscreen suite:
 .cursor/skills/verify-omairc/control-omairc doctor-qml
 ```
 
-Require `ok qml suite` and a working `qmltestrunner=`. This path loads production QML with a fake `Backend` (fixed theme colors, textScale 1.0). It does not open the compiled `build/omairc` window.
+Require `ok qml suite`. `bin/test` runs `tst_omairc.qml` through `seeded_qml_tests` (`Omairc.Test 1.0`). Default-window tests may still use a fake `Backend`. It does not open the compiled `build/omairc` window.
 
 ## Drive
 
