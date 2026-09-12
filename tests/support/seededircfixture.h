@@ -8,9 +8,10 @@
 
 class Backend;
 class CredentialStore;
-class FakeIrcTransport;
 class IrcConnection;
 class IrcController;
+class IrcDemoServer;
+class IrcLoopbackTransport;
 class IrcSlashSession;
 class QQmlApplicationEngine;
 class QQuickWindow;
@@ -49,8 +50,8 @@ public:
     IrcSlashSession &slash();
     IrcController &controller();
     IrcConnection *connection() const;
-    FakeIrcTransport *omarchyTransport() const;
-    FakeIrcTransport *oftcTransport() const;
+    IrcLoopbackTransport *omarchyTransport() const;
+    IrcLoopbackTransport *oftcTransport() const;
     QQuickWindow *window() const;
     QString lastError() const;
 
@@ -75,12 +76,9 @@ signals:
 private:
     bool fail(const QString &why);
     bool installXdg();
-    bool startNetwork(const QString &networkId,
-                      const QString &nick,
-                      const QStringList &autojoin,
-                      FakeIrcTransport **transport);
 
     std::unique_ptr<QTemporaryDir> m_xdg;
+    std::unique_ptr<IrcDemoServer> m_demo;
     std::unique_ptr<Backend> m_backend;
     std::unique_ptr<IrcSlashSession> m_slash;
     std::unique_ptr<IrcController> m_controller;
@@ -89,7 +87,7 @@ private:
     std::unique_ptr<QQmlApplicationEngine> m_engine;
     std::unique_ptr<QObject> m_root;
     QPointer<QQuickWindow> m_window;
-    FakeIrcTransport *m_omarchyTransport = nullptr;
-    FakeIrcTransport *m_oftcTransport = nullptr;
+    IrcLoopbackTransport *m_omarchyTransport = nullptr;
+    IrcLoopbackTransport *m_oftcTransport = nullptr;
     QString m_error;
 };

@@ -41,6 +41,8 @@ HEADERS += \
     src/irc/irceventtranslator.h \
     src/irc/irceventreducer.h \
     src/irc/irctransport.h \
+    src/irc/ircloopbacktransport.h \
+    src/irc/ircdemoserver.h \
     src/irc/qtirctransport.h \
     src/irc/ircstatusentry.h \
     src/irc/ircservicenick.h \
@@ -92,6 +94,8 @@ SOURCES += \
     src/irc/irceventtranslator.cpp \
     src/irc/irceventreducer.cpp \
     src/irc/qtirctransport.cpp \
+    src/irc/ircloopbacktransport.cpp \
+    src/irc/ircdemoserver.cpp \
     src/irc/ircstatusentry.cpp \
     src/irc/ircservicenick.cpp \
     src/irc/ircprefixnick.cpp \

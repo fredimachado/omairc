@@ -31,6 +31,8 @@ HEADERS += \
     ../../src/irc/irceventtranslator.h \
     ../../src/irc/irceventreducer.h \
     ../../src/irc/irctransport.h \
+    ../../src/irc/ircloopbacktransport.h \
+    ../../src/irc/ircdemoserver.h \
     ../../src/irc/ircstatusentry.h \
     ../../src/irc/ircservicenick.h \
     ../../src/irc/ircprefixnick.h \
@@ -61,6 +63,8 @@ SOURCES += \
     tst_main.cpp \
     ../support/fakeirctransport.cpp \
     ../support/seededircfixture.cpp \
+    ../../src/irc/ircloopbacktransport.cpp \
+    ../../src/irc/ircdemoserver.cpp \
     ../../src/backend.cpp \
     ../../src/irc/ircparser.cpp \
     ../../src/irc/ircframer.cpp \
