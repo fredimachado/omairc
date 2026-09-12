@@ -86,6 +86,7 @@ public:
     enum class State {
         Idle,
         Connecting,
+        StsUpgrading,
         CapLs,
         CapReq,
         Sasl,
@@ -212,8 +213,9 @@ private:
     bool allowCtcpReply(const QString &nick);
     void handleCap(const IrcMessage &message);
     void applyCachedSts();
-    bool handleStsAdvertisement(const std::optional<IrcStsAdvertisement> &advertisement);
+    void handleStsAdvertisement(const std::optional<IrcStsAdvertisement> &advertisement);
     void beginStsUpgrade(quint16 port);
+    bool shouldFinishStsUpgrade() const;
     void rescheduleStsExpiry();
     void handleAuthenticate(const IrcMessage &message);
     void handleWelcome(const IrcMessage &message);
@@ -294,7 +296,6 @@ private:
     bool m_saslSucceeded = false;
     bool m_capabilityNegotiationEnded = false;
     bool m_capabilityListSeen = false;
-    bool m_stsUpgradePending = false;
     QString m_channelTypes;
     int m_reconnectAttempt = 0;
     quint32 m_reportedRetryErrors = 0;

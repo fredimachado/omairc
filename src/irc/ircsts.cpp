@@ -1,5 +1,6 @@
 #include "ircsts.h"
 
+#include <QCryptographicHash>
 #include <QDateTime>
 #include <QDir>
 #include <QFile>
@@ -54,16 +55,11 @@ IrcStsAdvertisement parseStsValue(const QString &value)
 
 QString groupKey(const QString &host)
 {
-    QString key = host.trimmed().toCaseFolded();
-    for (QChar &character : key) {
-        const char latin = character.toLatin1();
-        const bool allowed = (latin >= 'a' && latin <= 'z')
-            || (latin >= '0' && latin <= '9')
-            || latin == '.' || latin == '-' || latin == '_';
-        if (!allowed)
-            character = QLatin1Char('_');
-    }
-    return key;
+    const QByteArray folded = host.trimmed().toCaseFolded().toUtf8();
+    if (folded.isEmpty())
+        return {};
+    return QString::fromLatin1(
+        QCryptographicHash::hash(folded, QCryptographicHash::Sha256).toHex());
 }
 }
 
@@ -80,10 +76,8 @@ std::optional<IrcStsAdvertisement> parseIrcStsAdvertisement(const QStringList &t
 
 QString IrcStsStore::rootDir() const
 {
-    const QByteArray xdg = qgetenv("XDG_CONFIG_HOME");
-    if (!xdg.isEmpty())
-        return QString::fromUtf8(xdg) + QLatin1String("/omairc");
-    return QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation);
+    return QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation)
+        + QLatin1String("/omairc");
 }
 
 QString IrcStsStore::filePath() const

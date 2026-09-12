@@ -20,6 +20,7 @@ private slots:
     void parseRejectsInvalidPortAndNegativeDuration();
     void parseTakesTheLastStsToken();
     void storeRoundTripsHostCaseAndOwnerOnlyFile();
+    void storeKeepsHostsThatOnlyDifferByUnsafeCharacters();
     void storeDurationZeroDeletesTheEntry();
     void storeLookupDropsExpiredEntries();
 
@@ -101,6 +102,19 @@ void StsTest::storeRoundTripsHostCaseAndOwnerOnlyFile()
     QVERIFY(!(permissions & QFileDevice::WriteOther));
 }
 
+void StsTest::storeKeepsHostsThatOnlyDifferByUnsafeCharacters()
+{
+    IrcStsStore store;
+    store.save(QStringLiteral("a/b"), 6697, 60);
+    store.save(QStringLiteral("a_b"), 6698, 60);
+    const std::optional<IrcStsCached> slash = store.lookup(QStringLiteral("a/b"));
+    const std::optional<IrcStsCached> underscore = store.lookup(QStringLiteral("a_b"));
+    QVERIFY(slash);
+    QVERIFY(underscore);
+    QCOMPARE(slash->port, quint16(6697));
+    QCOMPARE(underscore->port, quint16(6698));
+}
+
 void StsTest::storeDurationZeroDeletesTheEntry()
 {
     IrcStsStore store;
@@ -116,7 +130,9 @@ void StsTest::storeLookupDropsExpiredEntries()
     store.save(QStringLiteral("irc.example"), 6697, 60);
 
     QSettings settings(store.filePath(), QSettings::IniFormat);
-    settings.beginGroup(QStringLiteral("irc.example"));
+    const QStringList groups = settings.childGroups();
+    QCOMPARE(groups.size(), 1);
+    settings.beginGroup(groups.first());
     settings.setValue(QStringLiteral("expiry"), 1);
     settings.endGroup();
     settings.sync();

@@ -296,11 +296,13 @@ IrcSession::IrcSession(const IrcSessionConfig &config,
     });
 
     connect(m_transport, &IrcTransport::connected, this, [this] {
-        if (!m_tlsEnabled && m_state == State::Connecting)
+        if (!m_tlsEnabled && (m_state == State::Connecting
+                              || m_state == State::StsUpgrading))
             beginCapabilityNegotiation();
     });
     connect(m_transport, &IrcTransport::encrypted, this, [this] {
-        if (m_tlsEnabled && m_state == State::Connecting)
+        if (m_tlsEnabled && (m_state == State::Connecting
+                             || m_state == State::StsUpgrading))
             beginCapabilityNegotiation();
     });
     connect(m_transport, &IrcTransport::bytesReceived,
@@ -313,9 +315,8 @@ IrcSession::IrcSession(const IrcSessionConfig &config,
         fail(tlsFailure ? ErrorKind::Tls : ErrorKind::Network, message, true);
     });
     connect(m_transport, &IrcTransport::disconnected, this, [this] {
-        if (m_stsUpgradePending) {
+        if (shouldFinishStsUpgrade()) {
             resetForConnection();
-            setState(State::Connecting);
             m_transport->connectToHost(m_config.host, m_port, m_tlsEnabled);
             return;
         }
@@ -343,7 +344,6 @@ IrcSession::IrcSession(const IrcSessionConfig &config,
 
 IrcSession::~IrcSession()
 {
-    m_stsUpgradePending = false;
     m_expectedDisconnect = true;
     m_reconnectAfterDisconnect = false;
     m_reconnectTimer->cancel();
@@ -422,7 +422,6 @@ void IrcSession::start()
 
     m_expectedDisconnect = false;
     m_reconnectAfterDisconnect = false;
-    m_stsUpgradePending = false;
     m_stsDuration.reset();
     m_reconnectAttempt = 0;
     m_reportedRetryErrors = 0;
@@ -437,7 +436,6 @@ void IrcSession::start()
 void IrcSession::stop()
 {
     rescheduleStsExpiry();
-    m_stsUpgradePending = false;
     m_expectedDisconnect = true;
     m_reconnectAfterDisconnect = false;
     m_reconnectTimer->cancel();
@@ -620,7 +618,6 @@ void IrcSession::setState(State state)
 
 void IrcSession::beginCapabilityNegotiation()
 {
-    m_stsUpgradePending = false;
     setState(State::CapLs);
     sendLine(QByteArrayLiteral("CAP LS 302\r\n"));
 }
@@ -809,7 +806,7 @@ void IrcSession::handleBytes(const QByteArray &bytes)
     }
 
     for (const std::string &frame : result.frames) {
-        if (m_stsUpgradePending)
+        if (m_state == State::StsUpgrading)
             break;
         const IrcParseResult parsed = IrcParser::parse(frame);
         if (!parsed) {
@@ -1360,7 +1357,8 @@ void IrcSession::handleCap(const IrcMessage &message)
             && parameter(message, std::size_t(lsIndex + 1)) == QStringLiteral("*");
         if (continuation)
             return;
-        if (handleStsAdvertisement(m_pendingSts))
+        handleStsAdvertisement(m_pendingSts);
+        if (m_state == State::StsUpgrading)
             return;
         requestCapabilities();
         return;
@@ -1375,7 +1373,8 @@ void IrcSession::handleCap(const IrcMessage &message)
     if (newIndex >= 0) {
         const QStringList tokens = capabilityTokens(message, newIndex);
         m_capabilities.advertise(tokens);
-        if (handleStsAdvertisement(parseIrcStsAdvertisement(tokens)))
+        handleStsAdvertisement(parseIrcStsAdvertisement(tokens));
+        if (m_state == State::StsUpgrading)
             return;
         requestCapabilities();
         return;
@@ -1533,39 +1532,45 @@ void IrcSession::applyCachedSts()
     m_tlsEnabled = true;
 }
 
-bool IrcSession::handleStsAdvertisement(
+void IrcSession::handleStsAdvertisement(
     const std::optional<IrcStsAdvertisement> &advertisement)
 {
     if (!advertisement)
-        return false;
+        return;
     if (!m_tlsEnabled) {
-        if (!advertisement->port || m_stsUpgradePending)
-            return false;
+        if (!advertisement->port || m_state == State::StsUpgrading)
+            return;
         beginStsUpgrade(*advertisement->port);
-        return true;
+        return;
     }
     if (!advertisement->durationSeconds)
-        return false;
+        return;
     if (*advertisement->durationSeconds == 0) {
         m_sts.clear(m_config.host);
         m_stsDuration.reset();
-        return false;
+        return;
     }
     m_sts.save(m_config.host, m_port, *advertisement->durationSeconds);
     m_stsDuration = advertisement->durationSeconds;
-    return false;
 }
 
 void IrcSession::beginStsUpgrade(quint16 port)
 {
     m_port = port;
     m_tlsEnabled = true;
-    m_stsUpgradePending = true;
+    setState(State::StsUpgrading);
     emit statusEntry(IrcStatusEntry::lifecycle(
         m_config.networkId, IrcLogSeverity::Info,
         QStringLiteral("sts"),
         QStringLiteral("Upgraded to TLS on port %1").arg(port)));
     m_transport->shutdown();
+}
+
+bool IrcSession::shouldFinishStsUpgrade() const
+{
+    return m_state == State::StsUpgrading
+        && !m_expectedDisconnect
+        && !m_reconnectAfterDisconnect;
 }
 
 void IrcSession::rescheduleStsExpiry()
@@ -1577,7 +1582,6 @@ void IrcSession::rescheduleStsExpiry()
 
 void IrcSession::fail(ErrorKind kind, const QString &message, bool reconnect)
 {
-    m_stsUpgradePending = false;
     cancelPingWatchdog();
     if (reconnect) {
         const quint32 bit = quint32(1) << int(kind);
@@ -1626,7 +1630,6 @@ void IrcSession::beginReconnectAttempt()
     if (m_state != State::Reconnecting)
         return;
     m_reconnectTimer->cancel();
-    m_stsUpgradePending = false;
     applyCachedSts();
     resetForConnection();
     setState(State::Connecting);
