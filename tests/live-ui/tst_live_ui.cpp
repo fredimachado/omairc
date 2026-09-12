@@ -86,16 +86,19 @@ void walkItems(QQuickItem *item, const std::function<void(QQuickItem *)> &visit)
 
 QQuickItem *findNamedItem(QQuickWindow *window, const QString &name)
 {
+    QQuickItem *visible = nullptr;
+    QQuickItem *any = nullptr;
     if (!window)
         return nullptr;
-    if (QQuickItem *named = window->findChild<QQuickItem *>(name))
-        return named;
-    QQuickItem *found = nullptr;
     walkItems(window->contentItem(), [&](QQuickItem *item) {
-        if (!found && item->objectName() == name)
-            found = item;
+        if (item->objectName() != name)
+            return;
+        if (!any)
+            any = item;
+        if (!visible && item->isVisible() && item->width() > 0 && item->height() > 0)
+            visible = item;
     });
-    return found;
+    return visible ? visible : any;
 }
 
 void walkSidebarItems(QQuickItem *item, const std::function<void(QQuickItem *)> &visit)
@@ -149,6 +152,36 @@ bool saveFixtureShot(QQuickWindow *window, const QString &stem)
     QDir().mkpath(dir);
     const QString path = dir + QLatin1Char('/') + stem + QLatin1String(".png");
     return image.save(path) && QFileInfo(path).size() > 0;
+}
+
+QString productArtifactDir()
+{
+    const QByteArray override = qgetenv("OMAIRC_UI_ARTIFACTS");
+    if (!override.isEmpty())
+        return QString::fromLocal8Bit(override);
+    return QDir(fixtureArtifactDir() + QLatin1String("/..")).absolutePath();
+}
+
+bool saveProductShot(QQuickWindow *window, const QString &stem)
+{
+    if (!window)
+        return false;
+    QCoreApplication::processEvents();
+    const QImage image = window->grabWindow();
+    if (image.isNull())
+        return false;
+    const QString dir = productArtifactDir();
+    QDir().mkpath(dir);
+    const QString path = dir + QLatin1Char('/') + stem + QLatin1String(".png");
+    return image.save(path) && QFileInfo(path).size() > 0;
+}
+
+void clickNamed(QQuickWindow *window, QQuickItem *item)
+{
+    if (!window || !item)
+        return;
+    const QPointF scene = item->mapToScene(QPointF(item->width() / 2, item->height() / 2));
+    QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, scene.toPoint());
 }
 
 bool findMarkVisible(QQuickItem *list, int row)
@@ -1139,6 +1172,61 @@ void LiveUiTest::seededIrcFixtureFurnishesMockWorld()
              qPrintable(describeChrome(collectTranscriptChrome(window))));
     QVERIFY2(saveFixtureShot(window, QStringLiteral("live-ui-seeded-mock-world")),
              "seeded screenshot");
+
+    const int sentBefore = selectedBodies(messages).size();
+    QVERIFY(controller.sendMessage(QStringLiteral("Hello from the UI test")));
+    world.omarchyTransport()->injectBytes(
+        QByteArrayLiteral(":fred!u@h PRIVMSG #omarchy :Hello from the UI test\r\n"));
+    QVERIFY(waitUntil([&] {
+        return selectedBodies(messages).contains(QStringLiteral("Hello from the UI test"))
+            && selectedBodies(messages).size() == sentBefore + 1;
+    }));
+    QVERIFY2(saveProductShot(window, QStringLiteral("send-message")),
+             "send-message screenshot");
+
+    QQuickItem *desktopRowItem =
+        findNamedItem(window, QStringLiteral("conversation-#desktop"));
+    QVERIFY(desktopRowItem);
+    clickNamed(window, desktopRowItem);
+    QVERIFY(waitUntil([&] {
+        return window->property("currentConversation").toString()
+                == QStringLiteral("#desktop")
+            && window->property("currentPeopleCount").toInt() == 8;
+    }));
+    QCOMPARE(window->property("currentTopic").toString(),
+             QStringLiteral("Desktops should feel personal, fast, and calm."));
+    QVERIFY2(saveProductShot(window, QStringLiteral("switch-channel")),
+             "switch-channel screenshot");
+
+    controller.selectConversation(SeededIrcFixture::omarchyNetworkId(),
+                                  QStringLiteral("#omarchy"));
+    QVERIFY(waitUntil([&] {
+        return window->property("currentConversation").toString()
+            == QStringLiteral("#omarchy");
+    }));
+    QQuickItem *membersPanel = findNamedItem(window, QStringLiteral("membersPanel"));
+    QVERIFY(membersPanel);
+    QVERIFY(membersPanel->isVisible());
+    QTest::keyClick(window, Qt::Key_M, Qt::ControlModifier | Qt::ShiftModifier);
+    QVERIFY(waitUntil([&] { return !membersPanel->isVisible(); }));
+    QVERIFY2(saveProductShot(window, QStringLiteral("toggle-members")),
+             "toggle-members screenshot");
+
+    window->setProperty("membersVisible", true);
+    QVERIFY(waitUntil([&] { return membersPanel->isVisible(); }));
+    QQuickItem *mira = findNamedItem(window, QStringLiteral("member-mira"));
+    QVERIFY(mira);
+    clickNamed(window, mira);
+    QVERIFY(waitUntil([&] {
+        return window->property("currentConversation").toString()
+                == QStringLiteral("mira")
+            && !membersPanel->isVisible();
+    }));
+    QVERIFY2(saveProductShot(window, QStringLiteral("open-direct-message")),
+             "open-direct-message screenshot");
+
+    controller.selectConversation(SeededIrcFixture::omarchyNetworkId(),
+                                  QStringLiteral("#omarchy"));
 
     controller.selectConversation(SeededIrcFixture::oftcNetworkId(),
                                   QStringLiteral("#omarchy"));
