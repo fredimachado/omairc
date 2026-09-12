@@ -3020,6 +3020,7 @@ ApplicationWindow {
                 }
 
                 Rectangle {
+                    objectName: "connectionSheetCard"
                     anchors.centerIn: parent
                     width: Math.min(win.scaledSize(700), parent.width - win.scaledSize(40))
                     height: Math.min(win.scaledSize(700), parent.height - win.scaledSize(40))
@@ -3217,6 +3218,7 @@ ApplicationWindow {
                         clip: true
                         boundsBehavior: Flickable.StopAtBounds
                         ScrollBar.vertical: ScrollBar {
+                            id: sheetFlickScrollBar
                             objectName: "sheetFlickScrollBar"
                             policy: sheetFlick.contentHeight > sheetFlick.height
                                 ? ScrollBar.AlwaysOn : ScrollBar.AlwaysOff
@@ -3224,7 +3226,9 @@ ApplicationWindow {
 
                     Column {
                         id: sheetColumn
-                        width: sheetFlick.width
+                        width: sheetFlick.width - ((sheetFlickScrollBar.policy === ScrollBar.AlwaysOn
+                                || sheetFlickScrollBar.visible)
+                            ? sheetFlickScrollBar.width : 0)
                         spacing: win.scaledSize(10)
 
                         Text {
@@ -3303,33 +3307,6 @@ ApplicationWindow {
                             onTextEdited: function(value) {
                                 if (win.connection)
                                     win.connection.username = value;
-                            }
-                        }
-
-                        Row {
-                            width: parent.width
-                            spacing: win.scaledSize(12)
-
-                            ConnectionField {
-                                width: (parent.width - win.scaledSize(12)) / 2
-                                label: "Account"
-                                fieldObjectName: "connectionAccount"
-                                text: win.connection ? win.connection.account : ""
-                                onTextEdited: function(value) {
-                                    if (win.connection)
-                                        win.connection.account = value;
-                                }
-                            }
-
-                            ConnectionField {
-                                width: (parent.width - win.scaledSize(12)) / 2
-                                label: "Bouncer network"
-                                fieldObjectName: "connectionBouncerNetwork"
-                                text: win.connection ? win.connection.bouncerNetwork : ""
-                                onTextEdited: function(value) {
-                                    if (win.connection)
-                                        win.connection.bouncerNetwork = value;
-                                }
                             }
                         }
 

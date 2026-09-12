@@ -10,7 +10,7 @@ Connect is the first-run sheet that asks for a network profile before the compil
 - `connect-nick-required` shows `Nick is required` and keeps Apply muted while Nick is empty.
 - `connect-required` keeps the sheet up on first run; Escape and an outside click do not dismiss it.
 - `connect-keyboard` tabs from the network list through the form to Apply, and Shift+Tab returns. Enter Applies when Nick is complete. Enter from Host with an empty nick keeps `Nick is required` and does not start a session. Apply, Discard, and Add network are reachable without a mouse.
-- `connect-scrollbar` shows a vertical scrollbar on the form when Password is off-screen, and on the network list once it overflows. The bars stay visible without hover.
+- `connect-scrollbar` shows a vertical scrollbar on the form when Password is off-screen, and on the network list once it overflows. The bars stay visible without hover. The form bar does not cover the fields, and the card width stays the same.
 
 ## How to get to it (user POV)
 

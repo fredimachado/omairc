@@ -2796,8 +2796,6 @@ TestCase {
         verify(sheet.visible);
         compare(findChild(window, "connectionHost").text, "irc.libera.chat");
         compare(findChild(window, "connectionNick").text, "");
-        compare(findChild(window, "connectionAccount").text, "");
-        compare(findChild(window, "connectionBouncerNetwork").text, "");
         compare(findChild(window, "connectionAutojoin").text, "#omarchy");
         compare(findChild(window, "connectionConnectOnStartup").checked, false);
         compare(findChild(window, "connectionProblem").text, "Nick is required");
@@ -2931,8 +2929,6 @@ TestCase {
             "connectionTls",
             "connectionNick",
             "connectionUsername",
-            "connectionAccount",
-            "connectionBouncerNetwork",
             "connectionRealname",
             "connectionAutojoin",
             "connectionConnectOnStartup",
@@ -3312,6 +3308,10 @@ TestCase {
         tryCompare(window, "visible", true);
         waitForRendering(window.contentItem);
 
+        var card = findChild(window, "connectionSheetCard");
+        verify(card !== null, "Could not find connectionSheetCard");
+        var widthBefore = card.width;
+
         window.minimumHeight = 200;
         window.height = 320;
         waitForRendering(window.contentItem);
@@ -3325,6 +3325,12 @@ TestCase {
         compare(bar.policy, Controls.ScrollBar.AlwaysOn);
         compare(bar.visible, true);
         verify(bar.size < 1.0);
+        compare(card.width, widthBefore);
+
+        var sheet = findChild(window, "connectionSheet");
+        var host = findChild(window, "connectionHost");
+        verify(host !== null, "Could not find connectionHost");
+        verify(host.mapToItem(sheet, host.width, 0).x <= bar.mapToItem(sheet, 0, 0).x);
         window.close();
     }
 
@@ -4197,35 +4203,6 @@ TestCase {
         mouseClick(applyButton);
         compare(namedConnection.passwordSetCalls, 1);
         compare(namedConnection.lastPassword, "secret");
-        window.close();
-        restoreNamedConnection();
-    }
-
-    function test_accountAndBouncerNetworkAreEditable() {
-        restoreNamedConnection();
-        var window = createTemporaryObject(fallbackWindowComponent, null);
-        verify(window !== null, "The bouncer-login window should load");
-        tryCompare(window, "visible", true);
-        waitForRendering(window.contentItem);
-
-        keyClick(Qt.Key_Comma, Qt.ControlModifier);
-        var account = findChild(window, "connectionAccount");
-        verify(account !== null, "Could not find connectionAccount");
-        mouseClick(account);
-        keyClick(Qt.Key_J);
-        keyClick(Qt.Key_O);
-        keyClick(Qt.Key_E);
-        compare(namedConnection.account, "joe");
-
-        var bouncerNetwork = findChild(window, "connectionBouncerNetwork");
-        verify(bouncerNetwork !== null, "Could not find connectionBouncerNetwork");
-        mouseClick(bouncerNetwork);
-        keyClick(Qt.Key_L);
-        keyClick(Qt.Key_I);
-        keyClick(Qt.Key_B);
-        compare(namedConnection.bouncerNetwork, "lib");
-        compare(account.text, "joe");
-
         window.close();
         restoreNamedConnection();
     }
