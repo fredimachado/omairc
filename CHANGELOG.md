@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-09-12
+
 ### Added
 
 - IRCv3 `server-time`. Omairc requests the capability whenever the server advertises it, so a server that gates the `time` message tag behind it now sends real timestamps instead of folding them into the message body.
@@ -108,7 +110,8 @@ First public release: a dead-simple IRC client for Omarchy.
 - Keyboard map, slash-command complete, selectable transcript, and follow-unseen.
 - qmake Unix install tree and a GitHub Releases pacman repository.
 
-[Unreleased]: https://github.com/fredimachado/omairc/compare/v0.3.0alpha...HEAD
+[Unreleased]: https://github.com/fredimachado/omairc/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/fredimachado/omairc/compare/v0.3.0alpha...v0.3.0
 [0.3.0alpha]: https://github.com/fredimachado/omairc/compare/v0.2.0...v0.3.0alpha
 [0.2.0]: https://github.com/fredimachado/omairc/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/fredimachado/omairc/releases/tag/v0.1.0
