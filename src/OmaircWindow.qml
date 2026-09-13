@@ -147,13 +147,13 @@ ApplicationWindow {
 
         objectName: "transcriptNickHit"
         anchors.fill: parent
-        enabled: win.canOpenDirectMessage(nick)
+        enabled: nick.length > 0 && nick !== win.selfNick
         hoverEnabled: true
         cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
         Accessible.role: Accessible.Button
         Accessible.name: nick
         Accessible.onPressAction: {
-            if (win.canOpenDirectMessage(nick))
+            if (enabled)
                 win.openDirectMessage(nick);
         }
         onClicked: win.openDirectMessage(nick)
@@ -3990,7 +3990,8 @@ ApplicationWindow {
                     MouseArea {
                         id: memberMouse
                         anchors.fill: parent
-                        enabled: win.canOpenDirectMessage(memberDelegate.nick)
+                        enabled: memberDelegate.nick.length > 0
+                            && memberDelegate.nick !== win.selfNick
                         hoverEnabled: true
                         cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
                         onClicked: win.openDirectMessage(memberDelegate.nick)

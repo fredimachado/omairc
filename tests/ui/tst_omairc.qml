@@ -1152,7 +1152,15 @@ TestCase {
     }
 
     function renderedRowWithBody(body) {
-        return renderedMessageRow(item("messageList"), messageIndexWithBody(body));
+        var list = item("messageList");
+        var index = messageIndexWithBody(body);
+        list.positionViewAtIndex(index, ListView.Contain);
+        waitForRendering(appWindow.contentItem);
+        tryVerify(function() {
+            list.positionViewAtIndex(index, ListView.Contain);
+            return list.itemAtIndex(index) !== null;
+        }, 1000, "Message row " + index + " (" + body + ") should be rendered");
+        return list.itemAtIndex(index);
     }
 
     function clickNamedInRow(row, childName) {
@@ -1160,6 +1168,14 @@ TestCase {
         verify(target !== null, "Could not find " + childName);
         verify(target.visible, childName + " should be visible");
         mouseClick(target);
+    }
+
+    function selectOmarchy() {
+        appWindow.selectConversation("#omarchy", seed.omarchyNetworkId);
+        tryCompare(appWindow, "currentConversation", "#omarchy");
+        tryVerify(function() {
+            return item("messageList").Accessible.name === "Messages in #omarchy";
+        });
     }
 
     function assertMessageChrome(row, headerVisible, bodyText) {
@@ -2942,18 +2958,18 @@ TestCase {
         var start = list.model.rowCount();
         injectOmarchyChat("mira", "#omarchy", "transcript-dm-mira");
         injectOmarchyChat("fred", "#omarchy", "transcript-dm-self");
+        injectOmarchyChat("anna", "#omarchy", "transcript-dm-anna");
         injectOmarchyChat("mira", "#omarchy", "transcript-dm-group-lead", "12:02");
         injectOmarchyChat("mira", "#omarchy", "transcript-dm-group-follow", "12:02");
         seed.injectOmarchy(":rio!u@h PART #omarchy\r\n");
-        waitForRowCount(list, start + 5);
+        waitForRowCount(list, start + 6);
 
         mouseClick(composer);
         typeText("omarchy draft stays");
         compare(composer.text, "omarchy draft stays");
 
         var previousCount = appWindow.irc.conversations.rowCount();
-        var miraRow = renderedRowWithBody("transcript-dm-mira");
-        clickNamedInRow(miraRow, "messageAvatar");
+        clickNamedInRow(renderedRowWithBody("transcript-dm-mira"), "messageAvatar");
         tryCompare(appWindow, "currentConversation", "mira");
         compare(appWindow.currentTopic, "Direct message with mira");
         tryVerify(function() {
@@ -2961,32 +2977,24 @@ TestCase {
         });
         verify(visibleDirects(seed.omarchyNetworkId).indexOf("mira") !== -1);
         verify(!item("membersPanel").visible);
+        saveScreenshot("open-direct-message-transcript");
 
-        mouseClick(namedItem(liveConversation("#omarchy")));
-        tryCompare(appWindow, "currentConversation", "#omarchy");
+        selectOmarchy();
         compare(composer.text, "omarchy draft stays");
-
-        miraRow = renderedRowWithBody("transcript-dm-mira");
-        clickNamedInRow(miraRow, "messageAuthor");
+        clickNamedInRow(renderedRowWithBody("transcript-dm-mira"), "messageAuthor");
         tryCompare(appWindow, "currentConversation", "mira");
         compare(appWindow.irc.conversations.rowCount(), previousCount + 1);
 
-        mouseClick(namedItem(liveConversation("#omarchy")));
-        tryCompare(appWindow, "currentConversation", "#omarchy");
-
+        selectOmarchy();
         var annaCount = appWindow.irc.conversations.rowCount();
-        var annaRow = renderedRowWithBody(
-            "Morning! Has anyone tried the new minimal install flow yet?");
-        clickNamedInRow(annaRow, "messageAuthor");
+        clickNamedInRow(renderedRowWithBody("transcript-dm-anna"), "messageAuthor");
         tryCompare(appWindow, "currentConversation", "anna");
         compare(appWindow.irc.conversations.rowCount(), annaCount);
         compare(field(item("messageList").model, item("messageList").model.rowCount() - 1,
                       "body"),
                 "fred: The prototype already feels at home. Nice work.");
 
-        mouseClick(namedItem(liveConversation("#omarchy")));
-        tryCompare(appWindow, "currentConversation", "#omarchy");
-
+        selectOmarchy();
         clickNamedInRow(renderedRowWithBody("transcript-dm-self"), "messageAvatar");
         compare(appWindow.currentConversation, "#omarchy");
         clickNamedInRow(renderedRowWithBody("transcript-dm-self"), "messageAuthor");
@@ -3008,8 +3016,7 @@ TestCase {
         tryCompare(appWindow, "currentConversation", "mira");
         compare(appWindow.irc.conversations.rowCount(), previousCount + 1);
 
-        mouseClick(namedItem(liveConversation("#omarchy")));
-        tryCompare(appWindow, "currentConversation", "#omarchy");
+        selectOmarchy();
         seed.injectOmarchy(":NickServ!NickServ@services PRIVMSG fred "
                            + ":This nickname is registered.\r\n");
         compare(findNamed(liveConversation("NickServ")), null);
