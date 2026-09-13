@@ -72,15 +72,69 @@ def check_byte_array_lengths():
     return problems
 
 
-def text_blocks(source):
+def qml_brace_delta(text):
+    delta = 0
+    index = 0
+    length = len(text)
+    while index < length:
+        char = text[index]
+        if char in "\"'":
+            quote = char
+            index += 1
+            while index < length:
+                if text[index] == "\\":
+                    index += 2
+                    continue
+                if text[index] == quote:
+                    index += 1
+                    break
+                index += 1
+            continue
+        if char == "/" and index + 1 < length and text[index + 1] == "/":
+            newline = text.find("\n", index)
+            index = length if newline < 0 else newline
+            continue
+        if char == "/" and index + 1 < length and text[index + 1] == "*":
+            end = text.find("*/", index + 2)
+            index = length if end < 0 else end + 2
+            continue
+        if char == "/":
+            prior = index - 1
+            while prior >= 0 and text[prior] in " \t\r\n":
+                prior -= 1
+            previous = text[prior] if prior >= 0 else ""
+            if previous == "" or not (previous.isalnum() or previous in "_)].\""):
+                index += 1
+                while index < length:
+                    if text[index] == "\\":
+                        index += 2
+                        continue
+                    if text[index] == "/":
+                        index += 1
+                        while index < length and text[index].isalpha():
+                            index += 1
+                        break
+                    if text[index] == "\n":
+                        break
+                    index += 1
+                continue
+        if char == "{":
+            delta += 1
+        elif char == "}":
+            delta -= 1
+        index += 1
+    return delta
+
+
+def text_blocks(source, type_name="Text"):
     lines = source.splitlines()
     for index, line in enumerate(lines):
-        if not re.match(r"\s*Text\s*\{\s*$", line):
+        if not re.match(rf"\s*{type_name}\s*\{{\s*$", line):
             continue
         depth = 1
         body = []
         for follower in lines[index + 1:]:
-            depth += follower.count("{") - follower.count("}")
+            depth += qml_brace_delta(follower)
             if depth <= 0:
                 break
             body.append(follower)
@@ -100,6 +154,40 @@ def check_qml_text_plain_format():
             problems.append(
                 f"{relative}:{number}: {label} renders plainIrcText() without "
                 f"textFormat: Text.PlainText")
+    return problems
+
+
+def check_qml_textedit_rich_emphasized():
+    problems = []
+    for relative, source in sources("src/**/*.qml"):
+        for number, body in text_blocks(source, "TextEdit"):
+            if "TextEdit.RichText" not in body:
+                continue
+            if "emphasizedIrcText(" in body:
+                continue
+            name = re.search(r'objectName:\s*"([^"]+)"', body)
+            label = name.group(1) if name else "unnamed TextEdit"
+            problems.append(
+                f"{relative}:{number}: {label} uses RichText without "
+                f"emphasizedIrcText()")
+    return problems
+
+
+def check_message_delegate_body():
+    problems = []
+    allowed = re.compile(
+        r"(?:plainIrcText|emphasizedIrcText|hasIrcEmphasis)\(\s*"
+        r"(?:win\.)?messageDelegate\.body")
+    raw = re.compile(r"messageDelegate\.body")
+    for relative, source in sources("src/**/*.qml"):
+        allowed_spans = [(match.start(), match.end()) for match in allowed.finditer(source)]
+        for match in raw.finditer(source):
+            if any(start <= match.start() and match.end() <= end
+                   for start, end in allowed_spans):
+                continue
+            number = source.count("\n", 0, match.start()) + 1
+            problems.append(
+                f"{relative}:{number}: raw messageDelegate.body")
     return problems
 
 
@@ -162,6 +250,8 @@ def check_version_source():
 CHECKS = (
     ("QByteArray literal lengths", check_byte_array_lengths),
     ("PlainText on server-controlled QML text", check_qml_text_plain_format),
+    ("RichText through emphasizedIrcText", check_qml_textedit_rich_emphasized),
+    ("formatted messageDelegate.body", check_message_delegate_body),
     ("bounded IPC socket reads", check_socket_reads),
     ("single version source", check_version_source),
     ("CHANTYPES via IrcServerFeatures", check_hardcoded_chantypes),

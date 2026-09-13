@@ -169,29 +169,32 @@ ApplicationWindow {
         acceptedButtons: Qt.LeftButton
         cursorShape: {
             var pos = edit.positionAt(mouseX, mouseY);
-            if (win.httpUrlAt(edit.text, pos).length > 0)
+            var visible = win.editVisibleText(edit);
+            if (win.httpUrlAt(visible, pos).length > 0)
                 return Qt.PointingHandCursor;
-            if (inviteHits && win.inviteChannelAt(edit.text, pos).length > 0)
+            if (inviteHits && win.inviteChannelAt(visible, pos).length > 0)
                 return Qt.PointingHandCursor;
             return Qt.IBeamCursor;
         }
         onPressed: function(mouse) {
             var pos = edit.positionAt(mouse.x, mouse.y);
-            if (win.httpUrlAt(edit.text, pos).length > 0)
+            var visible = win.editVisibleText(edit);
+            if (win.httpUrlAt(visible, pos).length > 0)
                 return;
-            if (inviteHits && win.inviteChannelAt(edit.text, pos).length > 0)
+            if (inviteHits && win.inviteChannelAt(visible, pos).length > 0)
                 return;
             mouse.accepted = false;
         }
         onClicked: function(mouse) {
             var pos = edit.positionAt(mouse.x, mouse.y);
-            var url = win.httpUrlAt(edit.text, pos);
+            var visible = win.editVisibleText(edit);
+            var url = win.httpUrlAt(visible, pos);
             if (url.length > 0) {
                 win.openAllowedUrl(url);
                 return;
             }
             if (inviteHits)
-                win.joinInviteChannel(win.inviteChannelAt(edit.text, pos));
+                win.joinInviteChannel(win.inviteChannelAt(visible, pos));
         }
     }
 
@@ -306,9 +309,101 @@ ApplicationWindow {
         return nick.length > 0 ? nick.charAt(0).toUpperCase() : "?";
     }
 
-    function plainIrcText(text) {
+    function stripIrcColors(text) {
         return text.replace(/\x03(?:\d{1,2}(?:,\d{1,2})?)?/g, "")
-            .replace(/[\x02\x0f\x16\x1d\x1f]/g, "");
+            .replace(/\x04(?:[0-9A-Fa-f]{6}(?:,[0-9A-Fa-f]{6})?)?/g, "");
+    }
+
+    function plainIrcText(text) {
+        return stripIrcColors(text)
+            .replace(/[\x02\x0f\x11\x16\x1d\x1e\x1f]/g, "");
+    }
+
+    function escapeHtml(text) {
+        return String(text).replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;");
+    }
+
+    function hasIrcEmphasis(text) {
+        return /[\x02\x1d\x1f]/.test(text);
+    }
+
+    function editVisibleText(edit) {
+        if (!edit)
+            return "";
+        if (edit.textFormat === TextEdit.RichText)
+            return edit.getText(0, edit.length);
+        return edit.text;
+    }
+
+    function emphasizedIrcText(text) {
+        var input = stripIrcColors(text);
+        var bold = false;
+        var italic = false;
+        var underline = false;
+        var openBold = false;
+        var openItalic = false;
+        var openUnderline = false;
+        var html = "";
+        var index;
+        for (index = 0; index < input.length; ++index) {
+            var code = input.charCodeAt(index);
+            var changed = false;
+            if (code === 0x02) {
+                bold = !bold;
+                changed = true;
+            } else if (code === 0x1d) {
+                italic = !italic;
+                changed = true;
+            } else if (code === 0x1f) {
+                underline = !underline;
+                changed = true;
+            } else if (code === 0x0f) {
+                bold = false;
+                italic = false;
+                underline = false;
+                changed = true;
+            } else if (code !== 0x16 && code !== 0x11 && code !== 0x1e) {
+                html += escapeHtml(input.charAt(index));
+            }
+            if (!changed)
+                continue;
+            if (openUnderline) {
+                html += "</u>";
+                openUnderline = false;
+            }
+            if (openItalic) {
+                html += "</i>";
+                openItalic = false;
+            }
+            if (openBold) {
+                html += "</b>";
+                openBold = false;
+            }
+            if (bold) {
+                html += "<b>";
+                openBold = true;
+            }
+            if (italic) {
+                html += "<i>";
+                openItalic = true;
+            }
+            if (underline) {
+                html += "<u>";
+                openUnderline = true;
+            }
+        }
+        if (openUnderline)
+            html += "</u>";
+        if (openItalic)
+            html += "</i>";
+        if (openBold)
+            html += "</b>";
+        // Defence-in-depth: unreachable while every non-control character goes through escapeHtml.
+        if (/</.test(html.replace(/<\/?[biu]>/g, "")))
+            html = escapeHtml(plainIrcText(text));
+        return "<span style=\"white-space: pre-wrap;\">" + html + "</span>";
     }
 
     function transcriptRowCount(model) {
@@ -2733,7 +2828,9 @@ ApplicationWindow {
                         anchors.topMargin: messageDelegate.grouped
                             ? win.scaledSize(4)
                             : win.scaledSize(29)
-                        text: win.plainIrcText(messageDelegate.body)
+                        text: win.hasIrcEmphasis(messageDelegate.body)
+                            ? win.emphasizedIrcText(messageDelegate.body)
+                            : win.plainIrcText(messageDelegate.body)
                         color: (messageDelegate.replayed || messageDelegate.kind === "action")
                             ? win.mutedColor : win.inkColor
                         selectionColor: win.selectionColor
@@ -2744,7 +2841,9 @@ ApplicationWindow {
                         cursorVisible: false
                         activeFocusOnPress: false
                         activeFocusOnTab: false
-                        textFormat: TextEdit.PlainText
+                        textFormat: win.hasIrcEmphasis(messageDelegate.body)
+                            ? TextEdit.RichText
+                            : TextEdit.PlainText
                         padding: 0
                         font.family: "iA Writer Mono S"
                         font.italic: messageDelegate.kind === "action"

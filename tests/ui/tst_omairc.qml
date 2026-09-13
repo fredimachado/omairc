@@ -1193,7 +1193,7 @@ TestCase {
     }
 
     function containsMirc(text) {
-        return /[\u0002\u0003\u000f\u0016\u001d\u001f]/.test(text);
+        return /[\u0002\u0003\u0004\u000f\u0011\u0016\u001d\u001e\u001f]/.test(text);
     }
 
     function formattedIrcBody() {
@@ -2359,34 +2359,181 @@ TestCase {
         verify(!containsMirc(body.selectedText));
     }
 
-    function test_messageBodyStripsMircFormatting() {
+    function test_emphasizedIrcText() {
+        var bold = "hello \x02world\x02";
+        compare(appWindow.plainIrcText(bold), "hello world");
+        verify(appWindow.emphasizedIrcText(bold).indexOf("<b>world</b>") >= 0);
+
+        verify(appWindow.emphasizedIrcText("\x1ditalic\x1d").indexOf("<i>italic</i>") >= 0);
+        verify(appWindow.emphasizedIrcText("\x1funder\x1f").indexOf("<u>under</u>") >= 0);
+
+        var nested = appWindow.emphasizedIrcText("\x02bold\x1ditalic\x1d\x02");
+        verify(nested.indexOf("<b>") >= 0);
+        verify(nested.indexOf("<i>") >= 0);
+        verify(nested.indexOf("</b></i>") < 0);
+        verify(!/<b>[^<]*<i>[\s\S]*<\/b>\s*<\/i>/.test(nested));
+
+        var colorOnly = appWindow.emphasizedIrcText("\x0304red\x03");
+        compare(appWindow.plainIrcText("\x0304red\x03"), "red");
+        verify(colorOnly.indexOf("red") >= 0);
+        verify(colorOnly.indexOf("<b") < 0);
+        verify(colorOnly.indexOf("<i") < 0);
+        verify(colorOnly.indexOf("<u") < 0);
+
+        var literal = appWindow.emphasizedIrcText("<b>not html</b>");
+        verify(literal.indexOf("&lt;b&gt;") >= 0);
+        verify(literal.indexOf("&lt;/b&gt;") >= 0);
+        verify(literal.indexOf("<b>") < 0);
+        verify(literal.indexOf("</b>") < 0);
+
+        var reverse = appWindow.emphasizedIrcText("\x02a\x16b\x02");
+        verify(reverse.indexOf("<b>ab</b>") >= 0);
+        verify(reverse.indexOf("\x16") < 0);
+        verify(reverse.indexOf("</b><b>") < 0);
+
+        compare(appWindow.plainIrcText("\x04FF0000red"), "red");
+        var hexColor = appWindow.emphasizedIrcText("\x04FF0000red");
+        verify(hexColor.indexOf("red") >= 0);
+        verify(hexColor.indexOf("FF0000") < 0);
+
+        var extraCodes = appWindow.emphasizedIrcText("\x02a\x11b\x1ec\x02");
+        verify(extraCodes.indexOf("<b>abc</b>") >= 0);
+
+        var spaced = appWindow.emphasizedIrcText("a  \x02b\x02");
+        verify(spaced.indexOf("a  <b>b</b>") >= 0);
+    }
+
+    function test_emphasizedIrcTextFailClosed() {
+        var samples = [
+            "hello \x02world\x02",
+            "\x1ditalic\x1d",
+            "\x1funder\x1f",
+            "\x02bold\x1ditalic\x1d\x02",
+            "\x0304red\x03",
+            "<b>not html</b>",
+            "<a href=\"https://evil.example\">x</a>\x02y\x02",
+            "\x16flip\x16",
+            "\x02\x1d\x1f\x0f",
+            "\x02a\x16b\x02",
+            "\x04FF0000red",
+            "\x02a\x11b\x1ec\x02",
+            "a  \x02b\x02",
+            formattedIrcBody()
+        ];
+        var wrapper = "<span style=\"white-space: pre-wrap;\">";
+        var index = 0;
+        for (; index < samples.length; ++index) {
+            var html = appWindow.emphasizedIrcText(samples[index]);
+            verify(html.indexOf("<a") < 0);
+            verify(html.indexOf(wrapper) === 0);
+            verify(html.lastIndexOf("</span>") === html.length - 7);
+            verify(html.indexOf("<span") === 0);
+            verify(html.indexOf("<span", 1) < 0);
+            var re = /<\/?([A-Za-z][A-Za-z0-9]*)\b([^>]*)>/g;
+            var match;
+            while ((match = re.exec(html)) !== null) {
+                var tag = match[1].toLowerCase();
+                verify(tag === "b" || tag === "i" || tag === "u" || tag === "span",
+                       "unexpected tag <" + tag + "> in " + html);
+                if (tag === "span" && match[0].charAt(1) !== "/")
+                    compare(match[0], wrapper);
+                else
+                    compare(match[2], "");
+            }
+        }
+    }
+
+    function test_messageBodyRendersIrcEmphasis() {
         openSeededAppWindow();
         var list = item("messageList");
         var previousCount = list.model.rowCount();
-        injectOmarchyChat("anna", "#omarchy", formattedIrcBody());
+
+        var boldBody = "hello \x02world\x02";
+        injectOmarchyChat("anna", "#omarchy", boldBody);
         waitForRowCount(list, previousCount + 1);
-        compare(appWindow.plainIrcText(formattedIrcBody()), "bold / red");
-        compare(field(list.model, previousCount, "body"), formattedIrcBody());
+        compare(field(list.model, previousCount, "body"), boldBody);
 
         list.positionViewAtIndex(previousCount, ListView.Contain);
         waitForRendering(appWindow.contentItem);
-
         var row = list.itemAtIndex(previousCount);
-        verify(row !== null, "The formatted seeded message should be rendered");
+        verify(row !== null, "The bold seeded message should be rendered");
         var body = findChild(row, "messageBody");
+        verify(body !== null && body.visible, "Could not find bold messageBody");
+        compare(body.textFormat, TextEdit.RichText);
+        compare(body.getText(0, body.length), "hello world");
+        body.selectAll();
+        compare(body.selectedText, "hello world");
+        verify(!containsMirc(body.selectedText));
+        verify(appWindow.emphasizedIrcText(boldBody).indexOf("<b>world</b>") >= 0);
+        verify(body.text.indexOf("<b>world</b>") >= 0
+               || /font-weight\s*:\s*(bold|[6-9]00)/.test(body.text));
+
+        injectOmarchyChat("dax", "#omarchy", formattedIrcBody());
+        waitForRowCount(list, previousCount + 2);
+        compare(field(list.model, previousCount + 1, "body"), formattedIrcBody());
+        list.positionViewAtIndex(previousCount + 1, ListView.Contain);
+        waitForRendering(appWindow.contentItem);
+        row = list.itemAtIndex(previousCount + 1);
+        verify(row !== null, "The formatted seeded message should be rendered");
+        body = findChild(row, "messageBody");
         verify(body !== null && body.visible, "Could not find formatted messageBody");
-        compare(body.text, "bold / red");
+        compare(body.textFormat, TextEdit.RichText);
+        compare(body.getText(0, body.length), "bold / red");
         body.selectAll();
         compare(body.selectedText, "bold / red");
         verify(!containsMirc(body.selectedText));
+        verify(appWindow.emphasizedIrcText(formattedIrcBody()).indexOf("<b>bold</b>") >= 0);
+        verify(body.text.indexOf("<b>bold</b>") >= 0
+               || /font-weight\s*:\s*(bold|[6-9]00)/.test(body.text));
+
+        var colorBody = "\x0304red\x03";
+        injectOmarchyChat("mira", "#omarchy", colorBody);
+        waitForRowCount(list, previousCount + 3);
+        compare(field(list.model, previousCount + 2, "body"), colorBody);
+        list.positionViewAtIndex(previousCount + 2, ListView.Contain);
+        waitForRendering(appWindow.contentItem);
+        row = list.itemAtIndex(previousCount + 2);
+        verify(row !== null, "The color-only seeded message should be rendered");
+        body = findChild(row, "messageBody");
+        verify(body !== null && body.visible, "Could not find color-only messageBody");
+        compare(body.textFormat, TextEdit.PlainText);
+        compare(body.text, "red");
+        verify(body.text.indexOf("span") < 0);
+        verify(body.text.indexOf("color") < 0);
+
+        var literal = "<b>not html</b>";
+        injectOmarchyChat("kai", "#omarchy", literal);
+        waitForRowCount(list, previousCount + 4);
+        compare(field(list.model, previousCount + 3, "body"), literal);
+        list.positionViewAtIndex(previousCount + 3, ListView.Contain);
+        waitForRendering(appWindow.contentItem);
+        row = list.itemAtIndex(previousCount + 3);
+        verify(row !== null, "The literal HTML seeded message should be rendered");
+        body = findChild(row, "messageBody");
+        verify(body !== null && body.visible, "Could not find literal HTML messageBody");
+        compare(body.textFormat, TextEdit.PlainText);
+        compare(body.text, "<b>not html</b>");
+
+        var spacedBody = "a  \x02b\x02";
+        injectOmarchyChat("rio", "#omarchy", spacedBody);
+        waitForRowCount(list, previousCount + 5);
+        compare(field(list.model, previousCount + 4, "body"), spacedBody);
+        list.positionViewAtIndex(previousCount + 4, ListView.Contain);
+        waitForRendering(appWindow.contentItem);
+        row = list.itemAtIndex(previousCount + 4);
+        verify(row !== null, "The spaced emphasized message should be rendered");
+        body = findChild(row, "messageBody");
+        verify(body !== null && body.visible, "Could not find spaced messageBody");
+        compare(body.textFormat, TextEdit.RichText);
+        compare(body.getText(0, body.length), "a  b");
     }
 
-    function test_liveMessageBodyStripsMircFormatting() {
+    function test_liveMessageBodyRendersIrcEmphasis() {
         liveMessages.clear();
         liveMessages.append({
             author: "anna",
             time: "10:00",
-            body: formattedIrcBody(),
+            body: "hello \x02world\x02",
             kind: "message"
         });
         liveConsole.open = false;
@@ -2407,13 +2554,17 @@ TestCase {
 
         var body = null;
         var row = list.itemAtIndex(0);
-        verify(row !== null, "The formatted live message should be rendered");
+        verify(row !== null, "The bold live message should be rendered");
         body = findChild(row, "messageBody");
         verify(body !== null && body.visible, "Could not find live messageBody");
-        compare(body.text, "bold / red");
+        compare(body.textFormat, TextEdit.RichText);
+        compare(body.getText(0, body.length), "hello world");
         body.selectAll();
-        compare(body.selectedText, "bold / red");
+        compare(body.selectedText, "hello world");
         verify(!containsMirc(body.selectedText));
+        verify(window.emphasizedIrcText("hello \x02world\x02").indexOf("<b>world</b>") >= 0);
+        verify(body.text.indexOf("<b>world</b>") >= 0
+               || /font-weight\s*:\s*(bold|[6-9]00)/.test(body.text));
 
         window.close();
         liveMessages.clear();
@@ -2528,6 +2679,93 @@ TestCase {
 
         appWindow.lastOpenedUrl = "";
         var start = body.text.indexOf("https://example.com");
+        var rect = body.positionToRectangle(start + 4);
+        var hit = findChild(body, "urlHit");
+        verify(hit !== null, "Could not find message urlHit");
+        mouseClick(hit, rect.x + Math.max(1, rect.width / 2), rect.y + rect.height / 2);
+        compare(appWindow.lastOpenedUrl, "https://example.com");
+    }
+
+    function test_ctrlFFindsEmphasizedVisibleText() {
+        openSeededAppWindow();
+        var list = item("messageList");
+        var body = "find-emph \x02world\x02";
+        injectOmarchyChat("anna", "#omarchy", body);
+        waitForBody(list, body);
+
+        keyClick(Qt.Key_F, Qt.ControlModifier);
+        tryCompare(appWindow, "findActive", true);
+        typeText("find-emph");
+        tryVerify(function() {
+            var index = appWindow.findIndex;
+            return index >= 0 && field(list.model, index, "body") === body;
+        });
+        verify(containsMirc(field(list.model, appWindow.findIndex, "body")));
+        compare(appWindow.plainIrcText(field(list.model, appWindow.findIndex, "body")),
+                "find-emph world");
+    }
+
+    function test_actionRowRendersItalicAndEmphasis() {
+        openSeededAppWindow();
+        var list = item("messageList");
+        seed.injectOmarchy(":anna!u@h PRIVMSG #omarchy :\x01ACTION waves\x01\r\n");
+        waitForBody(list, "waves");
+        var actionAt = rowForBody(list.model, "waves");
+        compare(field(list.model, actionAt, "kind"), "action");
+
+        list.positionViewAtIndex(actionAt, ListView.Contain);
+        waitForRendering(appWindow.contentItem);
+        var row = list.itemAtIndex(actionAt);
+        verify(row !== null, "The action row should be rendered");
+        var body = findChild(row, "messageBody");
+        verify(body !== null && body.visible, "Could not find action messageBody");
+        compare(body.font.italic, true);
+        compare(body.textFormat, TextEdit.PlainText);
+        compare(body.text, "waves");
+
+        var boldAction = "waves \x02hello\x02";
+        seed.injectOmarchy(":dax!u@h PRIVMSG #omarchy :\x01ACTION waves \x02hello\x02\x01\r\n");
+        waitForBody(list, boldAction);
+        var boldAt = rowForBody(list.model, boldAction);
+        compare(field(list.model, boldAt, "kind"), "action");
+
+        list.positionViewAtIndex(boldAt, ListView.Contain);
+        waitForRendering(appWindow.contentItem);
+        row = list.itemAtIndex(boldAt);
+        verify(row !== null, "The bold action row should be rendered");
+        body = findChild(row, "messageBody");
+        verify(body !== null && body.visible, "Could not find bold action messageBody");
+        compare(body.font.italic, true);
+        compare(body.textFormat, TextEdit.RichText);
+        compare(body.getText(0, body.length), "waves hello");
+        verify(appWindow.emphasizedIrcText(boldAction).indexOf("<b>hello</b>") >= 0);
+        verify(body.text.indexOf("<b>") >= 0
+               || /font-weight\s*:\s*(bold|[6-9]00)/.test(body.text));
+    }
+
+    function test_messageBodyClickOpensHttpsUrlInsideEmphasis() {
+        openSeededAppWindow();
+        var list = item("messageList");
+        var previousCount = list.model.rowCount();
+        injectOmarchyChat("anna", "#omarchy", "see \x02https://example.com\x02");
+        waitForRowCount(list, previousCount + 1);
+        list.positionViewAtIndex(previousCount, ListView.Contain);
+        waitForRendering(appWindow.contentItem);
+
+        var row = list.itemAtIndex(previousCount);
+        verify(row !== null, "The emphasized URL message should be rendered");
+        var body = findChild(row, "messageBody");
+        verify(body !== null && body.visible, "Could not find emphasized URL messageBody");
+        compare(body.textFormat, TextEdit.RichText);
+        compare(body.getText(0, body.length), "see https://example.com");
+        compare(appWindow.editVisibleText(body), "see https://example.com");
+        body.selectAll();
+        compare(body.selectedText, "see https://example.com");
+        verify(!containsMirc(body.selectedText));
+        body.deselect();
+
+        appWindow.lastOpenedUrl = "";
+        var start = appWindow.editVisibleText(body).indexOf("https://example.com");
         var rect = body.positionToRectangle(start + 4);
         var hit = findChild(body, "urlHit");
         verify(hit !== null, "Could not find message urlHit");
