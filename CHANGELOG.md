@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `/disconnect [reason]` stops the focused network. `/quit` is the same command. Connect shows Disconnect next to Apply while that network is live or reconnecting. The profile, sidebar, and other networks stay.
+
 ## [0.3.0] - 2026-09-12
 
 ### Added

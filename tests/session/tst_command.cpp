@@ -201,6 +201,14 @@ void CommandTest::parseVerbsAndAliases()
     const IrcCommand bareJoin = IrcCommand::parse(QStringLiteral("/join"));
     QCOMPARE(bareJoin.verb, IrcCommand::Verb::Join);
     QVERIFY(bareJoin.argument.isEmpty());
+
+    const IrcCommand disconnect = IrcCommand::parse(QStringLiteral("/disconnect later"));
+    QCOMPARE(disconnect.verb, IrcCommand::Verb::Quit);
+    QCOMPARE(disconnect.argument, QStringLiteral("later"));
+
+    const IrcCommand quit = IrcCommand::parse(QStringLiteral("/quit later"));
+    QCOMPARE(quit.verb, IrcCommand::Verb::Quit);
+    QCOMPARE(quit.argument, QStringLiteral("later"));
 }
 
 void CommandTest::parseUnknown()
@@ -673,6 +681,22 @@ void CommandTest::catalogLookupAndScope()
     QCOMPARE(IrcVerbTable::all().size(), 29);
     for (const IrcVerbSpec& row : IrcVerbTable::all())
         QVERIFY(row.name != QLatin1String("say"));
+
+    const IrcVerbSpec *disconnect = IrcVerbTable::lookup(QStringLiteral("disconnect"));
+    QVERIFY(disconnect);
+    QCOMPARE(disconnect->verb, IrcCommand::Verb::Quit);
+    QCOMPARE(disconnect->name, QStringLiteral("disconnect"));
+    QCOMPARE(disconnect->usage, QStringLiteral("/disconnect [reason]"));
+    QVERIFY(disconnect->aliases.contains(QStringLiteral("quit")));
+    QVERIFY(!disconnect->aliases.contains(QStringLiteral("q")));
+
+    const IrcVerbSpec *quit = IrcVerbTable::lookup(QStringLiteral("quit"));
+    QVERIFY(quit);
+    QCOMPARE(quit, disconnect);
+    QCOMPARE(quit->verb, IrcCommand::Verb::Quit);
+    QCOMPARE(quit->name, QStringLiteral("disconnect"));
+    QCOMPARE(quit->usage, QStringLiteral("/disconnect [reason]"));
+    QVERIFY(!IrcVerbTable::lookup(QStringLiteral("q")));
 
     const IrcVerbSpec *query = IrcVerbTable::lookup(QStringLiteral("query"));
     QVERIFY(query);
@@ -1439,6 +1463,7 @@ void CommandTest::wrappersSendAndHelp()
     QVERIFY(selectedBodiesContain(messages, QStringLiteral("/raw")));
     QVERIFY(selectedBodiesContain(messages, QStringLiteral("/help")));
     QVERIFY(selectedBodiesContain(messages, QStringLiteral("/ban")));
+    QVERIFY(selectedBodiesContain(messages, QStringLiteral("/disconnect")));
 
     QVERIFY(console->submit(QStringLiteral("/help")));
     QVERIFY(logContains(console->lines(), QStringLiteral("Commands:")));
@@ -1577,6 +1602,18 @@ void CommandTest::slashProjectOpen()
     QVERIFY(invite.isOpen());
     QVERIFY(invite.containsLabel(QStringLiteral("/invite")));
     QCOMPARE(invite.hits().first().label, QStringLiteral("/invite"));
+
+    const auto disconnect = IrcSlashComplete::project(
+        QStringLiteral("/quit"), IrcComposerSurface::Conversation);
+    QVERIFY(disconnect.isOpen());
+    QCOMPARE(disconnect.hits().first().label, QStringLiteral("/disconnect"));
+    QCOMPARE(disconnect.hits().first().usage, QStringLiteral("/disconnect [reason]"));
+
+    const auto queryPrefix = IrcSlashComplete::project(
+        QStringLiteral("/q"), IrcComposerSurface::Conversation);
+    QVERIFY(queryPrefix.isOpen());
+    QCOMPARE(queryPrefix.hits().first().label, QStringLiteral("/query"));
+    QVERIFY(!queryPrefix.containsLabel(QStringLiteral("/disconnect")));
 
     const auto opConversation = IrcSlashComplete::project(
         QStringLiteral("/o"), IrcComposerSurface::Conversation);

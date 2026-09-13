@@ -132,6 +132,10 @@ IrcConnection::IrcConnection(IrcController &controller,
         startCredentialRead(profile);
     }
 
+    connect(&m_controller, &IrcController::statusChanged, this,
+            &IrcConnection::canDisconnectChanged);
+    connect(this, &IrcConnection::selectedNetworkChanged, this,
+            &IrcConnection::canDisconnectChanged);
     connect(&m_controller, &IrcController::errorOccurred, this,
             [this](const QString &networkId, IrcSession::ErrorKind kind, const QString &) {
         if (kind != IrcSession::ErrorKind::Authentication)
@@ -175,6 +179,15 @@ bool IrcConnection::canAdd() const
 bool IrcConnection::canRemove() const
 {
     return isStored(m_selectedNetworkId);
+}
+
+bool IrcConnection::canDisconnect() const
+{
+    const IrcSession *session = m_controller.session(m_selectedNetworkId);
+    if (!session)
+        return false;
+    return session->state() != IrcSession::State::Idle
+        && session->state() != IrcSession::State::Failed;
 }
 
 QString IrcConnection::host() const
@@ -1030,6 +1043,14 @@ bool IrcConnection::removeSelected()
     refreshRoster();
     pushNetworkOrder();
     return true;
+}
+
+bool IrcConnection::disconnectSelected()
+{
+    IrcSession *session = m_controller.session(m_selectedNetworkId);
+    if (!session)
+        return false;
+    return session->quit();
 }
 
 bool IrcConnection::activate()

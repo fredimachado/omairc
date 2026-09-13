@@ -38,3 +38,4 @@ Preconditions:
 - On Status, `/me` is not in the catalog. The list can open on `/mode` because `mode` starts with `me`. Conversation `/me` still ranks `/me` first.
 - Recalling a sent line keeps the list closed so Up/Down keep walking history. The list can open again after you leave history browse.
 - Compiled `/j` ranks only `/join` (the `j` alias). Down and Up wrap on that one row. The qml-suite Up/Down case uses a two-row fake and is not this compiled list.
+- `/q` ranks `/query`. `/quit` inserts `/disconnect `. `/q` is not a quit alias.

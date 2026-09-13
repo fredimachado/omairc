@@ -78,8 +78,10 @@ int IrcSlashComplete::scoreToken(const QString& foldedNeedle, const QString& tok
 int IrcSlashComplete::scoreSpec(const QString& foldedNeedle, const IrcVerbSpec& spec)
 {
     int best = scoreToken(foldedNeedle, spec.name);
-    for (const QString& alias : spec.aliases)
-        best = std::max(best, scoreToken(foldedNeedle, alias));
+    for (const QString& alias : spec.aliases) {
+        if (foldedNeedle == alias)
+            best = std::max(best, 100);
+    }
     return best;
 }
 

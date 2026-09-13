@@ -51,6 +51,7 @@ class IrcConnection : public QObject
     Q_PROPERTY(QString selectedNetworkId READ selectedNetworkId NOTIFY selectedNetworkChanged)
     Q_PROPERTY(bool canAdd READ canAdd NOTIFY draftChanged)
     Q_PROPERTY(bool canRemove READ canRemove NOTIFY selectedNetworkChanged)
+    Q_PROPERTY(bool canDisconnect READ canDisconnect NOTIFY canDisconnectChanged)
     Q_PROPERTY(QString host READ host WRITE setHost NOTIFY draftChanged)
     Q_PROPERTY(int port READ port WRITE setPort NOTIFY draftChanged)
     Q_PROPERTY(bool tlsEnabled READ tlsEnabled WRITE setTlsEnabled NOTIFY draftChanged)
@@ -92,6 +93,7 @@ public:
     QString selectedNetworkId() const;
     bool canAdd() const;
     bool canRemove() const;
+    bool canDisconnect() const;
 
     QString host() const;
     int port() const;
@@ -139,12 +141,14 @@ public:
     Q_INVOKABLE bool apply();
     Q_INVOKABLE void discard();
     Q_INVOKABLE bool removeSelected();
+    Q_INVOKABLE bool disconnectSelected();
     bool activate();
     bool activateStartup();
     void activateOnStartup();
 
 signals:
     void selectedNetworkChanged();
+    void canDisconnectChanged();
     void networksChanged();
     void draftChanged();
     void setupRequiredChanged();
