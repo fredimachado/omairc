@@ -2025,6 +2025,10 @@ ApplicationWindow {
             if (stick === stickFollowing) {
                 trackedCount = newCount;
                 stickToEnd();
+                Qt.callLater(function() {
+                    if (list.stick === list.stickFollowing)
+                        list.stickToEnd();
+                });
                 return;
             }
             if (firstUnseenIndex < 0)

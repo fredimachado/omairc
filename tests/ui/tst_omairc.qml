@@ -1225,11 +1225,9 @@ TestCase {
         keyClick(Qt.Key_Return);
         verify(seed.echoLastOmarchyPrivmsg());
 
-        tryVerify(function() {
-            return messages.model.rowCount() === previousCount + 1;
-        });
-        compare(field(messages.model, previousCount, "author"), "fred");
-        compare(field(messages.model, previousCount, "body"), "Hello from the UI test");
+        waitForNewMessage(messages, previousCount, "Hello from the UI test");
+        compare(field(messages.model, messages.model.rowCount() - 1, "author"), "fred");
+        compare(field(messages.model, messages.model.rowCount() - 1, "body"), "Hello from the UI test");
         compare(composer.text, "");
         saveScreenshot("send-message");
     }
@@ -1553,11 +1551,9 @@ TestCase {
         keyClick(Qt.Key_Return);
         verify(seed.echoLastOmarchyPrivmsg());
         compare(composer.text, "");
-        tryVerify(function() {
-            return messages.model.rowCount() === previousCount + 1;
-        });
-        compare(field(messages.model, previousCount, "author"), "fred");
-        compare(field(messages.model, previousCount, "body"), "omarchy draft");
+        waitForNewMessage(messages, previousCount, "omarchy draft");
+        compare(field(messages.model, messages.model.rowCount() - 1, "author"), "fred");
+        compare(field(messages.model, messages.model.rowCount() - 1, "body"), "omarchy draft");
 
         keyClick(Qt.Key_Up);
         compare(composer.text, "omarchy draft");
@@ -1603,7 +1599,8 @@ TestCase {
     }
 
     function injectOmarchyChat(nick, target, body, time) {
-        var prefix = time ? "@time=2026-09-12T" + time + ":00.000Z " : "";
+        var hhmm = time ? time : "12:00";
+        var prefix = "@time=2026-09-12T" + hhmm + ":00.000Z ";
         seed.injectOmarchy(prefix + ":" + nick + "!u@h PRIVMSG " + target
             + " :" + body + "\r\n");
     }
@@ -1611,6 +1608,33 @@ TestCase {
     function waitForRowCount(list, expected) {
         tryVerify(function() {
             return list.model.rowCount() === expected;
+        });
+    }
+
+    function rowForBody(model, body) {
+        var row = 0;
+        for (; row < model.rowCount(); ++row) {
+            if (field(model, row, "body") === body)
+                return row;
+        }
+        return -1;
+    }
+
+    function waitForBody(list, body) {
+        tryVerify(function() {
+            return rowForBody(list.model, body) >= 0;
+        });
+    }
+
+    function waitForNewMessage(list, previousCount, body) {
+        tryVerify(function() {
+            var count = list.model.rowCount();
+            if (count === previousCount + 1)
+                return field(list.model, previousCount, "body") === body;
+            if (count === previousCount + 2)
+                return field(list.model, previousCount, "kind") === "event"
+                    && field(list.model, previousCount + 1, "body") === body;
+            return false;
         });
     }
 
@@ -1707,8 +1731,8 @@ TestCase {
         keyClick(Qt.Key_Return);
         verify(seed.echoLastOmarchyPrivmsg());
         compare(composer.text, "");
-        waitForRowCount(list, countBefore + 1);
-        compare(field(list.model, countBefore, "body"), "keep me");
+        waitForNewMessage(list, countBefore, "keep me");
+        compare(field(list.model, list.model.rowCount() - 1, "body"), "keep me");
     }
 
     function test_ctrlFFindsTextInStatus() {
@@ -1971,10 +1995,12 @@ TestCase {
         typeText("sent while following");
         keyClick(Qt.Key_Return);
         verify(seed.echoLastOmarchyPrivmsg());
-        waitForRowCount(list, previousCount + 1);
+        waitForNewMessage(list, previousCount, "sent while following");
         waitForRendering(appWindow.contentItem);
         wait(0);
-        verify(transcriptPinned(list), "Sending should keep the list pinned to the end");
+        tryVerify(function() {
+            return transcriptPinned(list);
+        }, 1000, "Sending should keep the list pinned to the end");
         verify(list.contentY >= previousY);
         compare(item("messageUnseenJump").visible, false);
     }
@@ -2103,19 +2129,26 @@ TestCase {
         injectOmarchyChat("dax", "#omarchy", "changed sender", "11:12");
         seed.injectOmarchy(":rio!u@h PART #omarchy\r\n");
         injectOmarchyChat("dax", "#omarchy", "after event", "11:12");
-        waitForRowCount(list, start + 6);
+        waitForBody(list, "after event");
 
-        compare(field(list.model, start + 1, "author"), "anna");
-        compare(field(list.model, start + 1, "time"), field(list.model, start, "time"));
-        compare(field(list.model, start + 1, "body"), "group continuation");
-        compare(field(list.model, start + 1, "kind"), "message");
+        var leadRow = rowForBody(list.model, "group lead");
+        var groupedRow = rowForBody(list.model, "group continuation");
+        var newMinuteRow = rowForBody(list.model, "changed minute");
+        var newSenderRow = rowForBody(list.model, "changed sender");
+        var eventRowIndex = rowForBody(list.model, "rio left");
+        var afterEventRow = rowForBody(list.model, "after event");
+        compare(leadRow, start);
+        compare(groupedRow, leadRow + 1);
+        compare(field(list.model, groupedRow, "author"), "anna");
+        compare(field(list.model, groupedRow, "time"), field(list.model, leadRow, "time"));
+        compare(field(list.model, groupedRow, "kind"), "message");
 
-        var lead = renderedMessageRow(list, start);
-        var grouped = renderedMessageRow(list, start + 1);
-        var newMinute = renderedMessageRow(list, start + 2);
-        var newSender = renderedMessageRow(list, start + 3);
-        var eventRow = renderedMessageRow(list, start + 4);
-        var afterEvent = renderedMessageRow(list, start + 5);
+        var lead = renderedMessageRow(list, leadRow);
+        var grouped = renderedMessageRow(list, groupedRow);
+        var newMinute = renderedMessageRow(list, newMinuteRow);
+        var newSender = renderedMessageRow(list, newSenderRow);
+        var eventRow = renderedMessageRow(list, eventRowIndex);
+        var afterEvent = renderedMessageRow(list, afterEventRow);
 
         assertMessageChrome(lead, true, "group lead");
         assertMessageChrome(grouped, false, "group continuation");
@@ -2172,16 +2205,18 @@ TestCase {
         tryCompare(appWindow, "currentConversation", "anna");
         waitForRendering(appWindow.contentItem);
         var list = item("messageList");
-        var start = list.model.rowCount();
         seed.injectOmarchy(
             ":znc.in BATCH +hx znc.in/playback anna\r\n"
             + "@batch=hx;time=2011-10-19T16:40:51.620Z;msgid=old :anna!u@h PRIVMSG fred :replayed line\r\n"
             + ":znc.in BATCH -hx\r\n"
             + "@time=2011-10-19T16:40:51.620Z :anna!u@h PRIVMSG fred :live line\r\n");
-        waitForRowCount(list, start + 2);
+        waitForBody(list, "live line");
 
-        var replay = renderedMessageRow(list, start);
-        var live = renderedMessageRow(list, start + 1);
+        var replayRow = rowForBody(list.model, "replayed line");
+        var liveRow = rowForBody(list.model, "live line");
+        compare(liveRow, replayRow + 1);
+        var replay = renderedMessageRow(list, replayRow);
+        var live = renderedMessageRow(list, liveRow);
         assertMessageChrome(replay, true, "replayed line");
         assertMessageChrome(live, true, "live line");
         var replayBody = findChild(replay, "messageBody");
@@ -2210,7 +2245,7 @@ TestCase {
         }
         bytes += ":znc.in BATCH -pb\r\n";
         seed.injectOmarchy(bytes);
-        waitForRowCount(list, start + count);
+        waitForRowCount(list, start + count + 1);
     }
 
     function test_historySpliceKeepsTheReaderOnTheSameMessage() {
@@ -2586,12 +2621,14 @@ TestCase {
         var list = item("messageList");
         var previousCount = list.model.rowCount();
         seed.injectOmarchy(":rio!u@h PART #omarchy\r\n");
-        waitForRowCount(list, previousCount + 1);
-        compare(field(list.model, previousCount, "kind"), "event");
-        list.positionViewAtIndex(previousCount, ListView.Contain);
+        waitForBody(list, "rio left");
+        var eventAt = rowForBody(list.model, "rio left");
+        verify(eventAt >= previousCount);
+        compare(field(list.model, eventAt, "kind"), "event");
+        list.positionViewAtIndex(eventAt, ListView.Contain);
         waitForRendering(appWindow.contentItem);
 
-        var row = list.itemAtIndex(previousCount);
+        var row = list.itemAtIndex(eventAt);
         verify(row !== null, "The event row should be rendered");
         var eventText = findChild(row, "messageEvent");
         verify(eventText !== null && eventText.visible, "Could not find messageEvent");
@@ -2613,14 +2650,19 @@ TestCase {
             keyClick(Qt.Key_Escape);
         keyClick(Qt.Key_Return);
         seed.injectOmarchy(":server 319 fred lena :" + channels + "\r\n");
-        waitForRowCount(list, previousCount + 1);
-        compare(field(list.model, previousCount, "kind"), "whois");
-        var body = field(list.model, previousCount, "body");
+        tryVerify(function() {
+            var last = list.model.rowCount() - 1;
+            return last >= previousCount
+                && field(list.model, last, "kind") === "whois";
+        });
+        var whoisAt = list.model.rowCount() - 1;
+        compare(field(list.model, whoisAt, "kind"), "whois");
+        var body = field(list.model, whoisAt, "body");
         verify(body.indexOf("lena is on") === 0);
-        list.positionViewAtIndex(previousCount, ListView.Contain);
+        list.positionViewAtIndex(whoisAt, ListView.Contain);
         waitForRendering(appWindow.contentItem);
 
-        var row = list.itemAtIndex(previousCount);
+        var row = list.itemAtIndex(whoisAt);
         verify(row !== null, "The long whois row should be rendered");
         var whoisText = findChild(row, "messageWhois");
         verify(whoisText !== null && whoisText.visible, "Could not find messageWhois");
@@ -2962,7 +3004,7 @@ TestCase {
         injectOmarchyChat("mira", "#omarchy", "transcript-dm-group-lead", "12:02");
         injectOmarchyChat("mira", "#omarchy", "transcript-dm-group-follow", "12:02");
         seed.injectOmarchy(":rio!u@h PART #omarchy\r\n");
-        waitForRowCount(list, start + 6);
+        waitForBody(list, "rio left");
 
         mouseClick(composer);
         typeText("omarchy draft stays");
@@ -4667,11 +4709,9 @@ TestCase {
         typeText("hello oak");
         keyClick(Qt.Key_Return);
         verify(seed.echoLastOftcPrivmsg());
-        tryVerify(function() {
-            return messages.model.rowCount() === previousCount + 1;
-        });
-        compare(field(messages.model, previousCount, "author"), "oak");
-        compare(field(messages.model, previousCount, "body"), "hello oak");
+        waitForNewMessage(messages, previousCount, "hello oak");
+        compare(field(messages.model, messages.model.rowCount() - 1, "author"), "oak");
+        compare(field(messages.model, messages.model.rowCount() - 1, "body"), "hello oak");
         mouseClick(namedItem(liveConversation("#omarchy")));
     }
 
@@ -4689,9 +4729,7 @@ TestCase {
         typeText("secret to ness");
         keyClick(Qt.Key_Return);
         verify(seed.echoLastOftcPrivmsg());
-        tryVerify(function() {
-            return messages.model.rowCount() === previousCount + 1;
-        });
+        waitForNewMessage(messages, previousCount, "secret to ness");
 
         mouseClick(namedItem(liveOftcConversation("#omarchy")));
         tryCompare(appWindow, "currentConversationId", seed.oftcNetworkId + "\n#omarchy");

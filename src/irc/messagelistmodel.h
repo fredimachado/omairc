@@ -4,13 +4,16 @@
 
 #include <QAbstractListModel>
 #include <QByteArray>
+#include <QDate>
 #include <QHash>
 #include <QString>
 #include <QVariant>
 
 #include <optional>
+#include <vector>
 
 class IrcEventReducer;
+struct IrcConversationState;
 
 class MessageListModel : public QAbstractListModel
 {
@@ -42,10 +45,21 @@ public:
     void clearSelection();
 
 private:
+    struct VisualRow {
+        enum class Type { Store, Separator };
+        Type type = Type::Store;
+        int storeIndex = 0;
+        QDate date;
+    };
+
+    static std::vector<VisualRow> buildView(const IrcConversationState *conversation);
+    static int visualPrefixToRemove(const std::vector<VisualRow>& view, int storeRemoved);
+    void notifySeparatorRows();
+
     IrcEventReducer& m_reducer;
     std::optional<IrcConversationKey> m_selected;
     std::optional<IrcConversationKey> m_loaded;
-    int m_count = 0;
+    std::vector<VisualRow> m_view;
     int m_trimmed = 0;
     int m_spliceEpoch = 0;
 };

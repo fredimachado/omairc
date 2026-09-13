@@ -3979,15 +3979,17 @@ void ControllerTest::chatHistoryBatchShowsBodyAndTime()
 
     auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
     QVERIFY(messages);
-    QCOMPARE(roleAt(messages, 0, MessageListModel::BodyRole),
-             QStringLiteral("older"));
+    const int older = bodyRow(messages, QStringLiteral("older"));
+    const int joined = bodyRow(messages, QStringLiteral("omairc joined"));
+    QCOMPARE(older, 0);
+    QVERIFY(joined > older);
     const QDateTime replayed = QDateTime::fromString(
         QStringLiteral("2011-10-19T16:40:51.620Z"), Qt::ISODateWithMs);
-    QCOMPARE(roleAt(messages, 0, MessageListModel::TimeRole),
+    QCOMPARE(roleAt(messages, older, MessageListModel::TimeRole),
              replayed.toLocalTime().toString(QStringLiteral("HH:mm")));
-    QCOMPARE(roleAt(messages, 0, MessageListModel::OriginRole),
+    QCOMPARE(roleAt(messages, older, MessageListModel::OriginRole),
              QStringLiteral("replay"));
-    QCOMPARE(roleAt(messages, 1, MessageListModel::BodyRole),
+    QCOMPARE(roleAt(messages, joined, MessageListModel::BodyRole),
              QStringLiteral("omairc joined"));
     QCOMPARE(controller.unreadCountFor(QStringLiteral("libera")), 0);
 }
@@ -4019,19 +4021,19 @@ void ControllerTest::chatHistoryAndLiveTimeUseLocalWallClock()
 
     auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
     QVERIFY(messages);
-    QCOMPARE(roleAt(messages, 0, MessageListModel::BodyRole),
-             QStringLiteral("[13:30:15] hello"));
-    QCOMPARE(roleAt(messages, 0, MessageListModel::OriginRole),
+    const int hello = bodyRow(messages, QStringLiteral("[13:30:15] hello"));
+    const int joined = bodyRow(messages, QStringLiteral("omairc joined"));
+    const int live = bodyRow(messages, QStringLiteral("live now"));
+    QVERIFY(hello >= 0);
+    QVERIFY(joined > hello);
+    QVERIFY(live > joined);
+    QCOMPARE(roleAt(messages, hello, MessageListModel::OriginRole),
              QStringLiteral("replay"));
-    QCOMPARE(roleAt(messages, 0, MessageListModel::TimeRole),
+    QCOMPARE(roleAt(messages, hello, MessageListModel::TimeRole),
              QStringLiteral("13:30"));
-    QCOMPARE(roleAt(messages, 1, MessageListModel::BodyRole),
-             QStringLiteral("omairc joined"));
-    QCOMPARE(roleAt(messages, 2, MessageListModel::BodyRole),
-             QStringLiteral("live now"));
-    QCOMPARE(roleAt(messages, 2, MessageListModel::OriginRole),
+    QCOMPARE(roleAt(messages, live, MessageListModel::OriginRole),
              QStringLiteral("live"));
-    QCOMPARE(roleAt(messages, 2, MessageListModel::TimeRole),
+    QCOMPARE(roleAt(messages, live, MessageListModel::TimeRole),
              QStringLiteral("13:30"));
 }
 
