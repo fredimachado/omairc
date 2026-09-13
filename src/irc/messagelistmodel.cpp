@@ -96,8 +96,6 @@ int MessageListModel::visualPrefixToRemove(const std::vector<VisualRow>& view,
                 break;
             }
         }
-        // A separator that introduced the first remaining store row would
-        // become a leading day mark.
         if (following >= 0 && following <= storeRemoved)
             ++removed;
         else
