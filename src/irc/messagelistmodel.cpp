@@ -96,7 +96,9 @@ int MessageListModel::visualPrefixToRemove(const std::vector<VisualRow>& view,
                 break;
             }
         }
-        if (following >= 0 && following <= storeRemoved)
+        const bool trimmedWithPrefix = following >= 0 && following < storeRemoved;
+        const bool wouldLeadRemaining = following == storeRemoved;
+        if (trimmedWithPrefix || wouldLeadRemaining)
             ++removed;
         else
             break;
