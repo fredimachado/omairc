@@ -580,6 +580,18 @@ std::optional<QString> IrcSecretPolicy::redactPreviewLine(QStringView line,
     return conservativePreviewMask(line);
 }
 
+bool IrcSecretPolicy::allowsTranscript(QStringView text, QStringView channelTypes)
+{
+    if (text.isEmpty())
+        return true;
+    if (redactWireLine(text, channelTypes))
+        return false;
+    IrcMessage probe;
+    probe.command = "PRIVMSG";
+    probe.parameters = {"NickServ", text.toString().toStdString()};
+    return !redactMessage(probe, channelTypes);
+}
+
 std::optional<IrcMaskedCommand> IrcSecretPolicy::redactMessage(const IrcMessage& message,
                                                               QStringView channelTypes)
 {

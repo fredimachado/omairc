@@ -26,7 +26,7 @@ A dead-simple IRC client for Omarchy, built with Qt Quick and C++.
 ## Limits
 
 - Network sections stay expanded. Scroll the sidebar when they overflow.
-- No saved message history. A server that advertises `chathistory` and `batch` can fill a joined channel with its last 100 lines. A bouncer that volunteers `znc.in/playback` can replay on attach. There is no Soju or ZNC history-sync protocol.
+- Conversation logs live under `$XDG_STATE_HOME/omairc/logs/`. A restart reloads the last 2000 lines as muted backlog. `/clear` wipes the visible buffer and leaves the file. A server that advertises `chathistory` and `batch` can still fill a joined channel with its last 100 lines. A bouncer that volunteers `znc.in/playback` can replay on attach. There is no Soju or ZNC history-sync protocol.
 - Connect has no separate SASL account or bouncer-network fields. NickServ is the services password.
 - SASL is PLAIN only.
 - No DCC, file transfer, voice, or video.

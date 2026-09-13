@@ -1,5 +1,6 @@
 #include "irceventreducer.h"
 
+#include "ircconversationlog.h"
 #include "ircservicenick.h"
 #include "ircwiretext.h"
 
@@ -75,6 +76,52 @@ QString collapseEventBody(const QString& existing, const QString& incoming)
         }
     }
     return existing + QStringLiteral(", ") + incoming;
+}
+
+QString kindToken(IrcMessageKind kind)
+{
+    switch (kind) {
+    case IrcMessageKind::Action:
+        return QStringLiteral("action");
+    case IrcMessageKind::Event:
+    case IrcMessageKind::Error:
+        return QStringLiteral("event");
+    case IrcMessageKind::Whois:
+        return QStringLiteral("whois");
+    case IrcMessageKind::Notice:
+        return QStringLiteral("notice");
+    case IrcMessageKind::Message:
+        return QStringLiteral("message");
+    }
+    return {};
+}
+
+std::optional<IrcMessageKind> kindFromToken(const QString& token)
+{
+    if (token == QLatin1String("action"))
+        return IrcMessageKind::Action;
+    if (token == QLatin1String("event"))
+        return IrcMessageKind::Event;
+    if (token == QLatin1String("notice"))
+        return IrcMessageKind::Notice;
+    if (token == QLatin1String("message"))
+        return IrcMessageKind::Message;
+    return std::nullopt;
+}
+
+bool persistableKind(IrcMessageKind kind)
+{
+    switch (kind) {
+    case IrcMessageKind::Message:
+    case IrcMessageKind::Notice:
+    case IrcMessageKind::Action:
+    case IrcMessageKind::Event:
+        return true;
+    case IrcMessageKind::Error:
+    case IrcMessageKind::Whois:
+        return false;
+    }
+    return false;
 }
 
 enum class ChatLineReason
@@ -241,6 +288,47 @@ void IrcEventReducer::forgetNetwork(const QString& networkId)
     }
     if (m_selected && m_selected->networkId == networkId)
         m_selected.reset();
+}
+
+void IrcEventReducer::setConversationLog(IrcConversationLog *log)
+{
+    m_log = log;
+}
+
+void IrcEventReducer::hydrateFromLog(IrcConversationState& conversation)
+{
+    if (!m_log)
+        return;
+    const std::vector<IrcTranscriptLine> lines = m_log->readTail(
+        conversation.key.networkId, conversation.key.normalizedTarget,
+        kMaxMessages);
+    for (const IrcTranscriptLine& line : lines) {
+        const std::optional<IrcMessageKind> kind = kindFromToken(line.kind);
+        if (!kind)
+            continue;
+        const IrcMsgId msgid{line.msgid};
+        if (!msgid.isEmpty() && conversation.messageIds.count(msgid))
+            continue;
+        if (!msgid.isEmpty())
+            conversation.messageIds.insert(msgid);
+        conversation.messages.push_back(
+            {line.author, line.body, line.timestamp, *kind, false,
+             IrcOrigin::Replay, msgid});
+    }
+    capMessages(conversation);
+}
+
+void IrcEventReducer::persistMessage(const IrcConversationState& conversation,
+                                     const IrcReducedMessage& message)
+{
+    if (!m_log || !persistableKind(message.kind))
+        return;
+    const QString kind = kindToken(message.kind);
+    if (kind.isEmpty())
+        return;
+    m_log->append(conversation.key.networkId, conversation.key.normalizedTarget,
+                  {message.timestamp, message.author, kind, message.body,
+                   message.msgid.value});
 }
 
 void IrcEventReducer::setMuted(const IrcConversationKey& key, bool muted)
@@ -460,7 +548,10 @@ IrcConversationState *IrcEventReducer::ensureConversation(
         conversation.detail = IrcChannelState{};
     else
         conversation.detail = IrcDirectMessageState{};
-    return &m_conversations.emplace(key, std::move(conversation)).first->second;
+    IrcConversationState *created =
+        &m_conversations.emplace(key, std::move(conversation)).first->second;
+    hydrateFromLog(*created);
+    return created;
 }
 
 IrcConversationState *IrcEventReducer::findMutable(
@@ -532,6 +623,7 @@ void IrcEventReducer::appendChat(const IrcConversationKey& key,
         conversation->messageIds.insert(msgid);
     conversation->messages.push_back({author, body, timestamp, kind, false,
                                      IrcOrigin::Live, msgid});
+    persistMessage(*conversation, conversation->messages.back());
     capMessages(*conversation);
     clearTyping(*conversation, normalize(key.networkId, author));
     noteChatArrival(*conversation, key, author, body, kind, msgid);
@@ -572,6 +664,7 @@ void IrcEventReducer::appendEvent(IrcConversationState& conversation,
     conversation.messages.push_back(
         {QString(), body, QDateTime(), IrcMessageKind::Event, collapsible,
          IrcOrigin::Live, IrcMsgId{}});
+    persistMessage(conversation, conversation.messages.back());
     capMessages(conversation);
 }
 
@@ -977,6 +1070,8 @@ void IrcEventReducer::reduce(const IrcHistoryEvent& event)
         conversation->messages.begin() + std::ptrdiff_t(at),
         run.begin(),
         run.end());
+    for (const IrcReducedMessage& message : run)
+        persistMessage(*conversation, message);
     if (at != previousSize)
         ++conversation->spliceEpoch;
     capMessages(*conversation);

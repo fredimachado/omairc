@@ -1,12 +1,20 @@
 #include <QAbstractItemModel>
 #include <QDateTime>
+#include <QDir>
+#include <QDirIterator>
+#include <QFile>
+#include <QFileInfo>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QSignalSpy>
+#include <QTemporaryDir>
 #include <QTest>
 
 #include <time.h>
 
 #include "fakeirctransport.h"
 #include "irccapability.h"
+#include "ircconversationlog.h"
 #include "irccontroller.h"
 #include "ircmessage.h"
 #include "memberlistmodel.h"
@@ -200,6 +208,58 @@ QByteArray namesBurst(int nickCount, int perLine)
     return bytes;
 }
 
+class ScopedTranscriptRoot
+{
+public:
+    explicit ScopedTranscriptRoot(const QString& root)
+        : m_had(qEnvironmentVariableIsSet("OMAIRC_TRANSCRIPT_ROOT"))
+        , m_previous(qgetenv("OMAIRC_TRANSCRIPT_ROOT"))
+    {
+        qputenv("OMAIRC_TRANSCRIPT_ROOT", root.toUtf8());
+    }
+
+    ~ScopedTranscriptRoot()
+    {
+        if (m_had)
+            qputenv("OMAIRC_TRANSCRIPT_ROOT", m_previous);
+        else
+            qunsetenv("OMAIRC_TRANSCRIPT_ROOT");
+    }
+
+private:
+    bool m_had;
+    QByteArray m_previous;
+};
+
+bool treeContains(const QString& root, const QString& needle)
+{
+    QDirIterator it(root, QDir::Files, QDirIterator::Subdirectories);
+    while (it.hasNext()) {
+        const QString path = it.next();
+        QFile file(path);
+        if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
+            continue;
+        if (QString::fromUtf8(file.readAll()).contains(needle))
+            return true;
+    }
+    return false;
+}
+
+QStringList jsonlBodies(const QString& path)
+{
+    QStringList bodies;
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
+        return bodies;
+    while (!file.atEnd()) {
+        const QJsonDocument document = QJsonDocument::fromJson(file.readLine());
+        if (!document.isObject())
+            continue;
+        bodies.append(document.object().value(QStringLiteral("body")).toString());
+    }
+    return bodies;
+}
+
 QByteArray whoBurst(int nickCount)
 {
     QByteArray bytes;
@@ -340,6 +400,10 @@ private slots:
     void whoisFailureBeforeDeliveryDoesNotStealWatch();
     void closedDirectWhoisDoesNotResurrect();
     void whoisEventDoesNotCollapseWithJoin();
+    void transcriptPersistsAndReloadsMuted();
+    void transcriptHydrateDoesNotNotify();
+    void transcriptSkipsSecretsAndKeepsSessionOnWriteError();
+    void transcriptClearLeavesFile();
 };
 
 void ControllerTest::reducesTrafficAndRoutesOutboundByNetwork()
@@ -4447,6 +4511,258 @@ void ControllerTest::whoisEventDoesNotCollapseWithJoin()
     QVERIFY(!selectedBodiesContain(messages, QStringLiteral("End of WHOIS for lena, alice joined")));
     QCOMPARE(bodyRow(messages, QStringLiteral("End of WHOIS for lena")) + 1,
              bodyRow(messages, QStringLiteral("alice joined")));
+}
+
+void ControllerTest::transcriptPersistsAndReloadsMuted()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const QByteArray previousState = qgetenv("XDG_STATE_HOME");
+    qputenv("XDG_STATE_HOME", dir.path().toUtf8());
+    QCOMPARE(IrcConversationLog::defaultRoot(),
+             QDir(dir.path()).filePath(QStringLiteral("omairc/logs")));
+    if (previousState.isEmpty())
+        qunsetenv("XDG_STATE_HOME");
+    else
+        qputenv("XDG_STATE_HOME", previousState);
+    const QString root = dir.filePath(QStringLiteral("omairc/logs"));
+    ScopedTranscriptRoot scope(root);
+    IrcConversationLog paths(root);
+    const QString channelPath =
+        paths.pathFor(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    const QString directPath =
+        paths.pathFor(QStringLiteral("libera"), QStringLiteral("alice"));
+
+    {
+        IrcController controller;
+        auto *transport = new FakeIrcTransport;
+        IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+                                                    transport);
+        QVERIFY(session);
+        QVERIFY(controller.start(QStringLiteral("libera")));
+        transport->completeConnect();
+        transport->injectBytes(
+            QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
+                              ":server 001 omairc :Welcome\r\n"
+                              ":omairc!u@h JOIN :#omarchy\r\n"
+                              "@msgid=chan-1 :alice!u@h PRIVMSG #omarchy :hello channel\r\n"));
+        controller.selectConversation(QStringLiteral("libera"),
+                                      QStringLiteral("#omarchy"));
+        QVERIFY(controller.sendMessage(QStringLiteral("own line")));
+        controller.openDirectMessage(QStringLiteral("alice"));
+        QVERIFY(controller.sendMessage(QStringLiteral("hello alice")));
+        transport->injectBytes(
+            QByteArrayLiteral("@msgid=dm-1 :alice!u@h PRIVMSG omairc :reply\r\n"));
+    }
+
+    QVERIFY(QFileInfo::exists(channelPath));
+    QVERIFY(QFileInfo::exists(directPath));
+    const QFileDevice::Permissions bits = QFileInfo(channelPath).permissions();
+    QVERIFY(bits & QFileDevice::ReadOwner);
+    QVERIFY(bits & QFileDevice::WriteOwner);
+    QVERIFY(!(bits & QFileDevice::ReadGroup));
+    QVERIFY(!(bits & QFileDevice::ReadOther));
+
+    QFile channelFile(channelPath);
+    QVERIFY(channelFile.open(QIODevice::ReadOnly | QIODevice::Text));
+    const QJsonDocument first = QJsonDocument::fromJson(channelFile.readLine());
+    QVERIFY(first.isObject());
+    const QJsonObject object = first.object();
+    QVERIFY(object.contains(QStringLiteral("timestamp")));
+    QVERIFY(object.contains(QStringLiteral("author")));
+    QVERIFY(object.contains(QStringLiteral("kind")));
+    QVERIFY(object.contains(QStringLiteral("body")));
+    QVERIFY(jsonlBodies(channelPath).contains(QStringLiteral("hello channel")));
+    QVERIFY(jsonlBodies(directPath).contains(QStringLiteral("hello alice")));
+    QVERIFY(jsonlBodies(directPath).contains(QStringLiteral("reply")));
+
+    IrcController reloaded;
+    auto *transport = new FakeIrcTransport;
+    QSignalSpy mentions(&reloaded, &IrcController::mentionArrived);
+    IrcSession *session = reloaded.addSession(config(QStringLiteral("libera")),
+                                              transport);
+    QVERIFY(session);
+    QVERIFY(reloaded.start(QStringLiteral("libera")));
+    transport->completeConnect();
+    transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
+                          ":server 001 omairc :Welcome\r\n"
+                          ":omairc!u@h JOIN :#omarchy\r\n"
+                          "@msgid=chan-1 :alice!u@h PRIVMSG #omarchy :hello channel\r\n"));
+    reloaded.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    auto *messages = qobject_cast<QAbstractItemModel *>(reloaded.messages());
+    QVERIFY(messages);
+    const int hello = bodyRow(messages, QStringLiteral("hello channel"));
+    QVERIFY(hello >= 0);
+    QCOMPARE(roleAt(messages, hello, MessageListModel::OriginRole).toString(),
+             QStringLiteral("replay"));
+    QCOMPARE(roleAt(messages, hello, MessageListModel::MsgidRole).toString(),
+             QStringLiteral("chan-1"));
+    QVERIFY(selectedBodies(messages).count(QStringLiteral("hello channel")) == 1);
+    QCOMPARE(mentions.count(), 0);
+
+    reloaded.openDirectMessage(QStringLiteral("alice"));
+    QCOMPARE(reloaded.selectedTarget(), QStringLiteral("alice"));
+    QVERIFY(selectedBodiesContain(messages, QStringLiteral("hello alice")));
+    QVERIFY(selectedBodiesContain(messages, QStringLiteral("reply")));
+    const int reply = bodyRow(messages, QStringLiteral("reply"));
+    QVERIFY(reply >= 0);
+    QCOMPARE(roleAt(messages, reply, MessageListModel::OriginRole).toString(),
+             QStringLiteral("replay"));
+    QCOMPARE(mentions.count(), 0);
+    auto *conversations =
+        qobject_cast<QAbstractItemModel *>(reloaded.conversations());
+    const int aliceRow = rowForTarget(conversations, QStringLiteral("alice"));
+    QVERIFY(aliceRow >= 0);
+    QCOMPARE(roleAt(conversations, aliceRow, ConversationListModel::UnreadRole).toInt(),
+             0);
+}
+
+void ControllerTest::transcriptHydrateDoesNotNotify()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const QString root = dir.filePath(QStringLiteral("omairc/logs"));
+    ScopedTranscriptRoot scope(root);
+
+    {
+        IrcController controller;
+        auto *transport = new FakeIrcTransport;
+        QVERIFY(controller.addSession(config(QStringLiteral("libera")), transport));
+        QVERIFY(controller.start(QStringLiteral("libera")));
+        transport->completeConnect();
+        transport->injectBytes(
+            QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
+                              ":server 001 omairc :Welcome\r\n"
+                              ":omairc!u@h JOIN :#omarchy\r\n"
+                              ":omairc!u@h JOIN :#lab\r\n"
+                              ":zed!u@h PRIVMSG #lab :omairc: ping\r\n"));
+    }
+
+    IrcController reloaded;
+    auto *transport = new FakeIrcTransport;
+    QSignalSpy mentions(&reloaded, &IrcController::mentionArrived);
+    QVERIFY(reloaded.addSession(config(QStringLiteral("libera")), transport));
+    QVERIFY(reloaded.start(QStringLiteral("libera")));
+    transport->completeConnect();
+    transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
+                          ":server 001 omairc :Welcome\r\n"
+                          ":omairc!u@h JOIN :#omarchy\r\n"
+                          ":omairc!u@h JOIN :#lab\r\n"));
+    QCOMPARE(mentions.count(), 0);
+    auto *conversations =
+        qobject_cast<QAbstractItemModel *>(reloaded.conversations());
+    const int lab = rowForTarget(conversations, QStringLiteral("#lab"));
+    QVERIFY(lab >= 0);
+    QCOMPARE(roleAt(conversations, lab, ConversationListModel::UnreadRole).toInt(),
+             0);
+    QVERIFY(!roleAt(conversations, lab, ConversationListModel::MentionRole).toBool());
+    reloaded.selectConversation(QStringLiteral("libera"), QStringLiteral("#lab"));
+    auto *messages = qobject_cast<QAbstractItemModel *>(reloaded.messages());
+    const int ping = bodyRow(messages, QStringLiteral("omairc: ping"));
+    QVERIFY(ping >= 0);
+    QCOMPARE(roleAt(messages, ping, MessageListModel::OriginRole).toString(),
+             QStringLiteral("replay"));
+    QCOMPARE(mentions.count(), 0);
+}
+
+void ControllerTest::transcriptSkipsSecretsAndKeepsSessionOnWriteError()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const QString root = dir.filePath(QStringLiteral("omairc/logs"));
+    ScopedTranscriptRoot scope(root);
+
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+                                                transport);
+    QVERIFY(session);
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    transport->completeConnect();
+    transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
+                          ":server 001 omairc :Welcome\r\n"
+                          ":omairc!u@h JOIN :#omarchy\r\n"));
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    QVERIFY(controller.sendMessage(QStringLiteral("visible chat")));
+    QVERIFY(controller.sendMessage(QStringLiteral("IDENTIFY hunter2")));
+    QVERIFY(controller.sendMessage(QStringLiteral("/raw PASS s3cret")));
+    QVERIFY(controller.sendMessage(QStringLiteral("/join #locked roomkey")));
+    transport->injectBytes(QByteArrayLiteral(":omairc!u@h JOIN :#locked\r\n"));
+
+    QVERIFY(treeContains(root, QStringLiteral("visible chat")));
+    QVERIFY(!treeContains(root, QStringLiteral("hunter2")));
+    QVERIFY(!treeContains(root, QStringLiteral("s3cret")));
+    QVERIFY(!treeContains(root, QStringLiteral("roomkey")));
+    QCOMPARE(session->state(), IrcSession::State::Registered);
+
+    QTemporaryDir blocked;
+    QVERIFY(blocked.isValid());
+    const QString badRoot = blocked.filePath(QStringLiteral("not-a-dir"));
+    QFile blocker(badRoot);
+    QVERIFY(blocker.open(QIODevice::WriteOnly));
+    QVERIFY(blocker.write("nope") == 4);
+    blocker.close();
+    ScopedTranscriptRoot badScope(badRoot);
+    IrcController doomed;
+    auto *badTransport = new FakeIrcTransport;
+    IrcSession *badSession =
+        doomed.addSession(config(QStringLiteral("libera")), badTransport);
+    QVERIFY(badSession);
+    QVERIFY(doomed.start(QStringLiteral("libera")));
+    badTransport->completeConnect();
+    badTransport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
+                          ":server 001 omairc :Welcome\r\n"
+                          ":omairc!u@h JOIN :#omarchy\r\n"));
+    doomed.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    QVERIFY(doomed.sendMessage(QStringLiteral("still live")));
+    QCOMPARE(badSession->state(), IrcSession::State::Registered);
+    auto *messages = qobject_cast<QAbstractItemModel *>(doomed.messages());
+    QVERIFY(selectedBodiesContain(messages, QStringLiteral("still live")));
+}
+
+void ControllerTest::transcriptClearLeavesFile()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const QString root = dir.filePath(QStringLiteral("omairc/logs"));
+    ScopedTranscriptRoot scope(root);
+    IrcConversationLog paths(root);
+    const QString channelPath =
+        paths.pathFor(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    QVERIFY(controller.addSession(config(QStringLiteral("libera")), transport));
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    transport->completeConnect();
+    transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
+                          ":server 001 omairc :Welcome\r\n"
+                          ":omairc!u@h JOIN :#omarchy\r\n"));
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    QVERIFY(controller.sendMessage(QStringLiteral("keep me")));
+    QVERIFY(jsonlBodies(channelPath).contains(QStringLiteral("keep me")));
+    QVERIFY(controller.sendMessage(QStringLiteral("/clear")));
+    auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
+    QCOMPARE(messages->rowCount(), 0);
+    QVERIFY(jsonlBodies(channelPath).contains(QStringLiteral("keep me")));
+
+    IrcController missing;
+    auto *emptyTransport = new FakeIrcTransport;
+    QVERIFY(missing.addSession(config(QStringLiteral("libera")), emptyTransport));
+    QVERIFY(missing.start(QStringLiteral("libera")));
+    emptyTransport->completeConnect();
+    emptyTransport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
+                          ":server 001 omairc :Welcome\r\n"
+                          ":omairc!u@h JOIN :#fresh\r\n"));
+    missing.selectConversation(QStringLiteral("libera"), QStringLiteral("#fresh"));
+    auto *fresh = qobject_cast<QAbstractItemModel *>(missing.messages());
+    QCOMPARE(selectedBodies(fresh), QStringList{QStringLiteral("omairc joined")});
 }
 
 int runControllerTests(int argc, char **argv)

@@ -102,6 +102,8 @@ struct IrcMentionArrival
     IrcMsgId msgid{};
 };
 
+class IrcConversationLog;
+
 enum class IrcConversationCause {
     UserOpen,
     ChannelState,
@@ -146,6 +148,8 @@ public:
 
     static constexpr qint64 kStaleNamesSyncMs = 30000;
     static constexpr int kMaxMessages = 2000;
+
+    void setConversationLog(IrcConversationLog *log);
 
     void apply(const IrcEvent& event);
     bool releaseStaleNamesSync(const std::optional<IrcConversationKey>& key,
@@ -201,6 +205,9 @@ private:
                      const QString& body,
                      bool collapsible = false);
     void appendWhois(IrcConversationState& conversation, const QString& body);
+    void hydrateFromLog(IrcConversationState& conversation);
+    void persistMessage(const IrcConversationState& conversation,
+                        const IrcReducedMessage& message);
     void capMessages(IrcConversationState& conversation);
     std::optional<std::size_t> takeSpliceIndex(IrcConversationState& conversation);
 
@@ -246,4 +253,5 @@ private:
     std::optional<IrcConversationKey> m_selected;
     std::optional<IrcMentionArrival> m_mentionArrival;
     std::set<IrcConversationKey> m_mutedKeys;
+    IrcConversationLog *m_log = nullptr;
 };

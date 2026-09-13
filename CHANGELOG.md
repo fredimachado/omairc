@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Conversation transcripts persist under `$XDG_STATE_HOME/omairc/logs/{networkId}/{target}`. Join and opening a DM reload the tail as muted backlog. Lines that `IrcSecretPolicy` redacts are not written.
 - Live transcripts insert a centered date mark when the local calendar day changes. The label is `Today`, `Yesterday`, or the locale short date. Status stays a raw console.
 - `/mute [target]`, `/unmute [target]`, and `/muted`. Each network keeps its own list by conversation key. Chat still arrives. Mentions do not notify, increment, or badge. `Alt+A` skips muted mentions. Opening the buffer does not unmute. `/close` and clearing the network drop the flag. Status `/mute` without a target is refused.
 - `/disconnect [reason]` stops the focused network. `/quit` is the same command. Connect shows Disconnect next to Apply while that network is live or reconnecting. The profile, sidebar, and other networks stay.

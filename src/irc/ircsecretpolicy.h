@@ -20,4 +20,5 @@ std::optional<QString> redactWireLine(QStringView line, QStringView channelTypes
 std::optional<QString> redactPreviewLine(QStringView line, QStringView channelTypes = {});
 std::optional<IrcMaskedCommand> redactMessage(const IrcMessage& message,
                                               QStringView channelTypes = {});
+bool allowsTranscript(QStringView text, QStringView channelTypes = {});
 }
