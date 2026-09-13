@@ -91,6 +91,8 @@ public:
     Q_INVOKABLE void selectConversationById(const QString& conversationId);
     Q_INVOKABLE void openStatus(const QString& networkId);
     Q_INVOKABLE void openDirectMessage(const QString& nick);
+    Q_INVOKABLE void revealConversation(const QString& networkId,
+                                        const QString& target);
     Q_INVOKABLE void closeDirectMessage();
     Q_INVOKABLE bool sendMessage(const QString& text);
     Q_INVOKABLE bool nickIsTyping(const QString& nick) const;
@@ -113,7 +115,9 @@ signals:
     void errorOccurred(const QString &networkId,
                        IrcSession::ErrorKind kind,
                        const QString &message);
-    void mentionArrived(const QString &author, const QString &body);
+    void mentionArrived(const QString &author, const QString &body,
+                       const QString &networkId, const QString &target,
+                       const QString &msgid);
 
 private:
     enum class QuietWire { Privmsg, Notice };

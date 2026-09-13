@@ -4,6 +4,8 @@
 #include <QDBusConnection>
 #include <QDBusMessage>
 #include <QDBusPendingCall>
+#include <QDBusPendingCallWatcher>
+#include <QDBusPendingReply>
 #include <QDir>
 #include <QFile>
 #include <QRect>
@@ -14,6 +16,11 @@
 
 namespace {
 const auto windowGeometrySetting = QStringLiteral("window/geometry");
+
+QString notifyConversationKey(const QString &networkId, const QString &target)
+{
+    return networkId + QLatin1Char('\n') + target;
+}
 }
 
 Backend::Backend(QObject *parent) : QObject(parent) {
@@ -28,6 +35,17 @@ Backend::Backend(QObject *parent) : QObject(parent) {
         loadOmarchyTheme();
         watchOmarchyTheme();
     });
+
+    QDBusConnection bus = QDBusConnection::sessionBus();
+    if (!bus.isConnected())
+        return;
+    bus.connect(QString(),
+                QStringLiteral("/org/freedesktop/Notifications"),
+                QStringLiteral("org.freedesktop.Notifications"),
+                QStringLiteral("ActionInvoked"),
+                QStringLiteral("us"),
+                this,
+                SLOT(handleActionInvoked(uint,QString)));
 }
 
 QVariantMap Backend::windowGeometry() const {
@@ -50,7 +68,17 @@ void Backend::saveWindowGeometry(int x, int y, int width, int height, bool maxim
     settings.setValue(QStringLiteral("window/maximized"), maximized);
 }
 
-void Backend::notifyDesktop(const QString &summary, const QString &body) {
+void Backend::notifyDesktop(const QString &summary, const QString &body,
+                            const QString &networkId, const QString &target,
+                            const QString &msgid) {
+    QDBusConnection bus = QDBusConnection::sessionBus();
+    if (!bus.isConnected())
+        return;
+
+    uint replacesId = 0;
+    if (!networkId.isEmpty() && !target.isEmpty())
+        replacesId = m_conversationNotifyIds.value(notifyConversationKey(networkId, target), 0);
+
     QDBusMessage call = QDBusMessage::createMethodCall(
         QStringLiteral("org.freedesktop.Notifications"),
         QStringLiteral("/org/freedesktop/Notifications"),
@@ -58,15 +86,47 @@ void Backend::notifyDesktop(const QString &summary, const QString &body) {
         QStringLiteral("Notify"));
     call.setArguments({
         QStringLiteral("Omairc"),
-        uint(0),
+        replacesId,
         QStringLiteral("omairc"),
         summary,
         body,
-        QStringList{},
+        QStringList{QStringLiteral("default"), QStringLiteral("Open")},
         QVariantMap{},
         int(-1),
     });
-    QDBusConnection::sessionBus().asyncCall(call);
+
+    auto *watcher = new QDBusPendingCallWatcher(bus.asyncCall(call), this);
+    connect(watcher, &QDBusPendingCallWatcher::finished, this,
+            [this, networkId, target, msgid](QDBusPendingCallWatcher *finished) {
+        const QDBusPendingReply<uint> reply(*finished);
+        finished->deleteLater();
+        if (!reply.isValid())
+            return;
+        rememberNotifyId(networkId, target, msgid, reply.value());
+    });
+}
+
+void Backend::rememberNotifyId(const QString &networkId, const QString &target,
+                               const QString &msgid, uint id)
+{
+    if (networkId.isEmpty() || target.isEmpty() || id == 0)
+        return;
+    const QString key = notifyConversationKey(networkId, target);
+    const uint previous = m_conversationNotifyIds.value(key, 0);
+    if (previous != 0 && previous != id)
+        m_notifyById.remove(previous);
+    m_conversationNotifyIds.insert(key, id);
+    m_notifyById.insert(id, {networkId, target, msgid});
+}
+
+void Backend::handleActionInvoked(uint id, const QString &actionKey)
+{
+    if (actionKey != QStringLiteral("default") && !actionKey.isEmpty())
+        return;
+    const auto found = m_notifyById.constFind(id);
+    if (found == m_notifyById.cend())
+        return;
+    emit notificationActivated(found->networkId, found->target, found->msgid);
 }
 
 void Backend::setDarkMode(bool darkMode) {

@@ -24,6 +24,7 @@ public:
         KindRole,
         NetworkIdRole,
         OriginRole,
+        MsgidRole,
     };
 
     static QHash<int, QByteArray> staticRoleNames();

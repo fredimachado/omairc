@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QFileSystemWatcher>
+#include <QHash>
 #include <QObject>
 #include <QString>
 #include <QVariantMap>
@@ -28,16 +29,32 @@ public:
 
     Q_INVOKABLE QVariantMap windowGeometry() const;
     Q_INVOKABLE void saveWindowGeometry(int x, int y, int width, int height, bool maximized);
-    Q_INVOKABLE void notifyDesktop(const QString &summary, const QString &body);
+    Q_INVOKABLE void notifyDesktop(const QString &summary, const QString &body,
+                                   const QString &networkId = {},
+                                   const QString &target = {},
+                                   const QString &msgid = {});
 
 signals:
     void darkModeChanged();
     void textScaleChanged();
     void themeColorsChanged();
+    void notificationActivated(const QString &networkId, const QString &target,
+                               const QString &msgid);
+
+private slots:
+    void handleActionInvoked(uint id, const QString &actionKey);
 
 private:
+    struct NotifyConversation {
+        QString networkId;
+        QString target;
+        QString msgid;
+    };
+
     void loadOmarchyTheme();
     void watchOmarchyTheme();
+    void rememberNotifyId(const QString &networkId, const QString &target,
+                          const QString &msgid, uint id);
 
     bool m_darkMode = true;
     qreal m_textScale = 1.0;
@@ -46,4 +63,6 @@ private:
     QString m_themeAccent;
     QString m_themeSelection;
     QFileSystemWatcher m_themeWatcher;
+    QHash<QString, uint> m_conversationNotifyIds;
+    QHash<uint, NotifyConversation> m_notifyById;
 };
