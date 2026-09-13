@@ -1,6 +1,7 @@
 #pragma once
 
 #include "conversationlistmodel.h"
+#include "ircconversationlog.h"
 #include "irceventreducer.h"
 #include "irchighlight.h"
 #include "ircignore.h"
@@ -219,6 +220,7 @@ private:
 
     IrcSessionManager m_sessions;
     IrcStatusConsole m_console;
+    IrcConversationLog m_transcripts;
     IrcEventReducer m_reducer;
     IrcIgnoreStore m_ignores;
     IrcMuteStore m_mutes;

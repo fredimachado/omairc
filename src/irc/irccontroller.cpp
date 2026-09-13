@@ -114,6 +114,7 @@ IrcController::IrcController(QObject *parent)
     });
     connect(&m_console, &IrcStatusConsole::alertsChanged, this,
             &IrcController::statusChanged);
+    m_reducer.setConversationLog(&m_transcripts);
 }
 
 IrcSession *IrcController::addSession(const IrcSessionConfig& config,

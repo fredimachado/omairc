@@ -1,10 +1,14 @@
 #include <QTest>
 
+#include "ircconversationlog.h"
 #include "irceventreducer.h"
 #include "irceventtranslator.h"
 #include "ircparser.h"
 #include "ircsession.h"
 
+#include <QTemporaryDir>
+
+#include <algorithm>
 #include <string_view>
 #include <vector>
 
@@ -88,6 +92,8 @@ private slots:
     void nickMergeDropsDuplicateMsgids();
     void partThenJoinSplicesAboveThisJoin();
     void historicJoinInBatchDoesNotChangePeopleCount();
+    void transcriptHydrateIsReplayWithoutNotify();
+    void transcriptMsgidSkipsLaterLive();
     void historyAfterPartDoesNotSplice();
     void historyAfterCapDoesNotSplice();
     void clearMessagesDropsPendingHistory();
@@ -1588,6 +1594,79 @@ void ReducerTest::historicJoinInBatchDoesNotChangePeopleCount()
     QVERIFY(conversation);
     QCOMPARE(conversation->peopleCount(), 1);
     QCOMPARE(conversation->messages[0].body, QStringLiteral("from history"));
+}
+
+void ReducerTest::transcriptHydrateIsReplayWithoutNotify()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    IrcConversationLog log(dir.path());
+    const IrcConversationKey room =
+        IrcEventReducer().conversationKey(networkA, QStringLiteral("#omarchy"));
+
+    {
+        IrcEventReducer reducer;
+        reducer.setConversationLog(&log);
+        welcome(reducer, networkA);
+        reducer.apply(IrcJoinEvent{
+            networkA, QStringLiteral("#omarchy"), QStringLiteral("omairc")});
+        reducer.apply(IrcMessageEvent{
+            room, QStringLiteral("alice"), QStringLiteral("omairc: ping"),
+            timestamp, QStringLiteral("#omarchy"),
+            IrcMsgId{QStringLiteral("id-mention")}});
+    }
+
+    IrcEventReducer again;
+    again.setConversationLog(&log);
+    welcome(again, networkA);
+    again.apply(IrcJoinEvent{
+        networkA, QStringLiteral("#omarchy"), QStringLiteral("omairc")});
+    const IrcConversationState *conversation = again.find(room);
+    QVERIFY(conversation);
+    QCOMPARE(conversation->unread, 0);
+    QCOMPARE(conversation->mentions, 0);
+    QVERIFY(!again.takeMentionArrival().has_value());
+    QCOMPARE(conversation->messages.front().body, QStringLiteral("omairc joined"));
+    QCOMPARE(conversation->messages[1].body, QStringLiteral("omairc: ping"));
+    QCOMPARE(conversation->messages[1].origin, IrcOrigin::Replay);
+    QCOMPARE(conversation->messages.back().body, QStringLiteral("omairc joined"));
+}
+
+void ReducerTest::transcriptMsgidSkipsLaterLive()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    IrcConversationLog log(dir.path());
+    const IrcConversationKey room =
+        IrcEventReducer().conversationKey(networkA, QStringLiteral("#omarchy"));
+
+    {
+        IrcEventReducer reducer;
+        reducer.setConversationLog(&log);
+        welcome(reducer, networkA);
+        reducer.apply(IrcJoinEvent{
+            networkA, QStringLiteral("#omarchy"), QStringLiteral("omairc")});
+        reducer.apply(IrcMessageEvent{
+            room, QStringLiteral("alice"), QStringLiteral("first"), timestamp,
+            QStringLiteral("#omarchy"), IrcMsgId{QStringLiteral("same")}});
+    }
+
+    IrcEventReducer again;
+    again.setConversationLog(&log);
+    welcome(again, networkA);
+    again.apply(IrcJoinEvent{
+        networkA, QStringLiteral("#omarchy"), QStringLiteral("omairc")});
+    again.apply(IrcMessageEvent{
+        room, QStringLiteral("alice"), QStringLiteral("second"), timestamp,
+        QStringLiteral("#omarchy"), IrcMsgId{QStringLiteral("same")}});
+    const IrcConversationState *conversation = again.find(room);
+    QVERIFY(conversation);
+    QCOMPARE(conversation->messages[1].body, QStringLiteral("first"));
+    QCOMPARE(conversation->messages[1].origin, IrcOrigin::Replay);
+    QVERIFY(std::none_of(conversation->messages.begin(), conversation->messages.end(),
+                         [](const IrcReducedMessage& message) {
+                             return message.body == QStringLiteral("second");
+                         }));
 }
 
 void ReducerTest::nickCollisionMergesMessageIds()

@@ -50,6 +50,7 @@ HEADERS += \
     src/irc/ircservicenick.h \
     src/irc/ircprefixnick.h \
     src/irc/ircsecretpolicy.h \
+    src/irc/ircconversationlog.h \
     src/irc/ircnetworklog.h \
     src/irc/networklogmodel.h \
     src/irc/irccommand.h \
@@ -104,6 +105,7 @@ SOURCES += \
     src/irc/ircservicenick.cpp \
     src/irc/ircprefixnick.cpp \
     src/irc/ircsecretpolicy.cpp \
+    src/irc/ircconversationlog.cpp \
     src/irc/ircnetworklog.cpp \
     src/irc/networklogmodel.cpp \
     src/irc/irccommand.cpp \
