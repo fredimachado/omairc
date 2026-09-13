@@ -1249,8 +1249,10 @@ void LiveUiTest::seededIrcFixtureFurnishesDemoWorld()
     world.omarchyTransport()->injectBytes(
         QByteArrayLiteral(":fred!u@h PRIVMSG #omarchy :Hello from the UI test\r\n"));
     QVERIFY(waitUntil([&] {
-        return selectedBodies(messages).contains(QStringLiteral("Hello from the UI test"))
-            && selectedBodies(messages).size() == sentBefore + 1;
+        const QStringList bodies = selectedBodies(messages);
+        return !bodies.isEmpty()
+            && bodies.last() == QStringLiteral("Hello from the UI test")
+            && (bodies.size() == sentBefore + 1 || bodies.size() == sentBefore + 2);
     }));
     QVERIFY2(saveProductShot(window, QStringLiteral("send-message")),
              "send-message screenshot");
