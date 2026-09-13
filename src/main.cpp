@@ -125,6 +125,7 @@ int main(int argc, char *argv[]) {
         }
     }
     auto *ircController = new IrcController(&app);
+    ircController->setTranscriptRoot(IrcConversationLog::defaultRoot());
     auto *credentialStore = new SecretServiceCredentialStore(&app);
     auto *ircConnection = new IrcConnection(*ircController, *credentialStore, &app);
     if (demoServer && !demoServer->attach(*ircController, true)) {

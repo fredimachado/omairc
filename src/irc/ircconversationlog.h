@@ -25,6 +25,7 @@ public:
     ~IrcConversationLog();
 
     static QString defaultRoot();
+    void setRoot(QString root);
     const QString &root() const;
     QString pathFor(const QString &networkId, const QString &target) const;
 

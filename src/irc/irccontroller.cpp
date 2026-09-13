@@ -117,6 +117,11 @@ IrcController::IrcController(QObject *parent)
     m_reducer.setConversationLog(&m_transcripts);
 }
 
+void IrcController::setTranscriptRoot(const QString &root)
+{
+    m_transcripts.setRoot(root);
+}
+
 IrcSession *IrcController::addSession(const IrcSessionConfig& config,
                                       IrcTransport *transport,
                                       IrcReconnectTimer *reconnectTimer)

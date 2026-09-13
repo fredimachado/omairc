@@ -51,6 +51,7 @@ class IrcController : public QObject
 public:
     explicit IrcController(QObject *parent = nullptr);
 
+    void setTranscriptRoot(const QString &root);
     IrcSession *addSession(const IrcSessionConfig& config,
                            IrcTransport *transport,
                            IrcReconnectTimer *reconnectTimer = nullptr);

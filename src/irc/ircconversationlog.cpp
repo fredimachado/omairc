@@ -2,7 +2,6 @@
 
 #include "ircsecretpolicy.h"
 
-#include <QCoreApplication>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
@@ -124,10 +123,6 @@ IrcConversationLog::IrcConversationLog()
         m_root = scoped;
         return;
     }
-    if (QCoreApplication::applicationName() == QLatin1String("omairc")) {
-        m_root = defaultRoot();
-        return;
-    }
     m_scratch = std::make_unique<QTemporaryDir>();
     m_root = QDir(m_scratch->path()).filePath(QStringLiteral("omairc/logs"));
 }
@@ -138,6 +133,12 @@ IrcConversationLog::IrcConversationLog(QString root)
 }
 
 IrcConversationLog::~IrcConversationLog() = default;
+
+void IrcConversationLog::setRoot(QString root)
+{
+    m_scratch.reset();
+    m_root = std::move(root);
+}
 
 QString IrcConversationLog::defaultRoot()
 {
