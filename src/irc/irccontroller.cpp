@@ -933,28 +933,26 @@ IrcCommandOutcome IrcController::dispatchIgnore(const IrcCommand& command,
 
 void IrcController::hydrateMutes(const QString& networkId)
 {
-    const IrcCaseMapping& mapping =
-        m_reducer.serverFeatures(networkId).caseMapping();
     for (const QString& target : m_mutes.targets(networkId))
         m_reducer.setMuted(m_reducer.conversationKey(networkId, target), true);
 }
 
-void IrcController::applyMute(const QString& networkId,
+bool IrcController::applyMute(const QString& networkId,
                               const QString& target,
                               bool muted)
 {
     if (networkId.isEmpty() || target.isEmpty())
-        return;
+        return false;
     const IrcCaseMapping& mapping =
         m_reducer.serverFeatures(networkId).caseMapping();
-    if (muted)
-        m_mutes.add(networkId, target, mapping);
-    else
-        m_mutes.remove(networkId, target, mapping);
+    const bool changed = muted
+        ? m_mutes.add(networkId, target, mapping)
+        : m_mutes.remove(networkId, target, mapping);
     m_reducer.setMuted(m_reducer.conversationKey(networkId, target), muted);
     m_conversations.reload();
     ++m_conversationEpoch;
     emit conversationStateChanged();
+    return changed;
 }
 
 IrcCommandOutcome IrcController::dispatchMute(const IrcCommand& command,
@@ -993,19 +991,14 @@ IrcCommandOutcome IrcController::dispatchMute(const IrcCommand& command,
         if (!muteTargetIsUsable(target, features))
             return IrcCommandOutcome::Refused;
         if (command.verb == IrcCommand::Verb::Mute) {
-            const bool added = m_mutes.add(networkId, target, mapping);
-            m_reducer.setMuted(m_reducer.conversationKey(networkId, target), true);
+            const bool added = applyMute(networkId, target, true);
             text = added ? QStringLiteral("Muted %1").arg(target)
                          : QStringLiteral("Already muted %1").arg(target);
         } else {
-            const bool removed = m_mutes.remove(networkId, target, mapping);
-            m_reducer.setMuted(m_reducer.conversationKey(networkId, target), false);
+            const bool removed = applyMute(networkId, target, false);
             text = removed ? QStringLiteral("No longer muted %1").arg(target)
                            : QStringLiteral("Not muted %1").arg(target);
         }
-        m_conversations.reload();
-        ++m_conversationEpoch;
-        emit conversationStateChanged();
     }
     m_console.record(IrcStatusEntry::outcome(networkId, text));
     return IrcCommandOutcome::Sent;

@@ -172,7 +172,7 @@ private:
     IrcCommandOutcome dispatchMute(const IrcCommand& command,
                                    IrcComposerSurface surface);
     void hydrateMutes(const QString& networkId);
-    void applyMute(const QString& networkId,
+    bool applyMute(const QString& networkId,
                    const QString& target,
                    bool muted);
     IrcCommandOutcome dispatchChannelModeWrapper(const IrcCommand& command,
