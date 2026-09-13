@@ -209,6 +209,26 @@ int capLsCount(const QByteArrayList &frames)
     }
     return count;
 }
+
+QByteArrayList joinFrames(const QByteArrayList &frames)
+{
+    QByteArrayList joins;
+    for (const QByteArray &frame : frames) {
+        if (frame.startsWith("JOIN "))
+            joins.append(frame);
+    }
+    return joins;
+}
+
+void reconnectRegistered(Fixture &fixture)
+{
+    fixture.transport->remoteClose();
+    fixture.timer->fire();
+    fixture.transport->completeConnect();
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
+                          ":server 001 omairc :Welcome\r\n"));
+}
 }
 
 class SessionTest : public QObject
@@ -356,6 +376,11 @@ private slots:
     void capNakBeforeCapListIsIgnored();
     void ctcpFromServerPrefixGetsNoReply();
     void ctcpToFoldedSelfNickIsAnswered();
+    void keyedAutojoinSurvivesReconnectThenPartForgets();
+    void bareJoinDoesNotWipeStoredKey();
+    void joinWithNewKeyUpdatesAfterSuccess();
+    void welcomeSendsStoredChannelKey();
+    void badChannelKeyStaysOnStatusWithoutRetry();
 };
 
 void SessionTest::registersAndAutojoins()
@@ -4168,6 +4193,146 @@ void SessionTest::chatHistoryRequestFillsBothPlaceholdersAtOnce()
                           ":omairc!u@h JOIN :#%2omarchy\r\n"));
     QVERIFY(fixture.wrote(
         QByteArrayLiteral("CHATHISTORY LATEST #%2omarchy * 100\r\n")));
+}
+
+void SessionTest::keyedAutojoinSurvivesReconnectThenPartForgets()
+{
+    IrcSessionConfig sessionConfig = config();
+    sessionConfig.autojoinChannels = {};
+    Fixture fixture(sessionConfig);
+    StatusCollector status(fixture.session);
+    fixture.registerWithWelcome();
+
+    const auto target = IrcJoinTarget::make(QStringLiteral("#private"),
+                                            QStringLiteral("hunter2"));
+    QVERIFY(target);
+    QVERIFY(fixture.session->join(*target));
+    QCOMPARE(fixture.transport->writtenFrames().last(),
+             QByteArrayLiteral("JOIN #private hunter2\r\n"));
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(":omairc!u@h JOIN :#private\r\n"));
+    if (status.anyFieldContains(QStringLiteral("hunter2")))
+        QFAIL("channel key leaked");
+
+    int before = fixture.transport->writtenFrames().size();
+    reconnectRegistered(fixture);
+    QCOMPARE(joinFrames(fixture.transport->writtenFrames().mid(before)),
+             QByteArrayList({QByteArrayLiteral("JOIN #private hunter2\r\n")}));
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(":omairc!u@h JOIN :#private\r\n"));
+    if (status.anyFieldContains(QStringLiteral("hunter2")))
+        QFAIL("channel key leaked");
+
+    QVERIFY(fixture.session->part(QStringLiteral("#private")));
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(":omairc!u@h PART #private\r\n"));
+
+    before = fixture.transport->writtenFrames().size();
+    reconnectRegistered(fixture);
+    QCOMPARE(joinFrames(fixture.transport->writtenFrames().mid(before)),
+             QByteArrayList());
+}
+
+void SessionTest::bareJoinDoesNotWipeStoredKey()
+{
+    IrcSessionConfig sessionConfig = config();
+    sessionConfig.autojoinChannels = {};
+    Fixture fixture(sessionConfig);
+    fixture.registerWithWelcome();
+
+    const auto keyed = IrcJoinTarget::make(QStringLiteral("#private"),
+                                           QStringLiteral("hunter2"));
+    QVERIFY(keyed);
+    QVERIFY(fixture.session->join(*keyed));
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(":omairc!u@h JOIN :#private\r\n"));
+
+    const auto bare = IrcJoinTarget::make(QStringLiteral("#private"));
+    QVERIFY(bare);
+    QVERIFY(fixture.session->join(*bare));
+    QCOMPARE(fixture.transport->writtenFrames().last(),
+             QByteArrayLiteral("JOIN #private\r\n"));
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(":omairc!u@h JOIN :#private\r\n"));
+
+    const int before = fixture.transport->writtenFrames().size();
+    reconnectRegistered(fixture);
+    QCOMPARE(joinFrames(fixture.transport->writtenFrames().mid(before)),
+             QByteArrayList({QByteArrayLiteral("JOIN #private hunter2\r\n")}));
+}
+
+void SessionTest::joinWithNewKeyUpdatesAfterSuccess()
+{
+    IrcSessionConfig sessionConfig = config();
+    sessionConfig.autojoinChannels = {};
+    Fixture fixture(sessionConfig);
+    fixture.registerWithWelcome();
+
+    const auto first = IrcJoinTarget::make(QStringLiteral("#private"),
+                                           QStringLiteral("hunter2"));
+    QVERIFY(first);
+    QVERIFY(fixture.session->join(*first));
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(":omairc!u@h JOIN :#private\r\n"));
+
+    const auto next = IrcJoinTarget::make(QStringLiteral("#private"),
+                                          QStringLiteral("newkey"));
+    QVERIFY(next);
+    QVERIFY(fixture.session->join(*next));
+    QCOMPARE(fixture.transport->writtenFrames().last(),
+             QByteArrayLiteral("JOIN #private newkey\r\n"));
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(":omairc!u@h JOIN :#private\r\n"));
+
+    const int before = fixture.transport->writtenFrames().size();
+    reconnectRegistered(fixture);
+    QCOMPARE(joinFrames(fixture.transport->writtenFrames().mid(before)),
+             QByteArrayList({QByteArrayLiteral("JOIN #private newkey\r\n")}));
+}
+
+void SessionTest::welcomeSendsStoredChannelKey()
+{
+    IrcSessionConfig sessionConfig = config();
+    sessionConfig.autojoinChannels = {QStringLiteral("#omarchy"),
+                                      QStringLiteral("#private")};
+    sessionConfig.autojoinKeys.insert(QStringLiteral("#private"),
+                                      QStringLiteral("hunter2"));
+    Fixture fixture(sessionConfig);
+    StatusCollector status(fixture.session);
+    fixture.registerWithWelcome();
+
+    QCOMPARE(joinFrames(fixture.transport->writtenFrames()),
+             QByteArrayList({QByteArrayLiteral("JOIN #omarchy\r\n"),
+                             QByteArrayLiteral("JOIN #private hunter2\r\n")}));
+    if (status.anyFieldContains(QStringLiteral("hunter2")))
+        QFAIL("channel key leaked");
+}
+
+void SessionTest::badChannelKeyStaysOnStatusWithoutRetry()
+{
+    IrcSessionConfig sessionConfig = config();
+    sessionConfig.autojoinChannels = {QStringLiteral("#secret")};
+    sessionConfig.autojoinKeys.insert(QStringLiteral("#secret"),
+                                      QStringLiteral("hunter2"));
+    Fixture fixture(sessionConfig);
+    StatusCollector status(fixture.session);
+    fixture.registerWithWelcome();
+
+    QCOMPARE(joinFrames(fixture.transport->writtenFrames()),
+             QByteArrayList({QByteArrayLiteral("JOIN #secret hunter2\r\n")}));
+
+    const int framesAfterWelcome = fixture.transport->writtenFrames().size();
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(":server 475 omairc #secret :Cannot join channel (+k)\r\n"));
+    QCOMPARE(fixture.transport->writtenFrames().size(), framesAfterWelcome);
+    QVERIFY(status.hasLabel(QStringLiteral("475")));
+    if (status.anyFieldContains(QStringLiteral("hunter2")))
+        QFAIL("channel key leaked");
+
+    const int before = fixture.transport->writtenFrames().size();
+    reconnectRegistered(fixture);
+    QCOMPARE(joinFrames(fixture.transport->writtenFrames().mid(before)),
+             QByteArrayList({QByteArrayLiteral("JOIN #secret\r\n")}));
 }
 
 int runSessionTests(int argc, char **argv)

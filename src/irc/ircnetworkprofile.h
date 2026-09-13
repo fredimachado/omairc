@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QList>
+#include <QMap>
 #include <QString>
 #include <QStringList>
 
@@ -30,6 +31,7 @@ struct IrcNetworkProfile
     QString account;
     QString bouncerNetwork;
     QStringList autojoinChannels;
+    QMap<QString, QString> autojoinKeys;
     static constexpr int iconColorCount = 5;
     static constexpr int noIconColor = -1;
     int iconColor = noIconColor;

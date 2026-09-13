@@ -2,6 +2,7 @@
 
 #include <QElapsedTimer>
 #include <QHash>
+#include <QMap>
 #include <QMetaType>
 #include <QObject>
 #include <QSet>
@@ -77,6 +78,7 @@ struct IrcSessionConfig
     QString saslAccount;  // empty falls back to nick
 
     QStringList autojoinChannels;
+    QMap<QString, QString> autojoinKeys;
     bool reconnectEnabled = true;
     int reconnectBaseDelayMilliseconds = 1000;
     int reconnectMaximumDelayMilliseconds = 30000;
@@ -172,7 +174,8 @@ signals:
     void capabilitiesChanged(const QString& networkId,
                              IrcCapabilitySet capabilities);
     void autojoinChannelsChanged(const QString &networkId,
-                                 const QStringList &channels);
+                                 const QStringList &channels,
+                                 const QMap<QString, QString> &keys);
 
 private:
     void setState(State state);
@@ -217,6 +220,7 @@ private:
     bool selfPrefixed(const IrcMessage& message) const;
     bool selfIs(const QString& nick) const;
     void recordAutojoin(const QString &channel, bool joined);
+    void dropStoredAutojoinKey(const QString &channel);
     bool allowCtcpReply(const QString &nick);
     void handleCap(const IrcMessage &message);
     void applyCachedSts();
@@ -257,6 +261,8 @@ private:
     quint16 m_port = 0;
     bool m_tlsEnabled = true;
     QStringList m_autojoinChannels;
+    QMap<QString, QString> m_autojoinKeys;
+    QHash<QString, QString> m_pendingJoinKeys;
     QString m_nick;
     IrcTransport *m_transport;
     IrcReconnectTimer *m_reconnectTimer;

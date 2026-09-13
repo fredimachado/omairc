@@ -1,5 +1,6 @@
 #include "ircnetworkprofile.h"
 
+#include "irccasemapping.h"
 #include "irccommandbuilder.h"
 #include "ircserverfeatures.h"
 
@@ -26,6 +27,44 @@ QString prefixChannel(QString channel)
     return QLatin1Char('#') + channel;
 }
 
+bool tokenIsChannel(const QString &token)
+{
+    if (token.isEmpty())
+        return false;
+    return IrcServerFeatures().isChannel(utf8(token));
+}
+
+bool keepAutojoinToken(const QString &token, bool previousWasChannel)
+{
+    if (token.isEmpty())
+        return false;
+    if (tokenIsChannel(token))
+        return true;
+    return !previousWasChannel;
+}
+
+QMap<QString, QString> retainAutojoinKeys(const QMap<QString, QString> &keys,
+                                          const QStringList &channels)
+{
+    QMap<QString, QString> retained;
+    const IrcCaseMapping mapping;
+    for (const QString &channel : channels) {
+        for (auto it = keys.constBegin(); it != keys.constEnd(); ++it) {
+            if (mapping.equals(utf8(it.key()), utf8(channel))) {
+                retained.insert(channel, it.value());
+                break;
+            }
+            const QString prefixed = prefixChannel(it.key());
+            if (!prefixed.isEmpty()
+                && mapping.equals(utf8(prefixed), utf8(channel))) {
+                retained.insert(channel, it.value());
+                break;
+            }
+        }
+    }
+    return retained;
+}
+
 bool fitsOneLoginField(const QString &value)
 {
     for (const QChar mark : value) {
@@ -39,12 +78,18 @@ QStringList splitAutojoin(const QStringList &channels)
 {
     QStringList result;
     const QRegularExpression separators(QStringLiteral("[,\\s]+"));
+    bool previousWasChannel = false;
     for (const QString &entry : channels) {
         const QStringList parts = entry.split(separators, Qt::SkipEmptyParts);
         for (const QString &part : parts) {
-            const QString channel = prefixChannel(part);
-            if (!channel.isEmpty())
-                result.append(channel);
+            const QString token = part.trimmed();
+            if (!keepAutojoinToken(token, previousWasChannel))
+                continue;
+            const QString channel = prefixChannel(token);
+            if (channel.isEmpty())
+                continue;
+            result.append(channel);
+            previousWasChannel = tokenIsChannel(token);
         }
     }
     return result;
@@ -56,8 +101,14 @@ QStringList IrcNetworkProfile::parseAutojoin(const QString &channels)
     QStringList result;
     const QRegularExpression separators(QStringLiteral("[,\\s]+"));
     const QStringList parts = channels.split(separators, Qt::SkipEmptyParts);
-    for (const QString &part : parts)
-        result.append(part.trimmed());
+    bool previousWasChannel = false;
+    for (const QString &part : parts) {
+        const QString token = part.trimmed();
+        if (!keepAutojoinToken(token, previousWasChannel))
+            continue;
+        result.append(token);
+        previousWasChannel = tokenIsChannel(token);
+    }
     return result;
 }
 
@@ -110,6 +161,7 @@ IrcNetworkProfile IrcNetworkProfile::normalized() const
     profile.account = account.trimmed();
     profile.bouncerNetwork = bouncerNetwork.trimmed();
     profile.autojoinChannels = splitAutojoin(autojoinChannels);
+    profile.autojoinKeys = retainAutojoinKeys(autojoinKeys, profile.autojoinChannels);
     return profile;
 }
 
@@ -195,6 +247,7 @@ bool operator==(const IrcNetworkProfile &left, const IrcNetworkProfile &right)
         && left.account == right.account
         && left.bouncerNetwork == right.bouncerNetwork
         && left.autojoinChannels == right.autojoinChannels
+        && left.autojoinKeys == right.autojoinKeys
         && left.iconColor == right.iconColor;
 }
 
