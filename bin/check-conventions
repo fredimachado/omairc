@@ -72,10 +72,10 @@ def check_byte_array_lengths():
     return problems
 
 
-def text_blocks(source):
+def text_blocks(source, type_name="Text"):
     lines = source.splitlines()
     for index, line in enumerate(lines):
-        if not re.match(r"\s*Text\s*\{\s*$", line):
+        if not re.match(rf"\s*{type_name}\s*\{{\s*$", line):
             continue
         depth = 1
         body = []
@@ -100,6 +100,39 @@ def check_qml_text_plain_format():
             problems.append(
                 f"{relative}:{number}: {label} renders plainIrcText() without "
                 f"textFormat: Text.PlainText")
+    return problems
+
+
+def check_qml_textedit_rich_emphasized():
+    problems = []
+    for relative, source in sources("src/**/*.qml"):
+        for number, body in text_blocks(source, "TextEdit"):
+            if "TextEdit.RichText" not in body:
+                continue
+            if "emphasizedIrcText(" in body:
+                continue
+            name = re.search(r'objectName:\s*"([^"]+)"', body)
+            label = name.group(1) if name else "unnamed TextEdit"
+            problems.append(
+                f"{relative}:{number}: {label} uses RichText without "
+                f"emphasizedIrcText()")
+    return problems
+
+
+def check_message_delegate_body():
+    problems = []
+    allowed = re.compile(
+        r"(?:plainIrcText|emphasizedIrcText|hasIrcEmphasis)\(\s*"
+        r"(?:win\.)?messageDelegate\.body")
+    raw = re.compile(r"messageDelegate\.body")
+    for relative, source in sources("src/**/*.qml"):
+        for number, line in enumerate(source.splitlines(), 1):
+            for match in raw.finditer(line):
+                window = line[max(0, match.start() - 48):match.end()]
+                if allowed.search(window):
+                    continue
+                problems.append(
+                    f"{relative}:{number}: raw messageDelegate.body")
     return problems
 
 
@@ -162,6 +195,8 @@ def check_version_source():
 CHECKS = (
     ("QByteArray literal lengths", check_byte_array_lengths),
     ("PlainText on server-controlled QML text", check_qml_text_plain_format),
+    ("RichText through emphasizedIrcText", check_qml_textedit_rich_emphasized),
+    ("formatted messageDelegate.body", check_message_delegate_body),
     ("bounded IPC socket reads", check_socket_reads),
     ("single version source", check_version_source),
     ("CHANTYPES via IrcServerFeatures", check_hardcoded_chantypes),
