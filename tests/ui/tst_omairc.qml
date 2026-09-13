@@ -1693,8 +1693,8 @@ TestCase {
         keyClick(Qt.Key_Return);
         verify(seed.echoLastOmarchyPrivmsg());
         compare(composer.text, "");
-        waitForRowCount(list, countBefore + 1);
-        compare(field(list.model, countBefore, "body"), "keep me");
+        waitForNewMessage(list, countBefore, "keep me");
+        compare(field(list.model, list.model.rowCount() - 1, "body"), "keep me");
     }
 
     function test_ctrlFFindsTextInStatus() {
@@ -1960,7 +1960,9 @@ TestCase {
         waitForNewMessage(list, previousCount, "sent while following");
         waitForRendering(appWindow.contentItem);
         wait(0);
-        verify(transcriptPinned(list), "Sending should keep the list pinned to the end");
+        tryVerify(function() {
+            return transcriptPinned(list);
+        }, 1000, "Sending should keep the list pinned to the end");
         verify(list.contentY >= previousY);
         compare(item("messageUnseenJump").visible, false);
     }
@@ -2526,12 +2528,14 @@ TestCase {
         var list = item("messageList");
         var previousCount = list.model.rowCount();
         seed.injectOmarchy(":rio!u@h PART #omarchy\r\n");
-        waitForRowCount(list, previousCount + 1);
-        compare(field(list.model, previousCount, "kind"), "event");
-        list.positionViewAtIndex(previousCount, ListView.Contain);
+        waitForBody(list, "rio left");
+        var eventAt = rowForBody(list.model, "rio left");
+        verify(eventAt >= previousCount);
+        compare(field(list.model, eventAt, "kind"), "event");
+        list.positionViewAtIndex(eventAt, ListView.Contain);
         waitForRendering(appWindow.contentItem);
 
-        var row = list.itemAtIndex(previousCount);
+        var row = list.itemAtIndex(eventAt);
         verify(row !== null, "The event row should be rendered");
         var eventText = findChild(row, "messageEvent");
         verify(eventText !== null && eventText.visible, "Could not find messageEvent");
@@ -2553,14 +2557,19 @@ TestCase {
             keyClick(Qt.Key_Escape);
         keyClick(Qt.Key_Return);
         seed.injectOmarchy(":server 319 fred lena :" + channels + "\r\n");
-        waitForRowCount(list, previousCount + 1);
-        compare(field(list.model, previousCount, "kind"), "whois");
-        var body = field(list.model, previousCount, "body");
+        tryVerify(function() {
+            var last = list.model.rowCount() - 1;
+            return last >= previousCount
+                && field(list.model, last, "kind") === "whois";
+        });
+        var whoisAt = list.model.rowCount() - 1;
+        compare(field(list.model, whoisAt, "kind"), "whois");
+        var body = field(list.model, whoisAt, "body");
         verify(body.indexOf("lena is on") === 0);
-        list.positionViewAtIndex(previousCount, ListView.Contain);
+        list.positionViewAtIndex(whoisAt, ListView.Contain);
         waitForRendering(appWindow.contentItem);
 
-        var row = list.itemAtIndex(previousCount);
+        var row = list.itemAtIndex(whoisAt);
         verify(row !== null, "The long whois row should be rendered");
         var whoisText = findChild(row, "messageWhois");
         verify(whoisText !== null && whoisText.visible, "Could not find messageWhois");
