@@ -25,6 +25,24 @@ bool isIdentifierCharacter(QChar character)
         || QStringLiteral("-_[]\\`^{}|~").contains(character);
 }
 
+bool containsWord(const QString& normalizedBody, const QString& normalizedWord)
+{
+    if (normalizedWord.isEmpty())
+        return false;
+    qsizetype position = normalizedBody.indexOf(normalizedWord);
+    while (position >= 0) {
+        const qsizetype end = position + normalizedWord.size();
+        const bool leftBoundary = position == 0
+            || !isIdentifierCharacter(normalizedBody.at(position - 1));
+        const bool rightBoundary = end == normalizedBody.size()
+            || !isIdentifierCharacter(normalizedBody.at(end));
+        if (leftBoundary && rightBoundary)
+            return true;
+        position = normalizedBody.indexOf(normalizedWord, position + 1);
+    }
+    return false;
+}
+
 QString displayTarget(const IrcConversationKey& key, const QString& target)
 {
     return target.isEmpty() ? key.normalizedTarget : target;
@@ -125,6 +143,17 @@ const IrcServerFeatures& IrcEventReducer::serverFeatures(
     return defaults;
 }
 
+void IrcEventReducer::setHighlightWords(const QString& networkId,
+                                        const QStringList& words)
+{
+    if (networkId.isEmpty())
+        return;
+    if (words.isEmpty())
+        m_highlightWords.erase(networkId);
+    else
+        m_highlightWords[networkId] = words;
+}
+
 IrcConversationKey IrcEventReducer::conversationKey(
     const QString& networkId, const QString& target) const
 {
@@ -201,6 +230,7 @@ void IrcEventReducer::forgetNetwork(const QString& networkId)
     }
     m_features.erase(networkId);
     m_currentNicks.erase(networkId);
+    m_highlightWords.erase(networkId);
     m_presence.erase(networkId);
     m_selfAway.erase(networkId);
     for (auto it = m_mutedKeys.begin(); it != m_mutedKeys.end(); ) {
@@ -464,22 +494,18 @@ bool IrcEventReducer::isSelf(const QString& networkId, const QString& nick) cons
 bool IrcEventReducer::isMention(const QString& networkId,
                                 const QString& body) const
 {
-    const auto current = m_currentNicks.find(networkId);
-    if (current == m_currentNicks.end() || current->second.isEmpty())
-        return false;
-
     const QString normalizedBody = normalize(networkId, body);
-    const QString normalizedNick = normalize(networkId, current->second);
-    qsizetype position = normalizedBody.indexOf(normalizedNick);
-    while (position >= 0) {
-        const qsizetype end = position + normalizedNick.size();
-        const bool leftBoundary = position == 0
-            || !isIdentifierCharacter(normalizedBody.at(position - 1));
-        const bool rightBoundary = end == normalizedBody.size()
-            || !isIdentifierCharacter(normalizedBody.at(end));
-        if (leftBoundary && rightBoundary)
+    const auto current = m_currentNicks.find(networkId);
+    if (current != m_currentNicks.end()
+        && containsWord(normalizedBody, normalize(networkId, current->second))) {
+        return true;
+    }
+    const auto words = m_highlightWords.find(networkId);
+    if (words == m_highlightWords.end())
+        return false;
+    for (const QString& word : words->second) {
+        if (containsWord(normalizedBody, normalize(networkId, word)))
             return true;
-        position = normalizedBody.indexOf(normalizedNick, position + 1);
     }
     return false;
 }

@@ -678,7 +678,7 @@ void CommandTest::catalogLookupAndScope()
     QVERIFY(!IrcVerbTable::find(IrcCommand::Verb::Empty));
     QVERIFY(!IrcVerbTable::find(IrcCommand::Verb::Unknown));
 
-    QCOMPARE(IrcVerbTable::all().size(), 32);
+    QCOMPARE(IrcVerbTable::all().size(), 35);
     for (const IrcVerbSpec& row : IrcVerbTable::all())
         QVERIFY(row.name != QLatin1String("say"));
 
@@ -840,6 +840,29 @@ void CommandTest::catalogLookupAndScope()
     QCOMPARE(muted->scope, IrcVerbScope::Either);
     QVERIFY(muted->wrongScopeText.isEmpty());
 
+    const IrcVerbSpec *highlight = IrcVerbTable::lookup(QStringLiteral("highlight"));
+    QVERIFY(highlight);
+    QCOMPARE(highlight->verb, IrcCommand::Verb::Highlight);
+    QCOMPARE(highlight->name, QStringLiteral("highlight"));
+    QCOMPARE(highlight->usage, QStringLiteral("/highlight <word>"));
+    QCOMPARE(highlight->scope, IrcVerbScope::Either);
+    QVERIFY(highlight->wrongScopeText.isEmpty());
+    QVERIFY(highlight->aliases.isEmpty());
+
+    const IrcVerbSpec *unhighlight = IrcVerbTable::lookup(QStringLiteral("unhighlight"));
+    QVERIFY(unhighlight);
+    QCOMPARE(unhighlight->verb, IrcCommand::Verb::Unhighlight);
+    QCOMPARE(unhighlight->usage, QStringLiteral("/unhighlight <word>"));
+    QCOMPARE(unhighlight->scope, IrcVerbScope::Either);
+    QVERIFY(unhighlight->wrongScopeText.isEmpty());
+
+    const IrcVerbSpec *highlights = IrcVerbTable::lookup(QStringLiteral("highlights"));
+    QVERIFY(highlights);
+    QCOMPARE(highlights->verb, IrcCommand::Verb::Highlights);
+    QCOMPARE(highlights->usage, QStringLiteral("/highlights"));
+    QCOMPARE(highlights->scope, IrcVerbScope::Either);
+    QVERIFY(highlights->wrongScopeText.isEmpty());
+
     const IrcVerbSpec *op = IrcVerbTable::lookup(QStringLiteral("op"));
     QVERIFY(op);
     QCOMPARE(op->verb, IrcCommand::Verb::Op);
@@ -880,7 +903,7 @@ void CommandTest::catalogLookupAndScope()
     QCOMPARE(help->scope, IrcVerbScope::Either);
 
     const QVector<IrcVerbSpec> status = IrcVerbTable::visibleOn(IrcComposerSurface::Status);
-    QCOMPARE(status.size(), 24);
+    QCOMPARE(status.size(), 27);
     for (const IrcVerbSpec& row : status) {
         QVERIFY(row.allowedOn(IrcComposerSurface::Status));
         QVERIFY(row.verb != IrcCommand::Verb::Action);
@@ -895,7 +918,7 @@ void CommandTest::catalogLookupAndScope()
 
     const QVector<IrcVerbSpec> conversation =
         IrcVerbTable::visibleOn(IrcComposerSurface::Conversation);
-    QCOMPARE(conversation.size(), 32);
+    QCOMPARE(conversation.size(), 35);
     bool sawMe = false;
     bool sawClose = false;
     bool sawQuery = false;
@@ -914,6 +937,9 @@ void CommandTest::catalogLookupAndScope()
     bool sawMute = false;
     bool sawUnmute = false;
     bool sawMuted = false;
+    bool sawHighlight = false;
+    bool sawUnhighlight = false;
+    bool sawHighlights = false;
     bool sawOp = false;
     bool sawNs = false;
     bool sawRaw = false;
@@ -955,6 +981,12 @@ void CommandTest::catalogLookupAndScope()
             sawUnmute = true;
         if (row.name == QLatin1String("muted"))
             sawMuted = true;
+        if (row.name == QLatin1String("highlight"))
+            sawHighlight = true;
+        if (row.name == QLatin1String("unhighlight"))
+            sawUnhighlight = true;
+        if (row.name == QLatin1String("highlights"))
+            sawHighlights = true;
         if (row.name == QLatin1String("op"))
             sawOp = true;
         if (row.name == QLatin1String("ns"))
@@ -982,6 +1014,9 @@ void CommandTest::catalogLookupAndScope()
     QVERIFY(sawMute);
     QVERIFY(sawUnmute);
     QVERIFY(sawMuted);
+    QVERIFY(sawHighlight);
+    QVERIFY(sawUnhighlight);
+    QVERIFY(sawHighlights);
     QVERIFY(sawOp);
     QVERIFY(sawNs);
     QVERIFY(sawRaw);
@@ -1642,6 +1677,12 @@ void CommandTest::slashProjectOpen()
     QVERIFY(mute.isOpen());
     QCOMPARE(mute.hits().first().label, QStringLiteral("/mute"));
     QVERIFY(mute.containsLabel(QStringLiteral("/muted")));
+
+    const auto highlight = IrcSlashComplete::project(
+        QStringLiteral("/high"), IrcComposerSurface::Status);
+    QVERIFY(highlight.isOpen());
+    QCOMPARE(highlight.hits().first().label, QStringLiteral("/highlight"));
+    QVERIFY(highlight.containsLabel(QStringLiteral("/highlights")));
 
     const auto invite = IrcSlashComplete::project(
         QStringLiteral("/inv"), IrcComposerSurface::Conversation);

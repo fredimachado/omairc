@@ -61,6 +61,7 @@ private slots:
     void mentionArrivalSurvivesSelection();
     void mentionArrivalOnDirectMessage();
     void mutedChatDoesNotMention();
+    void highlightWordMentionsLikeNick();
     void welcomeResetsMembership();
     void awayIsOneFactVisibleInEveryChannel();
     void metadataStatusIsSeparateFromPrefixModes();
@@ -519,6 +520,75 @@ void ReducerTest::mutedChatDoesNotMention()
     });
     QVERIFY(reducer.takeMentionArrival().has_value());
     QCOMPARE(reducer.find(room)->mentions, 1);
+}
+
+void ReducerTest::highlightWordMentionsLikeNick()
+{
+    IrcEventReducer reducer;
+    welcome(reducer, networkA, QStringLiteral("fred"));
+    reducer.setHighlightWords(networkA, QStringList{QStringLiteral("omairc")});
+    const IrcConversationKey selected =
+        reducer.conversationKey(networkA, QStringLiteral("#selected"));
+    const IrcConversationKey background =
+        reducer.conversationKey(networkA, QStringLiteral("#background"));
+    reducer.markSelected(selected);
+
+    reducer.apply(IrcMessageEvent{
+        background,
+        QStringLiteral("Alice"),
+        QStringLiteral("please review omairc"),
+        timestamp,
+        QStringLiteral("#background"),
+    });
+    QCOMPARE(reducer.find(background)->unread, 1);
+    QCOMPARE(reducer.find(background)->mentions, 1);
+    const std::optional<IrcMentionArrival> hit = reducer.takeMentionArrival();
+    QVERIFY(hit.has_value());
+    QCOMPARE(hit->author, QStringLiteral("Alice"));
+    QCOMPARE(hit->body, QStringLiteral("please review omairc"));
+
+    reducer.apply(IrcMessageEvent{
+        background,
+        QStringLiteral("Alice"),
+        QStringLiteral("please review omaircd"),
+        timestamp,
+        QStringLiteral("#background"),
+    });
+    QCOMPARE(reducer.find(background)->unread, 2);
+    QCOMPARE(reducer.find(background)->mentions, 1);
+    QVERIFY(!reducer.takeMentionArrival().has_value());
+
+    reducer.setHighlightWords(networkA, QStringList{QStringLiteral("deploy")});
+    reducer.apply(IrcMessageEvent{
+        background,
+        QStringLiteral("Alice"),
+        QStringLiteral("please review deploy"),
+        timestamp,
+        QStringLiteral("#background"),
+    });
+    QCOMPARE(reducer.find(background)->mentions, 2);
+    QVERIFY(reducer.takeMentionArrival().has_value());
+
+    reducer.apply(IrcMessageEvent{
+        background,
+        QStringLiteral("Alice"),
+        QStringLiteral("please review deployment"),
+        timestamp,
+        QStringLiteral("#background"),
+    });
+    QCOMPARE(reducer.find(background)->mentions, 2);
+    QVERIFY(!reducer.takeMentionArrival().has_value());
+
+    reducer.setHighlightWords(networkA, {});
+    reducer.apply(IrcMessageEvent{
+        background,
+        QStringLiteral("Alice"),
+        QStringLiteral("fred: still a nick"),
+        timestamp,
+        QStringLiteral("#background"),
+    });
+    QCOMPARE(reducer.find(background)->mentions, 3);
+    QVERIFY(reducer.takeMentionArrival().has_value());
 }
 
 void ReducerTest::welcomeResetsMembership()
