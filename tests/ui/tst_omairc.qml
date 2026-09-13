@@ -3004,7 +3004,7 @@ TestCase {
         injectOmarchyChat("mira", "#omarchy", "transcript-dm-group-lead", "12:02");
         injectOmarchyChat("mira", "#omarchy", "transcript-dm-group-follow", "12:02");
         seed.injectOmarchy(":rio!u@h PART #omarchy\r\n");
-        waitForRowCount(list, start + 6);
+        waitForBody(list, "rio left");
 
         mouseClick(composer);
         typeText("omarchy draft stays");
