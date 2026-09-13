@@ -584,7 +584,7 @@ bool IrcSecretPolicy::allowsTranscript(QStringView text, QStringView channelType
 {
     if (text.isEmpty())
         return true;
-    if (redactPreviewLine(text, channelTypes))
+    if (redactWireLine(text, channelTypes))
         return false;
     IrcMessage probe;
     probe.command = "PRIVMSG";
