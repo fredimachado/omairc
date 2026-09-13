@@ -228,6 +228,10 @@ void HighlightTest::controllerHighlightsInboundAndKeepsChannelText()
     QVERIFY(conversations);
     const int omarchy = rowForTarget(conversations, QStringLiteral("#omarchy"));
     QVERIFY(omarchy >= 0);
+    QCOMPARE(conversations->data(conversations->index(omarchy, 0),
+                                 ConversationListModel::UnreadRole)
+                 .toInt(),
+             1);
     QVERIFY(conversations->data(conversations->index(omarchy, 0),
                                 ConversationListModel::MentionRole)
                 .toBool());
@@ -310,6 +314,19 @@ void HighlightTest::discardSessionKeepsTheList()
     QVERIFY(controller.discardSession(QStringLiteral("libera")));
     QVERIFY(IrcHighlightStore().contains(
         QStringLiteral("libera"), QStringLiteral("omairc"), IrcCaseMapping()));
+
+    auto *again = new FakeIrcTransport;
+    QVERIFY(controller.addSession(sessionConfig(), again));
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    welcome(again);
+    again->injectBytes(QByteArrayLiteral(":fred!u@h JOIN :#omarchy\r\n"
+                                        ":fred!u@h JOIN :#other\r\n"));
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#other"));
+    QSignalSpy spy(&controller, &IrcController::mentionArrived);
+    again->injectBytes(
+        QByteArrayLiteral(":Alice!u@h PRIVMSG #omarchy :please review omairc\r\n"));
+    QCOMPARE(spy.count(), 1);
+    QVERIFY(controller.mentionFor(QStringLiteral("libera")));
 }
 
 void HighlightTest::nickChangeKeepsTheList()
@@ -353,6 +370,14 @@ void HighlightTest::refusesEmptyAndExtraTokens()
     QVERIFY(!controller.sendMessage(QStringLiteral("/highlights extra")));
     QVERIFY(!IrcHighlightStore().contains(
         QStringLiteral("libera"), QStringLiteral("omairc"), IrcCaseMapping()));
+
+    QVERIFY(controller.sendMessage(QStringLiteral("/highlight omairc.example.net")));
+    QVERIFY(controller.sendMessage(QStringLiteral("/highlight #omarchy")));
+    QVERIFY(IrcHighlightStore().contains(
+        QStringLiteral("libera"), QStringLiteral("omairc.example.net"),
+        IrcCaseMapping()));
+    QVERIFY(IrcHighlightStore().contains(
+        QStringLiteral("libera"), QStringLiteral("#omarchy"), IrcCaseMapping()));
 }
 
 void HighlightTest::offlineHighlightIsNotConnected()
