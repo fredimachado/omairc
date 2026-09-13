@@ -1049,19 +1049,8 @@ void IrcSession::handleMessage(const IrcMessage &message)
             forgetChannelHistory(channel);
             recordAutojoin(channel, false);
         }
-    } else if (message.command == "475") {
-        const IrcServerFeatures features;
-        for (std::size_t index = 0; index < message.parameters.size(); ++index) {
-            const QString value = parameter(message, index);
-            if (value.isEmpty() || nicksEqual(value, m_nick))
-                continue;
-            const bool typed = !m_channelTypes.isEmpty()
-                && m_channelTypes.contains(value.front());
-            if (!typed && !features.isChannel(utf8(value)))
-                continue;
-            dropStoredAutojoinKey(value);
-            break;
-        }
+    } else if (message.command == "475" && message.parameters.size() >= 2) {
+        dropStoredAutojoinKey(parameter(message, 1));
     }
 }
 

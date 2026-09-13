@@ -54,12 +54,6 @@ QMap<QString, QString> retainAutojoinKeys(const QMap<QString, QString> &keys,
                 retained.insert(channel, it.value());
                 break;
             }
-            const QString prefixed = prefixChannel(it.key());
-            if (!prefixed.isEmpty()
-                && mapping.equals(utf8(prefixed), utf8(channel))) {
-                retained.insert(channel, it.value());
-                break;
-            }
         }
     }
     return retained;
