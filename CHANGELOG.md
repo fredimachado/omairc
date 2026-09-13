@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - `/disconnect [reason]` stops the focused network. `/quit` is the same command. Connect shows Disconnect next to Apply while that network is live or reconnecting. The profile, sidebar, and other networks stay.
+- Empty `/join` joins the latest inbound invite for that network. Clicking the channel token on the Status `INVITE` line does the same. A new invite replaces the stored one. Ignore still drops invites from ignored nicks.
 
 ## [0.3.0] - 2026-09-12
 

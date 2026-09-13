@@ -387,6 +387,11 @@ void IrcSession::setIgnoreFilter(IgnoreFilter filter)
     m_ignoreFilter = std::move(filter);
 }
 
+std::optional<IrcPendingInvite> IrcSession::pendingInvite() const
+{
+    return m_pendingInvite;
+}
+
 IrcSession::State IrcSession::state() const
 {
     return m_state;
@@ -612,6 +617,8 @@ void IrcSession::setState(State state)
 {
     if (m_state == state)
         return;
+    if (m_state == State::Registered && state != State::Registered)
+        m_pendingInvite.reset();
     m_state = state;
     emit stateChanged(state);
 }
@@ -835,6 +842,13 @@ void IrcSession::handleMessage(const IrcMessage &message)
     if (m_ignoreFilter && m_ignoreFilter(message, m_nick))
         return;
 
+    if (message.command == "INVITE" && message.parameters.size() >= 2) {
+        const QString nick = ircPrefixNick(message);
+        const QString channel = parameter(message, message.parameters.size() - 1);
+        if (!nick.isEmpty() && !channel.isEmpty())
+            m_pendingInvite = IrcPendingInvite{nick, channel};
+    }
+
     if (ircStatusKeepsIncoming(message, m_nick, m_channelTypes))
         emit statusEntry(IrcStatusEntry::incoming(m_config.networkId, message, m_channelTypes));
     applyIsupport(message);
@@ -988,6 +1002,10 @@ void IrcSession::handleMessage(const IrcMessage &message)
             bumpHistoryGeneration(channel);
             requestChannelHistory(channel);
             recordAutojoin(channel, true);
+            if (m_pendingInvite
+                && foldChannel(channel) == foldChannel(m_pendingInvite->channel)) {
+                m_pendingInvite.reset();
+            }
         }
     } else if (message.command == "PART" && selfPrefixed(message)) {
         const QString channel = parameter(message, 0);
@@ -1655,6 +1673,7 @@ void IrcSession::resetForConnection()
     m_capabilityNegotiationEnded = false;
     m_capabilityListSeen = false;
     m_pendingSts.reset();
+    m_pendingInvite.reset();
     m_channelTypes.clear();
     m_capabilityTimer->cancel();
     cancelPingWatchdog();

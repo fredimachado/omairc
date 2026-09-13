@@ -665,7 +665,7 @@ void CommandTest::catalogLookupAndScope()
     const IrcVerbSpec *join = IrcVerbTable::lookup(QStringLiteral("J"));
     QVERIFY(join);
     QCOMPARE(join->verb, IrcCommand::Verb::Join);
-    QCOMPARE(join->usage, QStringLiteral("/join <channel> [key][, ...]"));
+    QCOMPARE(join->usage, QStringLiteral("/join [channel] [key][, ...]"));
 
     const IrcVerbSpec *leave = IrcVerbTable::lookup(QStringLiteral("leave"));
     QVERIFY(leave);
@@ -1464,9 +1464,12 @@ void CommandTest::wrappersSendAndHelp()
     QVERIFY(selectedBodiesContain(messages, QStringLiteral("/help")));
     QVERIFY(selectedBodiesContain(messages, QStringLiteral("/ban")));
     QVERIFY(selectedBodiesContain(messages, QStringLiteral("/disconnect")));
+    QVERIFY(selectedBodiesContain(messages, QStringLiteral("Empty /join joins the latest invite")));
 
     QVERIFY(console->submit(QStringLiteral("/help")));
     QVERIFY(logContains(console->lines(), QStringLiteral("Commands:")));
+    QVERIFY(logContains(console->lines(),
+                        QStringLiteral("Empty /join joins the latest invite")));
     QCOMPARE(controller.selectedTarget(), QStringLiteral("#omarchy"));
     QCOMPARE(selectedBodyHits(messages, QStringLiteral("Commands:")), 1);
 
@@ -1553,7 +1556,7 @@ void CommandTest::slashProjectOpen()
         QStringLiteral("/jo"), IrcComposerSurface::Conversation);
     QVERIFY(join.isOpen());
     QCOMPARE(join.hits().first().label, QStringLiteral("/join"));
-    QCOMPARE(join.hits().first().usage, QStringLiteral("/join <channel> [key][, ...]"));
+    QCOMPARE(join.hits().first().usage, QStringLiteral("/join [channel] [key][, ...]"));
 
     const auto alias = IrcSlashComplete::project(
         QStringLiteral("/j"), IrcComposerSurface::Conversation);

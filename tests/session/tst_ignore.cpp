@@ -284,6 +284,8 @@ void IgnoreTest::controllerMutesPrivateTrafficAndListsOnStatus()
     QVERIFY(!logContains(controller.console()->lines(), QStringLiteral("heads up")));
     QVERIFY(!logContains(controller.console()->lines(), QStringLiteral("#spam")));
     QVERIFY(!logContains(controller.console()->lines(), QStringLiteral("invited you")));
+    QVERIFY(!controller.sendMessage(QStringLiteral("/join")));
+    QCOMPARE(controller.lastError(), QStringLiteral("Command was refused"));
     QVERIFY(!framesContain(transport->writtenFrames(),
                            QByteArrayLiteral("NOTICE lena :")));
     controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));

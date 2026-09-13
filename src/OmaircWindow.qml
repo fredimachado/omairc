@@ -144,21 +144,37 @@ ApplicationWindow {
 
     component PlainUrlHit: MouseArea {
         required property Item edit
+        property bool inviteHits: false
 
         objectName: "urlHit"
         anchors.fill: parent
         hoverEnabled: true
         acceptedButtons: Qt.LeftButton
-        cursorShape: win.httpUrlAt(edit.text, edit.positionAt(mouseX, mouseY)).length > 0
-            ? Qt.PointingHandCursor
-            : Qt.IBeamCursor
+        cursorShape: {
+            var pos = edit.positionAt(mouseX, mouseY);
+            if (win.httpUrlAt(edit.text, pos).length > 0)
+                return Qt.PointingHandCursor;
+            if (inviteHits && win.inviteChannelAt(edit.text, pos).length > 0)
+                return Qt.PointingHandCursor;
+            return Qt.IBeamCursor;
+        }
         onPressed: function(mouse) {
-            var url = win.httpUrlAt(edit.text, edit.positionAt(mouse.x, mouse.y));
-            if (url.length === 0)
-                mouse.accepted = false;
+            var pos = edit.positionAt(mouse.x, mouse.y);
+            if (win.httpUrlAt(edit.text, pos).length > 0)
+                return;
+            if (inviteHits && win.inviteChannelAt(edit.text, pos).length > 0)
+                return;
+            mouse.accepted = false;
         }
         onClicked: function(mouse) {
-            win.openAllowedUrl(win.httpUrlAt(edit.text, edit.positionAt(mouse.x, mouse.y)));
+            var pos = edit.positionAt(mouse.x, mouse.y);
+            var url = win.httpUrlAt(edit.text, pos);
+            if (url.length > 0) {
+                win.openAllowedUrl(url);
+                return;
+            }
+            if (inviteHits)
+                win.joinInviteChannel(win.inviteChannelAt(edit.text, pos));
         }
     }
 
@@ -335,6 +351,28 @@ ApplicationWindow {
         if (url.indexOf("\n") >= 0 || url.indexOf("\r") >= 0 || url.indexOf(" ") >= 0)
             return false;
         return true;
+    }
+
+    function inviteChannelAt(text, index) {
+        if (!text || index < 0 || index >= text.length)
+            return "";
+        var marker = " invited you to ";
+        var at = text.lastIndexOf(marker);
+        if (at < 0)
+            return "";
+        var start = at + marker.length;
+        var channel = text.substring(start);
+        if (channel.length === 0)
+            return "";
+        if (index >= start && index < start + channel.length)
+            return channel;
+        return "";
+    }
+
+    function joinInviteChannel(channel) {
+        if (!channel || !networkConsole)
+            return false;
+        return networkConsole.submit("/join " + channel);
     }
 
     function httpUrlAt(text, index) {
@@ -2727,7 +2765,10 @@ ApplicationWindow {
                         font.family: "iA Writer Mono S"
                         font.pixelSize: win.scaledSize(12)
 
-                        PlainUrlHit { edit: consoleText }
+                        PlainUrlHit {
+                            edit: consoleText
+                            inviteHits: consoleDelegate.label === "INVITE"
+                        }
                     }
                 }
             }
