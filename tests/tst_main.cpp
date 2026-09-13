@@ -25,6 +25,7 @@ int runOmaircIpcTests(int argc, char **argv);
 int runOmaircCliTests(int argc, char **argv);
 int runOmaircFileLogTests(int argc, char **argv);
 int runSecretServiceTests(int argc, char **argv);
+int runBackendTests(int argc, char **argv);
 
 int main(int argc, char **argv)
 {
@@ -57,6 +58,7 @@ int main(int argc, char **argv)
     const int cliStatus = runOmaircCliTests(argc, argv);
     const int fileLogStatus = runOmaircFileLogTests(argc, argv);
     const int secretServiceStatus = runSecretServiceTests(argc, argv);
+    const int backendStatus = runBackendTests(argc, argv);
     const int statuses[] = {
         protocolStatus,
         caseMappingStatus,
@@ -81,6 +83,7 @@ int main(int argc, char **argv)
         cliStatus,
         fileLogStatus,
         secretServiceStatus,
+        backendStatus,
     };
     for (const int status : statuses) {
         if (status != 0)

@@ -1,7 +1,6 @@
-QT += core network testlib
+QT += core gui network testlib dbus
 
 include(../qtkeychain.pri)
-QT -= gui
 
 CONFIG += c++17 console testcase
 TEMPLATE = app
@@ -21,6 +20,7 @@ HEADERS += \
     ../src/omaircipchandler.h \
     ../src/omairccli.h \
     ../src/omaircfilelog.h \
+    ../src/backend.h \
     ../src/irc/ircmessage.h \
     ../src/irc/ircparser.h \
     ../src/irc/ircframer.h \
@@ -75,11 +75,13 @@ SOURCES += \
     tst_omaircipc.cpp \
     tst_omairccli.cpp \
     tst_omaircfilelog.cpp \
+    tst_backend.cpp \
     ../src/singleinstance.cpp \
     ../src/omaircipc.cpp \
     ../src/omaircipchandler.cpp \
     ../src/omairccli.cpp \
     ../src/omaircfilelog.cpp \
+    ../src/backend.cpp \
     protocol/tst_protocol.cpp \
     protocol/tst_casemapping.cpp \
     protocol/tst_corpus.cpp \

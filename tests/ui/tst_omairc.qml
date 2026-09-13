@@ -2379,6 +2379,61 @@ TestCase {
         compare(appWindow.lastNotification.body, "hello");
     }
 
+    function test_notificationActivateOpensLiveChannelMention() {
+        openSeededAppWindow();
+        appWindow.selectConversation("#ricing", seed.omarchyNetworkId);
+        tryCompare(appWindow, "currentConversation", "#ricing");
+
+        appWindow.lastNotification = null;
+        appWindow.notifyMentionIfUnfocused(true, "anna", "fred: ping",
+                                           seed.omarchyNetworkId, "#omarchy",
+                                           "mention-1");
+        compare(appWindow.lastNotification, null);
+
+        seed.injectOmarchy("@msgid=mention-1 :anna!u@h PRIVMSG #omarchy :fred: ping\r\n");
+        appWindow.notifyMentionIfUnfocused(false, "anna", "fred: ping",
+                                           seed.omarchyNetworkId, "#omarchy",
+                                           "mention-1");
+        compare(appWindow.lastNotification.author, "anna");
+        compare(appWindow.lastNotification.body, "fred: ping");
+        compare(appWindow.lastNotification.networkId, seed.omarchyNetworkId);
+        compare(appWindow.lastNotification.target, "#omarchy");
+        compare(appWindow.lastNotification.msgid, "mention-1");
+
+        appWindow.activateNotifiedConversation(seed.omarchyNetworkId, "#omarchy",
+                                               "mention-1");
+        tryCompare(appWindow, "currentConversation", "#omarchy");
+        compare(appWindow.currentNetworkId, seed.omarchyNetworkId);
+        waitForRendering(appWindow.contentItem);
+        var mentionRow = appWindow.msgidRow("mention-1");
+        verify(mentionRow >= 0);
+        compare(field(item("messageList").model, mentionRow, "msgid"), "mention-1");
+        compare(field(item("messageList").model, mentionRow, "body"), "fred: ping");
+    }
+
+    function test_notificationActivateOpensDirectMessage() {
+        openSeededAppWindow();
+        appWindow.selectConversation("#ricing", seed.omarchyNetworkId);
+        tryCompare(appWindow, "currentConversation", "#ricing");
+
+        seed.injectOmarchy("@msgid=dm-7 :anna!u@h PRIVMSG fred :secret\r\n");
+        appWindow.notifyMentionIfUnfocused(false, "anna", "secret",
+                                           seed.omarchyNetworkId, "anna", "dm-7");
+        compare(appWindow.lastNotification.author, "anna");
+        compare(appWindow.lastNotification.body, "secret");
+        compare(appWindow.lastNotification.networkId, seed.omarchyNetworkId);
+        compare(appWindow.lastNotification.target, "anna");
+        compare(appWindow.lastNotification.msgid, "dm-7");
+
+        appWindow.activateNotifiedConversation(seed.omarchyNetworkId, "anna", "dm-7");
+        tryCompare(appWindow, "currentConversation", "anna");
+        compare(appWindow.currentNetworkId, seed.omarchyNetworkId);
+        waitForRendering(appWindow.contentItem);
+        var dmRow = appWindow.msgidRow("dm-7");
+        verify(dmRow >= 0);
+        compare(field(item("messageList").model, dmRow, "body"), "secret");
+    }
+
     function test_messageBodyClickOpensHttpsUrl() {
         openSeededAppWindow();
         var list = item("messageList");

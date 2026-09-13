@@ -60,6 +60,7 @@ private slots:
     void unreadMentionsRespectSelection();
     void mentionArrivalSurvivesSelection();
     void mentionArrivalOnDirectMessage();
+    void mentionArrivalCarriesNetworkTargetAndMsgid();
     void mutedChatDoesNotMention();
     void highlightWordMentionsLikeNick();
     void welcomeResetsMembership();
@@ -479,6 +480,48 @@ void ReducerTest::mentionArrivalOnDirectMessage()
         QStringLiteral("Alice"),
     });
     QVERIFY(!reducer.takeMentionArrival().has_value());
+}
+
+void ReducerTest::mentionArrivalCarriesNetworkTargetAndMsgid()
+{
+    IrcEventReducer reducer;
+    welcome(reducer, networkA);
+    const IrcConversationKey room =
+        reducer.conversationKey(networkA, QStringLiteral("#omarchy"));
+    reducer.apply(IrcMessageEvent{
+        room,
+        QStringLiteral("Alice"),
+        QStringLiteral("omairc: ping"),
+        timestamp,
+        QStringLiteral("#omarchy"),
+        IrcMsgId{QStringLiteral("mid-1")},
+    });
+
+    const std::optional<IrcMentionArrival> mention = reducer.takeMentionArrival();
+    QVERIFY(mention.has_value());
+    QCOMPARE(mention->author, QStringLiteral("Alice"));
+    QCOMPARE(mention->body, QStringLiteral("omairc: ping"));
+    QCOMPARE(mention->networkId, networkA);
+    QCOMPARE(mention->target, QStringLiteral("#omarchy"));
+    QCOMPARE(mention->msgid.value, QStringLiteral("mid-1"));
+
+    const IrcConversationKey dm =
+        reducer.conversationKey(networkA, QStringLiteral("Alice"));
+    reducer.apply(IrcMessageEvent{
+        dm,
+        QStringLiteral("Alice"),
+        QStringLiteral("hello"),
+        timestamp,
+        QStringLiteral("Alice"),
+        IrcMsgId{QStringLiteral("dm-7")},
+    });
+    const std::optional<IrcMentionArrival> direct = reducer.takeMentionArrival();
+    QVERIFY(direct.has_value());
+    QCOMPARE(direct->author, QStringLiteral("Alice"));
+    QCOMPARE(direct->body, QStringLiteral("hello"));
+    QCOMPARE(direct->networkId, networkA);
+    QCOMPARE(direct->target, QStringLiteral("Alice"));
+    QCOMPARE(direct->msgid.value, QStringLiteral("dm-7"));
 }
 
 void ReducerTest::mutedChatDoesNotMention()
