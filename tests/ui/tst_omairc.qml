@@ -1193,7 +1193,7 @@ TestCase {
     }
 
     function containsMirc(text) {
-        return /[\u0002\u0003\u000f\u0016\u001d\u001f]/.test(text);
+        return /[\u0002\u0003\u0004\u000f\u0011\u0016\u001d\u001e\u001f]/.test(text);
     }
 
     function formattedIrcBody() {
@@ -2375,7 +2375,7 @@ TestCase {
 
         var colorOnly = appWindow.emphasizedIrcText("\x0304red\x03");
         compare(appWindow.plainIrcText("\x0304red\x03"), "red");
-        verify(colorOnly === "red" || colorOnly === appWindow.plainIrcText("\x0304red\x03"));
+        verify(colorOnly.indexOf("red") >= 0);
         verify(colorOnly.indexOf("<b") < 0);
         verify(colorOnly.indexOf("<i") < 0);
         verify(colorOnly.indexOf("<u") < 0);
@@ -2385,6 +2385,22 @@ TestCase {
         verify(literal.indexOf("&lt;/b&gt;") >= 0);
         verify(literal.indexOf("<b>") < 0);
         verify(literal.indexOf("</b>") < 0);
+
+        var reverse = appWindow.emphasizedIrcText("\x02a\x16b\x02");
+        verify(reverse.indexOf("<b>ab</b>") >= 0);
+        verify(reverse.indexOf("\x16") < 0);
+        verify(reverse.indexOf("</b><b>") < 0);
+
+        compare(appWindow.plainIrcText("\x04FF0000red"), "red");
+        var hexColor = appWindow.emphasizedIrcText("\x04FF0000red");
+        verify(hexColor.indexOf("red") >= 0);
+        verify(hexColor.indexOf("FF0000") < 0);
+
+        var extraCodes = appWindow.emphasizedIrcText("\x02a\x11b\x1ec\x02");
+        verify(extraCodes.indexOf("<b>abc</b>") >= 0);
+
+        var spaced = appWindow.emphasizedIrcText("a  \x02b\x02");
+        verify(spaced.indexOf("a  <b>b</b>") >= 0);
     }
 
     function test_emphasizedIrcTextFailClosed() {
@@ -2398,19 +2414,31 @@ TestCase {
             "<a href=\"https://evil.example\">x</a>\x02y\x02",
             "\x16flip\x16",
             "\x02\x1d\x1f\x0f",
+            "\x02a\x16b\x02",
+            "\x04FF0000red",
+            "\x02a\x11b\x1ec\x02",
+            "a  \x02b\x02",
             formattedIrcBody()
         ];
+        var wrapper = "<span style=\"white-space: pre-wrap;\">";
         var index = 0;
         for (; index < samples.length; ++index) {
             var html = appWindow.emphasizedIrcText(samples[index]);
             verify(html.indexOf("<a") < 0);
-            verify(html.indexOf("<span") < 0);
-            var re = /<\/?([A-Za-z][A-Za-z0-9]*)\b/g;
+            verify(html.indexOf(wrapper) === 0);
+            verify(html.lastIndexOf("</span>") === html.length - 7);
+            verify(html.indexOf("<span") === 0);
+            verify(html.indexOf("<span", 1) < 0);
+            var re = /<\/?([A-Za-z][A-Za-z0-9]*)\b([^>]*)>/g;
             var match;
             while ((match = re.exec(html)) !== null) {
                 var tag = match[1].toLowerCase();
-                verify(tag === "b" || tag === "i" || tag === "u",
+                verify(tag === "b" || tag === "i" || tag === "u" || tag === "span",
                        "unexpected tag <" + tag + "> in " + html);
+                if (tag === "span" && match[0].charAt(1) !== "/")
+                    compare(match[0], wrapper);
+                else
+                    compare(match[2], "");
             }
         }
     }
@@ -2485,6 +2513,19 @@ TestCase {
         verify(body !== null && body.visible, "Could not find literal HTML messageBody");
         compare(body.textFormat, TextEdit.PlainText);
         compare(body.text, "<b>not html</b>");
+
+        var spacedBody = "a  \x02b\x02";
+        injectOmarchyChat("rio", "#omarchy", spacedBody);
+        waitForRowCount(list, previousCount + 5);
+        compare(field(list.model, previousCount + 4, "body"), spacedBody);
+        list.positionViewAtIndex(previousCount + 4, ListView.Contain);
+        waitForRendering(appWindow.contentItem);
+        row = list.itemAtIndex(previousCount + 4);
+        verify(row !== null, "The spaced emphasized message should be rendered");
+        body = findChild(row, "messageBody");
+        verify(body !== null && body.visible, "Could not find spaced messageBody");
+        compare(body.textFormat, TextEdit.RichText);
+        compare(body.getText(0, body.length), "a  b");
     }
 
     function test_liveMessageBodyRendersIrcEmphasis() {

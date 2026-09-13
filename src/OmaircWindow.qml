@@ -309,9 +309,14 @@ ApplicationWindow {
         return nick.length > 0 ? nick.charAt(0).toUpperCase() : "?";
     }
 
-    function plainIrcText(text) {
+    function stripIrcColors(text) {
         return text.replace(/\x03(?:\d{1,2}(?:,\d{1,2})?)?/g, "")
-            .replace(/[\x02\x0f\x16\x1d\x1f]/g, "");
+            .replace(/\x04(?:[0-9A-Fa-f]{6}(?:,[0-9A-Fa-f]{6})?)?/g, "");
+    }
+
+    function plainIrcText(text) {
+        return stripIrcColors(text)
+            .replace(/[\x02\x0f\x11\x16\x1d\x1e\x1f]/g, "");
     }
 
     function escapeHtml(text) {
@@ -333,7 +338,7 @@ ApplicationWindow {
     }
 
     function emphasizedIrcText(text) {
-        var input = text.replace(/\x03(?:\d{1,2}(?:,\d{1,2})?)?/g, "");
+        var input = stripIrcColors(text);
         var bold = false;
         var italic = false;
         var underline = false;
@@ -354,12 +359,12 @@ ApplicationWindow {
             } else if (code === 0x1f) {
                 underline = !underline;
                 changed = true;
-            } else if (code === 0x0f || code === 0x16) {
+            } else if (code === 0x0f) {
                 bold = false;
                 italic = false;
                 underline = false;
                 changed = true;
-            } else {
+            } else if (code !== 0x16 && code !== 0x11 && code !== 0x1e) {
                 html += escapeHtml(input.charAt(index));
             }
             if (!changed)
@@ -395,9 +400,10 @@ ApplicationWindow {
             html += "</i>";
         if (openBold)
             html += "</b>";
+        // Defence-in-depth: unreachable while every non-control character goes through escapeHtml.
         if (/</.test(html.replace(/<\/?[biu]>/g, "")))
-            return escapeHtml(plainIrcText(text));
-        return html;
+            html = escapeHtml(plainIrcText(text));
+        return "<span style=\"white-space: pre-wrap;\">" + html + "</span>";
     }
 
     function transcriptRowCount(model) {
@@ -2838,7 +2844,6 @@ ApplicationWindow {
                         textFormat: win.hasIrcEmphasis(messageDelegate.body)
                             ? TextEdit.RichText
                             : TextEdit.PlainText
-                        textMargin: win.hasIrcEmphasis(messageDelegate.body) ? 0 : 4
                         padding: 0
                         font.family: "iA Writer Mono S"
                         font.italic: messageDelegate.kind === "action"
