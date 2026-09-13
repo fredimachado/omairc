@@ -2,6 +2,8 @@
 
 #include "irceventreducer.h"
 
+#include <QLocale>
+
 namespace
 {
 QString kindString(IrcMessageKind kind)
@@ -30,6 +32,78 @@ QString displayTime(const IrcReducedMessage& message)
         return {};
     return message.timestamp.toLocalTime().toString(QStringLiteral("HH:mm"));
 }
+
+std::optional<QDate> assignedDate(const IrcReducedMessage& message,
+                                  const std::optional<QDate>& previous)
+{
+    if (message.timestamp.isValid())
+        return message.timestamp.toLocalTime().date();
+    if (message.origin == IrcOrigin::Live)
+        return QDate::currentDate();
+    return previous;
+}
+
+QString dateLabel(const QDate& date)
+{
+    const QDate today = QDate::currentDate();
+    if (date == today)
+        return QStringLiteral("Today");
+    if (date == today.addDays(-1))
+        return QStringLiteral("Yesterday");
+    return QLocale().toString(date, QLocale::ShortFormat);
+}
+}
+
+std::vector<MessageListModel::VisualRow> MessageListModel::buildView(
+    const IrcConversationState *conversation)
+{
+    std::vector<VisualRow> view;
+    if (!conversation)
+        return view;
+    view.reserve(conversation->messages.size() + 8);
+    std::optional<QDate> previous;
+    for (int i = 0; i < int(conversation->messages.size()); ++i) {
+        const std::optional<QDate> date =
+            assignedDate(conversation->messages[size_t(i)], previous);
+        if (date && previous && *date != *previous)
+            view.push_back({VisualRow::Type::Separator, 0, *date});
+        view.push_back({VisualRow::Type::Store, i, {}});
+        if (date)
+            previous = date;
+    }
+    return view;
+}
+
+int MessageListModel::visualPrefixToRemove(const std::vector<VisualRow>& view,
+                                           int storeRemoved)
+{
+    if (storeRemoved <= 0)
+        return 0;
+    int removed = 0;
+    for (int i = 0; i < int(view.size()); ++i) {
+        const VisualRow& row = view[size_t(i)];
+        if (row.type == VisualRow::Type::Store) {
+            if (row.storeIndex < storeRemoved)
+                ++removed;
+            else
+                break;
+            continue;
+        }
+        int following = -1;
+        for (int j = i + 1; j < int(view.size()); ++j) {
+            if (view[size_t(j)].type == VisualRow::Type::Store) {
+                following = view[size_t(j)].storeIndex;
+                break;
+            }
+        }
+        // A separator that introduced the first remaining store row would
+        // become a leading day mark.
+        if (following >= 0 && following <= storeRemoved)
+            ++removed;
+        else
+            break;
+    }
+    return removed;
 }
 
 MessageListModel::MessageListModel(IrcEventReducer& reducer, QObject *parent)
@@ -40,19 +114,45 @@ MessageListModel::MessageListModel(IrcEventReducer& reducer, QObject *parent)
 
 int MessageListModel::rowCount(const QModelIndex& parent) const
 {
-    return parent.isValid() ? 0 : m_count;
+    return parent.isValid() ? 0 : int(m_view.size());
 }
 
 QVariant MessageListModel::data(const QModelIndex& index, int role) const
 {
-    if (!index.isValid() || !m_selected || index.row() < 0 || index.row() >= m_count)
+    if (!index.isValid() || !m_selected || index.row() < 0
+        || index.row() >= int(m_view.size()))
         return {};
 
     const IrcConversationState *conversation = m_reducer.find(*m_selected);
-    if (!conversation || index.row() >= int(conversation->messages.size()))
+    if (!conversation)
         return {};
 
-    const IrcReducedMessage& message = conversation->messages[size_t(index.row())];
+    const VisualRow& row = m_view[size_t(index.row())];
+    if (row.type == VisualRow::Type::Separator) {
+        switch (role) {
+        case AuthorRole:
+            return QString();
+        case TimeRole:
+            return QString();
+        case BodyRole:
+            return dateLabel(row.date);
+        case KindRole:
+            return QStringLiteral("event");
+        case NetworkIdRole:
+            return conversation->key.networkId;
+        case OriginRole:
+            return QStringLiteral("live");
+        default:
+            return {};
+        }
+    }
+
+    if (row.storeIndex < 0
+        || row.storeIndex >= int(conversation->messages.size()))
+        return {};
+
+    const IrcReducedMessage& message =
+        conversation->messages[size_t(row.storeIndex)];
     switch (role) {
     case AuthorRole:
         return message.author;
@@ -106,51 +206,65 @@ QString MessageListModel::field(int row, const QString& name) const
     return value.isValid() ? value.toString() : QString{};
 }
 
+void MessageListModel::notifySeparatorRows()
+{
+    for (int row = 0; row < int(m_view.size()); ++row) {
+        if (m_view[size_t(row)].type != VisualRow::Type::Separator)
+            continue;
+        const QModelIndex idx = index(row, 0);
+        emit dataChanged(idx, idx);
+    }
+}
+
 void MessageListModel::reload()
 {
-    int count = 0;
-    int trimmed = 0;
-    int spliceEpoch = 0;
-    if (m_selected) {
-        if (const IrcConversationState *conversation = m_reducer.find(*m_selected)) {
-            count = int(conversation->messages.size());
-            trimmed = conversation->trimmed;
-            spliceEpoch = conversation->spliceEpoch;
-        }
-    }
+    const IrcConversationState *conversation =
+        m_selected ? m_reducer.find(*m_selected) : nullptr;
+    std::vector<VisualRow> next = buildView(conversation);
+    const int trimmed = conversation ? conversation->trimmed : 0;
+    const int spliceEpoch = conversation ? conversation->spliceEpoch : 0;
 
     const bool sameConversation = m_selected.has_value() == m_loaded.has_value()
         && (!m_selected || *m_selected == *m_loaded)
         && spliceEpoch == m_spliceEpoch;
     if (sameConversation) {
-        int removed = trimmed - m_trimmed;
-        if (removed < 0)
-            removed = 0;
-        if (removed > m_count)
-            removed = m_count;
-        if (removed > 0) {
-            beginRemoveRows(QModelIndex(), 0, removed - 1);
-            m_count -= removed;
+        int storeRemoved = trimmed - m_trimmed;
+        if (storeRemoved < 0)
+            storeRemoved = 0;
+        const int visualRemoved = visualPrefixToRemove(m_view, storeRemoved);
+        if (visualRemoved > 0) {
+            beginRemoveRows(QModelIndex(), 0, visualRemoved - 1);
+            m_view.erase(m_view.begin(),
+                         m_view.begin() + visualRemoved);
+            const int keep = int(m_view.size());
+            for (int i = 0; i < keep && i < int(next.size()); ++i)
+                m_view[size_t(i)] = next[size_t(i)];
             m_trimmed = trimmed;
             endRemoveRows();
         }
-        if (count > m_count) {
-            beginInsertRows(QModelIndex(), m_count, count - 1);
-            m_count = count;
+        if (int(next.size()) > int(m_view.size())) {
+            beginInsertRows(QModelIndex(), int(m_view.size()),
+                            int(next.size()) - 1);
+            m_view = std::move(next);
+            m_trimmed = trimmed;
             endInsertRows();
+            notifySeparatorRows();
             return;
         }
-        if (count == m_count) {
-            if (count > 0) {
-                const QModelIndex last = index(count - 1);
+        if (int(next.size()) == int(m_view.size())) {
+            m_view = std::move(next);
+            m_trimmed = trimmed;
+            if (!m_view.empty()) {
+                const QModelIndex last = index(int(m_view.size()) - 1);
                 emit dataChanged(last, last);
             }
+            notifySeparatorRows();
             return;
         }
     }
 
     beginResetModel();
-    m_count = count;
+    m_view = std::move(next);
     m_loaded = m_selected;
     m_trimmed = trimmed;
     m_spliceEpoch = spliceEpoch;
