@@ -46,6 +46,8 @@ public:
     Q_INVOKABLE void injectOftc(const QString &bytes);
     Q_INVOKABLE bool echoLastOmarchyPrivmsg();
     Q_INVOKABLE bool echoLastOftcPrivmsg();
+    Q_INVOKABLE int omarchyFrameCount() const;
+    Q_INVOKABLE bool omarchyWroteFrom(int start, const QString &needle) const;
 
     Backend &backend();
     IrcSlashSession &slash();

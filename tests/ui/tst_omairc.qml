@@ -788,7 +788,7 @@ TestCase {
             var keepSelection = open;
             open = true;
             matches = [
-                { label: "/join", usage: "/join <channel> [key][, ...]" },
+                { label: "/join", usage: "/join [channel] [key][, ...]" },
                 { label: "/nick", usage: "/nick <nickname>" }
             ];
             if (!keepSelection)
@@ -2422,6 +2422,49 @@ TestCase {
         verify(hit !== null, "Could not find console urlHit");
         mouseClick(hit, rect.x + Math.max(1, rect.width / 2), rect.y + rect.height / 2);
         compare(appWindow.lastOpenedUrl, "http://example.com");
+    }
+
+    function test_consoleInviteChannelClickJoins() {
+        openSeededAppWindow();
+        var list = item("consoleList");
+        keyClick(Qt.Key_QuoteLeft, Qt.ControlModifier);
+        tryCompare(appWindow, "consoleVisible", true);
+
+        var previousCount = list.model.rowCount();
+        seed.injectOmarchy(":alice!u@h INVITE fred :#invited\r\n");
+        waitForRowCount(list, previousCount + 1);
+        list.positionViewAtIndex(previousCount, ListView.Contain);
+        waitForRendering(appWindow.contentItem);
+
+        var row = list.itemAtIndex(previousCount);
+        verify(row !== null, "The invite console line should be rendered");
+        var body = findChild(row, "consoleText");
+        verify(body !== null, "Could not find invite consoleText");
+        compare(body.textFormat, TextEdit.PlainText);
+        compare(field(list.model, previousCount, "label"), "INVITE");
+        compare(body.text, "alice invited you to #invited");
+        body.selectAll();
+        compare(body.selectedText, "alice invited you to #invited");
+        body.deselect();
+
+        var framesBefore = seed.omarchyFrameCount();
+        var nickRect = body.positionToRectangle(1);
+        var nickHit = findChild(body, "urlHit");
+        verify(nickHit !== null, "Could not find console urlHit");
+        mouseClick(nickHit, nickRect.x + Math.max(1, nickRect.width / 2),
+                   nickRect.y + nickRect.height / 2);
+        verify(!seed.omarchyWroteFrom(framesBefore, "JOIN #invited"));
+        compare(appWindow.currentConversation, "#omarchy");
+        tryCompare(appWindow, "consoleVisible", true);
+
+        var start = body.text.indexOf("#invited");
+        var rect = body.positionToRectangle(start + 1);
+        mouseClick(nickHit, rect.x + Math.max(1, rect.width / 2),
+                   rect.y + rect.height / 2);
+        verify(seed.omarchyWroteFrom(framesBefore, "JOIN #invited"));
+        seed.injectOmarchy(":fred!u@h JOIN :#invited\r\n");
+        tryCompare(appWindow, "currentConversation", "#invited");
+        tryCompare(appWindow, "consoleVisible", false);
     }
 
     function test_eventRowAndTopicStripMirc() {

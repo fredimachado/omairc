@@ -727,11 +727,23 @@ IrcCommandOutcome IrcController::dispatch(const IrcCommand& command,
     bool sent = false;
     switch (command.verb) {
     case IrcCommand::Verb::Join: {
-        const std::optional<QVector<IrcJoinTarget>> targets =
-            ircParseJoinTargets(command.argument,
-                                m_reducer.serverFeatures(active->networkId()));
-        if (!targets)
-            return IrcCommandOutcome::Refused;
+        const IrcServerFeatures& features =
+            m_reducer.serverFeatures(active->networkId());
+        std::optional<QVector<IrcJoinTarget>> targets;
+        if (command.argument.isEmpty()) {
+            const std::optional<IrcPendingInvite> pending = active->pendingInvite();
+            if (!pending)
+                return IrcCommandOutcome::Refused;
+            const std::optional<IrcJoinTarget> target =
+                IrcJoinTarget::make(pending->channel, std::nullopt, features);
+            if (!target)
+                return IrcCommandOutcome::Refused;
+            targets = QVector<IrcJoinTarget>{*target};
+        } else {
+            targets = ircParseJoinTargets(command.argument, features);
+            if (!targets)
+                return IrcCommandOutcome::Refused;
+        }
         sent = true;
         for (const IrcJoinTarget& target : *targets)
             sent = sent && active->join(target);
@@ -1108,7 +1120,8 @@ IrcCommandOutcome IrcController::dispatchHelp(IrcComposerSurface surface)
     for (const IrcVerbSpec& row : IrcVerbTable::all())
         names.append(QLatin1Char('/') + row.name);
     const QString text =
-        QStringLiteral("Commands: %1").arg(names.join(QStringLiteral(", ")));
+        QStringLiteral("Commands: %1. Empty /join joins the latest invite.")
+            .arg(names.join(QStringLiteral(", ")));
     if (surface == IrcComposerSurface::Conversation) {
         if (!m_selected)
             return IrcCommandOutcome::WrongScope;
@@ -1427,6 +1440,18 @@ void IrcController::handleMessage(const QString& networkId,
             }
         }
         apply(event);
+        if (const auto *join = std::get_if<IrcJoinEvent>(&event)) {
+            if (IrcSession *session = m_sessions.findSession(join->networkId)) {
+                if (const auto pending = session->pendingInvite()) {
+                    const auto& mapping = features.caseMapping();
+                    if (mapping.equals(utf8(join->nick), utf8(currentNick))
+                        && mapping.equals(utf8(join->channel),
+                                          utf8(pending->channel))) {
+                        selectConversation(join->networkId, join->channel);
+                    }
+                }
+            }
+        }
     }
 }
 

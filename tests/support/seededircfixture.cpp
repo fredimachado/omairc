@@ -8,9 +8,11 @@
 #include "ircslashcomplete.h"
 #include "storage/credentialstore.h"
 
+#include <QByteArray>
 #include <QCoreApplication>
 #include <QDir>
 #include <QMetaObject>
+#include <QtGlobal>
 #include <QQmlApplicationEngine>
 #include <QQmlComponent>
 #include <QQuickWindow>
@@ -273,4 +275,22 @@ bool SeededIrcFixture::echoLastOftcPrivmsg()
     if (!m_demo || !m_controller)
         return false;
     return m_demo->echoLastOftcPrivmsg(m_controller->currentNick());
+}
+
+int SeededIrcFixture::omarchyFrameCount() const
+{
+    return m_omarchyTransport ? m_omarchyTransport->writtenFrames().size() : 0;
+}
+
+bool SeededIrcFixture::omarchyWroteFrom(int start, const QString &needle) const
+{
+    if (!m_omarchyTransport)
+        return false;
+    const QByteArrayList frames = m_omarchyTransport->writtenFrames();
+    const QByteArray utf8 = needle.toUtf8();
+    for (int i = qMax(0, start); i < frames.size(); ++i) {
+        if (frames.at(i).contains(utf8))
+            return true;
+    }
+    return false;
 }

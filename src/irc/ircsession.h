@@ -57,6 +57,12 @@ signals:
     void reachable();
 };
 
+struct IrcPendingInvite
+{
+    QString nick;
+    QString channel;
+};
+
 struct IrcSessionConfig
 {
     QString networkId;
@@ -129,6 +135,7 @@ public:
 
     using IgnoreFilter = std::function<bool(const IrcMessage&, const QString&)>;
     void setIgnoreFilter(IgnoreFilter filter);
+    std::optional<IrcPendingInvite> pendingInvite() const;
 
 public slots:
     void start();
@@ -286,6 +293,7 @@ private:
     static constexpr int kMaxIgnoredBatches = 32;
     QHash<QString, QElapsedTimer> m_ctcpReplyClock;
     IgnoreFilter m_ignoreFilter;
+    std::optional<IrcPendingInvite> m_pendingInvite;
     State m_state = State::Idle;
     bool m_expectedDisconnect = false;
     bool m_reconnectAfterDisconnect = false;
