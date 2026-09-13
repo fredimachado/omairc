@@ -1390,6 +1390,12 @@ ApplicationWindow {
             connectionSheetOpen = true;
     }
 
+    function disconnectSheetNetwork() {
+        if (!connection)
+            return;
+        connection.disconnectSelected();
+    }
+
     function focusConnectionSheetStart() {
         if (!connectionOverlayVisible || !win.active)
             return;
@@ -3583,6 +3589,49 @@ ApplicationWindow {
                             }
 
                             Rectangle {
+                                objectName: "connectionDisconnect"
+                                visible: win.connection ? win.connection.canDisconnect : false
+                                width: visible ? win.scaledSize(108) : 0
+                                height: win.scaledSize(30)
+                                radius: win.scaledSize(7)
+                                activeFocusOnTab: visible
+                                Accessible.role: Accessible.Button
+                                Accessible.name: "Disconnect"
+                                Accessible.onPressAction: win.disconnectSheetNetwork()
+                                color: disconnectMouse.containsMouse || activeFocus
+                                    ? win.hoverColor : "transparent"
+                                border.width: 1
+                                border.color: activeFocus ? win.accentColor : win.dividerColor
+                                Keys.onPressed: function(event) {
+                                    if (event.key === Qt.Key_Return
+                                            || event.key === Qt.Key_Enter
+                                            || event.key === Qt.Key_Space) {
+                                        win.disconnectSheetNetwork();
+                                        event.accepted = true;
+                                    }
+                                }
+
+                                Text {
+                                    anchors.centerIn: parent
+                                    text: "Disconnect"
+                                    color: win.mutedColor
+                                    font.family: "iA Writer Mono S"
+                                    font.pixelSize: win.scaledSize(11)
+                                }
+
+                                MouseArea {
+                                    id: disconnectMouse
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: {
+                                        win.disconnectSheetNetwork();
+                                        parent.forceActiveFocus();
+                                    }
+                                }
+                            }
+
+                            Rectangle {
                                 objectName: "connectionApply"
                                 width: win.scaledSize(88)
                                 height: win.scaledSize(30)
@@ -3869,6 +3918,7 @@ ApplicationWindow {
                     { keys: "Up / Down", action: "history" },
                     { keys: "Escape", action: "dismiss" },
                     { keys: "Ctrl+/", action: "this sheet" },
+                    { keys: "/disconnect", action: "disconnect network" },
                     { keys: "Ctrl+Q", action: "quit" }
                 ]
 

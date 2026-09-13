@@ -310,6 +310,9 @@ private slots:
     void twoSessionsStartTogether();
     void startingBackgroundNetworkDoesNotStealStatus();
     void quitWhileReconnecting();
+    void disconnectLeavesOtherNetworkLive();
+    void quitAliasIdlesFocusedNetwork();
+    void disconnectWhileIdleIsRefused();
     void statusJoinUsesConsoleNetwork();
     void implicitStatusPartStaysOnFocusedNetwork();
     void implicitStatusKickStaysOnFocusedNetwork();
@@ -3433,6 +3436,88 @@ void ControllerTest::quitWhileReconnecting()
     QVERIFY(controller.sendMessage(QStringLiteral("/quit")));
     QCOMPARE(session->state(), IrcSession::State::Idle);
     QVERIFY(!timer->active);
+}
+
+void ControllerTest::disconnectLeavesOtherNetworkLive()
+{
+    IrcController controller;
+    auto *transportA = new FakeIrcTransport;
+    auto *transportB = new FakeIrcTransport;
+    IrcSession *sessionA = controller.addSession(config(QStringLiteral("network-a")),
+                                                 transportA);
+    IrcSession *sessionB = controller.addSession(config(QStringLiteral("network-b")),
+                                                 transportB);
+    QVERIFY(sessionA);
+    QVERIFY(sessionB);
+    registerSession(sessionA, transportA);
+    registerSession(sessionB, transportB);
+    transportA->injectBytes(QByteArrayLiteral(":omairc!u@h JOIN :#alpha\r\n"));
+    transportB->injectBytes(QByteArrayLiteral(":omairc!u@h JOIN :#lab\r\n"));
+    controller.selectConversation(QStringLiteral("network-a"), QStringLiteral("#alpha"));
+
+    QVERIFY(controller.sendMessage(QStringLiteral("/disconnect")));
+    QCOMPARE(sessionA->state(), IrcSession::State::Idle);
+    QCOMPARE(controller.session(QStringLiteral("network-a")), sessionA);
+    QCOMPARE(controller.session(QStringLiteral("network-b")), sessionB);
+    QCOMPARE(sessionB->state(), IrcSession::State::Registered);
+    QCOMPARE(controller.connectionStatusFor(QStringLiteral("network-a")),
+             QStringLiteral("Offline"));
+    QVERIFY(framesContain(transportA->writtenFrames(), QByteArrayLiteral("QUIT")));
+
+    auto *conversations =
+        qobject_cast<QAbstractItemModel *>(controller.conversations());
+    QVERIFY(conversations);
+    QCOMPARE(conversations->rowCount(), 2);
+    QVERIFY(rowForTarget(conversations, QStringLiteral("#alpha")) >= 0);
+    QVERIFY(rowForTarget(conversations, QStringLiteral("#lab")) >= 0);
+
+    controller.openStatus(QStringLiteral("network-a"));
+    QVERIFY(controller.console()->isOpen());
+    QCOMPARE(controller.console()->networkId(), QStringLiteral("network-a"));
+
+    controller.selectConversation(QStringLiteral("network-b"), QStringLiteral("#lab"));
+    transportB->injectBytes(QByteArrayLiteral(":zed!u@h PRIVMSG #lab :still here\r\n"));
+    auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
+    QVERIFY(messages);
+    QVERIFY(selectedBodiesContain(messages, QStringLiteral("still here")));
+    QCOMPARE(sessionB->state(), IrcSession::State::Registered);
+}
+
+void ControllerTest::quitAliasIdlesFocusedNetwork()
+{
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+                                                transport);
+    QVERIFY(session);
+    registerSession(session, transport);
+    transport->injectBytes(QByteArrayLiteral(":omairc!u@h JOIN :#omarchy\r\n"));
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+
+    QVERIFY(controller.sendMessage(QStringLiteral("/quit")));
+    QCOMPARE(session->state(), IrcSession::State::Idle);
+    QCOMPARE(controller.session(QStringLiteral("libera")), session);
+    QCOMPARE(controller.conversations()->rowCount(), 1);
+    QVERIFY(framesContain(transport->writtenFrames(), QByteArrayLiteral("QUIT")));
+}
+
+void ControllerTest::disconnectWhileIdleIsRefused()
+{
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+                                                transport);
+    QVERIFY(session);
+    registerSession(session, transport);
+    transport->injectBytes(QByteArrayLiteral(":omairc!u@h JOIN :#omarchy\r\n"));
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    QVERIFY(controller.sendMessage(QStringLiteral("/disconnect")));
+    QCOMPARE(session->state(), IrcSession::State::Idle);
+
+    QVERIFY(!controller.sendMessage(QStringLiteral("/disconnect")));
+    QCOMPARE(controller.lastError(), QStringLiteral("Command was refused"));
+    QCOMPARE(session->state(), IrcSession::State::Idle);
+    QCOMPARE(controller.session(QStringLiteral("libera")), session);
 }
 
 void ControllerTest::statusJoinUsesConsoleNetwork()

@@ -90,6 +90,7 @@ TestCase {
         property string selectedNetworkId: "setup-id"
         property bool canAdd: false
         property bool canRemove: false
+        property bool canDisconnect: false
 
         property int setPasswordCalls: 0
         property string lastSetPassword: ""
@@ -127,6 +128,7 @@ TestCase {
         }
 
         property int applyCalls: 0
+        property int disconnectSelectedCalls: 0
 
         function apply() {
             applyCalls += 1;
@@ -145,6 +147,11 @@ TestCase {
         }
 
         function removeSelected() {
+            return false;
+        }
+
+        function disconnectSelected() {
+            disconnectSelectedCalls += 1;
             return false;
         }
     }
@@ -586,7 +593,9 @@ TestCase {
         property string selectedNetworkId: "libera"
         property bool canAdd: true
         property bool canRemove: true
+        property bool canDisconnect: false
         property int passwordSetCalls: 0
+        property int disconnectSelectedCalls: 0
         property string lastPassword: ""
         property int applyCalls: 0
         property bool applySucceeds: false
@@ -684,6 +693,11 @@ TestCase {
                 namedNetworks.setProperty(0, "selected", true);
                 displayName = namedNetworks.get(0).displayName;
             }
+            return true;
+        }
+
+        function disconnectSelected() {
+            disconnectSelectedCalls += 1;
             return true;
         }
     }
@@ -1025,6 +1039,8 @@ TestCase {
         namedConnection.setupRequired = false;
         namedConnection.canAdd = true;
         namedConnection.canRemove = true;
+        namedConnection.canDisconnect = false;
+        namedConnection.disconnectSelectedCalls = 0;
         namedConnection.account = "";
         namedConnection.bouncerNetwork = "";
     }
@@ -2807,6 +2823,9 @@ TestCase {
         compare(findChild(window, "networkChoiceList") !== null, true);
         compare(findChild(window, "connectionAddNetwork").visible, false);
         compare(findChild(window, "connectionRemove").visible, false);
+        var hiddenDisconnect = findChild(window, "connectionDisconnect");
+        verify(hiddenDisconnect !== null, "Could not find connectionDisconnect");
+        compare(hiddenDisconnect.visible, false);
         var password = findChild(window, "connectionPassword");
         var formViewport = findChild(window, "sheetFlick");
         verify(password.mapToItem(sheet, 0, password.height).y
@@ -2957,6 +2976,42 @@ TestCase {
         wait(0);
         compare(focusObjectName(window), "connectionDiscard");
         window.close();
+    }
+
+    function test_connectionDisconnectSitsBesideApply() {
+        fakeConnection.applyCalls = 0;
+        fakeConnection.disconnectSelectedCalls = 0;
+        fakeConnection.canDisconnect = false;
+        var window = createTemporaryObject(setupWindowComponent, null);
+        verify(window !== null, "The setup window should load");
+        tryCompare(window, "visible", true);
+        waitForRendering(window.contentItem);
+
+        var disconnectButton = findChild(window, "connectionDisconnect");
+        var applyButton = findChild(window, "connectionApply");
+        verify(disconnectButton !== null, "Could not find connectionDisconnect");
+        verify(applyButton !== null, "Could not find connectionApply");
+        compare(disconnectButton.visible, false);
+        compare(disconnectButton.parent, applyButton.parent);
+
+        fakeConnection.canDisconnect = true;
+        tryCompare(disconnectButton, "visible", true);
+        compare(disconnectButton.width > 0, true);
+        verify(disconnectButton.x < applyButton.x);
+        verify(applyButton.x - (disconnectButton.x + disconnectButton.width)
+               <= disconnectButton.parent.spacing + 1);
+
+        mouseClick(disconnectButton);
+        compare(fakeConnection.disconnectSelectedCalls, 1);
+        compare(fakeConnection.applyCalls, 0);
+        compare(findChild(window, "connectionSheet").visible, true);
+
+        applyButton.forceActiveFocus();
+        tryCompare(applyButton, "activeFocus", true);
+        fakeConnection.canDisconnect = false;
+        tryCompare(disconnectButton, "visible", false);
+        window.close();
+        fakeConnection.disconnectSelectedCalls = 0;
     }
 
     function test_connectionSheetOpenedFromComposerKeepsTabInsideSheet() {
@@ -4027,6 +4082,8 @@ TestCase {
                "shortcut sheet should list Ctrl+K");
         verify(texts.indexOf("jump to conversation") !== -1,
                "shortcut sheet should name jump to conversation");
+        verify(texts.indexOf("/disconnect") !== -1,
+               "shortcut sheet should list /disconnect");
         keyClick(Qt.Key_Escape);
         tryCompare(sheet, "opened", false);
     }

@@ -117,6 +117,7 @@ private slots:
     void failedMigrationDiscardRetriesWriteBeforeObsoleteDelete();
     void accountAndBouncerNetworkLoginAsOneName();
     void twoProfilesApplyIndependently();
+    void disconnectSelectedIdlesWithoutDroppingProfile();
     void twoProfilesKeepDistinctIconColorsAcrossReload();
     void missingIconColorIsAssignedOnce();
     void removeSelectedDropsSessionAndStore();
@@ -1597,6 +1598,48 @@ void ConnectionTest::twoProfilesApplyIndependently()
     QCOMPARE(m_transports.last()->connectionState(),
              IrcTransport::ConnectionState::Connecting);
     QCOMPARE(connection.networks()->rowCount(), 2);
+}
+
+void ConnectionTest::disconnectSelectedIdlesWithoutDroppingProfile()
+{
+    IrcController controller;
+    IrcConnection connection(controller, capturingFactory(), credentialStore());
+    connection.setConnectOnStartup(true);
+    QVERIFY(welcomeOmarchy(connection, controller));
+    QCOMPARE(connection.connectOnStartup(), true);
+    QVERIFY(connection.canDisconnect());
+
+    const QString id = connection.selectedNetworkId();
+    const QString host = connection.host();
+    const QString nick = connection.nick();
+    IrcSession *session = controller.session(id);
+    QVERIFY(session);
+    QCOMPARE(session->state(), IrcSession::State::Registered);
+    QCOMPARE(controller.conversations()->rowCount(), 1);
+
+    QVERIFY(connection.disconnectSelected());
+    QCOMPARE(session->state(), IrcSession::State::Idle);
+    QCOMPARE(controller.session(id), session);
+    QVERIFY(!connection.canDisconnect());
+    QCOMPARE(connection.connectOnStartup(), true);
+    QCOMPARE(connection.host(), host);
+    QCOMPARE(connection.nick(), nick);
+    QCOMPARE(connection.selectedNetworkId(), id);
+    QCOMPARE(IrcProfileStore().profiles().size(), 1);
+    QCOMPARE(IrcProfileStore().profiles().first().connectOnStartup, true);
+    QCOMPARE(IrcProfileStore().profiles().first().host, host);
+    QCOMPARE(controller.conversations()->rowCount(), 1);
+    QCOMPARE(connection.networks()->rowCount(), 1);
+
+    QVERIFY(!connection.disconnectSelected());
+    QCOMPARE(session->state(), IrcSession::State::Idle);
+    QCOMPARE(controller.session(id), session);
+
+    QVERIFY(connection.apply());
+    QCOMPARE(controller.session(id), session);
+    QCOMPARE(session->state(), IrcSession::State::Connecting);
+    QVERIFY(connection.canDisconnect());
+    QCOMPARE(connection.connectOnStartup(), true);
 }
 
 void ConnectionTest::twoProfilesKeepDistinctIconColorsAcrossReload()

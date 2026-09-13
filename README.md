@@ -13,7 +13,7 @@ A dead-simple IRC client for Omarchy, built with Qt Quick and C++.
 - Channels and DMs. Member panel and people count on channels only. Click a nick to open or create a DM. `Ctrl+W` or `/close` closes a DM.
 - Presence dots and away dimming when the server grants `away-notify`. Status lines need `draft/metadata-2` and `batch`. Typing ellipsis needs `message-tags`. Member ranks follow the server `PREFIX`.
 - Keyboard first. `Ctrl+/` lists the shortcuts. Walk conversations and networks, `Ctrl+K` jump, `Alt+A` next unread, `Ctrl+F` find, Tab nick complete, Up/Down history, drafts that stay with each conversation.
-- Slash commands from the same single-line composer, with complete after `/`. Catalog is `/me`, `/join` (`/j`), `/part` (`/leave`), `/nick`, `/quit`, `/clear`, `/close`, `/query`, `/msg`, `/topic`, `/notice`, `/away`, `/back`, `/whois`, `/mode`, `/kick`, `/invite`, `/ignore`, `/unignore`, `/ignored`, `/op`, `/deop`, `/voice`, `/devoice`, `/ban`, `/ns`, `/cs`, `/raw` (`/quote`), and `/help`.
+- Slash commands from the same single-line composer, with complete after `/`. Catalog is `/me`, `/join` (`/j`), `/part` (`/leave`), `/nick`, `/disconnect` (`/quit`), `/clear`, `/close`, `/query`, `/msg`, `/topic`, `/notice`, `/away`, `/back`, `/whois`, `/mode`, `/kick`, `/invite`, `/ignore`, `/unignore`, `/ignored`, `/op`, `/deop`, `/voice`, `/devoice`, `/ban`, `/ns`, `/cs`, `/raw` (`/quote`), and `/help`.
 - `/ignore` hides private messages, notices, and invites from that nick and persists per network. Channel text stays visible.
 - Desktop notification for an unfocused mention or DM. Focused window stays quiet.
 - Clickable `http` and `https` links in chat and Status. Other schemes do nothing.
