@@ -1,5 +1,6 @@
 #include <QCoreApplication>
 #include <QFile>
+#include <QRegularExpression>
 #include <QSettings>
 #include <QTemporaryDir>
 #include <QTest>
@@ -15,6 +16,7 @@ class ProfileTest : public QObject
 
 private slots:
     void init();
+    void createMintsElevenCharNetworkId();
     void suggestedPrefillsLiberachat();
     void validateRefusesIncompleteAndUnsendable();
     void validateRefusesUnsendableAccountAndBouncerNetwork();
@@ -49,6 +51,14 @@ QString ProfileTest::settingsFile() const
 {
     QSettings settings;
     return settings.fileName();
+}
+
+void ProfileTest::createMintsElevenCharNetworkId()
+{
+    const QString id = IrcNetworkProfile::create().networkId;
+    QCOMPARE(id.size(), 11);
+    QVERIFY(QRegularExpression(QStringLiteral("^[A-Za-z0-9_-]{11}$")).match(id).hasMatch());
+    QVERIFY(IrcNetworkProfile::create().networkId != id);
 }
 
 void ProfileTest::suggestedPrefillsLiberachat()

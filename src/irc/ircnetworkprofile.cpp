@@ -3,9 +3,9 @@
 #include "irccommandbuilder.h"
 #include "ircserverfeatures.h"
 
+#include <QByteArray>
 #include <QRandomGenerator>
 #include <QRegularExpression>
-#include <QUuid>
 
 namespace
 {
@@ -64,7 +64,10 @@ QStringList IrcNetworkProfile::parseAutojoin(const QString &channels)
 IrcNetworkProfile IrcNetworkProfile::create()
 {
     IrcNetworkProfile profile;
-    profile.networkId = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    const quint64 bits = QRandomGenerator::system()->generate64();
+    const QByteArray bytes(reinterpret_cast<const char *>(&bits), 8);
+    profile.networkId = QString::fromLatin1(
+        bytes.toBase64(QByteArray::Base64UrlEncoding | QByteArray::OmitTrailingEquals));
     return profile;
 }
 
