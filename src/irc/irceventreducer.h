@@ -97,6 +97,9 @@ struct IrcMentionArrival
 {
     QString author;
     QString body;
+    QString networkId;
+    QString target;
+    IrcMsgId msgid{};
 };
 
 enum class IrcConversationCause {
@@ -192,7 +195,8 @@ private:
                          const IrcConversationKey& key,
                          const QString& author,
                          const QString& body,
-                         IrcMessageKind kind);
+                         IrcMessageKind kind,
+                         const IrcMsgId& msgid);
     void appendEvent(IrcConversationState& conversation,
                      const QString& body,
                      bool collapsible = false);

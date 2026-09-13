@@ -531,6 +531,20 @@ void IrcController::openDirectMessage(const QString& nick)
     selectConversation(m_selected->networkId, nick);
 }
 
+void IrcController::revealConversation(const QString& networkId,
+                                       const QString& target)
+{
+    if (networkId.isEmpty() || target.isEmpty())
+        return;
+    const IrcConversationKey key = m_reducer.conversationKey(networkId, target);
+    if (!m_reducer.find(key)) {
+        if (!m_reducer.ensureConversation(key, target, IrcConversationCause::UserOpen))
+            return;
+        m_conversations.reload();
+    }
+    selectConversation(networkId, target);
+}
+
 void IrcController::closeDirectMessage()
 {
     if (!selectedIsCloseableDirect())
@@ -1528,8 +1542,10 @@ void IrcController::apply(const IrcEvent& event)
     if (notify.rearmTyping)
         armTypingRefresh();
     notifySelfAwayIfChanged(previousId, previousAway);
-    if (std::optional<IrcMentionArrival> mention = m_reducer.takeMentionArrival())
-        emit mentionArrived(mention->author, mention->body);
+    if (std::optional<IrcMentionArrival> mention = m_reducer.takeMentionArrival()) {
+        emit mentionArrived(mention->author, mention->body, mention->networkId,
+                            mention->target, mention->msgid.value);
+    }
 }
 
 void IrcController::publish(const IrcViewNotify& notify)

@@ -311,6 +311,8 @@ private slots:
     void automaticIdentifyDoesNotOpenNickServDirect();
     void mentionArrivedOnSelectedBuffer();
     void mentionArrivedOnDirectMessageWithoutNick();
+    void mentionArrivedCarriesNetworkTargetAndMsgid();
+    void revealConversationSelectsExistingAndRecreatesClosedDirect();
     void chghostLeavesMemberNickAndRanks();
     void twoSessionsStartTogether();
     void startingBackgroundNetworkDoesNotStealStatus();
@@ -3462,6 +3464,85 @@ void ControllerTest::mentionArrivedOnDirectMessageWithoutNick()
     QCOMPARE(spy.count(), 2);
     QCOMPARE(spy.at(1).at(0).toString(), QStringLiteral("Alice"));
     QCOMPARE(spy.at(1).at(1).toString(), QStringLiteral("waves"));
+}
+
+void ControllerTest::mentionArrivedCarriesNetworkTargetAndMsgid()
+{
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+                                                transport);
+    QVERIFY(session);
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    transport->completeConnect();
+    transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
+                          ":server 001 omairc :Welcome\r\n"
+                          ":omairc!u@h JOIN :#omarchy\r\n"));
+    QCOMPARE(controller.selectedTarget(), QStringLiteral("#omarchy"));
+
+    QSignalSpy spy(&controller, &IrcController::mentionArrived);
+    transport->injectBytes(
+        QByteArrayLiteral("@msgid=mid-1 :Alice!u@h PRIVMSG #omarchy :omairc: ping\r\n"));
+    QCOMPARE(spy.count(), 1);
+    QCOMPARE(spy.at(0).at(0).toString(), QStringLiteral("Alice"));
+    QCOMPARE(spy.at(0).at(1).toString(), QStringLiteral("omairc: ping"));
+    QCOMPARE(spy.at(0).at(2).toString(), QStringLiteral("libera"));
+    QCOMPARE(spy.at(0).at(3).toString(), QStringLiteral("#omarchy"));
+    QCOMPARE(spy.at(0).at(4).toString(), QStringLiteral("mid-1"));
+
+    transport->injectBytes(
+        QByteArrayLiteral("@msgid=dm-7 :Alice!u@h PRIVMSG omairc :hello\r\n"));
+    QCOMPARE(spy.count(), 2);
+    QCOMPARE(spy.at(1).at(0).toString(), QStringLiteral("Alice"));
+    QCOMPARE(spy.at(1).at(1).toString(), QStringLiteral("hello"));
+    QCOMPARE(spy.at(1).at(2).toString(), QStringLiteral("libera"));
+    QCOMPARE(spy.at(1).at(3).toString(), QStringLiteral("Alice"));
+    QCOMPARE(spy.at(1).at(4).toString(), QStringLiteral("dm-7"));
+}
+
+void ControllerTest::revealConversationSelectsExistingAndRecreatesClosedDirect()
+{
+    IrcController controller;
+    auto *transportA = new FakeIrcTransport;
+    auto *transportB = new FakeIrcTransport;
+    QVERIFY(controller.addSession(config(QStringLiteral("libera")), transportA));
+    QVERIFY(controller.addSession(config(QStringLiteral("oftc")), transportB));
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("oftc")));
+    registerSession(controller.session(QStringLiteral("libera")), transportA);
+    registerSession(controller.session(QStringLiteral("oftc")), transportB);
+    transportA->injectBytes(QByteArrayLiteral(":omairc!u@h JOIN :#omarchy\r\n"));
+    transportB->injectBytes(QByteArrayLiteral(":omairc!u@h JOIN :#lab\r\n"));
+    controller.selectConversation(QStringLiteral("oftc"), QStringLiteral("#lab"));
+    QCOMPARE(controller.selectedNetworkId(), QStringLiteral("oftc"));
+
+    controller.revealConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    QCOMPARE(controller.selectedNetworkId(), QStringLiteral("libera"));
+    QCOMPARE(controller.selectedTarget(), QStringLiteral("#omarchy"));
+
+    transportA->injectBytes(
+        QByteArrayLiteral(":Alice!u@h PRIVMSG omairc :hello\r\n"));
+    auto *conversations =
+        qobject_cast<QAbstractItemModel *>(controller.conversations());
+    QVERIFY(conversations);
+    QVERIFY(rowForTarget(conversations, QStringLiteral("Alice")) >= 0);
+
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("Alice"));
+    controller.closeDirectMessage();
+    QVERIFY(rowForTarget(conversations, QStringLiteral("Alice")) < 0);
+
+    controller.selectConversation(QStringLiteral("oftc"), QStringLiteral("#lab"));
+    QCOMPARE(controller.selectedNetworkId(), QStringLiteral("oftc"));
+    controller.revealConversation(QStringLiteral("libera"), QStringLiteral("Alice"));
+    QCOMPARE(controller.selectedNetworkId(), QStringLiteral("libera"));
+    QCOMPARE(controller.selectedTarget(), QStringLiteral("Alice"));
+    QVERIFY(rowForTarget(conversations, QStringLiteral("Alice")) >= 0);
+
+    const QString stillAlice = controller.selectedTarget();
+    controller.revealConversation(QStringLiteral("libera"), QStringLiteral("#missing"));
+    QCOMPARE(controller.selectedTarget(), stillAlice);
+    QCOMPARE(rowForTarget(conversations, QStringLiteral("#missing")), -1);
 }
 
 void ControllerTest::chghostLeavesMemberNickAndRanks()

@@ -142,6 +142,23 @@ ApplicationWindow {
     Material.accent: accentColor
     color: pageColor
 
+    component TranscriptNickHit: MouseArea {
+        required property string nick
+
+        objectName: "transcriptNickHit"
+        anchors.fill: parent
+        enabled: nick.length > 0 && nick !== win.selfNick
+        hoverEnabled: true
+        cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+        Accessible.role: Accessible.Button
+        Accessible.name: nick
+        Accessible.onPressAction: {
+            if (enabled)
+                win.openDirectMessage(nick);
+        }
+        onClicked: win.openDirectMessage(nick)
+    }
+
     component PlainUrlHit: MouseArea {
         required property Item edit
         property bool inviteHits: false
@@ -403,14 +420,60 @@ ApplicationWindow {
         return openAllowedUrl(httpUrlAt(text, index));
     }
 
-    function notifyMentionIfUnfocused(windowActive, author, body) {
+    function notifyMentionIfUnfocused(windowActive, author, body, networkId, target, msgid) {
         if (windowActive)
             return;
         var text = plainIrcText(body);
         lastNotification = { author: author, body: text };
+        if (networkId)
+            lastNotification.networkId = networkId;
+        if (target)
+            lastNotification.target = target;
+        if (msgid)
+            lastNotification.msgid = msgid;
         if (suppressDesktopNotification)
             return;
-        backend.notifyDesktop(author, text);
+        backend.notifyDesktop(author, text, networkId || "", target || "", msgid || "");
+    }
+
+    function msgidRow(msgid) {
+        if (!msgid)
+            return -1;
+        var model = irc ? irc.messages : null;
+        if (!model)
+            return -1;
+        var needle = String(msgid);
+        var count = transcriptRowCount(model);
+        for (var row = 0; row < count; ++row) {
+            if (transcriptField(model, row, "msgid") === needle)
+                return row;
+        }
+        return -1;
+    }
+
+    function activateNotifiedConversation(networkId, target, msgid) {
+        win.show();
+        win.raise();
+        win.requestActivate();
+        if (!irc || !networkId || !target)
+            return;
+        sidebarNetworkFocusId = "";
+        irc.revealConversation(networkId, target);
+        Qt.callLater(function() {
+            if (irc.selectedNetworkId !== networkId || irc.selectedTarget !== target)
+                return;
+            var id = msgid ? String(msgid).trim() : "";
+            var row = id.length > 0 ? win.msgidRow(id) : -1;
+            if (row < 0)
+                messageList.pinToEnd();
+            else
+                win.revealFindMatch(row);
+            composer.forceActiveFocus();
+        });
+    }
+
+    function canOpenDirectMessage(nick) {
+        return nick.length > 0 && nick !== selfNick;
     }
 
     function openDirectMessage(nick) {
@@ -445,7 +508,7 @@ ApplicationWindow {
 
     function activateFocusedMember() {
         var nick = memberNickAt(membersList.currentIndex);
-        if (nick.length === 0 || nick === win.selfNick)
+        if (!canOpenDirectMessage(nick))
             return;
         win.openDirectMessage(nick);
     }
@@ -1480,10 +1543,18 @@ ApplicationWindow {
     }
 
     Connections {
+        target: backend
+        ignoreUnknownSignals: true
+        function onNotificationActivated(networkId, target, msgid) {
+            win.activateNotifiedConversation(networkId, target, msgid);
+        }
+    }
+
+    Connections {
         target: win.irc
         ignoreUnknownSignals: true
-        function onMentionArrived(author, body) {
-            win.notifyMentionIfUnfocused(win.active, author, body);
+        function onMentionArrived(author, body, networkId, target, msgid) {
+            win.notifyMentionIfUnfocused(win.active, author, body, networkId, target, msgid);
         }
     }
 
@@ -2617,6 +2688,8 @@ ApplicationWindow {
                             font.bold: true
                             font.pixelSize: win.scaledSize(13)
                         }
+
+                        TranscriptNickHit { nick: messageDelegate.author }
                     }
 
                     Row {
@@ -2629,11 +2702,14 @@ ApplicationWindow {
                         spacing: win.scaledSize(9)
 
                         Text {
+                            objectName: "messageAuthor"
                             text: messageDelegate.author
                             color: messageDelegate.replayed ? win.mutedColor : win.nickColor(messageDelegate.author)
                             font.family: "iA Writer Mono S"
                             font.bold: true
                             font.pixelSize: win.scaledSize(12)
+
+                            TranscriptNickHit { nick: messageDelegate.author }
                         }
 
                         Text {
@@ -3814,7 +3890,7 @@ ApplicationWindow {
                     Accessible.description: win.memberStatusVisible ? status : ""
                     Accessible.role: Accessible.Button
                     Accessible.onPressAction: {
-                        if (nick !== win.selfNick)
+                        if (win.canOpenDirectMessage(nick))
                             win.openDirectMessage(nick);
                     }
                     width: ListView.view.width
@@ -3918,7 +3994,8 @@ ApplicationWindow {
                     MouseArea {
                         id: memberMouse
                         anchors.fill: parent
-                        enabled: memberDelegate.nick !== win.selfNick
+                        enabled: memberDelegate.nick.length > 0
+                            && memberDelegate.nick !== win.selfNick
                         hoverEnabled: true
                         cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
                         onClicked: win.openDirectMessage(memberDelegate.nick)

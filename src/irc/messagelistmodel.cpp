@@ -168,6 +168,8 @@ QVariant MessageListModel::data(const QModelIndex& index, int role) const
         return message.origin == IrcOrigin::Replay
             ? QStringLiteral("replay")
             : QStringLiteral("live");
+    case MsgidRole:
+        return message.msgid.value;
     default:
         return {};
     }
@@ -182,6 +184,7 @@ QHash<int, QByteArray> MessageListModel::staticRoleNames()
         {KindRole, "kind"},
         {NetworkIdRole, "networkId"},
         {OriginRole, "origin"},
+        {MsgidRole, "msgid"},
     };
 }
 

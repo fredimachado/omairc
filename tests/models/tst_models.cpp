@@ -136,6 +136,7 @@ void ModelTest::roleNamesMatchQml()
     QCOMPARE(messages.roleNames()[MessageListModel::NetworkIdRole],
              QByteArray("networkId"));
     QCOMPARE(messages.roleNames()[MessageListModel::OriginRole], QByteArray("origin"));
+    QCOMPARE(messages.roleNames()[MessageListModel::MsgidRole], QByteArray("msgid"));
 
     QCOMPARE(members.roleNames()[MemberListModel::NickRole], QByteArray("nick"));
     QCOMPARE(members.roleNames()[MemberListModel::LabelRole], QByteArray("label"));
@@ -877,8 +878,10 @@ void ModelTest::originRoleNameAndValues()
     QCOMPARE(messages.field(0, QStringLiteral("origin")), QStringLiteral("replay"));
     QCOMPARE(messages.field(0, QStringLiteral("body")), QStringLiteral("older"));
     QCOMPARE(messages.field(0, QStringLiteral("author")), QStringLiteral("alice"));
+    QCOMPARE(messages.field(0, QStringLiteral("msgid")), QStringLiteral("id-1"));
     QCOMPARE(messages.field(1, QStringLiteral("origin")), QStringLiteral("live"));
     QCOMPARE(messages.field(1, QStringLiteral("body")), QStringLiteral("omairc joined"));
+    QCOMPARE(messages.field(1, QStringLiteral("msgid")), QString());
     QCOMPARE(messages.field(0, QStringLiteral("no-such-role")), QString());
     QCOMPARE(roleAt(messages, 0, MessageListModel::OriginRole),
              QStringLiteral("replay"));
