@@ -203,8 +203,29 @@ void IrcEventReducer::forgetNetwork(const QString& networkId)
     m_currentNicks.erase(networkId);
     m_presence.erase(networkId);
     m_selfAway.erase(networkId);
+    for (auto it = m_mutedKeys.begin(); it != m_mutedKeys.end(); ) {
+        if (it->networkId == networkId)
+            it = m_mutedKeys.erase(it);
+        else
+            ++it;
+    }
     if (m_selected && m_selected->networkId == networkId)
         m_selected.reset();
+}
+
+void IrcEventReducer::setMuted(const IrcConversationKey& key, bool muted)
+{
+    if (key.networkId.isEmpty() || key.normalizedTarget.isEmpty())
+        return;
+    if (muted)
+        m_mutedKeys.insert(key);
+    else
+        m_mutedKeys.erase(key);
+    if (IrcConversationState *conversation = findMutable(key)) {
+        conversation->muted = muted;
+        if (muted)
+            conversation->mentions = 0;
+    }
 }
 
 void IrcEventReducer::clearMessages(const IrcConversationKey& key)
@@ -404,6 +425,7 @@ IrcConversationState *IrcEventReducer::ensureConversation(
     IrcConversationState conversation;
     conversation.key = key;
     conversation.target = displayTarget;
+    conversation.muted = m_mutedKeys.count(key) > 0;
     if (targetIsChannel)
         conversation.detail = IrcChannelState{};
     else
@@ -498,12 +520,12 @@ void IrcEventReducer::noteChatArrival(IrcConversationState& conversation,
     const bool self = isSelf(key.networkId, author);
     const std::optional<ChatLineReason> reason = classifyChatLine(
         conversation, kind, self, isMention(key.networkId, body));
-    if (reason)
+    if (reason && !conversation.muted)
         m_mentionArrival = IrcMentionArrival{author, body};
     if (self || (m_selected && *m_selected == key))
         return;
     ++conversation.unread;
-    if (reason == ChatLineReason::NickMention)
+    if (reason == ChatLineReason::NickMention && !conversation.muted)
         ++conversation.mentions;
 }
 
@@ -721,6 +743,8 @@ void IrcEventReducer::reduce(const IrcNickEvent& event)
     m_conversations.erase(direct);
     moved.key = newKey;
     moved.target = event.newNick;
+    if (m_mutedKeys.erase(oldKey))
+        m_mutedKeys.insert(newKey);
     auto existing = m_conversations.find(newKey);
     if (existing == m_conversations.end()) {
         m_conversations.emplace(newKey, std::move(moved));
@@ -738,6 +762,7 @@ void IrcEventReducer::reduce(const IrcNickEvent& event)
         capMessages(existing->second);
         existing->second.unread += moved.unread;
         existing->second.mentions += moved.mentions;
+        existing->second.muted = existing->second.muted || moved.muted;
         for (auto& hint : moved.typing)
             existing->second.typing.insert_or_assign(hint.first,
                                                      std::move(hint.second));

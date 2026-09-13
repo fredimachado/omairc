@@ -7,6 +7,7 @@ Mention notify is the desktop notification Omairc sends when a mention or a dire
 - `notify-unfocused` records a desktop notification for a mention while the window is inactive.
 - `notify-dm-unfocused` records a desktop notification for a direct message that does not contain the nick while the window is inactive.
 - `notify-focused` sends nothing when the window is already focused.
+- `notify-muted` sends nothing for a muted channel or direct message. Chat still arrives. Mentions stay at 0.
 - `notify-plain` strips IRC formatting from the notification body (`hey \x02fred` becomes `hey fred`).
 
 ## How to get to it (user POV)

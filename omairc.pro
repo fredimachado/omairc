@@ -36,6 +36,7 @@ HEADERS += \
     src/irc/ircpresence.h \
     src/irc/irctcp.h \
     src/irc/ircignore.h \
+    src/irc/ircmute.h \
     src/irc/ircevent.h \
     src/irc/ircviewnotify.h \
     src/irc/irceventtranslator.h \
@@ -91,6 +92,7 @@ SOURCES += \
     src/irc/ircpresence.cpp \
     src/irc/irctcp.cpp \
     src/irc/ircignore.cpp \
+    src/irc/ircmute.cpp \
     src/irc/irceventtranslator.cpp \
     src/irc/irceventreducer.cpp \
     src/irc/qtirctransport.cpp \

@@ -721,7 +721,7 @@ ApplicationWindow {
                 continue;
 
             var row = rows[rowIndex];
-            if (mentionRow === null && row.mention === true)
+            if (mentionRow === null && row.mention === true && row.muted !== true)
                 mentionRow = row;
             if (unreadRow === null && row.unread > 0)
                 unreadRow = row;
@@ -1710,6 +1710,7 @@ ApplicationWindow {
         property string conversationName
         property int unread: 0
         property bool mention: false
+        property bool muted: false
         property bool direct: false
         property bool typing: false
         property string networkId: ""
@@ -1799,11 +1800,13 @@ ApplicationWindow {
             text: (conversationRow.direct ? "" : "#  ") + conversationRow.conversationName.replace("#", "")
             color: conversationRow.current
                 ? win.inkColor
-                : conversationRow.unread > 0 ? win.inkColor : win.mutedColor
+                : conversationRow.muted || conversationRow.unread === 0
+                    ? win.mutedColor
+                    : win.inkColor
             elide: Text.ElideRight
             font.family: "iA Writer Mono S"
             font.bold: conversationRow.current
-                       || conversationRow.unread > 0
+                       || (!conversationRow.muted && conversationRow.unread > 0)
             font.pixelSize: win.scaledSize(13)
         }
 
@@ -1843,13 +1846,15 @@ ApplicationWindow {
                 width: Math.max(win.scaledSize(19), badgeText.implicitWidth + win.scaledSize(10))
                 height: win.scaledSize(19)
                 radius: height / 2
-                color: conversationRow.mention ? win.accentColor : win.raisedColor
+                color: conversationRow.mention && !conversationRow.muted
+                    ? win.accentColor : win.raisedColor
 
                 Text {
                     id: badgeText
                     anchors.centerIn: parent
                     text: conversationRow.unread
-                    color: conversationRow.mention ? "#ffffff" : win.inkColor
+                    color: conversationRow.mention && !conversationRow.muted
+                        ? "#ffffff" : win.inkColor
                     font.family: "iA Writer Mono S"
                     font.bold: true
                     font.pixelSize: win.scaledSize(10)
@@ -2225,6 +2230,7 @@ ApplicationWindow {
                                     conversationId: model.conversationId
                                     unread: model.unread
                                     mention: model.mention
+                                    muted: model.muted
                                     direct: model.direct
                                     typing: model.typing
                                     networkId: model.networkId
@@ -2268,6 +2274,7 @@ ApplicationWindow {
                                     conversationId: model.conversationId
                                     unread: model.unread
                                     mention: model.mention
+                                    muted: model.muted
                                     direct: model.direct
                                     typing: model.typing
                                     networkId: model.networkId

@@ -60,6 +60,7 @@ private slots:
     void unreadMentionsRespectSelection();
     void mentionArrivalSurvivesSelection();
     void mentionArrivalOnDirectMessage();
+    void mutedChatDoesNotMention();
     void welcomeResetsMembership();
     void awayIsOneFactVisibleInEveryChannel();
     void metadataStatusIsSeparateFromPrefixModes();
@@ -477,6 +478,47 @@ void ReducerTest::mentionArrivalOnDirectMessage()
         QStringLiteral("Alice"),
     });
     QVERIFY(!reducer.takeMentionArrival().has_value());
+}
+
+void ReducerTest::mutedChatDoesNotMention()
+{
+    IrcEventReducer reducer;
+    welcome(reducer, networkA);
+    const IrcConversationKey room =
+        reducer.conversationKey(networkA, QStringLiteral("#room"));
+    reducer.setMuted(room, true);
+    reducer.apply(IrcMessageEvent{
+        room,
+        QStringLiteral("Alice"),
+        QStringLiteral("omairc: ping"),
+        timestamp,
+        QStringLiteral("#room"),
+    });
+
+    QVERIFY(!reducer.takeMentionArrival().has_value());
+    const IrcConversationState *muted = reducer.find(room);
+    QVERIFY(muted);
+    QVERIFY(muted->muted);
+    QCOMPARE(muted->mentions, 0);
+    QCOMPARE(muted->unread, 1);
+    QCOMPARE(muted->messages.back().body, QStringLiteral("omairc: ping"));
+
+    reducer.markSelected(room);
+    QVERIFY(reducer.find(room)->muted);
+    QCOMPARE(reducer.find(room)->unread, 0);
+
+    reducer.clearSelection();
+    reducer.setMuted(room, false);
+    QVERIFY(!reducer.find(room)->muted);
+    reducer.apply(IrcMessageEvent{
+        room,
+        QStringLiteral("Alice"),
+        QStringLiteral("omairc: back"),
+        timestamp,
+        QStringLiteral("#room"),
+    });
+    QVERIFY(reducer.takeMentionArrival().has_value());
+    QCOMPARE(reducer.find(room)->mentions, 1);
 }
 
 void ReducerTest::welcomeResetsMembership()

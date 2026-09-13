@@ -1343,6 +1343,20 @@ TestCase {
         tryCompare(appWindow, "currentConversation", "#ricing");
     }
 
+    function test_jumpToNextUnreadSkipsMutedMention() {
+        openSeededAppWindow();
+        compare(appWindow.currentConversation, "#omarchy");
+        verify(appWindow.irc.sendMessage("/mute #ricing"));
+        var ricing = namedItem(liveConversation("#ricing"));
+        tryCompare(ricing, "muted", true);
+        compare(ricing.mention, false);
+
+        keyClick(Qt.Key_A, Qt.AltModifier);
+
+        tryCompare(appWindow, "currentConversation", "anna");
+        compare(namedItem(liveConversation("#ricing")).muted, true);
+    }
+
     function test_jumpToNextUnreadFallsBackToUnread() {
         openSeededAppWindow();
         mouseClick(namedItem(liveConversation("#ricing")));

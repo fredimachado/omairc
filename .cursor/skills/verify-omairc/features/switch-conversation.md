@@ -14,7 +14,7 @@ Switch conversation lets a user leave the current mock chat and open another cha
 
 - Click `#omarchy`, `#desktop`, `#ricing`, or `#help` under CHANNELS.
 - Click `anna` or `dax` under DIRECT MESSAGES.
-- Press `Alt+Down` / `Alt+Up` to walk CHANNELS then DIRECT MESSAGES. Press `Alt+A` for the next unread (mentions first).
+- Press `Alt+Down` / `Alt+Up` to walk CHANNELS then DIRECT MESSAGES. Press `Alt+A` for the next unread (mentions first, skipping muted).
 
 ## Driving it with control-omairc
 

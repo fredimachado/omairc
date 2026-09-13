@@ -4,6 +4,7 @@
 #include "irccommand.h"
 #include "irceventtranslator.h"
 #include "ircignore.h"
+#include "ircmute.h"
 #include "ircjointarget.h"
 #include "ircviewnotify.h"
 #include "irctyping.h"
@@ -51,6 +52,15 @@ bool ignoreNickIsUsable(const QString& nick, const IrcServerFeatures& features)
         return false;
     }
     return true;
+}
+
+bool muteTargetIsUsable(const QString& target, const IrcServerFeatures& features)
+{
+    if (target.isEmpty())
+        return false;
+    if (features.isChannel(utf8(target)))
+        return true;
+    return ignoreNickIsUsable(target, features);
 }
 
 QString stateText(IrcSession::State state)
@@ -114,6 +124,7 @@ IrcSession *IrcController::addSession(const IrcSessionConfig& config,
         return nullptr;
 
     m_currentNicks.insert(config.networkId, config.nick);
+    hydrateMutes(config.networkId);
     session->setIgnoreFilter(
         [this, networkId = config.networkId](const IrcMessage& message,
                                              const QString& selfNick) {
@@ -179,6 +190,7 @@ void IrcController::forgetNetworkState(const QString &networkId)
     m_capabilities.remove(networkId);
     m_lastErrors.remove(networkId);
     m_ignores.forget(networkId);
+    m_mutes.forget(networkId);
     if (m_selected && m_selected->networkId == networkId)
         clearConversationSelection();
     reloadModels();
@@ -551,6 +563,7 @@ void IrcController::dropSelectedDirectAndReselect()
         const IrcConversationState *neighbor = m_reducer.find(*next);
         nextTarget = neighbor ? neighbor->target : next->normalizedTarget;
     }
+    applyMute(dropping.networkId, m_selectedTarget, false);
     m_reducer.dropDirectMessage(dropping);
     reloadModels();
     if (!nextTarget.isEmpty())
@@ -708,6 +721,12 @@ IrcCommandOutcome IrcController::dispatch(const IrcCommand& command,
         || command.verb == IrcCommand::Verb::Unignore
         || command.verb == IrcCommand::Verb::Ignored) {
         return dispatchIgnore(command, surface);
+    }
+
+    if (command.verb == IrcCommand::Verb::Mute
+        || command.verb == IrcCommand::Verb::Unmute
+        || command.verb == IrcCommand::Verb::Muted) {
+        return dispatchMute(command, surface);
     }
 
     if (command.verb == IrcCommand::Verb::Help)
@@ -906,6 +925,79 @@ IrcCommandOutcome IrcController::dispatchIgnore(const IrcCommand& command,
             const bool removed = m_ignores.remove(networkId, nick, mapping);
             text = removed ? QStringLiteral("No longer ignoring %1").arg(nick)
                            : QStringLiteral("Not ignoring %1").arg(nick);
+        }
+    }
+    m_console.record(IrcStatusEntry::outcome(networkId, text));
+    return IrcCommandOutcome::Sent;
+}
+
+void IrcController::hydrateMutes(const QString& networkId)
+{
+    for (const QString& target : m_mutes.targets(networkId))
+        m_reducer.setMuted(m_reducer.conversationKey(networkId, target), true);
+}
+
+bool IrcController::applyMute(const QString& networkId,
+                              const QString& target,
+                              bool muted)
+{
+    if (networkId.isEmpty() || target.isEmpty())
+        return false;
+    const IrcCaseMapping& mapping =
+        m_reducer.serverFeatures(networkId).caseMapping();
+    const bool changed = muted
+        ? m_mutes.add(networkId, target, mapping)
+        : m_mutes.remove(networkId, target, mapping);
+    m_reducer.setMuted(m_reducer.conversationKey(networkId, target), muted);
+    m_conversations.reload();
+    ++m_conversationEpoch;
+    emit conversationStateChanged();
+    return changed;
+}
+
+IrcCommandOutcome IrcController::dispatchMute(const IrcCommand& command,
+                                              IrcComposerSurface surface)
+{
+    const QString networkId = queryNetworkId(surface);
+    if (networkId.isEmpty()) {
+        if (surface == IrcComposerSurface::Conversation && !m_selected)
+            return IrcCommandOutcome::WrongScope;
+        return IrcCommandOutcome::Refused;
+    }
+    IrcSession *session = sessionFor(surface);
+    if (!session || session->state() == IrcSession::State::Idle
+        || session->state() == IrcSession::State::Failed)
+        return IrcCommandOutcome::NotConnected;
+
+    const IrcServerFeatures& features = m_reducer.serverFeatures(networkId);
+    const IrcCaseMapping& mapping = features.caseMapping();
+    QString text;
+    if (command.verb == IrcCommand::Verb::Muted) {
+        if (!command.argument.isEmpty())
+            return IrcCommandOutcome::Refused;
+        const QStringList targets = m_mutes.listed(networkId, mapping);
+        text = targets.isEmpty()
+            ? QStringLiteral("Not muting anything")
+            : QStringLiteral("Muted: %1").arg(targets.join(QStringLiteral(", ")));
+    } else {
+        QString target = firstToken(command.argument);
+        if (!restAfterFirstToken(command.argument).isEmpty())
+            return IrcCommandOutcome::Refused;
+        if (target.isEmpty()) {
+            if (surface == IrcComposerSurface::Status || !m_selected)
+                return IrcCommandOutcome::WrongScope;
+            target = selectedTarget();
+        }
+        if (!muteTargetIsUsable(target, features))
+            return IrcCommandOutcome::Refused;
+        if (command.verb == IrcCommand::Verb::Mute) {
+            const bool added = applyMute(networkId, target, true);
+            text = added ? QStringLiteral("Muted %1").arg(target)
+                         : QStringLiteral("Already muted %1").arg(target);
+        } else {
+            const bool removed = applyMute(networkId, target, false);
+            text = removed ? QStringLiteral("No longer muted %1").arg(target)
+                           : QStringLiteral("Not muted %1").arg(target);
         }
     }
     m_console.record(IrcStatusEntry::outcome(networkId, text));

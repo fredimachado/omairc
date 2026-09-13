@@ -130,6 +130,8 @@ QVariant ConversationListModel::data(const QModelIndex& index, int role) const
     case TypingRole:
         return m_reducer.directPeerIsTyping(conversation->key,
                                             QDateTime::currentDateTimeUtc());
+    case MutedRole:
+        return conversation->muted;
     default:
         return {};
     }
@@ -146,6 +148,7 @@ QHash<int, QByteArray> ConversationListModel::roleNames() const
         {ConversationIdRole, "conversationId"},
         {ConversationNameRole, "conversationName"},
         {TypingRole, "typing"},
+        {MutedRole, "muted"},
     };
 }
 
@@ -158,7 +161,7 @@ void ConversationListModel::reload()
         emit dataChanged(index(0, 0),
                          index(keys.size() - 1, 0),
                          {Qt::DisplayRole, ConversationRole, UnreadRole, MentionRole,
-                          TypingRole});
+                          TypingRole, MutedRole});
         return;
     }
     beginResetModel();
