@@ -3,6 +3,7 @@
 #include "conversationlistmodel.h"
 #include "irceventreducer.h"
 #include "ircignore.h"
+#include "ircmute.h"
 #include "ircsessionmanager.h"
 #include "ircstatusconsole.h"
 #include "ircstatusentry.h"
@@ -168,6 +169,12 @@ private:
                                     IrcComposerSurface surface);
     IrcCommandOutcome dispatchIgnore(const IrcCommand& command,
                                      IrcComposerSurface surface);
+    IrcCommandOutcome dispatchMute(const IrcCommand& command,
+                                   IrcComposerSurface surface);
+    void hydrateMutes(const QString& networkId);
+    void applyMute(const QString& networkId,
+                   const QString& target,
+                   bool muted);
     IrcCommandOutcome dispatchChannelModeWrapper(const IrcCommand& command,
                                                 IrcComposerSurface surface);
     IrcCommandOutcome dispatchServiceMsg(const IrcCommand& command,
@@ -206,6 +213,7 @@ private:
     IrcStatusConsole m_console;
     IrcEventReducer m_reducer;
     IrcIgnoreStore m_ignores;
+    IrcMuteStore m_mutes;
     ConversationListModel m_conversations;
     MessageListModel m_messages;
     MemberListModel m_members;

@@ -53,6 +53,7 @@ public:
         ConversationIdRole,
         ConversationNameRole,
         TypingRole,
+        MutedRole,
     };
 
     explicit ConversationListModel(IrcEventReducer& reducer,

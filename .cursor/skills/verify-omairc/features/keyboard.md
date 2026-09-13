@@ -7,7 +7,7 @@ Keyboard is the window chord map: walk conversations, walk network headers, jump
 - `keyboard-walk` moves CHANNELS then DIRECT MESSAGES with `Alt+Down` / `Alt+Up`, wrapping at both ends. Status is not in that list.
 - `keyboard-networks` moves network headers with `Alt+Left` / `Alt+Right`, wrapping at both ends. A network with no conversations stays in that walk. Enter opens that network's Status. `Ctrl+,` opens Connect for that header.
 - `keyboard-jump` opens a filter overlay with `Ctrl+K`. It lists channels, direct messages, and each network's Status. Type filters the list. Up/Down highlight, Enter jumps, Escape dismisses and returns to the composer. It is a no-op while Connect is visible.
-- `keyboard-unread` jumps to the next unread with `Alt+A`, mentions first.
+- `keyboard-unread` jumps to the next unread with `Alt+A`, mentions first. Muted conversations are skipped while hunting mentions.
 - `keyboard-complete` completes a nick prefix in the composer with `Tab`.
 - `keyboard-history` recalls sent lines with `Up` / `Down` and restores a typed draft on `Down`.
 - `keyboard-drafts` keeps unsent composer text per conversation and Status. Switching targets restores that draft. It does not follow you.

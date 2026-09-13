@@ -102,6 +102,8 @@ void ModelTest::roleNamesMatchQml()
              QByteArray("conversationName"));
     QCOMPARE(conversations.roleNames()[ConversationListModel::TypingRole],
              QByteArray("typing"));
+    QCOMPARE(conversations.roleNames()[ConversationListModel::MutedRole],
+             QByteArray("muted"));
 
     QCOMPARE(messages.roleNames()[MessageListModel::AuthorRole], QByteArray("author"));
     QCOMPARE(messages.roleNames()[MessageListModel::TimeRole], QByteArray("time"));
