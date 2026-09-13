@@ -3,6 +3,7 @@
 #include "ircchannelmode.h"
 #include "irccommand.h"
 #include "irceventtranslator.h"
+#include "irchighlight.h"
 #include "ircignore.h"
 #include "ircmute.h"
 #include "ircjointarget.h"
@@ -132,6 +133,7 @@ IrcSession *IrcController::addSession(const IrcSessionConfig& config,
                 message, selfNick, m_ignores.nicks(networkId),
                 m_reducer.serverFeatures(networkId));
         });
+    syncHighlightWords(config.networkId);
     connect(session, &IrcSession::registered, this,
             [this, session](const QString& networkId) {
         m_currentNicks[networkId] = session->nick();
@@ -191,6 +193,7 @@ void IrcController::forgetNetworkState(const QString &networkId)
     m_lastErrors.remove(networkId);
     m_ignores.forget(networkId);
     m_mutes.forget(networkId);
+    m_highlights.forget(networkId);
     if (m_selected && m_selected->networkId == networkId)
         clearConversationSelection();
     reloadModels();
@@ -729,6 +732,12 @@ IrcCommandOutcome IrcController::dispatch(const IrcCommand& command,
         return dispatchMute(command, surface);
     }
 
+    if (command.verb == IrcCommand::Verb::Highlight
+        || command.verb == IrcCommand::Verb::Unhighlight
+        || command.verb == IrcCommand::Verb::Highlights) {
+        return dispatchHighlight(command, surface);
+    }
+
     if (command.verb == IrcCommand::Verb::Help)
         return dispatchHelp(surface);
 
@@ -1002,6 +1011,54 @@ IrcCommandOutcome IrcController::dispatchMute(const IrcCommand& command,
     }
     m_console.record(IrcStatusEntry::outcome(networkId, text));
     return IrcCommandOutcome::Sent;
+}
+
+IrcCommandOutcome IrcController::dispatchHighlight(const IrcCommand& command,
+                                                   IrcComposerSurface surface)
+{
+    const QString networkId = queryNetworkId(surface);
+    if (networkId.isEmpty()) {
+        if (surface == IrcComposerSurface::Conversation && !m_selected)
+            return IrcCommandOutcome::WrongScope;
+        return IrcCommandOutcome::Refused;
+    }
+    IrcSession *session = sessionFor(surface);
+    if (!session || session->state() == IrcSession::State::Idle
+        || session->state() == IrcSession::State::Failed)
+        return IrcCommandOutcome::NotConnected;
+
+    const IrcCaseMapping& mapping =
+        m_reducer.serverFeatures(networkId).caseMapping();
+    QString text;
+    if (command.verb == IrcCommand::Verb::Highlights) {
+        if (!command.argument.isEmpty())
+            return IrcCommandOutcome::Refused;
+        const QStringList words = m_highlights.listed(networkId, mapping);
+        text = words.isEmpty()
+            ? QStringLiteral("No highlight words")
+            : QStringLiteral("Highlights: %1").arg(words.join(QStringLiteral(", ")));
+    } else {
+        const QString word = firstToken(command.argument);
+        if (word.isEmpty() || !restAfterFirstToken(command.argument).isEmpty())
+            return IrcCommandOutcome::Refused;
+        if (command.verb == IrcCommand::Verb::Highlight) {
+            const bool added = m_highlights.add(networkId, word, mapping);
+            text = added ? QStringLiteral("Highlighting %1").arg(word)
+                         : QStringLiteral("Already highlighting %1").arg(word);
+        } else {
+            const bool removed = m_highlights.remove(networkId, word, mapping);
+            text = removed ? QStringLiteral("No longer highlighting %1").arg(word)
+                           : QStringLiteral("Not highlighting %1").arg(word);
+        }
+        syncHighlightWords(networkId);
+    }
+    m_console.record(IrcStatusEntry::outcome(networkId, text));
+    return IrcCommandOutcome::Sent;
+}
+
+void IrcController::syncHighlightWords(const QString& networkId)
+{
+    m_reducer.setHighlightWords(networkId, m_highlights.words(networkId));
 }
 
 IrcCommandOutcome IrcController::dispatchQuery(const IrcCommand& command,

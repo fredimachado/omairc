@@ -133,6 +133,7 @@ public:
     void setServerFeatures(const QString& networkId,
                            const IrcServerFeatures& features);
     const IrcServerFeatures& serverFeatures(const QString& networkId) const;
+    void setHighlightWords(const QString& networkId, const QStringList& words);
 
     IrcConversationKey conversationKey(const QString& networkId,
                                        const QString& target) const;
@@ -235,6 +236,7 @@ private:
     Store m_conversations;
     std::map<QString, IrcServerFeatures> m_features;
     std::map<QString, QString> m_currentNicks;
+    std::map<QString, QStringList> m_highlightWords;
     std::map<QString, IrcNetworkPresence> m_presence;
     std::set<QString> m_selfAway;
     std::optional<IrcConversationKey> m_selected;

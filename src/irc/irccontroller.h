@@ -2,6 +2,7 @@
 
 #include "conversationlistmodel.h"
 #include "irceventreducer.h"
+#include "irchighlight.h"
 #include "ircignore.h"
 #include "ircmute.h"
 #include "ircsessionmanager.h"
@@ -175,6 +176,9 @@ private:
     bool applyMute(const QString& networkId,
                    const QString& target,
                    bool muted);
+    IrcCommandOutcome dispatchHighlight(const IrcCommand& command,
+                                        IrcComposerSurface surface);
+    void syncHighlightWords(const QString& networkId);
     IrcCommandOutcome dispatchChannelModeWrapper(const IrcCommand& command,
                                                 IrcComposerSurface surface);
     IrcCommandOutcome dispatchServiceMsg(const IrcCommand& command,
@@ -214,6 +218,7 @@ private:
     IrcEventReducer m_reducer;
     IrcIgnoreStore m_ignores;
     IrcMuteStore m_mutes;
+    IrcHighlightStore m_highlights;
     ConversationListModel m_conversations;
     MessageListModel m_messages;
     MemberListModel m_members;
