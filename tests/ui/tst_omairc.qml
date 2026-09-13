@@ -1140,6 +1140,28 @@ TestCase {
         return row;
     }
 
+    function messageIndexWithBody(body) {
+        var list = item("messageList");
+        var row = 0;
+        for (; row < list.model.rowCount(); ++row) {
+            if (field(list.model, row, "body") === body)
+                return row;
+        }
+        fail("Could not find message body " + body);
+        return -1;
+    }
+
+    function renderedRowWithBody(body) {
+        return renderedMessageRow(item("messageList"), messageIndexWithBody(body));
+    }
+
+    function clickNamedInRow(row, childName) {
+        var target = findChild(row, childName);
+        verify(target !== null, "Could not find " + childName);
+        verify(target.visible, childName + " should be visible");
+        mouseClick(target);
+    }
+
     function assertMessageChrome(row, headerVisible, bodyText) {
         var avatar = findChild(row, "messageAvatar");
         var header = findChild(row, "messageHeader");
@@ -2911,6 +2933,99 @@ TestCase {
         });
         verify(!item("membersPanel").visible);
         saveScreenshot("open-direct-message");
+    }
+
+    function test_openDirectMessageFromTranscriptNick() {
+        openSeededAppWindow();
+        var list = item("messageList");
+        var composer = item("messageComposer");
+        var start = list.model.rowCount();
+        injectOmarchyChat("mira", "#omarchy", "transcript-dm-mira");
+        injectOmarchyChat("fred", "#omarchy", "transcript-dm-self");
+        injectOmarchyChat("mira", "#omarchy", "transcript-dm-group-lead", "12:02");
+        injectOmarchyChat("mira", "#omarchy", "transcript-dm-group-follow", "12:02");
+        seed.injectOmarchy(":rio!u@h PART #omarchy\r\n");
+        waitForRowCount(list, start + 5);
+
+        mouseClick(composer);
+        typeText("omarchy draft stays");
+        compare(composer.text, "omarchy draft stays");
+
+        var previousCount = appWindow.irc.conversations.rowCount();
+        var miraRow = renderedRowWithBody("transcript-dm-mira");
+        clickNamedInRow(miraRow, "messageAvatar");
+        tryCompare(appWindow, "currentConversation", "mira");
+        compare(appWindow.currentTopic, "Direct message with mira");
+        tryVerify(function() {
+            return appWindow.irc.conversations.rowCount() === previousCount + 1;
+        });
+        verify(visibleDirects(seed.omarchyNetworkId).indexOf("mira") !== -1);
+        verify(!item("membersPanel").visible);
+
+        mouseClick(namedItem(liveConversation("#omarchy")));
+        tryCompare(appWindow, "currentConversation", "#omarchy");
+        compare(composer.text, "omarchy draft stays");
+
+        miraRow = renderedRowWithBody("transcript-dm-mira");
+        clickNamedInRow(miraRow, "messageAuthor");
+        tryCompare(appWindow, "currentConversation", "mira");
+        compare(appWindow.irc.conversations.rowCount(), previousCount + 1);
+
+        mouseClick(namedItem(liveConversation("#omarchy")));
+        tryCompare(appWindow, "currentConversation", "#omarchy");
+
+        var annaCount = appWindow.irc.conversations.rowCount();
+        var annaRow = renderedRowWithBody(
+            "Morning! Has anyone tried the new minimal install flow yet?");
+        clickNamedInRow(annaRow, "messageAuthor");
+        tryCompare(appWindow, "currentConversation", "anna");
+        compare(appWindow.irc.conversations.rowCount(), annaCount);
+        compare(field(item("messageList").model, item("messageList").model.rowCount() - 1,
+                      "body"),
+                "fred: The prototype already feels at home. Nice work.");
+
+        mouseClick(namedItem(liveConversation("#omarchy")));
+        tryCompare(appWindow, "currentConversation", "#omarchy");
+
+        clickNamedInRow(renderedRowWithBody("transcript-dm-self"), "messageAvatar");
+        compare(appWindow.currentConversation, "#omarchy");
+        clickNamedInRow(renderedRowWithBody("transcript-dm-self"), "messageAuthor");
+        compare(appWindow.currentConversation, "#omarchy");
+
+        var eventRow = renderedRowWithBody("rio left");
+        compare(findChild(eventRow, "messageAvatar").visible, false);
+        compare(findChild(eventRow, "messageHeader").visible, false);
+        mouseClick(findChild(eventRow, "messageEvent"));
+        compare(appWindow.currentConversation, "#omarchy");
+
+        var grouped = renderedRowWithBody("transcript-dm-group-follow");
+        compare(findChild(grouped, "messageAvatar").visible, false);
+        compare(findChild(grouped, "messageHeader").visible, false);
+        mouseClick(findChild(grouped, "messageBody"));
+        compare(appWindow.currentConversation, "#omarchy");
+
+        clickMember("mira");
+        tryCompare(appWindow, "currentConversation", "mira");
+        compare(appWindow.irc.conversations.rowCount(), previousCount + 1);
+
+        mouseClick(namedItem(liveConversation("#omarchy")));
+        tryCompare(appWindow, "currentConversation", "#omarchy");
+        seed.injectOmarchy(":NickServ!NickServ@services PRIVMSG fred "
+                           + ":This nickname is registered.\r\n");
+        compare(findNamed(liveConversation("NickServ")), null);
+        keyClick(Qt.Key_QuoteLeft, Qt.ControlModifier);
+        tryCompare(appWindow, "consoleVisible", true);
+        var consoleList = item("consoleList");
+        tryVerify(function() {
+            var row = 0;
+            for (; row < consoleList.model.rowCount(); ++row) {
+                if (field(consoleList.model, row, "text").indexOf(
+                        "This nickname is registered.") >= 0)
+                    return true;
+            }
+            return false;
+        });
+        compare(findNamed(liveConversation("NickServ")), null);
     }
 
     function test_connectionSheetOpensWhenSetupRequired() {

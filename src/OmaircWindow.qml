@@ -142,6 +142,23 @@ ApplicationWindow {
     Material.accent: accentColor
     color: pageColor
 
+    component TranscriptNickHit: MouseArea {
+        required property string nick
+
+        objectName: "transcriptNickHit"
+        anchors.fill: parent
+        enabled: win.canOpenDirectMessage(nick)
+        hoverEnabled: true
+        cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+        Accessible.role: Accessible.Button
+        Accessible.name: nick
+        Accessible.onPressAction: {
+            if (win.canOpenDirectMessage(nick))
+                win.openDirectMessage(nick);
+        }
+        onClicked: win.openDirectMessage(nick)
+    }
+
     component PlainUrlHit: MouseArea {
         required property Item edit
         property bool inviteHits: false
@@ -455,6 +472,10 @@ ApplicationWindow {
         });
     }
 
+    function canOpenDirectMessage(nick) {
+        return nick.length > 0 && nick !== selfNick;
+    }
+
     function openDirectMessage(nick) {
         if (!irc)
             return;
@@ -487,7 +508,7 @@ ApplicationWindow {
 
     function activateFocusedMember() {
         var nick = memberNickAt(membersList.currentIndex);
-        if (nick.length === 0 || nick === win.selfNick)
+        if (!canOpenDirectMessage(nick))
             return;
         win.openDirectMessage(nick);
     }
@@ -2663,6 +2684,8 @@ ApplicationWindow {
                             font.bold: true
                             font.pixelSize: win.scaledSize(13)
                         }
+
+                        TranscriptNickHit { nick: messageDelegate.author }
                     }
 
                     Row {
@@ -2675,11 +2698,14 @@ ApplicationWindow {
                         spacing: win.scaledSize(9)
 
                         Text {
+                            objectName: "messageAuthor"
                             text: messageDelegate.author
                             color: messageDelegate.replayed ? win.mutedColor : win.nickColor(messageDelegate.author)
                             font.family: "iA Writer Mono S"
                             font.bold: true
                             font.pixelSize: win.scaledSize(12)
+
+                            TranscriptNickHit { nick: messageDelegate.author }
                         }
 
                         Text {
@@ -3860,7 +3886,7 @@ ApplicationWindow {
                     Accessible.description: win.memberStatusVisible ? status : ""
                     Accessible.role: Accessible.Button
                     Accessible.onPressAction: {
-                        if (nick !== win.selfNick)
+                        if (win.canOpenDirectMessage(nick))
                             win.openDirectMessage(nick);
                     }
                     width: ListView.view.width
@@ -3964,7 +3990,7 @@ ApplicationWindow {
                     MouseArea {
                         id: memberMouse
                         anchors.fill: parent
-                        enabled: memberDelegate.nick !== win.selfNick
+                        enabled: win.canOpenDirectMessage(memberDelegate.nick)
                         hoverEnabled: true
                         cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
                         onClicked: win.openDirectMessage(memberDelegate.nick)

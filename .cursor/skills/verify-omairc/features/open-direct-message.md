@@ -9,12 +9,14 @@ Open a direct message lets a user click another person in a channel member list 
 - `dm-history` shows that new conversation's own transcript, not the channel's.
 - `dm-unread` clears anna's unread badge when her conversation is opened.
 - `dm-self` ignores a click on `fred`.
+- `dm-transcript` opens or selects that nick from a chat or action author or avatar.
 
 ## How to get to it (user POV)
 
 - In a channel with the member panel open, click a member who is not `fred`.
 - Press `Ctrl+Shift+P`, move with arrows, and press Enter on a member who is not `fred`.
 - Click an existing DIRECT MESSAGES row (`anna` or `dax`).
+- Click the author or avatar on a chat or action row. Grouped follow-ups, event rows, WHOIS rows, and `fred` do nothing.
 
 ## Driving it with control-omairc
 
@@ -31,6 +33,7 @@ Preconditions:
 - **Ignore self.** Return to `#omarchy` and click `fred`. Run `control-omairc click-conversation --name "#omarchy"`, `control-omairc wait-title --exact "#omarchy · irc.example · fred - Omairc"`, and `control-omairc click-member --name fred`. The title stays `#omarchy · irc.example · fred - Omairc`.
 - **Proof.** Capture the created mira conversation. Run `control-omairc screenshot --feature open-direct-message --name mira-dm`. The screenshot shows title identity `mira`, a `mira` sidebar row, no member panel, and `Hi mira from verify`.
 - **Offscreen suite.** When Xvfb tools are missing, run `control-omairc doctor-qml` then `control-omairc qml-suite`. `bin/test` clicks `mira` and writes `test-artifacts/open-direct-message.png`. `qml-suite` copies it to `test-artifacts/verify/open-direct-message/mira-dm.png`. The image must show `mira` selected, the beginning line, and no member panel. This does not prove the compiled-window `click-member` path.
+- **Transcript nick.** `bin/test` runs `test_openDirectMessageFromTranscriptNick`. It clicks mira's avatar and author, ignores `fred` and event or grouped rows, keeps anna's existing buffer, and leaves NickServ on Status. Desktop `control-omairc` has no transcript-nick click.
 
 ## Gotchas
 
