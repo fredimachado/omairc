@@ -17,7 +17,29 @@ const auto realnameKey = QStringLiteral("realname");
 const auto accountKey = QStringLiteral("account");
 const auto bouncerNetworkKey = QStringLiteral("bouncerNetwork");
 const auto autojoinKey = QStringLiteral("autojoin");
+const auto autojoinKeyChannelsKey = QStringLiteral("autojoinKeyChannels");
+const auto autojoinKeyValuesKey = QStringLiteral("autojoinKeyValues");
 const auto iconColorKey = QStringLiteral("iconColor");
+
+QMap<QString, QString> loadAutojoinKeys(const QStringList &channels,
+                                        const QStringList &names,
+                                        const QStringList &values)
+{
+    QMap<QString, QString> keys;
+    if (names.size() != values.size())
+        return keys;
+    for (const QString &channel : channels) {
+        for (int index = 0; index < names.size(); ++index) {
+            if (names.at(index).isEmpty() || values.at(index).isEmpty())
+                continue;
+            if (QString::compare(channel, names.at(index), Qt::CaseInsensitive) != 0)
+                continue;
+            keys.insert(channel, values.at(index));
+            break;
+        }
+    }
+    return keys;
+}
 }
 
 IrcProfileStore::IrcProfileStore() = default;
@@ -44,6 +66,10 @@ QList<IrcNetworkProfile> IrcProfileStore::profiles() const
         profile.account = settings.value(accountKey).toString();
         profile.bouncerNetwork = settings.value(bouncerNetworkKey).toString();
         profile.autojoinChannels = settings.value(autojoinKey).toStringList();
+        profile.autojoinKeys = loadAutojoinKeys(
+            profile.autojoinChannels,
+            settings.value(autojoinKeyChannelsKey).toStringList(),
+            settings.value(autojoinKeyValuesKey).toStringList());
         bool iconOk = false;
         const int iconColor = settings.value(iconColorKey).toInt(&iconOk);
         profile.iconColor = (iconOk
@@ -78,6 +104,10 @@ void IrcProfileStore::save(const IrcNetworkProfile &profile)
     settings.setValue(accountKey, profile.account);
     settings.setValue(bouncerNetworkKey, profile.bouncerNetwork);
     settings.setValue(autojoinKey, profile.autojoinChannels);
+    if (!profile.autojoinKeys.isEmpty()) {
+        settings.setValue(autojoinKeyChannelsKey, profile.autojoinKeys.keys());
+        settings.setValue(autojoinKeyValuesKey, profile.autojoinKeys.values());
+    }
     if (profile.iconColor >= 0 && profile.iconColor < IrcNetworkProfile::iconColorCount)
         settings.setValue(iconColorKey, profile.iconColor);
     settings.endGroup();

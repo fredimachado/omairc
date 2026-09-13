@@ -1,6 +1,7 @@
 #include <QCoreApplication>
 #include <QFile>
 #include <QList>
+#include <QMap>
 #include <QSettings>
 #include <QTemporaryDir>
 #include <QTest>
@@ -13,6 +14,7 @@
 #include "ircprofilestore.h"
 #include "ircsession.h"
 #include "ircstatusentry.h"
+#include "messagelistmodel.h"
 #include "networklogmodel.h"
 
 #include <memory>
@@ -36,6 +38,24 @@ QStringList reloadedAutojoin()
     if (profiles.isEmpty())
         return {};
     return profiles.first().autojoinChannels;
+}
+
+QMap<QString, QString> reloadedAutojoinKeys()
+{
+    const QList<IrcNetworkProfile> profiles = IrcProfileStore().profiles();
+    if (profiles.isEmpty())
+        return {};
+    return profiles.first().autojoinKeys;
+}
+
+QByteArrayList joinFrames(const QByteArrayList &frames)
+{
+    QByteArrayList joins;
+    for (const QByteArray &frame : frames) {
+        if (frame.startsWith("JOIN "))
+            joins.append(frame);
+    }
+    return joins;
 }
 
 bool logContains(QAbstractItemModel *lines, const QString &needle)
@@ -143,6 +163,9 @@ private slots:
     void reconnectWelcomeJoinsRememberedChannels();
     void bareJoinStoresPrefixedChannel();
     void connectApplyOverridesRememberedAutojoin();
+    void connectAutojoinTokensDoNotCreateSecretChannel();
+    void droppingAutojoinNameDropsItsKey();
+    void keyedJoinPersistsReloadAndPartForgetsKey();
 
 private:
     IrcConnection::TransportFactory capturingFactory();
@@ -2209,7 +2232,8 @@ void ConnectionTest::keyedJoinSavesChannelNameOnly()
                                       QByteArrayLiteral("JOIN #private hunter2\r\n"))
                  .text(),
              QStringLiteral("JOIN #private ***"));
-    QVERIFY(!logContains(controller.console()->lines(), QStringLiteral("hunter2")));
+    if (logContains(controller.console()->lines(), QStringLiteral("hunter2")))
+        QFAIL("channel key leaked");
     QCOMPARE(reloadedAutojoin(), QStringList({QStringLiteral("#omarchy")}));
 
     m_transports.last()->injectBytes(
@@ -2217,13 +2241,46 @@ void ConnectionTest::keyedJoinSavesChannelNameOnly()
     QCOMPARE(reloadedAutojoin(),
              QStringList({QStringLiteral("#omarchy"), QStringLiteral("#private")}));
     QCOMPARE(connection.autojoin(), QStringLiteral("#omarchy #private"));
+    if (connection.autojoin().contains(QLatin1String("hunter2")))
+        QFAIL("channel key leaked");
+    QCOMPARE(reloadedAutojoinKeys().keys(),
+             QStringList({QStringLiteral("#private")}));
+    if (reloadedAutojoinKeys().value(QStringLiteral("#private"))
+        != QStringLiteral("hunter2")) {
+        QFAIL("stored channel key mismatch");
+    }
 
-    QSettings settings;
-    QFile file(settings.fileName());
-    QVERIFY(file.open(QIODevice::ReadOnly | QIODevice::Text));
-    const QString contents = QString::fromUtf8(file.readAll());
-    QVERIFY(!contents.contains(QLatin1String("hunter2")));
-    QVERIFY(contents.contains(QLatin1String("#private")));
+    controller.selectConversation(connection.selectedNetworkId(),
+                                  QStringLiteral("#private"));
+    QAbstractItemModel *messages = controller.messages();
+    QVERIFY(messages);
+    for (int row = 0; row < messages->rowCount(); ++row) {
+        const QString body =
+            messages->data(messages->index(row, 0), MessageListModel::BodyRole)
+                .toString();
+        const QString author =
+            messages->data(messages->index(row, 0), MessageListModel::AuthorRole)
+                .toString();
+        if (body.contains(QLatin1String("hunter2"))
+            || author.contains(QLatin1String("hunter2"))) {
+            QFAIL("channel key leaked");
+        }
+    }
+
+    FakeIrcTransport *transport = m_transports.last();
+    IrcSession *session = controller.session(connection.selectedNetworkId());
+    QVERIFY(session);
+    transport->remoteClose();
+    QTRY_COMPARE(transport->connectionState(),
+                 IrcTransport::ConnectionState::Connecting);
+    const int framesBefore = transport->writtenFrames().size();
+    transport->completeConnect();
+    transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
+                          ":server 001 omairc :Welcome\r\n"));
+    QCOMPARE(joinFrames(transport->writtenFrames().mid(framesBefore)),
+             QByteArrayList({QByteArrayLiteral("JOIN #omarchy\r\n"),
+                             QByteArrayLiteral("JOIN #private hunter2\r\n")}));
 }
 
 void ConnectionTest::reconnectWelcomeJoinsRememberedChannels()
@@ -2304,6 +2361,84 @@ void ConnectionTest::connectApplyOverridesRememberedAutojoin()
                           ":server 001 omairc :Welcome\r\n"));
     QVERIFY(fresh->writtenFrames().contains(QByteArrayLiteral("JOIN #omarchy\r\n")));
     QVERIFY(!fresh->writtenFrames().contains(QByteArrayLiteral("JOIN #lab\r\n")));
+}
+
+void ConnectionTest::connectAutojoinTokensDoNotCreateSecretChannel()
+{
+    IrcController controller;
+    IrcConnection connection(controller, capturingFactory(), credentialStore());
+    fillCompleteDraft(connection);
+    connection.setAutojoin(QStringLiteral("#chan secret"));
+    QCOMPARE(connection.autojoin(), QStringLiteral("#chan"));
+    QVERIFY(!connection.autojoin().contains(QLatin1String("secret")));
+    QVERIFY(connection.apply());
+    QCOMPARE(reloadedAutojoin(), QStringList({QStringLiteral("#chan")}));
+    QVERIFY(!reloadedAutojoin().contains(QStringLiteral("#secret")));
+    QVERIFY(reloadedAutojoinKeys().isEmpty());
+}
+
+void ConnectionTest::droppingAutojoinNameDropsItsKey()
+{
+    IrcController controller;
+    IrcConnection connection(controller, capturingFactory(), credentialStore());
+    QVERIFY(welcomeOmarchy(connection, controller));
+    QVERIFY(controller.sendMessage(QStringLiteral("/join #private hunter2")));
+    m_transports.last()->injectBytes(
+        QByteArrayLiteral(":omairc!u@h JOIN :#private\r\n"));
+    QCOMPARE(reloadedAutojoinKeys().keys(),
+             QStringList({QStringLiteral("#private")}));
+
+    connection.setAutojoin(QStringLiteral("#omarchy"));
+    QCOMPARE(connection.autojoin(), QStringLiteral("#omarchy"));
+    QVERIFY(connection.apply());
+    QCOMPARE(reloadedAutojoin(), QStringList({QStringLiteral("#omarchy")}));
+    QVERIFY(reloadedAutojoinKeys().isEmpty());
+}
+
+void ConnectionTest::keyedJoinPersistsReloadAndPartForgetsKey()
+{
+    IrcController controller;
+    IrcConnection connection(controller, capturingFactory(), credentialStore());
+    QVERIFY(welcomeOmarchy(connection, controller));
+    QVERIFY(controller.sendMessage(QStringLiteral("/join #private hunter2")));
+    m_transports.last()->injectBytes(
+        QByteArrayLiteral(":omairc!u@h JOIN :#private\r\n"));
+    if (reloadedAutojoinKeys().value(QStringLiteral("#private"))
+        != QStringLiteral("hunter2")) {
+        QFAIL("stored channel key mismatch");
+    }
+
+    const QList<IrcNetworkProfile> stored = IrcProfileStore().profiles();
+    QCOMPARE(stored.size(), 1);
+    IrcSessionConfig reloaded;
+    reloaded.networkId = stored.first().networkId;
+    reloaded.host = stored.first().host;
+    reloaded.port = stored.first().port;
+    reloaded.tlsEnabled = stored.first().tlsEnabled;
+    reloaded.nick = stored.first().nick;
+    reloaded.username = stored.first().username;
+    reloaded.realname = stored.first().realname;
+    reloaded.autojoinChannels = stored.first().autojoinChannels;
+    reloaded.autojoinKeys = stored.first().autojoinKeys;
+    reloaded.reconnectEnabled = false;
+
+    FakeIrcTransport *fresh = new FakeIrcTransport;
+    IrcSession session(reloaded, fresh);
+    session.start();
+    fresh->completeConnect();
+    const int before = fresh->writtenFrames().size();
+    fresh->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
+                          ":server 001 omairc :Welcome\r\n"));
+    QCOMPARE(joinFrames(fresh->writtenFrames().mid(before)),
+             QByteArrayList({QByteArrayLiteral("JOIN #omarchy\r\n"),
+                             QByteArrayLiteral("JOIN #private hunter2\r\n")}));
+
+    QVERIFY(controller.sendMessage(QStringLiteral("/part #private")));
+    m_transports.last()->injectBytes(
+        QByteArrayLiteral(":omairc!u@h PART #private\r\n"));
+    QCOMPARE(reloadedAutojoin(), QStringList({QStringLiteral("#omarchy")}));
+    QVERIFY(reloadedAutojoinKeys().isEmpty());
 }
 
 int runConnectionTests(int argc, char **argv)

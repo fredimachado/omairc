@@ -22,6 +22,8 @@ private slots:
     void validateRefusesUnsendableAccountAndBouncerNetwork();
     void saslAccountFallsBackToNickAndAppendsBouncerNetwork();
     void storeRoundTripsFieldsWithoutPassword();
+    void storeRoundTripsAutojoinKeys();
+    void parseAutojoinDoesNotInventChannelFromFollowingToken();
     void pickIconColorTakesTheOnlyFreeSlot();
     void ensureIconColorAssignsOnce();
     void missingIconColorDefaultsToNone();
@@ -227,6 +229,47 @@ void ProfileTest::storeRoundTripsFieldsWithoutPassword()
     unnamed.nick = QStringLiteral("omairc");
     store.save(unnamed);
     QCOMPARE(IrcProfileStore().profiles().size(), 1);
+}
+
+void ProfileTest::storeRoundTripsAutojoinKeys()
+{
+    IrcNetworkProfile profile = IrcNetworkProfile::create();
+    profile.host = QStringLiteral("irc.example.net");
+    profile.nick = QStringLiteral("omairc");
+    profile.autojoinChannels = {QStringLiteral("#omarchy"), QStringLiteral("#private")};
+    profile.autojoinKeys.insert(QStringLiteral("#private"), QStringLiteral("hunter2"));
+
+    IrcProfileStore().save(profile);
+    const IrcNetworkProfile loaded = IrcProfileStore().profiles().first();
+    QCOMPARE(loaded.autojoinChannels, profile.autojoinChannels);
+    QCOMPARE(loaded.autojoinKeys.keys(), QStringList({QStringLiteral("#private")}));
+    if (loaded.autojoinKeys.value(QStringLiteral("#private"))
+        != QStringLiteral("hunter2")) {
+        QFAIL("stored channel key mismatch");
+    }
+
+    profile.autojoinChannels = {QStringLiteral("#omarchy")};
+    QVERIFY(profile.normalized().autojoinKeys.isEmpty());
+}
+
+void ProfileTest::parseAutojoinDoesNotInventChannelFromFollowingToken()
+{
+    QCOMPARE(IrcNetworkProfile::parseAutojoin(QStringLiteral("#chan secret")),
+             QStringList({QStringLiteral("#chan")}));
+    QCOMPARE(IrcNetworkProfile::parseAutojoin(QStringLiteral("#chan,secret")),
+             QStringList({QStringLiteral("#chan")}));
+    QCOMPARE(IrcNetworkProfile::parseAutojoin(QStringLiteral("#omarchy #desktop")),
+             QStringList({QStringLiteral("#omarchy"), QStringLiteral("#desktop")}));
+    QCOMPARE(IrcNetworkProfile::parseAutojoin(QStringLiteral("omarchy, lab")),
+             QStringList({QStringLiteral("omarchy"), QStringLiteral("lab")}));
+
+    IrcNetworkProfile profile = IrcNetworkProfile::suggested();
+    profile.nick = QStringLiteral("omairc");
+    profile.autojoinChannels = IrcNetworkProfile::parseAutojoin(
+        QStringLiteral("#chan secret"));
+    QCOMPARE(profile.normalized().autojoinChannels,
+             QStringList({QStringLiteral("#chan")}));
+    QVERIFY(!profile.normalized().autojoinChannels.contains(QStringLiteral("#secret")));
 }
 
 void ProfileTest::pickIconColorTakesTheOnlyFreeSlot()

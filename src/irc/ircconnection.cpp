@@ -505,9 +505,13 @@ void IrcConnection::setBouncerNetwork(const QString &network)
 void IrcConnection::setAutojoin(const QString &channels)
 {
     const QStringList next = IrcNetworkProfile::parseAutojoin(channels);
-    if (m_draft.autojoinChannels == next)
+    IrcNetworkProfile probe = m_draft;
+    probe.autojoinChannels = next;
+    const QMap<QString, QString> nextKeys = probe.normalized().autojoinKeys;
+    if (m_draft.autojoinChannels == next && m_draft.autojoinKeys == nextKeys)
         return;
     m_draft.autojoinChannels = next;
+    m_draft.autojoinKeys = nextKeys;
     emit draftChanged();
 }
 
@@ -1266,6 +1270,7 @@ std::optional<IrcSessionConfig> IrcConnection::sessionConfigFor(
     config.nickServPassword = nickServSecretFor(profile.networkId).password;
     config.saslAccount = profile.saslAccount();
     config.autojoinChannels = profile.autojoinChannels;
+    config.autojoinKeys = profile.autojoinKeys;
     return config;
 }
 
@@ -1302,21 +1307,27 @@ bool IrcConnection::reconcile(const IrcNetworkProfile &profile)
 }
 
 void IrcConnection::persistAutojoin(const QString &networkId,
-                                    const QStringList &channels)
+                                    const QStringList &channels,
+                                    const QMap<QString, QString> &keys)
 {
     for (IrcNetworkProfile &profile : m_stored) {
         if (profile.networkId != networkId)
             continue;
-        if (profile.autojoinChannels == channels)
+        if (profile.autojoinChannels == channels && profile.autojoinKeys == keys)
             return;
         profile.autojoinChannels = channels;
+        profile.autojoinKeys = keys;
         m_store.save(profile);
         const auto applied = m_applied.find(networkId);
-        if (applied != m_applied.end())
+        if (applied != m_applied.end()) {
             applied->profile.autojoinChannels = channels;
+            applied->profile.autojoinKeys = keys;
+        }
         if (m_draft.networkId == networkId
-            && m_draft.autojoinChannels != channels) {
+            && (m_draft.autojoinChannels != channels
+                || m_draft.autojoinKeys != keys)) {
             m_draft.autojoinChannels = channels;
+            m_draft.autojoinKeys = keys;
             emit draftChanged();
         }
         return;

@@ -5,6 +5,7 @@
 #include "irccasemapping.h"
 #include "ircjointarget.h"
 #include "ircparser.h"
+#include "ircserverfeatures.h"
 #include "ircprefixnick.h"
 #include "ircpresence.h"
 #include "ircservicenick.h"
@@ -116,6 +117,30 @@ QString parameter(const IrcMessage &message, std::size_t index)
     if (index >= message.parameters.size())
         return {};
     return ircWireText(message.parameters[index]);
+}
+
+QString lookupAutojoinKey(const QMap<QString, QString> &keys,
+                          const IrcCaseMapping &mapping,
+                          const QString &channel)
+{
+    for (auto it = keys.constBegin(); it != keys.constEnd(); ++it) {
+        if (mapping.equals(utf8(it.key()), utf8(channel)))
+            return it.value();
+    }
+    return {};
+}
+
+bool eraseAutojoinKey(QMap<QString, QString> &keys,
+                      const IrcCaseMapping &mapping,
+                      const QString &channel)
+{
+    for (auto it = keys.begin(); it != keys.end(); ++it) {
+        if (mapping.equals(utf8(it.key()), utf8(channel))) {
+            keys.erase(it);
+            return true;
+        }
+    }
+    return false;
 }
 
 // Some servers omit user@host on a self JOIN or a NICK change. The bare token
@@ -250,6 +275,7 @@ IrcSession::IrcSession(const IrcSessionConfig &config,
     , m_port(config.port)
     , m_tlsEnabled(config.tlsEnabled)
     , m_autojoinChannels(config.autojoinChannels)
+    , m_autojoinKeys(config.autojoinKeys)
     , m_nick(config.nick)
     , m_transport(transport)
     , m_reconnectTimer(reconnectTimer)
@@ -535,6 +561,8 @@ bool IrcSession::join(const IrcJoinTarget& target)
     const QByteArray line = builtLine(IrcCommandBuilder::join(channel, key));
     if (line.isEmpty())
         return false;
+    if (target.hasKey())
+        m_pendingJoinKeys.insert(foldChannel(target.channel()), *target.key());
     sendLine(line);
     return true;
 }
@@ -1021,6 +1049,8 @@ void IrcSession::handleMessage(const IrcMessage &message)
             forgetChannelHistory(channel);
             recordAutojoin(channel, false);
         }
+    } else if (message.command == "475" && message.parameters.size() >= 2) {
+        dropStoredAutojoinKey(parameter(message, 1));
     }
 }
 
@@ -1172,15 +1202,48 @@ void IrcSession::recordAutojoin(const QString &channel, bool joined)
         return m_caseMapping.equals(utf8(existing), utf8(channel));
     });
     if (joined) {
-        if (found != channels.end())
+        QString listed = channel;
+        bool nameChanged = false;
+        if (found == channels.end()) {
+            channels.append(channel);
+            nameChanged = true;
+        } else {
+            listed = *found;
+        }
+
+        bool keyChanged = false;
+        const QString pending = m_pendingJoinKeys.take(foldChannel(channel));
+        if (!pending.isEmpty()) {
+            const QString existing = lookupAutojoinKey(m_autojoinKeys, m_caseMapping,
+                                                       listed);
+            if (existing != pending) {
+                eraseAutojoinKey(m_autojoinKeys, m_caseMapping, listed);
+                m_autojoinKeys.insert(listed, pending);
+                keyChanged = true;
+            }
+        }
+        if (!nameChanged && !keyChanged)
             return;
-        channels.append(channel);
     } else {
-        if (found == channels.end())
+        const bool hadName = found != channels.end();
+        const bool hadKey = eraseAutojoinKey(m_autojoinKeys, m_caseMapping, channel);
+        m_pendingJoinKeys.remove(foldChannel(channel));
+        if (!hadName && !hadKey)
             return;
-        channels.erase(found);
+        if (hadName)
+            channels.erase(found);
     }
-    emit autojoinChannelsChanged(m_config.networkId, channels);
+    emit autojoinChannelsChanged(m_config.networkId, channels, m_autojoinKeys);
+}
+
+void IrcSession::dropStoredAutojoinKey(const QString &channel)
+{
+    if (channel.isEmpty())
+        return;
+    m_pendingJoinKeys.remove(foldChannel(channel));
+    if (!eraseAutojoinKey(m_autojoinKeys, m_caseMapping, channel))
+        return;
+    emit autojoinChannelsChanged(m_config.networkId, m_autojoinChannels, m_autojoinKeys);
 }
 
 bool IrcSession::selfPrefixed(const IrcMessage& message) const
@@ -1532,7 +1595,11 @@ void IrcSession::handleWelcome(const IrcMessage &message)
                     QStringLiteral("IDENTIFY ") + m_config.nickServPassword);
     }
     for (const QString &channel : m_autojoinChannels) {
-        const std::optional<IrcJoinTarget> target = IrcJoinTarget::make(channel);
+        const QString key = lookupAutojoinKey(m_autojoinKeys, m_caseMapping, channel);
+        const std::optional<QString> secret = key.isEmpty()
+            ? std::nullopt
+            : std::optional<QString>(key);
+        const std::optional<IrcJoinTarget> target = IrcJoinTarget::make(channel, secret);
         if (!target || !join(*target)) {
             emit errorOccurred(m_config.networkId,
                                ErrorKind::Protocol,
@@ -1674,6 +1741,7 @@ void IrcSession::resetForConnection()
     m_capabilityListSeen = false;
     m_pendingSts.reset();
     m_pendingInvite.reset();
+    m_pendingJoinKeys.clear();
     m_channelTypes.clear();
     m_capabilityTimer->cancel();
     cancelPingWatchdog();
