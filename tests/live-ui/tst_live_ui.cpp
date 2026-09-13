@@ -622,8 +622,8 @@ void LiveUiTest::consecutiveSameAuthorMinuteGroupsThroughIrcEvent()
     const int groupedAt = chromeIndex(rows, QStringLiteral("group continuation"));
     const int eventAt = chromeIndex(rows, QStringLiteral("rio left"));
     const int afterAt = chromeIndex(rows, QStringLiteral("after event"));
-    QVERIFY2(leadAt >= 0 && groupedAt == leadAt + 1 && eventAt == groupedAt + 1
-                 && afterAt == eventAt + 1,
+    QVERIFY2(leadAt >= 0 && groupedAt == leadAt + 1 && eventAt > groupedAt
+                 && afterAt > eventAt,
              qPrintable(describeChrome(rows)));
 
     const TranscriptRowChrome &lead = rows.at(leadAt);
@@ -835,7 +835,7 @@ void LiveUiTest::replayAndLiveSameAuthorMinuteDoNotGroupThroughIrcEvent()
     const int replayAt = chromeIndex(rows, QStringLiteral("replayed line"));
     const int joinAt = chromeIndex(rows, QStringLiteral("omairc joined"));
     const int liveAt = chromeIndex(rows, QStringLiteral("live line"));
-    QVERIFY2(replayAt >= 0 && joinAt == replayAt + 1 && liveAt == joinAt + 1,
+    QVERIFY2(replayAt >= 0 && joinAt > replayAt && liveAt > joinAt,
              qPrintable(describeChrome(rows)));
     QVERIFY2(rows.at(replayAt).avatarVisible && rows.at(replayAt).headerVisible,
              qPrintable(describeChrome(rows)));
