@@ -15,6 +15,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `/disconnect [reason]` stops the focused network. `/quit` is the same command. Connect shows Disconnect next to Apply while that network is live or reconnecting. The profile, sidebar, and other networks stay.
 - Empty `/join` joins the latest inbound invite for that network. Clicking the channel token on the Status `INVITE` line does the same. A new invite replaces the stored one. Ignore still drops invites from ignored nicks.
 
+### Fixed
+
+- The Ctrl+K jump field no longer overlaps its hint with the focused border. The hint stays inside the field as "Jump to conversation…" until you type.
+
 ## [0.3.0] - 2026-09-12
 
 ### Added
