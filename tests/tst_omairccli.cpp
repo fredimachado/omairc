@@ -260,12 +260,14 @@ void OmaircCliTest::namesAndConversationsParse()
                  "A DM, Status, or a channel that is not joined is an error.\n"
                  "\n"
                  "  --network ID   Connection to use. See connections.\n"
+                 "  --             End options. Later args are the target.\n"
                  "\n"
                  "With one connection, --network may be omitted.\n"
                  "\n"
                  "Examples:\n"
                  "  omairc names '#channel'\n"
-                 "  omairc names --network abc '#channel'\n"));
+                 "  omairc names --network abc '#channel'\n"
+                 "  omairc names -- --dash-nick\n"));
 
     const auto missing = OmaircCli::parseArgs({QStringLiteral("names")});
     QVERIFY(std::holds_alternative<OmaircCli::CliError>(missing));
@@ -277,6 +279,13 @@ void OmaircCliTest::namesAndConversationsParse()
              OmaircIpc::Command::Names);
     QCOMPARE(std::get<OmaircIpc::Request>(names).target,
              QStringLiteral("#chan"));
+
+    const auto dashTarget = OmaircCli::parseArgs(
+        {QStringLiteral("names"), QStringLiteral("--"),
+         QStringLiteral("--dash-nick")});
+    QVERIFY(std::holds_alternative<OmaircIpc::Request>(dashTarget));
+    QCOMPARE(std::get<OmaircIpc::Request>(dashTarget).target,
+             QStringLiteral("--dash-nick"));
 
     const auto conversationsHelp = OmaircCli::parseArgs(
         {QStringLiteral("conversations"), QStringLiteral("--help")});

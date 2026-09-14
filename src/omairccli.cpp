@@ -132,12 +132,14 @@ const CommandSpec kCommands[] = {
         "A DM, Status, or a channel that is not joined is an error.\n"
         "\n"
         "  --network ID   Connection to use. See connections.\n"
+        "  --             End options. Later args are the target.\n"
         "\n"
         "With one connection, --network may be omitted.\n"
         "\n"
         "Examples:\n"
         "  omairc names '#channel'\n"
-        "  omairc names --network abc '#channel'\n",
+        "  omairc names --network abc '#channel'\n"
+        "  omairc names -- --dash-nick\n",
     },
     {
         CommandId::Conversations,
@@ -391,17 +393,22 @@ ParseOutcome parseNamesCommand(const QStringList &args)
 {
     OmaircIpc::Request request;
     request.command = OmaircIpc::Command::Names;
+    bool optionsEnded = false;
     for (int i = 1; i < args.size(); ++i) {
         const QString &arg = args.at(i);
-        if (isHelpFlag(arg))
+        if (!optionsEnded && arg == QLatin1String("--")) {
+            optionsEnded = true;
+            continue;
+        }
+        if (!optionsEnded && isHelpFlag(arg))
             return HelpTopic{HelpScope::Command, CommandId::Names};
-        if (arg == QLatin1String("--network")) {
+        if (!optionsEnded && arg == QLatin1String("--network")) {
             if (i + 1 >= args.size() || isFlag(args.at(i + 1)))
                 return CliError{QStringLiteral("--network requires an id")};
             request.networkId = args.at(++i);
             continue;
         }
-        if (isFlag(arg))
+        if (!optionsEnded && isFlag(arg))
             return CliError{QStringLiteral("Unknown option: %1").arg(arg)};
         if (!request.target.isEmpty())
             return unexpectedArgument(arg);
