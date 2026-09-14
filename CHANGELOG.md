@@ -11,9 +11,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Conversation transcripts persist under `$XDG_STATE_HOME/omairc/logs/{networkId}/{target}`. Join and opening a DM reload the tail as muted backlog. Lines that `IrcSecretPolicy` redacts are not written.
 - Live transcripts insert a centered date mark when the local calendar day changes. The label is `Today`, `Yesterday`, or the locale short date. Status stays a raw console.
+- Chat bodies render bold, italic, and underline. Topics, Status, find, and notifications stay stripped plain text.
+- Click a chat or action author or avatar to open or create a DM, same as the member panel. Self, events, WHOIS, and grouped follow-up rows stay inert.
+- Activating a desktop notification raises the window and opens that conversation. A missing DM is created the same way a member click is.
+- `/highlight <word>`, `/unhighlight <word>`, and `/highlights`. Each network keeps its own list, persisted next to ignore. A whole-word hit increments mentions and notifies like a nick mention. Clearing the network drops the list.
 - `/mute [target]`, `/unmute [target]`, and `/muted`. Each network keeps its own list by conversation key. Chat still arrives. Mentions do not notify, increment, or badge. `Alt+A` skips muted mentions. Opening the buffer does not unmute. `/close` and clearing the network drop the flag. Status `/mute` without a target is refused.
 - `/disconnect [reason]` stops the focused network. `/quit` is the same command. Connect shows Disconnect next to Apply while that network is live or reconnecting. The profile, sidebar, and other networks stay.
 - Empty `/join` joins the latest inbound invite for that network. Clicking the channel token on the Status `INVITE` line does the same. A new invite replaces the stored one. Ignore still drops invites from ignored nicks.
+- A successful keyed self JOIN stores the key beside the Autojoin names. Welcome sends `JOIN #chan key`. Part and kick drop both. The Connect field stays names only.
+
+### Changed
+
+- New networks mint an 11-character base64url id instead of a UUID.
 
 ### Fixed
 

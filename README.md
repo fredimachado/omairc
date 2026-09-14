@@ -8,15 +8,20 @@ A dead-simple IRC client for Omarchy, built with Qt Quick and C++.
 
 - Several networks in one window. Each keeps its own channels, direct messages, nick, and connection state.
 - Connect sheet on first launch. Libera Chat defaults, TLS on, autojoin `#omarchy`. Password is the connection `PASS`. NickServ is SASL PLAIN when the server offers it, otherwise `IDENTIFY` after welcome. Apply starts the session. Nothing connects on its own unless you turn on Connect automatically on startup.
-- `Ctrl+,` or `edit` beside a network name reopens Connect. The network name opens Status.
+- `Ctrl+,` or `edit` beside a network name reopens Connect. Disconnect sits next to Apply while that network is live or reconnecting. The network name opens Status.
 - Status console per network. Handshake, errors, and AUTH stay there, not in DIRECT MESSAGES.
-- Channels and DMs. Member panel and people count on channels only. Click a nick to open or create a DM. `Ctrl+W` or `/close` closes a DM.
+- Channels and DMs. Member panel and people count on channels only. Click a nick in the member list, or a chat author or avatar, to open or create a DM. `Ctrl+W` or `/close` closes a DM.
+- Live transcripts insert a centered `Today`, `Yesterday`, or locale date mark when the local day changes. Status stays a raw console.
 - Presence dots and away dimming when the server grants `away-notify`. Status lines need `draft/metadata-2` and `batch`. Typing ellipsis needs `message-tags`. Member ranks follow the server `PREFIX`.
 - Keyboard first. `Ctrl+/` lists the shortcuts. Walk conversations and networks, `Ctrl+K` jump, `Alt+A` next unread, `Ctrl+F` find, Tab nick complete, Up/Down history, drafts that stay with each conversation.
-- Slash commands from the same single-line composer, with complete after `/`. Catalog is `/me`, `/join` (`/j`), `/part` (`/leave`), `/nick`, `/disconnect` (`/quit`), `/clear`, `/close`, `/query`, `/msg`, `/topic`, `/notice`, `/away`, `/back`, `/whois`, `/mode`, `/kick`, `/invite`, `/ignore`, `/unignore`, `/ignored`, `/mute`, `/unmute`, `/muted`, `/op`, `/deop`, `/voice`, `/devoice`, `/ban`, `/ns`, `/cs`, `/raw` (`/quote`), and `/help`.
+- Slash commands from the same single-line composer, with complete after `/`. Catalog is `/me`, `/join` (`/j`), `/part` (`/leave`), `/nick`, `/disconnect` (`/quit`), `/clear`, `/close`, `/query`, `/msg`, `/topic`, `/notice`, `/away`, `/back`, `/whois`, `/mode`, `/kick`, `/invite`, `/ignore`, `/unignore`, `/ignored`, `/mute`, `/unmute`, `/muted`, `/highlight`, `/unhighlight`, `/highlights`, `/op`, `/deop`, `/voice`, `/devoice`, `/ban`, `/ns`, `/cs`, `/raw` (`/quote`), and `/help`.
 - `/ignore` hides private messages, notices, and invites from that nick and persists per network. Channel text stays visible.
 - `/mute` quiets a channel or direct message. Chat still arrives. Mentions do not notify or badge. `/unmute` and `/muted` match the ignore verbs. Status `/mute` without a target is refused.
-- Desktop notification for an unfocused mention or DM. Focused window stays quiet.
+- `/highlight` treats extra words as mentions on that network. `/unhighlight` and `/highlights` match the ignore verbs.
+- Empty `/join` joins the latest inbound invite. Clicking the channel on a Status `INVITE` line does the same.
+- A successful keyed `/join` remembers the key for autojoin. Part and kick drop it. Connect still lists names only.
+- Desktop notification for an unfocused mention or DM. Focused window stays quiet. Activating the notification raises the window and opens that conversation.
+- Chat bodies render bold, italic, and underline. Topics, Status, find, and notifications stay plain text.
 - Clickable `http` and `https` links in chat and Status. Other schemes do nothing.
 - Colors follow the current Omarchy theme and update live. Text follows the desktop size.
 - Profiles in `$XDG_CONFIG_HOME/omairc/`. Passwords and NickServ secrets go through QtKeychain into Secret Service. If that service is missing, those secrets stay session-only and Connect says so. If a saved secret cannot be returned, Connect automatically on startup leaves that network disconnected. Errors go to `$XDG_STATE_HOME/omairc/omairc.log`.
