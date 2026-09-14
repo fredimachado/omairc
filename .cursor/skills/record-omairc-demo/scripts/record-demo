@@ -1,0 +1,319 @@
+#!/usr/bin/env bash
+# Record the Omairc README demo on Omarchy workspace 1 and encode a 1600-wide GIF.
+#
+# Usage (from repo root):
+#   .cursor/skills/record-omairc-demo/scripts/record-demo
+#   .cursor/skills/record-omairc-demo/scripts/record-demo --encode-only /path/to.mp4
+#
+# Edit drive_walkthrough() to change keys or timings.
+# Do not change Hyprland monitor mode/scale from this script.
+
+set -euo pipefail
+
+SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+SKILL_DIR="$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)"
+ROOT="$(CDPATH= cd -- "$SKILL_DIR/../../.." && pwd)"
+INJECT=(python3 "$SCRIPT_DIR/inject-evdev.py")
+
+BINARY="${OMAIRC_DEMO_BINARY:-$ROOT/build/omairc}"
+OUTDIR="${OMAIRC_DEMO_OUTDIR:-${TMPDIR:-/tmp}/omairc-demo-rec}"
+OUTPUT="${OMAIRC_DEMO_GIF:-$ROOT/omairc.gif}"
+RECORD_WORKSPACE="${OMAIRC_DEMO_WORKSPACE:-1}"
+RESTORE_WORKSPACE="${OMAIRC_DEMO_RESTORE_WORKSPACE:-2}"
+USER_CONFIG="${XDG_CONFIG_HOME:-$HOME/.config}/omairc/omairc.conf"
+
+# Final GIF is 1600-wide (16:9 → 900 tall). Capture stays native.
+GIF_WIDTH="${GIF_WIDTH:-1600}"
+GIF_HEIGHT="${GIF_HEIGHT:-900}"
+GIF_FPS="${GIF_FPS:-15}"
+# Flat UI compresses better without dither; rectangle only rewrites changed regions.
+GIF_DITHER="${GIF_DITHER:-none}"
+GIF_DIFF_MODE="${GIF_DIFF_MODE:-rectangle}"
+TYPE_DELAY="${TYPE_DELAY:-0.08}"
+
+DEMO_PID=""
+RECORDING_STARTED=0
+CURSOR_HIDDEN=0
+CURSOR_INVISIBLE_ORIG=false
+
+die() {
+  echo "record-demo: $*" >&2
+  exit 1
+}
+
+hl() {
+  hyprctl dispatch "$1" >/dev/null
+}
+
+require_cmds() {
+  local missing=""
+  local cmd
+  for cmd in "$@"; do
+    command -v "$cmd" >/dev/null 2>&1 || missing="$missing $cmd"
+  done
+  [[ -z "$missing" ]] || die "missing tools:$missing"
+}
+
+require_tools() {
+  require_cmds ffmpeg hyprctl omarchy python3
+  id -nG | grep -qw input || die "user is not in group input (needed to write /dev/input)"
+}
+
+ensure_binary() {
+  if [[ ! -x "$BINARY" ]]; then
+    echo "record-demo: building $BINARY" >&2
+    "$ROOT/bin/build"
+  fi
+  [[ -x "$BINARY" ]] || die "no demo binary at $BINARY"
+  if [[ "$BINARY" == *"/usr/bin/omairc" ]]; then
+    die "refusing to drive the installed client"
+  fi
+}
+
+cursor_invisible_lua() {
+  hyprctl eval "hl.config({ cursor = { invisible = $1 } })" >/dev/null
+}
+
+hide_cursor() {
+  CURSOR_INVISIBLE_ORIG=false
+  if hyprctl getoption cursor:invisible -j | grep -q '"bool": *true'; then
+    CURSOR_INVISIBLE_ORIG=true
+  fi
+  cursor_invisible_lua true
+  CURSOR_HIDDEN=1
+}
+
+show_cursor() {
+  [[ "$CURSOR_HIDDEN" -eq 1 ]] || return 0
+  cursor_invisible_lua "$CURSOR_INVISIBLE_ORIG" || cursor_invisible_lua false
+  CURSOR_HIDDEN=0
+}
+
+# Runs from the trap and from the success path, so every step is best-effort:
+# a failure here must not skip the pointer unhide or the demo kill.
+restore() {
+  set +e
+  if [[ "$RECORDING_STARTED" -eq 1 ]]; then
+    OMARCHY_SCREENRECORD_DIR="$OUTDIR" omarchy screenrecord --stop-recording \
+      >"$OUTDIR/stop.txt" 2>&1
+    RECORDING_STARTED=0
+  fi
+  show_cursor
+  if [[ -n "${DEMO_PID:-}" ]] && kill -0 "$DEMO_PID" 2>/dev/null; then
+    kill "$DEMO_PID" 2>/dev/null
+    wait "$DEMO_PID" 2>/dev/null
+    DEMO_PID=""
+  fi
+  hl "hl.dsp.focus({ workspace = \"$RESTORE_WORKSPACE\" })"
+  hl 'hl.dsp.focus({ window = "class:cursor" })'
+  set -e
+}
+
+# Print the title of the window owned by $1, once it maps. Matching on the pid
+# we spawned (not on the title) is what keeps us off the user's live client.
+wait_demo_window() {
+  python3 - "$1" <<'PY'
+import json, subprocess, sys, time
+
+pid = int(sys.argv[1])
+deadline = time.time() + 12
+while time.time() < deadline:
+    clients = json.loads(subprocess.check_output(["hyprctl", "clients", "-j"]))
+    for client in clients:
+        if client.get("pid") == pid:
+            print(client.get("title") or "")
+            sys.exit(0)
+    time.sleep(0.1)
+sys.exit(1)
+PY
+}
+
+focus_demo() {
+  hyprctl dispatch "hl.dsp.focus({ window = \"pid:$DEMO_PID\" })" >/dev/null
+}
+
+press() {
+  focus_demo
+  "${INJECT[@]}" chord "$1" >/dev/null
+}
+
+type_slow() {
+  focus_demo
+  "${INJECT[@]}" type --delay "$TYPE_DELAY" "$1" >/dev/null
+}
+
+# Edit this function to change the on-screen demo. Every pause is explicit here:
+# press and type_slow return as soon as the keys are injected.
+drive_walkthrough() {
+  sleep 1.2
+  press ctrl+slash
+  sleep 1.9
+  press escape
+  sleep 0.55
+  press alt+down
+  sleep 1.4
+  press ctrl+k
+  sleep 0.65
+  type_slow "omarchy"
+  sleep 0.2
+  press return
+  sleep 1.2
+  press ctrl+shift+m
+  sleep 1.4
+  press ctrl+l
+  sleep 0.35
+  type_slow "mi"
+  press tab
+  sleep 0.5
+  type_slow " optional it is."
+  press return
+  sleep 1.1
+  press ctrl+k
+  sleep 0.6
+  type_slow "anna"
+  sleep 0.2
+  press return
+  sleep 1.6
+}
+
+newest_recording() {
+  # Tolerate an empty dir: the caller reports the missing mp4, not pipefail.
+  ls -1t "$OUTDIR"/screenrecording-*.mp4 2>/dev/null | head -1 || true
+}
+
+encode_gif() {
+  local rec="$1"
+  local out="$2"
+  [[ -f "$rec" ]] || die "no recording at $rec"
+  mkdir -p "$(dirname -- "$out")"
+  ffmpeg -y -i "$rec" \
+    -vf "fps=${GIF_FPS},scale=${GIF_WIDTH}:${GIF_HEIGHT}:flags=lanczos:force_original_aspect_ratio=decrease,pad=${GIF_WIDTH}:${GIF_HEIGHT}:(ow-iw)/2:(oh-ih)/2:color=black,split[s0][s1];[s0]palettegen=stats_mode=full[p];[s1][p]paletteuse=dither=${GIF_DITHER}:diff_mode=${GIF_DIFF_MODE}" \
+    -loop 0 "$out"
+  echo "record-demo: wrote $out"
+  if command -v identify >/dev/null 2>&1; then
+    identify "$out" | awk 'NR==1 { print } END { print }'
+  fi
+  ls -lh "$out"
+}
+
+leak_check() {
+  [[ -f "$USER_CONFIG" ]] || return 0
+  # QSettings keys are "<networkId>\<key>", and IrcDemoServer's seeded network
+  # ids are literally "omarchy" and "oftc". The real networks are uuid-keyed.
+  if grep -Eq '^(omarchy|oftc)\\' "$USER_CONFIG"; then
+    die "demo profiles leaked into $USER_CONFIG"
+  fi
+  echo "record-demo: config clean"
+}
+
+print_monitor() {
+  hyprctl monitors | awk '
+    /^Monitor / { name = $2 }
+    /^[[:space:]]+[0-9]+x[0-9]+@/ { mode = $1 }
+    /^[[:space:]]+scale:/ {
+      print "record-demo: monitor " name " " mode " scale=" $2 " (unchanged)"
+      exit
+    }'
+}
+
+record_walkthrough() {
+  mkdir -p "$OUTDIR"
+  print_monitor
+
+  hl "hl.dsp.focus({ workspace = \"$RECORD_WORKSPACE\" })"
+  sleep 0.3
+
+  # Unset XDG_CONFIG_HOME so --demo-server uses a temp config, not ~/.config.
+  env -u XDG_CONFIG_HOME OMAIRC_ALLOW_MULTI=1 "$BINARY" --demo-server \
+    >"$OUTDIR/omairc-demo.log" 2>&1 &
+  DEMO_PID=$!
+
+  local title
+  title="$(wait_demo_window "$DEMO_PID")" ||
+    die "demo window did not appear (see $OUTDIR/omairc-demo.log)"
+  [[ "$title" == *irc.example* ]] ||
+    die "pid $DEMO_PID is not seeded by --demo-server: $title"
+  echo "record-demo: pid=$DEMO_PID title=$title"
+
+  hl "hl.dsp.focus({ workspace = \"$RECORD_WORKSPACE\" })"
+  focus_demo
+  hl 'hl.dsp.cursor.move_to_corner({ corner = "topleft" })' || true
+  hide_cursor
+  sleep 0.8
+
+  OMARCHY_SCREENRECORD_DIR="$OUTDIR" omarchy screenrecord --fullscreen
+  RECORDING_STARTED=1
+  sleep 2.4
+
+  drive_walkthrough
+
+  local stop_out="$OUTDIR/stop-path.txt"
+  OMARCHY_SCREENRECORD_DIR="$OUTDIR" omarchy screenrecord --stop-recording \
+    | tee "$stop_out"
+  RECORDING_STARTED=0
+  sleep 0.3
+
+  local rec
+  rec="$(grep -Eo '/[^[:space:]]+\.mp4' "$stop_out" | tail -1 || true)"
+  if [[ -z "$rec" || ! -f "$rec" ]]; then
+    rec="$(newest_recording)"
+  fi
+  [[ -n "$rec" && -f "$rec" ]] || die "screenrecord produced no mp4 in $OUTDIR"
+
+  restore
+  trap - EXIT
+
+  leak_check
+  echo "record-demo: capture $rec"
+  encode_gif "$rec" "$OUTPUT"
+}
+
+usage() {
+  cat <<EOF
+record-demo - workspace-1 Omairc demo GIF (1600x900)
+
+Usage:
+  record-demo
+  record-demo --encode-only <mp4>
+  record-demo -h
+
+Env:
+  OMAIRC_DEMO_GIF        output path (default: $ROOT/omairc.gif)
+  OMAIRC_DEMO_OUTDIR     capture dir (default: $OUTDIR)
+  OMAIRC_DEMO_BINARY     demo binary (default: $ROOT/build/omairc)
+  GIF_WIDTH/GIF_HEIGHT   default 1600x900
+  GIF_FPS                default 15
+  GIF_DITHER             default none (try floyd_steinberg for photo-ish frames)
+  GIF_DIFF_MODE          default rectangle
+  TYPE_DELAY             seconds per typed character (default 0.08)
+  OMAIRC_EVDEV_DEVICE    override keyboard event node
+EOF
+}
+
+main() {
+  case "${1:-}" in
+    -h | --help)
+      usage
+      exit 0
+      ;;
+    --encode-only)
+      [[ -n "${2:-}" ]] || die "--encode-only needs an mp4 path"
+      require_cmds ffmpeg
+      encode_gif "$2" "$OUTPUT"
+      exit 0
+      ;;
+    "")
+      ;;
+    *)
+      die "unknown argument: $1 (try --help)"
+      ;;
+  esac
+
+  require_tools
+  ensure_binary
+  mkdir -p "$OUTDIR"
+  trap restore EXIT
+  record_walkthrough
+}
+
+main "$@"
