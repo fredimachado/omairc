@@ -163,7 +163,11 @@ QByteArray OmaircIpcHandler::handleRead(const OmaircIpc::Request &request,
         const IrcController::CliMessage &newest = lines.constLast();
         cursor.timestamp = newest.timestamp;
         cursor.msgid = newest.msgid;
-        m_cursors.save(networkId, request.target, cursor);
+        if (!m_cursors.save(networkId, request.target, cursor)) {
+            qWarning("Could not save the CLI cursor for %s %s",
+                     qUtf8Printable(networkId),
+                     qUtf8Printable(request.target));
+        }
     }
 
     QJsonArray messages;
