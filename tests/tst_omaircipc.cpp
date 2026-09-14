@@ -66,6 +66,29 @@ QByteArray framesJoin(const QByteArrayList &frames)
     return joined;
 }
 
+class ScopedCursorRoot
+{
+public:
+    explicit ScopedCursorRoot(const QString &root)
+        : m_had(qEnvironmentVariableIsSet("OMAIRC_CURSOR_ROOT"))
+        , m_previous(qgetenv("OMAIRC_CURSOR_ROOT"))
+    {
+        qputenv("OMAIRC_CURSOR_ROOT", root.toUtf8());
+    }
+
+    ~ScopedCursorRoot()
+    {
+        if (m_had)
+            qputenv("OMAIRC_CURSOR_ROOT", m_previous);
+        else
+            qunsetenv("OMAIRC_CURSOR_ROOT");
+    }
+
+private:
+    bool m_had;
+    QByteArray m_previous;
+};
+
 }
 
 class OmaircIpcTest : public QObject
@@ -653,8 +676,7 @@ void OmaircIpcTest::handlerReadNamesConversations()
 {
     QTemporaryDir cursorDir;
     QVERIFY(cursorDir.isValid());
-    const QByteArray previousCursor = qgetenv("OMAIRC_CURSOR_ROOT");
-    qputenv("OMAIRC_CURSOR_ROOT", cursorDir.path().toUtf8());
+    const ScopedCursorRoot cursorRoot(cursorDir.path());
 
     IrcController controller;
     auto *transport = new FakeIrcTransport;
@@ -798,11 +820,6 @@ void OmaircIpcTest::handlerReadNamesConversations()
              QStringLiteral("after cursor"));
 
     QCOMPARE(controller.selectedTarget(), selectedBefore);
-
-    if (previousCursor.isEmpty())
-        qunsetenv("OMAIRC_CURSOR_ROOT");
-    else
-        qputenv("OMAIRC_CURSOR_ROOT", previousCursor);
 }
 
 int runOmaircIpcTests(int argc, char **argv)
