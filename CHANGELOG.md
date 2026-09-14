@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-09-14
+
 ### Added
 
 - `omairc read`, `omairc names`, and `omairc conversations` snapshot the running window as JSON. An agent can fetch recent chat, a joined-channel member list, and the channel and DM list without changing the UI selection. `read --unread` is a CLI cursor under `$XDG_STATE_HOME/omairc/cli-cursors/` and does not clear GUI unread or mention badges. `--since` and `--unread` keep the newest 100 lines and set `"truncated": true` when they drop older ones. The unread cursor tie-breaks same-millisecond lines with a per-conversation sequence so empty `msgid` tags do not drop later arrivals.
@@ -132,7 +134,8 @@ First public release: a dead-simple IRC client for Omarchy.
 - Keyboard map, slash-command complete, selectable transcript, and follow-unseen.
 - qmake Unix install tree and a GitHub Releases pacman repository.
 
-[Unreleased]: https://github.com/fredimachado/omairc/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/fredimachado/omairc/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/fredimachado/omairc/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/fredimachado/omairc/compare/v0.3.0alpha...v0.3.0
 [0.3.0alpha]: https://github.com/fredimachado/omairc/compare/v0.2.0...v0.3.0alpha
 [0.2.0]: https://github.com/fredimachado/omairc/compare/v0.1.0...v0.2.0

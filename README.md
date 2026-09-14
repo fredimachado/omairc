@@ -2,7 +2,7 @@
 
 A dead-simple IRC client for Omarchy, built with Qt Quick and C++. Agents talk to the running window over `$XDG_RUNTIME_DIR/omairc.sock`. Humans use the same binary.
 
-![Omairc interface](omairc.png)
+![Omairc in demo mode](omairc.gif)
 
 ## Features
 
