@@ -915,7 +915,7 @@ void OmaircIpcTest::handlerReadReportsTruncated()
     QCOMPARE(OmaircIpc::responseMessages(since).at(0).toObject()
                  .value(QStringLiteral("message")).toString(),
              QStringLiteral("n1"));
-    QCOMPARE(OmaircIpc::responseMessages(since).constLast().toObject()
+    QCOMPARE(OmaircIpc::responseMessages(since).last().toObject()
                  .value(QStringLiteral("message")).toString(),
              QStringLiteral("n100"));
 
@@ -927,7 +927,7 @@ void OmaircIpcTest::handlerReadReportsTruncated()
     QCOMPARE(OmaircIpc::responseMessages(unread).at(0).toObject()
                  .value(QStringLiteral("message")).toString(),
              QStringLiteral("n1"));
-    QCOMPARE(OmaircIpc::responseMessages(unread).constLast().toObject()
+    QCOMPARE(OmaircIpc::responseMessages(unread).last().toObject()
                  .value(QStringLiteral("message")).toString(),
              QStringLiteral("n100"));
 }
@@ -997,7 +997,7 @@ void OmaircIpcTest::handlerUnreadKeepsSameMillisecondLines()
         QByteArrayLiteral("{\"cmd\":\"read\",\"target\":\"#omarchy\",\"unread\":true}"));
     QVERIFY(OmaircIpc::responseOk(legacyUnread));
     QVERIFY(OmaircIpc::responseMessages(legacyUnread).size() >= 1);
-    QCOMPARE(OmaircIpc::responseMessages(legacyUnread).constLast().toObject()
+    QCOMPARE(OmaircIpc::responseMessages(legacyUnread).last().toObject()
                  .value(QStringLiteral("message")).toString(),
              QStringLiteral("legacy"));
 }
