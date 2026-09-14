@@ -31,17 +31,32 @@ bool tightenOwnerDir(const QString &path)
     return QFile::setPermissions(path, kOwnerDir);
 }
 
+bool atOrUnderRoot(const QString &path, const QString &root)
+{
+    const QString cleanPath = QDir::cleanPath(path);
+    const QString cleanRoot = QDir::cleanPath(root);
+    return cleanPath == cleanRoot
+        || cleanPath.startsWith(cleanRoot + QLatin1Char('/'));
+}
+
 bool prepareTree(const QString &filePath)
 {
     const QString dir = QFileInfo(filePath).absolutePath();
     if (!QDir().mkpath(dir))
         return false;
+    const QString root =
+        QDir(OmaircCliCursorStore::defaultRoot()).absolutePath();
     QDir walk(dir);
-    tightenOwnerDir(walk.absolutePath());
-    if (walk.cdUp())
-        tightenOwnerDir(walk.absolutePath());
-    if (walk.cdUp())
-        tightenOwnerDir(walk.absolutePath());
+    while (true) {
+        const QString current = walk.absolutePath();
+        if (!atOrUnderRoot(current, root))
+            break;
+        tightenOwnerDir(current);
+        if (QDir::cleanPath(current) == QDir::cleanPath(root))
+            break;
+        if (!walk.cdUp())
+            break;
+    }
     return true;
 }
 

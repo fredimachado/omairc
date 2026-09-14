@@ -125,6 +125,7 @@ private slots:
     void socketLimitsConcurrentClients();
     void parseReadWindows();
     void handlerReadNamesConversations();
+    void handlerUnreadDoesNotChmodCursorRootParent();
 };
 
 void OmaircIpcTest::parseRaisePing()
@@ -820,6 +821,42 @@ void OmaircIpcTest::handlerReadNamesConversations()
              QStringLiteral("after cursor"));
 
     QCOMPARE(controller.selectedTarget(), selectedBefore);
+}
+
+void OmaircIpcTest::handlerUnreadDoesNotChmodCursorRootParent()
+{
+    QTemporaryDir parentDir;
+    QVERIFY(parentDir.isValid());
+    const QFileDevice::Permissions openParent =
+        QFileDevice::ReadOwner | QFileDevice::WriteOwner | QFileDevice::ExeOwner
+        | QFileDevice::ReadGroup | QFileDevice::ExeGroup
+        | QFileDevice::ReadOther | QFileDevice::ExeOther;
+    QVERIFY(QFile::setPermissions(parentDir.path(), openParent));
+    const QString cursorRoot =
+        QDir(parentDir.path()).filePath(QStringLiteral("cursors"));
+    QVERIFY(QDir().mkpath(cursorRoot));
+    const ScopedCursorRoot scoped(cursorRoot);
+
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    IrcSession *session =
+        controller.addSession(testConfig(QStringLiteral("net-1")), transport);
+    QVERIFY(session);
+    registerSession(session, transport);
+    seedChannelAndDirect(transport);
+
+    OmaircIpcHandler handler(&controller);
+    const QByteArray unread =
+        handler.handleLine(QByteArrayLiteral("{\"cmd\":\"read\",\"unread\":true}"));
+    QVERIFY(OmaircIpc::responseOk(unread));
+    QVERIFY(OmaircIpc::responseMessages(unread).size() >= 1);
+    QVERIFY(QFileInfo::exists(
+        QDir(cursorRoot).filePath(QStringLiteral("net-1.json"))));
+
+    const QFileDevice::Permissions parentBits =
+        QFileInfo(parentDir.path()).permissions();
+    QVERIFY(parentBits & QFileDevice::ReadGroup);
+    QVERIFY(parentBits & QFileDevice::ReadOther);
 }
 
 int runOmaircIpcTests(int argc, char **argv)
