@@ -77,6 +77,20 @@ KEY_CODES = {
     ".": 52,
     "slash": 53,
     "/": 53,
+    "equal": 13,
+    "=": 13,
+    "leftbrace": 26,
+    "[": 26,
+    "rightbrace": 27,
+    "]": 27,
+    "semicolon": 39,
+    ";": 39,
+    "apostrophe": 40,
+    "'": 40,
+    "grave": 41,
+    "`": 41,
+    "backslash": 43,
+    "\\": 43,
     "space": 57,
     " ": 57,
     "enter": 28,
@@ -90,6 +104,32 @@ KEY_CODES = {
     "alt": 56,
     "super": 125,
     "meta": 125,
+}
+
+# Scancodes are physical, so the character a shifted key produces is whatever
+# the compositor's layout says. These pairings assume US QWERTY.
+SHIFTED_CHARS = {
+    "!": "1",
+    "@": "2",
+    "#": "3",
+    "$": "4",
+    "%": "5",
+    "^": "6",
+    "&": "7",
+    "*": "8",
+    "(": "9",
+    ")": "0",
+    "_": "minus",
+    "+": "equal",
+    "{": "leftbrace",
+    "}": "rightbrace",
+    ":": "semicolon",
+    '"': "apostrophe",
+    "~": "grave",
+    "|": "backslash",
+    "<": "comma",
+    ">": "dot",
+    "?": "slash",
 }
 
 
@@ -147,6 +187,20 @@ def tap(fd: int, code: int, hold: float = 0.04) -> None:
     sync(fd)
 
 
+def tap_shifted(fd: int, code: int, hold: float = 0.03) -> None:
+    """Shift+key at typing speed. chord() pads mods and would break cadence."""
+    shift = key("shift")
+    emit(fd, EV_KEY, shift, 1)
+    sync(fd)
+    time.sleep(0.01)
+    try:
+        tap(fd, code, hold=hold)
+    finally:
+        # Same hazard as chord(): a held Shift would outlive this process.
+        emit(fd, EV_KEY, shift, 0)
+        sync(fd)
+
+
 def chord(fd: int, mods: list[str], name: str) -> None:
     mod_codes = [key(mod) for mod in mods]
     code = key(name)
@@ -168,8 +222,11 @@ def chord(fd: int, mods: list[str], name: str) -> None:
 
 def type_text(fd: int, text: str, delay: float) -> None:
     for char in text:
-        if char.isupper():
-            chord(fd, ["shift"], char.lower())
+        shifted = SHIFTED_CHARS.get(char)
+        if shifted is not None:
+            tap_shifted(fd, key(shifted))
+        elif char.isupper():
+            tap_shifted(fd, key(char.lower()))
         else:
             tap(fd, key(char), hold=0.03)
         time.sleep(delay)

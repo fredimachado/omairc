@@ -31,6 +31,9 @@ GIF_DITHER="${GIF_DITHER:-none}"
 GIF_DIFF_MODE="${GIF_DIFF_MODE:-rectangle}"
 TYPE_DELAY="${TYPE_DELAY:-0.08}"
 
+SCENARIO="${OMAIRC_DEMO_SCENARIO:-}"
+DRY_RUN=0
+
 DEMO_PID=""
 RECORDING_STARTED=0
 CURSOR_HIDDEN=0
@@ -176,6 +179,21 @@ drive_walkthrough() {
   sleep 1.6
 }
 
+# A --scenario file redefines drive_walkthrough, so one-off clips never have to
+# edit (and dirty) the committed default above. It runs in this shell, so it can
+# call press, type_slow, and sleep.
+load_scenario() {
+  [[ -n "$SCENARIO" ]] || return 0
+  [[ -f "$SCENARIO" ]] || die "no scenario file at $SCENARIO"
+  local before after
+  before="$(declare -f drive_walkthrough)"
+  # shellcheck source=/dev/null
+  source "$SCENARIO"
+  after="$(declare -f drive_walkthrough)"
+  [[ "$before" != "$after" ]] || die "$SCENARIO did not redefine drive_walkthrough"
+  echo "record-demo: scenario $SCENARIO"
+}
+
 newest_recording() {
   # Tolerate an empty dir: the caller reports the missing mp4, not pipefail.
   ls -1t "$OUTDIR"/screenrecording-*.mp4 2>/dev/null | head -1 || true
@@ -237,6 +255,20 @@ record_walkthrough() {
 
   hl "hl.dsp.focus({ workspace = \"$RECORD_WORKSPACE\" })"
   focus_demo
+
+  if [[ "$DRY_RUN" -eq 1 ]]; then
+    # Drive the keys so a new scenario can be checked without paying for a
+    # capture and encode. Leave the pointer alone: nothing is being filmed.
+    echo "record-demo: dry run, no capture and no gif"
+    sleep 0.8
+    drive_walkthrough
+    restore
+    trap - EXIT
+    leak_check
+    echo "record-demo: dry run finished"
+    return 0
+  fi
+
   hl 'hl.dsp.cursor.move_to_corner({ corner = "topleft" })' || true
   hide_cursor
   sleep 0.8
@@ -273,14 +305,29 @@ usage() {
 record-demo - workspace-1 Omairc demo GIF (1600x900)
 
 Usage:
-  record-demo
-  record-demo --encode-only <mp4>
+  record-demo                       record the default walkthrough
+  record-demo --scenario <file>     record a custom walkthrough
+  record-demo --dry-run             drive the keys, no capture, no gif
+  record-demo --encode-only <mp4>   re-encode an existing capture
   record-demo -h
+
+A scenario file redefines drive_walkthrough and is sourced into this script,
+so it can call press, type_slow, and sleep:
+
+  drive_walkthrough() {
+    sleep 1.2
+    press ctrl+k
+    sleep 0.5
+    type_slow "#desktop"
+    press return
+    sleep 1.5
+  }
 
 Env:
   OMAIRC_DEMO_GIF        output path (default: $ROOT/omairc.gif)
   OMAIRC_DEMO_OUTDIR     capture dir (default: $OUTDIR)
   OMAIRC_DEMO_BINARY     demo binary (default: $ROOT/build/omairc)
+  OMAIRC_DEMO_SCENARIO   scenario file (same as --scenario)
   GIF_WIDTH/GIF_HEIGHT   default 1600x900
   GIF_FPS                default 15
   GIF_DITHER             default none (try floyd_steinberg for photo-ish frames)
@@ -291,26 +338,42 @@ EOF
 }
 
 main() {
-  case "${1:-}" in
-    -h | --help)
-      usage
-      exit 0
-      ;;
-    --encode-only)
-      [[ -n "${2:-}" ]] || die "--encode-only needs an mp4 path"
-      require_cmds ffmpeg
-      encode_gif "$2" "$OUTPUT"
-      exit 0
-      ;;
-    "")
-      ;;
-    *)
-      die "unknown argument: $1 (try --help)"
-      ;;
-  esac
+  local encode_only=""
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      -h | --help)
+        usage
+        exit 0
+        ;;
+      --encode-only)
+        [[ -n "${2:-}" ]] || die "--encode-only needs an mp4 path"
+        encode_only="$2"
+        shift 2
+        ;;
+      --scenario)
+        [[ -n "${2:-}" ]] || die "--scenario needs a file"
+        SCENARIO="$2"
+        shift 2
+        ;;
+      --dry-run)
+        DRY_RUN=1
+        shift
+        ;;
+      *)
+        die "unknown argument: $1 (try --help)"
+        ;;
+    esac
+  done
+
+  if [[ -n "$encode_only" ]]; then
+    require_cmds ffmpeg
+    encode_gif "$encode_only" "$OUTPUT"
+    exit 0
+  fi
 
   require_tools
   ensure_binary
+  load_scenario
   mkdir -p "$OUTDIR"
   trap restore EXIT
   record_walkthrough

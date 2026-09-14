@@ -1,6 +1,6 @@
 ---
 name: record-omairc-demo
-description: Records the Omairc README demo on Omarchy workspace 1 from ./build/omairc --demo-server, injects real keyboard chords so Omakeycast overlays them, then encodes a looping 1600x900 GIF. Use when regenerating omairc.gif, recording the demo walkthrough, or changing the demo GIF script, timings, or key sequence.
+description: Records the Omairc README demo on Omarchy workspace 1 from ./build/omairc --demo-server, injects real keyboard chords so Omakeycast overlays them, then encodes a looping 1600x900 GIF. Use when regenerating omairc.gif, recording the demo walkthrough, recording a custom demo scenario the user describes, or changing the demo GIF script, timings, or key sequence.
 ---
 
 # Record Omairc demo GIF
@@ -25,7 +25,49 @@ Re-encode an existing capture without recording:
 .cursor/skills/record-omairc-demo/scripts/record-demo --encode-only /path/to/screenrecording.mp4
 ```
 
-Change the clip by editing `drive_walkthrough` in [scripts/record-demo](scripts/record-demo). Encode knobs (`GIF_WIDTH`, `GIF_HEIGHT`, `GIF_FPS`, `GIF_DITHER`, `GIF_DIFF_MODE`) live at the top of that script.
+Encode knobs (`GIF_WIDTH`, `GIF_HEIGHT`, `GIF_FPS`, `GIF_DITHER`, `GIF_DIFF_MODE`)
+live at the top of [scripts/record-demo](scripts/record-demo).
+
+## A different scenario
+
+If the user does not describe one, record the default walkthrough. Do not
+improvise a variation.
+
+For a one-off clip, write a scenario file that redefines `drive_walkthrough`
+and pass `--scenario`. Do **not** edit `drive_walkthrough` in the script for
+this: that function is the committed default, and editing it leaves the repo
+dirty and silently changes what a bare run produces. Edit it only when the
+user wants the default itself to change.
+
+```sh
+cat > /tmp/scenario.sh <<'EOF'
+drive_walkthrough() {
+  sleep 1.2
+  press ctrl+k
+  sleep 0.5
+  type_slow "#desktop"
+  press return
+  sleep 1.5
+}
+EOF
+scripts/record-demo --dry-run --scenario /tmp/scenario.sh   # ~15s, no gif
+scripts/record-demo --scenario /tmp/scenario.sh             # then record
+```
+
+The file is sourced into the script, so it can call `press`, `type_slow`, and
+`sleep`. Always `--dry-run` a new scenario first: it launches the window and
+injects the keys without capturing or encoding, which is where a wrong
+shortcut or a jump that finds nothing shows up cheaply.
+
+Seeded world to write against, on two networks:
+
+| Network | Nick | Channels | Direct messages |
+|---|---|---|---|
+| `omarchy` | `fred` | `#omarchy`, `#desktop`, `#ricing`, `#help` | `anna`, `dax` |
+| `oftc` | `oak` | `#omarchy`, `#lab`, `#build` | `rio` |
+
+`Ctrl+/` in the running window lists every drivable shortcut. `type_slow`
+handles all printable ASCII, assuming a US QWERTY layout.
 
 ## Hard rules
 
@@ -105,6 +147,7 @@ Do not crush to 128 colors unless the user asks. Capture stays native; only the 
 - [ ] `id -nG` includes `input`.
 - [ ] Omakeycast plugin enabled (`io.github.fredimachado.omakeycast` in `~/.config/omarchy/shell.json`).
 - [ ] Run `scripts/record-demo` (or `--encode-only`). Do not drive keys by hand unless debugging.
+- [ ] Custom scenario: `--scenario`, never an edit to `drive_walkthrough`. `--dry-run` it before recording, and confirm `git status` is clean afterwards.
 - [ ] After restore: pointer visible again, workspace 2, Cursor focused, demo PID gone, no `omarchy`/`oftc` stanzas leaked into `~/.config/omairc/omairc.conf`.
 - [ ] `identify omairc.gif` (or `ffprobe`) shows **1600×900**. Copy into the repo root if the script did not already.
 
