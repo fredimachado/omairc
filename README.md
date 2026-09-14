@@ -6,39 +6,25 @@ A dead-simple IRC client for Omarchy, built with Qt Quick and C++. Agents talk t
 
 ## Features
 
-- AI-friendly local CLI. While the window is running, the same binary prints one JSON line and exits. `connections` lists networks. `status` shows one. `send` writes to a channel or nick without changing the UI selection. `conversations` lists channels and DMs with the GUI unread and mention badges, and does not clear them. `read` snapshots recent chat (`message`, `notice`, `action`) for one target or for the whole network. `names` snapshots the joined-channel member list. `raise` activates the window. With exactly one connection, `--network` may be omitted. Quote channel targets. `#` starts a shell comment. Quote send text when it contains spaces.
-- `omairc read --unread` uses a CLI cursor under `$XDG_STATE_HOME/omairc/cli-cursors/`. It does not change the selected conversation or the GUI unread and mention counts. Two agents on this machine share one cursor per network, or per network and target.
-- Several networks in one window. Each keeps its own channels, direct messages, nick, and connection state.
-- Connect sheet on first launch. Libera Chat defaults, TLS on, autojoin `#omarchy`. Password is the connection `PASS`. NickServ is SASL PLAIN when the server offers it, otherwise `IDENTIFY` after welcome. Apply starts the session. Nothing connects on its own unless you turn on Connect automatically on startup.
-- `Ctrl+,` or `edit` beside a network name reopens Connect. Disconnect sits next to Apply while that network is live or reconnecting. The network name opens Status.
-- Status console per network. Handshake, errors, and AUTH stay there, not in DIRECT MESSAGES.
-- Channels and DMs. Member panel and people count on channels only. Click a nick in the member list, or a chat author or avatar, to open or create a DM. `Ctrl+W` or `/close` closes a DM.
-- Live transcripts insert a centered `Today`, `Yesterday`, or locale date mark when the local day changes. Status stays a raw console.
-- Presence dots and away dimming when the server grants `away-notify`. Status lines need `draft/metadata-2` and `batch`. Typing ellipsis needs `message-tags`. Member ranks follow the server `PREFIX`.
-- Keyboard first. `Ctrl+/` lists the shortcuts. Walk conversations and networks, `Ctrl+K` jump, `Alt+A` next unread, `Ctrl+F` find, Tab nick complete, Up/Down history, drafts that stay with each conversation.
-- Slash commands from the same single-line composer, with complete after `/`. Catalog is `/me`, `/join` (`/j`), `/part` (`/leave`), `/nick`, `/disconnect` (`/quit`), `/clear`, `/close`, `/query`, `/msg`, `/topic`, `/notice`, `/away`, `/back`, `/whois`, `/mode`, `/kick`, `/invite`, `/ignore`, `/unignore`, `/ignored`, `/mute`, `/unmute`, `/muted`, `/highlight`, `/unhighlight`, `/highlights`, `/op`, `/deop`, `/voice`, `/devoice`, `/ban`, `/ns`, `/cs`, `/raw` (`/quote`), and `/help`.
-- `/ignore` hides private messages, notices, and invites from that nick and persists per network. Channel text stays visible.
-- `/mute` quiets a channel or direct message. Chat still arrives. Mentions do not notify or badge. `/unmute` and `/muted` match the ignore verbs. Status `/mute` without a target is refused.
-- `/highlight` treats extra words as mentions on that network. `/unhighlight` and `/highlights` match the ignore verbs.
-- Empty `/join` joins the latest inbound invite. Clicking the channel on a Status `INVITE` line does the same.
-- A successful keyed `/join` remembers the key for autojoin. Part and kick drop it. Connect still lists names only.
-- Desktop notification for an unfocused mention or DM. Focused window stays quiet. Activating the notification raises the window and opens that conversation.
-- Chat bodies render bold, italic, and underline. Topics, Status, find, and notifications stay plain text.
-- Clickable `http` and `https` links in chat and Status. Other schemes do nothing.
+- AI-friendly local CLI. While the window runs, the same binary prints one JSON line and exits: `connections`, `status`, `send`, `conversations`, `read`, `names`, `raise`. None of them change the selected conversation or clear the GUI badges.
+- Several networks in one window. Each keeps its own channels, direct messages, nick, and connection state, plus a Status console that holds the handshake, AUTH, and errors.
+- Connect sheet on first launch. Libera Chat defaults, TLS on, autojoin `#omarchy`. NickServ is SASL PLAIN when the server offers it, otherwise `IDENTIFY`. Nothing connects on its own unless you ask it to.
+- Channels and direct messages. Member panel and people count on channels only. Click a nick to open a DM, `Ctrl+W` to close it.
+- Keyboard first. `Ctrl+/` lists the shortcuts: `Ctrl+K` jump, `Alt+A` next unread, `Ctrl+F` find, Tab nick complete, Up/Down history, and drafts that stay with each conversation.
+- Slash commands from the composer, with complete after `/`. The usual set plus `/ignore`, `/mute`, and `/highlight`, which persist per network.
+- Desktop notification for a mention or DM while the window is unfocused. Activating it raises the window and opens that conversation.
 - Colors follow the current Omarchy theme and update live. Text follows the desktop size.
-- Profiles in `$XDG_CONFIG_HOME/omairc/`. Passwords and NickServ secrets go through QtKeychain into Secret Service. If that service is missing, those secrets stay session-only and Connect says so. If a saved secret cannot be returned, Connect automatically on startup leaves that network disconnected. Errors go to `$XDG_STATE_HOME/omairc/omairc.log`.
-- One process. A second launch raises the existing window. While that window is running, the same binary can send `connections`, `status`, `send`, `read`, `names`, `conversations`, and `raise` over `$XDG_RUNTIME_DIR/omairc.sock`.
-- IRCv3 `sasl`, `sts`, `echo-message`, `server-time`, `multi-prefix`, `chghost`, `cap-notify`, `batch`, `chathistory`, and `znc.in/playback`. Reconnects with backoff. Answers CTCP VERSION.
+- Backlog on arrival. A joined channel asks for its last 100 lines over `CHATHISTORY`, a ZNC bouncer's `znc.in/playback` replay is folded in on attach, and a restart reloads the last 2000 lines from the local log as muted backlog.
+- IRCv3 `sasl`, `sts`, `echo-message`, `server-time`, `multi-prefix`, `away-notify`, `message-tags`, `chghost`, `cap-notify`, `batch`, `chathistory`, and `znc.in/playback`. Reconnects with backoff.
+- Profiles in `$XDG_CONFIG_HOME/omairc/`. Passwords and NickServ secrets go through QtKeychain into Secret Service; without that service they stay session-only and Connect says so. Logs and errors land in `$XDG_STATE_HOME/omairc/`.
+- One process. A second launch raises the existing window.
 
 ## Limits
 
-- Network sections stay expanded. Scroll the sidebar when they overflow.
-- Conversation logs live under `$XDG_STATE_HOME/omairc/logs/`. A restart reloads the last 2000 lines as muted backlog. `/clear` wipes the visible buffer and leaves the file. A server that advertises `chathistory` and `batch` can still fill a joined channel with its last 100 lines. A bouncer that volunteers `znc.in/playback` can replay on attach. There is no Soju or ZNC history-sync protocol.
-- Connect has no separate SASL account or bouncer-network fields. NickServ is the services password.
-- SASL is PLAIN only.
-- No DCC, file transfer, voice, or video.
-- No plugins or scripts.
-- The local CLI is control of the running window, not a second IRC client.
+- SASL is PLAIN only, and Connect has no separate SASL account or bouncer-network fields.
+- No DCC, file transfer, voice, video, plugins, or scripts.
+- No Soju or ZNC history-sync protocol. Omairc asks for and accepts server history, but it does not drive a bouncer's own sync commands.
+- The local CLI controls the running window. It is not a second IRC client.
 
 ## Install
 
@@ -52,15 +38,13 @@ cd omairc
 
 Run that as your regular user. `makepkg` calls `sudo` when it needs to.
 
-Or install a release package:
+Or install a [release package](https://github.com/fredimachado/omairc/releases/latest):
 
 ```sh
 sudo pacman -U omairc-*.pkg.tar.zst
 ```
 
-[Latest release](https://github.com/fredimachado/omairc/releases/latest).
-
-To get updates through pacman, add:
+For updates through pacman, add:
 
 ```ini
 [omairc]
@@ -84,9 +68,7 @@ make
 make INSTALL_ROOT="$pkgdir" install
 ```
 
-Default `PREFIX` is `/usr/local`. Prove the staged tree with `bin/test-install`. That command does not write `./build`. Install also ships bash completion at `share/bash-completion/completions/omairc`.
-
-`version.pri` is the only version string. Tag a release as `v` plus that value. Arch `pkgver` cannot contain hyphens, so pre-releases use `0.4.0alpha` rather than `0.4.0-alpha`.
+Default `PREFIX` is `/usr/local`. Prove the staged tree with `bin/test-install`. `version.pri` is the only version string; tag a release as `v` plus that value. Arch `pkgver` cannot contain hyphens, so pre-releases use `0.4.0alpha` rather than `0.4.0-alpha`.
 
 Omairc is MIT. See `LICENSE`. The IRC protocol code in `src/irc/` is LGPL-3.0-or-later. The bundled iA Writer Mono font is OFL-1.1.
 
@@ -96,7 +78,7 @@ Omairc is MIT. See `LICENSE`. The IRC protocol code in `src/irc/` is LGPL-3.0-or
 npx skills add fredimachado/omairc/skills -g
 ```
 
-That installs the local CLI skill for this user (Cursor, Claude Code, Codex, and other agents the Skills CLI supports). The window must already be running. Preview with `npx skills add fredimachado/omairc/skills --list`.
+That installs the local CLI skill for this user (Cursor, Claude Code, Codex, and other agents the Skills CLI supports). The window must already be running. Preview with `--list`.
 
 ## Build
 
@@ -105,23 +87,14 @@ bin/build
 ./build/omairc
 ./build/omairc --demo-server
 ./build/omairc --help
-./build/omairc --version
-./build/omairc connections
-./build/omairc status
-./build/omairc send --help
 ./build/omairc send --network <id> '#channel' hello
-./build/omairc send '#channel' 'hello there'
-./build/omairc conversations
-./build/omairc names '#channel'
-./build/omairc read --last 20
 ./build/omairc read '#channel' --since 5m
 ./build/omairc read --unread
-./build/omairc raise
 ```
 
-`--demo-server` seeds an in-process session and skips Connect. `--help` and `--version` print plain text and exit without a window. After the send target, `--help` and `--version` are message text. Quote channel targets. `#` starts a shell comment. Quote send text when it contains spaces.
+`--demo-server` seeds an in-process session and skips Connect. `--help` and `--version` print plain text and exit without a window; after a send target they are message text. Quote channel targets, since `#` starts a shell comment.
 
-Control commands need a running window. They print JSON on stdout and exit. With exactly one connection, `--network` may be omitted. With zero or more than one, omit is an error and the message points at `connections`. `send`, `read`, `names`, and `conversations` do not change the UI selection. Default `read` is `--last 50`. `--last` over 100 is an error. `--since` and `--unread` keep the newest 100 and set `"truncated": true` when they drop older lines. `--last`, `--since`, and `--unread` do not combine.
+Control commands need a running window. With exactly one connection, `--network` may be omitted. Default `read` is `--last 50`, capped at 100; `--last`, `--since`, and `--unread` do not combine. `--unread` uses a CLI cursor under `$XDG_STATE_HOME/omairc/cli-cursors/` that agents on this machine share, separate from the GUI unread counts.
 
 Set `OMAIRC_ALLOW_MULTI=1` if you need more than one normal process while debugging.
 
@@ -135,10 +108,6 @@ bin/test-desktop
 bin/test-live
 ```
 
-`bin/test` is the default gate. It checks conventions, builds, checks CLI help and version, then runs the C++ suite and the offscreen QML tests. CI also runs `bin/test-san` and `bin/test-live`.
+`bin/test` is the default gate: conventions, build, CLI help and version, the C++ suite, and the offscreen QML tests. CI also runs `bin/test-san` (ASan and UBSan) and `bin/test-live`.
 
-`bin/test-san` rebuilds the C++ suite with ASan and UBSan.
-
-`bin/test-desktop` is optional. On Arch or Omarchy it needs `xorg-server-xvfb`, `xorg-xauth`, `xdotool`, and `imagemagick`. It launches `./build/omairc --demo-server` as a black box.
-
-`bin/test-live` is optional and needs Docker. It starts Ergo, Solanum, and ngIRCd on loopback, runs the protocol suite, then the dual-network production-QML proof.
+`bin/test-desktop` is optional and needs `xorg-server-xvfb`, `xorg-xauth`, `xdotool`, and `imagemagick`. `bin/test-live` is optional and needs Docker; it drives Ergo, Solanum, and ngIRCd on loopback, then the dual-network production-QML proof.
