@@ -1,11 +1,13 @@
 # Omairc
 
-A dead-simple IRC client for Omarchy, built with Qt Quick and C++.
+A dead-simple IRC client for Omarchy, built with Qt Quick and C++. Agents talk to the running window over `$XDG_RUNTIME_DIR/omairc.sock`. Humans use the same binary.
 
 ![Omairc interface](omairc.png)
 
 ## Features
 
+- AI-friendly local CLI. While the window is running, the same binary prints one JSON line and exits. `connections` lists networks. `status` shows one. `send` writes to a channel or nick without changing the UI selection. `conversations` lists channels and DMs with the GUI unread and mention badges, and does not clear them. `read` snapshots recent chat (`message`, `notice`, `action`) for one target or for the whole network. `names` snapshots the joined-channel member list. `raise` activates the window. With exactly one connection, `--network` may be omitted.
+- `omairc read --unread` uses a CLI cursor under `$XDG_STATE_HOME/omairc/cli-cursors/`. It does not change the selected conversation or the GUI unread and mention counts. Two agents on this machine share one cursor per network, or per network and target. Quote channel targets in the shell. `#` starts a comment.
 - Several networks in one window. Each keeps its own channels, direct messages, nick, and connection state.
 - Connect sheet on first launch. Libera Chat defaults, TLS on, autojoin `#omarchy`. Password is the connection `PASS`. NickServ is SASL PLAIN when the server offers it, otherwise `IDENTIFY` after welcome. Apply starts the session. Nothing connects on its own unless you turn on Connect automatically on startup.
 - `Ctrl+,` or `edit` beside a network name reopens Connect. The network name opens Status.
@@ -20,7 +22,7 @@ A dead-simple IRC client for Omarchy, built with Qt Quick and C++.
 - Clickable `http` and `https` links in chat and Status. Other schemes do nothing.
 - Colors follow the current Omarchy theme and update live. Text follows the desktop size.
 - Profiles in `$XDG_CONFIG_HOME/omairc/`. Passwords and NickServ secrets go through QtKeychain into Secret Service. If that service is missing, those secrets stay session-only and Connect says so. If a saved secret cannot be returned, Connect automatically on startup leaves that network disconnected. Errors go to `$XDG_STATE_HOME/omairc/omairc.log`.
-- One process. A second launch raises the existing window. While that window is running, the same binary can send `connections`, `status`, `send`, and `raise` over `$XDG_RUNTIME_DIR/omairc.sock`.
+- One process. A second launch raises the existing window. While that window is running, the same binary can send `connections`, `status`, `send`, `read`, `names`, `conversations`, and `raise` over `$XDG_RUNTIME_DIR/omairc.sock`.
 - IRCv3 `sasl`, `sts`, `echo-message`, `server-time`, `multi-prefix`, `chghost`, `cap-notify`, `batch`, `chathistory`, and `znc.in/playback`. Reconnects with backoff. Answers CTCP VERSION.
 
 ## Limits
@@ -95,12 +97,17 @@ bin/build
 ./build/omairc status
 ./build/omairc send --help
 ./build/omairc send --network <id> '#channel' hello
+./build/omairc conversations
+./build/omairc names '#channel'
+./build/omairc read --last 20
+./build/omairc read '#channel' --since 5m
+./build/omairc read --unread
 ./build/omairc raise
 ```
 
 `--demo-server` seeds an in-process session and skips Connect. `--help` and `--version` print plain text and exit without a window. After the send target, `--help` and `--version` are message text.
 
-Control commands need a running window. They print JSON on stdout and exit. With exactly one connection, `--network` may be omitted. With zero or more than one, omit is an error and the message points at `connections`. `send` does not change the UI selection.
+Control commands need a running window. They print JSON on stdout and exit. With exactly one connection, `--network` may be omitted. With zero or more than one, omit is an error and the message points at `connections`. `send`, `read`, `names`, and `conversations` do not change the UI selection. Default `read` is `--last 50`. `--last` over 100 is an error. `--last`, `--since`, and `--unread` do not combine.
 
 Set `OMAIRC_ALLOW_MULTI=1` if you need more than one normal process while debugging.
 

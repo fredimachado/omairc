@@ -61,14 +61,14 @@ if is_json_object "$HELP_OUTPUT"; then
   echo "omairc --help must not print JSON." >&2
   exit 1
 fi
-for token in connections list status send raise --demo-server --version; do
+for token in connections list status send read names conversations raise --demo-server --version; do
   printf '%s\n' "$HELP_OUTPUT" | grep -Fq -- "$token" || {
     echo "omairc --help must mention $token" >&2
     exit 1
   }
 done
 
-for command in connections list status send raise; do
+for command in connections list status send read names conversations raise; do
   set +e
   COMMAND_HELP="$(DISPLAY= "$ROOT/build/omairc" "$command" --help 2>&1)"
   COMMAND_STATUS=$?
@@ -140,7 +140,7 @@ printf '%s\n' "$HELP_COMPREPLY_TEXT" | grep -Fxq status || {
   echo "bash completion for help must include status." >&2
   exit 1
 }
-for token in connections list status send raise; do
+for token in connections list status send read names conversations raise; do
   printf '%s\n' "$HELP_OUTPUT" | grep -Fq -- "$token" || continue
   grep -Fq -- "$token" "$COMPLETION" || {
     echo "completion file must mention control verb $token from --help." >&2

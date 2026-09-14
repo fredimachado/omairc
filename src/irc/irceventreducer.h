@@ -167,6 +167,7 @@ public:
 
     std::optional<IrcMemberView> memberView(const IrcConversationKey& key,
                                             const QString& normalizedNick) const;
+    bool mentions(const QString& networkId, const QString& body) const;
 
     QStringList typingNicks(const IrcConversationKey& key,
                             const QDateTime& now) const;

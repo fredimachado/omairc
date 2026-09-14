@@ -17,7 +17,9 @@
 #include <QSet>
 #include <QStringList>
 #include <QTimer>
+#include <QVector>
 
+#include <QDateTime>
 #include <map>
 #include <optional>
 #include <variant>
@@ -105,6 +107,49 @@ public:
     bool sendToTarget(const QString &networkId,
                       const QString &target,
                       const QString &text);
+
+    struct CliMessage {
+        QString networkId;
+        QString target;
+        QString sender;
+        QDateTime timestamp;
+        QString message;
+        QString kind;
+        QString msgid;
+        bool mention = false;
+    };
+
+    struct CliMember {
+        QString nick;
+        QString label;
+        bool away = false;
+        QString status;
+    };
+
+    struct CliConversation {
+        QString target;
+        bool channel = false;
+        int unread = 0;
+        bool mention = false;
+    };
+
+    struct CliReadQuery {
+        enum class Mode { Last, Since, After } mode = Mode::Last;
+        int last = 50;
+        QDateTime sinceUtc;
+        QDateTime afterUtc;
+        QString afterMsgid;
+    };
+
+    std::variant<QVector<CliMessage>, QString> snapshotMessages(
+        const QString &networkId,
+        const QString &target,
+        const CliReadQuery &query) const;
+    std::variant<QVector<CliMember>, QString> snapshotMembers(
+        const QString &networkId,
+        const QString &target) const;
+    std::variant<QVector<CliConversation>, QString> snapshotConversations(
+        const QString &networkId) const;
 
 signals:
     void selectionChanged();

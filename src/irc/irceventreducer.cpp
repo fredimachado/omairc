@@ -582,6 +582,12 @@ bool IrcEventReducer::isSelf(const QString& networkId, const QString& nick) cons
         && equals(networkId, current->second, nick);
 }
 
+bool IrcEventReducer::mentions(const QString& networkId,
+                               const QString& body) const
+{
+    return isMention(networkId, body);
+}
+
 bool IrcEventReducer::isMention(const QString& networkId,
                                 const QString& body) const
 {

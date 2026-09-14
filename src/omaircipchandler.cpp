@@ -3,7 +3,11 @@
 #include "irc/irccontroller.h"
 #include "irc/ircsession.h"
 
+#include <QJsonArray>
+#include <QJsonObject>
 #include <QMetaEnum>
+
+#include <optional>
 
 OmaircIpcHandler::OmaircIpcHandler(IrcController *controller, RaiseFn raiseFn)
     : m_controller(controller)
@@ -102,6 +106,117 @@ QByteArray OmaircIpcHandler::handle(const OmaircIpc::Request &request) const
         }
         return OmaircIpc::okResponse();
     }
+    case OmaircIpc::Command::Read:
+    case OmaircIpc::Command::Names:
+    case OmaircIpc::Command::Conversations: {
+        if (!m_controller)
+            return OmaircIpc::errorResponse(
+                QStringLiteral("No IRC controller in this process"));
+        const OmaircIpc::ResolveResult resolved =
+            OmaircIpc::resolveNetworkId(request.networkId, networkIds());
+        if (!resolved.ok)
+            return OmaircIpc::errorResponse(resolved.error);
+        if (request.command == OmaircIpc::Command::Read)
+            return handleRead(request, resolved.networkId);
+        if (request.command == OmaircIpc::Command::Names)
+            return handleNames(request, resolved.networkId);
+        return handleConversations(resolved.networkId);
+    }
     }
     return OmaircIpc::errorResponse(QStringLiteral("Unknown command"));
+}
+
+QByteArray OmaircIpcHandler::handleRead(const OmaircIpc::Request &request,
+                                       const QString &networkId) const
+{
+    IrcController::CliReadQuery query;
+    std::optional<OmaircCliCursor> loaded;
+    if (std::holds_alternative<OmaircIpc::UnreadWindow>(request.window)) {
+        loaded = m_cursors.load(networkId, request.target);
+        if (loaded) {
+            query.mode = IrcController::CliReadQuery::Mode::After;
+            query.afterUtc = loaded->timestamp;
+            query.afterMsgid = loaded->msgid;
+        } else {
+            query.mode = IrcController::CliReadQuery::Mode::Last;
+            query.last = 50;
+        }
+    } else if (const auto *since =
+                   std::get_if<OmaircIpc::SinceWindow>(&request.window)) {
+        query.mode = IrcController::CliReadQuery::Mode::Since;
+        query.sinceUtc = since->cutoffUtc;
+    } else {
+        const auto last = std::get<OmaircIpc::LastWindow>(request.window);
+        query.mode = IrcController::CliReadQuery::Mode::Last;
+        query.last = last.count;
+    }
+
+    const auto result =
+        m_controller->snapshotMessages(networkId, request.target, query);
+    if (const auto *error = std::get_if<QString>(&result))
+        return OmaircIpc::errorResponse(*error);
+    const auto &lines = std::get<QVector<IrcController::CliMessage>>(result);
+
+    if (std::holds_alternative<OmaircIpc::UnreadWindow>(request.window)
+        && !lines.isEmpty()) {
+        OmaircCliCursor cursor;
+        const IrcController::CliMessage &newest = lines.constLast();
+        cursor.timestamp = newest.timestamp;
+        cursor.msgid = newest.msgid;
+        m_cursors.save(networkId, request.target, cursor);
+    }
+
+    QJsonArray messages;
+    for (const IrcController::CliMessage &line : lines) {
+        QJsonObject row;
+        row.insert(QStringLiteral("network"), line.networkId);
+        row.insert(QStringLiteral("target"), line.target);
+        row.insert(QStringLiteral("sender"), line.sender);
+        row.insert(QStringLiteral("timestamp"),
+                   line.timestamp.toUTC().toString(Qt::ISODateWithMs));
+        row.insert(QStringLiteral("message"), line.message);
+        row.insert(QStringLiteral("kind"), line.kind);
+        if (!line.msgid.isEmpty())
+            row.insert(QStringLiteral("msgid"), line.msgid);
+        row.insert(QStringLiteral("mention"), line.mention);
+        messages.append(row);
+    }
+    return OmaircIpc::okMessages(messages);
+}
+
+QByteArray OmaircIpcHandler::handleNames(const OmaircIpc::Request &request,
+                                        const QString &networkId) const
+{
+    const auto result = m_controller->snapshotMembers(networkId, request.target);
+    if (const auto *error = std::get_if<QString>(&result))
+        return OmaircIpc::errorResponse(*error);
+    QJsonArray members;
+    for (const IrcController::CliMember &member :
+         std::get<QVector<IrcController::CliMember>>(result)) {
+        QJsonObject row;
+        row.insert(QStringLiteral("nick"), member.nick);
+        row.insert(QStringLiteral("label"), member.label);
+        row.insert(QStringLiteral("away"), member.away);
+        row.insert(QStringLiteral("status"), member.status);
+        members.append(row);
+    }
+    return OmaircIpc::okMembers(members);
+}
+
+QByteArray OmaircIpcHandler::handleConversations(const QString &networkId) const
+{
+    const auto result = m_controller->snapshotConversations(networkId);
+    if (const auto *error = std::get_if<QString>(&result))
+        return OmaircIpc::errorResponse(*error);
+    QJsonArray conversations;
+    for (const IrcController::CliConversation &conversation :
+         std::get<QVector<IrcController::CliConversation>>(result)) {
+        QJsonObject row;
+        row.insert(QStringLiteral("target"), conversation.target);
+        row.insert(QStringLiteral("channel"), conversation.channel);
+        row.insert(QStringLiteral("unread"), conversation.unread);
+        row.insert(QStringLiteral("mention"), conversation.mention);
+        conversations.append(row);
+    }
+    return OmaircIpc::okConversations(conversations);
 }

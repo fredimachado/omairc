@@ -14,6 +14,8 @@ private slots:
     void sendHelpVsText();
     void versionRequest();
     void sendAllowsDashPrefixedText();
+    void readParseAndHelp();
+    void namesAndConversationsParse();
 };
 
 void OmaircCliTest::overviewHelp()
@@ -36,6 +38,12 @@ void OmaircCliTest::overviewHelp()
                  "  omairc status [--network ID]     Show one connection as JSON\n"
                  "  omairc send [--network ID] TARGET TEXT...\n"
                  "                                   Send a message without changing UI selection\n"
+                 "  omairc read [--network ID] [TARGET] [--last N|--since DURATION|--unread]\n"
+                 "                                   Snapshot chat as JSON without changing UI selection\n"
+                 "  omairc names [--network ID] TARGET\n"
+                 "                                   List members of a joined channel as JSON\n"
+                 "  omairc conversations [--network ID]\n"
+                 "                                   List channels and DMs as JSON\n"
                  "  omairc raise                     Activate the existing window\n"
                  "\n"
                  "Run 'omairc <command> --help' for command detail.\n"));
@@ -150,6 +158,146 @@ void OmaircCliTest::sendAllowsDashPrefixedText()
     QVERIFY(std::holds_alternative<OmaircIpc::Request>(withDashDash));
     QCOMPARE(std::get<OmaircIpc::Request>(withDashDash).text,
              QStringLiteral("--network not-an-option"));
+}
+
+void OmaircCliTest::readParseAndHelp()
+{
+    const auto help = OmaircCli::parseArgs({QStringLiteral("read"),
+                                            QStringLiteral("--help")});
+    QVERIFY(std::holds_alternative<OmaircCli::HelpTopic>(help));
+    QCOMPARE(OmaircCli::formatHelp(std::get<OmaircCli::HelpTopic>(help)),
+             QStringLiteral(
+                 "Usage: omairc read [--network ID] [TARGET] [--last N|--since DURATION|--unread]\n"
+                 "\n"
+                 "Snapshot recent chat from the running window as JSON.\n"
+                 "\n"
+                 "No target means every channel and DM on that network.\n"
+                 "A named target that is not in the window is an error.\n"
+                 "read does not invent conversations.\n"
+                 "Output kinds are message, notice, and action. Join and part lines stay out.\n"
+                 "\n"
+                 "  --network ID     Connection to use. See connections.\n"
+                 "  --last N         Newest N lines. Default 50. Maximum 100.\n"
+                 "  --since DURATION Lines in the last window, still capped at 100 newest.\n"
+                 "                   Examples: 5m, 1h. Units are s, m, h, d.\n"
+                 "  --unread         Lines after the CLI cursor for that target, or for the\n"
+                 "                   network when untargeted. Does not change UI selection or\n"
+                 "                   GUI unread badges. Stored under $XDG_STATE_HOME/omairc/.\n"
+                 "  --               End options. Later args are the target.\n"
+                 "\n"
+                 "Give exactly one window flag. They do not combine.\n"
+                 "With one connection, --network may be omitted.\n"
+                 "\n"
+                 "Examples:\n"
+                 "  omairc read --last 20\n"
+                 "  omairc read '#channel' --last 20\n"
+                 "  omairc read --network abc nick --since 5m\n"
+                 "  omairc read --unread\n"
+                 "  omairc read '#channel' --unread\n"));
+
+    const auto def = OmaircCli::parseArgs({QStringLiteral("read")});
+    QVERIFY(std::holds_alternative<OmaircIpc::Request>(def));
+    QCOMPARE(std::get<OmaircIpc::Request>(def).command, OmaircIpc::Command::Read);
+    QCOMPARE(std::get<OmaircIpc::Request>(def).target, QString());
+    QVERIFY(std::holds_alternative<OmaircIpc::LastWindow>(
+        std::get<OmaircIpc::Request>(def).window));
+    QCOMPARE(std::get<OmaircIpc::LastWindow>(
+                 std::get<OmaircIpc::Request>(def).window).count,
+             50);
+
+    const auto last = OmaircCli::parseArgs(
+        {QStringLiteral("read"), QStringLiteral("--last"), QStringLiteral("20"),
+         QStringLiteral("#chan")});
+    QVERIFY(std::holds_alternative<OmaircIpc::Request>(last));
+    QCOMPARE(std::get<OmaircIpc::Request>(last).target, QStringLiteral("#chan"));
+    QCOMPARE(std::get<OmaircIpc::LastWindow>(
+                 std::get<OmaircIpc::Request>(last).window).count,
+             20);
+
+    const auto afterTarget = OmaircCli::parseArgs(
+        {QStringLiteral("read"), QStringLiteral("#chan"),
+         QStringLiteral("--unread")});
+    QVERIFY(std::holds_alternative<OmaircIpc::Request>(afterTarget));
+    QVERIFY(std::holds_alternative<OmaircIpc::UnreadWindow>(
+        std::get<OmaircIpc::Request>(afterTarget).window));
+
+    const auto over = OmaircCli::parseArgs(
+        {QStringLiteral("read"), QStringLiteral("--last"), QStringLiteral("101")});
+    QVERIFY(std::holds_alternative<OmaircCli::CliError>(over));
+    QVERIFY(std::get<OmaircCli::CliError>(over).message.contains(
+        QStringLiteral("100")));
+
+    const auto mixed = OmaircCli::parseArgs(
+        {QStringLiteral("read"), QStringLiteral("--unread"),
+         QStringLiteral("--last"), QStringLiteral("1")});
+    QVERIFY(std::holds_alternative<OmaircCli::CliError>(mixed));
+
+    const auto since = OmaircCli::parseArgs(
+        {QStringLiteral("read"), QStringLiteral("--since"), QStringLiteral("5m")});
+    QVERIFY(std::holds_alternative<OmaircIpc::Request>(since));
+    QVERIFY(std::holds_alternative<OmaircIpc::SinceWindow>(
+        std::get<OmaircIpc::Request>(since).window));
+    QCOMPARE(std::get<OmaircIpc::SinceWindow>(
+                 std::get<OmaircIpc::Request>(since).window).token,
+             QStringLiteral("5m"));
+
+    const auto badSince = OmaircCli::parseArgs(
+        {QStringLiteral("read"), QStringLiteral("--since"), QStringLiteral("no")});
+    QVERIFY(std::holds_alternative<OmaircCli::CliError>(badSince));
+}
+
+void OmaircCliTest::namesAndConversationsParse()
+{
+    const auto namesHelp = OmaircCli::parseArgs(
+        {QStringLiteral("names"), QStringLiteral("--help")});
+    QVERIFY(std::holds_alternative<OmaircCli::HelpTopic>(namesHelp));
+    QCOMPARE(OmaircCli::formatHelp(std::get<OmaircCli::HelpTopic>(namesHelp)),
+             QStringLiteral(
+                 "Usage: omairc names [--network ID] TARGET\n"
+                 "\n"
+                 "List the current members of a joined channel as JSON.\n"
+                 "This is the member panel snapshot, not a live NAMES round-trip.\n"
+                 "A DM, Status, or a channel that is not joined is an error.\n"
+                 "\n"
+                 "  --network ID   Connection to use. See connections.\n"
+                 "\n"
+                 "With one connection, --network may be omitted.\n"
+                 "\n"
+                 "Examples:\n"
+                 "  omairc names '#channel'\n"
+                 "  omairc names --network abc '#channel'\n"));
+
+    const auto missing = OmaircCli::parseArgs({QStringLiteral("names")});
+    QVERIFY(std::holds_alternative<OmaircCli::CliError>(missing));
+
+    const auto names = OmaircCli::parseArgs(
+        {QStringLiteral("names"), QStringLiteral("#chan")});
+    QVERIFY(std::holds_alternative<OmaircIpc::Request>(names));
+    QCOMPARE(std::get<OmaircIpc::Request>(names).command,
+             OmaircIpc::Command::Names);
+    QCOMPARE(std::get<OmaircIpc::Request>(names).target,
+             QStringLiteral("#chan"));
+
+    const auto conversationsHelp = OmaircCli::parseArgs(
+        {QStringLiteral("conversations"), QStringLiteral("--help")});
+    QVERIFY(std::holds_alternative<OmaircCli::HelpTopic>(conversationsHelp));
+    QCOMPARE(OmaircCli::formatHelp(std::get<OmaircCli::HelpTopic>(conversationsHelp)),
+             QStringLiteral(
+                 "Usage: omairc conversations [--network ID]\n"
+                 "\n"
+                 "List channels and DMs on that network as JSON.\n"
+                 "Each row has target, channel, unread, and mention from the GUI.\n"
+                 "This snapshot does not clear those badges.\n"
+                 "\n"
+                 "  --network ID   Connection to use. See connections.\n"
+                 "\n"
+                 "With one connection, --network may be omitted.\n"));
+
+    const auto conversations = OmaircCli::parseArgs(
+        {QStringLiteral("conversations")});
+    QVERIFY(std::holds_alternative<OmaircIpc::Request>(conversations));
+    QCOMPARE(std::get<OmaircIpc::Request>(conversations).command,
+             OmaircIpc::Command::Conversations);
 }
 
 int runOmaircCliTests(int argc, char **argv)

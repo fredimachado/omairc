@@ -1,7 +1,12 @@
+#include <QDir>
+#include <QFile>
+#include <QFileInfo>
 #include <QJsonArray>
+#include <QJsonDocument>
 #include <QJsonObject>
 #include <QLocalSocket>
 #include <QSignalSpy>
+#include <QTemporaryDir>
 #include <QTest>
 
 #include <variant>
@@ -10,6 +15,7 @@
 #include "irccontroller.h"
 #include "ircmessage.h"
 #include "omairccli.h"
+#include "omaircclipcursor.h"
 #include "omaircipc.h"
 #include "omaircipchandler.h"
 #include "singleinstance.h"
@@ -38,6 +44,18 @@ void registerSession(IrcSession *session, FakeIrcTransport *transport)
         QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
                           ":server 001 omairc :Welcome\r\n"));
     QCOMPARE(session->state(), IrcSession::State::Registered);
+}
+
+void seedChannelAndDirect(FakeIrcTransport *transport)
+{
+    transport->injectBytes(
+        QByteArrayLiteral(":omairc!u@h JOIN :#omarchy\r\n"
+                          ":alice!u@h JOIN :#omarchy\r\n"
+                          "@time=2011-10-19T16:40:51.620Z;msgid=old :alice!u@h PRIVMSG #omarchy :older\r\n"
+                          "@time=2011-10-19T16:41:00.000Z;msgid=mid :alice!u@h PRIVMSG #omarchy :middle\r\n"
+                          "@time=2011-10-19T16:42:00.000Z;msgid=new :alice!u@h PRIVMSG #omarchy :newest\r\n"
+                          "@time=2011-10-19T16:43:00.000Z;msgid=act :alice!u@h PRIVMSG #omarchy :\x01""ACTION waves\x01\r\n"
+                          "@time=2011-10-19T16:44:00.000Z;msgid=dm-1 :alice!u@h PRIVMSG omairc :reply\r\n"));
 }
 
 QByteArray framesJoin(const QByteArrayList &frames)
@@ -82,6 +100,8 @@ private slots:
     void socketAcceptsDisconnectedRaisePing();
     void socketExpiresIdleClient();
     void socketLimitsConcurrentClients();
+    void parseReadWindows();
+    void handlerReadNamesConversations();
 };
 
 void OmaircIpcTest::parseRaisePing()
@@ -595,6 +615,194 @@ for (QLocalSocket *client : clients) {
         client->disconnectFromServer();
         delete client;
     }
+}
+
+void OmaircIpcTest::parseReadWindows()
+{
+    const auto def =
+        OmaircIpc::parseRequest(QByteArrayLiteral("{\"cmd\":\"read\"}"));
+    QVERIFY(def.has_value());
+    QCOMPARE(def->command, OmaircIpc::Command::Read);
+    QVERIFY(std::holds_alternative<OmaircIpc::LastWindow>(def->window));
+    QCOMPARE(std::get<OmaircIpc::LastWindow>(def->window).count, 50);
+
+    const auto last = OmaircIpc::parseRequest(
+        QByteArrayLiteral("{\"cmd\":\"read\",\"last\":20,\"target\":\"#c\"}"));
+    QVERIFY(last.has_value());
+    QCOMPARE(std::get<OmaircIpc::LastWindow>(last->window).count, 20);
+    QCOMPARE(last->target, QStringLiteral("#c"));
+
+    OmaircIpc::ParseError error;
+    QVERIFY(!OmaircIpc::parseRequest(
+                 QByteArrayLiteral("{\"cmd\":\"read\",\"last\":101}"), &error)
+                 .has_value());
+    QVERIFY(error.message.contains(QStringLiteral("100")));
+
+    QVERIFY(!OmaircIpc::parseRequest(
+                 QByteArrayLiteral("{\"cmd\":\"read\",\"last\":20,\"unread\":true}"),
+                 &error)
+                 .has_value());
+
+    const auto unread = OmaircIpc::parseRequest(
+        QByteArrayLiteral("{\"cmd\":\"read\",\"unread\":true}"));
+    QVERIFY(unread.has_value());
+    QVERIFY(std::holds_alternative<OmaircIpc::UnreadWindow>(unread->window));
+}
+
+void OmaircIpcTest::handlerReadNamesConversations()
+{
+    QTemporaryDir cursorDir;
+    QVERIFY(cursorDir.isValid());
+    const QByteArray previousCursor = qgetenv("OMAIRC_CURSOR_ROOT");
+    qputenv("OMAIRC_CURSOR_ROOT", cursorDir.path().toUtf8());
+
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    IrcSession *session =
+        controller.addSession(testConfig(QStringLiteral("net-1")), transport);
+    QVERIFY(session);
+    registerSession(session, transport);
+    seedChannelAndDirect(transport);
+
+    const QString selectedBefore = controller.selectedTarget();
+    const int unreadBefore = controller.unreadCountFor(QStringLiteral("net-1"));
+
+    OmaircIpcHandler handler(&controller);
+    const QByteArray lastTwo = handler.handleLine(
+        QByteArrayLiteral("{\"cmd\":\"read\",\"target\":\"#omarchy\",\"last\":2}"));
+    QVERIFY(OmaircIpc::responseOk(lastTwo));
+    const QJsonArray lastMessages = OmaircIpc::responseMessages(lastTwo);
+    QCOMPARE(lastMessages.size(), 2);
+    QCOMPARE(lastMessages.at(0).toObject().value(QStringLiteral("message")).toString(),
+             QStringLiteral("newest"));
+    QCOMPARE(lastMessages.at(1).toObject().value(QStringLiteral("kind")).toString(),
+             QStringLiteral("action"));
+    QCOMPARE(lastMessages.at(1).toObject().value(QStringLiteral("message")).toString(),
+             QStringLiteral("waves"));
+    for (const QJsonValue &value : lastMessages) {
+        const QString kind = value.toObject().value(QStringLiteral("kind")).toString();
+        QVERIFY(kind == QLatin1String("message")
+                || kind == QLatin1String("notice")
+                || kind == QLatin1String("action"));
+        QVERIFY(value.toObject().value(QStringLiteral("message")).toString()
+                != QStringLiteral("omairc joined"));
+    }
+
+    const QByteArray untargeted = handler.handleLine(
+        QByteArrayLiteral("{\"cmd\":\"read\",\"last\":50}"));
+    QVERIFY(OmaircIpc::responseOk(untargeted));
+    QStringList targets;
+    for (const QJsonValue &value : OmaircIpc::responseMessages(untargeted))
+        targets.append(value.toObject().value(QStringLiteral("target")).toString());
+    QVERIFY(targets.contains(QStringLiteral("#omarchy")));
+    QVERIFY(targets.contains(QStringLiteral("alice")));
+
+    const QByteArray since = handler.handleLine(QByteArrayLiteral(
+        "{\"cmd\":\"read\",\"target\":\"#omarchy\",\"since\":\"2011-10-19T16:40:51.620Z\"}"));
+    QVERIFY(OmaircIpc::responseOk(since));
+    QVERIFY(OmaircIpc::responseMessages(since).size() >= 1);
+    QCOMPARE(OmaircIpc::responseMessages(since).at(0).toObject()
+                 .value(QStringLiteral("msgid")).toString(),
+             QStringLiteral("old"));
+
+    const QByteArray missing = handler.handleLine(
+        QByteArrayLiteral("{\"cmd\":\"read\",\"target\":\"#nope\"}"));
+    QVERIFY(!OmaircIpc::responseOk(missing));
+    QVERIFY(OmaircIpc::responseError(missing).contains(QStringLiteral("#nope")));
+
+    const QByteArray names = handler.handleLine(
+        QByteArrayLiteral("{\"cmd\":\"names\",\"target\":\"#omarchy\"}"));
+    QVERIFY(OmaircIpc::responseOk(names));
+    QStringList nicks;
+    for (const QJsonValue &value : OmaircIpc::responseMembers(names)) {
+        const QJsonObject row = value.toObject();
+        nicks.append(row.value(QStringLiteral("nick")).toString());
+        QVERIFY(row.contains(QStringLiteral("label")));
+        QVERIFY(row.contains(QStringLiteral("away")));
+        QVERIFY(row.contains(QStringLiteral("status")));
+    }
+    QVERIFY(nicks.contains(QStringLiteral("omairc")));
+    QVERIFY(nicks.contains(QStringLiteral("alice")));
+
+    const QByteArray namesDm = handler.handleLine(
+        QByteArrayLiteral("{\"cmd\":\"names\",\"target\":\"alice\"}"));
+    QVERIFY(!OmaircIpc::responseOk(namesDm));
+    const QByteArray namesMissing = handler.handleLine(
+        QByteArrayLiteral("{\"cmd\":\"names\",\"target\":\"#nope\"}"));
+    QVERIFY(!OmaircIpc::responseOk(namesMissing));
+    const QByteArray namesStatus = handler.handleLine(
+        QByteArrayLiteral("{\"cmd\":\"names\",\"target\":\"Status\"}"));
+    QVERIFY(!OmaircIpc::responseOk(namesStatus));
+
+    const QByteArray conversations = handler.handleLine(
+        QByteArrayLiteral("{\"cmd\":\"conversations\"}"));
+    QVERIFY(OmaircIpc::responseOk(conversations));
+    QJsonObject channelRow;
+    QJsonObject dmRow;
+    for (const QJsonValue &value : OmaircIpc::responseConversations(conversations)) {
+        const QJsonObject row = value.toObject();
+        if (row.value(QStringLiteral("target")).toString() == QLatin1String("#omarchy"))
+            channelRow = row;
+        if (row.value(QStringLiteral("target")).toString() == QLatin1String("alice"))
+            dmRow = row;
+    }
+    QCOMPARE(channelRow.value(QStringLiteral("channel")).toBool(), true);
+    QCOMPARE(dmRow.value(QStringLiteral("channel")).toBool(), false);
+    QVERIFY(dmRow.value(QStringLiteral("unread")).toInt() >= 1);
+
+    QStringList conversationTargets;
+    for (const QJsonValue &value : OmaircIpc::responseConversations(conversations))
+        conversationTargets.append(
+            value.toObject().value(QStringLiteral("target")).toString());
+    QVERIFY(!conversationTargets.contains(QStringLiteral("#nope")));
+
+    QCOMPARE(controller.selectedTarget(), selectedBefore);
+    QCOMPARE(controller.unreadCountFor(QStringLiteral("net-1")), unreadBefore);
+
+    const QByteArray firstUnread = handler.handleLine(
+        QByteArrayLiteral("{\"cmd\":\"read\",\"target\":\"#omarchy\",\"unread\":true}"));
+    QVERIFY(OmaircIpc::responseOk(firstUnread));
+    QVERIFY(OmaircIpc::responseMessages(firstUnread).size() >= 1);
+    const QString cursorPath =
+        QDir(cursorDir.path()).filePath(QStringLiteral("net-1/#omarchy.json"));
+    QVERIFY(QFileInfo::exists(cursorPath));
+    const QFileDevice::Permissions bits = QFileInfo(cursorPath).permissions();
+    QVERIFY(bits & QFileDevice::ReadOwner);
+    QVERIFY(bits & QFileDevice::WriteOwner);
+    QVERIFY(!(bits & QFileDevice::ReadGroup));
+    QVERIFY(!(bits & QFileDevice::ReadOther));
+    QFile cursorFile(cursorPath);
+    QVERIFY(cursorFile.open(QIODevice::ReadOnly));
+    const QByteArray firstCursor = cursorFile.readAll();
+    cursorFile.close();
+
+    const QByteArray secondUnread = handler.handleLine(
+        QByteArrayLiteral("{\"cmd\":\"read\",\"target\":\"#omarchy\",\"unread\":true}"));
+    QVERIFY(OmaircIpc::responseOk(secondUnread));
+    QCOMPARE(OmaircIpc::responseMessages(secondUnread).size(), 0);
+    QVERIFY(cursorFile.open(QIODevice::ReadOnly));
+    QCOMPARE(cursorFile.readAll(), firstCursor);
+    cursorFile.close();
+
+    transport->injectBytes(
+        QByteArrayLiteral("@time=2011-10-19T16:45:00.000Z;msgid=later :alice!u@h PRIVMSG #omarchy :after cursor\r\n"));
+    const QByteArray thirdUnread = handler.handleLine(
+        QByteArrayLiteral("{\"cmd\":\"read\",\"target\":\"#omarchy\",\"unread\":true}"));
+    QVERIFY(OmaircIpc::responseOk(thirdUnread));
+    QCOMPARE(OmaircIpc::responseMessages(thirdUnread).size(), 1);
+    QCOMPARE(OmaircIpc::responseMessages(thirdUnread).at(0).toObject()
+                 .value(QStringLiteral("msgid")).toString(),
+             QStringLiteral("later"));
+    QCOMPARE(OmaircIpc::responseMessages(thirdUnread).at(0).toObject()
+                 .value(QStringLiteral("message")).toString(),
+             QStringLiteral("after cursor"));
+
+    QCOMPARE(controller.selectedTarget(), selectedBefore);
+
+    if (previousCursor.isEmpty())
+        qunsetenv("OMAIRC_CURSOR_ROOT");
+    else
+        qputenv("OMAIRC_CURSOR_ROOT", previousCursor);
 }
 
 int runOmaircIpcTests(int argc, char **argv)

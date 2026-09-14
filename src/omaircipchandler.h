@@ -1,5 +1,6 @@
 #pragma once
 
+#include "omaircclipcursor.h"
 #include "omaircipc.h"
 
 #include <QByteArray>
@@ -25,7 +26,13 @@ private:
     OmaircIpc::ConnectionInfo infoFor(const QString &networkId) const;
     QStringList networkIds() const;
     QByteArray handle(const OmaircIpc::Request &request) const;
+    QByteArray handleRead(const OmaircIpc::Request &request,
+                          const QString &networkId) const;
+    QByteArray handleNames(const OmaircIpc::Request &request,
+                           const QString &networkId) const;
+    QByteArray handleConversations(const QString &networkId) const;
 
     IrcController *m_controller = nullptr;
     RaiseFn m_raiseFn;
+    OmaircCliCursorStore m_cursors;
 };
