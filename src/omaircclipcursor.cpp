@@ -106,6 +106,7 @@ std::optional<OmaircCliCursor> OmaircCliCursorStore::load(
         return std::nullopt;
     cursor.timestamp = cursor.timestamp.toUTC();
     cursor.msgid = object.value(QStringLiteral("msgid")).toString();
+    cursor.sequence = object.value(QStringLiteral("sequence")).toInteger();
     return cursor;
 }
 
@@ -124,6 +125,7 @@ bool OmaircCliCursorStore::save(const QString &networkId,
                   when.toString(Qt::ISODateWithMs));
     if (!cursor.msgid.isEmpty())
         object.insert(QStringLiteral("msgid"), cursor.msgid);
+    object.insert(QStringLiteral("sequence"), cursor.sequence);
     QSaveFile file(path);
     if (!file.open(QIODevice::WriteOnly))
         return false;

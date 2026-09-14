@@ -9,6 +9,7 @@ struct OmaircCliCursor
 {
     QDateTime timestamp;
     QString msgid;
+    qint64 sequence = 0;
 };
 
 class OmaircCliCursorStore

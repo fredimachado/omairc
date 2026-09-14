@@ -700,14 +700,21 @@ qint64 lineStamp(const QDateTime &when)
 
 int compareChat(const QDateTime &leftTs,
                 const QString &leftMsgid,
+                qint64 leftSequence,
                 const QDateTime &rightTs,
-                const QString &rightMsgid)
+                const QString &rightMsgid,
+                qint64 rightSequence)
 {
     const qint64 left = lineStamp(leftTs);
     const qint64 right = lineStamp(rightTs);
     if (left != right)
         return left < right ? -1 : 1;
-    return QString::compare(leftMsgid, rightMsgid);
+    const int msgidOrder = QString::compare(leftMsgid, rightMsgid);
+    if (msgidOrder != 0)
+        return msgidOrder;
+    if (leftSequence != rightSequence)
+        return leftSequence < rightSequence ? -1 : 1;
+    return 0;
 }
 
 void appendChatLines(QVector<IrcController::CliMessage> &out,
@@ -728,6 +735,7 @@ void appendChatLines(QVector<IrcController::CliMessage> &out,
         row.message = message.body;
         row.kind = kind;
         row.msgid = message.msgid.value;
+        row.sequence = message.sequence;
         row.mention = reducer.mentions(conversation.key.networkId, message.body);
         out.append(row);
     }
@@ -738,8 +746,9 @@ bool sortAndCap(QVector<IrcController::CliMessage> &lines, int cap)
     std::sort(lines.begin(), lines.end(),
               [](const IrcController::CliMessage &left,
                  const IrcController::CliMessage &right) {
-                  return compareChat(left.timestamp, left.msgid,
-                                     right.timestamp, right.msgid) < 0;
+                  return compareChat(left.timestamp, left.msgid, left.sequence,
+                                     right.timestamp, right.msgid,
+                                     right.sequence) < 0;
               });
     if (cap >= 0 && lines.size() > cap) {
         lines.erase(lines.begin(), lines.end() - cap);
@@ -783,8 +792,9 @@ IrcController::snapshotMessages(const QString &networkId,
     if (query.mode == CliReadQuery::Mode::After) {
         QVector<CliMessage> kept;
         for (const CliMessage &line : lines) {
-            if (compareChat(line.timestamp, line.msgid,
-                            query.afterUtc, query.afterMsgid) > 0)
+            if (compareChat(line.timestamp, line.msgid, line.sequence,
+                            query.afterUtc, query.afterMsgid,
+                            query.afterSequence) > 0)
                 kept.append(line);
         }
         lines = std::move(kept);

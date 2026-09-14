@@ -137,6 +137,7 @@ QByteArray OmaircIpcHandler::handleRead(const OmaircIpc::Request &request,
             query.mode = IrcController::CliReadQuery::Mode::After;
             query.afterUtc = loaded->timestamp;
             query.afterMsgid = loaded->msgid;
+            query.afterSequence = loaded->sequence;
         } else {
             query.mode = IrcController::CliReadQuery::Mode::Last;
             query.last = 50;
@@ -164,6 +165,7 @@ QByteArray OmaircIpcHandler::handleRead(const OmaircIpc::Request &request,
         const IrcController::CliMessage &newest = lines.constLast();
         cursor.timestamp = newest.timestamp;
         cursor.msgid = newest.msgid;
+        cursor.sequence = newest.sequence;
         if (!m_cursors.save(networkId, request.target, cursor)) {
             qWarning("Could not save the CLI cursor for %s %s",
                      qUtf8Printable(networkId),

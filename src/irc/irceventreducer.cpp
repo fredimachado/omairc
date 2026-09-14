@@ -146,6 +146,12 @@ std::optional<ChatLineReason> classifyChatLine(
         return ChatLineReason::DirectMessage;
     return std::nullopt;
 }
+
+void admitMessage(IrcConversationState& conversation, IrcReducedMessage message)
+{
+    message.sequence = conversation.nextSequence++;
+    conversation.messages.push_back(std::move(message));
+}
 }
 
 bool IrcMemberView::isAway() const noexcept
@@ -311,9 +317,9 @@ void IrcEventReducer::hydrateFromLog(IrcConversationState& conversation)
             continue;
         if (!msgid.isEmpty())
             conversation.messageIds.insert(msgid);
-        conversation.messages.push_back(
-            {line.author, line.body, line.timestamp, *kind, false,
-             IrcOrigin::Replay, msgid});
+        admitMessage(conversation,
+                     {line.author, line.body, line.timestamp, *kind, false,
+                      IrcOrigin::Replay, msgid});
     }
     capMessages(conversation);
 }
@@ -627,8 +633,8 @@ void IrcEventReducer::appendChat(const IrcConversationKey& key,
         return;
     if (!msgid.isEmpty())
         conversation->messageIds.insert(msgid);
-    conversation->messages.push_back({author, body, timestamp, kind, false,
-                                     IrcOrigin::Live, msgid});
+    admitMessage(*conversation, {author, body, timestamp, kind, false,
+                                IrcOrigin::Live, msgid});
     persistMessage(*conversation, conversation->messages.back());
     capMessages(*conversation);
     clearTyping(*conversation, normalize(key.networkId, author));
@@ -667,9 +673,9 @@ void IrcEventReducer::appendEvent(IrcConversationState& conversation,
             return;
         }
     }
-    conversation.messages.push_back(
-        {QString(), body, QDateTime(), IrcMessageKind::Event, collapsible,
-         IrcOrigin::Live, IrcMsgId{}});
+    admitMessage(conversation,
+                 {QString(), body, QDateTime(), IrcMessageKind::Event, collapsible,
+                  IrcOrigin::Live, IrcMsgId{}});
     persistMessage(conversation, conversation.messages.back());
     capMessages(conversation);
 }
@@ -677,9 +683,9 @@ void IrcEventReducer::appendEvent(IrcConversationState& conversation,
 void IrcEventReducer::appendWhois(IrcConversationState& conversation,
                                   const QString& body)
 {
-    conversation.messages.push_back(
-        {QString(), body, QDateTime(), IrcMessageKind::Whois, false,
-         IrcOrigin::Live, IrcMsgId{}});
+    admitMessage(conversation,
+                 {QString(), body, QDateTime(), IrcMessageKind::Whois, false,
+                  IrcOrigin::Live, IrcMsgId{}});
     capMessages(conversation);
 }
 
@@ -887,6 +893,8 @@ void IrcEventReducer::reduce(const IrcNickEvent& event)
             }
             existing->second.messages.push_back(std::move(message));
         }
+        existing->second.nextSequence =
+            std::max(existing->second.nextSequence, moved.nextSequence);
         capMessages(existing->second);
         existing->second.unread += moved.unread;
         existing->second.mentions += moved.mentions;
@@ -1069,6 +1077,7 @@ void IrcEventReducer::reduce(const IrcHistoryEvent& event)
             conversation->messageIds.insert(line.msgid);
         run.push_back({line.author, line.body, line.timestamp, kind, false,
                        IrcOrigin::Replay, line.msgid});
+        run.back().sequence = conversation->nextSequence++;
     }
     if (run.empty())
         return;

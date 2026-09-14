@@ -116,6 +116,7 @@ public:
         QString message;
         QString kind;
         QString msgid;
+        qint64 sequence = 0;
         bool mention = false;
     };
 
@@ -139,6 +140,7 @@ public:
         QDateTime sinceUtc;
         QDateTime afterUtc;
         QString afterMsgid;
+        qint64 afterSequence = 0;
     };
 
     struct CliMessageSnapshot {
