@@ -90,6 +90,14 @@ Default `PREFIX` is `/usr/local`. Prove the staged tree with `bin/test-install`.
 
 Omairc is MIT. See `LICENSE`. The IRC protocol code in `src/irc/` is LGPL-3.0-or-later. The bundled iA Writer Mono font is OFL-1.1.
 
+## Agent skill
+
+```sh
+npx skills add fredimachado/omairc/skills -g
+```
+
+That installs the local CLI skill for this user (Cursor, Claude Code, Codex, and other agents the Skills CLI supports). The window must already be running. Preview with `npx skills add fredimachado/omairc/skills --list`.
+
 ## Build
 
 ```sh

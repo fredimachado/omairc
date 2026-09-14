@@ -21,6 +21,9 @@
 - Keep system light/dark mode and portal text-scale detection in
   `SystemTheme`.
 - Use the bundled `iA Writer Mono S` font for all custom interface text.
+- The public CLI skill lives in `skills/omairc/`. Install it with
+  `npx skills add fredimachado/omairc/skills -g`. Proving the GUI uses
+  `.cursor/skills/verify-omairc`; that skill is internal.
 
 ## Visual conventions
 
