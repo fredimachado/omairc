@@ -6,8 +6,8 @@ A dead-simple IRC client for Omarchy, built with Qt Quick and C++. Agents talk t
 
 ## Features
 
-- AI-friendly local CLI. While the window is running, the same binary prints one JSON line and exits. `connections` lists networks. `status` shows one. `send` writes to a channel or nick without changing the UI selection. `conversations` lists channels and DMs with the GUI unread and mention badges, and does not clear them. `read` snapshots recent chat (`message`, `notice`, `action`) for one target or for the whole network. `names` snapshots the joined-channel member list. `raise` activates the window. With exactly one connection, `--network` may be omitted.
-- `omairc read --unread` uses a CLI cursor under `$XDG_STATE_HOME/omairc/cli-cursors/`. It does not change the selected conversation or the GUI unread and mention counts. Two agents on this machine share one cursor per network, or per network and target. Quote channel targets in the shell. `#` starts a comment.
+- AI-friendly local CLI. While the window is running, the same binary prints one JSON line and exits. `connections` lists networks. `status` shows one. `send` writes to a channel or nick without changing the UI selection. `conversations` lists channels and DMs with the GUI unread and mention badges, and does not clear them. `read` snapshots recent chat (`message`, `notice`, `action`) for one target or for the whole network. `names` snapshots the joined-channel member list. `raise` activates the window. With exactly one connection, `--network` may be omitted. Quote channel targets. `#` starts a shell comment. Quote send text when it contains spaces.
+- `omairc read --unread` uses a CLI cursor under `$XDG_STATE_HOME/omairc/cli-cursors/`. It does not change the selected conversation or the GUI unread and mention counts. Two agents on this machine share one cursor per network, or per network and target.
 - Several networks in one window. Each keeps its own channels, direct messages, nick, and connection state.
 - Connect sheet on first launch. Libera Chat defaults, TLS on, autojoin `#omarchy`. Password is the connection `PASS`. NickServ is SASL PLAIN when the server offers it, otherwise `IDENTIFY` after welcome. Apply starts the session. Nothing connects on its own unless you turn on Connect automatically on startup.
 - `Ctrl+,` or `edit` beside a network name reopens Connect. Disconnect sits next to Apply while that network is live or reconnecting. The network name opens Status.
@@ -102,6 +102,7 @@ bin/build
 ./build/omairc status
 ./build/omairc send --help
 ./build/omairc send --network <id> '#channel' hello
+./build/omairc send '#channel' 'hello there'
 ./build/omairc conversations
 ./build/omairc names '#channel'
 ./build/omairc read --last 20
@@ -110,7 +111,7 @@ bin/build
 ./build/omairc raise
 ```
 
-`--demo-server` seeds an in-process session and skips Connect. `--help` and `--version` print plain text and exit without a window. After the send target, `--help` and `--version` are message text.
+`--demo-server` seeds an in-process session and skips Connect. `--help` and `--version` print plain text and exit without a window. After the send target, `--help` and `--version` are message text. Quote channel targets. `#` starts a shell comment. Quote send text when it contains spaces.
 
 Control commands need a running window. They print JSON on stdout and exit. With exactly one connection, `--network` may be omitted. With zero or more than one, omit is an error and the message points at `connections`. `send`, `read`, `names`, and `conversations` do not change the UI selection. Default `read` is `--last 50`. `--last` over 100 is an error. `--since` and `--unread` keep the newest 100 and set `"truncated": true` when they drop older lines. `--last`, `--since`, and `--unread` do not combine.
 
