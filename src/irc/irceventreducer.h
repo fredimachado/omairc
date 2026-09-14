@@ -35,6 +35,7 @@ struct IrcReducedMessage
     bool collapsible = false;
     IrcOrigin origin = IrcOrigin::Live;
     IrcMsgId msgid{};
+    qint64 sequence = 0;
 };
 
 struct IrcMemberState
@@ -86,6 +87,7 @@ struct IrcConversationState
     int trimmed = 0;
     std::set<IrcMsgId> messageIds;
     int spliceEpoch = 0;
+    qint64 nextSequence = 0;
 
     bool isChannel() const noexcept;
     const IrcChannelState *channel() const noexcept;
@@ -167,6 +169,7 @@ public:
 
     std::optional<IrcMemberView> memberView(const IrcConversationKey& key,
                                             const QString& normalizedNick) const;
+    bool mentions(const QString& networkId, const QString& body) const;
 
     QStringList typingNicks(const IrcConversationKey& key,
                             const QDateTime& now) const;

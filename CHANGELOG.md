@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `omairc read`, `omairc names`, and `omairc conversations` snapshot the running window as JSON. An agent can fetch recent chat, a joined-channel member list, and the channel and DM list without changing the UI selection. `read --unread` is a CLI cursor under `$XDG_STATE_HOME/omairc/cli-cursors/` and does not clear GUI unread or mention badges. `--since` and `--unread` keep the newest 100 lines and set `"truncated": true` when they drop older ones. The unread cursor tie-breaks same-millisecond lines with a per-conversation sequence so empty `msgid` tags do not drop later arrivals.
 - Conversation transcripts persist under `$XDG_STATE_HOME/omairc/logs/{networkId}/{target}`. Join and opening a DM reload the tail as muted backlog. Lines that `IrcSecretPolicy` redacts are not written.
 - Live transcripts insert a centered date mark when the local calendar day changes. The label is `Today`, `Yesterday`, or the locale short date. Status stays a raw console.
 - Chat bodies render bold, italic, and underline. Topics, Status, find, and notifications stay stripped plain text.

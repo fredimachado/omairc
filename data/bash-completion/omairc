@@ -4,7 +4,7 @@ _omairc()
     cur="${COMP_WORDS[COMP_CWORD]}"
 
     if [ "$COMP_CWORD" -eq 1 ]; then
-        COMPREPLY=( $(compgen -W "connections list status send raise help --help --version --demo-server" -- "$cur") )
+        COMPREPLY=( $(compgen -W "connections list status send read names conversations raise help --help --version --demo-server" -- "$cur") )
         return 0
     fi
 
@@ -13,10 +13,13 @@ _omairc()
             COMPREPLY=( $(compgen -W "--help" -- "$cur") )
             ;;
         help)
-            COMPREPLY=( $(compgen -W "connections list status send raise --help" -- "$cur") )
+            COMPREPLY=( $(compgen -W "connections list status send read names conversations raise --help" -- "$cur") )
             ;;
-        status|send)
+        status|send|names|conversations)
             COMPREPLY=( $(compgen -W "--network --help" -- "$cur") )
+            ;;
+        read)
+            COMPREPLY=( $(compgen -W "--network --last --since --unread --help" -- "$cur") )
             ;;
     esac
 }

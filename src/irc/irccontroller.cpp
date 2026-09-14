@@ -13,6 +13,8 @@
 
 #include <QByteArray>
 #include <QDateTime>
+
+#include <algorithm>
 #include <variant>
 
 namespace
@@ -670,6 +672,191 @@ bool IrcController::sendToTarget(const QString &networkId,
     setLastError(networkId, {});
     emit statusChanged();
     return true;
+}
+
+namespace {
+
+QString cliKind(IrcMessageKind kind)
+{
+    switch (kind) {
+    case IrcMessageKind::Action:
+        return QStringLiteral("action");
+    case IrcMessageKind::Notice:
+        return QStringLiteral("notice");
+    case IrcMessageKind::Message:
+        return QStringLiteral("message");
+    case IrcMessageKind::Event:
+    case IrcMessageKind::Error:
+    case IrcMessageKind::Whois:
+        return {};
+    }
+    return {};
+}
+
+qint64 lineStamp(const QDateTime &when)
+{
+    return when.toUTC().toMSecsSinceEpoch();
+}
+
+int compareChat(const QDateTime &leftTs,
+                const QString &leftMsgid,
+                qint64 leftSequence,
+                const QDateTime &rightTs,
+                const QString &rightMsgid,
+                qint64 rightSequence)
+{
+    const qint64 left = lineStamp(leftTs);
+    const qint64 right = lineStamp(rightTs);
+    if (left != right)
+        return left < right ? -1 : 1;
+    const int msgidOrder = QString::compare(leftMsgid, rightMsgid);
+    if (msgidOrder != 0)
+        return msgidOrder;
+    if (leftSequence != rightSequence)
+        return leftSequence < rightSequence ? -1 : 1;
+    return 0;
+}
+
+void appendChatLines(QVector<IrcController::CliMessage> &out,
+                     const IrcConversationState &conversation,
+                     const IrcEventReducer &reducer)
+{
+    for (const IrcReducedMessage &message : conversation.messages) {
+        const QString kind = cliKind(message.kind);
+        if (kind.isEmpty())
+            continue;
+        IrcController::CliMessage row;
+        row.networkId = conversation.key.networkId;
+        row.target = conversation.target;
+        row.sender = message.author;
+        row.timestamp = message.timestamp.isValid()
+            ? message.timestamp.toUTC()
+            : QDateTime::currentDateTimeUtc();
+        row.message = message.body;
+        row.kind = kind;
+        row.msgid = message.msgid.value;
+        row.sequence = message.sequence;
+        row.mention = reducer.mentions(conversation.key.networkId, message.body);
+        out.append(row);
+    }
+}
+
+bool sortAndCap(QVector<IrcController::CliMessage> &lines, int cap)
+{
+    std::sort(lines.begin(), lines.end(),
+              [](const IrcController::CliMessage &left,
+                 const IrcController::CliMessage &right) {
+                  return compareChat(left.timestamp, left.msgid, left.sequence,
+                                     right.timestamp, right.msgid,
+                                     right.sequence) < 0;
+              });
+    if (cap >= 0 && lines.size() > cap) {
+        lines.erase(lines.begin(), lines.end() - cap);
+        return true;
+    }
+    return false;
+}
+
+}
+
+std::variant<IrcController::CliMessageSnapshot, QString>
+IrcController::snapshotMessages(const QString &networkId,
+                                const QString &target,
+                                const CliReadQuery &query) const
+{
+    QVector<CliMessage> lines;
+    if (target.isEmpty()) {
+        for (const auto &entry : m_reducer.conversations()) {
+            if (entry.first.networkId != networkId)
+                continue;
+            appendChatLines(lines, entry.second, m_reducer);
+        }
+    } else {
+        const IrcConversationKey key = m_reducer.conversationKey(networkId, target);
+        const IrcConversationState *conversation = m_reducer.find(key);
+        if (!conversation)
+            return QStringLiteral("No conversation for '%1'.").arg(target);
+        appendChatLines(lines, *conversation, m_reducer);
+    }
+
+    if (query.mode == CliReadQuery::Mode::Since) {
+        QVector<CliMessage> kept;
+        for (const CliMessage &line : lines) {
+            if (lineStamp(line.timestamp) >= lineStamp(query.sinceUtc))
+                kept.append(line);
+        }
+        lines = std::move(kept);
+        const bool truncated = sortAndCap(lines, 100);
+        return CliMessageSnapshot{std::move(lines), truncated};
+    }
+    if (query.mode == CliReadQuery::Mode::After) {
+        QVector<CliMessage> kept;
+        for (const CliMessage &line : lines) {
+            if (compareChat(line.timestamp, line.msgid, line.sequence,
+                            query.afterUtc, query.afterMsgid,
+                            query.afterSequence) > 0)
+                kept.append(line);
+        }
+        lines = std::move(kept);
+        const bool truncated = sortAndCap(lines, 100);
+        return CliMessageSnapshot{std::move(lines), truncated};
+    }
+
+    const int last = query.last < 1 ? 50 : query.last;
+    sortAndCap(lines, last);
+    return CliMessageSnapshot{std::move(lines)};
+}
+
+std::variant<QVector<IrcController::CliMember>, QString>
+IrcController::snapshotMembers(const QString &networkId,
+                               const QString &target) const
+{
+    const IrcConversationKey key = m_reducer.conversationKey(networkId, target);
+    const IrcConversationState *conversation = m_reducer.find(key);
+    if (!conversation)
+        return QStringLiteral("No conversation for '%1'.").arg(target);
+    const IrcChannelState *channel = conversation->channel();
+    if (!channel)
+        return QStringLiteral("names is for joined channels.");
+    if (!channel->joined)
+        return QStringLiteral("Not joined.");
+
+    QVector<CliMember> members;
+    members.reserve(int(channel->members.size()));
+    for (const auto &entry : channel->members) {
+        const std::optional<IrcMemberView> view =
+            m_reducer.memberView(key, entry.first);
+        if (!view)
+            continue;
+        CliMember row;
+        row.nick = view->nick;
+        row.label = view->label;
+        row.away = view->isAway();
+        row.status = view->status;
+        members.append(row);
+    }
+    return members;
+}
+
+std::variant<QVector<IrcController::CliConversation>, QString>
+IrcController::snapshotConversations(const QString &networkId) const
+{
+    QVector<CliConversation> rows;
+    const QVector<IrcConversationKey> keys = ircSidebarOrder(m_reducer);
+    for (const IrcConversationKey &key : keys) {
+        if (key.networkId != networkId)
+            continue;
+        const IrcConversationState *conversation = m_reducer.find(key);
+        if (!conversation)
+            continue;
+        CliConversation row;
+        row.target = conversation->target;
+        row.channel = conversation->isChannel();
+        row.unread = conversation->unread;
+        row.mention = conversation->mentions > 0;
+        rows.append(row);
+    }
+    return rows;
 }
 
 IrcCommandOutcome IrcController::dispatch(const IrcCommand& command,

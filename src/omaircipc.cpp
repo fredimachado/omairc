@@ -3,12 +3,35 @@
 #include <QJsonDocument>
 #include <QJsonParseError>
 
+#include <limits>
+#include <type_traits>
+
 namespace OmaircIpc {
 namespace {
 
 QByteArray toLine(const QJsonObject &object)
 {
     return QJsonDocument(object).toJson(QJsonDocument::Compact);
+}
+
+QByteArray okArray(const char *key, const QJsonArray &array)
+{
+    QJsonObject object;
+    object.insert(QStringLiteral("ok"), true);
+    object.insert(QLatin1String(key), array);
+    return toLine(object);
+}
+
+bool hasWindowKey(const QJsonObject &object, const char *key)
+{
+    return object.contains(QLatin1String(key));
+}
+
+int windowKeyCount(const QJsonObject &object)
+{
+    return int(hasWindowKey(object, "last"))
+        + int(hasWindowKey(object, "since"))
+        + int(hasWindowKey(object, "unread"));
 }
 
 QJsonObject parseObject(const QByteArray &line, QString *error)
@@ -37,6 +60,13 @@ QJsonObject connectionObject(const ConnectionInfo &info)
     if (!info.lastError.isEmpty())
         object.insert(QStringLiteral("lastError"), info.lastError);
     return object;
+}
+
+std::optional<qint64> scaledMs(qint64 count, qint64 factor)
+{
+    if (count > std::numeric_limits<qint64>::max() / factor)
+        return std::nullopt;
+    return count * factor;
 }
 
 }
@@ -98,6 +128,55 @@ std::optional<Request> parseRequest(const QByteArray &line, ParseError *error)
                 error->message = QStringLiteral("send requires text");
             return std::nullopt;
         }
+    } else if (cmd == QLatin1String("read")) {
+        request.command = Command::Read;
+        request.networkId = object.value(QStringLiteral("network")).toString().trimmed();
+        request.target = object.value(QStringLiteral("target")).toString().trimmed();
+        if (windowKeyCount(object) > 1) {
+            if (error)
+                error->message = QStringLiteral(
+                    "last, since, and unread cannot be combined");
+            return std::nullopt;
+        }
+        if (hasWindowKey(object, "unread")) {
+            if (!object.value(QStringLiteral("unread")).toBool()) {
+                if (error)
+                    error->message = QStringLiteral("unread must be true");
+                return std::nullopt;
+            }
+            request.window = UnreadWindow{};
+        } else if (hasWindowKey(object, "since")) {
+            const QString token = object.value(QStringLiteral("since")).toString();
+            const std::optional<SinceWindow> since = parseSince(token);
+            if (!since) {
+                if (error)
+                    error->message = QStringLiteral("Invalid since value");
+                return std::nullopt;
+            }
+            request.window = *since;
+        } else if (hasWindowKey(object, "last")) {
+            const int count = object.value(QStringLiteral("last")).toInt(-1);
+            if (count < 1 || count > 100) {
+                if (error)
+                    error->message = QStringLiteral("last must be between 1 and 100");
+                return std::nullopt;
+            }
+            request.window = LastWindow{count};
+        } else {
+            request.window = LastWindow{50};
+        }
+    } else if (cmd == QLatin1String("names")) {
+        request.command = Command::Names;
+        request.networkId = object.value(QStringLiteral("network")).toString().trimmed();
+        request.target = object.value(QStringLiteral("target")).toString().trimmed();
+        if (request.target.isEmpty()) {
+            if (error)
+                error->message = QStringLiteral("names requires a target");
+            return std::nullopt;
+        }
+    } else if (cmd == QLatin1String("conversations")) {
+        request.command = Command::Conversations;
+        request.networkId = object.value(QStringLiteral("network")).toString().trimmed();
     } else if (cmd.isEmpty()) {
         if (error)
             error->message = QStringLiteral("Missing cmd");
@@ -132,8 +211,78 @@ QByteArray encodeRequest(const Request &request)
         object.insert(QStringLiteral("target"), request.target);
         object.insert(QStringLiteral("text"), request.text);
         break;
+    case Command::Read:
+        object.insert(QStringLiteral("cmd"), QStringLiteral("read"));
+        if (!request.networkId.isEmpty())
+            object.insert(QStringLiteral("network"), request.networkId);
+        if (!request.target.isEmpty())
+            object.insert(QStringLiteral("target"), request.target);
+        std::visit([&object](const auto &window) {
+            using T = std::decay_t<decltype(window)>;
+            if constexpr (std::is_same_v<T, LastWindow>) {
+                object.insert(QStringLiteral("last"), window.count);
+            } else if constexpr (std::is_same_v<T, SinceWindow>) {
+                if (!window.token.isEmpty())
+                    object.insert(QStringLiteral("since"), window.token);
+                else
+                    object.insert(QStringLiteral("since"),
+                                  window.cutoffUtc.toUTC().toString(Qt::ISODateWithMs));
+            } else {
+                object.insert(QStringLiteral("unread"), true);
+            }
+        }, request.window);
+        break;
+    case Command::Names:
+        object.insert(QStringLiteral("cmd"), QStringLiteral("names"));
+        if (!request.networkId.isEmpty())
+            object.insert(QStringLiteral("network"), request.networkId);
+        object.insert(QStringLiteral("target"), request.target);
+        break;
+    case Command::Conversations:
+        object.insert(QStringLiteral("cmd"), QStringLiteral("conversations"));
+        if (!request.networkId.isEmpty())
+            object.insert(QStringLiteral("network"), request.networkId);
+        break;
     }
     return toLine(object);
+}
+
+std::optional<qint64> durationMs(const QString &token)
+{
+    if (token.size() < 2)
+        return std::nullopt;
+    const QChar unit = token.back();
+    bool ok = false;
+    const qint64 count = token.left(token.size() - 1).toLongLong(&ok);
+    if (!ok || count < 1)
+        return std::nullopt;
+    if (unit == QLatin1Char('s'))
+        return scaledMs(count, 1000);
+    if (unit == QLatin1Char('m'))
+        return scaledMs(count, 60 * 1000);
+    if (unit == QLatin1Char('h'))
+        return scaledMs(count, 60 * 60 * 1000);
+    if (unit == QLatin1Char('d'))
+        return scaledMs(count, qint64(24) * 60 * 60 * 1000);
+    return std::nullopt;
+}
+
+std::optional<SinceWindow> parseSince(const QString &token)
+{
+    if (const std::optional<qint64> ms = durationMs(token)) {
+        SinceWindow since;
+        since.cutoffUtc = QDateTime::currentDateTimeUtc().addMSecs(-*ms);
+        since.token = token;
+        return since;
+    }
+    QDateTime parsed = QDateTime::fromString(token, Qt::ISODateWithMs);
+    if (!parsed.isValid())
+        parsed = QDateTime::fromString(token, Qt::ISODate);
+    if (!parsed.isValid())
+        return std::nullopt;
+    SinceWindow since;
+    since.cutoffUtc = parsed.toUTC();
+    return since;
 }
 
 ResolveResult resolveNetworkId(const QString &requested,
@@ -192,6 +341,27 @@ QByteArray okStatus(const ConnectionInfo &status)
     return toLine(object);
 }
 
+QByteArray okMessages(const QJsonArray &messages, bool truncated)
+{
+    if (!truncated)
+        return okArray("messages", messages);
+    QJsonObject object;
+    object.insert(QStringLiteral("ok"), true);
+    object.insert(QStringLiteral("messages"), messages);
+    object.insert(QStringLiteral("truncated"), true);
+    return toLine(object);
+}
+
+QByteArray okMembers(const QJsonArray &members)
+{
+    return okArray("members", members);
+}
+
+QByteArray okConversations(const QJsonArray &conversations)
+{
+    return okArray("conversations", conversations);
+}
+
 QByteArray errorResponse(const QString &message)
 {
     QJsonObject object;
@@ -226,6 +396,34 @@ QJsonObject responseStatus(const QByteArray &line)
     QString unused;
     const QJsonObject object = parseObject(line, &unused);
     return object.value(QStringLiteral("status")).toObject();
+}
+
+QJsonArray responseMessages(const QByteArray &line)
+{
+    QString unused;
+    const QJsonObject object = parseObject(line, &unused);
+    return object.value(QStringLiteral("messages")).toArray();
+}
+
+bool responseTruncated(const QByteArray &line)
+{
+    QString unused;
+    const QJsonObject object = parseObject(line, &unused);
+    return object.value(QStringLiteral("truncated")).toBool(false);
+}
+
+QJsonArray responseMembers(const QByteArray &line)
+{
+    QString unused;
+    const QJsonObject object = parseObject(line, &unused);
+    return object.value(QStringLiteral("members")).toArray();
+}
+
+QJsonArray responseConversations(const QByteArray &line)
+{
+    QString unused;
+    const QJsonObject object = parseObject(line, &unused);
+    return object.value(QStringLiteral("conversations")).toArray();
 }
 
 QString stateLabel(const QString &sessionStateName)

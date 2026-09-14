@@ -86,6 +86,80 @@ const CommandSpec kCommands[] = {
         "  omairc send -- '#channel' --version\n",
     },
     {
+        CommandId::Read,
+        "read",
+        nullptr,
+        "omairc read [--network ID] [TARGET] [--last N|--since DURATION|--unread]",
+        "Snapshot chat as JSON without changing UI selection",
+        "Usage: omairc read [--network ID] [TARGET] [--last N|--since DURATION|--unread]\n"
+        "\n"
+        "Snapshot recent chat from the running window as JSON.\n"
+        "\n"
+        "No target means every channel and DM on that network.\n"
+        "A named target that is not in the window is an error.\n"
+        "read does not invent conversations.\n"
+        "Output kinds are message, notice, and action. Join and part lines stay out.\n"
+        "\n"
+        "  --network ID     Connection to use. See connections.\n"
+        "  --last N         Newest N lines. Default 50. Maximum 100.\n"
+        "  --since DURATION Lines in the last window, still capped at 100 newest.\n"
+        "                   Examples: 5m, 1h. Units are s, m, h, d.\n"
+        "  --unread         Lines after the CLI cursor for that target, or for the\n"
+        "                   network when untargeted. Still capped at 100 newest.\n"
+        "                   Does not change UI selection or GUI unread badges.\n"
+        "                   Stored under $XDG_STATE_HOME/omairc/.\n"
+        "  --               End options. Later args are the target.\n"
+        "\n"
+        "Give exactly one window flag. They do not combine.\n"
+        "When the 100-line cap drops older lines, the JSON includes \"truncated\": true.\n"
+        "With one connection, --network may be omitted.\n"
+        "\n"
+        "Examples:\n"
+        "  omairc read --last 20\n"
+        "  omairc read '#channel' --last 20\n"
+        "  omairc read --network abc nick --since 5m\n"
+        "  omairc read --unread\n"
+        "  omairc read '#channel' --unread\n",
+    },
+    {
+        CommandId::Names,
+        "names",
+        nullptr,
+        "omairc names [--network ID] TARGET",
+        "List members of a joined channel as JSON",
+        "Usage: omairc names [--network ID] TARGET\n"
+        "\n"
+        "List the current members of a joined channel as JSON.\n"
+        "This is the member panel snapshot, not a live NAMES round-trip.\n"
+        "A DM, Status, or a channel that is not joined is an error.\n"
+        "\n"
+        "  --network ID   Connection to use. See connections.\n"
+        "  --             End options. Later args are the target.\n"
+        "\n"
+        "With one connection, --network may be omitted.\n"
+        "\n"
+        "Examples:\n"
+        "  omairc names '#channel'\n"
+        "  omairc names --network abc '#channel'\n"
+        "  omairc names -- --dash-nick\n",
+    },
+    {
+        CommandId::Conversations,
+        "conversations",
+        nullptr,
+        "omairc conversations [--network ID]",
+        "List channels and DMs as JSON",
+        "Usage: omairc conversations [--network ID]\n"
+        "\n"
+        "List channels and DMs on that network as JSON.\n"
+        "Each row has target, channel, unread, and mention from the GUI.\n"
+        "This snapshot does not clear those badges.\n"
+        "\n"
+        "  --network ID   Connection to use. See connections.\n"
+        "\n"
+        "With one connection, --network may be omitted.\n",
+    },
+    {
         CommandId::Raise,
         "raise",
         nullptr,
@@ -246,6 +320,126 @@ ParseOutcome parseSendCommand(const QStringList &args)
     return request;
 }
 
+ParseOutcome parseReadCommand(const QStringList &args)
+{
+    OmaircIpc::Request request;
+    request.command = OmaircIpc::Command::Read;
+    request.window = OmaircIpc::LastWindow{50};
+    bool sawWindow = false;
+    bool optionsEnded = false;
+    for (int i = 1; i < args.size(); ++i) {
+        const QString &arg = args.at(i);
+        if (!optionsEnded && arg == QLatin1String("--")) {
+            optionsEnded = true;
+            continue;
+        }
+        if (!optionsEnded && arg == QLatin1String("--network")) {
+            if (i + 1 >= args.size() || isFlag(args.at(i + 1)))
+                return CliError{QStringLiteral("--network requires an id")};
+            request.networkId = args.at(++i);
+            continue;
+        }
+        if (!optionsEnded && isHelpFlag(arg))
+            return HelpTopic{HelpScope::Command, CommandId::Read};
+        if (!optionsEnded && arg == QLatin1String("--last")) {
+            if (sawWindow) {
+                return CliError{QStringLiteral(
+                    "--last, --since, and --unread cannot be combined")};
+            }
+            if (i + 1 >= args.size() || isFlag(args.at(i + 1)))
+                return CliError{QStringLiteral("--last requires a count")};
+            bool ok = false;
+            const int count = args.at(++i).toInt(&ok);
+            if (!ok || count < 1 || count > 100) {
+                return CliError{QStringLiteral("--last must be between 1 and 100")};
+            }
+            request.window = OmaircIpc::LastWindow{count};
+            sawWindow = true;
+            continue;
+        }
+        if (!optionsEnded && arg == QLatin1String("--since")) {
+            if (sawWindow) {
+                return CliError{QStringLiteral(
+                    "--last, --since, and --unread cannot be combined")};
+            }
+            if (i + 1 >= args.size() || isFlag(args.at(i + 1)))
+                return CliError{QStringLiteral("--since requires a duration")};
+            const QString token = args.at(++i);
+            const std::optional<OmaircIpc::SinceWindow> since =
+                OmaircIpc::parseSince(token);
+            if (!since)
+                return CliError{QStringLiteral("Invalid --since value")};
+            request.window = *since;
+            sawWindow = true;
+            continue;
+        }
+        if (!optionsEnded && arg == QLatin1String("--unread")) {
+            if (sawWindow) {
+                return CliError{QStringLiteral(
+                    "--last, --since, and --unread cannot be combined")};
+            }
+            request.window = OmaircIpc::UnreadWindow{};
+            sawWindow = true;
+            continue;
+        }
+        if (!optionsEnded && isFlag(arg))
+            return CliError{QStringLiteral("Unknown option: %1").arg(arg)};
+        if (!request.target.isEmpty())
+            return unexpectedArgument(arg);
+        request.target = arg;
+    }
+    return request;
+}
+
+ParseOutcome parseNamesCommand(const QStringList &args)
+{
+    OmaircIpc::Request request;
+    request.command = OmaircIpc::Command::Names;
+    bool optionsEnded = false;
+    for (int i = 1; i < args.size(); ++i) {
+        const QString &arg = args.at(i);
+        if (!optionsEnded && arg == QLatin1String("--")) {
+            optionsEnded = true;
+            continue;
+        }
+        if (!optionsEnded && isHelpFlag(arg))
+            return HelpTopic{HelpScope::Command, CommandId::Names};
+        if (!optionsEnded && arg == QLatin1String("--network")) {
+            if (i + 1 >= args.size() || isFlag(args.at(i + 1)))
+                return CliError{QStringLiteral("--network requires an id")};
+            request.networkId = args.at(++i);
+            continue;
+        }
+        if (!optionsEnded && isFlag(arg))
+            return CliError{QStringLiteral("Unknown option: %1").arg(arg)};
+        if (!request.target.isEmpty())
+            return unexpectedArgument(arg);
+        request.target = arg;
+    }
+    if (request.target.isEmpty())
+        return CliError{QStringLiteral("names requires a target")};
+    return request;
+}
+
+ParseOutcome parseConversationsCommand(const QStringList &args)
+{
+    OmaircIpc::Request request;
+    request.command = OmaircIpc::Command::Conversations;
+    for (int i = 1; i < args.size(); ++i) {
+        const QString &arg = args.at(i);
+        if (isHelpFlag(arg))
+            return HelpTopic{HelpScope::Command, CommandId::Conversations};
+        if (arg == QLatin1String("--network")) {
+            if (i + 1 >= args.size() || isFlag(args.at(i + 1)))
+                return CliError{QStringLiteral("--network requires an id")};
+            request.networkId = args.at(++i);
+            continue;
+        }
+        return unexpectedArgument(arg);
+    }
+    return request;
+}
+
 std::optional<QByteArray> readLine(QLocalSocket &socket)
 {
     QElapsedTimer timer;
@@ -327,6 +521,12 @@ ParseOutcome parseArgs(const QStringList &args)
         return parseStatusCommand(args);
     case CommandId::Send:
         return parseSendCommand(args);
+    case CommandId::Read:
+        return parseReadCommand(args);
+    case CommandId::Names:
+        return parseNamesCommand(args);
+    case CommandId::Conversations:
+        return parseConversationsCommand(args);
     case CommandId::Raise:
         return parseNoArgCommand(args, spec->id, OmaircIpc::Command::Raise);
     }

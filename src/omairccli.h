@@ -11,7 +11,7 @@ class QCoreApplication;
 
 namespace OmaircCli {
 
-enum class CommandId { Help, Connections, Status, Send, Raise };
+enum class CommandId { Help, Connections, Status, Send, Read, Names, Conversations, Raise };
 
 enum class HelpScope { Overview, Command };
 

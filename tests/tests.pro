@@ -19,6 +19,7 @@ HEADERS += \
     ../src/omaircipc.h \
     ../src/omaircipchandler.h \
     ../src/omairccli.h \
+    ../src/omaircclipcursor.h \
     ../src/omaircfilelog.h \
     ../src/backend.h \
     ../src/irc/ircmessage.h \
@@ -81,6 +82,7 @@ SOURCES += \
     ../src/omaircipc.cpp \
     ../src/omaircipchandler.cpp \
     ../src/omairccli.cpp \
+    ../src/omaircclipcursor.cpp \
     ../src/omaircfilelog.cpp \
     ../src/backend.cpp \
     protocol/tst_protocol.cpp \
