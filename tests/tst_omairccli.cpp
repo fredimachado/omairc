@@ -244,6 +244,13 @@ void OmaircCliTest::readParseAndHelp()
     const auto badSince = OmaircCli::parseArgs(
         {QStringLiteral("read"), QStringLiteral("--since"), QStringLiteral("no")});
     QVERIFY(std::holds_alternative<OmaircCli::CliError>(badSince));
+
+    const auto overflowSince = OmaircCli::parseArgs(
+        {QStringLiteral("read"), QStringLiteral("--since"),
+         QStringLiteral("9999999999999999s")});
+    QVERIFY(std::holds_alternative<OmaircCli::CliError>(overflowSince));
+    QCOMPARE(std::get<OmaircCli::CliError>(overflowSince).message,
+             QStringLiteral("Invalid --since value"));
 }
 
 void OmaircCliTest::namesAndConversationsParse()

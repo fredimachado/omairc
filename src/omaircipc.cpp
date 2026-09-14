@@ -3,6 +3,7 @@
 #include <QJsonDocument>
 #include <QJsonParseError>
 
+#include <limits>
 #include <type_traits>
 
 namespace OmaircIpc {
@@ -59,6 +60,13 @@ QJsonObject connectionObject(const ConnectionInfo &info)
     if (!info.lastError.isEmpty())
         object.insert(QStringLiteral("lastError"), info.lastError);
     return object;
+}
+
+std::optional<qint64> scaledMs(qint64 count, qint64 factor)
+{
+    if (count > std::numeric_limits<qint64>::max() / factor)
+        return std::nullopt;
+    return count * factor;
 }
 
 }
@@ -249,13 +257,13 @@ std::optional<qint64> durationMs(const QString &token)
     if (!ok || count < 1)
         return std::nullopt;
     if (unit == QLatin1Char('s'))
-        return count * 1000;
+        return scaledMs(count, 1000);
     if (unit == QLatin1Char('m'))
-        return count * 60 * 1000;
+        return scaledMs(count, 60 * 1000);
     if (unit == QLatin1Char('h'))
-        return count * 60 * 60 * 1000;
+        return scaledMs(count, 60 * 60 * 1000);
     if (unit == QLatin1Char('d'))
-        return count * 24 * 60 * 60 * 1000;
+        return scaledMs(count, qint64(24) * 60 * 60 * 1000);
     return std::nullopt;
 }
 

@@ -671,6 +671,10 @@ void OmaircIpcTest::parseReadWindows()
         QByteArrayLiteral("{\"cmd\":\"read\",\"unread\":true}"));
     QVERIFY(unread.has_value());
     QVERIFY(std::holds_alternative<OmaircIpc::UnreadWindow>(unread->window));
+
+    QCOMPARE(OmaircIpc::durationMs(QStringLiteral("1s")), qint64(1000));
+    QVERIFY(!OmaircIpc::durationMs(QStringLiteral("9999999999999999s")));
+    QVERIFY(!OmaircIpc::durationMs(QStringLiteral("9223372036854775807d")));
 }
 
 void OmaircIpcTest::handlerReadNamesConversations()
