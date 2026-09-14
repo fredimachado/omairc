@@ -18,6 +18,9 @@ constexpr QFileDevice::Permissions kOwnerFile =
 
 QString safeSegment(QString name)
 {
+    // Encode '%' first so a/b and a%2fb do not share a path. rfc1459
+    // #Chan and #chan stay distinct cursor files.
+    name.replace(QLatin1Char('%'), QLatin1String("%25"));
     name.replace(QLatin1Char('/'), QLatin1String("%2f"));
     name.replace(QLatin1Char('\\'), QLatin1String("%5c"));
     name.replace(QChar(0), QLatin1String("%00"));
