@@ -107,7 +107,7 @@ bin/build
 
 `--demo-server` seeds an in-process session and skips Connect. `--help` and `--version` print plain text and exit without a window. After the send target, `--help` and `--version` are message text.
 
-Control commands need a running window. They print JSON on stdout and exit. With exactly one connection, `--network` may be omitted. With zero or more than one, omit is an error and the message points at `connections`. `send`, `read`, `names`, and `conversations` do not change the UI selection. Default `read` is `--last 50`. `--last` over 100 is an error. `--last`, `--since`, and `--unread` do not combine.
+Control commands need a running window. They print JSON on stdout and exit. With exactly one connection, `--network` may be omitted. With zero or more than one, omit is an error and the message points at `connections`. `send`, `read`, `names`, and `conversations` do not change the UI selection. Default `read` is `--last 50`. `--last` over 100 is an error. `--since` and `--unread` keep the newest 100 and set `"truncated": true` when they drop older lines. `--last`, `--since`, and `--unread` do not combine.
 
 Set `OMAIRC_ALLOW_MULTI=1` if you need more than one normal process while debugging.
 

@@ -141,7 +141,12 @@ public:
         QString afterMsgid;
     };
 
-    std::variant<QVector<CliMessage>, QString> snapshotMessages(
+    struct CliMessageSnapshot {
+        QVector<CliMessage> lines;
+        bool truncated = false;
+    };
+
+    std::variant<CliMessageSnapshot, QString> snapshotMessages(
         const QString &networkId,
         const QString &target,
         const CliReadQuery &query) const;

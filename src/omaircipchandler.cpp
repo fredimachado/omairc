@@ -155,7 +155,8 @@ QByteArray OmaircIpcHandler::handleRead(const OmaircIpc::Request &request,
         m_controller->snapshotMessages(networkId, request.target, query);
     if (const auto *error = std::get_if<QString>(&result))
         return OmaircIpc::errorResponse(*error);
-    const auto &lines = std::get<QVector<IrcController::CliMessage>>(result);
+    const auto &snapshot = std::get<IrcController::CliMessageSnapshot>(result);
+    const QVector<IrcController::CliMessage> &lines = snapshot.lines;
 
     if (std::holds_alternative<OmaircIpc::UnreadWindow>(request.window)
         && !lines.isEmpty()) {
@@ -185,7 +186,7 @@ QByteArray OmaircIpcHandler::handleRead(const OmaircIpc::Request &request,
         row.insert(QStringLiteral("mention"), line.mention);
         messages.append(row);
     }
-    return OmaircIpc::okMessages(messages);
+    return OmaircIpc::okMessages(messages, snapshot.truncated);
 }
 
 QByteArray OmaircIpcHandler::handleNames(const OmaircIpc::Request &request,

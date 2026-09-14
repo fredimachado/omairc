@@ -341,9 +341,15 @@ QByteArray okStatus(const ConnectionInfo &status)
     return toLine(object);
 }
 
-QByteArray okMessages(const QJsonArray &messages)
+QByteArray okMessages(const QJsonArray &messages, bool truncated)
 {
-    return okArray("messages", messages);
+    if (!truncated)
+        return okArray("messages", messages);
+    QJsonObject object;
+    object.insert(QStringLiteral("ok"), true);
+    object.insert(QStringLiteral("messages"), messages);
+    object.insert(QStringLiteral("truncated"), true);
+    return toLine(object);
 }
 
 QByteArray okMembers(const QJsonArray &members)
@@ -397,6 +403,13 @@ QJsonArray responseMessages(const QByteArray &line)
     QString unused;
     const QJsonObject object = parseObject(line, &unused);
     return object.value(QStringLiteral("messages")).toArray();
+}
+
+bool responseTruncated(const QByteArray &line)
+{
+    QString unused;
+    const QJsonObject object = parseObject(line, &unused);
+    return object.value(QStringLiteral("truncated")).toBool(false);
 }
 
 QJsonArray responseMembers(const QByteArray &line)

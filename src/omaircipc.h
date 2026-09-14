@@ -80,7 +80,8 @@ ResolveResult resolveNetworkId(const QString &requested,
 QByteArray okResponse();
 QByteArray okConnections(const QVector<ConnectionInfo> &connections);
 QByteArray okStatus(const ConnectionInfo &status);
-QByteArray okMessages(const QJsonArray &messages);
+QByteArray okMessages(const QJsonArray &messages, bool truncated = false);
+bool responseTruncated(const QByteArray &line);
 QByteArray okMembers(const QJsonArray &members);
 QByteArray okConversations(const QJsonArray &conversations);
 QByteArray errorResponse(const QString &message);

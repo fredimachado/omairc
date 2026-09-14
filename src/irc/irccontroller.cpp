@@ -733,7 +733,7 @@ void appendChatLines(QVector<IrcController::CliMessage> &out,
     }
 }
 
-void sortAndCap(QVector<IrcController::CliMessage> &lines, int cap)
+bool sortAndCap(QVector<IrcController::CliMessage> &lines, int cap)
 {
     std::sort(lines.begin(), lines.end(),
               [](const IrcController::CliMessage &left,
@@ -741,13 +741,16 @@ void sortAndCap(QVector<IrcController::CliMessage> &lines, int cap)
                   return compareChat(left.timestamp, left.msgid,
                                      right.timestamp, right.msgid) < 0;
               });
-    if (cap >= 0 && lines.size() > cap)
+    if (cap >= 0 && lines.size() > cap) {
         lines.erase(lines.begin(), lines.end() - cap);
+        return true;
+    }
+    return false;
 }
 
 }
 
-std::variant<QVector<IrcController::CliMessage>, QString>
+std::variant<IrcController::CliMessageSnapshot, QString>
 IrcController::snapshotMessages(const QString &networkId,
                                 const QString &target,
                                 const CliReadQuery &query) const
@@ -774,8 +777,8 @@ IrcController::snapshotMessages(const QString &networkId,
                 kept.append(line);
         }
         lines = std::move(kept);
-        sortAndCap(lines, 100);
-        return lines;
+        const bool truncated = sortAndCap(lines, 100);
+        return CliMessageSnapshot{std::move(lines), truncated};
     }
     if (query.mode == CliReadQuery::Mode::After) {
         QVector<CliMessage> kept;
@@ -785,13 +788,13 @@ IrcController::snapshotMessages(const QString &networkId,
                 kept.append(line);
         }
         lines = std::move(kept);
-        sortAndCap(lines, 100);
-        return lines;
+        const bool truncated = sortAndCap(lines, 100);
+        return CliMessageSnapshot{std::move(lines), truncated};
     }
 
     const int last = query.last < 1 ? 50 : query.last;
     sortAndCap(lines, last);
-    return lines;
+    return CliMessageSnapshot{std::move(lines)};
 }
 
 std::variant<QVector<IrcController::CliMember>, QString>
