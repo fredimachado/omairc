@@ -4215,50 +4215,68 @@ ApplicationWindow {
             spacing: win.scaledSize(8)
             width: jumpSheet.availableWidth
 
-            TextField {
-                id: jumpFilter
-                objectName: "jumpFilter"
-                Accessible.name: "Jump to conversation"
+            Rectangle {
+                id: jumpFilterShell
                 width: parent.width
                 height: win.scaledSize(32)
-                color: win.inkColor
-                selectionColor: win.selectionColor
-                selectedTextColor: "#ffffff"
-                font.family: "iA Writer Mono S"
-                font.pixelSize: win.scaledSize(13)
-                placeholderText: "Jump"
-                placeholderTextColor: win.mutedColor
-                leftPadding: win.scaledSize(8)
-                rightPadding: win.scaledSize(8)
-                background: Rectangle {
-                    color: win.panelColor
-                    border.width: 1
-                    border.color: jumpFilter.activeFocus ? win.accentColor : win.dividerColor
-                    radius: win.scaledSize(7)
+                color: win.panelColor
+                border.width: 1
+                border.color: jumpFilter.activeFocus ? win.accentColor : win.dividerColor
+                radius: win.scaledSize(7)
+
+                TextField {
+                    id: jumpFilter
+                    objectName: "jumpFilter"
+                    Accessible.name: "Jump to conversation"
+                    anchors.fill: parent
+                    z: 1
+                    color: win.inkColor
+                    selectionColor: win.selectionColor
+                    selectedTextColor: "#ffffff"
+                    font.family: "iA Writer Mono S"
+                    font.pixelSize: win.scaledSize(13)
+                    placeholderText: ""
+                    verticalAlignment: TextInput.AlignVCenter
+                    leftPadding: win.scaledSize(8)
+                    rightPadding: win.scaledSize(8)
+                    background: Item {}
+                    Keys.onPressed: function(event) {
+                        if (event.key === Qt.Key_Down) {
+                            win.stepJump(1);
+                            event.accepted = true;
+                            return;
+                        }
+                        if (event.key === Qt.Key_Up) {
+                            win.stepJump(-1);
+                            event.accepted = true;
+                            return;
+                        }
+                        if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
+                            win.activateJumpSelection();
+                            event.accepted = true;
+                            return;
+                        }
+                        if (event.key === Qt.Key_Tab) {
+                            event.accepted = true;
+                        }
+                    }
+                    onTextChanged: {
+                        win.jumpSelectedIndex = 0;
+                        win.refreshJumpMatches();
+                    }
                 }
-                Keys.onPressed: function(event) {
-                    if (event.key === Qt.Key_Down) {
-                        win.stepJump(1);
-                        event.accepted = true;
-                        return;
-                    }
-                    if (event.key === Qt.Key_Up) {
-                        win.stepJump(-1);
-                        event.accepted = true;
-                        return;
-                    }
-                    if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
-                        win.activateJumpSelection();
-                        event.accepted = true;
-                        return;
-                    }
-                    if (event.key === Qt.Key_Tab) {
-                        event.accepted = true;
-                    }
-                }
-                onTextChanged: {
-                    win.jumpSelectedIndex = 0;
-                    win.refreshJumpMatches();
+
+                Text {
+                    objectName: "jumpFilterPlaceholder"
+                    z: 0
+                    anchors.left: parent.left
+                    anchors.leftMargin: win.scaledSize(8)
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: "Jump to conversation…"
+                    color: win.mutedColor
+                    font.family: "iA Writer Mono S"
+                    font.pixelSize: win.scaledSize(13)
+                    visible: jumpFilter.text.length === 0
                 }
             }
 

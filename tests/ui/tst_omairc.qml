@@ -3217,6 +3217,17 @@ TestCase {
         window.close();
     }
 
+    function test_ctrlKJumpFilterPlaceholder() {
+        openSeededAppWindow();
+        openJumpSheet();
+        compare(item("jumpFilter").text, "");
+        tryCompare(item("jumpFilter"), "activeFocus", true);
+        compare(item("jumpFilterPlaceholder").visible, true);
+        typeText("ric");
+        tryCompare(item("jumpFilter"), "text", "ric");
+        compare(item("jumpFilterPlaceholder").visible, false);
+    }
+
     function test_openDirectMessageFromMember() {
         openSeededAppWindow();
         var previousCount = appWindow.irc.conversations.rowCount();
