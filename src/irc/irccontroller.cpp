@@ -1870,7 +1870,7 @@ void IrcController::armTypingRefresh()
     QDateTime soonest;
     for (const auto& conversation : m_reducer.conversations()) {
         for (const auto& entry : conversation.second.typing) {
-            if (!ircIsTyping(entry.second, now))
+            if (!ircTypingShowsIndicator(entry.second, now))
                 continue;
             const QDateTime expires = ircTypingExpiresAt(entry.second);
             if (!soonest.isValid() || expires < soonest)

@@ -447,7 +447,7 @@ QStringList IrcEventReducer::typingNicks(const IrcConversationKey& key,
     for (const auto& entry : conversation->typing) {
         if (isSelf(key.networkId, entry.second.displayNick))
             continue;
-        if (!ircIsTyping(entry.second, now))
+        if (!ircTypingShowsIndicator(entry.second, now))
             continue;
         nicks.append(entry.second.displayNick);
     }
@@ -463,7 +463,7 @@ bool IrcEventReducer::directPeerIsTyping(const IrcConversationKey& key,
     const auto found = conversation->typing.find(key.normalizedTarget);
     if (found == conversation->typing.end())
         return false;
-    return ircIsTyping(found->second, now);
+    return ircTypingShowsIndicator(found->second, now);
 }
 
 void IrcEventReducer::clearTypingFacts(const QString& networkId)

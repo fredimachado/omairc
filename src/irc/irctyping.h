@@ -35,6 +35,10 @@ struct IrcTypingHint
 };
 
 bool ircIsTyping(const IrcTypingHint& hint, const QDateTime& now) noexcept;
+// A hint shows an indicator only while its clock is Active. A paused hint
+// still counts as typing until ircTypingPausedHoldMs, so pruneExpiredTyping
+// keeps using ircIsTyping to drop it at that expiry.
+bool ircTypingShowsIndicator(const IrcTypingHint& hint, const QDateTime& now) noexcept;
 QDateTime ircTypingExpiresAt(const IrcTypingHint& hint);
 std::optional<IrcTypingPhase> ircTypingPhaseFromTag(const QString& value);
 QByteArray ircTypingTagmsg(const QString& target, IrcTypingPhase phase);

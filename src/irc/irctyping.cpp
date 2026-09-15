@@ -33,6 +33,11 @@ bool ircIsTyping(const IrcTypingHint& hint, const QDateTime& now) noexcept
     return now < ircTypingExpiresAt(hint);
 }
 
+bool ircTypingShowsIndicator(const IrcTypingHint& hint, const QDateTime& now) noexcept
+{
+    return hint.clock == IrcTypingClock::Active && ircIsTyping(hint, now);
+}
+
 std::optional<IrcTypingPhase> ircTypingPhaseFromTag(const QString& value)
 {
     if (value.compare(QLatin1String("active"), Qt::CaseInsensitive) == 0)
