@@ -45,10 +45,15 @@ void welcome(IrcEventReducer& reducer,
     reducer.apply(IrcWelcomeEvent{network, nick});
 }
 
+IrcName parsedName(const IrcServerFeatures& features, std::string_view token)
+{
+    const auto parsed = features.parseNamesToken(token);
+    return {QString::fromStdString(parsed->nick), parsed->ranks};
+}
+
 IrcName parsedName(std::string_view token)
 {
-    const auto parsed = IrcServerFeatures().parseNamesToken(token);
-    return {QString::fromStdString(parsed->nick), parsed->ranks};
+    return parsedName(IrcServerFeatures(), token);
 }
 
 QVariant roleAt(const QAbstractItemModel& model, int row, int role)
@@ -76,6 +81,8 @@ private slots:
     void roleNamesMatchQml();
     void joinNamesPrivmsgPopulateModels();
     void memberStatusIsMetadataNotPrefixModes();
+    void membersOrderByRankThenNick();
+    void membersFollowServerPrefixOrder();
     void identicalChannelsStayDistinct();
     void selectingZerosUnread();
     void membersEmptyForDirectMessage();
@@ -206,17 +213,17 @@ void ModelTest::joinNamesPrivmsgPopulateModels()
              QStringLiteral("live"));
 
     QCOMPARE(members.rowCount(), 3);
-    QCOMPARE(roleAt(members, 0, MemberListModel::NickRole), QStringLiteral("Alice"));
-    QCOMPARE(roleAt(members, 0, MemberListModel::LabelRole), QStringLiteral("Alice"));
+    QCOMPARE(roleAt(members, 0, MemberListModel::NickRole), QStringLiteral("omairc"));
+    QCOMPARE(roleAt(members, 0, MemberListModel::LabelRole), QStringLiteral("@omairc"));
     QCOMPARE(roleAt(members, 0, MemberListModel::StatusRole), QString());
-    QCOMPARE(roleAt(members, 0, MemberListModel::AwayRole), false);
     QCOMPARE(roleAt(members, 1, MemberListModel::NickRole), QStringLiteral("Bob"));
     QCOMPARE(roleAt(members, 1, MemberListModel::LabelRole), QStringLiteral("+Bob"));
     QCOMPARE(roleAt(members, 1, MemberListModel::StatusRole), QString());
     QCOMPARE(roleAt(members, 1, MemberListModel::AwayRole), true);
-    QCOMPARE(roleAt(members, 2, MemberListModel::NickRole), QStringLiteral("omairc"));
-    QCOMPARE(roleAt(members, 2, MemberListModel::LabelRole), QStringLiteral("@omairc"));
+    QCOMPARE(roleAt(members, 2, MemberListModel::NickRole), QStringLiteral("Alice"));
+    QCOMPARE(roleAt(members, 2, MemberListModel::LabelRole), QStringLiteral("Alice"));
     QCOMPARE(roleAt(members, 2, MemberListModel::StatusRole), QString());
+    QCOMPARE(roleAt(members, 2, MemberListModel::AwayRole), false);
     QCOMPARE(roleAt(members, 2, MemberListModel::NetworkIdRole), networkA);
 }
 
@@ -252,6 +259,98 @@ void ModelTest::memberStatusIsMetadataNotPrefixModes()
         QVERIFY(status != QStringLiteral("v"));
         QCOMPARE(roleAt(members, row, MemberListModel::AwayRole), false);
     }
+}
+
+void ModelTest::membersOrderByRankThenNick()
+{
+    IrcEventReducer reducer;
+    MemberListModel members(reducer);
+    welcome(reducer, networkA);
+
+    const IrcConversationKey room =
+        reducer.conversationKey(networkA, QStringLiteral("#room"));
+    reducer.apply(IrcNamesEvent{
+        networkA,
+        QStringLiteral("#room"),
+        {parsedName("mira"), parsedName("@anna"), parsedName("~zoe"),
+         parsedName("+kai"), parsedName("%dax"), parsedName("&bob"),
+         parsedName("@abel"), parsedName("~adam")},
+        true,
+    });
+    members.select(room);
+
+    const auto visibleNicks = [&members] {
+        QStringList nicks;
+        for (int row = 0; row < members.rowCount(); ++row)
+            nicks.append(roleAt(members, row, MemberListModel::NickRole).toString());
+        return nicks;
+    };
+    QCOMPARE(visibleNicks(),
+             QStringList({QStringLiteral("adam"), QStringLiteral("zoe"),
+                          QStringLiteral("bob"), QStringLiteral("abel"),
+                          QStringLiteral("anna"), QStringLiteral("dax"),
+                          QStringLiteral("kai"), QStringLiteral("mira")}));
+
+    QSignalSpy resets(&members, &QAbstractItemModel::modelReset);
+    QSignalSpy moves(&members, &QAbstractItemModel::rowsMoved);
+
+    reducer.apply(IrcModeEvent{
+        networkA, QStringLiteral("#room"), QStringLiteral("op"),
+        QStringLiteral("+o"), {QStringLiteral("mira")}});
+    members.reload();
+    QCOMPARE(resets.size(), 0);
+    QCOMPARE(moves.size(), 1);
+    QCOMPARE(visibleNicks(),
+             QStringList({QStringLiteral("adam"), QStringLiteral("zoe"),
+                          QStringLiteral("bob"), QStringLiteral("abel"),
+                          QStringLiteral("anna"), QStringLiteral("mira"),
+                          QStringLiteral("dax"), QStringLiteral("kai")}));
+    QCOMPARE(roleAt(members, 5, MemberListModel::LabelRole), QStringLiteral("@mira"));
+
+    reducer.apply(IrcModeEvent{
+        networkA, QStringLiteral("#room"), QStringLiteral("op"),
+        QStringLiteral("-o"), {QStringLiteral("mira")}});
+    members.reload();
+    QCOMPARE(resets.size(), 0);
+    QCOMPARE(visibleNicks(),
+             QStringList({QStringLiteral("adam"), QStringLiteral("zoe"),
+                          QStringLiteral("bob"), QStringLiteral("abel"),
+                          QStringLiteral("anna"), QStringLiteral("dax"),
+                          QStringLiteral("kai"), QStringLiteral("mira")}));
+    QCOMPARE(roleAt(members, 7, MemberListModel::LabelRole), QStringLiteral("mira"));
+    QCOMPARE(roleAt(members, 3, MemberListModel::LabelRole), QStringLiteral("@abel"));
+}
+
+void ModelTest::membersFollowServerPrefixOrder()
+{
+    IrcEventReducer reducer;
+    MemberListModel members(reducer);
+    welcome(reducer, networkB);
+
+    IrcServerFeatures features;
+    features.applyToken("PREFIX=(ohv)@%+");
+    reducer.setServerFeatures(networkB, features);
+
+    const IrcConversationKey room =
+        reducer.conversationKey(networkB, QStringLiteral("#room"));
+    reducer.apply(IrcNamesEvent{
+        networkB,
+        QStringLiteral("#room"),
+        {parsedName(features, "mira"), parsedName(features, "+kai"),
+         parsedName(features, "%dax"), parsedName(features, "@anna")},
+        true,
+    });
+    members.select(room);
+
+    QStringList ordered;
+    for (int row = 0; row < members.rowCount(); ++row)
+        ordered.append(roleAt(members, row, MemberListModel::NickRole).toString());
+    QCOMPARE(ordered,
+             QStringList({QStringLiteral("anna"), QStringLiteral("dax"),
+                          QStringLiteral("kai"), QStringLiteral("mira")}));
+    QCOMPARE(roleAt(members, 0, MemberListModel::LabelRole), QStringLiteral("@anna"));
+    QCOMPARE(roleAt(members, 1, MemberListModel::LabelRole), QStringLiteral("%dax"));
+    QCOMPARE(roleAt(members, 2, MemberListModel::LabelRole), QStringLiteral("+kai"));
 }
 
 void ModelTest::identicalChannelsStayDistinct()
@@ -709,8 +808,8 @@ void ModelTest::selectedMemberJoinInsertsInsteadOfReset()
     });
     members.select(room);
     QCOMPARE(members.rowCount(), 2);
-    QCOMPARE(roleAt(members, 0, MemberListModel::NickRole), QStringLiteral("Alice"));
-    QCOMPARE(roleAt(members, 1, MemberListModel::NickRole), QStringLiteral("omairc"));
+    QCOMPARE(roleAt(members, 0, MemberListModel::NickRole), QStringLiteral("omairc"));
+    QCOMPARE(roleAt(members, 1, MemberListModel::NickRole), QStringLiteral("Alice"));
 
     QSignalSpy resets(&members, &QAbstractItemModel::modelReset);
     QSignalSpy inserts(&members, &QAbstractItemModel::rowsInserted);
@@ -722,9 +821,9 @@ void ModelTest::selectedMemberJoinInsertsInsteadOfReset()
     members.reload();
     QCOMPARE(resets.size(), 0);
     QCOMPARE(inserts.size(), 1);
-    QCOMPARE(inserts.at(0).at(1).toInt(), 1);
+    QCOMPARE(inserts.at(0).at(1).toInt(), 2);
     QCOMPARE(members.rowCount(), 3);
-    QCOMPARE(roleAt(members, 1, MemberListModel::NickRole), QStringLiteral("Bob"));
+    QCOMPARE(roleAt(members, 2, MemberListModel::NickRole), QStringLiteral("Bob"));
 
     reducer.apply(IrcPartEvent{
         networkA, QStringLiteral("#room"), QStringLiteral("Bob"), {}});
@@ -732,7 +831,7 @@ void ModelTest::selectedMemberJoinInsertsInsteadOfReset()
     QCOMPARE(resets.size(), 0);
     QCOMPARE(removes.size(), 1);
     QCOMPARE(members.rowCount(), 2);
-    QCOMPARE(roleAt(members, 0, MemberListModel::NickRole), QStringLiteral("Alice"));
+    QCOMPARE(roleAt(members, 0, MemberListModel::NickRole), QStringLiteral("omairc"));
 
     reducer.apply(IrcModeEvent{
         networkA, QStringLiteral("#room"), QStringLiteral("op"),
@@ -740,6 +839,7 @@ void ModelTest::selectedMemberJoinInsertsInsteadOfReset()
     members.reload();
     QCOMPARE(resets.size(), 0);
     QVERIFY(changes.size() >= 1);
+    QCOMPARE(roleAt(members, 0, MemberListModel::NickRole), QStringLiteral("Alice"));
     QCOMPARE(roleAt(members, 0, MemberListModel::LabelRole), QStringLiteral("@Alice"));
 
     reducer.apply(IrcNickEvent{

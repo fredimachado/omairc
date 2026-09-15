@@ -974,6 +974,20 @@ TestCase {
         return -1;
     }
 
+    function renderedMembers() {
+        var members = item("membersList");
+        var rows = [];
+        var row = 0;
+        for (; row < members.count; ++row) {
+            members.positionViewAtIndex(row, ListView.Contain);
+            waitForRendering(appWindow.contentItem);
+            var delegate = members.itemAtIndex(row);
+            if (delegate && delegate.nick.length > 0)
+                rows.push(delegate.nick + "=" + delegate.label);
+        }
+        return rows;
+    }
+
     function openSeededAppWindow() {
         destroyAppWindowAndSeed();
         seed = createTemporaryObject(seedComponent, testCase);
@@ -2948,10 +2962,11 @@ TestCase {
         var members = item("membersList");
         members.positionViewAtIndex(0, ListView.Contain);
         wait(0);
-        var anna = members.itemAtIndex(0);
-        verify(anna !== null, "The first member delegate should be rendered");
-        compare(anna.nick, "anna");
-        var highlight = findChild(anna, "memberHighlight");
+        var top = members.itemAtIndex(0);
+        verify(top !== null, "The first member delegate should be rendered");
+        compare(top.nick, "fred");
+        compare(top.label, "~fred");
+        var highlight = findChild(top, "memberHighlight");
         verify(highlight !== null, "Could not find memberHighlight");
         verify(!members.activeFocus);
         compare(members.currentIndex, 0);
@@ -2967,6 +2982,45 @@ TestCase {
         tryCompare(members, "activeFocus", false);
         verify(Qt.colorEqual(highlight.color, "transparent"),
                "unfocused member list should not keep a selection fill");
+    }
+
+    function test_memberRowsFollowRankOrder() {
+        openSeededAppWindow();
+        compare(appWindow.currentConversation, "#omarchy");
+        verify(item("membersPanel").visible);
+
+        // The demo network advertises PREFIX=(qaohv)~&@%+, and the seeded
+        // #omarchy ranks fred as founder, anna as admin, dax and mira as ops,
+        // kai as halfop, and teo as voice. Mira holds two ranks at once, and
+        // teo is away, because rank and presence are independent.
+        compare(renderedMembers().join(" "),
+                "fred=~fred anna=&anna dax=@dax mira=@mira kai=%kai teo=+teo "
+                + "ivy=ivy lena=lena max=max nora=nora sam=sam sol=sol");
+        compare(appWindow.currentPeopleCount, 12);
+        saveScreenshot("member-rank-order");
+
+        // A 353 replaces the member set, so the seeded ranks give way.
+        seed.injectOmarchy(
+            ":server 353 fred = #omarchy :teo @anna @dax +mira fred kai sol\r\n"
+            + ":server 366 fred #omarchy :End of NAMES\r\n");
+        tryVerify(function() {
+            var rows = renderedMembers();
+            return rows.length === 7 && rows[0] === "anna=@anna";
+        });
+        compare(renderedMembers().join(" "),
+                "anna=@anna dax=@dax mira=+mira "
+                + "fred=fred kai=kai sol=sol teo=teo");
+        compare(appWindow.currentPeopleCount, 7);
+
+        seed.injectOmarchy(":op!u@h MODE #omarchy -o anna\r\n"
+                           + ":op!u@h MODE #omarchy +o teo\r\n");
+        tryVerify(function() {
+            return renderedMembers()[0] === "dax=@dax";
+        });
+        compare(renderedMembers().join(" "),
+                "dax=@dax teo=@teo mira=+mira "
+                + "anna=anna fred=fred kai=kai sol=sol");
+        saveScreenshot("member-rank-order-demoted");
     }
 
     function test_focusMembersReopensHiddenPanel() {

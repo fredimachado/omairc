@@ -402,6 +402,23 @@ std::optional<IrcMemberView> IrcEventReducer::memberView(
         facts.status};
 }
 
+QVector<IrcOrderedMember> IrcEventReducer::orderedMembers(
+    const IrcConversationKey& key) const
+{
+    const IrcConversationState *conversation = find(key);
+    const IrcChannelState *channel = conversation ? conversation->channel() : nullptr;
+    if (!channel)
+        return {};
+
+    const IrcServerFeatures& features = serverFeatures(key.networkId);
+    QVector<IrcOrderedMember> ordered;
+    ordered.reserve(int(channel->members.size()));
+    for (const auto& entry : channel->members)
+        ordered.append({entry.first, features.rankPriority(entry.second.ranks)});
+    std::sort(ordered.begin(), ordered.end());
+    return ordered;
+}
+
 void IrcEventReducer::clearPresenceFacts(const QString& networkId,
                                          bool away,
                                          bool status)

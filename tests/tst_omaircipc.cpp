@@ -754,6 +754,26 @@ void OmaircIpcTest::handlerReadNamesConversations()
     QVERIFY(nicks.contains(QStringLiteral("omairc")));
     QVERIFY(nicks.contains(QStringLiteral("alice")));
 
+    // Ranks order the snapshot, and the label carries the highest one. This
+    // session never saw a 005, so the ladder is the default `~&@%+`.
+    transport->injectBytes(
+        QByteArrayLiteral(":server 353 omairc = #omarchy :+omairc @alice\r\n"
+                          ":server 366 omairc #omarchy :End of NAMES\r\n"));
+    const QByteArray ranked = handler.handleLine(
+        QByteArrayLiteral("{\"cmd\":\"names\",\"target\":\"#omarchy\"}"));
+    QVERIFY(OmaircIpc::responseOk(ranked));
+    QStringList rankedNicks;
+    QStringList rankedLabels;
+    for (const QJsonValue &value : OmaircIpc::responseMembers(ranked)) {
+        const QJsonObject row = value.toObject();
+        rankedNicks.append(row.value(QStringLiteral("nick")).toString());
+        rankedLabels.append(row.value(QStringLiteral("label")).toString());
+    }
+    QCOMPARE(rankedNicks,
+             QStringList({QStringLiteral("alice"), QStringLiteral("omairc")}));
+    QCOMPARE(rankedLabels,
+             QStringList({QStringLiteral("@alice"), QStringLiteral("+omairc")}));
+
     const QByteArray namesDm = handler.handleLine(
         QByteArrayLiteral("{\"cmd\":\"names\",\"target\":\"alice\"}"));
     QVERIFY(!OmaircIpc::responseOk(namesDm));

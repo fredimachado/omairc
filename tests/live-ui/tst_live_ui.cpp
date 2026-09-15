@@ -1122,12 +1122,12 @@ void LiveUiTest::seededIrcFixtureFurnishesDemoWorld()
     const IrcServerFeatures &omarchyFeatures =
         controller.serverFeatures(SeededIrcFixture::omarchyNetworkId());
     QCOMPARE(featureText(omarchyFeatures.channelTypes()), QStringLiteral("#"));
-    QCOMPARE(featureText(omarchyFeatures.prefixModes()), QStringLiteral("ov"));
-    QCOMPARE(featureText(omarchyFeatures.prefixSymbols()), QStringLiteral("@+"));
+    QCOMPARE(featureText(omarchyFeatures.prefixModes()), QStringLiteral("qaohv"));
+    QCOMPARE(featureText(omarchyFeatures.prefixSymbols()), QStringLiteral("~&@%+"));
     const IrcServerFeatures &oftcFeatures =
         controller.serverFeatures(SeededIrcFixture::oftcNetworkId());
     QCOMPARE(featureText(oftcFeatures.channelTypes()), QStringLiteral("#"));
-    QCOMPARE(featureText(oftcFeatures.prefixSymbols()), QStringLiteral("@+"));
+    QCOMPARE(featureText(oftcFeatures.prefixSymbols()), QStringLiteral("~&@%+"));
 
     IrcSession *omarchySession =
         controller.session(SeededIrcFixture::omarchyNetworkId());
@@ -1187,6 +1187,28 @@ void LiveUiTest::seededIrcFixtureFurnishesDemoWorld()
     auto *members = qobject_cast<QAbstractItemModel *>(controller.members());
     QVERIFY(members);
     QCOMPARE(members->rowCount(), 12);
+    QStringList memberOrder;
+    for (int row = 0; row < members->rowCount(); ++row) {
+        memberOrder.append(
+            roleAt(members, row, MemberListModel::NickRole).toString());
+    }
+    QCOMPARE(memberOrder,
+             QStringList({QStringLiteral("fred"), QStringLiteral("anna"),
+                          QStringLiteral("dax"), QStringLiteral("mira"),
+                          QStringLiteral("kai"), QStringLiteral("teo"),
+                          QStringLiteral("ivy"), QStringLiteral("lena"),
+                          QStringLiteral("max"), QStringLiteral("nora"),
+                          QStringLiteral("sam"), QStringLiteral("sol")}));
+    QCOMPARE(memberField(members, QStringLiteral("fred"), MemberListModel::LabelRole),
+             QStringLiteral("~fred"));
+    QCOMPARE(memberField(members, QStringLiteral("anna"), MemberListModel::LabelRole),
+             QStringLiteral("&anna"));
+    QCOMPARE(memberField(members, QStringLiteral("mira"), MemberListModel::LabelRole),
+             QStringLiteral("@mira"));
+    QCOMPARE(memberField(members, QStringLiteral("teo"), MemberListModel::LabelRole),
+             QStringLiteral("+teo"));
+    QCOMPARE(memberField(members, QStringLiteral("sol"), MemberListModel::LabelRole),
+             QStringLiteral("sol"));
     for (const QString &nick : {QStringLiteral("teo"), QStringLiteral("lena"),
                                 QStringLiteral("sam"), QStringLiteral("ivy"),
                                 QStringLiteral("max")}) {

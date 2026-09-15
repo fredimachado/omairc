@@ -7,6 +7,7 @@
 
 #include <QDateTime>
 #include <QStringList>
+#include <QVector>
 
 #include <map>
 #include <optional>
@@ -53,6 +54,29 @@ struct IrcMemberView
     QString status;
 
     bool isAway() const noexcept;
+};
+
+// One channel member in panel order. `priority` is the index of the member's
+// highest rank in the server's PREFIX order, so a lower value is a higher
+// privilege and members without a rank come last.
+struct IrcOrderedMember
+{
+    QString nick;
+    int priority = 0;
+
+    friend bool operator==(const IrcOrderedMember& left,
+                           const IrcOrderedMember& right)
+    {
+        return left.priority == right.priority && left.nick == right.nick;
+    }
+
+    friend bool operator<(const IrcOrderedMember& left,
+                          const IrcOrderedMember& right)
+    {
+        if (left.priority != right.priority)
+            return left.priority < right.priority;
+        return left.nick < right.nick;
+    }
 };
 
 struct IrcTranscriptAnchor
@@ -169,6 +193,7 @@ public:
 
     std::optional<IrcMemberView> memberView(const IrcConversationKey& key,
                                             const QString& normalizedNick) const;
+    QVector<IrcOrderedMember> orderedMembers(const IrcConversationKey& key) const;
     bool mentions(const QString& networkId, const QString& body) const;
 
     QStringList typingNicks(const IrcConversationKey& key,

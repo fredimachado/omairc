@@ -2,6 +2,20 @@
 
 #include "irceventreducer.h"
 
+#include <QSet>
+
+namespace
+{
+QSet<QString> nicksOf(const QVector<IrcOrderedMember>& members)
+{
+    QSet<QString> nicks;
+    nicks.reserve(members.size());
+    for (const IrcOrderedMember& member : members)
+        nicks.insert(member.nick);
+    return nicks;
+}
+}
+
 MemberListModel::MemberListModel(IrcEventReducer& reducer, QObject *parent)
     : QAbstractListModel(parent)
     , m_reducer(reducer)
@@ -10,16 +24,16 @@ MemberListModel::MemberListModel(IrcEventReducer& reducer, QObject *parent)
 
 int MemberListModel::rowCount(const QModelIndex& parent) const
 {
-    return parent.isValid() ? 0 : m_nicks.size();
+    return parent.isValid() ? 0 : m_members.size();
 }
 
 QVariant MemberListModel::data(const QModelIndex& index, int role) const
 {
-    if (!index.isValid() || !m_selected || index.row() < 0 || index.row() >= m_nicks.size())
+    if (!index.isValid() || !m_selected || index.row() < 0 || index.row() >= m_members.size())
         return {};
 
     const std::optional<IrcMemberView> member =
-        m_reducer.memberView(*m_selected, m_nicks.at(index.row()));
+        m_reducer.memberView(*m_selected, m_members.at(index.row()).nick);
     if (!member)
         return {};
 
@@ -52,79 +66,87 @@ QHash<int, QByteArray> MemberListModel::roleNames() const
 
 void MemberListModel::reload()
 {
-    QVector<QString> nicks;
-    if (m_selected) {
-        if (const IrcConversationState *conversation = m_reducer.find(*m_selected)) {
-            if (const IrcChannelState *channel = conversation->channel()) {
-                nicks.reserve(int(channel->members.size()));
-                for (const auto& entry : channel->members)
-                    nicks.append(entry.first);
-            }
-        }
-    }
+    QVector<IrcOrderedMember> members;
+    if (m_selected)
+        members = m_reducer.orderedMembers(*m_selected);
 
     const bool sameConversation = m_selected.has_value() == m_loaded.has_value()
         && (!m_selected || *m_selected == *m_loaded);
     if (!sameConversation) {
-        resetNicks(std::move(nicks));
+        resetMembers(std::move(members));
         return;
     }
-    syncNicks(std::move(nicks));
+    syncMembers(std::move(members));
 }
 
-void MemberListModel::resetNicks(QVector<QString> nicks)
+void MemberListModel::resetMembers(QVector<IrcOrderedMember> members)
 {
     beginResetModel();
-    m_nicks = std::move(nicks);
+    m_members = std::move(members);
     rebuildRowIndex();
     m_loaded = m_selected;
     endResetModel();
 }
 
-void MemberListModel::syncNicks(QVector<QString> nicks)
+void MemberListModel::syncMembers(QVector<IrcOrderedMember> members)
 {
-    if (nicks == m_nicks) {
-        if (!m_nicks.isEmpty())
-            emit dataChanged(index(0, 0), index(m_nicks.size() - 1, 0),
+    if (members == m_members) {
+        if (!m_members.isEmpty())
+            emit dataChanged(index(0, 0), index(m_members.size() - 1, 0),
                              {LabelRole, StatusRole, AwayRole});
         return;
     }
 
-    int oldIndex = 0;
-    int newIndex = 0;
-    while (oldIndex < m_nicks.size() || newIndex < nicks.size()) {
-        if (oldIndex == m_nicks.size()) {
-            beginInsertRows(QModelIndex(), oldIndex, oldIndex);
-            m_nicks.insert(oldIndex, nicks.at(newIndex));
-            endInsertRows();
-            ++oldIndex;
-            ++newIndex;
+    // Departures. A nick that quit, parted, or was kicked is gone from the
+    // new order.
+    const QSet<QString> wanted = nicksOf(members);
+    QSet<QString> present = nicksOf(m_members);
+    for (int row = m_members.size() - 1; row >= 0; --row) {
+        const QString& nick = m_members.at(row).nick;
+        if (wanted.contains(nick))
             continue;
-        }
-        if (newIndex == nicks.size()) {
-            beginRemoveRows(QModelIndex(), oldIndex, oldIndex);
-            m_nicks.removeAt(oldIndex);
-            endRemoveRows();
+        present.remove(nick);
+        beginRemoveRows(QModelIndex(), row, row);
+        m_members.removeAt(row);
+        endRemoveRows();
+    }
+
+    // Arrivals, seeded beside their sorted position.
+    for (const IrcOrderedMember& member : members) {
+        if (present.contains(member.nick))
             continue;
-        }
-        const QString& oldNick = m_nicks.at(oldIndex);
-        const QString& newNick = nicks.at(newIndex);
-        if (oldNick == newNick) {
-            ++oldIndex;
-            ++newIndex;
-            continue;
-        }
-        if (oldNick < newNick) {
-            beginRemoveRows(QModelIndex(), oldIndex, oldIndex);
-            m_nicks.removeAt(oldIndex);
-            endRemoveRows();
-            continue;
-        }
-        beginInsertRows(QModelIndex(), oldIndex, oldIndex);
-        m_nicks.insert(oldIndex, newNick);
+        present.insert(member.nick);
+        int at = 0;
+        while (at < m_members.size() && !(member < m_members.at(at)))
+            ++at;
+        beginInsertRows(QModelIndex(), at, at);
+        m_members.insert(at, member);
         endInsertRows();
-        ++oldIndex;
-        ++newIndex;
+    }
+
+    // Rank order. The two lists now hold the same nicks, so walking the new
+    // order and moving each row into place sorts the survivors without
+    // resetting the model. A row that keeps its place keeps its delegate; only
+    // the rows that moved or changed rank refresh their roles.
+    for (int row = 0; row < members.size(); ++row) {
+        const IrcOrderedMember& target = members.at(row);
+        int from = row;
+        while (from < m_members.size() && m_members.at(from).nick != target.nick)
+            ++from;
+        if (from >= m_members.size())
+            continue;
+
+        const bool moved = from != row;
+        if (moved) {
+            beginMoveRows(QModelIndex(), from, from, QModelIndex(), row);
+            m_members.move(from, row);
+            endMoveRows();
+        }
+        if (moved || m_members.at(row).priority != target.priority) {
+            m_members[row].priority = target.priority;
+            emit dataChanged(index(row, 0), index(row, 0),
+                             {LabelRole, StatusRole, AwayRole});
+        }
     }
     rebuildRowIndex();
 }
@@ -132,18 +154,24 @@ void MemberListModel::syncNicks(QVector<QString> nicks)
 void MemberListModel::rebuildRowIndex()
 {
     m_rowByNick.clear();
-    m_rowByNick.reserve(m_nicks.size());
-    for (int row = 0; row < m_nicks.size(); ++row)
-        m_rowByNick.insert(m_nicks.at(row), row);
+    m_rowByNick.reserve(m_members.size());
+    for (int row = 0; row < m_members.size(); ++row)
+        m_rowByNick.insert(m_members.at(row).nick, row);
+}
+
+int MemberListModel::rowForNick(const QString& normalizedNick) const
+{
+    const auto found = m_rowByNick.constFind(normalizedNick);
+    return found == m_rowByNick.cend() ? -1 : *found;
 }
 
 void MemberListModel::touch(const QString& normalizedNick)
 {
-    const auto found = m_rowByNick.constFind(normalizedNick);
-    if (found == m_rowByNick.cend())
+    const int row = rowForNick(normalizedNick);
+    if (row < 0)
         return;
-    const QModelIndex row = index(*found, 0);
-    emit dataChanged(row, row, {AwayRole, StatusRole, LabelRole});
+    emit dataChanged(index(row, 0), index(row, 0),
+                     {AwayRole, StatusRole, LabelRole});
 }
 
 void MemberListModel::setSelected(const IrcConversationKey& key)
