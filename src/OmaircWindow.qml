@@ -2104,7 +2104,6 @@ ApplicationWindow {
                 anchors.right: unreadBadge.visible ? unreadBadge.left : parent.right
                 anchors.rightMargin: unreadBadge.visible ? win.scaledSize(6) : 0
                 anchors.verticalCenter: parent.verticalCenter
-                pixelSize: win.scaledSize(16)
             }
 
             Rectangle {

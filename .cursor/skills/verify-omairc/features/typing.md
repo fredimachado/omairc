@@ -27,7 +27,7 @@ Preconditions:
 ## Gotchas
 
 - A `typing=paused` hint stays visible for 30s, matching the IRCv3 typing client-tag recommendation. Do not expect dots to hide the instant the peer pauses.
-- The transcript indicator is DM-only. Channels keep the member-panel glyph.
+- The transcript indicator is DM-only. Channels keep the member-panel glyph. Transcript dots are 16px; the sidebar DM row and member-panel chrome glyphs stay at the TypingDots default of 12px.
 - Presence dots, away dimming, and status lines are member-presence. This feature is only the ellipsis.
 - The identity footer does not follow typing. Live away chrome is identity-footer.
 - Mock typing is only `anna`, and only on `#omarchy` or the `anna` DM. `#desktop` has no typing overlay.

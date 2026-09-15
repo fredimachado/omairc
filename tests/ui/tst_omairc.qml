@@ -4199,7 +4199,7 @@ TestCase {
         var dots = findChild(anna, "conversation-typing-" + seed.omarchyNetworkId + "-anna");
         verify(dots !== null, "The background DM typing indicator should be rendered");
         tryCompare(dots, "visible", true);
-        compare(dots.pixelSize, appWindow.scaledSize(16));
+        compare(dots.pixelSize, appWindow.scaledSize(12));
         saveScreenshot("typing-sidebar-dm");
         var pulse = dots.pulse;
         wait(320);
