@@ -100,26 +100,31 @@ conversation_y() {
     "#help") echo 160 ;;
     "#omarchy") echo 196 ;;
     "#ricing") echo 232 ;;
-    anna) echo 312 ;;
-    dax) echo 348 ;;
+    anna) echo 276 ;;
+    dax) echo 312 ;;
     *) die "unknown conversation '$1'. Use #desktop, #help, #omarchy, #ricing, anna, or dax." ;;
   esac
 }
 
 member_y() {
+  # Rows are ordered by server PREFIX rank, highest first, then nick
+  # (IrcEventReducer::orderedMembers). Seeded #omarchy settles as:
+  # ~fred, &anna, @dax, @mira, %kai, +teo, ivy, lena, max, nora, sam, sol.
+  # sol and nora are lateJoin and arrive via the transcript; wait for the
+  # transcript to settle before clicking the plain nicks.
   case $1 in
-    anna) echo 71 ;;
-    dax) echo 114 ;;
-    fred) echo 157 ;;
-    ivy) echo 200 ;;
+    fred) echo 71 ;;
+    anna) echo 114 ;;
+    dax) echo 157 ;;
+    mira) echo 200 ;;
     kai) echo 243 ;;
-    lena) echo 286 ;;
-    max) echo 329 ;;
-    mira) echo 372 ;;
-    nora) echo 415 ;;
-    sam) echo 458 ;;
-    sol) echo 501 ;;
-    teo) echo 544 ;;
+    teo) echo 286 ;;
+    ivy) echo 329 ;;
+    lena) echo 372 ;;
+    max) echo 415 ;;
+    nora) echo 458 ;;
+    sam) echo 501 ;;
+    sol) echo 544 ;;
     *) die "unknown member '$1'." ;;
   esac
 }
