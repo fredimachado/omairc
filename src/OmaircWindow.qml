@@ -100,6 +100,10 @@ ApplicationWindow {
             : (irc.lastError.length > 0 ? irc.lastError : irc.connectionStatus))
         : ""
     readonly property var activeMessages: irc ? irc.messages : null
+    readonly property font transcriptBodyFont: Qt.font({
+        family: "iA Writer Mono S",
+        pixelSize: scaledSize(13)
+    })
     // One line of transcript body text. The typing indicator claims the slot a
     // one-line message would occupy, so its box comes from this rather than
     // from the dots, whose glyphs are taller than a line of text.
@@ -148,14 +152,16 @@ ApplicationWindow {
 
     component TranscriptNickHit: MouseArea {
         required property string nick
+        property bool nickOpensDirect: false
 
         objectName: "transcriptNickHit"
         anchors.fill: parent
-        enabled: nick.length > 0 && nick !== win.selfNick
+        enabled: nickOpensDirect && nick.length > 0 && nick !== win.selfNick
         hoverEnabled: true
         cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
         Accessible.role: Accessible.Button
         Accessible.name: nick
+        Accessible.ignored: !enabled
         Accessible.onPressAction: {
             if (enabled)
                 win.openDirectMessage(nick);
@@ -212,7 +218,8 @@ ApplicationWindow {
 
         Accessible.role: Accessible.StaticText
         Accessible.ignored: dots.describedAs.length === 0
-        Accessible.description: dots.describedAs
+        // Name is for inspection when focus lands; appearance is not a live region.
+        Accessible.name: dots.describedAs
         spacing: 0
 
         Timer {
@@ -238,8 +245,8 @@ ApplicationWindow {
         id: messageLineProbe
         visible: false
         text: "X"
-        font.family: "iA Writer Mono S"
-        font.pixelSize: win.scaledSize(13)
+        font.family: win.transcriptBodyFont.family
+        font.pixelSize: win.transcriptBodyFont.pixelSize
     }
 
     component MessageAvatar: Rectangle {
@@ -247,6 +254,7 @@ ApplicationWindow {
 
         required property string author
         required property bool replayed
+        property bool nickOpensDirect: false
 
         anchors.left: parent.left
         anchors.leftMargin: win.scaledSize(24)
@@ -269,7 +277,10 @@ ApplicationWindow {
             font.pixelSize: win.scaledSize(13)
         }
 
-        TranscriptNickHit { nick: avatar.author }
+        TranscriptNickHit {
+            nick: avatar.author
+            nickOpensDirect: avatar.nickOpensDirect
+        }
     }
 
     component MessageHeader: Row {
@@ -278,6 +289,7 @@ ApplicationWindow {
         required property string author
         required property string time
         required property bool replayed
+        property bool nickOpensDirect: false
 
         anchors.left: parent.left
         anchors.leftMargin: win.scaledSize(70)
@@ -293,7 +305,10 @@ ApplicationWindow {
             font.bold: true
             font.pixelSize: win.scaledSize(12)
 
-            TranscriptNickHit { nick: header.author }
+            TranscriptNickHit {
+                nick: header.author
+                nickOpensDirect: header.nickOpensDirect
+            }
         }
 
         Text {
@@ -524,27 +539,30 @@ ApplicationWindow {
             && transcriptField(model, row - 1, "time") === time;
     }
 
+    function currentTranscriptMinute() {
+        // Same local HH:mm as MessageListModel::displayTime.
+        return Qt.formatDateTime(new Date(), "HH:mm");
+    }
+
     function bodyTextTopMargin(grouped) {
         return scaledSize(grouped ? 4 : 29);
     }
 
-    function transcriptRowHeight(kind, grouped, contentHeight) {
-        if (kind === "event")
+    // compact is grouped-or-whois: the shorter continuation row.
+    function transcriptRowHeight(isEvent, compact, contentHeight) {
+        if (isEvent)
             return Math.max(scaledSize(42), contentHeight + scaledSize(8));
-        return grouped || kind === "whois"
+        return compact
             ? Math.max(scaledSize(22), contentHeight + scaledSize(8))
             : Math.max(scaledSize(58), contentHeight + scaledSize(39));
     }
 
-    function typingFollowsPeerChat(model, nick) {
-        var last = transcriptRowCount(model) - 1;
-        if (last < 0 || nick.length === 0)
-            return false;
-        var kind = transcriptField(model, last, "kind");
-        if (kind === "event" || kind === "whois" || kind.length === 0)
-            return false;
-        return transcriptField(model, last, "origin") === "live"
-            && transcriptField(model, last, "author") === nick;
+    function typingFollowsPeerChat(model, nick, currentMinute) {
+        // The footer has no timestamp of its own. Treat it as the next live
+        // chat row from the peer arriving now, using the same local HH:mm
+        // MessageListModel::displayTime would assign that row.
+        return continuesMessageGroup(model, transcriptRowCount(model), nick,
+                                     currentMinute, "message", "live");
     }
 
     function isAllowedHttpUrl(url) {
@@ -2102,7 +2120,6 @@ ApplicationWindow {
                 anchors.right: unreadBadge.visible ? unreadBadge.left : parent.right
                 anchors.rightMargin: unreadBadge.visible ? win.scaledSize(6) : 0
                 anchors.verticalCenter: parent.verticalCenter
-                pixelSize: win.scaledSize(16)
             }
 
             Rectangle {
@@ -2151,9 +2168,10 @@ ApplicationWindow {
 
         property bool pinning: false
         property int trackedCount: 0
-        // Bumped whenever the visible rows change. A binding that reads a row
-        // by index has no other dependency to watch: the model object is
-        // stable and a reset can leave count unchanged.
+        // Bumped on count change, model reset, and dataChanged that covers
+        // the last row. Bindings that read a row through field() have no
+        // NOTIFY: the model object is stable, and a same-size rewrite leaves
+        // count unchanged.
         property int rowRevision: 0
         property int restoreOffset: -1
         property int pinGeneration: 0
@@ -2361,9 +2379,11 @@ ApplicationWindow {
                 list.noteGrowth(list.trackedCount, list.count);
             }
             function onDataChanged(topLeft, bottomRight) {
-                // A same-size reload swaps the whole view and reports only a
-                // dataChanged for the last row, so neither count nor a reset
-                // tells the footer to re-read it.
+                // The typing footer reads the last row through
+                // transcriptField / field(), a Q_INVOKABLE with no NOTIFY.
+                // Same-size reload and ListModel setProperty emit
+                // dataChanged without changing count, so this bump
+                // re-reads grouping.
                 if (bottomRight.row >= list.count - 1)
                     list.rowRevision += 1;
             }
@@ -2817,7 +2837,7 @@ ApplicationWindow {
 
                     width: messageList.width
                     height: win.transcriptRowHeight(
-                        kind, grouped,
+                        kind === "event", grouped || kind === "whois",
                         kind === "event"
                             ? messageEvent.implicitHeight
                             : (kind === "whois"
@@ -2874,6 +2894,7 @@ ApplicationWindow {
                         visible: messageDelegate.isChat && !messageDelegate.grouped
                         author: messageDelegate.author
                         replayed: messageDelegate.replayed
+                        nickOpensDirect: true
                     }
 
                     MessageHeader {
@@ -2882,6 +2903,7 @@ ApplicationWindow {
                         author: messageDelegate.author
                         time: messageDelegate.time
                         replayed: messageDelegate.replayed
+                        nickOpensDirect: true
                     }
 
                     TextEdit {
@@ -2911,9 +2933,9 @@ ApplicationWindow {
                             ? TextEdit.RichText
                             : TextEdit.PlainText
                         padding: 0
-                        font.family: "iA Writer Mono S"
+                        font.family: win.transcriptBodyFont.family
                         font.italic: messageDelegate.kind === "action"
-                        font.pixelSize: win.scaledSize(13)
+                        font.pixelSize: win.transcriptBodyFont.pixelSize
 
                         PlainUrlHit { edit: messageBody }
                     }
@@ -2930,12 +2952,33 @@ ApplicationWindow {
                         && !win.currentConversationIsChannel
                         && !win.consoleVisible
                         && typingRow.nick.length > 0
+                    property int minuteTick: 0
+                    readonly property string currentMinute: {
+                        typingRow.show;
+                        typingRow.minuteTick;
+                        return win.currentTranscriptMinute();
+                    }
                     readonly property bool grouped: {
                         // The revision read re-reads the last row after a model
                         // reset that leaves the row count unchanged.
                         messageList.rowRevision;
-                        return win.typingFollowsPeerChat(typingRow.transcriptModel,
-                                                         typingRow.nick);
+                        return win.typingFollowsPeerChat(
+                            typingRow.transcriptModel, typingRow.nick,
+                            typingRow.currentMinute);
+                    }
+
+                    Timer {
+                        // Grouping treats the footer as the next live chat row
+                        // arriving now. Snapshotting new Date() only when
+                        // rowRevision changes would stay grouped after the
+                        // minute rolls, then jump when the message arrives.
+                        // Tick while the indicator is shown so a minute
+                        // boundary ungroups the placeholder the same way the
+                        // arriving row would.
+                        interval: 1000
+                        running: typingRow.show
+                        repeat: true
+                        onTriggered: typingRow.minuteTick += 1
                     }
 
                     width: messageList.width
@@ -2943,7 +2986,7 @@ ApplicationWindow {
                     // A hidden footer with a real height reserves blank space at
                     // the content bottom and stickToEnd scrolls into it.
                     height: typingRow.show
-                        ? win.transcriptRowHeight("message", typingRow.grouped,
+                        ? win.transcriptRowHeight(false, typingRow.grouped,
                                                   win.messageLineHeight)
                         : 0
 

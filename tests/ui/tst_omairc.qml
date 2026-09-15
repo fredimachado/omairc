@@ -4199,7 +4199,7 @@ TestCase {
         var dots = findChild(anna, "conversation-typing-" + seed.omarchyNetworkId + "-anna");
         verify(dots !== null, "The background DM typing indicator should be rendered");
         tryCompare(dots, "visible", true);
-        compare(dots.pixelSize, appWindow.scaledSize(16));
+        compare(dots.pixelSize, appWindow.scaledSize(12));
         saveScreenshot("typing-sidebar-dm");
         var pulse = dots.pulse;
         wait(320);
@@ -4213,19 +4213,27 @@ TestCase {
 
         var footer = item("typingTranscript");
         tryCompare(footer, "visible", true);
-        compare(footer.grouped, true);
+        var list = item("messageList");
+        var grouped = appWindow.continuesMessageGroup(
+            list.model, list.model.rowCount(), "anna",
+            appWindow.currentTranscriptMinute(), "message", "live");
+        compare(footer.grouped, grouped);
         var avatar = findChild(footer, "typingTranscriptAvatar");
         verify(avatar !== null, "The typing avatar should exist");
-        compare(avatar.visible, false);
+        compare(avatar.visible, !grouped);
+        var header = findChild(footer, "typingTranscriptHeader");
+        verify(header !== null, "The typing header should exist");
+        compare(header.visible, !grouped);
         var dots = findChild(footer, "typingTranscriptDots");
         verify(dots !== null, "The typing dots should exist");
-        // The dots are 21 tall at scaledSize(16) against a 17 line of body
-        // text, so the grouped body slot sits 2px higher than scaledSize(4).
-        compare(dots.anchors.topMargin, appWindow.scaledSize(4) - 2);
+        compare(dots.anchors.topMargin,
+                appWindow.bodyTextTopMargin(grouped)
+                    + Math.round((appWindow.messageLineHeight - dots.implicitHeight) / 2));
         compare(dots.pixelSize, appWindow.scaledSize(16));
-        compare(footer.height, appWindow.scaledSize(25));
+        compare(footer.height, appWindow.transcriptRowHeight(
+                    false, grouped, appWindow.messageLineHeight));
         compare(dots.Accessible.role, Accessible.StaticText);
-        compare(dots.Accessible.description, "anna is typing");
+        compare(dots.Accessible.name, "anna is typing");
         compare(dots.Accessible.ignored, false);
         compare(dots.children[0].color.toString(), appWindow.mutedColor.toString());
     }
@@ -4237,10 +4245,12 @@ TestCase {
 
         var footer = item("typingTranscript");
         tryCompare(footer, "visible", true);
-        compare(footer.grouped, true);
 
         var composer = item("messageComposer");
         var messages = item("messageList");
+        compare(footer.grouped, appWindow.continuesMessageGroup(
+                    messages.model, messages.model.rowCount(), "anna",
+                    appWindow.currentTranscriptMinute(), "message", "live"));
         var previousCount = messages.model.rowCount();
         mouseClick(composer);
         typeText("hello anna");
@@ -4249,12 +4259,22 @@ TestCase {
         waitForNewMessage(messages, previousCount, "hello anna");
 
         tryCompare(footer, "grouped", false);
-        compare(findChild(footer, "typingTranscriptAvatar").visible, true);
-        compare(findChild(footer, "typingTranscriptHeader").visible, true);
-        // The ungrouped body slot sits at scaledSize(29) less the same 2px
-        // centring shift the grouped slot takes.
-        compare(findChild(footer, "typingTranscriptDots").anchors.topMargin,
-                appWindow.scaledSize(29) - 2);
+        var avatar = findChild(footer, "typingTranscriptAvatar");
+        var header = findChild(footer, "typingTranscriptHeader");
+        compare(avatar.visible, true);
+        compare(header.visible, true);
+        var avatarHit = findChild(avatar, "transcriptNickHit");
+        var headerHit = findChild(header, "transcriptNickHit");
+        verify(avatarHit !== null, "Could not find avatar transcriptNickHit");
+        verify(headerHit !== null, "Could not find header transcriptNickHit");
+        compare(avatarHit.enabled, false);
+        compare(headerHit.enabled, false);
+        compare(avatarHit.Accessible.ignored, true);
+        compare(headerHit.Accessible.ignored, true);
+        var dots = findChild(footer, "typingTranscriptDots");
+        compare(dots.anchors.topMargin,
+                appWindow.bodyTextTopMargin(false)
+                    + Math.round((appWindow.messageLineHeight - dots.implicitHeight) / 2));
         compare(findChild(footer, "messageAuthor").text, "anna");
         tryCompare(footer, "visible", true);
     }
@@ -4337,13 +4357,6 @@ TestCase {
         liveIrc.isChannel = false;
         liveIrc.hasTyping = true;
         liveIrc.typingNicks = ["anna"];
-        liveMessages.append({
-            author: "anna",
-            time: "10:00",
-            body: "first",
-            kind: "message",
-            origin: "live"
-        });
         var window = createTemporaryObject(liveWindowComponent, null);
         verify(window !== null, "The live window should load");
         tryCompare(window, "visible", true);
@@ -4353,13 +4366,24 @@ TestCase {
         verify(list !== null, "Could not find messageList");
         var footer = findChild(window, "typingTranscript");
         verify(footer !== null, "Could not find typingTranscript");
+
+        var nowMinute = window.currentTranscriptMinute();
+        var otherMinute = nowMinute === "10:00" ? "09:00" : "10:00";
+
+        liveMessages.append({
+            author: "anna",
+            time: nowMinute,
+            body: "first",
+            kind: "message",
+            origin: "live"
+        });
         tryCompare(footer, "visible", true);
 
         compare(footer.grouped, true);
-        compare(footer.height, window.scaledSize(25));
+        var groupedFooterHeight = footer.height;
         liveMessages.append({
             author: "anna",
-            time: "10:00",
+            time: nowMinute,
             body: "second",
             kind: "message",
             origin: "live"
@@ -4370,7 +4394,7 @@ TestCase {
         waitForRendering(window.contentItem);
         var groupedRow = list.itemAtIndex(1);
         verify(groupedRow !== null, "The arriving grouped row should be rendered");
-        compare(groupedRow.height, window.scaledSize(25));
+        compare(groupedRow.height, groupedFooterHeight);
 
         liveMessages.append({
             author: "live-nick",
@@ -4380,7 +4404,7 @@ TestCase {
             origin: "live"
         });
         tryCompare(footer, "grouped", false);
-        compare(footer.height, window.scaledSize(58));
+        var ungroupedAfterSelfHeight = footer.height;
         liveMessages.append({
             author: "anna",
             time: "10:02",
@@ -4394,7 +4418,33 @@ TestCase {
         waitForRendering(window.contentItem);
         var avatarRow = list.itemAtIndex(3);
         verify(avatarRow !== null, "The arriving avatar row should be rendered");
-        compare(avatarRow.height, window.scaledSize(58));
+        compare(avatarRow.height, ungroupedAfterSelfHeight);
+
+        liveMessages.clear();
+        liveMessages.append({
+            author: "anna",
+            time: otherMinute,
+            body: "older minute",
+            kind: "message",
+            origin: "live"
+        });
+        tryCompare(footer, "grouped", false);
+        var reservedHeight = footer.height;
+        liveMessages.append({
+            author: "anna",
+            time: nowMinute,
+            body: "later minute",
+            kind: "message",
+            origin: "live"
+        });
+        tryVerify(function() {
+            return list.itemAtIndex(1) !== null;
+        });
+        waitForRendering(window.contentItem);
+        var laterRow = list.itemAtIndex(1);
+        verify(laterRow !== null, "The arriving ungrouped row should be rendered");
+        compare(laterRow.grouped, false);
+        compare(laterRow.height, reservedHeight);
 
         window.close();
         liveIrc.hasTyping = false;
@@ -4449,7 +4499,7 @@ TestCase {
         liveMessages.clear();
         liveMessages.append({
             author: "anna",
-            time: "10:00",
+            time: window.currentTranscriptMinute(),
             body: "live tail",
             kind: "message",
             origin: "live"

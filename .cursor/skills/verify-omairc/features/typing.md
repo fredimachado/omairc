@@ -1,6 +1,6 @@
 # Typing
 
-Typing is the bouncing ellipsis that shows someone is composing. On a channel it sits beside that member's nick in the member panel. On a direct message it sits at the end of the transcript. It groups with the peer's last message when the peer spoke last, and takes its own avatar line otherwise. It is DM-only in the transcript and hidden while the peer's hint is `typing=paused`. Mock UI shows it for `anna` on `#omarchy` and the `anna` DM. A live session hides it unless the server granted `message-tags`.
+Typing is the bouncing ellipsis that shows someone is composing. On a channel it sits beside that member's nick in the member panel. On a direct message it sits at the end of the transcript. It groups with the peer's last message when the peer spoke last, and takes its own avatar line otherwise. It is DM-only in the transcript and stays visible through a `typing=paused` hold of 30s (IRCv3 typing client-tag SHOULD). Mock UI shows it for `anna` on `#omarchy` and the `anna` DM. A live session hides it unless the server granted `message-tags`.
 
 ## Sub-features
 
@@ -26,8 +26,8 @@ Preconditions:
 
 ## Gotchas
 
-- A `typing=paused` hint is stored for its 30s hold but paints nothing. Do not expect dots from a paused peer.
-- The transcript indicator is DM-only. Channels keep the member-panel glyph.
+- A `typing=paused` hint stays visible for 30s, matching the IRCv3 typing client-tag recommendation. Do not expect dots to hide the instant the peer pauses.
+- The transcript indicator is DM-only. Channels keep the member-panel glyph. Transcript dots are 16px; the sidebar DM row and member-panel chrome glyphs stay at the TypingDots default of 12px.
 - Presence dots, away dimming, and status lines are member-presence. This feature is only the ellipsis.
 - The identity footer does not follow typing. Live away chrome is identity-footer.
 - Mock typing is only `anna`, and only on `#omarchy` or the `anna` DM. `#desktop` has no typing overlay.

@@ -95,6 +95,7 @@ private slots:
     void reloadUnchangedKeysEmitsDataChangedNotReset();
     void typingRoleDerivesFromExistingDirectAndInvalidates();
     void selectedChatAppendInsertsInsteadOfReset();
+    void sameSizeReloadEmitsDataChangedCoveringFirstRow();
     void selectedMemberJoinInsertsInsteadOfReset();
     void reloadTrimEmitsRemovesWhenCountUnchanged();
     void reloadClearAfterCapEmitsRemoves();
@@ -788,6 +789,56 @@ void ModelTest::selectedChatAppendInsertsInsteadOfReset()
     messages.select(other);
     QCOMPARE(resets.size(), 1);
     QCOMPARE(messages.rowCount(), 1);
+}
+
+void ModelTest::sameSizeReloadEmitsDataChangedCoveringFirstRow()
+{
+    IrcEventReducer reducer;
+    MessageListModel messages(reducer);
+    welcome(reducer, networkA);
+
+    const IrcConversationKey room =
+        reducer.conversationKey(networkA, QStringLiteral("#room"));
+    reducer.apply(IrcMessageEvent{
+        room, QStringLiteral("Alice"), QStringLiteral("first"), timestamp,
+        QStringLiteral("#room")});
+    reducer.apply(IrcMessageEvent{
+        room, QStringLiteral("Bob"), QStringLiteral("second"), timestamp,
+        QStringLiteral("#room")});
+    reducer.apply(IrcJoinEvent{
+        networkA, QStringLiteral("#room"), QStringLiteral("Carol")});
+    messages.select(room);
+    const int rows = messages.rowCount();
+    QVERIFY(rows >= 3);
+    QCOMPARE(roleAt(messages, 0, MessageListModel::BodyRole),
+             QStringLiteral("first"));
+    QCOMPARE(roleAt(messages, rows - 1, MessageListModel::BodyRole),
+             QStringLiteral("Carol joined"));
+
+    QSignalSpy resets(&messages, &QAbstractItemModel::modelReset);
+    QSignalSpy inserts(&messages, &QAbstractItemModel::rowsInserted);
+    QSignalSpy changes(&messages, &QAbstractItemModel::dataChanged);
+    reducer.apply(IrcJoinEvent{
+        networkA, QStringLiteral("#room"), QStringLiteral("Dave")});
+    messages.reload();
+
+    QCOMPARE(resets.size(), 0);
+    QCOMPARE(inserts.size(), 0);
+    QCOMPARE(messages.rowCount(), rows);
+    QCOMPARE(roleAt(messages, 0, MessageListModel::BodyRole),
+             QStringLiteral("first"));
+    QCOMPARE(roleAt(messages, rows - 1, MessageListModel::BodyRole),
+             QStringLiteral("Carol, Dave joined"));
+
+    bool coversFirstAndLast = false;
+    for (int i = 0; i < changes.size(); ++i) {
+        const int top = changes.at(i).at(0).toModelIndex().row();
+        const int bottom = changes.at(i).at(1).toModelIndex().row();
+        if (top <= 0 && bottom >= rows - 1)
+            coversFirstAndLast = true;
+    }
+    QVERIFY2(coversFirstAndLast,
+             "same-size reload must emit dataChanged covering row 0, not only the last row");
 }
 
 void ModelTest::selectedMemberJoinInsertsInsteadOfReset()

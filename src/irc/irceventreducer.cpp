@@ -512,7 +512,7 @@ void IrcEventReducer::pruneExpiredTyping(IrcConversationState& conversation,
                                          const QDateTime& now)
 {
     for (auto it = conversation.typing.begin(); it != conversation.typing.end(); ) {
-        if (!ircIsTyping(it->second, now))
+        if (!ircTypingHintRetained(it->second, now))
             it = conversation.typing.erase(it);
         else
             ++it;
