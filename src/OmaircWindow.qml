@@ -2153,9 +2153,10 @@ ApplicationWindow {
 
         property bool pinning: false
         property int trackedCount: 0
-        // Bumped on count change and model reset. A binding that reads a row
-        // by index has no other dependency to watch: the model object is
-        // stable and a reset can leave count unchanged.
+        // Bumped on count change, model reset, and dataChanged that covers
+        // the last row. Bindings that read a row through field() have no
+        // NOTIFY: the model object is stable, and a same-size rewrite leaves
+        // count unchanged.
         property int rowRevision: 0
         property int restoreOffset: -1
         property int pinGeneration: 0
@@ -2361,6 +2362,15 @@ ApplicationWindow {
             }
             function onRowsInserted(parent, first, last) {
                 list.noteGrowth(list.trackedCount, list.count);
+            }
+            function onDataChanged(topLeft, bottomRight) {
+                // The typing footer reads the last row through
+                // transcriptField / field(), a Q_INVOKABLE with no NOTIFY.
+                // Same-size reload and ListModel setProperty emit
+                // dataChanged without changing count, so this bump
+                // re-reads grouping.
+                if (bottomRight.row >= list.count - 1)
+                    list.rowRevision += 1;
             }
             function onRowsRemoved(parent, first, last) {
                 if (first === 0
