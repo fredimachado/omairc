@@ -822,10 +822,11 @@ IrcController::snapshotMembers(const QString &networkId,
         return QStringLiteral("Not joined.");
 
     QVector<CliMember> members;
-    members.reserve(int(channel->members.size()));
-    for (const auto &entry : channel->members) {
+    const QVector<IrcOrderedMember> ordered = m_reducer.orderedMembers(key);
+    members.reserve(ordered.size());
+    for (const IrcOrderedMember &member : ordered) {
         const std::optional<IrcMemberView> view =
-            m_reducer.memberView(key, entry.first);
+            m_reducer.memberView(key, member.nick);
         if (!view)
             continue;
         CliMember row;

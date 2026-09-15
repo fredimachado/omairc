@@ -441,12 +441,12 @@ void ControllerTest::reducesTrafficAndRoutesOutboundByNetwork()
     QCOMPARE(roleAt(messages, 1, MessageListModel::BodyRole),
              QStringLiteral("hello"));
     QCOMPARE(members->rowCount(), 3);
-    QCOMPARE(roleAt(members, 0, MemberListModel::NickRole), QStringLiteral("Alice"));
-    QCOMPARE(roleAt(members, 0, MemberListModel::LabelRole), QStringLiteral("+Alice"));
-    QCOMPARE(roleAt(members, 1, MemberListModel::NickRole), QStringLiteral("Bob"));
-    QCOMPARE(roleAt(members, 1, MemberListModel::LabelRole), QStringLiteral("Bob"));
-    QCOMPARE(roleAt(members, 2, MemberListModel::NickRole), QStringLiteral("omairc"));
-    QCOMPARE(roleAt(members, 2, MemberListModel::LabelRole), QStringLiteral("@omairc"));
+    QCOMPARE(roleAt(members, 0, MemberListModel::NickRole), QStringLiteral("omairc"));
+    QCOMPARE(roleAt(members, 0, MemberListModel::LabelRole), QStringLiteral("@omairc"));
+    QCOMPARE(roleAt(members, 1, MemberListModel::NickRole), QStringLiteral("Alice"));
+    QCOMPARE(roleAt(members, 1, MemberListModel::LabelRole), QStringLiteral("+Alice"));
+    QCOMPARE(roleAt(members, 2, MemberListModel::NickRole), QStringLiteral("Bob"));
+    QCOMPARE(roleAt(members, 2, MemberListModel::LabelRole), QStringLiteral("Bob"));
     QCOMPARE(controller.selectedTarget(), QStringLiteral("#chan"));
     QVERIFY(controller.isChannel());
     QCOMPARE(controller.peopleCount(), 3);
@@ -469,8 +469,8 @@ void ControllerTest::reducesTrafficAndRoutesOutboundByNetwork()
     transportA->injectBytes(
         QByteArrayLiteral(":op!u@h MODE #chan +o Alice\r\n"
                           ":op!u@h MODE #chan -o Alice\r\n"));
-    QCOMPARE(roleAt(members, 0, MemberListModel::NickRole), QStringLiteral("Alice"));
-    QCOMPARE(roleAt(members, 0, MemberListModel::LabelRole), QStringLiteral("+Alice"));
+    QCOMPARE(roleAt(members, 1, MemberListModel::NickRole), QStringLiteral("Alice"));
+    QCOMPARE(roleAt(members, 1, MemberListModel::LabelRole), QStringLiteral("+Alice"));
 
     registerSession(sessionB, transportB);
     transportB->injectBytes(
@@ -717,23 +717,25 @@ void ControllerTest::presenceCapabilitiesGateAwayAndStatus()
 
     auto *members = qobject_cast<QAbstractItemModel *>(controller.members());
     QCOMPARE(members->rowCount(), 3);
-    QCOMPARE(roleAt(members, 0, MemberListModel::NickRole), QStringLiteral("Alice"));
-    QCOMPARE(roleAt(members, 0, MemberListModel::LabelRole), QStringLiteral("+Alice"));
-    QCOMPARE(roleAt(members, 0, MemberListModel::StatusRole), QString());
-    QCOMPARE(roleAt(members, 0, MemberListModel::AwayRole), false);
+    QCOMPARE(roleAt(members, 0, MemberListModel::NickRole), QStringLiteral("omairc"));
+    QCOMPARE(roleAt(members, 0, MemberListModel::LabelRole), QStringLiteral("@omairc"));
+    QCOMPARE(roleAt(members, 1, MemberListModel::NickRole), QStringLiteral("Alice"));
+    QCOMPARE(roleAt(members, 1, MemberListModel::LabelRole), QStringLiteral("+Alice"));
+    QCOMPARE(roleAt(members, 1, MemberListModel::StatusRole), QString());
+    QCOMPARE(roleAt(members, 1, MemberListModel::AwayRole), false);
 
     transport->injectBytes(
         QByteArrayLiteral(":server 352 omairc #omarchy u h server Alice G :0 real\r\n"
                           ":server 761 omairc Alice status * :writing docs\r\n"));
-    QCOMPARE(roleAt(members, 0, MemberListModel::AwayRole), true);
-    QCOMPARE(roleAt(members, 0, MemberListModel::StatusRole),
+    QCOMPARE(roleAt(members, 1, MemberListModel::AwayRole), true);
+    QCOMPARE(roleAt(members, 1, MemberListModel::StatusRole),
              QStringLiteral("writing docs"));
 
     transport->injectBytes(QByteArrayLiteral(":Alice!u@h AWAY\r\n"));
-    QCOMPARE(roleAt(members, 0, MemberListModel::AwayRole), false);
+    QCOMPARE(roleAt(members, 1, MemberListModel::AwayRole), false);
 
     transport->injectBytes(QByteArrayLiteral(":server 766 omairc Alice status :no key\r\n"));
-    QCOMPARE(roleAt(members, 0, MemberListModel::StatusRole), QString());
+    QCOMPARE(roleAt(members, 1, MemberListModel::StatusRole), QString());
 
     transport->injectBytes(
         QByteArrayLiteral(":server 761 omairc Alice status * :writing docs\r\n"
@@ -741,8 +743,8 @@ void ControllerTest::presenceCapabilitiesGateAwayAndStatus()
                           ":server CAP omairc DEL :away-notify draft/metadata-2\r\n"));
     QVERIFY(!controller.hasAwayPresence());
     QVERIFY(!controller.hasMemberStatus());
-    QCOMPARE(roleAt(members, 0, MemberListModel::AwayRole), false);
-    QCOMPARE(roleAt(members, 0, MemberListModel::StatusRole), QString());
+    QCOMPARE(roleAt(members, 1, MemberListModel::AwayRole), false);
+    QCOMPARE(roleAt(members, 1, MemberListModel::StatusRole), QString());
 }
 
 void ControllerTest::defaultPrefixPaintsLabelNotNick()
@@ -764,20 +766,21 @@ void ControllerTest::defaultPrefixPaintsLabelNotNick()
 
     auto *members = qobject_cast<QAbstractItemModel *>(controller.members());
     QCOMPARE(members->rowCount(), 3);
-    QCOMPARE(roleAt(members, 0, MemberListModel::NickRole), QStringLiteral("Alice"));
-    QCOMPARE(roleAt(members, 0, MemberListModel::LabelRole), QStringLiteral("@Alice"));
-    QCOMPARE(roleAt(members, 1, MemberListModel::NickRole), QStringLiteral("Bob"));
-    QCOMPARE(roleAt(members, 1, MemberListModel::LabelRole), QStringLiteral("+Bob"));
-    QCOMPARE(roleAt(members, 2, MemberListModel::NickRole), QStringLiteral("owner"));
-    QCOMPARE(roleAt(members, 2, MemberListModel::LabelRole), QStringLiteral("~owner"));
+    QCOMPARE(roleAt(members, 0, MemberListModel::NickRole), QStringLiteral("owner"));
+    QCOMPARE(roleAt(members, 0, MemberListModel::LabelRole), QStringLiteral("~owner"));
+    QCOMPARE(roleAt(members, 1, MemberListModel::NickRole), QStringLiteral("Alice"));
+    QCOMPARE(roleAt(members, 1, MemberListModel::LabelRole), QStringLiteral("@Alice"));
+    QCOMPARE(roleAt(members, 2, MemberListModel::NickRole), QStringLiteral("Bob"));
+    QCOMPARE(roleAt(members, 2, MemberListModel::LabelRole), QStringLiteral("+Bob"));
 
     transport->injectBytes(
         QByteArrayLiteral(":op!u@h MODE #omarchy -o Alice\r\n"
                           ":op!u@h MODE #omarchy +o Ghost\r\n"
                           ":Alice!u@h JOIN :#omarchy\r\n"));
     QCOMPARE(members->rowCount(), 3);
-    QCOMPARE(roleAt(members, 0, MemberListModel::NickRole), QStringLiteral("Alice"));
-    QCOMPARE(roleAt(members, 0, MemberListModel::LabelRole), QStringLiteral("+Alice"));
+    QCOMPARE(roleAt(members, 0, MemberListModel::NickRole), QStringLiteral("owner"));
+    QCOMPARE(roleAt(members, 1, MemberListModel::NickRole), QStringLiteral("Alice"));
+    QCOMPARE(roleAt(members, 1, MemberListModel::LabelRole), QStringLiteral("+Alice"));
 }
 
 void ControllerTest::channelCloseSlashIsWrongScope()
@@ -3631,15 +3634,15 @@ void ControllerTest::chghostLeavesMemberNickAndRanks()
     auto *members = qobject_cast<QAbstractItemModel *>(controller.members());
     QVERIFY(members);
     QCOMPARE(members->rowCount(), 2);
-    QCOMPARE(roleAt(members, 0, MemberListModel::NickRole), QStringLiteral("Alice"));
-    QCOMPARE(roleAt(members, 0, MemberListModel::LabelRole), QStringLiteral("+Alice"));
+    QCOMPARE(roleAt(members, 1, MemberListModel::NickRole), QStringLiteral("Alice"));
+    QCOMPARE(roleAt(members, 1, MemberListModel::LabelRole), QStringLiteral("+Alice"));
 
     transport->injectBytes(
         QByteArrayLiteral(":Alice!olduser@oldhost CHGHOST newuser newhost\r\n"
                           ":Alice!newuser@newhost CHGHOST\r\n"));
     QCOMPARE(members->rowCount(), 2);
-    QCOMPARE(roleAt(members, 0, MemberListModel::NickRole), QStringLiteral("Alice"));
-    QCOMPARE(roleAt(members, 0, MemberListModel::LabelRole), QStringLiteral("+Alice"));
+    QCOMPARE(roleAt(members, 1, MemberListModel::NickRole), QStringLiteral("Alice"));
+    QCOMPARE(roleAt(members, 1, MemberListModel::LabelRole), QStringLiteral("+Alice"));
 }
 
 void ControllerTest::twoSessionsStartTogether()
@@ -4248,8 +4251,8 @@ void ControllerTest::unsolicitedWhoisStaysOnStatus()
     QVERIFY(messages);
     QVERIFY(members);
     const QStringList before = selectedBodies(messages);
-    QCOMPARE(roleAt(members, 0, MemberListModel::NickRole), QStringLiteral("Alice"));
-    QCOMPARE(roleAt(members, 0, MemberListModel::AwayRole), false);
+    QCOMPARE(roleAt(members, 1, MemberListModel::NickRole), QStringLiteral("Alice"));
+    QCOMPARE(roleAt(members, 1, MemberListModel::AwayRole), false);
 
     transport->injectBytes(
         QByteArrayLiteral(":irc 311 omairc lena ~lena user/host * :Lena\r\n"
@@ -4261,7 +4264,7 @@ void ControllerTest::unsolicitedWhoisStaysOnStatus()
                                    QStringLiteral("lena is ~lena@user/host (Lena)")));
     QVERIFY(!selectedBodiesContain(messages, QStringLiteral("Alice is away: gone fishing")));
     QVERIFY(!selectedBodiesContain(messages, QStringLiteral("No such nick: missing")));
-    QCOMPARE(roleAt(members, 0, MemberListModel::AwayRole), false);
+    QCOMPARE(roleAt(members, 1, MemberListModel::AwayRole), false);
     QVERIFY(logContains(controller.console()->lines(),
                         QStringLiteral("lena is ~lena@user/host (Lena)")));
     QVERIFY(logContains(controller.console()->lines(),

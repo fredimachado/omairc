@@ -54,6 +54,10 @@ Status is not in this list.
 `label` includes the server `PREFIX` rank. `status` is the IRCv3
 metadata status when the server grants `draft/metadata-2`.
 
+Rows are in member-panel order: highest `PREFIX` rank first (`~`, `&`, `@`,
+`%`, `+`, then people without a rank), and case-mapped nick order inside each
+rank. This is the panel order, not the server's `NAMES` order.
+
 ## `read`
 
 ```json

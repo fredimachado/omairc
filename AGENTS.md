@@ -46,6 +46,9 @@
 - Show the people count, member toggle, and member panel only for channels.
   Clicking another user in the member panel must open or create a direct
   message with its own local message history.
+- Order member rows by the server's `PREFIX` rank, highest first, then nick.
+  Sort in `MemberListModel` through `IrcEventReducer::orderedMembers`, never in
+  QML, and keep the panel and `omairc names` in that same order.
 - Keep the composer single-line. `Enter` sends the message.
 
 ## Review lessons

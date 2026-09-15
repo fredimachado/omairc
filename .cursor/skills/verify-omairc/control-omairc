@@ -489,6 +489,8 @@ cmd_qml_suite() {
     "open-direct-message.png:open-direct-message/mira-dm.png" \
     "status-console.png:status-console/after-open.png" \
     "switch-channel.png:member-presence/after-desktop.png" \
+    "member-rank-order.png:member-presence/rank-order.png" \
+    "member-rank-order-demoted.png:member-presence/rank-order-demoted.png" \
     "switch-channel.png:identity-footer/mock-fred.png" \
     "typing-member-glyph.png:typing/member-glyph.png" \
     "typing-dm-overlay.png:typing/dm-overlay.png"

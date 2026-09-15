@@ -277,17 +277,25 @@ IrcPrefixSet IrcServerFeatures::apply(IrcPrefixSet ranks,
     return IrcPrefixSet(ranks.m_bits & ~bit);
 }
 
+int IrcServerFeatures::rankPriority(const IrcPrefixSet& ranks) const
+{
+    for (std::size_t index = 0; index < m_prefixPairs.size(); ++index) {
+        if ((ranks.m_bits & bitFor(m_prefixPairs[index].first)) != 0)
+            return static_cast<int>(index);
+    }
+    return static_cast<int>(m_prefixPairs.size());
+}
+
 std::string IrcServerFeatures::memberLabel(const IrcPrefixSet& ranks,
                                            std::string_view nick) const
 {
-    for (const auto& pair : m_prefixPairs) {
-        if ((ranks.m_bits & bitFor(pair.first)) != 0) {
-            std::string label;
-            label.reserve(nick.size() + 1);
-            label.push_back(pair.second);
-            label.append(nick);
-            return label;
-        }
-    }
-    return std::string(nick);
+    const int priority = rankPriority(ranks);
+    if (priority >= static_cast<int>(m_prefixPairs.size()))
+        return std::string(nick);
+
+    std::string label;
+    label.reserve(nick.size() + 1);
+    label.push_back(m_prefixPairs[static_cast<std::size_t>(priority)].second);
+    label.append(nick);
+    return label;
 }

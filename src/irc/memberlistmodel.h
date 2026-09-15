@@ -1,6 +1,6 @@
 #pragma once
 
-#include "ircevent.h"
+#include "irceventreducer.h"
 
 #include <QAbstractListModel>
 #include <QByteArray>
@@ -10,8 +10,6 @@
 #include <QVector>
 
 #include <optional>
-
-class IrcEventReducer;
 
 class MemberListModel : public QAbstractListModel
 {
@@ -41,12 +39,14 @@ public:
 private:
     void rebuildRowIndex();
 
-    void resetNicks(QVector<QString> nicks);
-    void syncNicks(QVector<QString> nicks);
+    void resetMembers(QVector<IrcOrderedMember> members);
+    void syncMembers(QVector<IrcOrderedMember> members);
+
+    int rowForNick(const QString& normalizedNick) const;
 
     IrcEventReducer& m_reducer;
     std::optional<IrcConversationKey> m_selected;
     std::optional<IrcConversationKey> m_loaded;
-    QVector<QString> m_nicks;
+    QVector<IrcOrderedMember> m_members;
     QHash<QString, int> m_rowByNick;
 };

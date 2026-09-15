@@ -134,7 +134,7 @@ That click path needs the seeded sidebar. Use `control-omairc launch --demo-serv
 
 Inspect the matching feature file for the exact recipe and observables.
 
-When desktop tools are missing, drive the mapped feature through the suite. `qml-suite` runs `bin/test`, which opens the Connect sheet with a fake incomplete profile, then clicks seeded `conversation-omarchy-#desktop`, `messageComposer`, `membersPanel` / `Ctrl+Shift+M`, `member-mira`, and `networkHeaderButton-omarchy` with real mouse and key events, then copies screenshots into `test-artifacts/verify/`. That covers every mapped feature except live PREFIX ranks, live typing, live slash dispatch, and a real unfocused desktop mention, which need a completed Connect (and, for mentions, an unfocused window). It is not a pass on a skipped desktop entry point; say so in the proof notes.
+When desktop tools are missing, drive the mapped feature through the suite. `qml-suite` runs `bin/test`, which opens the Connect sheet with a fake incomplete profile, then clicks seeded `conversation-omarchy-#desktop`, `messageComposer`, `membersPanel` / `Ctrl+Shift+M`, `member-mira`, and `networkHeaderButton-omarchy` with real mouse and key events, then copies screenshots into `test-artifacts/verify/`. That covers every mapped feature except live typing, live slash dispatch, a real unfocused desktop mention, and rank glyphs arriving from a real server handshake, which need a completed Connect (and, for mentions, an unfocused window). It is not a pass on a skipped desktop entry point; say so in the proof notes.
 
 ## Evidence
 

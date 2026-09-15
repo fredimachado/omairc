@@ -89,6 +89,7 @@ public:
         std::string_view mode,
         const std::vector<std::string>& arguments) const;
     IrcPrefixSet apply(IrcPrefixSet ranks, const IrcPrefixChange& change) const;
+    int rankPriority(const IrcPrefixSet& ranks) const;
     std::string memberLabel(const IrcPrefixSet& ranks,
                             std::string_view nick) const;
 

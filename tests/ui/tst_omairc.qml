@@ -974,6 +974,20 @@ TestCase {
         return -1;
     }
 
+    function renderedMembers() {
+        var members = item("membersList");
+        var rows = [];
+        var row = 0;
+        for (; row < members.count; ++row) {
+            members.positionViewAtIndex(row, ListView.Contain);
+            waitForRendering(appWindow.contentItem);
+            var delegate = members.itemAtIndex(row);
+            if (delegate && delegate.nick.length > 0)
+                rows.push(delegate.nick + "=" + delegate.label);
+        }
+        return rows;
+    }
+
     function openSeededAppWindow() {
         destroyAppWindowAndSeed();
         seed = createTemporaryObject(seedComponent, testCase);
@@ -2967,6 +2981,42 @@ TestCase {
         tryCompare(members, "activeFocus", false);
         verify(Qt.colorEqual(highlight.color, "transparent"),
                "unfocused member list should not keep a selection fill");
+    }
+
+    function test_memberRowsFollowRankOrder() {
+        openSeededAppWindow();
+        compare(appWindow.currentConversation, "#omarchy");
+        verify(item("membersPanel").visible);
+
+        var plain = renderedMembers();
+        compare(plain.length, 12);
+        compare(plain[0], "anna=anna");
+        compare(plain[11], "teo=teo");
+
+        // The demo network advertises PREFIX=(ov)@+, so the ladder is @ then +.
+        seed.injectOmarchy(
+            ":server 353 fred = #omarchy :teo @anna @dax +mira fred kai sol\r\n"
+            + ":server 366 fred #omarchy :End of NAMES\r\n");
+        tryVerify(function() {
+            var rows = renderedMembers();
+            return rows.length === 7 && rows[0] === "anna=@anna";
+        });
+
+        compare(renderedMembers().join(" "),
+                "anna=@anna dax=@dax mira=+mira "
+                + "fred=fred kai=kai sol=sol teo=teo");
+        compare(appWindow.currentPeopleCount, 7);
+        saveScreenshot("member-rank-order");
+
+        seed.injectOmarchy(":op!u@h MODE #omarchy -o anna\r\n"
+                           + ":op!u@h MODE #omarchy +o teo\r\n");
+        tryVerify(function() {
+            return renderedMembers()[0] === "dax=@dax";
+        });
+        compare(renderedMembers().join(" "),
+                "dax=@dax teo=@teo mira=+mira "
+                + "anna=anna fred=fred kai=kai sol=sol");
+        saveScreenshot("member-rank-order-demoted");
     }
 
     function test_focusMembersReopensHiddenPanel() {
