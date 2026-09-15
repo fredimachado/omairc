@@ -65,6 +65,15 @@ export QML2_IMPORT_PATH="${QT_ROOT}/qml"
 EOF
 $SUDO chmod +x "${PROFILE_SCRIPT}"
 
+log "Exposing qmake6 and the Qt libraries system-wide"
+# The profile.d script above only affects login shells. Symlink qmake6 onto the
+# default PATH and register the Qt libraries with the dynamic loader so bin/build
+# and bin/test work in any shell (login or not), however the agent invokes them.
+$SUDO ln -sf "${QT_ROOT}/bin/qmake6" /usr/local/bin/qmake6
+$SUDO ln -sf "${QT_ROOT}/bin/qmake6" /usr/local/bin/qmake
+echo "${QT_ROOT}/lib" | $SUDO tee /etc/ld.so.conf.d/omairc-qt.conf >/dev/null
+$SUDO ldconfig
+
 log "Installing ImageMagick 7 'magick' compatibility shim"
 # Ubuntu ships ImageMagick 6 (legacy per-command tools) without the unified
 # `magick` entrypoint that ImageMagick 7 / Omarchy provide and that
