@@ -400,6 +400,11 @@ private slots:
     void whoisFailureBeforeDeliveryDoesNotStealWatch();
     void closedDirectWhoisDoesNotResurrect();
     void whoisEventDoesNotCollapseWithJoin();
+    void ctcpFromChannelCopiesReplyAsWhoisEvent();
+    void statusCtcpStaysOnStatus();
+    void emptyChannelCtcpNamesANick();
+    void emptyDirectCtcpDefaultsAndRoutes();
+    void unsolicitedCtcpReplyStaysOnStatus();
     void transcriptPersistsAndReloadsMuted();
     void transcriptHydrateDoesNotNotify();
     void transcriptSkipsSecretsAndKeepsSessionOnWriteError();
@@ -4514,6 +4519,164 @@ void ControllerTest::whoisEventDoesNotCollapseWithJoin()
     QVERIFY(!selectedBodiesContain(messages, QStringLiteral("End of WHOIS for lena, alice joined")));
     QCOMPARE(bodyRow(messages, QStringLiteral("End of WHOIS for lena")) + 1,
              bodyRow(messages, QStringLiteral("alice joined")));
+}
+
+void ControllerTest::ctcpFromChannelCopiesReplyAsWhoisEvent()
+{
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+                                                 transport);
+    QVERIFY(session);
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    transport->completeConnect();
+    transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
+                          ":server 001 omairc :Welcome\r\n"
+                          ":omairc!u@h JOIN :#omarchy\r\n"));
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+
+    QVERIFY(controller.sendMessage(QStringLiteral("/version lena")));
+    QCOMPARE(transport->writtenFrames().last(),
+             QByteArray("PRIVMSG lena :\x01" "VERSION\x01\r\n"));
+
+    transport->injectBytes(
+        QByteArray(":lena!u@h NOTICE omairc :\x01VERSION Omairc 0.4.0\x01\r\n"));
+
+    auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
+    QVERIFY(messages);
+    QVERIFY(hasWhoisBody(messages,
+                         QStringLiteral("VERSION reply from lena: Omairc 0.4.0")));
+    QVERIFY(logContains(controller.console()->lines(),
+                        QStringLiteral("VERSION reply from lena: Omairc 0.4.0")));
+
+    QVERIFY(controller.sendMessage(QStringLiteral("/time lena")));
+    transport->injectBytes(
+        QByteArray(":lena!u@h NOTICE omairc :\x01"
+                   "TIME Tue, 15 Sep 2026 12:00:00 +0000\x01\r\n"));
+    QVERIFY(hasWhoisBody(
+        messages,
+        QStringLiteral("TIME reply from lena: Tue, 15 Sep 2026 12:00:00 +0000")));
+
+    QVERIFY(controller.sendMessage(QStringLiteral("/ping lena")));
+    const QByteArray pingFrame = transport->writtenFrames().last();
+    const QByteArray pingPrefix = QByteArray("PRIVMSG lena :\x01" "PING ");
+    QVERIFY(pingFrame.startsWith(pingPrefix));
+    QVERIFY(pingFrame.endsWith(QByteArray("\x01\r\n")));
+    const QByteArray token = pingFrame.mid(
+        pingPrefix.size(), pingFrame.size() - pingPrefix.size() - 3);
+    transport->injectBytes(QByteArray(":lena!u@h NOTICE omairc :\x01PING ")
+                           + token + QByteArray("\x01\r\n"));
+    bool sawPing = false;
+    for (const QString& body : selectedBodies(messages)) {
+        if (body.startsWith(QStringLiteral("PING reply from lena: "))
+            && body.endsWith(QStringLiteral(" ms"))) {
+            sawPing = true;
+        }
+    }
+    QVERIFY(sawPing);
+}
+
+void ControllerTest::statusCtcpStaysOnStatus()
+{
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+                                                 transport);
+    QVERIFY(session);
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    transport->completeConnect();
+    transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
+                          ":server 001 omairc :Welcome\r\n"
+                          ":omairc!u@h JOIN :#omarchy\r\n"));
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
+    QVERIFY(messages);
+    const QStringList before = selectedBodies(messages);
+
+    controller.openStatus(QStringLiteral("libera"));
+    QVERIFY(controller.console()->submit(QStringLiteral("/version lena")));
+    transport->injectBytes(
+        QByteArray(":lena!u@h NOTICE omairc :\x01VERSION Omairc 0.4.0\x01\r\n"));
+
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    QCOMPARE(selectedBodies(messages), before);
+    QVERIFY(!selectedBodiesContain(messages,
+                                   QStringLiteral("VERSION reply from lena: Omairc 0.4.0")));
+    QVERIFY(logContains(controller.console()->lines(),
+                        QStringLiteral("VERSION reply from lena: Omairc 0.4.0")));
+}
+
+void ControllerTest::emptyChannelCtcpNamesANick()
+{
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+                                                 transport);
+    QVERIFY(session);
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    transport->completeConnect();
+    transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
+                          ":server 001 omairc :Welcome\r\n"
+                          ":omairc!u@h JOIN :#omarchy\r\n"));
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    const int before = transport->writtenFrames().size();
+    QVERIFY(!controller.sendMessage(QStringLiteral("/ping")));
+    QCOMPARE(controller.lastError(), QStringLiteral("Name a nick"));
+    QCOMPARE(transport->writtenFrames().size(), before);
+}
+
+void ControllerTest::emptyDirectCtcpDefaultsAndRoutes()
+{
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+                                                 transport);
+    QVERIFY(session);
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    transport->completeConnect();
+    transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
+                          ":server 001 omairc :Welcome\r\n"
+                          ":omairc!u@h JOIN :#omarchy\r\n"
+                          ":lena!u@h PRIVMSG omairc :hi\r\n"));
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("lena"));
+    QVERIFY(controller.sendMessage(QStringLiteral("/version")));
+    QCOMPARE(transport->writtenFrames().last(),
+             QByteArray("PRIVMSG lena :\x01" "VERSION\x01\r\n"));
+    transport->injectBytes(
+        QByteArray(":lena!u@h NOTICE omairc :\x01VERSION HexChat 2.16\x01\r\n"));
+    auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
+    QVERIFY(messages);
+    QVERIFY(hasWhoisBody(messages,
+                         QStringLiteral("VERSION reply from lena: HexChat 2.16")));
+}
+
+void ControllerTest::unsolicitedCtcpReplyStaysOnStatus()
+{
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+                                                 transport);
+    QVERIFY(session);
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    transport->completeConnect();
+    transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
+                          ":server 001 omairc :Welcome\r\n"
+                          ":omairc!u@h JOIN :#omarchy\r\n"));
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
+    QVERIFY(messages);
+    const QStringList before = selectedBodies(messages);
+
+    transport->injectBytes(
+        QByteArray(":lena!u@h NOTICE omairc :\x01VERSION Omairc 0.4.0\x01\r\n"));
+    QCOMPARE(selectedBodies(messages), before);
+    QVERIFY(logContains(controller.console()->lines(),
+                        QStringLiteral("VERSION reply from lena: Omairc 0.4.0")));
 }
 
 void ControllerTest::transcriptPersistsAndReloadsMuted()

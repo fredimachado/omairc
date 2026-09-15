@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `/ping [nick]`, `/time [nick]`, and `/version [nick]` send those CTCP queries. Empty form uses the open direct message. Replies copy into the asking conversation, like `/whois`. Status stays the log. Channel targets are refused.
+
 ## [0.4.0] - 2026-09-14
 
 ### Added

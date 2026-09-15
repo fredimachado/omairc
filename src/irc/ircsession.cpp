@@ -535,6 +535,15 @@ bool IrcSession::sendAction(const QString& target, const QString& body)
     return sent;
 }
 
+bool IrcSession::sendCtcp(const QString& target, const QString& command, const QString& argument)
+{
+    const QString verb = command.trimmed().toUpper();
+    if (!isValidPrivmsgTarget(target) || verb.isEmpty() || verb.contains(QLatin1Char(' ')))
+        return false;
+    return sendTrailingBody(QStringLiteral("PRIVMSG %1 :").arg(target),
+                            ctcpPayload({verb, argument}));
+}
+
 bool IrcSession::sendTyping(const QString& target, IrcTypingPhase phase)
 {
     if (m_state != State::Registered)

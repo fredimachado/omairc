@@ -31,6 +31,20 @@ private:
     Progress m_progress = Progress::Detail;
 };
 
+class IrcCtcpReplyLine final
+{
+public:
+    const QString& nick() const noexcept;
+    const QString& command() const noexcept;
+
+private:
+    friend class IrcStatusEntry;
+    IrcCtcpReplyLine(QString nick, QString command);
+
+    QString m_nick;
+    QString m_command;
+};
+
 class IrcStatusEntry
 {
 public:
@@ -55,6 +69,7 @@ public:
     QString label() const;
     QString text() const;
     const IrcWhoisLine *whoisLine() const noexcept;
+    const IrcCtcpReplyLine *ctcpReply() const noexcept;
 
 private:
     explicit IrcStatusEntry(QString networkId,
@@ -63,7 +78,8 @@ private:
                             IrcLogSeverity severity,
                             QString label,
                             QString text,
-                            std::optional<IrcWhoisLine> whoisLine = {});
+                            std::optional<IrcWhoisLine> whoisLine = {},
+                            std::optional<IrcCtcpReplyLine> ctcpReply = {});
 
     QString m_networkId;
     QDateTime m_timestamp;
@@ -72,6 +88,7 @@ private:
     QString m_label;
     QString m_text;
     std::optional<IrcWhoisLine> m_whoisLine;
+    std::optional<IrcCtcpReplyLine> m_ctcpReply;
 };
 
 bool ircStatusKeepsIncoming(const IrcMessage& message,

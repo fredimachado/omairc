@@ -226,6 +226,8 @@ private:
                                    IrcComposerSurface surface);
     IrcCommandOutcome dispatchWhois(const IrcCommand& command,
                                     IrcComposerSurface surface);
+    IrcCommandOutcome dispatchCtcp(const IrcCommand& command,
+                                   IrcComposerSurface surface);
     IrcCommandOutcome dispatchIgnore(const IrcCommand& command,
                                      IrcComposerSurface surface);
     IrcCommandOutcome dispatchMute(const IrcCommand& command,
@@ -253,6 +255,40 @@ private:
     void handleStatusEntry(const IrcStatusEntry& entry);
     void routeWhoisLine(const QString& networkId, const IrcWhoisLine& line);
     void forgetWhoisWatches(const QString& networkId);
+    struct IrcCtcpWatchKey
+    {
+        QString networkId;
+        QString normalizedNick;
+        QString command;
+
+        friend bool operator<(const IrcCtcpWatchKey& left,
+                              const IrcCtcpWatchKey& right)
+        {
+            if (left.networkId != right.networkId)
+                return left.networkId < right.networkId;
+            if (left.normalizedNick != right.normalizedNick)
+                return left.normalizedNick < right.normalizedNick;
+            return left.command < right.command;
+        }
+    };
+    using IrcCtcpDestination = IrcWhoisDestination;
+    struct IrcCtcpWatch
+    {
+        IrcCtcpDestination destination;
+    };
+    std::optional<IrcCtcpWatchKey> ctcpWatchKey(const QString& networkId,
+                                                const QString& nick,
+                                                const QString& command) const;
+    QString ctcpQueryName(IrcCommand::Verb verb) const;
+    bool sendCtcpQuery(IrcSession& session,
+                       const QString& nick,
+                       const QString& command,
+                       const QString& argument,
+                       IrcCtcpDestination destination);
+    void routeCtcpReply(const QString& networkId,
+                        const IrcCtcpReplyLine& line,
+                        const QString& text);
+    void forgetCtcpWatches(const QString& networkId);
     void echoIfPresent(IrcSession *session,
                        const QString& target,
                        const QString& body,
@@ -294,4 +330,5 @@ private:
     QString m_composerDraft;
     QString m_typingTarget;
     std::map<IrcWhoisWatchKey, IrcWhoisWatch> m_whoisWatches;
+    std::map<IrcCtcpWatchKey, IrcCtcpWatch> m_ctcpWatches;
 };

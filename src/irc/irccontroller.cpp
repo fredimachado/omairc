@@ -8,6 +8,7 @@
 #include "ircmute.h"
 #include "ircjointarget.h"
 #include "ircviewnotify.h"
+#include "irctcp.h"
 #include "irctyping.h"
 #include "ircwiretext.h"
 
@@ -173,6 +174,7 @@ bool IrcController::discardSession(const QString &networkId)
     if (!m_sessions.findSession(networkId))
         return false;
     forgetWhoisWatches(networkId);
+    forgetCtcpWatches(networkId);
     const QString previousId = identityNetworkId();
     const bool previousAway = selfAway();
     m_reducer.apply(IrcSelfAwayEvent{networkId, false});
@@ -192,6 +194,7 @@ void IrcController::forgetNetworkState(const QString &networkId)
     if (networkId.isEmpty())
         return;
     forgetWhoisWatches(networkId);
+    forgetCtcpWatches(networkId);
     const QString previousId = identityNetworkId();
     const bool previousAway = selfAway();
     m_reducer.forgetNetwork(networkId);
@@ -915,6 +918,12 @@ IrcCommandOutcome IrcController::dispatch(const IrcCommand& command,
     if (command.verb == IrcCommand::Verb::Whois)
         return dispatchWhois(command, surface);
 
+    if (command.verb == IrcCommand::Verb::Ping
+        || command.verb == IrcCommand::Verb::Time
+        || command.verb == IrcCommand::Verb::Version) {
+        return dispatchCtcp(command, surface);
+    }
+
     if (command.verb == IrcCommand::Verb::Clear)
         return clearSurface(surface);
 
@@ -1527,6 +1536,72 @@ IrcCommandOutcome IrcController::dispatchWhois(const IrcCommand& command,
         : IrcCommandOutcome::Refused;
 }
 
+QString IrcController::ctcpQueryName(IrcCommand::Verb verb) const
+{
+    switch (verb) {
+    case IrcCommand::Verb::Ping:
+        return QStringLiteral("PING");
+    case IrcCommand::Verb::Time:
+        return QStringLiteral("TIME");
+    case IrcCommand::Verb::Version:
+        return QStringLiteral("VERSION");
+    default:
+        return {};
+    }
+}
+
+IrcCommandOutcome IrcController::dispatchCtcp(const IrcCommand& command,
+                                              IrcComposerSurface surface)
+{
+    const QString query = ctcpQueryName(command.verb);
+    if (query.isEmpty())
+        return IrcCommandOutcome::Unsupported;
+
+    QString nick = firstToken(command.argument);
+    if (!restAfterFirstToken(command.argument).isEmpty())
+        return IrcCommandOutcome::Refused;
+
+    IrcSession *session = nullptr;
+    if (nick.isEmpty()) {
+        if (selectedIsCloseableDirect()) {
+            nick = selectedTarget();
+            session = selectedSession();
+        } else if (m_selected) {
+            return IrcCommandOutcome::WrongScope;
+        } else {
+            return IrcCommandOutcome::Refused;
+        }
+    } else {
+        const QString networkId = queryNetworkId(surface);
+        if (networkId.isEmpty()) {
+            if (surface == IrcComposerSurface::Conversation)
+                return IrcCommandOutcome::WrongScope;
+            return IrcCommandOutcome::Refused;
+        }
+        if (m_reducer.serverFeatures(networkId).isChannel(utf8(nick)))
+            return IrcCommandOutcome::Refused;
+        session = m_sessions.findSession(networkId);
+    }
+    if (nick.isEmpty())
+        return IrcCommandOutcome::Refused;
+    if (!session || session->state() != IrcSession::State::Registered)
+        return IrcCommandOutcome::NotConnected;
+
+    IrcCtcpDestination destination{IrcWhoisStatusOnly{}};
+    if (surface == IrcComposerSurface::Conversation) {
+        if (!m_selected)
+            return IrcCommandOutcome::WrongScope;
+        destination = *m_selected;
+    }
+
+    QString argument;
+    if (command.verb == IrcCommand::Verb::Ping)
+        argument = QString::number(QDateTime::currentMSecsSinceEpoch());
+    return sendCtcpQuery(*session, nick, query, argument, std::move(destination))
+        ? IrcCommandOutcome::Sent
+        : IrcCommandOutcome::Refused;
+}
+
 std::optional<IrcController::IrcWhoisWatchKey>
 IrcController::whoisWatchKey(const QString& networkId, const QString& nick) const
 {
@@ -1575,6 +1650,8 @@ void IrcController::handleStatusEntry(const IrcStatusEntry& entry)
 {
     if (const IrcWhoisLine *line = entry.whoisLine())
         routeWhoisLine(entry.networkId(), *line);
+    if (const IrcCtcpReplyLine *line = entry.ctcpReply())
+        routeCtcpReply(entry.networkId(), *line, entry.text());
 }
 
 void IrcController::routeWhoisLine(const QString& networkId, const IrcWhoisLine& line)
@@ -1609,6 +1686,78 @@ void IrcController::forgetWhoisWatches(const QString& networkId)
     for (auto it = m_whoisWatches.begin(); it != m_whoisWatches.end(); ) {
         if (it->first.networkId == networkId)
             it = m_whoisWatches.erase(it);
+        else
+            ++it;
+    }
+}
+
+std::optional<IrcController::IrcCtcpWatchKey>
+IrcController::ctcpWatchKey(const QString& networkId,
+                            const QString& nick,
+                            const QString& command) const
+{
+    const QString trimmed = nick.trimmed();
+    const QString verb = command.trimmed().toUpper();
+    if (networkId.isEmpty() || trimmed.isEmpty() || verb.isEmpty())
+        return std::nullopt;
+    return IrcCtcpWatchKey{
+        networkId,
+        m_reducer.conversationKey(networkId, trimmed).normalizedTarget,
+        verb,
+    };
+}
+
+bool IrcController::sendCtcpQuery(IrcSession& session,
+                                  const QString& nick,
+                                  const QString& command,
+                                  const QString& argument,
+                                  IrcCtcpDestination destination)
+{
+    const std::optional<IrcCtcpWatchKey> key =
+        ctcpWatchKey(session.networkId(), nick, command);
+    if (!key)
+        return false;
+    if (const auto *conversation = std::get_if<IrcConversationKey>(&destination)) {
+        if (conversation->networkId != session.networkId())
+            return false;
+    }
+
+    if (!session.sendCtcp(nick, command, argument))
+        return false;
+    m_ctcpWatches.insert_or_assign(*key, IrcCtcpWatch{std::move(destination)});
+    return true;
+}
+
+void IrcController::routeCtcpReply(const QString& networkId,
+                                   const IrcCtcpReplyLine& line,
+                                   const QString& text)
+{
+    const std::optional<IrcCtcpWatchKey> key =
+        ctcpWatchKey(networkId, line.nick(), line.command());
+    if (!key)
+        return;
+    auto found = m_ctcpWatches.find(*key);
+    if (found == m_ctcpWatches.end())
+        return;
+
+    const IrcCtcpDestination destination = found->second.destination;
+    m_ctcpWatches.erase(found);
+
+    if (std::holds_alternative<IrcWhoisStatusOnly>(destination) || text.isEmpty())
+        return;
+    apply(IrcWhoisTranscriptEvent{
+        std::get<IrcConversationKey>(destination),
+        text,
+    });
+}
+
+void IrcController::forgetCtcpWatches(const QString& networkId)
+{
+    if (networkId.isEmpty())
+        return;
+    for (auto it = m_ctcpWatches.begin(); it != m_ctcpWatches.end(); ) {
+        if (it->first.networkId == networkId)
+            it = m_ctcpWatches.erase(it);
         else
             ++it;
     }
@@ -1705,6 +1854,7 @@ void IrcController::apply(const IrcEvent& event)
     if (const auto *welcome = std::get_if<IrcWelcomeEvent>(&event)) {
         m_unawaySent.remove(welcome->networkId);
         forgetWhoisWatches(welcome->networkId);
+        forgetCtcpWatches(welcome->networkId);
     } else if (const auto *selfAway = std::get_if<IrcSelfAwayEvent>(&event)) {
         m_unawaySent.remove(selfAway->networkId);
     }

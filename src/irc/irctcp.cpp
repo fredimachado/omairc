@@ -35,3 +35,25 @@ QString ctcpPayload(const IrcCtcpRequest& request)
         : request.command + QLatin1Char(' ') + request.argument;
     return QChar(1) + body + QChar(1);
 }
+
+QString formatCtcpReplyText(const QString& command,
+                            const QString& nick,
+                            const QString& argument,
+                            const QDateTime& now)
+{
+    if (command == QLatin1String("PING")) {
+        bool ok = false;
+        const qint64 sentMs = argument.toLongLong(&ok);
+        if (ok) {
+            const qint64 lag = now.toMSecsSinceEpoch() - sentMs;
+            if (lag >= 0 && lag < 24 * 60 * 60 * 1000)
+                return QStringLiteral("PING reply from %1: %2 ms").arg(nick).arg(lag);
+        }
+        if (argument.isEmpty())
+            return QStringLiteral("PING reply from %1").arg(nick);
+        return QStringLiteral("PING reply from %1: %2").arg(nick, argument);
+    }
+    if (argument.isEmpty())
+        return QStringLiteral("%1 reply from %2").arg(command, nick);
+    return QStringLiteral("%1 reply from %2: %3").arg(command, nick, argument);
+}

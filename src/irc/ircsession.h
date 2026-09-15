@@ -146,6 +146,7 @@ public slots:
     bool sendNotice(const QString& target, const QString& body);
     bool sendChannelMode(const IrcChannelModeRequest& request);
     bool sendAction(const QString& target, const QString& body);
+    bool sendCtcp(const QString& target, const QString& command, const QString& argument = {});
     bool sendTyping(const QString& target, IrcTypingPhase phase);
     bool join(const IrcJoinTarget& target);
     bool part(const QString& channel);

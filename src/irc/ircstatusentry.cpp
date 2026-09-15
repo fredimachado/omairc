@@ -632,6 +632,22 @@ IrcWhoisLine::IrcWhoisLine(QString nick, QString text, Progress progress)
 {
 }
 
+IrcCtcpReplyLine::IrcCtcpReplyLine(QString nick, QString command)
+    : m_nick(std::move(nick))
+    , m_command(std::move(command))
+{
+}
+
+const QString& IrcCtcpReplyLine::nick() const noexcept
+{
+    return m_nick;
+}
+
+const QString& IrcCtcpReplyLine::command() const noexcept
+{
+    return m_command;
+}
+
 const QString& IrcWhoisLine::nick() const noexcept
 {
     return m_nick;
@@ -658,7 +674,8 @@ IrcStatusEntry::IrcStatusEntry(QString networkId,
                                IrcLogSeverity severity,
                                QString label,
                                QString text,
-                               std::optional<IrcWhoisLine> whoisLine)
+                               std::optional<IrcWhoisLine> whoisLine,
+                               std::optional<IrcCtcpReplyLine> ctcpReply)
     : m_networkId(std::move(networkId))
     , m_timestamp(std::move(timestamp))
     , m_source(source)
@@ -666,6 +683,7 @@ IrcStatusEntry::IrcStatusEntry(QString networkId,
     , m_label(std::move(label))
     , m_text(std::move(text))
     , m_whoisLine(std::move(whoisLine))
+    , m_ctcpReply(std::move(ctcpReply))
 {
 }
 
@@ -714,6 +732,28 @@ IrcStatusEntry IrcStatusEntry::incoming(const QString& networkId,
                                   IrcLogSeverity::Info,
                                   QStringLiteral("CTCP"),
                                   QStringLiteral("%1 from %2").arg(text, sender));
+        }
+    }
+    if (commandOf(*display) == QStringLiteral("NOTICE") && display->parameters.size() >= 2) {
+        if (const auto request = parseCtcpRequest(
+                ircWireText(display->parameters.back()))) {
+            if (request->command != QStringLiteral("ACTION")) {
+                const QString sender = display->prefix && !display->prefix->nick.empty()
+                    ? ircWireText(display->prefix->nick)
+                    : QStringLiteral("unknown");
+                const QDateTime now = QDateTime::currentDateTimeUtc();
+                return IrcStatusEntry(networkId,
+                                      now,
+                                      IrcLogSource::Server,
+                                      IrcLogSeverity::Info,
+                                      QStringLiteral("CTCP"),
+                                      formatCtcpReplyText(request->command,
+                                                          sender,
+                                                          request->argument,
+                                                          now),
+                                      {},
+                                      IrcCtcpReplyLine(sender, request->command));
+            }
         }
     }
     if (const auto parts = parseIncomingNotice(*display)) {
@@ -821,4 +861,9 @@ QString IrcStatusEntry::text() const
 const IrcWhoisLine *IrcStatusEntry::whoisLine() const noexcept
 {
     return m_whoisLine ? &*m_whoisLine : nullptr;
+}
+
+const IrcCtcpReplyLine *IrcStatusEntry::ctcpReply() const noexcept
+{
+    return m_ctcpReply ? &*m_ctcpReply : nullptr;
 }

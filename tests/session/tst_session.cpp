@@ -1,4 +1,5 @@
 #include <QCoreApplication>
+#include <QDateTime>
 #include <QEvent>
 #include <QFile>
 #include <QPointer>
@@ -306,6 +307,7 @@ private slots:
     void incomingInviteDoesNotTranslateToEvents();
     void selfEchoToServiceIsRedacted();
     void sendPrivmsgValidatesTarget();
+    void sendCtcpWritesQuery();
     void sendPrivmsgSplitsNearTwoFrames();
     void sendPrivmsgSplitsEnormousToken();
     void setTopicIsSetOnly();
@@ -315,6 +317,7 @@ private slots:
     void whoisWritesDoubledNick();
     void whoisStatusLinesFormatKnownNumerics();
     void incomingNoticeStatusLinesWrapSpeaker();
+    void incomingCtcpNoticeStatusLines();
     void incomingNoticeDoesNotTranslateToEvents();
     void incomingNickservPrivmsgDoesNotTranslateToEvents();
     void incomingStandardRepliesShowDescriptionOnStatus();
@@ -2427,6 +2430,38 @@ void SessionTest::sendPrivmsgValidatesTarget()
     QCOMPARE(fixture.transport->writtenFrames().size(), before);
 }
 
+void SessionTest::sendCtcpWritesQuery()
+{
+    Fixture fixture;
+    fixture.connectTls();
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
+                          ":server 001 omairc :Welcome\r\n"));
+    QCOMPARE(fixture.session->state(), IrcSession::State::Registered);
+
+    QVERIFY(fixture.session->sendCtcp(QStringLiteral("lena"), QStringLiteral("VERSION")));
+    QCOMPARE(fixture.transport->writtenFrames().last(),
+             QByteArray("PRIVMSG lena :\x01" "VERSION\x01\r\n"));
+    QVERIFY(fixture.session->sendCtcp(QStringLiteral("lena"),
+                                      QStringLiteral("time")));
+    QCOMPARE(fixture.transport->writtenFrames().last(),
+             QByteArray("PRIVMSG lena :\x01" "TIME\x01\r\n"));
+    QVERIFY(fixture.session->sendCtcp(QStringLiteral("lena"),
+                                      QStringLiteral("PING"),
+                                      QStringLiteral("42")));
+    QCOMPARE(fixture.transport->writtenFrames().last(),
+             QByteArray("PRIVMSG lena :\x01" "PING 42\x01\r\n"));
+
+    const int before = fixture.transport->writtenFrames().size();
+    QVERIFY(!fixture.session->sendCtcp(QString(), QStringLiteral("VERSION")));
+    QVERIFY(!fixture.session->sendCtcp(QStringLiteral("lena smith"),
+                                       QStringLiteral("VERSION")));
+    QVERIFY(!fixture.session->sendCtcp(QStringLiteral("lena"), QString()));
+    QVERIFY(!fixture.session->sendCtcp(QStringLiteral("lena"),
+                                       QStringLiteral("PING PONG")));
+    QCOMPARE(fixture.transport->writtenFrames().size(), before);
+}
+
 void SessionTest::sendPrivmsgSplitsNearTwoFrames()
 {
     Fixture fixture;
@@ -2722,6 +2757,45 @@ void SessionTest::incomingNoticeStatusLinesWrapSpeaker()
     QCOMPARE(oneParam.label(), QStringLiteral("NOTICE"));
     QCOMPARE(oneParam.text(), QStringLiteral("-AUTH- "));
     QVERIFY(oneParam.text() != QStringLiteral("-AUTH- AUTH"));
+}
+
+void SessionTest::incomingCtcpNoticeStatusLines()
+{
+    const IrcStatusEntry version = IrcStatusEntry::incoming(
+        QStringLiteral("libera"),
+        mustParse(":lena!u@h NOTICE omairc :\x01VERSION Omairc 0.4.0\x01"));
+    QCOMPARE(version.label(), QStringLiteral("CTCP"));
+    QCOMPARE(version.text(), QStringLiteral("VERSION reply from lena: Omairc 0.4.0"));
+    QVERIFY(version.ctcpReply());
+    QCOMPARE(version.ctcpReply()->nick(), QStringLiteral("lena"));
+    QCOMPARE(version.ctcpReply()->command(), QStringLiteral("VERSION"));
+
+    const qint64 sent = QDateTime::currentDateTimeUtc().toMSecsSinceEpoch() - 25;
+    const std::string pingLine =
+        QStringLiteral(":lena!u@h NOTICE omairc :\x01PING %1\x01").arg(sent).toStdString();
+    const IrcStatusEntry ping = IrcStatusEntry::incoming(
+        QStringLiteral("libera"),
+        mustParse(pingLine));
+    QCOMPARE(ping.label(), QStringLiteral("CTCP"));
+    QVERIFY(ping.text().startsWith(QStringLiteral("PING reply from lena: ")));
+    QVERIFY(ping.text().endsWith(QStringLiteral(" ms")));
+    QVERIFY(ping.ctcpReply());
+    QCOMPARE(ping.ctcpReply()->command(), QStringLiteral("PING"));
+
+    const IrcStatusEntry time = IrcStatusEntry::incoming(
+        QStringLiteral("libera"),
+        mustParse(":lena!u@h NOTICE omairc :\x01"
+                  "TIME Tue, 15 Sep 2026 12:00:00 +0000\x01"));
+    QCOMPARE(time.label(), QStringLiteral("CTCP"));
+    QCOMPARE(time.text(),
+             QStringLiteral("TIME reply from lena: Tue, 15 Sep 2026 12:00:00 +0000"));
+
+    const IrcStatusEntry action = IrcStatusEntry::incoming(
+        QStringLiteral("libera"),
+        mustParse(":lena!u@h NOTICE omairc :\x01"
+                  "ACTION waves\x01"));
+    QCOMPARE(action.label(), QStringLiteral("NOTICE"));
+    QVERIFY(!action.ctcpReply());
 }
 
 void SessionTest::incomingNoticeDoesNotTranslateToEvents()
