@@ -2153,7 +2153,7 @@ ApplicationWindow {
 
         property bool pinning: false
         property int trackedCount: 0
-        // Bumped whenever the visible rows change. A binding that reads a row
+        // Bumped on count change and model reset. A binding that reads a row
         // by index has no other dependency to watch: the model object is
         // stable and a reset can leave count unchanged.
         property int rowRevision: 0
@@ -2361,13 +2361,6 @@ ApplicationWindow {
             }
             function onRowsInserted(parent, first, last) {
                 list.noteGrowth(list.trackedCount, list.count);
-            }
-            function onDataChanged(topLeft, bottomRight) {
-                // A same-size reload swaps the whole view and reports only a
-                // dataChanged for the last row, so neither count nor a reset
-                // tells the footer to re-read it.
-                if (bottomRight.row >= list.count - 1)
-                    list.rowRevision += 1;
             }
             function onRowsRemoved(parent, first, last) {
                 if (first === 0

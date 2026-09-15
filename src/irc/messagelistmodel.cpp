@@ -258,10 +258,9 @@ void MessageListModel::reload()
             m_view = std::move(next);
             m_trimmed = trimmed;
             if (!m_view.empty()) {
-                const QModelIndex last = index(int(m_view.size()) - 1);
-                emit dataChanged(last, last);
+                emit dataChanged(index(0, 0),
+                                 index(int(m_view.size()) - 1, 0));
             }
-            notifySeparatorRows();
             return;
         }
     }

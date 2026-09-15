@@ -4497,9 +4497,9 @@ TestCase {
             origin: "live"
         });
         tryCompare(footer, "grouped", true);
-        var revision = list.rowRevision;
         liveMessages.setProperty(0, "origin", "replay");
-        compare(list.rowRevision, revision + 1);
+        // ListModel.get() lets the grouped binding track origin; count and
+        // reset do not fire, so rowRevision stays put.
         tryCompare(footer, "grouped", false);
         compare(avatar.visible, true);
 
