@@ -26,7 +26,7 @@ Preconditions:
 
 ## Gotchas
 
-- Only `http` and `https` with `://` and a non-empty host are allowed. Trailing `.,;:!?)\]>` is stripped from the match.
+- Only `http` and `https` with `://` and non-empty text after `://` are allowed. A hostname is not validated separately, so `https:///foo` would still pass. Trailing `.,;:!?)\]>` is stripped from the match.
 - The body stays `PlainText`. Do not look for rich-text anchors.
 - Sending `https://example.com` from the compiled composer and clicking it is not this feature's proof. That opens the system URL handler.
 - Selectable message text is not this feature. The suite still checks that a body can be selected without opening a URL.
