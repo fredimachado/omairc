@@ -4235,7 +4235,7 @@ TestCase {
         compare(footer.height, appWindow.transcriptRowHeight(
                     "message", grouped, appWindow.messageLineHeight));
         compare(dots.Accessible.role, Accessible.StaticText);
-        compare(dots.Accessible.description, "anna is typing");
+        compare(dots.Accessible.name, "anna is typing");
         compare(dots.Accessible.ignored, false);
         compare(dots.children[0].color.toString(), appWindow.mutedColor.toString());
     }

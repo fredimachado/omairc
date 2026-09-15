@@ -214,7 +214,8 @@ ApplicationWindow {
 
         Accessible.role: Accessible.StaticText
         Accessible.ignored: dots.describedAs.length === 0
-        Accessible.description: dots.describedAs
+        // Name is for inspection when focus lands; appearance is not a live region.
+        Accessible.name: dots.describedAs
         spacing: 0
 
         Timer {
