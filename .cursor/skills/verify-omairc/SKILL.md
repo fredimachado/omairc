@@ -91,7 +91,7 @@ Use `control-omairc` against the isolated window. Stable handles:
 |---|---|
 | Window title `{name} - Omairc` | Current conversation |
 | `click-conversation --name #desktop` | Seeded sidebar channel or DM (`#desktop`, `#help`, `#omarchy`, `#ricing`, `anna`, `dax`) on `--demo-server`. Channels are alphabetical, then DMs. Created DMs such as `mira` are not in that list; open them with `click-member` from a channel. |
-| `click-member --name mira` | Member row while the panel is visible. Seeded `#omarchy` members are alphabetical. |
+| `click-member --name mira` | Member row while the panel is visible. Seeded `#omarchy` rows are ordered by rank: `~fred`, `&anna`, `@dax`, `@mira`, `%kai`, `+teo`, then the plain nicks. Seeded `#desktop` has no ranks and stays alphabetical. |
 | `click-people` | Header `12 PEOPLE` / `Hide members` control while the member column is open (`908,36`) |
 | `click-people --hidden` | Same control after the column hides (`1124,36`) |
 | `click-network` | Sidebar network name. Opens Status. |

@@ -48,7 +48,7 @@ Status is not in this list.
 ## `names`
 
 ```json
-{"ok":true,"members":[{"nick":"anna","label":"@anna","away":false,"status":""}]}
+{"ok":true,"members":[{"nick":"fred","label":"~fred","away":false,"status":"building Omairc"},{"nick":"anna","label":"&anna","away":false,"status":"writing docs"}]}
 ```
 
 `label` includes the server `PREFIX` rank. `status` is the IRCv3

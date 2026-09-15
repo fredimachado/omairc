@@ -63,7 +63,8 @@ conversation. Do not `raise` unless the user wants the window.
 target that is not in the window is an error. `read` does not invent
 conversations.
 
-`names` is the member panel, not a live NAMES round-trip. A DM, Status,
+`names` is the member panel, not a live NAMES round-trip. Rows come back in
+panel order: highest server `PREFIX` rank first, then nick. A DM, Status,
 or a channel that is not joined is an error.
 
 Connection `state` values: `Offline`, `Connecting`, `Connected`,

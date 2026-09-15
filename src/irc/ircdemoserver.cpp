@@ -19,7 +19,7 @@ constexpr auto kYesterday = "2026-09-11";
 constexpr auto kCaps =
     "echo-message message-tags away-notify multi-prefix batch "
     "draft/metadata-2 server-time";
-constexpr auto kIsupport = "CHANTYPES=# PREFIX=(ov)@+";
+constexpr auto kIsupport = "CHANTYPES=# PREFIX=(qaohv)~&@%+";
 
 struct SeedLine
 {
@@ -37,6 +37,7 @@ struct SeedChannel
     QStringList members;
     QStringList lateJoin;
     QStringList away;
+    QVector<QPair<QString, QString>> ranks;
     QVector<QPair<QString, QString>> statuses;
     QVector<SeedLine> lines;
     bool markRead = false;
@@ -110,6 +111,22 @@ QStringList initialMembers(const SeedChannel &channel)
     return names;
 }
 
+/// A NAMES reply carries the PREFIX symbols in front of the nick. The demo
+/// network advertises the full ladder, so a member may carry more than one.
+QStringList namesTokens(const SeedChannel &channel)
+{
+    QStringList tokens = initialMembers(channel);
+    for (QString &token : tokens) {
+        for (const auto &rank : channel.ranks) {
+            if (rank.first != token)
+                continue;
+            token.prepend(rank.second);
+            break;
+        }
+    }
+    return tokens;
+}
+
 QByteArray registrationBytes(const QString &nick, const QString &welcome)
 {
     QByteArray out;
@@ -135,7 +152,7 @@ QByteArray channelStateBytes(const SeedNetwork &network, const SeedChannel &chan
     out += line(QStringLiteral(":server 353 %1 = %2 :%3")
                     .arg(network.nick,
                          channel.name,
-                         initialMembers(channel).join(QLatin1Char(' '))));
+                         namesTokens(channel).join(QLatin1Char(' '))));
     out += line(QStringLiteral(":server 366 %1 %2 :End of NAMES")
                     .arg(network.nick, channel.name));
     return out;
@@ -215,6 +232,21 @@ SeedNetwork omarchyWorld()
     omarchy.away = {QStringLiteral("teo"), QStringLiteral("lena"),
                     QStringLiteral("sam"), QStringLiteral("ivy"),
                     QStringLiteral("max")};
+    // The demo ladder: founder, admin, two ops, halfop, voice, then the rest
+    // plain. `mira` holds two ranks at once, which `multi-prefix` allows, and
+    // `teo` is away and voiced, because rank and presence are independent.
+    //
+    // The `lateJoin` members arrive through the transcript, and an arriving
+    // member carries no rank until a server says so, so they stay out of this
+    // list and out of the initial NAMES.
+    omarchy.ranks = {
+        {QStringLiteral("fred"), QStringLiteral("~")},
+        {QStringLiteral("anna"), QStringLiteral("&")},
+        {QStringLiteral("dax"), QStringLiteral("@")},
+        {QStringLiteral("mira"), QStringLiteral("@+")},
+        {QStringLiteral("kai"), QStringLiteral("%")},
+        {QStringLiteral("teo"), QStringLiteral("+")},
+    };
     omarchy.statuses = {
         {QStringLiteral("anna"), QStringLiteral("writing docs")},
         {QStringLiteral("dax"), QStringLiteral("on #desktop")},
