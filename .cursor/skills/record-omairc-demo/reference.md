@@ -23,7 +23,7 @@ After a leak, demo `omarchy` / `oftc` blocks appeared in `~/.config/omairc/omair
 
 Omakeycast (`io.github.fredimachado.omakeycast`) in evdev-live mode reads `/dev/input/event*` and skips devices named `hl-virtual-keyboard`. `wtype` and similar virtual keyboards never overlay.
 
-Write `input_event` structs to a real keyboard (typically `AT Translated Set 2 keyboard`, `/dev/input/event3` on this laptop). Requires group `input`:
+Write `input_event` structs to a real keyboard (`AT Translated Set 2 keyboard`, `/dev/input/event3` on this laptop). Requires group `input`:
 
 ```sh
 sudo usermod -aG input "$USER"   # then log out
@@ -48,6 +48,12 @@ python3 scripts/inject-evdev.py type --delay 0.08 "omarchy"
 The injector only auto-picks a device whose name contains `keyboard`, and fails
 rather than guessing at some other event node. Override with
 `--device /dev/input/eventN` or `OMAIRC_EVDEV_DEVICE`.
+
+If a recording shows bare keys but no Super/Ctrl/Alt overlays, the auto-picked
+keyboard may not be the one Omakeycast is watching (e.g. an integrated or USB
+keyboard node rather than the AT keyboard). List candidates with
+`ls -l /dev/input/event*` (or their names via `inject-evdev.py`'s pick) and
+pass `--device` for the correct node.
 
 ## Isolated Xvfb is the wrong path
 

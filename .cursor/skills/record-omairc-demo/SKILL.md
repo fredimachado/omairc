@@ -5,7 +5,7 @@ description: Records the Omairc README demo on Omarchy workspace 1 from ./build/
 
 # Record Omairc demo GIF
 
-This is a **live Omarchy workspace recording**, not the isolated Xvfb path in `verify-omairc`. The README hero is `omairc.gif`. The GIF must be **1600×900** (1600-wide, 16:9).
+This is a **live Omarchy workspace recording**, not the isolated Xvfb path in `verify-omairc`. The README hero is `omairc.gif`. The capture stays native-resolution; only the **encoded GIF** is **1600×900** (1600-wide, 16:9).
 
 Do not invent a new driver. Edit and run the scripts in this skill.
 

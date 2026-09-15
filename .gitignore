@@ -7,6 +7,8 @@
 /build-seeded-qml-tests/
 *.o
 *.moc
+__pycache__/
+*.pyc
 moc_*.cpp
 qrc_*.cpp
 .qmake.stash
