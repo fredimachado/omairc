@@ -26,7 +26,7 @@ QDateTime ircTypingExpiresAt(const IrcTypingHint& hint)
     return hint.receivedAt.addMSecs(holdMs);
 }
 
-bool ircIsTyping(const IrcTypingHint& hint, const QDateTime& now) noexcept
+bool ircTypingHintRetained(const IrcTypingHint& hint, const QDateTime& now) noexcept
 {
     if (!hint.receivedAt.isValid() || !now.isValid())
         return false;
@@ -35,7 +35,7 @@ bool ircIsTyping(const IrcTypingHint& hint, const QDateTime& now) noexcept
 
 bool ircTypingShowsIndicator(const IrcTypingHint& hint, const QDateTime& now) noexcept
 {
-    return hint.clock == IrcTypingClock::Active && ircIsTyping(hint, now);
+    return ircTypingHintRetained(hint, now);
 }
 
 std::optional<IrcTypingPhase> ircTypingPhaseFromTag(const QString& value)
