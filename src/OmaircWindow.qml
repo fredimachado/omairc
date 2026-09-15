@@ -148,14 +148,16 @@ ApplicationWindow {
 
     component TranscriptNickHit: MouseArea {
         required property string nick
+        property bool nickOpensDirect: false
 
         objectName: "transcriptNickHit"
         anchors.fill: parent
-        enabled: nick.length > 0 && nick !== win.selfNick
+        enabled: nickOpensDirect && nick.length > 0 && nick !== win.selfNick
         hoverEnabled: true
         cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
         Accessible.role: Accessible.Button
         Accessible.name: nick
+        Accessible.ignored: !enabled
         Accessible.onPressAction: {
             if (enabled)
                 win.openDirectMessage(nick);
@@ -247,6 +249,7 @@ ApplicationWindow {
 
         required property string author
         required property bool replayed
+        property bool nickOpensDirect: false
 
         anchors.left: parent.left
         anchors.leftMargin: win.scaledSize(24)
@@ -269,7 +272,10 @@ ApplicationWindow {
             font.pixelSize: win.scaledSize(13)
         }
 
-        TranscriptNickHit { nick: avatar.author }
+        TranscriptNickHit {
+            nick: avatar.author
+            nickOpensDirect: avatar.nickOpensDirect
+        }
     }
 
     component MessageHeader: Row {
@@ -278,6 +284,7 @@ ApplicationWindow {
         required property string author
         required property string time
         required property bool replayed
+        property bool nickOpensDirect: false
 
         anchors.left: parent.left
         anchors.leftMargin: win.scaledSize(70)
@@ -293,7 +300,10 @@ ApplicationWindow {
             font.bold: true
             font.pixelSize: win.scaledSize(12)
 
-            TranscriptNickHit { nick: header.author }
+            TranscriptNickHit {
+                nick: header.author
+                nickOpensDirect: header.nickOpensDirect
+            }
         }
 
         Text {
@@ -2878,6 +2888,7 @@ ApplicationWindow {
                         visible: messageDelegate.isChat && !messageDelegate.grouped
                         author: messageDelegate.author
                         replayed: messageDelegate.replayed
+                        nickOpensDirect: true
                     }
 
                     MessageHeader {
@@ -2886,6 +2897,7 @@ ApplicationWindow {
                         author: messageDelegate.author
                         time: messageDelegate.time
                         replayed: messageDelegate.replayed
+                        nickOpensDirect: true
                     }
 
                     TextEdit {

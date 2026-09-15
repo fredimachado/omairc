@@ -4261,8 +4261,18 @@ TestCase {
         waitForNewMessage(messages, previousCount, "hello anna");
 
         tryCompare(footer, "grouped", false);
-        compare(findChild(footer, "typingTranscriptAvatar").visible, true);
-        compare(findChild(footer, "typingTranscriptHeader").visible, true);
+        var avatar = findChild(footer, "typingTranscriptAvatar");
+        var header = findChild(footer, "typingTranscriptHeader");
+        compare(avatar.visible, true);
+        compare(header.visible, true);
+        var avatarHit = findChild(avatar, "transcriptNickHit");
+        var headerHit = findChild(header, "transcriptNickHit");
+        verify(avatarHit !== null, "Could not find avatar transcriptNickHit");
+        verify(headerHit !== null, "Could not find header transcriptNickHit");
+        compare(avatarHit.enabled, false);
+        compare(headerHit.enabled, false);
+        compare(avatarHit.Accessible.ignored, true);
+        compare(headerHit.Accessible.ignored, true);
         // The ungrouped body slot sits at scaledSize(29) less the same 2px
         // centring shift the grouped slot takes.
         compare(findChild(footer, "typingTranscriptDots").anchors.topMargin,
