@@ -100,6 +100,10 @@ ApplicationWindow {
             : (irc.lastError.length > 0 ? irc.lastError : irc.connectionStatus))
         : ""
     readonly property var activeMessages: irc ? irc.messages : null
+    // One line of transcript body text. The typing indicator claims the slot a
+    // one-line message would occupy, so its box comes from this rather than
+    // from the dots, whose glyphs are taller than a line of text.
+    readonly property int messageLineHeight: messageLineProbe.implicitHeight
     readonly property bool currentConversationIsChannel: irc
         ? irc.isChannel : currentConversation.charAt(0) === "#"
     readonly property int currentPeopleCount: irc ? irc.peopleCount : 0
@@ -203,9 +207,12 @@ ApplicationWindow {
 
         property color ink: win.mutedColor
         property int pixelSize: win.scaledSize(12)
+        property string describedAs: ""
         property int pulse: 0
 
-        Accessible.ignored: true
+        Accessible.role: Accessible.StaticText
+        Accessible.ignored: dots.describedAs.length === 0
+        Accessible.description: dots.describedAs
         spacing: 0
 
         Timer {
@@ -224,6 +231,77 @@ ApplicationWindow {
                 font.family: "iA Writer Mono S"
                 font.pixelSize: dots.pixelSize
             }
+        }
+    }
+
+    Text {
+        id: messageLineProbe
+        visible: false
+        text: "X"
+        font.family: "iA Writer Mono S"
+        font.pixelSize: win.scaledSize(13)
+    }
+
+    component MessageAvatar: Rectangle {
+        id: avatar
+
+        required property string author
+        required property bool replayed
+
+        anchors.left: parent.left
+        anchors.leftMargin: win.scaledSize(24)
+        anchors.top: parent.top
+        anchors.topMargin: win.scaledSize(9)
+        width: win.scaledSize(34)
+        height: width
+        radius: width / 2
+        color: win.mixColors(win.pageColor,
+                             avatar.replayed ? win.mutedColor : win.nickColor(avatar.author),
+                             win.darkMode ? 0.23 : 0.16)
+
+        Text {
+            objectName: "messageAvatarInitial"
+            anchors.centerIn: parent
+            text: win.initials(avatar.author)
+            color: avatar.replayed ? win.mutedColor : win.nickColor(avatar.author)
+            font.family: "iA Writer Mono S"
+            font.bold: true
+            font.pixelSize: win.scaledSize(13)
+        }
+
+        TranscriptNickHit { nick: avatar.author }
+    }
+
+    component MessageHeader: Row {
+        id: header
+
+        required property string author
+        required property string time
+        required property bool replayed
+
+        anchors.left: parent.left
+        anchors.leftMargin: win.scaledSize(70)
+        anchors.top: parent.top
+        anchors.topMargin: win.scaledSize(8)
+        spacing: win.scaledSize(9)
+
+        Text {
+            objectName: "messageAuthor"
+            text: header.author
+            color: header.replayed ? win.mutedColor : win.nickColor(header.author)
+            font.family: "iA Writer Mono S"
+            font.bold: true
+            font.pixelSize: win.scaledSize(12)
+
+            TranscriptNickHit { nick: header.author }
+        }
+
+        Text {
+            anchors.baseline: parent.children[0].baseline
+            text: header.time
+            color: win.mutedColor
+            font.family: "iA Writer Mono S"
+            font.pixelSize: win.scaledSize(9)
         }
     }
 
@@ -444,6 +522,29 @@ ApplicationWindow {
             return false;
         return transcriptField(model, row - 1, "author") === author
             && transcriptField(model, row - 1, "time") === time;
+    }
+
+    function bodyTextTopMargin(grouped) {
+        return scaledSize(grouped ? 4 : 29);
+    }
+
+    function transcriptRowHeight(kind, grouped, contentHeight) {
+        if (kind === "event")
+            return Math.max(scaledSize(42), contentHeight + scaledSize(8));
+        return grouped || kind === "whois"
+            ? Math.max(scaledSize(22), contentHeight + scaledSize(8))
+            : Math.max(scaledSize(58), contentHeight + scaledSize(39));
+    }
+
+    function typingFollowsPeerChat(model, nick) {
+        var last = transcriptRowCount(model) - 1;
+        if (last < 0 || nick.length === 0)
+            return false;
+        var kind = transcriptField(model, last, "kind");
+        if (kind === "event" || kind === "whois" || kind.length === 0)
+            return false;
+        return transcriptField(model, last, "origin") === "live"
+            && transcriptField(model, last, "author") === nick;
     }
 
     function isAllowedHttpUrl(url) {
@@ -2001,7 +2102,7 @@ ApplicationWindow {
                 anchors.right: unreadBadge.visible ? unreadBadge.left : parent.right
                 anchors.rightMargin: unreadBadge.visible ? win.scaledSize(6) : 0
                 anchors.verticalCenter: parent.verticalCenter
-                pixelSize: win.scaledSize(12)
+                pixelSize: win.scaledSize(16)
             }
 
             Rectangle {
@@ -2050,6 +2151,10 @@ ApplicationWindow {
 
         property bool pinning: false
         property int trackedCount: 0
+        // Bumped whenever the visible rows change. A binding that reads a row
+        // by index has no other dependency to watch: the model object is
+        // stable and a reset can leave count unchanged.
+        property int rowRevision: 0
         property int restoreOffset: -1
         property int pinGeneration: 0
         property bool resetPending: false
@@ -2206,6 +2311,7 @@ ApplicationWindow {
         }
 
         onCountChanged: {
+            rowRevision += 1;
             if (resetPending)
                 return;
             noteGrowth(trackedCount, count);
@@ -2239,6 +2345,7 @@ ApplicationWindow {
                     list.snapshotAnchor();
             }
             function onModelReset() {
+                list.rowRevision += 1;
                 // ListView.count is still the pre-reset value here. The C++
                 // model already has the spliced rows, so growth after this
                 // handler would look like a bottom append.
@@ -2252,6 +2359,13 @@ ApplicationWindow {
             }
             function onRowsInserted(parent, first, last) {
                 list.noteGrowth(list.trackedCount, list.count);
+            }
+            function onDataChanged(topLeft, bottomRight) {
+                // A same-size reload swaps the whole view and reports only a
+                // dataChanged for the last row, so neither count nor a reset
+                // tells the footer to re-read it.
+                if (bottomRight.row >= list.count - 1)
+                    list.rowRevision += 1;
             }
             function onRowsRemoved(parent, first, last) {
                 if (first === 0
@@ -2702,13 +2816,13 @@ ApplicationWindow {
                         && win.findIndex === index
 
                     width: messageList.width
-                    height: kind === "event"
-                        ? Math.max(win.scaledSize(42), messageEvent.implicitHeight + win.scaledSize(8))
-                        : (kind === "whois"
-                            ? Math.max(win.scaledSize(22), messageWhois.implicitHeight + win.scaledSize(8))
-                            : (grouped
-                                ? Math.max(win.scaledSize(22), messageBody.implicitHeight + win.scaledSize(8))
-                                : Math.max(win.scaledSize(58), messageBody.implicitHeight + win.scaledSize(39))))
+                    height: win.transcriptRowHeight(
+                        kind, grouped,
+                        kind === "event"
+                            ? messageEvent.implicitHeight
+                            : (kind === "whois"
+                                ? messageWhois.implicitHeight
+                                : messageBody.implicitHeight))
 
                     Rectangle {
                         objectName: "findMatch"
@@ -2755,65 +2869,19 @@ ApplicationWindow {
                         font.pixelSize: win.scaledSize(12)
                     }
 
-                    Rectangle {
+                    MessageAvatar {
                         objectName: "messageAvatar"
                         visible: messageDelegate.isChat && !messageDelegate.grouped
-                        anchors.left: parent.left
-                        anchors.leftMargin: win.scaledSize(24)
-                        anchors.top: parent.top
-                        anchors.topMargin: win.scaledSize(9)
-                        width: win.scaledSize(34)
-                        height: width
-                        radius: width / 2
-                        color: win.mixColors(
-                            win.pageColor,
-                            messageDelegate.replayed
-                                ? win.mutedColor
-                                : win.nickColor(messageDelegate.author),
-                            win.darkMode ? 0.23 : 0.16)
-
-                        Text {
-                            objectName: "messageAvatarInitial"
-                            anchors.centerIn: parent
-                            text: win.initials(messageDelegate.author)
-                            color: messageDelegate.replayed
-                                ? win.mutedColor
-                                : win.nickColor(messageDelegate.author)
-                            font.family: "iA Writer Mono S"
-                            font.bold: true
-                            font.pixelSize: win.scaledSize(13)
-                        }
-
-                        TranscriptNickHit { nick: messageDelegate.author }
+                        author: messageDelegate.author
+                        replayed: messageDelegate.replayed
                     }
 
-                    Row {
+                    MessageHeader {
                         objectName: "messageHeader"
                         visible: messageDelegate.isChat && !messageDelegate.grouped
-                        anchors.left: parent.left
-                        anchors.leftMargin: win.scaledSize(70)
-                        anchors.top: parent.top
-                        anchors.topMargin: win.scaledSize(8)
-                        spacing: win.scaledSize(9)
-
-                        Text {
-                            objectName: "messageAuthor"
-                            text: messageDelegate.author
-                            color: messageDelegate.replayed ? win.mutedColor : win.nickColor(messageDelegate.author)
-                            font.family: "iA Writer Mono S"
-                            font.bold: true
-                            font.pixelSize: win.scaledSize(12)
-
-                            TranscriptNickHit { nick: messageDelegate.author }
-                        }
-
-                        Text {
-                            anchors.baseline: parent.children[0].baseline
-                            text: messageDelegate.time
-                            color: win.mutedColor
-                            font.family: "iA Writer Mono S"
-                            font.pixelSize: win.scaledSize(9)
-                        }
+                        author: messageDelegate.author
+                        time: messageDelegate.time
+                        replayed: messageDelegate.replayed
                     }
 
                     TextEdit {
@@ -2825,9 +2893,7 @@ ApplicationWindow {
                         anchors.right: parent.right
                         anchors.rightMargin: win.scaledSize(34)
                         anchors.top: parent.top
-                        anchors.topMargin: messageDelegate.grouped
-                            ? win.scaledSize(4)
-                            : win.scaledSize(29)
+                        anchors.topMargin: win.bodyTextTopMargin(messageDelegate.grouped)
                         text: win.hasIrcEmphasis(messageDelegate.body)
                             ? win.emphasizedIrcText(messageDelegate.body)
                             : win.plainIrcText(messageDelegate.body)
@@ -2850,6 +2916,65 @@ ApplicationWindow {
                         font.pixelSize: win.scaledSize(13)
 
                         PlainUrlHit { edit: messageBody }
+                    }
+                }
+
+                footer: Item {
+                    id: typingRow
+                    objectName: "typingTranscript"
+
+                    readonly property var transcriptModel: messageList.model
+                    readonly property string nick: win.typingNicks.length > 0
+                        ? String(win.typingNicks[0]) : ""
+                    readonly property bool show: win.typingVisible
+                        && !win.currentConversationIsChannel
+                        && !win.consoleVisible
+                        && typingRow.nick.length > 0
+                    readonly property bool grouped: {
+                        // The revision read re-reads the last row after a model
+                        // reset that leaves the row count unchanged.
+                        messageList.rowRevision;
+                        return win.typingFollowsPeerChat(typingRow.transcriptModel,
+                                                         typingRow.nick);
+                    }
+
+                    width: messageList.width
+                    visible: typingRow.show
+                    // A hidden footer with a real height reserves blank space at
+                    // the content bottom and stickToEnd scrolls into it.
+                    height: typingRow.show
+                        ? win.transcriptRowHeight("message", typingRow.grouped,
+                                                  win.messageLineHeight)
+                        : 0
+
+                    MessageAvatar {
+                        objectName: "typingTranscriptAvatar"
+                        visible: typingRow.show && !typingRow.grouped
+                        author: typingRow.nick
+                        replayed: false
+                    }
+
+                    MessageHeader {
+                        objectName: "typingTranscriptHeader"
+                        visible: typingRow.show && !typingRow.grouped
+                        author: typingRow.nick
+                        time: ""
+                        replayed: false
+                    }
+
+                    TypingDots {
+                        id: typingRowDots
+                        objectName: "typingTranscriptDots"
+                        visible: typingRow.show
+                        describedAs: typingRow.show
+                            ? typingRow.nick + " is typing" : ""
+                        anchors.left: parent.left
+                        anchors.leftMargin: win.scaledSize(70)
+                        anchors.top: parent.top
+                        anchors.topMargin: win.bodyTextTopMargin(typingRow.grouped)
+                            + Math.round((win.messageLineHeight
+                                - typingRowDots.implicitHeight) / 2)
+                        pixelSize: win.scaledSize(16)
                     }
                 }
             }
@@ -2962,24 +3087,6 @@ ApplicationWindow {
             UnseenJumpButton {
                 list: consoleList
                 objectName: "consoleUnseenJump"
-            }
-
-            Item {
-                objectName: "composer-typing"
-                visible: win.typingVisible && !win.currentConversationIsChannel
-                    && !win.consoleVisible && win.typingNicks && win.typingNicks.length > 0
-                height: win.scaledSize(12)
-                anchors.left: composerShell.left
-                anchors.right: composerShell.right
-                anchors.bottom: composerShell.top
-                z: 1
-
-                TypingDots {
-                    visible: parent.visible
-                    anchors.left: parent.left
-                    anchors.verticalCenter: parent.verticalCenter
-                    pixelSize: win.scaledSize(10)
-                }
             }
 
             Rectangle {

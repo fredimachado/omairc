@@ -93,6 +93,7 @@ private slots:
     void translatorDropsUnknownAndUntagged();
     void translatorIgnoresTypingTagOnChat();
     void reducerStoresClocksAndExpiresAtRead();
+    void reducerPausedHintStoredButPrunedAtPausedHold();
     void reducerClearsOnChatLeaveQuit();
     void reducerRemapsNickIncludingDirectMessage();
     void reducerMergesTypingWhenDirectMessageNicksCollide();
@@ -228,16 +229,50 @@ void TypingTest::reducerStoresClocksAndExpiresAtRead()
 
     reducer.apply(IrcTypingEvent{key, QStringLiteral("bob"),
                                  IrcTypingPhase::Paused, t0});
-    QCOMPARE(reducer.typingNicks(key, t0.addMSecs(5000)).size(), 2);
-    QCOMPARE(reducer.typingNicks(key, t0.addMSecs(10000)),
-             QStringList{QStringLiteral("bob")});
-    QVERIFY(reducer.typingNicks(key, t0.addMSecs(30000)).isEmpty());
+    QCOMPARE(reducer.typingNicks(key, t0.addMSecs(5000)),
+             QStringList{QStringLiteral("alice")});
+    QVERIFY(reducer.typingNicks(key, t0.addMSecs(10000)).isEmpty());
 
     reducer.apply(IrcTypingEvent{key, QStringLiteral("alice"),
                                  IrcTypingPhase::Done, t0.addMSecs(5000)});
     reducer.apply(IrcTypingEvent{key, QStringLiteral("bob"),
                                  IrcTypingPhase::Done, t0.addMSecs(5000)});
     QVERIFY(reducer.typingNicks(key, t0.addMSecs(5000)).isEmpty());
+}
+
+void TypingTest::reducerPausedHintStoredButPrunedAtPausedHold()
+{
+    IrcEventReducer reducer;
+    reducer.apply(IrcWelcomeEvent{network, QStringLiteral("omairc")});
+    reducer.apply(IrcJoinEvent{network, QStringLiteral("#omarchy"),
+                               QStringLiteral("omairc")});
+    const IrcConversationKey key =
+        reducer.conversationKey(network, QStringLiteral("#omarchy"));
+    const IrcConversationKey aliceDm =
+        reducer.conversationKey(network, QStringLiteral("Alice"));
+
+    reducer.apply(IrcTypingEvent{key, QStringLiteral("bob"),
+                                 IrcTypingPhase::Paused, t0});
+    QVERIFY(reducer.typingNicks(key, t0).isEmpty());
+    QVERIFY(reducer.typingNicks(key, t0.addMSecs(1000)).isEmpty());
+    QVERIFY(reducer.typingNicks(key, t0.addMSecs(29000)).isEmpty());
+    QCOMPARE(reducer.find(key)->typing.count(QStringLiteral("bob")), 1);
+
+    reducer.apply(IrcTypingEvent{key, QStringLiteral("alice"),
+                                 IrcTypingPhase::Active, t0.addMSecs(29000)});
+    QCOMPARE(reducer.find(key)->typing.count(QStringLiteral("bob")), 1);
+    reducer.apply(IrcTypingEvent{key, QStringLiteral("alice"),
+                                 IrcTypingPhase::Active, t0.addMSecs(30001)});
+    QCOMPARE(reducer.find(key)->typing.count(QStringLiteral("bob")), 0);
+
+    reducer.apply(IrcMessageEvent{aliceDm, QStringLiteral("Alice"),
+                                  QStringLiteral("hi"), t0, QStringLiteral("Alice")});
+    reducer.apply(IrcTypingEvent{aliceDm, QStringLiteral("Alice"),
+                                 IrcTypingPhase::Paused, t0});
+    QVERIFY(!reducer.directPeerIsTyping(aliceDm, t0));
+    reducer.apply(IrcTypingEvent{aliceDm, QStringLiteral("Alice"),
+                                 IrcTypingPhase::Active, t0});
+    QVERIFY(reducer.directPeerIsTyping(aliceDm, t0));
 }
 
 void TypingTest::reducerClearsOnChatLeaveQuit()
@@ -381,6 +416,10 @@ void TypingTest::reducerDirectPeerIsTypingForExistingDirectOnly()
     QVERIFY(!reducer.find(ghost));
 
     reducer.apply(IrcTypingEvent{aliceDm, QStringLiteral("Alice"),
+                                 IrcTypingPhase::Paused, t0});
+    QVERIFY(!reducer.directPeerIsTyping(aliceDm, t0));
+
+    reducer.apply(IrcTypingEvent{aliceDm, QStringLiteral("Alice"),
                                  IrcTypingPhase::Done, t0});
     QVERIFY(!reducer.directPeerIsTyping(aliceDm, t0));
 
@@ -464,9 +503,11 @@ void TypingTest::controllerDoesNotOpenConversationFromTypingOnly()
 
     transport->injectBytes(
         QByteArrayLiteral("@+typing=active :alice!u@h TAGMSG #omarchy\r\n"
-                          "@+typing=active :bob!u@h TAGMSG omairc\r\n"));
+                          "@+typing=active :bob!u@h TAGMSG omairc\r\n"
+                          "@+typing=paused :bob!u@h TAGMSG #omarchy\r\n"));
     QCOMPARE(controller.typingNicks(), QStringList{QStringLiteral("alice")});
     QVERIFY(controller.nickIsTyping(QStringLiteral("ALICE")));
+    QVERIFY(!controller.nickIsTyping(QStringLiteral("bob")));
     QVERIFY(!controller.nickIsTyping(QStringLiteral("omairc")));
     QCOMPARE(conversations->rowCount(), conversationCount);
     QCOMPARE(messages->rowCount(), messageCount);
@@ -534,6 +575,15 @@ void TypingTest::controllerSidebarTypingForExistingDirect()
     QCOMPARE(roleAt(conversations,
                     rowForTarget(conversations, QStringLiteral("#omarchy")),
                     ConversationListModel::TypingRole),
+             false);
+    QVERIFY(!changes.isEmpty());
+    QCOMPARE(changes.last().at(2).value<QList<int>>(),
+             QList<int>{ConversationListModel::TypingRole});
+
+    changes.clear();
+    transport->injectBytes(
+        QByteArrayLiteral("@+typing=paused :alice!u@h TAGMSG omairc\r\n"));
+    QCOMPARE(roleAt(conversations, aliceRow, ConversationListModel::TypingRole),
              false);
     QVERIFY(!changes.isEmpty());
     QCOMPARE(changes.last().at(2).value<QList<int>>(),

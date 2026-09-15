@@ -2926,6 +2926,7 @@ TestCase {
         tryVerify(function () {
             return row.height > appWindow.scaledSize(22);
         }, 1000, "A wrapped whois row should grow past the single-line height");
+        compare(row.height, whoisText.implicitHeight + appWindow.scaledSize(8));
         compare(findChild(row, "messageEvent").visible, false);
         compare(findChild(row, "messageAvatar").visible, false);
         compare(findChild(row, "messageHeader").visible, false);
@@ -4158,11 +4159,12 @@ TestCase {
         gatedIrc.isChannel = false;
         gatedIrc.selectedTarget = "anna";
         waitForRendering(window.contentItem);
-        var overlay = findChild(window, "composer-typing");
-        verify(overlay !== null, "The composer typing overlay should exist");
+        var overlay = findChild(window, "typingTranscript");
+        verify(overlay !== null, "The transcript typing footer should exist");
         tryCompare(overlay, "visible", true);
-        window.close();
         gatedIrc.hasTyping = false;
+        tryCompare(overlay, "visible", false);
+        window.close();
         gatedIrc.isChannel = true;
         gatedIrc.selectedTarget = "#omarchy";
     }
@@ -4181,9 +4183,8 @@ TestCase {
         mouseClick(anna);
         tryCompare(appWindow, "currentConversation", "anna");
         verify(!item("membersPanel").visible);
-        var overlay = item("composer-typing");
+        var overlay = item("typingTranscript");
         tryCompare(overlay, "visible", true);
-        compare(overlay.height, appWindow.scaledSize(12));
         saveScreenshot("typing-dm-overlay");
     }
 
@@ -4198,10 +4199,275 @@ TestCase {
         var dots = findChild(anna, "conversation-typing-" + seed.omarchyNetworkId + "-anna");
         verify(dots !== null, "The background DM typing indicator should be rendered");
         tryCompare(dots, "visible", true);
+        compare(dots.pixelSize, appWindow.scaledSize(16));
         saveScreenshot("typing-sidebar-dm");
         var pulse = dots.pulse;
         wait(320);
         tryCompare(dots, "pulse", (pulse + 1) % 3);
+    }
+
+    function test_typingIndicatorRidesTheTranscriptEnd() {
+        openSeededAppWindow();
+        mouseClick(namedItem(liveConversation("anna")));
+        tryCompare(appWindow, "currentConversation", "anna");
+
+        var footer = item("typingTranscript");
+        tryCompare(footer, "visible", true);
+        compare(footer.grouped, true);
+        var avatar = findChild(footer, "typingTranscriptAvatar");
+        verify(avatar !== null, "The typing avatar should exist");
+        compare(avatar.visible, false);
+        var dots = findChild(footer, "typingTranscriptDots");
+        verify(dots !== null, "The typing dots should exist");
+        // The dots are 21 tall at scaledSize(16) against a 17 line of body
+        // text, so the grouped body slot sits 2px higher than scaledSize(4).
+        compare(dots.anchors.topMargin, appWindow.scaledSize(4) - 2);
+        compare(dots.pixelSize, appWindow.scaledSize(16));
+        compare(footer.height, appWindow.scaledSize(25));
+        compare(dots.Accessible.role, Accessible.StaticText);
+        compare(dots.Accessible.description, "anna is typing");
+        compare(dots.Accessible.ignored, false);
+        compare(dots.children[0].color.toString(), appWindow.mutedColor.toString());
+    }
+
+    function test_typingIndicatorMovesBelowMyOwnMessage() {
+        openSeededAppWindow();
+        mouseClick(namedItem(liveConversation("anna")));
+        tryCompare(appWindow, "currentConversation", "anna");
+
+        var footer = item("typingTranscript");
+        tryCompare(footer, "visible", true);
+        compare(footer.grouped, true);
+
+        var composer = item("messageComposer");
+        var messages = item("messageList");
+        var previousCount = messages.model.rowCount();
+        mouseClick(composer);
+        typeText("hello anna");
+        keyClick(Qt.Key_Return);
+        verify(seed.echoLastOmarchyPrivmsg());
+        waitForNewMessage(messages, previousCount, "hello anna");
+
+        tryCompare(footer, "grouped", false);
+        compare(findChild(footer, "typingTranscriptAvatar").visible, true);
+        compare(findChild(footer, "typingTranscriptHeader").visible, true);
+        // The ungrouped body slot sits at scaledSize(29) less the same 2px
+        // centring shift the grouped slot takes.
+        compare(findChild(footer, "typingTranscriptDots").anchors.topMargin,
+                appWindow.scaledSize(29) - 2);
+        compare(findChild(footer, "messageAuthor").text, "anna");
+        tryCompare(footer, "visible", true);
+    }
+
+    function test_typingIndicatorKeepsScrollWhileReadingHistory() {
+        openSeededAppWindow();
+        mouseClick(namedItem(liveConversation("dax")));
+        tryCompare(appWindow, "currentConversation", "dax");
+
+        var list = item("messageList");
+        var composer = item("messageComposer");
+        mouseClick(composer);
+        verify(composer.activeFocus);
+        var start = list.model.rowCount();
+        var index = 0;
+        for (index = 0; index < 40; ++index) {
+            var minute = index < 10 ? "0" + index : "" + index;
+            injectOmarchyChat("dax", "fred", "scroll line " + index, "11:" + minute);
+        }
+        tryVerify(function() {
+            return list.model.rowCount() > start;
+        });
+        waitForRendering(appWindow.contentItem);
+        list.pinToEnd();
+        waitForRendering(appWindow.contentItem);
+        wait(0);
+        verify(list.contentHeight > list.height);
+
+        keyClick(Qt.Key_PageUp);
+        waitForRendering(appWindow.contentItem);
+        tryCompare(list, "stick", 1);
+        verify(!transcriptPinned(list));
+
+        var frozenY = list.contentY;
+        seed.injectOmarchy("@+typing=active :dax!u@h TAGMSG fred\r\n");
+        var footer = item("typingTranscript");
+        tryCompare(footer, "visible", true);
+        wait(0);
+
+        fuzzyCompare(list.contentY, frozenY, 2);
+        compare(list.stick, list.stickDetached);
+    }
+
+    function test_typingIndicatorFollowsTheEndWhileFollowing() {
+        openSeededAppWindow();
+        mouseClick(namedItem(liveConversation("anna")));
+        tryCompare(appWindow, "currentConversation", "anna");
+
+        var list = item("messageList");
+        var footer = item("typingTranscript");
+        tryCompare(footer, "visible", true);
+
+        var start = list.model.rowCount();
+        var index = 0;
+        for (index = 0; index < 40; ++index)
+            injectOmarchyChat("anna", "fred", "follow filler " + index);
+        tryVerify(function() {
+            return list.model.rowCount() > start + 30;
+        });
+        seed.injectOmarchy("@+typing=done :anna!u@h TAGMSG fred\r\n");
+        tryCompare(footer, "visible", false);
+
+        list.pinToEnd();
+        waitForRendering(appWindow.contentItem);
+        wait(0);
+        verify(list.contentHeight > list.height);
+
+        seed.injectOmarchy("@+typing=active :anna!u@h TAGMSG fred\r\n");
+        tryCompare(footer, "visible", true);
+        waitForRendering(appWindow.contentItem);
+
+        tryCompare(list, "atYEnd", true);
+        fuzzyCompare(list.contentY, list.endContentY(), 2);
+    }
+
+    function test_typingIndicatorSlotMatchesTheRowThatReplacesIt() {
+        liveConsole.open = false;
+        liveMessages.clear();
+        liveIrc.selectedTarget = "anna";
+        liveIrc.isChannel = false;
+        liveIrc.hasTyping = true;
+        liveIrc.typingNicks = ["anna"];
+        liveMessages.append({
+            author: "anna",
+            time: "10:00",
+            body: "first",
+            kind: "message",
+            origin: "live"
+        });
+        var window = createTemporaryObject(liveWindowComponent, null);
+        verify(window !== null, "The live window should load");
+        tryCompare(window, "visible", true);
+        waitForRendering(window.contentItem);
+
+        var list = findChild(window, "messageList");
+        verify(list !== null, "Could not find messageList");
+        var footer = findChild(window, "typingTranscript");
+        verify(footer !== null, "Could not find typingTranscript");
+        tryCompare(footer, "visible", true);
+
+        compare(footer.grouped, true);
+        compare(footer.height, window.scaledSize(25));
+        liveMessages.append({
+            author: "anna",
+            time: "10:00",
+            body: "second",
+            kind: "message",
+            origin: "live"
+        });
+        tryVerify(function() {
+            return list.itemAtIndex(1) !== null;
+        });
+        waitForRendering(window.contentItem);
+        var groupedRow = list.itemAtIndex(1);
+        verify(groupedRow !== null, "The arriving grouped row should be rendered");
+        compare(groupedRow.height, window.scaledSize(25));
+
+        liveMessages.append({
+            author: "live-nick",
+            time: "10:01",
+            body: "mine",
+            kind: "message",
+            origin: "live"
+        });
+        tryCompare(footer, "grouped", false);
+        compare(footer.height, window.scaledSize(58));
+        liveMessages.append({
+            author: "anna",
+            time: "10:02",
+            body: "third",
+            kind: "message",
+            origin: "live"
+        });
+        tryVerify(function() {
+            return list.itemAtIndex(3) !== null;
+        });
+        waitForRendering(window.contentItem);
+        var avatarRow = list.itemAtIndex(3);
+        verify(avatarRow !== null, "The arriving avatar row should be rendered");
+        compare(avatarRow.height, window.scaledSize(58));
+
+        window.close();
+        liveIrc.hasTyping = false;
+        liveIrc.typingNicks = [];
+        liveIrc.isChannel = true;
+        liveIrc.selectedTarget = "#omarchy";
+        liveMessages.clear();
+        liveConsole.open = false;
+    }
+
+    function test_typingIndicatorGoesUngroupedForANonChatLastRow() {
+        liveConsole.open = false;
+        liveMessages.clear();
+        liveIrc.selectedTarget = "anna";
+        liveIrc.isChannel = false;
+        liveIrc.hasTyping = true;
+        liveIrc.typingNicks = ["anna"];
+        var window = createTemporaryObject(liveWindowComponent, null);
+        verify(window !== null, "The live window should load");
+        tryCompare(window, "visible", true);
+        waitForRendering(window.contentItem);
+
+        var footer = findChild(window, "typingTranscript");
+        verify(footer !== null, "Could not find typingTranscript");
+        var avatar = findChild(footer, "typingTranscriptAvatar");
+        verify(avatar !== null, "The typing avatar should exist");
+        var list = findChild(window, "messageList");
+        verify(list !== null, "Could not find messageList");
+        tryCompare(footer, "visible", true);
+
+        liveMessages.append({
+            author: "",
+            time: "",
+            body: "2026-09-12",
+            kind: "event",
+            origin: "live"
+        });
+        tryCompare(footer, "grouped", false);
+        compare(avatar.visible, true);
+
+        liveMessages.clear();
+        liveMessages.append({
+            author: "",
+            time: "",
+            body: "anna is on #omarchy",
+            kind: "whois",
+            origin: "live"
+        });
+        tryCompare(footer, "grouped", false);
+        compare(avatar.visible, true);
+
+        liveMessages.clear();
+        liveMessages.append({
+            author: "anna",
+            time: "10:00",
+            body: "live tail",
+            kind: "message",
+            origin: "live"
+        });
+        tryCompare(footer, "grouped", true);
+        var revision = list.rowRevision;
+        liveMessages.setProperty(0, "origin", "replay");
+        compare(list.rowRevision, revision + 1);
+        tryCompare(footer, "grouped", false);
+        compare(avatar.visible, true);
+
+        window.close();
+        liveIrc.hasTyping = false;
+        liveIrc.typingNicks = [];
+        liveIrc.isChannel = true;
+        liveIrc.selectedTarget = "#omarchy";
+        liveMessages.clear();
+        liveConsole.open = false;
     }
 
     function test_openStatusFromNetworkHeaderKeepsAuthOutOfDirects() {
