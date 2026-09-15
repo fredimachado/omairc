@@ -524,6 +524,11 @@ ApplicationWindow {
             && transcriptField(model, row - 1, "time") === time;
     }
 
+    function currentTranscriptMinute() {
+        // Same local HH:mm as MessageListModel::displayTime.
+        return Qt.formatDateTime(new Date(), "HH:mm");
+    }
+
     function bodyTextTopMargin(grouped) {
         return scaledSize(grouped ? 4 : 29);
     }
@@ -536,15 +541,12 @@ ApplicationWindow {
             : Math.max(scaledSize(58), contentHeight + scaledSize(39));
     }
 
-    function typingFollowsPeerChat(model, nick) {
-        var last = transcriptRowCount(model) - 1;
-        if (last < 0 || nick.length === 0)
-            return false;
-        var kind = transcriptField(model, last, "kind");
-        if (kind === "event" || kind === "whois" || kind.length === 0)
-            return false;
-        return transcriptField(model, last, "origin") === "live"
-            && transcriptField(model, last, "author") === nick;
+    function typingFollowsPeerChat(model, nick, currentMinute) {
+        // The footer has no timestamp of its own. Treat it as the next live
+        // chat row from the peer arriving now, using the same local HH:mm
+        // MessageListModel::displayTime would assign that row.
+        return continuesMessageGroup(model, transcriptRowCount(model), nick,
+                                     currentMinute, "message", "live");
     }
 
     function isAllowedHttpUrl(url) {
@@ -2930,12 +2932,33 @@ ApplicationWindow {
                         && !win.currentConversationIsChannel
                         && !win.consoleVisible
                         && typingRow.nick.length > 0
+                    property int minuteTick: 0
+                    readonly property string currentMinute: {
+                        typingRow.show;
+                        typingRow.minuteTick;
+                        return win.currentTranscriptMinute();
+                    }
                     readonly property bool grouped: {
                         // The revision read re-reads the last row after a model
                         // reset that leaves the row count unchanged.
                         messageList.rowRevision;
-                        return win.typingFollowsPeerChat(typingRow.transcriptModel,
-                                                         typingRow.nick);
+                        return win.typingFollowsPeerChat(
+                            typingRow.transcriptModel, typingRow.nick,
+                            typingRow.currentMinute);
+                    }
+
+                    Timer {
+                        // Grouping treats the footer as the next live chat row
+                        // arriving now. Snapshotting new Date() only when
+                        // rowRevision changes would stay grouped after the
+                        // minute rolls, then jump when the message arrives.
+                        // Tick while the indicator is shown so a minute
+                        // boundary ungroups the placeholder the same way the
+                        // arriving row would.
+                        interval: 1000
+                        running: typingRow.show
+                        repeat: true
+                        onTriggered: typingRow.minuteTick += 1
                     }
 
                     width: messageList.width
