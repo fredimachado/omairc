@@ -100,6 +100,10 @@ ApplicationWindow {
             : (irc.lastError.length > 0 ? irc.lastError : irc.connectionStatus))
         : ""
     readonly property var activeMessages: irc ? irc.messages : null
+    readonly property font transcriptBodyFont: Qt.font({
+        family: "iA Writer Mono S",
+        pixelSize: scaledSize(13)
+    })
     // One line of transcript body text. The typing indicator claims the slot a
     // one-line message would occupy, so its box comes from this rather than
     // from the dots, whose glyphs are taller than a line of text.
@@ -241,8 +245,8 @@ ApplicationWindow {
         id: messageLineProbe
         visible: false
         text: "X"
-        font.family: "iA Writer Mono S"
-        font.pixelSize: win.scaledSize(13)
+        font.family: win.transcriptBodyFont.family
+        font.pixelSize: win.transcriptBodyFont.pixelSize
     }
 
     component MessageAvatar: Rectangle {
@@ -544,10 +548,11 @@ ApplicationWindow {
         return scaledSize(grouped ? 4 : 29);
     }
 
-    function transcriptRowHeight(kind, grouped, contentHeight) {
-        if (kind === "event")
+    // compact is grouped-or-whois: the shorter continuation row.
+    function transcriptRowHeight(isEvent, compact, contentHeight) {
+        if (isEvent)
             return Math.max(scaledSize(42), contentHeight + scaledSize(8));
-        return grouped || kind === "whois"
+        return compact
             ? Math.max(scaledSize(22), contentHeight + scaledSize(8))
             : Math.max(scaledSize(58), contentHeight + scaledSize(39));
     }
@@ -2832,7 +2837,7 @@ ApplicationWindow {
 
                     width: messageList.width
                     height: win.transcriptRowHeight(
-                        kind, grouped,
+                        kind === "event", grouped || kind === "whois",
                         kind === "event"
                             ? messageEvent.implicitHeight
                             : (kind === "whois"
@@ -2928,9 +2933,9 @@ ApplicationWindow {
                             ? TextEdit.RichText
                             : TextEdit.PlainText
                         padding: 0
-                        font.family: "iA Writer Mono S"
+                        font.family: win.transcriptBodyFont.family
                         font.italic: messageDelegate.kind === "action"
-                        font.pixelSize: win.scaledSize(13)
+                        font.pixelSize: win.transcriptBodyFont.pixelSize
 
                         PlainUrlHit { edit: messageBody }
                     }
@@ -2981,7 +2986,7 @@ ApplicationWindow {
                     // A hidden footer with a real height reserves blank space at
                     // the content bottom and stickToEnd scrolls into it.
                     height: typingRow.show
-                        ? win.transcriptRowHeight("message", typingRow.grouped,
+                        ? win.transcriptRowHeight(false, typingRow.grouped,
                                                   win.messageLineHeight)
                         : 0
 

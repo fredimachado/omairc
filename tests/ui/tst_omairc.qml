@@ -4226,14 +4226,12 @@ TestCase {
         compare(header.visible, !grouped);
         var dots = findChild(footer, "typingTranscriptDots");
         verify(dots !== null, "The typing dots should exist");
-        // The dots are 21 tall at scaledSize(16) against a 17 line of body
-        // text, so the body slot sits 2px higher than the grouped/ungrouped
-        // top margin.
         compare(dots.anchors.topMargin,
-                appWindow.bodyTextTopMargin(grouped) - 2);
+                appWindow.bodyTextTopMargin(grouped)
+                    + Math.round((appWindow.messageLineHeight - dots.implicitHeight) / 2));
         compare(dots.pixelSize, appWindow.scaledSize(16));
         compare(footer.height, appWindow.transcriptRowHeight(
-                    "message", grouped, appWindow.messageLineHeight));
+                    false, grouped, appWindow.messageLineHeight));
         compare(dots.Accessible.role, Accessible.StaticText);
         compare(dots.Accessible.name, "anna is typing");
         compare(dots.Accessible.ignored, false);
@@ -4273,10 +4271,10 @@ TestCase {
         compare(headerHit.enabled, false);
         compare(avatarHit.Accessible.ignored, true);
         compare(headerHit.Accessible.ignored, true);
-        // The ungrouped body slot sits at scaledSize(29) less the same 2px
-        // centring shift the grouped slot takes.
-        compare(findChild(footer, "typingTranscriptDots").anchors.topMargin,
-                appWindow.scaledSize(29) - 2);
+        var dots = findChild(footer, "typingTranscriptDots");
+        compare(dots.anchors.topMargin,
+                appWindow.bodyTextTopMargin(false)
+                    + Math.round((appWindow.messageLineHeight - dots.implicitHeight) / 2));
         compare(findChild(footer, "messageAuthor").text, "anna");
         tryCompare(footer, "visible", true);
     }
