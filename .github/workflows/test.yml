@@ -2,9 +2,23 @@ name: Test
 
 on:
   pull_request:
+    paths-ignore:
+      - '**/*.md'
+      - 'LICENSE'
+      - '.github/**'
+      - '.cursor/**'
+      - 'omairc.gif'
+      - 'omairc.png'
   push:
     branches:
       - master
+    paths-ignore:
+      - '**/*.md'
+      - 'LICENSE'
+      - '.github/**'
+      - '.cursor/**'
+      - 'omairc.gif'
+      - 'omairc.png'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
