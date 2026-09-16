@@ -5,6 +5,7 @@
 #include "irceventtranslator.h"
 #include "ircparser.h"
 #include "ircsession.h"
+#include "ircviewnotify.h"
 
 #include <QTemporaryDir>
 
@@ -81,6 +82,7 @@ private slots:
     void selfAwayIsNetworkMembershipNotMemberPresence();
     void selfAwayShowsOnOurOwnRowInEveryChannel();
     void peerPresenceFollowsSharedChannelAndAwayFacts();
+    void awayReloadsConversationsOnlyWhenItCanReachADirectRow();
     void staleNamesSyncReleasesAfterThirtySeconds();
     void consecutiveJoinsCollapseIntoOneEvent();
     void privmsgBreaksJoinCollapse();
@@ -1115,6 +1117,54 @@ void ReducerTest::peerPresenceFollowsSharedChannelAndAwayFacts()
     // Presence is per network.
     QVERIFY(reducer.peerPresence(networkB, QStringLiteral("alice"))
             == IrcPeerPresence::Unknown);
+}
+
+void ReducerTest::awayReloadsConversationsOnlyWhenItCanReachADirectRow()
+{
+    IrcEventReducer reducer;
+    welcome(reducer, networkA);
+    const std::optional<IrcConversationKey> nothing;
+
+    const auto awayNotify = [&](const QString& nick, std::optional<IrcAway> away) {
+        return classifyViewNotify(
+            IrcEvent{IrcAwayEvent{networkA, nick, away}}, reducer, nothing);
+    };
+
+    // No shared channel and no direct row: the presence role cannot change, so
+    // the sidebar must not reload.
+    IrcViewNotify orphan =
+        awayNotify(QStringLiteral("Alice"), IrcAway{QStringLiteral("lunch")});
+    QVERIFY(!orphan.conversations);
+    QCOMPARE(orphan.members, IrcMemberSurface::Row);
+    QCOMPARE(orphan.nick, QStringLiteral("alice"));
+
+    // A shared channel lets peerPresence answer, so a direct row's presence can
+    // change and the sidebar still reloads.
+    reducer.apply(IrcJoinEvent{
+        networkA, QStringLiteral("#omarchy"), QStringLiteral("Alice")});
+    IrcViewNotify shared =
+        awayNotify(QStringLiteral("Alice"), IrcAway{QStringLiteral("lunch")});
+    QVERIFY(shared.conversations);
+
+    // A direct row with no shared channel also still reloads, keeping the
+    // pre-existing behaviour for nicks that have a DM.
+    reducer.apply(IrcQuitEvent{networkA, QStringLiteral("Alice"), QString()});
+    const IrcConversationKey alice =
+        reducer.conversationKey(networkA, QStringLiteral("Alice"));
+    reducer.apply(IrcMessageEvent{
+        alice, QStringLiteral("Alice"), QStringLiteral("hi"), timestamp,
+        QStringLiteral("Alice")});
+    QVERIFY(reducer.find(alice));
+    IrcViewNotify direct =
+        awayNotify(QStringLiteral("Alice"), IrcAway{QStringLiteral("lunch")});
+    QVERIFY(direct.conversations);
+
+    // Clearing away is the same decision path.
+    reducer.apply(IrcAwayEvent{networkA, QStringLiteral("Alice"),
+                               IrcAway{QStringLiteral("lunch")}});
+    IrcViewNotify cleared = awayNotify(QStringLiteral("Alice"), std::nullopt);
+    QVERIFY(cleared.conversations);
+    QCOMPARE(cleared.members, IrcMemberSurface::Row);
 }
 
 void ReducerTest::staleNamesSyncReleasesAfterThirtySeconds()
