@@ -241,8 +241,10 @@ void ProfileTest::storeRoundTripsFieldsWithoutPassword()
     QVERIFY(!stored.allKeys().isEmpty());
     for (const QString &key : stored.allKeys()) {
         QVERIFY(!key.contains(QLatin1String("password"), Qt::CaseInsensitive));
-        QVERIFY(!stored.value(key).toString().contains(QLatin1String("password"),
-                                                       Qt::CaseInsensitive));
+        QVERIFY(!key.contains(QLatin1String("nick-secret")));
+        const QString value = stored.value(key).toString();
+        QVERIFY(!value.contains(QLatin1String("password"), Qt::CaseInsensitive));
+        QVERIFY(!value.contains(QLatin1String("nick-secret")));
     }
 
     IrcNetworkProfile unnamed;

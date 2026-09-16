@@ -569,9 +569,11 @@ void ConnectionTest::applyWritesPasswordToStoreNotSettings()
     QVERIFY(!settings.allKeys().isEmpty());
     for (const QString &key : settings.allKeys()) {
         QVERIFY(!key.contains(QLatin1String("password"), Qt::CaseInsensitive));
+        QVERIFY(!key.contains(QLatin1String("nick-secret")));
         const QString value = settings.value(key).toString();
         QVERIFY(!value.contains(QLatin1String("password"), Qt::CaseInsensitive));
         QVERIFY(!value.contains(QLatin1String("super-secret")));
+        QVERIFY(!value.contains(QLatin1String("nick-secret")));
     }
 }
 
@@ -1603,9 +1605,11 @@ void ConnectionTest::accountAndBouncerNetworkLoginAsOneName()
     QVERIFY(!settings.allKeys().isEmpty());
     for (const QString &key : settings.allKeys()) {
         QVERIFY(!key.contains(QLatin1String("password"), Qt::CaseInsensitive));
+        QVERIFY(!key.contains(QLatin1String("nick-secret")));
         const QString value = settings.value(key).toString();
         QVERIFY(!value.contains(QLatin1String("password"), Qt::CaseInsensitive));
         QVERIFY(!value.contains(QLatin1String("super-secret")));
+        QVERIFY(!value.contains(QLatin1String("nick-secret")));
     }
 }
 
