@@ -1627,9 +1627,11 @@ bool IrcController::sendWhois(IrcSession& session,
             return false;
     }
 
-    if (!session.whois(nick))
-        return false;
     m_whoisWatches.insert_or_assign(*key, IrcWhoisWatch{std::move(destination)});
+    if (!session.whois(nick)) {
+        m_whoisWatches.erase(*key);
+        return false;
+    }
     return true;
 }
 
