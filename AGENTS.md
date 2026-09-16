@@ -105,3 +105,26 @@ is missing.
 
 For visual changes, inspect the running window and the screenshots under
 `test-artifacts/`.
+
+On Windows, `bin\build.bat` finds a Qt 6 kit, runs qmake and nmake (or jom,
+or mingw32-make), and deploys Qt next to `build\release\omairc.exe`. Set
+`QMAKE` to pick a kit. Prefer the MSVC kit (`C:\Qt\6.*\msvc*_64\bin\qmake.exe`)
+when Visual Studio or Build Tools is installed. `cl` is not on PATH until you
+load the toolchain: run
+`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -find VC\Auxiliary\Build\vcvars64.bat`
+to locate `vcvars64.bat`, `call` it, then rerun `bin\build.bat`. The installer
+and `vswhere` live under `C:\Program Files (x86)\Microsoft Visual Studio\`;
+Community/Build Tools installs may be under `C:\Program Files\Microsoft Visual Studio\18\`
+or a year folder such as `2019`. QtKeychain must be installed for that kit
+(headers plus `mkspecs/modules/qt_Qt6Keychain.pri`); `bin\build.bat` copies
+`libqt6keychain.dll` / `qt6keychain.dll` next to the exe when present. Do not
+use a Linux `.deps` QtKeychain tree on Windows. `bin/build`, `bin/test`,
+`bin/test-desktop`, and `bin/test-live` stay Unix scripts. The C++ suite still
+builds from `tests/tests.pro` with the same kit. The Windows app uses the
+console subsystem so CLI stdout works; `FreeConsole()` runs only when opening
+the window. Launch the GUI with `start build\release\omairc.exe` so the
+terminal is not left waiting after the console is dropped. Local CLI IPC
+uses a named pipe (`omairc`), not a filesystem socket. Portal text-scale
+stays 1.0, desktop notifications no-op without DBus, the window icon
+stays empty, and the Omarchy `colors.toml` watch does nothing when that
+file is missing.

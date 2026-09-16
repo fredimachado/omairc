@@ -1,4 +1,5 @@
-QT += core gui network testlib dbus
+QT += core gui network testlib
+unix: QT += dbus
 
 include(../qtkeychain.pri)
 
@@ -11,6 +12,8 @@ greaterThan(QMAKE_GCC_MAJOR_VERSION, 15): QMAKE_CXXFLAGS += -Wno-sfinae-incomple
 
 INCLUDEPATH += ../src ../src/irc support
 include($$PWD/../version.pri)
+# $$PWD already uses forward slashes on current Qt kits; do not $$replace(..., \\, /)
+# here — that regex clears the path on win32-g++ qmake 3.1.
 DEFINES += TEST_CERT_DIR=\\\"$$PWD/support/certs\\\"
 DEFINES += TEST_CORPUS_DIR=\\\"$$PWD/protocol/corpus\\\"
 

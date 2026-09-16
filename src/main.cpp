@@ -11,11 +11,19 @@
 #include <QQuickStyle>
 #include <QSettings>
 #include <QTemporaryDir>
+#include <QTimer>
 #include <QUrl>
 #include <QWindow>
 
 #include <stdio.h>
 #include <variant>
+
+#ifdef Q_OS_WIN
+#  ifndef NOMINMAX
+#    define NOMINMAX
+#  endif
+#  include <windows.h>
+#endif
 
 #include "backend.h"
 #include "irc/ircconnection.h"
@@ -64,6 +72,11 @@ int main(int argc, char *argv[]) {
         }
         return OmaircCli::printOutcome(outcome);
     }
+
+#ifdef Q_OS_WIN
+    // win32 builds use the console subsystem so CLI output works; drop it for the window.
+    FreeConsole();
+#endif
 
     QGuiApplication app(argc, argv);
     app.setApplicationName(QStringLiteral("omairc"));
@@ -195,6 +208,14 @@ int main(int argc, char *argv[]) {
         raiseOmaircWindow(engine);
     if (ircConnection && !demoMode)
         ircConnection->activateStartup();
+
+    if (!qEnvironmentVariableIsEmpty("OMAIRC_SMOKE")) {
+        if (!qobject_cast<QWindow *>(engine.rootObjects().constFirst())) {
+            qCritical() << "Omairc smoke: root object is not a window";
+            return -1;
+        }
+        QTimer::singleShot(500, &app, &QCoreApplication::quit);
+    }
 
     return app.exec();
 }

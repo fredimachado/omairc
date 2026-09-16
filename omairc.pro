@@ -1,10 +1,19 @@
-QT += core gui qml quick quickcontrols2 dbus network
+QT += core gui qml quick quickcontrols2 network
+unix: QT += dbus
 
 include(qtkeychain.pri)
 
 CONFIG += c++17 release
+win32: CONFIG += console
 TARGET = omairc
 TEMPLATE = app
+
+# qmake's Windows default dumps .obj and moc/qrc sources next to the exe.
+win32 {
+    OBJECTS_DIR = $$OUT_PWD/.obj
+    MOC_DIR = $$OUT_PWD/.moc
+    RCC_DIR = $$OUT_PWD/.rcc
+}
 
 include($$PWD/version.pri)
 

@@ -13,6 +13,7 @@ class SingleInstanceTest : public QObject
 private slots:
     void primaryAcquireSucceeds();
     void secondaryNotifyEmitsActivation();
+    void socketNameIsPlatformSafe();
 };
 
 void SingleInstanceTest::primaryAcquireSucceeds()
@@ -42,6 +43,16 @@ void SingleInstanceTest::secondaryNotifyEmitsActivation()
     QCOMPARE(child.exitCode(), 0);
 
     QTRY_COMPARE(spy.count(), 1);
+}
+
+void SingleInstanceTest::socketNameIsPlatformSafe()
+{
+    const QString name = SingleInstance::socketPath();
+#ifdef Q_OS_WIN
+    QCOMPARE(name, QStringLiteral("omairc"));
+#else
+    QVERIFY(name.endsWith(QLatin1String("/omairc.sock")));
+#endif
 }
 
 int runSingleInstanceTests(int argc, char **argv)

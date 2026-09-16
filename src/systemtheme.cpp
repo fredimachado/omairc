@@ -1,15 +1,18 @@
 #include "systemtheme.h"
 
+#ifdef Q_OS_UNIX
 #include <QDBusConnection>
 #include <QDBusMessage>
 #include <QDBusPendingCall>
 #include <QDBusPendingCallWatcher>
 #include <QDBusPendingReply>
 #include <QDBusVariant>
+#include <QVariant>
+#endif
 #include <QGuiApplication>
 #include <QStyleHints>
-#include <QVariant>
 
+#ifdef Q_OS_UNIX
 namespace {
 QVariant unwrapVariant(QVariant value) {
     while (value.canConvert<QDBusVariant>())
@@ -57,6 +60,7 @@ bool gsettingsSchemeIsDark(const QVariant &value, bool *known) {
     return false;
 }
 }
+#endif
 
 SystemTheme::SystemTheme(QObject *parent) : QObject(parent) {
     bool known = false;
@@ -69,6 +73,7 @@ SystemTheme::SystemTheme(QObject *parent) : QObject(parent) {
                 this, &SystemTheme::refresh);
     }
 
+#ifdef Q_OS_UNIX
     QDBusConnection::sessionBus().connect(
         QString(),
         QStringLiteral("/org/freedesktop/portal/desktop"),
@@ -79,6 +84,7 @@ SystemTheme::SystemTheme(QObject *parent) : QObject(parent) {
 
     requestPortalDarkMode();
     requestPortalTextScale();
+#endif
 }
 
 void SystemTheme::refresh() {
@@ -87,10 +93,13 @@ void SystemTheme::refresh() {
     if (known)
         setDarkMode(qtDark);
 
+#ifdef Q_OS_UNIX
     requestPortalDarkMode();
     requestPortalTextScale();
+#endif
 }
 
+#ifdef Q_OS_UNIX
 void SystemTheme::requestPortalSetting(const QString &nameSpace, const QString &key,
                                        std::function<void(const QVariant &)> handler) {
     const QDBusConnection bus = QDBusConnection::sessionBus();
@@ -166,6 +175,7 @@ void SystemTheme::handlePortalSettingChanged(const QString &nameSpace, const QSt
     else
         refresh();
 }
+#endif
 
 bool SystemTheme::qtDarkMode(bool *known) const {
     *known = false;

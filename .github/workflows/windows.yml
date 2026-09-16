@@ -1,0 +1,167 @@
+name: Windows build
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - '.github/workflows/windows.yml'
+      - 'bin/build.bat'
+      - 'omairc.pro'
+      - 'qtkeychain.pri'
+      - 'version.pri'
+      - 'src/**'
+      - 'fonts/**'
+      - 'data/icons/**'
+  push:
+    branches:
+      - master
+    paths:
+      - '.github/workflows/windows.yml'
+      - 'bin/build.bat'
+      - 'omairc.pro'
+      - 'qtkeychain.pri'
+      - 'version.pri'
+      - 'src/**'
+      - 'fonts/**'
+      - 'data/icons/**'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    runs-on: windows-2022
+    timeout-minutes: 45
+    env:
+      QT_VERSION: 6.8.3
+      QTKEYCHAIN_VERSION: 0.15.0
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read version
+        run: |
+          $line = Select-String -Path version.pri -Pattern '^VERSION\s*=' | Select-Object -First 1
+          if (-not $line) { throw 'version.pri must set VERSION' }
+          $ver = ($line.Line -split '=', 2)[1].Trim()
+          if (-not $ver) { throw 'version.pri VERSION is empty' }
+          Add-Content $env:GITHUB_ENV "OMAIRC_VERSION=$ver"
+          Write-Host "Omairc $ver"
+
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Cache Qt
+        id: qt-cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/Qt
+          key: qt-${{ env.QT_VERSION }}-win64_msvc2022_64-qtkeychain-${{ env.QTKEYCHAIN_VERSION }}
+
+      - name: Install Qt 6
+        if: steps.qt-cache.outputs.cache-hit != 'true'
+        run: |
+          python -m venv "$env:RUNNER_TEMP\aqt"
+          & "$env:RUNNER_TEMP\aqt\Scripts\pip" install aqtinstall
+          & "$env:RUNNER_TEMP\aqt\Scripts\aqt" install-qt windows desktop $env:QT_VERSION win64_msvc2022_64 `
+            -O "$env:RUNNER_TEMP\Qt"
+
+      - name: Add Qt to PATH
+        run: |
+          $qtBin = Join-Path $env:RUNNER_TEMP "Qt\$env:QT_VERSION\msvc2022_64\bin"
+          if (-not (Test-Path (Join-Path $qtBin 'qmake.exe'))) {
+            throw "qmake not found at $qtBin"
+          }
+          Add-Content $env:GITHUB_PATH $qtBin
+          Add-Content $env:GITHUB_ENV "QMAKE=$qtBin\qmake.exe"
+
+      - name: Install QtKeychain
+        run: |
+          $qmake = $env:QMAKE
+          $qtPrefix = & $qmake -query QT_INSTALL_PREFIX
+          $pri = Join-Path (& $qmake -query QT_INSTALL_ARCHDATA) 'mkspecs\modules\qt_Qt6Keychain.pri'
+          if (Test-Path $pri) {
+            Write-Host "QtKeychain already at $pri"
+            exit 0
+          }
+          $src = Join-Path $env:RUNNER_TEMP 'qtkeychain-src'
+          $build = Join-Path $env:RUNNER_TEMP 'qtkeychain-build'
+          git clone --depth 1 --branch $env:QTKEYCHAIN_VERSION `
+            https://github.com/frankosterfeld/qtkeychain.git $src
+          cmake -S $src -B $build -G "NMake Makefiles" `
+            -DCMAKE_BUILD_TYPE=Release `
+            -DCMAKE_PREFIX_PATH="$qtPrefix" `
+            -DCMAKE_INSTALL_PREFIX="$qtPrefix" `
+            -DBUILD_WITH_QT6=ON `
+            -DBUILD_TRANSLATIONS=OFF `
+            -DBUILD_TEST_APPLICATION=OFF `
+            -DBUILD_TESTING=OFF
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cmake --build $build
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cmake --install $build
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if (-not (Test-Path $pri)) {
+            throw "QtKeychain installed but $pri is missing."
+          }
+
+      - name: Build
+        shell: cmd
+        run: bin\build.bat
+
+      - name: Smoke
+        run: |
+          $exe = 'build\release\omairc.exe'
+          if (-not (Test-Path $exe)) { throw "Expected $exe" }
+          $keychain = Get-ChildItem 'build\release' -Filter '*qt6keychain.dll' -File
+          if (-not $keychain) { throw 'qt6keychain.dll was not deployed next to the exe' }
+          $version = & $exe --version 2>&1 | Out-String
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if ($version -notmatch 'omairc\s+\d') { throw "Expected version text, got: $version" }
+          $help = & $exe --help 2>&1 | Out-String
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if ($help -notmatch 'Usage:') { throw "Expected help text, got: $help" }
+
+          $env:OMAIRC_ALLOW_MULTI = '1'
+          $env:OMAIRC_SMOKE = '1'
+          $env:QT_QPA_PLATFORM = 'offscreen'
+          $env:QT_QUICK_BACKEND = 'software'
+          $qtPlugins = Join-Path $env:RUNNER_TEMP "Qt\$env:QT_VERSION\msvc2022_64\plugins"
+          if (Test-Path $qtPlugins) { $env:QT_PLUGIN_PATH = $qtPlugins }
+          $full = (Resolve-Path $exe).Path
+          $p = Start-Process -FilePath $full -ArgumentList '--demo-server' -PassThru -NoNewWindow
+          if (-not $p.WaitForExit(30000)) {
+            Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
+            throw 'demo-server smoke did not exit within 30s'
+          }
+          if ($p.ExitCode -ne 0) { throw "demo-server smoke exited $($p.ExitCode)" }
+
+          $junk = @('*.obj','*.pdb','*.res','*.ilk','moc_*.cpp','moc_predefs.h','qrc_*.cpp')
+          Get-ChildItem 'build\release' -File | Where-Object {
+            foreach ($pat in $junk) { if ($_.Name -like $pat) { return $true } }
+            $false
+          } | Remove-Item -Force
+          $files = Get-ChildItem 'build\release' -Recurse -File
+          $mb = [math]::Round((($files | Measure-Object Length -Sum).Sum) / 1MB, 2)
+          Write-Host "Portable tree: $($files.Count) files, $mb MB"
+
+      - name: Upload portable tree
+        uses: actions/upload-artifact@v4
+        with:
+          name: omairc-${{ env.OMAIRC_VERSION }}-windows-x64
+          path: |
+            build/release/**
+            !build/release/*.obj
+            !build/release/*.pdb
+            !build/release/*.res
+            !build/release/*.ilk
+            !build/release/moc_*
+            !build/release/qrc_*
+          if-no-files-found: error
