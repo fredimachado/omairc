@@ -245,139 +245,6 @@ ApplicationWindow {
         }
     }
 
-    component MemberNickRow: Item {
-        id: memberRow
-
-        required property string nick
-        required property string label
-        required property string status
-        property bool memberAway: false
-        readonly property bool showAway: win.awayPresenceVisible && memberAway
-        property bool typing: false
-        property bool selected: false
-        property color selectedColor: win.raisedColor
-        property color panelColor: win.panelColor
-        property string rowObjectName: "member-" + nick
-        property string highlightObjectName: "memberHighlight"
-        property string presenceObjectName: "presence-dot-" + nick
-        property string statusObjectName: "member-status-" + nick
-        property string typingObjectName: "member-typing-" + nick
-
-        signal activated()
-
-        objectName: rowObjectName
-        Accessible.name: label
-        Accessible.description: win.memberStatusVisible ? status : ""
-        Accessible.role: Accessible.Button
-        Accessible.onPressAction: {
-            if (win.canOpenDirectMessage(memberRow.nick))
-                memberRow.activated();
-        }
-        width: ListView.view ? ListView.view.width : parent.width
-        height: win.scaledSize(43)
-
-        Rectangle {
-            objectName: memberRow.highlightObjectName
-            anchors.fill: parent
-            anchors.leftMargin: win.scaledSize(8)
-            anchors.rightMargin: win.scaledSize(8)
-            radius: win.scaledSize(7)
-            color: memberMouse.containsMouse
-                ? win.hoverColor
-                : (memberRow.selected ? memberRow.selectedColor : "transparent")
-        }
-
-        Rectangle {
-            anchors.left: parent.left
-            anchors.leftMargin: win.scaledSize(18)
-            anchors.verticalCenter: parent.verticalCenter
-            width: win.scaledSize(28)
-            height: width
-            radius: width / 2
-            color: win.mixColors(
-                win.pageColor,
-                win.nickColor(memberRow.nick),
-                win.darkMode ? 0.23 : 0.16)
-            opacity: memberRow.showAway ? 0.62 : 1
-
-            Text {
-                anchors.centerIn: parent
-                text: win.initials(memberRow.nick)
-                color: win.nickColor(memberRow.nick)
-                font.family: "iA Writer Mono S"
-                font.bold: true
-                font.pixelSize: win.scaledSize(11)
-            }
-
-            Rectangle {
-                objectName: memberRow.presenceObjectName
-                visible: win.awayPresenceVisible
-                anchors.right: parent.right
-                anchors.bottom: parent.bottom
-                width: win.scaledSize(7)
-                height: width
-                radius: width / 2
-                color: memberRow.showAway ? "#d6a552" : "#69b978"
-                border.width: win.scaledSize(2)
-                border.color: memberRow.panelColor
-            }
-        }
-
-        Column {
-            anchors.left: parent.left
-            anchors.leftMargin: win.scaledSize(56)
-            anchors.right: parent.right
-            anchors.rightMargin: win.scaledSize(10)
-            anchors.verticalCenter: parent.verticalCenter
-            spacing: 0
-
-            Row {
-                width: parent.width
-                spacing: win.scaledSize(4)
-
-                Text {
-                    width: Math.max(0, parent.width
-                        - (memberRow.typing
-                            ? memberTypingGlyph.implicitWidth + parent.spacing
-                            : 0))
-                    text: memberRow.label
-                    color: memberRow.showAway ? win.mutedColor : win.inkColor
-                    elide: Text.ElideRight
-                    font.family: "iA Writer Mono S"
-                    font.bold: memberRow.nick === win.selfNick
-                    font.pixelSize: win.scaledSize(12)
-                }
-
-                TypingDots {
-                    id: memberTypingGlyph
-                    objectName: memberRow.typingObjectName
-                    visible: memberRow.typing
-                    pixelSize: win.scaledSize(12)
-                }
-            }
-
-            Text {
-                objectName: memberRow.statusObjectName
-                visible: win.memberStatusVisible && memberRow.status.length > 0
-                width: parent.width
-                text: memberRow.status
-                color: win.mutedColor
-                elide: Text.ElideRight
-                font.family: "iA Writer Mono S"
-                font.pixelSize: win.scaledSize(9)
-            }
-        }
-
-        MouseArea {
-            id: memberMouse
-            anchors.fill: parent
-            enabled: win.canOpenDirectMessage(memberRow.nick)
-            hoverEnabled: true
-            cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
-            onClicked: memberRow.activated()
-        }
-    }
-
     Text {
         id: messageLineProbe
         visible: false
@@ -966,9 +833,7 @@ ApplicationWindow {
     }
 
     function refreshJumpMatches() {
-        var query = jumpSheet.filterItem
-            ? jumpSheet.filterItem.text.trim().toLowerCase()
-            : "";
+        var query = jumpFilter ? jumpFilter.text.trim().toLowerCase() : "";
         var rows = sidebarConversationRows();
         var sections = sidebarNetworkSections();
         jumpModel.clear();
@@ -1032,9 +897,7 @@ ApplicationWindow {
     }
 
     function refreshNickMatches() {
-        var query = nickSheet.filterItem
-            ? nickSheet.filterItem.text.trim().toLowerCase()
-            : "";
+        var query = nickFilter ? nickFilter.text.trim().toLowerCase() : "";
         nickModel.clear();
         var count = memberCount();
         for (var row = 0; row < count; ++row) {
@@ -1071,16 +934,16 @@ ApplicationWindow {
         if (jumpModel.count === 0)
             return;
         jumpSelectedIndex = (jumpSelectedIndex + delta + jumpModel.count) % jumpModel.count;
-        if (jumpSheet.listItem)
-            jumpSheet.listItem.positionViewAtIndex(jumpSelectedIndex, ListView.Contain);
+        if (jumpList)
+            jumpList.positionViewAtIndex(jumpSelectedIndex, ListView.Contain);
     }
 
     function stepNick(delta) {
         if (nickModel.count === 0)
             return;
         nickSelectedIndex = (nickSelectedIndex + delta + nickModel.count) % nickModel.count;
-        if (nickSheet.listItem)
-            nickSheet.listItem.positionViewAtIndex(nickSelectedIndex, ListView.Contain);
+        if (nickList)
+            nickList.positionViewAtIndex(nickSelectedIndex, ListView.Contain);
     }
 
     function activateJumpSelection() {
@@ -5144,25 +5007,19 @@ ApplicationWindow {
         }
     }
 
-    component FilterPickerSheet: Popup {
-        id: sheet
+    ListModel {
+        id: jumpModel
+        objectName: "jumpModel"
+    }
 
-        property string filterObjectName: ""
-        property string placeholderObjectName: ""
-        property string listObjectName: ""
-        property string filterAccessibleName: ""
-        property string placeholderText: ""
-        property alias filterItem: filterField
-        property alias listItem: resultList
-        property var matches: null
-        property int selectedIndex: 0
-        property bool memberRows: false
-        property var refreshMatches: function() {}
-        property var queryChanged: function() {}
-        property var step: function(delta) {}
-        property var activate: function() {}
-        property var prepare: function() {}
+    ListModel {
+        id: nickModel
+        objectName: "nickModel"
+    }
 
+    Popup {
+        id: jumpSheet
+        objectName: "jumpSheet"
         x: Math.round((win.width - width) / 2)
         y: Math.round((win.height - height) / 2)
         width: win.scaledSize(348)
@@ -5172,12 +5029,12 @@ ApplicationWindow {
         closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
         onOpened: {
             win.pickerEscapeGuard = true;
-            if (filterField.text.length > 0)
-                filterField.clear();
+            win.jumpSelectedIndex = 0;
+            if (jumpFilter.text.length > 0)
+                jumpFilter.clear();
             else
-                sheet.refreshMatches();
-            sheet.prepare();
-            filterField.forceActiveFocus();
+                win.refreshJumpMatches();
+            jumpFilter.forceActiveFocus();
         }
         onClosed: {
             Qt.callLater(function() {
@@ -5195,20 +5052,20 @@ ApplicationWindow {
 
         contentItem: Column {
             spacing: win.scaledSize(8)
-            width: sheet.availableWidth
+            width: jumpSheet.availableWidth
 
             Rectangle {
                 width: parent.width
                 height: win.scaledSize(32)
                 color: win.panelColor
                 border.width: 1
-                border.color: filterField.activeFocus ? win.accentColor : win.dividerColor
+                border.color: jumpFilter.activeFocus ? win.accentColor : win.dividerColor
                 radius: win.scaledSize(7)
 
                 TextField {
-                    id: filterField
-                    objectName: sheet.filterObjectName
-                    Accessible.name: sheet.filterAccessibleName
+                    id: jumpFilter
+                    objectName: "jumpFilter"
+                    Accessible.name: "Jump to conversation"
                     anchors.fill: parent
                     z: 1
                     color: win.inkColor
@@ -5223,17 +5080,17 @@ ApplicationWindow {
                     background: Item {}
                     Keys.onPressed: function(event) {
                         if (event.key === Qt.Key_Down) {
-                            sheet.step(1);
+                            win.stepJump(1);
                             event.accepted = true;
                             return;
                         }
                         if (event.key === Qt.Key_Up) {
-                            sheet.step(-1);
+                            win.stepJump(-1);
                             event.accepted = true;
                             return;
                         }
                         if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
-                            sheet.activate();
+                            win.activateJumpSelection();
                             event.accepted = true;
                             return;
                         }
@@ -5241,147 +5098,298 @@ ApplicationWindow {
                             event.accepted = true;
                         }
                     }
-                    onTextChanged: sheet.queryChanged()
+                    onTextChanged: {
+                        win.jumpSelectedIndex = 0;
+                        win.refreshJumpMatches();
+                    }
                 }
 
                 Text {
-                    objectName: sheet.placeholderObjectName
+                    objectName: "jumpFilterPlaceholder"
                     z: 0
                     anchors.left: parent.left
                     anchors.leftMargin: win.scaledSize(8)
                     anchors.verticalCenter: parent.verticalCenter
-                    text: sheet.placeholderText
+                    text: "Jump to conversation…"
                     color: win.mutedColor
                     font.family: "iA Writer Mono S"
                     font.pixelSize: win.scaledSize(13)
-                    visible: filterField.text.length === 0
+                    visible: jumpFilter.text.length === 0
                 }
             }
 
             ListView {
-                id: resultList
-                objectName: sheet.listObjectName
+                id: jumpList
+                objectName: "jumpList"
                 width: parent.width
                 height: Math.min(contentHeight, win.scaledSize(252))
                 clip: true
                 boundsBehavior: Flickable.StopAtBounds
-                model: sheet.matches
-                currentIndex: sheet.selectedIndex
+                model: jumpModel
+                currentIndex: win.jumpSelectedIndex
                 highlightFollowsCurrentItem: true
-                delegate: sheet.memberRows ? nickDelegate : conversationDelegate
+
+                delegate: Item {
+                    id: jumpDelegate
+                    required property int index
+                    required property string label
+                    required property string name
+                    required property string kind
+                    required property string networkId
+                    width: jumpList.width
+                    height: win.scaledSize(28)
+                    readonly property bool current: index === win.jumpSelectedIndex
+
+                    Rectangle {
+                        anchors.fill: parent
+                        radius: win.scaledSize(7)
+                        color: jumpDelegate.current ? win.hoverColor : "transparent"
+                    }
+
+                    Text {
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        anchors.leftMargin: win.scaledSize(8)
+                        anchors.rightMargin: win.scaledSize(8)
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: jumpDelegate.label
+                        color: jumpDelegate.current ? win.inkColor : win.mutedColor
+                        elide: Text.ElideRight
+                        font.family: "iA Writer Mono S"
+                        font.pixelSize: win.scaledSize(12)
+                    }
+                }
             }
         }
+    }
 
-        Component {
-            id: conversationDelegate
+    Popup {
+        id: nickSheet
+        objectName: "nickSheet"
+        x: Math.round((win.width - width) / 2)
+        y: Math.round((win.height - height) / 2)
+        width: win.scaledSize(348)
+        padding: win.scaledSize(16)
+        modal: true
+        focus: true
+        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+        onOpened: {
+            win.pickerEscapeGuard = true;
+            if (nickFilter.text.length > 0)
+                nickFilter.clear();
+            else
+                win.refreshNickMatches();
+            win.nickSelectedIndex = win.firstOpenableNickIndex();
+            nickFilter.forceActiveFocus();
+        }
+        onClosed: {
+            Qt.callLater(function() {
+                win.pickerEscapeGuard = false;
+                composer.forceActiveFocus();
+            });
+        }
 
-            Item {
-                id: jumpDelegate
-                required property int index
-                required property string label
-                required property string name
-                required property string kind
-                required property string networkId
-                width: resultList.width
-                height: win.scaledSize(28)
-                readonly property bool current: index === sheet.selectedIndex
+        background: Rectangle {
+            color: win.raisedColor
+            border.width: 1
+            border.color: win.dividerColor
+            radius: win.scaledSize(9)
+        }
 
-                Rectangle {
+        contentItem: Column {
+            spacing: win.scaledSize(8)
+            width: nickSheet.availableWidth
+
+            Rectangle {
+                width: parent.width
+                height: win.scaledSize(32)
+                color: win.panelColor
+                border.width: 1
+                border.color: nickFilter.activeFocus ? win.accentColor : win.dividerColor
+                radius: win.scaledSize(7)
+
+                TextField {
+                    id: nickFilter
+                    objectName: "nickFilter"
+                    Accessible.name: "Jump to nick"
                     anchors.fill: parent
-                    radius: win.scaledSize(7)
-                    color: jumpDelegate.current ? win.hoverColor : "transparent"
+                    z: 1
+                    color: win.inkColor
+                    selectionColor: win.selectionColor
+                    selectedTextColor: "#ffffff"
+                    font.family: "iA Writer Mono S"
+                    font.pixelSize: win.scaledSize(13)
+                    placeholderText: ""
+                    verticalAlignment: TextInput.AlignVCenter
+                    leftPadding: win.scaledSize(8)
+                    rightPadding: win.scaledSize(8)
+                    background: Item {}
+                    Keys.onPressed: function(event) {
+                        if (event.key === Qt.Key_Down) {
+                            win.stepNick(1);
+                            event.accepted = true;
+                            return;
+                        }
+                        if (event.key === Qt.Key_Up) {
+                            win.stepNick(-1);
+                            event.accepted = true;
+                            return;
+                        }
+                        if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
+                            win.activateNickSelection();
+                            event.accepted = true;
+                            return;
+                        }
+                        if (event.key === Qt.Key_Tab) {
+                            event.accepted = true;
+                        }
+                    }
+                    onTextChanged: {
+                        win.refreshNickMatches();
+                        win.nickSelectedIndex = win.firstOpenableNickIndex();
+                    }
                 }
 
                 Text {
+                    objectName: "nickFilterPlaceholder"
+                    z: 0
                     anchors.left: parent.left
-                    anchors.right: parent.right
                     anchors.leftMargin: win.scaledSize(8)
-                    anchors.rightMargin: win.scaledSize(8)
                     anchors.verticalCenter: parent.verticalCenter
-                    text: jumpDelegate.label
-                    color: jumpDelegate.current ? win.inkColor : win.mutedColor
-                    elide: Text.ElideRight
+                    text: "Jump to nick…"
+                    color: win.mutedColor
                     font.family: "iA Writer Mono S"
-                    font.pixelSize: win.scaledSize(12)
+                    font.pixelSize: win.scaledSize(13)
+                    visible: nickFilter.text.length === 0
+                }
+            }
+
+            ListView {
+                id: nickList
+                objectName: "nickList"
+                width: parent.width
+                height: Math.min(contentHeight, win.scaledSize(252))
+                clip: true
+                boundsBehavior: Flickable.StopAtBounds
+                model: nickModel
+                currentIndex: win.nickSelectedIndex
+                highlightFollowsCurrentItem: true
+
+                delegate: Item {
+                    id: nickRow
+                    required property int index
+                    required property string nick
+                    required property string label
+                    required property string status
+                    required property bool away
+
+                    readonly property bool showAway: win.awayPresenceVisible && away
+                    readonly property bool selected: index === win.nickSelectedIndex
+
+                    objectName: "nickPick-" + nick
+                    Accessible.name: label
+                    Accessible.description: win.memberStatusVisible ? status : ""
+                    Accessible.role: Accessible.Button
+                    Accessible.onPressAction: {
+                        if (win.canOpenDirectMessage(nick)) {
+                            win.nickSelectedIndex = index;
+                            win.activateNickSelection();
+                        }
+                    }
+                    width: nickList.width
+                    height: win.scaledSize(43)
+
+                    Rectangle {
+                        objectName: "nickPickHighlight"
+                        anchors.fill: parent
+                        anchors.leftMargin: win.scaledSize(8)
+                        anchors.rightMargin: win.scaledSize(8)
+                        radius: win.scaledSize(7)
+                        color: nickMouse.containsMouse || nickRow.selected
+                            ? win.hoverColor
+                            : "transparent"
+                    }
+
+                    Rectangle {
+                        anchors.left: parent.left
+                        anchors.leftMargin: win.scaledSize(18)
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: win.scaledSize(28)
+                        height: width
+                        radius: width / 2
+                        color: win.mixColors(
+                            win.pageColor,
+                            win.nickColor(nickRow.nick),
+                            win.darkMode ? 0.23 : 0.16)
+                        opacity: nickRow.showAway ? 0.62 : 1
+
+                        Text {
+                            anchors.centerIn: parent
+                            text: win.initials(nickRow.nick)
+                            color: win.nickColor(nickRow.nick)
+                            font.family: "iA Writer Mono S"
+                            font.bold: true
+                            font.pixelSize: win.scaledSize(11)
+                        }
+
+                        Rectangle {
+                            objectName: "nickPick-presence-" + nickRow.nick
+                            visible: win.awayPresenceVisible
+                            anchors.right: parent.right
+                            anchors.bottom: parent.bottom
+                            width: win.scaledSize(7)
+                            height: width
+                            radius: width / 2
+                            color: nickRow.showAway ? "#d6a552" : "#69b978"
+                            border.width: win.scaledSize(2)
+                            border.color: win.raisedColor
+                        }
+                    }
+
+                    Column {
+                        anchors.left: parent.left
+                        anchors.leftMargin: win.scaledSize(56)
+                        anchors.right: parent.right
+                        anchors.rightMargin: win.scaledSize(10)
+                        anchors.verticalCenter: parent.verticalCenter
+                        spacing: 0
+
+                        Text {
+                            width: parent.width
+                            text: nickRow.label
+                            color: nickRow.showAway ? win.mutedColor : win.inkColor
+                            elide: Text.ElideRight
+                            font.family: "iA Writer Mono S"
+                            font.bold: nickRow.nick === win.selfNick
+                            font.pixelSize: win.scaledSize(12)
+                        }
+
+                        Text {
+                            objectName: "nickPick-status-" + nickRow.nick
+                            visible: win.memberStatusVisible && nickRow.status.length > 0
+                            width: parent.width
+                            text: nickRow.status
+                            color: win.mutedColor
+                            elide: Text.ElideRight
+                            font.family: "iA Writer Mono S"
+                            font.pixelSize: win.scaledSize(9)
+                        }
+                    }
+
+                    MouseArea {
+                        id: nickMouse
+                        anchors.fill: parent
+                        enabled: win.canOpenDirectMessage(nickRow.nick)
+                        hoverEnabled: true
+                        cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                        onClicked: {
+                            win.nickSelectedIndex = nickRow.index;
+                            win.activateNickSelection();
+                        }
+                    }
                 }
             }
         }
-
-        Component {
-            id: nickDelegate
-
-            MemberNickRow {
-                required property int index
-
-                memberAway: model.away
-                typing: win.typingVisible
-                    && win.irc
-                    && win.irc.nickIsTyping(nick)
-                selected: index === sheet.selectedIndex
-                selectedColor: win.hoverColor
-                panelColor: win.raisedColor
-                rowObjectName: "nickPick-" + nick
-                highlightObjectName: "nickPickHighlight"
-                presenceObjectName: "nickPick-presence-" + nick
-                statusObjectName: "nickPick-status-" + nick
-                typingObjectName: "nickPick-typing-" + nick
-                onActivated: {
-                    win.nickSelectedIndex = index;
-                    win.activateNickSelection();
-                }
-            }
-        }
-    }
-
-    ListModel {
-        id: jumpModel
-        objectName: "jumpModel"
-    }
-
-    ListModel {
-        id: nickModel
-        objectName: "nickModel"
-    }
-
-    FilterPickerSheet {
-        id: jumpSheet
-        objectName: "jumpSheet"
-        filterObjectName: "jumpFilter"
-        placeholderObjectName: "jumpFilterPlaceholder"
-        listObjectName: "jumpList"
-        filterAccessibleName: "Jump to conversation"
-        placeholderText: "Jump to conversation…"
-        matches: jumpModel
-        selectedIndex: win.jumpSelectedIndex
-        refreshMatches: function() { win.refreshJumpMatches(); }
-        queryChanged: function() {
-            win.jumpSelectedIndex = 0;
-            win.refreshJumpMatches();
-        }
-        step: function(delta) { win.stepJump(delta); }
-        activate: function() { win.activateJumpSelection(); }
-        prepare: function() { win.jumpSelectedIndex = 0; }
-    }
-
-    FilterPickerSheet {
-        id: nickSheet
-        objectName: "nickSheet"
-        filterObjectName: "nickFilter"
-        placeholderObjectName: "nickFilterPlaceholder"
-        listObjectName: "nickList"
-        filterAccessibleName: "Jump to nick"
-        placeholderText: "Jump to nick…"
-        matches: nickModel
-        selectedIndex: win.nickSelectedIndex
-        memberRows: true
-        refreshMatches: function() { win.refreshNickMatches(); }
-        queryChanged: function() {
-            win.refreshNickMatches();
-            win.nickSelectedIndex = win.firstOpenableNickIndex();
-        }
-        step: function(delta) { win.stepNick(delta); }
-        activate: function() { win.activateNickSelection(); }
-        prepare: function() { win.nickSelectedIndex = win.firstOpenableNickIndex(); }
     }
 
     property rect normalGeometry: Qt.rect(x, y, width, height)
