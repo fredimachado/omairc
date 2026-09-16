@@ -7,11 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-09-16
+
 ### Added
 
+- The sidebar identity footer shows the running app version on the right, next to the nick.
 - `/ping [nick]`, `/time [nick]`, and `/version [nick]` send those CTCP queries. Empty form uses the open direct message. Replies copy into the asking conversation, like `/whois`. Status stays the log. Channel targets are refused. `--demo-server` answers those queries so the transcript row shows up without a live peer.
 - Direct messages the user opened or replied to come back on the next connect. A query the user never touched stays session-local. Preferences has a global `Reopen direct messages on startup` toggle, on by default. Turning it off stops restore but still records engaged targets under `[openDirects]` in `omairc.conf`, so turning it back on can reopen them. `Ctrl+W` drops a query from that set. NickServ and other service queries are not restored. Replayed history stays muted, with no unread badge or notification. Restore waits until after ISUPPORT (`376` / `422`).
 - Jump to a channel nick with `Ctrl+Shift+K`. Type filters the current channel's members, Up/Down highlight, Enter opens or creates that DM, Escape dismisses. The `ONLINE` heading opens the same sheet. Disabled on direct messages and Status.
+
+### Changed
+
+- Connect is tabbed. Connection holds the per-network profile. Preferences holds global settings such as reopening direct messages. Enter walks to the next field. `Ctrl+Enter` applies. The network rail owns Up/Down/Home/End and shows a `Ctrl+/` shortcut hint. Server password (PASS) and NickServ password are labeled apart, with the SASL fallback in the NickServ help. Closing the sheet returns focus to the composer.
+- Direct-message typing sits in the transcript, in the slot the peer's next line will occupy. It groups with that peer's last message in the same minute; otherwise it shows their avatar. Channel typing stays on the member row.
+- The member panel and `omairc names` list nicks by the server's `PREFIX` rank, highest first, then nick. Tab nick completion stays alphabetical.
 
 ## [0.4.0] - 2026-09-14
 
@@ -140,7 +149,8 @@ First public release: a dead-simple IRC client for Omarchy.
 - Keyboard map, slash-command complete, selectable transcript, and follow-unseen.
 - qmake Unix install tree and a GitHub Releases pacman repository.
 
-[Unreleased]: https://github.com/fredimachado/omairc/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/fredimachado/omairc/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/fredimachado/omairc/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/fredimachado/omairc/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/fredimachado/omairc/compare/v0.3.0alpha...v0.3.0
 [0.3.0alpha]: https://github.com/fredimachado/omairc/compare/v0.2.0...v0.3.0alpha

@@ -40,6 +40,7 @@ ApplicationWindow {
     readonly property color hoverColor: mixColors(pageColor, inkColor, darkMode ? 0.10 : 0.075)
     readonly property color dividerColor: mixColors(pageColor, inkColor, darkMode ? 0.13 : 0.11)
     readonly property color mutedColor: mixColors(pageColor, inkColor, darkMode ? 0.52 : 0.47)
+    readonly property string appVersion: Qt.application.version
     readonly property var nickPalette: [
         accentColor,
         darkMode ? "#c099ff" : "#7950b8",
@@ -3062,15 +3063,20 @@ ApplicationWindow {
                 }
 
                 Column {
+                    id: identityText
                     anchors.left: parent.left
                     anchors.leftMargin: win.scaledSize(63)
+                    anchors.right: selfVersionLabel.visible ? selfVersionLabel.left : parent.right
+                    anchors.rightMargin: win.scaledSize(selfVersionLabel.visible ? 8 : 17)
                     anchors.verticalCenter: parent.verticalCenter
                     spacing: win.scaledSize(1)
 
                     Text {
                         objectName: "selfNickLabel"
+                        width: parent.width
                         text: win.selfNick
                         color: win.inkColor
+                        elide: Text.ElideRight
                         font.family: "iA Writer Mono S"
                         font.bold: true
                         font.pixelSize: win.scaledSize(13)
@@ -3083,6 +3089,19 @@ ApplicationWindow {
                         font.family: "iA Writer Mono S"
                         font.pixelSize: win.scaledSize(10)
                     }
+                }
+
+                Text {
+                    id: selfVersionLabel
+                    objectName: "selfVersionLabel"
+                    anchors.right: parent.right
+                    anchors.rightMargin: win.scaledSize(17)
+                    anchors.bottom: identityText.bottom
+                    text: win.appVersion
+                    visible: text.length > 0
+                    color: win.mutedColor
+                    font.family: "iA Writer Mono S"
+                    font.pixelSize: win.scaledSize(10)
                 }
             }
         }

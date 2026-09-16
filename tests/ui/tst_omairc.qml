@@ -5422,6 +5422,18 @@ TestCase {
         verify(Qt.colorEqual(item("selfPresenceDot").color, "#69b978"));
     }
 
+    function test_identityFooterShowsAppVersion() {
+        openSeededAppWindow();
+        verify(appWindow.appVersion.length > 0);
+        var version = item("selfVersionLabel");
+        compare(version.text, appWindow.appVersion);
+        verify(version.visible);
+        var nick = item("selfNickLabel");
+        var nickRight = nick.mapToItem(appWindow.contentItem, nick.width, 0).x;
+        var versionLeft = version.mapToItem(appWindow.contentItem, 0, 0).x;
+        verify(versionLeft >= nickRight);
+    }
+
     function test_liveIdentityFooterShowsCurrentNick() {
         var window = createTemporaryObject(liveWindowComponent, null);
         verify(window !== null, "The live window should load");
@@ -5453,6 +5465,7 @@ TestCase {
         waitForRendering(window.contentItem);
 
         compare(findChild(window, "selfNickLabel").text, "sheet-nick");
+        compare(findChild(window, "selfVersionLabel").text, window.appVersion);
         window.close();
     }
 

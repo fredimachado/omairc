@@ -1,10 +1,15 @@
 #include "seededircfixture.h"
 
+#include <QCoreApplication>
 #include <QFontDatabase>
 #include <QQmlEngine>
 #include <QQuickStyle>
 #include <QtQml>
 #include <QtQuickTest>
+
+#ifndef OMAIRC_VERSION
+#error "Build with version.pri so OMAIRC_VERSION is defined"
+#endif
 
 class SeededQmlSetup : public QObject
 {
@@ -19,6 +24,7 @@ public:
 public slots:
     void applicationAvailable()
     {
+        QCoreApplication::setApplicationVersion(QStringLiteral(OMAIRC_VERSION));
         QFontDatabase::addApplicationFont(QStringLiteral(":/fonts/iAWriterMonoS-Regular.ttf"));
         QFontDatabase::addApplicationFont(QStringLiteral(":/fonts/iAWriterMonoS-Bold.ttf"));
         QQuickStyle::setStyle(QStringLiteral("Material"));

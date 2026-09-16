@@ -2,6 +2,10 @@
 #include <QGuiApplication>
 #include <QQuickStyle>
 
+#ifndef OMAIRC_VERSION
+#error "Build with version.pri so OMAIRC_VERSION is defined"
+#endif
+
 int runLiveUiTests(int argc, char **argv);
 
 int main(int argc, char **argv)
@@ -9,6 +13,7 @@ int main(int argc, char **argv)
     qputenv("OMAIRC_ALLOW_MULTI", "1");
     QGuiApplication app(argc, argv);
     app.setApplicationName(QStringLiteral("omairc"));
+    app.setApplicationVersion(QStringLiteral(OMAIRC_VERSION));
     app.setOrganizationName(QStringLiteral("omairc"));
     QFontDatabase::addApplicationFont(QStringLiteral(":/fonts/iAWriterMonoS-Regular.ttf"));
     QFontDatabase::addApplicationFont(QStringLiteral(":/fonts/iAWriterMonoS-Bold.ttf"));
