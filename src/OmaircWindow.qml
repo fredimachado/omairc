@@ -12,6 +12,7 @@ ApplicationWindow {
     property var connection: null
     property var slashCommands: null
     property bool connectionSheetOpen: false
+    property string connectionSheetTab: "connection"
     property bool connectionRemoveArmed: false
     property bool connectionPasswordEdited: false
     property bool connectionNickServEdited: false
@@ -1475,6 +1476,26 @@ ApplicationWindow {
         }
     }
 
+    // Apply is a window-level action, not a per-control one. Wiring it into
+    // each control meant Ctrl+Enter silently did nothing whenever focus sat
+    // somewhere without its own handler, such as a network row or a footer
+    // button. Qt matches Return and the keypad's Enter separately.
+    Shortcut {
+        sequence: "Ctrl+Return"
+        context: Qt.ApplicationShortcut
+        enabled: win.connectionOverlayVisible
+            && win.connectionSheetTab === "connection"
+        onActivated: win.submitConnection()
+    }
+
+    Shortcut {
+        sequence: "Ctrl+Enter"
+        context: Qt.ApplicationShortcut
+        enabled: win.connectionOverlayVisible
+            && win.connectionSheetTab === "connection"
+        onActivated: win.submitConnection()
+    }
+
     Shortcut {
         sequence: "Alt+Down"
         context: Qt.ApplicationShortcut
@@ -1596,6 +1617,8 @@ ApplicationWindow {
         id: field
 
         property string label
+        property string badge: ""
+        property string help: ""
         property alias fieldObjectName: input.objectName
         property alias text: input.text
         property bool secret: false
@@ -1609,11 +1632,92 @@ ApplicationWindow {
         width: parent ? parent.width : 0
         spacing: win.scaledSize(4)
 
-        Text {
-            text: field.label
-            color: win.mutedColor
-            font.family: "iA Writer Mono S"
-            font.pixelSize: win.scaledSize(10)
+        Row {
+            id: labelRow
+            height: win.scaledSize(15)
+            spacing: win.scaledSize(6)
+
+            Text {
+                height: labelRow.height
+                text: field.label
+                color: win.mutedColor
+                verticalAlignment: Text.AlignVCenter
+                font.family: "iA Writer Mono S"
+                font.pixelSize: win.scaledSize(10)
+            }
+
+            Rectangle {
+                id: badgeChip
+                objectName: field.fieldObjectName + "Badge"
+                visible: field.badge.length > 0
+                width: visible ? badgeChipLabel.implicitWidth + win.scaledSize(10) : 0
+                height: labelRow.height
+                radius: win.scaledSize(4)
+                color: win.panelColor
+                border.width: 1
+                border.color: win.dividerColor
+
+                Text {
+                    id: badgeChipLabel
+                    anchors.centerIn: parent
+                    text: field.badge
+                    color: win.mutedColor
+                    font.family: "iA Writer Mono S"
+                    font.pixelSize: win.scaledSize(9)
+                }
+            }
+
+            Item {
+                id: helpMark
+                objectName: field.fieldObjectName + "Help"
+                visible: field.help.length > 0
+                width: win.scaledSize(14)
+                height: labelRow.height
+                activeFocusOnTab: visible
+                Accessible.role: Accessible.Button
+                Accessible.name: field.label + " help"
+                Accessible.description: field.help
+                Accessible.onPressAction: helpMark.forceActiveFocus()
+                onActiveFocusChanged: {
+                    if (activeFocus)
+                        helpMouse.ToolTip.show(field.help);
+                    else
+                        helpMouse.ToolTip.hide();
+                }
+
+                Rectangle {
+                    id: helpCircle
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: win.scaledSize(14)
+                    height: width
+                    radius: width / 2
+                    color: "transparent"
+                    border.width: 1
+                    border.color: helpMark.activeFocus ? win.accentColor : win.dividerColor
+                }
+
+                Text {
+                    anchors.centerIn: helpCircle
+                    text: "?"
+                    color: helpMark.activeFocus ? win.inkColor : win.mutedColor
+                    font.family: "iA Writer Mono S"
+                    font.pixelSize: win.scaledSize(9)
+                }
+
+                MouseArea {
+                    id: helpMouse
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.WhatsThisCursor
+                    // Also revealed on keyboard focus, so the help is readable
+                    // without a mouse.
+                    ToolTip.visible: containsMouse
+                    ToolTip.text: field.help
+                    ToolTip.delay: 400
+                    ToolTip.objectName: field.fieldObjectName + "HelpTip"
+                    onClicked: helpMark.forceActiveFocus()
+                }
+            }
         }
 
         Rectangle {
@@ -1636,14 +1740,132 @@ ApplicationWindow {
                 leftPadding: win.scaledSize(10)
                 rightPadding: win.scaledSize(10)
                 verticalAlignment: TextInput.AlignVCenter
+                Accessible.description: field.help
                 background: Item {}
                 onTextEdited: field.textEdited(text)
                 Keys.onPressed: function(event) {
-                    if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
-                        win.submitConnection();
-                        event.accepted = true;
-                    }
+                    if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter)
+                        win.applyFromSheetKey(event);
                 }
+            }
+        }
+    }
+
+    component ConnectionTabButton: Rectangle {
+        id: tabButton
+
+        property string tabName
+        property string label
+        property string glyph: ""
+
+        readonly property bool current: win.connectionSheetTab === tabName
+        readonly property color tone: current ? win.inkColor : win.mutedColor
+
+        signal stepRequested(int direction)
+
+        objectName: "connectionSheetTab-" + tabName
+        width: tabContent.implicitWidth + win.scaledSize(26)
+        height: win.scaledSize(52)
+        color: tabMouse.containsMouse || activeFocus ? win.hoverColor : "transparent"
+        activeFocusOnTab: true
+        Accessible.role: Accessible.PageTab
+        Accessible.name: label
+        Accessible.selected: current
+        Accessible.onPressAction: win.selectConnectionSheetTab(tabName)
+
+        Keys.onPressed: function(event) {
+            if (event.key === Qt.Key_Left || event.key === Qt.Key_Right) {
+                stepRequested(event.key === Qt.Key_Right ? 1 : -1);
+                event.accepted = true;
+                return;
+            }
+            if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter
+                    || event.key === Qt.Key_Space) {
+                win.selectConnectionSheetTab(tabName);
+                event.accepted = true;
+            }
+        }
+
+        Row {
+            id: tabContent
+            anchors.centerIn: parent
+            spacing: win.scaledSize(7)
+
+            Text {
+                visible: tabButton.glyph.length > 0
+                text: tabButton.glyph
+                color: tabButton.tone
+                font.family: "iA Writer Mono S"
+                font.bold: true
+                font.pixelSize: win.scaledSize(12)
+            }
+
+            Item {
+                visible: tabButton.glyph.length === 0
+                width: win.scaledSize(12)
+                height: win.scaledSize(15)
+
+                Rectangle {
+                    x: 0
+                    y: win.scaledSize(4)
+                    width: parent.width
+                    height: Math.max(1, win.scaledSize(1))
+                    color: tabButton.tone
+                }
+
+                Rectangle {
+                    x: win.scaledSize(7)
+                    y: win.scaledSize(2)
+                    width: win.scaledSize(5)
+                    height: win.scaledSize(5)
+                    radius: win.scaledSize(1)
+                    color: tabButton.tone
+                }
+
+                Rectangle {
+                    x: 0
+                    y: win.scaledSize(10)
+                    width: parent.width
+                    height: Math.max(1, win.scaledSize(1))
+                    color: tabButton.tone
+                }
+
+                Rectangle {
+                    x: win.scaledSize(1)
+                    y: win.scaledSize(8)
+                    width: win.scaledSize(5)
+                    height: win.scaledSize(5)
+                    radius: win.scaledSize(1)
+                    color: tabButton.tone
+                }
+            }
+
+            Text {
+                text: tabButton.label
+                color: tabButton.tone
+                font.family: "iA Writer Mono S"
+                font.pixelSize: win.scaledSize(12)
+            }
+        }
+
+        Rectangle {
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.bottom: parent.bottom
+            height: Math.max(1, win.scaledSize(2))
+            radius: height / 2
+            visible: tabButton.current
+            color: win.accentColor
+        }
+
+        MouseArea {
+            id: tabMouse
+            anchors.fill: parent
+            hoverEnabled: true
+            cursorShape: Qt.PointingHandCursor
+            onClicked: {
+                win.selectConnectionSheetTab(tabButton.tabName);
+                tabButton.forceActiveFocus();
             }
         }
     }
@@ -1674,6 +1896,19 @@ ApplicationWindow {
             return;
         connection.select(networkId);
         connectionRemoveArmed = false;
+    }
+
+    function selectConnectionSheetTab(tabName) {
+        connectionSheetTab = tabName;
+    }
+
+    function stepConnectionSheetTab(direction) {
+        var next = connectionSheetTab === "connection" ? "preferences" : "connection";
+        connectionSheetTab = next;
+        if (next === "preferences")
+            connectionTabPreferences.forceActiveFocus();
+        else
+            connectionTabConnection.forceActiveFocus();
     }
 
     function addSheetNetwork() {
@@ -1729,11 +1964,60 @@ ApplicationWindow {
             connectionHostField.focusInput();
     }
 
+    // Enter walks the form the way a form should; the window-level Ctrl+Enter
+    // shortcut is the commit. Plain Enter applying from every field dismissed
+    // the sheet mid-edit.
     function applyFromSheetKey(event) {
         if (event.key !== Qt.Key_Return && event.key !== Qt.Key_Enter)
             return;
-        submitConnection();
+        if (event.modifiers & Qt.ControlModifier)
+            return;
+        advanceConnectionFocus();
         event.accepted = true;
+    }
+
+    function advanceConnectionFocus() {
+        var item = win.activeFocusItem;
+        if (!item)
+            return;
+        var next = item.nextItemInFocusChain(true);
+        if (next && next !== item)
+            next.forceActiveFocus();
+    }
+
+    // The rail keeps its own arrow-key navigation so a long network list does
+    // not have to be walked with Tab.
+    readonly property int networkChoiceStopCount: networkChoiceRepeater
+        ? networkChoiceRepeater.count + (connectionAddNetwork.visible ? 1 : 0) : 0
+
+    function focusNetworkChoiceStop(stop) {
+        var total = win.networkChoiceStopCount;
+        if (total <= 0)
+            return;
+        var clamped = Math.max(0, Math.min(stop, total - 1));
+        var target = clamped < networkChoiceRepeater.count
+            ? networkChoiceRepeater.itemAt(clamped)
+            : connectionAddNetwork;
+        if (!target)
+            return;
+        target.forceActiveFocus();
+    }
+
+    // Focus does not scroll a Flickable by itself, so a focused row could sit
+    // entirely outside the viewport.
+    function revealInScroll(flick, item) {
+        if (!flick || !item)
+            return;
+        var margin = win.scaledSize(6);
+        var top = item.y - margin;
+        var bottom = item.y + item.height + margin;
+        var target = flick.contentY;
+        if (top < flick.contentY)
+            target = top;
+        else if (bottom > flick.contentY + flick.height)
+            target = bottom - flick.height;
+        var lowest = Math.max(0, flick.contentHeight - flick.height);
+        flick.contentY = Math.max(0, Math.min(target, lowest));
     }
 
     Connections {
@@ -3390,8 +3674,17 @@ ApplicationWindow {
                 visible: win.connection && (win.connection.setupRequired || win.connectionSheetOpen)
                 color: win.mixColors(win.pageColor, win.inkColor, win.darkMode ? 0.18 : 0.12)
                 onVisibleChanged: {
-                    if (visible)
-                        Qt.callLater(win.focusConnectionSheetStart);
+                    if (!visible) {
+                        // Closing used to drop focus on the window itself, so
+                        // typing did nothing until the composer was clicked.
+                        Qt.callLater(function() {
+                            if (win.active)
+                                composer.forceActiveFocus();
+                        });
+                        return;
+                    }
+                    win.connectionSheetTab = "connection";
+                    Qt.callLater(win.focusConnectionSheetStart);
                 }
 
                 MouseArea {
@@ -3403,10 +3696,11 @@ ApplicationWindow {
                 }
 
                 Rectangle {
+                    id: connectionSheetCard
                     objectName: "connectionSheetCard"
                     anchors.centerIn: parent
-                    width: Math.min(win.scaledSize(700), parent.width - win.scaledSize(40))
-                    height: Math.min(win.scaledSize(700), parent.height - win.scaledSize(40))
+                    width: Math.min(win.scaledSize(860), parent.width - win.scaledSize(40))
+                    height: Math.min(win.scaledSize(720), parent.height - win.scaledSize(40))
                     radius: win.scaledSize(10)
                     color: win.raisedColor
                     border.width: 1
@@ -3418,121 +3712,655 @@ ApplicationWindow {
                         onClicked: function(mouse) { mouse.accepted = true; }
                     }
 
-                    Row {
+                    ColumnLayout {
                         anchors.fill: parent
-                        anchors.margins: win.scaledSize(18)
-                        spacing: win.scaledSize(16)
+                        spacing: 0
 
-                        ColumnLayout {
-                            id: networkRail
-                            objectName: "networkChoiceList"
-                            width: win.scaledSize(170)
-                            height: parent.height
-                            spacing: win.scaledSize(6)
+                        Item {
+                            id: connectionTabsHeader
+                            objectName: "connectionTabsHeader"
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: connectionTabConnection.height
 
-                            Text {
-                                id: networkRailLabel
-                                Layout.fillWidth: true
-                                text: "Networks"
-                                color: win.mutedColor
-                                font.family: "iA Writer Mono S"
-                                font.bold: true
-                                font.pixelSize: win.scaledSize(10)
-                            }
+                            Row {
+                                id: connectionTabs
+                                objectName: "connectionTabs"
+                                anchors.left: parent.left
+                                anchors.leftMargin: win.scaledSize(10)
+                                anchors.bottom: parent.bottom
+                                spacing: win.scaledSize(2)
 
-                            Flickable {
-                                id: networkChoiceScroll
-                                objectName: "networkChoiceScroll"
-                                Layout.fillWidth: true
-                                Layout.fillHeight: true
-                                Layout.minimumHeight: win.scaledSize(32)
-                                clip: true
-                                contentWidth: width
-                                contentHeight: networkChoiceColumn.implicitHeight
-                                boundsBehavior: Flickable.StopAtBounds
-                                ScrollBar.vertical: ScrollBar {
-                                    objectName: "networkChoiceScrollBar"
-                                    policy: networkChoiceScroll.contentHeight > networkChoiceScroll.height
-                                        ? ScrollBar.AlwaysOn : ScrollBar.AlwaysOff
+                                ConnectionTabButton {
+                                    id: connectionTabConnection
+                                    tabName: "connection"
+                                    label: "Connection"
+                                    glyph: "#"
+                                    onStepRequested: function(direction) {
+                                        win.stepConnectionSheetTab(direction);
+                                    }
                                 }
 
-                                Column {
-                                    id: networkChoiceColumn
-                                    width: networkChoiceScroll.width
+                                ConnectionTabButton {
+                                    id: connectionTabPreferences
+                                    tabName: "preferences"
+                                    label: "Preferences"
+                                    onStepRequested: function(direction) {
+                                        win.stepConnectionSheetTab(direction);
+                                    }
+                                }
+                            }
+                        }
+
+                        Rectangle {
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: 1
+                            color: win.dividerColor
+                        }
+
+                        ColumnLayout {
+                            id: connectionTab
+                            objectName: "connectionTab"
+                            Layout.fillWidth: true
+                            Layout.fillHeight: true
+                            visible: win.connectionSheetTab === "connection"
+                            enabled: visible
+                            spacing: 0
+
+                            RowLayout {
+                                id: connectionBody
+                                Layout.fillWidth: true
+                                Layout.fillHeight: true
+                                Layout.leftMargin: win.scaledSize(18)
+                                Layout.rightMargin: win.scaledSize(18)
+                                Layout.topMargin: win.scaledSize(14)
+                                Layout.bottomMargin: win.scaledSize(12)
+                                spacing: win.scaledSize(16)
+
+                                ColumnLayout {
+                                    id: networkRail
+                                    objectName: "networkChoiceList"
+                                    Layout.fillWidth: false
+                                    Layout.preferredWidth: win.scaledSize(170)
+                                    Layout.maximumWidth: win.scaledSize(170)
+                                    Layout.minimumWidth: win.scaledSize(150)
+                                    Layout.fillHeight: true
                                     spacing: win.scaledSize(6)
 
-                                    Repeater {
-                                        id: networkChoiceRepeater
-                                        objectName: "networkChoiceRepeater"
-                                        model: win.connection && win.connection.networks
-                                            ? win.connection.networks : null
-                                        delegate: Rectangle {
-                                            required property string networkId
-                                            required property string displayName
-                                            required property bool selected
-                                            property bool applyArmed: false
-                                            width: networkRail.width
-                                            height: win.scaledSize(32)
-                                            radius: win.scaledSize(6)
-                                            color: selected
-                                                ? win.mixColors(win.selectionColor, win.raisedColor,
-                                                                win.darkMode ? 0.45 : 0.35)
-                                                : (choiceMouse.containsMouse
-                                                    || activeFocus
-                                                    ? win.hoverColor : "transparent")
-                                            objectName: "networkChoice-" + networkId
-                                            activeFocusOnTab: true
-                                            Accessible.role: Accessible.Button
-                                            Accessible.name: displayName
-                                            Accessible.onPressAction: win.selectSheetNetwork(networkId)
-                                            onActiveFocusChanged: {
-                                                if (!activeFocus)
-                                                    applyArmed = false;
+                                    Text {
+                                        id: networkRailLabel
+                                        Layout.fillWidth: true
+                                        text: "Networks"
+                                        color: win.mutedColor
+                                        font.family: "iA Writer Mono S"
+                                        font.bold: true
+                                        font.pixelSize: win.scaledSize(10)
+                                    }
+
+                                    Flickable {
+                                        id: networkChoiceScroll
+                                        objectName: "networkChoiceScroll"
+                                        Layout.fillWidth: true
+                                        Layout.fillHeight: true
+                                        Layout.minimumHeight: win.scaledSize(32)
+                                        clip: true
+                                        contentWidth: width
+                                        contentHeight: networkChoiceColumn.implicitHeight
+                                        boundsBehavior: Flickable.StopAtBounds
+                                        ScrollBar.vertical: ScrollBar {
+                                            objectName: "networkChoiceScrollBar"
+                                            policy: networkChoiceScroll.contentHeight > networkChoiceScroll.height
+                                                ? ScrollBar.AlwaysOn : ScrollBar.AlwaysOff
+                                        }
+
+                                        Column {
+                                            id: networkChoiceColumn
+                                            width: networkChoiceScroll.width
+                                            spacing: win.scaledSize(6)
+
+                                            Repeater {
+                                                id: networkChoiceRepeater
+                                                objectName: "networkChoiceRepeater"
+                                                model: win.connection && win.connection.networks
+                                                    ? win.connection.networks : null
+                                                delegate: Rectangle {
+                                                    id: networkRow
+                                                    required property string networkId
+                                                    required property string displayName
+                                                    required property bool selected
+                                                    required property int index
+                                                    property bool applyArmed: false
+                                                    width: networkRail.width
+                                                    height: win.scaledSize(32)
+                                                    radius: win.scaledSize(6)
+                                                    color: selected
+                                                        ? win.mixColors(win.selectionColor, win.raisedColor,
+                                                                        win.darkMode ? 0.45 : 0.35)
+                                                        : (choiceMouse.containsMouse
+                                                            || activeFocus
+                                                            ? win.hoverColor : "transparent")
+                                                    objectName: "networkChoice-" + networkId
+                                                    activeFocusOnTab: true
+                                                    Accessible.role: Accessible.Button
+                                                    Accessible.name: displayName
+                                                    Accessible.onPressAction: win.selectSheetNetwork(networkId)
+                                                    onActiveFocusChanged: {
+                                                        if (activeFocus)
+                                                            win.revealInScroll(networkChoiceScroll, networkRow);
+                                                        else
+                                                            applyArmed = false;
+                                                    }
+                                                    Keys.onPressed: function(event) {
+                                                        if (event.key === Qt.Key_Down) {
+                                                            win.focusNetworkChoiceStop(index + 1);
+                                                            event.accepted = true;
+                                                            return;
+                                                        }
+                                                        if (event.key === Qt.Key_Up) {
+                                                            win.focusNetworkChoiceStop(index - 1);
+                                                            event.accepted = true;
+                                                            return;
+                                                        }
+                                                        if (event.key === Qt.Key_Home) {
+                                                            win.focusNetworkChoiceStop(0);
+                                                            event.accepted = true;
+                                                            return;
+                                                        }
+                                                        if (event.key === Qt.Key_End) {
+                                                            win.focusNetworkChoiceStop(
+                                                                win.networkChoiceStopCount - 1);
+                                                            event.accepted = true;
+                                                            return;
+                                                        }
+                                                        if (event.key === Qt.Key_Space) {
+                                                            win.selectSheetNetwork(networkId);
+                                                            event.accepted = true;
+                                                            return;
+                                                        }
+                                                        if (event.key !== Qt.Key_Return
+                                                                && event.key !== Qt.Key_Enter)
+                                                            return;
+                                                        // Ctrl+Enter is handled by the
+                                                        // window-level apply shortcut.
+                                                        if (event.modifiers & Qt.ControlModifier)
+                                                            return;
+                                                        if (selected && applyArmed)
+                                                            win.submitConnection();
+                                                        else {
+                                                            win.selectSheetNetwork(networkId);
+                                                            applyArmed = true;
+                                                        }
+                                                        event.accepted = true;
+                                                    }
+
+                                                    Text {
+                                                        anchors.fill: parent
+                                                        anchors.leftMargin: win.scaledSize(8)
+                                                        anchors.rightMargin: win.scaledSize(8)
+                                                        text: displayName
+                                                        color: win.inkColor
+                                                        elide: Text.ElideRight
+                                                        verticalAlignment: Text.AlignVCenter
+                                                        font.family: "iA Writer Mono S"
+                                                        font.pixelSize: win.scaledSize(11)
+                                                    }
+
+                                                    MouseArea {
+                                                        id: choiceMouse
+                                                        anchors.fill: parent
+                                                        hoverEnabled: true
+                                                        cursorShape: Qt.PointingHandCursor
+                                                        onClicked: {
+                                                            win.selectSheetNetwork(networkId);
+                                                            parent.forceActiveFocus();
+                                                        }
+                                                    }
+                                                }
                                             }
-                                            Keys.onPressed: function(event) {
-                                                if (event.key === Qt.Key_Space) {
-                                                    win.selectSheetNetwork(networkId);
-                                                    event.accepted = true;
-                                                    return;
+
+                                            Rectangle {
+                                                id: connectionAddNetwork
+                                                objectName: "connectionAddNetwork"
+                                                width: networkChoiceColumn.width
+                                                height: win.scaledSize(28)
+                                                radius: win.scaledSize(6)
+                                                visible: win.connection ? win.connection.canAdd : false
+                                                activeFocusOnTab: visible
+                                                Accessible.role: Accessible.Button
+                                                Accessible.name: "Add network"
+                                                Accessible.onPressAction: win.addSheetNetwork()
+                                                color: addNetworkMouse.containsMouse || activeFocus
+                                                    ? win.hoverColor : "transparent"
+                                                border.width: activeFocus ? 1 : 0
+                                                border.color: win.accentColor
+                                                onActiveFocusChanged: {
+                                                    if (activeFocus)
+                                                        win.revealInScroll(networkChoiceScroll,
+                                                                           connectionAddNetwork);
                                                 }
-                                                if (event.key !== Qt.Key_Return
-                                                        && event.key !== Qt.Key_Enter)
-                                                    return;
-                                                if (event.modifiers & Qt.ControlModifier) {
-                                                    win.submitConnection();
-                                                    event.accepted = true;
-                                                    return;
+                                                Keys.onPressed: function(event) {
+                                                    if (event.key === Qt.Key_Up) {
+                                                        win.focusNetworkChoiceStop(
+                                                            win.networkChoiceStopCount - 2);
+                                                        event.accepted = true;
+                                                        return;
+                                                    }
+                                                    if (event.key === Qt.Key_Return
+                                                            || event.key === Qt.Key_Enter
+                                                            || event.key === Qt.Key_Space) {
+                                                        win.addSheetNetwork();
+                                                        event.accepted = true;
+                                                    }
                                                 }
-                                                if (selected && applyArmed)
-                                                    win.submitConnection();
-                                                else {
-                                                    win.selectSheetNetwork(networkId);
-                                                    applyArmed = true;
+
+                                                Text {
+                                                    anchors.centerIn: parent
+                                                    text: "+ Add network"
+                                                    color: win.mutedColor
+                                                    font.family: "iA Writer Mono S"
+                                                    font.pixelSize: win.scaledSize(11)
                                                 }
+
+                                                MouseArea {
+                                                    id: addNetworkMouse
+                                                    anchors.fill: parent
+                                                    hoverEnabled: true
+                                                    cursorShape: Qt.PointingHandCursor
+                                                    onClicked: {
+                                                        win.addSheetNetwork();
+                                                        parent.forceActiveFocus();
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    Rectangle {
+                                        id: connectionShortcutsHint
+                                        objectName: "connectionShortcutsHint"
+                                        Layout.fillWidth: true
+                                        Layout.preferredHeight: win.scaledSize(30)
+                                        radius: win.scaledSize(7)
+                                        color: shortcutsHintMouse.containsMouse
+                                            ? win.hoverColor : win.panelColor
+                                        border.width: 1
+                                        border.color: activeFocus ? win.accentColor : win.dividerColor
+                                        activeFocusOnTab: true
+                                        Accessible.role: Accessible.Button
+                                        Accessible.name: "Keyboard shortcuts"
+                                        Accessible.description: "Open the keyboard shortcuts sheet"
+                                        Accessible.onPressAction: shortcutsSheet.open()
+                                        Keys.onPressed: function(event) {
+                                            if (event.key === Qt.Key_Return
+                                                    || event.key === Qt.Key_Enter
+                                                    || event.key === Qt.Key_Space) {
+                                                shortcutsSheet.open();
                                                 event.accepted = true;
+                                            }
+                                        }
+
+                                        Text {
+                                            anchors.left: parent.left
+                                            anchors.leftMargin: win.scaledSize(9)
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            text: "Shortcuts"
+                                            color: win.mutedColor
+                                            font.family: "iA Writer Mono S"
+                                            font.pixelSize: win.scaledSize(10)
+                                        }
+
+                                        Rectangle {
+                                            id: shortcutsKey
+                                            anchors.right: parent.right
+                                            anchors.rightMargin: win.scaledSize(7)
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            width: shortcutsKeyLabel.implicitWidth + win.scaledSize(10)
+                                            height: win.scaledSize(18)
+                                            radius: win.scaledSize(4)
+                                            color: win.raisedColor
+                                            border.width: 1
+                                            border.color: win.dividerColor
+
+                                            Text {
+                                                id: shortcutsKeyLabel
+                                                anchors.centerIn: parent
+                                                text: "Ctrl + /"
+                                                color: win.inkColor
+                                                font.family: "iA Writer Mono S"
+                                                font.pixelSize: win.scaledSize(10)
+                                            }
+                                        }
+
+                                        MouseArea {
+                                            id: shortcutsHintMouse
+                                            anchors.fill: parent
+                                            hoverEnabled: true
+                                            cursorShape: Qt.PointingHandCursor
+                                            onClicked: shortcutsSheet.open()
+                                        }
+                                    }
+                                }
+
+                                Item {
+                                    id: connectionFormArea
+                                    objectName: "connectionFormArea"
+                                    Layout.fillWidth: true
+                                    Layout.fillHeight: true
+
+                                    Flickable {
+                                        id: sheetFlick
+                                        objectName: "sheetFlick"
+                                        anchors.fill: parent
+                                        contentWidth: width
+                                        contentHeight: sheetColumn.implicitHeight
+                                        clip: true
+                                        boundsBehavior: Flickable.StopAtBounds
+                                        ScrollBar.vertical: ScrollBar {
+                                            id: sheetFlickScrollBar
+                                            objectName: "sheetFlickScrollBar"
+                                            policy: sheetFlick.contentHeight > sheetFlick.height
+                                                ? ScrollBar.AlwaysOn : ScrollBar.AlwaysOff
+                                        }
+
+                                        Column {
+                                            id: sheetColumn
+                                            width: sheetFlick.width - sheetFlickScrollBar.width
+                                            spacing: win.scaledSize(10)
+
+                                            Text {
+                                                text: "Connect"
+                                                color: win.inkColor
+                                                font.family: "iA Writer Mono S"
+                                                font.bold: true
+                                                font.pixelSize: win.scaledSize(15)
+                                            }
+
+                                            Row {
+                                                width: parent.width
+                                                spacing: win.scaledSize(12)
+
+                                                ConnectionField {
+                                                    id: connectionHostField
+                                                    width: parent.width - win.scaledSize(104)
+                                                        - win.scaledSize(72) - win.scaledSize(24)
+                                                    label: "Host"
+                                                    fieldObjectName: "connectionHost"
+                                                    text: win.connection ? win.connection.host : ""
+                                                    onTextEdited: function(value) {
+                                                        if (win.connection)
+                                                            win.connection.host = value;
+                                                    }
+                                                }
+
+                                                ConnectionField {
+                                                    width: win.scaledSize(104)
+                                                    label: "Port"
+                                                    fieldObjectName: "connectionPort"
+                                                    text: win.connection ? String(win.connection.port) : "6697"
+                                                    onTextEdited: function(value) {
+                                                        if (win.connection)
+                                                            win.connection.port = Number(value) || 0;
+                                                    }
+                                                }
+
+                                                Item {
+                                                    width: win.scaledSize(72)
+                                                    height: win.scaledSize(55)
+
+                                                    Column {
+                                                        anchors.left: parent.left
+                                                        anchors.right: parent.right
+                                                        anchors.bottom: parent.bottom
+                                                        spacing: win.scaledSize(4)
+
+                                                        Text {
+                                                            text: "TLS"
+                                                            color: win.mutedColor
+                                                            font.family: "iA Writer Mono S"
+                                                            font.pixelSize: win.scaledSize(10)
+                                                        }
+
+                                                        Switch {
+                                                            id: connectionTls
+                                                            objectName: "connectionTls"
+                                                            checked: win.connection ? win.connection.tlsEnabled : true
+                                                            Keys.onPressed: function(event) {
+                                                                win.applyFromSheetKey(event)
+                                                            }
+                                                            onToggled: {
+                                                                if (win.connection)
+                                                                    win.connection.tlsEnabled = checked;
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+
+                                            Row {
+                                                width: parent.width
+                                                spacing: win.scaledSize(12)
+
+                                                ConnectionField {
+                                                    id: connectionNickField
+                                                    width: Math.round((parent.width - win.scaledSize(12)) / 2)
+                                                    label: "Nick"
+                                                    fieldObjectName: "connectionNick"
+                                                    text: win.connection ? win.connection.nick : ""
+                                                    onTextEdited: function(value) {
+                                                        if (win.connection)
+                                                            win.connection.nick = value;
+                                                    }
+                                                }
+
+                                                ConnectionField {
+                                                    width: parent.width - connectionNickField.width
+                                                        - win.scaledSize(12)
+                                                    label: "Username"
+                                                    fieldObjectName: "connectionUsername"
+                                                    text: win.connection ? win.connection.username : ""
+                                                    onTextEdited: function(value) {
+                                                        if (win.connection)
+                                                            win.connection.username = value;
+                                                    }
+                                                }
+                                            }
+
+                                            ConnectionField {
+                                                label: "Real name"
+                                                fieldObjectName: "connectionRealname"
+                                                text: win.connection ? win.connection.realname : ""
+                                                onTextEdited: function(value) {
+                                                    if (win.connection)
+                                                        win.connection.realname = value;
+                                                }
+                                            }
+
+                                            ConnectionField {
+                                                label: "Autojoin"
+                                                fieldObjectName: "connectionAutojoin"
+                                                text: win.connection ? win.connection.autojoin : ""
+                                                onTextEdited: function(value) {
+                                                    if (win.connection)
+                                                        win.connection.autojoin = value;
+                                                }
+                                            }
+
+                                            Row {
+                                                width: parent.width
+                                                spacing: win.scaledSize(10)
+
+                                                Switch {
+                                                    id: connectionConnectOnStartup
+                                                    objectName: "connectionConnectOnStartup"
+                                                    Keys.onPressed: function(event) {
+                                                        win.applyFromSheetKey(event)
+                                                    }
+                                                    onToggled: {
+                                                        if (win.connection)
+                                                            win.connection.connectOnStartup = checked;
+                                                    }
+                                                }
+
+                                                Binding {
+                                                    target: connectionConnectOnStartup
+                                                    property: "checked"
+                                                    value: win.connection ? win.connection.connectOnStartup : false
+                                                    restoreMode: Binding.RestoreBinding
+                                                }
+
+                                                Item {
+                                                    width: parent.width - connectionConnectOnStartup.width
+                                                        - win.scaledSize(10)
+                                                    height: connectionConnectOnStartup.height
+
+                                                    Text {
+                                                        anchors.left: parent.left
+                                                        anchors.verticalCenter: parent.verticalCenter
+                                                        text: "Connect automatically on startup"
+                                                        color: win.inkColor
+                                                        font.family: "iA Writer Mono S"
+                                                        font.pixelSize: win.scaledSize(11)
+                                                    }
+                                                }
+                                            }
+
+                                            Rectangle {
+                                                width: parent.width
+                                                height: 1
+                                                color: win.dividerColor
+                                            }
+
+                                            ConnectionField {
+                                                id: connectionPassword
+                                                label: "Server password"
+                                                badge: "PASS"
+                                                help: "Sent as PASS while connecting. Also the SASL secret when no NickServ password is set."
+                                                fieldObjectName: "connectionPassword"
+                                                secret: true
+                                                onTextEdited: function(value) {
+                                                    win.connectionPasswordEdited = true;
+                                                }
+                                            }
+
+                                            ConnectionField {
+                                                id: connectionNickServ
+                                                label: "NickServ password"
+                                                help: "Preferred SASL secret. Sent as NickServ IDENTIFY when SASL did not succeed."
+                                                fieldObjectName: "connectionNickServ"
+                                                secret: true
+                                                onTextEdited: function(value) {
+                                                    win.connectionNickServEdited = true;
+                                                }
                                             }
 
                                             Text {
-                                                anchors.fill: parent
-                                                anchors.leftMargin: win.scaledSize(8)
-                                                anchors.rightMargin: win.scaledSize(8)
-                                                text: displayName
-                                                color: win.inkColor
-                                                elide: Text.ElideRight
-                                                verticalAlignment: Text.AlignVCenter
+                                                id: connectionCredentialStatus
+                                                objectName: "connectionCredentialStatus"
+                                                width: parent.width
+                                                visible: !!(win.connection && win.connection.credentialStatus)
+                                                text: (win.connection && win.connection.credentialStatus)
+                                                      ? win.connection.credentialStatus : ""
+                                                color: win.mutedColor
+                                                wrapMode: Text.Wrap
                                                 font.family: "iA Writer Mono S"
-                                                font.pixelSize: win.scaledSize(11)
+                                                font.pixelSize: win.scaledSize(10)
                                             }
 
-                                            MouseArea {
-                                                id: choiceMouse
-                                                anchors.fill: parent
-                                                hoverEnabled: true
-                                                cursorShape: Qt.PointingHandCursor
-                                                onClicked: {
-                                                    win.selectSheetNetwork(networkId);
-                                                    parent.forceActiveFocus();
+                                            Row {
+                                                width: parent.width
+                                                spacing: win.scaledSize(16)
+
+                                                Text {
+                                                    id: connectionForgetPassword
+                                                    objectName: "connectionForgetPassword"
+                                                    visible: !!(win.connection && win.connection.canForgetPassword)
+                                                    width: visible ? implicitWidth : 0
+                                                    text: "forget saved server password"
+                                                    color: win.accentColor
+                                                    font.family: "iA Writer Mono S"
+                                                    font.pixelSize: win.scaledSize(10)
+                                                    font.underline: activeFocus
+                                                    Accessible.role: Accessible.Button
+                                                    Accessible.name: "Forget saved server password"
+                                                    Accessible.description: "Remove the saved server password"
+                                                    activeFocusOnTab: visible
+                                                    Keys.onPressed: function(event) {
+                                                        if (event.key === Qt.Key_Return
+                                                                || event.key === Qt.Key_Enter
+                                                                || event.key === Qt.Key_Space) {
+                                                            forgetSavedPassword();
+                                                            event.accepted = true;
+                                                        }
+                                                    }
+                                                    Accessible.onPressAction: {
+                                                        forgetSavedPassword();
+                                                    }
+                                                    function forgetSavedPassword() {
+                                                        connectionPassword.text = "";
+                                                        win.connection.forgetPassword();
+                                                        win.connection.removeStoredPassword();
+                                                    }
+                                                    MouseArea {
+                                                        anchors.fill: parent
+                                                        hoverEnabled: true
+                                                        cursorShape: Qt.PointingHandCursor
+                                                        onClicked: {
+                                                            parent.forgetSavedPassword();
+                                                        }
+                                                    }
                                                 }
+
+                                                Text {
+                                                    id: connectionForgetNickServ
+                                                    objectName: "connectionForgetNickServ"
+                                                    visible: !!(win.connection && win.connection.canForgetNickServ)
+                                                    width: visible ? implicitWidth : 0
+                                                    text: "forget saved NickServ password"
+                                                    color: win.accentColor
+                                                    font.family: "iA Writer Mono S"
+                                                    font.pixelSize: win.scaledSize(10)
+                                                    font.underline: activeFocus
+                                                    Accessible.role: Accessible.Button
+                                                    Accessible.name: "Forget saved NickServ password"
+                                                    Accessible.description: "Remove the saved NickServ password"
+                                                    activeFocusOnTab: visible
+                                                    Keys.onPressed: function(event) {
+                                                        if (event.key === Qt.Key_Return
+                                                                || event.key === Qt.Key_Enter
+                                                                || event.key === Qt.Key_Space) {
+                                                            forgetSavedNickServ();
+                                                            event.accepted = true;
+                                                        }
+                                                    }
+                                                    Accessible.onPressAction: {
+                                                        forgetSavedNickServ();
+                                                    }
+                                                    function forgetSavedNickServ() {
+                                                        connectionNickServ.text = "";
+                                                        win.connection.forgetNickServ();
+                                                        win.connection.removeStoredNickServ();
+                                                    }
+                                                    MouseArea {
+                                                        anchors.fill: parent
+                                                        hoverEnabled: true
+                                                        cursorShape: Qt.PointingHandCursor
+                                                        onClicked: {
+                                                            parent.forgetSavedNickServ();
+                                                        }
+                                                    }
+                                                }
+                                            }
+
+                                            Text {
+                                                id: connectionProblem
+                                                objectName: "connectionProblem"
+                                                width: parent.width
+                                                visible: !!(win.connection && win.connection.problem)
+                                                text: (win.connection && win.connection.problem)
+                                                      ? win.connection.problem : ""
+                                                color: win.accentColor
+                                                wrapMode: Text.Wrap
+                                                font.family: "iA Writer Mono S"
+                                                font.pixelSize: win.scaledSize(11)
                                             }
                                         }
                                     }
@@ -3540,521 +4368,266 @@ ApplicationWindow {
                             }
 
                             Rectangle {
-                                id: connectionAddNetwork
-                                objectName: "connectionAddNetwork"
                                 Layout.fillWidth: true
-                                Layout.preferredHeight: win.scaledSize(28)
-                                radius: win.scaledSize(6)
-                                visible: win.connection ? win.connection.canAdd : false
-                                activeFocusOnTab: visible
-                                Accessible.role: Accessible.Button
-                                Accessible.name: "Add network"
-                                Accessible.onPressAction: win.addSheetNetwork()
-                                color: addNetworkMouse.containsMouse || activeFocus
-                                    ? win.hoverColor : "transparent"
-                                border.width: activeFocus ? 1 : 0
-                                border.color: win.accentColor
-                                Keys.onPressed: function(event) {
-                                    if (event.key === Qt.Key_Return
-                                            || event.key === Qt.Key_Enter
-                                            || event.key === Qt.Key_Space) {
-                                        win.addSheetNetwork();
-                                        event.accepted = true;
-                                    }
+                                Layout.preferredHeight: 1
+                                color: win.dividerColor
+                            }
+
+                            Item {
+                                id: connectionFooter
+                                objectName: "connectionFooter"
+                                Layout.fillWidth: true
+                                Layout.preferredHeight: win.scaledSize(52)
+
+                                Rectangle {
+                                    id: connectionFooterDot
+                                    anchors.left: parent.left
+                                    anchors.leftMargin: win.scaledSize(18)
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    width: win.scaledSize(6)
+                                    height: width
+                                    radius: width / 2
+                                    color: win.accentColor
                                 }
 
                                 Text {
-                                    anchors.centerIn: parent
-                                    text: "Add network"
+                                    id: connectionFooterName
+                                    objectName: "connectionFooterNetwork"
+                                    anchors.left: connectionFooterDot.right
+                                    anchors.leftMargin: win.scaledSize(8)
+                                    anchors.right: sheetActions.left
+                                    anchors.rightMargin: win.scaledSize(16)
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    text: win.connection ? win.connection.displayName : ""
                                     color: win.mutedColor
+                                    elide: Text.ElideRight
                                     font.family: "iA Writer Mono S"
                                     font.pixelSize: win.scaledSize(11)
                                 }
 
-                                MouseArea {
-                                    id: addNetworkMouse
-                                    anchors.fill: parent
-                                    hoverEnabled: true
-                                    cursorShape: Qt.PointingHandCursor
-                                    onClicked: {
-                                        win.addSheetNetwork();
-                                        parent.forceActiveFocus();
+                                Row {
+                                    id: sheetActions
+                                    anchors.right: parent.right
+                                    anchors.rightMargin: win.scaledSize(18)
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    spacing: win.scaledSize(8)
+
+                                    Rectangle {
+                                        objectName: "connectionRemove"
+                                        visible: win.connection ? win.connection.canRemove : false
+                                        width: visible ? win.scaledSize(win.connectionRemoveArmed ? 148 : 88) : 0
+                                        height: win.scaledSize(30)
+                                        radius: win.scaledSize(7)
+                                        activeFocusOnTab: visible
+                                        Accessible.role: Accessible.Button
+                                        Accessible.name: win.connectionRemoveArmed
+                                            ? "Confirm remove " + (win.connection ? win.connection.displayName : "")
+                                            : "Remove"
+                                        Accessible.onPressAction: win.removeSheetNetwork()
+                                        color: removeMouse.containsMouse || activeFocus
+                                            ? win.hoverColor : "transparent"
+                                        border.width: 1
+                                        border.color: activeFocus ? win.accentColor : win.dividerColor
+                                        Keys.onPressed: function(event) {
+                                            if (event.key === Qt.Key_Return
+                                                    || event.key === Qt.Key_Enter
+                                                    || event.key === Qt.Key_Space) {
+                                                win.removeSheetNetwork();
+                                                event.accepted = true;
+                                            }
+                                        }
+
+                                        Text {
+                                            anchors.centerIn: parent
+                                            text: win.connectionRemoveArmed
+                                                ? "Remove " + (win.connection ? win.connection.displayName : "") + "?"
+                                                : "Remove"
+                                            color: win.accentColor
+                                            elide: Text.ElideRight
+                                            width: parent.width - win.scaledSize(8)
+                                            horizontalAlignment: Text.AlignHCenter
+                                            font.family: "iA Writer Mono S"
+                                            font.pixelSize: win.scaledSize(11)
+                                        }
+
+                                        MouseArea {
+                                            id: removeMouse
+                                            anchors.fill: parent
+                                            hoverEnabled: true
+                                            cursorShape: Qt.PointingHandCursor
+                                            onClicked: {
+                                                win.removeSheetNetwork();
+                                                parent.forceActiveFocus();
+                                            }
+                                        }
+                                    }
+
+                                    Item { width: 1; height: 1 }
+
+                                    Rectangle {
+                                        objectName: "connectionDiscard"
+                                        width: win.scaledSize(88)
+                                        height: win.scaledSize(30)
+                                        radius: win.scaledSize(7)
+                                        activeFocusOnTab: true
+                                        Accessible.role: Accessible.Button
+                                        Accessible.name: "Discard"
+                                        Accessible.onPressAction: win.discardSheetConnection()
+                                        color: discardMouse.containsMouse || activeFocus
+                                            ? win.hoverColor : "transparent"
+                                        border.width: 1
+                                        border.color: activeFocus ? win.accentColor : win.dividerColor
+                                        Keys.onPressed: function(event) {
+                                            if (event.key === Qt.Key_Return
+                                                    || event.key === Qt.Key_Enter
+                                                    || event.key === Qt.Key_Space) {
+                                                win.discardSheetConnection();
+                                                event.accepted = true;
+                                            }
+                                        }
+
+                                        Text {
+                                            anchors.centerIn: parent
+                                            text: "Discard"
+                                            color: win.mutedColor
+                                            font.family: "iA Writer Mono S"
+                                            font.pixelSize: win.scaledSize(11)
+                                        }
+
+                                        MouseArea {
+                                            id: discardMouse
+                                            anchors.fill: parent
+                                            hoverEnabled: true
+                                            cursorShape: Qt.PointingHandCursor
+                                            onClicked: {
+                                                win.discardSheetConnection();
+                                                parent.forceActiveFocus();
+                                            }
+                                        }
+                                    }
+
+                                    Rectangle {
+                                        objectName: "connectionDisconnect"
+                                        visible: win.connection ? win.connection.canDisconnect : false
+                                        width: visible ? win.scaledSize(108) : 0
+                                        height: win.scaledSize(30)
+                                        radius: win.scaledSize(7)
+                                        activeFocusOnTab: visible
+                                        Accessible.role: Accessible.Button
+                                        Accessible.name: "Disconnect"
+                                        Accessible.onPressAction: win.disconnectSheetNetwork()
+                                        color: disconnectMouse.containsMouse || activeFocus
+                                            ? win.hoverColor : "transparent"
+                                        border.width: 1
+                                        border.color: activeFocus ? win.accentColor : win.dividerColor
+                                        Keys.onPressed: function(event) {
+                                            if (event.key === Qt.Key_Return
+                                                    || event.key === Qt.Key_Enter
+                                                    || event.key === Qt.Key_Space) {
+                                                win.disconnectSheetNetwork();
+                                                event.accepted = true;
+                                            }
+                                        }
+
+                                        Text {
+                                            anchors.centerIn: parent
+                                            text: "Disconnect"
+                                            color: win.mutedColor
+                                            font.family: "iA Writer Mono S"
+                                            font.pixelSize: win.scaledSize(11)
+                                        }
+
+                                        MouseArea {
+                                            id: disconnectMouse
+                                            anchors.fill: parent
+                                            hoverEnabled: true
+                                            cursorShape: Qt.PointingHandCursor
+                                            onClicked: {
+                                                win.disconnectSheetNetwork();
+                                                parent.forceActiveFocus();
+                                            }
+                                        }
+                                    }
+
+                                    Rectangle {
+                                        objectName: "connectionApply"
+                                        width: win.scaledSize(88)
+                                        height: win.scaledSize(30)
+                                        radius: win.scaledSize(7)
+                                        activeFocusOnTab: true
+                                        Accessible.role: Accessible.Button
+                                        Accessible.name: "Apply"
+                                        Accessible.onPressAction: win.submitConnection()
+                                        color: win.connection && win.connection.problem.length === 0
+                                            ? win.accentColor : win.raisedColor
+                                        border.width: 1
+                                        border.color: activeFocus
+                                            ? (win.connection && win.connection.problem.length === 0
+                                                ? win.inkColor : win.accentColor)
+                                            : "transparent"
+                                        Keys.onPressed: function(event) {
+                                            if (event.key === Qt.Key_Return
+                                                    || event.key === Qt.Key_Enter
+                                                    || event.key === Qt.Key_Space) {
+                                                win.submitConnection();
+                                                event.accepted = true;
+                                            }
+                                        }
+
+                                        Text {
+                                            anchors.centerIn: parent
+                                            text: "Apply"
+                                            color: win.connection && win.connection.problem.length === 0
+                                                ? "#ffffff" : win.mutedColor
+                                            font.family: "iA Writer Mono S"
+                                            font.bold: true
+                                            font.pixelSize: win.scaledSize(11)
+                                        }
+
+                                        MouseArea {
+                                            anchors.fill: parent
+                                            cursorShape: win.connection && win.connection.problem.length === 0
+                                                ? Qt.PointingHandCursor : Qt.ArrowCursor
+                                            onClicked: {
+                                                parent.forceActiveFocus();
+                                                win.submitConnection();
+                                            }
+                                        }
                                     }
                                 }
                             }
                         }
 
                         Item {
-                            width: parent.width - networkRail.width - parent.spacing
-                            height: parent.height
-
-                        Flickable {
-                        id: sheetFlick
-                        objectName: "sheetFlick"
-                        anchors.top: parent.top
-                        anchors.left: parent.left
-                        anchors.right: parent.right
-                        anchors.bottom: sheetActions.top
-                        anchors.bottomMargin: win.scaledSize(10)
-                        contentWidth: width
-                        contentHeight: sheetColumn.implicitHeight
-                        clip: true
-                        boundsBehavior: Flickable.StopAtBounds
-                        ScrollBar.vertical: ScrollBar {
-                            id: sheetFlickScrollBar
-                            objectName: "sheetFlickScrollBar"
-                            policy: sheetFlick.contentHeight > sheetFlick.height
-                                ? ScrollBar.AlwaysOn : ScrollBar.AlwaysOff
-                        }
-
-                    Column {
-                        id: sheetColumn
-                        width: sheetFlick.width - ((sheetFlickScrollBar.policy === ScrollBar.AlwaysOn
-                                || sheetFlickScrollBar.visible)
-                            ? sheetFlickScrollBar.width : 0)
-                        spacing: win.scaledSize(10)
-
-                        Text {
-                            text: "Connect"
-                            color: win.inkColor
-                            font.family: "iA Writer Mono S"
-                            font.bold: true
-                            font.pixelSize: win.scaledSize(15)
-                        }
-
-                        ConnectionField {
-                            id: connectionHostField
-                            label: "Host"
-                            fieldObjectName: "connectionHost"
-                            text: win.connection ? win.connection.host : ""
-                            onTextEdited: function(value) {
-                                if (win.connection)
-                                    win.connection.host = value;
-                            }
-                        }
-
-                        Row {
-                            width: parent.width
-                            spacing: win.scaledSize(12)
-
-                            ConnectionField {
-                                width: parent.width - win.scaledSize(120)
-                                label: "Port"
-                                fieldObjectName: "connectionPort"
-                                text: win.connection ? String(win.connection.port) : "6697"
-                                onTextEdited: function(value) {
-                                    if (win.connection)
-                                        win.connection.port = Number(value) || 0;
-                                }
-                            }
+                            id: connectionPreferencesPanel
+                            objectName: "connectionPreferencesPanel"
+                            Layout.fillWidth: true
+                            Layout.fillHeight: true
+                            visible: win.connectionSheetTab === "preferences"
 
                             Column {
-                                anchors.bottom: parent.bottom
-                                spacing: win.scaledSize(4)
+                                anchors.left: parent.left
+                                anchors.top: parent.top
+                                anchors.leftMargin: win.scaledSize(18)
+                                anchors.topMargin: win.scaledSize(18)
+                                spacing: win.scaledSize(8)
 
                                 Text {
-                                    text: "TLS"
-                                    color: win.mutedColor
-                                    font.family: "iA Writer Mono S"
-                                    font.pixelSize: win.scaledSize(10)
-                                }
-
-                                Switch {
-                                    id: connectionTls
-                                    objectName: "connectionTls"
-                                    checked: win.connection ? win.connection.tlsEnabled : true
-                                    Keys.onPressed: function(event) { win.applyFromSheetKey(event) }
-                                    onToggled: {
-                                        if (win.connection)
-                                            win.connection.tlsEnabled = checked;
-                                    }
-                                }
-                            }
-                        }
-
-                        ConnectionField {
-                            id: connectionNickField
-                            label: "Nick"
-                            fieldObjectName: "connectionNick"
-                            text: win.connection ? win.connection.nick : ""
-                            onTextEdited: function(value) {
-                                if (win.connection)
-                                    win.connection.nick = value;
-                            }
-                        }
-
-                        ConnectionField {
-                            label: "Username"
-                            fieldObjectName: "connectionUsername"
-                            text: win.connection ? win.connection.username : ""
-                            onTextEdited: function(value) {
-                                if (win.connection)
-                                    win.connection.username = value;
-                            }
-                        }
-
-                        ConnectionField {
-                            label: "Real name"
-                            fieldObjectName: "connectionRealname"
-                            text: win.connection ? win.connection.realname : ""
-                            onTextEdited: function(value) {
-                                if (win.connection)
-                                    win.connection.realname = value;
-                            }
-                        }
-
-                        ConnectionField {
-                            label: "Autojoin"
-                            fieldObjectName: "connectionAutojoin"
-                            text: win.connection ? win.connection.autojoin : ""
-                            onTextEdited: function(value) {
-                                if (win.connection)
-                                    win.connection.autojoin = value;
-                            }
-                        }
-
-                        Row {
-                            width: parent.width
-                            spacing: win.scaledSize(10)
-
-                            Switch {
-                                id: connectionConnectOnStartup
-                                objectName: "connectionConnectOnStartup"
-                                Keys.onPressed: function(event) { win.applyFromSheetKey(event) }
-                                onToggled: {
-                                    if (win.connection)
-                                        win.connection.connectOnStartup = checked;
-                                }
-                            }
-
-                            Binding {
-                                target: connectionConnectOnStartup
-                                property: "checked"
-                                value: win.connection ? win.connection.connectOnStartup : false
-                                restoreMode: Binding.RestoreBinding
-                            }
-                            Text {
-                                anchors.verticalCenter: parent.verticalCenter
-                                text: "Connect automatically on startup"
-                                color: win.inkColor
-                                font.family: "iA Writer Mono S"
-                                font.pixelSize: win.scaledSize(11)
-                            }
-                        }
-
-                        ConnectionField {
-                            id: connectionPassword
-                            label: "Password"
-                            fieldObjectName: "connectionPassword"
-                            secret: true
-                            onTextEdited: function(value) {
-                                win.connectionPasswordEdited = true;
-                            }
-                        }
-
-                        ConnectionField {
-                            id: connectionNickServ
-                            label: "NickServ"
-                            fieldObjectName: "connectionNickServ"
-                            secret: true
-                            onTextEdited: function(value) {
-                                win.connectionNickServEdited = true;
-                            }
-                        }
-
-                        Text {
-                            objectName: "connectionCredentialStatus"
-                            width: parent.width
-                            visible: !!(win.connection && win.connection.credentialStatus)
-                            text: (win.connection && win.connection.credentialStatus)
-                                  ? win.connection.credentialStatus : ""
-                            color: win.mutedColor
-                            wrapMode: Text.Wrap
-                            font.family: "iA Writer Mono S"
-                            font.pixelSize: win.scaledSize(10)
-                        }
-
-                        Text {
-                            objectName: "connectionForgetPassword"
-                            visible: !!(win.connection && win.connection.canForgetPassword)
-                            text: "forget saved password"
-                            color: win.accentColor
-                            font.family: "iA Writer Mono S"
-                            font.pixelSize: win.scaledSize(10)
-                            font.underline: activeFocus
-                            Accessible.role: Accessible.Button
-                            Accessible.name: "Forget saved password"
-                            Accessible.description: "Remove the saved connection password"
-                            activeFocusOnTab: visible
-                            Keys.onPressed: function(event) {
-                                if (event.key === Qt.Key_Return
-                                    || event.key === Qt.Key_Enter
-                                    || event.key === Qt.Key_Space) {
-                                    forgetSavedPassword();
-                                    event.accepted = true;
-                                }
-                            }
-                            Accessible.onPressAction: {
-                                forgetSavedPassword();
-                            }
-                            function forgetSavedPassword() {
-                                connectionPassword.text = "";
-                                win.connection.forgetPassword();
-                                win.connection.removeStoredPassword();
-                            }
-                            MouseArea {
-                                anchors.fill: parent
-                                hoverEnabled: true
-                                cursorShape: Qt.PointingHandCursor
-                                onClicked: {
-                                    parent.forgetSavedPassword();
-                                }
-                            }
-                        }
-
-                        Text {
-                            objectName: "connectionForgetNickServ"
-                            visible: !!(win.connection && win.connection.canForgetNickServ)
-                            text: "forget saved NickServ"
-                            color: win.accentColor
-                            font.family: "iA Writer Mono S"
-                            font.pixelSize: win.scaledSize(10)
-                            font.underline: activeFocus
-                            Accessible.role: Accessible.Button
-                            Accessible.name: "Forget saved NickServ"
-                            Accessible.description: "Remove the saved NickServ password"
-                            activeFocusOnTab: visible
-                            Keys.onPressed: function(event) {
-                                if (event.key === Qt.Key_Return
-                                    || event.key === Qt.Key_Enter
-                                    || event.key === Qt.Key_Space) {
-                                    forgetSavedNickServ();
-                                    event.accepted = true;
-                                }
-                            }
-                            Accessible.onPressAction: {
-                                forgetSavedNickServ();
-                            }
-                            function forgetSavedNickServ() {
-                                connectionNickServ.text = "";
-                                win.connection.forgetNickServ();
-                                win.connection.removeStoredNickServ();
-                            }
-                            MouseArea {
-                                anchors.fill: parent
-                                hoverEnabled: true
-                                cursorShape: Qt.PointingHandCursor
-                                onClicked: {
-                                    parent.forgetSavedNickServ();
-                                }
-                            }
-                        }
-
-                        Text {
-                            objectName: "connectionProblem"
-                            width: parent.width
-                            visible: !!(win.connection && win.connection.problem)
-                            text: (win.connection && win.connection.problem)
-                                  ? win.connection.problem : ""
-                            color: win.accentColor
-                            wrapMode: Text.Wrap
-                            font.family: "iA Writer Mono S"
-                            font.pixelSize: win.scaledSize(11)
-                        }
-                    }
-                    }
-
-                    Row {
-                        id: sheetActions
-                        anchors.left: parent.left
-                        anchors.right: parent.right
-                        anchors.bottom: parent.bottom
-                        spacing: win.scaledSize(8)
-
-                            Rectangle {
-                                objectName: "connectionRemove"
-                                visible: win.connection ? win.connection.canRemove : false
-                                width: visible ? win.scaledSize(win.connectionRemoveArmed ? 148 : 88) : 0
-                                height: win.scaledSize(30)
-                                radius: win.scaledSize(7)
-                                activeFocusOnTab: visible
-                                Accessible.role: Accessible.Button
-                                Accessible.name: win.connectionRemoveArmed
-                                    ? "Confirm remove " + (win.connection ? win.connection.displayName : "")
-                                    : "Remove"
-                                Accessible.onPressAction: win.removeSheetNetwork()
-                                color: removeMouse.containsMouse || activeFocus
-                                    ? win.hoverColor : "transparent"
-                                border.width: 1
-                                border.color: activeFocus ? win.accentColor : win.dividerColor
-                                Keys.onPressed: function(event) {
-                                    if (event.key === Qt.Key_Return
-                                            || event.key === Qt.Key_Enter
-                                            || event.key === Qt.Key_Space) {
-                                        win.removeSheetNetwork();
-                                        event.accepted = true;
-                                    }
-                                }
-
-                                Text {
-                                    anchors.centerIn: parent
-                                    text: win.connectionRemoveArmed
-                                        ? "Remove " + (win.connection ? win.connection.displayName : "") + "?"
-                                        : "Remove"
-                                    color: win.accentColor
-                                    elide: Text.ElideRight
-                                    width: parent.width - win.scaledSize(8)
-                                    horizontalAlignment: Text.AlignHCenter
-                                    font.family: "iA Writer Mono S"
-                                    font.pixelSize: win.scaledSize(11)
-                                }
-
-                                MouseArea {
-                                    id: removeMouse
-                                    anchors.fill: parent
-                                    hoverEnabled: true
-                                    cursorShape: Qt.PointingHandCursor
-                                    onClicked: {
-                                        win.removeSheetNetwork();
-                                        parent.forceActiveFocus();
-                                    }
-                                }
-                            }
-
-                            Item { width: 1; height: 1 }
-
-                            Rectangle {
-                                objectName: "connectionDiscard"
-                                width: win.scaledSize(88)
-                                height: win.scaledSize(30)
-                                radius: win.scaledSize(7)
-                                activeFocusOnTab: true
-                                Accessible.role: Accessible.Button
-                                Accessible.name: "Discard"
-                                Accessible.onPressAction: win.discardSheetConnection()
-                                color: discardMouse.containsMouse || activeFocus
-                                    ? win.hoverColor : "transparent"
-                                border.width: 1
-                                border.color: activeFocus ? win.accentColor : win.dividerColor
-                                Keys.onPressed: function(event) {
-                                    if (event.key === Qt.Key_Return
-                                            || event.key === Qt.Key_Enter
-                                            || event.key === Qt.Key_Space) {
-                                        win.discardSheetConnection();
-                                        event.accepted = true;
-                                    }
-                                }
-
-                                Text {
-                                    anchors.centerIn: parent
-                                    text: "Discard"
-                                    color: win.mutedColor
-                                    font.family: "iA Writer Mono S"
-                                    font.pixelSize: win.scaledSize(11)
-                                }
-
-                                MouseArea {
-                                    id: discardMouse
-                                    anchors.fill: parent
-                                    hoverEnabled: true
-                                    cursorShape: Qt.PointingHandCursor
-                                    onClicked: {
-                                        win.discardSheetConnection();
-                                        parent.forceActiveFocus();
-                                    }
-                                }
-                            }
-
-                            Rectangle {
-                                objectName: "connectionDisconnect"
-                                visible: win.connection ? win.connection.canDisconnect : false
-                                width: visible ? win.scaledSize(108) : 0
-                                height: win.scaledSize(30)
-                                radius: win.scaledSize(7)
-                                activeFocusOnTab: visible
-                                Accessible.role: Accessible.Button
-                                Accessible.name: "Disconnect"
-                                Accessible.onPressAction: win.disconnectSheetNetwork()
-                                color: disconnectMouse.containsMouse || activeFocus
-                                    ? win.hoverColor : "transparent"
-                                border.width: 1
-                                border.color: activeFocus ? win.accentColor : win.dividerColor
-                                Keys.onPressed: function(event) {
-                                    if (event.key === Qt.Key_Return
-                                            || event.key === Qt.Key_Enter
-                                            || event.key === Qt.Key_Space) {
-                                        win.disconnectSheetNetwork();
-                                        event.accepted = true;
-                                    }
-                                }
-
-                                Text {
-                                    anchors.centerIn: parent
-                                    text: "Disconnect"
-                                    color: win.mutedColor
-                                    font.family: "iA Writer Mono S"
-                                    font.pixelSize: win.scaledSize(11)
-                                }
-
-                                MouseArea {
-                                    id: disconnectMouse
-                                    anchors.fill: parent
-                                    hoverEnabled: true
-                                    cursorShape: Qt.PointingHandCursor
-                                    onClicked: {
-                                        win.disconnectSheetNetwork();
-                                        parent.forceActiveFocus();
-                                    }
-                                }
-                            }
-
-                            Rectangle {
-                                objectName: "connectionApply"
-                                width: win.scaledSize(88)
-                                height: win.scaledSize(30)
-                                radius: win.scaledSize(7)
-                                activeFocusOnTab: true
-                                Accessible.role: Accessible.Button
-                                Accessible.name: "Apply"
-                                Accessible.onPressAction: win.submitConnection()
-                                color: win.connection && win.connection.problem.length === 0
-                                    ? win.accentColor : win.raisedColor
-                                border.width: 1
-                                border.color: activeFocus
-                                    ? (win.connection && win.connection.problem.length === 0
-                                        ? win.inkColor : win.accentColor)
-                                    : "transparent"
-                                Keys.onPressed: function(event) {
-                                    if (event.key === Qt.Key_Return
-                                            || event.key === Qt.Key_Enter
-                                            || event.key === Qt.Key_Space) {
-                                        win.submitConnection();
-                                        event.accepted = true;
-                                    }
-                                }
-
-                                Text {
-                                    anchors.centerIn: parent
-                                    text: "Apply"
-                                    color: win.connection && win.connection.problem.length === 0
-                                        ? "#ffffff" : win.mutedColor
+                                    text: "Preferences"
+                                    color: win.inkColor
                                     font.family: "iA Writer Mono S"
                                     font.bold: true
-                                    font.pixelSize: win.scaledSize(11)
+                                    font.pixelSize: win.scaledSize(15)
                                 }
 
-                                MouseArea {
-                                    anchors.fill: parent
-                                    cursorShape: win.connection && win.connection.problem.length === 0
-                                        ? Qt.PointingHandCursor : Qt.ArrowCursor
-                                    onClicked: {
-                                        parent.forceActiveFocus();
-                                        win.submitConnection();
-                                    }
+                                Text {
+                                    text: "Nothing to configure yet."
+                                    color: win.mutedColor
+                                    font.family: "iA Writer Mono S"
+                                    font.pixelSize: win.scaledSize(11)
                                 }
                             }
                         }
-                    }
                     }
                 }
             }
@@ -4285,6 +4858,7 @@ ApplicationWindow {
                     { keys: "Alt+A", action: "next unread" },
                     { keys: "Ctrl+`", action: "Status" },
                     { keys: "Ctrl+,", action: "Connect" },
+                    { keys: "Ctrl+Enter", action: "apply connection" },
                     { keys: "Ctrl+Shift+M", action: "members panel" },
                     { keys: "Ctrl+Shift+P", action: "focus members" },
                     { keys: "Ctrl+W", action: "close direct message" },
