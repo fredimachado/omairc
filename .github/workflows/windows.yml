@@ -113,9 +113,8 @@ jobs:
           }
 
       - name: Build
-        run: |
-          cmd /c bin\build.bat
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+        shell: cmd
+        run: bin\build.bat
 
       - name: Smoke
         run: |

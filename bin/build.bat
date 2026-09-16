@@ -59,9 +59,6 @@ if exist "!QTBIN!\windeployqt.exe" (
     --no-quickcontrols2universalstyleimpl ^
     --no-quickcontrols2fluentwinui3styleimpl ^
     --no-quickcontrols2windowsstyleimpl ^
-    --no-quick3dutils ^
-    --no-quickeffects ^
-    --no-quickshapes ^
     "!EXE!"
   if errorlevel 1 exit /b 1
   call :prune_qt_deploy "!BUILD_DIR!\release"
