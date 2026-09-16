@@ -422,6 +422,19 @@ std::optional<IrcMemberView> IrcEventReducer::memberView(
         facts.status};
 }
 
+IrcPeerPresence IrcEventReducer::peerPresence(const QString& networkId,
+                                              const QString& normalizedNick) const
+{
+    if (normalizedNick.isEmpty() || !isVisible(networkId, normalizedNick))
+        return IrcPeerPresence::Unknown;
+    const auto presence = m_presence.find(networkId);
+    if (presence == m_presence.end())
+        return IrcPeerPresence::Online;
+    return presence->second.lookup(normalizedNick).away
+        ? IrcPeerPresence::Away
+        : IrcPeerPresence::Online;
+}
+
 QVector<IrcOrderedMember> IrcEventReducer::orderedMembers(
     const IrcConversationKey& key) const
 {

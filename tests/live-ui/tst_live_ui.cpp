@@ -344,6 +344,7 @@ private slots:
     void ctrlFFindsLiveTranscriptAndStatus();
     void seededIrcFixtureFurnishesDemoWorld();
     void selfAwayShowsOnEveryChannelRow();
+    void directMessagePresenceFollowsAwayAndOffline();
 
 private:
     bool check(bool ok) const;
@@ -1431,6 +1432,46 @@ void LiveUiTest::selfAwayShowsOnEveryChannelRow()
     QVERIFY(controller.sendMessage(QStringLiteral("/back")));
     QVERIFY(waitUntil([&] { return !controller.selfAway(); }));
     QVERIFY(!memberAway(controller.members(), QStringLiteral("fred")));
+}
+
+void LiveUiTest::directMessagePresenceFollowsAwayAndOffline()
+{
+    if (m_live)
+        QSKIP("SeededIrcFixture runs under bin/test, not the compose world.");
+
+    SeededIrcFixture world;
+    QVERIFY2(world.openWithAutoEcho(), qPrintable(world.lastError()));
+
+    IrcController &controller = world.controller();
+    auto *conversations =
+        qobject_cast<QAbstractItemModel *>(controller.conversations());
+    QVERIFY(conversations);
+
+    // `teo` is a seeded #omarchy member the demo marks away, so a direct
+    // message with him must not paint online just because the row exists.
+    controller.openDirectMessage(QStringLiteral("teo"));
+    QVERIFY(waitUntil([&] {
+        return rowFor(conversations, SeededIrcFixture::omarchyNetworkId(),
+                      QStringLiteral("teo")) >= 0;
+    }));
+    const int row = rowFor(conversations, SeededIrcFixture::omarchyNetworkId(),
+                           QStringLiteral("teo"));
+    QCOMPARE(roleAt(conversations, row, ConversationListModel::PresenceRole),
+             QStringLiteral("away"));
+
+    // The peer's AWAY clears with the same fact the member row reads.
+    world.injectOmarchy(QStringLiteral(":teo!u@h AWAY\r\n"));
+    QVERIFY(waitUntil([&] {
+        return roleAt(conversations, row, ConversationListModel::PresenceRole)
+            == QStringLiteral("online");
+    }));
+
+    // Quitting removes the only shared-channel proof, so the row reads offline.
+    world.injectOmarchy(QStringLiteral(":teo!u@h QUIT :bye\r\n"));
+    QVERIFY(waitUntil([&] {
+        return roleAt(conversations, row, ConversationListModel::PresenceRole)
+            == QStringLiteral("offline");
+    }));
 }
 
 int runLiveUiTests(int argc, char **argv)

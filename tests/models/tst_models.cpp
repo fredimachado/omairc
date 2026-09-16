@@ -94,6 +94,7 @@ private slots:
     void neighborAfterDropPrefersSameNetwork();
     void reloadUnchangedKeysEmitsDataChangedNotReset();
     void typingRoleDerivesFromExistingDirectAndInvalidates();
+    void conversationPresenceFollowsDirectPeerAway();
     void selectedChatAppendInsertsInsteadOfReset();
     void sameSizeReloadEmitsDataChangedCoveringFirstRow();
     void selectedMemberJoinInsertsInsteadOfReset();
@@ -136,6 +137,8 @@ void ModelTest::roleNamesMatchQml()
              QByteArray("typing"));
     QCOMPARE(conversations.roleNames()[ConversationListModel::MutedRole],
              QByteArray("muted"));
+    QCOMPARE(conversations.roleNames()[ConversationListModel::PresenceRole],
+             QByteArray("presence"));
 
     QCOMPARE(messages.roleNames()[MessageListModel::AuthorRole], QByteArray("author"));
     QCOMPARE(messages.roleNames()[MessageListModel::TimeRole], QByteArray("time"));
@@ -742,6 +745,58 @@ void ModelTest::typingRoleDerivesFromExistingDirectAndInvalidates()
     conversations.invalidateTyping();
     QCOMPARE(roleAt(conversations, aliceRow, ConversationListModel::TypingRole),
              false);
+}
+
+void ModelTest::conversationPresenceFollowsDirectPeerAway()
+{
+    IrcEventReducer reducer;
+    ConversationListModel conversations(reducer);
+    welcome(reducer, networkA);
+    reducer.apply(IrcJoinEvent{
+        networkA, QStringLiteral("#room"), QStringLiteral("omairc")});
+    reducer.apply(IrcJoinEvent{
+        networkA, QStringLiteral("#room"), QStringLiteral("Alice")});
+    const IrcConversationKey room =
+        reducer.conversationKey(networkA, QStringLiteral("#room"));
+    const IrcConversationKey alice =
+        reducer.conversationKey(networkA, QStringLiteral("Alice"));
+    reducer.apply(IrcMessageEvent{
+        alice, QStringLiteral("Alice"), QStringLiteral("hi"), timestamp,
+        QStringLiteral("Alice")});
+    conversations.reload();
+
+    const int aliceRow = rowFor(conversations, ircConversationId(alice));
+    const int roomRow = rowFor(conversations, ircConversationId(room));
+    QVERIFY(aliceRow >= 0);
+    QVERIFY(roomRow >= 0);
+
+    // A direct message paints the same away fact the member row reads, and a
+    // channel carries no peer presence.
+    QCOMPARE(roleAt(conversations, aliceRow, ConversationListModel::PresenceRole),
+             QStringLiteral("online"));
+    QCOMPARE(roleAt(conversations, roomRow, ConversationListModel::PresenceRole),
+             QString());
+
+    QSignalSpy changes(&conversations, &QAbstractItemModel::dataChanged);
+    reducer.apply(IrcAwayEvent{networkA, QStringLiteral("Alice"),
+                               IrcAway{QStringLiteral("lunch")}});
+    conversations.reload();
+    QVERIFY(!changes.isEmpty());
+    QVERIFY(changes.last().at(2).value<QList<int>>().contains(
+        ConversationListModel::PresenceRole));
+    QCOMPARE(roleAt(conversations, aliceRow, ConversationListModel::PresenceRole),
+             QStringLiteral("away"));
+
+    reducer.apply(IrcAwayEvent{networkA, QStringLiteral("Alice"), std::nullopt});
+    conversations.reload();
+    QCOMPARE(roleAt(conversations, aliceRow, ConversationListModel::PresenceRole),
+             QStringLiteral("online"));
+
+    // Losing the last shared channel stops the row claiming online.
+    reducer.apply(IrcQuitEvent{networkA, QStringLiteral("Alice"), QString()});
+    conversations.reload();
+    QCOMPARE(roleAt(conversations, aliceRow, ConversationListModel::PresenceRole),
+             QStringLiteral("offline"));
 }
 
 void ModelTest::selectedChatAppendInsertsInsteadOfReset()

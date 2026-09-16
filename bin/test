@@ -224,7 +224,7 @@ QT_QPA_PLATFORMTHEME= \
 QT_QUICK_BACKEND=software \
 OMAIRC_LIVE_UI_ARTIFACTS="$ROOT/test-artifacts/live-ui" \
 OMAIRC_UI_ARTIFACTS="$ROOT/test-artifacts" \
-"$ROOT/build-live-ui-tests/live_ui_tests" consecutiveSameAuthorMinuteGroupsThroughIrcEvent memberJoinPartModeUpdatesWithoutReset replayAndLiveSameAuthorMinuteDoNotGroupThroughIrcEvent bouncerQueryReplayRendersDirectMessageInSidebar ctrlFFindsLiveTranscriptAndStatus seededIrcFixtureFurnishesDemoWorld selfAwayShowsOnEveryChannelRow
+"$ROOT/build-live-ui-tests/live_ui_tests" consecutiveSameAuthorMinuteGroupsThroughIrcEvent memberJoinPartModeUpdatesWithoutReset replayAndLiveSameAuthorMinuteDoNotGroupThroughIrcEvent bouncerQueryReplayRendersDirectMessageInSidebar ctrlFFindsLiveTranscriptAndStatus seededIrcFixtureFurnishesDemoWorld selfAwayShowsOnEveryChannelRow directMessagePresenceFollowsAwayAndOffline
 
 if [ ! -s "$ROOT/test-artifacts/live-ui/live-ui-grouped-messages.png" ]; then
   echo "live_ui_tests did not create test-artifacts/live-ui/live-ui-grouped-messages.png." >&2

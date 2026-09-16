@@ -162,8 +162,19 @@ struct IrcViewClassifier {
 
     IrcViewNotify operator()(const IrcAwayEvent& event) const
     {
-        return IrcViewNotify::memberRow(
-            reducer.conversationKey(event.networkId, event.nick).normalizedTarget);
+        const IrcConversationKey key =
+            reducer.conversationKey(event.networkId, event.nick);
+        IrcViewNotify notify = IrcViewNotify::memberRow(key.normalizedTarget);
+        // A direct message row paints this peer's presence from the same facts,
+        // so the sidebar has to repaint when their away state lands. Skip that
+        // reload when nothing can change: the peer has no direct row and no
+        // shared channel for `peerPresence` to answer from.
+        const IrcConversationState *conversation = reducer.find(key);
+        notify.conversations =
+            (conversation && !conversation->isChannel())
+            || reducer.peerPresence(event.networkId, key.normalizedTarget)
+                   != IrcPeerPresence::Unknown;
+        return notify;
     }
 
     IrcViewNotify operator()(const IrcMemberStatusEvent& event) const

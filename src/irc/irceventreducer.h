@@ -56,6 +56,17 @@ struct IrcMemberView
     bool isAway() const noexcept;
 };
 
+// What we know about a nick's presence on a network from the same facts that
+// feed member rows: membership in a joined channel plus the per-network away
+// facts. Unknown means no shared channel proves the nick is online, so a direct
+// message row must not paint it as available.
+enum class IrcPeerPresence
+{
+    Unknown,
+    Online,
+    Away,
+};
+
 // One channel member in panel order. `priority` is the index of the member's
 // highest rank in the server's PREFIX order, so a lower value is a higher
 // privilege and members without a rank come last.
@@ -199,6 +210,8 @@ public:
 
     std::optional<IrcMemberView> memberView(const IrcConversationKey& key,
                                             const QString& normalizedNick) const;
+    IrcPeerPresence peerPresence(const QString& networkId,
+                                 const QString& normalizedNick) const;
     QVector<IrcOrderedMember> orderedMembers(const IrcConversationKey& key) const;
     bool mentions(const QString& networkId, const QString& body) const;
 
