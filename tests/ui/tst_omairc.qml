@@ -2934,6 +2934,58 @@ TestCase {
         saveScreenshot("wrapped-whois-row");
     }
 
+    function test_ctcpReplyCopiesIntoAskingTranscript() {
+        destroyAppWindowAndSeed();
+        seed = createTemporaryObject(seedComponent, testCase);
+        verify(seed !== null, "SeededIrcFixture should construct");
+        verify(seed.openWithAutoEcho(), seed.lastError);
+        verify(seed.connection, "seeded window needs a real IrcConnection");
+        appWindow = createTemporaryObject(seededWindowComponent, testCase, {
+            backend: seed.backend,
+            irc: seed.irc,
+            slashCommands: seed.slash,
+            connection: seed.connection
+        });
+        verify(appWindow !== null, "The seeded Omairc window should load");
+        tryCompare(appWindow, "visible", true);
+        waitForRendering(appWindow.contentItem);
+        tryVerify(function() {
+            return appWindow.currentConversation === "#omarchy"
+                && !appWindow.consoleVisible
+                && !appWindow.connectionOverlayVisible;
+        });
+
+        var list = item("messageList");
+        var previousCount = list.model.rowCount();
+        var composer = item("messageComposer");
+        mouseClick(composer);
+        typeText("/version anna");
+        if (item("slashCompleteList").visible)
+            keyClick(Qt.Key_Escape);
+        keyClick(Qt.Key_Return);
+        tryVerify(function() {
+            var last = list.model.rowCount() - 1;
+            return last >= previousCount
+                && field(list.model, last, "kind") === "whois"
+                && field(list.model, last, "body").indexOf(
+                    "VERSION reply from anna: Omairc ") === 0;
+        });
+        var replyAt = list.model.rowCount() - 1;
+        list.positionViewAtIndex(replyAt, ListView.Contain);
+        waitForRendering(appWindow.contentItem);
+        var row = list.itemAtIndex(replyAt);
+        verify(row !== null, "The CTCP reply row should be rendered");
+        var whoisText = findChild(row, "messageWhois");
+        verify(whoisText !== null && whoisText.visible, "Could not find messageWhois");
+        compare(whoisText.textFormat, Text.PlainText);
+        compare(whoisText.text, field(list.model, replyAt, "body"));
+        compare(findChild(row, "messageEvent").visible, false);
+        compare(findChild(row, "messageAvatar").visible, false);
+        compare(findChild(row, "messageHeader").visible, false);
+        compare(findChild(row, "messageBody").visible, false);
+        saveScreenshot("ctcp-version-transcript");
+    }
+
     function test_toggleMembersWithShortcut() {
         openSeededAppWindow();
         var panel = item("membersPanel");

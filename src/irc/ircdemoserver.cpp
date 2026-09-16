@@ -3,14 +3,27 @@
 #include "irccontroller.h"
 #include "ircloopbacktransport.h"
 #include "ircnetworkprofile.h"
+#include "ircparser.h"
 #include "ircprofilestore.h"
+#include "ircserverfeatures.h"
 #include "ircsession.h"
+#include "irctcp.h"
+#include "ircwiretext.h"
 
+#ifndef OMAIRC_VERSION
+#error "Build with version.pri so OMAIRC_VERSION is defined"
+#endif
+
+#include <QDateTime>
 #include <QHash>
 #include <QPair>
 #include <QSet>
 #include <QVector>
 #include <QtGlobal>
+
+#include <string>
+#include <string_view>
+#include <vector>
 
 namespace
 {
@@ -551,6 +564,69 @@ void injectClientEcho(IrcLoopbackTransport *transport, const QString &nick,
     transport->injectBytes(":" + nick.toUtf8() + "!u@h " + frame);
 }
 
+IrcServerFeatures demoServerFeatures()
+{
+    IrcServerFeatures features;
+    std::vector<std::string> tokens;
+    const QByteArray raw = QByteArray::fromRawData(kIsupport, int(qstrlen(kIsupport)));
+    for (const QByteArray &token : raw.split(' ')) {
+        if (!token.isEmpty())
+            tokens.emplace_back(token.constData(), std::size_t(token.size()));
+    }
+    features.applyTokens(tokens);
+    return features;
+}
+
+bool tryAnswerCtcp(IrcLoopbackTransport *transport, const QString &selfNick,
+                   const QByteArray &frame)
+{
+    if (!transport || selfNick.isEmpty() || !frame.startsWith("PRIVMSG "))
+        return false;
+
+    QByteArray wire = frame;
+    if (wire.endsWith("\r\n"))
+        wire.chop(2);
+    else if (wire.endsWith('\n'))
+        wire.chop(1);
+
+    const IrcParseResult parsed = IrcParser::parse(
+        std::string_view(wire.constData(), std::size_t(wire.size())));
+    if (!parsed || parsed.value->command != "PRIVMSG"
+        || parsed.value->parameters.size() < 2) {
+        return false;
+    }
+
+    const auto request = parseCtcpRequest(ircWireText(parsed.value->parameters[1]));
+    if (!request || request->command == QLatin1String("ACTION"))
+        return false;
+
+    static const IrcServerFeatures features = demoServerFeatures();
+    const std::string &target = parsed.value->parameters[0];
+    if (features.isChannel(target))
+        return false;
+
+    QString argument;
+    if (request->command == QLatin1String("PING")) {
+        argument = request->argument;
+    } else if (request->command == QLatin1String("TIME")) {
+        argument = QDateTime::currentDateTime().toString(Qt::RFC2822Date);
+    } else if (request->command == QLatin1String("VERSION")) {
+        argument = QStringLiteral("Omairc %1").arg(QString::fromLatin1(OMAIRC_VERSION));
+    } else {
+        return false;
+    }
+
+    const QString targetNick = ircWireText(target);
+    if (targetNick.isEmpty())
+        return false;
+
+    transport->injectBytes(":" + targetNick.toUtf8() + "!u@h NOTICE "
+                           + selfNick.toUtf8() + " :"
+                           + ctcpPayload({request->command, argument}).toUtf8()
+                           + "\r\n");
+    return true;
+}
+
 bool echoLastPrivmsg(IrcLoopbackTransport *transport, const QString &nick)
 {
     if (!transport || nick.isEmpty())
@@ -633,6 +709,8 @@ void IrcDemoServer::hookAutoEcho(IrcLoopbackTransport *transport, const QString 
 {
     QObject::connect(transport, &IrcLoopbackTransport::frameWritten, this,
                      [transport, nick](const QByteArray &frame) {
+        if (tryAnswerCtcp(transport, nick, frame))
+            return;
         if (frame.startsWith("PRIVMSG ") || frame.startsWith("NOTICE "))
             injectClientEcho(transport, nick, frame);
     });

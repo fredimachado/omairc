@@ -1722,9 +1722,11 @@ bool IrcController::sendCtcpQuery(IrcSession& session,
             return false;
     }
 
-    if (!session.sendCtcp(nick, command, argument))
-        return false;
     m_ctcpWatches.insert_or_assign(*key, IrcCtcpWatch{std::move(destination)});
+    if (!session.sendCtcp(nick, command, argument)) {
+        m_ctcpWatches.erase(*key);
+        return false;
+    }
     return true;
 }
 

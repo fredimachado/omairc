@@ -12,7 +12,7 @@ Slash commands let a live session send catalog verbs from the same single-line c
 ## How to get to it (user POV)
 
 - In a live conversation or Status, type a catalog verb and press Enter.
-- On `--demo-server`, catalog verbs run against the seeded controller. `/close` on a channel is rejected and stays in the composer. A partial needle such as `/j` Tab-inserts instead of sending.
+- On `--demo-server`, catalog verbs run against the seeded controller. `/close` on a channel is rejected and stays in the composer. A partial needle such as `/j` Tab-inserts instead of sending. `/ping`, `/time`, and `/version` get a NOTICE reply from the target nick, copied into the asking transcript as `whois` rows.
 - Press `Ctrl+W` to close a DM without typing `/close`. That chord is keyboard.
 
 ## Driving it with control-omairc

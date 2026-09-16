@@ -401,6 +401,7 @@ private slots:
     void closedDirectWhoisDoesNotResurrect();
     void whoisEventDoesNotCollapseWithJoin();
     void ctcpFromChannelCopiesReplyAsWhoisEvent();
+    void ctcpReplyDuringSendCopiesIntoAskingTranscript();
     void statusCtcpStaysOnStatus();
     void emptyChannelCtcpNamesANick();
     void emptyDirectCtcpDefaultsAndRoutes();
@@ -4575,6 +4576,45 @@ void ControllerTest::ctcpFromChannelCopiesReplyAsWhoisEvent()
         }
     }
     QVERIFY(sawPing);
+}
+
+void ControllerTest::ctcpReplyDuringSendCopiesIntoAskingTranscript()
+{
+    class ImmediateCtcpTransport : public FakeIrcTransport
+    {
+    public:
+        using FakeIrcTransport::FakeIrcTransport;
+
+        void write(const QByteArray& frame) override
+        {
+            FakeIrcTransport::write(frame);
+            if (!frame.startsWith("PRIVMSG lena :"))
+                return;
+            injectBytes(
+                QByteArray(":lena!u@h NOTICE omairc :\x01VERSION Omairc 0.4.0\x01\r\n"));
+        }
+    };
+
+    IrcController controller;
+    auto *transport = new ImmediateCtcpTransport;
+    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+                                                 transport);
+    QVERIFY(session);
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    transport->completeConnect();
+    transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
+                          ":server 001 omairc :Welcome\r\n"
+                          ":omairc!u@h JOIN :#omarchy\r\n"));
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+
+    QVERIFY(controller.sendMessage(QStringLiteral("/version lena")));
+    auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
+    QVERIFY(messages);
+    QVERIFY(hasWhoisBody(messages,
+                         QStringLiteral("VERSION reply from lena: Omairc 0.4.0")));
+    QVERIFY(logContains(controller.console()->lines(),
+                        QStringLiteral("VERSION reply from lena: Omairc 0.4.0")));
 }
 
 void ControllerTest::statusCtcpStaysOnStatus()

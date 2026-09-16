@@ -41,6 +41,7 @@ public:
     SeededIrcFixture &operator=(const SeededIrcFixture &) = delete;
 
     Q_INVOKABLE bool open();
+    Q_INVOKABLE bool openWithAutoEcho();
     Q_INVOKABLE bool createWindow();
     Q_INVOKABLE void injectOmarchy(const QString &bytes);
     Q_INVOKABLE void injectOftc(const QString &bytes);
@@ -79,6 +80,7 @@ signals:
 private:
     bool fail(const QString &why);
     bool installXdg();
+    bool start(bool autoEcho);
 
     std::unique_ptr<QTemporaryDir> m_xdg;
     std::unique_ptr<IrcDemoServer> m_demo;
