@@ -63,7 +63,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ runner.temp }}/Qt
-          key: qt-${{ env.QT_VERSION }}-win64_msvc2022_64
+          key: qt-${{ env.QT_VERSION }}-win64_msvc2022_64-qtkeychain-${{ env.QTKEYCHAIN_VERSION }}
 
       - name: Install Qt 6
         if: steps.qt-cache.outputs.cache-hit != 'true'
