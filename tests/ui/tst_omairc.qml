@@ -3692,6 +3692,65 @@ TestCase {
         compare(window.connectionSheetTab, "connection");
         tryCompare(connectionTab, "activeFocus", true);
         verify(findChild(window, "connectionFormArea").visible);
+
+        // Stepping uses the direction, so it wraps both ways rather than
+        // always toggling: Left from the first tab lands on the last, and
+        // Right from the last lands back on the first.
+        keyClick(Qt.Key_Left);
+        wait(0);
+        compare(window.connectionSheetTab, "preferences");
+        tryCompare(preferencesTab, "activeFocus", true);
+
+        keyClick(Qt.Key_Right);
+        wait(0);
+        compare(window.connectionSheetTab, "connection");
+        tryCompare(connectionTab, "activeFocus", true);
+        window.close();
+    }
+
+    function test_connectionSheetHelpShowsOnHoverAndFocus() {
+        var window = createTemporaryObject(setupWindowComponent, null);
+        verify(window !== null, "The help-hover window should load");
+        tryCompare(window, "visible", true);
+        waitForRendering(window.contentItem);
+        window.requestActivate();
+        tryCompare(window, "active", true);
+        wait(200);
+
+        var help = findChild(window, "connectionPasswordHelp");
+        var host = findChild(window, "connectionHost");
+        var tip = findChild(window, "connectionPasswordHelpTip");
+        verify(tip !== null, "Could not find connectionPasswordHelpTip");
+        var away = { x: 5, y: window.height - 5 };
+
+        // Hover alone.
+        mouseMove(window.contentItem, away.x, away.y);
+        wait(500);
+        compare(tip.visible, false);
+        mouseMove(help, help.width / 2, help.height / 2);
+        wait(800);
+        compare(tip.visible, true);
+
+        // Parking the pointer hides it again.
+        mouseMove(window.contentItem, away.x, away.y);
+        wait(700);
+        compare(tip.visible, false);
+
+        // Keyboard focus now drives the same declarative binding. The popup
+        // used to be opened imperatively, which wrote `visible` underneath the
+        // binding; hover must keep working after a focus/blur cycle.
+        help.forceActiveFocus();
+        tryCompare(help, "activeFocus", true);
+        tryCompare(tip, "visible", true);
+
+        host.forceActiveFocus();
+        tryCompare(host, "activeFocus", true);
+        tryCompare(tip, "visible", false);
+
+        mouseMove(help, help.width / 2, help.height / 2);
+        wait(900);
+        compare(tip.visible, true);
+
         window.close();
     }
 
@@ -3815,11 +3874,16 @@ TestCase {
         compare(forgetPassword.Accessible.name, "Forget saved server password");
         compare(forgetNickServ.Accessible.name, "Forget saved NickServ password");
 
-        // Both secrets stay hidden, and the help explains the SASL fallback.
+        // Both secrets stay hidden, and the help matches the real protocol
+        // behaviour. A server password is NOT also sent as PASS when SASL is
+        // negotiated: sendRegistration() suppresses PASS whenever SASL was
+        // requested and no separate NickServ password exists, so the password
+        // is used as the SASL secret *instead*. See sendsPassWhenSaslIsUnavailable,
+        // negotiatesSaslPlain and bothSecretsSaslSendsPassAndPlainFromNickServ.
         compare(findChild(window, "connectionPassword").echoMode, TextInput.Password);
         compare(findChild(window, "connectionNickServ").echoMode, TextInput.Password);
         compare(findChild(window, "connectionPassword").Accessible.description,
-                "Sent as PASS while connecting. Also the SASL secret when no NickServ password is set.");
+                "Used as the SASL secret when no NickServ password is set; otherwise sent as PASS while connecting.");
         compare(findChild(window, "connectionNickServ").Accessible.description,
                 "Preferred SASL secret. Sent as NickServ IDENTIFY when SASL did not succeed.");
 
@@ -3843,7 +3907,7 @@ TestCase {
 
         // The help text is exposed to assistive tech and rendered on focus.
         compare(findChild(window, "connectionPassword").Accessible.description,
-                "Sent as PASS while connecting. Also the SASL secret when no NickServ password is set.");
+                "Used as the SASL secret when no NickServ password is set; otherwise sent as PASS while connecting.");
         var tip = findChild(window, "connectionPasswordHelpTip");
         verify(tip !== null, "Could not find connectionPasswordHelpTip");
         compare(tip.visible, false);

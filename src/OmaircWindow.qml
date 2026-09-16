@@ -1678,12 +1678,6 @@ ApplicationWindow {
                 Accessible.name: field.label + " help"
                 Accessible.description: field.help
                 Accessible.onPressAction: helpMark.forceActiveFocus()
-                onActiveFocusChanged: {
-                    if (activeFocus)
-                        helpMouse.ToolTip.show(field.help);
-                    else
-                        helpMouse.ToolTip.hide();
-                }
 
                 Rectangle {
                     id: helpCircle
@@ -1709,9 +1703,11 @@ ApplicationWindow {
                     anchors.fill: parent
                     hoverEnabled: true
                     cursorShape: Qt.WhatsThisCursor
-                    // Also revealed on keyboard focus, so the help is readable
-                    // without a mouse.
-                    ToolTip.visible: containsMouse
+                    // Fully declarative: mixing ToolTip.show()/hide() with a
+                    // `visible` binding writes underneath the binding and can
+                    // desync it. Shown on hover and on keyboard focus so the
+                    // help is readable without a mouse.
+                    ToolTip.visible: containsMouse || helpMark.activeFocus
                     ToolTip.text: field.help
                     ToolTip.delay: 400
                     ToolTip.objectName: field.fieldObjectName + "HelpTip"
@@ -1898,17 +1894,33 @@ ApplicationWindow {
         connectionRemoveArmed = false;
     }
 
+    // One ordered list drives tab order, stepping and focus, so adding a third
+    // tab does not leave hard-coded pairs behind.
+    readonly property var connectionSheetTabOrder: ["connection", "preferences"]
+
     function selectConnectionSheetTab(tabName) {
         connectionSheetTab = tabName;
     }
 
+    function focusConnectionSheetTab(tabName) {
+        var buttons = connectionTabs.children;
+        for (var index = 0; index < buttons.length; ++index) {
+            if (buttons[index].tabName === tabName) {
+                buttons[index].forceActiveFocus();
+                return;
+            }
+        }
+    }
+
     function stepConnectionSheetTab(direction) {
-        var next = connectionSheetTab === "connection" ? "preferences" : "connection";
-        connectionSheetTab = next;
-        if (next === "preferences")
-            connectionTabPreferences.forceActiveFocus();
-        else
-            connectionTabConnection.forceActiveFocus();
+        var tabs = connectionSheetTabOrder;
+        var current = tabs.indexOf(connectionSheetTab);
+        if (current < 0)
+            current = 0;
+        var step = direction < 0 ? -1 : 1;
+        var next = (current + step + tabs.length) % tabs.length;
+        connectionSheetTab = tabs[next];
+        focusConnectionSheetTab(connectionSheetTab);
     }
 
     function addSheetNetwork() {
@@ -4233,7 +4245,7 @@ ApplicationWindow {
                                                 id: connectionPassword
                                                 label: "Server password"
                                                 badge: "PASS"
-                                                help: "Sent as PASS while connecting. Also the SASL secret when no NickServ password is set."
+                                                help: "Used as the SASL secret when no NickServ password is set; otherwise sent as PASS while connecting."
                                                 fieldObjectName: "connectionPassword"
                                                 secret: true
                                                 onTextEdited: function(value) {
