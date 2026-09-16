@@ -10,7 +10,7 @@ A dead-simple IRC client for Omarchy, built with Qt Quick and C++. Agents talk t
 - Several networks in one window. Each keeps its own channels, direct messages, nick, and connection state, plus a Status console that holds the handshake, AUTH, and errors.
 - Connect sheet on first launch. Libera Chat defaults, TLS on, autojoin `#omarchy`. NickServ is SASL PLAIN when the server offers it, otherwise `IDENTIFY`. Nothing connects on its own unless you ask it to.
 - Channels and direct messages. Member panel and people count on channels only. Click a nick to open a DM, `Ctrl+W` to close it.
-- Keyboard first. `Ctrl+/` lists the shortcuts: `Ctrl+K` jump, `Alt+A` next unread, `Ctrl+F` find, Tab nick complete, Up/Down history, and drafts that stay with each conversation.
+- Keyboard first. `Ctrl+/` lists the shortcuts: `Ctrl+K` jump, `Ctrl+Shift+K` nick, `Alt+A` next unread, `Ctrl+F` find, Tab nick complete, Up/Down history, and drafts that stay with each conversation.
 - Slash commands from the composer, with complete after `/`. The usual set plus `/ignore`, `/mute`, `/highlight`, and CTCP `/ping`, `/time`, and `/version`, which query a nick. Replies copy into the asking transcript, like `/whois`.
 - Desktop notification for a mention or DM while the window is unfocused. Activating it raises the window and opens that conversation.
 - Colors follow the current Omarchy theme and update live. Text follows the desktop size.

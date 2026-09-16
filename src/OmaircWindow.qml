@@ -43,10 +43,13 @@ ApplicationWindow {
 
     property bool membersVisible: true
     property bool shortcutsSheetEscapeGuard: false
-    property bool jumpSheetEscapeGuard: false
+    property bool pickerEscapeGuard: false
     property string sidebarNetworkFocusId: ""
     property int jumpSelectedIndex: 0
-    readonly property bool shortcutOverlayOpen: shortcutsSheet.opened || jumpSheet.opened
+    property int nickSelectedIndex: 0
+    readonly property bool shortcutOverlayOpen: shortcutsSheet.opened
+        || jumpSheet.opened
+        || nickSheet.opened
     readonly property var networkConsole: irc
         ? (irc.statusConsole ? irc.statusConsole : irc.console)
         : null
@@ -239,6 +242,139 @@ ApplicationWindow {
                 font.family: "iA Writer Mono S"
                 font.pixelSize: dots.pixelSize
             }
+        }
+    }
+
+    component MemberNickRow: Item {
+        id: memberRow
+
+        required property string nick
+        required property string label
+        required property string status
+        property bool memberAway: false
+        readonly property bool showAway: win.awayPresenceVisible && memberAway
+        property bool typing: false
+        property bool selected: false
+        property color selectedColor: win.raisedColor
+        property color panelColor: win.panelColor
+        property string rowObjectName: "member-" + nick
+        property string highlightObjectName: "memberHighlight"
+        property string presenceObjectName: "presence-dot-" + nick
+        property string statusObjectName: "member-status-" + nick
+        property string typingObjectName: "member-typing-" + nick
+
+        signal activated()
+
+        objectName: rowObjectName
+        Accessible.name: label
+        Accessible.description: win.memberStatusVisible ? status : ""
+        Accessible.role: Accessible.Button
+        Accessible.onPressAction: {
+            if (win.canOpenDirectMessage(memberRow.nick))
+                memberRow.activated();
+        }
+        width: ListView.view ? ListView.view.width : parent.width
+        height: win.scaledSize(43)
+
+        Rectangle {
+            objectName: memberRow.highlightObjectName
+            anchors.fill: parent
+            anchors.leftMargin: win.scaledSize(8)
+            anchors.rightMargin: win.scaledSize(8)
+            radius: win.scaledSize(7)
+            color: memberMouse.containsMouse
+                ? win.hoverColor
+                : (memberRow.selected ? memberRow.selectedColor : "transparent")
+        }
+
+        Rectangle {
+            anchors.left: parent.left
+            anchors.leftMargin: win.scaledSize(18)
+            anchors.verticalCenter: parent.verticalCenter
+            width: win.scaledSize(28)
+            height: width
+            radius: width / 2
+            color: win.mixColors(
+                win.pageColor,
+                win.nickColor(memberRow.nick),
+                win.darkMode ? 0.23 : 0.16)
+            opacity: memberRow.showAway ? 0.62 : 1
+
+            Text {
+                anchors.centerIn: parent
+                text: win.initials(memberRow.nick)
+                color: win.nickColor(memberRow.nick)
+                font.family: "iA Writer Mono S"
+                font.bold: true
+                font.pixelSize: win.scaledSize(11)
+            }
+
+            Rectangle {
+                objectName: memberRow.presenceObjectName
+                visible: win.awayPresenceVisible
+                anchors.right: parent.right
+                anchors.bottom: parent.bottom
+                width: win.scaledSize(7)
+                height: width
+                radius: width / 2
+                color: memberRow.showAway ? "#d6a552" : "#69b978"
+                border.width: win.scaledSize(2)
+                border.color: memberRow.panelColor
+            }
+        }
+
+        Column {
+            anchors.left: parent.left
+            anchors.leftMargin: win.scaledSize(56)
+            anchors.right: parent.right
+            anchors.rightMargin: win.scaledSize(10)
+            anchors.verticalCenter: parent.verticalCenter
+            spacing: 0
+
+            Row {
+                width: parent.width
+                spacing: win.scaledSize(4)
+
+                Text {
+                    width: Math.max(0, parent.width
+                        - (memberRow.typing
+                            ? memberTypingGlyph.implicitWidth + parent.spacing
+                            : 0))
+                    text: memberRow.label
+                    color: memberRow.showAway ? win.mutedColor : win.inkColor
+                    elide: Text.ElideRight
+                    font.family: "iA Writer Mono S"
+                    font.bold: memberRow.nick === win.selfNick
+                    font.pixelSize: win.scaledSize(12)
+                }
+
+                TypingDots {
+                    id: memberTypingGlyph
+                    objectName: memberRow.typingObjectName
+                    visible: memberRow.typing
+                    pixelSize: win.scaledSize(12)
+                }
+            }
+
+            Text {
+                objectName: memberRow.statusObjectName
+                visible: win.memberStatusVisible && memberRow.status.length > 0
+                width: parent.width
+                text: memberRow.status
+                color: win.mutedColor
+                elide: Text.ElideRight
+                font.family: "iA Writer Mono S"
+                font.pixelSize: win.scaledSize(9)
+            }
+        }
+
+        MouseArea {
+            id: memberMouse
+            anchors.fill: parent
+            enabled: win.canOpenDirectMessage(memberRow.nick)
+            hoverEnabled: true
+            cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+            onClicked: memberRow.activated()
         }
     }
 
@@ -830,7 +966,9 @@ ApplicationWindow {
     }
 
     function refreshJumpMatches() {
-        var query = jumpFilter ? jumpFilter.text.trim().toLowerCase() : "";
+        var query = jumpSheet.filterItem
+            ? jumpSheet.filterItem.text.trim().toLowerCase()
+            : "";
         var rows = sidebarConversationRows();
         var sections = sidebarNetworkSections();
         jumpModel.clear();
@@ -868,17 +1006,81 @@ ApplicationWindow {
             jumpSelectedIndex = Math.max(0, jumpModel.count - 1);
     }
 
+    function liveMemberRow(row) {
+        var empty = { nick: "", label: "", status: "", away: false };
+        if (!irc)
+            return empty;
+        var model = irc.members;
+        if (!model)
+            return empty;
+        if (typeof model.get === "function") {
+            var rowData = model.get(row);
+            return {
+                nick: rowData && rowData.nick ? rowData.nick : "",
+                label: rowData && rowData.label ? rowData.label : "",
+                status: rowData && rowData.status ? rowData.status : "",
+                away: !!(rowData && rowData.away)
+            };
+        }
+        var idx = model.index(row, 0);
+        return {
+            nick: model.data(idx, Qt.UserRole + 1) || "",
+            label: model.data(idx, Qt.UserRole + 2) || "",
+            status: model.data(idx, Qt.UserRole + 3) || "",
+            away: model.data(idx, Qt.UserRole + 4) === true
+        };
+    }
+
+    function refreshNickMatches() {
+        var query = nickSheet.filterItem
+            ? nickSheet.filterItem.text.trim().toLowerCase()
+            : "";
+        nickModel.clear();
+        var count = memberCount();
+        for (var row = 0; row < count; ++row) {
+            var member = liveMemberRow(row);
+            if (member.nick.length === 0)
+                continue;
+            if (query.length === 0
+                    || member.nick.toLowerCase().indexOf(query) !== -1)
+                nickModel.append(member);
+        }
+        if (nickSelectedIndex >= nickModel.count)
+            nickSelectedIndex = Math.max(0, nickModel.count - 1);
+    }
+
+    function firstOpenableNickIndex() {
+        for (var index = 0; index < nickModel.count; ++index) {
+            if (canOpenDirectMessage(nickModel.get(index).nick))
+                return index;
+        }
+        return 0;
+    }
+
     function openJumpSheet() {
         jumpSelectedIndex = 0;
         jumpSheet.open();
+    }
+
+    function openNickSheet() {
+        nickSelectedIndex = 0;
+        nickSheet.open();
     }
 
     function stepJump(delta) {
         if (jumpModel.count === 0)
             return;
         jumpSelectedIndex = (jumpSelectedIndex + delta + jumpModel.count) % jumpModel.count;
-        if (jumpList)
-            jumpList.positionViewAtIndex(jumpSelectedIndex, ListView.Contain);
+        if (jumpSheet.listItem)
+            jumpSheet.listItem.positionViewAtIndex(jumpSelectedIndex, ListView.Contain);
+    }
+
+    function stepNick(delta) {
+        if (nickModel.count === 0)
+            return;
+        nickSelectedIndex = (nickSelectedIndex + delta + nickModel.count) % nickModel.count;
+        if (nickSheet.listItem)
+            nickSheet.listItem.positionViewAtIndex(nickSelectedIndex, ListView.Contain);
     }
 
     function activateJumpSelection() {
@@ -902,6 +1104,16 @@ ApplicationWindow {
             }
         }
         selectConversation(name, networkId);
+    }
+
+    function activateNickSelection() {
+        if (nickSelectedIndex < 0 || nickSelectedIndex >= nickModel.count)
+            return;
+        var nick = nickModel.get(nickSelectedIndex).nick;
+        if (!canOpenDirectMessage(nick))
+            return;
+        nickSheet.close();
+        win.openDirectMessage(nick);
     }
 
     function focusNetworkHeader(section) {
@@ -1401,13 +1613,22 @@ ApplicationWindow {
     Shortcut {
         sequence: "Ctrl+K"
         context: Qt.ApplicationShortcut
-        enabled: !win.connectionOverlayVisible && !shortcutsSheet.opened
+        enabled: !win.connectionOverlayVisible
+            && !shortcutsSheet.opened
+            && !nickSheet.opened
         onActivated: {
             if (jumpSheet.opened)
                 jumpSheet.close();
             else
                 win.openJumpSheet();
         }
+    }
+
+    Shortcut {
+        sequence: "Ctrl+Shift+K"
+        context: Qt.ApplicationShortcut
+        enabled: currentConversationIsChannel && !consoleVisible && !win.shortcutOverlayOpen
+        onActivated: win.openNickSheet()
     }
 
     Shortcut {
@@ -1435,7 +1656,7 @@ ApplicationWindow {
         sequence: "Ctrl+/"
         context: Qt.ApplicationShortcut
         onActivated: {
-            if (jumpSheet.opened)
+            if (jumpSheet.opened || nickSheet.opened)
                 return;
             if (shortcutsSheet.opened)
                 shortcutsSheet.close();
@@ -1573,7 +1794,7 @@ ApplicationWindow {
                 return true;
             if (shortcutsSheet.opened || shortcutsSheetEscapeGuard)
                 return true;
-            if (jumpSheet.opened || jumpSheetEscapeGuard)
+            if (jumpSheet.opened || nickSheet.opened || pickerEscapeGuard)
                 return true;
             if (win.connection && win.connection.setupRequired)
                 return false;
@@ -1595,9 +1816,10 @@ ApplicationWindow {
                 shortcutsSheetEscapeGuard = false;
                 return;
             }
-            if (jumpSheet.opened || jumpSheetEscapeGuard) {
+            if (jumpSheet.opened || nickSheet.opened || pickerEscapeGuard) {
                 jumpSheet.close();
-                jumpSheetEscapeGuard = false;
+                nickSheet.close();
+                pickerEscapeGuard = false;
                 return;
             }
             if (win.connection && win.connectionSheetOpen) {
@@ -4668,16 +4890,28 @@ ApplicationWindow {
 
             Text {
                 id: membersHeading
+                objectName: "membersHeading"
                 anchors.top: parent.top
                 anchors.topMargin: win.scaledSize(23)
                 anchors.left: parent.left
                 anchors.leftMargin: win.scaledSize(20)
                 text: "ONLINE - " + win.currentPeopleCount
-                color: win.mutedColor
+                color: membersHeadingHit.containsMouse ? win.inkColor : win.mutedColor
                 font.family: "iA Writer Mono S"
                 font.bold: true
                 font.letterSpacing: win.scaledSize(0.7)
                 font.pixelSize: win.scaledSize(9)
+            }
+
+            MouseArea {
+                id: membersHeadingHit
+                objectName: "membersHeadingButton"
+                anchors.fill: membersHeading
+                hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
+                Accessible.role: Accessible.Button
+                Accessible.name: "Jump to nick"
+                onClicked: win.openNickSheet()
             }
 
             ListView {
@@ -4867,6 +5101,7 @@ ApplicationWindow {
                     { keys: "Alt+Down / Alt+Up", action: "walk conversations" },
                     { keys: "Alt+Left / Alt+Right", action: "walk networks" },
                     { keys: "Ctrl+K", action: "jump to conversation" },
+                    { keys: "Ctrl+Shift+K", action: "jump to nick" },
                     { keys: "Alt+A", action: "next unread" },
                     { keys: "Ctrl+`", action: "Status" },
                     { keys: "Ctrl+,", action: "Connect" },
@@ -4909,14 +5144,25 @@ ApplicationWindow {
         }
     }
 
-    ListModel {
-        id: jumpModel
-        objectName: "jumpModel"
-    }
+    component FilterPickerSheet: Popup {
+        id: sheet
 
-    Popup {
-        id: jumpSheet
-        objectName: "jumpSheet"
+        property string filterObjectName: ""
+        property string placeholderObjectName: ""
+        property string listObjectName: ""
+        property string filterAccessibleName: ""
+        property string placeholderText: ""
+        property alias filterItem: filterField
+        property alias listItem: resultList
+        property var matches: null
+        property int selectedIndex: 0
+        property bool memberRows: false
+        property var refreshMatches: function() {}
+        property var queryChanged: function() {}
+        property var step: function(delta) {}
+        property var activate: function() {}
+        property var prepare: function() {}
+
         x: Math.round((win.width - width) / 2)
         y: Math.round((win.height - height) / 2)
         width: win.scaledSize(348)
@@ -4925,17 +5171,17 @@ ApplicationWindow {
         focus: true
         closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
         onOpened: {
-            jumpSheetEscapeGuard = true;
-            jumpSelectedIndex = 0;
-            if (jumpFilter.text.length > 0)
-                jumpFilter.clear();
+            win.pickerEscapeGuard = true;
+            if (filterField.text.length > 0)
+                filterField.clear();
             else
-                win.refreshJumpMatches();
-            jumpFilter.forceActiveFocus();
+                sheet.refreshMatches();
+            sheet.prepare();
+            filterField.forceActiveFocus();
         }
         onClosed: {
             Qt.callLater(function() {
-                jumpSheetEscapeGuard = false;
+                win.pickerEscapeGuard = false;
                 composer.forceActiveFocus();
             });
         }
@@ -4949,21 +5195,20 @@ ApplicationWindow {
 
         contentItem: Column {
             spacing: win.scaledSize(8)
-            width: jumpSheet.availableWidth
+            width: sheet.availableWidth
 
             Rectangle {
-                id: jumpFilterShell
                 width: parent.width
                 height: win.scaledSize(32)
                 color: win.panelColor
                 border.width: 1
-                border.color: jumpFilter.activeFocus ? win.accentColor : win.dividerColor
+                border.color: filterField.activeFocus ? win.accentColor : win.dividerColor
                 radius: win.scaledSize(7)
 
                 TextField {
-                    id: jumpFilter
-                    objectName: "jumpFilter"
-                    Accessible.name: "Jump to conversation"
+                    id: filterField
+                    objectName: sheet.filterObjectName
+                    Accessible.name: sheet.filterAccessibleName
                     anchors.fill: parent
                     z: 1
                     color: win.inkColor
@@ -4978,17 +5223,17 @@ ApplicationWindow {
                     background: Item {}
                     Keys.onPressed: function(event) {
                         if (event.key === Qt.Key_Down) {
-                            win.stepJump(1);
+                            sheet.step(1);
                             event.accepted = true;
                             return;
                         }
                         if (event.key === Qt.Key_Up) {
-                            win.stepJump(-1);
+                            sheet.step(-1);
                             event.accepted = true;
                             return;
                         }
                         if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
-                            win.activateJumpSelection();
+                            sheet.activate();
                             event.accepted = true;
                             return;
                         }
@@ -4996,69 +5241,147 @@ ApplicationWindow {
                             event.accepted = true;
                         }
                     }
-                    onTextChanged: {
-                        win.jumpSelectedIndex = 0;
-                        win.refreshJumpMatches();
-                    }
+                    onTextChanged: sheet.queryChanged()
                 }
 
                 Text {
-                    objectName: "jumpFilterPlaceholder"
+                    objectName: sheet.placeholderObjectName
                     z: 0
                     anchors.left: parent.left
                     anchors.leftMargin: win.scaledSize(8)
                     anchors.verticalCenter: parent.verticalCenter
-                    text: "Jump to conversation…"
+                    text: sheet.placeholderText
                     color: win.mutedColor
                     font.family: "iA Writer Mono S"
                     font.pixelSize: win.scaledSize(13)
-                    visible: jumpFilter.text.length === 0
+                    visible: filterField.text.length === 0
                 }
             }
 
             ListView {
-                id: jumpList
-                objectName: "jumpList"
+                id: resultList
+                objectName: sheet.listObjectName
                 width: parent.width
                 height: Math.min(contentHeight, win.scaledSize(252))
                 clip: true
                 boundsBehavior: Flickable.StopAtBounds
-                model: jumpModel
-                currentIndex: win.jumpSelectedIndex
+                model: sheet.matches
+                currentIndex: sheet.selectedIndex
                 highlightFollowsCurrentItem: true
+                delegate: sheet.memberRows ? nickDelegate : conversationDelegate
+            }
+        }
 
-                delegate: Item {
-                    id: jumpDelegate
-                    required property int index
-                    required property string label
-                    required property string name
-                    required property string kind
-                    required property string networkId
-                    width: jumpList.width
-                    height: win.scaledSize(28)
-                    readonly property bool current: index === win.jumpSelectedIndex
+        Component {
+            id: conversationDelegate
 
-                    Rectangle {
-                        anchors.fill: parent
-                        radius: win.scaledSize(7)
-                        color: jumpDelegate.current ? win.hoverColor : "transparent"
-                    }
+            Item {
+                id: jumpDelegate
+                required property int index
+                required property string label
+                required property string name
+                required property string kind
+                required property string networkId
+                width: resultList.width
+                height: win.scaledSize(28)
+                readonly property bool current: index === sheet.selectedIndex
 
-                    Text {
-                        anchors.left: parent.left
-                        anchors.right: parent.right
-                        anchors.leftMargin: win.scaledSize(8)
-                        anchors.rightMargin: win.scaledSize(8)
-                        anchors.verticalCenter: parent.verticalCenter
-                        text: jumpDelegate.label
-                        color: jumpDelegate.current ? win.inkColor : win.mutedColor
-                        elide: Text.ElideRight
-                        font.family: "iA Writer Mono S"
-                        font.pixelSize: win.scaledSize(12)
-                    }
+                Rectangle {
+                    anchors.fill: parent
+                    radius: win.scaledSize(7)
+                    color: jumpDelegate.current ? win.hoverColor : "transparent"
+                }
+
+                Text {
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.leftMargin: win.scaledSize(8)
+                    anchors.rightMargin: win.scaledSize(8)
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: jumpDelegate.label
+                    color: jumpDelegate.current ? win.inkColor : win.mutedColor
+                    elide: Text.ElideRight
+                    font.family: "iA Writer Mono S"
+                    font.pixelSize: win.scaledSize(12)
                 }
             }
         }
+
+        Component {
+            id: nickDelegate
+
+            MemberNickRow {
+                required property int index
+
+                memberAway: model.away
+                typing: win.typingVisible
+                    && win.irc
+                    && win.irc.nickIsTyping(nick)
+                selected: index === sheet.selectedIndex
+                selectedColor: win.hoverColor
+                panelColor: win.raisedColor
+                rowObjectName: "nickPick-" + nick
+                highlightObjectName: "nickPickHighlight"
+                presenceObjectName: "nickPick-presence-" + nick
+                statusObjectName: "nickPick-status-" + nick
+                typingObjectName: "nickPick-typing-" + nick
+                onActivated: {
+                    win.nickSelectedIndex = index;
+                    win.activateNickSelection();
+                }
+            }
+        }
+    }
+
+    ListModel {
+        id: jumpModel
+        objectName: "jumpModel"
+    }
+
+    ListModel {
+        id: nickModel
+        objectName: "nickModel"
+    }
+
+    FilterPickerSheet {
+        id: jumpSheet
+        objectName: "jumpSheet"
+        filterObjectName: "jumpFilter"
+        placeholderObjectName: "jumpFilterPlaceholder"
+        listObjectName: "jumpList"
+        filterAccessibleName: "Jump to conversation"
+        placeholderText: "Jump to conversation…"
+        matches: jumpModel
+        selectedIndex: win.jumpSelectedIndex
+        refreshMatches: function() { win.refreshJumpMatches(); }
+        queryChanged: function() {
+            win.jumpSelectedIndex = 0;
+            win.refreshJumpMatches();
+        }
+        step: function(delta) { win.stepJump(delta); }
+        activate: function() { win.activateJumpSelection(); }
+        prepare: function() { win.jumpSelectedIndex = 0; }
+    }
+
+    FilterPickerSheet {
+        id: nickSheet
+        objectName: "nickSheet"
+        filterObjectName: "nickFilter"
+        placeholderObjectName: "nickFilterPlaceholder"
+        listObjectName: "nickList"
+        filterAccessibleName: "Jump to nick"
+        placeholderText: "Jump to nick…"
+        matches: nickModel
+        selectedIndex: win.nickSelectedIndex
+        memberRows: true
+        refreshMatches: function() { win.refreshNickMatches(); }
+        queryChanged: function() {
+            win.refreshNickMatches();
+            win.nickSelectedIndex = win.firstOpenableNickIndex();
+        }
+        step: function(delta) { win.stepNick(delta); }
+        activate: function() { win.activateNickSelection(); }
+        prepare: function() { win.nickSelectedIndex = win.firstOpenableNickIndex(); }
     }
 
     property rect normalGeometry: Qt.rect(x, y, width, height)
