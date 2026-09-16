@@ -12,12 +12,10 @@ greaterThan(QMAKE_GCC_MAJOR_VERSION, 15): QMAKE_CXXFLAGS += -Wno-sfinae-incomple
 
 INCLUDEPATH += ../src ../src/irc support
 include($$PWD/../version.pri)
-TEST_CERT_DIR = $$PWD/support/certs
-TEST_CERT_DIR = $$replace(TEST_CERT_DIR, \\, /)
-TEST_CORPUS_DIR = $$PWD/protocol/corpus
-TEST_CORPUS_DIR = $$replace(TEST_CORPUS_DIR, \\, /)
-DEFINES += TEST_CERT_DIR=\\\"$$TEST_CERT_DIR\\\"
-DEFINES += TEST_CORPUS_DIR=\\\"$$TEST_CORPUS_DIR\\\"
+# $$PWD already uses forward slashes on current Qt kits; do not $$replace(..., \\, /)
+# here — that regex clears the path on win32-g++ qmake 3.1.
+DEFINES += TEST_CERT_DIR=\\\"$$PWD/support/certs\\\"
+DEFINES += TEST_CORPUS_DIR=\\\"$$PWD/protocol/corpus\\\"
 
 HEADERS += \
     ../src/singleinstance.h \

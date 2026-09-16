@@ -435,12 +435,26 @@ void ProfileTest::storeRemoveDropsTheNetworkGroup()
     QCOMPARE(loaded.first().networkId, keep.networkId);
     QCOMPARE(loaded.first().host, QStringLiteral("irc.example.net"));
 
+#ifndef Q_OS_WIN
     QFile file(settingsFile());
     QVERIFY(file.open(QIODevice::ReadOnly | QIODevice::Text));
     const QString contents = QString::fromUtf8(file.readAll());
     QVERIFY(contents.contains(keep.networkId));
     QVERIFY(!contents.contains(drop.networkId));
     QVERIFY(!contents.contains(QLatin1String("irc.oftc.net")));
+#else
+    QSettings stored;
+    const QStringList values = [&stored]() {
+        QStringList out;
+        for (const QString &key : stored.allKeys())
+            out.append(stored.value(key).toString());
+        return out;
+    }();
+    const QString joined = values.join(QLatin1Char('\n'));
+    QVERIFY(joined.contains(keep.networkId));
+    QVERIFY(!joined.contains(drop.networkId));
+    QVERIFY(!joined.contains(QLatin1String("irc.oftc.net")));
+#endif
 }
 
 int runProfileTests(int argc, char **argv)

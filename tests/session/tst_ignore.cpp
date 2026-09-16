@@ -206,7 +206,7 @@ void IgnoreTest::filterDropsPrivateNoticeInviteAndKeepsChannel()
         mustParse(":lena!u@h PRIVMSG #omarchy :hello"), QStringLiteral("omairc"),
         nicks, features));
     QVERIFY(!ircIgnoreDropsInbound(
-        mustParse(":lena!u@h PRIVMSG #omarchy :\x01ACTION waves\x01"),
+        mustParse(":lena!u@h PRIVMSG #omarchy :" "\x01" "ACTION waves" "\x01"),
         QStringLiteral("omairc"), nicks, features));
     QVERIFY(!ircIgnoreDropsInbound(
         mustParse(":bob!u@h PRIVMSG omairc :hi"), QStringLiteral("omairc"), nicks,

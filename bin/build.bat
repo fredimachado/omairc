@@ -45,6 +45,11 @@ if exist "!QTBIN!\windeployqt.exe" (
   if errorlevel 1 exit /b 1
 )
 
+rem windeployqt does not always ship QtKeychain; copy it next to the exe when present.
+for %%F in ("!QTBIN!\libqt6keychain.dll" "!QTBIN!\qt6keychain.dll") do (
+  if exist %%F copy /Y %%F "!BUILD_DIR!\release\" >nul
+)
+
 echo Built !EXE!
 exit /b 0
 
