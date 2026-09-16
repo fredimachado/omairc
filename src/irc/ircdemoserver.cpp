@@ -10,10 +10,6 @@
 #include "irctcp.h"
 #include "ircwiretext.h"
 
-#ifndef OMAIRC_VERSION
-#error "Build with version.pri so OMAIRC_VERSION is defined"
-#endif
-
 #include <QDateTime>
 #include <QHash>
 #include <QPair>
@@ -636,7 +632,7 @@ bool tryAnswerCtcp(IrcLoopbackTransport *transport, const QString &selfNick,
     } else if (request->command == QLatin1String("TIME")) {
         argument = QDateTime::currentDateTime().toString(Qt::RFC2822Date);
     } else if (request->command == QLatin1String("VERSION")) {
-        argument = QStringLiteral("Omairc %1").arg(QString::fromLatin1(OMAIRC_VERSION));
+        argument = ctcpVersionReplyText();
     } else {
         return false;
     }

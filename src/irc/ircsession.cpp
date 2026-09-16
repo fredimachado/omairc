@@ -936,7 +936,7 @@ void IrcSession::handleMessage(const IrcMessage &message)
             } else if (request->command == QStringLiteral("VERSION")) {
                 payload = ctcpPayload({
                     QStringLiteral("VERSION"),
-                    QStringLiteral("Omairc %1").arg(QString::fromLatin1(OMAIRC_VERSION)),
+                    ctcpVersionReplyText(),
                 });
             } else {
                 return;

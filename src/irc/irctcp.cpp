@@ -36,6 +36,11 @@ QString ctcpPayload(const IrcCtcpRequest& request)
     return QChar(1) + body + QChar(1);
 }
 
+QString ctcpVersionReplyText()
+{
+    return QStringLiteral("https://omairc.app");
+}
+
 QString formatCtcpReplyText(const QString& command,
                             const QString& nick,
                             const QString& argument,

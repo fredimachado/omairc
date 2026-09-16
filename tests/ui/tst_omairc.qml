@@ -2996,7 +2996,7 @@ TestCase {
             return last >= previousCount
                 && field(list.model, last, "kind") === "whois"
                 && field(list.model, last, "body").indexOf(
-                    "VERSION reply from anna: Omairc ") === 0;
+                    "VERSION reply from anna: https://omairc.app") === 0;
         });
         var replyAt = list.model.rowCount() - 1;
         list.positionViewAtIndex(replyAt, ListView.Contain);
