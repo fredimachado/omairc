@@ -40,6 +40,21 @@ ApplicationWindow {
     readonly property color hoverColor: mixColors(pageColor, inkColor, darkMode ? 0.10 : 0.075)
     readonly property color dividerColor: mixColors(pageColor, inkColor, darkMode ? 0.13 : 0.11)
     readonly property color mutedColor: mixColors(pageColor, inkColor, darkMode ? 0.52 : 0.47)
+    readonly property var nickPalette: [
+        accentColor,
+        darkMode ? "#c099ff" : "#7950b8",
+        darkMode ? "#7fc8a9" : "#237a58",
+        darkMode ? "#efb366" : "#a45f14",
+        darkMode ? "#ed8f9d" : "#b44355"
+    ]
+    readonly property real nickAvatarMix: darkMode ? 0.23 : 0.16
+    readonly property var nickAvatarFills: [
+        mixColors(pageColor, nickPalette[0], nickAvatarMix),
+        mixColors(pageColor, nickPalette[1], nickAvatarMix),
+        mixColors(pageColor, nickPalette[2], nickAvatarMix),
+        mixColors(pageColor, nickPalette[3], nickAvatarMix),
+        mixColors(pageColor, nickPalette[4], nickAvatarMix)
+    ]
 
     property bool membersVisible: true
     property bool shortcutsSheetEscapeGuard: false
@@ -47,6 +62,7 @@ ApplicationWindow {
     property string sidebarNetworkFocusId: ""
     property int jumpSelectedIndex: 0
     property int nickSelectedIndex: 0
+    property var nickSourceRows: []
     readonly property bool shortcutOverlayOpen: shortcutsSheet.opened
         || jumpSheet.opened
         || nickSheet.opened
@@ -385,21 +401,18 @@ ApplicationWindow {
     }
 
     function paletteColor(index) {
-        var palette = [
-            accentColor,
-            darkMode ? "#c099ff" : "#7950b8",
-            darkMode ? "#7fc8a9" : "#237a58",
-            darkMode ? "#efb366" : "#a45f14",
-            darkMode ? "#ed8f9d" : "#b44355"
-        ];
-        return palette[index];
+        return nickPalette[index];
     }
 
-    function nickColor(nick) {
+    function nickPaletteIndex(nick) {
         var hash = 0;
         for (var index = 0; index < nick.length; ++index)
             hash = (hash + nick.charCodeAt(index)) % 5;
-        return paletteColor(hash);
+        return hash;
+    }
+
+    function nickColor(nick) {
+        return paletteColor(nickPaletteIndex(nick));
     }
 
     function initials(nick) {
@@ -896,17 +909,34 @@ ApplicationWindow {
         };
     }
 
-    function refreshNickMatches() {
-        var query = nickFilter ? nickFilter.text.trim().toLowerCase() : "";
-        nickModel.clear();
+    function snapshotChannelMembers() {
+        var rows = [];
         var count = memberCount();
         for (var row = 0; row < count; ++row) {
             var member = liveMemberRow(row);
             if (member.nick.length === 0)
                 continue;
+            rows.push(member);
+        }
+        return rows;
+    }
+
+    function refreshNickMatches() {
+        var query = nickFilter ? nickFilter.text.trim().toLowerCase() : "";
+        nickModel.clear();
+        var source = nickSourceRows;
+        for (var row = 0; row < source.length; ++row) {
+            var member = source[row];
             if (query.length === 0
                     || member.nick.toLowerCase().indexOf(query) !== -1)
-                nickModel.append(member);
+                nickModel.append({
+                    name: member.nick,
+                    label: member.label,
+                    memberStatus: member.status,
+                    awayFlag: member.away ? 1 : 0,
+                    glyph: initials(member.nick),
+                    paletteIndex: nickPaletteIndex(member.nick)
+                });
         }
         if (nickSelectedIndex >= nickModel.count)
             nickSelectedIndex = Math.max(0, nickModel.count - 1);
@@ -914,7 +944,7 @@ ApplicationWindow {
 
     function firstOpenableNickIndex() {
         for (var index = 0; index < nickModel.count; ++index) {
-            if (canOpenDirectMessage(nickModel.get(index).nick))
+            if (canOpenDirectMessage(nickModel.get(index).name))
                 return index;
         }
         return 0;
@@ -926,6 +956,7 @@ ApplicationWindow {
     }
 
     function openNickSheet() {
+        nickSourceRows = snapshotChannelMembers();
         nickSelectedIndex = 0;
         nickSheet.open();
     }
@@ -972,7 +1003,7 @@ ApplicationWindow {
     function activateNickSelection() {
         if (nickSelectedIndex < 0 || nickSelectedIndex >= nickModel.count)
             return;
-        var nick = nickModel.get(nickSelectedIndex).nick;
+        var nick = nickModel.get(nickSelectedIndex).name;
         if (!canOpenDirectMessage(nick))
             return;
         nickSheet.close();
@@ -5304,20 +5335,27 @@ ApplicationWindow {
                 delegate: Item {
                     id: nickRow
                     required property int index
-                    required property string nick
+                    required property string name
                     required property string label
-                    required property string status
-                    required property bool away
+                    required property string memberStatus
+                    required property int awayFlag
+                    required property string glyph
+                    required property int paletteIndex
 
+                    readonly property string nick: name
+                    readonly property bool away: awayFlag === 1
                     readonly property bool showAway: win.awayPresenceVisible && away
                     readonly property bool selected: index === win.nickSelectedIndex
+                    readonly property bool openable: name !== win.selfNick
+                    readonly property color nickTint: win.nickPalette[paletteIndex]
+                    readonly property color avatarFill: win.nickAvatarFills[paletteIndex]
 
-                    objectName: "nickPick-" + nick
+                    objectName: "nickPick-" + name
                     Accessible.name: label
-                    Accessible.description: win.memberStatusVisible ? status : ""
+                    Accessible.description: win.memberStatusVisible ? memberStatus : ""
                     Accessible.role: Accessible.Button
                     Accessible.onPressAction: {
-                        if (win.canOpenDirectMessage(nick)) {
+                        if (openable) {
                             win.nickSelectedIndex = index;
                             win.activateNickSelection();
                         }
@@ -5343,16 +5381,13 @@ ApplicationWindow {
                         width: win.scaledSize(28)
                         height: width
                         radius: width / 2
-                        color: win.mixColors(
-                            win.pageColor,
-                            win.nickColor(nickRow.nick),
-                            win.darkMode ? 0.23 : 0.16)
+                        color: nickRow.avatarFill
                         opacity: nickRow.showAway ? 0.62 : 1
 
                         Text {
                             anchors.centerIn: parent
-                            text: win.initials(nickRow.nick)
-                            color: win.nickColor(nickRow.nick)
+                            text: nickRow.glyph
+                            color: nickRow.nickTint
                             font.family: "iA Writer Mono S"
                             font.bold: true
                             font.pixelSize: win.scaledSize(11)
@@ -5392,9 +5427,9 @@ ApplicationWindow {
 
                         Text {
                             objectName: "nickPick-status-" + nickRow.nick
-                            visible: win.memberStatusVisible && nickRow.status.length > 0
+                            visible: win.memberStatusVisible && nickRow.memberStatus.length > 0
                             width: parent.width
-                            text: nickRow.status
+                            text: nickRow.memberStatus
                             color: win.mutedColor
                             elide: Text.ElideRight
                             font.family: "iA Writer Mono S"
@@ -5405,7 +5440,7 @@ ApplicationWindow {
                     MouseArea {
                         id: nickMouse
                         anchors.fill: parent
-                        enabled: win.canOpenDirectMessage(nickRow.nick)
+                        enabled: nickRow.openable
                         hoverEnabled: true
                         cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
                         onClicked: {

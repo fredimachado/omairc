@@ -1130,7 +1130,7 @@ TestCase {
         var rows = [];
         var index = 0;
         for (; index < model.count; ++index)
-            rows.push(model.get(index).nick + "=" + model.get(index).label);
+            rows.push(model.get(index).name + "=" + model.get(index).label);
         return rows;
     }
 
@@ -3368,7 +3368,7 @@ TestCase {
                 "fred=~fred anna=&anna dax=@dax mira=@mira kai=%kai teo=+teo "
                 + "ivy=ivy lena=lena max=max nora=nora sam=sam sol=sol");
         compare(appWindow.nickSelectedIndex, 1);
-        compare(item("nickModel").get(1).nick, "anna");
+        compare(item("nickModel").get(1).name, "anna");
         saveScreenshot("jump-to-nick");
 
         typeText("mi");
@@ -3376,9 +3376,9 @@ TestCase {
         compare(item("nickFilterPlaceholder").visible, false);
         var model = item("nickModel");
         compare(model.count, 1);
-        compare(model.get(0).nick, "mira");
+        compare(model.get(0).name, "mira");
         compare(model.get(0).label, "@mira");
-        compare(model.get(0).status, "making tea");
+        compare(model.get(0).memberStatus, "making tea");
         compare(appWindow.nickSelectedIndex, 0);
 
         keyClick(Qt.Key_Return);
@@ -3399,7 +3399,7 @@ TestCase {
         typeText("anna");
         tryCompare(item("nickFilter"), "text", "anna");
         compare(item("nickModel").count, 1);
-        compare(item("nickModel").get(0).nick, "anna");
+        compare(item("nickModel").get(0).name, "anna");
         keyClick(Qt.Key_Return);
         tryCompare(sheet, "opened", false);
         tryCompare(appWindow, "currentConversation", "anna");
@@ -3443,7 +3443,7 @@ TestCase {
         typeText("kai");
         tryCompare(item("nickFilter"), "text", "kai");
         compare(item("nickModel").count, 1);
-        compare(item("nickModel").get(0).nick, "kai");
+        compare(item("nickModel").get(0).name, "kai");
         keyClick(Qt.Key_Return);
         tryCompare(sheet, "opened", false);
         tryCompare(appWindow, "currentConversation", "kai");
@@ -3459,17 +3459,19 @@ TestCase {
         var teo = -1;
         var index = 0;
         for (; index < model.count; ++index) {
-            if (model.get(index).nick === "teo") {
+            if (model.get(index).name === "teo") {
                 teo = index;
                 break;
             }
         }
         verify(teo >= 0, "teo should be in the nick sheet");
-        compare(model.get(teo).away, true);
+        compare(model.get(teo).awayFlag, 1);
         compare(model.get(teo).label, "+teo");
         var list = item("nickList");
         list.positionViewAtIndex(teo, ListView.Contain);
-        waitForRendering(appWindow.contentItem);
+        tryVerify(function() {
+            return list.itemAtIndex(teo) !== null;
+        });
         var row = list.itemAtIndex(teo);
         verify(row !== null, "teo nick row should render");
         compare(row.nick, "teo");
@@ -3505,7 +3507,7 @@ TestCase {
         var sheet = item("nickSheet");
         tryCompare(sheet, "opened", true);
         tryCompare(item("nickFilter"), "activeFocus", true);
-        compare(item("nickModel").get(0).nick, "fred");
+        compare(item("nickModel").get(0).name, "fred");
         keyClick(Qt.Key_Escape);
         tryCompare(sheet, "opened", false);
         tryCompare(item("messageComposer"), "activeFocus", true);
