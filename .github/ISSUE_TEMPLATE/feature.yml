@@ -1,0 +1,31 @@
+name: Feature idea
+description: Suggest a change or new capability.
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Ideas are welcome. Say what you want and why — we can figure out the shape later.
+        Informal brainstorming also fits [#omarchy](https://web.libera.chat/#omarchy) or [#omairc](https://web.libera.chat/#omairc) on Libera.
+  - type: textarea
+    id: idea
+    attributes:
+      label: What should Omairc do?
+      description: Describe the feature or change in plain language.
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: Why does this matter?
+      description: What problem does it solve, or what workflow does it unlock?
+    validations:
+      required: false
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives you've considered
+      description: Other approaches, existing slash commands, or clients that do this well.
+    validations:
+      required: false

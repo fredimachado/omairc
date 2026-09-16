@@ -1,0 +1,42 @@
+name: Bug report
+description: Something isn't working the way it should.
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for filing a bug. Fill in what you can — incomplete reports are still useful.
+        For a quick chat first, try [#omarchy](https://web.libera.chat/#omarchy) or [#omairc](https://web.libera.chat/#omairc) on Libera.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you expect, and what actually happened?
+      placeholder: Steps to reproduce, then expected vs actual result.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Omairc version
+      description: From `omairc --version`, or the package version if you installed with pacman.
+      placeholder: e.g. 0.5.0
+    validations:
+      required: false
+  - type: input
+    id: system
+    attributes:
+      label: System
+      description: Distro and desktop matter for themes, notifications, and Secret Service.
+      placeholder: e.g. Omarchy, Arch + Hyprland
+    validations:
+      required: false
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs or status console lines
+      description: Paste anything useful from the Status console or `$XDG_STATE_HOME/omairc/`. Strip passwords and NickServ secrets.
+      render: text
+    validations:
+      required: false
