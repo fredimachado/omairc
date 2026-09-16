@@ -6,6 +6,26 @@
 
 namespace
 {
+// A direct message row carries the peer's presence so the sidebar can stop
+// claiming "online" for someone the member list would mark away. The facts come
+// from the reducer, the same source member rows read.
+QString conversationPresence(const IrcEventReducer& reducer,
+                             const IrcConversationState& conversation)
+{
+    if (conversation.isChannel())
+        return {};
+    switch (reducer.peerPresence(conversation.key.networkId,
+                                 conversation.key.normalizedTarget)) {
+    case IrcPeerPresence::Online:
+        return QStringLiteral("online");
+    case IrcPeerPresence::Away:
+        return QStringLiteral("away");
+    case IrcPeerPresence::Unknown:
+        break;
+    }
+    return QStringLiteral("offline");
+}
+
 int groupRank(const IrcConversationState *conversation)
 {
     if (!conversation || !conversation->isChannel())
@@ -132,9 +152,10 @@ QVariant ConversationListModel::data(const QModelIndex& index, int role) const
                                             QDateTime::currentDateTimeUtc());
     case MutedRole:
         return conversation->muted;
-    default:
-        return {};
+    case PresenceRole:
+        return conversationPresence(m_reducer, *conversation);
     }
+    return {};
 }
 
 QHash<int, QByteArray> ConversationListModel::roleNames() const
@@ -149,6 +170,7 @@ QHash<int, QByteArray> ConversationListModel::roleNames() const
         {ConversationNameRole, "conversationName"},
         {TypingRole, "typing"},
         {MutedRole, "muted"},
+        {PresenceRole, "presence"},
     };
 }
 
@@ -161,7 +183,7 @@ void ConversationListModel::reload()
         emit dataChanged(index(0, 0),
                          index(keys.size() - 1, 0),
                          {Qt::DisplayRole, ConversationRole, UnreadRole, MentionRole,
-                          TypingRole, MutedRole});
+                          TypingRole, MutedRole, PresenceRole});
         return;
     }
     beginResetModel();

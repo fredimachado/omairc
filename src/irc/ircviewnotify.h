@@ -162,8 +162,12 @@ struct IrcViewClassifier {
 
     IrcViewNotify operator()(const IrcAwayEvent& event) const
     {
-        return IrcViewNotify::memberRow(
+        IrcViewNotify notify = IrcViewNotify::memberRow(
             reducer.conversationKey(event.networkId, event.nick).normalizedTarget);
+        // A direct message row paints this peer's presence from the same facts,
+        // so the sidebar has to repaint when their away state lands.
+        notify.conversations = true;
+        return notify;
     }
 
     IrcViewNotify operator()(const IrcMemberStatusEvent& event) const

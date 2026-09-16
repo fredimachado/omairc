@@ -2420,6 +2420,9 @@ ApplicationWindow {
         property bool muted: false
         property bool direct: false
         property bool typing: false
+        // "online" / "away" / "offline" for a direct message, empty for a
+        // channel. Direct rows reuse the member list's presence source.
+        property string presence: ""
         property string networkId: ""
         property string conversationId: networkId + "\n" + conversationName
 
@@ -2486,12 +2489,19 @@ ApplicationWindow {
             }
 
             Rectangle {
+                objectName: "conversation-presence-" + conversationRow.networkId
+                    + "-" + conversationRow.conversationName
+                // Other people's away state needs away-notify, exactly like the
+                // member rows. An unknown peer reads as offline, not online.
+                visible: conversationRow.direct && win.awayPresenceVisible
                 anchors.right: parent.right
                 anchors.bottom: parent.bottom
                 width: win.scaledSize(7)
                 height: width
                 radius: width / 2
-                color: "#69b978"
+                color: conversationRow.presence === "away" ? "#d6a552"
+                    : (conversationRow.presence === "online"
+                        ? "#69b978" : win.mutedColor)
                 border.width: win.scaledSize(2)
                 border.color: win.panelColor
             }
@@ -3003,6 +3013,7 @@ ApplicationWindow {
                                     muted: model.muted
                                     direct: model.direct
                                     typing: model.typing
+                                    presence: model.presence || ""
                                     networkId: model.networkId
                                     visible: model.direct
                                         && model.networkId === liveNet.networkId

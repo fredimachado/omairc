@@ -80,6 +80,7 @@ private slots:
     void clearMessagesEmptiesAfterCap();
     void selfAwayIsNetworkMembershipNotMemberPresence();
     void selfAwayShowsOnOurOwnRowInEveryChannel();
+    void peerPresenceFollowsSharedChannelAndAwayFacts();
     void staleNamesSyncReleasesAfterThirtySeconds();
     void consecutiveJoinsCollapseIntoOneEvent();
     void privmsgBreaksJoinCollapse();
@@ -1078,6 +1079,42 @@ void ReducerTest::selfAwayShowsOnOurOwnRowInEveryChannel()
     reducer.apply(IrcSelfAwayEvent{networkA, false});
     QVERIFY(!reducer.memberView(omarchy, QStringLiteral("omairc"))->isAway());
     QVERIFY(!reducer.memberView(desktop, QStringLiteral("omairc"))->isAway());
+}
+
+void ReducerTest::peerPresenceFollowsSharedChannelAndAwayFacts()
+{
+    IrcEventReducer reducer;
+    welcome(reducer, networkA);
+
+    // No shared channel proves the nick is online, so a direct message must not
+    // paint it as available.
+    QVERIFY(reducer.peerPresence(networkA, QStringLiteral("alice"))
+            == IrcPeerPresence::Unknown);
+
+    reducer.apply(IrcJoinEvent{
+        networkA, QStringLiteral("#omarchy"), QStringLiteral("Alice")});
+    QVERIFY(reducer.peerPresence(networkA, QStringLiteral("alice"))
+            == IrcPeerPresence::Online);
+
+    // The away flag is the same fact a channel member row reads.
+    reducer.apply(IrcAwayEvent{networkA, QStringLiteral("Alice"),
+                               IrcAway{QStringLiteral("lunch")}});
+    QVERIFY(reducer.peerPresence(networkA, QStringLiteral("alice"))
+            == IrcPeerPresence::Away);
+
+    reducer.apply(IrcAwayEvent{networkA, QStringLiteral("Alice"), std::nullopt});
+    QVERIFY(reducer.peerPresence(networkA, QStringLiteral("alice"))
+            == IrcPeerPresence::Online);
+
+    // Losing the last shared channel drops the presence with the facts, so the
+    // direct message stops claiming online.
+    reducer.apply(IrcQuitEvent{networkA, QStringLiteral("Alice"), QString()});
+    QVERIFY(reducer.peerPresence(networkA, QStringLiteral("alice"))
+            == IrcPeerPresence::Unknown);
+
+    // Presence is per network.
+    QVERIFY(reducer.peerPresence(networkB, QStringLiteral("alice"))
+            == IrcPeerPresence::Unknown);
 }
 
 void ReducerTest::staleNamesSyncReleasesAfterThirtySeconds()

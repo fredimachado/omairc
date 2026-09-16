@@ -209,6 +209,7 @@ TestCase {
             conversationId: "libera\n#omarchy"
             conversationName: "#omarchy"
             typing: false
+            presence: ""
         }
         ListElement {
             conversation: "anna"
@@ -219,6 +220,7 @@ TestCase {
             conversationId: "libera\nanna"
             conversationName: "anna"
             typing: true
+            presence: "online"
         }
     }
 
@@ -4948,6 +4950,46 @@ TestCase {
         var dots = findChild(row, "conversation-typing-libera-anna");
         verify(dots !== null, "The live DM typing indicator should exist");
         tryCompare(dots, "visible", true);
+        window.close();
+    }
+
+    function test_liveDmPresenceFollowsAwayFacts() {
+        liveConversations.setProperty(1, "presence", "online");
+        var window = createTemporaryObject(liveWindowComponent, null);
+        verify(window !== null, "The live window should load");
+        tryCompare(window, "visible", true);
+        waitForRendering(window.contentItem);
+
+        var networks = findChild(window, "liveNetworkRepeater");
+        verify(networks !== null, "The live network repeater should exist");
+        var network = networks.itemAt(0);
+        var dms = findChild(network, "directConversationRepeater");
+        verify(dms !== null, "The live direct-message repeater should exist");
+        var row = dms.itemAt(1);
+        verify(row !== null, "The live DM row should be rendered");
+        compare(row.conversationName, "anna");
+        var dot = findChild(row, "conversation-presence-libera-anna");
+        verify(dot !== null, "The DM presence dot should be rendered");
+        compare(dot.visible, true);
+        verify(Qt.colorEqual(dot.color, "#69b978"));
+
+        liveConversations.setProperty(1, "presence", "away");
+        waitForRendering(window.contentItem);
+        verify(Qt.colorEqual(dot.color, "#d6a552"));
+
+        // A peer we cannot place in a shared channel reads offline, not online.
+        liveConversations.setProperty(1, "presence", "offline");
+        waitForRendering(window.contentItem);
+        verify(Qt.colorEqual(dot.color, window.mutedColor));
+        compare(dot.visible, true);
+
+        // Other people's away state needs away-notify, like member rows.
+        liveIrc.hasAwayPresence = false;
+        waitForRendering(window.contentItem);
+        compare(dot.visible, false);
+        liveIrc.hasAwayPresence = true;
+
+        liveConversations.setProperty(1, "presence", "online");
         window.close();
     }
 
