@@ -1545,7 +1545,44 @@ QString IrcController::ctcpQueryName(IrcCommand::Verb verb) const
         return QStringLiteral("TIME");
     case IrcCommand::Verb::Version:
         return QStringLiteral("VERSION");
-    default:
+    case IrcCommand::Verb::Empty:
+    case IrcCommand::Verb::Say:
+    case IrcCommand::Verb::Action:
+    case IrcCommand::Verb::Join:
+    case IrcCommand::Verb::Part:
+    case IrcCommand::Verb::Nick:
+    case IrcCommand::Verb::Quit:
+    case IrcCommand::Verb::Clear:
+    case IrcCommand::Verb::Close:
+    case IrcCommand::Verb::Query:
+    case IrcCommand::Verb::Msg:
+    case IrcCommand::Verb::Topic:
+    case IrcCommand::Verb::Notice:
+    case IrcCommand::Verb::Away:
+    case IrcCommand::Verb::Back:
+    case IrcCommand::Verb::Whois:
+    case IrcCommand::Verb::Mode:
+    case IrcCommand::Verb::Kick:
+    case IrcCommand::Verb::Invite:
+    case IrcCommand::Verb::Ignore:
+    case IrcCommand::Verb::Unignore:
+    case IrcCommand::Verb::Ignored:
+    case IrcCommand::Verb::Mute:
+    case IrcCommand::Verb::Unmute:
+    case IrcCommand::Verb::Muted:
+    case IrcCommand::Verb::Highlight:
+    case IrcCommand::Verb::Unhighlight:
+    case IrcCommand::Verb::Highlights:
+    case IrcCommand::Verb::Op:
+    case IrcCommand::Verb::Deop:
+    case IrcCommand::Verb::Voice:
+    case IrcCommand::Verb::Devoice:
+    case IrcCommand::Verb::Ban:
+    case IrcCommand::Verb::Ns:
+    case IrcCommand::Verb::Cs:
+    case IrcCommand::Verb::Raw:
+    case IrcCommand::Verb::Help:
+    case IrcCommand::Verb::Unknown:
         return {};
     }
 }
@@ -1554,9 +1591,6 @@ IrcCommandOutcome IrcController::dispatchCtcp(const IrcCommand& command,
                                               IrcComposerSurface surface)
 {
     const QString query = ctcpQueryName(command.verb);
-    if (query.isEmpty())
-        return IrcCommandOutcome::Unsupported;
-
     QString nick = firstToken(command.argument);
     if (!restAfterFirstToken(command.argument).isEmpty())
         return IrcCommandOutcome::Refused;
