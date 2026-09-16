@@ -204,9 +204,9 @@ void MuteTest::parseAndCatalog()
              IrcCommand::Verb::Muted);
     QVERIFY(IrcCommand::parse(QStringLiteral("/mute #omarchy"))
                 .allowedOn(IrcComposerSurface::Status));
-    QCOMPARE(IrcVerbTable::all().size(), 35);
-    QCOMPARE(IrcVerbTable::visibleOn(IrcComposerSurface::Status).size(), 27);
-    QCOMPARE(IrcVerbTable::visibleOn(IrcComposerSurface::Conversation).size(), 35);
+    QCOMPARE(IrcVerbTable::all().size(), 38);
+    QCOMPARE(IrcVerbTable::visibleOn(IrcComposerSurface::Status).size(), 30);
+    QCOMPARE(IrcVerbTable::visibleOn(IrcComposerSurface::Conversation).size(), 38);
     const auto probe = IrcSlashComplete::project(
         QStringLiteral("/mu"), IrcComposerSurface::Conversation);
     QVERIFY(probe.isOpen());

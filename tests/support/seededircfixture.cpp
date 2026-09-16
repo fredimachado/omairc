@@ -192,6 +192,16 @@ bool SeededIrcFixture::installXdg()
 
 bool SeededIrcFixture::open()
 {
+    return start(false);
+}
+
+bool SeededIrcFixture::openWithAutoEcho()
+{
+    return start(true);
+}
+
+bool SeededIrcFixture::start(bool autoEcho)
+{
     if (m_controller)
         return fail(QStringLiteral("already open"));
     if (!installXdg())
@@ -208,7 +218,7 @@ bool SeededIrcFixture::open()
     m_controller = std::make_unique<IrcController>();
     m_credentials = std::make_unique<MissingCredentialStore>();
     m_connection = std::make_unique<IrcConnection>(*m_controller, *m_credentials);
-    if (!m_demo->attach(*m_controller))
+    if (!m_demo->attach(*m_controller, autoEcho))
         return fail(m_demo->lastError().isEmpty()
                         ? QStringLiteral("attach demo")
                         : m_demo->lastError());

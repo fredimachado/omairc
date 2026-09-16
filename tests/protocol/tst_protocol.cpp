@@ -29,6 +29,7 @@
 #include "ircparser.h"
 #include "ircprefixnick.h"
 #include "ircserverfeatures.h"
+#include "irctcp.h"
 #include "ircwiretext.h"
 
 #include <string>
@@ -96,6 +97,7 @@ private slots:
     void privmsgWithoutTimeUsesCurrentUtc();
     void privmsgInvalidTimeUsesCurrentUtc();
     void actionAndTypingUseIrcv3TimeTag();
+    void parsesAndFormatsCtcp();
     void buildsJoin();
     void rejectsInvalidJoin();
 };
@@ -563,6 +565,46 @@ void ProtocolTest::actionAndTypingUseIrcv3TimeTag()
     QCOMPARE(typingEvent->phase, IrcTypingPhase::Active);
     QCOMPARE(typingEvent->receivedAt.toUTC().toMSecsSinceEpoch(),
              exampleServerTime().toMSecsSinceEpoch());
+}
+
+void ProtocolTest::parsesAndFormatsCtcp()
+{
+    const auto version = parseCtcpRequest(QChar(1) + QStringLiteral("VERSION") + QChar(1));
+    QVERIFY(version);
+    QCOMPARE(version->command, QStringLiteral("VERSION"));
+    QVERIFY(version->argument.isEmpty());
+    QCOMPARE(ctcpPayload(*version), QChar(1) + QStringLiteral("VERSION") + QChar(1));
+
+    const auto ping = parseCtcpRequest(QChar(1) + QStringLiteral("ping 42") + QChar(1));
+    QVERIFY(ping);
+    QCOMPARE(ping->command, QStringLiteral("PING"));
+    QCOMPARE(ping->argument, QStringLiteral("42"));
+    QCOMPARE(ctcpPayload(*ping), QChar(1) + QStringLiteral("PING 42") + QChar(1));
+
+    QVERIFY(!parseCtcpRequest(QStringLiteral("VERSION")));
+    QVERIFY(!parseCtcpRequest(QChar(1) + QString(QChar(1))));
+
+    const QDateTime now = QDateTime::fromMSecsSinceEpoch(1'700'000'000'042, QTimeZone::UTC);
+    QCOMPARE(formatCtcpReplyText(QStringLiteral("PING"),
+                                 QStringLiteral("lena"),
+                                 QStringLiteral("1700000000000"),
+                                 now),
+             QStringLiteral("PING reply from lena: 42 ms"));
+    QCOMPARE(formatCtcpReplyText(QStringLiteral("PING"),
+                                 QStringLiteral("lena"),
+                                 QString(),
+                                 now),
+             QStringLiteral("PING reply from lena"));
+    QCOMPARE(formatCtcpReplyText(QStringLiteral("TIME"),
+                                 QStringLiteral("lena"),
+                                 QStringLiteral("Tue, 15 Sep 2026 12:00:00 +0000"),
+                                 now),
+             QStringLiteral("TIME reply from lena: Tue, 15 Sep 2026 12:00:00 +0000"));
+    QCOMPARE(formatCtcpReplyText(QStringLiteral("VERSION"),
+                                 QStringLiteral("lena"),
+                                 QStringLiteral("Omairc 0.4.0"),
+                                 now),
+             QStringLiteral("VERSION reply from lena: Omairc 0.4.0"));
 }
 
 void ProtocolTest::buildsJoin()

@@ -35,7 +35,7 @@ Preconditions:
 - Tab still nick-completes `mi` when the composer is not a slash query.
 - Escape dismisses the list before the shortcuts sheet, Connect, or Status.
 - Enter on an exact name or alias (`/close`, `/j`) sends. Enter on a partial (`/jo`) inserts `/join `.
-- On Status, `/me` is not in the catalog. The list can open on `/mode` because `mode` starts with `me`. Conversation `/me` still ranks `/me` first.
+- On Status, `/me` is not in the catalog. The list can open on `/mode` because `mode` starts with `me`. Conversation `/me` still ranks `/me` first. Status `/t` opens `/time`. Conversation `/t` still ranks `/topic` first.
 - Recalling a sent line keeps the list closed so Up/Down keep walking history. The list can open again after you leave history browse.
 - Compiled `/j` ranks only `/join` (the `j` alias). Down and Up wrap on that one row. The qml-suite Up/Down case uses a two-row fake and is not this compiled list.
 - `/q` ranks `/query`. `/quit` inserts `/disconnect `. `/q` is not a quit alias.

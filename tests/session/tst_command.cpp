@@ -131,6 +131,7 @@ private slots:
     void parseNotice();
     void parseAwayAndBack();
     void parseWhois();
+    void parseCtcpQueries();
     void parseMode();
     void parseKick();
     void parseInvite();
@@ -144,6 +145,7 @@ private slots:
     void statusSubmitDoesNotSendAction();
     void awayAndBackWriteAwayFrames();
     void whoisSendsAndDefaults();
+    void ctcpSendsAndDefaults();
     void modeSendsAndRefuses();
     void wrappersSendAndHelp();
     void slashProjectClosed();
@@ -395,6 +397,42 @@ void CommandTest::parseWhois()
     QCOMPARE(escapedWhois.verb, IrcCommand::Verb::Say);
     QCOMPARE(escapedWhois.argument, QStringLiteral("/whois lena"));
     QVERIFY(escapedWhois.isLiveMessage());
+}
+
+void CommandTest::parseCtcpQueries()
+{
+    const IrcCommand ping = IrcCommand::parse(QStringLiteral("/ping lena"));
+    QCOMPARE(ping.verb, IrcCommand::Verb::Ping);
+    QCOMPARE(ping.argument, QStringLiteral("lena"));
+    QCOMPARE(ping.name, QStringLiteral("/ping"));
+    QVERIFY(!ping.isLiveMessage());
+    QVERIFY(ping.allowedOn(IrcComposerSurface::Conversation));
+    QVERIFY(ping.allowedOn(IrcComposerSurface::Status));
+
+    const IrcCommand foldedPing = IrcCommand::parse(QStringLiteral("/PING"));
+    QCOMPARE(foldedPing.verb, IrcCommand::Verb::Ping);
+    QVERIFY(foldedPing.argument.isEmpty());
+
+    const IrcCommand time = IrcCommand::parse(QStringLiteral("/TIME lena"));
+    QCOMPARE(time.verb, IrcCommand::Verb::Time);
+    QCOMPARE(time.argument, QStringLiteral("lena"));
+    QCOMPARE(time.name, QStringLiteral("/TIME"));
+    QVERIFY(time.allowedOn(IrcComposerSurface::Status));
+
+    const IrcCommand version = IrcCommand::parse(QStringLiteral("/version lena"));
+    QCOMPARE(version.verb, IrcCommand::Verb::Version);
+    QCOMPARE(version.argument, QStringLiteral("lena"));
+    QVERIFY(version.allowedOn(IrcComposerSurface::Conversation));
+    QVERIFY(version.allowedOn(IrcComposerSurface::Status));
+
+    const IrcCommand empty = IrcCommand::parse(QStringLiteral("/version"));
+    QCOMPARE(empty.verb, IrcCommand::Verb::Version);
+    QVERIFY(empty.argument.isEmpty());
+
+    const IrcCommand escaped = IrcCommand::parse(QStringLiteral("//ping lena"));
+    QCOMPARE(escaped.verb, IrcCommand::Verb::Say);
+    QCOMPARE(escaped.argument, QStringLiteral("/ping lena"));
+    QVERIFY(escaped.isLiveMessage());
 }
 
 void CommandTest::parseMode()
@@ -678,7 +716,7 @@ void CommandTest::catalogLookupAndScope()
     QVERIFY(!IrcVerbTable::find(IrcCommand::Verb::Empty));
     QVERIFY(!IrcVerbTable::find(IrcCommand::Verb::Unknown));
 
-    QCOMPARE(IrcVerbTable::all().size(), 35);
+    QCOMPARE(IrcVerbTable::all().size(), 38);
     for (const IrcVerbSpec& row : IrcVerbTable::all())
         QVERIFY(row.name != QLatin1String("say"));
 
@@ -767,6 +805,29 @@ void CommandTest::catalogLookupAndScope()
     QCOMPARE(whois->scope, IrcVerbScope::Either);
     QCOMPARE(whois->wrongScopeText, QStringLiteral("Name a nick"));
     QVERIFY(whois->aliases.isEmpty());
+
+    const IrcVerbSpec *ping = IrcVerbTable::lookup(QStringLiteral("ping"));
+    QVERIFY(ping);
+    QCOMPARE(ping->verb, IrcCommand::Verb::Ping);
+    QCOMPARE(ping->name, QStringLiteral("ping"));
+    QCOMPARE(ping->usage, QStringLiteral("/ping [nick]"));
+    QCOMPARE(ping->scope, IrcVerbScope::Either);
+    QCOMPARE(ping->wrongScopeText, QStringLiteral("Name a nick"));
+    QVERIFY(ping->aliases.isEmpty());
+
+    const IrcVerbSpec *time = IrcVerbTable::lookup(QStringLiteral("time"));
+    QVERIFY(time);
+    QCOMPARE(time->verb, IrcCommand::Verb::Time);
+    QCOMPARE(time->usage, QStringLiteral("/time [nick]"));
+    QCOMPARE(time->scope, IrcVerbScope::Either);
+    QCOMPARE(time->wrongScopeText, QStringLiteral("Name a nick"));
+
+    const IrcVerbSpec *version = IrcVerbTable::lookup(QStringLiteral("version"));
+    QVERIFY(version);
+    QCOMPARE(version->verb, IrcCommand::Verb::Version);
+    QCOMPARE(version->usage, QStringLiteral("/version [nick]"));
+    QCOMPARE(version->scope, IrcVerbScope::Either);
+    QCOMPARE(version->wrongScopeText, QStringLiteral("Name a nick"));
 
     const IrcVerbSpec *mode = IrcVerbTable::lookup(QStringLiteral("mode"));
     QVERIFY(mode);
@@ -903,7 +964,7 @@ void CommandTest::catalogLookupAndScope()
     QCOMPARE(help->scope, IrcVerbScope::Either);
 
     const QVector<IrcVerbSpec> status = IrcVerbTable::visibleOn(IrcComposerSurface::Status);
-    QCOMPARE(status.size(), 27);
+    QCOMPARE(status.size(), 30);
     for (const IrcVerbSpec& row : status) {
         QVERIFY(row.allowedOn(IrcComposerSurface::Status));
         QVERIFY(row.verb != IrcCommand::Verb::Action);
@@ -918,7 +979,7 @@ void CommandTest::catalogLookupAndScope()
 
     const QVector<IrcVerbSpec> conversation =
         IrcVerbTable::visibleOn(IrcComposerSurface::Conversation);
-    QCOMPARE(conversation.size(), 35);
+    QCOMPARE(conversation.size(), 38);
     bool sawMe = false;
     bool sawClose = false;
     bool sawQuery = false;
@@ -928,6 +989,9 @@ void CommandTest::catalogLookupAndScope()
     bool sawAway = false;
     bool sawBack = false;
     bool sawWhois = false;
+    bool sawPing = false;
+    bool sawTime = false;
+    bool sawVersion = false;
     bool sawMode = false;
     bool sawKick = false;
     bool sawInvite = false;
@@ -963,6 +1027,12 @@ void CommandTest::catalogLookupAndScope()
             sawBack = true;
         if (row.name == QLatin1String("whois"))
             sawWhois = true;
+        if (row.name == QLatin1String("ping"))
+            sawPing = true;
+        if (row.name == QLatin1String("time"))
+            sawTime = true;
+        if (row.name == QLatin1String("version"))
+            sawVersion = true;
         if (row.name == QLatin1String("mode"))
             sawMode = true;
         if (row.name == QLatin1String("kick"))
@@ -1005,6 +1075,9 @@ void CommandTest::catalogLookupAndScope()
     QVERIFY(sawAway);
     QVERIFY(sawBack);
     QVERIFY(sawWhois);
+    QVERIFY(sawPing);
+    QVERIFY(sawTime);
+    QVERIFY(sawVersion);
     QVERIFY(sawMode);
     QVERIFY(sawKick);
     QVERIFY(sawInvite);
@@ -1059,6 +1132,12 @@ void CommandTest::closeWrongScopeUsesCatalogSentence()
              QStringLiteral("Op applies to channels"));
     const IrcCommand whois = IrcCommand::parse(QStringLiteral("/whois"));
     QCOMPARE(ircCommandOutcomeText(IrcCommandOutcome::WrongScope, whois),
+             QStringLiteral("Name a nick"));
+    const IrcCommand ping = IrcCommand::parse(QStringLiteral("/ping"));
+    QCOMPARE(ircCommandOutcomeText(IrcCommandOutcome::WrongScope, ping),
+             QStringLiteral("Name a nick"));
+    const IrcCommand version = IrcCommand::parse(QStringLiteral("/version"));
+    QCOMPARE(ircCommandOutcomeText(IrcCommandOutcome::WrongScope, version),
              QStringLiteral("Name a nick"));
 }
 
@@ -1365,6 +1444,87 @@ void CommandTest::whoisSendsAndDefaults()
                            QByteArrayLiteral("WHOIS")));
 }
 
+void CommandTest::ctcpSendsAndDefaults()
+{
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    IrcSession *session = controller.addSession(config(), transport);
+    QVERIFY(session);
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    welcome(transport);
+    QCOMPARE(session->state(), IrcSession::State::Registered);
+    transport->injectBytes(QByteArrayLiteral(":omairc!u@h JOIN :#omarchy\r\n"));
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+
+    QVERIFY(controller.sendMessage(QStringLiteral("/version lena")));
+    QCOMPARE(transport->writtenFrames().last(),
+             QByteArray("PRIVMSG lena :\x01" "VERSION\x01\r\n"));
+
+    QVERIFY(controller.sendMessage(QStringLiteral("/time lena")));
+    QCOMPARE(transport->writtenFrames().last(),
+             QByteArray("PRIVMSG lena :\x01" "TIME\x01\r\n"));
+
+    QVERIFY(controller.sendMessage(QStringLiteral("/ping lena")));
+    const QByteArray pingFrame = transport->writtenFrames().last();
+    QVERIFY(pingFrame.startsWith(QByteArray("PRIVMSG lena :\x01" "PING ")));
+    QVERIFY(pingFrame.endsWith(QByteArray("\x01\r\n")));
+
+    IrcStatusConsole *console = controller.console();
+    QVERIFY(!logContains(console->lines(), QString(QChar(1))));
+    QVERIFY(!logContains(console->lines(), QStringLiteral("PRIVMSG lena")));
+
+    QVERIFY(console->submit(QStringLiteral("/version lena")));
+    QCOMPARE(transport->writtenFrames().last(),
+             QByteArray("PRIVMSG lena :\x01" "VERSION\x01\r\n"));
+
+    const int beforeChannel = transport->writtenFrames().size();
+    QVERIFY(!controller.sendMessage(QStringLiteral("/ping #omarchy")));
+    QCOMPARE(controller.lastError(), QStringLiteral("Command was refused"));
+    QVERIFY(!controller.sendMessage(QStringLiteral("/version lena extra")));
+    QCOMPARE(transport->writtenFrames().size(), beforeChannel);
+
+    const int beforeChannelEmpty = transport->writtenFrames().size();
+    QVERIFY(!controller.sendMessage(QStringLiteral("/ping")));
+    QCOMPARE(controller.lastError(), QStringLiteral("Name a nick"));
+    QVERIFY(!controller.sendMessage(QStringLiteral("/time")));
+    QCOMPARE(controller.lastError(), QStringLiteral("Name a nick"));
+    QVERIFY(!controller.sendMessage(QStringLiteral("/version")));
+    QCOMPARE(transport->writtenFrames().size(), beforeChannelEmpty);
+
+    transport->injectBytes(QByteArrayLiteral(":lena!u@h PRIVMSG omairc :hi\r\n"));
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("lena"));
+    QVERIFY(controller.sendMessage(QStringLiteral("/version")));
+    QCOMPARE(transport->writtenFrames().last(),
+             QByteArray("PRIVMSG lena :\x01" "VERSION\x01\r\n"));
+    QVERIFY(controller.sendMessage(QStringLiteral("/time")));
+    QCOMPARE(transport->writtenFrames().last(),
+             QByteArray("PRIVMSG lena :\x01" "TIME\x01\r\n"));
+    QVERIFY(controller.sendMessage(QStringLiteral("/ping")));
+    QVERIFY(transport->writtenFrames().last().startsWith(
+        QByteArray("PRIVMSG lena :\x01" "PING ")));
+
+    IrcController statusOnly;
+    auto *statusTransport = new FakeIrcTransport;
+    IrcSession *statusSession = statusOnly.addSession(config(), statusTransport);
+    QVERIFY(statusSession);
+    QVERIFY(statusOnly.start(QStringLiteral("libera")));
+    welcome(statusTransport);
+    QCOMPARE(statusSession->state(), IrcSession::State::Registered);
+    QVERIFY(statusOnly.selectedTarget().isEmpty());
+    IrcStatusConsole *statusConsole = statusOnly.console();
+    const int beforeStatusEmpty = statusTransport->writtenFrames().size();
+    QVERIFY(statusConsole->submit(QStringLiteral("/ping")));
+    QVERIFY(logContains(statusConsole->lines(), QStringLiteral("Command was refused")));
+    QCOMPARE(statusTransport->writtenFrames().size(), beforeStatusEmpty);
+
+    transport->remoteClose();
+    QVERIFY(session->state() != IrcSession::State::Registered);
+    const int framesBefore = transport->writtenFrames().size();
+    QVERIFY(!controller.sendMessage(QStringLiteral("/version lena")));
+    QCOMPARE(controller.lastError(), QStringLiteral("Not connected"));
+    QCOMPARE(transport->writtenFrames().size(), framesBefore);
+}
+
 void CommandTest::modeSendsAndRefuses()
 {
     IrcController controller;
@@ -1531,6 +1691,9 @@ void CommandTest::wrappersSendAndHelp()
     QVERIFY(selectedBodiesContain(messages, QStringLiteral("/cs")));
     QVERIFY(selectedBodiesContain(messages, QStringLiteral("/raw")));
     QVERIFY(selectedBodiesContain(messages, QStringLiteral("/help")));
+    QVERIFY(selectedBodiesContain(messages, QStringLiteral("/ping")));
+    QVERIFY(selectedBodiesContain(messages, QStringLiteral("/time")));
+    QVERIFY(selectedBodiesContain(messages, QStringLiteral("/version")));
     QVERIFY(selectedBodiesContain(messages, QStringLiteral("/mute")));
     QVERIFY(selectedBodiesContain(messages, QStringLiteral("/unmute")));
     QVERIFY(selectedBodiesContain(messages, QStringLiteral("/muted")));
@@ -1659,12 +1822,20 @@ void CommandTest::slashProjectOpen()
     const auto statusTopic = IrcSlashComplete::project(
         QStringLiteral("/t"), IrcComposerSurface::Status);
     QVERIFY(!statusTopic.containsLabel(QStringLiteral("/topic")));
-    QVERIFY(!statusTopic.isOpen());
+    QVERIFY(statusTopic.isOpen());
+    QCOMPARE(statusTopic.hits().first().label, QStringLiteral("/time"));
     const auto conversationTopic = IrcSlashComplete::project(
         QStringLiteral("/t"), IrcComposerSurface::Conversation);
     QVERIFY(conversationTopic.isOpen());
     QCOMPARE(conversationTopic.hits().first().label, QStringLiteral("/topic"));
+    QVERIFY(conversationTopic.containsLabel(QStringLiteral("/time")));
     QVERIFY(!conversationTopic.containsLabel(QStringLiteral("/notice")));
+
+    const auto ping = IrcSlashComplete::project(
+        QStringLiteral("/pi"), IrcComposerSurface::Conversation);
+    QVERIFY(ping.isOpen());
+    QCOMPARE(ping.hits().first().label, QStringLiteral("/ping"));
+    QCOMPARE(ping.hits().first().usage, QStringLiteral("/ping [nick]"));
 
     const auto ignore = IrcSlashComplete::project(
         QStringLiteral("/ig"), IrcComposerSurface::Status);
