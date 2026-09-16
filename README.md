@@ -133,8 +133,11 @@ From the repo root:
 bin\build.bat
 build\release\omairc.exe
 build\release\omairc.exe --demo-server
+build\release\omairc.exe --help
 ```
 
 `bin\build.bat` finds a Qt 6 kit (MSVC preferred, then MinGW), loads the MSVC toolchain when needed, builds into `build\release\`, and runs `windeployqt`. Set `QMAKE` to pick a kit. QtKeychain must be installed for that kit. Opening `omairc.pro` in Qt Creator still works.
+
+The same exe is the local CLI. Start the window first, then `omairc.exe connections`, `send`, `read`, and the rest from another terminal. On Windows there is no `omairc.sock` file; the client listens on a named pipe.
 
 Compared with Linux you will miss portal text scale (stays 1.0), desktop notifications, the Omarchy theme watch when `colors.toml` is absent, a window icon, the pacman/`bin/install` path, and the UI / desktop / live test runners. Profiles land in the Qt app config location instead of `$XDG_CONFIG_HOME`. For a copied tree, also copy OpenSSL next to the exe when the kit is OpenSSL-backed (typical MinGW) so TLS to Libera Chat works.

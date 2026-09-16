@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Windows CLI output works: the Windows build uses the console subsystem so `--help`, `--version`, and control commands print in a terminal or into a redirect, then `FreeConsole()` drops that console when opening the window. The local server uses a named pipe (`omairc`) instead of a drive-letter path that `QLocalServer` cannot listen on.
+
 ## [0.5.0] - 2026-09-16
 
 ### Added

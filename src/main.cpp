@@ -17,6 +17,10 @@
 #include <stdio.h>
 #include <variant>
 
+#ifdef Q_OS_WIN
+#  include <windows.h>
+#endif
+
 #include "backend.h"
 #include "irc/ircconnection.h"
 #include "irc/irccontroller.h"
@@ -64,6 +68,11 @@ int main(int argc, char *argv[]) {
         }
         return OmaircCli::printOutcome(outcome);
     }
+
+#ifdef Q_OS_WIN
+    // win32 builds use the console subsystem so CLI output works; drop it for the window.
+    FreeConsole();
+#endif
 
     QGuiApplication app(argc, argv);
     app.setApplicationName(QStringLiteral("omairc"));

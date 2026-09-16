@@ -122,10 +122,12 @@ jobs:
           if (-not (Test-Path $exe)) { throw "Expected $exe" }
           $keychain = Get-ChildItem 'build\release' -Filter '*qt6keychain.dll' -File
           if (-not $keychain) { throw 'qt6keychain.dll was not deployed next to the exe' }
-          & $exe --version
+          $version = & $exe --version 2>&1 | Out-String
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          & $exe --help
+          if ($version -notmatch 'omairc\s+\d') { throw "Expected version text, got: $version" }
+          $help = & $exe --help 2>&1 | Out-String
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if ($help -notmatch 'Usage:') { throw "Expected help text, got: $help" }
           $junk = @('*.obj','*.pdb','*.res','*.ilk','moc_*.cpp','moc_predefs.h','qrc_*.cpp')
           Get-ChildItem 'build\release' -File | Where-Object {
             foreach ($pat in $junk) { if ($_.Name -like $pat) { return $true } }

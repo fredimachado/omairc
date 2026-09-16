@@ -69,10 +69,15 @@ QString SingleInstance::lockPath()
 
 QString SingleInstance::runtimeDir() const
 {
+#ifdef Q_OS_WIN
+    // RuntimeLocation is the user profile on Windows. Keep the lock out of home.
+    return QStandardPaths::writableLocation(QStandardPaths::TempLocation);
+#else
     QString dir = QStandardPaths::writableLocation(QStandardPaths::RuntimeLocation);
     if (dir.isEmpty())
         dir = QStandardPaths::writableLocation(QStandardPaths::TempLocation);
     return dir;
+#endif
 }
 
 QString SingleInstance::lockFilePath() const
@@ -82,7 +87,12 @@ QString SingleInstance::lockFilePath() const
 
 QString SingleInstance::serverName() const
 {
+#ifdef Q_OS_WIN
+    // Named pipes reject drive-letter paths. Qt prepends \\.\pipe\.
+    return QStringLiteral("omairc");
+#else
     return QDir(runtimeDir()).filePath(QStringLiteral("omairc.sock"));
+#endif
 }
 
 bool SingleInstance::becomePrimary()
