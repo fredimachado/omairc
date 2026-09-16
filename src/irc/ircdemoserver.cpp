@@ -564,6 +564,31 @@ void injectClientEcho(IrcLoopbackTransport *transport, const QString &nick,
     transport->injectBytes(":" + nick.toUtf8() + "!u@h " + frame);
 }
 
+// A real server answers AWAY with 306 (now away) or 305 (no longer away). The
+// demo does not echo our own away-notify back, which is the case the client has
+// to cover on its own.
+bool tryAnswerAway(IrcLoopbackTransport *transport, const QString &selfNick,
+                   const QByteArray &frame)
+{
+    if (!transport || selfNick.isEmpty())
+        return false;
+    QByteArray wire = frame;
+    if (wire.endsWith("\r\n"))
+        wire.chop(2);
+    else if (wire.endsWith('\n'))
+        wire.chop(1);
+    if (wire != "AWAY" && !wire.startsWith("AWAY :"))
+        return false;
+    const bool away = wire.size() > int(qstrlen("AWAY"));
+    transport->injectBytes(QByteArrayLiteral(":server ")
+                           + (away ? QByteArrayLiteral("306 ") : QByteArrayLiteral("305 "))
+                           + selfNick.toUtf8()
+                           + (away
+                                  ? QByteArrayLiteral(" :You have been marked as being away\r\n")
+                                  : QByteArrayLiteral(" :You are no longer marked as being away\r\n")));
+    return true;
+}
+
 IrcServerFeatures demoServerFeatures()
 {
     IrcServerFeatures features;
@@ -710,6 +735,8 @@ void IrcDemoServer::hookAutoEcho(IrcLoopbackTransport *transport, const QString 
     QObject::connect(transport, &IrcLoopbackTransport::frameWritten, this,
                      [transport, nick](const QByteArray &frame) {
         if (tryAnswerCtcp(transport, nick, frame))
+            return;
+        if (tryAnswerAway(transport, nick, frame))
             return;
         if (frame.startsWith("PRIVMSG ") || frame.startsWith("NOTICE "))
             injectClientEcho(transport, nick, frame);

@@ -343,6 +343,7 @@ private slots:
     void bouncerQueryReplayRendersDirectMessageInSidebar();
     void ctrlFFindsLiveTranscriptAndStatus();
     void seededIrcFixtureFurnishesDemoWorld();
+    void selfAwayShowsOnEveryChannelRow();
 
 private:
     bool check(bool ok) const;
@@ -1396,6 +1397,40 @@ void LiveUiTest::seededIrcFixtureFurnishesDemoWorld()
     QVERIFY(rowFor(conversations, SeededIrcFixture::omarchyNetworkId(),
                    QStringLiteral("mira"))
             >= 0);
+}
+
+void LiveUiTest::selfAwayShowsOnEveryChannelRow()
+{
+    if (m_live)
+        QSKIP("SeededIrcFixture runs under bin/test, not the compose world.");
+
+    SeededIrcFixture world;
+    QVERIFY2(world.openWithAutoEcho(), qPrintable(world.lastError()));
+
+    IrcController &controller = world.controller();
+    QCOMPARE(controller.currentNick(), QStringLiteral("fred"));
+    QCOMPARE(controller.selectedTarget(), QStringLiteral("#omarchy"));
+    auto *members = qobject_cast<QAbstractItemModel *>(controller.members());
+    QVERIFY(members);
+    QVERIFY(!memberAway(members, QStringLiteral("fred")));
+
+    // The demo answers AWAY with 306 and does not echo our own away-notify back,
+    // so the self row is the client's own fact to paint.
+    QVERIFY(controller.sendMessage(QStringLiteral("/away lunch")));
+    QVERIFY(waitUntil([&] { return controller.selfAway(); }));
+    QVERIFY(memberAway(members, QStringLiteral("fred")));
+    QVERIFY(!memberAway(members, QStringLiteral("anna")));
+
+    controller.selectConversation(SeededIrcFixture::omarchyNetworkId(),
+                                  QStringLiteral("#desktop"));
+    QVERIFY(waitUntil([&] {
+        const QAbstractItemModel *rows = controller.members();
+        return rows->rowCount() == 8 && memberAway(rows, QStringLiteral("fred"));
+    }));
+
+    QVERIFY(controller.sendMessage(QStringLiteral("/back")));
+    QVERIFY(waitUntil([&] { return !controller.selfAway(); }));
+    QVERIFY(!memberAway(controller.members(), QStringLiteral("fred")));
 }
 
 int runLiveUiTests(int argc, char **argv)
