@@ -428,6 +428,13 @@ TestCase {
     }
 
     ListModel {
+        id: selfAwayMembers
+
+        ListElement { nick: "live-nick"; label: "~live-nick"; status: ""; away: true }
+        ListElement { nick: "anna"; label: "&anna"; status: ""; away: true }
+    }
+
+    ListModel {
         id: prefixedMembers
 
         ListElement { nick: "mira"; label: "@mira"; status: ""; away: false }
@@ -4977,6 +4984,43 @@ TestCase {
         compare(member.away, true);
         compare(member.Accessible.description, "writing docs");
         window.close();
+    }
+
+    function test_memberPresenceShowsOurOwnAwayWithoutAwayNotify() {
+        var savedMembers = gatedIrc.members;
+        var savedPeopleCount = gatedIrc.peopleCount;
+        gatedIrc.members = selfAwayMembers;
+        gatedIrc.peopleCount = selfAwayMembers.count;
+        gatedIrc.hasAwayPresence = false;
+        var window = createTemporaryObject(gatedWindowComponent, null);
+        verify(window !== null, "The self-away window should load");
+        tryCompare(window, "visible", true);
+        waitForRendering(window.contentItem);
+
+        var members = findChild(window, "membersList");
+        verify(members !== null, "Could not find membersList");
+        var selfRow = members.itemAtIndex(0);
+        verify(selfRow !== null, "The self member delegate should be rendered");
+        compare(selfRow.nick, "live-nick");
+        compare(selfRow.away, true);
+        var selfDot = findChild(selfRow, "presence-dot-live-nick");
+        verify(selfDot !== null, "The self presence dot should be rendered");
+        compare(selfDot.visible, true);
+        verify(Qt.colorEqual(selfDot.color, "#d6a552"));
+
+        // away-notify is off, so another member's away state stays unpainted.
+        var otherRow = members.itemAtIndex(1);
+        verify(otherRow !== null, "The other member delegate should be rendered");
+        compare(otherRow.nick, "anna");
+        compare(otherRow.away, false);
+        var otherDot = findChild(otherRow, "presence-dot-anna");
+        verify(otherDot !== null, "The other presence dot should be rendered");
+        compare(otherDot.visible, false);
+
+        window.close();
+        gatedIrc.members = savedMembers;
+        gatedIrc.peopleCount = savedPeopleCount;
+        gatedIrc.hasAwayPresence = false;
     }
 
     function test_typingChromeFollowsCapabilities() {

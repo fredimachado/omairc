@@ -313,6 +313,7 @@ private slots:
     void closeDirectMessageInvokableOnChannelIsSilent();
     void closeDirectMessageWhileDisconnected();
     void selfAwayFollowsNumericsAndUnawaysAfterChat();
+    void selfAwayRefreshesOurOwnMemberRow();
     void closeLastDirectKeepsSelfAway();
     void queryOpensDirectWithoutPrivmsg();
     void queryAliceCreatesDirectRowWithoutPrivmsg();
@@ -1480,6 +1481,47 @@ void ControllerTest::selfAwayFollowsNumericsAndUnawaysAfterChat()
                           ":server CAP omairc DEL :away-notify\r\n"));
     QVERIFY(!controller.hasAwayPresence());
     QVERIFY(controller.selfAway());
+}
+
+void ControllerTest::selfAwayRefreshesOurOwnMemberRow()
+{
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+                                                transport);
+    QVERIFY(session);
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    transport->completeConnect();
+    transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :away-notify\r\n"
+                          ":server CAP omairc ACK :away-notify\r\n"
+                          ":server 001 omairc :Welcome\r\n"
+                          ":server 005 omairc CHANTYPES=# PREFIX=(ov)@+ "
+                          ":are supported by this server\r\n"
+                          ":omairc!u@h JOIN :#omarchy\r\n"
+                          ":server 353 omairc = #omarchy :@omairc +Alice\r\n"
+                          ":server 366 omairc #omarchy :End of NAMES\r\n"));
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+
+    auto *members = qobject_cast<QAbstractItemModel *>(controller.members());
+    QVERIFY(members);
+    QCOMPARE(roleAt(members, 0, MemberListModel::NickRole), QStringLiteral("omairc"));
+    QCOMPARE(roleAt(members, 0, MemberListModel::AwayRole), false);
+    QCOMPARE(roleAt(members, 1, MemberListModel::AwayRole), false);
+
+    QSignalSpy changed(members, &QAbstractItemModel::dataChanged);
+    transport->injectBytes(
+        QByteArrayLiteral(":server 306 omairc :You have been marked as being away\r\n"));
+    QVERIFY(controller.selfAway());
+    QVERIFY2(!changed.isEmpty(),
+             "the member row for our own nick must refresh when self-away changes");
+    QCOMPARE(roleAt(members, 0, MemberListModel::AwayRole), true);
+    QCOMPARE(roleAt(members, 1, MemberListModel::AwayRole), false);
+
+    transport->injectBytes(
+        QByteArrayLiteral(":server 305 omairc :You are no longer marked as being away\r\n"));
+    QVERIFY(!controller.selfAway());
+    QCOMPARE(roleAt(members, 0, MemberListModel::AwayRole), false);
 }
 
 void ControllerTest::explicitChatClearsAwayOnOriginNetwork()

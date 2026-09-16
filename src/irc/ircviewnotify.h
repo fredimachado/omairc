@@ -64,6 +64,15 @@ struct IrcViewNotify {
         return notify;
     }
 
+    // Deliberately broader than the row that changed: self-away is
+    // network-scoped and rare, and syncMembers short-circuits an unchanged list.
+    static IrcViewNotify memberReset()
+    {
+        IrcViewNotify notify;
+        notify.members = IrcMemberSurface::Reset;
+        return notify;
+    }
+
     static IrcViewNotify typingOnly()
     {
         IrcViewNotify notify;
@@ -165,7 +174,9 @@ struct IrcViewClassifier {
 
     IrcViewNotify operator()(const IrcSelfAwayEvent&) const
     {
-        return IrcViewNotify::none();
+        // Our own away state is overlaid on our member row, so the visible
+        // channel's member list has to repaint when it changes.
+        return IrcViewNotify::memberReset();
     }
 
     IrcViewNotify operator()(const IrcTypingEvent&) const

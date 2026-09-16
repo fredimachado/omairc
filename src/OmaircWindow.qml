@@ -4897,7 +4897,13 @@ ApplicationWindow {
                     readonly property string nick: memberData.nick
                     readonly property string label: memberData.label
                     readonly property string status: memberData.status
-                    readonly property bool away: win.awayPresenceVisible && memberData.away
+                    // Exact match, like `openable`; the reducer's overlay is the CASEMAPPING-aware path.
+                    readonly property bool isSelf: nick.length > 0 && nick === win.selfNick
+                    // Other members' away state needs away-notify, but our own
+                    // arrives as the 305/306 numerics, so it stays visible and
+                    // agrees with the identity footer.
+                    readonly property bool away: memberData.away
+                        && (win.awayPresenceVisible || isSelf)
                     readonly property bool typing: win.typingVisible
                         && (win.irc
                             ? win.irc.nickIsTyping(memberDelegate.nick)
@@ -4951,7 +4957,7 @@ ApplicationWindow {
 
                         Rectangle {
                             objectName: "presence-dot-" + memberDelegate.nick
-                            visible: win.awayPresenceVisible
+                            visible: win.awayPresenceVisible || memberDelegate.isSelf
                             anchors.right: parent.right
                             anchors.bottom: parent.bottom
                             width: win.scaledSize(7)
@@ -5374,7 +5380,10 @@ ApplicationWindow {
 
                     readonly property string nick: name
                     readonly property bool away: awayFlag === 1
-                    readonly property bool showAway: win.awayPresenceVisible && away
+                    // Exact match, like `openable`; the reducer's overlay is the CASEMAPPING-aware path.
+                    readonly property bool isSelf: nick.length > 0 && nick === win.selfNick
+                    readonly property bool showAway: away
+                        && (win.awayPresenceVisible || isSelf)
                     readonly property bool selected: index === win.nickSelectedIndex
                     readonly property bool openable: name !== win.selfNick
                     readonly property color nickTint: win.nickPalette[paletteIndex]
@@ -5425,7 +5434,7 @@ ApplicationWindow {
 
                         Rectangle {
                             objectName: "nickPick-presence-" + nickRow.nick
-                            visible: win.awayPresenceVisible
+                            visible: win.awayPresenceVisible || nickRow.isSelf
                             anchors.right: parent.right
                             anchors.bottom: parent.bottom
                             width: win.scaledSize(7)

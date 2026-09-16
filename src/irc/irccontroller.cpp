@@ -2051,6 +2051,7 @@ void IrcController::apply(const IrcEvent& event)
         }
     }
     if (selfAwayOnly) {
+        publish(classifyViewNotify(event, m_reducer, m_selected));
         notifySelfAwayIfChanged(previousId, previousAway);
         return;
     }

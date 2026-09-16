@@ -79,6 +79,7 @@ private slots:
     void messagesCapAtTwoThousandFifo();
     void clearMessagesEmptiesAfterCap();
     void selfAwayIsNetworkMembershipNotMemberPresence();
+    void selfAwayShowsOnOurOwnRowInEveryChannel();
     void staleNamesSyncReleasesAfterThirtySeconds();
     void consecutiveJoinsCollapseIntoOneEvent();
     void privmsgBreaksJoinCollapse();
@@ -1043,6 +1044,40 @@ void ReducerTest::selfAwayIsNetworkMembershipNotMemberPresence()
     welcome(reducer, networkA);
     QVERIFY(!reducer.selfAway(networkA));
     QVERIFY(!reducer.selfAway(networkB));
+}
+
+void ReducerTest::selfAwayShowsOnOurOwnRowInEveryChannel()
+{
+    IrcEventReducer reducer;
+    welcome(reducer, networkA);
+    const IrcConversationKey omarchy =
+        reducer.conversationKey(networkA, QStringLiteral("#omarchy"));
+    const IrcConversationKey desktop =
+        reducer.conversationKey(networkA, QStringLiteral("#desktop"));
+    reducer.apply(IrcJoinEvent{
+        networkA, QStringLiteral("#omarchy"), QStringLiteral("omairc")});
+    reducer.apply(IrcJoinEvent{
+        networkA, QStringLiteral("#desktop"), QStringLiteral("omairc")});
+    reducer.apply(IrcJoinEvent{
+        networkA, QStringLiteral("#omarchy"), QStringLiteral("Alice")});
+
+    QVERIFY(!reducer.memberView(omarchy, QStringLiteral("omairc"))->isAway());
+    QVERIFY(!reducer.memberView(desktop, QStringLiteral("omairc"))->isAway());
+
+    reducer.apply(IrcSelfAwayEvent{networkA, true});
+    QVERIFY(reducer.selfAway(networkA));
+    QVERIFY(reducer.memberView(omarchy, QStringLiteral("omairc"))->isAway());
+    QVERIFY(reducer.memberView(desktop, QStringLiteral("omairc"))->isAway());
+    QVERIFY(!reducer.memberView(omarchy, QStringLiteral("alice"))->isAway());
+
+    // The overlay is a read of the network-level fact, so losing member
+    // presence facts must not clear our own away state.
+    reducer.clearPresenceFacts(networkA, true, true);
+    QVERIFY(reducer.memberView(omarchy, QStringLiteral("omairc"))->isAway());
+
+    reducer.apply(IrcSelfAwayEvent{networkA, false});
+    QVERIFY(!reducer.memberView(omarchy, QStringLiteral("omairc"))->isAway());
+    QVERIFY(!reducer.memberView(desktop, QStringLiteral("omairc"))->isAway());
 }
 
 void ReducerTest::staleNamesSyncReleasesAfterThirtySeconds()
