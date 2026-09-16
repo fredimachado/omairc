@@ -43,10 +43,13 @@ ApplicationWindow {
 
     property bool membersVisible: true
     property bool shortcutsSheetEscapeGuard: false
-    property bool jumpSheetEscapeGuard: false
+    property bool pickerEscapeGuard: false
     property string sidebarNetworkFocusId: ""
     property int jumpSelectedIndex: 0
-    readonly property bool shortcutOverlayOpen: shortcutsSheet.opened || jumpSheet.opened
+    property int nickSelectedIndex: 0
+    readonly property bool shortcutOverlayOpen: shortcutsSheet.opened
+        || jumpSheet.opened
+        || nickSheet.opened
     readonly property var networkConsole: irc
         ? (irc.statusConsole ? irc.statusConsole : irc.console)
         : null
@@ -868,9 +871,63 @@ ApplicationWindow {
             jumpSelectedIndex = Math.max(0, jumpModel.count - 1);
     }
 
+    function liveMemberRow(row) {
+        var empty = { nick: "", label: "", status: "", away: false };
+        if (!irc)
+            return empty;
+        var model = irc.members;
+        if (!model)
+            return empty;
+        if (typeof model.get === "function") {
+            var rowData = model.get(row);
+            return {
+                nick: rowData && rowData.nick ? rowData.nick : "",
+                label: rowData && rowData.label ? rowData.label : "",
+                status: rowData && rowData.status ? rowData.status : "",
+                away: !!(rowData && rowData.away)
+            };
+        }
+        var idx = model.index(row, 0);
+        return {
+            nick: model.data(idx, Qt.UserRole + 1) || "",
+            label: model.data(idx, Qt.UserRole + 2) || "",
+            status: model.data(idx, Qt.UserRole + 3) || "",
+            away: model.data(idx, Qt.UserRole + 4) === true
+        };
+    }
+
+    function refreshNickMatches() {
+        var query = nickFilter ? nickFilter.text.trim().toLowerCase() : "";
+        nickModel.clear();
+        var count = memberCount();
+        for (var row = 0; row < count; ++row) {
+            var member = liveMemberRow(row);
+            if (member.nick.length === 0)
+                continue;
+            if (query.length === 0
+                    || member.nick.toLowerCase().indexOf(query) !== -1)
+                nickModel.append(member);
+        }
+        if (nickSelectedIndex >= nickModel.count)
+            nickSelectedIndex = Math.max(0, nickModel.count - 1);
+    }
+
+    function firstOpenableNickIndex() {
+        for (var index = 0; index < nickModel.count; ++index) {
+            if (canOpenDirectMessage(nickModel.get(index).nick))
+                return index;
+        }
+        return 0;
+    }
+
     function openJumpSheet() {
         jumpSelectedIndex = 0;
         jumpSheet.open();
+    }
+
+    function openNickSheet() {
+        nickSelectedIndex = 0;
+        nickSheet.open();
     }
 
     function stepJump(delta) {
@@ -879,6 +936,14 @@ ApplicationWindow {
         jumpSelectedIndex = (jumpSelectedIndex + delta + jumpModel.count) % jumpModel.count;
         if (jumpList)
             jumpList.positionViewAtIndex(jumpSelectedIndex, ListView.Contain);
+    }
+
+    function stepNick(delta) {
+        if (nickModel.count === 0)
+            return;
+        nickSelectedIndex = (nickSelectedIndex + delta + nickModel.count) % nickModel.count;
+        if (nickList)
+            nickList.positionViewAtIndex(nickSelectedIndex, ListView.Contain);
     }
 
     function activateJumpSelection() {
@@ -902,6 +967,16 @@ ApplicationWindow {
             }
         }
         selectConversation(name, networkId);
+    }
+
+    function activateNickSelection() {
+        if (nickSelectedIndex < 0 || nickSelectedIndex >= nickModel.count)
+            return;
+        var nick = nickModel.get(nickSelectedIndex).nick;
+        if (!canOpenDirectMessage(nick))
+            return;
+        nickSheet.close();
+        win.openDirectMessage(nick);
     }
 
     function focusNetworkHeader(section) {
@@ -1401,13 +1476,22 @@ ApplicationWindow {
     Shortcut {
         sequence: "Ctrl+K"
         context: Qt.ApplicationShortcut
-        enabled: !win.connectionOverlayVisible && !shortcutsSheet.opened
+        enabled: !win.connectionOverlayVisible
+            && !shortcutsSheet.opened
+            && !nickSheet.opened
         onActivated: {
             if (jumpSheet.opened)
                 jumpSheet.close();
             else
                 win.openJumpSheet();
         }
+    }
+
+    Shortcut {
+        sequence: "Ctrl+Shift+K"
+        context: Qt.ApplicationShortcut
+        enabled: currentConversationIsChannel && !consoleVisible && !win.shortcutOverlayOpen
+        onActivated: win.openNickSheet()
     }
 
     Shortcut {
@@ -1435,7 +1519,7 @@ ApplicationWindow {
         sequence: "Ctrl+/"
         context: Qt.ApplicationShortcut
         onActivated: {
-            if (jumpSheet.opened)
+            if (jumpSheet.opened || nickSheet.opened)
                 return;
             if (shortcutsSheet.opened)
                 shortcutsSheet.close();
@@ -1573,7 +1657,7 @@ ApplicationWindow {
                 return true;
             if (shortcutsSheet.opened || shortcutsSheetEscapeGuard)
                 return true;
-            if (jumpSheet.opened || jumpSheetEscapeGuard)
+            if (jumpSheet.opened || nickSheet.opened || pickerEscapeGuard)
                 return true;
             if (win.connection && win.connection.setupRequired)
                 return false;
@@ -1595,9 +1679,10 @@ ApplicationWindow {
                 shortcutsSheetEscapeGuard = false;
                 return;
             }
-            if (jumpSheet.opened || jumpSheetEscapeGuard) {
+            if (jumpSheet.opened || nickSheet.opened || pickerEscapeGuard) {
                 jumpSheet.close();
-                jumpSheetEscapeGuard = false;
+                nickSheet.close();
+                pickerEscapeGuard = false;
                 return;
             }
             if (win.connection && win.connectionSheetOpen) {
@@ -4668,16 +4753,28 @@ ApplicationWindow {
 
             Text {
                 id: membersHeading
+                objectName: "membersHeading"
                 anchors.top: parent.top
                 anchors.topMargin: win.scaledSize(23)
                 anchors.left: parent.left
                 anchors.leftMargin: win.scaledSize(20)
                 text: "ONLINE - " + win.currentPeopleCount
-                color: win.mutedColor
+                color: membersHeadingHit.containsMouse ? win.inkColor : win.mutedColor
                 font.family: "iA Writer Mono S"
                 font.bold: true
                 font.letterSpacing: win.scaledSize(0.7)
                 font.pixelSize: win.scaledSize(9)
+            }
+
+            MouseArea {
+                id: membersHeadingHit
+                objectName: "membersHeadingButton"
+                anchors.fill: membersHeading
+                hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
+                Accessible.role: Accessible.Button
+                Accessible.name: "Jump to nick"
+                onClicked: win.openNickSheet()
             }
 
             ListView {
@@ -4867,6 +4964,7 @@ ApplicationWindow {
                     { keys: "Alt+Down / Alt+Up", action: "walk conversations" },
                     { keys: "Alt+Left / Alt+Right", action: "walk networks" },
                     { keys: "Ctrl+K", action: "jump to conversation" },
+                    { keys: "Ctrl+Shift+K", action: "jump to nick" },
                     { keys: "Alt+A", action: "next unread" },
                     { keys: "Ctrl+`", action: "Status" },
                     { keys: "Ctrl+,", action: "Connect" },
@@ -4914,6 +5012,11 @@ ApplicationWindow {
         objectName: "jumpModel"
     }
 
+    ListModel {
+        id: nickModel
+        objectName: "nickModel"
+    }
+
     Popup {
         id: jumpSheet
         objectName: "jumpSheet"
@@ -4925,8 +5028,8 @@ ApplicationWindow {
         focus: true
         closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
         onOpened: {
-            jumpSheetEscapeGuard = true;
-            jumpSelectedIndex = 0;
+            win.pickerEscapeGuard = true;
+            win.jumpSelectedIndex = 0;
             if (jumpFilter.text.length > 0)
                 jumpFilter.clear();
             else
@@ -4935,7 +5038,7 @@ ApplicationWindow {
         }
         onClosed: {
             Qt.callLater(function() {
-                jumpSheetEscapeGuard = false;
+                win.pickerEscapeGuard = false;
                 composer.forceActiveFocus();
             });
         }
@@ -4952,7 +5055,6 @@ ApplicationWindow {
             width: jumpSheet.availableWidth
 
             Rectangle {
-                id: jumpFilterShell
                 width: parent.width
                 height: win.scaledSize(32)
                 color: win.panelColor
@@ -5055,6 +5157,235 @@ ApplicationWindow {
                         elide: Text.ElideRight
                         font.family: "iA Writer Mono S"
                         font.pixelSize: win.scaledSize(12)
+                    }
+                }
+            }
+        }
+    }
+
+    Popup {
+        id: nickSheet
+        objectName: "nickSheet"
+        x: Math.round((win.width - width) / 2)
+        y: Math.round((win.height - height) / 2)
+        width: win.scaledSize(348)
+        padding: win.scaledSize(16)
+        modal: true
+        focus: true
+        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+        onOpened: {
+            win.pickerEscapeGuard = true;
+            if (nickFilter.text.length > 0)
+                nickFilter.clear();
+            else
+                win.refreshNickMatches();
+            win.nickSelectedIndex = win.firstOpenableNickIndex();
+            nickFilter.forceActiveFocus();
+        }
+        onClosed: {
+            Qt.callLater(function() {
+                win.pickerEscapeGuard = false;
+                composer.forceActiveFocus();
+            });
+        }
+
+        background: Rectangle {
+            color: win.raisedColor
+            border.width: 1
+            border.color: win.dividerColor
+            radius: win.scaledSize(9)
+        }
+
+        contentItem: Column {
+            spacing: win.scaledSize(8)
+            width: nickSheet.availableWidth
+
+            Rectangle {
+                width: parent.width
+                height: win.scaledSize(32)
+                color: win.panelColor
+                border.width: 1
+                border.color: nickFilter.activeFocus ? win.accentColor : win.dividerColor
+                radius: win.scaledSize(7)
+
+                TextField {
+                    id: nickFilter
+                    objectName: "nickFilter"
+                    Accessible.name: "Jump to nick"
+                    anchors.fill: parent
+                    z: 1
+                    color: win.inkColor
+                    selectionColor: win.selectionColor
+                    selectedTextColor: "#ffffff"
+                    font.family: "iA Writer Mono S"
+                    font.pixelSize: win.scaledSize(13)
+                    placeholderText: ""
+                    verticalAlignment: TextInput.AlignVCenter
+                    leftPadding: win.scaledSize(8)
+                    rightPadding: win.scaledSize(8)
+                    background: Item {}
+                    Keys.onPressed: function(event) {
+                        if (event.key === Qt.Key_Down) {
+                            win.stepNick(1);
+                            event.accepted = true;
+                            return;
+                        }
+                        if (event.key === Qt.Key_Up) {
+                            win.stepNick(-1);
+                            event.accepted = true;
+                            return;
+                        }
+                        if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
+                            win.activateNickSelection();
+                            event.accepted = true;
+                            return;
+                        }
+                        if (event.key === Qt.Key_Tab) {
+                            event.accepted = true;
+                        }
+                    }
+                    onTextChanged: {
+                        win.refreshNickMatches();
+                        win.nickSelectedIndex = win.firstOpenableNickIndex();
+                    }
+                }
+
+                Text {
+                    objectName: "nickFilterPlaceholder"
+                    z: 0
+                    anchors.left: parent.left
+                    anchors.leftMargin: win.scaledSize(8)
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: "Jump to nick…"
+                    color: win.mutedColor
+                    font.family: "iA Writer Mono S"
+                    font.pixelSize: win.scaledSize(13)
+                    visible: nickFilter.text.length === 0
+                }
+            }
+
+            ListView {
+                id: nickList
+                objectName: "nickList"
+                width: parent.width
+                height: Math.min(contentHeight, win.scaledSize(252))
+                clip: true
+                boundsBehavior: Flickable.StopAtBounds
+                model: nickModel
+                currentIndex: win.nickSelectedIndex
+                highlightFollowsCurrentItem: true
+
+                delegate: Item {
+                    id: nickRow
+                    required property int index
+                    required property string nick
+                    required property string label
+                    required property string status
+                    required property bool away
+
+                    readonly property bool showAway: win.awayPresenceVisible && away
+                    readonly property bool selected: index === win.nickSelectedIndex
+
+                    objectName: "nickPick-" + nick
+                    Accessible.name: label
+                    Accessible.description: win.memberStatusVisible ? status : ""
+                    Accessible.role: Accessible.Button
+                    Accessible.onPressAction: {
+                        if (win.canOpenDirectMessage(nick)) {
+                            win.nickSelectedIndex = index;
+                            win.activateNickSelection();
+                        }
+                    }
+                    width: nickList.width
+                    height: win.scaledSize(43)
+
+                    Rectangle {
+                        objectName: "nickPickHighlight"
+                        anchors.fill: parent
+                        anchors.leftMargin: win.scaledSize(8)
+                        anchors.rightMargin: win.scaledSize(8)
+                        radius: win.scaledSize(7)
+                        color: nickMouse.containsMouse || nickRow.selected
+                            ? win.hoverColor
+                            : "transparent"
+                    }
+
+                    Rectangle {
+                        anchors.left: parent.left
+                        anchors.leftMargin: win.scaledSize(18)
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: win.scaledSize(28)
+                        height: width
+                        radius: width / 2
+                        color: win.mixColors(
+                            win.pageColor,
+                            win.nickColor(nickRow.nick),
+                            win.darkMode ? 0.23 : 0.16)
+                        opacity: nickRow.showAway ? 0.62 : 1
+
+                        Text {
+                            anchors.centerIn: parent
+                            text: win.initials(nickRow.nick)
+                            color: win.nickColor(nickRow.nick)
+                            font.family: "iA Writer Mono S"
+                            font.bold: true
+                            font.pixelSize: win.scaledSize(11)
+                        }
+
+                        Rectangle {
+                            objectName: "nickPick-presence-" + nickRow.nick
+                            visible: win.awayPresenceVisible
+                            anchors.right: parent.right
+                            anchors.bottom: parent.bottom
+                            width: win.scaledSize(7)
+                            height: width
+                            radius: width / 2
+                            color: nickRow.showAway ? "#d6a552" : "#69b978"
+                            border.width: win.scaledSize(2)
+                            border.color: win.raisedColor
+                        }
+                    }
+
+                    Column {
+                        anchors.left: parent.left
+                        anchors.leftMargin: win.scaledSize(56)
+                        anchors.right: parent.right
+                        anchors.rightMargin: win.scaledSize(10)
+                        anchors.verticalCenter: parent.verticalCenter
+                        spacing: 0
+
+                        Text {
+                            width: parent.width
+                            text: nickRow.label
+                            color: nickRow.showAway ? win.mutedColor : win.inkColor
+                            elide: Text.ElideRight
+                            font.family: "iA Writer Mono S"
+                            font.bold: nickRow.nick === win.selfNick
+                            font.pixelSize: win.scaledSize(12)
+                        }
+
+                        Text {
+                            objectName: "nickPick-status-" + nickRow.nick
+                            visible: win.memberStatusVisible && nickRow.status.length > 0
+                            width: parent.width
+                            text: nickRow.status
+                            color: win.mutedColor
+                            elide: Text.ElideRight
+                            font.family: "iA Writer Mono S"
+                            font.pixelSize: win.scaledSize(9)
+                        }
+                    }
+
+                    MouseArea {
+                        id: nickMouse
+                        anchors.fill: parent
+                        enabled: win.canOpenDirectMessage(nickRow.nick)
+                        hoverEnabled: true
+                        cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                        onClicked: {
+                            win.nickSelectedIndex = nickRow.index;
+                            win.activateNickSelection();
+                        }
                     }
                 }
             }

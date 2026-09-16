@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - `/ping [nick]`, `/time [nick]`, and `/version [nick]` send those CTCP queries. Empty form uses the open direct message. Replies copy into the asking conversation, like `/whois`. Status stays the log. Channel targets are refused. `--demo-server` answers those queries so the transcript row shows up without a live peer.
+- Jump to a channel nick with `Ctrl+Shift+K`. Type filters the current channel's members, Up/Down highlight, Enter opens or creates that DM, Escape dismisses. The `ONLINE` heading opens the same sheet. Disabled on direct messages and Status.
 
 ## [0.4.0] - 2026-09-14
 
