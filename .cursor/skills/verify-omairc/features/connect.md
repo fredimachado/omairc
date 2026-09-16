@@ -7,7 +7,7 @@ Connect is the first-run sheet that asks for a network profile before the compil
 - `connect-first-run` shows the Connect overlay when no complete profile is saved.
 - `connect-defaults` prefills Host `irc.libera.chat`, Port `6697`, TLS on, and Autojoin `#omarchy`.
 - `connect-on-startup` offers an opt-in `Connect automatically on startup` toggle, off by default.
-- `connect-preferences` holds global settings. `Reopen direct messages on startup` is on by default and takes effect immediately, without Apply.
+- `connect-preferences` holds global settings. `Reopen direct messages on startup` is on by default and takes effect immediately, without Apply. Enter on that toggle walks focus; Ctrl+Enter does nothing on the Preferences tab.
 - `connect-nick-required` shows `Nick is required` and keeps Apply muted while Nick is empty.
 - `connect-required` keeps the sheet up on first run; Escape and an outside click do not dismiss it.
 - `connect-keyboard` tabs from the network list through the form to Apply, and Shift+Tab returns. Enter Applies when Nick is complete. Enter from Host with an empty nick keeps `Nick is required` and does not start a session. Apply, Discard, and Add network are reachable without a mouse.
@@ -41,4 +41,4 @@ Preconditions:
 - NickServ sits in the Tab order after Password. Forget links appear only when a stored secret exists. First run skips Add network, Forget, and Remove.
 - Enter on a network row selects that network. A second Enter or Ctrl+Return Applies. Enter on Discard, Add network, or Forget activates that control.
 - Disconnect stops the selected live or reconnecting session. The sheet stays open. The profile and Connect automatically on startup stay as saved. Apply starts that network again.
-- The Preferences tab is global. `Reopen direct messages on startup` writes immediately and does not use Apply. Ctrl+Enter does nothing on that tab.
+- The Preferences tab is global. `Reopen direct messages on startup` writes immediately and does not use Apply. Enter on that toggle walks focus the same way it does on Connection switches. Ctrl+Enter does nothing on that tab.

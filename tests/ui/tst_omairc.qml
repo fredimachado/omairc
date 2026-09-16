@@ -3867,6 +3867,14 @@ TestCase {
         keyClick(Qt.Key_Tab);
         wait(0);
         compare(focusObjectName(window), "connectionReopenDirects");
+
+        var checkedBefore = reopen.checked;
+        keyClick(Qt.Key_Return);
+        compare(reopen.checked, checkedBefore);
+        compare(liveIrc.reopenDirectMessages, checkedBefore);
+        verify(findChild(window, "connectionSheet").visible);
+        verify(focusObjectName(window) !== "connectionReopenDirects");
+
         window.close();
         liveIrc.reopenDirectMessages = true;
     }

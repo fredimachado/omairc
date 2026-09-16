@@ -4640,6 +4640,9 @@ ApplicationWindow {
                                         id: connectionReopenDirects
                                         objectName: "connectionReopenDirects"
                                         Accessible.name: "Reopen direct messages on startup"
+                                        Keys.onPressed: function(event) {
+                                            win.applyFromSheetKey(event)
+                                        }
                                         onToggled: {
                                             if (win.irc)
                                                 win.irc.reopenDirectMessages = checked;
