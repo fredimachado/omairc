@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `/ping [nick]`, `/time [nick]`, and `/version [nick]` send those CTCP queries. Empty form uses the open direct message. Replies copy into the asking conversation, like `/whois`. Status stays the log. Channel targets are refused. `--demo-server` answers those queries so the transcript row shows up without a live peer.
 - Direct messages the user opened or replied to come back on the next connect. A query the user never touched stays session-local. Preferences has a global `Reopen direct messages on startup` toggle, on by default. Turning it off stops restore but still records engaged targets under `[openDirects]` in `omairc.conf`, so turning it back on can reopen them. `Ctrl+W` drops a query from that set. NickServ and other service queries are not restored. Replayed history stays muted, with no unread badge or notification. Restore waits until after ISUPPORT (`376` / `422`).
+- Jump to a channel nick with `Ctrl+Shift+K`. Type filters the current channel's members, Up/Down highlight, Enter opens or creates that DM, Escape dismisses. The `ONLINE` heading opens the same sheet. Disabled on direct messages and Status.
 
 ## [0.4.0] - 2026-09-14
 

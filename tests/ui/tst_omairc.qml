@@ -1117,6 +1117,23 @@ TestCase {
         return sheet;
     }
 
+    function openNickSheet() {
+        keyClick(Qt.Key_K, Qt.ControlModifier | Qt.ShiftModifier);
+        var sheet = item("nickSheet");
+        tryCompare(sheet, "opened", true);
+        tryCompare(item("nickFilter"), "activeFocus", true);
+        return sheet;
+    }
+
+    function nickModelRows() {
+        var model = item("nickModel");
+        var rows = [];
+        var index = 0;
+        for (; index < model.count; ++index)
+            rows.push(model.get(index).name + "=" + model.get(index).label);
+        return rows;
+    }
+
     function saveScreenshot(name) {
         var image = grabImage(appWindow.contentItem);
         try {
@@ -3337,6 +3354,181 @@ TestCase {
         typeText("ric");
         tryCompare(item("jumpFilter"), "text", "ric");
         compare(item("jumpFilterPlaceholder").visible, false);
+    }
+
+    function test_ctrlShiftKOpensFilteredNickAndCreatesDm() {
+        openSeededAppWindow();
+        compare(appWindow.currentConversation, "#omarchy");
+        var previousCount = appWindow.irc.conversations.rowCount();
+        var composer = item("messageComposer");
+        var sheet = openNickSheet();
+        compare(item("nickFilterPlaceholder").visible, true);
+        compare(item("nickFilterPlaceholder").text, "Jump to nick…");
+        compare(nickModelRows().join(" "),
+                "fred=~fred anna=&anna dax=@dax mira=@mira kai=%kai teo=+teo "
+                + "ivy=ivy lena=lena max=max nora=nora sam=sam sol=sol");
+        compare(appWindow.nickSelectedIndex, 1);
+        compare(item("nickModel").get(1).name, "anna");
+        saveScreenshot("jump-to-nick");
+
+        typeText("mi");
+        tryCompare(item("nickFilter"), "text", "mi");
+        compare(item("nickFilterPlaceholder").visible, false);
+        var model = item("nickModel");
+        compare(model.count, 1);
+        compare(model.get(0).name, "mira");
+        compare(model.get(0).label, "@mira");
+        compare(model.get(0).memberStatus, "making tea");
+        compare(appWindow.nickSelectedIndex, 0);
+
+        keyClick(Qt.Key_Return);
+        tryCompare(sheet, "opened", false);
+        tryCompare(appWindow, "currentConversation", "mira");
+        compare(appWindow.currentTopic, "Direct message with mira");
+        tryVerify(function() {
+            return appWindow.irc.conversations.rowCount() === previousCount + 1;
+        });
+        verify(!item("membersPanel").visible);
+        tryCompare(composer, "activeFocus", true);
+    }
+
+    function test_ctrlShiftKSelectsExistingDirectMessage() {
+        openSeededAppWindow();
+        var previousCount = appWindow.irc.conversations.rowCount();
+        var sheet = openNickSheet();
+        typeText("anna");
+        tryCompare(item("nickFilter"), "text", "anna");
+        compare(item("nickModel").count, 1);
+        compare(item("nickModel").get(0).name, "anna");
+        keyClick(Qt.Key_Return);
+        tryCompare(sheet, "opened", false);
+        tryCompare(appWindow, "currentConversation", "anna");
+        compare(appWindow.irc.conversations.rowCount(), previousCount);
+        compare(appWindow.currentTopic, "Direct message with anna");
+    }
+
+    function test_ctrlShiftKEscapeKeepsConversationAndDraft() {
+        openSeededAppWindow();
+        var composer = item("messageComposer");
+        mouseClick(composer);
+        verify(composer.activeFocus);
+        typeText("keep this draft");
+        compare(composer.text, "keep this draft");
+
+        var sheet = openNickSheet();
+        typeText("teo");
+        tryCompare(item("nickFilter"), "text", "teo");
+        keyClick(Qt.Key_Escape);
+        tryCompare(sheet, "opened", false);
+        compare(appWindow.currentConversation, "#omarchy");
+        compare(composer.text, "keep this draft");
+        tryCompare(composer, "activeFocus", true);
+    }
+
+    function test_ctrlShiftKOrderMatchesMemberPanel() {
+        openSeededAppWindow();
+        verify(item("membersPanel").visible);
+        var panel = renderedMembers();
+        openNickSheet();
+        compare(nickModelRows().join(" "), panel.join(" "));
+    }
+
+    function test_ctrlShiftKWorksWithMembersHidden() {
+        openSeededAppWindow();
+        keyClick(Qt.Key_M, Qt.ControlModifier | Qt.ShiftModifier);
+        tryCompare(item("membersPanel"), "visible", false);
+        var previousCount = appWindow.irc.conversations.rowCount();
+        var sheet = openNickSheet();
+        verify(!item("membersPanel").visible);
+        typeText("kai");
+        tryCompare(item("nickFilter"), "text", "kai");
+        compare(item("nickModel").count, 1);
+        compare(item("nickModel").get(0).name, "kai");
+        keyClick(Qt.Key_Return);
+        tryCompare(sheet, "opened", false);
+        tryCompare(appWindow, "currentConversation", "kai");
+        tryVerify(function() {
+            return appWindow.irc.conversations.rowCount() === previousCount + 1;
+        });
+    }
+
+    function test_ctrlShiftKShowsAwayState() {
+        openSeededAppWindow();
+        openNickSheet();
+        var model = item("nickModel");
+        var teo = -1;
+        var index = 0;
+        for (; index < model.count; ++index) {
+            if (model.get(index).name === "teo") {
+                teo = index;
+                break;
+            }
+        }
+        verify(teo >= 0, "teo should be in the nick sheet");
+        compare(model.get(teo).awayFlag, 1);
+        compare(model.get(teo).label, "+teo");
+        var list = item("nickList");
+        list.positionViewAtIndex(teo, ListView.Contain);
+        tryVerify(function() {
+            return list.itemAtIndex(teo) !== null;
+        });
+        var row = list.itemAtIndex(teo);
+        verify(row !== null, "teo nick row should render");
+        compare(row.nick, "teo");
+        compare(row.showAway, true);
+        var dot = findChild(row, "nickPick-presence-teo");
+        verify(dot !== null, "nick sheet should show teo's presence dot");
+        compare(dot.visible, true);
+        verify(Qt.colorEqual(dot.color, "#d6a552"));
+    }
+
+    function test_ctrlShiftKIgnoredOnDirectMessage() {
+        openSeededAppWindow();
+        mouseClick(namedItem(liveConversation("anna")));
+        tryCompare(appWindow, "currentConversation", "anna");
+        keyClick(Qt.Key_K, Qt.ControlModifier | Qt.ShiftModifier);
+        compare(item("nickSheet").opened, false);
+        compare(appWindow.currentConversation, "anna");
+    }
+
+    function test_ctrlShiftKIgnoredOnStatus() {
+        openSeededAppWindow();
+        keyClick(Qt.Key_QuoteLeft, Qt.ControlModifier);
+        tryCompare(appWindow, "consoleVisible", true);
+        keyClick(Qt.Key_K, Qt.ControlModifier | Qt.ShiftModifier);
+        compare(item("nickSheet").opened, false);
+        compare(appWindow.consoleVisible, true);
+    }
+
+    function test_ctrlShiftKIgnoredWhenConnectIsVisible() {
+        openSeededAppWindow();
+        compare(appWindow.currentConversation, "#omarchy");
+        verify(item("membersPanel").visible);
+        keyClick(Qt.Key_Comma, Qt.ControlModifier);
+        tryCompare(appWindow, "connectionOverlayVisible", true);
+        tryCompare(item("connectionSheet"), "visible", true);
+
+        keyClick(Qt.Key_K, Qt.ControlModifier | Qt.ShiftModifier);
+        compare(item("nickSheet").opened, false);
+        compare(appWindow.connectionOverlayVisible, true);
+
+        keyClick(Qt.Key_M, Qt.ControlModifier | Qt.ShiftModifier);
+        compare(appWindow.membersVisible, true);
+        compare(item("membersPanel").visible, true);
+        compare(appWindow.connectionOverlayVisible, true);
+    }
+
+    function test_membersHeadingOpensNickSheet() {
+        openSeededAppWindow();
+        verify(item("membersPanel").visible);
+        mouseClick(item("membersHeadingButton"));
+        var sheet = item("nickSheet");
+        tryCompare(sheet, "opened", true);
+        tryCompare(item("nickFilter"), "activeFocus", true);
+        compare(item("nickModel").get(0).name, "fred");
+        keyClick(Qt.Key_Escape);
+        tryCompare(sheet, "opened", false);
+        tryCompare(item("messageComposer"), "activeFocus", true);
     }
 
     function test_openDirectMessageFromMember() {
@@ -5630,6 +5822,10 @@ TestCase {
                "shortcut sheet should list Ctrl+K");
         verify(texts.indexOf("jump to conversation") !== -1,
                "shortcut sheet should name jump to conversation");
+        verify(texts.indexOf("Ctrl+Shift+K") !== -1,
+               "shortcut sheet should list Ctrl+Shift+K");
+        verify(texts.indexOf("jump to nick") !== -1,
+               "shortcut sheet should name jump to nick");
         verify(texts.indexOf("/disconnect") !== -1,
                "shortcut sheet should list /disconnect");
         keyClick(Qt.Key_Escape);
