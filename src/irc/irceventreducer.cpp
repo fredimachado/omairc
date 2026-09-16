@@ -406,7 +406,8 @@ std::optional<IrcMemberView> IrcEventReducer::memberView(
     // Self-away arrives as a network-level numeric (305/306), not as member
     // presence, and a server is not required to echo our own AWAY back through
     // away-notify. Overlay it on our own row so the identity footer and the
-    // self member row agree in every channel.
+    // self member row agree in every channel. The event carries no reason, so
+    // the overlay has none.
     std::optional<IrcAway> away = facts.away;
     if (!away && selfAway(key.networkId)
         && isSelf(key.networkId, member->second.displayNick)) {

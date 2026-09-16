@@ -4897,6 +4897,7 @@ ApplicationWindow {
                     readonly property string nick: memberData.nick
                     readonly property string label: memberData.label
                     readonly property string status: memberData.status
+                    // Exact match, like `openable`; the reducer's overlay is the CASEMAPPING-aware path.
                     readonly property bool isSelf: nick.length > 0 && nick === win.selfNick
                     // Other members' away state needs away-notify, but our own
                     // arrives as the 305/306 numerics, so it stays visible and
@@ -5379,6 +5380,7 @@ ApplicationWindow {
 
                     readonly property string nick: name
                     readonly property bool away: awayFlag === 1
+                    // Exact match, like `openable`; the reducer's overlay is the CASEMAPPING-aware path.
                     readonly property bool isSelf: nick.length > 0 && nick === win.selfNick
                     readonly property bool showAway: away
                         && (win.awayPresenceVisible || isSelf)

@@ -64,6 +64,8 @@ struct IrcViewNotify {
         return notify;
     }
 
+    // Deliberately broader than the row that changed: self-away is
+    // network-scoped and rare, and syncMembers short-circuits an unchanged list.
     static IrcViewNotify memberReset()
     {
         IrcViewNotify notify;
