@@ -6,6 +6,7 @@ Open a direct message lets a user click another person in a channel member list 
 
 - `dm-open-seeded` opens the existing `anna` conversation from her member row.
 - `dm-create` adds a new DIRECT MESSAGES row when the nick is not already listed.
+- `dm-nick-sheet` opens or creates that DM from `Ctrl+Shift+K` or the `ONLINE` heading, including when the member panel is hidden.
 - `dm-history` shows that new conversation's own transcript, not the channel's.
 - `dm-unread` clears anna's unread badge when her conversation is opened.
 - `dm-self` ignores a click on `fred`.
@@ -15,6 +16,7 @@ Open a direct message lets a user click another person in a channel member list 
 
 - In a channel with the member panel open, click a member who is not `fred`.
 - Press `Ctrl+Shift+P`, move with arrows, and press Enter on a member who is not `fred`.
+- Press `Ctrl+Shift+K` on a channel, type a nick substring, and press Enter. Click `ONLINE` in the member panel for the same sheet.
 - Click an existing DIRECT MESSAGES row (`anna` or `dax`).
 - Click the author or avatar on a chat or action row. Grouped follow-ups, event rows, WHOIS rows, and `fred` do nothing.
 

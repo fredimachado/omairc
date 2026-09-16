@@ -103,6 +103,7 @@ Use `control-omairc` against the isolated window. Stable handles:
 | `key --key ctrl+w` | Close the selected direct message. No-op on a channel or Status. |
 | `key --key ctrl+slash` | Toggle the shortcuts overlay |
 | `key --key ctrl+k` | Jump to a conversation. No-op while Connect is visible. |
+| `key --key ctrl+shift+k` | Jump to a channel nick and open or create that DM. No-op on a direct message or Status. |
 | `key --key ctrl+grave` | Toggle Status. Does nothing useful on first-run Connect. |
 | `key --key alt+Down` | Next sidebar conversation (channels, then DMs). Status is not in this list. |
 | `key --key alt+Up` | Previous sidebar conversation |
@@ -117,7 +118,7 @@ Use `control-omairc` against the isolated window. Stable handles:
 
 Named clicks are window-relative pixels for 1180x760 at textScale 1.0. They are invalid on a maximized window, a restored user geometry, or a portal text scale other than 1.0. That is why launch isolates XDG and DBus.
 
-QML object names used by `bin/test` (not visible to xdotool): `connectionSheet`, `connectionHost`, `connectionNick`, `connectionPort`, `connectionTls`, `connectionUsername`, `connectionRealname`, `connectionAutojoin`, `connectionConnectOnStartup`, `connectionPassword`, `connectionNickServ`, `connectionProblem`, `connectionCredentialStatus`, `connectionForgetPassword`, `connectionForgetNickServ`, `connectionAddNetwork`, `connectionRemove`, `connectionDisconnect`, `connectionApply`, `connectionDiscard`, `networkChoiceList`, `connectionSheetTab-connection`, `connectionSheetTab-preferences`, `connectionPreferencesPanel`, `connectionReopenDirects`, `conversation-omarchy-#desktop`, `conversation-omarchy-anna`, `messageComposer`, `sendButton`, `peopleButton`, `membersPanel`, `membersList`, `member-mira`, `messageList`, `messageBody`, `urlHit`, `messageUnseenJump`, `directConversationRepeater`, `networkHeaderButton-omarchy`, `consoleList`, `consoleUnseenJump`, `selfNickLabel`, `selfPresenceDot`, `selfPresenceLabel`, `presence-dot-anna`, `member-status-anna`, `shortcutsSheet`, `jumpSheet`, `jumpFilter`, `jumpFilterPlaceholder`, `jumpModel`, `typingTranscript`, `typingTranscriptDots`, `typingTranscriptAvatar`, `typingTranscriptHeader`, `member-typing-anna`, `slashCompleteList`, `slashHit-join`.
+QML object names used by `bin/test` (not visible to xdotool): `connectionSheet`, `connectionHost`, `connectionNick`, `connectionPort`, `connectionTls`, `connectionUsername`, `connectionRealname`, `connectionAutojoin`, `connectionConnectOnStartup`, `connectionPassword`, `connectionNickServ`, `connectionProblem`, `connectionCredentialStatus`, `connectionForgetPassword`, `connectionForgetNickServ`, `connectionAddNetwork`, `connectionRemove`, `connectionDisconnect`, `connectionApply`, `connectionDiscard`, `networkChoiceList`, `connectionSheetTab-connection`, `connectionSheetTab-preferences`, `connectionPreferencesPanel`, `connectionReopenDirects`, `conversation-omarchy-#desktop`, `conversation-omarchy-anna`, `messageComposer`, `sendButton`, `peopleButton`, `membersPanel`, `membersList`, `membersHeadingButton`, `member-mira`, `messageList`, `messageBody`, `urlHit`, `messageUnseenJump`, `directConversationRepeater`, `networkHeaderButton-omarchy`, `consoleList`, `consoleUnseenJump`, `selfNickLabel`, `selfPresenceDot`, `selfPresenceLabel`, `presence-dot-anna`, `member-status-anna`, `shortcutsSheet`, `jumpSheet`, `jumpFilter`, `jumpFilterPlaceholder`, `jumpModel`, `nickSheet`, `nickFilter`, `nickFilterPlaceholder`, `nickModel`, `nickList`, `typingTranscript`, `typingTranscriptDots`, `typingTranscriptAvatar`, `typingTranscriptHeader`, `member-typing-anna`, `slashCompleteList`, `slashHit-join`.
 
 Typical drive:
 
@@ -179,6 +180,6 @@ cleanup
 
 `click-send` assumes the member panel is open (channel, members visible, width >= 980). Prefer `send --text` / `Enter`.
 `click-people` assumes the member column is open. After it hides, use `click-people --hidden`.
-`key --key ctrl+slash` maps to `Control_L+slash`. `ctrl+shift+m` and `ctrl+shift+p` map to `Control_L+Shift_L+m` / `p`. xdotool's shorter tokens do not reach those Qt shortcuts on the isolated Xvfb.
+`key --key ctrl+slash` maps to `Control_L+slash`. `ctrl+shift+m`, `ctrl+shift+p`, and `ctrl+shift+k` map to `Control_L+Shift_L+m` / `p` / `k`. xdotool's shorter tokens do not reach those Qt shortcuts on the isolated Xvfb.
 
 If Xvfb tools are missing, install `xorg-server-xvfb xorg-xauth xdotool imagemagick` before using this skill. `bin/test` can still run the offscreen QML suite without those packages.
