@@ -41,8 +41,30 @@ if not exist "!EXE!" (
 )
 
 if exist "!QTBIN!\windeployqt.exe" (
-  "!QTBIN!\windeployqt.exe" --qmldir "!ROOT!\src" "!EXE!"
+  rem Default Qt 6.11 windeployqt follows every Quick Controls style and
+  rem ships Mesa, translations, and QML tooling. Omairc forces Material.
+  "!QTBIN!\windeployqt.exe" ^
+    --qmldir "!ROOT!\src" ^
+    --release ^
+    --no-translations ^
+    --no-opengl-sw ^
+    --no-compiler-runtime ^
+    --no-system-d3d-compiler ^
+    --no-system-dxc-compiler ^
+    --skip-plugin-types qmltooling,generic,imageformats ^
+    --no-quickcontrols2fusion ^
+    --no-quickcontrols2imagine ^
+    --no-quickcontrols2imaginestyleimpl ^
+    --no-quickcontrols2universal ^
+    --no-quickcontrols2universalstyleimpl ^
+    --no-quickcontrols2fluentwinui3styleimpl ^
+    --no-quickcontrols2windowsstyleimpl ^
+    --no-quick3dutils ^
+    --no-quickeffects ^
+    --no-quickshapes ^
+    "!EXE!"
   if errorlevel 1 exit /b 1
+  call :prune_qt_deploy "!BUILD_DIR!\release"
 )
 
 rem windeployqt does not always ship QtKeychain; copy it next to the exe when present.
@@ -51,6 +73,59 @@ for %%F in ("!QTBIN!\libqt6keychain.dll" "!QTBIN!\qt6keychain.dll") do (
 )
 
 echo Built !EXE!
+exit /b 0
+
+:prune_qt_deploy
+set "REL=%~1"
+if not exist "!REL!\omairc.exe" exit /b 0
+
+rem qmlimportscanner still copies every Controls style even when the matching
+rem libraries are skipped. Keep Material plus Basic as a load fallback.
+for %%D in (
+  "!REL!\qml\QtQuick\Controls\FluentWinUI3"
+  "!REL!\qml\QtQuick\Controls\Fusion"
+  "!REL!\qml\QtQuick\Controls\Imagine"
+  "!REL!\qml\QtQuick\Controls\Universal"
+  "!REL!\qml\QtQuick\Controls\Windows"
+  "!REL!\qml\QtQuick\NativeStyle"
+  "!REL!\qml\QtQuick\Effects"
+  "!REL!\qml\QtQuick\Shapes"
+  "!REL!\qml\QtQuick\Dialogs"
+  "!REL!\qml\QtQuick\Particles"
+  "!REL!\qml\QtQuick\LocalStorage"
+  "!REL!\qml\QtQuick\Timeline"
+  "!REL!\qml\QtQuick\tooling"
+  "!REL!\qml\QtQuick\VectorImage"
+  "!REL!\qml\QtQuick\Controls\designer"
+  "!REL!\translations"
+  "!REL!\qmltooling"
+  "!REL!\generic"
+  "!REL!\imageformats"
+) do (
+  if exist %%D rmdir /s /q %%D
+)
+
+for %%F in (
+  opengl32sw.dll
+  D3Dcompiler_47.dll
+  dxcompiler.dll
+  dxil.dll
+  Qt6QuickControls2Fusion.dll
+  Qt6QuickControls2FusionStyleImpl.dll
+  Qt6QuickControls2Imagine.dll
+  Qt6QuickControls2ImagineStyleImpl.dll
+  Qt6QuickControls2Universal.dll
+  Qt6QuickControls2UniversalStyleImpl.dll
+  Qt6QuickControls2FluentWinUI3StyleImpl.dll
+  Qt6QuickControls2WindowsStyleImpl.dll
+  Qt6QuickEffects.dll
+  Qt6QuickShapes.dll
+  Qt6Quick3DUtils.dll
+) do (
+  if exist "!REL!\%%F" del /q "!REL!\%%F"
+)
+
+if exist "!REL!\qml" del /s /q "!REL!\qml\*.qmltypes" >nul 2>&1
 exit /b 0
 
 :find_qmake
