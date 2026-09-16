@@ -1521,21 +1521,30 @@ ApplicationWindow {
     Shortcut {
         sequence: "Ctrl+Shift+K"
         context: Qt.ApplicationShortcut
-        enabled: currentConversationIsChannel && !consoleVisible && !win.shortcutOverlayOpen
+        enabled: currentConversationIsChannel
+            && !consoleVisible
+            && !win.connectionOverlayVisible
+            && !win.shortcutOverlayOpen
         onActivated: win.openNickSheet()
     }
 
     Shortcut {
         sequence: "Ctrl+Shift+M"
         context: Qt.ApplicationShortcut
-        enabled: currentConversationIsChannel && !consoleVisible && !win.shortcutOverlayOpen
+        enabled: currentConversationIsChannel
+            && !consoleVisible
+            && !win.connectionOverlayVisible
+            && !win.shortcutOverlayOpen
         onActivated: membersVisible = !membersVisible
     }
 
     Shortcut {
         sequence: "Ctrl+Shift+P"
         context: Qt.ApplicationShortcut
-        enabled: currentConversationIsChannel && !consoleVisible && !win.shortcutOverlayOpen
+        enabled: currentConversationIsChannel
+            && !consoleVisible
+            && !win.connectionOverlayVisible
+            && !win.shortcutOverlayOpen
         onActivated: focusMembersList()
     }
 
@@ -4827,10 +4836,12 @@ ApplicationWindow {
                 id: membersHeadingHit
                 objectName: "membersHeadingButton"
                 anchors.fill: membersHeading
+                anchors.margins: -win.scaledSize(8)
                 hoverEnabled: true
                 cursorShape: Qt.PointingHandCursor
                 Accessible.role: Accessible.Button
                 Accessible.name: "Jump to nick"
+                Accessible.onPressAction: win.openNickSheet()
                 onClicked: win.openNickSheet()
             }
 

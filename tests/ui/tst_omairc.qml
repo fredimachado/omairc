@@ -3500,6 +3500,24 @@ TestCase {
         compare(appWindow.consoleVisible, true);
     }
 
+    function test_ctrlShiftKIgnoredWhenConnectIsVisible() {
+        openSeededAppWindow();
+        compare(appWindow.currentConversation, "#omarchy");
+        verify(item("membersPanel").visible);
+        keyClick(Qt.Key_Comma, Qt.ControlModifier);
+        tryCompare(appWindow, "connectionOverlayVisible", true);
+        tryCompare(item("connectionSheet"), "visible", true);
+
+        keyClick(Qt.Key_K, Qt.ControlModifier | Qt.ShiftModifier);
+        compare(item("nickSheet").opened, false);
+        compare(appWindow.connectionOverlayVisible, true);
+
+        keyClick(Qt.Key_M, Qt.ControlModifier | Qt.ShiftModifier);
+        compare(appWindow.membersVisible, true);
+        compare(item("membersPanel").visible, true);
+        compare(appWindow.connectionOverlayVisible, true);
+    }
+
     function test_membersHeadingOpensNickSheet() {
         openSeededAppWindow();
         verify(item("membersPanel").visible);
