@@ -41,6 +41,17 @@
   Test the live `MessageListModel` and the compiled window. Confirm rendered
   labels. A warning-free QML startup does not prove that bindings render
   visible values.
+- The Connect sheet is tabbed: `Connection` holds the per-network profile and
+  `Preferences` is the home for global settings (still empty). Keep the
+  `Ctrl+/` shortcut hint in its rail so new users find the shortcuts sheet.
+- The Connect sheet is keyboard-first. `Enter` walks to the next field and
+  `Ctrl+Enter` applies, so a stray keypress cannot commit a half-typed
+  profile. `Ctrl+Enter` is one window-level `Shortcut`, not a branch inside
+  each control: wiring it per control meant it silently did nothing wherever
+  focus sat on something without its own handler. The network rail owns
+  `Up`/`Down`/`Home`/`End` and scrolls the focused row into view; focus does
+  not scroll a `Flickable` on its own. Focusable rows must stay reachable by
+  `Tab` as well. Closing the sheet returns focus to the composer.
 - Channel switching must update the topic, message model, people count, and
   member list together.
 - Show the people count, member toggle, and member panel only for channels.

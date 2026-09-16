@@ -3433,6 +3433,86 @@ TestCase {
         compare(findNamed(liveConversation("NickServ")), null);
     }
 
+    function test_connectionSheetCtrlEnterAppliesFromAnyFocus() {
+        restoreNamedConnection();
+        namedConnection.applySucceeds = true;
+        var window = createTemporaryObject(fallbackWindowComponent, null);
+        verify(window !== null, "The ctrl-enter window should load");
+        tryCompare(window, "visible", true);
+        waitForRendering(window.contentItem);
+        window.requestActivate();
+        tryCompare(window, "active", true);
+
+        var sheet = findChild(window, "connectionSheet");
+        var rail = findChild(window, "networkChoiceRepeater");
+
+        // Ctrl+Enter used to be wired per control, so it did nothing wherever
+        // focus sat somewhere without its own handler. It is now one
+        // window-level action that works from every stop in the sheet.
+        var targets = [
+            "networkChoice-libera",
+            "connectionShortcutsHint",
+            "connectionSheetTab-connection",
+            "connectionSheetTab-preferences",
+            "connectionTls",
+            "connectionConnectOnStartup",
+            "connectionPassword",
+            "connectionNickServ",
+            "connectionApply"
+        ];
+        var i = 0;
+        for (i = 0; i < targets.length; ++i) {
+            keyClick(Qt.Key_Comma, Qt.ControlModifier);
+            tryCompare(sheet, "visible", true);
+            waitForRendering(window.contentItem);
+
+            var target = findChild(window, targets[i]);
+            if (target === null)
+                target = repeaterItemByName(rail, targets[i]);
+            verify(target !== null, "Could not find " + targets[i]);
+            target.forceActiveFocus();
+            tryCompare(target, "activeFocus", true);
+
+            namedConnection.applyCalls = 0;
+            keyClick(Qt.Key_Return, Qt.ControlModifier);
+            compare(namedConnection.applyCalls, 1);
+            compare(sheet.visible, false);
+        }
+
+        // Reaching the row by Tab, the way a user does, works the same.
+        keyClick(Qt.Key_Comma, Qt.ControlModifier);
+        tryCompare(sheet, "visible", true);
+        waitForRendering(window.contentItem);
+
+        var reached = false;
+        var step = 0;
+        for (step = 0; step < 40 && !reached; ++step) {
+            keyClick(Qt.Key_Tab);
+            wait(0);
+            reached = focusObjectName(window).indexOf("networkChoice-") === 0;
+        }
+        verify(reached, "Tab should reach a network row");
+        namedConnection.applyCalls = 0;
+        keyClick(Qt.Key_Return, Qt.ControlModifier);
+        compare(namedConnection.applyCalls, 1);
+        compare(sheet.visible, false);
+
+        // Apply belongs to the Connection tab; Preferences has nothing to apply.
+        keyClick(Qt.Key_Comma, Qt.ControlModifier);
+        tryCompare(sheet, "visible", true);
+        waitForRendering(window.contentItem);
+        window.connectionSheetTab = "preferences";
+        waitForRendering(window.contentItem);
+        namedConnection.applyCalls = 0;
+        keyClick(Qt.Key_Return, Qt.ControlModifier);
+        wait(0);
+        compare(namedConnection.applyCalls, 0);
+        verify(sheet.visible);
+
+        window.close();
+        restoreNamedConnection();
+    }
+
     function test_connectionSheetOpensWhenSetupRequired() {
         var window = createTemporaryObject(setupWindowComponent, null);
         verify(window !== null, "The setup window should load");
@@ -3555,6 +3635,14 @@ TestCase {
         keyClick(Qt.Key_Return);
         compare(fakeConnection.setPasswordCalls, 0);
         compare(fakeConnection.lastSetPassword, "");
+
+        // Not even the explicit commit may store a password while the profile
+        // is still invalid.
+        password.forceActiveFocus();
+        tryCompare(password, "activeFocus", true);
+        keyClick(Qt.Key_Return, Qt.ControlModifier);
+        compare(fakeConnection.setPasswordCalls, 0);
+        compare(fakeConnection.lastSetPassword, "");
         window.close();
     }
 
@@ -3575,6 +3663,7 @@ TestCase {
 
         var expected = [
             "networkChoice-setup-id",
+            "connectionShortcutsHint",
             "connectionHost",
             "connectionPort",
             "connectionTls",
@@ -3583,7 +3672,9 @@ TestCase {
             "connectionRealname",
             "connectionAutojoin",
             "connectionConnectOnStartup",
+            "connectionPasswordHelp",
             "connectionPassword",
+            "connectionNickServHelp",
             "connectionNickServ",
             "connectionDiscard",
             "connectionApply"
@@ -3599,8 +3690,20 @@ TestCase {
 
         keyClick(Qt.Key_Tab);
         wait(0);
+        compare(focusObjectName(window), "connectionSheetTab-connection");
+        keyClick(Qt.Key_Tab);
+        wait(0);
+        compare(focusObjectName(window), "connectionSheetTab-preferences");
+        keyClick(Qt.Key_Tab);
+        wait(0);
         compare(focusObjectName(window), "networkChoice-setup-id");
 
+        keyClick(Qt.Key_Tab, Qt.ShiftModifier);
+        wait(0);
+        compare(focusObjectName(window), "connectionSheetTab-preferences");
+        keyClick(Qt.Key_Tab, Qt.ShiftModifier);
+        wait(0);
+        compare(focusObjectName(window), "connectionSheetTab-connection");
         keyClick(Qt.Key_Tab, Qt.ShiftModifier);
         wait(0);
         compare(focusObjectName(window), "connectionApply");
@@ -3608,6 +3711,424 @@ TestCase {
         wait(0);
         compare(focusObjectName(window), "connectionDiscard");
         window.close();
+    }
+
+    function test_connectionSheetTabsSwitchWithArrowKeys() {
+        var window = createTemporaryObject(setupWindowComponent, null);
+        verify(window !== null, "The tab-window should load");
+        tryCompare(window, "visible", true);
+        waitForRendering(window.contentItem);
+        window.requestActivate();
+        tryCompare(window, "active", true);
+
+        var connectionTab = findChild(window, "connectionSheetTab-connection");
+        var preferencesTab = findChild(window, "connectionSheetTab-preferences");
+        verify(connectionTab !== null, "Could not find connectionSheetTab-connection");
+        verify(preferencesTab !== null, "Could not find connectionSheetTab-preferences");
+        compare(window.connectionSheetTab, "connection");
+
+        connectionTab.forceActiveFocus();
+        tryCompare(connectionTab, "activeFocus", true);
+        keyClick(Qt.Key_Right);
+        wait(0);
+        compare(window.connectionSheetTab, "preferences");
+        tryCompare(preferencesTab, "activeFocus", true);
+
+        var preferences = findChild(window, "connectionPreferencesPanel");
+        verify(preferences !== null, "Could not find connectionPreferencesPanel");
+        verify(preferences.visible);
+        compare(findChild(window, "connectionFormArea").visible, false);
+
+        keyClick(Qt.Key_Left);
+        wait(0);
+        compare(window.connectionSheetTab, "connection");
+        tryCompare(connectionTab, "activeFocus", true);
+        verify(findChild(window, "connectionFormArea").visible);
+
+        // Stepping uses the direction, so it wraps both ways rather than
+        // always toggling: Left from the first tab lands on the last, and
+        // Right from the last lands back on the first.
+        keyClick(Qt.Key_Left);
+        wait(0);
+        compare(window.connectionSheetTab, "preferences");
+        tryCompare(preferencesTab, "activeFocus", true);
+
+        keyClick(Qt.Key_Right);
+        wait(0);
+        compare(window.connectionSheetTab, "connection");
+        tryCompare(connectionTab, "activeFocus", true);
+        window.close();
+    }
+
+    function test_connectionSheetHelpShowsOnHoverAndFocus() {
+        var window = createTemporaryObject(setupWindowComponent, null);
+        verify(window !== null, "The help-hover window should load");
+        tryCompare(window, "visible", true);
+        waitForRendering(window.contentItem);
+        window.requestActivate();
+        tryCompare(window, "active", true);
+        wait(200);
+
+        var help = findChild(window, "connectionPasswordHelp");
+        var host = findChild(window, "connectionHost");
+        var tip = findChild(window, "connectionPasswordHelpTip");
+        verify(tip !== null, "Could not find connectionPasswordHelpTip");
+        var away = { x: 5, y: window.height - 5 };
+
+        // Hover alone.
+        mouseMove(window.contentItem, away.x, away.y);
+        wait(500);
+        compare(tip.visible, false);
+        mouseMove(help, help.width / 2, help.height / 2);
+        wait(800);
+        compare(tip.visible, true);
+
+        // Parking the pointer hides it again.
+        mouseMove(window.contentItem, away.x, away.y);
+        wait(700);
+        compare(tip.visible, false);
+
+        // Keyboard focus now drives the same declarative binding. The popup
+        // used to be opened imperatively, which wrote `visible` underneath the
+        // binding; hover must keep working after a focus/blur cycle.
+        help.forceActiveFocus();
+        tryCompare(help, "activeFocus", true);
+        tryCompare(tip, "visible", true);
+
+        host.forceActiveFocus();
+        tryCompare(host, "activeFocus", true);
+        tryCompare(tip, "visible", false);
+
+        mouseMove(help, help.width / 2, help.height / 2);
+        wait(900);
+        compare(tip.visible, true);
+
+        window.close();
+    }
+
+    function test_connectionSheetTabsRespondToClicks() {
+        var window = createTemporaryObject(setupWindowComponent, null);
+        verify(window !== null, "The tab-click window should load");
+        tryCompare(window, "visible", true);
+        waitForRendering(window.contentItem);
+        window.requestActivate();
+        tryCompare(window, "active", true);
+
+        var connectionTab = findChild(window, "connectionSheetTab-connection");
+        var preferencesTab = findChild(window, "connectionSheetTab-preferences");
+        verify(connectionTab !== null, "Could not find connectionSheetTab-connection");
+        verify(preferencesTab !== null, "Could not find connectionSheetTab-preferences");
+
+        mouseClick(preferencesTab);
+        compare(window.connectionSheetTab, "preferences");
+        verify(findChild(window, "connectionPreferencesPanel").visible);
+        compare(findChild(window, "connectionFormArea").visible, false);
+
+        mouseClick(connectionTab);
+        compare(window.connectionSheetTab, "connection");
+        verify(findChild(window, "connectionFormArea").visible);
+        window.close();
+    }
+
+    function test_connectionSheetShortcutsHintOpensShortcuts() {
+        var window = createTemporaryObject(setupWindowComponent, null);
+        verify(window !== null, "The shortcuts-hint window should load");
+        tryCompare(window, "visible", true);
+        waitForRendering(window.contentItem);
+
+        var hint = findChild(window, "connectionShortcutsHint");
+        verify(hint !== null, "Could not find connectionShortcutsHint");
+        verify(hint.visible);
+
+        var shortcuts = findChild(window, "shortcutsSheet");
+        verify(shortcuts !== null, "Could not find shortcutsSheet");
+        mouseClick(hint);
+        tryCompare(shortcuts, "opened", true);
+        window.close();
+    }
+
+    function test_connectionSheetShortcutsHintIsKeyboardReachable() {
+        var window = createTemporaryObject(setupWindowComponent, null);
+        verify(window !== null, "The shortcuts-hint window should load");
+        tryCompare(window, "visible", true);
+        waitForRendering(window.contentItem);
+        window.requestActivate();
+        tryCompare(window, "active", true);
+
+        var hint = findChild(window, "connectionShortcutsHint");
+        verify(hint !== null, "Could not find connectionShortcutsHint");
+        compare(hint.activeFocusOnTab, true);
+
+        var shortcuts = findChild(window, "shortcutsSheet");
+        hint.forceActiveFocus();
+        tryCompare(hint, "activeFocus", true);
+
+        keyClick(Qt.Key_Return);
+        tryCompare(shortcuts, "opened", true);
+        shortcuts.close();
+        tryCompare(shortcuts, "opened", false);
+
+        hint.forceActiveFocus();
+        tryCompare(hint, "activeFocus", true);
+        keyClick(Qt.Key_Space);
+        tryCompare(shortcuts, "opened", true);
+        shortcuts.close();
+        window.close();
+    }
+
+    function test_connectionSheetDistinguishesTheTwoSecrets() {
+        fakeConnection.canForgetPassword = true;
+        fakeConnection.canForgetNickServ = true;
+        var window = createTemporaryObject(setupWindowComponent, null);
+        verify(window !== null, "The label window should load");
+        tryCompare(window, "visible", true);
+        waitForRendering(window.contentItem);
+
+        // #176: a newcomer must be able to tell the server password from the
+        // NickServ password from the sheet alone, and the labels, forget links
+        // and accessibility names must agree.
+        var visibleLabels = [];
+        var seen = [];
+        function walk(node) {
+            if (!node || seen.indexOf(node) !== -1)
+                return;
+            seen.push(node);
+            if (node.text !== undefined && node.visible && node.font !== undefined)
+                visibleLabels.push(String(node.text));
+            var kids = node.children;
+            if (kids) {
+                var index = 0;
+                for (; index < kids.length; ++index)
+                    walk(kids[index]);
+            }
+            if (node.contentItem)
+                walk(node.contentItem);
+        }
+        walk(window.contentItem);
+
+        verify(visibleLabels.indexOf("Server password") !== -1,
+               "the sheet should label the server password field");
+        verify(visibleLabels.indexOf("NickServ password") !== -1,
+               "the sheet should label the NickServ password field");
+        verify(visibleLabels.indexOf("PASS") !== -1,
+               "the server password field should carry the PASS badge");
+        // The old ambiguous labels are gone.
+        compare(visibleLabels.indexOf("Password"), -1);
+        compare(visibleLabels.indexOf("NickServ"), -1);
+
+        verify(visibleLabels.indexOf("forget saved server password") !== -1,
+               "the server password forget link should name the server password");
+        verify(visibleLabels.indexOf("forget saved NickServ password") !== -1,
+               "the NickServ forget link should name the NickServ password");
+
+        var forgetPassword = findChild(window, "connectionForgetPassword");
+        var forgetNickServ = findChild(window, "connectionForgetNickServ");
+        compare(forgetPassword.Accessible.name, "Forget saved server password");
+        compare(forgetNickServ.Accessible.name, "Forget saved NickServ password");
+
+        // Both secrets stay hidden, and the help matches the real protocol
+        // behaviour. A server password is NOT also sent as PASS when SASL is
+        // negotiated: sendRegistration() suppresses PASS whenever SASL was
+        // requested and no separate NickServ password exists, so the password
+        // is used as the SASL secret *instead*. See sendsPassWhenSaslIsUnavailable,
+        // negotiatesSaslPlain and bothSecretsSaslSendsPassAndPlainFromNickServ.
+        compare(findChild(window, "connectionPassword").echoMode, TextInput.Password);
+        compare(findChild(window, "connectionNickServ").echoMode, TextInput.Password);
+        compare(findChild(window, "connectionPassword").Accessible.description,
+                "Used as the SASL secret when no NickServ password is set; otherwise sent as PASS while connecting.");
+        compare(findChild(window, "connectionNickServ").Accessible.description,
+                "Preferred SASL secret. Sent as NickServ IDENTIFY when SASL did not succeed.");
+
+        window.close();
+        fakeConnection.canForgetPassword = false;
+        fakeConnection.canForgetNickServ = false;
+    }
+
+    function test_connectionSheetHelpIsKeyboardReachable() {
+        var window = createTemporaryObject(setupWindowComponent, null);
+        verify(window !== null, "The help window should load");
+        tryCompare(window, "visible", true);
+        waitForRendering(window.contentItem);
+        window.requestActivate();
+        tryCompare(window, "active", true);
+
+        var help = findChild(window, "connectionPasswordHelp");
+        verify(help !== null, "Could not find connectionPasswordHelp");
+        compare(help.activeFocusOnTab, true);
+        compare(help.Accessible.name, "Server password help");
+
+        // The help text is exposed to assistive tech and rendered on focus.
+        compare(findChild(window, "connectionPassword").Accessible.description,
+                "Used as the SASL secret when no NickServ password is set; otherwise sent as PASS while connecting.");
+        var tip = findChild(window, "connectionPasswordHelpTip");
+        verify(tip !== null, "Could not find connectionPasswordHelpTip");
+        compare(tip.visible, false);
+
+        help.forceActiveFocus();
+        tryCompare(help, "activeFocus", true);
+        tryCompare(tip, "visible", true);
+
+        // Leaving the marker hides it again.
+        var host = findChild(window, "connectionHost");
+        host.forceActiveFocus();
+        tryCompare(host, "activeFocus", true);
+        tryCompare(tip, "visible", false);
+
+        // Only the fields that carry help get a marker.
+        compare(findChild(window, "connectionHostHelp").visible, false);
+        compare(findChild(window, "connectionNickServHelp").visible, true);
+        window.close();
+    }
+
+    function test_connectionSheetRailArrowNavigation() {
+        restoreNamedConnection();
+        namedNetworks.append({
+            networkId: "oftc",
+            displayName: "irc.oftc.net",
+            stored: true,
+            selected: false,
+            iconColor: 1
+        });
+        var window = createTemporaryObject(fallbackWindowComponent, null);
+        verify(window !== null, "The rail-arrow window should load");
+        tryCompare(window, "visible", true);
+        waitForRendering(window.contentItem);
+        window.requestActivate();
+        tryCompare(window, "active", true);
+
+        keyClick(Qt.Key_Comma, Qt.ControlModifier);
+        tryCompare(findChild(window, "connectionSheet"), "visible", true);
+        waitForRendering(window.contentItem);
+
+        var rail = findChild(window, "networkChoiceRepeater");
+        var libera = repeaterItemByName(rail, "networkChoice-libera");
+        verify(libera !== null, "Could not find networkChoice-libera");
+        libera.forceActiveFocus();
+        tryCompare(libera, "activeFocus", true);
+
+        keyClick(Qt.Key_Down);
+        wait(0);
+        compare(focusObjectName(window), "networkChoice-oftc");
+
+        keyClick(Qt.Key_Down);
+        wait(0);
+        compare(focusObjectName(window), "connectionAddNetwork");
+
+        keyClick(Qt.Key_Up);
+        wait(0);
+        compare(focusObjectName(window), "networkChoice-oftc");
+
+        keyClick(Qt.Key_Home);
+        wait(0);
+        compare(focusObjectName(window), "networkChoice-libera");
+
+        keyClick(Qt.Key_End);
+        wait(0);
+        compare(focusObjectName(window), "connectionAddNetwork");
+
+        // Down on the last stop stays put rather than jumping columns.
+        keyClick(Qt.Key_Down);
+        wait(0);
+        compare(focusObjectName(window), "connectionAddNetwork");
+
+        // Selecting with Enter still works from the keyboard.
+        namedConnection.applyCalls = 0;
+        libera.forceActiveFocus();
+        keyClick(Qt.Key_Return);
+        compare(namedConnection.applyCalls, 0);
+        compare(namedConnection.selectedNetworkId, "libera");
+        window.close();
+        restoreNamedConnection();
+    }
+
+    function test_connectionSheetRailKeepsFocusedRowVisible() {
+        restoreNamedConnection();
+        var extra = 0;
+        for (extra = 0; extra < 16; ++extra) {
+            namedNetworks.append({
+                networkId: "probe-" + extra,
+                displayName: "irc.probe" + extra + ".example",
+                stored: true,
+                selected: false,
+                iconColor: 1
+            });
+        }
+        var window = createTemporaryObject(fallbackWindowComponent, null);
+        verify(window !== null, "The rail-scroll window should load");
+        tryCompare(window, "visible", true);
+        waitForRendering(window.contentItem);
+        window.requestActivate();
+        tryCompare(window, "active", true);
+
+        keyClick(Qt.Key_Comma, Qt.ControlModifier);
+        tryCompare(findChild(window, "connectionSheet"), "visible", true);
+        waitForRendering(window.contentItem);
+
+        var rail = findChild(window, "networkChoiceRepeater");
+        var scroll = findChild(window, "networkChoiceScroll");
+        var first = repeaterItemByName(rail, "networkChoice-libera");
+        var last = repeaterItemByName(rail, "networkChoice-probe-15");
+
+        function rowIsVisible(row) {
+            return row.y >= scroll.contentY
+                && row.y + row.height <= scroll.contentY + scroll.height;
+        }
+
+        first.forceActiveFocus();
+        tryCompare(first, "activeFocus", true);
+        compare(scroll.contentY, 0);
+        verify(rowIsVisible(first));
+
+        // Focus used to land on rows that sat entirely outside the viewport.
+        verify(last.y >= scroll.contentY + scroll.height);
+        last.forceActiveFocus();
+        tryCompare(last, "activeFocus", true);
+        verify(rowIsVisible(last));
+        verify(scroll.contentY > 0);
+
+        first.forceActiveFocus();
+        tryCompare(first, "activeFocus", true);
+        verify(rowIsVisible(first));
+
+        // Walking the rail with Down keeps every focused row on screen.
+        first.forceActiveFocus();
+        var step = 0;
+        for (step = 0; step < 17; ++step) {
+            keyClick(Qt.Key_Down);
+            wait(0);
+            var focused = window.activeFocusItem;
+            if (focused && focused.objectName
+                    && focused.objectName.indexOf("networkChoice-") === 0)
+                verify(rowIsVisible(focused));
+        }
+        window.close();
+        restoreNamedConnection();
+    }
+
+    function test_connectionSheetCloseRestoresComposerFocus() {
+        restoreNamedConnection();
+        var window = createTemporaryObject(fallbackWindowComponent, null);
+        verify(window !== null, "The focus-restore window should load");
+        tryCompare(window, "visible", true);
+        waitForRendering(window.contentItem);
+        window.requestActivate();
+        tryCompare(window, "active", true);
+
+        var sheet = findChild(window, "connectionSheet");
+        keyClick(Qt.Key_Comma, Qt.ControlModifier);
+        tryCompare(sheet, "visible", true);
+        waitForRendering(window.contentItem);
+
+        var host = findChild(window, "connectionHost");
+        host.forceActiveFocus();
+        tryCompare(host, "activeFocus", true);
+        keyClick(Qt.Key_Escape);
+        tryCompare(sheet, "visible", false);
+
+        // Focus used to be left on the window itself, so typing did nothing.
+        tryCompare(findChild(window, "messageComposer"), "activeFocus", true);
+        window.close();
+        restoreNamedConnection();
     }
 
     function test_connectionDisconnectSitsBesideApply() {
@@ -3628,6 +4149,7 @@ TestCase {
 
         fakeConnection.canDisconnect = true;
         tryCompare(disconnectButton, "visible", true);
+        waitForRendering(window.contentItem);
         compare(disconnectButton.width > 0, true);
         verify(disconnectButton.x < applyButton.x);
         verify(applyButton.x - (disconnectButton.x + disconnectButton.width)
@@ -3690,7 +4212,7 @@ TestCase {
         restoreNamedConnection();
     }
 
-    function test_connectionSheetEnterFromHostKeepsNickProblem() {
+    function test_connectionSheetEnterFromHostAdvancesWithoutApplying() {
         fakeConnection.applyCalls = 0;
         var window = createTemporaryObject(setupWindowComponent, null);
         verify(window !== null, "The setup window should load");
@@ -3705,6 +4227,16 @@ TestCase {
         tryCompare(host, "activeFocus", true);
         keyClick(Qt.Key_Return);
 
+        // Plain Enter walks the form instead of committing it.
+        compare(fakeConnection.applyCalls, 0);
+        tryCompare(findChild(window, "connectionPort"), "activeFocus", true);
+        verify(host.activeFocus === false);
+        verify(findChild(window, "connectionSheet").visible);
+
+        // Ctrl+Enter is the commit, and an invalid profile still refuses it.
+        host.forceActiveFocus();
+        tryCompare(host, "activeFocus", true);
+        keyClick(Qt.Key_Return, Qt.ControlModifier);
         compare(fakeConnection.applyCalls, 0);
         compare(findChild(window, "connectionProblem").text, "Nick is required");
         verify(findChild(window, "connectionProblem").visible);
@@ -3732,7 +4264,7 @@ TestCase {
         verify(nick !== null, "Could not find connectionNick");
         nick.forceActiveFocus();
         tryCompare(nick, "activeFocus", true);
-        keyClick(Qt.Key_Return);
+        keyClick(Qt.Key_Return, Qt.ControlModifier);
 
         compare(namedConnection.applyCalls, 1);
         compare(sheet.visible, false);
@@ -3740,7 +4272,7 @@ TestCase {
         restoreNamedConnection();
     }
 
-    function test_connectionSheetEnterFromSwitchesAppliesAndCloses() {
+    function test_connectionSheetEnterFromSwitchesAdvancesWithoutApplying() {
         restoreNamedConnection();
         namedConnection.applySucceeds = true;
         namedConnection.applyCalls = 0;
@@ -3755,11 +4287,22 @@ TestCase {
         var sheet = findChild(window, "connectionSheet");
         tryCompare(sheet, "visible", true);
 
+        // Enter advances from a switch without flipping or committing it.
         var tls = findChild(window, "connectionTls");
         verify(tls !== null, "Could not find connectionTls");
+        var tlsBefore = tls.checked;
         tls.forceActiveFocus();
         tryCompare(tls, "activeFocus", true);
         keyClick(Qt.Key_Return);
+        compare(namedConnection.applyCalls, 0);
+        compare(tls.checked, tlsBefore);
+        tryCompare(findChild(window, "connectionNick"), "activeFocus", true);
+        verify(sheet.visible);
+
+        // Ctrl+Enter commits from a switch.
+        tls.forceActiveFocus();
+        tryCompare(tls, "activeFocus", true);
+        keyClick(Qt.Key_Return, Qt.ControlModifier);
         compare(namedConnection.applyCalls, 1);
         compare(sheet.visible, false);
 
@@ -3770,7 +4313,7 @@ TestCase {
         verify(startup !== null, "Could not find connectionConnectOnStartup");
         startup.forceActiveFocus();
         tryCompare(startup, "activeFocus", true);
-        keyClick(Qt.Key_Return);
+        keyClick(Qt.Key_Return, Qt.ControlModifier);
         compare(namedConnection.applyCalls, 1);
         compare(sheet.visible, false);
         window.close();
@@ -3890,12 +4433,21 @@ TestCase {
         tryCompare(nick, "activeFocus", true);
         compare(focusObjectName(window), "connectionNick");
 
+        // Plain Enter steps out of the empty nick field without committing.
         keyClick(Qt.Key_Return);
+        compare(fakeConnection.applyCalls, 0);
+        compare(fakeConnection.selectedNetworkId, "setup-id");
+        verify(findChild(window, "connectionSheet").visible);
+        tryCompare(findChild(window, "connectionUsername"), "activeFocus", true);
+
+        // Ctrl+Enter still reports the missing nick and keeps the sheet open.
+        nick.forceActiveFocus();
+        tryCompare(nick, "activeFocus", true);
+        keyClick(Qt.Key_Return, Qt.ControlModifier);
         compare(fakeConnection.applyCalls, 0);
         compare(findChild(window, "connectionProblem").text, "Nick is required");
         verify(findChild(window, "connectionProblem").visible);
         verify(findChild(window, "connectionSheet").visible);
-        compare(fakeConnection.selectedNetworkId, "setup-id");
         verify(nick.activeFocus);
         window.close();
     }
@@ -3929,7 +4481,7 @@ TestCase {
         compare(focusObjectName(window), "connectionHost");
         compare(namedConnection.selectedNetworkId, "libera");
 
-        keyClick(Qt.Key_Return);
+        keyClick(Qt.Key_Return, Qt.ControlModifier);
         compare(namedConnection.applyCalls, 1);
         compare(namedConnection.selectedNetworkId, "libera");
         compare(sheet.visible, false);
