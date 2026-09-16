@@ -243,6 +243,7 @@ private:
     void rememberOpenDirect(const QString& networkId, const QString& target);
     void forgetOpenDirect(const QString& networkId, const QString& target);
     void restoreOpenDirects(const QString& networkId);
+    void noteOpenDirectsMotd(const QString& networkId);
     bool applyMute(const QString& networkId,
                    const QString& target,
                    bool muted);
@@ -332,6 +333,7 @@ private:
     QHash<QString, QString> m_lastErrors;
     QHash<QString, IrcCapabilitySet> m_capabilities;
     QSet<QString> m_unawaySent;
+    QSet<QString> m_openDirectsMotdSeen;
     std::optional<IrcConversationKey> m_selected;
     QString m_selectedTarget;
     QStringList m_networkOrder;

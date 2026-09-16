@@ -154,6 +154,16 @@ void admitMessage(IrcConversationState& conversation, IrcReducedMessage message)
 }
 }
 
+bool ircTargetLooksLikeService(const QString& target,
+                               const IrcServerFeatures& features)
+{
+    const std::string_view types = features.channelTypes();
+    return ircIsServiceIdentity(
+        target,
+        QStringView{},
+        QString::fromLatin1(types.data(), qsizetype(types.size())));
+}
+
 bool IrcMemberView::isAway() const noexcept
 {
     return away.has_value();
@@ -555,11 +565,7 @@ IrcConversationState *IrcEventReducer::ensureConversation(
 
     const IrcServerFeatures& features = serverFeatures(key.networkId);
     const bool targetIsChannel = features.isChannel(utf8(key.normalizedTarget));
-    const std::string_view types = features.channelTypes();
-    const bool targetLooksLikeService = ircIsServiceIdentity(
-        displayTarget,
-        QStringView{},
-        QString::fromLatin1(types.data(), qsizetype(types.size())));
+    const bool targetLooksLikeService = ircTargetLooksLikeService(displayTarget, features);
     if (!ircConversationCauseInserts(cause, targetIsChannel, targetLooksLikeService))
         return nullptr;
 

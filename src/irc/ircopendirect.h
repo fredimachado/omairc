@@ -11,9 +11,6 @@ class IrcOpenDirectStore
 public:
     QStringList targets(const QString& networkId) const;
     QStringList listed(const QString& networkId, const IrcCaseMapping& mapping) const;
-    bool contains(const QString& networkId,
-                  const QString& target,
-                  const IrcCaseMapping& mapping) const;
     bool add(const QString& networkId,
              const QString& target,
              const IrcCaseMapping& mapping);

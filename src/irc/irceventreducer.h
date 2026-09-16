@@ -159,6 +159,9 @@ inline bool ircConversationCauseInserts(IrcConversationCause cause,
     return false;
 }
 
+bool ircTargetLooksLikeService(const QString& target,
+                               const IrcServerFeatures& features);
+
 class IrcEventReducer
 {
 public:

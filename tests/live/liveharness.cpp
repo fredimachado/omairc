@@ -260,9 +260,15 @@ bool liveClassicComplete(const QVector<IrcMessage> &incoming,
 LiveClient::LiveClient(const LiveDaemonInfo &daemon,
                        const QString &nick,
                        bool tls,
-                       const QString &password)
+                       const QString &password,
+                       const QString &networkId,
+                       const QString &transcriptRoot)
 {
-    config.networkId = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    config.networkId = networkId.isEmpty()
+        ? QUuid::createUuid().toString(QUuid::WithoutBraces)
+        : networkId;
+    if (!transcriptRoot.isEmpty())
+        controller.setTranscriptRoot(transcriptRoot);
     config.host = liveHost();
     config.port = tls ? daemon.tlsPort : daemon.plainPort;
     config.tlsEnabled = tls;
@@ -311,6 +317,14 @@ bool LiveClient::waitRegistered(int timeoutMs)
 {
     return waitUntil([this] {
         return session && session->state() == IrcSession::State::Registered;
+    }, timeoutMs);
+}
+
+bool LiveClient::waitMotd(int timeoutMs)
+{
+    return waitUntil([this] {
+        return hasServerLabel(QStringLiteral("376"))
+            || hasServerLabel(QStringLiteral("422"));
     }, timeoutMs);
 }
 

@@ -8,7 +8,6 @@
 #include "ircmute.h"
 #include "ircopendirect.h"
 #include "ircjointarget.h"
-#include "ircservicenick.h"
 #include "ircviewnotify.h"
 #include "irctcp.h"
 #include "irctyping.h"
@@ -19,7 +18,7 @@
 #include <QSettings>
 
 #include <algorithm>
-#include <string_view>
+#include <string>
 #include <variant>
 
 namespace
@@ -69,15 +68,6 @@ bool muteTargetIsUsable(const QString& target, const IrcServerFeatures& features
     if (features.isChannel(utf8(target)))
         return true;
     return ignoreNickIsUsable(target, features);
-}
-
-bool looksLikeServiceTarget(const QString& target, const IrcServerFeatures& features)
-{
-    const std::string_view types = features.channelTypes();
-    return ircIsServiceIdentity(
-        target,
-        QStringView{},
-        QString::fromLatin1(types.data(), qsizetype(types.size())));
 }
 
 QString reopenDirectMessagesKey()
@@ -182,7 +172,7 @@ IrcSession *IrcController::addSession(const IrcSessionConfig& config,
             [this, session](const QString& networkId) {
         m_currentNicks[networkId] = session->nick();
         apply(IrcWelcomeEvent{networkId, session->nick()});
-        restoreOpenDirects(networkId);
+        m_openDirectsMotdSeen.remove(networkId);
         updateStatus(session);
     });
     connect(session, &IrcSession::messageReceived,
@@ -215,6 +205,7 @@ bool IrcController::discardSession(const QString &networkId)
     const bool previousAway = selfAway();
     m_reducer.apply(IrcSelfAwayEvent{networkId, false});
     m_unawaySent.remove(networkId);
+    m_openDirectsMotdSeen.remove(networkId);
     m_currentNicks.remove(networkId);
     m_capabilities.remove(networkId);
     m_console.forget(networkId);
@@ -235,6 +226,7 @@ void IrcController::forgetNetworkState(const QString &networkId)
     const bool previousAway = selfAway();
     m_reducer.forgetNetwork(networkId);
     m_unawaySent.remove(networkId);
+    m_openDirectsMotdSeen.remove(networkId);
     m_currentNicks.remove(networkId);
     m_capabilities.remove(networkId);
     m_lastErrors.remove(networkId);
@@ -438,8 +430,11 @@ void IrcController::setReopenDirectMessages(bool enabled)
     emit reopenDirectMessagesChanged();
     if (!enabled)
         return;
-    for (const QString& networkId : m_sessions.networkIds())
-        restoreOpenDirects(networkId);
+    for (const QString& networkId : m_sessions.networkIds()) {
+        IrcSession *session = m_sessions.findSession(networkId);
+        if (session && session->state() == IrcSession::State::Registered)
+            restoreOpenDirects(networkId);
+    }
 }
 
 bool IrcController::nickIsTyping(const QString& nick) const
@@ -725,6 +720,7 @@ bool IrcController::sendToTarget(const QString &networkId,
         return false;
     }
 
+    rememberOpenDirect(networkId, target);
     const IrcConversationKey key = m_reducer.conversationKey(networkId, target);
     m_reducer.ensureConversation(key, target, IrcConversationCause::QuietSend);
     noteNickDelivery(networkId, target);
@@ -940,6 +936,7 @@ IrcCommandOutcome IrcController::dispatch(const IrcCommand& command,
             return IrcCommandOutcome::WrongScope;
         const bool sent = session->sendAction(selectedTarget(), command.argument);
         if (sent) {
+            rememberOpenDirect(session->networkId(), selectedTarget());
             noteNickDelivery(session->networkId(), selectedTarget());
             echoLocal(IrcMessageKind::Action, command.argument);
             m_typingTarget.clear();
@@ -1149,6 +1146,7 @@ IrcCommandOutcome IrcController::sendSelectedMessage(const QString& body)
         return IrcCommandOutcome::WrongScope;
     const bool sent = session->sendPrivmsg(selectedTarget(), body);
     if (sent) {
+        rememberOpenDirect(session->networkId(), selectedTarget());
         noteNickDelivery(session->networkId(), selectedTarget());
         echoLocal(IrcMessageKind::Message, body);
         m_typingTarget.clear();
@@ -1229,7 +1227,7 @@ bool IrcController::persistableDirectTarget(const QString& networkId,
     const IrcServerFeatures& features = m_reducer.serverFeatures(networkId);
     if (features.isChannel(utf8(target)))
         return false;
-    return !looksLikeServiceTarget(target, features);
+    return !ircTargetLooksLikeService(target, features);
 }
 
 void IrcController::rememberOpenDirect(const QString& networkId, const QString& target)
@@ -1238,10 +1236,11 @@ void IrcController::rememberOpenDirect(const QString& networkId, const QString& 
         return;
     const IrcConversationState *conversation =
         m_reducer.find(m_reducer.conversationKey(networkId, target));
-    if (!conversation || conversation->isChannel())
+    if (conversation && conversation->isChannel())
         return;
     const QString stored =
-        conversation->target.isEmpty() ? target : conversation->target;
+        (conversation && !conversation->target.isEmpty()) ? conversation->target
+                                                          : target;
     m_openDirects.add(networkId, stored,
                       m_reducer.serverFeatures(networkId).caseMapping());
 }
@@ -1254,16 +1253,26 @@ void IrcController::forgetOpenDirect(const QString& networkId, const QString& ta
                          m_reducer.serverFeatures(networkId).caseMapping());
 }
 
+void IrcController::noteOpenDirectsMotd(const QString& networkId)
+{
+    if (networkId.isEmpty() || m_openDirectsMotdSeen.contains(networkId))
+        return;
+    m_openDirectsMotdSeen.insert(networkId);
+    restoreOpenDirects(networkId);
+}
+
 void IrcController::restoreOpenDirects(const QString& networkId)
 {
     if (!m_reopenDirectMessages || networkId.isEmpty())
         return;
     bool created = false;
+    const bool prune = m_openDirectsMotdSeen.contains(networkId);
     const IrcCaseMapping& mapping =
         m_reducer.serverFeatures(networkId).caseMapping();
-    for (const QString& target : m_openDirects.targets(networkId)) {
+    for (const QString& target : m_openDirects.listed(networkId, mapping)) {
         if (!persistableDirectTarget(networkId, target)) {
-            m_openDirects.remove(networkId, target, mapping);
+            if (prune)
+                m_openDirects.remove(networkId, target, mapping);
             continue;
         }
         const IrcConversationKey key = m_reducer.conversationKey(networkId, target);
@@ -1271,7 +1280,7 @@ void IrcController::restoreOpenDirects(const QString& networkId)
             continue;
         if (m_reducer.ensureConversation(key, target, IrcConversationCause::Restore))
             created = true;
-        else
+        else if (prune)
             m_openDirects.remove(networkId, target, mapping);
     }
     if (!created)
@@ -2020,11 +2029,26 @@ void IrcController::apply(const IrcEvent& event)
         m_openDirects.rekey(nick->networkId, nick->oldNick, nick->newNick,
                             m_reducer.serverFeatures(nick->networkId).caseMapping());
     } else if (const auto *message = std::get_if<IrcMessageEvent>(&event)) {
-        rememberOpenDirect(message->conversation.networkId, message->target);
+        if (m_reducer.serverFeatures(message->conversation.networkId)
+                .caseMapping()
+                .equals(utf8(message->author),
+                        utf8(m_currentNicks.value(message->conversation.networkId)))) {
+            rememberOpenDirect(message->conversation.networkId, message->target);
+        }
     } else if (const auto *notice = std::get_if<IrcNoticeEvent>(&event)) {
-        rememberOpenDirect(notice->conversation.networkId, notice->target);
+        if (m_reducer.serverFeatures(notice->conversation.networkId)
+                .caseMapping()
+                .equals(utf8(notice->author),
+                        utf8(m_currentNicks.value(notice->conversation.networkId)))) {
+            rememberOpenDirect(notice->conversation.networkId, notice->target);
+        }
     } else if (const auto *action = std::get_if<IrcActionEvent>(&event)) {
-        rememberOpenDirect(action->conversation.networkId, action->target);
+        if (m_reducer.serverFeatures(action->conversation.networkId)
+                .caseMapping()
+                .equals(utf8(action->author),
+                        utf8(m_currentNicks.value(action->conversation.networkId)))) {
+            rememberOpenDirect(action->conversation.networkId, action->target);
+        }
     }
     if (selfAwayOnly) {
         notifySelfAwayIfChanged(previousId, previousAway);
@@ -2094,6 +2118,8 @@ void IrcController::handleMessage(const QString& networkId,
         }
         return;
     }
+    if (message.command == "376" || message.command == "422")
+        noteOpenDirectsMotd(networkId);
     if (message.command == "333" && message.parameters.size() >= 3) {
         const QString channel = parameter(message, 1);
         const IrcConversationKey key = m_reducer.conversationKey(networkId, channel);

@@ -62,7 +62,9 @@ public:
     LiveClient(const LiveDaemonInfo &daemon,
                const QString &nick,
                bool tls,
-               const QString &password = {});
+               const QString &password = {},
+               const QString &networkId = {},
+               const QString &transcriptRoot = {});
     ~LiveClient();
 
     LiveClient(const LiveClient &) = delete;
@@ -70,6 +72,7 @@ public:
 
     bool waitRegistered(int timeoutMs = 20000);
     bool waitFailed(int timeoutMs = 20000);
+    bool waitMotd(int timeoutMs = 20000);
     bool hasServerLabel(const QString &label) const;
     bool waitServerLabel(const QString &label, int timeoutMs = 20000);
     const IrcServerFeatures &features() const;

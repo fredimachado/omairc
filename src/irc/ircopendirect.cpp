@@ -93,15 +93,6 @@ QStringList IrcOpenDirectStore::listed(const QString& networkId,
     return unique;
 }
 
-bool IrcOpenDirectStore::contains(const QString& networkId,
-                                  const QString& target,
-                                  const IrcCaseMapping& mapping) const
-{
-    if (networkId.isEmpty() || target.isEmpty())
-        return false;
-    return listContains(cached(networkId), target, mapping);
-}
-
 bool IrcOpenDirectStore::add(const QString& networkId,
                              const QString& target,
                              const IrcCaseMapping& mapping)
