@@ -272,6 +272,7 @@ int runBackendTests(int argc, char **argv)
     BackendNotifyTest test;
     return QTest::qExec(&test, argc, argv);
 #else
+    // DBus-backed notification tests are Unix-only; this is an intentional no-op.
     Q_UNUSED(argc);
     Q_UNUSED(argv);
     return 0;
