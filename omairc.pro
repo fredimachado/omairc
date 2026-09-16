@@ -7,6 +7,13 @@ CONFIG += c++17 release
 TARGET = omairc
 TEMPLATE = app
 
+# qmake's Windows default dumps .obj and moc/qrc sources next to the exe.
+win32 {
+    OBJECTS_DIR = $$OUT_PWD/.obj
+    MOC_DIR = $$OUT_PWD/.moc
+    RCC_DIR = $$OUT_PWD/.rcc
+}
+
 include($$PWD/version.pri)
 
 # GCC 16 emits this diagnostic from Qt 6.11's own headers.

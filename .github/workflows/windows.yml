@@ -126,7 +126,11 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           & $exe --help
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          Get-ChildItem 'build\release' -Recurse -Filter '*.pdb' -File | Remove-Item -Force
+          $junk = @('*.obj','*.pdb','*.res','*.ilk','moc_*.cpp','moc_predefs.h','qrc_*.cpp')
+          Get-ChildItem 'build\release' -File | Where-Object {
+            foreach ($pat in $junk) { if ($_.Name -like $pat) { return $true } }
+            $false
+          } | Remove-Item -Force
           $files = Get-ChildItem 'build\release' -Recurse -File
           $mb = [math]::Round((($files | Measure-Object Length -Sum).Sum) / 1MB, 2)
           Write-Host "Portable tree: $($files.Count) files, $mb MB"
@@ -135,5 +139,12 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: omairc-${{ env.OMAIRC_VERSION }}-windows-x64
-          path: build/release/
+          path: |
+            build/release/**
+            !build/release/*.obj
+            !build/release/*.pdb
+            !build/release/*.res
+            !build/release/*.ilk
+            !build/release/moc_*
+            !build/release/qrc_*
           if-no-files-found: error

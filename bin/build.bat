@@ -70,6 +70,7 @@ for %%F in ("!QTBIN!\libqt6keychain.dll" "!QTBIN!\qt6keychain.dll") do (
 )
 
 echo Built !EXE!
+call :prune_build_junk "!BUILD_DIR!\release"
 exit /b 0
 
 :prune_qt_deploy
@@ -123,6 +124,13 @@ for %%F in (
 )
 
 if exist "!REL!\qml" del /s /q "!REL!\qml\*.qmltypes" >nul 2>&1
+exit /b 0
+
+:prune_build_junk
+set "REL=%~1"
+if not exist "!REL!\omairc.exe" exit /b 0
+del /q "!REL!\*.obj" "!REL!\*.pdb" "!REL!\*.res" "!REL!\*.ilk" >nul 2>&1
+del /q "!REL!\moc_*.cpp" "!REL!\moc_predefs.h" "!REL!\qrc_*.cpp" >nul 2>&1
 exit /b 0
 
 :find_qmake
