@@ -11,6 +11,7 @@
 #include <QQuickStyle>
 #include <QSettings>
 #include <QTemporaryDir>
+#include <QTimer>
 #include <QUrl>
 #include <QWindow>
 
@@ -207,6 +208,14 @@ int main(int argc, char *argv[]) {
         raiseOmaircWindow(engine);
     if (ircConnection && !demoMode)
         ircConnection->activateStartup();
+
+    if (!qEnvironmentVariableIsEmpty("OMAIRC_SMOKE")) {
+        if (!qobject_cast<QWindow *>(engine.rootObjects().constFirst())) {
+            qCritical() << "Omairc smoke: root object is not a window";
+            return -1;
+        }
+        QTimer::singleShot(500, &app, &QCoreApplication::quit);
+    }
 
     return app.exec();
 }

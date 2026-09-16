@@ -128,6 +128,21 @@ jobs:
           $help = & $exe --help 2>&1 | Out-String
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           if ($help -notmatch 'Usage:') { throw "Expected help text, got: $help" }
+
+          $env:OMAIRC_ALLOW_MULTI = '1'
+          $env:OMAIRC_SMOKE = '1'
+          $env:QT_QPA_PLATFORM = 'offscreen'
+          $env:QT_QUICK_BACKEND = 'software'
+          $qtPlugins = Join-Path $env:RUNNER_TEMP "Qt\$env:QT_VERSION\msvc2022_64\plugins"
+          if (Test-Path $qtPlugins) { $env:QT_PLUGIN_PATH = $qtPlugins }
+          $full = (Resolve-Path $exe).Path
+          $p = Start-Process -FilePath $full -ArgumentList '--demo-server' -PassThru -NoNewWindow
+          if (-not $p.WaitForExit(30000)) {
+            Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
+            throw 'demo-server smoke did not exit within 30s'
+          }
+          if ($p.ExitCode -ne 0) { throw "demo-server smoke exited $($p.ExitCode)" }
+
           $junk = @('*.obj','*.pdb','*.res','*.ilk','moc_*.cpp','moc_predefs.h','qrc_*.cpp')
           Get-ChildItem 'build\release' -File | Where-Object {
             foreach ($pat in $junk) { if ($_.Name -like $pat) { return $true } }
