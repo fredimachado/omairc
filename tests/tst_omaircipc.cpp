@@ -1,3 +1,4 @@
+#include <QCoreApplication>
 #include <QDateTime>
 #include <QDir>
 #include <QFile>
@@ -6,10 +7,12 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QLocalSocket>
+#include <QSettings>
 #include <QSignalSpy>
 #include <QTemporaryDir>
 #include <QTest>
 
+#include <memory>
 #include <variant>
 
 #include "fakeirctransport.h"
@@ -97,6 +100,7 @@ class OmaircIpcTest : public QObject
     Q_OBJECT
 
 private slots:
+    void init();
     void parseRaisePing();
     void parseRaiseJson();
     void parseConnectionsAndList();
@@ -129,7 +133,21 @@ private slots:
     void handlerUnreadDoesNotChmodCursorRootParent();
     void handlerReadReportsTruncated();
     void handlerUnreadKeepsSameMillisecondLines();
+
+private:
+    std::unique_ptr<QTemporaryDir> m_settingsDir;
 };
+
+void OmaircIpcTest::init()
+{
+    m_settingsDir = std::make_unique<QTemporaryDir>();
+    QVERIFY(m_settingsDir->isValid());
+    qputenv("XDG_CONFIG_HOME", m_settingsDir->path().toUtf8());
+    QSettings::setPath(QSettings::NativeFormat, QSettings::UserScope,
+                       m_settingsDir->path());
+    QCoreApplication::setOrganizationName(QStringLiteral("omairc"));
+    QCoreApplication::setApplicationName(QStringLiteral("omairc"));
+}
 
 void OmaircIpcTest::parseRaisePing()
 {

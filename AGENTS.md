@@ -42,7 +42,8 @@
   labels. A warning-free QML startup does not prove that bindings render
   visible values.
 - The Connect sheet is tabbed: `Connection` holds the per-network profile and
-  `Preferences` is the home for global settings (still empty). Keep the
+  `Preferences` holds global settings such as reopening direct messages on
+  startup. Keep the
   `Ctrl+/` shortcut hint in its rail so new users find the shortcuts sheet.
 - The Connect sheet is keyboard-first. `Enter` walks to the next field and
   `Ctrl+Enter` applies, so a stray keypress cannot commit a half-typed
@@ -70,7 +71,8 @@ need judgment.
 - Inventing a conversation requires `IrcConversationCause` on
   `ensureConversation`. QuietSend and InboundSelf never invent; UserOpen
   invents DMs; ChannelState invents channels; InboundOther invents
-  channels and non-service DMs. Cover `/msg` with `echo-message`, incoming
+  channels and non-service DMs; Restore invents non-service DMs so open
+  queries survive a restart. Cover `/msg` with `echo-message`, incoming
   NickServ PRIVMSG, and incoming human PRIVMSG in the same test matrix.
 - Do not hard-code CHANTYPES, CHANMODES, or PREFIX. Call
   `IrcServerFeatures`.

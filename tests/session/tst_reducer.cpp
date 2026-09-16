@@ -1733,6 +1733,12 @@ void ReducerTest::conversationCauseInsertTable()
         IrcConversationCause::QuietSend, false, false));
     QVERIFY(!ircConversationCauseInserts(
         IrcConversationCause::QuietSend, true, false));
+    QVERIFY(ircConversationCauseInserts(
+        IrcConversationCause::Restore, false, false));
+    QVERIFY(!ircConversationCauseInserts(
+        IrcConversationCause::Restore, false, true));
+    QVERIFY(!ircConversationCauseInserts(
+        IrcConversationCause::Restore, true, false));
 }
 
 void ReducerTest::ensureConversationHonorsCause()
@@ -1785,6 +1791,20 @@ void ReducerTest::ensureConversationHonorsCause()
         lena, QStringLiteral("lena"), IrcConversationCause::QuietSend));
     QVERIFY(reducer.ensureConversation(
         lena, QStringLiteral("lena"), IrcConversationCause::InboundSelf));
+
+    QVERIFY(!reducer.find(ghost));
+    IrcConversationState *restored = reducer.ensureConversation(
+        ghost, QStringLiteral("ghost"), IrcConversationCause::Restore);
+    QVERIFY(restored);
+    QVERIFY(!restored->isChannel());
+
+    IrcEventReducer restoreOnly;
+    welcome(restoreOnly, networkA);
+    QVERIFY(!restoreOnly.ensureConversation(
+        nickserv, QStringLiteral("NickServ"), IrcConversationCause::Restore));
+    QVERIFY(!restoreOnly.find(nickserv));
+    QVERIFY(!restoreOnly.ensureConversation(
+        room, QStringLiteral("#room"), IrcConversationCause::Restore));
 
     reducer.apply(IrcMessageEvent{
         lena, QStringLiteral("omairc"), QStringLiteral("hello"), timestamp,

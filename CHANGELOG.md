@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - `/ping [nick]`, `/time [nick]`, and `/version [nick]` send those CTCP queries. Empty form uses the open direct message. Replies copy into the asking conversation, like `/whois`. Status stays the log. Channel targets are refused. `--demo-server` answers those queries so the transcript row shows up without a live peer.
+- Direct messages that were open at quit come back on the next connect. Preferences has a global `Reopen direct messages on startup` toggle, on by default. `Ctrl+W` drops a query from that set. NickServ and other service queries are not restored. Replayed history stays muted, with no unread badge or notification.
 
 ## [0.4.0] - 2026-09-14
 
