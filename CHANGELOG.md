@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Our CTCP `VERSION` reply no longer reveals the build number. It answers `https://omairc.app` instead.
+
 ### Fixed
 
 - Windows CLI output works: the Windows build uses the console subsystem so `--help`, `--version`, and control commands print in a terminal or into a redirect, then `FreeConsole()` drops that console when opening the window. The local server uses a named pipe (`omairc`) instead of a drive-letter path that `QLocalServer` cannot listen on.

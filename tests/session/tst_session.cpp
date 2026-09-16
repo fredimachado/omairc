@@ -69,9 +69,7 @@ namespace
 QByteArray ctcpVersionReply(const QByteArray &nick)
 {
     return QByteArrayLiteral("NOTICE ") + nick
-        + QByteArrayLiteral(" :\x01VERSION Omairc ")
-        + OMAIRC_VERSION
-        + QByteArrayLiteral("\x01\r\n");
+        + QByteArrayLiteral(" :\x01VERSION https://omairc.app\x01\r\n");
 }
 
 QByteArray decodeAuthenticatePlain(const QByteArray &frame)
