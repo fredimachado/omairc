@@ -28,7 +28,32 @@ A dead-simple IRC client for Omarchy, built with Qt Quick and C++. Agents talk t
 
 ## Install
 
-On Omarchy or another Arch-based system:
+On Omarchy or another Arch-based system, install the latest release with one
+command:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/fredimachado/omairc/master/install.sh | sh
+```
+
+That adds the `[omairc]` pacman repository, pointed at the latest GitHub
+release, and installs it. It is safe to re-run: the repository is only added
+once, and later runs upgrade to the newest release. Read
+[`install.sh`](install.sh) before piping it if you prefer. The same script is
+also published as a release asset, so the version-pinned form works too:
+
+```sh
+curl -fsSL https://github.com/fredimachado/omairc/releases/latest/download/install.sh | sh
+```
+
+After the repository is configured, upgrades go through pacman as usual:
+
+```sh
+sudo pacman -Sy omairc
+```
+
+On Omarchy you can also run `omarchy pkg add omairc`.
+
+Build from source instead:
 
 ```sh
 git clone https://github.com/fredimachado/omairc.git
@@ -38,25 +63,11 @@ cd omairc
 
 Run that as your regular user. `makepkg` calls `sudo` when it needs to.
 
-Or install a [release package](https://github.com/fredimachado/omairc/releases/latest):
+Or install a [release package](https://github.com/fredimachado/omairc/releases/latest) directly:
 
 ```sh
 sudo pacman -U omairc-*.pkg.tar.zst
 ```
-
-For updates through pacman, add:
-
-```ini
-[omairc]
-SigLevel = Optional TrustAll
-Server = https://github.com/fredimachado/omairc/releases/latest/download
-```
-
-```sh
-sudo pacman -Sy omairc
-```
-
-On Omarchy you can also run `omarchy pkg add omairc`.
 
 Depends on `qt6-base`, `qt6-declarative`, `qt6-svg`, `qt6-wayland`, `qtkeychain-qt6`, and `xdg-desktop-portal`.
 

@@ -113,4 +113,5 @@ jobs:
             omairc.db.tar.zst \
             omairc.files \
             omairc.files.tar.zst \
+            install.sh \
             --clobber
