@@ -122,7 +122,9 @@ use a Linux `.deps` QtKeychain tree on Windows. `bin/build`, `bin/test`,
 `bin/test-desktop`, and `bin/test-live` stay Unix scripts. The C++ suite still
 builds from `tests/tests.pro` with the same kit. The Windows app uses the
 console subsystem so CLI stdout works; `FreeConsole()` runs only when opening
-the window. Local CLI IPC uses a named pipe (`omairc`), not a filesystem
-socket. Portal text-scale stays 1.0, desktop notifications no-op without DBus,
-the window icon stays empty, and the Omarchy `colors.toml` watch does nothing
-when that file is missing.
+the window. Launch the GUI with `start build\release\omairc.exe` so the
+terminal is not left waiting after the console is dropped. Local CLI IPC
+uses a named pipe (`omairc`), not a filesystem socket. Portal text-scale
+stays 1.0, desktop notifications no-op without DBus, the window icon
+stays empty, and the Omarchy `colors.toml` watch does nothing when that
+file is missing.

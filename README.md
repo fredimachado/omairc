@@ -131,10 +131,12 @@ From the repo root:
 
 ```bat
 bin\build.bat
-build\release\omairc.exe
-build\release\omairc.exe --demo-server
+start build\release\omairc.exe
+start build\release\omairc.exe --demo-server
 build\release\omairc.exe --help
 ```
+
+Use `start` for the window so the prompt comes back. The exe is a console app so `--help` and the local CLI can print; a foreground launch keeps that terminal busy even after `FreeConsole()`.
 
 `bin\build.bat` finds a Qt 6 kit (MSVC preferred, then MinGW), loads the MSVC toolchain when needed, builds into `build\release\`, and runs `windeployqt`. Set `QMAKE` to pick a kit. QtKeychain must be installed for that kit. Opening `omairc.pro` in Qt Creator still works.
 
