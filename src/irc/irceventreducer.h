@@ -136,6 +136,7 @@ enum class IrcConversationCause {
     InboundOther,
     InboundSelf,
     QuietSend,
+    Restore,
 };
 
 inline bool ircConversationCauseInserts(IrcConversationCause cause,
@@ -149,12 +150,17 @@ inline bool ircConversationCauseInserts(IrcConversationCause cause,
         return targetIsChannel;
     case IrcConversationCause::InboundOther:
         return targetIsChannel || !targetLooksLikeService;
+    case IrcConversationCause::Restore:
+        return !targetIsChannel && !targetLooksLikeService;
     case IrcConversationCause::InboundSelf:
     case IrcConversationCause::QuietSend:
         return false;
     }
     return false;
 }
+
+bool ircTargetLooksLikeService(const QString& target,
+                               const IrcServerFeatures& features);
 
 class IrcEventReducer
 {

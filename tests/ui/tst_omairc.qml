@@ -282,6 +282,7 @@ TestCase {
         property bool hasAwayPresence: true
         property bool hasMemberStatus: true
         property bool hasTyping: false
+        property bool reopenDirectMessages: true
         property var typingNicks: []
         property var conversations: liveConversations
         property var messages: liveMessages
@@ -366,6 +367,7 @@ TestCase {
         property bool hasAwayPresence: true
         property bool hasMemberStatus: true
         property bool hasTyping: false
+        property bool reopenDirectMessages: true
         property var typingNicks: []
         property var conversations: liveConversations
         property var messages: liveMessages
@@ -449,6 +451,7 @@ TestCase {
         property bool hasAwayPresence: false
         property bool hasMemberStatus: false
         property bool hasTyping: false
+        property bool reopenDirectMessages: true
         property var typingNicks: ["anna"]
         property var conversations: liveConversations
         property var messages: liveMessages
@@ -518,6 +521,7 @@ TestCase {
         property bool hasAwayPresence: true
         property bool hasMemberStatus: true
         property bool hasTyping: false
+        property bool reopenDirectMessages: true
         property var typingNicks: []
         property var conversations: liveConversations
         property var messages: liveMessages
@@ -3828,6 +3832,51 @@ TestCase {
         compare(window.connectionSheetTab, "connection");
         verify(findChild(window, "connectionFormArea").visible);
         window.close();
+    }
+
+    function test_connectionPreferencesReopenDirectsToggle() {
+        liveIrc.reopenDirectMessages = true;
+        var window = createTemporaryObject(setupWindowComponent, null);
+        verify(window !== null, "The preferences-toggle window should load");
+        tryCompare(window, "visible", true);
+        waitForRendering(window.contentItem);
+        window.requestActivate();
+        tryCompare(window, "active", true);
+
+        var preferencesTab = findChild(window, "connectionSheetTab-preferences");
+        verify(preferencesTab !== null, "Could not find connectionSheetTab-preferences");
+        mouseClick(preferencesTab);
+        compare(window.connectionSheetTab, "preferences");
+
+        var reopen = findChild(window, "connectionReopenDirects");
+        verify(reopen !== null, "Could not find connectionReopenDirects");
+        verify(reopen.visible);
+        compare(reopen.checked, true);
+        compare(liveIrc.reopenDirectMessages, true);
+
+        mouseClick(reopen);
+        compare(reopen.checked, false);
+        compare(liveIrc.reopenDirectMessages, false);
+
+        mouseClick(reopen);
+        compare(reopen.checked, true);
+        compare(liveIrc.reopenDirectMessages, true);
+
+        preferencesTab.forceActiveFocus();
+        tryCompare(preferencesTab, "activeFocus", true);
+        keyClick(Qt.Key_Tab);
+        wait(0);
+        compare(focusObjectName(window), "connectionReopenDirects");
+
+        var checkedBefore = reopen.checked;
+        keyClick(Qt.Key_Return);
+        compare(reopen.checked, checkedBefore);
+        compare(liveIrc.reopenDirectMessages, checkedBefore);
+        verify(findChild(window, "connectionSheet").visible);
+        verify(focusObjectName(window) !== "connectionReopenDirects");
+
+        window.close();
+        liveIrc.reopenDirectMessages = true;
     }
 
     function test_connectionSheetShortcutsHintOpensShortcuts() {

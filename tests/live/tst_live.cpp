@@ -7,6 +7,9 @@
 #include "messagelistmodel.h"
 
 #include <QAbstractItemModel>
+#include <QCoreApplication>
+#include <QSettings>
+#include <QTemporaryDir>
 #include <QTest>
 
 class LiveIrcdTest : public QObject
@@ -41,6 +44,8 @@ private slots:
     void saslPlain();
     void foldedNickCollision_data();
     void foldedNickCollision();
+    void asciiDirectRestore_data();
+    void asciiDirectRestore();
     void joinMultipleChannels_data();
     void joinMultipleChannels();
 };
@@ -556,6 +561,120 @@ void LiveIrcdTest::foldedNickCollision()
     if (b.waitRegistered())
         QSKIP("daemon advertised a folding casemap but accepted both nicks");
     QVERIFY(b.waitFailed());
+}
+
+void LiveIrcdTest::asciiDirectRestore_data()
+{
+    QTest::addColumn<QString>("daemonName");
+    for (const LiveDaemonInfo &daemon : liveDaemons()) {
+        if (daemon.mapping == IrcCaseMapping::Kind::Ascii
+            && daemon.nickLength >= 8) {
+            QTest::newRow(qPrintable(daemon.name)) << daemon.name;
+        }
+    }
+}
+
+void LiveIrcdTest::asciiDirectRestore()
+{
+    QFETCH(QString, daemonName);
+    const LiveDaemonInfo *daemon = liveDaemon(daemonName);
+    QVERIFY(daemon);
+    QCOMPARE(daemon->mapping, IrcCaseMapping::Kind::Ascii);
+
+    QTemporaryDir configHome;
+    QVERIFY(configHome.isValid());
+    qputenv("XDG_CONFIG_HOME", configHome.path().toUtf8());
+    QSettings::setPath(QSettings::NativeFormat, QSettings::UserScope,
+                       configHome.path());
+    QCoreApplication::setOrganizationName(QStringLiteral("omairc"));
+    QCoreApplication::setApplicationName(QStringLiteral("omairc"));
+
+    QTemporaryDir logs;
+    QVERIFY(logs.isValid());
+    const QString networkId = QStringLiteral("ascii-dm");
+    const bool tls = daemon->plainPort == 0;
+    const QString selfNick = uniqueNick(daemon->nickLength);
+    const QString peerNick = uniqueNick(daemon->nickLength - 3) + QStringLiteral("[m]");
+
+    LiveClient peer(*daemon, peerNick, tls);
+    QVERIFY2(peer.waitRegistered(), qPrintable(peer.lastError));
+
+    {
+        LiveClient self(*daemon, selfNick, tls, {}, networkId, logs.path());
+        QVERIFY2(self.waitRegistered(), qPrintable(self.lastError));
+        QVERIFY(self.waitMotd());
+        QCOMPARE(self.features().caseMapping().kind(), IrcCaseMapping::Kind::Ascii);
+        QVERIFY(peer.session->sendPrivmsg(self.session->nick(),
+                                          QStringLiteral("hi there")));
+        QVERIFY(waitUntil([&] {
+            return conversationRow(self.controller.conversations(), peerNick) >= 0;
+        }));
+        self.controller.selectConversation(networkId, peerNick);
+        QVERIFY(self.controller.sendMessage(QStringLiteral("hello back")));
+        QVERIFY(waitUntil([&] {
+            auto *messages = self.controller.messages();
+            for (int row = 0; row < messages->rowCount(); ++row) {
+                if (messages->index(row, 0).data(MessageListModel::BodyRole).toString()
+                    == QStringLiteral("hello back")) {
+                    return true;
+                }
+            }
+            return false;
+        }));
+    }
+
+    LiveClient reloaded(*daemon, selfNick, tls, {}, networkId, logs.path());
+    QVERIFY2(reloaded.waitRegistered(), qPrintable(reloaded.lastError));
+    QVERIFY(reloaded.waitMotd());
+    auto *conversations = reloaded.controller.conversations();
+    QCOMPARE(conversationRow(conversations, peerNick) >= 0, true);
+    int rows = 0;
+    for (int row = 0; row < conversations->rowCount(); ++row) {
+        if (sameFolded(conversations->index(row, 0)
+                           .data(ConversationListModel::ConversationRole)
+                           .toString(),
+                       peerNick)) {
+            ++rows;
+        }
+    }
+    QCOMPARE(rows, 1);
+    QVERIFY(peer.session->sendPrivmsg(reloaded.session->nick(),
+                                      QStringLiteral("second")));
+    QVERIFY(waitUntil([&] {
+        auto *messages = reloaded.controller.messages();
+        reloaded.controller.selectConversation(networkId, peerNick);
+        for (int row = 0; row < messages->rowCount(); ++row) {
+            if (messages->index(row, 0).data(MessageListModel::BodyRole).toString()
+                == QStringLiteral("second")) {
+                return true;
+            }
+        }
+        return false;
+    }));
+    rows = 0;
+    for (int row = 0; row < conversations->rowCount(); ++row) {
+        if (sameFolded(conversations->index(row, 0)
+                           .data(ConversationListModel::ConversationRole)
+                           .toString(),
+                       peerNick)) {
+            ++rows;
+        }
+    }
+    QCOMPARE(rows, 1);
+    reloaded.controller.selectConversation(networkId, peerNick);
+    auto *messages = reloaded.controller.messages();
+    bool sawHi = false;
+    bool sawHello = false;
+    for (int row = 0; row < messages->rowCount(); ++row) {
+        const QString body =
+            messages->index(row, 0).data(MessageListModel::BodyRole).toString();
+        if (body == QStringLiteral("hi there"))
+            sawHi = true;
+        if (body == QStringLiteral("hello back"))
+            sawHello = true;
+    }
+    QVERIFY(sawHi);
+    QVERIFY(sawHello);
 }
 
 void LiveIrcdTest::joinMultipleChannels_data()

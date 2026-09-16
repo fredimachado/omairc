@@ -1,7 +1,10 @@
 #include <QAbstractItemModel>
+#include <QCoreApplication>
 #include <QList>
 #include <QObject>
+#include <QSettings>
 #include <QSignalSpy>
+#include <QTemporaryDir>
 #include <QTest>
 
 #include "conversationlistmodel.h"
@@ -16,6 +19,7 @@
 #include "irctyping.h"
 #include "irctypingpublisher.h"
 
+#include <memory>
 #include <variant>
 
 namespace
@@ -86,6 +90,7 @@ class TypingTest : public QObject
     Q_OBJECT
 
 private slots:
+    void init();
     void publisherThrottlesPerTarget();
     void publisherSuppressesDoneAfterChat();
     void publisherRefusesPausedAndUnknownTargets();
@@ -103,7 +108,21 @@ private slots:
     void controllerNotifyComposerTextThrottles();
     void controllerDoesNotOpenConversationFromTypingOnly();
     void controllerSidebarTypingForExistingDirect();
+
+private:
+    std::unique_ptr<QTemporaryDir> m_settingsDir;
 };
+
+void TypingTest::init()
+{
+    m_settingsDir = std::make_unique<QTemporaryDir>();
+    QVERIFY(m_settingsDir->isValid());
+    qputenv("XDG_CONFIG_HOME", m_settingsDir->path().toUtf8());
+    QSettings::setPath(QSettings::NativeFormat, QSettings::UserScope,
+                       m_settingsDir->path());
+    QCoreApplication::setOrganizationName(QStringLiteral("omairc"));
+    QCoreApplication::setApplicationName(QStringLiteral("omairc"));
+}
 
 void TypingTest::publisherThrottlesPerTarget()
 {

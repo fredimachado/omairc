@@ -6,6 +6,7 @@
 #include "irchighlight.h"
 #include "ircignore.h"
 #include "ircmute.h"
+#include "ircopendirect.h"
 #include "ircsessionmanager.h"
 #include "ircstatusconsole.h"
 #include "ircstatusentry.h"
@@ -48,6 +49,7 @@ class IrcController : public QObject
     Q_PROPERTY(bool hasMemberStatus READ hasMemberStatus NOTIFY capabilitiesChanged)
     Q_PROPERTY(bool hasTyping READ hasTyping NOTIFY capabilitiesChanged)
     Q_PROPERTY(QStringList typingNicks READ typingNicks NOTIFY typingChanged)
+    Q_PROPERTY(bool reopenDirectMessages READ reopenDirectMessages WRITE setReopenDirectMessages NOTIFY reopenDirectMessagesChanged)
     Q_PROPERTY(IrcStatusConsole* console READ console CONSTANT)
 
 public:
@@ -86,6 +88,8 @@ public:
     bool hasMemberStatus() const;
     bool hasTyping() const;
     QStringList typingNicks() const;
+    bool reopenDirectMessages() const;
+    void setReopenDirectMessages(bool enabled);
     IrcStatusConsole *console();
     const IrcServerFeatures &serverFeatures(const QString &networkId) const;
 
@@ -166,6 +170,7 @@ signals:
 
     void capabilitiesChanged();
     void typingChanged();
+    void reopenDirectMessagesChanged();
     void errorOccurred(const QString &networkId,
                        IrcSession::ErrorKind kind,
                        const QString &message);
@@ -233,6 +238,12 @@ private:
     IrcCommandOutcome dispatchMute(const IrcCommand& command,
                                    IrcComposerSurface surface);
     void hydrateMutes(const QString& networkId);
+    bool persistableDirectTarget(const QString& networkId,
+                                 const QString& target) const;
+    void rememberOpenDirect(const QString& networkId, const QString& target);
+    void forgetOpenDirect(const QString& networkId, const QString& target);
+    void restoreOpenDirects(const QString& networkId);
+    void noteOpenDirectsMotd(const QString& networkId);
     bool applyMute(const QString& networkId,
                    const QString& target,
                    bool muted);
@@ -313,6 +324,7 @@ private:
     IrcEventReducer m_reducer;
     IrcIgnoreStore m_ignores;
     IrcMuteStore m_mutes;
+    IrcOpenDirectStore m_openDirects;
     IrcHighlightStore m_highlights;
     ConversationListModel m_conversations;
     MessageListModel m_messages;
@@ -321,11 +333,13 @@ private:
     QHash<QString, QString> m_lastErrors;
     QHash<QString, IrcCapabilitySet> m_capabilities;
     QSet<QString> m_unawaySent;
+    QSet<QString> m_openDirectsMotdSeen;
     std::optional<IrcConversationKey> m_selected;
     QString m_selectedTarget;
     QStringList m_networkOrder;
     QString m_connectionStatus = QStringLiteral("Offline");
     int m_conversationEpoch = 0;
+    bool m_reopenDirectMessages = true;
     QTimer m_typingRefresh;
     QString m_composerDraft;
     QString m_typingTarget;
