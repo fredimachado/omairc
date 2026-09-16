@@ -1,4 +1,7 @@
 #include <QAbstractItemModel>
+#include <QCoreApplication>
+#include <QSettings>
+#include <QTemporaryDir>
 #include <QTest>
 
 #include "fakeirctransport.h"
@@ -13,6 +16,7 @@
 #include "messagelistmodel.h"
 #include "networklogmodel.h"
 
+#include <memory>
 #include <type_traits>
 
 namespace
@@ -121,6 +125,7 @@ class CommandTest : public QObject
     Q_OBJECT
 
 private slots:
+    void init();
     void parseEmptyAndSay();
     void parseSlashEscape();
     void parseVerbsAndAliases();
@@ -151,7 +156,21 @@ private slots:
     void slashProjectClosed();
     void slashProjectOpen();
     void slashSessionKeys();
+
+private:
+    std::unique_ptr<QTemporaryDir> m_settingsDir;
 };
+
+void CommandTest::init()
+{
+    m_settingsDir = std::make_unique<QTemporaryDir>();
+    QVERIFY(m_settingsDir->isValid());
+    qputenv("XDG_CONFIG_HOME", m_settingsDir->path().toUtf8());
+    QSettings::setPath(QSettings::NativeFormat, QSettings::UserScope,
+                       m_settingsDir->path());
+    QCoreApplication::setOrganizationName(QStringLiteral("omairc"));
+    QCoreApplication::setApplicationName(QStringLiteral("omairc"));
+}
 
 void CommandTest::parseEmptyAndSay()
 {

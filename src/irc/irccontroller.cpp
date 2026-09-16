@@ -6,7 +6,9 @@
 #include "irchighlight.h"
 #include "ircignore.h"
 #include "ircmute.h"
+#include "ircopendirect.h"
 #include "ircjointarget.h"
+#include "ircservicenick.h"
 #include "ircviewnotify.h"
 #include "irctcp.h"
 #include "irctyping.h"
@@ -14,8 +16,10 @@
 
 #include <QByteArray>
 #include <QDateTime>
+#include <QSettings>
 
 #include <algorithm>
+#include <string_view>
 #include <variant>
 
 namespace
@@ -65,6 +69,36 @@ bool muteTargetIsUsable(const QString& target, const IrcServerFeatures& features
     if (features.isChannel(utf8(target)))
         return true;
     return ignoreNickIsUsable(target, features);
+}
+
+bool looksLikeServiceTarget(const QString& target, const IrcServerFeatures& features)
+{
+    const std::string_view types = features.channelTypes();
+    return ircIsServiceIdentity(
+        target,
+        QStringView{},
+        QString::fromLatin1(types.data(), qsizetype(types.size())));
+}
+
+QString reopenDirectMessagesKey()
+{
+    return QStringLiteral("reopenDirectMessages");
+}
+
+bool loadReopenDirectMessages()
+{
+    QSettings settings;
+    settings.beginGroup(QStringLiteral("preferences"));
+    return settings.value(reopenDirectMessagesKey(), true).toBool();
+}
+
+void saveReopenDirectMessages(bool enabled)
+{
+    QSettings settings;
+    settings.beginGroup(QStringLiteral("preferences"));
+    settings.setValue(reopenDirectMessagesKey(), enabled);
+    settings.endGroup();
+    settings.sync();
 }
 
 QString stateText(IrcSession::State state)
@@ -118,6 +152,7 @@ IrcController::IrcController(QObject *parent)
     connect(&m_console, &IrcStatusConsole::alertsChanged, this,
             &IrcController::statusChanged);
     m_reducer.setConversationLog(&m_transcripts);
+    m_reopenDirectMessages = loadReopenDirectMessages();
 }
 
 void IrcController::setTranscriptRoot(const QString &root)
@@ -147,6 +182,7 @@ IrcSession *IrcController::addSession(const IrcSessionConfig& config,
             [this, session](const QString& networkId) {
         m_currentNicks[networkId] = session->nick();
         apply(IrcWelcomeEvent{networkId, session->nick()});
+        restoreOpenDirects(networkId);
         updateStatus(session);
     });
     connect(session, &IrcSession::messageReceived,
@@ -204,6 +240,7 @@ void IrcController::forgetNetworkState(const QString &networkId)
     m_lastErrors.remove(networkId);
     m_ignores.forget(networkId);
     m_mutes.forget(networkId);
+    m_openDirects.forget(networkId);
     m_highlights.forget(networkId);
     if (m_selected && m_selected->networkId == networkId)
         clearConversationSelection();
@@ -387,6 +424,24 @@ QStringList IrcController::typingNicks() const
     return m_reducer.typingNicks(*m_selected, QDateTime::currentDateTimeUtc());
 }
 
+bool IrcController::reopenDirectMessages() const
+{
+    return m_reopenDirectMessages;
+}
+
+void IrcController::setReopenDirectMessages(bool enabled)
+{
+    if (m_reopenDirectMessages == enabled)
+        return;
+    m_reopenDirectMessages = enabled;
+    saveReopenDirectMessages(enabled);
+    emit reopenDirectMessagesChanged();
+    if (!enabled)
+        return;
+    for (const QString& networkId : m_sessions.networkIds())
+        restoreOpenDirects(networkId);
+}
+
 bool IrcController::nickIsTyping(const QString& nick) const
 {
     if (!m_selected || nick.isEmpty())
@@ -538,6 +593,7 @@ void IrcController::openDirectMessage(const QString& nick)
         m_reducer.conversationKey(m_selected->networkId, nick);
     if (!m_reducer.ensureConversation(key, nick, IrcConversationCause::UserOpen))
         return;
+    rememberOpenDirect(m_selected->networkId, nick);
     m_conversations.reload();
     selectConversation(m_selected->networkId, nick);
 }
@@ -551,6 +607,7 @@ void IrcController::revealConversation(const QString& networkId,
     if (!m_reducer.find(key)) {
         if (!m_reducer.ensureConversation(key, target, IrcConversationCause::UserOpen))
             return;
+        rememberOpenDirect(networkId, target);
         m_conversations.reload();
     }
     selectConversation(networkId, target);
@@ -592,6 +649,7 @@ void IrcController::dropSelectedDirectAndReselect()
         nextTarget = neighbor ? neighbor->target : next->normalizedTarget;
     }
     applyMute(dropping.networkId, m_selectedTarget, false);
+    forgetOpenDirect(dropping.networkId, m_selectedTarget);
     m_reducer.dropDirectMessage(dropping);
     reloadModels();
     if (!nextTarget.isEmpty())
@@ -1163,6 +1221,66 @@ void IrcController::hydrateMutes(const QString& networkId)
         m_reducer.setMuted(m_reducer.conversationKey(networkId, target), true);
 }
 
+bool IrcController::persistableDirectTarget(const QString& networkId,
+                                            const QString& target) const
+{
+    if (networkId.isEmpty() || target.isEmpty())
+        return false;
+    const IrcServerFeatures& features = m_reducer.serverFeatures(networkId);
+    if (features.isChannel(utf8(target)))
+        return false;
+    return !looksLikeServiceTarget(target, features);
+}
+
+void IrcController::rememberOpenDirect(const QString& networkId, const QString& target)
+{
+    if (!persistableDirectTarget(networkId, target))
+        return;
+    const IrcConversationState *conversation =
+        m_reducer.find(m_reducer.conversationKey(networkId, target));
+    if (!conversation || conversation->isChannel())
+        return;
+    const QString stored =
+        conversation->target.isEmpty() ? target : conversation->target;
+    m_openDirects.add(networkId, stored,
+                      m_reducer.serverFeatures(networkId).caseMapping());
+}
+
+void IrcController::forgetOpenDirect(const QString& networkId, const QString& target)
+{
+    if (networkId.isEmpty() || target.isEmpty())
+        return;
+    m_openDirects.remove(networkId, target,
+                         m_reducer.serverFeatures(networkId).caseMapping());
+}
+
+void IrcController::restoreOpenDirects(const QString& networkId)
+{
+    if (!m_reopenDirectMessages || networkId.isEmpty())
+        return;
+    bool created = false;
+    const IrcCaseMapping& mapping =
+        m_reducer.serverFeatures(networkId).caseMapping();
+    for (const QString& target : m_openDirects.targets(networkId)) {
+        if (!persistableDirectTarget(networkId, target)) {
+            m_openDirects.remove(networkId, target, mapping);
+            continue;
+        }
+        const IrcConversationKey key = m_reducer.conversationKey(networkId, target);
+        if (m_reducer.find(key))
+            continue;
+        if (m_reducer.ensureConversation(key, target, IrcConversationCause::Restore))
+            created = true;
+        else
+            m_openDirects.remove(networkId, target, mapping);
+    }
+    if (!created)
+        return;
+    m_conversations.reload();
+    ++m_conversationEpoch;
+    emit conversationStateChanged();
+}
+
 bool IrcController::applyMute(const QString& networkId,
                               const QString& target,
                               bool muted)
@@ -1305,6 +1423,7 @@ IrcCommandOutcome IrcController::dispatchQuery(const IrcCommand& command,
     const IrcConversationKey key = m_reducer.conversationKey(networkId, nick);
     if (!m_reducer.ensureConversation(key, nick, IrcConversationCause::UserOpen))
         return IrcCommandOutcome::Refused;
+    rememberOpenDirect(networkId, nick);
     m_conversations.reload();
     selectConversation(networkId, nick);
     if (rest.isEmpty())
@@ -1897,6 +2016,16 @@ void IrcController::apply(const IrcEvent& event)
         m_unawaySent.remove(selfAway->networkId);
     }
     m_reducer.apply(event);
+    if (const auto *nick = std::get_if<IrcNickEvent>(&event)) {
+        m_openDirects.rekey(nick->networkId, nick->oldNick, nick->newNick,
+                            m_reducer.serverFeatures(nick->networkId).caseMapping());
+    } else if (const auto *message = std::get_if<IrcMessageEvent>(&event)) {
+        rememberOpenDirect(message->conversation.networkId, message->target);
+    } else if (const auto *notice = std::get_if<IrcNoticeEvent>(&event)) {
+        rememberOpenDirect(notice->conversation.networkId, notice->target);
+    } else if (const auto *action = std::get_if<IrcActionEvent>(&event)) {
+        rememberOpenDirect(action->conversation.networkId, action->target);
+    }
     if (selfAwayOnly) {
         notifySelfAwayIfChanged(previousId, previousAway);
         return;

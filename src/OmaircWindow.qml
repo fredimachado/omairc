@@ -4616,6 +4616,7 @@ ApplicationWindow {
                             Layout.fillWidth: true
                             Layout.fillHeight: true
                             visible: win.connectionSheetTab === "preferences"
+                            enabled: visible
 
                             Column {
                                 anchors.left: parent.left
@@ -4632,11 +4633,33 @@ ApplicationWindow {
                                     font.pixelSize: win.scaledSize(15)
                                 }
 
-                                Text {
-                                    text: "Nothing to configure yet."
-                                    color: win.mutedColor
-                                    font.family: "iA Writer Mono S"
-                                    font.pixelSize: win.scaledSize(11)
+                                Row {
+                                    spacing: win.scaledSize(10)
+
+                                    Switch {
+                                        id: connectionReopenDirects
+                                        objectName: "connectionReopenDirects"
+                                        Accessible.name: "Reopen direct messages on startup"
+                                        onToggled: {
+                                            if (win.irc)
+                                                win.irc.reopenDirectMessages = checked;
+                                        }
+                                    }
+
+                                    Binding {
+                                        target: connectionReopenDirects
+                                        property: "checked"
+                                        value: win.irc ? win.irc.reopenDirectMessages : true
+                                        restoreMode: Binding.RestoreBinding
+                                    }
+
+                                    Text {
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        text: "Reopen direct messages on startup"
+                                        color: win.inkColor
+                                        font.family: "iA Writer Mono S"
+                                        font.pixelSize: win.scaledSize(11)
+                                    }
                                 }
                             }
                         }

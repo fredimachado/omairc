@@ -38,6 +38,7 @@ HEADERS += \
     ../src/irc/irctcp.h \
     ../src/irc/ircignore.h \
     ../src/irc/ircmute.h \
+    ../src/irc/ircopendirect.h \
     ../src/irc/irchighlight.h \
     ../src/irc/ircevent.h \
     ../src/irc/ircviewnotify.h \
@@ -103,6 +104,7 @@ SOURCES += \
     ../src/irc/irctcp.cpp \
     ../src/irc/ircignore.cpp \
     ../src/irc/ircmute.cpp \
+    ../src/irc/ircopendirect.cpp \
     ../src/irc/irchighlight.cpp \
     ../src/irc/irceventtranslator.cpp \
     ../src/irc/irceventreducer.cpp \
@@ -142,6 +144,7 @@ SOURCES += \
     session/tst_command.cpp \
     session/tst_ignore.cpp \
     session/tst_mute.cpp \
+    session/tst_opendirect.cpp \
     session/tst_highlight.cpp \
     session/tst_typing.cpp \
     session/tst_reducer.cpp \
