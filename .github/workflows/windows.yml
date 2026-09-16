@@ -63,7 +63,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ runner.temp }}/Qt
-          key: qt-${{ env.QT_VERSION }}-win64_msvc2022_64-declarative
+          key: qt-${{ env.QT_VERSION }}-win64_msvc2022_64
 
       - name: Install Qt 6
         if: steps.qt-cache.outputs.cache-hit != 'true'
@@ -71,8 +71,7 @@ jobs:
           python -m venv "$env:RUNNER_TEMP\aqt"
           & "$env:RUNNER_TEMP\aqt\Scripts\pip" install aqtinstall
           & "$env:RUNNER_TEMP\aqt\Scripts\aqt" install-qt windows desktop $env:QT_VERSION win64_msvc2022_64 `
-            -O "$env:RUNNER_TEMP\Qt" `
-            -m qtdeclarative qtsvg qtshadertools qttools
+            -O "$env:RUNNER_TEMP\Qt"
 
       - name: Add Qt to PATH
         run: |
