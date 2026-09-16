@@ -296,6 +296,7 @@ private slots:
     void managerDiscardUnregistersImmediately();
     void pingAndWelcomeProduceStatusEntries();
     void statusKeepListOmitsProtocolDump();
+    void outgoingWhoisAndCtcpQueriesStayOffStatus();
     void configuredPasswordNeverAppearsInStatusEntries();
     void saslAccountNeverAppearsInStatusEntries();
     void keyedJoinIsRedactedInStatusEntries();
@@ -1758,6 +1759,18 @@ void SessionTest::statusKeepListOmitsProtocolDump()
     QVERIFY(!status.anyFieldContains(QStringLiteral("hello there")));
     QVERIFY(!status.anyFieldContains(QStringLiteral("older replay")));
     QVERIFY(!status.anyFieldContains(QStringLiteral("ACTION waves")));
+}
+
+void SessionTest::outgoingWhoisAndCtcpQueriesStayOffStatus()
+{
+    QVERIFY(!ircStatusKeepsOutgoing(QByteArrayLiteral("WHOIS lena lena\r\n")));
+    QVERIFY(!ircStatusKeepsOutgoing(
+        QByteArray("PRIVMSG lena :\x01" "VERSION\x01\r\n")));
+    QVERIFY(!ircStatusKeepsOutgoing(
+        QByteArray("PRIVMSG lena :\x01" "TIME\x01\r\n")));
+    QVERIFY(!ircStatusKeepsOutgoing(
+        QByteArray("PRIVMSG lena :\x01" "PING 1\x01\r\n")));
+    QVERIFY(ircStatusKeepsOutgoing(QByteArrayLiteral("PASS secret\r\n")));
 }
 
 void SessionTest::configuredPasswordNeverAppearsInStatusEntries()

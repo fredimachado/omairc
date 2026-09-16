@@ -1470,6 +1470,9 @@ void CommandTest::ctcpSendsAndDefaults()
     QVERIFY(pingFrame.endsWith(QByteArray("\x01\r\n")));
 
     IrcStatusConsole *console = controller.console();
+    QVERIFY(!logContains(console->lines(), QString(QChar(1))));
+    QVERIFY(!logContains(console->lines(), QStringLiteral("PRIVMSG lena")));
+
     QVERIFY(console->submit(QStringLiteral("/version lena")));
     QCOMPARE(transport->writtenFrames().last(),
              QByteArray("PRIVMSG lena :\x01" "VERSION\x01\r\n"));
