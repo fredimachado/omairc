@@ -41,14 +41,16 @@ if not exist "!EXE!" (
 )
 
 if exist "!QTBIN!\windeployqt.exe" (
-  rem Default Qt 6.11 windeployqt follows every Quick Controls style and
-  rem ships Mesa, translations, and QML tooling. Omairc forces Material.
+  rem Ship the compiler runtime next to the exe so a per-user installer
+  rem does not need an elevated vc_redist. Default Qt 6.11 windeployqt
+  rem follows every Quick Controls style and ships Mesa, translations,
+  rem and QML tooling. Omairc forces Material.
   "!QTBIN!\windeployqt.exe" ^
     --qmldir "!ROOT!\src" ^
     --release ^
     --no-translations ^
     --no-opengl-sw ^
-    --no-compiler-runtime ^
+    --compiler-runtime ^
     --no-system-d3d-compiler ^
     --no-system-dxc-compiler ^
     --skip-plugin-types qmltooling,generic,imageformats ^
@@ -69,8 +71,27 @@ for %%F in ("!QTBIN!\libqt6keychain.dll" "!QTBIN!\qt6keychain.dll") do (
   if exist %%F copy /Y %%F "!BUILD_DIR!\release\" >nul
 )
 
+rem windeployqt --compiler-runtime still misses VS 2026's Microsoft.VC145.CRT.
+if /i "!QSPEC!"=="win32-msvc" (
+  call :deploy_msvc_runtime "!BUILD_DIR!\release"
+  if not exist "!BUILD_DIR!\release\msvcp140.dll" (
+    echo msvcp140.dll was not deployed next to the exe. >&2
+    echo Run from an x64 Native Tools prompt so VCToolsRedistDir is set. >&2
+    exit /b 1
+  )
+)
+
 echo Built !EXE!
 call :prune_build_junk "!BUILD_DIR!\release"
+exit /b 0
+
+:deploy_msvc_runtime
+set "REL=%~1"
+if not exist "!REL!\omairc.exe" exit /b 0
+if not defined VCToolsRedistDir exit /b 0
+for /d %%D in ("!VCToolsRedistDir!x64\Microsoft.VC*.CRT") do (
+  if exist "%%D\msvcp140.dll" copy /Y "%%D\*.dll" "!REL!\" >nul
+)
 exit /b 0
 
 :prune_qt_deploy
@@ -182,7 +203,8 @@ if not errorlevel 1 (
   if not errorlevel 1 exit /b 0
 )
 
-set "VSWHERE=!ProgramFiles(x86)!\Microsoft Visual Studio\Installer\vswhere.exe"
+set "VSWHERE=%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe"
+if not exist "!VSWHERE!" set "VSWHERE=%ProgramFiles%\Microsoft Visual Studio\Installer\vswhere.exe"
 if not exist "!VSWHERE!" (
   echo vswhere.exe not found. Open an x64 Native Tools Command Prompt and rerun. >&2
   exit /b 1

@@ -15,6 +15,7 @@ qrc_*.cpp
 .qmake.stash
 Makefile
 test-artifacts/
+/dist/
 .audit/
 .worktrees/
 

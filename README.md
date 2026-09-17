@@ -127,9 +127,12 @@ bin/test-live
 
 Omarchy is the home. A native Windows build is a bonus: it works, it is not the focus, and why not.
 
-Each version tag also publishes `omairc-*-windows-x64.zip` on the
-[GitHub release](https://github.com/fredimachado/omairc/releases/latest):
-unzip and run `omairc.exe` (use `start` so the terminal comes back).
+Each version tag also publishes `omairc-*-windows-x64.zip` and
+`omairc-*-windows-x64-setup.exe` on the
+[GitHub release](https://github.com/fredimachado/omairc/releases/latest).
+The installer is per-user by default (no admin): Start Menu, user PATH, and
+`%LOCALAPPDATA%\Programs\Omairc`. Unzip the zip and run `omairc.exe` if you
+want a portable tree (use `start` so the terminal comes back).
 
 From the repo root:
 
@@ -138,11 +141,12 @@ bin\build.bat
 start build\release\omairc.exe
 start build\release\omairc.exe --demo-server
 build\release\omairc.exe --help
+bin\package-windows.bat
 ```
 
 Use `start` for the window so the prompt comes back. The exe is a console app so `--help` and the local CLI can print; a foreground launch keeps that terminal busy even after `FreeConsole()`.
 
-`bin\build.bat` finds a Qt 6 kit (MSVC preferred, then MinGW), loads the MSVC toolchain when needed, builds into `build\release\`, and runs `windeployqt`. Set `QMAKE` to pick a kit. QtKeychain must be installed for that kit. Opening `omairc.pro` in Qt Creator still works.
+`bin\build.bat` finds a Qt 6 kit (MSVC preferred, then MinGW), loads the MSVC toolchain when needed, builds into `build\release\`, and runs `windeployqt` (including the compiler runtime DLLs). Set `QMAKE` to pick a kit. QtKeychain must be installed for that kit. Opening `omairc.pro` in Qt Creator still works. `bin\package-windows.bat` needs Inno Setup 6 (`ISCC.exe`) and writes `dist\omairc-*-windows-x64-setup.exe`.
 
 The same exe is the local CLI. Start the window first, then `omairc.exe connections`, `send`, `read`, and the rest from another terminal. On Windows there is no `omairc.sock` file; the client listens on a named pipe.
 
