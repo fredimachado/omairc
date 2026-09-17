@@ -75,7 +75,7 @@ ApplicationWindow {
         : false
     onConsoleVisibleChanged: {
         resetNickComplete();
-        if (!abandonFind())
+        if (!abandonFind() && !suppressComposerStash)
             stashComposerDraft();
         restoreComposerDraft();
         resetComposerHistoryBrowse();
@@ -93,7 +93,7 @@ ApplicationWindow {
     readonly property string currentConversationId: irc ? irc.selectedConversationId : ""
     onCurrentConversationIdChanged: {
         resetNickComplete();
-        if (!abandonFind())
+        if (!abandonFind() && !suppressComposerStash)
             stashComposerDraft();
         restoreComposerDraft();
         resetComposerHistoryBrowse();
@@ -102,7 +102,7 @@ ApplicationWindow {
         if (!consoleVisible)
             return;
         resetNickComplete();
-        if (!abandonFind())
+        if (!abandonFind() && !suppressComposerStash)
             stashComposerDraft();
         restoreComposerDraft();
         resetComposerHistoryBrowse();
@@ -153,6 +153,7 @@ ApplicationWindow {
     property var composerHistories: ({})
     property var composerDrafts: ({})
     property string composerDraftKey: ""
+    property bool suppressComposerStash: false
     property bool findActive: false
     property int findIndex: -1
     property int composerHistoryIndex: -1
@@ -1268,15 +1269,15 @@ ApplicationWindow {
         composerHistoryDraft = "";
     }
 
-    function rememberSentComposerLine(text) {
+    function rememberSentComposerLine(text, key) {
         resetNickComplete();
         resetComposerHistoryBrowse();
-        var key = composerHistoryKey();
-        var lines = (composerHistories[key] || []).slice();
+        var historyKey = key && key.length ? key : composerHistoryKey();
+        var lines = (composerHistories[historyKey] || []).slice();
         lines.push(text);
         if (lines.length > 50)
             lines.shift();
-        composerHistories[key] = lines;
+        composerHistories[historyKey] = lines;
     }
 
     function recallComposerHistory(delta) {
@@ -1456,6 +1457,15 @@ ApplicationWindow {
         Qt.callLater(function() { list.adoptViewport(); });
     }
 
+    function dispatchComposerSend(fromConsole, original) {
+        if (fromConsole) {
+            return irc && networkConsole
+                && networkConsole.submit(original)
+                && networkConsole.lastSubmitAccepted !== false;
+        }
+        return irc && irc.sendMessage(original);
+    }
+
     function sendMessage() {
         if (findActive) {
             advanceFind(false);
@@ -1466,20 +1476,44 @@ ApplicationWindow {
         if (original.length === 0)
             return;
 
-        if (consoleVisible) {
-            if (irc && networkConsole.submit(original)) {
-                rememberSentComposerLine(original);
-                composer.clear();
-            }
-            consoleList.pinToEnd();
+        var fromConsole = consoleVisible;
+        var sentFromKey = composerDraftKey;
+        var sentFromConversationId = currentConversationId;
+        suppressComposerStash = true;
+        Qt.callLater(function() { suppressComposerStash = false; });
+        if (sentFromKey.length > 0)
+            composerDrafts[sentFromKey] = "";
+        composer.clear();
+
+        var sent = dispatchComposerSend(fromConsole, original);
+        suppressComposerStash = false;
+
+        if (!sent) {
+            composer.text = original;
+            composer.cursorPosition = composer.text.length;
+            if (sentFromKey.length > 0 && composerDraftKey === sentFromKey)
+                composerDrafts[sentFromKey] = original;
+            if (fromConsole)
+                consoleList.pinToEnd();
+            else
+                messageList.pinToEnd();
             return;
         }
 
-        if (irc && irc.sendMessage(original)) {
-            rememberSentComposerLine(original);
-            composer.clear();
+        rememberSentComposerLine(original, sentFromKey);
+        var kept = composerDrafts[composerDraftKey] || "";
+        composer.text = kept;
+        composer.cursorPosition = composer.text.length;
+        if (consoleVisible)
+            consoleList.pinToEnd();
+        else
+            messageList.pinToEnd();
+        if (consoleVisible !== fromConsole
+                || currentConversationId !== sentFromConversationId) {
+            Qt.callLater(function() {
+                composer.forceActiveFocus();
+            });
         }
-        messageList.pinToEnd();
     }
 
     Shortcut {

@@ -342,6 +342,7 @@ private slots:
     void awayWaitsForNumericThenChatUnaways();
     void statusQueryClosesStatus();
     void statusQueryChannelStaysOpen();
+    void statusSubmitLastAcceptedFollowsOutcome();
     void disconnectedQuerySelectsBareNotText();
     void statusQueryWithNoNetworkDoesNotCrash();
     void conversationClearWipesMessages();
@@ -2290,6 +2291,30 @@ void ControllerTest::statusQueryChannelStaysOpen()
     QVERIFY(console->isOpen());
     QCOMPARE(controller.selectedTarget(), QStringLiteral("#omarchy"));
     QVERIFY(logContains(console->lines(), QStringLiteral("Command was refused")));
+}
+
+void ControllerTest::statusSubmitLastAcceptedFollowsOutcome()
+{
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+                                                transport);
+    QVERIFY(session);
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    transport->completeConnect();
+    transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
+                          ":server 001 omairc :Welcome\r\n"
+                          ":omairc!u@h JOIN :#omarchy\r\n"));
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+
+    IrcStatusConsole *console = controller.console();
+    QVERIFY(console->lastSubmitAccepted());
+    QVERIFY(console->submit(QStringLiteral("/query")));
+    QVERIFY(!console->lastSubmitAccepted());
+    QVERIFY(logContains(console->lines(), QStringLiteral("Command was refused")));
+    QVERIFY(console->submit(QStringLiteral("/query lena")));
+    QVERIFY(console->lastSubmitAccepted());
 }
 
 void ControllerTest::disconnectedQuerySelectsBareNotText()

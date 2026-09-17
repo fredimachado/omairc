@@ -183,15 +183,31 @@ void IrcStatusConsole::setOpen(bool open)
 bool IrcStatusConsole::submit(const QString& input)
 {
     const IrcCommand command = IrcCommand::parse(input);
-    if (command.verb == IrcCommand::Verb::Empty)
+    if (command.verb == IrcCommand::Verb::Empty) {
+        setLastSubmitAccepted(false);
         return false;
+    }
 
     const IrcCommandOutcome outcome = m_dispatch(command);
     if (outcome != IrcCommandOutcome::Sent && !m_networkId.isEmpty()) {
         m_log.append(IrcStatusEntry::outcome(
             m_networkId, ircCommandOutcomeText(outcome, command)));
     }
+    setLastSubmitAccepted(outcome == IrcCommandOutcome::Sent);
     return true;
+}
+
+bool IrcStatusConsole::lastSubmitAccepted() const
+{
+    return m_lastSubmitAccepted;
+}
+
+void IrcStatusConsole::setLastSubmitAccepted(bool accepted)
+{
+    if (m_lastSubmitAccepted == accepted)
+        return;
+    m_lastSubmitAccepted = accepted;
+    emit lastSubmitAcceptedChanged();
 }
 
 bool IrcStatusConsole::clearLog()
