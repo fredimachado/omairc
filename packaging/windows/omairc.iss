@@ -61,6 +61,9 @@ Filename: "{app}\{#MyAppExeName}"; Description: "Launch {#MyAppName}"; \
   Flags: nowait postinstall skipifsilent runasoriginaluser
 
 [Code]
+var
+  UninstallAppPath: String;
+
 function EnvRootKey: Integer;
 begin
   if IsAdminInstallMode then
@@ -225,8 +228,14 @@ begin
     AddToPath(ExpandConstant('{app}'));
 end;
 
+function InitializeUninstall(): Boolean;
+begin
+  UninstallAppPath := ExpandConstant('{app}');
+  Result := True;
+end;
+
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 begin
-  if CurUninstallStep = usPostUninstall then
-    RemoveFromPath(ExpandConstant('{app}'));
+  if CurUninstallStep = usUninstall then
+    RemoveFromPath(UninstallAppPath);
 end;
