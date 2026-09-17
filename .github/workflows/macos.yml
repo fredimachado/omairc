@@ -198,6 +198,17 @@ jobs:
         run: |
           set -euo pipefail
           bin/check-conventions
+          run_test_bin() {
+            if [ -x "./$1" ]; then
+              "./$1" "${@:2}"
+            elif [ -x "./$1.app/Contents/MacOS/$1" ]; then
+              "./$1.app/Contents/MacOS/$1" "${@:2}"
+            else
+              echo "Could not find $1 under $(pwd)" >&2
+              ls -la
+              exit 1
+            fi
+          }
           jobs=$(sysctl -n hw.ncpu)
           mkdir -p build-tests
           cd build-tests
@@ -205,7 +216,7 @@ jobs:
           # Qt 6.8 still emits -framework AGL; SDK 26 removed it.
           find . -name Makefile -print0 | xargs -0 sed -i '' 's/-framework AGL//g'
           make -j"$jobs"
-          ./protocol_tests
+          run_test_bin protocol_tests
           cd "$GITHUB_WORKSPACE"
           mkdir -p build-seeded-qml-tests
           cd build-seeded-qml-tests
@@ -214,7 +225,6 @@ jobs:
           find . -name Makefile -print0 | xargs -0 sed -i '' 's/-framework AGL//g'
           make -j"$jobs"
           test_state=$(mktemp -d "${RUNNER_TEMP}/omairc-tests.XXXXXX")
-          cd "$GITHUB_WORKSPACE"
           XDG_CONFIG_HOME="$test_state/config" \
           XDG_CACHE_HOME="$test_state/cache" \
           XDG_DATA_HOME="$test_state/data" \
@@ -222,7 +232,7 @@ jobs:
           QT_QPA_PLATFORM=offscreen \
           QT_QPA_PLATFORMTHEME= \
           QT_QUICK_BACKEND=software \
-          "$GITHUB_WORKSPACE/build-seeded-qml-tests/seeded_qml_tests" \
+          run_test_bin seeded_qml_tests \
             -input "$GITHUB_WORKSPACE/tests/ui/tst_omairc.qml"
           XDG_CONFIG_HOME="$test_state/config" \
           XDG_CACHE_HOME="$test_state/cache" \
@@ -231,7 +241,7 @@ jobs:
           QT_QPA_PLATFORM=offscreen \
           QT_QPA_PLATFORMTHEME= \
           QT_QUICK_BACKEND=software \
-          "$GITHUB_WORKSPACE/build-seeded-qml-tests/seeded_qml_tests" \
+          run_test_bin seeded_qml_tests \
             -input "$GITHUB_WORKSPACE/tests/ui/tst_seeded_window.qml"
           rm -rf "$test_state"
 

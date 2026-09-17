@@ -2,6 +2,7 @@ QT += core gui network quick testlib
 unix:!macx: QT += dbus
 
 macx {
+    CONFIG -= app_bundle
     HEADERS += ../src/macosnotifications.h
     OBJECTIVE_SOURCES += ../src/macosnotifications.mm
     LIBS += -framework UserNotifications -framework Foundation -framework AppKit

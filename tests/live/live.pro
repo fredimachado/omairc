@@ -2,6 +2,7 @@ QT += core network testlib
 QT -= gui
 
 macx {
+    CONFIG -= app_bundle
     CONFIG += sdk_no_version_check
     QMAKE_CXXFLAGS += -include arm_acle.h
 }
