@@ -441,16 +441,17 @@ void ProfileTest::storeRemoveDropsTheNetworkGroup()
     QVERIFY(!contents.contains(QLatin1String("irc.oftc.net")));
 #else
     QSettings stored;
+    const QStringList keys = stored.allKeys();
+    const QString joinedKeys = keys.join(QLatin1Char('\n'));
+    QVERIFY(joinedKeys.contains(keep.networkId));
+    QVERIFY(!joinedKeys.contains(drop.networkId));
     const QStringList values = [&stored]() {
         QStringList out;
         for (const QString &key : stored.allKeys())
             out.append(stored.value(key).toString());
         return out;
     }();
-    const QString joined = values.join(QLatin1Char('\n'));
-    QVERIFY(joined.contains(keep.networkId));
-    QVERIFY(!joined.contains(drop.networkId));
-    QVERIFY(!joined.contains(QLatin1String("irc.oftc.net")));
+    QVERIFY(!values.join(QLatin1Char('\n')).contains(QLatin1String("irc.oftc.net")));
 #endif
 }
 
