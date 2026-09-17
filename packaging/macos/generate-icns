@@ -1,0 +1,45 @@
+#!/usr/bin/env sh
+# Build data/icons/omairc.icns from the committed iconset PNGs.
+# Regenerate the PNGs from data/icons/hicolor/scalable/apps/omairc.svg when
+# the mark changes:
+#   rsvg-convert -w SIZE -h SIZE omairc.svg -o icon_WxH.png
+# Keep the filenames under data/icons/macos/omairc.iconset/ in sync with
+# Apple's iconset convention, then rerun this script on macOS (iconutil).
+set -eu
+
+ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)"
+ICONSET="$ROOT/data/icons/macos/omairc.iconset"
+ICNS="$ROOT/data/icons/omairc.icns"
+SVG="$ROOT/data/icons/hicolor/scalable/apps/omairc.svg"
+
+if [ ! -d "$ICONSET" ]; then
+  echo "Missing $ICONSET" >&2
+  exit 1
+fi
+
+if ! command -v iconutil >/dev/null 2>&1; then
+  echo "iconutil is required to build $ICNS (run on macOS)." >&2
+  exit 1
+fi
+
+if [ -f "$SVG" ] && command -v rsvg-convert >/dev/null 2>&1; then
+  regen=0
+  if [ ! -f "$ICNS" ] || [ "$SVG" -nt "$ICNS" ]; then
+    regen=1
+  fi
+  if [ "$regen" -eq 1 ]; then
+    rsvg-convert -w 16 -h 16 "$SVG" -o "$ICONSET/icon_16x16.png"
+    rsvg-convert -w 32 -h 32 "$SVG" -o "$ICONSET/icon_16x16@2x.png"
+    rsvg-convert -w 32 -h 32 "$SVG" -o "$ICONSET/icon_32x32.png"
+    rsvg-convert -w 64 -h 64 "$SVG" -o "$ICONSET/icon_32x32@2x.png"
+    rsvg-convert -w 128 -h 128 "$SVG" -o "$ICONSET/icon_128x128.png"
+    rsvg-convert -w 256 -h 256 "$SVG" -o "$ICONSET/icon_128x128@2x.png"
+    rsvg-convert -w 256 -h 256 "$SVG" -o "$ICONSET/icon_256x256.png"
+    rsvg-convert -w 512 -h 512 "$SVG" -o "$ICONSET/icon_256x256@2x.png"
+    rsvg-convert -w 512 -h 512 "$SVG" -o "$ICONSET/icon_512x512.png"
+    rsvg-convert -w 1024 -h 1024 "$SVG" -o "$ICONSET/icon_512x512@2x.png"
+  fi
+fi
+
+iconutil -c icns "$ICONSET" -o "$ICNS"
+echo "Wrote $ICNS"

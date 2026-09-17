@@ -1,0 +1,257 @@
+name: macOS build
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - '.github/workflows/macos.yml'
+      - 'bin/build-macos'
+      - 'bin/package-macos'
+      - 'packaging/macos/**'
+      - 'omairc.pro'
+      - 'qtkeychain.pri'
+      - 'version.pri'
+      - 'src/**'
+      - 'fonts/**'
+      - 'data/icons/**'
+      - 'LICENSE'
+  push:
+    branches:
+      - master
+    tags:
+      - 'v*'
+    paths:
+      - '.github/workflows/macos.yml'
+      - 'bin/build-macos'
+      - 'bin/package-macos'
+      - 'packaging/macos/**'
+      - 'omairc.pro'
+      - 'qtkeychain.pri'
+      - 'version.pri'
+      - 'src/**'
+      - 'fonts/**'
+      - 'data/icons/**'
+      - 'LICENSE'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
+permissions:
+  contents: write
+
+jobs:
+  macos:
+    runs-on: macos-latest
+    timeout-minutes: 45
+    env:
+      QT_VERSION: 6.8.3
+      QTKEYCHAIN_VERSION: 0.15.0
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read version
+        run: |
+          set -euo pipefail
+          ver=$(awk '/^VERSION / { print $3; exit }' version.pri)
+          test -n "$ver"
+          echo "OMAIRC_VERSION=$ver" >> "$GITHUB_ENV"
+          echo "Omairc $ver"
+
+      - name: Assert tag version
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME#v}"
+          test "$tag" = "$OMAIRC_VERSION"
+
+      - name: Select Qt arch
+        run: |
+          set -euo pipefail
+          case "$(uname -m)" in
+            arm64)
+              echo "QT_ARCH=clang_arm64" >> "$GITHUB_ENV"
+              echo "OMAIRC_MAC_SUFFIX=macos-arm64" >> "$GITHUB_ENV"
+              ;;
+            x86_64)
+              echo "QT_ARCH=clang_64" >> "$GITHUB_ENV"
+              echo "OMAIRC_MAC_SUFFIX=macos-x64" >> "$GITHUB_ENV"
+              ;;
+            *)
+              echo "Unsupported runner architecture: $(uname -m)" >&2
+              exit 1
+              ;;
+          esac
+          echo "Qt arch: $QT_ARCH ($OMAIRC_MAC_SUFFIX)"
+
+      - name: Cache Qt
+        id: qt-cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/Qt
+          key: qt-${{ env.QT_VERSION }}-${{ env.QT_ARCH }}-qtkeychain-${{ env.QTKEYCHAIN_VERSION }}
+
+      - name: Install Qt 6
+        if: steps.qt-cache.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          python3 -m venv "$RUNNER_TEMP/aqt"
+          "$RUNNER_TEMP/aqt/bin/pip" install aqtinstall
+          "$RUNNER_TEMP/aqt/bin/aqt" install-qt mac desktop "$QT_VERSION" "$QT_ARCH" \
+            -O "$RUNNER_TEMP/Qt"
+
+      - name: Add Qt to PATH
+        run: |
+          set -euo pipefail
+          qt_bin="$RUNNER_TEMP/Qt/$QT_VERSION/$QT_ARCH/bin"
+          test -x "$qt_bin/qmake"
+          echo "$qt_bin" >> "$GITHUB_PATH"
+          echo "QMAKE=$qt_bin/qmake" >> "$GITHUB_ENV"
+          {
+            echo "DYLD_LIBRARY_PATH=$RUNNER_TEMP/Qt/$QT_VERSION/$QT_ARCH/lib:${DYLD_LIBRARY_PATH:-}"
+            echo "QT_PLUGIN_PATH=$RUNNER_TEMP/Qt/$QT_VERSION/$QT_ARCH/plugins"
+            echo "QML2_IMPORT_PATH=$RUNNER_TEMP/Qt/$QT_VERSION/$QT_ARCH/qml"
+          } >> "$GITHUB_ENV"
+
+      - name: Install QtKeychain
+        run: |
+          set -euo pipefail
+          qmake="$QMAKE"
+          qt_prefix="$("$qmake" -query QT_INSTALL_PREFIX)"
+          pri="$("$qmake" -query QT_INSTALL_ARCHDATA)/mkspecs/modules/qt_Qt6Keychain.pri"
+          if [ -f "$pri" ]; then
+            echo "QtKeychain already at $pri"
+            exit 0
+          fi
+          src="$RUNNER_TEMP/qtkeychain-src"
+          build="$RUNNER_TEMP/qtkeychain-build"
+          git clone --depth 1 --branch "$QTKEYCHAIN_VERSION" \
+            https://github.com/frankosterfeld/qtkeychain.git "$src"
+          cmake -S "$src" -B "$build" -G "Unix Makefiles" \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_CXX_COMPILER=clang++ \
+            -DCMAKE_PREFIX_PATH="$qt_prefix" \
+            -DCMAKE_INSTALL_PREFIX="$qt_prefix" \
+            -DBUILD_WITH_QT6=ON \
+            -DBUILD_TRANSLATIONS=OFF \
+            -DBUILD_TEST_APPLICATION=OFF \
+            -DBUILD_TESTING=OFF
+          cmake --build "$build"
+          cmake --install "$build"
+          test -f "$pri"
+
+      - name: Build
+        run: bin/build-macos
+
+      - name: Smoke
+        run: |
+          set -euo pipefail
+          exe="$GITHUB_WORKSPACE/build/omairc.app/Contents/MacOS/omairc"
+          test -x "$exe"
+          version=$("$exe" --version 2>&1)
+          case "$version" in
+            omairc\ [0-9]*) ;;
+            *) echo "Expected version text, got: $version" >&2; exit 1 ;;
+          esac
+          help=$("$exe" --help 2>&1)
+          case "$help" in
+            *Usage:*) ;;
+            *) echo "Expected help text, got: $help" >&2; exit 1 ;;
+          esac
+          export OMAIRC_ALLOW_MULTI=1
+          export OMAIRC_SMOKE=1
+          export QT_QPA_PLATFORM=offscreen
+          export QT_QUICK_BACKEND=software
+          "$exe" --demo-server &
+          pid=$!
+          for _ in $(seq 1 60); do
+            if ! kill -0 "$pid" 2>/dev/null; then
+              wait "$pid"
+              exit $?
+            fi
+            sleep 0.5
+          done
+          kill "$pid" 2>/dev/null || true
+          wait "$pid" 2>/dev/null || true
+          echo "demo-server smoke did not exit within 30s" >&2
+          exit 1
+
+      - name: Portable tests
+        run: |
+          set -euo pipefail
+          bin/check-conventions
+          jobs=$(sysctl -n hw.ncpu)
+          mkdir -p build-tests
+          cd build-tests
+          qmake "$GITHUB_WORKSPACE/tests/tests.pro"
+          make -j"$jobs"
+          ./protocol_tests
+          cd "$GITHUB_WORKSPACE"
+          mkdir -p build-seeded-qml-tests
+          cd build-seeded-qml-tests
+          qmake "$GITHUB_WORKSPACE/tests/ui/seeded-qml.pro"
+          make -j"$jobs"
+          test_state=$(mktemp -d "${RUNNER_TEMP}/omairc-tests.XXXXXX")
+          cd "$GITHUB_WORKSPACE"
+          XDG_CONFIG_HOME="$test_state/config" \
+          XDG_CACHE_HOME="$test_state/cache" \
+          XDG_DATA_HOME="$test_state/data" \
+          XDG_STATE_HOME="$test_state/state" \
+          QT_QPA_PLATFORM=offscreen \
+          QT_QPA_PLATFORMTHEME= \
+          QT_QUICK_BACKEND=software \
+          "$GITHUB_WORKSPACE/build-seeded-qml-tests/seeded_qml_tests" \
+            -input "$GITHUB_WORKSPACE/tests/ui/tst_omairc.qml"
+          XDG_CONFIG_HOME="$test_state/config" \
+          XDG_CACHE_HOME="$test_state/cache" \
+          XDG_DATA_HOME="$test_state/data" \
+          XDG_STATE_HOME="$test_state/state" \
+          QT_QPA_PLATFORM=offscreen \
+          QT_QPA_PLATFORMTHEME= \
+          QT_QUICK_BACKEND=software \
+          "$GITHUB_WORKSPACE/build-seeded-qml-tests/seeded_qml_tests" \
+            -input "$GITHUB_WORKSPACE/tests/ui/tst_seeded_window.qml"
+          rm -rf "$test_state"
+
+      - name: Package app zip
+        run: bin/package-macos
+
+      - name: Upload app zip
+        uses: actions/upload-artifact@v4
+        with:
+          name: omairc-${{ env.OMAIRC_VERSION }}-${{ env.OMAIRC_MAC_SUFFIX }}
+          path: dist/omairc-${{ env.OMAIRC_VERSION }}-${{ env.OMAIRC_MAC_SUFFIX }}.zip
+          if-no-files-found: error
+
+      - name: Publish GitHub Release asset
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          set -euo pipefail
+          tag="$GITHUB_REF_NAME"
+          zip="dist/omairc-${OMAIRC_VERSION}-${OMAIRC_MAC_SUFFIX}.zip"
+          zip_name=$(basename "$zip")
+          test -f "$zip"
+
+          deadline=$(( $(date +%s) + 1800 ))
+          while ! gh release view "$tag" >/dev/null 2>&1; do
+            if [ "$(date +%s)" -ge "$deadline" ]; then
+              echo "Timed out waiting for GitHub Release $tag (created by Release package)" >&2
+              exit 1
+            fi
+            echo "Waiting for release $tag..."
+            sleep 15
+          done
+
+          mapfile -t assets < <(gh release view "$tag" --json assets --jq '.assets[].name')
+          for asset in "${assets[@]}"; do
+            case "$asset" in
+              omairc-*-macos-*.zip)
+                if [ "$asset" != "$zip_name" ]; then
+                  gh release delete-asset "$tag" "$asset" --yes
+                fi
+                ;;
+            esac
+          done
+
+          gh release upload "$tag" "$zip" --clobber

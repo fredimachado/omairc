@@ -1,0 +1,104 @@
+#!/usr/bin/env sh
+set -eu
+
+prune_qt_deploy() {
+  app="$1"
+  rel="$app/Contents"
+  for dir in \
+    "$rel/Resources/qml/QtQuick/Controls/FluentWinUI3" \
+    "$rel/Resources/qml/QtQuick/Controls/Fusion" \
+    "$rel/Resources/qml/QtQuick/Controls/Imagine" \
+    "$rel/Resources/qml/QtQuick/Controls/Universal" \
+    "$rel/Resources/qml/QtQuick/Controls/Windows" \
+    "$rel/Resources/qml/QtQuick/NativeStyle" \
+    "$rel/Resources/qml/QtQuick/Effects" \
+    "$rel/Resources/qml/QtQuick/Shapes" \
+    "$rel/Resources/qml/QtQuick/Dialogs" \
+    "$rel/Resources/qml/QtQuick/Particles" \
+    "$rel/Resources/qml/QtQuick/LocalStorage" \
+    "$rel/Resources/qml/QtQuick/Timeline" \
+    "$rel/Resources/qml/QtQuick/tooling" \
+    "$rel/Resources/qml/QtQuick/VectorImage" \
+    "$rel/Resources/qml/QtQuick/Controls/designer" \
+    "$rel/PlugIns/quick/libquickcontrols2fusionstyleplugin.dylib" \
+    "$rel/PlugIns/quick/libquickcontrols2imaginestyleplugin.dylib" \
+    "$rel/PlugIns/quick/libquickcontrols2universalstyleplugin.dylib" \
+    "$rel/PlugIns/quick/libquickcontrols2windowsstyleplugin.dylib" \
+    "$rel/PlugIns/quick/libqtquickcontrols2fluentwinui3styleplugin.dylib"
+  do
+    rm -rf -- "$dir"
+  done
+}
+
+ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
+BUILD_DIR="$ROOT/build"
+VERSION="$("$ROOT/bin/version")"
+
+if [ "$(uname -s)" != "Darwin" ]; then
+  echo "bin/build-macos must run on macOS." >&2
+  exit 1
+fi
+
+if command -v qmake6 >/dev/null 2>&1; then
+  QMAKE=qmake6
+elif command -v qmake >/dev/null 2>&1 && qmake -query QT_VERSION | grep -q '^6\.'; then
+  QMAKE=qmake
+else
+  echo "A Qt 6 qmake (qmake6) is required to build omairc on macOS." >&2
+  exit 1
+fi
+
+JOBS="$(sysctl -n hw.ncpu 2>/dev/null || echo 2)"
+QT_BIN="$("$QMAKE" -query QT_INSTALL_BINS)"
+QT_LIB="$("$QMAKE" -query QT_INSTALL_LIBS)"
+
+"$ROOT/packaging/macos/generate-icns"
+
+INFO_PLIST="$BUILD_DIR/Info.plist"
+mkdir -p "$BUILD_DIR"
+sed "s/@OMAIRC_VERSION@/$VERSION/g" "$ROOT/packaging/macos/Info.plist" >"$INFO_PLIST"
+
+cd "$BUILD_DIR"
+"$QMAKE" "$ROOT/omairc.pro" \
+  CONFIG+=app_bundle \
+  ICON="$ROOT/data/icons/omairc.icns" \
+  QMAKE_INFO_PLIST="$INFO_PLIST" \
+  QMAKE_MACOSX_DEPLOYMENT_TARGET=11.0
+make -j"$JOBS"
+
+APP="$BUILD_DIR/omairc.app"
+EXE="$APP/Contents/MacOS/omairc"
+if [ ! -x "$EXE" ]; then
+  echo "Expected $EXE after the build." >&2
+  exit 1
+fi
+
+if [ -x "$QT_BIN/macdeployqt" ]; then
+  "$QT_BIN/macdeployqt" "$APP" \
+    -qmldir="$ROOT/src" \
+    -always-overwrite
+  prune_qt_deploy "$APP"
+fi
+
+FRAMEWORKS="$APP/Contents/Frameworks"
+mkdir -p "$FRAMEWORKS"
+for keychain in "$QT_LIB/libqt6keychain.dylib" "$QT_LIB/libQt6Keychain.dylib"; do
+  if [ -f "$keychain" ]; then
+    dest="$FRAMEWORKS/$(basename "$keychain")"
+    cp -f "$keychain" "$dest"
+    id="@executable_path/../Frameworks/$(basename "$keychain")"
+    install_name_tool -id "$id" "$dest" 2>/dev/null || true
+    otool -L "$EXE" | awk 'NR>1 { print $1 }' | while read -r dep; do
+      case "$dep" in
+        *qt6keychain*|*Qt6Keychain*)
+          install_name_tool -change "$dep" "$id" "$EXE" 2>/dev/null || true
+          ;;
+      esac
+    done
+    break
+  fi
+done
+
+ln -sf "omairc.app/Contents/MacOS/omairc" "$BUILD_DIR/omairc"
+
+echo "Built $APP"

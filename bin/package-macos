@@ -1,0 +1,40 @@
+#!/usr/bin/env sh
+set -eu
+
+ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
+APP="$ROOT/build/omairc.app"
+
+if [ ! -d "$APP" ]; then
+  echo "Expected $APP. Run bin/build-macos first." >&2
+  exit 1
+fi
+
+if [ "$(uname -s)" != "Darwin" ]; then
+  echo "bin/package-macos must run on macOS." >&2
+  exit 1
+fi
+
+VERSION="${OMAIRC_VERSION:-$("$ROOT/bin/version")}"
+ARCH="$(uname -m)"
+case "$ARCH" in
+  arm64) SUFFIX=macos-arm64 ;;
+  x86_64) SUFFIX=macos-x64 ;;
+  *)
+    echo "Unsupported macOS architecture: $ARCH" >&2
+    exit 1
+    ;;
+esac
+
+mkdir -p "$ROOT/dist"
+ZIP="$ROOT/dist/omairc-${VERSION}-${SUFFIX}.zip"
+STAGE="$ROOT/dist/omairc-${VERSION}-${SUFFIX}"
+rm -rf -- "$STAGE" "$ZIP"
+mkdir -p "$STAGE"
+ditto "$APP" "$STAGE/omairc.app"
+(
+  cd "$ROOT/dist"
+  ditto -c -k --sequesterRsrc --keepParent "$STAGE/omairc.app" "$(basename "$ZIP")"
+)
+rm -rf -- "$STAGE"
+
+echo "Built $ZIP"
