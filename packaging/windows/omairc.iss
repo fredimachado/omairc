@@ -98,20 +98,16 @@ begin
   Parts[Count] := Copy(S, StartPos, Length(S) - StartPos + 1);
 end;
 
-function JoinNonEmpty(const Parts: TArrayOfString): String;
+function JoinParts(const Parts: TArrayOfString): String;
 var
   I: Integer;
 begin
   Result := '';
-  for I := 0 to GetArrayLength(Parts) - 1 do
-  begin
-    if Parts[I] = '' then
-      Continue;
-    if Result = '' then
-      Result := Parts[I]
-    else
-      Result := Result + ';' + Parts[I];
-  end;
+  if GetArrayLength(Parts) = 0 then
+    Exit;
+  Result := Parts[0];
+  for I := 1 to GetArrayLength(Parts) - 1 do
+    Result := Result + ';' + Parts[I];
 end;
 
 function SameDir(const Left, Right: String): Boolean;
@@ -171,6 +167,7 @@ procedure AddToPath(const Dir: String);
 var
   OrigPath: String;
   Parts: TArrayOfString;
+  N: Integer;
 begin
   if Dir = '' then
     Exit;
@@ -179,9 +176,19 @@ begin
   if PathListHasDir(OrigPath, Dir) then
     Exit;
   SplitSemicolon(OrigPath, Parts);
-  SetArrayLength(Parts, GetArrayLength(Parts) + 1);
-  Parts[GetArrayLength(Parts) - 1] := Dir;
-  if not RegWriteExpandStringValue(EnvRootKey, EnvSubKey, 'Path', JoinNonEmpty(Parts)) then
+  N := GetArrayLength(Parts);
+  if (N > 0) and (Parts[N - 1] = '') then
+  begin
+    SetArrayLength(Parts, N + 1);
+    Parts[N] := '';
+    Parts[N - 1] := Dir;
+  end
+  else
+  begin
+    SetArrayLength(Parts, N + 1);
+    Parts[N] := Dir;
+  end;
+  if not RegWriteExpandStringValue(EnvRootKey, EnvSubKey, 'Path', JoinParts(Parts)) then
     Log('Could not add Omairc to PATH');
 end;
 
@@ -202,13 +209,13 @@ begin
   SetArrayLength(Kept, 0);
   for I := 0 to GetArrayLength(Parts) - 1 do
   begin
-    if (Parts[I] = '') or SamePathDir(Parts[I], Dir) then
+    if SamePathDir(Parts[I], Dir) then
       Continue;
     SetArrayLength(Kept, Count + 1);
     Kept[Count] := Parts[I];
     Inc(Count);
   end;
-  if not RegWriteExpandStringValue(EnvRootKey, EnvSubKey, 'Path', JoinNonEmpty(Kept)) then
+  if not RegWriteExpandStringValue(EnvRootKey, EnvSubKey, 'Path', JoinParts(Kept)) then
     Log('Could not remove Omairc from PATH');
 end;
 
