@@ -71,26 +71,31 @@ jobs:
           set -euo pipefail
           case "$(uname -m)" in
             arm64)
-              echo "QT_ARCH=clang_arm64" >> "$GITHUB_ENV"
-              echo "OMAIRC_MAC_SUFFIX=macos-arm64" >> "$GITHUB_ENV"
+              qt_aqt_arch=clang_64
+              qt_install_dir=macos
+              omairc_mac_suffix=macos-arm64
               ;;
             x86_64)
-              echo "QT_ARCH=clang_64" >> "$GITHUB_ENV"
-              echo "OMAIRC_MAC_SUFFIX=macos-x64" >> "$GITHUB_ENV"
+              qt_aqt_arch=clang_64
+              qt_install_dir=macos
+              omairc_mac_suffix=macos-x64
               ;;
             *)
               echo "Unsupported runner architecture: $(uname -m)" >&2
               exit 1
               ;;
           esac
-          echo "Qt arch: $QT_ARCH ($OMAIRC_MAC_SUFFIX)"
+          echo "QT_AQT_ARCH=$qt_aqt_arch" >> "$GITHUB_ENV"
+          echo "QT_INSTALL_DIR=$qt_install_dir" >> "$GITHUB_ENV"
+          echo "OMAIRC_MAC_SUFFIX=$omairc_mac_suffix" >> "$GITHUB_ENV"
+          echo "Qt arch: $qt_aqt_arch (install: $qt_install_dir, artifact: $omairc_mac_suffix)"
 
       - name: Cache Qt
         id: qt-cache
         uses: actions/cache@v4
         with:
           path: ${{ runner.temp }}/Qt
-          key: qt-${{ env.QT_VERSION }}-${{ env.QT_ARCH }}-qtkeychain-${{ env.QTKEYCHAIN_VERSION }}
+          key: qt-${{ env.QT_VERSION }}-${{ env.OMAIRC_MAC_SUFFIX }}-qtkeychain-${{ env.QTKEYCHAIN_VERSION }}
 
       - name: Install Qt 6
         if: steps.qt-cache.outputs.cache-hit != 'true'
@@ -98,20 +103,20 @@ jobs:
           set -euo pipefail
           python3 -m venv "$RUNNER_TEMP/aqt"
           "$RUNNER_TEMP/aqt/bin/pip" install aqtinstall
-          "$RUNNER_TEMP/aqt/bin/aqt" install-qt mac desktop "$QT_VERSION" "$QT_ARCH" \
+          "$RUNNER_TEMP/aqt/bin/aqt" install-qt mac desktop "$QT_VERSION" "$QT_AQT_ARCH" \
             -O "$RUNNER_TEMP/Qt"
 
       - name: Add Qt to PATH
         run: |
           set -euo pipefail
-          qt_bin="$RUNNER_TEMP/Qt/$QT_VERSION/$QT_ARCH/bin"
+          qt_bin="$RUNNER_TEMP/Qt/$QT_VERSION/$QT_INSTALL_DIR/bin"
           test -x "$qt_bin/qmake"
           echo "$qt_bin" >> "$GITHUB_PATH"
           echo "QMAKE=$qt_bin/qmake" >> "$GITHUB_ENV"
           {
-            echo "DYLD_LIBRARY_PATH=$RUNNER_TEMP/Qt/$QT_VERSION/$QT_ARCH/lib:${DYLD_LIBRARY_PATH:-}"
-            echo "QT_PLUGIN_PATH=$RUNNER_TEMP/Qt/$QT_VERSION/$QT_ARCH/plugins"
-            echo "QML2_IMPORT_PATH=$RUNNER_TEMP/Qt/$QT_VERSION/$QT_ARCH/qml"
+            echo "DYLD_LIBRARY_PATH=$RUNNER_TEMP/Qt/$QT_VERSION/$QT_INSTALL_DIR/lib:${DYLD_LIBRARY_PATH:-}"
+            echo "QT_PLUGIN_PATH=$RUNNER_TEMP/Qt/$QT_VERSION/$QT_INSTALL_DIR/plugins"
+            echo "QML2_IMPORT_PATH=$RUNNER_TEMP/Qt/$QT_VERSION/$QT_INSTALL_DIR/qml"
           } >> "$GITHUB_ENV"
 
       - name: Install QtKeychain

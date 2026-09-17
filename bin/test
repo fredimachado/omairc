@@ -31,9 +31,9 @@ omairc_binary() {
     exit 1
   fi
 }
-OMAIRC_BIN="$(omairc_binary)"
 
 "$ROOT/bin/build"
+OMAIRC_BIN="$(omairc_binary)"
 
 VERSION="$("$ROOT/bin/version")"
 got="$(DISPLAY= "$OMAIRC_BIN" --version)"
