@@ -1502,10 +1502,6 @@ ApplicationWindow {
         else
             messageList.pinToEnd();
         Qt.callLater(function() {
-            if (composer.text.trim() === original && kept !== original) {
-                composer.text = kept;
-                composer.cursorPosition = composer.text.length;
-            }
             composer.forceActiveFocus();
         });
     }
