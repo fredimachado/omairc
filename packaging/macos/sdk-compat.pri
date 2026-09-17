@@ -4,6 +4,5 @@ macx {
     QMAKE_CXXFLAGS += -include arm_acle.h
 
     QMAKE_LIBS_OPENGL = -framework OpenGL
-    LIBS -= -framework AGL
     LIBS = $$replace(LIBS, "-framework AGL", )
 }
