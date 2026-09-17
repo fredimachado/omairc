@@ -135,6 +135,13 @@ ApplicationWindow {
     readonly property bool memberStatusVisible: !irc || irc.hasMemberStatus
     readonly property bool awayPresenceVisible: !irc || irc.hasAwayPresence
     readonly property bool selfAway: irc ? irc.selfAway : false
+    // Same Connected gate as the network header status mark: Offline /
+    // Connecting / Reconnecting stay muted "offline", then away or available.
+    readonly property string selfPresence: {
+        if (irc && irc.connectionStatus !== "Connected")
+            return "offline"
+        return selfAway ? "away" : "available"
+    }
     readonly property bool typingVisible: !irc || irc.hasTyping
     readonly property var typingNicks: irc ? irc.typingNicks : []
     readonly property string selfNick: {
@@ -352,6 +359,16 @@ ApplicationWindow {
             base.g + (tint.g - base.g) * amount,
             base.b + (tint.b - base.b) * amount,
             1);
+    }
+
+    // Shared presence mark palette. Call sites map their own vocabulary onto
+    // "away" / "online" / "offline" so the hex values live in one place.
+    function presenceMarkColor(kind) {
+        if (kind === "away")
+            return "#d6a552"
+        if (kind === "online")
+            return "#69b978"
+        return mutedColor
     }
 
     function focusedNetworkDisplayName() {
@@ -2428,8 +2445,8 @@ ApplicationWindow {
                         radius: width / 2
                         color: section.liveAlerts > 0
                             ? win.accentColor
-                            : (section.liveStatus === "Connected"
-                                ? "#69b978" : win.mutedColor)
+                            : win.presenceMarkColor(section.liveStatus === "Connected"
+                                ? "online" : "offline")
                     }
 
                     Text {
@@ -2533,9 +2550,10 @@ ApplicationWindow {
                 width: win.scaledSize(7)
                 height: width
                 radius: width / 2
-                color: conversationRow.presence === "away" ? "#d6a552"
-                    : (conversationRow.presence === "online"
-                        ? "#69b978" : win.mutedColor)
+                color: win.presenceMarkColor(
+                    conversationRow.presence === "away" ? "away"
+                        : (conversationRow.presence === "online"
+                            ? "online" : "offline"))
                 border.width: win.scaledSize(2)
                 border.color: win.panelColor
             }
@@ -3101,7 +3119,10 @@ ApplicationWindow {
                         width: win.scaledSize(9)
                         height: width
                         radius: width / 2
-                        color: win.selfAway ? "#d6a552" : "#69b978"
+                        color: win.presenceMarkColor(
+                            win.selfPresence === "away" ? "away"
+                                : (win.selfPresence === "available"
+                                    ? "online" : "offline"))
                         border.width: win.scaledSize(2)
                         border.color: win.panelColor
                     }
@@ -3129,7 +3150,7 @@ ApplicationWindow {
 
                     Text {
                         objectName: "selfPresenceLabel"
-                        text: win.selfAway ? "away" : "available"
+                        text: win.selfPresence
                         color: win.mutedColor
                         font.family: "iA Writer Mono S"
                         font.pixelSize: win.scaledSize(10)

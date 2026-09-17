@@ -859,6 +859,28 @@ TestCase {
         }
     }
 
+    function resetGatedIrc() {
+        gatedIrc.currentNick = "live-nick";
+        gatedIrc.selfAway = false;
+        gatedIrc.selectedTarget = "#omarchy";
+        gatedIrc.selectedNetworkId = "libera";
+        gatedIrc.topic = "A cozy corner for Omarchy users and builders.";
+        gatedIrc.isChannel = true;
+        gatedIrc.peopleCount = 1;
+        gatedIrc.connectionStatus = "Connected";
+        gatedIrc.lastError = "";
+        gatedIrc.conversationEpoch = 0;
+        gatedIrc.hasAwayPresence = false;
+        gatedIrc.hasMemberStatus = false;
+        gatedIrc.hasTyping = false;
+        gatedIrc.reopenDirectMessages = true;
+        gatedIrc.typingNicks = ["anna"];
+        gatedIrc.conversations = liveConversations;
+        gatedIrc.messages = liveMessages;
+        gatedIrc.members = gatedMembers;
+        gatedIrc.statusConsole = liveConsole;
+    }
+
     function init() {
         appWindow = createTemporaryObject(windowComponent, null);
         verify(appWindow !== null, "The production Omairc window should load");
@@ -888,6 +910,7 @@ TestCase {
         slashFake.reset();
         liveConsole.open = false;
         liveConsole.networkId = "libera";
+        resetGatedIrc();
     }
 
     function field(model, row, name) {
@@ -5029,8 +5052,6 @@ TestCase {
     }
 
     function test_memberPresenceShowsOurOwnAwayWithoutAwayNotify() {
-        var savedMembers = gatedIrc.members;
-        var savedPeopleCount = gatedIrc.peopleCount;
         gatedIrc.members = selfAwayMembers;
         gatedIrc.peopleCount = selfAwayMembers.count;
         gatedIrc.hasAwayPresence = false;
@@ -5060,9 +5081,6 @@ TestCase {
         compare(otherDot.visible, false);
 
         window.close();
-        gatedIrc.members = savedMembers;
-        gatedIrc.peopleCount = savedPeopleCount;
-        gatedIrc.hasAwayPresence = false;
     }
 
     function test_typingChromeFollowsCapabilities() {
@@ -5096,8 +5114,6 @@ TestCase {
         gatedIrc.hasTyping = false;
         tryCompare(overlay, "visible", false);
         window.close();
-        gatedIrc.isChannel = true;
-        gatedIrc.selectedTarget = "#omarchy";
     }
 
     function test_mockTypingShowsMemberGlyphAndDmOverlay() {
@@ -5541,7 +5557,25 @@ TestCase {
         compare(findChild(window, "selfPresenceLabel").text, "away");
         verify(Qt.colorEqual(findChild(window, "selfPresenceDot").color, "#d6a552"));
         window.close();
+    }
+
+    function test_liveIdentityFooterShowsOfflineWhenDisconnected() {
         gatedIrc.selfAway = false;
+        gatedIrc.connectionStatus = "Offline";
+        var window = createTemporaryObject(gatedWindowComponent, null);
+        verify(window !== null, "The gated offline window should load");
+        tryCompare(window, "visible", true);
+        waitForRendering(window.contentItem);
+
+        compare(findChild(window, "selfPresenceLabel").text, "offline");
+        verify(Qt.colorEqual(findChild(window, "selfPresenceDot").color,
+                             window.mutedColor));
+        gatedIrc.selfAway = true;
+        compare(findChild(window, "selfPresenceLabel").text, "offline");
+        gatedIrc.connectionStatus = "Connected";
+        compare(findChild(window, "selfPresenceLabel").text, "away");
+        verify(Qt.colorEqual(findChild(window, "selfPresenceDot").color, "#d6a552"));
+        window.close();
     }
 
     function test_identityFooterFallsBackToConnectionNick() {
