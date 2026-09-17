@@ -21,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Avatar fetches refuse decompression bombs whose declared or decoded dimensions exceed a fixed budget, and hostname HTTPS GETs pin to one pre-validated address so QNAM cannot re-resolve (DNS rebinding).
 - Opening the Windows window from Explorer or the Start Menu no longer flashes a console. `--help` and the local CLI still print in cmd or PowerShell by attaching to the parent terminal.
 - Windows uninstall removes the install directory from PATH before the files, so a silent uninstall cannot leave the entry behind.
 - `bin\build.bat` finds `vswhere.exe` when `cl` is not already on PATH. Delayed expansion cannot read `%ProgramFiles(x86)%`.
