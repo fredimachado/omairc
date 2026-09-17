@@ -252,6 +252,7 @@ private:
                      const QString& body,
                      bool collapsible = false);
     void appendWhois(IrcConversationState& conversation, const QString& body);
+    void appendError(IrcConversationState& conversation, const QString& body);
     void hydrateFromLog(IrcConversationState& conversation);
     void persistMessage(const IrcConversationState& conversation,
                         const IrcReducedMessage& message);
@@ -276,6 +277,7 @@ private:
     void reduce(const IrcTypingEvent& event);
     void reduce(const IrcHistoryEvent& event);
     void reduce(const IrcWhoisTranscriptEvent& event);
+    void reduce(const IrcChannelErrorEvent& event);
 
     void clearTyping(IrcConversationState& conversation,
                      const QString& normalizedNick);

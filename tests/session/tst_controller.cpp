@@ -299,6 +299,7 @@ private slots:
     void emptyJoinAcceptsLatestInvite();
     void emptyJoinFromStatusUsesPendingInvite();
     void joinOtherDoesNotConsumePendingInvite();
+    void joinOpensLastNamedChannel();
     void failedInviteJoinKeepsPending();
     void sessionDropClearsPendingInvite();
     void inviteDefaultsToSelectedChannel();
@@ -981,8 +982,10 @@ void ControllerTest::incomingInviteStaysOnStatusWithoutConversation()
 
     QVERIFY(controller.sendMessage(QStringLiteral("/join #lab")));
     QCOMPARE(transport->writtenFrames().last(), QByteArrayLiteral("JOIN #lab\r\n"));
-    transport->injectBytes(QByteArrayLiteral(":omairc!u@h JOIN :#lab\r\n"));
+    QCOMPARE(controller.selectedTarget(), QStringLiteral("#lab"));
     QVERIFY(rowForTarget(conversations, QStringLiteral("#lab")) >= 0);
+    transport->injectBytes(QByteArrayLiteral(":omairc!u@h JOIN :#lab\r\n"));
+    QCOMPARE(controller.selectedTarget(), QStringLiteral("#lab"));
 }
 
 void ControllerTest::emptyJoinAcceptsLatestInvite()
@@ -1010,6 +1013,7 @@ void ControllerTest::emptyJoinAcceptsLatestInvite()
 
     QVERIFY(controller.sendMessage(QStringLiteral("/join")));
     QCOMPARE(transport->writtenFrames().last(), QByteArrayLiteral("JOIN #desk\r\n"));
+    QCOMPARE(controller.selectedTarget(), QStringLiteral("#desk"));
     transport->injectBytes(QByteArrayLiteral(":omairc!u@h JOIN :#desk\r\n"));
     QCOMPARE(controller.selectedTarget(), QStringLiteral("#desk"));
     auto *conversations =
@@ -1037,6 +1041,8 @@ void ControllerTest::emptyJoinFromStatusUsesPendingInvite()
     transport->injectBytes(QByteArrayLiteral(":alice!u@h INVITE omairc :#lab\r\n"));
     QVERIFY(controller.console()->submit(QStringLiteral("/join")));
     QCOMPARE(transport->writtenFrames().last(), QByteArrayLiteral("JOIN #lab\r\n"));
+    QCOMPARE(controller.selectedTarget(), QStringLiteral("#lab"));
+    QVERIFY(!controller.console()->isOpen());
     transport->injectBytes(QByteArrayLiteral(":omairc!u@h JOIN :#lab\r\n"));
     QCOMPARE(controller.selectedTarget(), QStringLiteral("#lab"));
     QVERIFY(!controller.console()->isOpen());
@@ -1057,12 +1063,50 @@ void ControllerTest::joinOtherDoesNotConsumePendingInvite()
     transport->injectBytes(QByteArrayLiteral(":alice!u@h INVITE omairc :#lab\r\n"));
     QVERIFY(controller.sendMessage(QStringLiteral("/join #other")));
     QCOMPARE(transport->writtenFrames().last(), QByteArrayLiteral("JOIN #other\r\n"));
+    QCOMPARE(controller.selectedTarget(), QStringLiteral("#other"));
     transport->injectBytes(QByteArrayLiteral(":omairc!u@h JOIN :#other\r\n"));
-    QCOMPARE(controller.selectedTarget(), QStringLiteral("#omarchy"));
+    QCOMPARE(controller.selectedTarget(), QStringLiteral("#other"));
 
     QVERIFY(controller.sendMessage(QStringLiteral("/join")));
     QCOMPARE(transport->writtenFrames().last(), QByteArrayLiteral("JOIN #lab\r\n"));
+    QCOMPARE(controller.selectedTarget(), QStringLiteral("#lab"));
     transport->injectBytes(QByteArrayLiteral(":omairc!u@h JOIN :#lab\r\n"));
+    QCOMPARE(controller.selectedTarget(), QStringLiteral("#lab"));
+}
+
+void ControllerTest::joinOpensLastNamedChannel()
+{
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+                                                transport);
+    QVERIFY(session);
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    registerSession(session, transport);
+    transport->injectBytes(QByteArrayLiteral(":omairc!u@h JOIN :#omarchy\r\n"));
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+
+    QVERIFY(controller.sendMessage(QStringLiteral("/join #alpha,#beta,#gamma")));
+    QCOMPARE(transport->writtenFrames().mid(transport->writtenFrames().size() - 3),
+             QByteArrayList({
+                 QByteArrayLiteral("JOIN #alpha\r\n"),
+                 QByteArrayLiteral("JOIN #beta\r\n"),
+                 QByteArrayLiteral("JOIN #gamma\r\n"),
+             }));
+    QCOMPARE(controller.selectedTarget(), QStringLiteral("#gamma"));
+    auto *conversations =
+        qobject_cast<QAbstractItemModel *>(controller.conversations());
+    QVERIFY(conversations);
+    QVERIFY(rowForTarget(conversations, QStringLiteral("#gamma")) >= 0);
+    QCOMPARE(rowForTarget(conversations, QStringLiteral("#alpha")), -1);
+    QCOMPARE(rowForTarget(conversations, QStringLiteral("#beta")), -1);
+    transport->injectBytes(
+        QByteArrayLiteral(":server 473 omairc #alpha :Cannot join channel (+i)\r\n"));
+    QCOMPARE(rowForTarget(conversations, QStringLiteral("#alpha")), -1);
+    QCOMPARE(controller.selectedTarget(), QStringLiteral("#gamma"));
+
+    QVERIFY(controller.sendMessage(QStringLiteral("/j lab")));
+    QCOMPARE(transport->writtenFrames().last(), QByteArrayLiteral("JOIN #lab\r\n"));
     QCOMPARE(controller.selectedTarget(), QStringLiteral("#lab"));
 }
 
@@ -1081,10 +1125,14 @@ void ControllerTest::failedInviteJoinKeepsPending()
     transport->injectBytes(QByteArrayLiteral(":alice!u@h INVITE omairc :#lab\r\n"));
     QVERIFY(controller.sendMessage(QStringLiteral("/join")));
     QCOMPARE(transport->writtenFrames().last(), QByteArrayLiteral("JOIN #lab\r\n"));
+    QCOMPARE(controller.selectedTarget(), QStringLiteral("#lab"));
     transport->injectBytes(
         QByteArrayLiteral(":server 473 omairc #lab :Cannot join channel (+i)\r\n"));
     QVERIFY(logHasLabel(controller.console()->lines(), QStringLiteral("473")));
-    QCOMPARE(controller.selectedTarget(), QStringLiteral("#omarchy"));
+    QCOMPARE(controller.selectedTarget(), QStringLiteral("#lab"));
+    auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
+    QVERIFY(messages);
+    QVERIFY(hasEventBody(messages, QStringLiteral("Cannot join channel (+i)")));
 
     QVERIFY(controller.sendMessage(QStringLiteral("/join")));
     QCOMPARE(transport->writtenFrames().last(), QByteArrayLiteral("JOIN #lab\r\n"));

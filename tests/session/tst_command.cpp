@@ -1182,12 +1182,15 @@ void CommandTest::conversationSendAndUnknown()
     QVERIFY(controller.sendMessage(QStringLiteral("/join #other")));
     QCOMPARE(transport->writtenFrames().last(),
              QByteArrayLiteral("JOIN #other\r\n"));
+    QCOMPARE(controller.selectedTarget(), QStringLiteral("#other"));
 
     QVERIFY(controller.sendMessage(QStringLiteral("/join #alpha,#beta desktop")));
     QCOMPARE(transport->writtenFrames().at(transport->writtenFrames().size() - 2),
              QByteArrayLiteral("JOIN #alpha\r\n"));
     QCOMPARE(transport->writtenFrames().last(),
              QByteArrayLiteral("JOIN #beta desktop\r\n"));
+    QCOMPARE(controller.selectedTarget(), QStringLiteral("#beta"));
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
 
     QVERIFY(controller.sendMessage(QStringLiteral("/topic new banner")));
     QCOMPARE(transport->writtenFrames().last(),
@@ -1262,6 +1265,7 @@ void CommandTest::joinSendsKeyedFrames()
                  QByteArrayLiteral("JOIN #b\r\n"),
                  QByteArrayLiteral("JOIN #c\r\n"),
              }));
+    QCOMPARE(controller.selectedTarget(), QStringLiteral("#c"));
 
     IrcStatusConsole *console = controller.console();
     QVERIFY(!logContains(console->lines(), QStringLiteral("JOIN #c pworddd")));
@@ -1273,6 +1277,7 @@ void CommandTest::joinSendsKeyedFrames()
     QVERIFY(controller.sendMessage(QStringLiteral("/join #secretchan hunter2")));
     QCOMPARE(transport->writtenFrames().last(),
              QByteArrayLiteral("JOIN #secretchan hunter2\r\n"));
+    QCOMPARE(controller.selectedTarget(), QStringLiteral("#secretchan"));
     QVERIFY(!logContains(console->lines(), QStringLiteral("hunter2")));
     QCOMPARE(IrcStatusEntry::outgoing(
                  QStringLiteral("libera"),
@@ -1283,6 +1288,8 @@ void CommandTest::joinSendsKeyedFrames()
     QVERIFY(console->submit(QStringLiteral("/join #fromstatus deskkey")));
     QCOMPARE(transport->writtenFrames().last(),
              QByteArrayLiteral("JOIN #fromstatus deskkey\r\n"));
+    QCOMPARE(controller.selectedTarget(), QStringLiteral("#fromstatus"));
+    QVERIFY(!controller.console()->isOpen());
     QVERIFY(!logContains(console->lines(), QStringLiteral("deskkey")));
     QCOMPARE(IrcStatusEntry::outgoing(
                  QStringLiteral("libera"),

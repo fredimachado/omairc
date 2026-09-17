@@ -9,11 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `/join` opens the last named channel as soon as the JOIN is sent, including `/j` and a Status submit. Multiple names land on the last one.
 - Our CTCP `VERSION` reply no longer reveals the build number. It answers `https://omairc.app` instead.
 
 ### Fixed
 
 - `/query` clears the composer and focuses the new direct message. The command no longer stays as a draft on the source buffer or the new query. A refused `/query` stays in the composer, including on Status.
+- A successful `/join` is consumed from the composer before the window switches, so it cannot remain as a draft on the previous conversation.
+- A failed `/join` copies the server's reason into the selected channel transcript as well as Status.
 - Windows CLI output works: the Windows build uses the console subsystem so `--help`, `--version`, and control commands print in a terminal or into a redirect, then `FreeConsole()` drops that console when opening the window. The local server uses a named pipe (`omairc`) instead of a drive-letter path that `QLocalServer` cannot listen on.
 
 ## [0.5.0] - 2026-09-16

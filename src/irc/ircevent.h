@@ -214,6 +214,13 @@ struct IrcWhoisTranscriptEvent
     QString formattedBody;
 };
 
+struct IrcChannelErrorEvent
+{
+    QString networkId;
+    QString channel;
+    QString body;
+};
+
 using IrcEvent = std::variant<
     IrcWelcomeEvent,
     IrcMessageEvent,
@@ -232,4 +239,5 @@ using IrcEvent = std::variant<
     IrcMemberStatusEvent,
     IrcTypingEvent,
     IrcHistoryEvent,
-    IrcWhoisTranscriptEvent>;
+    IrcWhoisTranscriptEvent,
+    IrcChannelErrorEvent>;
