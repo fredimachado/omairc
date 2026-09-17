@@ -260,6 +260,8 @@ private:
     IrcCommandOutcome dispatchRaw(const IrcCommand& command,
                                   IrcComposerSurface surface);
     IrcCommandOutcome dispatchHelp(IrcComposerSurface surface);
+    IrcCommandOutcome dispatchStatus(const IrcCommand& command,
+                                     IrcComposerSurface surface);
     std::optional<IrcWhoisWatchKey> whoisWatchKey(const QString& networkId,
                                                   const QString& nick) const;
     bool sendWhois(IrcSession& session,

@@ -1049,6 +1049,9 @@ IrcCommandOutcome IrcController::dispatch(const IrcCommand& command,
     if (command.verb == IrcCommand::Verb::Help)
         return dispatchHelp(surface);
 
+    if (command.verb == IrcCommand::Verb::Status)
+        return dispatchStatus(command, surface);
+
     IrcSession *active = sessionFor(surface);
     if (!active) {
         if (surface == IrcComposerSurface::Conversation && !m_selected
@@ -1664,6 +1667,69 @@ IrcCommandOutcome IrcController::dispatchHelp(IrcComposerSurface surface)
     return IrcCommandOutcome::Sent;
 }
 
+IrcCommandOutcome IrcController::dispatchStatus(const IrcCommand& command,
+                                                IrcComposerSurface surface)
+{
+    IrcSession *session = sessionFor(surface);
+    if (!session) {
+        if (surface == IrcComposerSurface::Conversation && !m_selected
+                && !m_sessions.networkIds().isEmpty())
+            return IrcCommandOutcome::Refused;
+        return IrcCommandOutcome::NotConnected;
+    }
+    if (session->state() != IrcSession::State::Registered)
+        return IrcCommandOutcome::NotConnected;
+
+    const QString networkId = session->networkId();
+    const auto echo = [&](const QString& text) -> IrcCommandOutcome {
+        if (surface == IrcComposerSurface::Conversation) {
+            if (!m_selected)
+                return IrcCommandOutcome::WrongScope;
+            apply(IrcWhoisTranscriptEvent{*m_selected, text});
+            return IrcCommandOutcome::Sent;
+        }
+        m_console.record(IrcStatusEntry::outcome(networkId, text));
+        return IrcCommandOutcome::Sent;
+    };
+
+    const IrcCapabilitySet capabilities = m_capabilities.value(networkId);
+    if (!capabilities.contains(IrcCapability::MemberMetadata)
+            || !capabilities.contains(IrcCapability::Batch)) {
+        return echo(QStringLiteral("This network does not support standing status."));
+    }
+
+    if (command.argument.isEmpty()) {
+        const QString current =
+            peerMetadata(networkId, session->nick())
+                .value(QStringLiteral("status"))
+                .toString();
+        if (current.isEmpty()) {
+            return echo(QStringLiteral(
+                "No standing status. Use /status <text> or /status clear."));
+        }
+        return echo(QStringLiteral("Standing status: %1").arg(current));
+    }
+
+    const QString token = firstToken(command.argument);
+    if (token.compare(QStringLiteral("clear"), Qt::CaseInsensitive) == 0
+            && restAfterFirstToken(command.argument).isEmpty()) {
+        if (!session->clearOwnMetadata(IrcMetadata::statusKey()))
+            return IrcCommandOutcome::Refused;
+        apply(IrcMemberMetadataEvent{
+            networkId, session->nick(), IrcMetadata::statusKey(), QString{}});
+        return echo(QStringLiteral("Standing status cleared."));
+    }
+
+    QString clamped = command.argument;
+    while (clamped.toUtf8().size() > IrcMetadata::maximumValueBytes)
+        clamped.chop(1);
+    if (!session->setOwnMetadata(IrcMetadata::statusKey(), clamped))
+        return IrcCommandOutcome::Refused;
+    apply(IrcMemberMetadataEvent{
+        networkId, session->nick(), IrcMetadata::statusKey(), clamped});
+    return echo(QStringLiteral("Standing status set to %1.").arg(clamped));
+}
+
 IrcCommandOutcome IrcController::dispatchWhois(const IrcCommand& command,
                                                IrcComposerSurface surface)
 {
@@ -1726,6 +1792,7 @@ QString IrcController::ctcpQueryName(IrcCommand::Verb verb) const
     case IrcCommand::Verb::Notice:
     case IrcCommand::Verb::Away:
     case IrcCommand::Verb::Back:
+    case IrcCommand::Verb::Status:
     case IrcCommand::Verb::Whois:
     case IrcCommand::Verb::Mode:
     case IrcCommand::Verb::Kick:
@@ -1751,6 +1818,7 @@ QString IrcController::ctcpQueryName(IrcCommand::Verb verb) const
     case IrcCommand::Verb::Unknown:
         return {};
     }
+    return {};
 }
 
 IrcCommandOutcome IrcController::dispatchCtcp(const IrcCommand& command,
