@@ -22,6 +22,8 @@ public:
         StatusRole,
         AwayRole,
         NetworkIdRole,
+        AvatarRole,
+        BotRole,
     };
 
     explicit MemberListModel(IrcEventReducer& reducer, QObject *parent = nullptr);

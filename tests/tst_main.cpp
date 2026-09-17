@@ -19,6 +19,8 @@ int runTypingTests(int argc, char **argv);
 int runProfileTests(int argc, char **argv);
 int runConnectionTests(int argc, char **argv);
 int runReducerTests(int argc, char **argv);
+int runAvatarUrlTests(int argc, char **argv);
+int runAvatarStoreTests(int argc, char **argv);
 int runModelTests(int argc, char **argv);
 int runQtIrcTransportIntegrationTests(int argc, char **argv);
 int runSingleInstanceTests(int argc, char **argv);
@@ -53,6 +55,8 @@ int main(int argc, char **argv)
     const int profileStatus = runProfileTests(argc, argv);
     const int connectionStatus = runConnectionTests(argc, argv);
     const int reducerStatus = runReducerTests(argc, argv);
+    const int avatarUrlStatus = runAvatarUrlTests(argc, argv);
+    const int avatarStoreStatus = runAvatarStoreTests(argc, argv);
     const int modelStatus = runModelTests(argc, argv);
     const int integrationStatus = runQtIrcTransportIntegrationTests(argc, argv);
     const int singleInstanceStatus = runSingleInstanceTests(argc, argv);
@@ -79,6 +83,8 @@ int main(int argc, char **argv)
         profileStatus,
         connectionStatus,
         reducerStatus,
+        avatarUrlStatus,
+        avatarStoreStatus,
         modelStatus,
         integrationStatus,
         singleInstanceStatus,

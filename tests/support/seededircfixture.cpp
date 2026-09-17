@@ -1,6 +1,7 @@
 #include "seededircfixture.h"
 
 #include "backend.h"
+#include "ircavatarstore.h"
 #include "ircconnection.h"
 #include "irccontroller.h"
 #include "ircdemoserver.h"
@@ -236,6 +237,7 @@ bool SeededIrcFixture::createWindow()
         return fail(QStringLiteral("window already created"));
 
     m_engine = std::make_unique<QQmlApplicationEngine>();
+    IrcAvatarStore *avatarStore = ircInstallAvatarStore(m_engine.get());
     QQmlComponent component(m_engine.get(), QUrl(QStringLiteral("qrc:/OmaircWindow.qml")));
     if (component.status() == QQmlComponent::Error)
         return fail(component.errorString());
@@ -245,6 +247,7 @@ bool SeededIrcFixture::createWindow()
     properties.insert(QStringLiteral("irc"), QVariant::fromValue(m_controller.get()));
     properties.insert(QStringLiteral("connection"), QVariant::fromValue(m_connection.get()));
     properties.insert(QStringLiteral("slashCommands"), QVariant::fromValue(m_slash.get()));
+    properties.insert(QStringLiteral("avatarStore"), QVariant::fromValue(avatarStore));
     m_root.reset(component.createWithInitialProperties(properties));
     if (!m_root)
         return fail(component.errorString());

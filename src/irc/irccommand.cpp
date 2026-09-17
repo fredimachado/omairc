@@ -52,6 +52,8 @@ const QVector<IrcVerbSpec>& IrcVerbTable::all()
          QStringLiteral("/away [reason]"), IrcVerbScope::Either, {}},
         {IrcCommand::Verb::Back, QStringLiteral("back"), {},
          QStringLiteral("/back"), IrcVerbScope::Either, {}},
+        {IrcCommand::Verb::Status, QStringLiteral("status"), {},
+         QStringLiteral("/status [text|clear]"), IrcVerbScope::Either, {}},
         {IrcCommand::Verb::Whois, QStringLiteral("whois"), {},
          QStringLiteral("/whois [nick]"), IrcVerbScope::Either,
          QStringLiteral("Name a nick")},

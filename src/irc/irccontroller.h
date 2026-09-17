@@ -18,6 +18,7 @@
 #include <QSet>
 #include <QStringList>
 #include <QTimer>
+#include <QVariantMap>
 #include <QVector>
 
 #include <QDateTime>
@@ -43,6 +44,7 @@ class IrcController : public QObject
     Q_PROPERTY(QString connectionStatus READ connectionStatus NOTIFY statusChanged)
     Q_PROPERTY(QString lastError READ lastError NOTIFY statusChanged)
     Q_PROPERTY(int conversationEpoch READ conversationEpoch NOTIFY conversationStateChanged)
+    Q_PROPERTY(int peerMetadataEpoch READ peerMetadataEpoch NOTIFY peerMetadataChanged)
     Q_PROPERTY(QString currentNick READ currentNick NOTIFY selectionChanged)
     Q_PROPERTY(bool selfAway READ selfAway NOTIFY selfAwayChanged)
     Q_PROPERTY(bool hasAwayPresence READ hasAwayPresence NOTIFY capabilitiesChanged)
@@ -50,6 +52,7 @@ class IrcController : public QObject
     Q_PROPERTY(bool hasTyping READ hasTyping NOTIFY capabilitiesChanged)
     Q_PROPERTY(QStringList typingNicks READ typingNicks NOTIFY typingChanged)
     Q_PROPERTY(bool reopenDirectMessages READ reopenDirectMessages WRITE setReopenDirectMessages NOTIFY reopenDirectMessagesChanged)
+    Q_PROPERTY(bool loadPeerAvatars READ loadPeerAvatars WRITE setLoadPeerAvatars NOTIFY loadPeerAvatarsChanged)
     Q_PROPERTY(IrcStatusConsole* console READ console CONSTANT)
 
 public:
@@ -76,6 +79,7 @@ public:
     QString connectionStatus() const;
     QString lastError() const;
     int conversationEpoch() const;
+    int peerMetadataEpoch() const;
     QString lastErrorForNetwork(const QString& networkId) const;
     Q_INVOKABLE QString lastErrorFor(const QString& networkId) const;
     Q_INVOKABLE QString connectionStatusFor(const QString& networkId) const;
@@ -90,6 +94,8 @@ public:
     QStringList typingNicks() const;
     bool reopenDirectMessages() const;
     void setReopenDirectMessages(bool enabled);
+    bool loadPeerAvatars() const;
+    void setLoadPeerAvatars(bool enabled);
     IrcStatusConsole *console();
     const IrcServerFeatures &serverFeatures(const QString &networkId) const;
 
@@ -105,6 +111,8 @@ public:
     Q_INVOKABLE bool sendMessage(const QString& text);
     Q_INVOKABLE bool nickIsTyping(const QString& nick) const;
     Q_INVOKABLE void notifyComposerText(const QString& text);
+    Q_INVOKABLE QVariantMap peerMetadata(const QString& networkId,
+                                         const QString& nick) const;
 
     QStringList networkIds() const;
     IrcSession *session(const QString &networkId) const;
@@ -167,11 +175,13 @@ signals:
     void selectionChanged();
     void statusChanged();
     void conversationStateChanged();
+    void peerMetadataChanged();
     void selfAwayChanged();
 
     void capabilitiesChanged();
     void typingChanged();
     void reopenDirectMessagesChanged();
+    void loadPeerAvatarsChanged();
     void errorOccurred(const QString &networkId,
                        IrcSession::ErrorKind kind,
                        const QString &message);
@@ -207,6 +217,7 @@ private:
     {
         IrcWhoisDestination destination;
         bool failedIsAmbiguous = false;
+        bool metadataEmitted = false;
     };
 
     void apply(const IrcEvent& event);
@@ -258,6 +269,8 @@ private:
     IrcCommandOutcome dispatchRaw(const IrcCommand& command,
                                   IrcComposerSurface surface);
     IrcCommandOutcome dispatchHelp(IrcComposerSurface surface);
+    IrcCommandOutcome dispatchStatus(const IrcCommand& command,
+                                     IrcComposerSurface surface);
     std::optional<IrcWhoisWatchKey> whoisWatchKey(const QString& networkId,
                                                   const QString& nick) const;
     bool sendWhois(IrcSession& session,
@@ -266,6 +279,8 @@ private:
     void noteNickDelivery(const QString& networkId, const QString& target);
     void handleStatusEntry(const IrcStatusEntry& entry);
     void routeWhoisLine(const QString& networkId, const IrcWhoisLine& line);
+    QStringList whoisMetadataLines(const QString& networkId,
+                                   const QString& nick) const;
     void forgetWhoisWatches(const QString& networkId);
     struct IrcCtcpWatchKey
     {
@@ -301,6 +316,28 @@ private:
                         const IrcCtcpReplyLine& line,
                         const QString& text);
     void forgetCtcpWatches(const QString& networkId);
+    struct IrcStatusWatch
+    {
+        IrcWhoisDestination destination;
+        enum class Kind { Set, Clear };
+        Kind kind = Kind::Set;
+        QString value;
+    };
+    void armStatusWatch(const QString& networkId,
+                        IrcComposerSurface surface,
+                        IrcStatusWatch::Kind kind,
+                        const QString& value);
+    void forgetStatusWatch(const QString& networkId);
+    void echoStatusOutcome(const QString& networkId,
+                           const IrcWhoisDestination& destination,
+                           const QString& text);
+    void routeStatusMetadataReply(const QString& networkId,
+                                  const QString& nick,
+                                  const QString& key,
+                                  const QString& value);
+    void routeStatusMetadataError(const IrcStatusEntry& entry);
+    void routeStatusMetadataFail(const QString& networkId,
+                                 const IrcMessage& message);
     void echoIfPresent(IrcSession *session,
                        const QString& target,
                        const QString& body,
@@ -344,10 +381,13 @@ private:
     QStringList m_networkOrder;
     QString m_connectionStatus = QStringLiteral("Offline");
     int m_conversationEpoch = 0;
+    int m_peerMetadataEpoch = 0;
     bool m_reopenDirectMessages = true;
+    bool m_loadPeerAvatars = true;
     QTimer m_typingRefresh;
     QString m_composerDraft;
     QString m_typingTarget;
     std::map<IrcWhoisWatchKey, IrcWhoisWatch> m_whoisWatches;
     std::map<IrcCtcpWatchKey, IrcCtcpWatch> m_ctcpWatches;
+    QHash<QString, IrcStatusWatch> m_statusWatches;
 };

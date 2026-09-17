@@ -7,6 +7,7 @@
 #include "ircignore.h"
 #include "ircmute.h"
 #include "ircopendirect.h"
+#include "ircpresence.h"
 #include "ircjointarget.h"
 #include "ircviewnotify.h"
 #include "irctcp.h"
@@ -16,6 +17,7 @@
 #include <QByteArray>
 #include <QDateTime>
 #include <QSettings>
+#include <QVariantMap>
 
 #include <algorithm>
 #include <string>
@@ -75,6 +77,11 @@ QString reopenDirectMessagesKey()
     return QStringLiteral("reopenDirectMessages");
 }
 
+QString loadPeerAvatarsKey()
+{
+    return QStringLiteral("loadPeerAvatars");
+}
+
 bool loadReopenDirectMessages()
 {
     QSettings settings;
@@ -87,6 +94,24 @@ void saveReopenDirectMessages(bool enabled)
     QSettings settings;
     settings.beginGroup(QStringLiteral("preferences"));
     settings.setValue(reopenDirectMessagesKey(), enabled);
+    settings.endGroup();
+    settings.sync();
+}
+
+bool loadLoadPeerAvatars()
+{
+    QSettings settings;
+    settings.beginGroup(QStringLiteral("preferences"));
+    // Default on: HTTPS policy still fails closed. Turn off to keep avatar
+    // hosts from seeing your IP when you join a busy channel.
+    return settings.value(loadPeerAvatarsKey(), true).toBool();
+}
+
+void saveLoadPeerAvatars(bool enabled)
+{
+    QSettings settings;
+    settings.beginGroup(QStringLiteral("preferences"));
+    settings.setValue(loadPeerAvatarsKey(), enabled);
     settings.endGroup();
     settings.sync();
 }
@@ -143,6 +168,7 @@ IrcController::IrcController(QObject *parent)
             &IrcController::statusChanged);
     m_reducer.setConversationLog(&m_transcripts);
     m_reopenDirectMessages = loadReopenDirectMessages();
+    m_loadPeerAvatars = loadLoadPeerAvatars();
 }
 
 void IrcController::setTranscriptRoot(const QString &root)
@@ -189,9 +215,11 @@ IrcSession *IrcController::addSession(const IrcSessionConfig& config,
         emit statusChanged();
         emit errorOccurred(networkId, kind, message);
     });
+    // Log every status line before WHOIS/CTCP routing so nothing is dropped when
+    // routing defers or ignores an entry.
+    m_console.observe(session);
     connect(session, &IrcSession::statusEntry,
             this, &IrcController::handleStatusEntry);
-    m_console.observe(session);
     return session;
 }
 
@@ -201,6 +229,7 @@ bool IrcController::discardSession(const QString &networkId)
         return false;
     forgetWhoisWatches(networkId);
     forgetCtcpWatches(networkId);
+    forgetStatusWatch(networkId);
     const QString previousId = identityNetworkId();
     const bool previousAway = selfAway();
     m_reducer.apply(IrcSelfAwayEvent{networkId, false});
@@ -222,6 +251,7 @@ void IrcController::forgetNetworkState(const QString &networkId)
         return;
     forgetWhoisWatches(networkId);
     forgetCtcpWatches(networkId);
+    forgetStatusWatch(networkId);
     const QString previousId = identityNetworkId();
     const bool previousAway = selfAway();
     m_reducer.forgetNetwork(networkId);
@@ -335,6 +365,11 @@ int IrcController::conversationEpoch() const
     return m_conversationEpoch;
 }
 
+int IrcController::peerMetadataEpoch() const
+{
+    return m_peerMetadataEpoch;
+}
+
 QString IrcController::lastErrorForNetwork(const QString& networkId) const
 {
     return m_lastErrors.value(networkId);
@@ -437,6 +472,20 @@ void IrcController::setReopenDirectMessages(bool enabled)
     }
 }
 
+bool IrcController::loadPeerAvatars() const
+{
+    return m_loadPeerAvatars;
+}
+
+void IrcController::setLoadPeerAvatars(bool enabled)
+{
+    if (m_loadPeerAvatars == enabled)
+        return;
+    m_loadPeerAvatars = enabled;
+    saveLoadPeerAvatars(enabled);
+    emit loadPeerAvatarsChanged();
+}
+
 bool IrcController::nickIsTyping(const QString& nick) const
 {
     if (!m_selected || nick.isEmpty())
@@ -471,6 +520,34 @@ void IrcController::notifyComposerText(const QString& text)
     m_typingTarget.clear();
 }
 
+QVariantMap IrcController::peerMetadata(const QString& networkId,
+                                        const QString& nick) const
+{
+    QVariantMap result;
+    result.insert(QStringLiteral("avatar"), QString());
+    result.insert(QStringLiteral("status"), QString());
+    result.insert(QStringLiteral("bot"), false);
+    result.insert(QStringLiteral("displayName"), QString());
+    result.insert(QStringLiteral("pronouns"), QString());
+    result.insert(QStringLiteral("homepage"), QString());
+    result.insert(QStringLiteral("color"), QString());
+    if (networkId.isEmpty() || nick.isEmpty())
+        return result;
+    const IrcNickPresence facts = m_reducer.nickPresence(networkId, nick);
+    result.insert(QStringLiteral("avatar"), facts.avatar());
+    result.insert(QStringLiteral("status"), facts.status());
+    result.insert(QStringLiteral("bot"), facts.isBot());
+    result.insert(QStringLiteral("displayName"),
+                  facts.metadata(IrcMetadata::displayNameKey()));
+    result.insert(QStringLiteral("pronouns"),
+                  facts.metadata(IrcMetadata::pronounsKey()));
+    result.insert(QStringLiteral("homepage"),
+                  facts.metadata(IrcMetadata::homepageKey()));
+    result.insert(QStringLiteral("color"),
+                  facts.metadata(IrcMetadata::colorKey()));
+    return result;
+}
+
 void IrcController::handleCapabilities(const QString& networkId,
                                        IrcCapabilitySet capabilities)
 {
@@ -481,10 +558,14 @@ void IrcController::handleCapabilities(const QString& networkId,
         return previous.contains(capability) && !capabilities.contains(capability);
     };
     const bool awayDropped = dropped(IrcCapability::AwayNotify);
-    const bool statusDropped = dropped(IrcCapability::MemberMetadata)
+    const bool metadataDropped = dropped(IrcCapability::MemberMetadata)
         || dropped(IrcCapability::Batch);
-    if (awayDropped || statusDropped) {
-        m_reducer.clearPresenceFacts(networkId, awayDropped, statusDropped);
+    if (awayDropped || metadataDropped) {
+        m_reducer.clearPresenceFacts(networkId, awayDropped, metadataDropped);
+        if (metadataDropped) {
+            ++m_peerMetadataEpoch;
+            emit peerMetadataChanged();
+        }
         reloadModels();
     }
     if (dropped(IrcCapability::MessageTags)) {
@@ -1025,6 +1106,9 @@ IrcCommandOutcome IrcController::dispatch(const IrcCommand& command,
 
     if (command.verb == IrcCommand::Verb::Help)
         return dispatchHelp(surface);
+
+    if (command.verb == IrcCommand::Verb::Status)
+        return dispatchStatus(command, surface);
 
     IrcSession *active = sessionFor(surface);
     if (!active) {
@@ -1641,6 +1725,73 @@ IrcCommandOutcome IrcController::dispatchHelp(IrcComposerSurface surface)
     return IrcCommandOutcome::Sent;
 }
 
+IrcCommandOutcome IrcController::dispatchStatus(const IrcCommand& command,
+                                                IrcComposerSurface surface)
+{
+    IrcSession *session = sessionFor(surface);
+    if (!session) {
+        if (surface == IrcComposerSurface::Conversation && !m_selected
+                && !m_sessions.networkIds().isEmpty())
+            return IrcCommandOutcome::Refused;
+        return IrcCommandOutcome::NotConnected;
+    }
+    if (session->state() != IrcSession::State::Registered)
+        return IrcCommandOutcome::NotConnected;
+
+    const QString networkId = session->networkId();
+    const auto echo = [&](const QString& text) -> IrcCommandOutcome {
+        if (surface == IrcComposerSurface::Conversation) {
+            if (!m_selected)
+                return IrcCommandOutcome::WrongScope;
+            apply(IrcWhoisTranscriptEvent{*m_selected, text});
+            return IrcCommandOutcome::Sent;
+        }
+        m_console.record(IrcStatusEntry::outcome(networkId, text));
+        return IrcCommandOutcome::Sent;
+    };
+
+    const IrcCapabilitySet capabilities = m_capabilities.value(networkId);
+    if (!capabilities.contains(IrcCapability::MemberMetadata)
+            || !capabilities.contains(IrcCapability::Batch)) {
+        return echo(QStringLiteral("This network does not support standing status."));
+    }
+
+    if (command.argument.isEmpty()) {
+        const QString current =
+            peerMetadata(networkId, session->nick())
+                .value(QStringLiteral("status"))
+                .toString();
+        if (current.isEmpty()) {
+            return echo(QStringLiteral(
+                "No standing status. Use /status <text> or /status clear."));
+        }
+        return echo(QStringLiteral("Standing status: %1").arg(current));
+    }
+
+    const QString token = firstToken(command.argument);
+    if (token.compare(QStringLiteral("clear"), Qt::CaseInsensitive) == 0
+            && restAfterFirstToken(command.argument).isEmpty()) {
+        if (!session->clearOwnMetadata(IrcMetadata::statusKey()))
+            return IrcCommandOutcome::Refused;
+        armStatusWatch(networkId, surface, IrcStatusWatch::Kind::Clear, QString{});
+        return IrcCommandOutcome::Sent;
+    }
+
+    const int valueBudget = IrcMetadata::effectiveMaxValueBytes(
+        session->metadataCapability().maxValueBytes);
+    if (valueBudget <= 0) {
+        return echo(QStringLiteral(
+            "This network does not allow standing status text."));
+    }
+    const QString clamped = IrcMetadata::clamped(command.argument, valueBudget);
+    if (clamped.isEmpty()
+            || !session->setOwnMetadata(IrcMetadata::statusKey(), clamped)) {
+        return IrcCommandOutcome::Refused;
+    }
+    armStatusWatch(networkId, surface, IrcStatusWatch::Kind::Set, clamped);
+    return IrcCommandOutcome::Sent;
+}
+
 IrcCommandOutcome IrcController::dispatchWhois(const IrcCommand& command,
                                                IrcComposerSurface surface)
 {
@@ -1703,6 +1854,7 @@ QString IrcController::ctcpQueryName(IrcCommand::Verb verb) const
     case IrcCommand::Verb::Notice:
     case IrcCommand::Verb::Away:
     case IrcCommand::Verb::Back:
+    case IrcCommand::Verb::Status:
     case IrcCommand::Verb::Whois:
     case IrcCommand::Verb::Mode:
     case IrcCommand::Verb::Kick:
@@ -1728,6 +1880,7 @@ QString IrcController::ctcpQueryName(IrcCommand::Verb verb) const
     case IrcCommand::Verb::Unknown:
         return {};
     }
+    return {};
 }
 
 IrcCommandOutcome IrcController::dispatchCtcp(const IrcCommand& command,
@@ -1827,6 +1980,7 @@ void IrcController::noteNickDelivery(const QString& networkId, const QString& ta
 
 void IrcController::handleStatusEntry(const IrcStatusEntry& entry)
 {
+    routeStatusMetadataError(entry);
     if (const IrcWhoisLine *line = entry.whoisLine())
         routeWhoisLine(entry.networkId(), *line);
     if (const IrcCtcpReplyLine *line = entry.ctcpReply())
@@ -1847,15 +2001,60 @@ void IrcController::routeWhoisLine(const QString& networkId, const IrcWhoisLine&
         return;
 
     const IrcWhoisDestination destination = found->second.destination;
+    const IrcConversationKey *conversation =
+        std::get_if<IrcConversationKey>(&destination);
+    if (conversation) {
+        apply(IrcWhoisTranscriptEvent{
+            *conversation,
+            line.text(),
+        });
+    }
+
+    if (line.progress() == IrcWhoisLine::Progress::Detail
+        && !found->second.metadataEmitted) {
+        found->second.metadataEmitted = true;
+        for (const QString& text : whoisMetadataLines(networkId, line.nick())) {
+            m_console.record(IrcStatusEntry::lifecycle(
+                networkId, IrcLogSeverity::Info, QStringLiteral("whois"), text));
+            if (conversation) {
+                apply(IrcWhoisTranscriptEvent{
+                    *conversation,
+                    text,
+                });
+            }
+        }
+    }
+
     if (line.terminal())
         m_whoisWatches.erase(found);
+}
 
-    if (std::holds_alternative<IrcWhoisStatusOnly>(destination))
-        return;
-    apply(IrcWhoisTranscriptEvent{
-        std::get<IrcConversationKey>(destination),
-        line.text(),
-    });
+QStringList IrcController::whoisMetadataLines(const QString& networkId,
+                                              const QString& nick) const
+{
+    const IrcNickPresence facts = m_reducer.nickPresence(networkId, nick);
+    QStringList lines;
+    const auto addValue = [&](const QString& key, const QString& pattern) {
+        const QString value = facts.metadata(key);
+        if (value.isEmpty())
+            return;
+        lines.append(pattern.arg(nick, value));
+    };
+    addValue(IrcMetadata::displayNameKey(),
+             QStringLiteral("%1 is also known as %2"));
+    addValue(IrcMetadata::pronounsKey(), QStringLiteral("%1 pronouns %2"));
+    addValue(IrcMetadata::statusKey(), QStringLiteral("%1 status %2"));
+    if (facts.isBot()) {
+        const QString software = facts.metadata(IrcMetadata::botKey());
+        if (software.isEmpty())
+            lines.append(QStringLiteral("%1 is a bot").arg(nick));
+        else
+            lines.append(QStringLiteral("%1 is a bot (%2)").arg(nick, software));
+    }
+    addValue(IrcMetadata::homepageKey(), QStringLiteral("%1 homepage %2"));
+    addValue(IrcMetadata::colorKey(), QStringLiteral("%1 color %2"));
+    addValue(IrcMetadata::avatarKey(), QStringLiteral("%1 avatar %2"));
+    return lines;
 }
 
 void IrcController::forgetWhoisWatches(const QString& networkId)
@@ -1942,6 +2141,143 @@ void IrcController::forgetCtcpWatches(const QString& networkId)
         else
             ++it;
     }
+}
+
+void IrcController::armStatusWatch(const QString& networkId,
+                                   IrcComposerSurface surface,
+                                   IrcStatusWatch::Kind kind,
+                                   const QString& value)
+{
+    IrcWhoisDestination destination{IrcWhoisStatusOnly{}};
+    if (surface == IrcComposerSurface::Conversation && m_selected)
+        destination = *m_selected;
+    m_statusWatches.insert(networkId, IrcStatusWatch{std::move(destination), kind, value});
+}
+
+void IrcController::forgetStatusWatch(const QString& networkId)
+{
+    if (networkId.isEmpty())
+        return;
+    m_statusWatches.remove(networkId);
+}
+
+void IrcController::echoStatusOutcome(const QString& networkId,
+                                      const IrcWhoisDestination& destination,
+                                      const QString& text)
+{
+    if (const auto *conversation = std::get_if<IrcConversationKey>(&destination)) {
+        apply(IrcWhoisTranscriptEvent{*conversation, text});
+        return;
+    }
+    m_console.record(IrcStatusEntry::outcome(networkId, text));
+}
+
+void IrcController::routeStatusMetadataReply(const QString& networkId,
+                                             const QString& nick,
+                                             const QString& key,
+                                             const QString& value)
+{
+    auto found = m_statusWatches.find(networkId);
+    if (found == m_statusWatches.end())
+        return;
+    if (key.compare(IrcMetadata::statusKey(), Qt::CaseInsensitive) != 0)
+        return;
+    const QString self = m_currentNicks.value(networkId);
+    if (self.isEmpty()
+        || !m_reducer.serverFeatures(networkId)
+                .caseMapping()
+                .equals(utf8(nick), utf8(self))) {
+        return;
+    }
+    if (found->kind == IrcStatusWatch::Kind::Clear) {
+        if (!value.isEmpty())
+            return;
+        echoStatusOutcome(networkId, found->destination,
+                          QStringLiteral("Standing status cleared."));
+    } else {
+        if (value.isEmpty())
+            return;
+        echoStatusOutcome(networkId, found->destination,
+                          QStringLiteral("Standing status set to %1.").arg(value));
+    }
+    m_statusWatches.erase(found);
+}
+
+void IrcController::routeStatusMetadataError(const IrcStatusEntry& entry)
+{
+    const QString networkId = entry.networkId();
+    auto found = m_statusWatches.find(networkId);
+    if (found == m_statusWatches.end())
+        return;
+    const QString label = entry.label();
+    if (label != QStringLiteral("764") && label != QStringLiteral("767")
+        && label != QStringLiteral("769")) {
+        return;
+    }
+    const QString keyToken = firstToken(entry.text());
+    if (!keyToken.isEmpty()
+        && keyToken.compare(IrcMetadata::statusKey(), Qt::CaseInsensitive) != 0) {
+        return;
+    }
+    const QString reason = entry.text().isEmpty() ? label : entry.text();
+    const QString message = found->kind == IrcStatusWatch::Kind::Clear
+        ? QStringLiteral("Could not clear standing status: %1").arg(reason)
+        : QStringLiteral("Could not set standing status: %1").arg(reason);
+    echoStatusOutcome(networkId, found->destination, message);
+    m_statusWatches.erase(found);
+}
+
+void IrcController::routeStatusMetadataFail(const QString& networkId,
+                                            const IrcMessage& message)
+{
+    if (parameter(message, 0).compare(QLatin1String("METADATA"), Qt::CaseInsensitive)
+        != 0) {
+        return;
+    }
+    auto found = m_statusWatches.find(networkId);
+    if (found == m_statusWatches.end())
+        return;
+
+    const QString code = parameter(message, 1).toUpper();
+    const bool knownFail =
+        code == QLatin1String("KEY_NO_PERMISSION")
+        || code == QLatin1String("VALUE_INVALID")
+        || code == QLatin1String("RATE_LIMITED")
+        || code == QLatin1String("KEY_NOT_SET")
+        || code == QLatin1String("LIMIT_REACHED")
+        || code == QLatin1String("KEY_INVALID");
+    if (!knownFail)
+        return;
+
+    bool sawStatusKey = false;
+    bool sawOtherKnownKey = false;
+    // Skip trailing description so prose cannot invent a key.
+    const std::size_t lastContext =
+        message.parameters.size() > 2 ? message.parameters.size() - 1 : 2;
+    for (std::size_t index = 2; index < lastContext; ++index) {
+        const QString token = parameter(message, index);
+        if (!IrcMetadata::isKnownKey(token))
+            continue;
+        if (token.compare(IrcMetadata::statusKey(), Qt::CaseInsensitive) == 0)
+            sawStatusKey = true;
+        else
+            sawOtherKnownKey = true;
+    }
+    // SUB warnings for other keys must not consume a pending /status watch.
+    if (sawOtherKnownKey && !sawStatusKey)
+        return;
+
+    const QString description = message.parameters.empty()
+        ? code
+        : parameter(message, message.parameters.size() - 1);
+    const QString reason = description.isEmpty()
+        ? code
+        : QStringLiteral("%1 %2").arg(code, description);
+    const QString outcome = found->kind == IrcStatusWatch::Kind::Clear
+        ? QStringLiteral("Could not clear standing status: %1").arg(reason)
+        : QStringLiteral("Could not set standing status: %1").arg(reason);
+    echoStatusOutcome(networkId, found->destination, outcome);
+    m_statusWatches.erase(found);
 }
 
 void IrcController::echoIfPresent(IrcSession *session,
@@ -2036,10 +2372,19 @@ void IrcController::apply(const IrcEvent& event)
         m_unawaySent.remove(welcome->networkId);
         forgetWhoisWatches(welcome->networkId);
         forgetCtcpWatches(welcome->networkId);
+        forgetStatusWatch(welcome->networkId);
     } else if (const auto *selfAway = std::get_if<IrcSelfAwayEvent>(&event)) {
         m_unawaySent.remove(selfAway->networkId);
     }
     m_reducer.apply(event);
+    if (const auto *metadata = std::get_if<IrcMemberMetadataEvent>(&event)) {
+        ++m_peerMetadataEpoch;
+        emit peerMetadataChanged();
+        routeStatusMetadataReply(metadata->networkId,
+                                 metadata->nick,
+                                 metadata->key,
+                                 metadata->value);
+    }
     if (const auto *nick = std::get_if<IrcNickEvent>(&event)) {
         m_openDirects.rekey(nick->networkId, nick->oldNick, nick->newNick,
                             m_reducer.serverFeatures(nick->networkId).caseMapping());
@@ -2124,6 +2469,8 @@ void IrcController::publish(const IrcViewNotify& notify)
 void IrcController::handleMessage(const QString& networkId,
                                   const IrcMessage& message)
 {
+    if (message.command == "FAIL")
+        routeStatusMetadataFail(networkId, message);
     if (message.command == "005") {
         IrcServerFeatures features = m_reducer.serverFeatures(networkId);
         if (message.parameters.size() > 2) {

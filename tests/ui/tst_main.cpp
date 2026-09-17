@@ -1,7 +1,9 @@
+#include "ircavatarstore.h"
 #include "seededircfixture.h"
 
 #include <QCoreApplication>
 #include <QFontDatabase>
+#include <QQmlContext>
 #include <QQmlEngine>
 #include <QQuickStyle>
 #include <QtQml>
@@ -30,9 +32,12 @@ public slots:
         QQuickStyle::setStyle(QStringLiteral("Material"));
     }
 
-    void qmlEngineAvailable(QQmlEngine *)
+    void qmlEngineAvailable(QQmlEngine *engine)
     {
         qmlRegisterType<SeededIrcFixture>("Omairc.Test", 1, 0, "SeededIrcFixture");
+        IrcAvatarStore *store = ircInstallAvatarStore(engine);
+        engine->rootContext()->setContextProperty(QStringLiteral("appAvatarStore"),
+                                                  store);
     }
 };
 

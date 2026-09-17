@@ -52,6 +52,12 @@ struct IrcMemberView
     IrcPrefixSet ranks;
     std::optional<IrcAway> away;
     QString status;
+    QString avatar;
+    bool bot = false;
+    QString displayName;
+    QString pronouns;
+    QString homepage;
+    QString color;
 
     bool isAway() const noexcept;
 };
@@ -210,6 +216,8 @@ public:
 
     std::optional<IrcMemberView> memberView(const IrcConversationKey& key,
                                             const QString& normalizedNick) const;
+    IrcNickPresence nickPresence(const QString& networkId,
+                                 const QString& nick) const;
     IrcPeerPresence peerPresence(const QString& networkId,
                                  const QString& normalizedNick) const;
     QVector<IrcOrderedMember> orderedMembers(const IrcConversationKey& key) const;
@@ -221,7 +229,7 @@ public:
                             const QDateTime& now) const;
     void clearTypingFacts(const QString& networkId);
 
-    void clearPresenceFacts(const QString& networkId, bool away, bool status);
+    void clearPresenceFacts(const QString& networkId, bool away, bool metadata);
 
     bool selfAway(const QString& networkId) const noexcept;
 
@@ -273,7 +281,7 @@ private:
     void reduce(const IrcModeEvent& event);
     void reduce(const IrcAwayEvent& event);
     void reduce(const IrcSelfAwayEvent& event);
-    void reduce(const IrcMemberStatusEvent& event);
+    void reduce(const IrcMemberMetadataEvent& event);
     void reduce(const IrcTypingEvent& event);
     void reduce(const IrcHistoryEvent& event);
     void reduce(const IrcWhoisTranscriptEvent& event);

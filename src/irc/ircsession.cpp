@@ -433,6 +433,11 @@ IrcCapabilitySet IrcSession::capabilities() const
     return m_capabilities.enabled();
 }
 
+IrcMetadataCapability IrcSession::metadataCapability() const
+{
+    return m_metadataCapability;
+}
+
 bool IrcSession::historyPending() const
 {
     return !m_historyPending.isEmpty();
@@ -616,6 +621,44 @@ bool IrcSession::clearAway()
     return setAway({});
 }
 
+bool IrcSession::setOwnMetadata(const QString& key, const QString& value)
+{
+    if (m_state != State::Registered)
+        return false;
+    const IrcCapabilitySet enabled = m_capabilities.enabled();
+    if (!enabled.contains(IrcCapability::MemberMetadata)
+        || !enabled.contains(IrcCapability::Batch)) {
+        return false;
+    }
+    if (key.isEmpty() || !IrcMetadata::isKnownKey(key))
+        return false;
+    const QString stored = IrcMetadata::canonicalKey(key);
+    if (stored.isEmpty())
+        return false;
+    if (value.isEmpty())
+        return sendCommand(QStringLiteral("METADATA * SET %1").arg(stored));
+    const QByteArray prefix =
+        QStringLiteral("METADATA * SET %1 :").arg(stored).toUtf8();
+    // Keep the SET inside one classic frame; value budget is the residual.
+    const int wireBudget =
+        qMax(0, int(IrcCommandBuilder::kMaxFrameBytes) - prefix.size() - 2);
+    const int maxBytes = qMin(
+        IrcMetadata::effectiveMaxValueBytes(m_metadataCapability.maxValueBytes),
+        wireBudget);
+    // Explicit max-value-bytes=0 (or a zero wire residual) forbids non-empty values.
+    if (maxBytes <= 0)
+        return false;
+    const QString clamped = IrcMetadata::clamped(value, maxBytes);
+    if (clamped.isEmpty())
+        return false;
+    return sendCommand(QStringLiteral("METADATA * SET %1 :%2").arg(stored, clamped));
+}
+
+bool IrcSession::clearOwnMetadata(const QString& key)
+{
+    return setOwnMetadata(key, {});
+}
+
 bool IrcSession::changeNick(const QString& nick)
 {
     return !nick.isEmpty()
@@ -714,8 +757,12 @@ void IrcSession::subscribeToMemberMetadata()
         || !enabled.contains(IrcCapability::Batch)) {
         return;
     }
+    const QStringList keys =
+        IrcMetadata::subscriptionKeys(m_metadataCapability.maxSubs);
+    if (keys.isEmpty())
+        return;
     sendLine(wireLine(QStringLiteral("METADATA * SUB %1")
-                          .arg(IrcMetadata::subscribedKeys().join(QLatin1Char(' ')))));
+                          .arg(keys.join(QLatin1Char(' ')))));
 }
 
 void IrcSession::probeChannelAway(const QString& channel)
@@ -1443,6 +1490,8 @@ void IrcSession::handleCap(const IrcMessage &message)
         m_capabilities.advertise(tokens);
         if (const auto advertisement = parseIrcStsAdvertisement(tokens))
             m_pendingSts = advertisement;
+        if (const auto metadata = parseIrcMetadataCapability(tokens))
+            m_metadataCapability = *metadata;
         const bool continuation = message.parameters.size() > std::size_t(lsIndex + 1)
             && parameter(message, std::size_t(lsIndex + 1)) == QStringLiteral("*");
         if (continuation)
@@ -1464,6 +1513,8 @@ void IrcSession::handleCap(const IrcMessage &message)
         const QStringList tokens = capabilityTokens(message, newIndex);
         m_capabilities.advertise(tokens);
         handleStsAdvertisement(parseIrcStsAdvertisement(tokens));
+        if (const auto metadata = parseIrcMetadataCapability(tokens))
+            m_metadataCapability = *metadata;
         if (m_state == State::StsUpgrading)
             return;
         requestCapabilities();
@@ -1474,6 +1525,8 @@ void IrcSession::handleCap(const IrcMessage &message)
     if (delIndex >= 0) {
         m_capabilities.withdraw(capabilityTokens(message, delIndex));
         publishCapabilities();
+        if (!m_capabilities.enabled().contains(IrcCapability::MemberMetadata))
+            m_metadataCapability = {};
         if (!replayEnabled(ReplayKind::ChatHistory))
             abandonHistoryRequests();
         requestCapabilities();
@@ -1482,8 +1535,13 @@ void IrcSession::handleCap(const IrcMessage &message)
 
     const int ackIndex = parameterIndex(message, QStringLiteral("ACK"));
     if (ackIndex >= 0) {
-        const IrcCapabilitySet granted =
-            m_capabilities.acknowledge(capabilityTokens(message, ackIndex));
+        const QStringList tokens = capabilityTokens(message, ackIndex);
+        const IrcCapabilitySet granted = m_capabilities.acknowledge(tokens);
+        if (const auto metadata = parseIrcMetadataCapability(tokens)) {
+            // Bare ACK keeps limits learned from CAP LS / NEW.
+            if (metadata->maxSubs || metadata->maxValueBytes)
+                m_metadataCapability = *metadata;
+        }
         publishCapabilities();
         if (granted.contains(IrcCapability::Sasl)) {
             setState(State::Sasl);
@@ -1755,6 +1813,7 @@ void IrcSession::resetForConnection()
     m_capabilityTimer->cancel();
     cancelPingWatchdog();
     m_capabilities.reset(!saslSecret(m_config).isEmpty());
+    m_metadataCapability = {};
     m_typing.reset();
     publishCapabilities();
 }

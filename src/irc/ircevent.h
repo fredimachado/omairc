@@ -177,11 +177,12 @@ struct IrcSelfAwayEvent
     bool away = false;
 };
 
-struct IrcMemberStatusEvent
+struct IrcMemberMetadataEvent
 {
     QString networkId;
     QString nick;
-    QString status;
+    QString key;
+    QString value;
 };
 
 struct IrcTypingEvent
@@ -236,7 +237,7 @@ using IrcEvent = std::variant<
     IrcModeEvent,
     IrcAwayEvent,
     IrcSelfAwayEvent,
-    IrcMemberStatusEvent,
+    IrcMemberMetadataEvent,
     IrcTypingEvent,
     IrcHistoryEvent,
     IrcWhoisTranscriptEvent,

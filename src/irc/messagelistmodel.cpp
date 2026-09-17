@@ -142,6 +142,10 @@ QVariant MessageListModel::data(const QModelIndex& index, int role) const
             return conversation->key.networkId;
         case OriginRole:
             return QStringLiteral("live");
+        case AuthorAvatarRole:
+            return QString();
+        case AuthorBotRole:
+            return false;
         default:
             return {};
         }
@@ -170,6 +174,16 @@ QVariant MessageListModel::data(const QModelIndex& index, int role) const
             : QStringLiteral("live");
     case MsgidRole:
         return message.msgid.value;
+    case AuthorAvatarRole:
+        if (message.author.isEmpty())
+            return QString();
+        return m_reducer.nickPresence(conversation->key.networkId, message.author)
+            .avatar();
+    case AuthorBotRole:
+        if (message.author.isEmpty())
+            return false;
+        return m_reducer.nickPresence(conversation->key.networkId, message.author)
+            .isBot();
     default:
         return {};
     }
@@ -185,6 +199,8 @@ QHash<int, QByteArray> MessageListModel::staticRoleNames()
         {NetworkIdRole, "networkId"},
         {OriginRole, "origin"},
         {MsgidRole, "msgid"},
+        {AuthorAvatarRole, "authorAvatar"},
+        {AuthorBotRole, "authorBot"},
     };
 }
 

@@ -4,6 +4,7 @@
 #include "irceventreducer.h"
 #include "irceventtranslator.h"
 #include "ircparser.h"
+#include "ircpresence.h"
 #include "ircsession.h"
 #include "ircviewnotify.h"
 
@@ -71,6 +72,7 @@ private slots:
     void welcomeResetsMembership();
     void awayIsOneFactVisibleInEveryChannel();
     void metadataStatusIsSeparateFromPrefixModes();
+    void metadataKeysStoreIndependentlyOfAwayAndPrefix();
     void presenceIsDroppedWithTheLastChannelAndOnWelcome();
     void losingACapabilityClearsTheFactsItFed();
     void modeEditsExistingRowsOnly();
@@ -83,6 +85,8 @@ private slots:
     void selfAwayShowsOnOurOwnRowInEveryChannel();
     void peerPresenceFollowsSharedChannelAndAwayFacts();
     void awayReloadsConversationsOnlyWhenItCanReachADirectRow();
+    void metadataNotifyRefreshesOnlyAffectedSurfaces();
+    void falseyBotValuesAreNotBots();
     void staleNamesSyncReleasesAfterThirtySeconds();
     void consecutiveJoinsCollapseIntoOneEvent();
     void privmsgBreaksJoinCollapse();
@@ -722,8 +726,9 @@ void ReducerTest::metadataStatusIsSeparateFromPrefixModes()
         true,
     });
 
-    reducer.apply(IrcMemberStatusEvent{
-        networkA, QStringLiteral("Alice"), QStringLiteral("writing docs")});
+    reducer.apply(IrcMemberMetadataEvent{
+        networkA, QStringLiteral("Alice"), QStringLiteral("status"),
+        QStringLiteral("writing docs")});
     const std::optional<IrcMemberView> member =
         reducer.memberView(room, QStringLiteral("alice"));
     QCOMPARE(member->status, QStringLiteral("writing docs"));
@@ -731,8 +736,66 @@ void ReducerTest::metadataStatusIsSeparateFromPrefixModes()
     QCOMPARE(member->ranks, parsedName("@Alice").ranks);
     QVERIFY(!member->isAway());
 
-    reducer.apply(IrcMemberStatusEvent{networkA, QStringLiteral("Alice"), QString()});
+    reducer.apply(IrcMemberMetadataEvent{
+        networkA, QStringLiteral("Alice"), QStringLiteral("status"), QString()});
     QCOMPARE(reducer.memberView(room, QStringLiteral("alice"))->status, QString());
+}
+
+void ReducerTest::metadataKeysStoreIndependentlyOfAwayAndPrefix()
+{
+    IrcEventReducer reducer;
+    welcome(reducer, networkA);
+    const IrcConversationKey room =
+        reducer.conversationKey(networkA, QStringLiteral("#room"));
+    reducer.apply(IrcNamesEvent{
+        networkA,
+        QStringLiteral("#room"),
+        {parsedName("@Alice")},
+        true,
+    });
+    reducer.apply(IrcAwayEvent{networkA, QStringLiteral("Alice"),
+                               IrcAway{QStringLiteral("lunch")}});
+
+    reducer.apply(IrcMemberMetadataEvent{
+        networkA, QStringLiteral("Alice"), QStringLiteral("avatar"),
+        QStringLiteral("https://example.com/a.png")});
+    reducer.apply(IrcMemberMetadataEvent{
+        networkA, QStringLiteral("Alice"), QStringLiteral("bot"),
+        QStringLiteral("PacketBot")});
+    reducer.apply(IrcMemberMetadataEvent{
+        networkA, QStringLiteral("Alice"), QStringLiteral("display-name"),
+        QStringLiteral("Anna Docs")});
+    reducer.apply(IrcMemberMetadataEvent{
+        networkA, QStringLiteral("Alice"), QStringLiteral("status"),
+        QStringLiteral("writing docs")});
+
+    const std::optional<IrcMemberView> member =
+        reducer.memberView(room, QStringLiteral("alice"));
+    QVERIFY(member->isAway());
+    QCOMPARE(member->label, QStringLiteral("@Alice"));
+    QCOMPARE(member->status, QStringLiteral("writing docs"));
+    QCOMPARE(member->avatar, QStringLiteral("https://example.com/a.png"));
+    QVERIFY(member->bot);
+    QCOMPARE(member->displayName, QStringLiteral("Anna Docs"));
+
+    const IrcNickPresence facts =
+        reducer.nickPresence(networkA, QStringLiteral("ALICE"));
+    QVERIFY(facts.away.has_value());
+    QCOMPARE(facts.avatar(), QStringLiteral("https://example.com/a.png"));
+    QVERIFY(facts.isBot());
+    QCOMPARE(facts.metadata(QStringLiteral("display-name")),
+             QStringLiteral("Anna Docs"));
+
+    reducer.apply(IrcMemberMetadataEvent{
+        networkA, QStringLiteral("Alice"), QStringLiteral("bot"), QString()});
+    const std::optional<IrcMemberView> afterClear =
+        reducer.memberView(room, QStringLiteral("alice"));
+    QVERIFY(!afterClear->bot);
+    QCOMPARE(afterClear->status, QStringLiteral("writing docs"));
+    QCOMPARE(afterClear->avatar, QStringLiteral("https://example.com/a.png"));
+    QCOMPARE(afterClear->displayName, QStringLiteral("Anna Docs"));
+    QVERIFY(afterClear->isAway());
+    QCOMPARE(afterClear->label, QStringLiteral("@Alice"));
 }
 
 void ReducerTest::presenceIsDroppedWithTheLastChannelAndOnWelcome()
@@ -778,8 +841,9 @@ void ReducerTest::losingACapabilityClearsTheFactsItFed()
         networkA, QStringLiteral("#room"), QStringLiteral("Alice")});
     reducer.apply(IrcAwayEvent{networkA, QStringLiteral("Alice"),
                                IrcAway{QStringLiteral("lunch")}});
-    reducer.apply(IrcMemberStatusEvent{
-        networkA, QStringLiteral("Alice"), QStringLiteral("writing docs")});
+    reducer.apply(IrcMemberMetadataEvent{
+        networkA, QStringLiteral("Alice"), QStringLiteral("status"),
+        QStringLiteral("writing docs")});
 
     reducer.clearPresenceFacts(networkA, true, false);
     QVERIFY(!reducer.memberView(room, QStringLiteral("alice"))->isAway());
@@ -1117,6 +1181,75 @@ void ReducerTest::peerPresenceFollowsSharedChannelAndAwayFacts()
     // Presence is per network.
     QVERIFY(reducer.peerPresence(networkB, QStringLiteral("alice"))
             == IrcPeerPresence::Unknown);
+}
+
+void ReducerTest::metadataNotifyRefreshesOnlyAffectedSurfaces()
+{
+    IrcEventReducer reducer;
+    welcome(reducer, networkA);
+    const std::optional<IrcConversationKey> nothing;
+
+    const auto metadataNotify = [&](const QString& nick, const QString& key) {
+        return classifyViewNotify(
+            IrcEvent{IrcMemberMetadataEvent{networkA, nick, key, QStringLiteral("x")}},
+            reducer,
+            nothing);
+    };
+
+    IrcViewNotify statusOnly =
+        metadataNotify(QStringLiteral("Alice"), IrcMetadata::statusKey());
+    QCOMPARE(statusOnly.members, IrcMemberSurface::Row);
+    QVERIFY(!statusOnly.conversations);
+    QVERIFY(!statusOnly.messages);
+
+    reducer.apply(IrcJoinEvent{
+        networkA, QStringLiteral("#omarchy"), QStringLiteral("Alice")});
+    IrcViewNotify avatarShared =
+        metadataNotify(QStringLiteral("Alice"), IrcMetadata::avatarKey());
+    QVERIFY(avatarShared.messages);
+    QVERIFY(!avatarShared.conversations);
+
+    const IrcConversationKey alice =
+        reducer.conversationKey(networkA, QStringLiteral("Alice"));
+    reducer.apply(IrcMessageEvent{
+        alice, QStringLiteral("Alice"), QStringLiteral("hi"), timestamp,
+        QStringLiteral("Alice")});
+    IrcViewNotify avatarDirect =
+        metadataNotify(QStringLiteral("Alice"), IrcMetadata::avatarKey());
+    QVERIFY(avatarDirect.messages);
+    QVERIFY(avatarDirect.conversations);
+}
+
+void ReducerTest::falseyBotValuesAreNotBots()
+{
+    IrcEventReducer reducer;
+    welcome(reducer, networkA);
+    const IrcConversationKey room =
+        reducer.conversationKey(networkA, QStringLiteral("#room"));
+    reducer.apply(IrcNamesEvent{
+        networkA,
+        QStringLiteral("#room"),
+        {parsedName("Alice")},
+        true,
+    });
+
+    for (const QString& falsey :
+         {QStringLiteral("0"), QStringLiteral("false"), QStringLiteral("no")}) {
+        reducer.apply(IrcMemberMetadataEvent{
+            networkA, QStringLiteral("Alice"), IrcMetadata::botKey(), falsey});
+        const std::optional<IrcMemberView> member =
+            reducer.memberView(room, QStringLiteral("alice"));
+        QVERIFY(member.has_value());
+        QVERIFY(!member->bot);
+        QVERIFY(!reducer.nickPresence(networkA, QStringLiteral("Alice")).isBot());
+        reducer.apply(IrcMemberMetadataEvent{
+            networkA, QStringLiteral("Alice"), IrcMetadata::botKey(), QString()});
+    }
+
+    reducer.apply(IrcMemberMetadataEvent{
+        networkA, QStringLiteral("Alice"), IrcMetadata::botKey(),
+        QStringLiteral("PacketBot")});
+    QVERIFY(reducer.memberView(room, QStringLiteral("alice"))->bot);
 }
 
 void ReducerTest::awayReloadsConversationsOnlyWhenItCanReachADirectRow()

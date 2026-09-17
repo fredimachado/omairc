@@ -4,6 +4,7 @@
 #include "ircloopbacktransport.h"
 #include "ircnetworkprofile.h"
 #include "ircparser.h"
+#include "ircpresence.h"
 #include "ircprofilestore.h"
 #include "ircserverfeatures.h"
 #include "ircsession.h"
@@ -185,6 +186,40 @@ QByteArray presenceBytes(const SeedNetwork &network)
     for (const QString &nick : statusNicks) {
         out += line(QStringLiteral(":server 761 %1 %2 status * :%3")
                         .arg(network.nick, nick, status.value(nick)));
+    }
+    QSet<QString> members;
+    for (const SeedChannel &channel : network.channels) {
+        for (const QString &nick : channel.members)
+            members.insert(nick);
+    }
+    if (members.contains(QStringLiteral("dax"))) {
+        out += line(QStringLiteral(":server 761 %1 dax bot * :PacketBot")
+                        .arg(network.nick));
+    }
+    // Bundled demo art loads through the avatar store's qrc path so
+    // --demo-server shows real glyphs without outbound HTTPS or
+    // weakening ircAvatarUrlIsSafe for network URLs.
+    if (members.contains(QStringLiteral("mira"))) {
+        out += line(
+            QStringLiteral(
+                ":server 761 %1 mira avatar * :qrc:/demo/mira-avatar.png")
+                .arg(network.nick));
+    }
+    if (members.contains(QStringLiteral("anna"))) {
+        out += line(
+            QStringLiteral(
+                ":server 761 %1 anna avatar * :qrc:/demo/anna-avatar.png")
+                .arg(network.nick));
+        out += line(QStringLiteral(":server 761 %1 anna display-name * :Anna Docs")
+                        .arg(network.nick));
+        out += line(QStringLiteral(":server 761 %1 anna pronouns * :she/her")
+                        .arg(network.nick));
+    }
+    if (members.contains(QStringLiteral("kai"))) {
+        out += line(
+            QStringLiteral(
+                ":server 761 %1 kai avatar * :qrc:/demo/kai-avatar.png")
+                .arg(network.nick));
     }
     return out;
 }
@@ -585,6 +620,57 @@ bool tryAnswerAway(IrcLoopbackTransport *transport, const QString &selfNick,
     return true;
 }
 
+// Real servers answer METADATA SET with 761 / 766 (or 764 / 767 / 769 on
+// failure) and typically do not send a separate METADATA notification to self.
+// The demo mirrors that reply shape so the client applies standing status from
+// the numeric response, not from optimistic local state.
+bool tryAnswerMetadata(IrcLoopbackTransport *transport, const QString &selfNick,
+                       const QByteArray &frame)
+{
+    if (!transport || selfNick.isEmpty())
+        return false;
+    QByteArray wire = frame;
+    if (wire.endsWith("\r\n"))
+        wire.chop(2);
+    else if (wire.endsWith('\n'))
+        wire.chop(1);
+    if (!wire.startsWith("METADATA "))
+        return false;
+
+    const IrcParseResult parsed = IrcParser::parse(
+        std::string_view(wire.constData(), std::size_t(wire.size())));
+    if (!parsed || parsed.value->command != "METADATA"
+        || parsed.value->parameters.size() < 3) {
+        return false;
+    }
+
+    const QString target = ircWireText(parsed.value->parameters[0]);
+    if (target != QLatin1String("*")
+        && target.compare(selfNick, Qt::CaseInsensitive) != 0) {
+        return false;
+    }
+    const QString subcommand = ircWireText(parsed.value->parameters[1]);
+    if (subcommand.compare(QLatin1String("SET"), Qt::CaseInsensitive) != 0)
+        return false;
+
+    const QString key = ircWireText(parsed.value->parameters[2]);
+    const QString stored = IrcMetadata::canonicalKey(key);
+    if (stored.isEmpty())
+        return false;
+
+    QString value;
+    if (parsed.value->parameters.size() >= 4)
+        value = IrcMetadata::clamped(ircWireText(parsed.value->parameters[3]));
+    if (value.isEmpty()) {
+        transport->injectBytes(line(QStringLiteral(":server 766 %1 %2 %3 :unset")
+                                        .arg(selfNick, selfNick, stored)));
+        return true;
+    }
+    transport->injectBytes(line(QStringLiteral(":server 761 %1 %2 %3 * :%4")
+                                    .arg(selfNick, selfNick, stored, value)));
+    return true;
+}
+
 IrcServerFeatures demoServerFeatures()
 {
     IrcServerFeatures features;
@@ -733,6 +819,8 @@ void IrcDemoServer::hookAutoEcho(IrcLoopbackTransport *transport, const QString 
         if (tryAnswerCtcp(transport, nick, frame))
             return;
         if (tryAnswerAway(transport, nick, frame))
+            return;
+        if (tryAnswerMetadata(transport, nick, frame))
             return;
         if (frame.startsWith("PRIVMSG ") || frame.startsWith("NOTICE "))
             injectClientEcho(transport, nick, frame);

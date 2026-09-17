@@ -6,7 +6,9 @@ Member presence is what each channel member row shows besides the nick: a presen
 
 - `presence-dot` shows a green mark when the person is available and an amber mark when they are away.
 - `presence-dm` mirrors a direct-message peer on the sidebar avatar dot. It is green when a shared channel proves the peer available, amber when the member list would mark them away, and muted when no shared channel proves them online. It reads the same per-network facts as member rows.
-- `presence-status` shows a status line under the nick when that person has one (`writing docs`, `on #desktop`, `making tea`, `new here`, `building Omairc` on the mock list).
+- `presence-status` shows a status line under the nick when that person has one (`writing docs`, `on #desktop`, `making tea`, `new here`, `building Omairc` on the mock list). Status is not away: it never dims the nick.
+- `presence-bot` shows a tiny geometric bot mark next to the nick (`member-bot-dax` on seeded `#omarchy`) when `bot` metadata is set. It sits beside the name, not on the avatar, so the presence dot stays visible. Non-bots such as `anna` keep the mark hidden.
+- `presence-avatar` clips a fetched HTTPS avatar into the nick circle when the image is Ready. Unsafe URLs (http, localhost, private IPs, file, data) fail closed and keep the initial. Mira's demo `https://example.com/.../{size}/...` URL is valid HTTPS; loading it is best-effort and initials stay if the fetch fails.
 - `presence-away` dims the nick and avatar for away members. On `#omarchy` those mock nicks are `teo`, `lena`, `sam`, `ivy`, and `max`.
 - `presence-caps` hides other members' dots and away dimming without `away-notify`, and hides status lines unless both `draft/metadata-2` and `batch` are on. Those are independent. Our own row keeps its dot and dimming either way, because `/away` and `/back` are answered by the `306` / `305` numerics rather than by `away-notify`. A direct message dot follows the same gate as other members' rows.
 - `presence-prefix` shows the live rank glyphs on the member label. The seeded demo `#omarchy` carries `~fred`, `&anna`, `@dax`, `@mira` (op and voice at once), `%kai`, and `+teo`; every other seeded channel has plain nicks.
@@ -38,7 +40,8 @@ Preconditions:
 - Showing or hiding the whole panel is toggle-members. This feature is what the rows contain while the panel is open.
 - Clicking a member still opens a DM. That is open-direct-message, not presence.
 - Live rank glyphs replace the bare nick in the label (`@mira`). Seeded `#omarchy` rows carry glyphs; `#desktop`, `#ricing`, `#help`, and every OFTC channel stay plain.
-- Rank, away state, and status are independent. Seeded `teo` is voiced and away; the away members are not grouped together.
+- Rank, away state, and status are independent. Seeded `teo` is voiced and away; the away members are not grouped together. A standing status line is never treated as away.
+- Seeded `dax` is a bot (`PacketBot`) and keeps `@dax` plus a small mark beside the nick. The avatar circle still shows an initial unless a safe HTTPS image loads.
 - Our own row is the only member row that shows away chrome without `away-notify`. It tracks the `305` / `306` numerics and the identity footer, not member presence.
 - A direct message dot is presence, not unread state, and a peer with no shared channel reads muted rather than green.
 - Without `away-notify`, the direct message dot follows other members' rows and stays hidden.
