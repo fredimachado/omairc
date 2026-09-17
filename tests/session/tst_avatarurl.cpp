@@ -24,6 +24,7 @@ private slots:
     void rejectsTrailingDotLocalhost();
     void rejectsLinkLocal();
     void quantizesFetchPixelSize();
+    void selectsSafeAddressAndPinsUrl();
 };
 
 void AvatarUrlTest::substitutesSizePlaceholder()
@@ -147,6 +148,25 @@ void AvatarUrlTest::quantizesFetchPixelSize()
     QCOMPARE(ircAvatarFetchPixelSize(48), 32);
     QCOMPARE(ircAvatarFetchPixelSize(49), 64);
     QCOMPARE(ircAvatarFetchPixelSize(64), 64);
+}
+
+void AvatarUrlTest::selectsSafeAddressAndPinsUrl()
+{
+    QCOMPARE(ircSelectSafeAvatarAddress({}), QHostAddress());
+    QCOMPARE(ircSelectSafeAvatarAddress({QHostAddress(QStringLiteral("127.0.0.1"))}),
+             QHostAddress());
+    QCOMPARE(ircSelectSafeAvatarAddress(
+                 {QHostAddress(QStringLiteral("10.0.0.1")),
+                  QHostAddress(QStringLiteral("93.184.216.34"))}),
+             QHostAddress(QStringLiteral("93.184.216.34")));
+
+    const QUrl hostUrl(QStringLiteral("https://cdn.example/a.png"));
+    const QUrl pinned = ircAvatarUrlPinnedToAddress(
+        hostUrl, QHostAddress(QStringLiteral("93.184.216.34")));
+    QCOMPARE(pinned, QUrl(QStringLiteral("https://93.184.216.34/a.png")));
+    QVERIFY(ircAvatarUrlIsSafe(pinned));
+
+    QVERIFY(!ircAvatarUrlPinnedToAddress(hostUrl, QHostAddress()).isValid());
 }
 
 int runAvatarUrlTests(int argc, char **argv)

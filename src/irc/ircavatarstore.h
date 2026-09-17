@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QHash>
+#include <QHostAddress>
 #include <QHostInfo>
 #include <QImage>
 #include <QList>
@@ -13,6 +14,7 @@
 class QNetworkAccessManager;
 class QNetworkReply;
 class QQmlEngine;
+class AvatarStoreTest;
 
 class IrcAvatarStore : public QQuickImageProvider
 {
@@ -32,10 +34,13 @@ signals:
     void ready(const QString& rawUrl);
 
 private:
+    friend class AvatarStoreTest;
+
     struct Fetch {
         QString rawUrl;
         QUrl url;
         QString key;
+        QString tlsHost;
         int redirects = 0;
         int lookupId = -1;
         QNetworkReply *reply = nullptr;
@@ -44,11 +49,15 @@ private:
 
     static QString keyForUrl(const QUrl& url);
     static QImage circled(const QImage& source, const QSize& requestedSize);
+    static QImage loadBoundedImage(const QByteArray& body);
+    static QImage loadBoundedImageFromFile(const QString& path);
 
     void scheduleFetch(const QString& rawUrl, const QUrl& url, const QString& key);
     void lookupThenGet(Fetch fetch);
     void startGet(Fetch fetch);
     void finishLookup(const QString& key, const QHostInfo& info);
+    void applyResolvedAddresses(const QString& key,
+                                const QList<QHostAddress>& addresses);
     void finishReply(const QString& key);
     void dropFetch(const QString& key);
     void remember(const QString& key, const QImage& image);

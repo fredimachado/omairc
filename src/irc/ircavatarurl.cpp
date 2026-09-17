@@ -99,3 +99,23 @@ bool ircAvatarUrlIsSafe(const QUrl& url)
         return !ircHostAddressIsUnsafe(address);
     return true;
 }
+
+QHostAddress ircSelectSafeAvatarAddress(const QList<QHostAddress>& addresses)
+{
+    for (const QHostAddress& address : addresses) {
+        if (!ircHostAddressIsUnsafe(address))
+            return address;
+    }
+    return {};
+}
+
+QUrl ircAvatarUrlPinnedToAddress(const QUrl& url, const QHostAddress& address)
+{
+    if (!url.isValid() || address.isNull())
+        return {};
+    QUrl pinned = url;
+    pinned.setHost(address.toString());
+    if (!pinned.isValid() || pinned.host().isEmpty())
+        return {};
+    return pinned;
+}

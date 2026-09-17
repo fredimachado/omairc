@@ -8,6 +8,7 @@
 #include <QTest>
 #include <QTimer>
 #include <QUrl>
+#include <QtEndian>
 
 #include "ircavatarstore.h"
 #include "ircavatarurl.h"
@@ -31,6 +32,47 @@ QString publicAvatarUrl(const char *path)
 {
     return QStringLiteral("https://") + QLatin1String(kPublicHost) + QLatin1Char('/')
         + QLatin1String(path);
+}
+
+QByteArray pngChunk(const QByteArray& type, const QByteArray& data)
+{
+    QByteArray chunk;
+    chunk.resize(4);
+    qToBigEndian(quint32(data.size()), chunk.data());
+    chunk += type;
+    chunk += data;
+    quint32 crc = 0xffffffffu;
+    const QByteArray crcInput = type + data;
+    for (unsigned char byte : crcInput) {
+        crc ^= byte;
+        for (int i = 0; i < 8; ++i)
+            crc = (crc & 1u) ? (0xedb88320u ^ (crc >> 1)) : (crc >> 1);
+    }
+    crc ^= 0xffffffffu;
+    QByteArray crcBytes;
+    crcBytes.resize(4);
+    qToBigEndian(crc, crcBytes.data());
+    chunk += crcBytes;
+    return chunk;
+}
+
+QByteArray pngDeclaringSize(int width, int height)
+{
+    QByteArray ihdr;
+    ihdr.resize(13);
+    qToBigEndian(quint32(width), ihdr.data());
+    qToBigEndian(quint32(height), ihdr.data() + 4);
+    ihdr[8] = 8;  // bit depth
+    ihdr[9] = 2;  // RGB
+    ihdr[10] = 0;
+    ihdr[11] = 0;
+    ihdr[12] = 0;
+    QByteArray png;
+    png += QByteArray::fromHex("89504e470d0a1a0a");
+    png += pngChunk("IHDR", ihdr);
+    png += pngChunk("IDAT", QByteArray::fromBase64("eJwDAAAAAAE="));
+    png += pngChunk("IEND", {});
+    return png;
 }
 
 class MockNetworkReply : public QNetworkReply
@@ -107,12 +149,17 @@ public:
         m_responses.insert(url.toString(QUrl::FullyEncoded), response);
     }
 
+    QNetworkRequest lastRequest;
+    int requestCount = 0;
+
 protected:
     QNetworkReply *createRequest(Operation op, const QNetworkRequest& request,
                                  QIODevice *outgoingData) override
     {
         Q_UNUSED(op);
         Q_UNUSED(outgoingData);
+        lastRequest = request;
+        ++requestCount;
         auto *reply = new MockNetworkReply(request, this);
         const Response response =
             m_responses.value(request.url().toString(QUrl::FullyEncoded));
@@ -153,6 +200,10 @@ private slots:
     void capsCircledSizeWhenRequestedSizeInvalid();
     void sourceIgnoresNonPositivePixelSize();
     void loadsBundledQrcWithoutHttpsPolicy();
+    void refusesDecodedImageBomb();
+    void acceptsValidDecodedImageWithinBudget();
+    void pinsHostnameFetchToResolvedAddress();
+    void refusesHostnameWhenOnlyUnsafeAddressesResolve();
 };
 
 void AvatarStoreTest::refusesRedirectToUnsafe()
@@ -295,11 +346,12 @@ void AvatarStoreTest::capsCircledSizeWhenRequestedSizeInvalid()
     const QUrl url = ircResolvedAvatarUrl(rawUrl, 32);
     QVERIFY(ircAvatarUrlIsSafe(url));
 
-    QImage huge(2000, 2000, QImage::Format_ARGB32);
-    huge.fill(Qt::red);
+    // Within the decoded budget, but larger than the circled render cap.
+    QImage large(512, 512, QImage::Format_ARGB32);
+    large.fill(Qt::red);
     QBuffer buffer;
     buffer.open(QIODevice::WriteOnly);
-    QVERIFY(huge.save(&buffer, "PNG"));
+    QVERIFY(large.save(&buffer, "PNG"));
 
     MockNetworkAccessManager::Response response;
     response.body = buffer.data();
@@ -343,6 +395,124 @@ void AvatarStoreTest::loadsBundledQrcWithoutHttpsPolicy()
     const QString key = source.section(QLatin1Char('/'), -1);
     const QImage image = store.requestImage(key, &imageSize, QSize(32, 32));
     QVERIFY(!image.isNull());
+}
+
+void AvatarStoreTest::refusesDecodedImageBomb()
+{
+    MockNetworkAccessManager nam;
+    IrcAvatarStore store;
+    store.setNetworkAccessManager(&nam);
+
+    const QString rawUrl = publicAvatarUrl("bomb.png");
+    const QUrl url = ircResolvedAvatarUrl(rawUrl, 32);
+    QVERIFY(ircAvatarUrlIsSafe(url));
+
+    const QByteArray bomb = pngDeclaringSize(20000, 20000);
+    QVERIFY(bomb.size() < 256);
+
+    MockNetworkAccessManager::Response response;
+    response.body = bomb;
+    nam.setResponse(url, response);
+
+    QSignalSpy readySpy(&store, &IrcAvatarStore::ready);
+    QCOMPARE(store.source(rawUrl, 32), QString());
+    QVERIFY(waitForIdle(1000));
+    QCOMPARE(readySpy.count(), 0);
+    QCOMPARE(store.source(rawUrl, 32), QString());
+}
+
+void AvatarStoreTest::acceptsValidDecodedImageWithinBudget()
+{
+    MockNetworkAccessManager nam;
+    IrcAvatarStore store;
+    store.setNetworkAccessManager(&nam);
+
+    const QString rawUrl = publicAvatarUrl("ok-64.png");
+    const QUrl url = ircResolvedAvatarUrl(rawUrl, 32);
+    QVERIFY(ircAvatarUrlIsSafe(url));
+
+    QImage ok(64, 64, QImage::Format_ARGB32);
+    ok.fill(QColor(0x2f, 0x9a, 0x8f));
+    QBuffer buffer;
+    buffer.open(QIODevice::WriteOnly);
+    QVERIFY(ok.save(&buffer, "PNG"));
+
+    MockNetworkAccessManager::Response response;
+    response.body = buffer.data();
+    nam.setResponse(url, response);
+
+    QSignalSpy readySpy(&store, &IrcAvatarStore::ready);
+    QCOMPARE(store.source(rawUrl, 32), QString());
+    QVERIFY(waitForReady(readySpy));
+    QCOMPARE(store.source(rawUrl, 32),
+             QStringLiteral("image://omairc-avatar/") + avatarKey(url));
+}
+
+void AvatarStoreTest::pinsHostnameFetchToResolvedAddress()
+{
+    MockNetworkAccessManager nam;
+    IrcAvatarStore store;
+    store.setNetworkAccessManager(&nam);
+
+    const QString rawUrl = QStringLiteral("https://cdn.example/pin.png");
+    const QUrl logicalUrl = ircResolvedAvatarUrl(rawUrl, 32);
+    QVERIFY(ircAvatarUrlIsSafe(logicalUrl));
+    QVERIFY(QHostAddress(logicalUrl.host()).isNull());
+
+    const QUrl pinnedUrl = ircAvatarUrlPinnedToAddress(
+        logicalUrl, QHostAddress(QLatin1String(kPublicHost)));
+    MockNetworkAccessManager::Response response;
+    response.body = kTinyPng;
+    nam.setResponse(pinnedUrl, response);
+
+    QSignalSpy readySpy(&store, &IrcAvatarStore::ready);
+    QCOMPARE(store.source(rawUrl, 32), QString());
+
+    const QString key = avatarKey(logicalUrl);
+    QVERIFY(store.m_fetches.contains(key));
+    if (store.m_fetches.value(key).lookupId >= 0)
+        QHostInfo::abortHostLookup(store.m_fetches.value(key).lookupId);
+    store.m_fetches[key].lookupId = -1;
+    store.applyResolvedAddresses(
+        key,
+        {QHostAddress(QStringLiteral("127.0.0.1")),
+         QHostAddress(QLatin1String(kPublicHost))});
+
+    QVERIFY(waitForReady(readySpy));
+    QCOMPARE(nam.requestCount, 1);
+    QCOMPARE(nam.lastRequest.url(), pinnedUrl);
+    QCOMPARE(nam.lastRequest.peerVerifyName(), QStringLiteral("cdn.example"));
+    QCOMPARE(nam.lastRequest.rawHeader("Host"), QByteArray("cdn.example"));
+    QCOMPARE(readySpy.at(0).at(0).toString(), rawUrl);
+}
+
+void AvatarStoreTest::refusesHostnameWhenOnlyUnsafeAddressesResolve()
+{
+    MockNetworkAccessManager nam;
+    IrcAvatarStore store;
+    store.setNetworkAccessManager(&nam);
+
+    const QString rawUrl = QStringLiteral("https://cdn.example/unsafe.png");
+    const QUrl logicalUrl = ircResolvedAvatarUrl(rawUrl, 32);
+    QVERIFY(ircAvatarUrlIsSafe(logicalUrl));
+
+    QSignalSpy readySpy(&store, &IrcAvatarStore::ready);
+    QCOMPARE(store.source(rawUrl, 32), QString());
+
+    const QString key = avatarKey(logicalUrl);
+    QVERIFY(store.m_fetches.contains(key));
+    if (store.m_fetches.value(key).lookupId >= 0)
+        QHostInfo::abortHostLookup(store.m_fetches.value(key).lookupId);
+    store.m_fetches[key].lookupId = -1;
+    store.applyResolvedAddresses(
+        key,
+        {QHostAddress(QStringLiteral("127.0.0.1")),
+         QHostAddress(QStringLiteral("10.0.0.8"))});
+
+    QVERIFY(waitForIdle());
+    QCOMPARE(nam.requestCount, 0);
+    QCOMPARE(readySpy.count(), 0);
+    QCOMPARE(store.source(rawUrl, 32), QString());
 }
 
 int runAvatarStoreTests(int argc, char **argv)

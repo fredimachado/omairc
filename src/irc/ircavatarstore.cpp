@@ -2,7 +2,9 @@
 
 #include "ircavatarurl.h"
 
+#include <QBuffer>
 #include <QCryptographicHash>
+#include <QImageReader>
 #include <QMutexLocker>
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
@@ -19,6 +21,11 @@ constexpr int kFetchTimeoutMs = 10000;
 constexpr int kMaximumCacheEntries = 64;
 constexpr int kMaximumCircledEdge = 128;
 constexpr int kMaximumRedirects = 3;
+// Decoded budget is independent of the circled render size: a tiny compressed
+// payload can still declare a multi-gigapixel IHDR.
+constexpr int kMaximumDecodedEdge = 1024;
+constexpr qint64 kMaximumDecodedPixels = 1024 * 1024;
+constexpr int kMaximumDecodedAllocationMb = 16;
 const auto kProviderId = QStringLiteral("omairc-avatar");
 
 bool contentTypeIsImage(const QByteArray& type)
@@ -37,6 +44,33 @@ QUrl redirectTarget(const QNetworkReply *reply)
     if (!relative.isValid())
         return {};
     return reply->url().resolved(relative);
+}
+
+bool decodedSizeWithinBudget(const QSize& size)
+{
+    if (!size.isValid() || size.width() <= 0 || size.height() <= 0)
+        return false;
+    if (size.width() > kMaximumDecodedEdge || size.height() > kMaximumDecodedEdge)
+        return false;
+    const qint64 pixels = qint64(size.width()) * qint64(size.height());
+    if (pixels <= 0 || pixels > kMaximumDecodedPixels)
+        return false;
+    return true;
+}
+
+QImage readBoundedImage(QImageReader& reader)
+{
+    reader.setAutoTransform(true);
+    reader.setAllocationLimit(kMaximumDecodedAllocationMb);
+    const QSize size = reader.size();
+    if (size.isValid() && !decodedSizeWithinBudget(size))
+        return {};
+    QImage image = reader.read();
+    if (image.isNull())
+        return {};
+    if (!decodedSizeWithinBudget(image.size()))
+        return {};
+    return image;
 }
 }
 
@@ -106,6 +140,22 @@ QImage IrcAvatarStore::circled(const QImage& source, const QSize& requestedSize)
     return circle;
 }
 
+QImage IrcAvatarStore::loadBoundedImage(const QByteArray& body)
+{
+    QByteArray bytes = body;
+    QBuffer buffer(&bytes);
+    if (!buffer.open(QIODevice::ReadOnly))
+        return {};
+    QImageReader reader(&buffer);
+    return readBoundedImage(reader);
+}
+
+QImage IrcAvatarStore::loadBoundedImageFromFile(const QString& path)
+{
+    QImageReader reader(path);
+    return readBoundedImage(reader);
+}
+
 QString IrcAvatarStore::source(const QString& rawUrl, int pixelSize)
 {
     const QString trimmed = rawUrl.trimmed();
@@ -119,7 +169,7 @@ QString IrcAvatarStore::source(const QString& rawUrl, int pixelSize)
         if (cached(key).isNull()) {
             // QImage loads Qt resources as ":/…", not "qrc:/…".
             const QString resourcePath = trimmed.mid(3);
-            QImage image(resourcePath);
+            const QImage image = loadBoundedImageFromFile(resourcePath);
             if (image.isNull())
                 return {};
             remember(key, image);
@@ -184,6 +234,7 @@ void IrcAvatarStore::lookupThenGet(Fetch fetch)
             dropFetch(fetch.key);
             return;
         }
+        found->tlsHost.clear();
         startGet(found.value());
         return;
     }
@@ -201,10 +252,30 @@ void IrcAvatarStore::lookupThenGet(Fetch fetch)
 
 void IrcAvatarStore::startGet(Fetch fetch)
 {
-    if (!ircAvatarUrlIsSafe(fetch.url)) {
-        dropFetch(fetch.key);
-        return;
+    if (fetch.tlsHost.isEmpty()) {
+        if (!ircAvatarUrlIsSafe(fetch.url)) {
+            dropFetch(fetch.key);
+            return;
+        }
+    } else {
+        // URL host is the pinned IP; original hostname is only for TLS/Host.
+        const QHostAddress pinned(fetch.url.host());
+        if (pinned.isNull() || ircHostAddressIsUnsafe(pinned)) {
+            dropFetch(fetch.key);
+            return;
+        }
+        if (fetch.url.scheme().compare(QLatin1String("https"), Qt::CaseInsensitive)
+            != 0) {
+            dropFetch(fetch.key);
+            return;
+        }
+        const int port = fetch.url.port(-1);
+        if (port != -1 && port != 443) {
+            dropFetch(fetch.key);
+            return;
+        }
     }
+
     QNetworkRequest request(fetch.url);
     request.setTransferTimeout(kFetchTimeoutMs);
     request.setMaximumRedirectsAllowed(0);
@@ -214,6 +285,16 @@ void IrcAvatarStore::startGet(Fetch fetch)
                          QNetworkRequest::AlwaysNetwork);
     request.setRawHeader("Accept", "image/*");
     request.setHeader(QNetworkRequest::UserAgentHeader, QStringLiteral("Omairc"));
+    if (!fetch.tlsHost.isEmpty()) {
+        // Connect to the pinned IP in the URL; verify/SNI against the original
+        // hostname so QNAM never gets a second chance to resolve it.
+        request.setPeerVerifyName(fetch.tlsHost);
+        QByteArray hostHeader = fetch.tlsHost.toUtf8();
+        const int port = fetch.url.port(-1);
+        if (port != -1 && port != 443)
+            hostHeader += ':' + QByteArray::number(port);
+        request.setRawHeader("Host", hostHeader);
+    }
 
     QNetworkReply *reply = m_nam->get(request);
     reply->setParent(this);
@@ -226,6 +307,7 @@ void IrcAvatarStore::startGet(Fetch fetch)
     found->reply = reply;
     found->lookupId = -1;
     found->url = fetch.url;
+    found->tlsHost = fetch.tlsHost;
     found->redirects = fetch.redirects;
     found->rawUrl = fetch.rawUrl;
     found->body.clear();
@@ -247,10 +329,6 @@ void IrcAvatarStore::startGet(Fetch fetch)
 
 void IrcAvatarStore::finishLookup(const QString& key, const QHostInfo& info)
 {
-    // Pre-connect lookup blocks literal private addresses, but QNAM resolves the
-    // host again at GET time (DNS-rebinding TOCTOU). Any resolved address that
-    // is not global unicast drops the fetch (fail-closed; dual-stack hosts with
-    // one non-global address are rejected too).
     auto found = m_fetches.find(key);
     if (found == m_fetches.end())
         return;
@@ -259,14 +337,32 @@ void IrcAvatarStore::finishLookup(const QString& key, const QHostInfo& info)
         dropFetch(key);
         return;
     }
-    for (const QHostAddress& address : info.addresses()) {
-        if (ircHostAddressIsUnsafe(address)) {
-            dropFetch(key);
-            return;
-        }
+    applyResolvedAddresses(key, info.addresses());
+}
+
+void IrcAvatarStore::applyResolvedAddresses(const QString& key,
+                                           const QList<QHostAddress>& addresses)
+{
+    // Pin the GET to one pre-validated address so QNAM cannot re-resolve the
+    // hostname (DNS-rebinding TOCTOU). Dual-stack answers may mix safe and
+    // unsafe addresses; only a safe global-unicast address is used.
+    auto found = m_fetches.find(key);
+    if (found == m_fetches.end())
+        return;
+    const QHostAddress pinned = ircSelectSafeAvatarAddress(addresses);
+    if (pinned.isNull()) {
+        dropFetch(key);
+        return;
     }
-    const Fetch fetch = found.value();
-    startGet(fetch);
+    const QString originalHost = found->url.host();
+    const QUrl pinnedUrl = ircAvatarUrlPinnedToAddress(found->url, pinned);
+    if (!pinnedUrl.isValid()) {
+        dropFetch(key);
+        return;
+    }
+    found->tlsHost = originalHost;
+    found->url = pinnedUrl;
+    startGet(found.value());
 }
 
 void IrcAvatarStore::finishReply(const QString& key)
@@ -290,6 +386,7 @@ void IrcAvatarStore::finishReply(const QString& key)
         }
         Fetch next = found.value();
         next.url = redirected;
+        next.tlsHost.clear();
         next.redirects += 1;
         next.body.clear();
         reply->deleteLater();
@@ -312,8 +409,8 @@ void IrcAvatarStore::finishReply(const QString& key)
     m_fetches.remove(key);
     if (!ok)
         return;
-    QImage image;
-    if (!image.loadFromData(body))
+    const QImage image = loadBoundedImage(body);
+    if (image.isNull())
         return;
     remember(key, image);
     emit ready(rawUrl);
