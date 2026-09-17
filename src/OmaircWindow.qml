@@ -447,11 +447,15 @@ ApplicationWindow {
         }
 
         Text {
-            anchors.baseline: authorRow.baseline
+            objectName: "messageTime"
             text: header.time
             color: win.mutedColor
             font.family: "iA Writer Mono S"
             font.pixelSize: win.scaledSize(9)
+            // Row has no glyph baseline (baselineOffset stays 0). Anchoring to
+            // authorRow.baseline lifts the smaller stamp on Core Text; match
+            // the author label inside the Row instead.
+            y: authorLabel.baselineOffset - baselineOffset
         }
     }
 
