@@ -290,8 +290,10 @@ ApplicationWindow {
         property int avatarEpoch: 0
 
         readonly property string storeSource: {
-            glyph.avatarEpoch
-            if (!win.avatarStore || glyph.avatarUrl.length === 0)
+            glyph.avatarEpoch // re-run when avatarStore.ready(rawUrl) fires
+            if (!win.avatarStore || glyph.avatarUrl.length === 0 || width <= 0)
+                return ""
+            if (win.irc && win.irc.loadPeerAvatars === false)
                 return ""
             return win.avatarStore.source(glyph.avatarUrl, Math.round(width))
         }
@@ -302,9 +304,10 @@ ApplicationWindow {
             anchors.fill: parent
             visible: status === Image.Ready
             asynchronous: true
-            cache: false
+            cache: true // avatarEpoch rebinding covers ready(); sourceSize drives decode
             fillMode: Image.PreserveAspectCrop
             source: glyph.storeSource
+            sourceSize: Qt.size(Math.round(width), Math.round(height))
         }
 
         Text {
@@ -2685,9 +2688,12 @@ ApplicationWindow {
 
             Text {
                 objectName: "conversationLabel"
-                width: Math.max(0, parent.width
-                    - (conversationRow.direct && conversationRow.bot
-                        ? dmBotMark.width + parent.spacing : 0))
+                width: {
+                    var reserved = (conversationRow.direct && conversationRow.bot
+                        ? dmBotMark.width + parent.spacing : 0);
+                    var cap = Math.max(0, parent.width - reserved);
+                    return Math.min(implicitWidth, cap);
+                }
                 text: (conversationRow.direct ? "" : "#  ") + conversationRow.conversationName.replace("#", "")
                 color: conversationRow.current
                     ? win.inkColor
@@ -3270,9 +3276,12 @@ ApplicationWindow {
 
                         Text {
                             objectName: "selfNickLabel"
-                            width: Math.max(0, parent.width
-                                - (win.peerBot(win.selfNick)
-                                    ? selfBotMark.width + parent.spacing : 0))
+                            width: {
+                                var reserved = win.peerBot(win.selfNick)
+                                    ? selfBotMark.width + parent.spacing : 0;
+                                var cap = Math.max(0, parent.width - reserved);
+                                return Math.min(implicitWidth, cap);
+                            }
                             text: win.selfNick
                             color: win.inkColor
                             elide: Text.ElideRight
@@ -5026,6 +5035,38 @@ ApplicationWindow {
                                         font.pixelSize: win.scaledSize(11)
                                     }
                                 }
+
+                                Row {
+                                    spacing: win.scaledSize(10)
+
+                                    Switch {
+                                        id: connectionLoadPeerAvatars
+                                        objectName: "connectionLoadPeerAvatars"
+                                        Accessible.name: "Show peer avatars"
+                                        Keys.onPressed: function(event) {
+                                            win.applyFromSheetKey(event)
+                                        }
+                                        onToggled: {
+                                            if (win.irc)
+                                                win.irc.loadPeerAvatars = checked;
+                                        }
+                                    }
+
+                                    Binding {
+                                        target: connectionLoadPeerAvatars
+                                        property: "checked"
+                                        value: win.irc ? win.irc.loadPeerAvatars : true
+                                        restoreMode: Binding.RestoreBinding
+                                    }
+
+                                    Text {
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        text: "Show peer avatars"
+                                        color: win.inkColor
+                                        font.family: "iA Writer Mono S"
+                                        font.pixelSize: win.scaledSize(11)
+                                    }
+                                }
                             }
                         }
                     }
@@ -5196,12 +5237,15 @@ ApplicationWindow {
                             spacing: win.scaledSize(4)
 
                             Text {
-                                width: Math.max(0, parent.width
-                                    - (memberDelegate.bot
+                                width: {
+                                    var reserved = (memberDelegate.bot
                                         ? memberBotMark.width + parent.spacing : 0)
-                                    - (memberDelegate.typing
-                                        ? memberTypingGlyph.implicitWidth + parent.spacing
-                                        : 0))
+                                        + (memberDelegate.typing
+                                            ? memberTypingGlyph.implicitWidth + parent.spacing
+                                            : 0);
+                                    var cap = Math.max(0, parent.width - reserved);
+                                    return Math.min(implicitWidth, cap);
+                                }
                                 text: memberDelegate.label
                                 color: memberDelegate.away ? win.mutedColor : win.inkColor
                                 elide: Text.ElideRight
@@ -5683,9 +5727,12 @@ ApplicationWindow {
                             spacing: win.scaledSize(4)
 
                             Text {
-                                width: Math.max(0, parent.width
-                                    - (nickRow.bot
-                                        ? nickBotMark.width + parent.spacing : 0))
+                                width: {
+                                    var reserved = nickRow.bot
+                                        ? nickBotMark.width + parent.spacing : 0;
+                                    var cap = Math.max(0, parent.width - reserved);
+                                    return Math.min(implicitWidth, cap);
+                                }
                                 text: nickRow.label
                                 color: nickRow.showAway ? win.mutedColor : win.inkColor
                                 elide: Text.ElideRight

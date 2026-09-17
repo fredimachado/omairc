@@ -17,6 +17,7 @@ namespace
 constexpr int kMaximumAvatarBytes = 512 * 1024;
 constexpr int kFetchTimeoutMs = 10000;
 constexpr int kMaximumCacheEntries = 64;
+constexpr int kMaximumCircledEdge = 128;
 constexpr int kMaximumRedirects = 3;
 const auto kProviderId = QStringLiteral("omairc-avatar");
 
@@ -85,7 +86,7 @@ QImage IrcAvatarStore::circled(const QImage& source, const QSize& requestedSize)
     if (requestedSize.width() > 0 && requestedSize.height() > 0)
         edge = qMax(requestedSize.width(), requestedSize.height());
     else if (source.width() > 0 && source.height() > 0)
-        edge = qMax(source.width(), source.height());
+        edge = qMin(qMax(source.width(), source.height()), kMaximumCircledEdge);
     const QSize target(edge, edge);
     QImage circle(target, QImage::Format_ARGB32_Premultiplied);
     circle.fill(Qt::transparent);
@@ -106,7 +107,10 @@ QImage IrcAvatarStore::circled(const QImage& source, const QSize& requestedSize)
 
 QString IrcAvatarStore::source(const QString& rawUrl, int pixelSize) const
 {
-    const QUrl url = ircResolvedAvatarUrl(rawUrl, pixelSize);
+    const int fetchSize = ircAvatarFetchPixelSize(pixelSize);
+    if (fetchSize <= 0)
+        return {};
+    const QUrl url = ircResolvedAvatarUrl(rawUrl, fetchSize);
     if (!ircAvatarUrlIsSafe(url))
         return {};
     const QString key = keyForUrl(url);

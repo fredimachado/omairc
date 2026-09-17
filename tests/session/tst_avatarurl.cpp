@@ -18,6 +18,7 @@ private slots:
     void rejectsFile();
     void rejectsEmpty();
     void rejectsUserinfoAndLocalSuffix();
+    void quantizesFetchPixelSize();
 };
 
 void AvatarUrlTest::substitutesSizePlaceholder()
@@ -91,6 +92,17 @@ void AvatarUrlTest::rejectsUserinfoAndLocalSuffix()
     QVERIFY(!ircAvatarUrlIsSafe(
         ircResolvedAvatarUrl(QStringLiteral("https://printer.local/a.png"), 32)));
     QVERIFY(ircHostAddressIsUnsafe(QHostAddress(QStringLiteral("100.64.0.1"))));
+}
+
+void AvatarUrlTest::quantizesFetchPixelSize()
+{
+    QCOMPARE(ircAvatarFetchPixelSize(0), 0);
+    QCOMPARE(ircAvatarFetchPixelSize(-1), 0);
+    QCOMPARE(ircAvatarFetchPixelSize(22), 32);
+    QCOMPARE(ircAvatarFetchPixelSize(34), 32);
+    QCOMPARE(ircAvatarFetchPixelSize(48), 32);
+    QCOMPARE(ircAvatarFetchPixelSize(49), 64);
+    QCOMPARE(ircAvatarFetchPixelSize(64), 64);
 }
 
 int runAvatarUrlTests(int argc, char **argv)

@@ -148,6 +148,8 @@ private slots:
     void refusesWrongContentType();
     void refusesNon200();
     void successfulFetchPopulatesCache();
+    void capsCircledSizeWhenRequestedSizeInvalid();
+    void sourceIgnoresNonPositivePixelSize();
 };
 
 void AvatarStoreTest::refusesRedirectToUnsafe()
@@ -278,6 +280,39 @@ void AvatarStoreTest::successfulFetchPopulatesCache()
     const QImage image = store.requestImage(avatarKey(url), &imageSize, QSize(32, 32));
     QVERIFY(!image.isNull());
     QCOMPARE(imageSize, QSize(32, 32));
+}
+
+void AvatarStoreTest::capsCircledSizeWhenRequestedSizeInvalid()
+{
+    IrcAvatarStore store;
+
+    const QString rawUrl = publicAvatarUrl("huge.png");
+    const QUrl url = ircResolvedAvatarUrl(rawUrl, 32);
+    QVERIFY(ircAvatarUrlIsSafe(url));
+
+    QImage huge(2000, 2000, QImage::Format_ARGB32);
+    huge.fill(Qt::red);
+    store.put(url, huge);
+
+    const QString key = avatarKey(url);
+    QSize imageSize;
+    const QImage invalidSize =
+        store.requestImage(key, &imageSize, QSize());
+    QVERIFY(!invalidSize.isNull());
+    QCOMPARE(invalidSize.size(), QSize(128, 128));
+    QCOMPARE(imageSize, QSize(128, 128));
+
+    const QImage zeroSize =
+        store.requestImage(key, &imageSize, QSize(0, 0));
+    QVERIFY(!zeroSize.isNull());
+    QCOMPARE(zeroSize.size(), QSize(128, 128));
+}
+
+void AvatarStoreTest::sourceIgnoresNonPositivePixelSize()
+{
+    IrcAvatarStore store;
+    QCOMPARE(store.source(publicAvatarUrl("zero-width.png"), 0), QString());
+    QCOMPARE(store.source(publicAvatarUrl("zero-width.png"), -4), QString());
 }
 
 int runAvatarStoreTests(int argc, char **argv)

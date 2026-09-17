@@ -46,6 +46,16 @@ bool ircHostAddressIsUnsafe(const QHostAddress& address)
     return false;
 }
 
+int ircAvatarFetchPixelSize(int layoutPixels)
+{
+    if (layoutPixels <= 0)
+        return 0;
+    const int rounded = layoutPixels;
+    const int distance32 = qAbs(rounded - 32);
+    const int distance64 = qAbs(rounded - 64);
+    return distance32 <= distance64 ? 32 : 64;
+}
+
 QUrl ircResolvedAvatarUrl(const QString& raw, int pixelSize)
 {
     const QString trimmed = raw.trimmed();
