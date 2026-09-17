@@ -4,6 +4,7 @@
 #import <Foundation/Foundation.h>
 #import <UserNotifications/UserNotifications.h>
 
+#include <QByteArray>
 #include <QMetaObject>
 #include <QString>
 
@@ -23,6 +24,20 @@ QString fromNSString(NSString *value)
 NSString *conversationIdentifier(const QString &networkId, const QString &target)
 {
     return toNSString(networkId + QLatin1Char('\n') + target);
+}
+
+bool notificationsAvailable()
+{
+    NSString *bundleId = [[NSBundle mainBundle] bundleIdentifier];
+    if (!bundleId || bundleId.length == 0)
+        return false;
+    if (!qEnvironmentVariableIsEmpty("OMAIRC_SKIP_NOTIFICATIONS"))
+        return false;
+    if (qgetenv("QT_QPA_PLATFORM") == "offscreen")
+        return false;
+    if (!NSApp)
+        return false;
+    return true;
 }
 }
 
@@ -70,7 +85,11 @@ NSString *conversationIdentifier(const QString &networkId, const QString &target
 
 MacOsNotifications::MacOsNotifications(QObject *parent)
     : QObject(parent)
+    , m_enabled(notificationsAvailable())
 {
+    if (!m_enabled)
+        return;
+
     static OmaircNotificationDelegate *delegate = nil;
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{
@@ -89,6 +108,9 @@ MacOsNotifications::MacOsNotifications(QObject *parent)
 
 MacOsNotifications::~MacOsNotifications()
 {
+    if (!m_enabled)
+        return;
+
     UNUserNotificationCenter *center = [UNUserNotificationCenter currentNotificationCenter];
     if ([center.delegate isKindOfClass:[OmaircNotificationDelegate class]]) {
         OmaircNotificationDelegate *delegate =
@@ -102,6 +124,9 @@ void MacOsNotifications::notify(const QString &summary, const QString &body,
                                 const QString &networkId, const QString &target,
                                 const QString &msgid)
 {
+    if (!m_enabled)
+        return;
+
     UNUserNotificationCenter *center = [UNUserNotificationCenter currentNotificationCenter];
     if (!center)
         return;

@@ -17,4 +17,7 @@ public:
 signals:
     void activated(const QString &networkId, const QString &target,
                    const QString &msgid);
+
+private:
+    bool m_enabled = false;
 };

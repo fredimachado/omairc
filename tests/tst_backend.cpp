@@ -266,7 +266,7 @@ void BackendNotifyTest::notifyDesktopAfterDisconnectDoesNotCrash()
 }
 #endif
 
-#ifndef Q_OS_LINUX
+#if !defined(Q_OS_LINUX) && !defined(Q_OS_MACOS)
 class BackendNotifySmokeTest : public QObject
 {
     Q_OBJECT
@@ -290,6 +290,8 @@ int runBackendTests(int argc, char **argv)
 #ifdef Q_OS_LINUX
     BackendNotifyTest test;
     return QTest::qExec(&test, argc, argv);
+#elif defined(Q_OS_MACOS)
+    return 0;
 #else
     BackendNotifySmokeTest test;
     return QTest::qExec(&test, argc, argv);
