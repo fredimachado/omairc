@@ -209,6 +209,7 @@ private:
     {
         IrcWhoisDestination destination;
         bool failedIsAmbiguous = false;
+        bool metadataEmitted = false;
     };
 
     void apply(const IrcEvent& event);
@@ -270,6 +271,8 @@ private:
     void noteNickDelivery(const QString& networkId, const QString& target);
     void handleStatusEntry(const IrcStatusEntry& entry);
     void routeWhoisLine(const QString& networkId, const IrcWhoisLine& line);
+    QStringList whoisMetadataLines(const QString& networkId,
+                                   const QString& nick) const;
     void forgetWhoisWatches(const QString& networkId);
     struct IrcCtcpWatchKey
     {

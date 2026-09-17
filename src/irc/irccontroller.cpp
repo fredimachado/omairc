@@ -191,9 +191,9 @@ IrcSession *IrcController::addSession(const IrcSessionConfig& config,
         emit statusChanged();
         emit errorOccurred(networkId, kind, message);
     });
+    m_console.observe(session);
     connect(session, &IrcSession::statusEntry,
             this, &IrcController::handleStatusEntry);
-    m_console.observe(session);
     return session;
 }
 
@@ -1938,15 +1938,60 @@ void IrcController::routeWhoisLine(const QString& networkId, const IrcWhoisLine&
         return;
 
     const IrcWhoisDestination destination = found->second.destination;
+    const IrcConversationKey *conversation =
+        std::get_if<IrcConversationKey>(&destination);
+    if (conversation) {
+        apply(IrcWhoisTranscriptEvent{
+            *conversation,
+            line.text(),
+        });
+    }
+
+    if (line.progress() == IrcWhoisLine::Progress::Detail
+        && !found->second.metadataEmitted) {
+        found->second.metadataEmitted = true;
+        for (const QString& text : whoisMetadataLines(networkId, line.nick())) {
+            m_console.record(IrcStatusEntry::lifecycle(
+                networkId, IrcLogSeverity::Info, QStringLiteral("whois"), text));
+            if (conversation) {
+                apply(IrcWhoisTranscriptEvent{
+                    *conversation,
+                    text,
+                });
+            }
+        }
+    }
+
     if (line.terminal())
         m_whoisWatches.erase(found);
+}
 
-    if (std::holds_alternative<IrcWhoisStatusOnly>(destination))
-        return;
-    apply(IrcWhoisTranscriptEvent{
-        std::get<IrcConversationKey>(destination),
-        line.text(),
-    });
+QStringList IrcController::whoisMetadataLines(const QString& networkId,
+                                              const QString& nick) const
+{
+    const IrcNickPresence facts = m_reducer.nickPresence(networkId, nick);
+    QStringList lines;
+    const auto addValue = [&](const QString& key, const QString& pattern) {
+        const QString value = facts.metadata(key);
+        if (value.isEmpty())
+            return;
+        lines.append(pattern.arg(nick, value));
+    };
+    addValue(IrcMetadata::displayNameKey(),
+             QStringLiteral("%1 is also known as %2"));
+    addValue(IrcMetadata::pronounsKey(), QStringLiteral("%1 pronouns %2"));
+    addValue(IrcMetadata::statusKey(), QStringLiteral("%1 status %2"));
+    if (facts.isBot()) {
+        const QString software = facts.metadata(IrcMetadata::botKey());
+        if (software.isEmpty())
+            lines.append(QStringLiteral("%1 is a bot").arg(nick));
+        else
+            lines.append(QStringLiteral("%1 is a bot (%2)").arg(nick, software));
+    }
+    addValue(IrcMetadata::homepageKey(), QStringLiteral("%1 homepage %2"));
+    addValue(IrcMetadata::colorKey(), QStringLiteral("%1 color %2"));
+    addValue(IrcMetadata::avatarKey(), QStringLiteral("%1 avatar %2"));
+    return lines;
 }
 
 void IrcController::forgetWhoisWatches(const QString& networkId)
