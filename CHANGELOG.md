@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Opening the Windows window from Explorer or the Start Menu no longer flashes a console. `--help` and the local CLI still print in cmd or PowerShell by attaching to the parent terminal.
 - `bin\build.bat` finds `vswhere.exe` when `cl` is not already on PATH. Delayed expansion cannot read `%ProgramFiles(x86)%`.
 - The Windows installer and `LICENSE` copyright name Fredi Machado.
 - The Windows installer treats expanded and unexpanded PATH entries as the same directory, so a `%LOCALAPPDATA%\Programs\Omairc` entry is not duplicated on install and is removed on uninstall.

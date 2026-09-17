@@ -41,6 +41,50 @@
 #error "Build with omairc.pro so OMAIRC_VERSION is defined"
 #endif
 
+#ifdef Q_OS_WIN
+static bool stdHandleIsRedirected(DWORD stdHandle)
+{
+    const HANDLE handle = GetStdHandle(stdHandle);
+    if (!handle || handle == INVALID_HANDLE_VALUE)
+        return false;
+    const DWORD type = GetFileType(handle);
+    return type == FILE_TYPE_DISK || type == FILE_TYPE_PIPE;
+}
+
+static void reopenConsoleOutput(FILE *stream)
+{
+#ifdef _MSC_VER
+    FILE *unused = nullptr;
+    freopen_s(&unused, "CONOUT$", "w", stream);
+#else
+    (void)freopen("CONOUT$", "w", stream);
+#endif
+}
+
+static void attachParentConsole()
+{
+    const bool outRedirected = stdHandleIsRedirected(STD_OUTPUT_HANDLE);
+    const bool errRedirected = stdHandleIsRedirected(STD_ERROR_HANDLE);
+    if (outRedirected && errRedirected)
+        return;
+
+    const HANDLE savedOut = outRedirected ? GetStdHandle(STD_OUTPUT_HANDLE)
+                                          : INVALID_HANDLE_VALUE;
+    const HANDLE savedErr = errRedirected ? GetStdHandle(STD_ERROR_HANDLE)
+                                          : INVALID_HANDLE_VALUE;
+    if (!AttachConsole(ATTACH_PARENT_PROCESS))
+        return;
+    if (outRedirected)
+        SetStdHandle(STD_OUTPUT_HANDLE, savedOut);
+    if (errRedirected)
+        SetStdHandle(STD_ERROR_HANDLE, savedErr);
+    if (!outRedirected)
+        reopenConsoleOutput(stdout);
+    if (!errRedirected)
+        reopenConsoleOutput(stderr);
+}
+#endif
+
 static void raiseOmaircWindow(QQmlApplicationEngine &engine)
 {
     const auto roots = engine.rootObjects();
@@ -62,6 +106,10 @@ int main(int argc, char *argv[]) {
         && (args.constFirst() == QLatin1String("--help")
             || args.constFirst() == QLatin1String("--version")
             || OmaircCli::looksLikeCommand(argc, argv));
+#ifdef Q_OS_WIN
+    if (headless)
+        attachParentConsole();
+#endif
     if (headless) {
         const OmaircCli::ParseOutcome outcome = OmaircCli::parseArgs(args);
         if (const auto *request = std::get_if<OmaircIpc::Request>(&outcome)) {
@@ -72,11 +120,6 @@ int main(int argc, char *argv[]) {
         }
         return OmaircCli::printOutcome(outcome);
     }
-
-#ifdef Q_OS_WIN
-    // win32 builds use the console subsystem so CLI output works; drop it for the window.
-    FreeConsole();
-#endif
 
     QGuiApplication app(argc, argv);
     app.setApplicationName(QStringLiteral("omairc"));

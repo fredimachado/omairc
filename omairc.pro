@@ -4,7 +4,6 @@ unix: QT += dbus
 include(qtkeychain.pri)
 
 CONFIG += c++17 release
-win32: CONFIG += console
 TARGET = omairc
 TEMPLATE = app
 
