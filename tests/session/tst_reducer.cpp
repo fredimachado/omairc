@@ -85,6 +85,8 @@ private slots:
     void selfAwayShowsOnOurOwnRowInEveryChannel();
     void peerPresenceFollowsSharedChannelAndAwayFacts();
     void awayReloadsConversationsOnlyWhenItCanReachADirectRow();
+    void metadataNotifyRefreshesOnlyAffectedSurfaces();
+    void falseyBotValuesAreNotBots();
     void staleNamesSyncReleasesAfterThirtySeconds();
     void consecutiveJoinsCollapseIntoOneEvent();
     void privmsgBreaksJoinCollapse();
@@ -1179,6 +1181,75 @@ void ReducerTest::peerPresenceFollowsSharedChannelAndAwayFacts()
     // Presence is per network.
     QVERIFY(reducer.peerPresence(networkB, QStringLiteral("alice"))
             == IrcPeerPresence::Unknown);
+}
+
+void ReducerTest::metadataNotifyRefreshesOnlyAffectedSurfaces()
+{
+    IrcEventReducer reducer;
+    welcome(reducer, networkA);
+    const std::optional<IrcConversationKey> nothing;
+
+    const auto metadataNotify = [&](const QString& nick, const QString& key) {
+        return classifyViewNotify(
+            IrcEvent{IrcMemberMetadataEvent{networkA, nick, key, QStringLiteral("x")}},
+            reducer,
+            nothing);
+    };
+
+    IrcViewNotify statusOnly =
+        metadataNotify(QStringLiteral("Alice"), IrcMetadata::statusKey());
+    QCOMPARE(statusOnly.members, IrcMemberSurface::Row);
+    QVERIFY(!statusOnly.conversations);
+    QVERIFY(!statusOnly.messages);
+
+    reducer.apply(IrcJoinEvent{
+        networkA, QStringLiteral("#omarchy"), QStringLiteral("Alice")});
+    IrcViewNotify avatarShared =
+        metadataNotify(QStringLiteral("Alice"), IrcMetadata::avatarKey());
+    QVERIFY(avatarShared.messages);
+    QVERIFY(!avatarShared.conversations);
+
+    const IrcConversationKey alice =
+        reducer.conversationKey(networkA, QStringLiteral("Alice"));
+    reducer.apply(IrcMessageEvent{
+        alice, QStringLiteral("Alice"), QStringLiteral("hi"), timestamp,
+        QStringLiteral("Alice")});
+    IrcViewNotify avatarDirect =
+        metadataNotify(QStringLiteral("Alice"), IrcMetadata::avatarKey());
+    QVERIFY(avatarDirect.messages);
+    QVERIFY(avatarDirect.conversations);
+}
+
+void ReducerTest::falseyBotValuesAreNotBots()
+{
+    IrcEventReducer reducer;
+    welcome(reducer, networkA);
+    const IrcConversationKey room =
+        reducer.conversationKey(networkA, QStringLiteral("#room"));
+    reducer.apply(IrcNamesEvent{
+        networkA,
+        QStringLiteral("#room"),
+        {parsedName("Alice")},
+        true,
+    });
+
+    for (const QString& falsey :
+         {QStringLiteral("0"), QStringLiteral("false"), QStringLiteral("no")}) {
+        reducer.apply(IrcMemberMetadataEvent{
+            networkA, QStringLiteral("Alice"), IrcMetadata::botKey(), falsey});
+        const std::optional<IrcMemberView> member =
+            reducer.memberView(room, QStringLiteral("alice"));
+        QVERIFY(member.has_value());
+        QVERIFY(!member->bot);
+        QVERIFY(!reducer.nickPresence(networkA, QStringLiteral("Alice")).isBot());
+        reducer.apply(IrcMemberMetadataEvent{
+            networkA, QStringLiteral("Alice"), IrcMetadata::botKey(), QString()});
+    }
+
+    reducer.apply(IrcMemberMetadataEvent{
+        networkA, QStringLiteral("Alice"), IrcMetadata::botKey(),
+        QStringLiteral("PacketBot")});
+    QVERIFY(reducer.memberView(room, QStringLiteral("alice"))->bot);
 }
 
 void ReducerTest::awayReloadsConversationsOnlyWhenItCanReachADirectRow()

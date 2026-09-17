@@ -229,7 +229,7 @@ public:
                             const QDateTime& now) const;
     void clearTypingFacts(const QString& networkId);
 
-    void clearPresenceFacts(const QString& networkId, bool away, bool status);
+    void clearPresenceFacts(const QString& networkId, bool away, bool metadata);
 
     bool selfAway(const QString& networkId) const noexcept;
 

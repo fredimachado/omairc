@@ -36,9 +36,9 @@ QString colorKey()
     return QStringLiteral("color");
 }
 
-QStringList subscribedKeys()
+const QStringList& subscribedKeys()
 {
-    return {
+    static const QStringList keys = {
         avatarKey(),
         statusKey(),
         botKey(),
@@ -47,32 +47,35 @@ QStringList subscribedKeys()
         homepageKey(),
         colorKey(),
     };
+    return keys;
 }
 
-bool isKnownKey(const QString& key)
+QString canonicalKey(const QString& key)
 {
     for (const QString& known : subscribedKeys()) {
-        if (key.compare(known, Qt::CaseInsensitive) == 0)
-            return true;
-    }
-    return false;
-}
-}
-
-namespace {
-QString storedMetadataKey(const QString& key)
-{
-    for (const QString& known : IrcMetadata::subscribedKeys()) {
         if (key.compare(known, Qt::CaseInsensitive) == 0)
             return known;
     }
     return {};
 }
+
+bool isKnownKey(const QString& key)
+{
+    return !canonicalKey(key).isEmpty();
+}
+
+QString clamped(const QString& value)
+{
+    QString result = value;
+    while (result.toUtf8().size() > maximumValueBytes)
+        result.chop(1);
+    return result;
+}
 }
 
 QString IrcNickPresence::metadata(const QString& key) const
 {
-    const QString stored = storedMetadataKey(key);
+    const QString stored = IrcMetadata::canonicalKey(key);
     if (stored.isEmpty())
         return {};
     const auto found = keys.find(stored);
@@ -81,13 +84,20 @@ QString IrcNickPresence::metadata(const QString& key) const
 
 bool IrcNickPresence::hasKey(const QString& key) const
 {
-    const QString stored = storedMetadataKey(key);
+    const QString stored = IrcMetadata::canonicalKey(key);
     return !stored.isEmpty() && keys.find(stored) != keys.end();
 }
 
 bool IrcNickPresence::isBot() const
 {
-    return hasKey(IrcMetadata::botKey());
+    // IRCv3 registry: setting `bot` marks the client; the value names the software.
+    const QString software = metadata(IrcMetadata::botKey());
+    if (software.isEmpty())
+        return false;
+    const QString trimmed = software.trimmed();
+    return trimmed.compare(QStringLiteral("0"), Qt::CaseInsensitive) != 0
+        && trimmed.compare(QStringLiteral("false"), Qt::CaseInsensitive) != 0
+        && trimmed.compare(QStringLiteral("no"), Qt::CaseInsensitive) != 0;
 }
 
 QString IrcNickPresence::status() const
@@ -132,7 +142,7 @@ void IrcNetworkPresence::setMetadata(const QString& normalizedNick,
 {
     if (normalizedNick.isEmpty())
         return;
-    const QString stored = storedMetadataKey(key);
+    const QString stored = IrcMetadata::canonicalKey(key);
     if (stored.isEmpty())
         return;
     if (value.isEmpty()) {
@@ -185,11 +195,6 @@ void IrcNetworkPresence::clearMetadata()
         entry->second.keys.clear();
         entry = entry->second.isDefault() ? m_nicks.erase(entry) : std::next(entry);
     }
-}
-
-void IrcNetworkPresence::clearStatus()
-{
-    clearMetadata();
 }
 
 bool IrcNetworkPresence::knows(const QString& normalizedNick) const noexcept

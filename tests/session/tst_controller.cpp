@@ -829,7 +829,9 @@ void ControllerTest::presenceCapabilitiesGateAwayAndStatus()
 
     const QVariantMap empty = controller.peerMetadata(QString(), QString());
     QCOMPARE(empty.value(QStringLiteral("bot")).toBool(), false);
-    QVERIFY(!empty.contains(QStringLiteral("status")));
+    QCOMPARE(empty.value(QStringLiteral("status")).toString(), QString());
+    QCOMPARE(empty.value(QStringLiteral("avatar")).toString(), QString());
+    QCOMPARE(empty.value(QStringLiteral("displayName")).toString(), QString());
 
     transport->injectBytes(QByteArrayLiteral(":Alice!u@h AWAY\r\n"));
     QCOMPARE(roleAt(members, 1, MemberListModel::AwayRole), false);

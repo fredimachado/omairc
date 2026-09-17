@@ -18,6 +18,11 @@ private slots:
     void rejectsFile();
     void rejectsEmpty();
     void rejectsUserinfoAndLocalSuffix();
+    void rejectsNonStandardPort();
+    void rejectsIpv4MappedLoopback();
+    void rejectsZeroNetwork();
+    void rejectsTrailingDotLocalhost();
+    void rejectsLinkLocal();
     void quantizesFetchPixelSize();
 };
 
@@ -92,6 +97,45 @@ void AvatarUrlTest::rejectsUserinfoAndLocalSuffix()
     QVERIFY(!ircAvatarUrlIsSafe(
         ircResolvedAvatarUrl(QStringLiteral("https://printer.local/a.png"), 32)));
     QVERIFY(ircHostAddressIsUnsafe(QHostAddress(QStringLiteral("100.64.0.1"))));
+}
+
+void AvatarUrlTest::rejectsNonStandardPort()
+{
+    QVERIFY(!ircAvatarUrlIsSafe(
+        ircResolvedAvatarUrl(QStringLiteral("https://example.com:8443/a.png"), 32)));
+    QVERIFY(ircAvatarUrlIsSafe(
+        ircResolvedAvatarUrl(QStringLiteral("https://example.com/a.png"), 32)));
+}
+
+void AvatarUrlTest::rejectsIpv4MappedLoopback()
+{
+    QVERIFY(!ircAvatarUrlIsSafe(
+        ircResolvedAvatarUrl(QStringLiteral("https://[::ffff:127.0.0.1]/a.png"), 32)));
+    QVERIFY(ircHostAddressIsUnsafe(
+        QHostAddress(QStringLiteral("::ffff:127.0.0.1"))));
+}
+
+void AvatarUrlTest::rejectsZeroNetwork()
+{
+    QVERIFY(!ircAvatarUrlIsSafe(
+        ircResolvedAvatarUrl(QStringLiteral("https://0.0.0.0/a.png"), 32)));
+    QVERIFY(ircHostAddressIsUnsafe(QHostAddress(QStringLiteral("0.0.0.0"))));
+    QVERIFY(ircHostAddressIsUnsafe(QHostAddress(QStringLiteral("0.1.2.3"))));
+}
+
+void AvatarUrlTest::rejectsTrailingDotLocalhost()
+{
+    QVERIFY(!ircAvatarUrlIsSafe(
+        ircResolvedAvatarUrl(QStringLiteral("https://localhost./a.png"), 32)));
+    QVERIFY(ircAvatarUrlIsSafe(
+        ircResolvedAvatarUrl(QStringLiteral("https://example.com./a.png"), 32)));
+}
+
+void AvatarUrlTest::rejectsLinkLocal()
+{
+    QVERIFY(!ircAvatarUrlIsSafe(
+        ircResolvedAvatarUrl(QStringLiteral("https://169.254.12.34/a.png"), 32)));
+    QVERIFY(ircHostAddressIsUnsafe(QHostAddress(QStringLiteral("169.254.12.34"))));
 }
 
 void AvatarUrlTest::quantizesFetchPixelSize()

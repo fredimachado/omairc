@@ -14,8 +14,10 @@ QString displayNameKey();
 QString pronounsKey();
 QString homepageKey();
 QString colorKey();
-QStringList subscribedKeys();
+const QStringList& subscribedKeys();
 bool isKnownKey(const QString& key);
+QString canonicalKey(const QString& key);
+QString clamped(const QString& value);
 
 constexpr int maximumValueBytes = 512;
 }
@@ -52,7 +54,6 @@ public:
     void clear() noexcept;
     void clearAway();
     void clearMetadata();
-    void clearStatus();
     bool knows(const QString& normalizedNick) const noexcept;
 
     IrcNickPresence lookup(const QString& normalizedNick) const;

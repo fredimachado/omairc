@@ -111,6 +111,7 @@ private slots:
     void translatesMetadataForStatusAvatarAndBot();
     void translates761DisplayName();
     void translates766ClearingAKey();
+    void ignores766WithoutNamedKey();
     void ignoresUnknownAndChannelMetadata();
     void metadataStatusDoesNotImplyAway();
 };
@@ -722,6 +723,11 @@ void ProtocolTest::translates766ClearingAKey()
     QCOMPARE(event->nick, QStringLiteral("Alice"));
     QCOMPARE(event->key, QStringLiteral("avatar"));
     QVERIFY(event->value.isEmpty());
+}
+
+void ProtocolTest::ignores766WithoutNamedKey()
+{
+    QVERIFY(translateLine(":server 766 me Alice :no matching key").empty());
 }
 
 void ProtocolTest::ignoresUnknownAndChannelMetadata()

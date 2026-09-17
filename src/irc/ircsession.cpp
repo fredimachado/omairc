@@ -627,18 +627,10 @@ bool IrcSession::setOwnMetadata(const QString& key, const QString& value)
     }
     if (key.isEmpty() || !IrcMetadata::isKnownKey(key))
         return false;
-    QString stored;
-    for (const QString& known : IrcMetadata::subscribedKeys()) {
-        if (key.compare(known, Qt::CaseInsensitive) == 0) {
-            stored = known;
-            break;
-        }
-    }
+    const QString stored = IrcMetadata::canonicalKey(key);
     if (stored.isEmpty())
         return false;
-    QString clamped = value;
-    while (clamped.toUtf8().size() > IrcMetadata::maximumValueBytes)
-        clamped.chop(1);
+    const QString clamped = IrcMetadata::clamped(value);
     if (clamped.isEmpty())
         return sendCommand(QStringLiteral("METADATA * SET %1").arg(stored));
     return sendCommand(QStringLiteral("METADATA * SET %1 :%2").arg(stored, clamped));

@@ -471,14 +471,14 @@ QVector<IrcOrderedMember> IrcEventReducer::orderedMembers(
 
 void IrcEventReducer::clearPresenceFacts(const QString& networkId,
                                          bool away,
-                                         bool status)
+                                         bool metadata)
 {
     const auto presence = m_presence.find(networkId);
     if (presence == m_presence.end())
         return;
     if (away)
         presence->second.clearAway();
-    if (status)
+    if (metadata)
         presence->second.clearMetadata();
 }
 

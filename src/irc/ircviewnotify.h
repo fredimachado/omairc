@@ -2,6 +2,7 @@
 
 #include "ircevent.h"
 #include "irceventreducer.h"
+#include "ircpresence.h"
 
 #include <QString>
 
@@ -179,10 +180,18 @@ struct IrcViewClassifier {
 
     IrcViewNotify operator()(const IrcMemberMetadataEvent& event) const
     {
-        IrcViewNotify notify = IrcViewNotify::memberRow(
-            reducer.conversationKey(event.networkId, event.nick).normalizedTarget);
-        notify.conversations = true;
-        notify.messages = true;
+        const IrcConversationKey key =
+            reducer.conversationKey(event.networkId, event.nick);
+        IrcViewNotify notify = IrcViewNotify::memberRow(key.normalizedTarget);
+        const QString canonical = IrcMetadata::canonicalKey(event.key);
+        const bool affectsTranscriptChrome =
+            canonical == IrcMetadata::avatarKey()
+            || canonical == IrcMetadata::botKey();
+        if (affectsTranscriptChrome)
+            notify.messages = true;
+        const IrcConversationState *conversation = reducer.find(key);
+        if (affectsTranscriptChrome && conversation && !conversation->isChannel())
+            notify.conversations = true;
         return notify;
     }
 
