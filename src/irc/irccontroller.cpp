@@ -1775,11 +1775,17 @@ IrcCommandOutcome IrcController::dispatchStatus(const IrcCommand& command,
         return IrcCommandOutcome::Sent;
     }
 
-    const QString clamped = IrcMetadata::clamped(
-        command.argument,
-        IrcMetadata::effectiveMaxValueBytes(session->metadataCapability().maxValueBytes));
-    if (!session->setOwnMetadata(IrcMetadata::statusKey(), clamped))
+    const int valueBudget = IrcMetadata::effectiveMaxValueBytes(
+        session->metadataCapability().maxValueBytes);
+    if (valueBudget <= 0) {
+        return echo(QStringLiteral(
+            "This network does not allow standing status text."));
+    }
+    const QString clamped = IrcMetadata::clamped(command.argument, valueBudget);
+    if (clamped.isEmpty()
+            || !session->setOwnMetadata(IrcMetadata::statusKey(), clamped)) {
         return IrcCommandOutcome::Refused;
+    }
     armStatusWatch(networkId, surface, IrcStatusWatch::Kind::Set, clamped);
     return IrcCommandOutcome::Sent;
 }

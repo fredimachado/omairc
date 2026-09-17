@@ -2763,6 +2763,26 @@ void SessionTest::metadataCapabilityLimitsSubscriptionsAndValues()
         legacy.transport->writtenFrames(),
         QByteArrayLiteral(
             "METADATA * SUB status avatar bot display-name pronouns homepage color\r\n")));
+
+    Fixture zeroValue;
+    zeroValue.connectTls();
+    zeroValue.transport->injectBytes(
+        QByteArrayLiteral(
+            ":server CAP omairc LS :batch draft/metadata-2=max-value-bytes=0\r\n"
+            ":server CAP omairc ACK :batch draft/metadata-2\r\n"
+            ":server 001 omairc :Welcome\r\n"));
+    QCOMPARE(zeroValue.session->state(), IrcSession::State::Registered);
+    QCOMPARE(zeroValue.session->metadataCapability().maxValueBytes, 0);
+    QCOMPARE(IrcMetadata::effectiveMaxValueBytes(
+                 zeroValue.session->metadataCapability().maxValueBytes),
+             0);
+    const int beforeZeroSet = zeroValue.transport->writtenFrames().size();
+    QVERIFY(!zeroValue.session->setOwnMetadata(QStringLiteral("status"),
+                                               QStringLiteral("blocked")));
+    QCOMPARE(zeroValue.transport->writtenFrames().size(), beforeZeroSet);
+    QVERIFY(zeroValue.session->clearOwnMetadata(QStringLiteral("status")));
+    QCOMPARE(zeroValue.transport->writtenFrames().last(),
+             QByteArrayLiteral("METADATA * SET status\r\n"));
 }
 
 void SessionTest::whoisWritesDoubledNick()

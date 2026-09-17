@@ -10,6 +10,7 @@
 #include "irccommand.h"
 #include "irccontroller.h"
 #include "ircjointarget.h"
+#include "ircpresence.h"
 #include "ircserverfeatures.h"
 #include "ircsession.h"
 #include "ircslashcomplete.h"
@@ -178,6 +179,7 @@ private slots:
     void statusWritesMetadataFrames();
     void statusRefusesOnMetadataError();
     void statusRefusesOnMetadataFailReplies();
+    void statusRefusesNonEmptyWhenMaxValueBytesZero();
     void whoisSendsAndDefaults();
     void ctcpSendsAndDefaults();
     void modeSendsAndRefuses();
@@ -1747,6 +1749,51 @@ void CommandTest::statusRefusesOnMetadataFailReplies()
         QByteArrayLiteral(":server 761 omairc omairc status * :waiting\r\n"));
     QVERIFY(selectedBodiesContain(
         messages, QStringLiteral("Standing status set to waiting.")));
+}
+
+void CommandTest::statusRefusesNonEmptyWhenMaxValueBytesZero()
+{
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    IrcSession *session = controller.addSession(config(), transport);
+    QVERIFY(session);
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    transport->completeConnect();
+    transport->injectBytes(
+        QByteArrayLiteral(
+            ":server CAP omairc LS :away-notify batch "
+            "draft/metadata-2=max-value-bytes=0\r\n"
+            ":server CAP omairc ACK :away-notify batch draft/metadata-2\r\n"
+            ":server 001 omairc :Welcome\r\n"));
+    QCOMPARE(session->state(), IrcSession::State::Registered);
+    QCOMPARE(session->metadataCapability().maxValueBytes, 0);
+    QCOMPARE(IrcMetadata::effectiveMaxValueBytes(
+                 session->metadataCapability().maxValueBytes),
+             0);
+    transport->injectBytes(
+        QByteArrayLiteral(":omairc!u@h JOIN :#omarchy\r\n"
+                          ":server 353 omairc = #omarchy :omairc Alice\r\n"
+                          ":server 366 omairc #omarchy :End of NAMES\r\n"));
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
+    QVERIFY(messages);
+
+    const int beforeSet = transport->writtenFrames().size();
+    QVERIFY(controller.sendMessage(QStringLiteral("/status writing")));
+    QCOMPARE(transport->writtenFrames().size(), beforeSet);
+    QVERIFY(!framesContain(transport->writtenFrames().mid(beforeSet),
+                           QByteArrayLiteral("METADATA * SET status :")));
+    QVERIFY(selectedBodiesContain(
+        messages,
+        QStringLiteral("This network does not allow standing status text.")));
+
+    QVERIFY(controller.sendMessage(QStringLiteral("/status clear")));
+    QCOMPARE(transport->writtenFrames().last(),
+             QByteArrayLiteral("METADATA * SET status\r\n"));
+    transport->injectBytes(
+        QByteArrayLiteral(":server 766 omairc omairc status :unset\r\n"));
+    QVERIFY(selectedBodiesContain(messages,
+                                  QStringLiteral("Standing status cleared.")));
 }
 
 void CommandTest::whoisSendsAndDefaults()

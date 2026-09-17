@@ -645,9 +645,12 @@ bool IrcSession::setOwnMetadata(const QString& key, const QString& value)
     const int maxBytes = qMin(
         IrcMetadata::effectiveMaxValueBytes(m_metadataCapability.maxValueBytes),
         wireBudget);
+    // Explicit max-value-bytes=0 (or a zero wire residual) forbids non-empty values.
+    if (maxBytes <= 0)
+        return false;
     const QString clamped = IrcMetadata::clamped(value, maxBytes);
     if (clamped.isEmpty())
-        return sendCommand(QStringLiteral("METADATA * SET %1").arg(stored));
+        return false;
     return sendCommand(QStringLiteral("METADATA * SET %1 :%2").arg(stored, clamped));
 }
 

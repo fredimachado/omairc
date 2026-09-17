@@ -102,7 +102,8 @@ bool isKnownKey(const QString& key)
 
 int effectiveMaxValueBytes(std::optional<int> advertised)
 {
-    if (!advertised.has_value() || *advertised <= 0)
+    // Absent/malformed → client default. Explicit 0 means no non-empty values.
+    if (!advertised.has_value())
         return maximumValueBytes;
     return qMin(*advertised, maximumValueBytes);
 }
@@ -114,9 +115,10 @@ QString clamped(const QString& value)
 
 QString clamped(const QString& value, int maxBytes)
 {
-    const int limit = maxBytes > 0 ? maxBytes : maximumValueBytes;
+    if (maxBytes <= 0)
+        return {};
     QString result = value;
-    while (result.toUtf8().size() > limit)
+    while (result.toUtf8().size() > maxBytes)
         result.chop(1);
     return result;
 }
