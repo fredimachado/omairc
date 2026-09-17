@@ -313,6 +313,7 @@ private slots:
     void kickWritesOptionalReason();
     void inviteWritesNickThenChannel();
     void setAwayEncodesOptionalReason();
+    void setOwnMetadataWritesSetAndClear();
     void whoisWritesDoubledNick();
     void whoisStatusLinesFormatKnownNumerics();
     void incomingNoticeStatusLinesWrapSpeaker();
@@ -463,7 +464,8 @@ void SessionTest::negotiatesPresenceCapabilities()
 
     fixture.transport->injectBytes(
         QByteArrayLiteral(":server 001 omairc :Welcome\r\n"));
-    QVERIFY(fixture.wrote(QByteArrayLiteral("METADATA * SUB status\r\n")));
+    QVERIFY(fixture.wrote(QByteArrayLiteral(
+        "METADATA * SUB avatar status bot display-name pronouns homepage color\r\n")));
 
     fixture.transport->injectBytes(
         QByteArrayLiteral(":server 366 omairc #omarchy :End of /NAMES\r\n"));
@@ -522,7 +524,8 @@ void SessionTest::refusedPresenceCapabilitiesStayOffWithoutFailing()
         QByteArrayLiteral(":server 001 omairc :Welcome\r\n"
                           ":server 366 omairc #omarchy :End of /NAMES\r\n"));
     QCOMPARE(fixture.session->state(), IrcSession::State::Registered);
-    QVERIFY(!fixture.wrote(QByteArrayLiteral("METADATA * SUB status\r\n")));
+    QVERIFY(!fixture.wrote(QByteArrayLiteral(
+        "METADATA * SUB avatar status bot display-name pronouns homepage color\r\n")));
     QVERIFY(!fixture.wrote(QByteArrayLiteral("WHO #omarchy\r\n")));
 }
 
@@ -2618,6 +2621,44 @@ void SessionTest::setAwayEncodesOptionalReason()
     QVERIFY(fixture.session->clearAway());
     QCOMPARE(fixture.transport->writtenFrames().last(),
              QByteArrayLiteral("AWAY\r\n"));
+}
+
+void SessionTest::setOwnMetadataWritesSetAndClear()
+{
+    Fixture fixture;
+    fixture.connectTls();
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :batch draft/metadata-2\r\n"
+                          ":server CAP omairc ACK :batch draft/metadata-2\r\n"
+                          ":server 001 omairc :Welcome\r\n"));
+    QCOMPARE(fixture.session->state(), IrcSession::State::Registered);
+
+    QVERIFY(fixture.session->setOwnMetadata(QStringLiteral("status"),
+                                            QStringLiteral("writing")));
+    QCOMPARE(fixture.transport->writtenFrames().last(),
+             QByteArrayLiteral("METADATA * SET status :writing\r\n"));
+
+    QVERIFY(fixture.session->clearOwnMetadata(QStringLiteral("status")));
+    QCOMPARE(fixture.transport->writtenFrames().last(),
+             QByteArrayLiteral("METADATA * SET status\r\n"));
+
+    const int afterClear = fixture.transport->writtenFrames().size();
+    QVERIFY(!fixture.session->setOwnMetadata(QStringLiteral("unknown"),
+                                             QStringLiteral("x")));
+    QVERIFY(!fixture.session->setOwnMetadata(QString(), QStringLiteral("x")));
+    QCOMPARE(fixture.transport->writtenFrames().size(), afterClear);
+
+    Fixture withoutCap;
+    withoutCap.connectTls();
+    withoutCap.transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
+                          ":server 001 omairc :Welcome\r\n"));
+    QCOMPARE(withoutCap.session->state(), IrcSession::State::Registered);
+    const int before = withoutCap.transport->writtenFrames().size();
+    QVERIFY(!withoutCap.session->setOwnMetadata(QStringLiteral("status"),
+                                                QStringLiteral("writing")));
+    QVERIFY(!withoutCap.session->clearOwnMetadata(QStringLiteral("status")));
+    QCOMPARE(withoutCap.transport->writtenFrames().size(), before);
 }
 
 void SessionTest::whoisWritesDoubledNick()

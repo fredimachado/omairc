@@ -155,6 +155,8 @@ public slots:
     bool setTopic(const QString& channel, const QString& topic);
     bool setAway(const QString& reason = {});
     bool clearAway();
+    bool setOwnMetadata(const QString& key, const QString& value);
+    bool clearOwnMetadata(const QString& key);
     bool changeNick(const QString& nick);
     bool quit(const QString& reason = {});
     bool whois(const QString& nick);

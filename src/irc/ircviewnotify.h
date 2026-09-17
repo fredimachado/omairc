@@ -177,10 +177,13 @@ struct IrcViewClassifier {
         return notify;
     }
 
-    IrcViewNotify operator()(const IrcMemberStatusEvent& event) const
+    IrcViewNotify operator()(const IrcMemberMetadataEvent& event) const
     {
-        return IrcViewNotify::memberRow(
+        IrcViewNotify notify = IrcViewNotify::memberRow(
             reducer.conversationKey(event.networkId, event.nick).normalizedTarget);
+        notify.conversations = true;
+        notify.messages = true;
+        return notify;
     }
 
     IrcViewNotify operator()(const IrcSelfAwayEvent&) const

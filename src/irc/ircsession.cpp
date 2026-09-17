@@ -616,6 +616,39 @@ bool IrcSession::clearAway()
     return setAway({});
 }
 
+bool IrcSession::setOwnMetadata(const QString& key, const QString& value)
+{
+    if (m_state != State::Registered)
+        return false;
+    const IrcCapabilitySet enabled = m_capabilities.enabled();
+    if (!enabled.contains(IrcCapability::MemberMetadata)
+        || !enabled.contains(IrcCapability::Batch)) {
+        return false;
+    }
+    if (key.isEmpty() || !IrcMetadata::isKnownKey(key))
+        return false;
+    QString stored;
+    for (const QString& known : IrcMetadata::subscribedKeys()) {
+        if (key.compare(known, Qt::CaseInsensitive) == 0) {
+            stored = known;
+            break;
+        }
+    }
+    if (stored.isEmpty())
+        return false;
+    QString clamped = value;
+    while (clamped.toUtf8().size() > IrcMetadata::maximumValueBytes)
+        clamped.chop(1);
+    if (clamped.isEmpty())
+        return sendCommand(QStringLiteral("METADATA * SET %1").arg(stored));
+    return sendCommand(QStringLiteral("METADATA * SET %1 :%2").arg(stored, clamped));
+}
+
+bool IrcSession::clearOwnMetadata(const QString& key)
+{
+    return setOwnMetadata(key, {});
+}
+
 bool IrcSession::changeNick(const QString& nick)
 {
     return !nick.isEmpty()

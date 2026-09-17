@@ -18,6 +18,7 @@
 #include <QSet>
 #include <QStringList>
 #include <QTimer>
+#include <QVariantMap>
 #include <QVector>
 
 #include <QDateTime>
@@ -105,6 +106,8 @@ public:
     Q_INVOKABLE bool sendMessage(const QString& text);
     Q_INVOKABLE bool nickIsTyping(const QString& nick) const;
     Q_INVOKABLE void notifyComposerText(const QString& text);
+    Q_INVOKABLE QVariantMap peerMetadata(const QString& networkId,
+                                         const QString& nick) const;
 
     QStringList networkIds() const;
     IrcSession *session(const QString &networkId) const;

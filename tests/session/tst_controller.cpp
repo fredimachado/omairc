@@ -11,6 +11,7 @@
 #include <QSignalSpy>
 #include <QTemporaryDir>
 #include <QTest>
+#include <QVariantMap>
 
 #include <memory>
 #include <time.h>
@@ -757,6 +758,17 @@ void ControllerTest::presenceCapabilitiesGateAwayAndStatus()
     QCOMPARE(roleAt(members, 1, MemberListModel::AwayRole), true);
     QCOMPARE(roleAt(members, 1, MemberListModel::StatusRole),
              QStringLiteral("writing docs"));
+
+    const QVariantMap alice = controller.peerMetadata(QStringLiteral("libera"),
+                                                      QStringLiteral("Alice"));
+    QCOMPARE(alice.value(QStringLiteral("status")).toString(),
+             QStringLiteral("writing docs"));
+    QCOMPARE(alice.value(QStringLiteral("bot")).toBool(), false);
+    QVERIFY(alice.value(QStringLiteral("avatar")).toString().isEmpty());
+
+    const QVariantMap empty = controller.peerMetadata(QString(), QString());
+    QCOMPARE(empty.value(QStringLiteral("bot")).toBool(), false);
+    QVERIFY(!empty.contains(QStringLiteral("status")));
 
     transport->injectBytes(QByteArrayLiteral(":Alice!u@h AWAY\r\n"));
     QCOMPARE(roleAt(members, 1, MemberListModel::AwayRole), false);

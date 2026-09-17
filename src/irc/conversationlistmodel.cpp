@@ -154,6 +154,18 @@ QVariant ConversationListModel::data(const QModelIndex& index, int role) const
         return conversation->muted;
     case PresenceRole:
         return conversationPresence(m_reducer, *conversation);
+    case AvatarRole:
+        if (conversation->isChannel())
+            return QString();
+        return m_reducer.nickPresence(conversation->key.networkId,
+                                      conversation->key.normalizedTarget)
+            .avatar();
+    case BotRole:
+        if (conversation->isChannel())
+            return false;
+        return m_reducer.nickPresence(conversation->key.networkId,
+                                      conversation->key.normalizedTarget)
+            .isBot();
     }
     return {};
 }
@@ -171,6 +183,8 @@ QHash<int, QByteArray> ConversationListModel::roleNames() const
         {TypingRole, "typing"},
         {MutedRole, "muted"},
         {PresenceRole, "presence"},
+        {AvatarRole, "avatar"},
+        {BotRole, "bot"},
     };
 }
 
@@ -183,7 +197,7 @@ void ConversationListModel::reload()
         emit dataChanged(index(0, 0),
                          index(keys.size() - 1, 0),
                          {Qt::DisplayRole, ConversationRole, UnreadRole, MentionRole,
-                          TypingRole, MutedRole, PresenceRole});
+                          TypingRole, MutedRole, PresenceRole, AvatarRole, BotRole});
         return;
     }
     beginResetModel();

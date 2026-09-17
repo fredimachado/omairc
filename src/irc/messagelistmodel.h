@@ -28,6 +28,8 @@ public:
         NetworkIdRole,
         OriginRole,
         MsgidRole,
+        AuthorAvatarRole,
+        AuthorBotRole,
     };
 
     static QHash<int, QByteArray> staticRoleNames();

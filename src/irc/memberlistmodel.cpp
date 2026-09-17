@@ -48,6 +48,10 @@ QVariant MemberListModel::data(const QModelIndex& index, int role) const
         return member->isAway();
     case NetworkIdRole:
         return m_selected->networkId;
+    case AvatarRole:
+        return member->avatar;
+    case BotRole:
+        return member->bot;
     default:
         return {};
     }
@@ -61,6 +65,8 @@ QHash<int, QByteArray> MemberListModel::roleNames() const
         {StatusRole, "status"},
         {AwayRole, "away"},
         {NetworkIdRole, "networkId"},
+        {AvatarRole, "avatar"},
+        {BotRole, "bot"},
     };
 }
 
@@ -93,7 +99,7 @@ void MemberListModel::syncMembers(QVector<IrcOrderedMember> members)
     if (members == m_members) {
         if (!m_members.isEmpty())
             emit dataChanged(index(0, 0), index(m_members.size() - 1, 0),
-                             {LabelRole, StatusRole, AwayRole});
+                             {LabelRole, StatusRole, AwayRole, AvatarRole, BotRole});
         return;
     }
 
@@ -145,7 +151,7 @@ void MemberListModel::syncMembers(QVector<IrcOrderedMember> members)
         if (moved || m_members.at(row).priority != target.priority) {
             m_members[row].priority = target.priority;
             emit dataChanged(index(row, 0), index(row, 0),
-                             {LabelRole, StatusRole, AwayRole});
+                             {LabelRole, StatusRole, AwayRole, AvatarRole, BotRole});
         }
     }
     rebuildRowIndex();
@@ -171,7 +177,7 @@ void MemberListModel::touch(const QString& normalizedNick)
     if (row < 0)
         return;
     emit dataChanged(index(row, 0), index(row, 0),
-                     {AwayRole, StatusRole, LabelRole});
+                     {AwayRole, StatusRole, LabelRole, AvatarRole, BotRole});
 }
 
 void MemberListModel::setSelected(const IrcConversationKey& key)

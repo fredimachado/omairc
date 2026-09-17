@@ -81,6 +81,7 @@ private slots:
     void roleNamesMatchQml();
     void joinNamesPrivmsgPopulateModels();
     void memberStatusIsMetadataNotPrefixModes();
+    void memberAndDirectRowsExposeAvatarAndBot();
     void membersOrderByRankThenNick();
     void membersFollowServerPrefixOrder();
     void identicalChannelsStayDistinct();
@@ -139,6 +140,10 @@ void ModelTest::roleNamesMatchQml()
              QByteArray("muted"));
     QCOMPARE(conversations.roleNames()[ConversationListModel::PresenceRole],
              QByteArray("presence"));
+    QCOMPARE(conversations.roleNames()[ConversationListModel::AvatarRole],
+             QByteArray("avatar"));
+    QCOMPARE(conversations.roleNames()[ConversationListModel::BotRole],
+             QByteArray("bot"));
 
     QCOMPARE(messages.roleNames()[MessageListModel::AuthorRole], QByteArray("author"));
     QCOMPARE(messages.roleNames()[MessageListModel::TimeRole], QByteArray("time"));
@@ -148,6 +153,10 @@ void ModelTest::roleNamesMatchQml()
              QByteArray("networkId"));
     QCOMPARE(messages.roleNames()[MessageListModel::OriginRole], QByteArray("origin"));
     QCOMPARE(messages.roleNames()[MessageListModel::MsgidRole], QByteArray("msgid"));
+    QCOMPARE(messages.roleNames()[MessageListModel::AuthorAvatarRole],
+             QByteArray("authorAvatar"));
+    QCOMPARE(messages.roleNames()[MessageListModel::AuthorBotRole],
+             QByteArray("authorBot"));
 
     QCOMPARE(members.roleNames()[MemberListModel::NickRole], QByteArray("nick"));
     QCOMPARE(members.roleNames()[MemberListModel::LabelRole], QByteArray("label"));
@@ -155,6 +164,8 @@ void ModelTest::roleNamesMatchQml()
     QCOMPARE(members.roleNames()[MemberListModel::AwayRole], QByteArray("away"));
     QCOMPARE(members.roleNames()[MemberListModel::NetworkIdRole],
              QByteArray("networkId"));
+    QCOMPARE(members.roleNames()[MemberListModel::AvatarRole], QByteArray("avatar"));
+    QCOMPARE(members.roleNames()[MemberListModel::BotRole], QByteArray("bot"));
 }
 
 void ModelTest::joinNamesPrivmsgPopulateModels()
@@ -245,8 +256,9 @@ void ModelTest::memberStatusIsMetadataNotPrefixModes()
         {parsedName("@Alice"), parsedName("+Bob")},
         true,
     });
-    reducer.apply(IrcMemberStatusEvent{
-        networkA, QStringLiteral("Alice"), QStringLiteral("writing docs")});
+    reducer.apply(IrcMemberMetadataEvent{
+        networkA, QStringLiteral("Alice"), QStringLiteral("status"),
+        QStringLiteral("writing docs")});
     members.select(room);
 
     QCOMPARE(roleAt(members, 0, MemberListModel::NickRole), QStringLiteral("Alice"));
@@ -263,6 +275,62 @@ void ModelTest::memberStatusIsMetadataNotPrefixModes()
         QVERIFY(status != QStringLiteral("v"));
         QCOMPARE(roleAt(members, row, MemberListModel::AwayRole), false);
     }
+}
+
+void ModelTest::memberAndDirectRowsExposeAvatarAndBot()
+{
+    IrcEventReducer reducer;
+    MemberListModel members(reducer);
+    ConversationListModel conversations(reducer);
+    MessageListModel messages(reducer);
+    welcome(reducer, networkA);
+
+    const IrcConversationKey room =
+        reducer.conversationKey(networkA, QStringLiteral("#room"));
+    const IrcConversationKey alice =
+        reducer.conversationKey(networkA, QStringLiteral("Alice"));
+    reducer.apply(IrcNamesEvent{
+        networkA,
+        QStringLiteral("#room"),
+        {parsedName("@Alice"), parsedName("+Bob")},
+        true,
+    });
+    reducer.apply(IrcMessageEvent{
+        alice, QStringLiteral("Alice"), QStringLiteral("hi"), timestamp,
+        QStringLiteral("Alice")});
+    reducer.apply(IrcMemberMetadataEvent{
+        networkA, QStringLiteral("Alice"), QStringLiteral("avatar"),
+        QStringLiteral("https://example.com/a.png")});
+    reducer.apply(IrcMemberMetadataEvent{
+        networkA, QStringLiteral("Alice"), QStringLiteral("bot"),
+        QStringLiteral("PacketBot")});
+    members.select(room);
+    conversations.reload();
+    messages.select(alice);
+
+    QCOMPARE(roleAt(members, 0, MemberListModel::NickRole), QStringLiteral("Alice"));
+    QCOMPARE(roleAt(members, 0, MemberListModel::AvatarRole),
+             QStringLiteral("https://example.com/a.png"));
+    QCOMPARE(roleAt(members, 0, MemberListModel::BotRole), true);
+    QCOMPARE(roleAt(members, 1, MemberListModel::AvatarRole), QString());
+    QCOMPARE(roleAt(members, 1, MemberListModel::BotRole), false);
+
+    const int aliceRow = rowFor(conversations, ircConversationId(alice));
+    const int roomRow = rowFor(conversations, ircConversationId(room));
+    QVERIFY(aliceRow >= 0);
+    QVERIFY(roomRow >= 0);
+    QCOMPARE(roleAt(conversations, aliceRow, ConversationListModel::AvatarRole),
+             QStringLiteral("https://example.com/a.png"));
+    QCOMPARE(roleAt(conversations, aliceRow, ConversationListModel::BotRole), true);
+    QCOMPARE(roleAt(conversations, roomRow, ConversationListModel::AvatarRole),
+             QString());
+    QCOMPARE(roleAt(conversations, roomRow, ConversationListModel::BotRole), false);
+
+    QCOMPARE(roleAt(messages, 0, MessageListModel::AuthorRole),
+             QStringLiteral("Alice"));
+    QCOMPARE(roleAt(messages, 0, MessageListModel::AuthorAvatarRole),
+             QStringLiteral("https://example.com/a.png"));
+    QCOMPARE(roleAt(messages, 0, MessageListModel::AuthorBotRole), true);
 }
 
 void ModelTest::membersOrderByRankThenNick()

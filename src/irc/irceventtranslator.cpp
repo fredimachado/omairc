@@ -111,12 +111,12 @@ QDateTime timestampFor(const IrcMessage& message)
 
 /// `<Target> <Key> <Visibility> [<Value>]`, the shape shared by `METADATA`,
 /// `761` and `766` once the numeric client parameter has been dropped.
-void appendMemberStatus(std::vector<IrcEvent>& events,
-                        const QString& networkId,
-                        const IrcMessage& message,
-                        std::size_t targetIndex,
-                        bool clearsValue,
-                        const IrcServerFeatures& features)
+void appendMemberMetadata(std::vector<IrcEvent>& events,
+                          const QString& networkId,
+                          const IrcMessage& message,
+                          std::size_t targetIndex,
+                          bool clearsValue,
+                          const IrcServerFeatures& features)
 {
     const std::size_t required = clearsValue ? targetIndex + 2 : targetIndex + 3;
     if (message.parameters.size() < required)
@@ -125,12 +125,12 @@ void appendMemberStatus(std::vector<IrcEvent>& events,
     const QString key = parameter(message, targetIndex + 1);
     if (target.isEmpty() || features.isChannel(utf8(target)))
         return;
-    if (key.compare(IrcMetadata::statusKey(), Qt::CaseInsensitive) != 0)
+    if (!IrcMetadata::isKnownKey(key))
         return;
     const QString value = clearsValue
         ? QString{}
         : clampedMetadataValue(parameter(message, targetIndex + 3));
-    events.emplace_back(IrcMemberStatusEvent{networkId, target, value});
+    events.emplace_back(IrcMemberMetadataEvent{networkId, target, key, value});
 }
 
 bool isJoinFailureNumeric(const QString& command)
@@ -287,11 +287,11 @@ std::vector<IrcEvent> IrcEventTranslator::translate(
     } else if (command == QStringLiteral("CHGHOST")) {
         // Members store nick plus ranks. User and host are not modeled.
     } else if (command == QStringLiteral("METADATA")) {
-        appendMemberStatus(events, networkId, message, 0, false, features);
+        appendMemberMetadata(events, networkId, message, 0, false, features);
     } else if (command == QStringLiteral("761")) {
-        appendMemberStatus(events, networkId, message, 1, false, features);
+        appendMemberMetadata(events, networkId, message, 1, false, features);
     } else if (command == QStringLiteral("766")) {
-        appendMemberStatus(events, networkId, message, 1, true, features);
+        appendMemberMetadata(events, networkId, message, 1, true, features);
     } else if (isJoinFailureNumeric(command) && message.parameters.size() >= 3) {
         events.emplace_back(IrcChannelErrorEvent{
             networkId, parameter(message, 1), parameter(message, 2)});

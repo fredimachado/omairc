@@ -419,7 +419,24 @@ std::optional<IrcMemberView> IrcEventReducer::memberView(
             member->second.ranks, utf8(member->second.displayNick))),
         member->second.ranks,
         away,
-        facts.status};
+        facts.status(),
+        facts.avatar(),
+        facts.isBot(),
+        facts.metadata(IrcMetadata::displayNameKey()),
+        facts.metadata(IrcMetadata::pronounsKey()),
+        facts.metadata(IrcMetadata::homepageKey()),
+        facts.metadata(IrcMetadata::colorKey())};
+}
+
+IrcNickPresence IrcEventReducer::nickPresence(const QString& networkId,
+                                              const QString& nick) const
+{
+    if (networkId.isEmpty() || nick.isEmpty())
+        return {};
+    const auto presence = m_presence.find(networkId);
+    if (presence == m_presence.end())
+        return {};
+    return presence->second.lookup(normalize(networkId, nick));
 }
 
 IrcPeerPresence IrcEventReducer::peerPresence(const QString& networkId,
@@ -462,7 +479,7 @@ void IrcEventReducer::clearPresenceFacts(const QString& networkId,
     if (away)
         presence->second.clearAway();
     if (status)
-        presence->second.clearStatus();
+        presence->second.clearMetadata();
 }
 
 bool IrcEventReducer::selfAway(const QString& networkId) const noexcept
@@ -1065,10 +1082,10 @@ void IrcEventReducer::reduce(const IrcSelfAwayEvent& event)
         m_selfAway.erase(event.networkId);
 }
 
-void IrcEventReducer::reduce(const IrcMemberStatusEvent& event)
+void IrcEventReducer::reduce(const IrcMemberMetadataEvent& event)
 {
-    m_presence[event.networkId].setStatus(
-        normalize(event.networkId, event.nick), event.status);
+    m_presence[event.networkId].setMetadata(
+        normalize(event.networkId, event.nick), event.key, event.value);
 }
 
 void IrcEventReducer::reduce(const IrcTypingEvent& event)

@@ -7,6 +7,7 @@
 #include "ircignore.h"
 #include "ircmute.h"
 #include "ircopendirect.h"
+#include "ircpresence.h"
 #include "ircjointarget.h"
 #include "ircviewnotify.h"
 #include "irctcp.h"
@@ -16,6 +17,7 @@
 #include <QByteArray>
 #include <QDateTime>
 #include <QSettings>
+#include <QVariantMap>
 
 #include <algorithm>
 #include <string>
@@ -469,6 +471,28 @@ void IrcController::notifyComposerText(const QString& text)
         return;
     session->sendTyping(target, IrcTypingPhase::Done);
     m_typingTarget.clear();
+}
+
+QVariantMap IrcController::peerMetadata(const QString& networkId,
+                                        const QString& nick) const
+{
+    QVariantMap result;
+    result.insert(QStringLiteral("bot"), false);
+    if (networkId.isEmpty() || nick.isEmpty())
+        return result;
+    const IrcNickPresence facts = m_reducer.nickPresence(networkId, nick);
+    result.insert(QStringLiteral("avatar"), facts.avatar());
+    result.insert(QStringLiteral("status"), facts.status());
+    result.insert(QStringLiteral("bot"), facts.isBot());
+    result.insert(QStringLiteral("displayName"),
+                  facts.metadata(IrcMetadata::displayNameKey()));
+    result.insert(QStringLiteral("pronouns"),
+                  facts.metadata(IrcMetadata::pronounsKey()));
+    result.insert(QStringLiteral("homepage"),
+                  facts.metadata(IrcMetadata::homepageKey()));
+    result.insert(QStringLiteral("color"),
+                  facts.metadata(IrcMetadata::colorKey()));
+    return result;
 }
 
 void IrcController::handleCapabilities(const QString& networkId,

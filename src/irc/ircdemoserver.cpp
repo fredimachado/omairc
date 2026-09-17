@@ -186,6 +186,27 @@ QByteArray presenceBytes(const SeedNetwork &network)
         out += line(QStringLiteral(":server 761 %1 %2 status * :%3")
                         .arg(network.nick, nick, status.value(nick)));
     }
+    QSet<QString> members;
+    for (const SeedChannel &channel : network.channels) {
+        for (const QString &nick : channel.members)
+            members.insert(nick);
+    }
+    if (members.contains(QStringLiteral("dax"))) {
+        out += line(QStringLiteral(":server 761 %1 dax bot * :PacketBot")
+                        .arg(network.nick));
+    }
+    if (members.contains(QStringLiteral("mira"))) {
+        out += line(
+            QStringLiteral(
+                ":server 761 %1 mira avatar * :https://example.com/avatars/{size}/mira.png")
+                .arg(network.nick));
+    }
+    if (members.contains(QStringLiteral("anna"))) {
+        out += line(QStringLiteral(":server 761 %1 anna display-name * :Anna Docs")
+                        .arg(network.nick));
+        out += line(QStringLiteral(":server 761 %1 anna pronouns * :she/her")
+                        .arg(network.nick));
+    }
     return out;
 }
 
