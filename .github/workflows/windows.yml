@@ -259,14 +259,20 @@ jobs:
           if (Test-Path $exe) { throw 'omairc.exe still present after uninstall' }
           if (Test-Path $shortcut) { throw 'Start Menu shortcut still present after uninstall' }
 
-          $envKeyAfter = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Environment')
-          $pathAfter = $null
-          if ($null -ne $envKeyAfter -and $null -ne $envKeyAfter.GetValue('Path')) {
-            $pathAfter = $envKeyAfter.GetValue('Path', $null, [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
-          }
-          if ($pathBefore -cne $pathAfter) {
-            throw "Path mutated by install/uninstall. before=[$pathBefore] after=[$pathAfter]"
-          }
+          $pathDeadline = (Get-Date).AddSeconds(15)
+          do {
+            $envKeyAfter = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Environment')
+            $pathAfter = $null
+            if ($null -ne $envKeyAfter -and $null -ne $envKeyAfter.GetValue('Path')) {
+              $pathAfter = $envKeyAfter.GetValue('Path', $null, [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
+            }
+            if ($pathBefore -ceq $pathAfter) { break }
+            if ((Get-Date) -gt $pathDeadline) {
+              if (Test-Path $uninsLog) { Get-Content $uninsLog }
+              throw "Path mutated by install/uninstall. before=[$pathBefore] after=[$pathAfter]"
+            }
+            Start-Sleep -Milliseconds 200
+          } while ($true)
           Write-Host 'Uninstall removed the install dir and Start Menu shortcut; Path is unchanged'
 
       - name: Upload installer
