@@ -55,6 +55,8 @@ public:
         TypingRole,
         MutedRole,
         PresenceRole,
+        AvatarRole,
+        BotRole,
     };
 
     explicit ConversationListModel(IrcEventReducer& reducer,

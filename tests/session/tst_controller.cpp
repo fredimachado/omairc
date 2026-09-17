@@ -11,6 +11,7 @@
 #include <QSignalSpy>
 #include <QTemporaryDir>
 #include <QTest>
+#include <QVariantMap>
 
 #include <memory>
 #include <time.h>
@@ -138,6 +139,63 @@ bool logHasLabel(QAbstractItemModel *lines, const QString& label)
             return true;
     }
     return false;
+}
+
+bool logHasLabeledText(QAbstractItemModel *lines,
+                       const QString& label,
+                       const QString& text)
+{
+    for (int row = 0; row < lines->rowCount(); ++row) {
+        if (lines->data(lines->index(row, 0), NetworkLogModel::LabelRole).toString()
+                == label
+            && lines->data(lines->index(row, 0), NetworkLogModel::TextRole).toString()
+                == text)
+            return true;
+    }
+    return false;
+}
+
+QStringList logTexts(QAbstractItemModel *lines)
+{
+    QStringList texts;
+    if (!lines)
+        return texts;
+    for (int row = 0; row < lines->rowCount(); ++row) {
+        texts.append(
+            lines->data(lines->index(row, 0), NetworkLogModel::TextRole).toString());
+    }
+    return texts;
+}
+
+QByteArray aliceMetadataWelcome()
+{
+    return QByteArrayLiteral(
+        ":server CAP omairc LS :away-notify batch draft/metadata-2\r\n"
+        ":server CAP omairc ACK :away-notify batch draft/metadata-2\r\n"
+        ":server 001 omairc :Welcome\r\n"
+        ":omairc!u@h JOIN :#omarchy\r\n"
+        ":server 353 omairc = #omarchy :@omairc Alice\r\n"
+        ":server 366 omairc #omarchy :End of NAMES\r\n"
+        ":server 761 omairc Alice display-name * :Alice Docs\r\n"
+        ":server 761 omairc Alice pronouns * :she/her\r\n"
+        ":server 761 omairc Alice status * :writing docs\r\n"
+        ":server 761 omairc Alice bot * :PacketBot\r\n"
+        ":server 761 omairc Alice homepage * :https://example.com/alice\r\n"
+        ":server 761 omairc Alice color * :#aabbcc\r\n"
+        ":server 761 omairc Alice avatar * :https://example.com/alice.png\r\n");
+}
+
+QStringList aliceWhoisMetadataLines()
+{
+    return {
+        QStringLiteral("Alice is also known as Alice Docs"),
+        QStringLiteral("Alice pronouns she/her"),
+        QStringLiteral("Alice status writing docs"),
+        QStringLiteral("Alice is a bot (PacketBot)"),
+        QStringLiteral("Alice homepage https://example.com/alice"),
+        QStringLiteral("Alice color #aabbcc"),
+        QStringLiteral("Alice avatar https://example.com/alice.png"),
+    };
 }
 
 bool selectedBodiesContain(QAbstractItemModel *messages, const QString& needle)
@@ -289,6 +347,7 @@ private slots:
     void incomingActionUsesActionKindAndStripsCtcp();
     void emptyNetworkIdDoesNotSwitch();
     void presenceCapabilitiesGateAwayAndStatus();
+    void peerMetadataEpochBumpsOnInboundMetadata();
     void defaultPrefixPaintsLabelNotNick();
     void channelCloseSlashIsWrongScope();
     void partDefaultsToSelectedChannel();
@@ -400,6 +459,9 @@ private slots:
     void chatHistoryBatchShowsBodyAndTime();
     void chatHistoryAndLiveTimeUseLocalWallClock();
     void whoisFromChannelCopiesStatusLinesAsEvents();
+    void whoisFromChannelIncludesStoredMetadata();
+    void statusWhoisIncludesStoredMetadataNotTranscript();
+    void failedWhoisDoesNotEmitStoredMetadata();
     void whoisInterleavesByAskingBuffer();
     void statusWhoisSupersedesConversationWatch();
     void unsolicitedWhoisStaysOnStatus();
@@ -761,6 +823,19 @@ void ControllerTest::presenceCapabilitiesGateAwayAndStatus()
     QCOMPARE(roleAt(members, 1, MemberListModel::StatusRole),
              QStringLiteral("writing docs"));
 
+    const QVariantMap alice = controller.peerMetadata(QStringLiteral("libera"),
+                                                      QStringLiteral("Alice"));
+    QCOMPARE(alice.value(QStringLiteral("status")).toString(),
+             QStringLiteral("writing docs"));
+    QCOMPARE(alice.value(QStringLiteral("bot")).toBool(), false);
+    QVERIFY(alice.value(QStringLiteral("avatar")).toString().isEmpty());
+
+    const QVariantMap empty = controller.peerMetadata(QString(), QString());
+    QCOMPARE(empty.value(QStringLiteral("bot")).toBool(), false);
+    QCOMPARE(empty.value(QStringLiteral("status")).toString(), QString());
+    QCOMPARE(empty.value(QStringLiteral("avatar")).toString(), QString());
+    QCOMPARE(empty.value(QStringLiteral("displayName")).toString(), QString());
+
     transport->injectBytes(QByteArrayLiteral(":Alice!u@h AWAY\r\n"));
     QCOMPARE(roleAt(members, 1, MemberListModel::AwayRole), false);
 
@@ -775,6 +850,36 @@ void ControllerTest::presenceCapabilitiesGateAwayAndStatus()
     QVERIFY(!controller.hasMemberStatus());
     QCOMPARE(roleAt(members, 1, MemberListModel::AwayRole), false);
     QCOMPARE(roleAt(members, 1, MemberListModel::StatusRole), QString());
+}
+
+void ControllerTest::peerMetadataEpochBumpsOnInboundMetadata()
+{
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+                                                transport);
+    QVERIFY(session);
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    transport->completeConnect();
+    transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :batch draft/metadata-2\r\n"
+                          ":server CAP omairc ACK :batch draft/metadata-2\r\n"
+                          ":server 001 omairc :Welcome\r\n"
+                          ":server 005 omairc CHANTYPES=# PREFIX=(ov)@+ "
+                          ":are supported by this server\r\n"
+                          ":omairc!u@h JOIN :#omarchy\r\n"
+                          ":server 353 omairc = #omarchy :@omairc Alice\r\n"
+                          ":server 366 omairc #omarchy :End of NAMES\r\n"));
+    QCOMPARE(controller.peerMetadataEpoch(), 0);
+    QSignalSpy spy(&controller, &IrcController::peerMetadataChanged);
+    transport->injectBytes(
+        QByteArrayLiteral(":server 761 omairc Alice bot * :PacketBot\r\n"));
+    QCOMPARE(controller.peerMetadataEpoch(), 1);
+    QCOMPARE(spy.count(), 1);
+    QCOMPARE(controller.peerMetadata(QStringLiteral("libera"), QStringLiteral("Alice"))
+                 .value(QStringLiteral("bot"))
+                 .toBool(),
+             true);
 }
 
 void ControllerTest::defaultPrefixPaintsLabelNotNick()
@@ -4345,6 +4450,118 @@ void ControllerTest::whoisFromChannelCopiesStatusLinesAsEvents()
     for (const QString& body : expected) {
         QVERIFY(hasWhoisBody(messages, body));
         QVERIFY(logContains(controller.console()->lines(), body));
+    }
+}
+
+void ControllerTest::whoisFromChannelIncludesStoredMetadata()
+{
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+                                                 transport);
+    QVERIFY(session);
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    transport->completeConnect();
+    transport->injectBytes(aliceMetadataWelcome());
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+
+    QVERIFY(controller.sendMessage(QStringLiteral("/whois Alice")));
+    QCOMPARE(transport->writtenFrames().last(),
+             QByteArrayLiteral("WHOIS Alice Alice\r\n"));
+    QVERIFY(!framesContain(transport->writtenFrames(),
+                           QByteArrayLiteral("METADATA * GET")));
+
+    transport->injectBytes(
+        QByteArrayLiteral(":irc 311 omairc Alice ~alice user/host * :Alice\r\n"
+                          ":irc 319 omairc Alice :#omarchy\r\n"
+                          ":irc 318 omairc Alice :End of /WHOIS list.\r\n"));
+
+    auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
+    QVERIFY(messages);
+    const QStringList extras = aliceWhoisMetadataLines();
+    QStringList expected = {QStringLiteral("Alice is ~alice@user/host (Alice)")};
+    expected += extras;
+    expected << QStringLiteral("Alice is on #omarchy")
+             << QStringLiteral("End of WHOIS for Alice");
+    QCOMPARE(selectedBodies(messages).mid(selectedBodies(messages).size()
+                                          - expected.size()),
+             expected);
+    auto *lines = controller.console()->lines();
+    for (const QString& body : expected) {
+        QVERIFY(hasWhoisBody(messages, body));
+        QVERIFY(logHasLabeledText(lines, QStringLiteral("whois"), body));
+    }
+}
+
+void ControllerTest::statusWhoisIncludesStoredMetadataNotTranscript()
+{
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+                                                 transport);
+    QVERIFY(session);
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    transport->completeConnect();
+    transport->injectBytes(aliceMetadataWelcome());
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+
+    auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
+    QVERIFY(messages);
+    const QStringList before = selectedBodies(messages);
+
+    controller.openStatus(QStringLiteral("libera"));
+    QVERIFY(controller.console()->submit(QStringLiteral("/whois Alice")));
+
+    transport->injectBytes(
+        QByteArrayLiteral(":irc 311 omairc Alice ~alice user/host * :Alice\r\n"
+                          ":irc 318 omairc Alice :End of /WHOIS list.\r\n"));
+
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    QCOMPARE(selectedBodies(messages), before);
+    QVERIFY(!selectedBodiesContain(messages,
+                                   QStringLiteral("Alice is ~alice@user/host (Alice)")));
+    QVERIFY(!selectedBodiesContain(messages, QStringLiteral("End of WHOIS for Alice")));
+    auto *lines = controller.console()->lines();
+    QVERIFY(logHasLabeledText(lines, QStringLiteral("whois"),
+                              QStringLiteral("Alice is ~alice@user/host (Alice)")));
+    QVERIFY(logHasLabeledText(lines, QStringLiteral("whois"),
+                              QStringLiteral("End of WHOIS for Alice")));
+    for (const QString& body : aliceWhoisMetadataLines()) {
+        QVERIFY(!selectedBodiesContain(messages, body));
+        QVERIFY(logHasLabeledText(lines, QStringLiteral("whois"), body));
+    }
+    const QStringList texts = logTexts(lines);
+    const int user = texts.indexOf(QStringLiteral("Alice is ~alice@user/host (Alice)"));
+    const int knownAs =
+        texts.indexOf(QStringLiteral("Alice is also known as Alice Docs"));
+    const int end = texts.indexOf(QStringLiteral("End of WHOIS for Alice"));
+    QVERIFY(user >= 0);
+    QVERIFY(knownAs > user);
+    QVERIFY(end > knownAs);
+}
+
+void ControllerTest::failedWhoisDoesNotEmitStoredMetadata()
+{
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+                                                 transport);
+    QVERIFY(session);
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    transport->completeConnect();
+    transport->injectBytes(aliceMetadataWelcome());
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+
+    QVERIFY(controller.sendMessage(QStringLiteral("/whois Alice")));
+    transport->injectBytes(
+        QByteArrayLiteral(":irc 401 omairc Alice :No such nick/channel\r\n"));
+
+    auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
+    QVERIFY(messages);
+    QVERIFY(hasWhoisBody(messages, QStringLiteral("No such nick: Alice")));
+    for (const QString& body : aliceWhoisMetadataLines()) {
+        QVERIFY(!selectedBodiesContain(messages, body));
+        QVERIFY(!logContains(controller.console()->lines(), body));
     }
 }
 

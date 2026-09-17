@@ -545,6 +545,9 @@ bool keepsIncomingNumeric(const QString& command)
     case 375:
     case 376:
     case 422:
+    case 764: // ERR_METADATALIMIT
+    case 767: // ERR_KEYINVALID
+    case 769: // ERR_KEYNOPERMISSION
     case 903:
     case 904:
     case 905:

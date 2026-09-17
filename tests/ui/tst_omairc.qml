@@ -210,6 +210,8 @@ TestCase {
             conversationName: "#omarchy"
             typing: false
             presence: ""
+            avatar: ""
+            bot: false
         }
         ListElement {
             conversation: "anna"
@@ -221,6 +223,8 @@ TestCase {
             conversationName: "anna"
             typing: true
             presence: "online"
+            avatar: ""
+            bot: false
         }
     }
 
@@ -426,22 +430,22 @@ TestCase {
     ListModel {
         id: gatedMembers
 
-        ListElement { nick: "anna"; label: "anna"; status: "writing docs"; away: true }
+        ListElement { nick: "anna"; label: "anna"; status: "writing docs"; away: true; avatar: ""; bot: false }
     }
 
     ListModel {
         id: selfAwayMembers
 
-        ListElement { nick: "live-nick"; label: "~live-nick"; status: ""; away: true }
-        ListElement { nick: "anna"; label: "&anna"; status: ""; away: true }
+        ListElement { nick: "live-nick"; label: "~live-nick"; status: ""; away: true; avatar: ""; bot: false }
+        ListElement { nick: "anna"; label: "&anna"; status: ""; away: true; avatar: ""; bot: false }
     }
 
     ListModel {
         id: prefixedMembers
 
-        ListElement { nick: "mira"; label: "@mira"; status: ""; away: false }
-        ListElement { nick: "sol"; label: "+sol"; status: ""; away: false }
-        ListElement { nick: "anna"; label: "anna"; status: ""; away: false }
+        ListElement { nick: "mira"; label: "@mira"; status: ""; away: false; avatar: ""; bot: false }
+        ListElement { nick: "sol"; label: "+sol"; status: ""; away: false; avatar: ""; bot: false }
+        ListElement { nick: "anna"; label: "anna"; status: ""; away: false; avatar: ""; bot: false }
     }
 
     QtObject {
@@ -1034,7 +1038,8 @@ TestCase {
             backend: seed.backend,
             irc: seed.irc,
             slashCommands: seed.slash,
-            connection: seed.connection
+            connection: seed.connection,
+            avatarStore: appAvatarStore
         });
         verify(appWindow !== null, "The seeded Omairc window should load");
         tryCompare(appWindow, "visible", true);
@@ -2997,7 +3002,8 @@ TestCase {
             backend: seed.backend,
             irc: seed.irc,
             slashCommands: seed.slash,
-            connection: seed.connection
+            connection: seed.connection,
+            avatarStore: appAvatarStore
         });
         verify(appWindow !== null, "The seeded Omairc window should load");
         tryCompare(appWindow, "visible", true);
@@ -5049,6 +5055,217 @@ TestCase {
         compare(member.away, true);
         compare(member.Accessible.description, "writing docs");
         window.close();
+    }
+
+    function test_memberBotMarkShowsForDemoDaxNotAnna() {
+        openSeededAppWindow();
+        var members = item("membersList");
+        verify(item("membersPanel").visible);
+        var dax = members.itemAtIndex(memberIndex("dax"));
+        verify(dax !== null, "The dax member delegate should be rendered");
+        compare(dax.bot, true);
+        var daxBot = findChild(dax, "member-bot-dax");
+        verify(daxBot !== null, "dax should have a bot mark");
+        compare(daxBot.visible, true);
+        compare(daxBot.shown, true);
+        var daxLabel = null;
+        var kids = dax.children;
+        // Prefer the nick label that sits in the same Row as the bot mark.
+        function findLabelNearBot(node) {
+            if (!node || !node.children)
+                return null;
+            for (var i = 0; i < node.children.length; ++i) {
+                var child = node.children[i];
+                if (child === daxBot)
+                    continue;
+                if (child.text === dax.label)
+                    return child;
+                var nested = findLabelNearBot(child);
+                if (nested)
+                    return nested;
+            }
+            return null;
+        }
+        daxLabel = findLabelNearBot(dax);
+        verify(daxLabel !== null, "dax nick label should exist");
+        // Bot mark sits beside the nick, not at the far right of the row.
+        compare(daxBot.x < daxLabel.x + daxLabel.width + appWindow.scaledSize(12), true);
+        compare(daxBot.x > daxLabel.x + daxLabel.width - 2, true);
+
+        var anna = members.itemAtIndex(memberIndex("anna"));
+        verify(anna !== null, "The anna member delegate should be rendered");
+        compare(anna.bot, false);
+        compare(anna.away, false);
+        var annaBot = findChild(anna, "member-bot-anna");
+        verify(annaBot !== null, "anna should still instantiate a hidden bot mark");
+        compare(annaBot.visible, false);
+        var annaStatus = findChild(anna, "member-status-anna");
+        verify(annaStatus !== null, "anna status line should exist");
+        compare(annaStatus.visible, true);
+        compare(annaStatus.text, "writing docs");
+        compare(anna.Accessible.description, "writing docs");
+    }
+
+    function test_demoMiraAvatarReachesImageReady() {
+        openSeededAppWindow();
+        function findPhoto(node) {
+            if (!node)
+                return null;
+            if (node.objectName === "nickGlyphPhoto")
+                return node;
+            var children = node.children || [];
+            for (var i = 0; i < children.length; ++i) {
+                var found = findPhoto(children[i]);
+                if (found)
+                    return found;
+            }
+            return null;
+        }
+        function assertDemoAvatarReady(nick, url) {
+            var members = item("membersList");
+            var row = members.itemAtIndex(memberIndex(nick));
+            verify(row !== null, nick + " member row should render");
+            compare(row.avatar, url);
+            var photo = findPhoto(row);
+            verify(photo !== null, nick + " glyph photo should exist");
+            tryCompare(photo, "status", Image.Ready);
+            tryCompare(photo, "visible", true);
+        }
+        assertDemoAvatarReady("mira", "qrc:/demo/mira-avatar.png");
+        assertDemoAvatarReady("anna", "qrc:/demo/anna-avatar.png");
+        assertDemoAvatarReady("kai", "qrc:/demo/kai-avatar.png");
+    }
+
+    function test_loadPeerAvatarsPreferenceGatesStoreSource() {
+        openSeededAppWindow();
+        compare(seed.irc.loadPeerAvatars, true);
+        var mira = item("membersList").itemAtIndex(memberIndex("mira"));
+        var glyph = null;
+        function findGlyph(node) {
+            if (!node)
+                return null;
+            if (node.avatarUrl === "qrc:/demo/mira-avatar.png")
+                return node;
+            var children = node.children || [];
+            for (var i = 0; i < children.length; ++i) {
+                var found = findGlyph(children[i]);
+                if (found)
+                    return found;
+            }
+            return null;
+        }
+        glyph = findGlyph(mira);
+        verify(glyph !== null, "mira NickGlyph should bind the bundled avatar");
+        tryVerify(function() {
+            return glyph.storeSource.indexOf("image://omairc-avatar/") === 0;
+        });
+        seed.irc.loadPeerAvatars = false;
+        tryCompare(glyph, "storeSource", "");
+        seed.irc.loadPeerAvatars = true;
+        tryVerify(function() {
+            return glyph.storeSource.indexOf("image://omairc-avatar/") === 0;
+        });
+    }
+
+    function test_memberBotMarkAppearsAfterLateMetadata() {
+        openSeededAppWindow();
+        var members = item("membersList");
+        var anna = members.itemAtIndex(memberIndex("anna"));
+        verify(anna !== null, "The anna member delegate should be rendered");
+        compare(anna.bot, false);
+        var annaBot = findChild(anna, "member-bot-anna");
+        compare(annaBot.visible, false);
+
+        seed.injectOmarchy(":server 761 fred anna bot * :PacketBot\r\n");
+        tryCompare(anna, "bot", true);
+        tryCompare(annaBot, "shown", true);
+        tryCompare(annaBot, "visible", true);
+    }
+
+    function test_identityFooterBotAndAvatarRefreshAfterSelfMetadata() {
+        openSeededAppWindow();
+        var selfBot = item("selfBotMark");
+        compare(selfBot.shown, false);
+        compare(selfBot.visible, false);
+        compare(appWindow.peerBot(appWindow.selfNick), false);
+        compare(appWindow.peerAvatar(appWindow.selfNick), "");
+
+        seed.injectOmarchy(":server 761 fred fred bot * :ReviewBot\r\n");
+        tryCompare(selfBot, "shown", true);
+        tryCompare(selfBot, "visible", true);
+        tryVerify(function() {
+            return appWindow.peerBot(appWindow.selfNick) === true;
+        });
+
+        seed.injectOmarchy(
+            ":server 761 fred fred avatar * :https://example.com/self.png\r\n");
+        tryVerify(function() {
+            return appWindow.peerAvatar(appWindow.selfNick)
+                === "https://example.com/self.png";
+        });
+        var selfGlyph = item("selfNickGlyph");
+        tryCompare(selfGlyph, "avatarUrl", "https://example.com/self.png");
+    }
+
+    function test_transcriptBotAndAvatarRefreshAfterLateMetadata() {
+        openSeededAppWindow();
+        // nora has no seeded avatar/bot — unlike anna/mira/kai.
+        injectOmarchyChat("nora", "#omarchy", "late-meta-chrome", "12:30");
+        var row = renderedRowWithBody("late-meta-chrome");
+        compare(row.author, "nora");
+        compare(row.authorBot, false);
+        compare(row.authorAvatar, "");
+        var bot = findChild(row, "message-bot-nora");
+        verify(bot !== null, "Transcript bot mark should exist for nora");
+        compare(bot.shown, false);
+
+        seed.injectOmarchy(
+            ":server 761 fred nora bot * :PacketBot\r\n"
+            + ":server 761 fred nora avatar * :https://example.com/nora.png\r\n");
+        tryCompare(row, "authorBot", true);
+        tryCompare(row, "authorAvatar", "https://example.com/nora.png");
+        tryCompare(bot, "shown", true);
+        tryCompare(bot, "visible", true);
+    }
+
+    function test_typingTranscriptBotRefreshesAfterLateMetadata() {
+        openSeededAppWindow();
+        mouseClick(namedItem(liveConversation("anna")));
+        tryCompare(appWindow, "currentConversation", "anna");
+
+        var footer = item("typingTranscript");
+        tryCompare(footer, "visible", true);
+        tryCompare(footer, "grouped", false);
+        var header = findChild(footer, "typingTranscriptHeader");
+        verify(header !== null, "The typing header should exist");
+        compare(header.bot, false);
+        var bot = findChild(header, "message-bot-anna");
+        verify(bot !== null, "Typing header should host a bot mark");
+        compare(bot.shown, false);
+        compare(appWindow.peerBot("anna"), false);
+
+        seed.injectOmarchy(":server 761 fred anna bot * :PacketBot\r\n");
+        tryVerify(function() {
+            return appWindow.peerBot("anna") === true;
+        });
+        tryCompare(header, "bot", true);
+        tryCompare(bot, "shown", true);
+        tryCompare(bot, "visible", true);
+    }
+
+    function test_dmSidebarBotMarkAppearsAfterLateMetadata() {
+        openSeededAppWindow();
+        var annaRow = namedItem(liveConversation("anna"));
+        verify(annaRow !== null, "Seeded anna DM row should exist");
+        compare(annaRow.bot, false);
+        var bot = findChild(annaRow, "conversation-bot-anna");
+        verify(bot !== null, "DM sidebar bot mark should exist");
+        compare(bot.shown, false);
+
+        seed.injectOmarchy(":server 761 fred anna bot * :PacketBot\r\n");
+        tryCompare(annaRow, "bot", true);
+        tryCompare(bot, "shown", true);
+        tryCompare(bot, "visible", true);
     }
 
     function test_memberPresenceShowsOurOwnAwayWithoutAwayNotify() {

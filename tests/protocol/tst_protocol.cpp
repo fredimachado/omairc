@@ -51,6 +51,14 @@ std::vector<IrcEvent> translate(const IrcMessage& message)
         QStringLiteral("net"), QStringLiteral("me"), features, message);
 }
 
+std::vector<IrcEvent> translateLine(const char *line)
+{
+    const auto parsed = IrcParser::parse(line);
+    if (!parsed)
+        return {};
+    return translate(*parsed.value);
+}
+
 QDateTime exampleServerTime()
 {
     return QDateTime(QDate(2011, 10, 19), QTime(16, 40, 51, 620), QTimeZone::UTC);
@@ -100,6 +108,12 @@ private slots:
     void parsesAndFormatsCtcp();
     void buildsJoin();
     void rejectsInvalidJoin();
+    void translatesMetadataForStatusAvatarAndBot();
+    void translates761DisplayName();
+    void translates766ClearingAKey();
+    void ignores766WithoutNamedKey();
+    void ignoresUnknownAndChannelMetadata();
+    void metadataStatusDoesNotImplyAway();
 };
 
 void ProtocolTest::parsesTrailingParameters()
@@ -656,6 +670,82 @@ void ProtocolTest::rejectsInvalidJoin()
 
     const auto tooLong = IrcCommandBuilder::join(std::string(508, 'A'));
     QVERIFY(!tooLong);
+}
+
+void ProtocolTest::translatesMetadataForStatusAvatarAndBot()
+{
+    const std::vector<IrcEvent> status = translateLine(
+        "METADATA Alice status * :writing docs");
+    QCOMPARE(status.size(), std::size_t(1));
+    const auto *statusEvent = std::get_if<IrcMemberMetadataEvent>(&status.front());
+    QVERIFY(statusEvent);
+    QCOMPARE(statusEvent->networkId, QStringLiteral("net"));
+    QCOMPARE(statusEvent->nick, QStringLiteral("Alice"));
+    QCOMPARE(statusEvent->key, QStringLiteral("status"));
+    QCOMPARE(statusEvent->value, QStringLiteral("writing docs"));
+
+    const std::vector<IrcEvent> avatar = translateLine(
+        "METADATA Alice avatar * :https://example.com/avatars/{size}/mira.png");
+    QCOMPARE(avatar.size(), std::size_t(1));
+    const auto *avatarEvent = std::get_if<IrcMemberMetadataEvent>(&avatar.front());
+    QVERIFY(avatarEvent);
+    QCOMPARE(avatarEvent->key, QStringLiteral("avatar"));
+    QCOMPARE(avatarEvent->value,
+             QStringLiteral("https://example.com/avatars/{size}/mira.png"));
+
+    const std::vector<IrcEvent> bot = translateLine("METADATA Alice bot * :PacketBot");
+    QCOMPARE(bot.size(), std::size_t(1));
+    const auto *botEvent = std::get_if<IrcMemberMetadataEvent>(&bot.front());
+    QVERIFY(botEvent);
+    QCOMPARE(botEvent->key, QStringLiteral("bot"));
+    QCOMPARE(botEvent->value, QStringLiteral("PacketBot"));
+}
+
+void ProtocolTest::translates761DisplayName()
+{
+    const std::vector<IrcEvent> events = translateLine(
+        ":server 761 me Alice display-name * :Anna Docs");
+    QCOMPARE(events.size(), std::size_t(1));
+    const auto *event = std::get_if<IrcMemberMetadataEvent>(&events.front());
+    QVERIFY(event);
+    QCOMPARE(event->nick, QStringLiteral("Alice"));
+    QCOMPARE(event->key, QStringLiteral("display-name"));
+    QCOMPARE(event->value, QStringLiteral("Anna Docs"));
+}
+
+void ProtocolTest::translates766ClearingAKey()
+{
+    const std::vector<IrcEvent> events = translateLine(
+        ":server 766 me Alice avatar :no matching key");
+    QCOMPARE(events.size(), std::size_t(1));
+    const auto *event = std::get_if<IrcMemberMetadataEvent>(&events.front());
+    QVERIFY(event);
+    QCOMPARE(event->nick, QStringLiteral("Alice"));
+    QCOMPARE(event->key, QStringLiteral("avatar"));
+    QVERIFY(event->value.isEmpty());
+}
+
+void ProtocolTest::ignores766WithoutNamedKey()
+{
+    QVERIFY(translateLine(":server 766 me Alice :no matching key").empty());
+}
+
+void ProtocolTest::ignoresUnknownAndChannelMetadata()
+{
+    QVERIFY(translateLine("METADATA Alice unknown * :nope").empty());
+    QVERIFY(translateLine(":server 761 me Alice unknown * :nope").empty());
+    QVERIFY(translateLine("METADATA #omarchy status * :nope").empty());
+    QVERIFY(translateLine(":server 761 me #omarchy status * :nope").empty());
+    QVERIFY(translateLine(":server 766 me #omarchy status :no key").empty());
+}
+
+void ProtocolTest::metadataStatusDoesNotImplyAway()
+{
+    const std::vector<IrcEvent> events = translateLine(
+        "METADATA Alice status * :writing");
+    QCOMPARE(events.size(), std::size_t(1));
+    QVERIFY(std::get_if<IrcMemberMetadataEvent>(&events.front()));
+    QVERIFY(!std::get_if<IrcAwayEvent>(&events.front()));
 }
 
 int runProtocolTests(int argc, char **argv)

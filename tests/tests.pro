@@ -1,4 +1,4 @@
-QT += core gui network testlib
+QT += core gui network quick testlib
 unix:!macx: QT += dbus
 
 macx {
@@ -44,6 +44,8 @@ HEADERS += \
     ../src/irc/irctyping.h \
     ../src/irc/irctypingpublisher.h \
     ../src/irc/ircpresence.h \
+    ../src/irc/ircavatarurl.h \
+    ../src/irc/ircavatarstore.h \
     ../src/irc/irctcp.h \
     ../src/irc/ircignore.h \
     ../src/irc/ircmute.h \
@@ -110,6 +112,8 @@ SOURCES += \
     ../src/irc/irctyping.cpp \
     ../src/irc/irctypingpublisher.cpp \
     ../src/irc/ircpresence.cpp \
+    ../src/irc/ircavatarurl.cpp \
+    ../src/irc/ircavatarstore.cpp \
     ../src/irc/irctcp.cpp \
     ../src/irc/ircignore.cpp \
     ../src/irc/ircmute.cpp \
@@ -157,4 +161,6 @@ SOURCES += \
     session/tst_highlight.cpp \
     session/tst_typing.cpp \
     session/tst_reducer.cpp \
+    session/tst_avatarurl.cpp \
+    session/tst_avatarstore.cpp \
     models/tst_models.cpp

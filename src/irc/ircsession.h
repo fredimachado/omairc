@@ -15,6 +15,7 @@
 
 #include "irccapability.h"
 #include "irccapabilitynegotiation.h"
+#include "ircpresence.h"
 #include "irccasemapping.h"
 #include "ircframer.h"
 #include "irchistorybatch.h"
@@ -133,6 +134,7 @@ public:
     State state() const;
     int reconnectAttempt() const;
     IrcCapabilitySet capabilities() const;
+    IrcMetadataCapability metadataCapability() const;
     bool historyPending() const;
 
     using IgnoreFilter = std::function<bool(const IrcMessage&, const QString&)>;
@@ -155,6 +157,8 @@ public slots:
     bool setTopic(const QString& channel, const QString& topic);
     bool setAway(const QString& reason = {});
     bool clearAway();
+    bool setOwnMetadata(const QString& key, const QString& value);
+    bool clearOwnMetadata(const QString& key);
     bool changeNick(const QString& nick);
     bool quit(const QString& reason = {});
     bool whois(const QString& nick);
@@ -277,6 +281,7 @@ private:
     std::optional<IrcStsAdvertisement> m_pendingSts;
     std::optional<qint64> m_stsDuration;
     IrcCapabilitySet m_publishedCapabilities;
+    IrcMetadataCapability m_metadataCapability;
     IrcTypingPublisher m_typing;
     struct OpenBatch
     {

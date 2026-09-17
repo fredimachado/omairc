@@ -2,6 +2,7 @@
 #include "conversationlistmodel.h"
 #include "fakeirctransport.h"
 #include "irccapability.h"
+#include "ircavatarstore.h"
 #include "ircconnection.h"
 #include "irccontroller.h"
 #include "ircnetworkprofile.h"
@@ -27,6 +28,7 @@
 #include <QMetaObject>
 #include <QAbstractItemModel>
 #include <QQmlApplicationEngine>
+#include <QQmlEngine>
 #include <QSignalSpy>
 #include <QQmlComponent>
 #include <QQuickItem>
@@ -100,6 +102,12 @@ bool writeLiberaProfile()
         return false;
     IrcProfileStore().save(profile);
     return true;
+}
+
+void bindAvatarStore(QQmlEngine *engine, QVariantMap *properties)
+{
+    properties->insert(QStringLiteral("avatarStore"),
+                       QVariant::fromValue(ircInstallAvatarStore(engine)));
 }
 
 int chromeIndex(const QVector<TranscriptRowChrome> &rows, const QString &body)
@@ -586,6 +594,7 @@ void LiveUiTest::consecutiveSameAuthorMinuteGroupsThroughIrcEvent()
     properties.insert(QStringLiteral("irc"), QVariant::fromValue(&controller));
     properties.insert(QStringLiteral("connection"), QVariant::fromValue(&connection));
     properties.insert(QStringLiteral("slashCommands"), QVariant::fromValue(&slash));
+    bindAvatarStore(&engine, &properties);
     std::unique_ptr<QObject> root(component.createWithInitialProperties(properties));
     QVERIFY2(root.get(), qPrintable(component.errorString()));
     auto *window = qobject_cast<QQuickWindow *>(root.get());
@@ -687,6 +696,7 @@ void LiveUiTest::memberJoinPartModeUpdatesWithoutReset()
     properties.insert(QStringLiteral("irc"), QVariant::fromValue(&controller));
     properties.insert(QStringLiteral("connection"), QVariant::fromValue(&connection));
     properties.insert(QStringLiteral("slashCommands"), QVariant::fromValue(&slash));
+    bindAvatarStore(&engine, &properties);
     std::unique_ptr<QObject> root(component.createWithInitialProperties(properties));
     QVERIFY2(root.get(), qPrintable(component.errorString()));
     auto *window = qobject_cast<QQuickWindow *>(root.get());
@@ -799,6 +809,7 @@ void LiveUiTest::replayAndLiveSameAuthorMinuteDoNotGroupThroughIrcEvent()
     properties.insert(QStringLiteral("irc"), QVariant::fromValue(&controller));
     properties.insert(QStringLiteral("connection"), QVariant::fromValue(&connection));
     properties.insert(QStringLiteral("slashCommands"), QVariant::fromValue(&slash));
+    bindAvatarStore(&engine, &properties);
     std::unique_ptr<QObject> root(component.createWithInitialProperties(properties));
     QVERIFY2(root.get(), qPrintable(component.errorString()));
     auto *window = qobject_cast<QQuickWindow *>(root.get());
@@ -895,6 +906,7 @@ void LiveUiTest::bouncerQueryReplayRendersDirectMessageInSidebar()
     properties.insert(QStringLiteral("irc"), QVariant::fromValue(&controller));
     properties.insert(QStringLiteral("connection"), QVariant::fromValue(&connection));
     properties.insert(QStringLiteral("slashCommands"), QVariant::fromValue(&slash));
+    bindAvatarStore(&engine, &properties);
     std::unique_ptr<QObject> root(component.createWithInitialProperties(properties));
     QVERIFY2(root.get(), qPrintable(component.errorString()));
     auto *window = qobject_cast<QQuickWindow *>(root.get());
@@ -990,6 +1002,7 @@ void LiveUiTest::ctrlFFindsLiveTranscriptAndStatus()
     properties.insert(QStringLiteral("irc"), QVariant::fromValue(&controller));
     properties.insert(QStringLiteral("connection"), QVariant::fromValue(&connection));
     properties.insert(QStringLiteral("slashCommands"), QVariant::fromValue(&slash));
+    bindAvatarStore(&engine, &properties);
     std::unique_ptr<QObject> root(component.createWithInitialProperties(properties));
     QVERIFY2(root.get(), qPrintable(component.errorString()));
     auto *window = qobject_cast<QQuickWindow *>(root.get());

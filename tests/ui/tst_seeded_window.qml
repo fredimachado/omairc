@@ -27,6 +27,7 @@ TestCase {
             irc: world.irc
             connection: world.connection
             slashCommands: world.slash
+            avatarStore: appAvatarStore
         }
     }
 

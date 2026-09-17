@@ -3,16 +3,19 @@
 #include <QSettings>
 #include <QTemporaryDir>
 #include <QTest>
+#include <QVariant>
 
 #include "fakeirctransport.h"
 #include "ircchannelmode.h"
 #include "irccommand.h"
 #include "irccontroller.h"
 #include "ircjointarget.h"
+#include "ircpresence.h"
 #include "ircserverfeatures.h"
 #include "ircsession.h"
 #include "ircslashcomplete.h"
 #include "ircstatusentry.h"
+#include "memberlistmodel.h"
 #include "messagelistmodel.h"
 #include "networklogmodel.h"
 
@@ -39,6 +42,15 @@ void welcome(FakeIrcTransport *transport)
     transport->completeConnect();
     transport->injectBytes(
         QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
+                          ":server 001 omairc :Welcome\r\n"));
+}
+
+void welcomeMetadata(FakeIrcTransport *transport)
+{
+    transport->completeConnect();
+    transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :away-notify batch draft/metadata-2\r\n"
+                          ":server CAP omairc ACK :away-notify batch draft/metadata-2\r\n"
                           ":server 001 omairc :Welcome\r\n"));
 }
 
@@ -91,6 +103,20 @@ bool framesContain(const QByteArrayList& frames, const QByteArray& needle)
     return false;
 }
 
+QVariant memberRole(QAbstractItemModel *members, const QString& nick, int role)
+{
+    if (!members)
+        return {};
+    for (int row = 0; row < members->rowCount(); ++row) {
+        if (members->data(members->index(row, 0), MemberListModel::NickRole)
+                .toString()
+            == nick) {
+            return members->data(members->index(row, 0), role);
+        }
+    }
+    return {};
+}
+
 struct ParsedChannelMode {
     bool ok = false;
     bool query = false;
@@ -135,6 +161,7 @@ private slots:
     void parseTopic();
     void parseNotice();
     void parseAwayAndBack();
+    void parseStatus();
     void parseWhois();
     void parseCtcpQueries();
     void parseMode();
@@ -149,6 +176,10 @@ private slots:
     void joinSendsKeyedFrames();
     void statusSubmitDoesNotSendAction();
     void awayAndBackWriteAwayFrames();
+    void statusWritesMetadataFrames();
+    void statusRefusesOnMetadataError();
+    void statusRefusesOnMetadataFailReplies();
+    void statusRefusesNonEmptyWhenMaxValueBytesZero();
     void whoisSendsAndDefaults();
     void ctcpSendsAndDefaults();
     void modeSendsAndRefuses();
@@ -388,6 +419,38 @@ void CommandTest::parseAwayAndBack()
     const IrcCommand escaped = IrcCommand::parse(QStringLiteral("//away lunch"));
     QCOMPARE(escaped.verb, IrcCommand::Verb::Say);
     QCOMPARE(escaped.argument, QStringLiteral("/away lunch"));
+    QVERIFY(escaped.isLiveMessage());
+}
+
+void CommandTest::parseStatus()
+{
+    const IrcCommand empty = IrcCommand::parse(QStringLiteral("/status"));
+    QCOMPARE(empty.verb, IrcCommand::Verb::Status);
+    QVERIFY(empty.argument.isEmpty());
+    QCOMPARE(empty.name, QStringLiteral("/status"));
+    QVERIFY(!empty.isLiveMessage());
+    QVERIFY(empty.allowedOn(IrcComposerSurface::Conversation));
+    QVERIFY(empty.allowedOn(IrcComposerSurface::Status));
+
+    const IrcCommand writing = IrcCommand::parse(QStringLiteral("/status writing docs"));
+    QCOMPARE(writing.verb, IrcCommand::Verb::Status);
+    QCOMPARE(writing.argument, QStringLiteral("writing docs"));
+    QCOMPARE(writing.name, QStringLiteral("/status"));
+    QVERIFY(!writing.isLiveMessage());
+
+    const IrcCommand foldedClear = IrcCommand::parse(QStringLiteral("/STATUS clear"));
+    QCOMPARE(foldedClear.verb, IrcCommand::Verb::Status);
+    QCOMPARE(foldedClear.argument, QStringLiteral("clear"));
+    QCOMPARE(foldedClear.name, QStringLiteral("/STATUS"));
+    QVERIFY(!foldedClear.isLiveMessage());
+
+    const IrcCommand keepClear = IrcCommand::parse(QStringLiteral("/status clear the table"));
+    QCOMPARE(keepClear.verb, IrcCommand::Verb::Status);
+    QCOMPARE(keepClear.argument, QStringLiteral("clear the table"));
+
+    const IrcCommand escaped = IrcCommand::parse(QStringLiteral("//status lunch"));
+    QCOMPARE(escaped.verb, IrcCommand::Verb::Say);
+    QCOMPARE(escaped.argument, QStringLiteral("/status lunch"));
     QVERIFY(escaped.isLiveMessage());
 }
 
@@ -735,7 +798,7 @@ void CommandTest::catalogLookupAndScope()
     QVERIFY(!IrcVerbTable::find(IrcCommand::Verb::Empty));
     QVERIFY(!IrcVerbTable::find(IrcCommand::Verb::Unknown));
 
-    QCOMPARE(IrcVerbTable::all().size(), 38);
+    QCOMPARE(IrcVerbTable::all().size(), 39);
     for (const IrcVerbSpec& row : IrcVerbTable::all())
         QVERIFY(row.name != QLatin1String("say"));
 
@@ -815,6 +878,15 @@ void CommandTest::catalogLookupAndScope()
     QCOMPARE(back->scope, IrcVerbScope::Either);
     QVERIFY(back->wrongScopeText.isEmpty());
     QVERIFY(back->aliases.isEmpty());
+
+    const IrcVerbSpec *status = IrcVerbTable::lookup(QStringLiteral("status"));
+    QVERIFY(status);
+    QCOMPARE(status->verb, IrcCommand::Verb::Status);
+    QCOMPARE(status->name, QStringLiteral("status"));
+    QCOMPARE(status->usage, QStringLiteral("/status [text|clear]"));
+    QCOMPARE(status->scope, IrcVerbScope::Either);
+    QVERIFY(status->wrongScopeText.isEmpty());
+    QVERIFY(status->aliases.isEmpty());
 
     const IrcVerbSpec *whois = IrcVerbTable::lookup(QStringLiteral("whois"));
     QVERIFY(whois);
@@ -982,9 +1054,9 @@ void CommandTest::catalogLookupAndScope()
     QCOMPARE(help->usage, QStringLiteral("/help"));
     QCOMPARE(help->scope, IrcVerbScope::Either);
 
-    const QVector<IrcVerbSpec> status = IrcVerbTable::visibleOn(IrcComposerSurface::Status);
-    QCOMPARE(status.size(), 30);
-    for (const IrcVerbSpec& row : status) {
+    const QVector<IrcVerbSpec> statusRows = IrcVerbTable::visibleOn(IrcComposerSurface::Status);
+    QCOMPARE(statusRows.size(), 31);
+    for (const IrcVerbSpec& row : statusRows) {
         QVERIFY(row.allowedOn(IrcComposerSurface::Status));
         QVERIFY(row.verb != IrcCommand::Verb::Action);
         QVERIFY(row.verb != IrcCommand::Verb::Close);
@@ -998,7 +1070,7 @@ void CommandTest::catalogLookupAndScope()
 
     const QVector<IrcVerbSpec> conversation =
         IrcVerbTable::visibleOn(IrcComposerSurface::Conversation);
-    QCOMPARE(conversation.size(), 38);
+    QCOMPARE(conversation.size(), 39);
     bool sawMe = false;
     bool sawClose = false;
     bool sawQuery = false;
@@ -1007,6 +1079,7 @@ void CommandTest::catalogLookupAndScope()
     bool sawNotice = false;
     bool sawAway = false;
     bool sawBack = false;
+    bool sawStatus = false;
     bool sawWhois = false;
     bool sawPing = false;
     bool sawTime = false;
@@ -1044,6 +1117,8 @@ void CommandTest::catalogLookupAndScope()
             sawAway = true;
         if (row.name == QLatin1String("back"))
             sawBack = true;
+        if (row.name == QLatin1String("status"))
+            sawStatus = true;
         if (row.name == QLatin1String("whois"))
             sawWhois = true;
         if (row.name == QLatin1String("ping"))
@@ -1093,6 +1168,7 @@ void CommandTest::catalogLookupAndScope()
     QVERIFY(sawNotice);
     QVERIFY(sawAway);
     QVERIFY(sawBack);
+    QVERIFY(sawStatus);
     QVERIFY(sawWhois);
     QVERIFY(sawPing);
     QVERIFY(sawTime);
@@ -1400,6 +1476,324 @@ void CommandTest::awayAndBackWriteAwayFrames()
     QCOMPARE(lonely.lastError(), QStringLiteral("Not connected"));
     QVERIFY(!lonely.sendMessage(QStringLiteral("/back")));
     QCOMPARE(lonely.lastError(), QStringLiteral("Not connected"));
+}
+
+void CommandTest::statusWritesMetadataFrames()
+{
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    IrcSession *session = controller.addSession(config(), transport);
+    QVERIFY(session);
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    welcomeMetadata(transport);
+    QCOMPARE(session->state(), IrcSession::State::Registered);
+    transport->injectBytes(
+        QByteArrayLiteral(":omairc!u@h JOIN :#omarchy\r\n"
+                          ":server 353 omairc = #omarchy :omairc Alice\r\n"
+                          ":server 366 omairc #omarchy :End of NAMES\r\n"));
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    QVERIFY(controller.hasMemberStatus());
+    QVERIFY(!controller.selfAway());
+
+    auto *members = qobject_cast<QAbstractItemModel *>(controller.members());
+    QVERIFY(members);
+    auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
+    QVERIFY(messages);
+    IrcStatusConsole *console = controller.console();
+    QVERIFY(console);
+
+    const int beforeEmpty = transport->writtenFrames().size();
+    const int statusRowsBeforeEmpty = console->lines()->rowCount();
+    QVERIFY(controller.sendMessage(QStringLiteral("/status")));
+    QCOMPARE(transport->writtenFrames().size(), beforeEmpty);
+    QVERIFY(!framesContain(transport->writtenFrames().mid(beforeEmpty),
+                           QByteArrayLiteral("METADATA")));
+    QCOMPARE(console->lines()->rowCount(), statusRowsBeforeEmpty);
+    QVERIFY(selectedBodiesContain(
+        messages, QStringLiteral("No standing status. Use /status <text> or /status clear.")));
+    QCOMPARE(controller.peerMetadata(QStringLiteral("libera"), QStringLiteral("omairc"))
+                 .value(QStringLiteral("status"))
+                 .toString(),
+             QString());
+
+    QVERIFY(controller.sendMessage(QStringLiteral("/status writing docs")));
+    QCOMPARE(transport->writtenFrames().last(),
+             QByteArrayLiteral("METADATA * SET status :writing docs\r\n"));
+    QVERIFY(!framesContain(QByteArrayList{transport->writtenFrames().last()},
+                           QByteArrayLiteral("AWAY")));
+    QVERIFY(!controller.selfAway());
+    QCOMPARE(controller.peerMetadata(QStringLiteral("libera"), QStringLiteral("omairc"))
+                 .value(QStringLiteral("status"))
+                 .toString(),
+             QString());
+    QVERIFY(!selectedBodiesContain(messages,
+                                   QStringLiteral("Standing status set to writing docs.")));
+    transport->injectBytes(
+        QByteArrayLiteral(":server 761 omairc omairc status * :writing docs\r\n"));
+    QCOMPARE(controller.peerMetadata(QStringLiteral("libera"), QStringLiteral("omairc"))
+                 .value(QStringLiteral("status"))
+                 .toString(),
+             QStringLiteral("writing docs"));
+    QCOMPARE(memberRole(members, QStringLiteral("omairc"), MemberListModel::StatusRole),
+             QStringLiteral("writing docs"));
+    QCOMPARE(memberRole(members, QStringLiteral("omairc"), MemberListModel::AwayRole),
+             false);
+    QVERIFY(selectedBodiesContain(messages,
+                                  QStringLiteral("Standing status set to writing docs.")));
+
+    const int beforeQuery = transport->writtenFrames().size();
+    QVERIFY(controller.sendMessage(QStringLiteral("/status")));
+    QCOMPARE(transport->writtenFrames().size(), beforeQuery);
+    QVERIFY(!framesContain(transport->writtenFrames().mid(beforeQuery),
+                           QByteArrayLiteral("METADATA")));
+    QVERIFY(selectedBodiesContain(messages, QStringLiteral("Standing status: writing docs")));
+
+    QVERIFY(controller.sendMessage(QStringLiteral("/status clear the table")));
+    QCOMPARE(transport->writtenFrames().last(),
+             QByteArrayLiteral("METADATA * SET status :clear the table\r\n"));
+    QCOMPARE(controller.peerMetadata(QStringLiteral("libera"), QStringLiteral("omairc"))
+                 .value(QStringLiteral("status"))
+                 .toString(),
+             QStringLiteral("writing docs"));
+    QVERIFY(!selectedBodiesContain(
+        messages, QStringLiteral("Standing status set to clear the table.")));
+    transport->injectBytes(
+        QByteArrayLiteral(":server 761 omairc omairc status * :clear the table\r\n"));
+    QCOMPARE(controller.peerMetadata(QStringLiteral("libera"), QStringLiteral("omairc"))
+                 .value(QStringLiteral("status"))
+                 .toString(),
+             QStringLiteral("clear the table"));
+    QVERIFY(selectedBodiesContain(
+        messages, QStringLiteral("Standing status set to clear the table.")));
+
+    QVERIFY(controller.sendMessage(QStringLiteral("/STATUS clear")));
+    QCOMPARE(transport->writtenFrames().last(),
+             QByteArrayLiteral("METADATA * SET status\r\n"));
+    QCOMPARE(controller.peerMetadata(QStringLiteral("libera"), QStringLiteral("omairc"))
+                 .value(QStringLiteral("status"))
+                 .toString(),
+             QStringLiteral("clear the table"));
+    QVERIFY(!selectedBodiesContain(messages, QStringLiteral("Standing status cleared.")));
+    transport->injectBytes(
+        QByteArrayLiteral(":server 766 omairc omairc status :unset\r\n"));
+    QCOMPARE(controller.peerMetadata(QStringLiteral("libera"), QStringLiteral("omairc"))
+                 .value(QStringLiteral("status"))
+                 .toString(),
+             QString());
+    QCOMPARE(memberRole(members, QStringLiteral("omairc"), MemberListModel::StatusRole),
+             QString());
+    QVERIFY(selectedBodiesContain(messages, QStringLiteral("Standing status cleared.")));
+    QVERIFY(!controller.selfAway());
+    QVERIFY(!framesContain(QByteArrayList{transport->writtenFrames().last()},
+                           QByteArrayLiteral("AWAY")));
+
+    const int statusRowsBeforeSubmit = console->lines()->rowCount();
+    const int transcriptHitsBeforeSubmit =
+        selectedBodyHits(messages, QStringLiteral("Standing status set to lunch."));
+    QVERIFY(console->submit(QStringLiteral("/status lunch")));
+    QCOMPARE(transport->writtenFrames().last(),
+             QByteArrayLiteral("METADATA * SET status :lunch\r\n"));
+    QCOMPARE(controller.peerMetadata(QStringLiteral("libera"), QStringLiteral("omairc"))
+                 .value(QStringLiteral("status"))
+                 .toString(),
+             QString());
+    QVERIFY(!logContains(console->lines(), QStringLiteral("Standing status set to lunch.")));
+    transport->injectBytes(
+        QByteArrayLiteral(":server 761 omairc omairc status * :lunch\r\n"));
+    QVERIFY(logContains(console->lines(), QStringLiteral("Standing status set to lunch.")));
+    QCOMPARE(console->lines()->rowCount(), statusRowsBeforeSubmit + 1);
+    QCOMPARE(selectedBodyHits(messages, QStringLiteral("Standing status set to lunch.")),
+             transcriptHitsBeforeSubmit);
+    QCOMPARE(controller.peerMetadata(QStringLiteral("libera"), QStringLiteral("omairc"))
+                 .value(QStringLiteral("status"))
+                 .toString(),
+             QStringLiteral("lunch"));
+    QVERIFY(!controller.selfAway());
+
+    IrcController unsupported;
+    auto *plain = new FakeIrcTransport;
+    IrcSession *plainSession = unsupported.addSession(config(), plain);
+    QVERIFY(plainSession);
+    QVERIFY(unsupported.start(QStringLiteral("libera")));
+    welcome(plain);
+    QCOMPARE(plainSession->state(), IrcSession::State::Registered);
+    plain->injectBytes(QByteArrayLiteral(":omairc!u@h JOIN :#omarchy\r\n"));
+    unsupported.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    QVERIFY(!unsupported.hasMemberStatus());
+    const int beforeUnsupported = plain->writtenFrames().size();
+    QVERIFY(unsupported.sendMessage(QStringLiteral("/status hi")));
+    QCOMPARE(plain->writtenFrames().size(), beforeUnsupported);
+    QVERIFY(!framesContain(plain->writtenFrames().mid(beforeUnsupported),
+                           QByteArrayLiteral("METADATA")));
+    QVERIFY(selectedBodiesContain(
+        qobject_cast<QAbstractItemModel *>(unsupported.messages()),
+        QStringLiteral("This network does not support standing status.")));
+
+    IrcController lonely;
+    QVERIFY(!lonely.sendMessage(QStringLiteral("/status hi")));
+    QCOMPARE(lonely.lastError(), QStringLiteral("Not connected"));
+}
+
+void CommandTest::statusRefusesOnMetadataError()
+{
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    IrcSession *session = controller.addSession(config(), transport);
+    QVERIFY(session);
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    welcomeMetadata(transport);
+    QCOMPARE(session->state(), IrcSession::State::Registered);
+    transport->injectBytes(
+        QByteArrayLiteral(":omairc!u@h JOIN :#omarchy\r\n"
+                          ":server 353 omairc = #omarchy :omairc Alice\r\n"
+                          ":server 366 omairc #omarchy :End of NAMES\r\n"));
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+
+    auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
+    QVERIFY(messages);
+
+    QVERIFY(controller.sendMessage(QStringLiteral("/status blocked")));
+    QCOMPARE(transport->writtenFrames().last(),
+             QByteArrayLiteral("METADATA * SET status :blocked\r\n"));
+    QCOMPARE(controller.peerMetadata(QStringLiteral("libera"), QStringLiteral("omairc"))
+                 .value(QStringLiteral("status"))
+                 .toString(),
+             QString());
+    transport->injectBytes(
+        QByteArrayLiteral(":server 769 omairc status :permission denied\r\n"));
+    QCOMPARE(controller.peerMetadata(QStringLiteral("libera"), QStringLiteral("omairc"))
+                 .value(QStringLiteral("status"))
+                 .toString(),
+             QString());
+    QVERIFY(selectedBodiesContain(
+        messages,
+        QStringLiteral("Could not set standing status: status permission denied")));
+}
+
+void CommandTest::statusRefusesOnMetadataFailReplies()
+{
+    auto runFail = [&](const QByteArray& failLine, const QString& needle) {
+        IrcController controller;
+        auto *transport = new FakeIrcTransport;
+        IrcSession *session = controller.addSession(config(), transport);
+        QVERIFY(session);
+        QVERIFY(controller.start(QStringLiteral("libera")));
+        welcomeMetadata(transport);
+        transport->injectBytes(
+            QByteArrayLiteral(":omairc!u@h JOIN :#omarchy\r\n"
+                              ":server 353 omairc = #omarchy :omairc Alice\r\n"
+                              ":server 366 omairc #omarchy :End of NAMES\r\n"));
+        controller.selectConversation(QStringLiteral("libera"),
+                                      QStringLiteral("#omarchy"));
+        auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
+        QVERIFY(messages);
+
+        QVERIFY(controller.sendMessage(QStringLiteral("/status blocked")));
+        QCOMPARE(transport->writtenFrames().last(),
+                 QByteArrayLiteral("METADATA * SET status :blocked\r\n"));
+        transport->injectBytes(failLine);
+        QCOMPARE(controller.peerMetadata(QStringLiteral("libera"),
+                                         QStringLiteral("omairc"))
+                     .value(QStringLiteral("status"))
+                     .toString(),
+                 QString());
+        QVERIFY(selectedBodiesContain(messages, needle));
+
+        // A later success for status must not falsely confirm the failed watch.
+        transport->injectBytes(
+            QByteArrayLiteral(
+                ":server 761 omairc omairc status * :should-not-confirm\r\n"));
+        QVERIFY(!selectedBodiesContain(
+            messages, QStringLiteral("Standing status set to should-not-confirm")));
+        QCOMPARE(controller.peerMetadata(QStringLiteral("libera"),
+                                         QStringLiteral("omairc"))
+                     .value(QStringLiteral("status"))
+                     .toString(),
+                 QStringLiteral("should-not-confirm"));
+    };
+
+    runFail(QByteArrayLiteral(
+                ":server FAIL METADATA KEY_NO_PERMISSION omairc status "
+                ":permission denied\r\n"),
+            QStringLiteral("Could not set standing status: KEY_NO_PERMISSION"));
+    runFail(QByteArrayLiteral(
+                ":server FAIL METADATA VALUE_INVALID :value is too long\r\n"),
+            QStringLiteral("Could not set standing status: VALUE_INVALID"));
+    runFail(QByteArrayLiteral(
+                ":server FAIL METADATA RATE_LIMITED * status 5 "
+                ":too many changes\r\n"),
+            QStringLiteral("Could not set standing status: RATE_LIMITED"));
+
+    // Unrelated FAIL for another key must not consume the watch.
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    IrcSession *session = controller.addSession(config(), transport);
+    QVERIFY(session);
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    welcomeMetadata(transport);
+    transport->injectBytes(
+        QByteArrayLiteral(":omairc!u@h JOIN :#omarchy\r\n"
+                          ":server 353 omairc = #omarchy :omairc Alice\r\n"
+                          ":server 366 omairc #omarchy :End of NAMES\r\n"));
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
+    QVERIFY(messages);
+    QVERIFY(controller.sendMessage(QStringLiteral("/status waiting")));
+    transport->injectBytes(
+        QByteArrayLiteral(
+            ":server FAIL METADATA KEY_NO_PERMISSION omairc avatar "
+            ":no avatar permission\r\n"));
+    QVERIFY(!selectedBodiesContain(
+        messages, QStringLiteral("Could not set standing status")));
+    transport->injectBytes(
+        QByteArrayLiteral(":server 761 omairc omairc status * :waiting\r\n"));
+    QVERIFY(selectedBodiesContain(
+        messages, QStringLiteral("Standing status set to waiting.")));
+}
+
+void CommandTest::statusRefusesNonEmptyWhenMaxValueBytesZero()
+{
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    IrcSession *session = controller.addSession(config(), transport);
+    QVERIFY(session);
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    transport->completeConnect();
+    transport->injectBytes(
+        QByteArrayLiteral(
+            ":server CAP omairc LS :away-notify batch "
+            "draft/metadata-2=max-value-bytes=0\r\n"
+            ":server CAP omairc ACK :away-notify batch draft/metadata-2\r\n"
+            ":server 001 omairc :Welcome\r\n"));
+    QCOMPARE(session->state(), IrcSession::State::Registered);
+    QCOMPARE(session->metadataCapability().maxValueBytes, 0);
+    QCOMPARE(IrcMetadata::effectiveMaxValueBytes(
+                 session->metadataCapability().maxValueBytes),
+             0);
+    transport->injectBytes(
+        QByteArrayLiteral(":omairc!u@h JOIN :#omarchy\r\n"
+                          ":server 353 omairc = #omarchy :omairc Alice\r\n"
+                          ":server 366 omairc #omarchy :End of NAMES\r\n"));
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
+    QVERIFY(messages);
+
+    const int beforeSet = transport->writtenFrames().size();
+    QVERIFY(controller.sendMessage(QStringLiteral("/status writing")));
+    QCOMPARE(transport->writtenFrames().size(), beforeSet);
+    QVERIFY(!framesContain(transport->writtenFrames().mid(beforeSet),
+                           QByteArrayLiteral("METADATA * SET status :")));
+    QVERIFY(selectedBodiesContain(
+        messages,
+        QStringLiteral("This network does not allow standing status text.")));
+
+    QVERIFY(controller.sendMessage(QStringLiteral("/status clear")));
+    QCOMPARE(transport->writtenFrames().last(),
+             QByteArrayLiteral("METADATA * SET status\r\n"));
+    transport->injectBytes(
+        QByteArrayLiteral(":server 766 omairc omairc status :unset\r\n"));
+    QVERIFY(selectedBodiesContain(messages,
+                                  QStringLiteral("Standing status cleared.")));
 }
 
 void CommandTest::whoisSendsAndDefaults()
@@ -1725,6 +2119,7 @@ void CommandTest::wrappersSendAndHelp()
     QVERIFY(selectedBodiesContain(messages, QStringLiteral("/muted")));
     QVERIFY(selectedBodiesContain(messages, QStringLiteral("/ban")));
     QVERIFY(selectedBodiesContain(messages, QStringLiteral("/disconnect")));
+    QVERIFY(selectedBodiesContain(messages, QStringLiteral("/status")));
     QVERIFY(selectedBodiesContain(messages, QStringLiteral("Empty /join joins the latest invite")));
 
     QVERIFY(console->submit(QStringLiteral("/help")));

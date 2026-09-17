@@ -5,4 +5,5 @@ OmaircWindow {
     irc: ircController
     connection: ircConnection
     slashCommands: slashSession
+    avatarStore: appAvatarStore
 }
