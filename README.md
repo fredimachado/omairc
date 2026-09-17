@@ -79,7 +79,7 @@ make
 make INSTALL_ROOT="$pkgdir" install
 ```
 
-Default `PREFIX` is `/usr/local`. Prove the staged tree with `bin/test-install`. `version.pri` is the only version string; tag a release as `v` plus that value. Arch `pkgver` cannot contain hyphens, so pre-releases use `0.5.0alpha` rather than `0.5.0-alpha`.
+Default `PREFIX` is `/usr/local`. Prove the staged tree with `bin/test-install`. `version.pri` is the only version string; tag a release as `v` plus that value. Arch `pkgver` cannot contain hyphens, so pre-releases use `0.6.0alpha` rather than `0.6.0-alpha`.
 
 Omairc is MIT. See `LICENSE`. The IRC protocol code in `src/irc/` is LGPL-3.0-or-later. The bundled iA Writer Mono font is OFL-1.1.
 
@@ -126,6 +126,10 @@ bin/test-live
 ## Windows
 
 Omarchy is the home. A native Windows build is a bonus: it works, it is not the focus, and why not.
+
+Each version tag also publishes `omairc-*-windows-x64.zip` on the
+[GitHub release](https://github.com/fredimachado/omairc/releases/latest):
+unzip and run `omairc.exe` (use `start` so the terminal comes back).
 
 From the repo root:
 

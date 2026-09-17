@@ -15,6 +15,8 @@ on:
   push:
     branches:
       - master
+    tags:
+      - 'v*'
     paths:
       - '.github/workflows/windows.yml'
       - 'bin/build.bat'
@@ -27,10 +29,10 @@ on:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   windows:
@@ -39,6 +41,7 @@ jobs:
     env:
       QT_VERSION: 6.8.3
       QTKEYCHAIN_VERSION: 0.15.0
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     defaults:
       run:
         shell: pwsh
@@ -53,6 +56,16 @@ jobs:
           if (-not $ver) { throw 'version.pri VERSION is empty' }
           Add-Content $env:GITHUB_ENV "OMAIRC_VERSION=$ver"
           Write-Host "Omairc $ver"
+
+      - name: Assert tag version
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          $tag = $env:GITHUB_REF_NAME
+          if (-not $tag.StartsWith('v')) { throw "Expected v* tag, got $tag" }
+          $expected = $tag.Substring(1)
+          if ($expected -ne $env:OMAIRC_VERSION) {
+            throw "Tag $tag does not match version.pri $($env:OMAIRC_VERSION)"
+          }
 
       - uses: ilammy/msvc-dev-cmd@v1
         with:
@@ -165,3 +178,52 @@ jobs:
             !build/release/moc_*
             !build/release/qrc_*
           if-no-files-found: error
+
+      - name: Package release zip
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          $ver = $env:OMAIRC_VERSION
+          $name = "omairc-$ver-windows-x64"
+          $stage = Join-Path $env:RUNNER_TEMP $name
+          if (Test-Path $stage) { Remove-Item $stage -Recurse -Force }
+          New-Item -ItemType Directory -Path $stage | Out-Null
+          Copy-Item -Path 'build\release\*' -Destination $stage -Recurse
+          $zip = Join-Path (Get-Location) "$name.zip"
+          if (Test-Path $zip) { Remove-Item $zip -Force }
+          Compress-Archive -Path $stage -DestinationPath $zip
+          $mb = [math]::Round((Get-Item $zip).Length / 1MB, 2)
+          Write-Host "Release zip: $zip ($mb MB)"
+
+      - name: Publish GitHub Release asset
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $tag = $env:GITHUB_REF_NAME
+          $ver = $env:OMAIRC_VERSION
+          $zipName = "omairc-$ver-windows-x64.zip"
+          if (-not (Test-Path $zipName)) { throw "Missing $zipName" }
+
+          # Release package creates the GitHub Release; wait if this job finishes first.
+          $deadline = (Get-Date).AddMinutes(30)
+          while ($true) {
+            gh release view $tag 1>$null 2>$null
+            if ($LASTEXITCODE -eq 0) { break }
+            if ((Get-Date) -gt $deadline) {
+              throw "Timed out waiting for GitHub Release $tag (created by Release package)"
+            }
+            Write-Host "Waiting for release $tag..."
+            Start-Sleep -Seconds 15
+          }
+
+          $assetList = gh release view $tag --json assets --jq '.assets[].name'
+          if ($LASTEXITCODE -ne 0) { throw "gh release view $tag failed" }
+          foreach ($asset in @($assetList)) {
+            if (-not $asset) { continue }
+            if ($asset -like 'omairc-*-windows-x64.zip' -and $asset -ne $zipName) {
+              gh release delete-asset $tag $asset --yes
+              if ($LASTEXITCODE -ne 0) { throw "Failed to delete stale asset $asset" }
+            }
+          }
+
+          gh release upload $tag $zipName --clobber
+          if ($LASTEXITCODE -ne 0) { throw "Failed to upload $zipName" }

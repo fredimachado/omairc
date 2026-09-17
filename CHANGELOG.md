@@ -7,16 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-09-17
+
+### Added
+
+- A native Windows build. `bin\build.bat` and `bin\build.ps1` produce a portable tree next to `omairc.exe`. CI uploads that tree as an artifact; each version tag also publishes `omairc-*-windows-x64.zip` on the GitHub release. Portal text scale, desktop notifications, and the Omarchy theme watch stay Linux-only.
+- `install.sh` adds the omairc pacman repository from the latest GitHub release and installs the package. Safe to re-run. Served from master and as a release asset for a version-pinned URL.
+
 ### Changed
 
 - `/join` opens the last named channel as soon as the JOIN is sent, including `/j` and a Status submit. Multiple names land on the last one.
 - Our CTCP `VERSION` reply no longer reveals the build number. It answers `https://omairc.app` instead.
+- The scalable app icon puts the Omarchy mark behind the hash.
 
 ### Fixed
 
 - `/query` clears the composer and focuses the new direct message. The command no longer stays as a draft on the source buffer or the new query. A refused `/query` stays in the composer, including on Status.
 - A successful `/join` is consumed from the composer before the window switches, so it cannot remain as a draft on the previous conversation.
 - A failed `/join` copies the server's reason into the selected channel transcript as well as Status.
+- `/away` and `/back` mark our own nick away or online on every channel member row when `306` / `305` land, even when the server does not echo our own away-notify. The identity footer already had that fact; the panel and the nick picker now match it.
+- A direct-message sidebar row's presence dot follows shared-channel membership and away facts (online, away, or unknown) instead of a hard-coded green mark. A peer who quits no longer looks available. The dot stays hidden when `away-notify` is off, like member rows.
 - Windows CLI output works: the Windows build uses the console subsystem so `--help`, `--version`, and control commands print in a terminal or into a redirect, then `FreeConsole()` drops that console when opening the window. The local server uses a named pipe (`omairc`) instead of a drive-letter path that `QLocalServer` cannot listen on.
 
 ## [0.5.0] - 2026-09-16
@@ -161,8 +171,10 @@ First public release: a dead-simple IRC client for Omarchy.
 - Keyboard map, slash-command complete, selectable transcript, and follow-unseen.
 - qmake Unix install tree and a GitHub Releases pacman repository.
 
-[Unreleased]: https://github.com/fredimachado/omairc/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/fredimachado/omairc/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/fredimachado/omairc/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/fredimachado/omairc/compare/v0.4.0...v0.5.0
+
 [0.4.0]: https://github.com/fredimachado/omairc/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/fredimachado/omairc/compare/v0.3.0alpha...v0.3.0
 [0.3.0alpha]: https://github.com/fredimachado/omairc/compare/v0.2.0...v0.3.0alpha
