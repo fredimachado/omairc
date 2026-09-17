@@ -196,20 +196,30 @@ QByteArray presenceBytes(const SeedNetwork &network)
         out += line(QStringLiteral(":server 761 %1 dax bot * :PacketBot")
                         .arg(network.nick));
     }
+    // Bundled demo art loads through the avatar store's qrc path so
+    // --demo-server shows real glyphs without outbound HTTPS or
+    // weakening ircAvatarUrlIsSafe for network URLs.
     if (members.contains(QStringLiteral("mira"))) {
-        // Bundled demo art loads through the avatar store's qrc path so
-        // --demo-server shows a real glyph without outbound HTTPS or
-        // weakening ircAvatarUrlIsSafe for network URLs.
         out += line(
             QStringLiteral(
                 ":server 761 %1 mira avatar * :qrc:/demo/mira-avatar.png")
                 .arg(network.nick));
     }
     if (members.contains(QStringLiteral("anna"))) {
+        out += line(
+            QStringLiteral(
+                ":server 761 %1 anna avatar * :qrc:/demo/anna-avatar.png")
+                .arg(network.nick));
         out += line(QStringLiteral(":server 761 %1 anna display-name * :Anna Docs")
                         .arg(network.nick));
         out += line(QStringLiteral(":server 761 %1 anna pronouns * :she/her")
                         .arg(network.nick));
+    }
+    if (members.contains(QStringLiteral("kai"))) {
+        out += line(
+            QStringLiteral(
+                ":server 761 %1 kai avatar * :qrc:/demo/kai-avatar.png")
+                .arg(network.nick));
     }
     return out;
 }

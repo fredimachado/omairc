@@ -5085,11 +5085,6 @@ TestCase {
 
     function test_demoMiraAvatarReachesImageReady() {
         openSeededAppWindow();
-        var members = item("membersList");
-        var mira = members.itemAtIndex(memberIndex("mira"));
-        verify(mira !== null, "mira member row should render");
-        compare(mira.avatar, "qrc:/demo/mira-avatar.png");
-        var photo = null;
         function findPhoto(node) {
             if (!node)
                 return null;
@@ -5103,10 +5098,19 @@ TestCase {
             }
             return null;
         }
-        photo = findPhoto(mira);
-        verify(photo !== null, "mira glyph photo should exist");
-        tryCompare(photo, "status", Image.Ready);
-        tryCompare(photo, "visible", true);
+        function assertDemoAvatarReady(nick, url) {
+            var members = item("membersList");
+            var row = members.itemAtIndex(memberIndex(nick));
+            verify(row !== null, nick + " member row should render");
+            compare(row.avatar, url);
+            var photo = findPhoto(row);
+            verify(photo !== null, nick + " glyph photo should exist");
+            tryCompare(photo, "status", Image.Ready);
+            tryCompare(photo, "visible", true);
+        }
+        assertDemoAvatarReady("mira", "qrc:/demo/mira-avatar.png");
+        assertDemoAvatarReady("anna", "qrc:/demo/anna-avatar.png");
+        assertDemoAvatarReady("kai", "qrc:/demo/kai-avatar.png");
     }
 
     function test_loadPeerAvatarsPreferenceGatesStoreSource() {

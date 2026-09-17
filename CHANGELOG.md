@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- IRCv3 `draft/metadata-2` now covers peer `avatar`, `status`, and `bot`, plus WHOIS extras (`display-name`, `pronouns`, `homepage`, `color`). Member, nick picker, transcript, and DM circles load an HTTPS avatar when it is safe; a bad URL keeps the initial. Bots get a small mark next to the nick. Standing `status` stays separate from AWAY. `--demo-server` ships a bundled `qrc` avatar for `mira` so the glyph reaches `Image.Ready` without outbound HTTPS.
+- IRCv3 `draft/metadata-2` now covers peer `avatar`, `status`, and `bot`, plus WHOIS extras (`display-name`, `pronouns`, `homepage`, `color`). Member, nick picker, transcript, and DM circles load an HTTPS avatar when it is safe; a bad URL keeps the initial. Bots get a small mark next to the nick. Standing `status` stays separate from AWAY. `--demo-server` ships bundled `qrc` avatars for `mira`, `anna`, and `kai` so glyphs reach `Image.Ready` without outbound HTTPS.
 - `/status [text|clear]` sets or clears the local user's standing metadata without reconnecting. Empty `/status` echoes the current value. Networks that do not grant metadata say so on Status or the asking transcript. Success waits for the server's `761` / `766` reply; limit and permission errors surface instead of an optimistic echo.
 - Preferences → **Show peer avatars** (default on) gates automatic avatar fetches. Turn it off to keep avatar hosts from seeing your IP on busy channels; the HTTPS URL policy still fails closed either way.
 - The Windows build embeds the app icon in `omairc.exe`. Explorer, the title bar, and the taskbar use it instead of the default executable mark.
