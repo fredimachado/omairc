@@ -115,6 +115,37 @@ begin
   Result := CompareText(RemoveBackslash(Left), RemoveBackslash(Right)) = 0;
 end;
 
+function ExpandEnvironmentStrings(lpSrc: String; lpDst: String; nSize: DWORD): DWORD;
+  external 'ExpandEnvironmentStringsW@kernel32.dll stdcall';
+
+function ExpandEnv(const S: String): String;
+var
+  Len: DWORD;
+begin
+  if S = '' then
+  begin
+    Result := '';
+    Exit;
+  end;
+  Len := ExpandEnvironmentStrings(S, '', 0);
+  if Len = 0 then
+  begin
+    Result := S;
+    Exit;
+  end;
+  SetLength(Result, Len);
+  Len := ExpandEnvironmentStrings(S, Result, Len);
+  if Len = 0 then
+    Result := S
+  else
+    SetLength(Result, Len - 1);
+end;
+
+function SamePathDir(const Left, Right: String): Boolean;
+begin
+  Result := SameDir(ExpandEnv(Left), ExpandEnv(Right));
+end;
+
 function PathListHasDir(const PathList, Dir: String): Boolean;
 var
   Parts: TArrayOfString;
@@ -124,7 +155,7 @@ begin
   Result := False;
   for I := 0 to GetArrayLength(Parts) - 1 do
   begin
-    if (Parts[I] <> '') and SameDir(Parts[I], Dir) then
+    if (Parts[I] <> '') and SamePathDir(Parts[I], Dir) then
     begin
       Result := True;
       Exit;
@@ -167,7 +198,7 @@ begin
   SetArrayLength(Kept, 0);
   for I := 0 to GetArrayLength(Parts) - 1 do
   begin
-    if (Parts[I] = '') or SameDir(Parts[I], Dir) then
+    if (Parts[I] = '') or SamePathDir(Parts[I], Dir) then
       Continue;
     SetArrayLength(Kept, Count + 1);
     Kept[Count] := Parts[I];

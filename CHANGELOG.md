@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `bin\build.bat` finds `vswhere.exe` when `cl` is not already on PATH. Delayed expansion cannot read `%ProgramFiles(x86)%`.
 - The Windows installer and `LICENSE` copyright name Fredi Machado.
+- The Windows installer treats expanded and unexpanded PATH entries as the same directory, so a `%LOCALAPPDATA%\Programs\Omairc` entry is not duplicated on install and is removed on uninstall.
 
 ## [0.6.0] - 2026-09-17
 
