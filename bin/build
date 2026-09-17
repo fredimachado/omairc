@@ -13,7 +13,7 @@ else
   exit 1
 fi
 
-JOBS="$(nproc 2>/dev/null || echo 1)"
+JOBS="$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 1)"
 
 mkdir -p "$BUILD_DIR"
 cd "$BUILD_DIR"
@@ -21,4 +21,11 @@ cd "$BUILD_DIR"
 "$QMAKE" "$ROOT/omairc.pro"
 make -j"$JOBS"
 
-echo "Built $BUILD_DIR/omairc"
+if [ -x "$BUILD_DIR/omairc" ]; then
+  echo "Built $BUILD_DIR/omairc"
+elif [ -x "$BUILD_DIR/omairc.app/Contents/MacOS/omairc" ]; then
+  echo "Built $BUILD_DIR/omairc.app/Contents/MacOS/omairc"
+else
+  echo "Build finished but omairc binary was not found under $BUILD_DIR." >&2
+  exit 1
+fi

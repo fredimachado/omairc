@@ -19,12 +19,24 @@ else
   exit 1
 fi
 
-JOBS="$(nproc 2>/dev/null || echo 1)"
+JOBS="$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 1)"
+
+omairc_binary() {
+  if [ -x "$ROOT/build/omairc" ]; then
+    printf '%s\n' "$ROOT/build/omairc"
+  elif [ -x "$ROOT/build/omairc.app/Contents/MacOS/omairc" ]; then
+    printf '%s\n' "$ROOT/build/omairc.app/Contents/MacOS/omairc"
+  else
+    echo "Could not find omairc binary under $ROOT/build." >&2
+    exit 1
+  fi
+}
+OMAIRC_BIN="$(omairc_binary)"
 
 "$ROOT/bin/build"
 
 VERSION="$("$ROOT/bin/version")"
-got="$(DISPLAY= "$ROOT/build/omairc" --version)"
+got="$(DISPLAY= "$OMAIRC_BIN" --version)"
 test "$got" = "omairc $VERSION" || {
   echo "--version must print exactly omairc $VERSION" >&2
   printf 'got: %s\n' "$got" >&2
@@ -49,7 +61,7 @@ is_json_object() {
 }
 
 set +e
-HELP_OUTPUT="$(DISPLAY= "$ROOT/build/omairc" --help 2>&1)"
+HELP_OUTPUT="$(DISPLAY= "$OMAIRC_BIN" --help 2>&1)"
 HELP_STATUS=$?
 set -e
 if [ "$HELP_STATUS" -ne 0 ]; then
@@ -70,7 +82,7 @@ done
 
 for command in connections list status send read names conversations raise; do
   set +e
-  COMMAND_HELP="$(DISPLAY= "$ROOT/build/omairc" "$command" --help 2>&1)"
+  COMMAND_HELP="$(DISPLAY= "$OMAIRC_BIN" "$command" --help 2>&1)"
   COMMAND_STATUS=$?
   set -e
   if [ "$COMMAND_STATUS" -ne 0 ]; then
@@ -84,7 +96,7 @@ for command in connections list status send read names conversations raise; do
 done
 
 set +e
-SEND_HELP="$(DISPLAY= "$ROOT/build/omairc" send --help 2>&1)"
+SEND_HELP="$(DISPLAY= "$OMAIRC_BIN" send --help 2>&1)"
 SEND_HELP_STATUS=$?
 set -e
 if [ "$SEND_HELP_STATUS" -ne 0 ]; then
@@ -102,54 +114,56 @@ printf '%s\n' "$SEND_HELP" | grep -Fq -- "Usage: omairc send" || {
 }
 
 set +e
-SEND_TEXT="$(DISPLAY= "$ROOT/build/omairc" send '#c' --help 2>&1)"
+SEND_TEXT="$(DISPLAY= "$OMAIRC_BIN" send '#c' --help 2>&1)"
 set -e
 printf '%s\n' "$SEND_TEXT" | grep -Fq -- "Usage: omairc send" && {
   echo "omairc send '#c' --help must not print the send help page." >&2
   exit 1
 }
 
-COMPLETION="$ROOT/data/bash-completion/omairc"
-COMPREPLY_TEXT="$(bash -c '
-  source "$1"
-  COMP_WORDS=(omairc "")
-  COMP_CWORD=1
-  _omairc
-  printf "%s\n" "${COMPREPLY[@]}"
-' bash "$COMPLETION")"
-printf '%s\n' "$COMPREPLY_TEXT" | grep -Fxq send || {
-  echo "bash completion at the first token must include send." >&2
-  exit 1
-}
-printf '%s\n' "$COMPREPLY_TEXT" | grep -Fxq -- --help || {
-  echo "bash completion at the first token must include --help." >&2
-  exit 1
-}
-HELP_COMPREPLY_TEXT="$(bash -c '
-  source "$1"
-  COMP_WORDS=(omairc help "s")
-  COMP_CWORD=2
-  _omairc
-  printf "%s\n" "${COMPREPLY[@]}"
-' bash "$COMPLETION")"
-printf '%s\n' "$HELP_COMPREPLY_TEXT" | grep -Fxq send || {
-  echo "bash completion for help must include send." >&2
-  exit 1
-}
-printf '%s\n' "$HELP_COMPREPLY_TEXT" | grep -Fxq status || {
-  echo "bash completion for help must include status." >&2
-  exit 1
-}
-for token in connections list status send read names conversations raise; do
-  printf '%s\n' "$HELP_OUTPUT" | grep -Fq -- "$token" || continue
-  grep -Fq -- "$token" "$COMPLETION" || {
-    echo "completion file must mention control verb $token from --help." >&2
+if [ "$(uname -s)" != Darwin ]; then
+  COMPLETION="$ROOT/data/bash-completion/omairc"
+  COMPREPLY_TEXT="$(bash -c '
+    source "$1"
+    COMP_WORDS=(omairc "")
+    COMP_CWORD=1
+    _omairc
+    printf "%s\n" "${COMPREPLY[@]}"
+  ' bash "$COMPLETION")"
+  printf '%s\n' "$COMPREPLY_TEXT" | grep -Fxq send || {
+    echo "bash completion at the first token must include send." >&2
     exit 1
   }
-done
+  printf '%s\n' "$COMPREPLY_TEXT" | grep -Fxq -- --help || {
+    echo "bash completion at the first token must include --help." >&2
+    exit 1
+  }
+  HELP_COMPREPLY_TEXT="$(bash -c '
+    source "$1"
+    COMP_WORDS=(omairc help "s")
+    COMP_CWORD=2
+    _omairc
+    printf "%s\n" "${COMPREPLY[@]}"
+  ' bash "$COMPLETION")"
+  printf '%s\n' "$HELP_COMPREPLY_TEXT" | grep -Fxq send || {
+    echo "bash completion for help must include send." >&2
+    exit 1
+  }
+  printf '%s\n' "$HELP_COMPREPLY_TEXT" | grep -Fxq status || {
+    echo "bash completion for help must include status." >&2
+    exit 1
+  }
+  for token in connections list status send read names conversations raise; do
+    printf '%s\n' "$HELP_OUTPUT" | grep -Fq -- "$token" || continue
+    grep -Fq -- "$token" "$COMPLETION" || {
+      echo "completion file must mention control verb $token from --help." >&2
+      exit 1
+    }
+  done
+fi
 
 set +e
-CLI_OUTPUT="$("$ROOT/build/omairc" send '#channel' please use --version 2>&1)"
+CLI_OUTPUT="$("$OMAIRC_BIN" send '#channel' please use --version 2>&1)"
 CLI_STATUS=$?
 set -e
 case "$CLI_OUTPUT" in
