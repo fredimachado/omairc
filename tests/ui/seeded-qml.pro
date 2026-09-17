@@ -1,6 +1,12 @@
 QT += core gui qml quick quickcontrols2 network testlib
 unix:!macx: QT += dbus
 
+macx {
+    HEADERS += ../../src/macosnotifications.h
+    OBJECTIVE_SOURCES += ../../src/macosnotifications.mm
+    LIBS += -framework UserNotifications -framework Foundation -framework AppKit
+}
+
 CONFIG += c++17 qmltestcase
 TEMPLATE = app
 TARGET = seeded_qml_tests
