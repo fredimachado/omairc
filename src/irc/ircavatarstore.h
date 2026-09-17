@@ -24,6 +24,7 @@ public:
 
     Q_INVOKABLE QString source(const QString& rawUrl, int pixelSize) const;
     void put(const QUrl& url, const QImage& image);
+    void setNetworkAccessManager(QNetworkAccessManager *nam);
 
     QImage requestImage(const QString& id, QSize *size,
                         const QSize& requestedSize) override;

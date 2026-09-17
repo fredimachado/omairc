@@ -46,6 +46,15 @@ IrcAvatarStore::IrcAvatarStore(QObject *parent)
     setParent(parent);
 }
 
+void IrcAvatarStore::setNetworkAccessManager(QNetworkAccessManager *nam)
+{
+    if (!nam || nam == m_nam)
+        return;
+    if (m_nam && m_nam->parent() == this)
+        delete m_nam;
+    m_nam = nam;
+}
+
 IrcAvatarStore::~IrcAvatarStore()
 {
     const QList<Fetch> pending = m_fetches.values();
