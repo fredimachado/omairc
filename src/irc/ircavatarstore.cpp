@@ -123,7 +123,8 @@ QString IrcAvatarStore::source(const QString& rawUrl, int pixelSize)
             if (image.isNull())
                 return {};
             remember(key, image);
-            emit ready(trimmed);
+            // Synchronous fill — do not emit ready() here or storeSource
+            // re-enters through avatarEpoch while still evaluating.
         }
         return QStringLiteral("image://") + kProviderId + QLatin1Char('/') + key;
     }
