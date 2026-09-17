@@ -131,7 +131,10 @@ void MacOsNotifications::notify(const QString &summary, const QString &body,
     if (!center)
         return;
 
-    UNMutableNotificationContent *content = [UNMutableNotificationContent new];
+    // packaging/macos/objc-arc.pri enables -fobjc-arc for this translation
+    // unit. Keep an MRC release path so a missed flag cannot leak content.
+    UNMutableNotificationContent *content =
+        [[UNMutableNotificationContent alloc] init];
     content.title = toNSString(summary);
     content.body = toNSString(body);
     content.userInfo = @{
@@ -148,6 +151,9 @@ void MacOsNotifications::notify(const QString &summary, const QString &body,
         [UNNotificationRequest requestWithIdentifier:identifier
                                              content:content
                                              trigger:nil];
+#if !__has_feature(objc_arc)
+    [content release];
+#endif
     [center removePendingNotificationRequestsWithIdentifiers:@[identifier]];
     [center removeDeliveredNotificationsWithIdentifiers:@[identifier]];
     [center addNotificationRequest:request

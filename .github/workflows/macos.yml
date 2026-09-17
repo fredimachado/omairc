@@ -83,14 +83,19 @@ jobs:
           set -euo pipefail
           case "$(uname -m)" in
             arm64)
-              qt_aqt_arch=clang_64
+              # Prefer aqt's Apple Silicon kit when published. Qt 6.8.x currently
+              # only lists universal clang_64; install falls back and Smoke
+              # asserts the Mach-O contains arm64. Artifact stays macos-arm64.
+              qt_aqt_arch=clang_arm64
               qt_install_dir=macos
               omairc_mac_suffix=macos-arm64
+              expected_macho_arch=arm64
               ;;
             x86_64)
               qt_aqt_arch=clang_64
               qt_install_dir=macos
               omairc_mac_suffix=macos-x64
+              expected_macho_arch=x86_64
               ;;
             *)
               echo "Unsupported runner architecture: $(uname -m)" >&2
@@ -100,14 +105,15 @@ jobs:
           echo "QT_AQT_ARCH=$qt_aqt_arch" >> "$GITHUB_ENV"
           echo "QT_INSTALL_DIR=$qt_install_dir" >> "$GITHUB_ENV"
           echo "OMAIRC_MAC_SUFFIX=$omairc_mac_suffix" >> "$GITHUB_ENV"
-          echo "Qt arch: $qt_aqt_arch (install: $qt_install_dir, artifact: $omairc_mac_suffix)"
+          echo "EXPECTED_MACHO_ARCH=$expected_macho_arch" >> "$GITHUB_ENV"
+          echo "Qt arch: $qt_aqt_arch (install: $qt_install_dir, artifact: $omairc_mac_suffix, macho: $expected_macho_arch)"
 
       - name: Cache Qt
         id: qt-cache
         uses: actions/cache@v4
         with:
           path: ${{ runner.temp }}/Qt
-          key: qt-${{ env.QT_VERSION }}-${{ env.OMAIRC_MAC_SUFFIX }}-qtkeychain-${{ env.QTKEYCHAIN_VERSION }}
+          key: qt-${{ env.QT_VERSION }}-${{ env.OMAIRC_MAC_SUFFIX }}-${{ env.QT_AQT_ARCH }}-qtkeychain-${{ env.QTKEYCHAIN_VERSION }}
 
       - name: Install Qt 6
         if: steps.qt-cache.outputs.cache-hit != 'true'
@@ -115,21 +121,49 @@ jobs:
           set -euo pipefail
           python3 -m venv "$RUNNER_TEMP/aqt"
           "$RUNNER_TEMP/aqt/bin/pip" install aqtinstall
-          "$RUNNER_TEMP/aqt/bin/aqt" install-qt mac desktop "$QT_VERSION" "$QT_AQT_ARCH" \
+          aqt="$RUNNER_TEMP/aqt/bin/aqt"
+          arch="$QT_AQT_ARCH"
+          available=$("$aqt" list-qt mac desktop --arch "$QT_VERSION")
+          if ! printf '%s\n' $available | grep -qx "$arch"; then
+            if [ "$arch" = clang_arm64 ]; then
+              echo "aqt has no clang_arm64 for $QT_VERSION (have: $available); using universal clang_64"
+              arch=clang_64
+            else
+              echo "aqt arch $arch unavailable for $QT_VERSION (have: $available)" >&2
+              exit 1
+            fi
+          fi
+          "$aqt" install-qt mac desktop "$QT_VERSION" "$arch" \
             -O "$RUNNER_TEMP/Qt"
+          echo "QT_AQT_ARCH=$arch" >> "$GITHUB_ENV"
 
       - name: Add Qt to PATH
         run: |
           set -euo pipefail
-          qt_bin="$RUNNER_TEMP/Qt/$QT_VERSION/$QT_INSTALL_DIR/bin"
+          qt_root="$RUNNER_TEMP/Qt/$QT_VERSION"
+          qt_dir=
+          for candidate in "$QT_INSTALL_DIR" macos clang_arm64 clang_64; do
+            if [ -x "$qt_root/$candidate/bin/qmake" ]; then
+              qt_dir=$candidate
+              break
+            fi
+          done
+          if [ -z "$qt_dir" ]; then
+            echo "Could not find qmake under $qt_root" >&2
+            ls -la "$qt_root" >&2 || true
+            exit 1
+          fi
+          qt_bin="$qt_root/$qt_dir/bin"
           test -x "$qt_bin/qmake"
+          echo "QT_INSTALL_DIR=$qt_dir" >> "$GITHUB_ENV"
           echo "$qt_bin" >> "$GITHUB_PATH"
           echo "QMAKE=$qt_bin/qmake" >> "$GITHUB_ENV"
           {
-            echo "DYLD_LIBRARY_PATH=$RUNNER_TEMP/Qt/$QT_VERSION/$QT_INSTALL_DIR/lib:${DYLD_LIBRARY_PATH:-}"
-            echo "QT_PLUGIN_PATH=$RUNNER_TEMP/Qt/$QT_VERSION/$QT_INSTALL_DIR/plugins"
-            echo "QML2_IMPORT_PATH=$RUNNER_TEMP/Qt/$QT_VERSION/$QT_INSTALL_DIR/qml"
+            echo "DYLD_LIBRARY_PATH=$qt_root/$qt_dir/lib:${DYLD_LIBRARY_PATH:-}"
+            echo "QT_PLUGIN_PATH=$qt_root/$qt_dir/plugins"
+            echo "QML2_IMPORT_PATH=$qt_root/$qt_dir/qml"
           } >> "$GITHUB_ENV"
+          echo "Using Qt at $qt_bin (aqt arch $QT_AQT_ARCH)"
 
       - name: Install QtKeychain
         run: |
@@ -166,6 +200,30 @@ jobs:
           set -euo pipefail
           exe="$GITHUB_WORKSPACE/build/omairc.app/Contents/MacOS/omairc"
           test -x "$exe"
+          archs=$(lipo -archs "$exe" 2>/dev/null || true)
+          if [ -z "$archs" ]; then
+            archs=$(file -b "$exe")
+          fi
+          echo "Mach-O archs: $archs (expect $EXPECTED_MACHO_ARCH, artifact $OMAIRC_MAC_SUFFIX)"
+          case "$archs" in
+            *"$EXPECTED_MACHO_ARCH"*) ;;
+            *)
+              echo "Binary missing $EXPECTED_MACHO_ARCH (got: $archs); refusing $OMAIRC_MAC_SUFFIX artifact" >&2
+              exit 1
+              ;;
+          esac
+          case "$OMAIRC_MAC_SUFFIX" in
+            macos-arm64)
+              test "$EXPECTED_MACHO_ARCH" = arm64
+              ;;
+            macos-x64)
+              test "$EXPECTED_MACHO_ARCH" = x86_64
+              ;;
+            *)
+              echo "Unexpected artifact suffix $OMAIRC_MAC_SUFFIX" >&2
+              exit 1
+              ;;
+          esac
           version=$("$exe" --version 2>&1)
           case "$version" in
             omairc\ [0-9]*) ;;

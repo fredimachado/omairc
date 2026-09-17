@@ -6,6 +6,7 @@ macx {
     HEADERS += ../../src/macosnotifications.h
     OBJECTIVE_SOURCES += ../../src/macosnotifications.mm
     LIBS += -framework UserNotifications -framework Foundation -framework AppKit
+    include($$PWD/../../packaging/macos/objc-arc.pri)
 }
 
 CONFIG += c++17 qmltestcase

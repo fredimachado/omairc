@@ -247,6 +247,50 @@ def check_version_source():
     return problems
 
 
+def check_macos_objc_arc():
+    problems = []
+    mm = ROOT / "src" / "macosnotifications.mm"
+    if not mm.is_file():
+        return problems
+    text = mm.read_text(encoding="utf-8", errors="replace")
+    if "__has_feature(objc_arc)" not in text or "[content release]" not in text:
+        problems.append(
+            "src/macosnotifications.mm: keep an MRC [content release] gated on "
+            "!__has_feature(objc_arc) so notify() cannot leak without ARC")
+    for relative, source in sources("**/*.pro"):
+        if "macosnotifications.mm" not in source:
+            continue
+        if "packaging/macos/objc-arc.pri" not in source:
+            problems.append(
+                f"{relative}: builds macosnotifications.mm without "
+                f"packaging/macos/objc-arc.pri (-fobjc-arc)")
+    return problems
+
+
+def check_macos_ci_arch_selection():
+    problems = []
+    workflow = ROOT / ".github" / "workflows" / "macos.yml"
+    if not workflow.is_file():
+        return problems
+    text = workflow.read_text(encoding="utf-8", errors="replace")
+    if "qt_aqt_arch=clang_arm64" not in text:
+        problems.append(
+            ".github/workflows/macos.yml: arm64 runners must prefer aqt "
+            "clang_arm64 (install may fall back to universal clang_64)")
+    if "EXPECTED_MACHO_ARCH" not in text or "lipo -archs" not in text:
+        problems.append(
+            ".github/workflows/macos.yml: Smoke must lipo-check the binary "
+            "against EXPECTED_MACHO_ARCH so macos-arm64/macos-x64 match")
+    arm64_case = text.split("arm64)", 1)
+    if len(arm64_case) > 1:
+        arm64_body = arm64_case[1].split("x86_64)", 1)[0]
+        if "clang_arm64" not in arm64_body:
+            problems.append(
+                ".github/workflows/macos.yml: arm64 case must prefer "
+                "clang_arm64 before any clang_64 fallback")
+    return problems
+
+
 CHECKS = (
     ("QByteArray literal lengths", check_byte_array_lengths),
     ("PlainText on server-controlled QML text", check_qml_text_plain_format),
@@ -256,6 +300,8 @@ CHECKS = (
     ("single version source", check_version_source),
     ("CHANTYPES via IrcServerFeatures", check_hardcoded_chantypes),
     ("retired mock sidebar tokens", check_retired_mock_sidebar),
+    ("macOS ObjC ARC for notifications", check_macos_objc_arc),
+    ("macOS CI Qt arch selection", check_macos_ci_arch_selection),
 )
 
 
