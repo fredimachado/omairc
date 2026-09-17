@@ -10,7 +10,11 @@ if not exist "!EXE!" (
 )
 
 set "VERSION="
-for /f "usebackq tokens=2 delims==" %%I in (`findstr /b "VERSION " "%ROOT%\version.pri"`) do set "VERSION=%%I"
+if defined OMAIRC_VERSION (
+  set "VERSION=!OMAIRC_VERSION!"
+) else (
+  for /f "usebackq tokens=2 delims==" %%I in (`findstr /b /c:"VERSION " "%ROOT%\version.pri"`) do set "VERSION=%%I"
+)
 set "VERSION=!VERSION: =!"
 if not defined VERSION (
   echo version.pri must set VERSION >&2
