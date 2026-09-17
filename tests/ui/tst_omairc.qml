@@ -5045,6 +5045,29 @@ TestCase {
         verify(daxBot !== null, "dax should have a bot mark");
         compare(daxBot.visible, true);
         compare(daxBot.shown, true);
+        var daxLabel = null;
+        var kids = dax.children;
+        // Prefer the nick label that sits in the same Row as the bot mark.
+        function findLabelNearBot(node) {
+            if (!node || !node.children)
+                return null;
+            for (var i = 0; i < node.children.length; ++i) {
+                var child = node.children[i];
+                if (child === daxBot)
+                    continue;
+                if (child.text === dax.label)
+                    return child;
+                var nested = findLabelNearBot(child);
+                if (nested)
+                    return nested;
+            }
+            return null;
+        }
+        daxLabel = findLabelNearBot(dax);
+        verify(daxLabel !== null, "dax nick label should exist");
+        // Bot mark sits beside the nick, not at the far right of the row.
+        compare(daxBot.x < daxLabel.x + daxLabel.width + appWindow.scaledSize(12), true);
+        compare(daxBot.x > daxLabel.x + daxLabel.width - 2, true);
 
         var anna = members.itemAtIndex(memberIndex("anna"));
         verify(anna !== null, "The anna member delegate should be rendered");
@@ -5058,6 +5081,63 @@ TestCase {
         compare(annaStatus.visible, true);
         compare(annaStatus.text, "writing docs");
         compare(anna.Accessible.description, "writing docs");
+    }
+
+    function test_demoMiraAvatarReachesImageReady() {
+        openSeededAppWindow();
+        var members = item("membersList");
+        var mira = members.itemAtIndex(memberIndex("mira"));
+        verify(mira !== null, "mira member row should render");
+        compare(mira.avatar, "qrc:/demo/mira-avatar.png");
+        var photo = null;
+        function findPhoto(node) {
+            if (!node)
+                return null;
+            if (node.objectName === "nickGlyphPhoto")
+                return node;
+            var children = node.children || [];
+            for (var i = 0; i < children.length; ++i) {
+                var found = findPhoto(children[i]);
+                if (found)
+                    return found;
+            }
+            return null;
+        }
+        photo = findPhoto(mira);
+        verify(photo !== null, "mira glyph photo should exist");
+        tryCompare(photo, "status", Image.Ready);
+        tryCompare(photo, "visible", true);
+    }
+
+    function test_loadPeerAvatarsPreferenceGatesStoreSource() {
+        openSeededAppWindow();
+        compare(seed.irc.loadPeerAvatars, true);
+        var mira = item("membersList").itemAtIndex(memberIndex("mira"));
+        var glyph = null;
+        function findGlyph(node) {
+            if (!node)
+                return null;
+            if (node.avatarUrl === "qrc:/demo/mira-avatar.png")
+                return node;
+            var children = node.children || [];
+            for (var i = 0; i < children.length; ++i) {
+                var found = findGlyph(children[i]);
+                if (found)
+                    return found;
+            }
+            return null;
+        }
+        glyph = findGlyph(mira);
+        verify(glyph !== null, "mira NickGlyph should bind the bundled avatar");
+        tryVerify(function() {
+            return glyph.storeSource.indexOf("image://omairc-avatar/") === 0;
+        });
+        seed.irc.loadPeerAvatars = false;
+        tryCompare(glyph, "storeSource", "");
+        seed.irc.loadPeerAvatars = true;
+        tryVerify(function() {
+            return glyph.storeSource.indexOf("image://omairc-avatar/") === 0;
+        });
     }
 
     function test_memberBotMarkAppearsAfterLateMetadata() {

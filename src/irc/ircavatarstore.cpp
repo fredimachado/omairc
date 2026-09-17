@@ -87,6 +87,7 @@ QImage IrcAvatarStore::circled(const QImage& source, const QSize& requestedSize)
         edge = qMax(requestedSize.width(), requestedSize.height());
     else if (source.width() > 0 && source.height() > 0)
         edge = qMin(qMax(source.width(), source.height()), kMaximumCircledEdge);
+    edge = qMin(edge, kMaximumCircledEdge);
     const QSize target(edge, edge);
     QImage circle(target, QImage::Format_ARGB32_Premultiplied);
     circle.fill(Qt::transparent);
@@ -105,8 +106,26 @@ QImage IrcAvatarStore::circled(const QImage& source, const QSize& requestedSize)
     return circle;
 }
 
-QString IrcAvatarStore::source(const QString& rawUrl, int pixelSize) const
+QString IrcAvatarStore::source(const QString& rawUrl, int pixelSize)
 {
+    const QString trimmed = rawUrl.trimmed();
+    // Bundled demo art may use qrc: without the HTTPS policy. Network URLs
+    // still must pass ircAvatarUrlIsSafe.
+    if (trimmed.startsWith(QLatin1String("qrc:"), Qt::CaseInsensitive)) {
+        const QUrl resourceUrl(trimmed);
+        if (!resourceUrl.isValid())
+            return {};
+        const QString key = keyForUrl(resourceUrl);
+        if (cached(key).isNull()) {
+            QImage image(trimmed);
+            if (image.isNull())
+                return {};
+            remember(key, image);
+            emit ready(trimmed);
+        }
+        return QStringLiteral("image://") + kProviderId + QLatin1Char('/') + key;
+    }
+
     const int fetchSize = ircAvatarFetchPixelSize(pixelSize);
     if (fetchSize <= 0)
         return {};
@@ -119,15 +138,6 @@ QString IrcAvatarStore::source(const QString& rawUrl, int pixelSize) const
         return {};
     }
     return QStringLiteral("image://") + kProviderId + QLatin1Char('/') + key;
-}
-
-void IrcAvatarStore::put(const QUrl& url, const QImage& image)
-{
-    if (!ircAvatarUrlIsSafe(url) || image.isNull())
-        return;
-    const QString key = keyForUrl(url);
-    remember(key, image);
-    emit ready(QString::fromUtf8(url.toEncoded()));
 }
 
 QImage IrcAvatarStore::requestImage(const QString& id, QSize *size,
@@ -143,7 +153,7 @@ QImage IrcAvatarStore::requestImage(const QString& id, QSize *size,
 }
 
 void IrcAvatarStore::scheduleFetch(const QString& rawUrl, const QUrl& url,
-                                   const QString& key) const
+                                   const QString& key)
 {
     if (!cached(key).isNull())
         return;
@@ -157,7 +167,7 @@ void IrcAvatarStore::scheduleFetch(const QString& rawUrl, const QUrl& url,
     lookupThenGet(fetch);
 }
 
-void IrcAvatarStore::lookupThenGet(Fetch fetch) const
+void IrcAvatarStore::lookupThenGet(Fetch fetch)
 {
     auto found = m_fetches.find(fetch.key);
     if (found == m_fetches.end())
@@ -175,11 +185,10 @@ void IrcAvatarStore::lookupThenGet(Fetch fetch) const
         return;
     }
 
-    auto *self = const_cast<IrcAvatarStore *>(this);
     const int lookupId = QHostInfo::lookupHost(
-        fetch.url.host(), self,
-        [self, key = fetch.key](const QHostInfo& info) {
-            self->finishLookup(key, info);
+        fetch.url.host(), this,
+        [this, key = fetch.key](const QHostInfo& info) {
+            finishLookup(key, info);
         });
     found = m_fetches.find(fetch.key);
     if (found == m_fetches.end())
@@ -187,7 +196,7 @@ void IrcAvatarStore::lookupThenGet(Fetch fetch) const
     found->lookupId = lookupId;
 }
 
-void IrcAvatarStore::startGet(Fetch fetch) const
+void IrcAvatarStore::startGet(Fetch fetch)
 {
     if (!ircAvatarUrlIsSafe(fetch.url)) {
         dropFetch(fetch.key);
@@ -203,9 +212,8 @@ void IrcAvatarStore::startGet(Fetch fetch) const
     request.setRawHeader("Accept", "image/*");
     request.setHeader(QNetworkRequest::UserAgentHeader, QStringLiteral("Omairc"));
 
-    auto *self = const_cast<IrcAvatarStore *>(this);
     QNetworkReply *reply = m_nam->get(request);
-    reply->setParent(self);
+    reply->setParent(this);
     auto found = m_fetches.find(fetch.key);
     if (found == m_fetches.end()) {
         reply->abort();
@@ -219,23 +227,27 @@ void IrcAvatarStore::startGet(Fetch fetch) const
     found->rawUrl = fetch.rawUrl;
     found->body.clear();
 
-    QObject::connect(reply, &QNetworkReply::readyRead, self, [self, key = fetch.key]() {
-        auto it = self->m_fetches.find(key);
-        if (it == self->m_fetches.end() || !it->reply)
+    QObject::connect(reply, &QNetworkReply::readyRead, this, [this, key = fetch.key]() {
+        auto it = m_fetches.find(key);
+        if (it == m_fetches.end() || !it->reply)
             return;
         it->body += it->reply->readAll();
         if (it->body.size() > kMaximumAvatarBytes) {
             it->reply->abort();
-            self->dropFetch(key);
+            dropFetch(key);
         }
     });
-    QObject::connect(reply, &QNetworkReply::finished, self, [self, key = fetch.key]() {
-        self->finishReply(key);
+    QObject::connect(reply, &QNetworkReply::finished, this, [this, key = fetch.key]() {
+        finishReply(key);
     });
 }
 
-void IrcAvatarStore::finishLookup(const QString& key, const QHostInfo& info) const
+void IrcAvatarStore::finishLookup(const QString& key, const QHostInfo& info)
 {
+    // Pre-connect lookup blocks literal private addresses, but QNAM resolves the
+    // host again at GET time (DNS-rebinding TOCTOU). Any resolved address that
+    // is not global unicast drops the fetch (fail-closed; dual-stack hosts with
+    // one non-global address are rejected too).
     auto found = m_fetches.find(key);
     if (found == m_fetches.end())
         return;
@@ -254,7 +266,7 @@ void IrcAvatarStore::finishLookup(const QString& key, const QHostInfo& info) con
     startGet(fetch);
 }
 
-void IrcAvatarStore::finishReply(const QString& key) const
+void IrcAvatarStore::finishReply(const QString& key)
 {
     auto found = m_fetches.find(key);
     if (found == m_fetches.end())
@@ -301,26 +313,25 @@ void IrcAvatarStore::finishReply(const QString& key) const
     if (!image.loadFromData(body))
         return;
     remember(key, image);
-    emit const_cast<IrcAvatarStore *>(this)->ready(rawUrl);
+    emit ready(rawUrl);
 }
 
-void IrcAvatarStore::dropFetch(const QString& key) const
+void IrcAvatarStore::dropFetch(const QString& key)
 {
     auto found = m_fetches.find(key);
     if (found == m_fetches.end())
         return;
-    auto *self = const_cast<IrcAvatarStore *>(this);
     if (found->lookupId >= 0)
         QHostInfo::abortHostLookup(found->lookupId);
     if (found->reply) {
-        found->reply->disconnect(self);
+        found->reply->disconnect(this);
         found->reply->abort();
         found->reply->deleteLater();
     }
     m_fetches.remove(key);
 }
 
-void IrcAvatarStore::remember(const QString& key, const QImage& image) const
+void IrcAvatarStore::remember(const QString& key, const QImage& image)
 {
     QMutexLocker locker(&m_mutex);
     m_images.insert(key, image);

@@ -215,6 +215,8 @@ IrcSession *IrcController::addSession(const IrcSessionConfig& config,
         emit statusChanged();
         emit errorOccurred(networkId, kind, message);
     });
+    // Log every status line before WHOIS/CTCP routing so nothing is dropped when
+    // routing defers or ignores an entry.
     m_console.observe(session);
     connect(session, &IrcSession::statusEntry,
             this, &IrcController::handleStatusEntry);
@@ -522,7 +524,13 @@ QVariantMap IrcController::peerMetadata(const QString& networkId,
                                         const QString& nick) const
 {
     QVariantMap result;
+    result.insert(QStringLiteral("avatar"), QString());
+    result.insert(QStringLiteral("status"), QString());
     result.insert(QStringLiteral("bot"), false);
+    result.insert(QStringLiteral("displayName"), QString());
+    result.insert(QStringLiteral("pronouns"), QString());
+    result.insert(QStringLiteral("homepage"), QString());
+    result.insert(QStringLiteral("color"), QString());
     if (networkId.isEmpty() || nick.isEmpty())
         return result;
     const IrcNickPresence facts = m_reducer.nickPresence(networkId, nick);
@@ -550,11 +558,11 @@ void IrcController::handleCapabilities(const QString& networkId,
         return previous.contains(capability) && !capabilities.contains(capability);
     };
     const bool awayDropped = dropped(IrcCapability::AwayNotify);
-    const bool statusDropped = dropped(IrcCapability::MemberMetadata)
+    const bool metadataDropped = dropped(IrcCapability::MemberMetadata)
         || dropped(IrcCapability::Batch);
-    if (awayDropped || statusDropped) {
-        m_reducer.clearPresenceFacts(networkId, awayDropped, statusDropped);
-        if (statusDropped) {
+    if (awayDropped || metadataDropped) {
+        m_reducer.clearPresenceFacts(networkId, awayDropped, metadataDropped);
+        if (metadataDropped) {
             ++m_peerMetadataEpoch;
             emit peerMetadataChanged();
         }
@@ -1768,9 +1776,7 @@ IrcCommandOutcome IrcController::dispatchStatus(const IrcCommand& command,
         return IrcCommandOutcome::Sent;
     }
 
-    QString clamped = command.argument;
-    while (clamped.toUtf8().size() > IrcMetadata::maximumValueBytes)
-        clamped.chop(1);
+    const QString clamped = IrcMetadata::clamped(command.argument);
     if (!session->setOwnMetadata(IrcMetadata::statusKey(), clamped))
         return IrcCommandOutcome::Refused;
     armStatusWatch(networkId, surface, IrcStatusWatch::Kind::Set, clamped);

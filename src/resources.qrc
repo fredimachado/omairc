@@ -6,5 +6,6 @@
         <file alias="fonts/iAWriterMonoS-Bold.ttf">../fonts/iAWriterMonoS-Bold.ttf</file>
         <file alias="icons/omairc.svg">../data/icons/hicolor/scalable/apps/omairc.svg</file>
         <file alias="icons/omairc.ico">../data/icons/omairc.ico</file>
+        <file alias="demo/mira-avatar.png">../data/demo/mira-avatar.png</file>
     </qresource>
 </RCC>

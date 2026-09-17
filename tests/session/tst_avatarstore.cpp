@@ -1,4 +1,6 @@
+#include <QBuffer>
 #include <QCryptographicHash>
+#include <QImage>
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
 #include <QNetworkRequest>
@@ -284,7 +286,9 @@ void AvatarStoreTest::successfulFetchPopulatesCache()
 
 void AvatarStoreTest::capsCircledSizeWhenRequestedSizeInvalid()
 {
+    MockNetworkAccessManager nam;
     IrcAvatarStore store;
+    store.setNetworkAccessManager(&nam);
 
     const QString rawUrl = publicAvatarUrl("huge.png");
     const QUrl url = ircResolvedAvatarUrl(rawUrl, 32);
@@ -292,7 +296,17 @@ void AvatarStoreTest::capsCircledSizeWhenRequestedSizeInvalid()
 
     QImage huge(2000, 2000, QImage::Format_ARGB32);
     huge.fill(Qt::red);
-    store.put(url, huge);
+    QBuffer buffer;
+    buffer.open(QIODevice::WriteOnly);
+    QVERIFY(huge.save(&buffer, "PNG"));
+
+    MockNetworkAccessManager::Response response;
+    response.body = buffer.data();
+    nam.setResponse(url, response);
+
+    QSignalSpy readySpy(&store, &IrcAvatarStore::ready);
+    QCOMPARE(store.source(rawUrl, 32), QString());
+    QVERIFY(waitForReady(readySpy));
 
     const QString key = avatarKey(url);
     QSize imageSize;
@@ -313,6 +327,21 @@ void AvatarStoreTest::sourceIgnoresNonPositivePixelSize()
     IrcAvatarStore store;
     QCOMPARE(store.source(publicAvatarUrl("zero-width.png"), 0), QString());
     QCOMPARE(store.source(publicAvatarUrl("zero-width.png"), -4), QString());
+}
+
+void AvatarStoreTest::loadsBundledQrcWithoutHttpsPolicy()
+{
+    IrcAvatarStore store;
+    const QString rawUrl = QStringLiteral("qrc:/demo/mira-avatar.png");
+    QSignalSpy readySpy(&store, &IrcAvatarStore::ready);
+    const QString source = store.source(rawUrl, 32);
+    if (source.isEmpty() && readySpy.isEmpty())
+        QSKIP("demo mira avatar is not linked into protocol_tests");
+    QVERIFY(source.startsWith(QStringLiteral("image://omairc-avatar/")));
+    QSize imageSize;
+    const QString key = source.section(QLatin1Char('/'), -1);
+    const QImage image = store.requestImage(key, &imageSize, QSize(32, 32));
+    QVERIFY(!image.isNull());
 }
 
 int runAvatarStoreTests(int argc, char **argv)

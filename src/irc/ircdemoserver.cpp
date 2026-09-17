@@ -644,22 +644,13 @@ bool tryAnswerMetadata(IrcLoopbackTransport *transport, const QString &selfNick,
         return false;
 
     const QString key = ircWireText(parsed.value->parameters[2]);
-    QString stored;
-    for (const QString &known : IrcMetadata::subscribedKeys()) {
-        if (key.compare(known, Qt::CaseInsensitive) == 0) {
-            stored = known;
-            break;
-        }
-    }
+    const QString stored = IrcMetadata::canonicalKey(key);
     if (stored.isEmpty())
         return false;
 
     QString value;
-    if (parsed.value->parameters.size() >= 4) {
-        value = ircWireText(parsed.value->parameters[3]);
-        while (value.toUtf8().size() > IrcMetadata::maximumValueBytes)
-            value.chop(1);
-    }
+    if (parsed.value->parameters.size() >= 4)
+        value = IrcMetadata::clamped(ircWireText(parsed.value->parameters[3]));
     if (value.isEmpty()) {
         transport->injectBytes(line(QStringLiteral(":server 766 %1 %2 %3 :unset")
                                         .arg(selfNick, selfNick, stored)));
