@@ -4,6 +4,7 @@ unix:!macx: QT += dbus
 macx {
     CONFIG += sdk_no_version_check
     QMAKE_CXXFLAGS += -include arm_acle.h
+    QMAKE_LIBS_OPENGL -= -framework AGL
 
     HEADERS += ../../src/macosnotifications.h
     OBJECTIVE_SOURCES += ../../src/macosnotifications.mm

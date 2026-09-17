@@ -51,6 +51,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Prefer Xcode 16 when available
+        run: |
+          set -euo pipefail
+          xcode16=$(ls -d /Applications/Xcode_16*.app 2>/dev/null | sort -V | tail -n 1 || true)
+          if [ -n "$xcode16" ]; then
+            echo "Selecting $xcode16"
+            sudo xcode-select -s "$xcode16/Contents/Developer"
+          else
+            echo "No Xcode 16 install found; using default Xcode"
+          fi
+          xcodebuild -version
+
       - name: Read version
         run: |
           set -euo pipefail
