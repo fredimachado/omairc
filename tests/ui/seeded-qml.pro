@@ -2,10 +2,6 @@ QT += core gui qml quick quickcontrols2 network testlib
 unix:!macx: QT += dbus
 
 macx {
-    CONFIG += sdk_no_version_check
-    QMAKE_CXXFLAGS += -include arm_acle.h
-    QMAKE_LIBS_OPENGL -= -framework AGL
-
     HEADERS += ../../src/macosnotifications.h
     OBJECTIVE_SOURCES += ../../src/macosnotifications.mm
     LIBS += -framework UserNotifications -framework Foundation -framework AppKit
@@ -128,3 +124,5 @@ SOURCES += \
     ../../src/irc/qtirctransport.cpp
 
 RESOURCES += ../../src/resources.qrc
+
+include($$PWD/../../packaging/macos/sdk-compat.pri)

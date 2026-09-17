@@ -202,12 +202,16 @@ jobs:
           mkdir -p build-tests
           cd build-tests
           qmake "$GITHUB_WORKSPACE/tests/tests.pro"
+          # Qt 6.8 still emits -framework AGL; SDK 26 removed it.
+          find . -name Makefile -print0 | xargs -0 sed -i '' 's/-framework AGL//g'
           make -j"$jobs"
           ./protocol_tests
           cd "$GITHUB_WORKSPACE"
           mkdir -p build-seeded-qml-tests
           cd build-seeded-qml-tests
           qmake "$GITHUB_WORKSPACE/tests/ui/seeded-qml.pro"
+          # Qt 6.8 still emits -framework AGL; SDK 26 removed it.
+          find . -name Makefile -print0 | xargs -0 sed -i '' 's/-framework AGL//g'
           make -j"$jobs"
           test_state=$(mktemp -d "${RUNNER_TEMP}/omairc-tests.XXXXXX")
           cd "$GITHUB_WORKSPACE"

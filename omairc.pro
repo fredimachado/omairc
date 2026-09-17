@@ -16,10 +16,6 @@ win32 {
 }
 
 macx {
-    CONFIG += sdk_no_version_check
-    QMAKE_CXXFLAGS += -include arm_acle.h
-    QMAKE_LIBS_OPENGL -= -framework AGL
-
     OBJECTS_DIR = $$OUT_PWD/.obj
     MOC_DIR = $$OUT_PWD/.moc
     RCC_DIR = $$OUT_PWD/.rcc
@@ -198,3 +194,5 @@ unix:!macx {
     bash_completion.files = $$PWD/data/bash-completion/omairc
     INSTALLS += bash_completion
 }
+
+include($$PWD/packaging/macos/sdk-compat.pri)
