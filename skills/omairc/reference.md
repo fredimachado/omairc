@@ -39,11 +39,12 @@ Same object shape as one `connections` row.
 ## `conversations`
 
 ```json
-{"ok":true,"conversations":[{"target":"#omarchy","channel":true,"unread":0,"mention":false}]}
+{"ok":true,"conversations":[{"target":"#omarchy","channel":true,"topic":"A cozy corner for Omarchy users and builders.","unread":0,"mention":false}]}
 ```
 
 `unread` and `mention` are GUI badges. This snapshot does not clear them.
-Status is not in this list.
+Channel rows include `topic` (empty when the server has not sent one). Direct
+message rows omit it. Status is not in this list.
 
 ## `names`
 

@@ -54,6 +54,7 @@ void seedChannelAndDirect(FakeIrcTransport *transport)
 {
     transport->injectBytes(
         QByteArrayLiteral(":omairc!u@h JOIN :#omarchy\r\n"
+                          ":irc.example 332 omairc #omarchy :A cozy corner\r\n"
                           ":alice!u@h JOIN :#omarchy\r\n"
                           "@time=2011-10-19T16:40:51.620Z;msgid=old :alice!u@h PRIVMSG #omarchy :older\r\n"
                           "@time=2011-10-19T16:41:00.000Z;msgid=mid :alice!u@h PRIVMSG #omarchy :middle\r\n"
@@ -815,7 +816,10 @@ void OmaircIpcTest::handlerReadNamesConversations()
             dmRow = row;
     }
     QCOMPARE(channelRow.value(QStringLiteral("channel")).toBool(), true);
+    QCOMPARE(channelRow.value(QStringLiteral("topic")).toString(),
+             QStringLiteral("A cozy corner"));
     QCOMPARE(dmRow.value(QStringLiteral("channel")).toBool(), false);
+    QVERIFY(!dmRow.contains(QStringLiteral("topic")));
     QVERIFY(dmRow.value(QStringLiteral("unread")).toInt() >= 1);
 
     QStringList conversationTargets;

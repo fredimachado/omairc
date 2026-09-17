@@ -158,6 +158,7 @@ const CommandSpec kCommands[] = {
         "\n"
         "List channels and DMs on that network as JSON.\n"
         "Each row has target, channel, unread, and mention from the GUI.\n"
+        "Channel rows also include topic.\n"
         "This snapshot does not clear those badges.\n"
         "\n"
         "  --network ID   Connection to use. See connections.\n"

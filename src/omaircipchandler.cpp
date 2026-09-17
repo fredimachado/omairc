@@ -221,6 +221,8 @@ QByteArray OmaircIpcHandler::handleConversations(const QString &networkId) const
         QJsonObject row;
         row.insert(QStringLiteral("target"), conversation.target);
         row.insert(QStringLiteral("channel"), conversation.channel);
+        if (conversation.channel)
+            row.insert(QStringLiteral("topic"), conversation.topic);
         row.insert(QStringLiteral("unread"), conversation.unread);
         row.insert(QStringLiteral("mention"), conversation.mention);
         conversations.append(row);
