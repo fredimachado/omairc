@@ -310,6 +310,7 @@ private:
     bool selectedIsCloseableDirect() const;
     void dropSelectedDirectAndReselect();
     void clearConversationSelection();
+    void openJoinedChannel(const QString& networkId, const QString& channel);
     IrcSession *selectedSession() const;
     QString identityNetworkId() const;
     void notifySelfAwayIfChanged(const QString& previousId, bool previousAway);

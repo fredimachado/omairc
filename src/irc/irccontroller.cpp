@@ -608,6 +608,18 @@ void IrcController::revealConversation(const QString& networkId,
     selectConversation(networkId, target);
 }
 
+void IrcController::openJoinedChannel(const QString& networkId,
+                                      const QString& channel)
+{
+    if (networkId.isEmpty() || channel.isEmpty())
+        return;
+    const IrcConversationKey key = m_reducer.conversationKey(networkId, channel);
+    if (!m_reducer.ensureConversation(key, channel, IrcConversationCause::ChannelState))
+        return;
+    m_conversations.reload();
+    selectConversation(networkId, channel);
+}
+
 void IrcController::closeDirectMessage()
 {
     if (!selectedIsCloseableDirect())
@@ -1047,6 +1059,8 @@ IrcCommandOutcome IrcController::dispatch(const IrcCommand& command,
         sent = true;
         for (const IrcJoinTarget& target : *targets)
             sent = sent && active->join(target);
+        if (sent)
+            openJoinedChannel(active->networkId(), targets->constLast().channel());
         break;
     }
     case IrcCommand::Verb::Part: {

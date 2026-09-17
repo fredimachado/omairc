@@ -38,6 +38,6 @@ Preconditions:
 
 - `Enter` sends. There is no multiline composer. Do not hold Shift+Enter expecting a newline.
 - Empty or whitespace-only input is ignored. A screenshot of an unchanged transcript is the empty-submit proof.
-- `/me` is a live ACTION. Other catalog verbs are slash-commands. A rejected command such as `/close` on a channel stays in the composer.
+- `/me` is a live ACTION. Other catalog verbs are slash-commands. A rejected command such as `/close` on a channel stays in the composer. A successful `/join` or `/query` is consumed before the window switches, so it cannot remain as a draft.
 - Messages are session-local. Relaunching the isolated instance resets the seeded session. Prove persistence inside one launch.
 - `click-send` is only aimed while the member panel is visible. If the panel is closed, use `Enter`.

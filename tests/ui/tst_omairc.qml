@@ -5799,6 +5799,51 @@ TestCase {
         compare(composer.text, "/query mira");
     }
 
+    function typeJoinCommand(composer, command) {
+        mouseClick(composer);
+        verify(composer.activeFocus);
+        typeText(command);
+        compare(composer.text, command);
+        if (item("slashCompleteList").visible)
+            keyClick(Qt.Key_Escape);
+        keyClick(Qt.Key_Return);
+    }
+
+    function test_joinOpensChannelAndConsumesComposer() {
+        openSeededAppWindow();
+        var composer = item("messageComposer");
+        mouseClick(composer);
+        verify(composer.activeFocus);
+        compare(appWindow.currentConversation, "#omarchy");
+
+        mouseClick(namedItem(liveConversation("#help")));
+        tryCompare(appWindow, "currentConversation", "#help");
+        typeText("help draft");
+        compare(composer.text, "help draft");
+
+        mouseClick(namedItem(liveConversation("#omarchy")));
+        tryCompare(appWindow, "currentConversation", "#omarchy");
+        compare(composer.text, "");
+
+        typeJoinCommand(composer, "/join #desktop,#help");
+        tryCompare(appWindow, "currentConversation", "#help");
+        compare(composer.text, "help draft");
+
+        mouseClick(namedItem(liveConversation("#omarchy")));
+        tryCompare(appWindow, "currentConversation", "#omarchy");
+        compare(composer.text, "");
+
+        typeJoinCommand(composer, "/join #lab");
+        tryCompare(appWindow, "currentConversation", "#lab");
+        compare(composer.text, "");
+        verify(namedItem(liveConversation("#lab")) !== null);
+        compare(appWindow.currentConversationIsChannel, true);
+
+        mouseClick(namedItem(liveConversation("#omarchy")));
+        tryCompare(appWindow, "currentConversation", "#omarchy");
+        compare(composer.text, "");
+    }
+
     function openSlashWindow() {
         if (appWindow) {
             appWindow.close();
