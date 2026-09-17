@@ -41,6 +41,10 @@ if not exist "!EXE!" (
 )
 
 if exist "!QTBIN!\windeployqt.exe" (
+  rem Skip the compiler-runtime redist installer. On MSVC,
+  rem --compiler-runtime copies vc_redist.x64.exe (never run) instead of
+  rem the CRT DLLs. :deploy_msvc_runtime copies msvcp140 and vcruntime140
+  rem next to the exe so a per-user install does not need vc_redist.
   rem Default Qt 6.11 windeployqt follows every Quick Controls style and
   rem ships Mesa, translations, and QML tooling. Omairc forces Material.
   "!QTBIN!\windeployqt.exe" ^
@@ -69,8 +73,31 @@ for %%F in ("!QTBIN!\libqt6keychain.dll" "!QTBIN!\qt6keychain.dll") do (
   if exist %%F copy /Y %%F "!BUILD_DIR!\release\" >nul
 )
 
+rem Copy the MSVC CRT DLLs. windeployqt --compiler-runtime only drops
+rem vc_redist.x64.exe, and that still misses VS 2026's VC145 folder.
+if /i "!QSPEC!"=="win32-msvc" (
+  call :deploy_msvc_runtime "!BUILD_DIR!\release"
+  if not exist "!BUILD_DIR!\release\msvcp140.dll" (
+    echo warning: msvcp140.dll was not deployed next to the exe. >&2
+    echo Packaging needs the CRT DLLs; run from an x64 Native Tools prompt >&2
+    echo so VCToolsRedistDir is set, then bin\package-windows.bat. >&2
+  )
+)
+
 echo Built !EXE!
 call :prune_build_junk "!BUILD_DIR!\release"
+exit /b 0
+
+:deploy_msvc_runtime
+set "REL=%~1"
+if not exist "!REL!\omairc.exe" exit /b 0
+if not defined VCToolsRedistDir exit /b 0
+for /d %%D in ("!VCToolsRedistDir!x64\Microsoft.VC*.CRT") do (
+  if exist "%%D\msvcp140.dll" (
+    copy /Y "%%D\msvcp140*.dll" "!REL!\" >nul
+    copy /Y "%%D\vcruntime140*.dll" "!REL!\" >nul
+  )
+)
 exit /b 0
 
 :prune_qt_deploy
@@ -122,6 +149,7 @@ for %%F in (
 ) do (
   if exist "!REL!\%%F" del /q "!REL!\%%F"
 )
+del /q "!REL!\vc_redist*.exe" >nul 2>&1
 
 if exist "!REL!\qml" del /s /q "!REL!\qml\*.qmltypes" >nul 2>&1
 exit /b 0
@@ -182,7 +210,8 @@ if not errorlevel 1 (
   if not errorlevel 1 exit /b 0
 )
 
-set "VSWHERE=!ProgramFiles(x86)!\Microsoft Visual Studio\Installer\vswhere.exe"
+set "VSWHERE=%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe"
+if not exist "!VSWHERE!" set "VSWHERE=%ProgramFiles%\Microsoft Visual Studio\Installer\vswhere.exe"
 if not exist "!VSWHERE!" (
   echo vswhere.exe not found. Open an x64 Native Tools Command Prompt and rerun. >&2
   exit /b 1

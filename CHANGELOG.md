@@ -10,6 +10,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - The Windows build embeds the app icon in `omairc.exe`. Explorer, the title bar, and the taskbar use it instead of the default executable mark.
+- A per-user Inno Setup installer (`omairc-*-windows-x64-setup.exe`) on each version tag, next to the portable zip. `bin\package-windows.bat` compiles it from the windeployqt tree. Start Menu and user PATH are created; config is left alone on uninstall.
+
+### Changed
+
+- The Windows portable tree ships `msvcp140` and `vcruntime140` next to `omairc.exe` so a user-mode install does not need `vc_redist`. `bin\build.bat` copies those DLLs from `VCToolsRedistDir`. It does not pass `windeployqt --compiler-runtime`: on MSVC that switch only adds an unused `vc_redist.x64.exe`.
+
+### Fixed
+
+- `bin\build.bat` finds `vswhere.exe` when `cl` is not already on PATH. Delayed expansion cannot read `%ProgramFiles(x86)%`.
+- The Windows installer and `LICENSE` copyright name Fredi Machado.
+- The Windows installer treats expanded and unexpanded PATH entries as the same directory, so a `%LOCALAPPDATA%\Programs\Omairc` entry is not duplicated on install and is removed on uninstall.
 
 ## [0.6.0] - 2026-09-17
 
