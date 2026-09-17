@@ -5186,20 +5186,21 @@ TestCase {
 
     function test_transcriptBotAndAvatarRefreshAfterLateMetadata() {
         openSeededAppWindow();
-        injectOmarchyChat("anna", "#omarchy", "late-meta-chrome", "12:30");
+        // nora has no seeded avatar/bot — unlike anna/mira/kai.
+        injectOmarchyChat("nora", "#omarchy", "late-meta-chrome", "12:30");
         var row = renderedRowWithBody("late-meta-chrome");
-        compare(row.author, "anna");
+        compare(row.author, "nora");
         compare(row.authorBot, false);
         compare(row.authorAvatar, "");
-        var bot = findChild(row, "message-bot-anna");
-        verify(bot !== null, "Transcript bot mark should exist for anna");
+        var bot = findChild(row, "message-bot-nora");
+        verify(bot !== null, "Transcript bot mark should exist for nora");
         compare(bot.shown, false);
 
         seed.injectOmarchy(
-            ":server 761 fred anna bot * :PacketBot\r\n"
-            + ":server 761 fred anna avatar * :https://example.com/anna.png\r\n");
+            ":server 761 fred nora bot * :PacketBot\r\n"
+            + ":server 761 fred nora avatar * :https://example.com/nora.png\r\n");
         tryCompare(row, "authorBot", true);
-        tryCompare(row, "authorAvatar", "https://example.com/anna.png");
+        tryCompare(row, "authorAvatar", "https://example.com/nora.png");
         tryCompare(bot, "shown", true);
         tryCompare(bot, "visible", true);
     }
