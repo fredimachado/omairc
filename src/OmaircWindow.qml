@@ -75,7 +75,7 @@ ApplicationWindow {
         : false
     onConsoleVisibleChanged: {
         resetNickComplete();
-        if (!abandonFind())
+        if (!abandonFind() && !suppressComposerStash)
             stashComposerDraft();
         restoreComposerDraft();
         resetComposerHistoryBrowse();
@@ -93,7 +93,7 @@ ApplicationWindow {
     readonly property string currentConversationId: irc ? irc.selectedConversationId : ""
     onCurrentConversationIdChanged: {
         resetNickComplete();
-        if (!abandonFind())
+        if (!abandonFind() && !suppressComposerStash)
             stashComposerDraft();
         restoreComposerDraft();
         resetComposerHistoryBrowse();
@@ -102,7 +102,7 @@ ApplicationWindow {
         if (!consoleVisible)
             return;
         resetNickComplete();
-        if (!abandonFind())
+        if (!abandonFind() && !suppressComposerStash)
             stashComposerDraft();
         restoreComposerDraft();
         resetComposerHistoryBrowse();
@@ -153,6 +153,7 @@ ApplicationWindow {
     property var composerHistories: ({})
     property var composerDrafts: ({})
     property string composerDraftKey: ""
+    property bool suppressComposerStash: false
     property bool findActive: false
     property int findIndex: -1
     property int composerHistoryIndex: -1
@@ -1466,20 +1467,47 @@ ApplicationWindow {
         if (original.length === 0)
             return;
 
-        if (consoleVisible) {
-            if (irc && networkConsole.submit(original)) {
-                rememberSentComposerLine(original);
-                composer.clear();
-            }
-            consoleList.pinToEnd();
+        var fromConsole = consoleVisible;
+        var sentFromKey = composerDraftKey;
+        suppressComposerStash = true;
+        if (sentFromKey.length > 0)
+            composerDrafts[sentFromKey] = "";
+        composer.clear();
+
+        var sent = false;
+        if (fromConsole)
+            sent = irc && networkConsole && networkConsole.submit(original);
+        else
+            sent = irc && irc.sendMessage(original);
+        suppressComposerStash = false;
+
+        if (!sent) {
+            composer.text = original;
+            composer.cursorPosition = composer.text.length;
+            if (sentFromKey.length > 0 && composerDraftKey === sentFromKey)
+                composerDrafts[sentFromKey] = original;
+            if (fromConsole)
+                consoleList.pinToEnd();
+            else
+                messageList.pinToEnd();
             return;
         }
 
-        if (irc && irc.sendMessage(original)) {
-            rememberSentComposerLine(original);
-            composer.clear();
-        }
-        messageList.pinToEnd();
+        rememberSentComposerLine(original);
+        var kept = composerDrafts[composerDraftKey] || "";
+        composer.text = kept;
+        composer.cursorPosition = composer.text.length;
+        if (consoleVisible)
+            consoleList.pinToEnd();
+        else
+            messageList.pinToEnd();
+        Qt.callLater(function() {
+            if (composer.text.trim() === original && kept !== original) {
+                composer.text = kept;
+                composer.cursorPosition = composer.text.length;
+            }
+            composer.forceActiveFocus();
+        });
     }
 
     Shortcut {
