@@ -66,6 +66,15 @@ public:
 
 namespace
 {
+bool framesContain(const QByteArrayList &frames, const QByteArray &needle)
+{
+    for (const QByteArray &frame : frames) {
+        if (frame.contains(needle))
+            return true;
+    }
+    return false;
+}
+
 QByteArray ctcpVersionReply(const QByteArray &nick)
 {
     return QByteArrayLiteral("NOTICE ") + nick
@@ -314,6 +323,7 @@ private slots:
     void inviteWritesNickThenChannel();
     void setAwayEncodesOptionalReason();
     void setOwnMetadataWritesSetAndClear();
+    void metadataCapabilityLimitsSubscriptionsAndValues();
     void whoisWritesDoubledNick();
     void whoisStatusLinesFormatKnownNumerics();
     void incomingNoticeStatusLinesWrapSpeaker();
@@ -465,7 +475,7 @@ void SessionTest::negotiatesPresenceCapabilities()
     fixture.transport->injectBytes(
         QByteArrayLiteral(":server 001 omairc :Welcome\r\n"));
     QVERIFY(fixture.wrote(QByteArrayLiteral(
-        "METADATA * SUB avatar status bot display-name pronouns homepage color\r\n")));
+        "METADATA * SUB status avatar bot display-name pronouns homepage color\r\n")));
 
     fixture.transport->injectBytes(
         QByteArrayLiteral(":server 366 omairc #omarchy :End of /NAMES\r\n"));
@@ -525,7 +535,7 @@ void SessionTest::refusedPresenceCapabilitiesStayOffWithoutFailing()
                           ":server 366 omairc #omarchy :End of /NAMES\r\n"));
     QCOMPARE(fixture.session->state(), IrcSession::State::Registered);
     QVERIFY(!fixture.wrote(QByteArrayLiteral(
-        "METADATA * SUB avatar status bot display-name pronouns homepage color\r\n")));
+        "METADATA * SUB status avatar bot display-name pronouns homepage color\r\n")));
     QVERIFY(!fixture.wrote(QByteArrayLiteral("WHO #omarchy\r\n")));
 }
 
@@ -2659,6 +2669,87 @@ void SessionTest::setOwnMetadataWritesSetAndClear()
                                                 QStringLiteral("writing")));
     QVERIFY(!withoutCap.session->clearOwnMetadata(QStringLiteral("status")));
     QCOMPARE(withoutCap.transport->writtenFrames().size(), before);
+}
+
+void SessionTest::metadataCapabilityLimitsSubscriptionsAndValues()
+{
+    Fixture limited;
+    limited.connectTls();
+    limited.transport->injectBytes(
+        QByteArrayLiteral(
+            ":server CAP omairc LS :batch "
+            "draft/metadata-2=max-subs=2,max-value-bytes=8\r\n"
+            ":server CAP omairc ACK :batch draft/metadata-2\r\n"
+            ":server 001 omairc :Welcome\r\n"));
+    QCOMPARE(limited.session->state(), IrcSession::State::Registered);
+    QCOMPARE(limited.session->metadataCapability().maxSubs, 2);
+    QCOMPARE(limited.session->metadataCapability().maxValueBytes, 8);
+    QVERIFY(framesContain(
+        limited.transport->writtenFrames(),
+        QByteArrayLiteral("METADATA * SUB status avatar\r\n")));
+    QVERIFY(!framesContain(
+        limited.transport->writtenFrames(),
+        QByteArrayLiteral("METADATA * SUB status avatar bot")));
+
+    QVERIFY(limited.session->setOwnMetadata(
+        QStringLiteral("status"), QStringLiteral("abcdefghijk")));
+    QCOMPARE(limited.transport->writtenFrames().last(),
+             QByteArrayLiteral("METADATA * SET status :abcdefgh\r\n"));
+
+    QVERIFY(limited.session->setOwnMetadata(
+        QStringLiteral("status"), QStringLiteral("café!!!!")));
+    const QByteArray last = limited.transport->writtenFrames().last();
+    QVERIFY(last.startsWith("METADATA * SET status :"));
+    const QByteArray value = last.mid(QByteArray("METADATA * SET status :").size());
+    QVERIFY(value.endsWith("\r\n"));
+    QCOMPARE(value.chopped(2).size(), 8);
+
+    Fixture zeroSubs;
+    zeroSubs.connectTls();
+    zeroSubs.transport->injectBytes(
+        QByteArrayLiteral(
+            ":server CAP omairc LS :batch draft/metadata-2=max-subs=0\r\n"
+            ":server CAP omairc ACK :batch draft/metadata-2\r\n"
+            ":server 001 omairc :Welcome\r\n"));
+    QCOMPARE(zeroSubs.session->state(), IrcSession::State::Registered);
+    QVERIFY(!framesContain(zeroSubs.transport->writtenFrames(),
+                            QByteArrayLiteral("METADATA * SUB")));
+
+    Fixture malformed;
+    malformed.connectTls();
+    malformed.transport->injectBytes(
+        QByteArrayLiteral(
+            ":server CAP omairc LS :batch "
+            "draft/metadata-2=max-subs=-3,max-value-bytes=nope,max-value-bytes=99999\r\n"
+            ":server CAP omairc ACK :batch draft/metadata-2\r\n"
+            ":server 001 omairc :Welcome\r\n"));
+    QCOMPARE(malformed.session->state(), IrcSession::State::Registered);
+    QVERIFY(!malformed.session->metadataCapability().maxSubs.has_value());
+    QCOMPARE(malformed.session->metadataCapability().maxValueBytes, 99999);
+    QVERIFY(framesContain(
+        malformed.transport->writtenFrames(),
+        QByteArrayLiteral(
+            "METADATA * SUB status avatar bot display-name pronouns homepage color\r\n")));
+    const QString huge(600, QLatin1Char('x'));
+    QVERIFY(malformed.session->setOwnMetadata(QStringLiteral("status"), huge));
+    const QByteArray hugeFrame = malformed.transport->writtenFrames().last();
+    QCOMPARE(hugeFrame.mid(QByteArray("METADATA * SET status :").size()).chopped(2).size(),
+             512);
+
+    Fixture legacy;
+    legacy.connectTls();
+    legacy.transport->injectBytes(
+        QByteArrayLiteral(
+            ":server CAP omairc LS :batch draft/metadata-2\r\n"
+            ":server CAP omairc ACK :batch draft/metadata-2\r\n"
+            ":server 001 omairc :Welcome\r\n"));
+    QCOMPARE(legacy.session->state(), IrcSession::State::Registered);
+    QVERIFY(!legacy.session->metadataCapability().maxSubs.has_value());
+    QVERIFY(!legacy.session->metadataCapability().maxValueBytes.has_value());
+    QVERIFY(framesContain(
+        legacy.transport->writtenFrames(),
+        QByteArrayLiteral(
+            "METADATA * SUB status avatar bot display-name pronouns homepage color\r\n")));
 }
 
 void SessionTest::whoisWritesDoubledNick()

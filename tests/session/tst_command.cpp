@@ -177,6 +177,7 @@ private slots:
     void awayAndBackWriteAwayFrames();
     void statusWritesMetadataFrames();
     void statusRefusesOnMetadataError();
+    void statusRefusesOnMetadataFailReplies();
     void whoisSendsAndDefaults();
     void ctcpSendsAndDefaults();
     void modeSendsAndRefuses();
@@ -1665,6 +1666,87 @@ void CommandTest::statusRefusesOnMetadataError()
     QVERIFY(selectedBodiesContain(
         messages,
         QStringLiteral("Could not set standing status: status permission denied")));
+}
+
+void CommandTest::statusRefusesOnMetadataFailReplies()
+{
+    auto runFail = [&](const QByteArray& failLine, const QString& needle) {
+        IrcController controller;
+        auto *transport = new FakeIrcTransport;
+        IrcSession *session = controller.addSession(config(), transport);
+        QVERIFY(session);
+        QVERIFY(controller.start(QStringLiteral("libera")));
+        welcomeMetadata(transport);
+        transport->injectBytes(
+            QByteArrayLiteral(":omairc!u@h JOIN :#omarchy\r\n"
+                              ":server 353 omairc = #omarchy :omairc Alice\r\n"
+                              ":server 366 omairc #omarchy :End of NAMES\r\n"));
+        controller.selectConversation(QStringLiteral("libera"),
+                                      QStringLiteral("#omarchy"));
+        auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
+        QVERIFY(messages);
+
+        QVERIFY(controller.sendMessage(QStringLiteral("/status blocked")));
+        QCOMPARE(transport->writtenFrames().last(),
+                 QByteArrayLiteral("METADATA * SET status :blocked\r\n"));
+        transport->injectBytes(failLine);
+        QCOMPARE(controller.peerMetadata(QStringLiteral("libera"),
+                                         QStringLiteral("omairc"))
+                     .value(QStringLiteral("status"))
+                     .toString(),
+                 QString());
+        QVERIFY(selectedBodiesContain(messages, needle));
+
+        // A later success for status must not falsely confirm the failed watch.
+        transport->injectBytes(
+            QByteArrayLiteral(
+                ":server 761 omairc omairc status * :should-not-confirm\r\n"));
+        QVERIFY(!selectedBodiesContain(
+            messages, QStringLiteral("Standing status set to should-not-confirm")));
+        QCOMPARE(controller.peerMetadata(QStringLiteral("libera"),
+                                         QStringLiteral("omairc"))
+                     .value(QStringLiteral("status"))
+                     .toString(),
+                 QStringLiteral("should-not-confirm"));
+    };
+
+    runFail(QByteArrayLiteral(
+                ":server FAIL METADATA KEY_NO_PERMISSION omairc status "
+                ":permission denied\r\n"),
+            QStringLiteral("Could not set standing status: KEY_NO_PERMISSION"));
+    runFail(QByteArrayLiteral(
+                ":server FAIL METADATA VALUE_INVALID :value is too long\r\n"),
+            QStringLiteral("Could not set standing status: VALUE_INVALID"));
+    runFail(QByteArrayLiteral(
+                ":server FAIL METADATA RATE_LIMITED * status 5 "
+                ":too many changes\r\n"),
+            QStringLiteral("Could not set standing status: RATE_LIMITED"));
+
+    // Unrelated FAIL for another key must not consume the watch.
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    IrcSession *session = controller.addSession(config(), transport);
+    QVERIFY(session);
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    welcomeMetadata(transport);
+    transport->injectBytes(
+        QByteArrayLiteral(":omairc!u@h JOIN :#omarchy\r\n"
+                          ":server 353 omairc = #omarchy :omairc Alice\r\n"
+                          ":server 366 omairc #omarchy :End of NAMES\r\n"));
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
+    QVERIFY(messages);
+    QVERIFY(controller.sendMessage(QStringLiteral("/status waiting")));
+    transport->injectBytes(
+        QByteArrayLiteral(
+            ":server FAIL METADATA KEY_NO_PERMISSION omairc avatar "
+            ":no avatar permission\r\n"));
+    QVERIFY(!selectedBodiesContain(
+        messages, QStringLiteral("Could not set standing status")));
+    transport->injectBytes(
+        QByteArrayLiteral(":server 761 omairc omairc status * :waiting\r\n"));
+    QVERIFY(selectedBodiesContain(
+        messages, QStringLiteral("Standing status set to waiting.")));
 }
 
 void CommandTest::whoisSendsAndDefaults()

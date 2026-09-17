@@ -6,6 +6,12 @@
 #include <map>
 #include <optional>
 
+struct IrcMetadataCapability
+{
+    std::optional<int> maxSubs;
+    std::optional<int> maxValueBytes;
+};
+
 namespace IrcMetadata {
 QString statusKey();
 QString avatarKey();
@@ -15,12 +21,18 @@ QString pronounsKey();
 QString homepageKey();
 QString colorKey();
 const QStringList& subscribedKeys();
+QStringList subscriptionKeys(std::optional<int> maxSubs);
 bool isKnownKey(const QString& key);
 QString canonicalKey(const QString& key);
 QString clamped(const QString& value);
+QString clamped(const QString& value, int maxBytes);
+int effectiveMaxValueBytes(std::optional<int> advertised);
 
 constexpr int maximumValueBytes = 512;
 }
+
+std::optional<IrcMetadataCapability> parseIrcMetadataCapability(
+    const QStringList& tokens);
 
 struct IrcAway
 {

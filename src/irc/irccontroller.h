@@ -335,6 +335,8 @@ private:
                                   const QString& key,
                                   const QString& value);
     void routeStatusMetadataError(const IrcStatusEntry& entry);
+    void routeStatusMetadataFail(const QString& networkId,
+                                 const IrcMessage& message);
     void echoIfPresent(IrcSession *session,
                        const QString& target,
                        const QString& body,

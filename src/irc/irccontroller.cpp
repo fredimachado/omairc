@@ -1775,7 +1775,9 @@ IrcCommandOutcome IrcController::dispatchStatus(const IrcCommand& command,
         return IrcCommandOutcome::Sent;
     }
 
-    const QString clamped = IrcMetadata::clamped(command.argument);
+    const QString clamped = IrcMetadata::clamped(
+        command.argument,
+        IrcMetadata::effectiveMaxValueBytes(session->metadataCapability().maxValueBytes));
     if (!session->setOwnMetadata(IrcMetadata::statusKey(), clamped))
         return IrcCommandOutcome::Refused;
     armStatusWatch(networkId, surface, IrcStatusWatch::Kind::Set, clamped);
@@ -2217,6 +2219,59 @@ void IrcController::routeStatusMetadataError(const IrcStatusEntry& entry)
     m_statusWatches.erase(found);
 }
 
+void IrcController::routeStatusMetadataFail(const QString& networkId,
+                                            const IrcMessage& message)
+{
+    if (parameter(message, 0).compare(QLatin1String("METADATA"), Qt::CaseInsensitive)
+        != 0) {
+        return;
+    }
+    auto found = m_statusWatches.find(networkId);
+    if (found == m_statusWatches.end())
+        return;
+
+    const QString code = parameter(message, 1).toUpper();
+    const bool knownFail =
+        code == QLatin1String("KEY_NO_PERMISSION")
+        || code == QLatin1String("VALUE_INVALID")
+        || code == QLatin1String("RATE_LIMITED")
+        || code == QLatin1String("KEY_NOT_SET")
+        || code == QLatin1String("LIMIT_REACHED")
+        || code == QLatin1String("KEY_INVALID");
+    if (!knownFail)
+        return;
+
+    bool sawStatusKey = false;
+    bool sawOtherKnownKey = false;
+    // Skip trailing description so prose cannot invent a key.
+    const std::size_t lastContext =
+        message.parameters.size() > 2 ? message.parameters.size() - 1 : 2;
+    for (std::size_t index = 2; index < lastContext; ++index) {
+        const QString token = parameter(message, index);
+        if (!IrcMetadata::isKnownKey(token))
+            continue;
+        if (token.compare(IrcMetadata::statusKey(), Qt::CaseInsensitive) == 0)
+            sawStatusKey = true;
+        else
+            sawOtherKnownKey = true;
+    }
+    // SUB warnings for other keys must not consume a pending /status watch.
+    if (sawOtherKnownKey && !sawStatusKey)
+        return;
+
+    const QString description = message.parameters.empty()
+        ? code
+        : parameter(message, message.parameters.size() - 1);
+    const QString reason = description.isEmpty()
+        ? code
+        : QStringLiteral("%1 %2").arg(code, description);
+    const QString outcome = found->kind == IrcStatusWatch::Kind::Clear
+        ? QStringLiteral("Could not clear standing status: %1").arg(reason)
+        : QStringLiteral("Could not set standing status: %1").arg(reason);
+    echoStatusOutcome(networkId, found->destination, outcome);
+    m_statusWatches.erase(found);
+}
+
 void IrcController::echoIfPresent(IrcSession *session,
                                   const QString& target,
                                   const QString& body,
@@ -2406,6 +2461,8 @@ void IrcController::publish(const IrcViewNotify& notify)
 void IrcController::handleMessage(const QString& networkId,
                                   const IrcMessage& message)
 {
+    if (message.command == "FAIL")
+        routeStatusMetadataFail(networkId, message);
     if (message.command == "005") {
         IrcServerFeatures features = m_reducer.serverFeatures(networkId);
         if (message.parameters.size() > 2) {
