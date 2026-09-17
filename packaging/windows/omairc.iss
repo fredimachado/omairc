@@ -8,6 +8,10 @@
   #error MyAppVersion must be defined (run bin\package-windows.bat)
 #endif
 
+#ifndef MyAppSource
+  #define MyAppSource "..\..\build\release"
+#endif
+
 #define MyAppName "Omairc"
 #define MyAppExeName "omairc.exe"
 
@@ -43,7 +47,7 @@ OutputBaseFilename=omairc-{#MyAppVersion}-windows-x64-setup
 Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Files]
-Source: "..\..\build\release\*"; DestDir: "{app}"; \
+Source: "{#MyAppSource}\*"; DestDir: "{app}"; \
   Flags: ignoreversion recursesubdirs createallsubdirs; \
   Excludes: "*.obj,*.pdb,*.res,*.ilk,moc_*.cpp,moc_predefs.h,qrc_*.cpp,vc_redist*.exe"
 Source: "..\..\LICENSE"; DestDir: "{app}"; DestName: "LICENSE.txt"

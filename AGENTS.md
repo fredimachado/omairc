@@ -137,7 +137,10 @@ per-user install does not need `vc_redist`. `:prune_qt_deploy` deletes a
 stale `vc_redist*.exe` left in an existing build directory.
 `bin\package-windows.bat` compiles
 `packaging/windows/omairc.iss` with Inno Setup 6 into
-`dist\omairc-*-windows-x64-setup.exe`. Privileges stay lowest by default
+`dist\omairc-*-windows-x64-setup.exe`. It stages a copy of `build\release`
+first so the script does not glob a live tree; still run it after a
+fresh `bin\build.bat` if you switched Qt kits, or leftover DLLs from the
+previous kit still ship. Privileges stay lowest by default
 (`{autopf}` is `%LOCALAPPDATA%\Programs\Omairc`); the wizard can elevate
 for all users. The installer uses `data/icons/omairc.ico`, adds a Start
 Menu shortcut and user PATH, and leaves config and logs alone on

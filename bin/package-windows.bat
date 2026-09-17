@@ -32,9 +32,22 @@ if errorlevel 1 exit /b 1
 
 if not exist "%ROOT%\dist" mkdir "%ROOT%\dist"
 
+set "STAGE=%ROOT%\dist\omairc-windows-stage"
+if exist "!STAGE!" rmdir /s /q "!STAGE!"
+mkdir "!STAGE!"
+xcopy /E /I /Q /Y "%ROOT%\build\release\*" "!STAGE!\" >nul
+if errorlevel 1 (
+  echo Failed to stage build\release for the installer. >&2
+  exit /b 1
+)
+del /q "!STAGE!\*.obj" "!STAGE!\*.pdb" "!STAGE!\*.res" "!STAGE!\*.ilk" >nul 2>&1
+del /q "!STAGE!\moc_*.cpp" "!STAGE!\moc_predefs.h" "!STAGE!\qrc_*.cpp" >nul 2>&1
+del /q "!STAGE!\vc_redist*.exe" >nul 2>&1
+
 echo Compiling Omairc !VERSION! setup with "!ISCC!"
-"!ISCC!" /Q /DMyAppVersion=!VERSION! "%ROOT%\packaging\windows\omairc.iss"
+"!ISCC!" /Q /DMyAppVersion=!VERSION! /DMyAppSource="..\..\dist\omairc-windows-stage" "%ROOT%\packaging\windows\omairc.iss"
 if errorlevel 1 exit /b 1
+if exist "!STAGE!" rmdir /s /q "!STAGE!"
 
 set "SETUP=%ROOT%\dist\omairc-!VERSION!-windows-x64-setup.exe"
 if not exist "!SETUP!" (
