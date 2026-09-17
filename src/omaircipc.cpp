@@ -50,15 +50,14 @@ QJsonObject parseObject(const QByteArray &line, QString *error)
 QJsonObject connectionObject(const ConnectionInfo &info)
 {
     QJsonObject object;
-    object.insert(QStringLiteral("id"), info.id);
-    object.insert(QStringLiteral("host"), info.host);
+    putText(object, QStringLiteral("id"), info.id);
+    putText(object, QStringLiteral("host"), info.host);
     object.insert(QStringLiteral("port"), info.port);
-    object.insert(QStringLiteral("tls"), info.tls);
-    object.insert(QStringLiteral("nick"), info.nick);
-    object.insert(QStringLiteral("state"), info.state);
-    object.insert(QStringLiteral("selected"), info.selected);
-    if (!info.lastError.isEmpty())
-        object.insert(QStringLiteral("lastError"), info.lastError);
+    putFlag(object, QStringLiteral("tls"), info.tls);
+    putText(object, QStringLiteral("nick"), info.nick);
+    putText(object, QStringLiteral("state"), info.state);
+    putFlag(object, QStringLiteral("selected"), info.selected);
+    putText(object, QStringLiteral("lastError"), info.lastError);
     return object;
 }
 

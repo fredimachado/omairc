@@ -13,7 +13,8 @@ Omairc is a desktop IRC client. While the window is running, the same
 `omairc` binary prints one JSON line and exits. It is control of that
 window, not a second IRC client.
 
-JSON field lists: [reference.md](reference.md).
+JSON field lists: [reference.md](reference.md). Row fields omit empty
+strings and `false` flags; treat absence as that default.
 
 ## Prerequisite
 
@@ -53,7 +54,7 @@ conversation. Do not `raise` unless the user wants the window.
 |---|---|
 | `connections` / `list` | Networks: `id`, `host`, `port`, `tls`, `nick`, `state`, `selected` |
 | `status [--network ID]` | One connection |
-| `conversations [--network ID]` | Channels and DMs with GUI `unread` and `mention` badges (does not clear them) |
+| `conversations [--network ID]` | Channels and DMs with GUI `unread`/`mention` badges and channel `topic` (does not clear badges) |
 | `names [--network ID] TARGET` | Joined-channel member panel snapshot |
 | `send [--network ID] TARGET TEXT...` | PRIVMSG without changing UI selection |
 | `read [--network ID] [TARGET] [--last N\|--since DURATION\|--unread]` | Chat snapshot (`message`, `notice`, `action`) |

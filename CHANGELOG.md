@@ -9,11 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `omairc conversations` includes `topic` on channel rows.
 - The Windows build embeds the app icon in `omairc.exe`. Explorer, the title bar, and the taskbar use it instead of the default executable mark.
 - A per-user Inno Setup installer (`omairc-*-windows-x64-setup.exe`) on each version tag, next to the portable zip. `bin\package-windows.bat` compiles it from the windeployqt tree. Start Menu and user PATH are created; config is left alone on uninstall.
 
 ### Changed
 
+- CLI JSON rows omit empty strings and `false` flags so agent payloads stay small. Missing means that default. Numbers such as `unread` stay. Top-level `"ok": false` on errors is unchanged.
 - The Windows portable tree ships `msvcp140` and `vcruntime140` next to `omairc.exe` so a user-mode install does not need `vc_redist`. `bin\build.bat` copies those DLLs from `VCToolsRedistDir`. It does not pass `windeployqt --compiler-runtime`: on MSVC that switch only adds an unused `vc_redist.x64.exe`.
 
 ### Fixed
