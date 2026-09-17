@@ -5060,6 +5060,106 @@ TestCase {
         compare(anna.Accessible.description, "writing docs");
     }
 
+    function test_memberBotMarkAppearsAfterLateMetadata() {
+        openSeededAppWindow();
+        var members = item("membersList");
+        var anna = members.itemAtIndex(memberIndex("anna"));
+        verify(anna !== null, "The anna member delegate should be rendered");
+        compare(anna.bot, false);
+        var annaBot = findChild(anna, "member-bot-anna");
+        compare(annaBot.visible, false);
+
+        seed.injectOmarchy(":server 761 fred anna bot * :PacketBot\r\n");
+        tryCompare(anna, "bot", true);
+        tryCompare(annaBot, "shown", true);
+        tryCompare(annaBot, "visible", true);
+    }
+
+    function test_identityFooterBotAndAvatarRefreshAfterSelfMetadata() {
+        openSeededAppWindow();
+        var selfBot = item("selfBotMark");
+        compare(selfBot.shown, false);
+        compare(selfBot.visible, false);
+        compare(appWindow.peerBot(appWindow.selfNick), false);
+        compare(appWindow.peerAvatar(appWindow.selfNick), "");
+
+        seed.injectOmarchy(":server 761 fred fred bot * :ReviewBot\r\n");
+        tryCompare(selfBot, "shown", true);
+        tryCompare(selfBot, "visible", true);
+        tryVerify(function() {
+            return appWindow.peerBot(appWindow.selfNick) === true;
+        });
+
+        seed.injectOmarchy(
+            ":server 761 fred fred avatar * :https://example.com/self.png\r\n");
+        tryVerify(function() {
+            return appWindow.peerAvatar(appWindow.selfNick)
+                === "https://example.com/self.png";
+        });
+        var selfGlyph = item("selfNickGlyph");
+        tryCompare(selfGlyph, "avatarUrl", "https://example.com/self.png");
+    }
+
+    function test_transcriptBotAndAvatarRefreshAfterLateMetadata() {
+        openSeededAppWindow();
+        injectOmarchyChat("anna", "#omarchy", "late-meta-chrome", "12:30");
+        var row = renderedRowWithBody("late-meta-chrome");
+        compare(row.author, "anna");
+        compare(row.authorBot, false);
+        compare(row.authorAvatar, "");
+        var bot = findChild(row, "message-bot-anna");
+        verify(bot !== null, "Transcript bot mark should exist for anna");
+        compare(bot.shown, false);
+
+        seed.injectOmarchy(
+            ":server 761 fred anna bot * :PacketBot\r\n"
+            + ":server 761 fred anna avatar * :https://example.com/anna.png\r\n");
+        tryCompare(row, "authorBot", true);
+        tryCompare(row, "authorAvatar", "https://example.com/anna.png");
+        tryCompare(bot, "shown", true);
+        tryCompare(bot, "visible", true);
+    }
+
+    function test_typingTranscriptBotRefreshesAfterLateMetadata() {
+        openSeededAppWindow();
+        mouseClick(namedItem(liveConversation("anna")));
+        tryCompare(appWindow, "currentConversation", "anna");
+
+        var footer = item("typingTranscript");
+        tryCompare(footer, "visible", true);
+        tryCompare(footer, "grouped", false);
+        var header = findChild(footer, "typingTranscriptHeader");
+        verify(header !== null, "The typing header should exist");
+        compare(header.bot, false);
+        var bot = findChild(header, "message-bot-anna");
+        verify(bot !== null, "Typing header should host a bot mark");
+        compare(bot.shown, false);
+        compare(appWindow.peerBot("anna"), false);
+
+        seed.injectOmarchy(":server 761 fred anna bot * :PacketBot\r\n");
+        tryVerify(function() {
+            return appWindow.peerBot("anna") === true;
+        });
+        tryCompare(header, "bot", true);
+        tryCompare(bot, "shown", true);
+        tryCompare(bot, "visible", true);
+    }
+
+    function test_dmSidebarBotMarkAppearsAfterLateMetadata() {
+        openSeededAppWindow();
+        var annaRow = namedItem(liveConversation("anna"));
+        verify(annaRow !== null, "Seeded anna DM row should exist");
+        compare(annaRow.bot, false);
+        var bot = findChild(annaRow, "conversation-bot-anna");
+        verify(bot !== null, "DM sidebar bot mark should exist");
+        compare(bot.shown, false);
+
+        seed.injectOmarchy(":server 761 fred anna bot * :PacketBot\r\n");
+        tryCompare(annaRow, "bot", true);
+        tryCompare(bot, "shown", true);
+        tryCompare(bot, "visible", true);
+    }
+
     function test_memberPresenceShowsOurOwnAwayWithoutAwayNotify() {
         var savedMembers = gatedIrc.members;
         var savedPeopleCount = gatedIrc.peopleCount;

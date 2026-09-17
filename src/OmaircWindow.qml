@@ -527,6 +527,9 @@ ApplicationWindow {
     function peerFacts(nick) {
         if (!irc || typeof irc.peerMetadata !== "function" || !nick)
             return { avatar: "", bot: false };
+        // peerMetadata is a plain invokable. Read peerMetadataEpoch so an
+        // inbound 761 / 766 re-runs this binding without a selection churn.
+        var _epoch = irc.peerMetadataEpoch
         var networkId = irc.selectedNetworkId;
         if (!networkId || networkId.length === 0)
             networkId = win.currentNetworkId;
@@ -3231,6 +3234,7 @@ ApplicationWindow {
                     height: width
 
                     NickGlyph {
+                        objectName: "selfNickGlyph"
                         anchors.fill: parent
                         nick: win.selfNick
                         avatarUrl: win.peerAvatar(win.selfNick)
@@ -3470,9 +3474,14 @@ ApplicationWindow {
                     required property string time
                     required property string body
                     required property string kind
+                    required property var model
+                    // Read roles through model so MessageListModel dataChanged
+                    // refreshes them. Keep them optional so ListModel fixtures
+                    // without avatar/bot roles still instantiate.
+                    readonly property string authorAvatar: model && model.authorAvatar
+                        ? String(model.authorAvatar) : ""
+                    readonly property bool authorBot: !!(model && model.authorBot)
                     readonly property string origin: win.transcriptField(messageList.model, index, "origin")
-                    readonly property string authorAvatar: win.transcriptField(messageList.model, index, "authorAvatar")
-                    readonly property bool authorBot: win.transcriptField(messageList.model, index, "authorBot") === "true"
                     readonly property bool replayed: origin === "replay"
                     readonly property bool isChat: kind !== "event" && kind !== "whois"
                     readonly property bool grouped: win.continuesMessageGroup(

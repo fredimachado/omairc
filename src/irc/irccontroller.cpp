@@ -337,6 +337,11 @@ int IrcController::conversationEpoch() const
     return m_conversationEpoch;
 }
 
+int IrcController::peerMetadataEpoch() const
+{
+    return m_peerMetadataEpoch;
+}
+
 QString IrcController::lastErrorForNetwork(const QString& networkId) const
 {
     return m_lastErrors.value(networkId);
@@ -509,6 +514,10 @@ void IrcController::handleCapabilities(const QString& networkId,
         || dropped(IrcCapability::Batch);
     if (awayDropped || statusDropped) {
         m_reducer.clearPresenceFacts(networkId, awayDropped, statusDropped);
+        if (statusDropped) {
+            ++m_peerMetadataEpoch;
+            emit peerMetadataChanged();
+        }
         reloadModels();
     }
     if (dropped(IrcCapability::MessageTags)) {
@@ -2176,6 +2185,10 @@ void IrcController::apply(const IrcEvent& event)
         m_unawaySent.remove(selfAway->networkId);
     }
     m_reducer.apply(event);
+    if (std::holds_alternative<IrcMemberMetadataEvent>(event)) {
+        ++m_peerMetadataEpoch;
+        emit peerMetadataChanged();
+    }
     if (const auto *nick = std::get_if<IrcNickEvent>(&event)) {
         m_openDirects.rekey(nick->networkId, nick->oldNick, nick->newNick,
                             m_reducer.serverFeatures(nick->networkId).caseMapping());

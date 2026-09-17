@@ -347,6 +347,7 @@ private slots:
     void incomingActionUsesActionKindAndStripsCtcp();
     void emptyNetworkIdDoesNotSwitch();
     void presenceCapabilitiesGateAwayAndStatus();
+    void peerMetadataEpochBumpsOnInboundMetadata();
     void defaultPrefixPaintsLabelNotNick();
     void channelCloseSlashIsWrongScope();
     void partDefaultsToSelectedChannel();
@@ -844,6 +845,36 @@ void ControllerTest::presenceCapabilitiesGateAwayAndStatus()
     QVERIFY(!controller.hasMemberStatus());
     QCOMPARE(roleAt(members, 1, MemberListModel::AwayRole), false);
     QCOMPARE(roleAt(members, 1, MemberListModel::StatusRole), QString());
+}
+
+void ControllerTest::peerMetadataEpochBumpsOnInboundMetadata()
+{
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+                                                transport);
+    QVERIFY(session);
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    transport->completeConnect();
+    transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :batch draft/metadata-2\r\n"
+                          ":server CAP omairc ACK :batch draft/metadata-2\r\n"
+                          ":server 001 omairc :Welcome\r\n"
+                          ":server 005 omairc CHANTYPES=# PREFIX=(ov)@+ "
+                          ":are supported by this server\r\n"
+                          ":omairc!u@h JOIN :#omarchy\r\n"
+                          ":server 353 omairc = #omarchy :@omairc Alice\r\n"
+                          ":server 366 omairc #omarchy :End of NAMES\r\n"));
+    QCOMPARE(controller.peerMetadataEpoch(), 0);
+    QSignalSpy spy(&controller, &IrcController::peerMetadataChanged);
+    transport->injectBytes(
+        QByteArrayLiteral(":server 761 omairc Alice bot * :PacketBot\r\n"));
+    QCOMPARE(controller.peerMetadataEpoch(), 1);
+    QCOMPARE(spy.count(), 1);
+    QCOMPARE(controller.peerMetadata(QStringLiteral("libera"), QStringLiteral("Alice"))
+                 .value(QStringLiteral("bot"))
+                 .toBool(),
+             true);
 }
 
 void ControllerTest::defaultPrefixPaintsLabelNotNick()
