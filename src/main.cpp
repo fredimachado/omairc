@@ -51,26 +51,37 @@ static bool stdHandleIsRedirected(DWORD stdHandle)
     return type == FILE_TYPE_DISK || type == FILE_TYPE_PIPE;
 }
 
-// GUI-subsystem binaries have no console of their own. Reuse the parent
-// terminal for --help and the local CLI, but leave redirected handles alone.
+static void reopenConsoleOutput(FILE *stream)
+{
+#ifdef _MSC_VER
+    FILE *unused = nullptr;
+    freopen_s(&unused, "CONOUT$", "w", stream);
+#else
+    (void)freopen("CONOUT$", "w", stream);
+#endif
+}
+
 static void attachParentConsole()
 {
-    if (stdHandleIsRedirected(STD_OUTPUT_HANDLE)
-        || stdHandleIsRedirected(STD_ERROR_HANDLE)) {
+    const bool outRedirected = stdHandleIsRedirected(STD_OUTPUT_HANDLE);
+    const bool errRedirected = stdHandleIsRedirected(STD_ERROR_HANDLE);
+    if (outRedirected && errRedirected)
         return;
-    }
+
+    const HANDLE savedOut = outRedirected ? GetStdHandle(STD_OUTPUT_HANDLE)
+                                          : INVALID_HANDLE_VALUE;
+    const HANDLE savedErr = errRedirected ? GetStdHandle(STD_ERROR_HANDLE)
+                                          : INVALID_HANDLE_VALUE;
     if (!AttachConsole(ATTACH_PARENT_PROCESS))
         return;
-#ifdef _MSC_VER
-    FILE *stream = nullptr;
-    freopen_s(&stream, "CONOUT$", "w", stdout);
-    freopen_s(&stream, "CONOUT$", "w", stderr);
-    freopen_s(&stream, "CONIN$", "r", stdin);
-#else
-    (void)freopen("CONOUT$", "w", stdout);
-    (void)freopen("CONOUT$", "w", stderr);
-    (void)freopen("CONIN$", "r", stdin);
-#endif
+    if (outRedirected)
+        SetStdHandle(STD_OUTPUT_HANDLE, savedOut);
+    if (errRedirected)
+        SetStdHandle(STD_ERROR_HANDLE, savedErr);
+    if (!outRedirected)
+        reopenConsoleOutput(stdout);
+    if (!errRedirected)
+        reopenConsoleOutput(stderr);
 }
 #endif
 

@@ -144,7 +144,7 @@ build\release\omairc.exe --help
 bin\package-windows.bat
 ```
 
-The exe is a GUI process, so Explorer and the Start Menu do not flash a console, and a terminal prompt comes back as soon as the window is up. `--help`, `--version`, and control commands attach to the parent terminal when they need to print.
+The exe is a GUI process, so Explorer and the Start Menu do not flash a console, and a terminal prompt comes back as soon as the window is up. `--help`, `--version`, and control commands attach to the parent terminal when they need to print. Interactive `--help` / `--version` from cmd or PowerShell can print after the next prompt, because Windows does not wait for a GUI-subsystem process; redirected capture (`> file`, PowerShell `2>&1`) still works. Git Bash / mintty is not a Windows console, so `AttachConsole` fails there and those commands can print nothing unless you run them from cmd or PowerShell.
 
 `bin\build.bat` finds a Qt 6 kit (MSVC preferred, then MinGW), loads the MSVC toolchain when needed, builds into `build\release\`, and runs `windeployqt`. The MSVC CRT DLLs (`msvcp140`, `vcruntime140`) are copied from `VCToolsRedistDir`, not from `windeployqt --compiler-runtime`. Set `QMAKE` to pick a kit. QtKeychain must be installed for that kit. Opening `omairc.pro` in Qt Creator still works. `bin\package-windows.bat` needs Inno Setup 6 (`ISCC.exe`) and writes `dist\omairc-*-windows-x64-setup.exe`.
 

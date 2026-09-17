@@ -122,8 +122,9 @@ use a Linux `.deps` QtKeychain tree on Windows. `bin/build`, `bin/test`,
 `bin/test-desktop`, and `bin/test-live` stay Unix scripts. The C++ suite still
 builds from `tests/tests.pro` with the same kit. The Windows app uses the
 windows subsystem so Explorer and the Start Menu do not flash a console.
-`--help` and the local CLI attach to the parent terminal with `AttachConsole`.
-Local CLI IPC
+`--help` and the local CLI attach to a parent Windows console with
+`AttachConsole` (cmd/PowerShell, not Git Bash/mintty). Redirected
+stdout/stderr stay on the pipe or file. Local CLI IPC
 uses a named pipe (`omairc`), not a filesystem socket. Portal text-scale
 stays 1.0, desktop notifications no-op without DBus, and the Omarchy
 `colors.toml` watch does nothing when that file is missing. Windows
