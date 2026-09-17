@@ -142,6 +142,7 @@ public:
     struct CliConversation {
         QString target;
         bool channel = false;
+        QString topic;
         int unread = 0;
         bool mention = false;
     };

@@ -1002,6 +1002,8 @@ IrcController::snapshotConversations(const QString &networkId) const
         CliConversation row;
         row.target = conversation->target;
         row.channel = conversation->isChannel();
+        if (const IrcChannelState *channel = conversation->channel())
+            row.topic = channel->topic;
         row.unread = conversation->unread;
         row.mention = conversation->mentions > 0;
         rows.append(row);
