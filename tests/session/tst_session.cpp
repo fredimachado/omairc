@@ -15,7 +15,9 @@
 #include "fakeirctransport.h"
 #include "irceventtranslator.h"
 #include "ircjointarget.h"
+#include "ircmessage.h"
 #include "ircparser.h"
+#include "ircpresence.h"
 #include "ircserverfeatures.h"
 #include "ircsession.h"
 #include "ircsessionmanager.h"
@@ -2730,11 +2732,22 @@ void SessionTest::metadataCapabilityLimitsSubscriptionsAndValues()
         malformed.transport->writtenFrames(),
         QByteArrayLiteral(
             "METADATA * SUB status avatar bot display-name pronouns homepage color\r\n")));
+    QCOMPARE(IrcMetadata::effectiveMaxValueBytes(
+                 malformed.session->metadataCapability().maxValueBytes),
+             IrcMetadata::maximumValueBytes);
     const QString huge(600, QLatin1Char('x'));
+    QCOMPARE(IrcMetadata::clamped(huge).toUtf8().size(),
+             IrcMetadata::maximumValueBytes);
     QVERIFY(malformed.session->setOwnMetadata(QStringLiteral("status"), huge));
     const QByteArray hugeFrame = malformed.transport->writtenFrames().last();
-    QCOMPARE(hugeFrame.mid(QByteArray("METADATA * SET status :").size()).chopped(2).size(),
-             512);
+    const QByteArray setPrefix = QByteArrayLiteral("METADATA * SET status :");
+    QVERIFY(hugeFrame.startsWith(setPrefix));
+    QVERIFY(hugeFrame.endsWith("\r\n"));
+    const int wireBudget =
+        int(IrcProtocol::maxClassicFrameBytes) - setPrefix.size() - 2;
+    QCOMPARE(hugeFrame.mid(setPrefix.size()).chopped(2).size(),
+             qMin(IrcMetadata::maximumValueBytes, wireBudget));
+    QCOMPARE(hugeFrame.size(), int(IrcProtocol::maxClassicFrameBytes));
 
     Fixture legacy;
     legacy.connectTls();

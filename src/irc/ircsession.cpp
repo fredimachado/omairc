@@ -635,8 +635,16 @@ bool IrcSession::setOwnMetadata(const QString& key, const QString& value)
     const QString stored = IrcMetadata::canonicalKey(key);
     if (stored.isEmpty())
         return false;
-    const int maxBytes =
-        IrcMetadata::effectiveMaxValueBytes(m_metadataCapability.maxValueBytes);
+    if (value.isEmpty())
+        return sendCommand(QStringLiteral("METADATA * SET %1").arg(stored));
+    const QByteArray prefix =
+        QStringLiteral("METADATA * SET %1 :").arg(stored).toUtf8();
+    // Keep the SET inside one classic frame; value budget is the residual.
+    const int wireBudget =
+        qMax(0, int(IrcCommandBuilder::kMaxFrameBytes) - prefix.size() - 2);
+    const int maxBytes = qMin(
+        IrcMetadata::effectiveMaxValueBytes(m_metadataCapability.maxValueBytes),
+        wireBudget);
     const QString clamped = IrcMetadata::clamped(value, maxBytes);
     if (clamped.isEmpty())
         return sendCommand(QStringLiteral("METADATA * SET %1").arg(stored));
