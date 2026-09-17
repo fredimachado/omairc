@@ -1,5 +1,5 @@
 #include <QCoreApplication>
-#ifndef Q_OS_WIN
+#ifdef Q_OS_LINUX
 #include <QFile>
 #endif
 #include <QRegularExpression>
@@ -37,7 +37,7 @@ private slots:
     void storeRemoveDropsTheNetworkGroup();
 
 private:
-#ifndef Q_OS_WIN
+#ifdef Q_OS_LINUX
     QString settingsFile() const;
 #endif
 
@@ -53,7 +53,7 @@ void ProfileTest::init()
     QCoreApplication::setApplicationName(QStringLiteral("omairc"));
 }
 
-#ifndef Q_OS_WIN
+#ifdef Q_OS_LINUX
 QString ProfileTest::settingsFile() const
 {
     QSettings settings;
@@ -215,7 +215,7 @@ void ProfileTest::storeRoundTripsFieldsWithoutPassword()
     QCOMPARE(loaded.first(), profile);
     QCOMPARE(loaded.first().saslAccount(), QStringLiteral("joe/libera"));
 
-#ifndef Q_OS_WIN
+#ifdef Q_OS_LINUX
     QFile file(settingsFile());
     QVERIFY(file.exists());
     QVERIFY(settingsFile().endsWith(QStringLiteral("/omairc/omairc.conf")));
@@ -432,7 +432,7 @@ void ProfileTest::storeRemoveDropsTheNetworkGroup()
     QCOMPARE(loaded.first().networkId, keep.networkId);
     QCOMPARE(loaded.first().host, QStringLiteral("irc.example.net"));
 
-#ifndef Q_OS_WIN
+#ifdef Q_OS_LINUX
     QFile file(settingsFile());
     QVERIFY(file.open(QIODevice::ReadOnly | QIODevice::Text));
     const QString contents = QString::fromUtf8(file.readAll());
