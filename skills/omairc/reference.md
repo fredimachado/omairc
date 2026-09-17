@@ -5,6 +5,10 @@ Every control command prints one compact JSON object on stdout.
 Success has `"ok": true`. Failure has `"ok": false` and `"error"`.
 `--help` and `--version` are plain text, not JSON.
 
+Row fields omit empty strings and `false` flags. Treat a missing flag as
+`false` and a missing string as empty. Numbers such as `unread` and `port`
+stay even when zero. Top-level `"ok": false` on errors is kept.
+
 ## Envelope
 
 ```json
@@ -25,6 +29,7 @@ Unknown `--network`: `"Unknown network id '<id>'."`
 ```
 
 `lastError` is present only when that connection has one.
+`tls` and `selected` appear only when true.
 
 `state`: `Offline`, `Connecting`, `Connected`, `Disconnecting`, `Reconnecting`.
 
@@ -39,21 +44,23 @@ Same object shape as one `connections` row.
 ## `conversations`
 
 ```json
-{"ok":true,"conversations":[{"target":"#omarchy","channel":true,"topic":"A cozy corner for Omarchy users and builders.","unread":0,"mention":false}]}
+{"ok":true,"conversations":[{"target":"#omarchy","channel":true,"topic":"A cozy corner for Omarchy users and builders.","unread":0}]}
 ```
 
 `unread` and `mention` are GUI badges. This snapshot does not clear them.
-Channel rows include `topic` (empty when the server has not sent one). Direct
-message rows omit it. Status is not in this list.
+`channel` and `mention` appear only when true. Channel rows may include
+`topic` when the server has sent one. Direct message rows omit both.
+Status is not in this list.
 
 ## `names`
 
 ```json
-{"ok":true,"members":[{"nick":"fred","label":"~fred","away":false,"status":"building Omairc"},{"nick":"anna","label":"&anna","away":false,"status":"writing docs"}]}
+{"ok":true,"members":[{"nick":"fred","label":"~fred","status":"building Omairc"},{"nick":"anna","label":"&anna","away":true,"status":"writing docs"}]}
 ```
 
 `label` includes the server `PREFIX` rank. `status` is the IRCv3
 metadata status when the server grants `draft/metadata-2`.
+`away` appears only when true; `status` only when non-empty.
 
 Rows are in member-panel order: highest `PREFIX` rank first (`~`, `&`, `@`,
 `%`, `+`, then people without a rank), and case-mapped nick order inside each
@@ -62,9 +69,10 @@ rank. This is the panel order, not the server's `NAMES` order.
 ## `read`
 
 ```json
-{"ok":true,"messages":[{"network":"…","target":"#omarchy","sender":"anna","timestamp":"2026-09-14T03:00:00.000Z","message":"hello","kind":"message","mention":false}]}
+{"ok":true,"messages":[{"network":"…","target":"#omarchy","sender":"anna","timestamp":"2026-09-14T03:00:00.000Z","message":"hello","kind":"message"}]}
 ```
 
 `kind` is `message`, `notice`, or `action`. Join and part lines stay out.
 `msgid` is present when the server tagged the line.
+`mention` appears only when true.
 `"truncated": true` when the 100-line cap dropped older lines.

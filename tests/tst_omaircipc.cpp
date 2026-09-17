@@ -280,10 +280,20 @@ void OmaircIpcTest::connectionsResponseShape()
     info.selected = true;
     infos.append(info);
 
+    OmaircIpc::ConnectionInfo plain;
+    plain.id = QStringLiteral("plain");
+    plain.host = QStringLiteral("irc.local");
+    plain.port = 6667;
+    plain.tls = false;
+    plain.nick = QStringLiteral("guest");
+    plain.state = QStringLiteral("Offline");
+    plain.selected = false;
+    infos.append(plain);
+
     const QByteArray line = OmaircIpc::okConnections(infos);
     QVERIFY(OmaircIpc::responseOk(line));
     const QJsonArray connections = OmaircIpc::responseConnections(line);
-    QCOMPARE(connections.size(), 1);
+    QCOMPARE(connections.size(), 2);
     const QJsonObject row = connections.at(0).toObject();
     QCOMPARE(row.value(QStringLiteral("id")).toString(), QStringLiteral("nid"));
     QCOMPARE(row.value(QStringLiteral("host")).toString(),
@@ -295,6 +305,14 @@ void OmaircIpcTest::connectionsResponseShape()
     QCOMPARE(row.value(QStringLiteral("state")).toString(),
              QStringLiteral("Connected"));
     QCOMPARE(row.value(QStringLiteral("selected")).toBool(), true);
+    QVERIFY(!row.contains(QStringLiteral("lastError")));
+
+    const QJsonObject sparse = connections.at(1).toObject();
+    QCOMPARE(sparse.value(QStringLiteral("id")).toString(), QStringLiteral("plain"));
+    QCOMPARE(sparse.value(QStringLiteral("port")).toInt(), 6667);
+    QVERIFY(!sparse.contains(QStringLiteral("tls")));
+    QVERIFY(!sparse.contains(QStringLiteral("selected")));
+    QVERIFY(!sparse.contains(QStringLiteral("lastError")));
 }
 
 void OmaircIpcTest::handlerRaiseAndUnknown()
@@ -767,8 +785,8 @@ void OmaircIpcTest::handlerReadNamesConversations()
         const QJsonObject row = value.toObject();
         nicks.append(row.value(QStringLiteral("nick")).toString());
         QVERIFY(row.contains(QStringLiteral("label")));
-        QVERIFY(row.contains(QStringLiteral("away")));
-        QVERIFY(row.contains(QStringLiteral("status")));
+        QVERIFY(!row.contains(QStringLiteral("away")));
+        QVERIFY(!row.contains(QStringLiteral("status")));
     }
     QVERIFY(nicks.contains(QStringLiteral("omairc")));
     QVERIFY(nicks.contains(QStringLiteral("alice")));
@@ -818,7 +836,8 @@ void OmaircIpcTest::handlerReadNamesConversations()
     QCOMPARE(channelRow.value(QStringLiteral("channel")).toBool(), true);
     QCOMPARE(channelRow.value(QStringLiteral("topic")).toString(),
              QStringLiteral("A cozy corner"));
-    QCOMPARE(dmRow.value(QStringLiteral("channel")).toBool(), false);
+    QVERIFY(!channelRow.contains(QStringLiteral("mention")));
+    QVERIFY(!dmRow.contains(QStringLiteral("channel")));
     QVERIFY(!dmRow.contains(QStringLiteral("topic")));
     QVERIFY(dmRow.value(QStringLiteral("unread")).toInt() >= 1);
 

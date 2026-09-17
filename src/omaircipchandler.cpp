@@ -176,16 +176,15 @@ QByteArray OmaircIpcHandler::handleRead(const OmaircIpc::Request &request,
     QJsonArray messages;
     for (const IrcController::CliMessage &line : lines) {
         QJsonObject row;
-        row.insert(QStringLiteral("network"), line.networkId);
-        row.insert(QStringLiteral("target"), line.target);
-        row.insert(QStringLiteral("sender"), line.sender);
-        row.insert(QStringLiteral("timestamp"),
-                   line.timestamp.toUTC().toString(Qt::ISODateWithMs));
-        row.insert(QStringLiteral("message"), line.message);
-        row.insert(QStringLiteral("kind"), line.kind);
-        if (!line.msgid.isEmpty())
-            row.insert(QStringLiteral("msgid"), line.msgid);
-        row.insert(QStringLiteral("mention"), line.mention);
+        OmaircIpc::putText(row, QStringLiteral("network"), line.networkId);
+        OmaircIpc::putText(row, QStringLiteral("target"), line.target);
+        OmaircIpc::putText(row, QStringLiteral("sender"), line.sender);
+        OmaircIpc::putText(row, QStringLiteral("timestamp"),
+                           line.timestamp.toUTC().toString(Qt::ISODateWithMs));
+        OmaircIpc::putText(row, QStringLiteral("message"), line.message);
+        OmaircIpc::putText(row, QStringLiteral("kind"), line.kind);
+        OmaircIpc::putText(row, QStringLiteral("msgid"), line.msgid);
+        OmaircIpc::putFlag(row, QStringLiteral("mention"), line.mention);
         messages.append(row);
     }
     return OmaircIpc::okMessages(messages, snapshot.truncated);
@@ -201,10 +200,10 @@ QByteArray OmaircIpcHandler::handleNames(const OmaircIpc::Request &request,
     for (const IrcController::CliMember &member :
          std::get<QVector<IrcController::CliMember>>(result)) {
         QJsonObject row;
-        row.insert(QStringLiteral("nick"), member.nick);
-        row.insert(QStringLiteral("label"), member.label);
-        row.insert(QStringLiteral("away"), member.away);
-        row.insert(QStringLiteral("status"), member.status);
+        OmaircIpc::putText(row, QStringLiteral("nick"), member.nick);
+        OmaircIpc::putText(row, QStringLiteral("label"), member.label);
+        OmaircIpc::putFlag(row, QStringLiteral("away"), member.away);
+        OmaircIpc::putText(row, QStringLiteral("status"), member.status);
         members.append(row);
     }
     return OmaircIpc::okMembers(members);
@@ -219,12 +218,12 @@ QByteArray OmaircIpcHandler::handleConversations(const QString &networkId) const
     for (const IrcController::CliConversation &conversation :
          std::get<QVector<IrcController::CliConversation>>(result)) {
         QJsonObject row;
-        row.insert(QStringLiteral("target"), conversation.target);
-        row.insert(QStringLiteral("channel"), conversation.channel);
+        OmaircIpc::putText(row, QStringLiteral("target"), conversation.target);
+        OmaircIpc::putFlag(row, QStringLiteral("channel"), conversation.channel);
         if (conversation.channel)
-            row.insert(QStringLiteral("topic"), conversation.topic);
+            OmaircIpc::putText(row, QStringLiteral("topic"), conversation.topic);
         row.insert(QStringLiteral("unread"), conversation.unread);
-        row.insert(QStringLiteral("mention"), conversation.mention);
+        OmaircIpc::putFlag(row, QStringLiteral("mention"), conversation.mention);
         conversations.append(row);
     }
     return OmaircIpc::okConversations(conversations);

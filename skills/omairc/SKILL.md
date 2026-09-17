@@ -13,7 +13,8 @@ Omairc is a desktop IRC client. While the window is running, the same
 `omairc` binary prints one JSON line and exits. It is control of that
 window, not a second IRC client.
 
-JSON field lists: [reference.md](reference.md).
+JSON field lists: [reference.md](reference.md). Row fields omit empty
+strings and `false` flags; treat absence as that default.
 
 ## Prerequisite
 

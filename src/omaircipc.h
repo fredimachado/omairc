@@ -77,6 +77,20 @@ QByteArray encodeRequest(const Request &request);
 ResolveResult resolveNetworkId(const QString &requested,
                                const QStringList &availableIds);
 
+// Agent-facing rows omit empty strings and false flags. Absence means that
+// default. Keep top-level `"ok": false` on errors; do not use these for it.
+inline void putText(QJsonObject &object, const QString &key, const QString &value)
+{
+    if (!value.isEmpty())
+        object.insert(key, value);
+}
+
+inline void putFlag(QJsonObject &object, const QString &key, bool value)
+{
+    if (value)
+        object.insert(key, true);
+}
+
 QByteArray okResponse();
 QByteArray okConnections(const QVector<ConnectionInfo> &connections);
 QByteArray okStatus(const ConnectionInfo &status);
