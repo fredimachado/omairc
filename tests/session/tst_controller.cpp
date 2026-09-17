@@ -1098,6 +1098,12 @@ void ControllerTest::joinOpensLastNamedChannel()
         qobject_cast<QAbstractItemModel *>(controller.conversations());
     QVERIFY(conversations);
     QVERIFY(rowForTarget(conversations, QStringLiteral("#gamma")) >= 0);
+    QCOMPARE(rowForTarget(conversations, QStringLiteral("#alpha")), -1);
+    QCOMPARE(rowForTarget(conversations, QStringLiteral("#beta")), -1);
+    transport->injectBytes(
+        QByteArrayLiteral(":server 473 omairc #alpha :Cannot join channel (+i)\r\n"));
+    QCOMPARE(rowForTarget(conversations, QStringLiteral("#alpha")), -1);
+    QCOMPARE(controller.selectedTarget(), QStringLiteral("#gamma"));
 
     QVERIFY(controller.sendMessage(QStringLiteral("/j lab")));
     QCOMPARE(transport->writtenFrames().last(), QByteArrayLiteral("JOIN #lab\r\n"));
@@ -1124,6 +1130,9 @@ void ControllerTest::failedInviteJoinKeepsPending()
         QByteArrayLiteral(":server 473 omairc #lab :Cannot join channel (+i)\r\n"));
     QVERIFY(logHasLabel(controller.console()->lines(), QStringLiteral("473")));
     QCOMPARE(controller.selectedTarget(), QStringLiteral("#lab"));
+    auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
+    QVERIFY(messages);
+    QVERIFY(hasEventBody(messages, QStringLiteral("Cannot join channel (+i)")));
 
     QVERIFY(controller.sendMessage(QStringLiteral("/join")));
     QCOMPARE(transport->writtenFrames().last(), QByteArrayLiteral("JOIN #lab\r\n"));

@@ -132,6 +132,19 @@ void appendMemberStatus(std::vector<IrcEvent>& events,
         : clampedMetadataValue(parameter(message, targetIndex + 3));
     events.emplace_back(IrcMemberStatusEvent{networkId, target, value});
 }
+
+bool isJoinFailureNumeric(const QString& command)
+{
+    return command == QStringLiteral("403")
+        || command == QStringLiteral("405")
+        || command == QStringLiteral("471")
+        || command == QStringLiteral("473")
+        || command == QStringLiteral("474")
+        || command == QStringLiteral("475")
+        || command == QStringLiteral("476")
+        || command == QStringLiteral("477")
+        || command == QStringLiteral("489");
+}
 }
 
 std::optional<IrcConversationKey> ircConversationFor(
@@ -279,6 +292,9 @@ std::vector<IrcEvent> IrcEventTranslator::translate(
         appendMemberStatus(events, networkId, message, 1, false, features);
     } else if (command == QStringLiteral("766")) {
         appendMemberStatus(events, networkId, message, 1, true, features);
+    } else if (isJoinFailureNumeric(command) && message.parameters.size() >= 3) {
+        events.emplace_back(IrcChannelErrorEvent{
+            networkId, parameter(message, 1), parameter(message, 2)});
     }
 
     return events;

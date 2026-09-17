@@ -735,6 +735,15 @@ void IrcEventReducer::appendWhois(IrcConversationState& conversation,
     capMessages(conversation);
 }
 
+void IrcEventReducer::appendError(IrcConversationState& conversation,
+                                  const QString& body)
+{
+    admitMessage(conversation,
+                 {QString(), body, QDateTime(), IrcMessageKind::Error, false,
+                  IrcOrigin::Live, IrcMsgId{}});
+    capMessages(conversation);
+}
+
 void IrcEventReducer::capMessages(IrcConversationState& conversation)
 {
     auto& messages = conversation.messages;
@@ -1148,5 +1157,14 @@ void IrcEventReducer::reduce(const IrcWhoisTranscriptEvent& event)
     if (!conversation)
         return;
     appendWhois(*conversation, event.formattedBody);
+}
+
+void IrcEventReducer::reduce(const IrcChannelErrorEvent& event)
+{
+    IrcConversationState *conversation =
+        findMutable(conversationKey(event.networkId, event.channel));
+    if (!conversation)
+        return;
+    appendError(*conversation, event.body);
 }
 

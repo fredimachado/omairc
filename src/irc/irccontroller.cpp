@@ -1058,7 +1058,7 @@ IrcCommandOutcome IrcController::dispatch(const IrcCommand& command,
         }
         sent = true;
         for (const IrcJoinTarget& target : *targets)
-            sent = sent && active->join(target);
+            sent = active->join(target) && sent;
         if (sent)
             openJoinedChannel(active->networkId(), targets->constLast().channel());
         break;
