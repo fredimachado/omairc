@@ -8,6 +8,12 @@ if not exist "!EXE!" (
   echo Expected !EXE!. Run bin\build.bat first. >&2
   exit /b 1
 )
+if not exist "%ROOT%\build\release\msvcp140.dll" (
+  echo msvcp140.dll is missing next to omairc.exe. >&2
+  echo The installer needs the MSVC CRT DLLs. Rebuild from an x64 Native Tools >&2
+  echo prompt so VCToolsRedistDir is set, then rerun bin\package-windows.bat. >&2
+  exit /b 1
+)
 
 set "VERSION="
 if defined OMAIRC_VERSION (

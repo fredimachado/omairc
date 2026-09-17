@@ -78,9 +78,9 @@ rem vc_redist.x64.exe, and that still misses VS 2026's VC145 folder.
 if /i "!QSPEC!"=="win32-msvc" (
   call :deploy_msvc_runtime "!BUILD_DIR!\release"
   if not exist "!BUILD_DIR!\release\msvcp140.dll" (
-    echo msvcp140.dll was not deployed next to the exe. >&2
-    echo Run from an x64 Native Tools prompt so VCToolsRedistDir is set. >&2
-    exit /b 1
+    echo warning: msvcp140.dll was not deployed next to the exe. >&2
+    echo Packaging needs the CRT DLLs; run from an x64 Native Tools prompt >&2
+    echo so VCToolsRedistDir is set, then bin\package-windows.bat. >&2
   )
 )
 
