@@ -15,7 +15,8 @@
 AppId={{37400F83-8332-4043-8DFF-1F69E51F6555}
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
-AppPublisher={#MyAppName}
+AppPublisher=Fredi Machado
+AppCopyright=Copyright (C) 2026 Fredi Machado
 AppPublisherURL=https://omairc.app
 AppSupportURL=https://github.com/fredimachado/omairc/issues
 AppUpdatesURL=https://github.com/fredimachado/omairc/releases
