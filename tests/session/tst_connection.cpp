@@ -6,6 +6,7 @@
 #include <QTest>
 
 #include "fakeirctransport.h"
+#include "testsettings.h"
 #include "storage/credentialstore.h"
 #include "ircconnection.h"
 #include "irccontroller.h"
@@ -307,13 +308,7 @@ void ConnectionTest::init()
 {
     m_dir = std::make_unique<QTemporaryDir>();
     QVERIFY(m_dir->isValid());
-#ifdef Q_OS_WIN
-    QSettings::setDefaultFormat(QSettings::IniFormat);
-    QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, m_dir->path());
-#else
-    qputenv("XDG_CONFIG_HOME", m_dir->path().toUtf8());
-    QSettings::setPath(QSettings::NativeFormat, QSettings::UserScope, m_dir->path());
-#endif
+    TestSettings::isolate(m_dir->path());
     QCoreApplication::setOrganizationName(QStringLiteral("omairc"));
     QCoreApplication::setApplicationName(QStringLiteral("omairc"));
     m_transports.clear();

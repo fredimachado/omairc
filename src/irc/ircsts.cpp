@@ -1,11 +1,12 @@
 #include "ircsts.h"
 
+#include "../omaircpaths.h"
+
 #include <QCryptographicHash>
 #include <QDateTime>
 #include <QDir>
 #include <QFile>
 #include <QSettings>
-#include <QStandardPaths>
 
 namespace
 {
@@ -76,8 +77,7 @@ std::optional<IrcStsAdvertisement> parseIrcStsAdvertisement(const QStringList &t
 
 QString IrcStsStore::rootDir() const
 {
-    return QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation)
-        + QLatin1String("/omairc");
+    return omaircConfigRoot() + QLatin1String("/omairc");
 }
 
 QString IrcStsStore::filePath() const

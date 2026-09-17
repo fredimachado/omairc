@@ -11,6 +11,7 @@
 #include "irccontroller.h"
 #include "ircopendirect.h"
 #include "messagelistmodel.h"
+#include "testsettings.h"
 
 #include <memory>
 
@@ -133,8 +134,7 @@ void OpenDirectTest::init()
 {
     m_dir = std::make_unique<QTemporaryDir>();
     QVERIFY(m_dir->isValid());
-    qputenv("XDG_CONFIG_HOME", m_dir->path().toUtf8());
-    QSettings::setPath(QSettings::NativeFormat, QSettings::UserScope, m_dir->path());
+    TestSettings::isolate(m_dir->path());
     QCoreApplication::setOrganizationName(QStringLiteral("omairc"));
     QCoreApplication::setApplicationName(QStringLiteral("omairc"));
 }

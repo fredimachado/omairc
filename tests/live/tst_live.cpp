@@ -1,4 +1,5 @@
 #include "liveharness.h"
+#include "testsettings.h"
 #include "livepeer.h"
 #include "conversationlistmodel.h"
 #include "irccapability.h"
@@ -583,9 +584,7 @@ void LiveIrcdTest::asciiDirectRestore()
 
     QTemporaryDir configHome;
     QVERIFY(configHome.isValid());
-    qputenv("XDG_CONFIG_HOME", configHome.path().toUtf8());
-    QSettings::setPath(QSettings::NativeFormat, QSettings::UserScope,
-                       configHome.path());
+    TestSettings::isolate(configHome.path());
     QCoreApplication::setOrganizationName(QStringLiteral("omairc"));
     QCoreApplication::setApplicationName(QStringLiteral("omairc"));
 

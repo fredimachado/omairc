@@ -77,6 +77,7 @@ SOURCES += \
     tst_main.cpp \
     ../support/fakeirctransport.cpp \
     ../support/seededircfixture.cpp \
+    ../support/testsettings.cpp \
     ../../src/irc/ircloopbacktransport.cpp \
     ../../src/irc/ircdemoserver.cpp \
     ../../src/backend.cpp \
@@ -88,6 +89,7 @@ SOURCES += \
     ../../src/irc/ircserverfeatures.cpp \
     ../../src/irc/irccapability.cpp \
     ../../src/irc/irccapabilitynegotiation.cpp \
+    ../../src/omaircpaths.cpp \
     ../../src/irc/ircsts.cpp \
     ../../src/irc/irctyping.cpp \
     ../../src/irc/irctypingpublisher.cpp \

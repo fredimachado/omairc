@@ -41,6 +41,7 @@ greaterThan(QMAKE_GCC_MAJOR_VERSION, 15): QMAKE_CXXFLAGS += -Wno-sfinae-incomple
 isEmpty(PREFIX): PREFIX = /usr/local
 
 HEADERS += \
+    src/omaircpaths.h \
     src/backend.h \
     src/singleinstance.h \
     src/omaircipc.h \
@@ -104,6 +105,7 @@ HEADERS += \
 
 SOURCES += \
     src/main.cpp \
+    src/omaircpaths.cpp \
     src/backend.cpp \
     src/singleinstance.cpp \
     src/omaircipc.cpp \

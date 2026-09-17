@@ -26,6 +26,7 @@
 #endif
 
 #include "backend.h"
+#include "omaircpaths.h"
 #include "irc/ircavatarstore.h"
 #include "irc/ircconnection.h"
 #include "irc/irccontroller.h"
@@ -137,6 +138,11 @@ int main(int argc, char *argv[]) {
 #endif
     app.setOrganizationName(QStringLiteral("omairc"));
 
+#ifdef Q_OS_MACOS
+    QSettings::setDefaultFormat(QSettings::IniFormat);
+    QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, omaircConfigRoot());
+#endif
+
     QCommandLineParser parser;
     parser.setApplicationDescription(
         QStringLiteral("A dead-simple IRC client for Omarchy."));
@@ -177,7 +183,11 @@ int main(int argc, char *argv[]) {
         qputenv("XDG_CONFIG_HOME", config.toUtf8());
         qputenv("XDG_CACHE_HOME", (root + QLatin1String("/cache")).toUtf8());
         qputenv("XDG_DATA_HOME", (root + QLatin1String("/data")).toUtf8());
+#ifdef Q_OS_MACOS
+        QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, config);
+#else
         QSettings::setPath(QSettings::NativeFormat, QSettings::UserScope, config);
+#endif
     }
     if (demoMode) {
         demoServer = new IrcDemoServer(&app);
