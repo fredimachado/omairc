@@ -125,6 +125,8 @@ console subsystem so CLI stdout works; `FreeConsole()` runs only when opening
 the window. Launch the GUI with `start build\release\omairc.exe` so the
 terminal is not left waiting after the console is dropped. Local CLI IPC
 uses a named pipe (`omairc`), not a filesystem socket. Portal text-scale
-stays 1.0, desktop notifications no-op without DBus, the window icon
-stays empty, and the Omarchy `colors.toml` watch does nothing when that
-file is missing.
+stays 1.0, desktop notifications no-op without DBus, and the Omarchy
+`colors.toml` watch does nothing when that file is missing. Windows
+embeds `data/icons/omairc.ico` in the exe (`RC_ICONS`) and the same
+file in the window icon; regenerate it from the SVG with ImageMagick
+when the mark changes.

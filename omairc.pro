@@ -13,6 +13,7 @@ win32 {
     OBJECTS_DIR = $$OUT_PWD/.obj
     MOC_DIR = $$OUT_PWD/.moc
     RCC_DIR = $$OUT_PWD/.rcc
+    RC_ICONS = $$PWD/data/icons/omairc.ico
 }
 
 include($$PWD/version.pri)

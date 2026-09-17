@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- The Windows build embeds the app icon in `omairc.exe`. Explorer, the title bar, and the taskbar use it instead of the default executable mark.
+
 ## [0.6.0] - 2026-09-17
 
 ### Added

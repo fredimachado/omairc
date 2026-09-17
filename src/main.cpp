@@ -82,9 +82,13 @@ int main(int argc, char *argv[]) {
     app.setApplicationName(QStringLiteral("omairc"));
     app.setApplicationVersion(QStringLiteral(OMAIRC_VERSION));
     app.setDesktopFileName(QStringLiteral("omairc"));
+#ifdef Q_OS_WIN
+    app.setWindowIcon(QIcon(QStringLiteral(":/icons/omairc.ico")));
+#else
     app.setWindowIcon(QIcon::fromTheme(
         QStringLiteral("omairc"),
         QIcon(QStringLiteral(":/icons/omairc.svg"))));
+#endif
     app.setOrganizationName(QStringLiteral("omairc"));
 
     QCommandLineParser parser;
