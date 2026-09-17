@@ -361,6 +361,16 @@ ApplicationWindow {
             1);
     }
 
+    // Shared presence mark palette. Call sites map their own vocabulary onto
+    // "away" / "online" / "offline" so the hex values live in one place.
+    function presenceMarkColor(kind) {
+        if (kind === "away")
+            return "#d6a552"
+        if (kind === "online")
+            return "#69b978"
+        return mutedColor
+    }
+
     function focusedNetworkDisplayName() {
         if (connection && connection.networks) {
             var model = connection.networks;
@@ -2435,8 +2445,8 @@ ApplicationWindow {
                         radius: width / 2
                         color: section.liveAlerts > 0
                             ? win.accentColor
-                            : (section.liveStatus === "Connected"
-                                ? "#69b978" : win.mutedColor)
+                            : win.presenceMarkColor(section.liveStatus === "Connected"
+                                ? "online" : "offline")
                     }
 
                     Text {
@@ -2540,9 +2550,10 @@ ApplicationWindow {
                 width: win.scaledSize(7)
                 height: width
                 radius: width / 2
-                color: conversationRow.presence === "away" ? "#d6a552"
-                    : (conversationRow.presence === "online"
-                        ? "#69b978" : win.mutedColor)
+                color: win.presenceMarkColor(
+                    conversationRow.presence === "away" ? "away"
+                        : (conversationRow.presence === "online"
+                            ? "online" : "offline"))
                 border.width: win.scaledSize(2)
                 border.color: win.panelColor
             }
@@ -3108,9 +3119,10 @@ ApplicationWindow {
                         width: win.scaledSize(9)
                         height: width
                         radius: width / 2
-                        color: win.selfPresence === "away" ? "#d6a552"
-                            : (win.selfPresence === "available"
-                                ? "#69b978" : win.mutedColor)
+                        color: win.presenceMarkColor(
+                            win.selfPresence === "away" ? "away"
+                                : (win.selfPresence === "available"
+                                    ? "online" : "offline"))
                         border.width: win.scaledSize(2)
                         border.color: win.panelColor
                     }
