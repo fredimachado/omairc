@@ -210,6 +210,8 @@ TestCase {
             conversationName: "#omarchy"
             typing: false
             presence: ""
+            avatar: ""
+            bot: false
         }
         ListElement {
             conversation: "anna"
@@ -221,6 +223,8 @@ TestCase {
             conversationName: "anna"
             typing: true
             presence: "online"
+            avatar: ""
+            bot: false
         }
     }
 
@@ -426,22 +430,22 @@ TestCase {
     ListModel {
         id: gatedMembers
 
-        ListElement { nick: "anna"; label: "anna"; status: "writing docs"; away: true }
+        ListElement { nick: "anna"; label: "anna"; status: "writing docs"; away: true; avatar: ""; bot: false }
     }
 
     ListModel {
         id: selfAwayMembers
 
-        ListElement { nick: "live-nick"; label: "~live-nick"; status: ""; away: true }
-        ListElement { nick: "anna"; label: "&anna"; status: ""; away: true }
+        ListElement { nick: "live-nick"; label: "~live-nick"; status: ""; away: true; avatar: ""; bot: false }
+        ListElement { nick: "anna"; label: "&anna"; status: ""; away: true; avatar: ""; bot: false }
     }
 
     ListModel {
         id: prefixedMembers
 
-        ListElement { nick: "mira"; label: "@mira"; status: ""; away: false }
-        ListElement { nick: "sol"; label: "+sol"; status: ""; away: false }
-        ListElement { nick: "anna"; label: "anna"; status: ""; away: false }
+        ListElement { nick: "mira"; label: "@mira"; status: ""; away: false; avatar: ""; bot: false }
+        ListElement { nick: "sol"; label: "+sol"; status: ""; away: false; avatar: ""; bot: false }
+        ListElement { nick: "anna"; label: "anna"; status: ""; away: false; avatar: ""; bot: false }
     }
 
     QtObject {
@@ -1011,7 +1015,8 @@ TestCase {
             backend: seed.backend,
             irc: seed.irc,
             slashCommands: seed.slash,
-            connection: seed.connection
+            connection: seed.connection,
+            avatarStore: appAvatarStore
         });
         verify(appWindow !== null, "The seeded Omairc window should load");
         tryCompare(appWindow, "visible", true);
@@ -2974,7 +2979,8 @@ TestCase {
             backend: seed.backend,
             irc: seed.irc,
             slashCommands: seed.slash,
-            connection: seed.connection
+            connection: seed.connection,
+            avatarStore: appAvatarStore
         });
         verify(appWindow !== null, "The seeded Omairc window should load");
         tryCompare(appWindow, "visible", true);
@@ -5026,6 +5032,32 @@ TestCase {
         compare(member.away, true);
         compare(member.Accessible.description, "writing docs");
         window.close();
+    }
+
+    function test_memberBotMarkShowsForDemoDaxNotAnna() {
+        openSeededAppWindow();
+        var members = item("membersList");
+        verify(item("membersPanel").visible);
+        var dax = members.itemAtIndex(memberIndex("dax"));
+        verify(dax !== null, "The dax member delegate should be rendered");
+        compare(dax.bot, true);
+        var daxBot = findChild(dax, "member-bot-dax");
+        verify(daxBot !== null, "dax should have a bot mark");
+        compare(daxBot.visible, true);
+        compare(daxBot.shown, true);
+
+        var anna = members.itemAtIndex(memberIndex("anna"));
+        verify(anna !== null, "The anna member delegate should be rendered");
+        compare(anna.bot, false);
+        compare(anna.away, false);
+        var annaBot = findChild(anna, "member-bot-anna");
+        verify(annaBot !== null, "anna should still instantiate a hidden bot mark");
+        compare(annaBot.visible, false);
+        var annaStatus = findChild(anna, "member-status-anna");
+        verify(annaStatus !== null, "anna status line should exist");
+        compare(annaStatus.visible, true);
+        compare(annaStatus.text, "writing docs");
+        compare(anna.Accessible.description, "writing docs");
     }
 
     function test_memberPresenceShowsOurOwnAwayWithoutAwayNotify() {

@@ -11,6 +11,7 @@ ApplicationWindow {
     required property var irc
     property var connection: null
     property var slashCommands: null
+    property var avatarStore: null
     property bool connectionSheetOpen: false
     property string connectionSheetTab: "connection"
     property bool connectionRemoveArmed: false
@@ -271,12 +272,107 @@ ApplicationWindow {
         font.pixelSize: win.transcriptBodyFont.pixelSize
     }
 
-    component MessageAvatar: Rectangle {
+    component NickGlyph: Rectangle {
+        id: glyph
+
+        property string nick: ""
+        property string avatarUrl: ""
+        property bool replayed: false
+        property bool dimmed: false
+        property string initialObjectName: "nickGlyphInitial"
+        property color ink: glyph.replayed ? win.mutedColor : win.nickColor(glyph.nick)
+        property color fill: win.mixColors(win.pageColor, ink, win.darkMode ? 0.23 : 0.16)
+        property int fontPixelSize: win.scaledSize(11)
+
+        radius: width / 2
+        color: fill
+        opacity: dimmed ? 0.62 : 1
+        property int avatarEpoch: 0
+
+        readonly property string storeSource: {
+            glyph.avatarEpoch
+            if (!win.avatarStore || glyph.avatarUrl.length === 0)
+                return ""
+            return win.avatarStore.source(glyph.avatarUrl, Math.round(width))
+        }
+
+        Image {
+            id: photo
+            objectName: "nickGlyphPhoto"
+            anchors.fill: parent
+            visible: status === Image.Ready
+            asynchronous: true
+            cache: false
+            fillMode: Image.PreserveAspectCrop
+            source: glyph.storeSource
+        }
+
+        Text {
+            objectName: glyph.initialObjectName
+            visible: photo.status !== Image.Ready
+            anchors.centerIn: parent
+            text: win.initials(glyph.nick)
+            color: glyph.ink
+            font.family: "iA Writer Mono S"
+            font.bold: true
+            font.pixelSize: glyph.fontPixelSize
+        }
+
+        Connections {
+            target: win.avatarStore
+            function onReady(rawUrl) {
+                if (rawUrl !== glyph.avatarUrl)
+                    return
+                glyph.avatarEpoch += 1
+            }
+        }
+    }
+
+    component BotMark: Item {
+        id: botMark
+
+        property bool shown: false
+
+        visible: shown
+        width: shown ? win.scaledSize(10) : 0
+        height: win.scaledSize(10)
+
+        Rectangle {
+            anchors.horizontalCenter: parent.horizontalCenter
+            y: 0
+            width: Math.max(1, win.scaledSize(1))
+            height: win.scaledSize(3)
+            color: win.mutedColor
+        }
+
+        Rectangle {
+            anchors.horizontalCenter: parent.horizontalCenter
+            y: 0
+            width: win.scaledSize(3)
+            height: Math.max(1, win.scaledSize(1))
+            radius: width / 2
+            color: win.mutedColor
+        }
+
+        Rectangle {
+            anchors.horizontalCenter: parent.horizontalCenter
+            anchors.bottom: parent.bottom
+            width: win.scaledSize(8)
+            height: win.scaledSize(6)
+            radius: win.scaledSize(1)
+            color: "transparent"
+            border.color: win.mutedColor
+            border.width: Math.max(1, win.scaledSize(1))
+        }
+    }
+
+    component MessageAvatar: Item {
         id: avatar
 
         required property string author
         required property bool replayed
         property bool nickOpensDirect: false
+        property string avatarUrl: ""
 
         anchors.left: parent.left
         anchors.leftMargin: win.scaledSize(24)
@@ -284,19 +380,14 @@ ApplicationWindow {
         anchors.topMargin: win.scaledSize(9)
         width: win.scaledSize(34)
         height: width
-        radius: width / 2
-        color: win.mixColors(win.pageColor,
-                             avatar.replayed ? win.mutedColor : win.nickColor(avatar.author),
-                             win.darkMode ? 0.23 : 0.16)
 
-        Text {
-            objectName: "messageAvatarInitial"
-            anchors.centerIn: parent
-            text: win.initials(avatar.author)
-            color: avatar.replayed ? win.mutedColor : win.nickColor(avatar.author)
-            font.family: "iA Writer Mono S"
-            font.bold: true
-            font.pixelSize: win.scaledSize(13)
+        NickGlyph {
+            anchors.fill: parent
+            nick: avatar.author
+            avatarUrl: avatar.avatarUrl
+            replayed: avatar.replayed
+            initialObjectName: "messageAvatarInitial"
+            fontPixelSize: win.scaledSize(13)
         }
 
         TranscriptNickHit {
@@ -312,6 +403,7 @@ ApplicationWindow {
         required property string time
         required property bool replayed
         property bool nickOpensDirect: false
+        property bool bot: false
 
         anchors.left: parent.left
         anchors.leftMargin: win.scaledSize(70)
@@ -319,22 +411,33 @@ ApplicationWindow {
         anchors.topMargin: win.scaledSize(8)
         spacing: win.scaledSize(9)
 
-        Text {
-            objectName: "messageAuthor"
-            text: header.author
-            color: header.replayed ? win.mutedColor : win.nickColor(header.author)
-            font.family: "iA Writer Mono S"
-            font.bold: true
-            font.pixelSize: win.scaledSize(12)
+        Row {
+            id: authorRow
+            spacing: header.bot ? win.scaledSize(4) : 0
 
-            TranscriptNickHit {
-                nick: header.author
-                nickOpensDirect: header.nickOpensDirect
+            Text {
+                id: authorLabel
+                objectName: "messageAuthor"
+                text: header.author
+                color: header.replayed ? win.mutedColor : win.nickColor(header.author)
+                font.family: "iA Writer Mono S"
+                font.bold: true
+                font.pixelSize: win.scaledSize(12)
+
+                TranscriptNickHit {
+                    nick: header.author
+                    nickOpensDirect: header.nickOpensDirect
+                }
+            }
+
+            BotMark {
+                objectName: "message-bot-" + header.author
+                shown: header.bot
             }
         }
 
         Text {
-            anchors.baseline: parent.children[0].baseline
+            anchors.baseline: authorRow.baseline
             text: header.time
             color: win.mutedColor
             font.family: "iA Writer Mono S"
@@ -419,6 +522,27 @@ ApplicationWindow {
 
     function initials(nick) {
         return nick.length > 0 ? nick.charAt(0).toUpperCase() : "?";
+    }
+
+    function peerFacts(nick) {
+        if (!irc || typeof irc.peerMetadata !== "function" || !nick)
+            return { avatar: "", bot: false };
+        var networkId = irc.selectedNetworkId;
+        if (!networkId || networkId.length === 0)
+            networkId = win.currentNetworkId;
+        if (!networkId)
+            return { avatar: "", bot: false };
+        var facts = irc.peerMetadata(networkId, nick);
+        return facts ? facts : { avatar: "", bot: false };
+    }
+
+    function peerAvatar(nick) {
+        var facts = peerFacts(nick);
+        return facts.avatar ? facts.avatar : "";
+    }
+
+    function peerBot(nick) {
+        return !!(peerFacts(nick).bot);
     }
 
     function stripIrcColors(text) {
@@ -887,7 +1011,7 @@ ApplicationWindow {
     }
 
     function liveMemberRow(row) {
-        var empty = { nick: "", label: "", status: "", away: false };
+        var empty = { nick: "", label: "", status: "", away: false, avatar: "", bot: false };
         if (!irc)
             return empty;
         var model = irc.members;
@@ -899,7 +1023,9 @@ ApplicationWindow {
                 nick: rowData && rowData.nick ? rowData.nick : "",
                 label: rowData && rowData.label ? rowData.label : "",
                 status: rowData && rowData.status ? rowData.status : "",
-                away: !!(rowData && rowData.away)
+                away: !!(rowData && rowData.away),
+                avatar: rowData && rowData.avatar ? rowData.avatar : "",
+                bot: !!(rowData && rowData.bot)
             };
         }
         var idx = model.index(row, 0);
@@ -907,7 +1033,9 @@ ApplicationWindow {
             nick: model.data(idx, Qt.UserRole + 1) || "",
             label: model.data(idx, Qt.UserRole + 2) || "",
             status: model.data(idx, Qt.UserRole + 3) || "",
-            away: model.data(idx, Qt.UserRole + 4) === true
+            away: model.data(idx, Qt.UserRole + 4) === true,
+            avatar: model.data(idx, Qt.UserRole + 6) || "",
+            bot: model.data(idx, Qt.UserRole + 7) === true
         };
     }
 
@@ -936,6 +1064,8 @@ ApplicationWindow {
                     label: member.label,
                     memberStatus: member.status,
                     awayFlag: member.away ? 1 : 0,
+                    botFlag: member.bot ? 1 : 0,
+                    avatar: member.avatar || "",
                     glyph: initials(member.nick),
                     paletteIndex: nickPaletteIndex(member.nick)
                 });
@@ -2458,6 +2588,8 @@ ApplicationWindow {
         // channel. Direct rows reuse the member list's presence source.
         property string presence: ""
         property string networkId: ""
+        property string avatar: ""
+        property bool bot: false
         property string conversationId: networkId + "\n" + conversationName
 
         objectName: networkId.length > 0
@@ -2503,23 +2635,22 @@ ApplicationWindow {
             color: win.accentColor
         }
 
-        Rectangle {
+        Item {
             visible: conversationRow.direct
             anchors.left: parent.left
             anchors.leftMargin: win.scaledSize(18)
             anchors.verticalCenter: parent.verticalCenter
             width: win.scaledSize(22)
             height: width
-            radius: width / 2
-            color: win.mixColors(win.pageColor, win.nickColor(conversationRow.conversationName), 0.24)
 
-            Text {
-                anchors.centerIn: parent
-                text: win.initials(conversationRow.conversationName)
-                color: win.nickColor(conversationRow.conversationName)
-                font.family: "iA Writer Mono S"
-                font.bold: true
-                font.pixelSize: win.scaledSize(11)
+            NickGlyph {
+                anchors.fill: parent
+                nick: conversationRow.conversationName
+                avatarUrl: conversationRow.avatar
+                fill: win.mixColors(win.pageColor,
+                                    win.nickColor(conversationRow.conversationName),
+                                    0.24)
+                fontPixelSize: win.scaledSize(11)
             }
 
             Rectangle {
@@ -2541,24 +2672,38 @@ ApplicationWindow {
             }
         }
 
-        Text {
-            objectName: "conversationLabel"
+        Row {
             anchors.left: parent.left
             anchors.leftMargin: conversationRow.direct ? win.scaledSize(49) : win.scaledSize(20)
             anchors.right: rowTrail.left
             anchors.rightMargin: win.scaledSize(8)
             anchors.verticalCenter: parent.verticalCenter
-            text: (conversationRow.direct ? "" : "#  ") + conversationRow.conversationName.replace("#", "")
-            color: conversationRow.current
-                ? win.inkColor
-                : conversationRow.muted || conversationRow.unread === 0
-                    ? win.mutedColor
-                    : win.inkColor
-            elide: Text.ElideRight
-            font.family: "iA Writer Mono S"
-            font.bold: conversationRow.current
-                       || (!conversationRow.muted && conversationRow.unread > 0)
-            font.pixelSize: win.scaledSize(13)
+            spacing: win.scaledSize(4)
+
+            Text {
+                objectName: "conversationLabel"
+                width: Math.max(0, parent.width
+                    - (conversationRow.direct && conversationRow.bot
+                        ? dmBotMark.width + parent.spacing : 0))
+                text: (conversationRow.direct ? "" : "#  ") + conversationRow.conversationName.replace("#", "")
+                color: conversationRow.current
+                    ? win.inkColor
+                    : conversationRow.muted || conversationRow.unread === 0
+                        ? win.mutedColor
+                        : win.inkColor
+                elide: Text.ElideRight
+                font.family: "iA Writer Mono S"
+                font.bold: conversationRow.current
+                           || (!conversationRow.muted && conversationRow.unread > 0)
+                font.pixelSize: win.scaledSize(13)
+            }
+
+            BotMark {
+                id: dmBotMark
+                objectName: "conversation-bot-" + conversationRow.conversationName
+                shown: conversationRow.direct && conversationRow.bot
+                anchors.verticalCenter: parent.verticalCenter
+            }
         }
 
         Item {
@@ -3049,6 +3194,8 @@ ApplicationWindow {
                                     typing: model.typing
                                     presence: model.presence || ""
                                     networkId: model.networkId
+                                    avatar: model.direct ? (model.avatar || "") : ""
+                                    bot: !!(model.direct && model.bot)
                                     visible: model.direct
                                         && model.networkId === liveNet.networkId
                                     width: sidebar.width
@@ -3076,22 +3223,19 @@ ApplicationWindow {
                     color: win.dividerColor
                 }
 
-                Rectangle {
+                Item {
                     anchors.left: parent.left
                     anchors.leftMargin: win.scaledSize(17)
                     anchors.verticalCenter: parent.verticalCenter
                     width: win.scaledSize(34)
                     height: width
-                    radius: width / 2
-                    color: win.mixColors(win.pageColor, win.nickColor(win.selfNick), 0.24)
 
-                    Text {
-                        anchors.centerIn: parent
-                        text: win.initials(win.selfNick)
-                        color: win.nickColor(win.selfNick)
-                        font.family: "iA Writer Mono S"
-                        font.bold: true
-                        font.pixelSize: win.scaledSize(14)
+                    NickGlyph {
+                        anchors.fill: parent
+                        nick: win.selfNick
+                        avatarUrl: win.peerAvatar(win.selfNick)
+                        fill: win.mixColors(win.pageColor, win.nickColor(win.selfNick), 0.24)
+                        fontPixelSize: win.scaledSize(14)
                     }
 
                     Rectangle {
@@ -3116,15 +3260,29 @@ ApplicationWindow {
                     anchors.verticalCenter: parent.verticalCenter
                     spacing: win.scaledSize(1)
 
-                    Text {
-                        objectName: "selfNickLabel"
+                    Row {
                         width: parent.width
-                        text: win.selfNick
-                        color: win.inkColor
-                        elide: Text.ElideRight
-                        font.family: "iA Writer Mono S"
-                        font.bold: true
-                        font.pixelSize: win.scaledSize(13)
+                        spacing: win.scaledSize(4)
+
+                        Text {
+                            objectName: "selfNickLabel"
+                            width: Math.max(0, parent.width
+                                - (win.peerBot(win.selfNick)
+                                    ? selfBotMark.width + parent.spacing : 0))
+                            text: win.selfNick
+                            color: win.inkColor
+                            elide: Text.ElideRight
+                            font.family: "iA Writer Mono S"
+                            font.bold: true
+                            font.pixelSize: win.scaledSize(13)
+                        }
+
+                        BotMark {
+                            id: selfBotMark
+                            objectName: "selfBotMark"
+                            shown: win.peerBot(win.selfNick)
+                            anchors.verticalCenter: parent.verticalCenter
+                        }
                     }
 
                     Text {
@@ -3313,6 +3471,8 @@ ApplicationWindow {
                     required property string body
                     required property string kind
                     readonly property string origin: win.transcriptField(messageList.model, index, "origin")
+                    readonly property string authorAvatar: win.transcriptField(messageList.model, index, "authorAvatar")
+                    readonly property bool authorBot: win.transcriptField(messageList.model, index, "authorBot") === "true"
                     readonly property bool replayed: origin === "replay"
                     readonly property bool isChat: kind !== "event" && kind !== "whois"
                     readonly property bool grouped: win.continuesMessageGroup(
@@ -3378,6 +3538,7 @@ ApplicationWindow {
                         objectName: "messageAvatar"
                         visible: messageDelegate.isChat && !messageDelegate.grouped
                         author: messageDelegate.author
+                        avatarUrl: messageDelegate.authorAvatar
                         replayed: messageDelegate.replayed
                         nickOpensDirect: true
                     }
@@ -3389,6 +3550,7 @@ ApplicationWindow {
                         time: messageDelegate.time
                         replayed: messageDelegate.replayed
                         nickOpensDirect: true
+                        bot: messageDelegate.authorBot
                     }
 
                     TextEdit {
@@ -3479,6 +3641,7 @@ ApplicationWindow {
                         objectName: "typingTranscriptAvatar"
                         visible: typingRow.show && !typingRow.grouped
                         author: typingRow.nick
+                        avatarUrl: win.peerAvatar(typingRow.nick)
                         replayed: false
                     }
 
@@ -3488,6 +3651,7 @@ ApplicationWindow {
                         author: typingRow.nick
                         time: ""
                         replayed: false
+                        bot: win.peerBot(typingRow.nick)
                     }
 
                     TypingDots {
@@ -4937,11 +5101,14 @@ ApplicationWindow {
                     id: memberDelegate
 
                     readonly property var memberData: win.irc
-                        ? ({nick: model.nick, label: model.label, status: model.status, away: model.away})
-                        : ({nick: "", label: "", status: "", away: false})
+                        ? ({nick: model.nick, label: model.label, status: model.status,
+                            away: model.away, avatar: model.avatar || "", bot: !!model.bot})
+                        : ({nick: "", label: "", status: "", away: false, avatar: "", bot: false})
                     readonly property string nick: memberData.nick
                     readonly property string label: memberData.label
                     readonly property string status: memberData.status
+                    readonly property string avatar: memberData.avatar
+                    readonly property bool bot: memberData.bot
                     // Exact match, like `openable`; the reducer's overlay is the CASEMAPPING-aware path.
                     readonly property bool isSelf: nick.length > 0 && nick === win.selfNick
                     // Other members' away state needs away-notify, but our own
@@ -4978,26 +5145,19 @@ ApplicationWindow {
                                 : "transparent")
                     }
 
-                    Rectangle {
+                    Item {
                         anchors.left: parent.left
                         anchors.leftMargin: win.scaledSize(18)
                         anchors.verticalCenter: parent.verticalCenter
                         width: win.scaledSize(28)
                         height: width
-                        radius: width / 2
-                        color: win.mixColors(
-                            win.pageColor,
-                            win.nickColor(memberDelegate.nick),
-                            win.darkMode ? 0.23 : 0.16)
-                        opacity: memberDelegate.away ? 0.62 : 1
 
-                        Text {
-                            anchors.centerIn: parent
-                            text: win.initials(memberDelegate.nick)
-                            color: win.nickColor(memberDelegate.nick)
-                            font.family: "iA Writer Mono S"
-                            font.bold: true
-                            font.pixelSize: win.scaledSize(11)
+                        NickGlyph {
+                            anchors.fill: parent
+                            nick: memberDelegate.nick
+                            avatarUrl: memberDelegate.avatar
+                            dimmed: memberDelegate.away
+                            fontPixelSize: win.scaledSize(11)
                         }
 
                         Rectangle {
@@ -5028,6 +5188,8 @@ ApplicationWindow {
 
                             Text {
                                 width: Math.max(0, parent.width
+                                    - (memberDelegate.bot
+                                        ? memberBotMark.width + parent.spacing : 0)
                                     - (memberDelegate.typing
                                         ? memberTypingGlyph.implicitWidth + parent.spacing
                                         : 0))
@@ -5037,6 +5199,13 @@ ApplicationWindow {
                                 font.family: "iA Writer Mono S"
                                 font.bold: memberDelegate.nick === win.selfNick
                                 font.pixelSize: win.scaledSize(12)
+                            }
+
+                            BotMark {
+                                id: memberBotMark
+                                objectName: "member-bot-" + memberDelegate.nick
+                                shown: memberDelegate.bot
+                                anchors.verticalCenter: parent.verticalCenter
                             }
 
                             TypingDots {
@@ -5420,11 +5589,14 @@ ApplicationWindow {
                     required property string label
                     required property string memberStatus
                     required property int awayFlag
+                    required property int botFlag
+                    required property string avatar
                     required property string glyph
                     required property int paletteIndex
 
                     readonly property string nick: name
                     readonly property bool away: awayFlag === 1
+                    readonly property bool bot: botFlag === 1
                     // Exact match, like `openable`; the reducer's overlay is the CASEMAPPING-aware path.
                     readonly property bool isSelf: nick.length > 0 && nick === win.selfNick
                     readonly property bool showAway: away
@@ -5458,23 +5630,21 @@ ApplicationWindow {
                             : "transparent"
                     }
 
-                    Rectangle {
+                    Item {
                         anchors.left: parent.left
                         anchors.leftMargin: win.scaledSize(18)
                         anchors.verticalCenter: parent.verticalCenter
                         width: win.scaledSize(28)
                         height: width
-                        radius: width / 2
-                        color: nickRow.avatarFill
-                        opacity: nickRow.showAway ? 0.62 : 1
 
-                        Text {
-                            anchors.centerIn: parent
-                            text: nickRow.glyph
-                            color: nickRow.nickTint
-                            font.family: "iA Writer Mono S"
-                            font.bold: true
-                            font.pixelSize: win.scaledSize(11)
+                        NickGlyph {
+                            anchors.fill: parent
+                            nick: nickRow.nick
+                            avatarUrl: nickRow.avatar
+                            dimmed: nickRow.showAway
+                            ink: nickRow.nickTint
+                            fill: nickRow.avatarFill
+                            fontPixelSize: win.scaledSize(11)
                         }
 
                         Rectangle {
@@ -5499,14 +5669,28 @@ ApplicationWindow {
                         anchors.verticalCenter: parent.verticalCenter
                         spacing: 0
 
-                        Text {
+                        Row {
                             width: parent.width
-                            text: nickRow.label
-                            color: nickRow.showAway ? win.mutedColor : win.inkColor
-                            elide: Text.ElideRight
-                            font.family: "iA Writer Mono S"
-                            font.bold: nickRow.nick === win.selfNick
-                            font.pixelSize: win.scaledSize(12)
+                            spacing: win.scaledSize(4)
+
+                            Text {
+                                width: Math.max(0, parent.width
+                                    - (nickRow.bot
+                                        ? nickBotMark.width + parent.spacing : 0))
+                                text: nickRow.label
+                                color: nickRow.showAway ? win.mutedColor : win.inkColor
+                                elide: Text.ElideRight
+                                font.family: "iA Writer Mono S"
+                                font.bold: nickRow.nick === win.selfNick
+                                font.pixelSize: win.scaledSize(12)
+                            }
+
+                            BotMark {
+                                id: nickBotMark
+                                objectName: "nickPick-bot-" + nickRow.nick
+                                shown: nickRow.bot
+                                anchors.verticalCenter: parent.verticalCenter
+                            }
                         }
 
                         Text {

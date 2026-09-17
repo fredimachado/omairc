@@ -26,6 +26,7 @@
 #endif
 
 #include "backend.h"
+#include "irc/ircavatarstore.h"
 #include "irc/ircconnection.h"
 #include "irc/irccontroller.h"
 #include "irc/ircdemoserver.h"
@@ -218,6 +219,7 @@ int main(int argc, char *argv[]) {
     });
 
     QQmlApplicationEngine engine;
+    IrcAvatarStore *avatarStore = ircInstallAvatarStore(&engine);
 
     bool pendingRaise = false;
     OmaircIpcHandler ipcHandler(ircController);
@@ -245,6 +247,8 @@ int main(int argc, char *argv[]) {
         QStringLiteral("ircConnection"), ircConnection);
     engine.rootContext()->setContextProperty(
         QStringLiteral("slashSession"), &slashSession);
+    engine.rootContext()->setContextProperty(
+        QStringLiteral("appAvatarStore"), avatarStore);
     engine.load(QUrl(QStringLiteral("qrc:/Main.qml")));
     if (engine.rootObjects().isEmpty()) {
         qCritical() << "Could not load the Omairc interface; resource available:"
