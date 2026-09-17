@@ -372,6 +372,9 @@ private slots:
     void closeDirectMessageDropsAndSelectsNeighbor();
     void closeDirectMessageInvokableOnChannelIsSilent();
     void closeDirectMessageWhileDisconnected();
+    void clearingLastDirectNotifiesConnectionStatus();
+    void selectingOfflineNetworkNotifiesConnectionStatus();
+    void openStatusWithoutSessionNotifiesConnectionStatus();
     void selfAwayFollowsNumericsAndUnawaysAfterChat();
     void selfAwayRefreshesOurOwnMemberRow();
     void closeLastDirectKeepsSelfAway();
@@ -1571,6 +1574,69 @@ void ControllerTest::closeDirectMessageWhileDisconnected()
     auto *conversations =
         qobject_cast<QAbstractItemModel *>(controller.conversations());
     QCOMPARE(conversations->rowCount(), 0);
+}
+
+void ControllerTest::clearingLastDirectNotifiesConnectionStatus()
+{
+    IrcController controller;
+    auto *transportA = new FakeIrcTransport;
+    auto *transportB = new FakeIrcTransport;
+    QVERIFY(controller.addSession(config(QStringLiteral("network-a")), transportA));
+    QVERIFY(controller.addSession(config(QStringLiteral("network-b")), transportB));
+    registerSession(controller.session(QStringLiteral("network-b")), transportB);
+    transportB->injectBytes(QByteArrayLiteral(":bob!u@h PRIVMSG omairc :hi\r\n"));
+    QCOMPARE(controller.selectedTarget(), QStringLiteral("bob"));
+    QCOMPARE(controller.focusedNetworkId(), QStringLiteral("network-b"));
+    QCOMPARE(controller.connectionStatus(), QStringLiteral("Connected"));
+
+    // Point Status at the offline network without changing the selected DM.
+    // Closing the last direct falls back to that console network.
+    controller.console()->setNetwork(QStringLiteral("network-a"));
+    QCOMPARE(controller.focusedNetworkId(), QStringLiteral("network-b"));
+    QCOMPARE(controller.connectionStatus(), QStringLiteral("Connected"));
+
+    QSignalSpy statusSpy(&controller, &IrcController::statusChanged);
+    QVERIFY(controller.sendMessage(QStringLiteral("/close")));
+    QCOMPARE(controller.selectedTarget(), QString());
+    QCOMPARE(controller.focusedNetworkId(), QStringLiteral("network-a"));
+    QCOMPARE(controller.connectionStatus(), QStringLiteral("Offline"));
+    QVERIFY(statusSpy.count() >= 1);
+}
+
+void ControllerTest::selectingOfflineNetworkNotifiesConnectionStatus()
+{
+    IrcController controller;
+    auto *transportA = new FakeIrcTransport;
+    auto *transportB = new FakeIrcTransport;
+    QVERIFY(controller.addSession(config(QStringLiteral("network-a")), transportA));
+    QVERIFY(controller.addSession(config(QStringLiteral("network-b")), transportB));
+    registerSession(controller.session(QStringLiteral("network-a")), transportA);
+    transportA->injectBytes(QByteArrayLiteral(":alice!u@h PRIVMSG omairc :hi\r\n"));
+    QCOMPARE(controller.connectionStatus(), QStringLiteral("Connected"));
+
+    QSignalSpy statusSpy(&controller, &IrcController::statusChanged);
+    controller.selectConversation(QStringLiteral("network-b"), QStringLiteral("bob"));
+    QCOMPARE(controller.focusedNetworkId(), QStringLiteral("network-b"));
+    QCOMPARE(controller.connectionStatus(), QStringLiteral("Offline"));
+    QVERIFY(statusSpy.count() >= 1);
+}
+
+void ControllerTest::openStatusWithoutSessionNotifiesConnectionStatus()
+{
+    IrcController controller;
+    auto *transportA = new FakeIrcTransport;
+    auto *transportB = new FakeIrcTransport;
+    QVERIFY(controller.addSession(config(QStringLiteral("network-a")), transportA));
+    QVERIFY(controller.addSession(config(QStringLiteral("network-b")), transportB));
+    registerSession(controller.session(QStringLiteral("network-a")), transportA);
+    transportA->injectBytes(QByteArrayLiteral(":alice!u@h PRIVMSG omairc :hi\r\n"));
+    QCOMPARE(controller.connectionStatus(), QStringLiteral("Connected"));
+
+    QSignalSpy statusSpy(&controller, &IrcController::statusChanged);
+    controller.openStatus(QStringLiteral("network-b"));
+    QCOMPARE(controller.focusedNetworkId(), QStringLiteral("network-b"));
+    QCOMPARE(controller.connectionStatus(), QStringLiteral("Offline"));
+    QVERIFY(statusSpy.count() >= 1);
 }
 
 void ControllerTest::selfAwayFollowsNumericsAndUnawaysAfterChat()

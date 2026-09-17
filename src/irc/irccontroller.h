@@ -350,6 +350,9 @@ private:
     QString identityNetworkId() const;
     void notifySelfAwayIfChanged(const QString& previousId, bool previousAway);
     void updateStatus(IrcSession *session);
+    // connectionStatus() follows focusedNetworkId(), so focus changes must
+    // notify even when the newly focused network has no live session.
+    void notifyFocusedConnectionStatus();
     void setLastError(const QString& networkId, const QString& message);
     QString errorNetworkId(IrcComposerSurface surface) const;
     void armTypingRefresh();

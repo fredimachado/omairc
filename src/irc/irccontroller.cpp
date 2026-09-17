@@ -627,8 +627,7 @@ void IrcController::selectConversation(const QString& networkId,
     m_conversations.select(key);
     m_messages.select(key);
     m_members.select(key);
-    if (IrcSession *session = m_sessions.findSession(networkId))
-        updateStatus(session);
+    notifyFocusedConnectionStatus();
     emit selectionChanged();
     emit capabilitiesChanged();
     notifyComposerText(m_composerDraft);
@@ -655,8 +654,7 @@ void IrcController::openStatus(const QString& networkId)
     const bool previousAway = selfAway();
     m_console.setNetwork(networkId);
     m_console.setOpen(true);
-    if (IrcSession *session = m_sessions.findSession(networkId))
-        updateStatus(session);
+    notifyFocusedConnectionStatus();
     emit selectionChanged();
     notifySelfAwayIfChanged(previousId, previousAway);
 }
@@ -763,6 +761,7 @@ void IrcController::clearConversationSelection()
     emit selectionChanged();
     emit capabilitiesChanged();
     emit typingChanged();
+    notifyFocusedConnectionStatus();
     notifySelfAwayIfChanged(previousId, previousAway);
 }
 
@@ -2529,5 +2528,14 @@ void IrcController::updateStatus(IrcSession *session)
     if (!session)
         return;
     m_connectionStatus = stateText(session->state());
+    emit statusChanged();
+}
+
+void IrcController::notifyFocusedConnectionStatus()
+{
+    if (IrcSession *session = m_sessions.findSession(focusedNetworkId())) {
+        updateStatus(session);
+        return;
+    }
     emit statusChanged();
 }
