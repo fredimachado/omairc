@@ -117,7 +117,9 @@ QString IrcAvatarStore::source(const QString& rawUrl, int pixelSize)
             return {};
         const QString key = keyForUrl(resourceUrl);
         if (cached(key).isNull()) {
-            QImage image(trimmed);
+            // QImage loads Qt resources as ":/…", not "qrc:/…".
+            const QString resourcePath = trimmed.mid(3);
+            QImage image(resourcePath);
             if (image.isNull())
                 return {};
             remember(key, image);
