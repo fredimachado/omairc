@@ -1,7 +1,9 @@
 #include <QCoreApplication>
 #include <QTest>
 
-#ifdef Q_OS_UNIX
+#include "backend.h"
+
+#ifdef Q_OS_LINUX
 #include <QDBusAbstractAdaptor>
 #include <QDBusConnection>
 #include <QDBusMessage>
@@ -10,8 +12,6 @@
 #include <QStringList>
 #include <QVariantMap>
 #include <QVector>
-
-#include "backend.h"
 
 namespace {
 void disconnectSessionBus()
@@ -266,19 +266,34 @@ void BackendNotifyTest::notifyDesktopAfterDisconnectDoesNotCrash()
 }
 #endif
 
+#ifndef Q_OS_LINUX
+class BackendNotifySmokeTest : public QObject
+{
+    Q_OBJECT
+
+private slots:
+    void notifyDesktopDoesNotCrash();
+};
+
+void BackendNotifySmokeTest::notifyDesktopDoesNotCrash()
+{
+    Backend backend;
+    backend.notifyDesktop(QStringLiteral("alice"), QStringLiteral("hello"),
+                          QStringLiteral("omarchy"), QStringLiteral("#omarchy"),
+                          QStringLiteral("mid-1"));
+    backend.notifyDesktop(QStringLiteral("bob"), QStringLiteral("ping"));
+}
+#endif
+
 int runBackendTests(int argc, char **argv)
 {
-#ifdef Q_OS_UNIX
+#ifdef Q_OS_LINUX
     BackendNotifyTest test;
     return QTest::qExec(&test, argc, argv);
 #else
-    // DBus-backed notification tests are Unix-only; this is an intentional no-op.
-    Q_UNUSED(argc);
-    Q_UNUSED(argv);
-    return 0;
+    BackendNotifySmokeTest test;
+    return QTest::qExec(&test, argc, argv);
 #endif
 }
 
-#ifdef Q_OS_UNIX
 #include "tst_backend.moc"
-#endif

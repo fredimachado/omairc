@@ -127,6 +127,8 @@ int main(int argc, char *argv[]) {
     app.setDesktopFileName(QStringLiteral("omairc"));
 #ifdef Q_OS_WIN
     app.setWindowIcon(QIcon(QStringLiteral(":/icons/omairc.ico")));
+#elif defined(Q_OS_MACOS)
+    app.setWindowIcon(QIcon(QStringLiteral(":/icons/omairc.svg")));
 #else
     app.setWindowIcon(QIcon::fromTheme(
         QStringLiteral("omairc"),

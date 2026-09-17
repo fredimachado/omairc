@@ -1,4 +1,5 @@
-QT += core gui qml quick quickcontrols2 network testlib dbus
+QT += core gui qml quick quickcontrols2 network testlib
+unix:!macx: QT += dbus
 
 CONFIG += c++17 testcase
 TEMPLATE = app

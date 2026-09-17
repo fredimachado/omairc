@@ -1,5 +1,5 @@
 QT += core gui network testlib
-unix: QT += dbus
+unix:!macx: QT += dbus
 
 include(../qtkeychain.pri)
 
