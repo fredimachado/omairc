@@ -5533,6 +5533,7 @@ TestCase {
     function test_liveIdentityFooterShowsAwayWithoutMemberPresence() {
         gatedIrc.selfAway = true;
         gatedIrc.hasAwayPresence = false;
+        gatedIrc.connectionStatus = "Connected";
         var window = createTemporaryObject(gatedWindowComponent, null);
         verify(window !== null, "The gated away window should load");
         tryCompare(window, "visible", true);
@@ -5542,6 +5543,27 @@ TestCase {
         verify(Qt.colorEqual(findChild(window, "selfPresenceDot").color, "#d6a552"));
         window.close();
         gatedIrc.selfAway = false;
+    }
+
+    function test_liveIdentityFooterShowsOfflineWhenDisconnected() {
+        gatedIrc.selfAway = false;
+        gatedIrc.connectionStatus = "Offline";
+        var window = createTemporaryObject(gatedWindowComponent, null);
+        verify(window !== null, "The gated offline window should load");
+        tryCompare(window, "visible", true);
+        waitForRendering(window.contentItem);
+
+        compare(findChild(window, "selfPresenceLabel").text, "offline");
+        verify(Qt.colorEqual(findChild(window, "selfPresenceDot").color,
+                             window.mutedColor));
+        gatedIrc.selfAway = true;
+        compare(findChild(window, "selfPresenceLabel").text, "offline");
+        gatedIrc.connectionStatus = "Connected";
+        compare(findChild(window, "selfPresenceLabel").text, "away");
+        verify(Qt.colorEqual(findChild(window, "selfPresenceDot").color, "#d6a552"));
+        window.close();
+        gatedIrc.selfAway = false;
+        gatedIrc.connectionStatus = "Connected";
     }
 
     function test_identityFooterFallsBackToConnectionNick() {

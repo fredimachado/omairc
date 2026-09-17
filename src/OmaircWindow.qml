@@ -135,6 +135,13 @@ ApplicationWindow {
     readonly property bool memberStatusVisible: !irc || irc.hasMemberStatus
     readonly property bool awayPresenceVisible: !irc || irc.hasAwayPresence
     readonly property bool selfAway: irc ? irc.selfAway : false
+    // Same Connected gate as the network header status mark: Offline /
+    // Connecting / Reconnecting stay muted "offline", then away or available.
+    readonly property string selfPresence: {
+        if (irc && irc.connectionStatus !== "Connected")
+            return "offline"
+        return selfAway ? "away" : "available"
+    }
     readonly property bool typingVisible: !irc || irc.hasTyping
     readonly property var typingNicks: irc ? irc.typingNicks : []
     readonly property string selfNick: {
@@ -3101,7 +3108,9 @@ ApplicationWindow {
                         width: win.scaledSize(9)
                         height: width
                         radius: width / 2
-                        color: win.selfAway ? "#d6a552" : "#69b978"
+                        color: win.selfPresence === "away" ? "#d6a552"
+                            : (win.selfPresence === "available"
+                                ? "#69b978" : win.mutedColor)
                         border.width: win.scaledSize(2)
                         border.color: win.panelColor
                     }
@@ -3129,7 +3138,7 @@ ApplicationWindow {
 
                     Text {
                         objectName: "selfPresenceLabel"
-                        text: win.selfAway ? "away" : "available"
+                        text: win.selfPresence
                         color: win.mutedColor
                         font.family: "iA Writer Mono S"
                         font.pixelSize: win.scaledSize(10)
