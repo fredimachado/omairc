@@ -41,6 +41,39 @@
 #error "Build with omairc.pro so OMAIRC_VERSION is defined"
 #endif
 
+#ifdef Q_OS_WIN
+static bool stdHandleIsRedirected(DWORD stdHandle)
+{
+    const HANDLE handle = GetStdHandle(stdHandle);
+    if (!handle || handle == INVALID_HANDLE_VALUE)
+        return false;
+    const DWORD type = GetFileType(handle);
+    return type == FILE_TYPE_DISK || type == FILE_TYPE_PIPE;
+}
+
+// GUI-subsystem binaries have no console of their own. Reuse the parent
+// terminal for --help and the local CLI, but leave redirected handles alone.
+static void attachParentConsole()
+{
+    if (stdHandleIsRedirected(STD_OUTPUT_HANDLE)
+        || stdHandleIsRedirected(STD_ERROR_HANDLE)) {
+        return;
+    }
+    if (!AttachConsole(ATTACH_PARENT_PROCESS))
+        return;
+#ifdef _MSC_VER
+    FILE *stream = nullptr;
+    freopen_s(&stream, "CONOUT$", "w", stdout);
+    freopen_s(&stream, "CONOUT$", "w", stderr);
+    freopen_s(&stream, "CONIN$", "r", stdin);
+#else
+    (void)freopen("CONOUT$", "w", stdout);
+    (void)freopen("CONOUT$", "w", stderr);
+    (void)freopen("CONIN$", "r", stdin);
+#endif
+}
+#endif
+
 static void raiseOmaircWindow(QQmlApplicationEngine &engine)
 {
     const auto roots = engine.rootObjects();
@@ -62,6 +95,10 @@ int main(int argc, char *argv[]) {
         && (args.constFirst() == QLatin1String("--help")
             || args.constFirst() == QLatin1String("--version")
             || OmaircCli::looksLikeCommand(argc, argv));
+#ifdef Q_OS_WIN
+    if (headless)
+        attachParentConsole();
+#endif
     if (headless) {
         const OmaircCli::ParseOutcome outcome = OmaircCli::parseArgs(args);
         if (const auto *request = std::get_if<OmaircIpc::Request>(&outcome)) {
@@ -72,11 +109,6 @@ int main(int argc, char *argv[]) {
         }
         return OmaircCli::printOutcome(outcome);
     }
-
-#ifdef Q_OS_WIN
-    // win32 builds use the console subsystem so CLI output works; drop it for the window.
-    FreeConsole();
-#endif
 
     QGuiApplication app(argc, argv);
     app.setApplicationName(QStringLiteral("omairc"));
