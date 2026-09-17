@@ -14,7 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- The Windows portable tree ships the MSVC runtime DLLs next to `omairc.exe` so a user-mode install does not need `vc_redist`. `bin\build.bat` copies them from `VCToolsRedistDir` because `windeployqt --compiler-runtime` skips VS 2026's VC145 folder.
+- The Windows portable tree ships `msvcp140` and `vcruntime140` next to `omairc.exe` so a user-mode install does not need `vc_redist`. `bin\build.bat` copies those DLLs from `VCToolsRedistDir`. It does not pass `windeployqt --compiler-runtime`: on MSVC that switch only adds an unused `vc_redist.x64.exe`.
 
 ### Fixed
 

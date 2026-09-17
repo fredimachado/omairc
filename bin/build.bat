@@ -41,16 +41,18 @@ if not exist "!EXE!" (
 )
 
 if exist "!QTBIN!\windeployqt.exe" (
-  rem Ship the compiler runtime next to the exe so a per-user installer
-  rem does not need an elevated vc_redist. Default Qt 6.11 windeployqt
-  rem follows every Quick Controls style and ships Mesa, translations,
-  rem and QML tooling. Omairc forces Material.
+  rem Skip the compiler-runtime redist installer. On MSVC,
+  rem --compiler-runtime copies vc_redist.x64.exe (never run) instead of
+  rem the CRT DLLs. :deploy_msvc_runtime copies msvcp140 and vcruntime140
+  rem next to the exe so a per-user install does not need vc_redist.
+  rem Default Qt 6.11 windeployqt follows every Quick Controls style and
+  rem ships Mesa, translations, and QML tooling. Omairc forces Material.
   "!QTBIN!\windeployqt.exe" ^
     --qmldir "!ROOT!\src" ^
     --release ^
     --no-translations ^
     --no-opengl-sw ^
-    --compiler-runtime ^
+    --no-compiler-runtime ^
     --no-system-d3d-compiler ^
     --no-system-dxc-compiler ^
     --skip-plugin-types qmltooling,generic,imageformats ^
@@ -71,7 +73,8 @@ for %%F in ("!QTBIN!\libqt6keychain.dll" "!QTBIN!\qt6keychain.dll") do (
   if exist %%F copy /Y %%F "!BUILD_DIR!\release\" >nul
 )
 
-rem windeployqt --compiler-runtime still misses VS 2026's Microsoft.VC145.CRT.
+rem Copy the MSVC CRT DLLs. windeployqt --compiler-runtime only drops
+rem vc_redist.x64.exe, and that still misses VS 2026's VC145 folder.
 if /i "!QSPEC!"=="win32-msvc" (
   call :deploy_msvc_runtime "!BUILD_DIR!\release"
   if not exist "!BUILD_DIR!\release\msvcp140.dll" (
@@ -90,7 +93,10 @@ set "REL=%~1"
 if not exist "!REL!\omairc.exe" exit /b 0
 if not defined VCToolsRedistDir exit /b 0
 for /d %%D in ("!VCToolsRedistDir!x64\Microsoft.VC*.CRT") do (
-  if exist "%%D\msvcp140.dll" copy /Y "%%D\*.dll" "!REL!\" >nul
+  if exist "%%D\msvcp140.dll" (
+    copy /Y "%%D\msvcp140*.dll" "!REL!\" >nul
+    copy /Y "%%D\vcruntime140*.dll" "!REL!\" >nul
+  )
 )
 exit /b 0
 
@@ -143,6 +149,7 @@ for %%F in (
 ) do (
   if exist "!REL!\%%F" del /q "!REL!\%%F"
 )
+del /q "!REL!\vc_redist*.exe" >nul 2>&1
 
 if exist "!REL!\qml" del /s /q "!REL!\qml\*.qmltypes" >nul 2>&1
 exit /b 0

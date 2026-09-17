@@ -129,10 +129,13 @@ stays 1.0, desktop notifications no-op without DBus, and the Omarchy
 `colors.toml` watch does nothing when that file is missing. Windows
 embeds `data/icons/omairc.ico` in the exe (`RC_ICONS`) and the same
 file in the window icon; regenerate it from the SVG with ImageMagick
-when the mark changes. `windeployqt --compiler-runtime` is not enough on
-VS 2026 (VC145); `bin\build.bat` also copies `Microsoft.VC*.CRT` from
-`VCToolsRedistDir` next to the exe so a per-user install does not need
-`vc_redist`. `bin\package-windows.bat` compiles
+when the mark changes. `windeployqt --compiler-runtime` copies
+`vc_redist.x64.exe` on MSVC and does not copy the CRT DLLs, so
+`bin\build.bat` uses `--no-compiler-runtime` and copies `msvcp140*.dll`
+and `vcruntime140*.dll` from `VCToolsRedistDir` next to the exe so a
+per-user install does not need `vc_redist`. `:prune_qt_deploy` deletes a
+stale `vc_redist*.exe` left in an existing build directory.
+`bin\package-windows.bat` compiles
 `packaging/windows/omairc.iss` with Inno Setup 6 into
 `dist\omairc-*-windows-x64-setup.exe`. Privileges stay lowest by default
 (`{autopf}` is `%LOCALAPPDATA%\Programs\Omairc`); the wizard can elevate

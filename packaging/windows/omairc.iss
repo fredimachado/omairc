@@ -45,7 +45,7 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 [Files]
 Source: "..\..\build\release\*"; DestDir: "{app}"; \
   Flags: ignoreversion recursesubdirs createallsubdirs; \
-  Excludes: "*.obj,*.pdb,*.res,*.ilk,moc_*.cpp,moc_predefs.h,qrc_*.cpp"
+  Excludes: "*.obj,*.pdb,*.res,*.ilk,moc_*.cpp,moc_predefs.h,qrc_*.cpp,vc_redist*.exe"
 Source: "..\..\LICENSE"; DestDir: "{app}"; DestName: "LICENSE.txt"
 
 [Icons]
