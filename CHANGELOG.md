@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- IRCv3 `draft/metadata-2` now covers peer `avatar`, `status`, and `bot`, plus WHOIS extras (`display-name`, `pronouns`, `homepage`, `color`). Member, nick picker, transcript, and DM circles load an HTTPS avatar when it is safe; a bad URL keeps the initial. Bots get a small mark next to the nick. Standing `status` stays separate from AWAY.
+- `/status [text|clear]` sets or clears the local user's standing metadata without reconnecting. Empty `/status` echoes the current value. Networks that do not grant metadata say so on Status or the asking transcript.
 - The Windows build embeds the app icon in `omairc.exe`. Explorer, the title bar, and the taskbar use it instead of the default executable mark.
 - A per-user Inno Setup installer (`omairc-*-windows-x64-setup.exe`) on each version tag, next to the portable zip. `bin\package-windows.bat` compiles it from the windeployqt tree. Start Menu and user PATH are created; config is left alone on uninstall.
 
