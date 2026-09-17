@@ -197,9 +197,12 @@ QByteArray presenceBytes(const SeedNetwork &network)
                         .arg(network.nick));
     }
     if (members.contains(QStringLiteral("mira"))) {
+        // Bundled demo art loads through the avatar store's qrc path so
+        // --demo-server shows a real glyph without outbound HTTPS or
+        // weakening ircAvatarUrlIsSafe for network URLs.
         out += line(
             QStringLiteral(
-                ":server 761 %1 mira avatar * :https://example.com/avatars/{size}/mira.png")
+                ":server 761 %1 mira avatar * :qrc:/demo/mira-avatar.png")
                 .arg(network.nick));
     }
     if (members.contains(QStringLiteral("anna"))) {
@@ -607,9 +610,10 @@ bool tryAnswerAway(IrcLoopbackTransport *transport, const QString &selfNick,
     return true;
 }
 
-// Real servers answer METADATA SET with 761 / 766 and do not echo our own
-// METADATA notifications back. The demo matches that so the client has to
-// apply standing status locally, the same way it covers AWAY.
+// Real servers answer METADATA SET with 761 / 766 (or 764 / 767 / 769 on
+// failure) and typically do not send a separate METADATA notification to self.
+// The demo mirrors that reply shape so the client applies standing status from
+// the numeric response, not from optimistic local state.
 bool tryAnswerMetadata(IrcLoopbackTransport *transport, const QString &selfNick,
                        const QByteArray &frame)
 {

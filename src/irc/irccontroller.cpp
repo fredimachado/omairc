@@ -77,6 +77,11 @@ QString reopenDirectMessagesKey()
     return QStringLiteral("reopenDirectMessages");
 }
 
+QString loadPeerAvatarsKey()
+{
+    return QStringLiteral("loadPeerAvatars");
+}
+
 bool loadReopenDirectMessages()
 {
     QSettings settings;
@@ -89,6 +94,24 @@ void saveReopenDirectMessages(bool enabled)
     QSettings settings;
     settings.beginGroup(QStringLiteral("preferences"));
     settings.setValue(reopenDirectMessagesKey(), enabled);
+    settings.endGroup();
+    settings.sync();
+}
+
+bool loadLoadPeerAvatars()
+{
+    QSettings settings;
+    settings.beginGroup(QStringLiteral("preferences"));
+    // Default on: HTTPS policy still fails closed. Turn off to keep avatar
+    // hosts from seeing your IP when you join a busy channel.
+    return settings.value(loadPeerAvatarsKey(), true).toBool();
+}
+
+void saveLoadPeerAvatars(bool enabled)
+{
+    QSettings settings;
+    settings.beginGroup(QStringLiteral("preferences"));
+    settings.setValue(loadPeerAvatarsKey(), enabled);
     settings.endGroup();
     settings.sync();
 }
@@ -145,6 +168,7 @@ IrcController::IrcController(QObject *parent)
             &IrcController::statusChanged);
     m_reducer.setConversationLog(&m_transcripts);
     m_reopenDirectMessages = loadReopenDirectMessages();
+    m_loadPeerAvatars = loadLoadPeerAvatars();
 }
 
 void IrcController::setTranscriptRoot(const QString &root)
@@ -203,6 +227,7 @@ bool IrcController::discardSession(const QString &networkId)
         return false;
     forgetWhoisWatches(networkId);
     forgetCtcpWatches(networkId);
+    forgetStatusWatch(networkId);
     const QString previousId = identityNetworkId();
     const bool previousAway = selfAway();
     m_reducer.apply(IrcSelfAwayEvent{networkId, false});
@@ -224,6 +249,7 @@ void IrcController::forgetNetworkState(const QString &networkId)
         return;
     forgetWhoisWatches(networkId);
     forgetCtcpWatches(networkId);
+    forgetStatusWatch(networkId);
     const QString previousId = identityNetworkId();
     const bool previousAway = selfAway();
     m_reducer.forgetNetwork(networkId);
@@ -442,6 +468,20 @@ void IrcController::setReopenDirectMessages(bool enabled)
         if (session && session->state() == IrcSession::State::Registered)
             restoreOpenDirects(networkId);
     }
+}
+
+bool IrcController::loadPeerAvatars() const
+{
+    return m_loadPeerAvatars;
+}
+
+void IrcController::setLoadPeerAvatars(bool enabled)
+{
+    if (m_loadPeerAvatars == enabled)
+        return;
+    m_loadPeerAvatars = enabled;
+    saveLoadPeerAvatars(enabled);
+    emit loadPeerAvatarsChanged();
 }
 
 bool IrcController::nickIsTyping(const QString& nick) const
@@ -1724,9 +1764,8 @@ IrcCommandOutcome IrcController::dispatchStatus(const IrcCommand& command,
             && restAfterFirstToken(command.argument).isEmpty()) {
         if (!session->clearOwnMetadata(IrcMetadata::statusKey()))
             return IrcCommandOutcome::Refused;
-        apply(IrcMemberMetadataEvent{
-            networkId, session->nick(), IrcMetadata::statusKey(), QString{}});
-        return echo(QStringLiteral("Standing status cleared."));
+        armStatusWatch(networkId, surface, IrcStatusWatch::Kind::Clear, QString{});
+        return IrcCommandOutcome::Sent;
     }
 
     QString clamped = command.argument;
@@ -1734,9 +1773,8 @@ IrcCommandOutcome IrcController::dispatchStatus(const IrcCommand& command,
         clamped.chop(1);
     if (!session->setOwnMetadata(IrcMetadata::statusKey(), clamped))
         return IrcCommandOutcome::Refused;
-    apply(IrcMemberMetadataEvent{
-        networkId, session->nick(), IrcMetadata::statusKey(), clamped});
-    return echo(QStringLiteral("Standing status set to %1.").arg(clamped));
+    armStatusWatch(networkId, surface, IrcStatusWatch::Kind::Set, clamped);
+    return IrcCommandOutcome::Sent;
 }
 
 IrcCommandOutcome IrcController::dispatchWhois(const IrcCommand& command,
@@ -1927,6 +1965,7 @@ void IrcController::noteNickDelivery(const QString& networkId, const QString& ta
 
 void IrcController::handleStatusEntry(const IrcStatusEntry& entry)
 {
+    routeStatusMetadataError(entry);
     if (const IrcWhoisLine *line = entry.whoisLine())
         routeWhoisLine(entry.networkId(), *line);
     if (const IrcCtcpReplyLine *line = entry.ctcpReply())
@@ -2089,6 +2128,90 @@ void IrcController::forgetCtcpWatches(const QString& networkId)
     }
 }
 
+void IrcController::armStatusWatch(const QString& networkId,
+                                   IrcComposerSurface surface,
+                                   IrcStatusWatch::Kind kind,
+                                   const QString& value)
+{
+    IrcWhoisDestination destination{IrcWhoisStatusOnly{}};
+    if (surface == IrcComposerSurface::Conversation && m_selected)
+        destination = *m_selected;
+    m_statusWatches.insert(networkId, IrcStatusWatch{std::move(destination), kind, value});
+}
+
+void IrcController::forgetStatusWatch(const QString& networkId)
+{
+    if (networkId.isEmpty())
+        return;
+    m_statusWatches.remove(networkId);
+}
+
+void IrcController::echoStatusOutcome(const QString& networkId,
+                                      const IrcWhoisDestination& destination,
+                                      const QString& text)
+{
+    if (const auto *conversation = std::get_if<IrcConversationKey>(&destination)) {
+        apply(IrcWhoisTranscriptEvent{*conversation, text});
+        return;
+    }
+    m_console.record(IrcStatusEntry::outcome(networkId, text));
+}
+
+void IrcController::routeStatusMetadataReply(const QString& networkId,
+                                             const QString& nick,
+                                             const QString& key,
+                                             const QString& value)
+{
+    auto found = m_statusWatches.find(networkId);
+    if (found == m_statusWatches.end())
+        return;
+    if (key.compare(IrcMetadata::statusKey(), Qt::CaseInsensitive) != 0)
+        return;
+    const QString self = m_currentNicks.value(networkId);
+    if (self.isEmpty()
+        || !m_reducer.serverFeatures(networkId)
+                .caseMapping()
+                .equals(utf8(nick), utf8(self))) {
+        return;
+    }
+    if (found->kind == IrcStatusWatch::Kind::Clear) {
+        if (!value.isEmpty())
+            return;
+        echoStatusOutcome(networkId, found->destination,
+                          QStringLiteral("Standing status cleared."));
+    } else {
+        if (value.isEmpty())
+            return;
+        echoStatusOutcome(networkId, found->destination,
+                          QStringLiteral("Standing status set to %1.").arg(value));
+    }
+    m_statusWatches.erase(found);
+}
+
+void IrcController::routeStatusMetadataError(const IrcStatusEntry& entry)
+{
+    const QString networkId = entry.networkId();
+    auto found = m_statusWatches.find(networkId);
+    if (found == m_statusWatches.end())
+        return;
+    const QString label = entry.label();
+    if (label != QStringLiteral("764") && label != QStringLiteral("767")
+        && label != QStringLiteral("769")) {
+        return;
+    }
+    const QString keyToken = firstToken(entry.text());
+    if (!keyToken.isEmpty()
+        && keyToken.compare(IrcMetadata::statusKey(), Qt::CaseInsensitive) != 0) {
+        return;
+    }
+    const QString reason = entry.text().isEmpty() ? label : entry.text();
+    const QString message = found->kind == IrcStatusWatch::Kind::Clear
+        ? QStringLiteral("Could not clear standing status: %1").arg(reason)
+        : QStringLiteral("Could not set standing status: %1").arg(reason);
+    echoStatusOutcome(networkId, found->destination, message);
+    m_statusWatches.erase(found);
+}
+
 void IrcController::echoIfPresent(IrcSession *session,
                                   const QString& target,
                                   const QString& body,
@@ -2181,13 +2304,18 @@ void IrcController::apply(const IrcEvent& event)
         m_unawaySent.remove(welcome->networkId);
         forgetWhoisWatches(welcome->networkId);
         forgetCtcpWatches(welcome->networkId);
+        forgetStatusWatch(welcome->networkId);
     } else if (const auto *selfAway = std::get_if<IrcSelfAwayEvent>(&event)) {
         m_unawaySent.remove(selfAway->networkId);
     }
     m_reducer.apply(event);
-    if (std::holds_alternative<IrcMemberMetadataEvent>(event)) {
+    if (const auto *metadata = std::get_if<IrcMemberMetadataEvent>(&event)) {
         ++m_peerMetadataEpoch;
         emit peerMetadataChanged();
+        routeStatusMetadataReply(metadata->networkId,
+                                 metadata->nick,
+                                 metadata->key,
+                                 metadata->value);
     }
     if (const auto *nick = std::get_if<IrcNickEvent>(&event)) {
         m_openDirects.rekey(nick->networkId, nick->oldNick, nick->newNick,
