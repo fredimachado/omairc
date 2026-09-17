@@ -5731,6 +5731,74 @@ TestCase {
         tryCompare(composer, "activeFocus", true);
     }
 
+    function test_refusedQueryKeepsComposer() {
+        openSeededAppWindow();
+        var composer = item("messageComposer");
+        mouseClick(composer);
+        verify(composer.activeFocus);
+        typeText("/query");
+        compare(composer.text, "/query");
+        if (item("slashCompleteList").visible)
+            keyClick(Qt.Key_Escape);
+        keyClick(Qt.Key_Return);
+
+        compare(appWindow.currentConversation, "#omarchy");
+        compare(appWindow.consoleVisible, false);
+        compare(composer.text, "/query");
+        tryCompare(composer, "activeFocus", true);
+    }
+
+    function test_refusedQueryFromStatusKeepsComposer() {
+        openSeededAppWindow();
+        keyClick(Qt.Key_QuoteLeft, Qt.ControlModifier);
+        tryCompare(appWindow, "consoleVisible", true);
+        var composer = item("messageComposer");
+        var list = item("consoleList");
+        mouseClick(composer);
+        verify(composer.activeFocus);
+        typeText("/query");
+        compare(composer.text, "/query");
+        if (item("slashCompleteList").visible)
+            keyClick(Qt.Key_Escape);
+        keyClick(Qt.Key_Return);
+
+        compare(appWindow.consoleVisible, true);
+        compare(composer.text, "/query");
+        tryCompare(composer, "activeFocus", true);
+        var found = false;
+        var row = 0;
+        for (; row < list.model.rowCount(); ++row) {
+            if (field(list.model, row, "text").indexOf("Command was refused") >= 0) {
+                found = true;
+                break;
+            }
+        }
+        verify(found, "Status should log the refused /query");
+    }
+
+    function test_typedQueryHistoryStaysOnSource() {
+        openSeededAppWindow();
+        var composer = item("messageComposer");
+        mouseClick(composer);
+        verify(composer.activeFocus);
+        typeText("/query mira");
+        compare(composer.text, "/query mira");
+        if (item("slashCompleteList").visible)
+            keyClick(Qt.Key_Escape);
+        keyClick(Qt.Key_Return);
+
+        compare(appWindow.currentConversation, "mira");
+        compare(composer.text, "");
+        keyClick(Qt.Key_Up);
+        compare(composer.text, "");
+
+        mouseClick(namedItem(liveConversation("#omarchy")));
+        tryCompare(appWindow, "currentConversation", "#omarchy");
+        compare(composer.text, "");
+        keyClick(Qt.Key_Up);
+        compare(composer.text, "/query mira");
+    }
+
     function openSlashWindow() {
         if (appWindow) {
             appWindow.close();

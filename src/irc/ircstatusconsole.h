@@ -20,6 +20,7 @@ class IrcStatusConsole : public QObject
     Q_PROPERTY(bool open READ isOpen WRITE setOpen NOTIFY openChanged)
     Q_PROPERTY(int alerts READ alerts NOTIFY alertsChanged)
     Q_PROPERTY(QString networkId READ networkId NOTIFY networkChanged)
+    Q_PROPERTY(bool lastSubmitAccepted READ lastSubmitAccepted NOTIFY lastSubmitAcceptedChanged)
 public:
     using Dispatch = std::function<IrcCommandOutcome(const IrcCommand&)>;
 
@@ -39,6 +40,7 @@ public:
     void setOpen(bool open);
 
     Q_INVOKABLE bool submit(const QString& input);
+    bool lastSubmitAccepted() const;
     bool clearLog();
     void record(const IrcStatusEntry& entry);
     IrcSession *boundSession() const;
@@ -47,10 +49,12 @@ signals:
     void openChanged();
     void alertsChanged();
     void networkChanged();
+    void lastSubmitAcceptedChanged();
 
 private:
     void recordLifecycle(IrcSession *session);
     void noteLogChanged(const QString& networkId);
+    void setLastSubmitAccepted(bool accepted);
 
     IrcSessionManager& m_sessions;
     IrcNetworkLog m_log;
@@ -59,4 +63,5 @@ private:
     QString m_networkId;
     Dispatch m_dispatch;
     bool m_open = false;
+    bool m_lastSubmitAccepted = true;
 };
