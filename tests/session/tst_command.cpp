@@ -1664,7 +1664,7 @@ void CommandTest::statusRefusesOnMetadataError()
              QString());
     QVERIFY(selectedBodiesContain(
         messages,
-        QStringLiteral("Could not set standing status: status :permission denied")));
+        QStringLiteral("Could not set standing status: status permission denied")));
 }
 
 void CommandTest::whoisSendsAndDefaults()
