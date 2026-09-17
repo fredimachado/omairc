@@ -161,16 +161,18 @@ Each version tag also publishes `omairc-*-macos-arm64.zip` (Apple Silicon CI; In
 From the repo root on macOS:
 
 ```sh
-brew install qt@6 qtkeychain
+brew install qt@6 qtkeychain cmake
 export PATH="$(brew --prefix qt@6)/bin:$PATH"
+# Homebrew's qtkeychain formula has no qmake module; either rely on brew
+# discovery in qtkeychain.pri, or build a local copy into .deps:
+#   bin/install-qtkeychain "$PWD/.deps/usr"
 bin/build-macos
 open build/omairc.app
 build/omairc.app/Contents/MacOS/omairc --demo-server
 build/omairc --help
-bin/package-macos
 ```
 
-Or install Qt 6.8 with [aqtinstall](https://github.com/miurahr/aqtinstall) the way CI does (`clang_arm64` on Apple Silicon, `clang_64` on Intel), build QtKeychain against that prefix with `clang++`, then run `bin/build-macos`. `bin/build-macos` generates `data/icons/omairc.icns`, runs `qmake` + `make` into `build/omairc.app`, and runs `macdeployqt`. `bin/package-macos` writes `dist/omairc-*-macos-*.zip`.
+Homebrew Qt builds skip `macdeployqt` (its framework layout can hang dyld) and keep linking against the brew prefix, so leave `qt@6` on `PATH` when you run the app. For a relocatable zip, install Qt 6.8 with [aqtinstall](https://github.com/miurahr/aqtinstall) the way CI does (`clang_64` on Apple Silicon and Intel), build QtKeychain into that prefix with `clang++`, then run `bin/build-macos` and `bin/package-macos`. `bin/build-macos` generates `data/icons/omairc.icns`, runs `qmake` + `make` into `build/omairc.app`, and on non-Homebrew kits runs `macdeployqt`. `bin/package-macos` writes `dist/omairc-*-macos-*.zip`.
 
 The same binary is the local CLI. Start the app first, then run `omairc connections`, `send`, `read`, and the rest from another terminal. The Unix socket lives under Qt's `RuntimeLocation` (typically `~/Library/Caches/TemporaryItems/` or `$TMPDIR`), not `$XDG_RUNTIME_DIR`. Passwords use the macOS Keychain through QtKeychain instead of Secret Service.
 

@@ -30,6 +30,92 @@ prune_qt_deploy() {
   done
 }
 
+embed_qtkeychain() {
+  app="$1"
+  exe="$app/Contents/MacOS/omairc"
+  frameworks="$app/Contents/Frameworks"
+  mkdir -p "$frameworks"
+
+  candidates=
+  # Prefer a project-local .deps build, then Qt's lib dir, then Homebrew.
+  for keychain in \
+    "$ROOT/.deps/usr/lib/libqt6keychain.1.dylib" \
+    "$ROOT/.deps/usr/lib/libqt6keychain.dylib" \
+    "$QT_LIB/libqt6keychain.1.dylib" \
+    "$QT_LIB/libqt6keychain.dylib" \
+    "$QT_LIB/libQt6Keychain.dylib"
+  do
+    if [ -f "$keychain" ]; then
+      candidates="$keychain"
+      break
+    fi
+  done
+  if [ -z "$candidates" ] && command -v brew >/dev/null 2>&1; then
+    brew_lib="$(brew --prefix qtkeychain 2>/dev/null)/lib"
+    for keychain in \
+      "$brew_lib/libqt6keychain.1.dylib" \
+      "$brew_lib/libqt6keychain.dylib"
+    do
+      if [ -f "$keychain" ]; then
+        candidates="$keychain"
+        break
+      fi
+    done
+  fi
+  if [ -z "$candidates" ]; then
+    echo "Warning: libqt6keychain not found to embed; runtime may need DYLD_LIBRARY_PATH." >&2
+    return 0
+  fi
+
+  src="$candidates"
+  base="$(basename "$src")"
+  # Normalize to the usual SONAME so @rpath/libqt6keychain.1.dylib resolves.
+  case "$base" in
+    libqt6keychain.dylib) dest_base=libqt6keychain.1.dylib ;;
+    *) dest_base="$base" ;;
+  esac
+  dest="$frameworks/$dest_base"
+  cp -f "$src" "$dest"
+  id="@executable_path/../Frameworks/$dest_base"
+  install_name_tool -id "$id" "$dest" 2>/dev/null || true
+  otool -L "$exe" | awk 'NR>1 { print $1 }' | while read -r dep; do
+    case "$dep" in
+      *qt6keychain*|*Qt6Keychain*)
+        install_name_tool -change "$dep" "$id" "$exe" 2>/dev/null || true
+        ;;
+    esac
+  done
+}
+
+adhoc_sign() {
+  app="$1"
+  if ! command -v codesign >/dev/null 2>&1; then
+    return 0
+  fi
+  # Deep sign so freshly copied dylibs are trusted by dyld.
+  codesign --force --deep --sign - "$app" 2>/dev/null || \
+    codesign --force --sign - "$app/Contents/MacOS/omairc" 2>/dev/null || true
+}
+
+is_homebrew_qt() {
+  case "$QT_PREFIX" in
+    /opt/homebrew|/opt/homebrew/*|/usr/local/Cellar/*|/usr/local/opt/*|/home/linuxbrew/*)
+      return 0
+      ;;
+  esac
+  # Homebrew's qt formula reports QT_INSTALL_PREFIX=/opt/homebrew.
+  if command -v brew >/dev/null 2>&1; then
+    brew_qt="$(brew --prefix qt@6 2>/dev/null || brew --prefix qt 2>/dev/null || true)"
+    if [ -n "$brew_qt" ] && [ "$QT_PREFIX" = "$(CDPATH= cd -- "$brew_qt" && pwd)" ]; then
+      return 0
+    fi
+    if [ "$QT_PREFIX" = "$(brew --prefix 2>/dev/null)" ]; then
+      return 0
+    fi
+  fi
+  return 1
+}
+
 ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 BUILD_DIR="$ROOT/build"
 VERSION="$("$ROOT/bin/version")"
@@ -51,6 +137,7 @@ fi
 JOBS="$(sysctl -n hw.ncpu 2>/dev/null || echo 2)"
 QT_BIN="$("$QMAKE" -query QT_INSTALL_BINS)"
 QT_LIB="$("$QMAKE" -query QT_INSTALL_LIBS)"
+QT_PREFIX="$("$QMAKE" -query QT_INSTALL_PREFIX)"
 
 "$ROOT/packaging/macos/generate-icns"
 
@@ -75,32 +162,27 @@ if [ ! -x "$EXE" ]; then
   echo "Expected $EXE after the build." >&2
   exit 1
 fi
+# omairc.pro may reset QMAKE_INFO_PLIST to the unsubstituted template; install
+# the versioned plist we generated above.
+cp -f "$INFO_PLIST" "$APP/Contents/Info.plist"
 
-if [ -x "$QT_BIN/macdeployqt" ]; then
-  "$QT_BIN/macdeployqt" "$APP" \
-    -qmldir="$ROOT/src" \
-    -always-overwrite
-  prune_qt_deploy "$APP"
-fi
-
-FRAMEWORKS="$APP/Contents/Frameworks"
-mkdir -p "$FRAMEWORKS"
-for keychain in "$QT_LIB/libqt6keychain.dylib" "$QT_LIB/libQt6Keychain.dylib"; do
-  if [ -f "$keychain" ]; then
-    dest="$FRAMEWORKS/$(basename "$keychain")"
-    cp -f "$keychain" "$dest"
-    id="@executable_path/../Frameworks/$(basename "$keychain")"
-    install_name_tool -id "$id" "$dest" 2>/dev/null || true
-    otool -L "$EXE" | awk 'NR>1 { print $1 }' | while read -r dep; do
-      case "$dep" in
-        *qt6keychain*|*Qt6Keychain*)
-          install_name_tool -change "$dep" "$id" "$EXE" 2>/dev/null || true
-          ;;
-      esac
-    done
-    break
+# Homebrew's framework layout confuses macdeployqt; the resulting bundle can
+# hang forever inside dyld. Keep those builds linked against the brew prefix.
+if is_homebrew_qt; then
+  echo "Homebrew Qt detected at $QT_PREFIX; skipping macdeployqt."
+  rm -rf -- "$APP/Contents/PlugIns" "$APP/Contents/Resources/qml"
+  embed_qtkeychain "$APP"
+  adhoc_sign "$APP"
+else
+  if [ -x "$QT_BIN/macdeployqt" ]; then
+    "$QT_BIN/macdeployqt" "$APP" \
+      -qmldir="$ROOT/src" \
+      -always-overwrite
+    prune_qt_deploy "$APP"
   fi
-done
+  embed_qtkeychain "$APP"
+  adhoc_sign "$APP"
+fi
 
 ln -sf "omairc.app/Contents/MacOS/omairc" "$BUILD_DIR/omairc"
 

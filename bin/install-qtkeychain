@@ -54,8 +54,14 @@ cmake -S "$SRC" -B "$BUILD" -G "$CMAKE_GENERATOR" \
 cmake --build "$BUILD"
 cmake --install "$BUILD"
 
-PRI="$("$QMAKE" -query QT_INSTALL_ARCHDATA)/mkspecs/modules/qt_Qt6Keychain.pri"
+PRI="$QT_PREFIX/mkspecs/modules/qt_Qt6Keychain.pri"
 if [ ! -f "$PRI" ]; then
-  echo "QtKeychain installed but $PRI is missing." >&2
+  PRI="$QT_PREFIX/lib/qt6/mkspecs/modules/qt_Qt6Keychain.pri"
+fi
+if [ ! -f "$PRI" ]; then
+  PRI="$("$QMAKE" -query QT_INSTALL_ARCHDATA)/mkspecs/modules/qt_Qt6Keychain.pri"
+fi
+if [ ! -f "$PRI" ]; then
+  echo "QtKeychain installed but qt_Qt6Keychain.pri is missing under $QT_PREFIX." >&2
   exit 1
 fi
