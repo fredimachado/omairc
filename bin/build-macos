@@ -60,6 +60,7 @@ sed "s/@OMAIRC_VERSION@/$VERSION/g" "$ROOT/packaging/macos/Info.plist" >"$INFO_P
 
 cd "$BUILD_DIR"
 "$QMAKE" "$ROOT/omairc.pro" \
+  CONFIG+=sdk_no_version_check \
   CONFIG+=app_bundle \
   ICON="$ROOT/data/icons/omairc.icns" \
   QMAKE_INFO_PLIST="$INFO_PLIST" \

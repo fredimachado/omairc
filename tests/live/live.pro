@@ -1,6 +1,11 @@
 QT += core network testlib
 QT -= gui
 
+macx {
+    CONFIG += sdk_no_version_check
+    QMAKE_CXXFLAGS += -include arm_acle.h
+}
+
 CONFIG += c++17 console testcase
 TEMPLATE = app
 TARGET = live_tests
