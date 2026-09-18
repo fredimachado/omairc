@@ -3611,6 +3611,8 @@ ApplicationWindow {
                         wrapMode: TextEdit.Wrap
                         readOnly: true
                         selectByMouse: true
+                        selectionColor: win.selectionColor
+                        selectedTextColor: "#ffffff"
                         cursorVisible: false
                         activeFocusOnPress: false
                         activeFocusOnTab: false

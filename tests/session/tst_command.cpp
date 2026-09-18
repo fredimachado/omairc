@@ -185,6 +185,8 @@ private slots:
     void statusRefusesOnMetadataFailReplies();
     void ownMetadataFailKeylessPreservesConcurrentWatches();
     void statusRefusesNonEmptyWhenMaxValueBytesZero();
+    void avatarRefusesNonEmptyWhenMaxValueBytesZero();
+    void avatarClearTreatsKeyNotSetAsSuccess();
     void avatarWritesMetadataFrames();
     void avatarRefusesUnsafeInput();
     void avatarRefusesOnMetadataFailReplies();
@@ -1919,6 +1921,74 @@ void CommandTest::statusRefusesNonEmptyWhenMaxValueBytesZero()
         QByteArrayLiteral(":server 766 omairc omairc status :unset\r\n"));
     QVERIFY(selectedBodiesContain(messages,
                                   QStringLiteral("Standing status cleared.")));
+}
+
+void CommandTest::avatarRefusesNonEmptyWhenMaxValueBytesZero()
+{
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    IrcSession *session = controller.addSession(config(), transport);
+    QVERIFY(session);
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    transport->completeConnect();
+    transport->injectBytes(
+        QByteArrayLiteral(
+            ":server CAP omairc LS :away-notify batch "
+            "draft/metadata-2=max-value-bytes=0\r\n"
+            ":server CAP omairc ACK :away-notify batch draft/metadata-2\r\n"
+            ":server 001 omairc :Welcome\r\n"));
+    QCOMPARE(session->state(), IrcSession::State::Registered);
+    QCOMPARE(session->metadataCapability().maxValueBytes, 0);
+    transport->injectBytes(
+        QByteArrayLiteral(":omairc!u@h JOIN :#omarchy\r\n"
+                          ":server 353 omairc = #omarchy :omairc Alice\r\n"
+                          ":server 366 omairc #omarchy :End of NAMES\r\n"));
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
+    QVERIFY(messages);
+
+    const int beforeSet = transport->writtenFrames().size();
+    QVERIFY(controller.sendMessage(
+        QStringLiteral("/avatar https://example.com/a.png")));
+    QCOMPARE(transport->writtenFrames().size(), beforeSet);
+    QVERIFY(!framesContain(transport->writtenFrames().mid(beforeSet),
+                           QByteArrayLiteral("METADATA * SET avatar :")));
+    QVERIFY(selectedBodiesContain(
+        messages,
+        QStringLiteral("This network does not allow avatar URLs.")));
+
+    QVERIFY(controller.sendMessage(QStringLiteral("/avatar clear")));
+    QCOMPARE(transport->writtenFrames().last(),
+             QByteArrayLiteral("METADATA * SET avatar\r\n"));
+    transport->injectBytes(
+        QByteArrayLiteral(":server 766 omairc omairc avatar :unset\r\n"));
+    QVERIFY(selectedBodiesContain(messages, QStringLiteral("Avatar cleared.")));
+}
+
+void CommandTest::avatarClearTreatsKeyNotSetAsSuccess()
+{
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    IrcSession *session = controller.addSession(config(), transport);
+    QVERIFY(session);
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    welcomeMetadata(transport);
+    transport->injectBytes(
+        QByteArrayLiteral(":omairc!u@h JOIN :#omarchy\r\n"
+                          ":server 353 omairc = #omarchy :omairc Alice\r\n"
+                          ":server 366 omairc #omarchy :End of NAMES\r\n"));
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
+    QVERIFY(messages);
+
+    QVERIFY(controller.sendMessage(QStringLiteral("/avatar clear")));
+    QCOMPARE(transport->writtenFrames().last(),
+             QByteArrayLiteral("METADATA * SET avatar\r\n"));
+    transport->injectBytes(
+        QByteArrayLiteral(
+            ":server FAIL METADATA KEY_NOT_SET omairc avatar "
+            ":already unset\r\n"));
+    QVERIFY(selectedBodiesContain(messages, QStringLiteral("Avatar cleared.")));
 }
 
 void CommandTest::avatarWritesMetadataFrames()

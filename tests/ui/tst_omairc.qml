@@ -3008,6 +3008,8 @@ TestCase {
         verify(whoisText !== null && whoisText.visible, "Could not find messageWhois");
         compare(whoisText.wrapMode, TextEdit.Wrap);
         compare(whoisText.textFormat, TextEdit.PlainText);
+        compare(whoisText.selectionColor, appWindow.selectionColor);
+        compare(whoisText.selectedTextColor, "#ffffff");
         compare(whoisText.text, body);
         tryVerify(function () { return whoisText.lineCount > 1; },
                   1000, "The WHOIS row should wrap");

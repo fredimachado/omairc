@@ -94,7 +94,7 @@ QString ownMetadataNoValueMessage(const QString& metadataKey)
     if (metadataKey.compare(IrcMetadata::statusKey(), Qt::CaseInsensitive) == 0)
         return QStringLiteral("This network does not allow standing status text.");
     if (metadataKey.compare(IrcMetadata::avatarKey(), Qt::CaseInsensitive) == 0)
-        return QStringLiteral("This network does not support avatars.");
+        return QStringLiteral("This network does not allow avatar URLs.");
     return {};
 }
 
