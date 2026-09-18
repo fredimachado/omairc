@@ -348,8 +348,10 @@ jobs:
             sleep 15
           done
 
-          mapfile -t assets < <(gh release view "$tag" --json assets --jq '.assets[].name')
-          for asset in "${assets[@]}"; do
+          # macOS /bin/bash is 3.2; mapfile is Bash 4+.
+          assets=$(gh release view "$tag" --json assets --jq '.assets[].name')
+          while IFS= read -r asset || [ -n "$asset" ]; do
+            [ -n "$asset" ] || continue
             case "$asset" in
               omairc-*-macos-*.zip)
                 if [ "$asset" != "$zip_name" ]; then
@@ -357,6 +359,6 @@ jobs:
                 fi
                 ;;
             esac
-          done
+          done <<< "$assets"
 
           gh release upload "$tag" "$zip" --clobber
