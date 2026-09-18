@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `/avatar [url|email]` sets the local user's standing avatar metadata. HTTPS URLs pass the same safety checks as peer avatars; email addresses store a Gravatar SHA-256 HTTPS URL with `{size}` and `d=404`. Empty `/avatar` echoes the stored URL (clickable when HTTPS). Sole `/avatar clear` unsets the key.
+
+### Changed
+
+- `/status` and `/avatar` replies (inspect, set/clear confirmation, and errors) copy into the selected conversation transcript when one is open, including from the Status composer. `/status [text]` sets standing status; empty `/status` echoes the current value; sole `/status clear` unsets it.
+
 ## [0.7.0] - 2026-09-18
 
 ### Added

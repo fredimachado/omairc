@@ -1,3 +1,4 @@
+#include <QCryptographicHash>
 #include <QAbstractItemModel>
 #include <QCoreApplication>
 #include <QSettings>
@@ -7,6 +8,7 @@
 
 #include "fakeirctransport.h"
 #include "testsettings.h"
+#include "ircavatarurl.h"
 #include "ircchannelmode.h"
 #include "irccommand.h"
 #include "irccontroller.h"
@@ -163,6 +165,7 @@ private slots:
     void parseNotice();
     void parseAwayAndBack();
     void parseStatus();
+    void parseAvatar();
     void parseWhois();
     void parseCtcpQueries();
     void parseMode();
@@ -180,7 +183,13 @@ private slots:
     void statusWritesMetadataFrames();
     void statusRefusesOnMetadataError();
     void statusRefusesOnMetadataFailReplies();
+    void ownMetadataFailKeylessPreservesConcurrentWatches();
     void statusRefusesNonEmptyWhenMaxValueBytesZero();
+    void avatarRefusesNonEmptyWhenMaxValueBytesZero();
+    void avatarClearTreatsKeyNotSetAsSuccess();
+    void avatarWritesMetadataFrames();
+    void avatarRefusesUnsafeInput();
+    void avatarRefusesOnMetadataFailReplies();
     void whoisSendsAndDefaults();
     void ctcpSendsAndDefaults();
     void modeSendsAndRefuses();
@@ -451,6 +460,30 @@ void CommandTest::parseStatus()
     QCOMPARE(escaped.verb, IrcCommand::Verb::Say);
     QCOMPARE(escaped.argument, QStringLiteral("/status lunch"));
     QVERIFY(escaped.isLiveMessage());
+}
+
+void CommandTest::parseAvatar()
+{
+    const IrcCommand empty = IrcCommand::parse(QStringLiteral("/avatar"));
+    QCOMPARE(empty.verb, IrcCommand::Verb::Avatar);
+    QVERIFY(empty.argument.isEmpty());
+    QCOMPARE(empty.name, QStringLiteral("/avatar"));
+    QVERIFY(!empty.isLiveMessage());
+    QVERIFY(empty.allowedOn(IrcComposerSurface::Conversation));
+    QVERIFY(empty.allowedOn(IrcComposerSurface::Status));
+
+    const IrcCommand url = IrcCommand::parse(
+        QStringLiteral("/avatar https://example.com/a.png"));
+    QCOMPARE(url.verb, IrcCommand::Verb::Avatar);
+    QCOMPARE(url.argument, QStringLiteral("https://example.com/a.png"));
+
+    const IrcCommand email = IrcCommand::parse(QStringLiteral("/avatar me@example.com"));
+    QCOMPARE(email.verb, IrcCommand::Verb::Avatar);
+    QCOMPARE(email.argument, QStringLiteral("me@example.com"));
+
+    const IrcCommand foldedClear = IrcCommand::parse(QStringLiteral("/AVATAR clear"));
+    QCOMPARE(foldedClear.verb, IrcCommand::Verb::Avatar);
+    QCOMPARE(foldedClear.argument, QStringLiteral("clear"));
 }
 
 void CommandTest::parseWhois()
@@ -797,7 +830,7 @@ void CommandTest::catalogLookupAndScope()
     QVERIFY(!IrcVerbTable::find(IrcCommand::Verb::Empty));
     QVERIFY(!IrcVerbTable::find(IrcCommand::Verb::Unknown));
 
-    QCOMPARE(IrcVerbTable::all().size(), 39);
+    QCOMPARE(IrcVerbTable::all().size(), 40);
     for (const IrcVerbSpec& row : IrcVerbTable::all())
         QVERIFY(row.name != QLatin1String("say"));
 
@@ -882,10 +915,19 @@ void CommandTest::catalogLookupAndScope()
     QVERIFY(status);
     QCOMPARE(status->verb, IrcCommand::Verb::Status);
     QCOMPARE(status->name, QStringLiteral("status"));
-    QCOMPARE(status->usage, QStringLiteral("/status [text|clear]"));
+    QCOMPARE(status->usage, QStringLiteral("/status [text]"));
     QCOMPARE(status->scope, IrcVerbScope::Either);
     QVERIFY(status->wrongScopeText.isEmpty());
     QVERIFY(status->aliases.isEmpty());
+
+    const IrcVerbSpec *avatar = IrcVerbTable::lookup(QStringLiteral("avatar"));
+    QVERIFY(avatar);
+    QCOMPARE(avatar->verb, IrcCommand::Verb::Avatar);
+    QCOMPARE(avatar->name, QStringLiteral("avatar"));
+    QCOMPARE(avatar->usage, QStringLiteral("/avatar [url|email]"));
+    QCOMPARE(avatar->scope, IrcVerbScope::Either);
+    QVERIFY(avatar->wrongScopeText.isEmpty());
+    QVERIFY(avatar->aliases.isEmpty());
 
     const IrcVerbSpec *whois = IrcVerbTable::lookup(QStringLiteral("whois"));
     QVERIFY(whois);
@@ -1054,7 +1096,7 @@ void CommandTest::catalogLookupAndScope()
     QCOMPARE(help->scope, IrcVerbScope::Either);
 
     const QVector<IrcVerbSpec> statusRows = IrcVerbTable::visibleOn(IrcComposerSurface::Status);
-    QCOMPARE(statusRows.size(), 31);
+    QCOMPARE(statusRows.size(), 32);
     for (const IrcVerbSpec& row : statusRows) {
         QVERIFY(row.allowedOn(IrcComposerSurface::Status));
         QVERIFY(row.verb != IrcCommand::Verb::Action);
@@ -1069,7 +1111,7 @@ void CommandTest::catalogLookupAndScope()
 
     const QVector<IrcVerbSpec> conversation =
         IrcVerbTable::visibleOn(IrcComposerSurface::Conversation);
-    QCOMPARE(conversation.size(), 39);
+    QCOMPARE(conversation.size(), 40);
     bool sawMe = false;
     bool sawClose = false;
     bool sawQuery = false;
@@ -1079,6 +1121,7 @@ void CommandTest::catalogLookupAndScope()
     bool sawAway = false;
     bool sawBack = false;
     bool sawStatus = false;
+    bool sawAvatar = false;
     bool sawWhois = false;
     bool sawPing = false;
     bool sawTime = false;
@@ -1118,6 +1161,8 @@ void CommandTest::catalogLookupAndScope()
             sawBack = true;
         if (row.name == QLatin1String("status"))
             sawStatus = true;
+        if (row.name == QLatin1String("avatar"))
+            sawAvatar = true;
         if (row.name == QLatin1String("whois"))
             sawWhois = true;
         if (row.name == QLatin1String("ping"))
@@ -1168,6 +1213,7 @@ void CommandTest::catalogLookupAndScope()
     QVERIFY(sawAway);
     QVERIFY(sawBack);
     QVERIFY(sawStatus);
+    QVERIFY(sawAvatar);
     QVERIFY(sawWhois);
     QVERIFY(sawPing);
     QVERIFY(sawTime);
@@ -1546,6 +1592,10 @@ void CommandTest::statusWritesMetadataFrames()
     QVERIFY(!framesContain(transport->writtenFrames().mid(beforeQuery),
                            QByteArrayLiteral("METADATA")));
     QVERIFY(selectedBodiesContain(messages, QStringLiteral("Standing status: writing docs")));
+    QCOMPARE(controller.peerMetadata(QStringLiteral("libera"), QStringLiteral("omairc"))
+                 .value(QStringLiteral("status"))
+                 .toString(),
+             QStringLiteral("writing docs"));
 
     QVERIFY(controller.sendMessage(QStringLiteral("/status clear the table")));
     QCOMPARE(transport->writtenFrames().last(),
@@ -1572,7 +1622,8 @@ void CommandTest::statusWritesMetadataFrames()
                  .value(QStringLiteral("status"))
                  .toString(),
              QStringLiteral("clear the table"));
-    QVERIFY(!selectedBodiesContain(messages, QStringLiteral("Standing status cleared.")));
+    const int clearedHitsBeforeAlias =
+        selectedBodyHits(messages, QStringLiteral("Standing status cleared."));
     transport->injectBytes(
         QByteArrayLiteral(":server 766 omairc omairc status :unset\r\n"));
     QCOMPARE(controller.peerMetadata(QStringLiteral("libera"), QStringLiteral("omairc"))
@@ -1581,7 +1632,8 @@ void CommandTest::statusWritesMetadataFrames()
              QString());
     QCOMPARE(memberRole(members, QStringLiteral("omairc"), MemberListModel::StatusRole),
              QString());
-    QVERIFY(selectedBodiesContain(messages, QStringLiteral("Standing status cleared.")));
+    QCOMPARE(selectedBodyHits(messages, QStringLiteral("Standing status cleared.")),
+             clearedHitsBeforeAlias + 1);
     QVERIFY(!controller.selfAway());
     QVERIFY(!framesContain(QByteArrayList{transport->writtenFrames().last()},
                            QByteArrayLiteral("AWAY")));
@@ -1599,10 +1651,10 @@ void CommandTest::statusWritesMetadataFrames()
     QVERIFY(!logContains(console->lines(), QStringLiteral("Standing status set to lunch.")));
     transport->injectBytes(
         QByteArrayLiteral(":server 761 omairc omairc status * :lunch\r\n"));
-    QVERIFY(logContains(console->lines(), QStringLiteral("Standing status set to lunch.")));
-    QCOMPARE(console->lines()->rowCount(), statusRowsBeforeSubmit + 1);
+    QVERIFY(!logContains(console->lines(), QStringLiteral("Standing status set to lunch.")));
+    QCOMPARE(console->lines()->rowCount(), statusRowsBeforeSubmit);
     QCOMPARE(selectedBodyHits(messages, QStringLiteral("Standing status set to lunch.")),
-             transcriptHitsBeforeSubmit);
+             transcriptHitsBeforeSubmit + 1);
     QCOMPARE(controller.peerMetadata(QStringLiteral("libera"), QStringLiteral("omairc"))
                  .value(QStringLiteral("status"))
                  .toString(),
@@ -1716,12 +1768,35 @@ void CommandTest::statusRefusesOnMetadataFailReplies()
                 ":permission denied\r\n"),
             QStringLiteral("Could not set standing status: KEY_NO_PERMISSION"));
     runFail(QByteArrayLiteral(
-                ":server FAIL METADATA VALUE_INVALID :value is too long\r\n"),
-            QStringLiteral("Could not set standing status: VALUE_INVALID"));
-    runFail(QByteArrayLiteral(
                 ":server FAIL METADATA RATE_LIMITED * status 5 "
                 ":too many changes\r\n"),
             QStringLiteral("Could not set standing status: RATE_LIMITED"));
+
+    IrcController keyless;
+    auto *keylessTransport = new FakeIrcTransport;
+    IrcSession *keylessSession = keyless.addSession(config(), keylessTransport);
+    QVERIFY(keylessSession);
+    QVERIFY(keyless.start(QStringLiteral("libera")));
+    welcomeMetadata(keylessTransport);
+    keylessTransport->injectBytes(
+        QByteArrayLiteral(":omairc!u@h JOIN :#omarchy\r\n"
+                          ":server 353 omairc = #omarchy :omairc Alice\r\n"
+                          ":server 366 omairc #omarchy :End of NAMES\r\n"));
+    keyless.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    auto *keylessMessages =
+        qobject_cast<QAbstractItemModel *>(keyless.messages());
+    QVERIFY(keylessMessages);
+    QVERIFY(keyless.sendMessage(QStringLiteral("/status blocked")));
+    keylessTransport->injectBytes(
+        QByteArrayLiteral(
+            ":server FAIL METADATA VALUE_INVALID :value is too long\r\n"));
+    QVERIFY(!selectedBodiesContain(
+        keylessMessages,
+        QStringLiteral("Could not set standing status")));
+    keylessTransport->injectBytes(
+        QByteArrayLiteral(":server 761 omairc omairc status * :blocked\r\n"));
+    QVERIFY(selectedBodiesContain(
+        keylessMessages, QStringLiteral("Standing status set to blocked.")));
 
     // Unrelated FAIL for another key must not consume the watch.
     IrcController controller;
@@ -1748,6 +1823,59 @@ void CommandTest::statusRefusesOnMetadataFailReplies()
         QByteArrayLiteral(":server 761 omairc omairc status * :waiting\r\n"));
     QVERIFY(selectedBodiesContain(
         messages, QStringLiteral("Standing status set to waiting.")));
+}
+
+void CommandTest::ownMetadataFailKeylessPreservesConcurrentWatches()
+{
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    IrcSession *session = controller.addSession(config(), transport);
+    QVERIFY(session);
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    welcomeMetadata(transport);
+    transport->injectBytes(
+        QByteArrayLiteral(":omairc!u@h JOIN :#omarchy\r\n"
+                          ":server 353 omairc = #omarchy :omairc Alice\r\n"
+                          ":server 366 omairc #omarchy :End of NAMES\r\n"));
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
+    QVERIFY(messages);
+
+    QVERIFY(controller.sendMessage(QStringLiteral("/status writing")));
+    QCOMPARE(transport->writtenFrames().last(),
+             QByteArrayLiteral("METADATA * SET status :writing\r\n"));
+    QVERIFY(controller.sendMessage(
+        QStringLiteral("/avatar https://example.com/a.png")));
+    QCOMPARE(transport->writtenFrames().last(),
+             QByteArrayLiteral("METADATA * SET avatar :https://example.com/a.png\r\n"));
+
+    transport->injectBytes(
+        QByteArrayLiteral(
+            ":server FAIL METADATA VALUE_INVALID :value is too long\r\n"));
+    QVERIFY(!selectedBodiesContain(
+        messages, QStringLiteral("Could not set standing status")));
+    QVERIFY(!selectedBodiesContain(
+        messages, QStringLiteral("Could not set avatar")));
+
+    transport->injectBytes(
+        QByteArrayLiteral(
+            ":server FAIL METADATA KEY_NO_PERMISSION omairc avatar "
+            ":permission denied\r\n"));
+    QVERIFY(!selectedBodiesContain(
+        messages, QStringLiteral("Could not set standing status")));
+    QVERIFY(selectedBodiesContain(
+        messages, QStringLiteral("Could not set avatar: KEY_NO_PERMISSION")));
+
+    transport->injectBytes(
+        QByteArrayLiteral(":server 761 omairc omairc status * :writing\r\n"));
+    QVERIFY(selectedBodiesContain(
+        messages, QStringLiteral("Standing status set to writing.")));
+    transport->injectBytes(
+        QByteArrayLiteral(
+            ":server 761 omairc omairc avatar * :https://example.com/a.png\r\n"));
+    QVERIFY(!selectedBodiesContain(
+        messages,
+        QStringLiteral("Avatar set to https://example.com/a.png.")));
 }
 
 void CommandTest::statusRefusesNonEmptyWhenMaxValueBytesZero()
@@ -1793,6 +1921,226 @@ void CommandTest::statusRefusesNonEmptyWhenMaxValueBytesZero()
         QByteArrayLiteral(":server 766 omairc omairc status :unset\r\n"));
     QVERIFY(selectedBodiesContain(messages,
                                   QStringLiteral("Standing status cleared.")));
+}
+
+void CommandTest::avatarRefusesNonEmptyWhenMaxValueBytesZero()
+{
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    IrcSession *session = controller.addSession(config(), transport);
+    QVERIFY(session);
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    transport->completeConnect();
+    transport->injectBytes(
+        QByteArrayLiteral(
+            ":server CAP omairc LS :away-notify batch "
+            "draft/metadata-2=max-value-bytes=0\r\n"
+            ":server CAP omairc ACK :away-notify batch draft/metadata-2\r\n"
+            ":server 001 omairc :Welcome\r\n"));
+    QCOMPARE(session->state(), IrcSession::State::Registered);
+    QCOMPARE(session->metadataCapability().maxValueBytes, 0);
+    transport->injectBytes(
+        QByteArrayLiteral(":omairc!u@h JOIN :#omarchy\r\n"
+                          ":server 353 omairc = #omarchy :omairc Alice\r\n"
+                          ":server 366 omairc #omarchy :End of NAMES\r\n"));
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
+    QVERIFY(messages);
+
+    const int beforeSet = transport->writtenFrames().size();
+    QVERIFY(controller.sendMessage(
+        QStringLiteral("/avatar https://example.com/a.png")));
+    QCOMPARE(transport->writtenFrames().size(), beforeSet);
+    QVERIFY(!framesContain(transport->writtenFrames().mid(beforeSet),
+                           QByteArrayLiteral("METADATA * SET avatar :")));
+    QVERIFY(selectedBodiesContain(
+        messages,
+        QStringLiteral("This network does not allow avatar URLs.")));
+
+    QVERIFY(controller.sendMessage(QStringLiteral("/avatar clear")));
+    QCOMPARE(transport->writtenFrames().last(),
+             QByteArrayLiteral("METADATA * SET avatar\r\n"));
+    transport->injectBytes(
+        QByteArrayLiteral(":server 766 omairc omairc avatar :unset\r\n"));
+    QVERIFY(selectedBodiesContain(messages, QStringLiteral("Avatar cleared.")));
+}
+
+void CommandTest::avatarClearTreatsKeyNotSetAsSuccess()
+{
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    IrcSession *session = controller.addSession(config(), transport);
+    QVERIFY(session);
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    welcomeMetadata(transport);
+    transport->injectBytes(
+        QByteArrayLiteral(":omairc!u@h JOIN :#omarchy\r\n"
+                          ":server 353 omairc = #omarchy :omairc Alice\r\n"
+                          ":server 366 omairc #omarchy :End of NAMES\r\n"));
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
+    QVERIFY(messages);
+
+    QVERIFY(controller.sendMessage(QStringLiteral("/avatar clear")));
+    QCOMPARE(transport->writtenFrames().last(),
+             QByteArrayLiteral("METADATA * SET avatar\r\n"));
+    transport->injectBytes(
+        QByteArrayLiteral(
+            ":server FAIL METADATA KEY_NOT_SET omairc avatar "
+            ":already unset\r\n"));
+    QVERIFY(selectedBodiesContain(messages, QStringLiteral("Avatar cleared.")));
+}
+
+void CommandTest::avatarWritesMetadataFrames()
+{
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    IrcSession *session = controller.addSession(config(), transport);
+    QVERIFY(session);
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    welcomeMetadata(transport);
+    transport->injectBytes(
+        QByteArrayLiteral(":omairc!u@h JOIN :#omarchy\r\n"
+                          ":server 353 omairc = #omarchy :omairc Alice\r\n"
+                          ":server 366 omairc #omarchy :End of NAMES\r\n"));
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
+    QVERIFY(messages);
+
+    const QByteArray hash =
+        QCryptographicHash::hash(QByteArrayLiteral("me@example.com"),
+                                 QCryptographicHash::Sha256)
+            .toHex();
+    const QString gravatarUrl =
+        QStringLiteral("https://www.gravatar.com/avatar/%1?s={size}&d=404")
+            .arg(QString::fromLatin1(hash));
+
+    QVERIFY(controller.sendMessage(
+        QStringLiteral("/avatar https://example.com/a.png")));
+    QCOMPARE(transport->writtenFrames().last(),
+             QByteArrayLiteral("METADATA * SET avatar :https://example.com/a.png\r\n"));
+    transport->injectBytes(
+        QByteArrayLiteral(
+            ":server 761 omairc omairc avatar * :https://example.com/a.png\r\n"));
+    QVERIFY(selectedBodiesContain(
+        messages, QStringLiteral("Avatar set to https://example.com/a.png.")));
+
+    QVERIFY(controller.sendMessage(QStringLiteral("/avatar me@example.com")));
+    QCOMPARE(transport->writtenFrames().last(),
+             QByteArrayLiteral("METADATA * SET avatar :")
+                 + gravatarUrl.toUtf8()
+                 + QByteArrayLiteral("\r\n"));
+    transport->injectBytes(
+        QByteArrayLiteral(":server 761 omairc omairc avatar * :")
+            + gravatarUrl.toUtf8()
+            + QByteArrayLiteral("\r\n"));
+    QVERIFY(selectedBodiesContain(
+        messages, QStringLiteral("Avatar set to %1.").arg(gravatarUrl)));
+
+    QVERIFY(controller.sendMessage(QStringLiteral("/avatar clear")));
+    QCOMPARE(transport->writtenFrames().last(),
+             QByteArrayLiteral("METADATA * SET avatar\r\n"));
+    transport->injectBytes(
+        QByteArrayLiteral(":server 766 omairc omairc avatar :unset\r\n"));
+    QVERIFY(selectedBodiesContain(messages, QStringLiteral("Avatar cleared.")));
+
+    const int beforeInspect = transport->writtenFrames().size();
+    QVERIFY(controller.sendMessage(QStringLiteral("/avatar")));
+    QCOMPARE(transport->writtenFrames().size(), beforeInspect);
+    QVERIFY(!framesContain(transport->writtenFrames().mid(beforeInspect),
+                           QByteArrayLiteral("METADATA")));
+    QVERIFY(selectedBodiesContain(
+        messages, QStringLiteral("No standing avatar. Use /avatar <url|email> or /avatar clear.")));
+
+    transport->injectBytes(
+        QByteArrayLiteral(
+            ":server 761 omairc omairc avatar * :https://example.com/a.png\r\n"));
+    QVERIFY(controller.sendMessage(QStringLiteral("/avatar")));
+    QCOMPARE(transport->writtenFrames().size(), beforeInspect);
+    QVERIFY(selectedBodiesContain(
+        messages,
+        QStringLiteral("Standing avatar: https://example.com/a.png")));
+}
+
+void CommandTest::avatarRefusesUnsafeInput()
+{
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    IrcSession *session = controller.addSession(config(), transport);
+    QVERIFY(session);
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    welcomeMetadata(transport);
+    transport->injectBytes(QByteArrayLiteral(":omairc!u@h JOIN :#omarchy\r\n"));
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
+    QVERIFY(messages);
+
+    const int beforeUnsafe = transport->writtenFrames().size();
+    QVERIFY(controller.sendMessage(QStringLiteral("/avatar http://example.com/a.png")));
+    QCOMPARE(transport->writtenFrames().size(), beforeUnsafe);
+    QVERIFY(selectedBodiesContain(
+        messages,
+        QStringLiteral("Avatar must be an HTTPS URL or an email address.")));
+
+    IrcController unsupported;
+    auto *plain = new FakeIrcTransport;
+    IrcSession *plainSession = unsupported.addSession(config(), plain);
+    QVERIFY(plainSession);
+    QVERIFY(unsupported.start(QStringLiteral("libera")));
+    welcome(plain);
+    plain->injectBytes(QByteArrayLiteral(":omairc!u@h JOIN :#omarchy\r\n"));
+    unsupported.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    const int beforeUnsupported = plain->writtenFrames().size();
+    QVERIFY(unsupported.sendMessage(
+        QStringLiteral("/avatar https://example.com/a.png")));
+    QCOMPARE(plain->writtenFrames().size(), beforeUnsupported);
+    QVERIFY(selectedBodiesContain(
+        qobject_cast<QAbstractItemModel *>(unsupported.messages()),
+        QStringLiteral("This network does not support avatars.")));
+}
+
+void CommandTest::avatarRefusesOnMetadataFailReplies()
+{
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    IrcSession *session = controller.addSession(config(), transport);
+    QVERIFY(session);
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    welcomeMetadata(transport);
+    transport->injectBytes(
+        QByteArrayLiteral(":omairc!u@h JOIN :#omarchy\r\n"
+                          ":server 353 omairc = #omarchy :omairc Alice\r\n"
+                          ":server 366 omairc #omarchy :End of NAMES\r\n"));
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
+    QVERIFY(messages);
+
+    QVERIFY(controller.sendMessage(QStringLiteral("/status waiting")));
+    transport->injectBytes(
+        QByteArrayLiteral(
+            ":server FAIL METADATA KEY_NO_PERMISSION omairc avatar "
+            ":no avatar permission\r\n"));
+    QVERIFY(!selectedBodiesContain(
+        messages, QStringLiteral("Could not set standing status")));
+    transport->injectBytes(
+        QByteArrayLiteral(":server 761 omairc omairc status * :waiting\r\n"));
+    QVERIFY(selectedBodiesContain(
+        messages, QStringLiteral("Standing status set to waiting.")));
+
+    QVERIFY(controller.sendMessage(
+        QStringLiteral("/avatar https://example.com/a.png")));
+    transport->injectBytes(
+        QByteArrayLiteral(
+            ":server FAIL METADATA KEY_NO_PERMISSION omairc avatar "
+            ":permission denied\r\n"));
+    QVERIFY(selectedBodiesContain(
+        messages, QStringLiteral("Could not set avatar: KEY_NO_PERMISSION")));
+    transport->injectBytes(
+        QByteArrayLiteral(
+            ":server 761 omairc omairc avatar * :https://example.com/a.png\r\n"));
+    QVERIFY(!selectedBodiesContain(
+        messages,
+        QStringLiteral("Avatar set to https://example.com/a.png.")));
 }
 
 void CommandTest::whoisSendsAndDefaults()

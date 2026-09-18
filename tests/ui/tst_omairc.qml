@@ -2762,6 +2762,32 @@ TestCase {
         compare(appWindow.lastOpenedUrl, "https://example.com");
     }
 
+    function test_whoisRowClickOpensHttpsUrl() {
+        openSeededAppWindow();
+        seed.injectOmarchy(
+            ":server 761 fred fred avatar * :https://example.com/a.png\r\n");
+        var list = item("messageList");
+        verify(appWindow.irc.sendMessage("/avatar"));
+        waitForBody(list, "Standing avatar: https://example.com/a.png");
+        var whoisAt = rowForBody(list.model, "Standing avatar: https://example.com/a.png");
+        list.positionViewAtIndex(whoisAt, ListView.Contain);
+        waitForRendering(appWindow.contentItem);
+        var row = list.itemAtIndex(whoisAt);
+        verify(row !== null, "The avatar inspect row should be rendered");
+        var body = findChild(row, "messageWhois");
+        verify(body !== null && body.visible, "Could not find messageWhois");
+        compare(body.textFormat, TextEdit.PlainText);
+        compare(body.text, "Standing avatar: https://example.com/a.png");
+
+        appWindow.lastOpenedUrl = "";
+        var start = body.text.indexOf("https://example.com/a.png");
+        var rect = body.positionToRectangle(start + 4);
+        var hit = findChild(body, "urlHit");
+        verify(hit !== null, "Could not find whois urlHit");
+        mouseClick(hit, rect.x + Math.max(1, rect.width / 2), rect.y + rect.height / 2);
+        compare(appWindow.lastOpenedUrl, "https://example.com/a.png");
+    }
+
     function test_ctrlFFindsEmphasizedVisibleText() {
         openSeededAppWindow();
         var list = item("messageList");
@@ -2980,8 +3006,10 @@ TestCase {
         verify(row !== null, "The long whois row should be rendered");
         var whoisText = findChild(row, "messageWhois");
         verify(whoisText !== null && whoisText.visible, "Could not find messageWhois");
-        compare(whoisText.wrapMode, Text.Wrap);
-        compare(whoisText.textFormat, Text.PlainText);
+        compare(whoisText.wrapMode, TextEdit.Wrap);
+        compare(whoisText.textFormat, TextEdit.PlainText);
+        compare(whoisText.selectionColor, appWindow.selectionColor);
+        compare(whoisText.selectedTextColor, "#ffffff");
         compare(whoisText.text, body);
         tryVerify(function () { return whoisText.lineCount > 1; },
                   1000, "The WHOIS row should wrap");
