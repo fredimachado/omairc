@@ -120,6 +120,7 @@ IrcNetworkProfile IrcNetworkProfile::suggested()
 {
     IrcNetworkProfile profile = create();
     profile.host = QStringLiteral("irc.libera.chat");
+    profile.name = profile.host;
     profile.port = 6697;
     profile.tlsEnabled = true;
     profile.autojoinChannels = {QStringLiteral("#omarchy")};
@@ -151,6 +152,7 @@ bool IrcNetworkProfile::ensureIconColor(const QList<int> &used)
 IrcNetworkProfile IrcNetworkProfile::normalized() const
 {
     IrcNetworkProfile profile = *this;
+    profile.name = name.trimmed();
     profile.host = host.trimmed();
     profile.nick = nick.trimmed();
     profile.username = username.trimmed();
@@ -160,6 +162,14 @@ IrcNetworkProfile IrcNetworkProfile::normalized() const
     profile.autojoinChannels = splitAutojoin(autojoinChannels);
     profile.autojoinKeys = retainAutojoinKeys(autojoinKeys, profile.autojoinChannels);
     return profile;
+}
+
+QString IrcNetworkProfile::resolvedName() const
+{
+    const QString trimmedName = name.trimmed();
+    if (!trimmedName.isEmpty())
+        return trimmedName;
+    return host.trimmed();
 }
 
 QString IrcNetworkProfile::saslAccount() const
@@ -232,6 +242,7 @@ QString IrcNetworkProfile::problemText(Problem problem)
 bool operator==(const IrcNetworkProfile &left, const IrcNetworkProfile &right)
 {
     return left.networkId == right.networkId
+        && left.name == right.name
         && left.host == right.host
         && left.port == right.port
         && left.tlsEnabled == right.tlsEnabled

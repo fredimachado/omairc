@@ -5,6 +5,7 @@
 namespace
 {
 const auto networksGroup = QStringLiteral("networks");
+const auto nameKey = QStringLiteral("name");
 const auto hostKey = QStringLiteral("host");
 const auto portKey = QStringLiteral("port");
 const auto tlsKey = QStringLiteral("tls");
@@ -55,6 +56,9 @@ QList<IrcNetworkProfile> IrcProfileStore::profiles() const
         IrcNetworkProfile profile;
         profile.networkId = id;
         profile.host = settings.value(hostKey).toString();
+        profile.name = settings.value(nameKey).toString();
+        if (profile.name.trimmed().isEmpty())
+            profile.name = profile.host;
         profile.port = quint16(settings.value(portKey, 6697).toUInt());
         profile.tlsEnabled = settings.value(tlsKey, true).toBool();
         profile.connectOnStartup = settings.value(connectOnStartupKey, false).toBool();
@@ -92,6 +96,7 @@ void IrcProfileStore::save(const IrcNetworkProfile &profile)
     settings.beginGroup(networksGroup);
     settings.beginGroup(profile.networkId);
     settings.remove(QString());
+    settings.setValue(nameKey, profile.name);
     settings.setValue(hostKey, profile.host);
     settings.setValue(portKey, profile.port);
     settings.setValue(tlsKey, profile.tlsEnabled);

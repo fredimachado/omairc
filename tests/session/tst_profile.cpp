@@ -30,6 +30,8 @@ private slots:
     void pickIconColorTakesTheOnlyFreeSlot();
     void ensureIconColorAssignsOnce();
     void missingIconColorDefaultsToNone();
+    void missingNameDefaultsToHost();
+    void resolvedNameFallsBackToHost();
     void missingConnectOnStartupDefaultsToFalse();
     void missingSecretSavedDefaultsToFalse();
     void missingNickServSavedDefaultsToFalse();
@@ -76,6 +78,7 @@ void ProfileTest::suggestedPrefillsLiberachat()
     QVERIFY(!profile.networkId.isEmpty());
     QCOMPARE(profile.iconColor, IrcNetworkProfile::noIconColor);
     QCOMPARE(profile.host, QStringLiteral("irc.libera.chat"));
+    QCOMPARE(profile.name, QStringLiteral("irc.libera.chat"));
     QCOMPARE(profile.port, quint16(6697));
     QVERIFY(profile.tlsEnabled);
     QCOMPARE(profile.autojoinChannels, QStringList{QStringLiteral("#omarchy")});
@@ -179,6 +182,7 @@ void ProfileTest::saslAccountFallsBackToNickAndAppendsBouncerNetwork()
 void ProfileTest::storeRoundTripsFieldsWithoutPassword()
 {
     IrcNetworkProfile profile = IrcNetworkProfile::create();
+    profile.name = QStringLiteral("Example Net");
     profile.host = QStringLiteral("irc.example.net");
     profile.port = 6697;
     profile.tlsEnabled = true;
@@ -199,6 +203,7 @@ void ProfileTest::storeRoundTripsFieldsWithoutPassword()
     const QList<IrcNetworkProfile> loaded = IrcProfileStore().profiles();
     QCOMPARE(loaded.size(), 1);
     QCOMPARE(loaded.first().networkId, profile.networkId);
+    QCOMPARE(loaded.first().name, profile.name);
     QCOMPARE(loaded.first().host, profile.host);
     QCOMPARE(loaded.first().port, profile.port);
     QCOMPARE(loaded.first().tlsEnabled, profile.tlsEnabled);
@@ -222,6 +227,7 @@ void ProfileTest::storeRoundTripsFieldsWithoutPassword()
     QVERIFY(file.open(QIODevice::ReadOnly | QIODevice::Text));
     const QString contents = QString::fromUtf8(file.readAll());
     QVERIFY(contents.contains(profile.networkId));
+    QVERIFY(contents.contains(profile.name));
     QVERIFY(contents.contains(profile.host));
     QVERIFY(contents.contains(QLatin1String("networks")));
     QVERIFY(contents.contains(QLatin1String("secretSaved")));
@@ -336,6 +342,49 @@ void ProfileTest::missingIconColorDefaultsToNone()
 
     QCOMPARE(IrcProfileStore().profiles().first().iconColor,
              IrcNetworkProfile::noIconColor);
+}
+
+void ProfileTest::missingNameDefaultsToHost()
+{
+    IrcNetworkProfile profile = IrcNetworkProfile::create();
+    profile.host = QStringLiteral("irc.example.net");
+    profile.nick = QStringLiteral("omairc");
+    IrcProfileStore().save(profile);
+
+    QSettings settings;
+    settings.beginGroup(QStringLiteral("networks"));
+    settings.beginGroup(profile.networkId);
+    settings.remove(QStringLiteral("name"));
+    settings.endGroup();
+    settings.endGroup();
+    settings.sync();
+
+    const IrcNetworkProfile loaded = IrcProfileStore().profiles().first();
+    QCOMPARE(loaded.host, QStringLiteral("irc.example.net"));
+    QCOMPARE(loaded.name, QStringLiteral("irc.example.net"));
+    QCOMPARE(loaded.resolvedName(), QStringLiteral("irc.example.net"));
+
+    settings.beginGroup(QStringLiteral("networks"));
+    settings.beginGroup(profile.networkId);
+    settings.setValue(QStringLiteral("name"), QStringLiteral("   "));
+    settings.endGroup();
+    settings.endGroup();
+    settings.sync();
+
+    const IrcNetworkProfile blank = IrcProfileStore().profiles().first();
+    QCOMPARE(blank.name, QStringLiteral("irc.example.net"));
+}
+
+void ProfileTest::resolvedNameFallsBackToHost()
+{
+    IrcNetworkProfile profile;
+    profile.host = QStringLiteral("irc.example.net");
+    QVERIFY(profile.name.isEmpty());
+    QCOMPARE(profile.resolvedName(), QStringLiteral("irc.example.net"));
+
+    profile.name = QStringLiteral("  Example  ");
+    QCOMPARE(profile.resolvedName(), QStringLiteral("Example"));
+    QCOMPARE(profile.normalized().name, QStringLiteral("Example"));
 }
 
 void ProfileTest::missingConnectOnStartupDefaultsToFalse()

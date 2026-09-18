@@ -19,6 +19,7 @@ struct IrcNetworkProfile
     };
 
     QString networkId;
+    QString name;
     QString host;
     quint16 port = 6697;
     bool tlsEnabled = true;
@@ -42,6 +43,7 @@ struct IrcNetworkProfile
     static int pickIconColor(const QList<int> &used);
     bool ensureIconColor(const QList<int> &used);
     IrcNetworkProfile normalized() const;
+    QString resolvedName() const;
     // Bouncers select the upstream network from the account name, after a slash.
     QString saslAccount() const;
     Problem validate() const;

@@ -14,10 +14,10 @@ IrcTransport *defaultTransport()
 
 bool profileLess(const IrcNetworkProfile &left, const IrcNetworkProfile &right)
 {
-    const int host = QString::compare(left.host.trimmed(), right.host.trimmed(),
+    const int name = QString::compare(left.resolvedName(), right.resolvedName(),
                                       Qt::CaseInsensitive);
-    if (host != 0)
-        return host < 0;
+    if (name != 0)
+        return name < 0;
     const int nick = QString::compare(left.nick.trimmed(), right.nick.trimmed(),
                                       Qt::CaseInsensitive);
     if (nick != 0)
@@ -193,6 +193,11 @@ bool IrcConnection::canDisconnect() const
         return false;
     return session->state() != IrcSession::State::Idle
         && session->state() != IrcSession::State::Failed;
+}
+
+QString IrcConnection::name() const
+{
+    return m_draft.name;
 }
 
 QString IrcConnection::host() const
@@ -429,6 +434,15 @@ void IrcConnection::clearFocusNickServ()
         return;
     m_focusNickServ = false;
     emit focusNickServChanged();
+}
+
+void IrcConnection::setName(const QString &name)
+{
+    if (m_draft.name == name)
+        return;
+    m_draft.name = name;
+    emit draftChanged();
+    refreshRoster();
 }
 
 void IrcConnection::setHost(const QString &host)
@@ -1437,21 +1451,21 @@ IrcNetworkProfile IrcConnection::storedProfile(const QString &networkId) const
 
 QString IrcConnection::rosterDisplayName(const IrcNetworkProfile &profile) const
 {
-    const QString host = profile.host.trimmed();
-    if (host.isEmpty())
+    const QString label = profile.resolvedName();
+    if (label.isEmpty())
         return QStringLiteral("New network");
     bool clash = false;
     for (const IrcNetworkProfile &other : m_stored) {
         if (other.networkId == profile.networkId)
             continue;
-        if (other.host.trimmed().compare(host, Qt::CaseInsensitive) == 0) {
+        if (other.resolvedName().compare(label, Qt::CaseInsensitive) == 0) {
             clash = true;
             break;
         }
     }
     if (clash && !profile.nick.trimmed().isEmpty())
-        return host + QStringLiteral(" · ") + profile.nick.trimmed();
-    return host;
+        return label + QStringLiteral(" · ") + profile.nick.trimmed();
+    return label;
 }
 
 QVector<IrcConnection::RosterRow> IrcConnection::rosterRows() const
