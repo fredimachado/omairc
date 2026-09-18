@@ -6023,6 +6023,10 @@ TestCase {
         verify(item("aboutCheckUpdates").visible);
         verify(item("aboutOk").visible);
         verify(!item("aboutUpdateStatus").visible);
+        compare(sheet.width, appWindow.width);
+        compare(sheet.height, appWindow.height);
+        fuzzyCompare(sheet.color.a, 0.5, 0.01);
+        verify(item("aboutSheetCard").visible);
         saveScreenshot("about-sheet");
 
         keyClick(Qt.Key_Escape);
@@ -6134,11 +6138,45 @@ TestCase {
         compare(findChild(window, "aboutVersion").text, window.appVersion);
         compare(findChild(window, "aboutOpenSource").text, "This project is open-source.");
         verify(window.connectionOverlayVisible);
+        fuzzyCompare(sheet.color.a, 0.5, 0.01);
 
+        mouseClick(findChild(window, "aboutSheetDimmer"), 10, 10);
+        tryCompare(sheet, "opened", false);
+        verify(window.connectionOverlayVisible);
+
+        mouseClick(findChild(window, "selfVersionHit"));
+        tryCompare(sheet, "opened", true);
         keyClick(Qt.Key_Escape);
         tryCompare(sheet, "opened", false);
         verify(window.connectionOverlayVisible);
         window.close();
+    }
+
+    function test_aboutSheetLeftClickDimmerDismisses() {
+        openSeededAppWindow();
+        var sheet = item("aboutSheet");
+        mouseClick(item("selfVersionHit"));
+        tryCompare(sheet, "opened", true);
+
+        mouseClick(item("aboutSheetDimmer"), 10, 10);
+        tryCompare(sheet, "opened", false);
+        compare(appWindow.currentConversation, "#omarchy");
+    }
+
+    function test_aboutSheetIgnoresRightClickAndCardClick() {
+        openSeededAppWindow();
+        var sheet = item("aboutSheet");
+        mouseClick(item("selfVersionHit"));
+        tryCompare(sheet, "opened", true);
+
+        mouseClick(item("aboutSheetDimmer"), 10, 10, Qt.RightButton);
+        wait(0);
+        verify(sheet.opened);
+
+        mouseClick(item("aboutName"));
+        wait(0);
+        verify(sheet.opened);
+        compare(appWindow.currentConversation, "#omarchy");
     }
 
     function test_liveIdentityFooterShowsCurrentNick() {

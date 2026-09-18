@@ -169,6 +169,10 @@ ApplicationWindow {
     }
     readonly property bool connectionOverlayVisible: connection
         && (connection.setupRequired || connectionSheetOpen)
+    readonly property color overlayVeilColor: {
+        var veil = mixColors(pageColor, inkColor, darkMode ? 0.18 : 0.12);
+        return Qt.rgba(veil.r, veil.g, veil.b, 0.5);
+    }
 
     property var composerHistories: ({})
     property var composerDrafts: ({})
@@ -4423,11 +4427,7 @@ ApplicationWindow {
         anchors.fill: parent
         z: 1
         visible: win.connection && (win.connection.setupRequired || win.connectionSheetOpen)
-        color: {
-            var veil = win.mixColors(win.pageColor, win.inkColor,
-                                     win.darkMode ? 0.18 : 0.12)
-            return Qt.rgba(veil.r, veil.g, veil.b, 0.5)
-        }
+        color: win.overlayVeilColor
         onVisibleChanged: {
             if (!visible) {
                 // Closing used to drop focus on the window itself, so
@@ -5551,21 +5551,25 @@ ApplicationWindow {
         }
     }
 
-    Popup {
+    Rectangle {
         id: aboutSheet
         objectName: "aboutSheet"
-        x: Math.round((win.width - width) / 2)
-        y: Math.round((win.height - height) / 2)
-        width: win.scaledSize(440)
-        padding: 0
-        modal: true
-        focus: true
-        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
-        onOpened: {
-            aboutSheetEscapeGuard = true;
-            aboutOkButton.forceActiveFocus();
-        }
-        onClosed: {
+        anchors.fill: parent
+        z: 2
+        visible: false
+        readonly property bool opened: visible
+        function open() { visible = true; }
+        function close() { visible = false; }
+        color: win.overlayVeilColor
+        onVisibleChanged: {
+            if (visible) {
+                aboutSheetEscapeGuard = true;
+                Qt.callLater(function() {
+                    if (aboutOkButton)
+                        aboutOkButton.forceActiveFocus();
+                });
+                return;
+            }
             aboutUpdateCheck.cancel();
             Qt.callLater(function() {
                 aboutSheetEscapeGuard = false;
@@ -5576,17 +5580,46 @@ ApplicationWindow {
             });
         }
 
-        background: Rectangle {
+        MouseArea {
+            id: aboutSheetClickSink
+            objectName: "aboutSheetDimmer"
+            anchors.fill: parent
+            hoverEnabled: true
+            acceptedButtons: Qt.AllButtons
+            onPressed: function(mouse) { mouse.accepted = true; }
+            onClicked: function(mouse) {
+                if (mouse.button !== Qt.LeftButton)
+                    return;
+                Qt.callLater(function() {
+                    if (aboutSheet)
+                        aboutSheet.close();
+                });
+            }
+            onWheel: function(wheel) { wheel.accepted = true; }
+        }
+
+        Rectangle {
+            id: aboutSheetCard
+            objectName: "aboutSheetCard"
+            anchors.centerIn: parent
+            width: win.scaledSize(440)
+            height: aboutSheetBody.implicitHeight
+            radius: win.scaledSize(9)
             color: win.raisedColor
             border.width: 1
             border.color: win.dividerColor
-            radius: win.scaledSize(9)
             clip: true
-        }
 
-        contentItem: Column {
-            width: aboutSheet.width
-            spacing: 0
+            MouseArea {
+                id: aboutSheetCardClickSink
+                anchors.fill: parent
+                onClicked: function(mouse) { mouse.accepted = true; }
+            }
+
+            Column {
+                id: aboutSheetBody
+                width: parent.width
+                spacing: 0
 
             Column {
                 width: parent.width
@@ -5839,6 +5872,7 @@ ApplicationWindow {
                 }
             }
         }
+    }
     }
 
     ListModel {
