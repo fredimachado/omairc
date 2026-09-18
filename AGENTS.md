@@ -149,12 +149,13 @@ uninstall. Look for `ISCC.exe` under `%LOCALAPPDATA%\Programs\Inno Setup 6`
 as well as Program Files, or set `ISCC`. On macOS, `bin/build-macos` and
 `bin/package-macos` produce `build/omairc.app` and
 `dist/omairc-*-macos-*.zip`; CI runs `.github/workflows/macos.yml` on
-`macos-latest` with Qt 6.8.3 via aqtinstall (prefers `clang_arm64` on
-Apple Silicon, falls back to universal `clang_64` when aqt has not
-published an arm64-only kit; `clang_64` on Intel). CI asserts the Mach-O
-contains `arm64` or `x86_64` to match the `macos-arm64` / `macos-x64`
-artifact name. Build QtKeychain against the same Qt
-prefix with Apple `clang++` so passwords use the Keychain backend. There
-is no `qt6-wayland` dependency on macOS. Regenerate `data/icons/omairc.icns`
+`macos-latest` (Apple Silicon) and `macos-15-intel` with Qt 6.8.3 via
+aqtinstall (prefers `clang_arm64` on Apple Silicon, falls back to
+universal `clang_64` when aqt has not published an arm64-only kit;
+`clang_64` on Intel). CI asserts the Mach-O contains `arm64` or `x86_64`
+to match the `macos-arm64` / `macos-x64` artifact name, uploads both
+zips as workflow artifacts, and attaches both to version tags. Build
+QtKeychain against the same Qt prefix with Apple `clang++` so passwords
+use the Keychain backend. There is no `qt6-wayland` dependency on macOS. Regenerate `data/icons/omairc.icns`
 from the SVG with `packaging/macos/generate-icns` when the mark changes.
 Release zips are unsigned/ad-hoc; notarization is out of scope for now.

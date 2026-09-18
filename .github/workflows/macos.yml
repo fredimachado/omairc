@@ -42,8 +42,20 @@ permissions:
 
 jobs:
   macos:
-    runs-on: macos-latest
-    timeout-minutes: 45
+    name: macOS ${{ matrix.suffix }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            suffix: macos-arm64
+            macho: arm64
+          # macos-15-intel is the last GitHub-hosted x86_64 image (through 2027).
+          - os: macos-15-intel
+            suffix: macos-x64
+            macho: x86_64
     env:
       QT_VERSION: 6.8.3
       QTKEYCHAIN_VERSION: 0.15.0
@@ -79,9 +91,17 @@ jobs:
           test "$tag" = "$OMAIRC_VERSION"
 
       - name: Select Qt arch
+        env:
+          MATRIX_MACHO: ${{ matrix.macho }}
+          MATRIX_SUFFIX: ${{ matrix.suffix }}
         run: |
           set -euo pipefail
-          case "$(uname -m)" in
+          host="$(uname -m)"
+          if [ "$host" != "$MATRIX_MACHO" ]; then
+            echo "Runner architecture $host does not match matrix $MATRIX_MACHO" >&2
+            exit 1
+          fi
+          case "$host" in
             arm64)
               # Prefer aqt's Apple Silicon kit when published. Qt 6.8.x currently
               # only lists universal clang_64; install falls back and Smoke
@@ -98,10 +118,14 @@ jobs:
               expected_macho_arch=x86_64
               ;;
             *)
-              echo "Unsupported runner architecture: $(uname -m)" >&2
+              echo "Unsupported runner architecture: $host" >&2
               exit 1
               ;;
           esac
+          if [ "$omairc_mac_suffix" != "$MATRIX_SUFFIX" ]; then
+            echo "Derived suffix $omairc_mac_suffix does not match matrix $MATRIX_SUFFIX" >&2
+            exit 1
+          fi
           echo "QT_AQT_ARCH=$qt_aqt_arch" >> "$GITHUB_ENV"
           echo "QT_INSTALL_DIR=$qt_install_dir" >> "$GITHUB_ENV"
           echo "OMAIRC_MAC_SUFFIX=$omairc_mac_suffix" >> "$GITHUB_ENV"
@@ -348,10 +372,12 @@ jobs:
             sleep 15
           done
 
-          mapfile -t assets < <(gh release view "$tag" --json assets --jq '.assets[].name')
-          for asset in "${assets[@]}"; do
+          # Only replace this architecture's zip so a parallel Intel/ARM
+          # job cannot delete the sibling release asset.
+          gh release view "$tag" --json assets --jq '.assets[].name' | while IFS= read -r asset; do
+            [ -n "$asset" ] || continue
             case "$asset" in
-              omairc-*-macos-*.zip)
+              omairc-*-"$OMAIRC_MAC_SUFFIX".zip)
                 if [ "$asset" != "$zip_name" ]; then
                   gh release delete-asset "$tag" "$asset" --yes
                 fi
@@ -360,3 +386,58 @@ jobs:
           done
 
           gh release upload "$tag" "$zip" --clobber
+
+  macos-zips:
+    name: Both macOS zips
+    needs: macos
+    if: ${{ always() && !cancelled() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Download architecture zips
+        uses: actions/download-artifact@v4
+        with:
+          pattern: omairc-*-macos-*
+          merge-multiple: true
+          path: dist
+
+      - name: Assert both architecture zips
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          ls -la dist || true
+          arm=(dist/omairc-*-macos-arm64.zip)
+          intel=(dist/omairc-*-macos-x64.zip)
+          if [ "${#arm[@]}" -ne 1 ] || [ ! -f "${arm[0]}" ]; then
+            echo "Expected one macos-arm64 zip artifact" >&2
+            exit 1
+          fi
+          if [ "${#intel[@]}" -ne 1 ] || [ ! -f "${intel[0]}" ]; then
+            echo "Expected one macos-x64 zip artifact" >&2
+            exit 1
+          fi
+          echo "Workflow artifacts: ${arm[0]} ${intel[0]}"
+
+          if [[ "${GITHUB_REF:-}" == refs/tags/v* ]]; then
+            tag="$GITHUB_REF_NAME"
+            arm_name=$(basename "${arm[0]}")
+            intel_name=$(basename "${intel[0]}")
+            deadline=$(( $(date +%s) + 180 ))
+            while true; do
+              assets=$(gh release view "$tag" --json assets --jq '.assets[].name')
+              if printf '%s\n' "$assets" | grep -Fxq "$arm_name" && \
+                 printf '%s\n' "$assets" | grep -Fxq "$intel_name"; then
+                echo "Release $tag has $arm_name and $intel_name"
+                break
+              fi
+              if [ "$(date +%s)" -ge "$deadline" ]; then
+                echo "Release $tag is missing a macOS zip:" >&2
+                printf '%s\n' "$assets" >&2
+                exit 1
+              fi
+              echo "Waiting for both macOS zips on release $tag..."
+              sleep 10
+            done
+          fi
