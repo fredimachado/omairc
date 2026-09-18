@@ -257,6 +257,13 @@ void IrcController::forgetNetworkState(const QString &networkId)
     const QString previousId = identityNetworkId();
     const bool previousAway = selfAway();
     m_reducer.forgetNetwork(networkId);
+    for (auto it = m_cancelledPendingJoins.begin();
+         it != m_cancelledPendingJoins.end(); ) {
+        if (it->networkId == networkId)
+            it = m_cancelledPendingJoins.erase(it);
+        else
+            ++it;
+    }
     m_unawaySent.remove(networkId);
     m_openDirectsMotdSeen.remove(networkId);
     m_currentNicks.remove(networkId);
@@ -728,29 +735,61 @@ bool IrcController::selectedIsCloseableDirect() const
     return !conversation || !conversation->isChannel();
 }
 
-void IrcController::dropSelectedDirectAndReselect()
+void IrcController::dropConversationAndReselect(const IrcConversationKey& key,
+                                               bool forgetDirect)
 {
-    if (!m_selected)
-        return;
-    const IrcConversationKey dropping = *m_selected;
-    const QVector<IrcConversationKey> ordered = ircSidebarOrder(m_reducer, m_networkOrder);
-    const std::optional<IrcConversationKey> next =
-        ircNeighborAfterDrop(ordered, dropping);
+    const IrcConversationState *conversation = m_reducer.find(key);
+    const bool channel = conversation && conversation->isChannel();
+    const bool wasSelected = m_selected && *m_selected == key;
+    const QString displayTarget = conversation && !conversation->target.isEmpty()
+        ? conversation->target
+        : (wasSelected ? m_selectedTarget : key.normalizedTarget);
     QString nextNetworkId;
     QString nextTarget;
-    if (next) {
-        nextNetworkId = next->networkId;
-        const IrcConversationState *neighbor = m_reducer.find(*next);
-        nextTarget = neighbor ? neighbor->target : next->normalizedTarget;
+    if (wasSelected) {
+        const QVector<IrcConversationKey> ordered =
+            ircSidebarOrder(m_reducer, m_networkOrder);
+        const std::optional<IrcConversationKey> next =
+            ircNeighborAfterDrop(ordered, key);
+        if (next) {
+            nextNetworkId = next->networkId;
+            const IrcConversationState *neighbor = m_reducer.find(*next);
+            nextTarget = neighbor ? neighbor->target : next->normalizedTarget;
+        }
     }
-    applyMute(dropping.networkId, m_selectedTarget, false);
-    forgetOpenDirect(dropping.networkId, m_selectedTarget);
-    m_reducer.dropDirectMessage(dropping);
+    applyMute(key.networkId, displayTarget, false);
+    if (forgetDirect)
+        forgetOpenDirect(key.networkId, displayTarget);
+    if (channel)
+        m_reducer.dropChannel(key);
+    else
+        m_reducer.dropDirectMessage(key);
     reloadModels();
+    if (!wasSelected)
+        return;
     if (!nextTarget.isEmpty())
         selectConversation(nextNetworkId, nextTarget);
     else
         clearConversationSelection();
+}
+
+void IrcController::dropSelectedDirectAndReselect()
+{
+    if (!m_selected)
+        return;
+    dropConversationAndReselect(*m_selected, true);
+}
+
+bool IrcController::dismissChannel(const QString& networkId, const QString& channel)
+{
+    if (networkId.isEmpty() || channel.isEmpty())
+        return false;
+    const IrcConversationKey key = m_reducer.conversationKey(networkId, channel);
+    const IrcConversationState *conversation = m_reducer.find(key);
+    if (!conversation || !conversation->isChannel())
+        return false;
+    dropConversationAndReselect(key, false);
+    return true;
 }
 
 void IrcController::clearConversationSelection()
@@ -1151,8 +1190,15 @@ IrcCommandOutcome IrcController::dispatch(const IrcCommand& command,
                 return IrcCommandOutcome::Refused;
         }
         sent = true;
-        for (const IrcJoinTarget& target : *targets)
-            sent = active->join(target) && sent;
+        for (const IrcJoinTarget& target : *targets) {
+            const bool wrote = active->join(target);
+            if (wrote) {
+                m_cancelledPendingJoins.erase(
+                    m_reducer.conversationKey(active->networkId(),
+                                              target.channel()));
+            }
+            sent = wrote && sent;
+        }
         if (sent)
             openJoinedChannel(active->networkId(), targets->constLast().channel());
         break;
@@ -1165,7 +1211,21 @@ IrcCommandOutcome IrcController::dispatch(const IrcCommand& command,
             if (m_selected->networkId != queryNetworkId(surface))
                 return IrcCommandOutcome::Refused;
             channel = selectedTarget();
-            sent = !channel.isEmpty() && active->part(channel);
+            if (channel.isEmpty())
+                return IrcCommandOutcome::Refused;
+        }
+        const IrcConversationKey key =
+            m_reducer.conversationKey(active->networkId(), channel);
+        const IrcConversationState *conversation = m_reducer.find(key);
+        const bool joined = conversation
+            && conversation->channel()
+            && conversation->channel()->joined;
+        if (dismissChannel(active->networkId(), channel)) {
+            if (joined)
+                active->part(channel);
+            else
+                m_cancelledPendingJoins.insert(key);
+            sent = true;
             break;
         }
         sent = active->part(channel);
@@ -2516,10 +2576,20 @@ void IrcController::handleMessage(const QString& networkId,
         }
         apply(event);
         if (const auto *join = std::get_if<IrcJoinEvent>(&event)) {
+            const auto& mapping = features.caseMapping();
+            const bool selfJoin =
+                mapping.equals(utf8(join->nick), utf8(currentNick));
+            const IrcConversationKey joinKey =
+                m_reducer.conversationKey(join->networkId, join->channel);
+            if (selfJoin && m_cancelledPendingJoins.erase(joinKey)) {
+                if (IrcSession *session = m_sessions.findSession(join->networkId))
+                    session->part(join->channel);
+                dismissChannel(join->networkId, join->channel);
+                continue;
+            }
             if (IrcSession *session = m_sessions.findSession(join->networkId)) {
                 if (const auto pending = session->pendingInvite()) {
-                    const auto& mapping = features.caseMapping();
-                    if (mapping.equals(utf8(join->nick), utf8(currentNick))
+                    if (selfJoin
                         && mapping.equals(utf8(join->channel),
                                           utf8(pending->channel))) {
                         selectConversation(join->networkId, join->channel);

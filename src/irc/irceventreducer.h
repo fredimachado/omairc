@@ -204,6 +204,7 @@ public:
     bool releaseStaleNamesSync(const std::optional<IrcConversationKey>& key,
                                const QDateTime& now);
     bool dropDirectMessage(const IrcConversationKey& key);
+    bool dropChannel(const IrcConversationKey& key);
     void forgetNetwork(const QString& networkId);
     void clearMessages(const IrcConversationKey& key);
     void setMuted(const IrcConversationKey& key, bool muted);
