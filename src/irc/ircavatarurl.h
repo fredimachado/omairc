@@ -5,6 +5,7 @@
 #include <QString>
 #include <QUrl>
 
+QString ircAvatarMetadataValue(const QString& input);
 QUrl ircResolvedAvatarUrl(const QString& raw, int pixelSize);
 int ircAvatarFetchPixelSize(int layoutPixels);
 bool ircAvatarUrlIsSafe(const QUrl& url);

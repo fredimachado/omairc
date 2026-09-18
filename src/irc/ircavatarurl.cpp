@@ -1,5 +1,6 @@
 #include "ircavatarurl.h"
 
+#include <QCryptographicHash>
 #include <QtGlobal>
 
 namespace
@@ -19,6 +20,38 @@ bool hostLooksLocal(const QString& host)
     return host.compare(QLatin1String("localhost"), Qt::CaseInsensitive) == 0
         || host.endsWith(QLatin1String(".local"), Qt::CaseInsensitive)
         || host.endsWith(QLatin1String(".localhost"), Qt::CaseInsensitive);
+}
+
+bool looksLikeAvatarEmail(const QString& input)
+{
+    QString trimmed = input.trimmed();
+    if (trimmed.startsWith(QStringLiteral("mailto:"), Qt::CaseInsensitive))
+        trimmed = trimmed.mid(7).trimmed();
+    if (trimmed.contains(QStringLiteral("://")))
+        return false;
+    const int at = trimmed.indexOf(QLatin1Char('@'));
+    if (at <= 0 || at >= trimmed.size() - 1)
+        return false;
+    const QString local = trimmed.left(at);
+    const QString domain = trimmed.mid(at + 1);
+    if (local.isEmpty() || domain.isEmpty())
+        return false;
+    if (domain.indexOf(QLatin1Char('@')) >= 0)
+        return false;
+    return domain.contains(QLatin1Char('.'));
+}
+
+QString gravatarMetadataUrl(const QString& email)
+{
+    QString normalized = email.trimmed();
+    if (normalized.startsWith(QStringLiteral("mailto:"), Qt::CaseInsensitive))
+        normalized = normalized.mid(7).trimmed();
+    normalized = normalized.toLower();
+    const QByteArray hash =
+        QCryptographicHash::hash(normalized.toUtf8(), QCryptographicHash::Sha256)
+            .toHex();
+    return QStringLiteral("https://www.gravatar.com/avatar/%1?s={size}&d=404")
+        .arg(QString::fromLatin1(hash));
 }
 }
 
@@ -44,6 +77,19 @@ bool ircHostAddressIsUnsafe(const QHostAddress& address)
     if ((ipv4 & 0xff000000u) == 0)
         return true;
     return false;
+}
+
+QString ircAvatarMetadataValue(const QString& input)
+{
+    const QString trimmed = input.trimmed();
+    if (trimmed.isEmpty())
+        return {};
+    if (looksLikeAvatarEmail(trimmed))
+        return gravatarMetadataUrl(trimmed);
+    const QUrl resolved = ircResolvedAvatarUrl(trimmed, 32);
+    if (ircAvatarUrlIsSafe(resolved))
+        return trimmed;
+    return {};
 }
 
 int ircAvatarFetchPixelSize(int layoutPixels)
