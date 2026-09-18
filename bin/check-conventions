@@ -267,6 +267,45 @@ def check_macos_objc_arc():
     return problems
 
 
+def check_macos_notarization():
+    problems = []
+    workflow = ROOT / ".github" / "workflows" / "macos.yml"
+    sign = ROOT / "bin" / "sign-macos"
+    entitlements = ROOT / "packaging" / "macos" / "Omairc.entitlements"
+    if not workflow.is_file():
+        return problems
+    text = workflow.read_text(encoding="utf-8", errors="replace")
+    if "APPLE_CERTIFICATE" not in text or "OMAIRC_REQUIRE_DEVELOPER_ID" not in text:
+        problems.append(
+            ".github/workflows/macos.yml: import a Developer ID certificate and "
+            "set OMAIRC_REQUIRE_DEVELOPER_ID so signed CI builds cannot silently "
+            "fall back to ad-hoc")
+    if "Tag releases require APPLE_CERTIFICATE" not in text:
+        problems.append(
+            ".github/workflows/macos.yml: v* tags must fail closed without "
+            "APPLE_CERTIFICATE rather than shipping an ad-hoc zip")
+    if "notarytool" not in (ROOT / "bin" / "notarize-macos").read_text(
+            encoding="utf-8", errors="replace"):
+        problems.append(
+            "bin/notarize-macos: notarize Developer ID zips with notarytool")
+    if "bin/notarize-macos" not in text:
+        problems.append(
+            ".github/workflows/macos.yml: notarize release zips through "
+            "bin/notarize-macos, not on every pull request")
+    if "CODESIGN_IDENTITY" not in sign.read_text(encoding="utf-8", errors="replace"):
+        problems.append(
+            "bin/sign-macos: Developer ID sign when CODESIGN_IDENTITY is set")
+    if "com.apple.security.cs.allow-jit" not in entitlements.read_text(
+            encoding="utf-8", errors="replace"):
+        problems.append(
+            "packaging/macos/Omairc.entitlements: hardened runtime must allow "
+            "QML JIT")
+    build = (ROOT / "bin" / "build-macos").read_text(encoding="utf-8", errors="replace")
+    if "bin/sign-macos" not in build:
+        problems.append("bin/build-macos: sign through bin/sign-macos")
+    return problems
+
+
 def check_macos_ci_arch_selection():
     problems = []
     workflow = ROOT / ".github" / "workflows" / "macos.yml"
@@ -343,6 +382,7 @@ CHECKS = (
     ("retired mock sidebar tokens", check_retired_mock_sidebar),
     ("macOS ObjC ARC for notifications", check_macos_objc_arc),
     ("macOS CI Qt arch selection", check_macos_ci_arch_selection),
+    ("macOS Developer ID notarization", check_macos_notarization),
     ("macOS SDK compat arch gate", check_macos_sdk_compat),
 )
 

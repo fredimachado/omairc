@@ -156,7 +156,7 @@ Compared with Linux you will miss portal text scale (stays 1.0), desktop notific
 
 Omarchy is the home. A native macOS build is a bonus: it works, it is not the focus, and why not.
 
-Each version tag publishes `omairc-*-macos-arm64.zip` (Apple Silicon) and `omairc-*-macos-x64.zip` (Intel) on the [GitHub release](https://github.com/fredimachado/omairc/releases/latest). Pull-request CI uploads both zips as workflow artifacts. The bundles are unsigned and ad-hoc signed only; Gatekeeper may block them until you right-click → Open the first time. Notarization is not wired up yet.
+Each version tag publishes `omairc-*-macos-arm64.zip` (Apple Silicon) and `omairc-*-macos-x64.zip` (Intel) on the [GitHub release](https://github.com/fredimachado/omairc/releases/latest). Pull-request CI uploads both zips as workflow artifacts. CI signs the bundles with Developer ID. Version tags (and a manual workflow run) notarize and staple; Apple's first look at a new Developer ID can sit in progress for hours, so pull requests do not wait on that. Local Homebrew-Qt builds stay ad-hoc.
 
 From the repo root on macOS:
 
@@ -172,7 +172,7 @@ build/omairc.app/Contents/MacOS/omairc --demo-server
 build/omairc --help
 ```
 
-Homebrew Qt builds skip `macdeployqt` (its framework layout can hang dyld) and keep linking against the brew prefix, so leave `qt@6` on `PATH` when you run the app. For a relocatable zip, install Qt 6.8 with [aqtinstall](https://github.com/miurahr/aqtinstall) the way CI does (prefers `clang_arm64` on Apple Silicon with a universal `clang_64` fallback when aqt has no arm64-only kit; `clang_64` on Intel), build QtKeychain into that prefix with `clang++`, then run `bin/build-macos` and `bin/package-macos`. `bin/build-macos` generates `data/icons/omairc.icns`, runs `qmake` + `make` into `build/omairc.app`, and on non-Homebrew kits runs `macdeployqt`. `bin/package-macos` writes `dist/omairc-*-macos-*.zip`.
+Homebrew Qt builds skip `macdeployqt` (its framework layout can hang dyld) and keep linking against the brew prefix, so leave `qt@6` on `PATH` when you run the app. For a relocatable zip, install Qt 6.8 with [aqtinstall](https://github.com/miurahr/aqtinstall) the way CI does (prefers `clang_arm64` on Apple Silicon with a universal `clang_64` fallback when aqt has no arm64-only kit; `clang_64` on Intel), build QtKeychain into that prefix with `clang++`, then run `bin/build-macos` and `bin/package-macos`. `bin/build-macos` generates `data/icons/omairc.icns`, runs `qmake` + `make` into `build/omairc.app`, on non-Homebrew kits runs `macdeployqt`, and signs with Developer ID when `CODESIGN_IDENTITY` is set (otherwise ad-hoc). `bin/package-macos` writes `dist/omairc-*-macos-*.zip`. `bin/notarize-macos` submits that zip to Apple, waits, and staples.
 
 The same binary is the local CLI. Start the app first, then run `omairc connections`, `send`, `read`, and the rest from another terminal. The Unix socket lives under Qt's `RuntimeLocation` (typically `~/Library/Caches/TemporaryItems/` or `$TMPDIR`), not `$XDG_RUNTIME_DIR`. Passwords use the macOS Keychain through QtKeychain instead of Secret Service.
 

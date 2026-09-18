@@ -1,0 +1,65 @@
+#!/usr/bin/env sh
+set -eu
+
+# Sign build/omairc.app. Developer ID when CODESIGN_IDENTITY is set (CI);
+# otherwise ad-hoc so local Homebrew-Qt builds stay simple.
+
+ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
+APP="${1:-$ROOT/build/omairc.app}"
+ENTITLEMENTS="$ROOT/packaging/macos/Omairc.entitlements"
+
+if [ "$(uname -s)" != "Darwin" ]; then
+  echo "bin/sign-macos must run on macOS." >&2
+  exit 1
+fi
+
+if [ ! -d "$APP" ]; then
+  echo "Expected $APP. Run bin/build-macos first." >&2
+  exit 1
+fi
+
+if ! command -v codesign >/dev/null 2>&1; then
+  echo "codesign is required to sign $APP." >&2
+  exit 1
+fi
+
+adhoc_sign() {
+  echo "Ad-hoc signing $APP"
+  codesign --force --deep --sign - "$APP"
+}
+
+identity="${CODESIGN_IDENTITY:-}"
+case "$identity" in
+  ""|-)
+    if [ "${OMAIRC_REQUIRE_DEVELOPER_ID:-}" = 1 ]; then
+      echo "OMAIRC_REQUIRE_DEVELOPER_ID=1 but CODESIGN_IDENTITY is not set." >&2
+      exit 1
+    fi
+    adhoc_sign
+    exit 0
+    ;;
+esac
+
+if [ ! -f "$ENTITLEMENTS" ]; then
+  echo "Expected entitlements at $ENTITLEMENTS" >&2
+  exit 1
+fi
+
+if [ -n "${APPLE_TEAM_ID:-}" ]; then
+  case "$identity" in
+    *"$APPLE_TEAM_ID"*) ;;
+    *)
+      echo "CODESIGN_IDENTITY does not contain APPLE_TEAM_ID=$APPLE_TEAM_ID: $identity" >&2
+      exit 1
+      ;;
+  esac
+fi
+
+echo "Signing $APP with $identity"
+# Nested code first, no entitlements. Then the bundle with the app entitlements
+# so QML JIT is allowed and nested Qt/Keychain dylibs keep their own signatures.
+codesign --force --deep --options runtime --timestamp --sign "$identity" "$APP"
+codesign --force --options runtime --timestamp \
+  --entitlements "$ENTITLEMENTS" --sign "$identity" "$APP"
+codesign --verify --deep --strict --verbose=2 "$APP"
+echo "Signed $APP"

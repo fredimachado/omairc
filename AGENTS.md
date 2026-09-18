@@ -198,4 +198,9 @@ zips as workflow artifacts, and attaches both to version tags. Build
 QtKeychain against the same Qt prefix with Apple `clang++` so passwords
 use the Keychain backend. There is no `qt6-wayland` dependency on macOS. Regenerate `data/icons/omairc.icns`
 from the SVG with `packaging/macos/generate-icns` when the mark changes.
-Release zips are unsigned/ad-hoc; notarization is out of scope for now.
+CI imports a Developer ID certificate and signs with hardened runtime
+(`packaging/macos/Omairc.entitlements`). Version tags and workflow_dispatch
+run `bin/notarize-macos` (`notarytool` + staple). Pull requests sign only:
+Apple often holds the first Developer ID uploads In Progress for hours.
+Tag releases fail if the signing secrets are missing. Local
+`bin/build-macos` stays ad-hoc unless `CODESIGN_IDENTITY` is set.
