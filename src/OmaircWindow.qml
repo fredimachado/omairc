@@ -4440,6 +4440,11 @@ ApplicationWindow {
             onClicked: function(mouse) {
                 if (mouse.button !== Qt.LeftButton)
                     return;
+                var versionPt = mapToItem(selfVersionHit, mouse.x, mouse.y);
+                if (selfVersionHit.visible && selfVersionHit.contains(versionPt)) {
+                    aboutSheet.open();
+                    return;
+                }
                 // Hide on the next tick so this same click cannot land on the
                 // sidebar or member list once the dimmer is gone.
                 if (win.connection && !win.connection.setupRequired)

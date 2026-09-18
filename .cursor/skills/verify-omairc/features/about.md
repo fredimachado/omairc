@@ -29,3 +29,4 @@ Preconditions:
 - Check for Updates talks to `api.github.com`. The offscreen suite injects a JSON payload and does not treat a live GitHub round-trip as proof.
 - A compiled-window click on View the source on GitHub would call `Qt.openUrlExternally`. Do not use that as proof on the isolated display.
 - Escape closes About before Connect. On first-run Connect, the second Escape does not dismiss the required sheet.
+- Connect covers the window, so a compiled click on the footer version while Connect is open is handled by that overlay: it opens About and does not dismiss Connect. Conversation and member clicks stay blocked.
