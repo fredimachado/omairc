@@ -45,7 +45,7 @@ permissions:
 jobs:
   macos:
     runs-on: macos-latest
-    timeout-minutes: 60
+    timeout-minutes: 90
     env:
       QT_VERSION: 6.8.3
       QTKEYCHAIN_VERSION: 0.15.0

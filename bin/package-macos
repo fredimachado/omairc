@@ -47,6 +47,18 @@ has_developer_id() {
   return 1
 }
 
+notary_field() {
+  python3 -c '
+import json, pathlib, sys
+text = pathlib.Path(sys.argv[1]).read_text(encoding="utf-8")
+idx = text.rfind("{")
+if idx < 0:
+    raise SystemExit("notarytool produced no JSON")
+payload = json.loads(text[idx:])
+print(payload.get(sys.argv[2]) or "")
+' "$1" "$2"
+}
+
 notarize_and_staple() {
   key_path="${APP_STORE_CONNECT_API_KEY_PATH:-}"
   key_id="${APP_STORE_CONNECT_KEY_ID:-}"
@@ -69,38 +81,55 @@ notarize_and_staple() {
     return 0
   fi
 
-  echo "Submitting $ZIP to Apple notarization"
+  echo "Uploading $ZIP to Apple notarization"
   submit_json="$ROOT/dist/notary-submit.json"
-  status_file="$ROOT/dist/notary-status.txt"
-  id_file="$ROOT/dist/notary-id.txt"
+  set +e
   xcrun notarytool submit "$ZIP" \
     --key "$key_path" \
     --key-id "$key_id" \
     --issuer "$issuer" \
-    --wait \
-    --timeout 15m \
-    --output-format json >"$submit_json"
-  python3 -c '
-import json, pathlib, sys
-text = pathlib.Path(sys.argv[1]).read_text(encoding="utf-8")
-idx = text.rfind("{")
-if idx < 0:
-    raise SystemExit("notarytool produced no JSON")
-payload = json.loads(text[idx:])
-pathlib.Path(sys.argv[2]).write_text(payload.get("status") or "", encoding="utf-8")
-pathlib.Path(sys.argv[3]).write_text(payload.get("id") or "", encoding="utf-8")
-' "$submit_json" "$status_file" "$id_file"
-  status=$(cat "$status_file")
-  submission_id=$(tr -d " \n" <"$id_file")
-  rm -f -- "$status_file" "$id_file" "$submit_json"
+    --output-format json \
+    >"$submit_json"
+  submit_rc=$?
+  set -e
+  cat "$submit_json"
+  submission_id=$(notary_field "$submit_json" id)
+  if [ -z "$submission_id" ] || [ "$submit_rc" -ne 0 ]; then
+    echo "notarytool submit failed (exit $submit_rc, id ${submission_id:-none})." >&2
+    exit 1
+  fi
+
+  # First-time Developer ID uploads are often held for extra analysis.
+  # A short submit --wait looks hung, then fails while Apple is still working.
+  echo "Waiting for notarization $submission_id (can take tens of minutes)"
+  set +e
+  xcrun notarytool wait "$submission_id" \
+    --key "$key_path" \
+    --key-id "$key_id" \
+    --issuer "$issuer" \
+    --timeout 45m
+  wait_rc=$?
+  set -e
+
+  info_json="$ROOT/dist/notary-info.json"
+  set +e
+  xcrun notarytool info "$submission_id" \
+    --key "$key_path" \
+    --key-id "$key_id" \
+    --issuer "$issuer" \
+    --output-format json \
+    >"$info_json"
+  set -e
+  cat "$info_json"
+  status=$(notary_field "$info_json" status)
+  rm -f -- "$submit_json" "$info_json"
+
   if [ "$status" != "Accepted" ]; then
-    echo "Notarization status was ${status:-unknown} (id $submission_id)." >&2
-    if [ -n "$submission_id" ]; then
-      xcrun notarytool log "$submission_id" \
-        --key "$key_path" \
-        --key-id "$key_id" \
-        --issuer "$issuer" >&2 || true
-    fi
+    echo "Notarization status was ${status:-unknown} (id $submission_id, wait exit $wait_rc)." >&2
+    xcrun notarytool log "$submission_id" \
+      --key "$key_path" \
+      --key-id "$key_id" \
+      --issuer "$issuer" >&2 || true
     exit 1
   fi
 
