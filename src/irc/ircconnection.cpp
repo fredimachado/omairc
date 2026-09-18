@@ -1279,6 +1279,7 @@ std::optional<IrcSessionConfig> IrcConnection::sessionConfigFor(
 
     IrcSessionConfig config;
     config.networkId = profile.networkId;
+    config.name = profile.name;
     config.host = profile.host;
     config.port = profile.port;
     config.tlsEnabled = profile.tlsEnabled;

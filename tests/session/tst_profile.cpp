@@ -31,6 +31,7 @@ private slots:
     void ensureIconColorAssignsOnce();
     void missingIconColorDefaultsToNone();
     void missingNameDefaultsToHost();
+    void emptyNameOmitsNameKey();
     void resolvedNameFallsBackToHost();
     void missingConnectOnStartupDefaultsToFalse();
     void missingSecretSavedDefaultsToFalse();
@@ -375,6 +376,32 @@ void ProfileTest::missingNameDefaultsToHost()
     QCOMPARE(blank.name, QStringLiteral("irc.example.net"));
 }
 
+void ProfileTest::emptyNameOmitsNameKey()
+{
+    IrcNetworkProfile profile = IrcNetworkProfile::create();
+    profile.host = QStringLiteral("irc.example.net");
+    profile.nick = QStringLiteral("omairc");
+    QVERIFY(profile.name.isEmpty());
+    IrcProfileStore().save(profile);
+
+    QSettings settings;
+    settings.beginGroup(QStringLiteral("networks"));
+    settings.beginGroup(profile.networkId);
+    QVERIFY(!settings.contains(QStringLiteral("name")));
+    QCOMPARE(settings.value(QStringLiteral("host")).toString(),
+             QStringLiteral("irc.example.net"));
+    settings.endGroup();
+    settings.endGroup();
+
+    profile.name = QStringLiteral("   ");
+    IrcProfileStore().save(profile);
+    settings.beginGroup(QStringLiteral("networks"));
+    settings.beginGroup(profile.networkId);
+    QVERIFY(!settings.contains(QStringLiteral("name")));
+    settings.endGroup();
+    settings.endGroup();
+}
+
 void ProfileTest::resolvedNameFallsBackToHost()
 {
     IrcNetworkProfile profile;
@@ -384,6 +411,12 @@ void ProfileTest::resolvedNameFallsBackToHost()
 
     profile.name = QStringLiteral("  Example  ");
     QCOMPARE(profile.resolvedName(), QStringLiteral("Example"));
+    QCOMPARE(IrcNetworkProfile::resolvedName(QStringLiteral("  Example  "),
+                                             QStringLiteral("irc.example.net")),
+             QStringLiteral("Example"));
+    QCOMPARE(IrcNetworkProfile::resolvedName(QString(),
+                                             QStringLiteral("irc.example.net")),
+             QStringLiteral("irc.example.net"));
     QCOMPARE(profile.normalized().name, QStringLiteral("Example"));
 }
 

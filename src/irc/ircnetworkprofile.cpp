@@ -164,12 +164,17 @@ IrcNetworkProfile IrcNetworkProfile::normalized() const
     return profile;
 }
 
-QString IrcNetworkProfile::resolvedName() const
+QString IrcNetworkProfile::resolvedName(const QString &name, const QString &host)
 {
     const QString trimmedName = name.trimmed();
     if (!trimmedName.isEmpty())
         return trimmedName;
     return host.trimmed();
+}
+
+QString IrcNetworkProfile::resolvedName() const
+{
+    return resolvedName(name, host);
 }
 
 QString IrcNetworkProfile::saslAccount() const

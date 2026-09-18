@@ -89,6 +89,7 @@ private slots:
     void loadingStoredProfileDoesNotConnectUntilActivate();
     void customNameIsRosterDisplayName();
     void missingStoredNameUsesHostAsDisplayName();
+    void editingHostLeavesLoadedLegacyName();
     void duplicateNamesDisambiguateWithNick();
     void connectOnStartupDraftAppliesAndDiscards();
     void applyIsIdempotentForTheSameSecret();
@@ -447,6 +448,32 @@ void ConnectionTest::missingStoredNameUsesHostAsDisplayName()
     IrcController controller;
     IrcConnection connection(controller, capturingFactory(), credentialStore());
     QCOMPARE(connection.host(), QStringLiteral("irc.example.net"));
+    QCOMPARE(connection.name(), QStringLiteral("irc.example.net"));
+    QCOMPARE(connection.displayName(), QStringLiteral("irc.example.net"));
+}
+
+void ConnectionTest::editingHostLeavesLoadedLegacyName()
+{
+    IrcNetworkProfile profile = IrcNetworkProfile::create();
+    profile.host = QStringLiteral("irc.example.net");
+    profile.nick = QStringLiteral("omairc");
+    IrcProfileStore().save(profile);
+
+    QSettings settings;
+    settings.beginGroup(QStringLiteral("networks"));
+    settings.beginGroup(profile.networkId);
+    settings.remove(QStringLiteral("name"));
+    settings.endGroup();
+    settings.endGroup();
+    settings.sync();
+
+    IrcController controller;
+    IrcConnection connection(controller, capturingFactory(), credentialStore());
+    QCOMPARE(connection.name(), QStringLiteral("irc.example.net"));
+    QCOMPARE(connection.host(), QStringLiteral("irc.example.net"));
+
+    connection.setHost(QStringLiteral("irc.changed.example"));
+    QCOMPARE(connection.host(), QStringLiteral("irc.changed.example"));
     QCOMPARE(connection.name(), QStringLiteral("irc.example.net"));
     QCOMPARE(connection.displayName(), QStringLiteral("irc.example.net"));
 }

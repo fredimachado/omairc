@@ -96,7 +96,8 @@ void IrcProfileStore::save(const IrcNetworkProfile &profile)
     settings.beginGroup(networksGroup);
     settings.beginGroup(profile.networkId);
     settings.remove(QString());
-    settings.setValue(nameKey, profile.name);
+    if (!profile.name.trimmed().isEmpty())
+        settings.setValue(nameKey, profile.name);
     settings.setValue(hostKey, profile.host);
     settings.setValue(portKey, profile.port);
     settings.setValue(tlsKey, profile.tlsEnabled);
