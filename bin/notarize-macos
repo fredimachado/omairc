@@ -1,0 +1,146 @@
+#!/usr/bin/env sh
+set -eu
+
+# Submit dist/omairc-*-macos-*.zip to Apple notarization, wait, staple, re-zip.
+# First Developer ID submissions can stay In Progress for hours. Pull requests
+# should not call this; tags may fail closed with OMAIRC_REQUIRE_NOTARIZE=1.
+
+ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
+APP="$ROOT/build/omairc.app"
+
+if [ "$(uname -s)" != "Darwin" ]; then
+  echo "bin/notarize-macos must run on macOS." >&2
+  exit 1
+fi
+
+if [ ! -d "$APP" ]; then
+  echo "Expected $APP. Run bin/build-macos first." >&2
+  exit 1
+fi
+
+VERSION="${OMAIRC_VERSION:-$("$ROOT/bin/version")}"
+ARCH="$(uname -m)"
+case "$ARCH" in
+  arm64) SUFFIX=macos-arm64 ;;
+  x86_64) SUFFIX=macos-x64 ;;
+  *)
+    echo "Unsupported macOS architecture: $ARCH" >&2
+    exit 1
+    ;;
+esac
+
+ZIP="$ROOT/dist/omairc-${VERSION}-${SUFFIX}.zip"
+if [ ! -f "$ZIP" ]; then
+  echo "Expected $ZIP. Run bin/package-macos first." >&2
+  exit 1
+fi
+
+key_path="${APP_STORE_CONNECT_API_KEY_PATH:-}"
+key_id="${APP_STORE_CONNECT_KEY_ID:-}"
+issuer="${APP_STORE_CONNECT_ISSUER_ID:-}"
+timeout="${OMAIRC_NOTARY_TIMEOUT:-45m}"
+
+if [ -z "$key_path" ] || [ ! -f "$key_path" ] || [ -z "$key_id" ] || [ -z "$issuer" ]; then
+  if [ "${OMAIRC_REQUIRE_NOTARIZE:-}" = 1 ]; then
+    echo "OMAIRC_REQUIRE_NOTARIZE=1 but App Store Connect API key, key id, or issuer is missing." >&2
+    exit 1
+  fi
+  echo "Skipping notarization (no App Store Connect API key)."
+  exit 0
+fi
+
+if ! codesign -dvv "$APP" 2>&1 | grep -q 'Authority=Developer ID Application'; then
+  if [ "${OMAIRC_REQUIRE_NOTARIZE:-}" = 1 ]; then
+    echo "OMAIRC_REQUIRE_NOTARIZE=1 but $APP is not signed with Developer ID Application." >&2
+    exit 1
+  fi
+  echo "Skipping notarization ($APP is not Developer ID signed)."
+  exit 0
+fi
+
+notary_field() {
+  python3 -c '
+import json, pathlib, sys
+text = pathlib.Path(sys.argv[1]).read_text(encoding="utf-8")
+idx = text.rfind("{")
+if idx < 0:
+    raise SystemExit("notarytool produced no JSON")
+payload = json.loads(text[idx:])
+print(payload.get(sys.argv[2]) or "")
+' "$1" "$2"
+}
+
+zip_app() {
+  STAGE="$ROOT/dist/omairc-${VERSION}-${SUFFIX}"
+  rm -rf -- "$STAGE" "$ZIP"
+  mkdir -p "$STAGE"
+  ditto "$APP" "$STAGE/omairc.app"
+  (
+    cd "$ROOT/dist"
+    ditto -c -k --sequesterRsrc --keepParent "$STAGE/omairc.app" "$(basename "$ZIP")"
+  )
+  rm -rf -- "$STAGE"
+}
+
+echo "Uploading $ZIP to Apple notarization"
+submit_json="$ROOT/dist/notary-submit.json"
+set +e
+xcrun notarytool submit "$ZIP" \
+  --key "$key_path" \
+  --key-id "$key_id" \
+  --issuer "$issuer" \
+  --output-format json \
+  >"$submit_json"
+submit_rc=$?
+set -e
+cat "$submit_json"
+submission_id=$(notary_field "$submit_json" id)
+if [ -z "$submission_id" ] || [ "$submit_rc" -ne 0 ]; then
+  echo "notarytool submit failed (exit $submit_rc, id ${submission_id:-none})." >&2
+  exit 1
+fi
+
+echo "Waiting for notarization $submission_id (timeout $timeout)"
+set +e
+xcrun notarytool wait "$submission_id" \
+  --key "$key_path" \
+  --key-id "$key_id" \
+  --issuer "$issuer" \
+  --timeout "$timeout"
+wait_rc=$?
+set -e
+
+info_json="$ROOT/dist/notary-info.json"
+set +e
+xcrun notarytool info "$submission_id" \
+  --key "$key_path" \
+  --key-id "$key_id" \
+  --issuer "$issuer" \
+  --output-format json \
+  >"$info_json"
+set -e
+cat "$info_json"
+status=$(notary_field "$info_json" status)
+rm -f -- "$submit_json" "$info_json"
+
+if [ "$status" != "Accepted" ]; then
+  echo "Notarization status was ${status:-unknown} (id $submission_id, wait exit $wait_rc)." >&2
+  xcrun notarytool log "$submission_id" \
+    --key "$key_path" \
+    --key-id "$key_id" \
+    --issuer "$issuer" >&2 || true
+  if [ "${OMAIRC_REQUIRE_NOTARIZE:-}" = 1 ]; then
+    exit 1
+  fi
+  echo "Leaving $ZIP Developer ID signed but not stapled."
+  exit 0
+fi
+
+echo "Stapling notarization ticket to $APP"
+xcrun stapler staple "$APP"
+xcrun stapler validate "$APP"
+zip_app
+if [ -n "${GITHUB_ENV:-}" ]; then
+  echo "OMAIRC_NOTARIZED=1" >> "$GITHUB_ENV"
+fi
+echo "Notarized $ZIP"

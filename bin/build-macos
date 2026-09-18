@@ -87,14 +87,8 @@ embed_qtkeychain() {
   done
 }
 
-adhoc_sign() {
-  app="$1"
-  if ! command -v codesign >/dev/null 2>&1; then
-    return 0
-  fi
-  # Deep sign so freshly copied dylibs are trusted by dyld.
-  codesign --force --deep --sign - "$app" 2>/dev/null || \
-    codesign --force --sign - "$app/Contents/MacOS/omairc" 2>/dev/null || true
+sign_app() {
+  "$ROOT/bin/sign-macos" "$1"
 }
 
 is_homebrew_qt() {
@@ -172,7 +166,7 @@ if is_homebrew_qt; then
   echo "Homebrew Qt detected at $QT_PREFIX; skipping macdeployqt."
   rm -rf -- "$APP/Contents/PlugIns" "$APP/Contents/Resources/qml"
   embed_qtkeychain "$APP"
-  adhoc_sign "$APP"
+  sign_app "$APP"
 else
   if [ -x "$QT_BIN/macdeployqt" ]; then
     "$QT_BIN/macdeployqt" "$APP" \
@@ -181,7 +175,7 @@ else
     prune_qt_deploy "$APP"
   fi
   embed_qtkeychain "$APP"
-  adhoc_sign "$APP"
+  sign_app "$APP"
 fi
 
 ln -sf "omairc.app/Contents/MacOS/omairc" "$BUILD_DIR/omairc"

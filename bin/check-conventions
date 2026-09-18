@@ -282,6 +282,45 @@ def check_macos_ci_bash32():
     return problems
 
 
+def check_macos_notarization():
+    problems = []
+    workflow = ROOT / ".github" / "workflows" / "macos.yml"
+    sign = ROOT / "bin" / "sign-macos"
+    entitlements = ROOT / "packaging" / "macos" / "Omairc.entitlements"
+    if not workflow.is_file():
+        return problems
+    text = workflow.read_text(encoding="utf-8", errors="replace")
+    if "APPLE_CERTIFICATE" not in text or "OMAIRC_REQUIRE_DEVELOPER_ID" not in text:
+        problems.append(
+            ".github/workflows/macos.yml: import a Developer ID certificate and "
+            "set OMAIRC_REQUIRE_DEVELOPER_ID so signed CI builds cannot silently "
+            "fall back to ad-hoc")
+    if "Tag releases require APPLE_CERTIFICATE" not in text:
+        problems.append(
+            ".github/workflows/macos.yml: v* tags must fail closed without "
+            "APPLE_CERTIFICATE rather than shipping an ad-hoc zip")
+    if "notarytool" not in (ROOT / "bin" / "notarize-macos").read_text(
+            encoding="utf-8", errors="replace"):
+        problems.append(
+            "bin/notarize-macos: notarize Developer ID zips with notarytool")
+    if "bin/notarize-macos" not in text:
+        problems.append(
+            ".github/workflows/macos.yml: notarize release zips through "
+            "bin/notarize-macos, not on every pull request")
+    if "CODESIGN_IDENTITY" not in sign.read_text(encoding="utf-8", errors="replace"):
+        problems.append(
+            "bin/sign-macos: Developer ID sign when CODESIGN_IDENTITY is set")
+    if "com.apple.security.cs.allow-jit" not in entitlements.read_text(
+            encoding="utf-8", errors="replace"):
+        problems.append(
+            "packaging/macos/Omairc.entitlements: hardened runtime must allow "
+            "QML JIT")
+    build = (ROOT / "bin" / "build-macos").read_text(encoding="utf-8", errors="replace")
+    if "bin/sign-macos" not in build:
+        problems.append("bin/build-macos: sign through bin/sign-macos")
+    return problems
+
+
 def check_macos_ci_arch_selection():
     problems = []
     workflow = ROOT / ".github" / "workflows" / "macos.yml"
@@ -303,6 +342,47 @@ def check_macos_ci_arch_selection():
             problems.append(
                 ".github/workflows/macos.yml: arm64 case must prefer "
                 "clang_arm64 before any clang_64 fallback")
+    if "macos-15-intel" not in text:
+        problems.append(
+            ".github/workflows/macos.yml: Intel zips must build on macos-15-intel")
+    if "suffix: macos-arm64" not in text or "suffix: macos-x64" not in text:
+        problems.append(
+            ".github/workflows/macos.yml: matrix must include macos-arm64 and "
+            "macos-x64 so both architecture zips are artifacts")
+    if "omairc-*-macos-*.zip" in text:
+        problems.append(
+            ".github/workflows/macos.yml: do not glob every macOS zip when "
+            "replacing a release asset; that deletes the other architecture")
+    if "actions/download-artifact@v4" not in text or "macos-arm64.zip" not in text \
+            or "macos-x64.zip" not in text:
+        problems.append(
+            ".github/workflows/macos.yml: a follow-up job must download both "
+            "macos-arm64 and macos-x64 artifacts so a missing zip fails the run")
+    return problems
+
+
+def check_macos_sdk_compat():
+    problems = []
+    pri = ROOT / "packaging" / "macos" / "sdk-compat.pri"
+    if not pri.is_file():
+        return ["packaging/macos/sdk-compat.pri: missing SDK compatibility pri"]
+    text = pri.read_text(encoding="utf-8", errors="replace")
+    if "-include arm_acle.h" not in text:
+        problems.append(
+            "packaging/macos/sdk-compat.pri: Apple Silicon still needs "
+            "-include arm_acle.h for Qt 6.8 qyieldcpu.h on Xcode 26")
+    if "equals(QMAKE_HOST.arch, arm64)" not in text:
+        problems.append(
+            "packaging/macos/sdk-compat.pri: -include arm_acle.h must be gated "
+            "to Apple Silicon; Intel fails with ACLE not enabled")
+    for relative, source in sources("**/*.pro"):
+        if "-include arm_acle.h" not in source:
+            continue
+        if "equals(QMAKE_HOST.arch, arm64)" in source:
+            continue
+        problems.append(
+            f"{relative}: -include arm_acle.h must go through "
+            "packaging/macos/sdk-compat.pri so Intel builds skip it")
     return problems
 
 
@@ -318,6 +398,8 @@ CHECKS = (
     ("macOS ObjC ARC for notifications", check_macos_objc_arc),
     ("macOS CI Qt arch selection", check_macos_ci_arch_selection),
     ("macOS CI Bash 3.2 builtins", check_macos_ci_bash32),
+    ("macOS Developer ID notarization", check_macos_notarization),
+    ("macOS SDK compat arch gate", check_macos_sdk_compat),
 )
 
 

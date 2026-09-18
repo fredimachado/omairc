@@ -7,6 +7,8 @@ on:
       - '.github/workflows/macos.yml'
       - 'bin/build-macos'
       - 'bin/package-macos'
+      - 'bin/sign-macos'
+      - 'bin/notarize-macos'
       - 'packaging/macos/**'
       - 'omairc.pro'
       - 'qtkeychain.pri'
@@ -24,6 +26,8 @@ on:
       - '.github/workflows/macos.yml'
       - 'bin/build-macos'
       - 'bin/package-macos'
+      - 'bin/sign-macos'
+      - 'bin/notarize-macos'
       - 'packaging/macos/**'
       - 'omairc.pro'
       - 'qtkeychain.pri'
@@ -42,8 +46,20 @@ permissions:
 
 jobs:
   macos:
-    runs-on: macos-latest
-    timeout-minutes: 45
+    name: macOS ${{ matrix.suffix }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: ${{ github.event_name == 'pull_request' && 45 || 90 }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            suffix: macos-arm64
+            macho: arm64
+          # macos-15-intel is the last GitHub-hosted x86_64 image (through 2027).
+          - os: macos-15-intel
+            suffix: macos-x64
+            macho: x86_64
     env:
       QT_VERSION: 6.8.3
       QTKEYCHAIN_VERSION: 0.15.0
@@ -79,9 +95,17 @@ jobs:
           test "$tag" = "$OMAIRC_VERSION"
 
       - name: Select Qt arch
+        env:
+          MATRIX_MACHO: ${{ matrix.macho }}
+          MATRIX_SUFFIX: ${{ matrix.suffix }}
         run: |
           set -euo pipefail
-          case "$(uname -m)" in
+          host="$(uname -m)"
+          if [ "$host" != "$MATRIX_MACHO" ]; then
+            echo "Runner architecture $host does not match matrix $MATRIX_MACHO" >&2
+            exit 1
+          fi
+          case "$host" in
             arm64)
               # Prefer aqt's Apple Silicon kit when published. Qt 6.8.x currently
               # only lists universal clang_64; install falls back and Smoke
@@ -98,10 +122,14 @@ jobs:
               expected_macho_arch=x86_64
               ;;
             *)
-              echo "Unsupported runner architecture: $(uname -m)" >&2
+              echo "Unsupported runner architecture: $host" >&2
               exit 1
               ;;
           esac
+          if [ "$omairc_mac_suffix" != "$MATRIX_SUFFIX" ]; then
+            echo "Derived suffix $omairc_mac_suffix does not match matrix $MATRIX_SUFFIX" >&2
+            exit 1
+          fi
           echo "QT_AQT_ARCH=$qt_aqt_arch" >> "$GITHUB_ENV"
           echo "QT_INSTALL_DIR=$qt_install_dir" >> "$GITHUB_ENV"
           echo "OMAIRC_MAC_SUFFIX=$omairc_mac_suffix" >> "$GITHUB_ENV"
@@ -191,6 +219,103 @@ jobs:
           cmake --build "$build"
           cmake --install "$build"
           test -f "$pri"
+
+      - name: Import Developer ID certificate
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          APP_STORE_CONNECT_PRIVATE_KEY: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          is_tag=0
+          case "${GITHUB_REF:-}" in
+            refs/tags/v*) is_tag=1 ;;
+          esac
+
+          if [ -z "${APPLE_CERTIFICATE:-}" ] || [ -z "${APPLE_CERTIFICATE_PASSWORD:-}" ]; then
+            if [ "$is_tag" -eq 1 ]; then
+              echo "Tag releases require APPLE_CERTIFICATE and APPLE_CERTIFICATE_PASSWORD." >&2
+              exit 1
+            fi
+            echo "No Developer ID certificate; the zip will stay ad-hoc."
+            exit 0
+          fi
+
+          if [ -z "${APP_STORE_CONNECT_PRIVATE_KEY:-}" ] || \
+             [ -z "${APP_STORE_CONNECT_KEY_ID:-}" ] || \
+             [ -z "${APP_STORE_CONNECT_ISSUER_ID:-}" ]; then
+            if [ "$is_tag" -eq 1 ]; then
+              echo "Tag releases require App Store Connect API key, key id, and issuer." >&2
+              exit 1
+            fi
+            echo "Developer ID present without notary credentials; the zip will be signed but not notarized."
+          fi
+
+          cert_path="$RUNNER_TEMP/developer-id.p12"
+          python3 -c 'import base64, os, pathlib, sys; pathlib.Path(sys.argv[1]).write_bytes(base64.b64decode(os.environ["APPLE_CERTIFICATE"]))' "$cert_path"
+
+          keychain_path="$RUNNER_TEMP/omairc-signing.keychain-db"
+          keychain_password=$(uuidgen)
+          security delete-keychain "$keychain_path" 2>/dev/null || true
+          security create-keychain -p "$keychain_password" "$keychain_path"
+          security set-keychain-settings -lut 21600 "$keychain_path"
+          security unlock-keychain -p "$keychain_password" "$keychain_path"
+          curl -fsSL "https://www.apple.com/certificateauthority/DeveloperIDG2CA.cer" \
+            -o "$RUNNER_TEMP/DeveloperIDG2CA.cer"
+          security import "$RUNNER_TEMP/DeveloperIDG2CA.cer" -k "$keychain_path" \
+            -T /usr/bin/codesign -T /usr/bin/security >/dev/null
+          security import "$cert_path" \
+            -P "$APPLE_CERTIFICATE_PASSWORD" \
+            -A -t cert -f pkcs12 -k "$keychain_path" \
+            -T /usr/bin/codesign -T /usr/bin/security >/dev/null
+          security set-key-partition-list -S apple-tool:,apple: \
+            -k "$keychain_password" "$keychain_path" >/dev/null
+          existing=$(security list-keychains -d user | sed 's/"//g')
+          # shellcheck disable=SC2086
+          security list-keychains -d user -s "$keychain_path" $existing
+
+          identity=$(security find-identity -v -p codesigning "$keychain_path" \
+            | awk -F '"' '/Developer ID Application/{print $2; exit}')
+          if [ -z "$identity" ]; then
+            echo "No Developer ID Application identity in the imported certificate." >&2
+            security find-identity -v -p codesigning "$keychain_path" >&2 || true
+            exit 1
+          fi
+          if [ -n "${APPLE_TEAM_ID:-}" ]; then
+            case "$identity" in
+              *"$APPLE_TEAM_ID"*) ;;
+              *)
+                echo "Imported identity does not contain APPLE_TEAM_ID=$APPLE_TEAM_ID: $identity" >&2
+                exit 1
+                ;;
+            esac
+          fi
+
+          {
+            echo "CODESIGN_IDENTITY=$identity"
+            echo "APPLE_TEAM_ID=${APPLE_TEAM_ID:-}"
+            echo "OMAIRC_REQUIRE_DEVELOPER_ID=1"
+            echo "MACOS_SIGNING_KEYCHAIN=$keychain_path"
+          } >> "$GITHUB_ENV"
+
+          if [ -n "${APP_STORE_CONNECT_PRIVATE_KEY:-}" ] && \
+             [ -n "${APP_STORE_CONNECT_KEY_ID:-}" ] && \
+             [ -n "${APP_STORE_CONNECT_ISSUER_ID:-}" ]; then
+            key_path="$RUNNER_TEMP/AuthKey.p8"
+            python3 -c 'import os, pathlib, sys; text = os.environ["APP_STORE_CONNECT_PRIVATE_KEY"].replace("\\n", "\n"); pathlib.Path(sys.argv[1]).write_text(text if text.endswith("\n") else text + "\n", encoding="utf-8")' "$key_path"
+            chmod 600 "$key_path"
+            {
+              echo "APP_STORE_CONNECT_API_KEY_PATH=$key_path"
+              echo "APP_STORE_CONNECT_KEY_ID=$APP_STORE_CONNECT_KEY_ID"
+              echo "APP_STORE_CONNECT_ISSUER_ID=$APP_STORE_CONNECT_ISSUER_ID"
+            } >> "$GITHUB_ENV"
+          fi
+
+          rm -f "$cert_path"
+          echo "Imported $identity"
 
       - name: Build
         run: bin/build-macos
@@ -322,12 +447,52 @@ jobs:
       - name: Package app zip
         run: bin/package-macos
 
+      - name: Verify Developer ID signature
+        if: env.CODESIGN_IDENTITY != ''
+        run: |
+          set -euo pipefail
+          app="$GITHUB_WORKSPACE/build/omairc.app"
+          codesign --verify --deep --strict --verbose=2 "$app"
+          codesign -dvv "$app"
+
       - name: Upload app zip
         uses: actions/upload-artifact@v4
         with:
           name: omairc-${{ env.OMAIRC_VERSION }}-${{ env.OMAIRC_MAC_SUFFIX }}
           path: dist/omairc-${{ env.OMAIRC_VERSION }}-${{ env.OMAIRC_MAC_SUFFIX }}.zip
           if-no-files-found: error
+
+      - name: Notarize app zip
+        if: env.APP_STORE_CONNECT_API_KEY_PATH != '' && (startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch')
+        env:
+          OMAIRC_REQUIRE_NOTARIZE: ${{ startsWith(github.ref, 'refs/tags/v') && '1' || '0' }}
+        run: bin/notarize-macos
+
+      - name: Verify notarization ticket
+        if: env.OMAIRC_NOTARIZED == '1'
+        run: |
+          set -euo pipefail
+          xcrun stapler validate "$GITHUB_WORKSPACE/build/omairc.app"
+
+      - name: Replace zip with stapled app
+        if: env.OMAIRC_NOTARIZED == '1'
+        uses: actions/upload-artifact@v4
+        with:
+          name: omairc-${{ env.OMAIRC_VERSION }}-${{ env.OMAIRC_MAC_SUFFIX }}
+          path: dist/omairc-${{ env.OMAIRC_VERSION }}-${{ env.OMAIRC_MAC_SUFFIX }}.zip
+          if-no-files-found: error
+          overwrite: true
+
+      - name: Delete signing keychain
+        if: always()
+        run: |
+          set -euo pipefail
+          if [ -n "${MACOS_SIGNING_KEYCHAIN:-}" ]; then
+            security delete-keychain "$MACOS_SIGNING_KEYCHAIN" || true
+          fi
+          if [ -n "${APP_STORE_CONNECT_API_KEY_PATH:-}" ]; then
+            rm -f "$APP_STORE_CONNECT_API_KEY_PATH"
+          fi
 
       - name: Publish GitHub Release asset
         if: startsWith(github.ref, 'refs/tags/v')
@@ -348,12 +513,14 @@ jobs:
             sleep 15
           done
 
+          # Only replace this architecture's zip so a parallel Intel/ARM
+          # job cannot delete the sibling release asset.
           # macOS /bin/bash is 3.2; mapfile is Bash 4+.
           assets=$(gh release view "$tag" --json assets --jq '.assets[].name')
           while IFS= read -r asset || [ -n "$asset" ]; do
             [ -n "$asset" ] || continue
             case "$asset" in
-              omairc-*-macos-*.zip)
+              omairc-*-"$OMAIRC_MAC_SUFFIX".zip)
                 if [ "$asset" != "$zip_name" ]; then
                   gh release delete-asset "$tag" "$asset" --yes
                 fi
@@ -362,3 +529,58 @@ jobs:
           done <<< "$assets"
 
           gh release upload "$tag" "$zip" --clobber
+
+  macos-zips:
+    name: Both macOS zips
+    needs: macos
+    if: ${{ always() && !cancelled() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Download architecture zips
+        uses: actions/download-artifact@v4
+        with:
+          pattern: omairc-*-macos-*
+          merge-multiple: true
+          path: dist
+
+      - name: Assert both architecture zips
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          ls -la dist || true
+          arm=(dist/omairc-*-macos-arm64.zip)
+          intel=(dist/omairc-*-macos-x64.zip)
+          if [ "${#arm[@]}" -ne 1 ] || [ ! -f "${arm[0]}" ]; then
+            echo "Expected one macos-arm64 zip artifact" >&2
+            exit 1
+          fi
+          if [ "${#intel[@]}" -ne 1 ] || [ ! -f "${intel[0]}" ]; then
+            echo "Expected one macos-x64 zip artifact" >&2
+            exit 1
+          fi
+          echo "Workflow artifacts: ${arm[0]} ${intel[0]}"
+
+          if [[ "${GITHUB_REF:-}" == refs/tags/v* ]]; then
+            tag="$GITHUB_REF_NAME"
+            arm_name=$(basename "${arm[0]}")
+            intel_name=$(basename "${intel[0]}")
+            deadline=$(( $(date +%s) + 180 ))
+            while true; do
+              assets=$(gh release view "$tag" --json assets --jq '.assets[].name')
+              if printf '%s\n' "$assets" | grep -Fxq "$arm_name" && \
+                 printf '%s\n' "$assets" | grep -Fxq "$intel_name"; then
+                echo "Release $tag has $arm_name and $intel_name"
+                break
+              fi
+              if [ "$(date +%s)" -ge "$deadline" ]; then
+                echo "Release $tag is missing a macOS zip:" >&2
+                printf '%s\n' "$assets" >&2
+                exit 1
+              fi
+              echo "Waiting for both macOS zips on release $tag..."
+              sleep 10
+            done
+          fi
