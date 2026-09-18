@@ -975,7 +975,7 @@ void ControllerTest::partDefaultsToSelectedChannel()
     QVERIFY(rowForTarget(conversations, QStringLiteral("#omarchy")) < 0);
 
     QVERIFY(!controller.sendMessage(QStringLiteral("/leave")));
-    QCOMPARE(controller.lastError(), QStringLiteral("Part applies to channels"));
+    QCOMPARE(controller.lastError(), QStringLiteral("Command was refused"));
 
     QVERIFY(controller.console()->submit(QStringLiteral("/part #desktop leftover")));
     QCOMPARE(transport->writtenFrames().last(),
