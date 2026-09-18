@@ -5852,6 +5852,125 @@ TestCase {
         verify(versionLeft >= nickRight);
     }
 
+    function test_aboutSheetOpensFromVersionAndEscapeKeepsConversation() {
+        openSeededAppWindow();
+        var sheet = item("aboutSheet");
+        verify(!sheet.opened);
+        verify(!sheet.visible);
+
+        mouseClick(item("selfVersionHit"));
+        tryCompare(sheet, "opened", true);
+        compare(item("aboutTitle").text, "About Omairc");
+        compare(item("aboutName").text, "Omairc");
+        compare(item("aboutVersion").text, appWindow.appVersion);
+        verify(String(item("aboutLogo").source).indexOf("icons/omairc.svg") >= 0);
+        verify(item("aboutDescription").text.indexOf("open-source") === -1);
+        compare(item("aboutOpenSource").text, "This project is open-source.");
+        compare(item("aboutGithubLink").text, "View the source on GitHub");
+        compare(item("aboutCopyright").text, "Copyright © 2026 Fredi Machado");
+        verify(item("aboutCheckUpdates").visible);
+        verify(item("aboutOk").visible);
+        verify(!item("aboutUpdateStatus").visible);
+        saveScreenshot("about-sheet");
+
+        keyClick(Qt.Key_Escape);
+        tryCompare(sheet, "opened", false);
+        compare(appWindow.currentConversation, "#omarchy");
+    }
+
+    function test_aboutSheetBlocksWindowShortcuts() {
+        openSeededAppWindow();
+        var sheet = item("aboutSheet");
+        mouseClick(item("selfVersionHit"));
+        tryCompare(sheet, "opened", true);
+
+        keyClick(Qt.Key_Down, Qt.AltModifier);
+        compare(appWindow.currentConversation, "#omarchy");
+        verify(sheet.opened);
+
+        keyClick(Qt.Key_QuoteLeft, Qt.ControlModifier);
+        compare(appWindow.consoleVisible, false);
+        verify(sheet.opened);
+
+        keyClick(Qt.Key_Slash, Qt.ControlModifier);
+        verify(sheet.opened);
+        verify(!item("shortcutsSheet").opened);
+    }
+
+    function test_aboutSheetOkCloses() {
+        openSeededAppWindow();
+        var sheet = item("aboutSheet");
+        mouseClick(item("selfVersionHit"));
+        tryCompare(sheet, "opened", true);
+
+        mouseClick(item("aboutOk"));
+        tryCompare(sheet, "opened", false);
+        compare(appWindow.currentConversation, "#omarchy");
+    }
+
+    function test_aboutSheetGithubLinkOpensRepo() {
+        openSeededAppWindow();
+        mouseClick(item("selfVersionHit"));
+        tryCompare(item("aboutSheet"), "opened", true);
+        compare(item("aboutUpdateCheck").repoUrl,
+                "https://github.com/fredimachado/omairc");
+
+        appWindow.lastOpenedUrl = "";
+        mouseClick(item("aboutGithubLink"));
+        compare(appWindow.lastOpenedUrl, "https://github.com/fredimachado/omairc");
+        verify(item("aboutSheet").opened);
+    }
+
+    function test_aboutSheetCheckForUpdatesShowsLatest() {
+        openSeededAppWindow();
+        mouseClick(item("selfVersionHit"));
+        tryCompare(item("aboutSheet"), "opened", true);
+
+        var checker = item("aboutUpdateCheck");
+        checker.currentVersion = "0.1.0";
+        verify(item("aboutCheckUpdates").visible);
+        verify(!item("aboutUpdateStatus").visible);
+
+        checker.applyGithubPayload(
+            '{"tag_name":"v9.9.9","html_url":"https://github.com/fredimachado/omairc/releases/tag/v9.9.9"}',
+            200);
+        compare(checker.status, "updateAvailable");
+        compare(item("aboutUpdateStatus").text, "Version 9.9.9 is available.");
+        verify(item("aboutUpdateStatus").visible);
+
+        appWindow.lastOpenedUrl = "";
+        mouseClick(item("aboutUpdateStatus"));
+        compare(appWindow.lastOpenedUrl,
+                "https://github.com/fredimachado/omairc/releases/tag/v9.9.9");
+
+        checker.applyGithubPayload(
+            '{"tag_name":"v0.1.0","html_url":"https://github.com/fredimachado/omairc/releases/tag/v0.1.0"}',
+            200);
+        compare(item("aboutUpdateStatus").text, "Omairc is up to date.");
+    }
+
+    function test_aboutSheetOpensFromFirstRunVersion() {
+        var window = createTemporaryObject(setupWindowComponent, null);
+        verify(window !== null, "The setup window should load");
+        tryCompare(window, "visible", true);
+        waitForRendering(window.contentItem);
+        window.suppressExternalUrlOpen = true;
+
+        var sheet = findChild(window, "aboutSheet");
+        verify(sheet !== null, "Could not find aboutSheet");
+        verify(!sheet.opened);
+        mouseClick(findChild(window, "selfVersionHit"));
+        tryCompare(sheet, "opened", true);
+        compare(findChild(window, "aboutVersion").text, window.appVersion);
+        compare(findChild(window, "aboutOpenSource").text, "This project is open-source.");
+        verify(window.connectionOverlayVisible);
+
+        keyClick(Qt.Key_Escape);
+        tryCompare(sheet, "opened", false);
+        verify(window.connectionOverlayVisible);
+        window.close();
+    }
+
     function test_liveIdentityFooterShowsCurrentNick() {
         var window = createTemporaryObject(liveWindowComponent, null);
         verify(window !== null, "The live window should load");

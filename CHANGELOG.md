@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Clicking the sidebar version opens an About sheet with the Omairc logo, an open-source GitHub link, and Check for Updates against the latest GitHub release.
 - `/avatar [url|email]` sets the local user's standing avatar metadata. HTTPS URLs pass the same safety checks as peer avatars; email addresses store a Gravatar SHA-256 HTTPS URL with `{size}` and `d=404`. Empty `/avatar` echoes the stored URL (clickable when HTTPS). Sole `/avatar clear` unsets the key.
 
 ### Changed

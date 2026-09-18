@@ -1,4 +1,5 @@
 #include "ircavatarstore.h"
+#include "omaircupdatecheck.h"
 #include "seededircfixture.h"
 
 #include <QCoreApplication>
@@ -35,6 +36,7 @@ public slots:
     void qmlEngineAvailable(QQmlEngine *engine)
     {
         qmlRegisterType<SeededIrcFixture>("Omairc.Test", 1, 0, "SeededIrcFixture");
+        omaircRegisterUpdateCheck();
         IrcAvatarStore *store = ircInstallAvatarStore(engine);
         engine->rootContext()->setContextProperty(QStringLiteral("appAvatarStore"),
                                                   store);
