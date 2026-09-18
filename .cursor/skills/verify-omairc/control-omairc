@@ -21,6 +21,7 @@ Usage:
   control-omairc click-people [--hidden]
   control-omairc click-network
   control-omairc click-edit
+  control-omairc click-version
   control-omairc click-send
   control-omairc focus-composer
   control-omairc type --text "<text>"
@@ -354,6 +355,13 @@ cmd_click_edit() {
   click_xy 220 36
 }
 
+cmd_click_version() {
+  load_state
+  # Footer is 66 CSS px at the bottom of the 244 CSS px sidebar. The version
+  # sits on the presence baseline, right-padded 17 CSS px.
+  click_xy 214 734
+}
+
 cmd_click_send() {
   load_state
   click_xy 909 717
@@ -486,6 +494,7 @@ cmd_qml_suite() {
     "$EVIDENCE_DIR/status-console" \
     "$EVIDENCE_DIR/member-presence" \
     "$EVIDENCE_DIR/identity-footer" \
+    "$EVIDENCE_DIR/about" \
     "$EVIDENCE_DIR/keyboard" \
     "$EVIDENCE_DIR/typing"
   for pair in \
@@ -502,6 +511,7 @@ cmd_qml_suite() {
     "member-rank-order.png:member-presence/rank-order.png" \
     "member-rank-order-demoted.png:member-presence/rank-order-demoted.png" \
     "switch-channel.png:identity-footer/mock-fred.png" \
+    "about-sheet.png:about/about-sheet.png" \
     "typing-member-glyph.png:typing/member-glyph.png" \
     "typing-dm-overlay.png:typing/dm-overlay.png"
   do
@@ -544,6 +554,7 @@ case $cmd in
   click-people) cmd_click_people "$@" ;;
   click-network) cmd_click_network ;;
   click-edit) cmd_click_edit ;;
+  click-version) cmd_click_version ;;
   click-send) cmd_click_send ;;
   focus-composer) cmd_focus_composer ;;
   type) cmd_type "$@" ;;

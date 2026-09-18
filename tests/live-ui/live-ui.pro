@@ -21,6 +21,7 @@ DEFINES += LIVE_CERT_DIR=\\\"$$PWD/../live/certs\\\"
 
 HEADERS += \
     ../../src/backend.h \
+    ../../src/omaircupdatecheck.h \
     ../../src/irc/ircmessage.h \
     ../../src/irc/ircparser.h \
     ../../src/irc/ircframer.h \
@@ -91,6 +92,7 @@ SOURCES += \
     ../../src/irc/ircloopbacktransport.cpp \
     ../../src/irc/ircdemoserver.cpp \
     ../../src/backend.cpp \
+    ../../src/omaircupdatecheck.cpp \
     ../../src/irc/ircparser.cpp \
     ../../src/irc/ircframer.cpp \
     ../../src/irc/ircwiretext.cpp \

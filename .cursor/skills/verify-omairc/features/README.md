@@ -14,7 +14,7 @@ This directory is the maintained source for verifying the user-facing behavior o
 ## Driving conventions
 
 - Treat every command as literal. Keep quoted names and flags unchanged.
-- Prefer named helper targets (`click-conversation`, `click-member`, `click-network`, `click-edit`, `focus-composer`) over raw `--x/--y`.
+- Prefer named helper targets (`click-conversation`, `click-member`, `click-network`, `click-edit`, `click-version`, `focus-composer`) over raw `--x/--y`.
 - Window title `{conversation} - Omairc` is the conversation identity.
 - Named clicks assume the isolated 1180x760 window at textScale 1.0.
 - Restore the baseline conversation (`#omarchy`) after a mutation if another recipe will reuse the instance.
@@ -50,6 +50,7 @@ Keep implementation details out of the map. Name only user paths, stable handles
 - [Status console](./status-console.md) covers the network Status pane, header entry points, AUTH notices, and the shared composer.
 - [Member presence](./member-presence.md) covers presence dots, away dimming, status lines, capability gating, and live PREFIX ranks.
 - [Identity footer](./identity-footer.md) covers the sidebar nick footer (`fred` on first run, then the connection or live nick), the app version on the right, and live available/away/offline chrome.
+- [About](./about.md) covers the About sheet opened from that footer version, the GitHub source link, and Check for Updates.
 - [Keyboard](./keyboard.md) covers conversation walk, network-header walk, unread jump, `Ctrl+K` jump, `Ctrl+Shift+K` nick jump, nick complete, history, find, member focus, the `Ctrl+Shift+S` server list toggle, `Ctrl+W` close, the shortcut sheet, and `Ctrl+,`.
 - [Slash complete](./slash-complete.md) covers the composer slash-command list for `/` plus a character, Tab insert, Escape dismiss, and Up/Down.
 - [Typing](./typing.md) covers bouncing ellipsis on channel members and in direct messages, plus the `message-tags` gate.

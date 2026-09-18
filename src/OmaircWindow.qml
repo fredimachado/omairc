@@ -3,6 +3,7 @@ import QtQuick.Controls
 import QtQuick.Controls.Material
 import QtQuick.Layouts
 import QtQuick.Window
+import Omairc.App 1.0
 
 ApplicationWindow {
     id: win
@@ -70,6 +71,7 @@ ApplicationWindow {
             sidebarNetworkFocusId = "";
     }
     property bool shortcutsSheetEscapeGuard: false
+    property bool aboutSheetEscapeGuard: false
     property bool pickerEscapeGuard: false
     property int jumpSelectedIndex: 0
     property int nickSelectedIndex: 0
@@ -77,6 +79,7 @@ ApplicationWindow {
     readonly property bool shortcutOverlayOpen: shortcutsSheet.opened
         || jumpSheet.opened
         || nickSheet.opened
+        || aboutSheet.opened
     readonly property var networkConsole: irc
         ? (irc.statusConsole ? irc.statusConsole : irc.console)
         : null
@@ -166,6 +169,10 @@ ApplicationWindow {
     }
     readonly property bool connectionOverlayVisible: connection
         && (connection.setupRequired || connectionSheetOpen)
+    readonly property color overlayVeilColor: {
+        var veil = mixColors(pageColor, inkColor, darkMode ? 0.18 : 0.12);
+        return Qt.rgba(veil.r, veil.g, veil.b, 0.5);
+    }
 
     property var composerHistories: ({})
     property var composerDrafts: ({})
@@ -806,6 +813,16 @@ ApplicationWindow {
         lastOpenedUrl = url;
         if (!suppressExternalUrlOpen)
             Qt.openUrlExternally(url);
+        return true;
+    }
+
+    function openAboutFromVersionClick(mappedItem, mouse) {
+        if (!selfVersionHit.visible)
+            return false;
+        var point = mappedItem.mapToItem(selfVersionHit, mouse.x, mouse.y);
+        if (!selfVersionHit.contains(point))
+            return false;
+        aboutSheet.open();
         return true;
     }
 
@@ -1688,6 +1705,7 @@ ApplicationWindow {
     Shortcut {
         sequence: "Ctrl+Q"
         context: Qt.ApplicationShortcut
+        enabled: !win.shortcutOverlayOpen
         onActivated: win.close()
     }
 
@@ -1714,6 +1732,7 @@ ApplicationWindow {
         enabled: !win.connectionOverlayVisible
             && !shortcutsSheet.opened
             && !nickSheet.opened
+            && !aboutSheet.opened
         onActivated: {
             if (jumpSheet.opened)
                 jumpSheet.close();
@@ -1773,7 +1792,7 @@ ApplicationWindow {
         sequence: "Ctrl+/"
         context: Qt.ApplicationShortcut
         onActivated: {
-            if (jumpSheet.opened || nickSheet.opened)
+            if (jumpSheet.opened || nickSheet.opened || aboutSheet.opened)
                 return;
             if (shortcutsSheet.opened)
                 shortcutsSheet.close();
@@ -1911,6 +1930,8 @@ ApplicationWindow {
                 return true;
             if (shortcutsSheet.opened || shortcutsSheetEscapeGuard)
                 return true;
+            if (aboutSheet.opened || aboutSheetEscapeGuard)
+                return true;
             if (jumpSheet.opened || nickSheet.opened || pickerEscapeGuard)
                 return true;
             if (win.connection && win.connection.setupRequired)
@@ -1931,6 +1952,11 @@ ApplicationWindow {
             if (shortcutsSheet.opened || shortcutsSheetEscapeGuard) {
                 shortcutsSheet.close();
                 shortcutsSheetEscapeGuard = false;
+                return;
+            }
+            if (aboutSheet.opened || aboutSheetEscapeGuard) {
+                aboutSheet.close();
+                aboutSheetEscapeGuard = false;
                 return;
             }
             if (jumpSheet.opened || nickSheet.opened || pickerEscapeGuard) {
@@ -3357,8 +3383,8 @@ ApplicationWindow {
                     id: identityText
                     anchors.left: parent.left
                     anchors.leftMargin: win.scaledSize(63)
-                    anchors.right: selfVersionLabel.visible ? selfVersionLabel.left : parent.right
-                    anchors.rightMargin: win.scaledSize(selfVersionLabel.visible ? 8 : 17)
+                    anchors.right: selfVersionHit.visible ? selfVersionHit.left : parent.right
+                    anchors.rightMargin: win.scaledSize(selfVersionHit.visible ? 8 : 17)
                     anchors.verticalCenter: parent.verticalCenter
                     spacing: win.scaledSize(1)
 
@@ -3399,17 +3425,34 @@ ApplicationWindow {
                     }
                 }
 
-                Text {
-                    id: selfVersionLabel
-                    objectName: "selfVersionLabel"
+                MouseArea {
+                    id: selfVersionHit
+                    objectName: "selfVersionHit"
+                    Accessible.role: Accessible.Button
+                    Accessible.name: "About Omairc"
+                    Accessible.onPressAction: aboutSheet.open()
                     anchors.right: parent.right
-                    anchors.rightMargin: win.scaledSize(17)
+                    anchors.rightMargin: win.scaledSize(8)
                     anchors.bottom: identityText.bottom
-                    text: win.appVersion
-                    visible: text.length > 0
-                    color: win.mutedColor
-                    font.family: "iA Writer Mono S"
-                    font.pixelSize: win.scaledSize(10)
+                    anchors.top: identityText.top
+                    width: selfVersionLabel.implicitWidth + win.scaledSize(18)
+                    visible: selfVersionLabel.text.length > 0
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: aboutSheet.open()
+
+                    Text {
+                        id: selfVersionLabel
+                        objectName: "selfVersionLabel"
+                        anchors.right: parent.right
+                        anchors.rightMargin: win.scaledSize(9)
+                        anchors.bottom: parent.bottom
+                        text: win.appVersion
+                        color: selfVersionHit.containsMouse ? win.inkColor : win.mutedColor
+                        font.family: "iA Writer Mono S"
+                        font.pixelSize: win.scaledSize(10)
+                        font.underline: selfVersionHit.containsMouse
+                    }
                 }
             }
         }
@@ -4384,11 +4427,7 @@ ApplicationWindow {
         anchors.fill: parent
         z: 1
         visible: win.connection && (win.connection.setupRequired || win.connectionSheetOpen)
-        color: {
-            var veil = win.mixColors(win.pageColor, win.inkColor,
-                                     win.darkMode ? 0.18 : 0.12)
-            return Qt.rgba(veil.r, veil.g, veil.b, 0.5)
-        }
+        color: win.overlayVeilColor
         onVisibleChanged: {
             if (!visible) {
                 // Closing used to drop focus on the window itself, so
@@ -4404,12 +4443,15 @@ ApplicationWindow {
         }
 
         MouseArea {
+            id: connectionSheetClickSink
             anchors.fill: parent
             hoverEnabled: true
             acceptedButtons: Qt.AllButtons
             onPressed: function(mouse) { mouse.accepted = true; }
             onClicked: function(mouse) {
                 if (mouse.button !== Qt.LeftButton)
+                    return;
+                if (win.openAboutFromVersionClick(connectionSheetClickSink, mouse))
                     return;
                 // Hide on the next tick so this same click cannot land on the
                 // sidebar or member list once the dimmer is gone.
@@ -4436,7 +4478,11 @@ ApplicationWindow {
             MouseArea {
                 id: sheetCardClickSink
                 anchors.fill: parent
-                onClicked: function(mouse) { mouse.accepted = true; }
+                onClicked: function(mouse) {
+                    if (win.openAboutFromVersionClick(sheetCardClickSink, mouse))
+                        return;
+                    mouse.accepted = true;
+                }
             }
 
             ColumnLayout {
@@ -5428,6 +5474,11 @@ ApplicationWindow {
         }
     }
 
+    UpdateCheck {
+        id: aboutUpdateCheck
+        objectName: "aboutUpdateCheck"
+    }
+
     Popup {
         id: shortcutsSheet
         objectName: "shortcutsSheet"
@@ -5498,6 +5549,330 @@ ApplicationWindow {
                 }
             }
         }
+    }
+
+    Rectangle {
+        id: aboutSheet
+        objectName: "aboutSheet"
+        anchors.fill: parent
+        z: 2
+        visible: false
+        readonly property bool opened: visible
+        function open() { visible = true; }
+        function close() { visible = false; }
+        color: win.overlayVeilColor
+        onVisibleChanged: {
+            if (visible) {
+                aboutSheetEscapeGuard = true;
+                Qt.callLater(function() {
+                    if (aboutOkButton)
+                        aboutOkButton.forceActiveFocus();
+                });
+                return;
+            }
+            aboutUpdateCheck.cancel();
+            Qt.callLater(function() {
+                aboutSheetEscapeGuard = false;
+                if (win.connectionOverlayVisible)
+                    win.focusConnectionSheetStart();
+                else
+                    composer.forceActiveFocus();
+            });
+        }
+
+        MouseArea {
+            id: aboutSheetClickSink
+            objectName: "aboutSheetDimmer"
+            anchors.fill: parent
+            hoverEnabled: true
+            acceptedButtons: Qt.AllButtons
+            onPressed: function(mouse) { mouse.accepted = true; }
+            onClicked: function(mouse) {
+                if (mouse.button !== Qt.LeftButton)
+                    return;
+                Qt.callLater(function() {
+                    if (aboutSheet)
+                        aboutSheet.close();
+                });
+            }
+            onWheel: function(wheel) { wheel.accepted = true; }
+        }
+
+        Rectangle {
+            id: aboutSheetCard
+            objectName: "aboutSheetCard"
+            anchors.centerIn: parent
+            width: win.scaledSize(440)
+            height: aboutSheetBody.implicitHeight
+            radius: win.scaledSize(9)
+            color: win.raisedColor
+            border.width: 1
+            border.color: win.dividerColor
+            clip: true
+
+            MouseArea {
+                id: aboutSheetCardClickSink
+                anchors.fill: parent
+                onClicked: function(mouse) { mouse.accepted = true; }
+            }
+
+            Column {
+                id: aboutSheetBody
+                width: parent.width
+                spacing: 0
+
+            Column {
+                width: parent.width
+                leftPadding: win.scaledSize(22)
+                rightPadding: win.scaledSize(22)
+                topPadding: win.scaledSize(18)
+                bottomPadding: win.scaledSize(16)
+                spacing: win.scaledSize(14)
+
+                Text {
+                    objectName: "aboutTitle"
+                    text: "About Omairc"
+                    color: win.mutedColor
+                    font.family: "iA Writer Mono S"
+                    font.pixelSize: win.scaledSize(11)
+                }
+
+                Item {
+                    width: parent.width - parent.leftPadding - parent.rightPadding
+                    height: Math.max(aboutBrand.implicitHeight, aboutLogo.height)
+
+                    Column {
+                        id: aboutBrand
+                        anchors.left: parent.left
+                        anchors.right: aboutLogo.left
+                        anchors.rightMargin: win.scaledSize(16)
+                        anchors.verticalCenter: parent.verticalCenter
+                        spacing: win.scaledSize(8)
+
+                        Text {
+                            objectName: "aboutName"
+                            text: "Omairc"
+                            color: win.inkColor
+                            font.family: "iA Writer Mono S"
+                            font.bold: true
+                            font.pixelSize: win.scaledSize(28)
+                        }
+
+                        Text {
+                            objectName: "aboutVersion"
+                            text: win.appVersion
+                            color: win.mutedColor
+                            font.family: "iA Writer Mono S"
+                            font.pixelSize: win.scaledSize(13)
+                        }
+
+                        Rectangle {
+                            id: aboutCheckUpdates
+                            objectName: "aboutCheckUpdates"
+                            width: aboutCheckUpdatesLabel.implicitWidth + win.scaledSize(18)
+                            height: win.scaledSize(28)
+                            radius: win.scaledSize(7)
+                            activeFocusOnTab: true
+                            Accessible.role: Accessible.Button
+                            Accessible.name: "Check for Updates"
+                            Accessible.onPressAction: aboutUpdateCheck.check()
+                            enabled: aboutUpdateCheck.status !== "checking"
+                            color: aboutCheckUpdatesMouse.containsMouse || activeFocus
+                                ? win.hoverColor : "transparent"
+                            border.width: 1
+                            border.color: activeFocus ? win.accentColor : win.dividerColor
+                            Keys.onPressed: function(event) {
+                                if (event.key === Qt.Key_Return
+                                        || event.key === Qt.Key_Enter
+                                        || event.key === Qt.Key_Space) {
+                                    aboutUpdateCheck.check();
+                                    event.accepted = true;
+                                }
+                            }
+
+                            Text {
+                                id: aboutCheckUpdatesLabel
+                                anchors.centerIn: parent
+                                text: "Check for Updates"
+                                color: aboutCheckUpdates.enabled ? win.inkColor : win.mutedColor
+                                font.family: "iA Writer Mono S"
+                                font.pixelSize: win.scaledSize(11)
+                            }
+
+                            MouseArea {
+                                id: aboutCheckUpdatesMouse
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: aboutCheckUpdates.enabled
+                                    ? Qt.PointingHandCursor : Qt.ArrowCursor
+                                onClicked: {
+                                    aboutCheckUpdates.forceActiveFocus();
+                                    aboutUpdateCheck.check();
+                                }
+                            }
+                        }
+                    }
+
+                    Image {
+                        id: aboutLogo
+                        objectName: "aboutLogo"
+                        anchors.right: parent.right
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: win.scaledSize(88)
+                        height: width
+                        source: "qrc:/icons/omairc.svg"
+                        sourceSize.width: win.scaledSize(88)
+                        sourceSize.height: win.scaledSize(88)
+                        fillMode: Image.PreserveAspectFit
+                        smooth: true
+                    }
+                }
+
+                Text {
+                    objectName: "aboutDescription"
+                    width: parent.width - parent.leftPadding - parent.rightPadding
+                    wrapMode: Text.WordWrap
+                    text: "Omairc is an Internet Relay Chat client for Omarchy. People use it to communicate, share, play, and work with each other on IRC networks around the world."
+                    color: win.inkColor
+                    font.family: "iA Writer Mono S"
+                    font.pixelSize: win.scaledSize(12)
+                }
+
+                Column {
+                    width: parent.width - parent.leftPadding - parent.rightPadding
+                    spacing: win.scaledSize(6)
+
+                    Text {
+                        objectName: "aboutOpenSource"
+                        width: parent.width
+                        wrapMode: Text.WordWrap
+                        text: "This project is open-source."
+                        color: win.inkColor
+                        font.family: "iA Writer Mono S"
+                        font.pixelSize: win.scaledSize(12)
+                    }
+
+                    Text {
+                        id: aboutGithubLink
+                        objectName: "aboutGithubLink"
+                        text: "View the source on GitHub"
+                        color: aboutGithubMouse.containsMouse ? win.accentColor : win.inkColor
+                        font.family: "iA Writer Mono S"
+                        font.pixelSize: win.scaledSize(12)
+                        font.underline: true
+                        Accessible.role: Accessible.Link
+                        Accessible.name: "View the source on GitHub"
+                        Accessible.onPressAction: win.openAllowedUrl(aboutUpdateCheck.repoUrl)
+
+                        MouseArea {
+                            id: aboutGithubMouse
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: win.openAllowedUrl(aboutUpdateCheck.repoUrl)
+                        }
+                    }
+
+                    Text {
+                        id: aboutUpdateStatus
+                        objectName: "aboutUpdateStatus"
+                        width: parent.width
+                        visible: aboutUpdateCheck.message.length > 0
+                        wrapMode: Text.WordWrap
+                        text: aboutUpdateCheck.message
+                        color: aboutUpdateStatusMouse.enabled && aboutUpdateStatusMouse.containsMouse
+                            ? win.accentColor : win.mutedColor
+                        font.family: "iA Writer Mono S"
+                        font.pixelSize: win.scaledSize(12)
+                        font.underline: aboutUpdateCheck.status === "updateAvailable"
+                        Accessible.role: aboutUpdateCheck.status === "updateAvailable"
+                            ? Accessible.Link : Accessible.StaticText
+                        Accessible.name: aboutUpdateCheck.message
+                        Accessible.onPressAction: {
+                            if (aboutUpdateCheck.status === "updateAvailable")
+                                win.openAllowedUrl(aboutUpdateCheck.latestUrl);
+                        }
+
+                        MouseArea {
+                            id: aboutUpdateStatusMouse
+                            anchors.fill: parent
+                            enabled: aboutUpdateCheck.status === "updateAvailable"
+                                && aboutUpdateCheck.latestUrl.length > 0
+                            hoverEnabled: true
+                            cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                            onClicked: win.openAllowedUrl(aboutUpdateCheck.latestUrl)
+                        }
+                    }
+                }
+
+                Item {
+                    width: parent.width - parent.leftPadding - parent.rightPadding
+                    height: win.scaledSize(30)
+
+                    Rectangle {
+                        id: aboutOkButton
+                        objectName: "aboutOk"
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        width: win.scaledSize(88)
+                        height: win.scaledSize(30)
+                        radius: win.scaledSize(7)
+                        activeFocusOnTab: true
+                        Accessible.role: Accessible.Button
+                        Accessible.name: "OK"
+                        Accessible.onPressAction: aboutSheet.close()
+                        color: aboutOkMouse.containsMouse || activeFocus
+                            ? win.hoverColor : "transparent"
+                        border.width: 1
+                        border.color: activeFocus ? win.accentColor : win.dividerColor
+                        Keys.onPressed: function(event) {
+                            if (event.key === Qt.Key_Return
+                                    || event.key === Qt.Key_Enter
+                                    || event.key === Qt.Key_Space) {
+                                aboutSheet.close();
+                                event.accepted = true;
+                            }
+                        }
+
+                        Text {
+                            anchors.centerIn: parent
+                            text: "OK"
+                            color: win.inkColor
+                            font.family: "iA Writer Mono S"
+                            font.pixelSize: win.scaledSize(11)
+                        }
+
+                        MouseArea {
+                            id: aboutOkMouse
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: aboutSheet.close()
+                        }
+                    }
+                }
+            }
+
+            Rectangle {
+                width: parent.width
+                height: 1
+                color: win.dividerColor
+            }
+
+            Item {
+                width: parent.width
+                height: win.scaledSize(40)
+
+                Text {
+                    objectName: "aboutCopyright"
+                    anchors.centerIn: parent
+                    text: "Copyright © 2026 Fredi Machado"
+                    color: win.mutedColor
+                    font.family: "iA Writer Mono S"
+                    font.pixelSize: win.scaledSize(10)
+                }
+            }
+        }
+    }
     }
 
     ListModel {

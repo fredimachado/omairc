@@ -1,6 +1,6 @@
 # Identity footer
 
-The sidebar footer always shows who this window is. It is the initials chip, the nick, a presence mark, and `available`, `away`, or `offline`. The app version sits on the right of that same footer, on the presence line. It is not a conversation and it does not open a sheet. The mark and label follow live `irc.connectionStatus` and `irc.selfAway`. They do not follow member presence or `hasAwayPresence`. A connected session stays `available` unless away; anything other than `Connected` is `offline`.
+The sidebar footer always shows who this window is. It is the initials chip, the nick, a presence mark, and `available`, `away`, or `offline`. The app version sits on the right of that same footer, on the presence line. Clicking that version opens About. The mark and label follow live `irc.connectionStatus` and `irc.selfAway`. They do not follow member presence or `hasAwayPresence`. A connected session stays `available` unless away; anything other than `Connected` is `offline`.
 
 ## Sub-features
 
@@ -8,7 +8,7 @@ The sidebar footer always shows who this window is. It is the initials chip, the
 - `identity-connection-nick` shows the Connect nick draft as soon as Nick is non-empty, including before Apply.
 - `identity-live-nick` shows the live session nick when one is present.
 - `identity-self-away` paints the footer mark amber `#d6a552` and the word `away` when the focused network is `Connected` and live `irc.selfAway` is true. When `Connected` and not away, the mark is green `#69b978` and the word is `available`. When the focused network is not `Connected`, the mark is muted and the word is `offline`, even if a prior away fact remains. The nick is not dimmed.
-- `identity-app-version` shows the running app version on the right of the footer, muted, on the same baseline as `available` / `away` / `offline`. It is present on every screen, including first-run Connect.
+- `identity-app-version` shows the running app version on the right of the footer, muted, on the same baseline as `available` / `away` / `offline`. It is present on every screen, including first-run Connect. Clicking it opens About.
 
 ## How to get to it (user POV)
 
@@ -30,4 +30,4 @@ Preconditions:
 - Other members' dots still gate on `hasAwayPresence`. Our own member row and the footer mark do not, because the `305` / `306` numerics are authoritative for us when Connected.
 - An empty first-run Nick shows an empty footer nick and `?` initials. That is the fallback, not a saved profile. `fred` only appears on the demo server, where it is the seeded live nick.
 - `irc.currentNick` is empty only when nothing is selected. First-run (empty selection) then shows the Connect nick draft if you typed one without Apply. Opening Status over a selected conversation keeps the live nick.
-- The network name and `edit` control are the Status / Connect entry points. Clicking the footer does nothing.
+- The network name and `edit` control are the Status / Connect entry points. The nick and presence words do not open a sheet. The version on the right opens About.
