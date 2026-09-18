@@ -157,4 +157,7 @@ artifact name. Build QtKeychain against the same Qt
 prefix with Apple `clang++` so passwords use the Keychain backend. There
 is no `qt6-wayland` dependency on macOS. Regenerate `data/icons/omairc.icns`
 from the SVG with `packaging/macos/generate-icns` when the mark changes.
-Release zips are unsigned/ad-hoc; notarization is out of scope for now.
+CI imports a Developer ID certificate, signs with hardened runtime
+(`packaging/macos/Omairc.entitlements`), notarizes with `notarytool`, and
+staples the ticket. Tag releases fail if those secrets are missing. Local
+`bin/build-macos` stays ad-hoc unless `CODESIGN_IDENTITY` is set.

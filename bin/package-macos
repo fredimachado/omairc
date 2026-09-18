@@ -27,14 +27,90 @@ esac
 
 mkdir -p "$ROOT/dist"
 ZIP="$ROOT/dist/omairc-${VERSION}-${SUFFIX}.zip"
-STAGE="$ROOT/dist/omairc-${VERSION}-${SUFFIX}"
-rm -rf -- "$STAGE" "$ZIP"
-mkdir -p "$STAGE"
-ditto "$APP" "$STAGE/omairc.app"
-(
-  cd "$ROOT/dist"
-  ditto -c -k --sequesterRsrc --keepParent "$STAGE/omairc.app" "$(basename "$ZIP")"
-)
-rm -rf -- "$STAGE"
 
+zip_app() {
+  STAGE="$ROOT/dist/omairc-${VERSION}-${SUFFIX}"
+  rm -rf -- "$STAGE" "$ZIP"
+  mkdir -p "$STAGE"
+  ditto "$APP" "$STAGE/omairc.app"
+  (
+    cd "$ROOT/dist"
+    ditto -c -k --sequesterRsrc --keepParent "$STAGE/omairc.app" "$(basename "$ZIP")"
+  )
+  rm -rf -- "$STAGE"
+}
+
+has_developer_id() {
+  if codesign -dvv "$APP" 2>&1 | grep -q 'Authority=Developer ID Application'; then
+    return 0
+  fi
+  return 1
+}
+
+notarize_and_staple() {
+  key_path="${APP_STORE_CONNECT_API_KEY_PATH:-}"
+  key_id="${APP_STORE_CONNECT_KEY_ID:-}"
+  issuer="${APP_STORE_CONNECT_ISSUER_ID:-}"
+  if [ -z "$key_path" ] || [ ! -f "$key_path" ] || [ -z "$key_id" ] || [ -z "$issuer" ]; then
+    if [ "${OMAIRC_REQUIRE_NOTARIZE:-}" = 1 ]; then
+      echo "OMAIRC_REQUIRE_NOTARIZE=1 but App Store Connect API key, key id, or issuer is missing." >&2
+      exit 1
+    fi
+    echo "Skipping notarization (no App Store Connect API key)."
+    return 0
+  fi
+
+  if ! has_developer_id; then
+    if [ "${OMAIRC_REQUIRE_NOTARIZE:-}" = 1 ]; then
+      echo "OMAIRC_REQUIRE_NOTARIZE=1 but $APP is not signed with Developer ID Application." >&2
+      exit 1
+    fi
+    echo "Skipping notarization ($APP is not Developer ID signed)."
+    return 0
+  fi
+
+  echo "Submitting $ZIP to Apple notarization"
+  submit_json="$ROOT/dist/notary-submit.json"
+  status_file="$ROOT/dist/notary-status.txt"
+  id_file="$ROOT/dist/notary-id.txt"
+  xcrun notarytool submit "$ZIP" \
+    --key "$key_path" \
+    --key-id "$key_id" \
+    --issuer "$issuer" \
+    --wait \
+    --timeout 15m \
+    --output-format json >"$submit_json"
+  python3 -c '
+import json, pathlib, sys
+text = pathlib.Path(sys.argv[1]).read_text(encoding="utf-8")
+idx = text.rfind("{")
+if idx < 0:
+    raise SystemExit("notarytool produced no JSON")
+payload = json.loads(text[idx:])
+pathlib.Path(sys.argv[2]).write_text(payload.get("status") or "", encoding="utf-8")
+pathlib.Path(sys.argv[3]).write_text(payload.get("id") or "", encoding="utf-8")
+' "$submit_json" "$status_file" "$id_file"
+  status=$(cat "$status_file")
+  submission_id=$(tr -d " \n" <"$id_file")
+  rm -f -- "$status_file" "$id_file" "$submit_json"
+  if [ "$status" != "Accepted" ]; then
+    echo "Notarization status was ${status:-unknown} (id $submission_id)." >&2
+    if [ -n "$submission_id" ]; then
+      xcrun notarytool log "$submission_id" \
+        --key "$key_path" \
+        --key-id "$key_id" \
+        --issuer "$issuer" >&2 || true
+    fi
+    exit 1
+  fi
+
+  echo "Stapling notarization ticket to $APP"
+  xcrun stapler staple "$APP"
+  xcrun stapler validate "$APP"
+  zip_app
+  echo "Notarized $ZIP"
+}
+
+zip_app
+notarize_and_staple
 echo "Built $ZIP"
