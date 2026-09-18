@@ -4355,7 +4355,11 @@ ApplicationWindow {
         anchors.fill: parent
         z: 1
         visible: win.connection && (win.connection.setupRequired || win.connectionSheetOpen)
-        color: win.mixColors(win.pageColor, win.inkColor, win.darkMode ? 0.18 : 0.12)
+        color: {
+            var veil = win.mixColors(win.pageColor, win.inkColor,
+                                     win.darkMode ? 0.18 : 0.12)
+            return Qt.rgba(veil.r, veil.g, veil.b, 0.5)
+        }
         onVisibleChanged: {
             if (!visible) {
                 // Closing used to drop focus on the window itself, so

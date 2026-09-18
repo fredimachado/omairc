@@ -13,7 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Connect is a window-level modal. The sidebar and member list cannot be used while it is open. Escape and a click outside the card still dismiss it after a profile exists; first-run still cannot be dismissed.
+- Connect is a window-level modal. The sidebar and member list cannot be used while it is open. Escape and a click outside the card still dismiss it after a profile exists; first-run still cannot be dismissed. The dimmer is 50% transparent so those columns stay visible behind the sheet.
 - `/status` and `/avatar` replies (inspect, set/clear confirmation, and errors) copy into the selected conversation transcript when one is open, including from the Status composer. `/status [text]` sets standing status; empty `/status` echoes the current value; sole `/status clear` unsets it.
 
 ## [0.7.0] - 2026-09-18

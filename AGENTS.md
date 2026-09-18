@@ -48,7 +48,8 @@
   `Ctrl+/` shortcut hint in its rail so new users find the shortcuts sheet.
 - The Connect sheet is a window-level modal. Sidebar servers, conversations,
   and the member panel cannot be clicked, focused, or walked while it is
-  open. `Ctrl+/` still opens the shortcuts overlay on top of it.
+  open. The dimmer is 50% transparent so those columns stay visible.
+  `Ctrl+/` still opens the shortcuts overlay on top of it.
 - The Connect sheet is keyboard-first. `Enter` walks to the next field and
   `Ctrl+Enter` applies, so a stray keypress cannot commit a half-typed
   profile. `Ctrl+Enter` is one window-level `Shortcut`, not a branch inside
