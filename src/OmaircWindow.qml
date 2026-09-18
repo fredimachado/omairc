@@ -3241,9 +3241,9 @@ ApplicationWindow {
                                     required property var model
                                     conversationName: model.conversation
                                     conversationId: model.conversationId
-                                    unread: model.unread
-                                    mention: model.mention
-                                    muted: model.muted
+                                    unread: model.unread || 0
+                                    mention: !!model.mention
+                                    muted: !!model.muted
                                     direct: model.direct
                                     typing: model.typing
                                     networkId: model.networkId
@@ -3285,9 +3285,9 @@ ApplicationWindow {
                                     required property var model
                                     conversationName: model.conversation
                                     conversationId: model.conversationId
-                                    unread: model.unread
-                                    mention: model.mention
-                                    muted: model.muted
+                                    unread: model.unread || 0
+                                    mention: !!model.mention
+                                    muted: !!model.muted
                                     direct: model.direct
                                     typing: model.typing
                                     presence: model.presence || ""
