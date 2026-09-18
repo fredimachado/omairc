@@ -3666,9 +3666,9 @@ TestCase {
         compare(sheet.width, window.width);
         compare(sheet.height, window.height);
 
-        var row = findChild(window, "conversation-libera-anna");
-        verify(row !== null, "Could not find conversation-libera-anna");
-        mouseClick(row);
+        // Left of the centered card, over the sidebar. First-run must ignore
+        // that click instead of switching conversation or dismissing.
+        mouseClick(window.contentItem, 40, 140);
         compare(liveIrc.selectedTarget, "#omarchy");
         verify(sheet.visible);
 
