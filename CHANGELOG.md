@@ -7,16 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-09-19
+
 ### Added
 
+- Status formats the connect-time server report instead of raw numerics: `CAP LS`/`ACK`/`NAK`/`NEW`/`DEL` read as `Server supports`/`Acknowledged`/`Rejected`/`Server added`/`Server removed` with pipe-separated tokens, outgoing `CAP REQ` as `Requesting`, `004` fields as labeled `Host`, `IRCd`, `User modes`, `Channel modes`, and `Parametric channel modes`, and LUSERS numerics (`250`–`255`, `265`, `266`, `396`, among others) as their text. `--demo-server` seeds that burst.
 - Clicking the sidebar version opens an About sheet with the Omairc logo, an open-source GitHub link, and Check for Updates against the latest GitHub release. A 50% dimmer covers the window; a left-click on that dimmer dismisses the sheet, matching Connect.
 - A Name field on the Connect sheet, above Host. That name is what the network list, sidebar, and `omairc connections` / `status` rows show. Older configs without a name keep using the host. Name and Host stay independent: editing Host does not rewrite a loaded name.
+- A vertical scrollbar on the member list when a nick list overflows, appearing on scroll or hover like the sidebar, so long channel rosters are discoverable without permanent chrome.
 - `/avatar [url|email]` sets the local user's standing avatar metadata. HTTPS URLs pass the same safety checks as peer avatars; email addresses store a Gravatar SHA-256 HTTPS URL with `{size}` and `d=404`. Empty `/avatar` echoes the stored URL (clickable when HTTPS). Sole `/avatar clear` unsets the key.
+- `Ctrl+Shift+S` collapses and restores the left server list column. Collapsing changes its width rather than hiding the column, so `Alt+Down` / `Alt+Up` still walk conversations while it is out of view, and `Alt+Left` / `Alt+Right` brings it back. Collapsing drops the focused network header so `Enter` in the composer sends again. The chord is in the shortcuts sheet.
 
 ### Changed
 
 - Connect is a window-level modal. The sidebar and member list cannot be used while it is open. Escape and a click outside the card still dismiss it after a profile exists; first-run still cannot be dismissed. The dimmer is 50% transparent so those columns stay visible behind the sheet.
 - `/status` and `/avatar` replies (inspect, set/clear confirmation, and errors) copy into the selected conversation transcript when one is open, including from the Status composer. `/status [text]` sets standing status; empty `/status` echoes the current value; sole `/status clear` unsets it.
+
+### Fixed
+
+- Channel-targeted service PRIVMSG, including Ergo's HistServ join/quit history replay, no longer floods the Status console.
 
 ## [0.7.0] - 2026-09-18
 
@@ -215,7 +224,8 @@ First public release: a dead-simple IRC client for Omarchy.
 - Keyboard map, slash-command complete, selectable transcript, and follow-unseen.
 - qmake Unix install tree and a GitHub Releases pacman repository.
 
-[Unreleased]: https://github.com/fredimachado/omairc/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/fredimachado/omairc/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/fredimachado/omairc/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/fredimachado/omairc/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/fredimachado/omairc/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/fredimachado/omairc/compare/v0.4.0...v0.5.0

@@ -1,6 +1,6 @@
 # Single version for --version, CTCP VERSION, tests, and packaging.
-# Arch pkgver cannot contain hyphens: use 0.7.0alpha, not 0.7.0-alpha.
+# Arch pkgver cannot contain hyphens: use 0.8.0alpha, not 0.8.0-alpha.
 # Tag releases as v plus this string. Letter suffixes (alpha, beta, rc)
-# compare older than the final 0.7.0, so pacman upgrades cleanly.
-VERSION = 0.7.0
+# compare older than the final 0.8.0, so pacman upgrades cleanly.
+VERSION = 0.8.0
 DEFINES += OMAIRC_VERSION=\\\"$$VERSION\\\"
