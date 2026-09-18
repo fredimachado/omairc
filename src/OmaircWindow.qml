@@ -812,6 +812,16 @@ ApplicationWindow {
         return true;
     }
 
+    function openAboutFromVersionClick(mappedItem, mouse) {
+        if (!selfVersionHit.visible)
+            return false;
+        var point = mappedItem.mapToItem(selfVersionHit, mouse.x, mouse.y);
+        if (!selfVersionHit.contains(point))
+            return false;
+        aboutSheet.open();
+        return true;
+    }
+
     function openHttpUrlAt(text, index) {
         return openAllowedUrl(httpUrlAt(text, index));
     }
@@ -4433,6 +4443,7 @@ ApplicationWindow {
         }
 
         MouseArea {
+            id: connectionSheetClickSink
             anchors.fill: parent
             hoverEnabled: true
             acceptedButtons: Qt.AllButtons
@@ -4440,11 +4451,8 @@ ApplicationWindow {
             onClicked: function(mouse) {
                 if (mouse.button !== Qt.LeftButton)
                     return;
-                var versionPt = mapToItem(selfVersionHit, mouse.x, mouse.y);
-                if (selfVersionHit.visible && selfVersionHit.contains(versionPt)) {
-                    aboutSheet.open();
+                if (win.openAboutFromVersionClick(connectionSheetClickSink, mouse))
                     return;
-                }
                 // Hide on the next tick so this same click cannot land on the
                 // sidebar or member list once the dimmer is gone.
                 if (win.connection && !win.connection.setupRequired)
@@ -4470,7 +4478,11 @@ ApplicationWindow {
             MouseArea {
                 id: sheetCardClickSink
                 anchors.fill: parent
-                onClicked: function(mouse) { mouse.accepted = true; }
+                onClicked: function(mouse) {
+                    if (win.openAboutFromVersionClick(sheetCardClickSink, mouse))
+                        return;
+                    mouse.accepted = true;
+                }
             }
 
             ColumnLayout {
