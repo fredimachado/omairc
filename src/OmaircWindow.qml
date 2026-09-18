@@ -59,6 +59,13 @@ ApplicationWindow {
     ]
 
     property bool membersVisible: true
+    property bool serverListVisible: true
+    // The composer routes Enter to the focused network header, so a collapsed
+    // rail must not keep a selection armed that nobody can see.
+    onServerListVisibleChanged: {
+        if (!serverListVisible)
+            sidebarNetworkFocusId = "";
+    }
     property bool shortcutsSheetEscapeGuard: false
     property bool pickerEscapeGuard: false
     property string sidebarNetworkFocusId: ""
@@ -1208,6 +1215,9 @@ ApplicationWindow {
         var nextIndex = current < 0
             ? (delta > 0 ? 0 : sections.length - 1)
             : (current + delta + sections.length) % sections.length;
+        // Walking networks is rail navigation: if the rail is collapsed the
+        // highlight would land on a row nobody can see.
+        serverListVisible = true;
         focusNetworkHeader(sections[nextIndex]);
     }
 
@@ -1738,6 +1748,15 @@ ApplicationWindow {
             && !win.connectionOverlayVisible
             && !win.shortcutOverlayOpen
         onActivated: focusMembersList()
+    }
+
+    // The server list is always available, so unlike the members panel this
+    // toggle is not gated on the conversation being a channel.
+    Shortcut {
+        sequence: "Ctrl+Shift+S"
+        context: Qt.ApplicationShortcut
+        enabled: !win.connectionOverlayVisible && !win.shortcutOverlayOpen
+        onActivated: win.serverListVisible = !win.serverListVisible
     }
 
     Shortcut {
@@ -3131,8 +3150,16 @@ ApplicationWindow {
 
         Rectangle {
             id: sidebar
-            Layout.preferredWidth: win.scaledSize(244)
-            Layout.minimumWidth: win.scaledSize(214)
+            objectName: "serverList"
+            // Collapse the rail by width instead of hiding it. Hiding it
+            // propagates visible: false to every NetworkSection, and
+            // sidebarConversationRows()/sidebarNetworkSections() skip
+            // invisible rows, so Alt+Up/Down and Alt+Left/Right would stop
+            // walking the list. clip keeps the collapsed content from
+            // painting over the transcript.
+            clip: true
+            Layout.preferredWidth: win.serverListVisible ? win.scaledSize(244) : 0
+            Layout.minimumWidth: win.serverListVisible ? win.scaledSize(214) : 0
             Layout.fillHeight: true
             color: win.panelColor
 
@@ -5403,6 +5430,7 @@ ApplicationWindow {
                     { keys: "Ctrl+Enter", action: "apply connection" },
                     { keys: "Ctrl+Shift+M", action: "members panel" },
                     { keys: "Ctrl+Shift+P", action: "focus members" },
+                    { keys: "Ctrl+Shift+S", action: "server list" },
                     { keys: "Ctrl+W", action: "close direct message" },
                     { keys: "Ctrl+L", action: "composer" },
                     { keys: "Ctrl+F", action: "find" },

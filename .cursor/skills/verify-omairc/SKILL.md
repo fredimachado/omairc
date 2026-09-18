@@ -100,6 +100,7 @@ Use `control-omairc` against the isolated window. Stable handles:
 | `send --text "..."` | Focus composer, type, `Enter` |
 | `key --key ctrl+shift+m` | Toggle members on a channel |
 | `key --key ctrl+shift+p` | Focus the member list on a channel. Reopens the panel if it was hidden. |
+| `key --key ctrl+shift+s` | Collapse or restore the left server list column |
 | `key --key ctrl+w` | Close the selected direct message. No-op on a channel or Status. |
 | `key --key ctrl+slash` | Toggle the shortcuts overlay |
 | `key --key ctrl+k` | Jump to a conversation. No-op while Connect is visible. |
@@ -148,7 +149,7 @@ Standards:
 - Window title is the conversation identity. A screenshot must show the sidebar selection, header name, topic, and (for channels) people count together.
 - Messages are session-local. Persistence proof is the same session: the row stays after sending, and switching away and back still shows it.
 - `control-omairc compare --before <a> --after <b>` requires a visible pixel change (ImageMagick AE > 100).
-- `bin/test` writes `test-artifacts/{connection-sheet,switch-channel,send-message,toggle-members,open-direct-message,status-console,typing-member-glyph,typing-dm-overlay}.png`. Treat those as QML-suite evidence, not desktop-window evidence. `qml-suite` copies them into `test-artifacts/verify/<feature-id>/`, and reuses `switch-channel.png` for member-presence and identity-footer.
+- `bin/test` writes `test-artifacts/{connection-sheet,switch-channel,send-message,toggle-members,toggle-server-list,server-list-collapsed,open-direct-message,status-console,typing-member-glyph,typing-dm-overlay}.png`. Treat those as QML-suite evidence, not desktop-window evidence. `qml-suite` copies them into `test-artifacts/verify/<feature-id>/`, and reuses `switch-channel.png` for member-presence and identity-footer.
 - Record the feature ID and entry point on every artifact name.
 
 ## Cleanup
@@ -180,6 +181,6 @@ cleanup
 
 `click-send` assumes the member panel is open (channel, members visible, width >= 980). Prefer `send --text` / `Enter`.
 `click-people` assumes the member column is open. After it hides, use `click-people --hidden`.
-`key --key ctrl+slash` maps to `Control_L+slash`. `ctrl+shift+m`, `ctrl+shift+p`, and `ctrl+shift+k` map to `Control_L+Shift_L+m` / `p` / `k`. xdotool's shorter tokens do not reach those Qt shortcuts on the isolated Xvfb.
+`key --key ctrl+slash` maps to `Control_L+slash`. `ctrl+shift+m`, `ctrl+shift+p`, `ctrl+shift+k`, and `ctrl+shift+s` map to `Control_L+Shift_L+m` / `p` / `k` / `s`. xdotool's shorter tokens do not reach those Qt shortcuts on the isolated Xvfb.
 
 If Xvfb tools are missing, install `xorg-server-xvfb xorg-xauth xdotool imagemagick` before using this skill. `bin/test` can still run the offscreen QML suite without those packages.

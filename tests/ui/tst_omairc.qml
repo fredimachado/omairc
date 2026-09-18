@@ -3089,6 +3089,56 @@ TestCase {
         saveScreenshot("toggle-members");
     }
 
+    function test_toggleServerListWithShortcut() {
+        openSeededAppWindow();
+        var sidebar = item("serverList");
+        var expandedWidth = sidebar.width;
+        verify(expandedWidth > 0, "The server list should occupy width while shown");
+
+        keyClick(Qt.Key_S, Qt.ControlModifier | Qt.ShiftModifier);
+
+        tryCompare(sidebar, "width", 0);
+        saveScreenshot("server-list-collapsed");
+
+        keyClick(Qt.Key_S, Qt.ControlModifier | Qt.ShiftModifier);
+
+        tryCompare(sidebar, "width", expandedWidth);
+        saveScreenshot("toggle-server-list");
+    }
+
+    function test_collapsedServerListKeepsWalking() {
+        openSeededAppWindow();
+        var sidebar = item("serverList");
+        var expandedWidth = sidebar.width;
+
+        keyClick(Qt.Key_S, Qt.ControlModifier | Qt.ShiftModifier);
+        tryCompare(sidebar, "width", 0);
+
+        // Collapsing is not hiding: the rail's rows stay live, so walking
+        // conversations still reaches them while the column is out of view.
+        keyClick(Qt.Key_Down, Qt.AltModifier);
+        tryCompare(appWindow, "currentConversation", "#ricing");
+
+        // Network walking highlights a rail row, so it brings the rail back
+        // rather than arming a selection nobody can see.
+        keyClick(Qt.Key_Right, Qt.AltModifier);
+        compare(appWindow.sidebarNetworkFocusId, seed.oftcNetworkId);
+        tryCompare(sidebar, "width", expandedWidth);
+    }
+
+    function test_collapsingServerListDropsNetworkSelection() {
+        openSeededAppWindow();
+        var sidebar = item("serverList");
+
+        keyClick(Qt.Key_Right, Qt.AltModifier);
+        compare(appWindow.sidebarNetworkFocusId, seed.oftcNetworkId);
+
+        keyClick(Qt.Key_S, Qt.ControlModifier | Qt.ShiftModifier);
+        tryCompare(sidebar, "width", 0);
+        compare(appWindow.sidebarNetworkFocusId, "",
+                "collapsing the server list should drop its keyboard selection");
+    }
+
     function test_focusMembersWithShortcut() {
         openSeededAppWindow();
         var panel = item("membersPanel");
@@ -6455,6 +6505,10 @@ TestCase {
                "shortcut sheet should list Ctrl+Shift+K");
         verify(texts.indexOf("jump to nick") !== -1,
                "shortcut sheet should name jump to nick");
+        verify(texts.indexOf("Ctrl+Shift+S") !== -1,
+               "shortcut sheet should list Ctrl+Shift+S");
+        verify(texts.indexOf("server list") !== -1,
+               "shortcut sheet should name server list");
         verify(texts.indexOf("/disconnect") !== -1,
                "shortcut sheet should list /disconnect");
         keyClick(Qt.Key_Escape);
