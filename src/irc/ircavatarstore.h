@@ -42,7 +42,7 @@ private:
         QString rawUrl;
         QUrl url;
         QString key;
-        QString tlsHost;
+        QHostAddress pinnedAddress;
         int redirects = 0;
         int lookupId = -1;
         QNetworkReply *reply = nullptr;

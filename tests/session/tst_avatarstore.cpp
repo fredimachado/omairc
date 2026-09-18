@@ -478,11 +478,9 @@ void AvatarStoreTest::pinsHostnameFetchToResolvedAddress()
     QVERIFY(ircAvatarUrlIsSafe(logicalUrl));
     QVERIFY(QHostAddress(logicalUrl.host()).isNull());
 
-    const QUrl pinnedUrl = ircAvatarUrlPinnedToAddress(
-        logicalUrl, QHostAddress(QLatin1String(kPublicHost)));
     MockNetworkAccessManager::Response response;
     response.body = kTinyPng;
-    nam.setResponse(pinnedUrl, response);
+    nam.setResponse(logicalUrl, response);
 
     QSignalSpy readySpy(&store, &IrcAvatarStore::ready);
     QCOMPARE(store.source(rawUrl, 32), QString());
@@ -499,9 +497,15 @@ void AvatarStoreTest::pinsHostnameFetchToResolvedAddress()
 
     QVERIFY(waitForReady(readySpy));
     QCOMPARE(nam.requestCount, 1);
-    QCOMPARE(nam.lastRequest.url(), pinnedUrl);
-    QCOMPARE(nam.lastRequest.peerVerifyName(), QStringLiteral("cdn.example"));
-    QCOMPARE(nam.lastRequest.rawHeader("Host"), QByteArray("cdn.example"));
+    QCOMPARE(nam.lastRequest.url(), logicalUrl);
+    QVERIFY(QHostAddress(nam.lastRequest.url().host()).isNull());
+    QCOMPARE(nam.lastRequest.url().host(), QStringLiteral("cdn.example"));
+    const QVariant pinned =
+        nam.lastRequest.attribute(
+            static_cast<QNetworkRequest::Attribute>(QNetworkRequest::User + 1000));
+    QVERIFY(pinned.isValid());
+    QCOMPARE(pinned.value<QHostAddress>(),
+             QHostAddress(QLatin1String(kPublicHost)));
     QCOMPARE(readySpy.at(0).at(0).toString(), rawUrl);
 }
 
