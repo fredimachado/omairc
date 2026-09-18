@@ -1691,6 +1691,7 @@ ApplicationWindow {
     Shortcut {
         sequence: "Ctrl+Q"
         context: Qt.ApplicationShortcut
+        enabled: !win.shortcutOverlayOpen
         onActivated: win.close()
     }
 

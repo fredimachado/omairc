@@ -6054,6 +6054,19 @@ TestCase {
         verify(sheet.opened);
     }
 
+    function test_aboutSheetBlocksCtrlQ() {
+        openSeededAppWindow();
+        var sheet = item("aboutSheet");
+        mouseClick(item("selfVersionHit"));
+        tryCompare(sheet, "opened", true);
+        verify(appWindow.visible);
+
+        keyClick(Qt.Key_Q, Qt.ControlModifier);
+        wait(0);
+        verify(appWindow.visible);
+        verify(sheet.opened);
+    }
+
     function test_aboutSheetOkCloses() {
         openSeededAppWindow();
         var sheet = item("aboutSheet");
