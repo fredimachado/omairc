@@ -281,6 +281,17 @@ bool IrcEventReducer::dropDirectMessage(const IrcConversationKey& key)
     return true;
 }
 
+bool IrcEventReducer::dropChannel(const IrcConversationKey& key)
+{
+    const auto found = m_conversations.find(key);
+    if (found == m_conversations.end() || !found->second.isChannel())
+        return false;
+    if (m_selected == key)
+        m_selected.reset();
+    m_conversations.erase(found);
+    return true;
+}
+
 void IrcEventReducer::forgetNetwork(const QString& networkId)
 {
     if (networkId.isEmpty())

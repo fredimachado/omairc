@@ -24,6 +24,7 @@
 #include <QDateTime>
 #include <map>
 #include <optional>
+#include <set>
 #include <variant>
 
 struct IrcViewNotify;
@@ -98,6 +99,7 @@ public:
     void setLoadPeerAvatars(bool enabled);
     IrcStatusConsole *console();
     const IrcServerFeatures &serverFeatures(const QString &networkId) const;
+    Q_INVOKABLE QString networkIconUrl(const QString &networkId) const;
 
     Q_INVOKABLE bool start(const QString& networkId);
     Q_INVOKABLE void selectConversation(const QString& networkId,
@@ -179,6 +181,7 @@ signals:
     void selfAwayChanged();
 
     void capabilitiesChanged();
+    void serverFeaturesChanged();
     void typingChanged();
     void reopenDirectMessagesChanged();
     void loadPeerAvatarsChanged();
@@ -271,6 +274,8 @@ private:
     IrcCommandOutcome dispatchHelp(IrcComposerSurface surface);
     IrcCommandOutcome dispatchStatus(const IrcCommand& command,
                                      IrcComposerSurface surface);
+    IrcCommandOutcome dispatchAvatar(const IrcCommand& command,
+                                     IrcComposerSurface surface);
     std::optional<IrcWhoisWatchKey> whoisWatchKey(const QString& networkId,
                                                   const QString& nick) const;
     bool sendWhois(IrcSession& session,
@@ -316,28 +321,39 @@ private:
                         const IrcCtcpReplyLine& line,
                         const QString& text);
     void forgetCtcpWatches(const QString& networkId);
-    struct IrcStatusWatch
+    struct IrcOwnMetadataWatch
     {
         IrcWhoisDestination destination;
         enum class Kind { Set, Clear };
         Kind kind = Kind::Set;
         QString value;
     };
-    void armStatusWatch(const QString& networkId,
-                        IrcComposerSurface surface,
-                        IrcStatusWatch::Kind kind,
-                        const QString& value);
-    void forgetStatusWatch(const QString& networkId);
-    void echoStatusOutcome(const QString& networkId,
-                           const IrcWhoisDestination& destination,
-                           const QString& text);
-    void routeStatusMetadataReply(const QString& networkId,
-                                  const QString& nick,
-                                  const QString& key,
-                                  const QString& value);
-    void routeStatusMetadataError(const IrcStatusEntry& entry);
-    void routeStatusMetadataFail(const QString& networkId,
-                                 const IrcMessage& message);
+    IrcCommandOutcome dispatchOwnMetadataClear(IrcSession *session,
+                                               IrcComposerSurface surface,
+                                               const QString& metadataKey);
+    IrcCommandOutcome dispatchOwnMetadataSet(IrcSession *session,
+                                             IrcComposerSurface surface,
+                                             const QString& metadataKey,
+                                             const QString& value);
+    IrcCommandOutcome echoMetadataCommandFeedback(IrcComposerSurface surface,
+                                                 const QString& networkId,
+                                                 const QString& text);
+    void armOwnMetadataWatch(const QString& networkId,
+                             const QString& metadataKey,
+                             IrcComposerSurface surface,
+                             IrcOwnMetadataWatch::Kind kind,
+                             const QString& value);
+    void forgetOwnMetadataWatches(const QString& networkId);
+    void echoOwnMetadataOutcome(const QString& networkId,
+                                const IrcWhoisDestination& destination,
+                                const QString& text);
+    void routeOwnMetadataReply(const QString& networkId,
+                               const QString& nick,
+                               const QString& key,
+                               const QString& value);
+    void routeOwnMetadataError(const IrcStatusEntry& entry);
+    void routeOwnMetadataFail(const QString& networkId,
+                              const IrcMessage& message);
     void echoIfPresent(IrcSession *session,
                        const QString& target,
                        const QString& body,
@@ -346,7 +362,10 @@ private:
     IrcCommandOutcome clearSurface(IrcComposerSurface surface);
     bool report(IrcCommandOutcome outcome, const IrcCommand& command);
     bool selectedIsCloseableDirect() const;
+    void dropConversationAndReselect(const IrcConversationKey& key,
+                                     bool forgetDirect);
     void dropSelectedDirectAndReselect();
+    bool dismissChannel(const QString& networkId, const QString& channel);
     void clearConversationSelection();
     void openJoinedChannel(const QString& networkId, const QString& channel);
     IrcSession *selectedSession() const;
@@ -389,5 +408,6 @@ private:
     QString m_typingTarget;
     std::map<IrcWhoisWatchKey, IrcWhoisWatch> m_whoisWatches;
     std::map<IrcCtcpWatchKey, IrcCtcpWatch> m_ctcpWatches;
-    QHash<QString, IrcStatusWatch> m_statusWatches;
+    QHash<QString, QHash<QString, IrcOwnMetadataWatch>> m_ownMetadataWatches;
+    std::set<IrcConversationKey> m_cancelledPendingJoins;
 };

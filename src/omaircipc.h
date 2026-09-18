@@ -56,6 +56,7 @@ struct ResolveResult {
 
 struct ConnectionInfo {
     QString id;
+    QString name;
     QString host;
     int port = 0;
     bool tls = false;
@@ -99,8 +100,11 @@ bool responseTruncated(const QByteArray &line);
 QByteArray okMembers(const QJsonArray &members);
 QByteArray okConversations(const QJsonArray &conversations);
 QByteArray errorResponse(const QString &message);
+QByteArray uncertainResponse(const QString &message);
 
+bool responseHasOk(const QByteArray &line);
 bool responseOk(const QByteArray &line);
+bool responseUncertain(const QByteArray &line);
 QString responseError(const QByteArray &line);
 QJsonArray responseConnections(const QByteArray &line);
 QJsonObject responseStatus(const QByteArray &line);

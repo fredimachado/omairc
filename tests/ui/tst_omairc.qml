@@ -47,6 +47,7 @@ TestCase {
             stored: false
             selected: true
             iconColor: 1
+            iconUrl: ""
         }
     }
 
@@ -58,6 +59,7 @@ TestCase {
             stored: true
             selected: true
             iconColor: 1
+            iconUrl: ""
         }
     }
 
@@ -65,6 +67,7 @@ TestCase {
         id: fakeConnection
 
         property string host: "irc.libera.chat"
+        property string name: "irc.libera.chat"
         property int port: 6697
         property bool tlsEnabled: true
         property bool connectOnStartup: false
@@ -592,6 +595,7 @@ TestCase {
         id: namedConnection
 
         property string host: "irc.libera.chat"
+        property string name: "irc.libera.chat"
         property int port: 6697
         property bool tlsEnabled: true
         property string nick: "sheet-nick"
@@ -646,6 +650,7 @@ TestCase {
             addedFromSnapshot = null;
             selectedNetworkId = snap.networkId;
             host = snap.host;
+            name = snap.name;
             nick = snap.nick;
             displayName = snap.displayName;
             dirty = false;
@@ -678,6 +683,7 @@ TestCase {
             addedFromSnapshot = {
                 networkId: selectedNetworkId,
                 host: host,
+                name: name,
                 nick: nick,
                 displayName: displayName
             };
@@ -688,12 +694,14 @@ TestCase {
                 displayName: "New network",
                 stored: false,
                 selected: true,
-                iconColor: 1
+                iconColor: 1,
+                iconUrl: ""
             });
             selectedNetworkId = "new-id";
             displayName = "New network";
             selectedNetworkChanged();
             host = "";
+            name = "";
             nick = "";
             return true;
         }
@@ -1077,11 +1085,13 @@ TestCase {
             displayName: "irc.libera.chat",
             stored: true,
             selected: true,
-            iconColor: 1
+            iconColor: 1,
+            iconUrl: ""
         });
         namedConnection.selectedNetworkId = "libera";
         namedConnection.displayName = "irc.libera.chat";
         namedConnection.host = "irc.libera.chat";
+        namedConnection.name = "irc.libera.chat";
         namedConnection.nick = "sheet-nick";
         namedConnection.passwordSetCalls = 0;
         namedConnection.lastPassword = "";
@@ -2758,6 +2768,32 @@ TestCase {
         compare(appWindow.lastOpenedUrl, "https://example.com");
     }
 
+    function test_whoisRowClickOpensHttpsUrl() {
+        openSeededAppWindow();
+        seed.injectOmarchy(
+            ":server 761 fred fred avatar * :https://example.com/a.png\r\n");
+        var list = item("messageList");
+        verify(appWindow.irc.sendMessage("/avatar"));
+        waitForBody(list, "Standing avatar: https://example.com/a.png");
+        var whoisAt = rowForBody(list.model, "Standing avatar: https://example.com/a.png");
+        list.positionViewAtIndex(whoisAt, ListView.Contain);
+        waitForRendering(appWindow.contentItem);
+        var row = list.itemAtIndex(whoisAt);
+        verify(row !== null, "The avatar inspect row should be rendered");
+        var body = findChild(row, "messageWhois");
+        verify(body !== null && body.visible, "Could not find messageWhois");
+        compare(body.textFormat, TextEdit.PlainText);
+        compare(body.text, "Standing avatar: https://example.com/a.png");
+
+        appWindow.lastOpenedUrl = "";
+        var start = body.text.indexOf("https://example.com/a.png");
+        var rect = body.positionToRectangle(start + 4);
+        var hit = findChild(body, "urlHit");
+        verify(hit !== null, "Could not find whois urlHit");
+        mouseClick(hit, rect.x + Math.max(1, rect.width / 2), rect.y + rect.height / 2);
+        compare(appWindow.lastOpenedUrl, "https://example.com/a.png");
+    }
+
     function test_ctrlFFindsEmphasizedVisibleText() {
         openSeededAppWindow();
         var list = item("messageList");
@@ -2976,8 +3012,10 @@ TestCase {
         verify(row !== null, "The long whois row should be rendered");
         var whoisText = findChild(row, "messageWhois");
         verify(whoisText !== null && whoisText.visible, "Could not find messageWhois");
-        compare(whoisText.wrapMode, Text.Wrap);
-        compare(whoisText.textFormat, Text.PlainText);
+        compare(whoisText.wrapMode, TextEdit.Wrap);
+        compare(whoisText.textFormat, TextEdit.PlainText);
+        compare(whoisText.selectionColor, appWindow.selectionColor);
+        compare(whoisText.selectedTextColor, "#ffffff");
         compare(whoisText.text, body);
         tryVerify(function () { return whoisText.lineCount > 1; },
                   1000, "The WHOIS row should wrap");
@@ -3055,6 +3093,56 @@ TestCase {
         tryCompare(panel, "visible", false);
         compare(item("peopleButton").Accessible.name, "Show members");
         saveScreenshot("toggle-members");
+    }
+
+    function test_toggleServerListWithShortcut() {
+        openSeededAppWindow();
+        var sidebar = item("serverList");
+        var expandedWidth = sidebar.width;
+        verify(expandedWidth > 0, "The server list should occupy width while shown");
+
+        keyClick(Qt.Key_S, Qt.ControlModifier | Qt.ShiftModifier);
+
+        tryCompare(sidebar, "width", 0);
+        saveScreenshot("server-list-collapsed");
+
+        keyClick(Qt.Key_S, Qt.ControlModifier | Qt.ShiftModifier);
+
+        tryCompare(sidebar, "width", expandedWidth);
+        saveScreenshot("server-list-restored");
+    }
+
+    function test_collapsedServerListKeepsWalking() {
+        openSeededAppWindow();
+        var sidebar = item("serverList");
+        var expandedWidth = sidebar.width;
+
+        keyClick(Qt.Key_S, Qt.ControlModifier | Qt.ShiftModifier);
+        tryCompare(sidebar, "width", 0);
+
+        // Collapsing is not hiding: the rail's rows stay live, so walking
+        // conversations still reaches them while the column is out of view.
+        keyClick(Qt.Key_Down, Qt.AltModifier);
+        tryCompare(appWindow, "currentConversation", "#ricing");
+
+        // Network walking highlights a rail row, so it brings the rail back
+        // rather than arming a selection nobody can see.
+        keyClick(Qt.Key_Right, Qt.AltModifier);
+        compare(appWindow.sidebarNetworkFocusId, seed.oftcNetworkId);
+        tryCompare(sidebar, "width", expandedWidth);
+    }
+
+    function test_collapsingServerListDropsNetworkSelection() {
+        openSeededAppWindow();
+        var sidebar = item("serverList");
+
+        keyClick(Qt.Key_Right, Qt.AltModifier);
+        compare(appWindow.sidebarNetworkFocusId, seed.oftcNetworkId);
+
+        keyClick(Qt.Key_S, Qt.ControlModifier | Qt.ShiftModifier);
+        tryCompare(sidebar, "width", 0);
+        compare(appWindow.sidebarNetworkFocusId, "",
+                "collapsing the server list should drop its keyboard selection");
     }
 
     function test_focusMembersWithShortcut() {
@@ -3166,6 +3254,31 @@ TestCase {
 
         keyClick(Qt.Key_Return);
         tryCompare(appWindow, "currentConversation", "mira");
+    }
+
+    function test_memberListScrollbarAppearsWhenOverflowing() {
+        openSeededAppWindow();
+        verify(item("membersPanel").visible);
+        var members = item("membersList");
+        var bar = verticalScrollBar(members);
+        compare(bar.policy, Controls.ScrollBar.AsNeeded);
+
+        var names = [];
+        var index = 0;
+        for (; index < 30; ++index)
+            names.push("bulk" + index);
+        seed.injectOmarchy(
+            ":server 353 fred = #omarchy :" + names.join(" ") + "\r\n"
+            + ":server 366 fred #omarchy :End of NAMES\r\n");
+        tryVerify(function() { return members.count === 30; });
+        waitForRendering(appWindow.contentItem);
+        verify(members.contentHeight > members.height);
+        verify(bar.size < 1);
+
+        keyClick(Qt.Key_P, Qt.ControlModifier | Qt.ShiftModifier);
+        tryCompare(members, "activeFocus", true);
+        keyClick(Qt.Key_Down);
+        tryCompare(members, "currentIndex", 1);
     }
 
     function test_memberEnterAfterSwitchingToSmallerChannel() {
@@ -3556,6 +3669,86 @@ TestCase {
         compare(appWindow.connectionOverlayVisible, true);
     }
 
+    function test_connectionSheetBlocksSidebarAndMembers() {
+        openSeededAppWindow();
+        compare(appWindow.currentConversation, "#omarchy");
+        verify(item("membersPanel").visible);
+        keyClick(Qt.Key_Comma, Qt.ControlModifier);
+        tryCompare(appWindow, "connectionOverlayVisible", true);
+        var sheet = item("connectionSheet");
+        tryCompare(sheet, "visible", true);
+        compare(sheet.width, appWindow.width);
+        compare(sheet.height, appWindow.height);
+
+        mouseClick(namedItem(liveConversation("#desktop")));
+        wait(0);
+        compare(appWindow.currentConversation, "#omarchy");
+
+        if (!appWindow.connectionOverlayVisible)
+            keyClick(Qt.Key_Comma, Qt.ControlModifier);
+        tryCompare(appWindow, "connectionOverlayVisible", true);
+        mouseClick(appWindow.contentItem, 40, 124);
+        wait(0);
+        compare(appWindow.currentConversation, "#omarchy");
+
+        if (!appWindow.connectionOverlayVisible)
+            keyClick(Qt.Key_Comma, Qt.ControlModifier);
+        tryCompare(appWindow, "connectionOverlayVisible", true);
+        mouseClick(appWindow.contentItem, 1070, 200);
+        wait(0);
+        compare(appWindow.currentConversation, "#omarchy");
+
+        if (!appWindow.connectionOverlayVisible)
+            keyClick(Qt.Key_Comma, Qt.ControlModifier);
+        tryCompare(item("connectionSheet"), "visible", true);
+        keyClick(Qt.Key_Down, Qt.AltModifier);
+        compare(appWindow.currentConversation, "#omarchy");
+        verify(item("connectionSheet").visible);
+
+        keyClick(Qt.Key_QuoteLeft, Qt.ControlModifier);
+        compare(appWindow.consoleVisible, false);
+        verify(item("connectionSheet").visible);
+
+        mouseClick(liveHeaderButton(seed.omarchyNetworkId));
+        compare(appWindow.consoleVisible, false);
+        compare(appWindow.currentConversation, "#omarchy");
+    }
+
+    function test_connectionSheetFirstRunIgnoresSidebarClicks() {
+        liveIrc.selectedTarget = "#omarchy";
+        liveIrc.selectedNetworkId = "libera";
+        liveIrc.selectedConversationId = "libera\n#omarchy";
+        liveIrc.isChannel = true;
+        liveConsole.open = false;
+        var window = createTemporaryObject(setupWindowComponent, null);
+        verify(window !== null, "The setup window should load");
+        tryCompare(window, "visible", true);
+        waitForRendering(window.contentItem);
+
+        var sheet = findChild(window, "connectionSheet");
+        verify(sheet !== null, "Could not find connectionSheet");
+        verify(sheet.visible);
+        compare(sheet.width, window.width);
+        compare(sheet.height, window.height);
+
+        // Left of the centered card, over the sidebar. First-run must ignore
+        // that click instead of switching conversation or dismissing.
+        mouseClick(window.contentItem, 40, 140);
+        compare(liveIrc.selectedTarget, "#omarchy");
+        verify(sheet.visible);
+
+        var header = findNamedIn(window, "networkHeaderButton-setup-id");
+        verify(header !== null, "Could not find networkHeaderButton-setup-id");
+        mouseClick(header);
+        compare(liveConsole.open, false);
+        verify(sheet.visible);
+        window.close();
+        liveIrc.selectedTarget = "#omarchy";
+        liveIrc.selectedConversationId = "libera\n#omarchy";
+        liveIrc.isChannel = true;
+        liveConsole.open = false;
+    }
+
     function test_membersHeadingOpensNickSheet() {
         openSeededAppWindow();
         verify(item("membersPanel").visible);
@@ -3757,6 +3950,7 @@ TestCase {
         verify(sheet !== null, "Could not find connectionSheet");
         verify(sheet.visible);
         compare(findChild(window, "connectionHost").text, "irc.libera.chat");
+        compare(findChild(window, "connectionName").text, "irc.libera.chat");
         compare(findChild(window, "connectionNick").text, "");
         compare(findChild(window, "connectionAutojoin").text, "#omarchy");
         compare(findChild(window, "connectionConnectOnStartup").checked, false);
@@ -3772,6 +3966,10 @@ TestCase {
         var hiddenDisconnect = findChild(window, "connectionDisconnect");
         verify(hiddenDisconnect !== null, "Could not find connectionDisconnect");
         compare(hiddenDisconnect.visible, false);
+        var nameField = findChild(window, "connectionName");
+        var hostField = findChild(window, "connectionHost");
+        verify(nameField.mapToItem(sheet, 0, 0).y < hostField.mapToItem(sheet, 0, 0).y,
+               "Name field should sit above Host");
         var password = findChild(window, "connectionPassword");
         var formViewport = findChild(window, "sheetFlick");
         verify(password.mapToItem(sheet, 0, password.height).y
@@ -3898,6 +4096,7 @@ TestCase {
         var expected = [
             "networkChoice-setup-id",
             "connectionShortcutsHint",
+            "connectionName",
             "connectionHost",
             "connectionPort",
             "connectionTls",
@@ -4266,7 +4465,8 @@ TestCase {
             displayName: "irc.oftc.net",
             stored: true,
             selected: false,
-            iconColor: 1
+            iconColor: 1,
+            iconUrl: ""
         });
         var window = createTemporaryObject(fallbackWindowComponent, null);
         verify(window !== null, "The rail-arrow window should load");
@@ -4329,7 +4529,8 @@ TestCase {
                 displayName: "irc.probe" + extra + ".example",
                 stored: true,
                 selected: false,
-                iconColor: 1
+                iconColor: 1,
+                iconUrl: ""
             });
         }
         var window = createTemporaryObject(fallbackWindowComponent, null);
@@ -4465,7 +4666,7 @@ TestCase {
         keyClick(Qt.Key_Comma, Qt.ControlModifier);
         tryCompare(findChild(window, "connectionSheet"), "visible", true);
         tryCompare(composer, "activeFocus", false);
-        tryCompare(findChild(window, "connectionHost"), "activeFocus", true);
+        tryCompare(findChild(window, "connectionName"), "activeFocus", true);
 
         var step = 0;
         var name = "";
@@ -4499,6 +4700,14 @@ TestCase {
         waitForRendering(window.contentItem);
         window.requestActivate();
         tryCompare(window, "active", true);
+
+        var nameField = findChild(window, "connectionName");
+        verify(nameField !== null, "Could not find connectionName");
+        nameField.forceActiveFocus();
+        tryCompare(nameField, "activeFocus", true);
+        keyClick(Qt.Key_Return);
+        compare(fakeConnection.applyCalls, 0);
+        tryCompare(findChild(window, "connectionHost"), "activeFocus", true);
 
         var host = findChild(window, "connectionHost");
         verify(host !== null, "Could not find connectionHost");
@@ -4738,7 +4947,8 @@ TestCase {
             displayName: "irc.oftc.net",
             stored: true,
             selected: false,
-            iconColor: 1
+            iconColor: 1,
+            iconUrl: ""
         });
         namedConnection.applySucceeds = true;
         namedConnection.applyCalls = 0;
@@ -4754,10 +4964,10 @@ TestCase {
         tryCompare(sheet, "visible", true);
         waitForRendering(window.contentItem);
 
-        var host = findChild(window, "connectionHost");
-        verify(host !== null, "Could not find connectionHost");
-        tryCompare(host, "activeFocus", true);
-        compare(focusObjectName(window), "connectionHost");
+        var name = findChild(window, "connectionName");
+        verify(name !== null, "Could not find connectionName");
+        tryCompare(name, "activeFocus", true);
+        compare(focusObjectName(window), "connectionName");
         compare(namedConnection.selectedNetworkId, "libera");
 
         keyClick(Qt.Key_Return, Qt.ControlModifier);
@@ -4775,7 +4985,8 @@ TestCase {
             displayName: "irc.oftc.net",
             stored: true,
             selected: false,
-            iconColor: 1
+            iconColor: 1,
+            iconUrl: ""
         });
         var window = createTemporaryObject(fallbackWindowComponent, null);
         verify(window !== null, "The add-then-discard window should load");
@@ -4797,6 +5008,7 @@ TestCase {
         compare(namedNetworks.count, 3);
         compare(namedConnection.selectedNetworkId, "new-id");
         compare(findChild(window, "connectionHost").text, "");
+        compare(findChild(window, "connectionName").text, "");
 
         mouseClick(discardButton);
         compare(namedConnection.discardCalls, 1);
@@ -4804,6 +5016,7 @@ TestCase {
         compare(namedConnection.selectedNetworkId, "libera");
         compare(namedConnection.host, "irc.libera.chat");
         compare(findChild(window, "connectionHost").text, "irc.libera.chat");
+        compare(findChild(window, "connectionName").text, "irc.libera.chat");
         compare(namedConnection.nick, "sheet-nick");
 
         mouseClick(addButton);
@@ -4861,7 +5074,8 @@ TestCase {
                 displayName: "irc.extra" + extra + ".example",
                 stored: true,
                 selected: false,
-                iconColor: 1
+                iconColor: 1,
+                iconUrl: ""
             });
         }
         var window = createTemporaryObject(fallbackWindowComponent, null);
@@ -5134,6 +5348,43 @@ TestCase {
         assertDemoAvatarReady("mira", "qrc:/demo/mira-avatar.png");
         assertDemoAvatarReady("anna", "qrc:/demo/anna-avatar.png");
         assertDemoAvatarReady("kai", "qrc:/demo/kai-avatar.png");
+    }
+
+    function test_demoOmarchyNetworkIconReachesImageReady() {
+        openSeededAppWindow();
+        var omarchyPhoto = namedItem("networkIconPhoto-" + seed.omarchyNetworkId);
+        verify(omarchyPhoto !== null, "omarchy network icon photo should exist");
+        tryCompare(omarchyPhoto, "status", Image.Ready);
+        tryCompare(omarchyPhoto, "visible", true);
+        compare(String(omarchyPhoto.source).indexOf("image://omairc-avatar/square/"), 0);
+        var omarchyInitial = namedItem("networkIconInitial-" + seed.omarchyNetworkId);
+        verify(omarchyInitial !== null, "omarchy network icon initial should exist");
+        compare(omarchyInitial.visible, false);
+
+        var oftcPhoto = namedItem("networkIconPhoto-" + seed.oftcNetworkId);
+        verify(oftcPhoto !== null, "OFTC network icon photo should exist");
+        compare(oftcPhoto.status === Image.Ready, false);
+        compare(oftcPhoto.visible, false);
+        var oftcInitial = namedItem("networkIconInitial-" + seed.oftcNetworkId);
+        verify(oftcInitial !== null, "OFTC network icon initial should exist");
+        compare(oftcInitial.visible, true);
+    }
+
+    function test_mockNetworkIconWithoutTokenKeepsInitial() {
+        restoreNamedConnection();
+        var window = createTemporaryObject(liveNamedWindowComponent, null);
+        verify(window !== null, "The mock network window should load");
+        tryCompare(window, "visible", true);
+        waitForRendering(window.contentItem);
+        var photo = findNamedIn(window, "networkIconPhoto-libera");
+        verify(photo !== null, "mock network icon photo should exist");
+        compare(photo.status === Image.Ready, false);
+        compare(photo.visible, false);
+        var initial = findNamedIn(window, "networkIconInitial-libera");
+        verify(initial !== null, "mock network icon initial should exist");
+        compare(initial.visible, true);
+        window.close();
+        restoreNamedConnection();
     }
 
     function test_loadPeerAvatarsPreferenceGatesStoreSource() {
@@ -5753,6 +6004,181 @@ TestCase {
         verify(versionLeft >= nickRight);
     }
 
+    function test_aboutSheetOpensFromVersionAndEscapeKeepsConversation() {
+        openSeededAppWindow();
+        var sheet = item("aboutSheet");
+        verify(!sheet.opened);
+        verify(!sheet.visible);
+
+        mouseClick(item("selfVersionHit"));
+        tryCompare(sheet, "opened", true);
+        compare(item("aboutTitle").text, "About Omairc");
+        compare(item("aboutName").text, "Omairc");
+        compare(item("aboutVersion").text, appWindow.appVersion);
+        verify(String(item("aboutLogo").source).indexOf("icons/omairc.svg") >= 0);
+        verify(item("aboutDescription").text.indexOf("open-source") === -1);
+        compare(item("aboutOpenSource").text, "This project is open-source.");
+        compare(item("aboutGithubLink").text, "View the source on GitHub");
+        compare(item("aboutCopyright").text, "Copyright © 2026 Fredi Machado");
+        verify(item("aboutCheckUpdates").visible);
+        verify(item("aboutOk").visible);
+        verify(!item("aboutUpdateStatus").visible);
+        compare(sheet.width, appWindow.width);
+        compare(sheet.height, appWindow.height);
+        fuzzyCompare(sheet.color.a, 0.5, 0.01);
+        verify(item("aboutSheetCard").visible);
+        saveScreenshot("about-sheet");
+
+        keyClick(Qt.Key_Escape);
+        tryCompare(sheet, "opened", false);
+        compare(appWindow.currentConversation, "#omarchy");
+    }
+
+    function test_aboutSheetBlocksWindowShortcuts() {
+        openSeededAppWindow();
+        var sheet = item("aboutSheet");
+        mouseClick(item("selfVersionHit"));
+        tryCompare(sheet, "opened", true);
+
+        keyClick(Qt.Key_Down, Qt.AltModifier);
+        compare(appWindow.currentConversation, "#omarchy");
+        verify(sheet.opened);
+
+        keyClick(Qt.Key_QuoteLeft, Qt.ControlModifier);
+        compare(appWindow.consoleVisible, false);
+        verify(sheet.opened);
+
+        keyClick(Qt.Key_Slash, Qt.ControlModifier);
+        verify(sheet.opened);
+        verify(!item("shortcutsSheet").opened);
+
+        compare(appWindow.serverListVisible, true);
+        keyClick(Qt.Key_S, Qt.ControlModifier | Qt.ShiftModifier);
+        compare(appWindow.serverListVisible, true);
+        verify(sheet.opened);
+    }
+
+    function test_aboutSheetBlocksCtrlQ() {
+        openSeededAppWindow();
+        var sheet = item("aboutSheet");
+        mouseClick(item("selfVersionHit"));
+        tryCompare(sheet, "opened", true);
+        verify(appWindow.visible);
+
+        keyClick(Qt.Key_Q, Qt.ControlModifier);
+        wait(0);
+        verify(appWindow.visible);
+        verify(sheet.opened);
+    }
+
+    function test_aboutSheetOkCloses() {
+        openSeededAppWindow();
+        var sheet = item("aboutSheet");
+        mouseClick(item("selfVersionHit"));
+        tryCompare(sheet, "opened", true);
+
+        mouseClick(item("aboutOk"));
+        tryCompare(sheet, "opened", false);
+        compare(appWindow.currentConversation, "#omarchy");
+    }
+
+    function test_aboutSheetGithubLinkOpensRepo() {
+        openSeededAppWindow();
+        mouseClick(item("selfVersionHit"));
+        tryCompare(item("aboutSheet"), "opened", true);
+        compare(item("aboutUpdateCheck").repoUrl,
+                "https://github.com/fredimachado/omairc");
+
+        appWindow.lastOpenedUrl = "";
+        mouseClick(item("aboutGithubLink"));
+        compare(appWindow.lastOpenedUrl, "https://github.com/fredimachado/omairc");
+        verify(item("aboutSheet").opened);
+    }
+
+    function test_aboutSheetCheckForUpdatesShowsLatest() {
+        openSeededAppWindow();
+        mouseClick(item("selfVersionHit"));
+        tryCompare(item("aboutSheet"), "opened", true);
+
+        var checker = item("aboutUpdateCheck");
+        checker.currentVersion = "0.1.0";
+        verify(item("aboutCheckUpdates").visible);
+        verify(!item("aboutUpdateStatus").visible);
+
+        checker.applyGithubPayload(
+            '{"tag_name":"v9.9.9","html_url":"https://github.com/fredimachado/omairc/releases/tag/v9.9.9"}',
+            200);
+        compare(checker.status, "updateAvailable");
+        compare(item("aboutUpdateStatus").text, "Version 9.9.9 is available.");
+        verify(item("aboutUpdateStatus").visible);
+
+        appWindow.lastOpenedUrl = "";
+        mouseClick(item("aboutUpdateStatus"));
+        compare(appWindow.lastOpenedUrl,
+                "https://github.com/fredimachado/omairc/releases/tag/v9.9.9");
+
+        checker.applyGithubPayload(
+            '{"tag_name":"v0.1.0","html_url":"https://github.com/fredimachado/omairc/releases/tag/v0.1.0"}',
+            200);
+        compare(item("aboutUpdateStatus").text, "Omairc is up to date.");
+    }
+
+    function test_aboutSheetOpensFromFirstRunVersion() {
+        var window = createTemporaryObject(setupWindowComponent, null);
+        verify(window !== null, "The setup window should load");
+        tryCompare(window, "visible", true);
+        waitForRendering(window.contentItem);
+        window.suppressExternalUrlOpen = true;
+
+        var sheet = findChild(window, "aboutSheet");
+        verify(sheet !== null, "Could not find aboutSheet");
+        verify(!sheet.opened);
+        mouseClick(findChild(window, "selfVersionHit"));
+        tryCompare(sheet, "opened", true);
+        compare(findChild(window, "aboutVersion").text, window.appVersion);
+        compare(findChild(window, "aboutOpenSource").text, "This project is open-source.");
+        verify(window.connectionOverlayVisible);
+        fuzzyCompare(sheet.color.a, 0.5, 0.01);
+
+        mouseClick(findChild(window, "aboutSheetDimmer"), 10, 10);
+        tryCompare(sheet, "opened", false);
+        verify(window.connectionOverlayVisible);
+
+        mouseClick(findChild(window, "selfVersionHit"));
+        tryCompare(sheet, "opened", true);
+        keyClick(Qt.Key_Escape);
+        tryCompare(sheet, "opened", false);
+        verify(window.connectionOverlayVisible);
+        window.close();
+    }
+
+    function test_aboutSheetLeftClickDimmerDismisses() {
+        openSeededAppWindow();
+        var sheet = item("aboutSheet");
+        mouseClick(item("selfVersionHit"));
+        tryCompare(sheet, "opened", true);
+
+        mouseClick(item("aboutSheetDimmer"), 10, 10);
+        tryCompare(sheet, "opened", false);
+        compare(appWindow.currentConversation, "#omarchy");
+    }
+
+    function test_aboutSheetIgnoresRightClickAndCardClick() {
+        openSeededAppWindow();
+        var sheet = item("aboutSheet");
+        mouseClick(item("selfVersionHit"));
+        tryCompare(sheet, "opened", true);
+
+        mouseClick(item("aboutSheetDimmer"), 10, 10, Qt.RightButton);
+        wait(0);
+        verify(sheet.opened);
+
+        mouseClick(item("aboutName"));
+        wait(0);
+        verify(sheet.opened);
+        compare(appWindow.currentConversation, "#omarchy");
+    }
+
     function test_liveIdentityFooterShowsCurrentNick() {
         var window = createTemporaryObject(liveWindowComponent, null);
         verify(window !== null, "The live window should load");
@@ -6356,6 +6782,10 @@ TestCase {
                "shortcut sheet should list Ctrl+Shift+K");
         verify(texts.indexOf("jump to nick") !== -1,
                "shortcut sheet should name jump to nick");
+        verify(texts.indexOf("Ctrl+Shift+S") !== -1,
+               "shortcut sheet should list Ctrl+Shift+S");
+        verify(texts.indexOf("server list") !== -1,
+               "shortcut sheet should name server list");
         verify(texts.indexOf("/disconnect") !== -1,
                "shortcut sheet should list /disconnect");
         keyClick(Qt.Key_Escape);
@@ -6369,7 +6799,8 @@ TestCase {
             displayName: "irc.oftc.net",
             stored: true,
             selected: false,
-            iconColor: 1
+            iconColor: 1,
+            iconUrl: ""
         });
         var window = createTemporaryObject(liveNamedWindowComponent, null);
         verify(window !== null, "The two-network window should load");
@@ -6479,9 +6910,11 @@ TestCase {
             compare(namedNetworks.count, 2);
             compare(namedConnection.selectedNetworkId, "new-id");
             compare(findChild(window, "connectionHost").text, "");
+            compare(findChild(window, "connectionName").text, "");
             namedNetworks.setProperty(1, "displayName", "irc.oftc.net");
             namedConnection.displayName = "irc.oftc.net";
             namedConnection.host = "irc.oftc.net";
+            namedConnection.name = "irc.oftc.net";
             namedConnection.nick = "oak";
             waitForRendering(window.contentItem);
 
@@ -6553,7 +6986,8 @@ TestCase {
             displayName: "irc.oftc.net",
             stored: true,
             selected: false,
-            iconColor: 1
+            iconColor: 1,
+            iconUrl: ""
         });
         namedConnection.dirty = true;
         var window = createTemporaryObject(fallbackWindowComponent, null);
@@ -6784,7 +7218,8 @@ TestCase {
             displayName: "irc.oftc.net",
             stored: true,
             selected: false,
-            iconColor: 1
+            iconColor: 1,
+            iconUrl: ""
         });
         var window = createTemporaryObject(fallbackWindowComponent, null);
         verify(window !== null, "The accessible rail window should load");

@@ -33,6 +33,7 @@ HEADERS += \
     ../src/omairccli.h \
     ../src/omaircclipcursor.h \
     ../src/omaircfilelog.h \
+    ../src/omaircupdatecheck.h \
     ../src/backend.h \
     ../src/irc/ircmessage.h \
     ../src/irc/ircparser.h \
@@ -48,6 +49,7 @@ HEADERS += \
     ../src/irc/irctypingpublisher.h \
     ../src/irc/ircpresence.h \
     ../src/irc/ircavatarurl.h \
+    ../src/irc/ircavatarhttp.h \
     ../src/irc/ircavatarstore.h \
     ../src/irc/irctcp.h \
     ../src/irc/ircignore.h \
@@ -93,6 +95,7 @@ SOURCES += \
     tst_omaircipc.cpp \
     tst_omairccli.cpp \
     tst_omaircfilelog.cpp \
+    tst_omaircupdatecheck.cpp \
     tst_backend.cpp \
     ../src/omaircpaths.cpp \
     ../src/singleinstance.cpp \
@@ -101,6 +104,7 @@ SOURCES += \
     ../src/omairccli.cpp \
     ../src/omaircclipcursor.cpp \
     ../src/omaircfilelog.cpp \
+    ../src/omaircupdatecheck.cpp \
     ../src/backend.cpp \
     protocol/tst_protocol.cpp \
     protocol/tst_casemapping.cpp \
@@ -118,6 +122,7 @@ SOURCES += \
     ../src/irc/irctypingpublisher.cpp \
     ../src/irc/ircpresence.cpp \
     ../src/irc/ircavatarurl.cpp \
+    ../src/irc/ircavatarhttp.cpp \
     ../src/irc/ircavatarstore.cpp \
     ../src/irc/irctcp.cpp \
     ../src/irc/ircignore.cpp \

@@ -66,6 +66,7 @@ struct SeedNetwork
     QString networkId;
     QString nick;
     QString welcome;
+    QString iconUrl;
     QVector<SeedChannel> channels;
     QVector<SeedDirect> directs;
 };
@@ -137,7 +138,9 @@ QStringList namesTokens(const SeedChannel &channel)
     return tokens;
 }
 
-QByteArray registrationBytes(const QString &nick, const QString &welcome)
+QByteArray registrationBytes(const QString &nick,
+                             const QString &welcome,
+                             const QString &iconUrl = {})
 {
     QByteArray out;
     out += line(QStringLiteral(":server CAP %1 LS :%2")
@@ -148,8 +151,33 @@ QByteArray registrationBytes(const QString &nick, const QString &welcome)
                               ":*** Looking up your hostname...")
                     .arg(nick));
     out += line(QStringLiteral(":server 001 %1 :%2").arg(nick, welcome));
+    out += line(QStringLiteral(":server 002 %1 :Your host is demo.omairc, running version 1.0")
+                    .arg(nick));
+    out += line(QStringLiteral(":server 003 %1 :This server was created Fri Sep 18 2026")
+                    .arg(nick));
+    out += line(QStringLiteral(":server 004 %1 demo.omairc OmaircDemo iw abc def")
+                    .arg(nick));
+    out += line(QStringLiteral(":server 250 %1 :Highest connection count: 42")
+                    .arg(nick));
+    out += line(QStringLiteral(":server 251 %1 :There are 12 users and 3 invisible on this server")
+                    .arg(nick));
+    out += line(QStringLiteral(":server 252 %1 1 :IRC Operator online")
+                    .arg(nick));
+    out += line(QStringLiteral(":server 253 %1 0 :unknown connections")
+                    .arg(nick));
+    out += line(QStringLiteral(":server 254 %1 3 :channels formed")
+                    .arg(nick));
+    out += line(QStringLiteral(":server 255 %1 :I have 9 clients and 1 servers")
+                    .arg(nick));
+    out += line(QStringLiteral(":server 265 %1 9 12 :Current local users 9, max 12")
+                    .arg(nick));
+    out += line(QStringLiteral(":server 266 %1 12 42 :Current global users 12, max 42")
+                    .arg(nick));
+    QString isupport = QLatin1String(kIsupport);
+    if (!iconUrl.isEmpty())
+        isupport += QStringLiteral(" draft/ICON=%1").arg(iconUrl);
     out += line(QStringLiteral(":server 005 %1 %2 :are supported by this server")
-                    .arg(nick, QLatin1String(kIsupport)));
+                    .arg(nick, isupport));
     return out;
 }
 
@@ -262,6 +290,7 @@ SeedNetwork omarchyWorld()
     network.networkId = QStringLiteral("omarchy");
     network.nick = QStringLiteral("fred");
     network.welcome = QStringLiteral("Welcome to the demo network");
+    network.iconUrl = QStringLiteral("qrc:/demo/omarchy-icon.png");
 
     SeedChannel omarchy;
     omarchy.name = QStringLiteral("#omarchy");
@@ -841,7 +870,8 @@ bool IrcDemoServer::attach(IrcController &controller, bool autoEcho)
     }
     controller.setNetworkOrder({omarchy.networkId, oftc.networkId});
 
-    m_omarchyTransport->injectBytes(registrationBytes(omarchy.nick, omarchy.welcome));
+    m_omarchyTransport->injectBytes(
+        registrationBytes(omarchy.nick, omarchy.welcome, omarchy.iconUrl));
     m_oftcTransport->injectBytes(registrationBytes(oftc.nick, oftc.welcome));
     injectWorld(m_omarchyTransport, omarchy);
     injectWorld(m_oftcTransport, oftc);

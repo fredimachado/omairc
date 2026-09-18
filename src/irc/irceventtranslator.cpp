@@ -150,13 +150,23 @@ bool isJoinFailureNumeric(const QString& command)
 {
     return command == QStringLiteral("403")
         || command == QStringLiteral("405")
+        || command == QStringLiteral("448")
         || command == QStringLiteral("471")
         || command == QStringLiteral("473")
         || command == QStringLiteral("474")
         || command == QStringLiteral("475")
         || command == QStringLiteral("476")
         || command == QStringLiteral("477")
-        || command == QStringLiteral("489");
+        || command == QStringLiteral("479")
+        || command == QStringLiteral("489")
+        || command == QStringLiteral("520");
+}
+
+bool isAmbiguousJoinFailureNumeric(const QString& command)
+{
+    return command == QStringLiteral("437")
+        || command == QStringLiteral("480")
+        || command == QStringLiteral("485");
 }
 }
 
@@ -305,9 +315,15 @@ std::vector<IrcEvent> IrcEventTranslator::translate(
         appendMemberMetadata(events, networkId, message, 1, features);
     } else if (command == QStringLiteral("766")) {
         append766KeyNotSet(events, networkId, message, features);
-    } else if (isJoinFailureNumeric(command) && message.parameters.size() >= 3) {
-        events.emplace_back(IrcChannelErrorEvent{
-            networkId, parameter(message, 1), parameter(message, 2)});
+    } else if ((isJoinFailureNumeric(command)
+                || isAmbiguousJoinFailureNumeric(command))
+               && message.parameters.size() >= 3) {
+        const QString channel = parameter(message, 1);
+        if (!isAmbiguousJoinFailureNumeric(command)
+            || features.isChannel(utf8(channel))) {
+            events.emplace_back(IrcChannelErrorEvent{
+                networkId, channel, parameter(message, 2)});
+        }
     }
 
     return events;

@@ -114,6 +114,12 @@ private slots:
     void ignores766WithoutNamedKey();
     void ignoresUnknownAndChannelMetadata();
     void metadataStatusDoesNotImplyAway();
+    void translates448BadChanName();
+    void stillTranslates473JoinFailure();
+    void translates479And520JoinFailures();
+    void translates437OnlyForChannelTargets();
+    void translates437UsingAdvertisedChanTypes();
+    void ignoresShortJoinFailureNumeric();
 };
 
 void ProtocolTest::parsesTrailingParameters()
@@ -746,6 +752,152 @@ void ProtocolTest::metadataStatusDoesNotImplyAway()
     QCOMPARE(events.size(), std::size_t(1));
     QVERIFY(std::get_if<IrcMemberMetadataEvent>(&events.front()));
     QVERIFY(!std::get_if<IrcAwayEvent>(&events.front()));
+}
+
+void ProtocolTest::translates448BadChanName()
+{
+    const std::vector<IrcEvent> events = translateLine(
+        ":server 448 me #bad :Channel name contains illegal characters");
+    QCOMPARE(events.size(), std::size_t(1));
+    const auto *event = std::get_if<IrcChannelErrorEvent>(&events.front());
+    QVERIFY(event);
+    QCOMPARE(event->networkId, QStringLiteral("net"));
+    QCOMPARE(event->channel, QStringLiteral("#bad"));
+    QCOMPARE(event->body, QStringLiteral("Channel name contains illegal characters"));
+}
+
+void ProtocolTest::stillTranslates473JoinFailure()
+{
+    const std::vector<IrcEvent> events = translateLine(
+        ":server 473 me #alpha :Cannot join channel (+i)");
+    QCOMPARE(events.size(), std::size_t(1));
+    const auto *event = std::get_if<IrcChannelErrorEvent>(&events.front());
+    QVERIFY(event);
+    QCOMPARE(event->channel, QStringLiteral("#alpha"));
+    QCOMPARE(event->body, QStringLiteral("Cannot join channel (+i)"));
+}
+
+void ProtocolTest::translates479And520JoinFailures()
+{
+    const std::vector<IrcEvent> badName = translateLine(
+        ":server 479 me #bad :Illegal channel name");
+    QCOMPARE(badName.size(), std::size_t(1));
+    const auto *badNameEvent = std::get_if<IrcChannelErrorEvent>(&badName.front());
+    QVERIFY(badNameEvent);
+    QCOMPARE(badNameEvent->channel, QStringLiteral("#bad"));
+    QCOMPARE(badNameEvent->body, QStringLiteral("Illegal channel name"));
+
+    const std::vector<IrcEvent> operOnly = translateLine(
+        ":server 520 me #opers :Cannot join channel (+O)");
+    QCOMPARE(operOnly.size(), std::size_t(1));
+    const auto *operOnlyEvent = std::get_if<IrcChannelErrorEvent>(&operOnly.front());
+    QVERIFY(operOnlyEvent);
+    QCOMPARE(operOnlyEvent->channel, QStringLiteral("#opers"));
+    QCOMPARE(operOnlyEvent->body, QStringLiteral("Cannot join channel (+O)"));
+}
+
+void ProtocolTest::translates437OnlyForChannelTargets()
+{
+    const std::vector<IrcEvent> channel = translateLine(
+        ":server 437 me #held :Nick/channel is temporarily unavailable");
+    QCOMPARE(channel.size(), std::size_t(1));
+    const auto *event = std::get_if<IrcChannelErrorEvent>(&channel.front());
+    QVERIFY(event);
+    QCOMPARE(event->channel, QStringLiteral("#held"));
+    QCOMPARE(event->body, QStringLiteral("Nick/channel is temporarily unavailable"));
+
+    QVERIFY(translateLine(
+                ":server 437 me alice :Nick/channel is temporarily unavailable")
+                .empty());
+
+    QCOMPARE(translateLine(":server 480 me #ssl :Cannot join channel (SSL needed)")
+                 .size(),
+             std::size_t(1));
+    QVERIFY(translateLine(":server 480 me alice :Cannot join channel (SSL needed)")
+                .empty());
+    QCOMPARE(translateLine(":server 485 me #uniq :Cannot join channel")
+                 .size(),
+             std::size_t(1));
+    QVERIFY(translateLine(":server 485 me alice :Cannot join channel").empty());
+}
+
+void ProtocolTest::translates437UsingAdvertisedChanTypes()
+{
+    IrcServerFeatures features;
+    features.applyToken("CHANTYPES=&");
+
+    const auto room437 = IrcParser::parse(
+        ":server 437 me &room :Nick/channel is temporarily unavailable");
+    QVERIFY(room437);
+    const std::vector<IrcEvent> roomEvents = IrcEventTranslator::translate(
+        QStringLiteral("net"), QStringLiteral("me"), features, *room437.value);
+    QCOMPARE(roomEvents.size(), std::size_t(1));
+    const auto *roomEvent = std::get_if<IrcChannelErrorEvent>(&roomEvents.front());
+    QVERIFY(roomEvent);
+    QCOMPARE(roomEvent->channel, QStringLiteral("&room"));
+    QCOMPARE(roomEvent->body,
+             QStringLiteral("Nick/channel is temporarily unavailable"));
+
+    const auto hash437 = IrcParser::parse(
+        ":server 437 me #room :Nick/channel is temporarily unavailable");
+    QVERIFY(hash437);
+    QVERIFY(IrcEventTranslator::translate(
+                QStringLiteral("net"), QStringLiteral("me"), features, *hash437.value)
+                .empty());
+    const auto nick437 = IrcParser::parse(
+        ":server 437 me alice :Nick/channel is temporarily unavailable");
+    QVERIFY(nick437);
+    QVERIFY(IrcEventTranslator::translate(
+                QStringLiteral("net"), QStringLiteral("me"), features, *nick437.value)
+                .empty());
+
+    const auto room480 = IrcParser::parse(
+        ":server 480 me &room :Cannot join channel (SSL needed)");
+    QVERIFY(room480);
+    const std::vector<IrcEvent> sslEvents = IrcEventTranslator::translate(
+        QStringLiteral("net"), QStringLiteral("me"), features, *room480.value);
+    QCOMPARE(sslEvents.size(), std::size_t(1));
+    const auto *sslEvent = std::get_if<IrcChannelErrorEvent>(&sslEvents.front());
+    QVERIFY(sslEvent);
+    QCOMPARE(sslEvent->channel, QStringLiteral("&room"));
+
+    const auto hash480 = IrcParser::parse(
+        ":server 480 me #room :Cannot join channel (SSL needed)");
+    QVERIFY(hash480);
+    QVERIFY(IrcEventTranslator::translate(
+                QStringLiteral("net"), QStringLiteral("me"), features, *hash480.value)
+                .empty());
+    const auto nick480 = IrcParser::parse(
+        ":server 480 me alice :Cannot join channel (SSL needed)");
+    QVERIFY(nick480);
+    QVERIFY(IrcEventTranslator::translate(
+                QStringLiteral("net"), QStringLiteral("me"), features, *nick480.value)
+                .empty());
+
+    const auto room485 = IrcParser::parse(":server 485 me &room :Cannot join channel");
+    QVERIFY(room485);
+    const std::vector<IrcEvent> uniqEvents = IrcEventTranslator::translate(
+        QStringLiteral("net"), QStringLiteral("me"), features, *room485.value);
+    QCOMPARE(uniqEvents.size(), std::size_t(1));
+    const auto *uniqEvent = std::get_if<IrcChannelErrorEvent>(&uniqEvents.front());
+    QVERIFY(uniqEvent);
+    QCOMPARE(uniqEvent->channel, QStringLiteral("&room"));
+
+    const auto hash485 = IrcParser::parse(":server 485 me #room :Cannot join channel");
+    QVERIFY(hash485);
+    QVERIFY(IrcEventTranslator::translate(
+                QStringLiteral("net"), QStringLiteral("me"), features, *hash485.value)
+                .empty());
+    const auto nick485 = IrcParser::parse(":server 485 me alice :Cannot join channel");
+    QVERIFY(nick485);
+    QVERIFY(IrcEventTranslator::translate(
+                QStringLiteral("net"), QStringLiteral("me"), features, *nick485.value)
+                .empty());
+}
+
+void ProtocolTest::ignoresShortJoinFailureNumeric()
+{
+    QVERIFY(translateLine(":server 448 me :nope").empty());
 }
 
 int runProtocolTests(int argc, char **argv)

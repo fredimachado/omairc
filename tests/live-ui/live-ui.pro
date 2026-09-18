@@ -21,6 +21,7 @@ DEFINES += LIVE_CERT_DIR=\\\"$$PWD/../live/certs\\\"
 
 HEADERS += \
     ../../src/backend.h \
+    ../../src/omaircupdatecheck.h \
     ../../src/irc/ircmessage.h \
     ../../src/irc/ircparser.h \
     ../../src/irc/ircframer.h \
@@ -35,6 +36,7 @@ HEADERS += \
     ../../src/irc/irctypingpublisher.h \
     ../../src/irc/ircpresence.h \
     ../../src/irc/ircavatarurl.h \
+    ../../src/irc/ircavatarhttp.h \
     ../../src/irc/ircavatarstore.h \
     ../../src/irc/irctcp.h \
     ../../src/irc/ircignore.h \
@@ -90,6 +92,7 @@ SOURCES += \
     ../../src/irc/ircloopbacktransport.cpp \
     ../../src/irc/ircdemoserver.cpp \
     ../../src/backend.cpp \
+    ../../src/omaircupdatecheck.cpp \
     ../../src/irc/ircparser.cpp \
     ../../src/irc/ircframer.cpp \
     ../../src/irc/ircwiretext.cpp \
@@ -104,6 +107,7 @@ SOURCES += \
     ../../src/irc/irctypingpublisher.cpp \
     ../../src/irc/ircpresence.cpp \
     ../../src/irc/ircavatarurl.cpp \
+    ../../src/irc/ircavatarhttp.cpp \
     ../../src/irc/ircavatarstore.cpp \
     ../../src/irc/irctcp.cpp \
     ../../src/irc/ircignore.cpp \

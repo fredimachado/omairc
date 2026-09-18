@@ -28,7 +28,9 @@ stop. Do not launch a window unless the user asked you to.
 
 `--help` and `--version` print plain text and do not need a window.
 Control commands need a window, print JSON on stdout, and use exit 0
-only when `"ok": true`.
+only when `"ok": true`. If `send` prints `"uncertain": true` (exit 2), do
+not retry `send`. Confirm with `read --last` on that target (own nick and
+the same text). If present, stop; if absent, send once.
 
 ## Binary
 
@@ -54,7 +56,7 @@ conversation. Do not `raise` unless the user wants the window.
 
 | Command | Role |
 |---|---|
-| `connections` / `list` | Networks: `id`, `host`, `port`, `tls`, `nick`, `state`, `selected` |
+| `connections` / `list` | Networks: `id`, `name`, `host`, `port`, `tls`, `nick`, `state`, `selected` |
 | `status [--network ID]` | One connection |
 | `conversations [--network ID]` | Channels and DMs with GUI `unread`/`mention` badges and channel `topic` (does not clear badges) |
 | `names [--network ID] TARGET` | Joined-channel member panel snapshot |

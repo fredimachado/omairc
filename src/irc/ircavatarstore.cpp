@@ -1,5 +1,6 @@
 #include "ircavatarstore.h"
 
+#include "ircavatarhttp.h"
 #include "ircavatarurl.h"
 
 #include <QBuffer>
@@ -12,6 +13,10 @@
 #include <QPainter>
 #include <QPainterPath>
 #include <QQmlEngine>
+#include <QSslConfiguration>
+#include <QSslError>
+#include <QSslSocket>
+#include <QTimer>
 #include <QtGlobal>
 
 namespace
@@ -27,6 +32,299 @@ constexpr int kMaximumDecodedEdge = 1024;
 constexpr qint64 kMaximumDecodedPixels = 1024 * 1024;
 constexpr int kMaximumDecodedAllocationMb = 16;
 const auto kProviderId = QStringLiteral("omairc-avatar");
+const auto kPinnedAddressAttribute =
+    static_cast<QNetworkRequest::Attribute>(QNetworkRequest::User + 1000);
+
+QByteArray avatarRequestPath(const QUrl& url)
+{
+    QByteArray path = url.path(QUrl::FullyEncoded).toUtf8();
+    if (path.isEmpty())
+        path = "/";
+    const QByteArray query = url.query(QUrl::FullyEncoded).toUtf8();
+    if (!query.isEmpty())
+        path += '?' + query;
+    return path;
+}
+
+QByteArray avatarHostHeader(const QUrl& url)
+{
+    QByteArray host = url.host().toUtf8();
+    const int port = url.port(-1);
+    if (port != -1 && port != 443)
+        host += ':' + QByteArray::number(port);
+    return host;
+}
+
+class PinnedHttpsReply : public QNetworkReply
+{
+public:
+    PinnedHttpsReply(const QNetworkRequest& request, const QHostAddress& pinned,
+                     QObject *parent)
+        : QNetworkReply(parent)
+        , m_request(request)
+        , m_pinned(pinned)
+    {
+        setRequest(request);
+        setUrl(request.url());
+        open(QIODevice::ReadOnly);
+        QTimer::singleShot(0, this, [this]() { start(); });
+    }
+
+protected:
+    qint64 readData(char *data, qint64 maxSize) override
+    {
+        if (m_readOffset >= m_body.size())
+            return -1;
+        const qint64 chunk = qMin(maxSize, m_body.size() - m_readOffset);
+        memcpy(data, m_body.constData() + m_readOffset, chunk);
+        m_readOffset += chunk;
+        return chunk;
+    }
+
+    void abort() override
+    {
+        if (m_aborted)
+            return;
+        m_aborted = true;
+        m_timer.stop();
+        m_socket.abort();
+        setError(QNetworkReply::OperationCanceledError,
+                 QStringLiteral("Avatar fetch aborted"));
+        emit finished();
+    }
+
+private:
+    void start()
+    {
+        const QUrl url = m_request.url();
+        m_hostname = url.host();
+        m_port = quint16(url.port(443));
+
+        m_timer.setSingleShot(true);
+        m_timer.setInterval(kFetchTimeoutMs);
+        connect(&m_timer, &QTimer::timeout, this, [this]() {
+            if (m_aborted || m_finished)
+                return;
+            m_socket.abort();
+            fail(QNetworkReply::TimeoutError, QStringLiteral("Avatar fetch timed out"));
+        });
+
+        connect(&m_socket, &QSslSocket::encrypted, this, [this]() {
+            sendRequest();
+        });
+        connect(&m_socket, &QSslSocket::readyRead, this, [this]() {
+            consumeSocket();
+        });
+        connect(&m_socket, &QSslSocket::disconnected, this, [this]() {
+            if (m_aborted || m_finished)
+                return;
+            if (!m_headersParsed)
+                fail(QNetworkReply::ProtocolFailure,
+                     QStringLiteral("Avatar fetch ended before headers"));
+            else if (m_contentLength < 0)
+                completeBody();
+        });
+        connect(&m_socket, &QSslSocket::sslErrors, this,
+                [this](const QList<QSslError>& errors) {
+            Q_UNUSED(errors);
+            if (m_aborted || m_finished)
+                return;
+            m_socket.abort();
+            fail(QNetworkReply::SslHandshakeFailedError,
+                 QStringLiteral("Avatar fetch TLS verification failed"));
+        });
+        connect(&m_socket, &QAbstractSocket::errorOccurred, this,
+                [this](QAbstractSocket::SocketError error) {
+            if (m_aborted || m_finished || error == QAbstractSocket::RemoteHostClosedError)
+                return;
+            fail(QNetworkReply::HostNotFoundError, m_socket.errorString());
+        });
+
+        QSslConfiguration ssl = QSslConfiguration::defaultConfiguration();
+        ssl.setAllowedNextProtocols({QByteArrayLiteral("http/1.1")});
+        m_socket.setSslConfiguration(ssl);
+        m_socket.setPeerVerifyName(m_hostname);
+        m_timer.start();
+        m_socket.connectToHostEncrypted(m_pinned.toString(), m_port, m_hostname);
+    }
+
+    void sendRequest()
+    {
+        QByteArray request;
+        request += "GET ";
+        request += avatarRequestPath(m_request.url());
+        request += " HTTP/1.1\r\n";
+        request += "Host: ";
+        request += avatarHostHeader(m_request.url());
+        request += "\r\n";
+        const QByteArray accept = m_request.rawHeader("Accept");
+        if (!accept.isEmpty()) {
+            request += "Accept: ";
+            request += accept;
+            request += "\r\n";
+        }
+        const QByteArray userAgent = m_request.rawHeader("User-Agent");
+        if (!userAgent.isEmpty()) {
+            request += "User-Agent: ";
+            request += userAgent;
+            request += "\r\n";
+        }
+        request += "Connection: close\r\n\r\n";
+        m_socket.write(request);
+    }
+
+    void consumeSocket()
+    {
+        m_buffer += m_socket.readAll();
+        if (!m_headersParsed) {
+            const int headerEnd = m_buffer.indexOf("\r\n\r\n");
+            if (headerEnd < 0)
+                return;
+            if (!parseHeaders(m_buffer.left(headerEnd)))
+                return;
+            m_buffer.remove(0, headerEnd + 4);
+            m_headersParsed = true;
+            const int status =
+                attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+            const QVariant redirect =
+                attribute(QNetworkRequest::RedirectionTargetAttribute);
+            if (redirect.isValid() && status >= 300 && status < 400) {
+                completeBody();
+                return;
+            }
+        }
+        if (m_contentLength >= 0) {
+            if (m_buffer.size() >= m_contentLength)
+                completeBody();
+            return;
+        }
+        if (m_chunked) {
+            bool decoded = false;
+            ircAvatarHttpDecodeChunkedBody(m_buffer, &decoded);
+            if (decoded
+                || m_socket.state() == QAbstractSocket::UnconnectedState) {
+                completeBody();
+            }
+            return;
+        }
+        if (m_socket.state() == QAbstractSocket::UnconnectedState)
+            completeBody();
+    }
+
+    bool parseHeaders(const QByteArray& headerBlock)
+    {
+        const int lineEnd = headerBlock.indexOf("\r\n");
+        if (lineEnd < 0)
+            return false;
+        const QList<QByteArray> statusParts = headerBlock.left(lineEnd).split(' ');
+        if (statusParts.size() < 2) {
+            fail(QNetworkReply::ProtocolFailure,
+                 QStringLiteral("Avatar fetch returned malformed status"));
+            return false;
+        }
+        bool ok = false;
+        const int statusCode = statusParts.at(1).toInt(&ok);
+        if (!ok) {
+            fail(QNetworkReply::ProtocolFailure,
+                 QStringLiteral("Avatar fetch returned malformed status"));
+            return false;
+        }
+        setAttribute(QNetworkRequest::HttpStatusCodeAttribute, statusCode);
+        const QByteArray contentType =
+            ircAvatarHttpHeaderValue(headerBlock, "Content-Type");
+        if (!contentType.isEmpty())
+            setHeader(QNetworkRequest::ContentTypeHeader, contentType);
+        const QByteArray location =
+            ircAvatarHttpHeaderValue(headerBlock, "Location");
+        if (!location.isEmpty()) {
+            setAttribute(QNetworkRequest::RedirectionTargetAttribute,
+                         QUrl::fromEncoded(location));
+        }
+        const QByteArray contentLength =
+            ircAvatarHttpHeaderValue(headerBlock, "Content-Length");
+        if (!contentLength.isEmpty()) {
+            m_contentLength = contentLength.toLongLong();
+            if (m_contentLength < 0) {
+                fail(QNetworkReply::ProtocolFailure,
+                     QStringLiteral("Avatar fetch returned invalid Content-Length"));
+                return false;
+            }
+        } else if (ircAvatarHttpTransferEncodingIsChunked(headerBlock)) {
+            m_chunked = true;
+        }
+        return true;
+    }
+
+    void completeBody()
+    {
+        if (m_finished)
+            return;
+        if (m_contentLength >= 0) {
+            m_body = m_buffer.left(int(m_contentLength));
+        } else if (m_chunked) {
+            bool ok = false;
+            m_body = ircAvatarHttpDecodeChunkedBody(m_buffer, &ok);
+            if (!ok) {
+                fail(QNetworkReply::ProtocolFailure,
+                     QStringLiteral("Avatar fetch returned invalid chunked body"));
+                return;
+            }
+        } else {
+            m_body = m_buffer;
+        }
+        m_finished = true;
+        m_timer.stop();
+        m_socket.disconnect(this);
+        m_socket.abort();
+        setError(QNetworkReply::NoError, {});
+        emit readyRead();
+        emit finished();
+    }
+
+    void fail(QNetworkReply::NetworkError error, const QString& message)
+    {
+        if (m_aborted || m_finished)
+            return;
+        m_finished = true;
+        m_timer.stop();
+        m_socket.disconnect(this);
+        m_socket.abort();
+        setError(error, message);
+        emit finished();
+    }
+
+    QNetworkRequest m_request;
+    QHostAddress m_pinned;
+    QSslSocket m_socket;
+    QTimer m_timer;
+    QString m_hostname;
+    quint16 m_port = 443;
+    QByteArray m_buffer;
+    QByteArray m_body;
+    qint64 m_readOffset = 0;
+    qint64 m_contentLength = -1;
+    bool m_chunked = false;
+    bool m_headersParsed = false;
+    bool m_aborted = false;
+    bool m_finished = false;
+};
+
+class PinnedNetworkAccessManager : public QNetworkAccessManager
+{
+protected:
+    QNetworkReply *createRequest(Operation op, const QNetworkRequest& request,
+                                 QIODevice *outgoingData) override
+    {
+        const QVariant pinned =
+            request.attribute(kPinnedAddressAttribute);
+        if (op == GetOperation && pinned.isValid()) {
+            const QHostAddress address = pinned.value<QHostAddress>();
+            if (!address.isNull())
+                return new PinnedHttpsReply(request, address, this);
+        }
+        return QNetworkAccessManager::createRequest(op, request, outgoingData);
+    }
+};
 
 bool contentTypeIsImage(const QByteArray& type)
 {
@@ -76,8 +374,9 @@ QImage readBoundedImage(QImageReader& reader)
 
 IrcAvatarStore::IrcAvatarStore(QObject *parent)
     : QQuickImageProvider(QQuickImageProvider::Image)
-    , m_nam(new QNetworkAccessManager(this))
+    , m_nam(new PinnedNetworkAccessManager)
 {
+    m_nam->setParent(this);
     setParent(parent);
 }
 
@@ -140,6 +439,35 @@ QImage IrcAvatarStore::circled(const QImage& source, const QSize& requestedSize)
     return circle;
 }
 
+QImage IrcAvatarStore::roundedRect(const QImage& source, const QSize& requestedSize)
+{
+    if (source.isNull())
+        return {};
+    int edge = 32;
+    if (requestedSize.width() > 0 && requestedSize.height() > 0)
+        edge = qMax(requestedSize.width(), requestedSize.height());
+    else if (source.width() > 0 && source.height() > 0)
+        edge = qMin(qMax(source.width(), source.height()), kMaximumCircledEdge);
+    edge = qMin(edge, kMaximumCircledEdge);
+    const QSize target(edge, edge);
+    const qreal radius = 8.0 / 28.0 * edge;
+    QImage frame(target, QImage::Format_ARGB32_Premultiplied);
+    frame.fill(Qt::transparent);
+    QPainter painter(&frame);
+    painter.setRenderHint(QPainter::Antialiasing, true);
+    painter.setRenderHint(QPainter::SmoothPixmapTransform, true);
+    QPainterPath clip;
+    clip.addRoundedRect(QRectF(QPointF(0, 0), QSizeF(target)), radius, radius);
+    painter.setClipPath(clip);
+    const qreal scale = qMax(qreal(edge) / qMax(1, source.width()),
+                             qreal(edge) / qMax(1, source.height()));
+    const QSize drawn(qRound(source.width() * scale),
+                      qRound(source.height() * scale));
+    const QPoint offset((edge - drawn.width()) / 2, (edge - drawn.height()) / 2);
+    painter.drawImage(QRect(offset, drawn), source);
+    return frame;
+}
+
 QImage IrcAvatarStore::loadBoundedImage(const QByteArray& body)
 {
     QByteArray bytes = body;
@@ -158,6 +486,21 @@ QImage IrcAvatarStore::loadBoundedImageFromFile(const QString& path)
 
 QString IrcAvatarStore::source(const QString& rawUrl, int pixelSize)
 {
+    return source(rawUrl, pixelSize, QString());
+}
+
+QString IrcAvatarStore::source(const QString& rawUrl, int pixelSize,
+                               const QString& clip)
+{
+    const bool squareClip =
+        clip.trimmed().compare(QLatin1String("square"), Qt::CaseInsensitive) == 0;
+    const auto imageIdForKey = [&](const QString& key) -> QString {
+        if (squareClip)
+            return QStringLiteral("image://") + kProviderId
+                + QLatin1String("/square/") + key;
+        return QStringLiteral("image://") + kProviderId + QLatin1Char('/') + key;
+    };
+
     const QString trimmed = rawUrl.trimmed();
     // Bundled demo art may use qrc: without the HTTPS policy. Network URLs
     // still must pass ircAvatarUrlIsSafe.
@@ -176,7 +519,7 @@ QString IrcAvatarStore::source(const QString& rawUrl, int pixelSize)
             // Synchronous fill — do not emit ready() here or storeSource
             // re-enters through avatarEpoch while still evaluating.
         }
-        return QStringLiteral("image://") + kProviderId + QLatin1Char('/') + key;
+        return imageIdForKey(key);
     }
 
     const int fetchSize = ircAvatarFetchPixelSize(pixelSize);
@@ -190,16 +533,25 @@ QString IrcAvatarStore::source(const QString& rawUrl, int pixelSize)
         scheduleFetch(rawUrl, url, key);
         return {};
     }
-    return QStringLiteral("image://") + kProviderId + QLatin1Char('/') + key;
+    return imageIdForKey(key);
 }
 
 QImage IrcAvatarStore::requestImage(const QString& id, QSize *size,
                                     const QSize& requestedSize)
 {
-    const QImage image = cached(id);
+    QString cacheKey = id;
+    bool squareClip = false;
+    const QString squarePrefix = QStringLiteral("square/");
+    if (cacheKey.startsWith(squarePrefix)) {
+        squareClip = true;
+        cacheKey = cacheKey.mid(squarePrefix.size());
+    }
+    const QImage image = cached(cacheKey);
     if (image.isNull())
         return {};
-    const QImage framed = circled(image, requestedSize);
+    const QImage framed = squareClip
+        ? roundedRect(image, requestedSize)
+        : circled(image, requestedSize);
     if (size)
         *size = framed.size();
     return framed;
@@ -234,7 +586,7 @@ void IrcAvatarStore::lookupThenGet(Fetch fetch)
             dropFetch(fetch.key);
             return;
         }
-        found->tlsHost.clear();
+        found->pinnedAddress = QHostAddress();
         startGet(found.value());
         return;
     }
@@ -252,28 +604,22 @@ void IrcAvatarStore::lookupThenGet(Fetch fetch)
 
 void IrcAvatarStore::startGet(Fetch fetch)
 {
-    if (fetch.tlsHost.isEmpty()) {
+    if (!fetch.pinnedAddress.isNull()) {
+        if (ircHostAddressIsUnsafe(fetch.pinnedAddress)) {
+            dropFetch(fetch.key);
+            return;
+        }
         if (!ircAvatarUrlIsSafe(fetch.url)) {
             dropFetch(fetch.key);
             return;
         }
-    } else {
-        // URL host is the pinned IP; original hostname is only for TLS/Host.
-        const QHostAddress pinned(fetch.url.host());
-        if (pinned.isNull() || ircHostAddressIsUnsafe(pinned)) {
+        if (!QHostAddress(fetch.url.host()).isNull()) {
             dropFetch(fetch.key);
             return;
         }
-        if (fetch.url.scheme().compare(QLatin1String("https"), Qt::CaseInsensitive)
-            != 0) {
-            dropFetch(fetch.key);
-            return;
-        }
-        const int port = fetch.url.port(-1);
-        if (port != -1 && port != 443) {
-            dropFetch(fetch.key);
-            return;
-        }
+    } else if (!ircAvatarUrlIsSafe(fetch.url)) {
+        dropFetch(fetch.key);
+        return;
     }
 
     QNetworkRequest request(fetch.url);
@@ -285,15 +631,9 @@ void IrcAvatarStore::startGet(Fetch fetch)
                          QNetworkRequest::AlwaysNetwork);
     request.setRawHeader("Accept", "image/*");
     request.setHeader(QNetworkRequest::UserAgentHeader, QStringLiteral("Omairc"));
-    if (!fetch.tlsHost.isEmpty()) {
-        // Connect to the pinned IP in the URL; verify/SNI against the original
-        // hostname so QNAM never gets a second chance to resolve it.
-        request.setPeerVerifyName(fetch.tlsHost);
-        QByteArray hostHeader = fetch.tlsHost.toUtf8();
-        const int port = fetch.url.port(-1);
-        if (port != -1 && port != 443)
-            hostHeader += ':' + QByteArray::number(port);
-        request.setRawHeader("Host", hostHeader);
+    if (!fetch.pinnedAddress.isNull()) {
+        request.setAttribute(kPinnedAddressAttribute,
+                             QVariant::fromValue(fetch.pinnedAddress));
     }
 
     QNetworkReply *reply = m_nam->get(request);
@@ -307,7 +647,7 @@ void IrcAvatarStore::startGet(Fetch fetch)
     found->reply = reply;
     found->lookupId = -1;
     found->url = fetch.url;
-    found->tlsHost = fetch.tlsHost;
+    found->pinnedAddress = fetch.pinnedAddress;
     found->redirects = fetch.redirects;
     found->rawUrl = fetch.rawUrl;
     found->body.clear();
@@ -354,14 +694,7 @@ void IrcAvatarStore::applyResolvedAddresses(const QString& key,
         dropFetch(key);
         return;
     }
-    const QString originalHost = found->url.host();
-    const QUrl pinnedUrl = ircAvatarUrlPinnedToAddress(found->url, pinned);
-    if (!pinnedUrl.isValid()) {
-        dropFetch(key);
-        return;
-    }
-    found->tlsHost = originalHost;
-    found->url = pinnedUrl;
+    found->pinnedAddress = pinned;
     startGet(found.value());
 }
 
@@ -386,7 +719,7 @@ void IrcAvatarStore::finishReply(const QString& key)
         }
         Fetch next = found.value();
         next.url = redirected;
-        next.tlsHost.clear();
+        next.pinnedAddress = QHostAddress();
         next.redirects += 1;
         next.body.clear();
         reply->deleteLater();

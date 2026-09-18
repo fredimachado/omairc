@@ -54,7 +54,6 @@ IrcLogSeverity severityFor(const QString& command)
 {
     if (command == QStringLiteral("PING")
         || command == QStringLiteral("PONG")
-        || command == QStringLiteral("CAP")
         || command == QStringLiteral("AUTHENTICATE")) {
         return IrcLogSeverity::Trace;
     }
@@ -81,8 +80,108 @@ bool trailingBodyOnly(const QString& command)
     if (command.size() != 3 || !command[0].isDigit())
         return false;
     const int code = command.toInt();
-    return (code >= 1 && code <= 5) || code == 372 || code == 375 || code == 376
+    return (code >= 1 && code <= 3) || code == 372 || code == 375 || code == 376
         || code == 422;
+}
+
+QString joinPipeSeparated(const QStringList& tokens)
+{
+    return tokens.join(QStringLiteral(" | "));
+}
+
+QStringList capTokens(const IrcMessage& message, int subcommandIndex)
+{
+    if (message.parameters.size() <= std::size_t(subcommandIndex + 1))
+        return {};
+    return ircWireText(message.parameters.back())
+        .split(QLatin1Char(' '), Qt::SkipEmptyParts);
+}
+
+QStringList messageParameters(const IrcMessage& message)
+{
+    QStringList params;
+    params.reserve(int(message.parameters.size()));
+    for (const std::string& parameter : message.parameters)
+        params.append(ircWireText(parameter));
+    return params;
+}
+
+std::optional<QString> formatIncomingCap(const IrcMessage& message)
+{
+    if (message.parameters.size() < 2)
+        return std::nullopt;
+
+    const QString subcommand = ircWireText(message.parameters[1]);
+    static constexpr struct {
+        const char *subcommand = nullptr;
+        const char *prefix = nullptr;
+    } kCapFormats[] = {
+        {"LS", "Server supports"},
+        {"ACK", "Acknowledged"},
+        {"NAK", "Rejected"},
+        {"NEW", "Server added"},
+        {"DEL", "Server removed"},
+    };
+
+    for (const auto& row : kCapFormats) {
+        if (subcommand.compare(QLatin1String(row.subcommand), Qt::CaseInsensitive) != 0)
+            continue;
+        const QStringList tokens = capTokens(message, 1);
+        if (tokens.isEmpty())
+            return QString::fromLatin1(row.prefix) + QLatin1Char(':');
+        return QString::fromLatin1(row.prefix) + QStringLiteral(": ")
+            + joinPipeSeparated(tokens);
+    }
+    return std::nullopt;
+}
+
+std::optional<QString> formatOutgoingCapReq(QStringView display)
+{
+    const QStringView trimmed = display.trimmed();
+    if (!trimmed.startsWith(QLatin1String("CAP"), Qt::CaseInsensitive))
+        return std::nullopt;
+    QStringView rest = trimmed.sliced(3).trimmed();
+    if (!rest.startsWith(QLatin1String("REQ"), Qt::CaseInsensitive))
+        return std::nullopt;
+    rest = rest.sliced(3).trimmed();
+    if (rest.startsWith(QLatin1Char(':')))
+        rest = rest.sliced(1);
+    const QStringList tokens =
+        rest.toString().split(QLatin1Char(' '), Qt::SkipEmptyParts);
+    if (tokens.isEmpty())
+        return QStringLiteral("Requesting:");
+    return QStringLiteral("Requesting: ") + joinPipeSeparated(tokens);
+}
+
+std::optional<QString> formatLusersNumeric(int code, const QStringList& params)
+{
+    QStringList rest = params;
+    if (!rest.isEmpty())
+        rest.removeFirst();
+
+    if (rest.isEmpty())
+        return std::nullopt;
+
+    switch (code) {
+    case 252:
+    case 253:
+    case 254:
+        if (rest.size() >= 2)
+            return rest.front() + QLatin1Char(' ') + rest.back();
+        return rest.front();
+    case 20:
+    case 42:
+    case 221:
+    case 250:
+    case 251:
+    case 255:
+    case 265:
+    case 266:
+    case 396:
+        return rest.back();
+    default:
+        return std::nullopt;
+    }
 }
 
 QString incomingText(const IrcMessage& message, const QString& command, bool redacted)
@@ -441,7 +540,7 @@ struct IrcStatusKeepRow
 constexpr IrcStatusKeepRow kStatusKeep[] = {
     {"PING", IrcStatusKeep::Drop, IrcStatusKeep::Drop},
     {"PONG", IrcStatusKeep::Drop, IrcStatusKeep::Drop},
-    {"CAP", IrcStatusKeep::Drop, IrcStatusKeep::Drop},
+    {"CAP", IrcStatusKeep::Keep, IrcStatusKeep::Drop},
     {"AUTHENTICATE", IrcStatusKeep::Drop, IrcStatusKeep::Drop},
     {"JOIN", IrcStatusKeep::Drop, IrcStatusKeep::Drop},
     {"PART", IrcStatusKeep::Drop, IrcStatusKeep::Drop},
@@ -541,6 +640,18 @@ bool keepsIncomingNumeric(const QString& command)
     if (code >= 1 && code <= 4)
         return true;
     switch (code) {
+    case 20:
+    case 42:
+    case 221:
+    case 250:
+    case 251:
+    case 252:
+    case 253:
+    case 254:
+    case 255:
+    case 265:
+    case 266:
+    case 396:
     case 372:
     case 375:
     case 376:
@@ -577,6 +688,11 @@ bool keepsIncomingPrivmsg(const IrcMessage& message,
     const QString target = message.parameters.empty()
         ? QString()
         : ircWireText(message.parameters.front());
+    // Channel chat belongs in the channel transcript. Ergo replays join/quit
+    // history as HistServ PRIVMSG to the channel; the service-nick rule below
+    // would otherwise flood Status with that replay.
+    if (features.isChannel(utf8(target)))
+        return false;
     const QString sender = message.prefix && !message.prefix->nick.empty()
         ? ircWireText(message.prefix->nick)
         : QString();
@@ -623,8 +739,19 @@ bool ircStatusKeepsOutgoing(const QByteArray& line)
     const QString verb = firstToken(QStringView(display));
     if (verb.isEmpty())
         return false;
-    if (const IrcStatusKeepRow *row = statusKeepRow(verb))
-        return row->outgoing == IrcStatusKeep::Keep;
+    if (const IrcStatusKeepRow *row = statusKeepRow(verb)) {
+        if (row->outgoing == IrcStatusKeep::Keep)
+            return true;
+        if (verb == QStringLiteral("CAP")) {
+            const QStringView trimmed = QStringView(display).trimmed();
+            if (trimmed.size() > 3) {
+                const QStringView rest = trimmed.sliced(3).trimmed();
+                if (rest.startsWith(QLatin1String("REQ"), Qt::CaseInsensitive))
+                    return true;
+            }
+        }
+        return false;
+    }
     return false;
 }
 
@@ -690,9 +817,80 @@ IrcStatusEntry::IrcStatusEntry(QString networkId,
 {
 }
 
+QList<IrcStatusEntry> IrcStatusEntry::incomingAll(const QString& networkId,
+                                                  const IrcMessage& message,
+                                                  QStringView channelTypes)
+{
+    const QString command = commandOf(message);
+    if (command == QStringLiteral("004")) {
+        static constexpr struct {
+            const char *label = nullptr;
+            int index = 0;
+        } kMyinfoFields[] = {
+            {"Host", 1},
+            {"IRCd", 2},
+            {"User modes", 3},
+            {"Channel modes", 4},
+            {"Parametric channel modes", 5},
+        };
+
+        const QStringList params = messageParameters(message);
+        QList<IrcStatusEntry> entries;
+        for (const auto& field : kMyinfoFields) {
+            if (field.index >= params.size())
+                break;
+            if (field.index == 5 && params.size() <= 5)
+                break;
+            entries.append(IrcStatusEntry(networkId,
+                                          QDateTime::currentDateTimeUtc(),
+                                          IrcLogSource::Server,
+                                          severityFor(command),
+                                          QStringLiteral("004"),
+                                          QString::fromLatin1(field.label)
+                                              + QStringLiteral(": ")
+                                              + params.at(field.index)));
+        }
+        if (!entries.isEmpty())
+            return entries;
+    }
+    if (command == QStringLiteral("CAP")) {
+        if (const auto formatted = formatIncomingCap(message)) {
+            return {IrcStatusEntry(networkId,
+                                   QDateTime::currentDateTimeUtc(),
+                                   IrcLogSource::Server,
+                                   severityFor(command),
+                                   QStringLiteral("CAP"),
+                                   *formatted)};
+        }
+    }
+    if (command.size() == 3 && command[0].isDigit()) {
+        bool ok = false;
+        const int code = command.toInt(&ok);
+        if (ok) {
+            const QStringList params = messageParameters(message);
+            if (const auto formatted = formatLusersNumeric(code, params)) {
+                return {IrcStatusEntry(networkId,
+                                       QDateTime::currentDateTimeUtc(),
+                                       IrcLogSource::Server,
+                                       severityFor(command),
+                                       command,
+                                       *formatted)};
+            }
+        }
+    }
+    return {buildDefaultIncoming(networkId, message, channelTypes)};
+}
+
 IrcStatusEntry IrcStatusEntry::incoming(const QString& networkId,
                                        const IrcMessage& message,
                                        QStringView channelTypes)
+{
+    return incomingAll(networkId, message, channelTypes).first();
+}
+
+IrcStatusEntry IrcStatusEntry::buildDefaultIncoming(const QString& networkId,
+                                                    const IrcMessage& message,
+                                                    QStringView channelTypes)
 {
     const QString command = commandOf(message);
     if (const auto formatted = formatWhois(message)) {
@@ -798,7 +996,9 @@ IrcStatusEntry IrcStatusEntry::outgoing(const QString& networkId,
         std::string_view(wire.constData(), std::size_t(wire.size())));
     const QString verb = firstToken(QStringView(display));
     QString text = display;
-    if (const auto safe = IrcSecretPolicy::redactWireLine(QStringView(display), channelTypes))
+    if (const auto capReq = formatOutgoingCapReq(QStringView(display)))
+        text = *capReq;
+    else if (const auto safe = IrcSecretPolicy::redactWireLine(QStringView(display), channelTypes))
         text = *safe;
     return IrcStatusEntry(networkId,
                           QDateTime::currentDateTimeUtc(),

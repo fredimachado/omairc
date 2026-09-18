@@ -1,6 +1,7 @@
 #include "ircsession.h"
 
 #include "ircchannelmode.h"
+#include "ircnetworkprofile.h"
 #include "irccommandbuilder.h"
 #include "irccasemapping.h"
 #include "ircjointarget.h"
@@ -381,6 +382,11 @@ IrcSession::~IrcSession()
 QString IrcSession::networkId() const
 {
     return m_config.networkId;
+}
+
+QString IrcSession::name() const
+{
+    return IrcNetworkProfile::resolvedName(m_config.name, m_config.host);
 }
 
 QString IrcSession::host() const
@@ -933,8 +939,12 @@ void IrcSession::handleMessage(const IrcMessage &message)
             m_pendingInvite = IrcPendingInvite{nick, channel};
     }
 
-    if (ircStatusKeepsIncoming(message, m_nick, m_channelTypes))
-        emit statusEntry(IrcStatusEntry::incoming(m_config.networkId, message, m_channelTypes));
+    if (ircStatusKeepsIncoming(message, m_nick, m_channelTypes)) {
+        for (const IrcStatusEntry& entry :
+             IrcStatusEntry::incomingAll(m_config.networkId, message, m_channelTypes)) {
+            emit statusEntry(entry);
+        }
+    }
     applyIsupport(message);
 
     if (message.command == "BATCH") {

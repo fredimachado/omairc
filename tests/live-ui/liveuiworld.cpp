@@ -2,6 +2,7 @@
 
 #include "backend.h"
 #include "ircavatarstore.h"
+#include "omaircupdatecheck.h"
 #include "ircconnection.h"
 #include "irccontroller.h"
 #include "ircnetworkprofile.h"
@@ -481,6 +482,7 @@ bool LiveUiWorld::loadWindow()
                          }
                      });
     IrcAvatarStore *avatarStore = ircInstallAvatarStore(m_engine.get());
+    omaircRegisterUpdateCheck();
     m_engine->rootContext()->setContextProperty(QStringLiteral("appBackend"), m_backend.get());
     m_engine->rootContext()->setContextProperty(QStringLiteral("ircController"),
                                                 m_controller.get());

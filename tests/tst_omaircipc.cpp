@@ -1,12 +1,15 @@
 #include <QCoreApplication>
 #include <QDateTime>
 #include <QDir>
+#include <QElapsedTimer>
 #include <QFile>
 #include <QFileInfo>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QLocalServer>
 #include <QLocalSocket>
+#include <QProcess>
 #include <QSettings>
 #include <QSignalSpy>
 #include <QTemporaryDir>
@@ -72,6 +75,119 @@ QByteArray framesJoin(const QByteArrayList &frames)
     return joined;
 }
 
+QString omaircBinary()
+{
+    const QDir dir(QCoreApplication::applicationDirPath());
+    const QStringList candidates{
+        dir.filePath(QStringLiteral("../build/omairc")),
+        dir.filePath(QStringLiteral("../build/omairc.exe")),
+        dir.filePath(QStringLiteral("../build/release/omairc.exe")),
+        dir.filePath(QStringLiteral("../build/omairc.app/Contents/MacOS/omairc")),
+    };
+    for (const QString &path : candidates) {
+        const QFileInfo info(path);
+        if (info.exists() && info.isExecutable())
+            return info.canonicalFilePath();
+    }
+    return {};
+}
+
+QByteArray lastJsonLine(const QByteArray &bytes)
+{
+    for (const QByteArray &line : bytes.split('\n')) {
+        const QByteArray trimmed = line.trimmed();
+        if (trimmed.startsWith('{'))
+            return trimmed;
+    }
+    return {};
+}
+
+struct CliProcessResult {
+    int exitCode = -1;
+    QByteArray stdoutBytes;
+    QByteArray stderrBytes;
+};
+
+bool listenMuteServer(QLocalServer *server)
+{
+    const QString path = SingleInstance::socketPath();
+    QLocalServer::removeServer(path);
+    server->setSocketOptions(QLocalServer::UserAccessOption);
+    return server->listen(path);
+}
+
+void dropAfterRequest(QLocalSocket *socket)
+{
+    QElapsedTimer timer;
+    timer.start();
+    QByteArray buffer;
+    while (!buffer.contains('\n') && timer.elapsed() < 3000) {
+        if (socket->bytesAvailable() == 0)
+            socket->waitForReadyRead(int(3000 - timer.elapsed()));
+        buffer += socket->readAll();
+    }
+    socket->disconnectFromServer();
+    if (socket->state() != QLocalSocket::UnconnectedState)
+        socket->waitForDisconnected(1000);
+}
+
+CliProcessResult runOmaircCli(const QStringList &args)
+{
+    CliProcessResult result;
+    QProcess proc;
+    proc.setProgram(omaircBinary());
+    proc.setArguments(args);
+    proc.start();
+    if (!proc.waitForStarted(5000))
+        return result;
+    if (!proc.waitForFinished(5000)) {
+        proc.kill();
+        proc.waitForFinished(1000);
+        return result;
+    }
+    result.exitCode = proc.exitCode();
+    result.stdoutBytes = proc.readAllStandardOutput();
+    result.stderrBytes = proc.readAllStandardError();
+    return result;
+}
+
+CliProcessResult runOmaircCliAgainstMute(const QStringList &args)
+{
+    QLocalServer server;
+    if (!listenMuteServer(&server))
+        return {};
+
+    QProcess proc;
+    proc.setProgram(omaircBinary());
+    proc.setArguments(args);
+    proc.start();
+    if (!proc.waitForStarted(5000))
+        return {};
+    if (!server.waitForNewConnection(3000)) {
+        proc.kill();
+        proc.waitForFinished(1000);
+        return {};
+    }
+    QLocalSocket *socket = server.nextPendingConnection();
+    if (!socket) {
+        proc.kill();
+        proc.waitForFinished(1000);
+        return {};
+    }
+    dropAfterRequest(socket);
+    if (!proc.waitForFinished(5000)) {
+        proc.kill();
+        proc.waitForFinished(1000);
+        return {};
+    }
+
+    CliProcessResult result;
+    result.exitCode = proc.exitCode();
+    result.stdoutBytes = proc.readAllStandardOutput();
+    result.stderrBytes = proc.readAllStandardError();
+    return result;
+}
+
 class ScopedCursorRoot
 {
 public:
@@ -116,6 +232,7 @@ private slots:
     void handlerRaiseAndUnknown();
     void handlerStatusResolve();
     void handlerConnectionsAndSend();
+    void handlerConnectionsEmitsResolvedName();
     void handlerSendSplitsLongLine();
     void socketRaiseStillWorks();
     void socketCommandRoundTrip();
@@ -135,6 +252,9 @@ private slots:
     void handlerUnreadDoesNotChmodCursorRootParent();
     void handlerReadReportsTruncated();
     void handlerUnreadKeepsSameMillisecondLines();
+    void uncertainResponseShape();
+    void cliSendUncertainWhenReplyDropped();
+    void cliSendNotUncertainWhenClientMissing();
 
 private:
     std::unique_ptr<QTemporaryDir> m_settingsDir;
@@ -271,6 +391,7 @@ void OmaircIpcTest::connectionsResponseShape()
     QVector<OmaircIpc::ConnectionInfo> infos;
     OmaircIpc::ConnectionInfo info;
     info.id = QStringLiteral("nid");
+    info.name = QStringLiteral("Example Net");
     info.host = QStringLiteral("irc.example");
     info.port = 6697;
     info.tls = true;
@@ -295,6 +416,8 @@ void OmaircIpcTest::connectionsResponseShape()
     QCOMPARE(connections.size(), 2);
     const QJsonObject row = connections.at(0).toObject();
     QCOMPARE(row.value(QStringLiteral("id")).toString(), QStringLiteral("nid"));
+    QCOMPARE(row.value(QStringLiteral("name")).toString(),
+             QStringLiteral("Example Net"));
     QCOMPARE(row.value(QStringLiteral("host")).toString(),
              QStringLiteral("irc.example"));
     QCOMPARE(row.value(QStringLiteral("port")).toInt(), 6697);
@@ -309,6 +432,7 @@ void OmaircIpcTest::connectionsResponseShape()
     const QJsonObject sparse = connections.at(1).toObject();
     QCOMPARE(sparse.value(QStringLiteral("id")).toString(), QStringLiteral("plain"));
     QCOMPARE(sparse.value(QStringLiteral("port")).toInt(), 6667);
+    QVERIFY(!sparse.contains(QStringLiteral("name")));
     QVERIFY(!sparse.contains(QStringLiteral("tls")));
     QVERIFY(!sparse.contains(QStringLiteral("selected")));
     QVERIFY(!sparse.contains(QStringLiteral("lastError")));
@@ -356,6 +480,8 @@ void OmaircIpcTest::handlerConnectionsAndSend()
     QCOMPARE(connections.size(), 1);
     const QJsonObject row = connections.at(0).toObject();
     QCOMPARE(row.value(QStringLiteral("id")).toString(), QStringLiteral("net-1"));
+    QCOMPARE(row.value(QStringLiteral("name")).toString(),
+             QStringLiteral("irc.example"));
     QCOMPARE(row.value(QStringLiteral("host")).toString(),
              QStringLiteral("irc.example"));
     QCOMPARE(row.value(QStringLiteral("port")).toInt(), 6697);
@@ -372,6 +498,10 @@ void OmaircIpcTest::handlerConnectionsAndSend()
                  .value(QStringLiteral("id"))
                  .toString(),
              QStringLiteral("net-1"));
+    QCOMPARE(OmaircIpc::responseStatus(statusLine)
+                 .value(QStringLiteral("name"))
+                 .toString(),
+             QStringLiteral("irc.example"));
 
     const int framesBefore = transport->writtenFrames().size();
     const QByteArray sendLine = handler.handleLine(QByteArrayLiteral(
@@ -379,6 +509,37 @@ void OmaircIpcTest::handlerConnectionsAndSend()
     QVERIFY(OmaircIpc::responseOk(sendLine));
     QVERIFY(framesJoin(transport->writtenFrames().mid(framesBefore))
                 .contains(QByteArrayLiteral("PRIVMSG #omarchy :hello agents")));
+}
+
+void OmaircIpcTest::handlerConnectionsEmitsResolvedName()
+{
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    IrcSessionConfig config = testConfig(QStringLiteral("net-1"));
+    config.name = QStringLiteral("Example Net");
+    IrcSession *session = controller.addSession(config, transport);
+    QVERIFY(session);
+    registerSession(session, transport);
+
+    OmaircIpcHandler handler(&controller);
+    const QByteArray connectionsLine =
+        handler.handleLine(QByteArrayLiteral("{\"cmd\":\"connections\"}"));
+    QVERIFY(OmaircIpc::responseOk(connectionsLine));
+    const QJsonArray connections = OmaircIpc::responseConnections(connectionsLine);
+    QCOMPARE(connections.size(), 1);
+    const QJsonObject row = connections.at(0).toObject();
+    QCOMPARE(row.value(QStringLiteral("name")).toString(),
+             QStringLiteral("Example Net"));
+    QCOMPARE(row.value(QStringLiteral("host")).toString(),
+             QStringLiteral("irc.example"));
+
+    const QByteArray statusLine =
+        handler.handleLine(QByteArrayLiteral("{\"cmd\":\"status\"}"));
+    QVERIFY(OmaircIpc::responseOk(statusLine));
+    QCOMPARE(OmaircIpc::responseStatus(statusLine)
+                 .value(QStringLiteral("name"))
+                 .toString(),
+             QStringLiteral("Example Net"));
 }
 
 void OmaircIpcTest::handlerSendSplitsLongLine()
@@ -990,6 +1151,80 @@ void OmaircIpcTest::handlerReadReportsTruncated()
     QCOMPARE(OmaircIpc::responseMessages(unread).last().toObject()
                  .value(QStringLiteral("message")).toString(),
              QStringLiteral("n100"));
+}
+
+void OmaircIpcTest::uncertainResponseShape()
+{
+    const QString message = QStringLiteral(
+        "No response from Omairc after send; the message may already have been delivered");
+    const QByteArray line = OmaircIpc::uncertainResponse(message);
+    QVERIFY(!OmaircIpc::responseOk(line));
+    QVERIFY(OmaircIpc::responseUncertain(line));
+    QCOMPARE(OmaircIpc::responseError(line), message);
+
+    const QJsonObject object =
+        QJsonDocument::fromJson(line).object();
+    QCOMPARE(object.value(QStringLiteral("ok")).toBool(), false);
+    QCOMPARE(object.value(QStringLiteral("uncertain")).toBool(), true);
+    QCOMPARE(object.value(QStringLiteral("error")).toString(), message);
+
+    const QByteArray plainError =
+        OmaircIpc::errorResponse(QStringLiteral("Not connected"));
+    QVERIFY(!OmaircIpc::responseOk(plainError));
+    QVERIFY(!OmaircIpc::responseUncertain(plainError));
+    QVERIFY(OmaircIpc::responseHasOk(line));
+    QVERIFY(OmaircIpc::responseHasOk(plainError));
+    QVERIFY(OmaircIpc::responseHasOk(QByteArrayLiteral("{\"ok\":true}")));
+    QVERIFY(OmaircIpc::responseHasOk(QByteArrayLiteral("{\"ok\":false}")));
+    // sendReplyUncertain treats empty/missing replies and !responseHasOk as
+    // uncertain, so a non-boolean "ok" must not look like a readable envelope.
+    QVERIFY(!OmaircIpc::responseHasOk(QByteArrayLiteral("not json")));
+    QVERIFY(!OmaircIpc::responseHasOk(QByteArrayLiteral("{\"error\":\"x\"}")));
+    QVERIFY(!OmaircIpc::responseHasOk(QByteArrayLiteral("{\"ok\":\"true\"}")));
+    QVERIFY(!OmaircIpc::responseHasOk(QByteArrayLiteral("{\"ok\":1}")));
+    QVERIFY(!OmaircIpc::responseHasOk(QByteArrayLiteral("{\"ok\":null}")));
+}
+
+void OmaircIpcTest::cliSendUncertainWhenReplyDropped()
+{
+    if (omaircBinary().isEmpty())
+        QSKIP("omairc binary missing");
+
+    const auto send = runOmaircCliAgainstMute(
+        {QStringLiteral("send"), QStringLiteral("#chan"),
+         QStringLiteral("hello")});
+    QCOMPARE(send.exitCode, 2);
+    const QByteArray sendJson = lastJsonLine(send.stdoutBytes);
+    QVERIFY(OmaircIpc::responseUncertain(sendJson));
+    QVERIFY(!OmaircIpc::responseOk(sendJson));
+    QCOMPARE(OmaircIpc::responseError(sendJson),
+             QStringLiteral(
+                 "No response from Omairc after send; the message may already have been delivered"));
+    QVERIFY(QString::fromUtf8(send.stderrBytes)
+                .contains(OmaircIpc::responseError(sendJson)));
+
+    const auto raise = runOmaircCliAgainstMute({QStringLiteral("raise")});
+    QCOMPARE(raise.exitCode, 1);
+    const QByteArray raiseJson = lastJsonLine(raise.stdoutBytes);
+    QVERIFY(!OmaircIpc::responseUncertain(raiseJson));
+    QCOMPARE(OmaircIpc::responseError(raiseJson),
+             QStringLiteral("Invalid or missing response from Omairc"));
+}
+
+void OmaircIpcTest::cliSendNotUncertainWhenClientMissing()
+{
+    if (omaircBinary().isEmpty())
+        QSKIP("omairc binary missing");
+
+    QLocalServer::removeServer(SingleInstance::socketPath());
+    const auto result = runOmaircCli(
+        {QStringLiteral("send"), QStringLiteral("#chan"),
+         QStringLiteral("hello")});
+    QCOMPARE(result.exitCode, 1);
+    const QByteArray json = lastJsonLine(result.stdoutBytes);
+    QVERIFY(!OmaircIpc::responseUncertain(json));
+    QVERIFY(OmaircIpc::responseError(json).contains(
+        QStringLiteral("Omairc is not running")));
 }
 
 void OmaircIpcTest::handlerUnreadKeepsSameMillisecondLines()

@@ -78,6 +78,7 @@ private slots:
     void modeEditsExistingRowsOnly();
     void joinOfListedNickKeepsRanks();
     void dropDirectMessageErasesOnlyDirectRows();
+    void dropChannelErasesOnlyChannelRows();
     void clearMessagesWipesTranscriptKeepsRow();
     void messagesCapAtTwoThousandFifo();
     void clearMessagesEmptiesAfterCap();
@@ -956,6 +957,41 @@ void ReducerTest::dropDirectMessageErasesOnlyDirectRows()
     const IrcConversationState *recreated = reducer.find(lena);
     QVERIFY(recreated);
     QCOMPARE(recreated->unread, 1);
+}
+
+void ReducerTest::dropChannelErasesOnlyChannelRows()
+{
+    IrcEventReducer reducer;
+    welcome(reducer, networkA);
+    const IrcConversationKey lena =
+        reducer.conversationKey(networkA, QStringLiteral("lena"));
+    const IrcConversationKey channel =
+        reducer.conversationKey(networkA, QStringLiteral("#room"));
+    reducer.apply(IrcMessageEvent{
+        lena, QStringLiteral("lena"), QStringLiteral("hi"), timestamp,
+        QStringLiteral("lena")});
+    reducer.apply(IrcJoinEvent{
+        networkA, QStringLiteral("#room"), QStringLiteral("omairc")});
+    reducer.markSelected(channel);
+
+    QCOMPARE(reducer.conversations().size(), std::size_t(2));
+    QVERIFY(reducer.dropChannel(channel));
+    QVERIFY(!reducer.find(channel));
+    QVERIFY(reducer.find(lena));
+    QVERIFY(!reducer.find(lena)->isChannel());
+    QCOMPARE(reducer.conversations().size(), std::size_t(1));
+    QVERIFY(!reducer.selected());
+    QVERIFY(!reducer.dropChannel(channel));
+    QVERIFY(!reducer.dropChannel(lena));
+    QVERIFY(reducer.find(lena));
+    QCOMPARE(reducer.conversations().size(), std::size_t(1));
+
+    reducer.apply(IrcJoinEvent{
+        networkA, QStringLiteral("#room"), QStringLiteral("omairc")});
+    const IrcConversationState *recreated = reducer.find(channel);
+    QVERIFY(recreated);
+    QVERIFY(recreated->isChannel());
+    QVERIFY(recreated->channel()->joined);
 }
 
 void ReducerTest::clearMessagesWipesTranscriptKeepsRow()

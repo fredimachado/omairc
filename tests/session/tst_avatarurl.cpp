@@ -1,3 +1,4 @@
+#include <QCryptographicHash>
 #include <QHostAddress>
 #include <QTest>
 #include <QUrl>
@@ -25,6 +26,10 @@ private slots:
     void rejectsLinkLocal();
     void quantizesFetchPixelSize();
     void selectsSafeAddressAndPinsUrl();
+    void metadataValueAcceptsHttpsUrl();
+    void metadataValueBuildsGravatarFromEmail();
+    void metadataValueStripsMailto();
+    void metadataValueRejectsUnsafeInput();
 };
 
 void AvatarUrlTest::substitutesSizePlaceholder()
@@ -167,6 +172,47 @@ void AvatarUrlTest::selectsSafeAddressAndPinsUrl()
     QVERIFY(ircAvatarUrlIsSafe(pinned));
 
     QVERIFY(!ircAvatarUrlPinnedToAddress(hostUrl, QHostAddress()).isValid());
+}
+
+void AvatarUrlTest::metadataValueAcceptsHttpsUrl()
+{
+    const QString url = QStringLiteral("https://cdn.example.com/a.png");
+    QCOMPARE(ircAvatarMetadataValue(url), url);
+    QCOMPARE(ircAvatarMetadataValue(QStringLiteral("  %1  ").arg(url)), url);
+}
+
+void AvatarUrlTest::metadataValueBuildsGravatarFromEmail()
+{
+    const QByteArray hash =
+        QCryptographicHash::hash(QByteArrayLiteral("me@example.com"),
+                                 QCryptographicHash::Sha256)
+            .toHex();
+    const QString expected =
+        QStringLiteral("https://www.gravatar.com/avatar/%1?s={size}&d=404")
+            .arg(QString::fromLatin1(hash));
+    QCOMPARE(ircAvatarMetadataValue(QStringLiteral("Me@Example.COM")), expected);
+}
+
+void AvatarUrlTest::metadataValueStripsMailto()
+{
+    const QByteArray hash =
+        QCryptographicHash::hash(QByteArrayLiteral("me@example.com"),
+                                 QCryptographicHash::Sha256)
+            .toHex();
+    const QString expected =
+        QStringLiteral("https://www.gravatar.com/avatar/%1?s={size}&d=404")
+            .arg(QString::fromLatin1(hash));
+    QCOMPARE(ircAvatarMetadataValue(QStringLiteral("mailto:Me@Example.COM")), expected);
+}
+
+void AvatarUrlTest::metadataValueRejectsUnsafeInput()
+{
+    QVERIFY(ircAvatarMetadataValue(QString()).isEmpty());
+    QVERIFY(ircAvatarMetadataValue(QStringLiteral("   ")).isEmpty());
+    QVERIFY(ircAvatarMetadataValue(QStringLiteral("http://example.com/a.png")).isEmpty());
+    QVERIFY(ircAvatarMetadataValue(QStringLiteral("https://localhost/a.png")).isEmpty());
+    QVERIFY(ircAvatarMetadataValue(QStringLiteral("not-an-email")).isEmpty());
+    QVERIFY(ircAvatarMetadataValue(QStringLiteral("missing-domain@host")).isEmpty());
 }
 
 int runAvatarUrlTests(int argc, char **argv)

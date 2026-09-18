@@ -9,5 +9,6 @@
         <file alias="demo/mira-avatar.png">../data/demo/mira-avatar.png</file>
         <file alias="demo/anna-avatar.png">../data/demo/anna-avatar.png</file>
         <file alias="demo/kai-avatar.png">../data/demo/kai-avatar.png</file>
+        <file alias="demo/omarchy-icon.png">../data/demo/omarchy-icon.png</file>
     </qresource>
 </RCC>

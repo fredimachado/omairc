@@ -305,6 +305,9 @@ private slots:
     void managerDiscardUnregistersImmediately();
     void pingAndWelcomeProduceStatusEntries();
     void statusKeepListOmitsProtocolDump();
+    void incomingCapMyinfoAndLusersFormatting();
+    void ergoHistoryReplayPrivmsgStaysOffStatus();
+    void outgoingCapReqKeptCapEndDropped();
     void outgoingWhoisAndCtcpQueriesStayOffStatus();
     void configuredPasswordNeverAppearsInStatusEntries();
     void saslAccountNeverAppearsInStatusEntries();
@@ -1721,7 +1724,8 @@ void SessionTest::pingAndWelcomeProduceStatusEntries()
                           ":server 001 omairc :Welcome\r\n"));
 
     QVERIFY(!status.hasLabel(QStringLiteral("PING")));
-    QVERIFY(!status.hasLabel(QStringLiteral("CAP")));
+    QVERIFY(status.hasLabel(QStringLiteral("CAP")));
+    QVERIFY(status.anyFieldContains(QStringLiteral("Server supports: multi-prefix")));
     QVERIFY(status.hasLabel(QStringLiteral("001")));
 }
 
@@ -1755,6 +1759,9 @@ void SessionTest::statusKeepListOmitsProtocolDump()
             ":server 404 omairc #omarchy :Cannot send to channel\r\n"));
 
     QVERIFY(status.hasLabel(QStringLiteral("001")));
+    QVERIFY(status.hasLabel(QStringLiteral("CAP")));
+    QVERIFY(status.anyFieldContains(QStringLiteral("Server supports: batch | chathistory")));
+    QVERIFY(status.anyFieldContains(QStringLiteral("Acknowledged: batch | chathistory")));
     QVERIFY(status.hasLabel(QStringLiteral("372")));
     QVERIFY(status.hasLabel(QStringLiteral("376")));
     QVERIFY(status.anyFieldContains(QStringLiteral("-NickServ- Please identify")));
@@ -1772,6 +1779,103 @@ void SessionTest::statusKeepListOmitsProtocolDump()
     QVERIFY(!status.anyFieldContains(QStringLiteral("hello there")));
     QVERIFY(!status.anyFieldContains(QStringLiteral("older replay")));
     QVERIFY(!status.anyFieldContains(QStringLiteral("ACTION waves")));
+}
+
+void SessionTest::incomingCapMyinfoAndLusersFormatting()
+{
+    const QList<IrcStatusEntry> fourParam = IrcStatusEntry::incomingAll(
+        QStringLiteral("libera"),
+        mustParse(":server 004 omairc demo.omairc OmaircDemo iw abc"));
+    QCOMPARE(fourParam.size(), 4);
+    QCOMPARE(fourParam.at(0).label(), QStringLiteral("004"));
+    QCOMPARE(fourParam.at(0).text(), QStringLiteral("Host: demo.omairc"));
+    QCOMPARE(fourParam.at(1).text(), QStringLiteral("IRCd: OmaircDemo"));
+    QCOMPARE(fourParam.at(2).text(), QStringLiteral("User modes: iw"));
+    QCOMPARE(fourParam.at(3).text(), QStringLiteral("Channel modes: abc"));
+
+    const QList<IrcStatusEntry> fiveParam = IrcStatusEntry::incomingAll(
+        QStringLiteral("libera"),
+        mustParse(":server 004 omairc demo.omairc OmaircDemo iw abc ABC"));
+    QCOMPARE(fiveParam.size(), 5);
+    QCOMPARE(fiveParam.at(4).text(),
+             QStringLiteral("Parametric channel modes: ABC"));
+
+    const IrcStatusEntry capLs = IrcStatusEntry::incoming(
+        QStringLiteral("libera"),
+        mustParse(":server CAP omairc LS :batch chathistory echo-message"));
+    QCOMPARE(capLs.label(), QStringLiteral("CAP"));
+    QCOMPARE(capLs.text(),
+             QStringLiteral("Server supports: batch | chathistory | echo-message"));
+    QCOMPARE(capLs.severity(), IrcLogSeverity::Info);
+
+    const IrcStatusEntry capAck = IrcStatusEntry::incoming(
+        QStringLiteral("libera"),
+        mustParse(":server CAP omairc ACK :batch chathistory"));
+    QCOMPARE(capAck.text(), QStringLiteral("Acknowledged: batch | chathistory"));
+
+    const IrcStatusEntry capNickCollision = IrcStatusEntry::incoming(
+        QStringLiteral("libera"),
+        mustParse(":server CAP ACK LS :batch"));
+    QCOMPARE(capNickCollision.label(), QStringLiteral("CAP"));
+    QCOMPARE(capNickCollision.text(), QStringLiteral("Server supports: batch"));
+
+    const IrcStatusEntry capLsContinuation = IrcStatusEntry::incoming(
+        QStringLiteral("libera"),
+        mustParse(":server CAP * LS * :cap-one cap-two"));
+    QCOMPARE(capLsContinuation.text(),
+             QStringLiteral("Server supports: cap-one | cap-two"));
+
+    const IrcStatusEntry lusers252 = IrcStatusEntry::incoming(
+        QStringLiteral("libera"),
+        mustParse(":server 252 omairc 1 :IRC Operators online"));
+    QCOMPARE(lusers252.label(), QStringLiteral("252"));
+    QCOMPARE(lusers252.text(), QStringLiteral("1 IRC Operators online"));
+
+    const IrcStatusEntry lusers265 = IrcStatusEntry::incoming(
+        QStringLiteral("libera"),
+        mustParse(":server 265 omairc 10 20 :Current local users 10, max 20"));
+    QCOMPARE(lusers265.label(), QStringLiteral("265"));
+    QCOMPARE(lusers265.text(), QStringLiteral("Current local users 10, max 20"));
+}
+
+void SessionTest::ergoHistoryReplayPrivmsgStaysOffStatus()
+{
+    IrcSessionConfig sessionConfig = config();
+    sessionConfig.autojoinChannels = {};
+    Fixture fixture(sessionConfig);
+    StatusCollector status(fixture.session);
+    fixture.connectTls();
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(
+            ":server CAP omairc LS :batch chathistory\r\n"
+            ":server CAP omairc ACK :batch chathistory\r\n"
+            ":server 001 omairc :Welcome\r\n"
+            ":server 005 omairc CHANTYPES=# :are supported by this server\r\n"
+            ":omairc!u@h JOIN :#ergo\r\n"
+            ":irc.host BATCH +hx chathistory #ergo\r\n"
+            "@batch=hx :HistServ!HistServ@internal PRIVMSG #ergo :alice joined the channel\r\n"
+            "@batch=hx :HistServ!HistServ@internal PRIVMSG #ergo :bob quit (Ping timeout)\r\n"
+            ":irc.host BATCH -hx\r\n"
+            ":NickServ!NickServ@services PRIVMSG omairc :Please identify\r\n"));
+
+    QVERIFY(!status.anyFieldContains(QStringLiteral("joined the channel")));
+    QVERIFY(!status.anyFieldContains(QStringLiteral("quit (Ping timeout)")));
+    QVERIFY(status.anyFieldContains(QStringLiteral("Please identify")));
+}
+
+void SessionTest::outgoingCapReqKeptCapEndDropped()
+{
+    QVERIFY(ircStatusKeepsOutgoing(QByteArrayLiteral("CAP REQ :multi-prefix\r\n")));
+    QVERIFY(!ircStatusKeepsOutgoing(QByteArrayLiteral("CAP END\r\n")));
+    QVERIFY(!ircStatusKeepsOutgoing(QByteArrayLiteral("CAP LS 302\r\n")));
+
+    const IrcStatusEntry capReq = IrcStatusEntry::outgoing(
+        QStringLiteral("libera"),
+        QByteArrayLiteral("CAP REQ :multi-prefix chghost\r\n"));
+    QCOMPARE(capReq.label(), QStringLiteral("CAP"));
+    QCOMPARE(capReq.text(),
+             QStringLiteral("Requesting: multi-prefix | chghost"));
+    QCOMPARE(capReq.severity(), IrcLogSeverity::Info);
 }
 
 void SessionTest::outgoingWhoisAndCtcpQueriesStayOffStatus()
@@ -1800,7 +1904,8 @@ void SessionTest::configuredPasswordNeverAppearsInStatusEntries()
                           ":server 001 omairc :Welcome\r\n"));
 
     QVERIFY(!passStatus.hasLabel(QStringLiteral("PING")));
-    QVERIFY(!passStatus.hasLabel(QStringLiteral("CAP")));
+    QVERIFY(passStatus.hasLabel(QStringLiteral("CAP")));
+    QVERIFY(passStatus.anyFieldContains(QStringLiteral("Server supports: multi-prefix")));
     QVERIFY(passStatus.hasLabel(QStringLiteral("001")));
     QVERIFY(passStatus.hasLabel(QStringLiteral("PASS")));
     QVERIFY(!passStatus.anyFieldContains(QStringLiteral("hunter2")));

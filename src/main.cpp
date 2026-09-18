@@ -27,6 +27,7 @@
 
 #include "backend.h"
 #include "omaircpaths.h"
+#include "omaircupdatecheck.h"
 #include "irc/ircavatarstore.h"
 #include "irc/ircconnection.h"
 #include "irc/irccontroller.h"
@@ -261,6 +262,7 @@ int main(int argc, char *argv[]) {
         QStringLiteral("slashSession"), &slashSession);
     engine.rootContext()->setContextProperty(
         QStringLiteral("appAvatarStore"), avatarStore);
+    omaircRegisterUpdateCheck();
     engine.load(QUrl(QStringLiteral("qrc:/Main.qml")));
     if (engine.rootObjects().isEmpty()) {
         qCritical() << "Could not load the Omairc interface; resource available:"
