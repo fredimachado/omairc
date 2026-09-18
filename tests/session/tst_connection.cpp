@@ -1787,6 +1787,15 @@ void ConnectionTest::networkIconUrlComesFromIsupport()
     QCOMPARE(networks->data(networks->index(0, 0), NetworkListModel::IconUrlRole)
                  .toString(),
              QStringLiteral("https://example.org/icon.svg"));
+
+    m_transports.last()->injectBytes(
+        QByteArrayLiteral(":server 005 omairc CHANMODES=beI,k,l,ps CASEMAPPING=rfc1459 "
+                          ":are supported by this server\r\n"));
+    QCOMPARE(controller.networkIconUrl(networkId),
+             QStringLiteral("https://example.org/icon.svg"));
+    QCOMPARE(networks->data(networks->index(0, 0), NetworkListModel::IconUrlRole)
+                 .toString(),
+             QStringLiteral("https://example.org/icon.svg"));
 }
 
 void ConnectionTest::removeSelectedDropsSessionAndStore()

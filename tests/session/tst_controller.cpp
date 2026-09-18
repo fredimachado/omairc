@@ -43,6 +43,14 @@ public:
         ++cancelCount;
     }
 
+    void fire()
+    {
+        if (!active)
+            return;
+        active = false;
+        emit fired();
+    }
+
     QList<int> delays;
     bool active = false;
     int cancelCount = 0;
@@ -455,6 +463,7 @@ private slots:
     void implicitStatusKickStaysOnFocusedNetwork();
     void selectConversationByIdUsesCompositeKey();
     void networkIconUrlComesFromIsupport();
+    void networkIconUrlClearsWhenReconnectOmitsDraftIcon();
     void forgetNetworkDropsGhostRowsAndLog();
     void backgroundChatBumpsConversationEpoch();
     void backgroundPlaybackBumpsUnreadAndMention();
@@ -4221,8 +4230,50 @@ void ControllerTest::networkIconUrlComesFromIsupport()
     QCOMPARE(controller.networkIconUrl(networkId),
              QStringLiteral("https://example.org/icon.svg"));
 
+    transport->injectBytes(
+        QByteArrayLiteral(":server 005 omairc CHANMODES=beI,k,l,ps CASEMAPPING=rfc1459 "
+                          ":are supported by this server\r\n"));
+    QCOMPARE(controller.networkIconUrl(networkId),
+             QStringLiteral("https://example.org/icon.svg"));
+
     controller.forgetNetworkState(networkId);
     QCOMPARE(controller.networkIconUrl(networkId), QString());
+}
+
+void ControllerTest::networkIconUrlClearsWhenReconnectOmitsDraftIcon()
+{
+    IrcController controller;
+    IrcSessionConfig sessionConfig = config(QStringLiteral("libera"));
+    sessionConfig.reconnectEnabled = true;
+    auto *transport = new FakeIrcTransport;
+    auto *timer = new FakeReconnectTimer;
+    IrcSession *session = controller.addSession(sessionConfig, transport, timer);
+    QVERIFY(session);
+    registerSession(session, transport);
+
+    transport->injectBytes(
+        QByteArrayLiteral(":server 005 omairc draft/ICON=https://example.org/icon.svg "
+                          "CHANTYPES=# PREFIX=(ov)@+ "
+                          ":are supported by this server\r\n"));
+    QCOMPARE(controller.networkIconUrl(QStringLiteral("libera")),
+             QStringLiteral("https://example.org/icon.svg"));
+
+    transport->remoteClose();
+    QCOMPARE(session->state(), IrcSession::State::Reconnecting);
+    QVERIFY(timer->active);
+    timer->fire();
+    transport->completeConnect();
+    transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
+                          ":server 001 omairc :Welcome\r\n"));
+    QCOMPARE(session->state(), IrcSession::State::Registered);
+    QCOMPARE(controller.networkIconUrl(QStringLiteral("libera")), QString());
+
+    transport->injectBytes(
+        QByteArrayLiteral(":server 005 omairc CHANTYPES=# PREFIX=(ov)@+ "
+                          "CASEMAPPING=rfc1459 "
+                          ":are supported by this server\r\n"));
+    QCOMPARE(controller.networkIconUrl(QStringLiteral("libera")), QString());
 }
 
 void ControllerTest::forgetNetworkDropsGhostRowsAndLog()
