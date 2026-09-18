@@ -2311,7 +2311,7 @@ ApplicationWindow {
         if (connection && connection.nick.length === 0)
             connectionNickField.focusInput();
         else
-            connectionHostField.focusInput();
+            connectionNameField.focusInput();
     }
 
     // Enter walks the form the way a form should; the window-level Ctrl+Enter
@@ -4555,6 +4555,17 @@ ApplicationWindow {
                                                 font.family: "iA Writer Mono S"
                                                 font.bold: true
                                                 font.pixelSize: win.scaledSize(15)
+                                            }
+
+                                            ConnectionField {
+                                                id: connectionNameField
+                                                label: "Name"
+                                                fieldObjectName: "connectionName"
+                                                text: win.connection ? win.connection.name : ""
+                                                onTextEdited: function(value) {
+                                                    if (win.connection)
+                                                        win.connection.name = value;
+                                                }
                                             }
 
                                             Row {

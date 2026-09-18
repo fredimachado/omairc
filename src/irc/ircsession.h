@@ -68,6 +68,7 @@ struct IrcPendingInvite
 struct IrcSessionConfig
 {
     QString networkId;
+    QString name;
     QString host;
     quint16 port = 6697;
     bool tlsEnabled = true;
@@ -126,6 +127,7 @@ public:
     ~IrcSession() override;
 
     QString networkId() const;
+    QString name() const;
     QString host() const;
     quint16 port() const;
     bool tlsEnabled() const;

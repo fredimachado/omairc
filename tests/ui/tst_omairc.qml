@@ -67,6 +67,7 @@ TestCase {
         id: fakeConnection
 
         property string host: "irc.libera.chat"
+        property string name: "irc.libera.chat"
         property int port: 6697
         property bool tlsEnabled: true
         property bool connectOnStartup: false
@@ -594,6 +595,7 @@ TestCase {
         id: namedConnection
 
         property string host: "irc.libera.chat"
+        property string name: "irc.libera.chat"
         property int port: 6697
         property bool tlsEnabled: true
         property string nick: "sheet-nick"
@@ -648,6 +650,7 @@ TestCase {
             addedFromSnapshot = null;
             selectedNetworkId = snap.networkId;
             host = snap.host;
+            name = snap.name;
             nick = snap.nick;
             displayName = snap.displayName;
             dirty = false;
@@ -680,6 +683,7 @@ TestCase {
             addedFromSnapshot = {
                 networkId: selectedNetworkId,
                 host: host,
+                name: name,
                 nick: nick,
                 displayName: displayName
             };
@@ -697,6 +701,7 @@ TestCase {
             displayName = "New network";
             selectedNetworkChanged();
             host = "";
+            name = "";
             nick = "";
             return true;
         }
@@ -1086,6 +1091,7 @@ TestCase {
         namedConnection.selectedNetworkId = "libera";
         namedConnection.displayName = "irc.libera.chat";
         namedConnection.host = "irc.libera.chat";
+        namedConnection.name = "irc.libera.chat";
         namedConnection.nick = "sheet-nick";
         namedConnection.passwordSetCalls = 0;
         namedConnection.lastPassword = "";
@@ -3864,6 +3870,7 @@ TestCase {
         verify(sheet !== null, "Could not find connectionSheet");
         verify(sheet.visible);
         compare(findChild(window, "connectionHost").text, "irc.libera.chat");
+        compare(findChild(window, "connectionName").text, "irc.libera.chat");
         compare(findChild(window, "connectionNick").text, "");
         compare(findChild(window, "connectionAutojoin").text, "#omarchy");
         compare(findChild(window, "connectionConnectOnStartup").checked, false);
@@ -3879,6 +3886,10 @@ TestCase {
         var hiddenDisconnect = findChild(window, "connectionDisconnect");
         verify(hiddenDisconnect !== null, "Could not find connectionDisconnect");
         compare(hiddenDisconnect.visible, false);
+        var nameField = findChild(window, "connectionName");
+        var hostField = findChild(window, "connectionHost");
+        verify(nameField.mapToItem(sheet, 0, 0).y < hostField.mapToItem(sheet, 0, 0).y,
+               "Name field should sit above Host");
         var password = findChild(window, "connectionPassword");
         var formViewport = findChild(window, "sheetFlick");
         verify(password.mapToItem(sheet, 0, password.height).y
@@ -4005,6 +4016,7 @@ TestCase {
         var expected = [
             "networkChoice-setup-id",
             "connectionShortcutsHint",
+            "connectionName",
             "connectionHost",
             "connectionPort",
             "connectionTls",
@@ -4574,7 +4586,7 @@ TestCase {
         keyClick(Qt.Key_Comma, Qt.ControlModifier);
         tryCompare(findChild(window, "connectionSheet"), "visible", true);
         tryCompare(composer, "activeFocus", false);
-        tryCompare(findChild(window, "connectionHost"), "activeFocus", true);
+        tryCompare(findChild(window, "connectionName"), "activeFocus", true);
 
         var step = 0;
         var name = "";
@@ -4608,6 +4620,14 @@ TestCase {
         waitForRendering(window.contentItem);
         window.requestActivate();
         tryCompare(window, "active", true);
+
+        var nameField = findChild(window, "connectionName");
+        verify(nameField !== null, "Could not find connectionName");
+        nameField.forceActiveFocus();
+        tryCompare(nameField, "activeFocus", true);
+        keyClick(Qt.Key_Return);
+        compare(fakeConnection.applyCalls, 0);
+        tryCompare(findChild(window, "connectionHost"), "activeFocus", true);
 
         var host = findChild(window, "connectionHost");
         verify(host !== null, "Could not find connectionHost");
@@ -4864,10 +4884,10 @@ TestCase {
         tryCompare(sheet, "visible", true);
         waitForRendering(window.contentItem);
 
-        var host = findChild(window, "connectionHost");
-        verify(host !== null, "Could not find connectionHost");
-        tryCompare(host, "activeFocus", true);
-        compare(focusObjectName(window), "connectionHost");
+        var name = findChild(window, "connectionName");
+        verify(name !== null, "Could not find connectionName");
+        tryCompare(name, "activeFocus", true);
+        compare(focusObjectName(window), "connectionName");
         compare(namedConnection.selectedNetworkId, "libera");
 
         keyClick(Qt.Key_Return, Qt.ControlModifier);
@@ -4908,6 +4928,7 @@ TestCase {
         compare(namedNetworks.count, 3);
         compare(namedConnection.selectedNetworkId, "new-id");
         compare(findChild(window, "connectionHost").text, "");
+        compare(findChild(window, "connectionName").text, "");
 
         mouseClick(discardButton);
         compare(namedConnection.discardCalls, 1);
@@ -4915,6 +4936,7 @@ TestCase {
         compare(namedConnection.selectedNetworkId, "libera");
         compare(namedConnection.host, "irc.libera.chat");
         compare(findChild(window, "connectionHost").text, "irc.libera.chat");
+        compare(findChild(window, "connectionName").text, "irc.libera.chat");
         compare(namedConnection.nick, "sheet-nick");
 
         mouseClick(addButton);
@@ -6633,9 +6655,11 @@ TestCase {
             compare(namedNetworks.count, 2);
             compare(namedConnection.selectedNetworkId, "new-id");
             compare(findChild(window, "connectionHost").text, "");
+            compare(findChild(window, "connectionName").text, "");
             namedNetworks.setProperty(1, "displayName", "irc.oftc.net");
             namedConnection.displayName = "irc.oftc.net";
             namedConnection.host = "irc.oftc.net";
+            namedConnection.name = "irc.oftc.net";
             namedConnection.nick = "oak";
             waitForRendering(window.contentItem);
 

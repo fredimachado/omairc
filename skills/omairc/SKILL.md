@@ -56,7 +56,7 @@ conversation. Do not `raise` unless the user wants the window.
 
 | Command | Role |
 |---|---|
-| `connections` / `list` | Networks: `id`, `host`, `port`, `tls`, `nick`, `state`, `selected` |
+| `connections` / `list` | Networks: `id`, `name`, `host`, `port`, `tls`, `nick`, `state`, `selected` |
 | `status [--network ID]` | One connection |
 | `conversations [--network ID]` | Channels and DMs with GUI `unread`/`mention` badges and channel `topic` (does not clear badges) |
 | `names [--network ID] TARGET` | Joined-channel member panel snapshot |

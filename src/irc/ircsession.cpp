@@ -1,6 +1,7 @@
 #include "ircsession.h"
 
 #include "ircchannelmode.h"
+#include "ircnetworkprofile.h"
 #include "irccommandbuilder.h"
 #include "irccasemapping.h"
 #include "ircjointarget.h"
@@ -381,6 +382,11 @@ IrcSession::~IrcSession()
 QString IrcSession::networkId() const
 {
     return m_config.networkId;
+}
+
+QString IrcSession::name() const
+{
+    return IrcNetworkProfile::resolvedName(m_config.name, m_config.host);
 }
 
 QString IrcSession::host() const

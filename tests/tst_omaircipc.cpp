@@ -232,6 +232,7 @@ private slots:
     void handlerRaiseAndUnknown();
     void handlerStatusResolve();
     void handlerConnectionsAndSend();
+    void handlerConnectionsEmitsResolvedName();
     void handlerSendSplitsLongLine();
     void socketRaiseStillWorks();
     void socketCommandRoundTrip();
@@ -390,6 +391,7 @@ void OmaircIpcTest::connectionsResponseShape()
     QVector<OmaircIpc::ConnectionInfo> infos;
     OmaircIpc::ConnectionInfo info;
     info.id = QStringLiteral("nid");
+    info.name = QStringLiteral("Example Net");
     info.host = QStringLiteral("irc.example");
     info.port = 6697;
     info.tls = true;
@@ -414,6 +416,8 @@ void OmaircIpcTest::connectionsResponseShape()
     QCOMPARE(connections.size(), 2);
     const QJsonObject row = connections.at(0).toObject();
     QCOMPARE(row.value(QStringLiteral("id")).toString(), QStringLiteral("nid"));
+    QCOMPARE(row.value(QStringLiteral("name")).toString(),
+             QStringLiteral("Example Net"));
     QCOMPARE(row.value(QStringLiteral("host")).toString(),
              QStringLiteral("irc.example"));
     QCOMPARE(row.value(QStringLiteral("port")).toInt(), 6697);
@@ -428,6 +432,7 @@ void OmaircIpcTest::connectionsResponseShape()
     const QJsonObject sparse = connections.at(1).toObject();
     QCOMPARE(sparse.value(QStringLiteral("id")).toString(), QStringLiteral("plain"));
     QCOMPARE(sparse.value(QStringLiteral("port")).toInt(), 6667);
+    QVERIFY(!sparse.contains(QStringLiteral("name")));
     QVERIFY(!sparse.contains(QStringLiteral("tls")));
     QVERIFY(!sparse.contains(QStringLiteral("selected")));
     QVERIFY(!sparse.contains(QStringLiteral("lastError")));
@@ -475,6 +480,8 @@ void OmaircIpcTest::handlerConnectionsAndSend()
     QCOMPARE(connections.size(), 1);
     const QJsonObject row = connections.at(0).toObject();
     QCOMPARE(row.value(QStringLiteral("id")).toString(), QStringLiteral("net-1"));
+    QCOMPARE(row.value(QStringLiteral("name")).toString(),
+             QStringLiteral("irc.example"));
     QCOMPARE(row.value(QStringLiteral("host")).toString(),
              QStringLiteral("irc.example"));
     QCOMPARE(row.value(QStringLiteral("port")).toInt(), 6697);
@@ -491,6 +498,10 @@ void OmaircIpcTest::handlerConnectionsAndSend()
                  .value(QStringLiteral("id"))
                  .toString(),
              QStringLiteral("net-1"));
+    QCOMPARE(OmaircIpc::responseStatus(statusLine)
+                 .value(QStringLiteral("name"))
+                 .toString(),
+             QStringLiteral("irc.example"));
 
     const int framesBefore = transport->writtenFrames().size();
     const QByteArray sendLine = handler.handleLine(QByteArrayLiteral(
@@ -498,6 +509,37 @@ void OmaircIpcTest::handlerConnectionsAndSend()
     QVERIFY(OmaircIpc::responseOk(sendLine));
     QVERIFY(framesJoin(transport->writtenFrames().mid(framesBefore))
                 .contains(QByteArrayLiteral("PRIVMSG #omarchy :hello agents")));
+}
+
+void OmaircIpcTest::handlerConnectionsEmitsResolvedName()
+{
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    IrcSessionConfig config = testConfig(QStringLiteral("net-1"));
+    config.name = QStringLiteral("Example Net");
+    IrcSession *session = controller.addSession(config, transport);
+    QVERIFY(session);
+    registerSession(session, transport);
+
+    OmaircIpcHandler handler(&controller);
+    const QByteArray connectionsLine =
+        handler.handleLine(QByteArrayLiteral("{\"cmd\":\"connections\"}"));
+    QVERIFY(OmaircIpc::responseOk(connectionsLine));
+    const QJsonArray connections = OmaircIpc::responseConnections(connectionsLine);
+    QCOMPARE(connections.size(), 1);
+    const QJsonObject row = connections.at(0).toObject();
+    QCOMPARE(row.value(QStringLiteral("name")).toString(),
+             QStringLiteral("Example Net"));
+    QCOMPARE(row.value(QStringLiteral("host")).toString(),
+             QStringLiteral("irc.example"));
+
+    const QByteArray statusLine =
+        handler.handleLine(QByteArrayLiteral("{\"cmd\":\"status\"}"));
+    QVERIFY(OmaircIpc::responseOk(statusLine));
+    QCOMPARE(OmaircIpc::responseStatus(statusLine)
+                 .value(QStringLiteral("name"))
+                 .toString(),
+             QStringLiteral("Example Net"));
 }
 
 void OmaircIpcTest::handlerSendSplitsLongLine()

@@ -78,7 +78,7 @@ void OmaircCliTest::commandPages()
                  "\n"
                  "List connections as JSON. list is an alias.\n"
                  "\n"
-                 "Each row has id, host, port, tls, nick, state, and selected.\n"));
+                 "Each row has id, name, host, port, tls, nick, state, and selected.\n"));
 
     const auto status = OmaircCli::parseArgs(
         {QStringLiteral("status"), QStringLiteral("--help")});
