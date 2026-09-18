@@ -25,7 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- Hostname image fetches keep the hostname on the HTTP request while still pinning TCP to one pre-validated address, so Cloudflare (Unreal `draft/ICON` favicon) is not 403'd.
+- Hostname image fetches keep the hostname on the HTTP request while still pinning TCP to one pre-validated address, and parse response headers case-insensitively, so Cloudflare (Unreal `draft/ICON` favicon) is not 403'd.
 - Avatar fetches refuse decompression bombs whose declared or decoded dimensions exceed a fixed budget, and hostname HTTPS GETs pin to one pre-validated address so QNAM cannot re-resolve (DNS rebinding).
 - Closing the last direct message refreshes `connectionStatus` when focus falls back to another network, so the identity footer and Status header no longer keep a stale Connected mark next to the new nick.
 - The identity footer shows `offline` with a muted mark when the focused network is not Connected, matching the sidebar network status. It still shows `away` or `available` only while Connected.

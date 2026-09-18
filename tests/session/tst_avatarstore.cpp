@@ -10,6 +10,7 @@
 #include <QUrl>
 #include <QtEndian>
 
+#include "ircavatarhttp.h"
 #include "ircavatarstore.h"
 #include "ircavatarurl.h"
 
@@ -221,6 +222,10 @@ private slots:
     void circleClipHasTransparentCorners();
     void squareClipHasRoundedRectShape();
     void squareClipWorksForBundledQrc();
+    void parsesHttpHeadersCaseInsensitively();
+    void skipsLeadingCrlfInHeaderBlock();
+    void decodesChunkedHttpBody();
+    void ipv6PinnedAddressUsesUnbracketedHost();
 };
 
 void AvatarStoreTest::refusesRedirectToUnsafe()
@@ -599,6 +604,65 @@ void AvatarStoreTest::squareClipHasRoundedRectShape()
     QVERIFY(pixelIsTransparent(image, 0, 0));
     QVERIFY(pixelIsOpaque(image, 16, 16));
     QVERIFY(pixelIsOpaque(image, 16, 0));
+}
+
+void AvatarStoreTest::parsesHttpHeadersCaseInsensitively()
+{
+    const QByteArray headers =
+        "HTTP/1.1 200 OK\r\n"
+        "Content-Type: image/vnd.microsoft.icon\r\n"
+        "LOCATION: /icons/favicon.ico\r\n"
+        "content-length: 42\r\n"
+        "\r\n";
+    QCOMPARE(ircAvatarHttpHeaderValue(headers, "Content-Type"),
+             QByteArray("image/vnd.microsoft.icon"));
+    QCOMPARE(ircAvatarHttpHeaderValue(headers, "Location"),
+             QByteArray("/icons/favicon.ico"));
+    QCOMPARE(ircAvatarHttpHeaderValue(headers, "Content-Length"),
+             QByteArray("42"));
+    QVERIFY(ircAvatarHttpHeaderValue(headers, "Transfer-Encoding").isEmpty());
+}
+
+void AvatarStoreTest::skipsLeadingCrlfInHeaderBlock()
+{
+    const QByteArray headers =
+        "\r\n"
+        "HTTP/1.1 200 OK\r\n"
+        "Content-Type: image/png\r\n"
+        "\r\n";
+    QCOMPARE(ircAvatarHttpHeaderValue(headers, "Content-Type"),
+             QByteArray("image/png"));
+}
+
+void AvatarStoreTest::decodesChunkedHttpBody()
+{
+    const QByteArray payload = QByteArray("icon-bytes");
+    QByteArray raw;
+    raw += QByteArray::number(payload.size(), 16);
+    raw += "\r\n";
+    raw += payload;
+    raw += "\r\n0\r\n\r\n";
+
+    bool ok = false;
+    const QByteArray decoded = ircAvatarHttpDecodeChunkedBody(raw, &ok);
+    QVERIFY(ok);
+    QCOMPARE(decoded, payload);
+
+    bool bad = true;
+    QVERIFY(ircAvatarHttpDecodeChunkedBody("5\r\nabc", &bad).isEmpty());
+    QVERIFY(!bad);
+}
+
+void AvatarStoreTest::ipv6PinnedAddressUsesUnbracketedHost()
+{
+    const QHostAddress pinned(QStringLiteral("2001:db8::1"));
+    QVERIFY(pinned.protocol() == QAbstractSocket::IPv6Protocol);
+    QCOMPARE(pinned.toString(), QStringLiteral("2001:db8::1"));
+    QVERIFY(!pinned.toString().startsWith(QLatin1Char('[')));
+    QCOMPARE(ircAvatarUrlPinnedToAddress(
+                 QUrl(QStringLiteral("https://cdn.example/icon.png")), pinned)
+                 .host(),
+             QStringLiteral("2001:db8::1"));
 }
 
 void AvatarStoreTest::squareClipWorksForBundledQrc()

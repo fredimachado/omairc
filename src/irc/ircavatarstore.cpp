@@ -1,5 +1,6 @@
 #include "ircavatarstore.h"
 
+#include "ircavatarhttp.h"
 #include "ircavatarurl.h"
 
 #include <QBuffer>
@@ -52,26 +53,6 @@ QByteArray avatarHostHeader(const QUrl& url)
     if (port != -1 && port != 443)
         host += ':' + QByteArray::number(port);
     return host;
-}
-
-QByteArray headerValue(const QByteArray& headers, const QByteArray& name)
-{
-    const QByteArray needle = name.toLower() + ": ";
-    int offset = 0;
-    while (offset < headers.size()) {
-        const int lineEnd = headers.indexOf("\r\n", offset);
-        const int lineLength =
-            lineEnd < 0 ? headers.size() - offset : lineEnd - offset;
-        const QByteArray line = headers.mid(offset, lineLength);
-        if (line.isEmpty())
-            break;
-        if (line.startsWith(needle))
-            return line.mid(needle.size());
-        if (lineEnd < 0)
-            break;
-        offset = lineEnd + 2;
-    }
-    return {};
 }
 
 class PinnedHttpsReply : public QNetworkReply
@@ -217,6 +198,15 @@ private:
                 completeBody();
             return;
         }
+        if (m_chunked) {
+            bool decoded = false;
+            ircAvatarHttpDecodeChunkedBody(m_buffer, &decoded);
+            if (decoded
+                || m_socket.state() == QAbstractSocket::UnconnectedState) {
+                completeBody();
+            }
+            return;
+        }
         if (m_socket.state() == QAbstractSocket::UnconnectedState)
             completeBody();
     }
@@ -240,15 +230,18 @@ private:
             return false;
         }
         setAttribute(QNetworkRequest::HttpStatusCodeAttribute, statusCode);
-        const QByteArray contentType = headerValue(headerBlock, "Content-Type");
+        const QByteArray contentType =
+            ircAvatarHttpHeaderValue(headerBlock, "Content-Type");
         if (!contentType.isEmpty())
             setHeader(QNetworkRequest::ContentTypeHeader, contentType);
-        const QByteArray location = headerValue(headerBlock, "Location");
+        const QByteArray location =
+            ircAvatarHttpHeaderValue(headerBlock, "Location");
         if (!location.isEmpty()) {
             setAttribute(QNetworkRequest::RedirectionTargetAttribute,
                          QUrl::fromEncoded(location));
         }
-        const QByteArray contentLength = headerValue(headerBlock, "Content-Length");
+        const QByteArray contentLength =
+            ircAvatarHttpHeaderValue(headerBlock, "Content-Length");
         if (!contentLength.isEmpty()) {
             m_contentLength = contentLength.toLongLong();
             if (m_contentLength < 0) {
@@ -256,6 +249,8 @@ private:
                      QStringLiteral("Avatar fetch returned invalid Content-Length"));
                 return false;
             }
+        } else if (ircAvatarHttpTransferEncodingIsChunked(headerBlock)) {
+            m_chunked = true;
         }
         return true;
     }
@@ -264,10 +259,19 @@ private:
     {
         if (m_finished)
             return;
-        if (m_contentLength >= 0)
+        if (m_contentLength >= 0) {
             m_body = m_buffer.left(int(m_contentLength));
-        else
+        } else if (m_chunked) {
+            bool ok = false;
+            m_body = ircAvatarHttpDecodeChunkedBody(m_buffer, &ok);
+            if (!ok) {
+                fail(QNetworkReply::ProtocolFailure,
+                     QStringLiteral("Avatar fetch returned invalid chunked body"));
+                return;
+            }
+        } else {
             m_body = m_buffer;
+        }
         m_finished = true;
         m_timer.stop();
         m_socket.disconnect(this);
@@ -299,6 +303,7 @@ private:
     QByteArray m_body;
     qint64 m_readOffset = 0;
     qint64 m_contentLength = -1;
+    bool m_chunked = false;
     bool m_headersParsed = false;
     bool m_aborted = false;
     bool m_finished = false;
