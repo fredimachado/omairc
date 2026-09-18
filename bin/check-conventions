@@ -286,10 +286,12 @@ def check_macos_notarization():
     problems = []
     workflow = ROOT / ".github" / "workflows" / "macos.yml"
     sign = ROOT / "bin" / "sign-macos"
+    notarize = ROOT / "bin" / "notarize-macos"
     entitlements = ROOT / "packaging" / "macos" / "Omairc.entitlements"
     if not workflow.is_file():
         return problems
     text = workflow.read_text(encoding="utf-8", errors="replace")
+    notarize_text = notarize.read_text(encoding="utf-8", errors="replace") if notarize.is_file() else ""
     if "APPLE_CERTIFICATE" not in text or "OMAIRC_REQUIRE_DEVELOPER_ID" not in text:
         problems.append(
             ".github/workflows/macos.yml: import a Developer ID certificate and "
@@ -299,8 +301,7 @@ def check_macos_notarization():
         problems.append(
             ".github/workflows/macos.yml: v* tags must fail closed without "
             "APPLE_CERTIFICATE rather than shipping an ad-hoc zip")
-    if "notarytool" not in (ROOT / "bin" / "notarize-macos").read_text(
-            encoding="utf-8", errors="replace"):
+    if "notarytool" not in notarize_text:
         problems.append(
             "bin/notarize-macos: notarize Developer ID zips with notarytool")
     if "bin/notarize-macos" not in text:
@@ -318,6 +319,32 @@ def check_macos_notarization():
     build = (ROOT / "bin" / "build-macos").read_text(encoding="utf-8", errors="replace")
     if "bin/sign-macos" not in build:
         problems.append("bin/build-macos: sign through bin/sign-macos")
+    if "codesign --verify" not in text:
+        problems.append(
+            ".github/workflows/macos.yml: keep codesign --verify after Developer ID "
+            "signing")
+    if "stapler validate" not in text:
+        problems.append(
+            ".github/workflows/macos.yml: keep stapler validate after notarization")
+    if "spctl --assess --type execute --verbose=4" not in text:
+        problems.append(
+            ".github/workflows/macos.yml: after stapling, assess Gatekeeper with "
+            "spctl --assess --type execute --verbose=4 so a rejected app fails "
+            "the release")
+    if re.search(r"\bspctl\b", text) and "OMAIRC_NOTARIZED" not in text:
+        problems.append(
+            ".github/workflows/macos.yml: Gatekeeper assessment must run only after "
+            "successful notarization (OMAIRC_NOTARIZED)")
+    combined = text + "\n" + notarize_text
+    if re.search(r"(--apple-id|\bAPPLE_ID\b|\bAPP_PASSWORD\b)", combined):
+        problems.append(
+            "macOS notarization must use the App Store Connect API key, not "
+            "Apple ID / app-password")
+    if re.search(r"com\.apple\.quarantine|\bxattr\b", combined):
+        problems.append(
+            "do not strip quarantine to bypass Gatekeeper; assess the stapled app")
+    if re.search(r"(?i)\bsparkle\b", combined):
+        problems.append("do not add Sparkle to macOS CI or notarization")
     return problems
 
 
@@ -345,6 +372,10 @@ def check_macos_ci_arch_selection():
     if "macos-15-intel" not in text:
         problems.append(
             ".github/workflows/macos.yml: Intel zips must build on macos-15-intel")
+    if not re.search(r"(?m)^\s+- os: macos-15$", text):
+        problems.append(
+            ".github/workflows/macos.yml: Apple Silicon zips must build on macos-15; "
+            "macos-latest is macOS 26 and does not ship Xcode 16")
     if "suffix: macos-arm64" not in text or "suffix: macos-x64" not in text:
         problems.append(
             ".github/workflows/macos.yml: matrix must include macos-arm64 and "
@@ -353,11 +384,68 @@ def check_macos_ci_arch_selection():
         problems.append(
             ".github/workflows/macos.yml: do not glob every macOS zip when "
             "replacing a release asset; that deletes the other architecture")
-    if "actions/download-artifact@v4" not in text or "macos-arm64.zip" not in text \
+    if "actions/download-artifact@v8" not in text or "macos-arm64.zip" not in text \
             or "macos-x64.zip" not in text:
         problems.append(
             ".github/workflows/macos.yml: a follow-up job must download both "
             "macos-arm64 and macos-x64 artifacts so a missing zip fails the run")
+    return problems
+
+
+def check_macos_ci_xcode_and_actions():
+    problems = []
+    workflow = ROOT / ".github" / "workflows" / "macos.yml"
+    if not workflow.is_file():
+        return problems
+    text = workflow.read_text(encoding="utf-8", errors="replace")
+    if "maxim-lobanov/setup-xcode@v1" not in text or "xcode-version:" not in text:
+        problems.append(
+            ".github/workflows/macos.yml: select Xcode with maxim-lobanov/setup-xcode "
+            "and an exact xcode-version; do not fall back to the runner default")
+    if "No Xcode 16 install found" in text or "Prefer Xcode 16 when available" in text:
+        problems.append(
+            ".github/workflows/macos.yml: do not keep a best-effort Xcode 16 "
+            "shell fallback; setup-xcode must fail closed")
+    versions = re.findall(r"xcode-version:\s*['\"]?([^\s'\"}]+)", text)
+    versions += re.findall(r'(?m)^\s+xcode:\s*"([^"]+)"', text)
+    concrete = [version for version in versions if not version.startswith("${{")]
+    if not concrete:
+        problems.append(
+            ".github/workflows/macos.yml: pin an exact Xcode 16 release in "
+            "xcode-version or the matrix xcode field")
+    for version in concrete:
+        if not re.fullmatch(r"16\.\d+", version):
+            problems.append(
+                ".github/workflows/macos.yml: Xcode pin must be an exact 16.x "
+                f"release (Qt 6.8.3), not {version!r}")
+    required = (
+        ("actions/checkout@v7", "actions/checkout@v7"),
+        ("actions/cache@v6", "actions/cache@v6"),
+        ("actions/upload-artifact@v7", "actions/upload-artifact@v7"),
+        ("actions/download-artifact@v8", "actions/download-artifact@v8"),
+    )
+    for needle, label in required:
+        if needle not in text:
+            problems.append(
+                f".github/workflows/macos.yml: use {label} (current Node 24 major)")
+    stale = (
+        r"actions/checkout@v[1-6]\b",
+        r"actions/cache@v[1-5]\b",
+        r"actions/upload-artifact@v[1-6]\b",
+        r"actions/download-artifact@v[1-7]\b",
+    )
+    for pattern in stale:
+        if re.search(pattern, text):
+            problems.append(
+                f".github/workflows/macos.yml: replace stale action pin matching "
+                f"{pattern}")
+    if "contents: write" not in text:
+        problems.append(
+            ".github/workflows/macos.yml: keep contents: write for release assets")
+    if re.search(r"(id-token|pages|pull-requests):\s*write", text):
+        problems.append(
+            ".github/workflows/macos.yml: do not broaden workflow permissions "
+            "beyond contents: write")
     return problems
 
 
@@ -399,6 +487,7 @@ CHECKS = (
     ("macOS CI Qt arch selection", check_macos_ci_arch_selection),
     ("macOS CI Bash 3.2 builtins", check_macos_ci_bash32),
     ("macOS Developer ID notarization", check_macos_notarization),
+    ("macOS CI Xcode and Actions majors", check_macos_ci_xcode_and_actions),
     ("macOS SDK compat arch gate", check_macos_sdk_compat),
 )
 
