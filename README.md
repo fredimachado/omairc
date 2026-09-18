@@ -156,7 +156,7 @@ Compared with Linux you will miss portal text scale (stays 1.0), desktop notific
 
 Omarchy is the home. A native macOS build is a bonus: it works, it is not the focus, and why not.
 
-Each version tag also publishes `omairc-*-macos-arm64.zip` (Apple Silicon CI; Intel builds use `macos-x64`) on the [GitHub release](https://github.com/fredimachado/omairc/releases/latest). Pull-request CI uploads the same zip as a workflow artifact. The bundle is unsigned and ad-hoc signed only; Gatekeeper may block it until you right-click → Open the first time. Notarization is not wired up yet.
+Each version tag publishes `omairc-*-macos-arm64.zip` (Apple Silicon) and `omairc-*-macos-x64.zip` (Intel) on the [GitHub release](https://github.com/fredimachado/omairc/releases/latest). Pull-request CI uploads both zips as workflow artifacts. The bundles are unsigned and ad-hoc signed only; Gatekeeper may block them until you right-click → Open the first time. Notarization is not wired up yet.
 
 From the repo root on macOS:
 
