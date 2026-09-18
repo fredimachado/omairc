@@ -2538,13 +2538,8 @@ void IrcController::routeOwnMetadataFail(const QString& networkId,
         echoOwnMetadataOutcome(networkId, watch.destination, outcome);
     };
 
-    if (failKeys.isEmpty()) {
-        const QHash<QString, IrcOwnMetadataWatch> pending = *networkWatches;
-        m_ownMetadataWatches.erase(networkWatches);
-        for (auto it = pending.constBegin(); it != pending.constEnd(); ++it)
-            finishWatch(it.key(), it.value());
+    if (failKeys.isEmpty())
         return;
-    }
 
     for (const QString& canonical : failKeys) {
         auto found = networkWatches->find(canonical);

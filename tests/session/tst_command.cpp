@@ -183,6 +183,7 @@ private slots:
     void statusWritesMetadataFrames();
     void statusRefusesOnMetadataError();
     void statusRefusesOnMetadataFailReplies();
+    void ownMetadataFailKeylessPreservesConcurrentWatches();
     void statusRefusesNonEmptyWhenMaxValueBytesZero();
     void avatarWritesMetadataFrames();
     void avatarRefusesUnsafeInput();
@@ -1765,12 +1766,35 @@ void CommandTest::statusRefusesOnMetadataFailReplies()
                 ":permission denied\r\n"),
             QStringLiteral("Could not set standing status: KEY_NO_PERMISSION"));
     runFail(QByteArrayLiteral(
-                ":server FAIL METADATA VALUE_INVALID :value is too long\r\n"),
-            QStringLiteral("Could not set standing status: VALUE_INVALID"));
-    runFail(QByteArrayLiteral(
                 ":server FAIL METADATA RATE_LIMITED * status 5 "
                 ":too many changes\r\n"),
             QStringLiteral("Could not set standing status: RATE_LIMITED"));
+
+    IrcController keyless;
+    auto *keylessTransport = new FakeIrcTransport;
+    IrcSession *keylessSession = keyless.addSession(config(), keylessTransport);
+    QVERIFY(keylessSession);
+    QVERIFY(keyless.start(QStringLiteral("libera")));
+    welcomeMetadata(keylessTransport);
+    keylessTransport->injectBytes(
+        QByteArrayLiteral(":omairc!u@h JOIN :#omarchy\r\n"
+                          ":server 353 omairc = #omarchy :omairc Alice\r\n"
+                          ":server 366 omairc #omarchy :End of NAMES\r\n"));
+    keyless.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    auto *keylessMessages =
+        qobject_cast<QAbstractItemModel *>(keyless.messages());
+    QVERIFY(keylessMessages);
+    QVERIFY(keyless.sendMessage(QStringLiteral("/status blocked")));
+    keylessTransport->injectBytes(
+        QByteArrayLiteral(
+            ":server FAIL METADATA VALUE_INVALID :value is too long\r\n"));
+    QVERIFY(!selectedBodiesContain(
+        keylessMessages,
+        QStringLiteral("Could not set standing status")));
+    keylessTransport->injectBytes(
+        QByteArrayLiteral(":server 761 omairc omairc status * :blocked\r\n"));
+    QVERIFY(selectedBodiesContain(
+        keylessMessages, QStringLiteral("Standing status set to blocked.")));
 
     // Unrelated FAIL for another key must not consume the watch.
     IrcController controller;
@@ -1797,6 +1821,59 @@ void CommandTest::statusRefusesOnMetadataFailReplies()
         QByteArrayLiteral(":server 761 omairc omairc status * :waiting\r\n"));
     QVERIFY(selectedBodiesContain(
         messages, QStringLiteral("Standing status set to waiting.")));
+}
+
+void CommandTest::ownMetadataFailKeylessPreservesConcurrentWatches()
+{
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    IrcSession *session = controller.addSession(config(), transport);
+    QVERIFY(session);
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    welcomeMetadata(transport);
+    transport->injectBytes(
+        QByteArrayLiteral(":omairc!u@h JOIN :#omarchy\r\n"
+                          ":server 353 omairc = #omarchy :omairc Alice\r\n"
+                          ":server 366 omairc #omarchy :End of NAMES\r\n"));
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
+    QVERIFY(messages);
+
+    QVERIFY(controller.sendMessage(QStringLiteral("/status writing")));
+    QCOMPARE(transport->writtenFrames().last(),
+             QByteArrayLiteral("METADATA * SET status :writing\r\n"));
+    QVERIFY(controller.sendMessage(
+        QStringLiteral("/avatar https://example.com/a.png")));
+    QCOMPARE(transport->writtenFrames().last(),
+             QByteArrayLiteral("METADATA * SET avatar :https://example.com/a.png\r\n"));
+
+    transport->injectBytes(
+        QByteArrayLiteral(
+            ":server FAIL METADATA VALUE_INVALID :value is too long\r\n"));
+    QVERIFY(!selectedBodiesContain(
+        messages, QStringLiteral("Could not set standing status")));
+    QVERIFY(!selectedBodiesContain(
+        messages, QStringLiteral("Could not set avatar")));
+
+    transport->injectBytes(
+        QByteArrayLiteral(
+            ":server FAIL METADATA KEY_NO_PERMISSION omairc avatar "
+            ":permission denied\r\n"));
+    QVERIFY(!selectedBodiesContain(
+        messages, QStringLiteral("Could not set standing status")));
+    QVERIFY(selectedBodiesContain(
+        messages, QStringLiteral("Could not set avatar: KEY_NO_PERMISSION")));
+
+    transport->injectBytes(
+        QByteArrayLiteral(":server 761 omairc omairc status * :writing\r\n"));
+    QVERIFY(selectedBodiesContain(
+        messages, QStringLiteral("Standing status set to writing.")));
+    transport->injectBytes(
+        QByteArrayLiteral(
+            ":server 761 omairc omairc avatar * :https://example.com/a.png\r\n"));
+    QVERIFY(!selectedBodiesContain(
+        messages,
+        QStringLiteral("Avatar set to https://example.com/a.png.")));
 }
 
 void CommandTest::statusRefusesNonEmptyWhenMaxValueBytesZero()
