@@ -515,7 +515,9 @@ jobs:
 
           # Only replace this architecture's zip so a parallel Intel/ARM
           # job cannot delete the sibling release asset.
-          gh release view "$tag" --json assets --jq '.assets[].name' | while IFS= read -r asset; do
+          # macOS /bin/bash is 3.2; mapfile is Bash 4+.
+          assets=$(gh release view "$tag" --json assets --jq '.assets[].name')
+          while IFS= read -r asset || [ -n "$asset" ]; do
             [ -n "$asset" ] || continue
             case "$asset" in
               omairc-*-"$OMAIRC_MAC_SUFFIX".zip)
@@ -524,7 +526,7 @@ jobs:
                 fi
                 ;;
             esac
-          done
+          done <<< "$assets"
 
           gh release upload "$tag" "$zip" --clobber
 
