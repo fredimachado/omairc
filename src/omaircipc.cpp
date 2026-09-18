@@ -369,6 +369,25 @@ QByteArray errorResponse(const QString &message)
     return toLine(object);
 }
 
+QByteArray uncertainResponse(const QString &message)
+{
+    QJsonObject object;
+    object.insert(QStringLiteral("ok"), false);
+    putFlag(object, QStringLiteral("uncertain"), true);
+    object.insert(QStringLiteral("error"), message);
+    return toLine(object);
+}
+
+bool responseHasOk(const QByteArray &line)
+{
+    QJsonParseError parseError;
+    const QJsonDocument document =
+        QJsonDocument::fromJson(line.trimmed(), &parseError);
+    if (parseError.error != QJsonParseError::NoError || !document.isObject())
+        return false;
+    return document.object().value(QStringLiteral("ok")).isBool();
+}
+
 bool responseOk(const QByteArray &line)
 {
     QString unused;
@@ -381,6 +400,13 @@ QString responseError(const QByteArray &line)
     QString unused;
     const QJsonObject object = parseObject(line, &unused);
     return object.value(QStringLiteral("error")).toString();
+}
+
+bool responseUncertain(const QByteArray &line)
+{
+    QString unused;
+    const QJsonObject object = parseObject(line, &unused);
+    return object.value(QStringLiteral("uncertain")).toBool(false);
 }
 
 QJsonArray responseConnections(const QByteArray &line)

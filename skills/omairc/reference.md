@@ -14,9 +14,16 @@ stay even when zero. Top-level `"ok": false` on errors is kept.
 ```json
 {"ok":true}
 {"ok":false,"error":"Omairc is not running (no local socket). Start the client first."}
+{"ok":false,"uncertain":true,"error":"No response from Omairc after send; the message may already have been delivered"}
 ```
 
 `send` and `raise` succeed with `{"ok":true}` only.
+
+`send` may return `"uncertain": true` (exit 2) after a successful local-socket
+write of the send request when the CLI does not get a readable reply. That is
+not proof the window ran `sendToTarget`. Do not retry `send`. Confirm with
+`read --last` on that target using own nick and the same text; a peer can send
+identical text. If present, stop; if absent, send once.
 
 Zero connections: `"No connections are available."`
 More than one connection without `--network`: `"Multiple connections are available; specify a network id."`

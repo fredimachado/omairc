@@ -227,6 +227,20 @@ int fail(const QString &message, int code = 1)
     return code;
 }
 
+int uncertain(const QString &message)
+{
+    writeStdoutLine(OmaircIpc::uncertainResponse(message));
+    writeStderr(message);
+    return 2;
+}
+
+bool sendReplyUncertain(const std::optional<QByteArray> &response)
+{
+    if (!response || response->isEmpty())
+        return true;
+    return !OmaircIpc::responseHasOk(*response);
+}
+
 bool isFlag(const QString &arg)
 {
     return arg.startsWith(QLatin1Char('-'));
@@ -487,6 +501,15 @@ int sendRequest(const OmaircIpc::Request &request)
     }
 
     const std::optional<QByteArray> response = readLine(socket);
+    if (request.command == OmaircIpc::Command::Send) {
+        if (sendReplyUncertain(response)) {
+            return uncertain(QStringLiteral(
+                "No response from Omairc after send; the message may already have been delivered"));
+        }
+        writeStdoutLine(*response);
+        return OmaircIpc::responseOk(*response) ? 0 : 1;
+    }
+
     if (!response)
         return fail(QStringLiteral("Invalid or missing response from Omairc"));
     if (response->isEmpty())
