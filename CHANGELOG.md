@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-09-18
+
 ### Added
 
 - IRCv3 `draft/ICON` shows the server icon in the sidebar network square when the URL is safe and loads; otherwise the initial letter and palette color stay. `--demo-server` ships a bundled `qrc` icon for the omarchy seed network.
@@ -20,12 +22,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `/part` drops the local channel conversation. PART is written only when the buffer was joined, so a failed `/join` window can be dismissed without a 403. `/leave` is the same command. Named channels that were never opened still send PART. A delayed self JOIN after that dismiss sends PART and drops the buffer instead of resurrecting a channel the user already left.
 - `omairc send` returns exit 2 with `"uncertain": true` after a successful local-socket write of the send request when the CLI does not get a readable reply, so agents do not double-send on a lost ack.
 - CLI JSON rows omit empty strings and `false` flags so agent payloads stay small. Missing means that default. Numbers such as `unread` stay. Top-level `"ok": false` on errors is unchanged.
 - The Windows portable tree ships `msvcp140` and `vcruntime140` next to `omairc.exe` so a user-mode install does not need `vc_redist`. `bin\build.bat` copies those DLLs from `VCToolsRedistDir`. It does not pass `windeployqt --compiler-runtime`: on MSVC that switch only adds an unused `vc_redist.x64.exe`.
 
 ### Fixed
 
+- Join failure `448` (illegal channel name) copies into the selected channel transcript as well as Status, like the other join errors.
 - Hostname image fetches keep the hostname on the HTTP request while still pinning TCP to one pre-validated address, and parse response headers case-insensitively, so Cloudflare (Unreal `draft/ICON` favicon) is not 403'd.
 - Avatar fetches refuse decompression bombs whose declared or decoded dimensions exceed a fixed budget, and hostname HTTPS GETs pin to one pre-validated address so QNAM cannot re-resolve (DNS rebinding).
 - Closing the last direct message refreshes `connectionStatus` when focus falls back to another network, so the identity footer and Status header no longer keep a stale Connected mark next to the new nick.
@@ -200,7 +204,8 @@ First public release: a dead-simple IRC client for Omarchy.
 - Keyboard map, slash-command complete, selectable transcript, and follow-unseen.
 - qmake Unix install tree and a GitHub Releases pacman repository.
 
-[Unreleased]: https://github.com/fredimachado/omairc/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/fredimachado/omairc/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/fredimachado/omairc/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/fredimachado/omairc/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/fredimachado/omairc/compare/v0.4.0...v0.5.0
 
