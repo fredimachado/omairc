@@ -27,119 +27,14 @@ esac
 
 mkdir -p "$ROOT/dist"
 ZIP="$ROOT/dist/omairc-${VERSION}-${SUFFIX}.zip"
+STAGE="$ROOT/dist/omairc-${VERSION}-${SUFFIX}"
+rm -rf -- "$STAGE" "$ZIP"
+mkdir -p "$STAGE"
+ditto "$APP" "$STAGE/omairc.app"
+(
+  cd "$ROOT/dist"
+  ditto -c -k --sequesterRsrc --keepParent "$STAGE/omairc.app" "$(basename "$ZIP")"
+)
+rm -rf -- "$STAGE"
 
-zip_app() {
-  STAGE="$ROOT/dist/omairc-${VERSION}-${SUFFIX}"
-  rm -rf -- "$STAGE" "$ZIP"
-  mkdir -p "$STAGE"
-  ditto "$APP" "$STAGE/omairc.app"
-  (
-    cd "$ROOT/dist"
-    ditto -c -k --sequesterRsrc --keepParent "$STAGE/omairc.app" "$(basename "$ZIP")"
-  )
-  rm -rf -- "$STAGE"
-}
-
-has_developer_id() {
-  if codesign -dvv "$APP" 2>&1 | grep -q 'Authority=Developer ID Application'; then
-    return 0
-  fi
-  return 1
-}
-
-notary_field() {
-  python3 -c '
-import json, pathlib, sys
-text = pathlib.Path(sys.argv[1]).read_text(encoding="utf-8")
-idx = text.rfind("{")
-if idx < 0:
-    raise SystemExit("notarytool produced no JSON")
-payload = json.loads(text[idx:])
-print(payload.get(sys.argv[2]) or "")
-' "$1" "$2"
-}
-
-notarize_and_staple() {
-  key_path="${APP_STORE_CONNECT_API_KEY_PATH:-}"
-  key_id="${APP_STORE_CONNECT_KEY_ID:-}"
-  issuer="${APP_STORE_CONNECT_ISSUER_ID:-}"
-  if [ -z "$key_path" ] || [ ! -f "$key_path" ] || [ -z "$key_id" ] || [ -z "$issuer" ]; then
-    if [ "${OMAIRC_REQUIRE_NOTARIZE:-}" = 1 ]; then
-      echo "OMAIRC_REQUIRE_NOTARIZE=1 but App Store Connect API key, key id, or issuer is missing." >&2
-      exit 1
-    fi
-    echo "Skipping notarization (no App Store Connect API key)."
-    return 0
-  fi
-
-  if ! has_developer_id; then
-    if [ "${OMAIRC_REQUIRE_NOTARIZE:-}" = 1 ]; then
-      echo "OMAIRC_REQUIRE_NOTARIZE=1 but $APP is not signed with Developer ID Application." >&2
-      exit 1
-    fi
-    echo "Skipping notarization ($APP is not Developer ID signed)."
-    return 0
-  fi
-
-  echo "Uploading $ZIP to Apple notarization"
-  submit_json="$ROOT/dist/notary-submit.json"
-  set +e
-  xcrun notarytool submit "$ZIP" \
-    --key "$key_path" \
-    --key-id "$key_id" \
-    --issuer "$issuer" \
-    --output-format json \
-    >"$submit_json"
-  submit_rc=$?
-  set -e
-  cat "$submit_json"
-  submission_id=$(notary_field "$submit_json" id)
-  if [ -z "$submission_id" ] || [ "$submit_rc" -ne 0 ]; then
-    echo "notarytool submit failed (exit $submit_rc, id ${submission_id:-none})." >&2
-    exit 1
-  fi
-
-  # First-time Developer ID uploads are often held for extra analysis.
-  # A short submit --wait looks hung, then fails while Apple is still working.
-  echo "Waiting for notarization $submission_id (can take tens of minutes)"
-  set +e
-  xcrun notarytool wait "$submission_id" \
-    --key "$key_path" \
-    --key-id "$key_id" \
-    --issuer "$issuer" \
-    --timeout 45m
-  wait_rc=$?
-  set -e
-
-  info_json="$ROOT/dist/notary-info.json"
-  set +e
-  xcrun notarytool info "$submission_id" \
-    --key "$key_path" \
-    --key-id "$key_id" \
-    --issuer "$issuer" \
-    --output-format json \
-    >"$info_json"
-  set -e
-  cat "$info_json"
-  status=$(notary_field "$info_json" status)
-  rm -f -- "$submit_json" "$info_json"
-
-  if [ "$status" != "Accepted" ]; then
-    echo "Notarization status was ${status:-unknown} (id $submission_id, wait exit $wait_rc)." >&2
-    xcrun notarytool log "$submission_id" \
-      --key "$key_path" \
-      --key-id "$key_id" \
-      --issuer "$issuer" >&2 || true
-    exit 1
-  fi
-
-  echo "Stapling notarization ticket to $APP"
-  xcrun stapler staple "$APP"
-  xcrun stapler validate "$APP"
-  zip_app
-  echo "Notarized $ZIP"
-}
-
-zip_app
-notarize_and_staple
 echo "Built $ZIP"

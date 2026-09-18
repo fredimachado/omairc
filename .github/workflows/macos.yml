@@ -8,6 +8,7 @@ on:
       - 'bin/build-macos'
       - 'bin/package-macos'
       - 'bin/sign-macos'
+      - 'bin/notarize-macos'
       - 'packaging/macos/**'
       - 'omairc.pro'
       - 'qtkeychain.pri'
@@ -26,6 +27,7 @@ on:
       - 'bin/build-macos'
       - 'bin/package-macos'
       - 'bin/sign-macos'
+      - 'bin/notarize-macos'
       - 'packaging/macos/**'
       - 'omairc.pro'
       - 'qtkeychain.pri'
@@ -45,7 +47,7 @@ permissions:
 jobs:
   macos:
     runs-on: macos-latest
-    timeout-minutes: 90
+    timeout-minutes: ${{ github.event_name == 'pull_request' && 45 || 90 }}
     env:
       QT_VERSION: 6.8.3
       QTKEYCHAIN_VERSION: 0.15.0
@@ -285,7 +287,6 @@ jobs:
               echo "APP_STORE_CONNECT_API_KEY_PATH=$key_path"
               echo "APP_STORE_CONNECT_KEY_ID=$APP_STORE_CONNECT_KEY_ID"
               echo "APP_STORE_CONNECT_ISSUER_ID=$APP_STORE_CONNECT_ISSUER_ID"
-              echo "OMAIRC_REQUIRE_NOTARIZE=1"
             } >> "$GITHUB_ENV"
           fi
 
@@ -429,9 +430,34 @@ jobs:
           app="$GITHUB_WORKSPACE/build/omairc.app"
           codesign --verify --deep --strict --verbose=2 "$app"
           codesign -dvv "$app"
-          if [ -n "${APP_STORE_CONNECT_API_KEY_PATH:-}" ]; then
-            xcrun stapler validate "$app"
-          fi
+
+      - name: Upload app zip
+        uses: actions/upload-artifact@v4
+        with:
+          name: omairc-${{ env.OMAIRC_VERSION }}-${{ env.OMAIRC_MAC_SUFFIX }}
+          path: dist/omairc-${{ env.OMAIRC_VERSION }}-${{ env.OMAIRC_MAC_SUFFIX }}.zip
+          if-no-files-found: error
+
+      - name: Notarize app zip
+        if: env.APP_STORE_CONNECT_API_KEY_PATH != '' && (startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch')
+        env:
+          OMAIRC_REQUIRE_NOTARIZE: ${{ startsWith(github.ref, 'refs/tags/v') && '1' || '0' }}
+        run: bin/notarize-macos
+
+      - name: Verify notarization ticket
+        if: env.OMAIRC_NOTARIZED == '1'
+        run: |
+          set -euo pipefail
+          xcrun stapler validate "$GITHUB_WORKSPACE/build/omairc.app"
+
+      - name: Replace zip with stapled app
+        if: env.OMAIRC_NOTARIZED == '1'
+        uses: actions/upload-artifact@v4
+        with:
+          name: omairc-${{ env.OMAIRC_VERSION }}-${{ env.OMAIRC_MAC_SUFFIX }}
+          path: dist/omairc-${{ env.OMAIRC_VERSION }}-${{ env.OMAIRC_MAC_SUFFIX }}.zip
+          if-no-files-found: error
+          overwrite: true
 
       - name: Delete signing keychain
         if: always()
@@ -443,13 +469,6 @@ jobs:
           if [ -n "${APP_STORE_CONNECT_API_KEY_PATH:-}" ]; then
             rm -f "$APP_STORE_CONNECT_API_KEY_PATH"
           fi
-
-      - name: Upload app zip
-        uses: actions/upload-artifact@v4
-        with:
-          name: omairc-${{ env.OMAIRC_VERSION }}-${{ env.OMAIRC_MAC_SUFFIX }}
-          path: dist/omairc-${{ env.OMAIRC_VERSION }}-${{ env.OMAIRC_MAC_SUFFIX }}.zip
-          if-no-files-found: error
 
       - name: Publish GitHub Release asset
         if: startsWith(github.ref, 'refs/tags/v')

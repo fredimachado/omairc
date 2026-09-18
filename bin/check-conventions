@@ -271,7 +271,6 @@ def check_macos_notarization():
     problems = []
     workflow = ROOT / ".github" / "workflows" / "macos.yml"
     sign = ROOT / "bin" / "sign-macos"
-    package = ROOT / "bin" / "package-macos"
     entitlements = ROOT / "packaging" / "macos" / "Omairc.entitlements"
     if not workflow.is_file():
         return problems
@@ -285,9 +284,14 @@ def check_macos_notarization():
         problems.append(
             ".github/workflows/macos.yml: v* tags must fail closed without "
             "APPLE_CERTIFICATE rather than shipping an ad-hoc zip")
-    if "notarytool" not in package.read_text(encoding="utf-8", errors="replace"):
+    if "notarytool" not in (ROOT / "bin" / "notarize-macos").read_text(
+            encoding="utf-8", errors="replace"):
         problems.append(
-            "bin/package-macos: notarize Developer ID zips with notarytool")
+            "bin/notarize-macos: notarize Developer ID zips with notarytool")
+    if "bin/notarize-macos" not in text:
+        problems.append(
+            ".github/workflows/macos.yml: notarize release zips through "
+            "bin/notarize-macos, not on every pull request")
     if "CODESIGN_IDENTITY" not in sign.read_text(encoding="utf-8", errors="replace"):
         problems.append(
             "bin/sign-macos: Developer ID sign when CODESIGN_IDENTITY is set")
