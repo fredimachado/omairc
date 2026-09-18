@@ -347,6 +347,7 @@ private:
     bool report(IrcCommandOutcome outcome, const IrcCommand& command);
     bool selectedIsCloseableDirect() const;
     void dropSelectedDirectAndReselect();
+    bool dismissChannel(const QString& networkId, const QString& channel);
     void clearConversationSelection();
     void openJoinedChannel(const QString& networkId, const QString& channel);
     IrcSession *selectedSession() const;

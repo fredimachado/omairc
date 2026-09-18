@@ -744,6 +744,41 @@ void IrcController::dropSelectedDirectAndReselect()
         clearConversationSelection();
 }
 
+bool IrcController::dismissChannel(const QString& networkId, const QString& channel)
+{
+    if (networkId.isEmpty() || channel.isEmpty())
+        return false;
+    const IrcConversationKey key = m_reducer.conversationKey(networkId, channel);
+    const IrcConversationState *conversation = m_reducer.find(key);
+    if (!conversation || !conversation->isChannel())
+        return false;
+    const bool wasSelected = m_selected && *m_selected == key;
+    const QString target = conversation->target;
+    QString nextNetworkId;
+    QString nextTarget;
+    if (wasSelected) {
+        const QVector<IrcConversationKey> ordered =
+            ircSidebarOrder(m_reducer, m_networkOrder);
+        const std::optional<IrcConversationKey> next =
+            ircNeighborAfterDrop(ordered, key);
+        if (next) {
+            nextNetworkId = next->networkId;
+            const IrcConversationState *neighbor = m_reducer.find(*next);
+            nextTarget = neighbor ? neighbor->target : next->normalizedTarget;
+        }
+    }
+    applyMute(networkId, target, false);
+    m_reducer.dropChannel(key);
+    reloadModels();
+    if (!wasSelected)
+        return true;
+    if (!nextTarget.isEmpty())
+        selectConversation(nextNetworkId, nextTarget);
+    else
+        clearConversationSelection();
+    return true;
+}
+
 void IrcController::clearConversationSelection()
 {
     const QString previousId = identityNetworkId();
@@ -1156,7 +1191,19 @@ IrcCommandOutcome IrcController::dispatch(const IrcCommand& command,
             if (m_selected->networkId != queryNetworkId(surface))
                 return IrcCommandOutcome::Refused;
             channel = selectedTarget();
-            sent = !channel.isEmpty() && active->part(channel);
+            if (channel.isEmpty())
+                return IrcCommandOutcome::Refused;
+        }
+        const IrcConversationKey key =
+            m_reducer.conversationKey(active->networkId(), channel);
+        const IrcConversationState *conversation = m_reducer.find(key);
+        const bool joined = conversation
+            && conversation->channel()
+            && conversation->channel()->joined;
+        if (dismissChannel(active->networkId(), channel)) {
+            if (joined)
+                active->part(channel);
+            sent = true;
             break;
         }
         sent = active->part(channel);
