@@ -738,6 +738,8 @@ void ControllerTest::statusKeepListLeavesTranscriptIntact()
     QVERIFY(logContains(lines, QStringLiteral("motd line")));
     QVERIFY(logContains(lines, QStringLiteral("-NickServ- Please identify")));
     QVERIFY(logHasLabel(lines, QStringLiteral("001")));
+    QVERIFY(logHasLabel(lines, QStringLiteral("CAP")));
+    QVERIFY(logContains(lines, QStringLiteral("Server supports: batch | chathistory")));
     QVERIFY(logHasLabel(lines, QStringLiteral("372")));
     QVERIFY(!logHasLabel(lines, QStringLiteral("PING")));
     QVERIFY(!logHasLabel(lines, QStringLiteral("PONG")));
