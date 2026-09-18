@@ -370,6 +370,9 @@ private slots:
     void partMissingChannelStillSends();
     void partNonSelectedUnjoinedDropsWithoutPart();
     void partUnjoinedDropsMute();
+    void partUnjoinedDelayedJoinSendsPart();
+    void rejoinClearsCancelledPendingJoin();
+    void partNonSelectedUnjoinedDelayedJoinKeepsSelection();
     void partFromDirectIsWrongScope();
     void kickDefaultsToSelectedChannel();
     void kickFromDirectIsWrongScope();
@@ -1191,6 +1194,109 @@ void ControllerTest::partUnjoinedDropsMute()
     QCOMPARE(roleAt(conversations, rejoined, ConversationListModel::MutedRole), false);
     QVERIFY(!IrcMuteStore().contains(
         QStringLiteral("libera"), QStringLiteral("#ghost"), IrcCaseMapping()));
+}
+
+void ControllerTest::partUnjoinedDelayedJoinSendsPart()
+{
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+                                                transport);
+    QVERIFY(session);
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    registerSession(session, transport);
+    transport->injectBytes(QByteArrayLiteral(":omairc!u@h JOIN :#omarchy\r\n"));
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+
+    QVERIFY(controller.sendMessage(QStringLiteral("/join #lab")));
+    QCOMPARE(transport->writtenFrames().last(), QByteArrayLiteral("JOIN #lab\r\n"));
+    QCOMPARE(controller.selectedTarget(), QStringLiteral("#lab"));
+    auto *conversations =
+        qobject_cast<QAbstractItemModel *>(controller.conversations());
+    QVERIFY(conversations);
+    QVERIFY(rowForTarget(conversations, QStringLiteral("#lab")) >= 0);
+
+    QVERIFY(controller.sendMessage(QStringLiteral("/part")));
+    QVERIFY(!framesContain(transport->writtenFrames(), QByteArrayLiteral("PART")));
+    QVERIFY(rowForTarget(conversations, QStringLiteral("#lab")) < 0);
+    QCOMPARE(controller.selectedTarget(), QStringLiteral("#omarchy"));
+
+    transport->injectBytes(QByteArrayLiteral(":omairc!u@h JOIN :#lab\r\n"));
+    QCOMPARE(transport->writtenFrames().last(), QByteArrayLiteral("PART #lab\r\n"));
+    QVERIFY(rowForTarget(conversations, QStringLiteral("#lab")) < 0);
+    QCOMPARE(controller.selectedTarget(), QStringLiteral("#omarchy"));
+}
+
+void ControllerTest::rejoinClearsCancelledPendingJoin()
+{
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+                                                transport);
+    QVERIFY(session);
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    registerSession(session, transport);
+    transport->injectBytes(QByteArrayLiteral(":omairc!u@h JOIN :#omarchy\r\n"));
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+
+    QVERIFY(controller.sendMessage(QStringLiteral("/join #lab")));
+    QCOMPARE(transport->writtenFrames().last(), QByteArrayLiteral("JOIN #lab\r\n"));
+    QVERIFY(controller.sendMessage(QStringLiteral("/part")));
+    QVERIFY(!framesContain(transport->writtenFrames(), QByteArrayLiteral("PART")));
+    QCOMPARE(controller.selectedTarget(), QStringLiteral("#omarchy"));
+
+    QVERIFY(controller.sendMessage(QStringLiteral("/join #lab")));
+    QCOMPARE(transport->writtenFrames().last(), QByteArrayLiteral("JOIN #lab\r\n"));
+    QCOMPARE(controller.selectedTarget(), QStringLiteral("#lab"));
+    auto *conversations =
+        qobject_cast<QAbstractItemModel *>(controller.conversations());
+    QVERIFY(conversations);
+    QVERIFY(rowForTarget(conversations, QStringLiteral("#lab")) >= 0);
+
+    const int framesBefore = transport->writtenFrames().size();
+    transport->injectBytes(QByteArrayLiteral(":omairc!u@h JOIN :#lab\r\n"));
+    QCOMPARE(transport->writtenFrames().size(), framesBefore);
+    QVERIFY(!framesContain(transport->writtenFrames(), QByteArrayLiteral("PART")));
+    QVERIFY(rowForTarget(conversations, QStringLiteral("#lab")) >= 0);
+    QCOMPARE(controller.selectedTarget(), QStringLiteral("#lab"));
+    QCOMPARE(controller.peopleCount(), 1);
+}
+
+void ControllerTest::partNonSelectedUnjoinedDelayedJoinKeepsSelection()
+{
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+                                                transport);
+    QVERIFY(session);
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    registerSession(session, transport);
+    transport->injectBytes(QByteArrayLiteral(":omairc!u@h JOIN :#omarchy\r\n"));
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+
+    QVERIFY(controller.sendMessage(QStringLiteral("/join #lab")));
+    QCOMPARE(transport->writtenFrames().last(), QByteArrayLiteral("JOIN #lab\r\n"));
+    QCOMPARE(controller.selectedTarget(), QStringLiteral("#lab"));
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    QCOMPARE(controller.selectedTarget(), QStringLiteral("#omarchy"));
+    auto *conversations =
+        qobject_cast<QAbstractItemModel *>(controller.conversations());
+    QVERIFY(conversations);
+    QVERIFY(rowForTarget(conversations, QStringLiteral("#lab")) >= 0);
+
+    QVERIFY(controller.sendMessage(QStringLiteral("/part #lab")));
+    QVERIFY(!framesContain(transport->writtenFrames(), QByteArrayLiteral("PART")));
+    QVERIFY(rowForTarget(conversations, QStringLiteral("#lab")) < 0);
+    QCOMPARE(controller.selectedTarget(), QStringLiteral("#omarchy"));
+
+    transport->injectBytes(QByteArrayLiteral(":alice!u@h JOIN :#lab\r\n"));
+    QVERIFY(!framesContain(transport->writtenFrames(), QByteArrayLiteral("PART")));
+    QCOMPARE(controller.selectedTarget(), QStringLiteral("#omarchy"));
+
+    transport->injectBytes(QByteArrayLiteral(":omairc!u@h JOIN :#lab\r\n"));
+    QCOMPARE(transport->writtenFrames().last(), QByteArrayLiteral("PART #lab\r\n"));
+    QVERIFY(rowForTarget(conversations, QStringLiteral("#lab")) < 0);
+    QCOMPARE(controller.selectedTarget(), QStringLiteral("#omarchy"));
 }
 
 void ControllerTest::partFromDirectIsWrongScope()

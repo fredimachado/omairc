@@ -24,6 +24,7 @@
 #include <QDateTime>
 #include <map>
 #include <optional>
+#include <set>
 #include <variant>
 
 struct IrcViewNotify;
@@ -393,4 +394,5 @@ private:
     std::map<IrcWhoisWatchKey, IrcWhoisWatch> m_whoisWatches;
     std::map<IrcCtcpWatchKey, IrcCtcpWatch> m_ctcpWatches;
     QHash<QString, IrcStatusWatch> m_statusWatches;
+    std::set<IrcConversationKey> m_cancelledPendingJoins;
 };
