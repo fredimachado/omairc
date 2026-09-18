@@ -10,6 +10,7 @@ Connect is the first-run sheet that asks for a network profile before the compil
 - `connect-preferences` holds global settings. `Reopen direct messages on startup` is on by default and takes effect immediately, without Apply. Enter on that toggle walks focus; Ctrl+Enter does nothing on the Preferences tab.
 - `connect-nick-required` shows `Nick is required` and keeps Apply muted while Nick is empty.
 - `connect-required` keeps the sheet up on first run; Escape and an outside click do not dismiss it.
+- `connect-modal` covers the whole window with a 50% transparent dimmer. Sidebar servers, conversations, and channel members stay visible but cannot be clicked or walked while Connect is open. After a profile exists, a click on that dimmer still dismisses the sheet without changing the selected conversation.
 - `connect-keyboard` tabs from the network list through the form to Apply, and Shift+Tab returns. Enter Applies when Nick is complete. Enter from Host with an empty nick keeps `Nick is required` and does not start a session. Apply, Discard, and Add network are reachable without a mouse.
 - `connect-disconnect` shows Disconnect next to Apply when the selected network is live or reconnecting. It stops that session, leaves the sheet open, and leaves the profile. Apply starts or reconnects the same network. Connect automatically on startup stays as saved.
 - `connect-scrollbar` shows a vertical scrollbar on the form when Password is off-screen, and on the network list once it overflows. The bars stay visible without hover. The form bar does not cover the fields, and the card width stays the same.
@@ -33,7 +34,7 @@ Preconditions:
 
 ## Gotchas
 
-- First run cannot be dismissed. Escape and a click outside the card only work after a complete profile already exists.
+- First run cannot be dismissed. Escape and a click outside the card only work after a complete profile already exists. The overlay covers the sidebar and member list, so those clicks do not switch conversation, open Status, or open a DM.
 - Discard on first run restores the suggested Libera defaults. It does not close the sheet. An incomplete saved profile still opens Connect, but the fields follow that stored draft, not `suggested()`. Isolated `control-omairc launch` uses empty XDG, so it is first-run suggested values. A stored profile with no name uses the host as the name. Name and Host stay independent after that: changing Host does not update Name, so a legacy profile keeps the original host in Name until you edit it.
 - Apply on the compiled window starts a real IRC session. That is not this feature's proof, and it does not restore the seeded `#omarchy` sidebar.
 - Seeded conversation recipes need `control-omairc launch --demo-server` or `qml-suite` (seeded `IrcController`). They do not start from this sheet.
