@@ -719,41 +719,15 @@ bool IrcController::selectedIsCloseableDirect() const
     return !conversation || !conversation->isChannel();
 }
 
-void IrcController::dropSelectedDirectAndReselect()
+void IrcController::dropConversationAndReselect(const IrcConversationKey& key,
+                                               bool forgetDirect)
 {
-    if (!m_selected)
-        return;
-    const IrcConversationKey dropping = *m_selected;
-    const QVector<IrcConversationKey> ordered = ircSidebarOrder(m_reducer, m_networkOrder);
-    const std::optional<IrcConversationKey> next =
-        ircNeighborAfterDrop(ordered, dropping);
-    QString nextNetworkId;
-    QString nextTarget;
-    if (next) {
-        nextNetworkId = next->networkId;
-        const IrcConversationState *neighbor = m_reducer.find(*next);
-        nextTarget = neighbor ? neighbor->target : next->normalizedTarget;
-    }
-    applyMute(dropping.networkId, m_selectedTarget, false);
-    forgetOpenDirect(dropping.networkId, m_selectedTarget);
-    m_reducer.dropDirectMessage(dropping);
-    reloadModels();
-    if (!nextTarget.isEmpty())
-        selectConversation(nextNetworkId, nextTarget);
-    else
-        clearConversationSelection();
-}
-
-bool IrcController::dismissChannel(const QString& networkId, const QString& channel)
-{
-    if (networkId.isEmpty() || channel.isEmpty())
-        return false;
-    const IrcConversationKey key = m_reducer.conversationKey(networkId, channel);
     const IrcConversationState *conversation = m_reducer.find(key);
-    if (!conversation || !conversation->isChannel())
-        return false;
+    const bool channel = conversation && conversation->isChannel();
     const bool wasSelected = m_selected && *m_selected == key;
-    const QString target = conversation->target;
+    const QString displayTarget = conversation && !conversation->target.isEmpty()
+        ? conversation->target
+        : (wasSelected ? m_selectedTarget : key.normalizedTarget);
     QString nextNetworkId;
     QString nextTarget;
     if (wasSelected) {
@@ -767,15 +741,38 @@ bool IrcController::dismissChannel(const QString& networkId, const QString& chan
             nextTarget = neighbor ? neighbor->target : next->normalizedTarget;
         }
     }
-    applyMute(networkId, target, false);
-    m_reducer.dropChannel(key);
+    applyMute(key.networkId, displayTarget, false);
+    if (forgetDirect)
+        forgetOpenDirect(key.networkId, displayTarget);
+    if (channel)
+        m_reducer.dropChannel(key);
+    else
+        m_reducer.dropDirectMessage(key);
     reloadModels();
     if (!wasSelected)
-        return true;
+        return;
     if (!nextTarget.isEmpty())
         selectConversation(nextNetworkId, nextTarget);
     else
         clearConversationSelection();
+}
+
+void IrcController::dropSelectedDirectAndReselect()
+{
+    if (!m_selected)
+        return;
+    dropConversationAndReselect(*m_selected, true);
+}
+
+bool IrcController::dismissChannel(const QString& networkId, const QString& channel)
+{
+    if (networkId.isEmpty() || channel.isEmpty())
+        return false;
+    const IrcConversationKey key = m_reducer.conversationKey(networkId, channel);
+    const IrcConversationState *conversation = m_reducer.find(key);
+    if (!conversation || !conversation->isChannel())
+        return false;
+    dropConversationAndReselect(key, false);
     return true;
 }
 

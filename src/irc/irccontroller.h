@@ -346,6 +346,8 @@ private:
     IrcCommandOutcome clearSurface(IrcComposerSurface surface);
     bool report(IrcCommandOutcome outcome, const IrcCommand& command);
     bool selectedIsCloseableDirect() const;
+    void dropConversationAndReselect(const IrcConversationKey& key,
+                                     bool forgetDirect);
     void dropSelectedDirectAndReselect();
     bool dismissChannel(const QString& networkId, const QString& channel);
     void clearConversationSelection();
