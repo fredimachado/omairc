@@ -106,6 +106,26 @@ is missing.
 For visual changes, inspect the running window and the screenshots under
 `test-artifacts/`.
 
+`bin/test` prints hundreds of `QQmlVMEMetaObject: Internal error - attempted to
+evaluate a function in an invalid context` warnings from the seeded QML and
+live-ui suites. They are pre-existing, they never fail a suite, and no
+`TypeError` accompanies them. Mechanism: reading a method-valued property on a
+QObject whose `QQmlContextData` is already destroyed makes Qt 6.10+ log the
+warning and hand back `undefined`. The backtrace is
+`QObjectWrapper::virtualResolveLookupGetter` into `QQmlVMEMetaObject::method()`,
+and the contexts are torn down by `QQmlDelegateModel::handleModelReset()` while
+released delegates await deletion. The reads come from `sidebarConversationRows()`
+duck-typing `section.children` with `child.activate`: replacing that read with a
+data-property read took the seeded suite from 1769 warnings to 0, and reordering
+the guard to test `visible` and `height` first only cut the live-ui burst from
+360 to 90, because a released row can still report itself visible. A compiled
+window does not log the warning while the rail is toggled or networks are walked,
+so this is churn from driving many conversations in one process. Treating it as
+a bug fix means replacing the `children` scan with the per-section Repeaters,
+which removes the read and the warning together; do not silence it with a message
+handler, and do not assume the load-bearing `child.activate` test can be swapped
+for another property without checking which children still count as rows.
+
 On Windows, `bin\build.bat` finds a Qt 6 kit, runs qmake and nmake (or jom,
 or mingw32-make), and deploys Qt next to `build\release\omairc.exe`. Set
 `QMAKE` to pick a kit. Prefer the MSVC kit (`C:\Qt\6.*\msvc*_64\bin\qmake.exe`)
