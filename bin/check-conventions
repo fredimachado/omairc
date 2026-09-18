@@ -307,6 +307,31 @@ def check_macos_ci_arch_selection():
     return problems
 
 
+def check_macos_sdk_compat():
+    problems = []
+    pri = ROOT / "packaging" / "macos" / "sdk-compat.pri"
+    if not pri.is_file():
+        return ["packaging/macos/sdk-compat.pri: missing SDK compatibility pri"]
+    text = pri.read_text(encoding="utf-8", errors="replace")
+    if "-include arm_acle.h" not in text:
+        problems.append(
+            "packaging/macos/sdk-compat.pri: Apple Silicon still needs "
+            "-include arm_acle.h for Qt 6.8 qyieldcpu.h on Xcode 26")
+    if "equals(QMAKE_HOST.arch, arm64)" not in text:
+        problems.append(
+            "packaging/macos/sdk-compat.pri: -include arm_acle.h must be gated "
+            "to Apple Silicon; Intel fails with ACLE not enabled")
+    for relative, source in sources("**/*.pro"):
+        if "-include arm_acle.h" not in source:
+            continue
+        if "equals(QMAKE_HOST.arch, arm64)" in source:
+            continue
+        problems.append(
+            f"{relative}: -include arm_acle.h must go through "
+            "packaging/macos/sdk-compat.pri so Intel builds skip it")
+    return problems
+
+
 CHECKS = (
     ("QByteArray literal lengths", check_byte_array_lengths),
     ("PlainText on server-controlled QML text", check_qml_text_plain_format),
@@ -318,6 +343,7 @@ CHECKS = (
     ("retired mock sidebar tokens", check_retired_mock_sidebar),
     ("macOS ObjC ARC for notifications", check_macos_objc_arc),
     ("macOS CI Qt arch selection", check_macos_ci_arch_selection),
+    ("macOS SDK compat arch gate", check_macos_sdk_compat),
 )
 
 

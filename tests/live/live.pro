@@ -3,9 +3,8 @@ QT -= gui
 
 macx {
     CONFIG -= app_bundle
-    CONFIG += sdk_no_version_check
-    QMAKE_CXXFLAGS += -include arm_acle.h
 }
+include($$PWD/../../packaging/macos/sdk-compat.pri)
 
 CONFIG += c++17 console testcase
 TEMPLATE = app
