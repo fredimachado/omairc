@@ -933,8 +933,12 @@ void IrcSession::handleMessage(const IrcMessage &message)
             m_pendingInvite = IrcPendingInvite{nick, channel};
     }
 
-    if (ircStatusKeepsIncoming(message, m_nick, m_channelTypes))
-        emit statusEntry(IrcStatusEntry::incoming(m_config.networkId, message, m_channelTypes));
+    if (ircStatusKeepsIncoming(message, m_nick, m_channelTypes)) {
+        for (const IrcStatusEntry& entry :
+             IrcStatusEntry::incomingAll(m_config.networkId, message, m_channelTypes)) {
+            emit statusEntry(entry);
+        }
+    }
     applyIsupport(message);
 
     if (message.command == "BATCH") {
