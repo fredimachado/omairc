@@ -56,6 +56,7 @@ struct ResolveResult {
 
 struct ConnectionInfo {
     QString id;
+    QString name;
     QString host;
     int port = 0;
     bool tls = false;

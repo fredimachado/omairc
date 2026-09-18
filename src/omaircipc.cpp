@@ -51,6 +51,7 @@ QJsonObject connectionObject(const ConnectionInfo &info)
 {
     QJsonObject object;
     putText(object, QStringLiteral("id"), info.id);
+    putText(object, QStringLiteral("name"), info.name);
     putText(object, QStringLiteral("host"), info.host);
     object.insert(QStringLiteral("port"), info.port);
     putFlag(object, QStringLiteral("tls"), info.tls);

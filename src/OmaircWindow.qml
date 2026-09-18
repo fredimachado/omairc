@@ -59,9 +59,18 @@ ApplicationWindow {
     ]
 
     property bool membersVisible: true
+    property bool serverListVisible: true
+    property string sidebarNetworkFocusId: ""
+    // The composer routes Enter to the focused network header, so a collapsed
+    // rail must not keep a selection armed that nobody can see. This handler
+    // sits below the sidebarNetworkFocusId declaration so the dependency reads
+    // top-to-bottom.
+    onServerListVisibleChanged: {
+        if (!serverListVisible)
+            sidebarNetworkFocusId = "";
+    }
     property bool shortcutsSheetEscapeGuard: false
     property bool pickerEscapeGuard: false
-    property string sidebarNetworkFocusId: ""
     property int jumpSelectedIndex: 0
     property int nickSelectedIndex: 0
     property var nickSourceRows: []
@@ -1208,6 +1217,9 @@ ApplicationWindow {
         var nextIndex = current < 0
             ? (delta > 0 ? 0 : sections.length - 1)
             : (current + delta + sections.length) % sections.length;
+        // Walking networks is rail navigation: if the rail is collapsed the
+        // highlight would land on a row nobody can see.
+        serverListVisible = true;
         focusNetworkHeader(sections[nextIndex]);
     }
 
@@ -1738,6 +1750,15 @@ ApplicationWindow {
             && !win.connectionOverlayVisible
             && !win.shortcutOverlayOpen
         onActivated: focusMembersList()
+    }
+
+    // The server list is always available, so unlike the members panel this
+    // toggle is not gated on the conversation being a channel.
+    Shortcut {
+        sequence: "Ctrl+Shift+S"
+        context: Qt.ApplicationShortcut
+        enabled: !win.connectionOverlayVisible && !win.shortcutOverlayOpen
+        onActivated: win.serverListVisible = !win.serverListVisible
     }
 
     Shortcut {
@@ -2291,7 +2312,7 @@ ApplicationWindow {
         if (connection && connection.nick.length === 0)
             connectionNickField.focusInput();
         else
-            connectionHostField.focusInput();
+            connectionNameField.focusInput();
     }
 
     // Enter walks the form the way a form should; the window-level Ctrl+Enter
@@ -3133,8 +3154,16 @@ ApplicationWindow {
 
         Rectangle {
             id: sidebar
-            Layout.preferredWidth: win.scaledSize(244)
-            Layout.minimumWidth: win.scaledSize(214)
+            objectName: "serverList"
+            // Collapse the rail by width instead of hiding it. Hiding it
+            // propagates visible: false to every NetworkSection, and
+            // sidebarConversationRows()/sidebarNetworkSections() skip
+            // invisible rows, so Alt+Up/Down and Alt+Left/Right would stop
+            // walking the list. clip keeps the collapsed content from
+            // painting over the transcript.
+            clip: true
+            Layout.preferredWidth: win.serverListVisible ? win.scaledSize(244) : 0
+            Layout.minimumWidth: win.serverListVisible ? win.scaledSize(214) : 0
             Layout.fillHeight: true
             color: win.panelColor
 
@@ -4770,6 +4799,17 @@ ApplicationWindow {
                                         font.pixelSize: win.scaledSize(15)
                                     }
 
+                                    ConnectionField {
+                                        id: connectionNameField
+                                        label: "Name"
+                                        fieldObjectName: "connectionName"
+                                        text: win.connection ? win.connection.name : ""
+                                        onTextEdited: function(value) {
+                                            if (win.connection)
+                                                win.connection.name = value;
+                                        }
+                                    }
+
                                     Row {
                                         width: parent.width
                                         spacing: win.scaledSize(12)
@@ -5421,6 +5461,7 @@ ApplicationWindow {
                     { keys: "Ctrl+Enter", action: "apply connection" },
                     { keys: "Ctrl+Shift+M", action: "members panel" },
                     { keys: "Ctrl+Shift+P", action: "focus members" },
+                    { keys: "Ctrl+Shift+S", action: "server list" },
                     { keys: "Ctrl+W", action: "close direct message" },
                     { keys: "Ctrl+L", action: "composer" },
                     { keys: "Ctrl+F", action: "find" },
