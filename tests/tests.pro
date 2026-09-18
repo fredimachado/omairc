@@ -1,5 +1,13 @@
 QT += core gui network quick testlib
-unix: QT += dbus
+unix:!macx: QT += dbus
+
+macx {
+    CONFIG -= app_bundle
+    HEADERS += ../src/macosnotifications.h
+    OBJECTIVE_SOURCES += ../src/macosnotifications.mm
+    LIBS += -framework UserNotifications -framework Foundation -framework AppKit
+    include($$PWD/../packaging/macos/objc-arc.pri)
+}
 
 include(../qtkeychain.pri)
 
@@ -18,6 +26,7 @@ DEFINES += TEST_CERT_DIR=\\\"$$PWD/support/certs\\\"
 DEFINES += TEST_CORPUS_DIR=\\\"$$PWD/protocol/corpus\\\"
 
 HEADERS += \
+    ../src/omaircpaths.h \
     ../src/singleinstance.h \
     ../src/omaircipc.h \
     ../src/omaircipchandler.h \
@@ -75,7 +84,8 @@ HEADERS += \
     ../src/storage/secretservicecredentialstore.h \
     ../src/irc/ircconnection.h \
     ../src/irc/qtirctransport.h \
-    support/fakeirctransport.h
+    support/fakeirctransport.h \
+    support/testsettings.h
 
 SOURCES += \
     tst_main.cpp \
@@ -84,6 +94,7 @@ SOURCES += \
     tst_omairccli.cpp \
     tst_omaircfilelog.cpp \
     tst_backend.cpp \
+    ../src/omaircpaths.cpp \
     ../src/singleinstance.cpp \
     ../src/omaircipc.cpp \
     ../src/omaircipchandler.cpp \
@@ -139,6 +150,7 @@ SOURCES += \
     ../src/irc/ircconnection.cpp \
     ../src/irc/qtirctransport.cpp \
     support/fakeirctransport.cpp \
+    support/testsettings.cpp \
     integration/tst_qtirctransport.cpp \
     session/tst_transport.cpp \
     session/tst_session.cpp \
@@ -158,3 +170,5 @@ SOURCES += \
     session/tst_avatarurl.cpp \
     session/tst_avatarstore.cpp \
     models/tst_models.cpp
+
+include($$PWD/../packaging/macos/sdk-compat.pri)

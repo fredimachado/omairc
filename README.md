@@ -151,3 +151,29 @@ The exe is a GUI process, so Explorer and the Start Menu do not flash a console,
 The same exe is the local CLI. Start the window first, then `omairc.exe connections`, `send`, `read`, and the rest from another terminal. On Windows there is no `omairc.sock` file; the client listens on a named pipe.
 
 Compared with Linux you will miss portal text scale (stays 1.0), desktop notifications, the Omarchy theme watch when `colors.toml` is absent, the pacman/`bin/install` path, and the UI / desktop / live test runners. Profiles land in the Qt app config location instead of `$XDG_CONFIG_HOME`. For a copied tree, also copy OpenSSL next to the exe when the kit is OpenSSL-backed (typical MinGW) so TLS to Libera Chat works.
+
+## macOS
+
+Omarchy is the home. A native macOS build is a bonus: it works, it is not the focus, and why not.
+
+Each version tag also publishes `omairc-*-macos-arm64.zip` (Apple Silicon CI; Intel builds use `macos-x64`) on the [GitHub release](https://github.com/fredimachado/omairc/releases/latest). Pull-request CI uploads the same zip as a workflow artifact. The bundle is unsigned and ad-hoc signed only; Gatekeeper may block it until you right-click → Open the first time. Notarization is not wired up yet.
+
+From the repo root on macOS:
+
+```sh
+brew install qt@6 qtkeychain cmake
+export PATH="$(brew --prefix qt@6)/bin:$PATH"
+# Homebrew's qtkeychain formula has no qmake module; either rely on brew
+# discovery in qtkeychain.pri, or build a local copy into .deps:
+#   bin/install-qtkeychain "$PWD/.deps/usr"
+bin/build-macos
+open build/omairc.app
+build/omairc.app/Contents/MacOS/omairc --demo-server
+build/omairc --help
+```
+
+Homebrew Qt builds skip `macdeployqt` (its framework layout can hang dyld) and keep linking against the brew prefix, so leave `qt@6` on `PATH` when you run the app. For a relocatable zip, install Qt 6.8 with [aqtinstall](https://github.com/miurahr/aqtinstall) the way CI does (prefers `clang_arm64` on Apple Silicon with a universal `clang_64` fallback when aqt has no arm64-only kit; `clang_64` on Intel), build QtKeychain into that prefix with `clang++`, then run `bin/build-macos` and `bin/package-macos`. `bin/build-macos` generates `data/icons/omairc.icns`, runs `qmake` + `make` into `build/omairc.app`, and on non-Homebrew kits runs `macdeployqt`. `bin/package-macos` writes `dist/omairc-*-macos-*.zip`.
+
+The same binary is the local CLI. Start the app first, then run `omairc connections`, `send`, `read`, and the rest from another terminal. The Unix socket lives under Qt's `RuntimeLocation` (typically `~/Library/Caches/TemporaryItems/` or `$TMPDIR`), not `$XDG_RUNTIME_DIR`. Passwords use the macOS Keychain through QtKeychain instead of Secret Service.
+
+Compared with Linux you will miss portal text scale (stays 1.0), Freedesktop D-Bus notifications and theme hooks, the Omarchy `colors.toml` watch when that file is absent, the pacman/`bin/install` path, Wayland/portal integration, and the desktop/live test runners. Profiles land in the Qt app config location instead of `$XDG_CONFIG_HOME`.

@@ -8,6 +8,7 @@
 #include <QTest>
 
 #include "conversationlistmodel.h"
+#include "testsettings.h"
 #include "fakeirctransport.h"
 #include "irccontroller.h"
 #include "ircevent.h"
@@ -117,9 +118,7 @@ void TypingTest::init()
 {
     m_settingsDir = std::make_unique<QTemporaryDir>();
     QVERIFY(m_settingsDir->isValid());
-    qputenv("XDG_CONFIG_HOME", m_settingsDir->path().toUtf8());
-    QSettings::setPath(QSettings::NativeFormat, QSettings::UserScope,
-                       m_settingsDir->path());
+    TestSettings::isolate(m_settingsDir->path());
     QCoreApplication::setOrganizationName(QStringLiteral("omairc"));
     QCoreApplication::setApplicationName(QStringLiteral("omairc"));
 }

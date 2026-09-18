@@ -76,3 +76,13 @@ rank. This is the panel order, not the server's `NAMES` order.
 `msgid` is present when the server tagged the line.
 `mention` appears only when true.
 `"truncated": true` when the 100-line cap dropped older lines.
+
+## Paths (macOS)
+
+| Item | Location |
+|---|---|
+| Built binary | `./build/omairc.app/Contents/MacOS/omairc` |
+| CLI socket | `omairc.sock` under Qt `RuntimeLocation` (typically `$TMPDIR`) |
+| Config / profiles | `~/Library/Application Support/omairc/` (or `$XDG_CONFIG_HOME/omairc/` when set) |
+| State / logs / CLI cursors | `~/Library/Application Support/omairc/` state tree (or `$XDG_STATE_HOME/omairc/` when set) |
+| Secrets | macOS Keychain via QtKeychain |

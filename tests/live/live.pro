@@ -1,6 +1,12 @@
 QT += core network testlib
 QT -= gui
 
+macx {
+    CONFIG -= app_bundle
+    CONFIG += sdk_no_version_check
+    QMAKE_CXXFLAGS += -include arm_acle.h
+}
+
 CONFIG += c++17 console testcase
 TEMPLATE = app
 TARGET = live_tests
@@ -8,7 +14,7 @@ include($$PWD/../../version.pri)
 
 greaterThan(QMAKE_GCC_MAJOR_VERSION, 15): QMAKE_CXXFLAGS += -Wno-sfinae-incomplete
 
-INCLUDEPATH += ../../src/irc
+INCLUDEPATH += ../../src/irc ../support
 DEFINES += LIVE_CERT_DIR=\\\"$$PWD/certs\\\"
 
 HEADERS += \
@@ -61,6 +67,7 @@ HEADERS += \
 SOURCES += \
     tst_main.cpp \
     tst_live.cpp \
+    ../support/testsettings.cpp \
     liveharness.cpp \
     livepeer.cpp \
     ../../src/irc/ircparser.cpp \
@@ -71,6 +78,7 @@ SOURCES += \
     ../../src/irc/ircserverfeatures.cpp \
     ../../src/irc/irccapability.cpp \
     ../../src/irc/irccapabilitynegotiation.cpp \
+    ../../src/omaircpaths.cpp \
     ../../src/irc/ircsts.cpp \
     ../../src/irc/irctyping.cpp \
     ../../src/irc/irctypingpublisher.cpp \

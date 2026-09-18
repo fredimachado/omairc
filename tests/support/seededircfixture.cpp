@@ -1,4 +1,5 @@
 #include "seededircfixture.h"
+#include "testsettings.h"
 
 #include "backend.h"
 #include "ircavatarstore.h"
@@ -184,10 +185,9 @@ bool SeededIrcFixture::installXdg()
     QDir().mkpath(config);
     QDir().mkpath(root + QLatin1String("/cache"));
     QDir().mkpath(root + QLatin1String("/data"));
-    qputenv("XDG_CONFIG_HOME", config.toUtf8());
     qputenv("XDG_CACHE_HOME", (root + QLatin1String("/cache")).toUtf8());
     qputenv("XDG_DATA_HOME", (root + QLatin1String("/data")).toUtf8());
-    QSettings::setPath(QSettings::NativeFormat, QSettings::UserScope, config);
+    TestSettings::isolate(config);
     return true;
 }
 

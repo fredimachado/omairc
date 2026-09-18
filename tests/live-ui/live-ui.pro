@@ -1,4 +1,13 @@
-QT += core gui qml quick quickcontrols2 network testlib dbus
+QT += core gui qml quick quickcontrols2 network testlib
+unix:!macx: QT += dbus
+
+macx {
+    CONFIG -= app_bundle
+    HEADERS += ../../src/macosnotifications.h
+    OBJECTIVE_SOURCES += ../../src/macosnotifications.mm
+    LIBS += -framework UserNotifications -framework Foundation -framework AppKit
+    include($$PWD/../../packaging/macos/objc-arc.pri)
+}
 
 CONFIG += c++17 testcase
 TEMPLATE = app
@@ -77,6 +86,7 @@ SOURCES += \
     ../live/livepeer.cpp \
     ../support/fakeirctransport.cpp \
     ../support/seededircfixture.cpp \
+    ../support/testsettings.cpp \
     ../../src/irc/ircloopbacktransport.cpp \
     ../../src/irc/ircdemoserver.cpp \
     ../../src/backend.cpp \
@@ -88,6 +98,7 @@ SOURCES += \
     ../../src/irc/ircserverfeatures.cpp \
     ../../src/irc/irccapability.cpp \
     ../../src/irc/irccapabilitynegotiation.cpp \
+    ../../src/omaircpaths.cpp \
     ../../src/irc/ircsts.cpp \
     ../../src/irc/irctyping.cpp \
     ../../src/irc/irctypingpublisher.cpp \
@@ -125,3 +136,5 @@ SOURCES += \
     ../../src/irc/qtirctransport.cpp
 
 RESOURCES += ../../src/resources.qrc
+
+include($$PWD/../../packaging/macos/sdk-compat.pri)

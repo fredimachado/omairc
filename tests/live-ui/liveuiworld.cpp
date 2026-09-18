@@ -11,6 +11,7 @@
 #include "ircslashcomplete.h"
 #include "ircstatusconsole.h"
 #include "liveharness.h"
+#include "testsettings.h"
 #include "livepeer.h"
 #include "memberlistmodel.h"
 #include "messagelistmodel.h"
@@ -300,11 +301,10 @@ bool LiveUiWorld::open()
     QDir().mkpath(cache);
     QDir().mkpath(data);
     QDir().mkpath(state);
-    qputenv("XDG_CONFIG_HOME", config.toUtf8());
     qputenv("XDG_CACHE_HOME", cache.toUtf8());
     qputenv("XDG_DATA_HOME", data.toUtf8());
     qputenv("XDG_STATE_HOME", state.toUtf8());
-    QSettings::setPath(QSettings::NativeFormat, QSettings::UserScope, config);
+    TestSettings::isolate(config);
 
     if (!writeProfiles())
         return false;

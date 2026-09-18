@@ -1,0 +1,189 @@
+#!/usr/bin/env sh
+set -eu
+
+prune_qt_deploy() {
+  app="$1"
+  rel="$app/Contents"
+  for dir in \
+    "$rel/Resources/qml/QtQuick/Controls/FluentWinUI3" \
+    "$rel/Resources/qml/QtQuick/Controls/Fusion" \
+    "$rel/Resources/qml/QtQuick/Controls/Imagine" \
+    "$rel/Resources/qml/QtQuick/Controls/Universal" \
+    "$rel/Resources/qml/QtQuick/Controls/Windows" \
+    "$rel/Resources/qml/QtQuick/NativeStyle" \
+    "$rel/Resources/qml/QtQuick/Effects" \
+    "$rel/Resources/qml/QtQuick/Shapes" \
+    "$rel/Resources/qml/QtQuick/Dialogs" \
+    "$rel/Resources/qml/QtQuick/Particles" \
+    "$rel/Resources/qml/QtQuick/LocalStorage" \
+    "$rel/Resources/qml/QtQuick/Timeline" \
+    "$rel/Resources/qml/QtQuick/tooling" \
+    "$rel/Resources/qml/QtQuick/VectorImage" \
+    "$rel/Resources/qml/QtQuick/Controls/designer" \
+    "$rel/PlugIns/quick/libquickcontrols2fusionstyleplugin.dylib" \
+    "$rel/PlugIns/quick/libquickcontrols2imaginestyleplugin.dylib" \
+    "$rel/PlugIns/quick/libquickcontrols2universalstyleplugin.dylib" \
+    "$rel/PlugIns/quick/libquickcontrols2windowsstyleplugin.dylib" \
+    "$rel/PlugIns/quick/libqtquickcontrols2fluentwinui3styleplugin.dylib"
+  do
+    rm -rf -- "$dir"
+  done
+}
+
+embed_qtkeychain() {
+  app="$1"
+  exe="$app/Contents/MacOS/omairc"
+  frameworks="$app/Contents/Frameworks"
+  mkdir -p "$frameworks"
+
+  candidates=
+  # Prefer a project-local .deps build, then Qt's lib dir, then Homebrew.
+  for keychain in \
+    "$ROOT/.deps/usr/lib/libqt6keychain.1.dylib" \
+    "$ROOT/.deps/usr/lib/libqt6keychain.dylib" \
+    "$QT_LIB/libqt6keychain.1.dylib" \
+    "$QT_LIB/libqt6keychain.dylib" \
+    "$QT_LIB/libQt6Keychain.dylib"
+  do
+    if [ -f "$keychain" ]; then
+      candidates="$keychain"
+      break
+    fi
+  done
+  if [ -z "$candidates" ] && command -v brew >/dev/null 2>&1; then
+    brew_lib="$(brew --prefix qtkeychain 2>/dev/null)/lib"
+    for keychain in \
+      "$brew_lib/libqt6keychain.1.dylib" \
+      "$brew_lib/libqt6keychain.dylib"
+    do
+      if [ -f "$keychain" ]; then
+        candidates="$keychain"
+        break
+      fi
+    done
+  fi
+  if [ -z "$candidates" ]; then
+    echo "Warning: libqt6keychain not found to embed; runtime may need DYLD_LIBRARY_PATH." >&2
+    return 0
+  fi
+
+  src="$candidates"
+  base="$(basename "$src")"
+  # Normalize to the usual SONAME so @rpath/libqt6keychain.1.dylib resolves.
+  case "$base" in
+    libqt6keychain.dylib) dest_base=libqt6keychain.1.dylib ;;
+    *) dest_base="$base" ;;
+  esac
+  dest="$frameworks/$dest_base"
+  cp -f "$src" "$dest"
+  id="@executable_path/../Frameworks/$dest_base"
+  install_name_tool -id "$id" "$dest" 2>/dev/null || true
+  otool -L "$exe" | awk 'NR>1 { print $1 }' | while read -r dep; do
+    case "$dep" in
+      *qt6keychain*|*Qt6Keychain*)
+        install_name_tool -change "$dep" "$id" "$exe" 2>/dev/null || true
+        ;;
+    esac
+  done
+}
+
+adhoc_sign() {
+  app="$1"
+  if ! command -v codesign >/dev/null 2>&1; then
+    return 0
+  fi
+  # Deep sign so freshly copied dylibs are trusted by dyld.
+  codesign --force --deep --sign - "$app" 2>/dev/null || \
+    codesign --force --sign - "$app/Contents/MacOS/omairc" 2>/dev/null || true
+}
+
+is_homebrew_qt() {
+  case "$QT_PREFIX" in
+    /opt/homebrew|/opt/homebrew/*|/usr/local/Cellar/*|/usr/local/opt/*|/home/linuxbrew/*)
+      return 0
+      ;;
+  esac
+  # Homebrew's qt formula reports QT_INSTALL_PREFIX=/opt/homebrew.
+  if command -v brew >/dev/null 2>&1; then
+    brew_qt="$(brew --prefix qt@6 2>/dev/null || brew --prefix qt 2>/dev/null || true)"
+    if [ -n "$brew_qt" ] && [ "$QT_PREFIX" = "$(CDPATH= cd -- "$brew_qt" && pwd)" ]; then
+      return 0
+    fi
+    if [ "$QT_PREFIX" = "$(brew --prefix 2>/dev/null)" ]; then
+      return 0
+    fi
+  fi
+  return 1
+}
+
+ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
+BUILD_DIR="$ROOT/build"
+VERSION="$("$ROOT/bin/version")"
+
+if [ "$(uname -s)" != "Darwin" ]; then
+  echo "bin/build-macos must run on macOS." >&2
+  exit 1
+fi
+
+if command -v qmake6 >/dev/null 2>&1; then
+  QMAKE=qmake6
+elif command -v qmake >/dev/null 2>&1 && qmake -query QT_VERSION | grep -q '^6\.'; then
+  QMAKE=qmake
+else
+  echo "A Qt 6 qmake (qmake6) is required to build omairc on macOS." >&2
+  exit 1
+fi
+
+JOBS="$(sysctl -n hw.ncpu 2>/dev/null || echo 2)"
+QT_BIN="$("$QMAKE" -query QT_INSTALL_BINS)"
+QT_LIB="$("$QMAKE" -query QT_INSTALL_LIBS)"
+QT_PREFIX="$("$QMAKE" -query QT_INSTALL_PREFIX)"
+
+"$ROOT/packaging/macos/generate-icns"
+
+INFO_PLIST="$BUILD_DIR/Info.plist"
+mkdir -p "$BUILD_DIR"
+sed "s/@OMAIRC_VERSION@/$VERSION/g" "$ROOT/packaging/macos/Info.plist" >"$INFO_PLIST"
+
+cd "$BUILD_DIR"
+"$QMAKE" "$ROOT/omairc.pro" \
+  CONFIG+=sdk_no_version_check \
+  CONFIG+=app_bundle \
+  ICON="$ROOT/data/icons/omairc.icns" \
+  QMAKE_INFO_PLIST="$INFO_PLIST" \
+  QMAKE_MACOSX_DEPLOYMENT_TARGET=11.0
+# Qt 6.8 still emits -framework AGL; SDK 26 removed it.
+find . -name Makefile -print0 | xargs -0 sed -i '' 's/-framework AGL//g'
+make -j"$JOBS"
+
+APP="$BUILD_DIR/omairc.app"
+EXE="$APP/Contents/MacOS/omairc"
+if [ ! -x "$EXE" ]; then
+  echo "Expected $EXE after the build." >&2
+  exit 1
+fi
+# omairc.pro may reset QMAKE_INFO_PLIST to the unsubstituted template; install
+# the versioned plist we generated above.
+cp -f "$INFO_PLIST" "$APP/Contents/Info.plist"
+
+# Homebrew's framework layout confuses macdeployqt; the resulting bundle can
+# hang forever inside dyld. Keep those builds linked against the brew prefix.
+if is_homebrew_qt; then
+  echo "Homebrew Qt detected at $QT_PREFIX; skipping macdeployqt."
+  rm -rf -- "$APP/Contents/PlugIns" "$APP/Contents/Resources/qml"
+  embed_qtkeychain "$APP"
+  adhoc_sign "$APP"
+else
+  if [ -x "$QT_BIN/macdeployqt" ]; then
+    "$QT_BIN/macdeployqt" "$APP" \
+      -qmldir="$ROOT/src" \
+      -always-overwrite
+    prune_qt_deploy "$APP"
+  fi
+  embed_qtkeychain "$APP"
+  adhoc_sign "$APP"
+fi
+
+ln -sf "omairc.app/Contents/MacOS/omairc" "$BUILD_DIR/omairc"
+
+echo "Built $APP"

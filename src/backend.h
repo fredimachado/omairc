@@ -1,12 +1,16 @@
 #pragma once
 
 #include <QFileSystemWatcher>
-#ifdef Q_OS_UNIX
+#ifdef Q_OS_LINUX
 #include <QHash>
 #endif
 #include <QObject>
 #include <QString>
 #include <QVariantMap>
+
+#ifdef Q_OS_MACOS
+class MacOsNotifications;
+#endif
 
 class Backend : public QObject {
     Q_OBJECT
@@ -44,12 +48,12 @@ signals:
                                const QString &msgid);
 
 private slots:
-#ifdef Q_OS_UNIX
+#ifdef Q_OS_LINUX
     void handleActionInvoked(uint id, const QString &actionKey);
 #endif
 
 private:
-#ifdef Q_OS_UNIX
+#ifdef Q_OS_LINUX
     struct NotifyConversation {
         QString networkId;
         QString target;
@@ -59,7 +63,7 @@ private:
 
     void loadOmarchyTheme();
     void watchOmarchyTheme();
-#ifdef Q_OS_UNIX
+#ifdef Q_OS_LINUX
     void rememberNotifyId(const QString &networkId, const QString &target,
                           const QString &msgid, uint id);
 #endif
@@ -71,8 +75,11 @@ private:
     QString m_themeAccent;
     QString m_themeSelection;
     QFileSystemWatcher m_themeWatcher;
-#ifdef Q_OS_UNIX
+#ifdef Q_OS_LINUX
     QHash<QString, uint> m_conversationNotifyIds;
     QHash<uint, NotifyConversation> m_notifyById;
+#endif
+#ifdef Q_OS_MACOS
+    MacOsNotifications *m_macNotifications = nullptr;
 #endif
 };

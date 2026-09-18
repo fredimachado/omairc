@@ -2,6 +2,7 @@
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QStandardPaths>
 #include <QTemporaryDir>
 #include <QTest>
 
@@ -17,6 +18,7 @@ private slots:
     void writeProducesOneFormattedLine();
     void secondWriteAppends();
     void defaultPathUsesXdgStateHome();
+    void defaultPathUsesPlatformStateLocation();
     void constructWithoutWriteLeavesPathMissing();
     void writeTightensExistingWorldReadableFile();
 
@@ -79,9 +81,29 @@ void OmaircFileLogTest::defaultPathUsesXdgStateHome()
 {
     m_dir = std::make_unique<QTemporaryDir>();
     QVERIFY(m_dir->isValid());
+    const QByteArray previous = qgetenv("XDG_STATE_HOME");
     qputenv("XDG_STATE_HOME", m_dir->path().toUtf8());
     QCOMPARE(OmaircFileLog::defaultPath(),
              QDir(m_dir->path()).filePath(QStringLiteral("omairc/omairc.log")));
+    if (previous.isEmpty())
+        qunsetenv("XDG_STATE_HOME");
+    else
+        qputenv("XDG_STATE_HOME", previous);
+}
+
+void OmaircFileLogTest::defaultPathUsesPlatformStateLocation()
+{
+    const QByteArray previous = qgetenv("XDG_STATE_HOME");
+    qunsetenv("XDG_STATE_HOME");
+    QString root = QStandardPaths::writableLocation(QStandardPaths::GenericStateLocation);
+    if (root.isEmpty())
+        root = QStandardPaths::writableLocation(QStandardPaths::TempLocation);
+    QCOMPARE(OmaircFileLog::defaultPath(),
+             QDir(root).filePath(QStringLiteral("omairc/omairc.log")));
+    if (previous.isEmpty())
+        qunsetenv("XDG_STATE_HOME");
+    else
+        qputenv("XDG_STATE_HOME", previous);
 }
 
 void OmaircFileLogTest::constructWithoutWriteLeavesPathMissing()

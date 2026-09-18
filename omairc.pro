@@ -1,5 +1,5 @@
 QT += core gui qml quick quickcontrols2 network
-unix: QT += dbus
+unix:!macx: QT += dbus
 
 include(qtkeychain.pri)
 
@@ -15,6 +15,25 @@ win32 {
     RC_ICONS = $$PWD/data/icons/omairc.ico
 }
 
+macx {
+    OBJECTS_DIR = $$OUT_PWD/.obj
+    MOC_DIR = $$OUT_PWD/.moc
+    RCC_DIR = $$OUT_PWD/.rcc
+    CONFIG += app_bundle
+
+    exists($$PWD/data/icons/omairc.icns) {
+        ICON = $$PWD/data/icons/omairc.icns
+    }
+    exists($$PWD/packaging/macos/Info.plist) {
+        QMAKE_INFO_PLIST = $$PWD/packaging/macos/Info.plist
+    }
+
+    HEADERS += src/macosnotifications.h
+    OBJECTIVE_SOURCES += src/macosnotifications.mm
+    LIBS += -framework UserNotifications -framework Foundation -framework AppKit
+    include($$PWD/packaging/macos/objc-arc.pri)
+}
+
 include($$PWD/version.pri)
 
 # GCC 16 emits this diagnostic from Qt 6.11's own headers.
@@ -23,6 +42,7 @@ greaterThan(QMAKE_GCC_MAJOR_VERSION, 15): QMAKE_CXXFLAGS += -Wno-sfinae-incomple
 isEmpty(PREFIX): PREFIX = /usr/local
 
 HEADERS += \
+    src/omaircpaths.h \
     src/backend.h \
     src/singleinstance.h \
     src/omaircipc.h \
@@ -86,6 +106,7 @@ HEADERS += \
 
 SOURCES += \
     src/main.cpp \
+    src/omaircpaths.cpp \
     src/backend.cpp \
     src/singleinstance.cpp \
     src/omaircipc.cpp \
@@ -143,7 +164,7 @@ SOURCES += \
 
 RESOURCES += src/resources.qrc
 
-unix {
+unix:!macx {
     target.path = $$PREFIX/bin
     INSTALLS += target
 
@@ -176,3 +197,5 @@ unix {
     bash_completion.files = $$PWD/data/bash-completion/omairc
     INSTALLS += bash_completion
 }
+
+include($$PWD/packaging/macos/sdk-compat.pri)

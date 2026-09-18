@@ -1,5 +1,5 @@
 #include <QCoreApplication>
-#ifndef Q_OS_WIN
+#ifdef Q_OS_LINUX
 #include <QFile>
 #endif
 #include <QRegularExpression>
@@ -9,6 +9,7 @@
 
 #include "ircnetworkprofile.h"
 #include "ircprofilestore.h"
+#include "testsettings.h"
 
 #include <memory>
 
@@ -36,7 +37,7 @@ private slots:
     void storeRemoveDropsTheNetworkGroup();
 
 private:
-#ifndef Q_OS_WIN
+#ifdef Q_OS_LINUX
     QString settingsFile() const;
 #endif
 
@@ -47,18 +48,12 @@ void ProfileTest::init()
 {
     m_dir = std::make_unique<QTemporaryDir>();
     QVERIFY(m_dir->isValid());
-#ifdef Q_OS_WIN
-    QSettings::setDefaultFormat(QSettings::IniFormat);
-    QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, m_dir->path());
-#else
-    qputenv("XDG_CONFIG_HOME", m_dir->path().toUtf8());
-    QSettings::setPath(QSettings::NativeFormat, QSettings::UserScope, m_dir->path());
-#endif
+    TestSettings::isolate(m_dir->path());
     QCoreApplication::setOrganizationName(QStringLiteral("omairc"));
     QCoreApplication::setApplicationName(QStringLiteral("omairc"));
 }
 
-#ifndef Q_OS_WIN
+#ifdef Q_OS_LINUX
 QString ProfileTest::settingsFile() const
 {
     QSettings settings;
@@ -220,7 +215,7 @@ void ProfileTest::storeRoundTripsFieldsWithoutPassword()
     QCOMPARE(loaded.first(), profile);
     QCOMPARE(loaded.first().saslAccount(), QStringLiteral("joe/libera"));
 
-#ifndef Q_OS_WIN
+#ifdef Q_OS_LINUX
     QFile file(settingsFile());
     QVERIFY(file.exists());
     QVERIFY(settingsFile().endsWith(QStringLiteral("/omairc/omairc.conf")));
@@ -437,7 +432,7 @@ void ProfileTest::storeRemoveDropsTheNetworkGroup()
     QCOMPARE(loaded.first().networkId, keep.networkId);
     QCOMPARE(loaded.first().host, QStringLiteral("irc.example.net"));
 
-#ifndef Q_OS_WIN
+#ifdef Q_OS_LINUX
     QFile file(settingsFile());
     QVERIFY(file.open(QIODevice::ReadOnly | QIODevice::Text));
     const QString contents = QString::fromUtf8(file.readAll());
@@ -446,16 +441,17 @@ void ProfileTest::storeRemoveDropsTheNetworkGroup()
     QVERIFY(!contents.contains(QLatin1String("irc.oftc.net")));
 #else
     QSettings stored;
+    const QStringList keys = stored.allKeys();
+    const QString joinedKeys = keys.join(QLatin1Char('\n'));
+    QVERIFY(joinedKeys.contains(keep.networkId));
+    QVERIFY(!joinedKeys.contains(drop.networkId));
     const QStringList values = [&stored]() {
         QStringList out;
         for (const QString &key : stored.allKeys())
             out.append(stored.value(key).toString());
         return out;
     }();
-    const QString joined = values.join(QLatin1Char('\n'));
-    QVERIFY(joined.contains(keep.networkId));
-    QVERIFY(!joined.contains(drop.networkId));
-    QVERIFY(!joined.contains(QLatin1String("irc.oftc.net")));
+    QVERIFY(!values.join(QLatin1Char('\n')).contains(QLatin1String("irc.oftc.net")));
 #endif
 }
 

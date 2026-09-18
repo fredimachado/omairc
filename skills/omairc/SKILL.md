@@ -33,7 +33,9 @@ only when `"ok": true`.
 ## Binary
 
 Use `omairc` from `PATH`. In this source tree, `./build/omairc` after
-`bin/build`. Do not speak the Unix socket yourself.
+`bin/build` on Linux and Windows. On macOS, qmake builds an app bundle:
+`./build/omairc.app/Contents/MacOS/omairc`. Do not speak the local socket
+yourself.
 
 Before inventing flags, run `omairc --help` and `omairc <command> --help`.
 
@@ -103,10 +105,17 @@ when they drop older lines.
 
 `--since` examples: `5m`, `1h`. Units are `s`, `m`, `h`, `d`.
 
-`--unread` uses a CLI cursor under `$XDG_STATE_HOME/omairc/cli-cursors/`.
-It does not change the selected conversation or the GUI unread and
-mention counts. Two agents on this machine share one cursor per network,
-or per network and target.
+`--unread` uses a CLI cursor under `omairc/cli-cursors/` in the platform
+state location (`$XDG_STATE_HOME` overrides when set). It does not change
+the selected conversation or the GUI unread and mention counts. Two agents
+on this machine share one cursor per network, or per network and target.
+
+## Local socket and secrets
+
+The running window listens on a filesystem socket named `omairc.sock` under
+Qt `RuntimeLocation` (on macOS this is usually under `$TMPDIR`, not your
+home directory). Network passwords use the platform secret store (Keychain
+on macOS, libsecret on Linux, Credential Manager on Windows).
 
 ## Do not
 

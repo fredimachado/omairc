@@ -1,0 +1,362 @@
+name: macOS build
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - '.github/workflows/macos.yml'
+      - 'bin/build-macos'
+      - 'bin/package-macos'
+      - 'packaging/macos/**'
+      - 'omairc.pro'
+      - 'qtkeychain.pri'
+      - 'version.pri'
+      - 'src/**'
+      - 'fonts/**'
+      - 'data/icons/**'
+      - 'LICENSE'
+  push:
+    branches:
+      - master
+    tags:
+      - 'v*'
+    paths:
+      - '.github/workflows/macos.yml'
+      - 'bin/build-macos'
+      - 'bin/package-macos'
+      - 'packaging/macos/**'
+      - 'omairc.pro'
+      - 'qtkeychain.pri'
+      - 'version.pri'
+      - 'src/**'
+      - 'fonts/**'
+      - 'data/icons/**'
+      - 'LICENSE'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
+permissions:
+  contents: write
+
+jobs:
+  macos:
+    runs-on: macos-latest
+    timeout-minutes: 45
+    env:
+      QT_VERSION: 6.8.3
+      QTKEYCHAIN_VERSION: 0.15.0
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Prefer Xcode 16 when available
+        run: |
+          set -euo pipefail
+          xcode16=$(ls -d /Applications/Xcode_16*.app 2>/dev/null | sort -V | tail -n 1 || true)
+          if [ -n "$xcode16" ]; then
+            echo "Selecting $xcode16"
+            sudo xcode-select -s "$xcode16/Contents/Developer"
+          else
+            echo "No Xcode 16 install found; using default Xcode"
+          fi
+          xcodebuild -version
+
+      - name: Read version
+        run: |
+          set -euo pipefail
+          ver=$(awk '/^VERSION / { print $3; exit }' version.pri)
+          test -n "$ver"
+          echo "OMAIRC_VERSION=$ver" >> "$GITHUB_ENV"
+          echo "Omairc $ver"
+
+      - name: Assert tag version
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME#v}"
+          test "$tag" = "$OMAIRC_VERSION"
+
+      - name: Select Qt arch
+        run: |
+          set -euo pipefail
+          case "$(uname -m)" in
+            arm64)
+              # Prefer aqt's Apple Silicon kit when published. Qt 6.8.x currently
+              # only lists universal clang_64; install falls back and Smoke
+              # asserts the Mach-O contains arm64. Artifact stays macos-arm64.
+              qt_aqt_arch=clang_arm64
+              qt_install_dir=macos
+              omairc_mac_suffix=macos-arm64
+              expected_macho_arch=arm64
+              ;;
+            x86_64)
+              qt_aqt_arch=clang_64
+              qt_install_dir=macos
+              omairc_mac_suffix=macos-x64
+              expected_macho_arch=x86_64
+              ;;
+            *)
+              echo "Unsupported runner architecture: $(uname -m)" >&2
+              exit 1
+              ;;
+          esac
+          echo "QT_AQT_ARCH=$qt_aqt_arch" >> "$GITHUB_ENV"
+          echo "QT_INSTALL_DIR=$qt_install_dir" >> "$GITHUB_ENV"
+          echo "OMAIRC_MAC_SUFFIX=$omairc_mac_suffix" >> "$GITHUB_ENV"
+          echo "EXPECTED_MACHO_ARCH=$expected_macho_arch" >> "$GITHUB_ENV"
+          echo "Qt arch: $qt_aqt_arch (install: $qt_install_dir, artifact: $omairc_mac_suffix, macho: $expected_macho_arch)"
+
+      - name: Cache Qt
+        id: qt-cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/Qt
+          key: qt-${{ env.QT_VERSION }}-${{ env.OMAIRC_MAC_SUFFIX }}-${{ env.QT_AQT_ARCH }}-qtkeychain-${{ env.QTKEYCHAIN_VERSION }}
+
+      - name: Install Qt 6
+        if: steps.qt-cache.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          python3 -m venv "$RUNNER_TEMP/aqt"
+          "$RUNNER_TEMP/aqt/bin/pip" install aqtinstall
+          aqt="$RUNNER_TEMP/aqt/bin/aqt"
+          arch="$QT_AQT_ARCH"
+          available=$("$aqt" list-qt mac desktop --arch "$QT_VERSION")
+          if ! printf '%s\n' $available | grep -qx "$arch"; then
+            if [ "$arch" = clang_arm64 ]; then
+              echo "aqt has no clang_arm64 for $QT_VERSION (have: $available); using universal clang_64"
+              arch=clang_64
+            else
+              echo "aqt arch $arch unavailable for $QT_VERSION (have: $available)" >&2
+              exit 1
+            fi
+          fi
+          "$aqt" install-qt mac desktop "$QT_VERSION" "$arch" \
+            -O "$RUNNER_TEMP/Qt"
+          echo "QT_AQT_ARCH=$arch" >> "$GITHUB_ENV"
+
+      - name: Add Qt to PATH
+        run: |
+          set -euo pipefail
+          qt_root="$RUNNER_TEMP/Qt/$QT_VERSION"
+          qt_dir=
+          for candidate in "$QT_INSTALL_DIR" macos clang_arm64 clang_64; do
+            if [ -x "$qt_root/$candidate/bin/qmake" ]; then
+              qt_dir=$candidate
+              break
+            fi
+          done
+          if [ -z "$qt_dir" ]; then
+            echo "Could not find qmake under $qt_root" >&2
+            ls -la "$qt_root" >&2 || true
+            exit 1
+          fi
+          qt_bin="$qt_root/$qt_dir/bin"
+          test -x "$qt_bin/qmake"
+          echo "QT_INSTALL_DIR=$qt_dir" >> "$GITHUB_ENV"
+          echo "$qt_bin" >> "$GITHUB_PATH"
+          echo "QMAKE=$qt_bin/qmake" >> "$GITHUB_ENV"
+          {
+            echo "DYLD_LIBRARY_PATH=$qt_root/$qt_dir/lib:${DYLD_LIBRARY_PATH:-}"
+            echo "QT_PLUGIN_PATH=$qt_root/$qt_dir/plugins"
+            echo "QML2_IMPORT_PATH=$qt_root/$qt_dir/qml"
+          } >> "$GITHUB_ENV"
+          echo "Using Qt at $qt_bin (aqt arch $QT_AQT_ARCH)"
+
+      - name: Install QtKeychain
+        run: |
+          set -euo pipefail
+          qmake="$QMAKE"
+          qt_prefix="$("$qmake" -query QT_INSTALL_PREFIX)"
+          pri="$("$qmake" -query QT_INSTALL_ARCHDATA)/mkspecs/modules/qt_Qt6Keychain.pri"
+          if [ -f "$pri" ]; then
+            echo "QtKeychain already at $pri"
+            exit 0
+          fi
+          src="$RUNNER_TEMP/qtkeychain-src"
+          build="$RUNNER_TEMP/qtkeychain-build"
+          git clone --depth 1 --branch "$QTKEYCHAIN_VERSION" \
+            https://github.com/frankosterfeld/qtkeychain.git "$src"
+          cmake -S "$src" -B "$build" -G "Unix Makefiles" \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_CXX_COMPILER=clang++ \
+            -DCMAKE_PREFIX_PATH="$qt_prefix" \
+            -DCMAKE_INSTALL_PREFIX="$qt_prefix" \
+            -DBUILD_WITH_QT6=ON \
+            -DBUILD_TRANSLATIONS=OFF \
+            -DBUILD_TEST_APPLICATION=OFF \
+            -DBUILD_TESTING=OFF
+          cmake --build "$build"
+          cmake --install "$build"
+          test -f "$pri"
+
+      - name: Build
+        run: bin/build-macos
+
+      - name: Smoke
+        run: |
+          set -euo pipefail
+          exe="$GITHUB_WORKSPACE/build/omairc.app/Contents/MacOS/omairc"
+          test -x "$exe"
+          archs=$(lipo -archs "$exe" 2>/dev/null || true)
+          if [ -z "$archs" ]; then
+            archs=$(file -b "$exe")
+          fi
+          echo "Mach-O archs: $archs (expect $EXPECTED_MACHO_ARCH, artifact $OMAIRC_MAC_SUFFIX)"
+          case "$archs" in
+            *"$EXPECTED_MACHO_ARCH"*) ;;
+            *)
+              echo "Binary missing $EXPECTED_MACHO_ARCH (got: $archs); refusing $OMAIRC_MAC_SUFFIX artifact" >&2
+              exit 1
+              ;;
+          esac
+          case "$OMAIRC_MAC_SUFFIX" in
+            macos-arm64)
+              test "$EXPECTED_MACHO_ARCH" = arm64
+              ;;
+            macos-x64)
+              test "$EXPECTED_MACHO_ARCH" = x86_64
+              ;;
+            *)
+              echo "Unexpected artifact suffix $OMAIRC_MAC_SUFFIX" >&2
+              exit 1
+              ;;
+          esac
+          version=$("$exe" --version 2>&1)
+          case "$version" in
+            omairc\ [0-9]*) ;;
+            *) echo "Expected version text, got: $version" >&2; exit 1 ;;
+          esac
+          help=$("$exe" --help 2>&1)
+          case "$help" in
+            *Usage:*) ;;
+            *) echo "Expected help text, got: $help" >&2; exit 1 ;;
+          esac
+          export OMAIRC_ALLOW_MULTI=1
+          export OMAIRC_SMOKE=1
+          export QT_QPA_PLATFORM=offscreen
+          export QT_QUICK_BACKEND=software
+          "$exe" --demo-server &
+          pid=$!
+          for _ in $(seq 1 60); do
+            if ! kill -0 "$pid" 2>/dev/null; then
+              wait "$pid"
+              exit $?
+            fi
+            sleep 0.5
+          done
+          kill "$pid" 2>/dev/null || true
+          wait "$pid" 2>/dev/null || true
+          echo "demo-server smoke did not exit within 30s" >&2
+          exit 1
+
+      - name: Portable tests
+        run: |
+          set -euo pipefail
+          bin/check-conventions
+          run_test_bin() {
+            if [ -x "./$1" ]; then
+              "./$1" "${@:2}"
+            elif [ -x "./$1.app/Contents/MacOS/$1" ]; then
+              "./$1.app/Contents/MacOS/$1" "${@:2}"
+            else
+              echo "Could not find $1 under $(pwd)" >&2
+              ls -la
+              exit 1
+            fi
+          }
+          run_test_bin_timed() {
+            local timeout_secs="$1"
+            local name="$2"
+            shift 2
+            if [ -x "./$name" ]; then
+              perl -e 'alarm shift; exec @ARGV' "$timeout_secs" "./$name" "$@"
+            elif [ -x "./$name.app/Contents/MacOS/$name" ]; then
+              perl -e 'alarm shift; exec @ARGV' "$timeout_secs" \
+                "./$name.app/Contents/MacOS/$name" "$@"
+            else
+              echo "Could not find $name under $(pwd)" >&2
+              ls -la
+              exit 1
+            fi
+          }
+          jobs=$(sysctl -n hw.ncpu)
+          mkdir -p build-tests
+          cd build-tests
+          qmake "$GITHUB_WORKSPACE/tests/tests.pro"
+          # Qt 6.8 still emits -framework AGL; SDK 26 removed it.
+          find . -name Makefile -print0 | xargs -0 sed -i '' 's/-framework AGL//g'
+          make -j"$jobs"
+          run_test_bin_timed 180 protocol_tests
+          cd "$GITHUB_WORKSPACE"
+          mkdir -p build-seeded-qml-tests
+          cd build-seeded-qml-tests
+          qmake "$GITHUB_WORKSPACE/tests/ui/seeded-qml.pro"
+          # Qt 6.8 still emits -framework AGL; SDK 26 removed it.
+          find . -name Makefile -print0 | xargs -0 sed -i '' 's/-framework AGL//g'
+          make -j"$jobs"
+          mkdir -p "$GITHUB_WORKSPACE/test-artifacts"
+          test_state=$(mktemp -d "${RUNNER_TEMP}/omairc-tests.XXXXXX")
+          XDG_CONFIG_HOME="$test_state/config" \
+          XDG_CACHE_HOME="$test_state/cache" \
+          XDG_DATA_HOME="$test_state/data" \
+          XDG_STATE_HOME="$test_state/state" \
+          QT_QPA_PLATFORM=offscreen \
+          QT_QPA_PLATFORMTHEME= \
+          QT_QUICK_BACKEND=software \
+          run_test_bin seeded_qml_tests \
+            -input "$GITHUB_WORKSPACE/tests/ui/tst_omairc.qml"
+          XDG_CONFIG_HOME="$test_state/config" \
+          XDG_CACHE_HOME="$test_state/cache" \
+          XDG_DATA_HOME="$test_state/data" \
+          XDG_STATE_HOME="$test_state/state" \
+          QT_QPA_PLATFORM=offscreen \
+          QT_QPA_PLATFORMTHEME= \
+          QT_QUICK_BACKEND=software \
+          run_test_bin seeded_qml_tests \
+            -input "$GITHUB_WORKSPACE/tests/ui/tst_seeded_window.qml"
+          rm -rf "$test_state"
+
+      - name: Package app zip
+        run: bin/package-macos
+
+      - name: Upload app zip
+        uses: actions/upload-artifact@v4
+        with:
+          name: omairc-${{ env.OMAIRC_VERSION }}-${{ env.OMAIRC_MAC_SUFFIX }}
+          path: dist/omairc-${{ env.OMAIRC_VERSION }}-${{ env.OMAIRC_MAC_SUFFIX }}.zip
+          if-no-files-found: error
+
+      - name: Publish GitHub Release asset
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          set -euo pipefail
+          tag="$GITHUB_REF_NAME"
+          zip="dist/omairc-${OMAIRC_VERSION}-${OMAIRC_MAC_SUFFIX}.zip"
+          zip_name=$(basename "$zip")
+          test -f "$zip"
+
+          deadline=$(( $(date +%s) + 1800 ))
+          while ! gh release view "$tag" >/dev/null 2>&1; do
+            if [ "$(date +%s)" -ge "$deadline" ]; then
+              echo "Timed out waiting for GitHub Release $tag (created by Release package)" >&2
+              exit 1
+            fi
+            echo "Waiting for release $tag..."
+            sleep 15
+          done
+
+          mapfile -t assets < <(gh release view "$tag" --json assets --jq '.assets[].name')
+          for asset in "${assets[@]}"; do
+            case "$asset" in
+              omairc-*-macos-*.zip)
+                if [ "$asset" != "$zip_name" ]; then
+                  gh release delete-asset "$tag" "$asset" --yes
+                fi
+                ;;
+            esac
+          done
+
+          gh release upload "$tag" "$zip" --clobber

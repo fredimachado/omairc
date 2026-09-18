@@ -17,6 +17,7 @@
 #include <time.h>
 
 #include "fakeirctransport.h"
+#include "testsettings.h"
 #include "irccapability.h"
 #include "ircconversationlog.h"
 #include "irccontroller.h"
@@ -491,9 +492,7 @@ void ControllerTest::init()
 {
     m_settingsDir = std::make_unique<QTemporaryDir>();
     QVERIFY(m_settingsDir->isValid());
-    qputenv("XDG_CONFIG_HOME", m_settingsDir->path().toUtf8());
-    QSettings::setPath(QSettings::NativeFormat, QSettings::UserScope,
-                       m_settingsDir->path());
+    TestSettings::isolate(m_settingsDir->path());
     QCoreApplication::setOrganizationName(QStringLiteral("omairc"));
     QCoreApplication::setApplicationName(QStringLiteral("omairc"));
 }

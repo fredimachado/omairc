@@ -2,7 +2,7 @@
 
 #include <QObject>
 
-#ifdef Q_OS_UNIX
+#ifdef Q_OS_LINUX
 #include <functional>
 
 class QDBusVariant;
@@ -24,14 +24,14 @@ signals:
 public slots:
     void refresh();
 
-#ifdef Q_OS_UNIX
+#ifdef Q_OS_LINUX
 private slots:
     void handlePortalSettingChanged(const QString &nameSpace, const QString &key,
                                     const QDBusVariant &value);
 #endif
 
 private:
-#ifdef Q_OS_UNIX
+#ifdef Q_OS_LINUX
     void requestPortalSetting(const QString &nameSpace, const QString &key,
                               std::function<void(const QVariant &)> handler);
     void requestPortalDarkMode();

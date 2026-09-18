@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>en</string>
+	<key>CFBundleExecutable</key>
+	<string>omairc</string>
+	<key>CFBundleIconFile</key>
+	<string>omairc</string>
+	<key>CFBundleIdentifier</key>
+	<string>app.omairc.Omairc</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>Omairc</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>@OMAIRC_VERSION@</string>
+	<key>CFBundleVersion</key>
+	<string>@OMAIRC_VERSION@</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>11.0</string>
+	<key>NSHighResolutionCapable</key>
+	<true/>
+	<key>NSPrincipalClass</key>
+	<string>NSApplication</string>
+	<key>NSUserNotificationUsageDescription</key>
+	<string>Omairc shows mention and direct-message alerts while the window is unfocused.</string>
+	<key>NSUserNotificationsUsageDescription</key>
+	<string>Omairc shows mention and direct-message alerts while the window is unfocused.</string>
+</dict>
+</plist>

@@ -111,7 +111,9 @@ OmaircFileLog::~OmaircFileLog()
 
 QString OmaircFileLog::defaultPath()
 {
-    QString root = QStandardPaths::writableLocation(QStandardPaths::GenericStateLocation);
+    QString root = QString::fromUtf8(qgetenv("XDG_STATE_HOME"));
+    if (root.isEmpty())
+        root = QStandardPaths::writableLocation(QStandardPaths::GenericStateLocation);
     if (root.isEmpty())
         root = QStandardPaths::writableLocation(QStandardPaths::TempLocation);
     return QDir(root).filePath(QStringLiteral("omairc/omairc.log"));

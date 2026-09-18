@@ -1,6 +1,6 @@
 #include "systemtheme.h"
 
-#ifdef Q_OS_UNIX
+#ifdef Q_OS_LINUX
 #include <QDBusConnection>
 #include <QDBusMessage>
 #include <QDBusPendingCall>
@@ -12,7 +12,7 @@
 #include <QGuiApplication>
 #include <QStyleHints>
 
-#ifdef Q_OS_UNIX
+#ifdef Q_OS_LINUX
 namespace {
 QVariant unwrapVariant(QVariant value) {
     while (value.canConvert<QDBusVariant>())
@@ -73,7 +73,7 @@ SystemTheme::SystemTheme(QObject *parent) : QObject(parent) {
                 this, &SystemTheme::refresh);
     }
 
-#ifdef Q_OS_UNIX
+#ifdef Q_OS_LINUX
     QDBusConnection::sessionBus().connect(
         QString(),
         QStringLiteral("/org/freedesktop/portal/desktop"),
@@ -93,13 +93,13 @@ void SystemTheme::refresh() {
     if (known)
         setDarkMode(qtDark);
 
-#ifdef Q_OS_UNIX
+#ifdef Q_OS_LINUX
     requestPortalDarkMode();
     requestPortalTextScale();
 #endif
 }
 
-#ifdef Q_OS_UNIX
+#ifdef Q_OS_LINUX
 void SystemTheme::requestPortalSetting(const QString &nameSpace, const QString &key,
                                        std::function<void(const QVariant &)> handler) {
     const QDBusConnection bus = QDBusConnection::sessionBus();

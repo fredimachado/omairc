@@ -18,6 +18,7 @@
 #include "messagelistmodel.h"
 #include "networklogmodel.h"
 #include "seededircfixture.h"
+#include "testsettings.h"
 
 #include <QColor>
 #include <QCoreApplication>
@@ -559,10 +560,9 @@ void LiveUiTest::consecutiveSameAuthorMinuteGroupsThroughIrcEvent()
     QDir().mkpath(config);
     QDir().mkpath(xdgRoot + QLatin1String("/cache"));
     QDir().mkpath(xdgRoot + QLatin1String("/data"));
-    qputenv("XDG_CONFIG_HOME", config.toUtf8());
     qputenv("XDG_CACHE_HOME", (xdgRoot + QLatin1String("/cache")).toUtf8());
     qputenv("XDG_DATA_HOME", (xdgRoot + QLatin1String("/data")).toUtf8());
-    QSettings::setPath(QSettings::NativeFormat, QSettings::UserScope, config);
+    TestSettings::isolate(config);
 
     Backend backend;
     IrcSlashSession slash;
@@ -662,10 +662,9 @@ void LiveUiTest::memberJoinPartModeUpdatesWithoutReset()
     QDir().mkpath(config);
     QDir().mkpath(xdgRoot + QLatin1String("/cache"));
     QDir().mkpath(xdgRoot + QLatin1String("/data"));
-    qputenv("XDG_CONFIG_HOME", config.toUtf8());
     qputenv("XDG_CACHE_HOME", (xdgRoot + QLatin1String("/cache")).toUtf8());
     qputenv("XDG_DATA_HOME", (xdgRoot + QLatin1String("/data")).toUtf8());
-    QSettings::setPath(QSettings::NativeFormat, QSettings::UserScope, config);
+    TestSettings::isolate(config);
 
     Backend backend;
     IrcSlashSession slash;
@@ -774,10 +773,9 @@ void LiveUiTest::replayAndLiveSameAuthorMinuteDoNotGroupThroughIrcEvent()
     QDir().mkpath(config);
     QDir().mkpath(xdgRoot + QLatin1String("/cache"));
     QDir().mkpath(xdgRoot + QLatin1String("/data"));
-    qputenv("XDG_CONFIG_HOME", config.toUtf8());
     qputenv("XDG_CACHE_HOME", (xdgRoot + QLatin1String("/cache")).toUtf8());
     qputenv("XDG_DATA_HOME", (xdgRoot + QLatin1String("/data")).toUtf8());
-    QSettings::setPath(QSettings::NativeFormat, QSettings::UserScope, config);
+    TestSettings::isolate(config);
 
     Backend backend;
     IrcSlashSession slash;
@@ -871,10 +869,9 @@ void LiveUiTest::bouncerQueryReplayRendersDirectMessageInSidebar()
     QDir().mkpath(config);
     QDir().mkpath(xdgRoot + QLatin1String("/cache"));
     QDir().mkpath(xdgRoot + QLatin1String("/data"));
-    qputenv("XDG_CONFIG_HOME", config.toUtf8());
     qputenv("XDG_CACHE_HOME", (xdgRoot + QLatin1String("/cache")).toUtf8());
     qputenv("XDG_DATA_HOME", (xdgRoot + QLatin1String("/data")).toUtf8());
-    QSettings::setPath(QSettings::NativeFormat, QSettings::UserScope, config);
+    TestSettings::isolate(config);
 
     Backend backend;
     IrcSlashSession slash;
@@ -964,10 +961,9 @@ void LiveUiTest::ctrlFFindsLiveTranscriptAndStatus()
     QDir().mkpath(config);
     QDir().mkpath(xdgRoot + QLatin1String("/cache"));
     QDir().mkpath(xdgRoot + QLatin1String("/data"));
-    qputenv("XDG_CONFIG_HOME", config.toUtf8());
     qputenv("XDG_CACHE_HOME", (xdgRoot + QLatin1String("/cache")).toUtf8());
     qputenv("XDG_DATA_HOME", (xdgRoot + QLatin1String("/data")).toUtf8());
-    QSettings::setPath(QSettings::NativeFormat, QSettings::UserScope, config);
+    TestSettings::isolate(config);
 
     Backend backend;
     IrcSlashSession slash;

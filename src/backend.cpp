@@ -1,12 +1,15 @@
 #include "backend.h"
 
 #include <QColor>
-#ifdef Q_OS_UNIX
+#ifdef Q_OS_LINUX
 #include <QDBusConnection>
 #include <QDBusMessage>
 #include <QDBusPendingCall>
 #include <QDBusPendingCallWatcher>
 #include <QDBusPendingReply>
+#endif
+#ifdef Q_OS_MACOS
+#include "macosnotifications.h"
 #endif
 #include <QDir>
 #include <QFile>
@@ -19,7 +22,7 @@
 namespace {
 const auto windowGeometrySetting = QStringLiteral("window/geometry");
 
-#ifdef Q_OS_UNIX
+#ifdef Q_OS_LINUX
 QString notifyConversationKey(const QString &networkId, const QString &target)
 {
     return networkId + QLatin1Char('\n') + target;
@@ -40,7 +43,7 @@ Backend::Backend(QObject *parent) : QObject(parent) {
         watchOmarchyTheme();
     });
 
-#ifdef Q_OS_UNIX
+#ifdef Q_OS_LINUX
     QDBusConnection bus = QDBusConnection::sessionBus();
     if (!bus.isConnected())
         return;
@@ -51,6 +54,10 @@ Backend::Backend(QObject *parent) : QObject(parent) {
                 QStringLiteral("us"),
                 this,
                 SLOT(handleActionInvoked(uint,QString)));
+#elif defined(Q_OS_MACOS)
+    m_macNotifications = new MacOsNotifications(this);
+    connect(m_macNotifications, &MacOsNotifications::activated, this,
+            &Backend::notificationActivated);
 #endif
 }
 
@@ -77,7 +84,7 @@ void Backend::saveWindowGeometry(int x, int y, int width, int height, bool maxim
 void Backend::notifyDesktop(const QString &summary, const QString &body,
                             const QString &networkId, const QString &target,
                             const QString &msgid) {
-#ifdef Q_OS_UNIX
+#ifdef Q_OS_LINUX
     QDBusConnection bus = QDBusConnection::sessionBus();
     if (!bus.isConnected())
         return;
@@ -111,6 +118,9 @@ void Backend::notifyDesktop(const QString &summary, const QString &body,
             return;
         rememberNotifyId(networkId, target, msgid, reply.value());
     });
+#elif defined(Q_OS_MACOS)
+    if (m_macNotifications)
+        m_macNotifications->notify(summary, body, networkId, target, msgid);
 #else
     Q_UNUSED(summary);
     Q_UNUSED(body);
@@ -120,7 +130,7 @@ void Backend::notifyDesktop(const QString &summary, const QString &body,
 #endif
 }
 
-#ifdef Q_OS_UNIX
+#ifdef Q_OS_LINUX
 void Backend::rememberNotifyId(const QString &networkId, const QString &target,
                                const QString &msgid, uint id)
 {
