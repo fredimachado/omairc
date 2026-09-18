@@ -89,17 +89,6 @@ QString joinPipeSeparated(const QStringList& tokens)
     return tokens.join(QStringLiteral(" | "));
 }
 
-int capSubcommandIndex(const IrcMessage& message, const QString& subcommand)
-{
-    for (std::size_t index = 1; index < message.parameters.size(); ++index) {
-        if (ircWireText(message.parameters[index]).compare(subcommand, Qt::CaseInsensitive)
-            == 0) {
-            return int(index);
-        }
-    }
-    return -1;
-}
-
 QStringList capTokens(const IrcMessage& message, int subcommandIndex)
 {
     if (message.parameters.size() <= std::size_t(subcommandIndex + 1))
@@ -119,6 +108,10 @@ QStringList messageParameters(const IrcMessage& message)
 
 std::optional<QString> formatIncomingCap(const IrcMessage& message)
 {
+    if (message.parameters.size() < 2)
+        return std::nullopt;
+
+    const QString subcommand = ircWireText(message.parameters[1]);
     static constexpr struct {
         const char *subcommand = nullptr;
         const char *prefix = nullptr;
@@ -131,10 +124,9 @@ std::optional<QString> formatIncomingCap(const IrcMessage& message)
     };
 
     for (const auto& row : kCapFormats) {
-        const int index = capSubcommandIndex(message, QString::fromLatin1(row.subcommand));
-        if (index < 0)
+        if (subcommand.compare(QLatin1String(row.subcommand), Qt::CaseInsensitive) != 0)
             continue;
-        const QStringList tokens = capTokens(message, index);
+        const QStringList tokens = capTokens(message, 1);
         if (tokens.isEmpty())
             return QString::fromLatin1(row.prefix) + QLatin1Char(':');
         return QString::fromLatin1(row.prefix) + QStringLiteral(": ")

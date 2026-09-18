@@ -1813,6 +1813,18 @@ void SessionTest::incomingCapMyinfoAndLusersFormatting()
         mustParse(":server CAP omairc ACK :batch chathistory"));
     QCOMPARE(capAck.text(), QStringLiteral("Acknowledged: batch | chathistory"));
 
+    const IrcStatusEntry capNickCollision = IrcStatusEntry::incoming(
+        QStringLiteral("libera"),
+        mustParse(":server CAP ACK LS :batch"));
+    QCOMPARE(capNickCollision.label(), QStringLiteral("CAP"));
+    QCOMPARE(capNickCollision.text(), QStringLiteral("Server supports: batch"));
+
+    const IrcStatusEntry capLsContinuation = IrcStatusEntry::incoming(
+        QStringLiteral("libera"),
+        mustParse(":server CAP * LS * :cap-one cap-two"));
+    QCOMPARE(capLsContinuation.text(),
+             QStringLiteral("Server supports: cap-one | cap-two"));
+
     const IrcStatusEntry lusers252 = IrcStatusEntry::incoming(
         QStringLiteral("libera"),
         mustParse(":server 252 omairc 1 :IRC Operators online"));
