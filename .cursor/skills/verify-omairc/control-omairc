@@ -496,6 +496,7 @@ cmd_qml_suite() {
     "open-direct-message.png:open-direct-message/mira-dm.png" \
     "jump-to-nick.png:keyboard/jump-to-nick.png" \
     "server-list-collapsed.png:keyboard/server-list-collapsed.png" \
+    "server-list-restored.png:keyboard/server-list-restored.png" \
     "status-console.png:status-console/after-open.png" \
     "switch-channel.png:member-presence/after-desktop.png" \
     "member-rank-order.png:member-presence/rank-order.png" \

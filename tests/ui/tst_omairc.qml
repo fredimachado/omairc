@@ -3103,7 +3103,7 @@ TestCase {
         keyClick(Qt.Key_S, Qt.ControlModifier | Qt.ShiftModifier);
 
         tryCompare(sidebar, "width", expandedWidth);
-        saveScreenshot("toggle-server-list");
+        saveScreenshot("server-list-restored");
     }
 
     function test_collapsedServerListKeepsWalking() {

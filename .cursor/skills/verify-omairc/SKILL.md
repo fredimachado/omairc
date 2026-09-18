@@ -149,7 +149,7 @@ Standards:
 - Window title is the conversation identity. A screenshot must show the sidebar selection, header name, topic, and (for channels) people count together.
 - Messages are session-local. Persistence proof is the same session: the row stays after sending, and switching away and back still shows it.
 - `control-omairc compare --before <a> --after <b>` requires a visible pixel change (ImageMagick AE > 100).
-- `bin/test` writes `test-artifacts/{connection-sheet,switch-channel,send-message,toggle-members,toggle-server-list,server-list-collapsed,open-direct-message,status-console,typing-member-glyph,typing-dm-overlay}.png`. Treat those as QML-suite evidence, not desktop-window evidence. `qml-suite` copies them into `test-artifacts/verify/<feature-id>/`, and reuses `switch-channel.png` for member-presence and identity-footer.
+- `bin/test` writes `test-artifacts/{connection-sheet,switch-channel,send-message,toggle-members,server-list-collapsed,server-list-restored,open-direct-message,status-console,typing-member-glyph,typing-dm-overlay}.png`. Treat those as QML-suite evidence, not desktop-window evidence. `qml-suite` copies them into `test-artifacts/verify/<feature-id>/`, and reuses `switch-channel.png` for member-presence and identity-footer.
 - Record the feature ID and entry point on every artifact name.
 
 ## Cleanup

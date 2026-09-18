@@ -60,15 +60,16 @@ ApplicationWindow {
 
     property bool membersVisible: true
     property bool serverListVisible: true
+    property string sidebarNetworkFocusId: ""
     // The composer routes Enter to the focused network header, so a collapsed
-    // rail must not keep a selection armed that nobody can see.
+    // rail must not keep a selection armed that nobody can see. Declared below
+    // sidebarNetworkFocusId so the dependency reads top-to-bottom.
     onServerListVisibleChanged: {
         if (!serverListVisible)
             sidebarNetworkFocusId = "";
     }
     property bool shortcutsSheetEscapeGuard: false
     property bool pickerEscapeGuard: false
-    property string sidebarNetworkFocusId: ""
     property int jumpSelectedIndex: 0
     property int nickSelectedIndex: 0
     property var nickSourceRows: []
