@@ -385,7 +385,7 @@ bool responseHasOk(const QByteArray &line)
         QJsonDocument::fromJson(line.trimmed(), &parseError);
     if (parseError.error != QJsonParseError::NoError || !document.isObject())
         return false;
-    return document.object().contains(QStringLiteral("ok"));
+    return document.object().value(QStringLiteral("ok")).isBool();
 }
 
 bool responseOk(const QByteArray &line)

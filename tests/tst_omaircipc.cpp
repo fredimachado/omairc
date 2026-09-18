@@ -1130,9 +1130,17 @@ void OmaircIpcTest::uncertainResponseShape()
         OmaircIpc::errorResponse(QStringLiteral("Not connected"));
     QVERIFY(!OmaircIpc::responseOk(plainError));
     QVERIFY(!OmaircIpc::responseUncertain(plainError));
+    QVERIFY(OmaircIpc::responseHasOk(line));
     QVERIFY(OmaircIpc::responseHasOk(plainError));
+    QVERIFY(OmaircIpc::responseHasOk(QByteArrayLiteral("{\"ok\":true}")));
+    QVERIFY(OmaircIpc::responseHasOk(QByteArrayLiteral("{\"ok\":false}")));
+    // sendReplyUncertain treats empty/missing replies and !responseHasOk as
+    // uncertain, so a non-boolean "ok" must not look like a readable envelope.
     QVERIFY(!OmaircIpc::responseHasOk(QByteArrayLiteral("not json")));
     QVERIFY(!OmaircIpc::responseHasOk(QByteArrayLiteral("{\"error\":\"x\"}")));
+    QVERIFY(!OmaircIpc::responseHasOk(QByteArrayLiteral("{\"ok\":\"true\"}")));
+    QVERIFY(!OmaircIpc::responseHasOk(QByteArrayLiteral("{\"ok\":1}")));
+    QVERIFY(!OmaircIpc::responseHasOk(QByteArrayLiteral("{\"ok\":null}")));
 }
 
 void OmaircIpcTest::cliSendUncertainWhenReplyDropped()
