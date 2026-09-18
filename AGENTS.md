@@ -106,6 +106,42 @@ is missing.
 For visual changes, inspect the running window and the screenshots under
 `test-artifacts/`.
 
+`bin/test` prints hundreds of `QQmlVMEMetaObject: Internal error - attempted to
+evaluate a function in an invalid context` warnings from the seeded QML and
+live-ui suites. They are pre-existing, they never fail a suite, and no
+`TypeError` accompanies them. Mechanism: reading a method-valued property on a
+QObject whose `QQmlContextData` is already destroyed makes Qt 6.10+ log the
+warning and hand back `undefined`. The backtrace is
+`QObjectWrapper::virtualResolveLookupGetter` into `QQmlVMEMetaObject::method()`,
+and the contexts are torn down by `QQmlDelegateModel::handleModelReset()` while
+released delegates await deletion.
+
+Only a method-valued read reaches that guard, so the warning comes from
+`children` scans that duck-type a function, and `sidebarConversationRows()` is
+the one that does: it tests `child.activate`. Replacing just that read with a
+data-property read took the seeded suite from 1769 warnings to 0.
+`sidebarNetworkSections()` also scans `column.children`, but duck-types
+`networkId` (a string) and `headerItem` (a property alias to an Item), and
+neither is a method, so it cannot raise this warning — corroborated by the fact
+that removing the `activate` read alone already took the suite to zero.
+Reordering the guard to test `visible` and `height` first only cut the live-ui
+burst from 360 to 90, because a released row can still report itself visible.
+
+One isolated compiled-window run logged none either: twelve rail toggles,
+twelve network-walk round trips, and conversation churn across six targets left
+no record. Judge that claim against the file log, not stderr, because
+`OmaircFileLog` replaces Qt's default handler and `qWarning` output therefore
+never reaches the console: `$XDG_STATE_HOME/omairc/omairc.log` is the only place
+warnings appear, and a `console.warn` positive control is how you prove the file
+is recording. No CI job drives the compiled window, so this is a manual
+observation, not a gate.
+
+Treating the warning as a bug fix means replacing the `children` scan with the
+per-section Repeaters, which removes the read and the warning together; do not
+silence it with a message handler, and do not assume the load-bearing
+`child.activate` test can be swapped for another property without checking which
+children still count as rows.
+
 On Windows, `bin\build.bat` finds a Qt 6 kit, runs qmake and nmake (or jom,
 or mingw32-make), and deploys Qt next to `build\release\omairc.exe`. Set
 `QMAKE` to pick a kit. Prefer the MSVC kit (`C:\Qt\6.*\msvc*_64\bin\qmake.exe`)

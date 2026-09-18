@@ -404,6 +404,7 @@ cmd_key() {
     ctrl+shift+k) key=Control_L+Shift_L+k ;;
     ctrl+shift+m) key=Control_L+Shift_L+m ;;
     ctrl+shift+p) key=Control_L+Shift_L+p ;;
+    ctrl+shift+s) key=Control_L+Shift_L+s ;;
   esac
   load_state
   xdotool windowfocus --sync "$WINDOW"
@@ -503,6 +504,8 @@ cmd_qml_suite() {
     "toggle-members.png:toggle-members/members-hidden.png" \
     "open-direct-message.png:open-direct-message/mira-dm.png" \
     "jump-to-nick.png:keyboard/jump-to-nick.png" \
+    "server-list-collapsed.png:keyboard/server-list-collapsed.png" \
+    "server-list-restored.png:keyboard/server-list-restored.png" \
     "status-console.png:status-console/after-open.png" \
     "switch-channel.png:member-presence/after-desktop.png" \
     "member-rank-order.png:member-presence/rank-order.png" \

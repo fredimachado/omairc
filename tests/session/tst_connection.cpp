@@ -87,6 +87,10 @@ private slots:
     void init();
     void setupRequiredUntilCompleteProfileIsSaved();
     void loadingStoredProfileDoesNotConnectUntilActivate();
+    void customNameIsRosterDisplayName();
+    void missingStoredNameUsesHostAsDisplayName();
+    void editingHostLeavesLoadedLegacyName();
+    void duplicateNamesDisambiguateWithNick();
     void connectOnStartupDraftAppliesAndDiscards();
     void applyIsIdempotentForTheSameSecret();
     void profileKeyChangePersistsExistingPassword();
@@ -334,6 +338,7 @@ CredentialStore &ConnectionTest::credentialStore()
 
 void ConnectionTest::fillCompleteDraft(IrcConnection &connection, const QString &host)
 {
+    connection.setName(host);
     connection.setHost(host);
     connection.setPort(6697);
     connection.setTlsEnabled(true);
@@ -365,6 +370,7 @@ void ConnectionTest::setupRequiredUntilCompleteProfileIsSaved()
     IrcConnection connection(controller, capturingFactory(), credentialStore());
     QVERIFY(connection.setupRequired());
     QCOMPARE(connection.host(), QStringLiteral("irc.libera.chat"));
+    QCOMPARE(connection.name(), QStringLiteral("irc.libera.chat"));
     QCOMPARE(connection.displayName(), QStringLiteral("irc.libera.chat"));
     QVERIFY(!connection.activate());
     QCOMPARE(m_transports.size(), 0);
@@ -397,6 +403,103 @@ void ConnectionTest::loadingStoredProfileDoesNotConnectUntilActivate()
     QCOMPARE(m_transports.size(), 1);
     QCOMPARE(m_transports.first()->connectionState(),
              IrcTransport::ConnectionState::Connecting);
+}
+
+void ConnectionTest::customNameIsRosterDisplayName()
+{
+    IrcController controller;
+    IrcConnection connection(controller, capturingFactory(), credentialStore());
+    fillCompleteDraft(connection, QStringLiteral("irc.example"));
+    connection.setName(QStringLiteral("Example Net"));
+    QVERIFY(connection.apply());
+    QCOMPARE(connection.name(), QStringLiteral("Example Net"));
+    QCOMPARE(connection.host(), QStringLiteral("irc.example"));
+    QCOMPARE(connection.displayName(), QStringLiteral("Example Net"));
+    QCOMPARE(connection.networks()->data(connection.networks()->index(0, 0),
+                                         NetworkListModel::DisplayNameRole).toString(),
+             QStringLiteral("Example Net"));
+
+    connection.setName(QString());
+    QCOMPARE(connection.displayName(), QStringLiteral("irc.example"));
+    connection.setName(QStringLiteral("Example Net"));
+    QVERIFY(connection.apply());
+
+    IrcConnection reloaded(controller, capturingFactory(), credentialStore());
+    QCOMPARE(reloaded.name(), QStringLiteral("Example Net"));
+    QCOMPARE(reloaded.host(), QStringLiteral("irc.example"));
+    QCOMPARE(reloaded.displayName(), QStringLiteral("Example Net"));
+}
+
+void ConnectionTest::missingStoredNameUsesHostAsDisplayName()
+{
+    IrcNetworkProfile profile = IrcNetworkProfile::create();
+    profile.host = QStringLiteral("irc.example.net");
+    profile.nick = QStringLiteral("omairc");
+    IrcProfileStore().save(profile);
+
+    QSettings settings;
+    settings.beginGroup(QStringLiteral("networks"));
+    settings.beginGroup(profile.networkId);
+    settings.remove(QStringLiteral("name"));
+    settings.endGroup();
+    settings.endGroup();
+    settings.sync();
+
+    IrcController controller;
+    IrcConnection connection(controller, capturingFactory(), credentialStore());
+    QCOMPARE(connection.host(), QStringLiteral("irc.example.net"));
+    QCOMPARE(connection.name(), QStringLiteral("irc.example.net"));
+    QCOMPARE(connection.displayName(), QStringLiteral("irc.example.net"));
+}
+
+void ConnectionTest::editingHostLeavesLoadedLegacyName()
+{
+    IrcNetworkProfile profile = IrcNetworkProfile::create();
+    profile.host = QStringLiteral("irc.example.net");
+    profile.nick = QStringLiteral("omairc");
+    IrcProfileStore().save(profile);
+
+    QSettings settings;
+    settings.beginGroup(QStringLiteral("networks"));
+    settings.beginGroup(profile.networkId);
+    settings.remove(QStringLiteral("name"));
+    settings.endGroup();
+    settings.endGroup();
+    settings.sync();
+
+    IrcController controller;
+    IrcConnection connection(controller, capturingFactory(), credentialStore());
+    QCOMPARE(connection.name(), QStringLiteral("irc.example.net"));
+    QCOMPARE(connection.host(), QStringLiteral("irc.example.net"));
+
+    connection.setHost(QStringLiteral("irc.changed.example"));
+    QCOMPARE(connection.host(), QStringLiteral("irc.changed.example"));
+    QCOMPARE(connection.name(), QStringLiteral("irc.example.net"));
+    QCOMPARE(connection.displayName(), QStringLiteral("irc.example.net"));
+}
+
+void ConnectionTest::duplicateNamesDisambiguateWithNick()
+{
+    IrcController controller;
+    IrcConnection connection(controller, capturingFactory(), credentialStore());
+    fillCompleteDraft(connection, QStringLiteral("irc.one.example"));
+    connection.setName(QStringLiteral("Shared"));
+    QVERIFY(connection.apply());
+    QVERIFY(connection.add());
+    fillCompleteDraft(connection, QStringLiteral("irc.two.example"));
+    connection.setName(QStringLiteral("Shared"));
+    connection.setNick(QStringLiteral("oak"));
+    QVERIFY(connection.apply());
+
+    const QAbstractItemModel *networks = connection.networks();
+    QCOMPARE(networks->rowCount(), 2);
+    const QString first = networks->data(networks->index(0, 0),
+                                         NetworkListModel::DisplayNameRole).toString();
+    const QString second = networks->data(networks->index(1, 0),
+                                          NetworkListModel::DisplayNameRole).toString();
+    QVERIFY(first.startsWith(QStringLiteral("Shared · ")));
+    QVERIFY(second.startsWith(QStringLiteral("Shared · ")));
+    QVERIFY(first != second);
 }
 
 void ConnectionTest::connectOnStartupDraftAppliesAndDiscards()
@@ -513,10 +616,13 @@ void ConnectionTest::discardOnFirstRunRestoresSuggested()
     IrcConnection connection(controller, capturingFactory(), credentialStore());
     QVERIFY(connection.setupRequired());
     QCOMPARE(connection.host(), QStringLiteral("irc.libera.chat"));
+    QCOMPARE(connection.name(), QStringLiteral("irc.libera.chat"));
     connection.setHost(QStringLiteral("irc.changed"));
+    connection.setName(QStringLiteral("Changed"));
     connection.setAutojoin(QString());
     connection.discard();
     QCOMPARE(connection.host(), QStringLiteral("irc.libera.chat"));
+    QCOMPARE(connection.name(), QStringLiteral("irc.libera.chat"));
     QCOMPARE(connection.autojoin(), QStringLiteral("#omarchy"));
     QVERIFY(connection.setupRequired());
 }
