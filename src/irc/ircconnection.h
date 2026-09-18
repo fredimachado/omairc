@@ -31,6 +31,7 @@ public:
         StoredRole,
         SelectedRole,
         IconColorRole,
+        IconUrlRole,
     };
 
     explicit NetworkListModel(IrcConnection &owner, QObject *parent = nullptr);
@@ -189,6 +190,7 @@ private:
         bool stored = false;
         bool selected = false;
         int iconColor = IrcNetworkProfile::noIconColor;
+        QString iconUrl;
     };
 
     struct CredentialOperation {

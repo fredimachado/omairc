@@ -135,6 +135,12 @@ void IrcServerFeatures::applyToken(std::string_view token)
         const auto result = std::from_chars(begin, end, length);
         if (result.ec == std::errc() && result.ptr == end && length > 0)
             m_nickLength = length;
+        return;
+    }
+
+    if (name == "draft/ICON") {
+        if (!value.empty())
+            m_iconUrl.assign(value);
     }
 }
 
@@ -192,6 +198,11 @@ std::string_view IrcServerFeatures::chanModesC() const noexcept
 std::string_view IrcServerFeatures::chanModesD() const noexcept
 {
     return m_chanModesD;
+}
+
+std::string_view IrcServerFeatures::iconUrl() const noexcept
+{
+    return m_iconUrl;
 }
 
 char IrcServerFeatures::letterForSymbol(char symbol) const

@@ -454,6 +454,7 @@ private slots:
     void implicitStatusPartStaysOnFocusedNetwork();
     void implicitStatusKickStaysOnFocusedNetwork();
     void selectConversationByIdUsesCompositeKey();
+    void networkIconUrlComesFromIsupport();
     void forgetNetworkDropsGhostRowsAndLog();
     void backgroundChatBumpsConversationEpoch();
     void backgroundPlaybackBumpsUnreadAndMention();
@@ -4201,6 +4202,27 @@ void ControllerTest::selectConversationByIdUsesCompositeKey()
     controller.selectConversationById(QStringLiteral("#chan"));
     QCOMPARE(controller.selectedNetworkId(), QStringLiteral("network-b"));
     QCOMPARE(controller.selectedConversationId(), QStringLiteral("network-b\n#chan"));
+}
+
+void ControllerTest::networkIconUrlComesFromIsupport()
+{
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    const QString networkId = QStringLiteral("libera");
+    IrcSession *session = controller.addSession(config(networkId), transport);
+    QVERIFY(session);
+    registerSession(session, transport);
+    QCOMPARE(controller.networkIconUrl(networkId), QString());
+
+    transport->injectBytes(
+        QByteArrayLiteral(":server 005 omairc draft/ICON=https://example.org/icon.svg "
+                          "CHANTYPES=# PREFIX=(ov)@+ "
+                          ":are supported by this server\r\n"));
+    QCOMPARE(controller.networkIconUrl(networkId),
+             QStringLiteral("https://example.org/icon.svg"));
+
+    controller.forgetNetworkState(networkId);
+    QCOMPARE(controller.networkIconUrl(networkId), QString());
 }
 
 void ControllerTest::forgetNetworkDropsGhostRowsAndLog()

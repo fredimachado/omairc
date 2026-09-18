@@ -98,6 +98,7 @@ public:
     void setLoadPeerAvatars(bool enabled);
     IrcStatusConsole *console();
     const IrcServerFeatures &serverFeatures(const QString &networkId) const;
+    Q_INVOKABLE QString networkIconUrl(const QString &networkId) const;
 
     Q_INVOKABLE bool start(const QString& networkId);
     Q_INVOKABLE void selectConversation(const QString& networkId,
@@ -179,6 +180,7 @@ signals:
     void selfAwayChanged();
 
     void capabilitiesChanged();
+    void serverFeaturesChanged();
     void typingChanged();
     void reopenDirectMessagesChanged();
     void loadPeerAvatarsChanged();

@@ -140,6 +140,7 @@ private slots:
     void disconnectSelectedIdlesWithoutDroppingProfile();
     void twoProfilesKeepDistinctIconColorsAcrossReload();
     void missingIconColorIsAssignedOnce();
+    void networkIconUrlComesFromIsupport();
     void removeSelectedDropsSessionAndStore();
     void removeSelectedDeletesStoredSecret();
     void usernameChangePersistsExistingPassword();
@@ -1761,6 +1762,31 @@ void ConnectionTest::missingIconColorIsAssignedOnce()
     QCOMPARE(reloaded.networks()->data(reloaded.networks()->index(0, 0),
                                        NetworkListModel::IconColorRole).toInt(),
              color);
+}
+
+void ConnectionTest::networkIconUrlComesFromIsupport()
+{
+    IrcController controller;
+    IrcConnection connection(controller, capturingFactory(), credentialStore());
+    QVERIFY(welcomeOmarchy(connection, controller));
+
+    const QString networkId = connection.selectedNetworkId();
+    const QAbstractItemModel *networks = connection.networks();
+    QCOMPARE(networks->roleNames().value(NetworkListModel::IconUrlRole),
+             QByteArray("iconUrl"));
+    QCOMPARE(networks->data(networks->index(0, 0), NetworkListModel::IconUrlRole)
+                 .toString(),
+             QString());
+
+    m_transports.last()->injectBytes(
+        QByteArrayLiteral(":server 005 omairc draft/ICON=https://example.org/icon.svg "
+                          "CHANTYPES=# PREFIX=(ov)@+ "
+                          ":are supported by this server\r\n"));
+    QCOMPARE(controller.networkIconUrl(networkId),
+             QStringLiteral("https://example.org/icon.svg"));
+    QCOMPARE(networks->data(networks->index(0, 0), NetworkListModel::IconUrlRole)
+                 .toString(),
+             QStringLiteral("https://example.org/icon.svg"));
 }
 
 void ConnectionTest::removeSelectedDropsSessionAndStore()

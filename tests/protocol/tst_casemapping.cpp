@@ -24,6 +24,7 @@ private slots:
     void translator353UsesParseNamesToken();
     void parsesChanModesFromIsupport();
     void prefixChangesConsumeNonPrefixParameters();
+    void parsesDraftIconFromIsupport();
 };
 
 void CaseMappingTest::normalizesAdvertisedMappings()
@@ -254,6 +255,37 @@ void CaseMappingTest::prefixChangesConsumeNonPrefixParameters()
     QCOMPARE(limitThenOp.size(), std::size_t(1));
     QCOMPARE(QString::fromStdString(limitThenOp.front().nick()),
              QStringLiteral("alice"));
+}
+
+void CaseMappingTest::parsesDraftIconFromIsupport()
+{
+    IrcServerFeatures features;
+    QVERIFY(features.iconUrl().empty());
+
+    features.applyToken("draft/ICON=https://example.org/icon.svg");
+    QCOMPARE(QString::fromStdString(std::string(features.iconUrl())),
+             QStringLiteral("https://example.org/icon.svg"));
+
+    features.applyToken(
+        "draft/ICON=https://example.net/icon.png?size={size}");
+    QCOMPARE(QString::fromStdString(std::string(features.iconUrl())),
+             QStringLiteral("https://example.net/icon.png?size={size}"));
+
+    IrcServerFeatures ignored;
+    ignored.applyToken("ICON=https://example.org/x.png");
+    QVERIFY(ignored.iconUrl().empty());
+
+    IrcServerFeatures empty;
+    empty.applyToken("draft/ICON");
+    empty.applyToken("draft/ICON=");
+    QVERIFY(empty.iconUrl().empty());
+
+    IrcServerFeatures kept;
+    kept.applyToken("draft/ICON=https://example.org/icon.svg");
+    kept.applyToken("CHANTYPES=#");
+    kept.applyToken("NICKLEN=16");
+    QCOMPARE(QString::fromStdString(std::string(kept.iconUrl())),
+             QStringLiteral("https://example.org/icon.svg"));
 }
 
 int runCaseMappingTests(int argc, char **argv)
