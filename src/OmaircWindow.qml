@@ -4379,7 +4379,10 @@ ApplicationWindow {
                 // Hide on the next tick so this same click cannot land on the
                 // sidebar or member list once the dimmer is gone.
                 if (win.connection && !win.connection.setupRequired)
-                    Qt.callLater(function() { win.connectionSheetOpen = false; });
+                    Qt.callLater(function() {
+                        if (win)
+                            win.connectionSheetOpen = false;
+                    });
             }
             onWheel: function(wheel) { wheel.accepted = true; }
         }

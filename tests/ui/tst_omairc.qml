@@ -3625,18 +3625,21 @@ TestCase {
         compare(sheet.height, appWindow.height);
 
         mouseClick(namedItem(liveConversation("#desktop")));
+        wait(0);
         compare(appWindow.currentConversation, "#omarchy");
 
         if (!appWindow.connectionOverlayVisible)
             keyClick(Qt.Key_Comma, Qt.ControlModifier);
         tryCompare(appWindow, "connectionOverlayVisible", true);
         mouseClick(appWindow.contentItem, 40, 124);
+        wait(0);
         compare(appWindow.currentConversation, "#omarchy");
 
         if (!appWindow.connectionOverlayVisible)
             keyClick(Qt.Key_Comma, Qt.ControlModifier);
         tryCompare(appWindow, "connectionOverlayVisible", true);
-        clickMember("mira");
+        mouseClick(appWindow.contentItem, 1070, 200);
+        wait(0);
         compare(appWindow.currentConversation, "#omarchy");
 
         if (!appWindow.connectionOverlayVisible)
