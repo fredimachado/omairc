@@ -53,6 +53,7 @@ OmaircIpc::ConnectionInfo OmaircIpcHandler::infoFor(const QString &networkId) co
     if (!session)
         return info;
 
+    info.name = session->name();
     info.host = session->host();
     info.port = int(session->port());
     info.tls = session->tlsEnabled();

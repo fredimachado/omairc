@@ -238,9 +238,9 @@ void IgnoreTest::parseAndCatalog()
              IrcCommand::Verb::Ignored);
     QVERIFY(IrcCommand::parse(QStringLiteral("/ignore lena"))
                 .allowedOn(IrcComposerSurface::Status));
-    QCOMPARE(IrcVerbTable::all().size(), 39);
-    QCOMPARE(IrcVerbTable::visibleOn(IrcComposerSurface::Status).size(), 31);
-    QCOMPARE(IrcVerbTable::visibleOn(IrcComposerSurface::Conversation).size(), 39);
+    QCOMPARE(IrcVerbTable::all().size(), 40);
+    QCOMPARE(IrcVerbTable::visibleOn(IrcComposerSurface::Status).size(), 32);
+    QCOMPARE(IrcVerbTable::visibleOn(IrcComposerSurface::Conversation).size(), 40);
     const auto probe = IrcSlashComplete::project(
         QStringLiteral("/ig"), IrcComposerSurface::Conversation);
     QVERIFY(probe.isOpen());

@@ -32,9 +32,10 @@ Unknown `--network`: `"Unknown network id '<id>'."`
 ## `connections`
 
 ```json
-{"ok":true,"connections":[{"id":"…","host":"irc.libera.chat","port":6697,"tls":true,"nick":"fred","state":"Connected","selected":true}]}
+{"ok":true,"connections":[{"id":"…","name":"Libera","host":"irc.libera.chat","port":6697,"tls":true,"nick":"fred","state":"Connected","selected":true}]}
 ```
 
+`name` is the Connect-sheet label. When it is empty, the row uses `host`.
 `lastError` is present only when that connection has one.
 `tls` and `selected` appear only when true.
 
@@ -43,7 +44,7 @@ Unknown `--network`: `"Unknown network id '<id>'."`
 ## `status`
 
 ```json
-{"ok":true,"status":{"id":"…","host":"…","port":6697,"tls":true,"nick":"…","state":"Connected","selected":true}}
+{"ok":true,"status":{"id":"…","name":"…","host":"…","port":6697,"tls":true,"nick":"…","state":"Connected","selected":true}}
 ```
 
 Same object shape as one `connections` row.

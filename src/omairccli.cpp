@@ -50,7 +50,7 @@ const CommandSpec kCommands[] = {
         "\n"
         "List connections as JSON. list is an alias.\n"
         "\n"
-        "Each row has id, host, port, tls, nick, state, and selected.\n",
+        "Each row has id, name, host, port, tls, nick, state, and selected.\n",
     },
     {
         CommandId::Status,

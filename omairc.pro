@@ -50,6 +50,7 @@ HEADERS += \
     src/omairccli.h \
     src/omaircclipcursor.h \
     src/omaircfilelog.h \
+    src/omaircupdatecheck.h \
     src/systemtheme.h \
     src/irc/ircmessage.h \
     src/irc/ircparser.h \
@@ -115,6 +116,7 @@ SOURCES += \
     src/omairccli.cpp \
     src/omaircclipcursor.cpp \
     src/omaircfilelog.cpp \
+    src/omaircupdatecheck.cpp \
     src/systemtheme.cpp \
     src/irc/ircparser.cpp \
     src/irc/ircframer.cpp \

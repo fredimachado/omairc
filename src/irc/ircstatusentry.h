@@ -4,6 +4,7 @@
 
 #include <QByteArray>
 #include <QDateTime>
+#include <QList>
 #include <QString>
 #include <QStringView>
 
@@ -48,6 +49,9 @@ private:
 class IrcStatusEntry
 {
 public:
+    static QList<IrcStatusEntry> incomingAll(const QString& networkId,
+                                            const IrcMessage& message,
+                                            QStringView channelTypes = {});
     static IrcStatusEntry incoming(const QString& networkId,
                                   const IrcMessage& message,
                                   QStringView channelTypes = {});
@@ -72,6 +76,9 @@ public:
     const IrcCtcpReplyLine *ctcpReply() const noexcept;
 
 private:
+    static IrcStatusEntry buildDefaultIncoming(const QString& networkId,
+                                               const IrcMessage& message,
+                                               QStringView channelTypes);
     explicit IrcStatusEntry(QString networkId,
                             QDateTime timestamp,
                             IrcLogSource source,

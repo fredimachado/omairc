@@ -5,11 +5,12 @@ Connect is the first-run sheet that asks for a network profile before the compil
 ## Sub-features
 
 - `connect-first-run` shows the Connect overlay when no complete profile is saved.
-- `connect-defaults` prefills Host `irc.libera.chat`, Port `6697`, TLS on, and Autojoin `#omarchy`.
+- `connect-defaults` prefills Name `irc.libera.chat`, Host `irc.libera.chat`, Port `6697`, TLS on, and Autojoin `#omarchy`.
 - `connect-on-startup` offers an opt-in `Connect automatically on startup` toggle, off by default.
 - `connect-preferences` holds global settings. `Reopen direct messages on startup` is on by default and takes effect immediately, without Apply. Enter on that toggle walks focus; Ctrl+Enter does nothing on the Preferences tab.
 - `connect-nick-required` shows `Nick is required` and keeps Apply muted while Nick is empty.
 - `connect-required` keeps the sheet up on first run; Escape and an outside click do not dismiss it.
+- `connect-modal` covers the whole window with a 50% transparent dimmer. Sidebar servers, conversations, and channel members stay visible but cannot be clicked or walked while Connect is open. After a profile exists, a click on that dimmer still dismisses the sheet without changing the selected conversation.
 - `connect-keyboard` tabs from the network list through the form to Apply, and Shift+Tab returns. Enter Applies when Nick is complete. Enter from Host with an empty nick keeps `Nick is required` and does not start a session. Apply, Discard, and Add network are reachable without a mouse.
 - `connect-disconnect` shows Disconnect next to Apply when the selected network is live or reconnecting. It stops that session, leaves the sheet open, and leaves the profile. Apply starts or reconnects the same network. Connect automatically on startup stays as saved.
 - `connect-scrollbar` shows a vertical scrollbar on the form when Password is off-screen, and on the network list once it overflows. The bars stay visible without hover. The form bar does not cover the fields, and the card width stays the same.
@@ -27,14 +28,14 @@ Preconditions:
 - `control-omairc launch --demo-server` skips Connect and shows the seeded sidebar. Do not start this recipe there.
 - When Xvfb tools are missing, use `control-omairc doctor-qml` then `control-omairc qml-suite`. Do not send input to the user's live window.
 
-- **First-run sheet.** After an isolated launch, run `control-omairc title` then `control-omairc screenshot --feature connect --name first-run`. The title is `irc.libera.chat Status`. The overlay heading is `Connect`. Host is `irc.libera.chat`, port is `6697`, TLS is on, Autojoin is `#omarchy`, `Connect automatically on startup` is off, Nick is empty, the problem line is `Nick is required`, and Apply is muted.
+- **First-run sheet.** After an isolated launch, run `control-omairc title` then `control-omairc screenshot --feature connect --name first-run`. The title is `irc.libera.chat Status`. The overlay heading is `Connect`. Name is `irc.libera.chat`, Host is `irc.libera.chat`, port is `6697`, TLS is on, Autojoin is `#omarchy`, `Connect automatically on startup` is off, Nick is empty, the problem line is `Nick is required`, and Apply is muted.
 - **Offscreen suite.** When Xvfb tools are missing, run `control-omairc doctor-qml` then `control-omairc qml-suite`. `bin/test` opens a window with a fake incomplete profile and writes `test-artifacts/connection-sheet.png`. `qml-suite` copies it to `test-artifacts/verify/connect/first-run.png`. The image must show `Connect`, `irc.libera.chat`, `Nick is required`, and muted Apply. The same suite covers Tab from the network list to Apply, Enter from Host keeping `Nick is required`, Enter from Nick closing a complete sheet, scrollbars on a short window and a long network list, and Disconnect next to Apply when the selected network is live. This does not prove the compiled-window first-run path.
 - **Keyboard on first run.** After an isolated launch, run `control-omairc key --key Tab` until Apply is focused, then `control-omairc key --key shift+Tab`. The focus ring returns through Discard. With Nick empty, `control-omairc key --key Return` from Host leaves the sheet open and `Nick is required` visible. Shrink the window until Password is off-screen. The form scrollbar is visible without hovering.
 
 ## Gotchas
 
-- First run cannot be dismissed. Escape and a click outside the card only work after a complete profile already exists.
-- Discard on first run restores the suggested Libera defaults. It does not close the sheet. An incomplete saved profile still opens Connect, but the fields follow that stored draft, not `suggested()`. Isolated `control-omairc launch` uses empty XDG, so it is first-run suggested values.
+- First run cannot be dismissed. Escape and a click outside the card only work after a complete profile already exists. The overlay covers the sidebar and member list, so those clicks do not switch conversation, open Status, or open a DM.
+- Discard on first run restores the suggested Libera defaults. It does not close the sheet. An incomplete saved profile still opens Connect, but the fields follow that stored draft, not `suggested()`. Isolated `control-omairc launch` uses empty XDG, so it is first-run suggested values. A stored profile with no name uses the host as the name. Name and Host stay independent after that: changing Host does not update Name, so a legacy profile keeps the original host in Name until you edit it.
 - Apply on the compiled window starts a real IRC session. That is not this feature's proof, and it does not restore the seeded `#omarchy` sidebar.
 - Seeded conversation recipes need `control-omairc launch --demo-server` or `qml-suite` (seeded `IrcController`). They do not start from this sheet.
 - `qml-suite` overwrites `test-artifacts/verify/connect/first-run.png`. If this run also captured a compiled first-run, keep that file as `compiled-first-run.png` before running the suite.

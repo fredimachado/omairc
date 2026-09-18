@@ -8,10 +8,10 @@ A dead-simple IRC client for Omarchy, built with Qt Quick and C++. Agents talk t
 
 - AI-friendly local CLI. While the window runs, the same binary prints one JSON line and exits: `connections`, `status`, `send`, `conversations`, `read`, `names`, `raise`. None of them change the selected conversation or clear the GUI badges.
 - Several networks in one window. Each keeps its own channels, direct messages, nick, and connection state, plus a Status console that holds the handshake, AUTH, and errors.
-- Connect sheet on first launch. Libera Chat defaults, TLS on, autojoin `#omarchy`. NickServ is SASL PLAIN when the server offers it, otherwise `IDENTIFY`. Nothing connects on its own unless you ask it to.
+- Connect sheet on first launch. Name and Libera Chat host defaults, TLS on, autojoin `#omarchy`. NickServ is SASL PLAIN when the server offers it, otherwise `IDENTIFY`. Nothing connects on its own unless you ask it to.
 - Channels and direct messages. Member panel and people count on channels only. Click a nick to open a DM, `Ctrl+W` to close it. When the network grants `draft/metadata-2`, member and nick circles can show an avatar, a standing status line, and a small bot mark.
 - Keyboard first. `Ctrl+/` lists the shortcuts: `Ctrl+K` jump, `Ctrl+Shift+K` nick, `Alt+A` next unread, `Ctrl+F` find, Tab nick complete, Up/Down history, and drafts that stay with each conversation.
-- Slash commands from the composer, with complete after `/`. The usual set plus `/status`, `/ignore`, `/mute`, `/highlight`, and CTCP `/ping`, `/time`, and `/version`, which query a nick. Replies copy into the asking transcript, like `/whois`. `/status` sets standing metadata; `/status clear` removes it. It is not `/away`.
+- Slash commands from the composer, with complete after `/`. The usual set plus `/status`, `/avatar`, `/ignore`, `/mute`, `/highlight`, and CTCP `/ping`, `/time`, and `/version`, which query a nick. Replies copy into the asking transcript, like `/whois`. `/status` and `/avatar` set standing metadata; empty `/status` or `/avatar` shows the current value (avatar URLs are clickable). `/status clear` and `/avatar clear` unset when they are the only token. They are not `/away`.
 - Desktop notification for a mention or DM while the window is unfocused. Activating it raises the window and opens that conversation.
 - Colors follow the current Omarchy theme and update live. When that theme file is missing, Omairc uses a built-in dark or light palette. Text follows the desktop size.
 - Backlog on arrival. A joined channel asks for its last 100 lines over `CHATHISTORY`, a ZNC bouncer's `znc.in/playback` replay is folded in on attach, and a restart reloads the last 2000 lines from the local log as muted backlog.
@@ -79,7 +79,7 @@ make
 make INSTALL_ROOT="$pkgdir" install
 ```
 
-Default `PREFIX` is `/usr/local`. Prove the staged tree with `bin/test-install`. `version.pri` is the only version string; tag a release as `v` plus that value. Arch `pkgver` cannot contain hyphens, so pre-releases use `0.6.0alpha` rather than `0.6.0-alpha`.
+Default `PREFIX` is `/usr/local`. Prove the staged tree with `bin/test-install`. `version.pri` is the only version string; tag a release as `v` plus that value. Arch `pkgver` cannot contain hyphens, so pre-releases use `0.8.0alpha` rather than `0.8.0-alpha`.
 
 Omairc is MIT. See `LICENSE`. The IRC protocol code in `src/irc/` is LGPL-3.0-or-later. The bundled iA Writer Mono font is OFL-1.1.
 
