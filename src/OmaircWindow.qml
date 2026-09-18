@@ -4408,7 +4408,9 @@ ApplicationWindow {
             hoverEnabled: true
             acceptedButtons: Qt.AllButtons
             onPressed: function(mouse) { mouse.accepted = true; }
-            onClicked: {
+            onClicked: function(mouse) {
+                if (mouse.button !== Qt.LeftButton)
+                    return;
                 // Hide on the next tick so this same click cannot land on the
                 // sidebar or member list once the dimmer is gone.
                 if (win.connection && !win.connection.setupRequired)
