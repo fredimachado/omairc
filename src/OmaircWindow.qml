@@ -4374,9 +4374,12 @@ ApplicationWindow {
             anchors.fill: parent
             hoverEnabled: true
             acceptedButtons: Qt.AllButtons
+            onPressed: function(mouse) { mouse.accepted = true; }
             onClicked: {
+                // Hide on the next tick so this same click cannot land on the
+                // sidebar or member list once the dimmer is gone.
                 if (win.connection && !win.connection.setupRequired)
-                    win.connectionSheetOpen = false;
+                    Qt.callLater(function() { win.connectionSheetOpen = false; });
             }
             onWheel: function(wheel) { wheel.accepted = true; }
         }

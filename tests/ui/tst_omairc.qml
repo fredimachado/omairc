@@ -3630,6 +3630,12 @@ TestCase {
         if (!appWindow.connectionOverlayVisible)
             keyClick(Qt.Key_Comma, Qt.ControlModifier);
         tryCompare(appWindow, "connectionOverlayVisible", true);
+        mouseClick(appWindow.contentItem, 40, 124);
+        compare(appWindow.currentConversation, "#omarchy");
+
+        if (!appWindow.connectionOverlayVisible)
+            keyClick(Qt.Key_Comma, Qt.ControlModifier);
+        tryCompare(appWindow, "connectionOverlayVisible", true);
         clickMember("mira");
         compare(appWindow.currentConversation, "#omarchy");
 
