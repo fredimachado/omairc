@@ -28,7 +28,9 @@ stop. Do not launch a window unless the user asked you to.
 
 `--help` and `--version` print plain text and do not need a window.
 Control commands need a window, print JSON on stdout, and use exit 0
-only when `"ok": true`.
+only when `"ok": true`. If `send` prints `"uncertain": true` (exit 2), do
+not retry `send`. Confirm with `read --last` on that target (own nick and
+the same text). If present, stop; if absent, send once.
 
 ## Binary
 

@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `omairc send` returns exit 2 with `"uncertain": true` when the request reached the running window but the CLI did not get a readable reply, so agents do not double-send on a lost ack.
 - CLI JSON rows omit empty strings and `false` flags so agent payloads stay small. Missing means that default. Numbers such as `unread` stay. Top-level `"ok": false` on errors is unchanged.
 - The Windows portable tree ships `msvcp140` and `vcruntime140` next to `omairc.exe` so a user-mode install does not need `vc_redist`. `bin\build.bat` copies those DLLs from `VCToolsRedistDir`. It does not pass `windeployqt --compiler-runtime`: on MSVC that switch only adds an unused `vc_redist.x64.exe`.
 
