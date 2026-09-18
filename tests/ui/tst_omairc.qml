@@ -47,6 +47,7 @@ TestCase {
             stored: false
             selected: true
             iconColor: 1
+            iconUrl: ""
         }
     }
 
@@ -58,6 +59,7 @@ TestCase {
             stored: true
             selected: true
             iconColor: 1
+            iconUrl: ""
         }
     }
 
@@ -688,7 +690,8 @@ TestCase {
                 displayName: "New network",
                 stored: false,
                 selected: true,
-                iconColor: 1
+                iconColor: 1,
+                iconUrl: ""
             });
             selectedNetworkId = "new-id";
             displayName = "New network";
@@ -1077,7 +1080,8 @@ TestCase {
             displayName: "irc.libera.chat",
             stored: true,
             selected: true,
-            iconColor: 1
+            iconColor: 1,
+            iconUrl: ""
         });
         namedConnection.selectedNetworkId = "libera";
         namedConnection.displayName = "irc.libera.chat";
@@ -4266,7 +4270,8 @@ TestCase {
             displayName: "irc.oftc.net",
             stored: true,
             selected: false,
-            iconColor: 1
+            iconColor: 1,
+            iconUrl: ""
         });
         var window = createTemporaryObject(fallbackWindowComponent, null);
         verify(window !== null, "The rail-arrow window should load");
@@ -4329,7 +4334,8 @@ TestCase {
                 displayName: "irc.probe" + extra + ".example",
                 stored: true,
                 selected: false,
-                iconColor: 1
+                iconColor: 1,
+                iconUrl: ""
             });
         }
         var window = createTemporaryObject(fallbackWindowComponent, null);
@@ -4738,7 +4744,8 @@ TestCase {
             displayName: "irc.oftc.net",
             stored: true,
             selected: false,
-            iconColor: 1
+            iconColor: 1,
+            iconUrl: ""
         });
         namedConnection.applySucceeds = true;
         namedConnection.applyCalls = 0;
@@ -4775,7 +4782,8 @@ TestCase {
             displayName: "irc.oftc.net",
             stored: true,
             selected: false,
-            iconColor: 1
+            iconColor: 1,
+            iconUrl: ""
         });
         var window = createTemporaryObject(fallbackWindowComponent, null);
         verify(window !== null, "The add-then-discard window should load");
@@ -4861,7 +4869,8 @@ TestCase {
                 displayName: "irc.extra" + extra + ".example",
                 stored: true,
                 selected: false,
-                iconColor: 1
+                iconColor: 1,
+                iconUrl: ""
             });
         }
         var window = createTemporaryObject(fallbackWindowComponent, null);
@@ -5134,6 +5143,43 @@ TestCase {
         assertDemoAvatarReady("mira", "qrc:/demo/mira-avatar.png");
         assertDemoAvatarReady("anna", "qrc:/demo/anna-avatar.png");
         assertDemoAvatarReady("kai", "qrc:/demo/kai-avatar.png");
+    }
+
+    function test_demoOmarchyNetworkIconReachesImageReady() {
+        openSeededAppWindow();
+        var omarchyPhoto = namedItem("networkIconPhoto-" + seed.omarchyNetworkId);
+        verify(omarchyPhoto !== null, "omarchy network icon photo should exist");
+        tryCompare(omarchyPhoto, "status", Image.Ready);
+        tryCompare(omarchyPhoto, "visible", true);
+        compare(String(omarchyPhoto.source).indexOf("image://omairc-avatar/square/"), 0);
+        var omarchyInitial = namedItem("networkIconInitial-" + seed.omarchyNetworkId);
+        verify(omarchyInitial !== null, "omarchy network icon initial should exist");
+        compare(omarchyInitial.visible, false);
+
+        var oftcPhoto = namedItem("networkIconPhoto-" + seed.oftcNetworkId);
+        verify(oftcPhoto !== null, "OFTC network icon photo should exist");
+        compare(oftcPhoto.status === Image.Ready, false);
+        compare(oftcPhoto.visible, false);
+        var oftcInitial = namedItem("networkIconInitial-" + seed.oftcNetworkId);
+        verify(oftcInitial !== null, "OFTC network icon initial should exist");
+        compare(oftcInitial.visible, true);
+    }
+
+    function test_mockNetworkIconWithoutTokenKeepsInitial() {
+        restoreNamedConnection();
+        var window = createTemporaryObject(liveNamedWindowComponent, null);
+        verify(window !== null, "The mock network window should load");
+        tryCompare(window, "visible", true);
+        waitForRendering(window.contentItem);
+        var photo = findNamedIn(window, "networkIconPhoto-libera");
+        verify(photo !== null, "mock network icon photo should exist");
+        compare(photo.status === Image.Ready, false);
+        compare(photo.visible, false);
+        var initial = findNamedIn(window, "networkIconInitial-libera");
+        verify(initial !== null, "mock network icon initial should exist");
+        compare(initial.visible, true);
+        window.close();
+        restoreNamedConnection();
     }
 
     function test_loadPeerAvatarsPreferenceGatesStoreSource() {
@@ -6369,7 +6415,8 @@ TestCase {
             displayName: "irc.oftc.net",
             stored: true,
             selected: false,
-            iconColor: 1
+            iconColor: 1,
+            iconUrl: ""
         });
         var window = createTemporaryObject(liveNamedWindowComponent, null);
         verify(window !== null, "The two-network window should load");
@@ -6553,7 +6600,8 @@ TestCase {
             displayName: "irc.oftc.net",
             stored: true,
             selected: false,
-            iconColor: 1
+            iconColor: 1,
+            iconUrl: ""
         });
         namedConnection.dirty = true;
         var window = createTemporaryObject(fallbackWindowComponent, null);
@@ -6784,7 +6832,8 @@ TestCase {
             displayName: "irc.oftc.net",
             stored: true,
             selected: false,
-            iconColor: 1
+            iconColor: 1,
+            iconUrl: ""
         });
         var window = createTemporaryObject(fallbackWindowComponent, null);
         verify(window !== null, "The accessible rail window should load");
