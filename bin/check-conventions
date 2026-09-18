@@ -267,6 +267,21 @@ def check_macos_objc_arc():
     return problems
 
 
+def check_macos_ci_bash32():
+    problems = []
+    workflow = ROOT / ".github" / "workflows" / "macos.yml"
+    if not workflow.is_file():
+        return problems
+    for number, line in enumerate(
+            workflow.read_text(encoding="utf-8", errors="replace").splitlines(), 1):
+        code = line.split("#", 1)[0]
+        if re.search(r"\b(mapfile|readarray)\b", code):
+            problems.append(
+                f".github/workflows/macos.yml:{number}: macOS /bin/bash is 3.2; "
+                "do not use mapfile/readarray (Bash 4+)")
+    return problems
+
+
 def check_macos_ci_arch_selection():
     problems = []
     workflow = ROOT / ".github" / "workflows" / "macos.yml"
@@ -302,6 +317,7 @@ CHECKS = (
     ("retired mock sidebar tokens", check_retired_mock_sidebar),
     ("macOS ObjC ARC for notifications", check_macos_objc_arc),
     ("macOS CI Qt arch selection", check_macos_ci_arch_selection),
+    ("macOS CI Bash 3.2 builtins", check_macos_ci_bash32),
 )
 
 
