@@ -3613,6 +3613,77 @@ TestCase {
         compare(appWindow.connectionOverlayVisible, true);
     }
 
+    function test_connectionSheetBlocksSidebarAndMembers() {
+        openSeededAppWindow();
+        compare(appWindow.currentConversation, "#omarchy");
+        verify(item("membersPanel").visible);
+        keyClick(Qt.Key_Comma, Qt.ControlModifier);
+        tryCompare(appWindow, "connectionOverlayVisible", true);
+        var sheet = item("connectionSheet");
+        tryCompare(sheet, "visible", true);
+        compare(sheet.width, appWindow.width);
+        compare(sheet.height, appWindow.height);
+
+        mouseClick(namedItem(liveConversation("#desktop")));
+        compare(appWindow.currentConversation, "#omarchy");
+
+        if (!appWindow.connectionOverlayVisible)
+            keyClick(Qt.Key_Comma, Qt.ControlModifier);
+        tryCompare(appWindow, "connectionOverlayVisible", true);
+        clickMember("mira");
+        compare(appWindow.currentConversation, "#omarchy");
+
+        if (!appWindow.connectionOverlayVisible)
+            keyClick(Qt.Key_Comma, Qt.ControlModifier);
+        tryCompare(item("connectionSheet"), "visible", true);
+        keyClick(Qt.Key_Down, Qt.AltModifier);
+        compare(appWindow.currentConversation, "#omarchy");
+        verify(item("connectionSheet").visible);
+
+        keyClick(Qt.Key_QuoteLeft, Qt.ControlModifier);
+        compare(appWindow.consoleVisible, false);
+        verify(item("connectionSheet").visible);
+
+        mouseClick(liveHeaderButton(seed.omarchyNetworkId));
+        compare(appWindow.consoleVisible, false);
+        compare(appWindow.currentConversation, "#omarchy");
+    }
+
+    function test_connectionSheetFirstRunIgnoresSidebarClicks() {
+        liveIrc.selectedTarget = "#omarchy";
+        liveIrc.selectedNetworkId = "libera";
+        liveIrc.selectedConversationId = "libera\n#omarchy";
+        liveIrc.isChannel = true;
+        liveConsole.open = false;
+        var window = createTemporaryObject(setupWindowComponent, null);
+        verify(window !== null, "The setup window should load");
+        tryCompare(window, "visible", true);
+        waitForRendering(window.contentItem);
+
+        var sheet = findChild(window, "connectionSheet");
+        verify(sheet !== null, "Could not find connectionSheet");
+        verify(sheet.visible);
+        compare(sheet.width, window.width);
+        compare(sheet.height, window.height);
+
+        var row = findChild(window, "conversation-libera-anna");
+        verify(row !== null, "Could not find conversation-libera-anna");
+        mouseClick(row);
+        compare(liveIrc.selectedTarget, "#omarchy");
+        verify(sheet.visible);
+
+        var header = findNamedIn(window, "networkHeaderButton-setup-id");
+        verify(header !== null, "Could not find networkHeaderButton-setup-id");
+        mouseClick(header);
+        compare(liveConsole.open, false);
+        verify(sheet.visible);
+        window.close();
+        liveIrc.selectedTarget = "#omarchy";
+        liveIrc.selectedConversationId = "libera\n#omarchy";
+        liveIrc.isChannel = true;
+        liveConsole.open = false;
+    }
+
     function test_membersHeadingOpensNickSheet() {
         openSeededAppWindow();
         verify(item("membersPanel").visible);

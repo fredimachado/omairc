@@ -54,6 +54,7 @@ Preconditions:
 - `Ctrl+W` is disabled on channels and Status. Typed `/close` on a channel is a rejected slash command and stays in the composer.
 - `Tab` completes a nick prefix in the composer. Prove it with `qml-suite` (`mi` → `mira: `).
 - Page Up / Page Down are disabled while Connect is visible.
+- `Alt+Down` / `Alt+Up`, `Alt+Left` / `Alt+Right`, `Alt+A`, `Ctrl+L`, `Ctrl+W`, and `Ctrl+`` are disabled while Connect is visible. Connect is a window-level modal; those chords must not walk servers or members behind it. `Ctrl+/` still opens the shortcuts overlay.
 - `Ctrl+F` enters find even with an empty composer. It jumps the current transcript to the match and leaves follow-the-end so the match stays put. Escape restores the draft, not the old scroll position.
 - Escape closes the sheet before Status. `Ctrl+/` toggles it.
 - `Ctrl+K` is disabled while Connect is visible, the same rule as `Ctrl+F`. Duplicate channel names show the network display name.
