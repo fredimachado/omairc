@@ -146,6 +146,13 @@ void omaircRegisterUpdateCheck()
     qmlRegisterType<OmaircUpdateCheck>("Omairc.App", 1, 0, "UpdateCheck");
 }
 
+static void registerOmaircUpdateCheckAtStartup()
+{
+    omaircRegisterUpdateCheck();
+}
+
+Q_COREAPP_STARTUP_FUNCTION(registerOmaircUpdateCheckAtStartup)
+
 OmaircUpdateCheck::OmaircUpdateCheck(QObject *parent)
     : QObject(parent)
     , m_currentVersion(QStringLiteral(OMAIRC_VERSION))
