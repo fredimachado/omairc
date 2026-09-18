@@ -35,6 +35,7 @@ HEADERS += \
     ../../src/irc/irctypingpublisher.h \
     ../../src/irc/ircpresence.h \
     ../../src/irc/ircavatarurl.h \
+    ../../src/irc/ircavatarhttp.h \
     ../../src/irc/ircavatarstore.h \
     ../../src/irc/irctcp.h \
     ../../src/irc/ircignore.h \
@@ -104,6 +105,7 @@ SOURCES += \
     ../../src/irc/irctypingpublisher.cpp \
     ../../src/irc/ircpresence.cpp \
     ../../src/irc/ircavatarurl.cpp \
+    ../../src/irc/ircavatarhttp.cpp \
     ../../src/irc/ircavatarstore.cpp \
     ../../src/irc/irctcp.cpp \
     ../../src/irc/ircignore.cpp \

@@ -66,6 +66,7 @@ struct SeedNetwork
     QString networkId;
     QString nick;
     QString welcome;
+    QString iconUrl;
     QVector<SeedChannel> channels;
     QVector<SeedDirect> directs;
 };
@@ -137,7 +138,9 @@ QStringList namesTokens(const SeedChannel &channel)
     return tokens;
 }
 
-QByteArray registrationBytes(const QString &nick, const QString &welcome)
+QByteArray registrationBytes(const QString &nick,
+                             const QString &welcome,
+                             const QString &iconUrl = {})
 {
     QByteArray out;
     out += line(QStringLiteral(":server CAP %1 LS :%2")
@@ -148,8 +151,11 @@ QByteArray registrationBytes(const QString &nick, const QString &welcome)
                               ":*** Looking up your hostname...")
                     .arg(nick));
     out += line(QStringLiteral(":server 001 %1 :%2").arg(nick, welcome));
+    QString isupport = QLatin1String(kIsupport);
+    if (!iconUrl.isEmpty())
+        isupport += QStringLiteral(" draft/ICON=%1").arg(iconUrl);
     out += line(QStringLiteral(":server 005 %1 %2 :are supported by this server")
-                    .arg(nick, QLatin1String(kIsupport)));
+                    .arg(nick, isupport));
     return out;
 }
 
@@ -262,6 +268,7 @@ SeedNetwork omarchyWorld()
     network.networkId = QStringLiteral("omarchy");
     network.nick = QStringLiteral("fred");
     network.welcome = QStringLiteral("Welcome to the demo network");
+    network.iconUrl = QStringLiteral("qrc:/demo/omarchy-icon.png");
 
     SeedChannel omarchy;
     omarchy.name = QStringLiteral("#omarchy");
@@ -841,7 +848,8 @@ bool IrcDemoServer::attach(IrcController &controller, bool autoEcho)
     }
     controller.setNetworkOrder({omarchy.networkId, oftc.networkId});
 
-    m_omarchyTransport->injectBytes(registrationBytes(omarchy.nick, omarchy.welcome));
+    m_omarchyTransport->injectBytes(
+        registrationBytes(omarchy.nick, omarchy.welcome, omarchy.iconUrl));
     m_oftcTransport->injectBytes(registrationBytes(oftc.nick, oftc.welcome));
     injectWorld(m_omarchyTransport, omarchy);
     injectWorld(m_oftcTransport, oftc);

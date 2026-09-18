@@ -2391,6 +2391,7 @@ ApplicationWindow {
         property string networkId
         property string displayName
         property int iconColor: -1
+        property string iconUrl: ""
         property string statusText: ""
         property int alerts: 0
         property int unread: 0
@@ -2479,6 +2480,7 @@ ApplicationWindow {
             }
 
             Rectangle {
+                id: networkIconRect
                 objectName: "networkIcon-" + section.networkId
                 anchors.left: parent.left
                 anchors.leftMargin: win.scaledSize(18)
@@ -2488,8 +2490,31 @@ ApplicationWindow {
                 radius: win.scaledSize(8)
                 color: section.iconColor >= 0 ? win.paletteColor(section.iconColor)
                                               : win.accentColor
+                property int avatarEpoch: 0
+
+                readonly property string storeSource: {
+                    networkIconRect.avatarEpoch
+                    if (!win.avatarStore || section.iconUrl.length === 0 || width <= 0)
+                        return ""
+                    return win.avatarStore.source(section.iconUrl, Math.round(width),
+                                                  "square")
+                }
+
+                Image {
+                    id: networkIconPhoto
+                    objectName: "networkIconPhoto-" + section.networkId
+                    anchors.fill: parent
+                    visible: status === Image.Ready
+                    asynchronous: true
+                    cache: true
+                    fillMode: Image.PreserveAspectCrop
+                    source: networkIconRect.storeSource
+                    sourceSize: Qt.size(Math.round(width), Math.round(height))
+                }
 
                 Text {
+                    objectName: "networkIconInitial-" + section.networkId
+                    visible: networkIconPhoto.status !== Image.Ready
                     anchors.centerIn: parent
                     text: section.displayName.length > 0
                         ? section.displayName.charAt(0).toUpperCase()
@@ -2498,6 +2523,15 @@ ApplicationWindow {
                     font.family: "iA Writer Mono S"
                     font.bold: true
                     font.pixelSize: win.scaledSize(14)
+                }
+
+                Connections {
+                    target: win.avatarStore
+                    function onReady(rawUrl) {
+                        if (rawUrl !== section.iconUrl)
+                            return
+                        networkIconRect.avatarEpoch += 1
+                    }
                 }
             }
 
@@ -3138,6 +3172,7 @@ ApplicationWindow {
                             required property string networkId
                             required property string displayName
                             required property int iconColor
+                            required property string iconUrl
                             width: parent ? parent.width : 0
                             spacing: 0
 
@@ -3145,6 +3180,7 @@ ApplicationWindow {
                                 networkId: liveNet.networkId
                                 displayName: liveNet.displayName
                                 iconColor: liveNet.iconColor
+                                iconUrl: liveNet.iconUrl
                                 unread: 0
                                 mention: false
                             }

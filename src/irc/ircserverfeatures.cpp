@@ -78,8 +78,17 @@ void IrcServerFeatures::rebuildModeRules()
 
 void IrcServerFeatures::applyToken(std::string_view token)
 {
-    if (token.empty() || token.front() == '-')
+    if (token.empty())
         return;
+
+    if (token.front() == '-') {
+        const std::string_view rest = token.substr(1);
+        const std::size_t separator = rest.find('=');
+        const std::string_view name = rest.substr(0, separator);
+        if (name == "draft/ICON")
+            m_iconUrl.clear();
+        return;
+    }
 
     const std::size_t separator = token.find('=');
     const std::string_view name = token.substr(0, separator);
@@ -135,6 +144,12 @@ void IrcServerFeatures::applyToken(std::string_view token)
         const auto result = std::from_chars(begin, end, length);
         if (result.ec == std::errc() && result.ptr == end && length > 0)
             m_nickLength = length;
+        return;
+    }
+
+    if (name == "draft/ICON") {
+        if (!value.empty())
+            m_iconUrl.assign(value);
     }
 }
 
@@ -192,6 +207,11 @@ std::string_view IrcServerFeatures::chanModesC() const noexcept
 std::string_view IrcServerFeatures::chanModesD() const noexcept
 {
     return m_chanModesD;
+}
+
+std::string_view IrcServerFeatures::iconUrl() const noexcept
+{
+    return m_iconUrl;
 }
 
 char IrcServerFeatures::letterForSymbol(char symbol) const

@@ -55,6 +55,8 @@ QVariant NetworkListModel::data(const QModelIndex &index, int role) const
         return row.selected;
     case IconColorRole:
         return row.iconColor;
+    case IconUrlRole:
+        return row.iconUrl;
     default:
         return {};
     }
@@ -68,6 +70,7 @@ QHash<int, QByteArray> NetworkListModel::roleNames() const
         {StoredRole, "stored"},
         {SelectedRole, "selected"},
         {IconColorRole, "iconColor"},
+        {IconUrlRole, "iconUrl"},
     };
 }
 
@@ -134,6 +137,8 @@ IrcConnection::IrcConnection(IrcController &controller,
 
     connect(&m_controller, &IrcController::statusChanged, this,
             &IrcConnection::canDisconnectChanged);
+    connect(&m_controller, &IrcController::serverFeaturesChanged, this,
+            &IrcConnection::refreshRoster);
     connect(this, &IrcConnection::selectedNetworkChanged, this,
             &IrcConnection::canDisconnectChanged);
     connect(&m_controller, &IrcController::errorOccurred, this,
@@ -1457,11 +1462,13 @@ QVector<IrcConnection::RosterRow> IrcConnection::rosterRows() const
         const IrcNetworkProfile shown =
             profile.networkId == m_selectedNetworkId ? m_draft : profile;
         rows.append({profile.networkId, rosterDisplayName(shown), true,
-                     profile.networkId == m_selectedNetworkId, shown.iconColor});
+                     profile.networkId == m_selectedNetworkId, shown.iconColor,
+                     m_controller.networkIconUrl(profile.networkId)});
     }
     if (!isStored(m_selectedNetworkId) && !m_selectedNetworkId.isEmpty()) {
         rows.append({m_selectedNetworkId, rosterDisplayName(m_draft), false, true,
-                     m_draft.iconColor});
+                     m_draft.iconColor,
+                     m_controller.networkIconUrl(m_selectedNetworkId)});
     }
     return rows;
 }

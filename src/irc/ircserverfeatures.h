@@ -83,6 +83,7 @@ public:
     std::string_view chanModesB() const noexcept;
     std::string_view chanModesC() const noexcept;
     std::string_view chanModesD() const noexcept;
+    std::string_view iconUrl() const noexcept;
 
     std::optional<IrcParsedName> parseNamesToken(std::string_view token) const;
     std::vector<IrcPrefixChange> prefixChanges(
@@ -116,5 +117,6 @@ private:
     std::string m_chanModesB;
     std::string m_chanModesC;
     std::string m_chanModesD;
+    std::string m_iconUrl;
     std::array<ModeParamRule, 256> m_modeRules{};
 };

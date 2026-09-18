@@ -197,6 +197,8 @@ IrcSession *IrcController::addSession(const IrcSessionConfig& config,
     connect(session, &IrcSession::registered, this,
             [this, session](const QString& networkId) {
         m_currentNicks[networkId] = session->nick();
+        m_reducer.setServerFeatures(networkId, IrcServerFeatures{});
+        emit serverFeaturesChanged();
         apply(IrcWelcomeEvent{networkId, session->nick()});
         m_openDirectsMotdSeen.remove(networkId);
         updateStatus(session);
@@ -268,6 +270,7 @@ void IrcController::forgetNetworkState(const QString &networkId)
         clearConversationSelection();
     reloadModels();
     emit capabilitiesChanged();
+    emit serverFeaturesChanged();
     emit statusChanged();
     notifySelfAwayIfChanged(previousId, previousAway);
 }
@@ -585,6 +588,12 @@ IrcStatusConsole *IrcController::console()
 const IrcServerFeatures &IrcController::serverFeatures(const QString &networkId) const
 {
     return m_reducer.serverFeatures(networkId);
+}
+
+QString IrcController::networkIconUrl(const QString &networkId) const
+{
+    return QString::fromStdString(
+        std::string(m_reducer.serverFeatures(networkId).iconUrl()));
 }
 
 bool IrcController::start(const QString& networkId)
@@ -2478,6 +2487,7 @@ void IrcController::handleMessage(const QString& networkId,
                 message.parameters.begin() + 1, message.parameters.end() - 1);
             features.applyTokens(tokens);
             m_reducer.setServerFeatures(networkId, features);
+            emit serverFeaturesChanged();
         }
         return;
     }

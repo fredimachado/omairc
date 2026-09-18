@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- IRCv3 `draft/ICON` shows the server icon in the sidebar network square when the URL is safe and loads; otherwise the initial letter and palette color stay. `--demo-server` ships a bundled `qrc` icon for the omarchy seed network.
 - IRCv3 `draft/metadata-2` now covers peer `avatar`, `status`, and `bot`, plus WHOIS extras (`display-name`, `pronouns`, `homepage`, `color`). Member, nick picker, transcript, and DM circles load an HTTPS avatar when it is safe; a bad URL keeps the initial. Bots get a small mark next to the nick. Standing `status` stays separate from AWAY. `--demo-server` ships bundled `qrc` avatars for `mira`, `anna`, and `kai` so glyphs reach `Image.Ready` without outbound HTTPS.
 - `/status [text|clear]` sets or clears the local user's standing metadata without reconnecting. Empty `/status` echoes the current value. Networks that do not grant metadata say so on Status or the asking transcript. Success waits for the server's `761` / `766` reply; legacy numerics and `FAIL METADATA` codes (`KEY_NO_PERMISSION`, `VALUE_INVALID`, `RATE_LIMITED`, and kin) surface the failed set/clear on Status or the asking transcript instead of an optimistic echo. Capability values honor `max-subs` (status-first subscriptions) and `max-value-bytes` (including an explicit `0`, which refuses non-empty text locally) with a 512-byte client ceiling.
 - Preferences → **Show peer avatars** (default on) gates automatic avatar fetches. Turn it off to keep avatar hosts from seeing your IP on busy channels; the HTTPS URL policy still fails closed either way.
@@ -25,6 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Hostname image fetches keep the hostname on the HTTP request while still pinning TCP to one pre-validated address, and parse response headers case-insensitively, so Cloudflare (Unreal `draft/ICON` favicon) is not 403'd.
 - Avatar fetches refuse decompression bombs whose declared or decoded dimensions exceed a fixed budget, and hostname HTTPS GETs pin to one pre-validated address so QNAM cannot re-resolve (DNS rebinding).
 - Closing the last direct message refreshes `connectionStatus` when focus falls back to another network, so the identity footer and Status header no longer keep a stale Connected mark next to the new nick.
 - The identity footer shows `offline` with a muted mark when the focused network is not Connected, matching the sidebar network status. It still shows `away` or `available` only while Connected.
