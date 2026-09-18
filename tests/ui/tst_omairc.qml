@@ -3172,6 +3172,31 @@ TestCase {
         tryCompare(appWindow, "currentConversation", "mira");
     }
 
+    function test_memberListScrollbarAppearsWhenOverflowing() {
+        openSeededAppWindow();
+        verify(item("membersPanel").visible);
+        var members = item("membersList");
+        var bar = verticalScrollBar(members);
+        compare(bar.policy, Controls.ScrollBar.AsNeeded);
+
+        var names = [];
+        var index = 0;
+        for (; index < 30; ++index)
+            names.push("bulk" + index);
+        seed.injectOmarchy(
+            ":server 353 fred = #omarchy :" + names.join(" ") + "\r\n"
+            + ":server 366 fred #omarchy :End of NAMES\r\n");
+        tryVerify(function() { return members.count === 30; });
+        waitForRendering(appWindow.contentItem);
+        verify(members.contentHeight > members.height);
+        verify(bar.size < 1);
+
+        keyClick(Qt.Key_P, Qt.ControlModifier | Qt.ShiftModifier);
+        tryCompare(members, "activeFocus", true);
+        keyClick(Qt.Key_Down);
+        tryCompare(members, "currentIndex", 1);
+    }
+
     function test_memberEnterAfterSwitchingToSmallerChannel() {
         openSeededAppWindow();
         var members = item("membersList");
