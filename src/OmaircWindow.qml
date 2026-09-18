@@ -62,8 +62,9 @@ ApplicationWindow {
     property bool serverListVisible: true
     property string sidebarNetworkFocusId: ""
     // The composer routes Enter to the focused network header, so a collapsed
-    // rail must not keep a selection armed that nobody can see. Declared below
-    // sidebarNetworkFocusId so the dependency reads top-to-bottom.
+    // rail must not keep a selection armed that nobody can see. This handler
+    // sits below the sidebarNetworkFocusId declaration so the dependency reads
+    // top-to-bottom.
     onServerListVisibleChanged: {
         if (!serverListVisible)
             sidebarNetworkFocusId = "";
