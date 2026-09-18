@@ -78,8 +78,17 @@ void IrcServerFeatures::rebuildModeRules()
 
 void IrcServerFeatures::applyToken(std::string_view token)
 {
-    if (token.empty() || token.front() == '-')
+    if (token.empty())
         return;
+
+    if (token.front() == '-') {
+        const std::string_view rest = token.substr(1);
+        const std::size_t separator = rest.find('=');
+        const std::string_view name = rest.substr(0, separator);
+        if (name == "draft/ICON")
+            m_iconUrl.clear();
+        return;
+    }
 
     const std::size_t separator = token.find('=');
     const std::string_view name = token.substr(0, separator);

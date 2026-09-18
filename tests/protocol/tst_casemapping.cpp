@@ -25,6 +25,7 @@ private slots:
     void parsesChanModesFromIsupport();
     void prefixChangesConsumeNonPrefixParameters();
     void parsesDraftIconFromIsupport();
+    void draftIconRemovalClearsAdvertisedUrl();
 };
 
 void CaseMappingTest::normalizesAdvertisedMappings()
@@ -285,6 +286,28 @@ void CaseMappingTest::parsesDraftIconFromIsupport()
     kept.applyToken("CHANTYPES=#");
     kept.applyToken("NICKLEN=16");
     QCOMPARE(QString::fromStdString(std::string(kept.iconUrl())),
+             QStringLiteral("https://example.org/icon.svg"));
+}
+
+void CaseMappingTest::draftIconRemovalClearsAdvertisedUrl()
+{
+    IrcServerFeatures features;
+    features.applyToken("draft/ICON=https://example.org/icon.svg");
+    QCOMPARE(QString::fromStdString(std::string(features.iconUrl())),
+             QStringLiteral("https://example.org/icon.svg"));
+
+    features.applyToken("-draft/ICON");
+    QVERIFY(features.iconUrl().empty());
+
+    features.applyToken("draft/ICON=https://example.org/icon.svg");
+    features.applyToken("-ICON");
+    QCOMPARE(QString::fromStdString(std::string(features.iconUrl())),
+             QStringLiteral("https://example.org/icon.svg"));
+
+    features.applyToken("-PREFIX");
+    QCOMPARE(QString::fromStdString(std::string(features.prefixModes())),
+             QStringLiteral("qaohv"));
+    QCOMPARE(QString::fromStdString(std::string(features.iconUrl())),
              QStringLiteral("https://example.org/icon.svg"));
 }
 
