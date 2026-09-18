@@ -5196,6 +5196,7 @@ ApplicationWindow {
                 clip: true
                 model: win.irc ? win.irc.members : null
                 boundsBehavior: Flickable.StopAtBounds
+                ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
                 keyNavigationEnabled: true
                 highlightFollowsCurrentItem: true
                 highlightMoveDuration: 0
