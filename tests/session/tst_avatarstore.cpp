@@ -185,6 +185,20 @@ bool waitForIdle(int timeoutMs = 500)
 {
     return QTest::qWaitFor([]() { return true; }, timeoutMs);
 }
+
+bool pixelIsTransparent(const QImage& image, int x, int y)
+{
+    if (x < 0 || y < 0 || x >= image.width() || y >= image.height())
+        return true;
+    return qAlpha(image.pixel(x, y)) == 0;
+}
+
+bool pixelIsOpaque(const QImage& image, int x, int y)
+{
+    if (x < 0 || y < 0 || x >= image.width() || y >= image.height())
+        return false;
+    return qAlpha(image.pixel(x, y)) > 0;
+}
 }
 
 class AvatarStoreTest : public QObject
@@ -204,6 +218,9 @@ private slots:
     void acceptsValidDecodedImageWithinBudget();
     void pinsHostnameFetchToResolvedAddress();
     void refusesHostnameWhenOnlyUnsafeAddressesResolve();
+    void circleClipHasTransparentCorners();
+    void squareClipHasRoundedRectShape();
+    void squareClipWorksForBundledQrc();
 };
 
 void AvatarStoreTest::refusesRedirectToUnsafe()
@@ -334,6 +351,8 @@ void AvatarStoreTest::successfulFetchPopulatesCache()
     const QImage image = store.requestImage(avatarKey(url), &imageSize, QSize(32, 32));
     QVERIFY(!image.isNull());
     QCOMPARE(imageSize, QSize(32, 32));
+    QVERIFY(pixelIsTransparent(image, 0, 0));
+    QVERIFY(pixelIsOpaque(image, 16, 16));
 }
 
 void AvatarStoreTest::capsCircledSizeWhenRequestedSizeInvalid()
@@ -513,6 +532,87 @@ void AvatarStoreTest::refusesHostnameWhenOnlyUnsafeAddressesResolve()
     QCOMPARE(nam.requestCount, 0);
     QCOMPARE(readySpy.count(), 0);
     QCOMPARE(store.source(rawUrl, 32), QString());
+}
+
+void AvatarStoreTest::circleClipHasTransparentCorners()
+{
+    MockNetworkAccessManager nam;
+    IrcAvatarStore store;
+    store.setNetworkAccessManager(&nam);
+
+    const QString rawUrl = publicAvatarUrl("circle-clip.png");
+    const QUrl url = ircResolvedAvatarUrl(rawUrl, 32);
+    QVERIFY(ircAvatarUrlIsSafe(url));
+
+    MockNetworkAccessManager::Response response;
+    response.body = kTinyPng;
+    nam.setResponse(url, response);
+
+    QSignalSpy readySpy(&store, &IrcAvatarStore::ready);
+    QCOMPARE(store.source(rawUrl, 32), QString());
+    QVERIFY(waitForReady(readySpy));
+
+    const QString expectedSource =
+        QStringLiteral("image://omairc-avatar/") + avatarKey(url);
+    QCOMPARE(store.source(rawUrl, 32), expectedSource);
+
+    QSize imageSize;
+    const QImage image = store.requestImage(avatarKey(url), &imageSize, QSize(32, 32));
+    QVERIFY(!image.isNull());
+    QCOMPARE(imageSize, QSize(32, 32));
+    QVERIFY(pixelIsTransparent(image, 0, 0));
+    QVERIFY(pixelIsOpaque(image, 16, 16));
+}
+
+void AvatarStoreTest::squareClipHasRoundedRectShape()
+{
+    MockNetworkAccessManager nam;
+    IrcAvatarStore store;
+    store.setNetworkAccessManager(&nam);
+
+    const QString rawUrl = publicAvatarUrl("square-clip.png");
+    const QUrl url = ircResolvedAvatarUrl(rawUrl, 32);
+    QVERIFY(ircAvatarUrlIsSafe(url));
+
+    MockNetworkAccessManager::Response response;
+    response.body = kTinyPng;
+    nam.setResponse(url, response);
+
+    QSignalSpy readySpy(&store, &IrcAvatarStore::ready);
+    QCOMPARE(store.source(rawUrl, 32, QStringLiteral("square")), QString());
+    QVERIFY(waitForReady(readySpy));
+    QCOMPARE(readySpy.at(0).at(0).toString(), rawUrl);
+
+    const QString expectedSource =
+        QStringLiteral("image://omairc-avatar/square/") + avatarKey(url);
+    QCOMPARE(store.source(rawUrl, 32, QStringLiteral("square")), expectedSource);
+
+    QSize imageSize;
+    const QString requestId = QStringLiteral("square/") + avatarKey(url);
+    const QImage image = store.requestImage(requestId, &imageSize, QSize(32, 32));
+    QVERIFY(!image.isNull());
+    QCOMPARE(imageSize, QSize(32, 32));
+    QVERIFY(pixelIsTransparent(image, 0, 0));
+    QVERIFY(pixelIsOpaque(image, 16, 16));
+    QVERIFY(pixelIsOpaque(image, 16, 0));
+}
+
+void AvatarStoreTest::squareClipWorksForBundledQrc()
+{
+    IrcAvatarStore store;
+    const QString rawUrl = QStringLiteral("qrc:/demo/mira-avatar.png");
+    const QString source = store.source(rawUrl, 32, QStringLiteral("square"));
+    if (source.isEmpty())
+        QSKIP("demo mira avatar is not linked into protocol_tests");
+    QCOMPARE(source.section(QLatin1Char('/'), 0, -2),
+             QStringLiteral("image://omairc-avatar/square"));
+    QSize imageSize;
+    const QString requestId = source.section(QLatin1Char('/'), -2, -1);
+    const QImage image = store.requestImage(requestId, &imageSize, QSize(32, 32));
+    QVERIFY(!image.isNull());
+    QVERIFY(pixelIsTransparent(image, 0, 0));
+    QVERIFY(pixelIsOpaque(image, 16, 16));
+    QVERIFY(pixelIsOpaque(image, 16, 0));
 }
 
 int runAvatarStoreTests(int argc, char **argv)

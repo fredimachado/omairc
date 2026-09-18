@@ -140,6 +140,35 @@ QImage IrcAvatarStore::circled(const QImage& source, const QSize& requestedSize)
     return circle;
 }
 
+QImage IrcAvatarStore::roundedRect(const QImage& source, const QSize& requestedSize)
+{
+    if (source.isNull())
+        return {};
+    int edge = 32;
+    if (requestedSize.width() > 0 && requestedSize.height() > 0)
+        edge = qMax(requestedSize.width(), requestedSize.height());
+    else if (source.width() > 0 && source.height() > 0)
+        edge = qMin(qMax(source.width(), source.height()), kMaximumCircledEdge);
+    edge = qMin(edge, kMaximumCircledEdge);
+    const QSize target(edge, edge);
+    const qreal radius = 8.0 / 28.0 * edge;
+    QImage frame(target, QImage::Format_ARGB32_Premultiplied);
+    frame.fill(Qt::transparent);
+    QPainter painter(&frame);
+    painter.setRenderHint(QPainter::Antialiasing, true);
+    painter.setRenderHint(QPainter::SmoothPixmapTransform, true);
+    QPainterPath clip;
+    clip.addRoundedRect(QRectF(QPointF(0, 0), QSizeF(target)), radius, radius);
+    painter.setClipPath(clip);
+    const qreal scale = qMax(qreal(edge) / qMax(1, source.width()),
+                             qreal(edge) / qMax(1, source.height()));
+    const QSize drawn(qRound(source.width() * scale),
+                      qRound(source.height() * scale));
+    const QPoint offset((edge - drawn.width()) / 2, (edge - drawn.height()) / 2);
+    painter.drawImage(QRect(offset, drawn), source);
+    return frame;
+}
+
 QImage IrcAvatarStore::loadBoundedImage(const QByteArray& body)
 {
     QByteArray bytes = body;
@@ -158,6 +187,21 @@ QImage IrcAvatarStore::loadBoundedImageFromFile(const QString& path)
 
 QString IrcAvatarStore::source(const QString& rawUrl, int pixelSize)
 {
+    return source(rawUrl, pixelSize, QString());
+}
+
+QString IrcAvatarStore::source(const QString& rawUrl, int pixelSize,
+                               const QString& clip)
+{
+    const bool squareClip =
+        clip.trimmed().compare(QLatin1String("square"), Qt::CaseInsensitive) == 0;
+    const auto imageIdForKey = [&](const QString& key) -> QString {
+        if (squareClip)
+            return QStringLiteral("image://") + kProviderId
+                + QLatin1String("/square/") + key;
+        return QStringLiteral("image://") + kProviderId + QLatin1Char('/') + key;
+    };
+
     const QString trimmed = rawUrl.trimmed();
     // Bundled demo art may use qrc: without the HTTPS policy. Network URLs
     // still must pass ircAvatarUrlIsSafe.
@@ -176,7 +220,7 @@ QString IrcAvatarStore::source(const QString& rawUrl, int pixelSize)
             // Synchronous fill — do not emit ready() here or storeSource
             // re-enters through avatarEpoch while still evaluating.
         }
-        return QStringLiteral("image://") + kProviderId + QLatin1Char('/') + key;
+        return imageIdForKey(key);
     }
 
     const int fetchSize = ircAvatarFetchPixelSize(pixelSize);
@@ -190,16 +234,25 @@ QString IrcAvatarStore::source(const QString& rawUrl, int pixelSize)
         scheduleFetch(rawUrl, url, key);
         return {};
     }
-    return QStringLiteral("image://") + kProviderId + QLatin1Char('/') + key;
+    return imageIdForKey(key);
 }
 
 QImage IrcAvatarStore::requestImage(const QString& id, QSize *size,
                                     const QSize& requestedSize)
 {
-    const QImage image = cached(id);
+    QString cacheKey = id;
+    bool squareClip = false;
+    const QString squarePrefix = QStringLiteral("square/");
+    if (cacheKey.startsWith(squarePrefix)) {
+        squareClip = true;
+        cacheKey = cacheKey.mid(squarePrefix.size());
+    }
+    const QImage image = cached(cacheKey);
     if (image.isNull())
         return {};
-    const QImage framed = circled(image, requestedSize);
+    const QImage framed = squareClip
+        ? roundedRect(image, requestedSize)
+        : circled(image, requestedSize);
     if (size)
         *size = framed.size();
     return framed;

@@ -25,6 +25,8 @@ public:
     ~IrcAvatarStore() override;
 
     Q_INVOKABLE QString source(const QString& rawUrl, int pixelSize);
+    Q_INVOKABLE QString source(const QString& rawUrl, int pixelSize,
+                               const QString& clip);
     void setNetworkAccessManager(QNetworkAccessManager *nam);
 
     QImage requestImage(const QString& id, QSize *size,
@@ -49,6 +51,7 @@ private:
 
     static QString keyForUrl(const QUrl& url);
     static QImage circled(const QImage& source, const QSize& requestedSize);
+    static QImage roundedRect(const QImage& source, const QSize& requestedSize);
     static QImage loadBoundedImage(const QByteArray& body);
     static QImage loadBoundedImageFromFile(const QString& path);
 
