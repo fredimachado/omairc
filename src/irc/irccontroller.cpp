@@ -98,6 +98,29 @@ QString ownMetadataNoValueMessage(const QString& metadataKey)
     return {};
 }
 
+QString ownMetadataInspectEmptyMessage(const QString& metadataKey)
+{
+    if (metadataKey.compare(IrcMetadata::statusKey(), Qt::CaseInsensitive) == 0) {
+        return QStringLiteral(
+            "No standing status. Use /status <text> or /status clear.");
+    }
+    if (metadataKey.compare(IrcMetadata::avatarKey(), Qt::CaseInsensitive) == 0) {
+        return QStringLiteral(
+            "No standing avatar. Use /avatar <url|email> or /avatar clear.");
+    }
+    return {};
+}
+
+QString ownMetadataInspectValueMessage(const QString& metadataKey,
+                                       const QString& value)
+{
+    if (metadataKey.compare(IrcMetadata::statusKey(), Qt::CaseInsensitive) == 0)
+        return QStringLiteral("Standing status: %1").arg(value);
+    if (metadataKey.compare(IrcMetadata::avatarKey(), Qt::CaseInsensitive) == 0)
+        return QStringLiteral("Standing avatar: %1").arg(value);
+    return {};
+}
+
 QString parameter(const IrcMessage& message, std::size_t index)
 {
     if (index >= message.parameters.size())
@@ -1858,6 +1881,21 @@ IrcCommandOutcome IrcController::dispatchHelp(IrcComposerSurface surface)
     return IrcCommandOutcome::Sent;
 }
 
+IrcCommandOutcome IrcController::echoMetadataCommandFeedback(
+    IrcComposerSurface surface,
+    const QString& networkId,
+    const QString& text)
+{
+    if (m_selected && m_selected->networkId == networkId) {
+        apply(IrcWhoisTranscriptEvent{*m_selected, text});
+        return IrcCommandOutcome::Sent;
+    }
+    if (surface == IrcComposerSurface::Conversation)
+        return IrcCommandOutcome::WrongScope;
+    m_console.record(IrcStatusEntry::outcome(networkId, text));
+    return IrcCommandOutcome::Sent;
+}
+
 IrcCommandOutcome IrcController::dispatchStatus(const IrcCommand& command,
                                                 IrcComposerSurface surface)
 {
@@ -1872,30 +1910,39 @@ IrcCommandOutcome IrcController::dispatchStatus(const IrcCommand& command,
         return IrcCommandOutcome::NotConnected;
 
     const QString networkId = session->networkId();
-    const auto echo = [&](const QString& text) -> IrcCommandOutcome {
-        if (surface == IrcComposerSurface::Conversation) {
-            if (!m_selected)
-                return IrcCommandOutcome::WrongScope;
-            apply(IrcWhoisTranscriptEvent{*m_selected, text});
-            return IrcCommandOutcome::Sent;
-        }
-        m_console.record(IrcStatusEntry::outcome(networkId, text));
-        return IrcCommandOutcome::Sent;
-    };
 
     const IrcCapabilitySet capabilities = m_capabilities.value(networkId);
     if (!capabilities.contains(IrcCapability::MemberMetadata)
             || !capabilities.contains(IrcCapability::Batch)) {
-        return echo(ownMetadataNoCapMessage(IrcMetadata::statusKey()));
+        return echoMetadataCommandFeedback(
+            surface, networkId, ownMetadataNoCapMessage(IrcMetadata::statusKey()));
     }
 
-    if (command.argument.isEmpty() || isOwnMetadataClearAlias(command.argument))
+    if (command.argument.isEmpty()) {
+        const QString current =
+            peerMetadata(networkId, session->nick())
+                .value(IrcMetadata::statusKey())
+                .toString();
+        if (current.isEmpty()) {
+            return echoMetadataCommandFeedback(
+                surface, networkId,
+                ownMetadataInspectEmptyMessage(IrcMetadata::statusKey()));
+        }
+        return echoMetadataCommandFeedback(
+            surface, networkId,
+            ownMetadataInspectValueMessage(IrcMetadata::statusKey(), current));
+    }
+
+    if (isOwnMetadataClearAlias(command.argument))
         return dispatchOwnMetadataClear(session, surface, IrcMetadata::statusKey());
 
     const int valueBudget = IrcMetadata::effectiveMaxValueBytes(
         session->metadataCapability().maxValueBytes);
-    if (valueBudget <= 0)
-        return echo(ownMetadataNoValueMessage(IrcMetadata::statusKey()));
+    if (valueBudget <= 0) {
+        return echoMetadataCommandFeedback(
+            surface, networkId,
+            ownMetadataNoValueMessage(IrcMetadata::statusKey()));
+    }
     const QString clamped = IrcMetadata::clamped(command.argument, valueBudget);
     if (clamped.isEmpty())
         return IrcCommandOutcome::Refused;
@@ -1916,36 +1963,46 @@ IrcCommandOutcome IrcController::dispatchAvatar(const IrcCommand& command,
         return IrcCommandOutcome::NotConnected;
 
     const QString networkId = session->networkId();
-    const auto echo = [&](const QString& text) -> IrcCommandOutcome {
-        if (surface == IrcComposerSurface::Conversation) {
-            if (!m_selected)
-                return IrcCommandOutcome::WrongScope;
-            apply(IrcWhoisTranscriptEvent{*m_selected, text});
-            return IrcCommandOutcome::Sent;
-        }
-        m_console.record(IrcStatusEntry::outcome(networkId, text));
-        return IrcCommandOutcome::Sent;
-    };
 
     const IrcCapabilitySet capabilities = m_capabilities.value(networkId);
     if (!capabilities.contains(IrcCapability::MemberMetadata)
             || !capabilities.contains(IrcCapability::Batch)) {
-        return echo(ownMetadataNoCapMessage(IrcMetadata::avatarKey()));
+        return echoMetadataCommandFeedback(
+            surface, networkId, ownMetadataNoCapMessage(IrcMetadata::avatarKey()));
     }
 
-    if (command.argument.isEmpty() || isOwnMetadataClearAlias(command.argument))
+    if (command.argument.isEmpty()) {
+        const QString current =
+            peerMetadata(networkId, session->nick())
+                .value(IrcMetadata::avatarKey())
+                .toString();
+        if (current.isEmpty()) {
+            return echoMetadataCommandFeedback(
+                surface, networkId,
+                ownMetadataInspectEmptyMessage(IrcMetadata::avatarKey()));
+        }
+        return echoMetadataCommandFeedback(
+            surface, networkId,
+            ownMetadataInspectValueMessage(IrcMetadata::avatarKey(), current));
+    }
+
+    if (isOwnMetadataClearAlias(command.argument))
         return dispatchOwnMetadataClear(session, surface, IrcMetadata::avatarKey());
 
     const QString resolved = ircAvatarMetadataValue(command.argument);
     if (resolved.isEmpty()) {
-        return echo(QStringLiteral(
-            "Avatar must be an HTTPS URL or an email address."));
+        return echoMetadataCommandFeedback(
+            surface, networkId,
+            QStringLiteral("Avatar must be an HTTPS URL or an email address."));
     }
 
     const int valueBudget = IrcMetadata::effectiveMaxValueBytes(
         session->metadataCapability().maxValueBytes);
-    if (valueBudget <= 0)
-        return echo(ownMetadataNoValueMessage(IrcMetadata::avatarKey()));
+    if (valueBudget <= 0) {
+        return echoMetadataCommandFeedback(
+            surface, networkId,
+            ownMetadataNoValueMessage(IrcMetadata::avatarKey()));
+    }
     const QString clamped = IrcMetadata::clamped(resolved, valueBudget);
     if (clamped.isEmpty())
         return IrcCommandOutcome::Refused;
@@ -2334,7 +2391,7 @@ void IrcController::armOwnMetadataWatch(const QString& networkId,
                                         const QString& value)
 {
     IrcWhoisDestination destination{IrcWhoisStatusOnly{}};
-    if (surface == IrcComposerSurface::Conversation && m_selected)
+    if (m_selected && m_selected->networkId == networkId)
         destination = *m_selected;
     const QString canonical = IrcMetadata::canonicalKey(metadataKey);
     m_ownMetadataWatches[networkId].insert(
@@ -2354,6 +2411,10 @@ void IrcController::echoOwnMetadataOutcome(const QString& networkId,
 {
     if (const auto *conversation = std::get_if<IrcConversationKey>(&destination)) {
         apply(IrcWhoisTranscriptEvent{*conversation, text});
+        return;
+    }
+    if (m_selected && m_selected->networkId == networkId) {
+        apply(IrcWhoisTranscriptEvent{*m_selected, text});
         return;
     }
     m_console.record(IrcStatusEntry::outcome(networkId, text));

@@ -1547,15 +1547,12 @@ void CommandTest::statusWritesMetadataFrames()
     const int beforeEmpty = transport->writtenFrames().size();
     const int statusRowsBeforeEmpty = console->lines()->rowCount();
     QVERIFY(controller.sendMessage(QStringLiteral("/status")));
-    QCOMPARE(transport->writtenFrames().last(),
-             QByteArrayLiteral("METADATA * SET status\r\n"));
-    QVERIFY(!selectedBodiesContain(messages,
-                                   QStringLiteral("Standing status cleared.")));
-    transport->injectBytes(
-        QByteArrayLiteral(":server 766 omairc omairc status :unset\r\n"));
+    QCOMPARE(transport->writtenFrames().size(), beforeEmpty);
+    QVERIFY(!framesContain(transport->writtenFrames().mid(beforeEmpty),
+                           QByteArrayLiteral("METADATA")));
     QCOMPARE(console->lines()->rowCount(), statusRowsBeforeEmpty);
-    QVERIFY(selectedBodiesContain(messages,
-                                  QStringLiteral("Standing status cleared.")));
+    QVERIFY(selectedBodiesContain(
+        messages, QStringLiteral("No standing status. Use /status <text> or /status clear.")));
     QCOMPARE(controller.peerMetadata(QStringLiteral("libera"), QStringLiteral("omairc"))
                  .value(QStringLiteral("status"))
                  .toString(),
@@ -1587,22 +1584,15 @@ void CommandTest::statusWritesMetadataFrames()
                                   QStringLiteral("Standing status set to writing docs.")));
 
     const int beforeQuery = transport->writtenFrames().size();
-    const int clearedHitsBeforeQuery =
-        selectedBodyHits(messages, QStringLiteral("Standing status cleared."));
     QVERIFY(controller.sendMessage(QStringLiteral("/status")));
-    QCOMPARE(transport->writtenFrames().last(),
-             QByteArrayLiteral("METADATA * SET status\r\n"));
-    QCOMPARE(selectedBodyHits(messages, QStringLiteral("Standing status cleared.")),
-             clearedHitsBeforeQuery);
-    transport->injectBytes(
-        QByteArrayLiteral(":server 766 omairc omairc status :unset\r\n"));
-    QCOMPARE(transport->writtenFrames().size(), beforeQuery + 1);
+    QCOMPARE(transport->writtenFrames().size(), beforeQuery);
+    QVERIFY(!framesContain(transport->writtenFrames().mid(beforeQuery),
+                           QByteArrayLiteral("METADATA")));
+    QVERIFY(selectedBodiesContain(messages, QStringLiteral("Standing status: writing docs")));
     QCOMPARE(controller.peerMetadata(QStringLiteral("libera"), QStringLiteral("omairc"))
                  .value(QStringLiteral("status"))
                  .toString(),
-             QString());
-    QCOMPARE(selectedBodyHits(messages, QStringLiteral("Standing status cleared.")),
-             clearedHitsBeforeQuery + 1);
+             QStringLiteral("writing docs"));
 
     QVERIFY(controller.sendMessage(QStringLiteral("/status clear the table")));
     QCOMPARE(transport->writtenFrames().last(),
@@ -1658,10 +1648,10 @@ void CommandTest::statusWritesMetadataFrames()
     QVERIFY(!logContains(console->lines(), QStringLiteral("Standing status set to lunch.")));
     transport->injectBytes(
         QByteArrayLiteral(":server 761 omairc omairc status * :lunch\r\n"));
-    QVERIFY(logContains(console->lines(), QStringLiteral("Standing status set to lunch.")));
-    QCOMPARE(console->lines()->rowCount(), statusRowsBeforeSubmit + 1);
+    QVERIFY(!logContains(console->lines(), QStringLiteral("Standing status set to lunch.")));
+    QCOMPARE(console->lines()->rowCount(), statusRowsBeforeSubmit);
     QCOMPARE(selectedBodyHits(messages, QStringLiteral("Standing status set to lunch.")),
-             transcriptHitsBeforeSubmit);
+             transcriptHitsBeforeSubmit + 1);
     QCOMPARE(controller.peerMetadata(QStringLiteral("libera"), QStringLiteral("omairc"))
                  .value(QStringLiteral("status"))
                  .toString(),
@@ -1907,12 +1897,22 @@ void CommandTest::avatarWritesMetadataFrames()
         QByteArrayLiteral(":server 766 omairc omairc avatar :unset\r\n"));
     QVERIFY(selectedBodiesContain(messages, QStringLiteral("Avatar cleared.")));
 
+    const int beforeInspect = transport->writtenFrames().size();
     QVERIFY(controller.sendMessage(QStringLiteral("/avatar")));
-    QCOMPARE(transport->writtenFrames().last(),
-             QByteArrayLiteral("METADATA * SET avatar\r\n"));
+    QCOMPARE(transport->writtenFrames().size(), beforeInspect);
+    QVERIFY(!framesContain(transport->writtenFrames().mid(beforeInspect),
+                           QByteArrayLiteral("METADATA")));
+    QVERIFY(selectedBodiesContain(
+        messages, QStringLiteral("No standing avatar. Use /avatar <url|email> or /avatar clear.")));
+
     transport->injectBytes(
-        QByteArrayLiteral(":server FAIL METADATA KEY_NOT_SET omairc avatar :no key\r\n"));
-    QVERIFY(selectedBodiesContain(messages, QStringLiteral("Avatar cleared.")));
+        QByteArrayLiteral(
+            ":server 761 omairc omairc avatar * :https://example.com/a.png\r\n"));
+    QVERIFY(controller.sendMessage(QStringLiteral("/avatar")));
+    QCOMPARE(transport->writtenFrames().size(), beforeInspect);
+    QVERIFY(selectedBodiesContain(
+        messages,
+        QStringLiteral("Standing avatar: https://example.com/a.png")));
 }
 
 void CommandTest::avatarRefusesUnsafeInput()

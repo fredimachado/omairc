@@ -335,6 +335,9 @@ private:
                                              IrcComposerSurface surface,
                                              const QString& metadataKey,
                                              const QString& value);
+    IrcCommandOutcome echoMetadataCommandFeedback(IrcComposerSurface surface,
+                                                 const QString& networkId,
+                                                 const QString& text);
     void armOwnMetadataWatch(const QString& networkId,
                              const QString& metadataKey,
                              IrcComposerSurface surface,

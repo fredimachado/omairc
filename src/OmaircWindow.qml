@@ -3591,7 +3591,7 @@ ApplicationWindow {
                         font.pixelSize: win.scaledSize(10)
                     }
 
-                    Text {
+                    TextEdit {
                         id: messageWhois
                         objectName: "messageWhois"
                         visible: messageDelegate.kind === "whois"
@@ -3606,11 +3606,19 @@ ApplicationWindow {
                             : win.scaledSize(8)
                         horizontalAlignment: Text.AlignLeft
                         text: win.plainIrcText(messageDelegate.body)
-                        textFormat: Text.PlainText
+                        textFormat: TextEdit.PlainText
                         color: win.mutedColor
-                        wrapMode: Text.Wrap
+                        wrapMode: TextEdit.Wrap
+                        readOnly: true
+                        selectByMouse: true
+                        cursorVisible: false
+                        activeFocusOnPress: false
+                        activeFocusOnTab: false
+                        padding: 0
                         font.family: "iA Writer Mono S"
                         font.pixelSize: win.scaledSize(12)
+
+                        PlainUrlHit { edit: messageWhois }
                     }
 
                     MessageAvatar {
