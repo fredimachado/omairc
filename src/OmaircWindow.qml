@@ -4361,7 +4361,7 @@ ApplicationWindow {
                 // Closing used to drop focus on the window itself, so
                 // typing did nothing until the composer was clicked.
                 Qt.callLater(function() {
-                    if (win.active)
+                    if (win && win.active && composer)
                         composer.forceActiveFocus();
                 });
                 return;
