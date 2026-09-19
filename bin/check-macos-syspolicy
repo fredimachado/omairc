@@ -1,0 +1,55 @@
+#!/usr/bin/env sh
+set -eu
+
+# Run syspolicy_check notary-submission or distribution. GitHub-hosted
+# runners often report a fatal Internal Xprotect Error on bundles that
+# codesign --verify, check-macos-bundle, Apple notarization, and spctl
+# all accept. Ignore that internal error when it is the only Fatal check.
+# Any other syspolicy failure still fails.
+
+ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
+MODE="${1:-}"
+APP="${2:-$ROOT/build/omairc.app}"
+
+case "$MODE" in
+  notary-submission|distribution) ;;
+  *)
+    echo "Usage: bin/check-macos-syspolicy notary-submission|distribution [app]" >&2
+    exit 2
+    ;;
+esac
+
+if [ "$(uname -s)" != "Darwin" ]; then
+  echo "bin/check-macos-syspolicy must run on macOS." >&2
+  exit 1
+fi
+
+if [ ! -d "$APP" ]; then
+  echo "Expected $APP. Run bin/build-macos first." >&2
+  exit 1
+fi
+
+if ! command -v syspolicy_check >/dev/null 2>&1; then
+  echo "syspolicy_check is required (Xcode)." >&2
+  exit 1
+fi
+
+set +e
+out=$(syspolicy_check "$MODE" "$APP" 2>&1)
+status=$?
+set -e
+printf '%s\n' "$out"
+if [ "$status" -eq 0 ]; then
+  exit 0
+fi
+
+fatal=$(printf '%s\n' "$out" | grep -c 'Severity: Fatal' || true)
+case "$out" in
+  *"Internal Xprotect Error"*)
+    if [ "$fatal" -le 1 ]; then
+      echo "syspolicy_check $MODE: ignoring Internal Xprotect Error on this host." >&2
+      exit 0
+    fi
+    ;;
+esac
+exit "$status"

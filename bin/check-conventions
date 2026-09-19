@@ -348,15 +348,29 @@ def check_macos_notarization():
         problems.append(
             "call bin/check-macos-bundle from bin/build-macos and "
             ".github/workflows/macos.yml after Developer ID signing")
-    if "syspolicy_check notary-submission" not in text:
+    if "bin/check-macos-syspolicy notary-submission" not in text:
         problems.append(
             ".github/workflows/macos.yml: syspolicy_check notary-submission "
             "after Developer ID signing (catches dangling load commands "
             "spctl misses without quarantine)")
-    if "syspolicy_check distribution" not in text:
+    if "bin/check-macos-syspolicy distribution" not in text:
         problems.append(
             ".github/workflows/macos.yml: syspolicy_check distribution after "
             "stapling, before publishing the zip")
+    syspolicy = ROOT / "bin" / "check-macos-syspolicy"
+    if not syspolicy.is_file():
+        problems.append("bin/check-macos-syspolicy: wrap syspolicy_check")
+    else:
+        syspolicy_text = syspolicy.read_text(encoding="utf-8", errors="replace")
+        if "syspolicy_check" not in syspolicy_text:
+            problems.append(
+                "bin/check-macos-syspolicy: call syspolicy_check notary-submission "
+                "and distribution")
+        if "Internal Xprotect Error" not in syspolicy_text:
+            problems.append(
+                "bin/check-macos-syspolicy: ignore Internal Xprotect Error on "
+                "GitHub-hosted runners; codesign and Apple notarization are "
+                "the malware gate")
     if re.search(
             r"codesign --force --deep --options runtime",
             sign.read_text(encoding="utf-8", errors="replace")):
