@@ -5,6 +5,7 @@
 /build-live-tests/
 /build-live-ui-tests/
 /build-seeded-qml-tests/
+/build-version-override/
 /.deps/
 *.o
 *.moc
