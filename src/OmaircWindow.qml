@@ -2095,15 +2095,15 @@ ApplicationWindow {
                 readonly property string authorAvatar: model && model.authorAvatar
                     ? String(model.authorAvatar) : ""
                 readonly property bool authorBot: !!(model && model.authorBot)
-                readonly property string origin: win.transcriptField(ListView.view.model, index, "origin")
+                readonly property string origin: win.transcriptField(conversation.messageList.model, index, "origin")
                 readonly property bool replayed: origin === "replay"
                 readonly property bool isChat: kind !== "event" && kind !== "whois"
                 readonly property bool grouped: win.continuesMessageGroup(
-                    ListView.view.model, index, author, time, kind, origin)
+                    conversation.messageList.model, index, author, time, kind, origin)
                 readonly property bool findMatch: win.findActive
                     && win.findIndex === index
 
-                width: ListView.view.width
+                width: conversation.messageList.width
                 height: win.transcriptRowHeight(
                     kind === "event", grouped || kind === "whois",
                     kind === "event"
@@ -2144,8 +2144,8 @@ ApplicationWindow {
                     anchors.right: parent.right
                     anchors.rightMargin: win.scaledSize(34)
                     anchors.top: parent.top
-                    anchors.topMargin: win.transcriptField(
-                        ListView.view.model, messageDelegate.index - 1, "kind") === "whois"
+                        anchors.topMargin: win.transcriptField(
+                            conversation.messageList.model, messageDelegate.index - 1, "kind") === "whois"
                         ? win.scaledSize(4)
                         : win.scaledSize(8)
                     horizontalAlignment: Text.AlignLeft
@@ -2233,7 +2233,7 @@ ApplicationWindow {
                 id: typingRow
                 objectName: "typingTranscript"
 
-                readonly property var transcriptModel: ListView.view.model
+                readonly property var transcriptModel: conversation.messageList.model
                 readonly property string nick: win.typingNicks.length > 0
                     ? String(win.typingNicks[0]) : ""
                 readonly property bool show: win.typingVisible
@@ -2249,7 +2249,7 @@ ApplicationWindow {
                 readonly property bool grouped: {
                     // The revision read re-reads the last row after a model
                     // reset that leaves the row count unchanged.
-                    ListView.view.rowRevision;
+                    conversation.messageList.rowRevision;
                     return win.typingFollowsPeerChat(
                         typingRow.transcriptModel, typingRow.nick,
                         typingRow.currentMinute);
@@ -2269,7 +2269,7 @@ ApplicationWindow {
                     onTriggered: typingRow.minuteTick += 1
                 }
 
-                width: ListView.view.width
+                width: conversation.messageList.width
                 visible: typingRow.show
                 // A hidden footer with a real height reserves blank space at
                 // the content bottom and stickToEnd scrolls into it.
@@ -2331,7 +2331,7 @@ ApplicationWindow {
                 readonly property bool findMatch: win.findActive
                     && win.findIndex === index
 
-                width: ListView.view.width
+                width: conversation.consoleList.width
                 height: Math.max(win.scaledSize(22), consoleText.implicitHeight + win.scaledSize(8))
 
                 readonly property color labelColor: consoleDelegate.severity === "alert"
