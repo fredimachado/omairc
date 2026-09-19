@@ -13,6 +13,13 @@
         <file alias="qml/ConversationRow.qml">qml/ConversationRow.qml</file>
         <file alias="qml/TranscriptList.qml">qml/TranscriptList.qml</file>
         <file alias="qml/UnseenJumpButton.qml">qml/UnseenJumpButton.qml</file>
+        <file alias="qml/ConnectionField.qml">qml/ConnectionField.qml</file>
+        <file alias="qml/ConnectionTabButton.qml">qml/ConnectionTabButton.qml</file>
+        <file alias="qml/ConnectionSheet.qml">qml/ConnectionSheet.qml</file>
+        <file alias="qml/ShortcutsSheet.qml">qml/ShortcutsSheet.qml</file>
+        <file alias="qml/AboutSheet.qml">qml/AboutSheet.qml</file>
+        <file alias="qml/JumpSheet.qml">qml/JumpSheet.qml</file>
+        <file alias="qml/NickSheet.qml">qml/NickSheet.qml</file>
         <file alias="fonts/iAWriterMonoS-Regular.ttf">../fonts/iAWriterMonoS-Regular.ttf</file>
         <file alias="fonts/iAWriterMonoS-Bold.ttf">../fonts/iAWriterMonoS-Bold.ttf</file>
         <file alias="icons/omairc.svg">../data/icons/hicolor/scalable/apps/omairc.svg</file>
