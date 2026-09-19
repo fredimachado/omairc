@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.1] - 2026-09-19
+
 ### Added
 
 - `/znc <text>` sends `PRIVMSG *status <text>` on the focused network, the same way `/ns` talks to NickServ and `/cs` talks to ChanServ. Empty `/znc` is refused. Replies from `*status` stay on the Status console and do not open a DM. This is not `/status`.
@@ -14,6 +16,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - macOS CI selects Xcode 16.4 with `maxim-lobanov/setup-xcode` on `macos-15` and `macos-15-intel` (Qt 6.8.3; `macos-latest` is macOS 26 and no longer ships Xcode 16). After notarization and stapling, tag releases run `spctl --assess --type execute --verbose=4` so Gatekeeper rejection fails the job. Official GitHub Actions in that workflow use their current Node 24 majors.
+
+### Fixed
+
+- Sidebar navigation (`Alt+Up`/`Down`, `Alt+Left`/`Right`, `Alt+A`, `Ctrl+K`, reveal) reads `irc.conversations` and `connection.networks` through the list models instead of scanning QML children, so released delegates no longer trigger `QQmlVMEMetaObject` warnings on startup.
 
 ## [0.8.0] - 2026-09-19
 
@@ -233,7 +239,8 @@ First public release: a dead-simple IRC client for Omarchy.
 - Keyboard map, slash-command complete, selectable transcript, and follow-unseen.
 - qmake Unix install tree and a GitHub Releases pacman repository.
 
-[Unreleased]: https://github.com/fredimachado/omairc/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/fredimachado/omairc/compare/v0.8.1...HEAD
+[0.8.1]: https://github.com/fredimachado/omairc/compare/v0.8.0...v0.8.1
 [0.8.0]: https://github.com/fredimachado/omairc/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/fredimachado/omairc/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/fredimachado/omairc/compare/v0.5.0...v0.6.0
