@@ -74,8 +74,13 @@ TestCase {
         compare(appWindow.sidebarConversationRows().length > 0, true);
         var sidebarRows = appWindow.sidebarConversationRows();
         compare(typeof sidebarRows[0].activate, "undefined");
-        compare(sidebarRows[0].conversationName, "#omarchy");
+        compare(sidebarRows[0].conversationName, "#desktop");
         verify(sidebarRows[0].conversationId.indexOf("\n") > 0);
+        var names = [];
+        var row = 0;
+        for (; row < sidebarRows.length; ++row)
+            names.push(sidebarRows[row].conversationName);
+        verify(names.indexOf("#omarchy") !== -1);
         var sections = appWindow.sidebarNetworkSections();
         verify(sections.length >= 2);
         compare(typeof sections[0].headerItem, "undefined");
