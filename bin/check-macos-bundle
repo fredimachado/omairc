@@ -1,0 +1,43 @@
+#!/usr/bin/env sh
+set -eu
+
+# Fail if build/omairc.app still has dangling LC_RPATH / LC_LOAD_DYLIB paths.
+# Those plus Disable Library Validation are why a notarized zip can still be
+# blocked by Gatekeeper after a browser download (quarantine).
+
+ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
+APP="${1:-$ROOT/build/omairc.app}"
+
+if [ "$(uname -s)" != "Darwin" ]; then
+  echo "bin/check-macos-bundle must run on macOS." >&2
+  exit 1
+fi
+
+if [ ! -d "$APP" ]; then
+  echo "Expected $APP. Run bin/build-macos first." >&2
+  exit 1
+fi
+
+find "$APP" -type f ! -path '*/_CodeSignature/*' | while IFS= read -r bin; do
+  case "$(file -b "$bin" 2>/dev/null || true)" in
+    Mach-O*) ;;
+    *) continue ;;
+  esac
+  otool -l "$bin" | awk -v file="$bin" '
+    $1 == "cmd" && ($2 == "LC_RPATH" || $2 == "LC_LOAD_DYLIB" || $2 == "LC_LOAD_WEAK_DYLIB") {
+      pending = $2
+      next
+    }
+    pending && ($1 == "path" || $1 == "name") {
+      path = $2
+      if (path !~ /^@/ && path !~ /^\/System\// && path !~ /^\/usr\/lib\//) {
+        printf "dangling %s %s\n  in %s\n", pending, path, file > "/dev/stderr"
+        bad = 1
+      }
+      pending = ""
+    }
+    END { if (bad) exit 1 }
+  '
+done
+
+echo "No dangling load-command paths in $APP"

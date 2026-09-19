@@ -237,10 +237,11 @@ version tags. Build QtKeychain against the same Qt prefix with Apple
 `qt6-wayland` dependency on macOS. Regenerate `data/icons/omairc.icns`
 from the SVG with `packaging/macos/generate-icns` when the mark changes.
 CI imports a Developer ID certificate and signs with hardened runtime
-(`packaging/macos/Omairc.entitlements`). Version tags and workflow_dispatch
-run `bin/notarize-macos` (`notarytool` + staple), then `stapler validate`
-and `spctl --assess --type execute --verbose=4`. Pull requests sign only:
-Apple often holds the first Developer ID uploads In Progress for hours.
-Tag releases fail if the signing secrets are missing or Gatekeeper
-rejects the stapled app. Local `bin/build-macos` stays ad-hoc unless
-`CODESIGN_IDENTITY` is set.
+(`packaging/macos/Omairc.entitlements`; library validation stays on). Version
+tags and workflow_dispatch run `bin/notarize-macos` (`notarytool` + staple),
+then `stapler validate`, `syspolicy_check distribution`, and
+`spctl --assess --type execute --verbose=4`. Pull requests sign only and run
+`syspolicy_check notary-submission`: Apple often holds the first Developer ID
+uploads In Progress for hours. Tag releases fail if the signing secrets are
+missing or Gatekeeper rejects the stapled app. Local `bin/build-macos` stays
+ad-hoc unless `CODESIGN_IDENTITY` is set.

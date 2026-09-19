@@ -77,7 +77,7 @@ zip_app() {
   ditto "$APP" "$STAGE/omairc.app"
   (
     cd "$ROOT/dist"
-    ditto -c -k --sequesterRsrc --keepParent "$STAGE/omairc.app" "$(basename "$ZIP")"
+    ditto -c -k --keepParent "$STAGE/omairc.app" "$(basename "$ZIP")"
   )
   rm -rf -- "$STAGE"
 }

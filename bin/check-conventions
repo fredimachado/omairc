@@ -327,9 +327,42 @@ def check_macos_notarization():
         problems.append(
             "packaging/macos/Omairc.entitlements: hardened runtime must allow "
             "QML JIT")
+    if "disable-library-validation" in entitlements.read_text(
+            encoding="utf-8", errors="replace"):
+        problems.append(
+            "packaging/macos/Omairc.entitlements: leave library validation on; "
+            "Disable Library Validation makes Gatekeeper reject dangling "
+            "LC_RPATH / LC_LOAD_DYLIB paths after a quarantined download")
     build = (ROOT / "bin" / "build-macos").read_text(encoding="utf-8", errors="replace")
     if "bin/sign-macos" not in build:
         problems.append("bin/build-macos: sign through bin/sign-macos")
+    if "scrub_dangling_rpaths" not in build:
+        problems.append(
+            "bin/build-macos: strip absolute LC_RPATH entries before signing "
+            "so a quarantined download is not a dangling-load-command reject")
+    if "PlugIns/sqldrivers" not in build:
+        problems.append(
+            "bin/build-macos: prune Qt SQL plugins; they load Postgres.app / "
+            "Homebrew dylibs outside the bundle")
+    if "bin/check-macos-bundle" not in build or "bin/check-macos-bundle" not in text:
+        problems.append(
+            "call bin/check-macos-bundle from bin/build-macos and "
+            ".github/workflows/macos.yml after Developer ID signing")
+    if "syspolicy_check notary-submission" not in text:
+        problems.append(
+            ".github/workflows/macos.yml: syspolicy_check notary-submission "
+            "after Developer ID signing (catches dangling load commands "
+            "spctl misses without quarantine)")
+    if "syspolicy_check distribution" not in text:
+        problems.append(
+            ".github/workflows/macos.yml: syspolicy_check distribution after "
+            "stapling, before publishing the zip")
+    if re.search(
+            r"codesign --force --deep --options runtime",
+            sign.read_text(encoding="utf-8", errors="replace")):
+        problems.append(
+            "bin/sign-macos: do not codesign --deep for Developer ID; sign "
+            "nested Mach-O inside-out, then the bundle with entitlements")
     if "codesign --verify" not in text:
         problems.append(
             ".github/workflows/macos.yml: keep codesign --verify after Developer ID "

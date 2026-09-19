@@ -11,6 +11,7 @@ on:
       - 'bin/package-macos'
       - 'bin/sign-macos'
       - 'bin/notarize-macos'
+      - 'bin/check-macos-bundle'
       - 'packaging/macos/**'
       - 'omairc.pro'
       - 'qtkeychain.pri'
@@ -32,6 +33,7 @@ on:
       - 'bin/package-macos'
       - 'bin/sign-macos'
       - 'bin/notarize-macos'
+      - 'bin/check-macos-bundle'
       - 'packaging/macos/**'
       - 'omairc.pro'
       - 'qtkeychain.pri'
@@ -470,6 +472,9 @@ jobs:
           app="$GITHUB_WORKSPACE/build/omairc.app"
           codesign --verify --deep --strict --verbose=2 "$app"
           codesign -dvv "$app"
+          codesign -d --entitlements :- "$app"
+          bin/check-macos-bundle "$app"
+          syspolicy_check notary-submission "$app"
 
       - name: Upload app zip
         uses: actions/upload-artifact@v7
@@ -494,7 +499,9 @@ jobs:
         if: env.OMAIRC_NOTARIZED == '1'
         run: |
           set -euo pipefail
-          spctl --assess --type execute --verbose=4 build/omairc.app
+          app="$GITHUB_WORKSPACE/build/omairc.app"
+          syspolicy_check distribution "$app"
+          spctl --assess --type execute --verbose=4 "$app"
 
       - name: Replace zip with stapled app
         if: env.OMAIRC_NOTARIZED == '1'
