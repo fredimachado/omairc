@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.2] - 2026-09-19
+
 ### Fixed
 
 - macOS GitHub zips were notarized and stapled but Gatekeeper still blocked a
@@ -15,6 +17,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Postgres.app / Homebrew libraries. Relocatable builds now keep library
   validation on, strip those dangling load commands, and `syspolicy_check`
   the bundle the way a downloaded copy is assessed.
+- macOS GitHub zips were about 45 MB because aqt's `clang_64` Qt kit is
+  universal and `macdeployqt` copied unused Quick Controls styles, Widgets,
+  and SQL plugins. Relocatable builds now thin to the host architecture and
+  prune those extras, matching the Windows deploy.
 
 ## [0.8.1] - 2026-09-19
 
@@ -248,7 +254,8 @@ First public release: a dead-simple IRC client for Omarchy.
 - Keyboard map, slash-command complete, selectable transcript, and follow-unseen.
 - qmake Unix install tree and a GitHub Releases pacman repository.
 
-[Unreleased]: https://github.com/fredimachado/omairc/compare/v0.8.1...HEAD
+[Unreleased]: https://github.com/fredimachado/omairc/compare/v0.8.2...HEAD
+[0.8.2]: https://github.com/fredimachado/omairc/compare/v0.8.1...v0.8.2
 [0.8.1]: https://github.com/fredimachado/omairc/compare/v0.8.0...v0.8.1
 [0.8.0]: https://github.com/fredimachado/omairc/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/fredimachado/omairc/compare/v0.6.0...v0.7.0
