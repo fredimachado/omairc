@@ -34,6 +34,11 @@ int runBackendTests(int argc, char **argv);
 
 int main(int argc, char **argv)
 {
+#if defined(Q_OS_MACOS)
+    // SecureTransport otherwise imports the loopback TLS key into the login
+    // keychain and can block protocol_tests on a permission dialog.
+    qputenv("QT_SSL_USE_TEMPORARY_KEYCHAIN", "1");
+#endif
     QCoreApplication app(argc, argv);
     if (qEnvironmentVariableIsSet("OMAIRC_TEST_SI_SECONDARY")) {
         SingleInstance secondary;
