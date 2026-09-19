@@ -3,4 +3,19 @@
 # Tag releases as v plus this string. Letter suffixes (alpha, beta, rc)
 # compare older than the final 0.8.0, so pacman upgrades cleanly.
 VERSION = 0.8.0
-DEFINES += OMAIRC_VERSION=\\\"$$VERSION\\\"
+
+# Write a generated header so incremental builds recompile objects that embed
+# the version when VERSION changes. Regeneration is content-compared so an
+# unchanged version does not touch the file and recompile the world.
+isEmpty(OMAIRC_ROOT) {
+    exists($$PWD/version.pri): OMAIRC_ROOT = $$PWD
+    else:exists($$PWD/../version.pri): OMAIRC_ROOT = $$PWD/..
+    else:exists($$PWD/../../version.pri): OMAIRC_ROOT = $$PWD/../..
+    else:error("Cannot locate repository root for version.pri")
+}
+
+OMAIRC_VERSION_HEADER = $$OUT_PWD/omaircversion.h
+system("$$OMAIRC_ROOT/bin/gen-omaircversion-h $$VERSION $$shell_quote($$OMAIRC_VERSION_HEADER)")
+
+INCLUDEPATH += $$OUT_PWD
+HEADERS += $$OMAIRC_VERSION_HEADER

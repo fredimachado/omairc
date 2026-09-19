@@ -1,0 +1,25 @@
+#!/usr/bin/env sh
+set -eu
+
+if [ "$#" -ne 2 ]; then
+  echo "usage: $0 <version> <output-path>" >&2
+  exit 1
+fi
+
+version="$1"
+out="$2"
+
+wanted="#ifndef OMAIRC_VERSION_H
+#define OMAIRC_VERSION_H
+#define OMAIRC_VERSION \"$version\"
+#endif"
+
+if [ -f "$out" ] && [ "$(cat "$out")" = "$wanted" ]; then
+  exit 0
+fi
+
+printf '%s\n' \
+  '#ifndef OMAIRC_VERSION_H' \
+  '#define OMAIRC_VERSION_H' \
+  "#define OMAIRC_VERSION \"$version\"" \
+  '#endif' >"$out"

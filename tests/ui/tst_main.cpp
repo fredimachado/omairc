@@ -10,9 +10,7 @@
 #include <QtQml>
 #include <QtQuickTest>
 
-#ifndef OMAIRC_VERSION
-#error "Build with version.pri so OMAIRC_VERSION is defined"
-#endif
+#include "omaircversion.h"
 
 class SeededQmlSetup : public QObject
 {

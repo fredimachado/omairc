@@ -2,10 +2,7 @@
 
 #include "omaircipc.h"
 #include "singleinstance.h"
-
-#ifndef OMAIRC_VERSION
-#error "Build with omairc.pro so OMAIRC_VERSION is defined"
-#endif
+#include "omaircversion.h"
 
 #include <QCoreApplication>
 #include <QElapsedTimer>

@@ -3,6 +3,7 @@
 #include <variant>
 
 #include "omairccli.h"
+#include "omaircversion.h"
 
 class OmaircCliTest : public QObject
 {
