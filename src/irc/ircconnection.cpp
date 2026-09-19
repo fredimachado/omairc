@@ -5,6 +5,8 @@
 
 #include <algorithm>
 
+#include <QVariantMap>
+
 namespace
 {
 IrcTransport *defaultTransport()
@@ -62,7 +64,7 @@ QVariant NetworkListModel::data(const QModelIndex &index, int role) const
     }
 }
 
-QHash<int, QByteArray> NetworkListModel::roleNames() const
+QHash<int, QByteArray> NetworkListModel::staticRoleNames()
 {
     return {
         {NetworkIdRole, "networkId"},
@@ -72,6 +74,38 @@ QHash<int, QByteArray> NetworkListModel::roleNames() const
         {IconColorRole, "iconColor"},
         {IconUrlRole, "iconUrl"},
     };
+}
+
+QHash<int, QByteArray> NetworkListModel::roleNames() const
+{
+    return staticRoleNames();
+}
+
+QVariantMap NetworkListModel::get(int row) const
+{
+    QVariantMap result;
+    if (row < 0 || row >= rowCount())
+        return result;
+    const QModelIndex idx = index(row, 0);
+    const auto names = staticRoleNames();
+    for (auto it = names.cbegin(); it != names.cend(); ++it)
+        result.insert(QString::fromUtf8(it.value()), data(idx, it.key()));
+    return result;
+}
+
+QVariant NetworkListModel::field(int row, const QString &name) const
+{
+    static const QHash<QString, int> roles = [] {
+        QHash<QString, int> byName;
+        const QHash<int, QByteArray> names = NetworkListModel::staticRoleNames();
+        for (auto it = names.cbegin(); it != names.cend(); ++it)
+            byName.insert(QString::fromUtf8(it.value()), it.key());
+        return byName;
+    }();
+    const auto role = roles.constFind(name);
+    if (role == roles.cend())
+        return {};
+    return data(index(row, 0), role.value());
 }
 
 void NetworkListModel::resetRows()

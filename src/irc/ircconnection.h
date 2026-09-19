@@ -10,6 +10,8 @@
 #include <QMap>
 #include <QObject>
 #include <QString>
+#include <QVariant>
+#include <QVariantMap>
 #include <QVector>
 
 #include <functional>
@@ -36,9 +38,13 @@ public:
 
     explicit NetworkListModel(IrcConnection &owner, QObject *parent = nullptr);
 
+    static QHash<int, QByteArray> staticRoleNames();
+
     int rowCount(const QModelIndex &parent = QModelIndex()) const override;
     QVariant data(const QModelIndex &index, int role) const override;
     QHash<int, QByteArray> roleNames() const override;
+    Q_INVOKABLE QVariantMap get(int row) const;
+    Q_INVOKABLE QVariant field(int row, const QString &name) const;
 
     void resetRows();
 
