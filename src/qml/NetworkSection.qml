@@ -17,7 +17,6 @@ Column {
     property var irc: null
     property var networkConsole: null
     property var avatarStore: null
-    property alias headerItem: networkHeader
 
     signal statusRequested(string networkId)
     signal editRequested(string networkId)

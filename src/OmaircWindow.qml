@@ -1081,16 +1081,6 @@ ApplicationWindow {
         });
     }
 
-    function activateConversationItem(row) {
-        if (!row)
-            return;
-        selectConversation(row.conversationName, row.networkId);
-        Qt.callLater(function() {
-            if (win)
-                win.revealSidebarRow(row);
-        });
-    }
-
     function jumpToNextUnread() {
         var rows = sidebarConversationRows();
         if (rows.length === 0)
@@ -2349,7 +2339,7 @@ ApplicationWindow {
                                         && model.networkId === liveNet.networkId
                                     width: sidebar.width
                                     height: visible ? win.scaledSize(36) : 0
-                                    onActivated: win.activateConversationItem(channelRow)
+                                    onActivated: win.activateSidebarConversation(channelRow)
                                 }
                             }
 
@@ -2404,7 +2394,7 @@ ApplicationWindow {
                                         && model.networkId === liveNet.networkId
                                     width: sidebar.width
                                     height: visible ? win.scaledSize(36) : 0
-                                    onActivated: win.activateConversationItem(directRow)
+                                    onActivated: win.activateSidebarConversation(directRow)
                                 }
                             }
                         }

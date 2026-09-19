@@ -30,13 +30,9 @@ Item {
     Accessible.name: conversationName
     Accessible.description: typing ? "Typing" : ""
     Accessible.role: Accessible.Button
-    Accessible.onPressAction: activate()
+    Accessible.onPressAction: conversationRow.activated()
     width: parent ? parent.width : 0
     height: conversationRow.style.scaledSize(36)
-
-    function activate() {
-        conversationRow.activated();
-    }
 
     Rectangle {
         anchors.fill: parent
@@ -197,6 +193,6 @@ Item {
         anchors.fill: parent
         hoverEnabled: true
         cursorShape: Qt.PointingHandCursor
-        onClicked: conversationRow.activate()
+        onClicked: conversationRow.activated()
     }
 }
