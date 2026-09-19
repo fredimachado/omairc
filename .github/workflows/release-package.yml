@@ -88,9 +88,11 @@ jobs:
         run: |
           set -euo pipefail
           pkgver=$(./bin/version)
+          source_tar=$(mktemp "/tmp/omairc-${pkgver}.XXXXXX.tar.gz")
           tar --exclude='.git' --exclude='.arena-omairc-pacman' \
-            -czf "omairc-${pkgver}.tar.gz" \
+            -czf "$source_tar" \
             --transform "s,^\.,omairc-${pkgver}," .
+          mv "$source_tar" "omairc-${pkgver}.tar.gz"
           sed -i "s|^source=.*|source=(\"omairc-${pkgver}.tar.gz\")|" PKGBUILD
           if [[ "$GITHUB_REF" == refs/heads/master ]]; then
             sed -i "s/^pkgrel=.*/pkgrel=${OMAIRC_ARCH_PKGREL}/" PKGBUILD
