@@ -25,4 +25,8 @@ make -j"$JOBS"
 ASAN_OPTIONS="${ASAN_OPTIONS:-abort_on_error=1:detect_leaks=0}"
 UBSAN_OPTIONS="${UBSAN_OPTIONS:-halt_on_error=1:print_stacktrace=1}"
 export ASAN_OPTIONS UBSAN_OPTIONS
+if [ "$(uname -s)" = Darwin ]; then
+  # SecureTransport otherwise imports the loopback TLS key into the login keychain.
+  export QT_SSL_USE_TEMPORARY_KEYCHAIN=1
+fi
 ./protocol_tests
