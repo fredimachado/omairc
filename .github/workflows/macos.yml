@@ -360,6 +360,15 @@ jobs:
               exit 1
               ;;
           esac
+          app="$GITHUB_WORKSPACE/build/omairc.app"
+          gui="$app/Contents/Frameworks/QtGui.framework/Versions/A/QtGui"
+          test -f "$gui"
+          gui_archs=$(lipo -archs "$gui")
+          echo "QtGui archs: $gui_archs"
+          test "$gui_archs" = "$EXPECTED_MACHO_ARCH"
+          test ! -d "$app/Contents/Frameworks/QtWidgets.framework"
+          test ! -d "$app/Contents/PlugIns/sqldrivers"
+          test ! -f "$app/Contents/PlugIns/quick/libqtquickcontrols2nativestyleplugin.dylib"
           version=$("$exe" --version 2>&1)
           expected="omairc $OMAIRC_DISPLAY_VERSION"
           test "$version" = "$expected" || {

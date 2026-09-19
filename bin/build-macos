@@ -4,12 +4,16 @@ set -eu
 prune_qt_deploy() {
   app="$1"
   rel="$app/Contents"
+  # qmlimportscanner still copies every Controls style. Keep Material plus
+  # Basic as a load fallback, matching bin/build.bat.
   for dir in \
     "$rel/Resources/qml/QtQuick/Controls/FluentWinUI3" \
     "$rel/Resources/qml/QtQuick/Controls/Fusion" \
     "$rel/Resources/qml/QtQuick/Controls/Imagine" \
     "$rel/Resources/qml/QtQuick/Controls/Universal" \
     "$rel/Resources/qml/QtQuick/Controls/Windows" \
+    "$rel/Resources/qml/QtQuick/Controls/iOS" \
+    "$rel/Resources/qml/QtQuick/Controls/macOS" \
     "$rel/Resources/qml/QtQuick/NativeStyle" \
     "$rel/Resources/qml/QtQuick/Effects" \
     "$rel/Resources/qml/QtQuick/Shapes" \
@@ -20,14 +24,95 @@ prune_qt_deploy() {
     "$rel/Resources/qml/QtQuick/tooling" \
     "$rel/Resources/qml/QtQuick/VectorImage" \
     "$rel/Resources/qml/QtQuick/Controls/designer" \
-    "$rel/PlugIns/quick/libquickcontrols2fusionstyleplugin.dylib" \
-    "$rel/PlugIns/quick/libquickcontrols2imaginestyleplugin.dylib" \
-    "$rel/PlugIns/quick/libquickcontrols2universalstyleplugin.dylib" \
-    "$rel/PlugIns/quick/libquickcontrols2windowsstyleplugin.dylib" \
-    "$rel/PlugIns/quick/libqtquickcontrols2fluentwinui3styleplugin.dylib" \
-    "$rel/PlugIns/sqldrivers"
+    "$rel/Resources/qml/QtQml/XmlListModel" \
+    "$rel/PlugIns/sqldrivers" \
+    "$rel/PlugIns/styles" \
+    "$rel/Frameworks/QtQuickControls2Imagine.framework" \
+    "$rel/Frameworks/QtQuickControls2ImagineStyleImpl.framework" \
+    "$rel/Frameworks/QtQuickControls2Fusion.framework" \
+    "$rel/Frameworks/QtQuickControls2FusionStyleImpl.framework" \
+    "$rel/Frameworks/QtQuickControls2Universal.framework" \
+    "$rel/Frameworks/QtQuickControls2UniversalStyleImpl.framework" \
+    "$rel/Frameworks/QtQuickControls2FluentWinUI3StyleImpl.framework" \
+    "$rel/Frameworks/QtQuickControls2IOSStyleImpl.framework" \
+    "$rel/Frameworks/QtQuickControls2MacOSStyleImpl.framework" \
+    "$rel/Frameworks/QtQuickDialogs2.framework" \
+    "$rel/Frameworks/QtQuickDialogs2QuickImpl.framework" \
+    "$rel/Frameworks/QtQuickDialogs2Utils.framework" \
+    "$rel/Frameworks/QtQuickParticles.framework" \
+    "$rel/Frameworks/QtQuickEffects.framework" \
+    "$rel/Frameworks/QtQuickShapes.framework" \
+    "$rel/Frameworks/QtQuickVectorImage.framework" \
+    "$rel/Frameworks/QtQuickVectorImageGenerator.framework" \
+    "$rel/Frameworks/QtSql.framework" \
+    "$rel/Frameworks/QtQmlXmlListModel.framework" \
+    "$rel/Frameworks/QtQmlLocalStorage.framework" \
+    "$rel/Frameworks/QtWidgets.framework"
   do
     rm -rf -- "$dir"
+  done
+  # macdeployqt names these libqtquickcontrols2* (the previous prune looked
+  # for libquickcontrols2* and left the unused style plugins in the zip).
+  for plugin in \
+    "$rel/PlugIns/quick/libqtquickcontrols2fusionstyleplugin.dylib" \
+    "$rel/PlugIns/quick/libqtquickcontrols2fusionstyleimplplugin.dylib" \
+    "$rel/PlugIns/quick/libqtquickcontrols2imaginestyleplugin.dylib" \
+    "$rel/PlugIns/quick/libqtquickcontrols2imaginestyleimplplugin.dylib" \
+    "$rel/PlugIns/quick/libqtquickcontrols2universalstyleplugin.dylib" \
+    "$rel/PlugIns/quick/libqtquickcontrols2universalstyleimplplugin.dylib" \
+    "$rel/PlugIns/quick/libqtquickcontrols2fluentwinui3styleplugin.dylib" \
+    "$rel/PlugIns/quick/libqtquickcontrols2fluentwinui3styleimplplugin.dylib" \
+    "$rel/PlugIns/quick/libqtquickcontrols2windowsstyleplugin.dylib" \
+    "$rel/PlugIns/quick/libqtquickcontrols2iosstyleplugin.dylib" \
+    "$rel/PlugIns/quick/libqtquickcontrols2iosstyleimplplugin.dylib" \
+    "$rel/PlugIns/quick/libqtquickcontrols2macosstyleplugin.dylib" \
+    "$rel/PlugIns/quick/libqtquickcontrols2macosstyleimplplugin.dylib" \
+    "$rel/PlugIns/quick/libqtquickcontrols2nativestyleplugin.dylib" \
+    "$rel/PlugIns/quick/libqtquickdialogsplugin.dylib" \
+    "$rel/PlugIns/quick/libqtquickdialogs2quickimplplugin.dylib" \
+    "$rel/PlugIns/quick/libparticlesplugin.dylib" \
+    "$rel/PlugIns/quick/libeffectsplugin.dylib" \
+    "$rel/PlugIns/quick/libqmlshapesplugin.dylib" \
+    "$rel/PlugIns/quick/libqquickvectorimageplugin.dylib" \
+    "$rel/PlugIns/quick/libqmllocalstorageplugin.dylib" \
+    "$rel/PlugIns/quick/libqmlxmllistmodelplugin.dylib" \
+    "$rel/PlugIns/quick/libquicktoolingplugin.dylib" \
+    "$rel/PlugIns/imageformats/libqgif.dylib" \
+    "$rel/PlugIns/imageformats/libqico.dylib"
+  do
+    rm -f -- "$plugin"
+  done
+  if [ -d "$rel/Resources/qml" ]; then
+    find "$rel/Resources/qml" -name '*.qmltypes' -delete
+  fi
+}
+
+# aqt's clang_64 kit is universal. macdeployqt copies both slices, so the
+# "macos-arm64" zip was shipping an unused x86_64 copy of every Qt library.
+thin_host_arch() {
+  app="$1"
+  host="$(uname -m)"
+  case "$host" in
+    arm64|x86_64) ;;
+    *) return 0 ;;
+  esac
+  find "$app" -type f | while IFS= read -r file; do
+    archs=$(lipo -archs "$file" 2>/dev/null || true)
+    [ -n "$archs" ] || continue
+    case "$archs" in
+      *"$host"*) ;;
+      *) continue ;;
+    esac
+    case "$archs" in
+      *" "*) ;;
+      *) continue ;;
+    esac
+    tmp="$file.thin.$$"
+    if lipo "$file" -thin "$host" -output "$tmp"; then
+      mv "$tmp" "$file"
+    else
+      rm -f "$tmp"
+    fi
   done
 }
 
@@ -233,6 +318,7 @@ else
     prune_qt_deploy "$APP"
   fi
   embed_qtkeychain "$APP"
+  thin_host_arch "$APP"
   scrub_dangling_rpaths "$APP"
   sign_app "$APP"
   "$ROOT/bin/check-macos-bundle" "$APP"
