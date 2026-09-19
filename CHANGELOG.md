@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- macOS GitHub zips were notarized and stapled but Gatekeeper still blocked a
+  quarantined download. The app disabled library validation while shipping a
+  QtKeychain `LC_RPATH` into the CI Qt prefix and unused SQL plugins that load
+  Postgres.app / Homebrew libraries. Relocatable builds now keep library
+  validation on, strip those dangling load commands, and `syspolicy_check`
+  the bundle the way a downloaded copy is assessed.
+
 ## [0.8.1] - 2026-09-19
 
 ### Added

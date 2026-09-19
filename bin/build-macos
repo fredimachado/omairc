@@ -24,7 +24,8 @@ prune_qt_deploy() {
     "$rel/PlugIns/quick/libquickcontrols2imaginestyleplugin.dylib" \
     "$rel/PlugIns/quick/libquickcontrols2universalstyleplugin.dylib" \
     "$rel/PlugIns/quick/libquickcontrols2windowsstyleplugin.dylib" \
-    "$rel/PlugIns/quick/libqtquickcontrols2fluentwinui3styleplugin.dylib"
+    "$rel/PlugIns/quick/libqtquickcontrols2fluentwinui3styleplugin.dylib" \
+    "$rel/PlugIns/sqldrivers"
   do
     rm -rf -- "$dir"
   done
@@ -84,6 +85,49 @@ embed_qtkeychain() {
         install_name_tool -change "$dep" "$id" "$exe" 2>/dev/null || true
         ;;
     esac
+  done
+  # CMake leaves an absolute Qt prefix LC_RPATH. Gatekeeper treats that as a
+  # dangling load-command path once the zip is quarantined.
+  otool -l "$dest" | awk '
+    $1 == "cmd" && $2 == "LC_RPATH" { pending = 1; next }
+    pending && $1 == "path" {
+      print $2
+      pending = 0
+    }
+  ' | while IFS= read -r rpath; do
+    case "$rpath" in
+      /*)
+        install_name_tool -delete_rpath "$rpath" "$dest"
+        ;;
+    esac
+  done
+  if ! otool -l "$dest" | grep -q 'path @loader_path'; then
+    install_name_tool -add_rpath "@loader_path" "$dest"
+  fi
+}
+
+scrub_dangling_rpaths() {
+  app="$1"
+  find "$app" -type f ! -path '*/_CodeSignature/*' | while IFS= read -r bin; do
+    case "$(file -b "$bin" 2>/dev/null || true)" in
+      Mach-O*) ;;
+      *) continue ;;
+    esac
+    otool -l "$bin" | awk '
+      $1 == "cmd" && $2 == "LC_RPATH" { pending = 1; next }
+      pending && $1 == "path" {
+        print $2
+        pending = 0
+      }
+    ' | while IFS= read -r rpath; do
+      case "$rpath" in
+        /System/*|/usr/lib/*|@*) continue ;;
+        /*)
+          echo "Removing dangling rpath $rpath from $bin"
+          install_name_tool -delete_rpath "$rpath" "$bin"
+          ;;
+      esac
+    done
   done
 }
 
@@ -189,7 +233,9 @@ else
     prune_qt_deploy "$APP"
   fi
   embed_qtkeychain "$APP"
+  scrub_dangling_rpaths "$APP"
   sign_app "$APP"
+  "$ROOT/bin/check-macos-bundle" "$APP"
 fi
 
 ln -sf "omairc.app/Contents/MacOS/omairc" "$BUILD_DIR/omairc"

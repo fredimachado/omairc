@@ -55,10 +55,27 @@ if [ -n "${APPLE_TEAM_ID:-}" ]; then
   esac
 fi
 
+sign_one() {
+  echo "  $1"
+  codesign --force --options runtime --timestamp --sign "$identity" "$1"
+}
+
+# Deepest paths first so nested code is signed before its parent bundle.
+depth_first() {
+  awk '{ print gsub(/\//, "/") "\t" $0 }' | sort -nr | cut -f2-
+}
+
 echo "Signing $APP with $identity"
-# Nested code first, no entitlements. Then the bundle with the app entitlements
-# so QML JIT is allowed and nested Qt/Keychain dylibs keep their own signatures.
-codesign --force --deep --options runtime --timestamp --sign "$identity" "$APP"
+# Nested code first, no app entitlements. Do not use --deep: it can stamp the
+# app entitlements onto Qt plugins and is the path Apple documents as broken.
+find "$APP/Contents" -name '*.dylib' -type f | depth_first | while IFS= read -r f; do
+  [ -n "$f" ] || continue
+  sign_one "$f"
+done
+find "$APP/Contents" -name '*.framework' -type d | depth_first | while IFS= read -r f; do
+  [ -n "$f" ] || continue
+  sign_one "$f"
+done
 codesign --force --options runtime --timestamp \
   --entitlements "$ENTITLEMENTS" --sign "$identity" "$APP"
 codesign --verify --deep --strict --verbose=2 "$APP"
