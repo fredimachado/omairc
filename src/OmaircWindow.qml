@@ -14,6 +14,7 @@ ApplicationWindow {
     property var connection: null
     property var slashCommands: null
     property var avatarStore: null
+    readonly property bool peerAvatarsEnabled: !irc || irc.loadPeerAvatars !== false
     property bool connectionSheetOpen: false
     property string connectionSheetTab: "connection"
     property bool connectionRemoveArmed: false
@@ -191,25 +192,6 @@ ApplicationWindow {
     Material.accent: accentColor
     color: pageColor
 
-    component TranscriptNickHit: MouseArea {
-        required property string nick
-        property bool nickOpensDirect: false
-
-        objectName: "transcriptNickHit"
-        anchors.fill: parent
-        enabled: nickOpensDirect && nick.length > 0 && nick !== win.selfNick
-        hoverEnabled: true
-        cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
-        Accessible.role: Accessible.Button
-        Accessible.name: nick
-        Accessible.ignored: !enabled
-        Accessible.onPressAction: {
-            if (enabled)
-                win.openDirectMessage(nick);
-        }
-        onClicked: win.openDirectMessage(nick)
-    }
-
     component PlainUrlHit: MouseArea {
         required property Item edit
         property bool inviteHits: false
@@ -255,149 +237,6 @@ ApplicationWindow {
         text: "X"
         font.family: win.transcriptBodyFont.family
         font.pixelSize: win.transcriptBodyFont.pixelSize
-    }
-
-    component NickGlyph: Rectangle {
-        id: glyph
-
-        property string nick: ""
-        property string avatarUrl: ""
-        property bool replayed: false
-        property bool dimmed: false
-        property string initialObjectName: "nickGlyphInitial"
-        property color ink: glyph.replayed ? win.mutedColor : win.nickColor(glyph.nick)
-        property color fill: win.mixColors(win.pageColor, ink, win.darkMode ? 0.23 : 0.16)
-        property int fontPixelSize: win.scaledSize(11)
-
-        radius: width / 2
-        color: fill
-        opacity: dimmed ? 0.62 : 1
-        property int avatarEpoch: 0
-
-        readonly property string storeSource: {
-            glyph.avatarEpoch // re-run when avatarStore.ready(rawUrl) fires
-            if (!win.avatarStore || glyph.avatarUrl.length === 0 || width <= 0)
-                return ""
-            if (win.irc && win.irc.loadPeerAvatars === false)
-                return ""
-            return win.avatarStore.source(glyph.avatarUrl, Math.round(width))
-        }
-
-        Image {
-            id: photo
-            objectName: "nickGlyphPhoto"
-            anchors.fill: parent
-            visible: status === Image.Ready
-            asynchronous: true
-            cache: true // avatarEpoch rebinding covers ready(); sourceSize drives decode
-            fillMode: Image.PreserveAspectCrop
-            source: glyph.storeSource
-            sourceSize: Qt.size(Math.round(width), Math.round(height))
-        }
-
-        Text {
-            objectName: glyph.initialObjectName
-            visible: photo.status !== Image.Ready
-            anchors.centerIn: parent
-            text: win.initials(glyph.nick)
-            color: glyph.ink
-            font.family: "iA Writer Mono S"
-            font.bold: true
-            font.pixelSize: glyph.fontPixelSize
-        }
-
-        Connections {
-            target: win.avatarStore
-            function onReady(rawUrl) {
-                if (rawUrl !== glyph.avatarUrl)
-                    return
-                glyph.avatarEpoch += 1
-            }
-        }
-    }
-
-    component MessageAvatar: Item {
-        id: avatar
-
-        required property string author
-        required property bool replayed
-        property bool nickOpensDirect: false
-        property string avatarUrl: ""
-
-        anchors.left: parent.left
-        anchors.leftMargin: win.scaledSize(24)
-        anchors.top: parent.top
-        anchors.topMargin: win.scaledSize(9)
-        width: win.scaledSize(34)
-        height: width
-
-        NickGlyph {
-            anchors.fill: parent
-            nick: avatar.author
-            avatarUrl: avatar.avatarUrl
-            replayed: avatar.replayed
-            initialObjectName: "messageAvatarInitial"
-            fontPixelSize: win.scaledSize(13)
-        }
-
-        TranscriptNickHit {
-            nick: avatar.author
-            nickOpensDirect: avatar.nickOpensDirect
-        }
-    }
-
-    component MessageHeader: Row {
-        id: header
-
-        required property string author
-        required property string time
-        required property bool replayed
-        property bool nickOpensDirect: false
-        property bool bot: false
-
-        anchors.left: parent.left
-        anchors.leftMargin: win.scaledSize(70)
-        anchors.top: parent.top
-        anchors.topMargin: win.scaledSize(8)
-        spacing: win.scaledSize(9)
-
-        Row {
-            id: authorRow
-            spacing: header.bot ? win.scaledSize(4) : 0
-
-            Text {
-                id: authorLabel
-                objectName: "messageAuthor"
-                text: header.author
-                color: header.replayed ? win.mutedColor : win.nickColor(header.author)
-                font.family: "iA Writer Mono S"
-                font.bold: true
-                font.pixelSize: win.scaledSize(12)
-
-                TranscriptNickHit {
-                    nick: header.author
-                    nickOpensDirect: header.nickOpensDirect
-                }
-            }
-
-            BotMark {
-                style: win.style
-                objectName: "message-bot-" + header.author
-                shown: header.bot
-            }
-        }
-
-        Text {
-            objectName: "messageTime"
-            text: header.time
-            color: win.mutedColor
-            font.family: "iA Writer Mono S"
-            font.pixelSize: win.scaledSize(9)
-            // Row has no glyph baseline (baselineOffset stays 0). Anchoring to
-            // authorRow.baseline lifts the smaller stamp on Core Text; match
-            // the author label inside the Row instead.
-            y: authorLabel.baselineOffset - baselineOffset
-        }
     }
 
     function scaledSize(pixels) {
@@ -2666,6 +2505,9 @@ ApplicationWindow {
 
             NickGlyph {
                 anchors.fill: parent
+                style: win.style
+                avatarStore: win.avatarStore
+                loadPeerAvatars: win.peerAvatarsEnabled
                 nick: conversationRow.conversationName
                 avatarUrl: conversationRow.avatar
                 fill: win.mixColors(win.pageColor,
@@ -3271,6 +3113,9 @@ ApplicationWindow {
                     NickGlyph {
                         objectName: "selfNickGlyph"
                         anchors.fill: parent
+                        style: win.style
+                        avatarStore: win.avatarStore
+                        loadPeerAvatars: win.peerAvatarsEnabled
                         nick: win.selfNick
                         avatarUrl: win.peerAvatar(win.selfNick)
                         fill: win.mixColors(win.pageColor, win.nickColor(win.selfNick), 0.24)
@@ -3615,20 +3460,28 @@ ApplicationWindow {
                     MessageAvatar {
                         objectName: "messageAvatar"
                         visible: messageDelegate.isChat && !messageDelegate.grouped
+                        style: win.style
+                        avatarStore: win.avatarStore
+                        loadPeerAvatars: win.peerAvatarsEnabled
+                        selfNick: win.selfNick
                         author: messageDelegate.author
                         avatarUrl: messageDelegate.authorAvatar
                         replayed: messageDelegate.replayed
                         nickOpensDirect: true
+                        onDirectMessageRequested: function(nick) { win.openDirectMessage(nick) }
                     }
 
                     MessageHeader {
                         objectName: "messageHeader"
                         visible: messageDelegate.isChat && !messageDelegate.grouped
+                        style: win.style
+                        selfNick: win.selfNick
                         author: messageDelegate.author
                         time: messageDelegate.time
                         replayed: messageDelegate.replayed
                         nickOpensDirect: true
                         bot: messageDelegate.authorBot
+                        onDirectMessageRequested: function(nick) { win.openDirectMessage(nick) }
                     }
 
                     TextEdit {
@@ -3718,18 +3571,26 @@ ApplicationWindow {
                     MessageAvatar {
                         objectName: "typingTranscriptAvatar"
                         visible: typingRow.show && !typingRow.grouped
+                        style: win.style
+                        avatarStore: win.avatarStore
+                        loadPeerAvatars: win.peerAvatarsEnabled
+                        selfNick: win.selfNick
                         author: typingRow.nick
                         avatarUrl: win.peerAvatar(typingRow.nick)
                         replayed: false
+                        onDirectMessageRequested: function(nick) { win.openDirectMessage(nick) }
                     }
 
                     MessageHeader {
                         objectName: "typingTranscriptHeader"
                         visible: typingRow.show && !typingRow.grouped
+                        style: win.style
+                        selfNick: win.selfNick
                         author: typingRow.nick
                         time: ""
                         replayed: false
                         bot: win.peerBot(typingRow.nick)
+                        onDirectMessageRequested: function(nick) { win.openDirectMessage(nick) }
                     }
 
                     TypingDots {
@@ -4242,6 +4103,9 @@ ApplicationWindow {
 
                         NickGlyph {
                             anchors.fill: parent
+                            style: win.style
+                            avatarStore: win.avatarStore
+                            loadPeerAvatars: win.peerAvatarsEnabled
                             nick: memberDelegate.nick
                             avatarUrl: memberDelegate.avatar
                             dimmed: memberDelegate.away
@@ -6118,6 +5982,9 @@ ApplicationWindow {
 
                         NickGlyph {
                             anchors.fill: parent
+                            style: win.style
+                            avatarStore: win.avatarStore
+                            loadPeerAvatars: win.peerAvatarsEnabled
                             nick: nickRow.nick
                             avatarUrl: nickRow.avatar
                             dimmed: nickRow.showAway
