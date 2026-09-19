@@ -1081,6 +1081,16 @@ ApplicationWindow {
         });
     }
 
+    function activateConversationItem(row) {
+        if (!row)
+            return;
+        selectConversation(row.conversationName, row.networkId);
+        Qt.callLater(function() {
+            if (win)
+                win.revealSidebarRow(row);
+        });
+    }
+
     function jumpToNextUnread() {
         var rows = sidebarConversationRows();
         if (rows.length === 0)
@@ -2213,751 +2223,6 @@ ApplicationWindow {
         }
     }
 
-    component NetworkSection: Column {
-        id: section
-
-        property string networkId
-        property string displayName
-        property int iconColor: -1
-        property string iconUrl: ""
-        property string statusText: ""
-        property int alerts: 0
-        property int unread: 0
-        property bool mention: false
-        property bool showEdit: win.connection !== null
-        property alias headerItem: networkHeader
-        readonly property bool headerFocused: section.networkId.length > 0
-            && section.networkId === win.sidebarNetworkFocusId
-
-        width: parent ? parent.width : 0
-        spacing: 0
-
-        readonly property color statusPulse: win.irc ? win.mixColors(win.pageColor, win.accentColor, 0) : "transparent"
-        readonly property string liveStatus: {
-            var pulse = win.irc ? win.irc.connectionStatus : "";
-            if (!win.irc)
-                return section.statusText;
-            var error = win.irc.lastErrorFor ? win.irc.lastErrorFor(section.networkId) : "";
-            if (error && error.length > 0)
-                return error;
-            return win.irc.connectionStatusFor
-                ? win.irc.connectionStatusFor(section.networkId)
-                : pulse;
-        }
-        readonly property int liveUnread: {
-            var epoch = win.irc ? win.irc.conversationEpoch : 0;
-            var pulse = win.irc ? win.irc.connectionStatus : "";
-            if (!win.irc)
-                return section.unread;
-            return win.irc.unreadCountFor ? win.irc.unreadCountFor(section.networkId) : 0;
-        }
-        readonly property bool liveMention: {
-            var epoch = win.irc ? win.irc.conversationEpoch : 0;
-            var pulse = win.irc ? win.irc.connectionStatus : "";
-            if (!win.irc)
-                return section.mention;
-            return win.irc.mentionFor ? win.irc.mentionFor(section.networkId) : false;
-        }
-        readonly property int liveAlerts: {
-            var pulse = win.networkConsole ? win.networkConsole.alerts : 0;
-            if (!win.networkConsole)
-                return section.alerts;
-            return win.networkConsole.alertsFor
-                ? win.networkConsole.alertsFor(section.networkId)
-                : pulse;
-        }
-
-        Item {
-            id: networkHeader
-            objectName: "networkHeader-" + section.networkId
-            width: parent.width
-            height: win.scaledSize(64)
-
-            Rectangle {
-                anchors.fill: parent
-                anchors.leftMargin: win.scaledSize(8)
-                anchors.rightMargin: win.scaledSize(8)
-                radius: win.scaledSize(7)
-                color: section.headerFocused
-                    ? win.raisedColor
-                    : networkHeaderButton.containsMouse ? win.hoverColor : "transparent"
-            }
-
-            Rectangle {
-                visible: section.headerFocused
-                anchors.left: parent.left
-                anchors.leftMargin: win.scaledSize(8)
-                anchors.verticalCenter: parent.verticalCenter
-                width: win.scaledSize(3)
-                height: win.scaledSize(18)
-                radius: width
-                color: win.accentColor
-            }
-
-            MouseArea {
-                id: networkHeaderButton
-                objectName: "networkHeaderButton-" + section.networkId
-                z: 1
-                anchors.left: parent.left
-                anchors.right: networkEditButton.left
-                anchors.top: parent.top
-                anchors.bottom: parent.bottom
-                hoverEnabled: true
-                cursorShape: Qt.PointingHandCursor
-                onClicked: win.openNetworkStatus(section.networkId)
-            }
-
-            Rectangle {
-                id: networkIconRect
-                objectName: "networkIcon-" + section.networkId
-                anchors.left: parent.left
-                anchors.leftMargin: win.scaledSize(18)
-                anchors.verticalCenter: parent.verticalCenter
-                width: win.scaledSize(28)
-                height: width
-                radius: win.scaledSize(8)
-                color: section.iconColor >= 0 ? win.paletteColor(section.iconColor)
-                                              : win.accentColor
-                property int avatarEpoch: 0
-
-                readonly property string storeSource: {
-                    networkIconRect.avatarEpoch
-                    if (!win.avatarStore || section.iconUrl.length === 0 || width <= 0)
-                        return ""
-                    return win.avatarStore.source(section.iconUrl, Math.round(width),
-                                                  "square")
-                }
-
-                Image {
-                    id: networkIconPhoto
-                    objectName: "networkIconPhoto-" + section.networkId
-                    anchors.fill: parent
-                    visible: status === Image.Ready
-                    asynchronous: true
-                    cache: true
-                    fillMode: Image.PreserveAspectCrop
-                    source: networkIconRect.storeSource
-                    sourceSize: Qt.size(Math.round(width), Math.round(height))
-                }
-
-                Text {
-                    objectName: "networkIconInitial-" + section.networkId
-                    visible: networkIconPhoto.status !== Image.Ready
-                    anchors.centerIn: parent
-                    text: section.displayName.length > 0
-                        ? section.displayName.charAt(0).toUpperCase()
-                        : "?"
-                    color: "#ffffff"
-                    font.family: "iA Writer Mono S"
-                    font.bold: true
-                    font.pixelSize: win.scaledSize(14)
-                }
-
-                Connections {
-                    target: win.avatarStore
-                    function onReady(rawUrl) {
-                        if (rawUrl !== section.iconUrl)
-                            return
-                        networkIconRect.avatarEpoch += 1
-                    }
-                }
-            }
-
-            Item {
-                id: networkEditButton
-                objectName: "networkEditButton-" + section.networkId
-                z: 2
-                visible: section.showEdit
-                anchors.right: parent.right
-                anchors.rightMargin: win.scaledSize(10)
-                anchors.verticalCenter: parent.verticalCenter
-                width: visible ? win.scaledSize(28) : 0
-                height: win.scaledSize(28)
-                Accessible.name: "Edit connection"
-                Accessible.role: Accessible.Button
-                Accessible.onPressAction: {
-                    if (win.connection)
-                        win.selectSheetNetwork(section.networkId);
-                    win.connectionSheetOpen = true;
-                }
-
-                Text {
-                    anchors.centerIn: parent
-                    text: "edit"
-                    color: editMouse.containsMouse ? win.inkColor : win.mutedColor
-                    font.family: "iA Writer Mono S"
-                    font.pixelSize: win.scaledSize(9)
-                }
-
-                MouseArea {
-                    id: editMouse
-                    anchors.fill: parent
-                    hoverEnabled: true
-                    cursorShape: Qt.PointingHandCursor
-                    onClicked: {
-                        if (win.connection)
-                            win.selectSheetNetwork(section.networkId);
-                        win.connectionSheetOpen = true;
-                    }
-                }
-            }
-
-            Column {
-                anchors.left: parent.left
-                anchors.leftMargin: win.scaledSize(56)
-                anchors.right: networkEditButton.left
-                anchors.rightMargin: win.scaledSize(8)
-                anchors.verticalCenter: parent.verticalCenter
-                spacing: win.scaledSize(2)
-
-                Row {
-                    width: parent.width
-                    spacing: win.scaledSize(6)
-
-                    Text {
-                        width: Math.max(0, parent.width - (unreadMark.visible ? unreadMark.width + parent.spacing : 0))
-                        text: section.displayName
-                        color: win.inkColor
-                        elide: Text.ElideRight
-                        font.family: "iA Writer Mono S"
-                        font.bold: true
-                        font.pixelSize: win.scaledSize(13)
-                    }
-
-                    Rectangle {
-                        id: unreadMark
-                        objectName: "networkUnreadMark-" + section.networkId
-                        visible: section.liveUnread > 0 || section.liveMention
-                        anchors.verticalCenter: parent.verticalCenter
-                        width: win.scaledSize(7)
-                        height: width
-                        radius: width / 2
-                        color: section.liveMention ? win.accentColor : win.inkColor
-                    }
-                }
-
-                Row {
-                    width: parent.width
-                    spacing: win.scaledSize(6)
-
-                    Rectangle {
-                        anchors.verticalCenter: parent.verticalCenter
-                        width: win.scaledSize(7)
-                        height: width
-                        radius: width / 2
-                        color: section.liveAlerts > 0
-                            ? win.accentColor
-                            : win.presenceMarkColor(section.liveStatus === "Connected"
-                                ? "online" : "offline")
-                    }
-
-                    Text {
-                        width: Math.max(0, parent.width - win.scaledSize(13))
-                        text: section.liveStatus
-                        color: win.mutedColor
-                        elide: Text.ElideRight
-                        font.family: "iA Writer Mono S"
-                        font.pixelSize: win.scaledSize(10)
-                    }
-                }
-            }
-        }
-    }
-
-    component ConversationRow: Item {
-        id: conversationRow
-
-        property string conversationName
-        property int unread: 0
-        property bool mention: false
-        property bool muted: false
-        property bool direct: false
-        property bool typing: false
-        // "online" / "away" / "offline" for a direct message, empty for a
-        // channel. Direct rows reuse the member list's presence source.
-        property string presence: ""
-        property string networkId: ""
-        property string avatar: ""
-        property bool bot: false
-        property string conversationId: networkId + "\n" + conversationName
-
-        objectName: networkId.length > 0
-            ? "conversation-" + networkId + "-" + conversationName
-            : "conversation-" + conversationName
-        Accessible.name: conversationName
-        Accessible.description: typing ? "Typing" : ""
-        Accessible.role: Accessible.Button
-        Accessible.onPressAction: activate()
-        width: parent ? parent.width : 0
-        height: win.scaledSize(36)
-
-        readonly property bool current: conversationId === win.currentConversationId
-            && !win.consoleVisible
-
-        function activate() {
-            win.selectConversation(conversationRow.conversationName,
-                                   conversationRow.networkId);
-            Qt.callLater(function() {
-                if (win)
-                    win.revealSidebarRow(conversationRow);
-            });
-        }
-
-        Rectangle {
-            anchors.fill: parent
-            anchors.leftMargin: win.scaledSize(8)
-            anchors.rightMargin: win.scaledSize(8)
-            radius: win.scaledSize(7)
-            color: conversationRow.current
-                ? win.raisedColor
-                : rowMouse.containsMouse ? win.hoverColor : "transparent"
-        }
-
-        Rectangle {
-            visible: conversationRow.current
-            anchors.left: parent.left
-            anchors.leftMargin: win.scaledSize(8)
-            anchors.verticalCenter: parent.verticalCenter
-            width: win.scaledSize(3)
-            height: win.scaledSize(18)
-            radius: width
-            color: win.accentColor
-        }
-
-        Item {
-            visible: conversationRow.direct
-            anchors.left: parent.left
-            anchors.leftMargin: win.scaledSize(18)
-            anchors.verticalCenter: parent.verticalCenter
-            width: win.scaledSize(22)
-            height: width
-
-            NickGlyph {
-                anchors.fill: parent
-                style: win.style
-                avatarStore: win.avatarStore
-                loadPeerAvatars: win.peerAvatarsEnabled
-                nick: conversationRow.conversationName
-                avatarUrl: conversationRow.avatar
-                fill: win.mixColors(win.pageColor,
-                                    win.nickColor(conversationRow.conversationName),
-                                    0.24)
-                fontPixelSize: win.scaledSize(11)
-            }
-
-            Rectangle {
-                objectName: "conversation-presence-" + conversationRow.networkId
-                    + "-" + conversationRow.conversationName
-                // Other people's away state needs away-notify, exactly like the
-                // member rows. An unknown peer reads as offline, not online.
-                visible: conversationRow.direct && win.awayPresenceVisible
-                anchors.right: parent.right
-                anchors.bottom: parent.bottom
-                width: win.scaledSize(7)
-                height: width
-                radius: width / 2
-                color: win.presenceMarkColor(
-                    conversationRow.presence === "away" ? "away"
-                        : (conversationRow.presence === "online"
-                            ? "online" : "offline"))
-                border.width: win.scaledSize(2)
-                border.color: win.panelColor
-            }
-        }
-
-        Row {
-            anchors.left: parent.left
-            anchors.leftMargin: conversationRow.direct ? win.scaledSize(49) : win.scaledSize(20)
-            anchors.right: rowTrail.left
-            anchors.rightMargin: win.scaledSize(8)
-            anchors.verticalCenter: parent.verticalCenter
-            spacing: win.scaledSize(4)
-
-            Text {
-                objectName: "conversationLabel"
-                width: {
-                    var reserved = (conversationRow.direct && conversationRow.bot
-                        ? dmBotMark.width + parent.spacing : 0);
-                    var cap = Math.max(0, parent.width - reserved);
-                    return Math.min(implicitWidth, cap);
-                }
-                text: (conversationRow.direct ? "" : "#  ") + conversationRow.conversationName.replace("#", "")
-                color: conversationRow.current
-                    ? win.inkColor
-                    : conversationRow.muted || conversationRow.unread === 0
-                        ? win.mutedColor
-                        : win.inkColor
-                elide: Text.ElideRight
-                font.family: "iA Writer Mono S"
-                font.bold: conversationRow.current
-                           || (!conversationRow.muted && conversationRow.unread > 0)
-                font.pixelSize: win.scaledSize(13)
-            }
-
-            BotMark {
-                id: dmBotMark
-                style: win.style
-                objectName: "conversation-bot-" + conversationRow.conversationName
-                shown: conversationRow.direct && conversationRow.bot
-                anchors.verticalCenter: parent.verticalCenter
-            }
-        }
-
-        Item {
-            id: rowTrail
-            anchors.right: parent.right
-            anchors.rightMargin: win.scaledSize(17)
-            anchors.verticalCenter: parent.verticalCenter
-            height: win.scaledSize(19)
-            width: {
-                var badge = unreadBadge.visible ? unreadBadge.width : 0;
-                var dots = rowTyping.visible ? rowTyping.implicitWidth : 0;
-                var gap = (badge > 0 && dots > 0) ? win.scaledSize(6) : 0;
-                return badge + dots + gap;
-            }
-
-            TypingDots {
-                id: rowTyping
-                style: win.style
-                objectName: conversationRow.networkId.length > 0
-                    ? "conversation-typing-" + conversationRow.networkId
-                        + "-" + conversationRow.conversationName
-                    : "conversation-typing-" + conversationRow.conversationName
-                visible: conversationRow.visible
-                    && conversationRow.direct
-                    && conversationRow.typing
-                anchors.right: unreadBadge.visible ? unreadBadge.left : parent.right
-                anchors.rightMargin: unreadBadge.visible ? win.scaledSize(6) : 0
-                anchors.verticalCenter: parent.verticalCenter
-            }
-
-            Rectangle {
-                id: unreadBadge
-                visible: conversationRow.unread > 0
-                anchors.right: parent.right
-                anchors.verticalCenter: parent.verticalCenter
-                width: Math.max(win.scaledSize(19), badgeText.implicitWidth + win.scaledSize(10))
-                height: win.scaledSize(19)
-                radius: height / 2
-                color: conversationRow.mention && !conversationRow.muted
-                    ? win.accentColor : win.raisedColor
-
-                Text {
-                    id: badgeText
-                    anchors.centerIn: parent
-                    text: conversationRow.unread
-                    color: conversationRow.mention && !conversationRow.muted
-                        ? "#ffffff" : win.inkColor
-                    font.family: "iA Writer Mono S"
-                    font.bold: true
-                    font.pixelSize: win.scaledSize(10)
-                }
-            }
-        }
-
-        MouseArea {
-            id: rowMouse
-            anchors.fill: parent
-            hoverEnabled: true
-            cursorShape: Qt.PointingHandCursor
-            onClicked: conversationRow.activate()
-        }
-    }
-
-    component TranscriptList: ListView {
-        id: list
-
-        readonly property int stickFollowing: 0
-        readonly property int stickDetached: 1
-        property int stick: 0
-        property int firstUnseenIndex: -1
-        readonly property bool jumpArmed: stick === stickDetached
-            && firstUnseenIndex >= 0
-            && firstUnseenIndex < count
-
-        property bool pinning: false
-        property int trackedCount: 0
-        // Bumped on count change, model reset, and dataChanged that covers
-        // the last row. Bindings that read a row through field() have no
-        // NOTIFY: the model object is stable, and a same-size rewrite leaves
-        // count unchanged.
-        property int rowRevision: 0
-        property int restoreOffset: -1
-        property int pinGeneration: 0
-        property bool resetPending: false
-        property int resetSavedCount: 0
-        property real previousContentHeight: 0
-
-        boundsBehavior: Flickable.StopAtBounds
-        clip: true
-        spacing: 0
-        highlightFollowsCurrentItem: false
-
-        function endContentY() {
-            return originY + Math.max(0, contentHeight - height);
-        }
-
-        function viewportPinned() {
-            if (count === 0 || contentHeight <= height || atYEnd)
-                return true;
-            return contentY >= endContentY() - 2;
-        }
-
-        function stickToEnd() {
-            contentY = endContentY();
-        }
-
-        function pinToEnd() {
-            stick = stickFollowing;
-            firstUnseenIndex = -1;
-            pinning = true;
-            trackedCount = count;
-            stickToEnd();
-            positionViewAtEnd();
-            var generation = ++pinGeneration;
-            Qt.callLater(function() {
-                if (generation !== pinGeneration)
-                    return;
-                stickToEnd();
-                positionViewAtEnd();
-                pinning = false;
-                trackedCount = count;
-            });
-        }
-
-        function adoptViewport() {
-            if (pinning)
-                return;
-            if (viewportPinned())
-                pinToEnd();
-            else
-                stick = stickDetached;
-        }
-
-        function noteGrowth(previousCount, newCount) {
-            if (newCount < previousCount) {
-                if (newCount <= 0) {
-                    pinToEnd();
-                    return;
-                }
-                if (firstUnseenIndex >= newCount)
-                    firstUnseenIndex = -1;
-                trackedCount = newCount;
-                return;
-            }
-            if (newCount <= previousCount) {
-                trackedCount = newCount;
-                return;
-            }
-            if (stick === stickFollowing) {
-                trackedCount = newCount;
-                stickToEnd();
-                Qt.callLater(function() {
-                    if (list.stick === list.stickFollowing)
-                        list.stickToEnd();
-                });
-                return;
-            }
-            if (firstUnseenIndex < 0)
-                firstUnseenIndex = previousCount;
-            trackedCount = newCount;
-        }
-
-        function noteSplice(previousCount, newCount) {
-            trackedCount = newCount;
-            if (newCount <= 0) {
-                pinToEnd();
-                return;
-            }
-            if (stick === stickFollowing) {
-                stickToEnd();
-                return;
-            }
-            // Replay rows land above the reader, so nothing new arrived at the
-            // bottom. Carry an armed marker along with its row rather than
-            // arming a fresh one over backfilled history.
-            if (firstUnseenIndex >= 0) {
-                firstUnseenIndex += newCount - previousCount;
-                if (firstUnseenIndex < 0 || firstUnseenIndex >= newCount)
-                    firstUnseenIndex = -1;
-            }
-        }
-
-        function modelRowCount() {
-            if (model && typeof model.rowCount === "function")
-                return model.rowCount();
-            return count;
-        }
-
-        function snapshotAnchor() {
-            var index = indexAt(Math.max(1, width / 2), contentY + 1);
-            if (index < 0)
-                index = indexAt(Math.max(1, width / 2), contentY + 8);
-            if (index < 0)
-                index = 0;
-            // A history splice inserts replay rows above the reader and may trim
-            // the front, so a raw index names a different message afterwards.
-            // Distance from the last row survives both.
-            restoreOffset = count - index;
-        }
-
-        function restoreAnchor() {
-            var offset = restoreOffset;
-            restoreOffset = -1;
-            if (stick === stickFollowing) {
-                pinToEnd();
-                return;
-            }
-            pinning = true;
-            var generation = ++pinGeneration;
-            var total = modelRowCount();
-            var target = total - offset;
-            if (offset >= 0 && target >= 0 && target < total)
-                positionViewAtIndex(target, ListView.Beginning);
-            Qt.callLater(function() {
-                if (generation !== pinGeneration)
-                    return;
-                pinning = false;
-            });
-        }
-
-        function jumpToUnseen() {
-            if (!jumpArmed)
-                return;
-            var target = firstUnseenIndex;
-            firstUnseenIndex = -1;
-            pinning = true;
-            var generation = ++pinGeneration;
-            positionViewAtIndex(target, ListView.Beginning);
-            Qt.callLater(function() {
-                if (generation !== pinGeneration)
-                    return;
-                pinning = false;
-                adoptViewport();
-            });
-        }
-
-        onCountChanged: {
-            rowRevision += 1;
-            if (resetPending)
-                return;
-            noteGrowth(trackedCount, count);
-        }
-
-        onModelChanged: pinToEnd()
-
-        onMovementEnded: adoptViewport()
-        onFlickEnded: adoptViewport()
-        onContentHeightChanged: {
-            var wasAtEnd = previousContentHeight <= height
-                || contentY + height >= originY + previousContentHeight - 2;
-            if (stick === stickFollowing && wasAtEnd)
-                stickToEnd();
-            previousContentHeight = contentHeight;
-        }
-        onHeightChanged: {
-            if (stick === stickFollowing)
-                stickToEnd();
-            else
-                adoptViewport();
-        }
-
-        Connections {
-            target: list.model
-            ignoreUnknownSignals: true
-            function onModelAboutToBeReset() {
-                list.resetPending = true;
-                list.resetSavedCount = list.count;
-                if (list.stick === list.stickDetached)
-                    list.snapshotAnchor();
-            }
-            function onModelReset() {
-                list.rowRevision += 1;
-                // ListView.count is still the pre-reset value here. The C++
-                // model already has the spliced rows, so growth after this
-                // handler would look like a bottom append.
-                var previous = list.resetSavedCount;
-                var newCount = list.modelRowCount();
-                list.noteSplice(previous, newCount);
-                Qt.callLater(function() {
-                    list.resetPending = false;
-                    list.restoreAnchor();
-                });
-            }
-            function onRowsInserted(parent, first, last) {
-                list.noteGrowth(list.trackedCount, list.count);
-            }
-            function onDataChanged(topLeft, bottomRight) {
-                // The typing footer reads the last row through
-                // transcriptField / field(), a Q_INVOKABLE with no NOTIFY.
-                // Same-size reload and ListModel setProperty emit
-                // dataChanged without changing count, so this bump
-                // re-reads grouping.
-                if (bottomRight.row >= list.count - 1)
-                    list.rowRevision += 1;
-            }
-            function onRowsRemoved(parent, first, last) {
-                if (first === 0
-                        && list.stick === list.stickDetached
-                        && list.firstUnseenIndex >= 0) {
-                    list.firstUnseenIndex -= (last - first + 1);
-                    if (list.firstUnseenIndex < 0)
-                        list.firstUnseenIndex = -1;
-                }
-            }
-        }
-
-        Component.onCompleted: pinToEnd()
-
-        ScrollBar.vertical: ScrollBar {
-            policy: list.contentHeight > list.height
-                ? ScrollBar.AlwaysOn : ScrollBar.AlwaysOff
-            onPressedChanged: {
-                if (!pressed)
-                    list.adoptViewport();
-            }
-        }
-    }
-
-    component UnseenJumpButton: Rectangle {
-        required property TranscriptList list
-
-        visible: list.visible && list.jumpArmed
-        width: win.scaledSize(36)
-        height: width
-        radius: width / 2
-        z: 2
-        anchors.right: list.right
-        anchors.bottom: list.bottom
-        anchors.rightMargin: win.scaledSize(16)
-        anchors.bottomMargin: win.scaledSize(16)
-        color: jumpMouse.containsMouse
-            ? win.mixColors(win.raisedColor, win.accentColor, win.darkMode ? 0.35 : 0.22)
-            : win.raisedColor
-        border.width: 1
-        border.color: win.dividerColor
-
-        Accessible.role: Accessible.Button
-        Accessible.name: "Jump to first new message"
-        Accessible.onPressAction: list.jumpToUnseen()
-
-        Text {
-            anchors.centerIn: parent
-            text: "\u2193"
-            color: win.inkColor
-            font.family: "iA Writer Mono S"
-            font.pixelSize: win.scaledSize(16)
-        }
-
-        MouseArea {
-            id: jumpMouse
-            anchors.fill: parent
-            hoverEnabled: true
-            cursorShape: Qt.PointingHandCursor
-            onClicked: list.jumpToUnseen()
-        }
-    }
-
     RowLayout {
         anchors.fill: parent
         spacing: 0
@@ -3019,12 +2284,27 @@ ApplicationWindow {
                             spacing: 0
 
                             NetworkSection {
+                                style: win.style
                                 networkId: liveNet.networkId
                                 displayName: liveNet.displayName
                                 iconColor: liveNet.iconColor
                                 iconUrl: liveNet.iconUrl
                                 unread: 0
                                 mention: false
+                                showEdit: win.connection !== null
+                                headerFocused: liveNet.networkId.length > 0
+                                    && liveNet.networkId === win.sidebarNetworkFocusId
+                                irc: win.irc
+                                networkConsole: win.networkConsole
+                                avatarStore: win.avatarStore
+                                onStatusRequested: function(networkId) {
+                                    win.openNetworkStatus(networkId);
+                                }
+                                onEditRequested: function(networkId) {
+                                    if (win.connection)
+                                        win.selectSheetNetwork(networkId);
+                                    win.connectionSheetOpen = true;
+                                }
                             }
 
                             Item {
@@ -3049,7 +2329,9 @@ ApplicationWindow {
                                     : "channelConversationRepeater-" + liveNet.networkId
                                 model: win.irc ? win.irc.conversations : null
                                 delegate: ConversationRow {
+                                    id: channelRow
                                     required property var model
+                                    style: win.style
                                     conversationName: model.conversation
                                     conversationId: model.conversationId
                                     unread: model.unread || 0
@@ -3058,10 +2340,16 @@ ApplicationWindow {
                                     direct: model.direct
                                     typing: model.typing
                                     networkId: model.networkId
+                                    current: conversationId === win.currentConversationId
+                                        && !win.consoleVisible
+                                    awayPresenceVisible: win.awayPresenceVisible
+                                    avatarStore: win.avatarStore
+                                    loadPeerAvatars: win.peerAvatarsEnabled
                                     visible: !model.direct
                                         && model.networkId === liveNet.networkId
                                     width: sidebar.width
                                     height: visible ? win.scaledSize(36) : 0
+                                    onActivated: win.activateConversationItem(channelRow)
                                 }
                             }
 
@@ -3093,7 +2381,9 @@ ApplicationWindow {
                                     : "directConversationRepeater-" + liveNet.networkId
                                 model: win.irc ? win.irc.conversations : null
                                 delegate: ConversationRow {
+                                    id: directRow
                                     required property var model
+                                    style: win.style
                                     conversationName: model.conversation
                                     conversationId: model.conversationId
                                     unread: model.unread || 0
@@ -3105,10 +2395,16 @@ ApplicationWindow {
                                     networkId: model.networkId
                                     avatar: model.direct ? (model.avatar || "") : ""
                                     bot: !!(model.direct && model.bot)
+                                    current: conversationId === win.currentConversationId
+                                        && !win.consoleVisible
+                                    awayPresenceVisible: win.awayPresenceVisible
+                                    avatarStore: win.avatarStore
+                                    loadPeerAvatars: win.peerAvatarsEnabled
                                     visible: model.direct
                                         && model.networkId === liveNet.networkId
                                     width: sidebar.width
                                     height: visible ? win.scaledSize(36) : 0
+                                    onActivated: win.activateConversationItem(directRow)
                                 }
                             }
                         }
@@ -3641,6 +2937,7 @@ ApplicationWindow {
             }
 
             UnseenJumpButton {
+                style: win.style
                 list: messageList
                 objectName: "messageUnseenJump"
             }
@@ -3746,6 +3043,7 @@ ApplicationWindow {
             }
 
             UnseenJumpButton {
+                style: win.style
                 list: consoleList
                 objectName: "consoleUnseenJump"
             }
