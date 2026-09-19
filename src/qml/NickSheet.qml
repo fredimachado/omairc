@@ -1,6 +1,5 @@
 import QtQuick
 import QtQuick.Controls
-import QtQuick.Window
 
 Popup {
     id: sheet
@@ -23,8 +22,6 @@ Popup {
     signal nickActivated(int index)
 
     objectName: "nickSheet"
-    x: Math.round(((Window.window ? Window.window.width : width) - width) / 2)
-    y: Math.round(((Window.window ? Window.window.height : height) - height) / 2)
     width: sheet.style.scaledSize(348)
     padding: sheet.style.scaledSize(16)
     modal: true

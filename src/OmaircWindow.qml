@@ -3297,6 +3297,8 @@ ApplicationWindow {
         id: shortcutsSheet
         objectName: "shortcutsSheet"
         style: win.style
+        x: Math.round((win.width - width) / 2)
+        y: Math.round((win.height - height) / 2)
         onOpened: shortcutsSheetEscapeGuard = true
         onClosed: Qt.callLater(function() { shortcutsSheetEscapeGuard = false })
     }
@@ -3340,6 +3342,8 @@ ApplicationWindow {
         id: jumpSheet
         objectName: "jumpSheet"
         style: win.style
+        x: Math.round((win.width - width) / 2)
+        y: Math.round((win.height - height) / 2)
         matches: jumpModel
         selectedIndex: win.jumpSelectedIndex
         onOpened: {
@@ -3369,6 +3373,8 @@ ApplicationWindow {
         id: nickSheet
         objectName: "nickSheet"
         style: win.style
+        x: Math.round((win.width - width) / 2)
+        y: Math.round((win.height - height) / 2)
         matches: nickModel
         selectedIndex: win.nickSelectedIndex
         selfNick: win.selfNick
