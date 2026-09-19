@@ -116,6 +116,8 @@ const QVector<IrcVerbSpec>& IrcVerbTable::all()
          QStringLiteral("/ns <text>"), IrcVerbScope::Either, {}},
         {IrcCommand::Verb::Cs, QStringLiteral("cs"), {},
          QStringLiteral("/cs <text>"), IrcVerbScope::Either, {}},
+        {IrcCommand::Verb::Znc, QStringLiteral("znc"), {},
+         QStringLiteral("/znc <text>"), IrcVerbScope::Either, {}},
         {IrcCommand::Verb::Raw, QStringLiteral("raw"), {QStringLiteral("quote")},
          QStringLiteral("/raw <line>"), IrcVerbScope::Either, {}},
         {IrcCommand::Verb::Help, QStringLiteral("help"), {},

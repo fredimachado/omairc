@@ -4073,11 +4073,19 @@ void ControllerTest::nsIdentifyDoesNotOpenDirectOrLeakSecret()
     transport->injectBytes(
         QByteArrayLiteral(":omairc!u@h PRIVMSG ChanServ :identify hunter2\r\n"));
 
+    QVERIFY(console->submit(QStringLiteral("/znc ListMods")));
+    QCOMPARE(transport->writtenFrames().last(),
+             QByteArrayLiteral("PRIVMSG *status :ListMods\r\n"));
+    transport->injectBytes(
+        QByteArrayLiteral(":omairc!u@h PRIVMSG *status :ListMods\r\n"
+                          ":*status!znc@znc.in PRIVMSG omairc :Modules: playback\r\n"));
+
     auto *conversations =
         qobject_cast<QAbstractItemModel *>(controller.conversations());
     QVERIFY(conversations);
     QCOMPARE(rowForTarget(conversations, QStringLiteral("NickServ")), -1);
     QCOMPARE(rowForTarget(conversations, QStringLiteral("ChanServ")), -1);
+    QCOMPARE(rowForTarget(conversations, QStringLiteral("*status")), -1);
     QCOMPARE(controller.selectedTarget(), QStringLiteral("#omarchy"));
 
     auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
