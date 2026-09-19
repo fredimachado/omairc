@@ -27,6 +27,7 @@ int runSingleInstanceTests(int argc, char **argv);
 int runOmaircIpcTests(int argc, char **argv);
 int runOmaircCliTests(int argc, char **argv);
 int runOmaircFileLogTests(int argc, char **argv);
+int runOmaircPathsTests(int argc, char **argv);
 int runIrcTextFormatterTests(int argc, char **argv);
 int runOmaircUpdateCheckTests(int argc, char **argv);
 int runSecretServiceTests(int argc, char **argv);
@@ -65,6 +66,7 @@ int main(int argc, char **argv)
     const int ipcStatus = runOmaircIpcTests(argc, argv);
     const int cliStatus = runOmaircCliTests(argc, argv);
     const int fileLogStatus = runOmaircFileLogTests(argc, argv);
+    const int pathsStatus = runOmaircPathsTests(argc, argv);
     const int ircTextFormatterStatus = runIrcTextFormatterTests(argc, argv);
     const int updateCheckStatus = runOmaircUpdateCheckTests(argc, argv);
     const int secretServiceStatus = runSecretServiceTests(argc, argv);
@@ -95,6 +97,7 @@ int main(int argc, char **argv)
         ipcStatus,
         cliStatus,
         fileLogStatus,
+        pathsStatus,
         ircTextFormatterStatus,
         updateCheckStatus,
         secretServiceStatus,

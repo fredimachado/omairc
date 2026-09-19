@@ -244,4 +244,10 @@ then `stapler validate`, `syspolicy_check distribution`, and
 `syspolicy_check notary-submission`: Apple often holds the first Developer ID
 uploads In Progress for hours. Tag releases fail if the signing secrets are
 missing or Gatekeeper rejects the stapled app. Local `bin/build-macos` stays
-ad-hoc unless `CODESIGN_IDENTITY` is set.
+ad-hoc unless `CODESIGN_IDENTITY` is set. The Homebrew cask is
+`packaging/homebrew/omairc.rb`: GitHub `macos-arm64` / `macos-x64` zips,
+`livecheck` on the latest release, a `binary` helper so `omairc connections`
+works from a terminal, and `zap` of `~/Library/Preferences/omairc` plus
+`~/Library/Preferences/State/omairc` (Qt `GenericConfigLocation` /
+`GenericStateLocation` on macOS). Do not cask a Homebrew-Qt `bin/build-macos`
+tree. Uninstall leaves config; `--zap` is the wipe.

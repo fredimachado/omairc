@@ -532,6 +532,98 @@ def check_macos_sdk_compat():
     return problems
 
 
+def macos_readme_section(text):
+    start = text.find("## macOS")
+    if start < 0:
+        return ""
+    rest = text[start + 2:]
+    next_heading = rest.find("\n## ")
+    if next_heading < 0:
+        return text[start:]
+    return text[start:start + 2 + next_heading]
+
+
+def check_homebrew_cask():
+    problems = []
+    path = ROOT / "packaging" / "homebrew" / "omairc.rb"
+    if not path.is_file():
+        return ["packaging/homebrew/omairc.rb: missing Homebrew cask"]
+    text = path.read_text(encoding="utf-8", errors="replace")
+    if 'cask "omairc" do' not in text:
+        problems.append('packaging/homebrew/omairc.rb: declare cask "omairc"')
+    if 'arch arm: "arm64", intel: "x64"' not in text:
+        problems.append(
+            "packaging/homebrew/omairc.rb: dual GitHub zips need "
+            'arch arm: "arm64", intel: "x64"')
+    if "omairc-#{version}-macos-#{arch}.zip" not in text:
+        problems.append(
+            "packaging/homebrew/omairc.rb: url must interpolate the GitHub "
+            "omairc-#{version}-macos-#{arch}.zip asset")
+    if "github.com/fredimachado/omairc/releases/download" not in text:
+        problems.append(
+            "packaging/homebrew/omairc.rb: url must be the GitHub release zip")
+    if not re.search(r'sha256 arm:\s+"[0-9a-f]{64}"', text):
+        problems.append(
+            "packaging/homebrew/omairc.rb: sha256 arm must be a real digest")
+    if not re.search(r'intel:\s+"[0-9a-f]{64}"', text):
+        problems.append(
+            "packaging/homebrew/omairc.rb: sha256 intel must be a real digest")
+    if "strategy :github_latest" not in text:
+        problems.append(
+            "packaging/homebrew/omairc.rb: livecheck must track GitHub latest")
+    if 'app "omairc.app"' not in text:
+        problems.append('packaging/homebrew/omairc.rb: install omairc.app')
+    if 'binary "#{appdir}/omairc.app/Contents/MacOS/omairc"' not in text:
+        problems.append(
+            "packaging/homebrew/omairc.rb: expose the CLI binary on PATH")
+    if "~/Library/Preferences/omairc" not in text:
+        problems.append(
+            "packaging/homebrew/omairc.rb: zap must use macOS "
+            "GenericConfigLocation (~/Library/Preferences/omairc)")
+    if "~/Library/Preferences/State/omairc" not in text:
+        problems.append(
+            "packaging/homebrew/omairc.rb: zap must use macOS "
+            "GenericStateLocation (~/Library/Preferences/State/omairc)")
+    if re.search(r"XDG_|~/\.config/omairc|Application Support/omairc", text):
+        problems.append(
+            "packaging/homebrew/omairc.rb: zap must not use Linux $XDG_* or "
+            "guessed Application Support paths")
+    if re.search(r"uninstall[^\n]*delete", text) or "uninstall delete:" in text:
+        problems.append(
+            "packaging/homebrew/omairc.rb: uninstall must leave config; "
+            "put user files in zap")
+    if "no-quarantine" in text or "xattr" in text:
+        problems.append(
+            "packaging/homebrew/omairc.rb: do not teach --no-quarantine")
+    if "bin/build-macos" in text or "qt@6" in text:
+        problems.append(
+            "packaging/homebrew/omairc.rb: do not cask a Homebrew-Qt "
+            "from-source tree")
+
+    readme = ROOT / "README.md"
+    section = macos_readme_section(
+        readme.read_text(encoding="utf-8", errors="replace") if readme.is_file() else "")
+    if not section:
+        problems.append("README.md: missing ## macOS section")
+        return problems
+    brew_pos = section.find("brew install --cask omairc")
+    zip_pos = section.find("omairc-*-macos-arm64.zip")
+    source_pos = section.find("bin/build-macos")
+    if brew_pos < 0:
+        problems.append("README.md: macOS section must lead with brew install --cask omairc")
+    if zip_pos < 0:
+        problems.append("README.md: macOS section must mention the GitHub zip")
+    if source_pos < 0:
+        problems.append("README.md: macOS section must keep the from-source build")
+    if brew_pos >= 0 and zip_pos >= 0 and brew_pos > zip_pos:
+        problems.append(
+            "README.md: macOS section must lead with brew, then the zip")
+    if zip_pos >= 0 and source_pos >= 0 and zip_pos > source_pos:
+        problems.append(
+            "README.md: macOS section must put the zip before the from-source build")
+    return problems
+
+
 CHECKS = (
     ("QByteArray literal lengths", check_byte_array_lengths),
     ("PlainText on server-controlled QML text", check_qml_text_plain_format),
@@ -548,6 +640,7 @@ CHECKS = (
     ("macOS Developer ID notarization", check_macos_notarization),
     ("macOS CI Xcode and Actions majors", check_macos_ci_xcode_and_actions),
     ("macOS SDK compat arch gate", check_macos_sdk_compat),
+    ("Homebrew macOS cask", check_homebrew_cask),
 )
 
 
