@@ -28,7 +28,11 @@ if /i "!QSPEC!"=="win32-g++" (
 if not exist "!BUILD_DIR!" mkdir "!BUILD_DIR!"
 cd /d "!BUILD_DIR!"
 
-"!QMAKE!" "!ROOT!\omairc.pro"
+set "QMAKE_ARGS="
+if defined OMAIRC_BUILD_VERSION (
+  set "QMAKE_ARGS=OMAIRC_BUILD_VERSION=!OMAIRC_BUILD_VERSION!"
+)
+"!QMAKE!" "!ROOT!\omairc.pro" !QMAKE_ARGS!
 if errorlevel 1 exit /b 1
 
 call :run_make

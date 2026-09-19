@@ -6,6 +6,8 @@ on:
     paths:
       - '.github/workflows/windows.yml'
       - 'bin/build.bat'
+      - 'bin/derive-build-versions.py'
+      - 'bin/gen-omaircversion-h.py'
       - 'bin/package-windows.bat'
       - 'packaging/windows/**'
       - 'omairc.pro'
@@ -23,6 +25,8 @@ on:
     paths:
       - '.github/workflows/windows.yml'
       - 'bin/build.bat'
+      - 'bin/derive-build-versions.py'
+      - 'bin/gen-omaircversion-h.py'
       - 'bin/package-windows.bat'
       - 'packaging/windows/**'
       - 'omairc.pro'
@@ -54,14 +58,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Read version
+      - name: Derive versions
         run: |
-          $line = Select-String -Path version.pri -Pattern '^VERSION\s*=' | Select-Object -First 1
-          if (-not $line) { throw 'version.pri must set VERSION' }
-          $ver = ($line.Line -split '=', 2)[1].Trim()
-          if (-not $ver) { throw 'version.pri VERSION is empty' }
-          Add-Content $env:GITHUB_ENV "OMAIRC_VERSION=$ver"
-          Write-Host "Omairc $ver"
+          python bin/derive-build-versions.py `
+            --git-ref "$env:GITHUB_REF" `
+            --sha "$env:GITHUB_SHA" `
+            --run-number "$env:GITHUB_RUN_NUMBER" `
+            --run-attempt "$env:GITHUB_RUN_ATTEMPT" `
+            --format github-env `
+            --github-env "$env:GITHUB_ENV"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Add-Content $env:GITHUB_ENV "OMAIRC_BUILD_NUMBER=$env:GITHUB_RUN_NUMBER"
+          Get-Content $env:GITHUB_ENV | Select-String '^OMAIRC_'
 
       - name: Assert tag version
         if: startsWith(github.ref, 'refs/tags/v')
@@ -71,6 +79,12 @@ jobs:
           $expected = $tag.Substring(1)
           if ($expected -ne $env:OMAIRC_VERSION) {
             throw "Tag $tag does not match version.pri $($env:OMAIRC_VERSION)"
+          }
+          if ($env:OMAIRC_DISPLAY_VERSION -ne $env:OMAIRC_VERSION) {
+            throw "Tag builds must keep unsuffixed display version"
+          }
+          if ($env:OMAIRC_ARTIFACT_VERSION -ne $env:OMAIRC_VERSION) {
+            throw "Tag builds must keep unsuffixed artifact version"
           }
 
       - uses: ilammy/msvc-dev-cmd@v1
@@ -144,9 +158,10 @@ jobs:
           if (-not (Test-Path 'build\release\msvcp140.dll')) {
             throw 'msvcp140.dll was not deployed next to the exe'
           }
-          $version = & $exe --version 2>&1 | Out-String
+          $version = (& $exe --version 2>&1 | Out-String).Trim()
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          if ($version -notmatch 'omairc\s+\d') { throw "Expected version text, got: $version" }
+          $expected = "omairc $($env:OMAIRC_DISPLAY_VERSION)"
+          if ($version -ne $expected) { throw "Expected '$expected', got: $version" }
           $help = & $exe --help 2>&1 | Out-String
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           if ($help -notmatch 'Usage:') { throw "Expected help text, got: $help" }
@@ -177,7 +192,7 @@ jobs:
       - name: Upload portable tree
         uses: actions/upload-artifact@v4
         with:
-          name: omairc-${{ env.OMAIRC_VERSION }}-windows-x64
+          name: omairc-${{ env.OMAIRC_ARTIFACT_VERSION }}-windows-x64
           path: |
             build/release/**
             !build/release/*.obj
@@ -198,7 +213,7 @@ jobs:
       - name: Smoke installer
         run: |
           $ErrorActionPreference = 'Stop'
-          $setup = "dist\omairc-$($env:OMAIRC_VERSION)-windows-x64-setup.exe"
+          $setup = "dist\omairc-$($env:OMAIRC_ARTIFACT_VERSION)-windows-x64-setup.exe"
           if (-not (Test-Path $setup)) { throw "Expected $setup" }
 
           $envKey = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Environment')
@@ -230,9 +245,10 @@ jobs:
           if (-not (Test-Path (Join-Path $dest 'msvcp140.dll'))) {
             throw 'msvcp140.dll was not installed'
           }
-          $version = & $exe --version 2>&1 | Out-String
+          $version = (& $exe --version 2>&1 | Out-String).Trim()
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          if ($version -notmatch 'omairc\s+\d') { throw "Expected version text, got: $version" }
+          $expected = "omairc $($env:OMAIRC_DISPLAY_VERSION)"
+          if ($version -ne $expected) { throw "Expected '$expected', got: $version" }
           $mb = [math]::Round(((Get-Item $setup).Length) / 1MB, 2)
           Write-Host "Installer: $setup ($mb MB)"
 
@@ -278,8 +294,8 @@ jobs:
       - name: Upload installer
         uses: actions/upload-artifact@v4
         with:
-          name: omairc-${{ env.OMAIRC_VERSION }}-windows-x64-setup
-          path: dist/omairc-${{ env.OMAIRC_VERSION }}-windows-x64-setup.exe
+          name: omairc-${{ env.OMAIRC_ARTIFACT_VERSION }}-windows-x64-setup
+          path: dist/omairc-${{ env.OMAIRC_ARTIFACT_VERSION }}-windows-x64-setup.exe
           if-no-files-found: error
 
       - name: Package release zip

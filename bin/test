@@ -3,6 +3,7 @@ set -eu
 
 ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 "$ROOT/bin/check-conventions"
+python3 -m unittest -v tests.test_derive_build_versions
 TEST_STATE="$(mktemp -d "${TMPDIR:-/tmp}/omairc-tests.XXXXXX")"
 
 cleanup() {
@@ -42,6 +43,42 @@ test "$got" = "omairc $VERSION" || {
   printf 'got: %s\n' "$got" >&2
   exit 1
 }
+
+BUILD_OVERRIDE_DIR="$ROOT/build-version-override"
+rm -rf "$BUILD_OVERRIDE_DIR"
+mkdir -p "$BUILD_OVERRIDE_DIR"
+OVERRIDE_VERSION="${VERSION}+master.gdeadbeef"
+cd "$BUILD_OVERRIDE_DIR"
+"$QMAKE" "OMAIRC_BUILD_VERSION=$OVERRIDE_VERSION" "$ROOT/omairc.pro"
+make -j"$JOBS"
+OVERRIDE_BIN="$BUILD_OVERRIDE_DIR/omairc"
+if [ ! -x "$OVERRIDE_BIN" ]; then
+  OVERRIDE_BIN="$BUILD_OVERRIDE_DIR/omairc.app/Contents/MacOS/omairc"
+fi
+HEADER="$BUILD_OVERRIDE_DIR/omaircversion.h"
+test -f "$HEADER" || {
+  echo "expected generated header at $HEADER" >&2
+  exit 1
+}
+grep -Fq "\"$OVERRIDE_VERSION\"" "$HEADER" || {
+  echo "omaircversion.h must embed OMAIRC_BUILD_VERSION" >&2
+  exit 1
+}
+override_got="$(DISPLAY= "$OVERRIDE_BIN" --version)"
+test "$override_got" = "omairc $OVERRIDE_VERSION" || {
+  echo "OMAIRC_BUILD_VERSION must appear in omairc --version" >&2
+  printf 'got: %s\n' "$override_got" >&2
+  exit 1
+}
+HEADER_MTIME="$(stat -c %Y "$HEADER" 2>/dev/null || stat -f %m "$HEADER")"
+sleep 1
+make -j"$JOBS" omairc
+HEADER_MTIME_AFTER="$(stat -c %Y "$HEADER" 2>/dev/null || stat -f %m "$HEADER")"
+test "$HEADER_MTIME" = "$HEADER_MTIME_AFTER" || {
+  echo "unchanged OMAIRC_BUILD_VERSION must not rewrite omaircversion.h" >&2
+  exit 1
+}
+cd "$ROOT"
 
 assert_not_version_line() {
   first_line=$(printf '%s\n' "$1" | head -n 1)

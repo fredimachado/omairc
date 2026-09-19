@@ -112,7 +112,8 @@ is_homebrew_qt() {
 
 ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 BUILD_DIR="$ROOT/build"
-VERSION="$("$ROOT/bin/version")"
+RELEASE_VERSION="$("$ROOT/bin/version")"
+BUILD_NUMBER="${OMAIRC_BUILD_NUMBER:-$RELEASE_VERSION}"
 
 if [ "$(uname -s)" != "Darwin" ]; then
   echo "bin/build-macos must run on macOS." >&2
@@ -137,15 +138,28 @@ QT_PREFIX="$("$QMAKE" -query QT_INSTALL_PREFIX)"
 
 INFO_PLIST="$BUILD_DIR/Info.plist"
 mkdir -p "$BUILD_DIR"
-sed "s/@OMAIRC_VERSION@/$VERSION/g" "$ROOT/packaging/macos/Info.plist" >"$INFO_PLIST"
+sed \
+  -e "s/@OMAIRC_RELEASE_VERSION@/$RELEASE_VERSION/g" \
+  -e "s/@OMAIRC_BUILD_NUMBER@/$BUILD_NUMBER/g" \
+  "$ROOT/packaging/macos/Info.plist" >"$INFO_PLIST"
 
 cd "$BUILD_DIR"
-"$QMAKE" "$ROOT/omairc.pro" \
-  CONFIG+=sdk_no_version_check \
-  CONFIG+=app_bundle \
-  ICON="$ROOT/data/icons/omairc.icns" \
-  QMAKE_INFO_PLIST="$INFO_PLIST" \
-  QMAKE_MACOSX_DEPLOYMENT_TARGET=11.0
+if [ -n "${OMAIRC_BUILD_VERSION:-}" ]; then
+  "$QMAKE" "$ROOT/omairc.pro" \
+    CONFIG+=sdk_no_version_check \
+    CONFIG+=app_bundle \
+    "ICON=$ROOT/data/icons/omairc.icns" \
+    "QMAKE_INFO_PLIST=$INFO_PLIST" \
+    QMAKE_MACOSX_DEPLOYMENT_TARGET=11.0 \
+    "OMAIRC_BUILD_VERSION=$OMAIRC_BUILD_VERSION"
+else
+  "$QMAKE" "$ROOT/omairc.pro" \
+    CONFIG+=sdk_no_version_check \
+    CONFIG+=app_bundle \
+    "ICON=$ROOT/data/icons/omairc.icns" \
+    "QMAKE_INFO_PLIST=$INFO_PLIST" \
+    QMAKE_MACOSX_DEPLOYMENT_TARGET=11.0
+fi
 # Qt 6.8 still emits -framework AGL; SDK 26 removed it.
 find . -name Makefile -print0 | xargs -0 sed -i '' 's/-framework AGL//g'
 make -j"$JOBS"

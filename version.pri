@@ -14,10 +14,15 @@ isEmpty(OMAIRC_ROOT) {
     else:error("Cannot locate repository root for version.pri")
 }
 
+OMAIRC_EFFECTIVE_VERSION = $$VERSION
+!isEmpty(OMAIRC_BUILD_VERSION) {
+    OMAIRC_EFFECTIVE_VERSION = $$OMAIRC_BUILD_VERSION
+}
+
 OMAIRC_VERSION_HEADER = $$OUT_PWD/omaircversion.h
 win32: OMAIRC_PYTHON = python
 else: OMAIRC_PYTHON = python3
-system($$OMAIRC_PYTHON $$shell_quote($$OMAIRC_ROOT/bin/gen-omaircversion-h.py) $$VERSION $$shell_quote($$OMAIRC_VERSION_HEADER))
+system($$OMAIRC_PYTHON $$shell_quote($$OMAIRC_ROOT/bin/gen-omaircversion-h.py) $$OMAIRC_EFFECTIVE_VERSION $$shell_quote($$OMAIRC_VERSION_HEADER))
 
 INCLUDEPATH += $$OUT_PWD
 HEADERS += $$OMAIRC_VERSION_HEADER
