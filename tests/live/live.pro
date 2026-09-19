@@ -21,6 +21,7 @@ HEADERS += \
     ../../src/irc/ircparser.h \
     ../../src/irc/ircframer.h \
     ../../src/irc/ircwiretext.h \
+    ../../src/irc/irctextformatter.h \
     ../../src/irc/irccommandbuilder.h \
     ../../src/irc/irccasemapping.h \
     ../../src/irc/ircserverfeatures.h \
@@ -74,6 +75,7 @@ SOURCES += \
     ../../src/irc/ircparser.cpp \
     ../../src/irc/ircframer.cpp \
     ../../src/irc/ircwiretext.cpp \
+    ../../src/irc/irctextformatter.cpp \
     ../../src/irc/irccommandbuilder.cpp \
     ../../src/irc/irccasemapping.cpp \
     ../../src/irc/ircserverfeatures.cpp \

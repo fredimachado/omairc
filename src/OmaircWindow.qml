@@ -37,6 +37,9 @@ ApplicationWindow {
         id: omaircStyle
         backend: win.backend
     }
+    IrcTextFormatter {
+        id: ircText
+    }
     readonly property alias style: omaircStyle
 
     readonly property bool darkMode: style.darkMode
@@ -334,23 +337,19 @@ ApplicationWindow {
     }
 
     function stripIrcColors(text) {
-        return text.replace(/\x03(?:\d{1,2}(?:,\d{1,2})?)?/g, "")
-            .replace(/\x04(?:[0-9A-Fa-f]{6}(?:,[0-9A-Fa-f]{6})?)?/g, "");
+        return ircText.stripIrcColors(text);
     }
 
     function plainIrcText(text) {
-        return stripIrcColors(text)
-            .replace(/[\x02\x0f\x11\x16\x1d\x1e\x1f]/g, "");
+        return ircText.plainIrcText(text);
     }
 
     function escapeHtml(text) {
-        return String(text).replace(/&/g, "&amp;")
-            .replace(/</g, "&lt;")
-            .replace(/>/g, "&gt;");
+        return ircText.escapeHtml(text);
     }
 
     function hasIrcEmphasis(text) {
-        return /[\x02\x1d\x1f]/.test(text);
+        return ircText.hasIrcEmphasis(text);
     }
 
     function editVisibleText(edit) {
@@ -362,72 +361,7 @@ ApplicationWindow {
     }
 
     function emphasizedIrcText(text) {
-        var input = stripIrcColors(text);
-        var bold = false;
-        var italic = false;
-        var underline = false;
-        var openBold = false;
-        var openItalic = false;
-        var openUnderline = false;
-        var html = "";
-        var index;
-        for (index = 0; index < input.length; ++index) {
-            var code = input.charCodeAt(index);
-            var changed = false;
-            if (code === 0x02) {
-                bold = !bold;
-                changed = true;
-            } else if (code === 0x1d) {
-                italic = !italic;
-                changed = true;
-            } else if (code === 0x1f) {
-                underline = !underline;
-                changed = true;
-            } else if (code === 0x0f) {
-                bold = false;
-                italic = false;
-                underline = false;
-                changed = true;
-            } else if (code !== 0x16 && code !== 0x11 && code !== 0x1e) {
-                html += escapeHtml(input.charAt(index));
-            }
-            if (!changed)
-                continue;
-            if (openUnderline) {
-                html += "</u>";
-                openUnderline = false;
-            }
-            if (openItalic) {
-                html += "</i>";
-                openItalic = false;
-            }
-            if (openBold) {
-                html += "</b>";
-                openBold = false;
-            }
-            if (bold) {
-                html += "<b>";
-                openBold = true;
-            }
-            if (italic) {
-                html += "<i>";
-                openItalic = true;
-            }
-            if (underline) {
-                html += "<u>";
-                openUnderline = true;
-            }
-        }
-        if (openUnderline)
-            html += "</u>";
-        if (openItalic)
-            html += "</i>";
-        if (openBold)
-            html += "</b>";
-        // Defence-in-depth: unreachable while every non-control character goes through escapeHtml.
-        if (/</.test(html.replace(/<\/?[biu]>/g, "")))
-            html = escapeHtml(plainIrcText(text));
-        return "<span style=\"white-space: pre-wrap;\">" + html + "</span>";
+        return ircText.emphasizedIrcText(text);
     }
 
     function transcriptRowCount(model) {
