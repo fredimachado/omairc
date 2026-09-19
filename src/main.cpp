@@ -32,6 +32,7 @@
 #include "irc/ircconnection.h"
 #include "irc/irccontroller.h"
 #include "irc/ircdemoserver.h"
+#include "irc/irctextformatter.h"
 #include "irc/ircslashcomplete.h"
 #include "omairccli.h"
 #include "omaircfilelog.h"
@@ -260,6 +261,7 @@ int main(int argc, char *argv[]) {
     engine.rootContext()->setContextProperty(
         QStringLiteral("appAvatarStore"), avatarStore);
     omaircRegisterUpdateCheck();
+    omaircRegisterIrcTextFormatter();
     engine.load(QUrl(QStringLiteral("qrc:/Main.qml")));
     if (engine.rootObjects().isEmpty()) {
         qCritical() << "Could not load the Omairc interface; resource available:"

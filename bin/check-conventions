@@ -176,7 +176,7 @@ def check_qml_textedit_rich_emphasized():
 def check_message_delegate_body():
     problems = []
     allowed = re.compile(
-        r"(?:plainIrcText|emphasizedIrcText|hasIrcEmphasis)\(\s*"
+        r"(?:(?:win|ircText|IrcTextFormatter)\.)?(?:plainIrcText|emphasizedIrcText|hasIrcEmphasis)\(\s*"
         r"(?:win\.)?messageDelegate\.body")
     raw = re.compile(r"messageDelegate\.body")
     for relative, source in sources("src/**/*.qml"):

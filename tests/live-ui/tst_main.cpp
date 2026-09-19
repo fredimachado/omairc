@@ -2,6 +2,7 @@
 #include <QGuiApplication>
 #include <QQuickStyle>
 
+#include "irctextformatter.h"
 #include "omaircupdatecheck.h"
 #include "omaircversion.h"
 
@@ -12,6 +13,7 @@ int main(int argc, char **argv)
     qputenv("OMAIRC_ALLOW_MULTI", "1");
     QGuiApplication app(argc, argv);
     omaircRegisterUpdateCheck();
+    omaircRegisterIrcTextFormatter();
     app.setApplicationName(QStringLiteral("omairc"));
     app.setApplicationVersion(QStringLiteral(OMAIRC_VERSION));
     app.setOrganizationName(QStringLiteral("omairc"));

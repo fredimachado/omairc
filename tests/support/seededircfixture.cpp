@@ -4,6 +4,7 @@
 #include "backend.h"
 #include "ircavatarstore.h"
 #include "omaircupdatecheck.h"
+#include "irctextformatter.h"
 #include "ircconnection.h"
 #include "irccontroller.h"
 #include "ircdemoserver.h"
@@ -239,6 +240,7 @@ bool SeededIrcFixture::createWindow()
 
     m_engine = std::make_unique<QQmlApplicationEngine>();
     omaircRegisterUpdateCheck();
+    omaircRegisterIrcTextFormatter();
     IrcAvatarStore *avatarStore = ircInstallAvatarStore(m_engine.get());
     QQmlComponent component(m_engine.get(), QUrl(QStringLiteral("qrc:/OmaircWindow.qml")));
     if (component.status() == QQmlComponent::Error)
