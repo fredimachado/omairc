@@ -72,6 +72,17 @@ TestCase {
                 "A cozy corner for Omarchy users and builders.");
         compare(appWindow.currentPeopleCount, 12);
         compare(appWindow.sidebarConversationRows().length > 0, true);
+        var sidebarRows = appWindow.sidebarConversationRows();
+        compare(typeof sidebarRows[0].activate, "undefined");
+        compare(sidebarRows[0].conversationName, "#omarchy");
+        verify(sidebarRows[0].conversationId.indexOf("\n") > 0);
+        var sections = appWindow.sidebarNetworkSections();
+        verify(sections.length >= 2);
+        compare(typeof sections[0].headerItem, "undefined");
+        verify(sections[0].networkId.length > 0);
+        verify(typeof appWindow.irc.conversations.get === "function");
+        verify(typeof appWindow.irc.conversations.hasDirects === "function");
+        verify(typeof appWindow.connection.networks.get === "function");
         verify(findChild(appWindow, "liveNetworkRepeater").count >= 2);
 
         var list = findChild(appWindow, "messageList");
