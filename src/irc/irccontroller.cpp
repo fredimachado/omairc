@@ -1189,7 +1189,8 @@ IrcCommandOutcome IrcController::dispatch(const IrcCommand& command,
     }
 
     if (command.verb == IrcCommand::Verb::Ns
-        || command.verb == IrcCommand::Verb::Cs) {
+        || command.verb == IrcCommand::Verb::Cs
+        || command.verb == IrcCommand::Verb::Znc) {
         return dispatchServiceMsg(command, surface);
     }
 
@@ -1826,9 +1827,20 @@ IrcCommandOutcome IrcController::dispatchChannelModeWrapper(
 IrcCommandOutcome IrcController::dispatchServiceMsg(const IrcCommand& command,
                                                     IrcComposerSurface surface)
 {
-    const QString nick = command.verb == IrcCommand::Verb::Ns
-        ? QStringLiteral("NickServ")
-        : QStringLiteral("ChanServ");
+    QString nick;
+    switch (command.verb) {
+    case IrcCommand::Verb::Ns:
+        nick = QStringLiteral("NickServ");
+        break;
+    case IrcCommand::Verb::Cs:
+        nick = QStringLiteral("ChanServ");
+        break;
+    case IrcCommand::Verb::Znc:
+        nick = QStringLiteral("*status");
+        break;
+    default:
+        return IrcCommandOutcome::Unsupported;
+    }
     IrcCommand msg = command;
     msg.verb = IrcCommand::Verb::Msg;
     msg.argument = command.argument.isEmpty()
@@ -2116,6 +2128,7 @@ QString IrcController::ctcpQueryName(IrcCommand::Verb verb) const
     case IrcCommand::Verb::Ban:
     case IrcCommand::Verb::Ns:
     case IrcCommand::Verb::Cs:
+    case IrcCommand::Verb::Znc:
     case IrcCommand::Verb::Raw:
     case IrcCommand::Verb::Help:
     case IrcCommand::Verb::Unknown:

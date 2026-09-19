@@ -670,6 +670,12 @@ void CommandTest::parseWrappersAndHelp()
     QCOMPARE(cs.argument, QStringLiteral("help"));
     QCOMPARE(cs.name, QStringLiteral("/CS"));
 
+    const IrcCommand znc = IrcCommand::parse(QStringLiteral("/znc ListMods"));
+    QCOMPARE(znc.verb, IrcCommand::Verb::Znc);
+    QCOMPARE(znc.argument, QStringLiteral("ListMods"));
+    QVERIFY(znc.allowedOn(IrcComposerSurface::Conversation));
+    QVERIFY(znc.allowedOn(IrcComposerSurface::Status));
+
     const IrcCommand raw = IrcCommand::parse(QStringLiteral("/raw PING :x"));
     QCOMPARE(raw.verb, IrcCommand::Verb::Raw);
     QCOMPARE(raw.argument, QStringLiteral("PING :x"));
@@ -830,7 +836,7 @@ void CommandTest::catalogLookupAndScope()
     QVERIFY(!IrcVerbTable::find(IrcCommand::Verb::Empty));
     QVERIFY(!IrcVerbTable::find(IrcCommand::Verb::Unknown));
 
-    QCOMPARE(IrcVerbTable::all().size(), 40);
+    QCOMPARE(IrcVerbTable::all().size(), 41);
     for (const IrcVerbSpec& row : IrcVerbTable::all())
         QVERIFY(row.name != QLatin1String("say"));
 
@@ -1081,6 +1087,12 @@ void CommandTest::catalogLookupAndScope()
     QCOMPARE(cs->verb, IrcCommand::Verb::Cs);
     QCOMPARE(cs->scope, IrcVerbScope::Either);
 
+    const IrcVerbSpec *znc = IrcVerbTable::lookup(QStringLiteral("znc"));
+    QVERIFY(znc);
+    QCOMPARE(znc->verb, IrcCommand::Verb::Znc);
+    QCOMPARE(znc->usage, QStringLiteral("/znc <text>"));
+    QCOMPARE(znc->scope, IrcVerbScope::Either);
+
     const IrcVerbSpec *raw = IrcVerbTable::lookup(QStringLiteral("quote"));
     QVERIFY(raw);
     QCOMPARE(raw->verb, IrcCommand::Verb::Raw);
@@ -1096,7 +1108,7 @@ void CommandTest::catalogLookupAndScope()
     QCOMPARE(help->scope, IrcVerbScope::Either);
 
     const QVector<IrcVerbSpec> statusRows = IrcVerbTable::visibleOn(IrcComposerSurface::Status);
-    QCOMPARE(statusRows.size(), 32);
+    QCOMPARE(statusRows.size(), 33);
     for (const IrcVerbSpec& row : statusRows) {
         QVERIFY(row.allowedOn(IrcComposerSurface::Status));
         QVERIFY(row.verb != IrcCommand::Verb::Action);
@@ -1111,7 +1123,7 @@ void CommandTest::catalogLookupAndScope()
 
     const QVector<IrcVerbSpec> conversation =
         IrcVerbTable::visibleOn(IrcComposerSurface::Conversation);
-    QCOMPARE(conversation.size(), 40);
+    QCOMPARE(conversation.size(), 41);
     bool sawMe = false;
     bool sawClose = false;
     bool sawQuery = false;
@@ -2426,6 +2438,16 @@ void CommandTest::wrappersSendAndHelp()
     QCOMPARE(transport->writtenFrames().last(),
              QByteArrayLiteral("PRIVMSG ChanServ :info #omarchy\r\n"));
 
+    QVERIFY(controller.sendMessage(QStringLiteral("/znc help")));
+    QCOMPARE(transport->writtenFrames().last(),
+             QByteArrayLiteral("PRIVMSG *status :help\r\n"));
+    QCOMPARE(controller.selectedTarget(), QStringLiteral("#omarchy"));
+
+    const int beforeEmptyZnc = transport->writtenFrames().size();
+    QVERIFY(!controller.sendMessage(QStringLiteral("/znc")));
+    QCOMPARE(controller.lastError(), QStringLiteral("Command was refused"));
+    QCOMPARE(transport->writtenFrames().size(), beforeEmptyZnc);
+
     QVERIFY(controller.sendMessage(QStringLiteral("/raw PING :x")));
     QCOMPARE(transport->writtenFrames().last(),
              QByteArrayLiteral("PING :x\r\n"));
@@ -2456,6 +2478,7 @@ void CommandTest::wrappersSendAndHelp()
     QVERIFY(selectedBodiesContain(messages, QStringLiteral("/invite")));
     QVERIFY(selectedBodiesContain(messages, QStringLiteral("/ns")));
     QVERIFY(selectedBodiesContain(messages, QStringLiteral("/cs")));
+    QVERIFY(selectedBodiesContain(messages, QStringLiteral("/znc")));
     QVERIFY(selectedBodiesContain(messages, QStringLiteral("/raw")));
     QVERIFY(selectedBodiesContain(messages, QStringLiteral("/help")));
     QVERIFY(selectedBodiesContain(messages, QStringLiteral("/ping")));
@@ -2527,6 +2550,9 @@ void CommandTest::wrappersSendAndHelp()
     QVERIFY(console->submit(QStringLiteral("/cs help")));
     QCOMPARE(transport->writtenFrames().last(),
              QByteArrayLiteral("PRIVMSG ChanServ :help\r\n"));
+    QVERIFY(console->submit(QStringLiteral("/znc ListMods")));
+    QCOMPARE(transport->writtenFrames().last(),
+             QByteArrayLiteral("PRIVMSG *status :ListMods\r\n"));
 }
 
 void CommandTest::slashProjectClosed()
