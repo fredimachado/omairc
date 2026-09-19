@@ -187,8 +187,8 @@ void HighlightTest::parseAndCatalog()
     QVERIFY(IrcCommand::parse(QStringLiteral("/highlight omairc"))
                 .allowedOn(IrcComposerSurface::Status));
     QCOMPARE(IrcVerbTable::all().size(), 41);
-    QCOMPARE(IrcVerbTable::visibleOn(IrcComposerSurface::Status).size(), 32);
-    QCOMPARE(IrcVerbTable::visibleOn(IrcComposerSurface::Conversation).size(), 40);
+    QCOMPARE(IrcVerbTable::visibleOn(IrcComposerSurface::Status).size(), 33);
+    QCOMPARE(IrcVerbTable::visibleOn(IrcComposerSurface::Conversation).size(), 41);
     const auto probe = IrcSlashComplete::project(
         QStringLiteral("/high"), IrcComposerSurface::Conversation);
     QVERIFY(probe.isOpen());

@@ -1108,7 +1108,7 @@ void CommandTest::catalogLookupAndScope()
     QCOMPARE(help->scope, IrcVerbScope::Either);
 
     const QVector<IrcVerbSpec> statusRows = IrcVerbTable::visibleOn(IrcComposerSurface::Status);
-    QCOMPARE(statusRows.size(), 32);
+    QCOMPARE(statusRows.size(), 33);
     for (const IrcVerbSpec& row : statusRows) {
         QVERIFY(row.allowedOn(IrcComposerSurface::Status));
         QVERIFY(row.verb != IrcCommand::Verb::Action);
@@ -1123,7 +1123,7 @@ void CommandTest::catalogLookupAndScope()
 
     const QVector<IrcVerbSpec> conversation =
         IrcVerbTable::visibleOn(IrcComposerSurface::Conversation);
-    QCOMPARE(conversation.size(), 40);
+    QCOMPARE(conversation.size(), 41);
     bool sawMe = false;
     bool sawClose = false;
     bool sawQuery = false;
