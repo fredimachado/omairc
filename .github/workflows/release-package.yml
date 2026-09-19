@@ -66,7 +66,7 @@ jobs:
             --run-attempt "$GITHUB_RUN_ATTEMPT" \
             --format github-env \
             --github-env "$GITHUB_ENV"
-          echo "release=$OMAIRC_VERSION display=$OMAIRC_DISPLAY_VERSION artifact=$OMAIRC_ARTIFACT_VERSION pkgrel=$OMAIRC_ARCH_PKGREL"
+          grep '^OMAIRC_' "$GITHUB_ENV" | tail -6
 
       - name: Assert versions
         run: |

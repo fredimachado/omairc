@@ -92,7 +92,7 @@ jobs:
             --format github-env \
             --github-env "$GITHUB_ENV"
           echo "OMAIRC_BUILD_NUMBER=$GITHUB_RUN_NUMBER" >> "$GITHUB_ENV"
-          echo "release=$OMAIRC_VERSION display=$OMAIRC_DISPLAY_VERSION artifact=$OMAIRC_ARTIFACT_VERSION"
+          grep '^OMAIRC_' "$GITHUB_ENV" | tail -6
 
       - name: Assert tag version
         if: startsWith(github.ref, 'refs/tags/v')
