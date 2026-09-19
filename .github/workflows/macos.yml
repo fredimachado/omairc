@@ -53,31 +53,29 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: macos-latest
+          # macos-latest is macOS 26 and no longer ships Xcode 16. macos-15
+          # ARM64 and macos-15-intel both install Xcode 16.4, which Qt 6.8.3
+          # targets. macos-15-intel is the last GitHub-hosted x86_64 image
+          # (through 2027).
+          - os: macos-15
             suffix: macos-arm64
             macho: arm64
-          # macos-15-intel is the last GitHub-hosted x86_64 image (through 2027).
+            xcode: "16.4"
           - os: macos-15-intel
             suffix: macos-x64
             macho: x86_64
+            xcode: "16.4"
     env:
       QT_VERSION: 6.8.3
       QTKEYCHAIN_VERSION: 0.15.0
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - name: Prefer Xcode 16 when available
-        run: |
-          set -euo pipefail
-          xcode16=$(ls -d /Applications/Xcode_16*.app 2>/dev/null | sort -V | tail -n 1 || true)
-          if [ -n "$xcode16" ]; then
-            echo "Selecting $xcode16"
-            sudo xcode-select -s "$xcode16/Contents/Developer"
-          else
-            echo "No Xcode 16 install found; using default Xcode"
-          fi
-          xcodebuild -version
+      - name: Select Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: ${{ matrix.xcode }}
 
       - name: Read version
         run: |
@@ -138,7 +136,7 @@ jobs:
 
       - name: Cache Qt
         id: qt-cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ${{ runner.temp }}/Qt
           key: qt-${{ env.QT_VERSION }}-${{ env.OMAIRC_MAC_SUFFIX }}-${{ env.QT_AQT_ARCH }}-qtkeychain-${{ env.QTKEYCHAIN_VERSION }}
@@ -456,7 +454,7 @@ jobs:
           codesign -dvv "$app"
 
       - name: Upload app zip
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: omairc-${{ env.OMAIRC_VERSION }}-${{ env.OMAIRC_MAC_SUFFIX }}
           path: dist/omairc-${{ env.OMAIRC_VERSION }}-${{ env.OMAIRC_MAC_SUFFIX }}.zip
@@ -474,9 +472,15 @@ jobs:
           set -euo pipefail
           xcrun stapler validate "$GITHUB_WORKSPACE/build/omairc.app"
 
+      - name: Assess Gatekeeper
+        if: env.OMAIRC_NOTARIZED == '1'
+        run: |
+          set -euo pipefail
+          spctl --assess --type execute --verbose=4 build/omairc.app
+
       - name: Replace zip with stapled app
         if: env.OMAIRC_NOTARIZED == '1'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: omairc-${{ env.OMAIRC_VERSION }}-${{ env.OMAIRC_MAC_SUFFIX }}
           path: dist/omairc-${{ env.OMAIRC_VERSION }}-${{ env.OMAIRC_MAC_SUFFIX }}.zip
@@ -540,7 +544,7 @@ jobs:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - name: Download architecture zips
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: omairc-*-macos-*
           merge-multiple: true

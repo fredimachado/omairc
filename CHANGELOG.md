@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- macOS CI selects Xcode 16.4 with `maxim-lobanov/setup-xcode` on `macos-15` and `macos-15-intel` (Qt 6.8.3; `macos-latest` is macOS 26 and no longer ships Xcode 16). After notarization and stapling, tag releases run `spctl --assess --type execute --verbose=4` so Gatekeeper rejection fails the job. Official GitHub Actions in that workflow use their current Node 24 majors.
+
 ## [0.8.0] - 2026-09-19
 
 ### Added

@@ -156,7 +156,7 @@ Compared with Linux you will miss portal text scale (stays 1.0), desktop notific
 
 Omarchy is the home. A native macOS build is a bonus: it works, it is not the focus, and why not.
 
-Each version tag publishes `omairc-*-macos-arm64.zip` (Apple Silicon) and `omairc-*-macos-x64.zip` (Intel) on the [GitHub release](https://github.com/fredimachado/omairc/releases/latest). Pull-request CI uploads both zips as workflow artifacts. CI signs the bundles with Developer ID. Version tags (and a manual workflow run) notarize and staple; Apple's first look at a new Developer ID can sit in progress for hours, so pull requests do not wait on that. Local Homebrew-Qt builds stay ad-hoc.
+Each version tag publishes `omairc-*-macos-arm64.zip` (Apple Silicon) and `omairc-*-macos-x64.zip` (Intel) on the [GitHub release](https://github.com/fredimachado/omairc/releases/latest). Pull-request CI uploads both zips as workflow artifacts. CI signs the bundles with Developer ID. Version tags (and a manual workflow run) notarize, staple, and Gatekeeper-assess the app; Apple's first look at a new Developer ID can sit in progress for hours, so pull requests do not wait on that. Local Homebrew-Qt builds stay ad-hoc.
 
 From the repo root on macOS:
 
