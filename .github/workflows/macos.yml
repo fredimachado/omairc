@@ -591,7 +591,7 @@ jobs:
             intel_name=$(basename "${intel[0]}")
             deadline=$(( $(date +%s) + 180 ))
             while true; do
-              assets=$(gh release view "$tag" --json assets --jq '.assets[].name')
+              assets=$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name')
               if printf '%s\n' "$assets" | grep -Fxq "$arm_name" && \
                  printf '%s\n' "$assets" | grep -Fxq "$intel_name"; then
                 echo "Release $tag has $arm_name and $intel_name"
