@@ -16,6 +16,10 @@ QtObject {
     readonly property color hoverColor: mixColors(pageColor, inkColor, darkMode ? 0.10 : 0.075)
     readonly property color dividerColor: mixColors(pageColor, inkColor, darkMode ? 0.13 : 0.11)
     readonly property color mutedColor: mixColors(pageColor, inkColor, darkMode ? 0.52 : 0.47)
+    readonly property color overlayVeilColor: {
+        var veil = mixColors(pageColor, inkColor, darkMode ? 0.18 : 0.12);
+        return Qt.rgba(veil.r, veil.g, veil.b, 0.5);
+    }
     readonly property var nickPalette: [
         accentColor,
         darkMode ? "#c099ff" : "#7950b8",
