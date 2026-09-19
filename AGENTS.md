@@ -13,11 +13,26 @@
 ## Architecture
 
 - This is a Qt 6 Quick application built with qmake and C++17.
-- Keep window presentation logic in `src/OmaircWindow.qml`. Seed the demo
-  world from `IrcDemoServer`, not from QML `ListModel`s.
+- `src/OmaircWindow.qml` is the shell: `irc` / `connection` / `backend`
+  bindings, window-owned `OmaircStyle` and `IrcTextFormatter`, window-level
+  `Shortcut`s (including the one `Ctrl+Enter` / `Ctrl+Return` pair that
+  applies Connect), submit/apply/focus helpers, conversation selection, send,
+  slash, find, overlay open/close, and aliases into extracted columns
+  (`sidebar.sidebarScroll`, `conversation.composer`,
+  `membersPanel.membersList`, ...). Presentation chrome lives in `src/qml/`
+  file-based components. Register new QML files in `src/resources.qrc` and
+  `import "qml"` from the window. Tests import `../../src`. The app loads
+  `qrc:/`.
+- Seed the demo world from `IrcDemoServer`, not from QML `ListModel`s.
 - Keep `Backend` limited to desktop integration: Omarchy theme colors, live
   theme watching, text scale, window geometry, and desktop notifications.
 - Keep IRC networking, protocol, session, and model code in `src/irc/`.
+  IRC formatting is `IrcTextFormatter` (`src/irc/irctextformatter.*`). The
+  window forwards `plainIrcText` / `emphasizedIrcText` / `hasIrcEmphasis` so
+  QML tests and `bin/check-conventions` still see those names. Do not move
+  URL policy (`isAllowedHttpUrl`, `httpUrlAt`, `openAllowedUrl`) or
+  `inviteChannelAt()` into C++. Nick colors stay presentation
+  (`OmaircStyle.nickColor`).
 - Keep system light/dark mode and portal text-scale detection in
   `SystemTheme`.
 - Use the bundled `iA Writer Mono S` font for all custom interface text.
@@ -25,14 +40,41 @@
   `npx skills add fredimachado/omairc/skills -g`. Proving the GUI uses
   `.cursor/skills/verify-omairc`; that skill is internal.
 
+## QML extraction / window growth
+
+Do not keep adding code to `src/OmaircWindow.qml`. New UI goes outside it.
+
+- New rows, sheets, panels, buttons, glyphs, and form fields live in
+  `src/qml/` as their own file, registered in `src/resources.qrc`.
+- Do not add large inline `component { }` blocks or new column/overlay trees
+  inside `OmaircWindow.qml`.
+- If a change would add a substantial chunk to the window, extract a file
+  (or extend an existing `src/qml/` type) in the same change, or as the first
+  follow-up. Do not park "we'll split it later" in the window.
+- Window wiring is allowed: instantiate the type with `style: win.style`
+  (never `style: style`), explicit props, and signals. Window JS may use
+  `property alias` on the instance for ids it already owns (`composer`,
+  `sidebarScroll`, `membersList`, `messageList`, `consoleList`).
+- No `host: win`. Do not pass the window as a god-object. Pass `OmaircStyle`,
+  models/services, and callbacks/signals.
+- Extract by coupling, not line count. Keep `objectName`s so recursive
+  `findChild` still works. File-based types stay QObject children of the same
+  parent.
+- Message and console delegates currently still live in the window (they call
+  `win.plainIrcText` / `win.emphasizedIrcText` / `PlainUrlHit`). That is
+  leftover, not a license to grow more delegate trees there. New transcript
+  chrome (headers, avatars, hits) already lives in `src/qml/`. Do not add
+  new leaf visuals inline.
+
 ## Visual conventions
 
 - Derive UI colors from `backend.themeBackground`, `themeForeground`,
   `themeAccent`, and `themeSelection`; do not introduce a separate fixed
   palette for structural UI.
-- Derive secondary surfaces and muted text with `mixColors()` so new Omarchy
-  themes continue to work.
-- Scale dimensions and text through `scaledSize()` and `backend.textScale`.
+- Derive secondary surfaces and muted text with `mixColors()` /
+  `OmaircStyle` so new Omarchy themes continue to work.
+- Scale dimensions and text through `scaledSize()`, `backend.textScale`, and
+  `style.scaledSize`.
 - Keep conversation counts consistent between the header and member panel.
 
 ## QML conventions
@@ -41,6 +83,13 @@
   Test the live `MessageListModel` and the compiled window. Confirm rendered
   labels. A warning-free QML startup does not prove that bindings render
   visible values.
+- Sidebar walk is model-driven. `sidebarConversationRows()` and
+  `sidebarNetworkSections()` read `irc.conversations` / `connection.networks`
+  through `get()` and `hasDirects()`. Transcript rows use `get()` / `field()`.
+  Do not scan QML children and duck-type methods (`child.activate` caused
+  `QQmlVMEMetaObject`). Reveal by `objectName` + `visible` + `height`.
+  `ConversationRow` has `signal activated()`, not `function activate()`.
+- Collapse the server list by width, not `visible: false`.
 - The Connect sheet is tabbed: `Connection` holds the per-network profile and
   `Preferences` holds global settings such as reopening direct messages on
   startup. Only queries the user opened or replied to are restored, and
