@@ -96,6 +96,7 @@ SOURCES += \
     tst_omaircipc.cpp \
     tst_omairccli.cpp \
     tst_omaircfilelog.cpp \
+    tst_omaircpaths.cpp \
     tst_irctextformatter.cpp \
     tst_omaircupdatecheck.cpp \
     tst_backend.cpp \
