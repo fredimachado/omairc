@@ -67,6 +67,7 @@ jobs:
             --run-attempt "$env:GITHUB_RUN_ATTEMPT" `
             --format github-env `
             --github-env "$env:GITHUB_ENV"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           Add-Content $env:GITHUB_ENV "OMAIRC_BUILD_NUMBER=$env:GITHUB_RUN_NUMBER"
           Get-Content $env:GITHUB_ENV | Select-String '^OMAIRC_'
 

@@ -6,6 +6,8 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import shutil
+import subprocess
 import sys
 from pathlib import Path
 
@@ -16,6 +18,9 @@ SHORT_SHA_RE = re.compile(r"^[0-9a-fA-F]{7,40}$")
 ARTIFACT_SAFE_RE = re.compile(r"^[0-9A-Za-z][0-9A-Za-z.+_-]*$")
 DISPLAY_SAFE_RE = re.compile(r"^[0-9A-Za-z][0-9A-Za-z.+_-]*$")
 PKGREL_RE = re.compile(r"^[0-9]+(?:\.[0-9]+)*$")
+CHANNEL_SAFE_RE = re.compile(r"^[0-9A-Za-z][0-9A-Za-z._-]*$")
+PULL_REQUEST_REF_RE = re.compile(r"^refs/pull/(\d+)/merge$")
+BRANCH_REF_RE = re.compile(r"^refs/heads/(.+)$")
 
 
 def read_canonical_version(version_pri: Path = VERSION_PRI) -> str:
@@ -44,6 +49,71 @@ def is_tag_ref(git_ref: str) -> bool:
 
 def tag_version(git_ref: str) -> str:
     return git_ref[len("refs/tags/v") :]
+
+
+def sanitize_channel(name: str) -> str:
+    cleaned = re.sub(r"[^0-9A-Za-z._-]+", "-", name.strip().lower())
+    cleaned = re.sub(r"-+", "-", cleaned).strip("-")
+    if not cleaned or not CHANNEL_SAFE_RE.fullmatch(cleaned):
+        raise ValueError(f"cannot derive snapshot channel from {name!r}")
+    return cleaned
+
+
+def snapshot_channel(git_ref: str) -> str:
+    if git_ref == "refs/heads/master":
+        return "master"
+    pull_match = PULL_REQUEST_REF_RE.fullmatch(git_ref)
+    if pull_match:
+        return f"pr{pull_match.group(1)}"
+    branch_match = BRANCH_REF_RE.fullmatch(git_ref)
+    if branch_match:
+        return sanitize_channel(branch_match.group(1))
+    raise ValueError(f"unsupported git ref for snapshot builds: {git_ref}")
+
+
+def arch_package_version(pkgver: str, pkgrel: str) -> str:
+    return f"{pkgver}-{pkgrel}"
+
+
+def compare_arch_versions(left: str, right: str) -> int:
+    vercmp = shutil.which("vercmp")
+    if vercmp:
+        proc = subprocess.run(
+            [vercmp, left, right],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        if proc.returncode == 0 and proc.stdout.strip():
+            return int(proc.stdout.strip())
+    return _compare_arch_versions_fallback(left, right)
+
+
+def _pkgrel_parts(pkgrel: str) -> list[int]:
+    return [int(part) for part in pkgrel.split(".")]
+
+
+def _compare_pkgrel(left: str, right: str) -> int:
+    left_parts = _pkgrel_parts(left)
+    right_parts = _pkgrel_parts(right)
+    for index in range(max(len(left_parts), len(right_parts))):
+        left_value = left_parts[index] if index < len(left_parts) else 0
+        right_value = right_parts[index] if index < len(right_parts) else 0
+        if left_value < right_value:
+            return -1
+        if left_value > right_value:
+            return 1
+    return 0
+
+
+def _compare_arch_versions_fallback(left: str, right: str) -> int:
+    left_pkgver, left_pkgrel = left.split("-", 1)
+    right_pkgver, right_pkgrel = right.split("-", 1)
+    if left_pkgver != right_pkgver:
+        raise ValueError(
+            f"fallback arch version compare requires matching pkgver, got {left!r} and {right!r}"
+        )
+    return _compare_pkgrel(left_pkgrel, right_pkgrel)
 
 
 def validate_field(name: str, value: str, pattern: re.Pattern[str]) -> None:
@@ -75,11 +145,12 @@ def derive(
         artifact = release
         arch_pkgrel = "1"
     else:
+        channel = snapshot_channel(git_ref)
         digest = short_sha(sha)
         release = canonical_version
-        display = f"{release}+master.g{digest}"
-        artifact = f"{release}-master.g{digest}.a{run_attempt}"
-        arch_pkgrel = f"1.{run_number}"
+        display = f"{release}+{channel}.g{digest}"
+        artifact = f"{release}-{channel}.g{digest}.a{run_attempt}"
+        arch_pkgrel = f"0.{run_number}" if channel == "master" else "1"
 
     validate_field("release", release, ARTIFACT_SAFE_RE)
     validate_field("display", display, DISPLAY_SAFE_RE)

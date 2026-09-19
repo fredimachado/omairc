@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import subprocess
 import sys
@@ -11,6 +12,14 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "bin" / "derive-build-versions.py"
+
+
+def load_module():
+    spec = importlib.util.spec_from_file_location("derive_build_versions", SCRIPT)
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(module)
+    return module
 
 
 def run_derive(**kwargs: str | int) -> subprocess.CompletedProcess[str]:
@@ -32,6 +41,10 @@ def run_derive(**kwargs: str | int) -> subprocess.CompletedProcess[str]:
 
 
 class DeriveBuildVersionsTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.module = load_module()
+
     def test_tag_release_is_unsuffixed(self) -> None:
         proc = run_derive(
             git_ref="refs/tags/v0.8.0",
@@ -63,7 +76,39 @@ class DeriveBuildVersionsTest(unittest.TestCase):
         self.assertEqual(values["release"], "0.8.0")
         self.assertEqual(values["display"], "0.8.0+master.gabcdef1")
         self.assertEqual(values["artifact"], "0.8.0-master.gabcdef1.a1")
-        self.assertEqual(values["arch_pkgrel"], "1.237")
+        self.assertEqual(values["arch_pkgrel"], "0.237")
+
+    def test_pull_request_snapshot(self) -> None:
+        proc = run_derive(
+            git_ref="refs/pull/235/merge",
+            sha="abcdef1234567890abcdef1234567890abcdef12",
+            run_number=237,
+            run_attempt=1,
+        )
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        values = json.loads(proc.stdout)
+        self.assertEqual(values["display"], "0.8.0+pr235.gabcdef1")
+        self.assertEqual(values["artifact"], "0.8.0-pr235.gabcdef1.a1")
+        self.assertEqual(values["arch_pkgrel"], "1")
+
+    def test_non_master_branch_snapshot(self) -> None:
+        proc = run_derive(
+            git_ref="refs/heads/cursor/master-snapshot-versions-df37",
+            sha="abcdef1",
+            run_number=12,
+            run_attempt=1,
+        )
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        values = json.loads(proc.stdout)
+        self.assertEqual(
+            values["display"],
+            "0.8.0+cursor-master-snapshot-versions-df37.gabcdef1",
+        )
+        self.assertEqual(
+            values["artifact"],
+            "0.8.0-cursor-master-snapshot-versions-df37.gabcdef1.a1",
+        )
+        self.assertEqual(values["arch_pkgrel"], "1")
 
     def test_rerun_changes_only_artifact(self) -> None:
         first = json.loads(
@@ -86,6 +131,40 @@ class DeriveBuildVersionsTest(unittest.TestCase):
         self.assertNotEqual(first["artifact"], second["artifact"])
         self.assertEqual(second["artifact"], "0.8.0-master.gabcdef1.a3")
 
+    def test_arch_snapshot_ordering(self) -> None:
+        release = "0.8.0"
+        early = self.module.derive(
+            git_ref="refs/heads/master",
+            sha="abcdef1",
+            run_number=1,
+            run_attempt=1,
+            canonical_version=release,
+        )
+        late = self.module.derive(
+            git_ref="refs/heads/master",
+            sha="abcdef1",
+            run_number=237,
+            run_attempt=1,
+            canonical_version=release,
+        )
+        tagged = self.module.derive(
+            git_ref="refs/tags/v0.8.0",
+            sha="abcdef1",
+            run_number=237,
+            run_attempt=1,
+            canonical_version=release,
+        )
+
+        early_version = self.module.arch_package_version(release, early["arch_pkgrel"])
+        late_version = self.module.arch_package_version(release, late["arch_pkgrel"])
+        release_version = self.module.arch_package_version(
+            release, tagged["arch_pkgrel"]
+        )
+
+        self.assertLess(self.module.compare_arch_versions(early_version, late_version), 0)
+        self.assertLess(self.module.compare_arch_versions(late_version, release_version), 0)
+        self.assertLess(self.module.compare_arch_versions(early_version, release_version), 0)
+
     def test_malformed_sha(self) -> None:
         proc = run_derive(
             git_ref="refs/heads/master",
@@ -106,20 +185,21 @@ class DeriveBuildVersionsTest(unittest.TestCase):
         self.assertNotEqual(proc.returncode, 0)
         self.assertIn("does not match version.pri", proc.stderr)
 
-    def test_missing_version_file(self) -> None:
-        import importlib.util
-
-        spec = importlib.util.spec_from_file_location(
-            "derive_build_versions", SCRIPT
+    def test_unsupported_ref(self) -> None:
+        proc = run_derive(
+            git_ref="refs/tags/beta-0.8.0",
+            sha="abcdef1",
+            run_number=1,
+            run_attempt=1,
         )
-        module = importlib.util.module_from_spec(spec)
-        assert spec.loader is not None
-        spec.loader.exec_module(module)
+        self.assertNotEqual(proc.returncode, 0)
+        self.assertIn("unsupported git ref", proc.stderr)
 
+    def test_missing_version_file(self) -> None:
         missing = ROOT / "tests" / "missing-version.pri"
         self.assertFalse(missing.is_file())
         with self.assertRaises(ValueError) as ctx:
-            module.read_canonical_version(missing)
+            self.module.read_canonical_version(missing)
         self.assertIn("missing version file", str(ctx.exception))
 
 
