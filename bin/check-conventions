@@ -247,6 +247,17 @@ def check_version_source():
     return problems
 
 
+def check_omairc_version_header():
+    problems = []
+    for relative, source in sources("src/**/*.cpp", "tests/**/*.cpp"):
+        if "OMAIRC_VERSION" not in source:
+            continue
+        if "omaircversion.h" not in source:
+            problems.append(
+                f"{relative}: include omaircversion.h for OMAIRC_VERSION")
+    return problems
+
+
 def check_macos_objc_arc():
     problems = []
     mm = ROOT / "src" / "macosnotifications.mm"
@@ -481,6 +492,7 @@ CHECKS = (
     ("formatted messageDelegate.body", check_message_delegate_body),
     ("bounded IPC socket reads", check_socket_reads),
     ("single version source", check_version_source),
+    ("OMAIRC_VERSION via omaircversion.h", check_omairc_version_header),
     ("CHANTYPES via IrcServerFeatures", check_hardcoded_chantypes),
     ("retired mock sidebar tokens", check_retired_mock_sidebar),
     ("macOS ObjC ARC for notifications", check_macos_objc_arc),

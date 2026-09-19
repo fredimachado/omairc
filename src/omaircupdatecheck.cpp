@@ -1,8 +1,5 @@
 #include "omaircupdatecheck.h"
-
-#ifndef OMAIRC_VERSION
-#error "Build with version.pri so OMAIRC_VERSION is defined"
-#endif
+#include "omaircversion.h"
 
 #include <QJsonDocument>
 #include <QJsonObject>

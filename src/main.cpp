@@ -39,10 +39,7 @@
 #include "singleinstance.h"
 #include "storage/secretservicecredentialstore.h"
 #include "systemtheme.h"
-
-#ifndef OMAIRC_VERSION
-#error "Build with omairc.pro so OMAIRC_VERSION is defined"
-#endif
+#include "omaircversion.h"
 
 #ifdef Q_OS_WIN
 static bool stdHandleIsRedirected(DWORD stdHandle)
