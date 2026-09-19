@@ -18,7 +18,11 @@ JOBS="$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 1)"
 mkdir -p "$BUILD_DIR"
 cd "$BUILD_DIR"
 
-"$QMAKE" "$ROOT/omairc.pro"
+if [ -n "${OMAIRC_BUILD_VERSION:-}" ]; then
+  "$QMAKE" "$ROOT/omairc.pro" "OMAIRC_BUILD_VERSION=$OMAIRC_BUILD_VERSION"
+else
+  "$QMAKE" "$ROOT/omairc.pro"
+fi
 make -j"$JOBS"
 
 if [ -x "$BUILD_DIR/omairc" ]; then

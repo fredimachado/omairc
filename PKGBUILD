@@ -29,7 +29,11 @@ sha256sums=('SKIP')
 
 build() {
   cd "$srcdir/$pkgname-$pkgver"
-  qmake6 PREFIX=/usr
+  local -a qmake_args=(PREFIX=/usr)
+  if [ -n "${OMAIRC_BUILD_VERSION:-}" ]; then
+    qmake_args+=(OMAIRC_BUILD_VERSION="$OMAIRC_BUILD_VERSION")
+  fi
+  qmake6 "${qmake_args[@]}"
   make
 }
 

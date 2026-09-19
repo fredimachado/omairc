@@ -8,6 +8,10 @@
   #error MyAppVersion must be defined (run bin\package-windows.bat)
 #endif
 
+#ifndef MyArtifactVersion
+  #define MyArtifactVersion MyAppVersion
+#endif
+
 #ifndef MyAppSource
   #define MyAppSource "..\..\build\release"
 #endif
@@ -41,7 +45,7 @@ CloseApplications=yes
 LicenseFile=..\..\LICENSE
 SetupIconFile=..\..\data\icons\omairc.ico
 OutputDir=..\..\dist
-OutputBaseFilename=omairc-{#MyAppVersion}-windows-x64-setup
+OutputBaseFilename=omairc-{#MyArtifactVersion}-windows-x64-setup
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"

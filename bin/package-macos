@@ -14,7 +14,7 @@ if [ "$(uname -s)" != "Darwin" ]; then
   exit 1
 fi
 
-VERSION="${OMAIRC_VERSION:-$("$ROOT/bin/version")}"
+VERSION="${OMAIRC_ARTIFACT_VERSION:-${OMAIRC_VERSION:-$("$ROOT/bin/version")}}"
 ARCH="$(uname -m)"
 case "$ARCH" in
   arm64) SUFFIX=macos-arm64 ;;

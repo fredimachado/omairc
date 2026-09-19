@@ -15,16 +15,25 @@ if not exist "%ROOT%\build\release\msvcp140.dll" (
   exit /b 1
 )
 
-set "VERSION="
-if defined OMAIRC_VERSION (
-  set "VERSION=!OMAIRC_VERSION!"
+set "DISPLAY_VERSION="
+if defined OMAIRC_DISPLAY_VERSION (
+  set "DISPLAY_VERSION=!OMAIRC_DISPLAY_VERSION!"
+) else if defined OMAIRC_BUILD_VERSION (
+  set "DISPLAY_VERSION=!OMAIRC_BUILD_VERSION!"
+) else if defined OMAIRC_VERSION (
+  set "DISPLAY_VERSION=!OMAIRC_VERSION!"
 ) else (
-  for /f "usebackq tokens=2 delims==" %%I in (`findstr /b /c:"VERSION " "%ROOT%\version.pri"`) do set "VERSION=%%I"
+  for /f "usebackq tokens=2 delims==" %%I in (`findstr /b /c:"VERSION " "%ROOT%\version.pri"`) do set "DISPLAY_VERSION=%%I"
 )
-set "VERSION=!VERSION: =!"
-if not defined VERSION (
+set "DISPLAY_VERSION=!DISPLAY_VERSION: =!"
+if not defined DISPLAY_VERSION (
   echo version.pri must set VERSION >&2
   exit /b 1
+)
+
+set "ARTIFACT_VERSION=!DISPLAY_VERSION!"
+if defined OMAIRC_ARTIFACT_VERSION (
+  set "ARTIFACT_VERSION=!OMAIRC_ARTIFACT_VERSION!"
 )
 
 call :find_iscc
@@ -44,12 +53,12 @@ del /q "!STAGE!\*.obj" "!STAGE!\*.pdb" "!STAGE!\*.res" "!STAGE!\*.ilk" >nul 2>&1
 del /q "!STAGE!\moc_*.cpp" "!STAGE!\moc_predefs.h" "!STAGE!\qrc_*.cpp" >nul 2>&1
 del /q "!STAGE!\vc_redist*.exe" >nul 2>&1
 
-echo Compiling Omairc !VERSION! setup with "!ISCC!"
-"!ISCC!" /Q /DMyAppVersion=!VERSION! /DMyAppSource="..\..\dist\omairc-windows-stage" "%ROOT%\packaging\windows\omairc.iss"
+echo Compiling Omairc !DISPLAY_VERSION! setup with "!ISCC!"
+"!ISCC!" /Q /DMyAppVersion=!DISPLAY_VERSION! /DMyArtifactVersion=!ARTIFACT_VERSION! /DMyAppSource="..\..\dist\omairc-windows-stage" "%ROOT%\packaging\windows\omairc.iss"
 if errorlevel 1 exit /b 1
 if exist "!STAGE!" rmdir /s /q "!STAGE!"
 
-set "SETUP=%ROOT%\dist\omairc-!VERSION!-windows-x64-setup.exe"
+set "SETUP=%ROOT%\dist\omairc-!ARTIFACT_VERSION!-windows-x64-setup.exe"
 if not exist "!SETUP!" (
   echo Expected !SETUP! after ISCC. >&2
   exit /b 1
