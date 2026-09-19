@@ -35,6 +35,14 @@ QSslCertificate testCertificate()
     return QSslCertificate(file.readAll(), QSsl::Pem);
 }
 
+QSslCertificate testCaCertificate()
+{
+    QFile file(QStringLiteral(TEST_CERT_DIR "/localhost-ca-cert.pem"));
+    if (!file.open(QIODevice::ReadOnly))
+        return QSslCertificate();
+    return QSslCertificate(file.readAll(), QSsl::Pem);
+}
+
 QSslKey testPrivateKey()
 {
     QFile file(QStringLiteral(TEST_CERT_DIR "/localhost-key.pem"));
@@ -120,12 +128,16 @@ void QtIrcTransportIntegrationTest::plainTcpExchangesBytesAndDisconnects()
 void QtIrcTransportIntegrationTest::tlsExchangesBytesAndDisconnects()
 {
     const QSslCertificate certificate = testCertificate();
+    const QSslCertificate caCertificate = testCaCertificate();
     const QSslKey privateKey = testPrivateKey();
     QVERIFY(!certificate.isNull());
+    QVERIFY(!caCertificate.isNull());
     QVERIFY(!privateKey.isNull());
 
     QSslConfiguration serverConfiguration = QSslConfiguration::defaultConfiguration();
     serverConfiguration.setLocalCertificate(certificate);
+    serverConfiguration.setLocalCertificateChain(
+        QList<QSslCertificate>{certificate, caCertificate});
     serverConfiguration.setPrivateKey(privateKey);
     QSslServer server;
     server.setSslConfiguration(serverConfiguration);
@@ -141,7 +153,7 @@ void QtIrcTransportIntegrationTest::tlsExchangesBytesAndDisconnects()
 
     QSslConfiguration clientConfiguration = QSslConfiguration::defaultConfiguration();
     QList<QSslCertificate> authorities = clientConfiguration.caCertificates();
-    authorities.append(certificate);
+    authorities.append(caCertificate);
     clientConfiguration.setCaCertificates(authorities);
     QtIrcTransport transport(clientConfiguration);
     QSignalSpy encrypted(&transport, &IrcTransport::encrypted);
@@ -211,7 +223,8 @@ void QtIrcTransportIntegrationTest::untrustedCertificateFailsWithUsefulError()
     QVERIFY2(message.contains(QStringLiteral("TLS certificate error")),
              qPrintable(message));
     QVERIFY2(message.contains(QStringLiteral("self-signed"), Qt::CaseInsensitive)
-                 || message.contains(QStringLiteral("trusted"), Qt::CaseInsensitive),
+                 || message.contains(QStringLiteral("trusted"), Qt::CaseInsensitive)
+                 || message.contains(QStringLiteral("issuer"), Qt::CaseInsensitive),
              qPrintable(message));
 }
 

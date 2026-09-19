@@ -1,0 +1,73 @@
+#!/usr/bin/env sh
+# Test-only loopback PKI. Never trust these certificates in production.
+#
+# SecureTransport rejects a self-signed CA:TRUE leaf used as a TLS server
+# cert ("not trusted for this purpose") and Apple's TLS server policy caps
+# publicly-shaped server certs at 398 days. Keep a long-lived CA and a
+# CA:FALSE serverAuth leaf with SAN DNS:localhost + IP:127.0.0.1.
+set -eu
+
+DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+
+CA_KEY="$DIR/localhost-ca-key.pem"
+CA_CERT="$DIR/localhost-ca-cert.pem"
+LEAF_KEY="$DIR/localhost-key.pem"
+LEAF_CERT="$DIR/localhost-cert.pem"
+CSR="$DIR/localhost.csr"
+SRL="$DIR/localhost-ca-cert.srl"
+CA_CFG="$DIR/localhost-ca.cnf"
+LEAF_CFG="$DIR/localhost-leaf.cnf"
+
+cleanup() {
+  rm -f "$CSR" "$SRL" "$CA_CFG" "$LEAF_CFG"
+}
+trap cleanup EXIT
+
+umask 077
+
+openssl genrsa -out "$CA_KEY" 2048
+openssl genrsa -out "$LEAF_KEY" 2048
+
+cat > "$CA_CFG" <<'EOF'
+[req]
+distinguished_name = dn
+x509_extensions = ext
+prompt = no
+
+[dn]
+CN = Omairc Test CA
+
+[ext]
+basicConstraints = critical,CA:TRUE
+keyUsage = critical,keyCertSign,cRLSign
+subjectKeyIdentifier = hash
+EOF
+
+cat > "$LEAF_CFG" <<'EOF'
+[req]
+distinguished_name = dn
+prompt = no
+
+[dn]
+CN = localhost
+
+[ext]
+basicConstraints = critical,CA:FALSE
+keyUsage = critical,digitalSignature,keyEncipherment
+extendedKeyUsage = serverAuth
+subjectAltName = DNS:localhost,IP:127.0.0.1
+subjectKeyIdentifier = hash
+authorityKeyIdentifier = keyid,issuer
+EOF
+
+openssl req -new -x509 -sha256 -days 3650 -key "$CA_KEY" -out "$CA_CERT" \
+  -config "$CA_CFG"
+openssl req -new -sha256 -key "$LEAF_KEY" -out "$CSR" -config "$LEAF_CFG"
+openssl x509 -req -sha256 -days 397 \
+  -in "$CSR" \
+  -CA "$CA_CERT" -CAkey "$CA_KEY" -CAcreateserial \
+  -out "$LEAF_CERT" \
+  -extfile "$LEAF_CFG" -extensions ext
+
+chmod 644 "$CA_CERT" "$LEAF_CERT"
+chmod 644 "$CA_KEY" "$LEAF_KEY"
