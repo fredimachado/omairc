@@ -615,10 +615,11 @@ void ModelTest::conversationGetFieldAndHasDirects()
     QCOMPARE(conversations.field(0, QStringLiteral("conversation")).toString(),
              QStringLiteral("#active"));
     QCOMPARE(conversations.field(0, QStringLiteral("direct")).toBool(), false);
-    QCOMPARE(conversations.field(0, QStringLiteral("unread")).toInt(), 1);
+    QCOMPARE(conversations.field(0, QStringLiteral("unread")).toInt(), 0);
     QCOMPARE(conversations.field(1, QStringLiteral("conversationName")).toString(),
              QStringLiteral("alice"));
     QCOMPARE(conversations.field(1, QStringLiteral("direct")).toBool(), true);
+    QCOMPARE(conversations.field(1, QStringLiteral("unread")).toInt(), 1);
     QCOMPARE(conversations.field(1, QStringLiteral("networkId")).toString(),
              networkA);
 
