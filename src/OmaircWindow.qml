@@ -89,12 +89,12 @@ ApplicationWindow {
         restoreComposerDraft();
         resetComposerHistoryBrowse();
         if (win.slashCommands)
-            win.slashCommands.sync(composer.text, consoleVisible);
+            win.slashCommands.sync(conversation.composer.text, consoleVisible);
         if (!consoleVisible)
             return;
         Qt.callLater(function() {
-            consoleList.pinToEnd();
-            composer.forceActiveFocus();
+            conversation.consoleList.pinToEnd();
+            conversation.composer.forceActiveFocus();
         });
     }
     readonly property string currentConversation: irc ? irc.selectedTarget : ""
@@ -116,12 +116,12 @@ ApplicationWindow {
         restoreComposerDraft();
         resetComposerHistoryBrowse();
         if (win.slashCommands)
-            win.slashCommands.sync(composer.text, consoleVisible);
+            win.slashCommands.sync(conversation.composer.text, consoleVisible);
     }
     onCurrentConversationChanged: {
         Qt.callLater(function() {
-            if (membersList)
-                membersList.currentIndex = 0;
+            if (membersPanel.membersList)
+                membersPanel.membersList.currentIndex = 0;
         });
     }
     readonly property string currentTopic: irc
@@ -556,10 +556,11 @@ ApplicationWindow {
     }
 
     function openAboutFromVersionClick(mappedItem, mouse) {
-        if (!selfVersionHit.visible)
+        var versionHit = sidebar.selfVersionHit;
+        if (!versionHit || !versionHit.visible)
             return false;
-        var point = mappedItem.mapToItem(selfVersionHit, mouse.x, mouse.y);
-        if (!selfVersionHit.contains(point))
+        var point = mappedItem.mapToItem(versionHit, mouse.x, mouse.y);
+        if (!versionHit.contains(point))
             return false;
         aboutSheet.open();
         return true;
@@ -614,10 +615,10 @@ ApplicationWindow {
             var id = msgid ? String(msgid).trim() : "";
             var row = id.length > 0 ? win.msgidRow(id) : -1;
             if (row < 0)
-                messageList.pinToEnd();
+                conversation.messageList.pinToEnd();
             else
                 win.revealFindMatch(row);
-            composer.forceActiveFocus();
+            conversation.composer.forceActiveFocus();
         });
     }
 
@@ -630,8 +631,8 @@ ApplicationWindow {
             return;
         irc.openDirectMessage(nick);
         Qt.callLater(function() {
-            messageList.pinToEnd();
-            composer.forceActiveFocus();
+            conversation.messageList.pinToEnd();
+            conversation.composer.forceActiveFocus();
         });
     }
 
@@ -640,8 +641,8 @@ ApplicationWindow {
             return;
         irc.closeDirectMessage();
         Qt.callLater(function() {
-            messageList.pinToEnd();
-            composer.forceActiveFocus();
+            conversation.messageList.pinToEnd();
+            conversation.composer.forceActiveFocus();
         });
     }
 
@@ -649,14 +650,14 @@ ApplicationWindow {
         membersVisible = true;
         Qt.callLater(function() {
             var last = memberCount() - 1;
-            if (membersList.currentIndex < 0 || membersList.currentIndex > last)
-                membersList.currentIndex = last < 0 ? -1 : 0;
-            membersList.forceActiveFocus();
+            if (membersPanel.membersList.currentIndex < 0 || membersPanel.membersList.currentIndex > last)
+                membersPanel.membersList.currentIndex = last < 0 ? -1 : 0;
+            membersPanel.membersList.forceActiveFocus();
         });
     }
 
     function activateFocusedMember() {
-        var nick = memberNickAt(membersList.currentIndex);
+        var nick = memberNickAt(membersPanel.membersList.currentIndex);
         if (!canOpenDirectMessage(nick))
             return;
         win.openDirectMessage(nick);
@@ -669,8 +670,8 @@ ApplicationWindow {
         var id = networkId && networkId.length ? networkId : irc.selectedNetworkId;
         irc.selectConversation(id, name);
         Qt.callLater(function() {
-            messageList.pinToEnd();
-            composer.forceActiveFocus();
+            conversation.messageList.pinToEnd();
+            conversation.composer.forceActiveFocus();
         });
     }
 
@@ -680,8 +681,8 @@ ApplicationWindow {
             return;
         irc.openStatus(networkId);
         Qt.callLater(function() {
-            consoleList.pinToEnd();
-            composer.forceActiveFocus();
+            conversation.consoleList.pinToEnd();
+            conversation.composer.forceActiveFocus();
         });
     }
 
@@ -741,7 +742,7 @@ ApplicationWindow {
     }
 
     function findVisibleNamedItem(name) {
-        if (!name || name.length === 0 || !sidebarScroll)
+        if (!name || name.length === 0 || !sidebar.sidebarScroll)
             return null;
         var found = null;
         function walk(node) {
@@ -759,7 +760,7 @@ ApplicationWindow {
             if (!found && node.contentItem)
                 walk(node.contentItem);
         }
-        walk(sidebarScroll.contentItem);
+        walk(sidebar.sidebarScroll.contentItem);
         return found;
     }
 
@@ -1053,15 +1054,15 @@ ApplicationWindow {
     }
 
     function revealSidebarRow(row) {
-        if (!row || !sidebarScroll)
+        if (!row || !sidebar.sidebarScroll)
             return;
-        var mapped = row.mapToItem(sidebarScroll.contentItem, 0, 0);
+        var mapped = row.mapToItem(sidebar.sidebarScroll.contentItem, 0, 0);
         var top = mapped.y;
         var bottom = top + row.height;
-        if (top < sidebarScroll.contentY)
-            sidebarScroll.contentY = Math.max(0, top);
-        else if (bottom > sidebarScroll.contentY + sidebarScroll.height)
-            sidebarScroll.contentY = Math.max(0, bottom - sidebarScroll.height);
+        if (top < sidebar.sidebarScroll.contentY)
+            sidebar.sidebarScroll.contentY = Math.max(0, top);
+        else if (bottom > sidebar.sidebarScroll.contentY + sidebar.sidebarScroll.height)
+            sidebar.sidebarScroll.contentY = Math.max(0, bottom - sidebar.sidebarScroll.height);
     }
 
     function revealNamedSidebarItem(name) {
@@ -1124,11 +1125,11 @@ ApplicationWindow {
     function unsentComposerText() {
         if (composerHistoryIndex >= 0)
             return composerHistoryDraft;
-        return composer.text;
+        return conversation.composer.text;
     }
 
     function stashComposerDraft() {
-        if (!composer)
+        if (!conversation.composer)
             return;
         if (composerDraftKey.length === 0)
             return;
@@ -1136,12 +1137,12 @@ ApplicationWindow {
     }
 
     function restoreComposerDraft() {
-        if (!composer)
+        if (!conversation.composer)
             return;
         var key = composerHistoryKey();
         composerDraftKey = key;
-        composer.text = composerDrafts[key] || "";
-        composer.cursorPosition = composer.text.length;
+        conversation.composer.text = composerDrafts[key] || "";
+        conversation.composer.cursorPosition = conversation.composer.text.length;
     }
 
     function abandonFind() {
@@ -1156,7 +1157,7 @@ ApplicationWindow {
         if (!abandonFind())
             return;
         restoreComposerDraft();
-        composer.forceActiveFocus();
+        conversation.composer.forceActiveFocus();
     }
 
     function transcriptRowText(model, row) {
@@ -1168,10 +1169,10 @@ ApplicationWindow {
     }
 
     function findNextMatch(fromStart) {
-        var query = composer.text;
+        var query = conversation.composer.text;
         if (query.length === 0)
             return -1;
-        var list = consoleVisible ? consoleList : messageList;
+        var list = consoleVisible ? conversation.consoleList : conversation.messageList;
         if (!list || list.count <= 0)
             return -1;
         var needle = query.toLowerCase();
@@ -1187,7 +1188,7 @@ ApplicationWindow {
     }
 
     function revealFindMatch(index) {
-        var list = consoleVisible ? consoleList : messageList;
+        var list = consoleVisible ? conversation.consoleList : conversation.messageList;
         if (!list)
             return;
         list.stick = list.stickDetached;
@@ -1203,7 +1204,7 @@ ApplicationWindow {
     }
 
     function advanceFind(fromStart) {
-        if (composer.text.length === 0) {
+        if (conversation.composer.text.length === 0) {
             findIndex = -1;
             return;
         }
@@ -1215,12 +1216,12 @@ ApplicationWindow {
     }
 
     function beginOrAdvanceFind() {
-        composer.forceActiveFocus();
+        conversation.composer.forceActiveFocus();
         if (!findActive) {
             stashComposerDraft();
             findActive = true;
             findIndex = -1;
-            composer.selectAll();
+            conversation.composer.selectAll();
             advanceFind(true);
             return;
         }
@@ -1245,13 +1246,13 @@ ApplicationWindow {
 
     function recallComposerHistory(delta) {
         var lines = composerHistories[composerHistoryKey()] || [];
-        if (composer.text.length === 0 && lines.length === 0)
+        if (conversation.composer.text.length === 0 && lines.length === 0)
             return false;
 
         if (composerHistoryIndex < 0) {
             if (delta > 0 || lines.length === 0)
                 return false;
-            composerHistoryDraft = composer.text;
+            composerHistoryDraft = conversation.composer.text;
             composerHistoryIndex = lines.length;
         }
 
@@ -1261,14 +1262,14 @@ ApplicationWindow {
         if (next >= lines.length) {
             var draft = composerHistoryDraft;
             resetComposerHistoryBrowse();
-            composer.text = draft;
-            composer.cursorPosition = composer.text.length;
+            conversation.composer.text = draft;
+            conversation.composer.cursorPosition = conversation.composer.text.length;
             return true;
         }
 
         composerHistoryIndex = next;
-        composer.text = lines[next];
-        composer.cursorPosition = composer.text.length;
+        conversation.composer.text = lines[next];
+        conversation.composer.cursorPosition = conversation.composer.text.length;
         return true;
     }
 
@@ -1356,9 +1357,9 @@ ApplicationWindow {
     function applyNickComplete() {
         var nick = nickCompleteMatches[nickCompleteIndex];
         var insertion = nick + (nickCompleteOrigin === 0 ? ": " : " ");
-        var after = composer.text.substring(composer.cursorPosition);
-        composer.text = composer.text.substring(0, nickCompleteOrigin) + insertion + after;
-        composer.cursorPosition = nickCompleteOrigin + insertion.length;
+        var after = conversation.composer.text.substring(conversation.composer.cursorPosition);
+        conversation.composer.text = conversation.composer.text.substring(0, nickCompleteOrigin) + insertion + after;
+        conversation.composer.cursorPosition = nickCompleteOrigin + insertion.length;
     }
 
     function completeNick() {
@@ -1368,9 +1369,9 @@ ApplicationWindow {
             return;
         }
 
-        var cursor = composer.cursorPosition;
-        var origin = composer.text.substring(0, cursor).lastIndexOf(" ") + 1;
-        var token = composer.text.substring(origin, cursor);
+        var cursor = conversation.composer.cursorPosition;
+        var origin = conversation.composer.text.substring(0, cursor).lastIndexOf(" ") + 1;
+        var token = conversation.composer.text.substring(origin, cursor);
         if (token.length === 0)
             return;
 
@@ -1399,7 +1400,7 @@ ApplicationWindow {
     }
 
     function scrollTranscript(direction) {
-        var list = consoleVisible ? consoleList : messageList;
+        var list = consoleVisible ? conversation.consoleList : conversation.messageList;
         if (!list || list.count <= 0)
             return;
 
@@ -1429,13 +1430,101 @@ ApplicationWindow {
         return irc && irc.sendMessage(original);
     }
 
+    function handleComposerText(text) {
+        if (findActive) {
+            if (slashCommands)
+                slashCommands.dismiss();
+            advanceFind(true);
+            return;
+        }
+        if (slashCommands) {
+            if (composerHistoryIndex >= 0)
+                slashCommands.dismiss();
+            else
+                slashCommands.sync(text, consoleVisible);
+        }
+        if (irc)
+            irc.notifyComposerText(text);
+    }
+
+    function handleComposerKey(event) {
+        if (findActive) {
+            if (event.key === Qt.Key_Tab
+                || ((event.key === Qt.Key_Up || event.key === Qt.Key_Down)
+                    && composerHasPlainModifier(event))) {
+                event.accepted = true;
+                return;
+            }
+        }
+
+        var historyArrow = (event.key === Qt.Key_Up
+            || event.key === Qt.Key_Down)
+            && composerHasPlainModifier(event)
+            && composerHistoryIndex >= 0;
+        if (!findActive && slashCommands && !historyArrow) {
+            var routed = slashCommands.routeKey(event.key, event.modifiers);
+            if (routed.accepted) {
+                if (routed.insertion.length > 0) {
+                    conversation.composer.text = routed.insertion;
+                    conversation.composer.cursorPosition = routed.insertion.length;
+                }
+                event.accepted = true;
+                return;
+            }
+        }
+
+        if (event.key === Qt.Key_Tab && composerHasPlainModifier(event)) {
+            completeNick();
+            event.accepted = true;
+            return;
+        }
+
+        resetNickComplete();
+
+        if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
+            if (!findActive && sidebarNetworkFocusId.length > 0) {
+                activateFocusedNetworkHeader();
+                event.accepted = true;
+                return;
+            }
+            sendMessage();
+            event.accepted = true;
+            return;
+        }
+
+        if (event.key === Qt.Key_Up && composerHasPlainModifier(event)) {
+            event.accepted = recallComposerHistory(-1);
+            return;
+        }
+
+        if (event.key === Qt.Key_Down && composerHasPlainModifier(event)) {
+            event.accepted = recallComposerHistory(1);
+            return;
+        }
+    }
+
+    function handleSlashHitHovered(index) {
+        if (slashCommands)
+            slashCommands.selectedIndex = index;
+    }
+
+    function handleSlashHitActivated(index) {
+        if (!slashCommands)
+            return;
+        var replacement = slashCommands.activate(index);
+        if (replacement.length > 0) {
+            conversation.composer.text = replacement;
+            conversation.composer.cursorPosition = replacement.length;
+        }
+    }
+
     function sendMessage() {
         if (findActive) {
             advanceFind(false);
             return;
         }
 
-        var original = composer.text.trim();
+        var original = conversation.composer.text.trim();
         if (original.length === 0)
             return;
 
@@ -1446,35 +1535,35 @@ ApplicationWindow {
         Qt.callLater(function() { suppressComposerStash = false; });
         if (sentFromKey.length > 0)
             composerDrafts[sentFromKey] = "";
-        composer.clear();
+        conversation.composer.clear();
 
         var sent = dispatchComposerSend(fromConsole, original);
         suppressComposerStash = false;
 
         if (!sent) {
-            composer.text = original;
-            composer.cursorPosition = composer.text.length;
+            conversation.composer.text = original;
+            conversation.composer.cursorPosition = conversation.composer.text.length;
             if (sentFromKey.length > 0 && composerDraftKey === sentFromKey)
                 composerDrafts[sentFromKey] = original;
             if (fromConsole)
-                consoleList.pinToEnd();
+                conversation.consoleList.pinToEnd();
             else
-                messageList.pinToEnd();
+                conversation.messageList.pinToEnd();
             return;
         }
 
         rememberSentComposerLine(original, sentFromKey);
         var kept = composerDrafts[composerDraftKey] || "";
-        composer.text = kept;
-        composer.cursorPosition = composer.text.length;
+        conversation.composer.text = kept;
+        conversation.composer.cursorPosition = conversation.composer.text.length;
         if (consoleVisible)
-            consoleList.pinToEnd();
+            conversation.consoleList.pinToEnd();
         else
-            messageList.pinToEnd();
+            conversation.messageList.pinToEnd();
         if (consoleVisible !== fromConsole
                 || currentConversationId !== sentFromConversationId) {
             Qt.callLater(function() {
-                composer.forceActiveFocus();
+                conversation.composer.forceActiveFocus();
             });
         }
     }
@@ -1492,7 +1581,7 @@ ApplicationWindow {
         enabled: !win.connectionOverlayVisible && !win.shortcutOverlayOpen
         onActivated: {
             sidebarNetworkFocusId = "";
-            composer.forceActiveFocus();
+            conversation.composer.forceActiveFocus();
         }
     }
 
@@ -1927,1082 +2016,415 @@ ApplicationWindow {
         spacing: 0
         enabled: !win.connectionOverlayVisible
 
-        Rectangle {
+        ServerListColumn {
             id: sidebar
             objectName: "serverList"
-            // Collapse the rail by width instead of hiding it. Walk order
-            // comes from irc.conversations / connection.networks, so
-            // Alt+Up/Down still reaches every row while the column is
-            // clipped. clip keeps the collapsed content from painting over
-            // the transcript. Alt+Left/Right restores the column so the
-            // header highlight stays visible.
-            clip: true
+            style: win.style
             Layout.preferredWidth: win.serverListVisible ? win.scaledSize(244) : 0
             Layout.minimumWidth: win.serverListVisible ? win.scaledSize(214) : 0
             Layout.fillHeight: true
-            color: win.panelColor
-
-            Rectangle {
-                anchors.right: parent.right
-                width: 1
-                height: parent.height
-                color: win.dividerColor
+            irc: win.irc
+            connection: win.connection
+            networkConsole: win.networkConsole
+            avatarStore: win.avatarStore
+            loadPeerAvatars: win.peerAvatarsEnabled
+            awayPresenceVisible: win.awayPresenceVisible
+            consoleVisible: win.consoleVisible
+            currentConversationId: win.currentConversationId
+            sidebarNetworkFocusId: win.sidebarNetworkFocusId
+            selfNick: win.selfNick
+            selfPresence: win.selfPresence
+            selfAvatar: win.peerAvatar(win.selfNick)
+            selfBot: win.peerBot(win.selfNick)
+            appVersion: win.appVersion
+            onConversationActivated: function(row) {
+                win.activateSidebarConversation(row);
             }
-
-            Flickable {
-                id: sidebarScroll
-                objectName: "sidebarList"
-                anchors.top: parent.top
-                anchors.left: parent.left
-                anchors.right: parent.right
-                anchors.bottom: identityFooter.top
-                clip: true
-                contentWidth: width
-                contentHeight: sidebarColumn.implicitHeight
-                boundsBehavior: Flickable.StopAtBounds
-                ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
-
-                Column {
-                    id: sidebarColumn
-                    width: sidebarScroll.width
-                    spacing: 0
-
-                    Repeater {
-                        id: liveNetworkRepeater
-                        objectName: "liveNetworkRepeater"
-                        model: win.irc && win.connection ? win.connection.networks : null
-
-                        Column {
-                            id: liveNet
-                            required property int index
-                            required property string networkId
-                            required property string displayName
-                            required property int iconColor
-                            required property string iconUrl
-                            width: parent ? parent.width : 0
-                            spacing: 0
-
-                            NetworkSection {
-                                style: win.style
-                                networkId: liveNet.networkId
-                                displayName: liveNet.displayName
-                                iconColor: liveNet.iconColor
-                                iconUrl: liveNet.iconUrl
-                                unread: 0
-                                mention: false
-                                showEdit: win.connection !== null
-                                headerFocused: liveNet.networkId.length > 0
-                                    && liveNet.networkId === win.sidebarNetworkFocusId
-                                irc: win.irc
-                                networkConsole: win.networkConsole
-                                avatarStore: win.avatarStore
-                                onStatusRequested: function(networkId) {
-                                    win.openNetworkStatus(networkId);
-                                }
-                                onEditRequested: function(networkId) {
-                                    if (win.connection)
-                                        win.selectSheetNetwork(networkId);
-                                    win.connectionSheetOpen = true;
-                                }
-                            }
-
-                            Item {
-                                width: parent.width
-                                height: win.scaledSize(28)
-                                Text {
-                                    anchors.left: parent.left
-                                    anchors.leftMargin: win.scaledSize(19)
-                                    anchors.verticalCenter: parent.verticalCenter
-                                    text: "CHANNELS"
-                                    color: win.mutedColor
-                                    font.family: "iA Writer Mono S"
-                                    font.bold: true
-                                    font.letterSpacing: win.scaledSize(0.8)
-                                    font.pixelSize: win.scaledSize(9)
-                                }
-                            }
-
-                            Repeater {
-                                objectName: liveNet.index === 0
-                                    ? "channelConversationRepeater"
-                                    : "channelConversationRepeater-" + liveNet.networkId
-                                model: win.irc ? win.irc.conversations : null
-                                delegate: ConversationRow {
-                                    id: channelRow
-                                    required property var model
-                                    style: win.style
-                                    conversationName: model.conversation
-                                    conversationId: model.conversationId
-                                    unread: model.unread || 0
-                                    mention: !!model.mention
-                                    muted: !!model.muted
-                                    direct: model.direct
-                                    typing: model.typing
-                                    networkId: model.networkId
-                                    current: conversationId === win.currentConversationId
-                                        && !win.consoleVisible
-                                    awayPresenceVisible: win.awayPresenceVisible
-                                    avatarStore: win.avatarStore
-                                    loadPeerAvatars: win.peerAvatarsEnabled
-                                    visible: !model.direct
-                                        && model.networkId === liveNet.networkId
-                                    width: sidebar.width
-                                    height: visible ? win.scaledSize(36) : 0
-                                    onActivated: win.activateSidebarConversation(channelRow)
-                                }
-                            }
-
-                            Item {
-                                width: parent.width
-                                height: {
-                                    var epoch = win.irc ? win.irc.conversationEpoch : 0;
-                                    return win.sectionHasDirects(liveNet.networkId)
-                                        ? win.scaledSize(36) : 0;
-                                }
-                                visible: height > 0
-                                Text {
-                                    anchors.left: parent.left
-                                    anchors.leftMargin: win.scaledSize(19)
-                                    anchors.bottom: parent.bottom
-                                    anchors.bottomMargin: win.scaledSize(8)
-                                    text: "DIRECT MESSAGES"
-                                    color: win.mutedColor
-                                    font.family: "iA Writer Mono S"
-                                    font.bold: true
-                                    font.letterSpacing: win.scaledSize(0.8)
-                                    font.pixelSize: win.scaledSize(9)
-                                }
-                            }
-
-                            Repeater {
-                                objectName: liveNet.index === 0
-                                    ? "directConversationRepeater"
-                                    : "directConversationRepeater-" + liveNet.networkId
-                                model: win.irc ? win.irc.conversations : null
-                                delegate: ConversationRow {
-                                    id: directRow
-                                    required property var model
-                                    style: win.style
-                                    conversationName: model.conversation
-                                    conversationId: model.conversationId
-                                    unread: model.unread || 0
-                                    mention: !!model.mention
-                                    muted: !!model.muted
-                                    direct: model.direct
-                                    typing: model.typing
-                                    presence: model.presence || ""
-                                    networkId: model.networkId
-                                    avatar: model.direct ? (model.avatar || "") : ""
-                                    bot: !!(model.direct && model.bot)
-                                    current: conversationId === win.currentConversationId
-                                        && !win.consoleVisible
-                                    awayPresenceVisible: win.awayPresenceVisible
-                                    avatarStore: win.avatarStore
-                                    loadPeerAvatars: win.peerAvatarsEnabled
-                                    visible: model.direct
-                                        && model.networkId === liveNet.networkId
-                                    width: sidebar.width
-                                    height: visible ? win.scaledSize(36) : 0
-                                    onActivated: win.activateSidebarConversation(directRow)
-                                }
-                            }
-                        }
-                    }
-
-                }
+            onStatusRequested: function(networkId) {
+                win.openNetworkStatus(networkId);
             }
-
-            Rectangle {
-                id: identityFooter
-                anchors.left: parent.left
-                anchors.right: parent.right
-                anchors.bottom: parent.bottom
-                height: win.scaledSize(66)
-                color: win.mixColors(win.panelColor, win.inkColor, win.darkMode ? 0.025 : 0.018)
-
-                Rectangle {
-                    anchors.top: parent.top
-                    width: parent.width
-                    height: 1
-                    color: win.dividerColor
-                }
-
-                Item {
-                    anchors.left: parent.left
-                    anchors.leftMargin: win.scaledSize(17)
-                    anchors.verticalCenter: parent.verticalCenter
-                    width: win.scaledSize(34)
-                    height: width
-
-                    NickGlyph {
-                        objectName: "selfNickGlyph"
-                        anchors.fill: parent
-                        style: win.style
-                        avatarStore: win.avatarStore
-                        loadPeerAvatars: win.peerAvatarsEnabled
-                        nick: win.selfNick
-                        avatarUrl: win.peerAvatar(win.selfNick)
-                        fill: win.mixColors(win.pageColor, win.nickColor(win.selfNick), 0.24)
-                        fontPixelSize: win.scaledSize(14)
-                    }
-
-                    Rectangle {
-                        objectName: "selfPresenceDot"
-                        anchors.right: parent.right
-                        anchors.bottom: parent.bottom
-                        width: win.scaledSize(9)
-                        height: width
-                        radius: width / 2
-                        color: win.presenceMarkColor(
-                            win.selfPresence === "away" ? "away"
-                                : (win.selfPresence === "available"
-                                    ? "online" : "offline"))
-                        border.width: win.scaledSize(2)
-                        border.color: win.panelColor
-                    }
-                }
-
-                Column {
-                    id: identityText
-                    anchors.left: parent.left
-                    anchors.leftMargin: win.scaledSize(63)
-                    anchors.right: selfVersionHit.visible ? selfVersionHit.left : parent.right
-                    anchors.rightMargin: win.scaledSize(selfVersionHit.visible ? 8 : 17)
-                    anchors.verticalCenter: parent.verticalCenter
-                    spacing: win.scaledSize(1)
-
-                    Row {
-                        width: parent.width
-                        spacing: win.scaledSize(4)
-
-                        Text {
-                            objectName: "selfNickLabel"
-                            width: {
-                                var reserved = win.peerBot(win.selfNick)
-                                    ? selfBotMark.width + parent.spacing : 0;
-                                var cap = Math.max(0, parent.width - reserved);
-                                return Math.min(implicitWidth, cap);
-                            }
-                            text: win.selfNick
-                            color: win.inkColor
-                            elide: Text.ElideRight
-                            font.family: "iA Writer Mono S"
-                            font.bold: true
-                            font.pixelSize: win.scaledSize(13)
-                        }
-
-                        BotMark {
-                            id: selfBotMark
-                            style: win.style
-                            objectName: "selfBotMark"
-                            shown: win.peerBot(win.selfNick)
-                            anchors.verticalCenter: parent.verticalCenter
-                        }
-                    }
-
-                    Text {
-                        objectName: "selfPresenceLabel"
-                        text: win.selfPresence
-                        color: win.mutedColor
-                        font.family: "iA Writer Mono S"
-                        font.pixelSize: win.scaledSize(10)
-                    }
-                }
-
-                MouseArea {
-                    id: selfVersionHit
-                    objectName: "selfVersionHit"
-                    Accessible.role: Accessible.Button
-                    Accessible.name: "About Omairc"
-                    Accessible.onPressAction: aboutSheet.open()
-                    anchors.right: parent.right
-                    anchors.rightMargin: win.scaledSize(8)
-                    anchors.bottom: identityText.bottom
-                    anchors.top: identityText.top
-                    width: selfVersionLabel.implicitWidth + win.scaledSize(18)
-                    visible: selfVersionLabel.text.length > 0
-                    hoverEnabled: true
-                    cursorShape: Qt.PointingHandCursor
-                    onClicked: aboutSheet.open()
-
-                    Text {
-                        id: selfVersionLabel
-                        objectName: "selfVersionLabel"
-                        anchors.right: parent.right
-                        anchors.rightMargin: win.scaledSize(9)
-                        anchors.bottom: parent.bottom
-                        text: win.appVersion
-                        color: selfVersionHit.containsMouse ? win.inkColor : win.mutedColor
-                        font.family: "iA Writer Mono S"
-                        font.pixelSize: win.scaledSize(10)
-                        font.underline: selfVersionHit.containsMouse
-                    }
-                }
+            onEditRequested: function(networkId) {
+                if (win.connection)
+                    win.selectSheetNetwork(networkId);
+                win.connectionSheetOpen = true;
             }
+            onVersionClicked: aboutSheet.open()
         }
 
-        Item {
+        ConversationColumn {
             id: conversation
+            style: win.style
             Layout.fillWidth: true
             Layout.fillHeight: true
+            consoleVisible: win.consoleVisible
+            currentConversationIsChannel: win.currentConversationIsChannel
+            membersVisible: win.membersVisible
+            currentPeopleCount: win.currentPeopleCount
+            headerTitle: {
+                if (win.duplicateTargetName(win.currentConversation)) {
+                    var network = win.focusedNetworkDisplayName();
+                    if (network.length > 0)
+                        return win.currentConversation + " · " + network;
+                }
+                return win.currentConversation;
+            }
+            topicText: win.plainIrcText(win.currentTopic)
+            statusTitle: win.statusTitleText()
+            statusSubtitle: win.irc
+                ? (win.irc.lastError.length > 0
+                    ? win.irc.lastError : win.irc.connectionStatus)
+                : ""
+            currentConversation: win.currentConversation
+            findActive: win.findActive
+            composerEnabled: !win.connectionOverlayVisible
+            slashCommands: win.slashCommands
+            activeMessages: win.activeMessages
+            consoleLines: win.networkConsole ? win.networkConsole.lines : null
+            messageDelegate: Item {
+                id: messageDelegate
 
-            Item {
-                id: conversationHeader
-                visible: !win.consoleVisible
-                anchors.top: parent.top
-                anchors.left: parent.left
-                anchors.right: parent.right
-                height: visible ? win.scaledSize(72) : 0
+                required property int index
+                required property string author
+                required property string time
+                required property string body
+                required property string kind
+                required property var model
+                // Read roles through model so MessageListModel dataChanged
+                // refreshes them. Keep them optional so ListModel fixtures
+                // without avatar/bot roles still instantiate.
+                readonly property string authorAvatar: model && model.authorAvatar
+                    ? String(model.authorAvatar) : ""
+                readonly property bool authorBot: !!(model && model.authorBot)
+                readonly property string origin: win.transcriptField(conversation.messageList.model, index, "origin")
+                readonly property bool replayed: origin === "replay"
+                readonly property bool isChat: kind !== "event" && kind !== "whois"
+                readonly property bool grouped: win.continuesMessageGroup(
+                    conversation.messageList.model, index, author, time, kind, origin)
+                readonly property bool findMatch: win.findActive
+                    && win.findIndex === index
 
-                Column {
+                width: conversation.messageList.width
+                height: win.transcriptRowHeight(
+                    kind === "event", grouped || kind === "whois",
+                    kind === "event"
+                        ? messageEvent.implicitHeight
+                        : (kind === "whois"
+                            ? messageWhois.implicitHeight
+                            : messageBody.implicitHeight))
+
+                Rectangle {
+                    objectName: "findMatch"
+                    anchors.fill: parent
+                    visible: messageDelegate.findMatch
+                    color: win.mixColors(win.pageColor, win.selectionColor, 0.42)
+                }
+
+                Text {
+                    id: messageEvent
+                    objectName: "messageEvent"
+                    visible: messageDelegate.kind === "event"
+                    x: win.scaledSize(24)
+                    y: Math.round((parent.height - implicitHeight) / 2)
+                    width: parent.width - win.scaledSize(48)
+                    horizontalAlignment: Text.AlignHCenter
+                    text: win.plainIrcText(messageDelegate.body)
+                    textFormat: Text.PlainText
+                    color: win.mutedColor
+                    wrapMode: Text.Wrap
+                    font.family: "iA Writer Mono S"
+                    font.pixelSize: win.scaledSize(10)
+                }
+
+                TextEdit {
+                    id: messageWhois
+                    objectName: "messageWhois"
+                    visible: messageDelegate.kind === "whois"
                     anchors.left: parent.left
-                    anchors.leftMargin: win.scaledSize(24)
-                    anchors.right: win.currentConversationIsChannel ? peopleButton.left : parent.right
-                    anchors.rightMargin: win.scaledSize(win.currentConversationIsChannel ? 18 : 24)
-                    anchors.verticalCenter: parent.verticalCenter
-                    spacing: win.scaledSize(3)
-
-                    Text {
-                        width: parent.width
-                        text: {
-                            if (win.duplicateTargetName(win.currentConversation)) {
-                                var network = win.focusedNetworkDisplayName();
-                                if (network.length > 0)
-                                    return win.currentConversation + " · " + network;
-                            }
-                            return win.currentConversation;
-                        }
-                        color: win.inkColor
-                        elide: Text.ElideRight
-                        font.family: "iA Writer Mono S"
-                        font.bold: true
-                        font.pixelSize: win.scaledSize(17)
-                    }
-
-                    Text {
-                        objectName: "conversationTopic"
-                        width: parent.width
-                        text: win.plainIrcText(win.currentTopic)
-                        textFormat: Text.PlainText
-                        color: win.mutedColor
-                        elide: Text.ElideRight
-                        font.family: "iA Writer Mono S"
-                        font.pixelSize: win.scaledSize(11)
-                    }
-                }
-
-                Rectangle {
-                    id: peopleButton
-                    objectName: "peopleButton"
-                    Accessible.name: win.membersVisible ? "Hide members" : "Show members"
-                    Accessible.role: Accessible.Button
-                    Accessible.onPressAction: win.membersVisible = !win.membersVisible
-                    visible: win.currentConversationIsChannel && !win.consoleVisible
+                    anchors.leftMargin: win.scaledSize(70)
                     anchors.right: parent.right
-                    anchors.rightMargin: win.scaledSize(19)
-                    anchors.verticalCenter: parent.verticalCenter
-                    width: win.scaledSize(74)
-                    height: win.scaledSize(30)
-                    radius: win.scaledSize(7)
-                    color: peopleMouse.containsMouse || win.membersVisible
-                        ? win.raisedColor : "transparent"
-                    border.width: 1
-                    border.color: win.membersVisible ? win.dividerColor : "transparent"
+                    anchors.rightMargin: win.scaledSize(34)
+                    anchors.top: parent.top
+                        anchors.topMargin: win.transcriptField(
+                            conversation.messageList.model, messageDelegate.index - 1, "kind") === "whois"
+                        ? win.scaledSize(4)
+                        : win.scaledSize(8)
+                    horizontalAlignment: Text.AlignLeft
+                    text: win.plainIrcText(messageDelegate.body)
+                    textFormat: TextEdit.PlainText
+                    color: win.mutedColor
+                    wrapMode: TextEdit.Wrap
+                    readOnly: true
+                    selectByMouse: true
+                    selectionColor: win.selectionColor
+                    selectedTextColor: "#ffffff"
+                    cursorVisible: false
+                    activeFocusOnPress: false
+                    activeFocusOnTab: false
+                    padding: 0
+                    font.family: "iA Writer Mono S"
+                    font.pixelSize: win.scaledSize(12)
 
-                    Text {
-                        anchors.centerIn: parent
-                        text: win.currentPeopleCount + " PEOPLE"
-                        color: win.membersVisible ? win.inkColor : win.mutedColor
-                        font.family: "iA Writer Mono S"
-                        font.bold: true
-                        font.pixelSize: win.scaledSize(9)
-                    }
-
-                    MouseArea {
-                        id: peopleMouse
-                        anchors.fill: parent
-                        hoverEnabled: true
-                        cursorShape: Qt.PointingHandCursor
-                        onClicked: win.membersVisible = !win.membersVisible
-                    }
+                    PlainUrlHit { edit: messageWhois }
                 }
 
-                Rectangle {
-                    anchors.bottom: parent.bottom
-                    width: parent.width
-                    height: 1
-                    color: win.dividerColor
+                MessageAvatar {
+                    objectName: "messageAvatar"
+                    visible: messageDelegate.isChat && !messageDelegate.grouped
+                    style: win.style
+                    avatarStore: win.avatarStore
+                    loadPeerAvatars: win.peerAvatarsEnabled
+                    selfNick: win.selfNick
+                    author: messageDelegate.author
+                    avatarUrl: messageDelegate.authorAvatar
+                    replayed: messageDelegate.replayed
+                    nickOpensDirect: true
+                    onDirectMessageRequested: function(nick) { win.openDirectMessage(nick) }
+                }
+
+                MessageHeader {
+                    objectName: "messageHeader"
+                    visible: messageDelegate.isChat && !messageDelegate.grouped
+                    style: win.style
+                    selfNick: win.selfNick
+                    author: messageDelegate.author
+                    time: messageDelegate.time
+                    replayed: messageDelegate.replayed
+                    nickOpensDirect: true
+                    bot: messageDelegate.authorBot
+                    onDirectMessageRequested: function(nick) { win.openDirectMessage(nick) }
+                }
+
+                TextEdit {
+                    id: messageBody
+                    objectName: "messageBody"
+                    visible: messageDelegate.isChat
+                    anchors.left: parent.left
+                    anchors.leftMargin: win.scaledSize(70)
+                    anchors.right: parent.right
+                    anchors.rightMargin: win.scaledSize(34)
+                    anchors.top: parent.top
+                    anchors.topMargin: win.bodyTextTopMargin(messageDelegate.grouped)
+                    text: win.hasIrcEmphasis(messageDelegate.body)
+                        ? win.emphasizedIrcText(messageDelegate.body)
+                        : win.plainIrcText(messageDelegate.body)
+                    color: (messageDelegate.replayed || messageDelegate.kind === "action")
+                        ? win.mutedColor : win.inkColor
+                    selectionColor: win.selectionColor
+                    selectedTextColor: "#ffffff"
+                    wrapMode: TextEdit.Wrap
+                    readOnly: true
+                    selectByMouse: true
+                    cursorVisible: false
+                    activeFocusOnPress: false
+                    activeFocusOnTab: false
+                    textFormat: win.hasIrcEmphasis(messageDelegate.body)
+                        ? TextEdit.RichText
+                        : TextEdit.PlainText
+                    padding: 0
+                    font.family: win.transcriptBodyFont.family
+                    font.italic: messageDelegate.kind === "action"
+                    font.pixelSize: win.transcriptBodyFont.pixelSize
+
+                    PlainUrlHit { edit: messageBody }
                 }
             }
 
-            Item {
-                id: consoleHeader
-                visible: win.consoleVisible
-                anchors.top: parent.top
-                anchors.left: parent.left
-                anchors.right: parent.right
-                height: visible ? win.scaledSize(72) : 0
+            messageFooter: Item {
+                id: typingRow
+                objectName: "typingTranscript"
 
-                Column {
+                readonly property var transcriptModel: conversation.messageList.model
+                readonly property string nick: win.typingNicks.length > 0
+                    ? String(win.typingNicks[0]) : ""
+                readonly property bool show: win.typingVisible
+                    && !win.currentConversationIsChannel
+                    && !win.consoleVisible
+                    && typingRow.nick.length > 0
+                property int minuteTick: 0
+                readonly property string currentMinute: {
+                    typingRow.show;
+                    typingRow.minuteTick;
+                    return win.currentTranscriptMinute();
+                }
+                readonly property bool grouped: {
+                    // The revision read re-reads the last row after a model
+                    // reset that leaves the row count unchanged.
+                    conversation.messageList.rowRevision;
+                    return win.typingFollowsPeerChat(
+                        typingRow.transcriptModel, typingRow.nick,
+                        typingRow.currentMinute);
+                }
+
+                Timer {
+                    // Grouping treats the footer as the next live chat row
+                    // arriving now. Snapshotting new Date() only when
+                    // rowRevision changes would stay grouped after the
+                    // minute rolls, then jump when the message arrives.
+                    // Tick while the indicator is shown so a minute
+                    // boundary ungroups the placeholder the same way the
+                    // arriving row would.
+                    interval: 1000
+                    running: typingRow.show
+                    repeat: true
+                    onTriggered: typingRow.minuteTick += 1
+                }
+
+                width: conversation.messageList.width
+                visible: typingRow.show
+                // A hidden footer with a real height reserves blank space at
+                // the content bottom and stickToEnd scrolls into it.
+                height: typingRow.show
+                    ? win.transcriptRowHeight(false, typingRow.grouped,
+                                              win.messageLineHeight)
+                    : 0
+
+                MessageAvatar {
+                    objectName: "typingTranscriptAvatar"
+                    visible: typingRow.show && !typingRow.grouped
+                    style: win.style
+                    avatarStore: win.avatarStore
+                    loadPeerAvatars: win.peerAvatarsEnabled
+                    selfNick: win.selfNick
+                    author: typingRow.nick
+                    avatarUrl: win.peerAvatar(typingRow.nick)
+                    replayed: false
+                    onDirectMessageRequested: function(nick) { win.openDirectMessage(nick) }
+                }
+
+                MessageHeader {
+                    objectName: "typingTranscriptHeader"
+                    visible: typingRow.show && !typingRow.grouped
+                    style: win.style
+                    selfNick: win.selfNick
+                    author: typingRow.nick
+                    time: ""
+                    replayed: false
+                    bot: win.peerBot(typingRow.nick)
+                    onDirectMessageRequested: function(nick) { win.openDirectMessage(nick) }
+                }
+
+                TypingDots {
+                    id: typingRowDots
+                    style: win.style
+                    objectName: "typingTranscriptDots"
+                    visible: typingRow.show
+                    describedAs: typingRow.show
+                        ? typingRow.nick + " is typing" : ""
+                    anchors.left: parent.left
+                    anchors.leftMargin: win.scaledSize(70)
+                    anchors.top: parent.top
+                    anchors.topMargin: win.bodyTextTopMargin(typingRow.grouped)
+                        + Math.round((win.messageLineHeight
+                            - typingRowDots.implicitHeight) / 2)
+                    pixelSize: win.scaledSize(16)
+                }
+            }
+            consoleDelegate: Item {
+                id: consoleDelegate
+
+                required property int index
+                required property string time
+                required property string label
+                required property string text
+                required property string source
+                required property string severity
+                readonly property bool findMatch: win.findActive
+                    && win.findIndex === index
+
+                width: conversation.consoleList.width
+                height: Math.max(win.scaledSize(22), consoleText.implicitHeight + win.scaledSize(8))
+
+                readonly property color labelColor: consoleDelegate.severity === "alert"
+                    ? win.accentColor
+                    : (consoleDelegate.severity === "trace"
+                        ? win.mutedColor
+                        : win.mixColors(win.pageColor, win.inkColor, 0.62))
+                readonly property color bodyColor: consoleDelegate.severity === "trace"
+                    ? win.mutedColor
+                    : win.inkColor
+                readonly property string glyph: consoleDelegate.source === "client"
+                    ? ">>"
+                    : (consoleDelegate.source === "local" ? "--" : "<<")
+
+                Rectangle {
+                    objectName: "findMatch"
+                    anchors.fill: parent
+                    visible: consoleDelegate.findMatch
+                    color: win.mixColors(win.pageColor, win.selectionColor, 0.42)
+                }
+
+                Text {
                     anchors.left: parent.left
                     anchors.leftMargin: win.scaledSize(24)
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: win.scaledSize(68)
+                    text: consoleDelegate.time
+                    color: win.mutedColor
+                    font.family: "iA Writer Mono S"
+                    font.pixelSize: win.scaledSize(10)
+                }
+
+                Text {
+                    anchors.left: parent.left
+                    anchors.leftMargin: win.scaledSize(96)
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: win.scaledSize(88)
+                    text: consoleDelegate.glyph + " " + consoleDelegate.label
+                    color: consoleDelegate.labelColor
+                    elide: Text.ElideRight
+                    font.family: "iA Writer Mono S"
+                    font.pixelSize: win.scaledSize(10)
+                }
+
+                TextEdit {
+                    id: consoleText
+                    objectName: "consoleText"
+                    anchors.left: parent.left
+                    anchors.leftMargin: win.scaledSize(192)
                     anchors.right: parent.right
                     anchors.rightMargin: win.scaledSize(24)
                     anchors.verticalCenter: parent.verticalCenter
-                    spacing: win.scaledSize(3)
-
-                    Text {
-                        width: parent.width
-                        text: win.statusTitleText()
-                        color: win.inkColor
-                        elide: Text.ElideRight
-                        font.family: "iA Writer Mono S"
-                        font.bold: true
-                        font.pixelSize: win.scaledSize(17)
-                    }
-
-                    Text {
-                        width: parent.width
-                        text: win.irc
-                            ? (win.irc.lastError.length > 0
-                                ? win.irc.lastError : win.irc.connectionStatus)
-                            : ""
-                        color: win.mutedColor
-                        elide: Text.ElideRight
-                        font.family: "iA Writer Mono S"
-                        font.pixelSize: win.scaledSize(11)
-                    }
-                }
-
-                Rectangle {
-                    anchors.bottom: parent.bottom
-                    width: parent.width
-                    height: 1
-                    color: win.dividerColor
-                }
-            }
-
-            TranscriptList {
-                id: messageList
-                objectName: "messageList"
-                visible: !win.consoleVisible
-                Accessible.name: "Messages in " + win.currentConversation
-                anchors.top: conversationHeader.bottom
-                anchors.left: parent.left
-                anchors.right: parent.right
-                anchors.bottom: composerShell.top
-                anchors.bottomMargin: win.scaledSize(12)
-                model: win.activeMessages
-
-                delegate: Item {
-                    id: messageDelegate
-
-                    required property int index
-                    required property string author
-                    required property string time
-                    required property string body
-                    required property string kind
-                    required property var model
-                    // Read roles through model so MessageListModel dataChanged
-                    // refreshes them. Keep them optional so ListModel fixtures
-                    // without avatar/bot roles still instantiate.
-                    readonly property string authorAvatar: model && model.authorAvatar
-                        ? String(model.authorAvatar) : ""
-                    readonly property bool authorBot: !!(model && model.authorBot)
-                    readonly property string origin: win.transcriptField(messageList.model, index, "origin")
-                    readonly property bool replayed: origin === "replay"
-                    readonly property bool isChat: kind !== "event" && kind !== "whois"
-                    readonly property bool grouped: win.continuesMessageGroup(
-                        messageList.model, index, author, time, kind, origin)
-                    readonly property bool findMatch: win.findActive
-                        && win.findIndex === index
-
-                    width: messageList.width
-                    height: win.transcriptRowHeight(
-                        kind === "event", grouped || kind === "whois",
-                        kind === "event"
-                            ? messageEvent.implicitHeight
-                            : (kind === "whois"
-                                ? messageWhois.implicitHeight
-                                : messageBody.implicitHeight))
-
-                    Rectangle {
-                        objectName: "findMatch"
-                        anchors.fill: parent
-                        visible: messageDelegate.findMatch
-                        color: win.mixColors(win.pageColor, win.selectionColor, 0.42)
-                    }
-
-                    Text {
-                        id: messageEvent
-                        objectName: "messageEvent"
-                        visible: messageDelegate.kind === "event"
-                        x: win.scaledSize(24)
-                        y: Math.round((parent.height - implicitHeight) / 2)
-                        width: parent.width - win.scaledSize(48)
-                        horizontalAlignment: Text.AlignHCenter
-                        text: win.plainIrcText(messageDelegate.body)
-                        textFormat: Text.PlainText
-                        color: win.mutedColor
-                        wrapMode: Text.Wrap
-                        font.family: "iA Writer Mono S"
-                        font.pixelSize: win.scaledSize(10)
-                    }
-
-                    TextEdit {
-                        id: messageWhois
-                        objectName: "messageWhois"
-                        visible: messageDelegate.kind === "whois"
-                        anchors.left: parent.left
-                        anchors.leftMargin: win.scaledSize(70)
-                        anchors.right: parent.right
-                        anchors.rightMargin: win.scaledSize(34)
-                        anchors.top: parent.top
-                        anchors.topMargin: win.transcriptField(
-                            messageList.model, messageDelegate.index - 1, "kind") === "whois"
-                            ? win.scaledSize(4)
-                            : win.scaledSize(8)
-                        horizontalAlignment: Text.AlignLeft
-                        text: win.plainIrcText(messageDelegate.body)
-                        textFormat: TextEdit.PlainText
-                        color: win.mutedColor
-                        wrapMode: TextEdit.Wrap
-                        readOnly: true
-                        selectByMouse: true
-                        selectionColor: win.selectionColor
-                        selectedTextColor: "#ffffff"
-                        cursorVisible: false
-                        activeFocusOnPress: false
-                        activeFocusOnTab: false
-                        padding: 0
-                        font.family: "iA Writer Mono S"
-                        font.pixelSize: win.scaledSize(12)
-
-                        PlainUrlHit { edit: messageWhois }
-                    }
-
-                    MessageAvatar {
-                        objectName: "messageAvatar"
-                        visible: messageDelegate.isChat && !messageDelegate.grouped
-                        style: win.style
-                        avatarStore: win.avatarStore
-                        loadPeerAvatars: win.peerAvatarsEnabled
-                        selfNick: win.selfNick
-                        author: messageDelegate.author
-                        avatarUrl: messageDelegate.authorAvatar
-                        replayed: messageDelegate.replayed
-                        nickOpensDirect: true
-                        onDirectMessageRequested: function(nick) { win.openDirectMessage(nick) }
-                    }
-
-                    MessageHeader {
-                        objectName: "messageHeader"
-                        visible: messageDelegate.isChat && !messageDelegate.grouped
-                        style: win.style
-                        selfNick: win.selfNick
-                        author: messageDelegate.author
-                        time: messageDelegate.time
-                        replayed: messageDelegate.replayed
-                        nickOpensDirect: true
-                        bot: messageDelegate.authorBot
-                        onDirectMessageRequested: function(nick) { win.openDirectMessage(nick) }
-                    }
-
-                    TextEdit {
-                        id: messageBody
-                        objectName: "messageBody"
-                        visible: messageDelegate.isChat
-                        anchors.left: parent.left
-                        anchors.leftMargin: win.scaledSize(70)
-                        anchors.right: parent.right
-                        anchors.rightMargin: win.scaledSize(34)
-                        anchors.top: parent.top
-                        anchors.topMargin: win.bodyTextTopMargin(messageDelegate.grouped)
-                        text: win.hasIrcEmphasis(messageDelegate.body)
-                            ? win.emphasizedIrcText(messageDelegate.body)
-                            : win.plainIrcText(messageDelegate.body)
-                        color: (messageDelegate.replayed || messageDelegate.kind === "action")
-                            ? win.mutedColor : win.inkColor
-                        selectionColor: win.selectionColor
-                        selectedTextColor: "#ffffff"
-                        wrapMode: TextEdit.Wrap
-                        readOnly: true
-                        selectByMouse: true
-                        cursorVisible: false
-                        activeFocusOnPress: false
-                        activeFocusOnTab: false
-                        textFormat: win.hasIrcEmphasis(messageDelegate.body)
-                            ? TextEdit.RichText
-                            : TextEdit.PlainText
-                        padding: 0
-                        font.family: win.transcriptBodyFont.family
-                        font.italic: messageDelegate.kind === "action"
-                        font.pixelSize: win.transcriptBodyFont.pixelSize
-
-                        PlainUrlHit { edit: messageBody }
-                    }
-                }
-
-                footer: Item {
-                    id: typingRow
-                    objectName: "typingTranscript"
-
-                    readonly property var transcriptModel: messageList.model
-                    readonly property string nick: win.typingNicks.length > 0
-                        ? String(win.typingNicks[0]) : ""
-                    readonly property bool show: win.typingVisible
-                        && !win.currentConversationIsChannel
-                        && !win.consoleVisible
-                        && typingRow.nick.length > 0
-                    property int minuteTick: 0
-                    readonly property string currentMinute: {
-                        typingRow.show;
-                        typingRow.minuteTick;
-                        return win.currentTranscriptMinute();
-                    }
-                    readonly property bool grouped: {
-                        // The revision read re-reads the last row after a model
-                        // reset that leaves the row count unchanged.
-                        messageList.rowRevision;
-                        return win.typingFollowsPeerChat(
-                            typingRow.transcriptModel, typingRow.nick,
-                            typingRow.currentMinute);
-                    }
-
-                    Timer {
-                        // Grouping treats the footer as the next live chat row
-                        // arriving now. Snapshotting new Date() only when
-                        // rowRevision changes would stay grouped after the
-                        // minute rolls, then jump when the message arrives.
-                        // Tick while the indicator is shown so a minute
-                        // boundary ungroups the placeholder the same way the
-                        // arriving row would.
-                        interval: 1000
-                        running: typingRow.show
-                        repeat: true
-                        onTriggered: typingRow.minuteTick += 1
-                    }
-
-                    width: messageList.width
-                    visible: typingRow.show
-                    // A hidden footer with a real height reserves blank space at
-                    // the content bottom and stickToEnd scrolls into it.
-                    height: typingRow.show
-                        ? win.transcriptRowHeight(false, typingRow.grouped,
-                                                  win.messageLineHeight)
-                        : 0
-
-                    MessageAvatar {
-                        objectName: "typingTranscriptAvatar"
-                        visible: typingRow.show && !typingRow.grouped
-                        style: win.style
-                        avatarStore: win.avatarStore
-                        loadPeerAvatars: win.peerAvatarsEnabled
-                        selfNick: win.selfNick
-                        author: typingRow.nick
-                        avatarUrl: win.peerAvatar(typingRow.nick)
-                        replayed: false
-                        onDirectMessageRequested: function(nick) { win.openDirectMessage(nick) }
-                    }
-
-                    MessageHeader {
-                        objectName: "typingTranscriptHeader"
-                        visible: typingRow.show && !typingRow.grouped
-                        style: win.style
-                        selfNick: win.selfNick
-                        author: typingRow.nick
-                        time: ""
-                        replayed: false
-                        bot: win.peerBot(typingRow.nick)
-                        onDirectMessageRequested: function(nick) { win.openDirectMessage(nick) }
-                    }
-
-                    TypingDots {
-                        id: typingRowDots
-                        style: win.style
-                        objectName: "typingTranscriptDots"
-                        visible: typingRow.show
-                        describedAs: typingRow.show
-                            ? typingRow.nick + " is typing" : ""
-                        anchors.left: parent.left
-                        anchors.leftMargin: win.scaledSize(70)
-                        anchors.top: parent.top
-                        anchors.topMargin: win.bodyTextTopMargin(typingRow.grouped)
-                            + Math.round((win.messageLineHeight
-                                - typingRowDots.implicitHeight) / 2)
-                        pixelSize: win.scaledSize(16)
-                    }
-                }
-            }
-
-            UnseenJumpButton {
-                style: win.style
-                list: messageList
-                objectName: "messageUnseenJump"
-            }
-
-            TranscriptList {
-                id: consoleList
-                objectName: "consoleList"
-                visible: win.consoleVisible
-                Accessible.name: "Status"
-                anchors.top: consoleHeader.bottom
-                anchors.left: parent.left
-                anchors.right: parent.right
-                anchors.bottom: composerShell.top
-                anchors.bottomMargin: win.scaledSize(12)
-                model: win.networkConsole ? win.networkConsole.lines : null
-
-                delegate: Item {
-                    id: consoleDelegate
-
-                    required property int index
-                    required property string time
-                    required property string label
-                    required property string text
-                    required property string source
-                    required property string severity
-                    readonly property bool findMatch: win.findActive
-                        && win.findIndex === index
-
-                    width: consoleList.width
-                    height: Math.max(win.scaledSize(22), consoleText.implicitHeight + win.scaledSize(8))
-
-                    readonly property color labelColor: consoleDelegate.severity === "alert"
-                        ? win.accentColor
-                        : (consoleDelegate.severity === "trace"
-                            ? win.mutedColor
-                            : win.mixColors(win.pageColor, win.inkColor, 0.62))
-                    readonly property color bodyColor: consoleDelegate.severity === "trace"
-                        ? win.mutedColor
-                        : win.inkColor
-                    readonly property string glyph: consoleDelegate.source === "client"
-                        ? ">>"
-                        : (consoleDelegate.source === "local" ? "--" : "<<")
-
-                    Rectangle {
-                        objectName: "findMatch"
-                        anchors.fill: parent
-                        visible: consoleDelegate.findMatch
-                        color: win.mixColors(win.pageColor, win.selectionColor, 0.42)
-                    }
-
-                    Text {
-                        anchors.left: parent.left
-                        anchors.leftMargin: win.scaledSize(24)
-                        anchors.verticalCenter: parent.verticalCenter
-                        width: win.scaledSize(68)
-                        text: consoleDelegate.time
-                        color: win.mutedColor
-                        font.family: "iA Writer Mono S"
-                        font.pixelSize: win.scaledSize(10)
-                    }
-
-                    Text {
-                        anchors.left: parent.left
-                        anchors.leftMargin: win.scaledSize(96)
-                        anchors.verticalCenter: parent.verticalCenter
-                        width: win.scaledSize(88)
-                        text: consoleDelegate.glyph + " " + consoleDelegate.label
-                        color: consoleDelegate.labelColor
-                        elide: Text.ElideRight
-                        font.family: "iA Writer Mono S"
-                        font.pixelSize: win.scaledSize(10)
-                    }
-
-                    TextEdit {
-                        id: consoleText
-                        objectName: "consoleText"
-                        anchors.left: parent.left
-                        anchors.leftMargin: win.scaledSize(192)
-                        anchors.right: parent.right
-                        anchors.rightMargin: win.scaledSize(24)
-                        anchors.verticalCenter: parent.verticalCenter
-                        text: win.plainIrcText(consoleDelegate.text)
-                        color: consoleDelegate.bodyColor
-                        selectionColor: win.selectionColor
-                        selectedTextColor: "#ffffff"
-                        wrapMode: TextEdit.Wrap
-                        readOnly: true
-                        selectByMouse: true
-                        cursorVisible: false
-                        activeFocusOnPress: false
-                        activeFocusOnTab: false
-                        textFormat: TextEdit.PlainText
-                        padding: 0
-                        font.family: "iA Writer Mono S"
-                        font.pixelSize: win.scaledSize(12)
-
-                        PlainUrlHit {
-                            edit: consoleText
-                            inviteHits: consoleDelegate.label === "INVITE"
-                        }
-                    }
-                }
-            }
-
-            UnseenJumpButton {
-                style: win.style
-                list: consoleList
-                objectName: "consoleUnseenJump"
-            }
-
-            Rectangle {
-                id: composerShell
-                anchors.left: parent.left
-                anchors.right: parent.right
-                anchors.bottom: parent.bottom
-                anchors.leftMargin: win.scaledSize(20)
-                anchors.rightMargin: win.scaledSize(20)
-                anchors.bottomMargin: win.scaledSize(20)
-                height: Math.max(win.scaledSize(46), Math.min(win.scaledSize(112),
-                    composer.contentHeight + win.scaledSize(20)))
-                radius: win.scaledSize(10)
-                color: win.panelColor
-                border.width: 1
-                border.color: composer.activeFocus ? win.accentColor : win.dividerColor
-
-                TextField {
-                    id: composer
-                    objectName: "messageComposer"
-                    Accessible.name: win.findActive ? "Find" : "Message composer"
-                    Accessible.description: win.findActive
-                        ? "Find in the current transcript"
-                        : (win.consoleVisible
-                            ? "Command for " + win.statusTitleText().replace(" Status", "")
-                            : "Write a message to " + win.currentConversation)
-                    anchors.left: parent.left
-                    anchors.right: sendButton.left
-                    anchors.top: parent.top
-                    anchors.bottom: parent.bottom
-                    anchors.leftMargin: win.scaledSize(8)
-                    anchors.rightMargin: win.scaledSize(8)
-                    verticalAlignment: TextEdit.AlignVCenter
-                    color: win.inkColor
+                    text: win.plainIrcText(consoleDelegate.text)
+                    color: consoleDelegate.bodyColor
                     selectionColor: win.selectionColor
                     selectedTextColor: "#ffffff"
+                    wrapMode: TextEdit.Wrap
+                    readOnly: true
+                    selectByMouse: true
+                    cursorVisible: false
+                    activeFocusOnPress: false
+                    activeFocusOnTab: false
+                    textFormat: TextEdit.PlainText
+                    padding: 0
                     font.family: "iA Writer Mono S"
-                    font.pixelSize: win.scaledSize(13)
-                    placeholderText: win.findActive ? "Find" : ""
-                    placeholderTextColor: win.mutedColor
-                    enabled: !win.connectionOverlayVisible
-                    leftPadding: win.scaledSize(8)
-                    rightPadding: win.scaledSize(8)
-                    topPadding: Math.max(win.scaledSize(8),
-                        (height - contentHeight) / 2)
-                    bottomPadding: topPadding
-                    background: Item {}
-                    onTextChanged: {
-                        if (win.findActive) {
-                            if (win.slashCommands)
-                                win.slashCommands.dismiss();
-                            win.advanceFind(true);
-                            return;
-                        }
-                        if (win.slashCommands) {
-                            if (win.composerHistoryIndex >= 0)
-                                win.slashCommands.dismiss();
-                            else
-                                win.slashCommands.sync(text, win.consoleVisible);
-                        }
-                        if (win.irc)
-                            win.irc.notifyComposerText(text);
-                    }
+                    font.pixelSize: win.scaledSize(12)
 
-                    Keys.onPressed: function(event) {
-                        if (win.findActive) {
-                            if (event.key === Qt.Key_Tab
-                                || ((event.key === Qt.Key_Up || event.key === Qt.Key_Down)
-                                    && win.composerHasPlainModifier(event))) {
-                                event.accepted = true;
-                                return;
-                            }
-                        }
-
-                        var historyArrow = (event.key === Qt.Key_Up
-                            || event.key === Qt.Key_Down)
-                            && win.composerHasPlainModifier(event)
-                            && win.composerHistoryIndex >= 0;
-                        if (!win.findActive && win.slashCommands && !historyArrow) {
-                            var routed = win.slashCommands.routeKey(event.key, event.modifiers);
-                            if (routed.accepted) {
-                                if (routed.insertion.length > 0) {
-                                    composer.text = routed.insertion;
-                                    composer.cursorPosition = routed.insertion.length;
-                                }
-                                event.accepted = true;
-                                return;
-                            }
-                        }
-
-                        if (event.key === Qt.Key_Tab && win.composerHasPlainModifier(event)) {
-                            win.completeNick();
-                            event.accepted = true;
-                            return;
-                        }
-
-                        win.resetNickComplete();
-
-                        if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
-                            if (!win.findActive && win.sidebarNetworkFocusId.length > 0) {
-                                win.activateFocusedNetworkHeader();
-                                event.accepted = true;
-                                return;
-                            }
-                            win.sendMessage();
-                            event.accepted = true;
-                            return;
-                        }
-
-                        if (event.key === Qt.Key_Up && win.composerHasPlainModifier(event)) {
-                            event.accepted = win.recallComposerHistory(-1);
-                            return;
-                        }
-
-                        if (event.key === Qt.Key_Down && win.composerHasPlainModifier(event)) {
-                            event.accepted = win.recallComposerHistory(1);
-                            return;
-                        }
-                    }
-                }
-
-                Rectangle {
-                    id: sendButton
-                    objectName: "sendButton"
-                    Accessible.name: "Send message"
-                    Accessible.role: Accessible.Button
-                    Accessible.onPressAction: {
-                        if (composer.text.trim().length > 0)
-                            win.sendMessage();
-                    }
-                    anchors.right: parent.right
-                    anchors.rightMargin: win.scaledSize(8)
-                    anchors.verticalCenter: parent.verticalCenter
-                    width: win.scaledSize(54)
-                    height: win.scaledSize(30)
-                    radius: win.scaledSize(7)
-                    color: composer.text.trim().length > 0
-                        ? (sendMouse.containsMouse
-                            ? win.mixColors(win.accentColor, win.inkColor, 0.14)
-                            : win.accentColor)
-                        : win.raisedColor
-
-                    Text {
-                        anchors.centerIn: parent
-                        text: "SEND"
-                        color: composer.text.trim().length > 0 ? "#ffffff" : win.mutedColor
-                        font.family: "iA Writer Mono S"
-                        font.bold: true
-                        font.pixelSize: win.scaledSize(9)
-                    }
-
-                    MouseArea {
-                        id: sendMouse
-                        anchors.fill: parent
-                        enabled: composer.text.trim().length > 0
-                        hoverEnabled: true
-                        cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
-                        onClicked: win.sendMessage()
+                    PlainUrlHit {
+                        edit: consoleText
+                        inviteHits: consoleDelegate.label === "INVITE"
                     }
                 }
             }
-
-            Rectangle {
-                id: slashCompleteList
-                objectName: "slashCompleteList"
-                visible: win.slashCommands && win.slashCommands.open
-                z: 2
-                anchors.left: composerShell.left
-                anchors.right: composerShell.right
-                anchors.bottom: composerShell.top
-                anchors.bottomMargin: win.scaledSize(6)
-                height: slashHitColumn.implicitHeight + win.scaledSize(12)
-                radius: win.scaledSize(10)
-                color: win.raisedColor
-                border.width: 1
-                border.color: win.dividerColor
-
-                Column {
-                    id: slashHitColumn
-                    anchors.left: parent.left
-                    anchors.right: parent.right
-                    anchors.top: parent.top
-                    anchors.margins: win.scaledSize(6)
-                    spacing: win.scaledSize(2)
-
-                    Repeater {
-                        model: win.slashCommands ? win.slashCommands.matches : []
-                        delegate: Rectangle {
-                            objectName: "slashHit-" + String(modelData.label).slice(1)
-                            width: slashHitColumn.width
-                            height: win.scaledSize(28)
-                            radius: win.scaledSize(7)
-                            color: {
-                                if (index === win.slashCommands.selectedIndex)
-                                    return win.mixColors(win.selectionColor, win.raisedColor,
-                                                         win.darkMode ? 0.45 : 0.35);
-                                if (hitMouse.containsMouse)
-                                    return win.hoverColor;
-                                return "transparent";
-                            }
-
-                            Row {
-                                anchors.fill: parent
-                                anchors.leftMargin: win.scaledSize(8)
-                                anchors.rightMargin: win.scaledSize(8)
-                                spacing: win.scaledSize(12)
-
-                                Text {
-                                    anchors.verticalCenter: parent.verticalCenter
-                                    text: modelData.label
-                                    color: win.inkColor
-                                    font.family: "iA Writer Mono S"
-                                    font.pixelSize: win.scaledSize(12)
-                                }
-
-                                Text {
-                                    anchors.verticalCenter: parent.verticalCenter
-                                    visible: usageHint.trim().length > 0
-                                    width: Math.max(0, parent.width - x)
-                                    text: usageHint
-                                    elide: Text.ElideRight
-                                    color: win.mutedColor
-                                    font.family: "iA Writer Mono S"
-                                    font.pixelSize: win.scaledSize(12)
-
-                                    readonly property string usageHint: {
-                                        var usage = String(modelData.usage)
-                                        var label = String(modelData.label)
-                                        if (usage.indexOf(label) === 0)
-                                            return usage.substring(label.length)
-                                        return usage
-                                    }
-                                }
-                            }
-
-                            MouseArea {
-                                id: hitMouse
-                                anchors.fill: parent
-                                hoverEnabled: true
-                                onEntered: win.slashCommands.selectedIndex = index
-                                onClicked: {
-                                    var replacement = win.slashCommands.activate(index);
-                                    if (replacement.length > 0) {
-                                        composer.text = replacement;
-                                        composer.cursorPosition = replacement.length;
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
+            onMembersToggleRequested: win.membersVisible = !win.membersVisible
+            onSendRequested: win.sendMessage()
+            onComposerTextEdited: function(text) {
+                win.handleComposerText(text);
+            }
+            onComposerKeyPressed: function(event) {
+                win.handleComposerKey(event);
+            }
+            onSlashHitHovered: function(index) {
+                win.handleSlashHitHovered(index);
+            }
+            onSlashHitActivated: function(index) {
+                win.handleSlashHitActivated(index);
             }
         }
 
-        Rectangle {
+        MembersColumn {
             id: membersPanel
             objectName: "membersPanel"
-            Accessible.name: "Members of " + win.currentConversation
+            style: win.style
             visible: win.currentConversationIsChannel
                 && win.membersVisible
                 && !win.consoleVisible
@@ -3010,219 +2432,21 @@ ApplicationWindow {
             Layout.preferredWidth: visible ? win.scaledSize(216) : 0
             Layout.minimumWidth: visible ? win.scaledSize(196) : 0
             Layout.fillHeight: true
-            color: win.panelColor
-
-            Rectangle {
-                anchors.left: parent.left
-                width: 1
-                height: parent.height
-                color: win.dividerColor
+            irc: win.irc
+            avatarStore: win.avatarStore
+            loadPeerAvatars: win.peerAvatarsEnabled
+            currentConversation: win.currentConversation
+            selfNick: win.selfNick
+            currentPeopleCount: win.currentPeopleCount
+            awayPresenceVisible: win.awayPresenceVisible
+            memberStatusVisible: win.memberStatusVisible
+            typingVisible: win.typingVisible
+            typingNicks: win.typingNicks
+            onNickSheetRequested: win.openNickSheet()
+            onDirectMessageRequested: function(nick) {
+                win.openDirectMessage(nick);
             }
-
-            Text {
-                id: membersHeading
-                objectName: "membersHeading"
-                anchors.top: parent.top
-                anchors.topMargin: win.scaledSize(23)
-                anchors.left: parent.left
-                anchors.leftMargin: win.scaledSize(20)
-                text: "ONLINE - " + win.currentPeopleCount
-                color: membersHeadingHit.containsMouse ? win.inkColor : win.mutedColor
-                font.family: "iA Writer Mono S"
-                font.bold: true
-                font.letterSpacing: win.scaledSize(0.7)
-                font.pixelSize: win.scaledSize(9)
-            }
-
-            MouseArea {
-                id: membersHeadingHit
-                objectName: "membersHeadingButton"
-                anchors.fill: membersHeading
-                anchors.margins: -win.scaledSize(8)
-                hoverEnabled: true
-                cursorShape: Qt.PointingHandCursor
-                Accessible.role: Accessible.Button
-                Accessible.name: "Jump to nick"
-                Accessible.onPressAction: win.openNickSheet()
-                onClicked: win.openNickSheet()
-            }
-
-            ListView {
-                id: membersList
-                objectName: "membersList"
-                anchors.top: membersHeading.bottom
-                anchors.topMargin: win.scaledSize(14)
-                anchors.left: parent.left
-                anchors.right: parent.right
-                anchors.bottom: parent.bottom
-                anchors.bottomMargin: win.scaledSize(10)
-                clip: true
-                model: win.irc ? win.irc.members : null
-                boundsBehavior: Flickable.StopAtBounds
-                ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
-                keyNavigationEnabled: true
-                highlightFollowsCurrentItem: true
-                highlightMoveDuration: 0
-                currentIndex: 0
-
-                Keys.onPressed: function(event) {
-                    if (event.key !== Qt.Key_Return && event.key !== Qt.Key_Enter)
-                        return;
-                    win.activateFocusedMember();
-                    event.accepted = true;
-                }
-
-                delegate: Item {
-                    id: memberDelegate
-
-                    readonly property var memberData: win.irc
-                        ? ({nick: model.nick, label: model.label, status: model.status,
-                            away: model.away, avatar: model.avatar || "", bot: !!model.bot})
-                        : ({nick: "", label: "", status: "", away: false, avatar: "", bot: false})
-                    readonly property string nick: memberData.nick
-                    readonly property string label: memberData.label
-                    readonly property string status: memberData.status
-                    readonly property string avatar: memberData.avatar
-                    readonly property bool bot: memberData.bot
-                    // Exact match, like `openable`; the reducer's overlay is the CASEMAPPING-aware path.
-                    readonly property bool isSelf: nick.length > 0 && nick === win.selfNick
-                    // Other members' away state needs away-notify, but our own
-                    // arrives as the 305/306 numerics, so it stays visible and
-                    // agrees with the identity footer.
-                    readonly property bool away: memberData.away
-                        && (win.awayPresenceVisible || isSelf)
-                    readonly property bool typing: win.typingVisible
-                        && (win.irc
-                            ? win.irc.nickIsTyping(memberDelegate.nick)
-                            : win.typingNicks.indexOf(memberDelegate.nick) !== -1)
-
-                    objectName: "member-" + nick
-                    Accessible.name: label
-                    Accessible.description: win.memberStatusVisible ? status : ""
-                    Accessible.role: Accessible.Button
-                    Accessible.onPressAction: {
-                        if (win.canOpenDirectMessage(nick))
-                            win.openDirectMessage(nick);
-                    }
-                    width: ListView.view.width
-                    height: win.scaledSize(43)
-
-                    Rectangle {
-                        objectName: "memberHighlight"
-                        anchors.fill: parent
-                        anchors.leftMargin: win.scaledSize(8)
-                        anchors.rightMargin: win.scaledSize(8)
-                        radius: win.scaledSize(7)
-                        color: memberMouse.containsMouse
-                            ? win.hoverColor
-                            : (memberDelegate.ListView.isCurrentItem && membersList.activeFocus
-                                ? win.raisedColor
-                                : "transparent")
-                    }
-
-                    Item {
-                        anchors.left: parent.left
-                        anchors.leftMargin: win.scaledSize(18)
-                        anchors.verticalCenter: parent.verticalCenter
-                        width: win.scaledSize(28)
-                        height: width
-
-                        NickGlyph {
-                            anchors.fill: parent
-                            style: win.style
-                            avatarStore: win.avatarStore
-                            loadPeerAvatars: win.peerAvatarsEnabled
-                            nick: memberDelegate.nick
-                            avatarUrl: memberDelegate.avatar
-                            dimmed: memberDelegate.away
-                            fontPixelSize: win.scaledSize(11)
-                        }
-
-                        Rectangle {
-                            objectName: "presence-dot-" + memberDelegate.nick
-                            visible: win.awayPresenceVisible || memberDelegate.isSelf
-                            anchors.right: parent.right
-                            anchors.bottom: parent.bottom
-                            width: win.scaledSize(7)
-                            height: width
-                            radius: width / 2
-                            color: memberDelegate.away ? "#d6a552" : "#69b978"
-                            border.width: win.scaledSize(2)
-                            border.color: win.panelColor
-                        }
-                    }
-
-                    Column {
-                        anchors.left: parent.left
-                        anchors.leftMargin: win.scaledSize(56)
-                        anchors.right: parent.right
-                        anchors.rightMargin: win.scaledSize(10)
-                        anchors.verticalCenter: parent.verticalCenter
-                        spacing: 0
-
-                        Row {
-                            width: parent.width
-                            spacing: win.scaledSize(4)
-
-                            Text {
-                                width: {
-                                    var reserved = (memberDelegate.bot
-                                        ? memberBotMark.width + parent.spacing : 0)
-                                        + (memberDelegate.typing
-                                            ? memberTypingGlyph.implicitWidth + parent.spacing
-                                            : 0);
-                                    var cap = Math.max(0, parent.width - reserved);
-                                    return Math.min(implicitWidth, cap);
-                                }
-                                text: memberDelegate.label
-                                color: memberDelegate.away ? win.mutedColor : win.inkColor
-                                elide: Text.ElideRight
-                                font.family: "iA Writer Mono S"
-                                font.bold: memberDelegate.nick === win.selfNick
-                                font.pixelSize: win.scaledSize(12)
-                            }
-
-                            BotMark {
-                                id: memberBotMark
-                                style: win.style
-                                objectName: "member-bot-" + memberDelegate.nick
-                                shown: memberDelegate.bot
-                                anchors.verticalCenter: parent.verticalCenter
-                            }
-
-                            TypingDots {
-                                id: memberTypingGlyph
-                                style: win.style
-                                objectName: "member-typing-" + memberDelegate.nick
-                                visible: memberDelegate.typing
-                                pixelSize: win.scaledSize(12)
-                            }
-                        }
-
-                        Text {
-                            objectName: "member-status-" + memberDelegate.nick
-                            visible: win.memberStatusVisible
-                                && memberDelegate.status.length > 0
-                            width: parent.width
-                            text: memberDelegate.status
-                            color: win.mutedColor
-                            elide: Text.ElideRight
-                            font.family: "iA Writer Mono S"
-                            font.pixelSize: win.scaledSize(9)
-                        }
-                    }
-
-                    MouseArea {
-                        id: memberMouse
-                        anchors.fill: parent
-                        enabled: memberDelegate.nick.length > 0
-                            && memberDelegate.nick !== win.selfNick
-                        hoverEnabled: true
-                        cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
-                        onClicked: win.openDirectMessage(memberDelegate.nick)
-                    }
-                }
-            }
+            onMemberActivateRequested: win.activateFocusedMember()
         }
     }
 
@@ -3248,8 +2472,8 @@ ApplicationWindow {
             // Closing used to drop focus on the window itself, so
             // typing did nothing until the composer was clicked.
             Qt.callLater(function() {
-                if (win && win.active && composer)
-                    composer.forceActiveFocus();
+                if (win && win.active && conversation.composer)
+                    conversation.composer.forceActiveFocus();
             });
         }
         onDimmerClicked: function(mouse) {
@@ -3319,7 +2543,7 @@ ApplicationWindow {
                 if (win.connectionOverlayVisible)
                     win.focusConnectionSheetStart();
                 else
-                    composer.forceActiveFocus();
+                    conversation.composer.forceActiveFocus();
             });
         }
         onUrlRequested: function(url) {
@@ -3358,7 +2582,7 @@ ApplicationWindow {
         onClosed: {
             Qt.callLater(function() {
                 win.pickerEscapeGuard = false;
-                composer.forceActiveFocus();
+                conversation.composer.forceActiveFocus();
             });
         }
         onStepRequested: function(delta) { win.stepJump(delta); }
@@ -3394,7 +2618,7 @@ ApplicationWindow {
         onClosed: {
             Qt.callLater(function() {
                 win.pickerEscapeGuard = false;
-                composer.forceActiveFocus();
+                conversation.composer.forceActiveFocus();
             });
         }
         onStepRequested: function(delta) { win.stepNick(delta); }
