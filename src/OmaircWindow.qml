@@ -4,6 +4,7 @@ import QtQuick.Controls.Material
 import QtQuick.Layouts
 import QtQuick.Window
 import Omairc.App 1.0
+import "qml"
 
 ApplicationWindow {
     id: win
@@ -31,33 +32,27 @@ ApplicationWindow {
             Qt.callLater(focusConnectionSheetStart);
     }
 
-    readonly property bool darkMode: backend.darkMode
-    readonly property real textScale: backend.textScale
-    readonly property color pageColor: backend.themeBackground
-    readonly property color inkColor: backend.themeForeground
-    readonly property color accentColor: backend.themeAccent
-    readonly property color selectionColor: backend.themeSelection
-    readonly property color panelColor: mixColors(pageColor, inkColor, darkMode ? 0.035 : 0.025)
-    readonly property color raisedColor: mixColors(pageColor, inkColor, darkMode ? 0.075 : 0.055)
-    readonly property color hoverColor: mixColors(pageColor, inkColor, darkMode ? 0.10 : 0.075)
-    readonly property color dividerColor: mixColors(pageColor, inkColor, darkMode ? 0.13 : 0.11)
-    readonly property color mutedColor: mixColors(pageColor, inkColor, darkMode ? 0.52 : 0.47)
+    OmaircStyle {
+        id: omaircStyle
+        backend: win.backend
+    }
+    readonly property alias style: omaircStyle
+
+    readonly property bool darkMode: style.darkMode
+    readonly property real textScale: style.textScale
+    readonly property color pageColor: style.pageColor
+    readonly property color inkColor: style.inkColor
+    readonly property color accentColor: style.accentColor
+    readonly property color selectionColor: style.selectionColor
+    readonly property color panelColor: style.panelColor
+    readonly property color raisedColor: style.raisedColor
+    readonly property color hoverColor: style.hoverColor
+    readonly property color dividerColor: style.dividerColor
+    readonly property color mutedColor: style.mutedColor
     readonly property string appVersion: Qt.application.version
-    readonly property var nickPalette: [
-        accentColor,
-        darkMode ? "#c099ff" : "#7950b8",
-        darkMode ? "#7fc8a9" : "#237a58",
-        darkMode ? "#efb366" : "#a45f14",
-        darkMode ? "#ed8f9d" : "#b44355"
-    ]
-    readonly property real nickAvatarMix: darkMode ? 0.23 : 0.16
-    readonly property var nickAvatarFills: [
-        mixColors(pageColor, nickPalette[0], nickAvatarMix),
-        mixColors(pageColor, nickPalette[1], nickAvatarMix),
-        mixColors(pageColor, nickPalette[2], nickAvatarMix),
-        mixColors(pageColor, nickPalette[3], nickAvatarMix),
-        mixColors(pageColor, nickPalette[4], nickAvatarMix)
-    ]
+    readonly property var nickPalette: style.nickPalette
+    readonly property real nickAvatarMix: style.nickAvatarMix
+    readonly property var nickAvatarFills: style.nickAvatarFills
 
     property bool membersVisible: true
     property bool serverListVisible: true
@@ -254,39 +249,6 @@ ApplicationWindow {
         }
     }
 
-    component TypingDots: Row {
-        id: dots
-
-        property color ink: win.mutedColor
-        property int pixelSize: win.scaledSize(12)
-        property string describedAs: ""
-        property int pulse: 0
-
-        Accessible.role: Accessible.StaticText
-        Accessible.ignored: dots.describedAs.length === 0
-        // Name is for inspection when focus lands; appearance is not a live region.
-        Accessible.name: dots.describedAs
-        spacing: 0
-
-        Timer {
-            interval: 320
-            repeat: true
-            running: dots.visible
-            onTriggered: dots.pulse = (dots.pulse + 1) % 3
-        }
-
-        Repeater {
-            model: 3
-            Text {
-                text: "."
-                color: dots.ink
-                opacity: dots.pulse === index ? 1 : 0.28
-                font.family: "iA Writer Mono S"
-                font.pixelSize: dots.pixelSize
-            }
-        }
-    }
-
     Text {
         id: messageLineProbe
         visible: false
@@ -351,44 +313,6 @@ ApplicationWindow {
                     return
                 glyph.avatarEpoch += 1
             }
-        }
-    }
-
-    component BotMark: Item {
-        id: botMark
-
-        property bool shown: false
-
-        visible: shown
-        width: shown ? win.scaledSize(10) : 0
-        height: win.scaledSize(10)
-
-        Rectangle {
-            anchors.horizontalCenter: parent.horizontalCenter
-            y: 0
-            width: Math.max(1, win.scaledSize(1))
-            height: win.scaledSize(3)
-            color: win.mutedColor
-        }
-
-        Rectangle {
-            anchors.horizontalCenter: parent.horizontalCenter
-            y: 0
-            width: win.scaledSize(3)
-            height: Math.max(1, win.scaledSize(1))
-            radius: width / 2
-            color: win.mutedColor
-        }
-
-        Rectangle {
-            anchors.horizontalCenter: parent.horizontalCenter
-            anchors.bottom: parent.bottom
-            width: win.scaledSize(8)
-            height: win.scaledSize(6)
-            radius: win.scaledSize(1)
-            color: "transparent"
-            border.color: win.mutedColor
-            border.width: Math.max(1, win.scaledSize(1))
         }
     }
 
@@ -457,6 +381,7 @@ ApplicationWindow {
             }
 
             BotMark {
+                style: win.style
                 objectName: "message-bot-" + header.author
                 shown: header.bot
             }
@@ -476,25 +401,15 @@ ApplicationWindow {
     }
 
     function scaledSize(pixels) {
-        return Math.max(1, Math.round(pixels * textScale));
+        return style.scaledSize(pixels);
     }
 
     function mixColors(base, tint, amount) {
-        return Qt.rgba(
-            base.r + (tint.r - base.r) * amount,
-            base.g + (tint.g - base.g) * amount,
-            base.b + (tint.b - base.b) * amount,
-            1);
+        return style.mixColors(base, tint, amount);
     }
 
-    // Shared presence mark palette. Call sites map their own vocabulary onto
-    // "away" / "online" / "offline" so the hex values live in one place.
     function presenceMarkColor(kind) {
-        if (kind === "away")
-            return "#d6a552"
-        if (kind === "online")
-            return "#69b978"
-        return mutedColor
+        return style.presenceMarkColor(kind);
     }
 
     function focusedNetworkDisplayName() {
@@ -546,22 +461,19 @@ ApplicationWindow {
     }
 
     function paletteColor(index) {
-        return nickPalette[index];
+        return style.paletteColor(index);
     }
 
     function nickPaletteIndex(nick) {
-        var hash = 0;
-        for (var index = 0; index < nick.length; ++index)
-            hash = (hash + nick.charCodeAt(index)) % 5;
-        return hash;
+        return style.nickPaletteIndex(nick);
     }
 
     function nickColor(nick) {
-        return paletteColor(nickPaletteIndex(nick));
+        return style.nickColor(nick);
     }
 
     function initials(nick) {
-        return nick.length > 0 ? nick.charAt(0).toUpperCase() : "?";
+        return style.initials(nick);
     }
 
     function peerFacts(nick) {
@@ -2813,6 +2725,7 @@ ApplicationWindow {
 
             BotMark {
                 id: dmBotMark
+                style: win.style
                 objectName: "conversation-bot-" + conversationRow.conversationName
                 shown: conversationRow.direct && conversationRow.bot
                 anchors.verticalCenter: parent.verticalCenter
@@ -2834,6 +2747,7 @@ ApplicationWindow {
 
             TypingDots {
                 id: rowTyping
+                style: win.style
                 objectName: conversationRow.networkId.length > 0
                     ? "conversation-typing-" + conversationRow.networkId
                         + "-" + conversationRow.conversationName
@@ -3410,6 +3324,7 @@ ApplicationWindow {
 
                         BotMark {
                             id: selfBotMark
+                            style: win.style
                             objectName: "selfBotMark"
                             shown: win.peerBot(win.selfNick)
                             anchors.verticalCenter: parent.verticalCenter
@@ -3819,6 +3734,7 @@ ApplicationWindow {
 
                     TypingDots {
                         id: typingRowDots
+                        style: win.style
                         objectName: "typingTranscriptDots"
                         visible: typingRow.show
                         describedAs: typingRow.show
@@ -4378,6 +4294,7 @@ ApplicationWindow {
 
                             BotMark {
                                 id: memberBotMark
+                                style: win.style
                                 objectName: "member-bot-" + memberDelegate.nick
                                 shown: memberDelegate.bot
                                 anchors.verticalCenter: parent.verticalCenter
@@ -4385,6 +4302,7 @@ ApplicationWindow {
 
                             TypingDots {
                                 id: memberTypingGlyph
+                                style: win.style
                                 objectName: "member-typing-" + memberDelegate.nick
                                 visible: memberDelegate.typing
                                 pixelSize: win.scaledSize(12)
@@ -6251,6 +6169,7 @@ ApplicationWindow {
 
                             BotMark {
                                 id: nickBotMark
+                                style: win.style
                                 objectName: "nickPick-bot-" + nickRow.nick
                                 shown: nickRow.bot
                                 anchors.verticalCenter: parent.verticalCenter
