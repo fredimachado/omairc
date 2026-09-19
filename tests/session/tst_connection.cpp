@@ -4,6 +4,7 @@
 #include <QSettings>
 #include <QTemporaryDir>
 #include <QTest>
+#include <QVariantMap>
 
 #include "fakeirctransport.h"
 #include "testsettings.h"
@@ -88,6 +89,7 @@ private slots:
     void setupRequiredUntilCompleteProfileIsSaved();
     void loadingStoredProfileDoesNotConnectUntilActivate();
     void customNameIsRosterDisplayName();
+    void networkListGetAndFieldLookUpRolesByName();
     void missingStoredNameUsesHostAsDisplayName();
     void editingHostLeavesLoadedLegacyName();
     void duplicateNamesDisambiguateWithNick();
@@ -428,6 +430,32 @@ void ConnectionTest::customNameIsRosterDisplayName()
     QCOMPARE(reloaded.name(), QStringLiteral("Example Net"));
     QCOMPARE(reloaded.host(), QStringLiteral("irc.example"));
     QCOMPARE(reloaded.displayName(), QStringLiteral("Example Net"));
+}
+
+void ConnectionTest::networkListGetAndFieldLookUpRolesByName()
+{
+    IrcController controller;
+    IrcConnection connection(controller, capturingFactory(), credentialStore());
+    fillCompleteDraft(connection, QStringLiteral("irc.example"));
+    connection.setName(QStringLiteral("Example Net"));
+    QVERIFY(connection.apply());
+
+    auto *networks = qobject_cast<NetworkListModel *>(connection.networks());
+    QVERIFY(networks);
+    QCOMPARE(networks->rowCount(), 1);
+    const QVariantMap row = networks->get(0);
+    QCOMPARE(row.value(QStringLiteral("displayName")).toString(),
+             QStringLiteral("Example Net"));
+    QCOMPARE(row.value(QStringLiteral("networkId")).toString(),
+             connection.selectedNetworkId());
+    QCOMPARE(networks->field(0, QStringLiteral("displayName")).toString(),
+             QStringLiteral("Example Net"));
+    QCOMPARE(networks->field(0, QStringLiteral("networkId")).toString(),
+             connection.selectedNetworkId());
+    QVERIFY(networks->field(0, QStringLiteral("stored")).toBool());
+    QVERIFY(networks->get(-1).isEmpty());
+    QVERIFY(networks->get(99).isEmpty());
+    QVERIFY(!networks->field(0, QStringLiteral("no-such-role")).isValid());
 }
 
 void ConnectionTest::missingStoredNameUsesHostAsDisplayName()

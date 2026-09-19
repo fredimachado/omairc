@@ -1672,6 +1672,14 @@ TestCase {
     function networkDisplayName(networkId) {
         var model = seed.connection.networks;
         var row = 0;
+        if (typeof model.get === "function") {
+            for (; row < model.rowCount(); ++row) {
+                var item = model.get(row);
+                if (item.networkId === networkId)
+                    return item.displayName || "";
+            }
+            return "";
+        }
         for (; row < model.rowCount(); ++row) {
             var idx = model.index(row, 0);
             if (model.data(idx, Qt.UserRole + 1) === networkId)
@@ -5146,6 +5154,30 @@ TestCase {
         compare(findChild(window, "liveNetworkRepeater").count, 0);
         compare(findChild(window, "conversation-#omarchy"), null);
         compare(findChild(window, "conversation-libera-#omarchy"), null);
+        window.close();
+    }
+
+    function test_sidebarRowsComeFromTheConversationModel() {
+        restoreNamedConnection();
+        var window = createTemporaryObject(liveWindowComponent, null);
+        verify(window !== null, "The live window should load");
+        tryCompare(window, "visible", true);
+        waitForRendering(window.contentItem);
+
+        var rows = window.sidebarConversationRows();
+        compare(rows.length, 2);
+        compare(typeof rows[0].activate, "undefined");
+        compare(rows[0].conversationName, "#omarchy");
+        compare(rows[0].direct, false);
+        compare(rows[1].conversationName, "anna");
+        compare(rows[1].direct, true);
+        compare(window.sectionHasDirects("libera"), true);
+        compare(window.sectionHasDirects("oftc"), false);
+
+        var sections = window.sidebarNetworkSections();
+        compare(sections.length, 1);
+        compare(typeof sections[0].headerItem, "undefined");
+        compare(sections[0].networkId, "libera");
         window.close();
     }
 

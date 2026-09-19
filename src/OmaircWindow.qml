@@ -252,14 +252,11 @@ ApplicationWindow {
     }
 
     function focusedNetworkDisplayName() {
-        if (connection && connection.networks) {
-            var model = connection.networks;
-            var id = currentNetworkId;
-            for (var row = 0; row < model.rowCount(); ++row) {
-                var idx = model.index(row, 0);
-                if (model.data(idx, Qt.UserRole + 1) === id)
-                    return model.data(idx, Qt.UserRole + 2) || "";
-            }
+        var count = modelRowCount(connection ? connection.networks : null);
+        for (var row = 0; row < count; ++row) {
+            var item = networkAt(row);
+            if (item && item.networkId === currentNetworkId)
+                return item.displayName || "";
         }
         if (connection && connection.displayName
                 && connection.selectedNetworkId === currentNetworkId)
@@ -437,13 +434,7 @@ ApplicationWindow {
     }
 
     function transcriptRowCount(model) {
-        if (!model)
-            return 0;
-        if (typeof model.count === "number")
-            return model.count;
-        if (typeof model.rowCount === "function")
-            return model.rowCount();
-        return 0;
+        return modelRowCount(model);
     }
 
     function transcriptField(model, row, name) {
@@ -697,24 +688,93 @@ ApplicationWindow {
         });
     }
 
+    function modelRowCount(model) {
+        if (!model)
+            return 0;
+        if (typeof model.count === "number")
+            return model.count;
+        if (typeof model.rowCount === "function")
+            return model.rowCount();
+        return 0;
+    }
+
+    function modelRowMap(model, row) {
+        if (!model || row < 0 || row >= modelRowCount(model))
+            return null;
+        if (typeof model.get === "function")
+            return model.get(row);
+        return null;
+    }
+
+    function conversationAt(row) {
+        var item = modelRowMap(irc ? irc.conversations : null, row);
+        if (!item)
+            return null;
+        var name = item.conversationName || item.conversation || "";
+        if (name.length === 0)
+            return null;
+        return {
+            conversationName: name,
+            conversationId: item.conversationId || "",
+            networkId: item.networkId || "",
+            unread: item.unread || 0,
+            mention: !!item.mention,
+            muted: !!item.muted,
+            direct: !!item.direct
+        };
+    }
+
+    function networkAt(row) {
+        var item = modelRowMap(connection ? connection.networks : null, row);
+        if (!item)
+            return null;
+        var id = item.networkId || "";
+        if (id.length === 0)
+            return null;
+        return {
+            networkId: id,
+            displayName: item.displayName || ""
+        };
+    }
+
+    function conversationObjectName(networkId, name) {
+        return networkId && networkId.length > 0
+            ? "conversation-" + networkId + "-" + name
+            : "conversation-" + name;
+    }
+
+    function findVisibleNamedItem(name) {
+        if (!name || name.length === 0 || !sidebarScroll)
+            return null;
+        var found = null;
+        function walk(node) {
+            if (!node || found)
+                return;
+            if (node.objectName === name && node.visible && node.height > 0) {
+                found = node;
+                return;
+            }
+            var kids = node.children;
+            if (kids) {
+                for (var index = 0; index < kids.length; ++index)
+                    walk(kids[index]);
+            }
+            if (!found && node.contentItem)
+                walk(node.contentItem);
+        }
+        walk(sidebarScroll.contentItem);
+        return found;
+    }
+
     function sidebarConversationRows() {
         var rows = [];
-
-        function appendSection(section) {
-            if (!section || section.visible === false)
-                return;
-            var kids = section.children;
-            for (var index = 0; index < kids.length; ++index) {
-                var child = kids[index];
-                if (child && child.conversationName !== undefined && child.activate
-                        && child.visible && child.height > 0)
-                    rows.push(child);
-            }
-        }
-
-        if (irc && connection) {
-            for (var liveIndex = 0; liveIndex < liveNetworkRepeater.count; ++liveIndex)
-                appendSection(liveNetworkRepeater.itemAt(liveIndex));
+        if (!irc || !connection)
+            return rows;
+        var count = modelRowCount(irc.conversations);
+        for (var row = 0; row < count; ++row) {
+            var item = conversationAt(row);
+            if (item)
+                rows.push(item);
         }
         return rows;
     }
@@ -725,10 +785,12 @@ ApplicationWindow {
         var model = irc.conversations;
         if (!model)
             return false;
-        for (var row = 0; row < model.rowCount(); ++row) {
-            var idx = model.index(row, 0);
-            if (model.data(idx, Qt.UserRole + 4) === true
-                    && model.data(idx, Qt.UserRole + 5) === networkId)
+        if (typeof model.hasDirects === "function")
+            return model.hasDirects(networkId);
+        var count = modelRowCount(model);
+        for (var row = 0; row < count; ++row) {
+            var item = conversationAt(row);
+            if (item && item.direct && item.networkId === networkId)
                 return true;
         }
         return false;
@@ -736,30 +798,13 @@ ApplicationWindow {
 
     function sidebarNetworkSections() {
         var sections = [];
-
-        function appendSection(section) {
-            if (!section || section.visible === false)
-                return;
-            if (section.networkId === undefined || section.networkId.length === 0)
-                return;
-            if (section.headerItem === undefined)
-                return;
-            sections.push(section);
-        }
-
-        if (irc && connection) {
-            for (var liveIndex = 0; liveIndex < liveNetworkRepeater.count; ++liveIndex) {
-                var column = liveNetworkRepeater.itemAt(liveIndex);
-                if (!column)
-                    continue;
-                var kids = column.children;
-                for (var child = 0; child < kids.length; ++child) {
-                    if (kids[child] && kids[child].headerItem !== undefined) {
-                        appendSection(kids[child]);
-                        break;
-                    }
-                }
-            }
+        if (!irc || !connection)
+            return sections;
+        var count = modelRowCount(connection.networks);
+        for (var row = 0; row < count; ++row) {
+            var item = networkAt(row);
+            if (item)
+                sections.push(item);
         }
         return sections;
     }
@@ -929,7 +974,7 @@ ApplicationWindow {
         var rows = sidebarConversationRows();
         for (var index = 0; index < rows.length; ++index) {
             if (rows[index].conversationId === conversationId) {
-                rows[index].activate();
+                activateSidebarConversation(rows[index]);
                 return;
             }
         }
@@ -950,7 +995,7 @@ ApplicationWindow {
         if (!section)
             return;
         sidebarNetworkFocusId = section.networkId;
-        revealSidebarRow(section.headerItem);
+        revealNamedSidebarItem("networkHeader-" + section.networkId);
     }
 
     function activateFocusedNetworkHeader() {
@@ -1007,7 +1052,7 @@ ApplicationWindow {
         var nextIndex = current < 0
             ? (delta > 0 ? 0 : rows.length - 1)
             : (current + delta + rows.length) % rows.length;
-        rows[nextIndex].activate();
+        activateSidebarConversation(rows[nextIndex]);
     }
 
     function revealSidebarRow(row) {
@@ -1020,6 +1065,20 @@ ApplicationWindow {
             sidebarScroll.contentY = Math.max(0, top);
         else if (bottom > sidebarScroll.contentY + sidebarScroll.height)
             sidebarScroll.contentY = Math.max(0, bottom - sidebarScroll.height);
+    }
+
+    function revealNamedSidebarItem(name) {
+        revealSidebarRow(findVisibleNamedItem(name));
+    }
+
+    function activateSidebarConversation(row) {
+        if (!row)
+            return;
+        selectConversation(row.conversationName, row.networkId);
+        Qt.callLater(function() {
+            revealNamedSidebarItem(conversationObjectName(row.networkId,
+                                                          row.conversationName));
+        });
     }
 
     function jumpToNextUnread() {
@@ -1054,7 +1113,7 @@ ApplicationWindow {
 
         var target = mentionRow ? mentionRow : unreadRow;
         if (target)
-            target.activate();
+            activateSidebarConversation(target);
     }
 
     function composerHistoryKey() {
@@ -1069,36 +1128,6 @@ ApplicationWindow {
         if (composerHistoryIndex >= 0)
             return composerHistoryDraft;
         return composer.text;
-    }
-
-    function rowNetworkId(row) {
-        if (!row)
-            return "";
-        var id = row.conversationId || "";
-        var sep = id.indexOf("\n");
-        if (sep > 0)
-            return id.substring(0, sep);
-        return row.networkId || "";
-    }
-
-    function neighborAfterDrop(rows, current) {
-        if (current < 0)
-            return rows.length > 0 ? rows[rows.length - 1] : null;
-        var network = rowNetworkId(rows[current]);
-        var index;
-        for (index = current + 1; index < rows.length; ++index) {
-            if (rowNetworkId(rows[index]) === network)
-                return rows[index];
-        }
-        for (index = current - 1; index >= 0; --index) {
-            if (rowNetworkId(rows[index]) === network)
-                return rows[index];
-        }
-        if (current + 1 < rows.length)
-            return rows[current + 1];
-        if (current > 0)
-            return rows[current - 1];
-        return null;
     }
 
     function stashComposerDraft() {
@@ -2937,12 +2966,12 @@ ApplicationWindow {
         Rectangle {
             id: sidebar
             objectName: "serverList"
-            // Collapse the rail by width instead of hiding it. Hiding it
-            // propagates visible: false to every NetworkSection, and
-            // sidebarConversationRows()/sidebarNetworkSections() skip
-            // invisible rows, so Alt+Up/Down and Alt+Left/Right would stop
-            // walking the list. clip keeps the collapsed content from
-            // painting over the transcript.
+            // Collapse the rail by width instead of hiding it. Walk order
+            // comes from irc.conversations / connection.networks, so
+            // Alt+Up/Down still reaches every row while the column is
+            // clipped. clip keeps the collapsed content from painting over
+            // the transcript. Alt+Left/Right restores the column so the
+            // header highlight stays visible.
             clip: true
             Layout.preferredWidth: win.serverListVisible ? win.scaledSize(244) : 0
             Layout.minimumWidth: win.serverListVisible ? win.scaledSize(214) : 0

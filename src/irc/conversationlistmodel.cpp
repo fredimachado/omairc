@@ -1,6 +1,7 @@
 #include "conversationlistmodel.h"
 
 #include <QDateTime>
+#include <QVariantMap>
 
 #include <algorithm>
 
@@ -170,7 +171,7 @@ QVariant ConversationListModel::data(const QModelIndex& index, int role) const
     return {};
 }
 
-QHash<int, QByteArray> ConversationListModel::roleNames() const
+QHash<int, QByteArray> ConversationListModel::staticRoleNames()
 {
     return {
         {ConversationRole, "conversation"},
@@ -186,6 +187,52 @@ QHash<int, QByteArray> ConversationListModel::roleNames() const
         {AvatarRole, "avatar"},
         {BotRole, "bot"},
     };
+}
+
+QHash<int, QByteArray> ConversationListModel::roleNames() const
+{
+    return staticRoleNames();
+}
+
+QVariantMap ConversationListModel::get(int row) const
+{
+    QVariantMap result;
+    if (row < 0 || row >= rowCount())
+        return result;
+    const QModelIndex idx = index(row, 0);
+    const auto names = staticRoleNames();
+    for (auto it = names.cbegin(); it != names.cend(); ++it)
+        result.insert(QString::fromUtf8(it.value()), data(idx, it.key()));
+    return result;
+}
+
+QVariant ConversationListModel::field(int row, const QString& name) const
+{
+    static const QHash<QString, int> roles = [] {
+        QHash<QString, int> byName;
+        const QHash<int, QByteArray> names = ConversationListModel::staticRoleNames();
+        for (auto it = names.cbegin(); it != names.cend(); ++it)
+            byName.insert(QString::fromUtf8(it.value()), it.key());
+        return byName;
+    }();
+    const auto role = roles.constFind(name);
+    if (role == roles.cend())
+        return {};
+    return data(index(row, 0), role.value());
+}
+
+bool ConversationListModel::hasDirects(const QString& networkId) const
+{
+    if (networkId.isEmpty())
+        return false;
+    for (const IrcConversationKey& key : m_keys) {
+        if (key.networkId != networkId)
+            continue;
+        const IrcConversationState *conversation = m_reducer.find(key);
+        if (conversation && !conversation->isChannel())
+            return true;
+    }
+    return false;
 }
 
 void ConversationListModel::reload()

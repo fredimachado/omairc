@@ -8,6 +8,7 @@
 #include <QString>
 #include <QStringList>
 #include <QVariant>
+#include <QVariantMap>
 #include <QVector>
 
 #include <optional>
@@ -62,9 +63,14 @@ public:
     explicit ConversationListModel(IrcEventReducer& reducer,
                                    QObject *parent = nullptr);
 
+    static QHash<int, QByteArray> staticRoleNames();
+
     int rowCount(const QModelIndex& parent = QModelIndex()) const override;
     QVariant data(const QModelIndex& index, int role) const override;
     QHash<int, QByteArray> roleNames() const override;
+    Q_INVOKABLE QVariantMap get(int row) const;
+    Q_INVOKABLE QVariant field(int row, const QString& name) const;
+    Q_INVOKABLE bool hasDirects(const QString& networkId) const;
 
     void reload();
     void invalidateTyping();

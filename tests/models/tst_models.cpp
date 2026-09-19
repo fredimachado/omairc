@@ -7,6 +7,7 @@
 #include <QTest>
 #include <QTime>
 #include <QTimeZone>
+#include <QVariantMap>
 
 #include "conversationlistmodel.h"
 #include "irceventreducer.h"
@@ -89,6 +90,7 @@ private slots:
     void membersEmptyForDirectMessage();
     void messageKinds();
     void conversationsOrderChannelsThenDirect();
+    void conversationGetFieldAndHasDirects();
     void twoNetworksFollowRosterThenChannelRank();
     void parseConversationIdRejectsBareAndDoubleSeparators();
     void neighborAfterDropNextPreviousGhostAndOnly();
@@ -592,6 +594,57 @@ void ModelTest::conversationsOrderChannelsThenDirect()
     QCOMPARE(roleAt(conversations, 3, ConversationListModel::ConversationRole),
              QStringLiteral("zed"));
     QCOMPARE(roleAt(conversations, 3, ConversationListModel::DirectRole), true);
+}
+
+void ModelTest::conversationGetFieldAndHasDirects()
+{
+    IrcEventReducer reducer;
+    ConversationListModel conversations(reducer);
+    welcome(reducer, networkA);
+    welcome(reducer, networkB);
+
+    reducer.apply(IrcJoinEvent{
+        networkA, QStringLiteral("#active"), QStringLiteral("omairc")});
+    reducer.apply(IrcMessageEvent{
+        reducer.conversationKey(networkA, QStringLiteral("alice")),
+        QStringLiteral("alice"), QStringLiteral("first"), timestamp,
+        QStringLiteral("alice")});
+
+    conversations.reload();
+    QCOMPARE(conversations.rowCount(), 2);
+    QCOMPARE(conversations.field(0, QStringLiteral("conversation")).toString(),
+             QStringLiteral("#active"));
+    QCOMPARE(conversations.field(0, QStringLiteral("direct")).toBool(), false);
+    QCOMPARE(conversations.field(0, QStringLiteral("unread")).toInt(), 0);
+    QCOMPARE(conversations.field(1, QStringLiteral("conversationName")).toString(),
+             QStringLiteral("alice"));
+    QCOMPARE(conversations.field(1, QStringLiteral("direct")).toBool(), true);
+    QCOMPARE(conversations.field(1, QStringLiteral("unread")).toInt(), 1);
+    QCOMPARE(conversations.field(1, QStringLiteral("networkId")).toString(),
+             networkA);
+
+    const QVariantMap channel = conversations.get(0);
+    QCOMPARE(channel.value(QStringLiteral("conversation")).toString(),
+             QStringLiteral("#active"));
+    QCOMPARE(channel.value(QStringLiteral("conversationName")).toString(),
+             QStringLiteral("#active"));
+    QCOMPARE(channel.value(QStringLiteral("conversationId")).toString(),
+             QStringLiteral("network-a\n#active"));
+    QCOMPARE(channel.value(QStringLiteral("direct")).toBool(), false);
+
+    const QVariantMap direct = conversations.get(1);
+    QCOMPARE(direct.value(QStringLiteral("conversation")).toString(),
+             QStringLiteral("alice"));
+    QCOMPARE(direct.value(QStringLiteral("direct")).toBool(), true);
+    QCOMPARE(direct.value(QStringLiteral("unread")).toInt(), 1);
+
+    QVERIFY(conversations.hasDirects(networkA));
+    QVERIFY(!conversations.hasDirects(networkB));
+    QVERIFY(!conversations.hasDirects(QString()));
+    QVERIFY(conversations.get(-1).isEmpty());
+    QVERIFY(conversations.get(99).isEmpty());
+    QVERIFY(!conversations.field(0, QStringLiteral("no-such-role")).isValid());
+    QVERIFY(!conversations.field(-1, QStringLiteral("conversation")).isValid());
 }
 
 void ModelTest::twoNetworksFollowRosterThenChannelRank()
