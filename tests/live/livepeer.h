@@ -27,6 +27,7 @@ public:
     bool waitRegistered(int timeoutMs = 20000);
     bool join(const QString &channel, int timeoutMs = 10000);
     void writeLine(const QString &line);
+    void mode(const QString &target, const QString &modes, const QString &nick = {});
     bool waitForCommand(const QString &command, int timeoutMs = 10000);
 
     QString nick;

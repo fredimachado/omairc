@@ -64,11 +64,18 @@ public:
                bool tls,
                const QString &password = {},
                const QString &networkId = {},
-               const QString &transcriptRoot = {});
+               const QString &transcriptRoot = {},
+               bool reconnectEnabled = false,
+               const QStringList &autojoinChannels = {});
     ~LiveClient();
 
     LiveClient(const LiveClient &) = delete;
     LiveClient &operator=(const LiveClient &) = delete;
+
+    bool canForceDisconnect() const;
+    bool forceDisconnect();
+    bool waitReconnecting(int timeoutMs = 20000);
+    bool waitRegisteredAgain(int timeoutMs = 40000);
 
     bool waitRegistered(int timeoutMs = 20000);
     bool waitFailed(int timeoutMs = 20000);
@@ -82,6 +89,7 @@ public:
 
     IrcController controller;
     IrcSession *session = nullptr;
+    QtIrcTransport *transport = nullptr;
     IrcSessionConfig config;
     QVector<IrcMessage> incoming;
     QVector<IrcStatusEntry> status;
