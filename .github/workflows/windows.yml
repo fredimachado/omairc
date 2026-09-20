@@ -189,11 +189,11 @@ jobs:
           $mb = [math]::Round((($files | Measure-Object Length -Sum).Sum) / 1MB, 2)
           Write-Host "Portable tree: $($files.Count) files, $mb MB"
 
-      # Pull requests compile and smoke the portable tree. Packaging the
-      # installer and uploading artifacts is for master, version tags, and a
-      # manual workflow_dispatch when someone actually needs the zip/setup.
+      # Compile and smoke on every push and PR. Package and upload only on
+      # version tags and a manual workflow_dispatch when someone needs the
+      # zip/setup. Master merges skip that work.
       - name: Upload portable tree
-        if: github.event_name != 'pull_request'
+        if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
         uses: actions/upload-artifact@v4
         with:
           name: omairc-${{ env.OMAIRC_ARTIFACT_VERSION }}-windows-x64
@@ -208,16 +208,16 @@ jobs:
           if-no-files-found: error
 
       - name: Install Inno Setup
-        if: github.event_name != 'pull_request'
+        if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
         run: choco install innosetup --no-progress -y
 
       - name: Package installer
-        if: github.event_name != 'pull_request'
+        if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
         shell: cmd
         run: bin\package-windows.bat
 
       - name: Smoke installer
-        if: github.event_name != 'pull_request'
+        if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
         run: |
           $ErrorActionPreference = 'Stop'
           $setup = "dist\omairc-$($env:OMAIRC_ARTIFACT_VERSION)-windows-x64-setup.exe"
@@ -299,7 +299,7 @@ jobs:
           Write-Host 'Uninstall removed the install dir and Start Menu shortcut; Path is unchanged'
 
       - name: Upload installer
-        if: github.event_name != 'pull_request'
+        if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
         uses: actions/upload-artifact@v4
         with:
           name: omairc-${{ env.OMAIRC_ARTIFACT_VERSION }}-windows-x64-setup

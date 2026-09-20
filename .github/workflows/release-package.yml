@@ -2,8 +2,8 @@ name: Release package
 
 on:
   push:
-    branches:
-      - master
+    # Master merges compile in test/windows/macos workflows. Package the
+    # Arch snapshot only on version tags, or on a manual workflow_dispatch.
     tags:
       - 'v*'
     paths:

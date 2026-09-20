@@ -232,10 +232,10 @@ with `maxim-lobanov/setup-xcode` (encoded on the matrix) rather than a
 best-effort `xcode-select` fallback. CI asserts the Mach-O contains
 `arm64` or `x86_64` to match the `macos-arm64` / `macos-x64` artifact
 name. Pull requests compile, smoke, and (on Apple Silicon) run portable
-tests; they do not zip or upload artifacts. `master`, version tags, and
-`workflow_dispatch` package both zips, and tags attach both to the GitHub
-release. Intel pull requests skip the portable test rebuild. Build QtKeychain
-against the same Qt prefix with Apple
+tests; they do not zip or upload artifacts. `master` is the same for
+packaging. Version tags and `workflow_dispatch` package both zips, and tags
+attach both to the GitHub release. Intel pull requests skip the portable test
+rebuild. Build QtKeychain against the same Qt prefix with Apple
 `clang++` so passwords use the Keychain backend. There is no
 `qt6-wayland` dependency on macOS. Regenerate `data/icons/omairc.icns`
 from the SVG with `packaging/macos/generate-icns` when the mark changes.

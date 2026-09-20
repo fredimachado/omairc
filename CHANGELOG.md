@@ -9,10 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Pull-request CI no longer packages or uploads Windows/macOS installers and
-  zips. Use a manual workflow run when you need those artifacts; `master` and
-  version tags still package. Intel macOS pull requests skip the portable test
-  rebuild (Linux and Apple Silicon still run it).
+- Pull-request and `master` CI no longer package or upload Windows/macOS
+  installers, zips, or the Arch snapshot. Use a manual workflow run when you
+  need those artifacts; version tags still package and publish. Intel macOS
+  pull requests skip the portable test rebuild (Linux and Apple Silicon still
+  run it).
 
 ### Fixed
 

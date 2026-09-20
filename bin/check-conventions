@@ -458,21 +458,30 @@ def _named_step_header(text, name):
     return match.group(0) if match else ""
 
 
-def check_pr_skips_packages():
+def check_ci_package_triggers():
     problems = []
     windows = ROOT / ".github" / "workflows" / "windows.yml"
     macos = ROOT / ".github" / "workflows" / "macos.yml"
+    release = ROOT / ".github" / "workflows" / "release-package.yml"
     windows_text = windows.read_text(encoding="utf-8", errors="replace") \
         if windows.is_file() else ""
     macos_text = macos.read_text(encoding="utf-8", errors="replace") \
         if macos.is_file() else ""
+    release_text = release.read_text(encoding="utf-8", errors="replace") \
+        if release.is_file() else ""
 
     if not windows.is_file():
         problems.append(".github/workflows/windows.yml: missing Windows workflow")
     if not macos.is_file():
         problems.append(".github/workflows/macos.yml: missing macOS workflow")
+    if not release.is_file():
+        problems.append(
+            ".github/workflows/release-package.yml: missing Arch package workflow")
 
-    skip_pr = "if: github.event_name != 'pull_request'"
+    package_if = (
+        "if: github.event_name == 'workflow_dispatch' || "
+        "startsWith(github.ref, 'refs/tags/v')"
+    )
     for relative, text, names in (
         (".github/workflows/windows.yml", windows_text, (
             "Upload portable tree",
@@ -493,10 +502,10 @@ def check_pr_skips_packages():
             if not header:
                 problems.append(f"{relative}: missing step {name!r}")
                 continue
-            if skip_pr not in header:
+            if package_if not in header:
                 problems.append(
-                    f"{relative}: {name} must skip pull_request; package and "
-                    "upload artifacts on master, tags, and workflow_dispatch")
+                    f"{relative}: {name} must package only on workflow_dispatch "
+                    "and v* tags; pull requests and master skip artifacts")
 
     portable = _named_step_header(macos_text, "Portable tests")
     if not portable:
@@ -507,10 +516,21 @@ def check_pr_skips_packages():
             ".github/workflows/macos.yml: Intel pull requests must skip "
             "Portable tests; Apple Silicon PRs and non-PR runs keep them")
 
-    if "Skip zip artifacts on pull requests" not in macos_text:
+    skip = _named_step_header(macos_text, "Skip zip artifacts")
+    if not skip:
         problems.append(
             ".github/workflows/macos.yml: Both macOS zips must stay a green "
-            "no-op on pull requests so a skipped download is not a failed check")
+            "no-op when this run does not package, so a skipped download is "
+            "not a failed check")
+    elif "workflow_dispatch" not in skip or "refs/tags/v" not in skip:
+        problems.append(
+            ".github/workflows/macos.yml: Skip zip artifacts must no-op on "
+            "pull requests and master, not only pull requests")
+
+    if re.search(r"(?m)^  push:\n    branches:\n      - master\b", release_text):
+        problems.append(
+            ".github/workflows/release-package.yml: do not package on master "
+            "pushes; keep v* tags and workflow_dispatch")
     return problems
 
 
@@ -770,7 +790,7 @@ CHECKS = (
     ("retired mock sidebar tokens", check_retired_mock_sidebar),
     ("macOS ObjC ARC for notifications", check_macos_objc_arc),
     ("macOS CI Qt arch selection", check_macos_ci_arch_selection),
-    ("PR CI skips packages", check_pr_skips_packages),
+    ("CI packages only on tags and dispatch", check_ci_package_triggers),
     ("macOS CI Bash 3.2 builtins", check_macos_ci_bash32),
     ("macOS Developer ID notarization", check_macos_notarization),
     ("macOS CI Xcode and Actions majors", check_macos_ci_xcode_and_actions),

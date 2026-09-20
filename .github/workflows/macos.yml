@@ -487,11 +487,11 @@ jobs:
             -input "$GITHUB_WORKSPACE/tests/ui/tst_seeded_window.qml"
           rm -rf "$test_state"
 
-      # Pull requests compile, smoke, and (on Apple Silicon) run portable
-      # tests. Zipping and uploading artifacts is for master, version tags,
-      # and a manual workflow_dispatch when someone actually needs the zip.
+      # Compile and smoke on every push and PR. Zip and upload only on
+      # version tags and a manual workflow_dispatch when someone needs the
+      # zip. Master merges skip that work.
       - name: Package app zip
-        if: github.event_name != 'pull_request'
+        if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
         run: bin/package-macos
 
       - name: Verify Developer ID signature
@@ -506,7 +506,7 @@ jobs:
           bin/check-macos-syspolicy notary-submission "$app"
 
       - name: Upload app zip
-        if: github.event_name != 'pull_request'
+        if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
         uses: actions/upload-artifact@v7
         with:
           name: omairc-${{ env.OMAIRC_ARTIFACT_VERSION }}-${{ env.OMAIRC_MAC_SUFFIX }}
@@ -598,14 +598,14 @@ jobs:
     env:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
-      - name: Skip zip artifacts on pull requests
-        if: github.event_name == 'pull_request'
+      - name: Skip zip artifacts
+        if: github.event_name != 'workflow_dispatch' && !startsWith(github.ref, 'refs/tags/v')
         run: |
-          echo "Pull requests skip zip artifacts."
+          echo "Pull requests and master skip zip artifacts."
           echo "Run this workflow with workflow_dispatch to package both architecture zips."
 
       - name: Download architecture zips
-        if: github.event_name != 'pull_request'
+        if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
         uses: actions/download-artifact@v8
         with:
           pattern: omairc-*-macos-*
@@ -613,7 +613,7 @@ jobs:
           path: dist
 
       - name: Assert both architecture zips
-        if: github.event_name != 'pull_request'
+        if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
         run: |
           set -euo pipefail
           shopt -s nullglob
