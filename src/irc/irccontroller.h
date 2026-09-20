@@ -5,6 +5,8 @@
 #include "irceventreducer.h"
 #include "irchighlight.h"
 #include "ircignore.h"
+#include "ircinbox.h"
+#include "ircinboxmodel.h"
 #include "ircmonitor.h"
 #include "ircmute.h"
 #include "ircopendirect.h"
@@ -57,6 +59,8 @@ class IrcController : public QObject
     Q_PROPERTY(bool loadPeerAvatars READ loadPeerAvatars WRITE setLoadPeerAvatars NOTIFY loadPeerAvatarsChanged)
     Q_PROPERTY(bool openConversationsAtUnread READ openConversationsAtUnread WRITE setOpenConversationsAtUnread NOTIFY openConversationsAtUnreadChanged)
     Q_PROPERTY(IrcStatusConsole* console READ console CONSTANT)
+    Q_PROPERTY(QAbstractItemModel* inbox READ inbox NOTIFY inboxChanged)
+    Q_PROPERTY(int inboxCount READ inboxCount NOTIFY inboxChanged)
 
 public:
     explicit IrcController(QObject *parent = nullptr);
@@ -102,6 +106,9 @@ public:
     bool openConversationsAtUnread() const;
     void setOpenConversationsAtUnread(bool enabled);
     IrcStatusConsole *console();
+    QAbstractItemModel *inbox();
+    int inboxCount() const;
+    Q_INVOKABLE void activateInboxItem(int row);
     const IrcServerFeatures &serverFeatures(const QString &networkId) const;
     Q_INVOKABLE QString networkIconUrl(const QString &networkId) const;
 
@@ -198,6 +205,7 @@ signals:
                        const QString &msgid);
     void monitorArrived(const QString &author, const QString &body,
                         const QString &networkId, const QString &target);
+    void inboxChanged();
 
 private:
     enum class QuietWire { Privmsg, Notice };
@@ -398,6 +406,8 @@ private:
     void setLastError(const QString& networkId, const QString& message);
     QString errorNetworkId(IrcComposerSurface surface) const;
     void armTypingRefresh();
+    void appendInbox(IrcInboxItem item);
+    void syncInbox();
 
     IrcSessionManager m_sessions;
     IrcStatusConsole m_console;
@@ -408,6 +418,8 @@ private:
     IrcMuteStore m_mutes;
     IrcOpenDirectStore m_openDirects;
     IrcHighlightStore m_highlights;
+    IrcInbox m_inbox;
+    IrcInboxModel m_inboxModel;
     ConversationListModel m_conversations;
     MessageListModel m_messages;
     MemberListModel m_members;

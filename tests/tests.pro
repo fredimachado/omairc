@@ -58,6 +58,8 @@ HEADERS += \
     ../src/irc/ircmute.h \
     ../src/irc/ircopendirect.h \
     ../src/irc/irchighlight.h \
+    ../src/irc/ircinbox.h \
+    ../src/irc/ircinboxmodel.h \
     ../src/irc/ircevent.h \
     ../src/irc/ircviewnotify.h \
     ../src/irc/irceventtranslator.h \
@@ -137,6 +139,8 @@ SOURCES += \
     ../src/irc/ircmute.cpp \
     ../src/irc/ircopendirect.cpp \
     ../src/irc/irchighlight.cpp \
+    ../src/irc/ircinbox.cpp \
+    ../src/irc/ircinboxmodel.cpp \
     ../src/irc/irceventtranslator.cpp \
     ../src/irc/irceventreducer.cpp \
     ../src/irc/ircstatusentry.cpp \

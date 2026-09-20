@@ -1,5 +1,6 @@
 #pragma once
 
+#include "ircinbox.h"
 #include "ircevent.h"
 #include "ircpresence.h"
 #include "ircserverfeatures.h"
@@ -146,6 +147,16 @@ struct IrcMentionArrival
     IrcMsgId msgid{};
 };
 
+struct IrcInboxArrival
+{
+    IrcInboxKind kind;
+    QString actor;
+    QString body;
+    QString networkId;
+    QString target;
+    IrcMsgId msgid{};
+};
+
 class IrcConversationLog;
 
 enum class IrcConversationCause {
@@ -236,6 +247,7 @@ public:
     bool selfAway(const QString& networkId) const noexcept;
 
     std::optional<IrcMentionArrival> takeMentionArrival();
+    std::optional<IrcInboxArrival> takeInboxArrival();
 
 private:
     IrcConversationState *findMutable(const IrcConversationKey& key) noexcept;
@@ -245,6 +257,8 @@ private:
                 const QString& right) const;
     bool isSelf(const QString& networkId, const QString& nick) const;
     bool isMention(const QString& networkId, const QString& body) const;
+    bool isNickMention(const QString& networkId, const QString& body) const;
+    bool isHighlightHit(const QString& networkId, const QString& body) const;
     void appendChat(const IrcConversationKey& key,
                     const QString& displayTarget,
                     const QString& author,
@@ -258,7 +272,8 @@ private:
                          const QString& body,
                          IrcMessageKind kind,
                          const IrcMsgId& msgid,
-                         qint64 sequence);
+                         qint64 sequence,
+                         IrcOrigin origin);
     void appendEvent(IrcConversationState& conversation,
                      const QString& body,
                      bool collapsible = false);
@@ -312,6 +327,7 @@ private:
     std::set<QString> m_selfAway;
     std::optional<IrcConversationKey> m_selected;
     std::optional<IrcMentionArrival> m_mentionArrival;
+    std::optional<IrcInboxArrival> m_inboxArrival;
     std::set<IrcConversationKey> m_mutedKeys;
     IrcConversationLog *m_log = nullptr;
 };

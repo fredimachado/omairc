@@ -127,6 +127,7 @@ bool persistableKind(IrcMessageKind kind)
 enum class ChatLineReason
 {
     NickMention,
+    Highlight,
     DirectMessage,
 };
 
@@ -134,7 +135,8 @@ std::optional<ChatLineReason> classifyChatLine(
     const IrcConversationState& conversation,
     IrcMessageKind kind,
     bool self,
-    bool nickHit)
+    bool nickHit,
+    bool highlightHit)
 {
     if (kind != IrcMessageKind::Message && kind != IrcMessageKind::Action)
         return std::nullopt;
@@ -142,9 +144,24 @@ std::optional<ChatLineReason> classifyChatLine(
         return std::nullopt;
     if (nickHit)
         return ChatLineReason::NickMention;
+    if (highlightHit)
+        return ChatLineReason::Highlight;
     if (!conversation.isChannel())
         return ChatLineReason::DirectMessage;
     return std::nullopt;
+}
+
+IrcInboxKind inboxKindFor(ChatLineReason reason)
+{
+    switch (reason) {
+    case ChatLineReason::NickMention:
+        return IrcInboxKind::Mention;
+    case ChatLineReason::Highlight:
+        return IrcInboxKind::Highlight;
+    case ChatLineReason::DirectMessage:
+        return IrcInboxKind::Direct;
+    }
+    return IrcInboxKind::Mention;
 }
 
 void admitMessage(IrcConversationState& conversation, IrcReducedMessage message)
@@ -249,6 +266,7 @@ std::optional<IrcConversationKey> IrcEventReducer::selected() const
 void IrcEventReducer::apply(const IrcEvent& event)
 {
     m_mentionArrival.reset();
+    m_inboxArrival.reset();
     std::visit([this](const auto& value) { reduce(value); }, event);
 }
 
@@ -257,6 +275,13 @@ std::optional<IrcMentionArrival> IrcEventReducer::takeMentionArrival()
     std::optional<IrcMentionArrival> mention = m_mentionArrival;
     m_mentionArrival.reset();
     return mention;
+}
+
+std::optional<IrcInboxArrival> IrcEventReducer::takeInboxArrival()
+{
+    std::optional<IrcInboxArrival> arrival = m_inboxArrival;
+    m_inboxArrival.reset();
+    return arrival;
 }
 
 bool IrcEventReducer::releaseStaleNamesSync(const std::optional<IrcConversationKey>& key,
@@ -672,15 +697,19 @@ bool IrcEventReducer::mentions(const QString& networkId,
     return isMention(networkId, body);
 }
 
-bool IrcEventReducer::isMention(const QString& networkId,
-                                const QString& body) const
+bool IrcEventReducer::isNickMention(const QString& networkId,
+                                    const QString& body) const
 {
     const QString normalizedBody = normalize(networkId, body);
     const auto current = m_currentNicks.find(networkId);
-    if (current != m_currentNicks.end()
-        && containsWord(normalizedBody, normalize(networkId, current->second))) {
-        return true;
-    }
+    return current != m_currentNicks.end()
+        && containsWord(normalizedBody, normalize(networkId, current->second));
+}
+
+bool IrcEventReducer::isHighlightHit(const QString& networkId,
+                                     const QString& body) const
+{
+    const QString normalizedBody = normalize(networkId, body);
     const auto words = m_highlightWords.find(networkId);
     if (words == m_highlightWords.end())
         return false;
@@ -689,6 +718,12 @@ bool IrcEventReducer::isMention(const QString& networkId,
             return true;
     }
     return false;
+}
+
+bool IrcEventReducer::isMention(const QString& networkId,
+                                const QString& body) const
+{
+    return isNickMention(networkId, body) || isHighlightHit(networkId, body);
 }
 
 void IrcEventReducer::appendChat(const IrcConversationKey& key,
@@ -717,7 +752,7 @@ void IrcEventReducer::appendChat(const IrcConversationKey& key,
     capMessages(*conversation);
     clearTyping(*conversation, normalize(key.networkId, author));
     noteChatArrival(*conversation, key, author, body, kind, msgid,
-                    conversation->messages.back().sequence);
+                    conversation->messages.back().sequence, IrcOrigin::Live);
 }
 
 void IrcEventReducer::noteChatArrival(IrcConversationState& conversation,
@@ -726,14 +761,31 @@ void IrcEventReducer::noteChatArrival(IrcConversationState& conversation,
                                       const QString& body,
                                       IrcMessageKind kind,
                                       const IrcMsgId& msgid,
-                                      qint64 sequence)
+                                      qint64 sequence,
+                                      IrcOrigin origin)
 {
     const bool self = isSelf(key.networkId, author);
+    const bool nickHit = isNickMention(key.networkId, body);
+    const bool highlightHit = !nickHit && isHighlightHit(key.networkId, body);
     const std::optional<ChatLineReason> reason = classifyChatLine(
-        conversation, kind, self, isMention(key.networkId, body));
+        conversation, kind, self, nickHit, highlightHit);
     if (reason && !conversation.muted) {
-        m_mentionArrival = IrcMentionArrival{
-            author, body, key.networkId, conversation.target, msgid};
+        if (reason == ChatLineReason::NickMention
+            || reason == ChatLineReason::DirectMessage) {
+            m_mentionArrival = IrcMentionArrival{
+                author, body, key.networkId, conversation.target, msgid};
+        }
+    }
+    if (origin == IrcOrigin::Live && reason && !conversation.muted
+        && !(m_selected && *m_selected == key)) {
+        m_inboxArrival = IrcInboxArrival{
+            inboxKindFor(*reason),
+            author,
+            body,
+            key.networkId,
+            conversation.target,
+            msgid,
+        };
     }
     if (self || (m_selected && *m_selected == key))
         return;
@@ -1022,10 +1074,22 @@ void IrcEventReducer::reduce(const IrcKickEvent& event)
     }
     forgetUnseen(event.networkId, departed);
     appendEvent(*conversation, event.target + QStringLiteral(" was kicked"));
-    if (isSelf(event.networkId, event.target))
+    if (isSelf(event.networkId, event.target)) {
         conversation->typing.clear();
-    else
+        const QString preview = event.reason.isEmpty()
+            ? QStringLiteral("You were kicked")
+            : event.reason;
+        m_inboxArrival = IrcInboxArrival{
+            IrcInboxKind::Kick,
+            event.author,
+            preview,
+            event.networkId,
+            event.channel,
+            IrcMsgId{},
+        };
+    } else {
         clearTyping(*conversation, departed.front());
+    }
 }
 
 void IrcEventReducer::reduce(const IrcTopicEvent& event)
@@ -1188,7 +1252,7 @@ void IrcEventReducer::reduce(const IrcHistoryEvent& event)
     for (const IrcReducedMessage& message : run) {
         noteChatArrival(*conversation, event.conversation, message.author,
                         message.body, message.kind, message.msgid,
-                        message.sequence);
+                        message.sequence, IrcOrigin::Replay);
     }
 }
 

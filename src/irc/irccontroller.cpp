@@ -764,6 +764,65 @@ IrcStatusConsole *IrcController::console()
     return &m_console;
 }
 
+QAbstractItemModel *IrcController::inbox()
+{
+    return &m_inboxModel;
+}
+
+int IrcController::inboxCount() const
+{
+    return m_inbox.count();
+}
+
+void IrcController::appendInbox(IrcInboxItem item)
+{
+    m_inbox.append(std::move(item));
+    syncInbox();
+}
+
+void IrcController::syncInbox()
+{
+    m_inboxModel.sync(m_inbox);
+    emit inboxChanged();
+}
+
+void IrcController::activateInboxItem(int row)
+{
+    if (row < 0 || row >= m_inbox.count())
+        return;
+
+    const IrcInboxItem item = m_inbox.at(row);
+    m_inbox.consumeAt(row);
+    syncInbox();
+
+    switch (item.kind) {
+    case IrcInboxKind::Mention:
+    case IrcInboxKind::Highlight:
+    case IrcInboxKind::Direct:
+        revealConversation(item.networkId, item.target);
+        break;
+    case IrcInboxKind::Invite: {
+        IrcSession *session = m_sessions.findSession(item.networkId);
+        if (!session)
+            break;
+        const IrcServerFeatures& features = m_reducer.serverFeatures(item.networkId);
+        const std::optional<IrcJoinTarget> target =
+            IrcJoinTarget::make(item.target, std::nullopt, features);
+        if (!target)
+            break;
+        if (session->join(*target))
+            openJoinedChannel(item.networkId, item.target);
+        break;
+    }
+    case IrcInboxKind::MonitorOnline:
+        revealConversation(item.networkId, item.actor);
+        break;
+    case IrcInboxKind::Kick:
+        revealConversation(item.networkId, item.target);
+        break;
+    }
+}
+
 const IrcServerFeatures &IrcController::serverFeatures(const QString &networkId) const
 {
     return m_reducer.serverFeatures(networkId);
@@ -812,6 +871,11 @@ void IrcController::selectConversation(const QString& networkId,
     }
     m_selected = key;
     m_selectedTarget = target;
+    m_inbox.consumeConversation(
+        networkId,
+        target,
+        m_reducer.serverFeatures(networkId).caseMapping());
+    syncInbox();
     m_conversations.select(key);
     m_messages.select(key);
     m_members.select(key);
@@ -871,6 +935,11 @@ void IrcController::revealConversation(const QString& networkId,
             return;
         rememberOpenDirect(networkId, target);
         m_conversations.reload();
+    }
+    const IrcServerFeatures& features = m_reducer.serverFeatures(networkId);
+    if (!features.isChannel(utf8(key.normalizedTarget))) {
+        m_inbox.consumeMonitor(networkId, target, features.caseMapping());
+        syncInbox();
     }
     selectConversation(networkId, target);
 }
@@ -1643,6 +1712,17 @@ void IrcController::handleMonitorPresence(const QString& networkId,
         if (monitorNotifyMuted(networkId, nick))
             continue;
         emit monitorArrived(display, body, networkId, display);
+        if (online && previous != MonitorPresence::Online) {
+            appendInbox({
+                IrcInboxKind::MonitorOnline,
+                QDateTime::currentDateTimeUtc(),
+                networkId,
+                display,
+                display,
+                body,
+                IrcMsgId{},
+            });
+        }
     }
 }
 
@@ -2532,6 +2612,23 @@ void IrcController::handleStatusEntry(const IrcStatusEntry& entry)
         routeWhoisLine(entry.networkId(), *line);
     if (const IrcCtcpReplyLine *line = entry.ctcpReply())
         routeCtcpReply(entry.networkId(), *line, entry.text());
+    if (entry.label() == QStringLiteral("INVITE")) {
+        IrcSession *session = m_sessions.findSession(entry.networkId());
+        if (!session)
+            return;
+        const std::optional<IrcPendingInvite> pending = session->pendingInvite();
+        if (!pending)
+            return;
+        appendInbox({
+            IrcInboxKind::Invite,
+            QDateTime::currentDateTimeUtc(),
+            entry.networkId(),
+            pending->nick,
+            pending->channel,
+            entry.text(),
+            IrcMsgId{},
+        });
+    }
 }
 
 void IrcController::routeWhoisLine(const QString& networkId, const IrcWhoisLine& line)
@@ -3021,6 +3118,17 @@ void IrcController::apply(const IrcEvent& event)
         emit mentionArrived(mention->author, mention->body, mention->networkId,
                             mention->target, mention->msgid.value);
     }
+    if (std::optional<IrcInboxArrival> arrival = m_reducer.takeInboxArrival()) {
+        appendInbox({
+            arrival->kind,
+            QDateTime::currentDateTimeUtc(),
+            arrival->networkId,
+            arrival->actor,
+            arrival->target,
+            arrival->body,
+            arrival->msgid,
+        });
+    }
 }
 
 void IrcController::publish(const IrcViewNotify& notify)
@@ -3115,6 +3223,10 @@ void IrcController::handleMessage(const QString& networkId,
                     if (selfJoin
                         && mapping.equals(utf8(join->channel),
                                           utf8(pending->channel))) {
+                        m_inbox.consumeInvite(join->networkId,
+                                              join->channel,
+                                              mapping);
+                        syncInbox();
                         selectConversation(join->networkId, join->channel);
                     }
                 }
