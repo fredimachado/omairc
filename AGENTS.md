@@ -231,8 +231,11 @@ Xcode 16, so Apple Silicon stays on `macos-15`. CI selects Xcode 16.4
 with `maxim-lobanov/setup-xcode` (encoded on the matrix) rather than a
 best-effort `xcode-select` fallback. CI asserts the Mach-O contains
 `arm64` or `x86_64` to match the `macos-arm64` / `macos-x64` artifact
-name, uploads both zips as workflow artifacts, and attaches both to
-version tags. Build QtKeychain against the same Qt prefix with Apple
+name. Pull requests compile, smoke, and (on Apple Silicon) run portable
+tests; they do not zip or upload artifacts. `master` is the same for
+packaging. Version tags and `workflow_dispatch` package both zips, and tags
+attach both to the GitHub release. Intel pull requests skip the portable test
+rebuild. Build QtKeychain against the same Qt prefix with Apple
 `clang++` so passwords use the Keychain backend. There is no
 `qt6-wayland` dependency on macOS. Regenerate `data/icons/omairc.icns`
 from the SVG with `packaging/macos/generate-icns` when the mark changes.
