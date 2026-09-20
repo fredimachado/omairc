@@ -35,6 +35,7 @@ HEADERS += \
     ../src/omaircfilelog.h \
     ../src/omaircupdatecheck.h \
     ../src/backend.h \
+    ../src/linuxsessionbus.h \
     ../src/irc/ircmessage.h \
     ../src/irc/ircparser.h \
     ../src/irc/ircframer.h \

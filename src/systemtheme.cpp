@@ -1,6 +1,8 @@
 #include "systemtheme.h"
 
 #ifdef Q_OS_LINUX
+#include "linuxsessionbus.h"
+
 #include <QDBusConnection>
 #include <QDBusMessage>
 #include <QDBusPendingCall>
@@ -74,7 +76,7 @@ SystemTheme::SystemTheme(QObject *parent) : QObject(parent) {
     }
 
 #ifdef Q_OS_LINUX
-    QDBusConnection::sessionBus().connect(
+    linuxSessionBusIfPresent().connect(
         QString(),
         QStringLiteral("/org/freedesktop/portal/desktop"),
         QStringLiteral("org.freedesktop.portal.Settings"),
@@ -102,7 +104,7 @@ void SystemTheme::refresh() {
 #ifdef Q_OS_LINUX
 void SystemTheme::requestPortalSetting(const QString &nameSpace, const QString &key,
                                        std::function<void(const QVariant &)> handler) {
-    const QDBusConnection bus = QDBusConnection::sessionBus();
+    const QDBusConnection bus = linuxSessionBusIfPresent();
     if (!bus.isConnected())
         return;
 
