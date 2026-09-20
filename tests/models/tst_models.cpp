@@ -140,6 +140,7 @@ private slots:
     void unreadMarkOrdersAfterDateSeparator();
     void unreadMarkKeptOnVisitClearedOnRevisit();
     void unreadMarkChangeMidBufferResetsInsteadOfInsert();
+    void unreadMarkAfterNickMergeStaysOnMovedChat();
 };
 
 void ModelTest::roleNamesMatchQml()
@@ -1894,6 +1895,36 @@ void ModelTest::unreadMarkChangeMidBufferResetsInsteadOfInsert()
     assertUnreadMarkRow(messages, 2);
     QCOMPARE(roleAt(messages, 3, MessageListModel::BodyRole),
              QStringLiteral("plants-mark"));
+}
+
+void ModelTest::unreadMarkAfterNickMergeStaysOnMovedChat()
+{
+    IrcEventReducer reducer;
+    MessageListModel messages(reducer);
+    welcome(reducer, networkA);
+
+    const IrcConversationKey dest =
+        reducer.conversationKey(networkA, QStringLiteral("Alicia"));
+    const IrcConversationKey moved =
+        reducer.conversationKey(networkA, QStringLiteral("Alice"));
+    reducer.markSelected(dest);
+    reducer.apply(IrcMessageEvent{
+        dest, QStringLiteral("Alicia"), QStringLiteral("dest-only"), timestamp,
+        QStringLiteral("Alicia")});
+    reducer.clearSelection();
+    reducer.apply(IrcMessageEvent{
+        moved, QStringLiteral("Alice"), QStringLiteral("moved-chat"), timestamp,
+        QStringLiteral("Alice")});
+    reducer.apply(IrcNickEvent{
+        networkA, QStringLiteral("Alice"), QStringLiteral("Alicia")});
+
+    messages.select(dest);
+    const int markRow = messages.unreadMarkRow();
+    assertUnreadMarkRow(messages, markRow);
+    QCOMPARE(roleAt(messages, markRow + 1, MessageListModel::BodyRole),
+             QStringLiteral("moved-chat"));
+    QVERIFY(roleAt(messages, markRow + 1, MessageListModel::BodyRole)
+            != QStringLiteral("dest-only"));
 }
 
 int runModelTests(int argc, char **argv)

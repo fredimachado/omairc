@@ -1656,11 +1656,21 @@ void ReducerTest::nickMergeAdoptsOrKeepsUnreadMark()
         alice, QStringLiteral("Alice"), QStringLiteral("moved-chat"), timestamp,
         QStringLiteral("Alice")});
     QVERIFY(adopt.find(alice)->unreadMark.has_value());
-    const qint64 movedMark = *adopt.find(alice)->unreadMark;
     adopt.apply(IrcNickEvent{
         networkA, QStringLiteral("Alice"), QStringLiteral("Alicia")});
     QVERIFY(adopt.find(alicia)->unreadMark.has_value());
-    QCOMPARE(*adopt.find(alicia)->unreadMark, movedMark);
+    qint64 destOnlySequence = -1;
+    qint64 movedChatSequence = -1;
+    for (const IrcReducedMessage& message : adopt.find(alicia)->messages) {
+        if (message.body == QStringLiteral("dest-only"))
+            destOnlySequence = message.sequence;
+        if (message.body == QStringLiteral("moved-chat"))
+            movedChatSequence = message.sequence;
+    }
+    QVERIFY(destOnlySequence >= 0);
+    QVERIFY(movedChatSequence >= 0);
+    QCOMPARE(*adopt.find(alicia)->unreadMark, movedChatSequence);
+    QVERIFY(*adopt.find(alicia)->unreadMark != destOnlySequence);
 
     IrcEventReducer keep;
     welcome(keep, networkA);
@@ -1687,6 +1697,17 @@ void ReducerTest::nickMergeAdoptsOrKeepsUnreadMark()
         networkA, QStringLiteral("Alice"), QStringLiteral("Alicia")});
     QVERIFY(keep.find(fromAlicia)->unreadMark.has_value());
     QCOMPARE(*keep.find(fromAlicia)->unreadMark, destMark);
+    qint64 destUnreadSequence = -1;
+    qint64 movedUnreadSequence = -1;
+    for (const IrcReducedMessage& message : keep.find(fromAlicia)->messages) {
+        if (message.body == QStringLiteral("from alicia"))
+            destUnreadSequence = message.sequence;
+        if (message.body == QStringLiteral("from alice"))
+            movedUnreadSequence = message.sequence;
+    }
+    QCOMPARE(*keep.find(fromAlicia)->unreadMark, destUnreadSequence);
+    QVERIFY(destUnreadSequence >= 0);
+    QVERIFY(destUnreadSequence != movedUnreadSequence);
 }
 
 void ReducerTest::msgidDedupSkipsLiveThenReplay()

@@ -982,14 +982,16 @@ void IrcEventReducer::reduce(const IrcNickEvent& event)
                 if (!existing->second.messageIds.insert(message.msgid).second)
                     continue;
             }
+            const qint64 oldSequence = message.sequence;
+            message.sequence = existing->second.nextSequence++;
+            if (!existing->second.unreadMark && moved.unreadMark
+                && oldSequence == *moved.unreadMark) {
+                existing->second.unreadMark = message.sequence;
+            }
             existing->second.messages.push_back(std::move(message));
         }
-        existing->second.nextSequence =
-            std::max(existing->second.nextSequence, moved.nextSequence);
         capMessages(existing->second);
         existing->second.unread += moved.unread;
-        if (!existing->second.unreadMark)
-            existing->second.unreadMark = moved.unreadMark;
         existing->second.mentions += moved.mentions;
         existing->second.muted = existing->second.muted || moved.muted;
         for (auto& hint : moved.typing)
