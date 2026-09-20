@@ -128,6 +128,7 @@ private slots:
     void controllerMonitorEdgeAppendsHydrationSkips();
     void controllerInboxCountTracksModel();
     void inviteCoalescesWithCaseMapping();
+    void monitorCoalescesWithCaseMapping();
     void selectConversationConsumesMonitorOnline();
     void selfJoinConsumesInviteWithoutPendingInvite();
     void forgetNetworkStatePurgesInbox();
@@ -561,6 +562,34 @@ void InboxTest::inviteCoalescesWithCaseMapping()
     QCOMPARE(inbox.at(0).preview, QStringLiteral("replacement"));
 }
 
+void InboxTest::monitorCoalescesWithCaseMapping()
+{
+    const IrcCaseMapping mapping(IrcCaseMapping::Kind::Ascii);
+    IrcInbox inbox;
+    inbox.append(sampleItem(IrcInboxKind::MonitorOnline,
+                            networkA,
+                            QStringLiteral("Alice"),
+                            QStringLiteral("Alice"),
+                            QStringLiteral("first")),
+                mapping);
+    inbox.append(sampleItem(IrcInboxKind::MonitorOnline,
+                            networkA,
+                            QStringLiteral("bob"),
+                            QStringLiteral("bob"),
+                            QStringLiteral("other")),
+                mapping);
+    inbox.append(sampleItem(IrcInboxKind::MonitorOnline,
+                            networkA,
+                            QStringLiteral("alice"),
+                            QStringLiteral("alice"),
+                            QStringLiteral("replacement")),
+                mapping);
+    QCOMPARE(inbox.count(), 2);
+    QCOMPARE(inbox.at(0).actor, QStringLiteral("alice"));
+    QCOMPARE(inbox.at(0).preview, QStringLiteral("replacement"));
+    QCOMPARE(inbox.at(1).actor, QStringLiteral("bob"));
+}
+
 void InboxTest::selectConversationConsumesMonitorOnline()
 {
     IrcController controller;
@@ -571,6 +600,11 @@ void InboxTest::selectConversationConsumesMonitorOnline()
     controller.openStatus(networkA);
 
     QVERIFY(controller.console()->submit(QStringLiteral("/monitor alice")));
+    transport->injectBytes(
+        QByteArrayLiteral(":server 730 omairc :alice!user@host\r\n"));
+    QCOMPARE(controller.inboxCount(), 0);
+
+    transport->injectBytes(QByteArrayLiteral(":server 731 * :alice\r\n"));
     transport->injectBytes(
         QByteArrayLiteral(":server 730 * :alice!u@h\r\n"));
     QCOMPARE(controller.inboxCount(), 1);
@@ -584,6 +618,10 @@ void InboxTest::selectConversationConsumesMonitorOnline()
     QCOMPARE(controller.selectedTarget(), QStringLiteral("alice"));
 
     QVERIFY(controller.console()->submit(QStringLiteral("/monitor bob")));
+    transport->injectBytes(
+        QByteArrayLiteral(":server 730 omairc :bob!user@host\r\n"));
+    QCOMPARE(controller.inboxCount(), 0);
+    transport->injectBytes(QByteArrayLiteral(":server 731 * :bob\r\n"));
     transport->injectBytes(
         QByteArrayLiteral(":server 730 * :bob!u@h\r\n"));
     QCOMPARE(controller.inboxCount(), 1);

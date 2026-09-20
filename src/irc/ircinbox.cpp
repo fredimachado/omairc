@@ -58,7 +58,7 @@ void IrcInbox::append(IrcInboxItem item, const IrcCaseMapping& mapping)
         for (auto it = m_items.begin(); it != m_items.end(); ++it) {
             if (it->kind == IrcInboxKind::MonitorOnline
                 && it->networkId == item.networkId
-                && it->actor == item.actor) {
+                && nicksMatch(it->actor, item.actor, mapping)) {
                 m_items.erase(it);
                 break;
             }
