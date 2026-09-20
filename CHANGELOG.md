@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.3] - 2026-09-20
+
 ### Added
 
 - A Homebrew cask (`Casks/omairc.rb`) for the notarized macOS GitHub zips. `brew tap fredimachado/omairc https://github.com/fredimachado/omairc` then `brew install --cask fredimachado/omairc/omairc` installs `omairc.app` into `/Applications` and puts `omairc` on `PATH`. Uninstall leaves profiles and logs; `--zap` removes `~/Library/Preferences/omairc` and `~/Library/Preferences/State/omairc`. Version tags rewrite the cask `version` and `sha256`s.
@@ -258,7 +260,8 @@ First public release: a dead-simple IRC client for Omarchy.
 - Keyboard map, slash-command complete, selectable transcript, and follow-unseen.
 - qmake Unix install tree and a GitHub Releases pacman repository.
 
-[Unreleased]: https://github.com/fredimachado/omairc/compare/v0.8.2...HEAD
+[Unreleased]: https://github.com/fredimachado/omairc/compare/v0.8.3...HEAD
+[0.8.3]: https://github.com/fredimachado/omairc/compare/v0.8.2...v0.8.3
 [0.8.2]: https://github.com/fredimachado/omairc/compare/v0.8.1...v0.8.2
 [0.8.1]: https://github.com/fredimachado/omairc/compare/v0.8.0...v0.8.1
 [0.8.0]: https://github.com/fredimachado/omairc/compare/v0.7.0...v0.8.0

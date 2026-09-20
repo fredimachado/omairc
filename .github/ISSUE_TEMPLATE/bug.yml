@@ -21,7 +21,7 @@ body:
     attributes:
       label: Omairc version
       description: From `omairc --version`, or the package version if you installed with pacman.
-      placeholder: e.g. 0.8.2
+      placeholder: e.g. 0.8.3
     validations:
       required: false
   - type: input
