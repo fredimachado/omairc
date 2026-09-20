@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Session inbox waiting list for background mentions, highlight words, direct
+  messages, channel invites, monitored-nick online edges, and self-kicks.
+  The identity footer shows an `inbox` mark with a count badge;
+  `Ctrl+Shift+A` opens a sheet to walk and activate rows. Selecting the
+  matching conversation from the sidebar consumes related rows.
 - Preferences → **Open conversations at unread** (default off). When on,
   switching or jumping to a different conversation lands on the New messages
   marker instead of the bottom. An already-focused buffer is left alone;

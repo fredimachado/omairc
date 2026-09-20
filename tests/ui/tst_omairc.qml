@@ -1238,6 +1238,19 @@ TestCase {
         return sheet;
     }
 
+    function openInboxSheet() {
+        keyClick(Qt.Key_A, Qt.ControlModifier | Qt.ShiftModifier);
+        var sheet = item("inboxSheet");
+        tryCompare(sheet, "opened", true);
+        return sheet;
+    }
+
+    function inboxBadgeText() {
+        var mark = namedItem("inboxMark");
+        var badge = findChild(mark, "inboxBadgeText");
+        return badge ? badge.text : "";
+    }
+
     function nickModelRows() {
         var model = item("nickModel");
         var rows = [];
@@ -3412,6 +3425,101 @@ TestCase {
         seed.injectOmarchy(":fred!u@h JOIN :#invited\r\n");
         tryCompare(appWindow, "currentConversation", "#invited");
         tryCompare(appWindow, "consoleVisible", false);
+    }
+
+    function test_inboxSheetTogglesWithShortcut() {
+        openSeededAppWindow();
+        var sheet = item("inboxSheet");
+        var composer = item("messageComposer");
+        verify(!sheet.opened);
+
+        keyClick(Qt.Key_A, Qt.ControlModifier | Qt.ShiftModifier);
+        tryCompare(sheet, "opened", true);
+
+        keyClick(Qt.Key_A, Qt.ControlModifier | Qt.ShiftModifier);
+        tryCompare(sheet, "opened", false);
+        tryCompare(composer, "activeFocus", true);
+
+        openInboxSheet();
+        keyClick(Qt.Key_Escape);
+        tryCompare(sheet, "opened", false);
+        tryCompare(composer, "activeFocus", true);
+
+        keyClick(Qt.Key_Comma, Qt.ControlModifier);
+        tryCompare(appWindow, "connectionOverlayVisible", true);
+        keyClick(Qt.Key_A, Qt.ControlModifier | Qt.ShiftModifier);
+        compare(sheet.opened, false);
+        compare(appWindow.connectionOverlayVisible, true);
+    }
+
+    function test_inboxMarkShowsCountAndOpensSheet() {
+        openSeededAppWindow();
+        compare(seed.irc.inboxCount, 0);
+        compare(inboxBadgeText(), "");
+
+        appWindow.selectConversation("#ricing", seed.omarchyNetworkId);
+        tryCompare(appWindow, "currentConversation", "#ricing");
+        seed.injectOmarchy("@msgid=inbox-mark-1 :anna!u@h PRIVMSG #omarchy :fred: inbox ping\r\n");
+        tryVerify(function() { return seed.irc.inboxCount === 1; });
+        compare(inboxBadgeText(), "1");
+
+        mouseClick(namedItem("inboxMark"));
+        tryCompare(item("inboxSheet"), "opened", true);
+        var list = item("inboxList");
+        compare(list.count, 1);
+        compare(field(seed.irc.inbox, 0, "kind"), "mention");
+        compare(field(seed.irc.inbox, 0, "target"), "#omarchy");
+    }
+
+    function test_inboxMentionEnterJumpsToMsgid() {
+        openSeededAppWindow();
+        appWindow.selectConversation("#ricing", seed.omarchyNetworkId);
+        tryCompare(appWindow, "currentConversation", "#ricing");
+
+        seed.injectOmarchy("@msgid=inbox-mention-1 :anna!u@h PRIVMSG #omarchy :fred: inbox scroll\r\n");
+        tryVerify(function() { return seed.irc.inboxCount === 1; });
+
+        openInboxSheet();
+        keyClick(Qt.Key_Return);
+        tryCompare(appWindow, "currentConversation", "#omarchy");
+        compare(appWindow.currentNetworkId, seed.omarchyNetworkId);
+        waitForRendering(appWindow.contentItem);
+        var mentionRow = appWindow.msgidRow("inbox-mention-1");
+        verify(mentionRow >= 0);
+        compare(field(item("messageList").model, mentionRow, "msgid"), "inbox-mention-1");
+        compare(field(item("messageList").model, mentionRow, "body"), "fred: inbox scroll");
+        tryCompare(item("messageComposer"), "activeFocus", true);
+    }
+
+    function test_inboxInviteEnterJoinsChannel() {
+        openSeededAppWindow();
+        var framesBefore = seed.omarchyFrameCount();
+        seed.injectOmarchy(":alice!u@h INVITE fred :#invited\r\n");
+        tryVerify(function() { return seed.irc.inboxCount === 1; });
+        compare(field(seed.irc.inbox, 0, "kind"), "invite");
+        compare(field(seed.irc.inbox, 0, "target"), "#invited");
+
+        openInboxSheet();
+        keyClick(Qt.Key_Return);
+        verify(seed.omarchyWroteFrom(framesBefore, "JOIN #invited"));
+        seed.injectOmarchy(":fred!u@h JOIN :#invited\r\n");
+        tryCompare(appWindow, "currentConversation", "#invited");
+        compare(seed.irc.inboxCount, 0);
+    }
+
+    function test_inboxSelectingConversationClearsMatchingRows() {
+        openSeededAppWindow();
+        appWindow.selectConversation("#ricing", seed.omarchyNetworkId);
+        tryCompare(appWindow, "currentConversation", "#ricing");
+        seed.injectOmarchy("@msgid=inbox-clear-1 :anna!u@h PRIVMSG #omarchy :fred: waiting\r\n");
+        tryVerify(function() { return seed.irc.inboxCount === 1; });
+        compare(inboxBadgeText(), "1");
+
+        mouseClick(namedItem(liveConversation("#omarchy")));
+        tryCompare(appWindow, "currentConversation", "#omarchy");
+        compare(seed.irc.inboxCount, 0);
+        compare(inboxBadgeText(), "");
+        compare(item("inboxSheet").opened, false);
     }
 
     function test_eventRowAndTopicStripMirc() {

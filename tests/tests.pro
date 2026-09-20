@@ -186,6 +186,7 @@ SOURCES += \
     session/tst_mute.cpp \
     session/tst_opendirect.cpp \
     session/tst_highlight.cpp \
+    session/tst_inbox.cpp \
     session/tst_typing.cpp \
     session/tst_reducer.cpp \
     session/tst_avatarurl.cpp \
