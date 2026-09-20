@@ -262,7 +262,9 @@ LiveClient::LiveClient(const LiveDaemonInfo &daemon,
                        bool tls,
                        const QString &password,
                        const QString &networkId,
-                       const QString &transcriptRoot)
+                       const QString &transcriptRoot,
+                       bool reconnectEnabled,
+                       const QStringList &autojoinChannels)
 {
     config.networkId = networkId.isEmpty()
         ? QUuid::createUuid().toString(QUuid::WithoutBraces)
@@ -276,17 +278,18 @@ LiveClient::LiveClient(const LiveDaemonInfo &daemon,
     config.username = QStringLiteral("omairc");
     config.realname = QStringLiteral("Omairc live");
     config.password = password;
-    config.reconnectEnabled = false;
+    config.reconnectEnabled = reconnectEnabled;
+    config.autojoinChannels = autojoinChannels;
     config.capabilityTimeoutMilliseconds = 8000;
 
-    QtIrcTransport *transport = tls
-        ? new QtIrcTransport(liveSslConfiguration())
-        : new QtIrcTransport;
+    transport = tls ? new QtIrcTransport(liveSslConfiguration()) : new QtIrcTransport;
     session = controller.addSession(config, transport);
     if (session)
         transport->setParent(session);
-    else
+    else {
         delete transport;
+        transport = nullptr;
+    }
 
     if (!session)
         return;
@@ -311,6 +314,33 @@ LiveClient::~LiveClient()
 {
     if (!config.networkId.isEmpty())
         controller.discardSession(config.networkId);
+}
+
+bool LiveClient::canForceDisconnect() const
+{
+    return session && transport;
+}
+
+bool LiveClient::forceDisconnect()
+{
+    if (!canForceDisconnect() || session->state() != IrcSession::State::Registered)
+        return false;
+    transport->shutdown();
+    return true;
+}
+
+bool LiveClient::waitReconnecting(int timeoutMs)
+{
+    return waitUntil([this] {
+        return session && session->state() == IrcSession::State::Reconnecting;
+    }, timeoutMs);
+}
+
+bool LiveClient::waitRegisteredAgain(int timeoutMs)
+{
+    return waitUntil([this] {
+        return session && session->state() == IrcSession::State::Registered;
+    }, timeoutMs);
 }
 
 bool LiveClient::waitRegistered(int timeoutMs)

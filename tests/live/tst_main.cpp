@@ -1,9 +1,12 @@
 #include <QCoreApplication>
 
 int runLiveIrcdTests(int argc, char **argv);
+int runLiveReconnectTests(int argc, char **argv);
 
 int main(int argc, char **argv)
 {
     QCoreApplication app(argc, argv);
-    return runLiveIrcdTests(argc, argv);
+    const int ircd = runLiveIrcdTests(argc, argv);
+    const int reconnect = runLiveReconnectTests(argc, argv);
+    return (ircd == 0 && reconnect == 0) ? 0 : 1;
 }
