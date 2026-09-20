@@ -6931,6 +6931,7 @@ TestCase {
         compare(liveDirectsHeading(seed.oftcNetworkId).height, 0);
         verify(sidebarRowShown(liveConversation("#omarchy")));
         verify(sidebarRowShown(liveConversation("anna")));
+        saveScreenshot("network-section-collapsed");
 
         keyClick(Qt.Key_Right, Qt.AltModifier | Qt.ShiftModifier);
 
@@ -6947,6 +6948,7 @@ TestCase {
 
     function test_networkCollapseChordNeedsHeaderFocus() {
         openSeededAppWindow();
+        mouseClick(item("messageComposer"));
         tryCompare(item("messageComposer"), "activeFocus", true);
         compare(appWindow.sidebarNetworkFocusId, "");
         verify(sidebarRowShown(liveOftcConversation("#build")));
@@ -6971,6 +6973,7 @@ TestCase {
 
     function test_collapseAllNetworksWithoutHeaderFocus() {
         openSeededAppWindow();
+        mouseClick(item("messageComposer"));
         tryCompare(item("messageComposer"), "activeFocus", true);
         compare(appWindow.sidebarNetworkFocusId, "");
 
@@ -6992,6 +6995,7 @@ TestCase {
         verify(liveHeader(seed.oftcNetworkId).visible);
         verify(namedItem("networkUnreadMark-" + seed.omarchyNetworkId).visible,
                "collapsed headers keep the unread/mention mark");
+        saveScreenshot("networks-collapsed-all");
 
         keyClick(Qt.Key_Right, Qt.ControlModifier | Qt.AltModifier | Qt.ShiftModifier);
 
@@ -7086,6 +7090,7 @@ TestCase {
                 && appWindow.sidebarNetworkFocusId === seed.oftcNetworkId;
         });
         compare(liveHeader(seed.oftcNetworkId).parent.headerFocused, true);
+        saveScreenshot("network-moved-up");
 
         keyClick(Qt.Key_Down, Qt.AltModifier | Qt.ShiftModifier);
 
