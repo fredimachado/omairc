@@ -3,6 +3,7 @@
 #include "conversationlistmodel.h"
 #include "irccapability.h"
 #include "memberlistmodel.h"
+#include "messagelistmodel.h"
 
 #include <QAbstractItemModel>
 #include <QTest>
@@ -54,6 +55,17 @@ int namesEndCount(const QVector<IrcMessage> &incoming, const QString &channel)
     }
     return ends;
 }
+
+bool channelTranscriptContains(QAbstractItemModel *messages, const QString &body)
+{
+    if (!messages)
+        return false;
+    for (int row = 0; row < messages->rowCount(); ++row) {
+        if (messages->index(row, 0).data(MessageListModel::BodyRole).toString() == body)
+            return true;
+    }
+    return false;
+}
 }
 
 void LiveReconnectTest::initTestCase()
@@ -73,13 +85,14 @@ void LiveReconnectTest::reconnectAutojoinKeepsChannelState()
     const bool tls = daemon->plainPort == 0;
     const quint16 port = tls ? daemon->tlsPort : daemon->plainPort;
     const QString channel = uniqueChannel();
-    const QString seed = QStringLiteral("reconnect-seed-%1").arg(channel);
+    const QString initialSeed = QStringLiteral("reconnect-initial-%1").arg(channel);
+    const QString replaySeed = QStringLiteral("reconnect-replay-%1").arg(channel);
 
     RawIrcPeer peer(liveHost(), port, tls, liveSslConfiguration(),
                     uniqueNick(daemon->nickLength));
     QVERIFY(peer.waitRegistered());
     QVERIFY(peer.join(channel));
-    peer.writeLine(QStringLiteral("PRIVMSG %1 :%2").arg(channel, seed));
+    peer.writeLine(QStringLiteral("PRIVMSG %1 :%2").arg(channel, initialSeed));
 
     LiveClient client(*daemon,
                       uniqueNick(daemon->nickLength),
@@ -105,6 +118,9 @@ void LiveReconnectTest::reconnectAutojoinKeepsChannelState()
     QVERIFY(waitUntil([&] {
         return client.memberRole(peer.nick, MemberListModel::NickRole).isValid();
     }));
+    QVERIFY(waitUntil([&] {
+        return channelTranscriptContains(client.controller.messages(), initialSeed);
+    }));
 
     auto *conversations = client.controller.conversations();
     QCOMPARE(conversationMatches(conversations, channel), 1);
@@ -113,6 +129,7 @@ void LiveReconnectTest::reconnectAutojoinKeepsChannelState()
     const int namesBefore = namesEndCount(client.incoming, channel);
     QVERIFY(client.forceDisconnect());
     QVERIFY(client.waitReconnecting());
+    peer.writeLine(QStringLiteral("PRIVMSG %1 :%2").arg(channel, replaySeed));
     QVERIFY2(client.waitRegisteredAgain(),
              qPrintable(QStringLiteral("re-register: ") + client.lastError));
     QVERIFY(waitUntil([&] {
@@ -127,6 +144,10 @@ void LiveReconnectTest::reconnectAutojoinKeepsChannelState()
         return client.memberRole(peer.nick, MemberListModel::NickRole).isValid();
     }));
     QVERIFY(client.controller.members()->rowCount() > 0);
+    QVERIFY(waitUntil([&] {
+        return channelTranscriptContains(client.controller.messages(), initialSeed)
+            && channelTranscriptContains(client.controller.messages(), replaySeed);
+    }));
 }
 
 int runLiveReconnectTests(int argc, char **argv)

@@ -160,6 +160,40 @@ bool noStatusTextContains(const QVector<IrcStatusEntry> &entries, const QString 
     return true;
 }
 
+bool statusHasLabel(const QVector<IrcStatusEntry> &entries, const QString &label)
+{
+    for (const IrcStatusEntry &entry : entries) {
+        if (entry.label() == label)
+            return true;
+    }
+    return false;
+}
+
+bool statusAnyFieldContains(const QVector<IrcStatusEntry> &entries, const QString &needle)
+{
+    for (const IrcStatusEntry &entry : entries) {
+        if (entry.text().contains(needle, Qt::CaseInsensitive)
+            || entry.label().contains(needle, Qt::CaseInsensitive)
+            || entry.networkId().contains(needle, Qt::CaseInsensitive)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+QString saslPlainPayloadBase64(const QString &account, const QString &secret)
+{
+    QByteArray plain;
+    const QByteArray accountBytes = account.toUtf8();
+    const QByteArray secretBytes = secret.toUtf8();
+    plain.append(accountBytes);
+    plain.append('\0');
+    plain.append(accountBytes);
+    plain.append('\0');
+    plain.append(secretBytes);
+    return QString::fromLatin1(plain.toBase64());
+}
+
 bool sawSelfPrivmsgTo(const QVector<IrcMessage> &incoming,
                       const QString &selfNick,
                       const QString &target,
@@ -616,9 +650,18 @@ void LiveIrcdTest::saslPlain()
     LiveClient authed(*daemon, nick, daemon->plainPort == 0, password);
     QVERIFY(authed.waitServerLabel(QStringLiteral("903")));
     QVERIFY2(authed.waitRegistered(), qPrintable(authed.lastError));
+    authed.controller.openStatus(authed.config.networkId);
+    const QString encodedAuth = saslPlainPayloadBase64(nick, password);
     QCOMPARE(conversationRow(authed.controller.conversations(), QStringLiteral("NickServ")),
              -1);
+    QVERIFY(!statusHasLabel(authed.status, QStringLiteral("AUTHENTICATE")));
+    QVERIFY(!statusAnyFieldContains(authed.status, QStringLiteral("AUTHENTICATE")));
     QVERIFY(noStatusTextContains(authed.status, password));
+    QVERIFY(noStatusTextContains(authed.status, encodedAuth));
+    QVERIFY(!logContains(authed.controller.console()->lines(),
+                         QStringLiteral("AUTHENTICATE")));
+    QVERIFY(!logContains(authed.controller.console()->lines(), password));
+    QVERIFY(!logContains(authed.controller.console()->lines(), encodedAuth));
 }
 
 void LiveIrcdTest::conversationInventionMatrix()

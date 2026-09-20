@@ -123,10 +123,14 @@ bool memberListMatches(LiveClient &client,
         && memberLabels(client) == expectedLabels(features, members);
 }
 
-char highestPrefixMode(const IrcServerFeatures &features)
+char operatorPrefixMode(const IrcServerFeatures &features)
 {
     const std::string_view modes = features.prefixModes();
-    return modes.empty() ? '\0' : modes.front();
+    for (char mode : modes) {
+        if (mode == 'o')
+            return mode;
+    }
+    return '\0';
 }
 
 char voicePrefixMode(const IrcServerFeatures &features)
@@ -158,10 +162,12 @@ void LiveMembersTest::memberPrefixRanks()
     QVERIFY(waitUntil([&] { return !client.features().prefixModes().empty(); }));
 
     const IrcServerFeatures &features = client.features();
-    const char opMode = highestPrefixMode(features);
+    const char opMode = operatorPrefixMode(features);
     const char voiceMode = voicePrefixMode(features);
-    if (opMode == '\0' || voiceMode == '\0')
-        QSKIP("Daemon PREFIX is too small for +o/+v rank checks");
+    if (opMode == '\0')
+        QSKIP("Daemon PREFIX does not advertise +o");
+    if (voiceMode == '\0')
+        QSKIP("Daemon PREFIX is too small for +v rank checks");
 
     const QString channel = uniqueChannel();
     QVERIFY(joinChannel(client, channel));
