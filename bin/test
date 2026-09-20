@@ -218,6 +218,10 @@ mkdir -p "$ROOT/build-tests"
 cd "$ROOT/build-tests"
 "$QMAKE" "$ROOT/tests/tests.pro"
 make -j"$JOBS"
+if [ "$(uname -s)" = Darwin ]; then
+  # SecureTransport otherwise imports the loopback TLS key into the login keychain.
+  export QT_SSL_USE_TEMPORARY_KEYCHAIN=1
+fi
 ./protocol_tests
 
 mkdir -p "$ROOT/build-seeded-qml-tests"

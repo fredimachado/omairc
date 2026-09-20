@@ -1,10 +1,12 @@
 #include <QFile>
 #include <QHostAddress>
+#include <QPointer>
 #include <QSignalSpy>
 #include <QSslCertificate>
 #include <QSslConfiguration>
 #include <QSslKey>
 #include <QSslServer>
+#include <QSslSocket>
 #include <QTcpServer>
 #include <QTcpSocket>
 #include <QTest>
@@ -33,6 +35,14 @@ QSslCertificate testCertificate()
     return QSslCertificate(file.readAll(), QSsl::Pem);
 }
 
+QSslCertificate testCaCertificate()
+{
+    QFile file(QStringLiteral(TEST_CERT_DIR "/localhost-ca-cert.pem"));
+    if (!file.open(QIODevice::ReadOnly))
+        return QSslCertificate();
+    return QSslCertificate(file.readAll(), QSsl::Pem);
+}
+
 QSslKey testPrivateKey()
 {
     QFile file(QStringLiteral(TEST_CERT_DIR "/localhost-key.pem"));
@@ -54,6 +64,20 @@ IrcSessionConfig sessionConfig(const QString &password)
     config.password = password;
     config.reconnectEnabled = false;
     return config;
+}
+
+QString tlsBackendReport(const QSslSocket *peer = nullptr)
+{
+    QString report = QStringLiteral("activeBackend=%1 availableBackends=%2")
+                         .arg(QSslSocket::activeBackend(),
+                              QSslSocket::availableBackends().join(QLatin1Char(',')));
+    if (peer) {
+        report += QStringLiteral(" peerError=%1 encrypted=%2")
+                      .arg(peer->errorString(),
+                           peer->isEncrypted() ? QLatin1String("true")
+                                               : QLatin1String("false"));
+    }
+    return report;
 }
 }
 
@@ -103,46 +127,68 @@ void QtIrcTransportIntegrationTest::plainTcpExchangesBytesAndDisconnects()
 
 void QtIrcTransportIntegrationTest::tlsExchangesBytesAndDisconnects()
 {
-#if defined(Q_OS_MACOS)
-    QSKIP("QSslServer loopback TLS handshake is flaky with SecureTransport on GitHub runners");
-#endif
     const QSslCertificate certificate = testCertificate();
+    const QSslCertificate caCertificate = testCaCertificate();
     const QSslKey privateKey = testPrivateKey();
     QVERIFY(!certificate.isNull());
+    QVERIFY(!caCertificate.isNull());
     QVERIFY(!privateKey.isNull());
 
     QSslConfiguration serverConfiguration = QSslConfiguration::defaultConfiguration();
     serverConfiguration.setLocalCertificate(certificate);
+    serverConfiguration.setLocalCertificateChain(
+        QList<QSslCertificate>{certificate, caCertificate});
     serverConfiguration.setPrivateKey(privateKey);
     QSslServer server;
     server.setSslConfiguration(serverConfiguration);
-    QVERIFY(server.listen(QHostAddress::LocalHost, 0));
-    QSignalSpy serverPending(&server, SIGNAL(pendingConnectionAvailable()));
+    server.setHandshakeTimeout(TlsHandshakeTimeout);
+    QVERIFY2(server.listen(QHostAddress::LocalHost, 0), qPrintable(tlsBackendReport()));
+
+    QPointer<QSslSocket> handshakePeer;
+    QObject::connect(&server, &QSslServer::startedEncryptionHandshake, &server,
+                     [&handshakePeer](QSslSocket *socket) {
+                         handshakePeer = socket;
+                     });
+    QSignalSpy handshakeStarted(&server, &QSslServer::startedEncryptionHandshake);
 
     QSslConfiguration clientConfiguration = QSslConfiguration::defaultConfiguration();
     QList<QSslCertificate> authorities = clientConfiguration.caCertificates();
-    authorities.append(certificate);
+    authorities.append(caCertificate);
     clientConfiguration.setCaCertificates(authorities);
     QtIrcTransport transport(clientConfiguration);
     QSignalSpy encrypted(&transport, &IrcTransport::encrypted);
     QSignalSpy received(&transport, &IrcTransport::bytesReceived);
     QSignalSpy disconnected(&transport, &IrcTransport::disconnected);
+    QSignalSpy clientErrors(&transport, &IrcTransport::errorOccurred);
     const QByteArray outbound("PING :tls\r\n");
     transport.connectToHost(QStringLiteral("127.0.0.1"), server.serverPort(), true);
     transport.write(outbound);
 
-    QVERIFY(!encrypted.isEmpty() || encrypted.wait(TlsHandshakeTimeout));
-    QVERIFY(server.hasPendingConnections()
-            || !serverPending.isEmpty()
-            || serverPending.wait(TlsHandshakeTimeout));
-    QTcpSocket *peer = server.nextPendingConnection();
-    QVERIFY(peer);
-    QSignalSpy peerReady(peer, &QTcpSocket::readyRead);
-    QVERIFY(peer->bytesAvailable() > 0 || peerReady.wait(SignalTimeout));
-    QCOMPARE(peer->readAll(), outbound);
+    const auto handshakeFailure = [&] {
+        QString report = tlsBackendReport(handshakePeer.data());
+        if (!clientErrors.isEmpty())
+            report += QStringLiteral(" clientError=%1").arg(clientErrors.last().at(0).toString());
+        return report;
+    };
+
+    QVERIFY2(!encrypted.isEmpty() || encrypted.wait(TlsHandshakeTimeout),
+             qPrintable(handshakeFailure()));
+    QVERIFY2(!handshakeStarted.isEmpty() || handshakeStarted.wait(TlsHandshakeTimeout),
+             qPrintable(handshakeFailure()));
+    QVERIFY2(handshakePeer, qPrintable(handshakeFailure()));
+
+    QSignalSpy peerEncrypted(handshakePeer, &QSslSocket::encrypted);
+    QVERIFY2(handshakePeer->isEncrypted() || !peerEncrypted.isEmpty()
+                 || peerEncrypted.wait(TlsHandshakeTimeout),
+             qPrintable(handshakeFailure()));
+
+    QSignalSpy peerReady(handshakePeer, &QTcpSocket::readyRead);
+    QVERIFY2(handshakePeer->bytesAvailable() > 0 || peerReady.wait(SignalTimeout),
+             qPrintable(handshakeFailure()));
+    QCOMPARE(handshakePeer->readAll(), outbound);
 
     const QByteArray greeting(":loopback 001 omairc :Welcome over TLS\r\n");
-    QCOMPARE(peer->write(greeting), qint64(greeting.size()));
+    QCOMPARE(handshakePeer->write(greeting), qint64(greeting.size()));
     QVERIFY(!received.isEmpty() || received.wait(SignalTimeout));
     QCOMPARE(received.last().at(0).toByteArray(), greeting);
 
@@ -177,7 +223,8 @@ void QtIrcTransportIntegrationTest::untrustedCertificateFailsWithUsefulError()
     QVERIFY2(message.contains(QStringLiteral("TLS certificate error")),
              qPrintable(message));
     QVERIFY2(message.contains(QStringLiteral("self-signed"), Qt::CaseInsensitive)
-                 || message.contains(QStringLiteral("trusted"), Qt::CaseInsensitive),
+                 || message.contains(QStringLiteral("trusted"), Qt::CaseInsensitive)
+                 || message.contains(QStringLiteral("issuer"), Qt::CaseInsensitive),
              qPrintable(message));
 }
 

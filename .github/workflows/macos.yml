@@ -443,7 +443,9 @@ jobs:
           # Qt 6.8 still emits -framework AGL; SDK 26 removed it.
           find . -name Makefile -print0 | xargs -0 sed -i '' 's/-framework AGL//g'
           make -j"$jobs"
-          run_test_bin_timed 180 protocol_tests
+          # SecureTransport otherwise imports the loopback TLS key into the
+          # login keychain and can hang protocol_tests on a permission dialog.
+          QT_SSL_USE_TEMPORARY_KEYCHAIN=1 run_test_bin_timed 180 protocol_tests
           cd "$GITHUB_WORKSPACE"
           mkdir -p build-seeded-qml-tests
           cd build-seeded-qml-tests
