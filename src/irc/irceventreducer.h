@@ -124,6 +124,7 @@ struct IrcConversationState
     std::map<QString, IrcTypingHint> typing;
     int unread = 0;
     int mentions = 0;
+    std::optional<qint64> unreadMark;
     bool muted = false;
     int trimmed = 0;
     std::set<IrcMsgId> messageIds;
@@ -256,7 +257,8 @@ private:
                          const QString& author,
                          const QString& body,
                          IrcMessageKind kind,
-                         const IrcMsgId& msgid);
+                         const IrcMsgId& msgid,
+                         qint64 sequence);
     void appendEvent(IrcConversationState& conversation,
                      const QString& body,
                      bool collapsible = false);

@@ -40,6 +40,7 @@ public:
     QVariant data(const QModelIndex& index, int role) const override;
     QHash<int, QByteArray> roleNames() const override;
     Q_INVOKABLE QString field(int row, const QString& name) const;
+    Q_INVOKABLE int unreadMarkRow() const;
 
     void reload();
     void setSelected(const IrcConversationKey& key);
@@ -48,7 +49,7 @@ public:
 
 private:
     struct VisualRow {
-        enum class Type { Store, Separator };
+        enum class Type { Store, DateSeparator, UnreadMark };
         Type type = Type::Store;
         int storeIndex = 0;
         QDate date;
@@ -64,4 +65,5 @@ private:
     std::vector<VisualRow> m_view;
     int m_trimmed = 0;
     int m_spliceEpoch = 0;
+    std::optional<qint64> m_unreadMark;
 };

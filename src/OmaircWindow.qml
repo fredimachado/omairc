@@ -385,12 +385,12 @@ ApplicationWindow {
     }
 
     function continuesMessageGroup(model, row, author, time, kind, origin) {
-        if (kind === "event" || kind === "whois"
+        if (kind === "event" || kind === "whois" || kind === "unread"
             || row <= 0 || author.length === 0 || time.length === 0)
             return false;
         var previousKind = transcriptField(model, row - 1, "kind");
         if (previousKind === "event" || previousKind === "whois"
-            || previousKind.length === 0)
+            || previousKind === "unread" || previousKind.length === 0)
             return false;
         if (transcriptField(model, row - 1, "origin") !== origin)
             return false;
@@ -2202,7 +2202,7 @@ ApplicationWindow {
                 readonly property bool authorBot: !!(model && model.authorBot)
                 readonly property string origin: win.transcriptField(conversation.messageList.model, index, "origin")
                 readonly property bool replayed: origin === "replay"
-                readonly property bool isChat: kind !== "event" && kind !== "whois"
+                readonly property bool isChat: kind !== "event" && kind !== "whois" && kind !== "unread"
                 readonly property bool grouped: win.continuesMessageGroup(
                     conversation.messageList.model, index, author, time, kind, origin)
                 readonly property bool findMatch: win.findActive
@@ -2210,18 +2210,28 @@ ApplicationWindow {
 
                 width: conversation.messageList.width
                 height: win.transcriptRowHeight(
-                    kind === "event", grouped || kind === "whois",
+                    kind === "event" || kind === "unread", grouped || kind === "whois",
                     kind === "event"
                         ? messageEvent.implicitHeight
-                        : (kind === "whois"
-                            ? messageWhois.implicitHeight
-                            : messageBody.implicitHeight))
+                        : (kind === "unread"
+                            ? unreadMark.implicitHeight
+                            : (kind === "whois"
+                                ? messageWhois.implicitHeight
+                                : messageBody.implicitHeight)))
 
                 Rectangle {
                     objectName: "findMatch"
                     anchors.fill: parent
                     visible: messageDelegate.findMatch
                     color: win.mixColors(win.pageColor, win.selectionColor, 0.42)
+                }
+
+                UnreadMark {
+                    id: unreadMark
+                    visible: messageDelegate.kind === "unread"
+                    style: win.style
+                    width: parent.width
+                    y: Math.round((parent.height - implicitHeight) / 2)
                 }
 
                 Text {

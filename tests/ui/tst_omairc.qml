@@ -1348,6 +1348,18 @@ TestCase {
         return body;
     }
 
+    function unreadMarkLabelText(mark) {
+        if (!mark)
+            return "";
+        var kids = mark.children;
+        var index = 0;
+        for (; index < kids.length; ++index) {
+            if (kids[index].text !== undefined && String(kids[index].text).length > 0)
+                return String(kids[index].text);
+        }
+        return "";
+    }
+
     function containsMirc(text) {
         return /[\u0002\u0003\u0004\u000f\u0011\u0016\u001d\u001e\u001f]/.test(text);
     }
@@ -2361,6 +2373,115 @@ TestCase {
         compare(field(dmList.model, dmStart, "time"),
                 field(dmList.model, dmStart - 1, "time"));
         compare(field(dmList.model, dmStart, "body"), "dm continuation");
+    }
+
+    function test_unreadMarkSitsBeforeFirstUnseenLine() {
+        openSeededAppWindow();
+        mouseClick(namedItem(liveConversation("#desktop")));
+        tryCompare(appWindow, "currentConversation", "#desktop");
+
+        injectOmarchyChat("anna", "#omarchy", "unread-mark-first-zx9");
+        injectOmarchyChat("dax", "#omarchy", "unread-mark-second-zx9");
+
+        mouseClick(namedItem(liveConversation("#omarchy")));
+        tryCompare(appWindow, "currentConversation", "#omarchy");
+        var list = item("messageList");
+        waitForBody(list, "unread-mark-first-zx9");
+        waitForBody(list, "unread-mark-second-zx9");
+
+        var first = rowForBody(list.model, "unread-mark-first-zx9");
+        verify(first > 0, "The first unseen line should not lead the buffer");
+        var markRow = list.model.unreadMarkRow();
+        compare(markRow, first - 1);
+        compare(field(list.model, markRow, "kind"), "unread");
+        compare(field(list.model, markRow, "body"), "");
+        compare(field(list.model, markRow, "author"), "");
+        compare(field(list.model, markRow, "time"), "");
+        compare(rowForBody(list.model, "unread-mark-second-zx9"), first + 1);
+
+        var row = renderedMessageRow(list, markRow);
+        var mark = findChild(row, "unreadMark");
+        verify(mark !== null, "Could not find unreadMark on the message row");
+        verify(mark.visible);
+        compare(unreadMarkLabelText(mark), "New messages");
+        compare(findNamedIn(list, "unreadMark"), mark);
+    }
+
+    function test_unreadMarkBreaksSameAuthorMinuteGrouping() {
+        openSeededAppWindow();
+        var list = item("messageList");
+        injectOmarchyChat("anna", "#omarchy", "group-before-mark", "13:37");
+        waitForBody(list, "group-before-mark");
+
+        mouseClick(namedItem(liveConversation("#desktop")));
+        tryCompare(appWindow, "currentConversation", "#desktop");
+        injectOmarchyChat("anna", "#omarchy", "group-after-mark", "13:37");
+
+        mouseClick(namedItem(liveConversation("#omarchy")));
+        tryCompare(appWindow, "currentConversation", "#omarchy");
+        waitForBody(list, "group-after-mark");
+
+        var beforeRow = rowForBody(list.model, "group-before-mark");
+        var afterRow = rowForBody(list.model, "group-after-mark");
+        var markRow = list.model.unreadMarkRow();
+        compare(markRow, beforeRow + 1);
+        compare(afterRow, markRow + 1);
+        compare(field(list.model, afterRow, "author"), "anna");
+        compare(field(list.model, afterRow, "time"),
+                field(list.model, beforeRow, "time"));
+        compare(appWindow.continuesMessageGroup(
+                    list.model, afterRow, "anna",
+                    field(list.model, afterRow, "time"), "message", "live"),
+                false);
+
+        var after = renderedMessageRow(list, afterRow);
+        assertMessageChrome(after, true, "group-after-mark");
+    }
+
+    function test_ctrlFSkipsUnreadMarkLabel() {
+        openSeededAppWindow();
+        mouseClick(namedItem(liveConversation("#desktop")));
+        tryCompare(appWindow, "currentConversation", "#desktop");
+        injectOmarchyChat("anna", "#omarchy", "zx9-surrounding-unique");
+        mouseClick(namedItem(liveConversation("#omarchy")));
+        tryCompare(appWindow, "currentConversation", "#omarchy");
+        var list = item("messageList");
+        waitForBody(list, "zx9-surrounding-unique");
+
+        var markRow = list.model.unreadMarkRow();
+        verify(markRow >= 0, "The unread mark should be in the transcript");
+        compare(field(list.model, markRow, "body"), "");
+
+        var composer = item("messageComposer");
+        mouseClick(composer);
+        keyClick(Qt.Key_F, Qt.ControlModifier);
+        tryCompare(appWindow, "findActive", true);
+        typeText("new");
+        waitForRendering(appWindow.contentItem);
+        wait(0);
+        verify(appWindow.findIndex !== markRow,
+               "Ctrl+F for new must not land on the unread mark");
+        verify(appWindow.findNextMatch(true) !== markRow);
+        if (appWindow.findIndex >= 0)
+            verify(field(list.model, appWindow.findIndex, "kind") !== "unread");
+
+        composer.selectAll();
+        typeText("new messages");
+        waitForRendering(appWindow.contentItem);
+        wait(0);
+        compare(appWindow.findNextMatch(true), -1);
+        verify(appWindow.findIndex !== markRow);
+
+        keyClick(Qt.Key_Escape);
+        tryCompare(appWindow, "findActive", false);
+        compare(appWindow.findIndex, -1);
+        keyClick(Qt.Key_F, Qt.ControlModifier);
+        tryCompare(appWindow, "findActive", true);
+        composer.text = "qqq-no-such-find-needle";
+        waitForRendering(appWindow.contentItem);
+        wait(0);
+        compare(appWindow.findNextMatch(true), -1);
+        compare(appWindow.findIndex, -1);
     }
 
     function test_replayAndLiveSameAuthorMinuteDoNotGroup() {

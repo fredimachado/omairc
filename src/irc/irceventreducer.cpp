@@ -225,8 +225,12 @@ IrcConversationKey IrcEventReducer::conversationKey(
 
 void IrcEventReducer::markSelected(const IrcConversationKey& key)
 {
+    if (m_selected && *m_selected == key)
+        return;
     m_selected = key;
     if (IrcConversationState *conversation = findMutable(key)) {
+        if (conversation->unread == 0)
+            conversation->unreadMark.reset();
         conversation->unread = 0;
         conversation->mentions = 0;
     }
@@ -712,7 +716,8 @@ void IrcEventReducer::appendChat(const IrcConversationKey& key,
     persistMessage(*conversation, conversation->messages.back());
     capMessages(*conversation);
     clearTyping(*conversation, normalize(key.networkId, author));
-    noteChatArrival(*conversation, key, author, body, kind, msgid);
+    noteChatArrival(*conversation, key, author, body, kind, msgid,
+                    conversation->messages.back().sequence);
 }
 
 void IrcEventReducer::noteChatArrival(IrcConversationState& conversation,
@@ -720,7 +725,8 @@ void IrcEventReducer::noteChatArrival(IrcConversationState& conversation,
                                       const QString& author,
                                       const QString& body,
                                       IrcMessageKind kind,
-                                      const IrcMsgId& msgid)
+                                      const IrcMsgId& msgid,
+                                      qint64 sequence)
 {
     const bool self = isSelf(key.networkId, author);
     const std::optional<ChatLineReason> reason = classifyChatLine(
@@ -731,6 +737,8 @@ void IrcEventReducer::noteChatArrival(IrcConversationState& conversation,
     }
     if (self || (m_selected && *m_selected == key))
         return;
+    if (conversation.unread == 0)
+        conversation.unreadMark = sequence;
     ++conversation.unread;
     if (reason == ChatLineReason::NickMention && !conversation.muted)
         ++conversation.mentions;
@@ -974,10 +982,14 @@ void IrcEventReducer::reduce(const IrcNickEvent& event)
                 if (!existing->second.messageIds.insert(message.msgid).second)
                     continue;
             }
+            const qint64 oldSequence = message.sequence;
+            message.sequence = existing->second.nextSequence++;
+            if (!existing->second.unreadMark && moved.unreadMark
+                && oldSequence == *moved.unreadMark) {
+                existing->second.unreadMark = message.sequence;
+            }
             existing->second.messages.push_back(std::move(message));
         }
-        existing->second.nextSequence =
-            std::max(existing->second.nextSequence, moved.nextSequence);
         capMessages(existing->second);
         existing->second.unread += moved.unread;
         existing->second.mentions += moved.mentions;
@@ -1175,7 +1187,8 @@ void IrcEventReducer::reduce(const IrcHistoryEvent& event)
     capMessages(*conversation);
     for (const IrcReducedMessage& message : run) {
         noteChatArrival(*conversation, event.conversation, message.author,
-                        message.body, message.kind, message.msgid);
+                        message.body, message.kind, message.msgid,
+                        message.sequence);
     }
 }
 
