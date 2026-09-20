@@ -73,10 +73,12 @@ ApplicationWindow {
     property bool aboutSheetEscapeGuard: false
     property bool pickerEscapeGuard: false
     property int jumpSelectedIndex: 0
+    property int inboxSelectedIndex: 0
     property int nickSelectedIndex: 0
     property var nickSourceRows: []
     readonly property bool shortcutOverlayOpen: shortcutsSheet.opened
         || jumpSheet.opened
+        || inboxSheet.opened
         || nickSheet.opened
         || aboutSheet.opened
     readonly property var networkConsole: irc
@@ -952,6 +954,20 @@ ApplicationWindow {
         jumpSheet.open();
     }
 
+    function inboxRowCount() {
+        if (!irc || !irc.inbox)
+            return 0;
+        var model = irc.inbox;
+        if (typeof model.rowCount === "function")
+            return model.rowCount();
+        return 0;
+    }
+
+    function openInboxSheet() {
+        inboxSelectedIndex = 0;
+        inboxSheet.open();
+    }
+
     function openNickSheet() {
         nickSourceRows = snapshotChannelMembers();
         nickSelectedIndex = 0;
@@ -964,6 +980,15 @@ ApplicationWindow {
         jumpSelectedIndex = (jumpSelectedIndex + delta + jumpModel.count) % jumpModel.count;
         if (jumpSheet.jumpList)
             jumpSheet.jumpList.positionViewAtIndex(jumpSelectedIndex, ListView.Contain);
+    }
+
+    function stepInbox(delta) {
+        var count = inboxRowCount();
+        if (count === 0)
+            return;
+        inboxSelectedIndex = (inboxSelectedIndex + delta + count) % count;
+        if (inboxSheet.inboxList)
+            inboxSheet.inboxList.positionViewAtIndex(inboxSelectedIndex, ListView.Contain);
     }
 
     function stepNick(delta) {
@@ -995,6 +1020,49 @@ ApplicationWindow {
             }
         }
         selectConversation(name, networkId);
+    }
+
+    function activateInboxSelection() {
+        if (!irc || inboxSelectedIndex < 0)
+            return;
+        var model = irc.inbox;
+        if (!model || typeof model.get !== "function")
+            return;
+        var count = inboxRowCount();
+        if (inboxSelectedIndex >= count)
+            return;
+        var item = model.get(inboxSelectedIndex);
+        var kind = item.kind || "";
+        var networkId = item.networkId || "";
+        var target = item.target || "";
+        var msgid = item.msgid || "";
+        var previousConversationId = currentConversationId;
+        irc.activateInboxItem(inboxSelectedIndex);
+        inboxSheet.close();
+        var scrollKinds = kind === "mention" || kind === "highlight" || kind === "direct";
+        var id = msgid ? String(msgid).trim() : "";
+        if (scrollKinds && id.length > 0) {
+            Qt.callLater(function() {
+                if (irc.selectedNetworkId !== networkId || irc.selectedTarget !== target)
+                    return;
+                if (irc.openConversationsAtUnread === true) {
+                    if (shouldOpenAtUnread(previousConversationId))
+                        placeTranscriptAfterSelect(previousConversationId);
+                } else {
+                    var row = win.msgidRow(id);
+                    if (row >= 0)
+                        win.revealFindMatch(row);
+                    else
+                        placeTranscriptAfterSelect(previousConversationId);
+                }
+                conversation.composer.forceActiveFocus();
+            });
+            return;
+        }
+        Qt.callLater(function() {
+            placeTranscriptAfterSelect(previousConversationId);
+            conversation.composer.forceActiveFocus();
+        });
     }
 
     function activateNickSelection() {
@@ -1690,6 +1758,7 @@ ApplicationWindow {
         context: Qt.ApplicationShortcut
         enabled: !win.connectionOverlayVisible
             && !shortcutsSheet.opened
+            && !inboxSheet.opened
             && !nickSheet.opened
             && !aboutSheet.opened
         onActivated: {
@@ -1697,6 +1766,22 @@ ApplicationWindow {
                 jumpSheet.close();
             else
                 win.openJumpSheet();
+        }
+    }
+
+    Shortcut {
+        sequence: "Ctrl+Shift+A"
+        context: Qt.ApplicationShortcut
+        enabled: !win.connectionOverlayVisible
+            && !shortcutsSheet.opened
+            && !jumpSheet.opened
+            && !nickSheet.opened
+            && !aboutSheet.opened
+        onActivated: {
+            if (inboxSheet.opened)
+                inboxSheet.close();
+            else
+                win.openInboxSheet();
         }
     }
 
@@ -1751,7 +1836,7 @@ ApplicationWindow {
         sequence: "Ctrl+/"
         context: Qt.ApplicationShortcut
         onActivated: {
-            if (jumpSheet.opened || nickSheet.opened || aboutSheet.opened)
+            if (jumpSheet.opened || inboxSheet.opened || nickSheet.opened || aboutSheet.opened)
                 return;
             if (shortcutsSheet.opened)
                 shortcutsSheet.close();
@@ -1949,7 +2034,7 @@ ApplicationWindow {
                 return true;
             if (aboutSheet.opened || aboutSheetEscapeGuard)
                 return true;
-            if (jumpSheet.opened || nickSheet.opened || pickerEscapeGuard)
+            if (jumpSheet.opened || inboxSheet.opened || nickSheet.opened || pickerEscapeGuard)
                 return true;
             if (win.connection && win.connection.setupRequired)
                 return false;
@@ -1976,8 +2061,9 @@ ApplicationWindow {
                 aboutSheetEscapeGuard = false;
                 return;
             }
-            if (jumpSheet.opened || nickSheet.opened || pickerEscapeGuard) {
+            if (jumpSheet.opened || inboxSheet.opened || nickSheet.opened || pickerEscapeGuard) {
                 jumpSheet.close();
+                inboxSheet.close();
                 nickSheet.close();
                 pickerEscapeGuard = false;
                 return;
@@ -2191,6 +2277,7 @@ ApplicationWindow {
             selfAvatar: win.peerAvatar(win.selfNick)
             selfBot: win.peerBot(win.selfNick)
             appVersion: win.appVersion
+            inboxCount: win.irc ? win.irc.inboxCount : 0
             onConversationActivated: function(row) {
                 win.activateSidebarConversation(row);
             }
@@ -2203,6 +2290,7 @@ ApplicationWindow {
                 win.connectionSheetOpen = true;
             }
             onVersionClicked: aboutSheet.open()
+            onInboxRequested: win.openInboxSheet()
         }
 
         ConversationColumn {
@@ -2754,6 +2842,33 @@ ApplicationWindow {
         onFilterChanged: {
             win.jumpSelectedIndex = 0;
             win.refreshJumpMatches();
+        }
+    }
+
+    InboxSheet {
+        id: inboxSheet
+        objectName: "inboxSheet"
+        style: win.style
+        x: Math.round((win.width - width) / 2)
+        y: Math.round((win.height - height) / 2)
+        inbox: win.irc ? win.irc.inbox : null
+        selectedIndex: win.inboxSelectedIndex
+        onOpened: {
+            win.pickerEscapeGuard = true;
+            win.inboxSelectedIndex = 0;
+            inboxSheet.forceActiveFocus();
+        }
+        onClosed: {
+            Qt.callLater(function() {
+                win.pickerEscapeGuard = false;
+                conversation.composer.forceActiveFocus();
+            });
+        }
+        onStepRequested: function(delta) { win.stepInbox(delta); }
+        onActivateRequested: win.activateInboxSelection()
+        onRowActivated: function(index) {
+            win.inboxSelectedIndex = index;
+            win.activateInboxSelection();
         }
     }
 
