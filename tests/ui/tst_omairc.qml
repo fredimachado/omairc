@@ -2574,6 +2574,60 @@ TestCase {
         compare(field(list.model, first, "body"), "open-at-unread-on-first-zx9");
     }
 
+    function test_openAtUnreadLandsOnMarkWhenQuerySwitchesConversation() {
+        openSeededAppWindow();
+        mouseClick(namedItem(liveConversation("anna")));
+        tryCompare(appWindow, "currentConversation", "anna");
+        var list = item("messageList");
+        var start = list.model.rowCount();
+        var index = 0;
+        for (index = 0; index < 24; ++index) {
+            var minute = index < 10 ? "0" + index : "" + index;
+            injectOmarchyChat("anna", "fred", "scroll line " + index, "10:" + minute);
+        }
+        waitForRowCount(list, start + 24);
+        waitForRendering(appWindow.contentItem);
+        list.pinToEnd();
+        waitForRendering(appWindow.contentItem);
+        wait(0);
+        verify(list.contentHeight > list.height);
+        verify(transcriptPinned(list));
+
+        mouseClick(namedItem(liveConversation("#omarchy")));
+        tryCompare(appWindow, "currentConversation", "#omarchy");
+        injectOmarchyChat("anna", "fred", "open-at-unread-query-first-zx9");
+        injectOmarchyChat("anna", "fred", "open-at-unread-query-second-zx9");
+        for (index = 0; index < 24; ++index) {
+            var unreadMinute = index < 10 ? "0" + index : "" + index;
+            injectOmarchyChat("anna", "fred", "open-at-unread filler " + index,
+                              "11:" + unreadMinute);
+        }
+        seed.irc.openConversationsAtUnread = true;
+
+        var composer = item("messageComposer");
+        mouseClick(composer);
+        typeText("/query anna hello");
+        compare(composer.text, "/query anna hello");
+        if (item("slashCompleteList").visible)
+            keyClick(Qt.Key_Escape);
+        keyClick(Qt.Key_Return);
+
+        tryCompare(appWindow, "currentConversation", "anna");
+        waitForBody(list, "open-at-unread-query-first-zx9");
+        waitForBody(list, "open-at-unread-query-second-zx9");
+        verify(seed.echoLastOmarchyPrivmsg());
+        waitForBody(list, "hello");
+
+        var first = rowForBody(list.model, "open-at-unread-query-first-zx9");
+        verify(first > 0, "The first unseen line should not lead the buffer");
+        var markRow = list.model.unreadMarkRow();
+        compare(markRow, first - 1);
+        compare(field(list.model, markRow, "kind"), "unread");
+        compare(rowForBody(list.model, "open-at-unread-query-second-zx9"), first + 1);
+        waitForOpenAtUnreadViewport(list, markRow);
+        verify(rowForBody(list.model, "hello") > first);
+    }
+
     function test_openAtUnreadWithoutMarkPinsToEnd() {
         openSeededAppWindow();
         seed.irc.openConversationsAtUnread = true;

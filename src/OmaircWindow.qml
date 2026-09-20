@@ -1639,10 +1639,15 @@ ApplicationWindow {
         var kept = composerDrafts[composerDraftKey] || "";
         conversation.composer.text = kept;
         conversation.composer.cursorPosition = conversation.composer.text.length;
-        if (consoleVisible)
+        if (consoleVisible) {
             conversation.consoleList.pinToEnd();
-        else
+        } else if (currentConversationId !== sentFromConversationId) {
+            Qt.callLater(function() {
+                placeTranscriptAfterSelect(sentFromConversationId);
+            });
+        } else {
             conversation.messageList.pinToEnd();
+        }
         if (consoleVisible !== fromConsole
                 || currentConversationId !== sentFromConversationId) {
             Qt.callLater(function() {
