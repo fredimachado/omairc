@@ -6,6 +6,7 @@
 #include "ircjointarget.h"
 #include "memberlistmodel.h"
 #include "messagelistmodel.h"
+#include "networklogmodel.h"
 
 #include <QAbstractItemModel>
 #include <QCoreApplication>
@@ -43,6 +44,7 @@ private slots:
     void peerMetadata();
     void chatHistoryOnJoin();
     void saslPlain();
+    void conversationInventionMatrix();
     void foldedNickCollision_data();
     void foldedNickCollision();
     void asciiDirectRestore_data();
@@ -122,6 +124,86 @@ bool sawPart(const QVector<IrcMessage> &incoming, const QString &channel)
         if (message.command != "PART" || message.parameters.empty())
             continue;
         if (sameFolded(messageText(message.parameters[0]), channel))
+            return true;
+    }
+    return false;
+}
+
+bool logContains(QAbstractItemModel *lines, const QString &needle)
+{
+    if (!lines)
+        return false;
+    for (int row = 0; row < lines->rowCount(); ++row) {
+        const QString text =
+            lines->data(lines->index(row, 0), NetworkLogModel::TextRole).toString();
+        if (text.contains(needle, Qt::CaseInsensitive))
+            return true;
+    }
+    return false;
+}
+
+bool statusTextContains(const QVector<IrcStatusEntry> &entries, const QString &needle)
+{
+    for (const IrcStatusEntry &entry : entries) {
+        if (entry.text().contains(needle, Qt::CaseInsensitive))
+            return true;
+    }
+    return false;
+}
+
+bool noStatusTextContains(const QVector<IrcStatusEntry> &entries, const QString &needle)
+{
+    for (const IrcStatusEntry &entry : entries) {
+        if (entry.text().contains(needle, Qt::CaseInsensitive))
+            return false;
+    }
+    return true;
+}
+
+bool sawSelfPrivmsgTo(const QVector<IrcMessage> &incoming,
+                      const QString &selfNick,
+                      const QString &target,
+                      const QString &body)
+{
+    for (const IrcMessage &message : incoming) {
+        if (message.command != "PRIVMSG" || message.parameters.size() < 2)
+            continue;
+        if (!message.prefix
+            || !sameFolded(messageText(message.prefix->nick), selfNick)) {
+            continue;
+        }
+        if (!sameFolded(messageText(message.parameters[0]), target))
+            continue;
+        if (messageText(message.parameters.back()) == body)
+            return true;
+    }
+    return false;
+}
+
+bool sawPrivmsgFrom(const QVector<IrcMessage> &incoming,
+                    const QString &sender,
+                    const QString &target)
+{
+    for (const IrcMessage &message : incoming) {
+        if (message.command != "PRIVMSG" || message.parameters.empty())
+            continue;
+        if (!message.prefix
+            || !sameFolded(messageText(message.prefix->nick), sender)) {
+            continue;
+        }
+        if (!sameFolded(messageText(message.parameters[0]), target))
+            continue;
+        return true;
+    }
+    return false;
+}
+
+bool channelTranscriptContains(QAbstractItemModel *messages, const QString &body)
+{
+    if (!messages)
+        return false;
+    for (int row = 0; row < messages->rowCount(); ++row) {
+        if (messages->index(row, 0).data(MessageListModel::BodyRole).toString() == body)
             return true;
     }
     return false;
@@ -520,6 +602,7 @@ void LiveIrcdTest::saslPlain()
     {
         LiveClient guest(*daemon, nick, daemon->plainPort == 0);
         QVERIFY(guest.waitRegistered());
+        auto *conversations = guest.controller.conversations();
         const int notices = messageCommandCount(guest.incoming, QStringLiteral("NOTICE"));
         QVERIFY(guest.session->sendPrivmsg(
             QStringLiteral("NickServ"),
@@ -527,10 +610,78 @@ void LiveIrcdTest::saslPlain()
         QVERIFY(waitUntil([&] {
             return messageCommandCount(guest.incoming, QStringLiteral("NOTICE")) > notices;
         }));
+        QCOMPARE(conversationRow(conversations, QStringLiteral("NickServ")), -1);
+        QVERIFY(noStatusTextContains(guest.status, password));
     }
     LiveClient authed(*daemon, nick, daemon->plainPort == 0, password);
     QVERIFY(authed.waitServerLabel(QStringLiteral("903")));
     QVERIFY2(authed.waitRegistered(), qPrintable(authed.lastError));
+    QCOMPARE(conversationRow(authed.controller.conversations(), QStringLiteral("NickServ")),
+             -1);
+    QVERIFY(noStatusTextContains(authed.status, password));
+}
+
+void LiveIrcdTest::conversationInventionMatrix()
+{
+    const LiveDaemonInfo *daemon = liveDaemon(QStringLiteral("ergo"));
+    if (!daemon)
+        QSKIP("Ergo is not in this live profile");
+    const bool tls = daemon->plainPort == 0;
+    const quint16 port = tls ? daemon->tlsPort : daemon->plainPort;
+    const QString peerNick = uniqueNick(daemon->nickLength);
+    const QString targetNick = QStringLiteral("lena");
+    const QString dmBody = QStringLiteral("hello");
+    const QString peerBody = QStringLiteral("hi");
+
+    LiveClient client(*daemon, uniqueNick(daemon->nickLength), tls);
+    QVERIFY(client.waitRegistered());
+    QVERIFY(client.session->capabilities().contains(IrcCapability::EchoMessage)
+            || waitUntil([&] {
+                   return client.session->capabilities().contains(
+                       IrcCapability::EchoMessage);
+               }));
+    client.controller.openStatus(client.config.networkId);
+
+    const QString channel = uniqueChannel();
+    QVERIFY(joinChannel(client, channel));
+    QVERIFY(waitUntil([&] {
+        return messageHasCommand(client.incoming, QStringLiteral("366"));
+    }));
+    client.selectChannel(channel);
+    QCOMPARE(client.controller.selectedTarget(), channel);
+
+    auto *conversations = client.controller.conversations();
+    QVERIFY(client.controller.sendMessage(
+        QStringLiteral("/msg %1 %2").arg(targetNick, dmBody)));
+    QCOMPARE(conversationRow(conversations, targetNick), -1);
+    QCOMPARE(client.controller.selectedTarget(), channel);
+
+    QVERIFY(waitUntil([&] {
+        return sawSelfPrivmsgTo(client.incoming, client.session->nick(), targetNick, dmBody);
+    }));
+    QCOMPARE(conversationRow(conversations, targetNick), -1);
+    QCOMPARE(client.controller.selectedTarget(), channel);
+    QVERIFY(!channelTranscriptContains(client.controller.messages(), dmBody));
+
+    QVERIFY(client.session->sendPrivmsg(QStringLiteral("NickServ"), QStringLiteral("HELP")));
+    QVERIFY(waitUntil([&] {
+        return sawPrivmsgFrom(client.incoming,
+                              QStringLiteral("NickServ"),
+                              client.session->nick());
+    }));
+    QCOMPARE(conversationRow(conversations, QStringLiteral("NickServ")), -1);
+    QCOMPARE(conversationRow(conversations, QStringLiteral("nickserv")), -1);
+    QVERIFY(logContains(client.controller.console()->lines(), QStringLiteral("NickServ"))
+            || statusTextContains(client.status, QStringLiteral("NickServ")));
+
+    RawIrcPeer peer(liveHost(), port, tls, liveSslConfiguration(), peerNick);
+    QVERIFY(peer.waitRegistered());
+    peer.writeLine(QStringLiteral("PRIVMSG %1 :%2")
+                       .arg(client.session->nick(), peerBody));
+    QVERIFY(waitUntil([&] {
+        return conversationRow(conversations, peerNick) >= 0;
+    }));
+    QCOMPARE(client.controller.selectedTarget(), channel);
 }
 
 void LiveIrcdTest::foldedNickCollision_data()
