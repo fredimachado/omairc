@@ -72,6 +72,25 @@ int rowFor(const ConversationListModel& model, const QString& conversationId)
     }
     return -1;
 }
+
+void assertUnreadMarkRow(const MessageListModel& messages, int row)
+{
+    QCOMPARE(messages.unreadMarkRow(), row);
+    QCOMPARE(roleAt(messages, row, MessageListModel::KindRole),
+             QStringLiteral("unread"));
+    QCOMPARE(roleAt(messages, row, MessageListModel::BodyRole), QString());
+    QCOMPARE(roleAt(messages, row, MessageListModel::AuthorRole), QString());
+    QCOMPARE(roleAt(messages, row, MessageListModel::TimeRole), QString());
+}
+
+int rowForBody(const MessageListModel& messages, const QString& body)
+{
+    for (int row = 0; row < messages.rowCount(); ++row) {
+        if (roleAt(messages, row, MessageListModel::BodyRole) == body)
+            return row;
+    }
+    return -1;
+}
 }
 
 class ModelTest : public QObject
@@ -113,6 +132,14 @@ private slots:
     void clearMessagesDropsDerivedDateSeparators();
     void dateSeparatorAppendsAfterMidnightWithoutReset();
     void reloadTrimAcrossDayRemovesLeadingSeparator();
+    void unreadMarkPlantsOnFirstUnselectedChat();
+    void unreadMarkSkippedForSelfAndSelected();
+    void unreadMarkSurvivesHistorySpliceAbove();
+    void unreadMarkSurvivesCapUntilStoreTrimmed();
+    void unreadMarkSuppressedWhenItWouldLead();
+    void unreadMarkOrdersAfterDateSeparator();
+    void unreadMarkKeptOnVisitClearedOnRevisit();
+    void unreadMarkChangeMidBufferResetsInsteadOfInsert();
 };
 
 void ModelTest::roleNamesMatchQml()
@@ -210,23 +237,24 @@ void ModelTest::joinNamesPrivmsgPopulateModels()
     QCOMPARE(roleAt(conversations, 0, ConversationListModel::ConversationIdRole),
              QStringLiteral("network-a\n#room"));
 
-    QCOMPARE(messages.rowCount(), 2);
+    QCOMPARE(messages.rowCount(), 3);
     QCOMPARE(roleAt(messages, 0, MessageListModel::KindRole),
              QStringLiteral("event"));
     QCOMPARE(roleAt(messages, 0, MessageListModel::AuthorRole), QString());
     QCOMPARE(roleAt(messages, 0, MessageListModel::TimeRole), QString());
     QCOMPARE(roleAt(messages, 0, MessageListModel::BodyRole),
              QStringLiteral("omairc joined"));
-    QCOMPARE(roleAt(messages, 1, MessageListModel::AuthorRole),
+    assertUnreadMarkRow(messages, 1);
+    QCOMPARE(roleAt(messages, 2, MessageListModel::AuthorRole),
              QStringLiteral("Alice"));
-    QCOMPARE(roleAt(messages, 1, MessageListModel::BodyRole),
+    QCOMPARE(roleAt(messages, 2, MessageListModel::BodyRole),
              QStringLiteral("hello"));
-    QCOMPARE(roleAt(messages, 1, MessageListModel::KindRole),
+    QCOMPARE(roleAt(messages, 2, MessageListModel::KindRole),
              QStringLiteral("message"));
-    QCOMPARE(roleAt(messages, 1, MessageListModel::TimeRole),
+    QCOMPARE(roleAt(messages, 2, MessageListModel::TimeRole),
              timestamp.toLocalTime().toString(QStringLiteral("HH:mm")));
-    QCOMPARE(roleAt(messages, 1, MessageListModel::NetworkIdRole), networkA);
-    QCOMPARE(roleAt(messages, 1, MessageListModel::OriginRole),
+    QCOMPARE(roleAt(messages, 2, MessageListModel::NetworkIdRole), networkA);
+    QCOMPARE(roleAt(messages, 2, MessageListModel::OriginRole),
              QStringLiteral("live"));
 
     QCOMPARE(members.rowCount(), 3);
@@ -542,21 +570,22 @@ void ModelTest::messageKinds()
         room, QStringLiteral("lena is ~lena@h (Lena)")});
 
     messages.select(room);
-    QCOMPARE(messages.rowCount(), 5);
+    QCOMPARE(messages.rowCount(), 6);
     QCOMPARE(roleAt(messages, 0, MessageListModel::KindRole),
              QStringLiteral("event"));
-    QCOMPARE(roleAt(messages, 1, MessageListModel::KindRole),
-             QStringLiteral("message"));
+    assertUnreadMarkRow(messages, 1);
     QCOMPARE(roleAt(messages, 2, MessageListModel::KindRole),
-             QStringLiteral("notice"));
+             QStringLiteral("message"));
     QCOMPARE(roleAt(messages, 3, MessageListModel::KindRole),
-             QStringLiteral("action"));
-    QCOMPARE(roleAt(messages, 3, MessageListModel::BodyRole),
-             QStringLiteral("waves"));
+             QStringLiteral("notice"));
     QCOMPARE(roleAt(messages, 4, MessageListModel::KindRole),
+             QStringLiteral("action"));
+    QCOMPARE(roleAt(messages, 4, MessageListModel::BodyRole),
+             QStringLiteral("waves"));
+    QCOMPARE(roleAt(messages, 5, MessageListModel::KindRole),
              QStringLiteral("whois"));
-    QCOMPARE(roleAt(messages, 4, MessageListModel::AuthorRole), QString());
-    QCOMPARE(roleAt(messages, 4, MessageListModel::TimeRole), QString());
+    QCOMPARE(roleAt(messages, 5, MessageListModel::AuthorRole), QString());
+    QCOMPARE(roleAt(messages, 5, MessageListModel::TimeRole), QString());
 }
 
 void ModelTest::conversationsOrderChannelsThenDirect()
@@ -930,6 +959,7 @@ void ModelTest::selectedChatAppendInsertsInsteadOfReset()
         reducer.conversationKey(networkA, QStringLiteral("#room"));
     reducer.apply(IrcJoinEvent{
         networkA, QStringLiteral("#room"), QStringLiteral("omairc")});
+    reducer.markSelected(room);
     messages.select(room);
     QCOMPARE(messages.rowCount(), 1);
 
@@ -1536,6 +1566,334 @@ void ModelTest::reloadTrimAcrossDayRemovesLeadingSeparator()
     QCOMPARE(roleAt(messages, 0, MessageListModel::BodyRole), QStringLiteral("0"));
     QCOMPARE(roleAt(messages, 1999, MessageListModel::BodyRole),
              QStringLiteral("capped"));
+}
+
+void ModelTest::unreadMarkPlantsOnFirstUnselectedChat()
+{
+    IrcEventReducer reducer;
+    MessageListModel messages(reducer);
+    welcome(reducer, networkA);
+
+    const IrcConversationKey room =
+        reducer.conversationKey(networkA, QStringLiteral("#room"));
+    reducer.apply(IrcJoinEvent{
+        networkA, QStringLiteral("#room"), QStringLiteral("omairc")});
+    reducer.apply(IrcMessageEvent{
+        room, QStringLiteral("Alice"), QStringLiteral("first-unread"), timestamp,
+        QStringLiteral("#room")});
+    reducer.apply(IrcMessageEvent{
+        room, QStringLiteral("Bob"), QStringLiteral("later-unread"), timestamp,
+        QStringLiteral("#room")});
+
+    const IrcConversationState *conversation = reducer.find(room);
+    QVERIFY(conversation);
+    QVERIFY(conversation->unreadMark.has_value());
+    QCOMPARE(*conversation->unreadMark, conversation->messages[1].sequence);
+    QCOMPARE(conversation->unread, 2);
+
+    messages.select(room);
+    QCOMPARE(messages.rowCount(), 4);
+    QCOMPARE(roleAt(messages, 0, MessageListModel::BodyRole),
+             QStringLiteral("omairc joined"));
+    assertUnreadMarkRow(messages, 1);
+    QCOMPARE(roleAt(messages, 2, MessageListModel::BodyRole),
+             QStringLiteral("first-unread"));
+    QCOMPARE(roleAt(messages, 3, MessageListModel::BodyRole),
+             QStringLiteral("later-unread"));
+}
+
+void ModelTest::unreadMarkSkippedForSelfAndSelected()
+{
+    IrcEventReducer selfReducer;
+    MessageListModel selfMessages(selfReducer);
+    welcome(selfReducer, networkA);
+    const IrcConversationKey selfRoom =
+        selfReducer.conversationKey(networkA, QStringLiteral("#self"));
+    selfReducer.apply(IrcJoinEvent{
+        networkA, QStringLiteral("#self"), QStringLiteral("omairc")});
+    selfReducer.apply(IrcMessageEvent{
+        selfRoom, QStringLiteral("omairc"), QStringLiteral("my line"), timestamp,
+        QStringLiteral("#self")});
+    const IrcConversationState *selfState = selfReducer.find(selfRoom);
+    QVERIFY(selfState);
+    QVERIFY(!selfState->unreadMark.has_value());
+    QCOMPARE(selfState->unread, 0);
+    selfMessages.select(selfRoom);
+    QCOMPARE(selfMessages.unreadMarkRow(), -1);
+    QCOMPARE(selfMessages.rowCount(), 2);
+    QCOMPARE(roleAt(selfMessages, 1, MessageListModel::BodyRole),
+             QStringLiteral("my line"));
+
+    IrcEventReducer selectedReducer;
+    MessageListModel selectedMessages(selectedReducer);
+    welcome(selectedReducer, networkA);
+    const IrcConversationKey selectedRoom =
+        selectedReducer.conversationKey(networkA, QStringLiteral("#sel"));
+    selectedReducer.apply(IrcJoinEvent{
+        networkA, QStringLiteral("#sel"), QStringLiteral("omairc")});
+    selectedReducer.markSelected(selectedRoom);
+    selectedMessages.select(selectedRoom);
+    selectedReducer.apply(IrcMessageEvent{
+        selectedRoom, QStringLiteral("Alice"), QStringLiteral("while-focused"),
+        timestamp, QStringLiteral("#sel")});
+    selectedMessages.reload();
+    const IrcConversationState *selectedState = selectedReducer.find(selectedRoom);
+    QVERIFY(selectedState);
+    QVERIFY(!selectedState->unreadMark.has_value());
+    QCOMPARE(selectedState->unread, 0);
+    QCOMPARE(selectedMessages.unreadMarkRow(), -1);
+    QCOMPARE(roleAt(selectedMessages, 1, MessageListModel::BodyRole),
+             QStringLiteral("while-focused"));
+}
+
+void ModelTest::unreadMarkSurvivesHistorySpliceAbove()
+{
+    IrcEventReducer reducer;
+    MessageListModel messages(reducer);
+    welcome(reducer, networkA);
+
+    const IrcConversationKey room =
+        reducer.conversationKey(networkA, QStringLiteral("#room"));
+    reducer.apply(IrcJoinEvent{
+        networkA, QStringLiteral("#room"), QStringLiteral("omairc")});
+    reducer.apply(IrcMessageEvent{
+        room, QStringLiteral("Alice"), QStringLiteral("live-unread"), timestamp,
+        QStringLiteral("#room")});
+    const IrcConversationState *conversation = reducer.find(room);
+    QVERIFY(conversation);
+    QVERIFY(conversation->unreadMark.has_value());
+    const qint64 markedSequence = *conversation->unreadMark;
+    QCOMPARE(markedSequence, conversation->messages.back().sequence);
+
+    messages.select(room);
+    QCOMPARE(messages.unreadMarkRow(), 1);
+    QCOMPARE(roleAt(messages, 2, MessageListModel::BodyRole),
+             QStringLiteral("live-unread"));
+
+    const QDate today = QDate::currentDate();
+    reducer.apply(IrcHistoryEvent{
+        room,
+        QStringLiteral("#room"),
+        {{QStringLiteral("alice"), QStringLiteral("older-one"), atLocal(today),
+          IrcMessageKindTag::Chat, IrcMsgId{QStringLiteral("hist-a")}},
+         {QStringLiteral("bob"), QStringLiteral("older-two"), atLocal(today),
+          IrcMessageKindTag::Chat, IrcMsgId{QStringLiteral("hist-b")}}},
+    });
+    messages.reload();
+
+    conversation = reducer.find(room);
+    QVERIFY(conversation);
+    QCOMPARE(*conversation->unreadMark, markedSequence);
+    QCOMPARE(messages.unreadMarkRow(), 3);
+    assertUnreadMarkRow(messages, 3);
+    QCOMPARE(roleAt(messages, 0, MessageListModel::BodyRole),
+             QStringLiteral("older-one"));
+    QCOMPARE(roleAt(messages, 1, MessageListModel::BodyRole),
+             QStringLiteral("older-two"));
+    QCOMPARE(roleAt(messages, 2, MessageListModel::BodyRole),
+             QStringLiteral("omairc joined"));
+    QCOMPARE(roleAt(messages, 4, MessageListModel::BodyRole),
+             QStringLiteral("live-unread"));
+}
+
+void ModelTest::unreadMarkSurvivesCapUntilStoreTrimmed()
+{
+    IrcEventReducer reducer;
+    MessageListModel messages(reducer);
+    welcome(reducer, networkA);
+
+    const IrcConversationKey room =
+        reducer.conversationKey(networkA, QStringLiteral("#room"));
+    reducer.apply(IrcJoinEvent{
+        networkA, QStringLiteral("#room"), QStringLiteral("omairc")});
+    reducer.markSelected(room);
+    for (int i = 0; i < 5; ++i) {
+        reducer.apply(IrcMessageEvent{
+            room, QStringLiteral("omairc"),
+            QStringLiteral("prefix-") + QString::number(i), timestamp,
+            QStringLiteral("#room")});
+    }
+    reducer.clearSelection();
+    reducer.apply(IrcMessageEvent{
+        room, QStringLiteral("Alice"), QStringLiteral("keep-mark"), timestamp,
+        QStringLiteral("#room")});
+    const IrcConversationState *conversation = reducer.find(room);
+    QVERIFY(conversation);
+    QVERIFY(conversation->unreadMark.has_value());
+    const qint64 markedSequence = *conversation->unreadMark;
+    QCOMPARE(conversation->messages.size(), std::size_t(7));
+
+    const int fill = IrcEventReducer::kMaxMessages - int(conversation->messages.size());
+    for (int i = 0; i < fill; ++i) {
+        reducer.apply(IrcMessageEvent{
+            room, QStringLiteral("Alice"),
+            QStringLiteral("fill-") + QString::number(i), timestamp,
+            QStringLiteral("#room")});
+    }
+    QCOMPARE(reducer.find(room)->messages.size(),
+             std::size_t(IrcEventReducer::kMaxMessages));
+    QCOMPARE(*reducer.find(room)->unreadMark, markedSequence);
+
+    messages.select(room);
+    QCOMPARE(messages.unreadMarkRow(), 6);
+    assertUnreadMarkRow(messages, 6);
+    QCOMPARE(roleAt(messages, 7, MessageListModel::BodyRole),
+             QStringLiteral("keep-mark"));
+
+    for (int i = 0; i < 5; ++i) {
+        reducer.apply(IrcMessageEvent{
+            room, QStringLiteral("Alice"),
+            QStringLiteral("trim-prefix-") + QString::number(i), timestamp,
+            QStringLiteral("#room")});
+    }
+    messages.reload();
+    QCOMPARE(*reducer.find(room)->unreadMark, markedSequence);
+    QCOMPARE(messages.unreadMarkRow(), 1);
+    QCOMPARE(roleAt(messages, 2, MessageListModel::BodyRole),
+             QStringLiteral("keep-mark"));
+
+    reducer.apply(IrcMessageEvent{
+        room, QStringLiteral("Alice"), QStringLiteral("drop-prefix"), timestamp,
+        QStringLiteral("#room")});
+    reducer.apply(IrcMessageEvent{
+        room, QStringLiteral("Alice"), QStringLiteral("drop-marked"), timestamp,
+        QStringLiteral("#room")});
+    messages.reload();
+    QCOMPARE(messages.unreadMarkRow(), -1);
+    QCOMPARE(rowForBody(messages, QStringLiteral("keep-mark")), -1);
+    for (int row = 0; row < messages.rowCount(); ++row)
+        QVERIFY(roleAt(messages, row, MessageListModel::KindRole) != QStringLiteral("unread"));
+}
+
+void ModelTest::unreadMarkSuppressedWhenItWouldLead()
+{
+    IrcEventReducer reducer;
+    MessageListModel messages(reducer);
+    welcome(reducer, networkA);
+
+    const IrcConversationKey room =
+        reducer.conversationKey(networkA, QStringLiteral("#lead"));
+    reducer.apply(IrcMessageEvent{
+        room, QStringLiteral("Alice"), QStringLiteral("first-store"), timestamp,
+        QStringLiteral("#lead")});
+    const IrcConversationState *conversation = reducer.find(room);
+    QVERIFY(conversation);
+    QVERIFY(conversation->unreadMark.has_value());
+    QCOMPARE(*conversation->unreadMark, conversation->messages.front().sequence);
+
+    messages.select(room);
+    QCOMPARE(messages.rowCount(), 1);
+    QCOMPARE(messages.unreadMarkRow(), -1);
+    QCOMPARE(roleAt(messages, 0, MessageListModel::KindRole),
+             QStringLiteral("message"));
+    QCOMPARE(roleAt(messages, 0, MessageListModel::BodyRole),
+             QStringLiteral("first-store"));
+}
+
+void ModelTest::unreadMarkOrdersAfterDateSeparator()
+{
+    IrcEventReducer reducer;
+    MessageListModel messages(reducer);
+    welcome(reducer, networkA);
+
+    const IrcConversationKey room =
+        reducer.conversationKey(networkA, QStringLiteral("#room"));
+    const QDate today = QDate::currentDate();
+    reducer.markSelected(room);
+    reducer.apply(IrcMessageEvent{
+        room, QStringLiteral("Alice"), QStringLiteral("older-line"),
+        atLocal(today.addDays(-1)), QStringLiteral("#room")});
+    reducer.clearSelection();
+    reducer.apply(IrcMessageEvent{
+        room, QStringLiteral("Alice"), QStringLiteral("today-unread"),
+        atLocal(today), QStringLiteral("#room")});
+
+    messages.select(room);
+    QCOMPARE(messages.rowCount(), 4);
+    QCOMPARE(roleAt(messages, 0, MessageListModel::BodyRole),
+             QStringLiteral("older-line"));
+    QCOMPARE(roleAt(messages, 1, MessageListModel::KindRole),
+             QStringLiteral("event"));
+    QCOMPARE(roleAt(messages, 1, MessageListModel::BodyRole),
+             QStringLiteral("Today"));
+    assertUnreadMarkRow(messages, 2);
+    QCOMPARE(roleAt(messages, 3, MessageListModel::BodyRole),
+             QStringLiteral("today-unread"));
+}
+
+void ModelTest::unreadMarkKeptOnVisitClearedOnRevisit()
+{
+    IrcEventReducer reducer;
+    MessageListModel messages(reducer);
+    welcome(reducer, networkA);
+
+    const IrcConversationKey room =
+        reducer.conversationKey(networkA, QStringLiteral("#room"));
+    const IrcConversationKey other =
+        reducer.conversationKey(networkA, QStringLiteral("#other"));
+    reducer.apply(IrcJoinEvent{
+        networkA, QStringLiteral("#room"), QStringLiteral("omairc")});
+    reducer.apply(IrcJoinEvent{
+        networkA, QStringLiteral("#other"), QStringLiteral("omairc")});
+    reducer.apply(IrcMessageEvent{
+        room, QStringLiteral("Alice"), QStringLiteral("while-away"), timestamp,
+        QStringLiteral("#room")});
+    QVERIFY(reducer.find(room)->unreadMark.has_value());
+    QCOMPARE(reducer.find(room)->unread, 1);
+
+    reducer.markSelected(room);
+    messages.select(room);
+    QVERIFY(reducer.find(room)->unreadMark.has_value());
+    QCOMPARE(reducer.find(room)->unread, 0);
+    QCOMPARE(messages.unreadMarkRow(), 1);
+    QCOMPARE(roleAt(messages, 2, MessageListModel::BodyRole),
+             QStringLiteral("while-away"));
+
+    reducer.markSelected(other);
+    messages.select(other);
+    QVERIFY(reducer.find(room)->unreadMark.has_value());
+
+    reducer.markSelected(room);
+    messages.select(room);
+    QVERIFY(!reducer.find(room)->unreadMark.has_value());
+    QCOMPARE(messages.unreadMarkRow(), -1);
+    QCOMPARE(roleAt(messages, 1, MessageListModel::BodyRole),
+             QStringLiteral("while-away"));
+}
+
+void ModelTest::unreadMarkChangeMidBufferResetsInsteadOfInsert()
+{
+    IrcEventReducer reducer;
+    MessageListModel messages(reducer);
+    welcome(reducer, networkA);
+
+    const IrcConversationKey room =
+        reducer.conversationKey(networkA, QStringLiteral("#room"));
+    reducer.apply(IrcJoinEvent{
+        networkA, QStringLiteral("#room"), QStringLiteral("omairc")});
+    reducer.markSelected(room);
+    messages.select(room);
+    reducer.apply(IrcMessageEvent{
+        room, QStringLiteral("Alice"), QStringLiteral("already-there"), timestamp,
+        QStringLiteral("#room")});
+    messages.reload();
+    QCOMPARE(messages.rowCount(), 2);
+    QCOMPARE(messages.unreadMarkRow(), -1);
+
+    reducer.clearSelection();
+    QSignalSpy resets(&messages, &QAbstractItemModel::modelReset);
+    QSignalSpy inserts(&messages, &QAbstractItemModel::rowsInserted);
+    reducer.apply(IrcMessageEvent{
+        room, QStringLiteral("Alice"), QStringLiteral("plants-mark"), timestamp,
+        QStringLiteral("#room")});
+    messages.reload();
+
+    QCOMPARE(resets.size(), 1);
+    QCOMPARE(inserts.size(), 0);
+    QCOMPARE(messages.unreadMarkRow(), 2);
+    assertUnreadMarkRow(messages, 2);
+    QCOMPARE(roleAt(messages, 3, MessageListModel::BodyRole),
+             QStringLiteral("plants-mark"));
 }
 
 int runModelTests(int argc, char **argv)

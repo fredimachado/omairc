@@ -96,6 +96,9 @@ private slots:
     void forgetNetworkLeavesTheOtherNetwork();
     void historySplicesAboveSelfJoin();
     void historyMarksUnreadLikeLiveWhenUnselected();
+    void historyReplayPlantsUnreadMarkLikeLive();
+    void mutedChatStillPlantsUnreadMark();
+    void nickMergeAdoptsOrKeepsUnreadMark();
     void msgidDedupSkipsLiveThenReplay();
     void msgidDedupSkipsReplayThenLive();
     void nickMergeDropsDuplicateMsgids();
@@ -1563,6 +1566,122 @@ void ReducerTest::historyMarksUnreadLikeLiveWhenUnselected()
     reducer.markSelected(background);
     QCOMPARE(backgroundState->unread, 0);
     QCOMPARE(backgroundState->mentions, 0);
+}
+
+void ReducerTest::historyReplayPlantsUnreadMarkLikeLive()
+{
+    IrcEventReducer reducer;
+    welcome(reducer, networkA);
+    reducer.apply(IrcJoinEvent{
+        networkA, QStringLiteral("#selected"), QStringLiteral("omairc")});
+    reducer.apply(IrcJoinEvent{
+        networkA, QStringLiteral("#background"), QStringLiteral("omairc")});
+    const IrcConversationKey selected =
+        reducer.conversationKey(networkA, QStringLiteral("#selected"));
+    const IrcConversationKey background =
+        reducer.conversationKey(networkA, QStringLiteral("#background"));
+    reducer.markSelected(selected);
+
+    reducer.apply(IrcHistoryEvent{
+        background,
+        QStringLiteral("#background"),
+        {replayLine(QStringLiteral("alice"), QStringLiteral("plain"),
+                    QStringLiteral("id-plain")),
+         replayLine(QStringLiteral("alice"), QStringLiteral("omairc: ping"),
+                    QStringLiteral("id-mention")),
+         replayLine(QStringLiteral("omairc"), QStringLiteral("my reply"),
+                    QStringLiteral("id-self"))},
+    });
+
+    const IrcConversationState *backgroundState = reducer.find(background);
+    QVERIFY(backgroundState);
+    QCOMPARE(backgroundState->unread, 2);
+    QCOMPARE(backgroundState->mentions, 1);
+    QVERIFY(backgroundState->unreadMark.has_value());
+    QCOMPARE(*backgroundState->unreadMark, backgroundState->messages[0].sequence);
+    QCOMPARE(backgroundState->messages[0].body, QStringLiteral("plain"));
+    QCOMPARE(backgroundState->messages[1].body, QStringLiteral("omairc: ping"));
+    QCOMPARE(backgroundState->messages[2].body, QStringLiteral("my reply"));
+
+    reducer.apply(IrcHistoryEvent{
+        selected,
+        QStringLiteral("#selected"),
+        {replayLine(QStringLiteral("alice"), QStringLiteral("omairc: here"),
+                    QStringLiteral("id-focused"))},
+    });
+    QCOMPARE(reducer.find(selected)->unread, 0);
+    QCOMPARE(reducer.find(selected)->mentions, 0);
+    QVERIFY(!reducer.find(selected)->unreadMark.has_value());
+}
+
+void ReducerTest::mutedChatStillPlantsUnreadMark()
+{
+    IrcEventReducer reducer;
+    welcome(reducer, networkA);
+    const IrcConversationKey room =
+        reducer.conversationKey(networkA, QStringLiteral("#room"));
+    reducer.setMuted(room, true);
+    reducer.apply(IrcMessageEvent{
+        room,
+        QStringLiteral("Alice"),
+        QStringLiteral("omairc: ping"),
+        timestamp,
+        QStringLiteral("#room"),
+    });
+
+    const IrcConversationState *muted = reducer.find(room);
+    QVERIFY(muted);
+    QVERIFY(muted->muted);
+    QCOMPARE(muted->mentions, 0);
+    QCOMPARE(muted->unread, 1);
+    QVERIFY(muted->unreadMark.has_value());
+    QCOMPARE(*muted->unreadMark, muted->messages.back().sequence);
+}
+
+void ReducerTest::nickMergeAdoptsOrKeepsUnreadMark()
+{
+    IrcEventReducer adopt;
+    welcome(adopt, networkA);
+    const IrcConversationKey alice =
+        adopt.conversationKey(networkA, QStringLiteral("Alice"));
+    const IrcConversationKey alicia =
+        adopt.conversationKey(networkA, QStringLiteral("Alicia"));
+    adopt.markSelected(alicia);
+    adopt.apply(IrcMessageEvent{
+        alicia, QStringLiteral("Alicia"), QStringLiteral("dest-only"), timestamp,
+        QStringLiteral("Alicia")});
+    QVERIFY(!adopt.find(alicia)->unreadMark.has_value());
+    adopt.clearSelection();
+    adopt.apply(IrcMessageEvent{
+        alice, QStringLiteral("Alice"), QStringLiteral("moved-chat"), timestamp,
+        QStringLiteral("Alice")});
+    QVERIFY(adopt.find(alice)->unreadMark.has_value());
+    const qint64 movedMark = *adopt.find(alice)->unreadMark;
+    adopt.apply(IrcNickEvent{
+        networkA, QStringLiteral("Alice"), QStringLiteral("Alicia")});
+    QVERIFY(adopt.find(alicia)->unreadMark.has_value());
+    QCOMPARE(*adopt.find(alicia)->unreadMark, movedMark);
+
+    IrcEventReducer keep;
+    welcome(keep, networkA);
+    const IrcConversationKey fromAlice =
+        keep.conversationKey(networkA, QStringLiteral("Alice"));
+    const IrcConversationKey fromAlicia =
+        keep.conversationKey(networkA, QStringLiteral("Alicia"));
+    keep.apply(IrcMessageEvent{
+        fromAlice, QStringLiteral("Alice"), QStringLiteral("from alice"), timestamp,
+        QStringLiteral("Alice")});
+    keep.apply(IrcMessageEvent{
+        fromAlicia, QStringLiteral("Alicia"), QStringLiteral("from alicia"), timestamp,
+        QStringLiteral("Alicia")});
+    QVERIFY(keep.find(fromAlice)->unreadMark.has_value());
+    QVERIFY(keep.find(fromAlicia)->unreadMark.has_value());
+    const qint64 destMark = *keep.find(fromAlicia)->unreadMark;
+    QVERIFY(destMark != *keep.find(fromAlice)->unreadMark);
+    keep.apply(IrcNickEvent{
+        networkA, QStringLiteral("Alice"), QStringLiteral("Alicia")});
+    QVERIFY(keep.find(fromAlicia)->unreadMark.has_value());
+    QCOMPARE(*keep.find(fromAlicia)->unreadMark, destMark);
 }
 
 void ReducerTest::msgidDedupSkipsLiveThenReplay()
