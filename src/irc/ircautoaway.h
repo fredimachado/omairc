@@ -2,9 +2,12 @@
 
 #include <QString>
 
+#include <limits>
 #include <optional>
 
 constexpr int ircAutoawayMinTimeoutSeconds = 30;
+constexpr int ircAutoawayMaxTimeoutSeconds =
+    std::numeric_limits<int>::max() / 1000;
 
 enum class IrcAutoawayKind {
     Query,

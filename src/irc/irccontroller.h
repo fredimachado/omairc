@@ -498,6 +498,7 @@ private:
     QTimer m_autoawayIdle;
     QTimer m_autoawayGrace;
     bool m_autoawayGraceArmed = false;
+    bool m_autoawayTripped = false;
     QSet<QString> m_autoAwayNetworks;
     QSet<QString> m_manualAwayNetworks;
     QTimer m_typingRefresh;

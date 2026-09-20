@@ -15,6 +15,7 @@
 #include "networklogmodel.h"
 #include "testsettings.h"
 
+#include <limits>
 #include <memory>
 #include <optional>
 
@@ -145,6 +146,9 @@ private slots:
     void sendToTargetClearsAutoAway();
     void incomingPrivmsgDoesNotClearAutoAway();
     void restoreOnAfterOff();
+    void refuseTimeoutAtOrAboveTimerCap();
+    void reconnectWhileTrippedSendsAway();
+    void reconnectDropsManualAwaySoAutoTripMarks();
 
 private:
     std::unique_ptr<QTemporaryDir> m_settingsDir;
@@ -198,6 +202,27 @@ void AutoawayTest::refuseBelowTimeoutFloor()
         ircParseAutoawayArgument(QStringLiteral("30s"));
     QCOMPARE(accepted.kind, IrcAutoawayKind::SetTimeout);
     QCOMPARE(accepted.timeoutSeconds, 30);
+}
+
+void AutoawayTest::refuseTimeoutAtOrAboveTimerCap()
+{
+    QCOMPARE(ircAutoawayMaxTimeoutSeconds,
+             std::numeric_limits<int>::max() / 1000);
+    const QString justBelow =
+        QString::number(ircAutoawayMaxTimeoutSeconds) + QLatin1Char('s');
+    const QString atCap =
+        QString::number(ircAutoawayMaxTimeoutSeconds + 1) + QLatin1Char('s');
+    QCOMPARE(ircParseAutoawayDuration(justBelow),
+             std::optional<int>(ircAutoawayMaxTimeoutSeconds));
+    QVERIFY(!ircParseAutoawayDuration(atCap));
+    QVERIFY(!ircParseAutoawayDuration(QStringLiteral("600h")));
+
+    const IrcAutoawayRequest acceptedCap = ircParseAutoawayArgument(justBelow);
+    QCOMPARE(acceptedCap.kind, IrcAutoawayKind::SetTimeout);
+    QCOMPARE(acceptedCap.timeoutSeconds, ircAutoawayMaxTimeoutSeconds);
+    QCOMPARE(ircParseAutoawayArgument(atCap).kind, IrcAutoawayKind::Usage);
+    QCOMPARE(ircParseAutoawayArgument(QStringLiteral("600h")).kind,
+             IrcAutoawayKind::Usage);
 }
 
 void AutoawayTest::disableOffAndZero()
@@ -569,6 +594,61 @@ void AutoawayTest::restoreOnAfterOff()
     QVERIFY(console);
     QVERIFY(console->submit(QStringLiteral("/autoaway")));
     QVERIFY(logContains(console->lines(), QStringLiteral("Auto-away 15 minutes")));
+}
+
+void AutoawayTest::reconnectWhileTrippedSendsAway()
+{
+    IrcController controller;
+    auto *transportA = joinNetwork(controller, QStringLiteral("network-a"));
+    auto *transportB = joinNetwork(controller, QStringLiteral("network-b"));
+    QVERIFY(transportA);
+    QVERIFY(transportB);
+    controller.selectConversation(QStringLiteral("network-a"),
+                                  QStringLiteral("#omarchy"));
+    QVERIFY(controller.sendMessage(QStringLiteral("/autoaway 15")));
+    controller.fireAutoawayIdleForTest();
+    controller.fireAutoawayGraceForTest();
+    QCOMPARE(transportA->writtenFrames().last(), QByteArrayLiteral("AWAY\r\n"));
+    QCOMPARE(transportB->writtenFrames().last(), QByteArrayLiteral("AWAY\r\n"));
+
+    const int beforeB = transportB->writtenFrames().size();
+    transportA->remoteClose();
+    QVERIFY(controller.start(QStringLiteral("network-a")));
+    const int beforeA = transportA->writtenFrames().size();
+    welcome(transportA);
+    QCOMPARE(awayFrameCount(transportA->writtenFrames(), beforeA), 1);
+    QVERIFY(framesContain(transportA->writtenFrames().mid(beforeA),
+                          QByteArrayLiteral("AWAY\r\n")));
+    QCOMPARE(transportB->writtenFrames().size(), beforeB);
+}
+
+void AutoawayTest::reconnectDropsManualAwaySoAutoTripMarks()
+{
+    IrcController controller;
+    auto *transportA = joinNetwork(controller, QStringLiteral("network-a"));
+    auto *transportB = joinNetwork(controller, QStringLiteral("network-b"));
+    QVERIFY(transportA);
+    QVERIFY(transportB);
+    controller.selectConversation(QStringLiteral("network-a"),
+                                  QStringLiteral("#omarchy"));
+    QVERIFY(controller.sendMessage(QStringLiteral("/autoaway 15")));
+    QVERIFY(controller.sendMessage(QStringLiteral("/away lunch")));
+    QCOMPARE(transportA->writtenFrames().last(),
+             QByteArrayLiteral("AWAY :lunch\r\n"));
+
+    transportA->remoteClose();
+    QVERIFY(controller.start(QStringLiteral("network-a")));
+    const int beforeA = transportA->writtenFrames().size();
+    welcome(transportA);
+    QCOMPARE(awayFrameCount(transportA->writtenFrames(), beforeA), 0);
+
+    const int afterWelcomeA = transportA->writtenFrames().size();
+    const int beforeB = transportB->writtenFrames().size();
+    controller.fireAutoawayIdleForTest();
+    controller.fireAutoawayGraceForTest();
+    QCOMPARE(awayFrameCount(transportA->writtenFrames(), afterWelcomeA), 1);
+    QCOMPARE(transportA->writtenFrames().last(), QByteArrayLiteral("AWAY\r\n"));
+    QCOMPARE(awayFrameCount(transportB->writtenFrames(), beforeB), 1);
 }
 
 int runAutoawayTests(int argc, char **argv)

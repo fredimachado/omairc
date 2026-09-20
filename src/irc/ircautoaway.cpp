@@ -2,8 +2,6 @@
 
 #include <QtGlobal>
 
-#include <limits>
-
 namespace
 {
 QString firstToken(const QString& argument)
@@ -91,9 +89,12 @@ std::optional<int> ircParseAutoawayDuration(const QString& token)
     else if (suffix == QLatin1Char('h'))
         seconds = value * 3600.0;
 
-    if (seconds > double(std::numeric_limits<int>::max()))
+    if (seconds > double(ircAutoawayMaxTimeoutSeconds))
         return std::nullopt;
-    return qRound(seconds);
+    const int rounded = qRound(seconds);
+    if (rounded < 0 || rounded > ircAutoawayMaxTimeoutSeconds)
+        return std::nullopt;
+    return rounded;
 }
 
 IrcAutoawayRequest ircParseAutoawayArgument(const QString& argument)
