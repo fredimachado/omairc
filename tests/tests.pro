@@ -81,6 +81,8 @@ HEADERS += \
     ../src/irc/messagelistmodel.h \
     ../src/irc/memberlistmodel.h \
     ../src/irc/irccontroller.h \
+    ../src/irc/ircloopbacktransport.h \
+    ../src/irc/ircdemoserver.h \
     ../src/irc/ircnetworkprofile.h \
     ../src/irc/ircprofilestore.h \
     ../src/storage/credentialstore.h \
@@ -153,6 +155,8 @@ SOURCES += \
     ../src/irc/messagelistmodel.cpp \
     ../src/irc/memberlistmodel.cpp \
     ../src/irc/irccontroller.cpp \
+    ../src/irc/ircloopbacktransport.cpp \
+    ../src/irc/ircdemoserver.cpp \
     ../src/irc/ircnetworkprofile.cpp \
     ../src/irc/ircprofilestore.cpp \
     ../src/storage/secretservicecredentialstore.cpp \
@@ -163,6 +167,7 @@ SOURCES += \
     integration/tst_qtirctransport.cpp \
     session/tst_transport.cpp \
     session/tst_session.cpp \
+    session/tst_demoserver.cpp \
     session/tst_capability.cpp \
     session/tst_sts.cpp \
     session/tst_profile.cpp \

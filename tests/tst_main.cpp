@@ -9,6 +9,7 @@ int runTransportTests(int argc, char **argv);
 int runCapabilityTests(int argc, char **argv);
 int runStsTests(int argc, char **argv);
 int runSessionTests(int argc, char **argv);
+int runDemoServerTests(int argc, char **argv);
 int runControllerTests(int argc, char **argv);
 int runCommandTests(int argc, char **argv);
 int runIgnoreTests(int argc, char **argv);
@@ -53,6 +54,7 @@ int main(int argc, char **argv)
     const int capabilityStatus = runCapabilityTests(argc, argv);
     const int stsStatus = runStsTests(argc, argv);
     const int sessionStatus = runSessionTests(argc, argv);
+    const int demoServerStatus = runDemoServerTests(argc, argv);
     const int controllerStatus = runControllerTests(argc, argv);
     const int commandStatus = runCommandTests(argc, argv);
     const int ignoreStatus = runIgnoreTests(argc, argv);
@@ -84,6 +86,7 @@ int main(int argc, char **argv)
         capabilityStatus,
         stsStatus,
         sessionStatus,
+        demoServerStatus,
         controllerStatus,
         commandStatus,
         ignoreStatus,
