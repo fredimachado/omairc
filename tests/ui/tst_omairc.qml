@@ -4528,6 +4528,50 @@ TestCase {
         restoreNamedConnection();
     }
 
+    function test_connectionSheetCtrlEnterDoesNotApplyWhileShortcutsOpen() {
+        restoreNamedConnection();
+        namedConnection.applySucceeds = true;
+        var window = createTemporaryObject(fallbackWindowComponent, null);
+        verify(window !== null, "The ctrl-enter-over-shortcuts window should load");
+        tryCompare(window, "visible", true);
+        waitForRendering(window.contentItem);
+        window.requestActivate();
+        tryCompare(window, "active", true);
+
+        keyClick(Qt.Key_Comma, Qt.ControlModifier);
+        tryCompare(window, "connectionOverlayVisible", true);
+        waitForRendering(window.contentItem);
+
+        window.connectionSheetTab = "preferences";
+        waitForRendering(window.contentItem);
+
+        keyClick(Qt.Key_Slash, Qt.ControlModifier);
+        tryCompare(window, "shortcutOverlayOpen", true);
+        compare(window.connectionOverlayVisible, true);
+
+        namedConnection.applyCalls = 0;
+        keyClick(Qt.Key_Return, Qt.ControlModifier);
+        compare(namedConnection.applyCalls, 0);
+        compare(window.connectionOverlayVisible, true);
+        compare(window.shortcutOverlayOpen, true);
+
+        keyClick(Qt.Key_Enter, Qt.ControlModifier);
+        compare(namedConnection.applyCalls, 0);
+        compare(window.connectionOverlayVisible, true);
+        compare(window.shortcutOverlayOpen, true);
+
+        keyClick(Qt.Key_Escape);
+        tryCompare(window, "shortcutOverlayOpen", false);
+        compare(window.connectionOverlayVisible, true);
+
+        keyClick(Qt.Key_Return, Qt.ControlModifier);
+        compare(namedConnection.applyCalls, 1);
+        compare(window.connectionOverlayVisible, false);
+
+        window.close();
+        restoreNamedConnection();
+    }
+
     function test_connectionSheetCtrlTabSwitchesTabsFromAnywhere() {
         restoreNamedConnection();
         var window = createTemporaryObject(fallbackWindowComponent, null);

@@ -1930,14 +1930,14 @@ ApplicationWindow {
     Shortcut {
         sequence: "Ctrl+Return"
         context: Qt.ApplicationShortcut
-        enabled: win.connectionOverlayVisible
+        enabled: win.connectionOverlayVisible && !win.shortcutOverlayOpen
         onActivated: win.submitConnection()
     }
 
     Shortcut {
         sequence: "Ctrl+Enter"
         context: Qt.ApplicationShortcut
-        enabled: win.connectionOverlayVisible
+        enabled: win.connectionOverlayVisible && !win.shortcutOverlayOpen
         onActivated: win.submitConnection()
     }
 
