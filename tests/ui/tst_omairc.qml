@@ -7651,8 +7651,10 @@ TestCase {
     }
 
     function typeListCommand(composer, command) {
-        mouseClick(composer);
-        verify(composer.activeFocus);
+        if (!composer.activeFocus) {
+            mouseClick(composer);
+            tryCompare(composer, "activeFocus", true);
+        }
         typeText(command);
         compare(composer.text, command);
         if (item("slashCompleteList").visible)
@@ -7700,6 +7702,7 @@ TestCase {
         verify(seed.omarchyWroteFrom(start, "LIST"));
         keyClick(Qt.Key_Escape);
         tryCompare(sheet, "opened", false);
+        tryCompare(composer, "activeFocus", true);
 
         var after = seed.omarchyFrameCount();
         typeListCommand(composer, "/list");
@@ -7711,6 +7714,7 @@ TestCase {
         verify(!seed.omarchyWroteFrom(after, "LIST"));
         keyClick(Qt.Key_Escape);
         tryCompare(sheet, "opened", false);
+        tryCompare(composer, "activeFocus", true);
 
         mouseClick(namedItem(liveOftcConversation("#omarchy")));
         tryCompare(appWindow, "currentNetworkId", seed.oftcNetworkId);
