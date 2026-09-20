@@ -225,8 +225,12 @@ IrcConversationKey IrcEventReducer::conversationKey(
 
 void IrcEventReducer::markSelected(const IrcConversationKey& key)
 {
+    if (m_selected && *m_selected == key)
+        return;
     m_selected = key;
     if (IrcConversationState *conversation = findMutable(key)) {
+        if (conversation->unread == 0)
+            conversation->unreadMark.reset();
         conversation->unread = 0;
         conversation->mentions = 0;
     }
@@ -731,6 +735,8 @@ void IrcEventReducer::noteChatArrival(IrcConversationState& conversation,
     }
     if (self || (m_selected && *m_selected == key))
         return;
+    if (conversation.unread == 0)
+        conversation.unreadMark = conversation.messages.back().sequence;
     ++conversation.unread;
     if (reason == ChatLineReason::NickMention && !conversation.muted)
         ++conversation.mentions;
@@ -980,6 +986,8 @@ void IrcEventReducer::reduce(const IrcNickEvent& event)
             std::max(existing->second.nextSequence, moved.nextSequence);
         capMessages(existing->second);
         existing->second.unread += moved.unread;
+        if (!existing->second.unreadMark)
+            existing->second.unreadMark = moved.unreadMark;
         existing->second.mentions += moved.mentions;
         existing->second.muted = existing->second.muted || moved.muted;
         for (auto& hint : moved.typing)

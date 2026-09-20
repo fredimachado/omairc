@@ -124,6 +124,7 @@ struct IrcConversationState
     std::map<QString, IrcTypingHint> typing;
     int unread = 0;
     int mentions = 0;
+    std::optional<qint64> unreadMark;
     bool muted = false;
     int trimmed = 0;
     std::set<IrcMsgId> messageIds;

@@ -62,11 +62,15 @@ std::vector<MessageListModel::VisualRow> MessageListModel::buildView(
         return view;
     view.reserve(conversation->messages.size() + 8);
     std::optional<QDate> previous;
+    const std::optional<qint64> unreadMark = conversation->unreadMark;
     for (int i = 0; i < int(conversation->messages.size()); ++i) {
         const std::optional<QDate> date =
             assignedDate(conversation->messages[size_t(i)], previous);
         if (date && previous && *date != *previous)
-            view.push_back({VisualRow::Type::Separator, 0, *date});
+            view.push_back({VisualRow::Type::DateSeparator, 0, *date});
+        if (unreadMark && conversation->messages[size_t(i)].sequence == *unreadMark
+            && !view.empty())
+            view.push_back({VisualRow::Type::UnreadMark, 0, {}});
         view.push_back({VisualRow::Type::Store, i, {}});
         if (date)
             previous = date;
@@ -128,7 +132,7 @@ QVariant MessageListModel::data(const QModelIndex& index, int role) const
         return {};
 
     const VisualRow& row = m_view[size_t(index.row())];
-    if (row.type == VisualRow::Type::Separator) {
+    if (row.type == VisualRow::Type::DateSeparator) {
         switch (role) {
         case AuthorRole:
             return QString();
@@ -138,6 +142,28 @@ QVariant MessageListModel::data(const QModelIndex& index, int role) const
             return dateLabel(row.date);
         case KindRole:
             return QStringLiteral("event");
+        case NetworkIdRole:
+            return conversation->key.networkId;
+        case OriginRole:
+            return QStringLiteral("live");
+        case AuthorAvatarRole:
+            return QString();
+        case AuthorBotRole:
+            return false;
+        default:
+            return {};
+        }
+    }
+    if (row.type == VisualRow::Type::UnreadMark) {
+        switch (role) {
+        case AuthorRole:
+            return QString();
+        case TimeRole:
+            return QString();
+        case BodyRole:
+            return QString();
+        case KindRole:
+            return QStringLiteral("unread");
         case NetworkIdRole:
             return conversation->key.networkId;
         case OriginRole:
@@ -225,10 +251,19 @@ QString MessageListModel::field(int row, const QString& name) const
     return value.isValid() ? value.toString() : QString{};
 }
 
+int MessageListModel::unreadMarkRow() const
+{
+    for (int row = 0; row < int(m_view.size()); ++row) {
+        if (m_view[size_t(row)].type == VisualRow::Type::UnreadMark)
+            return row;
+    }
+    return -1;
+}
+
 void MessageListModel::notifySeparatorRows()
 {
     for (int row = 0; row < int(m_view.size()); ++row) {
-        if (m_view[size_t(row)].type != VisualRow::Type::Separator)
+        if (m_view[size_t(row)].type != VisualRow::Type::DateSeparator)
             continue;
         const QModelIndex idx = index(row, 0);
         emit dataChanged(idx, idx);
@@ -242,10 +277,13 @@ void MessageListModel::reload()
     std::vector<VisualRow> next = buildView(conversation);
     const int trimmed = conversation ? conversation->trimmed : 0;
     const int spliceEpoch = conversation ? conversation->spliceEpoch : 0;
+    const std::optional<qint64> unreadMark =
+        conversation ? conversation->unreadMark : std::nullopt;
 
     const bool sameConversation = m_selected.has_value() == m_loaded.has_value()
         && (!m_selected || *m_selected == *m_loaded)
-        && spliceEpoch == m_spliceEpoch;
+        && spliceEpoch == m_spliceEpoch
+        && unreadMark == m_unreadMark;
     if (sameConversation) {
         int storeRemoved = trimmed - m_trimmed;
         if (storeRemoved < 0)
@@ -259,6 +297,7 @@ void MessageListModel::reload()
             for (int i = 0; i < keep && i < int(next.size()); ++i)
                 m_view[size_t(i)] = next[size_t(i)];
             m_trimmed = trimmed;
+            m_unreadMark = unreadMark;
             endRemoveRows();
         }
         if (int(next.size()) > int(m_view.size())) {
@@ -266,6 +305,7 @@ void MessageListModel::reload()
                             int(next.size()) - 1);
             m_view = std::move(next);
             m_trimmed = trimmed;
+            m_unreadMark = unreadMark;
             endInsertRows();
             notifySeparatorRows();
             return;
@@ -273,6 +313,7 @@ void MessageListModel::reload()
         if (int(next.size()) == int(m_view.size())) {
             m_view = std::move(next);
             m_trimmed = trimmed;
+            m_unreadMark = unreadMark;
             if (!m_view.empty()) {
                 emit dataChanged(index(0, 0),
                                  index(int(m_view.size()) - 1, 0));
@@ -286,6 +327,7 @@ void MessageListModel::reload()
     m_loaded = m_selected;
     m_trimmed = trimmed;
     m_spliceEpoch = spliceEpoch;
+    m_unreadMark = unreadMark;
     endResetModel();
 }
 
