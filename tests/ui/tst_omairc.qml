@@ -4542,11 +4542,16 @@ TestCase {
         tryCompare(window, "connectionOverlayVisible", true);
         waitForRendering(window.contentItem);
 
+        keyClick(Qt.Key_Slash, Qt.ControlModifier);
+        if (!window.shortcutOverlayOpen) {
+            var hint = findChild(window, "connectionShortcutsHint");
+            verify(hint !== null, "Could not find connectionShortcutsHint");
+            mouseClick(hint);
+        }
+        tryCompare(window, "shortcutOverlayOpen", true);
+
         window.connectionSheetTab = "preferences";
         waitForRendering(window.contentItem);
-
-        keyClick(Qt.Key_Slash, Qt.ControlModifier);
-        tryCompare(window, "shortcutOverlayOpen", true);
         compare(window.connectionOverlayVisible, true);
 
         namedConnection.applyCalls = 0;
