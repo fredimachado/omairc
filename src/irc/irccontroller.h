@@ -324,6 +324,9 @@ private:
                                    const QString& nick) const;
     void forgetWhoisWatches(const QString& networkId);
     void forgetChannelList(const QString& networkId);
+    bool beginChannelListLoad(IrcSession *session,
+                              const QString& networkId,
+                              const QString& mask);
     void applyListRow(const QString& networkId, IrcChannelListRow row);
     void finishChannelList(const QString& networkId);
     bool sameListMask(const QString& left, const QString& right) const;
@@ -441,6 +444,7 @@ private:
         QVector<IrcChannelListRow> rows;
         bool complete = false;
         bool loading = false;
+        std::optional<QString> pendingMask;
     };
     QHash<QString, ChannelListCache> m_channelLists;
     bool m_channelListPresented = false;

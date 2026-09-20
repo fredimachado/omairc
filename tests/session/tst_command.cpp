@@ -197,6 +197,7 @@ private slots:
     void modeSendsAndRefuses();
     void wrappersSendAndHelp();
     void listSendsAndCaches();
+    void listSerializesInFlightMaskChange();
     void slashProjectClosed();
     void slashProjectOpen();
     void slashSessionKeys();
@@ -2715,6 +2716,93 @@ void CommandTest::listSendsAndCaches()
 
     IrcController offline;
     QVERIFY(!offline.sendMessage(QStringLiteral("/list")));
+}
+
+void CommandTest::listSerializesInFlightMaskChange()
+{
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    IrcSession *session = controller.addSession(config(), transport);
+    QVERIFY(session);
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    welcome(transport);
+    QCOMPARE(session->state(), IrcSession::State::Registered);
+    transport->injectBytes(QByteArrayLiteral(":omairc!u@h JOIN :#omarchy\r\n"));
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+
+    QSignalSpy requested(&controller, &IrcController::channelListRequested);
+    const int framesBefore = transport->writtenFrames().size();
+    QVERIFY(controller.sendMessage(QStringLiteral("/list")));
+    QCOMPARE(transport->writtenFrames().size(), framesBefore + 1);
+    QCOMPARE(transport->writtenFrames().last(), QByteArrayLiteral("LIST\r\n"));
+    QCOMPARE(requested.size(), 1);
+
+    auto *model = qobject_cast<ChannelListModel *>(controller.channelList());
+    QVERIFY(model);
+    QVERIFY(model->loading());
+    QVERIFY(!model->complete());
+
+    QVERIFY(controller.sendMessage(QStringLiteral("/list")));
+    QCOMPARE(transport->writtenFrames().size(), framesBefore + 1);
+    QCOMPARE(requested.size(), 2);
+
+    QVERIFY(controller.sendMessage(QStringLiteral("/list #om*")));
+    QCOMPARE(transport->writtenFrames().size(), framesBefore + 1);
+    QCOMPARE(transport->writtenFrames().last(), QByteArrayLiteral("LIST\r\n"));
+    QCOMPARE(requested.size(), 3);
+    QVERIFY(model->loading());
+
+    transport->injectBytes(
+        QByteArrayLiteral(":server 321 omairc Channel :Users  Name\r\n"
+                          ":server 322 omairc #omarchy 12 :Cozy corner\r\n"
+                          ":server 322 omairc #linux 42 :Kernel discussion\r\n"
+                          ":server 322 omairc #random 4 :Off-topic\r\n"
+                          ":server 323 omairc :End of /LIST\r\n"));
+    QCOMPARE(transport->writtenFrames().size(), framesBefore + 2);
+    QCOMPARE(transport->writtenFrames().last(), QByteArrayLiteral("LIST #om*\r\n"));
+    QVERIFY(model->loading());
+    QVERIFY(!model->complete());
+    QCOMPARE(model->mask(), QStringLiteral("#om*"));
+    QCOMPARE(model->rowCount(), 0);
+
+    transport->injectBytes(
+        QByteArrayLiteral(":server 322 omairc #omarchy 12 :Cozy corner\r\n"
+                          ":server 323 omairc :End of /LIST\r\n"));
+    QVERIFY(model->complete());
+    QVERIFY(!model->loading());
+    QCOMPARE(model->mask(), QStringLiteral("#om*"));
+    QCOMPARE(model->sourceCount(), 1);
+    QCOMPARE(model->rowCount(), 1);
+    QCOMPARE(model->field(0, QStringLiteral("channel")).toString(),
+             QStringLiteral("#omarchy"));
+
+    const int framesAfterMasked = transport->writtenFrames().size();
+    QVERIFY(controller.sendMessage(QStringLiteral("/list")));
+    QCOMPARE(transport->writtenFrames().size(), framesAfterMasked + 1);
+    QCOMPARE(transport->writtenFrames().last(), QByteArrayLiteral("LIST\r\n"));
+    QVERIFY(controller.sendMessage(QStringLiteral("/list #om*")));
+    QCOMPARE(transport->writtenFrames().size(), framesAfterMasked + 1);
+    QVERIFY(controller.sendMessage(QStringLiteral("/list #lin*")));
+    QCOMPARE(transport->writtenFrames().size(), framesAfterMasked + 1);
+    QCOMPARE(requested.size(), 6);
+
+    transport->injectBytes(
+        QByteArrayLiteral(":server 322 omairc #omarchy 12 :Cozy corner\r\n"
+                          ":server 322 omairc #linux 42 :Kernel discussion\r\n"
+                          ":server 322 omairc #random 4 :Off-topic\r\n"
+                          ":server 323 omairc :End of /LIST\r\n"));
+    QCOMPARE(transport->writtenFrames().last(), QByteArrayLiteral("LIST #lin*\r\n"));
+    QCOMPARE(model->mask(), QStringLiteral("#lin*"));
+    QCOMPARE(model->rowCount(), 0);
+
+    transport->injectBytes(
+        QByteArrayLiteral(":server 322 omairc #linux 42 :Kernel discussion\r\n"
+                          ":server 323 omairc :End of /LIST\r\n"));
+    QVERIFY(model->complete());
+    QCOMPARE(model->mask(), QStringLiteral("#lin*"));
+    QCOMPARE(model->rowCount(), 1);
+    QCOMPARE(model->field(0, QStringLiteral("channel")).toString(),
+             QStringLiteral("#linux"));
 }
 
 void CommandTest::slashProjectClosed()

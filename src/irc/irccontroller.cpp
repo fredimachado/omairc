@@ -2331,7 +2331,11 @@ IrcCommandOutcome IrcController::dispatchList(const IrcCommand& command,
     const bool refresh = m_channelListPresented
         && m_channelList.networkId() == networkId
         && sameMask;
-    if (cache.loading && sameMask) {
+    if (cache.loading) {
+        if (sameMask)
+            cache.pendingMask.reset();
+        else
+            cache.pendingMask = mask;
         emit channelListRequested();
         return IrcCommandOutcome::Sent;
     }
@@ -2341,17 +2345,8 @@ IrcCommandOutcome IrcController::dispatchList(const IrcCommand& command,
         return IrcCommandOutcome::Sent;
     }
 
-    cache.mask = mask;
-    cache.rows.clear();
-    cache.complete = false;
-    cache.loading = true;
-    m_channelList.beginLoad(networkId, mask);
-    if (!session->list(mask)) {
-        cache.loading = false;
-        m_channelLists.remove(networkId);
-        m_channelList.clear();
+    if (!beginChannelListLoad(session, networkId, mask))
         return IrcCommandOutcome::Refused;
-    }
     emit channelListRequested();
     return IrcCommandOutcome::Sent;
 }
@@ -2816,6 +2811,28 @@ void IrcController::forgetChannelList(const QString& networkId)
         m_channelList.clear();
 }
 
+bool IrcController::beginChannelListLoad(IrcSession *session,
+                                         const QString& networkId,
+                                         const QString& mask)
+{
+    if (!session)
+        return false;
+    ChannelListCache &cache = m_channelLists[networkId];
+    cache.mask = mask;
+    cache.rows.clear();
+    cache.complete = false;
+    cache.loading = true;
+    cache.pendingMask.reset();
+    m_channelList.beginLoad(networkId, mask);
+    if (!session->list(mask)) {
+        cache.loading = false;
+        m_channelLists.remove(networkId);
+        m_channelList.clear();
+        return false;
+    }
+    return true;
+}
+
 bool IrcController::sameListMask(const QString& left, const QString& right) const
 {
     return QString::compare(left.trimmed(), right.trimmed(), Qt::CaseInsensitive) == 0;
@@ -2854,8 +2871,18 @@ void IrcController::finishChannelList(const QString& networkId)
     if (found == m_channelLists.end() || !found->loading)
         return;
     ChannelListCache &cache = *found;
+    const std::optional<QString> pending = cache.pendingMask;
+    cache.pendingMask.reset();
     cache.loading = false;
     cache.complete = true;
+    if (pending && !sameListMask(*pending, cache.mask)) {
+        IrcSession *session = m_sessions.findSession(networkId);
+        if (session && session->state() == IrcSession::State::Registered) {
+            if (beginChannelListLoad(session, networkId, *pending))
+                emit channelListRequested();
+            return;
+        }
+    }
     if (m_channelList.networkId() == networkId) {
         m_channelList.show(networkId, cache.mask, cache.rows, true, false, false);
     }
