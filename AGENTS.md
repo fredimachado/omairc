@@ -253,6 +253,8 @@ zips, `livecheck` on the latest release, a `binary` helper so
 `~/Library/Preferences/omairc` plus `~/Library/Preferences/State/omairc`
 (Qt `GenericConfigLocation` / `GenericStateLocation` on macOS). Version tags
 rewrite `version` and both `sha256`s through `bin/bump-homebrew-cask` after
-both zips land. Do not cask a Homebrew-Qt `bin/build-macos` tree. Do not
+both zips land. The bump job fetches and rebases onto `origin/master` when
+that push is not a fast-forward; a conflict re-applies the generated cask
+on the new tip instead of leaving the tap on the prior version. Do not cask a Homebrew-Qt `bin/build-macos` tree. Do not
 install the cask from a raw GitHub URL. Uninstall leaves config; `--zap` is
 the wipe.

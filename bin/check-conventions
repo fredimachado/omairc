@@ -630,6 +630,15 @@ def check_homebrew_cask():
         problems.append(
             ".github/workflows/macos.yml: Homebrew cask bump must wait for "
             "both architecture zips")
+    if "git fetch origin master" not in workflow_text \
+            or "git rebase origin/master" not in workflow_text:
+        problems.append(
+            ".github/workflows/macos.yml: cask bump must fetch and rebase "
+            "onto origin/master when the push is not a fast-forward")
+    if "max_attempts=5" not in workflow_text:
+        problems.append(
+            ".github/workflows/macos.yml: cask bump must retry a raced "
+            "master push instead of leaving the cask on the prior version")
 
     readme = ROOT / "README.md"
     section = macos_readme_section(
