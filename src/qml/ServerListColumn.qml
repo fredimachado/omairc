@@ -97,6 +97,7 @@ Rectangle {
                     required property string displayName
                     required property int iconColor
                     required property string iconUrl
+                    required property bool collapsed
                     width: parent ? parent.width : 0
                     spacing: 0
 
@@ -111,6 +112,7 @@ Rectangle {
                         showEdit: column.connection !== null
                         headerFocused: liveNet.networkId.length > 0
                             && liveNet.networkId === column.sidebarNetworkFocusId
+                        collapsed: liveNet.collapsed
                         irc: column.irc
                         networkConsole: column.networkConsole
                         avatarStore: column.avatarStore
@@ -120,11 +122,19 @@ Rectangle {
                         onEditRequested: function(networkId) {
                             column.editRequested(networkId);
                         }
+                        onCollapseToggled: {
+                            if (!column.connection)
+                                return;
+                            column.connection.setNetworkCollapsed(
+                                liveNet.networkId, !liveNet.collapsed);
+                        }
                     }
 
                     Item {
+                        objectName: "channelsHeading-" + liveNet.networkId
                         width: parent.width
-                        height: column.style.scaledSize(28)
+                        height: liveNet.collapsed ? 0 : column.style.scaledSize(28)
+                        visible: height > 0
                         Text {
                             anchors.left: parent.left
                             anchors.leftMargin: column.style.scaledSize(19)
@@ -162,6 +172,7 @@ Rectangle {
                             loadPeerAvatars: column.loadPeerAvatars
                             visible: !model.direct
                                 && model.networkId === liveNet.networkId
+                                && !liveNet.collapsed
                             width: column.width
                             height: visible ? column.style.scaledSize(36) : 0
                             onActivated: column.conversationActivated(channelRow)
@@ -169,8 +180,11 @@ Rectangle {
                     }
 
                     Item {
+                        objectName: "directsHeading-" + liveNet.networkId
                         width: parent.width
                         height: {
+                            if (liveNet.collapsed)
+                                return 0;
                             var epoch = column.irc ? column.irc.conversationEpoch : 0;
                             return column.sectionHasDirects(liveNet.networkId)
                                 ? column.style.scaledSize(36) : 0;
@@ -217,6 +231,7 @@ Rectangle {
                             loadPeerAvatars: column.loadPeerAvatars
                             visible: model.direct
                                 && model.networkId === liveNet.networkId
+                                && !liveNet.collapsed
                             width: column.width
                             height: visible ? column.style.scaledSize(36) : 0
                             onActivated: column.conversationActivated(directRow)

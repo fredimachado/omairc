@@ -14,12 +14,14 @@ Column {
     property bool mention: false
     property bool showEdit: false
     property bool headerFocused: false
+    property bool collapsed: false
     property var irc: null
     property var networkConsole: null
     property var avatarStore: null
 
     signal statusRequested(string networkId)
     signal editRequested(string networkId)
+    signal collapseToggled()
 
     width: parent ? parent.width : 0
     spacing: 0
@@ -89,7 +91,7 @@ Column {
             id: networkHeaderButton
             objectName: "networkHeaderButton-" + section.networkId
             z: 1
-            anchors.left: parent.left
+            anchors.left: networkCollapseButton.right
             anchors.right: networkEditButton.left
             anchors.top: parent.top
             anchors.bottom: parent.bottom
@@ -98,11 +100,42 @@ Column {
             onClicked: section.statusRequested(section.networkId)
         }
 
+        Item {
+            id: networkCollapseButton
+            objectName: "networkCollapseButton-" + section.networkId
+            z: 2
+            anchors.left: parent.left
+            anchors.leftMargin: section.style.scaledSize(12)
+            anchors.verticalCenter: parent.verticalCenter
+            width: section.style.scaledSize(14)
+            height: section.style.scaledSize(28)
+            Accessible.name: section.collapsed ? "Expand network" : "Collapse network"
+            Accessible.role: Accessible.Button
+            Accessible.onPressAction: section.collapseToggled()
+
+            Text {
+                anchors.centerIn: parent
+                text: section.collapsed ? "▸" : "▾"
+                color: collapseMouse.containsMouse ? section.style.inkColor
+                                                  : section.style.mutedColor
+                font.family: "iA Writer Mono S"
+                font.pixelSize: section.style.scaledSize(11)
+            }
+
+            MouseArea {
+                id: collapseMouse
+                anchors.fill: parent
+                hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
+                onClicked: section.collapseToggled()
+            }
+        }
+
         Rectangle {
             id: networkIconRect
             objectName: "networkIcon-" + section.networkId
             anchors.left: parent.left
-            anchors.leftMargin: section.style.scaledSize(18)
+            anchors.leftMargin: section.style.scaledSize(30)
             anchors.verticalCenter: parent.verticalCenter
             width: section.style.scaledSize(28)
             height: width
@@ -187,7 +220,7 @@ Column {
 
         Column {
             anchors.left: parent.left
-            anchors.leftMargin: section.style.scaledSize(56)
+            anchors.leftMargin: section.style.scaledSize(68)
             anchors.right: networkEditButton.left
             anchors.rightMargin: section.style.scaledSize(8)
             anchors.verticalCenter: parent.verticalCenter

@@ -598,10 +598,11 @@ ApplicationWindow {
     }
 
     function selectConversation(name, networkId) {
+        var id = networkId && networkId.length ? networkId : (irc ? irc.selectedNetworkId : "");
+        ensureNetworkExpanded(id);
         sidebarNetworkFocusId = "";
         if (!irc)
             return;
-        var id = networkId && networkId.length ? networkId : irc.selectedNetworkId;
         irc.selectConversation(id, name);
         Qt.callLater(function() {
             conversation.messageList.pinToEnd();
@@ -709,6 +710,48 @@ ApplicationWindow {
                 rows.push(item);
         }
         return rows;
+    }
+
+    function visibleSidebarConversationRows() {
+        var rows = sidebarConversationRows();
+        if (!connection)
+            return rows;
+        var visible = [];
+        for (var index = 0; index < rows.length; ++index) {
+            if (connection.isNetworkCollapsed(rows[index].networkId))
+                continue;
+            visible.push(rows[index]);
+        }
+        return visible;
+    }
+
+    function ensureNetworkExpanded(networkId) {
+        if (!connection || !networkId || networkId.length === 0)
+            return;
+        if (connection.isNetworkCollapsed(networkId))
+            connection.setNetworkCollapsed(networkId, false);
+    }
+
+    function collapseFocusedNetwork(collapsed) {
+        var id = sidebarNetworkFocusId;
+        if (!id || !connection)
+            return;
+        connection.setNetworkCollapsed(id, collapsed);
+    }
+
+    function collapseAllNetworks(collapsed) {
+        if (!connection)
+            return;
+        connection.setAllNetworksCollapsed(collapsed);
+    }
+
+    function moveFocusedNetwork(delta) {
+        var id = sidebarNetworkFocusId;
+        if (!id || !connection)
+            return;
+        connection.moveNetwork(id, delta);
+        sidebarNetworkFocusId = id;
+        revealNamedSidebarItem("networkHeader-" + id);
     }
 
     function sectionHasDirects(networkId) {
@@ -972,19 +1015,32 @@ ApplicationWindow {
         var rows = sidebarConversationRows();
         if (rows.length === 0)
             return;
+        if (visibleSidebarConversationRows().length === 0)
+            return;
 
         var current = -1;
-        for (var index = 0; index < rows.length; ++index) {
+        var index;
+        for (index = 0; index < rows.length; ++index) {
             if (rows[index].conversationId === currentConversationId) {
                 current = index;
                 break;
             }
         }
 
-        var nextIndex = current < 0
-            ? (delta > 0 ? 0 : rows.length - 1)
-            : (current + delta + rows.length) % rows.length;
-        activateSidebarConversation(rows[nextIndex]);
+        // A collapsed current row is missing from the visible list, but it
+        // still has a place in sidebar order. Walk from there and skip hidden
+        // networks so Alt+Down stays forward and Alt+Up stays backward.
+        var start = current >= 0 ? current : (delta > 0 ? -1 : rows.length);
+        var count = rows.length;
+        var step;
+        for (step = 1; step <= count; ++step) {
+            var nextIndex = start + delta * step;
+            nextIndex = ((nextIndex % count) + count) % count;
+            if (connection.isNetworkCollapsed(rows[nextIndex].networkId))
+                continue;
+            activateSidebarConversation(rows[nextIndex]);
+            return;
+        }
     }
 
     function revealSidebarRow(row) {
@@ -1679,6 +1735,64 @@ ApplicationWindow {
         context: Qt.ApplicationShortcut
         enabled: !win.connectionOverlayVisible && !win.shortcutOverlayOpen
         onActivated: stepNetwork(-1)
+    }
+
+    Shortcut {
+        sequence: "Alt+Shift+Left"
+        context: Qt.ApplicationShortcut
+        enabled: !win.connectionOverlayVisible && !win.shortcutOverlayOpen
+        onActivated: {
+            if (win.sidebarNetworkFocusId.length === 0)
+                return;
+            collapseFocusedNetwork(true);
+        }
+    }
+
+    Shortcut {
+        sequence: "Alt+Shift+Right"
+        context: Qt.ApplicationShortcut
+        enabled: !win.connectionOverlayVisible && !win.shortcutOverlayOpen
+        onActivated: {
+            if (win.sidebarNetworkFocusId.length === 0)
+                return;
+            collapseFocusedNetwork(false);
+        }
+    }
+
+    Shortcut {
+        sequence: "Ctrl+Alt+Shift+Left"
+        context: Qt.ApplicationShortcut
+        enabled: !win.connectionOverlayVisible && !win.shortcutOverlayOpen
+        onActivated: collapseAllNetworks(true)
+    }
+
+    Shortcut {
+        sequence: "Ctrl+Alt+Shift+Right"
+        context: Qt.ApplicationShortcut
+        enabled: !win.connectionOverlayVisible && !win.shortcutOverlayOpen
+        onActivated: collapseAllNetworks(false)
+    }
+
+    Shortcut {
+        sequence: "Alt+Shift+Up"
+        context: Qt.ApplicationShortcut
+        enabled: !win.connectionOverlayVisible && !win.shortcutOverlayOpen
+        onActivated: {
+            if (win.sidebarNetworkFocusId.length === 0)
+                return;
+            moveFocusedNetwork(-1);
+        }
+    }
+
+    Shortcut {
+        sequence: "Alt+Shift+Down"
+        context: Qt.ApplicationShortcut
+        enabled: !win.connectionOverlayVisible && !win.shortcutOverlayOpen
+        onActivated: {
+            if (win.sidebarNetworkFocusId.length === 0)
+                return;
+            moveFocusedNetwork(1);
+        }
     }
 
     Shortcut {

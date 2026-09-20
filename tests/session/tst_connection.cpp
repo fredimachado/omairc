@@ -1,7 +1,9 @@
+#include <QAbstractItemModel>
 #include <QCoreApplication>
 #include <QList>
 #include <QMap>
 #include <QSettings>
+#include <QStringList>
 #include <QTemporaryDir>
 #include <QTest>
 #include <QVariantMap>
@@ -77,6 +79,59 @@ bool framesContain(const QByteArrayList &frames, const QByteArray &needle)
             return true;
     }
     return false;
+}
+
+QStringList rosterNetworkIds(const QAbstractItemModel *networks)
+{
+    QStringList ids;
+    if (!networks)
+        return ids;
+    for (int row = 0; row < networks->rowCount(); ++row) {
+        ids.append(networks->data(networks->index(row, 0),
+                                  NetworkListModel::NetworkIdRole).toString());
+    }
+    return ids;
+}
+
+QStringList conversationNetworkIds(const QAbstractItemModel *conversations)
+{
+    QStringList ids;
+    if (!conversations)
+        return ids;
+    for (int row = 0; row < conversations->rowCount(); ++row) {
+        ids.append(conversations->data(conversations->index(row, 0),
+                                       ConversationListModel::NetworkIdRole)
+                       .toString());
+    }
+    return ids;
+}
+
+QStringList preferenceStringList(const QString &key)
+{
+    QSettings settings;
+    settings.beginGroup(QStringLiteral("preferences"));
+    return settings.value(key).toStringList();
+}
+
+bool preferenceHasKey(const QString &key)
+{
+    QSettings settings;
+    settings.beginGroup(QStringLiteral("preferences"));
+    return settings.contains(key);
+}
+
+IrcNetworkProfile storedTestProfile(const QString &host)
+{
+    IrcNetworkProfile profile = IrcNetworkProfile::create();
+    profile.host = host;
+    profile.name = host;
+    profile.port = 6697;
+    profile.tlsEnabled = true;
+    profile.nick = QStringLiteral("omairc");
+    profile.username = QStringLiteral("omairc");
+    profile.realname = QStringLiteral("Omairc User");
+    profile.autojoinChannels = {QStringLiteral("#omarchy")};
+    return profile;
 }
 }
 
@@ -173,6 +228,12 @@ private slots:
     void connectAutojoinTokensDoNotCreateSecretChannel();
     void droppingAutojoinNameDropsItsKey();
     void keyedJoinPersistsReloadAndPartForgetsKey();
+    void appliedNetworksKeepApplyOrder();
+    void moveNetworkSwapsPersistsAndRanksConversations();
+    void moveNetworkAtEndsIsNoOp();
+    void collapsedFlagsPersistAndFillAll();
+    void removeSelectedDropsOrderAndCollapsedIds();
+    void missingNetworkOrderAlphabetizesExistingProfiles();
 
 private:
     IrcConnection::TransportFactory capturingFactory();
@@ -2615,6 +2676,223 @@ void ConnectionTest::keyedJoinPersistsReloadAndPartForgetsKey()
         QByteArrayLiteral(":omairc!u@h PART #private\r\n"));
     QCOMPARE(reloadedAutojoin(), QStringList({QStringLiteral("#omarchy")}));
     QVERIFY(reloadedAutojoinKeys().isEmpty());
+}
+
+void ConnectionTest::appliedNetworksKeepApplyOrder()
+{
+    IrcController controller;
+    IrcConnection connection(controller, capturingFactory(), credentialStore());
+    fillCompleteDraft(connection, QStringLiteral("zebra.example"));
+    QVERIFY(connection.apply());
+    const QString zebraId = connection.selectedNetworkId();
+    QVERIFY(connection.add());
+    fillCompleteDraft(connection, QStringLiteral("alpha.example"));
+    QVERIFY(connection.apply());
+    const QString alphaId = connection.selectedNetworkId();
+
+    QCOMPARE(rosterNetworkIds(connection.networks()), QStringList({zebraId, alphaId}));
+    QCOMPARE(preferenceStringList(QStringLiteral("networkOrder")),
+             QStringList({zebraId, alphaId}));
+
+    connection.select(zebraId);
+    connection.setName(QStringLiteral("aaa.example"));
+    QVERIFY(connection.apply());
+    QCOMPARE(rosterNetworkIds(connection.networks()), QStringList({zebraId, alphaId}));
+
+    IrcController reloadedController;
+    IrcConnection reloaded(reloadedController, capturingFactory(), credentialStore());
+    QCOMPARE(rosterNetworkIds(reloaded.networks()), QStringList({zebraId, alphaId}));
+}
+
+void ConnectionTest::moveNetworkSwapsPersistsAndRanksConversations()
+{
+    IrcController controller;
+    IrcConnection connection(controller, capturingFactory(), credentialStore());
+    fillCompleteDraft(connection, QStringLiteral("zebra.example"));
+    QVERIFY(connection.apply());
+    const QString zebraId = connection.selectedNetworkId();
+    QVERIFY(connection.add());
+    fillCompleteDraft(connection, QStringLiteral("alpha.example"));
+    QVERIFY(connection.apply());
+    const QString alphaId = connection.selectedNetworkId();
+    QCOMPARE(m_transports.size(), 2);
+
+    m_transports.at(0)->completeConnect();
+    m_transports.at(0)->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
+                          ":server 001 omairc :Welcome\r\n"
+                          ":omairc!u@h JOIN :#omarchy\r\n"));
+    m_transports.at(1)->completeConnect();
+    m_transports.at(1)->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
+                          ":server 001 omairc :Welcome\r\n"
+                          ":omairc!u@h JOIN :#omarchy\r\n"));
+    QCOMPARE(conversationNetworkIds(controller.conversations()),
+             QStringList({zebraId, alphaId}));
+
+    QCOMPARE(connection.selectedNetworkId(), alphaId);
+    QVERIFY(connection.moveNetwork(zebraId, 1));
+    QCOMPARE(connection.selectedNetworkId(), alphaId);
+    QCOMPARE(rosterNetworkIds(connection.networks()), QStringList({alphaId, zebraId}));
+    QCOMPARE(preferenceStringList(QStringLiteral("networkOrder")),
+             QStringList({alphaId, zebraId}));
+    QCOMPARE(conversationNetworkIds(controller.conversations()),
+             QStringList({alphaId, zebraId}));
+
+    IrcController reloadedController;
+    IrcConnection reloaded(reloadedController, capturingFactory(), credentialStore());
+    QCOMPARE(rosterNetworkIds(reloaded.networks()), QStringList({alphaId, zebraId}));
+}
+
+void ConnectionTest::moveNetworkAtEndsIsNoOp()
+{
+    IrcController controller;
+    IrcConnection connection(controller, capturingFactory(), credentialStore());
+    fillCompleteDraft(connection, QStringLiteral("zebra.example"));
+    QVERIFY(connection.apply());
+    const QString zebraId = connection.selectedNetworkId();
+    QVERIFY(connection.add());
+    fillCompleteDraft(connection, QStringLiteral("alpha.example"));
+    QVERIFY(connection.apply());
+    const QString alphaId = connection.selectedNetworkId();
+    const QStringList original({zebraId, alphaId});
+    QCOMPARE(rosterNetworkIds(connection.networks()), original);
+
+    QVERIFY(!connection.moveNetwork(zebraId, -1));
+    QVERIFY(!connection.moveNetwork(alphaId, 1));
+    QVERIFY(!connection.moveNetwork(QString(), 1));
+    QVERIFY(!connection.moveNetwork(QStringLiteral("missing"), -1));
+    QCOMPARE(rosterNetworkIds(connection.networks()), original);
+    QCOMPARE(preferenceStringList(QStringLiteral("networkOrder")), original);
+
+    QVERIFY(connection.add());
+    const QString draftId = connection.selectedNetworkId();
+    QVERIFY(!connection.moveNetwork(draftId, -1));
+    QCOMPARE(rosterNetworkIds(connection.networks()).mid(0, 2), original);
+}
+
+void ConnectionTest::collapsedFlagsPersistAndFillAll()
+{
+    IrcController controller;
+    IrcConnection connection(controller, capturingFactory(), credentialStore());
+    fillCompleteDraft(connection, QStringLiteral("zebra.example"));
+    QVERIFY(connection.apply());
+    const QString zebraId = connection.selectedNetworkId();
+    QVERIFY(connection.add());
+    fillCompleteDraft(connection, QStringLiteral("alpha.example"));
+    QVERIFY(connection.apply());
+    const QString alphaId = connection.selectedNetworkId();
+
+    auto *networks = qobject_cast<NetworkListModel *>(connection.networks());
+    QVERIFY(networks);
+    QCOMPARE(networks->roleNames().value(NetworkListModel::CollapsedRole),
+             QByteArray("collapsed"));
+    QVERIFY(!connection.isNetworkCollapsed(QString()));
+    QVERIFY(!connection.isNetworkCollapsed(QStringLiteral("missing")));
+    QVERIFY(!connection.isNetworkCollapsed(zebraId));
+    QVERIFY(!connection.isNetworkCollapsed(alphaId));
+    QVERIFY(!networks->data(networks->index(0, 0), NetworkListModel::CollapsedRole).toBool());
+    QVERIFY(!networks->field(0, QStringLiteral("collapsed")).toBool());
+
+    connection.setNetworkCollapsed(QString(), true);
+    connection.setNetworkCollapsed(QStringLiteral("missing"), true);
+    QVERIFY(!preferenceHasKey(QStringLiteral("collapsedNetworks"))
+            || !preferenceStringList(QStringLiteral("collapsedNetworks"))
+                    .contains(QStringLiteral("missing")));
+
+    connection.setNetworkCollapsed(zebraId, true);
+    QVERIFY(connection.isNetworkCollapsed(zebraId));
+    QVERIFY(!connection.isNetworkCollapsed(alphaId));
+    QVERIFY(networks->data(networks->index(0, 0), NetworkListModel::CollapsedRole).toBool());
+    QVERIFY(!networks->data(networks->index(1, 0), NetworkListModel::CollapsedRole).toBool());
+    QCOMPARE(preferenceStringList(QStringLiteral("collapsedNetworks")),
+             QStringList({zebraId}));
+
+    IrcController reloadedController;
+    IrcConnection reloaded(reloadedController, capturingFactory(), credentialStore());
+    auto *reloadedNetworks = qobject_cast<NetworkListModel *>(reloaded.networks());
+    QVERIFY(reloadedNetworks);
+    QVERIFY(reloaded.isNetworkCollapsed(zebraId));
+    QVERIFY(!reloaded.isNetworkCollapsed(alphaId));
+    QVERIFY(reloadedNetworks->data(reloadedNetworks->index(0, 0),
+                                   NetworkListModel::CollapsedRole).toBool());
+    QVERIFY(!reloadedNetworks->data(reloadedNetworks->index(1, 0),
+                                    NetworkListModel::CollapsedRole).toBool());
+
+    reloaded.setAllNetworksCollapsed(true);
+    QVERIFY(reloaded.isNetworkCollapsed(zebraId));
+    QVERIFY(reloaded.isNetworkCollapsed(alphaId));
+    QVERIFY(reloadedNetworks->data(reloadedNetworks->index(0, 0),
+                                   NetworkListModel::CollapsedRole).toBool());
+    QVERIFY(reloadedNetworks->data(reloadedNetworks->index(1, 0),
+                                   NetworkListModel::CollapsedRole).toBool());
+    QCOMPARE(preferenceStringList(QStringLiteral("collapsedNetworks")),
+             QStringList({zebraId, alphaId}));
+
+    reloaded.setAllNetworksCollapsed(false);
+    QVERIFY(!reloaded.isNetworkCollapsed(zebraId));
+    QVERIFY(!reloaded.isNetworkCollapsed(alphaId));
+    QVERIFY(!reloadedNetworks->data(reloadedNetworks->index(0, 0),
+                                    NetworkListModel::CollapsedRole).toBool());
+    QVERIFY(!reloadedNetworks->data(reloadedNetworks->index(1, 0),
+                                    NetworkListModel::CollapsedRole).toBool());
+    QCOMPARE(preferenceStringList(QStringLiteral("collapsedNetworks")), QStringList());
+}
+
+void ConnectionTest::removeSelectedDropsOrderAndCollapsedIds()
+{
+    IrcController controller;
+    IrcConnection connection(controller, capturingFactory(), credentialStore());
+    fillCompleteDraft(connection, QStringLiteral("zebra.example"));
+    QVERIFY(connection.apply());
+    const QString zebraId = connection.selectedNetworkId();
+    QVERIFY(connection.add());
+    fillCompleteDraft(connection, QStringLiteral("alpha.example"));
+    QVERIFY(connection.apply());
+    const QString alphaId = connection.selectedNetworkId();
+
+    connection.setNetworkCollapsed(zebraId, true);
+    connection.setNetworkCollapsed(alphaId, true);
+    QCOMPARE(preferenceStringList(QStringLiteral("networkOrder")),
+             QStringList({zebraId, alphaId}));
+    QCOMPARE(preferenceStringList(QStringLiteral("collapsedNetworks")),
+             QStringList({zebraId, alphaId}));
+
+    QCOMPARE(connection.selectedNetworkId(), alphaId);
+    QVERIFY(connection.removeSelected());
+    QCOMPARE(rosterNetworkIds(connection.networks()), QStringList({zebraId}));
+    QCOMPARE(preferenceStringList(QStringLiteral("networkOrder")), QStringList({zebraId}));
+    QCOMPARE(preferenceStringList(QStringLiteral("collapsedNetworks")),
+             QStringList({zebraId}));
+    QVERIFY(!preferenceStringList(QStringLiteral("networkOrder")).contains(alphaId));
+    QVERIFY(!preferenceStringList(QStringLiteral("collapsedNetworks")).contains(alphaId));
+    QVERIFY(connection.isNetworkCollapsed(zebraId));
+    QVERIFY(!connection.isNetworkCollapsed(alphaId));
+
+    IrcController reloadedController;
+    IrcConnection reloaded(reloadedController, capturingFactory(), credentialStore());
+    QCOMPARE(rosterNetworkIds(reloaded.networks()), QStringList({zebraId}));
+    QVERIFY(reloaded.isNetworkCollapsed(zebraId));
+    QVERIFY(!reloaded.isNetworkCollapsed(alphaId));
+    QCOMPARE(preferenceStringList(QStringLiteral("networkOrder")), QStringList({zebraId}));
+    QCOMPARE(preferenceStringList(QStringLiteral("collapsedNetworks")),
+             QStringList({zebraId}));
+}
+
+void ConnectionTest::missingNetworkOrderAlphabetizesExistingProfiles()
+{
+    const IrcNetworkProfile zebra = storedTestProfile(QStringLiteral("zebra.example"));
+    const IrcNetworkProfile alpha = storedTestProfile(QStringLiteral("alpha.example"));
+    IrcProfileStore().save(zebra);
+    IrcProfileStore().save(alpha);
+    QVERIFY(!preferenceHasKey(QStringLiteral("networkOrder")));
+
+    IrcController controller;
+    IrcConnection connection(controller, capturingFactory(), credentialStore());
+    QCOMPARE(rosterNetworkIds(connection.networks()),
+             QStringList({alpha.networkId, zebra.networkId}));
+    QCOMPARE(preferenceStringList(QStringLiteral("networkOrder")),
+             QStringList({alpha.networkId, zebra.networkId}));
 }
 
 int runConnectionTests(int argc, char **argv)
