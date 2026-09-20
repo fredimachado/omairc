@@ -54,6 +54,7 @@ HEADERS += \
     ../src/irc/ircavatarstore.h \
     ../src/irc/irctcp.h \
     ../src/irc/ircignore.h \
+    ../src/irc/ircmonitor.h \
     ../src/irc/ircmute.h \
     ../src/irc/ircopendirect.h \
     ../src/irc/irchighlight.h \
@@ -132,6 +133,7 @@ SOURCES += \
     ../src/irc/ircavatarstore.cpp \
     ../src/irc/irctcp.cpp \
     ../src/irc/ircignore.cpp \
+    ../src/irc/ircmonitor.cpp \
     ../src/irc/ircmute.cpp \
     ../src/irc/ircopendirect.cpp \
     ../src/irc/irchighlight.cpp \
@@ -176,6 +178,7 @@ SOURCES += \
     session/tst_controller.cpp \
     session/tst_command.cpp \
     session/tst_ignore.cpp \
+    session/tst_monitor.cpp \
     session/tst_mute.cpp \
     session/tst_opendirect.cpp \
     session/tst_highlight.cpp \

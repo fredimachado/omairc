@@ -29,7 +29,8 @@ constexpr auto kYesterday = "2026-09-11";
 constexpr auto kCaps =
     "echo-message message-tags away-notify multi-prefix batch "
     "draft/metadata-2 server-time";
-constexpr auto kIsupport = "CHANTYPES=# PREFIX=(qaohv)~&@%+";
+constexpr auto kIsupport = "CHANTYPES=# PREFIX=(qaohv)~&@%+ MONITOR=100";
+constexpr int kMonitorLimit = 100;
 
 struct SeedLine
 {
@@ -624,6 +625,157 @@ void injectClientEcho(IrcLoopbackTransport *transport, const QString &nick,
     transport->injectBytes(":" + nick.toUtf8() + "!u@h " + frame);
 }
 
+QStringList demoOnlineNicks(const SeedNetwork &network)
+{
+    QSet<QString> nicks;
+    nicks.insert(network.nick);
+    for (const SeedChannel &channel : network.channels) {
+        for (const QString &nick : channel.members)
+            nicks.insert(nick);
+    }
+    for (const SeedDirect &direct : network.directs)
+        nicks.insert(direct.nick);
+    return nicks.values();
+}
+
+bool demoNickEquals(const QString &left, const QString &right)
+{
+    return left.compare(right, Qt::CaseInsensitive) == 0;
+}
+
+int demoMonitorIndex(const QStringList &nicks, const QString &nick)
+{
+    for (int i = 0; i < nicks.size(); ++i) {
+        if (demoNickEquals(nicks.at(i), nick))
+            return i;
+    }
+    return -1;
+}
+
+bool demoNickIsOnline(const QStringList &online, const QString &nick)
+{
+    return demoMonitorIndex(online, nick) >= 0;
+}
+
+void injectMonitorNumeric(IrcLoopbackTransport *transport,
+                          const QString &selfNick,
+                          const char *code,
+                          const QString &trailing)
+{
+    transport->injectBytes(line(QStringLiteral(":server %1 %2 :%3")
+                                    .arg(QLatin1String(code), selfNick, trailing)));
+}
+
+void injectMonitorStates(IrcLoopbackTransport *transport,
+                         const QString &selfNick,
+                         const QStringList &nicks,
+                         const QStringList &online)
+{
+    QStringList on;
+    QStringList off;
+    for (const QString &nick : nicks) {
+        if (demoNickIsOnline(online, nick))
+            on.append(nick + QStringLiteral("!u@h"));
+        else
+            off.append(nick);
+    }
+    if (!on.isEmpty())
+        injectMonitorNumeric(transport, selfNick, "730", on.join(QLatin1Char(',')));
+    if (!off.isEmpty())
+        injectMonitorNumeric(transport, selfNick, "731", off.join(QLatin1Char(',')));
+}
+
+bool tryAnswerMonitor(IrcLoopbackTransport *transport,
+                      const QString &selfNick,
+                      const QByteArray &frame,
+                      const QStringList &online,
+                      QStringList &watched)
+{
+    if (!transport || selfNick.isEmpty() || !frame.startsWith("MONITOR "))
+        return false;
+
+    QByteArray wire = frame;
+    if (wire.endsWith("\r\n"))
+        wire.chop(2);
+    else if (wire.endsWith('\n'))
+        wire.chop(1);
+
+    const IrcParseResult parsed = IrcParser::parse(
+        std::string_view(wire.constData(), std::size_t(wire.size())));
+    if (!parsed || parsed.value->command != "MONITOR"
+        || parsed.value->parameters.empty()) {
+        return false;
+    }
+
+    QString modifier = ircWireText(parsed.value->parameters[0]);
+    QString targetText;
+    if (modifier.size() > 1
+        && (modifier.startsWith(QLatin1Char('+'))
+            || modifier.startsWith(QLatin1Char('-')))) {
+        targetText = modifier.mid(1);
+        modifier = modifier.left(1);
+    } else if (parsed.value->parameters.size() >= 2) {
+        targetText = ircWireText(parsed.value->parameters[1]);
+    }
+    modifier = modifier.toUpper();
+
+    if (modifier == QLatin1String("C")) {
+        watched.clear();
+        return true;
+    }
+    if (modifier == QLatin1String("L")) {
+        if (!watched.isEmpty()) {
+            injectMonitorNumeric(transport, selfNick, "732",
+                                 watched.join(QLatin1Char(',')));
+        }
+        transport->injectBytes(
+            line(QStringLiteral(":server 733 %1 :End of MONITOR list")
+                     .arg(selfNick)));
+        return true;
+    }
+    if (modifier == QLatin1String("S")) {
+        injectMonitorStates(transport, selfNick, watched, online);
+        return true;
+    }
+    if (modifier != QLatin1String("+") && modifier != QLatin1String("-"))
+        return false;
+
+    const QStringList targets =
+        targetText.split(QLatin1Char(','), Qt::SkipEmptyParts);
+    if (modifier == QLatin1String("-")) {
+        for (const QString &nick : targets) {
+            const int index = demoMonitorIndex(watched, nick);
+            if (index >= 0)
+                watched.removeAt(index);
+        }
+        return true;
+    }
+
+    QStringList added;
+    QStringList overflow;
+    for (const QString &nick : targets) {
+        if (nick.isEmpty() || demoMonitorIndex(watched, nick) >= 0
+            || demoMonitorIndex(added, nick) >= 0) {
+            continue;
+        }
+        if (watched.size() + added.size() >= kMonitorLimit)
+            overflow.append(nick);
+        else
+            added.append(nick);
+    }
+    watched.append(added);
+    if (!added.isEmpty())
+        injectMonitorStates(transport, selfNick, added, online);
+    if (!overflow.isEmpty()) {
+        transport->injectBytes(line(
+            QStringLiteral(":server 734 %1 %2 %3 :Monitor list is full.")
+                .arg(selfNick,
+                     QString::number(kMonitorLimit),
+                     overflow.join(QLatin1Char(',')))));
+    }
+    return true;
+}
+
 bool tryAnswerPing(IrcLoopbackTransport *transport, const QByteArray &frame)
 {
     if (!transport)
@@ -866,10 +1018,12 @@ bool IrcDemoServer::startNetwork(IrcController &controller,
     return true;
 }
 
-void IrcDemoServer::hookAutoEcho(IrcLoopbackTransport *transport, const QString &nick)
+void IrcDemoServer::hookAutoEcho(IrcLoopbackTransport *transport,
+                                 const QString &nick,
+                                 const QStringList &online)
 {
     QObject::connect(transport, &IrcLoopbackTransport::frameWritten, this,
-                     [transport, nick](const QByteArray &frame) {
+                     [this, transport, nick, online](const QByteArray &frame) {
         if (tryAnswerPing(transport, frame))
             return;
         if (tryAnswerCtcp(transport, nick, frame))
@@ -878,6 +1032,10 @@ void IrcDemoServer::hookAutoEcho(IrcLoopbackTransport *transport, const QString 
             return;
         if (tryAnswerMetadata(transport, nick, frame))
             return;
+        if (tryAnswerMonitor(transport, nick, frame, online,
+                             m_monitorLists[transport])) {
+            return;
+        }
         if (frame.startsWith("PRIVMSG ") || frame.startsWith("NOTICE "))
             injectClientEcho(transport, nick, frame);
     });
@@ -911,8 +1069,8 @@ bool IrcDemoServer::attach(IrcController &controller, bool autoEcho)
     controller.selectConversation(omarchy.networkId, QStringLiteral("#omarchy"));
     m_omarchyTransport->injectBytes(typingBytes(omarchy));
     if (autoEcho) {
-        hookAutoEcho(m_omarchyTransport, omarchy.nick);
-        hookAutoEcho(m_oftcTransport, oftc.nick);
+        hookAutoEcho(m_omarchyTransport, omarchy.nick, demoOnlineNicks(omarchy));
+        hookAutoEcho(m_oftcTransport, oftc.nick, demoOnlineNicks(oftc));
     }
     return true;
 }

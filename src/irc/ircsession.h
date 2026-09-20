@@ -164,6 +164,7 @@ public slots:
     bool changeNick(const QString& nick);
     bool quit(const QString& reason = {});
     bool whois(const QString& nick);
+    bool sendMonitor(QChar modifier, const QStringList& nicks = {});
     bool sendRaw(const QString& line);
 
 signals:

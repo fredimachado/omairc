@@ -61,6 +61,9 @@ void CaseMappingTest::parsesServerFeatures()
     QVERIFY(features.isChannel("&local"));
     QVERIFY(!features.isChannel("#channel"));
     QCOMPARE(features.nickLength(), std::optional<std::size_t>(31));
+    features.applyToken("MONITOR=100");
+    QVERIFY(features.monitorAdvertised());
+    QCOMPARE(features.monitorLimit(), std::optional<std::size_t>(100));
     QCOMPARE(QString::fromStdString(std::string(features.prefixModes())),
              QStringLiteral("qaohv"));
     QCOMPARE(QString::fromStdString(std::string(features.prefixSymbols())),

@@ -5,6 +5,7 @@
 #include "irceventreducer.h"
 #include "irchighlight.h"
 #include "ircignore.h"
+#include "ircmonitor.h"
 #include "ircmute.h"
 #include "ircopendirect.h"
 #include "ircsessionmanager.h"
@@ -195,6 +196,8 @@ signals:
     void mentionArrived(const QString &author, const QString &body,
                        const QString &networkId, const QString &target,
                        const QString &msgid);
+    void monitorArrived(const QString &author, const QString &body,
+                        const QString &networkId, const QString &target);
 
 private:
     enum class QuietWire { Privmsg, Notice };
@@ -254,8 +257,21 @@ private:
                                    IrcComposerSurface surface);
     IrcCommandOutcome dispatchIgnore(const IrcCommand& command,
                                      IrcComposerSurface surface);
+    IrcCommandOutcome dispatchMonitor(const IrcCommand& command,
+                                      IrcComposerSurface surface);
+    void subscribeMonitors(const QString& networkId);
+    void forgetMonitorState(const QString& networkId);
+    QString monitorDisplayNick(const QString& networkId,
+                               const QString& nick) const;
+    bool monitorNotifyMuted(const QString& networkId,
+                            const QString& nick) const;
+    void handleMonitorPresence(const QString& networkId,
+                               const IrcMessage& message,
+                               bool online);
+    void handleMonitorListFull(const QString& networkId,
+                               const IrcMessage& message);
     IrcCommandOutcome dispatchMute(const IrcCommand& command,
-                                   IrcComposerSurface surface);
+                                     IrcComposerSurface surface);
     void hydrateMutes(const QString& networkId);
     bool persistableDirectTarget(const QString& networkId,
                                  const QString& target) const;
@@ -388,6 +404,7 @@ private:
     IrcConversationLog m_transcripts;
     IrcEventReducer m_reducer;
     IrcIgnoreStore m_ignores;
+    IrcMonitorStore m_monitors;
     IrcMuteStore m_mutes;
     IrcOpenDirectStore m_openDirects;
     IrcHighlightStore m_highlights;
@@ -399,6 +416,9 @@ private:
     QHash<QString, IrcCapabilitySet> m_capabilities;
     QSet<QString> m_unawaySent;
     QSet<QString> m_openDirectsMotdSeen;
+    QSet<QString> m_monitorSubscribed;
+    enum class MonitorPresence { Unknown, Online, Offline };
+    QHash<QString, QHash<QString, MonitorPresence>> m_monitorPresence;
     std::optional<IrcConversationKey> m_selected;
     QString m_selectedTarget;
     QStringList m_networkOrder;

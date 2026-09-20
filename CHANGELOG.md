@@ -13,6 +13,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   switching or jumping to a different conversation lands on the New messages
   marker instead of the bottom. An already-focused buffer is left alone;
   Status still pins to the end.
+- IRCv3 `MONITOR` watch lists. `/monitor <nick>`, `/unmonitor <nick>`, and
+  `/monitored` persist per network, re-subscribe after ISUPPORT, and write a
+  Status line on real online/offline edges. Unfocused desktop notify follows
+  mentions, including mute, without toast spam on reconnect hydration.
 
 ### Changed
 

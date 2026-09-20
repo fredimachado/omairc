@@ -2160,6 +2160,9 @@ ApplicationWindow {
         function onMentionArrived(author, body, networkId, target, msgid) {
             win.notifyMentionIfUnfocused(win.active, author, body, networkId, target, msgid);
         }
+        function onMonitorArrived(author, body, networkId, target) {
+            win.notifyMentionIfUnfocused(win.active, author, body, networkId, "", "");
+        }
     }
 
     RowLayout {

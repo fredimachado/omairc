@@ -87,6 +87,10 @@ void IrcServerFeatures::applyToken(std::string_view token)
         const std::string_view name = rest.substr(0, separator);
         if (name == "draft/ICON")
             m_iconUrl.clear();
+        if (name == "MONITOR") {
+            m_monitorAdvertised = false;
+            m_monitorLimit.reset();
+        }
         return;
     }
 
@@ -147,6 +151,23 @@ void IrcServerFeatures::applyToken(std::string_view token)
         return;
     }
 
+    if (name == "MONITOR") {
+        if (value.empty()) {
+            m_monitorAdvertised = true;
+            m_monitorLimit.reset();
+            return;
+        }
+        std::size_t limit = 0;
+        const char *begin = value.data();
+        const char *end = begin + value.size();
+        const auto result = std::from_chars(begin, end, limit);
+        if (result.ec == std::errc() && result.ptr == end && limit > 0) {
+            m_monitorAdvertised = true;
+            m_monitorLimit = limit;
+        }
+        return;
+    }
+
     if (name == "draft/ICON") {
         if (!value.empty())
             m_iconUrl.assign(value);
@@ -177,6 +198,16 @@ bool IrcServerFeatures::isChannel(std::string_view target) const noexcept
 std::optional<std::size_t> IrcServerFeatures::nickLength() const noexcept
 {
     return m_nickLength;
+}
+
+bool IrcServerFeatures::monitorAdvertised() const noexcept
+{
+    return m_monitorAdvertised;
+}
+
+std::optional<std::size_t> IrcServerFeatures::monitorLimit() const noexcept
+{
+    return m_monitorLimit;
 }
 
 std::string_view IrcServerFeatures::prefixModes() const noexcept
