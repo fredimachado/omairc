@@ -624,6 +624,31 @@ void injectClientEcho(IrcLoopbackTransport *transport, const QString &nick,
     transport->injectBytes(":" + nick.toUtf8() + "!u@h " + frame);
 }
 
+bool tryAnswerPing(IrcLoopbackTransport *transport, const QByteArray &frame)
+{
+    if (!transport)
+        return false;
+    QByteArray wire = frame;
+    if (wire.endsWith("\r\n"))
+        wire.chop(2);
+    else if (wire.endsWith('\n'))
+        wire.chop(1);
+    if (!wire.startsWith("PING "))
+        return false;
+
+    const IrcParseResult parsed = IrcParser::parse(
+        std::string_view(wire.constData(), std::size_t(wire.size())));
+    if (!parsed || parsed.value->command != "PING"
+        || parsed.value->parameters.empty()) {
+        return false;
+    }
+
+    const QString token = ircWireText(parsed.value->parameters.back());
+    transport->injectBytes(QByteArrayLiteral(":server PONG irc.example :")
+                           + token.toUtf8() + QByteArrayLiteral("\r\n"));
+    return true;
+}
+
 // A real server answers AWAY with 306 (now away) or 305 (no longer away). The
 // demo does not echo our own away-notify back, which is the case the client has
 // to cover on its own.
@@ -845,6 +870,8 @@ void IrcDemoServer::hookAutoEcho(IrcLoopbackTransport *transport, const QString 
 {
     QObject::connect(transport, &IrcLoopbackTransport::frameWritten, this,
                      [transport, nick](const QByteArray &frame) {
+        if (tryAnswerPing(transport, frame))
+            return;
         if (tryAnswerCtcp(transport, nick, frame))
             return;
         if (tryAnswerAway(transport, nick, frame))
