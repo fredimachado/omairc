@@ -770,11 +770,8 @@ void IrcEventReducer::noteChatArrival(IrcConversationState& conversation,
     const std::optional<ChatLineReason> reason = classifyChatLine(
         conversation, kind, self, nickHit, highlightHit);
     if (reason && !conversation.muted) {
-        if (reason == ChatLineReason::NickMention
-            || reason == ChatLineReason::DirectMessage) {
-            m_mentionArrival = IrcMentionArrival{
-                author, body, key.networkId, conversation.target, msgid};
-        }
+        m_mentionArrival = IrcMentionArrival{
+            author, body, key.networkId, conversation.target, msgid};
     }
     if (origin == IrcOrigin::Live && reason && !conversation.muted
         && !(m_selected && *m_selected == key)) {
@@ -792,8 +789,11 @@ void IrcEventReducer::noteChatArrival(IrcConversationState& conversation,
     if (conversation.unread == 0)
         conversation.unreadMark = sequence;
     ++conversation.unread;
-    if (reason == ChatLineReason::NickMention && !conversation.muted)
+    if ((reason == ChatLineReason::NickMention
+         || reason == ChatLineReason::Highlight)
+        && !conversation.muted) {
         ++conversation.mentions;
+    }
 }
 
 void IrcEventReducer::appendEvent(IrcConversationState& conversation,
