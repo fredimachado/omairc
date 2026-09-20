@@ -744,13 +744,25 @@ TestCase {
         }
 
         function isNetworkCollapsed(networkId) {
+            for (var row = 0; row < namedNetworks.count; ++row) {
+                if (namedNetworks.get(row).networkId === networkId)
+                    return namedNetworks.get(row).collapsed === true;
+            }
             return false;
         }
 
         function setNetworkCollapsed(networkId, collapsed) {
+            for (var row = 0; row < namedNetworks.count; ++row) {
+                if (namedNetworks.get(row).networkId === networkId) {
+                    namedNetworks.setProperty(row, "collapsed", collapsed);
+                    return;
+                }
+            }
         }
 
         function setAllNetworksCollapsed(collapsed) {
+            for (var row = 0; row < namedNetworks.count; ++row)
+                namedNetworks.setProperty(row, "collapsed", collapsed);
         }
 
         function moveNetwork(networkId, delta) {
@@ -7030,6 +7042,147 @@ TestCase {
         keyClick(Qt.Key_Up, Qt.AltModifier);
         tryCompare(appWindow, "currentConversation", "dax");
         compare(appWindow.currentConversationId, seed.omarchyNetworkId + "\ndax");
+    }
+
+    function test_altWalkFromCollapsedCurrentNetworkKeepsDirection() {
+        openSeededAppWindow();
+        compare(appWindow.currentConversation, "#omarchy");
+        compare(appWindow.currentConversationId, seed.omarchyNetworkId + "\n#omarchy");
+
+        var rows = appWindow.sidebarConversationRows();
+        var lastOftc = null;
+        var index;
+        for (index = 0; index < rows.length; ++index) {
+            if (rows[index].networkId === seed.oftcNetworkId)
+                lastOftc = rows[index];
+        }
+        verify(lastOftc !== null, "seeded oftc should have a conversation");
+
+        appWindow.connection.setNetworkCollapsed(seed.omarchyNetworkId, true);
+        waitForRendering(appWindow.contentItem);
+        compare(sidebarRowShown(liveConversation("#omarchy")), false);
+        compare(appWindow.currentConversation, "#omarchy");
+
+        keyClick(Qt.Key_Down, Qt.AltModifier);
+
+        tryCompare(appWindow, "currentConversation", "#build");
+        compare(appWindow.currentConversationId, seed.oftcNetworkId + "\n#build");
+        compare(appWindow.connection.isNetworkCollapsed(seed.omarchyNetworkId), true);
+
+        appWindow.connection.setNetworkCollapsed(seed.omarchyNetworkId, false);
+        waitForRendering(appWindow.contentItem);
+        mouseClick(namedItem(liveConversation("#omarchy")));
+        tryCompare(appWindow, "currentConversation", "#omarchy");
+        appWindow.connection.setNetworkCollapsed(seed.omarchyNetworkId, true);
+        waitForRendering(appWindow.contentItem);
+        compare(sidebarRowShown(liveConversation("#omarchy")), false);
+        compare(appWindow.currentConversation, "#omarchy");
+
+        keyClick(Qt.Key_Up, Qt.AltModifier);
+
+        tryCompare(appWindow, "currentConversation", lastOftc.conversationName);
+        compare(appWindow.currentConversationId, lastOftc.conversationId);
+        compare(appWindow.connection.isNetworkCollapsed(seed.omarchyNetworkId), true);
+    }
+
+    function test_altWalkFromCollapsedMiddleNetworkKeepsDirection() {
+        restoreNamedConnection();
+        namedNetworks.append({
+            networkId: "oftc",
+            displayName: "irc.oftc.net",
+            stored: true,
+            selected: false,
+            iconColor: 1,
+            iconUrl: "",
+            collapsed: false
+        });
+        namedNetworks.append({
+            networkId: "tilde",
+            displayName: "tilde.chat",
+            stored: true,
+            selected: false,
+            iconColor: 1,
+            iconUrl: "",
+            collapsed: false
+        });
+        liveConversations.append({
+            conversation: "#build",
+            unread: 0,
+            mention: false,
+            direct: false,
+            networkId: "oftc",
+            conversationId: "oftc\n#build",
+            conversationName: "#build",
+            typing: false
+        });
+        liveConversations.append({
+            conversation: "#town",
+            unread: 0,
+            mention: false,
+            direct: false,
+            networkId: "tilde",
+            conversationId: "tilde\n#town",
+            conversationName: "#town",
+            typing: false
+        });
+        liveIrc.conversationEpoch += 1;
+
+        var window = createTemporaryObject(liveNamedWindowComponent, null);
+        verify(window !== null, "The three-network window should load");
+        tryCompare(window, "visible", true);
+        waitForRendering(window.contentItem);
+        window.requestActivate();
+        tryCompare(window, "active", true);
+
+        try {
+            compare(window.sidebarNetworkSections().length, 3);
+            var rows = window.sidebarConversationRows();
+            compare(rows.length, 4);
+            compare(rows[0].conversationId, "libera\n#omarchy");
+            compare(rows[1].conversationId, "libera\nanna");
+            compare(rows[2].conversationId, "oftc\n#build");
+            compare(rows[3].conversationId, "tilde\n#town");
+
+            liveIrc.selectConversation("oftc", "#build");
+            tryCompare(window, "currentConversation", "#build");
+            compare(window.currentConversationId, "oftc\n#build");
+
+            window.connection.setNetworkCollapsed("oftc", true);
+            waitForRendering(window.contentItem);
+            compare(window.connection.isNetworkCollapsed("oftc"), true);
+            compare(window.visibleSidebarConversationRows().length, 3);
+            compare(window.currentConversation, "#build");
+
+            window.stepConversation(1);
+
+            tryCompare(window, "currentConversation", "#town");
+            compare(window.currentConversationId, "tilde\n#town");
+            compare(window.connection.isNetworkCollapsed("oftc"), true);
+
+            liveIrc.selectConversation("oftc", "#build");
+            tryCompare(window, "currentConversation", "#build");
+            compare(window.connection.isNetworkCollapsed("oftc"), true);
+
+            window.stepConversation(-1);
+
+            tryCompare(window, "currentConversation", "anna");
+            compare(window.currentConversationId, "libera\nanna");
+            compare(window.connection.isNetworkCollapsed("oftc"), true);
+
+            window.close();
+        } finally {
+            while (liveConversations.count > 2)
+                liveConversations.remove(liveConversations.count - 1);
+            liveIrc.selectedNetworkId = "libera";
+            liveIrc.selectedTarget = "#omarchy";
+            liveIrc.selectedConversationId = "libera\n#omarchy";
+            liveIrc.isChannel = true;
+            liveIrc.topic = "A cozy corner for Omarchy users and builders.";
+            liveIrc.peopleCount = 1;
+            liveConsole.open = false;
+            liveConsole.networkId = "libera";
+            restoreNamedConnection();
+        }
     }
 
     function test_jumpActivatesCollapsedNetworkConversation() {

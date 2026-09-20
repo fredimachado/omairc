@@ -1012,22 +1012,35 @@ ApplicationWindow {
     }
 
     function stepConversation(delta) {
-        var rows = visibleSidebarConversationRows();
+        var rows = sidebarConversationRows();
         if (rows.length === 0)
+            return;
+        if (visibleSidebarConversationRows().length === 0)
             return;
 
         var current = -1;
-        for (var index = 0; index < rows.length; ++index) {
+        var index;
+        for (index = 0; index < rows.length; ++index) {
             if (rows[index].conversationId === currentConversationId) {
                 current = index;
                 break;
             }
         }
 
-        var nextIndex = current < 0
-            ? (delta > 0 ? 0 : rows.length - 1)
-            : (current + delta + rows.length) % rows.length;
-        activateSidebarConversation(rows[nextIndex]);
+        // A collapsed current row is missing from the visible list, but it
+        // still has a place in sidebar order. Walk from there and skip hidden
+        // networks so Alt+Down stays forward and Alt+Up stays backward.
+        var start = current >= 0 ? current : (delta > 0 ? -1 : rows.length);
+        var count = rows.length;
+        var step;
+        for (step = 1; step <= count; ++step) {
+            var nextIndex = start + delta * step;
+            nextIndex = ((nextIndex % count) + count) % count;
+            if (connection.isNetworkCollapsed(rows[nextIndex].networkId))
+                continue;
+            activateSidebarConversation(rows[nextIndex]);
+            return;
+        }
     }
 
     function revealSidebarRow(row) {
