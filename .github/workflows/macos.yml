@@ -392,19 +392,26 @@ jobs:
           export OMAIRC_SMOKE=1
           export QT_QPA_PLATFORM=offscreen
           export QT_QUICK_BACKEND=software
-          "$exe" --demo-server &
-          pid=$!
-          for _ in $(seq 1 60); do
-            if ! kill -0 "$pid" 2>/dev/null; then
-              wait "$pid"
-              exit $?
-            fi
-            sleep 0.5
-          done
-          kill "$pid" 2>/dev/null || true
-          wait "$pid" 2>/dev/null || true
-          echo "demo-server smoke did not exit within 30s" >&2
-          exit 1
+          smoke() {
+            local bin="$1"
+            "$bin" --demo-server &
+            local pid=$!
+            for _ in $(seq 1 60); do
+              if ! kill -0 "$pid" 2>/dev/null; then
+                wait "$pid"
+                return $?
+              fi
+              sleep 0.5
+            done
+            kill "$pid" 2>/dev/null || true
+            wait "$pid" 2>/dev/null || true
+            echo "demo-server smoke did not exit within 30s ($bin)" >&2
+            return 1
+          }
+          smoke "$exe"
+          link="$GITHUB_WORKSPACE/build/omairc"
+          test -L "$link"
+          smoke "$link"
 
       - name: Portable tests
         run: |
@@ -697,7 +704,7 @@ jobs:
             fi
             printf '%s\n' "$push_out"
             case "$push_out" in
-              *non-fast-forward*|*fetch first*|*rejected*) ;;
+              *non-fast-forward*|*rejected*) ;;
               *)
                 echo "git push failed for a reason other than a master race" >&2
                 exit 1

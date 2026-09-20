@@ -1,9 +1,9 @@
 cask "omairc" do
   arch arm: "arm64", intel: "x64"
 
-  version "0.8.2"
-  sha256 arm:   "44bec2819bf30ed555e9f5d21aab816e5fe8587ec4aec54db1009d131b3fab83",
-         intel: "59393c50247011024728999f5af56cb19fa550f80d2dfe11a5bf0f51c39cb3ed"
+  version "0.8.3"
+  sha256 arm:   "07394edc34822294fc5e8716c3722a9ed51dcaa419112a8d1bdc1bf4835a088f",
+         intel: "e40a22c522351f44d8446f08b70d193e3e00ae9d7bdba39345d7047594c85d8c"
 
   url "https://github.com/fredimachado/omairc/releases/download/v#{version}/omairc-#{version}-macos-#{arch}.zip",
       verified: "github.com/fredimachado/omairc/"
@@ -19,7 +19,19 @@ cask "omairc" do
   depends_on macos: :big_sur
 
   app "omairc.app"
-  binary "#{appdir}/omairc.app/Contents/MacOS/omairc"
+
+  # Do not symlink Contents/MacOS/omairc into bin/. Qt then treats that path as
+  # the executable, skips the bundle qt.conf, and fails to load Quick Controls.
+  preflight do
+    wrapper = staged_path/"omairc"
+    wrapper.write <<~SH
+      #!/bin/sh
+      exec "#{appdir}/omairc.app/Contents/MacOS/omairc" "$@"
+    SH
+    File.chmod(0755, wrapper)
+  end
+
+  binary "omairc"
 
   uninstall quit: "app.omairc.Omairc"
 

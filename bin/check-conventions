@@ -580,9 +580,18 @@ def check_homebrew_cask():
             "Casks/omairc.rb: depends_on macos: :big_sur (LSMinimumSystemVersion)")
     if 'app "omairc.app"' not in text:
         problems.append('Casks/omairc.rb: install omairc.app')
-    if 'binary "#{appdir}/omairc.app/Contents/MacOS/omairc"' not in text:
+    if 'binary "#{appdir}/omairc.app/Contents/MacOS/omairc"' in text:
+        problems.append(
+            "Casks/omairc.rb: do not symlink Contents/MacOS/omairc; Qt then "
+            "misses the bundle qt.conf")
+    if 'binary "omairc"' not in text:
         problems.append(
             "Casks/omairc.rb: expose the CLI binary on PATH")
+    if "preflight" not in text \
+            or 'exec "#{appdir}/omairc.app/Contents/MacOS/omairc"' not in text:
+        problems.append(
+            "Casks/omairc.rb: PATH helper must exec the bundle Mach-O so Qt "
+            "reads qt.conf")
     if "caveats" not in text or "Start Omairc first" not in text:
         problems.append(
             "Casks/omairc.rb: caveats must say the CLI needs a running window")
@@ -639,6 +648,11 @@ def check_homebrew_cask():
         problems.append(
             ".github/workflows/macos.yml: cask bump must retry a raced "
             "master push instead of leaving the cask on the prior version")
+    if re.search(r"\*fetch first\*", workflow_text):
+        problems.append(
+            ".github/workflows/macos.yml: do not use *fetch first* as a "
+            "case pattern; the space splits the arm and bash dies before "
+            "git push")
 
     readme = ROOT / "README.md"
     section = macos_readme_section(
