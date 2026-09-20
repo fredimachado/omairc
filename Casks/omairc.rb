@@ -16,7 +16,7 @@ cask "omairc" do
     strategy :github_latest
   end
 
-  depends_on macos: ">= :big_sur"
+  depends_on macos: :big_sur
 
   app "omairc.app"
   binary "#{appdir}/omairc.app/Contents/MacOS/omairc"
@@ -28,4 +28,10 @@ cask "omairc" do
     "~/Library/Preferences/omairc",
     "~/Library/Saved Application State/app.omairc.Omairc.savedState",
   ]
+
+  caveats do
+    <<~EOS
+      The local CLI talks to the running window. Start Omairc first.
+    EOS
+  end
 end

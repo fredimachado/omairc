@@ -1,0 +1,84 @@
+#!/usr/bin/env python3
+"""Rewrite Casks/omairc.rb version and sha256 from notarized macOS zips."""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import re
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+CASK = ROOT / "Casks" / "omairc.rb"
+CHUNK = 1024 * 1024
+VERSION_RE = re.compile(r'^  version "([^"]+)"$', re.MULTILINE)
+ARM_SHA_RE = re.compile(r'^(  sha256 arm:\s+")([0-9a-f]{64})(")', re.MULTILINE)
+INTEL_SHA_RE = re.compile(r'^(         intel:\s+")([0-9a-f]{64})(")', re.MULTILINE)
+
+
+def sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        while True:
+            chunk = handle.read(CHUNK)
+            if not chunk:
+                break
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def require_zip(path: Path, version: str, suffix: str) -> Path:
+    expected = f"omairc-{version}-{suffix}.zip"
+    resolved = path.resolve()
+    if not resolved.is_file():
+        raise ValueError(f"missing zip: {path}")
+    if resolved.name != expected:
+        raise ValueError(f"expected {expected}, got {resolved.name}")
+    return resolved
+
+
+def bump(cask: Path, version: str, arm_zip: Path, intel_zip: Path) -> str:
+    text = cask.read_text(encoding="utf-8")
+    if VERSION_RE.search(text) is None:
+        raise ValueError(f"{cask}: missing version stanza")
+    if ARM_SHA_RE.search(text) is None or INTEL_SHA_RE.search(text) is None:
+        raise ValueError(f"{cask}: missing dual sha256 stanzas")
+
+    arm_sha = sha256_file(arm_zip)
+    intel_sha = sha256_file(intel_zip)
+    text = VERSION_RE.sub(f'  version "{version}"', text, count=1)
+    text = ARM_SHA_RE.sub(rf'\g<1>{arm_sha}\3', text, count=1)
+    text = INTEL_SHA_RE.sub(rf'\g<1>{intel_sha}\3', text, count=1)
+    cask.write_text(text, encoding="utf-8")
+    return f"version {version}\nsha256 arm:   {arm_sha}\n       intel: {intel_sha}\n"
+
+
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Point Casks/omairc.rb at a pair of macOS GitHub zips.")
+    parser.add_argument("--version", required=True)
+    parser.add_argument("--arm-zip", type=Path, required=True)
+    parser.add_argument("--intel-zip", type=Path, required=True)
+    parser.add_argument("--cask", type=Path, default=CASK)
+    return parser.parse_args(argv)
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = parse_args(argv)
+    try:
+        if not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", args.version):
+            raise ValueError(f"version must look like 0.8.2, got {args.version!r}")
+        arm_zip = require_zip(args.arm_zip, args.version, "macos-arm64")
+        intel_zip = require_zip(args.intel_zip, args.version, "macos-x64")
+        if not args.cask.is_file():
+            raise ValueError(f"missing cask: {args.cask}")
+        sys.stdout.write(bump(args.cask, args.version, arm_zip, intel_zip))
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

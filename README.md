@@ -159,15 +159,16 @@ Omarchy is the home. A native macOS build is a bonus: it works, it is not the fo
 Install the notarized GitHub `.app` with Homebrew:
 
 ```sh
-brew install --cask omairc
+brew tap fredimachado/omairc https://github.com/fredimachado/omairc
+brew install --cask fredimachado/omairc/omairc
 ```
 
-That puts Omairc in `/Applications` and `omairc` on `PATH` so the local CLI works from a terminal. The window still has to be running. Uninstall leaves profiles and logs; `brew uninstall --cask --zap omairc` is the wipe.
+The extra tap URL is required because this repository is `omairc`, not `homebrew-omairc`. That puts Omairc in `/Applications` and `omairc` on `PATH` so the local CLI works from a terminal. The window still has to be running. Uninstall leaves profiles and logs; `brew uninstall --cask --zap omairc` is the wipe.
 
-Until Homebrew has the cask, install the definition from this repository:
+Once Homebrew carries the cask, this is enough:
 
 ```sh
-brew install --cask https://raw.githubusercontent.com/fredimachado/omairc/master/packaging/homebrew/omairc.rb
+brew install --cask omairc
 ```
 
 Each version tag also publishes `omairc-*-macos-arm64.zip` (Apple Silicon) and `omairc-*-macos-x64.zip` (Intel) on the [GitHub release](https://github.com/fredimachado/omairc/releases/latest). Unzip that if you want a portable tree. Pull-request CI uploads both zips as workflow artifacts. CI signs the bundles with Developer ID. Version tags (and a manual workflow run) notarize, staple, and Gatekeeper-assess the app; Apple's first look at a new Developer ID can sit in progress for hours, so pull requests do not wait on that. Local Homebrew-Qt builds stay ad-hoc.
