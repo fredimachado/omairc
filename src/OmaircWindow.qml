@@ -1386,6 +1386,14 @@ ApplicationWindow {
             | Qt.AltModifier | Qt.MetaModifier);
     }
 
+    function composerCommandModifier() {
+        // Shortcut sequences map "Ctrl" to Command on macOS. Keys.onPressed
+        // reports that physical Command key as MetaModifier; ControlModifier
+        // is the physical Control key.
+        return (Qt.platform.os === "osx" || Qt.platform.os === "macos")
+            ? Qt.MetaModifier : Qt.ControlModifier;
+    }
+
     function handleComposerSidebarShortcut(event) {
         if (win.connectionOverlayVisible || win.shortcutOverlayOpen)
             return false;
@@ -1413,7 +1421,7 @@ ApplicationWindow {
                 moveFocusedNetwork(event.key === Qt.Key_Down ? 1 : -1);
             return true;
         }
-        if (mods === (Qt.ControlModifier | Qt.AltModifier | Qt.ShiftModifier)
+        if (mods === (composerCommandModifier() | Qt.AltModifier | Qt.ShiftModifier)
                 && (event.key === Qt.Key_Left || event.key === Qt.Key_Right)) {
             collapseAllNetworks(event.key === Qt.Key_Left);
             return true;

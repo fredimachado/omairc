@@ -1268,6 +1268,11 @@ TestCase {
         return Qt.platform.os === "osx" || Qt.platform.os === "macos" ? "Option" : "Alt";
     }
 
+    function shortcutCommandModifier() {
+        return Qt.platform.os === "osx" || Qt.platform.os === "macos"
+            ? Qt.MetaModifier : Qt.ControlModifier;
+    }
+
     function visibleListChild(listName, childName) {
         var list = item(listName);
         var index = 0;
@@ -7031,7 +7036,7 @@ TestCase {
         tryCompare(item("messageComposer"), "activeFocus", true);
         compare(appWindow.sidebarNetworkFocusId, "");
 
-        keyClick(Qt.Key_Left, Qt.ControlModifier | Qt.AltModifier | Qt.ShiftModifier);
+        keyClick(Qt.Key_Left, shortcutCommandModifier() | Qt.AltModifier | Qt.ShiftModifier);
 
         compare(appWindow.sidebarNetworkFocusId, "");
         tryVerify(function() {
@@ -7051,7 +7056,7 @@ TestCase {
                "collapsed headers keep the unread/mention mark");
         saveScreenshot("networks-collapsed-all");
 
-        keyClick(Qt.Key_Right, Qt.ControlModifier | Qt.AltModifier | Qt.ShiftModifier);
+        keyClick(Qt.Key_Right, shortcutCommandModifier() | Qt.AltModifier | Qt.ShiftModifier);
 
         compare(appWindow.sidebarNetworkFocusId, "");
         tryVerify(function() {
@@ -7063,6 +7068,39 @@ TestCase {
         verify(sidebarRowShown(liveOftcConversation("#build")));
         verify(liveChannelsHeading(seed.omarchyNetworkId).visible);
         verify(liveChannelsHeading(seed.oftcNetworkId).visible);
+    }
+
+    function test_collapseAllNetworksFromComposerLeavesCaret() {
+        openSeededAppWindow();
+        var composer = item("messageComposer");
+        mouseClick(composer);
+        tryCompare(composer, "activeFocus", true);
+        typeText("hello world");
+        compare(composer.text, "hello world");
+        var caret = composer.cursorPosition;
+        compare(appWindow.sidebarNetworkFocusId, "");
+
+        keyClick(Qt.Key_Left, shortcutCommandModifier() | Qt.AltModifier | Qt.ShiftModifier);
+
+        tryVerify(function() {
+            return appWindow.connection.isNetworkCollapsed(seed.omarchyNetworkId)
+                && appWindow.connection.isNetworkCollapsed(seed.oftcNetworkId);
+        });
+        compare(composer.text, "hello world");
+        compare(composer.cursorPosition, caret);
+        compare(appWindow.sidebarNetworkFocusId, "");
+        tryCompare(composer, "activeFocus", true);
+
+        keyClick(Qt.Key_Right, shortcutCommandModifier() | Qt.AltModifier | Qt.ShiftModifier);
+
+        tryVerify(function() {
+            return !appWindow.connection.isNetworkCollapsed(seed.omarchyNetworkId)
+                && !appWindow.connection.isNetworkCollapsed(seed.oftcNetworkId);
+        });
+        compare(composer.text, "hello world");
+        compare(composer.cursorPosition, caret);
+        compare(appWindow.sidebarNetworkFocusId, "");
+        tryCompare(composer, "activeFocus", true);
     }
 
     function test_altWalkSkipsCollapsedNetworkRows() {
