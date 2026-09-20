@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Preferences → **Open conversations at unread** (default off). When on,
+  switching or jumping to a conversation lands at the first unread instead of
+  always sticking to the bottom.
+
 ### Changed
 
 - Pull-request and `master` CI no longer package or upload Windows/macOS

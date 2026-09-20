@@ -110,6 +110,8 @@ private slots:
     void storeRekeysDisplayAndDropsDuplicate();
     void storeForgetDropsTheGroup();
     void defaultReopensOn();
+    void defaultOpenConversationsAtUnreadOff();
+    void openConversationsAtUnreadPersists();
     void openPersistsInboundDoesNot();
     void closeDropsPersist();
     void reopenRestoresHistoryWithoutUnread();
@@ -197,6 +199,32 @@ void OpenDirectTest::storeForgetDropsTheGroup()
 void OpenDirectTest::defaultReopensOn()
 {
     QCOMPARE(IrcController().reopenDirectMessages(), true);
+}
+
+void OpenDirectTest::defaultOpenConversationsAtUnreadOff()
+{
+    QCOMPARE(IrcController().openConversationsAtUnread(), false);
+}
+
+void OpenDirectTest::openConversationsAtUnreadPersists()
+{
+    QCOMPARE(IrcController().openConversationsAtUnread(), false);
+
+    {
+        IrcController controller;
+        QVERIFY(!controller.openConversationsAtUnread());
+        controller.setOpenConversationsAtUnread(true);
+        QVERIFY(controller.openConversationsAtUnread());
+    }
+
+    {
+        IrcController reloaded;
+        QVERIFY(reloaded.openConversationsAtUnread());
+        reloaded.setOpenConversationsAtUnread(false);
+        QVERIFY(!reloaded.openConversationsAtUnread());
+    }
+
+    QVERIFY(!IrcController().openConversationsAtUnread());
 }
 
 void OpenDirectTest::openPersistsInboundDoesNot()

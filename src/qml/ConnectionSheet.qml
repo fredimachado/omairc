@@ -1150,6 +1150,38 @@ Rectangle {
                             font.pixelSize: sheet.style.scaledSize(11)
                         }
                     }
+
+                    Row {
+                        spacing: sheet.style.scaledSize(10)
+
+                        Switch {
+                            id: connectionOpenAtUnread
+                            objectName: "connectionOpenAtUnread"
+                            Accessible.name: "Open conversations at unread"
+                            Keys.onPressed: function(event) {
+                                sheet.applyKeyRequested(event)
+                            }
+                            onToggled: {
+                                if (sheet.irc)
+                                    sheet.irc.openConversationsAtUnread = checked;
+                            }
+                        }
+
+                        Binding {
+                            target: connectionOpenAtUnread
+                            property: "checked"
+                            value: sheet.irc ? sheet.irc.openConversationsAtUnread : false
+                            restoreMode: Binding.RestoreBinding
+                        }
+
+                        Text {
+                            anchors.verticalCenter: parent.verticalCenter
+                            text: "Open conversations at unread"
+                            color: sheet.style.inkColor
+                            font.family: "iA Writer Mono S"
+                            font.pixelSize: sheet.style.scaledSize(11)
+                        }
+                    }
                 }
             }
         }

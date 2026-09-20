@@ -54,6 +54,7 @@ class IrcController : public QObject
     Q_PROPERTY(QStringList typingNicks READ typingNicks NOTIFY typingChanged)
     Q_PROPERTY(bool reopenDirectMessages READ reopenDirectMessages WRITE setReopenDirectMessages NOTIFY reopenDirectMessagesChanged)
     Q_PROPERTY(bool loadPeerAvatars READ loadPeerAvatars WRITE setLoadPeerAvatars NOTIFY loadPeerAvatarsChanged)
+    Q_PROPERTY(bool openConversationsAtUnread READ openConversationsAtUnread WRITE setOpenConversationsAtUnread NOTIFY openConversationsAtUnreadChanged)
     Q_PROPERTY(IrcStatusConsole* console READ console CONSTANT)
 
 public:
@@ -97,6 +98,8 @@ public:
     void setReopenDirectMessages(bool enabled);
     bool loadPeerAvatars() const;
     void setLoadPeerAvatars(bool enabled);
+    bool openConversationsAtUnread() const;
+    void setOpenConversationsAtUnread(bool enabled);
     IrcStatusConsole *console();
     const IrcServerFeatures &serverFeatures(const QString &networkId) const;
     Q_INVOKABLE QString networkIconUrl(const QString &networkId) const;
@@ -185,6 +188,7 @@ signals:
     void typingChanged();
     void reopenDirectMessagesChanged();
     void loadPeerAvatarsChanged();
+    void openConversationsAtUnreadChanged();
     void errorOccurred(const QString &networkId,
                        IrcSession::ErrorKind kind,
                        const QString &message);
@@ -403,6 +407,7 @@ private:
     int m_peerMetadataEpoch = 0;
     bool m_reopenDirectMessages = true;
     bool m_loadPeerAvatars = true;
+    bool m_openConversationsAtUnread = false;
     QTimer m_typingRefresh;
     QString m_composerDraft;
     QString m_typingTarget;

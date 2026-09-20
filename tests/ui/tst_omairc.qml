@@ -308,6 +308,7 @@ TestCase {
         property bool hasMemberStatus: true
         property bool hasTyping: false
         property bool reopenDirectMessages: true
+        property bool openConversationsAtUnread: false
         property var typingNicks: []
         property var conversations: liveConversations
         property var messages: liveMessages
@@ -393,6 +394,7 @@ TestCase {
         property bool hasMemberStatus: true
         property bool hasTyping: false
         property bool reopenDirectMessages: true
+        property bool openConversationsAtUnread: false
         property var typingNicks: []
         property var conversations: liveConversations
         property var messages: liveMessages
@@ -484,6 +486,7 @@ TestCase {
         property bool hasMemberStatus: false
         property bool hasTyping: false
         property bool reopenDirectMessages: true
+        property bool openConversationsAtUnread: false
         property var typingNicks: ["anna"]
         property var conversations: liveConversations
         property var messages: liveMessages
@@ -554,6 +557,7 @@ TestCase {
         property bool hasMemberStatus: true
         property bool hasTyping: false
         property bool reopenDirectMessages: true
+        property bool openConversationsAtUnread: false
         property var typingNicks: []
         property var conversations: liveConversations
         property var messages: liveMessages
@@ -929,6 +933,7 @@ TestCase {
         gatedIrc.hasMemberStatus = false;
         gatedIrc.hasTyping = false;
         gatedIrc.reopenDirectMessages = true;
+        gatedIrc.openConversationsAtUnread = false;
         gatedIrc.typingNicks = ["anna"];
         gatedIrc.conversations = liveConversations;
         gatedIrc.messages = liveMessages;
@@ -4509,6 +4514,57 @@ TestCase {
 
         window.close();
         liveIrc.reopenDirectMessages = true;
+    }
+
+    function test_connectionPreferencesOpenAtUnreadToggle() {
+        liveIrc.openConversationsAtUnread = false;
+        var window = createTemporaryObject(setupWindowComponent, null);
+        verify(window !== null, "The open-at-unread window should load");
+        tryCompare(window, "visible", true);
+        waitForRendering(window.contentItem);
+        window.requestActivate();
+        tryCompare(window, "active", true);
+
+        var preferencesTab = findChild(window, "connectionSheetTab-preferences");
+        verify(preferencesTab !== null, "Could not find connectionSheetTab-preferences");
+        mouseClick(preferencesTab);
+        compare(window.connectionSheetTab, "preferences");
+
+        var toggle = findChild(window, "connectionOpenAtUnread");
+        verify(toggle !== null, "Could not find connectionOpenAtUnread");
+        verify(toggle.visible);
+        compare(toggle.checked, false);
+        compare(liveIrc.openConversationsAtUnread, false);
+
+        mouseClick(toggle);
+        compare(toggle.checked, true);
+        compare(liveIrc.openConversationsAtUnread, true);
+
+        mouseClick(toggle);
+        compare(toggle.checked, false);
+        compare(liveIrc.openConversationsAtUnread, false);
+
+        preferencesTab.forceActiveFocus();
+        tryCompare(preferencesTab, "activeFocus", true);
+        keyClick(Qt.Key_Tab);
+        wait(0);
+        compare(focusObjectName(window), "connectionReopenDirects");
+        keyClick(Qt.Key_Tab);
+        wait(0);
+        compare(focusObjectName(window), "connectionLoadPeerAvatars");
+        keyClick(Qt.Key_Tab);
+        wait(0);
+        compare(focusObjectName(window), "connectionOpenAtUnread");
+
+        var checkedBefore = toggle.checked;
+        keyClick(Qt.Key_Return);
+        compare(toggle.checked, checkedBefore);
+        compare(liveIrc.openConversationsAtUnread, checkedBefore);
+        verify(findChild(window, "connectionSheet").visible);
+        verify(focusObjectName(window) !== "connectionOpenAtUnread");
+
+        window.close();
+        liveIrc.openConversationsAtUnread = false;
     }
 
     function test_connectionSheetShortcutsHintOpensShortcuts() {
