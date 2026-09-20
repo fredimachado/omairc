@@ -1,18 +1,22 @@
 #pragma once
 
+#include <QtGlobal>
+
 #ifdef Q_OS_LINUX
 #include <QDBusConnection>
 #include <QByteArray>
 #include <QFile>
 #include <QString>
 
-// sessionBus() autolaunches when DBUS_SESSION_BUS_ADDRESS is empty, and can
-// block for minutes on a unix:path that does not exist. Notifications and
-// portal reads are no-ops without a bus; do not wait for one.
+// sessionBus() can block for minutes when DBUS_SESSION_BUS_ADDRESS names a
+// unix:path that does not exist, or when the address is autolaunch:.
+// Notifications and portal reads already no-op without a connected bus.
+// An unset address still goes through sessionBus() so X11/autolaunch
+// fallbacks keep working in a real session.
 inline QDBusConnection linuxSessionBusIfPresent()
 {
     const QByteArray address = qgetenv("DBUS_SESSION_BUS_ADDRESS");
-    if (address.isEmpty())
+    if (address.startsWith("autolaunch:"))
         return QDBusConnection(QStringLiteral("omairc-no-session-bus"));
 
     const QByteArray prefix = QByteArrayLiteral("unix:path=");

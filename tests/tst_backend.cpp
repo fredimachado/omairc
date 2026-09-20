@@ -15,17 +15,9 @@
 #include <QVector>
 
 namespace {
-const auto kSessionBusName = QStringLiteral("qt_default_session_bus");
-
-void disconnectSessionBus()
-{
-    QDBusConnection::disconnectFromBus(kSessionBusName);
-}
-
 void setMissingSessionBus()
 {
     qputenv("DBUS_SESSION_BUS_ADDRESS", "unix:path=/tmp/omairc-no-such-session-bus");
-    disconnectSessionBus();
 }
 
 void drainSessionBus()
@@ -117,6 +109,7 @@ private:
     QProcess m_daemon;
     FakeNotifications m_notifications;
     QByteArray m_previousBus;
+    QString m_sessionConnectionName;
     bool m_hadBus = false;
     bool m_busReady = false;
 };
@@ -130,7 +123,10 @@ void BackendNotifyTest::initTestCase()
 void BackendNotifyTest::cleanupTestCase()
 {
     stopPrivateBus();
-    disconnectSessionBus();
+    if (!m_sessionConnectionName.isEmpty()) {
+        QDBusConnection::disconnectFromBus(m_sessionConnectionName);
+        m_sessionConnectionName.clear();
+    }
     if (m_hadBus)
         qputenv("DBUS_SESSION_BUS_ADDRESS", m_previousBus);
     else
@@ -171,6 +167,7 @@ bool BackendNotifyTest::registerNotifications()
     QDBusConnection bus = QDBusConnection::sessionBus();
     if (!bus.isConnected())
         return false;
+    m_sessionConnectionName = bus.name();
     new NotificationsAdaptor(&m_notifications);
     if (!bus.registerObject(QStringLiteral("/org/freedesktop/Notifications"),
                             &m_notifications,
@@ -254,8 +251,7 @@ void BackendNotifyTest::actionInvokedEmitsNetworkTargetMsgid()
 
 void BackendNotifyTest::notifyDesktopWithoutSessionBusDoesNotCrash()
 {
-    qunsetenv("DBUS_SESSION_BUS_ADDRESS");
-    disconnectSessionBus();
+    setMissingSessionBus();
     QElapsedTimer timer;
     timer.start();
     Backend backend;
@@ -263,7 +259,6 @@ void BackendNotifyTest::notifyDesktopWithoutSessionBusDoesNotCrash()
                           QStringLiteral("omarchy"), QStringLiteral("#omarchy"),
                           QStringLiteral("mid-1"));
     QVERIFY(timer.elapsed() < 2000);
-    disconnectSessionBus();
 }
 
 void BackendNotifyTest::notifyDesktopAfterDisconnectDoesNotCrash()
