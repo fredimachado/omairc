@@ -7,7 +7,7 @@ Popup {
     required property OmaircStyle style
 
     objectName: "shortcutsSheet"
-    width: sheet.style.scaledSize(348)
+    width: sheet.style.scaledSize(400)
     padding: sheet.style.scaledSize(16)
     modal: true
     focus: true
@@ -27,6 +27,12 @@ Popup {
             model: [
                 { keys: "Alt+Down / Alt+Up", action: "walk conversations" },
                 { keys: "Alt+Left / Alt+Right", action: "walk networks" },
+                { keys: "Alt+Shift+Left", action: "collapse network" },
+                { keys: "Alt+Shift+Right", action: "expand network" },
+                { keys: "Ctrl+Alt+Shift+Left", action: "collapse all networks" },
+                { keys: "Ctrl+Alt+Shift+Right", action: "expand all networks" },
+                { keys: "Alt+Shift+Up", action: "move network up" },
+                { keys: "Alt+Shift+Down", action: "move network down" },
                 { keys: "Ctrl+K", action: "jump to conversation" },
                 { keys: "Ctrl+Shift+K", action: "jump to nick" },
                 { keys: "Alt+A", action: "next unread" },
@@ -54,7 +60,7 @@ Popup {
                 width: parent.width
 
                 Text {
-                    width: sheet.style.scaledSize(168)
+                    width: sheet.style.scaledSize(210)
                     text: modelData.keys
                     color: sheet.style.inkColor
                     font.family: "iA Writer Mono S"

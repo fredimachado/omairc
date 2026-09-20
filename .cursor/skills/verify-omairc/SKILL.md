@@ -107,9 +107,17 @@ Use `control-omairc` against the isolated window. Stable handles:
 | `key --key ctrl+k` | Jump to a conversation. No-op while Connect is visible. |
 | `key --key ctrl+shift+k` | Jump to a channel nick and open or create that DM. No-op on a direct message or Status. |
 | `key --key ctrl+grave` | Toggle Status. Does nothing useful on first-run Connect. |
-| `key --key alt+Down` | Next sidebar conversation (channels, then DMs). Status is not in this list. |
+| `key --key alt+Down` | Next sidebar conversation (channels, then DMs). Status is not in this list. Skips rows under collapsed networks. |
 | `key --key alt+Up` | Previous sidebar conversation |
-| `key --key alt+a` | Next unread conversation, mentions first |
+| `key --key alt+Right` | Next network header. Headers stay walkable when that section is collapsed. |
+| `key --key alt+Left` | Previous network header |
+| `key --key alt+shift+Left` | Collapse the focused network section. No-op without header focus. |
+| `key --key alt+shift+Right` | Expand the focused network section |
+| `key --key ctrl+alt+shift+Left` | Collapse every network section. Does not need header focus. |
+| `key --key ctrl+alt+shift+Right` | Expand every network section |
+| `key --key alt+shift+Up` | Move the focused network up. No wrap. |
+| `key --key alt+shift+Down` | Move the focused network down |
+| `key --key alt+a` | Next unread conversation, mentions first. Expands a collapsed target network. |
 | `key --key Page_Up` | Scroll the visible transcript toward older lines. Composer stays focused. Disabled while Connect is visible. |
 | `key --key Page_Down` | Scroll the visible transcript toward newer lines. |
 | `key --key Tab` | Complete the nick prefix in the composer after `focus-composer`. |
@@ -182,6 +190,6 @@ cleanup
 
 `click-send` assumes the member panel is open (channel, members visible, width >= 980). Prefer `send --text` / `Enter`.
 `click-people` assumes the member column is open. After it hides, use `click-people --hidden`.
-`key --key ctrl+slash` maps to `Control_L+slash`. `ctrl+shift+m`, `ctrl+shift+p`, `ctrl+shift+k`, and `ctrl+shift+s` map to `Control_L+Shift_L+m` / `p` / `k` / `s`. xdotool's shorter tokens do not reach those Qt shortcuts on the isolated Xvfb.
+`key --key ctrl+slash` maps to `Control_L+slash`. `ctrl+shift+m`, `ctrl+shift+p`, `ctrl+shift+k`, and `ctrl+shift+s` map to `Control_L+Shift_L+m` / `p` / `k` / `s`. `alt+shift+Left` / `Right` / `Up` / `Down` map to `Alt_L+Shift_L+Left` and the matching arrows. `ctrl+alt+shift+Left` / `Right` map to `Control_L+Alt_L+Shift_L+Left` / `Right`. xdotool's shorter tokens do not reach those Qt shortcuts on the isolated Xvfb.
 
 If Xvfb tools are missing, install `xorg-server-xvfb xorg-xauth xdotool imagemagick` before using this skill. `bin/test` can still run the offscreen QML suite without those packages.

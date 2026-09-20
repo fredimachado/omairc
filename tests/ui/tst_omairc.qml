@@ -48,6 +48,7 @@ TestCase {
             selected: true
             iconColor: 1
             iconUrl: ""
+            collapsed: false
         }
     }
 
@@ -60,6 +61,7 @@ TestCase {
             selected: true
             iconColor: 1
             iconUrl: ""
+            collapsed: false
         }
     }
 
@@ -155,6 +157,20 @@ TestCase {
 
         function disconnectSelected() {
             disconnectSelectedCalls += 1;
+            return false;
+        }
+
+        function isNetworkCollapsed(networkId) {
+            return false;
+        }
+
+        function setNetworkCollapsed(networkId, collapsed) {
+        }
+
+        function setAllNetworksCollapsed(collapsed) {
+        }
+
+        function moveNetwork(networkId, delta) {
             return false;
         }
     }
@@ -695,7 +711,8 @@ TestCase {
                 stored: false,
                 selected: true,
                 iconColor: 1,
-                iconUrl: ""
+                iconUrl: "",
+                collapsed: false
             });
             selectedNetworkId = "new-id";
             displayName = "New network";
@@ -724,6 +741,20 @@ TestCase {
         function disconnectSelected() {
             disconnectSelectedCalls += 1;
             return true;
+        }
+
+        function isNetworkCollapsed(networkId) {
+            return false;
+        }
+
+        function setNetworkCollapsed(networkId, collapsed) {
+        }
+
+        function setAllNetworksCollapsed(collapsed) {
+        }
+
+        function moveNetwork(networkId, delta) {
+            return false;
         }
     }
 
@@ -945,6 +976,23 @@ TestCase {
         return namedItem("networkHeaderButton-" + networkId);
     }
 
+    function liveCollapseButton(networkId) {
+        return namedItem("networkCollapseButton-" + networkId);
+    }
+
+    function liveChannelsHeading(networkId) {
+        return namedItem("channelsHeading-" + networkId);
+    }
+
+    function liveDirectsHeading(networkId) {
+        return namedItem("directsHeading-" + networkId);
+    }
+
+    function sidebarRowShown(objectName) {
+        var row = namedItem(objectName);
+        return row.visible && row.height > 0;
+    }
+
     function statusTitle(networkId) {
         return networkDisplayName(networkId) + " Status";
     }
@@ -1086,7 +1134,8 @@ TestCase {
             stored: true,
             selected: true,
             iconColor: 1,
-            iconUrl: ""
+            iconUrl: "",
+            collapsed: false
         });
         namedConnection.selectedNetworkId = "libera";
         namedConnection.displayName = "irc.libera.chat";
@@ -4474,7 +4523,8 @@ TestCase {
             stored: true,
             selected: false,
             iconColor: 1,
-            iconUrl: ""
+            iconUrl: "",
+            collapsed: false
         });
         var window = createTemporaryObject(fallbackWindowComponent, null);
         verify(window !== null, "The rail-arrow window should load");
@@ -4538,7 +4588,8 @@ TestCase {
                 stored: true,
                 selected: false,
                 iconColor: 1,
-                iconUrl: ""
+                iconUrl: "",
+                collapsed: false
             });
         }
         var window = createTemporaryObject(fallbackWindowComponent, null);
@@ -4956,7 +5007,8 @@ TestCase {
             stored: true,
             selected: false,
             iconColor: 1,
-            iconUrl: ""
+            iconUrl: "",
+            collapsed: false
         });
         namedConnection.applySucceeds = true;
         namedConnection.applyCalls = 0;
@@ -4994,7 +5046,8 @@ TestCase {
             stored: true,
             selected: false,
             iconColor: 1,
-            iconUrl: ""
+            iconUrl: "",
+            collapsed: false
         });
         var window = createTemporaryObject(fallbackWindowComponent, null);
         verify(window !== null, "The add-then-discard window should load");
@@ -5083,7 +5136,8 @@ TestCase {
                 stored: true,
                 selected: false,
                 iconColor: 1,
-                iconUrl: ""
+                iconUrl: "",
+                collapsed: false
             });
         }
         var window = createTemporaryObject(fallbackWindowComponent, null);
@@ -6818,10 +6872,256 @@ TestCase {
                "shortcut sheet should list Ctrl+Shift+S");
         verify(texts.indexOf("server list") !== -1,
                "shortcut sheet should name server list");
+        verify(texts.indexOf("Alt+Shift+Left") !== -1,
+               "shortcut sheet should list Alt+Shift+Left");
+        verify(texts.indexOf("collapse network") !== -1,
+               "shortcut sheet should name collapse network");
+        verify(texts.indexOf("Alt+Shift+Right") !== -1,
+               "shortcut sheet should list Alt+Shift+Right");
+        verify(texts.indexOf("expand network") !== -1,
+               "shortcut sheet should name expand network");
+        verify(texts.indexOf("Ctrl+Alt+Shift+Left") !== -1,
+               "shortcut sheet should list Ctrl+Alt+Shift+Left");
+        verify(texts.indexOf("collapse all networks") !== -1,
+               "shortcut sheet should name collapse all networks");
+        verify(texts.indexOf("Ctrl+Alt+Shift+Right") !== -1,
+               "shortcut sheet should list Ctrl+Alt+Shift+Right");
+        verify(texts.indexOf("expand all networks") !== -1,
+               "shortcut sheet should name expand all networks");
+        verify(texts.indexOf("Alt+Shift+Up") !== -1,
+               "shortcut sheet should list Alt+Shift+Up");
+        verify(texts.indexOf("move network up") !== -1,
+               "shortcut sheet should name move network up");
+        verify(texts.indexOf("Alt+Shift+Down") !== -1,
+               "shortcut sheet should list Alt+Shift+Down");
+        verify(texts.indexOf("move network down") !== -1,
+               "shortcut sheet should name move network down");
         verify(texts.indexOf("/disconnect") !== -1,
                "shortcut sheet should list /disconnect");
         keyClick(Qt.Key_Escape);
         tryCompare(sheet, "opened", false);
+    }
+
+    function test_collapseFocusedNetworkWithShortcut() {
+        openSeededAppWindow();
+        keyClick(Qt.Key_Right, Qt.AltModifier);
+        compare(appWindow.sidebarNetworkFocusId, seed.oftcNetworkId);
+        verify(sidebarRowShown(liveOftcConversation("#build")));
+        verify(sidebarRowShown(liveOftcConversation("rio")));
+        verify(liveChannelsHeading(seed.oftcNetworkId).visible);
+        verify(liveDirectsHeading(seed.oftcNetworkId).visible);
+        verify(liveHeader(seed.oftcNetworkId).visible);
+        verify(liveHeader(seed.oftcNetworkId).height > 0);
+
+        keyClick(Qt.Key_Left, Qt.AltModifier | Qt.ShiftModifier);
+
+        tryVerify(function() {
+            return appWindow.connection.isNetworkCollapsed(seed.oftcNetworkId);
+        });
+        waitForRendering(appWindow.contentItem);
+        compare(appWindow.sidebarNetworkFocusId, seed.oftcNetworkId);
+        verify(liveHeader(seed.oftcNetworkId).visible);
+        verify(liveHeader(seed.oftcNetworkId).height > 0);
+        compare(sidebarRowShown(liveOftcConversation("#build")), false);
+        compare(namedItem(liveOftcConversation("#build")).height, 0);
+        compare(sidebarRowShown(liveOftcConversation("rio")), false);
+        compare(liveChannelsHeading(seed.oftcNetworkId).visible, false);
+        compare(liveChannelsHeading(seed.oftcNetworkId).height, 0);
+        compare(liveDirectsHeading(seed.oftcNetworkId).visible, false);
+        compare(liveDirectsHeading(seed.oftcNetworkId).height, 0);
+        verify(sidebarRowShown(liveConversation("#omarchy")));
+        verify(sidebarRowShown(liveConversation("anna")));
+
+        keyClick(Qt.Key_Right, Qt.AltModifier | Qt.ShiftModifier);
+
+        tryVerify(function() {
+            return !appWindow.connection.isNetworkCollapsed(seed.oftcNetworkId);
+        });
+        waitForRendering(appWindow.contentItem);
+        verify(sidebarRowShown(liveOftcConversation("#build")));
+        verify(sidebarRowShown(liveOftcConversation("rio")));
+        verify(liveChannelsHeading(seed.oftcNetworkId).visible);
+        verify(liveDirectsHeading(seed.oftcNetworkId).visible);
+        compare(appWindow.sidebarNetworkFocusId, seed.oftcNetworkId);
+    }
+
+    function test_networkCollapseChordNeedsHeaderFocus() {
+        openSeededAppWindow();
+        tryCompare(item("messageComposer"), "activeFocus", true);
+        compare(appWindow.sidebarNetworkFocusId, "");
+        verify(sidebarRowShown(liveOftcConversation("#build")));
+        var order = appWindow.sidebarNetworkSections();
+        compare(order[0].networkId, seed.omarchyNetworkId);
+        compare(order[1].networkId, seed.oftcNetworkId);
+
+        keyClick(Qt.Key_Left, Qt.AltModifier | Qt.ShiftModifier);
+        keyClick(Qt.Key_Right, Qt.AltModifier | Qt.ShiftModifier);
+        keyClick(Qt.Key_Up, Qt.AltModifier | Qt.ShiftModifier);
+        keyClick(Qt.Key_Down, Qt.AltModifier | Qt.ShiftModifier);
+
+        compare(appWindow.sidebarNetworkFocusId, "");
+        compare(appWindow.connection.isNetworkCollapsed(seed.oftcNetworkId), false);
+        compare(appWindow.connection.isNetworkCollapsed(seed.omarchyNetworkId), false);
+        verify(sidebarRowShown(liveOftcConversation("#build")));
+        verify(sidebarRowShown(liveConversation("#omarchy")));
+        compare(appWindow.sidebarNetworkSections()[0].networkId, seed.omarchyNetworkId);
+        compare(appWindow.sidebarNetworkSections()[1].networkId, seed.oftcNetworkId);
+        tryCompare(item("messageComposer"), "activeFocus", true);
+    }
+
+    function test_collapseAllNetworksWithoutHeaderFocus() {
+        openSeededAppWindow();
+        tryCompare(item("messageComposer"), "activeFocus", true);
+        compare(appWindow.sidebarNetworkFocusId, "");
+
+        keyClick(Qt.Key_Left, Qt.ControlModifier | Qt.AltModifier | Qt.ShiftModifier);
+
+        compare(appWindow.sidebarNetworkFocusId, "");
+        tryVerify(function() {
+            return appWindow.connection.isNetworkCollapsed(seed.omarchyNetworkId)
+                && appWindow.connection.isNetworkCollapsed(seed.oftcNetworkId);
+        });
+        waitForRendering(appWindow.contentItem);
+        compare(sidebarRowShown(liveConversation("#omarchy")), false);
+        compare(sidebarRowShown(liveConversation("anna")), false);
+        compare(sidebarRowShown(liveOftcConversation("#build")), false);
+        compare(sidebarRowShown(liveOftcConversation("rio")), false);
+        compare(liveChannelsHeading(seed.omarchyNetworkId).visible, false);
+        compare(liveChannelsHeading(seed.oftcNetworkId).visible, false);
+        verify(liveHeader(seed.omarchyNetworkId).visible);
+        verify(liveHeader(seed.oftcNetworkId).visible);
+        verify(namedItem("networkUnreadMark-" + seed.omarchyNetworkId).visible,
+               "collapsed headers keep the unread/mention mark");
+
+        keyClick(Qt.Key_Right, Qt.ControlModifier | Qt.AltModifier | Qt.ShiftModifier);
+
+        compare(appWindow.sidebarNetworkFocusId, "");
+        tryVerify(function() {
+            return !appWindow.connection.isNetworkCollapsed(seed.omarchyNetworkId)
+                && !appWindow.connection.isNetworkCollapsed(seed.oftcNetworkId);
+        });
+        waitForRendering(appWindow.contentItem);
+        verify(sidebarRowShown(liveConversation("#omarchy")));
+        verify(sidebarRowShown(liveOftcConversation("#build")));
+        verify(liveChannelsHeading(seed.omarchyNetworkId).visible);
+        verify(liveChannelsHeading(seed.oftcNetworkId).visible);
+    }
+
+    function test_altWalkSkipsCollapsedNetworkRows() {
+        openSeededAppWindow();
+        appWindow.connection.setNetworkCollapsed(seed.oftcNetworkId, true);
+        waitForRendering(appWindow.contentItem);
+        compare(sidebarRowShown(liveOftcConversation("#build")), false);
+        mouseClick(namedItem(liveConversation("dax")));
+        tryCompare(appWindow, "currentConversation", "dax");
+
+        keyClick(Qt.Key_Down, Qt.AltModifier);
+
+        tryCompare(appWindow, "currentConversation", "#desktop");
+        compare(appWindow.currentConversationId, seed.omarchyNetworkId + "\n#desktop");
+        compare(appWindow.consoleVisible, false);
+
+        mouseClick(namedItem(liveConversation("#desktop")));
+        tryCompare(appWindow, "currentConversation", "#desktop");
+        keyClick(Qt.Key_Up, Qt.AltModifier);
+        tryCompare(appWindow, "currentConversation", "dax");
+        compare(appWindow.currentConversationId, seed.omarchyNetworkId + "\ndax");
+    }
+
+    function test_jumpActivatesCollapsedNetworkConversation() {
+        openSeededAppWindow();
+        appWindow.connection.setNetworkCollapsed(seed.oftcNetworkId, true);
+        waitForRendering(appWindow.contentItem);
+        compare(appWindow.connection.isNetworkCollapsed(seed.oftcNetworkId), true);
+        compare(sidebarRowShown(liveOftcConversation("#build")), false);
+
+        var sheet = openJumpSheet();
+        typeText("build");
+        tryCompare(item("jumpFilter"), "text", "build");
+        var model = item("jumpModel");
+        compare(model.count, 1);
+        compare(model.get(0).name, "#build");
+        compare(model.get(0).networkId, seed.oftcNetworkId);
+
+        keyClick(Qt.Key_Return);
+
+        tryCompare(sheet, "opened", false);
+        tryCompare(appWindow, "currentConversation", "#build");
+        compare(appWindow.currentConversationId, seed.oftcNetworkId + "\n#build");
+        compare(appWindow.connection.isNetworkCollapsed(seed.oftcNetworkId), false);
+        verify(sidebarRowShown(liveOftcConversation("#build")));
+        verify(liveChannelsHeading(seed.oftcNetworkId).visible);
+    }
+
+    function test_unreadJumpExpandsCollapsedNetwork() {
+        openSeededAppWindow();
+        appWindow.connection.setNetworkCollapsed(seed.omarchyNetworkId, true);
+        waitForRendering(appWindow.contentItem);
+        mouseClick(namedItem(liveOftcConversation("#build")));
+        tryCompare(appWindow, "currentConversation", "#build");
+        compare(appWindow.connection.isNetworkCollapsed(seed.omarchyNetworkId), true);
+
+        keyClick(Qt.Key_A, Qt.AltModifier);
+
+        tryCompare(appWindow, "currentConversation", "#ricing");
+        compare(appWindow.currentConversationId, seed.omarchyNetworkId + "\n#ricing");
+        compare(appWindow.connection.isNetworkCollapsed(seed.omarchyNetworkId), false);
+        verify(sidebarRowShown(liveConversation("#ricing")));
+    }
+
+    function test_moveFocusedNetworkWithShortcut() {
+        openSeededAppWindow();
+        keyClick(Qt.Key_Right, Qt.AltModifier);
+        compare(appWindow.sidebarNetworkFocusId, seed.oftcNetworkId);
+        compare(appWindow.sidebarNetworkSections()[0].networkId, seed.omarchyNetworkId);
+        compare(appWindow.sidebarNetworkSections()[1].networkId, seed.oftcNetworkId);
+
+        keyClick(Qt.Key_Up, Qt.AltModifier | Qt.ShiftModifier);
+
+        tryVerify(function() {
+            var sections = appWindow.sidebarNetworkSections();
+            return sections.length === 2
+                && sections[0].networkId === seed.oftcNetworkId
+                && sections[1].networkId === seed.omarchyNetworkId
+                && appWindow.sidebarNetworkFocusId === seed.oftcNetworkId;
+        });
+        compare(liveHeader(seed.oftcNetworkId).parent.headerFocused, true);
+
+        keyClick(Qt.Key_Down, Qt.AltModifier | Qt.ShiftModifier);
+
+        tryVerify(function() {
+            var sections = appWindow.sidebarNetworkSections();
+            return sections.length === 2
+                && sections[0].networkId === seed.omarchyNetworkId
+                && sections[1].networkId === seed.oftcNetworkId
+                && appWindow.sidebarNetworkFocusId === seed.oftcNetworkId;
+        });
+        compare(liveHeader(seed.oftcNetworkId).parent.headerFocused, true);
+    }
+
+    function test_collapsedSectionKeepsHeaderWalkAndServerListToggle() {
+        openSeededAppWindow();
+        appWindow.connection.setNetworkCollapsed(seed.oftcNetworkId, true);
+        waitForRendering(appWindow.contentItem);
+        compare(appWindow.connection.isNetworkCollapsed(seed.oftcNetworkId), true);
+
+        keyClick(Qt.Key_Right, Qt.AltModifier);
+        compare(appWindow.sidebarNetworkFocusId, seed.oftcNetworkId);
+        verify(liveHeader(seed.oftcNetworkId).visible);
+        compare(liveHeader(seed.oftcNetworkId).parent.headerFocused, true);
+
+        keyClick(Qt.Key_Right, Qt.AltModifier);
+        compare(appWindow.sidebarNetworkFocusId, seed.omarchyNetworkId);
+        compare(liveHeader(seed.omarchyNetworkId).parent.headerFocused, true);
+
+        var sidebar = item("serverList");
+        var expandedWidth = sidebar.width;
+        keyClick(Qt.Key_S, Qt.ControlModifier | Qt.ShiftModifier);
+        tryCompare(sidebar, "width", 0);
+        compare(appWindow.sidebarNetworkFocusId, "");
+        keyClick(Qt.Key_S, Qt.ControlModifier | Qt.ShiftModifier);
+        tryCompare(sidebar, "width", expandedWidth);
+        compare(appWindow.connection.isNetworkCollapsed(seed.oftcNetworkId), true);
     }
 
     function test_emptyNetworkHeaderIsAKeyboardStop() {
@@ -6832,7 +7132,8 @@ TestCase {
             stored: true,
             selected: false,
             iconColor: 1,
-            iconUrl: ""
+            iconUrl: "",
+            collapsed: false
         });
         var window = createTemporaryObject(liveNamedWindowComponent, null);
         verify(window !== null, "The two-network window should load");
@@ -7019,7 +7320,8 @@ TestCase {
             stored: true,
             selected: false,
             iconColor: 1,
-            iconUrl: ""
+            iconUrl: "",
+            collapsed: false
         });
         namedConnection.dirty = true;
         var window = createTemporaryObject(fallbackWindowComponent, null);
@@ -7251,7 +7553,8 @@ TestCase {
             stored: true,
             selected: false,
             iconColor: 1,
-            iconUrl: ""
+            iconUrl: "",
+            collapsed: false
         });
         var window = createTemporaryObject(fallbackWindowComponent, null);
         verify(window !== null, "The accessible rail window should load");

@@ -405,6 +405,12 @@ cmd_key() {
     ctrl+shift+m) key=Control_L+Shift_L+m ;;
     ctrl+shift+p) key=Control_L+Shift_L+p ;;
     ctrl+shift+s) key=Control_L+Shift_L+s ;;
+    alt+shift+Left) key=Alt_L+Shift_L+Left ;;
+    alt+shift+Right) key=Alt_L+Shift_L+Right ;;
+    alt+shift+Up) key=Alt_L+Shift_L+Up ;;
+    alt+shift+Down) key=Alt_L+Shift_L+Down ;;
+    ctrl+alt+shift+Left) key=Control_L+Alt_L+Shift_L+Left ;;
+    ctrl+alt+shift+Right) key=Control_L+Alt_L+Shift_L+Right ;;
   esac
   load_state
   xdotool windowfocus --sync "$WINDOW"

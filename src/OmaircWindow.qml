@@ -598,10 +598,11 @@ ApplicationWindow {
     }
 
     function selectConversation(name, networkId) {
+        var id = networkId && networkId.length ? networkId : (irc ? irc.selectedNetworkId : "");
+        ensureNetworkExpanded(id);
         sidebarNetworkFocusId = "";
         if (!irc)
             return;
-        var id = networkId && networkId.length ? networkId : irc.selectedNetworkId;
         irc.selectConversation(id, name);
         Qt.callLater(function() {
             conversation.messageList.pinToEnd();
@@ -709,6 +710,48 @@ ApplicationWindow {
                 rows.push(item);
         }
         return rows;
+    }
+
+    function visibleSidebarConversationRows() {
+        var rows = sidebarConversationRows();
+        if (!connection)
+            return rows;
+        var visible = [];
+        for (var index = 0; index < rows.length; ++index) {
+            if (connection.isNetworkCollapsed(rows[index].networkId))
+                continue;
+            visible.push(rows[index]);
+        }
+        return visible;
+    }
+
+    function ensureNetworkExpanded(networkId) {
+        if (!connection || !networkId || networkId.length === 0)
+            return;
+        if (connection.isNetworkCollapsed(networkId))
+            connection.setNetworkCollapsed(networkId, false);
+    }
+
+    function collapseFocusedNetwork(collapsed) {
+        var id = sidebarNetworkFocusId;
+        if (!id || !connection)
+            return;
+        connection.setNetworkCollapsed(id, collapsed);
+    }
+
+    function collapseAllNetworks(collapsed) {
+        if (!connection)
+            return;
+        connection.setAllNetworksCollapsed(collapsed);
+    }
+
+    function moveFocusedNetwork(delta) {
+        var id = sidebarNetworkFocusId;
+        if (!id || !connection)
+            return;
+        connection.moveNetwork(id, delta);
+        sidebarNetworkFocusId = id;
+        revealNamedSidebarItem("networkHeader-" + id);
     }
 
     function sectionHasDirects(networkId) {
@@ -969,7 +1012,7 @@ ApplicationWindow {
     }
 
     function stepConversation(delta) {
-        var rows = sidebarConversationRows();
+        var rows = visibleSidebarConversationRows();
         if (rows.length === 0)
             return;
 
@@ -1679,6 +1722,64 @@ ApplicationWindow {
         context: Qt.ApplicationShortcut
         enabled: !win.connectionOverlayVisible && !win.shortcutOverlayOpen
         onActivated: stepNetwork(-1)
+    }
+
+    Shortcut {
+        sequence: "Alt+Shift+Left"
+        context: Qt.ApplicationShortcut
+        enabled: !win.connectionOverlayVisible && !win.shortcutOverlayOpen
+        onActivated: {
+            if (win.sidebarNetworkFocusId.length === 0)
+                return;
+            collapseFocusedNetwork(true);
+        }
+    }
+
+    Shortcut {
+        sequence: "Alt+Shift+Right"
+        context: Qt.ApplicationShortcut
+        enabled: !win.connectionOverlayVisible && !win.shortcutOverlayOpen
+        onActivated: {
+            if (win.sidebarNetworkFocusId.length === 0)
+                return;
+            collapseFocusedNetwork(false);
+        }
+    }
+
+    Shortcut {
+        sequence: "Ctrl+Alt+Shift+Left"
+        context: Qt.ApplicationShortcut
+        enabled: !win.connectionOverlayVisible && !win.shortcutOverlayOpen
+        onActivated: collapseAllNetworks(true)
+    }
+
+    Shortcut {
+        sequence: "Ctrl+Alt+Shift+Right"
+        context: Qt.ApplicationShortcut
+        enabled: !win.connectionOverlayVisible && !win.shortcutOverlayOpen
+        onActivated: collapseAllNetworks(false)
+    }
+
+    Shortcut {
+        sequence: "Alt+Shift+Up"
+        context: Qt.ApplicationShortcut
+        enabled: !win.connectionOverlayVisible && !win.shortcutOverlayOpen
+        onActivated: {
+            if (win.sidebarNetworkFocusId.length === 0)
+                return;
+            moveFocusedNetwork(-1);
+        }
+    }
+
+    Shortcut {
+        sequence: "Alt+Shift+Down"
+        context: Qt.ApplicationShortcut
+        enabled: !win.connectionOverlayVisible && !win.shortcutOverlayOpen
+        onActivated: {
+            if (win.sidebarNetworkFocusId.length === 0)
+                return;
+            moveFocusedNetwork(1);
+        }
     }
 
     Shortcut {
