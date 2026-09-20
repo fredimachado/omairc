@@ -1260,6 +1260,19 @@ TestCase {
         }
     }
 
+    function shortcutCtrlLabel() {
+        return Qt.platform.os === "osx" || Qt.platform.os === "macos" ? "Cmd" : "Ctrl";
+    }
+
+    function shortcutAltLabel() {
+        return Qt.platform.os === "osx" || Qt.platform.os === "macos" ? "Option" : "Alt";
+    }
+
+    function shortcutCommandModifier() {
+        return Qt.platform.os === "osx" || Qt.platform.os === "macos"
+            ? Qt.MetaModifier : Qt.ControlModifier;
+    }
+
     function visibleListChild(listName, childName) {
         var list = item(listName);
         var index = 0;
@@ -4386,6 +4399,9 @@ TestCase {
         var hint = findChild(window, "connectionShortcutsHint");
         verify(hint !== null, "Could not find connectionShortcutsHint");
         verify(hint.visible);
+        var hintKeys = findChild(window, "connectionShortcutsHintKeys");
+        verify(hintKeys !== null, "Could not find connectionShortcutsHintKeys");
+        compare(hintKeys.text, shortcutCtrlLabel() + " + /");
 
         var shortcuts = findChild(window, "shortcutsSheet");
         verify(shortcuts !== null, "Could not find shortcutsSheet");
@@ -6868,50 +6884,81 @@ TestCase {
         keyClick(Qt.Key_Slash, Qt.ControlModifier);
         tryCompare(sheet, "opened", true);
         var texts = shortcutSheetTexts();
-        verify(texts.indexOf("Alt+Left / Alt+Right") !== -1,
-               "shortcut sheet should list Alt+Left / Alt+Right");
+        var ctrl = shortcutCtrlLabel();
+        var alt = shortcutAltLabel();
+        verify(texts.indexOf(alt + "+Left / " + alt + "+Right") !== -1,
+               "shortcut sheet should list " + alt + "+Left / " + alt + "+Right");
         verify(texts.indexOf("walk networks") !== -1,
                "shortcut sheet should name walk networks");
-        verify(texts.indexOf("Ctrl+K") !== -1,
-               "shortcut sheet should list Ctrl+K");
+        verify(texts.indexOf(ctrl + "+K") !== -1,
+               "shortcut sheet should list " + ctrl + "+K");
         verify(texts.indexOf("jump to conversation") !== -1,
                "shortcut sheet should name jump to conversation");
-        verify(texts.indexOf("Ctrl+Shift+K") !== -1,
-               "shortcut sheet should list Ctrl+Shift+K");
+        verify(texts.indexOf(ctrl + "+Shift+K") !== -1,
+               "shortcut sheet should list " + ctrl + "+Shift+K");
         verify(texts.indexOf("jump to nick") !== -1,
                "shortcut sheet should name jump to nick");
-        verify(texts.indexOf("Ctrl+Shift+S") !== -1,
-               "shortcut sheet should list Ctrl+Shift+S");
+        verify(texts.indexOf(ctrl + "+Shift+S") !== -1,
+               "shortcut sheet should list " + ctrl + "+Shift+S");
         verify(texts.indexOf("server list") !== -1,
                "shortcut sheet should name server list");
-        verify(texts.indexOf("Alt+Shift+Left") !== -1,
-               "shortcut sheet should list Alt+Shift+Left");
+        verify(texts.indexOf(alt + "+Shift+Left") !== -1,
+               "shortcut sheet should list " + alt + "+Shift+Left");
         verify(texts.indexOf("collapse network") !== -1,
                "shortcut sheet should name collapse network");
-        verify(texts.indexOf("Alt+Shift+Right") !== -1,
-               "shortcut sheet should list Alt+Shift+Right");
+        verify(texts.indexOf(alt + "+Shift+Right") !== -1,
+               "shortcut sheet should list " + alt + "+Shift+Right");
         verify(texts.indexOf("expand network") !== -1,
                "shortcut sheet should name expand network");
-        verify(texts.indexOf("Ctrl+Alt+Shift+Left") !== -1,
-               "shortcut sheet should list Ctrl+Alt+Shift+Left");
+        verify(texts.indexOf(ctrl + "+" + alt + "+Shift+Left") !== -1,
+               "shortcut sheet should list " + ctrl + "+" + alt + "+Shift+Left");
         verify(texts.indexOf("collapse all networks") !== -1,
                "shortcut sheet should name collapse all networks");
-        verify(texts.indexOf("Ctrl+Alt+Shift+Right") !== -1,
-               "shortcut sheet should list Ctrl+Alt+Shift+Right");
+        verify(texts.indexOf(ctrl + "+" + alt + "+Shift+Right") !== -1,
+               "shortcut sheet should list " + ctrl + "+" + alt + "+Shift+Right");
         verify(texts.indexOf("expand all networks") !== -1,
                "shortcut sheet should name expand all networks");
-        verify(texts.indexOf("Alt+Shift+Up") !== -1,
-               "shortcut sheet should list Alt+Shift+Up");
+        verify(texts.indexOf(alt + "+Shift+Up") !== -1,
+               "shortcut sheet should list " + alt + "+Shift+Up");
         verify(texts.indexOf("move network up") !== -1,
                "shortcut sheet should name move network up");
-        verify(texts.indexOf("Alt+Shift+Down") !== -1,
-               "shortcut sheet should list Alt+Shift+Down");
+        verify(texts.indexOf(alt + "+Shift+Down") !== -1,
+               "shortcut sheet should list " + alt + "+Shift+Down");
         verify(texts.indexOf("move network down") !== -1,
                "shortcut sheet should name move network down");
         verify(texts.indexOf("/disconnect") !== -1,
                "shortcut sheet should list /disconnect");
+        verify(texts.indexOf(ctrl + "+/") !== -1,
+               "shortcut sheet should list " + ctrl + "+/");
         keyClick(Qt.Key_Escape);
         tryCompare(sheet, "opened", false);
+    }
+
+    function test_walkNetworksFromComposerLeavesCaret() {
+        openSeededAppWindow();
+        var composer = item("messageComposer");
+        mouseClick(composer);
+        tryCompare(composer, "activeFocus", true);
+        typeText("hello world");
+        compare(composer.text, "hello world");
+        var caret = composer.cursorPosition;
+
+        keyClick(Qt.Key_Right, Qt.AltModifier);
+
+        compare(appWindow.sidebarNetworkFocusId, seed.oftcNetworkId);
+        compare(appWindow.currentConversation, "#omarchy");
+        compare(composer.text, "hello world");
+        compare(composer.cursorPosition, caret);
+        tryCompare(composer, "activeFocus", true);
+
+        keyClick(Qt.Key_Left, Qt.AltModifier | Qt.ShiftModifier);
+
+        tryVerify(function() {
+            return appWindow.connection.isNetworkCollapsed(seed.oftcNetworkId);
+        });
+        compare(composer.text, "hello world");
+        compare(composer.cursorPosition, caret);
+        compare(appWindow.sidebarNetworkFocusId, seed.oftcNetworkId);
     }
 
     function test_collapseFocusedNetworkWithShortcut() {
@@ -6989,7 +7036,7 @@ TestCase {
         tryCompare(item("messageComposer"), "activeFocus", true);
         compare(appWindow.sidebarNetworkFocusId, "");
 
-        keyClick(Qt.Key_Left, Qt.ControlModifier | Qt.AltModifier | Qt.ShiftModifier);
+        keyClick(Qt.Key_Left, shortcutCommandModifier() | Qt.AltModifier | Qt.ShiftModifier);
 
         compare(appWindow.sidebarNetworkFocusId, "");
         tryVerify(function() {
@@ -7009,7 +7056,7 @@ TestCase {
                "collapsed headers keep the unread/mention mark");
         saveScreenshot("networks-collapsed-all");
 
-        keyClick(Qt.Key_Right, Qt.ControlModifier | Qt.AltModifier | Qt.ShiftModifier);
+        keyClick(Qt.Key_Right, shortcutCommandModifier() | Qt.AltModifier | Qt.ShiftModifier);
 
         compare(appWindow.sidebarNetworkFocusId, "");
         tryVerify(function() {
@@ -7021,6 +7068,39 @@ TestCase {
         verify(sidebarRowShown(liveOftcConversation("#build")));
         verify(liveChannelsHeading(seed.omarchyNetworkId).visible);
         verify(liveChannelsHeading(seed.oftcNetworkId).visible);
+    }
+
+    function test_collapseAllNetworksFromComposerLeavesCaret() {
+        openSeededAppWindow();
+        var composer = item("messageComposer");
+        mouseClick(composer);
+        tryCompare(composer, "activeFocus", true);
+        typeText("hello world");
+        compare(composer.text, "hello world");
+        var caret = composer.cursorPosition;
+        compare(appWindow.sidebarNetworkFocusId, "");
+
+        keyClick(Qt.Key_Left, shortcutCommandModifier() | Qt.AltModifier | Qt.ShiftModifier);
+
+        tryVerify(function() {
+            return appWindow.connection.isNetworkCollapsed(seed.omarchyNetworkId)
+                && appWindow.connection.isNetworkCollapsed(seed.oftcNetworkId);
+        });
+        compare(composer.text, "hello world");
+        compare(composer.cursorPosition, caret);
+        compare(appWindow.sidebarNetworkFocusId, "");
+        tryCompare(composer, "activeFocus", true);
+
+        keyClick(Qt.Key_Right, shortcutCommandModifier() | Qt.AltModifier | Qt.ShiftModifier);
+
+        tryVerify(function() {
+            return !appWindow.connection.isNetworkCollapsed(seed.omarchyNetworkId)
+                && !appWindow.connection.isNetworkCollapsed(seed.oftcNetworkId);
+        });
+        compare(composer.text, "hello world");
+        compare(composer.cursorPosition, caret);
+        compare(appWindow.sidebarNetworkFocusId, "");
+        tryCompare(composer, "activeFocus", true);
     }
 
     function test_altWalkSkipsCollapsedNetworkRows() {

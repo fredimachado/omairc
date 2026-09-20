@@ -21,6 +21,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   is started through a symlink. Qt otherwise skips the bundle `qt.conf` and
   fails with `qtquickcontrols2plugin not found`. The Homebrew PATH helper
   already execs the binary inside `omairc.app`.
+- Sidebar network chords (`Alt+Left` / `Alt+Right`, collapse/expand, and
+  collapse-all) work from the composer on macOS instead of moving the caret.
+  Collapse-all matches Command as `MetaModifier` in `Keys.onPressed`. The
+  shortcuts sheet and Connect hint show `Cmd` and `Option` in place of `Ctrl`
+  and `Alt`.
 
 ## [0.8.3] - 2026-09-20
 

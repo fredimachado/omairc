@@ -431,8 +431,9 @@ Rectangle {
 
                                 Text {
                                     id: shortcutsKeyLabel
+                                    objectName: "connectionShortcutsHintKeys"
                                     anchors.centerIn: parent
-                                    text: "Ctrl + /"
+                                    text: sheet.style.shortcutKeys("Ctrl + /")
                                     color: sheet.style.inkColor
                                     font.family: "iA Writer Mono S"
                                     font.pixelSize: sheet.style.scaledSize(10)
