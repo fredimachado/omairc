@@ -2953,13 +2953,9 @@ bool IrcController::failChannelListFromNumeric(const QString& networkId,
         return false;
     if (message.command.size() != 3)
         return false;
-    bool ok = false;
-    const int code = message.command.toInt(&ok);
-    if (!ok)
-        return false;
-    const bool tryAgain = code == 263;
-    const bool tooMany = code == 416;
-    const bool errorNumeric = code >= 400 && code <= 599;
+    const bool tryAgain = message.command == "263";
+    const bool tooMany = message.command == "416";
+    const bool errorNumeric = message.command[0] == '4' || message.command[0] == '5';
     if (!tryAgain && !tooMany && !errorNumeric)
         return false;
     bool mentionsList = false;
