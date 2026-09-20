@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- macOS relocatable builds load Quick Controls when `Contents/MacOS/omairc`
+  is started through a symlink. Qt otherwise skips the bundle `qt.conf` and
+  fails with `qtquickcontrols2plugin not found`. The Homebrew PATH helper
+  already execs the binary inside `omairc.app`.
+
 ## [0.8.3] - 2026-09-20
 
 ### Added

@@ -5,5 +5,7 @@
 
 QString omaircConfigRoot();
 QString omaircStateRoot();
+QString omaircMacBundleContentsDir(const QString &executablePath);
+QString omaircApplyMacBundleQtPaths();
 
 #endif
