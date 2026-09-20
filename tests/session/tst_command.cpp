@@ -2760,6 +2760,7 @@ void CommandTest::listSerializesInFlightMaskChange()
                           ":server 323 omairc :End of /LIST\r\n"));
     QCOMPARE(transport->writtenFrames().size(), framesBefore + 2);
     QCOMPARE(transport->writtenFrames().last(), QByteArrayLiteral("LIST #om*\r\n"));
+    QCOMPARE(requested.size(), 4);
     QVERIFY(model->loading());
     QVERIFY(!model->complete());
     QCOMPARE(model->mask(), QStringLiteral("#om*"));
@@ -2784,7 +2785,7 @@ void CommandTest::listSerializesInFlightMaskChange()
     QCOMPARE(transport->writtenFrames().size(), framesAfterMasked + 1);
     QVERIFY(controller.sendMessage(QStringLiteral("/list #lin*")));
     QCOMPARE(transport->writtenFrames().size(), framesAfterMasked + 1);
-    QCOMPARE(requested.size(), 6);
+    QCOMPARE(requested.size(), 7);
 
     transport->injectBytes(
         QByteArrayLiteral(":server 322 omairc #omarchy 12 :Cozy corner\r\n"
