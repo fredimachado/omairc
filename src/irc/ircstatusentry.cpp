@@ -649,6 +649,7 @@ bool keepsIncomingNumeric(const QString& command)
     case 253:
     case 254:
     case 255:
+    case 263: // RPL_TRYAGAIN
     case 265:
     case 266:
     case 396:

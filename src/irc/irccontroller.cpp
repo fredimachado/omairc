@@ -19,6 +19,7 @@
 #include <QByteArray>
 #include <QDateTime>
 #include <QSettings>
+#include <QTimer>
 #include <QVariantMap>
 
 #include <algorithm>
@@ -359,7 +360,11 @@ IrcSession *IrcController::addSession(const IrcSessionConfig& config,
     connect(session, &IrcSession::capabilitiesChanged,
             this, &IrcController::handleCapabilities);
     connect(session, &IrcSession::stateChanged, this,
-            [this, session](IrcSession::State) { updateStatus(session); });
+            [this, session](IrcSession::State state) {
+        if (state != IrcSession::State::Registered)
+            forgetChannelList(session->networkId());
+        updateStatus(session);
+    });
     connect(session, &IrcSession::errorOccurred, this,
             [this](const QString& networkId, IrcSession::ErrorKind kind, const QString& message) {
         setLastError(networkId, message);
@@ -381,6 +386,7 @@ bool IrcController::discardSession(const QString &networkId)
     forgetWhoisWatches(networkId);
     forgetCtcpWatches(networkId);
     forgetOwnMetadataWatches(networkId);
+    forgetChannelList(networkId);
     const QString previousId = identityNetworkId();
     const bool previousAway = selfAway();
     m_reducer.apply(IrcSelfAwayEvent{networkId, false});
@@ -404,6 +410,7 @@ void IrcController::forgetNetworkState(const QString &networkId)
     forgetWhoisWatches(networkId);
     forgetCtcpWatches(networkId);
     forgetOwnMetadataWatches(networkId);
+    forgetChannelList(networkId);
     const QString previousId = identityNetworkId();
     const bool previousAway = selfAway();
     if (IrcSession *session = m_sessions.findSession(networkId)) {
@@ -463,6 +470,11 @@ QAbstractItemModel *IrcController::messages()
 QAbstractItemModel *IrcController::members()
 {
     return &m_members;
+}
+
+QAbstractItemModel *IrcController::channelList()
+{
+    return &m_channelList;
 }
 
 QString IrcController::selectedNetworkId() const
@@ -702,6 +714,43 @@ void IrcController::notifyComposerText(const QString& text)
         return;
     session->sendTyping(target, IrcTypingPhase::Done);
     m_typingTarget.clear();
+}
+
+void IrcController::setChannelListPresented(bool presented)
+{
+    m_channelListPresented = presented;
+}
+
+void IrcController::setChannelListIdleTimeoutMs(int milliseconds)
+{
+    m_channelListIdleTimeoutMs = std::max(1, milliseconds);
+}
+
+bool IrcController::joinListedChannel(const QString& channel)
+{
+    const QString networkId = m_channelList.networkId();
+    if (networkId.isEmpty())
+        return false;
+    IrcSession *session = m_sessions.findSession(networkId);
+    if (!session || session->state() != IrcSession::State::Registered)
+        return false;
+    const std::optional<IrcJoinTarget> target =
+        IrcJoinTarget::make(channel, std::nullopt,
+                            m_reducer.serverFeatures(networkId));
+    if (!target)
+        return false;
+    const IrcConversationKey key =
+        m_reducer.conversationKey(networkId, target->channel());
+    if (m_reducer.find(key)) {
+        selectConversation(networkId, target->channel());
+        return true;
+    }
+    const bool wrote = session->join(*target);
+    if (wrote) {
+        m_cancelledPendingJoins.erase(key);
+        openJoinedChannel(networkId, target->channel());
+    }
+    return wrote;
 }
 
 QVariantMap IrcController::peerMetadata(const QString& networkId,
@@ -1405,6 +1454,9 @@ IrcCommandOutcome IrcController::dispatch(const IrcCommand& command,
 
     if (command.verb == IrcCommand::Verb::Help)
         return dispatchHelp(surface);
+
+    if (command.verb == IrcCommand::Verb::List)
+        return dispatchList(command, surface);
 
     if (command.verb == IrcCommand::Verb::Status)
         return dispatchStatus(command, surface);
@@ -2266,6 +2318,49 @@ IrcCommandOutcome IrcController::dispatchHelp(IrcComposerSurface surface)
     return IrcCommandOutcome::Sent;
 }
 
+IrcCommandOutcome IrcController::dispatchList(const IrcCommand& command,
+                                              IrcComposerSurface surface)
+{
+    const QString networkId = queryNetworkId(surface);
+    if (networkId.isEmpty()) {
+        if (surface == IrcComposerSurface::Conversation && !m_selected)
+            return IrcCommandOutcome::WrongScope;
+        return IrcCommandOutcome::Refused;
+    }
+    IrcSession *session = m_sessions.findSession(networkId);
+    if (!session || session->state() != IrcSession::State::Registered)
+        return IrcCommandOutcome::NotConnected;
+
+    const QString mask = command.argument.trimmed();
+    const auto found = m_channelLists.constFind(networkId);
+    const bool sameMask = found != m_channelLists.cend()
+        && sameListMask(found->mask, mask);
+    const bool refresh = m_channelListPresented
+        && m_channelList.networkId() == networkId
+        && sameMask;
+    if (found != m_channelLists.cend() && found->loading) {
+        ChannelListCache &cache = m_channelLists[networkId];
+        if (sameMask)
+            cache.pendingMask.reset();
+        else
+            cache.pendingMask = mask;
+        m_channelList.show(networkId, cache.mask, cache.rows, false, true, false,
+                           cache.error);
+        emit channelListRequested();
+        return IrcCommandOutcome::Sent;
+    }
+    if (found != m_channelLists.cend() && !refresh && found->complete && sameMask) {
+        m_channelList.show(networkId, found->mask, found->rows, true, false, true);
+        emit channelListRequested();
+        return IrcCommandOutcome::Sent;
+    }
+
+    if (!beginChannelListLoad(session, networkId, mask))
+        return IrcCommandOutcome::Refused;
+    emit channelListRequested();
+    return IrcCommandOutcome::Sent;
+}
+
 IrcCommandOutcome IrcController::echoMetadataCommandFeedback(
     IrcComposerSurface surface,
     const QString& networkId,
@@ -2507,6 +2602,7 @@ QString IrcController::ctcpQueryName(IrcCommand::Verb verb) const
     case IrcCommand::Verb::Znc:
     case IrcCommand::Verb::Raw:
     case IrcCommand::Verb::Help:
+    case IrcCommand::Verb::List:
     case IrcCommand::Verb::Unknown:
         return {};
     }
@@ -2714,6 +2810,191 @@ void IrcController::forgetWhoisWatches(const QString& networkId)
         else
             ++it;
     }
+}
+
+void IrcController::forgetChannelList(const QString& networkId)
+{
+    if (networkId.isEmpty())
+        return;
+    stopChannelListIdle(networkId);
+    m_channelLists.remove(networkId);
+    if (m_channelList.networkId() == networkId)
+        m_channelList.clear();
+}
+
+bool IrcController::beginChannelListLoad(IrcSession *session,
+                                         const QString& networkId,
+                                         const QString& mask)
+{
+    if (!session)
+        return false;
+    ChannelListCache &cache = m_channelLists[networkId];
+    cache.mask = mask;
+    cache.rows.clear();
+    cache.complete = false;
+    cache.loading = true;
+    cache.error.clear();
+    cache.pendingMask.reset();
+    m_channelList.beginLoad(networkId, mask);
+    if (!session->list(mask)) {
+        stopChannelListIdle(networkId);
+        cache.loading = false;
+        m_channelLists.remove(networkId);
+        m_channelList.clear();
+        return false;
+    }
+    armChannelListIdle(networkId);
+    return true;
+}
+
+bool IrcController::sameListMask(const QString& left, const QString& right) const
+{
+    return QString::compare(left.trimmed(), right.trimmed(), Qt::CaseInsensitive) == 0;
+}
+
+void IrcController::applyListRow(const QString& networkId, IrcChannelListRow row)
+{
+    if (row.channel.isEmpty())
+        return;
+    const auto found = m_channelLists.find(networkId);
+    if (found == m_channelLists.end() || !found->loading)
+        return;
+    ChannelListCache &cache = *found;
+    armChannelListIdle(networkId);
+    bool replaced = false;
+    for (IrcChannelListRow &existing : cache.rows) {
+        if (existing.channel.compare(row.channel, Qt::CaseInsensitive) != 0)
+            continue;
+        existing = row;
+        replaced = true;
+        break;
+    }
+    if (!replaced) {
+        if (cache.rows.size() >= ChannelListModel::kMaxRows)
+            return;
+        cache.rows.append(row);
+    }
+    if (m_channelList.networkId() != networkId || replaced)
+        return;
+    m_channelList.appendRow(row);
+}
+
+void IrcController::finishChannelList(const QString& networkId)
+{
+    const auto found = m_channelLists.find(networkId);
+    if (found == m_channelLists.end())
+        return;
+    ChannelListCache &cache = *found;
+    if (!cache.loading) {
+        cache.drainTimedOutEnd = false;
+        return;
+    }
+    if (cache.drainTimedOutEnd) {
+        cache.drainTimedOutEnd = false;
+        armChannelListIdle(networkId);
+        return;
+    }
+    stopChannelListIdle(networkId);
+    const std::optional<QString> pending = cache.pendingMask;
+    cache.pendingMask.reset();
+    cache.loading = false;
+    cache.complete = true;
+    cache.error.clear();
+    if (pending && !sameListMask(*pending, cache.mask)) {
+        IrcSession *session = m_sessions.findSession(networkId);
+        if (session && session->state() == IrcSession::State::Registered) {
+            if (beginChannelListLoad(session, networkId, *pending))
+                emit channelListRequested();
+            return;
+        }
+    }
+    if (m_channelList.networkId() == networkId) {
+        m_channelList.show(networkId, cache.mask, cache.rows, true, false, false);
+    }
+}
+
+bool IrcController::failChannelList(const QString& networkId, const QString& text)
+{
+    const auto found = m_channelLists.find(networkId);
+    if (found == m_channelLists.end() || !found->loading)
+        return false;
+    stopChannelListIdle(networkId);
+    ChannelListCache &cache = *found;
+    cache.loading = false;
+    cache.complete = false;
+    cache.pendingMask.reset();
+    cache.error = text;
+    if (m_channelList.networkId() == networkId)
+        m_channelList.fail(text);
+    return true;
+}
+
+void IrcController::armChannelListIdle(const QString& networkId)
+{
+    QTimer *&timer = m_channelListIdleTimers[networkId];
+    if (!timer) {
+        timer = new QTimer(this);
+        timer->setSingleShot(true);
+        connect(timer, &QTimer::timeout, this, [this, networkId] {
+            const QString text =
+                QStringLiteral("Channel list timed out. Try /list again.");
+            if (failChannelList(networkId, text)) {
+                m_console.record(IrcStatusEntry::outcome(networkId, text));
+                const auto found = m_channelLists.find(networkId);
+                if (found != m_channelLists.end())
+                    found->drainTimedOutEnd = true;
+            }
+        });
+    }
+    timer->start(m_channelListIdleTimeoutMs);
+}
+
+void IrcController::stopChannelListIdle(const QString& networkId)
+{
+    QTimer *timer = m_channelListIdleTimers.take(networkId);
+    if (!timer)
+        return;
+    timer->stop();
+    timer->deleteLater();
+}
+
+bool IrcController::failChannelListFromNumeric(const QString& networkId,
+                                               const IrcMessage& message)
+{
+    const auto found = m_channelLists.constFind(networkId);
+    if (found == m_channelLists.cend() || !found->loading)
+        return false;
+    if (message.command.size() != 3)
+        return false;
+    const bool tryAgain = message.command == "263";
+    const bool tooMany = message.command == "416";
+    const bool errorNumeric = message.command[0] == '4' || message.command[0] == '5';
+    if (!tryAgain && !tooMany && !errorNumeric)
+        return false;
+    bool mentionsList = false;
+    for (std::size_t i = 0; i < message.parameters.size(); ++i) {
+        if (parameter(message, i).compare(QLatin1String("LIST"), Qt::CaseInsensitive) == 0) {
+            mentionsList = true;
+            break;
+        }
+    }
+    if (tryAgain && !mentionsList)
+        return false;
+    if (errorNumeric && !tooMany && !mentionsList)
+        return false;
+    QString text = parameter(message, message.parameters.empty()
+                               ? 0
+                               : message.parameters.size() - 1);
+    if (text.isEmpty()) {
+        if (tryAgain)
+            text = QStringLiteral("Server load is too heavy. Try /list again.");
+        else if (tooMany)
+            text = QStringLiteral("Too many channel matches. Try a narrower /list.");
+        else
+            text = QStringLiteral("Channel list failed. Try /list again.");
+    }
+    failChannelList(networkId, text);
+    return true;
 }
 
 std::optional<IrcController::IrcCtcpWatchKey>
@@ -3187,6 +3468,30 @@ void IrcController::handleMessage(const QString& networkId,
     }
     if (message.command == "376" || message.command == "422")
         noteOpenDirectsMotd(networkId);
+    if (message.command == "322") {
+        if (message.parameters.size() >= 3) {
+            bool ok = false;
+            const int users = parameter(message, 2).toInt(&ok);
+            applyListRow(networkId, {
+                parameter(message, 1),
+                ok ? users : 0,
+                parameter(message, 3),
+            });
+        }
+        return;
+    }
+    if (message.command == "321") {
+        const auto found = m_channelLists.find(networkId);
+        if (found != m_channelLists.end() && found->loading)
+            armChannelListIdle(networkId);
+        return;
+    }
+    if (message.command == "323") {
+        finishChannelList(networkId);
+        return;
+    }
+    if (failChannelListFromNumeric(networkId, message))
+        return;
     if (message.command == "333" && message.parameters.size() >= 3) {
         const QString channel = parameter(message, 1);
         const IrcConversationKey key = m_reducer.conversationKey(networkId, channel);

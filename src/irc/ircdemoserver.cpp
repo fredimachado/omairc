@@ -14,6 +14,7 @@
 #include <QDateTime>
 #include <QHash>
 #include <QPair>
+#include <QRegularExpression>
 #include <QSet>
 #include <QVector>
 #include <QtGlobal>
@@ -62,6 +63,13 @@ struct SeedDirect
     bool typing = false;
 };
 
+struct SeedListed
+{
+    QString name;
+    int users = 0;
+    QString topic;
+};
+
 struct SeedNetwork
 {
     QString networkId;
@@ -70,6 +78,7 @@ struct SeedNetwork
     QString iconUrl;
     QVector<SeedChannel> channels;
     QVector<SeedDirect> directs;
+    QVector<SeedListed> directory;
 };
 
 SeedLine chat(const QString &nick,
@@ -468,6 +477,12 @@ SeedNetwork omarchyWorld()
 
     network.channels = {omarchy, desktop, ricing, help};
     network.directs = {anna, dax};
+    network.directory = {
+        {QStringLiteral("#linux"), 42,
+         QStringLiteral("Kernel discussion and distro help.")},
+        {QStringLiteral("#random"), 4,
+         QStringLiteral("Off-topic chatter.")},
+    };
     return network;
 }
 
@@ -544,6 +559,10 @@ SeedNetwork oftcWorld()
 
     network.channels = {omarchy, lab, build};
     network.directs = {rio};
+    network.directory = {
+        {QStringLiteral("#debian"), 28,
+         QStringLiteral("Debian GNU/Linux.")},
+    };
     return network;
 }
 
@@ -773,6 +792,77 @@ bool tryAnswerMonitor(IrcLoopbackTransport *transport,
                      QString::number(kMonitorLimit),
                      overflow.join(QLatin1Char(',')))));
     }
+    return true;
+}
+
+bool listMaskMatches(const QString &name, const QString &mask)
+{
+    if (mask.isEmpty())
+        return true;
+    const QStringList parts = mask.split(QLatin1Char(','), Qt::SkipEmptyParts);
+    if (parts.isEmpty())
+        return true;
+    for (QString part : parts) {
+        part = part.trimmed();
+        if (part.isEmpty())
+            continue;
+        if (part.contains(QLatin1Char('*')) || part.contains(QLatin1Char('?'))) {
+            QRegularExpression re(QRegularExpression::wildcardToRegularExpression(part));
+            re.setPatternOptions(QRegularExpression::CaseInsensitiveOption);
+            if (re.match(name).hasMatch())
+                return true;
+        } else if (name.compare(part, Qt::CaseInsensitive) == 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
+struct ListEntry
+{
+    QString name;
+    int users = 0;
+    QString topic;
+};
+
+QVector<ListEntry> listEntries(const SeedNetwork &network)
+{
+    QVector<ListEntry> rows;
+    for (const SeedChannel &channel : network.channels)
+        rows.append({channel.name, int(channel.members.size()), channel.topic});
+    for (const SeedListed &entry : network.directory)
+        rows.append({entry.name, entry.users, entry.topic});
+    return rows;
+}
+
+bool tryAnswerList(IrcLoopbackTransport *transport, const SeedNetwork &network,
+                   const QByteArray &frame)
+{
+    if (!transport)
+        return false;
+    QByteArray wire = frame;
+    if (wire.endsWith("\r\n"))
+        wire.chop(2);
+    else if (wire.endsWith('\n'))
+        wire.chop(1);
+    if (wire != "LIST" && !wire.startsWith("LIST "))
+        return false;
+
+    QString mask;
+    if (wire.size() > 5)
+        mask = QString::fromUtf8(wire.mid(5)).trimmed();
+
+    QByteArray out = line(QStringLiteral(":server 321 %1 Channel :Users  Name")
+                              .arg(network.nick));
+    for (const ListEntry &entry : listEntries(network)) {
+        if (!listMaskMatches(entry.name, mask))
+            continue;
+        out += line(QStringLiteral(":server 322 %1 %2 %3 :%4")
+                        .arg(network.nick, entry.name,
+                             QString::number(entry.users), entry.topic));
+    }
+    out += line(QStringLiteral(":server 323 %1 :End of /LIST").arg(network.nick));
+    transport->injectBytes(out);
     return true;
 }
 
@@ -1022,9 +1112,12 @@ void IrcDemoServer::hookAutoEcho(IrcLoopbackTransport *transport,
                                  const QString &nick,
                                  const QStringList &online)
 {
+    const SeedNetwork network = nick == oftcWorld().nick ? oftcWorld() : omarchyWorld();
     QObject::connect(transport, &IrcLoopbackTransport::frameWritten, this,
-                     [this, transport, nick, online](const QByteArray &frame) {
+                     [this, transport, nick, online, network](const QByteArray &frame) {
         if (tryAnswerPing(transport, frame))
+            return;
+        if (tryAnswerList(transport, network, frame))
             return;
         if (tryAnswerCtcp(transport, nick, frame))
             return;

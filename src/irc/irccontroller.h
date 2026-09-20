@@ -1,5 +1,6 @@
 #pragma once
 
+#include "channellistmodel.h"
 #include "conversationlistmodel.h"
 #include "ircconversationlog.h"
 #include "irceventreducer.h"
@@ -38,6 +39,7 @@ class IrcController : public QObject
     Q_PROPERTY(QAbstractItemModel* conversations READ conversations CONSTANT)
     Q_PROPERTY(QAbstractItemModel* messages READ messages CONSTANT)
     Q_PROPERTY(QAbstractItemModel* members READ members CONSTANT)
+    Q_PROPERTY(QAbstractItemModel* channelList READ channelList CONSTANT)
     Q_PROPERTY(QString selectedNetworkId READ selectedNetworkId NOTIFY selectionChanged)
     Q_PROPERTY(QString selectedTarget READ selectedTarget NOTIFY selectionChanged)
     Q_PROPERTY(QString selectedConversationId READ selectedConversationId NOTIFY selectionChanged)
@@ -76,6 +78,7 @@ public:
     QAbstractItemModel *conversations();
     QAbstractItemModel *messages();
     QAbstractItemModel *members();
+    QAbstractItemModel *channelList();
     QString selectedNetworkId() const;
     QString selectedTarget() const;
     QString selectedConversationId() const;
@@ -124,6 +127,9 @@ public:
     Q_INVOKABLE bool sendMessage(const QString& text);
     Q_INVOKABLE bool nickIsTyping(const QString& nick) const;
     Q_INVOKABLE void notifyComposerText(const QString& text);
+    Q_INVOKABLE void setChannelListPresented(bool presented);
+    Q_INVOKABLE bool joinListedChannel(const QString& channel);
+    void setChannelListIdleTimeoutMs(int milliseconds);
     Q_INVOKABLE QVariantMap peerMetadata(const QString& networkId,
                                          const QString& nick) const;
 
@@ -206,6 +212,7 @@ signals:
     void monitorArrived(const QString &author, const QString &body,
                         const QString &networkId, const QString &target);
     void inboxChanged();
+    void channelListRequested();
 
 private:
     enum class QuietWire { Privmsg, Notice };
@@ -300,6 +307,8 @@ private:
     IrcCommandOutcome dispatchRaw(const IrcCommand& command,
                                   IrcComposerSurface surface);
     IrcCommandOutcome dispatchHelp(IrcComposerSurface surface);
+    IrcCommandOutcome dispatchList(const IrcCommand& command,
+                                   IrcComposerSurface surface);
     IrcCommandOutcome dispatchStatus(const IrcCommand& command,
                                      IrcComposerSurface surface);
     IrcCommandOutcome dispatchAvatar(const IrcCommand& command,
@@ -315,6 +324,18 @@ private:
     QStringList whoisMetadataLines(const QString& networkId,
                                    const QString& nick) const;
     void forgetWhoisWatches(const QString& networkId);
+    void forgetChannelList(const QString& networkId);
+    bool beginChannelListLoad(IrcSession *session,
+                              const QString& networkId,
+                              const QString& mask);
+    void applyListRow(const QString& networkId, IrcChannelListRow row);
+    void finishChannelList(const QString& networkId);
+    bool failChannelList(const QString& networkId, const QString& text);
+    void armChannelListIdle(const QString& networkId);
+    void stopChannelListIdle(const QString& networkId);
+    bool failChannelListFromNumeric(const QString& networkId,
+                                    const IrcMessage& message);
+    bool sameListMask(const QString& left, const QString& right) const;
     struct IrcCtcpWatchKey
     {
         QString networkId;
@@ -423,6 +444,22 @@ private:
     ConversationListModel m_conversations;
     MessageListModel m_messages;
     MemberListModel m_members;
+    ChannelListModel m_channelList;
+    struct ChannelListCache {
+        QString mask;
+        QVector<IrcChannelListRow> rows;
+        bool complete = false;
+        bool loading = false;
+        QString error;
+        std::optional<QString> pendingMask;
+        // After idle timeout, a 323 from the unanswered LIST may still arrive
+        // after a retry's 321/322. Drain that one end; do not finish the retry.
+        bool drainTimedOutEnd = false;
+    };
+    QHash<QString, ChannelListCache> m_channelLists;
+    QHash<QString, QTimer *> m_channelListIdleTimers;
+    int m_channelListIdleTimeoutMs = 30000;
+    bool m_channelListPresented = false;
     QHash<QString, QString> m_currentNicks;
     QHash<QString, QString> m_lastErrors;
     QHash<QString, IrcCapabilitySet> m_capabilities;

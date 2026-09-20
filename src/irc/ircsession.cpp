@@ -736,6 +736,16 @@ bool IrcSession::whois(const QString& nick)
     return sendCommand(QStringLiteral("WHOIS %1 %1").arg(trimmed));
 }
 
+bool IrcSession::list(const QString& mask)
+{
+    const QString trimmed = mask.trimmed();
+    if (trimmed.contains(QLatin1Char('\r')) || trimmed.contains(QLatin1Char('\n')))
+        return false;
+    if (trimmed.isEmpty())
+        return sendCommand(QStringLiteral("LIST"));
+    return sendCommand(QStringLiteral("LIST %1").arg(trimmed));
+}
+
 void IrcSession::setState(State state)
 {
     if (m_state == state)
