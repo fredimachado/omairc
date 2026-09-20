@@ -672,7 +672,7 @@ void LiveIrcdTest::conversationInventionMatrix()
     const bool tls = daemon->plainPort == 0;
     const quint16 port = tls ? daemon->tlsPort : daemon->plainPort;
     const QString peerNick = uniqueNick(daemon->nickLength);
-    const QString targetNick = QStringLiteral("lena");
+    const QString targetNick = uniqueNick(daemon->nickLength);
     const QString dmBody = QStringLiteral("hello");
     const QString peerBody = QStringLiteral("hi");
 
@@ -694,6 +694,8 @@ void LiveIrcdTest::conversationInventionMatrix()
     QCOMPARE(client.controller.selectedTarget(), channel);
 
     auto *conversations = client.controller.conversations();
+    RawIrcPeer msgTarget(liveHost(), port, tls, liveSslConfiguration(), targetNick);
+    QVERIFY(msgTarget.waitRegistered());
     QVERIFY(client.controller.sendMessage(
         QStringLiteral("/msg %1 %2").arg(targetNick, dmBody)));
     QCOMPARE(conversationRow(conversations, targetNick), -1);
