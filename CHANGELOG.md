@@ -33,6 +33,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Desktop notifications and portal theme reads no-op immediately when the
+  D-Bus session bus address is empty or its `unix:path` is missing, instead
+  of blocking on `QDBusConnection::sessionBus()`.
 - macOS relocatable builds load Quick Controls when `Contents/MacOS/omairc`
   is started through a symlink. Qt otherwise skips the bundle `qt.conf` and
   fails with `qtquickcontrols2plugin not found`. The Homebrew PATH helper

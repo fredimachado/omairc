@@ -2,6 +2,8 @@
 
 #include <QColor>
 #ifdef Q_OS_LINUX
+#include "linuxsessionbus.h"
+
 #include <QDBusConnection>
 #include <QDBusMessage>
 #include <QDBusPendingCall>
@@ -44,7 +46,7 @@ Backend::Backend(QObject *parent) : QObject(parent) {
     });
 
 #ifdef Q_OS_LINUX
-    QDBusConnection bus = QDBusConnection::sessionBus();
+    QDBusConnection bus = linuxSessionBusIfPresent();
     if (!bus.isConnected())
         return;
     bus.connect(QString(),
@@ -85,7 +87,7 @@ void Backend::notifyDesktop(const QString &summary, const QString &body,
                             const QString &networkId, const QString &target,
                             const QString &msgid) {
 #ifdef Q_OS_LINUX
-    QDBusConnection bus = QDBusConnection::sessionBus();
+    QDBusConnection bus = linuxSessionBusIfPresent();
     if (!bus.isConnected())
         return;
 

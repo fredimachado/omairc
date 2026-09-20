@@ -21,6 +21,7 @@ DEFINES += LIVE_CERT_DIR=\\\"$$PWD/../live/certs\\\"
 
 HEADERS += \
     ../../src/backend.h \
+    ../../src/linuxsessionbus.h \
     ../../src/omaircupdatecheck.h \
     ../../src/irc/ircmessage.h \
     ../../src/irc/ircparser.h \

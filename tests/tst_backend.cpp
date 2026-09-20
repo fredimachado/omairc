@@ -7,6 +7,7 @@
 #include <QDBusAbstractAdaptor>
 #include <QDBusConnection>
 #include <QDBusMessage>
+#include <QElapsedTimer>
 #include <QProcess>
 #include <QSignalSpy>
 #include <QStringList>
@@ -14,11 +15,17 @@
 #include <QVector>
 
 namespace {
+const auto kSessionBusName = QStringLiteral("qt_default_session_bus");
+
 void disconnectSessionBus()
 {
-    const QString name = QDBusConnection::sessionBus().name();
-    if (!name.isEmpty())
-        QDBusConnection::disconnectFromBus(name);
+    QDBusConnection::disconnectFromBus(kSessionBusName);
+}
+
+void setMissingSessionBus()
+{
+    qputenv("DBUS_SESSION_BUS_ADDRESS", "unix:path=/tmp/omairc-no-such-session-bus");
+    disconnectSessionBus();
 }
 
 void drainSessionBus()
@@ -247,22 +254,27 @@ void BackendNotifyTest::actionInvokedEmitsNetworkTargetMsgid()
 
 void BackendNotifyTest::notifyDesktopWithoutSessionBusDoesNotCrash()
 {
+    qunsetenv("DBUS_SESSION_BUS_ADDRESS");
     disconnectSessionBus();
-    qputenv("DBUS_SESSION_BUS_ADDRESS", "unix:path=/tmp/omairc-no-such-session-bus");
+    QElapsedTimer timer;
+    timer.start();
     Backend backend;
     backend.notifyDesktop(QStringLiteral("alice"), QStringLiteral("hello"),
                           QStringLiteral("omarchy"), QStringLiteral("#omarchy"),
                           QStringLiteral("mid-1"));
+    QVERIFY(timer.elapsed() < 2000);
     disconnectSessionBus();
 }
 
 void BackendNotifyTest::notifyDesktopAfterDisconnectDoesNotCrash()
 {
     stopPrivateBus();
-    disconnectSessionBus();
-    qputenv("DBUS_SESSION_BUS_ADDRESS", "unix:path=/tmp/omairc-no-such-session-bus");
+    setMissingSessionBus();
+    QElapsedTimer timer;
+    timer.start();
     Backend backend;
     backend.notifyDesktop(QStringLiteral("alice"), QStringLiteral("hello"));
+    QVERIFY(timer.elapsed() < 2000);
 }
 #endif
 
