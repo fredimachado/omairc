@@ -24,7 +24,21 @@ Rectangle {
     Accessible.selected: current
     Accessible.onPressAction: tabButton.selected(tabName)
 
+    Keys.onShortcutOverride: function(event) {
+        var mods = event.modifiers & (Qt.ShiftModifier | Qt.ControlModifier
+            | Qt.AltModifier | Qt.MetaModifier);
+        if (mods === Qt.AltModifier
+                && (event.key === Qt.Key_Left || event.key === Qt.Key_Right)) {
+            event.accepted = false;
+            return;
+        }
+    }
     Keys.onPressed: function(event) {
+        var mods = event.modifiers & (Qt.ShiftModifier | Qt.ControlModifier
+            | Qt.AltModifier | Qt.MetaModifier);
+        if (mods === Qt.AltModifier
+                && (event.key === Qt.Key_Left || event.key === Qt.Key_Right))
+            return;
         if (event.key === Qt.Key_Left || event.key === Qt.Key_Right) {
             stepRequested(event.key === Qt.Key_Right ? 1 : -1);
             event.accepted = true;

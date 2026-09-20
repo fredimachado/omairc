@@ -1120,6 +1120,52 @@ ApplicationWindow {
         focusNetworkHeader(sections[nextIndex]);
     }
 
+    function connectionSheetRailHasFocus() {
+        var focused = win.activeFocusItem;
+        while (focused) {
+            if (focused.objectName) {
+                if (focused.objectName.indexOf("networkChoice-") === 0)
+                    return true;
+                if (focused.objectName === "connectionAddNetwork")
+                    return true;
+            }
+            focused = focused.parent;
+        }
+        return false;
+    }
+
+    function stepSheetNetwork(delta) {
+        if (!connection)
+            return;
+        var count = modelRowCount(connection.networks);
+        if (count === 0)
+            return;
+
+        var current = -1;
+        var index;
+        for (index = 0; index < count; ++index) {
+            var item = networkAt(index);
+            if (item && item.networkId === connection.selectedNetworkId) {
+                current = index;
+                break;
+            }
+        }
+
+        var nextIndex = current < 0
+            ? (delta > 0 ? 0 : count - 1)
+            : (current + delta + count) % count;
+        var next = networkAt(nextIndex);
+        if (!next)
+            return;
+
+        var moveFocus = connectionSheetRailHasFocus();
+        selectSheetNetwork(next.networkId);
+        if (moveFocus)
+            connectionSheet.focusNetworkChoiceStop(nextIndex);
+        else
+            connectionSheet.revealNetworkChoice(next.networkId);
+    }
+
     function stepConversation(delta) {
         var rows = sidebarConversationRows();
         if (rows.length === 0)
@@ -1885,7 +1931,6 @@ ApplicationWindow {
         sequence: "Ctrl+Return"
         context: Qt.ApplicationShortcut
         enabled: win.connectionOverlayVisible
-            && win.connectionSheetTab === "connection"
         onActivated: win.submitConnection()
     }
 
@@ -1893,8 +1938,54 @@ ApplicationWindow {
         sequence: "Ctrl+Enter"
         context: Qt.ApplicationShortcut
         enabled: win.connectionOverlayVisible
-            && win.connectionSheetTab === "connection"
         onActivated: win.submitConnection()
+    }
+
+    Shortcut {
+        sequence: "Ctrl+Tab"
+        context: Qt.ApplicationShortcut
+        enabled: win.connectionOverlayVisible && !win.shortcutOverlayOpen
+        onActivated: win.stepConnectionSheetTab(1)
+    }
+
+    Shortcut {
+        sequences: ["Ctrl+Shift+Tab", "Ctrl+Backtab"]
+        context: Qt.ApplicationShortcut
+        enabled: win.connectionOverlayVisible && !win.shortcutOverlayOpen
+        onActivated: win.stepConnectionSheetTab(-1)
+    }
+
+    Shortcut {
+        sequence: "Alt+Right"
+        context: Qt.ApplicationShortcut
+        enabled: win.connectionOverlayVisible && !win.shortcutOverlayOpen
+        onActivated: win.stepSheetNetwork(1)
+    }
+
+    Shortcut {
+        sequence: "Alt+Left"
+        context: Qt.ApplicationShortcut
+        enabled: win.connectionOverlayVisible && !win.shortcutOverlayOpen
+        onActivated: win.stepSheetNetwork(-1)
+    }
+
+    Shortcut {
+        sequence: "Ctrl+N"
+        context: Qt.ApplicationShortcut
+        enabled: win.connectionOverlayVisible && !win.shortcutOverlayOpen
+        onActivated: {
+            if (!win.addSheetNetwork())
+                return;
+            win.selectConnectionSheetTab("connection");
+            connectionSheet.connectionNameField.focusInput();
+        }
+    }
+
+    Shortcut {
+        sequence: "Ctrl+Shift+Delete"
+        context: Qt.ApplicationShortcut
+        enabled: win.connectionOverlayVisible && !win.shortcutOverlayOpen
+        onActivated: win.removeSheetNetwork()
     }
 
     Shortcut {
@@ -2140,9 +2231,10 @@ ApplicationWindow {
 
     function addSheetNetwork() {
         if (!connection || !connection.add())
-            return;
+            return false;
         clearConnectionPassword();
         connectionRemoveArmed = false;
+        return true;
     }
 
     function discardSheetConnection() {
@@ -2758,6 +2850,9 @@ ApplicationWindow {
         onDisconnectRequested: win.disconnectSheetNetwork()
         onApplyKeyRequested: function(event) {
             win.applyFromSheetKey(event);
+        }
+        onNetworkWalkRequested: function(direction) {
+            win.stepSheetNetwork(direction);
         }
         onPasswordEdited: win.connectionPasswordEdited = true
         onNickServEdited: win.connectionNickServEdited = true

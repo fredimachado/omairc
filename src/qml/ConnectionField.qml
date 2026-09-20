@@ -14,6 +14,7 @@ Column {
 
     signal textEdited(string text)
     signal applyKeyRequested(var event)
+    signal networkWalkRequested(int direction)
 
     function focusInput() {
         input.forceActiveFocus();
@@ -129,9 +130,25 @@ Column {
             Accessible.description: field.help
             background: Item {}
             onTextEdited: field.textEdited(text)
+            Keys.onShortcutOverride: function(event) {
+                var mods = event.modifiers & (Qt.ShiftModifier | Qt.ControlModifier
+                    | Qt.AltModifier | Qt.MetaModifier);
+                if (mods === Qt.AltModifier
+                        && (event.key === Qt.Key_Left || event.key === Qt.Key_Right))
+                    event.accepted = true;
+            }
             Keys.onPressed: function(event) {
-                if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter)
+                if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
                     field.applyKeyRequested(event);
+                    return;
+                }
+                var mods = event.modifiers & (Qt.ShiftModifier | Qt.ControlModifier
+                    | Qt.AltModifier | Qt.MetaModifier);
+                if (mods === Qt.AltModifier
+                        && (event.key === Qt.Key_Left || event.key === Qt.Key_Right)) {
+                    event.accepted = true;
+                    field.networkWalkRequested(event.key === Qt.Key_Right ? 1 : -1);
+                }
             }
         }
     }
