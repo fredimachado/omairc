@@ -129,6 +129,7 @@ public:
     Q_INVOKABLE void notifyComposerText(const QString& text);
     Q_INVOKABLE void setChannelListPresented(bool presented);
     Q_INVOKABLE bool joinListedChannel(const QString& channel);
+    void setChannelListIdleTimeoutMs(int milliseconds);
     Q_INVOKABLE QVariantMap peerMetadata(const QString& networkId,
                                          const QString& nick) const;
 
@@ -329,6 +330,11 @@ private:
                               const QString& mask);
     void applyListRow(const QString& networkId, IrcChannelListRow row);
     void finishChannelList(const QString& networkId);
+    bool failChannelList(const QString& networkId, const QString& text);
+    void armChannelListIdle(const QString& networkId);
+    void stopChannelListIdle(const QString& networkId);
+    bool failChannelListFromNumeric(const QString& networkId,
+                                    const IrcMessage& message);
     bool sameListMask(const QString& left, const QString& right) const;
     struct IrcCtcpWatchKey
     {
@@ -444,9 +450,12 @@ private:
         QVector<IrcChannelListRow> rows;
         bool complete = false;
         bool loading = false;
+        QString error;
         std::optional<QString> pendingMask;
     };
     QHash<QString, ChannelListCache> m_channelLists;
+    QHash<QString, QTimer *> m_channelListIdleTimers;
+    int m_channelListIdleTimeoutMs = 30000;
     bool m_channelListPresented = false;
     QHash<QString, QString> m_currentNicks;
     QHash<QString, QString> m_lastErrors;

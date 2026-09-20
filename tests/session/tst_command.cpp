@@ -198,6 +198,10 @@ private slots:
     void wrappersSendAndHelp();
     void listSendsAndCaches();
     void listSerializesInFlightMaskChange();
+    void listTryAgainUnwedgesAndRetries();
+    void listTooManyMatchesUnwedges();
+    void listIdleTimeoutUnwedges();
+    void listLoadingPresentsOwnNetwork();
     void slashProjectClosed();
     void slashProjectOpen();
     void slashSessionKeys();
@@ -2804,6 +2808,157 @@ void CommandTest::listSerializesInFlightMaskChange()
     QCOMPARE(model->rowCount(), 1);
     QCOMPARE(model->field(0, QStringLiteral("channel")).toString(),
              QStringLiteral("#linux"));
+}
+
+void CommandTest::listTryAgainUnwedgesAndRetries()
+{
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    IrcSession *session = controller.addSession(config(), transport);
+    QVERIFY(session);
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    welcome(transport);
+    transport->injectBytes(QByteArrayLiteral(":omairc!u@h JOIN :#omarchy\r\n"));
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+
+    const int statusRowsBefore = controller.console()->lines()->rowCount();
+    QVERIFY(controller.sendMessage(QStringLiteral("/list")));
+    auto *model = qobject_cast<ChannelListModel *>(controller.channelList());
+    QVERIFY(model);
+    QVERIFY(model->loading());
+
+    transport->injectBytes(
+        QByteArrayLiteral(":server 263 omairc WHO :Please wait a while and try again.\r\n"));
+    QVERIFY(model->loading());
+    QVERIFY(model->error().isEmpty());
+
+    transport->injectBytes(
+        QByteArrayLiteral(":server 263 omairc LIST :Server load is temporarily too heavy.\r\n"));
+    QVERIFY(!model->loading());
+    QVERIFY(!model->complete());
+    QCOMPARE(model->error(), QStringLiteral("Server load is temporarily too heavy."));
+    QVERIFY(logContains(controller.console()->lines(),
+                        QStringLiteral("Server load is temporarily too heavy.")));
+    QVERIFY(controller.console()->lines()->rowCount() > statusRowsBefore);
+
+    const int framesAfterFail = transport->writtenFrames().size();
+    QVERIFY(controller.sendMessage(QStringLiteral("/list")));
+    QCOMPARE(transport->writtenFrames().size(), framesAfterFail + 1);
+    QCOMPARE(transport->writtenFrames().last(), QByteArrayLiteral("LIST\r\n"));
+    QVERIFY(model->loading());
+    QVERIFY(model->error().isEmpty());
+}
+
+void CommandTest::listTooManyMatchesUnwedges()
+{
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    IrcSession *session = controller.addSession(config(), transport);
+    QVERIFY(session);
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    welcome(transport);
+    transport->injectBytes(QByteArrayLiteral(":omairc!u@h JOIN :#omarchy\r\n"));
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+
+    QVERIFY(controller.sendMessage(QStringLiteral("/list")));
+    auto *model = qobject_cast<ChannelListModel *>(controller.channelList());
+    QVERIFY(model);
+    transport->injectBytes(
+        QByteArrayLiteral(":server 322 omairc #linux 42 :Kernel discussion\r\n"
+                          ":server 416 omairc LIST :Too many matches\r\n"));
+    QVERIFY(!model->loading());
+    QVERIFY(!model->complete());
+    QCOMPARE(model->error(), QStringLiteral("Too many matches"));
+    QCOMPARE(model->sourceCount(), 1);
+    QVERIFY(logContains(controller.console()->lines(), QStringLiteral("Too many matches")));
+
+    const int framesAfterFail = transport->writtenFrames().size();
+    QVERIFY(controller.sendMessage(QStringLiteral("/list")));
+    QCOMPARE(transport->writtenFrames().size(), framesAfterFail + 1);
+    QCOMPARE(transport->writtenFrames().last(), QByteArrayLiteral("LIST\r\n"));
+    QVERIFY(model->loading());
+}
+
+void CommandTest::listIdleTimeoutUnwedges()
+{
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    IrcSession *session = controller.addSession(config(), transport);
+    QVERIFY(session);
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    welcome(transport);
+    transport->injectBytes(QByteArrayLiteral(":omairc!u@h JOIN :#omarchy\r\n"));
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+
+    controller.setChannelListIdleTimeoutMs(30);
+    QVERIFY(controller.sendMessage(QStringLiteral("/list")));
+    auto *model = qobject_cast<ChannelListModel *>(controller.channelList());
+    QVERIFY(model);
+    QVERIFY(model->loading());
+    QTest::qWait(200);
+    QVERIFY(!model->loading());
+    QVERIFY(!model->complete());
+    QVERIFY(model->error().contains(QStringLiteral("timed out")));
+    QVERIFY(logContains(controller.console()->lines(), QStringLiteral("timed out")));
+
+    const int framesAfterFail = transport->writtenFrames().size();
+    QVERIFY(controller.sendMessage(QStringLiteral("/list")));
+    QCOMPARE(transport->writtenFrames().size(), framesAfterFail + 1);
+    QCOMPARE(transport->writtenFrames().last(), QByteArrayLiteral("LIST\r\n"));
+    QVERIFY(model->loading());
+}
+
+void CommandTest::listLoadingPresentsOwnNetwork()
+{
+    IrcController controller;
+    auto *transportA = new FakeIrcTransport;
+    auto *transportB = new FakeIrcTransport;
+    QVERIFY(controller.addSession(config(QStringLiteral("libera")), transportA));
+    QVERIFY(controller.addSession(config(QStringLiteral("oftc")), transportB));
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    QVERIFY(controller.start(QStringLiteral("oftc")));
+    welcome(transportA);
+    welcome(transportB);
+    transportA->injectBytes(QByteArrayLiteral(":omairc!u@h JOIN :#omarchy\r\n"));
+    transportB->injectBytes(QByteArrayLiteral(":omairc!u@h JOIN :#lab\r\n"));
+
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    QVERIFY(controller.sendMessage(QStringLiteral("/list")));
+    QCOMPARE(transportA->writtenFrames().last(), QByteArrayLiteral("LIST\r\n"));
+    auto *model = qobject_cast<ChannelListModel *>(controller.channelList());
+    QVERIFY(model);
+    QVERIFY(model->loading());
+    QCOMPARE(model->networkId(), QStringLiteral("libera"));
+
+    controller.selectConversation(QStringLiteral("oftc"), QStringLiteral("#lab"));
+    QVERIFY(controller.sendMessage(QStringLiteral("/list")));
+    QCOMPARE(transportB->writtenFrames().last(), QByteArrayLiteral("LIST\r\n"));
+    transportB->injectBytes(
+        QByteArrayLiteral(":server 322 omairc #lab 7 :Lab\r\n"
+                          ":server 323 omairc :End of /LIST\r\n"));
+    QVERIFY(model->complete());
+    QCOMPARE(model->networkId(), QStringLiteral("oftc"));
+    QCOMPARE(model->field(0, QStringLiteral("channel")).toString(),
+             QStringLiteral("#lab"));
+
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    QVERIFY(controller.sendMessage(QStringLiteral("/list")));
+    QVERIFY(model->loading());
+    QCOMPARE(model->networkId(), QStringLiteral("libera"));
+    QCOMPARE(model->rowCount(), 0);
+    QCOMPARE(controller.selectedTarget(), QStringLiteral("#omarchy"));
+    QCOMPARE(transportA->writtenFrames().last(), QByteArrayLiteral("LIST\r\n"));
+
+    transportA->injectBytes(
+        QByteArrayLiteral(":server 322 omairc #linux 42 :Kernel discussion\r\n"
+                          ":server 323 omairc :End of /LIST\r\n"));
+    QVERIFY(model->complete());
+    QCOMPARE(model->networkId(), QStringLiteral("libera"));
+    QCOMPARE(model->field(0, QStringLiteral("channel")).toString(),
+             QStringLiteral("#linux"));
+    QVERIFY(controller.joinListedChannel(QStringLiteral("#linux")));
+    QCOMPARE(transportA->writtenFrames().last(), QByteArrayLiteral("JOIN #linux\r\n"));
+    QVERIFY(transportB->writtenFrames().last() != QByteArrayLiteral("JOIN #linux\r\n"));
 }
 
 void CommandTest::slashProjectClosed()

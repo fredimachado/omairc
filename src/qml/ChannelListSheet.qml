@@ -104,7 +104,7 @@ Popup {
             boundsBehavior: Flickable.StopAtBounds
             model: sheet.matches
             currentIndex: sheet.selectedIndex
-            highlightFollowsCurrentItem: true
+            highlightFollowsCurrentItem: false
             ScrollBar.vertical: ScrollBar {
                 policy: channelListList.contentHeight > channelListList.height
                     ? ScrollBar.AsNeeded : ScrollBar.AlwaysOff
@@ -165,7 +165,6 @@ Popup {
 
                 MouseArea {
                     anchors.fill: parent
-                    hoverEnabled: true
                     onClicked: sheet.rowActivated(listDelegate.index)
                 }
             }
@@ -178,6 +177,8 @@ Popup {
                 var model = sheet.matches;
                 if (!model)
                     return "";
+                if (model.error)
+                    return model.error;
                 var loading = model.loading === true;
                 var source = model.sourceCount || 0;
                 var visible = channelListList.count;

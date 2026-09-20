@@ -76,6 +76,7 @@ ApplicationWindow {
     property int inboxSelectedIndex: 0
     property int nickSelectedIndex: 0
     property int channelListSelectedIndex: 0
+    property bool channelListOpenAfterConnect: false
     property var nickSourceRows: []
     readonly property bool shortcutOverlayOpen: shortcutsSheet.opened
         || jumpSheet.opened
@@ -977,8 +978,10 @@ ApplicationWindow {
     }
 
     function openChannelListSheet() {
-        if (win.connectionOverlayVisible)
+        if (win.connectionOverlayVisible) {
+            win.channelListOpenAfterConnect = true;
             return;
+        }
         channelListSelectedIndex = 0;
         channelListSheet.open();
     }
@@ -2857,6 +2860,10 @@ ApplicationWindow {
             Qt.callLater(function() {
                 if (win && win.active && conversation.composer)
                     conversation.composer.forceActiveFocus();
+                if (win && win.channelListOpenAfterConnect) {
+                    win.channelListOpenAfterConnect = false;
+                    win.openChannelListSheet();
+                }
             });
         }
         onDimmerClicked: function(mouse) {

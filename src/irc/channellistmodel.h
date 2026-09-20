@@ -4,6 +4,7 @@
 #include <QByteArray>
 #include <QHash>
 #include <QString>
+#include <QTimer>
 #include <QVariant>
 #include <QVariantMap>
 #include <QVector>
@@ -22,6 +23,7 @@ class ChannelListModel : public QAbstractListModel
     Q_PROPERTY(bool loading READ loading NOTIFY stateChanged)
     Q_PROPERTY(bool complete READ complete NOTIFY stateChanged)
     Q_PROPERTY(bool cached READ cached NOTIFY stateChanged)
+    Q_PROPERTY(QString error READ error NOTIFY stateChanged)
     Q_PROPERTY(QString networkId READ networkId NOTIFY stateChanged)
     Q_PROPERTY(QString mask READ mask NOTIFY stateChanged)
     Q_PROPERTY(int sourceCount READ sourceCount NOTIFY stateChanged)
@@ -33,6 +35,8 @@ public:
         TopicRole,
         LabelRole,
     };
+
+    static constexpr int kMaxRows = 8000;
 
     explicit ChannelListModel(QObject *parent = nullptr);
 
@@ -49,20 +53,21 @@ public:
     bool loading() const;
     bool complete() const;
     bool cached() const;
+    QString error() const;
     QString networkId() const;
     QString mask() const;
     int sourceCount() const;
-    const QVector<IrcChannelListRow>& sourceRows() const;
 
     void show(const QString& networkId,
               const QString& mask,
               QVector<IrcChannelListRow> rows,
               bool complete,
               bool loading,
-              bool cached);
+              bool cached,
+              const QString& error = {});
     void beginLoad(const QString& networkId, const QString& mask);
     void appendRow(IrcChannelListRow row);
-    void finish(bool complete);
+    void fail(const QString& error);
     void clear();
 
 signals:
@@ -71,14 +76,19 @@ signals:
 
 private:
     bool matches(const IrcChannelListRow& row) const;
-    void rebuildVisible(bool resetAlways);
+    void rebuildVisible();
+    void emitStateSoon();
+    void emitStateNow();
     QString rowLabel(const IrcChannelListRow& row) const;
 
     QVector<IrcChannelListRow> m_source;
     QVector<int> m_visible;
     QString m_filter;
+    QString m_filterQuery;
     QString m_networkId;
     QString m_mask;
+    QString m_error;
+    QTimer m_stateFlush;
     bool m_loading = false;
     bool m_complete = false;
     bool m_cached = false;
