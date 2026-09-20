@@ -2574,6 +2574,7 @@ QString IrcController::ctcpQueryName(IrcCommand::Verb verb) const
     case IrcCommand::Verb::Notice:
     case IrcCommand::Verb::Away:
     case IrcCommand::Verb::Back:
+    case IrcCommand::Verb::Autoaway:
     case IrcCommand::Verb::Status:
     case IrcCommand::Verb::Avatar:
     case IrcCommand::Verb::Whois:

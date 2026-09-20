@@ -166,6 +166,7 @@ private slots:
     void parseTopic();
     void parseNotice();
     void parseAwayAndBack();
+    void parseAutoaway();
     void parseStatus();
     void parseAvatar();
     void parseWhois();
@@ -437,6 +438,31 @@ void CommandTest::parseAwayAndBack()
     const IrcCommand escaped = IrcCommand::parse(QStringLiteral("//away lunch"));
     QCOMPARE(escaped.verb, IrcCommand::Verb::Say);
     QCOMPARE(escaped.argument, QStringLiteral("/away lunch"));
+    QVERIFY(escaped.isLiveMessage());
+}
+
+void CommandTest::parseAutoaway()
+{
+    const IrcCommand query = IrcCommand::parse(QStringLiteral("/autoaway"));
+    QCOMPARE(query.verb, IrcCommand::Verb::Autoaway);
+    QVERIFY(query.argument.isEmpty());
+    QCOMPARE(query.name, QStringLiteral("/autoaway"));
+    QVERIFY(!query.isLiveMessage());
+    QVERIFY(query.allowedOn(IrcComposerSurface::Conversation));
+    QVERIFY(query.allowedOn(IrcComposerSurface::Status));
+
+    const IrcCommand timeout = IrcCommand::parse(QStringLiteral("/autoaway 15"));
+    QCOMPARE(timeout.verb, IrcCommand::Verb::Autoaway);
+    QCOMPARE(timeout.argument, QStringLiteral("15"));
+
+    const IrcCommand folded = IrcCommand::parse(QStringLiteral("/AUTOAWAY off"));
+    QCOMPARE(folded.verb, IrcCommand::Verb::Autoaway);
+    QCOMPARE(folded.argument, QStringLiteral("off"));
+    QCOMPARE(folded.name, QStringLiteral("/AUTOAWAY"));
+
+    const IrcCommand escaped = IrcCommand::parse(QStringLiteral("//autoaway 15"));
+    QCOMPARE(escaped.verb, IrcCommand::Verb::Say);
+    QCOMPARE(escaped.argument, QStringLiteral("/autoaway 15"));
     QVERIFY(escaped.isLiveMessage());
 }
 
@@ -858,7 +884,7 @@ void CommandTest::catalogLookupAndScope()
     QVERIFY(!IrcVerbTable::find(IrcCommand::Verb::Empty));
     QVERIFY(!IrcVerbTable::find(IrcCommand::Verb::Unknown));
 
-    QCOMPARE(IrcVerbTable::all().size(), 45);
+    QCOMPARE(IrcVerbTable::all().size(), 46);
     for (const IrcVerbSpec& row : IrcVerbTable::all())
         QVERIFY(row.name != QLatin1String("say"));
 
@@ -938,6 +964,16 @@ void CommandTest::catalogLookupAndScope()
     QCOMPARE(back->scope, IrcVerbScope::Either);
     QVERIFY(back->wrongScopeText.isEmpty());
     QVERIFY(back->aliases.isEmpty());
+
+    const IrcVerbSpec *autoaway = IrcVerbTable::lookup(QStringLiteral("autoaway"));
+    QVERIFY(autoaway);
+    QCOMPARE(autoaway->verb, IrcCommand::Verb::Autoaway);
+    QCOMPARE(autoaway->name, QStringLiteral("autoaway"));
+    QCOMPARE(autoaway->usage,
+             QStringLiteral("/autoaway [off|on|duration [reason]|reason [text]]"));
+    QCOMPARE(autoaway->scope, IrcVerbScope::Either);
+    QVERIFY(autoaway->wrongScopeText.isEmpty());
+    QVERIFY(autoaway->aliases.isEmpty());
 
     const IrcVerbSpec *status = IrcVerbTable::lookup(QStringLiteral("status"));
     QVERIFY(status);
@@ -1157,7 +1193,7 @@ void CommandTest::catalogLookupAndScope()
     QCOMPARE(list->scope, IrcVerbScope::Either);
 
     const QVector<IrcVerbSpec> statusRows = IrcVerbTable::visibleOn(IrcComposerSurface::Status);
-    QCOMPARE(statusRows.size(), 37);
+    QCOMPARE(statusRows.size(), 38);
     for (const IrcVerbSpec& row : statusRows) {
         QVERIFY(row.allowedOn(IrcComposerSurface::Status));
         QVERIFY(row.verb != IrcCommand::Verb::Action);
@@ -1172,7 +1208,7 @@ void CommandTest::catalogLookupAndScope()
 
     const QVector<IrcVerbSpec> conversation =
         IrcVerbTable::visibleOn(IrcComposerSurface::Conversation);
-    QCOMPARE(conversation.size(), 45);
+    QCOMPARE(conversation.size(), 46);
     bool sawMe = false;
     bool sawClose = false;
     bool sawQuery = false;
@@ -1181,6 +1217,7 @@ void CommandTest::catalogLookupAndScope()
     bool sawNotice = false;
     bool sawAway = false;
     bool sawBack = false;
+    bool sawAutoaway = false;
     bool sawStatus = false;
     bool sawAvatar = false;
     bool sawWhois = false;
@@ -1224,6 +1261,8 @@ void CommandTest::catalogLookupAndScope()
             sawAway = true;
         if (row.name == QLatin1String("back"))
             sawBack = true;
+        if (row.name == QLatin1String("autoaway"))
+            sawAutoaway = true;
         if (row.name == QLatin1String("status"))
             sawStatus = true;
         if (row.name == QLatin1String("avatar"))
@@ -1285,6 +1324,7 @@ void CommandTest::catalogLookupAndScope()
     QVERIFY(sawNotice);
     QVERIFY(sawAway);
     QVERIFY(sawBack);
+    QVERIFY(sawAutoaway);
     QVERIFY(sawStatus);
     QVERIFY(sawAvatar);
     QVERIFY(sawWhois);
@@ -2546,6 +2586,7 @@ void CommandTest::wrappersSendAndHelp()
     QVERIFY(selectedBodiesContain(messages, QStringLiteral("/znc")));
     QVERIFY(selectedBodiesContain(messages, QStringLiteral("/raw")));
     QVERIFY(selectedBodiesContain(messages, QStringLiteral("/help")));
+    QVERIFY(selectedBodiesContain(messages, QStringLiteral("/autoaway")));
     QVERIFY(selectedBodiesContain(messages, QStringLiteral("/list")));
     QVERIFY(selectedBodiesContain(messages, QStringLiteral("/ping")));
     QVERIFY(selectedBodiesContain(messages, QStringLiteral("/time")));
@@ -3167,6 +3208,11 @@ void CommandTest::slashProjectOpen()
     QVERIFY(highlight.isOpen());
     QCOMPARE(highlight.hits().first().label, QStringLiteral("/highlight"));
     QVERIFY(highlight.containsLabel(QStringLiteral("/highlights")));
+
+    const auto autoaway = IrcSlashComplete::project(
+        QStringLiteral("/auto"), IrcComposerSurface::Status);
+    QVERIFY(autoaway.isOpen());
+    QVERIFY(autoaway.containsLabel(QStringLiteral("/autoaway")));
 
     const auto invite = IrcSlashComplete::project(
         QStringLiteral("/inv"), IrcComposerSurface::Conversation);

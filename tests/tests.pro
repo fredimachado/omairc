@@ -59,6 +59,7 @@ HEADERS += \
     ../src/irc/ircmute.h \
     ../src/irc/ircopendirect.h \
     ../src/irc/irchighlight.h \
+    ../src/irc/ircautoaway.h \
     ../src/irc/ircinbox.h \
     ../src/irc/ircinboxmodel.h \
     ../src/irc/ircevent.h \
@@ -141,6 +142,7 @@ SOURCES += \
     ../src/irc/ircmute.cpp \
     ../src/irc/ircopendirect.cpp \
     ../src/irc/irchighlight.cpp \
+    ../src/irc/ircautoaway.cpp \
     ../src/irc/ircinbox.cpp \
     ../src/irc/ircinboxmodel.cpp \
     ../src/irc/irceventtranslator.cpp \
@@ -189,6 +191,7 @@ SOURCES += \
     session/tst_mute.cpp \
     session/tst_opendirect.cpp \
     session/tst_highlight.cpp \
+    session/tst_autoaway.cpp \
     session/tst_inbox.cpp \
     session/tst_typing.cpp \
     session/tst_reducer.cpp \
