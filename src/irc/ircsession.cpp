@@ -686,6 +686,43 @@ bool IrcSession::quit(const QString& reason)
     return true;
 }
 
+bool IrcSession::sendMonitor(QChar modifier, const QStringList& nicks)
+{
+    const QChar mark = modifier.toUpper();
+    if (mark == QLatin1Char('C') || mark == QLatin1Char('L')
+        || mark == QLatin1Char('S')) {
+        if (!nicks.isEmpty())
+            return false;
+        return sendCommand(QStringLiteral("MONITOR %1").arg(mark));
+    }
+    if (mark != QLatin1Char('+') && mark != QLatin1Char('-'))
+        return false;
+    if (nicks.isEmpty())
+        return false;
+
+    const QString prefix = QStringLiteral("MONITOR %1 ").arg(mark);
+    QStringList batch;
+    for (const QString& nick : nicks) {
+        if (nick.isEmpty())
+            return false;
+        QStringList next = batch;
+        next.append(nick);
+        const QString line = prefix + next.join(QLatin1Char(','));
+        if (line.size() + 2 > int(IrcCommandBuilder::kMaxFrameBytes)) {
+            if (batch.isEmpty())
+                return false;
+            if (!sendCommand(prefix + batch.join(QLatin1Char(','))))
+                return false;
+            batch = QStringList{nick};
+            if ((prefix + nick).size() + 2 > int(IrcCommandBuilder::kMaxFrameBytes))
+                return false;
+        } else {
+            batch = next;
+        }
+    }
+    return !batch.isEmpty() && sendCommand(prefix + batch.join(QLatin1Char(',')));
+}
+
 bool IrcSession::sendRaw(const QString& line)
 {
     return sendCommand(line);

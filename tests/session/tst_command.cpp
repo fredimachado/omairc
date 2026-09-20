@@ -836,7 +836,7 @@ void CommandTest::catalogLookupAndScope()
     QVERIFY(!IrcVerbTable::find(IrcCommand::Verb::Empty));
     QVERIFY(!IrcVerbTable::find(IrcCommand::Verb::Unknown));
 
-    QCOMPARE(IrcVerbTable::all().size(), 41);
+    QCOMPARE(IrcVerbTable::all().size(), 44);
     for (const IrcVerbSpec& row : IrcVerbTable::all())
         QVERIFY(row.name != QLatin1String("say"));
 
@@ -1017,6 +1017,27 @@ void CommandTest::catalogLookupAndScope()
     QCOMPARE(ignored->scope, IrcVerbScope::Either);
     QVERIFY(ignored->wrongScopeText.isEmpty());
 
+    const IrcVerbSpec *monitor = IrcVerbTable::lookup(QStringLiteral("monitor"));
+    QVERIFY(monitor);
+    QCOMPARE(monitor->verb, IrcCommand::Verb::Monitor);
+    QCOMPARE(monitor->usage, QStringLiteral("/monitor <nick>"));
+    QCOMPARE(monitor->scope, IrcVerbScope::Either);
+    QVERIFY(monitor->wrongScopeText.isEmpty());
+
+    const IrcVerbSpec *unmonitor = IrcVerbTable::lookup(QStringLiteral("unmonitor"));
+    QVERIFY(unmonitor);
+    QCOMPARE(unmonitor->verb, IrcCommand::Verb::Unmonitor);
+    QCOMPARE(unmonitor->usage, QStringLiteral("/unmonitor <nick>"));
+    QCOMPARE(unmonitor->scope, IrcVerbScope::Either);
+    QVERIFY(unmonitor->wrongScopeText.isEmpty());
+
+    const IrcVerbSpec *monitored = IrcVerbTable::lookup(QStringLiteral("monitored"));
+    QVERIFY(monitored);
+    QCOMPARE(monitored->verb, IrcCommand::Verb::Monitored);
+    QCOMPARE(monitored->usage, QStringLiteral("/monitored"));
+    QCOMPARE(monitored->scope, IrcVerbScope::Either);
+    QVERIFY(monitored->wrongScopeText.isEmpty());
+
     const IrcVerbSpec *mute = IrcVerbTable::lookup(QStringLiteral("mute"));
     QVERIFY(mute);
     QCOMPARE(mute->verb, IrcCommand::Verb::Mute);
@@ -1108,7 +1129,7 @@ void CommandTest::catalogLookupAndScope()
     QCOMPARE(help->scope, IrcVerbScope::Either);
 
     const QVector<IrcVerbSpec> statusRows = IrcVerbTable::visibleOn(IrcComposerSurface::Status);
-    QCOMPARE(statusRows.size(), 33);
+    QCOMPARE(statusRows.size(), 36);
     for (const IrcVerbSpec& row : statusRows) {
         QVERIFY(row.allowedOn(IrcComposerSurface::Status));
         QVERIFY(row.verb != IrcCommand::Verb::Action);
@@ -1123,7 +1144,7 @@ void CommandTest::catalogLookupAndScope()
 
     const QVector<IrcVerbSpec> conversation =
         IrcVerbTable::visibleOn(IrcComposerSurface::Conversation);
-    QCOMPARE(conversation.size(), 41);
+    QCOMPARE(conversation.size(), 44);
     bool sawMe = false;
     bool sawClose = false;
     bool sawQuery = false;
@@ -1144,6 +1165,9 @@ void CommandTest::catalogLookupAndScope()
     bool sawIgnore = false;
     bool sawUnignore = false;
     bool sawIgnored = false;
+    bool sawMonitor = false;
+    bool sawUnmonitor = false;
+    bool sawMonitored = false;
     bool sawMute = false;
     bool sawUnmute = false;
     bool sawMuted = false;
@@ -1195,6 +1219,12 @@ void CommandTest::catalogLookupAndScope()
             sawUnignore = true;
         if (row.name == QLatin1String("ignored"))
             sawIgnored = true;
+        if (row.name == QLatin1String("monitor"))
+            sawMonitor = true;
+        if (row.name == QLatin1String("unmonitor"))
+            sawUnmonitor = true;
+        if (row.name == QLatin1String("monitored"))
+            sawMonitored = true;
         if (row.name == QLatin1String("mute"))
             sawMute = true;
         if (row.name == QLatin1String("unmute"))
@@ -1236,6 +1266,9 @@ void CommandTest::catalogLookupAndScope()
     QVERIFY(sawIgnore);
     QVERIFY(sawUnignore);
     QVERIFY(sawIgnored);
+    QVERIFY(sawMonitor);
+    QVERIFY(sawUnmonitor);
+    QVERIFY(sawMonitored);
     QVERIFY(sawMute);
     QVERIFY(sawUnmute);
     QVERIFY(sawMuted);
@@ -2487,6 +2520,9 @@ void CommandTest::wrappersSendAndHelp()
     QVERIFY(selectedBodiesContain(messages, QStringLiteral("/mute")));
     QVERIFY(selectedBodiesContain(messages, QStringLiteral("/unmute")));
     QVERIFY(selectedBodiesContain(messages, QStringLiteral("/muted")));
+    QVERIFY(selectedBodiesContain(messages, QStringLiteral("/monitor")));
+    QVERIFY(selectedBodiesContain(messages, QStringLiteral("/unmonitor")));
+    QVERIFY(selectedBodiesContain(messages, QStringLiteral("/monitored")));
     QVERIFY(selectedBodiesContain(messages, QStringLiteral("/ban")));
     QVERIFY(selectedBodiesContain(messages, QStringLiteral("/disconnect")));
     QVERIFY(selectedBodiesContain(messages, QStringLiteral("/status")));
@@ -2636,6 +2672,12 @@ void CommandTest::slashProjectOpen()
     QVERIFY(ignore.isOpen());
     QCOMPARE(ignore.hits().first().label, QStringLiteral("/ignore"));
     QVERIFY(ignore.containsLabel(QStringLiteral("/ignored")));
+
+    const auto monitor = IrcSlashComplete::project(
+        QStringLiteral("/mon"), IrcComposerSurface::Status);
+    QVERIFY(monitor.isOpen());
+    QCOMPARE(monitor.hits().first().label, QStringLiteral("/monitor"));
+    QVERIFY(monitor.containsLabel(QStringLiteral("/monitored")));
 
     const auto mute = IrcSlashComplete::project(
         QStringLiteral("/mu"), IrcComposerSurface::Status);

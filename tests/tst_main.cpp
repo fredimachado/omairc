@@ -13,6 +13,7 @@ int runDemoServerTests(int argc, char **argv);
 int runControllerTests(int argc, char **argv);
 int runCommandTests(int argc, char **argv);
 int runIgnoreTests(int argc, char **argv);
+int runMonitorTests(int argc, char **argv);
 int runMuteTests(int argc, char **argv);
 int runOpenDirectTests(int argc, char **argv);
 int runHighlightTests(int argc, char **argv);
@@ -58,6 +59,7 @@ int main(int argc, char **argv)
     const int controllerStatus = runControllerTests(argc, argv);
     const int commandStatus = runCommandTests(argc, argv);
     const int ignoreStatus = runIgnoreTests(argc, argv);
+    const int monitorStatus = runMonitorTests(argc, argv);
     const int muteStatus = runMuteTests(argc, argv);
     const int openDirectStatus = runOpenDirectTests(argc, argv);
     const int highlightStatus = runHighlightTests(argc, argv);
@@ -90,6 +92,7 @@ int main(int argc, char **argv)
         controllerStatus,
         commandStatus,
         ignoreStatus,
+        monitorStatus,
         muteStatus,
         openDirectStatus,
         highlightStatus,

@@ -41,6 +41,7 @@ HEADERS += \
     ../../src/irc/ircavatarstore.h \
     ../../src/irc/irctcp.h \
     ../../src/irc/ircignore.h \
+    ../../src/irc/ircmonitor.h \
     ../../src/irc/ircmute.h \
     ../../src/irc/ircopendirect.h \
     ../../src/irc/irchighlight.h \
@@ -113,6 +114,7 @@ SOURCES += \
     ../../src/irc/ircavatarstore.cpp \
     ../../src/irc/irctcp.cpp \
     ../../src/irc/ircignore.cpp \
+    ../../src/irc/ircmonitor.cpp \
     ../../src/irc/ircmute.cpp \
     ../../src/irc/ircopendirect.cpp \
     ../../src/irc/irchighlight.cpp \

@@ -1,8 +1,10 @@
 #pragma once
 
 #include <QByteArray>
+#include <QHash>
 #include <QObject>
 #include <QString>
+#include <QStringList>
 
 class IrcController;
 class IrcLoopbackTransport;
@@ -41,9 +43,12 @@ private:
                       const QString &nick,
                       const QStringList &autojoin,
                       IrcLoopbackTransport **transport);
-    void hookAutoEcho(IrcLoopbackTransport *transport, const QString &nick);
+    void hookAutoEcho(IrcLoopbackTransport *transport,
+                      const QString &nick,
+                      const QStringList &online);
 
     IrcLoopbackTransport *m_omarchyTransport = nullptr;
     IrcLoopbackTransport *m_oftcTransport = nullptr;
+    QHash<IrcLoopbackTransport *, QStringList> m_monitorLists;
     QString m_error;
 };

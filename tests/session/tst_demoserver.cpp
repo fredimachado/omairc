@@ -11,6 +11,7 @@ class DemoServerTest : public QObject
 
 private slots:
     void answersClientPing();
+    void answersMonitorAdd();
 };
 
 void DemoServerTest::answersClientPing()
@@ -26,6 +27,23 @@ void DemoServerTest::answersClientPing()
     QCOMPARE(received.size(), 1);
     QCOMPARE(received.first().first().toByteArray(),
              QByteArrayLiteral(":server PONG irc.example :omairc-watchdog\r\n"));
+}
+
+void DemoServerTest::answersMonitorAdd()
+{
+    IrcController controller;
+    IrcDemoServer demo;
+    QVERIFY(demo.attach(controller, true));
+    IrcLoopbackTransport *transport = demo.omarchyTransport();
+    QVERIFY(transport);
+
+    QSignalSpy received(transport, &IrcLoopbackTransport::bytesReceived);
+    transport->write(QByteArrayLiteral("MONITOR + anna,ghost\r\n"));
+    QCOMPARE(received.size(), 2);
+    QCOMPARE(received.at(0).first().toByteArray(),
+             QByteArrayLiteral(":server 730 fred :anna!u@h\r\n"));
+    QCOMPARE(received.at(1).first().toByteArray(),
+             QByteArrayLiteral(":server 731 fred :ghost\r\n"));
 }
 
 int runDemoServerTests(int argc, char **argv)

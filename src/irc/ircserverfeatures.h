@@ -77,6 +77,8 @@ public:
     std::string_view channelTypes() const noexcept;
     bool isChannel(std::string_view target) const noexcept;
     std::optional<std::size_t> nickLength() const noexcept;
+    bool monitorAdvertised() const noexcept;
+    std::optional<std::size_t> monitorLimit() const noexcept;
     std::string_view prefixModes() const noexcept;
     std::string_view prefixSymbols() const noexcept;
     std::string_view chanModesA() const noexcept;
@@ -113,6 +115,8 @@ private:
     std::string m_prefixModes;
     std::string m_prefixSymbols;
     std::optional<std::size_t> m_nickLength;
+    bool m_monitorAdvertised = false;
+    std::optional<std::size_t> m_monitorLimit;
     std::string m_chanModesA;
     std::string m_chanModesB;
     std::string m_chanModesC;
