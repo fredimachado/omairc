@@ -3133,6 +3133,72 @@ TestCase {
         compare(field(item("messageList").model, dmRow, "body"), "secret");
     }
 
+    function test_openAtUnreadNotificationActivateLandsOnMark() {
+        openSeededAppWindow();
+        var list = item("messageList");
+        fillTranscriptUntilScrollable(list);
+
+        mouseClick(namedItem(liveConversation("#desktop")));
+        tryCompare(appWindow, "currentConversation", "#desktop");
+        injectUnreadWhileAway("#omarchy", "open-at-unread-notify-first-zx9",
+                              "open-at-unread-notify-second-zx9", 24);
+        seed.injectOmarchy(
+            "@msgid=mention-notify-unread-zx9 :anna!u@h PRIVMSG #omarchy :fred: ping notify-unread-zx9\r\n");
+        seed.irc.openConversationsAtUnread = true;
+
+        appWindow.activateNotifiedConversation(seed.omarchyNetworkId, "#omarchy",
+                                               "mention-notify-unread-zx9");
+        tryCompare(appWindow, "currentConversation", "#omarchy");
+        compare(appWindow.currentNetworkId, seed.omarchyNetworkId);
+        waitForBody(list, "open-at-unread-notify-first-zx9");
+        waitForBody(list, "open-at-unread-notify-second-zx9");
+        waitForBody(list, "fred: ping notify-unread-zx9");
+
+        var first = rowForBody(list.model, "open-at-unread-notify-first-zx9");
+        verify(first > 0, "The first unseen line should not lead the buffer");
+        var markRow = list.model.unreadMarkRow();
+        compare(markRow, first - 1);
+        compare(field(list.model, markRow, "kind"), "unread");
+        var msgidRow = appWindow.msgidRow("mention-notify-unread-zx9");
+        verify(msgidRow > markRow, "The notified mention should sit below the unread mark");
+        waitForOpenAtUnreadViewport(list, markRow);
+        compare(firstVisibleIndex(list), markRow);
+        verify(firstVisibleIndex(list) !== msgidRow);
+    }
+
+    function test_openAtUnreadNotificationActivateLeavesAlreadyViewingViewport() {
+        openSeededAppWindow();
+        seed.irc.openConversationsAtUnread = true;
+        var list = item("messageList");
+        fillTranscriptUntilScrollable(list);
+        seed.injectOmarchy(
+            "@msgid=mention-notify-same-zx9 :anna!u@h PRIVMSG #omarchy :fred: ping notify-same-zx9\r\n");
+        waitForBody(list, "fred: ping notify-same-zx9");
+        waitForRendering(appWindow.contentItem);
+        list.pinToEnd();
+        waitForRendering(appWindow.contentItem);
+        wait(0);
+
+        keyClick(Qt.Key_PageUp);
+        waitForRendering(appWindow.contentItem);
+        tryCompare(list, "stick", list.stickDetached);
+        verify(!transcriptPinned(list));
+        var frozenY = list.contentY;
+        var frozenStick = list.stick;
+
+        appWindow.activateNotifiedConversation(seed.omarchyNetworkId, "#omarchy",
+                                               "mention-notify-same-zx9");
+        tryCompare(appWindow, "currentConversation", "#omarchy");
+        waitForRendering(appWindow.contentItem);
+        wait(0);
+        waitForRendering(appWindow.contentItem);
+
+        fuzzyCompare(list.contentY, frozenY, 2);
+        compare(list.stick, frozenStick);
+        verify(!transcriptPinned(list));
+        verify(item("messageComposer").activeFocus);
+    }
+
     function test_messageBodyClickOpensHttpsUrl() {
         openSeededAppWindow();
         var list = item("messageList");

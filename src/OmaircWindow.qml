@@ -547,12 +547,17 @@ ApplicationWindow {
         Qt.callLater(function() {
             if (irc.selectedNetworkId !== networkId || irc.selectedTarget !== target)
                 return;
-            var id = msgid ? String(msgid).trim() : "";
-            var row = id.length > 0 ? win.msgidRow(id) : -1;
-            if (row >= 0)
-                win.revealFindMatch(row);
-            else
-                placeTranscriptAfterSelect(previousConversationId);
+            if (irc.openConversationsAtUnread === true) {
+                if (shouldOpenAtUnread(previousConversationId))
+                    placeTranscriptAfterSelect(previousConversationId);
+            } else {
+                var id = msgid ? String(msgid).trim() : "";
+                var row = id.length > 0 ? win.msgidRow(id) : -1;
+                if (row >= 0)
+                    win.revealFindMatch(row);
+                else
+                    placeTranscriptAfterSelect(previousConversationId);
+            }
             conversation.composer.forceActiveFocus();
         });
     }
