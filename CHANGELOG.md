@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- A Homebrew cask (`Casks/omairc.rb`) for the notarized macOS GitHub zips. `brew tap fredimachado/omairc https://github.com/fredimachado/omairc` then `brew install --cask fredimachado/omairc/omairc` installs `omairc.app` into `/Applications` and puts `omairc` on `PATH`. Uninstall leaves profiles and logs; `--zap` removes `~/Library/Preferences/omairc` and `~/Library/Preferences/State/omairc`. Version tags rewrite the cask `version` and `sha256`s.
+
 ## [0.8.2] - 2026-09-19
 
 ### Fixed

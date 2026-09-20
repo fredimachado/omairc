@@ -156,7 +156,22 @@ Compared with Linux you will miss portal text scale (stays 1.0), desktop notific
 
 Omarchy is the home. A native macOS build is a bonus: it works, it is not the focus, and why not.
 
-Each version tag publishes `omairc-*-macos-arm64.zip` (Apple Silicon) and `omairc-*-macos-x64.zip` (Intel) on the [GitHub release](https://github.com/fredimachado/omairc/releases/latest). Pull-request CI uploads both zips as workflow artifacts. CI signs the bundles with Developer ID. Version tags (and a manual workflow run) notarize, staple, and Gatekeeper-assess the app; Apple's first look at a new Developer ID can sit in progress for hours, so pull requests do not wait on that. Local Homebrew-Qt builds stay ad-hoc.
+Install the notarized GitHub `.app` with Homebrew:
+
+```sh
+brew tap fredimachado/omairc https://github.com/fredimachado/omairc
+brew install --cask fredimachado/omairc/omairc
+```
+
+The extra tap URL is required because this repository is `omairc`, not `homebrew-omairc`. That puts Omairc in `/Applications` and `omairc` on `PATH` so the local CLI works from a terminal. The window still has to be running. Uninstall leaves profiles and logs; `brew uninstall --cask --zap omairc` is the wipe.
+
+Once Homebrew carries the cask, this is enough:
+
+```sh
+brew install --cask omairc
+```
+
+Each version tag also publishes `omairc-*-macos-arm64.zip` (Apple Silicon) and `omairc-*-macos-x64.zip` (Intel) on the [GitHub release](https://github.com/fredimachado/omairc/releases/latest). Unzip that if you want a portable tree. Pull-request CI uploads both zips as workflow artifacts. CI signs the bundles with Developer ID. Version tags (and a manual workflow run) notarize, staple, and Gatekeeper-assess the app; Apple's first look at a new Developer ID can sit in progress for hours, so pull requests do not wait on that. Local Homebrew-Qt builds stay ad-hoc.
 
 From the repo root on macOS:
 
@@ -176,4 +191,4 @@ Homebrew Qt builds skip `macdeployqt` (its framework layout can hang dyld) and k
 
 The same binary is the local CLI. Start the app first, then run `omairc connections`, `send`, `read`, and the rest from another terminal. The Unix socket lives under Qt's `RuntimeLocation` (typically `~/Library/Caches/TemporaryItems/` or `$TMPDIR`), not `$XDG_RUNTIME_DIR`. Passwords use the macOS Keychain through QtKeychain instead of Secret Service.
 
-Compared with Linux you will miss portal text scale (stays 1.0), Freedesktop D-Bus notifications and theme hooks, the Omarchy `colors.toml` watch when that file is absent, the pacman/`bin/install` path, Wayland/portal integration, and the desktop/live test runners. Profiles land in the Qt app config location instead of `$XDG_CONFIG_HOME`.
+Compared with Linux you will miss portal text scale (stays 1.0), Freedesktop D-Bus notifications and theme hooks, the Omarchy `colors.toml` watch when that file is absent, the pacman/`bin/install` path, Wayland/portal integration, and the desktop/live test runners. Profiles land in `~/Library/Preferences/omairc` and logs in `~/Library/Preferences/State/omairc` (Qt `GenericConfigLocation` / `GenericStateLocation`), not `$XDG_*`.

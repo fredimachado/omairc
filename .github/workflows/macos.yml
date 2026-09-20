@@ -626,3 +626,98 @@ jobs:
               sleep 10
             done
           fi
+
+  bump-cask:
+    name: Homebrew cask
+    needs: macos-zips
+    if: ${{ success() && startsWith(github.ref, 'refs/tags/v') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: master
+          fetch-depth: 0
+
+      - name: Download architecture zips
+        uses: actions/download-artifact@v8
+        with:
+          pattern: omairc-*-macos-*
+          merge-multiple: true
+          path: dist
+
+      - name: Point the cask at this tag
+        env:
+          GIT_AUTHOR_NAME: github-actions[bot]
+          GIT_AUTHOR_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
+          GIT_COMMITTER_NAME: github-actions[bot]
+          GIT_COMMITTER_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME#v}"
+          shopt -s nullglob
+          arm=(dist/omairc-*-macos-arm64.zip)
+          intel=(dist/omairc-*-macos-x64.zip)
+          if [ "${#arm[@]}" -ne 1 ] || [ ! -f "${arm[0]}" ]; then
+            echo "Expected one macos-arm64 zip artifact" >&2
+            exit 1
+          fi
+          if [ "${#intel[@]}" -ne 1 ] || [ ! -f "${intel[0]}" ]; then
+            echo "Expected one macos-x64 zip artifact" >&2
+            exit 1
+          fi
+
+          commit_cask_bump() {
+            python3 bin/bump-homebrew-cask \
+              --version "$tag" \
+              --arm-zip "${arm[0]}" \
+              --intel-zip "${intel[0]}"
+            git add Casks/omairc.rb
+            if git diff --cached --quiet; then
+              return 1
+            fi
+            git commit -m "Point the Homebrew cask at the v${tag} macOS zips."
+            return 0
+          }
+
+          if ! commit_cask_bump; then
+            echo "Casks/omairc.rb already matches $tag"
+            exit 0
+          fi
+
+          attempt=1
+          max_attempts=5
+          while [ "$attempt" -le "$max_attempts" ]; do
+            if push_out=$(git push origin HEAD:master 2>&1); then
+              printf '%s\n' "$push_out"
+              echo "Pushed cask bump for v$tag"
+              exit 0
+            fi
+            printf '%s\n' "$push_out"
+            case "$push_out" in
+              *non-fast-forward*|*fetch first*|*rejected*) ;;
+              *)
+                echo "git push failed for a reason other than a master race" >&2
+                exit 1
+                ;;
+            esac
+            echo "Push was not a fast-forward; fetch and rebase (attempt $attempt/$max_attempts)"
+            git fetch origin master
+            if git rebase origin/master; then
+              attempt=$((attempt + 1))
+              continue
+            fi
+            echo "Rebase conflict; re-apply the generated bump on origin/master"
+            git rebase --abort
+            git reset --hard origin/master
+            if ! commit_cask_bump; then
+              echo "Casks/omairc.rb already matches $tag on origin/master"
+              exit 0
+            fi
+            attempt=$((attempt + 1))
+          done
+
+          echo "Could not push the Homebrew cask bump after $max_attempts attempts" >&2
+          exit 1

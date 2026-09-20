@@ -244,4 +244,17 @@ then `stapler validate`, `syspolicy_check distribution`, and
 `syspolicy_check notary-submission`: Apple often holds the first Developer ID
 uploads In Progress for hours. Tag releases fail if the signing secrets are
 missing or Gatekeeper rejects the stapled app. Local `bin/build-macos` stays
-ad-hoc unless `CODESIGN_IDENTITY` is set.
+ad-hoc unless `CODESIGN_IDENTITY` is set. The Homebrew cask is
+`Casks/omairc.rb` so this repository is a tap (`brew tap fredimachado/omairc
+https://github.com/fredimachado/omairc`; the URL is required because the repo
+is not `homebrew-omairc`). It ships the GitHub `macos-arm64` / `macos-x64`
+zips, `livecheck` on the latest release, a `binary` helper so
+`omairc connections` works from a terminal, and `zap` of
+`~/Library/Preferences/omairc` plus `~/Library/Preferences/State/omairc`
+(Qt `GenericConfigLocation` / `GenericStateLocation` on macOS). Version tags
+rewrite `version` and both `sha256`s through `bin/bump-homebrew-cask` after
+both zips land. The bump job fetches and rebases onto `origin/master` when
+that push is not a fast-forward; a conflict re-applies the generated cask
+on the new tip instead of leaving the tap on the prior version. Do not cask a Homebrew-Qt `bin/build-macos` tree. Do not
+install the cask from a raw GitHub URL. Uninstall leaves config; `--zap` is
+the wipe.
