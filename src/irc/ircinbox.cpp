@@ -43,13 +43,13 @@ std::deque<IrcInboxItem> IrcInbox::items() const
     return m_items;
 }
 
-void IrcInbox::append(IrcInboxItem item)
+void IrcInbox::append(IrcInboxItem item, const IrcCaseMapping& mapping)
 {
     if (item.kind == IrcInboxKind::Invite) {
         for (auto it = m_items.begin(); it != m_items.end(); ++it) {
             if (it->kind == IrcInboxKind::Invite
                 && it->networkId == item.networkId
-                && it->target == item.target) {
+                && targetsMatch(it->target, item.target, mapping)) {
                 m_items.erase(it);
                 break;
             }
@@ -115,6 +115,16 @@ void IrcInbox::consumeMonitor(const QString& networkId,
         } else {
             ++it;
         }
+    }
+}
+
+void IrcInbox::purgeNetwork(const QString& networkId)
+{
+    for (auto it = m_items.begin(); it != m_items.end(); ) {
+        if (it->networkId == networkId)
+            it = m_items.erase(it);
+        else
+            ++it;
     }
 }
 

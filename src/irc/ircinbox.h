@@ -37,7 +37,7 @@ public:
     const IrcInboxItem& at(int index) const;
     std::deque<IrcInboxItem> items() const;
 
-    void append(IrcInboxItem item);
+    void append(IrcInboxItem item, const IrcCaseMapping& mapping);
     void consumeAt(int index);
     void consumeConversation(const QString& networkId,
                              const QString& target,
@@ -48,6 +48,7 @@ public:
     void consumeMonitor(const QString& networkId,
                         const QString& nick,
                         const IrcCaseMapping& mapping);
+    void purgeNetwork(const QString& networkId);
 
 private:
     bool targetsMatch(const QString& left,

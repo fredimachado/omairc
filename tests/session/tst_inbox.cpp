@@ -6,6 +6,7 @@
 
 #include "conversationlistmodel.h"
 #include "fakeirctransport.h"
+#include "irccasemapping.h"
 #include "irccontroller.h"
 #include "ircinboxmodel.h"
 #include "irceventreducer.h"
@@ -126,6 +127,10 @@ private slots:
     void controllerKickSelectingConsumes();
     void controllerMonitorEdgeAppendsHydrationSkips();
     void controllerInboxCountTracksModel();
+    void inviteCoalescesWithCaseMapping();
+    void selectConversationConsumesMonitorOnline();
+    void selfJoinConsumesInviteWithoutPendingInvite();
+    void forgetNetworkStatePurgesInbox();
 
 private:
     std::unique_ptr<QTemporaryDir> m_dir;
@@ -142,6 +147,7 @@ void InboxTest::init()
 
 void InboxTest::appendConsumeAndCap()
 {
+    const IrcCaseMapping mapping;
     IrcInbox inbox;
     QCOMPARE(inbox.count(), 0);
 
@@ -150,7 +156,8 @@ void InboxTest::appendConsumeAndCap()
                                 networkA,
                                 QStringLiteral("alice"),
                                 QStringLiteral("#room"),
-                                QStringLiteral("line %1").arg(index)));
+                                QStringLiteral("line %1").arg(index)),
+                     mapping);
     }
     QCOMPARE(inbox.count(), IrcInbox::kMaxItems);
     QCOMPARE(inbox.at(0).preview, QStringLiteral("line 54"));
@@ -163,22 +170,26 @@ void InboxTest::appendConsumeAndCap()
 
 void InboxTest::inviteAndMonitorReplaceSameTarget()
 {
+    const IrcCaseMapping mapping;
     IrcInbox inbox;
     inbox.append(sampleItem(IrcInboxKind::Invite,
                             networkA,
                             QStringLiteral("alice"),
                             QStringLiteral("#lab"),
-                            QStringLiteral("first")));
+                            QStringLiteral("first")),
+                mapping);
     inbox.append(sampleItem(IrcInboxKind::Invite,
                             networkA,
                             QStringLiteral("bob"),
                             QStringLiteral("#desk"),
-                            QStringLiteral("other")));
+                            QStringLiteral("other")),
+                mapping);
     inbox.append(sampleItem(IrcInboxKind::Invite,
                             networkA,
                             QStringLiteral("carol"),
                             QStringLiteral("#lab"),
-                            QStringLiteral("replacement")));
+                            QStringLiteral("replacement")),
+                mapping);
     QCOMPARE(inbox.count(), 2);
     QCOMPARE(inbox.at(0).actor, QStringLiteral("carol"));
     QCOMPARE(inbox.at(0).target, QStringLiteral("#lab"));
@@ -189,21 +200,25 @@ void InboxTest::inviteAndMonitorReplaceSameTarget()
                             networkA,
                             QStringLiteral("alice"),
                             QStringLiteral("alice"),
-                            QStringLiteral("is online")));
+                            QStringLiteral("is online")),
+                mapping);
     inbox.append(sampleItem(IrcInboxKind::MonitorOnline,
                             networkA,
                             QStringLiteral("bob"),
                             QStringLiteral("bob"),
-                            QStringLiteral("is online")));
+                            QStringLiteral("is online")),
+                mapping);
     inbox.append(sampleItem(IrcInboxKind::MonitorOnline,
                             networkA,
                             QStringLiteral("alice"),
                             QStringLiteral("alice"),
-                            QStringLiteral("again")));
-    QCOMPARE(inbox.count(), 3);
+                            QStringLiteral("again")),
+                mapping);
+    QCOMPARE(inbox.count(), 4);
     QCOMPARE(inbox.at(0).actor, QStringLiteral("alice"));
     QCOMPARE(inbox.at(0).preview, QStringLiteral("again"));
     QCOMPARE(inbox.at(1).actor, QStringLiteral("bob"));
+    QCOMPARE(inbox.at(1).preview, QStringLiteral("is online"));
 }
 
 void InboxTest::consumeConversationInviteAndMonitor()
@@ -213,34 +228,40 @@ void InboxTest::consumeConversationInviteAndMonitor()
     inbox.append(sampleItem(IrcInboxKind::Mention,
                             networkA,
                             QStringLiteral("alice"),
-                            QStringLiteral("#room")));
+                            QStringLiteral("#room")),
+                 mapping);
     inbox.append(sampleItem(IrcInboxKind::Highlight,
                             networkA,
                             QStringLiteral("bob"),
-                            QStringLiteral("#room")));
+                            QStringLiteral("#room")),
+                 mapping);
     inbox.append(sampleItem(IrcInboxKind::Direct,
                             networkA,
                             QStringLiteral("carol"),
-                            QStringLiteral("carol")));
+                            QStringLiteral("carol")),
+                 mapping);
     inbox.append(sampleItem(IrcInboxKind::Kick,
                             networkA,
                             QStringLiteral("op"),
-                            QStringLiteral("#room")));
+                            QStringLiteral("#room")),
+                 mapping);
     inbox.append(sampleItem(IrcInboxKind::Invite,
                             networkA,
                             QStringLiteral("dax"),
-                            QStringLiteral("#lab")));
+                            QStringLiteral("#lab")),
+                 mapping);
     inbox.append(sampleItem(IrcInboxKind::MonitorOnline,
                             networkA,
                             QStringLiteral("mira"),
-                            QStringLiteral("mira")));
+                            QStringLiteral("mira")),
+                 mapping);
     QCOMPARE(inbox.count(), 6);
 
     inbox.consumeConversation(networkA, QStringLiteral("#room"), mapping);
     QCOMPARE(inbox.count(), 3);
-    QCOMPARE(inbox.at(0).kind, IrcInboxKind::Direct);
+    QCOMPARE(inbox.at(0).kind, IrcInboxKind::MonitorOnline);
     QCOMPARE(inbox.at(1).kind, IrcInboxKind::Invite);
-    QCOMPARE(inbox.at(2).kind, IrcInboxKind::MonitorOnline);
+    QCOMPARE(inbox.at(2).kind, IrcInboxKind::Direct);
 
     inbox.consumeInvite(networkA, QStringLiteral("#lab"), mapping);
     QCOMPARE(inbox.count(), 2);
@@ -254,12 +275,14 @@ void InboxTest::modelSyncTracksStore()
 {
     IrcInbox inbox;
     IrcInboxModel model;
+    const IrcCaseMapping mapping;
     inbox.append(sampleItem(IrcInboxKind::Direct,
                             networkA,
                             QStringLiteral("anna"),
                             QStringLiteral("anna"),
                             QStringLiteral("secret"),
-                            IrcMsgId{QStringLiteral("dm-1")}));
+                            IrcMsgId{QStringLiteral("dm-1")}),
+                mapping);
     model.sync(inbox);
 
     QCOMPARE(model.rowCount(), 1);
@@ -272,7 +295,7 @@ void InboxTest::modelSyncTracksStore()
     QCOMPARE(model.field(0, QStringLiteral("label")),
              QStringLiteral("Message from anna"));
 
-    inbox.append(sampleItem(IrcInboxKind::Mention));
+    inbox.append(sampleItem(IrcInboxKind::Mention), mapping);
     model.sync(inbox);
     QCOMPARE(model.rowCount(), 2);
     QCOMPARE(model.field(0, QStringLiteral("kind")), QStringLiteral("mention"));
@@ -513,6 +536,115 @@ void InboxTest::controllerMonitorEdgeAppendsHydrationSkips()
     QVERIFY(controller.start(networkA));
     welcomeMonitor(again);
     again->injectBytes(QByteArrayLiteral(":server 730 * :alice!u@h\r\n"));
+    QCOMPARE(controller.inboxCount(), 0);
+}
+
+void InboxTest::inviteCoalescesWithCaseMapping()
+{
+    const IrcCaseMapping mapping(IrcCaseMapping::Kind::Ascii);
+    IrcInbox inbox;
+    inbox.append(sampleItem(IrcInboxKind::Invite,
+                            networkA,
+                            QStringLiteral("alice"),
+                            QStringLiteral("#Lab"),
+                            QStringLiteral("first")),
+                mapping);
+    inbox.append(sampleItem(IrcInboxKind::Invite,
+                            networkA,
+                            QStringLiteral("bob"),
+                            QStringLiteral("#lab"),
+                            QStringLiteral("replacement")),
+                mapping);
+    QCOMPARE(inbox.count(), 1);
+    QCOMPARE(inbox.at(0).actor, QStringLiteral("bob"));
+    QCOMPARE(inbox.at(0).target, QStringLiteral("#lab"));
+    QCOMPARE(inbox.at(0).preview, QStringLiteral("replacement"));
+}
+
+void InboxTest::selectConversationConsumesMonitorOnline()
+{
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    QVERIFY(controller.addSession(sessionConfig(), transport));
+    QVERIFY(controller.start(networkA));
+    welcomeMonitor(transport);
+    controller.openStatus(networkA);
+
+    QVERIFY(controller.console()->submit(QStringLiteral("/monitor alice")));
+    transport->injectBytes(
+        QByteArrayLiteral(":server 730 * :alice!u@h\r\n"));
+    QCOMPARE(controller.inboxCount(), 1);
+
+    transport->injectBytes(QByteArrayLiteral(":fred!u@h JOIN :#omarchy\r\n"));
+    controller.selectConversation(networkA, QStringLiteral("#omarchy"));
+    QCOMPARE(controller.inboxCount(), 1);
+
+    controller.openDirectMessage(QStringLiteral("alice"));
+    QCOMPARE(controller.inboxCount(), 0);
+    QCOMPARE(controller.selectedTarget(), QStringLiteral("alice"));
+
+    QVERIFY(controller.console()->submit(QStringLiteral("/monitor bob")));
+    transport->injectBytes(
+        QByteArrayLiteral(":server 730 * :bob!u@h\r\n"));
+    QCOMPARE(controller.inboxCount(), 1);
+    controller.selectConversation(networkA, QStringLiteral("bob"));
+    QCOMPARE(controller.inboxCount(), 0);
+}
+
+void InboxTest::selfJoinConsumesInviteWithoutPendingInvite()
+{
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    QVERIFY(controller.addSession(sessionConfig(), transport));
+    QVERIFY(controller.start(networkA));
+    welcome(transport);
+    transport->injectBytes(QByteArrayLiteral(":fred!u@h JOIN :#omarchy\r\n"));
+    controller.selectConversation(networkA, QStringLiteral("#omarchy"));
+
+    transport->injectBytes(QByteArrayLiteral(":alice!u@h INVITE fred :#lab\r\n"));
+    QCOMPARE(controller.inboxCount(), 1);
+
+    QVERIFY(controller.sendMessage(QStringLiteral("/join #lab")));
+    transport->injectBytes(QByteArrayLiteral(":fred!u@h JOIN :#lab\r\n"));
+    QCOMPARE(controller.inboxCount(), 0);
+
+    transport->injectBytes(QByteArrayLiteral(":bob!u@h INVITE fred :#desk\r\n"));
+    QCOMPARE(controller.inboxCount(), 1);
+    transport->injectBytes(QByteArrayLiteral(":alice!u@h INVITE fred :#lab\r\n"));
+    QCOMPARE(controller.inboxCount(), 2);
+    QVERIFY(controller.sendMessage(QStringLiteral("/join #lab")));
+    transport->injectBytes(QByteArrayLiteral(":fred!u@h JOIN :#lab\r\n"));
+    QCOMPARE(controller.inboxCount(), 1);
+    auto *model = qobject_cast<IrcInboxModel *>(controller.inbox());
+    QVERIFY(model);
+    QCOMPARE(model->field(0, QStringLiteral("target")), QStringLiteral("#desk"));
+}
+
+void InboxTest::forgetNetworkStatePurgesInbox()
+{
+    const IrcCaseMapping mapping;
+    IrcInbox inbox;
+    inbox.append(sampleItem(IrcInboxKind::Mention), mapping);
+    inbox.append(sampleItem(IrcInboxKind::Invite,
+                            QStringLiteral("other"),
+                            QStringLiteral("alice"),
+                            QStringLiteral("#room")),
+                mapping);
+    inbox.purgeNetwork(networkA);
+    QCOMPARE(inbox.count(), 1);
+    QCOMPARE(inbox.at(0).networkId, QStringLiteral("other"));
+
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    QVERIFY(controller.addSession(sessionConfig(), transport));
+    QVERIFY(controller.start(networkA));
+    welcome(transport);
+    transport->injectBytes(QByteArrayLiteral(":fred!u@h JOIN :#omarchy\r\n"));
+    controller.selectConversation(networkA, QStringLiteral("#other"));
+    transport->injectBytes(
+        QByteArrayLiteral("@msgid=purge-1 :Alice!u@h PRIVMSG #omarchy :fred: ping\r\n"));
+    QCOMPARE(controller.inboxCount(), 1);
+    controller.forgetNetworkState(networkA);
     QCOMPARE(controller.inboxCount(), 0);
 }
 

@@ -431,6 +431,8 @@ void IrcController::forgetNetworkState(const QString &networkId)
     m_mutes.forget(networkId);
     m_openDirects.forget(networkId);
     m_highlights.forget(networkId);
+    m_inbox.purgeNetwork(networkId);
+    syncInbox();
     if (m_selected && m_selected->networkId == networkId)
         clearConversationSelection();
     reloadModels();
@@ -776,7 +778,8 @@ int IrcController::inboxCount() const
 
 void IrcController::appendInbox(IrcInboxItem item)
 {
-    m_inbox.append(std::move(item));
+    m_inbox.append(std::move(item),
+                    m_reducer.serverFeatures(item.networkId).caseMapping());
     syncInbox();
 }
 
@@ -871,10 +874,10 @@ void IrcController::selectConversation(const QString& networkId,
     }
     m_selected = key;
     m_selectedTarget = target;
-    m_inbox.consumeConversation(
-        networkId,
-        target,
-        m_reducer.serverFeatures(networkId).caseMapping());
+    const IrcServerFeatures& features = m_reducer.serverFeatures(networkId);
+    m_inbox.consumeConversation(networkId, target, features.caseMapping());
+    if (!features.isChannel(utf8(key.normalizedTarget)))
+        m_inbox.consumeMonitor(networkId, target, features.caseMapping());
     syncInbox();
     m_conversations.select(key);
     m_messages.select(key);
@@ -3218,16 +3221,15 @@ void IrcController::handleMessage(const QString& networkId,
                 dismissChannel(join->networkId, join->channel);
                 continue;
             }
-            if (IrcSession *session = m_sessions.findSession(join->networkId)) {
-                if (const auto pending = session->pendingInvite()) {
-                    if (selfJoin
-                        && mapping.equals(utf8(join->channel),
-                                          utf8(pending->channel))) {
-                        m_inbox.consumeInvite(join->networkId,
-                                              join->channel,
-                                              mapping);
-                        syncInbox();
-                        selectConversation(join->networkId, join->channel);
+            if (selfJoin
+                && features.isChannel(utf8(join->channel))) {
+                m_inbox.consumeInvite(join->networkId, join->channel, mapping);
+                syncInbox();
+                if (IrcSession *session = m_sessions.findSession(join->networkId)) {
+                    if (const auto pending = session->pendingInvite()) {
+                        if (mapping.equals(utf8(join->channel),
+                                          utf8(pending->channel)))
+                            selectConversation(join->networkId, join->channel);
                     }
                 }
             }
