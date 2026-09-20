@@ -10,8 +10,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Preferences → **Open conversations at unread** (default off). When on,
-  switching or jumping to a conversation lands at the first unread instead of
-  always sticking to the bottom.
+  switching or jumping to a different conversation lands on the New messages
+  marker instead of the bottom. An already-focused buffer is left alone;
+  Status still pins to the end.
 
 ### Changed
 

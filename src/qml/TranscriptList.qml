@@ -174,6 +174,26 @@ ListView {
         });
     }
 
+    function pinToUnread(row) {
+        var total = modelRowCount();
+        if (row < 0 || row >= total) {
+            pinToEnd();
+            return;
+        }
+        stick = stickDetached;
+        firstUnseenIndex = -1;
+        pinning = true;
+        var generation = ++pinGeneration;
+        positionViewAtIndex(row, ListView.Beginning);
+        Qt.callLater(function() {
+            if (generation !== pinGeneration)
+                return;
+            positionViewAtIndex(row, ListView.Beginning);
+            pinning = false;
+            adoptViewport();
+        });
+    }
+
     onCountChanged: {
         rowRevision += 1;
         if (resetPending)
