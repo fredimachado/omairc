@@ -1,6 +1,9 @@
 #include <QCoreApplication>
 #include <QDir>
+#include <QFile>
+#include <QFileInfo>
 #include <QStandardPaths>
+#include <QTemporaryDir>
 #include <QTest>
 
 #include "omaircpaths.h"
@@ -13,6 +16,7 @@ private slots:
     void xdgOverridesPlatformRoots();
     void unsetXdgUsesGenericLocations();
     void macOsRootsMatchHomebrewZap();
+    void macBundleContentsDirFollowsSymlink();
 };
 
 void OmaircPathsTest::xdgOverridesPlatformRoots()
@@ -75,6 +79,38 @@ void OmaircPathsTest::macOsRootsMatchHomebrewZap()
         qunsetenv("XDG_STATE_HOME");
     else
         qputenv("XDG_STATE_HOME", previousState);
+#endif
+}
+
+void OmaircPathsTest::macBundleContentsDirFollowsSymlink()
+{
+    QCOMPARE(omaircMacBundleContentsDir(
+                 QStringLiteral("/Applications/Foo.app/Contents/MacOS/foo")),
+             QStringLiteral("/Applications/Foo.app/Contents"));
+    QCOMPARE(omaircMacBundleContentsDir(QStringLiteral("/tmp/not-an-app/omairc")),
+             QString());
+    QCOMPARE(omaircMacBundleContentsDir(QString()), QString());
+
+#ifndef Q_OS_UNIX
+    return;
+#else
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const QString macOS = dir.filePath(QStringLiteral("omairc.app/Contents/MacOS"));
+    QVERIFY(QDir().mkpath(macOS));
+    const QString exe = macOS + QLatin1String("/omairc");
+    QFile file(exe);
+    QVERIFY(file.open(QIODevice::WriteOnly));
+    QVERIFY(file.write("x") > 0);
+    file.close();
+    QVERIFY(file.setPermissions(QFileDevice::ReadOwner | QFileDevice::WriteOwner
+                                | QFileDevice::ExeOwner | QFileDevice::ReadUser
+                                | QFileDevice::ExeUser));
+    const QString link = dir.filePath(QStringLiteral("omairc"));
+    QVERIFY(QFile::link(exe, link));
+    const QString contents = dir.filePath(QStringLiteral("omairc.app/Contents"));
+    QCOMPARE(omaircMacBundleContentsDir(link), QFileInfo(contents).canonicalFilePath());
+    QCOMPARE(omaircMacBundleContentsDir(exe), QFileInfo(contents).canonicalFilePath());
 #endif
 }
 

@@ -122,6 +122,7 @@ int main(int argc, char *argv[]) {
         return OmaircCli::printOutcome(outcome);
     }
 
+    const QString macBundleContents = omaircApplyMacBundleQtPaths();
     QGuiApplication app(argc, argv);
     app.setApplicationName(QStringLiteral("omairc"));
     app.setApplicationVersion(QStringLiteral(OMAIRC_VERSION));
@@ -230,6 +231,14 @@ int main(int argc, char *argv[]) {
     });
 
     QQmlApplicationEngine engine;
+    if (!macBundleContents.isEmpty()) {
+        const QString plugins = macBundleContents + QLatin1String("/PlugIns");
+        const QString qml = macBundleContents + QLatin1String("/Resources/qml");
+        if (QDir(plugins).exists())
+            QCoreApplication::addLibraryPath(plugins);
+        if (QDir(qml).exists())
+            engine.addImportPath(qml);
+    }
     IrcAvatarStore *avatarStore = ircInstallAvatarStore(&engine);
 
     bool pendingRaise = false;

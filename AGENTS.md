@@ -248,8 +248,9 @@ ad-hoc unless `CODESIGN_IDENTITY` is set. The Homebrew cask is
 `Casks/omairc.rb` so this repository is a tap (`brew tap fredimachado/omairc
 https://github.com/fredimachado/omairc`; the URL is required because the repo
 is not `homebrew-omairc`). It ships the GitHub `macos-arm64` / `macos-x64`
-zips, `livecheck` on the latest release, a `binary` helper so
-`omairc connections` works from a terminal, and `zap` of
+zips, `livecheck` on the latest release, a PATH helper that execs
+`Contents/MacOS/omairc` (not a symlink of the Mach-O, so Qt still reads the
+bundle `qt.conf`) so `omairc connections` works from a terminal, and `zap` of
 `~/Library/Preferences/omairc` plus `~/Library/Preferences/State/omairc`
 (Qt `GenericConfigLocation` / `GenericStateLocation` on macOS). Version tags
 rewrite `version` and both `sha256`s through `bin/bump-homebrew-cask` after
