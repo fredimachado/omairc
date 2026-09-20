@@ -61,7 +61,7 @@ Popup {
 
                 Text {
                     width: sheet.style.scaledSize(210)
-                    text: modelData.keys
+                    text: sheet.style.shortcutKeys(modelData.keys)
                     color: sheet.style.inkColor
                     font.family: "iA Writer Mono S"
                     font.pixelSize: sheet.style.scaledSize(11)

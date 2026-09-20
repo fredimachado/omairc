@@ -1381,6 +1381,46 @@ ApplicationWindow {
             || event.modifiers === Qt.KeypadModifier;
     }
 
+    function composerKeyModifiers(event) {
+        return event.modifiers & (Qt.ShiftModifier | Qt.ControlModifier
+            | Qt.AltModifier | Qt.MetaModifier);
+    }
+
+    function handleComposerSidebarShortcut(event) {
+        if (win.connectionOverlayVisible || win.shortcutOverlayOpen)
+            return false;
+        var mods = composerKeyModifiers(event);
+        if (!(mods & Qt.AltModifier))
+            return false;
+        if (event.key !== Qt.Key_Left && event.key !== Qt.Key_Right
+                && event.key !== Qt.Key_Up && event.key !== Qt.Key_Down)
+            return false;
+
+        if (mods === Qt.AltModifier) {
+            if (event.key === Qt.Key_Left || event.key === Qt.Key_Right)
+                stepNetwork(event.key === Qt.Key_Right ? 1 : -1);
+            else
+                stepConversation(event.key === Qt.Key_Down ? 1 : -1);
+            return true;
+        }
+        if (mods === (Qt.AltModifier | Qt.ShiftModifier)) {
+            if (event.key === Qt.Key_Left || event.key === Qt.Key_Right) {
+                if (win.sidebarNetworkFocusId.length > 0)
+                    collapseFocusedNetwork(event.key === Qt.Key_Left);
+                return true;
+            }
+            if (win.sidebarNetworkFocusId.length > 0)
+                moveFocusedNetwork(event.key === Qt.Key_Down ? 1 : -1);
+            return true;
+        }
+        if (mods === (Qt.ControlModifier | Qt.AltModifier | Qt.ShiftModifier)
+                && (event.key === Qt.Key_Left || event.key === Qt.Key_Right)) {
+            collapseAllNetworks(event.key === Qt.Key_Left);
+            return true;
+        }
+        return false;
+    }
+
     function transcriptIndexAt(list, y) {
         var x = Math.max(1, list.width / 2);
         var index = list.indexAt(x, y);
@@ -1438,6 +1478,11 @@ ApplicationWindow {
     }
 
     function handleComposerKey(event) {
+        if (handleComposerSidebarShortcut(event)) {
+            event.accepted = true;
+            return;
+        }
+
         if (findActive) {
             if (event.key === Qt.Key_Tab
                 || ((event.key === Qt.Key_Up || event.key === Qt.Key_Down)
@@ -1491,6 +1536,10 @@ ApplicationWindow {
             event.accepted = recallComposerHistory(1);
             return;
         }
+
+        // Keys.BeforeItem starts accepted. Ignore keys we did not handle so
+        // the composer can still type, select, and move the caret.
+        event.accepted = false;
     }
 
     function handleSlashHitHovered(index) {

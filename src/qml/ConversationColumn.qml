@@ -248,6 +248,10 @@ Item {
             background: Item {}
             onTextChanged: column.composerTextEdited(text)
 
+            // BeforeItem so Option+Left/Right never become word-movement.
+            // On macOS TextInput claims those as MoveToPreviousWord /
+            // MoveToNextWord, which swallows the window Shortcut.
+            Keys.priority: Keys.BeforeItem
             Keys.onPressed: function(event) {
                 column.composerKeyPressed(event);
             }

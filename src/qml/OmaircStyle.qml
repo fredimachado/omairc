@@ -36,8 +36,20 @@ QtObject {
         mixColors(pageColor, nickPalette[4], nickAvatarMix)
     ]
 
+    // Qt maps "Ctrl" in Shortcut sequences to Command and "Alt" to Option
+    // on macOS. The physical Control key is Meta. Show Cmd and Option in
+    // the sheet so a Win/Cmd or Option press matches.
+    readonly property bool usesCommandModifier: Qt.platform.os === "osx"
+        || Qt.platform.os === "macos"
+
     function scaledSize(pixels) {
         return Math.max(1, Math.round(pixels * textScale));
+    }
+
+    function shortcutKeys(label) {
+        if (!style.usesCommandModifier)
+            return label;
+        return label.split("Ctrl").join("Cmd").split("Alt").join("Option");
     }
 
     function mixColors(base, tint, amount) {
