@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Preferences → **Open conversations at unread** (default off). When on,
+  switching or jumping to a different conversation lands on the New messages
+  marker instead of the bottom. An already-focused buffer is left alone;
+  Status still pins to the end.
+
 ### Changed
 
 - Pull-request and `master` CI no longer package or upload Windows/macOS

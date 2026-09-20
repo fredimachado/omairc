@@ -308,6 +308,7 @@ TestCase {
         property bool hasMemberStatus: true
         property bool hasTyping: false
         property bool reopenDirectMessages: true
+        property bool openConversationsAtUnread: false
         property var typingNicks: []
         property var conversations: liveConversations
         property var messages: liveMessages
@@ -393,6 +394,7 @@ TestCase {
         property bool hasMemberStatus: true
         property bool hasTyping: false
         property bool reopenDirectMessages: true
+        property bool openConversationsAtUnread: false
         property var typingNicks: []
         property var conversations: liveConversations
         property var messages: liveMessages
@@ -484,6 +486,7 @@ TestCase {
         property bool hasMemberStatus: false
         property bool hasTyping: false
         property bool reopenDirectMessages: true
+        property bool openConversationsAtUnread: false
         property var typingNicks: ["anna"]
         property var conversations: liveConversations
         property var messages: liveMessages
@@ -554,6 +557,7 @@ TestCase {
         property bool hasMemberStatus: true
         property bool hasTyping: false
         property bool reopenDirectMessages: true
+        property bool openConversationsAtUnread: false
         property var typingNicks: []
         property var conversations: liveConversations
         property var messages: liveMessages
@@ -929,6 +933,7 @@ TestCase {
         gatedIrc.hasMemberStatus = false;
         gatedIrc.hasTyping = false;
         gatedIrc.reopenDirectMessages = true;
+        gatedIrc.openConversationsAtUnread = false;
         gatedIrc.typingNicks = ["anna"];
         gatedIrc.conversations = liveConversations;
         gatedIrc.messages = liveMessages;
@@ -2484,6 +2489,191 @@ TestCase {
         compare(appWindow.findIndex, -1);
     }
 
+    function injectUnreadWhileAway(target, firstBody, secondBody, extra) {
+        injectOmarchyChat("anna", target, firstBody);
+        injectOmarchyChat("dax", target, secondBody);
+        var count = extra === undefined ? 0 : extra;
+        var index = 0;
+        for (index = 0; index < count; ++index) {
+            var minute = index < 10 ? "0" + index : "" + index;
+            injectOmarchyChat("mira", target, "open-at-unread filler " + index,
+                              "11:" + minute);
+        }
+    }
+
+    function waitForOpenAtUnreadViewport(list, markRow) {
+        waitForRendering(appWindow.contentItem);
+        wait(0);
+        tryVerify(function() {
+            return firstVisibleIndex(list) === markRow;
+        }, 1000, "Switching should land the unread mark at the start of the view");
+        verify(unseenIsInView(list, markRow));
+        verify(!transcriptPinned(list),
+               "A long backlog should keep the unread mark off the last page");
+        compare(list.stick, list.stickDetached);
+    }
+
+    function test_defaultOffSwitchWithUnreadPinsToEnd() {
+        openSeededAppWindow();
+        compare(seed.irc.openConversationsAtUnread, false);
+        var list = item("messageList");
+        fillTranscriptUntilScrollable(list);
+
+        mouseClick(namedItem(liveConversation("#desktop")));
+        tryCompare(appWindow, "currentConversation", "#desktop");
+        injectUnreadWhileAway("#omarchy", "open-at-unread-off-first-zx9",
+                              "open-at-unread-off-second-zx9", 24);
+
+        mouseClick(namedItem(liveConversation("#omarchy")));
+        tryCompare(appWindow, "currentConversation", "#omarchy");
+        waitForBody(list, "open-at-unread-off-first-zx9");
+        waitForBody(list, "open-at-unread-off-second-zx9");
+        waitForRendering(appWindow.contentItem);
+        wait(0);
+
+        var first = rowForBody(list.model, "open-at-unread-off-first-zx9");
+        var markRow = list.model.unreadMarkRow();
+        verify(markRow >= 0, "Default-off still keeps the unread mark");
+        compare(markRow, first - 1);
+        compare(field(list.model, markRow, "kind"), "unread");
+        tryVerify(function() {
+            return transcriptPinned(list);
+        }, 1000, "Default-off should still pin a switched transcript to the end");
+        verify(firstVisibleIndex(list) !== markRow);
+    }
+
+    function test_openAtUnreadLandsOnMarkWhenSwitchingAwayAndBack() {
+        openSeededAppWindow();
+        var list = item("messageList");
+        fillTranscriptUntilScrollable(list);
+
+        mouseClick(namedItem(liveConversation("#desktop")));
+        tryCompare(appWindow, "currentConversation", "#desktop");
+        injectUnreadWhileAway("#omarchy", "open-at-unread-on-first-zx9",
+                              "open-at-unread-on-second-zx9", 24);
+        seed.irc.openConversationsAtUnread = true;
+
+        mouseClick(namedItem(liveConversation("#omarchy")));
+        tryCompare(appWindow, "currentConversation", "#omarchy");
+        waitForBody(list, "open-at-unread-on-first-zx9");
+        waitForBody(list, "open-at-unread-on-second-zx9");
+
+        var first = rowForBody(list.model, "open-at-unread-on-first-zx9");
+        verify(first > 0, "The first unseen line should not lead the buffer");
+        var markRow = list.model.unreadMarkRow();
+        compare(markRow, first - 1);
+        compare(field(list.model, markRow, "kind"), "unread");
+        compare(rowForBody(list.model, "open-at-unread-on-second-zx9"), first + 1);
+        waitForOpenAtUnreadViewport(list, markRow);
+
+        var row = list.itemAtIndex(markRow);
+        verify(row !== null, "The unread mark row should be in view");
+        var mark = findChild(row, "unreadMark");
+        verify(mark !== null && mark.visible);
+        compare(unreadMarkLabelText(mark), "New messages");
+        compare(field(list.model, first, "body"), "open-at-unread-on-first-zx9");
+    }
+
+    function test_openAtUnreadLandsOnMarkWhenQuerySwitchesConversation() {
+        openSeededAppWindow();
+        mouseClick(namedItem(liveConversation("anna")));
+        tryCompare(appWindow, "currentConversation", "anna");
+        var list = item("messageList");
+        var start = list.model.rowCount();
+        var index = 0;
+        for (index = 0; index < 24; ++index) {
+            var minute = index < 10 ? "0" + index : "" + index;
+            injectOmarchyChat("anna", "fred", "scroll line " + index, "10:" + minute);
+        }
+        waitForRowCount(list, start + 24);
+        waitForRendering(appWindow.contentItem);
+        list.pinToEnd();
+        waitForRendering(appWindow.contentItem);
+        wait(0);
+        verify(list.contentHeight > list.height);
+        verify(transcriptPinned(list));
+
+        mouseClick(namedItem(liveConversation("#omarchy")));
+        tryCompare(appWindow, "currentConversation", "#omarchy");
+        injectOmarchyChat("anna", "fred", "open-at-unread-query-first-zx9");
+        injectOmarchyChat("anna", "fred", "open-at-unread-query-second-zx9");
+        for (index = 0; index < 24; ++index) {
+            var unreadMinute = index < 10 ? "0" + index : "" + index;
+            injectOmarchyChat("anna", "fred", "open-at-unread filler " + index,
+                              "11:" + unreadMinute);
+        }
+        seed.irc.openConversationsAtUnread = true;
+
+        var composer = item("messageComposer");
+        mouseClick(composer);
+        typeText("/query anna hello");
+        compare(composer.text, "/query anna hello");
+        if (item("slashCompleteList").visible)
+            keyClick(Qt.Key_Escape);
+        keyClick(Qt.Key_Return);
+
+        tryCompare(appWindow, "currentConversation", "anna");
+        waitForBody(list, "open-at-unread-query-first-zx9");
+        waitForBody(list, "open-at-unread-query-second-zx9");
+        verify(seed.echoLastOmarchyPrivmsg());
+        waitForBody(list, "hello");
+
+        var first = rowForBody(list.model, "open-at-unread-query-first-zx9");
+        verify(first > 0, "The first unseen line should not lead the buffer");
+        var markRow = list.model.unreadMarkRow();
+        compare(markRow, first - 1);
+        compare(field(list.model, markRow, "kind"), "unread");
+        compare(rowForBody(list.model, "open-at-unread-query-second-zx9"), first + 1);
+        waitForOpenAtUnreadViewport(list, markRow);
+        verify(rowForBody(list.model, "hello") > first);
+    }
+
+    function test_openAtUnreadWithoutMarkPinsToEnd() {
+        openSeededAppWindow();
+        seed.irc.openConversationsAtUnread = true;
+        mouseClick(namedItem(liveConversation("#desktop")));
+        tryCompare(appWindow, "currentConversation", "#desktop");
+        var list = item("messageList");
+        fillTranscriptUntilScrollable(list);
+
+        mouseClick(namedItem(liveConversation("#omarchy")));
+        tryCompare(appWindow, "currentConversation", "#omarchy");
+        mouseClick(namedItem(liveConversation("#desktop")));
+        tryCompare(appWindow, "currentConversation", "#desktop");
+        waitForRendering(appWindow.contentItem);
+        wait(0);
+
+        compare(list.model.unreadMarkRow(), -1);
+        tryVerify(function() {
+            return transcriptPinned(list);
+        }, 1000, "A caught-up conversation should still pin to the end");
+        compare(list.stick, list.stickFollowing);
+    }
+
+    function test_openAtUnreadLeavesAlreadyViewingViewport() {
+        openSeededAppWindow();
+        seed.irc.openConversationsAtUnread = true;
+        var list = item("messageList");
+        fillTranscriptUntilScrollable(list);
+
+        keyClick(Qt.Key_PageUp);
+        waitForRendering(appWindow.contentItem);
+        tryCompare(list, "stick", list.stickDetached);
+        verify(!transcriptPinned(list));
+        var frozenY = list.contentY;
+        var frozenStick = list.stick;
+
+        appWindow.selectConversation("#omarchy", seed.omarchyNetworkId);
+        tryCompare(appWindow, "currentConversation", "#omarchy");
+        waitForRendering(appWindow.contentItem);
+        wait(0);
+        waitForRendering(appWindow.contentItem);
+
+        fuzzyCompare(list.contentY, frozenY, 2);
+        compare(list.stick, frozenStick);
+        verify(!transcriptPinned(list));
+    }
+
     function test_replayAndLiveSameAuthorMinuteDoNotGroup() {
         openSeededAppWindow();
         mouseClick(namedItem(liveConversation("anna")));
@@ -2941,6 +3131,72 @@ TestCase {
         var dmRow = appWindow.msgidRow("dm-7");
         verify(dmRow >= 0);
         compare(field(item("messageList").model, dmRow, "body"), "secret");
+    }
+
+    function test_openAtUnreadNotificationActivateLandsOnMark() {
+        openSeededAppWindow();
+        var list = item("messageList");
+        fillTranscriptUntilScrollable(list);
+
+        mouseClick(namedItem(liveConversation("#desktop")));
+        tryCompare(appWindow, "currentConversation", "#desktop");
+        injectUnreadWhileAway("#omarchy", "open-at-unread-notify-first-zx9",
+                              "open-at-unread-notify-second-zx9", 24);
+        seed.injectOmarchy(
+            "@msgid=mention-notify-unread-zx9 :anna!u@h PRIVMSG #omarchy :fred: ping notify-unread-zx9\r\n");
+        seed.irc.openConversationsAtUnread = true;
+
+        appWindow.activateNotifiedConversation(seed.omarchyNetworkId, "#omarchy",
+                                               "mention-notify-unread-zx9");
+        tryCompare(appWindow, "currentConversation", "#omarchy");
+        compare(appWindow.currentNetworkId, seed.omarchyNetworkId);
+        waitForBody(list, "open-at-unread-notify-first-zx9");
+        waitForBody(list, "open-at-unread-notify-second-zx9");
+        waitForBody(list, "fred: ping notify-unread-zx9");
+
+        var first = rowForBody(list.model, "open-at-unread-notify-first-zx9");
+        verify(first > 0, "The first unseen line should not lead the buffer");
+        var markRow = list.model.unreadMarkRow();
+        compare(markRow, first - 1);
+        compare(field(list.model, markRow, "kind"), "unread");
+        var msgidRow = appWindow.msgidRow("mention-notify-unread-zx9");
+        verify(msgidRow > markRow, "The notified mention should sit below the unread mark");
+        waitForOpenAtUnreadViewport(list, markRow);
+        compare(firstVisibleIndex(list), markRow);
+        verify(firstVisibleIndex(list) !== msgidRow);
+    }
+
+    function test_openAtUnreadNotificationActivateLeavesAlreadyViewingViewport() {
+        openSeededAppWindow();
+        seed.irc.openConversationsAtUnread = true;
+        var list = item("messageList");
+        fillTranscriptUntilScrollable(list);
+        seed.injectOmarchy(
+            "@msgid=mention-notify-same-zx9 :anna!u@h PRIVMSG #omarchy :fred: ping notify-same-zx9\r\n");
+        waitForBody(list, "fred: ping notify-same-zx9");
+        waitForRendering(appWindow.contentItem);
+        list.pinToEnd();
+        waitForRendering(appWindow.contentItem);
+        wait(0);
+
+        keyClick(Qt.Key_PageUp);
+        waitForRendering(appWindow.contentItem);
+        tryCompare(list, "stick", list.stickDetached);
+        verify(!transcriptPinned(list));
+        var frozenY = list.contentY;
+        var frozenStick = list.stick;
+
+        appWindow.activateNotifiedConversation(seed.omarchyNetworkId, "#omarchy",
+                                               "mention-notify-same-zx9");
+        tryCompare(appWindow, "currentConversation", "#omarchy");
+        waitForRendering(appWindow.contentItem);
+        wait(0);
+        waitForRendering(appWindow.contentItem);
+
+        fuzzyCompare(list.contentY, frozenY, 2);
+        compare(list.stick, frozenStick);
+        verify(!transcriptPinned(list));
+        verify(item("messageComposer").activeFocus);
     }
 
     function test_messageBodyClickOpensHttpsUrl() {
@@ -4509,6 +4765,57 @@ TestCase {
 
         window.close();
         liveIrc.reopenDirectMessages = true;
+    }
+
+    function test_connectionPreferencesOpenAtUnreadToggle() {
+        liveIrc.openConversationsAtUnread = false;
+        var window = createTemporaryObject(setupWindowComponent, null);
+        verify(window !== null, "The open-at-unread window should load");
+        tryCompare(window, "visible", true);
+        waitForRendering(window.contentItem);
+        window.requestActivate();
+        tryCompare(window, "active", true);
+
+        var preferencesTab = findChild(window, "connectionSheetTab-preferences");
+        verify(preferencesTab !== null, "Could not find connectionSheetTab-preferences");
+        mouseClick(preferencesTab);
+        compare(window.connectionSheetTab, "preferences");
+
+        var toggle = findChild(window, "connectionOpenAtUnread");
+        verify(toggle !== null, "Could not find connectionOpenAtUnread");
+        verify(toggle.visible);
+        compare(toggle.checked, false);
+        compare(liveIrc.openConversationsAtUnread, false);
+
+        mouseClick(toggle);
+        compare(toggle.checked, true);
+        compare(liveIrc.openConversationsAtUnread, true);
+
+        mouseClick(toggle);
+        compare(toggle.checked, false);
+        compare(liveIrc.openConversationsAtUnread, false);
+
+        preferencesTab.forceActiveFocus();
+        tryCompare(preferencesTab, "activeFocus", true);
+        keyClick(Qt.Key_Tab);
+        wait(0);
+        compare(focusObjectName(window), "connectionReopenDirects");
+        keyClick(Qt.Key_Tab);
+        wait(0);
+        compare(focusObjectName(window), "connectionLoadPeerAvatars");
+        keyClick(Qt.Key_Tab);
+        wait(0);
+        compare(focusObjectName(window), "connectionOpenAtUnread");
+
+        var checkedBefore = toggle.checked;
+        keyClick(Qt.Key_Return);
+        compare(toggle.checked, checkedBefore);
+        compare(liveIrc.openConversationsAtUnread, checkedBefore);
+        verify(findChild(window, "connectionSheet").visible);
+        verify(focusObjectName(window) !== "connectionOpenAtUnread");
+
+        window.close();
+        liveIrc.openConversationsAtUnread = false;
     }
 
     function test_connectionSheetShortcutsHintOpensShortcuts() {

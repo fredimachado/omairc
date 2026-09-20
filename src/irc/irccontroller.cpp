@@ -166,6 +166,11 @@ QString loadPeerAvatarsKey()
     return QStringLiteral("loadPeerAvatars");
 }
 
+QString openConversationsAtUnreadKey()
+{
+    return QStringLiteral("openConversationsAtUnread");
+}
+
 bool loadReopenDirectMessages()
 {
     QSettings settings;
@@ -196,6 +201,22 @@ void saveLoadPeerAvatars(bool enabled)
     QSettings settings;
     settings.beginGroup(QStringLiteral("preferences"));
     settings.setValue(loadPeerAvatarsKey(), enabled);
+    settings.endGroup();
+    settings.sync();
+}
+
+bool loadOpenConversationsAtUnread()
+{
+    QSettings settings;
+    settings.beginGroup(QStringLiteral("preferences"));
+    return settings.value(openConversationsAtUnreadKey(), false).toBool();
+}
+
+void saveOpenConversationsAtUnread(bool enabled)
+{
+    QSettings settings;
+    settings.beginGroup(QStringLiteral("preferences"));
+    settings.setValue(openConversationsAtUnreadKey(), enabled);
     settings.endGroup();
     settings.sync();
 }
@@ -253,6 +274,7 @@ IrcController::IrcController(QObject *parent)
     m_reducer.setConversationLog(&m_transcripts);
     m_reopenDirectMessages = loadReopenDirectMessages();
     m_loadPeerAvatars = loadLoadPeerAvatars();
+    m_openConversationsAtUnread = loadOpenConversationsAtUnread();
 }
 
 void IrcController::setTranscriptRoot(const QString &root)
@@ -578,6 +600,20 @@ void IrcController::setLoadPeerAvatars(bool enabled)
     m_loadPeerAvatars = enabled;
     saveLoadPeerAvatars(enabled);
     emit loadPeerAvatarsChanged();
+}
+
+bool IrcController::openConversationsAtUnread() const
+{
+    return m_openConversationsAtUnread;
+}
+
+void IrcController::setOpenConversationsAtUnread(bool enabled)
+{
+    if (m_openConversationsAtUnread == enabled)
+        return;
+    m_openConversationsAtUnread = enabled;
+    saveOpenConversationsAtUnread(enabled);
+    emit openConversationsAtUnreadChanged();
 }
 
 bool IrcController::nickIsTyping(const QString& nick) const

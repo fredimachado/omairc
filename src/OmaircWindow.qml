@@ -542,16 +542,22 @@ ApplicationWindow {
         if (!irc || !networkId || !target)
             return;
         sidebarNetworkFocusId = "";
+        var previousConversationId = currentConversationId;
         irc.revealConversation(networkId, target);
         Qt.callLater(function() {
             if (irc.selectedNetworkId !== networkId || irc.selectedTarget !== target)
                 return;
-            var id = msgid ? String(msgid).trim() : "";
-            var row = id.length > 0 ? win.msgidRow(id) : -1;
-            if (row < 0)
-                conversation.messageList.pinToEnd();
-            else
-                win.revealFindMatch(row);
+            if (irc.openConversationsAtUnread === true) {
+                if (shouldOpenAtUnread(previousConversationId))
+                    placeTranscriptAfterSelect(previousConversationId);
+            } else {
+                var id = msgid ? String(msgid).trim() : "";
+                var row = id.length > 0 ? win.msgidRow(id) : -1;
+                if (row >= 0)
+                    win.revealFindMatch(row);
+                else
+                    placeTranscriptAfterSelect(previousConversationId);
+            }
             conversation.composer.forceActiveFocus();
         });
     }
@@ -563,9 +569,10 @@ ApplicationWindow {
     function openDirectMessage(nick) {
         if (!irc)
             return;
+        var previousConversationId = currentConversationId;
         irc.openDirectMessage(nick);
         Qt.callLater(function() {
-            conversation.messageList.pinToEnd();
+            placeTranscriptAfterSelect(previousConversationId);
             conversation.composer.forceActiveFocus();
         });
     }
@@ -573,9 +580,10 @@ ApplicationWindow {
     function closeDirectMessage() {
         if (!irc)
             return;
+        var previousConversationId = currentConversationId;
         irc.closeDirectMessage();
         Qt.callLater(function() {
-            conversation.messageList.pinToEnd();
+            placeTranscriptAfterSelect(previousConversationId);
             conversation.composer.forceActiveFocus();
         });
     }
@@ -597,15 +605,48 @@ ApplicationWindow {
         win.openDirectMessage(nick);
     }
 
+    function shouldOpenAtUnread(previousConversationId) {
+        if (!irc || irc.openConversationsAtUnread !== true)
+            return false;
+        if (consoleVisible)
+            return false;
+        if (previousConversationId && previousConversationId === currentConversationId)
+            return false;
+        return true;
+    }
+
+    function placeTranscriptAfterSelect(previousConversationId) {
+        if (consoleVisible) {
+            conversation.consoleList.pinToEnd();
+            return;
+        }
+        var list = conversation.messageList;
+        if (irc && irc.openConversationsAtUnread === true
+                && previousConversationId
+                && previousConversationId === currentConversationId)
+            return;
+        if (!shouldOpenAtUnread(previousConversationId)) {
+            list.pinToEnd();
+            return;
+        }
+        var mark = (list.model && typeof list.model.unreadMarkRow === "function")
+            ? list.model.unreadMarkRow() : -1;
+        if (mark >= 0)
+            list.pinToUnread(mark);
+        else
+            list.pinToEnd();
+    }
+
     function selectConversation(name, networkId) {
         var id = networkId && networkId.length ? networkId : (irc ? irc.selectedNetworkId : "");
         ensureNetworkExpanded(id);
         sidebarNetworkFocusId = "";
         if (!irc)
             return;
+        var previousConversationId = currentConversationId;
         irc.selectConversation(id, name);
         Qt.callLater(function() {
-            conversation.messageList.pinToEnd();
+            placeTranscriptAfterSelect(previousConversationId);
             conversation.composer.forceActiveFocus();
         });
     }
@@ -1603,10 +1644,15 @@ ApplicationWindow {
         var kept = composerDrafts[composerDraftKey] || "";
         conversation.composer.text = kept;
         conversation.composer.cursorPosition = conversation.composer.text.length;
-        if (consoleVisible)
+        if (consoleVisible) {
             conversation.consoleList.pinToEnd();
-        else
+        } else if (currentConversationId !== sentFromConversationId) {
+            Qt.callLater(function() {
+                placeTranscriptAfterSelect(sentFromConversationId);
+            });
+        } else {
             conversation.messageList.pinToEnd();
+        }
         if (consoleVisible !== fromConsole
                 || currentConversationId !== sentFromConversationId) {
             Qt.callLater(function() {
