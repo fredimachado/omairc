@@ -28,30 +28,36 @@ Popup {
         radius: sheet.style.scaledSize(9)
     }
 
-    Keys.onPressed: function(event) {
-        if (event.key === Qt.Key_Down) {
-            sheet.stepRequested(1);
-            event.accepted = true;
-            return;
-        }
-        if (event.key === Qt.Key_Up) {
-            sheet.stepRequested(-1);
-            event.accepted = true;
-            return;
-        }
-        if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
-            sheet.activateRequested();
-            event.accepted = true;
-            return;
-        }
-        if (event.key === Qt.Key_Tab) {
-            event.accepted = true;
-        }
-    }
-
-    contentItem: Column {
-        spacing: sheet.style.scaledSize(8)
+    contentItem: Item {
         width: sheet.availableWidth
+        implicitHeight: column.implicitHeight
+        focus: true
+
+        Keys.onPressed: function(event) {
+            if (event.key === Qt.Key_Down) {
+                sheet.stepRequested(1);
+                event.accepted = true;
+                return;
+            }
+            if (event.key === Qt.Key_Up) {
+                sheet.stepRequested(-1);
+                event.accepted = true;
+                return;
+            }
+            if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
+                sheet.activateRequested();
+                event.accepted = true;
+                return;
+            }
+            if (event.key === Qt.Key_Tab) {
+                event.accepted = true;
+            }
+        }
+
+        Column {
+            id: column
+            spacing: sheet.style.scaledSize(8)
+            width: parent.width
 
         Text {
             objectName: "inboxEmptyLabel"
@@ -126,6 +132,7 @@ Popup {
                     onClicked: sheet.rowActivated(inboxDelegate.index)
                 }
             }
+        }
         }
     }
 }

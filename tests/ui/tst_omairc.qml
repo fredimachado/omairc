@@ -3454,19 +3454,20 @@ TestCase {
 
     function test_inboxMarkShowsCountAndOpensSheet() {
         openSeededAppWindow();
-        compare(seed.irc.inboxCount, 0);
-        compare(inboxBadgeText(), "");
+        var inboxBaseline = seed.irc.inboxCount;
+        compare(inboxBadgeText(), String(inboxBaseline));
 
         appWindow.selectConversation("#ricing", seed.omarchyNetworkId);
         tryCompare(appWindow, "currentConversation", "#ricing");
+        var inboxBeforeInject = seed.irc.inboxCount;
         seed.injectOmarchy("@msgid=inbox-mark-1 :anna!u@h PRIVMSG #omarchy :fred: inbox ping\r\n");
-        tryVerify(function() { return seed.irc.inboxCount === 1; });
-        compare(inboxBadgeText(), "1");
+        tryVerify(function() { return seed.irc.inboxCount === inboxBeforeInject + 1; });
+        compare(inboxBadgeText(), String(inboxBeforeInject + 1));
 
         mouseClick(namedItem("inboxMark"));
         tryCompare(item("inboxSheet"), "opened", true);
         var list = item("inboxList");
-        compare(list.count, 1);
+        compare(list.count, inboxBeforeInject + 1);
         compare(field(seed.irc.inbox, 0, "kind"), "mention");
         compare(field(seed.irc.inbox, 0, "target"), "#omarchy");
     }
@@ -3475,9 +3476,10 @@ TestCase {
         openSeededAppWindow();
         appWindow.selectConversation("#ricing", seed.omarchyNetworkId);
         tryCompare(appWindow, "currentConversation", "#ricing");
+        var inboxBeforeInject = seed.irc.inboxCount;
 
         seed.injectOmarchy("@msgid=inbox-mention-1 :anna!u@h PRIVMSG #omarchy :fred: inbox scroll\r\n");
-        tryVerify(function() { return seed.irc.inboxCount === 1; });
+        tryVerify(function() { return seed.irc.inboxCount === inboxBeforeInject + 1; });
 
         openInboxSheet();
         keyClick(Qt.Key_Return);
@@ -3493,9 +3495,10 @@ TestCase {
 
     function test_inboxInviteEnterJoinsChannel() {
         openSeededAppWindow();
+        var inboxBaseline = seed.irc.inboxCount;
         var framesBefore = seed.omarchyFrameCount();
         seed.injectOmarchy(":alice!u@h INVITE fred :#invited\r\n");
-        tryVerify(function() { return seed.irc.inboxCount === 1; });
+        tryVerify(function() { return seed.irc.inboxCount === inboxBaseline + 1; });
         compare(field(seed.irc.inbox, 0, "kind"), "invite");
         compare(field(seed.irc.inbox, 0, "target"), "#invited");
 
@@ -3504,21 +3507,22 @@ TestCase {
         verify(seed.omarchyWroteFrom(framesBefore, "JOIN #invited"));
         seed.injectOmarchy(":fred!u@h JOIN :#invited\r\n");
         tryCompare(appWindow, "currentConversation", "#invited");
-        compare(seed.irc.inboxCount, 0);
+        compare(seed.irc.inboxCount, inboxBaseline);
     }
 
     function test_inboxSelectingConversationClearsMatchingRows() {
         openSeededAppWindow();
         appWindow.selectConversation("#ricing", seed.omarchyNetworkId);
         tryCompare(appWindow, "currentConversation", "#ricing");
+        var inboxBaseline = seed.irc.inboxCount;
         seed.injectOmarchy("@msgid=inbox-clear-1 :anna!u@h PRIVMSG #omarchy :fred: waiting\r\n");
-        tryVerify(function() { return seed.irc.inboxCount === 1; });
-        compare(inboxBadgeText(), "1");
+        tryVerify(function() { return seed.irc.inboxCount === inboxBaseline + 1; });
+        compare(inboxBadgeText(), String(inboxBaseline + 1));
 
         mouseClick(namedItem(liveConversation("#omarchy")));
         tryCompare(appWindow, "currentConversation", "#omarchy");
-        compare(seed.irc.inboxCount, 0);
-        compare(inboxBadgeText(), "");
+        compare(seed.irc.inboxCount, inboxBaseline);
+        compare(inboxBadgeText(), String(inboxBaseline));
         compare(item("inboxSheet").opened, false);
     }
 

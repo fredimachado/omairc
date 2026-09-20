@@ -393,6 +393,7 @@ Rectangle {
 
                     Text {
                         id: inboxBadgeText
+                        objectName: "inboxBadgeText"
                         anchors.centerIn: parent
                         text: column.inboxCount
                         color: "#ffffff"
