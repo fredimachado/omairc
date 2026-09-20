@@ -716,7 +716,8 @@ void IrcEventReducer::appendChat(const IrcConversationKey& key,
     persistMessage(*conversation, conversation->messages.back());
     capMessages(*conversation);
     clearTyping(*conversation, normalize(key.networkId, author));
-    noteChatArrival(*conversation, key, author, body, kind, msgid);
+    noteChatArrival(*conversation, key, author, body, kind, msgid,
+                    conversation->messages.back().sequence);
 }
 
 void IrcEventReducer::noteChatArrival(IrcConversationState& conversation,
@@ -724,7 +725,8 @@ void IrcEventReducer::noteChatArrival(IrcConversationState& conversation,
                                       const QString& author,
                                       const QString& body,
                                       IrcMessageKind kind,
-                                      const IrcMsgId& msgid)
+                                      const IrcMsgId& msgid,
+                                      qint64 sequence)
 {
     const bool self = isSelf(key.networkId, author);
     const std::optional<ChatLineReason> reason = classifyChatLine(
@@ -736,7 +738,7 @@ void IrcEventReducer::noteChatArrival(IrcConversationState& conversation,
     if (self || (m_selected && *m_selected == key))
         return;
     if (conversation.unread == 0)
-        conversation.unreadMark = conversation.messages.back().sequence;
+        conversation.unreadMark = sequence;
     ++conversation.unread;
     if (reason == ChatLineReason::NickMention && !conversation.muted)
         ++conversation.mentions;
@@ -1183,7 +1185,8 @@ void IrcEventReducer::reduce(const IrcHistoryEvent& event)
     capMessages(*conversation);
     for (const IrcReducedMessage& message : run) {
         noteChatArrival(*conversation, event.conversation, message.author,
-                        message.body, message.kind, message.msgid);
+                        message.body, message.kind, message.msgid,
+                        message.sequence);
     }
 }
 

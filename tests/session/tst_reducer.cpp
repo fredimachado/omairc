@@ -1671,6 +1671,11 @@ void ReducerTest::nickMergeAdoptsOrKeepsUnreadMark()
     keep.apply(IrcMessageEvent{
         fromAlice, QStringLiteral("Alice"), QStringLiteral("from alice"), timestamp,
         QStringLiteral("Alice")});
+    keep.markSelected(fromAlicia);
+    keep.apply(IrcMessageEvent{
+        fromAlicia, QStringLiteral("Alicia"), QStringLiteral("dest-prefix"), timestamp,
+        QStringLiteral("Alicia")});
+    keep.clearSelection();
     keep.apply(IrcMessageEvent{
         fromAlicia, QStringLiteral("Alicia"), QStringLiteral("from alicia"), timestamp,
         QStringLiteral("Alicia")});

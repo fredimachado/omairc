@@ -2457,13 +2457,14 @@ TestCase {
         waitForRendering(appWindow.contentItem);
         wait(0);
         compare(appWindow.findNextMatch(true), -1);
+        verify(appWindow.findIndex !== markRow);
 
         keyClick(Qt.Key_Escape);
         tryCompare(appWindow, "findActive", false);
         compare(appWindow.findIndex, -1);
         keyClick(Qt.Key_F, Qt.ControlModifier);
         tryCompare(appWindow, "findActive", true);
-        typeText("zx9-no-such-find-needle");
+        composer.text = "qqq-no-such-find-needle";
         waitForRendering(appWindow.contentItem);
         wait(0);
         compare(appWindow.findNextMatch(true), -1);

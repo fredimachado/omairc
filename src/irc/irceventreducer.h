@@ -257,7 +257,8 @@ private:
                          const QString& author,
                          const QString& body,
                          IrcMessageKind kind,
-                         const IrcMsgId& msgid);
+                         const IrcMsgId& msgid,
+                         qint64 sequence);
     void appendEvent(IrcConversationState& conversation,
                      const QString& body,
                      bool collapsible = false);
