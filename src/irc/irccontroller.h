@@ -452,6 +452,10 @@ private:
         bool loading = false;
         QString error;
         std::optional<QString> pendingMask;
+        // After idle timeout, a 323 from the unanswered LIST may still arrive.
+        // Drain that end if it comes before any 321/322 of the new load.
+        bool drainTimedOutEnd = false;
+        bool receivedListPayload = false;
     };
     QHash<QString, ChannelListCache> m_channelLists;
     QHash<QString, QTimer *> m_channelListIdleTimers;

@@ -2835,6 +2835,7 @@ bool IrcController::beginChannelListLoad(IrcSession *session,
     cache.loading = true;
     cache.error.clear();
     cache.pendingMask.reset();
+    cache.receivedListPayload = false;
     m_channelList.beginLoad(networkId, mask);
     if (!session->list(mask)) {
         stopChannelListIdle(networkId);
@@ -2860,6 +2861,7 @@ void IrcController::applyListRow(const QString& networkId, IrcChannelListRow row
     if (found == m_channelLists.end() || !found->loading)
         return;
     ChannelListCache &cache = *found;
+    cache.receivedListPayload = true;
     armChannelListIdle(networkId);
     bool replaced = false;
     for (IrcChannelListRow &existing : cache.rows) {
@@ -2882,10 +2884,20 @@ void IrcController::applyListRow(const QString& networkId, IrcChannelListRow row
 void IrcController::finishChannelList(const QString& networkId)
 {
     const auto found = m_channelLists.find(networkId);
-    if (found == m_channelLists.end() || !found->loading)
+    if (found == m_channelLists.end())
         return;
-    stopChannelListIdle(networkId);
     ChannelListCache &cache = *found;
+    if (!cache.loading) {
+        cache.drainTimedOutEnd = false;
+        return;
+    }
+    if (cache.drainTimedOutEnd && !cache.receivedListPayload) {
+        cache.drainTimedOutEnd = false;
+        armChannelListIdle(networkId);
+        return;
+    }
+    cache.drainTimedOutEnd = false;
+    stopChannelListIdle(networkId);
     const std::optional<QString> pending = cache.pendingMask;
     cache.pendingMask.reset();
     cache.loading = false;
@@ -2929,8 +2941,12 @@ void IrcController::armChannelListIdle(const QString& networkId)
         connect(timer, &QTimer::timeout, this, [this, networkId] {
             const QString text =
                 QStringLiteral("Channel list timed out. Try /list again.");
-            if (failChannelList(networkId, text))
+            if (failChannelList(networkId, text)) {
                 m_console.record(IrcStatusEntry::outcome(networkId, text));
+                const auto found = m_channelLists.find(networkId);
+                if (found != m_channelLists.end())
+                    found->drainTimedOutEnd = true;
+            }
         });
     }
     timer->start(m_channelListIdleTimeoutMs);
@@ -3467,8 +3483,14 @@ void IrcController::handleMessage(const QString& networkId,
         }
         return;
     }
-    if (message.command == "321")
+    if (message.command == "321") {
+        const auto found = m_channelLists.find(networkId);
+        if (found != m_channelLists.end() && found->loading) {
+            found->receivedListPayload = true;
+            armChannelListIdle(networkId);
+        }
         return;
+    }
     if (message.command == "323") {
         finishChannelList(networkId);
         return;

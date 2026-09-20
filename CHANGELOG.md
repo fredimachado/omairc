@@ -46,8 +46,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   An unset address still uses the normal session bus.
 - `/list` recovers when the server answers `263`/`416` or goes silent:
   the overlay leaves "Loading channels…", Status gets the reason, and a
-  later `/list` sends LIST again. `/list` while another network's LIST is
-  in flight shows that network's own rows instead of the previous overlay.
+  later `/list` sends LIST again. A `323` from a timed-out LIST that
+  arrives after that retry does not complete the new load. `/list` while
+  another network's LIST is in flight shows that network's own rows
+  instead of the previous overlay.
 - macOS relocatable builds load Quick Controls when `Contents/MacOS/omairc`
   is started through a symlink. Qt otherwise skips the bundle `qt.conf` and
   fails with `qtquickcontrols2plugin not found`. The Homebrew PATH helper
