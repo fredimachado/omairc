@@ -32,6 +32,6 @@ Preconditions:
 
 - Unread badges and `Alt+A` are keyboard / switch-conversation. This feature is only the desktop notification.
 - The mentions badge stays nick-only. An unfocused direct message without the nick still notifies.
-- The identity footer does not follow mentions.
+- The identity footer shows a separate inbox mark and count for the session waiting list. That inbox is not the mentions badge and does not follow mention counts.
 - The suite sets `suppressDesktopNotification` so it does not call the session bus. A live compiled mention would.
 - Do not Apply on the compiled window to "get a mention". That starts a real network.

@@ -34,6 +34,7 @@ Popup {
                 { keys: "Alt+Shift+Up", action: "move network up" },
                 { keys: "Alt+Shift+Down", action: "move network down" },
                 { keys: "Ctrl+K", action: "jump to conversation" },
+                { keys: "Ctrl+Shift+A", action: "inbox" },
                 { keys: "Ctrl+Shift+K", action: "jump to nick" },
                 { keys: "Alt+A", action: "next unread" },
                 { keys: "Ctrl+`", action: "Status" },

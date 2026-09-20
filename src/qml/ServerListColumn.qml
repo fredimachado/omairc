@@ -19,6 +19,7 @@ Rectangle {
     property string selfAvatar: ""
     property bool selfBot: false
     property string appVersion: ""
+    property int inboxCount: 0
 
     property alias sidebarScroll: sidebarScroll
     property alias selfVersionHit: selfVersionHit
@@ -27,6 +28,7 @@ Rectangle {
     signal statusRequested(string networkId)
     signal editRequested(string networkId)
     signal versionClicked()
+    signal inboxRequested()
 
     objectName: "serverList"
     // Collapse the rail by width instead of hiding it. Walk order comes from
@@ -298,8 +300,8 @@ Rectangle {
             id: identityText
             anchors.left: parent.left
             anchors.leftMargin: column.style.scaledSize(63)
-            anchors.right: selfVersionHit.visible ? selfVersionHit.left : parent.right
-            anchors.rightMargin: column.style.scaledSize(selfVersionHit.visible ? 8 : 17)
+            anchors.right: footerRightColumn.visible ? footerRightColumn.left : parent.right
+            anchors.rightMargin: column.style.scaledSize(footerRightColumn.visible ? 8 : 17)
             anchors.verticalCenter: parent.verticalCenter
             spacing: column.style.scaledSize(1)
 
@@ -341,33 +343,92 @@ Rectangle {
             }
         }
 
-        MouseArea {
-            id: selfVersionHit
-            objectName: "selfVersionHit"
-            Accessible.role: Accessible.Button
-            Accessible.name: "About Omairc"
-            Accessible.onPressAction: column.versionClicked()
+        Column {
+            id: footerRightColumn
             anchors.right: parent.right
             anchors.rightMargin: column.style.scaledSize(8)
-            anchors.bottom: identityText.bottom
-            anchors.top: identityText.top
-            width: selfVersionLabel.implicitWidth + column.style.scaledSize(18)
-            visible: selfVersionLabel.text.length > 0
-            hoverEnabled: true
-            cursorShape: Qt.PointingHandCursor
-            onClicked: column.versionClicked()
+            anchors.verticalCenter: parent.verticalCenter
+            spacing: column.style.scaledSize(4)
+            visible: inboxMarkHit.visible || selfVersionHit.visible
 
-            Text {
-                id: selfVersionLabel
-                objectName: "selfVersionLabel"
-                anchors.right: parent.right
-                anchors.rightMargin: column.style.scaledSize(9)
-                anchors.bottom: parent.bottom
-                text: column.appVersion
-                color: selfVersionHit.containsMouse ? column.style.inkColor : column.style.mutedColor
-                font.family: "iA Writer Mono S"
-                font.pixelSize: column.style.scaledSize(10)
-                font.underline: selfVersionHit.containsMouse
+            MouseArea {
+                id: inboxMarkHit
+                objectName: "inboxMark"
+                Accessible.role: Accessible.Button
+                Accessible.name: "Inbox"
+                Accessible.onPressAction: column.inboxRequested()
+                width: Math.max(inboxMarkLabel.implicitWidth + column.style.scaledSize(18),
+                                inboxBadge.visible
+                                    ? inboxBadge.width + column.style.scaledSize(4)
+                                        + inboxMarkLabel.implicitWidth
+                                    : 0)
+                height: Math.max(inboxMarkLabel.implicitHeight, inboxBadge.height)
+                hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
+                onClicked: column.inboxRequested()
+
+                Text {
+                    id: inboxMarkLabel
+                    anchors.right: parent.right
+                    anchors.rightMargin: column.style.scaledSize(9)
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: "inbox"
+                    color: inboxMarkHit.containsMouse ? column.style.inkColor : column.style.mutedColor
+                    font.family: "iA Writer Mono S"
+                    font.pixelSize: column.style.scaledSize(10)
+                    font.underline: inboxMarkHit.containsMouse
+                }
+
+                Rectangle {
+                    id: inboxBadge
+                    visible: column.inboxCount > 0
+                    anchors.right: inboxMarkLabel.left
+                    anchors.rightMargin: column.style.scaledSize(4)
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: Math.max(column.style.scaledSize(19),
+                                    inboxBadgeText.implicitWidth + column.style.scaledSize(10))
+                    height: column.style.scaledSize(19)
+                    radius: height / 2
+                    color: column.style.accentColor
+
+                    Text {
+                        id: inboxBadgeText
+                        objectName: "inboxBadgeText"
+                        anchors.centerIn: parent
+                        text: column.inboxCount
+                        color: "#ffffff"
+                        font.family: "iA Writer Mono S"
+                        font.bold: true
+                        font.pixelSize: column.style.scaledSize(10)
+                    }
+                }
+            }
+
+            MouseArea {
+                id: selfVersionHit
+                objectName: "selfVersionHit"
+                Accessible.role: Accessible.Button
+                Accessible.name: "About Omairc"
+                Accessible.onPressAction: column.versionClicked()
+                width: selfVersionLabel.implicitWidth + column.style.scaledSize(18)
+                height: selfVersionLabel.implicitHeight
+                visible: selfVersionLabel.text.length > 0
+                hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
+                onClicked: column.versionClicked()
+
+                Text {
+                    id: selfVersionLabel
+                    objectName: "selfVersionLabel"
+                    anchors.right: parent.right
+                    anchors.rightMargin: column.style.scaledSize(9)
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: column.appVersion
+                    color: selfVersionHit.containsMouse ? column.style.inkColor : column.style.mutedColor
+                    font.family: "iA Writer Mono S"
+                    font.pixelSize: column.style.scaledSize(10)
+                    font.underline: selfVersionHit.containsMouse
+                }
             }
         }
     }

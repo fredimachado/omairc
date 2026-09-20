@@ -17,6 +17,7 @@ int runMonitorTests(int argc, char **argv);
 int runMuteTests(int argc, char **argv);
 int runOpenDirectTests(int argc, char **argv);
 int runHighlightTests(int argc, char **argv);
+int runInboxTests(int argc, char **argv);
 int runTypingTests(int argc, char **argv);
 int runProfileTests(int argc, char **argv);
 int runConnectionTests(int argc, char **argv);
@@ -63,6 +64,7 @@ int main(int argc, char **argv)
     const int muteStatus = runMuteTests(argc, argv);
     const int openDirectStatus = runOpenDirectTests(argc, argv);
     const int highlightStatus = runHighlightTests(argc, argv);
+    const int inboxStatus = runInboxTests(argc, argv);
     const int typingStatus = runTypingTests(argc, argv);
     const int profileStatus = runProfileTests(argc, argv);
     const int connectionStatus = runConnectionTests(argc, argv);
@@ -96,6 +98,7 @@ int main(int argc, char **argv)
         muteStatus,
         openDirectStatus,
         highlightStatus,
+        inboxStatus,
         typingStatus,
         profileStatus,
         connectionStatus,

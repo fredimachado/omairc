@@ -20,6 +20,7 @@
         <file alias="qml/ShortcutsSheet.qml">qml/ShortcutsSheet.qml</file>
         <file alias="qml/AboutSheet.qml">qml/AboutSheet.qml</file>
         <file alias="qml/JumpSheet.qml">qml/JumpSheet.qml</file>
+        <file alias="qml/InboxSheet.qml">qml/InboxSheet.qml</file>
         <file alias="qml/NickSheet.qml">qml/NickSheet.qml</file>
         <file alias="qml/ServerListColumn.qml">qml/ServerListColumn.qml</file>
         <file alias="qml/ConversationColumn.qml">qml/ConversationColumn.qml</file>
