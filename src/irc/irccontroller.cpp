@@ -2835,7 +2835,6 @@ bool IrcController::beginChannelListLoad(IrcSession *session,
     cache.loading = true;
     cache.error.clear();
     cache.pendingMask.reset();
-    cache.receivedListPayload = false;
     m_channelList.beginLoad(networkId, mask);
     if (!session->list(mask)) {
         stopChannelListIdle(networkId);
@@ -2861,7 +2860,6 @@ void IrcController::applyListRow(const QString& networkId, IrcChannelListRow row
     if (found == m_channelLists.end() || !found->loading)
         return;
     ChannelListCache &cache = *found;
-    cache.receivedListPayload = true;
     armChannelListIdle(networkId);
     bool replaced = false;
     for (IrcChannelListRow &existing : cache.rows) {
@@ -2891,12 +2889,11 @@ void IrcController::finishChannelList(const QString& networkId)
         cache.drainTimedOutEnd = false;
         return;
     }
-    if (cache.drainTimedOutEnd && !cache.receivedListPayload) {
+    if (cache.drainTimedOutEnd) {
         cache.drainTimedOutEnd = false;
         armChannelListIdle(networkId);
         return;
     }
-    cache.drainTimedOutEnd = false;
     stopChannelListIdle(networkId);
     const std::optional<QString> pending = cache.pendingMask;
     cache.pendingMask.reset();
@@ -3485,10 +3482,8 @@ void IrcController::handleMessage(const QString& networkId,
     }
     if (message.command == "321") {
         const auto found = m_channelLists.find(networkId);
-        if (found != m_channelLists.end() && found->loading) {
-            found->receivedListPayload = true;
+        if (found != m_channelLists.end() && found->loading)
             armChannelListIdle(networkId);
-        }
         return;
     }
     if (message.command == "323") {

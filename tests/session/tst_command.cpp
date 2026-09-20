@@ -202,6 +202,7 @@ private slots:
     void listTooManyMatchesUnwedges();
     void listIdleTimeoutUnwedges();
     void listIdleTimeoutLateEndDoesNotCompleteRetry();
+    void listIdleTimeoutLateEndAfterRetryStartDoesNotComplete();
     void listLoadingPresentsOwnNetwork();
     void slashProjectClosed();
     void slashProjectOpen();
@@ -2957,6 +2958,57 @@ void CommandTest::listIdleTimeoutLateEndDoesNotCompleteRetry()
 
     QVERIFY(controller.joinListedChannel(QStringLiteral("#linux")));
     QCOMPARE(transport->writtenFrames().last(), QByteArrayLiteral("JOIN #linux\r\n"));
+}
+
+void CommandTest::listIdleTimeoutLateEndAfterRetryStartDoesNotComplete()
+{
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    IrcSession *session = controller.addSession(config(), transport);
+    QVERIFY(session);
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    welcome(transport);
+    transport->injectBytes(QByteArrayLiteral(":omairc!u@h JOIN :#omarchy\r\n"));
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+
+    controller.setChannelListIdleTimeoutMs(30);
+    QVERIFY(controller.sendMessage(QStringLiteral("/list")));
+    auto *model = qobject_cast<ChannelListModel *>(controller.channelList());
+    QVERIFY(model);
+    QVERIFY(model->loading());
+    QTest::qWait(200);
+    QVERIFY(!model->loading());
+    QVERIFY(!model->complete());
+    QVERIFY(model->error().contains(QStringLiteral("timed out")));
+
+    const int framesAfterTimeout = transport->writtenFrames().size();
+    QVERIFY(controller.sendMessage(QStringLiteral("/list")));
+    QCOMPARE(transport->writtenFrames().size(), framesAfterTimeout + 1);
+    QCOMPARE(transport->writtenFrames().last(), QByteArrayLiteral("LIST\r\n"));
+    QVERIFY(model->loading());
+    QVERIFY(model->error().isEmpty());
+
+    transport->injectBytes(
+        QByteArrayLiteral(":server 321 omairc Channel :Users  Name\r\n"));
+    QVERIFY(model->loading());
+    QVERIFY(!model->complete());
+
+    transport->injectBytes(
+        QByteArrayLiteral(":server 323 omairc :End of /LIST\r\n"));
+    QVERIFY(model->loading());
+    QVERIFY(!model->complete());
+    QCOMPARE(model->rowCount(), 0);
+
+    transport->injectBytes(
+        QByteArrayLiteral(":server 322 omairc #linux 42 :Kernel discussion\r\n"
+                          ":server 323 omairc :End of /LIST\r\n"));
+    QVERIFY(model->complete());
+    QVERIFY(!model->loading());
+    QCOMPARE(model->sourceCount(), 1);
+    QCOMPARE(model->rowCount(), 1);
+    QCOMPARE(model->field(0, QStringLiteral("channel")).toString(),
+             QStringLiteral("#linux"));
+    QCOMPARE(model->field(0, QStringLiteral("users")).toInt(), 42);
 }
 
 void CommandTest::listLoadingPresentsOwnNetwork()
