@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Pull-request CI no longer packages or uploads Windows/macOS installers and
+  zips. Use a manual workflow run when you need those artifacts; `master` and
+  version tags still package. Intel macOS pull requests skip the portable test
+  rebuild (Linux and Apple Silicon still run it).
+
 ### Fixed
 
 - macOS relocatable builds load Quick Controls when `Contents/MacOS/omairc`

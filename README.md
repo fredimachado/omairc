@@ -132,7 +132,9 @@ Each version tag also publishes `omairc-*-windows-x64.zip` and
 [GitHub release](https://github.com/fredimachado/omairc/releases/latest).
 The installer is per-user by default (no admin): Start Menu, user PATH, and
 `%LOCALAPPDATA%\Programs\Omairc`. Unzip the zip and run `omairc.exe` if you
-want a portable tree.
+want a portable tree. Pull-request CI compiles and smokes the portable tree
+but does not package the installer; use a manual workflow run when you need
+the zip or setup.exe.
 
 From the repo root:
 
@@ -171,7 +173,7 @@ Once Homebrew carries the cask, this is enough:
 brew install --cask omairc
 ```
 
-Each version tag also publishes `omairc-*-macos-arm64.zip` (Apple Silicon) and `omairc-*-macos-x64.zip` (Intel) on the [GitHub release](https://github.com/fredimachado/omairc/releases/latest). Unzip that if you want a portable tree. Pull-request CI uploads both zips as workflow artifacts. CI signs the bundles with Developer ID. Version tags (and a manual workflow run) notarize, staple, and Gatekeeper-assess the app; Apple's first look at a new Developer ID can sit in progress for hours, so pull requests do not wait on that. Local Homebrew-Qt builds stay ad-hoc.
+Each version tag also publishes `omairc-*-macos-arm64.zip` (Apple Silicon) and `omairc-*-macos-x64.zip` (Intel) on the [GitHub release](https://github.com/fredimachado/omairc/releases/latest). Unzip that if you want a portable tree. Pull-request CI compiles and signs but does not upload zips; a manual workflow run, `master`, and version tags still package them. Intel pull requests also skip the portable test rebuild (Linux and Apple Silicon still run it). CI signs the bundles with Developer ID. Version tags (and a manual workflow run) notarize, staple, and Gatekeeper-assess the app; Apple's first look at a new Developer ID can sit in progress for hours, so pull requests do not wait on that. Local Homebrew-Qt builds stay ad-hoc.
 
 From the repo root on macOS:
 

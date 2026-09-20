@@ -413,7 +413,12 @@ jobs:
           test -L "$link"
           smoke "$link"
 
+      # Linux CI already runs check-conventions, protocol_tests, and the seeded
+      # QML suite. Apple Silicon PRs still rebuild those on macOS; Intel PRs
+      # skip them so the wall clock is the Linux test job (~8 min) instead of
+      # the Intel portable rebuild (~5 min on top of a 6 min compile).
       - name: Portable tests
+        if: github.event_name != 'pull_request' || matrix.suffix == 'macos-arm64'
         run: |
           set -euo pipefail
           bin/check-conventions
@@ -482,7 +487,11 @@ jobs:
             -input "$GITHUB_WORKSPACE/tests/ui/tst_seeded_window.qml"
           rm -rf "$test_state"
 
+      # Pull requests compile, smoke, and (on Apple Silicon) run portable
+      # tests. Zipping and uploading artifacts is for master, version tags,
+      # and a manual workflow_dispatch when someone actually needs the zip.
       - name: Package app zip
+        if: github.event_name != 'pull_request'
         run: bin/package-macos
 
       - name: Verify Developer ID signature
@@ -497,6 +506,7 @@ jobs:
           bin/check-macos-syspolicy notary-submission "$app"
 
       - name: Upload app zip
+        if: github.event_name != 'pull_request'
         uses: actions/upload-artifact@v7
         with:
           name: omairc-${{ env.OMAIRC_ARTIFACT_VERSION }}-${{ env.OMAIRC_MAC_SUFFIX }}
@@ -588,7 +598,14 @@ jobs:
     env:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
+      - name: Skip zip artifacts on pull requests
+        if: github.event_name == 'pull_request'
+        run: |
+          echo "Pull requests skip zip artifacts."
+          echo "Run this workflow with workflow_dispatch to package both architecture zips."
+
       - name: Download architecture zips
+        if: github.event_name != 'pull_request'
         uses: actions/download-artifact@v8
         with:
           pattern: omairc-*-macos-*
@@ -596,6 +613,7 @@ jobs:
           path: dist
 
       - name: Assert both architecture zips
+        if: github.event_name != 'pull_request'
         run: |
           set -euo pipefail
           shopt -s nullglob
