@@ -75,11 +75,13 @@ ApplicationWindow {
     property int jumpSelectedIndex: 0
     property int inboxSelectedIndex: 0
     property int nickSelectedIndex: 0
+    property int channelListSelectedIndex: 0
     property var nickSourceRows: []
     readonly property bool shortcutOverlayOpen: shortcutsSheet.opened
         || jumpSheet.opened
         || inboxSheet.opened
         || nickSheet.opened
+        || channelListSheet.opened
         || aboutSheet.opened
     readonly property var networkConsole: irc
         ? (irc.statusConsole ? irc.statusConsole : irc.console)
@@ -974,6 +976,13 @@ ApplicationWindow {
         nickSheet.open();
     }
 
+    function openChannelListSheet() {
+        if (win.connectionOverlayVisible)
+            return;
+        channelListSelectedIndex = 0;
+        channelListSheet.open();
+    }
+
     function stepJump(delta) {
         if (jumpModel.count === 0)
             return;
@@ -997,6 +1006,17 @@ ApplicationWindow {
         nickSelectedIndex = (nickSelectedIndex + delta + nickModel.count) % nickModel.count;
         if (nickSheet.nickList)
             nickSheet.nickList.positionViewAtIndex(nickSelectedIndex, ListView.Contain);
+    }
+
+    function stepChannelList(delta) {
+        var model = irc ? irc.channelList : null;
+        var count = model ? model.rowCount() : 0;
+        if (count === 0)
+            return;
+        channelListSelectedIndex = (channelListSelectedIndex + delta + count) % count;
+        if (channelListSheet.channelListList)
+            channelListSheet.channelListList.positionViewAtIndex(
+                channelListSelectedIndex, ListView.Contain);
     }
 
     function activateJumpSelection() {
@@ -1073,6 +1093,20 @@ ApplicationWindow {
             return;
         nickSheet.close();
         win.openDirectMessage(nick);
+    }
+
+    function activateChannelListSelection() {
+        var model = irc ? irc.channelList : null;
+        if (!model || channelListSelectedIndex < 0
+                || channelListSelectedIndex >= model.rowCount())
+            return;
+        var row = model.get(channelListSelectedIndex);
+        var channel = row && row.channel ? row.channel : "";
+        if (channel.length === 0)
+            return;
+        if (!irc.joinListedChannel(channel))
+            return;
+        channelListSheet.close();
     }
 
     function focusNetworkHeader(section) {
@@ -1807,6 +1841,7 @@ ApplicationWindow {
             && !inboxSheet.opened
             && !nickSheet.opened
             && !aboutSheet.opened
+            && !channelListSheet.opened
         onActivated: {
             if (jumpSheet.opened)
                 jumpSheet.close();
@@ -1882,7 +1917,8 @@ ApplicationWindow {
         sequence: "Ctrl+/"
         context: Qt.ApplicationShortcut
         onActivated: {
-            if (jumpSheet.opened || inboxSheet.opened || nickSheet.opened || aboutSheet.opened)
+            if (jumpSheet.opened || inboxSheet.opened || nickSheet.opened || aboutSheet.opened
+                    || channelListSheet.opened)
                 return;
             if (shortcutsSheet.opened)
                 shortcutsSheet.close();
@@ -2125,7 +2161,8 @@ ApplicationWindow {
                 return true;
             if (aboutSheet.opened || aboutSheetEscapeGuard)
                 return true;
-            if (jumpSheet.opened || inboxSheet.opened || nickSheet.opened || pickerEscapeGuard)
+            if (jumpSheet.opened || inboxSheet.opened || nickSheet.opened || channelListSheet.opened
+                    || pickerEscapeGuard)
                 return true;
             if (win.connection && win.connection.setupRequired)
                 return false;
@@ -2152,10 +2189,12 @@ ApplicationWindow {
                 aboutSheetEscapeGuard = false;
                 return;
             }
-            if (jumpSheet.opened || inboxSheet.opened || nickSheet.opened || pickerEscapeGuard) {
+            if (jumpSheet.opened || inboxSheet.opened || nickSheet.opened || channelListSheet.opened
+                    || pickerEscapeGuard) {
                 jumpSheet.close();
                 inboxSheet.close();
                 nickSheet.close();
+                channelListSheet.close();
                 pickerEscapeGuard = false;
                 return;
             }
@@ -3004,6 +3043,54 @@ ApplicationWindow {
         onNickActivated: function(index) {
             win.nickSelectedIndex = index;
             win.activateNickSelection();
+        }
+    }
+
+    Connections {
+        target: win.irc
+        ignoreUnknownSignals: true
+        function onChannelListRequested() {
+            win.openChannelListSheet();
+        }
+    }
+
+    ChannelListSheet {
+        id: channelListSheet
+        objectName: "channelListSheet"
+        style: win.style
+        x: Math.round((win.width - width) / 2)
+        y: Math.round((win.height - height) / 2)
+        matches: win.irc ? win.irc.channelList : null
+        selectedIndex: win.channelListSelectedIndex
+        onOpened: {
+            win.pickerEscapeGuard = true;
+            if (win.irc)
+                win.irc.setChannelListPresented(true);
+            win.channelListSelectedIndex = 0;
+            if (channelListSheet.channelListFilter.text.length > 0)
+                channelListSheet.channelListFilter.clear();
+            else if (win.irc && win.irc.channelList)
+                win.irc.channelList.filter = "";
+            channelListSheet.channelListFilter.forceActiveFocus();
+        }
+        onClosed: {
+            if (win.irc)
+                win.irc.setChannelListPresented(false);
+            Qt.callLater(function() {
+                win.pickerEscapeGuard = false;
+                conversation.composer.forceActiveFocus();
+            });
+        }
+        onStepRequested: function(delta) { win.stepChannelList(delta); }
+        onActivateRequested: win.activateChannelListSelection()
+        onFilterChanged: {
+            if (win.irc && win.irc.channelList)
+                win.irc.channelList.filter = channelListSheet.channelListFilter.text;
+            win.channelListSelectedIndex = 0;
+        }
+        onRowActivated: function(index) {
+            win.channelListSelectedIndex = index;
+            win.activateChannelListSelection();
         }
     }
 

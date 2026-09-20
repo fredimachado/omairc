@@ -128,6 +128,8 @@ const QVector<IrcVerbSpec>& IrcVerbTable::all()
          QStringLiteral("/raw <line>"), IrcVerbScope::Either, {}},
         {IrcCommand::Verb::Help, QStringLiteral("help"), {},
          QStringLiteral("/help"), IrcVerbScope::Either, {}},
+        {IrcCommand::Verb::List, QStringLiteral("list"), {},
+         QStringLiteral("/list [mask]"), IrcVerbScope::Either, {}},
     };
     return rows;
 }

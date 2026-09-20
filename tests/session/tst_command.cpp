@@ -3,6 +3,7 @@
 #include <QCoreApplication>
 #include <QSettings>
 #include <QTemporaryDir>
+#include <QSignalSpy>
 #include <QTest>
 #include <QVariant>
 
@@ -18,6 +19,7 @@
 #include "ircsession.h"
 #include "ircslashcomplete.h"
 #include "ircstatusentry.h"
+#include "channellistmodel.h"
 #include "memberlistmodel.h"
 #include "messagelistmodel.h"
 #include "networklogmodel.h"
@@ -194,6 +196,7 @@ private slots:
     void ctcpSendsAndDefaults();
     void modeSendsAndRefuses();
     void wrappersSendAndHelp();
+    void listSendsAndCaches();
     void slashProjectClosed();
     void slashProjectOpen();
     void slashSessionKeys();
@@ -693,6 +696,18 @@ void CommandTest::parseWrappersAndHelp()
     QVERIFY(help.allowedOn(IrcComposerSurface::Conversation));
     QVERIFY(help.allowedOn(IrcComposerSurface::Status));
 
+    const IrcCommand list = IrcCommand::parse(QStringLiteral("/list"));
+    QCOMPARE(list.verb, IrcCommand::Verb::List);
+    QVERIFY(list.argument.isEmpty());
+    QVERIFY(list.allowedOn(IrcComposerSurface::Conversation));
+    QVERIFY(list.allowedOn(IrcComposerSurface::Status));
+    const IrcCommand listMask = IrcCommand::parse(QStringLiteral("/LIST #foo*"));
+    QCOMPARE(listMask.verb, IrcCommand::Verb::List);
+    QCOMPARE(listMask.argument, QStringLiteral("#foo*"));
+    const IrcCommand escapedList = IrcCommand::parse(QStringLiteral("//list"));
+    QCOMPARE(escapedList.verb, IrcCommand::Verb::Say);
+    QCOMPARE(escapedList.argument, QStringLiteral("/list"));
+
     const IrcCommand escapedOp = IrcCommand::parse(QStringLiteral("//op alice"));
     QCOMPARE(escapedOp.verb, IrcCommand::Verb::Say);
     QCOMPARE(escapedOp.argument, QStringLiteral("/op alice"));
@@ -836,7 +851,7 @@ void CommandTest::catalogLookupAndScope()
     QVERIFY(!IrcVerbTable::find(IrcCommand::Verb::Empty));
     QVERIFY(!IrcVerbTable::find(IrcCommand::Verb::Unknown));
 
-    QCOMPARE(IrcVerbTable::all().size(), 44);
+    QCOMPARE(IrcVerbTable::all().size(), 45);
     for (const IrcVerbSpec& row : IrcVerbTable::all())
         QVERIFY(row.name != QLatin1String("say"));
 
@@ -1128,8 +1143,14 @@ void CommandTest::catalogLookupAndScope()
     QCOMPARE(help->usage, QStringLiteral("/help"));
     QCOMPARE(help->scope, IrcVerbScope::Either);
 
+    const IrcVerbSpec *list = IrcVerbTable::lookup(QStringLiteral("list"));
+    QVERIFY(list);
+    QCOMPARE(list->verb, IrcCommand::Verb::List);
+    QCOMPARE(list->usage, QStringLiteral("/list [mask]"));
+    QCOMPARE(list->scope, IrcVerbScope::Either);
+
     const QVector<IrcVerbSpec> statusRows = IrcVerbTable::visibleOn(IrcComposerSurface::Status);
-    QCOMPARE(statusRows.size(), 36);
+    QCOMPARE(statusRows.size(), 37);
     for (const IrcVerbSpec& row : statusRows) {
         QVERIFY(row.allowedOn(IrcComposerSurface::Status));
         QVERIFY(row.verb != IrcCommand::Verb::Action);
@@ -1144,7 +1165,7 @@ void CommandTest::catalogLookupAndScope()
 
     const QVector<IrcVerbSpec> conversation =
         IrcVerbTable::visibleOn(IrcComposerSurface::Conversation);
-    QCOMPARE(conversation.size(), 44);
+    QCOMPARE(conversation.size(), 45);
     bool sawMe = false;
     bool sawClose = false;
     bool sawQuery = false;
@@ -1178,6 +1199,7 @@ void CommandTest::catalogLookupAndScope()
     bool sawNs = false;
     bool sawRaw = false;
     bool sawHelp = false;
+    bool sawList = false;
     for (const IrcVerbSpec& row : conversation) {
         if (row.name == QLatin1String("me"))
             sawMe = true;
@@ -1245,6 +1267,8 @@ void CommandTest::catalogLookupAndScope()
             sawRaw = true;
         if (row.name == QLatin1String("help"))
             sawHelp = true;
+        if (row.name == QLatin1String("list"))
+            sawList = true;
     }
     QVERIFY(sawMe);
     QVERIFY(sawClose);
@@ -1279,6 +1303,7 @@ void CommandTest::catalogLookupAndScope()
     QVERIFY(sawNs);
     QVERIFY(sawRaw);
     QVERIFY(sawHelp);
+    QVERIFY(sawList);
 
     const IrcCommand say = IrcCommand::parse(QStringLiteral("hello"));
     QVERIFY(say.allowedOn(IrcComposerSurface::Conversation));
@@ -2514,6 +2539,7 @@ void CommandTest::wrappersSendAndHelp()
     QVERIFY(selectedBodiesContain(messages, QStringLiteral("/znc")));
     QVERIFY(selectedBodiesContain(messages, QStringLiteral("/raw")));
     QVERIFY(selectedBodiesContain(messages, QStringLiteral("/help")));
+    QVERIFY(selectedBodiesContain(messages, QStringLiteral("/list")));
     QVERIFY(selectedBodiesContain(messages, QStringLiteral("/ping")));
     QVERIFY(selectedBodiesContain(messages, QStringLiteral("/time")));
     QVERIFY(selectedBodiesContain(messages, QStringLiteral("/version")));
@@ -2591,6 +2617,106 @@ void CommandTest::wrappersSendAndHelp()
              QByteArrayLiteral("PRIVMSG *status :ListMods\r\n"));
 }
 
+void CommandTest::listSendsAndCaches()
+{
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    IrcSession *session = controller.addSession(config(), transport);
+    QVERIFY(session);
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    welcome(transport);
+    QCOMPARE(session->state(), IrcSession::State::Registered);
+    transport->injectBytes(QByteArrayLiteral(":omairc!u@h JOIN :#omarchy\r\n"));
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+
+    QSignalSpy requested(&controller, &IrcController::channelListRequested);
+    const int statusRowsBefore = controller.console()->lines()->rowCount();
+    const int framesBefore = transport->writtenFrames().size();
+    QVERIFY(controller.sendMessage(QStringLiteral("/list")));
+    QCOMPARE(transport->writtenFrames().size(), framesBefore + 1);
+    QCOMPARE(transport->writtenFrames().last(), QByteArrayLiteral("LIST\r\n"));
+    QCOMPARE(requested.size(), 1);
+
+    auto *model = qobject_cast<ChannelListModel *>(controller.channelList());
+    QVERIFY(model);
+    QVERIFY(model->loading());
+    QVERIFY(!model->complete());
+
+    transport->injectBytes(
+        QByteArrayLiteral(":server 321 omairc Channel :Users  Name\r\n"
+                          ":server 322 omairc #omarchy 12 :Cozy corner\r\n"
+                          ":server 322 omairc #linux 42 :Kernel discussion\r\n"
+                          ":server 322 omairc #random 4 :Off-topic\r\n"
+                          ":server 323 omairc :End of /LIST\r\n"));
+    QVERIFY(model->complete());
+    QVERIFY(!model->loading());
+    QVERIFY(!model->cached());
+    QCOMPARE(model->sourceCount(), 3);
+    QCOMPARE(model->rowCount(), 3);
+    QCOMPARE(model->field(0, QStringLiteral("channel")).toString(),
+             QStringLiteral("#linux"));
+    QCOMPARE(model->field(0, QStringLiteral("users")).toInt(), 42);
+    QCOMPARE(model->field(1, QStringLiteral("channel")).toString(),
+             QStringLiteral("#omarchy"));
+    QCOMPARE(model->field(2, QStringLiteral("channel")).toString(),
+             QStringLiteral("#random"));
+    QCOMPARE(controller.console()->lines()->rowCount(), statusRowsBefore);
+    QVERIFY(!logContains(controller.console()->lines(), QStringLiteral("#linux")));
+    QVERIFY(!logContains(controller.console()->lines(), QStringLiteral("End of /LIST")));
+
+    model->setFilter(QStringLiteral("lin"));
+    QCOMPARE(model->rowCount(), 1);
+    QCOMPARE(model->field(0, QStringLiteral("channel")).toString(),
+             QStringLiteral("#linux"));
+    model->setFilter(QString());
+    QCOMPARE(model->rowCount(), 3);
+
+    const int framesAfterFirst = transport->writtenFrames().size();
+    QVERIFY(controller.sendMessage(QStringLiteral("/list")));
+    QCOMPARE(transport->writtenFrames().size(), framesAfterFirst);
+    QVERIFY(model->cached());
+    QCOMPARE(model->rowCount(), 3);
+    QCOMPARE(requested.size(), 2);
+
+    controller.setChannelListPresented(true);
+    QVERIFY(controller.sendMessage(QStringLiteral("/list")));
+    QCOMPARE(transport->writtenFrames().last(), QByteArrayLiteral("LIST\r\n"));
+    QVERIFY(model->loading());
+    transport->injectBytes(
+        QByteArrayLiteral(":server 322 omairc #linux 40 :Kernel discussion\r\n"
+                          ":server 323 omairc :End of /LIST\r\n"));
+    QVERIFY(model->complete());
+    QVERIFY(!model->cached());
+    QCOMPARE(model->field(0, QStringLiteral("users")).toInt(), 40);
+
+    QVERIFY(controller.sendMessage(QStringLiteral("/list #om*")));
+    QCOMPARE(transport->writtenFrames().last(), QByteArrayLiteral("LIST #om*\r\n"));
+    transport->injectBytes(
+        QByteArrayLiteral(":server 322 omairc #omarchy 12 :Cozy corner\r\n"
+                          ":server 323 omairc :End of /LIST\r\n"));
+    QCOMPARE(model->rowCount(), 1);
+    QCOMPARE(model->field(0, QStringLiteral("channel")).toString(),
+             QStringLiteral("#omarchy"));
+    QCOMPARE(model->mask(), QStringLiteral("#om*"));
+
+    QVERIFY(controller.joinListedChannel(QStringLiteral("#linux")));
+    QCOMPARE(transport->writtenFrames().last(), QByteArrayLiteral("JOIN #linux\r\n"));
+    QCOMPARE(controller.selectedTarget(), QStringLiteral("#linux"));
+
+    const int framesBeforeFocus = transport->writtenFrames().size();
+    QVERIFY(controller.joinListedChannel(QStringLiteral("#omarchy")));
+    QCOMPARE(transport->writtenFrames().size(), framesBeforeFocus);
+    QCOMPARE(controller.selectedTarget(), QStringLiteral("#omarchy"));
+
+    const int framesBeforeStatus = transport->writtenFrames().size();
+    QVERIFY(controller.console()->submit(QStringLiteral("/list")));
+    QCOMPARE(transport->writtenFrames().size(), framesBeforeStatus + 1);
+    QCOMPARE(transport->writtenFrames().last(), QByteArrayLiteral("LIST\r\n"));
+
+    IrcController offline;
+    QVERIFY(!offline.sendMessage(QStringLiteral("/list")));
+}
+
 void CommandTest::slashProjectClosed()
 {
     const QStringList closedInputs = {
@@ -2642,6 +2768,10 @@ void CommandTest::slashProjectOpen()
         QStringLiteral("/LEAVE"), IrcComposerSurface::Conversation);
     QVERIFY(leave.isOpen());
     QCOMPARE(leave.hits().first().label, QStringLiteral("/part"));
+
+    const auto list = IrcSlashComplete::project(
+        QStringLiteral("/li"), IrcComposerSurface::Conversation);
+    QVERIFY(list.containsLabel(QStringLiteral("/list")));
 
     const auto msg = IrcSlashComplete::project(
         QStringLiteral("/msg"), IrcComposerSurface::Conversation);

@@ -14,6 +14,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   The identity footer shows an `inbox` mark with a count badge;
   `Ctrl+Shift+A` opens a sheet to walk and activate rows. Selecting the
   matching conversation from the sidebar consumes related rows.
+- `/list [mask]` opens a searchable overlay of channels on the focused network (name, users, topic; Enter joins). Each network keeps that LIST in memory until disconnect, so opening `/list` again with the same mask is instant; `/list` while the overlay is open refreshes. `322`/`323` stay out of Status. `--demo-server` answers LIST, including unjoined `#linux` / `#random` (omarchy) and `#debian` (oftc).
+
 - Preferences → **Open conversations at unread** (default off). When on,
   switching or jumping to a different conversation lands on the New messages
   marker instead of the bottom. An already-focused buffer is left alone;

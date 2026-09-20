@@ -72,6 +72,7 @@ HEADERS += \
     ../../src/irc/conversationlistmodel.h \
     ../../src/irc/messagelistmodel.h \
     ../../src/irc/memberlistmodel.h \
+    ../../src/irc/channellistmodel.h \
     ../../src/irc/irccontroller.h \
     ../../src/irc/ircnetworkprofile.h \
     ../../src/irc/ircprofilestore.h \
@@ -134,6 +135,7 @@ SOURCES += \
     ../../src/irc/conversationlistmodel.cpp \
     ../../src/irc/messagelistmodel.cpp \
     ../../src/irc/memberlistmodel.cpp \
+    ../../src/irc/channellistmodel.cpp \
     ../../src/irc/irccontroller.cpp \
     ../../src/irc/ircnetworkprofile.cpp \
     ../../src/irc/ircprofilestore.cpp \

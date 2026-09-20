@@ -1,6 +1,7 @@
 #include <QSignalSpy>
 #include <QTest>
 
+#include "channellistmodel.h"
 #include "irccontroller.h"
 #include "ircdemoserver.h"
 #include "ircloopbacktransport.h"
@@ -12,6 +13,7 @@ class DemoServerTest : public QObject
 private slots:
     void answersClientPing();
     void answersMonitorAdd();
+    void answersList();
 };
 
 void DemoServerTest::answersClientPing()
@@ -44,6 +46,34 @@ void DemoServerTest::answersMonitorAdd()
              QByteArrayLiteral(":server 730 fred :anna!u@h\r\n"));
     QCOMPARE(received.at(1).first().toByteArray(),
              QByteArrayLiteral(":server 731 fred :ghost\r\n"));
+}
+
+void DemoServerTest::answersList()
+{
+    IrcController controller;
+    IrcDemoServer demo;
+    QVERIFY(demo.attach(controller, true));
+    IrcLoopbackTransport *transport = demo.omarchyTransport();
+    QVERIFY(transport);
+
+    QVERIFY(controller.sendMessage(QStringLiteral("/list")));
+    QCOMPARE(transport->writtenFrames().last(), QByteArrayLiteral("LIST\r\n"));
+    auto *model = qobject_cast<ChannelListModel *>(controller.channelList());
+    QVERIFY(model);
+    QVERIFY(model->complete());
+    QCOMPARE(model->sourceCount(), 6);
+    QCOMPARE(model->field(0, QStringLiteral("channel")).toString(),
+             QStringLiteral("#linux"));
+    QCOMPARE(model->field(0, QStringLiteral("users")).toInt(), 42);
+    QCOMPARE(model->field(1, QStringLiteral("channel")).toString(),
+             QStringLiteral("#omarchy"));
+
+    QVERIFY(controller.sendMessage(QStringLiteral("/list #l*")));
+    QCOMPARE(transport->writtenFrames().last(), QByteArrayLiteral("LIST #l*\r\n"));
+    QVERIFY(model->complete());
+    QCOMPARE(model->rowCount(), 1);
+    QCOMPARE(model->field(0, QStringLiteral("channel")).toString(),
+             QStringLiteral("#linux"));
 }
 
 int runDemoServerTests(int argc, char **argv)

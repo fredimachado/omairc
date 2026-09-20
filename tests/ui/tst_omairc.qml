@@ -7625,6 +7625,104 @@ TestCase {
         compare(composer.text, "");
     }
 
+    function openSeededListWindow() {
+        destroyAppWindowAndSeed();
+        seed = createTemporaryObject(seedComponent, testCase);
+        verify(seed !== null, "SeededIrcFixture should construct");
+        verify(seed.openWithAutoEcho(), seed.lastError);
+        verify(seed.connection, "seeded window needs a real IrcConnection");
+        appWindow = createTemporaryObject(seededWindowComponent, testCase, {
+            backend: seed.backend,
+            irc: seed.irc,
+            slashCommands: seed.slash,
+            connection: seed.connection,
+            avatarStore: appAvatarStore
+        });
+        verify(appWindow !== null, "The seeded Omairc window should load");
+        tryCompare(appWindow, "visible", true);
+        waitForRendering(appWindow.contentItem);
+        appWindow.suppressExternalUrlOpen = true;
+        appWindow.suppressDesktopNotification = true;
+        tryVerify(function() {
+            return appWindow.currentConversation === "#omarchy"
+                && !appWindow.consoleVisible
+                && !appWindow.connectionOverlayVisible;
+        });
+    }
+
+    function typeListCommand(composer, command) {
+        mouseClick(composer);
+        verify(composer.activeFocus);
+        typeText(command);
+        compare(composer.text, command);
+        if (item("slashCompleteList").visible)
+            keyClick(Qt.Key_Escape);
+        keyClick(Qt.Key_Return);
+    }
+
+    function test_listOpensOverlayAndJoins() {
+        openSeededListWindow();
+        var composer = item("messageComposer");
+        typeListCommand(composer, "/list");
+        var sheet = item("channelListSheet");
+        tryCompare(sheet, "opened", true);
+        tryCompare(item("channelListFilter"), "activeFocus", true);
+        var model = appWindow.irc.channelList;
+        tryCompare(model, "complete", true);
+        compare(model.rowCount(), 6);
+        compare(model.get(0).channel, "#linux");
+        compare(model.get(0).users, 42);
+        compare(item("channelListStatus").text, "6 channels");
+        saveScreenshot("channel-list-overlay");
+
+        typeText("lin");
+        tryCompare(item("channelListFilter"), "text", "lin");
+        tryVerify(function() { return model.rowCount() === 1; });
+        compare(model.get(0).channel, "#linux");
+        compare(item("channelListStatus").text, "1 of 6 channels");
+
+        keyClick(Qt.Key_Return);
+        tryCompare(sheet, "opened", false);
+        tryCompare(appWindow, "currentConversation", "#linux");
+        tryCompare(composer, "activeFocus", true);
+        compare(composer.text, "");
+    }
+
+    function test_listUsesPerNetworkCache() {
+        openSeededListWindow();
+        var composer = item("messageComposer");
+        var start = seed.omarchyFrameCount();
+        typeListCommand(composer, "/list");
+        var sheet = item("channelListSheet");
+        tryCompare(sheet, "opened", true);
+        var model = appWindow.irc.channelList;
+        tryCompare(model, "complete", true);
+        verify(seed.omarchyWroteFrom(start, "LIST"));
+        keyClick(Qt.Key_Escape);
+        tryCompare(sheet, "opened", false);
+
+        var after = seed.omarchyFrameCount();
+        typeListCommand(composer, "/list");
+        tryCompare(sheet, "opened", true);
+        tryCompare(model, "cached", true);
+        compare(model.rowCount(), 6);
+        compare(model.get(0).channel, "#linux");
+        compare(seed.omarchyFrameCount(), after);
+        verify(!seed.omarchyWroteFrom(after, "LIST"));
+        keyClick(Qt.Key_Escape);
+        tryCompare(sheet, "opened", false);
+
+        mouseClick(namedItem(liveOftcConversation("#omarchy")));
+        tryCompare(appWindow, "currentNetworkId", seed.oftcNetworkId);
+        tryCompare(appWindow, "currentConversation", "#omarchy");
+        typeListCommand(composer, "/list");
+        tryCompare(sheet, "opened", true);
+        tryCompare(model, "complete", true);
+        compare(model.get(0).channel, "#debian");
+        compare(model.get(0).users, 28);
+        compare(model.networkId, seed.oftcNetworkId);
+    }
+
     function openSlashWindow() {
         if (appWindow) {
             appWindow.close();
