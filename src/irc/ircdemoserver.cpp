@@ -829,7 +829,7 @@ QVector<ListEntry> listEntries(const SeedNetwork &network)
 {
     QVector<ListEntry> rows;
     for (const SeedChannel &channel : network.channels)
-        rows.append({channel.name, channel.members.size(), channel.topic});
+        rows.append({channel.name, int(channel.members.size()), channel.topic});
     for (const SeedListed &entry : network.directory)
         rows.append({entry.name, entry.users, entry.topic});
     return rows;
