@@ -2,6 +2,7 @@
 
 #include "channellistmodel.h"
 #include "conversationlistmodel.h"
+#include "ircautoaway.h"
 #include "ircconversationlog.h"
 #include "irceventreducer.h"
 #include "irchighlight.h"
@@ -66,6 +67,7 @@ class IrcController : public QObject
 
 public:
     explicit IrcController(QObject *parent = nullptr);
+    ~IrcController() override;
 
     void setTranscriptRoot(const QString &root);
     IrcSession *addSession(const IrcSessionConfig& config,
@@ -127,6 +129,9 @@ public:
     Q_INVOKABLE bool sendMessage(const QString& text);
     Q_INVOKABLE bool nickIsTyping(const QString& nick) const;
     Q_INVOKABLE void notifyComposerText(const QString& text);
+    Q_INVOKABLE void noteLocalActivity();
+    void fireAutoawayIdleForTest();
+    void fireAutoawayGraceForTest();
     Q_INVOKABLE void setChannelListPresented(bool presented);
     Q_INVOKABLE bool joinListedChannel(const QString& channel);
     void setChannelListIdleTimeoutMs(int milliseconds);
@@ -299,6 +304,17 @@ private:
                    bool muted);
     IrcCommandOutcome dispatchHighlight(const IrcCommand& command,
                                         IrcComposerSurface surface);
+    IrcCommandOutcome dispatchAutoaway(const IrcCommand& command,
+                                       IrcComposerSurface surface);
+    IrcCommandOutcome echoAutoawayFeedback(IrcComposerSurface surface,
+                                           const QString& text);
+    void saveAutoaway() const;
+    void armAutoawayIdle();
+    void stopAutoawayTimers();
+    void onAutoawayIdle();
+    void onAutoawayGrace();
+    void tripAutoaway();
+    void clearAutoAwayNetworks();
     void syncHighlightWords(const QString& networkId);
     IrcCommandOutcome dispatchChannelModeWrapper(const IrcCommand& command,
                                                 IrcComposerSurface surface);
@@ -429,6 +445,7 @@ private:
     void armTypingRefresh();
     void appendInbox(IrcInboxItem item);
     void syncInbox();
+    bool eventFilter(QObject *watched, QEvent *event) override;
 
     IrcSessionManager m_sessions;
     IrcStatusConsole m_console;
@@ -477,6 +494,12 @@ private:
     bool m_reopenDirectMessages = true;
     bool m_loadPeerAvatars = true;
     bool m_openConversationsAtUnread = false;
+    IrcAutoawayConfig m_autoaway;
+    QTimer m_autoawayIdle;
+    QTimer m_autoawayGrace;
+    bool m_autoawayGraceArmed = false;
+    QSet<QString> m_autoAwayNetworks;
+    QSet<QString> m_manualAwayNetworks;
     QTimer m_typingRefresh;
     QString m_composerDraft;
     QString m_typingTarget;

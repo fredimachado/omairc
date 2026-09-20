@@ -1,16 +1,130 @@
+#include <QAbstractItemModel>
+#include <QCoreApplication>
+#include <QSettings>
+#include <QTemporaryDir>
 #include <QTest>
 
+#include "fakeirctransport.h"
 #include "ircautoaway.h"
 #include "irccommand.h"
+#include "irccontroller.h"
+#include "ircsession.h"
 #include "ircslashcomplete.h"
+#include "ircstatusconsole.h"
+#include "messagelistmodel.h"
+#include "networklogmodel.h"
+#include "testsettings.h"
 
+#include <memory>
 #include <optional>
+
+namespace
+{
+IrcSessionConfig config(const QString& networkId = QStringLiteral("libera"))
+{
+    IrcSessionConfig value;
+    value.networkId = networkId;
+    value.host = QStringLiteral("irc.example");
+    value.tlsEnabled = true;
+    value.nick = QStringLiteral("omairc");
+    value.username = QStringLiteral("omairc");
+    value.realname = QStringLiteral("Omairc User");
+    value.reconnectEnabled = false;
+    return value;
+}
+
+void welcome(FakeIrcTransport *transport)
+{
+    transport->completeConnect();
+    transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
+                          ":server 001 omairc :Welcome\r\n"));
+}
+
+bool selectedBodiesContain(QAbstractItemModel *messages, const QString& needle)
+{
+    if (!messages)
+        return false;
+    for (int row = 0; row < messages->rowCount(); ++row) {
+        const QString body =
+            messages->data(messages->index(row, 0), MessageListModel::BodyRole)
+                .toString();
+        if (body.contains(needle))
+            return true;
+    }
+    return false;
+}
+
+bool selectedWhoisContains(QAbstractItemModel *messages, const QString& needle)
+{
+    if (!messages)
+        return false;
+    for (int row = 0; row < messages->rowCount(); ++row) {
+        const QString kind =
+            messages->data(messages->index(row, 0), MessageListModel::KindRole)
+                .toString();
+        const QString body =
+            messages->data(messages->index(row, 0), MessageListModel::BodyRole)
+                .toString();
+        if (kind == QLatin1String("whois") && body.contains(needle))
+            return true;
+    }
+    return false;
+}
+
+bool logContains(QAbstractItemModel *lines, const QString& needle)
+{
+    for (int row = 0; row < lines->rowCount(); ++row) {
+        const QString text =
+            lines->data(lines->index(row, 0), NetworkLogModel::TextRole).toString();
+        if (text.contains(needle))
+            return true;
+    }
+    return false;
+}
+
+bool framesContain(const QByteArrayList& frames, const QByteArray& needle)
+{
+    for (const QByteArray& frame : frames) {
+        if (frame.contains(needle))
+            return true;
+    }
+    return false;
+}
+
+int awayFrameCount(const QByteArrayList& frames, int from = 0)
+{
+    int hits = 0;
+    for (int i = from; i < frames.size(); ++i) {
+        if (frames.at(i).startsWith("AWAY"))
+            ++hits;
+    }
+    return hits;
+}
+
+FakeIrcTransport *joinNetwork(IrcController& controller, const QString& networkId,
+                              const QString& channel = QStringLiteral("#omarchy"))
+{
+    auto *transport = new FakeIrcTransport;
+    IrcSession *session = controller.addSession(config(networkId), transport);
+    if (!session)
+        return nullptr;
+    if (!controller.start(networkId))
+        return nullptr;
+    welcome(transport);
+    transport->injectBytes(
+        QByteArrayLiteral(":omairc!u@h JOIN :") + channel.toUtf8()
+        + QByteArrayLiteral("\r\n"));
+    return transport;
+}
+}
 
 class AutoawayTest : public QObject
 {
     Q_OBJECT
 
 private slots:
+    void init();
     void parseBareNumbersAsMinutes();
     void parseSuffixesCaseInsensitive();
     void refuseBelowTimeoutFloor();
@@ -21,7 +135,29 @@ private slots:
     void timeoutKeepsOrSetsOneShot();
     void confirmationAndQueryCopy();
     void parseAndCatalog();
+    void enableDisablePersistsAndQueries();
+    void oneShotDoesNotOverwriteDefault();
+    void bareTextRefusedDoesNotWriteAway();
+    void tripAwaysAllRegisteredNetworksOnce();
+    void activityDuringGraceCancelsAway();
+    void manualAwayWinsOnThatNetwork();
+    void disableWhileActiveClearsAutoAway();
+    void sendToTargetClearsAutoAway();
+    void incomingPrivmsgDoesNotClearAutoAway();
+    void restoreOnAfterOff();
+
+private:
+    std::unique_ptr<QTemporaryDir> m_settingsDir;
 };
+
+void AutoawayTest::init()
+{
+    m_settingsDir = std::make_unique<QTemporaryDir>();
+    QVERIFY(m_settingsDir->isValid());
+    TestSettings::isolate(m_settingsDir->path());
+    QCoreApplication::setOrganizationName(QStringLiteral("omairc"));
+    QCoreApplication::setApplicationName(QStringLiteral("omairc"));
+}
 
 void AutoawayTest::parseBareNumbersAsMinutes()
 {
@@ -181,6 +317,258 @@ void AutoawayTest::parseAndCatalog()
         QStringLiteral("/auto"), IrcComposerSurface::Conversation);
     QVERIFY(probe.isOpen());
     QVERIFY(probe.containsLabel(QStringLiteral("/autoaway")));
+}
+
+void AutoawayTest::enableDisablePersistsAndQueries()
+{
+    {
+        IrcController controller;
+        auto *transport = joinNetwork(controller, QStringLiteral("libera"));
+        QVERIFY(transport);
+        controller.selectConversation(QStringLiteral("libera"),
+                                      QStringLiteral("#omarchy"));
+        auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
+        QVERIFY(messages);
+
+        QVERIFY(controller.sendMessage(QStringLiteral("/autoaway 15")));
+        QVERIFY(selectedWhoisContains(messages, QStringLiteral("Auto-away 15 minutes")));
+        QVERIFY(!framesContain(transport->writtenFrames(), QByteArrayLiteral("AWAY")));
+
+        QVERIFY(controller.sendMessage(QStringLiteral("/autoaway")));
+        QVERIFY(selectedWhoisContains(messages, QStringLiteral("Auto-away 15 minutes")));
+
+        QVERIFY(controller.sendMessage(QStringLiteral("/autoaway off")));
+        QVERIFY(selectedWhoisContains(messages, QStringLiteral("Auto-away off")));
+    }
+
+    {
+        IrcController reloaded;
+        auto *transport = joinNetwork(reloaded, QStringLiteral("libera"));
+        QVERIFY(transport);
+        reloaded.selectConversation(QStringLiteral("libera"),
+                                    QStringLiteral("#omarchy"));
+        auto *messages = qobject_cast<QAbstractItemModel *>(reloaded.messages());
+        QVERIFY(messages);
+        QVERIFY(reloaded.sendMessage(QStringLiteral("/autoaway")));
+        QVERIFY(selectedWhoisContains(
+            messages, QStringLiteral("Auto-away off, 15 minutes")));
+    }
+}
+
+void AutoawayTest::oneShotDoesNotOverwriteDefault()
+{
+    IrcController controller;
+    auto *transport = joinNetwork(controller, QStringLiteral("libera"));
+    QVERIFY(transport);
+    controller.selectConversation(QStringLiteral("libera"),
+                                  QStringLiteral("#omarchy"));
+    auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
+    QVERIFY(messages);
+
+    QVERIFY(controller.sendMessage(QStringLiteral("/autoaway reason AFK")));
+    QVERIFY(controller.sendMessage(
+        QStringLiteral("/autoaway 15m Stepped out for lunch")));
+    QVERIFY(selectedWhoisContains(
+        messages,
+        QStringLiteral("Auto-away in 15 minutes: Stepped out for lunch (this time only)")));
+    QVERIFY(!selectedWhoisContains(
+        messages,
+        QStringLiteral("Auto-away in 15 minutes: Stepped out for lunch (this time only), reason: AFK")));
+
+    QVERIFY(controller.sendMessage(QStringLiteral("/autoaway")));
+    QVERIFY(selectedWhoisContains(
+        messages,
+        QStringLiteral("Auto-away in 15 minutes: Stepped out for lunch (this time only), reason: AFK")));
+
+    controller.fireAutoawayIdleForTest();
+    controller.fireAutoawayGraceForTest();
+    QCOMPARE(transport->writtenFrames().last(),
+             QByteArrayLiteral("AWAY :Stepped out for lunch\r\n"));
+
+    controller.noteLocalActivity();
+    QCOMPARE(transport->writtenFrames().last(), QByteArrayLiteral("AWAY\r\n"));
+
+    const int afterBack = transport->writtenFrames().size();
+    controller.fireAutoawayIdleForTest();
+    controller.fireAutoawayGraceForTest();
+    QCOMPARE(transport->writtenFrames().size(), afterBack + 1);
+    QCOMPARE(transport->writtenFrames().last(),
+             QByteArrayLiteral("AWAY :AFK\r\n"));
+}
+
+void AutoawayTest::bareTextRefusedDoesNotWriteAway()
+{
+    IrcController controller;
+    auto *transport = joinNetwork(controller, QStringLiteral("libera"));
+    QVERIFY(transport);
+    controller.selectConversation(QStringLiteral("libera"),
+                                  QStringLiteral("#omarchy"));
+    const int before = transport->writtenFrames().size();
+    QVERIFY(!controller.sendMessage(QStringLiteral("/autoaway Sleeping")));
+    QCOMPARE(controller.lastError(), QStringLiteral("Command was refused"));
+    QCOMPARE(transport->writtenFrames().size(), before);
+    QVERIFY(!framesContain(transport->writtenFrames().mid(before),
+                           QByteArrayLiteral("AWAY")));
+}
+
+void AutoawayTest::tripAwaysAllRegisteredNetworksOnce()
+{
+    IrcController controller;
+    auto *transportA = joinNetwork(controller, QStringLiteral("network-a"));
+    auto *transportB = joinNetwork(controller, QStringLiteral("network-b"));
+    QVERIFY(transportA);
+    QVERIFY(transportB);
+    controller.selectConversation(QStringLiteral("network-a"),
+                                  QStringLiteral("#omarchy"));
+    QVERIFY(controller.sendMessage(QStringLiteral("/autoaway 15")));
+
+    const int beforeA = transportA->writtenFrames().size();
+    const int beforeB = transportB->writtenFrames().size();
+    controller.fireAutoawayIdleForTest();
+    controller.fireAutoawayGraceForTest();
+    QCOMPARE(awayFrameCount(transportA->writtenFrames(), beforeA), 1);
+    QCOMPARE(awayFrameCount(transportB->writtenFrames(), beforeB), 1);
+    QCOMPARE(transportA->writtenFrames().last(), QByteArrayLiteral("AWAY\r\n"));
+    QCOMPARE(transportB->writtenFrames().last(), QByteArrayLiteral("AWAY\r\n"));
+
+    controller.fireAutoawayIdleForTest();
+    controller.fireAutoawayGraceForTest();
+    QCOMPARE(awayFrameCount(transportA->writtenFrames(), beforeA), 1);
+    QCOMPARE(awayFrameCount(transportB->writtenFrames(), beforeB), 1);
+}
+
+void AutoawayTest::activityDuringGraceCancelsAway()
+{
+    IrcController controller;
+    auto *transport = joinNetwork(controller, QStringLiteral("libera"));
+    QVERIFY(transport);
+    controller.selectConversation(QStringLiteral("libera"),
+                                  QStringLiteral("#omarchy"));
+    QVERIFY(controller.sendMessage(QStringLiteral("/autoaway 15")));
+    const int before = transport->writtenFrames().size();
+    controller.fireAutoawayIdleForTest();
+    controller.noteLocalActivity();
+    controller.fireAutoawayGraceForTest();
+    QCOMPARE(transport->writtenFrames().size(), before);
+    QVERIFY(!framesContain(transport->writtenFrames().mid(before),
+                           QByteArrayLiteral("AWAY")));
+}
+
+void AutoawayTest::manualAwayWinsOnThatNetwork()
+{
+    IrcController controller;
+    auto *transportA = joinNetwork(controller, QStringLiteral("network-a"));
+    auto *transportB = joinNetwork(controller, QStringLiteral("network-b"));
+    QVERIFY(transportA);
+    QVERIFY(transportB);
+    controller.selectConversation(QStringLiteral("network-a"),
+                                  QStringLiteral("#omarchy"));
+    QVERIFY(controller.sendMessage(QStringLiteral("/autoaway 15")));
+    QVERIFY(controller.sendMessage(QStringLiteral("/away lunch")));
+    QCOMPARE(transportA->writtenFrames().last(),
+             QByteArrayLiteral("AWAY :lunch\r\n"));
+
+    const int beforeA = transportA->writtenFrames().size();
+    const int beforeB = transportB->writtenFrames().size();
+    controller.fireAutoawayIdleForTest();
+    controller.fireAutoawayGraceForTest();
+    QCOMPARE(awayFrameCount(transportA->writtenFrames(), beforeA), 0);
+    QCOMPARE(transportA->writtenFrames().last(),
+             QByteArrayLiteral("AWAY :lunch\r\n"));
+    QCOMPARE(awayFrameCount(transportB->writtenFrames(), beforeB), 1);
+    QCOMPARE(transportB->writtenFrames().last(), QByteArrayLiteral("AWAY\r\n"));
+}
+
+void AutoawayTest::disableWhileActiveClearsAutoAway()
+{
+    IrcController controller;
+    auto *transportA = joinNetwork(controller, QStringLiteral("network-a"));
+    auto *transportB = joinNetwork(controller, QStringLiteral("network-b"));
+    QVERIFY(transportA);
+    QVERIFY(transportB);
+    controller.selectConversation(QStringLiteral("network-a"),
+                                  QStringLiteral("#omarchy"));
+    QVERIFY(controller.sendMessage(QStringLiteral("/autoaway 15")));
+    controller.fireAutoawayIdleForTest();
+    controller.fireAutoawayGraceForTest();
+    QCOMPARE(transportA->writtenFrames().last(), QByteArrayLiteral("AWAY\r\n"));
+    QCOMPARE(transportB->writtenFrames().last(), QByteArrayLiteral("AWAY\r\n"));
+
+    QVERIFY(controller.sendMessage(QStringLiteral("/autoaway off")));
+    QCOMPARE(transportA->writtenFrames().last(), QByteArrayLiteral("AWAY\r\n"));
+    QCOMPARE(transportB->writtenFrames().last(), QByteArrayLiteral("AWAY\r\n"));
+    QVERIFY(selectedWhoisContains(
+        qobject_cast<QAbstractItemModel *>(controller.messages()),
+        QStringLiteral("Auto-away off")));
+}
+
+void AutoawayTest::sendToTargetClearsAutoAway()
+{
+    IrcController controller;
+    auto *transportA = joinNetwork(controller, QStringLiteral("network-a"));
+    auto *transportB = joinNetwork(controller, QStringLiteral("network-b"));
+    QVERIFY(transportA);
+    QVERIFY(transportB);
+    controller.selectConversation(QStringLiteral("network-a"),
+                                  QStringLiteral("#omarchy"));
+    QVERIFY(controller.sendMessage(QStringLiteral("/autoaway 15")));
+    controller.fireAutoawayIdleForTest();
+    controller.fireAutoawayGraceForTest();
+
+    const int beforeA = transportA->writtenFrames().size();
+    const int beforeB = transportB->writtenFrames().size();
+    QVERIFY(controller.sendToTarget(QStringLiteral("network-a"),
+                                    QStringLiteral("#omarchy"),
+                                    QStringLiteral("still here")));
+    QVERIFY(framesContain(transportA->writtenFrames().mid(beforeA),
+                          QByteArrayLiteral("PRIVMSG #omarchy :still here\r\n")));
+    QCOMPARE(awayFrameCount(transportA->writtenFrames(), beforeA), 1);
+    QCOMPARE(awayFrameCount(transportB->writtenFrames(), beforeB), 1);
+    QCOMPARE(transportA->writtenFrames().last(), QByteArrayLiteral("AWAY\r\n"));
+    QCOMPARE(transportB->writtenFrames().last(), QByteArrayLiteral("AWAY\r\n"));
+}
+
+void AutoawayTest::incomingPrivmsgDoesNotClearAutoAway()
+{
+    IrcController controller;
+    auto *transport = joinNetwork(controller, QStringLiteral("libera"));
+    QVERIFY(transport);
+    controller.selectConversation(QStringLiteral("libera"),
+                                  QStringLiteral("#omarchy"));
+    QVERIFY(controller.sendMessage(QStringLiteral("/autoaway 15")));
+    controller.fireAutoawayIdleForTest();
+    controller.fireAutoawayGraceForTest();
+    QCOMPARE(transport->writtenFrames().last(), QByteArrayLiteral("AWAY\r\n"));
+    const int afterAway = transport->writtenFrames().size();
+    transport->injectBytes(
+        QByteArrayLiteral(":alice!u@h PRIVMSG #omarchy :hey\r\n"));
+    QCOMPARE(transport->writtenFrames().size(), afterAway);
+    QVERIFY(selectedBodiesContain(
+        qobject_cast<QAbstractItemModel *>(controller.messages()),
+        QStringLiteral("hey")));
+}
+
+void AutoawayTest::restoreOnAfterOff()
+{
+    IrcController controller;
+    auto *transport = joinNetwork(controller, QStringLiteral("libera"));
+    QVERIFY(transport);
+    controller.selectConversation(QStringLiteral("libera"),
+                                  QStringLiteral("#omarchy"));
+    auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
+    QVERIFY(messages);
+    QVERIFY(!controller.sendMessage(QStringLiteral("/autoaway on")));
+    QCOMPARE(controller.lastError(), QStringLiteral("Command was refused"));
+
+    QVERIFY(controller.sendMessage(QStringLiteral("/autoaway 15")));
+    QVERIFY(controller.sendMessage(QStringLiteral("/autoaway off")));
+    QVERIFY(controller.sendMessage(QStringLiteral("/autoaway on")));
+    QVERIFY(selectedWhoisContains(messages, QStringLiteral("Auto-away 15 minutes")));
+
+    IrcStatusConsole *console = controller.console();
+    QVERIFY(console);
+    QVERIFY(console->submit(QStringLiteral("/autoaway")));
+    QVERIFY(logContains(console->lines(), QStringLiteral("Auto-away 15 minutes")));
 }
 
 int runAutoawayTests(int argc, char **argv)

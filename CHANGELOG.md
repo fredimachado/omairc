@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Global `/autoaway` idle timer (off by default). `/autoaway 15` or
+  `/autoaway 15m` enables a timeout in minutes; `/autoaway reason` stores a
+  default AWAY text; extra text on a duration is one-shot. It is not
+  `/status` and does not replace manual `/away`.
 - Session inbox waiting list for background mentions, highlight words, direct
   messages, channel invites, monitored-nick online edges, and self-kicks.
   The identity footer shows an `inbox` mark with a count badge;
