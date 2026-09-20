@@ -9,7 +9,9 @@
 #include <QList>
 #include <QMap>
 #include <QObject>
+#include <QSet>
 #include <QString>
+#include <QStringList>
 #include <QVariant>
 #include <QVariantMap>
 #include <QVector>
@@ -34,6 +36,7 @@ public:
         SelectedRole,
         IconColorRole,
         IconUrlRole,
+        CollapsedRole,
     };
 
     explicit NetworkListModel(IrcConnection &owner, QObject *parent = nullptr);
@@ -153,6 +156,10 @@ public:
     Q_INVOKABLE void discard();
     Q_INVOKABLE bool removeSelected();
     Q_INVOKABLE bool disconnectSelected();
+    Q_INVOKABLE bool moveNetwork(const QString &networkId, int delta);
+    Q_INVOKABLE bool isNetworkCollapsed(const QString &networkId) const;
+    Q_INVOKABLE void setNetworkCollapsed(const QString &networkId, bool collapsed);
+    Q_INVOKABLE void setAllNetworksCollapsed(bool collapsed);
     bool activate();
     bool activateStartup();
     void activateOnStartup();
@@ -161,6 +168,7 @@ signals:
     void selectedNetworkChanged();
     void canDisconnectChanged();
     void networksChanged();
+    void collapsedNetworksChanged();
     void draftChanged();
     void setupRequiredChanged();
     void focusPasswordChanged();
@@ -200,6 +208,7 @@ private:
         bool selected = false;
         int iconColor = IrcNetworkProfile::noIconColor;
         QString iconUrl;
+        bool collapsed = false;
     };
 
     struct CredentialOperation {
@@ -267,6 +276,13 @@ private:
     void assignIconColor(IrcNetworkProfile &profile, bool persist);
     void assignStoredIconColors();
     void sortStored();
+    void applyNetworkOrder();
+    void persistNetworkOrder();
+    void loadCollapsedNetworks();
+    void persistCollapsedNetworks();
+    QStringList storedNetworkIds() const;
+    QStringList collapsedNetworkIds() const;
+    int storedIndex(const QString &networkId) const;
     void selectStored(const QString &networkId);
     void pushNetworkOrder();
     void refreshRoster();
@@ -291,6 +307,7 @@ private:
     IrcProfileStore m_store;
     CredentialStore &m_credentialStore;
     QList<IrcNetworkProfile> m_stored;
+    QSet<QString> m_collapsedNetworkIds;
     IrcNetworkProfile m_draft;
     QString m_selectedNetworkId;
     QString m_addedFromNetworkId;

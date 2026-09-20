@@ -5,6 +5,9 @@
 
 #include <algorithm>
 
+#include <QHash>
+#include <QSettings>
+#include <QSet>
 #include <QVariantMap>
 
 namespace
@@ -25,6 +28,46 @@ bool profileLess(const IrcNetworkProfile &left, const IrcNetworkProfile &right)
     if (nick != 0)
         return nick < 0;
     return left.networkId < right.networkId;
+}
+
+QString preferencesGroup()
+{
+    return QStringLiteral("preferences");
+}
+
+QString networkOrderKey()
+{
+    return QStringLiteral("networkOrder");
+}
+
+QString collapsedNetworksKey()
+{
+    return QStringLiteral("collapsedNetworks");
+}
+
+bool preferenceContains(const QString &key)
+{
+    QSettings settings;
+    settings.beginGroup(preferencesGroup());
+    return settings.contains(key);
+}
+
+QStringList loadPreferenceList(const QString &key)
+{
+    QSettings settings;
+    settings.beginGroup(preferencesGroup());
+    return settings.value(key).toStringList();
+}
+
+void savePreferenceList(const QString &key, const QStringList &value)
+{
+    QSettings settings;
+    settings.beginGroup(preferencesGroup());
+    if (settings.contains(key) && settings.value(key).toStringList() == value)
+        return;
+    settings.setValue(key, value);
+    settings.endGroup();
+    settings.sync();
 }
 }
 
@@ -59,6 +102,8 @@ QVariant NetworkListModel::data(const QModelIndex &index, int role) const
         return row.iconColor;
     case IconUrlRole:
         return row.iconUrl;
+    case CollapsedRole:
+        return row.collapsed;
     default:
         return {};
     }
@@ -73,6 +118,7 @@ QHash<int, QByteArray> NetworkListModel::staticRoleNames()
         {SelectedRole, "selected"},
         {IconColorRole, "iconColor"},
         {IconUrlRole, "iconUrl"},
+        {CollapsedRole, "collapsed"},
     };
 }
 
@@ -706,9 +752,10 @@ bool IrcConnection::apply()
             break;
         }
     }
-    if (!found)
+    if (!found) {
         m_stored.append(profile);
-    sortStored();
+        persistNetworkOrder();
+    }
     m_draft = profile;
     m_selectedNetworkId = profile.networkId;
     emit draftChanged();
@@ -1078,6 +1125,9 @@ bool IrcConnection::removeSelected()
                                       return profile.networkId == id;
                                   }),
                    m_stored.end());
+    m_collapsedNetworkIds.remove(id);
+    persistNetworkOrder();
+    persistCollapsedNetworks();
 
     QString nextId;
     if (!m_stored.isEmpty()) {
@@ -1108,6 +1158,63 @@ bool IrcConnection::disconnectSelected()
     if (!session)
         return false;
     return session->quit();
+}
+
+bool IrcConnection::moveNetwork(const QString &networkId, int delta)
+{
+    if (delta == 0)
+        return false;
+    const int index = storedIndex(networkId);
+    if (index < 0)
+        return false;
+    const int next = index + delta;
+    if (next < 0 || next >= m_stored.size())
+        return false;
+    m_stored.move(index, next);
+    persistNetworkOrder();
+    refreshRoster();
+    pushNetworkOrder();
+    return true;
+}
+
+bool IrcConnection::isNetworkCollapsed(const QString &networkId) const
+{
+    if (networkId.isEmpty() || !isStored(networkId))
+        return false;
+    return m_collapsedNetworkIds.contains(networkId);
+}
+
+void IrcConnection::setNetworkCollapsed(const QString &networkId, bool collapsed)
+{
+    if (networkId.isEmpty() || !isStored(networkId))
+        return;
+    const bool currently = m_collapsedNetworkIds.contains(networkId);
+    if (currently == collapsed)
+        return;
+    if (collapsed)
+        m_collapsedNetworkIds.insert(networkId);
+    else
+        m_collapsedNetworkIds.remove(networkId);
+    persistCollapsedNetworks();
+    refreshRoster();
+    emit collapsedNetworksChanged();
+}
+
+void IrcConnection::setAllNetworksCollapsed(bool collapsed)
+{
+    QSet<QString> next;
+    if (collapsed) {
+        for (const IrcNetworkProfile &profile : m_stored) {
+            if (!profile.networkId.isEmpty())
+                next.insert(profile.networkId);
+        }
+    }
+    if (next == m_collapsedNetworkIds)
+        return;
+    m_collapsedNetworkIds = next;
+    persistCollapsedNetworks();
+    refreshRoster();
+    emit collapsedNetworksChanged();
 }
 
 bool IrcConnection::activate()
@@ -1405,7 +1512,8 @@ CredentialKey IrcConnection::nickServCredentialKey(const IrcNetworkProfile &prof
 void IrcConnection::loadStored()
 {
     m_stored = m_store.profiles();
-    sortStored();
+    applyNetworkOrder();
+    loadCollapsedNetworks();
 }
 
 QList<int> IrcConnection::usedIconColors(const QString &exceptId) const
@@ -1439,6 +1547,95 @@ void IrcConnection::sortStored()
     std::sort(m_stored.begin(), m_stored.end(), profileLess);
 }
 
+void IrcConnection::applyNetworkOrder()
+{
+    if (!preferenceContains(networkOrderKey())) {
+        sortStored();
+        persistNetworkOrder();
+        return;
+    }
+
+    const QStringList saved = loadPreferenceList(networkOrderKey());
+    QHash<QString, IrcNetworkProfile> byId;
+    for (const IrcNetworkProfile &profile : m_stored)
+        byId.insert(profile.networkId, profile);
+
+    QList<IrcNetworkProfile> ordered;
+    QSet<QString> placed;
+    for (const QString &id : saved) {
+        if (id.isEmpty() || placed.contains(id) || !byId.contains(id))
+            continue;
+        ordered.append(byId.value(id));
+        placed.insert(id);
+    }
+
+    QList<IrcNetworkProfile> appended;
+    for (const IrcNetworkProfile &profile : m_stored) {
+        if (!placed.contains(profile.networkId))
+            appended.append(profile);
+    }
+    std::sort(appended.begin(), appended.end(), profileLess);
+    ordered += appended;
+    m_stored = ordered;
+    persistNetworkOrder();
+}
+
+void IrcConnection::persistNetworkOrder()
+{
+    savePreferenceList(networkOrderKey(), storedNetworkIds());
+}
+
+void IrcConnection::loadCollapsedNetworks()
+{
+    m_collapsedNetworkIds.clear();
+    if (!preferenceContains(collapsedNetworksKey()))
+        return;
+
+    const QStringList saved = loadPreferenceList(collapsedNetworksKey());
+    for (const QString &id : saved) {
+        if (isStored(id))
+            m_collapsedNetworkIds.insert(id);
+    }
+    persistCollapsedNetworks();
+}
+
+void IrcConnection::persistCollapsedNetworks()
+{
+    savePreferenceList(collapsedNetworksKey(), collapsedNetworkIds());
+}
+
+QStringList IrcConnection::storedNetworkIds() const
+{
+    QStringList ids;
+    ids.reserve(m_stored.size());
+    for (const IrcNetworkProfile &profile : m_stored) {
+        if (!profile.networkId.isEmpty())
+            ids.append(profile.networkId);
+    }
+    return ids;
+}
+
+QStringList IrcConnection::collapsedNetworkIds() const
+{
+    QStringList ids;
+    for (const IrcNetworkProfile &profile : m_stored) {
+        if (m_collapsedNetworkIds.contains(profile.networkId))
+            ids.append(profile.networkId);
+    }
+    return ids;
+}
+
+int IrcConnection::storedIndex(const QString &networkId) const
+{
+    if (networkId.isEmpty())
+        return -1;
+    for (int i = 0; i < m_stored.size(); ++i) {
+        if (m_stored.at(i).networkId == networkId)
+            return i;
+    }
+    return -1;
+}
+
 void IrcConnection::selectStored(const QString &networkId)
 {
     if (isStored(networkId))
@@ -1454,10 +1651,7 @@ void IrcConnection::selectStored(const QString &networkId)
 
 void IrcConnection::pushNetworkOrder()
 {
-    QStringList order;
-    for (const IrcNetworkProfile &profile : m_stored)
-        order.append(profile.networkId);
-    m_controller.setNetworkOrder(order);
+    m_controller.setNetworkOrder(storedNetworkIds());
 }
 
 void IrcConnection::refreshRoster()
@@ -1512,7 +1706,8 @@ QVector<IrcConnection::RosterRow> IrcConnection::rosterRows() const
             profile.networkId == m_selectedNetworkId ? m_draft : profile;
         rows.append({profile.networkId, rosterDisplayName(shown), true,
                      profile.networkId == m_selectedNetworkId, shown.iconColor,
-                     m_controller.networkIconUrl(profile.networkId)});
+                     m_controller.networkIconUrl(profile.networkId),
+                     isNetworkCollapsed(profile.networkId)});
     }
     if (!isStored(m_selectedNetworkId) && !m_selectedNetworkId.isEmpty()) {
         rows.append({m_selectedNetworkId, rosterDisplayName(m_draft), false, true,
