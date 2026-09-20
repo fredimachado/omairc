@@ -72,6 +72,7 @@ HEADERS += \
 SOURCES += \
     tst_main.cpp \
     tst_live.cpp \
+    tst_live_members.cpp \
     tst_live_reconnect.cpp \
     ../support/testsettings.cpp \
     liveharness.cpp \

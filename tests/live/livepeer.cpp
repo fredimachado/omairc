@@ -146,6 +146,14 @@ bool RawIrcPeer::waitRegistered(int timeoutMs)
     return waitForCommand(QStringLiteral("001"), timeoutMs);
 }
 
+void RawIrcPeer::mode(const QString &target, const QString &modes, const QString &nick)
+{
+    if (nick.isEmpty())
+        writeLine(QStringLiteral("MODE %1 %2").arg(target, modes));
+    else
+        writeLine(QStringLiteral("MODE %1 %2 %3").arg(target, modes, nick));
+}
+
 bool RawIrcPeer::join(const QString &channel, int timeoutMs)
 {
     writeLine(QStringLiteral("JOIN %1").arg(channel));
