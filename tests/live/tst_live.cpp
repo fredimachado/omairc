@@ -232,6 +232,24 @@ bool sawPrivmsgFrom(const QVector<IrcMessage> &incoming,
     return false;
 }
 
+bool sawNoticeFrom(const QVector<IrcMessage> &incoming,
+                   const QString &sender,
+                   const QString &target)
+{
+    for (const IrcMessage &message : incoming) {
+        if (message.command != "NOTICE" || message.parameters.empty())
+            continue;
+        if (!message.prefix
+            || !sameFolded(messageText(message.prefix->nick), sender)) {
+            continue;
+        }
+        if (!sameFolded(messageText(message.parameters[0]), target))
+            continue;
+        return true;
+    }
+    return false;
+}
+
 bool channelTranscriptContains(QAbstractItemModel *messages, const QString &body)
 {
     if (!messages)
@@ -710,9 +728,9 @@ void LiveIrcdTest::conversationInventionMatrix()
 
     QVERIFY(client.session->sendPrivmsg(QStringLiteral("NickServ"), QStringLiteral("HELP")));
     QVERIFY(waitUntil([&] {
-        return sawPrivmsgFrom(client.incoming,
-                              QStringLiteral("NickServ"),
-                              client.session->nick());
+        return sawNoticeFrom(client.incoming,
+                             QStringLiteral("NickServ"),
+                             client.session->nick());
     }));
     QCOMPARE(conversationRow(conversations, QStringLiteral("NickServ")), -1);
     QCOMPARE(conversationRow(conversations, QStringLiteral("nickserv")), -1);
