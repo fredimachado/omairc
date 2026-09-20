@@ -693,9 +693,22 @@ TestCase {
                 return;
             }
             selectedNetworkId = networkId;
-            for (var row = 0; row < namedNetworks.count; ++row)
+            for (var row = 0; row < namedNetworks.count; ++row) {
+                var item = namedNetworks.get(row);
                 namedNetworks.setProperty(row, "selected",
-                    namedNetworks.get(row).networkId === networkId);
+                    item.networkId === networkId);
+                if (item.networkId !== networkId)
+                    continue;
+                displayName = item.displayName;
+                var rowHost = item.host;
+                var rowName = item.name;
+                host = (rowHost !== undefined && String(rowHost).length > 0)
+                    ? String(rowHost) : item.displayName;
+                name = (rowName !== undefined && String(rowName).length > 0)
+                    ? String(rowName) : item.displayName;
+                if (item.nick !== undefined && String(item.nick).length > 0)
+                    nick = String(item.nick);
+            }
             selectedNetworkChanged();
         }
 
@@ -4495,20 +4508,457 @@ TestCase {
         compare(namedConnection.applyCalls, 1);
         compare(sheet.visible, false);
 
-        // Apply belongs to the Connection tab; Preferences has nothing to apply.
+        // Apply commits the selected network from the whole sheet,
+        // including Preferences.
         keyClick(Qt.Key_Comma, Qt.ControlModifier);
         tryCompare(sheet, "visible", true);
         waitForRendering(window.contentItem);
         window.connectionSheetTab = "preferences";
         waitForRendering(window.contentItem);
+        var preferencesTab = findChild(window, "connectionSheetTab-preferences");
+        verify(preferencesTab !== null, "Could not find connectionSheetTab-preferences");
+        preferencesTab.forceActiveFocus();
+        tryCompare(preferencesTab, "activeFocus", true);
         namedConnection.applyCalls = 0;
         keyClick(Qt.Key_Return, Qt.ControlModifier);
+        compare(namedConnection.applyCalls, 1);
+        compare(sheet.visible, false);
+
+        window.close();
+        restoreNamedConnection();
+    }
+
+    function test_connectionSheetCtrlEnterDoesNotApplyWhileShortcutsOpen() {
+        restoreNamedConnection();
+        namedConnection.applySucceeds = true;
+        var window = createTemporaryObject(fallbackWindowComponent, null);
+        verify(window !== null, "The ctrl-enter-over-shortcuts window should load");
+        tryCompare(window, "visible", true);
+        waitForRendering(window.contentItem);
+        window.requestActivate();
+        tryCompare(window, "active", true);
+
+        keyClick(Qt.Key_Comma, Qt.ControlModifier);
+        tryCompare(window, "connectionOverlayVisible", true);
+        waitForRendering(window.contentItem);
+
+        keyClick(Qt.Key_Slash, Qt.ControlModifier);
+        if (!window.shortcutOverlayOpen) {
+            var hint = findChild(window, "connectionShortcutsHint");
+            verify(hint !== null, "Could not find connectionShortcutsHint");
+            mouseClick(hint);
+        }
+        tryCompare(window, "shortcutOverlayOpen", true);
+
+        window.connectionSheetTab = "preferences";
+        waitForRendering(window.contentItem);
+        compare(window.connectionOverlayVisible, true);
+
+        namedConnection.applyCalls = 0;
+        keyClick(Qt.Key_Return, Qt.ControlModifier);
+        compare(namedConnection.applyCalls, 0);
+        compare(window.connectionOverlayVisible, true);
+        compare(window.shortcutOverlayOpen, true);
+
+        keyClick(Qt.Key_Enter, Qt.ControlModifier);
+        compare(namedConnection.applyCalls, 0);
+        compare(window.connectionOverlayVisible, true);
+        compare(window.shortcutOverlayOpen, true);
+
+        keyClick(Qt.Key_Escape);
+        tryCompare(window, "shortcutOverlayOpen", false);
+        compare(window.connectionOverlayVisible, true);
+
+        keyClick(Qt.Key_Return, Qt.ControlModifier);
+        compare(namedConnection.applyCalls, 1);
+        compare(window.connectionOverlayVisible, false);
+
+        window.close();
+        restoreNamedConnection();
+    }
+
+    function test_connectionSheetCtrlTabSwitchesTabsFromAnywhere() {
+        restoreNamedConnection();
+        var window = createTemporaryObject(fallbackWindowComponent, null);
+        verify(window !== null, "The ctrl-tab window should load");
+        tryCompare(window, "visible", true);
+        waitForRendering(window.contentItem);
+        window.requestActivate();
+        tryCompare(window, "active", true);
+
+        keyClick(Qt.Key_Comma, Qt.ControlModifier);
+        var sheet = findChild(window, "connectionSheet");
+        tryCompare(sheet, "visible", true);
+        waitForRendering(window.contentItem);
+
+        var connectionTab = findChild(window, "connectionSheetTab-connection");
+        var preferencesTab = findChild(window, "connectionSheetTab-preferences");
+        var host = findChild(window, "connectionHost");
+        verify(connectionTab !== null, "Could not find connectionSheetTab-connection");
+        verify(preferencesTab !== null, "Could not find connectionSheetTab-preferences");
+        verify(host !== null, "Could not find connectionHost");
+        compare(window.connectionSheetTab, "connection");
+
+        host.forceActiveFocus();
+        tryCompare(host, "activeFocus", true);
+        keyClick(Qt.Key_Tab, Qt.ControlModifier);
         wait(0);
+        compare(window.connectionSheetTab, "preferences");
+        tryCompare(preferencesTab, "activeFocus", true);
+        compare(focusObjectName(window), "connectionSheetTab-preferences");
+        compare(host.activeFocus, false);
+        verify(findChild(window, "connectionPreferencesPanel").visible);
+        compare(findChild(window, "connectionFormArea").visible, false);
+
+        keyClick(Qt.Key_Tab);
+        wait(0);
+        compare(focusObjectName(window), "connectionReopenDirects");
+
+        keyClick(Qt.Key_Tab, Qt.ControlModifier | Qt.ShiftModifier);
+        wait(0);
+        compare(window.connectionSheetTab, "connection");
+        tryCompare(connectionTab, "activeFocus", true);
+        compare(focusObjectName(window), "connectionSheetTab-connection");
+        verify(findChild(window, "connectionFormArea").visible);
+
+        host.forceActiveFocus();
+        tryCompare(host, "activeFocus", true);
+        keyClick(Qt.Key_Backtab, Qt.ControlModifier);
+        wait(0);
+        compare(window.connectionSheetTab, "preferences");
+        tryCompare(preferencesTab, "activeFocus", true);
+
+        window.close();
+        restoreNamedConnection();
+    }
+
+    function test_connectionSheetAltArrowsWalkNetworksFromHost() {
+        restoreNamedConnection();
+        namedNetworks.append({
+            networkId: "oftc",
+            displayName: "irc.oftc.net",
+            stored: true,
+            selected: false,
+            iconColor: 1,
+            iconUrl: "",
+            collapsed: false
+        });
+        var extra = 0;
+        for (extra = 0; extra < 16; ++extra) {
+            namedNetworks.append({
+                networkId: "probe-" + extra,
+                displayName: "irc.probe" + extra + ".example",
+                stored: true,
+                selected: false,
+                iconColor: 1,
+                iconUrl: "",
+                collapsed: false
+            });
+        }
+        var window = createTemporaryObject(fallbackWindowComponent, null);
+        verify(window !== null, "The host-alt-arrow window should load");
+        tryCompare(window, "visible", true);
+        waitForRendering(window.contentItem);
+        window.requestActivate();
+        tryCompare(window, "active", true);
+
+        keyClick(Qt.Key_Comma, Qt.ControlModifier);
+        tryCompare(findChild(window, "connectionSheet"), "visible", true);
+        waitForRendering(window.contentItem);
+
+        var host = findChild(window, "connectionHost");
+        var rail = findChild(window, "networkChoiceRepeater");
+        var scroll = findChild(window, "networkChoiceScroll");
+        verify(host !== null, "Could not find connectionHost");
+        host.forceActiveFocus();
+        tryCompare(host, "activeFocus", true);
+        compare(host.text, "irc.libera.chat");
+        compare(namedConnection.selectedNetworkId, "libera");
+        compare(namedConnection.nick, "sheet-nick");
+
+        function rowIsVisible(row) {
+            return row.y >= scroll.contentY
+                && row.y + row.height <= scroll.contentY + scroll.height;
+        }
+
+        keyClick(Qt.Key_Right, Qt.AltModifier);
+        wait(0);
+        compare(namedConnection.selectedNetworkId, "oftc");
+        compare(host.text, "irc.oftc.net");
+        compare(namedConnection.nick, "sheet-nick");
+        tryCompare(host, "activeFocus", true);
+        compare(focusObjectName(window), "connectionHost");
+
+        keyClick(Qt.Key_Left, Qt.AltModifier);
+        wait(0);
+        compare(namedConnection.selectedNetworkId, "libera");
+        compare(host.text, "irc.libera.chat");
+        tryCompare(host, "activeFocus", true);
+        compare(focusObjectName(window), "connectionHost");
+
+        var step = 0;
+        for (step = 0; step < 17; ++step)
+            keyClick(Qt.Key_Right, Qt.AltModifier);
+        wait(0);
+        compare(namedConnection.selectedNetworkId, "probe-15");
+        compare(host.text, "irc.probe15.example");
+        tryCompare(host, "activeFocus", true);
+        compare(focusObjectName(window), "connectionHost");
+        var last = repeaterItemByName(rail, "networkChoice-probe-15");
+        verify(last !== null, "Could not find networkChoice-probe-15");
+        verify(rowIsVisible(last));
+        verify(scroll.contentY > 0);
+
+        window.close();
+        restoreNamedConnection();
+    }
+
+    function test_connectionSheetAltArrowsMoveRailFocus() {
+        restoreNamedConnection();
+        namedNetworks.append({
+            networkId: "oftc",
+            displayName: "irc.oftc.net",
+            stored: true,
+            selected: false,
+            iconColor: 1,
+            iconUrl: "",
+            collapsed: false
+        });
+        var window = createTemporaryObject(fallbackWindowComponent, null);
+        verify(window !== null, "The rail-alt-arrow window should load");
+        tryCompare(window, "visible", true);
+        waitForRendering(window.contentItem);
+        window.requestActivate();
+        tryCompare(window, "active", true);
+
+        keyClick(Qt.Key_Comma, Qt.ControlModifier);
+        tryCompare(findChild(window, "connectionSheet"), "visible", true);
+        waitForRendering(window.contentItem);
+
+        var reached = false;
+        var step = 0;
+        for (step = 0; step < 40 && !reached; ++step) {
+            keyClick(Qt.Key_Tab);
+            wait(0);
+            reached = focusObjectName(window).indexOf("networkChoice-") === 0;
+        }
+        verify(reached, "Tab should reach a network row");
+        compare(focusObjectName(window), "networkChoice-libera");
+        compare(namedConnection.selectedNetworkId, "libera");
+
+        keyClick(Qt.Key_Right, Qt.AltModifier);
+        wait(0);
+        compare(namedConnection.selectedNetworkId, "oftc");
+        compare(focusObjectName(window), "networkChoice-oftc");
+        compare(findChild(window, "connectionHost").text, "irc.oftc.net");
+
+        var addButton = findChild(window, "connectionAddNetwork");
+        verify(addButton !== null, "Could not find connectionAddNetwork");
+        addButton.forceActiveFocus();
+        tryCompare(addButton, "activeFocus", true);
+        keyClick(Qt.Key_Left, Qt.AltModifier);
+        wait(0);
+        compare(namedConnection.selectedNetworkId, "libera");
+        compare(focusObjectName(window), "networkChoice-libera");
+        compare(addButton.activeFocus, false);
+
+        window.close();
+        restoreNamedConnection();
+    }
+
+    function test_connectionSheetCtrlNAddsThenDiscardRestores() {
+        restoreNamedConnection();
+        namedNetworks.append({
+            networkId: "oftc",
+            displayName: "irc.oftc.net",
+            stored: true,
+            selected: false,
+            iconColor: 1,
+            iconUrl: "",
+            collapsed: false
+        });
+        var window = createTemporaryObject(fallbackWindowComponent, null);
+        verify(window !== null, "The ctrl-n window should load");
+        tryCompare(window, "visible", true);
+        waitForRendering(window.contentItem);
+        window.requestActivate();
+        tryCompare(window, "active", true);
+
+        keyClick(Qt.Key_Comma, Qt.ControlModifier);
+        var sheet = findChild(window, "connectionSheet");
+        tryCompare(sheet, "visible", true);
+        waitForRendering(window.contentItem);
+
+        keyClick(Qt.Key_N, Qt.ControlModifier);
+        wait(0);
+        compare(namedNetworks.count, 3);
+        compare(namedConnection.selectedNetworkId, "new-id");
+        compare(findChild(window, "connectionHost").text, "");
+        compare(findChild(window, "connectionName").text, "");
+        tryCompare(findChild(window, "connectionName"), "activeFocus", true);
+        compare(focusObjectName(window), "connectionName");
+
+        var reachedDiscard = false;
+        var step = 0;
+        for (step = 0; step < 40 && !reachedDiscard; ++step) {
+            keyClick(Qt.Key_Tab);
+            wait(0);
+            reachedDiscard = focusObjectName(window) === "connectionDiscard";
+        }
+        verify(reachedDiscard, "Tab should reach Discard after Ctrl+N");
+        keyClick(Qt.Key_Return);
+        compare(namedConnection.discardCalls, 1);
+        compare(namedNetworks.count, 2);
+        compare(namedConnection.selectedNetworkId, "libera");
+        compare(findChild(window, "connectionHost").text, "irc.libera.chat");
+        compare(findChild(window, "connectionName").text, "irc.libera.chat");
+        compare(namedConnection.nick, "sheet-nick");
+        verify(sheet.visible);
+
+        window.close();
+        restoreNamedConnection();
+    }
+
+    function test_connectionSheetCtrlShiftDeleteRemovesOrLeavesPresent() {
+        restoreNamedConnection();
+        namedNetworks.append({
+            networkId: "oftc",
+            displayName: "irc.oftc.net",
+            stored: true,
+            selected: false,
+            iconColor: 1,
+            iconUrl: "",
+            collapsed: false
+        });
+        var window = createTemporaryObject(fallbackWindowComponent, null);
+        verify(window !== null, "The ctrl-shift-delete window should load");
+        tryCompare(window, "visible", true);
+        waitForRendering(window.contentItem);
+        window.requestActivate();
+        tryCompare(window, "active", true);
+
+        keyClick(Qt.Key_Comma, Qt.ControlModifier);
+        var sheet = findChild(window, "connectionSheet");
+        tryCompare(sheet, "visible", true);
+        waitForRendering(window.contentItem);
+        compare(namedNetworks.count, 2);
+        compare(namedConnection.selectedNetworkId, "libera");
+        namedConnection.applyCalls = 0;
+
+        keyClick(Qt.Key_Delete, Qt.ControlModifier | Qt.ShiftModifier);
+        wait(0);
+        compare(window.connectionRemoveArmed, true);
+        compare(namedNetworks.count, 2);
+        compare(namedConnection.selectedNetworkId, "libera");
+        compare(namedConnection.applyCalls, 0);
+        verify(sheet.visible);
+
+        keyClick(Qt.Key_Escape);
+        tryCompare(sheet, "visible", false);
+        compare(namedNetworks.count, 2);
+        compare(namedConnection.selectedNetworkId, "libera");
+        compare(namedConnection.applyCalls, 0);
+
+        keyClick(Qt.Key_Comma, Qt.ControlModifier);
+        tryCompare(sheet, "visible", true);
+        waitForRendering(window.contentItem);
+        compare(namedNetworks.count, 2);
+
+        keyClick(Qt.Key_Delete, Qt.ControlModifier | Qt.ShiftModifier);
+        wait(0);
+        compare(window.connectionRemoveArmed, true);
+        keyClick(Qt.Key_Delete, Qt.ControlModifier | Qt.ShiftModifier);
+        wait(0);
+        compare(namedNetworks.count, 1);
+        compare(namedConnection.selectedNetworkId, "oftc");
         compare(namedConnection.applyCalls, 0);
         verify(sheet.visible);
 
         window.close();
         restoreNamedConnection();
+    }
+
+    function test_connectionSheetLeftRightFromHostStayInField() {
+        restoreNamedConnection();
+        namedNetworks.append({
+            networkId: "oftc",
+            displayName: "irc.oftc.net",
+            stored: true,
+            selected: false,
+            iconColor: 1,
+            iconUrl: "",
+            collapsed: false
+        });
+        var window = createTemporaryObject(fallbackWindowComponent, null);
+        verify(window !== null, "The host-arrow window should load");
+        tryCompare(window, "visible", true);
+        waitForRendering(window.contentItem);
+        window.requestActivate();
+        tryCompare(window, "active", true);
+
+        keyClick(Qt.Key_Comma, Qt.ControlModifier);
+        tryCompare(findChild(window, "connectionSheet"), "visible", true);
+        waitForRendering(window.contentItem);
+
+        var host = findChild(window, "connectionHost");
+        verify(host !== null, "Could not find connectionHost");
+        host.forceActiveFocus();
+        tryCompare(host, "activeFocus", true);
+        compare(window.connectionSheetTab, "connection");
+        compare(namedConnection.selectedNetworkId, "libera");
+
+        keyClick(Qt.Key_Right);
+        wait(0);
+        tryCompare(host, "activeFocus", true);
+        compare(focusObjectName(window), "connectionHost");
+        compare(window.connectionSheetTab, "connection");
+        compare(namedConnection.selectedNetworkId, "libera");
+
+        keyClick(Qt.Key_Left);
+        wait(0);
+        tryCompare(host, "activeFocus", true);
+        compare(focusObjectName(window), "connectionHost");
+        compare(window.connectionSheetTab, "connection");
+        compare(namedConnection.selectedNetworkId, "libera");
+        compare(host.text, "irc.libera.chat");
+
+        window.close();
+        restoreNamedConnection();
+    }
+
+    function test_connectionSheetCtrlNAndRemoveNoopOnFirstRun() {
+        var window = createTemporaryObject(setupWindowComponent, null);
+        verify(window !== null, "The first-run chord window should load");
+        tryCompare(window, "visible", true);
+        waitForRendering(window.contentItem);
+        window.requestActivate();
+        tryCompare(window, "active", true);
+
+        var nick = findChild(window, "connectionNick");
+        verify(nick !== null, "Could not find connectionNick");
+        tryCompare(nick, "activeFocus", true);
+        compare(fakeConnection.canAdd, false);
+        compare(fakeConnection.canRemove, false);
+        compare(setupNetworks.count, 1);
+        compare(fakeConnection.selectedNetworkId, "setup-id");
+        compare(findChild(window, "connectionAddNetwork").visible, false);
+        compare(findChild(window, "connectionRemove").visible, false);
+
+        keyClick(Qt.Key_N, Qt.ControlModifier);
+        wait(0);
+        compare(setupNetworks.count, 1);
+        compare(fakeConnection.selectedNetworkId, "setup-id");
+        tryCompare(nick, "activeFocus", true);
+        compare(window.connectionRemoveArmed, false);
+
+        keyClick(Qt.Key_Delete, Qt.ControlModifier | Qt.ShiftModifier);
+        wait(0);
+        compare(setupNetworks.count, 1);
+        compare(fakeConnection.selectedNetworkId, "setup-id");
+        compare(window.connectionRemoveArmed, false);
+        verify(findChild(window, "connectionSheet").visible);
+
+        window.close();
     }
 
     function test_connectionSheetOpensWhenSetupRequired() {
@@ -7470,6 +7920,24 @@ TestCase {
                "shortcut sheet should list /disconnect");
         verify(texts.indexOf(ctrl + "+/") !== -1,
                "shortcut sheet should list " + ctrl + "+/");
+        verify(texts.indexOf(ctrl + "+Tab / " + ctrl + "+Shift+Tab") !== -1,
+               "shortcut sheet should list " + ctrl + "+Tab / " + ctrl + "+Shift+Tab");
+        verify(texts.indexOf("Connect tabs") !== -1,
+               "shortcut sheet should name Connect tabs");
+        verify(texts.indexOf(ctrl + "+N") !== -1,
+               "shortcut sheet should list " + ctrl + "+N");
+        verify(texts.indexOf("add network") !== -1,
+               "shortcut sheet should name add network");
+        verify(texts.indexOf(ctrl + "+Shift+Delete") !== -1,
+               "shortcut sheet should list " + ctrl + "+Shift+Delete");
+        verify(texts.indexOf("remove network") !== -1,
+               "shortcut sheet should name remove network");
+        verify(texts.indexOf(ctrl + "+Enter") !== -1,
+               "shortcut sheet should list " + ctrl + "+Enter");
+        verify(texts.indexOf("apply selected network") !== -1,
+               "shortcut sheet should name apply selected network");
+        verify(texts.indexOf("apply connection") === -1,
+               "shortcut sheet should not keep the old apply connection label");
         keyClick(Qt.Key_Escape);
         tryCompare(sheet, "opened", false);
     }

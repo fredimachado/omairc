@@ -25,6 +25,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Connect sheet keyboard: Tab still walks the whole sheet and arrows stay
+  in-region. Sheet-wide `Ctrl+Tab` / `Ctrl+Shift+Tab` switch tabs,
+  `Alt+Left` / `Alt+Right` walk networks (focus stays in the field unless
+  already in the rail), `Ctrl+N` adds a network and focuses Name, and
+  `Ctrl+Shift+Delete` arms then removes the selected network. `Ctrl+Enter`
+  applies the selected network from Preferences as well.
 - Pull-request and `master` CI no longer package or upload Windows/macOS
   installers, zips, or the Arch snapshot. Use a manual workflow run when you
   need those artifacts; version tags still package and publish. Intel macOS

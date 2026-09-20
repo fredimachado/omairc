@@ -32,6 +32,7 @@ Rectangle {
     signal removeRequested()
     signal disconnectRequested()
     signal applyKeyRequested(var event)
+    signal networkWalkRequested(int direction)
     signal passwordEdited()
     signal nickServEdited()
     signal shortcutsRequested()
@@ -75,6 +76,34 @@ Rectangle {
             target = bottom - flick.height;
         var lowest = Math.max(0, flick.contentHeight - flick.height);
         flick.contentY = Math.max(0, Math.min(target, lowest));
+    }
+
+    function isNetworkWalkKey(event) {
+        var mods = event.modifiers & (Qt.ShiftModifier | Qt.ControlModifier
+            | Qt.AltModifier | Qt.MetaModifier);
+        return mods === Qt.AltModifier
+            && (event.key === Qt.Key_Left || event.key === Qt.Key_Right);
+    }
+
+    function handleNetworkWalkKey(event) {
+        if (!sheet.isNetworkWalkKey(event))
+            return false;
+        event.accepted = true;
+        sheet.networkWalkRequested(event.key === Qt.Key_Right ? 1 : -1);
+        return true;
+    }
+
+    function revealNetworkChoice(networkId) {
+        if (!networkChoiceRepeater)
+            return;
+        var index = 0;
+        for (index = 0; index < networkChoiceRepeater.count; ++index) {
+            var item = networkChoiceRepeater.itemAt(index);
+            if (item && item.networkId === networkId) {
+                revealInScroll(networkChoiceScroll, item);
+                return;
+            }
+        }
     }
 
     MouseArea {
@@ -258,7 +287,13 @@ Rectangle {
                                             else
                                                 applyArmed = false;
                                         }
+                                        Keys.onShortcutOverride: function(event) {
+                                            if (sheet.isNetworkWalkKey(event))
+                                                event.accepted = true;
+                                        }
                                         Keys.onPressed: function(event) {
+                                            if (sheet.handleNetworkWalkKey(event))
+                                                return;
                                             if (event.key === Qt.Key_Down) {
                                                 sheet.focusNetworkChoiceStop(index + 1);
                                                 event.accepted = true;
@@ -346,7 +381,13 @@ Rectangle {
                                             sheet.revealInScroll(networkChoiceScroll,
                                                                connectionAddNetwork);
                                     }
+                                    Keys.onShortcutOverride: function(event) {
+                                        if (sheet.isNetworkWalkKey(event))
+                                            event.accepted = true;
+                                    }
                                     Keys.onPressed: function(event) {
+                                        if (sheet.handleNetworkWalkKey(event))
+                                            return;
                                         if (event.key === Qt.Key_Up) {
                                             sheet.focusNetworkChoiceStop(
                                                 sheet.networkChoiceStopCount - 2);
@@ -498,6 +539,9 @@ Rectangle {
                                     onApplyKeyRequested: function(event) {
                                         sheet.applyKeyRequested(event);
                                     }
+                                    onNetworkWalkRequested: function(direction) {
+                                        sheet.networkWalkRequested(direction);
+                                    }
                                 }
 
                                 Row {
@@ -520,6 +564,9 @@ Rectangle {
                                         onApplyKeyRequested: function(event) {
                                             sheet.applyKeyRequested(event);
                                         }
+                                        onNetworkWalkRequested: function(direction) {
+                                            sheet.networkWalkRequested(direction);
+                                        }
                                     }
 
                                     ConnectionField {
@@ -535,6 +582,9 @@ Rectangle {
 
                                         onApplyKeyRequested: function(event) {
                                             sheet.applyKeyRequested(event);
+                                        }
+                                        onNetworkWalkRequested: function(direction) {
+                                            sheet.networkWalkRequested(direction);
                                         }
                                     }
 
@@ -590,6 +640,9 @@ Rectangle {
                                         onApplyKeyRequested: function(event) {
                                             sheet.applyKeyRequested(event);
                                         }
+                                        onNetworkWalkRequested: function(direction) {
+                                            sheet.networkWalkRequested(direction);
+                                        }
                                     }
 
                                     ConnectionField {
@@ -607,6 +660,9 @@ Rectangle {
                                         onApplyKeyRequested: function(event) {
                                             sheet.applyKeyRequested(event);
                                         }
+                                        onNetworkWalkRequested: function(direction) {
+                                            sheet.networkWalkRequested(direction);
+                                        }
                                     }
                                 }
 
@@ -623,6 +679,9 @@ Rectangle {
                                     onApplyKeyRequested: function(event) {
                                         sheet.applyKeyRequested(event);
                                     }
+                                    onNetworkWalkRequested: function(direction) {
+                                        sheet.networkWalkRequested(direction);
+                                    }
                                 }
 
                                 ConnectionField {
@@ -637,6 +696,9 @@ Rectangle {
 
                                     onApplyKeyRequested: function(event) {
                                         sheet.applyKeyRequested(event);
+                                    }
+                                    onNetworkWalkRequested: function(direction) {
+                                        sheet.networkWalkRequested(direction);
                                     }
                                 }
 
@@ -700,6 +762,9 @@ Rectangle {
                                     onApplyKeyRequested: function(event) {
                                         sheet.applyKeyRequested(event);
                                     }
+                                    onNetworkWalkRequested: function(direction) {
+                                        sheet.networkWalkRequested(direction);
+                                    }
                                 }
 
                                 ConnectionField {
@@ -715,6 +780,9 @@ Rectangle {
 
                                     onApplyKeyRequested: function(event) {
                                         sheet.applyKeyRequested(event);
+                                    }
+                                    onNetworkWalkRequested: function(direction) {
+                                        sheet.networkWalkRequested(direction);
                                     }
                                 }
 
