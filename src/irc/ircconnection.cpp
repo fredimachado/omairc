@@ -1499,8 +1499,7 @@ CredentialKey IrcConnection::credentialKey(const IrcNetworkProfile &profile) con
 {
     return {profile.networkId,
             profile.username.isEmpty() ? profile.nick : profile.username,
-            profile.host,
-            {}};
+            profile.host};
 }
 
 CredentialKey IrcConnection::nickServCredentialKey(const IrcNetworkProfile &profile) const
