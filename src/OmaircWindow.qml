@@ -1653,6 +1653,28 @@ ApplicationWindow {
         Qt.callLater(function() { list.adoptViewport(); });
     }
 
+    function jumpTranscript(toEnd) {
+        var list = consoleVisible ? conversation.consoleList : conversation.messageList;
+        if (!list || list.count <= 0)
+            return;
+        if (toEnd) {
+            list.pinToEnd();
+            return;
+        }
+        // Same layout guard as revealFindMatch: detach immediately so a
+        // still-pinned viewport cannot re-pin before index 0 is realized.
+        list.stick = list.stickDetached;
+        list.pinning = true;
+        var generation = ++list.pinGeneration;
+        list.positionViewAtIndex(0, ListView.Beginning);
+        Qt.callLater(function() {
+            if (generation !== list.pinGeneration)
+                return;
+            list.pinning = false;
+            list.adoptViewport();
+        });
+    }
+
     function dispatchComposerSend(fromConsole, original) {
         if (fromConsole) {
             return irc && networkConsole
@@ -1681,6 +1703,18 @@ ApplicationWindow {
 
     function handleComposerKey(event) {
         if (handleComposerSidebarShortcut(event)) {
+            event.accepted = true;
+            return;
+        }
+
+        // TextInput claims Ctrl+Home / Ctrl+End as start/end of document,
+        // which swallows the window Shortcut the same way Option+Left
+        // becomes word-movement. Unmodified Home / End stay caret.
+        var jumpMods = composerKeyModifiers(event);
+        if (!win.connectionOverlayVisible && !win.shortcutOverlayOpen
+                && jumpMods === composerCommandModifier()
+                && (event.key === Qt.Key_Home || event.key === Qt.Key_End)) {
+            jumpTranscript(event.key === Qt.Key_End);
             event.accepted = true;
             return;
         }
@@ -2168,6 +2202,20 @@ ApplicationWindow {
         context: Qt.ApplicationShortcut
         enabled: !win.connectionOverlayVisible && !win.shortcutOverlayOpen
         onActivated: scrollTranscript(1, 0.35)
+    }
+
+    Shortcut {
+        sequence: "Ctrl+Home"
+        context: Qt.ApplicationShortcut
+        enabled: !win.connectionOverlayVisible && !win.shortcutOverlayOpen
+        onActivated: jumpTranscript(false)
+    }
+
+    Shortcut {
+        sequence: "Ctrl+End"
+        context: Qt.ApplicationShortcut
+        enabled: !win.connectionOverlayVisible && !win.shortcutOverlayOpen
+        onActivated: jumpTranscript(true)
     }
 
     Shortcut {

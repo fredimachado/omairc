@@ -2058,6 +2058,20 @@ TestCase {
                 "Shift+Page Down should not scroll under an overlay");
     }
 
+    function assertCtrlHomeEndLeavesContentY(list) {
+        var before = list.contentY;
+        keyClick(Qt.Key_Home, Qt.ControlModifier);
+        waitForRendering(appWindow.contentItem);
+        wait(0);
+        compare(list.contentY, before,
+                "Ctrl+Home should not jump under an overlay");
+        keyClick(Qt.Key_End, Qt.ControlModifier);
+        waitForRendering(appWindow.contentItem);
+        wait(0);
+        compare(list.contentY, before,
+                "Ctrl+End should not jump under an overlay");
+    }
+
     function test_pageUpScrollsTranscript() {
         openSeededAppWindow();
         var composer = item("messageComposer");
@@ -2291,6 +2305,186 @@ TestCase {
         keyClick(Qt.Key_Slash, Qt.ControlModifier);
         tryCompare(item("shortcutsSheet"), "opened", true);
         assertShiftPageLeavesContentY(status);
+        compare(item("shortcutsSheet").opened, true);
+        compare(appWindow.consoleVisible, true);
+    }
+
+    function test_ctrlHomeEndJumpsTranscript() {
+        openSeededAppWindow();
+        var composer = item("messageComposer");
+        var list = item("messageList");
+        mouseClick(composer);
+        verify(composer.activeFocus);
+        fillTranscriptUntilScrollable(list);
+        warmTranscriptRows(list);
+        verify(list.contentHeight > list.height);
+        var startY = list.contentY;
+        verify(startY > 0);
+        verify(transcriptPinned(list));
+
+        keyClick(Qt.Key_Home, Qt.ControlModifier);
+        waitForRendering(appWindow.contentItem);
+        wait(0);
+        tryVerify(function() {
+            return list.contentY < startY && list.contentY <= list.originY + 8;
+        }, 1000, "Ctrl+Home should jump to the oldest lines");
+        verify(list.atYBeginning || firstVisibleIndex(list) === 0,
+               "Ctrl+Home should show the oldest rows");
+        tryCompare(list, "stick", list.stickDetached);
+        verify(!transcriptPinned(list));
+        verify(composer.activeFocus);
+
+        var frozenY = list.contentY;
+        appendLiveMessages(list, 1, "ctrl-home unseen");
+        waitForRendering(appWindow.contentItem);
+        wait(0);
+        fuzzyCompare(list.contentY, frozenY, 2);
+        verify(!transcriptPinned(list));
+        verify(composer.activeFocus);
+
+        keyClick(Qt.Key_End, Qt.ControlModifier);
+        waitForRendering(appWindow.contentItem);
+        wait(0);
+        tryVerify(function() {
+            return transcriptPinned(list);
+        }, 1000, "Ctrl+End should pin the transcript to the bottom");
+        verify(composer.activeFocus);
+
+        var pinnedY = list.contentY;
+        appendLiveMessages(list, 1, "ctrl-end follow");
+        waitForRendering(appWindow.contentItem);
+        wait(0);
+        tryVerify(function() {
+            return transcriptPinned(list);
+        }, 1000, "Incoming rows should keep a following list at the end");
+        verify(list.contentY >= pinnedY);
+        verify(composer.activeFocus);
+    }
+
+    function test_ctrlHomeEndJumpsStatus() {
+        openSeededAppWindow();
+        var composer = item("messageComposer");
+        var list = item("consoleList");
+        keyClick(Qt.Key_QuoteLeft, Qt.ControlModifier);
+        tryCompare(appWindow, "consoleVisible", true);
+        fillConsoleUntilScrollable(list);
+        mouseClick(composer);
+        verify(composer.activeFocus);
+        warmTranscriptRows(list);
+        verify(list.contentHeight > list.height);
+        var startY = list.contentY;
+        verify(startY > 0);
+        verify(transcriptPinned(list));
+        var bar = waitForScrollbarThumb(list, true);
+        var endPosition = bar.position;
+
+        keyClick(Qt.Key_Home, Qt.ControlModifier);
+        waitForRendering(appWindow.contentItem);
+        wait(0);
+        tryVerify(function() {
+            return list.contentY < startY && list.contentY <= list.originY + 8;
+        }, 1000, "Ctrl+Home should jump Status to the oldest lines");
+        tryCompare(list, "stick", list.stickDetached);
+        verify(!transcriptPinned(list));
+        verify(composer.activeFocus);
+        waitForScrollbarThumb(list, true);
+        verify(bar.position < endPosition, "Ctrl+Home should move the Status thumb up");
+
+        keyClick(Qt.Key_End, Qt.ControlModifier);
+        waitForRendering(appWindow.contentItem);
+        wait(0);
+        tryVerify(function() {
+            return transcriptPinned(list);
+        }, 1000, "Ctrl+End should pin Status to the bottom");
+        verify(composer.activeFocus);
+        compare(appWindow.consoleVisible, true);
+    }
+
+    function test_homeEndMoveComposerCaret() {
+        openSeededAppWindow();
+        var composer = item("messageComposer");
+        var list = item("messageList");
+        mouseClick(composer);
+        verify(composer.activeFocus);
+        fillTranscriptUntilScrollable(list);
+        verify(transcriptPinned(list));
+        typeText("hello world");
+        compare(composer.text, "hello world");
+        composer.cursorPosition = 5;
+        compare(composer.cursorPosition, 5);
+        var before = list.contentY;
+
+        keyClick(Qt.Key_Home);
+        compare(composer.cursorPosition, 0);
+        compare(list.contentY, before,
+                "Home should not jump the transcript");
+        verify(composer.activeFocus);
+
+        keyClick(Qt.Key_End);
+        compare(composer.cursorPosition, composer.text.length);
+        compare(list.contentY, before,
+                "End should not jump the transcript");
+        verify(composer.activeFocus);
+        verify(transcriptPinned(list));
+    }
+
+    function test_ctrlHomeEndIgnoredWhenConnectOrShortcutsOpen() {
+        openSeededAppWindow();
+        var composer = item("messageComposer");
+        var chat = item("messageList");
+        mouseClick(composer);
+        verify(composer.activeFocus);
+        fillTranscriptUntilScrollable(chat);
+        keyClick(Qt.Key_PageUp);
+        waitForRendering(appWindow.contentItem);
+        wait(0);
+        verify(chat.contentY > 0);
+        verify(!transcriptPinned(chat));
+
+        keyClick(Qt.Key_Comma, Qt.ControlModifier);
+        tryCompare(appWindow, "connectionOverlayVisible", true);
+        tryCompare(item("connectionSheet"), "visible", true);
+        assertCtrlHomeEndLeavesContentY(chat);
+        compare(appWindow.connectionOverlayVisible, true);
+        verify(item("connectionSheet").visible);
+
+        keyClick(Qt.Key_Escape);
+        tryCompare(appWindow, "connectionOverlayVisible", false);
+        tryCompare(composer, "activeFocus", true);
+
+        keyClick(Qt.Key_Slash, Qt.ControlModifier);
+        tryCompare(item("shortcutsSheet"), "opened", true);
+        assertCtrlHomeEndLeavesContentY(chat);
+        compare(item("shortcutsSheet").opened, true);
+
+        keyClick(Qt.Key_Escape);
+        tryCompare(item("shortcutsSheet"), "opened", false);
+        tryCompare(composer, "activeFocus", true);
+
+        keyClick(Qt.Key_QuoteLeft, Qt.ControlModifier);
+        tryCompare(appWindow, "consoleVisible", true);
+        var status = item("consoleList");
+        fillConsoleUntilScrollable(status);
+        mouseClick(composer);
+        verify(composer.activeFocus);
+        keyClick(Qt.Key_PageUp);
+        waitForRendering(appWindow.contentItem);
+        wait(0);
+        verify(status.contentY > 0);
+        verify(!transcriptPinned(status));
+
+        keyClick(Qt.Key_Comma, Qt.ControlModifier);
+        tryCompare(appWindow, "connectionOverlayVisible", true);
+        tryCompare(item("connectionSheet"), "visible", true);
+        assertCtrlHomeEndLeavesContentY(status);
+        compare(appWindow.connectionOverlayVisible, true);
+
+        keyClick(Qt.Key_Escape);
+        tryCompare(appWindow, "connectionOverlayVisible", false);
+
+        keyClick(Qt.Key_Slash, Qt.ControlModifier);
+        tryCompare(item("shortcutsSheet"), "opened", true);
+        assertCtrlHomeEndLeavesContentY(status);
         compare(item("shortcutsSheet").opened, true);
         compare(appWindow.consoleVisible, true);
     }
@@ -8398,6 +8592,10 @@ TestCase {
                "shortcut sheet should list Shift+Page Up / Shift+Page Down");
         verify(texts.indexOf("scroll half page") !== -1,
                "shortcut sheet should name scroll half page");
+        verify(texts.indexOf(ctrl + "+Home / " + ctrl + "+End") !== -1,
+               "shortcut sheet should list " + ctrl + "+Home / " + ctrl + "+End");
+        verify(texts.indexOf("top / bottom") !== -1,
+               "shortcut sheet should name top / bottom");
         keyClick(Qt.Key_Escape);
         tryCompare(sheet, "opened", false);
     }

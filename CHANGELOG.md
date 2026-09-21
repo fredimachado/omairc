@@ -18,6 +18,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and Status by about half a page. Unmodified Page Up / Page Down stay
   the full hop. The composer stays focused; both chords are disabled
   while Connect or the shortcuts overlay is open.
+- `Ctrl+Home` / `Ctrl+End` jump the conversation transcript and Status
+  to the top / bottom. `Ctrl+End` resumes follow-the-end. The composer
+  stays focused; both chords are disabled while Connect or the shortcuts
+  overlay is open.
 - Transcript rows for nick mentions and `/highlight` hits get a calm wash so
   they are easy to scan.
 - Global `/autoaway` idle timer (off by default). `/autoaway 15` or
