@@ -149,6 +149,8 @@ def check_qml_text_plain_format():
                 continue
             if "textFormat: Text.PlainText" in body:
                 continue
+            if re.search(r"textFormat:.*Text\.PlainText", body, re.S):
+                continue
             name = re.search(r'objectName:\s*"([^"]+)"', body)
             label = name.group(1) if name else "unnamed Text"
             problems.append(

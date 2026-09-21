@@ -9,6 +9,8 @@
 #include <QVariantMap>
 #include <QVector>
 
+#include "irctextformatter.h"
+
 struct IrcChannelListRow
 {
     QString channel;
@@ -75,6 +77,7 @@ signals:
     void stateChanged();
 
 private:
+    QString plainTopic(const QString& topic) const;
     bool matches(const IrcChannelListRow& row) const;
     void rebuildVisible();
     void emitStateSoon();
@@ -89,6 +92,7 @@ private:
     QString m_mask;
     QString m_error;
     QTimer m_stateFlush;
+    IrcTextFormatter m_textFormatter;
     bool m_loading = false;
     bool m_complete = false;
     bool m_cached = false;

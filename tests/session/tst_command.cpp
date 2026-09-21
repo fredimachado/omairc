@@ -198,6 +198,7 @@ private slots:
     void modeSendsAndRefuses();
     void wrappersSendAndHelp();
     void listSendsAndCaches();
+    void listFiltersPlainTopic();
     void listSerializesInFlightMaskChange();
     void listTryAgainUnwedgesAndRetries();
     void listTooManyMatchesUnwedges();
@@ -2763,6 +2764,57 @@ void CommandTest::listSendsAndCaches()
 
     IrcController offline;
     QVERIFY(!offline.sendMessage(QStringLiteral("/list")));
+}
+
+void CommandTest::listFiltersPlainTopic()
+{
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    IrcSession *session = controller.addSession(config(), transport);
+    QVERIFY(session);
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    welcome(transport);
+    QCOMPARE(session->state(), IrcSession::State::Registered);
+    transport->injectBytes(QByteArrayLiteral(":omairc!u@h JOIN :#omarchy\r\n"));
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+
+    QVERIFY(controller.sendMessage(QStringLiteral("/list")));
+    auto *model = qobject_cast<ChannelListModel *>(controller.channelList());
+    QVERIFY(model);
+
+    const QString topic = QChar(0x02) + QStringLiteral("Kernel") + QChar(0x02)
+        + QStringLiteral(" discussion and ")
+        + QChar(0x03) + QStringLiteral("04distro") + QChar(0x03)
+        + QStringLiteral(" help.");
+    transport->injectBytes(
+        QByteArrayLiteral(":server 321 omairc Channel :Users  Name\r\n"
+                          ":server 322 omairc #linux 42 :")
+        + topic.toUtf8()
+        + QByteArrayLiteral("\r\n"
+                          ":server 322 omairc #random 4 :Off-topic\r\n"
+                          ":server 323 omairc :End of /LIST\r\n"));
+    QVERIFY(model->complete());
+    QCOMPARE(model->rowCount(), 2);
+    QCOMPARE(model->field(0, QStringLiteral("channel")).toString(),
+             QStringLiteral("#linux"));
+    QCOMPARE(model->field(0, QStringLiteral("topic")).toString(), topic);
+    QCOMPARE(model->field(0, QStringLiteral("label")).toString(),
+             QStringLiteral("#linux 42 Kernel discussion and distro help."));
+    QVERIFY(!model->field(0, QStringLiteral("label")).toString().contains(QChar(0x02)));
+    QVERIFY(!model->field(0, QStringLiteral("label")).toString().contains(QChar(0x03)));
+
+    model->setFilter(QStringLiteral("distro"));
+    QCOMPARE(model->rowCount(), 1);
+    QCOMPARE(model->field(0, QStringLiteral("channel")).toString(),
+             QStringLiteral("#linux"));
+
+    model->setFilter(QStringLiteral("04"));
+    QCOMPARE(model->rowCount(), 0);
+
+    model->setFilter(QStringLiteral("lin"));
+    QCOMPARE(model->rowCount(), 1);
+    QCOMPARE(model->field(0, QStringLiteral("channel")).toString(),
+             QStringLiteral("#linux"));
 }
 
 void CommandTest::listSerializesInFlightMaskChange()

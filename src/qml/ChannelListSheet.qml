@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Controls
+import Omairc.App 1.0
 
 Popup {
     id: sheet
@@ -10,6 +11,10 @@ Popup {
 
     property alias channelListFilter: channelListFilter
     property alias channelListList: channelListList
+
+    IrcTextFormatter {
+        id: ircText
+    }
 
     signal stepRequested(int delta)
     signal activateRequested()
@@ -119,7 +124,9 @@ Popup {
                 required property string label
                 width: channelListList.width
                 height: sheet.style.scaledSize(28)
+                clip: true
                 readonly property bool current: index === sheet.selectedIndex
+                readonly property bool topicEmphasized: ircText.hasIrcEmphasis(listDelegate.topic)
                 objectName: "channelListRow-" + channel
 
                 Rectangle {
@@ -151,14 +158,26 @@ Popup {
                 }
 
                 Text {
+                    objectName: "channelListTopic"
                     anchors.left: userCount.right
                     anchors.leftMargin: sheet.style.scaledSize(10)
                     anchors.right: parent.right
                     anchors.rightMargin: sheet.style.scaledSize(8)
-                    anchors.verticalCenter: parent.verticalCenter
-                    text: listDelegate.topic
+                    anchors.top: parent.top
+                    anchors.bottom: parent.bottom
+                    text: listDelegate.topicEmphasized
+                        ? ircText.emphasizedIrcText(listDelegate.topic)
+                        : ircText.plainIrcText(listDelegate.topic)
+                    textFormat: listDelegate.topicEmphasized
+                        ? Text.RichText
+                        : Text.PlainText
                     color: sheet.style.mutedColor
-                    elide: Text.ElideRight
+                    elide: listDelegate.topicEmphasized
+                        ? Text.ElideNone
+                        : Text.ElideRight
+                    clip: true
+                    wrapMode: Text.NoWrap
+                    verticalAlignment: Text.AlignVCenter
                     font.family: "iA Writer Mono S"
                     font.pixelSize: sheet.style.scaledSize(12)
                 }
