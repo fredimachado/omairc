@@ -8534,6 +8534,7 @@ TestCase {
         verify(texts.indexOf("JUMP") !== -1, "shortcut sheet should head JUMP");
         verify(texts.indexOf("WRITE") !== -1, "shortcut sheet should head WRITE");
         verify(texts.indexOf("WINDOW") !== -1, "shortcut sheet should head WINDOW");
+        verify(texts.indexOf("CONNECT") !== -1, "shortcut sheet should head CONNECT");
         verify(texts.indexOf(alt + "+Down / " + alt + "+Up") !== -1,
                "shortcut sheet should list " + alt + "+Down / " + alt + "+Up");
         verify(texts.indexOf("walk conversations") !== -1,
