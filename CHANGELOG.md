@@ -12,11 +12,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Chat that arrives in the open channel or DM while the window is unfocused is
   now treated as unread: the New messages mark plants on the first live line
   and, when focus returns, the transcript lands on that mark instead of being
-  pinned to the bottom. Replayed backlog in that open conversation does not
-  plant the mark. Status keeps following the end.
+  pinned to the bottom. Replay while that conversation is open and the window
+  is unfocused still does not plant the mark. Status keeps following the end.
 
 ### Fixed
 
+- Connecting through ZNC now plants the New messages mark on the first
+  auto-selected channel. `znc.in/playback` was landing while that buffer was
+  already focused, so the mark never appeared there even though other channels
+  got it. Unread and mention badges stay at zero.
 - `./bin/install` (makepkg) no longer warns about an unused composer surface on
   `/status` `/avatar` watches, or a missing `CredentialKey::purpose` initializer.
 
