@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Transcript rows for nick mentions and `/highlight` hits get a calm wash so
+  they are easy to scan.
 - Global `/autoaway` idle timer (off by default). `/autoaway 15` or
   `/autoaway 15m` enables a timeout in minutes; `/autoaway reason` stores a
   default AWAY text; extra text on a duration is one-shot. It is not

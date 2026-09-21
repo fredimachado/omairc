@@ -235,6 +235,12 @@ public:
                                  const QString& normalizedNick) const;
     QVector<IrcOrderedMember> orderedMembers(const IrcConversationKey& key) const;
     bool mentions(const QString& networkId, const QString& body) const;
+    // Transcript wash: other-authored Message/Action whose body is a nick
+    // or /highlight hit. Not classifyChatLine, which also tags every DM.
+    bool isTranscriptHighlight(const QString& networkId,
+                               const QString& author,
+                               IrcMessageKind kind,
+                               const QString& body) const;
 
     QStringList typingNicks(const IrcConversationKey& key,
                             const QDateTime& now) const;

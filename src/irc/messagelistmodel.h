@@ -30,6 +30,9 @@ public:
         MsgidRole,
         AuthorAvatarRole,
         AuthorBotRole,
+        // Transcript wash for a nick or /highlight hit. Not the sidebar
+        // `mention` badge, which also flags every direct message.
+        MentionedRole,
     };
 
     static QHash<int, QByteArray> staticRoleNames();
@@ -43,6 +46,7 @@ public:
     Q_INVOKABLE int unreadMarkRow() const;
 
     void reload();
+    void notifyMentioned();
     void setSelected(const IrcConversationKey& key);
     void select(const IrcConversationKey& key);
     void clearSelection();

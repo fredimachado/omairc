@@ -697,6 +697,21 @@ bool IrcEventReducer::mentions(const QString& networkId,
     return isMention(networkId, body);
 }
 
+bool IrcEventReducer::isTranscriptHighlight(const QString& networkId,
+                                            const QString& author,
+                                            IrcMessageKind kind,
+                                            const QString& body) const
+{
+    // Kind and self match classifyChatLine, but that helper also returns
+    // DirectMessage for every query without a body hit. Regular DMs do not
+    // wash; only a nick or /highlight word in the body does.
+    if (kind != IrcMessageKind::Message && kind != IrcMessageKind::Action)
+        return false;
+    if (isSelf(networkId, author))
+        return false;
+    return mentions(networkId, body);
+}
+
 bool IrcEventReducer::isNickMention(const QString& networkId,
                                     const QString& body) const
 {

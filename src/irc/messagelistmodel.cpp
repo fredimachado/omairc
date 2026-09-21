@@ -150,6 +150,8 @@ QVariant MessageListModel::data(const QModelIndex& index, int role) const
             return QString();
         case AuthorBotRole:
             return false;
+        case MentionedRole:
+            return false;
         default:
             return {};
         }
@@ -171,6 +173,8 @@ QVariant MessageListModel::data(const QModelIndex& index, int role) const
         case AuthorAvatarRole:
             return QString();
         case AuthorBotRole:
+            return false;
+        case MentionedRole:
             return false;
         default:
             return {};
@@ -210,6 +214,10 @@ QVariant MessageListModel::data(const QModelIndex& index, int role) const
             return false;
         return m_reducer.nickPresence(conversation->key.networkId, message.author)
             .isBot();
+    case MentionedRole:
+        return m_reducer.isTranscriptHighlight(
+            conversation->key.networkId, message.author, message.kind,
+            message.body);
     default:
         return {};
     }
@@ -227,6 +235,7 @@ QHash<int, QByteArray> MessageListModel::staticRoleNames()
         {MsgidRole, "msgid"},
         {AuthorAvatarRole, "authorAvatar"},
         {AuthorBotRole, "authorBot"},
+        {MentionedRole, "mentioned"},
     };
 }
 
@@ -308,6 +317,11 @@ void MessageListModel::reload()
             m_unreadMark = unreadMark;
             endInsertRows();
             notifySeparatorRows();
+            // Insert only announces the new indices. MentionedRole is
+            // computed from the current nick and highlight words, so a
+            // self /nick that also appends "is now" would otherwise leave
+            // existing washes stale.
+            notifyMentioned();
             return;
         }
         if (int(next.size()) == int(m_view.size())) {
@@ -329,6 +343,15 @@ void MessageListModel::reload()
     m_spliceEpoch = spliceEpoch;
     m_unreadMark = unreadMark;
     endResetModel();
+}
+
+void MessageListModel::notifyMentioned()
+{
+    if (m_view.empty())
+        return;
+    emit dataChanged(index(0, 0),
+                     index(int(m_view.size()) - 1, 0),
+                     {MentionedRole});
 }
 
 void MessageListModel::setSelected(const IrcConversationKey& key)

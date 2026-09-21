@@ -6583,6 +6583,106 @@ TestCase {
         tryCompare(bot, "visible", true);
     }
 
+    function mentionWashAt(row) {
+        var wash = findChild(row, "mentionWash");
+        verify(wash !== null, "Could not find mentionWash");
+        return wash;
+    }
+
+    function visualChildIndex(row, objectName) {
+        var children = row.children;
+        var index = 0;
+        for (; index < children.length; ++index) {
+            if (children[index].objectName === objectName)
+                return index;
+        }
+        return -1;
+    }
+
+    function test_transcriptMentionWashForNickAndHighlightWords() {
+        openSeededAppWindow();
+        injectOmarchyChat("anna", "#omarchy", "mention-wash-plain-zx9");
+        var plain = renderedRowWithBody("mention-wash-plain-zx9");
+        compare(plain.mentioned, false);
+        compare(mentionWashAt(plain).visible, false);
+
+        injectOmarchyChat("anna", "#omarchy", "mention-wash-nick-zx9 fred please");
+        var nickHit = renderedRowWithBody("mention-wash-nick-zx9 fred please");
+        compare(nickHit.mentioned, true);
+        compare(mentionWashAt(nickHit).visible, true);
+
+        injectOmarchyChat("fred", "#omarchy", "mention-wash-self-zx9 fred");
+        var selfHit = renderedRowWithBody("mention-wash-self-zx9 fred");
+        compare(selfHit.mentioned, false);
+        compare(mentionWashAt(selfHit).visible, false);
+
+        injectOmarchyChat("anna", "#omarchy", "mention-wash-deploy-zx9 please review deploy");
+        var deploy = renderedRowWithBody("mention-wash-deploy-zx9 please review deploy");
+        compare(deploy.mentioned, false);
+        compare(mentionWashAt(deploy).visible, false);
+
+        verify(appWindow.irc.sendMessage("/highlight deploy"));
+        deploy = renderedRowWithBody("mention-wash-deploy-zx9 please review deploy");
+        tryCompare(deploy, "mentioned", true);
+        tryCompare(mentionWashAt(deploy), "visible", true);
+        plain = renderedRowWithBody("mention-wash-plain-zx9");
+        compare(plain.mentioned, false);
+        compare(mentionWashAt(plain).visible, false);
+
+        injectOmarchyChat("dax", "#omarchy", "mention-wash-after-zx9 still plain");
+        var after = renderedRowWithBody("mention-wash-after-zx9 still plain");
+        compare(after.mentioned, false);
+        compare(mentionWashAt(after).visible, false);
+
+        verify(appWindow.irc.sendMessage("/unhighlight deploy"));
+        deploy = renderedRowWithBody("mention-wash-deploy-zx9 please review deploy");
+        tryCompare(deploy, "mentioned", false);
+        tryCompare(mentionWashAt(deploy), "visible", false);
+
+        verify(appWindow.irc.sendMessage("/mute #omarchy"));
+        tryCompare(namedItem(liveConversation("#omarchy")), "muted", true);
+        injectOmarchyChat("anna", "#omarchy", "mention-wash-muted-zx9 fred please");
+        var mutedHit = renderedRowWithBody("mention-wash-muted-zx9 fred please");
+        compare(mutedHit.mentioned, true);
+        compare(mentionWashAt(mutedHit).visible, true);
+
+        keyClick(Qt.Key_F, Qt.ControlModifier);
+        tryCompare(appWindow, "findActive", true);
+        typeText("mention-wash-muted-zx9");
+        tryVerify(function() {
+            return appWindow.findIndex >= 0
+                && field(item("messageList").model, appWindow.findIndex, "body")
+                    === "mention-wash-muted-zx9 fred please";
+        }, 1000, "Find should land on the muted mention row");
+        var findRow = renderedRowWithBody("mention-wash-muted-zx9 fred please");
+        var findMark = findChild(findRow, "findMatch");
+        verify(findMark !== null && findMark.visible,
+               "findMatch should be visible on the mentioned row");
+        compare(mentionWashAt(findRow).visible, true);
+        var washIndex = visualChildIndex(findRow, "mentionWash");
+        var matchIndex = visualChildIndex(findRow, "findMatch");
+        verify(washIndex >= 0, "mentionWash should be a visual child of the row");
+        verify(matchIndex >= 0, "findMatch should be a visual child of the row");
+        verify(matchIndex > washIndex,
+               "findMatch should paint on top of mentionWash");
+        keyClick(Qt.Key_Escape);
+        tryCompare(appWindow, "findActive", false);
+
+        mouseClick(namedItem(liveConversation("anna")));
+        tryCompare(appWindow, "currentConversation", "anna");
+        injectOmarchyChat("anna", "fred", "mention-wash-dm-plain-zx9");
+        var dmPlain = renderedRowWithBody("mention-wash-dm-plain-zx9");
+        compare(dmPlain.mentioned, false);
+        compare(mentionWashAt(dmPlain).visible, false);
+
+        injectOmarchyChat("anna", "fred", "mention-wash-dm-nick-zx9 fred hi");
+        var dmNick = renderedRowWithBody("mention-wash-dm-nick-zx9 fred hi");
+        compare(dmNick.mentioned, true);
+        compare(mentionWashAt(dmNick).visible, true);
+
+        selectOmarchy();
+    }
+
     function test_typingTranscriptBotRefreshesAfterLateMetadata() {
         openSeededAppWindow();
         mouseClick(namedItem(liveConversation("anna")));

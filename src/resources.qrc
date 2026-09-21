@@ -6,6 +6,7 @@
         <file alias="qml/TypingDots.qml">qml/TypingDots.qml</file>
         <file alias="qml/BotMark.qml">qml/BotMark.qml</file>
         <file alias="qml/UnreadMark.qml">qml/UnreadMark.qml</file>
+        <file alias="qml/MentionWash.qml">qml/MentionWash.qml</file>
         <file alias="qml/TranscriptNickHit.qml">qml/TranscriptNickHit.qml</file>
         <file alias="qml/NickGlyph.qml">qml/NickGlyph.qml</file>
         <file alias="qml/MessageAvatar.qml">qml/MessageAvatar.qml</file>
