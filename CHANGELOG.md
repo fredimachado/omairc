@@ -7,12 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Changed
-
-- The `Ctrl+/` shortcuts sheet moves `Ctrl+Shift+S` into WINDOW alongside
-  the members-panel chords, and lists Connect-sheet chords under CONNECT so
-  `Ctrl+N` / `Ctrl+Enter` are not read as global.
-
 ## [0.9.0] - 2026-09-21
 
 ### Added
@@ -62,8 +56,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- The `Ctrl+/` shortcuts sheet groups chords under MOVE, JUMP, WRITE, and
-  WINDOW headings and pairs opposite network collapse/expand/move rows.
+- The `Ctrl+/` shortcuts sheet groups chords under MOVE, JUMP, WRITE,
+  WINDOW, and CONNECT headings and pairs opposite network collapse/expand/move
+  rows. `Ctrl+Shift+S` sits in WINDOW alongside the members-panel chords.
+  Connect-sheet chords live under CONNECT so `Ctrl+N` / `Ctrl+Enter` are not
+  read as global.
 - Connect sheet keyboard: Tab still walks the whole sheet and arrows stay
   in-region. Sheet-wide `Ctrl+Tab` / `Ctrl+Shift+Tab` switch tabs,
   `Alt+Left` / `Alt+Right` walk networks (focus stays in the field unless
