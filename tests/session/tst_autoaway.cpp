@@ -1,5 +1,6 @@
 #include <QAbstractItemModel>
 #include <QCoreApplication>
+#include <QEvent>
 #include <QSettings>
 #include <QTemporaryDir>
 #include <QTest>
@@ -115,6 +116,12 @@ void injectUnaway(FakeIrcTransport *transport)
         QByteArrayLiteral(":server 305 omairc :You are no longer marked as being away\r\n"));
 }
 
+void postAppEvent(QEvent::Type type)
+{
+    QEvent event(type);
+    QCoreApplication::sendEvent(QCoreApplication::instance(), &event);
+}
+
 FakeIrcTransport *joinNetwork(IrcController& controller, const QString& networkId,
                               const QString& channel = QStringLiteral("#omarchy"))
 {
@@ -165,6 +172,7 @@ private slots:
     void reconnectWhileTrippedSendsAway();
     void reconnectDropsManualAwaySoAutoTripMarks();
     void activityAfterEmptyTripClearsOneShot();
+    void wheelClearsAutoAway();
 
 private:
     std::unique_ptr<QTemporaryDir> m_settingsDir;
@@ -837,6 +845,26 @@ void AutoawayTest::activityAfterEmptyTripClearsOneShot()
     QCOMPARE(transport->writtenFrames().last(), QByteArrayLiteral("AWAY :AFK\r\n"));
     injectNowAway(transport);
     QVERIFY(controller.selfAway());
+}
+
+void AutoawayTest::wheelClearsAutoAway()
+{
+    IrcController controller;
+    auto *transport = joinNetwork(controller, QStringLiteral("libera"));
+    QVERIFY(transport);
+    controller.selectConversation(QStringLiteral("libera"),
+                                  QStringLiteral("#omarchy"));
+    QVERIFY(controller.sendMessage(QStringLiteral("/autoaway 15")));
+    controller.fireAutoawayIdleForTest();
+    controller.fireAutoawayGraceForTest();
+    QCOMPARE(transport->writtenFrames().last(), QByteArrayLiteral("AWAY :\r\n"));
+    injectNowAway(transport);
+    QVERIFY(controller.selfAway());
+
+    const int before = transport->writtenFrames().size();
+    postAppEvent(QEvent::Wheel);
+    QCOMPARE(awayFrameCount(transport->writtenFrames(), before), 1);
+    QCOMPARE(transport->writtenFrames().last(), QByteArrayLiteral("AWAY\r\n"));
 }
 
 int runAutoawayTests(int argc, char **argv)

@@ -2628,6 +2628,7 @@ bool IrcController::eventFilter(QObject *watched, QEvent *event)
     case QEvent::MouseButtonPress:
     case QEvent::TouchBegin:
     case QEvent::TabletPress:
+    case QEvent::Wheel:
         break;
     default:
         return false;
