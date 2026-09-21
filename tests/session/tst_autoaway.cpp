@@ -173,6 +173,7 @@ private slots:
     void reconnectDropsManualAwaySoAutoTripMarks();
     void activityAfterEmptyTripClearsOneShot();
     void wheelClearsAutoAway();
+    void composerNotifyDoesNotClearAutoAway();
 
 private:
     std::unique_ptr<QTemporaryDir> m_settingsDir;
@@ -865,6 +866,32 @@ void AutoawayTest::wheelClearsAutoAway()
     postAppEvent(QEvent::Wheel);
     QCOMPARE(awayFrameCount(transport->writtenFrames(), before), 1);
     QCOMPARE(transport->writtenFrames().last(), QByteArrayLiteral("AWAY\r\n"));
+}
+
+void AutoawayTest::composerNotifyDoesNotClearAutoAway()
+{
+    IrcController controller;
+    auto *transport = joinNetwork(controller, QStringLiteral("libera"));
+    QVERIFY(transport);
+    controller.selectConversation(QStringLiteral("libera"),
+                                  QStringLiteral("#omarchy"));
+    QVERIFY(controller.sendMessage(QStringLiteral("/autoaway 15")));
+    controller.fireAutoawayIdleForTest();
+    controller.fireAutoawayGraceForTest();
+    QCOMPARE(transport->writtenFrames().last(), QByteArrayLiteral("AWAY :\r\n"));
+    injectNowAway(transport);
+    QVERIFY(controller.selfAway());
+
+    const int afterAway = transport->writtenFrames().size();
+    controller.notifyComposerText(QStringLiteral("hello"));
+    QCOMPARE(transport->writtenFrames().size(), afterAway);
+    QVERIFY(controller.selfAway());
+
+    transport->injectBytes(QByteArrayLiteral(":omairc!u@h JOIN :#linux\r\n"));
+    controller.selectConversation(QStringLiteral("libera"),
+                                  QStringLiteral("#linux"));
+    QCOMPARE(transport->writtenFrames().size(), afterAway);
+    QVERIFY(controller.selfAway());
 }
 
 int runAutoawayTests(int argc, char **argv)

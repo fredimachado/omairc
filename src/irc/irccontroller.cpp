@@ -767,8 +767,6 @@ bool IrcController::nickIsTyping(const QString& nick) const
 void IrcController::notifyComposerText(const QString& text)
 {
     m_composerDraft = text;
-    if (!text.trimmed().isEmpty())
-        noteLocalActivity();
     if (m_console.isOpen())
         return;
     IrcSession *session = selectedSession();
