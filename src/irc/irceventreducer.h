@@ -204,6 +204,8 @@ public:
     IrcConversationKey conversationKey(const QString& networkId,
                                        const QString& target) const;
     void markSelected(const IrcConversationKey& key);
+    bool markRead(const IrcConversationKey& key);
+    void setWindowActive(bool active);
     void clearSelection();
     std::optional<IrcConversationKey> selected() const;
 
@@ -332,6 +334,7 @@ private:
     std::map<QString, IrcNetworkPresence> m_presence;
     std::set<QString> m_selfAway;
     std::optional<IrcConversationKey> m_selected;
+    bool m_windowActive = true;
     std::optional<IrcMentionArrival> m_mentionArrival;
     std::optional<IrcInboxArrival> m_inboxArrival;
     std::set<IrcConversationKey> m_mutedKeys;

@@ -253,6 +253,24 @@ void IrcEventReducer::markSelected(const IrcConversationKey& key)
     }
 }
 
+bool IrcEventReducer::markRead(const IrcConversationKey& key)
+{
+    IrcConversationState *conversation = findMutable(key);
+    if (!conversation || (conversation->unread == 0 && conversation->mentions == 0))
+        return false;
+    conversation->unread = 0;
+    conversation->mentions = 0;
+    // Keep unreadMark: the "New messages" boundary stays visible in an
+    // already-open transcript and clears on the next selection, matching
+    // markSelected's keep-on-visit rule.
+    return true;
+}
+
+void IrcEventReducer::setWindowActive(bool active)
+{
+    m_windowActive = active;
+}
+
 void IrcEventReducer::clearSelection()
 {
     m_selected.reset();
@@ -799,7 +817,8 @@ void IrcEventReducer::noteChatArrival(IrcConversationState& conversation,
             msgid,
         };
     }
-    if (self || (m_selected && *m_selected == key))
+    const bool selected = m_selected && *m_selected == key;
+    if (self || (selected && m_windowActive))
         return;
     if (conversation.unread == 0)
         conversation.unreadMark = sequence;

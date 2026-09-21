@@ -771,6 +771,24 @@ void IrcController::setOpenConversationsAtUnread(bool enabled)
     emit openConversationsAtUnreadChanged();
 }
 
+void IrcController::setWindowActive(bool active)
+{
+    m_reducer.setWindowActive(active);
+    if (!active)
+        return;
+    // Focus returned: consume the unread that piled up in the open
+    // conversation while the window was unfocused. The "New messages" mark
+    // survives so the transcript still shows where the backlog starts.
+    bool changed = false;
+    if (m_selected)
+        changed = m_reducer.markRead(*m_selected);
+    if (!changed)
+        return;
+    m_conversations.reload();
+    ++m_conversationEpoch;
+    emit conversationStateChanged();
+}
+
 bool IrcController::nickIsTyping(const QString& nick) const
 {
     if (!m_selected || nick.isEmpty())

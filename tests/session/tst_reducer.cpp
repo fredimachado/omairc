@@ -64,6 +64,8 @@ private slots:
     void identicalChannelsStayIsolated();
     void advertisedChannelTypesCreateChannels();
     void unreadMentionsRespectSelection();
+    void windowInactiveMarksSelectedChatUnread();
+    void markReadConsumesUnreadButKeepsMark();
     void mentionArrivalSurvivesSelection();
     void mentionArrivalOnDirectMessage();
     void mentionArrivalCarriesNetworkTargetAndMsgid();
@@ -372,6 +374,104 @@ void ReducerTest::unreadMentionsRespectSelection()
     reducer.markSelected(background);
     QCOMPARE(backgroundState->unread, 0);
     QCOMPARE(backgroundState->mentions, 0);
+}
+
+void ReducerTest::windowInactiveMarksSelectedChatUnread()
+{
+    IrcEventReducer reducer;
+    welcome(reducer, networkA);
+    const IrcConversationKey selected =
+        reducer.conversationKey(networkA, QStringLiteral("#selected"));
+    const IrcConversationKey background =
+        reducer.conversationKey(networkA, QStringLiteral("#background"));
+    reducer.markSelected(selected);
+
+    reducer.apply(IrcMessageEvent{
+        selected,
+        QStringLiteral("Alice"),
+        QStringLiteral("while-focused"),
+        timestamp,
+        QStringLiteral("#selected"),
+    });
+    const IrcConversationState *selectedState = reducer.find(selected);
+    QCOMPARE(selectedState->unread, 0);
+    QVERIFY(!selectedState->unreadMark.has_value());
+
+    reducer.setWindowActive(false);
+    reducer.apply(IrcMessageEvent{
+        selected,
+        QStringLiteral("Bob"),
+        QStringLiteral("first-unfocused"),
+        timestamp,
+        QStringLiteral("#selected"),
+    });
+    reducer.apply(IrcMessageEvent{
+        selected,
+        QStringLiteral("Bob"),
+        QStringLiteral("second-unfocused"),
+        timestamp,
+        QStringLiteral("#selected"),
+    });
+    QCOMPARE(selectedState->unread, 2);
+    QVERIFY(selectedState->unreadMark.has_value());
+    QCOMPARE(*selectedState->unreadMark,
+             selectedState->messages[1].sequence);
+
+    reducer.setWindowActive(true);
+    reducer.apply(IrcMessageEvent{
+        selected,
+        QStringLiteral("Bob"),
+        QStringLiteral("while-focused-again"),
+        timestamp,
+        QStringLiteral("#selected"),
+    });
+    QCOMPARE(selectedState->unread, 2);
+    QVERIFY(selectedState->unreadMark.has_value());
+
+    // A background conversation still plants unread regardless of focus.
+    reducer.apply(IrcMessageEvent{
+        background,
+        QStringLiteral("Alice"),
+        QStringLiteral("background"),
+        timestamp,
+        QStringLiteral("#background"),
+    });
+    QCOMPARE(reducer.find(background)->unread, 1);
+    QVERIFY(reducer.find(background)->unreadMark.has_value());
+}
+
+void ReducerTest::markReadConsumesUnreadButKeepsMark()
+{
+    IrcEventReducer reducer;
+    welcome(reducer, networkA);
+    const IrcConversationKey selected =
+        reducer.conversationKey(networkA, QStringLiteral("#selected"));
+    reducer.markSelected(selected);
+    reducer.setWindowActive(false);
+
+    reducer.apply(IrcMessageEvent{
+        selected,
+        QStringLiteral("Alice"),
+        QStringLiteral("omairc: away ping"),
+        timestamp,
+        QStringLiteral("#selected"),
+    });
+    const IrcConversationState *selectedState = reducer.find(selected);
+    QCOMPARE(selectedState->unread, 1);
+    QCOMPARE(selectedState->mentions, 1);
+    QVERIFY(selectedState->unreadMark.has_value());
+
+    reducer.markRead(selected);
+    QCOMPARE(selectedState->unread, 0);
+    QCOMPARE(selectedState->mentions, 0);
+    QVERIFY(selectedState->unreadMark.has_value());
+
+    // A later selection (a real switch away and back) clears the mark.
+    const IrcConversationKey other =
+        reducer.conversationKey(networkA, QStringLiteral("#other"));
+    reducer.markSelected(other);
+    reducer.markSelected(selected);
+    QVERIFY(!selectedState->unreadMark.has_value());
 }
 
 void ReducerTest::mentionArrivalSurvivesSelection()
