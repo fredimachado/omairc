@@ -15,7 +15,7 @@ A dead-simple IRC client for Omarchy, built with Qt Quick and C++. Agents talk t
 - Desktop notification for a mention or DM while the window is unfocused. Activating it raises the window and opens that conversation.
 - Colors follow the current Omarchy theme and update live. When that theme file is missing, Omairc uses a built-in dark or light palette. Text follows the desktop size.
 - Backlog on arrival. A joined channel asks for its last 100 lines over `CHATHISTORY`, a ZNC bouncer's `znc.in/playback` replay is folded in on attach, and a restart reloads the last 2000 lines from the local log as muted backlog.
-- IRCv3 `sasl`, `sts`, `echo-message`, `server-time`, `multi-prefix`, `away-notify`, `MONITOR`, `draft/metadata-2`, `draft/ICON`, `message-tags`, `chghost`, `cap-notify`, `batch`, `chathistory`, and `znc.in/playback`. When a network advertises `draft/ICON`, the sidebar network square can show that icon. Reconnects with backoff.
+- IRCv3 `sasl`, `sts`, `echo-message`, `server-time`, `multi-prefix`, `away-notify`, `MONITOR`, `draft/metadata-2`, `draft/ICON`, `message-tags`, `labeled-response`, `chghost`, `cap-notify`, `batch`, `chathistory`, and `znc.in/playback`. When a network advertises `draft/ICON`, the sidebar network square can show that icon. Reconnects with backoff.
 - Profiles in `$XDG_CONFIG_HOME/omairc/`. Passwords and NickServ secrets go through QtKeychain into Secret Service; without that service they stay session-only and Connect says so. Logs and errors land in `$XDG_STATE_HOME/omairc/`.
 - One process. A second launch raises the existing window.
 

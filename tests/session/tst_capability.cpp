@@ -37,6 +37,8 @@ private slots:
     void acknowledgingEitherChatHistorySpellingSettles();
     void acknowledgedRemovalDisablesTheCapability();
     void stsIsAdvertisedButNeverRequested();
+    void labeledResponseKeepsItsOwnLine();
+    void labeledResponseNeedsMessageTags();
 };
 
 void CapabilityTest::unwantedAdvertisementProducesNoRequest()
@@ -355,6 +357,46 @@ void CapabilityTest::stsIsAdvertisedButNeverRequested()
     QCOMPARE(request.lines,
              QStringList{QStringLiteral("multi-prefix cap-notify")});
     QVERIFY(!negotiation.settled());
+}
+
+void CapabilityTest::labeledResponseKeepsItsOwnLine()
+{
+    IrcCapabilityNegotiation negotiation(false);
+    negotiation.advertise(tokens(
+        QStringLiteral("message-tags labeled-response away-notify")));
+
+    const IrcCapabilityNegotiation::Request request = negotiation.takeRequest();
+    QCOMPARE(request.lines,
+             QStringList({QStringLiteral("message-tags"),
+                          QStringLiteral("labeled-response"),
+                          QStringLiteral("away-notify")}));
+    QVERIFY(!negotiation.settled());
+
+    const IrcCapabilitySet refused =
+        negotiation.reject(tokens(QStringLiteral("labeled-response")));
+    QVERIFY(refused.contains(IrcCapability::LabeledResponse));
+    QVERIFY(!negotiation.enabled().contains(IrcCapability::LabeledResponse));
+    QVERIFY(!negotiation.settled());
+
+    const IrcCapabilitySet granted =
+        negotiation.acknowledge(tokens(QStringLiteral("message-tags away-notify")));
+    QVERIFY(granted.contains(IrcCapability::MessageTags));
+    QVERIFY(granted.contains(IrcCapability::AwayNotify));
+    QVERIFY(!negotiation.enabled().contains(IrcCapability::LabeledResponse));
+    QVERIFY(negotiation.settled());
+}
+
+void CapabilityTest::labeledResponseNeedsMessageTags()
+{
+    IrcCapabilityNegotiation negotiation(false);
+    negotiation.advertise(tokens(QStringLiteral("labeled-response away-notify")));
+    QCOMPARE(negotiation.takeRequest().lines,
+             QStringList{QStringLiteral("away-notify")});
+
+    negotiation.advertise(tokens(QStringLiteral("message-tags")));
+    QCOMPARE(negotiation.takeRequest().lines,
+             QStringList({QStringLiteral("message-tags"),
+                          QStringLiteral("labeled-response")}));
 }
 
 int runCapabilityTests(int argc, char **argv)

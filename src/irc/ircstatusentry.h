@@ -71,6 +71,8 @@ public:
     IrcLogSource source() const;
     IrcLogSeverity severity() const;
     QString label() const;
+    QString requestLabel() const;
+    void setRequestLabel(QString requestLabel);
     QString text() const;
     const IrcWhoisLine *whoisLine() const noexcept;
     const IrcCtcpReplyLine *ctcpReply() const noexcept;
@@ -93,6 +95,7 @@ private:
     IrcLogSource m_source;
     IrcLogSeverity m_severity;
     QString m_label;
+    QString m_requestLabel;
     QString m_text;
     std::optional<IrcWhoisLine> m_whoisLine;
     std::optional<IrcCtcpReplyLine> m_ctcpReply;

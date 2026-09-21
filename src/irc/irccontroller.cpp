@@ -442,6 +442,8 @@ IrcSession *IrcController::addSession(const IrcSessionConfig& config,
     m_console.observe(session);
     connect(session, &IrcSession::statusEntry,
             this, &IrcController::handleStatusEntry);
+    connect(session, &IrcSession::requestLabelFinished,
+            this, &IrcController::onRequestLabelFinished);
     return session;
 }
 
@@ -3055,6 +3057,18 @@ bool IrcController::sendWhois(IrcSession& session,
             return false;
     }
 
+    QString requestLabel = session.startLabeledRequest();
+    if (!requestLabel.isEmpty()) {
+        m_labeledWatches.insert_or_assign(
+            IrcLabeledWatchKey{session.networkId(), requestLabel},
+            IrcLabeledWatch{IrcLabeledWatchKind::Whois, destination});
+        if (!session.whois(nick, requestLabel)) {
+            m_labeledWatches.erase(IrcLabeledWatchKey{session.networkId(), requestLabel});
+            session.cancelRequestLabel(requestLabel);
+            return false;
+        }
+        return true;
+    }
     m_whoisWatches.insert_or_assign(*key, IrcWhoisWatch{std::move(destination)});
     if (!session.whois(nick)) {
         m_whoisWatches.erase(*key);
@@ -3079,10 +3093,19 @@ void IrcController::noteNickDelivery(const QString& networkId, const QString& ta
 void IrcController::handleStatusEntry(const IrcStatusEntry& entry)
 {
     routeOwnMetadataError(entry);
-    if (const IrcWhoisLine *line = entry.whoisLine())
-        routeWhoisLine(entry.networkId(), *line);
-    if (const IrcCtcpReplyLine *line = entry.ctcpReply())
-        routeCtcpReply(entry.networkId(), *line, entry.text());
+    if (!entry.requestLabel().isEmpty()) {
+        if (const IrcWhoisLine *line = entry.whoisLine())
+            routeLabeledWhois(entry.networkId(), entry.requestLabel(), *line);
+        else if (const IrcCtcpReplyLine *line = entry.ctcpReply())
+            routeLabeledCtcp(entry.networkId(), entry.requestLabel(), *line, entry.text());
+        else
+            routeLabeledStandardReply(entry);
+    } else {
+        if (const IrcWhoisLine *line = entry.whoisLine())
+            routeWhoisLine(entry.networkId(), *line);
+        if (const IrcCtcpReplyLine *line = entry.ctcpReply())
+            routeCtcpReply(entry.networkId(), *line, entry.text());
+    }
     if (entry.label() == QStringLiteral("INVITE")) {
         IrcSession *session = m_sessions.findSession(entry.networkId());
         if (!session)
@@ -3144,6 +3167,109 @@ void IrcController::routeWhoisLine(const QString& networkId, const IrcWhoisLine&
         m_whoisWatches.erase(found);
 }
 
+void IrcController::routeLabeledWhois(const QString& networkId,
+                                      const QString& requestLabel,
+                                      const IrcWhoisLine& line)
+{
+    auto found = m_labeledWatches.find(IrcLabeledWatchKey{networkId, requestLabel});
+    if (found == m_labeledWatches.end()
+        || found->second.kind != IrcLabeledWatchKind::Whois) {
+        return;
+    }
+
+    const IrcWhoisDestination destination = found->second.destination;
+    const IrcConversationKey *conversation =
+        std::get_if<IrcConversationKey>(&destination);
+    if (conversation) {
+        apply(IrcWhoisTranscriptEvent{
+            *conversation,
+            line.text(),
+        });
+    }
+
+    if (line.progress() == IrcWhoisLine::Progress::Detail
+        && !found->second.metadataEmitted) {
+        found->second.metadataEmitted = true;
+        for (const QString& text : whoisMetadataLines(networkId, line.nick())) {
+            m_console.record(IrcStatusEntry::lifecycle(
+                networkId, IrcLogSeverity::Info, QStringLiteral("whois"), text));
+            if (conversation) {
+                apply(IrcWhoisTranscriptEvent{
+                    *conversation,
+                    text,
+                });
+            }
+        }
+    }
+
+    if (line.terminal())
+        m_labeledWatches.erase(found);
+}
+
+void IrcController::routeLabeledCtcp(const QString& networkId,
+                                     const QString& requestLabel,
+                                     const IrcCtcpReplyLine&,
+                                     const QString& text)
+{
+    auto found = m_labeledWatches.find(IrcLabeledWatchKey{networkId, requestLabel});
+    if (found == m_labeledWatches.end()
+        || found->second.kind != IrcLabeledWatchKind::Ctcp) {
+        return;
+    }
+
+    const IrcCtcpDestination destination = found->second.destination;
+    m_labeledWatches.erase(found);
+
+    if (std::holds_alternative<IrcWhoisStatusOnly>(destination) || text.isEmpty())
+        return;
+    apply(IrcWhoisTranscriptEvent{
+        std::get<IrcConversationKey>(destination),
+        text,
+    });
+}
+
+void IrcController::routeLabeledStandardReply(const IrcStatusEntry& entry)
+{
+    auto found = m_labeledWatches.find(
+        IrcLabeledWatchKey{entry.networkId(), entry.requestLabel()});
+    if (found == m_labeledWatches.end())
+        return;
+
+    if (const auto *conversation =
+            std::get_if<IrcConversationKey>(&found->second.destination)) {
+        if (!entry.text().isEmpty()) {
+            apply(IrcWhoisTranscriptEvent{
+                *conversation,
+                entry.text(),
+            });
+        }
+    }
+
+    if (entry.severity() == IrcLogSeverity::Alert)
+        m_labeledWatches.erase(found);
+}
+
+void IrcController::onRequestLabelFinished(const QString& networkId,
+                                           const QString& requestLabel)
+{
+    if (networkId.isEmpty() || requestLabel.isEmpty())
+        return;
+    m_labeledWatches.erase(IrcLabeledWatchKey{networkId, requestLabel});
+}
+
+void IrcController::forgetLabeledWatches(const QString& networkId,
+                                         IrcLabeledWatchKind kind)
+{
+    if (networkId.isEmpty())
+        return;
+    for (auto it = m_labeledWatches.begin(); it != m_labeledWatches.end(); ) {
+        if (it->first.networkId == networkId && it->second.kind == kind)
+            it = m_labeledWatches.erase(it);
+        else
+            ++it;
+    }
+}
+
 QStringList IrcController::whoisMetadataLines(const QString& networkId,
                                               const QString& nick) const
 {
@@ -3182,6 +3308,7 @@ void IrcController::forgetWhoisWatches(const QString& networkId)
         else
             ++it;
     }
+    forgetLabeledWatches(networkId, IrcLabeledWatchKind::Whois);
 }
 
 void IrcController::forgetChannelList(const QString& networkId)
@@ -3400,6 +3527,18 @@ bool IrcController::sendCtcpQuery(IrcSession& session,
             return false;
     }
 
+    QString requestLabel = session.startLabeledRequest();
+    if (!requestLabel.isEmpty()) {
+        m_labeledWatches.insert_or_assign(
+            IrcLabeledWatchKey{session.networkId(), requestLabel},
+            IrcLabeledWatch{IrcLabeledWatchKind::Ctcp, destination});
+        if (!session.sendCtcp(nick, command, argument, requestLabel)) {
+            m_labeledWatches.erase(IrcLabeledWatchKey{session.networkId(), requestLabel});
+            session.cancelRequestLabel(requestLabel);
+            return false;
+        }
+        return true;
+    }
     m_ctcpWatches.insert_or_assign(*key, IrcCtcpWatch{std::move(destination)});
     if (!session.sendCtcp(nick, command, argument)) {
         m_ctcpWatches.erase(*key);
@@ -3441,6 +3580,7 @@ void IrcController::forgetCtcpWatches(const QString& networkId)
         else
             ++it;
     }
+    forgetLabeledWatches(networkId, IrcLabeledWatchKind::Ctcp);
 }
 
 void IrcController::armOwnMetadataWatch(const QString& networkId,

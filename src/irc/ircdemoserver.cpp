@@ -21,6 +21,7 @@
 
 #include <string>
 #include <string_view>
+#include <optional>
 #include <vector>
 
 namespace
@@ -28,7 +29,7 @@ namespace
 constexpr auto kToday = "2026-09-12";
 constexpr auto kYesterday = "2026-09-11";
 constexpr auto kCaps =
-    "echo-message message-tags away-notify multi-prefix batch "
+    "echo-message message-tags labeled-response away-notify multi-prefix batch "
     "draft/metadata-2 server-time";
 constexpr auto kIsupport = "CHANTYPES=# PREFIX=(qaohv)~&@%+ MONITOR=100";
 constexpr int kMonitorLimit = 100;
@@ -97,6 +98,42 @@ SeedLine join(const QString &nick)
 QByteArray line(const QString &text)
 {
     return text.toUtf8() + QByteArrayLiteral("\r\n");
+}
+
+QByteArray stripCrlf(const QByteArray &frame)
+{
+    QByteArray wire = frame;
+    if (wire.endsWith("\r\n"))
+        wire.chop(2);
+    else if (wire.endsWith('\n'))
+        wire.chop(1);
+    return wire;
+}
+
+std::optional<IrcMessage> parseDemoFrame(const QByteArray &frame)
+{
+    const QByteArray wire = stripCrlf(frame);
+    const IrcParseResult parsed = IrcParser::parse(
+        std::string_view(wire.constData(), std::size_t(wire.size())));
+    if (!parsed)
+        return std::nullopt;
+    return *parsed.value;
+}
+
+QString demoTagValue(const IrcMessage &message, const char *name)
+{
+    for (const IrcTag &tag : message.tags) {
+        if (tag.name == name && tag.value)
+            return ircWireText(*tag.value);
+    }
+    return {};
+}
+
+QByteArray demoLabelPrefix(const QString &label)
+{
+    if (label.isEmpty())
+        return {};
+    return QByteArrayLiteral("@label=") + label.toUtf8() + QByteArrayLiteral(" ");
 }
 
 QByteArray privmsg(const SeedLine &row, const QString &target)
@@ -986,28 +1023,19 @@ IrcServerFeatures demoServerFeatures()
 bool tryAnswerCtcp(IrcLoopbackTransport *transport, const QString &selfNick,
                    const QByteArray &frame)
 {
-    if (!transport || selfNick.isEmpty() || !frame.startsWith("PRIVMSG "))
+    if (!transport || selfNick.isEmpty())
         return false;
 
-    QByteArray wire = frame;
-    if (wire.endsWith("\r\n"))
-        wire.chop(2);
-    else if (wire.endsWith('\n'))
-        wire.chop(1);
-
-    const IrcParseResult parsed = IrcParser::parse(
-        std::string_view(wire.constData(), std::size_t(wire.size())));
-    if (!parsed || parsed.value->command != "PRIVMSG"
-        || parsed.value->parameters.size() < 2) {
+    const std::optional<IrcMessage> parsed = parseDemoFrame(frame);
+    if (!parsed || parsed->command != "PRIVMSG" || parsed->parameters.size() < 2)
         return false;
-    }
 
-    const auto request = parseCtcpRequest(ircWireText(parsed.value->parameters[1]));
+    const auto request = parseCtcpRequest(ircWireText(parsed->parameters[1]));
     if (!request || request->command == QLatin1String("ACTION"))
         return false;
 
     static const IrcServerFeatures features = demoServerFeatures();
-    const std::string &target = parsed.value->parameters[0];
+    const std::string &target = parsed->parameters[0];
     if (features.isChannel(target))
         return false;
 
@@ -1026,10 +1054,48 @@ bool tryAnswerCtcp(IrcLoopbackTransport *transport, const QString &selfNick,
     if (targetNick.isEmpty())
         return false;
 
-    transport->injectBytes(":" + targetNick.toUtf8() + "!u@h NOTICE "
+    transport->injectBytes(demoLabelPrefix(demoTagValue(*parsed, "label"))
+                           + ":" + targetNick.toUtf8() + "!u@h NOTICE "
                            + selfNick.toUtf8() + " :"
                            + ctcpPayload({request->command, argument}).toUtf8()
                            + "\r\n");
+    return true;
+}
+
+bool tryAnswerWhois(IrcLoopbackTransport *transport, const QString &selfNick,
+                    const QByteArray &frame)
+{
+    if (!transport || selfNick.isEmpty())
+        return false;
+
+    const std::optional<IrcMessage> parsed = parseDemoFrame(frame);
+    if (!parsed || parsed->command != "WHOIS" || parsed->parameters.empty())
+        return false;
+
+    const QString nick = ircWireText(parsed->parameters.back());
+    if (nick.isEmpty())
+        return false;
+
+    const QString label = demoTagValue(*parsed, "label");
+    QByteArray out;
+    QByteArray innerPrefix;
+    if (!label.isEmpty()) {
+        const QByteArray batch = label.toUtf8();
+        out += demoLabelPrefix(label);
+        out += ":server BATCH +";
+        out += batch;
+        out += " labeled-response\r\n";
+        innerPrefix = QByteArrayLiteral("@batch=") + batch + QByteArrayLiteral(" ");
+    }
+    out += innerPrefix;
+    out += line(QStringLiteral(":server 311 %1 %2 ~%2 user/host * :%2")
+                    .arg(selfNick, nick));
+    out += innerPrefix;
+    out += line(QStringLiteral(":server 318 %1 %2 :End of /WHOIS list.")
+                    .arg(selfNick, nick));
+    if (!label.isEmpty())
+        out += line(QStringLiteral(":server BATCH -%1").arg(label));
+    transport->injectBytes(out);
     return true;
 }
 
@@ -1121,6 +1187,8 @@ void IrcDemoServer::hookAutoEcho(IrcLoopbackTransport *transport,
         if (tryAnswerPing(transport, frame))
             return;
         if (tryAnswerList(transport, network, frame))
+            return;
+        if (tryAnswerWhois(transport, nick, frame))
             return;
         if (tryAnswerCtcp(transport, nick, frame))
             return;
