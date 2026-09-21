@@ -779,6 +779,8 @@ void IrcController::setWindowActive(bool active)
     // Focus returned: consume the unread that piled up in the open
     // conversation while the window was unfocused. The "New messages" mark
     // survives so the transcript still shows where the backlog starts.
+    // Status being open does not clear m_selected, so this still consumes
+    // the last conversation; that matches the pre-unfocused-mark badge.
     bool changed = false;
     if (m_selected)
         changed = m_reducer.markRead(*m_selected);
