@@ -5,39 +5,36 @@ cask "omairc" do
   sha256 arm:   "a3fcd34eaa5f9740b793618be6250b2c61ec8afb3648d19c9b8e2fe84127ae68",
          intel: "ec7ecff03af63fc2760d5586e45be89c23ba61a8ed84a1f52ca1e4b4b17c7835"
 
-  url "https://github.com/fredimachado/omairc/releases/download/v#{version}/omairc-#{version}-macos-#{arch}.zip",
-      verified: "github.com/fredimachado/omairc/"
+  url "https://github.com/fredimachado/omairc/releases/download/v#{version}/omairc-#{version}-macos-#{arch}.zip"
   name "Omairc"
   desc "Keyboard-first IRC client"
-  homepage "https://omairc.app"
+  homepage "https://omairc.app/"
 
   livecheck do
     url :url
     strategy :github_latest
   end
 
-  depends_on macos: :big_sur
+  depends_on :macos
 
   app "omairc.app"
+  binary "omairc"
 
   # Do not symlink Contents/MacOS/omairc into bin/. Qt then treats that path as
   # the executable, skips the bundle qt.conf, and fails to load Quick Controls.
-  preflight do
-    wrapper = staged_path/"omairc"
-    wrapper.write <<~SH
+  preflight_steps do
+    write_file "omairc", <<~SH
       #!/bin/sh
-      exec "#{appdir}/omairc.app/Contents/MacOS/omairc" "$@"
+      exec "{{appdir}}/omairc.app/Contents/MacOS/omairc" "$@"
     SH
-    File.chmod(0755, wrapper)
+    set_permissions "omairc", "0755"
   end
-
-  binary "omairc"
 
   uninstall quit: "app.omairc.Omairc"
 
   zap trash: [
-    "~/Library/Preferences/State/omairc",
     "~/Library/Preferences/omairc",
+    "~/Library/Preferences/State/omairc",
     "~/Library/Saved Application State/app.omairc.Omairc.savedState",
   ]
 

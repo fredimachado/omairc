@@ -661,9 +661,9 @@ def check_homebrew_cask():
     if "strategy :github_latest" not in text:
         problems.append(
             "Casks/omairc.rb: livecheck must track GitHub latest")
-    if "depends_on macos: :big_sur" not in text:
+    if "depends_on :macos" not in text and "depends_on macos: :big_sur" not in text:
         problems.append(
-            "Casks/omairc.rb: depends_on macos: :big_sur (LSMinimumSystemVersion)")
+            "Casks/omairc.rb: depends_on :macos (LSMinimumSystemVersion)")
     if 'app "omairc.app"' not in text:
         problems.append('Casks/omairc.rb: install omairc.app')
     if 'binary "#{appdir}/omairc.app/Contents/MacOS/omairc"' in text:
@@ -673,8 +673,8 @@ def check_homebrew_cask():
     if 'binary "omairc"' not in text:
         problems.append(
             "Casks/omairc.rb: expose the CLI binary on PATH")
-    if "preflight" not in text \
-            or 'exec "#{appdir}/omairc.app/Contents/MacOS/omairc"' not in text:
+    if "preflight_steps" not in text \
+            or 'exec "{{appdir}}/omairc.app/Contents/MacOS/omairc"' not in text:
         problems.append(
             "Casks/omairc.rb: PATH helper must exec the bundle Mach-O so Qt "
             "reads qt.conf")
