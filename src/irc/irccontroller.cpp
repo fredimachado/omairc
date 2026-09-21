@@ -337,6 +337,21 @@ QString stateText(IrcSession::State state)
     }
     return QStringLiteral("Offline");
 }
+
+bool copiesLabeledStandardReply(const IrcStatusEntry& entry)
+{
+    const QString label = entry.label();
+    if (label == QLatin1String("FAIL")
+        || label == QLatin1String("WARN")
+        || label == QLatin1String("NOTE")) {
+        return true;
+    }
+    if (label.size() != 3)
+        return false;
+    if (!label.at(0).isDigit() || !label.at(1).isDigit() || !label.at(2).isDigit())
+        return false;
+    return label.at(0) == QLatin1Char('4') || label.at(0) == QLatin1Char('5');
+}
 }
 
 IrcController::IrcController(QObject *parent)
@@ -3220,7 +3235,7 @@ void IrcController::routeLabeledWhois(const QString& networkId,
 
 void IrcController::routeLabeledCtcp(const QString& networkId,
                                      const QString& requestLabel,
-                                     const IrcCtcpReplyLine&,
+                                     const IrcCtcpReplyLine& line,
                                      const QString& text)
 {
     auto found = m_labeledWatches.find(IrcLabeledWatchKey{networkId, requestLabel});
@@ -3231,6 +3246,10 @@ void IrcController::routeLabeledCtcp(const QString& networkId,
 
     const IrcCtcpDestination destination = found->second.destination;
     m_labeledWatches.erase(found);
+    if (const std::optional<IrcCtcpWatchKey> key =
+            ctcpWatchKey(networkId, line.nick(), line.command())) {
+        m_ctcpWatches.erase(*key);
+    }
 
     if (std::holds_alternative<IrcWhoisStatusOnly>(destination) || text.isEmpty())
         return;
@@ -3247,13 +3266,15 @@ void IrcController::routeLabeledStandardReply(const IrcStatusEntry& entry)
     if (found == m_labeledWatches.end())
         return;
 
-    if (const auto *conversation =
-            std::get_if<IrcConversationKey>(&found->second.destination)) {
-        if (!entry.text().isEmpty()) {
-            apply(IrcWhoisTranscriptEvent{
-                *conversation,
-                entry.text(),
-            });
+    if (copiesLabeledStandardReply(entry)) {
+        if (const auto *conversation =
+                std::get_if<IrcConversationKey>(&found->second.destination)) {
+            if (!entry.text().isEmpty()) {
+                apply(IrcWhoisTranscriptEvent{
+                    *conversation,
+                    entry.text(),
+                });
+            }
         }
     }
 
@@ -3544,15 +3565,13 @@ bool IrcController::sendCtcpQuery(IrcSession& session,
         m_labeledWatches.insert_or_assign(
             IrcLabeledWatchKey{session.networkId(), requestLabel},
             IrcLabeledWatch{IrcLabeledWatchKind::Ctcp, destination});
-        if (!session.sendCtcp(nick, command, argument, requestLabel)) {
-            m_labeledWatches.erase(IrcLabeledWatchKey{session.networkId(), requestLabel});
-            session.cancelRequestLabel(requestLabel);
-            return false;
-        }
-        return true;
     }
     m_ctcpWatches.insert_or_assign(*key, IrcCtcpWatch{std::move(destination)});
-    if (!session.sendCtcp(nick, command, argument)) {
+    if (!session.sendCtcp(nick, command, argument, requestLabel)) {
+        if (!requestLabel.isEmpty()) {
+            m_labeledWatches.erase(IrcLabeledWatchKey{session.networkId(), requestLabel});
+            session.cancelRequestLabel(requestLabel);
+        }
         m_ctcpWatches.erase(*key);
         return false;
     }

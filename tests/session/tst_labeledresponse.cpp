@@ -218,7 +218,10 @@ private slots:
     void ackCompletesWaiterWithoutTranscript();
     void labeledFailCopiesIntoAskingTranscript();
     void labeledCtcpReplyRoutesToAskingTranscript();
+    void unlabeledCtcpReplyAfterAckCopiesIntoAskingTranscript();
+    void unlabeledCtcpReplyAfterEchoMessageCopiesIntoAskingTranscript();
     void labeledCtcp401CopiesIntoAskingTranscript();
+    void unsolicitedLabeledResponseBatchesShareTheOpenBatchBudget();
     void timeoutClearsWaiters();
     void timeoutExpiresOnlyElapsedLabels();
     void timeoutDropsElapsedWatchWithoutStealingNewer();
@@ -482,6 +485,62 @@ void LabeledResponseTest::labeledCtcpReplyRoutesToAskingTranscript()
                          QStringLiteral("VERSION reply from lena: Omairc 0.4.0")));
 }
 
+void LabeledResponseTest::unlabeledCtcpReplyAfterAckCopiesIntoAskingTranscript()
+{
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    QVERIFY(registerLabeledController(controller, transport));
+
+    QVERIFY(controller.sendMessage(QStringLiteral("/version lena")));
+    const QString label = requestLabelOf(transport->writtenFrames().last());
+    QVERIFY(!label.isEmpty());
+    QVERIFY(commandOf(transport->writtenFrames().last()).startsWith("PRIVMSG lena :"));
+    QCOMPARE(controller.session(QStringLiteral("libera"))->pendingRequestLabelCount(), 1);
+
+    transport->injectBytes(
+        QByteArray("@label=" + label.toUtf8() + " :irc.example ACK\r\n"));
+    QCOMPARE(controller.session(QStringLiteral("libera"))->pendingRequestLabelCount(), 0);
+
+    auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
+    QVERIFY(messages);
+    QVERIFY(!hasWhoisBody(messages, QStringLiteral("VERSION from omairc")));
+    QVERIFY(!selectedBodiesContain(messages, QStringLiteral("VERSION from omairc")));
+
+    transport->injectBytes(
+        QByteArrayLiteral(":lena!u@h NOTICE omairc :\x01VERSION Omairc 0.4.0\x01\r\n"));
+    QVERIFY(hasWhoisBody(messages,
+                         QStringLiteral("VERSION reply from lena: Omairc 0.4.0")));
+}
+
+void LabeledResponseTest::unlabeledCtcpReplyAfterEchoMessageCopiesIntoAskingTranscript()
+{
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    QVERIFY(registerLabeledController(controller, transport));
+
+    QVERIFY(controller.sendMessage(QStringLiteral("/version lena")));
+    const QString label = requestLabelOf(transport->writtenFrames().last());
+    QVERIFY(!label.isEmpty());
+    QVERIFY(commandOf(transport->writtenFrames().last()).startsWith("PRIVMSG lena :"));
+
+    transport->injectBytes(
+        QByteArray("@label=" + label.toUtf8()
+                   + " :omairc!u@h PRIVMSG lena :\x01VERSION\x01\r\n"));
+
+    auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
+    QVERIFY(messages);
+    QVERIFY(!hasWhoisBody(messages, QStringLiteral("VERSION from omairc")));
+    QVERIFY(!selectedBodiesContain(messages, QStringLiteral("VERSION from omairc")));
+    QVERIFY(logContains(controller.console()->lines(),
+                        QStringLiteral("VERSION from omairc")));
+
+    transport->injectBytes(
+        QByteArrayLiteral(":lena!u@h NOTICE omairc :\x01VERSION Omairc 0.4.0\x01\r\n"));
+    QVERIFY(hasWhoisBody(messages,
+                         QStringLiteral("VERSION reply from lena: Omairc 0.4.0")));
+    QVERIFY(!hasWhoisBody(messages, QStringLiteral("VERSION from omairc")));
+}
+
 void LabeledResponseTest::labeledCtcp401CopiesIntoAskingTranscript()
 {
     IrcController controller;
@@ -510,6 +569,60 @@ void LabeledResponseTest::labeledCtcp401CopiesIntoAskingTranscript()
     transport->injectBytes(
         QByteArrayLiteral(":irc 401 omairc missingnick :No such nick/channel\r\n"));
     QCOMPARE(selectedBodies(messages), after401);
+}
+
+void LabeledResponseTest::unsolicitedLabeledResponseBatchesShareTheOpenBatchBudget()
+{
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    QVERIFY(registerLabeledController(controller, transport));
+    IrcSession *session = controller.session(QStringLiteral("libera"));
+    QVERIFY(session);
+    QCOMPARE(session->openBatchCount(), 0);
+
+    QByteArray fill;
+    for (int index = 0; index < 16; ++index) {
+        fill += QByteArrayLiteral(":irc.example BATCH +d")
+            + QByteArray::number(index)
+            + QByteArrayLiteral(" unknown.example/foo\r\n");
+    }
+    transport->injectBytes(fill);
+    QCOMPARE(session->openBatchCount(), 16);
+
+    QByteArray flood;
+    for (int index = 0; index < 40; ++index) {
+        const QByteArray id = QByteArrayLiteral("lr") + QByteArray::number(index);
+        flood += QByteArrayLiteral(":irc.example BATCH +")
+            + id
+            + QByteArrayLiteral(" labeled-response\r\n");
+        flood += QByteArrayLiteral("@batch=")
+            + id
+            + QByteArrayLiteral(" :irc 311 omairc lena ~x h * :Nope\r\n");
+        flood += QByteArrayLiteral("@batch=")
+            + id
+            + QByteArrayLiteral(" :irc 318 omairc lena :End of /WHOIS list.\r\n");
+    }
+    transport->injectBytes(flood);
+    QCOMPARE(session->openBatchCount(), 16);
+
+    auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
+    QVERIFY(messages);
+    QVERIFY(!selectedBodiesContain(messages, QStringLiteral("Nope")));
+
+    QVERIFY(controller.sendMessage(QStringLiteral("/whois lena")));
+    const QString label = requestLabelOf(transport->writtenFrames().last());
+    QVERIFY(!label.isEmpty());
+    QVERIFY(session->hasPendingRequestLabel(label));
+
+    transport->injectBytes(
+        QByteArray("@label=" + label.toUtf8()
+                   + " :irc.example BATCH +whois1 labeled-response\r\n"
+                     "@batch=whois1 :irc 311 omairc lena ~lena user/host * :Lena\r\n"
+                     "@batch=whois1 :irc 318 omairc lena :End of /WHOIS list.\r\n"
+                     ":irc.example BATCH -whois1\r\n"));
+    QVERIFY(hasWhoisBody(messages, QStringLiteral("lena is ~lena@user/host (Lena)")));
+    QVERIFY(hasWhoisBody(messages, QStringLiteral("End of WHOIS for lena")));
+    QCOMPARE(session->openBatchCount(), 16);
 }
 
 void LabeledResponseTest::timeoutClearsWaiters()

@@ -491,6 +491,11 @@ bool IrcSession::hasPendingRequestLabel(const QString& label) const
     return !label.isEmpty() && m_pendingRequestLabels.contains(label);
 }
 
+int IrcSession::openBatchCount() const
+{
+    return m_openBatches.size();
+}
+
 void IrcSession::setMonotonicClock(std::function<qint64()> clock)
 {
     m_monotonicClockFn = std::move(clock);
@@ -1392,13 +1397,17 @@ void IrcSession::handleBatch(const IrcMessage &message)
             ignoreBatch(reference);
             return;
         }
-        // A history batch that answers a request we are still waiting on is
-        // never crowded out. Everything else shares the open-batch budget, so
-        // a server cannot make us hold state for batches we did not ask for.
+        // A history batch that answers a request we are still waiting on, or a
+        // labeled-response batch whose opening @label is still pending, is never
+        // crowded out. Everything else shares the open-batch budget, so a server
+        // cannot make us hold state for batches we did not ask for.
         const bool solicited = kind == ReplayKind::ChatHistory
             && answersPendingHistory(parameter(message, 2));
+        const bool pendingLabeledResponse =
+            labeledResponse && hasPendingRequestLabel(carriedLabel);
         const bool overOpenCap =
-            !solicited && !labeledResponse && m_openBatches.size() >= kMaxOpenBatches;
+            !solicited && !pendingLabeledResponse
+            && m_openBatches.size() >= kMaxOpenBatches;
         if (m_ignoredBatches.contains(reference)
             || (!parent.isEmpty() && m_ignoredBatches.contains(parent))
             || (overOpenCap && isHistoryBatch(type, parent))) {

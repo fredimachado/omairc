@@ -172,6 +172,7 @@ public slots:
     void cancelRequestLabel(const QString& requestLabel);
     int pendingRequestLabelCount() const;
     bool hasPendingRequestLabel(const QString& label) const;
+    int openBatchCount() const;
     void setMonotonicClock(std::function<qint64()> clock);
     bool sendMonitor(QChar modifier, const QStringList& nicks = {});
     bool list(const QString& mask = {});
