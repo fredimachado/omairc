@@ -2581,8 +2581,6 @@ void IrcController::tripAutoaway()
 void IrcController::clearAutoAwayNetworks()
 {
     m_autoawayTripped = false;
-    if (m_autoAwayNetworks.isEmpty())
-        return;
     const QSet<QString> networks = m_autoAwayNetworks;
     m_autoAwayNetworks.clear();
     for (const QString& networkId : networks) {

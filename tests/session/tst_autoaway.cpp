@@ -174,6 +174,7 @@ private slots:
     void activityAfterEmptyTripClearsOneShot();
     void wheelClearsAutoAway();
     void composerNotifyDoesNotClearAutoAway();
+    void disableBeforeTripDropsOneShot();
 
 private:
     std::unique_ptr<QTemporaryDir> m_settingsDir;
@@ -892,6 +893,33 @@ void AutoawayTest::composerNotifyDoesNotClearAutoAway()
                                   QStringLiteral("#linux"));
     QCOMPARE(transport->writtenFrames().size(), afterAway);
     QVERIFY(controller.selfAway());
+}
+
+void AutoawayTest::disableBeforeTripDropsOneShot()
+{
+    IrcController controller;
+    auto *transport = joinNetwork(controller, QStringLiteral("libera"));
+    QVERIFY(transport);
+    controller.selectConversation(QStringLiteral("libera"),
+                                  QStringLiteral("#omarchy"));
+    auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
+    QVERIFY(messages);
+
+    QVERIFY(controller.sendMessage(QStringLiteral("/autoaway reason AFK")));
+    QVERIFY(controller.sendMessage(
+        QStringLiteral("/autoaway 15m Stepped out for lunch")));
+    QVERIFY(controller.sendMessage(QStringLiteral("/autoaway off")));
+    QVERIFY(controller.sendMessage(QStringLiteral("/autoaway")));
+    QVERIFY(selectedWhoisContains(
+        messages, QStringLiteral("Auto-away off, 15 minutes, reason: AFK")));
+
+    QVERIFY(controller.sendMessage(QStringLiteral("/autoaway on")));
+    QVERIFY(selectedWhoisContains(
+        messages, QStringLiteral("Auto-away 15 minutes, reason: AFK")));
+
+    controller.fireAutoawayIdleForTest();
+    controller.fireAutoawayGraceForTest();
+    QCOMPARE(transport->writtenFrames().last(), QByteArrayLiteral("AWAY :AFK\r\n"));
 }
 
 int runAutoawayTests(int argc, char **argv)
