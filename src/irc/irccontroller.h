@@ -132,6 +132,10 @@ public:
     Q_INVOKABLE void noteLocalActivity();
     void fireAutoawayIdleForTest();
     void fireAutoawayGraceForTest();
+    int autoawayIdleIntervalMsForTest() const;
+    bool autoawayIdleIsActiveForTest() const;
+    int autoawayGraceIntervalMsForTest() const;
+    bool autoawayGraceIsActiveForTest() const;
     Q_INVOKABLE void setChannelListPresented(bool presented);
     Q_INVOKABLE bool joinListedChannel(const QString& channel);
     void setChannelListIdleTimeoutMs(int milliseconds);

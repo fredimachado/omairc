@@ -2616,6 +2616,26 @@ void IrcController::fireAutoawayGraceForTest()
     onAutoawayGrace();
 }
 
+int IrcController::autoawayIdleIntervalMsForTest() const
+{
+    return m_autoawayIdle.interval();
+}
+
+bool IrcController::autoawayIdleIsActiveForTest() const
+{
+    return m_autoawayIdle.isActive();
+}
+
+int IrcController::autoawayGraceIntervalMsForTest() const
+{
+    return m_autoawayGrace.interval();
+}
+
+bool IrcController::autoawayGraceIsActiveForTest() const
+{
+    return m_autoawayGrace.isActive();
+}
+
 bool IrcController::eventFilter(QObject *watched, QEvent *event)
 {
     Q_UNUSED(watched);

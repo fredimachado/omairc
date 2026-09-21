@@ -175,6 +175,7 @@ private slots:
     void wheelClearsAutoAway();
     void composerNotifyDoesNotClearAutoAway();
     void disableBeforeTripDropsOneShot();
+    void idleTimerUsesMillisecondInterval();
 
 private:
     std::unique_ptr<QTemporaryDir> m_settingsDir;
@@ -920,6 +921,34 @@ void AutoawayTest::disableBeforeTripDropsOneShot()
     controller.fireAutoawayIdleForTest();
     controller.fireAutoawayGraceForTest();
     QCOMPARE(transport->writtenFrames().last(), QByteArrayLiteral("AWAY :AFK\r\n"));
+}
+
+void AutoawayTest::idleTimerUsesMillisecondInterval()
+{
+    IrcController controller;
+    auto *transport = joinNetwork(controller, QStringLiteral("libera"));
+    QVERIFY(transport);
+    controller.selectConversation(QStringLiteral("libera"),
+                                  QStringLiteral("#omarchy"));
+    QVERIFY(!controller.autoawayIdleIsActiveForTest());
+
+    QVERIFY(controller.sendMessage(QStringLiteral("/autoaway 15")));
+    QVERIFY(controller.autoawayIdleIsActiveForTest());
+    QCOMPARE(controller.autoawayIdleIntervalMsForTest(), 15 * 60 * 1000);
+    QVERIFY(!controller.autoawayGraceIsActiveForTest());
+
+    controller.fireAutoawayIdleForTest();
+    QVERIFY(!controller.autoawayIdleIsActiveForTest());
+    QVERIFY(controller.autoawayGraceIsActiveForTest());
+    QCOMPARE(controller.autoawayGraceIntervalMsForTest(), 10 * 1000);
+
+    QVERIFY(controller.sendMessage(QStringLiteral("/autoaway 30s")));
+    QVERIFY(controller.autoawayIdleIsActiveForTest());
+    QCOMPARE(controller.autoawayIdleIntervalMsForTest(), 30 * 1000);
+
+    controller.fireAutoawayIdleForTest();
+    QVERIFY(controller.autoawayGraceIsActiveForTest());
+    QCOMPARE(controller.autoawayGraceIntervalMsForTest(), 5 * 1000);
 }
 
 int runAutoawayTests(int argc, char **argv)
