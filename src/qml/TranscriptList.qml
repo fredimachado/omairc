@@ -10,13 +10,7 @@ ListView {
     property int firstUnseenIndex: -1
     property int unreadMarkRow: -1
     readonly property bool hasUnreadMark: unreadMarkRow >= 0
-    readonly property bool canScrollDown: {
-        void contentY;
-        void contentHeight;
-        void height;
-        void(atYEnd);
-        return !viewportPinned();
-    }
+    readonly property bool canScrollDown: !viewportPinned()
     readonly property bool jumpArmed: canScrollDown && (
         (stick === stickDetached
             && firstUnseenIndex >= 0

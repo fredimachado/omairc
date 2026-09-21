@@ -3032,6 +3032,12 @@ TestCase {
         var markRow = list.model.unreadMarkRow();
         verify(markRow >= 0, "Unfocused arrivals should plant the New messages mark");
 
+        tryVerify(function() {
+            return transcriptPinned(list);
+        }, 1000, "Unfocused backlog should stay pinned while the window is inactive");
+        var jump = item("messageUnseenJump");
+        compare(jump.visible, false);
+
         appWindow.windowFocusGained();
         waitForRendering(appWindow.contentItem);
         wait(0);
@@ -3041,7 +3047,6 @@ TestCase {
         verify(!transcriptPinned(list),
                "Unread backlog below the mark should leave room to scroll down");
 
-        var jump = item("messageUnseenJump");
         tryCompare(jump, "visible", true);
 
         list.pinToEnd();

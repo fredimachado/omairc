@@ -39,16 +39,23 @@ Rectangle {
 
         property real bounceOffset: 0
 
-        SequentialAnimation on bounceOffset {
-            running: jump.visible
-            loops: Animation.Infinite
+        SequentialAnimation {
+            id: bounceBurst
+            running: jump.visible && jump.list.hasUnreadMark
+            loops: 3
+            onStopped: arrow.bounceOffset = 0
+
             NumberAnimation {
+                target: arrow
+                property: "bounceOffset"
                 from: 0
                 to: jump.style.scaledSize(3)
                 duration: 700
                 easing.type: Easing.InOutSine
             }
             NumberAnimation {
+                target: arrow
+                property: "bounceOffset"
                 from: jump.style.scaledSize(3)
                 to: 0
                 duration: 700
