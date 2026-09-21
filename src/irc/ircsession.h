@@ -40,14 +40,12 @@ public:
 
     virtual void start(int delayMilliseconds);
     virtual void cancel();
-    virtual qint64 elapsedMilliseconds() const;
 
 signals:
     void fired();
 
 private:
     QTimer m_timer;
-    QElapsedTimer m_elapsed;
 };
 
 class IrcReachabilitySource : public QObject
@@ -174,6 +172,7 @@ public slots:
     void cancelRequestLabel(const QString& requestLabel);
     int pendingRequestLabelCount() const;
     bool hasPendingRequestLabel(const QString& label) const;
+    void setMonotonicClock(std::function<qint64()> clock);
     bool sendMonitor(QChar modifier, const QStringList& nicks = {});
     bool list(const QString& mask = {});
     bool sendRaw(const QString& line);
@@ -331,6 +330,8 @@ private:
     static constexpr int kMaxIgnoredBatches = 32;
     QHash<QString, QElapsedTimer> m_ctcpReplyClock;
     QHash<QString, qint64> m_pendingRequestLabels;
+    std::function<qint64()> m_monotonicClockFn;
+    QElapsedTimer m_monotonicClock;
     qint64 m_labelNow = 0;
     qint64 m_labelArmedAt = 0;
     int m_armedLabelDelay = 0;

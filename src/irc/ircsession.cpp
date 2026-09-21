@@ -272,19 +272,12 @@ IrcReconnectTimer::IrcReconnectTimer(QObject *parent)
 
 void IrcReconnectTimer::start(int delayMilliseconds)
 {
-    m_elapsed.start();
     m_timer.start(delayMilliseconds);
 }
 
 void IrcReconnectTimer::cancel()
 {
     m_timer.stop();
-    m_elapsed.invalidate();
-}
-
-qint64 IrcReconnectTimer::elapsedMilliseconds() const
-{
-    return m_elapsed.isValid() ? m_elapsed.elapsed() : 0;
 }
 
 IrcReachabilitySource::IrcReachabilitySource(QObject *parent)
@@ -315,6 +308,7 @@ IrcSession::IrcSession(const IrcSessionConfig &config,
     , m_reachability(reachability)
     , m_capabilities(!saslSecret(config).isEmpty())
 {
+    m_monotonicClock.start();
     qRegisterMetaType<IrcHistoryBatch>();
     Q_ASSERT(m_transport);
     if (!m_transport->parent())
@@ -495,6 +489,11 @@ int IrcSession::pendingRequestLabelCount() const
 bool IrcSession::hasPendingRequestLabel(const QString& label) const
 {
     return !label.isEmpty() && m_pendingRequestLabels.contains(label);
+}
+
+void IrcSession::setMonotonicClock(std::function<qint64()> clock)
+{
+    m_monotonicClockFn = std::move(clock);
 }
 
 void IrcSession::start()
@@ -1058,10 +1057,9 @@ void IrcSession::clearPendingRequestLabels(bool notify)
 
 qint64 IrcSession::labelClockMs() const
 {
-    if (!m_labelTimerArmed)
-        return m_labelNow;
-    const qint64 elapsed = std::max(qint64(0), m_labelTimer->elapsedMilliseconds());
-    return m_labelArmedAt + elapsed;
+    if (m_monotonicClockFn)
+        return m_monotonicClockFn();
+    return m_monotonicClock.isValid() ? m_monotonicClock.elapsed() : 0;
 }
 
 void IrcSession::armLabelTimer()
@@ -1092,11 +1090,11 @@ void IrcSession::armLabelTimer()
 
 void IrcSession::onLabelTimerFired()
 {
-    qint64 elapsed = std::max(0, m_armedLabelDelay);
-    const qint64 observed = m_labelTimer->elapsedMilliseconds();
-    if (observed > elapsed)
-        elapsed = observed;
-    m_labelNow = m_labelArmedAt + elapsed;
+    qint64 now = labelClockMs();
+    const qint64 firedAt = m_labelArmedAt + std::max(0, m_armedLabelDelay);
+    if (now < firedAt)
+        now = firedAt;
+    m_labelNow = now;
     m_labelTimerArmed = false;
 
     QStringList expired;

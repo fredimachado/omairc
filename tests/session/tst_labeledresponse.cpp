@@ -23,7 +23,6 @@ public:
     void start(int delayMilliseconds) override
     {
         active = true;
-        elapsedMs = 0;
         delays.append(delayMilliseconds);
     }
 
@@ -31,11 +30,6 @@ public:
     {
         active = false;
         ++cancelCount;
-    }
-
-    qint64 elapsedMilliseconds() const override
-    {
-        return elapsedMs;
     }
 
     void fire()
@@ -49,7 +43,6 @@ public:
     QList<int> delays;
     bool active = false;
     int cancelCount = 0;
-    qint64 elapsedMs = 0;
 };
 
 namespace
@@ -544,6 +537,8 @@ void LabeledResponseTest::timeoutExpiresOnlyElapsedLabels()
 {
     SessionFixture fixture;
     fixture.registerLabeled();
+    qint64 now = 0;
+    fixture.session->setMonotonicClock([&now]() { return now; });
     QSignalSpy finished(fixture.session, &IrcSession::requestLabelFinished);
 
     const QString first = fixture.session->startLabeledRequest();
@@ -552,7 +547,7 @@ void LabeledResponseTest::timeoutExpiresOnlyElapsedLabels()
     QCOMPARE(fixture.labelTimer->delays, QList<int>({45000}));
     QVERIFY(fixture.session->hasPendingRequestLabel(first));
 
-    fixture.labelTimer->elapsedMs = 10000;
+    now = 10000;
 
     const QString second = fixture.session->startLabeledRequest();
     QVERIFY(!second.isEmpty());
@@ -563,6 +558,7 @@ void LabeledResponseTest::timeoutExpiresOnlyElapsedLabels()
     QVERIFY(fixture.session->hasPendingRequestLabel(second));
     QCOMPARE(fixture.labelTimer->delays, QList<int>({45000}));
 
+    now = 45000;
     fixture.labelTimer->fire();
     QVERIFY(!fixture.session->hasPendingRequestLabel(first));
     QVERIFY(fixture.session->hasPendingRequestLabel(second));
@@ -572,6 +568,7 @@ void LabeledResponseTest::timeoutExpiresOnlyElapsedLabels()
     QCOMPARE(fixture.labelTimer->delays, QList<int>({45000, 10000}));
     QVERIFY(fixture.labelTimer->active);
 
+    now = 55000;
     fixture.labelTimer->fire();
     QCOMPARE(fixture.session->pendingRequestLabelCount(), 0);
     QVERIFY(!fixture.session->hasPendingRequestLabel(second));
@@ -587,13 +584,15 @@ void LabeledResponseTest::timeoutDropsElapsedWatchWithoutStealingNewer()
     QVERIFY(registerLabeledController(controller, transport, labelTimer));
     IrcSession *session = controller.session(QStringLiteral("libera"));
     QVERIFY(session);
+    qint64 now = 0;
+    session->setMonotonicClock([&now]() { return now; });
 
     QVERIFY(controller.sendMessage(QStringLiteral("/whois lena")));
     const QString first = requestLabelOf(transport->writtenFrames().last());
     QVERIFY(!first.isEmpty());
     QCOMPARE(labelTimer->delays, QList<int>({45000}));
 
-    labelTimer->elapsedMs = 10000;
+    now = 10000;
     controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#help"));
     QVERIFY(controller.sendMessage(QStringLiteral("/whois mira")));
     const QString second = requestLabelOf(transport->writtenFrames().last());
@@ -603,6 +602,7 @@ void LabeledResponseTest::timeoutDropsElapsedWatchWithoutStealingNewer()
     QVERIFY(session->hasPendingRequestLabel(first));
     QVERIFY(session->hasPendingRequestLabel(second));
 
+    now = 45000;
     labelTimer->fire();
     QVERIFY(!session->hasPendingRequestLabel(first));
     QVERIFY(session->hasPendingRequestLabel(second));
