@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `./bin/install` (makepkg) no longer warns about an unused composer surface on
+  `/status` `/avatar` watches, or a missing `CredentialKey::purpose` initializer.
+
 ## [0.9.0] - 2026-09-21
 
 ### Added
