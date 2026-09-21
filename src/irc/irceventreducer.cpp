@@ -827,14 +827,26 @@ void IrcEventReducer::noteChatArrival(IrcConversationState& conversation,
             msgid,
         };
     }
-    // Selected live chat is unread only while unfocused. Replay in that
-    // buffer is backlog (CHATHISTORY / bouncer playback), not "new since
-    // you left", so it must not plant the mark mid-splice. Unselected
-    // replay still counts as unread, as before.
-    if (self || (selected && (m_windowActive || origin != IrcOrigin::Live)))
+    // Selected live chat is unread only while unfocused. Replay while
+    // unfocused is still backlog (CHATHISTORY / bouncer playback), not
+    // "new since you left", so it must not plant the mark mid-splice.
+    // Focused replay (for example ZNC playback on the first auto-selected
+    // channel) still plants the mark without bumping unread.
+    if (self)
         return;
-    if (conversation.unread == 0)
+    if (selected) {
+        if (origin == IrcOrigin::Live && m_windowActive)
+            return;
+        if (origin != IrcOrigin::Live && !m_windowActive)
+            return;
+    }
+    if (conversation.unread == 0
+        && (!conversation.unreadMark.has_value() || origin != IrcOrigin::Replay
+            || !selected)) {
         conversation.unreadMark = sequence;
+    }
+    if (selected && origin != IrcOrigin::Live)
+        return;
     ++conversation.unread;
     if ((reason == ChatLineReason::NickMention
          || reason == ChatLineReason::Highlight)

@@ -489,6 +489,7 @@ private slots:
     void forgetNetworkDropsGhostRowsAndLog();
     void backgroundChatBumpsConversationEpoch();
     void backgroundPlaybackBumpsUnreadAndMention();
+    void focusedChannelPlaybackPlantsUnreadMark();
     void chatHistoryBatchShowsBodyAndTime();
     void chatHistoryAndLiveTimeUseLocalWallClock();
     void whoisFromChannelCopiesStatusLinesAsEvents();
@@ -4789,6 +4790,76 @@ void ControllerTest::backgroundPlaybackBumpsUnreadAndMention()
              QStringLiteral("omairc: ping"));
     QCOMPARE(roleAt(messages, 1, MessageListModel::OriginRole),
              QStringLiteral("replay"));
+}
+
+void ControllerTest::focusedChannelPlaybackPlantsUnreadMark()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const QString root = dir.filePath(QStringLiteral("omairc/logs"));
+    ScopedTranscriptRoot scope(root);
+
+    {
+        IrcController controller;
+        auto *transport = new FakeIrcTransport;
+        QVERIFY(controller.addSession(config(QStringLiteral("libera")), transport));
+        QVERIFY(controller.start(QStringLiteral("libera")));
+        transport->completeConnect();
+        transport->injectBytes(
+            QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
+                              ":server 001 omairc :Welcome\r\n"
+                              ":omairc!u@h JOIN :#omarchy\r\n"
+                              "@msgid=old-1 :alice!u@h PRIVMSG #omarchy :older line\r\n"));
+    }
+
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    QVERIFY(controller.addSession(config(QStringLiteral("libera")), transport));
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    transport->completeConnect();
+    transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :batch\r\n"
+                          ":server CAP omairc ACK :batch\r\n"
+                          ":server 001 omairc :Welcome\r\n"
+                          ":omairc!u@h JOIN :#omarchy\r\n"
+                          ":omairc!u@h JOIN :#lab\r\n"));
+    QCOMPARE(controller.selectedTarget(), QStringLiteral("#omarchy"));
+
+    transport->injectBytes(
+        QByteArrayLiteral(
+            ":znc.in BATCH +c znc.in/playback #omarchy\r\n"
+            "@batch=c;msgid=new-1 :lena!u@h PRIVMSG #omarchy :since-logoff\r\n"
+            "@batch=c;msgid=new-2 :zed!u@h PRIVMSG #omarchy :also-new\r\n"
+            ":znc.in BATCH -c\r\n"
+            ":znc.in BATCH +l znc.in/playback #lab\r\n"
+            "@batch=l;msgid=lab-1 :rio!u@h PRIVMSG #lab :lab-new\r\n"
+            ":znc.in BATCH -l\r\n"));
+
+    auto *messages = qobject_cast<MessageListModel *>(controller.messages());
+    QVERIFY(messages);
+    const int olderRow = bodyRow(messages, QStringLiteral("older line"));
+    const int sinceRow = bodyRow(messages, QStringLiteral("since-logoff"));
+    const int markRow = messages->unreadMarkRow();
+    QVERIFY(olderRow >= 0);
+    QVERIFY(sinceRow > olderRow);
+    QVERIFY(markRow >= 0);
+    QCOMPARE(markRow, sinceRow - 1);
+    QCOMPARE(roleAt(messages, markRow, MessageListModel::KindRole).toString(),
+             QStringLiteral("unread"));
+    QCOMPARE(roleAt(messages, sinceRow, MessageListModel::OriginRole).toString(),
+             QStringLiteral("replay"));
+
+    auto *conversations =
+        qobject_cast<QAbstractItemModel *>(controller.conversations());
+    QVERIFY(conversations);
+    QCOMPARE(roleAt(conversations,
+                    rowForTarget(conversations, QStringLiteral("#omarchy")),
+                    ConversationListModel::UnreadRole).toInt(),
+             0);
+    QCOMPARE(roleAt(conversations,
+                    rowForTarget(conversations, QStringLiteral("#lab")),
+                    ConversationListModel::UnreadRole).toInt(),
+             1);
 }
 
 void ControllerTest::chatHistoryBatchShowsBodyAndTime()

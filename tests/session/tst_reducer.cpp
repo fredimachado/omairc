@@ -1709,12 +1709,20 @@ void ReducerTest::historyReplayPlantsUnreadMarkLikeLive()
     reducer.apply(IrcHistoryEvent{
         selected,
         QStringLiteral("#selected"),
-        {replayLine(QStringLiteral("alice"), QStringLiteral("omairc: here"),
-                    QStringLiteral("id-focused"))},
+        {replayLine(QStringLiteral("alice"), QStringLiteral("since-away"),
+                    QStringLiteral("id-focused")),
+         replayLine(QStringLiteral("bob"), QStringLiteral("later"),
+                    QStringLiteral("id-later"))},
     });
-    QCOMPARE(reducer.find(selected)->unread, 0);
-    QCOMPARE(reducer.find(selected)->mentions, 0);
-    QVERIFY(!reducer.find(selected)->unreadMark.has_value());
+    const IrcConversationState *selectedState = reducer.find(selected);
+    QVERIFY(selectedState);
+    QCOMPARE(selectedState->unread, 0);
+    QCOMPARE(selectedState->mentions, 0);
+    QVERIFY(selectedState->unreadMark.has_value());
+    QCOMPARE(selectedState->messages[0].body, QStringLiteral("since-away"));
+    QCOMPARE(selectedState->messages[1].body, QStringLiteral("later"));
+    QCOMPARE(selectedState->messages[2].body, QStringLiteral("omairc joined"));
+    QCOMPARE(*selectedState->unreadMark, selectedState->messages[0].sequence);
 }
 
 void ReducerTest::replayWhileUnfocusedDoesNotPlantUnreadMarkOnSelected()
