@@ -103,6 +103,18 @@ int awayFrameCount(const QByteArrayList& frames, int from = 0)
     return hits;
 }
 
+void injectNowAway(FakeIrcTransport *transport)
+{
+    transport->injectBytes(
+        QByteArrayLiteral(":server 306 omairc :You have been marked as being away\r\n"));
+}
+
+void injectUnaway(FakeIrcTransport *transport)
+{
+    transport->injectBytes(
+        QByteArrayLiteral(":server 305 omairc :You are no longer marked as being away\r\n"));
+}
+
 FakeIrcTransport *joinNetwork(IrcController& controller, const QString& networkId,
                               const QString& channel = QStringLiteral("#omarchy"))
 {
@@ -422,6 +434,8 @@ void AutoawayTest::oneShotDoesNotOverwriteDefault()
     controller.fireAutoawayGraceForTest();
     QCOMPARE(transport->writtenFrames().last(),
              QByteArrayLiteral("AWAY :Stepped out for lunch\r\n"));
+    injectNowAway(transport);
+    QVERIFY(controller.selfAway());
 
     controller.noteLocalActivity();
     QCOMPARE(transport->writtenFrames().last(), QByteArrayLiteral("AWAY\r\n"));
@@ -432,6 +446,8 @@ void AutoawayTest::oneShotDoesNotOverwriteDefault()
     QCOMPARE(transport->writtenFrames().size(), afterBack + 1);
     QCOMPARE(transport->writtenFrames().last(),
              QByteArrayLiteral("AWAY :AFK\r\n"));
+    injectNowAway(transport);
+    QVERIFY(controller.selfAway());
 }
 
 void AutoawayTest::bareTextRefusedDoesNotWriteAway()
@@ -468,6 +484,12 @@ void AutoawayTest::tripAwaysAllRegisteredNetworksOnce()
     QCOMPARE(awayFrameCount(transportB->writtenFrames(), beforeB), 1);
     QCOMPARE(transportA->writtenFrames().last(), QByteArrayLiteral("AWAY :\r\n"));
     QCOMPARE(transportB->writtenFrames().last(), QByteArrayLiteral("AWAY :\r\n"));
+    injectNowAway(transportA);
+    QVERIFY(controller.selfAway());
+    controller.selectConversation(QStringLiteral("network-b"),
+                                  QStringLiteral("#omarchy"));
+    injectNowAway(transportB);
+    QVERIFY(controller.selfAway());
 
     controller.fireAutoawayIdleForTest();
     controller.fireAutoawayGraceForTest();
@@ -515,6 +537,10 @@ void AutoawayTest::manualAwayWinsOnThatNetwork()
              QByteArrayLiteral("AWAY :lunch\r\n"));
     QCOMPARE(awayFrameCount(transportB->writtenFrames(), beforeB), 1);
     QCOMPARE(transportB->writtenFrames().last(), QByteArrayLiteral("AWAY :\r\n"));
+    controller.selectConversation(QStringLiteral("network-b"),
+                                  QStringLiteral("#omarchy"));
+    injectNowAway(transportB);
+    QVERIFY(controller.selfAway());
 }
 
 void AutoawayTest::disableWhileActiveClearsAutoAway()
@@ -531,6 +557,12 @@ void AutoawayTest::disableWhileActiveClearsAutoAway()
     controller.fireAutoawayGraceForTest();
     QCOMPARE(transportA->writtenFrames().last(), QByteArrayLiteral("AWAY :\r\n"));
     QCOMPARE(transportB->writtenFrames().last(), QByteArrayLiteral("AWAY :\r\n"));
+    injectNowAway(transportA);
+    QVERIFY(controller.selfAway());
+    controller.selectConversation(QStringLiteral("network-b"),
+                                  QStringLiteral("#omarchy"));
+    injectNowAway(transportB);
+    QVERIFY(controller.selfAway());
 
     const int beforeA = transportA->writtenFrames().size();
     const int beforeB = transportB->writtenFrames().size();
@@ -542,6 +574,12 @@ void AutoawayTest::disableWhileActiveClearsAutoAway()
     QVERIFY(selectedWhoisContains(
         qobject_cast<QAbstractItemModel *>(controller.messages()),
         QStringLiteral("Auto-away off")));
+    injectUnaway(transportB);
+    QVERIFY(!controller.selfAway());
+    controller.selectConversation(QStringLiteral("network-a"),
+                                  QStringLiteral("#omarchy"));
+    injectUnaway(transportA);
+    QVERIFY(!controller.selfAway());
 }
 
 void AutoawayTest::sendToTargetClearsAutoAway()
@@ -581,10 +619,13 @@ void AutoawayTest::incomingPrivmsgDoesNotClearAutoAway()
     controller.fireAutoawayIdleForTest();
     controller.fireAutoawayGraceForTest();
     QCOMPARE(transport->writtenFrames().last(), QByteArrayLiteral("AWAY :\r\n"));
+    injectNowAway(transport);
+    QVERIFY(controller.selfAway());
     const int afterAway = transport->writtenFrames().size();
     transport->injectBytes(
         QByteArrayLiteral(":alice!u@h PRIVMSG #omarchy :hey\r\n"));
     QCOMPARE(transport->writtenFrames().size(), afterAway);
+    QVERIFY(controller.selfAway());
     QVERIFY(selectedBodiesContain(
         qobject_cast<QAbstractItemModel *>(controller.messages()),
         QStringLiteral("hey")));
@@ -632,6 +673,8 @@ void AutoawayTest::emptyAwayClearsProvenanceSoAutoTripMarks()
     controller.fireAutoawayGraceForTest();
     QCOMPARE(awayFrameCount(transport->writtenFrames(), before), 1);
     QCOMPARE(transport->writtenFrames().last(), QByteArrayLiteral("AWAY :\r\n"));
+    injectNowAway(transport);
+    QVERIFY(controller.selfAway());
 }
 
 void AutoawayTest::reconnectWhileTrippedSendsAway()
@@ -657,6 +700,8 @@ void AutoawayTest::reconnectWhileTrippedSendsAway()
     QCOMPARE(awayFrameCount(transportA->writtenFrames(), beforeA), 1);
     QVERIFY(framesContain(transportA->writtenFrames().mid(beforeA),
                           QByteArrayLiteral("AWAY :\r\n")));
+    injectNowAway(transportA);
+    QVERIFY(controller.selfAway());
     QCOMPARE(transportB->writtenFrames().size(), beforeB);
 }
 
@@ -717,6 +762,8 @@ void AutoawayTest::activityAfterEmptyTripClearsOneShot()
     controller.fireAutoawayGraceForTest();
     QCOMPARE(awayFrameCount(transport->writtenFrames(), afterWelcome), 1);
     QCOMPARE(transport->writtenFrames().last(), QByteArrayLiteral("AWAY :AFK\r\n"));
+    injectNowAway(transport);
+    QVERIFY(controller.selfAway());
 }
 
 int runAutoawayTests(int argc, char **argv)
