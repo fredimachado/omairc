@@ -8,7 +8,7 @@ struct CredentialKey
     QString networkId;
     QString username;
     QString host;
-    QString purpose;
+    QString purpose = {};
 };
 
 inline bool operator==(const CredentialKey &left, const CredentialKey &right)

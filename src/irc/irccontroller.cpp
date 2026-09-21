@@ -2804,7 +2804,7 @@ IrcCommandOutcome IrcController::dispatchStatus(const IrcCommand& command,
     }
 
     if (isOwnMetadataClearAlias(command.argument))
-        return dispatchOwnMetadataClear(session, surface, IrcMetadata::statusKey());
+        return dispatchOwnMetadataClear(session, IrcMetadata::statusKey());
 
     const int valueBudget = IrcMetadata::effectiveMaxValueBytes(
         session->metadataCapability().maxValueBytes);
@@ -2816,7 +2816,7 @@ IrcCommandOutcome IrcController::dispatchStatus(const IrcCommand& command,
     const QString clamped = IrcMetadata::clamped(command.argument, valueBudget);
     if (clamped.isEmpty())
         return IrcCommandOutcome::Refused;
-    return dispatchOwnMetadataSet(session, surface, IrcMetadata::statusKey(), clamped);
+    return dispatchOwnMetadataSet(session, IrcMetadata::statusKey(), clamped);
 }
 
 IrcCommandOutcome IrcController::dispatchAvatar(const IrcCommand& command,
@@ -2857,7 +2857,7 @@ IrcCommandOutcome IrcController::dispatchAvatar(const IrcCommand& command,
     }
 
     if (isOwnMetadataClearAlias(command.argument))
-        return dispatchOwnMetadataClear(session, surface, IrcMetadata::avatarKey());
+        return dispatchOwnMetadataClear(session, IrcMetadata::avatarKey());
 
     const QString resolved = ircAvatarMetadataValue(command.argument);
     if (resolved.isEmpty()) {
@@ -2876,28 +2876,26 @@ IrcCommandOutcome IrcController::dispatchAvatar(const IrcCommand& command,
     const QString clamped = IrcMetadata::clamped(resolved, valueBudget);
     if (clamped.isEmpty())
         return IrcCommandOutcome::Refused;
-    return dispatchOwnMetadataSet(session, surface, IrcMetadata::avatarKey(), clamped);
+    return dispatchOwnMetadataSet(session, IrcMetadata::avatarKey(), clamped);
 }
 
 IrcCommandOutcome IrcController::dispatchOwnMetadataClear(IrcSession *session,
-                                                        IrcComposerSurface surface,
                                                         const QString& metadataKey)
 {
     if (!session->clearOwnMetadata(metadataKey))
         return IrcCommandOutcome::Refused;
-    armOwnMetadataWatch(session->networkId(), metadataKey, surface,
+    armOwnMetadataWatch(session->networkId(), metadataKey,
                         IrcOwnMetadataWatch::Kind::Clear, QString{});
     return IrcCommandOutcome::Sent;
 }
 
 IrcCommandOutcome IrcController::dispatchOwnMetadataSet(IrcSession *session,
-                                                        IrcComposerSurface surface,
                                                         const QString& metadataKey,
                                                         const QString& value)
 {
     if (value.isEmpty() || !session->setOwnMetadata(metadataKey, value))
         return IrcCommandOutcome::Refused;
-    armOwnMetadataWatch(session->networkId(), metadataKey, surface,
+    armOwnMetadataWatch(session->networkId(), metadataKey,
                         IrcOwnMetadataWatch::Kind::Set, value);
     return IrcCommandOutcome::Sent;
 }
@@ -3616,7 +3614,6 @@ void IrcController::forgetCtcpWatches(const QString& networkId)
 
 void IrcController::armOwnMetadataWatch(const QString& networkId,
                                         const QString& metadataKey,
-                                        IrcComposerSurface surface,
                                         IrcOwnMetadataWatch::Kind kind,
                                         const QString& value)
 {

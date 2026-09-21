@@ -437,10 +437,8 @@ private:
         QString value;
     };
     IrcCommandOutcome dispatchOwnMetadataClear(IrcSession *session,
-                                               IrcComposerSurface surface,
                                                const QString& metadataKey);
     IrcCommandOutcome dispatchOwnMetadataSet(IrcSession *session,
-                                             IrcComposerSurface surface,
                                              const QString& metadataKey,
                                              const QString& value);
     IrcCommandOutcome echoMetadataCommandFeedback(IrcComposerSurface surface,
@@ -448,7 +446,6 @@ private:
                                                  const QString& text);
     void armOwnMetadataWatch(const QString& networkId,
                              const QString& metadataKey,
-                             IrcComposerSurface surface,
                              IrcOwnMetadataWatch::Kind kind,
                              const QString& value);
     void forgetOwnMetadataWatches(const QString& networkId);

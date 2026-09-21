@@ -54,6 +54,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Status line on real online/offline edges. Unfocused desktop notify follows
   mentions, including mute, without toast spam on reconnect hydration.
 
+### Fixed
+
+- `./bin/install` (makepkg) no longer warns about an unused composer surface on
+  `/status` `/avatar` watches, or a missing `CredentialKey::purpose` initializer.
+
 ### Changed
 
 - The `Ctrl+/` shortcuts sheet groups chords under MOVE, JUMP, WRITE, and
