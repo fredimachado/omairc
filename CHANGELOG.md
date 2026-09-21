@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `Shift+Page Up` / `Shift+Page Down` scroll the conversation transcript
+  and Status by about half a page. Unmodified Page Up / Page Down stay
+  the full hop. The composer stays focused; both chords are disabled
+  while Connect or the shortcuts overlay is open.
 - Transcript rows for nick mentions and `/highlight` hits get a calm wash so
   they are easy to scan.
 - Global `/autoaway` idle timer (off by default). `/autoaway 15` or

@@ -2098,6 +2098,123 @@ TestCase {
         compare(appWindow.consoleVisible, true);
     }
 
+    function test_shiftPageScrollsHalfTranscript() {
+        openSeededAppWindow();
+        var composer = item("messageComposer");
+        var list = item("messageList");
+        mouseClick(composer);
+        verify(composer.activeFocus);
+        fillTranscriptUntilScrollable(list);
+        var start = list.model.rowCount();
+        var target = appWindow.currentConversation;
+        var index = 0;
+        for (index = 0; index < 40; ++index) {
+            var minute = index < 10 ? "0" + index : "" + index;
+            injectOmarchyChat("anna", target, "half-page fill " + index, "14:" + minute);
+        }
+        waitForRowCount(list, start + 40);
+        waitForRendering(appWindow.contentItem);
+        list.pinToEnd();
+        waitForRendering(appWindow.contentItem);
+        wait(0);
+        // Instantiate rows so indexAt sees real heights before comparing hop size.
+        keyClick(Qt.Key_PageUp);
+        waitForRendering(appWindow.contentItem);
+        wait(0);
+        pageTranscriptToEnd(list);
+        verify(transcriptPinned(list));
+        verify(list.contentHeight > list.height);
+        var startY = list.contentY;
+        verify(startY > 0);
+
+        keyClick(Qt.Key_PageUp, Qt.ShiftModifier);
+        waitForRendering(appWindow.contentItem);
+        wait(0);
+        verify(list.contentY < startY, "Shift+Page Up should scroll toward older lines");
+        verify(composer.activeFocus);
+        var halfUpDelta = startY - list.contentY;
+        verify(halfUpDelta > 0);
+
+        pageTranscriptToEnd(list);
+        verify(transcriptPinned(list));
+        var fullStartY = list.contentY;
+        keyClick(Qt.Key_PageUp);
+        waitForRendering(appWindow.contentItem);
+        wait(0);
+        var fullUpDelta = fullStartY - list.contentY;
+        verify(fullUpDelta > halfUpDelta,
+               "Shift+Page Up should hop less than Page Up from the same start");
+        verify(composer.activeFocus);
+        var midY = list.contentY;
+        verify(midY > 0);
+
+        keyClick(Qt.Key_PageDown, Qt.ShiftModifier);
+        waitForRendering(appWindow.contentItem);
+        wait(0);
+        verify(list.contentY > midY, "Shift+Page Down should scroll toward newer lines");
+        verify(composer.activeFocus);
+        var halfDownDelta = list.contentY - midY;
+        verify(halfDownDelta > 0);
+
+        pageTranscriptToEnd(list);
+        keyClick(Qt.Key_PageUp);
+        waitForRendering(appWindow.contentItem);
+        wait(0);
+        var fullDownStart = list.contentY;
+        keyClick(Qt.Key_PageDown);
+        waitForRendering(appWindow.contentItem);
+        wait(0);
+        var fullDownDelta = list.contentY - fullDownStart;
+        verify(fullDownDelta > halfDownDelta,
+               "Shift+Page Down should hop less than Page Down from the same start");
+        verify(composer.activeFocus);
+    }
+
+    function test_shiftPageUpShowsStatusScrollbar() {
+        openSeededAppWindow();
+        var composer = item("messageComposer");
+        var list = item("consoleList");
+        keyClick(Qt.Key_QuoteLeft, Qt.ControlModifier);
+        tryCompare(appWindow, "consoleVisible", true);
+        fillConsoleUntilScrollable(list);
+        appendLiveConsoleLines(list, 40, "half-page console");
+        waitForRendering(appWindow.contentItem);
+        list.pinToEnd();
+        waitForRendering(appWindow.contentItem);
+        wait(0);
+        mouseClick(composer);
+        verify(composer.activeFocus);
+
+        var before = list.contentY;
+        var startFirst = firstVisibleIndex(list);
+        var bar = waitForScrollbarThumb(list, true);
+        var endPosition = bar.position;
+
+        keyClick(Qt.Key_PageUp, Qt.ShiftModifier);
+        waitForRendering(appWindow.contentItem);
+        wait(0);
+        verify(list.contentY < before, "Shift+Page Up should scroll Status toward older lines");
+        verify(composer.activeFocus);
+        waitForScrollbarThumb(list, true);
+        verify(bar.position < endPosition, "Shift+Page Up should move the Status thumb up");
+        var halfUpDelta = before - list.contentY;
+        verify(halfUpDelta > 0);
+        verify(firstVisibleIndex(list) < startFirst);
+
+        list.pinToEnd();
+        waitForRendering(appWindow.contentItem);
+        wait(0);
+        var fullStartY = list.contentY;
+        keyClick(Qt.Key_PageUp);
+        waitForRendering(appWindow.contentItem);
+        wait(0);
+        var fullUpDelta = fullStartY - list.contentY;
+        verify(fullUpDelta > halfUpDelta,
+               "Shift+Page Up should hop less than Page Up on Status");
+        verify(composer.activeFocus);
+        compare(appWindow.consoleVisible, true);
+    }
+
     function test_shortTranscriptHidesScrollbar() {
         openSeededAppWindow();
         mouseClick(namedItem(liveConversation("#help")));
@@ -8191,6 +8308,14 @@ TestCase {
                "shortcut sheet should name apply selected network");
         verify(texts.indexOf("apply connection") === -1,
                "shortcut sheet should not keep the old apply connection label");
+        verify(texts.indexOf("Page Up / Page Down") !== -1,
+               "shortcut sheet should list Page Up / Page Down");
+        verify(texts.indexOf("scroll") !== -1,
+               "shortcut sheet should name scroll");
+        verify(texts.indexOf("Shift+Page Up / Shift+Page Down") !== -1,
+               "shortcut sheet should list Shift+Page Up / Shift+Page Down");
+        verify(texts.indexOf("scroll half page") !== -1,
+               "shortcut sheet should name scroll half page");
         keyClick(Qt.Key_Escape);
         tryCompare(sheet, "opened", false);
     }

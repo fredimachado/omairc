@@ -1629,10 +1629,12 @@ ApplicationWindow {
         return list.indexAt(x, y + 8);
     }
 
-    function scrollTranscript(direction) {
+    function scrollTranscript(direction, fraction) {
         var list = consoleVisible ? conversation.consoleList : conversation.messageList;
         if (!list || list.count <= 0)
             return;
+        if (fraction === undefined)
+            fraction = 0.8;
 
         var first = transcriptIndexAt(list, list.contentY + 1);
         var last = transcriptIndexAt(list, list.contentY + Math.max(1, list.height - 1));
@@ -1643,7 +1645,7 @@ ApplicationWindow {
         if (last < first)
             last = first;
 
-        var page = Math.max(1, Math.round((last - first + 1) * 0.8));
+        var page = Math.max(1, Math.round((last - first + 1) * fraction));
         if (direction < 0)
             list.positionViewAtIndex(Math.max(0, first - page), ListView.Beginning);
         else
@@ -2152,6 +2154,20 @@ ApplicationWindow {
         context: Qt.ApplicationShortcut
         enabled: !win.connectionOverlayVisible && !win.shortcutOverlayOpen
         onActivated: scrollTranscript(1)
+    }
+
+    Shortcut {
+        sequence: "Shift+PgUp"
+        context: Qt.ApplicationShortcut
+        enabled: !win.connectionOverlayVisible && !win.shortcutOverlayOpen
+        onActivated: scrollTranscript(-1, 0.35)
+    }
+
+    Shortcut {
+        sequence: "Shift+PgDown"
+        context: Qt.ApplicationShortcut
+        enabled: !win.connectionOverlayVisible && !win.shortcutOverlayOpen
+        onActivated: scrollTranscript(1, 0.35)
     }
 
     Shortcut {
