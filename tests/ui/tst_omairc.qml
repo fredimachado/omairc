@@ -3011,6 +3011,62 @@ TestCase {
         compare(unreadMarkLabelText(mark), "New messages");
     }
 
+    function test_unreadMarkShowsScrollDownUntilBottom() {
+        openSeededAppWindow();
+        var list = item("messageList");
+        fillTranscriptUntilScrollable(list);
+
+        appWindow.windowFocusLost();
+        injectOmarchyChat("anna", "#omarchy", "scroll-down-first-zx9");
+        injectOmarchyChat("dax", "#omarchy", "scroll-down-second-zx9");
+        var index = 0;
+        for (index = 0; index < 24; ++index) {
+            var minute = index < 10 ? "0" + index : "" + index;
+            injectOmarchyChat("mira", "#omarchy", "scroll-down filler " + index,
+                              "11:" + minute);
+        }
+        waitForBody(list, "scroll-down-first-zx9");
+        waitForRendering(appWindow.contentItem);
+        wait(0);
+
+        var markRow = list.model.unreadMarkRow();
+        verify(markRow >= 0, "Unfocused arrivals should plant the New messages mark");
+
+        appWindow.windowFocusGained();
+        waitForRendering(appWindow.contentItem);
+        wait(0);
+        tryVerify(function() {
+            return firstVisibleIndex(list) === markRow;
+        }, 1000, "Focus return should land on the unread mark");
+        verify(!transcriptPinned(list),
+               "Unread backlog below the mark should leave room to scroll down");
+
+        var jump = item("messageUnseenJump");
+        tryCompare(jump, "visible", true);
+
+        list.pinToEnd();
+        waitForRendering(appWindow.contentItem);
+        wait(0);
+        tryVerify(function() {
+            return transcriptPinned(list);
+        }, 1000, "Pinning to end should reach the bottom");
+        tryCompare(jump, "visible", false);
+
+        list.pinToUnread(markRow);
+        waitForRendering(appWindow.contentItem);
+        wait(0);
+        verify(!transcriptPinned(list));
+        tryCompare(jump, "visible", true);
+
+        mouseClick(jump);
+        waitForRendering(appWindow.contentItem);
+        wait(0);
+        tryCompare(jump, "visible", false);
+        tryVerify(function() {
+            return transcriptPinned(list);
+        }, 1000, "Jump should scroll to the latest messages");
+    }
+
     function test_openAtUnreadLandsOnMarkWhenSwitchingAwayAndBack() {
         openSeededAppWindow();
         var list = item("messageList");

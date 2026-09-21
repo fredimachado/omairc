@@ -8,9 +8,21 @@ ListView {
     readonly property int stickDetached: 1
     property int stick: 0
     property int firstUnseenIndex: -1
-    readonly property bool jumpArmed: stick === stickDetached
-        && firstUnseenIndex >= 0
-        && firstUnseenIndex < count
+    readonly property int unreadMarkRow: (model && typeof model.unreadMarkRow === "function")
+        ? model.unreadMarkRow() : -1
+    readonly property bool hasUnreadMark: unreadMarkRow >= 0
+    readonly property bool canScrollDown: {
+        void contentY;
+        void contentHeight;
+        void height;
+        void(atYEnd);
+        return !viewportPinned();
+    }
+    readonly property bool jumpArmed: canScrollDown && (
+        (stick === stickDetached
+            && firstUnseenIndex >= 0
+            && firstUnseenIndex < count)
+        || hasUnreadMark)
 
     property bool pinning: false
     property int trackedCount: 0
@@ -161,17 +173,24 @@ ListView {
     function jumpToUnseen() {
         if (!jumpArmed)
             return;
-        var target = firstUnseenIndex;
-        firstUnseenIndex = -1;
-        pinning = true;
-        var generation = ++pinGeneration;
-        positionViewAtIndex(target, ListView.Beginning);
-        Qt.callLater(function() {
-            if (generation !== pinGeneration)
-                return;
-            pinning = false;
-            adoptViewport();
-        });
+        if (stick === stickDetached
+                && firstUnseenIndex >= 0
+                && firstUnseenIndex < count) {
+            var target = firstUnseenIndex;
+            firstUnseenIndex = -1;
+            pinning = true;
+            var generation = ++pinGeneration;
+            positionViewAtIndex(target, ListView.Beginning);
+            Qt.callLater(function() {
+                if (generation !== pinGeneration)
+                    return;
+                pinning = false;
+                adoptViewport();
+            });
+            return;
+        }
+        if (hasUnreadMark)
+            pinToEnd();
     }
 
     function pinToUnread(row) {
