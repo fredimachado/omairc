@@ -72,7 +72,8 @@ public:
     void setTranscriptRoot(const QString &root);
     IrcSession *addSession(const IrcSessionConfig& config,
                            IrcTransport *transport,
-                           IrcReconnectTimer *reconnectTimer = nullptr);
+                           IrcReconnectTimer *reconnectTimer = nullptr,
+                           IrcReconnectTimer *labelTimer = nullptr);
     bool discardSession(const QString &networkId);
     void forgetNetworkState(const QString &networkId);
     void setNetworkOrder(const QStringList &networkOrder);

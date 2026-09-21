@@ -15,7 +15,8 @@ public:
 
     IrcSession *createSession(const IrcSessionConfig &config,
                               IrcTransport *transport,
-                              IrcReconnectTimer *reconnectTimer = nullptr);
+                              IrcReconnectTimer *reconnectTimer = nullptr,
+                              IrcReconnectTimer *labelTimer = nullptr);
     IrcSession *findSession(const QString &networkId) const;
     QStringList networkIds() const;
 

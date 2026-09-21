@@ -23,6 +23,7 @@ public:
     void start(int delayMilliseconds) override
     {
         active = true;
+        elapsedMs = 0;
         delays.append(delayMilliseconds);
     }
 
@@ -30,6 +31,11 @@ public:
     {
         active = false;
         ++cancelCount;
+    }
+
+    qint64 elapsedMilliseconds() const override
+    {
+        return elapsedMs;
     }
 
     void fire()
@@ -43,6 +49,7 @@ public:
     QList<int> delays;
     bool active = false;
     int cancelCount = 0;
+    qint64 elapsedMs = 0;
 };
 
 namespace
@@ -178,10 +185,11 @@ bool logContains(QAbstractItemModel *lines, const QString& needle)
 }
 
 IrcSession *registerLabeledController(IrcController& controller,
-                                     FakeIrcTransport *transport)
+                                     FakeIrcTransport *transport,
+                                     FakeReconnectTimer *labelTimer = nullptr)
 {
     IrcSession *session = controller.addSession(sessionConfig(QStringLiteral("libera")),
-                                                transport);
+                                                transport, nullptr, labelTimer);
     if (!session)
         return nullptr;
     if (!controller.start(QStringLiteral("libera")))
@@ -217,7 +225,10 @@ private slots:
     void ackCompletesWaiterWithoutTranscript();
     void labeledFailCopiesIntoAskingTranscript();
     void labeledCtcpReplyRoutesToAskingTranscript();
+    void labeledCtcp401CopiesIntoAskingTranscript();
     void timeoutClearsWaiters();
+    void timeoutExpiresOnlyElapsedLabels();
+    void timeoutDropsElapsedWatchWithoutStealingNewer();
     void disconnectClearsWaiters();
     void twoLabeledWhoisForSameNickStayIndependent();
 
@@ -478,6 +489,36 @@ void LabeledResponseTest::labeledCtcpReplyRoutesToAskingTranscript()
                          QStringLiteral("VERSION reply from lena: Omairc 0.4.0")));
 }
 
+void LabeledResponseTest::labeledCtcp401CopiesIntoAskingTranscript()
+{
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    QVERIFY(registerLabeledController(controller, transport));
+
+    QVERIFY(controller.sendMessage(QStringLiteral("/version missingnick")));
+    const QString label = requestLabelOf(transport->writtenFrames().last());
+    QVERIFY(!label.isEmpty());
+    QVERIFY(commandOf(transport->writtenFrames().last())
+                .startsWith("PRIVMSG missingnick :"));
+    QCOMPARE(controller.session(QStringLiteral("libera"))->pendingRequestLabelCount(), 1);
+
+    transport->injectBytes(
+        QByteArray("@label=" + label.toUtf8()
+                   + " :irc 401 omairc missingnick :No such nick/channel\r\n"));
+
+    auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
+    QVERIFY(messages);
+    QVERIFY(hasWhoisBody(messages, QStringLiteral("No such nick: missingnick")));
+    QVERIFY(logContains(controller.console()->lines(),
+                        QStringLiteral("No such nick: missingnick")));
+    QCOMPARE(controller.session(QStringLiteral("libera"))->pendingRequestLabelCount(), 0);
+
+    const QStringList after401 = selectedBodies(messages);
+    transport->injectBytes(
+        QByteArrayLiteral(":irc 401 omairc missingnick :No such nick/channel\r\n"));
+    QCOMPARE(selectedBodies(messages), after401);
+}
+
 void LabeledResponseTest::timeoutClearsWaiters()
 {
     SessionFixture fixture;
@@ -488,13 +529,110 @@ void LabeledResponseTest::timeoutClearsWaiters()
     QVERIFY(!label.isEmpty());
     QVERIFY(fixture.session->whois(QStringLiteral("lena"), label));
     QCOMPARE(fixture.session->pendingRequestLabelCount(), 1);
+    QVERIFY(fixture.session->hasPendingRequestLabel(label));
     QVERIFY(fixture.labelTimer->active);
     QCOMPARE(fixture.labelTimer->delays.last(), 45000);
 
     fixture.labelTimer->fire();
     QCOMPARE(fixture.session->pendingRequestLabelCount(), 0);
+    QVERIFY(!fixture.session->hasPendingRequestLabel(label));
     QCOMPARE(finished.size(), 1);
     QCOMPARE(finished.first().at(1).toString(), label);
+}
+
+void LabeledResponseTest::timeoutExpiresOnlyElapsedLabels()
+{
+    SessionFixture fixture;
+    fixture.registerLabeled();
+    QSignalSpy finished(fixture.session, &IrcSession::requestLabelFinished);
+
+    const QString first = fixture.session->startLabeledRequest();
+    QVERIFY(!first.isEmpty());
+    QVERIFY(fixture.session->whois(QStringLiteral("lena"), first));
+    QCOMPARE(fixture.labelTimer->delays, QList<int>({45000}));
+    QVERIFY(fixture.session->hasPendingRequestLabel(first));
+
+    fixture.labelTimer->elapsedMs = 10000;
+
+    const QString second = fixture.session->startLabeledRequest();
+    QVERIFY(!second.isEmpty());
+    QVERIFY(first != second);
+    QVERIFY(fixture.session->whois(QStringLiteral("mira"), second));
+    QCOMPARE(fixture.session->pendingRequestLabelCount(), 2);
+    QVERIFY(fixture.session->hasPendingRequestLabel(first));
+    QVERIFY(fixture.session->hasPendingRequestLabel(second));
+    QCOMPARE(fixture.labelTimer->delays, QList<int>({45000}));
+
+    fixture.labelTimer->fire();
+    QVERIFY(!fixture.session->hasPendingRequestLabel(first));
+    QVERIFY(fixture.session->hasPendingRequestLabel(second));
+    QCOMPARE(fixture.session->pendingRequestLabelCount(), 1);
+    QCOMPARE(finished.size(), 1);
+    QCOMPARE(finished.first().at(1).toString(), first);
+    QCOMPARE(fixture.labelTimer->delays, QList<int>({45000, 10000}));
+    QVERIFY(fixture.labelTimer->active);
+
+    fixture.labelTimer->fire();
+    QCOMPARE(fixture.session->pendingRequestLabelCount(), 0);
+    QVERIFY(!fixture.session->hasPendingRequestLabel(second));
+    QCOMPARE(finished.size(), 2);
+    QCOMPARE(finished.at(1).at(1).toString(), second);
+}
+
+void LabeledResponseTest::timeoutDropsElapsedWatchWithoutStealingNewer()
+{
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    auto *labelTimer = new FakeReconnectTimer;
+    QVERIFY(registerLabeledController(controller, transport, labelTimer));
+    IrcSession *session = controller.session(QStringLiteral("libera"));
+    QVERIFY(session);
+
+    QVERIFY(controller.sendMessage(QStringLiteral("/whois lena")));
+    const QString first = requestLabelOf(transport->writtenFrames().last());
+    QVERIFY(!first.isEmpty());
+    QCOMPARE(labelTimer->delays, QList<int>({45000}));
+
+    labelTimer->elapsedMs = 10000;
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#help"));
+    QVERIFY(controller.sendMessage(QStringLiteral("/whois mira")));
+    const QString second = requestLabelOf(transport->writtenFrames().last());
+    QVERIFY(!second.isEmpty());
+    QVERIFY(first != second);
+    QCOMPARE(labelTimer->delays, QList<int>({45000}));
+    QVERIFY(session->hasPendingRequestLabel(first));
+    QVERIFY(session->hasPendingRequestLabel(second));
+
+    labelTimer->fire();
+    QVERIFY(!session->hasPendingRequestLabel(first));
+    QVERIFY(session->hasPendingRequestLabel(second));
+
+    transport->injectBytes(
+        QByteArray("@label=" + first.toUtf8()
+                   + " :irc 318 omairc lena :End of /WHOIS list.\r\n"));
+    auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
+    QVERIFY(messages);
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    QVERIFY(!selectedBodiesContain(messages, QStringLiteral("End of WHOIS for lena")));
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#help"));
+    QVERIFY(!selectedBodiesContain(messages, QStringLiteral("End of WHOIS for lena")));
+
+    transport->injectBytes(
+        QByteArrayLiteral(":irc 311 omairc mira ~other host * :Other\r\n"
+                          ":irc 318 omairc mira :End of /WHOIS list.\r\n"));
+    QVERIFY(!selectedBodiesContain(messages, QStringLiteral("Other")));
+    QVERIFY(!selectedBodiesContain(messages, QStringLiteral("End of WHOIS for mira")));
+
+    transport->injectBytes(
+        QByteArray("@label=" + second.toUtf8()
+                   + " :irc.example BATCH +b labeled-response\r\n"
+                     "@batch=b :irc 311 omairc mira ~m h * :FromHelp\r\n"
+                     "@batch=b :irc 318 omairc mira :End of /WHOIS list.\r\n"
+                     ":irc.example BATCH -b\r\n"));
+    QVERIFY(hasWhoisBody(messages, QStringLiteral("mira is ~m@h (FromHelp)")));
+    QVERIFY(hasWhoisBody(messages, QStringLiteral("End of WHOIS for mira")));
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    QVERIFY(!selectedBodiesContain(messages, QStringLiteral("FromHelp")));
 }
 
 void LabeledResponseTest::disconnectClearsWaiters()

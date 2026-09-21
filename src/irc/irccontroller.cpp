@@ -391,9 +391,11 @@ void IrcController::setTranscriptRoot(const QString &root)
 
 IrcSession *IrcController::addSession(const IrcSessionConfig& config,
                                       IrcTransport *transport,
-                                      IrcReconnectTimer *reconnectTimer)
+                                      IrcReconnectTimer *reconnectTimer,
+                                      IrcReconnectTimer *labelTimer)
 {
-    IrcSession *session = m_sessions.createSession(config, transport, reconnectTimer);
+    IrcSession *session = m_sessions.createSession(config, transport, reconnectTimer,
+                                                   labelTimer);
     if (!session)
         return nullptr;
 
@@ -3094,12 +3096,22 @@ void IrcController::handleStatusEntry(const IrcStatusEntry& entry)
 {
     routeOwnMetadataError(entry);
     if (!entry.requestLabel().isEmpty()) {
-        if (const IrcWhoisLine *line = entry.whoisLine())
-            routeLabeledWhois(entry.networkId(), entry.requestLabel(), *line);
-        else if (const IrcCtcpReplyLine *line = entry.ctcpReply())
-            routeLabeledCtcp(entry.networkId(), entry.requestLabel(), *line, entry.text());
-        else
-            routeLabeledStandardReply(entry);
+        auto found = m_labeledWatches.find(
+            IrcLabeledWatchKey{entry.networkId(), entry.requestLabel()});
+        if (found != m_labeledWatches.end()) {
+            if (found->second.kind == IrcLabeledWatchKind::Whois) {
+                if (const IrcWhoisLine *line = entry.whoisLine())
+                    routeLabeledWhois(entry.networkId(), entry.requestLabel(), *line);
+                else
+                    routeLabeledStandardReply(entry);
+            } else if (found->second.kind == IrcLabeledWatchKind::Ctcp) {
+                if (const IrcCtcpReplyLine *line = entry.ctcpReply())
+                    routeLabeledCtcp(entry.networkId(), entry.requestLabel(), *line,
+                                     entry.text());
+                else
+                    routeLabeledStandardReply(entry);
+            }
+        }
     } else {
         if (const IrcWhoisLine *line = entry.whoisLine())
             routeWhoisLine(entry.networkId(), *line);

@@ -40,12 +40,14 @@ public:
 
     virtual void start(int delayMilliseconds);
     virtual void cancel();
+    virtual qint64 elapsedMilliseconds() const;
 
 signals:
     void fired();
 
 private:
     QTimer m_timer;
+    QElapsedTimer m_elapsed;
 };
 
 class IrcReachabilitySource : public QObject
@@ -171,6 +173,7 @@ public slots:
     QString startLabeledRequest();
     void cancelRequestLabel(const QString& requestLabel);
     int pendingRequestLabelCount() const;
+    bool hasPendingRequestLabel(const QString& label) const;
     bool sendMonitor(QChar modifier, const QStringList& nicks = {});
     bool list(const QString& mask = {});
     bool sendRaw(const QString& line);
@@ -259,6 +262,7 @@ private:
     void clearPendingRequestLabels(bool notify);
     void armLabelTimer();
     void onLabelTimerFired();
+    qint64 labelClockMs() const;
     QString correlationLabel(const IrcMessage& message) const;
     void fail(ErrorKind kind, const QString &message, bool reconnect);
     void scheduleReconnect();
@@ -326,7 +330,11 @@ private:
     static constexpr int kMaxOpenBatches = 16;
     static constexpr int kMaxIgnoredBatches = 32;
     QHash<QString, QElapsedTimer> m_ctcpReplyClock;
-    QSet<QString> m_pendingRequestLabels;
+    QHash<QString, qint64> m_pendingRequestLabels;
+    qint64 m_labelNow = 0;
+    qint64 m_labelArmedAt = 0;
+    int m_armedLabelDelay = 0;
+    bool m_labelTimerArmed = false;
     quint64 m_nextRequestLabel = 0;
     IgnoreFilter m_ignoreFilter;
     std::optional<IrcPendingInvite> m_pendingInvite;

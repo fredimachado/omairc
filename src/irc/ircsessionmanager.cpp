@@ -7,14 +7,16 @@ IrcSessionManager::IrcSessionManager(QObject *parent)
 
 IrcSession *IrcSessionManager::createSession(const IrcSessionConfig &config,
                                              IrcTransport *transport,
-                                             IrcReconnectTimer *reconnectTimer)
+                                             IrcReconnectTimer *reconnectTimer,
+                                             IrcReconnectTimer *labelTimer)
 {
     if (!transport || config.networkId.isEmpty()
         || m_sessions.contains(config.networkId)) {
         return nullptr;
     }
 
-    auto *session = new IrcSession(config, transport, reconnectTimer, nullptr, this);
+    auto *session = new IrcSession(config, transport, reconnectTimer, nullptr, this,
+                                   nullptr, nullptr, labelTimer);
     m_sessions.insert(config.networkId, session);
     connect(session, &QObject::destroyed, this,
             [this, session, networkId = config.networkId] {

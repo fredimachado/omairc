@@ -272,12 +272,19 @@ IrcReconnectTimer::IrcReconnectTimer(QObject *parent)
 
 void IrcReconnectTimer::start(int delayMilliseconds)
 {
+    m_elapsed.start();
     m_timer.start(delayMilliseconds);
 }
 
 void IrcReconnectTimer::cancel()
 {
     m_timer.stop();
+    m_elapsed.invalidate();
+}
+
+qint64 IrcReconnectTimer::elapsedMilliseconds() const
+{
+    return m_elapsed.isValid() ? m_elapsed.elapsed() : 0;
 }
 
 IrcReachabilitySource::IrcReachabilitySource(QObject *parent)
@@ -483,6 +490,11 @@ bool IrcSession::historyPending() const
 int IrcSession::pendingRequestLabelCount() const
 {
     return m_pendingRequestLabels.size();
+}
+
+bool IrcSession::hasPendingRequestLabel(const QString& label) const
+{
+    return !label.isEmpty() && m_pendingRequestLabels.contains(label);
 }
 
 void IrcSession::start()
@@ -1008,7 +1020,10 @@ bool IrcSession::sendTrailingBody(const QString& prefix,
 QString IrcSession::beginLabeledRequest()
 {
     const QString label = QStringLiteral("lr%1").arg(++m_nextRequestLabel);
-    m_pendingRequestLabels.insert(label);
+    const qint64 now = labelClockMs();
+    m_labelNow = now;
+    const int timeout = std::max(0, m_config.labeledResponseTimeoutMilliseconds);
+    m_pendingRequestLabels.insert(label, now + timeout);
     armLabelTimer();
     return label;
 }
@@ -1017,38 +1032,86 @@ void IrcSession::dropRequestLabel(const QString& label)
 {
     if (label.isEmpty() || !m_pendingRequestLabels.remove(label))
         return;
-    if (m_pendingRequestLabels.isEmpty())
-        m_labelTimer->cancel();
+    armLabelTimer();
 }
 
 void IrcSession::finishRequestLabel(const QString& label)
 {
     if (label.isEmpty() || !m_pendingRequestLabels.remove(label))
         return;
-    if (m_pendingRequestLabels.isEmpty())
-        m_labelTimer->cancel();
+    armLabelTimer();
     emit requestLabelFinished(m_config.networkId, label);
 }
 
 void IrcSession::clearPendingRequestLabels(bool notify)
 {
-    const QSet<QString> labels = m_pendingRequestLabels;
+    const QList<QString> labels = m_pendingRequestLabels.keys();
     m_pendingRequestLabels.clear();
     m_labelTimer->cancel();
+    m_labelTimerArmed = false;
+    m_armedLabelDelay = 0;
     if (!notify)
         return;
     for (const QString& label : labels)
         emit requestLabelFinished(m_config.networkId, label);
 }
 
+qint64 IrcSession::labelClockMs() const
+{
+    if (!m_labelTimerArmed)
+        return m_labelNow;
+    const qint64 elapsed = std::max(qint64(0), m_labelTimer->elapsedMilliseconds());
+    return m_labelArmedAt + elapsed;
+}
+
 void IrcSession::armLabelTimer()
 {
-    m_labelTimer->start(std::max(0, m_config.labeledResponseTimeoutMilliseconds));
+    if (m_pendingRequestLabels.isEmpty()) {
+        m_labelTimer->cancel();
+        m_labelTimerArmed = false;
+        m_armedLabelDelay = 0;
+        return;
+    }
+
+    const qint64 now = labelClockMs();
+    m_labelNow = now;
+    qint64 earliest = std::numeric_limits<qint64>::max();
+    for (auto it = m_pendingRequestLabels.cbegin(); it != m_pendingRequestLabels.cend(); ++it)
+        earliest = std::min(earliest, it.value());
+    const qint64 remaining = std::max(qint64(0), earliest - now);
+    const int delay = remaining > qint64(std::numeric_limits<int>::max())
+        ? std::numeric_limits<int>::max()
+        : int(remaining);
+    if (m_labelTimerArmed && m_labelArmedAt + qint64(m_armedLabelDelay) == earliest)
+        return;
+    m_labelArmedAt = now;
+    m_armedLabelDelay = delay;
+    m_labelTimerArmed = true;
+    m_labelTimer->start(delay);
 }
 
 void IrcSession::onLabelTimerFired()
 {
-    clearPendingRequestLabels(true);
+    qint64 elapsed = std::max(0, m_armedLabelDelay);
+    const qint64 observed = m_labelTimer->elapsedMilliseconds();
+    if (observed > elapsed)
+        elapsed = observed;
+    m_labelNow = m_labelArmedAt + elapsed;
+    m_labelTimerArmed = false;
+
+    QStringList expired;
+    expired.reserve(m_pendingRequestLabels.size());
+    for (auto it = m_pendingRequestLabels.begin(); it != m_pendingRequestLabels.end(); ) {
+        if (it.value() <= m_labelNow) {
+            expired.append(it.key());
+            it = m_pendingRequestLabels.erase(it);
+        } else {
+            ++it;
+        }
+    }
+    for (const QString& label : expired)
+        emit requestLabelFinished(m_config.networkId, label);
+    armLabelTimer();
 }
 
 QString IrcSession::correlationLabel(const IrcMessage& message) const
