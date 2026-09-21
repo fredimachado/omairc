@@ -2619,6 +2619,8 @@ void IrcController::fireAutoawayGraceForTest()
 bool IrcController::eventFilter(QObject *watched, QEvent *event)
 {
     Q_UNUSED(watched);
+    if (!m_autoaway.enabled && !m_autoawayTripped && m_autoAwayNetworks.isEmpty())
+        return false;
     switch (event->type()) {
     case QEvent::KeyPress:
     case QEvent::MouseButtonPress:
