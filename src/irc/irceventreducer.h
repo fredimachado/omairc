@@ -235,6 +235,10 @@ public:
                                  const QString& normalizedNick) const;
     QVector<IrcOrderedMember> orderedMembers(const IrcConversationKey& key) const;
     bool mentions(const QString& networkId, const QString& body) const;
+    bool isTranscriptHighlight(const QString& networkId,
+                               const QString& author,
+                               IrcMessageKind kind,
+                               const QString& body) const;
 
     QStringList typingNicks(const IrcConversationKey& key,
                             const QDateTime& now) const;

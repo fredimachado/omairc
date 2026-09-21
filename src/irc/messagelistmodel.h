@@ -30,6 +30,7 @@ public:
         MsgidRole,
         AuthorAvatarRole,
         AuthorBotRole,
+        MentionedRole,
     };
 
     static QHash<int, QByteArray> staticRoleNames();

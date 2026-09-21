@@ -2471,6 +2471,7 @@ ApplicationWindow {
                 readonly property string authorAvatar: model && model.authorAvatar
                     ? String(model.authorAvatar) : ""
                 readonly property bool authorBot: !!(model && model.authorBot)
+                readonly property bool mentioned: !!(model && model.mentioned)
                 readonly property string origin: win.transcriptField(conversation.messageList.model, index, "origin")
                 readonly property bool replayed: origin === "replay"
                 readonly property bool isChat: kind !== "event" && kind !== "whois" && kind !== "unread"
@@ -2489,6 +2490,12 @@ ApplicationWindow {
                             : (kind === "whois"
                                 ? messageWhois.implicitHeight
                                 : messageBody.implicitHeight)))
+
+                MentionWash {
+                    style: win.style
+                    shown: messageDelegate.mentioned
+                    anchors.fill: parent
+                }
 
                 Rectangle {
                     objectName: "findMatch"

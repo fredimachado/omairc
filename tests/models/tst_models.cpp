@@ -141,6 +141,7 @@ private slots:
     void unreadMarkKeptOnVisitClearedOnRevisit();
     void unreadMarkChangeMidBufferResetsInsteadOfInsert();
     void unreadMarkAfterNickMergeStaysOnMovedChat();
+    void mentionedRoleHighlightsNickAndWords();
 };
 
 void ModelTest::roleNamesMatchQml()
@@ -187,6 +188,8 @@ void ModelTest::roleNamesMatchQml()
              QByteArray("authorAvatar"));
     QCOMPARE(messages.roleNames()[MessageListModel::AuthorBotRole],
              QByteArray("authorBot"));
+    QCOMPARE(messages.roleNames()[MessageListModel::MentionedRole],
+             QByteArray("mentioned"));
 
     QCOMPARE(members.roleNames()[MemberListModel::NickRole], QByteArray("nick"));
     QCOMPARE(members.roleNames()[MemberListModel::LabelRole], QByteArray("label"));
@@ -1925,6 +1928,112 @@ void ModelTest::unreadMarkAfterNickMergeStaysOnMovedChat()
              QStringLiteral("moved-chat"));
     QVERIFY(roleAt(messages, markRow + 1, MessageListModel::BodyRole)
             != QStringLiteral("dest-only"));
+}
+
+void ModelTest::mentionedRoleHighlightsNickAndWords()
+{
+    IrcEventReducer reducer;
+    MessageListModel messages(reducer);
+    welcome(reducer, networkA);
+
+    QCOMPARE(messages.roleNames()[MessageListModel::MentionedRole],
+             QByteArray("mentioned"));
+
+    const IrcConversationKey room =
+        reducer.conversationKey(networkA, QStringLiteral("#room"));
+    reducer.apply(IrcJoinEvent{
+        networkA, QStringLiteral("#room"), QStringLiteral("omairc")});
+    reducer.apply(IrcMessageEvent{
+        room, QStringLiteral("Alice"), QStringLiteral("hello"), timestamp,
+        QStringLiteral("#room")});
+    reducer.apply(IrcMessageEvent{
+        room, QStringLiteral("Alice"), QStringLiteral("omairc: ping"), timestamp,
+        QStringLiteral("#room")});
+    reducer.apply(IrcActionEvent{
+        room, QStringLiteral("Alice"), QStringLiteral("pokes omairc"), timestamp,
+        QStringLiteral("#room")});
+    reducer.apply(IrcMessageEvent{
+        room, QStringLiteral("omairc"), QStringLiteral("hello omairc"), timestamp,
+        QStringLiteral("#room")});
+    reducer.apply(IrcNoticeEvent{
+        room, QStringLiteral("Alice"), QStringLiteral("omairc: notice"), timestamp,
+        QStringLiteral("#room")});
+    reducer.apply(IrcMessageEvent{
+        room, QStringLiteral("Alice"), QStringLiteral("please review deploy"),
+        timestamp, QStringLiteral("#room")});
+    messages.select(room);
+
+    const int joined = rowForBody(messages, QStringLiteral("omairc joined"));
+    const int hello = rowForBody(messages, QStringLiteral("hello"));
+    const int nickHit = rowForBody(messages, QStringLiteral("omairc: ping"));
+    const int actionHit = rowForBody(messages, QStringLiteral("pokes omairc"));
+    const int selfHit = rowForBody(messages, QStringLiteral("hello omairc"));
+    const int noticeHit = rowForBody(messages, QStringLiteral("omairc: notice"));
+    const int deployHit =
+        rowForBody(messages, QStringLiteral("please review deploy"));
+    QVERIFY(joined >= 0);
+    QVERIFY(hello >= 0);
+    QVERIFY(nickHit >= 0);
+    QVERIFY(actionHit >= 0);
+    QVERIFY(selfHit >= 0);
+    QVERIFY(noticeHit >= 0);
+    QVERIFY(deployHit >= 0);
+
+    QCOMPARE(roleAt(messages, joined, MessageListModel::MentionedRole), false);
+    QCOMPARE(roleAt(messages, hello, MessageListModel::MentionedRole), false);
+    QCOMPARE(roleAt(messages, nickHit, MessageListModel::MentionedRole), true);
+    QCOMPARE(roleAt(messages, actionHit, MessageListModel::MentionedRole), true);
+    QCOMPARE(roleAt(messages, selfHit, MessageListModel::MentionedRole), false);
+    QCOMPARE(roleAt(messages, noticeHit, MessageListModel::MentionedRole), false);
+    QCOMPARE(roleAt(messages, deployHit, MessageListModel::MentionedRole), false);
+
+    const int unread = messages.unreadMarkRow();
+    QVERIFY(unread >= 0);
+    QCOMPARE(roleAt(messages, unread, MessageListModel::MentionedRole), false);
+
+    reducer.setHighlightWords(networkA, QStringList{QStringLiteral("deploy")});
+    messages.reload();
+    QCOMPARE(roleAt(messages, deployHit, MessageListModel::MentionedRole), true);
+    QCOMPARE(roleAt(messages, hello, MessageListModel::MentionedRole), false);
+
+    reducer.setHighlightWords(networkA, {});
+    messages.reload();
+    QCOMPARE(roleAt(messages, deployHit, MessageListModel::MentionedRole), false);
+    QCOMPARE(roleAt(messages, nickHit, MessageListModel::MentionedRole), true);
+
+    const QDate today = QDate::currentDate();
+    IrcEventReducer dated;
+    MessageListModel datedMessages(dated);
+    welcome(dated, networkA);
+    const IrcConversationKey datedRoom =
+        dated.conversationKey(networkA, QStringLiteral("#days"));
+    dated.apply(IrcMessageEvent{
+        datedRoom, QStringLiteral("Alice"), QStringLiteral("yesterday-line"),
+        atLocal(today.addDays(-1)), QStringLiteral("#days")});
+    dated.apply(IrcMessageEvent{
+        datedRoom, QStringLiteral("Alice"), QStringLiteral("omairc today"),
+        atLocal(today), QStringLiteral("#days")});
+    datedMessages.select(datedRoom);
+    const int separator = rowForBody(datedMessages, expectedDateLabel(today));
+    const int todayHit = rowForBody(datedMessages, QStringLiteral("omairc today"));
+    QVERIFY(separator >= 0);
+    QVERIFY(todayHit >= 0);
+    QCOMPARE(roleAt(datedMessages, separator, MessageListModel::KindRole),
+             QStringLiteral("event"));
+    QCOMPARE(roleAt(datedMessages, separator, MessageListModel::MentionedRole),
+             false);
+    QCOMPARE(roleAt(datedMessages, todayHit, MessageListModel::MentionedRole),
+             true);
+
+    const IrcConversationKey alice =
+        reducer.conversationKey(networkA, QStringLiteral("Alice"));
+    reducer.apply(IrcMessageEvent{
+        alice, QStringLiteral("Alice"), QStringLiteral("just a dm"), timestamp,
+        QStringLiteral("Alice")});
+    messages.select(alice);
+    const int dm = rowForBody(messages, QStringLiteral("just a dm"));
+    QVERIFY(dm >= 0);
+    QCOMPARE(roleAt(messages, dm, MessageListModel::MentionedRole), false);
 }
 
 int runModelTests(int argc, char **argv)

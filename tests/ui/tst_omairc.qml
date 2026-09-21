@@ -6583,6 +6583,46 @@ TestCase {
         tryCompare(bot, "visible", true);
     }
 
+    function mentionWashAt(row) {
+        var wash = findChild(row, "mentionWash");
+        verify(wash !== null, "Could not find mentionWash");
+        return wash;
+    }
+
+    function test_transcriptMentionWashForNickAndHighlightWords() {
+        openSeededAppWindow();
+        injectOmarchyChat("anna", "#omarchy", "mention-wash-plain-zx9");
+        var plain = renderedRowWithBody("mention-wash-plain-zx9");
+        compare(plain.mentioned, false);
+        compare(mentionWashAt(plain).visible, false);
+
+        injectOmarchyChat("anna", "#omarchy", "mention-wash-nick-zx9 fred please");
+        var nickHit = renderedRowWithBody("mention-wash-nick-zx9 fred please");
+        compare(nickHit.mentioned, true);
+        compare(mentionWashAt(nickHit).visible, true);
+
+        injectOmarchyChat("fred", "#omarchy", "mention-wash-self-zx9 fred");
+        var selfHit = renderedRowWithBody("mention-wash-self-zx9 fred");
+        compare(selfHit.mentioned, false);
+        compare(mentionWashAt(selfHit).visible, false);
+
+        injectOmarchyChat("anna", "#omarchy", "mention-wash-deploy-zx9 please review deploy");
+        var deploy = renderedRowWithBody("mention-wash-deploy-zx9 please review deploy");
+        compare(deploy.mentioned, false);
+        compare(mentionWashAt(deploy).visible, false);
+
+        verify(appWindow.irc.sendMessage("/highlight deploy"));
+        tryCompare(deploy, "mentioned", true);
+        tryCompare(mentionWashAt(deploy), "visible", true);
+        compare(plain.mentioned, false);
+        compare(mentionWashAt(plain).visible, false);
+
+        injectOmarchyChat("dax", "#omarchy", "mention-wash-after-zx9 still plain");
+        var after = renderedRowWithBody("mention-wash-after-zx9 still plain");
+        compare(after.mentioned, false);
+        compare(mentionWashAt(after).visible, false);
+    }
+
     function test_typingTranscriptBotRefreshesAfterLateMetadata() {
         openSeededAppWindow();
         mouseClick(namedItem(liveConversation("anna")));

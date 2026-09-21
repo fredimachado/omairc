@@ -150,6 +150,8 @@ QVariant MessageListModel::data(const QModelIndex& index, int role) const
             return QString();
         case AuthorBotRole:
             return false;
+        case MentionedRole:
+            return false;
         default:
             return {};
         }
@@ -171,6 +173,8 @@ QVariant MessageListModel::data(const QModelIndex& index, int role) const
         case AuthorAvatarRole:
             return QString();
         case AuthorBotRole:
+            return false;
+        case MentionedRole:
             return false;
         default:
             return {};
@@ -210,6 +214,10 @@ QVariant MessageListModel::data(const QModelIndex& index, int role) const
             return false;
         return m_reducer.nickPresence(conversation->key.networkId, message.author)
             .isBot();
+    case MentionedRole:
+        return m_reducer.isTranscriptHighlight(
+            conversation->key.networkId, message.author, message.kind,
+            message.body);
     default:
         return {};
     }
@@ -227,6 +235,7 @@ QHash<int, QByteArray> MessageListModel::staticRoleNames()
         {MsgidRole, "msgid"},
         {AuthorAvatarRole, "authorAvatar"},
         {AuthorBotRole, "authorBot"},
+        {MentionedRole, "mentioned"},
     };
 }
 

@@ -2168,6 +2168,7 @@ IrcCommandOutcome IrcController::dispatchHighlight(const IrcCommand& command,
 void IrcController::syncHighlightWords(const QString& networkId)
 {
     m_reducer.setHighlightWords(networkId, m_highlights.words(networkId));
+    m_messages.reload();
 }
 
 IrcCommandOutcome IrcController::dispatchQuery(const IrcCommand& command,
