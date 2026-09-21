@@ -2001,6 +2001,11 @@ void ModelTest::mentionedRoleHighlightsNickAndWords()
     QCOMPARE(roleAt(messages, deployHit, MessageListModel::MentionedRole), false);
     QCOMPARE(roleAt(messages, nickHit, MessageListModel::MentionedRole), true);
 
+    reducer.setMuted(room, true);
+    messages.select(room);
+    QCOMPARE(rowForBody(messages, QStringLiteral("omairc: ping")), nickHit);
+    QCOMPARE(roleAt(messages, nickHit, MessageListModel::MentionedRole), true);
+
     const QDate today = QDate::currentDate();
     IrcEventReducer dated;
     MessageListModel datedMessages(dated);
@@ -2034,6 +2039,14 @@ void ModelTest::mentionedRoleHighlightsNickAndWords()
     const int dm = rowForBody(messages, QStringLiteral("just a dm"));
     QVERIFY(dm >= 0);
     QCOMPARE(roleAt(messages, dm, MessageListModel::MentionedRole), false);
+
+    reducer.apply(IrcMessageEvent{
+        alice, QStringLiteral("Alice"), QStringLiteral("omairc: hi"), timestamp,
+        QStringLiteral("Alice")});
+    messages.select(alice);
+    const int dmNick = rowForBody(messages, QStringLiteral("omairc: hi"));
+    QVERIFY(dmNick >= 0);
+    QCOMPARE(roleAt(messages, dmNick, MessageListModel::MentionedRole), true);
 }
 
 int runModelTests(int argc, char **argv)
