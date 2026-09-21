@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.1] - 2026-09-21
+
 ### Added
 
 - Chat that arrives in the open channel or DM while the window is unfocused is
@@ -14,6 +16,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and, when focus returns, the transcript lands on that mark instead of being
   pinned to the bottom. Replay while that conversation is open and the window
   is unfocused still does not plant the mark. Status keeps following the end.
+- When a New messages mark is visible and the transcript can still scroll down,
+  a scroll-down chip stays armed until the viewport reaches the bottom, with a
+  subtle bounce to draw attention.
+
+### Changed
+
+- Transcript rows for nick mentions and `/highlight` hits use a softer wash so
+  mentions stay noticeable without dominating the transcript.
 
 ### Fixed
 
@@ -370,7 +380,8 @@ First public release: a dead-simple IRC client for Omarchy.
 - Keyboard map, slash-command complete, selectable transcript, and follow-unseen.
 - qmake Unix install tree and a GitHub Releases pacman repository.
 
-[Unreleased]: https://github.com/fredimachado/omairc/compare/v0.9.0...HEAD
+[Unreleased]: https://github.com/fredimachado/omairc/compare/v0.9.1...HEAD
+[0.9.1]: https://github.com/fredimachado/omairc/compare/v0.9.0...v0.9.1
 [0.9.0]: https://github.com/fredimachado/omairc/compare/v0.8.3...v0.9.0
 [0.8.3]: https://github.com/fredimachado/omairc/compare/v0.8.2...v0.8.3
 [0.8.2]: https://github.com/fredimachado/omairc/compare/v0.8.1...v0.8.2

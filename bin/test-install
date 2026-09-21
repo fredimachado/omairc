@@ -118,7 +118,7 @@ test "$got" = "$want" || {
 if command -v vercmp >/dev/null 2>&1; then
   test "$(vercmp "$VERSION-0.1" "$VERSION-0.237")" -lt 0
   test "$(vercmp "$VERSION-0.237" "$VERSION-1")" -lt 0
-  test "$(vercmp "$VERSION-1" "0.9.0-1")" -lt 0
+  test "$(vercmp "$VERSION-1" "0.9.1-1")" -lt 0
 fi
 
 printf '%s\n' "$dest_files"
