@@ -2391,6 +2391,7 @@ IrcCommandOutcome IrcController::dispatchAutoaway(const IrcCommand& command,
 
     bool persist = false;
     QString text;
+    const QString previousReason = autoawayReason();
     switch (request.kind) {
     case IrcAutoawayKind::Query:
         text = ircFormatAutoawayQuery(m_autoaway);
@@ -2408,7 +2409,8 @@ IrcCommandOutcome IrcController::dispatchAutoaway(const IrcCommand& command,
             return echoAutoawayUsage(surface);
         m_autoaway.enabled = true;
         persist = true;
-        armAutoawayIdle();
+        if (!m_autoawayTripped)
+            armAutoawayIdle();
         text = ircFormatAutoawayConfirmation(m_autoaway);
         break;
     case IrcAutoawayKind::SetTimeout:
@@ -2417,7 +2419,8 @@ IrcCommandOutcome IrcController::dispatchAutoaway(const IrcCommand& command,
         if (!request.text.isEmpty())
             m_autoaway.oneShotReason = request.text;
         persist = true;
-        armAutoawayIdle();
+        if (!m_autoawayTripped)
+            armAutoawayIdle();
         text = ircFormatAutoawayConfirmation(m_autoaway);
         break;
     case IrcAutoawayKind::SetDefaultReason:
@@ -2435,6 +2438,10 @@ IrcCommandOutcome IrcController::dispatchAutoaway(const IrcCommand& command,
     }
     if (persist)
         saveAutoaway();
+    if (m_autoawayTripped && m_autoaway.enabled
+        && autoawayReason() != previousReason) {
+        refreshAutoAwayReason();
+    }
     return echoAutoawayFeedback(surface, text);
 }
 
@@ -2542,6 +2549,19 @@ void IrcController::noteAwayCleared(const QString& networkId)
     m_manualAwayNetworks.remove(networkId);
     if (wasAuto && m_autoAwayNetworks.isEmpty())
         m_autoaway.oneShotReason.clear();
+}
+
+void IrcController::refreshAutoAwayReason()
+{
+    if (!m_autoawayTripped || !m_autoaway.enabled)
+        return;
+    const QString reason = autoawayReason();
+    for (const QString& networkId : m_autoAwayNetworks) {
+        IrcSession *session = m_sessions.findSession(networkId);
+        if (!session || session->state() != IrcSession::State::Registered)
+            continue;
+        session->markAway(reason);
+    }
 }
 
 void IrcController::tripAutoaway()

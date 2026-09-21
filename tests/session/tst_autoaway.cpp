@@ -160,6 +160,7 @@ private slots:
     void restoreOnAfterOff();
     void emptyAwayClearsProvenanceSoAutoTripMarks();
     void loadBelowFloorTimeoutDisables();
+    void reasonChangeWhileTrippedRewritesAway();
     void refuseTimeoutAtOrAboveTimerCap();
     void reconnectWhileTrippedSendsAway();
     void reconnectDropsManualAwaySoAutoTripMarks();
@@ -715,6 +716,38 @@ void AutoawayTest::loadBelowFloorTimeoutDisables()
     controller.fireAutoawayIdleForTest();
     controller.fireAutoawayGraceForTest();
     QCOMPARE(awayFrameCount(transport->writtenFrames(), before), 0);
+}
+
+void AutoawayTest::reasonChangeWhileTrippedRewritesAway()
+{
+    IrcController controller;
+    auto *transport = joinNetwork(controller, QStringLiteral("libera"));
+    QVERIFY(transport);
+    controller.selectConversation(QStringLiteral("libera"),
+                                  QStringLiteral("#omarchy"));
+    QVERIFY(controller.sendMessage(QStringLiteral("/autoaway reason AFK")));
+    QVERIFY(controller.sendMessage(QStringLiteral("/autoaway 15")));
+    controller.fireAutoawayIdleForTest();
+    controller.fireAutoawayGraceForTest();
+    QCOMPARE(transport->writtenFrames().last(),
+             QByteArrayLiteral("AWAY :AFK\r\n"));
+    injectNowAway(transport);
+    QVERIFY(controller.selfAway());
+
+    QVERIFY(controller.sendMessage(QStringLiteral("/autoaway reason lunch")));
+    QCOMPARE(transport->writtenFrames().last(),
+             QByteArrayLiteral("AWAY :lunch\r\n"));
+
+    QVERIFY(controller.sendMessage(
+        QStringLiteral("/autoaway 15m Stepped out")));
+    QCOMPARE(transport->writtenFrames().last(),
+             QByteArrayLiteral("AWAY :Stepped out\r\n"));
+
+    const int afterOneShot = transport->writtenFrames().size();
+    QVERIFY(controller.sendMessage(QStringLiteral("/autoaway reason AFK")));
+    QCOMPARE(transport->writtenFrames().size(), afterOneShot);
+    QCOMPARE(transport->writtenFrames().last(),
+             QByteArrayLiteral("AWAY :Stepped out\r\n"));
 }
 
 void AutoawayTest::reconnectWhileTrippedSendsAway()
