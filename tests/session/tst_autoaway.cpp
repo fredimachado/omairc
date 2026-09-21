@@ -149,6 +149,7 @@ private slots:
     void refuseTimeoutAtOrAboveTimerCap();
     void reconnectWhileTrippedSendsAway();
     void reconnectDropsManualAwaySoAutoTripMarks();
+    void activityAfterEmptyTripClearsOneShot();
 
 private:
     std::unique_ptr<QTemporaryDir> m_settingsDir;
@@ -190,18 +191,29 @@ void AutoawayTest::parseSuffixesCaseInsensitive()
 
 void AutoawayTest::refuseBelowTimeoutFloor()
 {
-    QCOMPARE(ircParseAutoawayDuration(QStringLiteral("20s")), std::optional<int>(20));
-    QCOMPARE(ircParseAutoawayDuration(QStringLiteral("0.4")), std::optional<int>(24));
+    QVERIFY(!ircParseAutoawayDuration(QStringLiteral("20s")));
+    QVERIFY(!ircParseAutoawayDuration(QStringLiteral("0.4")));
+    QVERIFY(!ircParseAutoawayDuration(QStringLiteral("29.5s")));
+    QVERIFY(!ircParseAutoawayDuration(QStringLiteral("0.49m")));
     QCOMPARE(ircParseAutoawayDuration(QStringLiteral("30s")), std::optional<int>(30));
+    QCOMPARE(ircParseAutoawayDuration(QStringLiteral("0.5m")), std::optional<int>(30));
 
     QCOMPARE(ircParseAutoawayArgument(QStringLiteral("20s")).kind,
              IrcAutoawayKind::Usage);
     QCOMPARE(ircParseAutoawayArgument(QStringLiteral("0.4")).kind,
              IrcAutoawayKind::Usage);
+    QCOMPARE(ircParseAutoawayArgument(QStringLiteral("29.5s")).kind,
+             IrcAutoawayKind::Usage);
+    QCOMPARE(ircParseAutoawayArgument(QStringLiteral("0.49m")).kind,
+             IrcAutoawayKind::Usage);
     const IrcAutoawayRequest accepted =
         ircParseAutoawayArgument(QStringLiteral("30s"));
     QCOMPARE(accepted.kind, IrcAutoawayKind::SetTimeout);
     QCOMPARE(accepted.timeoutSeconds, 30);
+    const IrcAutoawayRequest halfMinute =
+        ircParseAutoawayArgument(QStringLiteral("0.5m"));
+    QCOMPARE(halfMinute.kind, IrcAutoawayKind::SetTimeout);
+    QCOMPARE(halfMinute.timeoutSeconds, 30);
 }
 
 void AutoawayTest::refuseTimeoutAtOrAboveTimerCap()
@@ -649,6 +661,36 @@ void AutoawayTest::reconnectDropsManualAwaySoAutoTripMarks()
     QCOMPARE(awayFrameCount(transportA->writtenFrames(), afterWelcomeA), 1);
     QCOMPARE(transportA->writtenFrames().last(), QByteArrayLiteral("AWAY\r\n"));
     QCOMPARE(awayFrameCount(transportB->writtenFrames(), beforeB), 1);
+}
+
+void AutoawayTest::activityAfterEmptyTripClearsOneShot()
+{
+    IrcController controller;
+    auto *transport = joinNetwork(controller, QStringLiteral("libera"));
+    QVERIFY(transport);
+    controller.selectConversation(QStringLiteral("libera"),
+                                  QStringLiteral("#omarchy"));
+    QVERIFY(controller.sendMessage(QStringLiteral("/autoaway reason AFK")));
+    QVERIFY(controller.sendMessage(
+        QStringLiteral("/autoaway 15m Stepped out for lunch")));
+
+    transport->remoteClose();
+    const int afterClose = transport->writtenFrames().size();
+    controller.fireAutoawayIdleForTest();
+    controller.fireAutoawayGraceForTest();
+    QCOMPARE(awayFrameCount(transport->writtenFrames(), afterClose), 0);
+
+    controller.noteLocalActivity();
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    const int beforeWelcome = transport->writtenFrames().size();
+    welcome(transport);
+    QCOMPARE(awayFrameCount(transport->writtenFrames(), beforeWelcome), 0);
+
+    const int afterWelcome = transport->writtenFrames().size();
+    controller.fireAutoawayIdleForTest();
+    controller.fireAutoawayGraceForTest();
+    QCOMPARE(awayFrameCount(transport->writtenFrames(), afterWelcome), 1);
+    QCOMPARE(transport->writtenFrames().last(), QByteArrayLiteral("AWAY :AFK\r\n"));
 }
 
 int runAutoawayTests(int argc, char **argv)

@@ -91,6 +91,8 @@ std::optional<int> ircParseAutoawayDuration(const QString& token)
 
     if (seconds > double(ircAutoawayMaxTimeoutSeconds))
         return std::nullopt;
+    if (seconds < double(ircAutoawayMinTimeoutSeconds))
+        return std::nullopt;
     const int rounded = qRound(seconds);
     if (rounded < 0 || rounded > ircAutoawayMaxTimeoutSeconds)
         return std::nullopt;

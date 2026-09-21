@@ -2548,9 +2548,12 @@ void IrcController::clearAutoAwayNetworks()
 
 void IrcController::noteLocalActivity()
 {
+    const bool wasTripped = m_autoawayTripped;
     m_autoawayTripped = false;
     if (!m_autoAwayNetworks.isEmpty())
         clearAutoAwayNetworks();
+    else if (wasTripped)
+        m_autoaway.oneShotReason.clear();
     if (m_autoaway.enabled)
         armAutoawayIdle();
 }
