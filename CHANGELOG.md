@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-09-21
+
 ### Added
 
 - IRCv3 `labeled-response`. When a network advertises it (and `message-tags`),
@@ -33,7 +35,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   The identity footer shows an `inbox` mark with a count badge;
   `Ctrl+Shift+A` opens a sheet to walk and activate rows. Selecting the
   matching conversation from the sidebar consumes related rows.
+- Sidebar network order and per-network collapse persist. `Alt+Shift+Left` /
+  `Alt+Shift+Right` collapse or expand the focused network; a header chevron
+  toggles the same state. `Ctrl+Alt+Shift+Left` / `Ctrl+Alt+Shift+Right`
+  collapse or expand every network. `Alt+Shift+Up` / `Alt+Shift+Down` reorder
+  the focused header. Custom order and collapsed ids live in preferences.
 - `/list [mask]` opens a searchable overlay of channels on the focused network (name, users, topic; Enter joins). Each network keeps that LIST in memory until disconnect, so opening `/list` again with the same mask is instant; `/list` while the overlay is open refreshes. `322`/`323` stay out of Status. `--demo-server` answers LIST, including unjoined `#linux` / `#random` (omarchy) and `#debian` (oftc).
+- A centered New messages unread mark in conversation transcripts, planted
+  on the first chat that arrives while the buffer is unselected. Find skips
+  it. History splices plant the mark on the arriving sequence rather than
+  the join line.
 - Preferences → **Open conversations at unread** (default off). When on,
   switching or jumping to a different conversation lands on the New messages
   marker instead of the bottom. An already-focused buffer is left alone;
@@ -83,6 +94,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Collapse-all matches Command as `MetaModifier` in `Keys.onPressed`. The
   shortcuts sheet and Connect hint show `Cmd` and `Option` in place of `Ctrl`
   and `Alt`.
+- `--demo-server` answers client `PING`, so the idle-socket watchdog no
+  longer drops the loopback session after a silent minute.
 
 ## [0.8.3] - 2026-09-20
 
@@ -337,7 +350,8 @@ First public release: a dead-simple IRC client for Omarchy.
 - Keyboard map, slash-command complete, selectable transcript, and follow-unseen.
 - qmake Unix install tree and a GitHub Releases pacman repository.
 
-[Unreleased]: https://github.com/fredimachado/omairc/compare/v0.8.3...HEAD
+[Unreleased]: https://github.com/fredimachado/omairc/compare/v0.9.0...HEAD
+[0.9.0]: https://github.com/fredimachado/omairc/compare/v0.8.3...v0.9.0
 [0.8.3]: https://github.com/fredimachado/omairc/compare/v0.8.2...v0.8.3
 [0.8.2]: https://github.com/fredimachado/omairc/compare/v0.8.1...v0.8.2
 [0.8.1]: https://github.com/fredimachado/omairc/compare/v0.8.0...v0.8.1
