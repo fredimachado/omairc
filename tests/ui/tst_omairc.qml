@@ -3036,8 +3036,11 @@ TestCase {
             return transcriptPinned(list);
         }, 1000, "Unfocused backlog should stay pinned while the window is inactive");
         var jump = item("messageUnseenJump");
+        var burst = findChild(jump, "bounceBurst");
+        verify(burst !== null, "Could not find bounceBurst on the jump chip");
         compare(jump.visible, false);
         compare(jump.bounceArmed, false);
+        compare(burst.running, false);
 
         appWindow.windowFocusGained();
         waitForRendering(appWindow.contentItem);
@@ -3050,6 +3053,7 @@ TestCase {
 
         tryCompare(jump, "visible", true);
         compare(jump.bounceArmed, true);
+        tryCompare(burst, "running", true);
 
         list.pinToEnd();
         waitForRendering(appWindow.contentItem);
@@ -3059,6 +3063,7 @@ TestCase {
         }, 1000, "Pinning to end should reach the bottom");
         tryCompare(jump, "visible", false);
         compare(jump.bounceArmed, false);
+        tryCompare(burst, "running", false);
 
         list.pinToUnread(markRow);
         waitForRendering(appWindow.contentItem);
@@ -3066,6 +3071,7 @@ TestCase {
         verify(!transcriptPinned(list));
         tryCompare(jump, "visible", true);
         compare(jump.bounceArmed, true);
+        tryCompare(burst, "running", true);
 
         mouseClick(jump);
         waitForRendering(appWindow.contentItem);

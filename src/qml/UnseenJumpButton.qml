@@ -55,6 +55,7 @@ Rectangle {
 
         SequentialAnimation {
             id: bounceBurst
+            objectName: "bounceBurst"
             loops: 3
             onStopped: arrow.bounceOffset = 0
 
