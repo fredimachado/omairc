@@ -317,6 +317,11 @@ void MessageListModel::reload()
             m_unreadMark = unreadMark;
             endInsertRows();
             notifySeparatorRows();
+            // Insert only announces the new indices. MentionedRole is
+            // computed from the current nick and highlight words, so a
+            // self /nick that also appends "is now" would otherwise leave
+            // existing washes stale.
+            notifyMentioned();
             return;
         }
         if (int(next.size()) == int(m_view.size())) {
@@ -338,6 +343,15 @@ void MessageListModel::reload()
     m_spliceEpoch = spliceEpoch;
     m_unreadMark = unreadMark;
     endResetModel();
+}
+
+void MessageListModel::notifyMentioned()
+{
+    if (m_view.empty())
+        return;
+    emit dataChanged(index(0, 0),
+                     index(int(m_view.size()) - 1, 0),
+                     {MentionedRole});
 }
 
 void MessageListModel::setSelected(const IrcConversationKey& key)

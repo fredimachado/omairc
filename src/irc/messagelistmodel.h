@@ -44,6 +44,7 @@ public:
     Q_INVOKABLE int unreadMarkRow() const;
 
     void reload();
+    void notifyMentioned();
     void setSelected(const IrcConversationKey& key);
     void select(const IrcConversationKey& key);
     void clearSelection();

@@ -1992,13 +1992,37 @@ void ModelTest::mentionedRoleHighlightsNickAndWords()
     QCOMPARE(roleAt(messages, unread, MessageListModel::MentionedRole), false);
 
     reducer.setHighlightWords(networkA, QStringList{QStringLiteral("deploy")});
-    messages.reload();
+    messages.notifyMentioned();
     QCOMPARE(roleAt(messages, deployHit, MessageListModel::MentionedRole), true);
     QCOMPARE(roleAt(messages, hello, MessageListModel::MentionedRole), false);
 
     reducer.setHighlightWords(networkA, {});
-    messages.reload();
+    messages.notifyMentioned();
     QCOMPARE(roleAt(messages, deployHit, MessageListModel::MentionedRole), false);
+    QCOMPARE(roleAt(messages, nickHit, MessageListModel::MentionedRole), true);
+
+    QSignalSpy nickChanges(&messages, &QAbstractItemModel::dataChanged);
+    reducer.apply(IrcNickEvent{
+        networkA, QStringLiteral("omairc"), QStringLiteral("other")});
+    messages.reload();
+    QCOMPARE(roleAt(messages, nickHit, MessageListModel::MentionedRole), false);
+    QCOMPARE(roleAt(messages, actionHit, MessageListModel::MentionedRole), false);
+    bool notifiedNickHit = false;
+    for (int i = 0; i < nickChanges.size(); ++i) {
+        const int top = nickChanges.at(i).at(0).toModelIndex().row();
+        const int bottom = nickChanges.at(i).at(1).toModelIndex().row();
+        const QList<int> roles =
+            nickChanges.at(i).at(2).value<QList<int>>();
+        const bool mentionsRole = roles.isEmpty()
+            || roles.contains(MessageListModel::MentionedRole);
+        if (mentionsRole && top <= nickHit && bottom >= nickHit)
+            notifiedNickHit = true;
+    }
+    QVERIFY2(notifiedNickHit,
+             "self nick change must dataChanged MentionedRole on existing hits");
+    reducer.apply(IrcNickEvent{
+        networkA, QStringLiteral("other"), QStringLiteral("omairc")});
+    messages.reload();
     QCOMPARE(roleAt(messages, nickHit, MessageListModel::MentionedRole), true);
 
     reducer.setMuted(room, true);
