@@ -8,9 +8,14 @@ ListView {
     readonly property int stickDetached: 1
     property int stick: 0
     property int firstUnseenIndex: -1
-    readonly property bool jumpArmed: stick === stickDetached
-        && firstUnseenIndex >= 0
-        && firstUnseenIndex < count
+    property int unreadMarkRow: -1
+    readonly property bool hasUnreadMark: unreadMarkRow >= 0
+    readonly property bool canScrollDown: !viewportPinned()
+    readonly property bool jumpArmed: canScrollDown && (
+        (stick === stickDetached
+            && firstUnseenIndex >= 0
+            && firstUnseenIndex < count)
+        || hasUnreadMark)
 
     property bool pinning: false
     property int trackedCount: 0
@@ -32,6 +37,11 @@ ListView {
 
     function endContentY() {
         return originY + Math.max(0, contentHeight - height);
+    }
+
+    function refreshUnreadMarkRow() {
+        unreadMarkRow = (model && typeof model.unreadMarkRow === "function")
+            ? model.unreadMarkRow() : -1;
     }
 
     function viewportPinned() {
@@ -161,17 +171,24 @@ ListView {
     function jumpToUnseen() {
         if (!jumpArmed)
             return;
-        var target = firstUnseenIndex;
-        firstUnseenIndex = -1;
-        pinning = true;
-        var generation = ++pinGeneration;
-        positionViewAtIndex(target, ListView.Beginning);
-        Qt.callLater(function() {
-            if (generation !== pinGeneration)
-                return;
-            pinning = false;
-            adoptViewport();
-        });
+        if (stick === stickDetached
+                && firstUnseenIndex >= 0
+                && firstUnseenIndex < count) {
+            var target = firstUnseenIndex;
+            firstUnseenIndex = -1;
+            pinning = true;
+            var generation = ++pinGeneration;
+            positionViewAtIndex(target, ListView.Beginning);
+            Qt.callLater(function() {
+                if (generation !== pinGeneration)
+                    return;
+                pinning = false;
+                adoptViewport();
+            });
+            return;
+        }
+        if (hasUnreadMark)
+            pinToEnd();
     }
 
     function pinToUnread(row) {
@@ -196,12 +213,16 @@ ListView {
 
     onCountChanged: {
         rowRevision += 1;
+        refreshUnreadMarkRow();
         if (resetPending)
             return;
         noteGrowth(trackedCount, count);
     }
 
-    onModelChanged: pinToEnd()
+    onModelChanged: {
+        refreshUnreadMarkRow();
+        pinToEnd();
+    }
 
     onMovementEnded: adoptViewport()
     onFlickEnded: adoptViewport()
@@ -230,6 +251,7 @@ ListView {
         }
         function onModelReset() {
             list.rowRevision += 1;
+            list.refreshUnreadMarkRow();
             // ListView.count is still the pre-reset value here. The C++
             // model already has the spliced rows, so growth after this
             // handler would look like a bottom append.
@@ -264,7 +286,10 @@ ListView {
         }
     }
 
-    Component.onCompleted: pinToEnd()
+    Component.onCompleted: {
+        refreshUnreadMarkRow();
+        pinToEnd();
+    }
 
     ScrollBar.vertical: ScrollBar {
         policy: list.contentHeight > list.height
