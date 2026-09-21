@@ -8530,10 +8530,42 @@ TestCase {
         var texts = shortcutSheetTexts();
         var ctrl = shortcutCtrlLabel();
         var alt = shortcutAltLabel();
+        verify(texts.indexOf("MOVE") !== -1, "shortcut sheet should head MOVE");
+        verify(texts.indexOf("JUMP") !== -1, "shortcut sheet should head JUMP");
+        verify(texts.indexOf("WRITE") !== -1, "shortcut sheet should head WRITE");
+        verify(texts.indexOf("WINDOW") !== -1, "shortcut sheet should head WINDOW");
+        verify(texts.indexOf(alt + "+Down / " + alt + "+Up") !== -1,
+               "shortcut sheet should list " + alt + "+Down / " + alt + "+Up");
+        verify(texts.indexOf("walk conversations") !== -1,
+               "shortcut sheet should name walk conversations");
         verify(texts.indexOf(alt + "+Left / " + alt + "+Right") !== -1,
                "shortcut sheet should list " + alt + "+Left / " + alt + "+Right");
         verify(texts.indexOf("walk networks") !== -1,
                "shortcut sheet should name walk networks");
+        verify(texts.indexOf(alt + "+Shift+Left / Right") !== -1,
+               "shortcut sheet should list " + alt + "+Shift+Left / Right");
+        verify(texts.indexOf("collapse / expand network") !== -1,
+               "shortcut sheet should name collapse / expand network");
+        verify(texts.indexOf(ctrl + "+" + alt + "+Shift+Left / Right") !== -1,
+               "shortcut sheet should list " + ctrl + "+" + alt + "+Shift+Left / Right");
+        verify(texts.indexOf("collapse / expand all") !== -1,
+               "shortcut sheet should name collapse / expand all");
+        verify(texts.indexOf(alt + "+Shift+Up / Down") !== -1,
+               "shortcut sheet should list " + alt + "+Shift+Up / Down");
+        verify(texts.indexOf("move network") !== -1,
+               "shortcut sheet should name move network");
+        verify(texts.indexOf("collapse network") === -1,
+               "shortcut sheet should not keep a separate collapse network row");
+        verify(texts.indexOf("expand network") === -1,
+               "shortcut sheet should not keep a separate expand network row");
+        verify(texts.indexOf("collapse all networks") === -1,
+               "shortcut sheet should not keep a separate collapse all networks row");
+        verify(texts.indexOf("expand all networks") === -1,
+               "shortcut sheet should not keep a separate expand all networks row");
+        verify(texts.indexOf("move network up") === -1,
+               "shortcut sheet should not keep a separate move network up row");
+        verify(texts.indexOf("move network down") === -1,
+               "shortcut sheet should not keep a separate move network down row");
         verify(texts.indexOf(ctrl + "+K") !== -1,
                "shortcut sheet should list " + ctrl + "+K");
         verify(texts.indexOf("jump to conversation") !== -1,
@@ -8546,30 +8578,6 @@ TestCase {
                "shortcut sheet should list " + ctrl + "+Shift+S");
         verify(texts.indexOf("server list") !== -1,
                "shortcut sheet should name server list");
-        verify(texts.indexOf(alt + "+Shift+Left") !== -1,
-               "shortcut sheet should list " + alt + "+Shift+Left");
-        verify(texts.indexOf("collapse network") !== -1,
-               "shortcut sheet should name collapse network");
-        verify(texts.indexOf(alt + "+Shift+Right") !== -1,
-               "shortcut sheet should list " + alt + "+Shift+Right");
-        verify(texts.indexOf("expand network") !== -1,
-               "shortcut sheet should name expand network");
-        verify(texts.indexOf(ctrl + "+" + alt + "+Shift+Left") !== -1,
-               "shortcut sheet should list " + ctrl + "+" + alt + "+Shift+Left");
-        verify(texts.indexOf("collapse all networks") !== -1,
-               "shortcut sheet should name collapse all networks");
-        verify(texts.indexOf(ctrl + "+" + alt + "+Shift+Right") !== -1,
-               "shortcut sheet should list " + ctrl + "+" + alt + "+Shift+Right");
-        verify(texts.indexOf("expand all networks") !== -1,
-               "shortcut sheet should name expand all networks");
-        verify(texts.indexOf(alt + "+Shift+Up") !== -1,
-               "shortcut sheet should list " + alt + "+Shift+Up");
-        verify(texts.indexOf("move network up") !== -1,
-               "shortcut sheet should name move network up");
-        verify(texts.indexOf(alt + "+Shift+Down") !== -1,
-               "shortcut sheet should list " + alt + "+Shift+Down");
-        verify(texts.indexOf("move network down") !== -1,
-               "shortcut sheet should name move network down");
         verify(texts.indexOf("/disconnect") !== -1,
                "shortcut sheet should list /disconnect");
         verify(texts.indexOf(ctrl + "+/") !== -1,
@@ -8604,6 +8612,7 @@ TestCase {
                "shortcut sheet should list " + ctrl + "+Home / " + ctrl + "+End");
         verify(texts.indexOf("top / bottom") !== -1,
                "shortcut sheet should name top / bottom");
+        saveScreenshot("shortcuts-sheet");
         keyClick(Qt.Key_Escape);
         tryCompare(sheet, "opened", false);
     }
