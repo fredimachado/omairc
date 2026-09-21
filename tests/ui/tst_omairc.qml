@@ -2058,14 +2058,22 @@ TestCase {
                 "Shift+Page Down should not scroll under an overlay");
     }
 
+    function clickCtrlHome() {
+        keyClick(Qt.Key_Home, shortcutCommandModifier());
+    }
+
+    function clickCtrlEnd() {
+        keyClick(Qt.Key_End, shortcutCommandModifier());
+    }
+
     function assertCtrlHomeEndLeavesContentY(list) {
         var before = list.contentY;
-        keyClick(Qt.Key_Home, Qt.ControlModifier);
+        clickCtrlHome();
         waitForRendering(appWindow.contentItem);
         wait(0);
         compare(list.contentY, before,
                 "Ctrl+Home should not jump under an overlay");
-        keyClick(Qt.Key_End, Qt.ControlModifier);
+        clickCtrlEnd();
         waitForRendering(appWindow.contentItem);
         wait(0);
         compare(list.contentY, before,
@@ -2322,7 +2330,7 @@ TestCase {
         verify(startY > 0);
         verify(transcriptPinned(list));
 
-        keyClick(Qt.Key_Home, Qt.ControlModifier);
+        clickCtrlHome();
         waitForRendering(appWindow.contentItem);
         wait(0);
         tryVerify(function() {
@@ -2342,7 +2350,7 @@ TestCase {
         verify(!transcriptPinned(list));
         verify(composer.activeFocus);
 
-        keyClick(Qt.Key_End, Qt.ControlModifier);
+        clickCtrlEnd();
         waitForRendering(appWindow.contentItem);
         wait(0);
         tryVerify(function() {
@@ -2378,7 +2386,7 @@ TestCase {
         var bar = waitForScrollbarThumb(list, true);
         var endPosition = bar.position;
 
-        keyClick(Qt.Key_Home, Qt.ControlModifier);
+        clickCtrlHome();
         waitForRendering(appWindow.contentItem);
         wait(0);
         tryVerify(function() {
@@ -2390,7 +2398,7 @@ TestCase {
         waitForScrollbarThumb(list, true);
         verify(bar.position < endPosition, "Ctrl+Home should move the Status thumb up");
 
-        keyClick(Qt.Key_End, Qt.ControlModifier);
+        clickCtrlEnd();
         waitForRendering(appWindow.contentItem);
         wait(0);
         tryVerify(function() {
