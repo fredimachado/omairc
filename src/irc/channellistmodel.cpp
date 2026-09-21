@@ -1,7 +1,5 @@
 #include "channellistmodel.h"
 
-#include "irctextformatter.h"
-
 #include <algorithm>
 
 namespace
@@ -227,10 +225,9 @@ void ChannelListModel::clear()
     emitStateNow();
 }
 
-QString ChannelListModel::plainTopic(const QString& topic)
+QString ChannelListModel::plainTopic(const QString& topic) const
 {
-    IrcTextFormatter formatter;
-    return formatter.plainIrcText(topic);
+    return m_textFormatter.plainIrcText(topic);
 }
 
 bool ChannelListModel::matches(const IrcChannelListRow& row) const

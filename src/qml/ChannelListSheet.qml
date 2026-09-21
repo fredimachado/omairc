@@ -124,7 +124,9 @@ Popup {
                 required property string label
                 width: channelListList.width
                 height: sheet.style.scaledSize(28)
+                clip: true
                 readonly property bool current: index === sheet.selectedIndex
+                readonly property bool topicEmphasized: ircText.hasIrcEmphasis(listDelegate.topic)
                 objectName: "channelListRow-" + channel
 
                 Rectangle {
@@ -161,15 +163,21 @@ Popup {
                     anchors.leftMargin: sheet.style.scaledSize(10)
                     anchors.right: parent.right
                     anchors.rightMargin: sheet.style.scaledSize(8)
-                    anchors.verticalCenter: parent.verticalCenter
-                    text: ircText.hasIrcEmphasis(listDelegate.topic)
+                    anchors.top: parent.top
+                    anchors.bottom: parent.bottom
+                    text: listDelegate.topicEmphasized
                         ? ircText.emphasizedIrcText(listDelegate.topic)
                         : ircText.plainIrcText(listDelegate.topic)
-                    textFormat: ircText.hasIrcEmphasis(listDelegate.topic)
+                    textFormat: listDelegate.topicEmphasized
                         ? Text.RichText
                         : Text.PlainText
                     color: sheet.style.mutedColor
-                    elide: Text.ElideRight
+                    elide: listDelegate.topicEmphasized
+                        ? Text.ElideNone
+                        : Text.ElideRight
+                    clip: true
+                    wrapMode: Text.NoWrap
+                    verticalAlignment: Text.AlignVCenter
                     font.family: "iA Writer Mono S"
                     font.pixelSize: sheet.style.scaledSize(12)
                 }

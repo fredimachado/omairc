@@ -7687,6 +7687,12 @@ TestCase {
         var topic = findChild(linuxRow, "channelListTopic");
         verify(topic !== null && topic.visible, "Could not find channelListTopic");
         compare(topic.textFormat, Text.RichText);
+        compare(topic.elide, Text.ElideNone);
+        compare(topic.clip, true);
+        compare(topic.wrapMode, Text.NoWrap);
+        compare(linuxRow.clip, true);
+        verify(topic.height <= linuxRow.height);
+        verify(topic.x + topic.width <= linuxRow.width + 0.5);
         verify(!containsMirc(topic.text));
         verify(topic.text.indexOf("Kernel") >= 0);
         verify(topic.text.indexOf("distro") >= 0);
@@ -7694,6 +7700,13 @@ TestCase {
         verify(topic.text.indexOf("04") < 0);
         verify(topic.text.indexOf("<b>Kernel</b>") >= 0
                || /font-weight\s*:\s*(bold|[6-9]00)/.test(topic.text));
+
+        var randomRow = findChild(list, "channelListRow-#random");
+        verify(randomRow !== null, "The #random list row should be rendered");
+        var randomTopic = findChild(randomRow, "channelListTopic");
+        verify(randomTopic !== null && randomTopic.visible);
+        compare(randomTopic.textFormat, Text.PlainText);
+        compare(randomTopic.elide, Text.ElideRight);
         saveScreenshot("channel-list-overlay");
 
         typeText("distro");
