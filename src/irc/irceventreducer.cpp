@@ -834,17 +834,16 @@ void IrcEventReducer::noteChatArrival(IrcConversationState& conversation,
     // channel) still plants the mark without bumping unread.
     if (self)
         return;
-    if (selected) {
-        if (origin == IrcOrigin::Live && m_windowActive)
-            return;
-        if (origin != IrcOrigin::Live && !m_windowActive)
-            return;
-    }
-    if (conversation.unread == 0
-        && (!conversation.unreadMark.has_value() || origin != IrcOrigin::Replay
-            || !selected)) {
+    const bool skipLiveFocused =
+        selected && origin == IrcOrigin::Live && m_windowActive;
+    const bool skipReplayUnfocused =
+        selected && origin != IrcOrigin::Live && !m_windowActive;
+    if (skipLiveFocused || skipReplayUnfocused)
+        return;
+    const bool holdFocusedReplayMark = selected && origin != IrcOrigin::Live
+        && conversation.unreadMark.has_value();
+    if (conversation.unread == 0 && !holdFocusedReplayMark)
         conversation.unreadMark = sequence;
-    }
     if (selected && origin != IrcOrigin::Live)
         return;
     ++conversation.unread;

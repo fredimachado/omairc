@@ -1709,7 +1709,7 @@ void ReducerTest::historyReplayPlantsUnreadMarkLikeLive()
     reducer.apply(IrcHistoryEvent{
         selected,
         QStringLiteral("#selected"),
-        {replayLine(QStringLiteral("alice"), QStringLiteral("since-away"),
+        {replayLine(QStringLiteral("alice"), QStringLiteral("omairc: since-away"),
                     QStringLiteral("id-focused")),
          replayLine(QStringLiteral("bob"), QStringLiteral("later"),
                     QStringLiteral("id-later"))},
@@ -1719,7 +1719,7 @@ void ReducerTest::historyReplayPlantsUnreadMarkLikeLive()
     QCOMPARE(selectedState->unread, 0);
     QCOMPARE(selectedState->mentions, 0);
     QVERIFY(selectedState->unreadMark.has_value());
-    QCOMPARE(selectedState->messages[0].body, QStringLiteral("since-away"));
+    QCOMPARE(selectedState->messages[0].body, QStringLiteral("omairc: since-away"));
     QCOMPARE(selectedState->messages[1].body, QStringLiteral("later"));
     QCOMPARE(selectedState->messages[2].body, QStringLiteral("omairc joined"));
     QCOMPARE(*selectedState->unreadMark, selectedState->messages[0].sequence);
