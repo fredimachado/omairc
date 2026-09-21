@@ -262,12 +262,16 @@ bool IrcEventReducer::markRead(const IrcConversationKey& key)
     conversation->mentions = 0;
     // Keep unreadMark: the "New messages" boundary stays visible in an
     // already-open transcript and clears on the next selection, matching
-    // markSelected's keep-on-visit rule.
+    // markSelected's keep-on-visit rule. IrcController::setWindowActive(true)
+    // is what calls this on focus-regain; the reducer setter is flag-only.
     return true;
 }
 
 void IrcEventReducer::setWindowActive(bool active)
 {
+    // Flag only. Consuming unread on focus-regain is
+    // IrcController::setWindowActive, which calls markRead for the
+    // selected conversation.
     m_windowActive = active;
 }
 
@@ -806,8 +810,14 @@ void IrcEventReducer::noteChatArrival(IrcConversationState& conversation,
         m_mentionArrival = IrcMentionArrival{
             author, body, key.networkId, conversation.target, msgid};
     }
+    const bool selected = m_selected && *m_selected == key;
+    // Inbox is the waiting list for conversations the user is not looking
+    // at. Selection still skips it while the window is unfocused: that open
+    // buffer already plants unread, mentionArrived still desktop-notifies,
+    // and focus-regain consumes the badge in place. An inbox row would
+    // linger, because consume-on-select does not run on focus return.
     if (origin == IrcOrigin::Live && reason && !conversation.muted
-        && !(m_selected && *m_selected == key)) {
+        && !selected) {
         m_inboxArrival = IrcInboxArrival{
             inboxKindFor(*reason),
             author,
@@ -817,8 +827,11 @@ void IrcEventReducer::noteChatArrival(IrcConversationState& conversation,
             msgid,
         };
     }
-    const bool selected = m_selected && *m_selected == key;
-    if (self || (selected && m_windowActive))
+    // Selected live chat is unread only while unfocused. Replay in that
+    // buffer is backlog (CHATHISTORY / bouncer playback), not "new since
+    // you left", so it must not plant the mark mid-splice. Unselected
+    // replay still counts as unread, as before.
+    if (self || (selected && (m_windowActive || origin != IrcOrigin::Live)))
         return;
     if (conversation.unread == 0)
         conversation.unreadMark = sequence;
