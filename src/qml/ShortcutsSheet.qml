@@ -51,6 +51,7 @@ Popup {
                 { keys: "Ctrl+F", action: "find" },
                 { keys: "Enter", action: "send" },
                 { keys: "Page Up / Page Down", action: "scroll" },
+                { keys: "Shift+Page Up / Shift+Page Down", action: "scroll half page" },
                 { keys: "Tab", action: "nick complete" },
                 { keys: "Up / Down", action: "history" },
                 { keys: "Escape", action: "dismiss" },
