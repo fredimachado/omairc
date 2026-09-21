@@ -6622,8 +6622,10 @@ TestCase {
         compare(mentionWashAt(deploy).visible, false);
 
         verify(appWindow.irc.sendMessage("/highlight deploy"));
+        deploy = renderedRowWithBody("mention-wash-deploy-zx9 please review deploy");
         tryCompare(deploy, "mentioned", true);
         tryCompare(mentionWashAt(deploy), "visible", true);
+        plain = renderedRowWithBody("mention-wash-plain-zx9");
         compare(plain.mentioned, false);
         compare(mentionWashAt(plain).visible, false);
 
@@ -6633,6 +6635,7 @@ TestCase {
         compare(mentionWashAt(after).visible, false);
 
         verify(appWindow.irc.sendMessage("/unhighlight deploy"));
+        deploy = renderedRowWithBody("mention-wash-deploy-zx9 please review deploy");
         tryCompare(deploy, "mentioned", false);
         tryCompare(mentionWashAt(deploy), "visible", false);
 
