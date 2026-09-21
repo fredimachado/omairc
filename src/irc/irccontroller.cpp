@@ -1,5 +1,6 @@
 #include "irccontroller.h"
 
+#include "ircautoaway.h"
 #include "ircavatarurl.h"
 #include "ircchannelmode.h"
 #include "irccommand.h"
@@ -17,7 +18,12 @@
 #include "ircwiretext.h"
 
 #include <QByteArray>
+#include <QCoreApplication>
 #include <QDateTime>
+#include <QEvent>
+#ifdef QT_GUI_LIB
+#include <QGuiApplication>
+#endif
 #include <QSettings>
 #include <QTimer>
 #include <QVariantMap>
@@ -214,6 +220,21 @@ QString openConversationsAtUnreadKey()
     return QStringLiteral("openConversationsAtUnread");
 }
 
+QString autoawayEnabledKey()
+{
+    return QStringLiteral("autoawayEnabled");
+}
+
+QString autoawayTimeoutSecondsKey()
+{
+    return QStringLiteral("autoawayTimeoutSeconds");
+}
+
+QString autoawayDefaultReasonKey()
+{
+    return QStringLiteral("autoawayDefaultReason");
+}
+
 bool loadReopenDirectMessages()
 {
     QSettings settings;
@@ -260,6 +281,35 @@ void saveOpenConversationsAtUnread(bool enabled)
     QSettings settings;
     settings.beginGroup(QStringLiteral("preferences"));
     settings.setValue(openConversationsAtUnreadKey(), enabled);
+    settings.endGroup();
+    settings.sync();
+}
+
+IrcAutoawayConfig loadAutoaway()
+{
+    QSettings settings;
+    settings.beginGroup(QStringLiteral("preferences"));
+    IrcAutoawayConfig config;
+    config.enabled = settings.value(autoawayEnabledKey(), false).toBool();
+    config.timeoutSeconds =
+        settings.value(autoawayTimeoutSecondsKey(), 0).toInt();
+    if (config.timeoutSeconds < ircAutoawayMinTimeoutSeconds)
+        config.timeoutSeconds = 0;
+    if (config.timeoutSeconds > ircAutoawayMaxTimeoutSeconds)
+        config.timeoutSeconds = ircAutoawayMaxTimeoutSeconds;
+    if (config.timeoutSeconds < ircAutoawayMinTimeoutSeconds)
+        config.enabled = false;
+    config.defaultReason = settings.value(autoawayDefaultReasonKey()).toString();
+    return config;
+}
+
+void saveAutoawayConfig(const IrcAutoawayConfig& config)
+{
+    QSettings settings;
+    settings.beginGroup(QStringLiteral("preferences"));
+    settings.setValue(autoawayEnabledKey(), config.enabled);
+    settings.setValue(autoawayTimeoutSecondsKey(), config.timeoutSeconds);
+    settings.setValue(autoawayDefaultReasonKey(), config.defaultReason);
     settings.endGroup();
     settings.sync();
 }
@@ -318,6 +368,20 @@ IrcController::IrcController(QObject *parent)
     m_reopenDirectMessages = loadReopenDirectMessages();
     m_loadPeerAvatars = loadLoadPeerAvatars();
     m_openConversationsAtUnread = loadOpenConversationsAtUnread();
+    m_autoaway = loadAutoaway();
+    m_autoawayIdle.setSingleShot(true);
+    m_autoawayGrace.setSingleShot(true);
+    connect(&m_autoawayIdle, &QTimer::timeout, this, &IrcController::onAutoawayIdle);
+    connect(&m_autoawayGrace, &QTimer::timeout, this, &IrcController::onAutoawayGrace);
+    if (QCoreApplication *app = QCoreApplication::instance())
+        app->installEventFilter(this);
+    armAutoawayIdle();
+}
+
+IrcController::~IrcController()
+{
+    if (QCoreApplication *app = QCoreApplication::instance())
+        app->removeEventFilter(this);
 }
 
 void IrcController::setTranscriptRoot(const QString &root)
@@ -350,6 +414,8 @@ IrcSession *IrcController::addSession(const IrcSessionConfig& config,
         forgetMonitorState(networkId);
         emit serverFeaturesChanged();
         apply(IrcWelcomeEvent{networkId, session->nick()});
+        if (m_autoawayTripped && m_autoaway.enabled)
+            markSessionAutoAway(session);
         m_openDirectsMotdSeen.remove(networkId);
         updateStatus(session);
     });
@@ -391,6 +457,8 @@ bool IrcController::discardSession(const QString &networkId)
     const bool previousAway = selfAway();
     m_reducer.apply(IrcSelfAwayEvent{networkId, false});
     m_unawaySent.remove(networkId);
+    m_autoAwayNetworks.remove(networkId);
+    m_manualAwayNetworks.remove(networkId);
     m_openDirectsMotdSeen.remove(networkId);
     forgetMonitorState(networkId);
     m_currentNicks.remove(networkId);
@@ -428,6 +496,8 @@ void IrcController::forgetNetworkState(const QString &networkId)
             ++it;
     }
     m_unawaySent.remove(networkId);
+    m_autoAwayNetworks.remove(networkId);
+    m_manualAwayNetworks.remove(networkId);
     m_openDirectsMotdSeen.remove(networkId);
     forgetMonitorState(networkId);
     m_currentNicks.remove(networkId);
@@ -1158,6 +1228,7 @@ bool IrcController::sendToTarget(const QString &networkId,
     m_reducer.ensureConversation(key, target, IrcConversationCause::QuietSend);
     noteNickDelivery(networkId, target);
     echoIfPresent(session, target, text, QuietWire::Privmsg);
+    noteLocalActivity();
     unawayAfterChat(session);
     setLastError(networkId, {});
     emit statusChanged();
@@ -1375,6 +1446,7 @@ IrcCommandOutcome IrcController::dispatch(const IrcCommand& command,
             noteNickDelivery(session->networkId(), selectedTarget());
             echoLocal(IrcMessageKind::Action, command.argument);
             m_typingTarget.clear();
+            noteLocalActivity();
             unawayAfterChat(session);
         }
         return sent ? IrcCommandOutcome::Sent : IrcCommandOutcome::Refused;
@@ -1454,6 +1526,9 @@ IrcCommandOutcome IrcController::dispatch(const IrcCommand& command,
 
     if (command.verb == IrcCommand::Verb::Help)
         return dispatchHelp(surface);
+
+    if (command.verb == IrcCommand::Verb::Autoaway)
+        return dispatchAutoaway(command, surface);
 
     if (command.verb == IrcCommand::Verb::List)
         return dispatchList(command, surface);
@@ -1591,9 +1666,17 @@ IrcCommandOutcome IrcController::dispatch(const IrcCommand& command,
         break;
     case IrcCommand::Verb::Away:
         sent = active->setAway(command.argument);
+        if (sent) {
+            if (command.argument.trimmed().isEmpty())
+                noteAwayCleared(active->networkId());
+            else
+                noteManualAway(active->networkId());
+        }
         break;
     case IrcCommand::Verb::Back:
         sent = active->clearAway();
+        if (sent)
+            noteAwayCleared(active->networkId());
         break;
     default:
         return IrcCommandOutcome::Unsupported;
@@ -1624,6 +1707,7 @@ IrcCommandOutcome IrcController::sendSelectedMessage(const QString& body)
         noteNickDelivery(session->networkId(), selectedTarget());
         echoLocal(IrcMessageKind::Message, body);
         m_typingTarget.clear();
+        noteLocalActivity();
         unawayAfterChat(session);
     }
     return sent ? IrcCommandOutcome::Sent : IrcCommandOutcome::Refused;
@@ -2172,8 +2256,10 @@ IrcCommandOutcome IrcController::dispatchQuietSend(const IrcCommand& command,
     const IrcConversationKey key = m_reducer.conversationKey(networkId, target);
     m_reducer.ensureConversation(key, target, IrcConversationCause::QuietSend);
     echoIfPresent(session, target, body, spec->wire);
-    if (spec->wire == QuietWire::Privmsg)
+    if (spec->wire == QuietWire::Privmsg) {
+        noteLocalActivity();
         unawayAfterChat(session);
+    }
     return IrcCommandOutcome::Sent;
 }
 
@@ -2292,6 +2378,290 @@ IrcCommandOutcome IrcController::dispatchRaw(const IrcCommand& command,
         return IrcCommandOutcome::NotConnected;
     return session->sendRaw(command.argument) ? IrcCommandOutcome::Sent
                                               : IrcCommandOutcome::Refused;
+}
+
+IrcCommandOutcome IrcController::dispatchAutoaway(const IrcCommand& command,
+                                                  IrcComposerSurface surface)
+{
+    const IrcAutoawayRequest request = ircParseAutoawayArgument(command.argument);
+    if (request.kind == IrcAutoawayKind::Usage)
+        return echoAutoawayUsage(surface);
+
+    bool persist = false;
+    QString text;
+    const QString previousReason = autoawayReason();
+    switch (request.kind) {
+    case IrcAutoawayKind::Query:
+        text = ircFormatAutoawayQuery(m_autoaway);
+        break;
+    case IrcAutoawayKind::Disable:
+        m_autoaway.enabled = false;
+        persist = true;
+        stopAutoawayTimers();
+        m_autoawayTripped = false;
+        clearAutoAwayNetworks();
+        text = ircFormatAutoawayConfirmation(m_autoaway);
+        break;
+    case IrcAutoawayKind::EnableOn:
+        if (m_autoaway.timeoutSeconds < ircAutoawayMinTimeoutSeconds)
+            return echoAutoawayUsage(surface);
+        m_autoaway.enabled = true;
+        persist = true;
+        if (!m_autoawayTripped)
+            armAutoawayIdle();
+        text = ircFormatAutoawayConfirmation(m_autoaway);
+        break;
+    case IrcAutoawayKind::SetTimeout:
+        m_autoaway.enabled = true;
+        m_autoaway.timeoutSeconds = request.timeoutSeconds;
+        if (!request.text.isEmpty())
+            m_autoaway.oneShotReason = request.text;
+        persist = true;
+        if (!m_autoawayTripped)
+            armAutoawayIdle();
+        text = ircFormatAutoawayConfirmation(m_autoaway);
+        break;
+    case IrcAutoawayKind::SetDefaultReason:
+        m_autoaway.defaultReason = request.text;
+        persist = true;
+        text = ircFormatAutoawayConfirmation(m_autoaway);
+        break;
+    case IrcAutoawayKind::ClearDefaultReason:
+        m_autoaway.defaultReason.clear();
+        persist = true;
+        text = ircFormatAutoawayConfirmation(m_autoaway);
+        break;
+    case IrcAutoawayKind::Usage:
+        return echoAutoawayUsage(surface);
+    }
+    if (persist)
+        saveAutoaway();
+    if (m_autoawayTripped && m_autoaway.enabled
+        && autoawayReason() != previousReason) {
+        refreshAutoAwayReason();
+    }
+    return echoAutoawayFeedback(surface, text);
+}
+
+IrcCommandOutcome IrcController::echoAutoawayFeedback(IrcComposerSurface surface,
+                                                      const QString& text)
+{
+    QString networkId = queryNetworkId(surface);
+    if (networkId.isEmpty())
+        networkId = m_console.networkId();
+    if (networkId.isEmpty())
+        return IrcCommandOutcome::Refused;
+
+    if (surface == IrcComposerSurface::Conversation) {
+        if (!m_selected)
+            return IrcCommandOutcome::WrongScope;
+        apply(IrcWhoisTranscriptEvent{*m_selected, text});
+        return IrcCommandOutcome::Sent;
+    }
+    m_console.record(IrcStatusEntry::outcome(networkId, text));
+    return IrcCommandOutcome::Sent;
+}
+
+IrcCommandOutcome IrcController::echoAutoawayUsage(IrcComposerSurface surface)
+{
+    const IrcVerbSpec *spec = IrcVerbTable::find(IrcCommand::Verb::Autoaway);
+    return echoAutoawayFeedback(
+        surface,
+        spec ? spec->usage
+             : QStringLiteral("/autoaway [off|on|duration [reason]|reason [text]]"));
+}
+
+void IrcController::saveAutoaway() const
+{
+    saveAutoawayConfig(m_autoaway);
+}
+
+void IrcController::armAutoawayIdle()
+{
+    stopAutoawayTimers();
+    if (!m_autoaway.enabled
+        || m_autoaway.timeoutSeconds < ircAutoawayMinTimeoutSeconds
+        || m_autoaway.timeoutSeconds > ircAutoawayMaxTimeoutSeconds) {
+        return;
+    }
+    m_autoawayIdle.start(m_autoaway.timeoutSeconds * 1000);
+}
+
+void IrcController::stopAutoawayTimers()
+{
+    m_autoawayIdle.stop();
+    m_autoawayGrace.stop();
+    m_autoawayGraceArmed = false;
+}
+
+void IrcController::onAutoawayIdle()
+{
+    if (!m_autoaway.enabled
+        || m_autoaway.timeoutSeconds < ircAutoawayMinTimeoutSeconds)
+        return;
+    m_autoawayIdle.stop();
+    m_autoawayGraceArmed = true;
+    const int graceMs = ircAutoawayGraceSeconds(m_autoaway.timeoutSeconds) * 1000;
+    if (graceMs <= 0) {
+        onAutoawayGrace();
+        return;
+    }
+    m_autoawayGrace.start(graceMs);
+}
+
+void IrcController::onAutoawayGrace()
+{
+    if (!m_autoawayGraceArmed)
+        return;
+    m_autoawayGraceArmed = false;
+    m_autoawayGrace.stop();
+    tripAutoaway();
+}
+
+QString IrcController::autoawayReason() const
+{
+    return !m_autoaway.oneShotReason.isEmpty()
+        ? m_autoaway.oneShotReason
+        : m_autoaway.defaultReason;
+}
+
+bool IrcController::markSessionAutoAway(IrcSession *session)
+{
+    if (!session || session->state() != IrcSession::State::Registered)
+        return false;
+    if (!session->markAway(autoawayReason()))
+        return false;
+    m_autoAwayNetworks.insert(session->networkId());
+    return true;
+}
+
+void IrcController::noteManualAway(const QString& networkId)
+{
+    m_autoAwayNetworks.remove(networkId);
+    m_manualAwayNetworks.insert(networkId);
+}
+
+void IrcController::noteAwayCleared(const QString& networkId)
+{
+    const bool wasAuto = m_autoAwayNetworks.remove(networkId);
+    m_manualAwayNetworks.remove(networkId);
+    if (wasAuto && m_autoAwayNetworks.isEmpty())
+        m_autoaway.oneShotReason.clear();
+}
+
+void IrcController::refreshAutoAwayReason()
+{
+    if (!m_autoawayTripped || !m_autoaway.enabled)
+        return;
+    const QString reason = autoawayReason();
+    for (const QString& networkId : m_autoAwayNetworks) {
+        IrcSession *session = m_sessions.findSession(networkId);
+        if (!session || session->state() != IrcSession::State::Registered)
+            continue;
+        session->markAway(reason);
+    }
+}
+
+void IrcController::tripAutoaway()
+{
+    if (!m_autoaway.enabled)
+        return;
+    m_autoawayTripped = true;
+    for (const QString& networkId : m_sessions.networkIds()) {
+        if (m_autoAwayNetworks.contains(networkId)
+            || m_manualAwayNetworks.contains(networkId)
+            || m_reducer.selfAway(networkId)) {
+            continue;
+        }
+        markSessionAutoAway(m_sessions.findSession(networkId));
+    }
+    stopAutoawayTimers();
+}
+
+void IrcController::clearAutoAwayNetworks()
+{
+    m_autoawayTripped = false;
+    const QSet<QString> networks = m_autoAwayNetworks;
+    m_autoAwayNetworks.clear();
+    for (const QString& networkId : networks) {
+        if (IrcSession *session = m_sessions.findSession(networkId)) {
+            if (session->state() == IrcSession::State::Registered
+                && session->clearAway()) {
+                m_unawaySent.insert(networkId);
+            }
+        }
+    }
+    m_autoaway.oneShotReason.clear();
+}
+
+void IrcController::noteLocalActivity()
+{
+    const bool wasTripped = m_autoawayTripped;
+    m_autoawayTripped = false;
+    if (!m_autoAwayNetworks.isEmpty())
+        clearAutoAwayNetworks();
+    else if (wasTripped)
+        m_autoaway.oneShotReason.clear();
+    if (m_autoaway.enabled)
+        armAutoawayIdle();
+}
+
+#ifdef OMAIRC_TEST
+void IrcController::fireAutoawayIdleForTest()
+{
+    onAutoawayIdle();
+}
+
+void IrcController::fireAutoawayGraceForTest()
+{
+    onAutoawayGrace();
+}
+
+int IrcController::autoawayIdleIntervalMsForTest() const
+{
+    return m_autoawayIdle.interval();
+}
+
+bool IrcController::autoawayIdleIsActiveForTest() const
+{
+    return m_autoawayIdle.isActive();
+}
+
+int IrcController::autoawayGraceIntervalMsForTest() const
+{
+    return m_autoawayGrace.interval();
+}
+
+bool IrcController::autoawayGraceIsActiveForTest() const
+{
+    return m_autoawayGrace.isActive();
+}
+#endif
+
+bool IrcController::eventFilter(QObject *watched, QEvent *event)
+{
+    Q_UNUSED(watched);
+    if (!m_autoaway.enabled && !m_autoawayTripped && m_autoAwayNetworks.isEmpty())
+        return false;
+    switch (event->type()) {
+    case QEvent::KeyPress:
+    case QEvent::MouseButtonPress:
+    case QEvent::TouchBegin:
+    case QEvent::TabletPress:
+    case QEvent::Wheel:
+        break;
+    default:
+        return false;
+    }
+#ifdef QT_GUI_LIB
+    if (const auto *gui =
+            qobject_cast<QGuiApplication *>(QCoreApplication::instance())) {
+        if (gui->applicationState() != Qt::ApplicationActive)
+            return false;
+    }
+#endif
+    noteLocalActivity();
+    return false;
 }
 
 IrcCommandOutcome IrcController::dispatchHelp(IrcComposerSurface surface)
@@ -2574,6 +2944,7 @@ QString IrcController::ctcpQueryName(IrcCommand::Verb verb) const
     case IrcCommand::Verb::Notice:
     case IrcCommand::Verb::Away:
     case IrcCommand::Verb::Back:
+    case IrcCommand::Verb::Autoaway:
     case IrcCommand::Verb::Status:
     case IrcCommand::Verb::Avatar:
     case IrcCommand::Verb::Whois:
@@ -3266,8 +3637,10 @@ void IrcController::unawayAfterChat(IrcSession *session)
 {
     const QString networkId = session->networkId();
     if (m_reducer.selfAway(networkId) && !m_unawaySent.contains(networkId)) {
-        if (session->clearAway())
+        if (session->clearAway()) {
             m_unawaySent.insert(networkId);
+            noteAwayCleared(networkId);
+        }
     }
 }
 
@@ -3330,6 +3703,8 @@ void IrcController::apply(const IrcEvent& event)
     const bool selfAwayOnly = std::holds_alternative<IrcSelfAwayEvent>(event);
     if (const auto *welcome = std::get_if<IrcWelcomeEvent>(&event)) {
         m_unawaySent.remove(welcome->networkId);
+        m_autoAwayNetworks.remove(welcome->networkId);
+        m_manualAwayNetworks.remove(welcome->networkId);
         forgetWhoisWatches(welcome->networkId);
         forgetCtcpWatches(welcome->networkId);
         forgetOwnMetadataWatches(welcome->networkId);

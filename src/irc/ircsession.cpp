@@ -622,6 +622,14 @@ bool IrcSession::setAway(const QString& reason)
                          : QStringLiteral("AWAY :%1").arg(trimmed));
 }
 
+bool IrcSession::markAway(const QString& reason)
+{
+    const QString trimmed = reason.trimmed();
+    return sendCommand(
+        trimmed.isEmpty() ? QStringLiteral("AWAY :")
+                          : QStringLiteral("AWAY :%1").arg(trimmed));
+}
+
 bool IrcSession::clearAway()
 {
     return setAway({});
