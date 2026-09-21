@@ -45,6 +45,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The `Ctrl+/` shortcuts sheet groups chords under MOVE, JUMP, WRITE, and
+  WINDOW headings and pairs opposite network collapse/expand/move rows.
 - Connect sheet keyboard: Tab still walks the whole sheet and arrows stay
   in-region. Sheet-wide `Ctrl+Tab` / `Ctrl+Shift+Tab` switch tabs,
   `Alt+Left` / `Alt+Right` walk networks (focus stays in the field unless
