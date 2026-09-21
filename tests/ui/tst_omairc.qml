@@ -7704,7 +7704,7 @@ TestCase {
 
         item("channelListFilter").text = "";
         tryCompare(item("channelListFilter"), "text", "");
-        tryCompare(model, "rowCount", 6);
+        tryVerify(function() { return model.rowCount() === 6; });
 
         typeText("04");
         tryCompare(item("channelListFilter"), "text", "04");
@@ -7713,7 +7713,7 @@ TestCase {
 
         item("channelListFilter").text = "";
         tryCompare(item("channelListFilter"), "text", "");
-        tryCompare(model, "rowCount", 6);
+        tryVerify(function() { return model.rowCount() === 6; });
 
         typeText("lin");
         tryCompare(item("channelListFilter"), "text", "lin");
