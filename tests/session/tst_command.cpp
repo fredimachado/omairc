@@ -2601,23 +2601,11 @@ void CommandTest::wrappersSendAndHelp()
     QVERIFY(selectedBodiesContain(messages, QStringLiteral("/disconnect")));
     QVERIFY(selectedBodiesContain(messages, QStringLiteral("/status")));
     QVERIFY(selectedBodiesContain(messages, QStringLiteral("Empty /join joins the latest invite")));
-    QVERIFY(selectedBodiesContain(
-        messages,
-        QStringLiteral(
-            "/autoaway is off by default; bare numbers are minutes, optional "
-            "s/m/h, /autoaway reason sets the saved default, extra text after a "
-            "duration is one-shot, and off disables.")));
 
     QVERIFY(console->submit(QStringLiteral("/help")));
     QVERIFY(logContains(console->lines(), QStringLiteral("Commands:")));
     QVERIFY(logContains(console->lines(),
                         QStringLiteral("Empty /join joins the latest invite")));
-    QVERIFY(logContains(
-        console->lines(),
-        QStringLiteral(
-            "/autoaway is off by default; bare numbers are minutes, optional "
-            "s/m/h, /autoaway reason sets the saved default, extra text after a "
-            "duration is one-shot, and off disables.")));
     QCOMPARE(controller.selectedTarget(), QStringLiteral("#omarchy"));
     QCOMPARE(selectedBodyHits(messages, QStringLiteral("Commands:")), 1);
 

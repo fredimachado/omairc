@@ -2676,11 +2676,7 @@ IrcCommandOutcome IrcController::dispatchHelp(IrcComposerSurface surface)
     for (const IrcVerbSpec& row : IrcVerbTable::all())
         names.append(QLatin1Char('/') + row.name);
     const QString text =
-        QStringLiteral(
-            "Commands: %1. Empty /join joins the latest invite. "
-            "/autoaway is off by default; bare numbers are minutes, optional "
-            "s/m/h, /autoaway reason sets the saved default, extra text after a "
-            "duration is one-shot, and off disables.")
+        QStringLiteral("Commands: %1. Empty /join joins the latest invite.")
             .arg(names.join(QStringLiteral(", ")));
     if (surface == IrcComposerSurface::Conversation) {
         if (!m_selected)
