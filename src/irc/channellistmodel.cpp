@@ -1,5 +1,7 @@
 #include "channellistmodel.h"
 
+#include "irctextformatter.h"
+
 #include <algorithm>
 
 namespace
@@ -225,12 +227,18 @@ void ChannelListModel::clear()
     emitStateNow();
 }
 
+QString ChannelListModel::plainTopic(const QString& topic)
+{
+    IrcTextFormatter formatter;
+    return formatter.plainIrcText(topic);
+}
+
 bool ChannelListModel::matches(const IrcChannelListRow& row) const
 {
     if (m_filterQuery.isEmpty())
         return true;
     return row.channel.toLower().contains(m_filterQuery)
-        || row.topic.toLower().contains(m_filterQuery);
+        || plainTopic(row.topic).toLower().contains(m_filterQuery);
 }
 
 void ChannelListModel::rebuildVisible()
@@ -266,9 +274,10 @@ QString ChannelListModel::rowLabel(const IrcChannelListRow& row) const
     QString label = row.channel;
     label += QLatin1Char(' ');
     label += QString::number(row.users);
-    if (!row.topic.isEmpty()) {
+    const QString topic = plainTopic(row.topic);
+    if (!topic.isEmpty()) {
         label += QLatin1Char(' ');
-        label += row.topic;
+        label += topic;
     }
     return label;
 }

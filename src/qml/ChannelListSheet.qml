@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Controls
+import Omairc.App 1.0
 
 Popup {
     id: sheet
@@ -10,6 +11,10 @@ Popup {
 
     property alias channelListFilter: channelListFilter
     property alias channelListList: channelListList
+
+    IrcTextFormatter {
+        id: ircText
+    }
 
     signal stepRequested(int delta)
     signal activateRequested()
@@ -151,12 +156,18 @@ Popup {
                 }
 
                 Text {
+                    objectName: "channelListTopic"
                     anchors.left: userCount.right
                     anchors.leftMargin: sheet.style.scaledSize(10)
                     anchors.right: parent.right
                     anchors.rightMargin: sheet.style.scaledSize(8)
                     anchors.verticalCenter: parent.verticalCenter
-                    text: listDelegate.topic
+                    text: ircText.hasIrcEmphasis(listDelegate.topic)
+                        ? ircText.emphasizedIrcText(listDelegate.topic)
+                        : ircText.plainIrcText(listDelegate.topic)
+                    textFormat: ircText.hasIrcEmphasis(listDelegate.topic)
+                        ? Text.RichText
+                        : Text.PlainText
                     color: sheet.style.mutedColor
                     elide: Text.ElideRight
                     font.family: "iA Writer Mono S"

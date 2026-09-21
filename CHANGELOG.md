@@ -44,6 +44,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `/list` overlay topics strip mIRC colors and keep bold, italic, and
+  underline the same way chat transcripts do.
 - Desktop notifications and portal theme reads no-op immediately when
   `DBUS_SESSION_BUS_ADDRESS` is `autolaunch:` or a `unix:path` that does
   not exist, instead of blocking on `QDBusConnection::sessionBus()`.

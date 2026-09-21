@@ -75,6 +75,7 @@ signals:
     void stateChanged();
 
 private:
+    static QString plainTopic(const QString& topic);
     bool matches(const IrcChannelListRow& row) const;
     void rebuildVisible();
     void emitStateSoon();

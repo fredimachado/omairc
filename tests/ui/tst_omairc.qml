@@ -7675,7 +7675,45 @@ TestCase {
         compare(model.get(0).channel, "#linux");
         compare(model.get(0).users, 42);
         compare(item("channelListStatus").text, "6 channels");
+        verify(containsMirc(model.get(0).topic));
+
+        var list = item("channelListList");
+        list.positionViewAtIndex(0, ListView.Contain);
+        waitForRendering(appWindow.contentItem);
+        tryVerify(function() { return list.itemAtIndex(0) !== null; });
+        var linuxRow = list.itemAtIndex(0);
+        verify(linuxRow !== null, "The #linux list row should be rendered");
+        compare(linuxRow.objectName, "channelListRow-#linux");
+        var topic = findChild(linuxRow, "channelListTopic");
+        verify(topic !== null && topic.visible, "Could not find channelListTopic");
+        compare(topic.textFormat, Text.RichText);
+        verify(!containsMirc(topic.text));
+        verify(topic.text.indexOf("Kernel") >= 0);
+        verify(topic.text.indexOf("distro") >= 0);
+        verify(topic.text.indexOf("help") >= 0);
+        verify(topic.text.indexOf("04") < 0);
+        verify(topic.text.indexOf("<b>Kernel</b>") >= 0
+               || /font-weight\s*:\s*(bold|[6-9]00)/.test(topic.text));
         saveScreenshot("channel-list-overlay");
+
+        typeText("distro");
+        tryCompare(item("channelListFilter"), "text", "distro");
+        tryVerify(function() { return model.rowCount() === 1; });
+        compare(model.get(0).channel, "#linux");
+        compare(item("channelListStatus").text, "1 of 6 channels");
+
+        item("channelListFilter").text = "";
+        tryCompare(item("channelListFilter"), "text", "");
+        tryCompare(model, "rowCount", 6);
+
+        typeText("04");
+        tryCompare(item("channelListFilter"), "text", "04");
+        tryVerify(function() { return model.rowCount() === 0; });
+        compare(item("channelListStatus").text, "No matches");
+
+        item("channelListFilter").text = "";
+        tryCompare(item("channelListFilter"), "text", "");
+        tryCompare(model, "rowCount", 6);
 
         typeText("lin");
         tryCompare(item("channelListFilter"), "text", "lin");

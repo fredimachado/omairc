@@ -479,7 +479,10 @@ SeedNetwork omarchyWorld()
     network.directs = {anna, dax};
     network.directory = {
         {QStringLiteral("#linux"), 42,
-         QStringLiteral("Kernel discussion and distro help.")},
+         QChar(0x02) + QStringLiteral("Kernel") + QChar(0x02)
+             + QStringLiteral(" discussion and ")
+             + QChar(0x03) + QStringLiteral("04distro") + QChar(0x03)
+             + QStringLiteral(" help.")},
         {QStringLiteral("#random"), 4,
          QStringLiteral("Off-topic chatter.")},
     };
