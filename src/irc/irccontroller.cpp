@@ -2606,6 +2606,7 @@ void IrcController::noteLocalActivity()
         armAutoawayIdle();
 }
 
+#ifdef OMAIRC_TEST
 void IrcController::fireAutoawayIdleForTest()
 {
     onAutoawayIdle();
@@ -2635,6 +2636,7 @@ bool IrcController::autoawayGraceIsActiveForTest() const
 {
     return m_autoawayGrace.isActive();
 }
+#endif
 
 bool IrcController::eventFilter(QObject *watched, QEvent *event)
 {

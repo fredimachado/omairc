@@ -129,13 +129,15 @@ public:
     Q_INVOKABLE bool sendMessage(const QString& text);
     Q_INVOKABLE bool nickIsTyping(const QString& nick) const;
     Q_INVOKABLE void notifyComposerText(const QString& text);
-    Q_INVOKABLE void noteLocalActivity();
+    void noteLocalActivity();
+#ifdef OMAIRC_TEST
     void fireAutoawayIdleForTest();
     void fireAutoawayGraceForTest();
     int autoawayIdleIntervalMsForTest() const;
     bool autoawayIdleIsActiveForTest() const;
     int autoawayGraceIntervalMsForTest() const;
     bool autoawayGraceIsActiveForTest() const;
+#endif
     Q_INVOKABLE void setChannelListPresented(bool presented);
     Q_INVOKABLE bool joinListedChannel(const QString& channel);
     void setChannelListIdleTimeoutMs(int milliseconds);

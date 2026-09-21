@@ -24,6 +24,7 @@ include($$PWD/../version.pri)
 # here — that regex clears the path on win32-g++ qmake 3.1.
 DEFINES += TEST_CERT_DIR=\\\"$$PWD/support/certs\\\"
 DEFINES += TEST_CORPUS_DIR=\\\"$$PWD/protocol/corpus\\\"
+DEFINES += OMAIRC_TEST
 
 HEADERS += \
     ../src/omaircpaths.h \
