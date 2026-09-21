@@ -158,6 +158,7 @@ public slots:
     bool invite(const QString& nick, const QString& channel);
     bool setTopic(const QString& channel, const QString& topic);
     bool setAway(const QString& reason = {});
+    bool markAway(const QString& reason = {});
     bool clearAway();
     bool setOwnMetadata(const QString& key, const QString& value);
     bool clearOwnMetadata(const QString& key);

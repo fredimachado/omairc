@@ -465,8 +465,8 @@ void AutoawayTest::tripAwaysAllRegisteredNetworksOnce()
     controller.fireAutoawayGraceForTest();
     QCOMPARE(awayFrameCount(transportA->writtenFrames(), beforeA), 1);
     QCOMPARE(awayFrameCount(transportB->writtenFrames(), beforeB), 1);
-    QCOMPARE(transportA->writtenFrames().last(), QByteArrayLiteral("AWAY\r\n"));
-    QCOMPARE(transportB->writtenFrames().last(), QByteArrayLiteral("AWAY\r\n"));
+    QCOMPARE(transportA->writtenFrames().last(), QByteArrayLiteral("AWAY :\r\n"));
+    QCOMPARE(transportB->writtenFrames().last(), QByteArrayLiteral("AWAY :\r\n"));
 
     controller.fireAutoawayIdleForTest();
     controller.fireAutoawayGraceForTest();
@@ -513,7 +513,7 @@ void AutoawayTest::manualAwayWinsOnThatNetwork()
     QCOMPARE(transportA->writtenFrames().last(),
              QByteArrayLiteral("AWAY :lunch\r\n"));
     QCOMPARE(awayFrameCount(transportB->writtenFrames(), beforeB), 1);
-    QCOMPARE(transportB->writtenFrames().last(), QByteArrayLiteral("AWAY\r\n"));
+    QCOMPARE(transportB->writtenFrames().last(), QByteArrayLiteral("AWAY :\r\n"));
 }
 
 void AutoawayTest::disableWhileActiveClearsAutoAway()
@@ -528,8 +528,8 @@ void AutoawayTest::disableWhileActiveClearsAutoAway()
     QVERIFY(controller.sendMessage(QStringLiteral("/autoaway 15")));
     controller.fireAutoawayIdleForTest();
     controller.fireAutoawayGraceForTest();
-    QCOMPARE(transportA->writtenFrames().last(), QByteArrayLiteral("AWAY\r\n"));
-    QCOMPARE(transportB->writtenFrames().last(), QByteArrayLiteral("AWAY\r\n"));
+    QCOMPARE(transportA->writtenFrames().last(), QByteArrayLiteral("AWAY :\r\n"));
+    QCOMPARE(transportB->writtenFrames().last(), QByteArrayLiteral("AWAY :\r\n"));
 
     const int beforeA = transportA->writtenFrames().size();
     const int beforeB = transportB->writtenFrames().size();
@@ -579,7 +579,7 @@ void AutoawayTest::incomingPrivmsgDoesNotClearAutoAway()
     QVERIFY(controller.sendMessage(QStringLiteral("/autoaway 15")));
     controller.fireAutoawayIdleForTest();
     controller.fireAutoawayGraceForTest();
-    QCOMPARE(transport->writtenFrames().last(), QByteArrayLiteral("AWAY\r\n"));
+    QCOMPARE(transport->writtenFrames().last(), QByteArrayLiteral("AWAY :\r\n"));
     const int afterAway = transport->writtenFrames().size();
     transport->injectBytes(
         QByteArrayLiteral(":alice!u@h PRIVMSG #omarchy :hey\r\n"));
@@ -624,8 +624,8 @@ void AutoawayTest::reconnectWhileTrippedSendsAway()
     QVERIFY(controller.sendMessage(QStringLiteral("/autoaway 15")));
     controller.fireAutoawayIdleForTest();
     controller.fireAutoawayGraceForTest();
-    QCOMPARE(transportA->writtenFrames().last(), QByteArrayLiteral("AWAY\r\n"));
-    QCOMPARE(transportB->writtenFrames().last(), QByteArrayLiteral("AWAY\r\n"));
+    QCOMPARE(transportA->writtenFrames().last(), QByteArrayLiteral("AWAY :\r\n"));
+    QCOMPARE(transportB->writtenFrames().last(), QByteArrayLiteral("AWAY :\r\n"));
 
     const int beforeB = transportB->writtenFrames().size();
     transportA->remoteClose();
@@ -634,7 +634,7 @@ void AutoawayTest::reconnectWhileTrippedSendsAway()
     welcome(transportA);
     QCOMPARE(awayFrameCount(transportA->writtenFrames(), beforeA), 1);
     QVERIFY(framesContain(transportA->writtenFrames().mid(beforeA),
-                          QByteArrayLiteral("AWAY\r\n")));
+                          QByteArrayLiteral("AWAY :\r\n")));
     QCOMPARE(transportB->writtenFrames().size(), beforeB);
 }
 
@@ -663,7 +663,7 @@ void AutoawayTest::reconnectDropsManualAwaySoAutoTripMarks()
     controller.fireAutoawayIdleForTest();
     controller.fireAutoawayGraceForTest();
     QCOMPARE(awayFrameCount(transportA->writtenFrames(), afterWelcomeA), 1);
-    QCOMPARE(transportA->writtenFrames().last(), QByteArrayLiteral("AWAY\r\n"));
+    QCOMPARE(transportA->writtenFrames().last(), QByteArrayLiteral("AWAY :\r\n"));
     QCOMPARE(awayFrameCount(transportB->writtenFrames(), beforeB), 1);
 }
 

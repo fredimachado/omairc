@@ -412,13 +412,8 @@ IrcSession *IrcController::addSession(const IrcSessionConfig& config,
         forgetMonitorState(networkId);
         emit serverFeaturesChanged();
         apply(IrcWelcomeEvent{networkId, session->nick()});
-        if (m_autoawayTripped && m_autoaway.enabled) {
-            const QString reason = !m_autoaway.oneShotReason.isEmpty()
-                ? m_autoaway.oneShotReason
-                : m_autoaway.defaultReason;
-            if (session->setAway(reason))
-                m_autoAwayNetworks.insert(networkId);
-        }
+        if (m_autoawayTripped && m_autoaway.enabled)
+            markSessionAutoAway(session);
         m_openDirectsMotdSeen.remove(networkId);
         updateStatus(session);
     });
@@ -2507,25 +2502,35 @@ void IrcController::onAutoawayGrace()
     tripAutoaway();
 }
 
+QString IrcController::autoawayReason() const
+{
+    return !m_autoaway.oneShotReason.isEmpty()
+        ? m_autoaway.oneShotReason
+        : m_autoaway.defaultReason;
+}
+
+bool IrcController::markSessionAutoAway(IrcSession *session)
+{
+    if (!session || session->state() != IrcSession::State::Registered)
+        return false;
+    if (!session->markAway(autoawayReason()))
+        return false;
+    m_autoAwayNetworks.insert(session->networkId());
+    return true;
+}
+
 void IrcController::tripAutoaway()
 {
     if (!m_autoaway.enabled)
         return;
     m_autoawayTripped = true;
-    const QString reason = !m_autoaway.oneShotReason.isEmpty()
-        ? m_autoaway.oneShotReason
-        : m_autoaway.defaultReason;
     for (const QString& networkId : m_sessions.networkIds()) {
         if (m_autoAwayNetworks.contains(networkId)
             || m_manualAwayNetworks.contains(networkId)
             || m_reducer.selfAway(networkId)) {
             continue;
         }
-        IrcSession *session = m_sessions.findSession(networkId);
-        if (!session || session->state() != IrcSession::State::Registered)
-            continue;
-        if (session->setAway(reason))
-            m_autoAwayNetworks.insert(networkId);
+        markSessionAutoAway(m_sessions.findSession(networkId));
     }
     stopAutoawayTimers();
 }

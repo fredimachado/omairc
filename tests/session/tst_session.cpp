@@ -2738,6 +2738,16 @@ void SessionTest::setAwayEncodesOptionalReason()
     QVERIFY(fixture.session->clearAway());
     QCOMPARE(fixture.transport->writtenFrames().last(),
              QByteArrayLiteral("AWAY\r\n"));
+
+    QVERIFY(fixture.session->markAway({}));
+    QCOMPARE(fixture.transport->writtenFrames().last(),
+             QByteArrayLiteral("AWAY :\r\n"));
+    QVERIFY(fixture.session->markAway(QStringLiteral("   ")));
+    QCOMPARE(fixture.transport->writtenFrames().last(),
+             QByteArrayLiteral("AWAY :\r\n"));
+    QVERIFY(fixture.session->markAway(QStringLiteral("lunch")));
+    QCOMPARE(fixture.transport->writtenFrames().last(),
+             QByteArrayLiteral("AWAY :lunch\r\n"));
 }
 
 void SessionTest::setOwnMetadataWritesSetAndClear()

@@ -315,6 +315,8 @@ private:
     void onAutoawayGrace();
     void tripAutoaway();
     void clearAutoAwayNetworks();
+    QString autoawayReason() const;
+    bool markSessionAutoAway(IrcSession *session);
     void syncHighlightWords(const QString& networkId);
     IrcCommandOutcome dispatchChannelModeWrapper(const IrcCommand& command,
                                                 IrcComposerSurface surface);
