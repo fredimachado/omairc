@@ -28,6 +28,20 @@ Rectangle {
         : "Jump to first new message"
     Accessible.onPressAction: jump.list.jumpToUnseen()
 
+    // Finite Animation.running bindings assign false when the loops end,
+    // which either drops the binding or starts another burst. Drive restart
+    // from the arming edge instead.
+    readonly property bool bounceArmed: jump.visible && jump.list.hasUnreadMark
+
+    onBounceArmedChanged: {
+        if (bounceArmed)
+            bounceBurst.restart()
+        else {
+            bounceBurst.stop()
+            arrow.bounceOffset = 0
+        }
+    }
+
     Text {
         id: arrow
         anchors.centerIn: parent
@@ -41,7 +55,6 @@ Rectangle {
 
         SequentialAnimation {
             id: bounceBurst
-            running: jump.visible && jump.list.hasUnreadMark
             loops: 3
             onStopped: arrow.bounceOffset = 0
 

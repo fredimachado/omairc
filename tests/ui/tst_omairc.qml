@@ -3037,6 +3037,7 @@ TestCase {
         }, 1000, "Unfocused backlog should stay pinned while the window is inactive");
         var jump = item("messageUnseenJump");
         compare(jump.visible, false);
+        compare(jump.bounceArmed, false);
 
         appWindow.windowFocusGained();
         waitForRendering(appWindow.contentItem);
@@ -3048,6 +3049,7 @@ TestCase {
                "Unread backlog below the mark should leave room to scroll down");
 
         tryCompare(jump, "visible", true);
+        compare(jump.bounceArmed, true);
 
         list.pinToEnd();
         waitForRendering(appWindow.contentItem);
@@ -3056,17 +3058,20 @@ TestCase {
             return transcriptPinned(list);
         }, 1000, "Pinning to end should reach the bottom");
         tryCompare(jump, "visible", false);
+        compare(jump.bounceArmed, false);
 
         list.pinToUnread(markRow);
         waitForRendering(appWindow.contentItem);
         wait(0);
         verify(!transcriptPinned(list));
         tryCompare(jump, "visible", true);
+        compare(jump.bounceArmed, true);
 
         mouseClick(jump);
         waitForRendering(appWindow.contentItem);
         wait(0);
         tryCompare(jump, "visible", false);
+        compare(jump.bounceArmed, false);
         tryVerify(function() {
             return transcriptPinned(list);
         }, 1000, "Jump should scroll to the latest messages");
