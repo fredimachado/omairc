@@ -159,6 +159,7 @@ private slots:
     void incomingPrivmsgDoesNotClearAutoAway();
     void restoreOnAfterOff();
     void emptyAwayClearsProvenanceSoAutoTripMarks();
+    void loadBelowFloorTimeoutDisables();
     void refuseTimeoutAtOrAboveTimerCap();
     void reconnectWhileTrippedSendsAway();
     void reconnectDropsManualAwaySoAutoTripMarks();
@@ -681,6 +682,39 @@ void AutoawayTest::emptyAwayClearsProvenanceSoAutoTripMarks()
     QCOMPARE(transport->writtenFrames().last(), QByteArrayLiteral("AWAY :\r\n"));
     injectNowAway(transport);
     QVERIFY(controller.selfAway());
+}
+
+void AutoawayTest::loadBelowFloorTimeoutDisables()
+{
+    {
+        QSettings settings;
+        settings.beginGroup(QStringLiteral("preferences"));
+        settings.setValue(QStringLiteral("autoawayEnabled"), true);
+        settings.setValue(QStringLiteral("autoawayTimeoutSeconds"), 10);
+        settings.endGroup();
+        settings.sync();
+    }
+
+    IrcController controller;
+    auto *transport = joinNetwork(controller, QStringLiteral("libera"));
+    QVERIFY(transport);
+    controller.selectConversation(QStringLiteral("libera"),
+                                  QStringLiteral("#omarchy"));
+    auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
+    QVERIFY(messages);
+    QVERIFY(controller.sendMessage(QStringLiteral("/autoaway")));
+    QVERIFY(selectedWhoisContains(messages, QStringLiteral("Auto-away off")));
+    QVERIFY(!selectedWhoisContains(messages, QStringLiteral("10 seconds")));
+
+    QVERIFY(controller.sendMessage(QStringLiteral("/autoaway on")));
+    QVERIFY(selectedWhoisContains(
+        messages,
+        QStringLiteral("/autoaway [off|on|duration [reason]|reason [text]]")));
+
+    const int before = transport->writtenFrames().size();
+    controller.fireAutoawayIdleForTest();
+    controller.fireAutoawayGraceForTest();
+    QCOMPARE(awayFrameCount(transport->writtenFrames(), before), 0);
 }
 
 void AutoawayTest::reconnectWhileTrippedSendsAway()

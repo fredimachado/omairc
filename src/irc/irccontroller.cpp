@@ -293,10 +293,12 @@ IrcAutoawayConfig loadAutoaway()
     config.enabled = settings.value(autoawayEnabledKey(), false).toBool();
     config.timeoutSeconds =
         settings.value(autoawayTimeoutSecondsKey(), 0).toInt();
-    if (config.timeoutSeconds < 0)
+    if (config.timeoutSeconds < ircAutoawayMinTimeoutSeconds)
         config.timeoutSeconds = 0;
     if (config.timeoutSeconds > ircAutoawayMaxTimeoutSeconds)
         config.timeoutSeconds = ircAutoawayMaxTimeoutSeconds;
+    if (config.timeoutSeconds < ircAutoawayMinTimeoutSeconds)
+        config.enabled = false;
     config.defaultReason = settings.value(autoawayDefaultReasonKey()).toString();
     return config;
 }
@@ -2472,7 +2474,8 @@ void IrcController::saveAutoaway() const
 void IrcController::armAutoawayIdle()
 {
     stopAutoawayTimers();
-    if (!m_autoaway.enabled || m_autoaway.timeoutSeconds <= 0
+    if (!m_autoaway.enabled
+        || m_autoaway.timeoutSeconds < ircAutoawayMinTimeoutSeconds
         || m_autoaway.timeoutSeconds > ircAutoawayMaxTimeoutSeconds) {
         return;
     }
@@ -2488,7 +2491,8 @@ void IrcController::stopAutoawayTimers()
 
 void IrcController::onAutoawayIdle()
 {
-    if (!m_autoaway.enabled || m_autoaway.timeoutSeconds <= 0)
+    if (!m_autoaway.enabled
+        || m_autoaway.timeoutSeconds < ircAutoawayMinTimeoutSeconds)
         return;
     m_autoawayIdle.stop();
     m_autoawayGraceArmed = true;
