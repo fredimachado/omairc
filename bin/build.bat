@@ -51,6 +51,8 @@ if exist "!QTBIN!\windeployqt.exe" (
   rem next to the exe so a per-user install does not need vc_redist.
   rem Default Qt 6.11 windeployqt follows every Quick Controls style and
   rem ships Mesa, translations, and QML tooling. Omairc forces Material.
+  rem Keep imageformats: About loads qrc:/icons/omairc.svg through QML Image,
+  rem which needs qsvg.dll. iconengines/qsvgicon.dll is only for QIcon.
   "!QTBIN!\windeployqt.exe" ^
     --qmldir "!ROOT!\src" ^
     --release ^
@@ -59,7 +61,7 @@ if exist "!QTBIN!\windeployqt.exe" (
     --no-compiler-runtime ^
     --no-system-d3d-compiler ^
     --no-system-dxc-compiler ^
-    --skip-plugin-types qmltooling,generic,imageformats ^
+    --skip-plugin-types qmltooling,generic ^
     --no-quickcontrols2fusion ^
     --no-quickcontrols2imagine ^
     --no-quickcontrols2imaginestyleimpl ^
@@ -129,9 +131,16 @@ for %%D in (
   "!REL!\translations"
   "!REL!\qmltooling"
   "!REL!\generic"
-  "!REL!\imageformats"
 ) do (
   if exist %%D rmdir /s /q %%D
+)
+
+rem Drop unused decoders. Keep qsvg for About and jpeg/webp for avatars.
+for %%F in (
+  "!REL!\imageformats\qgif.dll"
+  "!REL!\imageformats\qico.dll"
+) do (
+  if exist %%F del /q %%F
 )
 
 for %%F in (

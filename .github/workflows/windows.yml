@@ -158,6 +158,8 @@ jobs:
           if (-not (Test-Path 'build\release\msvcp140.dll')) {
             throw 'msvcp140.dll was not deployed next to the exe'
           }
+          $svg = Get-ChildItem 'build\release' -Recurse -Filter 'qsvg.dll' -File
+          if (-not $svg) { throw 'qsvg.dll was not deployed (About overlay SVG)' }
           $version = (& $exe --version 2>&1 | Out-String).Trim()
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $expected = "omairc $($env:OMAIRC_DISPLAY_VERSION)"

@@ -7737,6 +7737,7 @@ TestCase {
         compare(item("aboutName").text, "Omairc");
         compare(item("aboutVersion").text, appWindow.appVersion);
         verify(String(item("aboutLogo").source).indexOf("icons/omairc.svg") >= 0);
+        tryCompare(item("aboutLogo"), "status", Image.Ready);
         verify(item("aboutDescription").text.indexOf("open-source") === -1);
         compare(item("aboutOpenSource").text, "This project is open-source.");
         compare(item("aboutGithubLink").text, "View the source on GitHub");

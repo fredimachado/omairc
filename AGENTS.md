@@ -209,7 +209,11 @@ when the mark changes. `windeployqt --compiler-runtime` copies
 `bin\build.bat` uses `--no-compiler-runtime` and copies `msvcp140*.dll`
 and `vcruntime140*.dll` from `VCToolsRedistDir` next to the exe so a
 per-user install does not need `vc_redist`. `:prune_qt_deploy` deletes a
-stale `vc_redist*.exe` left in an existing build directory.
+stale `vc_redist*.exe` left in an existing build directory. Keep
+`imageformats/qsvg.dll`: About loads `qrc:/icons/omairc.svg` through QML
+`Image`, which that plugin decodes. `iconengines/qsvgicon.dll` is not
+enough. Prune gif/ico like macOS; do not skip or rmdir the whole
+`imageformats` type.
 `bin\package-windows.bat` compiles
 `packaging/windows/omairc.iss` with Inno Setup 6 into
 `dist\omairc-*-windows-x64-setup.exe`. It stages a copy of `build\release`
