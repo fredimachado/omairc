@@ -130,6 +130,7 @@ public:
     Q_INVOKABLE bool sendMessage(const QString& text);
     Q_INVOKABLE bool nickIsTyping(const QString& nick) const;
     Q_INVOKABLE void notifyComposerText(const QString& text);
+    Q_INVOKABLE void setWindowActive(bool active);
     void noteLocalActivity();
 #ifdef OMAIRC_TEST
     void fireAutoawayIdleForTest();

@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Chat that arrives in the open channel or DM while the window is unfocused is
+  now treated as unread: the New messages mark plants on the first live line
+  and, when focus returns, the transcript lands on that mark instead of being
+  pinned to the bottom. Replayed backlog in that open conversation does not
+  plant the mark. Status keeps following the end.
+
 ### Fixed
 
 - `./bin/install` (makepkg) no longer warns about an unused composer surface on

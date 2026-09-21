@@ -2967,6 +2967,50 @@ TestCase {
         verify(firstVisibleIndex(list) !== markRow);
     }
 
+    function test_unfocusedArrivalPinsToNewMessagesMarkOnReturn() {
+        openSeededAppWindow();
+        var list = item("messageList");
+        fillTranscriptUntilScrollable(list);
+
+        appWindow.windowFocusLost();
+        injectOmarchyChat("anna", "#omarchy", "unfocused-first-zx9");
+        injectOmarchyChat("dax", "#omarchy", "unfocused-second-zx9");
+        var index = 0;
+        for (index = 0; index < 24; ++index) {
+            var minute = index < 10 ? "0" + index : "" + index;
+            injectOmarchyChat("mira", "#omarchy", "unfocused filler " + index,
+                              "11:" + minute);
+        }
+        waitForBody(list, "unfocused-first-zx9");
+        waitForBody(list, "unfocused-second-zx9");
+        waitForRendering(appWindow.contentItem);
+        wait(0);
+
+        var first = rowForBody(list.model, "unfocused-first-zx9");
+        verify(first > 0, "The first unfocused line should not lead the buffer");
+        var markRow = list.model.unreadMarkRow();
+        verify(markRow >= 0, "Unfocused arrivals should plant the New messages mark");
+        compare(markRow, first - 1);
+        compare(field(list.model, markRow, "kind"), "unread");
+        compare(rowForBody(list.model, "unfocused-second-zx9"), first + 1);
+
+        appWindow.windowFocusGained();
+        waitForRendering(appWindow.contentItem);
+        wait(0);
+        tryVerify(function() {
+            return firstVisibleIndex(list) === markRow;
+        }, 1000, "Focus return should land the New messages mark at the start of the view");
+        verify(!transcriptPinned(list),
+               "A long unfocused backlog should keep the mark off the last page");
+        compare(list.stick, list.stickDetached);
+
+        var row = list.itemAtIndex(markRow);
+        verify(row !== null, "The New messages mark row should be in view");
+        var mark = findChild(row, "unreadMark");
+        verify(mark !== null && mark.visible);
+        compare(unreadMarkLabelText(mark), "New messages");
+    }
+
     function test_openAtUnreadLandsOnMarkWhenSwitchingAwayAndBack() {
         openSeededAppWindow();
         var list = item("messageList");

@@ -29,8 +29,12 @@ ApplicationWindow {
     visible: true
     title: consoleVisible ? statusTitleText() : conversationTitleText()
     onActiveChanged: {
-        if (active)
+        if (active) {
             Qt.callLater(focusConnectionSheetStart);
+            windowFocusGained();
+        } else {
+            windowFocusLost();
+        }
     }
 
     OmaircStyle {
@@ -634,12 +638,44 @@ ApplicationWindow {
             list.pinToEnd();
             return;
         }
+        pinTranscriptToUnreadOr(list, true);
+    }
+
+    function pinTranscriptToUnreadOr(list, fallbackPinToEnd) {
         var mark = (list.model && typeof list.model.unreadMarkRow === "function")
             ? list.model.unreadMarkRow() : -1;
         if (mark >= 0)
             list.pinToUnread(mark);
-        else
+        else if (fallbackPinToEnd)
             list.pinToEnd();
+        else
+            list.adoptViewport();
+    }
+
+    // While the window is unfocused, new chat in the open channel or DM is
+    // treated as unread: the "New messages" mark plants on the first line and,
+    // when focus returns, the transcript lands on that mark instead of the
+    // bottom. Status keeps following the end.
+    function windowFocusLost() {
+        if (irc && typeof irc.setWindowActive === "function")
+            irc.setWindowActive(false);
+    }
+
+    function windowFocusGained() {
+        if (irc && typeof irc.setWindowActive === "function")
+            irc.setWindowActive(true);
+        Qt.callLater(pinTranscriptOnFocusReturn);
+    }
+
+    function pinTranscriptOnFocusReturn() {
+        if (consoleVisible) {
+            conversation.consoleList.pinToEnd();
+            return;
+        }
+        var list = conversation.messageList;
+        if (!list || list.count <= 0)
+            return;
+        pinTranscriptToUnreadOr(list, false);
     }
 
     function selectConversation(name, networkId) {

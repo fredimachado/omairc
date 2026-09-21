@@ -134,6 +134,7 @@ private slots:
     void reloadTrimAcrossDayRemovesLeadingSeparator();
     void unreadMarkPlantsOnFirstUnselectedChat();
     void unreadMarkSkippedForSelfAndSelected();
+    void unreadMarkPlantsOnSelectedChatWhileWindowInactive();
     void unreadMarkSurvivesHistorySpliceAbove();
     void unreadMarkSurvivesCapUntilStoreTrimmed();
     void unreadMarkSuppressedWhenItWouldLead();
@@ -1648,6 +1649,43 @@ void ModelTest::unreadMarkSkippedForSelfAndSelected()
     QCOMPARE(selectedMessages.unreadMarkRow(), -1);
     QCOMPARE(roleAt(selectedMessages, 1, MessageListModel::BodyRole),
              QStringLiteral("while-focused"));
+}
+
+void ModelTest::unreadMarkPlantsOnSelectedChatWhileWindowInactive()
+{
+    IrcEventReducer reducer;
+    MessageListModel messages(reducer);
+    welcome(reducer, networkA);
+
+    const IrcConversationKey room =
+        reducer.conversationKey(networkA, QStringLiteral("#room"));
+    reducer.markSelected(room);
+    messages.select(room);
+    reducer.apply(IrcMessageEvent{
+        room, QStringLiteral("Alice"), QStringLiteral("while-focused"), timestamp,
+        QStringLiteral("#room")});
+    messages.reload();
+    QCOMPARE(messages.unreadMarkRow(), -1);
+
+    reducer.setWindowActive(false);
+    reducer.apply(IrcMessageEvent{
+        room, QStringLiteral("Bob"), QStringLiteral("first-unfocused"), timestamp,
+        QStringLiteral("#room")});
+    reducer.apply(IrcMessageEvent{
+        room, QStringLiteral("Bob"), QStringLiteral("second-unfocused"), timestamp,
+        QStringLiteral("#room")});
+    messages.reload();
+
+    const IrcConversationState *conversation = reducer.find(room);
+    QVERIFY(conversation);
+    QCOMPARE(conversation->unread, 2);
+    QVERIFY(conversation->unreadMark.has_value());
+    QCOMPARE(messages.unreadMarkRow(), 1);
+    assertUnreadMarkRow(messages, 1);
+    QCOMPARE(roleAt(messages, 2, MessageListModel::BodyRole),
+             QStringLiteral("first-unfocused"));
+    QCOMPARE(roleAt(messages, 3, MessageListModel::BodyRole),
+             QStringLiteral("second-unfocused"));
 }
 
 void ModelTest::unreadMarkSurvivesHistorySpliceAbove()
