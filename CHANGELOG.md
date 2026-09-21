@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- The `Ctrl+/` shortcuts sheet moves `Ctrl+Shift+S` into WINDOW with the
+  members column, and lists Connect-sheet chords under CONNECT so
+  `Ctrl+N` / `Ctrl+Enter` are not read as global.
+
 ## [0.9.0] - 2026-09-21
 
 ### Added

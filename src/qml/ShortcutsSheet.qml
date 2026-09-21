@@ -15,8 +15,7 @@ Popup {
                 { keys: "Alt+Shift+Left / Right", action: "collapse / expand network" },
                 { keys: "Ctrl+Alt+Shift+Left / Right", action: "collapse / expand all" },
                 { keys: "Alt+Shift+Up / Down", action: "move network" },
-                { keys: "Alt+A", action: "next unread" },
-                { keys: "Ctrl+Shift+S", action: "server list" }
+                { keys: "Alt+A", action: "next unread" }
             ]
         },
         {
@@ -44,15 +43,21 @@ Popup {
             ]
         },
         {
-            title: "WINDOW",
+            title: "CONNECT",
             rows: [
-                { keys: "Ctrl+Shift+M", action: "members panel" },
-                { keys: "Ctrl+Shift+P", action: "focus members" },
                 { keys: "Ctrl+,", action: "Connect" },
                 { keys: "Ctrl+Tab / Ctrl+Shift+Tab", action: "Connect tabs" },
                 { keys: "Ctrl+N", action: "add network" },
                 { keys: "Ctrl+Shift+Delete", action: "remove network" },
-                { keys: "Ctrl+Enter", action: "apply selected network" },
+                { keys: "Ctrl+Enter", action: "apply selected network" }
+            ]
+        },
+        {
+            title: "WINDOW",
+            rows: [
+                { keys: "Ctrl+Shift+S", action: "server list" },
+                { keys: "Ctrl+Shift+M", action: "members panel" },
+                { keys: "Ctrl+Shift+P", action: "focus members" },
                 { keys: "/disconnect", action: "disconnect network" },
                 { keys: "Ctrl+/", action: "this sheet" },
                 { keys: "Ctrl+Q", action: "quit" }
