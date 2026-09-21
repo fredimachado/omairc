@@ -2035,6 +2035,29 @@ TestCase {
         }
     }
 
+    function warmTranscriptRows(list) {
+        // Instantiate rows so indexAt sees real heights before comparing hop size.
+        keyClick(Qt.Key_PageUp);
+        waitForRendering(appWindow.contentItem);
+        wait(0);
+        pageTranscriptToEnd(list);
+        verify(transcriptPinned(list));
+    }
+
+    function assertShiftPageLeavesContentY(list) {
+        var before = list.contentY;
+        keyClick(Qt.Key_PageUp, Qt.ShiftModifier);
+        waitForRendering(appWindow.contentItem);
+        wait(0);
+        compare(list.contentY, before,
+                "Shift+Page Up should not scroll under an overlay");
+        keyClick(Qt.Key_PageDown, Qt.ShiftModifier);
+        waitForRendering(appWindow.contentItem);
+        wait(0);
+        compare(list.contentY, before,
+                "Shift+Page Down should not scroll under an overlay");
+    }
+
     function test_pageUpScrollsTranscript() {
         openSeededAppWindow();
         var composer = item("messageComposer");
@@ -2117,12 +2140,7 @@ TestCase {
         list.pinToEnd();
         waitForRendering(appWindow.contentItem);
         wait(0);
-        // Instantiate rows so indexAt sees real heights before comparing hop size.
-        keyClick(Qt.Key_PageUp);
-        waitForRendering(appWindow.contentItem);
-        wait(0);
-        pageTranscriptToEnd(list);
-        verify(transcriptPinned(list));
+        warmTranscriptRows(list);
         verify(list.contentHeight > list.height);
         var startY = list.contentY;
         verify(startY > 0);
@@ -2184,8 +2202,10 @@ TestCase {
         wait(0);
         mouseClick(composer);
         verify(composer.activeFocus);
-
-        var before = list.contentY;
+        warmTranscriptRows(list);
+        verify(list.contentHeight > list.height);
+        var startY = list.contentY;
+        verify(startY > 0);
         var startFirst = firstVisibleIndex(list);
         var bar = waitForScrollbarThumb(list, true);
         var endPosition = bar.position;
@@ -2193,17 +2213,16 @@ TestCase {
         keyClick(Qt.Key_PageUp, Qt.ShiftModifier);
         waitForRendering(appWindow.contentItem);
         wait(0);
-        verify(list.contentY < before, "Shift+Page Up should scroll Status toward older lines");
+        verify(list.contentY < startY, "Shift+Page Up should scroll Status toward older lines");
         verify(composer.activeFocus);
         waitForScrollbarThumb(list, true);
         verify(bar.position < endPosition, "Shift+Page Up should move the Status thumb up");
-        var halfUpDelta = before - list.contentY;
+        var halfUpDelta = startY - list.contentY;
         verify(halfUpDelta > 0);
         verify(firstVisibleIndex(list) < startFirst);
 
-        list.pinToEnd();
-        waitForRendering(appWindow.contentItem);
-        wait(0);
+        pageTranscriptToEnd(list);
+        verify(transcriptPinned(list));
         var fullStartY = list.contentY;
         keyClick(Qt.Key_PageUp);
         waitForRendering(appWindow.contentItem);
@@ -2212,6 +2231,67 @@ TestCase {
         verify(fullUpDelta > halfUpDelta,
                "Shift+Page Up should hop less than Page Up on Status");
         verify(composer.activeFocus);
+        compare(appWindow.consoleVisible, true);
+    }
+
+    function test_shiftPageIgnoredWhenConnectOrShortcutsOpen() {
+        openSeededAppWindow();
+        var composer = item("messageComposer");
+        var chat = item("messageList");
+        mouseClick(composer);
+        verify(composer.activeFocus);
+        fillTranscriptUntilScrollable(chat);
+        keyClick(Qt.Key_PageUp);
+        waitForRendering(appWindow.contentItem);
+        wait(0);
+        verify(chat.contentY > 0);
+        verify(!transcriptPinned(chat));
+
+        keyClick(Qt.Key_Comma, Qt.ControlModifier);
+        tryCompare(appWindow, "connectionOverlayVisible", true);
+        tryCompare(item("connectionSheet"), "visible", true);
+        assertShiftPageLeavesContentY(chat);
+        compare(appWindow.connectionOverlayVisible, true);
+        verify(item("connectionSheet").visible);
+
+        keyClick(Qt.Key_Escape);
+        tryCompare(appWindow, "connectionOverlayVisible", false);
+        tryCompare(composer, "activeFocus", true);
+
+        keyClick(Qt.Key_Slash, Qt.ControlModifier);
+        tryCompare(item("shortcutsSheet"), "opened", true);
+        assertShiftPageLeavesContentY(chat);
+        compare(item("shortcutsSheet").opened, true);
+
+        keyClick(Qt.Key_Escape);
+        tryCompare(item("shortcutsSheet"), "opened", false);
+        tryCompare(composer, "activeFocus", true);
+
+        keyClick(Qt.Key_QuoteLeft, Qt.ControlModifier);
+        tryCompare(appWindow, "consoleVisible", true);
+        var status = item("consoleList");
+        fillConsoleUntilScrollable(status);
+        mouseClick(composer);
+        verify(composer.activeFocus);
+        keyClick(Qt.Key_PageUp);
+        waitForRendering(appWindow.contentItem);
+        wait(0);
+        verify(status.contentY > 0);
+        verify(!transcriptPinned(status));
+
+        keyClick(Qt.Key_Comma, Qt.ControlModifier);
+        tryCompare(appWindow, "connectionOverlayVisible", true);
+        tryCompare(item("connectionSheet"), "visible", true);
+        assertShiftPageLeavesContentY(status);
+        compare(appWindow.connectionOverlayVisible, true);
+
+        keyClick(Qt.Key_Escape);
+        tryCompare(appWindow, "connectionOverlayVisible", false);
+
+        keyClick(Qt.Key_Slash, Qt.ControlModifier);
+        tryCompare(item("shortcutsSheet"), "opened", true);
+        assertShiftPageLeavesContentY(status);
+        compare(item("shortcutsSheet").opened, true);
         compare(appWindow.consoleVisible, true);
     }
 
