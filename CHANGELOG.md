@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `./bin/install` (makepkg) no longer warns about an unused composer surface on
+  `/status` `/avatar` watches, or a missing `CredentialKey::purpose` initializer.
+
 ## [0.9.0] - 2026-09-21
 
 ### Added
@@ -53,11 +58,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `/monitored` persist per network, re-subscribe after ISUPPORT, and write a
   Status line on real online/offline edges. Unfocused desktop notify follows
   mentions, including mute, without toast spam on reconnect hydration.
-
-### Fixed
-
-- `./bin/install` (makepkg) no longer warns about an unused composer surface on
-  `/status` `/avatar` watches, or a missing `CredentialKey::purpose` initializer.
 
 ### Changed
 
