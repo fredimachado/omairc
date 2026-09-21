@@ -439,6 +439,8 @@ void AutoawayTest::oneShotDoesNotOverwriteDefault()
 
     controller.noteLocalActivity();
     QCOMPARE(transport->writtenFrames().last(), QByteArrayLiteral("AWAY\r\n"));
+    injectUnaway(transport);
+    QVERIFY(!controller.selfAway());
 
     const int afterBack = transport->writtenFrames().size();
     controller.fireAutoawayIdleForTest();
@@ -458,8 +460,10 @@ void AutoawayTest::bareTextRefusedDoesNotWriteAway()
     controller.selectConversation(QStringLiteral("libera"),
                                   QStringLiteral("#omarchy"));
     const int before = transport->writtenFrames().size();
-    QVERIFY(!controller.sendMessage(QStringLiteral("/autoaway Sleeping")));
-    QCOMPARE(controller.lastError(), QStringLiteral("Command was refused"));
+    QVERIFY(controller.sendMessage(QStringLiteral("/autoaway Sleeping")));
+    QVERIFY(selectedWhoisContains(
+        qobject_cast<QAbstractItemModel *>(controller.messages()),
+        QStringLiteral("/autoaway [off|on|duration [reason]|reason [text]]")));
     QCOMPARE(transport->writtenFrames().size(), before);
     QVERIFY(!framesContain(transport->writtenFrames().mid(before),
                            QByteArrayLiteral("AWAY")));
@@ -640,8 +644,10 @@ void AutoawayTest::restoreOnAfterOff()
                                   QStringLiteral("#omarchy"));
     auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
     QVERIFY(messages);
-    QVERIFY(!controller.sendMessage(QStringLiteral("/autoaway on")));
-    QCOMPARE(controller.lastError(), QStringLiteral("Command was refused"));
+    QVERIFY(controller.sendMessage(QStringLiteral("/autoaway on")));
+    QVERIFY(selectedWhoisContains(
+        messages,
+        QStringLiteral("/autoaway [off|on|duration [reason]|reason [text]]")));
 
     QVERIFY(controller.sendMessage(QStringLiteral("/autoaway 15")));
     QVERIFY(controller.sendMessage(QStringLiteral("/autoaway off")));

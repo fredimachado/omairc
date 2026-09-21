@@ -308,6 +308,7 @@ private:
                                        IrcComposerSurface surface);
     IrcCommandOutcome echoAutoawayFeedback(IrcComposerSurface surface,
                                            const QString& text);
+    IrcCommandOutcome echoAutoawayUsage(IrcComposerSurface surface);
     void saveAutoaway() const;
     void armAutoawayIdle();
     void stopAutoawayTimers();

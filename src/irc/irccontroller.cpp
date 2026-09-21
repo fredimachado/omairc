@@ -2385,7 +2385,7 @@ IrcCommandOutcome IrcController::dispatchAutoaway(const IrcCommand& command,
 {
     const IrcAutoawayRequest request = ircParseAutoawayArgument(command.argument);
     if (request.kind == IrcAutoawayKind::Usage)
-        return IrcCommandOutcome::Refused;
+        return echoAutoawayUsage(surface);
 
     bool persist = false;
     QString text;
@@ -2402,8 +2402,8 @@ IrcCommandOutcome IrcController::dispatchAutoaway(const IrcCommand& command,
         text = ircFormatAutoawayConfirmation(m_autoaway);
         break;
     case IrcAutoawayKind::EnableOn:
-        if (m_autoaway.timeoutSeconds <= 0)
-            return IrcCommandOutcome::Refused;
+        if (m_autoaway.timeoutSeconds < ircAutoawayMinTimeoutSeconds)
+            return echoAutoawayUsage(surface);
         m_autoaway.enabled = true;
         persist = true;
         armAutoawayIdle();
@@ -2429,7 +2429,7 @@ IrcCommandOutcome IrcController::dispatchAutoaway(const IrcCommand& command,
         text = ircFormatAutoawayConfirmation(m_autoaway);
         break;
     case IrcAutoawayKind::Usage:
-        return IrcCommandOutcome::Refused;
+        return echoAutoawayUsage(surface);
     }
     if (persist)
         saveAutoaway();
@@ -2453,6 +2453,15 @@ IrcCommandOutcome IrcController::echoAutoawayFeedback(IrcComposerSurface surface
     }
     m_console.record(IrcStatusEntry::outcome(networkId, text));
     return IrcCommandOutcome::Sent;
+}
+
+IrcCommandOutcome IrcController::echoAutoawayUsage(IrcComposerSurface surface)
+{
+    const IrcVerbSpec *spec = IrcVerbTable::find(IrcCommand::Verb::Autoaway);
+    return echoAutoawayFeedback(
+        surface,
+        spec ? spec->usage
+             : QStringLiteral("/autoaway [off|on|duration [reason]|reason [text]]"));
 }
 
 void IrcController::saveAutoaway() const
