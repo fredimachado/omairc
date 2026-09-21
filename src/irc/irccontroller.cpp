@@ -21,7 +21,9 @@
 #include <QCoreApplication>
 #include <QDateTime>
 #include <QEvent>
+#ifdef QT_GUI_LIB
 #include <QGuiApplication>
+#endif
 #include <QSettings>
 #include <QTimer>
 #include <QVariantMap>
@@ -2580,11 +2582,13 @@ bool IrcController::eventFilter(QObject *watched, QEvent *event)
     default:
         return false;
     }
+#ifdef QT_GUI_LIB
     if (const auto *gui =
             qobject_cast<QGuiApplication *>(QCoreApplication::instance())) {
         if (gui->applicationState() != Qt::ApplicationActive)
             return false;
     }
+#endif
     noteLocalActivity();
     return false;
 }
