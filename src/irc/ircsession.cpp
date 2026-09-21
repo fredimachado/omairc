@@ -100,6 +100,27 @@ QString describeMalformed(const char *kind, IrcError error,
     return text + QStringLiteral(". Preview: ") + shown;
 }
 
+bool isTagSafeLabel(const QString& label)
+{
+    if (label.isEmpty() || label.size() > 64)
+        return false;
+    for (const QChar character : label) {
+        const ushort value = character.unicode();
+        const bool ok = (value >= 'A' && value <= 'Z')
+            || (value >= 'a' && value <= 'z')
+            || (value >= '0' && value <= '9')
+            || value == '-' || value == '_';
+        if (!ok)
+            return false;
+    }
+    return true;
+}
+
+bool isLabeledResponseType(const QString& type)
+{
+    return type.compare(QLatin1String("labeled-response"), Qt::CaseInsensitive) == 0;
+}
+
 QByteArray builtLine(const IrcBuildResult &result)
 {
     if (!result)
@@ -270,7 +291,8 @@ IrcSession::IrcSession(const IrcSessionConfig &config,
                        IrcReconnectTimer *capabilityTimer,
                        QObject *parent,
                        IrcReconnectTimer *pingTimer,
-                       IrcReachabilitySource *reachability)
+                       IrcReachabilitySource *reachability,
+                       IrcReconnectTimer *labelTimer)
     : QObject(parent)
     , m_config(config)
     , m_port(config.port)
@@ -282,9 +304,11 @@ IrcSession::IrcSession(const IrcSessionConfig &config,
     , m_reconnectTimer(reconnectTimer)
     , m_capabilityTimer(capabilityTimer)
     , m_pingTimer(pingTimer)
+    , m_labelTimer(labelTimer)
     , m_reachability(reachability)
     , m_capabilities(!saslSecret(config).isEmpty())
 {
+    m_monotonicClock.start();
     qRegisterMetaType<IrcHistoryBatch>();
     Q_ASSERT(m_transport);
     if (!m_transport->parent())
@@ -306,6 +330,12 @@ IrcSession::IrcSession(const IrcSessionConfig &config,
         m_pingTimer = new IrcReconnectTimer(this);
     } else if (!m_pingTimer->parent()) {
         m_pingTimer->setParent(this);
+    }
+
+    if (!m_labelTimer) {
+        m_labelTimer = new IrcReconnectTimer(this);
+    } else if (!m_labelTimer->parent()) {
+        m_labelTimer->setParent(this);
     }
 
     if (!m_reachability) {
@@ -367,6 +397,7 @@ IrcSession::IrcSession(const IrcSessionConfig &config,
     connect(m_reachability, &IrcReachabilitySource::reachable,
             this, &IrcSession::beginReconnectAttempt);
     connect(m_pingTimer, &IrcReconnectTimer::fired, this, &IrcSession::onPingWatchdogFired);
+    connect(m_labelTimer, &IrcReconnectTimer::fired, this, &IrcSession::onLabelTimerFired);
 }
 
 IrcSession::~IrcSession()
@@ -375,6 +406,7 @@ IrcSession::~IrcSession()
     m_reconnectAfterDisconnect = false;
     m_reconnectTimer->cancel();
     m_capabilityTimer->cancel();
+    m_labelTimer->cancel();
     cancelPingWatchdog();
     m_transport->shutdown();
 }
@@ -449,6 +481,26 @@ bool IrcSession::historyPending() const
     return !m_historyPending.isEmpty();
 }
 
+int IrcSession::pendingRequestLabelCount() const
+{
+    return m_pendingRequestLabels.size();
+}
+
+bool IrcSession::hasPendingRequestLabel(const QString& label) const
+{
+    return !label.isEmpty() && m_pendingRequestLabels.contains(label);
+}
+
+int IrcSession::openBatchCount() const
+{
+    return m_openBatches.size();
+}
+
+void IrcSession::setMonotonicClock(std::function<qint64()> clock)
+{
+    m_monotonicClockFn = std::move(clock);
+}
+
 void IrcSession::start()
 {
     if (m_state != State::Idle && m_state != State::Failed)
@@ -483,6 +535,7 @@ void IrcSession::stop()
     m_reconnectTimer->cancel();
     m_capabilityTimer->cancel();
     cancelPingWatchdog();
+    clearPendingRequestLabels(true);
     m_reconnectAttempt = 0;
     m_reportedRetryErrors = 0;
 
@@ -546,13 +599,16 @@ bool IrcSession::sendAction(const QString& target, const QString& body)
     return sent;
 }
 
-bool IrcSession::sendCtcp(const QString& target, const QString& command, const QString& argument)
+bool IrcSession::sendCtcp(const QString& target, const QString& command, const QString& argument,
+                          const QString& requestLabel)
 {
     const QString verb = command.trimmed().toUpper();
     if (!isValidPrivmsgTarget(target) || verb.isEmpty() || verb.contains(QLatin1Char(' ')))
         return false;
     return sendTrailingBody(QStringLiteral("PRIVMSG %1 :").arg(target),
-                            ctcpPayload({verb, argument}));
+                            ctcpPayload({verb, argument}),
+                            {},
+                            requestLabel);
 }
 
 bool IrcSession::sendTyping(const QString& target, IrcTypingPhase phase)
@@ -736,12 +792,24 @@ bool IrcSession::sendRaw(const QString& line)
     return sendCommand(line);
 }
 
-bool IrcSession::whois(const QString& nick)
+bool IrcSession::whois(const QString& nick, const QString& requestLabel)
 {
     const QString trimmed = nick.trimmed();
     if (trimmed.isEmpty())
         return false;
-    return sendCommand(QStringLiteral("WHOIS %1 %1").arg(trimmed));
+    return sendCommand(QStringLiteral("WHOIS %1 %1").arg(trimmed), requestLabel);
+}
+
+QString IrcSession::startLabeledRequest()
+{
+    if (!capabilities().contains(IrcCapability::LabeledResponse))
+        return {};
+    return beginLabeledRequest();
+}
+
+void IrcSession::cancelRequestLabel(const QString& requestLabel)
+{
+    dropRequestLabel(requestLabel);
 }
 
 bool IrcSession::list(const QString& mask)
@@ -914,11 +982,17 @@ void IrcSession::sendLine(const QByteArray &line)
     m_transport->write(line);
 }
 
-bool IrcSession::sendCommand(const QString& command)
+bool IrcSession::sendCommand(const QString& command, const QString& requestLabel)
 {
     if (m_state != State::Registered)
         return false;
-    const QByteArray line = builtLine(IrcCommandBuilder::line(command.toStdString()));
+    QString wire = command;
+    if (!requestLabel.isEmpty()) {
+        if (!isTagSafeLabel(requestLabel))
+            return false;
+        wire = QStringLiteral("@label=%1 %2").arg(requestLabel, command);
+    }
+    const QByteArray line = builtLine(IrcCommandBuilder::line(wire.toStdString()));
     if (line.isEmpty())
         return false;
     sendLine(line);
@@ -927,20 +1001,134 @@ bool IrcSession::sendCommand(const QString& command)
 
 bool IrcSession::sendTrailingBody(const QString& prefix,
                                  const QString& body,
-                                 const QString& suffix)
+                                 const QString& suffix,
+                                 const QString& requestLabel)
 {
     const std::vector<std::string> chunks = IrcCommandBuilder::splitTrailingParam(
         utf8(prefix), utf8(body), utf8(suffix));
     if (chunks.empty())
         return false;
+    if (!requestLabel.isEmpty() && chunks.size() != 1)
+        return false;
     for (const std::string& chunk : chunks) {
         if (!sendCommand(prefix
                          + QString::fromUtf8(chunk.data(), qsizetype(chunk.size()))
-                         + suffix)) {
+                         + suffix,
+                         requestLabel)) {
             return false;
         }
     }
     return true;
+}
+
+QString IrcSession::beginLabeledRequest()
+{
+    const QString label = QStringLiteral("lr%1").arg(++m_nextRequestLabel);
+    const qint64 now = labelClockMs();
+    m_labelNow = now;
+    const int timeout = std::max(0, m_config.labeledResponseTimeoutMilliseconds);
+    m_pendingRequestLabels.insert(label, now + timeout);
+    armLabelTimer();
+    return label;
+}
+
+void IrcSession::dropRequestLabel(const QString& label)
+{
+    if (label.isEmpty() || !m_pendingRequestLabels.remove(label))
+        return;
+    armLabelTimer();
+}
+
+void IrcSession::finishRequestLabel(const QString& label)
+{
+    if (label.isEmpty() || !m_pendingRequestLabels.remove(label))
+        return;
+    armLabelTimer();
+    emit requestLabelFinished(m_config.networkId, label);
+}
+
+void IrcSession::clearPendingRequestLabels(bool notify)
+{
+    const QList<QString> labels = m_pendingRequestLabels.keys();
+    m_pendingRequestLabels.clear();
+    m_labelTimer->cancel();
+    m_labelTimerArmed = false;
+    m_armedLabelDelay = 0;
+    if (!notify)
+        return;
+    for (const QString& label : labels)
+        emit requestLabelFinished(m_config.networkId, label);
+}
+
+qint64 IrcSession::labelClockMs() const
+{
+    if (m_monotonicClockFn)
+        return m_monotonicClockFn();
+    return m_monotonicClock.isValid() ? m_monotonicClock.elapsed() : 0;
+}
+
+void IrcSession::armLabelTimer()
+{
+    if (m_pendingRequestLabels.isEmpty()) {
+        m_labelTimer->cancel();
+        m_labelTimerArmed = false;
+        m_armedLabelDelay = 0;
+        return;
+    }
+
+    const qint64 now = labelClockMs();
+    m_labelNow = now;
+    qint64 earliest = std::numeric_limits<qint64>::max();
+    for (auto it = m_pendingRequestLabels.cbegin(); it != m_pendingRequestLabels.cend(); ++it)
+        earliest = std::min(earliest, it.value());
+    const qint64 remaining = std::max(qint64(0), earliest - now);
+    const int delay = remaining > qint64(std::numeric_limits<int>::max())
+        ? std::numeric_limits<int>::max()
+        : int(remaining);
+    if (m_labelTimerArmed && m_labelArmedAt + qint64(m_armedLabelDelay) == earliest)
+        return;
+    m_labelArmedAt = now;
+    m_armedLabelDelay = delay;
+    m_labelTimerArmed = true;
+    m_labelTimer->start(delay);
+}
+
+void IrcSession::onLabelTimerFired()
+{
+    qint64 now = labelClockMs();
+    const qint64 firedAt = m_labelArmedAt + std::max(0, m_armedLabelDelay);
+    if (now < firedAt)
+        now = firedAt;
+    m_labelNow = now;
+    m_labelTimerArmed = false;
+
+    QStringList expired;
+    expired.reserve(m_pendingRequestLabels.size());
+    for (auto it = m_pendingRequestLabels.begin(); it != m_pendingRequestLabels.end(); ) {
+        if (it.value() <= m_labelNow) {
+            expired.append(it.key());
+            it = m_pendingRequestLabels.erase(it);
+        } else {
+            ++it;
+        }
+    }
+    for (const QString& label : expired)
+        emit requestLabelFinished(m_config.networkId, label);
+    armLabelTimer();
+}
+
+QString IrcSession::correlationLabel(const IrcMessage& message) const
+{
+    const QString label = tagValue(message, "label");
+    if (!label.isEmpty())
+        return label;
+    const QString batch = tagValue(message, "batch");
+    if (batch.isEmpty())
+        return {};
+    const auto found = m_openBatches.constFind(batch);
+    if (found == m_openBatches.cend())
+        return {};
+    return found.value().requestLabel;
 }
 
 void IrcSession::handleBytes(const QByteArray &bytes)
@@ -994,9 +1182,12 @@ void IrcSession::handleMessage(const IrcMessage &message)
             m_pendingInvite = IrcPendingInvite{nick, channel};
     }
 
+    const QString requestLabel = correlationLabel(message);
     if (ircStatusKeepsIncoming(message, m_nick, m_channelTypes)) {
-        for (const IrcStatusEntry& entry :
+        for (IrcStatusEntry entry :
              IrcStatusEntry::incomingAll(m_config.networkId, message, m_channelTypes)) {
+            if (!requestLabel.isEmpty())
+                entry.setRequestLabel(requestLabel);
             emit statusEntry(entry);
         }
     }
@@ -1008,6 +1199,11 @@ void IrcSession::handleMessage(const IrcMessage &message)
     }
     if (captureInBatch(message))
         return;
+
+    if (message.command == "ACK") {
+        finishRequestLabel(tagValue(message, "label"));
+        return;
+    }
 
     if (message.command == "PING") {
         if (message.parameters.empty()) {
@@ -1173,6 +1369,10 @@ void IrcSession::handleMessage(const IrcMessage &message)
     } else if (message.command == "475" && message.parameters.size() >= 2) {
         dropStoredAutojoinKey(parameter(message, 1));
     }
+
+    const QString carriedLabel = tagValue(message, "label");
+    if (!carriedLabel.isEmpty())
+        finishRequestLabel(carriedLabel);
 }
 
 void IrcSession::handleBatch(const IrcMessage &message)
@@ -1188,6 +1388,8 @@ void IrcSession::handleBatch(const IrcMessage &message)
     if (token.startsWith(QLatin1Char('+'))) {
         const QString parent = tagValue(message, "batch");
         const QString type = parameter(message, 1);
+        const QString carriedLabel = tagValue(message, "label");
+        const bool labeledResponse = isLabeledResponseType(type);
         if (m_openBatches.contains(reference))
             return;
         const std::optional<ReplayKind> kind = replayKindFor(type);
@@ -1195,13 +1397,17 @@ void IrcSession::handleBatch(const IrcMessage &message)
             ignoreBatch(reference);
             return;
         }
-        // A history batch that answers a request we are still waiting on is
-        // never crowded out. Everything else shares the open-batch budget, so
-        // a server cannot make us hold state for batches we did not ask for.
+        // A history batch that answers a request we are still waiting on, or a
+        // labeled-response batch whose opening @label is still pending, is never
+        // crowded out. Everything else shares the open-batch budget, so a server
+        // cannot make us hold state for batches we did not ask for.
         const bool solicited = kind == ReplayKind::ChatHistory
             && answersPendingHistory(parameter(message, 2));
+        const bool pendingLabeledResponse =
+            labeledResponse && hasPendingRequestLabel(carriedLabel);
         const bool overOpenCap =
-            !solicited && m_openBatches.size() >= kMaxOpenBatches;
+            !solicited && !pendingLabeledResponse
+            && m_openBatches.size() >= kMaxOpenBatches;
         if (m_ignoredBatches.contains(reference)
             || (!parent.isEmpty() && m_ignoredBatches.contains(parent))
             || (overOpenCap && isHistoryBatch(type, parent))) {
@@ -1215,6 +1421,8 @@ void IrcSession::handleBatch(const IrcMessage &message)
         OpenBatch frame;
         frame.type = type;
         frame.parent = parent;
+        if (labeledResponse)
+            frame.requestLabel = carriedLabel;
         const QString parentRoot = m_openBatches.contains(frame.parent)
             ? m_openBatches.value(frame.parent).replayRoot
             : QString{};
@@ -1255,6 +1463,8 @@ void IrcSession::closeBatch(const QString& reference)
     }
     for (const QString& child : children)
         ignoreBatch(child);
+    if (!frame.requestLabel.isEmpty())
+        finishRequestLabel(frame.requestLabel);
     if (frame.replayRoot == reference && !frame.collected.target.isEmpty()) {
         const bool currentMembership =
             frame.generation == historyGeneration(frame.collected.target);
@@ -1800,6 +2010,7 @@ void IrcSession::rescheduleStsExpiry()
 void IrcSession::fail(ErrorKind kind, const QString &message, bool reconnect)
 {
     cancelPingWatchdog();
+    clearPendingRequestLabels(true);
     if (reconnect) {
         const quint32 bit = quint32(1) << int(kind);
         if ((m_reportedRetryErrors & bit) == 0) {
@@ -1877,6 +2088,7 @@ void IrcSession::resetForConnection()
     m_channelTypes.clear();
     m_capabilityTimer->cancel();
     cancelPingWatchdog();
+    clearPendingRequestLabels(true);
     m_capabilities.reset(!saslSecret(m_config).isEmpty());
     m_metadataCapability = {};
     m_typing.reset();

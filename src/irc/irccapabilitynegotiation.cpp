@@ -78,6 +78,8 @@ const Wanted wantedTable[] = {
      IrcCapability::Batch, false, false, acceptsAnyValue},
     {IrcCapability::ChatHistory, QLatin1String("draft/chathistory"),
      IrcCapability::Batch, false, false, acceptsAnyValue},
+    {IrcCapability::LabeledResponse, QLatin1String("labeled-response"),
+     IrcCapability::MessageTags, false, true, acceptsAnyValue},
 };
 
 const Wanted *wantedFor(const QString& name)

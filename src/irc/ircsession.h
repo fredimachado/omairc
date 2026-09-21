@@ -86,6 +86,7 @@ struct IrcSessionConfig
     int reconnectMaximumDelayMilliseconds = 30000;
     int capabilityTimeoutMilliseconds = 10000;
     int pingTimeoutMilliseconds = 60000;
+    int labeledResponseTimeoutMilliseconds = 45000;
 };
 
 class IrcSession : public QObject
@@ -123,7 +124,8 @@ public:
                IrcReconnectTimer *capabilityTimer = nullptr,
                QObject *parent = nullptr,
                IrcReconnectTimer *pingTimer = nullptr,
-               IrcReachabilitySource *reachability = nullptr);
+               IrcReachabilitySource *reachability = nullptr,
+               IrcReconnectTimer *labelTimer = nullptr);
     ~IrcSession() override;
 
     QString networkId() const;
@@ -150,7 +152,8 @@ public slots:
     bool sendNotice(const QString& target, const QString& body);
     bool sendChannelMode(const IrcChannelModeRequest& request);
     bool sendAction(const QString& target, const QString& body);
-    bool sendCtcp(const QString& target, const QString& command, const QString& argument = {});
+    bool sendCtcp(const QString& target, const QString& command, const QString& argument = {},
+                  const QString& requestLabel = {});
     bool sendTyping(const QString& target, IrcTypingPhase phase);
     bool join(const IrcJoinTarget& target);
     bool part(const QString& channel);
@@ -164,7 +167,13 @@ public slots:
     bool clearOwnMetadata(const QString& key);
     bool changeNick(const QString& nick);
     bool quit(const QString& reason = {});
-    bool whois(const QString& nick);
+    bool whois(const QString& nick, const QString& requestLabel = {});
+    QString startLabeledRequest();
+    void cancelRequestLabel(const QString& requestLabel);
+    int pendingRequestLabelCount() const;
+    bool hasPendingRequestLabel(const QString& label) const;
+    int openBatchCount() const;
+    void setMonotonicClock(std::function<qint64()> clock);
     bool sendMonitor(QChar modifier, const QStringList& nicks = {});
     bool list(const QString& mask = {});
     bool sendRaw(const QString& line);
@@ -183,6 +192,7 @@ signals:
     void statusEntry(const IrcStatusEntry& entry);
     void capabilitiesChanged(const QString& networkId,
                              IrcCapabilitySet capabilities);
+    void requestLabelFinished(const QString& networkId, const QString& requestLabel);
     void autojoinChannelsChanged(const QString &networkId,
                                  const QStringList &channels,
                                  const QMap<QString, QString> &keys);
@@ -241,10 +251,19 @@ private:
     void handleAuthenticate(const IrcMessage &message);
     void handleWelcome(const IrcMessage &message);
     void applyIsupport(const IrcMessage &message);
-    bool sendCommand(const QString& command);
+    bool sendCommand(const QString& command, const QString& requestLabel = {});
     bool sendTrailingBody(const QString& prefix,
                           const QString& body,
-                          const QString& suffix = {});
+                          const QString& suffix = {},
+                          const QString& requestLabel = {});
+    QString beginLabeledRequest();
+    void dropRequestLabel(const QString& label);
+    void finishRequestLabel(const QString& label);
+    void clearPendingRequestLabels(bool notify);
+    void armLabelTimer();
+    void onLabelTimerFired();
+    qint64 labelClockMs() const;
+    QString correlationLabel(const IrcMessage& message) const;
     void fail(ErrorKind kind, const QString &message, bool reconnect);
     void scheduleReconnect();
     void beginReconnectAttempt();
@@ -278,6 +297,7 @@ private:
     IrcReconnectTimer *m_reconnectTimer;
     IrcReconnectTimer *m_capabilityTimer;
     IrcReconnectTimer *m_pingTimer;
+    IrcReconnectTimer *m_labelTimer;
     IrcReachabilitySource *m_reachability;
     PingWatchdog m_pingWatchdog = PingWatchdog::Off;
     IrcFramer m_framer;
@@ -296,6 +316,7 @@ private:
         std::optional<ReplayKind> kind;
         IrcHistoryBatch collected;
         int generation = 0;
+        QString requestLabel;
     };
     QHash<QString, OpenBatch> m_openBatches;
     QSet<QString> m_ignoredBatches;
@@ -309,6 +330,14 @@ private:
     static constexpr int kMaxOpenBatches = 16;
     static constexpr int kMaxIgnoredBatches = 32;
     QHash<QString, QElapsedTimer> m_ctcpReplyClock;
+    QHash<QString, qint64> m_pendingRequestLabels;
+    std::function<qint64()> m_monotonicClockFn;
+    QElapsedTimer m_monotonicClock;
+    qint64 m_labelNow = 0;
+    qint64 m_labelArmedAt = 0;
+    int m_armedLabelDelay = 0;
+    bool m_labelTimerArmed = false;
+    quint64 m_nextRequestLabel = 0;
     IgnoreFilter m_ignoreFilter;
     std::optional<IrcPendingInvite> m_pendingInvite;
     State m_state = State::Idle;

@@ -193,6 +193,7 @@ SOURCES += \
     session/tst_opendirect.cpp \
     session/tst_highlight.cpp \
     session/tst_autoaway.cpp \
+    session/tst_labeledresponse.cpp \
     session/tst_inbox.cpp \
     session/tst_typing.cpp \
     session/tst_reducer.cpp \

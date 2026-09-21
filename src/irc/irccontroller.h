@@ -72,7 +72,8 @@ public:
     void setTranscriptRoot(const QString &root);
     IrcSession *addSession(const IrcSessionConfig& config,
                            IrcTransport *transport,
-                           IrcReconnectTimer *reconnectTimer = nullptr);
+                           IrcReconnectTimer *reconnectTimer = nullptr,
+                           IrcReconnectTimer *labelTimer = nullptr);
     bool discardSession(const QString &networkId);
     void forgetNetworkState(const QString &networkId);
     void setNetworkOrder(const QStringList &networkOrder);
@@ -255,6 +256,26 @@ private:
         bool failedIsAmbiguous = false;
         bool metadataEmitted = false;
     };
+    struct IrcLabeledWatchKey
+    {
+        QString networkId;
+        QString requestLabel;
+
+        friend bool operator<(const IrcLabeledWatchKey& left,
+                              const IrcLabeledWatchKey& right)
+        {
+            if (left.networkId != right.networkId)
+                return left.networkId < right.networkId;
+            return left.requestLabel < right.requestLabel;
+        }
+    };
+    enum class IrcLabeledWatchKind { Whois, Ctcp };
+    struct IrcLabeledWatch
+    {
+        IrcLabeledWatchKind kind = IrcLabeledWatchKind::Whois;
+        IrcWhoisDestination destination;
+        bool metadataEmitted = false;
+    };
 
     void apply(const IrcEvent& event);
     void adoptReducerSelection();
@@ -349,6 +370,16 @@ private:
     void noteNickDelivery(const QString& networkId, const QString& target);
     void handleStatusEntry(const IrcStatusEntry& entry);
     void routeWhoisLine(const QString& networkId, const IrcWhoisLine& line);
+    void routeLabeledWhois(const QString& networkId,
+                           const QString& requestLabel,
+                           const IrcWhoisLine& line);
+    void routeLabeledCtcp(const QString& networkId,
+                          const QString& requestLabel,
+                          const IrcCtcpReplyLine& line,
+                          const QString& text);
+    void routeLabeledStandardReply(const IrcStatusEntry& entry);
+    void onRequestLabelFinished(const QString& networkId, const QString& requestLabel);
+    void forgetLabeledWatches(const QString& networkId, IrcLabeledWatchKind kind);
     QStringList whoisMetadataLines(const QString& networkId,
                                    const QString& nick) const;
     void forgetWhoisWatches(const QString& networkId);
@@ -518,6 +549,7 @@ private:
     QString m_typingTarget;
     std::map<IrcWhoisWatchKey, IrcWhoisWatch> m_whoisWatches;
     std::map<IrcCtcpWatchKey, IrcCtcpWatch> m_ctcpWatches;
+    std::map<IrcLabeledWatchKey, IrcLabeledWatch> m_labeledWatches;
     QHash<QString, QHash<QString, IrcOwnMetadataWatch>> m_ownMetadataWatches;
     std::set<IrcConversationKey> m_cancelledPendingJoins;
 };

@@ -1057,6 +1057,16 @@ QString IrcStatusEntry::label() const
     return m_label;
 }
 
+QString IrcStatusEntry::requestLabel() const
+{
+    return m_requestLabel;
+}
+
+void IrcStatusEntry::setRequestLabel(QString requestLabel)
+{
+    m_requestLabel = std::move(requestLabel);
+}
+
 QString IrcStatusEntry::text() const
 {
     return m_text;

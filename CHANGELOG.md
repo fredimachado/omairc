@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- IRCv3 `labeled-response`. When a network advertises it (and `message-tags`),
+  Omairc tags outbound WHOIS and CTCP `/ping` `/time` `/version` with a unique
+  `label` and routes the matching reply — including `labeled-response` batches —
+  to the asking transcript. Unlabeled servers keep the existing nick-keyed
+  watches. Composer PRIVMSG/NOTICE sends stay unlabeled.
 - `Shift+Page Up` / `Shift+Page Down` scroll the conversation transcript
   and Status by about half a page. Unmodified Page Up / Page Down stay
   the full hop. The composer stays focused; both chords are disabled

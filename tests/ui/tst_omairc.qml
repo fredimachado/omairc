@@ -3776,7 +3776,9 @@ TestCase {
         if (item("slashCompleteList").visible)
             keyClick(Qt.Key_Escape);
         keyClick(Qt.Key_Return);
-        seed.injectOmarchy(":server 319 fred lena :" + channels + "\r\n");
+        var label = seed.lastOmarchyRequestLabel();
+        verify(label.length > 0, "WHOIS should carry a labeled-response label");
+        seed.injectOmarchy("@label=" + label + " :server 319 fred lena :" + channels + "\r\n");
         tryVerify(function() {
             var last = list.model.rowCount() - 1;
             return last >= previousCount
