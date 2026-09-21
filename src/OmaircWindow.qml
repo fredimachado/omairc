@@ -2471,6 +2471,7 @@ ApplicationWindow {
                 readonly property string authorAvatar: model && model.authorAvatar
                     ? String(model.authorAvatar) : ""
                 readonly property bool authorBot: !!(model && model.authorBot)
+                // Wash: nick or /highlight hit. Not the sidebar `mention` badge.
                 readonly property bool mentioned: !!(model && model.mentioned)
                 readonly property string origin: win.transcriptField(conversation.messageList.model, index, "origin")
                 readonly property bool replayed: origin === "replay"
