@@ -531,9 +531,13 @@ void AutoawayTest::disableWhileActiveClearsAutoAway()
     QCOMPARE(transportA->writtenFrames().last(), QByteArrayLiteral("AWAY\r\n"));
     QCOMPARE(transportB->writtenFrames().last(), QByteArrayLiteral("AWAY\r\n"));
 
+    const int beforeA = transportA->writtenFrames().size();
+    const int beforeB = transportB->writtenFrames().size();
     QVERIFY(controller.sendMessage(QStringLiteral("/autoaway off")));
-    QCOMPARE(transportA->writtenFrames().last(), QByteArrayLiteral("AWAY\r\n"));
-    QCOMPARE(transportB->writtenFrames().last(), QByteArrayLiteral("AWAY\r\n"));
+    QCOMPARE(awayFrameCount(transportA->writtenFrames(), beforeA), 1);
+    QCOMPARE(awayFrameCount(transportB->writtenFrames(), beforeB), 1);
+    QCOMPARE(transportA->writtenFrames().at(beforeA), QByteArrayLiteral("AWAY\r\n"));
+    QCOMPARE(transportB->writtenFrames().at(beforeB), QByteArrayLiteral("AWAY\r\n"));
     QVERIFY(selectedWhoisContains(
         qobject_cast<QAbstractItemModel *>(controller.messages()),
         QStringLiteral("Auto-away off")));
