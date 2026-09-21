@@ -311,3 +311,20 @@ bool SeededIrcFixture::omarchyWroteFrom(int start, const QString &needle) const
     }
     return false;
 }
+
+QString SeededIrcFixture::lastOmarchyRequestLabel() const
+{
+    if (!m_omarchyTransport)
+        return {};
+    const QByteArrayList frames = m_omarchyTransport->writtenFrames();
+    for (int i = frames.size() - 1; i >= 0; --i) {
+        const QByteArray &frame = frames.at(i);
+        if (!frame.startsWith("@label="))
+            continue;
+        const int space = frame.indexOf(' ');
+        if (space < 0)
+            continue;
+        return QString::fromUtf8(frame.mid(7, space - 7));
+    }
+    return {};
+}

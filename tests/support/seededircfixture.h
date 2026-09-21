@@ -49,6 +49,7 @@ public:
     Q_INVOKABLE bool echoLastOftcPrivmsg();
     Q_INVOKABLE int omarchyFrameCount() const;
     Q_INVOKABLE bool omarchyWroteFrom(int start, const QString &needle) const;
+    Q_INVOKABLE QString lastOmarchyRequestLabel() const;
 
     Backend &backend();
     IrcSlashSession &slash();

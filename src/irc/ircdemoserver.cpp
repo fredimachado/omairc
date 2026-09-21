@@ -1062,43 +1062,6 @@ bool tryAnswerCtcp(IrcLoopbackTransport *transport, const QString &selfNick,
     return true;
 }
 
-bool tryAnswerWhois(IrcLoopbackTransport *transport, const QString &selfNick,
-                    const QByteArray &frame)
-{
-    if (!transport || selfNick.isEmpty())
-        return false;
-
-    const std::optional<IrcMessage> parsed = parseDemoFrame(frame);
-    if (!parsed || parsed->command != "WHOIS" || parsed->parameters.empty())
-        return false;
-
-    const QString nick = ircWireText(parsed->parameters.back());
-    if (nick.isEmpty())
-        return false;
-
-    const QString label = demoTagValue(*parsed, "label");
-    QByteArray out;
-    QByteArray innerPrefix;
-    if (!label.isEmpty()) {
-        const QByteArray batch = label.toUtf8();
-        out += demoLabelPrefix(label);
-        out += ":server BATCH +";
-        out += batch;
-        out += " labeled-response\r\n";
-        innerPrefix = QByteArrayLiteral("@batch=") + batch + QByteArrayLiteral(" ");
-    }
-    out += innerPrefix;
-    out += line(QStringLiteral(":server 311 %1 %2 ~%2 user/host * :%2")
-                    .arg(selfNick, nick));
-    out += innerPrefix;
-    out += line(QStringLiteral(":server 318 %1 %2 :End of /WHOIS list.")
-                    .arg(selfNick, nick));
-    if (!label.isEmpty())
-        out += line(QStringLiteral(":server BATCH -%1").arg(label));
-    transport->injectBytes(out);
-    return true;
-}
-
 bool echoLastPrivmsg(IrcLoopbackTransport *transport, const QString &nick)
 {
     if (!transport || nick.isEmpty())
@@ -1187,8 +1150,6 @@ void IrcDemoServer::hookAutoEcho(IrcLoopbackTransport *transport,
         if (tryAnswerPing(transport, frame))
             return;
         if (tryAnswerList(transport, network, frame))
-            return;
-        if (tryAnswerWhois(transport, nick, frame))
             return;
         if (tryAnswerCtcp(transport, nick, frame))
             return;
