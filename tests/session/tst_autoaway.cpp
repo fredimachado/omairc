@@ -146,6 +146,7 @@ private slots:
     void sendToTargetClearsAutoAway();
     void incomingPrivmsgDoesNotClearAutoAway();
     void restoreOnAfterOff();
+    void emptyAwayClearsProvenanceSoAutoTripMarks();
     void refuseTimeoutAtOrAboveTimerCap();
     void reconnectWhileTrippedSendsAway();
     void reconnectDropsManualAwaySoAutoTripMarks();
@@ -610,6 +611,27 @@ void AutoawayTest::restoreOnAfterOff()
     QVERIFY(console);
     QVERIFY(console->submit(QStringLiteral("/autoaway")));
     QVERIFY(logContains(console->lines(), QStringLiteral("Auto-away 15 minutes")));
+}
+
+void AutoawayTest::emptyAwayClearsProvenanceSoAutoTripMarks()
+{
+    IrcController controller;
+    auto *transport = joinNetwork(controller, QStringLiteral("libera"));
+    QVERIFY(transport);
+    controller.selectConversation(QStringLiteral("libera"),
+                                  QStringLiteral("#omarchy"));
+    QVERIFY(controller.sendMessage(QStringLiteral("/autoaway 15")));
+    QVERIFY(controller.sendMessage(QStringLiteral("/away lunch")));
+    QCOMPARE(transport->writtenFrames().last(),
+             QByteArrayLiteral("AWAY :lunch\r\n"));
+    QVERIFY(controller.sendMessage(QStringLiteral("/away")));
+    QCOMPARE(transport->writtenFrames().last(), QByteArrayLiteral("AWAY\r\n"));
+
+    const int before = transport->writtenFrames().size();
+    controller.fireAutoawayIdleForTest();
+    controller.fireAutoawayGraceForTest();
+    QCOMPARE(awayFrameCount(transport->writtenFrames(), before), 1);
+    QCOMPARE(transport->writtenFrames().last(), QByteArrayLiteral("AWAY :\r\n"));
 }
 
 void AutoawayTest::reconnectWhileTrippedSendsAway()

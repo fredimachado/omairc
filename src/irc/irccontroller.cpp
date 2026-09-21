@@ -1667,18 +1667,16 @@ IrcCommandOutcome IrcController::dispatch(const IrcCommand& command,
     case IrcCommand::Verb::Away:
         sent = active->setAway(command.argument);
         if (sent) {
-            m_autoAwayNetworks.remove(active->networkId());
-            m_manualAwayNetworks.insert(active->networkId());
+            if (command.argument.trimmed().isEmpty())
+                noteAwayCleared(active->networkId());
+            else
+                noteManualAway(active->networkId());
         }
         break;
     case IrcCommand::Verb::Back:
         sent = active->clearAway();
-        if (sent) {
-            const bool wasAuto = m_autoAwayNetworks.remove(active->networkId());
-            m_manualAwayNetworks.remove(active->networkId());
-            if (wasAuto && m_autoAwayNetworks.isEmpty())
-                m_autoaway.oneShotReason.clear();
-        }
+        if (sent)
+            noteAwayCleared(active->networkId());
         break;
     default:
         return IrcCommandOutcome::Unsupported;
@@ -2517,6 +2515,20 @@ bool IrcController::markSessionAutoAway(IrcSession *session)
         return false;
     m_autoAwayNetworks.insert(session->networkId());
     return true;
+}
+
+void IrcController::noteManualAway(const QString& networkId)
+{
+    m_autoAwayNetworks.remove(networkId);
+    m_manualAwayNetworks.insert(networkId);
+}
+
+void IrcController::noteAwayCleared(const QString& networkId)
+{
+    const bool wasAuto = m_autoAwayNetworks.remove(networkId);
+    m_manualAwayNetworks.remove(networkId);
+    if (wasAuto && m_autoAwayNetworks.isEmpty())
+        m_autoaway.oneShotReason.clear();
 }
 
 void IrcController::tripAutoaway()
@@ -3577,10 +3589,7 @@ void IrcController::unawayAfterChat(IrcSession *session)
     if (m_reducer.selfAway(networkId) && !m_unawaySent.contains(networkId)) {
         if (session->clearAway()) {
             m_unawaySent.insert(networkId);
-            const bool wasAuto = m_autoAwayNetworks.remove(networkId);
-            m_manualAwayNetworks.remove(networkId);
-            if (wasAuto && m_autoAwayNetworks.isEmpty())
-                m_autoaway.oneShotReason.clear();
+            noteAwayCleared(networkId);
         }
     }
 }
