@@ -30,13 +30,16 @@ wait-title --exact "#omarchy · irc.example · fred - Omairc"
 composer
 type --text "/j"
 screenshot --feature slash-complete --name after-slash-j
+key --key Tab
+screenshot --feature slash-complete --name after-tab
+compare --before test-artifacts/verify/slash-complete/after-slash-j.png --after test-artifacts/verify/slash-complete/after-tab.png
 key --key Escape
 wait-title --exact "#omarchy · irc.example · fred - Omairc"
 ```
 
 - **List for `/j`.** Press `Ctrl+L` and type `/j`. Run `control-omairc composer`, `control-omairc type --text "/j"`, and `control-omairc screenshot --feature slash-complete --name after-slash-j`. The compiled list sits above the composer with one row, `/join`. The composer shows `/j`.
-- **Escape.** Press Escape. Run `control-omairc key --key Escape` then `control-omairc wait-title --exact "#omarchy · irc.example · fred - Omairc"`. The list closes and `/j` stays in the composer. The conversation does not change.
-- **Tab insert.** From `/j`, `control-omairc key --key Tab` inserts `/join ` and closes the list. That step is not in this fence, because the recipe dismisses with Escape first. Prove Tab on a composer that still holds `/j`.
+- **Tab insert.** With `/j` still in the composer, press Tab. Run `control-omairc key --key Tab` then `control-omairc screenshot --feature slash-complete --name after-tab`. Tab inserts `/join ` and closes the list. Run `control-omairc compare --before test-artifacts/verify/slash-complete/after-slash-j.png --after test-artifacts/verify/slash-complete/after-tab.png`. `compare` must report a pixel change.
+- **Escape.** Press Escape only after that shot. Run `control-omairc key --key Escape` then `control-omairc wait-title --exact "#omarchy · irc.example · fred - Omairc"`. The conversation does not change. The composer holds the inserted `/join `.
 - **Offscreen suite.** Run `control-omairc doctor-qml` then `control-omairc qml-suite`. That run covers `test_slashCompleteListAppearsForSlashJ`, `test_slashCompleteTabInsertsCanonicalVerb`, `test_slashCompleteEscapeDismisses`, `test_slashCompleteUpDownMoveSelection`, and `test_slashCompleteHistoryUpWalksPastBareCommand`. The Up/Down test uses a two-row JS fake (`/join` and `/nick`). This is not compiled-window proof.
 
 ## Gotchas

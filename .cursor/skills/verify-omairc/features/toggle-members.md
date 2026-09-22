@@ -23,12 +23,10 @@ Preconditions:
 - Seeded conversation UI is showing (`#omarchy · irc.example · fred - Omairc`, members visible). Use `control-omairc launch --demo-server`. When Xvfb tools are missing, `qml-suite` (seeded `IrcController`) is the fallback and is not compiled-window proof.
 - `control-omairc launch` without `--demo-server` is first-run Connect titled `irc.libera.chat Status`. Do not start this recipe there.
 - For a desktop instance, the window is the isolated 1180x760 default, so the panel can appear (`width >= 980`).
-- The first `import` after a fresh `launch` can grab a blank frame. `composer` does not wait. This recipe sends Escape first. Escape is disabled on a conversation, so the panel stays as it was.
 
 ```desktop-recipe
 launch --demo-server
 wait-title --exact "#omarchy · irc.example · fred - Omairc"
-key --key Escape
 screenshot --feature toggle-members --name members-open
 toggle-members
 screenshot --feature toggle-members --name members-hidden
@@ -45,7 +43,7 @@ wait-title --exact "#omarchy · irc.example · fred - Omairc"
 screenshot --feature toggle-members --name after-toggle
 ```
 
-- **Baseline panel.** Send Escape so the window has painted, then capture the open panel. Run `control-omairc key --key Escape` then `control-omairc screenshot --feature toggle-members --name members-open`. The right column shows `ONLINE - 12` and nicks including `anna`, and the people control reads `12 PEOPLE`.
+- **Baseline panel.** Capture the open panel. Run `control-omairc screenshot --feature toggle-members --name members-open`. The right column shows `ONLINE - 12` and nicks including `anna`, and the people control reads `12 PEOPLE`. `compare` against `members-hidden` runs only after both grabs are real frames.
 - **Shortcut hide.** Press `Ctrl+Shift+M`. Run `control-omairc toggle-members` then `control-omairc screenshot --feature toggle-members --name members-hidden`. The right column is gone. Run `control-omairc compare --before test-artifacts/verify/toggle-members/members-open.png --after test-artifacts/verify/toggle-members/members-hidden.png`. `compare` must report a pixel change.
 - **Shortcut show.** Press `Ctrl+Shift+M` again. Run `control-omairc toggle-members`. The member column returns with `ONLINE - 12`.
 - **Channel count.** Press `Ctrl+K` and jump to `#desktop`. Run `control-omairc jump --query "#desktop"` then `control-omairc wait-title --exact "#desktop - Omairc"`. The people control and `ONLINE -` heading both use `8`.
@@ -57,7 +55,7 @@ screenshot --feature toggle-members --name after-toggle
 ## Gotchas
 
 - `run toggle-members` skips `launch` when `doctor` is already healthy and `demo=yes`. It does not reset the member panel, unread badges, or sent lines. A hidden panel survives. Recipes that need the default open panel on a fresh demo need `cleanup` before `run`.
-- A screenshot taken before any key on a fresh launch can be a blank frame. The recipe sends Escape first. Escape does not dismiss a conversation.
+- `screenshot` retries a near-solid grab and fails the run if the frame stays flat. The open-panel shot is the first grab. Compare it to `members-hidden` only after that retry has a real frame.
 - `Ctrl+Shift+M` is disabled on direct messages. A no-op there is correct, not a broken shortcut.
 - `control-omairc toggle-members` sends `Control_L+Shift_L+m`. xdotool's `ctrl+shift+m` token does not reach the Qt shortcut on the isolated Xvfb.
 - The panel also stays hidden when the window is narrower than 980 CSS pixels. Isolated launch stays at 1180 wide so this does not apply unless geometry isolation failed.

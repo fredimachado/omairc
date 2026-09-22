@@ -27,26 +27,25 @@ Preconditions:
 - A default compiled launch (`control-omairc launch`) is titled `irc.libera.chat Status` and shows Connect. That is the desktop entry point.
 - `control-omairc launch --demo-server` skips Connect and shows the seeded sidebar. Do not start this recipe there. Do not put both launches in one fence.
 - When Xvfb tools are missing, use `control-omairc doctor-qml` then `control-omairc qml-suite`. That suite is not compiled-window proof. Do not send input to the user's live window.
-- The first `import` after a fresh `launch` can grab a blank frame. This recipe sends `Tab`, `Shift+Tab`, and one `Return` before the screenshot so the sheet has painted. Those keys do not Apply.
 
 ```desktop-recipe
 launch
 wait-title --exact "irc.libera.chat Status"
+screenshot --feature connect --name first-run
 key --key Tab
 key --key shift+Tab
 key --key Return
 wait-title --exact "irc.libera.chat Status"
-screenshot --feature connect --name first-run
 ```
 
-- **First-run sheet.** After an isolated launch, the title is `irc.libera.chat Status`. Run `control-omairc wait-title --exact "irc.libera.chat Status"` then `control-omairc screenshot --feature connect --name first-run`. The overlay heading is `Connect`. Name is `irc.libera.chat`, Host is `irc.libera.chat`, port is `6697`, TLS is on, Autojoin is `#omarchy`, `Connect automatically on startup` is off, Nick is empty, the problem line is `Nick is required`, and Apply is muted.
-- **Keyboard on first run.** The recipe walks one `Tab`, one `Shift+Tab`, and one `Return`. Run `control-omairc key --key Tab`, `control-omairc key --key shift+Tab`, and `control-omairc key --key Return`, then `control-omairc wait-title --exact "irc.libera.chat Status"`. The sheet stays open. Nick stays empty, the problem line stays `Nick is required`, and Apply stays muted. Do not press `Return` again once Apply is focused. `Ctrl+Enter` would Apply. This recipe does not Apply.
+- **First-run sheet.** After an isolated launch, the title is `irc.libera.chat Status`. Run `control-omairc wait-title --exact "irc.libera.chat Status"` then `control-omairc screenshot --feature connect --name first-run`. That shot is the Connect sheet, before any key. The overlay heading is `Connect`. Name is `irc.libera.chat`, Host is `irc.libera.chat`, port is `6697`, TLS is on, Autojoin is `#omarchy`, `Connect automatically on startup` is off, Nick is empty, the problem line is `Nick is required`, and Apply is muted.
+- **Keyboard on first run.** After that shot, the recipe walks one `Tab`, one `Shift+Tab`, and one `Return`. Run `control-omairc key --key Tab`, `control-omairc key --key shift+Tab`, and `control-omairc key --key Return`, then `control-omairc wait-title --exact "irc.libera.chat Status"`. Those keys walk focus and leave the sheet open. Nick stays empty, the problem line stays `Nick is required`, and Apply stays muted. This walk is not claimed as a pixel change. Do not press `Return` again once Apply is focused. `Ctrl+Enter` would Apply. This recipe does not Apply.
 - **Offscreen suite.** When Xvfb tools are missing, run `control-omairc doctor-qml` then `control-omairc qml-suite`. `bin/test` opens a window with a fake incomplete profile and writes `test-artifacts/connection-sheet.png`. `qml-suite` copies it to `test-artifacts/verify/connect/first-run.png`. The image must show `Connect`, `irc.libera.chat`, `Nick is required`, and muted Apply. The same suite covers Tab from the network list to Apply, Enter from Host keeping `Nick is required`, Enter from Nick closing a complete sheet, scrollbars on a short window and a long network list, and Disconnect next to Apply when the selected network is live. This is not compiled-window proof.
 
 ## Gotchas
 
 - `run connect` skips `launch` when `doctor` is already healthy and `demo=no`. It does not reset the sheet. A healthy `--demo-server` instance makes plain `launch` fail instead of switching modes. Recipes that need a fresh first-run window need `cleanup` before `run`.
-- A screenshot taken before any key on a fresh launch can be a blank frame. The recipe keys first.
+- `screenshot` retries a near-solid grab and fails the run if the frame stays flat. `first-run` is taken before Tab, Shift+Tab, and Return. Those keys are the focus walk, after the sheet is already on screen.
 - First run cannot be dismissed. Escape and a click outside the card only work after a complete profile already exists. The overlay covers the sidebar and member list, so those clicks do not switch conversation, open Status, or open a DM.
 - Discard on first run restores the suggested Libera defaults. It does not close the sheet. An incomplete saved profile still opens Connect, but the fields follow that stored draft, not `suggested()`. Isolated `control-omairc launch` uses empty XDG, so it is first-run suggested values. A stored profile with no name uses the host as the name. Name and Host stay independent after that: changing Host does not update Name, so a legacy profile keeps the original host in Name until you edit it.
 - Apply on the compiled window starts a real IRC session. That is not this feature's proof, and it does not restore the seeded `#omarchy` sidebar.

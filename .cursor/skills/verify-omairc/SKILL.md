@@ -89,7 +89,7 @@ Use `control-omairc` against the isolated window. Shortcuts come first. Pixel cl
 
 Agents should `launch` (if needed) then `run <feature>` instead of assembling raw `key --key` chords. `run <feature>` plays the `desktop-recipe` fence in that feature file (under `## Driving it with control-omairc`, before `## Gotchas`). `run <feature> --dry-run` prints the fence and exits without launching. A missing file, a missing fence, or an empty fence exits non-zero. `qml-suite` and `doctor-qml` inside a fence are rejected. They are not compiled-window proof.
 
-`run` skips a fence `launch` when `doctor` is already healthy and the demo flag matches (`--demo-server` needs `demo=yes`; plain `launch` needs `demo=no`). A healthy instance in the other mode is an error. The runner does not clean it up. Any command failure stops the recipe. After the sequence, a `screenshot` path that is missing or empty fails the run. `wait-title` already fails on a title miss.
+`run` skips a fence `launch` when `doctor` is already healthy and the demo flag matches (`--demo-server` needs `demo=yes`; plain `launch` needs `demo=no`). A healthy instance in the other mode is an error. The runner does not clean it up. Any command failure stops the recipe. `screenshot` retries a missing, empty, or near-solid grab and exits non-zero if the frame stays flat. After the sequence, `run` still fails when a screenshot path is empty or the file is missing. `wait-title` already fails on a title miss.
 
 Named chord verbs wrap the same keysym path as `key`:
 
@@ -104,7 +104,7 @@ Named chord verbs wrap the same keysym path as `key`:
 | `nick-jump --query TEXT` | `Ctrl+Shift+K`, wait, type, Return. Same shape as `jump`. No-op on a direct message or Status. |
 | `status` | `Ctrl+grave`. Toggles Status. |
 | `connect` | `Ctrl+,`. Opens Connect when a connection exists. |
-| `composer` | `Ctrl+L`. `focus-composer` is the same chord. |
+| `composer` | `Ctrl+L`. `focus-composer` is the same chord. Both wait after the chord so a later `type` is not racing focus. |
 | `send --text "..."` | Focus the composer, type, `Enter`. |
 
 Chords that do not have a named verb still use `key --key`:
@@ -206,6 +206,6 @@ cleanup
 
 `click-send` assumes the member panel is open (channel, members visible, width >= 980). Prefer `send --text` / `Enter`.
 `click-people` assumes the member column is open. After it hides, use `click-people --hidden`.
-`key --key ctrl+slash` maps to `Control_L+slash`. `ctrl+shift+m`, `ctrl+shift+p`, `ctrl+shift+k`, and `ctrl+shift+s` map to `Control_L+Shift_L+m` / `p` / `k` / `s`. `alt+shift+Left` / `Right` / `Up` / `Down` map to `Alt_L+Shift_L+Left` and the matching arrows. `ctrl+alt+shift+Left` / `Right` map to `Control_L+Alt_L+Shift_L+Left` / `Right`. xdotool's shorter tokens do not reach those Qt shortcuts on the isolated Xvfb.
+`key --key ctrl+slash` maps to `Control_L+slash`. `ctrl+k`, `ctrl+l`, `ctrl+grave`, and `ctrl+comma` map to `Control_L+k` / `l` / `grave` / `comma`. `ctrl+shift+m`, `ctrl+shift+p`, `ctrl+shift+k`, and `ctrl+shift+s` map to `Control_L+Shift_L+m` / `p` / `k` / `s`. `alt+shift+Left` / `Right` / `Up` / `Down` map to `Alt_L+Shift_L+Left` and the matching arrows. `ctrl+alt+shift+Left` / `Right` map to `Control_L+Alt_L+Shift_L+Left` / `Right`. xdotool's shorter tokens do not reach those Qt shortcuts on the isolated Xvfb. `composer` and `focus-composer` use that `ctrl+l` path, then wait before a later `type`.
 
 If Xvfb tools are missing, install `xorg-server-xvfb xorg-xauth xdotool imagemagick` before using this skill. `bin/test` can still run the offscreen QML suite without those packages.

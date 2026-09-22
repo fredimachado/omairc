@@ -6,9 +6,16 @@ ROOT="$(CDPATH= cd -- "$SCRIPT_DIR/../../.." && pwd)"
 SELF=$SCRIPT_DIR/$(basename -- "$0")
 STATE_FILE="${OMAIRC_VERIFY_STATE:-${TMPDIR:-/tmp}/omairc-verify-$USER/state}"
 EVIDENCE_DIR="${OMAIRC_VERIFY_EVIDENCE:-$ROOT/test-artifacts/verify}"
-# Jump and nick-jump sheets focus the filter from onOpened. The chord's own
-# pause is not always enough before type on this Xvfb.
+# Jump, nick-jump, and composer focus need a pause after the chord before
+# type. The chord's own pause is not always enough on this Xvfb.
 JUMP_FIELD_DELAY=0.4
+# import can return a flat Xvfb frame before Qt has painted. Retry a few
+# times. Near-solid means a tiny standard deviation or very few colors.
+# File size is not the test: a sparse painted window can be a small PNG.
+SCREENSHOT_GRAB_ATTEMPTS=5
+SCREENSHOT_GRAB_DELAY=0.3
+SCREENSHOT_FLAT_STDDEV=0.005
+SCREENSHOT_FLAT_COLORS=16
 
 usage() {
   cat <<'EOF'
@@ -382,9 +389,10 @@ cmd_click_send() {
 }
 
 cmd_focus_composer() {
-  load_state
-  xdotool windowfocus --sync "$WINDOW"
-  xdotool key --window "$WINDOW" ctrl+l
+  require_no_args focus-composer "$@"
+  cmd_key --key ctrl+l
+  # Same settle jump uses before type, so a later type is not racing focus.
+  sleep "$JUMP_FIELD_DELAY"
 }
 
 cmd_type() {
@@ -415,6 +423,9 @@ cmd_key() {
   case $key in
     ctrl+slash) key=Control_L+slash ;;
     ctrl+k) key=Control_L+k ;;
+    ctrl+l) key=Control_L+l ;;
+    ctrl+grave) key=Control_L+grave ;;
+    ctrl+comma) key=Control_L+comma ;;
     ctrl+shift+k) key=Control_L+Shift_L+k ;;
     ctrl+shift+m) key=Control_L+Shift_L+m ;;
     ctrl+shift+p) key=Control_L+Shift_L+p ;;
@@ -441,7 +452,8 @@ cmd_send() {
     esac
   done
   [ -n "$text" ] || die "send requires --text"
-  cmd_focus_composer
+  cmd_key --key ctrl+l
+  sleep "$JUMP_FIELD_DELAY"
   cmd_type --text "$text"
   cmd_key --key Return
 }
@@ -454,7 +466,9 @@ require_no_args() {
 
 cmd_composer() {
   require_no_args composer "$@"
-  cmd_focus_composer
+  cmd_key --key ctrl+l
+  # Same settle jump uses before type, so a later type is not racing focus.
+  sleep "$JUMP_FIELD_DELAY"
 }
 
 cmd_query_chord() {
@@ -548,6 +562,33 @@ cmd_connect() {
   cmd_key --key ctrl+comma
 }
 
+# Print "stddev colors" or nothing when magick cannot read the file.
+screenshot_metrics() {
+  magick "$1" -format '%[fx:standard_deviation] %k' info: 2>/dev/null || true
+}
+
+# Missing, empty, unreadable, or near-solid. A flat Xvfb frame is one color
+# (stddev is NaN), a handful of colors, or a field whose spread is ~0.
+screenshot_is_near_solid() {
+  _path=$1
+  [ -s "$_path" ] || return 0
+  _stats=$(screenshot_metrics "$_path")
+  [ -n "$_stats" ] || return 0
+  _std=$(printf '%s\n' "$_stats" | awk '{ print $1; exit }')
+  _colors=$(printf '%s\n' "$_stats" | awk '{ print $2; exit }')
+  awk -v std="$_std" -v colors="$_colors" \
+    -v max_std="$SCREENSHOT_FLAT_STDDEV" -v max_colors="$SCREENSHOT_FLAT_COLORS" \
+    'BEGIN {
+      std += 0
+      colors += 0
+      max_std += 0
+      max_colors += 0
+      if (std != std || std < max_std || colors < max_colors)
+        exit 0
+      exit 1
+    }'
+}
+
 cmd_screenshot() {
   feature=
   name=
@@ -563,8 +604,19 @@ cmd_screenshot() {
   dest="$EVIDENCE_DIR/$feature"
   mkdir -p "$dest"
   path="$dest/$name.png"
-  import -display "$DISPLAY" -window "$WINDOW" "$path"
-  echo "$path"
+  _attempt=1
+  while :; do
+    import -display "$DISPLAY" -window "$WINDOW" "$path" || true
+    if ! screenshot_is_near_solid "$path"; then
+      echo "$path"
+      return 0
+    fi
+    [ "$_attempt" -lt "$SCREENSHOT_GRAB_ATTEMPTS" ] || break
+    _attempt=$((_attempt + 1))
+    sleep "$SCREENSHOT_GRAB_DELAY"
+  done
+  _stats=$(screenshot_metrics "$path")
+  die "screenshot is missing, empty, or still a flat frame: $path${_stats:+ ($_stats)}"
 }
 
 cmd_compare() {
