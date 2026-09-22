@@ -77,6 +77,7 @@ HEADERS += \
     src/irc/ircopendirect.h \
     src/irc/irchighlight.h \
     src/irc/ircautoaway.h \
+    src/irc/ircpref.h \
     src/irc/ircinbox.h \
     src/irc/ircinboxmodel.h \
     src/irc/ircevent.h \
@@ -148,6 +149,7 @@ SOURCES += \
     src/irc/ircopendirect.cpp \
     src/irc/irchighlight.cpp \
     src/irc/ircautoaway.cpp \
+    src/irc/ircpref.cpp \
     src/irc/ircinbox.cpp \
     src/irc/ircinboxmodel.cpp \
     src/irc/irceventtranslator.cpp \

@@ -1,5 +1,9 @@
 #include "ircslashcomplete.h"
 
+#include "ircpref.h"
+
+#include <QStringList>
+
 #include <QMetaType>
 #include <QVariantMap>
 #include <algorithm>
@@ -117,13 +121,116 @@ QVector<IrcSlashHit> IrcSlashComplete::rank(const QString& foldedNeedle,
     return hits;
 }
 
+IrcSlashProbe IrcSlashComplete::projectPref(const QString& composerText)
+{
+    int start = 0;
+    while (start < composerText.size() && composerText.at(start).isSpace())
+        ++start;
+    if (start >= composerText.size() || composerText.at(start) != QLatin1Char('/'))
+        return IrcSlashProbe::closed();
+
+    const QString body = composerText.mid(start + 1);
+    const int verbSpace = body.indexOf(QLatin1Char(' '));
+    if (verbSpace < 0)
+        return IrcSlashProbe::closed();
+    if (body.left(verbSpace).toLower() != QLatin1String("pref"))
+        return IrcSlashProbe::closed();
+
+    const QString rest = body.mid(verbSpace + 1);
+    if (rest.startsWith(QLatin1Char(' ')))
+        return IrcSlashProbe::closed();
+
+    const QString needle = body.toLower();
+    const int nameSpace = rest.indexOf(QLatin1Char(' '));
+    if (nameSpace < 0) {
+        const QString token = rest.toLower();
+        QVector<IrcSlashHit> hits;
+        const QVector<IrcPrefSpec>& catalog = ircPrefCatalog();
+        if (token.isEmpty()) {
+            for (const IrcPrefSpec& spec : catalog) {
+                hits.append({QStringLiteral("/pref ") + spec.token, spec.label});
+            }
+        } else {
+            struct Scored {
+                int index = 0;
+                int score = -1;
+                IrcSlashHit hit;
+            };
+            QVector<Scored> scored;
+            for (int i = 0; i < catalog.size(); ++i) {
+                const IrcPrefSpec& spec = catalog.at(i);
+                const int score = scoreToken(token, spec.token);
+                if (score < 0)
+                    continue;
+                scored.append({i, score,
+                               {QStringLiteral("/pref ") + spec.token, spec.label}});
+            }
+            std::stable_sort(scored.begin(), scored.end(),
+                             [](const Scored& left, const Scored& right) {
+                if (left.score != right.score)
+                    return left.score > right.score;
+                return left.index < right.index;
+            });
+            for (const Scored& row : scored)
+                hits.append(row.hit);
+        }
+        return IrcSlashProbe::open(needle, hits);
+    }
+
+    const QString name = rest.left(nameSpace);
+    const QString value = rest.mid(nameSpace + 1);
+    if (value.contains(QLatin1Char(' ')))
+        return IrcSlashProbe::closed();
+    const IrcPrefSpec *spec = ircPrefFind(name);
+    if (!spec)
+        return IrcSlashProbe::closed();
+
+    const QString prefix =
+        QStringLiteral("/pref ") + spec->token + QLatin1Char(' ');
+    static const QStringList values = {
+        QStringLiteral("on"),
+        QStringLiteral("off"),
+    };
+    QVector<IrcSlashHit> hits;
+    const QString foldedValue = value.toLower();
+    if (foldedValue.isEmpty()) {
+        for (const QString& word : values) {
+            const QString label = prefix + word;
+            hits.append({label, label});
+        }
+    } else {
+        struct Scored {
+            int index = 0;
+            int score = -1;
+            IrcSlashHit hit;
+        };
+        QVector<Scored> scored;
+        for (int i = 0; i < values.size(); ++i) {
+            const int score = scoreToken(foldedValue, values.at(i));
+            if (score < 0)
+                continue;
+            const QString label = prefix + values.at(i);
+            scored.append({i, score, {label, label}});
+        }
+        std::stable_sort(scored.begin(), scored.end(),
+                         [](const Scored& left, const Scored& right) {
+            if (left.score != right.score)
+                return left.score > right.score;
+            return left.index < right.index;
+        });
+        for (const Scored& row : scored)
+            hits.append(row.hit);
+    }
+    return IrcSlashProbe::open(needle, hits);
+}
+
 IrcSlashProbe IrcSlashComplete::project(const QString& composerText,
                                         IrcComposerSurface surface)
 {
     const QString needle = openableNeedle(composerText);
-    if (needle.isEmpty())
-        return IrcSlashProbe::closed();
-    return IrcSlashProbe::open(needle, rank(needle, surface));
+    if (!needle.isEmpty())
+        return IrcSlashProbe::open(needle, rank(needle, surface));
+    return projectPref(composerText);
 }
 
 IrcSlashSession::IrcSlashSession(QObject *parent)

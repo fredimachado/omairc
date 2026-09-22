@@ -7,7 +7,7 @@ Connect is the first-run sheet that asks for a network profile before the compil
 - `connect-first-run` shows the Connect overlay when no complete profile is saved.
 - `connect-defaults` prefills Name `irc.libera.chat`, Host `irc.libera.chat`, Port `6697`, TLS on, and Autojoin `#omarchy`.
 - `connect-on-startup` offers an opt-in `Connect automatically on startup` toggle, off by default.
-- `connect-preferences` holds global settings. `Reopen direct messages on startup` is on by default and takes effect immediately, without Apply. `Open conversations at unread` is off by default. Enter on those toggles walks focus; Ctrl+Enter applies the selected network from this tab as well.
+- `connect-preferences` holds global settings. `Reopen direct messages on startup` is on by default and takes effect immediately, without Apply. `Open conversations at unread` is on by default. `/pref` reads and sets these toggles from the composer. Enter on those toggles walks focus; Ctrl+Enter applies the selected network from this tab as well.
 - `connect-nick-required` shows `Nick is required` and keeps Apply muted while Nick is empty.
 - `connect-required` keeps the sheet up on first run; Escape and an outside click do not dismiss it.
 - `connect-modal` covers the whole window with a 50% transparent dimmer. Sidebar servers, conversations, and channel members stay visible but cannot be clicked or walked while Connect is open. After a profile exists, a click on that dimmer still dismisses the sheet without changing the selected conversation.

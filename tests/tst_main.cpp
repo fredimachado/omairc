@@ -18,6 +18,7 @@ int runMuteTests(int argc, char **argv);
 int runOpenDirectTests(int argc, char **argv);
 int runHighlightTests(int argc, char **argv);
 int runAutoawayTests(int argc, char **argv);
+int runPrefTests(int argc, char **argv);
 int runLabeledResponseTests(int argc, char **argv);
 int runInboxTests(int argc, char **argv);
 int runTypingTests(int argc, char **argv);
@@ -67,6 +68,7 @@ int main(int argc, char **argv)
     const int openDirectStatus = runOpenDirectTests(argc, argv);
     const int highlightStatus = runHighlightTests(argc, argv);
     const int autoawayStatus = runAutoawayTests(argc, argv);
+    const int prefStatus = runPrefTests(argc, argv);
     const int labeledResponseStatus = runLabeledResponseTests(argc, argv);
     const int inboxStatus = runInboxTests(argc, argv);
     const int typingStatus = runTypingTests(argc, argv);
@@ -103,6 +105,7 @@ int main(int argc, char **argv)
         openDirectStatus,
         highlightStatus,
         autoawayStatus,
+        prefStatus,
         labeledResponseStatus,
         inboxStatus,
         typingStatus,

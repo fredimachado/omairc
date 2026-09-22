@@ -61,6 +61,7 @@ HEADERS += \
     ../src/irc/ircopendirect.h \
     ../src/irc/irchighlight.h \
     ../src/irc/ircautoaway.h \
+    ../src/irc/ircpref.h \
     ../src/irc/ircinbox.h \
     ../src/irc/ircinboxmodel.h \
     ../src/irc/ircevent.h \
@@ -144,6 +145,7 @@ SOURCES += \
     ../src/irc/ircopendirect.cpp \
     ../src/irc/irchighlight.cpp \
     ../src/irc/ircautoaway.cpp \
+    ../src/irc/ircpref.cpp \
     ../src/irc/ircinbox.cpp \
     ../src/irc/ircinboxmodel.cpp \
     ../src/irc/irceventtranslator.cpp \
@@ -193,6 +195,7 @@ SOURCES += \
     session/tst_opendirect.cpp \
     session/tst_highlight.cpp \
     session/tst_autoaway.cpp \
+    session/tst_pref.cpp \
     session/tst_labeledresponse.cpp \
     session/tst_inbox.cpp \
     session/tst_typing.cpp \

@@ -1120,6 +1120,8 @@ TestCase {
         verify(seed !== null, "SeededIrcFixture should construct");
         verify(seed.open(), seed.lastError);
         verify(seed.connection, "seeded window needs a real IrcConnection");
+        // Product default is on. Seeded tests pin to the end unless they opt in.
+        seed.irc.openConversationsAtUnread = false;
         appWindow = createTemporaryObject(seededWindowComponent, testCase, {
             backend: seed.backend,
             irc: seed.irc,
@@ -2938,8 +2940,9 @@ TestCase {
         compare(list.stick, list.stickDetached);
     }
 
-    function test_defaultOffSwitchWithUnreadPinsToEnd() {
+    function test_openAtUnreadOffSwitchWithUnreadPinsToEnd() {
         openSeededAppWindow();
+        seed.irc.openConversationsAtUnread = false;
         compare(seed.irc.openConversationsAtUnread, false);
         var list = item("messageList");
         fillTranscriptUntilScrollable(list);
@@ -2958,12 +2961,12 @@ TestCase {
 
         var first = rowForBody(list.model, "open-at-unread-off-first-zx9");
         var markRow = list.model.unreadMarkRow();
-        verify(markRow >= 0, "Default-off still keeps the unread mark");
+        verify(markRow >= 0, "Open-at-unread off still keeps the unread mark");
         compare(markRow, first - 1);
         compare(field(list.model, markRow, "kind"), "unread");
         tryVerify(function() {
             return transcriptPinned(list);
-        }, 1000, "Default-off should still pin a switched transcript to the end");
+        }, 1000, "Open-at-unread off should still pin a switched transcript to the end");
         verify(firstVisibleIndex(list) !== markRow);
     }
 

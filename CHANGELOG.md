@@ -9,11 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `/pref` reads and sets the Preferences toggles from the composer. Bare
+  `/pref` prints all three. A name (`directs`, `avatars`, `unread`) prints
+  one, and `on` or `off` changes it. Completion offers the names, then
+  `on` and `off`. Asking about avatars also prints the IP note.
 - On a Windows Inno Setup install, Check for Updates downloads the new setup in
   the background. The About line and the footer version then read
   `Restart to update` and open the installer wizard. Closing the window after
   the download has finished opens that same wizard. Portable copies still open
   the GitHub release page.
+
+### Changed
+
+- Open conversations at unread is on by default.
+- The public description now says simple.
 
 ## [0.9.1] - 2026-09-21
 
@@ -380,7 +389,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.1.0] - 2026-09-07
 
-First public release: a dead-simple IRC client for Omarchy.
+First public release: a simple IRC client for Omarchy.
 
 - Connect sheet with a persisted network profile, TLS by default, and no saved password.
 - Live session through `IrcController`, plus `--mock` for the bundled prototype window.

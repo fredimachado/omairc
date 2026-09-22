@@ -334,8 +334,12 @@ private:
                                         IrcComposerSurface surface);
     IrcCommandOutcome dispatchAutoaway(const IrcCommand& command,
                                        IrcComposerSurface surface);
+    IrcCommandOutcome dispatchPref(const IrcCommand& command,
+                                   IrcComposerSurface surface);
     IrcCommandOutcome echoAutoawayFeedback(IrcComposerSurface surface,
                                            const QString& text);
+    IrcCommandOutcome echoPrefFeedback(IrcComposerSurface surface,
+                                       const QString& text);
     IrcCommandOutcome echoAutoawayUsage(IrcComposerSurface surface);
     void saveAutoaway() const;
     void armAutoawayIdle();
@@ -534,7 +538,7 @@ private:
     int m_peerMetadataEpoch = 0;
     bool m_reopenDirectMessages = true;
     bool m_loadPeerAvatars = true;
-    bool m_openConversationsAtUnread = false;
+    bool m_openConversationsAtUnread = true;
     IrcAutoawayConfig m_autoaway;
     QTimer m_autoawayIdle;
     QTimer m_autoawayGrace;

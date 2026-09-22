@@ -885,7 +885,7 @@ void CommandTest::catalogLookupAndScope()
     QVERIFY(!IrcVerbTable::find(IrcCommand::Verb::Empty));
     QVERIFY(!IrcVerbTable::find(IrcCommand::Verb::Unknown));
 
-    QCOMPARE(IrcVerbTable::all().size(), 46);
+    QCOMPARE(IrcVerbTable::all().size(), 47);
     for (const IrcVerbSpec& row : IrcVerbTable::all())
         QVERIFY(row.name != QLatin1String("say"));
 
@@ -975,6 +975,15 @@ void CommandTest::catalogLookupAndScope()
     QCOMPARE(autoaway->scope, IrcVerbScope::Either);
     QVERIFY(autoaway->wrongScopeText.isEmpty());
     QVERIFY(autoaway->aliases.isEmpty());
+
+    const IrcVerbSpec *pref = IrcVerbTable::lookup(QStringLiteral("pref"));
+    QVERIFY(pref);
+    QCOMPARE(pref->verb, IrcCommand::Verb::Pref);
+    QCOMPARE(pref->name, QStringLiteral("pref"));
+    QCOMPARE(pref->usage, QStringLiteral("/pref [directs|avatars|unread] [on|off]"));
+    QCOMPARE(pref->scope, IrcVerbScope::Either);
+    QVERIFY(pref->wrongScopeText.isEmpty());
+    QVERIFY(pref->aliases.isEmpty());
 
     const IrcVerbSpec *status = IrcVerbTable::lookup(QStringLiteral("status"));
     QVERIFY(status);
@@ -1194,7 +1203,7 @@ void CommandTest::catalogLookupAndScope()
     QCOMPARE(list->scope, IrcVerbScope::Either);
 
     const QVector<IrcVerbSpec> statusRows = IrcVerbTable::visibleOn(IrcComposerSurface::Status);
-    QCOMPARE(statusRows.size(), 38);
+    QCOMPARE(statusRows.size(), 39);
     for (const IrcVerbSpec& row : statusRows) {
         QVERIFY(row.allowedOn(IrcComposerSurface::Status));
         QVERIFY(row.verb != IrcCommand::Verb::Action);
@@ -1209,7 +1218,7 @@ void CommandTest::catalogLookupAndScope()
 
     const QVector<IrcVerbSpec> conversation =
         IrcVerbTable::visibleOn(IrcComposerSurface::Conversation);
-    QCOMPARE(conversation.size(), 46);
+    QCOMPARE(conversation.size(), 47);
     bool sawMe = false;
     bool sawClose = false;
     bool sawQuery = false;
@@ -1219,6 +1228,7 @@ void CommandTest::catalogLookupAndScope()
     bool sawAway = false;
     bool sawBack = false;
     bool sawAutoaway = false;
+    bool sawPref = false;
     bool sawStatus = false;
     bool sawAvatar = false;
     bool sawWhois = false;
@@ -1264,6 +1274,8 @@ void CommandTest::catalogLookupAndScope()
             sawBack = true;
         if (row.name == QLatin1String("autoaway"))
             sawAutoaway = true;
+        if (row.name == QLatin1String("pref"))
+            sawPref = true;
         if (row.name == QLatin1String("status"))
             sawStatus = true;
         if (row.name == QLatin1String("avatar"))
@@ -1326,6 +1338,7 @@ void CommandTest::catalogLookupAndScope()
     QVERIFY(sawAway);
     QVERIFY(sawBack);
     QVERIFY(sawAutoaway);
+    QVERIFY(sawPref);
     QVERIFY(sawStatus);
     QVERIFY(sawAvatar);
     QVERIFY(sawWhois);
@@ -2588,6 +2601,7 @@ void CommandTest::wrappersSendAndHelp()
     QVERIFY(selectedBodiesContain(messages, QStringLiteral("/raw")));
     QVERIFY(selectedBodiesContain(messages, QStringLiteral("/help")));
     QVERIFY(selectedBodiesContain(messages, QStringLiteral("/autoaway")));
+    QVERIFY(selectedBodiesContain(messages, QStringLiteral("/pref")));
     QVERIFY(selectedBodiesContain(messages, QStringLiteral("/list")));
     QVERIFY(selectedBodiesContain(messages, QStringLiteral("/ping")));
     QVERIFY(selectedBodiesContain(messages, QStringLiteral("/time")));

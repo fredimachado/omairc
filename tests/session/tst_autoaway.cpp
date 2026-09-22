@@ -373,9 +373,9 @@ void AutoawayTest::parseAndCatalog()
                 .allowedOn(IrcComposerSurface::Status));
     QVERIFY(IrcCommand::parse(QStringLiteral("/autoaway"))
                 .allowedOn(IrcComposerSurface::Conversation));
-    QCOMPARE(IrcVerbTable::all().size(), 46);
-    QCOMPARE(IrcVerbTable::visibleOn(IrcComposerSurface::Status).size(), 38);
-    QCOMPARE(IrcVerbTable::visibleOn(IrcComposerSurface::Conversation).size(), 46);
+    QCOMPARE(IrcVerbTable::all().size(), 47);
+    QCOMPARE(IrcVerbTable::visibleOn(IrcComposerSurface::Status).size(), 39);
+    QCOMPARE(IrcVerbTable::visibleOn(IrcComposerSurface::Conversation).size(), 47);
     const auto probe = IrcSlashComplete::project(
         QStringLiteral("/auto"), IrcComposerSurface::Conversation);
     QVERIFY(probe.isOpen());
