@@ -448,8 +448,10 @@ IrcSession *IrcController::addSession(const IrcSessionConfig& config,
             this, &IrcController::handleCapabilities);
     connect(session, &IrcSession::stateChanged, this,
             [this, session](IrcSession::State state) {
-        if (state != IrcSession::State::Registered)
+        if (state != IrcSession::State::Registered) {
             forgetChannelList(session->networkId());
+            m_appliedProfileAvatars.remove(session->networkId());
+        }
         updateStatus(session);
     });
     connect(session, &IrcSession::errorOccurred, this,
@@ -913,6 +915,7 @@ void IrcController::handleCapabilities(const QString& networkId,
         if (metadataDropped) {
             ++m_peerMetadataEpoch;
             emit peerMetadataChanged();
+            m_appliedProfileAvatars.remove(networkId);
         }
         reloadModels();
     }

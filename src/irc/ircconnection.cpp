@@ -1486,6 +1486,9 @@ void IrcConnection::persistAvatarUrl(const QString &networkId, const QString &ur
             return;
         profile.avatarUrl = url;
         m_store.save(profile);
+        const auto applied = m_applied.find(networkId);
+        if (applied != m_applied.end())
+            applied->profile.avatarUrl = url;
         if (m_draft.networkId == networkId)
             m_draft.avatarUrl = url;
         return;

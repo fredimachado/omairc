@@ -240,6 +240,7 @@ private slots:
     void avatarWritesMetadataFrames();
     void avatarAppliesSavedUrlOnConnect();
     void avatarAppliesSavedUrlAfterLateCaps();
+    void avatarAppliesSavedUrlOnReconnect();
     void avatarRefusesUnsafeInput();
     void avatarRefusesOnMetadataFailReplies();
     void whoisSendsAndDefaults();
@@ -2300,6 +2301,34 @@ void CommandTest::avatarAppliesSavedUrlOnConnect()
     welcomeMetadata(transport);
     QCOMPARE(session->state(), IrcSession::State::Registered);
     QVERIFY(framesContain(transport->writtenFrames(),
+                          QByteArrayLiteral(
+                              "METADATA * SET avatar :https://example.com/saved.png\r\n")));
+}
+
+void CommandTest::avatarAppliesSavedUrlOnReconnect()
+{
+    IrcNetworkProfile profile = liberaStoredProfile();
+    profile.avatarUrl = QStringLiteral("https://example.com/saved.png");
+    IrcProfileStore().save(profile);
+
+    CommandCredentialStore credentials;
+    IrcController controller;
+    IrcConnection connection(controller, nullTransportFactory(), credentials);
+    auto *transport = new FakeIrcTransport;
+    IrcSession *session = controller.addSession(config(), transport);
+    QVERIFY(session);
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    welcomeMetadata(transport);
+    QCOMPARE(session->state(), IrcSession::State::Registered);
+    QVERIFY(framesContain(transport->writtenFrames(),
+                          QByteArrayLiteral(
+                              "METADATA * SET avatar :https://example.com/saved.png\r\n")));
+
+    transport->remoteClose();
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    const int beforeReconnect = transport->writtenFrames().size();
+    welcomeMetadata(transport);
+    QVERIFY(framesContain(transport->writtenFrames().mid(beforeReconnect),
                           QByteArrayLiteral(
                               "METADATA * SET avatar :https://example.com/saved.png\r\n")));
 }
