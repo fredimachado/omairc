@@ -21,18 +21,41 @@ Send a message lets a user add a local line to the current mock transcript from 
 
 Preconditions:
 
-- Seeded conversation UI is showing. Use `control-omairc launch --demo-server`, or `qml-suite` (seeded `IrcController`). A default compiled launch is titled `irc.libera.chat Status`.
-- For the desktop recipe below, switch to `#desktop` first. Run `control-omairc click-conversation --name "#desktop"` then `control-omairc wait-title --exact "#desktop - Omairc"`. `launch --demo-server` starts on `#omarchy`.
+- Seeded conversation UI is showing. Use `control-omairc launch --demo-server`. When Xvfb tools are missing, `qml-suite` (seeded `IrcController`) is the fallback and is not compiled-window proof. A default compiled launch is titled `irc.libera.chat Status`.
+- For the desktop recipe below, jump to `#desktop` first. Run `control-omairc jump --query "#desktop"` then `control-omairc wait-title --exact "#desktop - Omairc"`. `launch --demo-server` starts on `#omarchy · irc.example · fred - Omairc`.
 - No prior verify line `Hello from verify` is already in this session's `#desktop` transcript.
 
-- **Keyboard focus.** Press `Ctrl+L`. Run `control-omairc focus-composer`. The composer ring uses the accent color.
-- **Type and send.** Enter a unique body. Run `control-omairc send --text "Hello from verify"`. The composer is empty and the last visible message is `fred` / `Hello from verify`.
+```desktop-recipe
+launch --demo-server
+jump --query "#desktop"
+wait-title --exact "#desktop - Omairc"
+screenshot --feature send-message --name before-send
+composer
+send --text "Hello from verify"
+focus-composer
+key --key Return
+focus-composer
+type --text "Sent with the button"
+click-send
+send --text "/me waves"
+screenshot --feature send-message --name after-send
+jump --query "#omarchy"
+wait-title --exact "#omarchy · irc.example · fred - Omairc"
+jump --query "#desktop"
+wait-title --exact "#desktop - Omairc"
+screenshot --feature send-message --name after-return
+compare --before test-artifacts/verify/send-message/before-send.png --after test-artifacts/verify/send-message/after-send.png
+```
+
+- **Open #desktop.** Press `Ctrl+K` and jump to `#desktop`. Run `control-omairc jump --query "#desktop"` then `control-omairc wait-title --exact "#desktop - Omairc"`. Capture the transcript before sending with `control-omairc screenshot --feature send-message --name before-send`.
+- **Keyboard focus.** Press `Ctrl+L`. Run `control-omairc composer` (`control-omairc focus-composer` is the same chord). The composer ring uses the accent color.
+- **Type and send.** Enter a unique body and press `Enter`. Run `control-omairc send --text "Hello from verify"`. The composer is empty and the last visible message is `fred` / `Hello from verify`.
 - **Empty submit.** Press `Enter` with an empty composer. Run `control-omairc focus-composer` then `control-omairc key --key Return`. The last message is still `Hello from verify`.
-- **SEND button.** Type a second unique body and click SEND while the member panel is open. Run `control-omairc focus-composer`, `control-omairc type --text "Sent with the button"`, and `control-omairc click-send`. The last message is `fred` / `Sent with the button`.
-- **Action line.** Send `/me waves`. Run `control-omairc send --text "/me waves"`. The last line is an italic action: author `fred`, body `waves`.
-- **Confirm persistence.** Switch to `#omarchy` and back. Run `control-omairc click-conversation --name "#omarchy"`, `control-omairc wait-title --exact "#omarchy - Omairc"`, `control-omairc click-conversation --name "#desktop"`, and `control-omairc wait-title --exact "#desktop - Omairc"`. `#desktop` still shows the three sent lines.
-- **Proof.** Capture the populated transcript. Run `control-omairc screenshot --feature send-message --name after-send` and `control-omairc screenshot --feature send-message --name after-return`. Both images show `Hello from verify` in `#desktop`.
-- **Offscreen suite.** When Xvfb tools are missing, run `control-omairc doctor-qml` then `control-omairc qml-suite`. `bin/test` sends from `#omarchy` (not `#desktop`) and writes `test-artifacts/send-message.png`. The last line is `fred` / `Hello from the UI test`. `qml-suite` copies it to `test-artifacts/verify/send-message/after-send.png`. This does not prove the compiled-window composer path.
+- **SEND button.** Type a second unique body and click SEND while the member panel is open. There is no chord for the button. Run `control-omairc focus-composer`, `control-omairc type --text "Sent with the button"`, and `control-omairc click-send`. The last message is `fred` / `Sent with the button`.
+- **Action line.** Send `/me waves` with `Enter`. Run `control-omairc send --text "/me waves"`. The last line is an italic action: author `fred`, body `waves`.
+- **Confirm persistence.** Jump to `#omarchy` and back to `#desktop`. Run `control-omairc jump --query "#omarchy"`, `control-omairc wait-title --exact "#omarchy · irc.example · fred - Omairc"`, `control-omairc jump --query "#desktop"`, and `control-omairc wait-title --exact "#desktop - Omairc"`. `#desktop` still shows the three sent lines.
+- **Proof.** Capture the populated transcript before leaving and after returning. Run `control-omairc screenshot --feature send-message --name after-send` before the jump away, and `control-omairc screenshot --feature send-message --name after-return` after coming back. Both images show `Hello from verify` in `#desktop`. Run `control-omairc compare --before test-artifacts/verify/send-message/before-send.png --after test-artifacts/verify/send-message/after-send.png`. `compare` must report a pixel change.
+- **Offscreen suite.** When Xvfb tools are missing, run `control-omairc doctor-qml` then `control-omairc qml-suite`. `bin/test` sends from `#omarchy` (not `#desktop`) and writes `test-artifacts/send-message.png`. The last line is `fred` / `Hello from the UI test`. `qml-suite` copies it to `test-artifacts/verify/send-message/after-send.png`. This is not compiled-window proof.
 
 ## Gotchas
 
