@@ -16,6 +16,8 @@
         <file alias="qml/TranscriptList.qml">qml/TranscriptList.qml</file>
         <file alias="qml/UnseenJumpButton.qml">qml/UnseenJumpButton.qml</file>
         <file alias="qml/ConnectionField.qml">qml/ConnectionField.qml</file>
+        <file alias="qml/FieldHelpMark.qml">qml/FieldHelpMark.qml</file>
+        <file alias="qml/PreferenceToggleRow.qml">qml/PreferenceToggleRow.qml</file>
         <file alias="qml/ConnectionTabButton.qml">qml/ConnectionTabButton.qml</file>
         <file alias="qml/ConnectionSheet.qml">qml/ConnectionSheet.qml</file>
         <file alias="qml/ShortcutsSheet.qml">qml/ShortcutsSheet.qml</file>

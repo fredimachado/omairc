@@ -58,52 +58,14 @@ Column {
             }
         }
 
-        Item {
+        FieldHelpMark {
             id: helpMark
             objectName: field.fieldObjectName + "Help"
-            visible: field.help.length > 0
-            width: field.style.scaledSize(14)
+            style: field.style
+            accessibleName: field.label + " help"
+            help: field.help
+            tipObjectName: field.fieldObjectName + "HelpTip"
             height: labelRow.height
-            activeFocusOnTab: visible
-            Accessible.role: Accessible.Button
-            Accessible.name: field.label + " help"
-            Accessible.description: field.help
-            Accessible.onPressAction: helpMark.forceActiveFocus()
-
-            Rectangle {
-                id: helpCircle
-                anchors.verticalCenter: parent.verticalCenter
-                width: field.style.scaledSize(14)
-                height: width
-                radius: width / 2
-                color: "transparent"
-                border.width: 1
-                border.color: helpMark.activeFocus ? field.style.accentColor : field.style.dividerColor
-            }
-
-            Text {
-                anchors.centerIn: helpCircle
-                text: "?"
-                color: helpMark.activeFocus ? field.style.inkColor : field.style.mutedColor
-                font.family: "iA Writer Mono S"
-                font.pixelSize: field.style.scaledSize(9)
-            }
-
-            MouseArea {
-                id: helpMouse
-                anchors.fill: parent
-                hoverEnabled: true
-                cursorShape: Qt.WhatsThisCursor
-                // Fully declarative: mixing ToolTip.show()/hide() with a
-                // `visible` binding writes underneath the binding and can
-                // desync it. Shown on hover and on keyboard focus so the
-                // help is readable without a mouse.
-                ToolTip.visible: containsMouse || helpMark.activeFocus
-                ToolTip.text: field.help
-                ToolTip.delay: 400
-                ToolTip.objectName: field.fieldObjectName + "HelpTip"
-                onClicked: helpMark.forceActiveFocus()
-            }
         }
     }
 

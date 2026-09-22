@@ -1155,99 +1155,51 @@ Rectangle {
                         font.pixelSize: sheet.style.scaledSize(15)
                     }
 
-                    Row {
-                        spacing: sheet.style.scaledSize(10)
-
-                        Switch {
-                            id: connectionReopenDirects
-                            objectName: "connectionReopenDirects"
-                            Accessible.name: "Reopen direct messages on startup"
-                            Keys.onPressed: function(event) {
-                                sheet.applyKeyRequested(event)
-                            }
-                            onToggled: {
-                                if (sheet.irc)
-                                    sheet.irc.reopenDirectMessages = checked;
-                            }
+                    PreferenceToggleRow {
+                        id: connectionReopenDirectsRow
+                        style: sheet.style
+                        switchObjectName: "connectionReopenDirects"
+                        label: "Reopen direct messages on startup"
+                        help: "Reopens direct messages you had open last session after each connect. Only tabs you opened or sent in are remembered."
+                        checked: sheet.irc ? sheet.irc.reopenDirectMessages : true
+                        onToggled: function(checked) {
+                            if (sheet.irc)
+                                sheet.irc.reopenDirectMessages = checked;
                         }
-
-                        Binding {
-                            target: connectionReopenDirects
-                            property: "checked"
-                            value: sheet.irc ? sheet.irc.reopenDirectMessages : true
-                            restoreMode: Binding.RestoreBinding
-                        }
-
-                        Text {
-                            anchors.verticalCenter: parent.verticalCenter
-                            text: "Reopen direct messages on startup"
-                            color: sheet.style.inkColor
-                            font.family: "iA Writer Mono S"
-                            font.pixelSize: sheet.style.scaledSize(11)
+                        onApplyKeyRequested: function(event) {
+                            sheet.applyKeyRequested(event);
                         }
                     }
 
-                    Row {
-                        spacing: sheet.style.scaledSize(10)
-
-                        Switch {
-                            id: connectionLoadPeerAvatars
-                            objectName: "connectionLoadPeerAvatars"
-                            Accessible.name: "Show peer avatars"
-                            Keys.onPressed: function(event) {
-                                sheet.applyKeyRequested(event)
-                            }
-                            onToggled: {
-                                if (sheet.irc)
-                                    sheet.irc.loadPeerAvatars = checked;
-                            }
+                    PreferenceToggleRow {
+                        id: connectionLoadPeerAvatarsRow
+                        style: sheet.style
+                        switchObjectName: "connectionLoadPeerAvatars"
+                        label: "Show peer avatars"
+                        help: "Fetches IRCv3 avatar images from peer metadata. Nick initials still show when this is off or no image loads. Turn off to keep avatar hosts from seeing your IP on busy channels."
+                        checked: sheet.irc ? sheet.irc.loadPeerAvatars : true
+                        onToggled: function(checked) {
+                            if (sheet.irc)
+                                sheet.irc.loadPeerAvatars = checked;
                         }
-
-                        Binding {
-                            target: connectionLoadPeerAvatars
-                            property: "checked"
-                            value: sheet.irc ? sheet.irc.loadPeerAvatars : true
-                            restoreMode: Binding.RestoreBinding
-                        }
-
-                        Text {
-                            anchors.verticalCenter: parent.verticalCenter
-                            text: "Show peer avatars"
-                            color: sheet.style.inkColor
-                            font.family: "iA Writer Mono S"
-                            font.pixelSize: sheet.style.scaledSize(11)
+                        onApplyKeyRequested: function(event) {
+                            sheet.applyKeyRequested(event);
                         }
                     }
 
-                    Row {
-                        spacing: sheet.style.scaledSize(10)
-
-                        Switch {
-                            id: connectionOpenAtUnread
-                            objectName: "connectionOpenAtUnread"
-                            Accessible.name: "Open conversations at unread"
-                            Keys.onPressed: function(event) {
-                                sheet.applyKeyRequested(event)
-                            }
-                            onToggled: {
-                                if (sheet.irc)
-                                    sheet.irc.openConversationsAtUnread = checked;
-                            }
+                    PreferenceToggleRow {
+                        id: connectionOpenAtUnreadRow
+                        style: sheet.style
+                        switchObjectName: "connectionOpenAtUnread"
+                        label: "Open conversations at unread"
+                        help: "Scrolls to the New messages marker when you switch conversations. Already-focused buffers and Status are left at the end."
+                        checked: sheet.irc ? sheet.irc.openConversationsAtUnread : false
+                        onToggled: function(checked) {
+                            if (sheet.irc)
+                                sheet.irc.openConversationsAtUnread = checked;
                         }
-
-                        Binding {
-                            target: connectionOpenAtUnread
-                            property: "checked"
-                            value: sheet.irc ? sheet.irc.openConversationsAtUnread : false
-                            restoreMode: Binding.RestoreBinding
-                        }
-
-                        Text {
-                            anchors.verticalCenter: parent.verticalCenter
-                            text: "Open conversations at unread"
-                            color: sheet.style.inkColor
-                            font.family: "iA Writer Mono S"
-                            font.pixelSize: sheet.style.scaledSize(11)
+                        onApplyKeyRequested: function(event) {
+                            sheet.applyKeyRequested(event);
                         }
                     }
                 }

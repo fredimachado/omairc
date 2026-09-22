@@ -5881,7 +5881,13 @@ TestCase {
         compare(focusObjectName(window), "connectionReopenDirects");
         keyClick(Qt.Key_Tab);
         wait(0);
+        compare(focusObjectName(window), "connectionReopenDirectsHelp");
+        keyClick(Qt.Key_Tab);
+        wait(0);
         compare(focusObjectName(window), "connectionLoadPeerAvatars");
+        keyClick(Qt.Key_Tab);
+        wait(0);
+        compare(focusObjectName(window), "connectionLoadPeerAvatarsHelp");
         keyClick(Qt.Key_Tab);
         wait(0);
         compare(focusObjectName(window), "connectionOpenAtUnread");
@@ -6012,6 +6018,44 @@ TestCase {
         window.close();
         fakeConnection.canForgetPassword = false;
         fakeConnection.canForgetNickServ = false;
+    }
+
+    function test_connectionPreferencesHelpIsKeyboardReachable() {
+        var window = createTemporaryObject(setupWindowComponent, null);
+        verify(window !== null, "The preferences-help window should load");
+        tryCompare(window, "visible", true);
+        waitForRendering(window.contentItem);
+        window.requestActivate();
+        tryCompare(window, "active", true);
+
+        var preferencesTab = findChild(window, "connectionSheetTab-preferences");
+        verify(preferencesTab !== null, "Could not find connectionSheetTab-preferences");
+        mouseClick(preferencesTab);
+        compare(window.connectionSheetTab, "preferences");
+
+        var help = findChild(window, "connectionLoadPeerAvatarsHelp");
+        verify(help !== null, "Could not find connectionLoadPeerAvatarsHelp");
+        compare(help.activeFocusOnTab, true);
+        compare(help.Accessible.name, "Show peer avatars help");
+
+        var toggle = findChild(window, "connectionLoadPeerAvatars");
+        var tip = findChild(window, "connectionLoadPeerAvatarsHelpTip");
+        verify(tip !== null, "Could not find connectionLoadPeerAvatarsHelpTip");
+        compare(toggle.Accessible.description,
+                "Fetches IRCv3 avatar images from peer metadata. Nick initials still show when this is off or no image loads. Turn off to keep avatar hosts from seeing your IP on busy channels.");
+        compare(tip.visible, false);
+
+        help.forceActiveFocus();
+        tryCompare(help, "activeFocus", true);
+        tryCompare(tip, "visible", true);
+
+        toggle.forceActiveFocus();
+        tryCompare(toggle, "activeFocus", true);
+        tryCompare(tip, "visible", false);
+
+        compare(findChild(window, "connectionReopenDirectsHelp").visible, true);
+        compare(findChild(window, "connectionOpenAtUnreadHelp").visible, true);
+        window.close();
     }
 
     function test_connectionSheetHelpIsKeyboardReachable() {
