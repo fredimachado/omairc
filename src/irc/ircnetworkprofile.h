@@ -36,6 +36,7 @@ struct IrcNetworkProfile
     static constexpr int iconColorCount = 5;
     static constexpr int noIconColor = -1;
     int iconColor = noIconColor;
+    QString avatarUrl;
 
     static IrcNetworkProfile create();
     static IrcNetworkProfile suggested();

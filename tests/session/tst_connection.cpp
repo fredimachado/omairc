@@ -51,6 +51,23 @@ QMap<QString, QString> reloadedAutojoinKeys()
     return profiles.first().autojoinKeys;
 }
 
+QString reloadedAvatarUrl()
+{
+    const QList<IrcNetworkProfile> profiles = IrcProfileStore().profiles();
+    if (profiles.isEmpty())
+        return {};
+    return profiles.first().avatarUrl;
+}
+
+void welcomeMetadata(FakeIrcTransport *transport)
+{
+    transport->completeConnect();
+    transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :away-notify batch draft/metadata-2\r\n"
+                          ":server CAP omairc ACK :away-notify batch draft/metadata-2\r\n"
+                          ":server 001 omairc :Welcome\r\n"));
+}
+
 QByteArrayList joinFrames(const QByteArrayList &frames)
 {
     QByteArrayList joins;
@@ -234,6 +251,9 @@ private slots:
     void collapsedFlagsPersistAndFillAll();
     void removeSelectedDropsOrderAndCollapsedIds();
     void missingNetworkOrderAlphabetizesExistingProfiles();
+    void avatarUrlSurvivesConnectionApply();
+    void avatarUrlSurvivesAutojoinPersist();
+    void avatarUrlApplyDoesNotReconnect();
 
 private:
     IrcConnection::TransportFactory capturingFactory();
@@ -2877,6 +2897,94 @@ void ConnectionTest::removeSelectedDropsOrderAndCollapsedIds()
     QCOMPARE(preferenceStringList(QStringLiteral("networkOrder")), QStringList({zebraId}));
     QCOMPARE(preferenceStringList(QStringLiteral("collapsedNetworks")),
              QStringList({zebraId}));
+}
+
+void ConnectionTest::avatarUrlSurvivesConnectionApply()
+{
+    IrcController controller;
+    IrcConnection connection(controller, capturingFactory(), credentialStore());
+    fillCompleteDraft(connection);
+    QVERIFY(connection.apply());
+    QVERIFY(connection.activate());
+    QVERIFY(m_transports.size() == 1);
+    FakeIrcTransport *transport = m_transports.last();
+    welcomeMetadata(transport);
+    transport->injectBytes(
+        QByteArrayLiteral(":omairc!u@h JOIN :#omarchy\r\n"
+                          ":server 353 omairc = #omarchy :omairc Alice\r\n"
+                          ":server 366 omairc #omarchy :End of NAMES\r\n"));
+    controller.selectConversation(connection.selectedNetworkId(),
+                                  QStringLiteral("#omarchy"));
+
+    QVERIFY(controller.sendMessage(
+        QStringLiteral("/avatar https://example.com/a.png")));
+    transport->injectBytes(
+        QByteArrayLiteral(
+            ":server 761 omairc omairc avatar * :https://example.com/a.png\r\n"));
+    QCOMPARE(reloadedAvatarUrl(), QStringLiteral("https://example.com/a.png"));
+
+    connection.setRealname(QStringLiteral("Omairc User updated"));
+    QVERIFY(connection.apply());
+    QCOMPARE(reloadedAvatarUrl(), QStringLiteral("https://example.com/a.png"));
+}
+
+void ConnectionTest::avatarUrlApplyDoesNotReconnect()
+{
+    IrcController controller;
+    IrcConnection connection(controller, capturingFactory(), credentialStore());
+    fillCompleteDraft(connection);
+    QVERIFY(connection.apply());
+    QVERIFY(connection.activate());
+    QVERIFY(m_transports.size() == 1);
+    FakeIrcTransport *transport = m_transports.last();
+    welcomeMetadata(transport);
+    transport->injectBytes(
+        QByteArrayLiteral(":omairc!u@h JOIN :#omarchy\r\n"
+                          ":server 353 omairc = #omarchy :omairc Alice\r\n"
+                          ":server 366 omairc #omarchy :End of NAMES\r\n"));
+    controller.selectConversation(connection.selectedNetworkId(),
+                                  QStringLiteral("#omarchy"));
+
+    QVERIFY(controller.sendMessage(
+        QStringLiteral("/avatar https://example.com/a.png")));
+    transport->injectBytes(
+        QByteArrayLiteral(
+            ":server 761 omairc omairc avatar * :https://example.com/a.png\r\n"));
+    QCOMPARE(reloadedAvatarUrl(), QStringLiteral("https://example.com/a.png"));
+
+    QVERIFY(connection.apply());
+    QCOMPARE(m_transports.size(), 1);
+    QCOMPARE(transport->connectionState(), IrcTransport::ConnectionState::Encrypted);
+}
+
+void ConnectionTest::avatarUrlSurvivesAutojoinPersist()
+{
+    IrcController controller;
+    IrcConnection connection(controller, capturingFactory(), credentialStore());
+    fillCompleteDraft(connection);
+    QVERIFY(connection.apply());
+    QVERIFY(connection.activate());
+    QVERIFY(m_transports.size() == 1);
+    FakeIrcTransport *transport = m_transports.last();
+    welcomeMetadata(transport);
+    transport->injectBytes(
+        QByteArrayLiteral(":omairc!u@h JOIN :#omarchy\r\n"
+                          ":server 353 omairc = #omarchy :omairc Alice\r\n"
+                          ":server 366 omairc #omarchy :End of NAMES\r\n"));
+    controller.selectConversation(connection.selectedNetworkId(),
+                                  QStringLiteral("#omarchy"));
+
+    QVERIFY(controller.sendMessage(
+        QStringLiteral("/avatar https://example.com/a.png")));
+    transport->injectBytes(
+        QByteArrayLiteral(
+            ":server 761 omairc omairc avatar * :https://example.com/a.png\r\n"));
+    QCOMPARE(reloadedAvatarUrl(), QStringLiteral("https://example.com/a.png"));
+
+    transport->injectBytes(QByteArrayLiteral(":omairc!u@h JOIN :#other\r\n"));
+    QCOMPARE(reloadedAvatarUrl(), QStringLiteral("https://example.com/a.png"));
+    QCOMPARE(reloadedAutojoin(),
+             QStringList({QStringLiteral("#omarchy"), QStringLiteral("#other")}));
 }
 
 void ConnectionTest::missingNetworkOrderAlphabetizesExistingProfiles()

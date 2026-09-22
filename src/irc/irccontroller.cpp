@@ -10,6 +10,7 @@
 #include "ircignore.h"
 #include "ircmonitor.h"
 #include "ircmute.h"
+#include "ircnetworkprofile.h"
 #include "ircopendirect.h"
 #include "ircpresence.h"
 #include "ircjointarget.h"
@@ -458,6 +459,7 @@ IrcSession *IrcController::addSession(const IrcSessionConfig& config,
         if (m_autoawayTripped && m_autoaway.enabled)
             markSessionAutoAway(session);
         m_openDirectsMotdSeen.remove(networkId);
+        applyProfileAvatarOnConnect(session);
         updateStatus(session);
     });
     connect(session, &IrcSession::messageReceived,
@@ -468,8 +470,10 @@ IrcSession *IrcController::addSession(const IrcSessionConfig& config,
             this, &IrcController::handleCapabilities);
     connect(session, &IrcSession::stateChanged, this,
             [this, session](IrcSession::State state) {
-        if (state != IrcSession::State::Registered)
+        if (state != IrcSession::State::Registered) {
             forgetChannelList(session->networkId());
+            m_appliedProfileAvatars.remove(session->networkId());
+        }
         updateStatus(session);
     });
     connect(session, &IrcSession::errorOccurred, this,
@@ -506,6 +510,7 @@ bool IrcController::discardSession(const QString &networkId)
     forgetMonitorState(networkId);
     m_currentNicks.remove(networkId);
     m_capabilities.remove(networkId);
+    m_appliedProfileAvatars.remove(networkId);
     m_console.forget(networkId);
     emit capabilitiesChanged();
     const bool discarded = m_sessions.discardSession(networkId);
@@ -545,6 +550,7 @@ void IrcController::forgetNetworkState(const QString &networkId)
     forgetMonitorState(networkId);
     m_currentNicks.remove(networkId);
     m_capabilities.remove(networkId);
+    m_appliedProfileAvatars.remove(networkId);
     m_lastErrors.remove(networkId);
     m_ignores.forget(networkId);
     m_monitors.forget(networkId);
@@ -945,6 +951,7 @@ void IrcController::handleCapabilities(const QString& networkId,
         if (metadataDropped) {
             ++m_peerMetadataEpoch;
             emit peerMetadataChanged();
+            m_appliedProfileAvatars.remove(networkId);
         }
         reloadModels();
     }
@@ -955,6 +962,11 @@ void IrcController::handleCapabilities(const QString& networkId,
         armTypingRefresh();
     }
     emit capabilitiesChanged();
+
+    if (IrcSession *session = m_sessions.findSession(networkId)) {
+        if (session->state() == IrcSession::State::Registered)
+            applyProfileAvatarOnConnect(session);
+    }
 }
 
 IrcStatusConsole *IrcController::console()
@@ -3020,10 +3032,13 @@ IrcCommandOutcome IrcController::dispatchOwnMetadataSet(IrcSession *session,
                                                         const QString& metadataKey,
                                                         const QString& value)
 {
-    if (value.isEmpty() || !session->setOwnMetadata(metadataKey, value))
+    if (value.isEmpty())
+        return IrcCommandOutcome::Refused;
+    const std::optional<QString> sent = session->setOwnMetadata(metadataKey, value);
+    if (!sent || sent->isEmpty())
         return IrcCommandOutcome::Refused;
     armOwnMetadataWatch(session->networkId(), metadataKey,
-                        IrcOwnMetadataWatch::Kind::Set, value);
+                        IrcOwnMetadataWatch::Kind::Set, *sent);
     return IrcCommandOutcome::Sent;
 }
 
@@ -3799,11 +3814,15 @@ void IrcController::routeOwnMetadataReply(const QString& networkId,
             return;
         echoOwnMetadataOutcome(networkId, found->destination,
                                ownMetadataClearedMessage(canonical));
+        if (canonical == IrcMetadata::avatarKey())
+            persistProfileAvatarUrl(networkId, QString{});
     } else {
-        if (value.isEmpty())
+        if (value.isEmpty() || found->value != value)
             return;
         echoOwnMetadataOutcome(networkId, found->destination,
                                ownMetadataSetMessage(canonical, value));
+        if (canonical == IrcMetadata::avatarKey())
+            persistProfileAvatarUrl(networkId, value);
     }
     networkWatches->erase(found);
     if (networkWatches->empty())
@@ -3885,6 +3904,8 @@ void IrcController::routeOwnMetadataFail(const QString& networkId,
             && code == QLatin1String("KEY_NOT_SET")) {
             echoOwnMetadataOutcome(networkId, watch.destination,
                                    ownMetadataClearedMessage(canonical));
+            if (canonical == IrcMetadata::avatarKey())
+                persistProfileAvatarUrl(networkId, QString{});
             return;
         }
         const QString outcome = watch.kind == IrcOwnMetadataWatch::Kind::Clear
@@ -3906,6 +3927,49 @@ void IrcController::routeOwnMetadataFail(const QString& networkId,
     }
     if (networkWatches->empty())
         m_ownMetadataWatches.erase(networkWatches);
+}
+
+void IrcController::setProfileAvatarUrlCallbacks(ProfileAvatarUrlPersist persist,
+                                                 ProfileAvatarUrlLookup lookup)
+{
+    m_profileAvatarUrlPersist = std::move(persist);
+    m_profileAvatarUrlLookup = std::move(lookup);
+}
+
+QString IrcController::profileAvatarUrlForNetwork(const QString& networkId) const
+{
+    if (m_profileAvatarUrlLookup)
+        return m_profileAvatarUrlLookup(networkId);
+    return {};
+}
+
+void IrcController::persistProfileAvatarUrl(const QString& networkId,
+                                              const QString& url)
+{
+    if (networkId.isEmpty() || !m_profileAvatarUrlPersist)
+        return;
+    m_profileAvatarUrlPersist(networkId, url);
+}
+
+void IrcController::applyProfileAvatarOnConnect(IrcSession *session)
+{
+    if (!session)
+        return;
+    const QString networkId = session->networkId();
+    if (m_appliedProfileAvatars.contains(networkId))
+        return;
+    const QString avatarUrl =
+        ircAvatarMetadataValue(profileAvatarUrlForNetwork(networkId));
+    if (avatarUrl.isEmpty())
+        return;
+    const IrcCapabilitySet capabilities = m_capabilities.value(networkId);
+    if (!capabilities.contains(IrcCapability::MemberMetadata)
+            || !capabilities.contains(IrcCapability::Batch)) {
+        return;
+    }
+    if (!session->setOwnMetadata(IrcMetadata::avatarKey(), avatarUrl))
+        return;
+    m_appliedProfileAvatars.insert(networkId);
 }
 
 void IrcController::echoIfPresent(IrcSession *session,

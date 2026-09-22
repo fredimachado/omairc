@@ -32,6 +32,9 @@ private slots:
     void missingIconColorDefaultsToNone();
     void missingNameDefaultsToHost();
     void emptyNameOmitsNameKey();
+    void storeRoundTripsAvatarUrl();
+    void missingAvatarUrlDefaultsToEmpty();
+    void emptyAvatarUrlOmitsAvatarUrlKey();
     void resolvedNameFallsBackToHost();
     void missingConnectOnStartupDefaultsToFalse();
     void missingSecretSavedDefaultsToFalse();
@@ -374,6 +377,54 @@ void ProfileTest::missingNameDefaultsToHost()
 
     const IrcNetworkProfile blank = IrcProfileStore().profiles().first();
     QCOMPARE(blank.name, QStringLiteral("irc.example.net"));
+}
+
+void ProfileTest::storeRoundTripsAvatarUrl()
+{
+    IrcNetworkProfile profile = IrcNetworkProfile::create();
+    profile.host = QStringLiteral("irc.example.net");
+    profile.nick = QStringLiteral("omairc");
+    profile.avatarUrl = QStringLiteral("https://example.com/a.png");
+
+    IrcProfileStore().save(profile);
+    const IrcNetworkProfile loaded = IrcProfileStore().profiles().first();
+    QCOMPARE(loaded.avatarUrl, QStringLiteral("https://example.com/a.png"));
+    QCOMPARE(loaded.networkId, profile.networkId);
+    QCOMPARE(loaded.host, profile.host);
+}
+
+void ProfileTest::missingAvatarUrlDefaultsToEmpty()
+{
+    IrcNetworkProfile profile = IrcNetworkProfile::create();
+    profile.host = QStringLiteral("irc.example.net");
+    profile.nick = QStringLiteral("omairc");
+    IrcProfileStore().save(profile);
+
+    QSettings settings;
+    settings.beginGroup(QStringLiteral("networks"));
+    settings.beginGroup(profile.networkId);
+    settings.remove(QStringLiteral("avatarUrl"));
+    settings.endGroup();
+    settings.endGroup();
+    settings.sync();
+
+    QVERIFY(IrcProfileStore().profiles().first().avatarUrl.isEmpty());
+}
+
+void ProfileTest::emptyAvatarUrlOmitsAvatarUrlKey()
+{
+    IrcNetworkProfile profile = IrcNetworkProfile::create();
+    profile.host = QStringLiteral("irc.example.net");
+    profile.nick = QStringLiteral("omairc");
+    QVERIFY(profile.avatarUrl.isEmpty());
+    IrcProfileStore().save(profile);
+
+    QSettings settings;
+    settings.beginGroup(QStringLiteral("networks"));
+    settings.beginGroup(profile.networkId);
+    QVERIFY(!settings.contains(QStringLiteral("avatarUrl")));
+    settings.endGroup();
+    settings.endGroup();
 }
 
 void ProfileTest::emptyNameOmitsNameKey()

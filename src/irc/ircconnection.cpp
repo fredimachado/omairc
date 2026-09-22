@@ -231,8 +231,17 @@ IrcConnection::IrcConnection(IrcController &controller,
             &IrcConnection::refreshRoster);
     connect(this, &IrcConnection::selectedNetworkChanged, this,
             &IrcConnection::canDisconnectChanged);
+    m_controller.setProfileAvatarUrlCallbacks(
+        [this](const QString &networkId, const QString &url) {
+            persistAvatarUrl(networkId, url);
+        },
+        [this](const QString &networkId) {
+            return storedProfile(networkId).avatarUrl;
+        });
+
     connect(&m_controller, &IrcController::errorOccurred, this,
-            [this](const QString &networkId, IrcSession::ErrorKind kind, const QString &) {
+            [this](const QString &networkId, IrcSession::ErrorKind kind,
+                   const QString &) {
         if (kind != IrcSession::ErrorKind::Authentication)
             return;
         if (!networkId.isEmpty() && networkId != m_selectedNetworkId) {
@@ -254,6 +263,11 @@ IrcConnection::IrcConnection(IrcController &controller,
         m_focusPassword = true;
         emit focusPasswordChanged();
     });
+}
+
+IrcConnection::~IrcConnection()
+{
+    m_controller.setProfileAvatarUrlCallbacks({}, {});
 }
 
 QAbstractItemModel *IrcConnection::networks()
@@ -1478,6 +1492,26 @@ bool IrcConnection::reconcile(const IrcNetworkProfile &profile)
 
     m_applied.insert(profile.networkId, candidate);
     return m_controller.start(profile.networkId);
+}
+
+void IrcConnection::persistAvatarUrl(const QString &networkId, const QString &url)
+{
+    if (networkId.isEmpty())
+        return;
+    for (IrcNetworkProfile &profile : m_stored) {
+        if (profile.networkId != networkId)
+            continue;
+        if (profile.avatarUrl == url)
+            return;
+        profile.avatarUrl = url;
+        m_store.save(profile);
+        const auto applied = m_applied.find(networkId);
+        if (applied != m_applied.end())
+            applied->profile.avatarUrl = url;
+        if (m_draft.networkId == networkId)
+            m_draft.avatarUrl = url;
+        return;
+    }
 }
 
 void IrcConnection::persistAutojoin(const QString &networkId,
