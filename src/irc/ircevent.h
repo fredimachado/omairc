@@ -102,7 +102,7 @@ struct IrcJoinEvent
     QString nick;
     // Set when JOIN carries the extended-join account parameter. Null means
     // a classic one-parameter JOIN, which must not clear a known account.
-    std::optional<QString> account;
+    std::optional<QString> account = std::nullopt;
 };
 
 struct IrcPartEvent
