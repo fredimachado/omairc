@@ -7845,6 +7845,79 @@ TestCase {
         compare(item("aboutUpdateStatus").text, "Omairc is up to date.");
     }
 
+    function test_aboutSheetInstalledCopyDownloadsSetup() {
+        openSeededAppWindow();
+        mouseClick(item("selfVersionHit"));
+        tryCompare(item("aboutSheet"), "opened", true);
+
+        var checker = item("aboutUpdateCheck");
+        checker.currentVersion = "0.1.0";
+        checker.installedCopy = false;
+        var payload = '{"tag_name":"v9.9.9","html_url":"https://github.com/fredimachado/omairc/releases/tag/v9.9.9","assets":[{"name":"omairc-9.9.9-windows-x64-setup.exe","browser_download_url":"https://github.com/fredimachado/omairc/releases/download/v9.9.9/omairc-9.9.9-windows-x64-setup.exe","size":12,"digest":"sha256:d323de13bbb0973b891849578f74c69cb4ef85fc37ffeb05b31d835f708c0ae9"}]}';
+        checker.applyGithubPayload(payload, 200);
+        compare(checker.installerUpdateAvailable, false);
+        compare(item("aboutUpdateStatus").text, "Version 9.9.9 is available.");
+        appWindow.lastOpenedUrl = "";
+        mouseClick(item("aboutUpdateStatus"));
+        compare(appWindow.lastOpenedUrl,
+                "https://github.com/fredimachado/omairc/releases/tag/v9.9.9");
+
+        checker.installedCopy = true;
+        checker.suppressInstallerLaunch();
+        checker.stageInstallerDownload("omairc-setup");
+        checker.applyGithubPayload(payload, 200);
+        compare(checker.installerUpdateAvailable, true);
+        appWindow.lastOpenedUrl = "";
+        mouseClick(item("aboutUpdateStatus"));
+        compare(appWindow.lastOpenedUrl, "");
+        compare(checker.status, "readyToRestart");
+        compare(item("aboutUpdateStatus").text, "Restart to update");
+        compare(item("selfVersionLabel").text, "Restart to update");
+
+        mouseClick(item("aboutOk"));
+        tryCompare(item("aboutSheet"), "opened", false);
+        compare(checker.status, "readyToRestart");
+        compare(item("selfVersionLabel").text, "Restart to update");
+        compare(checker.launchAttempts, 0);
+        mouseClick(item("selfVersionHit"));
+        compare(checker.launchAttempts, 1);
+        verify(!item("aboutSheet").opened);
+        appWindow.close();
+        compare(checker.launchAttempts, 1);
+    }
+
+    function test_aboutSheetQuitStartsReadyInstaller() {
+        openSeededAppWindow();
+        var checker = item("aboutUpdateCheck");
+        checker.currentVersion = "0.1.0";
+        checker.installedCopy = true;
+        checker.suppressInstallerLaunch();
+        checker.stageInstallerDownload("omairc-setup");
+        checker.applyGithubPayload(
+            '{"tag_name":"v9.9.9","html_url":"https://github.com/fredimachado/omairc/releases/tag/v9.9.9","assets":[{"name":"omairc-9.9.9-windows-x64-setup.exe","browser_download_url":"https://github.com/fredimachado/omairc/releases/download/v9.9.9/omairc-9.9.9-windows-x64-setup.exe","size":12,"digest":"sha256:d323de13bbb0973b891849578f74c69cb4ef85fc37ffeb05b31d835f708c0ae9"}]}',
+            200);
+        compare(checker.status, "updateAvailable");
+        appWindow.close();
+        compare(checker.launchAttempts, 0);
+
+        openSeededAppWindow();
+        checker = item("aboutUpdateCheck");
+        checker.currentVersion = "0.1.0";
+        checker.installedCopy = true;
+        checker.suppressInstallerLaunch();
+        checker.stageInstallerDownload("omairc-setup");
+        checker.applyGithubPayload(
+            '{"tag_name":"v9.9.9","html_url":"https://github.com/fredimachado/omairc/releases/tag/v9.9.9","assets":[{"name":"omairc-9.9.9-windows-x64-setup.exe","browser_download_url":"https://github.com/fredimachado/omairc/releases/download/v9.9.9/omairc-9.9.9-windows-x64-setup.exe","size":12,"digest":"sha256:d323de13bbb0973b891849578f74c69cb4ef85fc37ffeb05b31d835f708c0ae9"}]}',
+            200);
+        mouseClick(item("selfVersionHit"));
+        tryCompare(item("aboutSheet"), "opened", true);
+        mouseClick(item("aboutUpdateStatus"));
+        compare(checker.status, "readyToRestart");
+        compare(checker.launchAttempts, 0);
+        appWindow.close();
+        compare(checker.launchAttempts, 1);
+    }
+
     function test_aboutSheetOpensFromFirstRunVersion() {
         var window = createTemporaryObject(setupWindowComponent, null);
         verify(window !== null, "The setup window should load");

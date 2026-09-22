@@ -6,7 +6,7 @@ Clicking the app version on the right of the sidebar identity footer opens a mod
 
 - `about-open` opens the sheet from the footer version on every screen, including first-run Connect.
 - `about-content` shows About Omairc, the running version, the bundled logo, the open-source line, a GitHub source link, Check for Updates, OK, and `Copyright © 2026 Fredi Machado`. It does not show a license agreement, privacy policy, or third-party licenses.
-- `about-updates` asks GitHub's latest release. Up to date, a newer version (as a release link), and a failed check each print one status line. The GitHub link and an available release open in the desktop browser.
+- `about-updates` asks GitHub's latest release. Up to date, a newer version (as a release link), and a failed check each print one status line. The GitHub link and an available release open in the desktop browser. On an Inno Setup install, that same line downloads `omairc-<version>-windows-x64-setup.exe` in the background, then reads `Restart to update`. Clicking it starts the normal installer wizard. Closing the window after that also starts the wizard, once. Closing About does not cancel the download, and closing the window while the download is still running does not start the installer. A portable copy, or any copy that is not the installed build, keeps the release link.
 - `about-dismiss` closes with Escape, OK, or a left-click on the dimmer. Right-click and clicks on the card do not dismiss it. Escape closes About before Connect or Status. Window chords stay blocked while it is open.
 - `about-modal` covers the whole window with the same 50% opaque dimmer as Connect. Sidebar, transcript, and members stay visible behind it.
 
@@ -27,7 +27,7 @@ Preconditions:
 ## Gotchas
 
 - The nick, presence mark, and `available` / `away` / `offline` words are not the About entry point. Only the version on the right opens the sheet.
-- Check for Updates talks to `api.github.com`. The offscreen suite injects a JSON payload and does not treat a live GitHub round-trip as proof.
+- Check for Updates talks to `api.github.com`. The offscreen suite injects a JSON payload and does not treat a live GitHub round-trip as proof. The Windows installer download is proved with a staged payload and `installedCopy`, not a live GitHub asset. `suppressInstallerLaunch` keeps that test from starting the setup.
 - A compiled-window click on View the source on GitHub would call `Qt.openUrlExternally`. Do not use that as proof on the isolated display.
 - Escape closes About before Connect. On first-run Connect, the second Escape does not dismiss the required sheet.
 - Connect covers the window. A click on the footer version still opens About (the overlay and card forward that hit) and does not dismiss Connect. Conversation and member clicks stay blocked.

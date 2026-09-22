@@ -11,6 +11,29 @@ Rectangle {
     function open() { visible = true; }
     function close() { visible = false; }
 
+    function updateStatusActivates() {
+        var status = sheet.updateCheck.status;
+        return status === "updateAvailable"
+            || status === "readyToRestart"
+            || status === "downloadFailed";
+    }
+
+    function activateUpdateStatus() {
+        var checker = sheet.updateCheck;
+        var status = checker.status;
+        if (status === "readyToRestart") {
+            checker.launchInstaller();
+            return;
+        }
+        if ((status === "updateAvailable" || status === "downloadFailed")
+                && checker.installerUpdateAvailable) {
+            checker.download();
+            return;
+        }
+        if (status === "updateAvailable" || status === "downloadFailed")
+            sheet.urlRequested(checker.latestUrl);
+    }
+
     signal closed()
     signal shown()
     signal urlRequested(string url)
@@ -128,6 +151,7 @@ Rectangle {
                         Accessible.name: "Check for Updates"
                         Accessible.onPressAction: sheet.checkUpdatesRequested()
                         enabled: sheet.updateCheck.status !== "checking"
+                            && sheet.updateCheck.status !== "downloading"
                         color: aboutCheckUpdatesMouse.containsMouse || activeFocus
                             ? sheet.style.hoverColor : "transparent"
                         border.width: 1
@@ -235,23 +259,19 @@ Rectangle {
                         ? sheet.style.accentColor : sheet.style.mutedColor
                     font.family: "iA Writer Mono S"
                     font.pixelSize: sheet.style.scaledSize(12)
-                    font.underline: sheet.updateCheck.status === "updateAvailable"
-                    Accessible.role: sheet.updateCheck.status === "updateAvailable"
+                    font.underline: sheet.updateStatusActivates()
+                    Accessible.role: sheet.updateStatusActivates()
                         ? Accessible.Link : Accessible.StaticText
                     Accessible.name: sheet.updateCheck.message
-                    Accessible.onPressAction: {
-                        if (sheet.updateCheck.status === "updateAvailable")
-                            sheet.urlRequested(sheet.updateCheck.latestUrl);
-                    }
+                    Accessible.onPressAction: sheet.activateUpdateStatus()
 
                     MouseArea {
                         id: aboutUpdateStatusMouse
                         anchors.fill: parent
-                        enabled: sheet.updateCheck.status === "updateAvailable"
-                            && sheet.updateCheck.latestUrl.length > 0
+                        enabled: sheet.updateStatusActivates()
                         hoverEnabled: true
                         cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
-                        onClicked: sheet.urlRequested(sheet.updateCheck.latestUrl)
+                        onClicked: sheet.activateUpdateStatus()
                     }
                 }
             }
