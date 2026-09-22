@@ -13,6 +13,8 @@
 #include "ircchannelmode.h"
 #include "irccommand.h"
 #include "irccontroller.h"
+#include "ircnetworkprofile.h"
+#include "ircprofilestore.h"
 #include "ircjointarget.h"
 #include "ircpresence.h"
 #include "ircserverfeatures.h"
@@ -191,6 +193,7 @@ private slots:
     void avatarRefusesNonEmptyWhenMaxValueBytesZero();
     void avatarClearTreatsKeyNotSetAsSuccess();
     void avatarWritesMetadataFrames();
+    void avatarAppliesSavedUrlOnConnect();
     void avatarRefusesUnsafeInput();
     void avatarRefusesOnMetadataFailReplies();
     void whoisSendsAndDefaults();
@@ -2155,6 +2158,16 @@ void CommandTest::avatarWritesMetadataFrames()
             ":server 761 omairc omairc avatar * :https://example.com/a.png\r\n"));
     QVERIFY(selectedBodiesContain(
         messages, QStringLiteral("Avatar set to https://example.com/a.png.")));
+    {
+        IrcNetworkProfile loaded;
+        for (const IrcNetworkProfile& profile : IrcProfileStore().profiles()) {
+            if (profile.networkId == QStringLiteral("libera")) {
+                loaded = profile;
+                break;
+            }
+        }
+        QCOMPARE(loaded.avatarUrl, QStringLiteral("https://example.com/a.png"));
+    }
 
     QVERIFY(controller.sendMessage(QStringLiteral("/avatar me@example.com")));
     QCOMPARE(transport->writtenFrames().last(),
@@ -2174,6 +2187,16 @@ void CommandTest::avatarWritesMetadataFrames()
     transport->injectBytes(
         QByteArrayLiteral(":server 766 omairc omairc avatar :unset\r\n"));
     QVERIFY(selectedBodiesContain(messages, QStringLiteral("Avatar cleared.")));
+    {
+        IrcNetworkProfile loaded;
+        for (const IrcNetworkProfile& profile : IrcProfileStore().profiles()) {
+            if (profile.networkId == QStringLiteral("libera")) {
+                loaded = profile;
+                break;
+            }
+        }
+        QVERIFY(loaded.avatarUrl.isEmpty());
+    }
 
     const int beforeInspect = transport->writtenFrames().size();
     QVERIFY(controller.sendMessage(QStringLiteral("/avatar")));
@@ -2191,6 +2214,27 @@ void CommandTest::avatarWritesMetadataFrames()
     QVERIFY(selectedBodiesContain(
         messages,
         QStringLiteral("Standing avatar: https://example.com/a.png")));
+}
+
+void CommandTest::avatarAppliesSavedUrlOnConnect()
+{
+    IrcNetworkProfile profile;
+    profile.networkId = QStringLiteral("libera");
+    profile.host = QStringLiteral("irc.example");
+    profile.nick = QStringLiteral("omairc");
+    profile.avatarUrl = QStringLiteral("https://example.com/saved.png");
+    IrcProfileStore().save(profile);
+
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    IrcSession *session = controller.addSession(config(), transport);
+    QVERIFY(session);
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    welcomeMetadata(transport);
+    QCOMPARE(session->state(), IrcSession::State::Registered);
+    QVERIFY(framesContain(transport->writtenFrames(),
+                          QByteArrayLiteral(
+                              "METADATA * SET avatar :https://example.com/saved.png\r\n")));
 }
 
 void CommandTest::avatarRefusesUnsafeInput()

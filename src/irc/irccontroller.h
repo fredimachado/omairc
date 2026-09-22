@@ -11,6 +11,7 @@
 #include "ircinboxmodel.h"
 #include "ircmonitor.h"
 #include "ircmute.h"
+#include "ircnetworkprofile.h"
 #include "ircopendirect.h"
 #include "ircsessionmanager.h"
 #include "ircstatusconsole.h"
@@ -464,6 +465,9 @@ private:
     void routeOwnMetadataError(const IrcStatusEntry& entry);
     void routeOwnMetadataFail(const QString& networkId,
                               const IrcMessage& message);
+    IrcNetworkProfile profileForNetwork(const QString& networkId) const;
+    void persistProfileAvatarUrl(const QString& networkId, const QString& url);
+    void applyProfileAvatarOnConnect(IrcSession *session);
     void echoIfPresent(IrcSession *session,
                        const QString& target,
                        const QString& body,

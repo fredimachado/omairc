@@ -261,7 +261,8 @@ bool operator==(const IrcNetworkProfile &left, const IrcNetworkProfile &right)
         && left.bouncerNetwork == right.bouncerNetwork
         && left.autojoinChannels == right.autojoinChannels
         && left.autojoinKeys == right.autojoinKeys
-        && left.iconColor == right.iconColor;
+        && left.iconColor == right.iconColor
+        && left.avatarUrl == right.avatarUrl;
 }
 
 bool operator!=(const IrcNetworkProfile &left, const IrcNetworkProfile &right)

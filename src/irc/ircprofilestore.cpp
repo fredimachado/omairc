@@ -21,6 +21,7 @@ const auto autojoinKey = QStringLiteral("autojoin");
 const auto autojoinKeyChannelsKey = QStringLiteral("autojoinKeyChannels");
 const auto autojoinKeyValuesKey = QStringLiteral("autojoinKeyValues");
 const auto iconColorKey = QStringLiteral("iconColor");
+const auto avatarUrlKey = QStringLiteral("avatarUrl");
 
 QMap<QString, QString> loadAutojoinKeys(const QStringList &channels,
                                         const QStringList &names,
@@ -80,6 +81,7 @@ QList<IrcNetworkProfile> IrcProfileStore::profiles() const
                              && iconColor >= 0
                              && iconColor < IrcNetworkProfile::iconColorCount)
             ? iconColor : IrcNetworkProfile::noIconColor;
+        profile.avatarUrl = settings.value(avatarUrlKey).toString();
         settings.endGroup();
         result.append(profile);
     }
@@ -116,6 +118,8 @@ void IrcProfileStore::save(const IrcNetworkProfile &profile)
     }
     if (profile.iconColor >= 0 && profile.iconColor < IrcNetworkProfile::iconColorCount)
         settings.setValue(iconColorKey, profile.iconColor);
+    if (!profile.avatarUrl.isEmpty())
+        settings.setValue(avatarUrlKey, profile.avatarUrl);
     settings.endGroup();
     settings.endGroup();
     settings.sync();
