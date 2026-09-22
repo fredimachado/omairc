@@ -28,6 +28,7 @@
 #include <QVector>
 
 #include <QDateTime>
+#include <functional>
 #include <map>
 #include <optional>
 #include <set>
@@ -71,6 +72,11 @@ public:
     ~IrcController() override;
 
     void setTranscriptRoot(const QString &root);
+    using ProfileAvatarUrlPersist =
+        std::function<void(const QString &networkId, const QString &url)>;
+    using ProfileAvatarUrlLookup = std::function<QString(const QString &networkId)>;
+    void setProfileAvatarUrlCallbacks(ProfileAvatarUrlPersist persist,
+                                      ProfileAvatarUrlLookup lookup);
     IrcSession *addSession(const IrcSessionConfig& config,
                            IrcTransport *transport,
                            IrcReconnectTimer *reconnectTimer = nullptr,
@@ -465,7 +471,7 @@ private:
     void routeOwnMetadataError(const IrcStatusEntry& entry);
     void routeOwnMetadataFail(const QString& networkId,
                               const IrcMessage& message);
-    IrcNetworkProfile profileForNetwork(const QString& networkId) const;
+    QString profileAvatarUrlForNetwork(const QString& networkId) const;
     void persistProfileAvatarUrl(const QString& networkId, const QString& url);
     void applyProfileAvatarOnConnect(IrcSession *session);
     void echoIfPresent(IrcSession *session,
@@ -557,5 +563,8 @@ private:
     std::map<IrcCtcpWatchKey, IrcCtcpWatch> m_ctcpWatches;
     std::map<IrcLabeledWatchKey, IrcLabeledWatch> m_labeledWatches;
     QHash<QString, QHash<QString, IrcOwnMetadataWatch>> m_ownMetadataWatches;
+    QSet<QString> m_appliedProfileAvatars;
+    ProfileAvatarUrlPersist m_profileAvatarUrlPersist;
+    ProfileAvatarUrlLookup m_profileAvatarUrlLookup;
     std::set<IrcConversationKey> m_cancelledPendingJoins;
 };

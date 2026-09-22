@@ -9,7 +9,9 @@
 
 #include "fakeirctransport.h"
 #include "testsettings.h"
+#include "storage/credentialstore.h"
 #include "ircavatarurl.h"
+#include "ircconnection.h"
 #include "ircchannelmode.h"
 #include "irccommand.h"
 #include "irccontroller.h"
@@ -31,6 +33,49 @@
 
 namespace
 {
+class CommandCredentialStore final : public CredentialStore
+{
+public:
+    explicit CommandCredentialStore(QObject *parent = nullptr)
+        : CredentialStore(parent)
+    {
+    }
+
+    void read(const CredentialKey &) override
+    {
+        emit readFinished(State::Missing, {}, {});
+    }
+
+    void write(const CredentialKey &, const QString &) override
+    {
+        emit writeFinished(State::Missing, {});
+    }
+
+    void remove(const CredentialKey &) override
+    {
+        emit writeFinished(State::Missing, {});
+    }
+};
+
+IrcNetworkProfile liberaStoredProfile()
+{
+    IrcNetworkProfile profile = IrcNetworkProfile::create();
+    profile.networkId = QStringLiteral("libera");
+    profile.host = QStringLiteral("irc.example");
+    profile.name = profile.host;
+    profile.port = 6697;
+    profile.tlsEnabled = true;
+    profile.nick = QStringLiteral("omairc");
+    profile.username = QStringLiteral("omairc");
+    profile.realname = QStringLiteral("Omairc User");
+    return profile;
+}
+
+IrcConnection::TransportFactory nullTransportFactory()
+{
+    return []() -> IrcTransport * { return nullptr; };
+}
+
 IrcSessionConfig config(const QString& networkId = QStringLiteral("libera"))
 {
     IrcSessionConfig value;
@@ -194,6 +239,7 @@ private slots:
     void avatarClearTreatsKeyNotSetAsSuccess();
     void avatarWritesMetadataFrames();
     void avatarAppliesSavedUrlOnConnect();
+    void avatarAppliesSavedUrlAfterLateCaps();
     void avatarRefusesUnsafeInput();
     void avatarRefusesOnMetadataFailReplies();
     void whoisSendsAndDefaults();
@@ -2101,7 +2147,10 @@ void CommandTest::avatarRefusesNonEmptyWhenMaxValueBytesZero()
 
 void CommandTest::avatarClearTreatsKeyNotSetAsSuccess()
 {
+    IrcProfileStore().save(liberaStoredProfile());
+    CommandCredentialStore credentials;
     IrcController controller;
+    IrcConnection connection(controller, nullTransportFactory(), credentials);
     auto *transport = new FakeIrcTransport;
     IrcSession *session = controller.addSession(config(), transport);
     QVERIFY(session);
@@ -2115,6 +2164,12 @@ void CommandTest::avatarClearTreatsKeyNotSetAsSuccess()
     auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
     QVERIFY(messages);
 
+    QVERIFY(controller.sendMessage(
+        QStringLiteral("/avatar https://example.com/a.png")));
+    transport->injectBytes(
+        QByteArrayLiteral(
+            ":server 761 omairc omairc avatar * :https://example.com/a.png\r\n"));
+
     QVERIFY(controller.sendMessage(QStringLiteral("/avatar clear")));
     QCOMPARE(transport->writtenFrames().last(),
              QByteArrayLiteral("METADATA * SET avatar\r\n"));
@@ -2123,11 +2178,24 @@ void CommandTest::avatarClearTreatsKeyNotSetAsSuccess()
             ":server FAIL METADATA KEY_NOT_SET omairc avatar "
             ":already unset\r\n"));
     QVERIFY(selectedBodiesContain(messages, QStringLiteral("Avatar cleared.")));
+    {
+        IrcNetworkProfile loaded;
+        for (const IrcNetworkProfile& profile : IrcProfileStore().profiles()) {
+            if (profile.networkId == QStringLiteral("libera")) {
+                loaded = profile;
+                break;
+            }
+        }
+        QVERIFY(loaded.avatarUrl.isEmpty());
+    }
 }
 
 void CommandTest::avatarWritesMetadataFrames()
 {
+    IrcProfileStore().save(liberaStoredProfile());
+    CommandCredentialStore credentials;
     IrcController controller;
+    IrcConnection connection(controller, nullTransportFactory(), credentials);
     auto *transport = new FakeIrcTransport;
     IrcSession *session = controller.addSession(config(), transport);
     QVERIFY(session);
@@ -2218,20 +2286,50 @@ void CommandTest::avatarWritesMetadataFrames()
 
 void CommandTest::avatarAppliesSavedUrlOnConnect()
 {
-    IrcNetworkProfile profile;
-    profile.networkId = QStringLiteral("libera");
-    profile.host = QStringLiteral("irc.example");
-    profile.nick = QStringLiteral("omairc");
+    IrcNetworkProfile profile = liberaStoredProfile();
     profile.avatarUrl = QStringLiteral("https://example.com/saved.png");
     IrcProfileStore().save(profile);
 
+    CommandCredentialStore credentials;
     IrcController controller;
+    IrcConnection connection(controller, nullTransportFactory(), credentials);
     auto *transport = new FakeIrcTransport;
     IrcSession *session = controller.addSession(config(), transport);
     QVERIFY(session);
     QVERIFY(controller.start(QStringLiteral("libera")));
     welcomeMetadata(transport);
     QCOMPARE(session->state(), IrcSession::State::Registered);
+    QVERIFY(framesContain(transport->writtenFrames(),
+                          QByteArrayLiteral(
+                              "METADATA * SET avatar :https://example.com/saved.png\r\n")));
+}
+
+void CommandTest::avatarAppliesSavedUrlAfterLateCaps()
+{
+    IrcNetworkProfile profile = liberaStoredProfile();
+    profile.avatarUrl = QStringLiteral("https://example.com/saved.png");
+    IrcProfileStore().save(profile);
+
+    CommandCredentialStore credentials;
+    IrcController controller;
+    IrcConnection connection(controller, nullTransportFactory(), credentials);
+    auto *transport = new FakeIrcTransport;
+    IrcSession *session = controller.addSession(config(), transport);
+    QVERIFY(session);
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    transport->completeConnect();
+    transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :away-notify\r\n"
+                          ":server CAP omairc ACK :away-notify\r\n"
+                          ":server 001 omairc :Welcome\r\n"));
+    QCOMPARE(session->state(), IrcSession::State::Registered);
+    QVERIFY(!framesContain(transport->writtenFrames(),
+                          QByteArrayLiteral("METADATA * SET avatar")));
+
+    transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc NEW :batch draft/metadata-2\r\n"));
+    transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc ACK :batch draft/metadata-2\r\n"));
     QVERIFY(framesContain(transport->writtenFrames(),
                           QByteArrayLiteral(
                               "METADATA * SET avatar :https://example.com/saved.png\r\n")));

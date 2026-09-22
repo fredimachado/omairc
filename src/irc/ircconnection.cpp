@@ -221,6 +221,14 @@ IrcConnection::IrcConnection(IrcController &controller,
             &IrcConnection::refreshRoster);
     connect(this, &IrcConnection::selectedNetworkChanged, this,
             &IrcConnection::canDisconnectChanged);
+    m_controller.setProfileAvatarUrlCallbacks(
+        [this](const QString &networkId, const QString &url) {
+            persistAvatarUrl(networkId, url);
+        },
+        [this](const QString &networkId) {
+            return storedProfile(networkId).avatarUrl;
+        });
+
     connect(&m_controller, &IrcController::errorOccurred, this,
             [this](const QString &networkId, IrcSession::ErrorKind kind, const QString &) {
         if (kind != IrcSession::ErrorKind::Authentication)
@@ -1465,6 +1473,23 @@ bool IrcConnection::reconcile(const IrcNetworkProfile &profile)
 
     m_applied.insert(profile.networkId, candidate);
     return m_controller.start(profile.networkId);
+}
+
+void IrcConnection::persistAvatarUrl(const QString &networkId, const QString &url)
+{
+    if (networkId.isEmpty())
+        return;
+    for (IrcNetworkProfile &profile : m_stored) {
+        if (profile.networkId != networkId)
+            continue;
+        if (profile.avatarUrl == url)
+            return;
+        profile.avatarUrl = url;
+        m_store.save(profile);
+        if (m_draft.networkId == networkId)
+            m_draft.avatarUrl = url;
+        return;
+    }
 }
 
 void IrcConnection::persistAutojoin(const QString &networkId,
