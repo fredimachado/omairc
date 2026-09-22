@@ -140,18 +140,25 @@ QByteArray demoLabelPrefix(const QString &label)
 
 QByteArray privmsg(const SeedLine &row, const QString &target)
 {
-    QByteArray out;
+    QByteArray tags;
     if (!row.account.isEmpty()) {
-        out += "@account=";
-        out += row.account.toUtf8();
-        out += " ";
+        tags += "account=";
+        tags += row.account.toUtf8();
     }
     if (!row.day.isEmpty() && !row.hhmm.isEmpty()) {
-        out += "@time=";
-        out += row.day.toLatin1();
-        out += "T";
-        out += row.hhmm.toLatin1();
-        out += ":00.000Z ";
+        if (!tags.isEmpty())
+            tags += ';';
+        tags += "time=";
+        tags += row.day.toLatin1();
+        tags += 'T';
+        tags += row.hhmm.toLatin1();
+        tags += ":00.000Z";
+    }
+    QByteArray out;
+    if (!tags.isEmpty()) {
+        out += '@';
+        out += tags;
+        out += ' ';
     }
     out += ":";
     out += row.nick.toUtf8();

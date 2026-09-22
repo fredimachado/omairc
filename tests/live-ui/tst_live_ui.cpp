@@ -1243,7 +1243,7 @@ void LiveUiTest::seededIrcFixtureFurnishesDemoWorld()
         QStringLiteral("Morning! Has anyone tried the new minimal install flow yet?")));
     QVERIFY(omarchyBodies.contains(
         QStringLiteral("Keep the member list optional and I am sold.")));
-    QVERIFY(omarchyBodies.contains(QStringLiteral("sol joined")));
+    QVERIFY(omarchyBodies.contains(QStringLiteral("sol (solarius) joined")));
     QVERIFY(omarchyBodies.contains(QStringLiteral("nora joined")));
 
     controller.console()->setNetwork(SeededIrcFixture::omarchyNetworkId());

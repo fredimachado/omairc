@@ -16,7 +16,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `--demo-server` seeds IRCv3 service accounts so the member list, message
   header, and identity footer can show an account that differs from the nick.
 - `--demo-server` keeps profiles, preferences, open directs, transcripts, and
-  window geometry in memory instead of writing them to your config.
+  window geometry in memory instead of writing them to your config. On Windows
+  it also redirects `QSettings` into that temporary tree so ignores, highlights,
+  mutes, and monitors never touch the registry.
 - `/pref` reads and sets the Preferences toggles from the composer. Bare
   `/pref` prints all three. A name (`directs`, `avatars`, `unread`) prints
   one, and `on` or `off` changes it. Completion offers the names, then
@@ -26,6 +28,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `Restart to update` and open the installer wizard. Closing the window after
   the download has finished opens that same wizard. Portable copies still open
   the GitHub release page.
+
+### Fixed
+
+- Demo `PRIVMSG` seed lines combine `account` and `time` in one IRCv3 tag
+  section so tagged history replays parse.
+- Repeated `account` tags with the same value no longer repaint the open
+  transcript; logout and real account changes still refresh member rows and
+  headers.
+- Message headers clamp long account labels like the member list and identity
+  footer.
 
 ### Changed
 

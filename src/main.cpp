@@ -187,7 +187,8 @@ int main(int argc, char *argv[]) {
         qputenv("XDG_CACHE_HOME", (root + QLatin1String("/cache")).toUtf8());
         qputenv("XDG_DATA_HOME", (root + QLatin1String("/data")).toUtf8());
         qputenv("XDG_STATE_HOME", (root + QLatin1String("/state")).toUtf8());
-#ifdef Q_OS_MACOS
+#if defined(Q_OS_MACOS) || defined(Q_OS_WIN)
+        QSettings::setDefaultFormat(QSettings::IniFormat);
         QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, config);
 #else
         QSettings::setPath(QSettings::NativeFormat, QSettings::UserScope, config);

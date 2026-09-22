@@ -15,6 +15,7 @@ private slots:
     void answersMonitorAdd();
     void answersList();
     void seedsServiceAccounts();
+    void skipsRedundantAccountTag();
 };
 
 void DemoServerTest::answersClientPing()
@@ -69,6 +70,23 @@ void DemoServerTest::seedsServiceAccounts()
     QCOMPARE(controller.peerAccount(IrcDemoServer::omarchyNetworkId(),
                                   QStringLiteral("kai")),
              QStringLiteral("kaidev"));
+}
+
+void DemoServerTest::skipsRedundantAccountTag()
+{
+    IrcController controller;
+    IrcDemoServer demo;
+    QVERIFY(demo.attach(controller, false));
+    const int epoch = controller.peerAccountEpoch();
+    IrcLoopbackTransport *transport = demo.omarchyTransport();
+    QVERIFY(transport);
+
+    transport->injectBytes(
+        QByteArrayLiteral("@account=kaidev :kai!u@h PRIVMSG #omarchy :still here\r\n"));
+    QCOMPARE(controller.peerAccount(IrcDemoServer::omarchyNetworkId(),
+                                    QStringLiteral("kai")),
+             QStringLiteral("kaidev"));
+    QCOMPARE(controller.peerAccountEpoch(), epoch);
 }
 
 void DemoServerTest::answersList()

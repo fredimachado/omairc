@@ -72,6 +72,7 @@ public:
 
     void setTranscriptRoot(const QString &root);
     void setEphemeral(bool ephemeral);
+    void loadStoredPreferences();
     IrcSession *addSession(const IrcSessionConfig& config,
                            IrcTransport *transport,
                            IrcReconnectTimer *reconnectTimer = nullptr,

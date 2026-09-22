@@ -353,6 +353,14 @@ bool copiesLabeledStandardReply(const IrcStatusEntry& entry)
         return false;
     return label.at(0) == QLatin1Char('4') || label.at(0) == QLatin1Char('5');
 }
+
+bool servicesAccountMatches(const QString& stored, const QString& incoming)
+{
+    const auto canonical = [](const QString& value) {
+        return (value.isEmpty() || value == QLatin1String("*")) ? QString() : value;
+    };
+    return canonical(stored) == canonical(incoming);
+}
 }
 
 IrcController::IrcController(QObject *parent)
@@ -381,17 +389,13 @@ IrcController::IrcController(QObject *parent)
     connect(&m_console, &IrcStatusConsole::alertsChanged, this,
             &IrcController::statusChanged);
     m_reducer.setConversationLog(&m_transcripts);
-    m_reopenDirectMessages = loadReopenDirectMessages();
-    m_loadPeerAvatars = loadLoadPeerAvatars();
-    m_openConversationsAtUnread = loadOpenConversationsAtUnread();
-    m_autoaway = loadAutoaway();
     m_autoawayIdle.setSingleShot(true);
     m_autoawayGrace.setSingleShot(true);
     connect(&m_autoawayIdle, &QTimer::timeout, this, &IrcController::onAutoawayIdle);
     connect(&m_autoawayGrace, &QTimer::timeout, this, &IrcController::onAutoawayGrace);
     if (QCoreApplication *app = QCoreApplication::instance())
         app->installEventFilter(this);
-    armAutoawayIdle();
+    loadStoredPreferences();
 }
 
 IrcController::~IrcController()
@@ -411,6 +415,17 @@ void IrcController::setEphemeral(bool ephemeral)
     if (ephemeral)
         m_reducer.setConversationLog(nullptr);
     m_openDirects.setEphemeral(ephemeral);
+}
+
+void IrcController::loadStoredPreferences()
+{
+    if (m_ephemeral)
+        return;
+    m_reopenDirectMessages = loadReopenDirectMessages();
+    m_loadPeerAvatars = loadLoadPeerAvatars();
+    m_openConversationsAtUnread = loadOpenConversationsAtUnread();
+    m_autoaway = loadAutoaway();
+    armAutoawayIdle();
 }
 
 IrcSession *IrcController::addSession(const IrcSessionConfig& config,
@@ -3979,6 +3994,12 @@ void IrcController::adoptReducerSelection()
 
 void IrcController::apply(const IrcEvent& event)
 {
+    if (const auto *account = std::get_if<IrcAccountEvent>(&event)) {
+        const QString stored =
+            m_reducer.nickPresence(account->networkId, account->nick).account;
+        if (servicesAccountMatches(stored, account->account))
+            return;
+    }
     const QString previousId = identityNetworkId();
     const bool previousAway = selfAway();
     const bool typingOnly = std::holds_alternative<IrcTypingEvent>(event);
