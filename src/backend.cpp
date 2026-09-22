@@ -77,7 +77,14 @@ QVariantMap Backend::windowGeometry() const {
     return result;
 }
 
+void Backend::setEphemeral(bool ephemeral)
+{
+    m_ephemeral = ephemeral;
+}
+
 void Backend::saveWindowGeometry(int x, int y, int width, int height, bool maximized) {
+    if (m_ephemeral)
+        return;
     QSettings settings;
     settings.setValue(windowGeometrySetting, QRect(x, y, width, height));
     settings.setValue(QStringLiteral("window/maximized"), maximized);

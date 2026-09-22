@@ -17,6 +17,9 @@ enum class IrcCapability {
     ChatHistory,
     ServerTime,
     LabeledResponse,
+    AccountTag,
+    AccountNotify,
+    ExtendedJoin,
 };
 
 class IrcCapabilitySet

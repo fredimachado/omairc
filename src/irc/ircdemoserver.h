@@ -2,9 +2,12 @@
 
 #include <QByteArray>
 #include <QHash>
+#include <QList>
 #include <QObject>
 #include <QString>
 #include <QStringList>
+
+#include "ircnetworkprofile.h"
 
 class IrcController;
 class IrcLoopbackTransport;
@@ -23,6 +26,7 @@ public:
     static QString omarchyNetworkId();
     static QString oftcNetworkId();
 
+    static QList<IrcNetworkProfile> seedProfiles();
     bool writeProfiles();
     bool attach(IrcController &controller, bool autoEcho = false);
 

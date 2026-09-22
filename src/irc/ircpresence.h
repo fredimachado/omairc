@@ -43,6 +43,9 @@ struct IrcNickPresence
 {
     std::optional<IrcAway> away;
     std::map<QString, QString> keys;
+    // Services account from account-tag, account-notify, extended-join, or
+    // WHOIS 330. Empty means unknown or logged out; both display as nothing.
+    QString account;
 
     QString metadata(const QString& key) const;
     bool hasKey(const QString& key) const;
@@ -59,6 +62,8 @@ public:
     void setMetadata(const QString& normalizedNick,
                      const QString& key,
                      const QString& value);
+    // `*` and an empty value clear. A missing tag never calls this.
+    void setAccount(const QString& normalizedNick, const QString& account);
 
     void rekey(const QString& fromNormalized, const QString& toNormalized);
 

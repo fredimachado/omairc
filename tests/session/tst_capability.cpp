@@ -39,12 +39,16 @@ private slots:
     void stsIsAdvertisedButNeverRequested();
     void labeledResponseKeepsItsOwnLine();
     void labeledResponseNeedsMessageTags();
+    void accountCapsRequestWhenAdvertised();
+    void accountTagNeedsMessageTags();
+    void partialAccountAdvertisementRequestsOnlyPresentCaps();
+    void accountCapAckEnablesMatchingBits();
 };
 
 void CapabilityTest::unwantedAdvertisementProducesNoRequest()
 {
     IrcCapabilityNegotiation negotiation(false);
-    negotiation.advertise(tokens(QStringLiteral("account-notify invite-notify")));
+    negotiation.advertise(tokens(QStringLiteral("invite-notify")));
 
     const IrcCapabilityNegotiation::Request request = negotiation.takeRequest();
     QVERIFY(request.lines.isEmpty());
@@ -57,7 +61,7 @@ void CapabilityTest::quietCapsRequestWhenAdvertised()
 {
     IrcCapabilityNegotiation negotiation(false);
     negotiation.advertise(tokens(QStringLiteral(
-        "multi-prefix chghost cap-notify echo-message account-notify")));
+        "multi-prefix chghost cap-notify echo-message invite-notify")));
 
     const IrcCapabilityNegotiation::Request request = negotiation.takeRequest();
     QCOMPARE(request.lines,
@@ -383,6 +387,66 @@ void CapabilityTest::labeledResponseKeepsItsOwnLine()
     QVERIFY(granted.contains(IrcCapability::MessageTags));
     QVERIFY(granted.contains(IrcCapability::AwayNotify));
     QVERIFY(!negotiation.enabled().contains(IrcCapability::LabeledResponse));
+    QVERIFY(negotiation.settled());
+}
+
+void CapabilityTest::accountCapsRequestWhenAdvertised()
+{
+    IrcCapabilityNegotiation negotiation(false);
+    negotiation.advertise(tokens(QStringLiteral(
+        "message-tags account-tag account-notify extended-join")));
+
+    QCOMPARE(negotiation.takeRequest().lines,
+             QStringList({QStringLiteral("message-tags"),
+                          QStringLiteral(
+                              "account-tag account-notify extended-join")}));
+}
+
+void CapabilityTest::accountTagNeedsMessageTags()
+{
+    IrcCapabilityNegotiation negotiation(false);
+    negotiation.advertise(tokens(QStringLiteral(
+        "account-tag account-notify extended-join")));
+
+    QCOMPARE(negotiation.takeRequest().lines,
+             QStringList{QStringLiteral("account-notify extended-join")});
+}
+
+void CapabilityTest::partialAccountAdvertisementRequestsOnlyPresentCaps()
+{
+    IrcCapabilityNegotiation onlyNotify(false);
+    onlyNotify.advertise(tokens(QStringLiteral("account-notify")));
+    QCOMPARE(onlyNotify.takeRequest().lines,
+             QStringList{QStringLiteral("account-notify")});
+
+    IrcCapabilityNegotiation tagAndJoin(false);
+    tagAndJoin.advertise(tokens(QStringLiteral(
+        "message-tags account-tag extended-join")));
+    QCOMPARE(tagAndJoin.takeRequest().lines,
+             QStringList({QStringLiteral("message-tags"),
+                          QStringLiteral("account-tag extended-join")}));
+
+    IrcCapabilityNegotiation none(false);
+    none.advertise(tokens(QStringLiteral("invite-notify")));
+    QVERIFY(none.takeRequest().lines.isEmpty());
+    QVERIFY(none.settled());
+}
+
+void CapabilityTest::accountCapAckEnablesMatchingBits()
+{
+    IrcCapabilityNegotiation negotiation(false);
+    negotiation.advertise(tokens(QStringLiteral(
+        "message-tags account-tag account-notify extended-join")));
+    negotiation.takeRequest();
+
+    const IrcCapabilitySet granted = negotiation.acknowledge(tokens(QStringLiteral(
+        "message-tags account-tag account-notify extended-join")));
+    QVERIFY(granted.contains(IrcCapability::AccountTag));
+    QVERIFY(granted.contains(IrcCapability::AccountNotify));
+    QVERIFY(granted.contains(IrcCapability::ExtendedJoin));
+    QVERIFY(negotiation.enabled().contains(IrcCapability::AccountTag));
+    QVERIFY(negotiation.enabled().contains(IrcCapability::AccountNotify));
+    QVERIFY(negotiation.enabled().contains(IrcCapability::ExtendedJoin));
     QVERIFY(negotiation.settled());
 }
 

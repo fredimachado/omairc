@@ -24,6 +24,7 @@ public:
         NetworkIdRole,
         AvatarRole,
         BotRole,
+        AccountRole,
     };
 
     explicit MemberListModel(IrcEventReducer& reducer, QObject *parent = nullptr);

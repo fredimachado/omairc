@@ -28,6 +28,7 @@ public:
     void setDarkMode(bool darkMode);
     qreal textScale() const { return m_textScale; }
     void setTextScale(qreal textScale);
+    void setEphemeral(bool ephemeral);
     QString themeBackground() const { return m_themeBackground; }
     QString themeForeground() const { return m_themeForeground; }
     QString themeAccent() const { return m_themeAccent; }
@@ -68,6 +69,7 @@ private:
                           const QString &msgid, uint id);
 #endif
 
+    bool m_ephemeral = false;
     bool m_darkMode = true;
     qreal m_textScale = 1.0;
     QString m_themeBackground;

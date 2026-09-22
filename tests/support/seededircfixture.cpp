@@ -187,8 +187,10 @@ bool SeededIrcFixture::installXdg()
     QDir().mkpath(config);
     QDir().mkpath(root + QLatin1String("/cache"));
     QDir().mkpath(root + QLatin1String("/data"));
+    QDir().mkpath(root + QLatin1String("/state"));
     qputenv("XDG_CACHE_HOME", (root + QLatin1String("/cache")).toUtf8());
     qputenv("XDG_DATA_HOME", (root + QLatin1String("/data")).toUtf8());
+    qputenv("XDG_STATE_HOME", (root + QLatin1String("/state")).toUtf8());
     TestSettings::isolate(config);
     return true;
 }
@@ -211,16 +213,16 @@ bool SeededIrcFixture::start(bool autoEcho)
         return false;
 
     m_demo = std::make_unique<IrcDemoServer>();
-    if (!m_demo->writeProfiles())
-        return fail(m_demo->lastError().isEmpty()
-                        ? QStringLiteral("write profiles")
-                        : m_demo->lastError());
 
     m_backend = std::make_unique<Backend>();
+    m_backend->setEphemeral(true);
     m_slash = std::make_unique<IrcSlashSession>();
     m_controller = std::make_unique<IrcController>();
+    m_controller->setEphemeral(true);
     m_credentials = std::make_unique<MissingCredentialStore>();
-    m_connection = std::make_unique<IrcConnection>(*m_controller, *m_credentials);
+    m_connection = std::make_unique<IrcConnection>(*m_controller, *m_credentials,
+                                                   nullptr, true);
+    m_connection->setStoredProfiles(IrcDemoServer::seedProfiles());
     if (!m_demo->attach(*m_controller, autoEcho))
         return fail(m_demo->lastError().isEmpty()
                         ? QStringLiteral("attach demo")

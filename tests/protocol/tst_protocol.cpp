@@ -102,6 +102,7 @@ private slots:
     void splitsOutboundChatOnWordBoundary();
     void splitsOutboundChatHardWhenTokenExceedsFrame();
     void privmsgUsesIrcv3TimeTag();
+    void privmsgCombinesAccountAndTimeTags();
     void privmsgWithoutTimeUsesCurrentUtc();
     void privmsgInvalidTimeUsesCurrentUtc();
     void actionAndTypingUseIrcv3TimeTag();
@@ -529,6 +530,25 @@ void ProtocolTest::privmsgUsesIrcv3TimeTag()
     QCOMPARE(events.size(), std::size_t(1));
     const auto *message = std::get_if<IrcMessageEvent>(&events.front());
     QVERIFY(message);
+    QCOMPARE(message->body, QStringLiteral("hello"));
+    QCOMPARE(message->timestamp.toUTC().toMSecsSinceEpoch(),
+             exampleServerTime().toMSecsSinceEpoch());
+}
+
+void ProtocolTest::privmsgCombinesAccountAndTimeTags()
+{
+    const auto parsed = IrcParser::parse(
+        "@account=kaidev;time=2011-10-19T16:40:51.620Z :kai!u@h PRIVMSG #c :hello");
+    QVERIFY(parsed);
+    const std::vector<IrcEvent> events = translate(*parsed.value);
+    QCOMPARE(events.size(), std::size_t(2));
+    const auto *account = std::get_if<IrcAccountEvent>(&events.front());
+    QVERIFY(account);
+    QCOMPARE(account->nick, QStringLiteral("kai"));
+    QCOMPARE(account->account, QStringLiteral("kaidev"));
+    const auto *message = std::get_if<IrcMessageEvent>(&events.back());
+    QVERIFY(message);
+    QCOMPARE(message->author, QStringLiteral("kai"));
     QCOMPARE(message->body, QStringLiteral("hello"));
     QCOMPARE(message->timestamp.toUTC().toMSecsSinceEpoch(),
              exampleServerTime().toMSecsSinceEpoch());

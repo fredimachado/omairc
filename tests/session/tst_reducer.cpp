@@ -48,6 +48,32 @@ IrcReplayLine replayLine(const QString& author,
 {
     return {author, body, timestamp, IrcMessageKindTag::Chat, IrcMsgId{msgid}};
 }
+
+void applyWire(IrcEventReducer& reducer, std::string_view line)
+{
+    const IrcMessage message = mustParse(line);
+    for (const IrcEvent& event : IrcEventTranslator::translate(
+             networkA, QStringLiteral("omairc"),
+             reducer.serverFeatures(networkA), message)) {
+        reducer.apply(event);
+    }
+}
+
+const IrcConversationState *roomOf(
+    const IrcEventReducer& reducer,
+    const QString& channel = QStringLiteral("#room"))
+{
+    return reducer.find(reducer.conversationKey(networkA, channel));
+}
+
+QString lastBody(const IrcEventReducer& reducer,
+                 const QString& channel = QStringLiteral("#room"))
+{
+    const IrcConversationState *conversation = roomOf(reducer, channel);
+    if (!conversation || conversation->messages.empty())
+        return {};
+    return conversation->messages.back().body;
+}
 }
 
 class ReducerTest : public QObject
@@ -120,6 +146,10 @@ private slots:
     void conversationCauseInsertTable();
     void ensureConversationHonorsCause();
     void nickShapedJoinDoesNotInventDirect();
+    void extendedJoinRecordsAccountOnOneLine();
+    void accountCommandAndTagShareOneField();
+    void nickChangeKeepsServicesAccount();
+    void accountChangeRefreshesMemberRowAndTranscript();
 };
 
 void ReducerTest::namesFillAndCompleteWithoutDuplicates()
@@ -2439,6 +2469,141 @@ void ReducerTest::nickShapedJoinDoesNotInventDirect()
     reducer.apply(IrcJoinEvent{
         networkA, QStringLiteral("lena"), QStringLiteral("omairc")});
     QVERIFY(!reducer.find(reducer.conversationKey(networkA, QStringLiteral("lena"))));
+}
+
+void ReducerTest::extendedJoinRecordsAccountOnOneLine()
+{
+    // The wire form is enough. These caps do not have to be enabled.
+    IrcEventReducer reducer;
+    welcome(reducer, networkA);
+    applyWire(reducer, ":Alice!a@h JOIN #room services :Alice Example");
+
+    QCOMPARE(reducer.nickPresence(networkA, QStringLiteral("Alice")).account,
+             QStringLiteral("services"));
+    QCOMPARE(reducer.displayAccount(networkA, QStringLiteral("Alice")),
+             QStringLiteral("services"));
+    const IrcConversationState *room = roomOf(reducer);
+    QVERIFY(room);
+    QCOMPARE(room->messages.size(), std::size_t(1));
+    QCOMPARE(room->messages.front().body,
+             QStringLiteral("Alice (services) joined"));
+    QCOMPARE(reducer.memberView(room->key, QStringLiteral("alice"))->account,
+             QStringLiteral("services"));
+
+    applyWire(reducer, ":Alice!a@h PRIVMSG #room :hi");
+    applyWire(reducer, ":Alice!a@h JOIN :#room");
+    QCOMPARE(reducer.nickPresence(networkA, QStringLiteral("Alice")).account,
+             QStringLiteral("services"));
+    QCOMPARE(lastBody(reducer), QStringLiteral("Alice joined"));
+
+    applyWire(reducer, ":Alice!a@h PRIVMSG #room :again");
+    applyWire(reducer, ":Alice!a@h JOIN #room * :Alice Example");
+    QCOMPARE(reducer.nickPresence(networkA, QStringLiteral("Alice")).account,
+             QString());
+    QCOMPARE(reducer.displayAccount(networkA, QStringLiteral("Alice")), QString());
+    QCOMPARE(lastBody(reducer), QStringLiteral("Alice joined"));
+}
+
+void ReducerTest::accountCommandAndTagShareOneField()
+{
+    IrcEventReducer reducer;
+    welcome(reducer, networkA);
+    applyWire(reducer, ":Alice!a@h ACCOUNT services");
+    QCOMPARE(reducer.nickPresence(networkA, QStringLiteral("Alice")).account,
+             QStringLiteral("services"));
+    QVERIFY(!reducer.find(reducer.conversationKey(networkA, QStringLiteral("#room"))));
+
+    applyWire(reducer, ":Alice!a@h ACCOUNT *");
+    QCOMPARE(reducer.nickPresence(networkA, QStringLiteral("Alice")).account,
+             QString());
+
+    applyWire(reducer, "@account=services :Alice!a@h PRIVMSG #room :one");
+    QCOMPARE(reducer.nickPresence(networkA, QStringLiteral("Alice")).account,
+             QStringLiteral("services"));
+    applyWire(reducer, ":Alice!a@h PRIVMSG #room :two");
+    QCOMPARE(reducer.nickPresence(networkA, QStringLiteral("Alice")).account,
+             QStringLiteral("services"));
+    applyWire(reducer, "@account=* :Alice!a@h PRIVMSG #room :three");
+    QCOMPARE(reducer.nickPresence(networkA, QStringLiteral("Alice")).account,
+             QString());
+
+    applyWire(reducer, "@account=services :Alice!a@h NOTICE #room :psst");
+    IrcEventReducer viaCommand;
+    welcome(viaCommand, networkA);
+    applyWire(viaCommand, ":Alice!a@h ACCOUNT services");
+    QCOMPARE(reducer.nickPresence(networkA, QStringLiteral("Alice")).account,
+             viaCommand.nickPresence(networkA, QStringLiteral("Alice")).account);
+
+    applyWire(reducer, ":server 330 omairc Alice whoisacct :is logged in as");
+    QCOMPARE(reducer.nickPresence(networkA, QStringLiteral("Alice")).account,
+             QStringLiteral("whoisacct"));
+    applyWire(reducer, ":server 311 omairc Alice user host * :Alice Example");
+    QCOMPARE(reducer.nickPresence(networkA, QStringLiteral("Alice")).account,
+             QStringLiteral("whoisacct"));
+}
+
+void ReducerTest::nickChangeKeepsServicesAccount()
+{
+    IrcEventReducer reducer;
+    welcome(reducer, networkA);
+    applyWire(reducer, ":Alice!a@h JOIN #room services :Alice");
+    applyWire(reducer, ":Alice!a@h NICK Alicia");
+    QCOMPARE(reducer.nickPresence(networkA, QStringLiteral("Alicia")).account,
+             QStringLiteral("services"));
+    QCOMPARE(reducer.nickPresence(networkA, QStringLiteral("Alice")).account,
+             QString());
+    QCOMPARE(reducer.displayAccount(networkA, QStringLiteral("Alicia")),
+             QStringLiteral("services"));
+
+    IrcEventReducer same;
+    welcome(same, networkA);
+    applyWire(same, ":Bob!b@h JOIN #room bob :Bob");
+    QCOMPARE(lastBody(same), QStringLiteral("Bob joined"));
+    QCOMPARE(same.nickPresence(networkA, QStringLiteral("Bob")).account,
+             QStringLiteral("bob"));
+    QCOMPARE(same.displayAccount(networkA, QStringLiteral("Bob")), QString());
+    const IrcConversationState *room = roomOf(same);
+    QVERIFY(room);
+    QCOMPARE(same.memberView(room->key, QStringLiteral("bob"))->account, QString());
+    applyWire(same, ":Bob!b@h NICK Robert");
+    QCOMPARE(same.nickPresence(networkA, QStringLiteral("Robert")).account,
+             QStringLiteral("bob"));
+    QCOMPARE(same.displayAccount(networkA, QStringLiteral("Robert")),
+             QStringLiteral("bob"));
+
+    IrcEventReducer folded;
+    welcome(folded, networkA);
+    applyWire(folded, ":a[b!u@h JOIN #room a{b :name");
+    QCOMPARE(lastBody(folded), QStringLiteral("a[b joined"));
+    QCOMPARE(folded.displayAccount(networkA, QStringLiteral("a[b")), QString());
+
+    IrcEventReducer ascii;
+    welcome(ascii, networkA);
+    IrcServerFeatures features;
+    features.applyTokens({std::string("CASEMAPPING=ascii")});
+    ascii.setServerFeatures(networkA, features);
+    applyWire(ascii, ":a[b!u@h JOIN #room a{b :name");
+    QCOMPARE(lastBody(ascii), QStringLiteral("a[b (a{b) joined"));
+    QCOMPARE(ascii.displayAccount(networkA, QStringLiteral("a[b")),
+             QStringLiteral("a{b"));
+}
+
+void ReducerTest::accountChangeRefreshesMemberRowAndTranscript()
+{
+    IrcEventReducer reducer;
+    welcome(reducer, networkA);
+    reducer.apply(IrcJoinEvent{
+        networkA, QStringLiteral("#room"), QStringLiteral("Alice")});
+    const std::optional<IrcConversationKey> nothing;
+    const IrcViewNotify notify = classifyViewNotify(
+        IrcEvent{IrcAccountEvent{
+            networkA, QStringLiteral("Alice"), QStringLiteral("*")}},
+        reducer,
+        nothing);
+    QCOMPARE(notify.members, IrcMemberSurface::Row);
+    QCOMPARE(notify.nick, QStringLiteral("alice"));
+    QVERIFY(notify.messages);
+    QVERIFY(!notify.conversations);
 }
 
 int runReducerTests(int argc, char **argv)

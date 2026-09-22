@@ -771,7 +771,7 @@ void SessionTest::sendsPassWhenSaslIsUnavailable()
 
     fixture.connectTls();
     fixture.transport->injectBytes(
-        QByteArrayLiteral(":server CAP omairc LS :account-notify\r\n"));
+        QByteArrayLiteral(":server CAP omairc LS :invite-notify\r\n"));
     QCOMPARE(fixture.transport->writtenFrames().mid(1),
              QByteArrayList({
                  QByteArrayLiteral("PASS secret\r\n"),
@@ -819,7 +819,7 @@ void SessionTest::nickServOnlyWithoutSaslIdentifiesBeforeJoin()
     Fixture fixture(sessionConfig);
     fixture.connectTls();
     fixture.transport->injectBytes(
-        QByteArrayLiteral(":server CAP omairc LS :account-notify\r\n"
+        QByteArrayLiteral(":server CAP omairc LS :invite-notify\r\n"
                           ":server 001 omairc :Welcome\r\n"));
     const QByteArrayList frames = fixture.transport->writtenFrames();
     QVERIFY(!fixture.wrote(QByteArrayLiteral("PASS nick-secret\r\n")));
@@ -866,7 +866,7 @@ void SessionTest::bothSecretsWithoutSaslPassThenIdentifyBeforeJoin()
     Fixture fixture(sessionConfig);
     fixture.connectTls();
     fixture.transport->injectBytes(
-        QByteArrayLiteral(":server CAP omairc LS :account-notify\r\n"
+        QByteArrayLiteral(":server CAP omairc LS :invite-notify\r\n"
                           ":server 001 omairc :Welcome\r\n"));
     const QByteArrayList frames = fixture.transport->writtenFrames();
     QVERIFY(fixture.wrote(QByteArrayLiteral("PASS server-secret\r\n")));
@@ -2082,7 +2082,7 @@ void SessionTest::plaintextIdentifyEmitsOneStatusWarning()
     fixture.session->start();
     fixture.transport->completeConnect();
     fixture.transport->injectBytes(
-        QByteArrayLiteral(":server CAP omairc LS :account-notify\r\n"
+        QByteArrayLiteral(":server CAP omairc LS :invite-notify\r\n"
                           ":server 001 omairc :Welcome\r\n"));
     int warnings = 0;
     for (const IrcStatusEntry &entry : status.entries) {
@@ -2111,7 +2111,7 @@ void SessionTest::automaticIdentifyDoesNotAppearInStatusAsSecret()
     StatusCollector status(fixture.session);
     fixture.connectTls();
     fixture.transport->injectBytes(
-        QByteArrayLiteral(":server CAP omairc LS :account-notify\r\n"
+        QByteArrayLiteral(":server CAP omairc LS :invite-notify\r\n"
                           ":server 001 omairc :Welcome\r\n"));
     QVERIFY(!status.anyFieldContains(QStringLiteral("PRIVMSG")));
     QVERIFY(!status.anyFieldContains(QStringLiteral("nick-secret")));

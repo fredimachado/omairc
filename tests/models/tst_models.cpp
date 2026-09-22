@@ -99,6 +99,7 @@ class ModelTest : public QObject
 
 private slots:
     void roleNamesMatchQml();
+    void authorAccountRoleFollowsPresence();
     void joinNamesPrivmsgPopulateModels();
     void memberStatusIsMetadataNotPrefixModes();
     void memberAndDirectRowsExposeAvatarAndBot();
@@ -189,6 +190,8 @@ void ModelTest::roleNamesMatchQml()
              QByteArray("authorAvatar"));
     QCOMPARE(messages.roleNames()[MessageListModel::AuthorBotRole],
              QByteArray("authorBot"));
+    QCOMPARE(messages.roleNames()[MessageListModel::AuthorAccountRole],
+             QByteArray("authorAccount"));
     QCOMPARE(messages.roleNames()[MessageListModel::MentionedRole],
              QByteArray("mentioned"));
 
@@ -200,6 +203,51 @@ void ModelTest::roleNamesMatchQml()
              QByteArray("networkId"));
     QCOMPARE(members.roleNames()[MemberListModel::AvatarRole], QByteArray("avatar"));
     QCOMPARE(members.roleNames()[MemberListModel::BotRole], QByteArray("bot"));
+    QCOMPARE(members.roleNames()[MemberListModel::AccountRole],
+             QByteArray("account"));
+}
+
+void ModelTest::authorAccountRoleFollowsPresence()
+{
+    IrcEventReducer reducer;
+    MessageListModel messages(reducer);
+    MemberListModel members(reducer);
+    welcome(reducer, networkA);
+    const IrcConversationKey room =
+        reducer.conversationKey(networkA, QStringLiteral("#room"));
+    reducer.apply(IrcJoinEvent{
+        networkA, QStringLiteral("#room"), QStringLiteral("Alice")});
+    reducer.apply(IrcMessageEvent{
+        room, QStringLiteral("Alice"), QStringLiteral("hi"), timestamp,
+        QStringLiteral("#room")});
+    reducer.apply(IrcAccountEvent{
+        networkA, QStringLiteral("Alice"), QStringLiteral("services")});
+    members.select(room);
+    messages.select(room);
+
+    int chatRow = -1;
+    for (int row = 0; row < messages.rowCount(); ++row) {
+        if (roleAt(messages, row, MessageListModel::AuthorRole)
+            == QStringLiteral("Alice")) {
+            chatRow = row;
+        } else {
+            QCOMPARE(roleAt(messages, row, MessageListModel::AuthorAccountRole),
+                     QString());
+        }
+    }
+    QVERIFY(chatRow >= 0);
+    QCOMPARE(roleAt(messages, chatRow, MessageListModel::AuthorAccountRole),
+             QStringLiteral("services"));
+    QCOMPARE(roleAt(members, 0, MemberListModel::AccountRole),
+             QStringLiteral("services"));
+
+    reducer.apply(IrcAccountEvent{
+        networkA, QStringLiteral("Alice"), QStringLiteral("Alice")});
+    messages.reload();
+    members.reload();
+    QCOMPARE(roleAt(messages, chatRow, MessageListModel::AuthorAccountRole),
+             QString());
+    QCOMPARE(roleAt(members, 0, MemberListModel::AccountRole), QString());
 }
 
 void ModelTest::joinNamesPrivmsgPopulateModels()

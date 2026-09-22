@@ -487,7 +487,8 @@ std::optional<IrcMemberView> IrcEventReducer::memberView(
         facts.metadata(IrcMetadata::displayNameKey()),
         facts.metadata(IrcMetadata::pronounsKey()),
         facts.metadata(IrcMetadata::homepageKey()),
-        facts.metadata(IrcMetadata::colorKey())};
+        facts.metadata(IrcMetadata::colorKey()),
+        displayAccount(key.networkId, member->second.displayNick)};
 }
 
 IrcNickPresence IrcEventReducer::nickPresence(const QString& networkId,
@@ -499,6 +500,17 @@ IrcNickPresence IrcEventReducer::nickPresence(const QString& networkId,
     if (presence == m_presence.end())
         return {};
     return presence->second.lookup(normalize(networkId, nick));
+}
+
+QString IrcEventReducer::displayAccount(const QString& networkId,
+                                        const QString& nick) const
+{
+    const QString account = nickPresence(networkId, nick).account;
+    if (account.isEmpty() || nick.isEmpty())
+        return {};
+    if (serverFeatures(networkId).caseMapping().equals(utf8(account), utf8(nick)))
+        return {};
+    return account;
 }
 
 IrcPeerPresence IrcEventReducer::peerPresence(const QString& networkId,
@@ -969,6 +981,10 @@ void IrcEventReducer::reduce(const IrcActionEvent& event)
 
 void IrcEventReducer::reduce(const IrcJoinEvent& event)
 {
+    const QString normalizedNick = normalize(event.networkId, event.nick);
+    if (event.account && !normalizedNick.isEmpty())
+        m_presence[event.networkId].setAccount(normalizedNick, *event.account);
+
     const IrcConversationKey key = conversationKey(event.networkId, event.channel);
     IrcConversationState *conversation =
         ensureConversation(key, event.channel, IrcConversationCause::ChannelState);
@@ -977,7 +993,6 @@ void IrcEventReducer::reduce(const IrcJoinEvent& event)
     IrcChannelState *channel = conversation->channel();
     if (!channel)
         return;
-    const QString normalizedNick = normalize(event.networkId, event.nick);
     IrcPrefixSet ranks;
     const auto existing = channel->members.find(normalizedNick);
     if (existing != channel->members.end())
@@ -990,7 +1005,23 @@ void IrcEventReducer::reduce(const IrcJoinEvent& event)
         channel->historyAnchor = IrcTranscriptAnchor{
             conversation->trimmed + qint64(conversation->messages.size())};
     }
-    appendEvent(*conversation, event.nick + QStringLiteral(" joined"), !self);
+    QString body = event.nick + QStringLiteral(" joined");
+    if (event.account) {
+        const QString shown = displayAccount(event.networkId, event.nick);
+        if (!shown.isEmpty()) {
+            body = event.nick + QStringLiteral(" (") + shown
+                + QStringLiteral(") joined");
+        }
+    }
+    appendEvent(*conversation, body, !self);
+}
+
+void IrcEventReducer::reduce(const IrcAccountEvent& event)
+{
+    const QString normalizedNick = normalize(event.networkId, event.nick);
+    if (normalizedNick.isEmpty())
+        return;
+    m_presence[event.networkId].setAccount(normalizedNick, event.account);
 }
 
 void IrcEventReducer::reduce(const IrcPartEvent& event)

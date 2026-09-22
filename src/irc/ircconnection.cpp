@@ -162,20 +162,23 @@ void NetworkListModel::resetRows()
 
 IrcConnection::IrcConnection(IrcController &controller,
                              CredentialStore &credentialStore,
-                             QObject *parent)
-    : IrcConnection(controller, defaultTransport, credentialStore, parent)
+                             QObject *parent,
+                             bool ephemeral)
+    : IrcConnection(controller, defaultTransport, credentialStore, parent, ephemeral)
 {
 }
 
 IrcConnection::IrcConnection(IrcController &controller,
                              TransportFactory transportFactory,
                              CredentialStore &credentialStore,
-                             QObject *parent)
+                             QObject *parent,
+                             bool ephemeral)
     : QObject(parent)
     , m_controller(controller)
     , m_transportFactory(std::move(transportFactory))
     , m_credentialStore(credentialStore)
     , m_networks(*this)
+    , m_ephemeral(ephemeral)
 {
     if (!m_transportFactory)
         m_transportFactory = defaultTransport;
@@ -190,29 +193,36 @@ IrcConnection::IrcConnection(IrcController &controller,
         handleCredentialWrite(state, message);
     });
 
-    loadStored();
-    assignStoredIconColors();
-    if (!m_stored.isEmpty()) {
-        IrcNetworkProfile chosen = m_stored.first();
-        for (const IrcNetworkProfile &profile : m_stored) {
-            if (profile.isComplete()) {
-                chosen = profile;
-                break;
+    if (!m_ephemeral) {
+        loadStored();
+        assignStoredIconColors();
+        if (!m_stored.isEmpty()) {
+            IrcNetworkProfile chosen = m_stored.first();
+            for (const IrcNetworkProfile &profile : m_stored) {
+                if (profile.isComplete()) {
+                    chosen = profile;
+                    break;
+                }
             }
+            m_selectedNetworkId = chosen.networkId;
+            m_draft = chosen;
+        } else {
+            m_draft = IrcNetworkProfile::suggested();
+            m_selectedNetworkId = m_draft.networkId;
+            assignIconColor(m_draft, false);
         }
-        m_selectedNetworkId = chosen.networkId;
-        m_draft = chosen;
+        pushNetworkOrder();
+
+        for (const IrcNetworkProfile &profile : m_stored) {
+            if (profile.networkId.isEmpty())
+                continue;
+            startCredentialRead(profile);
+        }
     } else {
         m_draft = IrcNetworkProfile::suggested();
         m_selectedNetworkId = m_draft.networkId;
         assignIconColor(m_draft, false);
-    }
-    pushNetworkOrder();
-
-    for (const IrcNetworkProfile &profile : m_stored) {
-        if (profile.networkId.isEmpty())
-            continue;
-        startCredentialRead(profile);
+        pushNetworkOrder();
     }
 
     connect(&m_controller, &IrcController::statusChanged, this,
@@ -757,7 +767,8 @@ bool IrcConnection::apply()
     const IrcNetworkProfile previousProfile = storedProfile(m_selectedNetworkId);
     const CredentialKey previousCredentialKey = credentialKey(previousProfile);
     const CredentialKey nextCredentialKey = credentialKey(profile);
-    m_store.save(profile);
+    if (!m_ephemeral)
+        m_store.save(profile);
     bool found = false;
     for (IrcNetworkProfile &stored : m_stored) {
         if (stored.networkId == profile.networkId) {
@@ -768,7 +779,8 @@ bool IrcConnection::apply()
     }
     if (!found) {
         m_stored.append(profile);
-        persistNetworkOrder();
+        if (!m_ephemeral)
+            persistNetworkOrder();
     }
     m_draft = profile;
     m_selectedNetworkId = profile.networkId;
@@ -1395,7 +1407,8 @@ void IrcConnection::persistSavedFlag(const CredentialKey &key, bool saved)
         if (flag == saved)
             return;
         flag = saved;
-        m_store.save(profile);
+        if (!m_ephemeral)
+            m_store.save(profile);
         if (m_draft.networkId == key.networkId) {
             if (key.purpose.isEmpty())
                 m_draft.secretSaved = saved;
@@ -1512,7 +1525,8 @@ void IrcConnection::persistAutojoin(const QString &networkId,
             return;
         profile.autojoinChannels = channels;
         profile.autojoinKeys = keys;
-        m_store.save(profile);
+        if (!m_ephemeral)
+            m_store.save(profile);
         const auto applied = m_applied.find(networkId);
         if (applied != m_applied.end()) {
             applied->profile.autojoinChannels = channels;
@@ -1550,6 +1564,43 @@ void IrcConnection::loadStored()
     loadCollapsedNetworks();
 }
 
+void IrcConnection::setEphemeral(bool ephemeral)
+{
+    m_ephemeral = ephemeral;
+}
+
+void IrcConnection::setStoredProfiles(const QList<IrcNetworkProfile> &profiles)
+{
+    m_stored = profiles;
+    assignStoredIconColors();
+    applyNetworkOrder();
+    loadCollapsedNetworks();
+
+    if (!m_stored.isEmpty()) {
+        IrcNetworkProfile chosen = m_stored.first();
+        for (const IrcNetworkProfile &profile : m_stored) {
+            if (profile.isComplete()) {
+                chosen = profile;
+                break;
+            }
+        }
+        m_selectedNetworkId = chosen.networkId;
+        m_draft = chosen;
+    } else {
+        m_draft = IrcNetworkProfile::suggested();
+        m_selectedNetworkId = m_draft.networkId;
+        assignIconColor(m_draft, false);
+    }
+    pushNetworkOrder();
+
+    for (const IrcNetworkProfile &profile : m_stored) {
+        if (profile.networkId.isEmpty())
+            continue;
+        startCredentialRead(profile);
+    }
+    refreshRoster();
+}
+
 QList<int> IrcConnection::usedIconColors(const QString &exceptId) const
 {
     QList<int> used;
@@ -1566,14 +1617,14 @@ void IrcConnection::assignIconColor(IrcNetworkProfile &profile, bool persist)
 {
     if (!profile.ensureIconColor(usedIconColors(profile.networkId)))
         return;
-    if (persist && !profile.networkId.isEmpty())
+    if (persist && !m_ephemeral && !profile.networkId.isEmpty())
         m_store.save(profile);
 }
 
 void IrcConnection::assignStoredIconColors()
 {
     for (IrcNetworkProfile &profile : m_stored)
-        assignIconColor(profile, true);
+        assignIconColor(profile, !m_ephemeral);
 }
 
 void IrcConnection::sortStored()
@@ -1616,6 +1667,8 @@ void IrcConnection::applyNetworkOrder()
 
 void IrcConnection::persistNetworkOrder()
 {
+    if (m_ephemeral)
+        return;
     savePreferenceList(networkOrderKey(), storedNetworkIds());
 }
 
@@ -1635,6 +1688,8 @@ void IrcConnection::loadCollapsedNetworks()
 
 void IrcConnection::persistCollapsedNetworks()
 {
+    if (m_ephemeral)
+        return;
     savePreferenceList(collapsedNetworksKey(), collapsedNetworkIds());
 }
 

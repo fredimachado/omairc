@@ -354,6 +354,14 @@ bool copiesLabeledStandardReply(const IrcStatusEntry& entry)
         return false;
     return label.at(0) == QLatin1Char('4') || label.at(0) == QLatin1Char('5');
 }
+
+bool servicesAccountMatches(const QString& stored, const QString& incoming)
+{
+    const auto canonical = [](const QString& value) {
+        return (value.isEmpty() || value == QLatin1String("*")) ? QString() : value;
+    };
+    return canonical(stored) == canonical(incoming);
+}
 }
 
 IrcController::IrcController(QObject *parent)
@@ -382,17 +390,13 @@ IrcController::IrcController(QObject *parent)
     connect(&m_console, &IrcStatusConsole::alertsChanged, this,
             &IrcController::statusChanged);
     m_reducer.setConversationLog(&m_transcripts);
-    m_reopenDirectMessages = loadReopenDirectMessages();
-    m_loadPeerAvatars = loadLoadPeerAvatars();
-    m_openConversationsAtUnread = loadOpenConversationsAtUnread();
-    m_autoaway = loadAutoaway();
     m_autoawayIdle.setSingleShot(true);
     m_autoawayGrace.setSingleShot(true);
     connect(&m_autoawayIdle, &QTimer::timeout, this, &IrcController::onAutoawayIdle);
     connect(&m_autoawayGrace, &QTimer::timeout, this, &IrcController::onAutoawayGrace);
     if (QCoreApplication *app = QCoreApplication::instance())
         app->installEventFilter(this);
-    armAutoawayIdle();
+    loadStoredPreferences();
 }
 
 IrcController::~IrcController()
@@ -404,6 +408,25 @@ IrcController::~IrcController()
 void IrcController::setTranscriptRoot(const QString &root)
 {
     m_transcripts.setRoot(root);
+}
+
+void IrcController::setEphemeral(bool ephemeral)
+{
+    m_ephemeral = ephemeral;
+    if (ephemeral)
+        m_reducer.setConversationLog(nullptr);
+    m_openDirects.setEphemeral(ephemeral);
+}
+
+void IrcController::loadStoredPreferences()
+{
+    if (m_ephemeral)
+        return;
+    m_reopenDirectMessages = loadReopenDirectMessages();
+    m_loadPeerAvatars = loadLoadPeerAvatars();
+    m_openConversationsAtUnread = loadOpenConversationsAtUnread();
+    m_autoaway = loadAutoaway();
+    armAutoawayIdle();
 }
 
 IrcSession *IrcController::addSession(const IrcSessionConfig& config,
@@ -648,6 +671,11 @@ int IrcController::peerMetadataEpoch() const
     return m_peerMetadataEpoch;
 }
 
+int IrcController::peerAccountEpoch() const
+{
+    return m_peerAccountEpoch;
+}
+
 QString IrcController::lastErrorForNetwork(const QString& networkId) const
 {
     return m_lastErrors.value(networkId);
@@ -739,7 +767,8 @@ void IrcController::setReopenDirectMessages(bool enabled)
     if (m_reopenDirectMessages == enabled)
         return;
     m_reopenDirectMessages = enabled;
-    saveReopenDirectMessages(enabled);
+    if (!m_ephemeral)
+        saveReopenDirectMessages(enabled);
     emit reopenDirectMessagesChanged();
     if (!enabled)
         return;
@@ -760,7 +789,8 @@ void IrcController::setLoadPeerAvatars(bool enabled)
     if (m_loadPeerAvatars == enabled)
         return;
     m_loadPeerAvatars = enabled;
-    saveLoadPeerAvatars(enabled);
+    if (!m_ephemeral)
+        saveLoadPeerAvatars(enabled);
     emit loadPeerAvatarsChanged();
 }
 
@@ -774,7 +804,8 @@ void IrcController::setOpenConversationsAtUnread(bool enabled)
     if (m_openConversationsAtUnread == enabled)
         return;
     m_openConversationsAtUnread = enabled;
-    saveOpenConversationsAtUnread(enabled);
+    if (!m_ephemeral)
+        saveOpenConversationsAtUnread(enabled);
     emit openConversationsAtUnreadChanged();
 }
 
@@ -895,6 +926,12 @@ QVariantMap IrcController::peerMetadata(const QString& networkId,
     result.insert(QStringLiteral("color"),
                   facts.metadata(IrcMetadata::colorKey()));
     return result;
+}
+
+QString IrcController::peerAccount(const QString& networkId,
+                                   const QString& nick) const
+{
+    return m_reducer.displayAccount(networkId, nick);
 }
 
 void IrcController::handleCapabilities(const QString& networkId,
@@ -2593,6 +2630,8 @@ IrcCommandOutcome IrcController::dispatchPref(const IrcCommand& command,
 
 void IrcController::saveAutoaway() const
 {
+    if (m_ephemeral)
+        return;
     saveAutoawayConfig(m_autoaway);
 }
 
@@ -4016,6 +4055,12 @@ void IrcController::adoptReducerSelection()
 
 void IrcController::apply(const IrcEvent& event)
 {
+    if (const auto *account = std::get_if<IrcAccountEvent>(&event)) {
+        const QString stored =
+            m_reducer.nickPresence(account->networkId, account->nick).account;
+        if (servicesAccountMatches(stored, account->account))
+            return;
+    }
     const QString previousId = identityNetworkId();
     const bool previousAway = selfAway();
     const bool typingOnly = std::holds_alternative<IrcTypingEvent>(event);
@@ -4038,6 +4083,18 @@ void IrcController::apply(const IrcEvent& event)
                                  metadata->nick,
                                  metadata->key,
                                  metadata->value);
+    }
+    const bool accountsMoved = std::holds_alternative<IrcAccountEvent>(event)
+        || std::holds_alternative<IrcWelcomeEvent>(event)
+        || std::holds_alternative<IrcPartEvent>(event)
+        || std::holds_alternative<IrcQuitEvent>(event)
+        || std::holds_alternative<IrcKickEvent>(event)
+        || std::holds_alternative<IrcNickEvent>(event)
+        || (std::holds_alternative<IrcJoinEvent>(event)
+            && std::get<IrcJoinEvent>(event).account.has_value());
+    if (accountsMoved) {
+        ++m_peerAccountEpoch;
+        emit peerAccountChanged();
     }
     if (const auto *nick = std::get_if<IrcNickEvent>(&event)) {
         m_openDirects.rekey(nick->networkId, nick->oldNick, nick->newNick,

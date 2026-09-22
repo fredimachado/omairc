@@ -345,6 +345,21 @@ ApplicationWindow {
         return !!(peerFacts(nick).bot);
     }
 
+    function peerAccount(nick) {
+        if (!irc || typeof irc.peerAccount !== "function" || !nick)
+            return "";
+        // peerAccount is a plain invokable. Read peerAccountEpoch so an
+        // ACCOUNT or extended JOIN re-runs this binding.
+        var _epoch = irc.peerAccountEpoch
+        var networkId = irc.selectedNetworkId;
+        if (!networkId || networkId.length === 0)
+            networkId = win.currentNetworkId;
+        if (!networkId)
+            return "";
+        var account = irc.peerAccount(networkId, nick);
+        return account ? String(account) : "";
+    }
+
     function stripIrcColors(text) {
         return ircText.stripIrcColors(text);
     }
@@ -2526,6 +2541,7 @@ ApplicationWindow {
             selfPresence: win.selfPresence
             selfAvatar: win.peerAvatar(win.selfNick)
             selfBot: win.peerBot(win.selfNick)
+            selfAccount: win.peerAccount(win.selfNick)
             appVersion: win.appVersion
             updateReady: aboutUpdateCheck.status === "readyToRestart"
             inboxCount: win.irc ? win.irc.inboxCount : 0
@@ -2588,6 +2604,8 @@ ApplicationWindow {
                 readonly property string authorAvatar: model && model.authorAvatar
                     ? String(model.authorAvatar) : ""
                 readonly property bool authorBot: !!(model && model.authorBot)
+                readonly property string authorAccount: model && model.authorAccount
+                    ? String(model.authorAccount) : ""
                 // Wash: nick or /highlight hit. Not the sidebar `mention` badge.
                 readonly property bool mentioned: !!(model && model.mentioned)
                 readonly property string origin: win.transcriptField(conversation.messageList.model, index, "origin")
@@ -2702,6 +2720,7 @@ ApplicationWindow {
                     replayed: messageDelegate.replayed
                     nickOpensDirect: true
                     bot: messageDelegate.authorBot
+                    account: messageDelegate.authorAccount
                     onDirectMessageRequested: function(nick) { win.openDirectMessage(nick) }
                 }
 
@@ -2811,6 +2830,7 @@ ApplicationWindow {
                     time: ""
                     replayed: false
                     bot: win.peerBot(typingRow.nick)
+                    account: win.peerAccount(typingRow.nick)
                     onDirectMessageRequested: function(nick) { win.openDirectMessage(nick) }
                 }
 
