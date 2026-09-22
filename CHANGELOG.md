@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- On a Windows Inno Setup install, Check for Updates downloads the new setup in
+  the background. The About line and the footer version then read
+  `Restart to update` and open the installer wizard. Closing the window after
+  the download has finished opens that same wizard. Portable copies still open
+  the GitHub release page.
+
 ## [0.9.1] - 2026-09-21
 
 ### Added

@@ -30,4 +30,4 @@ Preconditions:
 - Other members' dots still gate on `hasAwayPresence`. Our own member row and the footer mark do not, because the `305` / `306` numerics are authoritative for us when Connected.
 - An empty first-run Nick shows an empty footer nick and `?` initials. That is the fallback, not a saved profile. `fred` only appears on the demo server, where it is the seeded live nick.
 - `irc.currentNick` is empty only when nothing is selected. First-run (empty selection) then shows the Connect nick draft if you typed one without Apply. Opening Status over a selected conversation keeps the live nick.
-- The network name and `edit` control are the Status / Connect entry points. The nick and presence words do not open a sheet. The version on the right opens About.
+- The network name and `edit` control are the Status / Connect entry points. The nick and presence words do not open a sheet. The version on the right opens About. When a Windows installer download is ready, that label reads `Restart to update` and starts the installer instead.

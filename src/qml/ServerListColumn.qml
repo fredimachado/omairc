@@ -19,6 +19,7 @@ Rectangle {
     property string selfAvatar: ""
     property bool selfBot: false
     property string appVersion: ""
+    property bool updateReady: false
     property int inboxCount: 0
 
     property alias sidebarScroll: sidebarScroll
@@ -336,6 +337,8 @@ Rectangle {
 
             Text {
                 objectName: "selfPresenceLabel"
+                width: parent.width
+                elide: Text.ElideRight
                 text: column.selfPresence
                 color: column.style.mutedColor
                 font.family: "iA Writer Mono S"
@@ -408,7 +411,7 @@ Rectangle {
                 id: selfVersionHit
                 objectName: "selfVersionHit"
                 Accessible.role: Accessible.Button
-                Accessible.name: "About Omairc"
+                Accessible.name: column.updateReady ? "Restart to update" : "About Omairc"
                 Accessible.onPressAction: column.versionClicked()
                 width: selfVersionLabel.implicitWidth + column.style.scaledSize(18)
                 height: selfVersionLabel.implicitHeight
@@ -423,7 +426,7 @@ Rectangle {
                     anchors.right: parent.right
                     anchors.rightMargin: column.style.scaledSize(9)
                     anchors.verticalCenter: parent.verticalCenter
-                    text: column.appVersion
+                    text: column.updateReady ? "Restart to update" : column.appVersion
                     color: selfVersionHit.containsMouse ? column.style.inkColor : column.style.mutedColor
                     font.family: "iA Writer Mono S"
                     font.pixelSize: column.style.scaledSize(10)

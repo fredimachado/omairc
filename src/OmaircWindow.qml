@@ -505,8 +505,24 @@ ApplicationWindow {
         var point = mappedItem.mapToItem(versionHit, mouse.x, mouse.y);
         if (!versionHit.contains(point))
             return false;
-        aboutSheet.open();
+        win.activateVersionControl();
         return true;
+    }
+
+    function activateVersionControl() {
+        if (aboutUpdateCheck.status === "readyToRestart") {
+            aboutUpdateCheck.launchInstaller();
+            return;
+        }
+        aboutSheet.open();
+    }
+
+    onClosing: {
+        if (aboutUpdateCheck.status !== "readyToRestart")
+            return;
+        if (aboutUpdateCheck.launchAttempts !== 0)
+            return;
+        aboutUpdateCheck.launchInstaller();
     }
 
     function openHttpUrlAt(text, index) {
@@ -2511,6 +2527,7 @@ ApplicationWindow {
             selfAvatar: win.peerAvatar(win.selfNick)
             selfBot: win.peerBot(win.selfNick)
             appVersion: win.appVersion
+            updateReady: aboutUpdateCheck.status === "readyToRestart"
             inboxCount: win.irc ? win.irc.inboxCount : 0
             onConversationActivated: function(row) {
                 win.activateSidebarConversation(row);
@@ -2523,7 +2540,7 @@ ApplicationWindow {
                     win.selectSheetNetwork(networkId);
                 win.connectionSheetOpen = true;
             }
-            onVersionClicked: aboutSheet.open()
+            onVersionClicked: win.activateVersionControl()
             onInboxRequested: win.openInboxSheet()
         }
 
