@@ -691,22 +691,25 @@ bool IrcSession::clearAway()
     return setAway({});
 }
 
-bool IrcSession::setOwnMetadata(const QString& key, const QString& value)
+std::optional<QString> IrcSession::setOwnMetadata(const QString& key, const QString& value)
 {
     if (m_state != State::Registered)
-        return false;
+        return std::nullopt;
     const IrcCapabilitySet enabled = m_capabilities.enabled();
     if (!enabled.contains(IrcCapability::MemberMetadata)
         || !enabled.contains(IrcCapability::Batch)) {
-        return false;
+        return std::nullopt;
     }
     if (key.isEmpty() || !IrcMetadata::isKnownKey(key))
-        return false;
+        return std::nullopt;
     const QString stored = IrcMetadata::canonicalKey(key);
     if (stored.isEmpty())
-        return false;
-    if (value.isEmpty())
-        return sendCommand(QStringLiteral("METADATA * SET %1").arg(stored));
+        return std::nullopt;
+    if (value.isEmpty()) {
+        if (!sendCommand(QStringLiteral("METADATA * SET %1").arg(stored)))
+            return std::nullopt;
+        return QString();
+    }
     const QByteArray prefix =
         QStringLiteral("METADATA * SET %1 :").arg(stored).toUtf8();
     // Keep the SET inside one classic frame; value budget is the residual.
@@ -717,16 +720,18 @@ bool IrcSession::setOwnMetadata(const QString& key, const QString& value)
         wireBudget);
     // Explicit max-value-bytes=0 (or a zero wire residual) forbids non-empty values.
     if (maxBytes <= 0)
-        return false;
+        return std::nullopt;
     const QString clamped = IrcMetadata::clamped(value, maxBytes);
     if (clamped.isEmpty())
-        return false;
-    return sendCommand(QStringLiteral("METADATA * SET %1 :%2").arg(stored, clamped));
+        return std::nullopt;
+    if (!sendCommand(QStringLiteral("METADATA * SET %1 :%2").arg(stored, clamped)))
+        return std::nullopt;
+    return clamped;
 }
 
 bool IrcSession::clearOwnMetadata(const QString& key)
 {
-    return setOwnMetadata(key, {});
+    return setOwnMetadata(key, {}).has_value();
 }
 
 bool IrcSession::changeNick(const QString& nick)

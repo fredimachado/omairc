@@ -3032,10 +3032,13 @@ IrcCommandOutcome IrcController::dispatchOwnMetadataSet(IrcSession *session,
                                                         const QString& metadataKey,
                                                         const QString& value)
 {
-    if (value.isEmpty() || !session->setOwnMetadata(metadataKey, value))
+    if (value.isEmpty())
+        return IrcCommandOutcome::Refused;
+    const std::optional<QString> sent = session->setOwnMetadata(metadataKey, value);
+    if (!sent || sent->isEmpty())
         return IrcCommandOutcome::Refused;
     armOwnMetadataWatch(session->networkId(), metadataKey,
-                        IrcOwnMetadataWatch::Kind::Set, value);
+                        IrcOwnMetadataWatch::Kind::Set, *sent);
     return IrcCommandOutcome::Sent;
 }
 

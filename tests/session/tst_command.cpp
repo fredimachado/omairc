@@ -244,6 +244,7 @@ private slots:
     void avatarSavedApplyReplyDoesNotStealUserWatch();
     void avatarApplyRetriesAfterMaxValueBytesOpens();
     void avatarApplySkipsUnsafeStoredUrl();
+    void avatarConfirmsFramedValue();
     void avatarRefusesUnsafeInput();
     void avatarRefusesOnMetadataFailReplies();
     void whoisSendsAndDefaults();
@@ -2468,6 +2469,58 @@ void CommandTest::avatarApplySkipsUnsafeStoredUrl()
     QCOMPARE(session->state(), IrcSession::State::Registered);
     QVERIFY(!framesContain(transport->writtenFrames(),
                           QByteArrayLiteral("METADATA * SET avatar")));
+}
+
+void CommandTest::avatarConfirmsFramedValue()
+{
+    IrcProfileStore().save(liberaStoredProfile());
+    CommandCredentialStore credentials;
+    IrcController controller;
+    IrcConnection connection(controller, nullTransportFactory(), credentials);
+    auto *transport = new FakeIrcTransport;
+    IrcSession *session = controller.addSession(config(), transport);
+    QVERIFY(session);
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    welcomeMetadata(transport);
+    transport->injectBytes(
+        QByteArrayLiteral(":omairc!u@h JOIN :#omarchy\r\n"
+                          ":server 353 omairc = #omarchy :omairc Alice\r\n"
+                          ":server 366 omairc #omarchy :End of NAMES\r\n"));
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
+    QVERIFY(messages);
+
+    // Longer than a classic METADATA frame, still inside the default
+    // metadata value budget, so only the wire clamp shortens it.
+    QString requested = QStringLiteral("https://example.com/");
+    requested += QString(500 - requested.size(), QLatin1Char('a'));
+    QCOMPARE(requested.size(), 500);
+
+    QVERIFY(controller.sendMessage(QStringLiteral("/avatar ") + requested));
+    const QByteArray frame = transport->writtenFrames().last();
+    const QByteArray prefix = QByteArrayLiteral("METADATA * SET avatar :");
+    QVERIFY(frame.startsWith(prefix));
+    QVERIFY(frame.endsWith("\r\n"));
+    const QByteArray sent = frame.mid(prefix.size()).chopped(2);
+    QVERIFY(!sent.isEmpty());
+    QVERIFY(sent.size() < requested.size());
+    const QString framed = QString::fromUtf8(sent);
+
+    transport->injectBytes(
+        QByteArrayLiteral(":server 761 omairc omairc avatar * :")
+        + requested.toUtf8()
+        + QByteArrayLiteral("\r\n"));
+    QVERIFY(!selectedBodiesContain(
+        messages, QStringLiteral("Avatar set to %1.").arg(requested)));
+    QCOMPARE(IrcProfileStore().profiles().first().avatarUrl, QString());
+
+    transport->injectBytes(
+        QByteArrayLiteral(":server 761 omairc omairc avatar * :")
+        + sent
+        + QByteArrayLiteral("\r\n"));
+    QVERIFY(selectedBodiesContain(
+        messages, QStringLiteral("Avatar set to %1.").arg(framed)));
+    QCOMPARE(IrcProfileStore().profiles().first().avatarUrl, framed);
 }
 
 void CommandTest::avatarRefusesUnsafeInput()

@@ -163,7 +163,9 @@ public slots:
     bool setAway(const QString& reason = {});
     bool markAway(const QString& reason = {});
     bool clearAway();
-    bool setOwnMetadata(const QString& key, const QString& value);
+    // The value placed on the wire, or nullopt when nothing was sent.
+    // An empty string clears the key.
+    std::optional<QString> setOwnMetadata(const QString& key, const QString& value);
     bool clearOwnMetadata(const QString& key);
     bool changeNick(const QString& nick);
     bool quit(const QString& reason = {});
