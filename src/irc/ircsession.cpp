@@ -42,6 +42,9 @@ QString saslSecret(const IrcSessionConfig &config)
 
 constexpr QLatin1String kSaslScramSha256("SCRAM-SHA-256");
 constexpr qsizetype kSaslAuthenticateChunk = 400;
+// Encoded SCRAM-SHA-256 messages fit in a few kilobytes. Stop a peer
+// that keeps streaming 400-byte AUTHENTICATE chunks.
+constexpr qsizetype kSaslIncomingEncodedLimit = 4096;
 
 QString ctcpReplyHost(const IrcMessage &message)
 {
@@ -1276,6 +1279,10 @@ void IrcSession::handleMessage(const IrcMessage &message)
         return;
     }
     if (message.command == "903") {
+        // Welcome before the verifier already failed the exchange.
+        // A later 903 must not move that session to Registering.
+        if (m_state != State::Sasl)
+            return;
         if (m_saslPending) {
             // 903 is success only after the server-final verifier matches.
             // A later CAP advertisement must not make an unfinished SCRAM
@@ -1996,6 +2003,14 @@ bool IrcSession::takeSaslChunk(const QByteArray &payload, QByteArray *message)
         return false;
     }
     if (payload != "+") {
+        if (payload.size() > kSaslIncomingEncodedLimit
+            || m_saslIncoming.size() > kSaslIncomingEncodedLimit - payload.size()) {
+            m_saslIncoming.clear();
+            fail(ErrorKind::Authentication,
+                 QStringLiteral("SASL authentication failed"),
+                 false);
+            return false;
+        }
         m_saslIncoming.append(payload);
         if (payload.size() == kSaslAuthenticateChunk)
             return false;
@@ -2054,6 +2069,15 @@ void IrcSession::handleWelcome(const IrcMessage &message)
 {
     if (m_state == State::Registered || m_state == State::Failed)
         return;
+
+    // 001 is not SASL success. An unfinished SCRAM exchange must not
+    // IDENTIFY with the same secret, or join, before the verifier.
+    if (m_saslMechanism == kSaslScramSha256 && !m_saslSucceeded) {
+        fail(ErrorKind::Authentication,
+             QStringLiteral("SASL authentication failed"),
+             false);
+        return;
+    }
 
     const QString assigned = parameter(message, 0);
     if (!assigned.isEmpty())
