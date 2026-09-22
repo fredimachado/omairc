@@ -178,6 +178,17 @@ struct IrcViewClassifier {
         return notify;
     }
 
+    IrcViewNotify operator()(const IrcAccountEvent& event) const
+    {
+        const IrcConversationKey key =
+            reducer.conversationKey(event.networkId, event.nick);
+        IrcViewNotify notify = IrcViewNotify::memberRow(key.normalizedTarget);
+        // Transcript headers read the account live, so a logout has to
+        // repaint existing rows. The sidebar conversation list does not.
+        notify.messages = true;
+        return notify;
+    }
+
     IrcViewNotify operator()(const IrcMemberMetadataEvent& event) const
     {
         const IrcConversationKey key =

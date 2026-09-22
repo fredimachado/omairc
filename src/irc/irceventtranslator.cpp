@@ -88,6 +88,20 @@ std::optional<QString> tagValue(const IrcMessage& message, const char *name)
     return std::nullopt;
 }
 
+// Present even when the value is missing or empty. A missing tag stays null
+// so callers do not treat "server omitted it" as an explicit logout.
+std::optional<QString> presentTagValue(const IrcMessage& message, const char *name)
+{
+    for (const IrcTag& tag : message.tags) {
+        if (tag.name != name)
+            continue;
+        if (!tag.value)
+            return QString{};
+        return ircWireText(*tag.value);
+    }
+    return std::nullopt;
+}
+
 QDateTime timestampFor(const IrcMessage& message)
 {
     const std::optional<QString> raw = tagValue(message, "time");
@@ -209,6 +223,13 @@ std::vector<IrcEvent> IrcEventTranslator::translate(
     const QString sender = author(message);
     const QDateTime timestamp = timestampFor(message);
 
+    // The account tag names the sender. Record it before command handling so
+    // NOTICE, which produces no transcript event, still updates the nick.
+    if (const std::optional<QString> account = presentTagValue(message, "account")) {
+        if (hasUserPrefix(message) && !sender.isEmpty())
+            events.emplace_back(IrcAccountEvent{networkId, sender, *account});
+    }
+
     if (command == QStringLiteral("NOTICE"))
         return events;
 
@@ -250,7 +271,22 @@ std::vector<IrcEvent> IrcEventTranslator::translate(
             return events;
         events.emplace_back(IrcTypingEvent{*conversation, sender, *phase, timestamp});
     } else if (command == QStringLiteral("JOIN") && !message.parameters.empty()) {
-        events.emplace_back(IrcJoinEvent{networkId, parameter(message, 0), sender});
+        std::optional<QString> account;
+        if (message.parameters.size() >= 2)
+            account = parameter(message, 1);
+        events.emplace_back(IrcJoinEvent{
+            networkId, parameter(message, 0), sender, std::move(account)});
+    } else if (command == QStringLiteral("ACCOUNT") && !sender.isEmpty()) {
+        const QString account = message.parameters.empty()
+            ? QString{}
+            : parameter(message, 0);
+        events.emplace_back(IrcAccountEvent{networkId, sender, account});
+    } else if (command == QStringLiteral("330") && message.parameters.size() >= 3) {
+        const QString nick = parameter(message, 1);
+        if (!nick.isEmpty()) {
+            events.emplace_back(IrcAccountEvent{
+                networkId, nick, parameter(message, 2)});
+        }
     } else if (command == QStringLiteral("PART") && !message.parameters.empty()) {
         events.emplace_back(IrcPartEvent{
             networkId, parameter(message, 0), sender, parameter(message, 1)});

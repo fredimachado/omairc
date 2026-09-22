@@ -91,13 +91,16 @@ Rectangle {
 
             readonly property var memberData: column.irc
                 ? ({nick: model.nick, label: model.label, status: model.status,
-                    away: model.away, avatar: model.avatar || "", bot: !!model.bot})
-                : ({nick: "", label: "", status: "", away: false, avatar: "", bot: false})
+                    away: model.away, avatar: model.avatar || "", bot: !!model.bot,
+                    account: model.account || ""})
+                : ({nick: "", label: "", status: "", away: false, avatar: "",
+                    bot: false, account: ""})
             readonly property string nick: memberData.nick
             readonly property string label: memberData.label
             readonly property string status: memberData.status
             readonly property string avatar: memberData.avatar
             readonly property bool bot: memberData.bot
+            readonly property string account: memberData.account || ""
             // Exact match, like `openable`; the reducer's overlay is the CASEMAPPING-aware path.
             readonly property bool isSelf: nick.length > 0 && nick === column.selfNick
             // Other members' away state needs away-notify, but our own
@@ -184,6 +187,8 @@ Rectangle {
                         width: {
                             var reserved = (memberDelegate.bot
                                 ? memberBotMark.width + parent.spacing : 0)
+                                + (memberAccountLabel.visible
+                                    ? memberAccountLabel.width + parent.spacing : 0)
                                 + (memberDelegate.typing
                                     ? memberTypingGlyph.implicitWidth + parent.spacing
                                     : 0);
@@ -196,6 +201,23 @@ Rectangle {
                         font.family: "iA Writer Mono S"
                         font.bold: memberDelegate.nick === column.selfNick
                         font.pixelSize: column.style.scaledSize(12)
+                    }
+
+                    Text {
+                        id: memberAccountLabel
+                        objectName: "member-account-" + memberDelegate.nick
+                        visible: memberDelegate.account.length > 0
+                        text: memberDelegate.account
+                        color: column.style.mutedColor
+                        elide: Text.ElideRight
+                        font.family: "iA Writer Mono S"
+                        font.pixelSize: column.style.scaledSize(12)
+                        width: visible
+                            ? Math.min(implicitWidth,
+                                       Math.max(column.style.scaledSize(48),
+                                                parent.width * 0.4))
+                            : 0
+                        anchors.verticalCenter: parent.verticalCenter
                     }
 
                     BotMark {

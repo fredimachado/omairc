@@ -95,11 +95,11 @@ public:
     using TransportFactory = std::function<IrcTransport *()>;
 
     IrcConnection(IrcController &controller, CredentialStore &credentialStore,
-                  QObject *parent = nullptr);
+                  QObject *parent = nullptr, bool ephemeral = false);
     IrcConnection(IrcController &controller,
                   TransportFactory transportFactory,
                   CredentialStore &credentialStore,
-                  QObject *parent = nullptr);
+                  QObject *parent = nullptr, bool ephemeral = false);
 
     QAbstractItemModel *networks();
     QString selectedNetworkId() const;
@@ -142,6 +142,8 @@ public:
     void setRealname(const QString &realname);
     void setAccount(const QString &account);
     void setBouncerNetwork(const QString &network);
+    void setEphemeral(bool ephemeral);
+    void setStoredProfiles(const QList<IrcNetworkProfile> &profiles);
     void setAutojoin(const QString &channels);
 
     Q_INVOKABLE void select(const QString &networkId);
@@ -320,5 +322,6 @@ private:
     QList<CredentialOperation> m_credentialOperations;
     QList<CredentialKey> m_pendingReads;
     bool m_operationInFlight = false;
+    bool m_ephemeral = false;
     QMetaObject::Connection m_startupActivationConnection;
 };

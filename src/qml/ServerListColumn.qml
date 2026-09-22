@@ -18,6 +18,7 @@ Rectangle {
     property string selfPresence: ""
     property string selfAvatar: ""
     property bool selfBot: false
+    property string selfAccount: ""
     property string appVersion: ""
     property bool updateReady: false
     property int inboxCount: 0
@@ -313,8 +314,10 @@ Rectangle {
                 Text {
                     objectName: "selfNickLabel"
                     width: {
-                        var reserved = column.selfBot
-                            ? selfBotMark.width + parent.spacing : 0;
+                        var reserved = (column.selfBot
+                            ? selfBotMark.width + parent.spacing : 0)
+                            + (selfAccountLabel.visible
+                                ? selfAccountLabel.width + parent.spacing : 0);
                         var cap = Math.max(0, parent.width - reserved);
                         return Math.min(implicitWidth, cap);
                     }
@@ -324,6 +327,23 @@ Rectangle {
                     font.family: "iA Writer Mono S"
                     font.bold: true
                     font.pixelSize: column.style.scaledSize(13)
+                }
+
+                Text {
+                    id: selfAccountLabel
+                    objectName: "selfAccountLabel"
+                    visible: column.selfAccount.length > 0
+                    text: column.selfAccount
+                    color: column.style.mutedColor
+                    elide: Text.ElideRight
+                    font.family: "iA Writer Mono S"
+                    font.pixelSize: column.style.scaledSize(13)
+                    width: visible
+                        ? Math.min(implicitWidth,
+                                   Math.max(column.style.scaledSize(48),
+                                            parent.width * 0.4))
+                        : 0
+                    anchors.verticalCenter: parent.verticalCenter
                 }
 
                 BotMark {

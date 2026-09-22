@@ -52,6 +52,7 @@ class IrcController : public QObject
     Q_PROPERTY(QString lastError READ lastError NOTIFY statusChanged)
     Q_PROPERTY(int conversationEpoch READ conversationEpoch NOTIFY conversationStateChanged)
     Q_PROPERTY(int peerMetadataEpoch READ peerMetadataEpoch NOTIFY peerMetadataChanged)
+    Q_PROPERTY(int peerAccountEpoch READ peerAccountEpoch NOTIFY peerAccountChanged)
     Q_PROPERTY(QString currentNick READ currentNick NOTIFY selectionChanged)
     Q_PROPERTY(bool selfAway READ selfAway NOTIFY selfAwayChanged)
     Q_PROPERTY(bool hasAwayPresence READ hasAwayPresence NOTIFY capabilitiesChanged)
@@ -70,6 +71,8 @@ public:
     ~IrcController() override;
 
     void setTranscriptRoot(const QString &root);
+    void setEphemeral(bool ephemeral);
+    void loadStoredPreferences();
     IrcSession *addSession(const IrcSessionConfig& config,
                            IrcTransport *transport,
                            IrcReconnectTimer *reconnectTimer = nullptr,
@@ -93,6 +96,7 @@ public:
     QString lastError() const;
     int conversationEpoch() const;
     int peerMetadataEpoch() const;
+    int peerAccountEpoch() const;
     QString lastErrorForNetwork(const QString& networkId) const;
     Q_INVOKABLE QString lastErrorFor(const QString& networkId) const;
     Q_INVOKABLE QString connectionStatusFor(const QString& networkId) const;
@@ -145,6 +149,10 @@ public:
     void setChannelListIdleTimeoutMs(int milliseconds);
     Q_INVOKABLE QVariantMap peerMetadata(const QString& networkId,
                                          const QString& nick) const;
+    // Empty when the services account is unknown, logged out, or the same
+    // as the nick under the network case mapping.
+    Q_INVOKABLE QString peerAccount(const QString& networkId,
+                                    const QString& nick) const;
 
     QStringList networkIds() const;
     IrcSession *session(const QString &networkId) const;
@@ -208,6 +216,7 @@ signals:
     void statusChanged();
     void conversationStateChanged();
     void peerMetadataChanged();
+    void peerAccountChanged();
     void selfAwayChanged();
 
     void capabilitiesChanged();
@@ -536,6 +545,8 @@ private:
     QString m_connectionStatus = QStringLiteral("Offline");
     int m_conversationEpoch = 0;
     int m_peerMetadataEpoch = 0;
+    int m_peerAccountEpoch = 0;
+    bool m_ephemeral = false;
     bool m_reopenDirectMessages = true;
     bool m_loadPeerAvatars = true;
     bool m_openConversationsAtUnread = true;
