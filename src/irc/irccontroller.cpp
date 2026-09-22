@@ -12,7 +12,6 @@
 #include "ircmute.h"
 #include "ircnetworkprofile.h"
 #include "ircopendirect.h"
-#include "ircprofilestore.h"
 #include "ircpresence.h"
 #include "ircjointarget.h"
 #include "ircviewnotify.h"
@@ -3776,7 +3775,7 @@ void IrcController::routeOwnMetadataReply(const QString& networkId,
         if (canonical == IrcMetadata::avatarKey())
             persistProfileAvatarUrl(networkId, QString{});
     } else {
-        if (value.isEmpty())
+        if (value.isEmpty() || found->value != value)
             return;
         echoOwnMetadataOutcome(networkId, found->destination,
                                ownMetadataSetMessage(canonical, value));
@@ -3899,10 +3898,6 @@ QString IrcController::profileAvatarUrlForNetwork(const QString& networkId) cons
 {
     if (m_profileAvatarUrlLookup)
         return m_profileAvatarUrlLookup(networkId);
-    for (const IrcNetworkProfile& profile : IrcProfileStore().profiles()) {
-        if (profile.networkId == networkId)
-            return profile.avatarUrl;
-    }
     return {};
 }
 
@@ -3921,7 +3916,8 @@ void IrcController::applyProfileAvatarOnConnect(IrcSession *session)
     const QString networkId = session->networkId();
     if (m_appliedProfileAvatars.contains(networkId))
         return;
-    const QString avatarUrl = profileAvatarUrlForNetwork(networkId);
+    const QString avatarUrl =
+        ircAvatarMetadataValue(profileAvatarUrlForNetwork(networkId));
     if (avatarUrl.isEmpty())
         return;
     const IrcCapabilitySet capabilities = m_capabilities.value(networkId);
@@ -3929,8 +3925,9 @@ void IrcController::applyProfileAvatarOnConnect(IrcSession *session)
             || !capabilities.contains(IrcCapability::Batch)) {
         return;
     }
+    if (!session->setOwnMetadata(IrcMetadata::avatarKey(), avatarUrl))
+        return;
     m_appliedProfileAvatars.insert(networkId);
-    session->setOwnMetadata(IrcMetadata::avatarKey(), avatarUrl);
 }
 
 void IrcController::echoIfPresent(IrcSession *session,

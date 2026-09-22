@@ -241,6 +241,9 @@ private slots:
     void avatarAppliesSavedUrlOnConnect();
     void avatarAppliesSavedUrlAfterLateCaps();
     void avatarAppliesSavedUrlOnReconnect();
+    void avatarSavedApplyReplyDoesNotStealUserWatch();
+    void avatarApplyRetriesAfterMaxValueBytesOpens();
+    void avatarApplySkipsUnsafeStoredUrl();
     void avatarRefusesUnsafeInput();
     void avatarRefusesOnMetadataFailReplies();
     void whoisSendsAndDefaults();
@@ -2362,6 +2365,109 @@ void CommandTest::avatarAppliesSavedUrlAfterLateCaps()
     QVERIFY(framesContain(transport->writtenFrames(),
                           QByteArrayLiteral(
                               "METADATA * SET avatar :https://example.com/saved.png\r\n")));
+}
+
+void CommandTest::avatarSavedApplyReplyDoesNotStealUserWatch()
+{
+    IrcNetworkProfile profile = liberaStoredProfile();
+    profile.avatarUrl = QStringLiteral("https://example.com/saved.png");
+    IrcProfileStore().save(profile);
+
+    CommandCredentialStore credentials;
+    IrcController controller;
+    IrcConnection connection(controller, nullTransportFactory(), credentials);
+    auto *transport = new FakeIrcTransport;
+    IrcSession *session = controller.addSession(config(), transport);
+    QVERIFY(session);
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    welcomeMetadata(transport);
+    transport->injectBytes(
+        QByteArrayLiteral(":omairc!u@h JOIN :#omarchy\r\n"
+                          ":server 353 omairc = #omarchy :omairc Alice\r\n"
+                          ":server 366 omairc #omarchy :End of NAMES\r\n"));
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
+    QVERIFY(messages);
+    QVERIFY(framesContain(transport->writtenFrames(),
+                          QByteArrayLiteral(
+                              "METADATA * SET avatar :https://example.com/saved.png\r\n")));
+
+    QVERIFY(controller.sendMessage(
+        QStringLiteral("/avatar https://example.com/new.png")));
+    transport->injectBytes(
+        QByteArrayLiteral(
+            ":server 761 omairc omairc avatar * :https://example.com/saved.png\r\n"));
+    QVERIFY(!selectedBodiesContain(
+        messages,
+        QStringLiteral("Avatar set to https://example.com/saved.png.")));
+    QCOMPARE(IrcProfileStore().profiles().first().avatarUrl,
+             QStringLiteral("https://example.com/saved.png"));
+
+    transport->injectBytes(
+        QByteArrayLiteral(
+            ":server 761 omairc omairc avatar * :https://example.com/new.png\r\n"));
+    QVERIFY(selectedBodiesContain(
+        messages,
+        QStringLiteral("Avatar set to https://example.com/new.png.")));
+    QCOMPARE(IrcProfileStore().profiles().first().avatarUrl,
+             QStringLiteral("https://example.com/new.png"));
+}
+
+void CommandTest::avatarApplyRetriesAfterMaxValueBytesOpens()
+{
+    IrcNetworkProfile profile = liberaStoredProfile();
+    profile.avatarUrl = QStringLiteral("https://example.com/saved.png");
+    IrcProfileStore().save(profile);
+
+    CommandCredentialStore credentials;
+    IrcController controller;
+    IrcConnection connection(controller, nullTransportFactory(), credentials);
+    auto *transport = new FakeIrcTransport;
+    IrcSession *session = controller.addSession(config(), transport);
+    QVERIFY(session);
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    transport->completeConnect();
+    transport->injectBytes(
+        QByteArrayLiteral(
+            ":server CAP omairc LS :away-notify batch "
+            "draft/metadata-2=max-value-bytes=0\r\n"
+            ":server CAP omairc ACK :away-notify batch draft/metadata-2\r\n"
+            ":server 001 omairc :Welcome\r\n"));
+    QCOMPARE(session->state(), IrcSession::State::Registered);
+    QVERIFY(!framesContain(transport->writtenFrames(),
+                          QByteArrayLiteral("METADATA * SET avatar")));
+
+    transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc DEL :draft/metadata-2 batch\r\n"));
+    const int before = transport->writtenFrames().size();
+    transport->injectBytes(
+        QByteArrayLiteral(
+            ":server CAP omairc NEW :batch draft/metadata-2\r\n"));
+    transport->injectBytes(
+        QByteArrayLiteral(
+            ":server CAP omairc ACK :batch draft/metadata-2\r\n"));
+    QVERIFY(framesContain(transport->writtenFrames().mid(before),
+                          QByteArrayLiteral(
+                              "METADATA * SET avatar :https://example.com/saved.png\r\n")));
+}
+
+void CommandTest::avatarApplySkipsUnsafeStoredUrl()
+{
+    IrcNetworkProfile profile = liberaStoredProfile();
+    profile.avatarUrl = QStringLiteral("http://example.com/saved.png");
+    IrcProfileStore().save(profile);
+
+    CommandCredentialStore credentials;
+    IrcController controller;
+    IrcConnection connection(controller, nullTransportFactory(), credentials);
+    auto *transport = new FakeIrcTransport;
+    IrcSession *session = controller.addSession(config(), transport);
+    QVERIFY(session);
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    welcomeMetadata(transport);
+    QCOMPARE(session->state(), IrcSession::State::Registered);
+    QVERIFY(!framesContain(transport->writtenFrames(),
+                          QByteArrayLiteral("METADATA * SET avatar")));
 }
 
 void CommandTest::avatarRefusesUnsafeInput()

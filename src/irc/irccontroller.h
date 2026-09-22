@@ -11,7 +11,6 @@
 #include "ircinboxmodel.h"
 #include "ircmonitor.h"
 #include "ircmute.h"
-#include "ircnetworkprofile.h"
 #include "ircopendirect.h"
 #include "ircsessionmanager.h"
 #include "ircstatusconsole.h"

@@ -100,6 +100,7 @@ public:
                   TransportFactory transportFactory,
                   CredentialStore &credentialStore,
                   QObject *parent = nullptr);
+    ~IrcConnection() override;
 
     QAbstractItemModel *networks();
     QString selectedNetworkId() const;

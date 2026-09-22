@@ -230,7 +230,8 @@ IrcConnection::IrcConnection(IrcController &controller,
         });
 
     connect(&m_controller, &IrcController::errorOccurred, this,
-            [this](const QString &networkId, IrcSession::ErrorKind kind, const QString &) {
+            [this](const QString &networkId, IrcSession::ErrorKind kind,
+                   const QString &) {
         if (kind != IrcSession::ErrorKind::Authentication)
             return;
         if (!networkId.isEmpty() && networkId != m_selectedNetworkId) {
@@ -252,6 +253,11 @@ IrcConnection::IrcConnection(IrcController &controller,
         m_focusPassword = true;
         emit focusPasswordChanged();
     });
+}
+
+IrcConnection::~IrcConnection()
+{
+    m_controller.setProfileAvatarUrlCallbacks({}, {});
 }
 
 QAbstractItemModel *IrcConnection::networks()
