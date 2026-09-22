@@ -110,7 +110,7 @@ private slots:
     void storeRekeysDisplayAndDropsDuplicate();
     void storeForgetDropsTheGroup();
     void defaultReopensOn();
-    void defaultOpenConversationsAtUnreadOff();
+    void defaultOpenConversationsAtUnreadOn();
     void openConversationsAtUnreadPersists();
     void openPersistsInboundDoesNot();
     void closeDropsPersist();
@@ -201,30 +201,30 @@ void OpenDirectTest::defaultReopensOn()
     QCOMPARE(IrcController().reopenDirectMessages(), true);
 }
 
-void OpenDirectTest::defaultOpenConversationsAtUnreadOff()
+void OpenDirectTest::defaultOpenConversationsAtUnreadOn()
 {
-    QCOMPARE(IrcController().openConversationsAtUnread(), false);
+    QCOMPARE(IrcController().openConversationsAtUnread(), true);
 }
 
 void OpenDirectTest::openConversationsAtUnreadPersists()
 {
-    QCOMPARE(IrcController().openConversationsAtUnread(), false);
+    QCOMPARE(IrcController().openConversationsAtUnread(), true);
 
     {
         IrcController controller;
-        QVERIFY(!controller.openConversationsAtUnread());
-        controller.setOpenConversationsAtUnread(true);
         QVERIFY(controller.openConversationsAtUnread());
+        controller.setOpenConversationsAtUnread(false);
+        QVERIFY(!controller.openConversationsAtUnread());
     }
 
     {
         IrcController reloaded;
-        QVERIFY(reloaded.openConversationsAtUnread());
-        reloaded.setOpenConversationsAtUnread(false);
         QVERIFY(!reloaded.openConversationsAtUnread());
+        reloaded.setOpenConversationsAtUnread(true);
+        QVERIFY(reloaded.openConversationsAtUnread());
     }
 
-    QVERIFY(!IrcController().openConversationsAtUnread());
+    QVERIFY(IrcController().openConversationsAtUnread());
 }
 
 void OpenDirectTest::openPersistsInboundDoesNot()

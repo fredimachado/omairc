@@ -1,7 +1,7 @@
 [Desktop Entry]
 Type=Application
 Name=Omairc
-Comment=A dead-simple IRC client for Omarchy
+Comment=A simple IRC client for Omarchy
 Exec=omairc
 Icon=omairc
 Terminal=false

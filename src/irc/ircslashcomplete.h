@@ -45,6 +45,7 @@ private:
     static QString openableNeedle(const QString& composerText);
     static QVector<IrcSlashHit> rank(const QString& foldedNeedle,
                                      IrcComposerSurface surface);
+    static IrcSlashProbe projectPref(const QString& composerText);
     static int scoreSpec(const QString& foldedNeedle, const IrcVerbSpec& spec);
     static int scoreToken(const QString& foldedNeedle, const QString& token);
 };

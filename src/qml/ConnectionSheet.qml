@@ -1193,7 +1193,7 @@ Rectangle {
                         switchObjectName: "connectionOpenAtUnread"
                         label: "Open conversations at unread"
                         help: "Scrolls to the New messages marker when you switch conversations. Already-focused buffers and Status are left at the end."
-                        checked: sheet.irc ? sheet.irc.openConversationsAtUnread : false
+                        checked: sheet.irc ? sheet.irc.openConversationsAtUnread : true
                         onToggled: function(checked) {
                             if (sheet.irc)
                                 sheet.irc.openConversationsAtUnread = checked;

@@ -145,7 +145,7 @@ int main(int argc, char *argv[]) {
 
     QCommandLineParser parser;
     parser.setApplicationDescription(
-        QStringLiteral("A dead-simple IRC client for Omarchy."));
+        QStringLiteral("A simple IRC client for Omarchy."));
     const QCommandLineOption demoOption(
         QStringLiteral("demo-server"),
         QStringLiteral("Open a furnished in-process demo session."));

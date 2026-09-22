@@ -58,7 +58,7 @@ Source: "..\..\LICENSE"; DestDir: "{app}"; DestName: "LICENSE.txt"
 
 [Icons]
 Name: "{autoprograms}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; \
-  Comment: "A dead-simple IRC client for Omarchy"
+  Comment: "A simple IRC client for Omarchy"
 
 [Run]
 Filename: "{app}\{#MyAppExeName}"; Description: "Launch {#MyAppName}"; \

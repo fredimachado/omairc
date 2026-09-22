@@ -1,6 +1,7 @@
 #include "irccontroller.h"
 
 #include "ircautoaway.h"
+#include "ircpref.h"
 #include "ircavatarurl.h"
 #include "ircchannelmode.h"
 #include "irccommand.h"
@@ -273,7 +274,7 @@ bool loadOpenConversationsAtUnread()
 {
     QSettings settings;
     settings.beginGroup(QStringLiteral("preferences"));
-    return settings.value(openConversationsAtUnreadKey(), false).toBool();
+    return settings.value(openConversationsAtUnreadKey(), true).toBool();
 }
 
 void saveOpenConversationsAtUnread(bool enabled)
@@ -1569,6 +1570,9 @@ IrcCommandOutcome IrcController::dispatch(const IrcCommand& command,
     if (command.verb == IrcCommand::Verb::Autoaway)
         return dispatchAutoaway(command, surface);
 
+    if (command.verb == IrcCommand::Verb::Pref)
+        return dispatchPref(command, surface);
+
     if (command.verb == IrcCommand::Verb::List)
         return dispatchList(command, surface);
 
@@ -2511,6 +2515,70 @@ IrcCommandOutcome IrcController::echoAutoawayUsage(IrcComposerSurface surface)
              : QStringLiteral("/autoaway [off|on|duration [reason]|reason [text]]"));
 }
 
+IrcCommandOutcome IrcController::echoPrefFeedback(IrcComposerSurface surface,
+                                                  const QString& text)
+{
+    if (surface == IrcComposerSurface::Conversation) {
+        if (m_selected)
+            apply(IrcWhoisTranscriptEvent{*m_selected, text});
+        return IrcCommandOutcome::Sent;
+    }
+    if (!m_console.networkId().isEmpty())
+        m_console.record(IrcStatusEntry::outcome(m_console.networkId(), text));
+    return IrcCommandOutcome::Sent;
+}
+
+IrcCommandOutcome IrcController::dispatchPref(const IrcCommand& command,
+                                              IrcComposerSurface surface)
+{
+    const IrcPrefRequest request = ircParsePrefArgument(command.argument);
+    if (request.kind == IrcPrefKind::Usage) {
+        const IrcVerbSpec *spec = IrcVerbTable::find(IrcCommand::Verb::Pref);
+        return echoPrefFeedback(surface, spec ? spec->usage : ircPrefUsage());
+    }
+
+    auto enabledFor = [this](IrcPrefName name) {
+        switch (name) {
+        case IrcPrefName::Directs:
+            return reopenDirectMessages();
+        case IrcPrefName::Avatars:
+            return loadPeerAvatars();
+        case IrcPrefName::Unread:
+            return openConversationsAtUnread();
+        }
+        return false;
+    };
+    auto applyPref = [this](IrcPrefName name, bool enabled) {
+        switch (name) {
+        case IrcPrefName::Directs:
+            setReopenDirectMessages(enabled);
+            break;
+        case IrcPrefName::Avatars:
+            setLoadPeerAvatars(enabled);
+            break;
+        case IrcPrefName::Unread:
+            setOpenConversationsAtUnread(enabled);
+            break;
+        }
+    };
+
+    if (request.kind == IrcPrefKind::Set)
+        applyPref(request.name, request.enabled);
+
+    if (request.kind == IrcPrefKind::QueryAll) {
+        return echoPrefFeedback(
+            surface,
+            ircFormatPrefList(reopenDirectMessages(), loadPeerAvatars(),
+                              openConversationsAtUnread()));
+    }
+    if (request.kind == IrcPrefKind::QueryOne) {
+        return echoPrefFeedback(
+            surface, ircFormatPrefQuery(request.name, enabledFor(request.name)));
+    }
+    return echoPrefFeedback(
+        surface, ircFormatPrefState(request.name, enabledFor(request.name)));
+}
+
 void IrcController::saveAutoaway() const
 {
     saveAutoawayConfig(m_autoaway);
@@ -2983,6 +3051,7 @@ QString IrcController::ctcpQueryName(IrcCommand::Verb verb) const
     case IrcCommand::Verb::Away:
     case IrcCommand::Verb::Back:
     case IrcCommand::Verb::Autoaway:
+    case IrcCommand::Verb::Pref:
     case IrcCommand::Verb::Status:
     case IrcCommand::Verb::Avatar:
     case IrcCommand::Verb::Whois:

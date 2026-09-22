@@ -564,7 +564,7 @@ QString formatHelp(const HelpTopic &topic)
 {
     if (topic.scope == HelpScope::Overview) {
         QString text = QStringLiteral(
-            "A dead-simple IRC client for Omarchy.\n"
+            "A simple IRC client for Omarchy.\n"
             "\n"
             "Usage:\n"
             "  omairc [--demo-server]          Open the client window\n"

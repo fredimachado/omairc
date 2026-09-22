@@ -3,7 +3,7 @@ pkgname=omairc
 # pkgver is read from version.pri so a release bump is a one-line change.
 pkgver=$(awk '/^VERSION / { print $3; exit }' version.pri)
 pkgrel=1
-pkgdesc='Dead-simple IRC client for Omarchy'
+pkgdesc='Simple IRC client for Omarchy'
 arch=('x86_64')
 url='https://github.com/fredimachado/omairc'
 license=('MIT' 'LGPL-3.0-or-later' 'OFL-1.1')

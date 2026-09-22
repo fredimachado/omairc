@@ -27,7 +27,7 @@ void OmaircCliTest::overviewHelp()
              OmaircCli::HelpScope::Overview);
     QCOMPARE(OmaircCli::formatHelp(std::get<OmaircCli::HelpTopic>(fromFlag)),
              QStringLiteral(
-                 "A dead-simple IRC client for Omarchy.\n"
+                 "A simple IRC client for Omarchy.\n"
                  "\n"
                  "Usage:\n"
                  "  omairc [--demo-server]          Open the client window\n"

@@ -2,7 +2,7 @@
 
 ## Product boundary
 
-- Keep Omairc dead-simple, keyboard-friendly, and visually native to Omarchy.
+- Keep Omairc simple, keyboard-friendly, and visually native to Omarchy.
 - Conversations are live through `IrcController`. `OmaircWindow` requires
   `irc`. Binding it to null does not load a prototype sidebar.
   `./build/omairc --demo-server` seeds that controller in-process and skips
@@ -92,7 +92,9 @@ Do not keep adding code to `src/OmaircWindow.qml`. New UI goes outside it.
 - Collapse the server list by width, not `visible: false`.
 - The Connect sheet is tabbed: `Connection` holds the per-network profile and
   `Preferences` holds global settings such as reopening direct messages on
-  startup. Only queries the user opened or replied to are restored, and
+  startup. `/pref` reads and sets those toggles from the composer
+  (`directs`, `avatars`, `unread`). Open conversations at unread starts on.
+  Only queries the user opened or replied to are restored, and
   restore waits until after ISUPPORT (`376` / `422`). Keep the
   `Ctrl+/` shortcut hint in its rail so new users find the shortcuts sheet.
 - The Connect sheet is a window-level modal. Sidebar servers, conversations,
