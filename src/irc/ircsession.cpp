@@ -40,6 +40,9 @@ QString saslSecret(const IrcSessionConfig &config)
                                              : config.nickServPassword;
 }
 
+constexpr QLatin1String kSaslScramSha256("SCRAM-SHA-256");
+constexpr qsizetype kSaslAuthenticateChunk = 400;
+
 QString ctcpReplyHost(const IrcMessage &message)
 {
     if (!message.prefix)
@@ -844,6 +847,7 @@ void IrcSession::requestCapabilities()
     if (request.requestsSasl) {
         m_saslRequested = true;
         m_saslPending = true;
+        m_saslMechanism = request.saslMechanism;
     }
 
     if (!request.lines.isEmpty()) {
@@ -1270,6 +1274,13 @@ void IrcSession::handleMessage(const IrcMessage &message)
     }
     if (message.command == "903") {
         if (m_saslPending) {
+            if (m_saslMechanism == kSaslScramSha256
+                && m_saslScramStep != SaslScramStep::Verified) {
+                fail(ErrorKind::Authentication,
+                     QStringLiteral("SASL authentication failed"),
+                     false);
+                return;
+            }
             m_saslPending = false;
             m_saslSucceeded = true;
             endCapabilityNegotiation();
@@ -1820,7 +1831,13 @@ void IrcSession::handleCap(const IrcMessage &message)
         publishCapabilities();
         if (granted.contains(IrcCapability::Sasl)) {
             setState(State::Sasl);
-            sendLine(QByteArrayLiteral("AUTHENTICATE PLAIN\r\n"));
+            if (m_saslMechanism == kSaslScramSha256) {
+                m_saslScramStep = SaslScramStep::AwaitPrompt;
+                m_saslIncoming.clear();
+                sendLine(QByteArrayLiteral("AUTHENTICATE SCRAM-SHA-256\r\n"));
+            } else {
+                sendLine(QByteArrayLiteral("AUTHENTICATE PLAIN\r\n"));
+            }
             return;
         }
         if (m_state == State::Registered)
@@ -1854,6 +1871,10 @@ void IrcSession::handleAuthenticate(const IrcMessage &message)
              false);
         return;
     }
+    if (m_saslMechanism == kSaslScramSha256) {
+        handleScramAuthenticate(QByteArray::fromStdString(message.parameters.front()));
+        return;
+    }
     if (message.parameters.front() != "+")
         return;
 
@@ -1877,6 +1898,116 @@ void IrcSession::handleAuthenticate(const IrcMessage &message)
     }
     sendLine(QByteArrayLiteral("AUTHENTICATE ") + encoded
              + QByteArrayLiteral("\r\n"));
+}
+
+void IrcSession::handleScramAuthenticate(const QByteArray &payload)
+{
+    if (m_saslScramStep == SaslScramStep::AwaitPrompt) {
+        if (payload != "+") {
+            fail(ErrorKind::Authentication,
+                 QStringLiteral("SASL authentication failed"),
+                 false);
+            return;
+        }
+        const QString account = m_config.saslAccount.isEmpty()
+            ? m_config.nick
+            : m_config.saslAccount;
+        const IrcSaslScram::Result started = m_scram.start(account, saslSecret(m_config));
+        if (!started.ok()) {
+            fail(ErrorKind::Authentication,
+                 QStringLiteral("SASL authentication failed"),
+                 false);
+            return;
+        }
+        m_saslScramStep = SaslScramStep::AwaitServerFirst;
+        sendSaslResponse(started.message);
+        return;
+    }
+
+    if (m_saslScramStep != SaslScramStep::AwaitServerFirst
+        && m_saslScramStep != SaslScramStep::AwaitServerFinal) {
+        return;
+    }
+
+    QByteArray message;
+    if (!takeSaslChunk(payload, &message))
+        return;
+
+    if (m_saslScramStep == SaslScramStep::AwaitServerFirst) {
+        const IrcSaslScram::Result clientFinal = m_scram.takeServerFirst(message);
+        if (!clientFinal.ok()) {
+            fail(ErrorKind::Authentication,
+                 QStringLiteral("SASL authentication failed"),
+                 false);
+            return;
+        }
+        m_saslScramStep = SaslScramStep::AwaitServerFinal;
+        sendSaslResponse(clientFinal.message);
+        return;
+    }
+
+    const IrcSaslScram::Result verified = m_scram.takeServerFinal(message);
+    if (!verified.ok()) {
+        fail(ErrorKind::Authentication,
+             QStringLiteral("SASL authentication failed"),
+             false);
+        return;
+    }
+    // The server-final challenge is non-empty. SASL 3.1 still requires an
+    // empty client response before the server sends 903.
+    m_saslScramStep = SaslScramStep::Verified;
+    sendSaslResponse(QByteArray());
+}
+
+void IrcSession::sendSaslResponse(const QByteArray &raw)
+{
+    const QByteArray encoded = raw.toBase64();
+    if (encoded.isEmpty()) {
+        sendLine(QByteArrayLiteral("AUTHENTICATE +\r\n"));
+        return;
+    }
+    for (qsizetype offset = 0; offset < encoded.size(); offset += kSaslAuthenticateChunk) {
+        const qsizetype length = qMin(kSaslAuthenticateChunk, encoded.size() - offset);
+        sendLine(QByteArrayLiteral("AUTHENTICATE ")
+                 + encoded.mid(offset, length)
+                 + QByteArrayLiteral("\r\n"));
+    }
+    if (encoded.size() % kSaslAuthenticateChunk == 0)
+        sendLine(QByteArrayLiteral("AUTHENTICATE +\r\n"));
+}
+
+bool IrcSession::takeSaslChunk(const QByteArray &payload, QByteArray *message)
+{
+    if (payload.isEmpty()
+        || (!m_saslIncoming.isEmpty()
+            && m_saslIncoming.size() % kSaslAuthenticateChunk != 0)) {
+        m_saslIncoming.clear();
+        fail(ErrorKind::Authentication,
+             QStringLiteral("SASL authentication failed"),
+             false);
+        return false;
+    }
+    if (payload != "+") {
+        m_saslIncoming.append(payload);
+        if (payload.size() == kSaslAuthenticateChunk)
+            return false;
+    }
+
+    const QByteArray encoded = m_saslIncoming;
+    m_saslIncoming.clear();
+    if (encoded.isEmpty()) {
+        message->clear();
+        return true;
+    }
+    const QByteArray::FromBase64Result decoded = QByteArray::fromBase64Encoding(encoded);
+    if (decoded.decodingStatus != QByteArray::Base64DecodingStatus::Ok) {
+        fail(ErrorKind::Authentication,
+             QStringLiteral("SASL authentication failed"),
+             false);
+        return false;
+    }
+    *message = decoded.decoded;
+    return true;
 }
 
 void IrcSession::applyIsupport(const IrcMessage &message)
@@ -2080,6 +2211,9 @@ void IrcSession::resetForConnection()
     m_saslRequested = false;
     m_saslPending = false;
     m_saslSucceeded = false;
+    m_saslMechanism.clear();
+    m_saslScramStep = SaslScramStep::Idle;
+    m_saslIncoming.clear();
     m_capabilityNegotiationEnded = false;
     m_capabilityListSeen = false;
     m_pendingSts.reset();

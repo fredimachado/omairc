@@ -1,5 +1,6 @@
 #pragma once
 
+#include <QByteArray>
 #include <QElapsedTimer>
 #include <QHash>
 #include <QMap>
@@ -15,6 +16,7 @@
 
 #include "irccapability.h"
 #include "irccapabilitynegotiation.h"
+#include "ircsaslscram.h"
 #include "ircpresence.h"
 #include "irccasemapping.h"
 #include "ircframer.h"
@@ -249,6 +251,9 @@ private:
     bool shouldFinishStsUpgrade() const;
     void rescheduleStsExpiry();
     void handleAuthenticate(const IrcMessage &message);
+    void handleScramAuthenticate(const QByteArray &payload);
+    void sendSaslResponse(const QByteArray &raw);
+    bool takeSaslChunk(const QByteArray &payload, QByteArray *message);
     void handleWelcome(const IrcMessage &message);
     void applyIsupport(const IrcMessage &message);
     bool sendCommand(const QString& command, const QString& requestLabel = {});
@@ -278,6 +283,14 @@ private:
         Off,
         Watching,
         Probing,
+    };
+
+    enum class SaslScramStep {
+        Idle,
+        AwaitPrompt,
+        AwaitServerFirst,
+        AwaitServerFinal,
+        Verified,
     };
 
     enum class RegistrationNick {
@@ -348,6 +361,10 @@ private:
     bool m_saslRequested = false;
     bool m_saslPending = false;
     bool m_saslSucceeded = false;
+    QString m_saslMechanism;
+    SaslScramStep m_saslScramStep = SaslScramStep::Idle;
+    QByteArray m_saslIncoming;
+    IrcSaslScram m_scram;
     bool m_capabilityNegotiationEnded = false;
     bool m_capabilityListSeen = false;
     QString m_channelTypes;
