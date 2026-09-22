@@ -22,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Open conversations at unread is on by default.
+- The shortcut sheet no longer lists `/disconnect`.
 - The public description now says simple.
 
 ## [0.9.1] - 2026-09-21

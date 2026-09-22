@@ -58,7 +58,6 @@ Popup {
                 { keys: "Ctrl+Shift+S", action: "server list" },
                 { keys: "Ctrl+Shift+M", action: "members panel" },
                 { keys: "Ctrl+Shift+P", action: "focus members" },
-                { keys: "/disconnect", action: "disconnect network" },
                 { keys: "Ctrl+/", action: "this sheet" },
                 { keys: "Ctrl+Q", action: "quit" }
             ]

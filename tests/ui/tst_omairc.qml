@@ -8816,8 +8816,8 @@ TestCase {
                "shortcut sheet should list " + ctrl + "+Shift+S");
         verify(texts.indexOf("server list") !== -1,
                "shortcut sheet should name server list");
-        verify(texts.indexOf("/disconnect") !== -1,
-               "shortcut sheet should list /disconnect");
+        verify(texts.indexOf("/disconnect") === -1,
+               "shortcut sheet should not list /disconnect");
         verify(texts.indexOf(ctrl + "+/") !== -1,
                "shortcut sheet should list " + ctrl + "+/");
         verify(texts.indexOf(ctrl + "+Tab / " + ctrl + "+Shift+Tab") !== -1,
