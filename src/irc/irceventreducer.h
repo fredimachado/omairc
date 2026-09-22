@@ -55,13 +55,13 @@ struct IrcMemberView
     QString status;
     QString avatar;
     bool bot = false;
-    // Empty when unknown, logged out, or the same as the nick under the
-    // network case mapping. Callers must not compare the raw account again.
-    QString account;
     QString displayName;
     QString pronouns;
     QString homepage;
     QString color;
+    // Empty when unknown, logged out, or the same as the nick under the
+    // network case mapping. Callers must not compare the raw account again.
+    QString account;
 
     bool isAway() const noexcept;
 };
