@@ -338,6 +338,7 @@ private slots:
     void scramServerFirstIllegalBase64Fails();
     void scramSaslReassemblesChunkedMessages();
     void scramWelcomeBeforeVerifierFails();
+    void abandonedScramBeforeAuthenticateRegisters();
     void scramSaslChunkLimitFails();
     void plaintextIdentifyEmitsOneStatusWarning();
     void plaintextStsPortReconnectsWithTlsAndCachesOnSecureDuration();
@@ -1264,6 +1265,41 @@ void SessionTest::scramWelcomeBeforeVerifierFails()
     QVERIFY(!fixture.wrote(QByteArrayLiteral("PRIVMSG NickServ :IDENTIFY pencil\r\n")));
     QVERIFY(!fixture.wrote(QByteArrayLiteral("JOIN #omarchy\r\n")));
     QVERIFY(!fixture.wrote(QByteArrayLiteral("JOIN &local\r\n")));
+}
+
+void SessionTest::abandonedScramBeforeAuthenticateRegisters()
+{
+    IrcSessionConfig sessionConfig = config();
+    sessionConfig.saslAccount = QStringLiteral("user");
+    sessionConfig.password = QStringLiteral("server-secret");
+    sessionConfig.nickServPassword = QStringLiteral("nick-secret");
+    Fixture fixture(sessionConfig);
+    QSignalSpy failed(fixture.session, &IrcSession::errorOccurred);
+
+    fixture.connectTls();
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :sasl=SCRAM-SHA-256\r\n"));
+    QVERIFY(fixture.wrote(QByteArrayLiteral("CAP REQ :sasl\r\n")));
+    QVERIFY(fixture.capabilityTimer->active);
+    QVERIFY(!fixture.wrote(QByteArrayLiteral("AUTHENTICATE SCRAM-SHA-256\r\n")));
+    QVERIFY(!fixture.wrote(QByteArrayLiteral("CAP END\r\n")));
+    QCOMPARE(fixture.session->state(), IrcSession::State::Registering);
+
+    fixture.capabilityTimer->fire();
+    QVERIFY(fixture.wrote(QByteArrayLiteral("CAP END\r\n")));
+    QVERIFY(!fixture.wrote(QByteArrayLiteral("AUTHENTICATE SCRAM-SHA-256\r\n")));
+    QVERIFY(!fixture.wrote(QByteArrayLiteral("AUTHENTICATE PLAIN\r\n")));
+    QCOMPARE(fixture.session->state(), IrcSession::State::Registering);
+    QCOMPARE(failed.size(), 0);
+
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(":server 001 omairc :Welcome\r\n"));
+
+    QCOMPARE(failed.size(), 0);
+    QCOMPARE(fixture.session->state(), IrcSession::State::Registered);
+    QVERIFY(!fixture.wrote(QByteArrayLiteral(
+        "PRIVMSG NickServ :IDENTIFY nick-secret\r\n")));
+    QVERIFY(fixture.wrote(QByteArrayLiteral("JOIN #omarchy\r\n")));
 }
 
 void SessionTest::scramSaslChunkLimitFails()

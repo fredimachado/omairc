@@ -2070,9 +2070,12 @@ void IrcSession::handleWelcome(const IrcMessage &message)
     if (m_state == State::Registered || m_state == State::Failed)
         return;
 
-    // 001 is not SASL success. An unfinished SCRAM exchange must not
-    // IDENTIFY with the same secret, or join, before the verifier.
-    if (m_saslMechanism == kSaslScramSha256 && !m_saslSucceeded) {
+    // 001 is not SASL success. Fail only while SCRAM is still outstanding.
+    // A capability timeout that already sent CAP END without AUTHENTICATE
+    // has ended negotiation, so that welcome registers. An exchange that
+    // has started must not IDENTIFY or join before the verifier.
+    if (m_saslMechanism == kSaslScramSha256 && !m_saslSucceeded
+        && (m_saslPending || m_state == State::Sasl || m_saslExchangeStarted)) {
         fail(ErrorKind::Authentication,
              QStringLiteral("SASL authentication failed"),
              false);
@@ -2091,7 +2094,10 @@ void IrcSession::handleWelcome(const IrcMessage &message)
     emit registered(m_config.networkId);
     armPingWatchdog();
     subscribeToMemberMetadata();
-    if (!m_config.nickServPassword.isEmpty() && !m_saslSucceeded) {
+    // SCRAM that did not succeed must not fall through to NickServ,
+    // including after negotiation was abandoned before AUTHENTICATE.
+    if (!m_config.nickServPassword.isEmpty() && !m_saslSucceeded
+        && m_saslMechanism != kSaslScramSha256) {
         if (!m_tlsEnabled) {
             emit statusEntry(IrcStatusEntry::lifecycle(
                 m_config.networkId, IrcLogSeverity::Alert,
