@@ -295,6 +295,49 @@ def check_macos_ci_bash32():
     return problems
 
 
+def check_windows_ignores_linux_qtkeychain_deps():
+    problems = []
+    pri = ROOT / "qtkeychain.pri"
+    text = pri.read_text(encoding="utf-8", errors="replace") if pri.is_file() else ""
+    if not pri.is_file():
+        problems.append("qtkeychain.pri: missing QtKeychain discovery")
+        return problems
+    if re.search(r"^} else:exists\(\$\$deps_dir/", text, re.M):
+        problems.append(
+            "qtkeychain.pri: .deps QtKeychain lookup must be unix-only; "
+            "Windows must use the kit module, not a Linux .deps tree")
+    if "unix {" not in text or "deps_dir/usr/mkspecs/modules/qt_Qt6Keychain.pri" not in text:
+        problems.append(
+            "qtkeychain.pri: keep Unix .deps discovery inside a unix { } block")
+    return problems
+
+
+def check_windows_about_svg_plugin():
+    problems = []
+    about = ROOT / "src" / "qml" / "AboutSheet.qml"
+    build = ROOT / "bin" / "build.bat"
+    workflow = ROOT / ".github" / "workflows" / "windows.yml"
+    about_text = about.read_text(encoding="utf-8", errors="replace") \
+        if about.is_file() else ""
+    build_text = build.read_text(encoding="utf-8", errors="replace") \
+        if build.is_file() else ""
+    windows_text = workflow.read_text(encoding="utf-8", errors="replace") \
+        if workflow.is_file() else ""
+    if "qrc:/icons/omairc.svg" not in about_text:
+        problems.append(
+            "src/qml/AboutSheet.qml: About logo must load qrc:/icons/omairc.svg")
+    if re.search(r"skip-plugin-types[^\n]*\bimageformats\b", build_text):
+        problems.append(
+            "bin/build.bat: do not skip imageformats; About needs qsvg.dll")
+    if re.search(r'"!REL!\\imageformats"', build_text):
+        problems.append(
+            "bin/build.bat: do not rmdir imageformats; prune gif/ico only")
+    if "qsvg.dll" not in windows_text:
+        problems.append(
+            ".github/workflows/windows.yml: Smoke must assert qsvg.dll is deployed")
+    return problems
+
+
 def check_macos_notarization():
     problems = []
     workflow = ROOT / ".github" / "workflows" / "macos.yml"
@@ -794,6 +837,8 @@ CHECKS = (
     ("macOS CI Qt arch selection", check_macos_ci_arch_selection),
     ("CI packages only on tags and dispatch", check_ci_package_triggers),
     ("macOS CI Bash 3.2 builtins", check_macos_ci_bash32),
+    ("Windows ignores Linux QtKeychain .deps", check_windows_ignores_linux_qtkeychain_deps),
+    ("Windows About SVG plugin", check_windows_about_svg_plugin),
     ("macOS Developer ID notarization", check_macos_notarization),
     ("macOS CI Xcode and Actions majors", check_macos_ci_xcode_and_actions),
     ("macOS SDK compat arch gate", check_macos_sdk_compat),
