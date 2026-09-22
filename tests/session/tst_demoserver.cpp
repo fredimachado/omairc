@@ -14,6 +14,7 @@ private slots:
     void answersClientPing();
     void answersMonitorAdd();
     void answersList();
+    void seedsServiceAccounts();
 };
 
 void DemoServerTest::answersClientPing()
@@ -46,6 +47,28 @@ void DemoServerTest::answersMonitorAdd()
              QByteArrayLiteral(":server 730 fred :anna!u@h\r\n"));
     QCOMPARE(received.at(1).first().toByteArray(),
              QByteArrayLiteral(":server 731 fred :ghost\r\n"));
+}
+
+void DemoServerTest::seedsServiceAccounts()
+{
+    IrcController controller;
+    IrcDemoServer demo;
+    QVERIFY(demo.attach(controller, false));
+    QCOMPARE(controller.peerAccount(IrcDemoServer::omarchyNetworkId(),
+                                  QStringLiteral("lena")),
+             QStringLiteral("pinkieval"));
+    QCOMPARE(controller.peerAccount(IrcDemoServer::omarchyNetworkId(),
+                                  QStringLiteral("fred")),
+             QStringLiteral("fredm"));
+    QCOMPARE(controller.peerAccount(IrcDemoServer::omarchyNetworkId(),
+                                  QStringLiteral("sol")),
+             QStringLiteral("solarius"));
+    QCOMPARE(controller.peerAccount(IrcDemoServer::omarchyNetworkId(),
+                                  QStringLiteral("teo")),
+             QStringLiteral("teoval"));
+    QCOMPARE(controller.peerAccount(IrcDemoServer::omarchyNetworkId(),
+                                  QStringLiteral("kai")),
+             QStringLiteral("kaidev"));
 }
 
 void DemoServerTest::answersList()

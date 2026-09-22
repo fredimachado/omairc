@@ -22,11 +22,13 @@ public:
                const QString& newTarget,
                const IrcCaseMapping& mapping);
     void forget(const QString& networkId);
+    void setEphemeral(bool ephemeral);
 
 private:
     QStringList load(const QString& networkId) const;
     void save(const QString& networkId, const QStringList& targets);
     const QStringList& cached(const QString& networkId) const;
 
+    bool m_ephemeral = false;
     mutable QHash<QString, QStringList> m_cache;
 };

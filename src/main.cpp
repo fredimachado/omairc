@@ -158,7 +158,7 @@ int main(int argc, char *argv[]) {
     if (guardProcess && !instance.acquireOrNotify())
         return 0;
 
-    OmaircFileLog appLog;
+    OmaircFileLog appLog(demoMode ? QString() : OmaircFileLog::defaultPath());
     appLog.install();
 
     QFontDatabase::addApplicationFont(QStringLiteral(":/fonts/iAWriterMonoS-Regular.ttf"));
@@ -167,10 +167,12 @@ int main(int argc, char *argv[]) {
     QQuickStyle::setStyle(QStringLiteral("Material"));
 
     Backend backend(&app);
+    if (demoMode)
+        backend.setEphemeral(true);
     IrcSlashSession slashSession(&app);
     QTemporaryDir demoXdg;
     IrcDemoServer *demoServer = nullptr;
-    if (demoMode && qEnvironmentVariableIsEmpty("XDG_CONFIG_HOME")) {
+    if (demoMode) {
         if (!demoXdg.isValid()) {
             qCritical() << "Could not create a temporary demo config directory";
             return -1;
@@ -180,27 +182,29 @@ int main(int argc, char *argv[]) {
         QDir().mkpath(config);
         QDir().mkpath(root + QLatin1String("/cache"));
         QDir().mkpath(root + QLatin1String("/data"));
+        QDir().mkpath(root + QLatin1String("/state"));
         qputenv("XDG_CONFIG_HOME", config.toUtf8());
         qputenv("XDG_CACHE_HOME", (root + QLatin1String("/cache")).toUtf8());
         qputenv("XDG_DATA_HOME", (root + QLatin1String("/data")).toUtf8());
+        qputenv("XDG_STATE_HOME", (root + QLatin1String("/state")).toUtf8());
 #ifdef Q_OS_MACOS
         QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, config);
 #else
         QSettings::setPath(QSettings::NativeFormat, QSettings::UserScope, config);
 #endif
     }
-    if (demoMode) {
-        demoServer = new IrcDemoServer(&app);
-        if (!demoServer->writeProfiles()) {
-            qCritical() << "Could not write demo profiles:"
-                        << demoServer->lastError();
-            return -1;
-        }
-    }
     auto *ircController = new IrcController(&app);
-    ircController->setTranscriptRoot(IrcConversationLog::defaultRoot());
+    if (demoMode)
+        ircController->setEphemeral(true);
+    else
+        ircController->setTranscriptRoot(IrcConversationLog::defaultRoot());
     auto *credentialStore = new SecretServiceCredentialStore(&app);
-    auto *ircConnection = new IrcConnection(*ircController, *credentialStore, &app);
+    auto *ircConnection = new IrcConnection(*ircController, *credentialStore, &app,
+                                           demoMode);
+    if (demoMode) {
+        ircConnection->setStoredProfiles(IrcDemoServer::seedProfiles());
+        demoServer = new IrcDemoServer(&app);
+    }
     if (demoServer && !demoServer->attach(*ircController, true)) {
         qCritical() << "Could not attach the demo session:"
                     << demoServer->lastError();

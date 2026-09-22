@@ -13,6 +13,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   each nick's services account and shows it in the member list, on message
   headers, beside your nick, and on the join line only when it differs from
   the nick.
+- `--demo-server` seeds IRCv3 service accounts so the member list, message
+  header, and identity footer can show an account that differs from the nick.
+- `--demo-server` keeps profiles, preferences, open directs, transcripts, and
+  window geometry in memory instead of writing them to your config.
 - `/pref` reads and sets the Preferences toggles from the composer. Bare
   `/pref` prints all three. A name (`directs`, `avatars`, `unread`) prints
   one, and `on` or `off` changes it. Completion offers the names, then

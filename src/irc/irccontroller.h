@@ -71,6 +71,7 @@ public:
     ~IrcController() override;
 
     void setTranscriptRoot(const QString &root);
+    void setEphemeral(bool ephemeral);
     IrcSession *addSession(const IrcSessionConfig& config,
                            IrcTransport *transport,
                            IrcReconnectTimer *reconnectTimer = nullptr,
@@ -544,6 +545,7 @@ private:
     int m_conversationEpoch = 0;
     int m_peerMetadataEpoch = 0;
     int m_peerAccountEpoch = 0;
+    bool m_ephemeral = false;
     bool m_reopenDirectMessages = true;
     bool m_loadPeerAvatars = true;
     bool m_openConversationsAtUnread = true;

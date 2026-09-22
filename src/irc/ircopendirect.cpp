@@ -40,10 +40,19 @@ bool listContains(const QStringList& targets,
 }
 }
 
+void IrcOpenDirectStore::setEphemeral(bool ephemeral)
+{
+    m_ephemeral = ephemeral;
+    if (ephemeral)
+        m_cache.clear();
+}
+
 QStringList IrcOpenDirectStore::load(const QString& networkId) const
 {
     if (networkId.isEmpty())
         return {};
+    if (m_ephemeral)
+        return m_cache.value(networkId);
     QSettings settings;
     settings.beginGroup(openDirectsGroup);
     settings.beginGroup(networkId);
@@ -54,6 +63,13 @@ void IrcOpenDirectStore::save(const QString& networkId, const QStringList& targe
 {
     if (networkId.isEmpty())
         return;
+    if (m_ephemeral) {
+        if (targets.isEmpty())
+            m_cache.remove(networkId);
+        else
+            m_cache.insert(networkId, targets);
+        return;
+    }
     QSettings settings;
     settings.beginGroup(openDirectsGroup);
     if (targets.isEmpty()) {

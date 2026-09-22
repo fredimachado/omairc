@@ -405,6 +405,14 @@ void IrcController::setTranscriptRoot(const QString &root)
     m_transcripts.setRoot(root);
 }
 
+void IrcController::setEphemeral(bool ephemeral)
+{
+    m_ephemeral = ephemeral;
+    if (ephemeral)
+        m_reducer.setConversationLog(nullptr);
+    m_openDirects.setEphemeral(ephemeral);
+}
+
 IrcSession *IrcController::addSession(const IrcSessionConfig& config,
                                       IrcTransport *transport,
                                       IrcReconnectTimer *reconnectTimer,
@@ -738,7 +746,8 @@ void IrcController::setReopenDirectMessages(bool enabled)
     if (m_reopenDirectMessages == enabled)
         return;
     m_reopenDirectMessages = enabled;
-    saveReopenDirectMessages(enabled);
+    if (!m_ephemeral)
+        saveReopenDirectMessages(enabled);
     emit reopenDirectMessagesChanged();
     if (!enabled)
         return;
@@ -759,7 +768,8 @@ void IrcController::setLoadPeerAvatars(bool enabled)
     if (m_loadPeerAvatars == enabled)
         return;
     m_loadPeerAvatars = enabled;
-    saveLoadPeerAvatars(enabled);
+    if (!m_ephemeral)
+        saveLoadPeerAvatars(enabled);
     emit loadPeerAvatarsChanged();
 }
 
@@ -773,7 +783,8 @@ void IrcController::setOpenConversationsAtUnread(bool enabled)
     if (m_openConversationsAtUnread == enabled)
         return;
     m_openConversationsAtUnread = enabled;
-    saveOpenConversationsAtUnread(enabled);
+    if (!m_ephemeral)
+        saveOpenConversationsAtUnread(enabled);
     emit openConversationsAtUnreadChanged();
 }
 
@@ -2592,6 +2603,8 @@ IrcCommandOutcome IrcController::dispatchPref(const IrcCommand& command,
 
 void IrcController::saveAutoaway() const
 {
+    if (m_ephemeral)
+        return;
     saveAutoawayConfig(m_autoaway);
 }
 

@@ -41,6 +41,7 @@ struct SeedLine
     QString body;
     QString day;
     QString hhmm;
+    QString account;
 };
 
 struct SeedChannel
@@ -85,14 +86,15 @@ struct SeedNetwork
 SeedLine chat(const QString &nick,
               const QString &body,
               const QString &hhmm,
-              const char *day = kToday)
+              const char *day = kToday,
+              const QString &account = {})
 {
-    return {SeedLine::Chat, nick, body, QString::fromLatin1(day), hhmm};
+    return {SeedLine::Chat, nick, body, QString::fromLatin1(day), hhmm, account};
 }
 
-SeedLine join(const QString &nick)
+SeedLine join(const QString &nick, const QString &account = {})
 {
-    return {SeedLine::Join, nick, {}, {}, {}};
+    return {SeedLine::Join, nick, {}, {}, {}, account};
 }
 
 QByteArray line(const QString &text)
@@ -139,6 +141,11 @@ QByteArray demoLabelPrefix(const QString &label)
 QByteArray privmsg(const SeedLine &row, const QString &target)
 {
     QByteArray out;
+    if (!row.account.isEmpty()) {
+        out += "@account=";
+        out += row.account.toUtf8();
+        out += " ";
+    }
     if (!row.day.isEmpty() && !row.hhmm.isEmpty()) {
         out += "@time=";
         out += row.day.toLatin1();
@@ -156,9 +163,19 @@ QByteArray privmsg(const SeedLine &row, const QString &target)
     return out;
 }
 
-QByteArray joinLine(const QString &nick, const QString &channel)
+QByteArray joinLine(const QString &nick,
+                    const QString &channel,
+                    const QString &account = {})
 {
+    if (!account.isEmpty())
+        return line(QStringLiteral(":%1!u@h JOIN %2 %3 :joined")
+                        .arg(nick, channel, account));
     return line(QStringLiteral(":%1!u@h JOIN :%2").arg(nick, channel));
+}
+
+QByteArray accountLine(const QString &nick, const QString &account)
+{
+    return line(QStringLiteral(":%1!u@h ACCOUNT %2").arg(nick, account));
 }
 
 QStringList initialMembers(const SeedChannel &channel)
@@ -299,13 +316,33 @@ QByteArray presenceBytes(const SeedNetwork &network)
     return out;
 }
 
+QByteArray accountBytes(const SeedNetwork &network)
+{
+    if (network.networkId != QStringLiteral("omarchy"))
+        return {};
+    QByteArray out;
+    // Peers already in NAMES before the transcript replays.
+    out += accountLine(QStringLiteral("lena"), QStringLiteral("pinkieval"));
+    // Self row in the identity footer.
+    out += accountLine(network.nick, QStringLiteral("fredm"));
+    return out;
+}
+
+QByteArray liveAccountBytes(const SeedNetwork &network)
+{
+    if (network.networkId != QStringLiteral("omarchy"))
+        return {};
+    // account-notify after the seeded world is up.
+    return accountLine(QStringLiteral("teo"), QStringLiteral("teoval"));
+}
+
 QByteArray transcriptBytes(const SeedNetwork &network)
 {
     QByteArray out;
     for (const SeedChannel &channel : network.channels) {
         for (const SeedLine &row : channel.lines) {
             if (row.kind == SeedLine::Join)
-                out += joinLine(row.nick, channel.name);
+                out += joinLine(row.nick, channel.name, row.account);
             else
                 out += privmsg(row, channel.name);
         }
@@ -384,7 +421,7 @@ SeedNetwork omarchyWorld()
         chat(QStringLiteral("mira"),
              QStringLiteral("The way the theme carries across the terminal and native apps is my favorite detail."),
              QStringLiteral("09:46")),
-        join(QStringLiteral("sol")),
+        join(QStringLiteral("sol"), QStringLiteral("solarius")),
         chat(QStringLiteral("sol"),
              QStringLiteral("Hey all. Just landed here from Arch. This feels surprisingly calm."),
              QStringLiteral("09:52")),
@@ -405,7 +442,9 @@ SeedNetwork omarchyWorld()
              QStringLiteral("09:58")),
         chat(QStringLiteral("kai"),
              QStringLiteral("That balance is hard to get right: friendly defaults without hiding the actual system."),
-             QStringLiteral("09:59")),
+             QStringLiteral("09:59"),
+             kToday,
+             QStringLiteral("kaidev")),
         chat(QStringLiteral("dax"),
              QStringLiteral("Exactly. Start simple, then make it yours one deliberate change at a time."),
              QStringLiteral("10:00")),
@@ -636,6 +675,7 @@ void injectWorld(IrcLoopbackTransport *transport, const SeedNetwork &network)
     for (const SeedChannel &channel : network.channels)
         out += channelStateBytes(network, channel);
     out += presenceBytes(network);
+    out += accountBytes(network);
     transport->injectBytes(out);
 }
 
@@ -656,7 +696,7 @@ void markRead(IrcController &controller, const SeedNetwork &network)
     }
 }
 
-bool writeSeedProfile(const SeedNetwork &network)
+IrcNetworkProfile seedProfile(const SeedNetwork &network)
 {
     IrcNetworkProfile profile;
     profile.networkId = network.networkId;
@@ -672,10 +712,7 @@ bool writeSeedProfile(const SeedNetwork &network)
         profile.iconColor = 1;
     else if (network.networkId == QStringLiteral("oftc"))
         profile.iconColor = 2;
-    if (!profile.isComplete())
-        return false;
-    IrcProfileStore().save(profile);
-    return true;
+    return profile;
 }
 
 void injectClientEcho(IrcLoopbackTransport *transport, const QString &nick,
@@ -1117,9 +1154,26 @@ bool IrcDemoServer::fail(const QString &why)
     return false;
 }
 
+QList<IrcNetworkProfile> IrcDemoServer::seedProfiles()
+{
+    const IrcNetworkProfile omarchy = seedProfile(omarchyWorld());
+    const IrcNetworkProfile oftc = seedProfile(oftcWorld());
+    QList<IrcNetworkProfile> profiles;
+    if (omarchy.isComplete())
+        profiles.append(omarchy);
+    if (oftc.isComplete())
+        profiles.append(oftc);
+    return profiles;
+}
+
 bool IrcDemoServer::writeProfiles()
 {
-    return writeSeedProfile(omarchyWorld()) && writeSeedProfile(oftcWorld());
+    const QList<IrcNetworkProfile> profiles = seedProfiles();
+    if (profiles.isEmpty())
+        return false;
+    for (const IrcNetworkProfile &profile : profiles)
+        IrcProfileStore().save(profile);
+    return true;
 }
 
 bool IrcDemoServer::startNetwork(IrcController &controller,
@@ -1193,6 +1247,7 @@ bool IrcDemoServer::attach(IrcController &controller, bool autoEcho)
     markRead(controller, oftc);
     controller.selectConversation(omarchy.networkId, QStringLiteral("#omarchy"));
     m_omarchyTransport->injectBytes(typingBytes(omarchy));
+    m_omarchyTransport->injectBytes(liveAccountBytes(omarchy));
     if (autoEcho) {
         hookAutoEcho(m_omarchyTransport, omarchy.nick, demoOnlineNicks(omarchy));
         hookAutoEcho(m_oftcTransport, oftc.nick, demoOnlineNicks(oftc));
