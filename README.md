@@ -144,6 +144,12 @@ brew install --cask fredimachado/omairc/omairc
 
 The tap URL is required because this repository is not `homebrew-omairc`. That installs the app and puts `omairc` on `PATH`. The window still has to be running. `brew uninstall --cask --zap omairc` wipes profiles and logs.
 
+Once Homebrew carries the cask:
+
+```sh
+brew install --cask omairc
+```
+
 Each version tag also publishes `omairc-*-macos-arm64.zip` and `omairc-*-macos-x64.zip` on the [GitHub release](https://github.com/fredimachado/omairc/releases/latest).
 
 From the repo:
