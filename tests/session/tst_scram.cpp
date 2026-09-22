@@ -47,6 +47,7 @@ private slots:
     void accountOrPasswordWithControlBytesIsRejected();
     void serverErrorAttributeFails();
     void missingOrGarbageAttributeFails();
+    void verifierOrSaltWithTrailingJunkFails();
     void serverFinalBeforeServerFirstFails();
     void secondCallInTheWrongStateFails();
     void generatedNonceIsPrintableAndHasNoComma();
@@ -223,6 +224,27 @@ void ScramTest::missingOrGarbageAttributeFails()
     QVERIFY(!extra.ok());
     QVERIFY(extra.message.isEmpty());
     QVERIFY(hidesPassword(extra));
+}
+
+void ScramTest::verifierOrSaltWithTrailingJunkFails()
+{
+    IrcSaslScram salt;
+    QVERIFY(salt.start(QStringLiteral("user"), QStringLiteral("pencil"), kNonce).ok());
+    const IrcSaslScram::Result salted = salt.takeServerFirst(
+        QByteArrayLiteral("r=rOprNGfwEbeRWgbNEkqO%hvYDpWUa2RaTCAfuxFIlj)hNlF$k0,s=")
+        + kSalt + QByteArrayLiteral("!,i=4096"));
+    QVERIFY(!salted.ok());
+    QVERIFY(salted.message.isEmpty());
+    QVERIFY(hidesPassword(salted));
+
+    IrcSaslScram verifier;
+    QVERIFY(verifier.start(QStringLiteral("user"), QStringLiteral("pencil"), kNonce).ok());
+    QVERIFY(verifier.takeServerFirst(kServerFirst).ok());
+    const IrcSaslScram::Result rejected = verifier.takeServerFinal(
+        kServerFinal + QByteArrayLiteral("!"));
+    QVERIFY(!rejected.ok());
+    QVERIFY(rejected.message.isEmpty());
+    QVERIFY(hidesPassword(rejected));
 }
 
 void ScramTest::serverFinalBeforeServerFirstFails()

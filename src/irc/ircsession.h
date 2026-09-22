@@ -362,6 +362,8 @@ private:
     bool m_saslPending = false;
     bool m_saslSucceeded = false;
     QString m_saslMechanism;
+    bool m_saslExchangeStarted = false;
+    bool m_saslScramExchange = false;
     SaslScramStep m_saslScramStep = SaslScramStep::Idle;
     QByteArray m_saslIncoming;
     IrcSaslScram m_scram;

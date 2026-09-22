@@ -334,6 +334,8 @@ private slots:
     void negotiatesSaslScramSha256();
     void scramNumericBeforeServerFinalFails();
     void scramFailureDoesNotFallThroughToPlain();
+    void scramPlainReadvertisementDoesNotFinishExchange();
+    void scramServerFirstIllegalBase64Fails();
     void scramSaslReassemblesChunkedMessages();
     void plaintextIdentifyEmitsOneStatusWarning();
     void plaintextStsPortReconnectsWithTlsAndCachesOnSecureDuration();
@@ -1118,6 +1120,72 @@ void SessionTest::scramFailureDoesNotFallThroughToPlain()
             "PRIVMSG NickServ :IDENTIFY pencil\r\n")));
         QVERIFY(!fixture.wrote(QByteArrayLiteral("JOIN #omarchy\r\n")));
     }
+}
+
+void SessionTest::scramPlainReadvertisementDoesNotFinishExchange()
+{
+    IrcSessionConfig sessionConfig = config();
+    sessionConfig.saslAccount = QStringLiteral("user");
+    sessionConfig.password = QStringLiteral("pencil");
+    sessionConfig.nickServPassword = QStringLiteral("pencil");
+    Fixture fixture(sessionConfig);
+    QSignalSpy failed(fixture.session, &IrcSession::errorOccurred);
+
+    beginScramExchange(fixture);
+    QVERIFY(fixture.wrote(QByteArrayLiteral("AUTHENTICATE SCRAM-SHA-256\r\n")));
+    const qsizetype before = fixture.transport->writtenFrames().size();
+
+    fixture.transport->injectBytes(QByteArrayLiteral(
+        ":server CAP omairc DEL :sasl\r\n"
+        ":server CAP omairc NEW :sasl=PLAIN\r\n"
+        ":server CAP omairc ACK :sasl\r\n"
+        ":server 903 omairc :SASL successful\r\n"
+        ":server 001 omairc :Welcome\r\n"));
+
+    const QByteArrayList frames = fixture.transport->writtenFrames();
+    for (qsizetype index = before; index < frames.size(); ++index)
+        QVERIFY(!frames.at(index).startsWith("AUTHENTICATE "));
+    QVERIFY(!fixture.wrote(QByteArrayLiteral("AUTHENTICATE PLAIN\r\n")));
+    QCOMPARE(failed.size(), 1);
+    QCOMPARE(qvariant_cast<IrcSession::ErrorKind>(failed.at(0).at(1)),
+             IrcSession::ErrorKind::Authentication);
+    QVERIFY(!failed.at(0).at(2).toString().contains(QStringLiteral("pencil")));
+    QCOMPARE(fixture.session->state(), IrcSession::State::Failed);
+    QVERIFY(!fixture.wrote(QByteArrayLiteral("CAP END\r\n")));
+    QVERIFY(!fixture.wrote(QByteArrayLiteral("PRIVMSG NickServ :IDENTIFY pencil\r\n")));
+    QVERIFY(!fixture.wrote(QByteArrayLiteral("JOIN #omarchy\r\n")));
+}
+
+void SessionTest::scramServerFirstIllegalBase64Fails()
+{
+    IrcSessionConfig sessionConfig = config();
+    sessionConfig.saslAccount = QStringLiteral("user");
+    sessionConfig.password = QStringLiteral("pencil");
+    Fixture fixture(sessionConfig);
+    QSignalSpy failed(fixture.session, &IrcSession::errorOccurred);
+
+    const QByteArray clientFirst = beginScramExchange(fixture);
+    const QByteArray nonce = clientFirst.mid(qsizetype(sizeof("n,,n=user,r=") - 1));
+    const QByteArray serverFirst = QByteArrayLiteral("r=") + nonce + kRfcServerNonceTail
+        + QByteArrayLiteral(",s=W22ZaJ0SNY7soEsUEjb6gQ==,i=4096");
+    QByteArray wire = saslWire(serverFirst);
+    QVERIFY(wire.startsWith("AUTHENTICATE "));
+    QVERIFY(wire.endsWith("\r\n"));
+    QVERIFY(saslAuthenticateBody(wire).size() < 400);
+    wire.insert(wire.size() - 2, '!');
+    QVERIFY(saslAuthenticateBody(wire).contains('!'));
+
+    const qsizetype before = fixture.transport->writtenFrames().size();
+    fixture.transport->injectBytes(wire);
+
+    QCOMPARE(fixture.transport->writtenFrames().size(), before);
+    QCOMPARE(failed.size(), 1);
+    QCOMPARE(qvariant_cast<IrcSession::ErrorKind>(failed.at(0).at(1)),
+             IrcSession::ErrorKind::Authentication);
+    QVERIFY(!failed.at(0).at(2).toString().contains(QStringLiteral("pencil")));
+    QCOMPARE(fixture.session->state(), IrcSession::State::Failed);
+    QVERIFY(!fixture.wrote(QByteArrayLiteral("AUTHENTICATE PLAIN\r\n")));
+    QVERIFY(!fixture.wrote(QByteArrayLiteral("CAP END\r\n")));
 }
 
 void SessionTest::scramSaslReassemblesChunkedMessages()

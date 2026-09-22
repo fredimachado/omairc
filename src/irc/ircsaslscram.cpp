@@ -187,7 +187,10 @@ bool parseAttributes(const QByteArray& message,
 
 bool decodeBase64(const QByteArray& text, QByteArray *decoded, QString *error)
 {
-    const QByteArray::FromBase64Result result = QByteArray::fromBase64Encoding(text);
+    // RFC 5802 canonical Base64 has no whitespace. Qt's default skips
+    // illegal characters and still reports Ok.
+    const QByteArray::FromBase64Result result = QByteArray::fromBase64Encoding(
+        text, QByteArray::AbortOnBase64DecodingErrors);
     if (result.decodingStatus != QByteArray::Base64DecodingStatus::Ok
         || result.decoded.isEmpty()) {
         *error = QStringLiteral("server message has a malformed SCRAM attribute");
