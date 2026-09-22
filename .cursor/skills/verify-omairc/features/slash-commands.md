@@ -20,17 +20,30 @@ Slash commands let a live session send catalog verbs from the same single-line c
 
 Preconditions:
 
-- Seeded dispatch needs `control-omairc launch --demo-server` or `qml-suite` (seeded `IrcController`).
-- Live network dispatch needs a completed Connect and a registered session. Do not Apply on the compiled first-run window for this proof.
+- Seeded dispatch needs `control-omairc launch --demo-server`. When Xvfb tools are missing, `qml-suite` (seeded `IrcController`) is the fallback and is not compiled-window proof.
+- Live network dispatch needs a completed Connect and a registered session. Do not Apply on the compiled first-run window for this proof. Do not inject IRC frames.
 - `control-omairc launch` without `--demo-server` is first-run Connect titled `irc.libera.chat Status`. That window has no session.
+- The composer must be empty. `send` appends to a leftover draft.
 
-- **Channel `/close` refuses.** On `#omarchy`, run `control-omairc send --text "/close"`. Use the full verb. The composer still holds `/close`. DIRECT MESSAGES still has `anna` and `dax`.
-- **`/join` opens the last channel.** On `#omarchy`, run `control-omairc send --text "/join #help"`. The title becomes `#help - Omairc` and the composer is empty. Switching back to `#omarchy` must not restore `/join #help` as a draft. `qml-suite` covers `test_joinOpensChannelAndConsumesComposer`.
-- **Offscreen suite.** When Xvfb tools are missing, run `control-omairc doctor-qml` then `control-omairc qml-suite`. `test_typedCloseStaysChatLine` is the refused `/close` path. `test_typedQueryOpensDirectAndClearsComposer` is the successful `/query` path. `test_joinOpensChannelAndConsumesComposer` is the successful `/join` path. `test_listOpensOverlayAndJoins` and `test_listUsesPerNetworkCache` are `/list`. There is no compiled-window screenshot for a real-network catalog.
-- **Live catalog.** Do not claim `/away`, `/whois`, `/topic`, `/query`, `/msg`, `/notice`, `/part`, `/kick`, `/close`, `/ignore`, `/unignore`, `/ignored`, `/monitor`, `/unmonitor`, `/monitored`, `/mute`, `/unmute`, or `/muted` on first-run Connect. It is `verified-unreachable` until a session has completed Connect. The attempted compiled route is `control-omairc launch` (title `irc.libera.chat Status`, Apply would start a real network).
+```desktop-recipe
+launch --demo-server
+wait-title --exact "#omarchy · irc.example · fred - Omairc"
+send --text "/join #help"
+wait-title --exact "#help - Omairc"
+screenshot --feature slash-commands --name after-join
+send --text "/close"
+wait-title --exact "#help - Omairc"
+screenshot --feature slash-commands --name close-stays
+```
+
+- **`/join` opens the last channel.** On a fresh demo, run `control-omairc send --text "/join #help"` then `control-omairc wait-title --exact "#help - Omairc"`. The composer is empty. Capture it with `control-omairc screenshot --feature slash-commands --name after-join`.
+- **Channel `/close` refuses.** On `#help`, run `control-omairc send --text "/close"` then `control-omairc wait-title --exact "#help - Omairc"`. The title stays `#help - Omairc`. The composer still holds `/close`. DIRECT MESSAGES still has `anna` and `dax`. Capture it with `control-omairc screenshot --feature slash-commands --name close-stays`.
+- **Offscreen suite.** When Xvfb tools are missing, run `control-omairc doctor-qml` then `control-omairc qml-suite`. `test_typedCloseStaysChatLine` is the refused `/close` path. `test_typedQueryOpensDirectAndClearsComposer` is the successful `/query` path. `test_joinOpensChannelAndConsumesComposer` is the successful `/join` path. `test_listOpensOverlayAndJoins` and `test_listUsesPerNetworkCache` are `/list`. This is not compiled-window proof. There is no compiled-window screenshot for a real-network catalog.
+- **Live catalog.** Do not claim `/away`, `/whois`, `/topic`, `/query`, `/msg`, `/notice`, `/part`, `/kick`, `/ignore`, or the monitor and mute verbs on first-run Connect. It is `verified-unreachable` until a session has completed Connect. The attempted compiled route is `control-omairc launch` (title `irc.libera.chat Status`, Apply would start a real network). This recipe does not Apply.
 
 ## Gotchas
 
+- `run slash-commands` skips `launch` when `doctor` is already healthy and `demo=yes`. It does not clear the composer or the selected channel. A leftover draft makes `/join #help` append instead of send. Recipes that need an empty composer on `#omarchy` need `cleanup` before `run`.
 - Live `/me` is an ACTION even without a trailing space.
 - `Ctrl+W` closes a DM. Typed `/close` on a channel is rejected.
 - `//away` and the other doubled slashes stay Say of the rest of the line.

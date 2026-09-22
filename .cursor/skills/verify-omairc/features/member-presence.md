@@ -23,19 +23,26 @@ Member presence is what each channel member row shows besides the nick: a presen
 
 Preconditions:
 
-- Seeded conversation UI is showing (`#omarchy · irc.example · fred - Omairc` or `#desktop - Omairc`, members visible). Use `control-omairc launch --demo-server`, or `qml-suite` (seeded `IrcController`).
+- Seeded conversation UI is showing (`#omarchy · irc.example · fred - Omairc`, members visible). Use `control-omairc launch --demo-server`. When Xvfb tools are missing, `qml-suite` (seeded `IrcController`) is the fallback and is not compiled-window proof.
 - `control-omairc launch` without `--demo-server` is first-run Connect titled `irc.libera.chat Status` with no member list. Do not start this recipe there.
-- `presence-prefix` and live `presence-caps` need a completed Connect and a real session. That is not this recipe.
+- The compiled demo already paints presence dots, away dimming, status lines, and PREFIX glyphs on `#omarchy`. Capability gating and a real handshake are not this fence.
 
-- **Channel chrome.** From the suite `#desktop` grab, confirm `ONLINE - 8` and rows for `anna` / `writing docs`, `dax` / `on #desktop`, and `teo` with the amber away mark. Run `control-omairc doctor-qml` then `control-omairc qml-suite`. `qml-suite` copies `test-artifacts/switch-channel.png` to `test-artifacts/verify/member-presence/after-desktop.png`.
-- **Capability gate.** The same suite run covers `presence-caps` in `test_memberPresenceChromeFollowsCapabilities`. Turning `away-notify` off hides other members' dots and dimming. Turning `draft/metadata-2` or `batch` off hides status lines. There is no compiled-window screenshot for that path. `test_memberPresenceShowsOurOwnAwayWithoutAwayNotify` covers the self exception: with `away-notify` off, our own row still paints the amber mark while another away row stays unpainted.
-- **Self away across channels.** `bin/test` runs `selfAwayShowsOnEveryChannelRow`. On `--demo-server` with auto-echo, `/away lunch` gets the `306` and marks `fred` away on `#omarchy`, and the same mark follows to `#desktop`; `/back` gets the `305` and clears both. The demo does not echo our own away-notify, so this proves the client paints its own row from the numeric.
-- **Direct message presence.** `bin/test` runs `directMessagePresenceFollowsAwayAndOffline`. It opens `teo` (seeded away in `#omarchy`) as a direct message and reads `presence` `away` on the sidebar row, injects `AWAY` to read `online`, then a `QUIT` to read `offline`. On the desktop, run `control-omairc launch --demo-server`, `control-omairc click-member --name teo`, and screenshot the sidebar: the new `teo` row carries the amber dot while `anna` and `dax` stay green. The offscreen suite covers the colors in `test_liveDmPresenceFollowsAwayFacts`.
-- **PREFIX ranks and rank order.** `presence-prefix` and `presence-rank-order` are visible on the seeded `#omarchy` at launch: run `control-omairc launch --demo-server`, `control-omairc doctor`, then `control-omairc screenshot --feature member-presence --name ranked-omarchy`. The rows read `~fred`, `&anna`, `@dax`, `@mira`, `%kai`, `+teo`, then the plain nicks. The suite covers the same rows in `test_memberRowsFollowRankOrder`, which keeps `test-artifacts/member-rank-order.png` and `test-artifacts/member-rank-order-demoted.png`; `qml-suite` copies them to `test-artifacts/verify/member-presence/`. That test also injects `:server 353 fred = #omarchy :teo @anna @dax +mira fred kai sol` plus a `366` to prove a fresh `NAMES` reorders, then a `-o` and a `+o` to prove a promotion or demotion reorders without a model reset. A `353` replaces the whole member set, because it starts a `NAMES` sync.
-- Rank glyphs arriving from a real server handshake are a live-session path, not a seeded one. The seeded `353` is the demo's stand-in.
+```desktop-recipe
+launch --demo-server
+wait-title --exact "#omarchy · irc.example · fred - Omairc"
+jump --query "#omarchy"
+wait-title --exact "#omarchy · irc.example · fred - Omairc"
+screenshot --feature member-presence --name ranked-omarchy
+```
+
+- **Ranked #omarchy.** Press `Ctrl+K` and jump to `#omarchy`. Run `control-omairc jump --query "#omarchy"` then `control-omairc wait-title --exact "#omarchy · irc.example · fred - Omairc"`, then `control-omairc screenshot --feature member-presence --name ranked-omarchy`. The member panel shows presence dots, away dimming, status lines, and rank glyphs. The rows read `~fred`, `&anna`, `@dax`, `@mira`, `%kai`, `+teo`, then `ivy`, `lena`, `max`, `nora`, `sam`, `sol`. `anna` is typing, so three dots sit beside `&anna`.
+- **Capability gate and injected NAMES.** `control-omairc doctor-qml` then `control-omairc qml-suite` covers `presence-caps` in `test_memberPresenceChromeFollowsCapabilities` and the self-away exception in `test_memberPresenceShowsOurOwnAwayWithoutAwayNotify`. `test_memberRowsFollowRankOrder` injects a `353` / `366` and mode changes. That suite is not compiled-window proof. Do not invent those frames on the desktop.
+- **Direct message presence.** `bin/test` runs `directMessagePresenceFollowsAwayAndOffline` by injecting `AWAY` and `QUIT`. That is not a compiled-window recipe. `nick-jump --query teo` would open the DM, and the sidebar dot is presence, but this fence stays on the channel panel.
+- **Mouse path.** `control-omairc click-member` opens a DM. That is open-direct-message, not this screenshot.
 
 ## Gotchas
 
+- `run member-presence` skips `launch` when `doctor` is already healthy and `demo=yes`. It does not reset the member panel. A hidden panel makes this screenshot miss the rows. Recipes that need the panel open on a fresh demo need `cleanup` before `run`.
 - The heading stays `ONLINE - N` even when some people are away. That count is the people feature, not presence.
 - Showing or hiding the whole panel is toggle-members. This feature is what the rows contain while the panel is open.
 - Clicking a member still opens a DM. That is open-direct-message, not presence.
