@@ -2954,7 +2954,7 @@ void ConnectionTest::avatarUrlApplyDoesNotReconnect()
 
     QVERIFY(connection.apply());
     QCOMPARE(m_transports.size(), 1);
-    QCOMPARE(transport->connectionState(), IrcTransport::ConnectionState::Connected);
+    QCOMPARE(transport->connectionState(), IrcTransport::ConnectionState::Encrypted);
 }
 
 void ConnectionTest::avatarUrlSurvivesAutojoinPersist()
