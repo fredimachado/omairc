@@ -7,6 +7,7 @@ int runCaseMappingTests(int argc, char **argv);
 int runCorpusTests(int argc, char **argv);
 int runTransportTests(int argc, char **argv);
 int runCapabilityTests(int argc, char **argv);
+int runScramTests(int argc, char **argv);
 int runStsTests(int argc, char **argv);
 int runSessionTests(int argc, char **argv);
 int runDemoServerTests(int argc, char **argv);
@@ -57,6 +58,7 @@ int main(int argc, char **argv)
     const int corpusStatus = runCorpusTests(argc, argv);
     const int transportStatus = runTransportTests(argc, argv);
     const int capabilityStatus = runCapabilityTests(argc, argv);
+    const int scramStatus = runScramTests(argc, argv);
     const int stsStatus = runStsTests(argc, argv);
     const int sessionStatus = runSessionTests(argc, argv);
     const int demoServerStatus = runDemoServerTests(argc, argv);
@@ -94,6 +96,7 @@ int main(int argc, char **argv)
         corpusStatus,
         transportStatus,
         capabilityStatus,
+        scramStatus,
         stsStatus,
         sessionStatus,
         demoServerStatus,
