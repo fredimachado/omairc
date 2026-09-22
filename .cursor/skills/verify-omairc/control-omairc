@@ -9,9 +9,11 @@ EVIDENCE_DIR="${OMAIRC_VERIFY_EVIDENCE:-$ROOT/test-artifacts/verify}"
 # Jump, nick-jump, and composer focus need a pause after the chord before
 # type. The chord's own pause is not always enough on this Xvfb.
 JUMP_FIELD_DELAY=0.4
-# import can return a flat Xvfb frame before Qt has painted. Retry a few
-# times. Near-solid means a tiny standard deviation or very few colors.
-# File size is not the test: a sparse painted window can be a small PNG.
+# import can return a flat Xvfb frame before Qt has painted, or fail and
+# leave the previous PNG in place. Drop that destination before each grab
+# and retry. Near-solid means a non-finite or tiny standard deviation, or
+# very few colors. File size is not the test: a sparse painted window can
+# be a small PNG.
 SCREENSHOT_GRAB_ATTEMPTS=5
 SCREENSHOT_GRAB_DELAY=0.3
 SCREENSHOT_FLAT_STDDEV=0.005
@@ -567,8 +569,10 @@ screenshot_metrics() {
   magick "$1" -format '%[fx:standard_deviation] %k' info: 2>/dev/null || true
 }
 
-# Missing, empty, unreadable, or near-solid. A flat Xvfb frame is one color
-# (stddev is NaN), a handful of colors, or a field whose spread is ~0.
+# Missing, empty, unreadable, or near-solid. ImageMagick 6 prints "-nan"
+# for a low-variance frame. mawk treats that token as ordered, so match
+# nan/inf as text before the numeric test. A flat frame is also one color,
+# a handful of colors, or a field whose spread is ~0.
 screenshot_is_near_solid() {
   _path=$1
   [ -s "$_path" ] || return 0
@@ -579,6 +583,10 @@ screenshot_is_near_solid() {
   awk -v std="$_std" -v colors="$_colors" \
     -v max_std="$SCREENSHOT_FLAT_STDDEV" -v max_colors="$SCREENSHOT_FLAT_COLORS" \
     'BEGIN {
+      token = tolower(std "")
+      sub(/^[+-]/, "", token)
+      if (token ~ /^(nan|inf)/)
+        exit 0
       std += 0
       colors += 0
       max_std += 0
@@ -606,15 +614,21 @@ cmd_screenshot() {
   path="$dest/$name.png"
   _attempt=1
   while :; do
-    import -display "$DISPLAY" -window "$WINDOW" "$path" || true
-    if ! screenshot_is_near_solid "$path"; then
-      echo "$path"
-      return 0
+    # A failed import must not classify the previous PNG as this grab.
+    rm -f -- "$path"
+    if import -display "$DISPLAY" -window "$WINDOW" "$path"; then
+      if ! screenshot_is_near_solid "$path"; then
+        echo "$path"
+        return 0
+      fi
+    else
+      rm -f -- "$path"
     fi
     [ "$_attempt" -lt "$SCREENSHOT_GRAB_ATTEMPTS" ] || break
     _attempt=$((_attempt + 1))
     sleep "$SCREENSHOT_GRAB_DELAY"
   done
+  # Latest grab failed, or it succeeded and is still near-solid.
   _stats=$(screenshot_metrics "$path")
   die "screenshot is missing, empty, or still a flat frame: $path${_stats:+ ($_stats)}"
 }

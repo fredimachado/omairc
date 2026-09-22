@@ -89,7 +89,7 @@ Use `control-omairc` against the isolated window. Shortcuts come first. Pixel cl
 
 Agents should `launch` (if needed) then `run <feature>` instead of assembling raw `key --key` chords. `run <feature>` plays the `desktop-recipe` fence in that feature file (under `## Driving it with control-omairc`, before `## Gotchas`). `run <feature> --dry-run` prints the fence and exits without launching. A missing file, a missing fence, or an empty fence exits non-zero. `qml-suite` and `doctor-qml` inside a fence are rejected. They are not compiled-window proof.
 
-`run` skips a fence `launch` when `doctor` is already healthy and the demo flag matches (`--demo-server` needs `demo=yes`; plain `launch` needs `demo=no`). A healthy instance in the other mode is an error. The runner does not clean it up. Any command failure stops the recipe. `screenshot` retries a missing, empty, or near-solid grab and exits non-zero if the frame stays flat. After the sequence, `run` still fails when a screenshot path is empty or the file is missing. `wait-title` already fails on a title miss.
+`run` skips a fence `launch` when `doctor` is already healthy and the demo flag matches (`--demo-server` needs `demo=yes`; plain `launch` needs `demo=no`). A healthy instance in the other mode is an error. The runner does not clean it up. Any command failure stops the recipe. `screenshot` retries a failed, missing, empty, or near-solid grab, treats a non-finite stddev as flat, and exits non-zero without keeping an older PNG at that path if the latest grab failed or the frame stays flat. After the sequence, `run` still fails when a screenshot path is empty or the file is missing. `wait-title` already fails on a title miss.
 
 Named chord verbs wrap the same keysym path as `key`:
 
