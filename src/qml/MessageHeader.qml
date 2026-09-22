@@ -14,9 +14,10 @@ Row {
 
     signal directMessageRequested(string nick)
 
-    width: parent.width
     anchors.left: parent.left
     anchors.leftMargin: style.scaledSize(70)
+    anchors.right: parent.right
+    anchors.rightMargin: style.scaledSize(34)
     anchors.top: parent.top
     anchors.topMargin: style.scaledSize(8)
     spacing: style.scaledSize(9)
