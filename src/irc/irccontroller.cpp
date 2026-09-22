@@ -642,6 +642,11 @@ int IrcController::peerMetadataEpoch() const
     return m_peerMetadataEpoch;
 }
 
+int IrcController::peerAccountEpoch() const
+{
+    return m_peerAccountEpoch;
+}
+
 QString IrcController::lastErrorForNetwork(const QString& networkId) const
 {
     return m_lastErrors.value(networkId);
@@ -889,6 +894,12 @@ QVariantMap IrcController::peerMetadata(const QString& networkId,
     result.insert(QStringLiteral("color"),
                   facts.metadata(IrcMetadata::colorKey()));
     return result;
+}
+
+QString IrcController::peerAccount(const QString& networkId,
+                                   const QString& nick) const
+{
+    return m_reducer.displayAccount(networkId, nick);
 }
 
 void IrcController::handleCapabilities(const QString& networkId,
@@ -3977,6 +3988,18 @@ void IrcController::apply(const IrcEvent& event)
                                  metadata->nick,
                                  metadata->key,
                                  metadata->value);
+    }
+    const bool accountsMoved = std::holds_alternative<IrcAccountEvent>(event)
+        || std::holds_alternative<IrcWelcomeEvent>(event)
+        || std::holds_alternative<IrcPartEvent>(event)
+        || std::holds_alternative<IrcQuitEvent>(event)
+        || std::holds_alternative<IrcKickEvent>(event)
+        || std::holds_alternative<IrcNickEvent>(event)
+        || (std::holds_alternative<IrcJoinEvent>(event)
+            && std::get<IrcJoinEvent>(event).account.has_value());
+    if (accountsMoved) {
+        ++m_peerAccountEpoch;
+        emit peerAccountChanged();
     }
     if (const auto *nick = std::get_if<IrcNickEvent>(&event)) {
         m_openDirects.rekey(nick->networkId, nick->oldNick, nick->newNick,

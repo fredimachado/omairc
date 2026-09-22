@@ -55,6 +55,9 @@ struct IrcMemberView
     QString status;
     QString avatar;
     bool bot = false;
+    // Empty when unknown, logged out, or the same as the nick under the
+    // network case mapping. Callers must not compare the raw account again.
+    QString account;
     QString displayName;
     QString pronouns;
     QString homepage;
@@ -233,6 +236,8 @@ public:
                                             const QString& normalizedNick) const;
     IrcNickPresence nickPresence(const QString& networkId,
                                  const QString& nick) const;
+    // Display label: empty unless the stored account adds information.
+    QString displayAccount(const QString& networkId, const QString& nick) const;
     IrcPeerPresence peerPresence(const QString& networkId,
                                  const QString& normalizedNick) const;
     QVector<IrcOrderedMember> orderedMembers(const IrcConversationKey& key) const;
@@ -308,6 +313,7 @@ private:
     void reduce(const IrcAwayEvent& event);
     void reduce(const IrcSelfAwayEvent& event);
     void reduce(const IrcMemberMetadataEvent& event);
+    void reduce(const IrcAccountEvent& event);
     void reduce(const IrcTypingEvent& event);
     void reduce(const IrcHistoryEvent& event);
     void reduce(const IrcWhoisTranscriptEvent& event);

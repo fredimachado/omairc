@@ -30,7 +30,7 @@ constexpr auto kToday = "2026-09-12";
 constexpr auto kYesterday = "2026-09-11";
 constexpr auto kCaps =
     "echo-message message-tags labeled-response away-notify multi-prefix batch "
-    "draft/metadata-2 server-time";
+    "draft/metadata-2 server-time account-tag account-notify extended-join";
 constexpr auto kIsupport = "CHANTYPES=# PREFIX=(qaohv)~&@%+ MONITOR=100";
 constexpr int kMonitorLimit = 100;
 

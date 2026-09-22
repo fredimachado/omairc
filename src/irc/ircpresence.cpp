@@ -197,7 +197,7 @@ QString IrcNickPresence::avatar() const
 
 bool IrcNickPresence::isDefault() const noexcept
 {
-    return !away.has_value() && keys.empty();
+    return !away.has_value() && keys.empty() && account.isEmpty();
 }
 
 IrcNickPresence& IrcNetworkPresence::entry(const QString& normalizedNick)
@@ -240,6 +240,23 @@ void IrcNetworkPresence::setMetadata(const QString& normalizedNick,
     }
     entry(normalizedNick).keys[stored] = value;
     eraseIfDefault(normalizedNick);
+}
+
+void IrcNetworkPresence::setAccount(const QString& normalizedNick,
+                                    const QString& account)
+{
+    if (normalizedNick.isEmpty())
+        return;
+    const bool clear = account.isEmpty() || account == QLatin1String("*");
+    if (clear) {
+        const auto found = m_nicks.find(normalizedNick);
+        if (found == m_nicks.end())
+            return;
+        found->second.account.clear();
+        eraseIfDefault(normalizedNick);
+        return;
+    }
+    entry(normalizedNick).account = account;
 }
 
 void IrcNetworkPresence::rekey(const QString& fromNormalized,

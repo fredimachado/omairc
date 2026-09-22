@@ -30,6 +30,7 @@ public:
         MsgidRole,
         AuthorAvatarRole,
         AuthorBotRole,
+        AuthorAccountRole,
         // Transcript wash for a nick or /highlight hit. Not the sidebar
         // `mention` badge, which also flags every direct message.
         MentionedRole,

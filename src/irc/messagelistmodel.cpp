@@ -150,6 +150,8 @@ QVariant MessageListModel::data(const QModelIndex& index, int role) const
             return QString();
         case AuthorBotRole:
             return false;
+        case AuthorAccountRole:
+            return QString();
         case MentionedRole:
             return false;
         default:
@@ -174,6 +176,8 @@ QVariant MessageListModel::data(const QModelIndex& index, int role) const
             return QString();
         case AuthorBotRole:
             return false;
+        case AuthorAccountRole:
+            return QString();
         case MentionedRole:
             return false;
         default:
@@ -214,6 +218,10 @@ QVariant MessageListModel::data(const QModelIndex& index, int role) const
             return false;
         return m_reducer.nickPresence(conversation->key.networkId, message.author)
             .isBot();
+    case AuthorAccountRole:
+        if (message.author.isEmpty())
+            return QString();
+        return m_reducer.displayAccount(conversation->key.networkId, message.author);
     case MentionedRole:
         return m_reducer.isTranscriptHighlight(
             conversation->key.networkId, message.author, message.kind,
@@ -235,6 +243,7 @@ QHash<int, QByteArray> MessageListModel::staticRoleNames()
         {MsgidRole, "msgid"},
         {AuthorAvatarRole, "authorAvatar"},
         {AuthorBotRole, "authorBot"},
+        {AuthorAccountRole, "authorAccount"},
         {MentionedRole, "mentioned"},
     };
 }
@@ -317,10 +326,10 @@ void MessageListModel::reload()
             m_unreadMark = unreadMark;
             endInsertRows();
             notifySeparatorRows();
-            // Insert only announces the new indices. MentionedRole is
-            // computed from the current nick and highlight words, so a
-            // self /nick that also appends "is now" would otherwise leave
-            // existing washes stale.
+            // Insert only announces the new indices. MentionedRole and
+            // AuthorAccountRole are computed live, so a nick change or an
+            // account that arrives with a new row would otherwise leave
+            // existing headers stale.
             notifyMentioned();
             return;
         }
@@ -351,7 +360,7 @@ void MessageListModel::notifyMentioned()
         return;
     emit dataChanged(index(0, 0),
                      index(int(m_view.size()) - 1, 0),
-                     {MentionedRole});
+                     {MentionedRole, AuthorAccountRole});
 }
 
 void MessageListModel::setSelected(const IrcConversationKey& key)

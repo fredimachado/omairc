@@ -80,6 +80,12 @@ const Wanted wantedTable[] = {
      IrcCapability::Batch, false, false, acceptsAnyValue},
     {IrcCapability::LabeledResponse, QLatin1String("labeled-response"),
      IrcCapability::MessageTags, false, true, acceptsAnyValue},
+    {IrcCapability::AccountTag, QLatin1String("account-tag"),
+     IrcCapability::MessageTags, false, false, acceptsAnyValue},
+    {IrcCapability::AccountNotify, QLatin1String("account-notify"),
+     std::nullopt, false, false, acceptsAnyValue},
+    {IrcCapability::ExtendedJoin, QLatin1String("extended-join"),
+     std::nullopt, false, false, acceptsAnyValue},
 };
 
 const Wanted *wantedFor(const QString& name)

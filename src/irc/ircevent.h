@@ -100,6 +100,9 @@ struct IrcJoinEvent
     QString networkId;
     QString channel;
     QString nick;
+    // Set when JOIN carries the extended-join account parameter. Null means
+    // a classic one-parameter JOIN, which must not clear a known account.
+    std::optional<QString> account;
 };
 
 struct IrcPartEvent
@@ -185,6 +188,13 @@ struct IrcMemberMetadataEvent
     QString value;
 };
 
+struct IrcAccountEvent
+{
+    QString networkId;
+    QString nick;
+    QString account;
+};
+
 struct IrcTypingEvent
 {
     IrcConversationKey conversation;
@@ -238,6 +248,7 @@ using IrcEvent = std::variant<
     IrcAwayEvent,
     IrcSelfAwayEvent,
     IrcMemberMetadataEvent,
+    IrcAccountEvent,
     IrcTypingEvent,
     IrcHistoryEvent,
     IrcWhoisTranscriptEvent,

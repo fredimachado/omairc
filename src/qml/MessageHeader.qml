@@ -10,6 +10,7 @@ Row {
     property string selfNick: ""
     property bool nickOpensDirect: false
     property bool bot: false
+    property string account: ""
 
     signal directMessageRequested(string nick)
 
@@ -21,7 +22,8 @@ Row {
 
     Row {
         id: authorRow
-        spacing: header.bot ? header.style.scaledSize(4) : 0
+        spacing: (header.bot || header.account.length > 0)
+            ? header.style.scaledSize(4) : 0
 
         Text {
             id: authorLabel
@@ -38,6 +40,16 @@ Row {
                 selfNick: header.selfNick
                 onDirectMessageRequested: header.directMessageRequested(nick)
             }
+        }
+
+        Text {
+            objectName: "message-account-" + header.author
+            visible: header.account.length > 0
+            text: header.account
+            color: header.style.mutedColor
+            font.family: "iA Writer Mono S"
+            font.pixelSize: header.style.scaledSize(12)
+            anchors.verticalCenter: authorLabel.verticalCenter
         }
 
         BotMark {
