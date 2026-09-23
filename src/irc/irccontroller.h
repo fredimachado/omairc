@@ -390,6 +390,10 @@ private:
     void noteManualAway(const QString& networkId);
     void noteAwayCleared(const QString& networkId);
     void refreshAutoAwayReason();
+    bool standingStatusSupported(IrcSession *session, bool nonEmpty) const;
+    void applyAutoawayStandingStatus(IrcSession *session);
+    void updateAutoawayStandingStatus(IrcSession *session, const QString& reason);
+    void restoreAutoawayStandingStatus(IrcSession *session);
     void syncHighlightWords(const QString& networkId);
     IrcCommandOutcome dispatchChannelModeWrapper(const IrcCommand& command,
                                                 IrcComposerSurface surface);
@@ -595,6 +599,7 @@ private:
     bool m_autoawayTripped = false;
     QSet<QString> m_autoAwayNetworks;
     QSet<QString> m_manualAwayNetworks;
+    QHash<QString, QString> m_autoawaySavedStatus;
     QTimer m_typingRefresh;
     QString m_composerDraft;
     QString m_typingTarget;
