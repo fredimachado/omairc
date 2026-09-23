@@ -926,15 +926,20 @@ void IrcEventReducer::capMessages(IrcConversationState& conversation)
 
 // A direct message has no join line to splice above, so its replay lands at
 // the tail. The anchor is a position in the logical transcript: trimmed
-// messages plus the index of the join line.
+// messages plus the index of the join line. A channel that is already joined
+// but whose anchor was consumed, cleared, or trimmed also lands at the tail.
+// Holding that batch for another self-join lets the next welcome drop it.
 std::optional<std::size_t> IrcEventReducer::peekSpliceIndex(
     const IrcConversationState& conversation) const
 {
     const IrcChannelState *channel = conversation.channel();
     if (!channel)
         return conversation.messages.size();
-    if (!channel->historyAnchor)
+    if (!channel->historyAnchor) {
+        if (channel->joined)
+            return conversation.messages.size();
         return std::nullopt;
+    }
     const qint64 index = channel->historyAnchor->sequence - conversation.trimmed;
     if (index < 0 || index > qint64(conversation.messages.size()))
         return std::nullopt;
@@ -950,9 +955,13 @@ std::optional<std::size_t> IrcEventReducer::takeSpliceIndex(
     if (!channel->historyAnchor)
         return std::nullopt;
     const qint64 index = channel->historyAnchor->sequence - conversation.trimmed;
-    channel->historyAnchor.reset();
-    if (index < 0 || index > qint64(conversation.messages.size()))
+    // A usable anchor stays until a replay line actually lands. An empty or
+    // fully deduped batch must not burn it. An index that no longer names a
+    // row cannot splice, so drop it here.
+    if (index < 0 || index > qint64(conversation.messages.size())) {
+        channel->historyAnchor.reset();
         return std::nullopt;
+    }
     return std::size_t(index);
 }
 
@@ -1404,13 +1413,13 @@ void IrcEventReducer::spliceHistory(IrcConversationState& conversation,
         run.end());
     for (const IrcReducedMessage& message : run)
         persistMessage(conversation, message);
-    // The anchor still names the join line. Inserting above it shifts that
-    // line forward by the number of messages that actually landed.
-    if (anchorUse == HistoryAnchorUse::Keep) {
-        if (IrcChannelState *channel = conversation.channel()) {
-            if (channel->historyAnchor)
-                channel->historyAnchor->sequence += qint64(run.size());
-        }
+    // Consume drops the anchor only once a replay line has landed. Keep
+    // still names the join line, shifted forward by what actually landed.
+    if (IrcChannelState *channel = conversation.channel()) {
+        if (anchorUse == HistoryAnchorUse::Consume)
+            channel->historyAnchor.reset();
+        else if (channel->historyAnchor)
+            channel->historyAnchor->sequence += qint64(run.size());
     }
     if (at != previousSize)
         ++conversation.spliceEpoch;
@@ -1427,15 +1436,17 @@ void IrcEventReducer::reduce(const IrcHistoryEvent& event)
     const bool channelTarget = serverFeatures(event.conversation.networkId)
         .isChannel(utf8(event.conversation.normalizedTarget));
     IrcConversationState *conversation = findMutable(event.conversation);
-    // ZNC answers PLAY before JOIN, so a channel batch often has no anchor
-    // yet. Hold one batch per channel until this connection's self-join
-    // creates the conversation and plants the anchor. A parted or
-    // never-joined buffer must not open a channel by itself. CHATHISTORY
-    // before an anchor still drops.
+    // ZNC answers PLAY before JOIN. Hold one batch until this connection's
+    // self-join, and hold a parted channel for the next one. Once joined,
+    // splice in this call: above the anchor when it is still there, and at
+    // the tail when CHATHISTORY, /clear, or the cap already removed it.
+    // Waiting for another join lets the next welcome drop the batch. A
+    // never-joined buffer must not open a channel. CHATHISTORY before an
+    // anchor still drops.
     if (event.kind == IrcHistoryKind::BouncerPlayback && channelTarget) {
         const IrcChannelState *channel =
             conversation ? conversation->channel() : nullptr;
-        if (!channel || !channel->historyAnchor) {
+        if (!channel || !channel->joined) {
             m_pendingPlayback.insert_or_assign(event.conversation, event);
             return;
         }

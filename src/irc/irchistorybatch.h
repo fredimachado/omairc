@@ -7,8 +7,9 @@
 
 #include <vector>
 
-// Which reply produced the batch. Only bouncer playback is held until the
-// channel's own join; chathistory still drops when there is no anchor.
+// Which reply produced the batch. Bouncer playback is held until the channel
+// is joined, then spliced even if the anchor is already gone. Chathistory
+// still drops when there is no anchor.
 enum class IrcHistoryKind
 {
     ChatHistory,

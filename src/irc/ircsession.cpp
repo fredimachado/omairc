@@ -1499,7 +1499,11 @@ void IrcSession::closeBatch(const QString& reference)
             frame.generation == historyGeneration(frame.collected.target);
         if (currentMembership && frame.kind == ReplayKind::ChatHistory)
             m_historyPending.remove(foldChannel(frame.collected.target));
-        if (!currentMembership)
+        // Self-join bumps history generation while a znc.in/playback batch
+        // can still be open. That batch is not a CHATHISTORY answer, so
+        // deliver it and let the reducer hold or splice. PART and KICK still
+        // discard an open playback batch in dropHistoryBatches.
+        if (frame.kind != ReplayKind::BouncerPlayback && !currentMembership)
             return;
         IrcHistoryBatch batch = frame.collected;
         if (frame.kind == ReplayKind::BouncerPlayback)

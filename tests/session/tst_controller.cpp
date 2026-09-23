@@ -566,6 +566,9 @@ private slots:
     void preJoinChannelPlaybackWithoutJoinDoesNotAdvanceClock();
     void preJoinPlaybackLeavesAnchorForChatHistory();
     void openChannelPlaybackBeforeRejoinSplicesAboveNewJoin();
+    void joinedChannelPlaybackSplicesAfterAnchorIsGone();
+    void selfEchoWithoutConversationDoesNotAdvancePlaybackClock();
+    void emptyChatHistoryLeavesAnchorForPlayback();
     void ephemeralControllerSkipsPlaybackSettings();
     void playbackTimeStoreRoundTripsNewestAndRekey();
     void forgetNetworkDropsPlaybackTimes();
@@ -6478,6 +6481,211 @@ void ControllerTest::openChannelPlaybackBeforeRejoinSplicesAboveNewJoin()
     }
     QVERIFY(laterJoin > awayRow);
     QCOMPARE(roleAt(messages, laterJoin, MessageListModel::OriginRole),
+             QStringLiteral("live"));
+}
+
+void ControllerTest::joinedChannelPlaybackSplicesAfterAnchorIsGone()
+{
+    const QDateTime historyAt = QDateTime::fromString(
+        QStringLiteral("2024-03-09T16:00:00.620Z"), Qt::ISODateWithMs);
+    const QDateTime anchoredAt = QDateTime::fromString(
+        QStringLiteral("2024-03-09T16:00:01.500Z"), Qt::ISODateWithMs);
+    const QDateTime clearedAt = QDateTime::fromString(
+        QStringLiteral("2024-03-09T16:00:04.000Z"), Qt::ISODateWithMs);
+    QVERIFY(historyAt.isValid());
+    QVERIFY(anchoredAt.isValid());
+    QVERIFY(clearedAt.isValid());
+    const QString clearedStamp = ircPlaybackPlayStamp(clearedAt);
+    const QByteArray playZero =
+        QByteArrayLiteral("PRIVMSG *status :*playback PLAY * 0\r\n");
+    const QByteArray playCleared =
+        QByteArrayLiteral("PRIVMSG *status :*playback PLAY * ")
+        + clearedStamp.toUtf8() + QByteArrayLiteral("\r\n");
+
+    IrcSessionConfig sessionConfig = config(QStringLiteral("libera"));
+    sessionConfig.reconnectEnabled = true;
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    auto *timer = new FakeReconnectTimer;
+    QVERIFY(controller.addSession(sessionConfig, transport, timer));
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    transport->completeConnect();
+    transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :batch chathistory znc.in/playback\r\n"
+                          ":server CAP omairc ACK :batch chathistory znc.in/playback\r\n"
+                          ":server 001 omairc :Welcome\r\n"
+                          ":omairc!u@h JOIN :#omarchy\r\n"
+                          ":irc.host BATCH +hx chathistory #omarchy\r\n"
+                          "@batch=hx;time=2024-03-09T16:00:00.620Z "
+                          ":alice!u@h PRIVMSG #omarchy :from history\r\n"
+                          ":irc.host BATCH -hx\r\n"
+                          ":znc.in BATCH +pb znc.in/playback #omarchy\r\n"
+                          "@batch=pb;time=2024-03-09T16:00:01.500Z "
+                          ":lena!u@h PRIVMSG #omarchy :after anchor\r\n"
+                          ":znc.in BATCH -pb\r\n"));
+
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    auto *anchored = qobject_cast<QAbstractItemModel *>(controller.messages());
+    QVERIFY(anchored);
+    QCOMPARE(transcriptBodies(anchored),
+             QStringList({QStringLiteral("from history"),
+                          QStringLiteral("omairc joined"),
+                          QStringLiteral("after anchor")}));
+    const int historyRow = bodyRow(anchored, QStringLiteral("from history"));
+    const int anchorJoin = bodyRow(anchored, QStringLiteral("omairc joined"));
+    const int afterAnchor = bodyRow(anchored, QStringLiteral("after anchor"));
+    QVERIFY(historyRow >= 0);
+    QVERIFY(anchorJoin > historyRow);
+    QVERIFY(afterAnchor > anchorJoin);
+    QCOMPARE(roleAt(anchored, historyRow, MessageListModel::OriginRole),
+             QStringLiteral("replay"));
+    QCOMPARE(roleAt(anchored, afterAnchor, MessageListModel::OriginRole),
+             QStringLiteral("replay"));
+
+    transport->injectBytes(QByteArrayLiteral(":omairc!u@h JOIN :#cleared\r\n"));
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#cleared"));
+    QVERIFY(controller.sendMessage(QStringLiteral("/clear")));
+    auto *cleared = qobject_cast<QAbstractItemModel *>(controller.messages());
+    QVERIFY(cleared);
+    QCOMPARE(cleared->rowCount(), 0);
+    transport->injectBytes(QByteArrayLiteral(
+        ":znc.in BATCH +pc znc.in/playback #cleared\r\n"
+        "@batch=pc;time=2024-03-09T16:00:04.000Z "
+        ":lena!u@h PRIVMSG #cleared :after clear\r\n"
+        ":znc.in BATCH -pc\r\n"));
+    QCOMPARE(selectedBodies(cleared),
+             QStringList{QStringLiteral("after clear")});
+    QCOMPARE(roleAt(cleared, bodyRow(cleared, QStringLiteral("after clear")),
+                    MessageListModel::OriginRole),
+             QStringLiteral("replay"));
+    QCOMPARE(ircPlaybackPlayStamp(
+                 IrcPlaybackTimeStore().newest(QStringLiteral("libera"))),
+             clearedStamp);
+    QCOMPARE(ircPlaybackPlayStamp(historyAt), QStringLiteral("1710000000.620"));
+    QCOMPARE(ircPlaybackPlayStamp(anchoredAt), QStringLiteral("1710000001.500"));
+
+    transport->remoteClose();
+    QVERIFY(timer->active);
+    timer->fire();
+    transport->completeConnect();
+    transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :batch chathistory znc.in/playback\r\n"
+                          ":server CAP omairc ACK :batch chathistory znc.in/playback\r\n"
+                          ":server 001 omairc :Welcome\r\n"));
+    QCOMPARE(frameCount(transport->writtenFrames(), playZero), 1);
+    QCOMPARE(frameCount(transport->writtenFrames(), playCleared), 1);
+}
+
+void ControllerTest::selfEchoWithoutConversationDoesNotAdvancePlaybackClock()
+{
+    const QDateTime peerAt = QDateTime::fromString(
+        QStringLiteral("2024-03-09T16:00:00.620Z"), Qt::ISODateWithMs);
+    const QDateTime keptAt = QDateTime::fromString(
+        QStringLiteral("2024-03-09T16:00:01.500Z"), Qt::ISODateWithMs);
+    QVERIFY(peerAt.isValid());
+    QVERIFY(keptAt.isValid());
+
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    QVERIFY(controller.addSession(config(QStringLiteral("libera")), transport));
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    transport->completeConnect();
+    transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :batch echo-message server-time\r\n"
+                          ":server CAP omairc ACK :batch echo-message server-time\r\n"
+                          ":server 001 omairc :Welcome\r\n"
+                          "@time=2024-03-09T16:00:00.620Z :lena!u@h PRIVMSG omairc :older\r\n"
+                          "@time=2024-03-09T17:00:00.000Z :omairc!u@h PRIVMSG #ghost "
+                          ":echo channel\r\n"
+                          "@time=2024-03-09T18:00:00.000Z :omairc!u@h PRIVMSG dana "
+                          ":echo query\r\n"));
+
+    auto *conversations =
+        qobject_cast<QAbstractItemModel *>(controller.conversations());
+    QVERIFY(conversations);
+    QVERIFY(rowForTarget(conversations, QStringLiteral("lena")) >= 0);
+    QCOMPARE(rowForTarget(conversations, QStringLiteral("#ghost")), -1);
+    QCOMPARE(rowForTarget(conversations, QStringLiteral("dana")), -1);
+    QCOMPARE(ircPlaybackPlayStamp(
+                 IrcPlaybackTimeStore().newest(QStringLiteral("libera"))),
+             ircPlaybackPlayStamp(peerAt));
+
+    transport->injectBytes(QByteArrayLiteral(
+        ":omairc!u@h JOIN :#omarchy\r\n"
+        "@time=2024-03-09T16:00:01.500Z :omairc!u@h PRIVMSG #omarchy :kept echo\r\n"));
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
+    QVERIFY(messages);
+    QVERIFY(selectedBodiesContain(messages, QStringLiteral("kept echo")));
+    QCOMPARE(ircPlaybackPlayStamp(
+                 IrcPlaybackTimeStore().newest(QStringLiteral("libera"))),
+             ircPlaybackPlayStamp(keptAt));
+    QCOMPARE(ircPlaybackPlayStamp(peerAt), QStringLiteral("1710000000.620"));
+    QCOMPARE(ircPlaybackPlayStamp(keptAt), QStringLiteral("1710000001.500"));
+}
+
+void ControllerTest::emptyChatHistoryLeavesAnchorForPlayback()
+{
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    QVERIFY(controller.addSession(config(QStringLiteral("libera")), transport));
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    transport->completeConnect();
+    transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :batch chathistory znc.in/playback\r\n"
+                          ":server CAP omairc ACK :batch chathistory znc.in/playback\r\n"
+                          ":server 001 omairc :Welcome\r\n"
+                          ":omairc!u@h JOIN :#empty\r\n"
+                          ":irc.host BATCH +empty chathistory #empty\r\n"
+                          ":irc.host BATCH -empty\r\n"
+                          ":znc.in BATCH +pe znc.in/playback #empty\r\n"
+                          "@batch=pe;time=2024-03-09T16:00:04.000Z "
+                          ":lena!u@h PRIVMSG #empty :from empty\r\n"
+                          ":znc.in BATCH -pe\r\n"
+                          ":omairc!u@h JOIN :#deduped\r\n"
+                          "@time=2024-03-09T16:00:00.620Z :alice!u@h PRIVMSG #deduped "
+                          ":already\r\n"
+                          ":irc.host BATCH +dup chathistory #deduped\r\n"
+                          "@batch=dup;time=2024-03-09T16:00:00.620Z "
+                          ":Alice!u@h PRIVMSG #deduped :already\r\n"
+                          ":irc.host BATCH -dup\r\n"
+                          ":znc.in BATCH +pd znc.in/playback #deduped\r\n"
+                          "@batch=pd;time=2024-03-09T16:00:05.000Z "
+                          ":lena!u@h PRIVMSG #deduped :from deduped\r\n"
+                          ":znc.in BATCH -pd\r\n"));
+
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#empty"));
+    auto *empty = qobject_cast<QAbstractItemModel *>(controller.messages());
+    QVERIFY(empty);
+    QCOMPARE(transcriptBodies(empty),
+             QStringList({QStringLiteral("from empty"),
+                          QStringLiteral("omairc joined")}));
+    const int emptyReplay = bodyRow(empty, QStringLiteral("from empty"));
+    const int emptyJoin = bodyRow(empty, QStringLiteral("omairc joined"));
+    QVERIFY(emptyReplay >= 0);
+    QVERIFY(emptyJoin > emptyReplay);
+    QCOMPARE(roleAt(empty, emptyReplay, MessageListModel::OriginRole),
+             QStringLiteral("replay"));
+    QCOMPARE(roleAt(empty, emptyJoin, MessageListModel::OriginRole),
+             QStringLiteral("live"));
+
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#deduped"));
+    auto *deduped = qobject_cast<QAbstractItemModel *>(controller.messages());
+    QVERIFY(deduped);
+    QCOMPARE(transcriptBodies(deduped),
+             QStringList({QStringLiteral("from deduped"),
+                          QStringLiteral("omairc joined"),
+                          QStringLiteral("already")}));
+    QCOMPARE(selectedBodies(deduped).count(QStringLiteral("already")), 1);
+    const int dedupedReplay = bodyRow(deduped, QStringLiteral("from deduped"));
+    const int dedupedJoin = bodyRow(deduped, QStringLiteral("omairc joined"));
+    const int already = bodyRow(deduped, QStringLiteral("already"));
+    QVERIFY(dedupedReplay >= 0);
+    QVERIFY(dedupedJoin > dedupedReplay);
+    QVERIFY(already > dedupedJoin);
+    QCOMPARE(roleAt(deduped, dedupedReplay, MessageListModel::OriginRole),
+             QStringLiteral("replay"));
+    QCOMPARE(roleAt(deduped, already, MessageListModel::OriginRole),
              QStringLiteral("live"));
 }
 

@@ -4372,11 +4372,11 @@ void IrcController::notePlaybackClock(const QString& networkId, const IrcMessage
 
     const QString sender = ircPrefixNick(message);
     const bool channel = features.isChannel(utf8(wireTarget));
+    const bool self =
+        features.caseMapping().equals(utf8(sender), utf8(currentNick));
     const QString displayTarget = channel
         ? wireTarget
-        : (features.caseMapping().equals(utf8(sender), utf8(currentNick))
-               ? wireTarget
-               : sender);
+        : (self ? wireTarget : sender);
     if (displayTarget.isEmpty())
         return;
     if (!channel
@@ -4384,6 +4384,13 @@ void IrcController::notePlaybackClock(const QString& networkId, const IrcMessage
             || ircTargetLooksLikeService(displayTarget, features))) {
         return;
     }
+    // A self echo whose query or channel does not exist yet is InboundSelf,
+    // so the reducer drops it. PLAY is exclusive and uses the newest stamp,
+    // so noting that line would skip bouncer history that was never kept.
+    // An admitted line, or one that matches an existing row, may still move
+    // the clock.
+    if (self && !m_reducer.find(m_reducer.conversationKey(networkId, displayTarget)))
+        return;
     m_playbackTimes.note(networkId, displayTarget, *when, features.caseMapping());
 }
 
