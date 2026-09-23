@@ -102,17 +102,24 @@ std::optional<QString> presentTagValue(const IrcMessage& message, const char *na
     return std::nullopt;
 }
 
-QDateTime timestampFor(const IrcMessage& message)
+std::optional<QDateTime> serverTimeOf(const IrcMessage& message)
 {
     const std::optional<QString> raw = tagValue(message, "time");
-    if (!raw)
-        return QDateTime::currentDateTimeUtc();
+    if (!raw || raw->isEmpty())
+        return std::nullopt;
     QDateTime parsed = QDateTime::fromString(*raw, Qt::ISODateWithMs);
     if (!parsed.isValid())
         parsed = QDateTime::fromString(*raw, Qt::ISODate);
     if (!parsed.isValid())
-        return QDateTime::currentDateTimeUtc();
+        return std::nullopt;
     return parsed.toUTC();
+}
+
+QDateTime timestampFor(const IrcMessage& message)
+{
+    if (const std::optional<QDateTime> serverTime = serverTimeOf(message))
+        return *serverTime;
+    return QDateTime::currentDateTimeUtc();
 }
 
 /// `<Target> <Key> <Visibility> [<Value>]` for `METADATA` and `761`.
@@ -181,6 +188,54 @@ bool isAmbiguousJoinFailureNumeric(const QString& command)
     return command == QStringLiteral("437")
         || command == QStringLiteral("480")
         || command == QStringLiteral("485");
+}
+
+// A znc.in/playback query buffer is named for the peer. After a nick change
+// the same buffer still has PRIVMSG to the previous nick and echoes from
+// that nick. File those on the batch conversation. A channel target stays
+// with its channel batch, and live PRIVMSG still has to name the current nick.
+std::optional<IrcReplayLine> bouncerQueryReplayLine(
+    const QString& batchTarget,
+    const IrcServerFeatures& features,
+    const IrcMessage& message,
+    const std::optional<QDateTime>& serverTime)
+{
+    const QString command = ircWireText(message.command).toUpper();
+    if (command != QStringLiteral("PRIVMSG") || message.parameters.size() < 2)
+        return std::nullopt;
+    if (message.prefix && !message.prefix->nick.empty()
+        && !ircNickIsRoutable(ircWireText(message.prefix->nick))) {
+        return std::nullopt;
+    }
+    const QString wireTarget = parameter(message, 0);
+    if (features.isChannel(utf8(wireTarget)) || isNetworkNoticeTarget(wireTarget)
+        || !hasUserPrefix(message) || isServiceUser(message, features)) {
+        return std::nullopt;
+    }
+    const QString sender = author(message);
+    if (sender.isEmpty()
+        || (!same(sender, batchTarget, features)
+            && !same(wireTarget, batchTarget, features))) {
+        return std::nullopt;
+    }
+    const QString body = parameter(message, 1);
+    const auto ctcp = parseCtcpRequest(body);
+    if (ctcp && ctcp->command != QStringLiteral("ACTION"))
+        return std::nullopt;
+    const IrcMsgId msgid{tagValue(message, "msgid").value_or(QString{})};
+    const QString actionPrefix = QChar(1) + QStringLiteral("ACTION ");
+    if (body.startsWith(actionPrefix) && body.endsWith(QChar(1))) {
+        return IrcReplayLine{
+            sender,
+            body.mid(actionPrefix.size(), body.size() - actionPrefix.size() - 1),
+            timestampFor(message),
+            IrcMessageKindTag::Emote,
+            msgid,
+            serverTime};
+    }
+    return IrcReplayLine{
+        sender, body, timestampFor(message), IrcMessageKindTag::Chat, msgid,
+        serverTime};
 }
 }
 
@@ -374,22 +429,38 @@ std::optional<IrcHistoryEvent> IrcEventTranslator::translateHistory(
     if (batch.target.isEmpty())
         return std::nullopt;
     const IrcConversationKey conversation = key(networkId, batch.target, features);
-    IrcHistoryEvent event{conversation, batch.target, {}};
+    // Channel batches already key off the channel. CHATHISTORY keeps the
+    // live nick check; only a bouncer query needs the previous-nick rule.
+    const bool bouncerQuery = batch.kind == IrcHistoryKind::BouncerPlayback
+        && !features.isChannel(utf8(batch.target));
+    IrcHistoryEvent event{conversation, batch.target, {}, batch.kind};
     event.lines.reserve(batch.lines.size());
     for (const IrcMessage& line : batch.lines) {
+        const std::optional<QDateTime> serverTime = serverTimeOf(line);
+        bool kept = false;
         for (const IrcEvent& translated :
              translate(networkId, currentNick, features, line)) {
             if (const auto *message = std::get_if<IrcMessageEvent>(&translated)) {
                 if (message->conversation != conversation)
                     continue;
                 event.lines.push_back({message->author, message->body, message->timestamp,
-                                       IrcMessageKindTag::Chat, message->msgid});
+                                       IrcMessageKindTag::Chat, message->msgid,
+                                       serverTime});
+                kept = true;
             } else if (const auto *action = std::get_if<IrcActionEvent>(&translated)) {
                 if (action->conversation != conversation)
                     continue;
                 event.lines.push_back({action->author, action->body, action->timestamp,
-                                       IrcMessageKindTag::Emote, action->msgid});
+                                       IrcMessageKindTag::Emote, action->msgid,
+                                       serverTime});
+                kept = true;
             }
+        }
+        if (kept || !bouncerQuery)
+            continue;
+        if (const std::optional<IrcReplayLine> replay =
+                bouncerQueryReplayLine(batch.target, features, line, serverTime)) {
+            event.lines.push_back(*replay);
         }
     }
     return event;

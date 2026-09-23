@@ -95,6 +95,8 @@ const Wanted wantedTable[] = {
      IrcCapability::Batch, false, false, acceptsAnyValue},
     {IrcCapability::ChatHistory, QLatin1String("draft/chathistory"),
      IrcCapability::Batch, false, false, acceptsAnyValue},
+    {IrcCapability::ZncPlayback, QLatin1String("znc.in/playback"),
+     IrcCapability::Batch, false, true, acceptsAnyValue},
     {IrcCapability::LabeledResponse, QLatin1String("labeled-response"),
      IrcCapability::MessageTags, false, true, acceptsAnyValue},
     {IrcCapability::AccountTag, QLatin1String("account-tag"),

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "irchistorybatch.h"
 #include "ircpresence.h"
 #include "ircserverfeatures.h"
 #include "irctyping.h"
@@ -210,6 +211,10 @@ struct IrcReplayLine
     QDateTime timestamp;
     IrcMessageKindTag kind = IrcMessageKindTag::Chat;
     IrcMsgId msgid{};
+    // Parsed time tag only. timestamp falls back to the local wall clock
+    // when the tag is missing or unparseable, and that fallback must not
+    // advance the bouncer PLAY clock.
+    std::optional<QDateTime> serverTime;
 };
 
 struct IrcHistoryEvent
@@ -217,6 +222,7 @@ struct IrcHistoryEvent
     IrcConversationKey conversation;
     QString target;
     std::vector<IrcReplayLine> lines;
+    IrcHistoryKind kind = IrcHistoryKind::ChatHistory;
 };
 
 struct IrcWhoisTranscriptEvent

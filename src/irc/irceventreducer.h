@@ -162,6 +162,25 @@ struct IrcInboxArrival
 
 class IrcConversationLog;
 
+// A replay line the reducer actually kept: inserted, or already present so
+// author/body/kind/time or msgid dedup skipped it. `serverTime` is the raw
+// time tag, never the translator's wall-clock fallback.
+struct IrcKeptReplay
+{
+    QString networkId;
+    QString target;
+    QDateTime serverTime;
+};
+
+// A bouncer query whose splice kept a line from the user, including a nick
+// they have since changed. The controller remembers that direct so the next
+// cold start can restore it before PLAY.
+struct IrcRememberedQuery
+{
+    QString networkId;
+    QString target;
+};
+
 enum class IrcConversationCause {
     UserOpen,
     ChannelState,
@@ -218,6 +237,15 @@ public:
     void setConversationLog(IrcConversationLog *log);
 
     void apply(const IrcEvent& event);
+    std::vector<IrcKeptReplay> takeKeptReplay();
+    std::vector<IrcRememberedQuery> takeRememberedQueries();
+    // MOTD-end restore has finished for this connection. Splice held query
+    // batches into directs that now exist. A self-only batch whose query
+    // still does not exist is a finished drop and does not move the clock.
+    bool releasePendingQueryPlayback(const QString& networkId);
+    // A znc.in/playback batch for this channel was spliced, or deduped onto
+    // a row already in the transcript, on the current connection.
+    bool playbackBatchKept(const QString& networkId, const QString& target) const;
     bool releaseStaleNamesSync(const std::optional<IrcConversationKey>& key,
                                const QDateTime& now);
     bool dropDirectMessage(const IrcConversationKey& key);
@@ -286,7 +314,8 @@ private:
                          IrcMessageKind kind,
                          const IrcMsgId& msgid,
                          qint64 sequence,
-                         IrcOrigin origin);
+                         IrcOrigin origin,
+                         const IrcHistoryEvent *history = nullptr);
     void appendEvent(IrcConversationState& conversation,
                      const QString& body,
                      bool collapsible = false);
@@ -296,7 +325,27 @@ private:
     void persistMessage(const IrcConversationState& conversation,
                         const IrcReducedMessage& message);
     void capMessages(IrcConversationState& conversation);
+    std::optional<std::size_t> peekSpliceIndex(
+        const IrcConversationState& conversation) const;
     std::optional<std::size_t> takeSpliceIndex(IrcConversationState& conversation);
+    enum class HistoryAnchorUse { Consume, Keep };
+    bool bouncerQueryOwnLine(const IrcHistoryEvent& event,
+                             const QString& author) const;
+    bool bouncerChannelOwnLine(const IrcHistoryEvent& event,
+                               const QString& author) const;
+    void rememberSelfNick(const QString& networkId, const QString& nick);
+    bool replayFromPeer(const IrcHistoryEvent& event) const;
+    // True when every line carries a msgid the transcript log already
+    // stored. Opening a missing query would only hydrate those lines.
+    bool replayOnlyRepeatsPersistedIds(const IrcHistoryEvent& event) const;
+    bool absorbPendingQueryPlayback(const IrcHistoryEvent& event);
+    void spliceHistory(IrcConversationState& conversation,
+                       const IrcHistoryEvent& event,
+                       HistoryAnchorUse anchorUse);
+    void holdPendingPlayback(const IrcHistoryEvent& event);
+    void dropKeptPlayback(const QString& networkId);
+    void releasePendingPlayback(IrcConversationState& conversation);
+    void dropPendingPlayback(const QString& networkId);
 
     void reduce(const IrcWelcomeEvent& event);
     void reduce(const IrcMessageEvent& event);
@@ -336,6 +385,9 @@ private:
     Store m_conversations;
     std::map<QString, IrcServerFeatures> m_features;
     std::map<QString, QString> m_currentNicks;
+    // Nicks welcomed on this network, plus any nick a self change left
+    // behind. Channel playback from one of them is our own backlog.
+    std::map<QString, std::set<QString>> m_selfNicks;
     std::map<QString, QStringList> m_highlightWords;
     std::map<QString, IrcNetworkPresence> m_presence;
     std::set<QString> m_selfAway;
@@ -345,4 +397,11 @@ private:
     std::optional<IrcInboxArrival> m_inboxArrival;
     std::set<IrcConversationKey> m_mutedKeys;
     IrcConversationLog *m_log = nullptr;
+    std::map<IrcConversationKey, IrcHistoryEvent> m_pendingPlayback;
+    std::set<IrcConversationKey> m_keptPlaybackChannels;
+    std::vector<IrcKeptReplay> m_keptReplay;
+    std::vector<IrcRememberedQuery> m_rememberedQueries;
+    // Set on welcome, cleared when open-direct restore finishes. A missing
+    // query is not a finished drop while this connection is still waiting.
+    std::set<QString> m_queryRestorePending;
 };

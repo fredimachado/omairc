@@ -476,6 +476,11 @@ private slots:
     void joinWithNewKeyUpdatesAfterSuccess();
     void welcomeSendsStoredChannelKey();
     void badChannelKeyStaysOnStatusWithoutRetry();
+    void zncPlaybackCapIsRequestedOnItsOwnLine();
+    void zncPlaybackWithoutBatchIsNotRequested();
+    void zncPlaybackCapStillEmitsUnsolicitedBatch();
+    void chatHistoryJoinSurvivesZncPlayback();
+    void selfJoinKeepsOpenPlaybackAndDropsStaleChatHistory();
 };
 
 void SessionTest::registersAndAutojoins()
@@ -5120,6 +5125,139 @@ void SessionTest::badChannelKeyStaysOnStatusWithoutRetry()
     reconnectRegistered(fixture);
     QCOMPARE(joinFrames(fixture.transport->writtenFrames().mid(before)),
              QByteArrayList({QByteArrayLiteral("JOIN #secret\r\n")}));
+}
+
+void SessionTest::zncPlaybackCapIsRequestedOnItsOwnLine()
+{
+    IrcSessionConfig sessionConfig = config();
+    sessionConfig.autojoinChannels = {};
+    Fixture fixture(sessionConfig);
+    fixture.connectTls();
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :batch znc.in/playback\r\n"));
+    QVERIFY(fixture.wrote(QByteArrayLiteral("CAP REQ :znc.in/playback\r\n")));
+    QVERIFY(fixture.wrote(QByteArrayLiteral("CAP REQ :batch\r\n")));
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc ACK :znc.in/playback batch\r\n"
+                          ":server 001 omairc :Welcome\r\n"
+                          ":server 376 omairc :End of MOTD\r\n"));
+    QVERIFY(fixture.session->capabilities().contains(IrcCapability::ZncPlayback));
+    QVERIFY(fixture.session->capabilities().contains(IrcCapability::Batch));
+    QVERIFY(!fixture.wrote(
+        QByteArrayLiteral("ZNC *playback PLAY * 0\r\n")));
+    QVERIFY(!framesContain(fixture.transport->writtenFrames(),
+                           QByteArrayLiteral("PRIVMSG *playback")));
+    QVERIFY(!framesContain(fixture.transport->writtenFrames(),
+                           QByteArrayLiteral("PRIVMSG *status :*playback")));
+}
+
+void SessionTest::zncPlaybackWithoutBatchIsNotRequested()
+{
+    IrcSessionConfig sessionConfig = config();
+    sessionConfig.autojoinChannels = {};
+    Fixture fixture(sessionConfig);
+    fixture.connectTls();
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :znc.in/playback multi-prefix\r\n"
+                          ":server CAP omairc ACK :multi-prefix\r\n"
+                          ":server 001 omairc :Welcome\r\n"));
+    QVERIFY(!fixture.wrote(QByteArrayLiteral("CAP REQ :znc.in/playback\r\n")));
+    QVERIFY(!fixture.session->capabilities().contains(IrcCapability::ZncPlayback));
+    QVERIFY(!framesContain(fixture.transport->writtenFrames(),
+                           QByteArrayLiteral("PLAY")));
+}
+
+void SessionTest::zncPlaybackCapStillEmitsUnsolicitedBatch()
+{
+    IrcSessionConfig sessionConfig = config();
+    sessionConfig.autojoinChannels = {};
+    Fixture fixture(sessionConfig);
+    QList<IrcHistoryBatch> batches;
+    QObject::connect(fixture.session, &IrcSession::historyBatchReceived, fixture.session,
+                     [&](const QString&, const IrcHistoryBatch& batch) {
+        batches.append(batch);
+    });
+    fixture.connectTls();
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :batch znc.in/playback\r\n"
+                          ":server CAP omairc ACK :batch znc.in/playback\r\n"
+                          ":server 001 omairc :Welcome\r\n"
+                          ":omairc!u@h JOIN :#omarchy\r\n"));
+    QVERIFY(fixture.session->capabilities().contains(IrcCapability::ZncPlayback));
+    QVERIFY(fixture.session->capabilities().contains(IrcCapability::Batch));
+
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(
+            ":znc.in BATCH +pb znc.in/playback #omarchy\r\n"
+            "@batch=pb :lena!u@h PRIVMSG #omarchy :yesterday\r\n"
+            ":znc.in BATCH -pb\r\n"
+            ":bob!u@h PRIVMSG #omarchy :after\r\n"));
+
+    QCOMPARE(batches.size(), 1);
+    QCOMPARE(batches.front().target, QStringLiteral("#omarchy"));
+    QCOMPARE(int(batches.front().lines.size()), 1);
+    QCOMPARE(QString::fromStdString(batches.front().lines.front().parameters.back()),
+             QStringLiteral("yesterday"));
+}
+
+void SessionTest::selfJoinKeepsOpenPlaybackAndDropsStaleChatHistory()
+{
+    IrcSessionConfig sessionConfig = config();
+    sessionConfig.autojoinChannels = {};
+    Fixture fixture(sessionConfig);
+    QList<IrcHistoryBatch> batches;
+    QObject::connect(fixture.session, &IrcSession::historyBatchReceived, fixture.session,
+                     [&](const QString&, const IrcHistoryBatch& batch) {
+        batches.append(batch);
+    });
+    fixture.connectTls();
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :batch chathistory znc.in/playback\r\n"
+                          ":server CAP omairc ACK :batch chathistory znc.in/playback\r\n"
+                          ":server 001 omairc :Welcome\r\n"
+                          ":znc.in BATCH +pb znc.in/playback #omarchy\r\n"
+                          "@batch=pb :lena!u@h PRIVMSG #omarchy :buffered\r\n"
+                          ":omairc!u@h JOIN :#omarchy\r\n"
+                          ":znc.in BATCH -pb\r\n"));
+
+    QCOMPARE(batches.size(), 1);
+    QCOMPARE(batches.front().kind, IrcHistoryKind::BouncerPlayback);
+    QCOMPARE(batches.front().target, QStringLiteral("#omarchy"));
+    QCOMPARE(int(batches.front().lines.size()), 1);
+    QCOMPARE(QString::fromStdString(batches.front().lines.front().parameters.back()),
+             QStringLiteral("buffered"));
+
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(":irc.host BATCH +hx chathistory #lab\r\n"
+                          "@batch=hx :alice!u@h PRIVMSG #lab :stale\r\n"
+                          ":omairc!u@h JOIN :#lab\r\n"
+                          ":irc.host BATCH -hx\r\n"));
+    QCOMPARE(batches.size(), 1);
+
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(":omairc!u@h JOIN :#parted\r\n"
+                          ":znc.in BATCH +gone znc.in/playback #parted\r\n"
+                          "@batch=gone :lena!u@h PRIVMSG #parted :lost\r\n"
+                          ":omairc!u@h PART :#parted\r\n"
+                          ":znc.in BATCH -gone\r\n"));
+    QCOMPARE(batches.size(), 1);
+}
+
+void SessionTest::chatHistoryJoinSurvivesZncPlayback()
+{
+    IrcSessionConfig sessionConfig = config();
+    sessionConfig.autojoinChannels = {};
+    Fixture fixture(sessionConfig);
+    fixture.connectTls();
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :batch chathistory znc.in/playback\r\n"
+                          ":server CAP omairc ACK :batch chathistory znc.in/playback\r\n"
+                          ":server 001 omairc :Welcome\r\n"
+                          ":omairc!u@h JOIN :#omarchy\r\n"));
+    QVERIFY(fixture.wrote(QByteArrayLiteral("CAP REQ :znc.in/playback\r\n")));
+    QVERIFY(fixture.wrote(
+        QByteArrayLiteral("CHATHISTORY LATEST #omarchy * 100\r\n")));
+    QVERIFY(fixture.session->historyPending());
 }
 
 int runSessionTests(int argc, char **argv)

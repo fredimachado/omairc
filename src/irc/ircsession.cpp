@@ -422,6 +422,11 @@ QString IrcSession::networkId() const
     return m_config.networkId;
 }
 
+QStringList IrcSession::autojoinChannels() const
+{
+    return m_autojoinChannels;
+}
+
 QString IrcSession::name() const
 {
     return IrcNetworkProfile::resolvedName(m_config.name, m_config.host);
@@ -1499,9 +1504,16 @@ void IrcSession::closeBatch(const QString& reference)
             frame.generation == historyGeneration(frame.collected.target);
         if (currentMembership && frame.kind == ReplayKind::ChatHistory)
             m_historyPending.remove(foldChannel(frame.collected.target));
-        if (!currentMembership)
+        // Self-join bumps history generation while a znc.in/playback batch
+        // can still be open. That batch is not a CHATHISTORY answer, so
+        // deliver it and let the reducer hold or splice. PART and KICK still
+        // discard an open playback batch in dropHistoryBatches.
+        if (frame.kind != ReplayKind::BouncerPlayback && !currentMembership)
             return;
-        emit historyBatchReceived(m_config.networkId, frame.collected);
+        IrcHistoryBatch batch = frame.collected;
+        if (frame.kind == ReplayKind::BouncerPlayback)
+            batch.kind = IrcHistoryKind::BouncerPlayback;
+        emit historyBatchReceived(m_config.networkId, batch);
     }
 }
 
@@ -1520,8 +1532,13 @@ bool IrcSession::captureInBatch(const IrcMessage& message)
     const auto root = m_openBatches.find(found.value().replayRoot);
     if (root == m_openBatches.end())
         return false;
-    if (int(root.value().collected.lines.size()) < kHistoryBufferCeiling)
-        root.value().collected.lines.push_back(message);
+    // Playback and CHATHISTORY LATEST are oldest-first. A full buffer keeps
+    // the newest lines. Overflow stays swallowed so it cannot surface as
+    // live traffic and move the exclusive PLAY bound past lines never kept.
+    auto& lines = root.value().collected.lines;
+    if (int(lines.size()) >= kHistoryBufferCeiling)
+        lines.erase(lines.begin());
+    lines.push_back(message);
     return true;
 }
 
@@ -1540,8 +1557,9 @@ std::optional<IrcSession::ReplayKind> IrcSession::replayKindFor(
     return std::nullopt;
 }
 
-// Bouncer playback must not require `chathistory`. ZNC batches its buffer
-// replay behind `batch` alone and never advertises `chathistory`.
+// Bouncer playback must not require `chathistory` or `znc.in/playback`.
+// ZNC batches its buffer replay behind `batch` alone. Requesting
+// `znc.in/playback` asks for a bounded PLAY and must not drop that path.
 bool IrcSession::replayEnabled(ReplayKind kind) const
 {
     const IrcCapabilitySet enabled = m_capabilities.enabled();

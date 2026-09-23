@@ -142,6 +142,7 @@ public:
     IrcCapabilitySet capabilities() const;
     IrcMetadataCapability metadataCapability() const;
     bool historyPending() const;
+    QStringList autojoinChannels() const;
 
     using IgnoreFilter = std::function<bool(const IrcMessage&, const QString&)>;
     void setIgnoreFilter(IgnoreFilter filter);
