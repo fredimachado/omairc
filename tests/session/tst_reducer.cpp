@@ -140,6 +140,8 @@ private slots:
     void clearMessagesDropsPendingHistory();
     void queryReplayFromPeerOpensDirectMessage();
     void selfOnlyQueryReplayDoesNotOpenDirectMessageForMsg();
+    void selfOnlyPlaybackThenPeerSplicesInOrder();
+    void playbackBatchKeptTracksSpliceAndDedup();
     void queryReplayAppendsAtTailOfExistingDirectMessage();
     void channelReplayWithoutConversationCreatesNothing();
     void nickCollisionMergesMessageIds();
@@ -2157,6 +2159,102 @@ void ReducerTest::selfOnlyQueryReplayDoesNotOpenDirectMessageForMsg()
 
     QVERIFY(!reducer.find(lena));
     QCOMPARE(reducer.conversations().size(), std::size_t(0));
+}
+
+void ReducerTest::selfOnlyPlaybackThenPeerSplicesInOrder()
+{
+    IrcEventReducer reducer;
+    welcome(reducer, networkA);
+    const IrcConversationKey lena =
+        reducer.conversationKey(networkA, QStringLiteral("lena"));
+
+    reducer.apply(IrcHistoryEvent{
+        lena,
+        QStringLiteral("lena"),
+        {replayLine(QStringLiteral("omairc"), QStringLiteral("held"),
+                    QStringLiteral("id-self"))},
+        IrcHistoryKind::BouncerPlayback,
+    });
+    QVERIFY(!reducer.find(lena));
+
+    reducer.apply(IrcHistoryEvent{
+        lena,
+        QStringLiteral("lena"),
+        {},
+        IrcHistoryKind::BouncerPlayback,
+    });
+    QVERIFY(!reducer.find(lena));
+
+    reducer.apply(IrcHistoryEvent{
+        lena,
+        QStringLiteral("lena"),
+        {replayLine(QStringLiteral("lena"), QStringLiteral("from peer"),
+                    QStringLiteral("id-peer"))},
+        IrcHistoryKind::BouncerPlayback,
+    });
+
+    const IrcConversationState *conversation = reducer.find(lena);
+    QVERIFY(conversation);
+    QCOMPARE(conversation->messages.size(), std::size_t(2));
+    QCOMPARE(conversation->messages[0].author, QStringLiteral("omairc"));
+    QCOMPARE(conversation->messages[0].body, QStringLiteral("held"));
+    QCOMPARE(conversation->messages[1].author, QStringLiteral("lena"));
+    QCOMPARE(conversation->messages[1].body, QStringLiteral("from peer"));
+    QVERIFY(!reducer.releasePendingQueryPlayback(networkA));
+    QCOMPARE(reducer.find(lena)->messages.size(), std::size_t(2));
+}
+
+void ReducerTest::playbackBatchKeptTracksSpliceAndDedup()
+{
+    IrcEventReducer reducer;
+    welcome(reducer, networkA);
+    const IrcConversationKey held =
+        reducer.conversationKey(networkA, QStringLiteral("#held"));
+    reducer.apply(IrcHistoryEvent{
+        held,
+        QStringLiteral("#held"),
+        {replayLine(QStringLiteral("lena"), QStringLiteral("before"),
+                    QStringLiteral("id-before"))},
+        IrcHistoryKind::BouncerPlayback,
+    });
+    QVERIFY(!reducer.playbackBatchKept(networkA, QStringLiteral("#held")));
+    reducer.apply(IrcJoinEvent{
+        networkA, QStringLiteral("#held"), QStringLiteral("omairc")});
+    QVERIFY(reducer.playbackBatchKept(networkA, QStringLiteral("#held")));
+
+    const IrcConversationKey dup =
+        reducer.conversationKey(networkA, QStringLiteral("#dup"));
+    reducer.apply(IrcJoinEvent{
+        networkA, QStringLiteral("#dup"), QStringLiteral("omairc")});
+    reducer.apply(IrcMessageEvent{
+        dup, QStringLiteral("lena"), QStringLiteral("already"), timestamp,
+        QStringLiteral("#dup")});
+    QVERIFY(!reducer.playbackBatchKept(networkA, QStringLiteral("#dup")));
+    reducer.apply(IrcHistoryEvent{
+        dup,
+        QStringLiteral("#dup"),
+        {replayLine(QStringLiteral("Lena"), QStringLiteral("already"),
+                    QStringLiteral("id-dup"))},
+        IrcHistoryKind::BouncerPlayback,
+    });
+    QVERIFY(reducer.playbackBatchKept(networkA, QStringLiteral("#dup")));
+    QCOMPARE(reducer.find(dup)->messages.size(), std::size_t(2));
+
+    const IrcConversationKey empty =
+        reducer.conversationKey(networkA, QStringLiteral("#empty"));
+    reducer.apply(IrcJoinEvent{
+        networkA, QStringLiteral("#empty"), QStringLiteral("omairc")});
+    reducer.apply(IrcHistoryEvent{
+        empty,
+        QStringLiteral("#empty"),
+        {},
+        IrcHistoryKind::BouncerPlayback,
+    });
+    QVERIFY(!reducer.playbackBatchKept(networkA, QStringLiteral("#empty")));
+
+    welcome(reducer, networkA);
+    QVERIFY(!reducer.playbackBatchKept(networkA, QStringLiteral("#held")));
+    QVERIFY(!reducer.playbackBatchKept(networkA, QStringLiteral("#dup")));
 }
 
 void ReducerTest::queryReplayAppendsAtTailOfExistingDirectMessage()

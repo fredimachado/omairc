@@ -4431,8 +4431,11 @@ bool IrcController::sendZncPlayback(IrcSession *session,
                                     const QString& target,
                                     const QString& from)
 {
-    const QString body = QStringLiteral("*playback PLAY %1 %2").arg(target, from);
-    return session->sendPrivmsg(QStringLiteral("*status"), body);
+    // ZNC dispatches the IRC command ZNC to the named module. PRIVMSG
+    // *status :*playback is an unknown status command, so OnModCommand
+    // never runs. PRIVMSG *playback would open a query on other clients.
+    return session->sendRaw(
+        QStringLiteral("ZNC *playback PLAY %1 %2").arg(target, from));
 }
 
 bool IrcController::zncPlaybackCovers(const QString& networkId,
@@ -4502,8 +4505,9 @@ void IrcController::requestZncPlayback(IrcSession *session)
             m_zncPlaybackSent[networkId].targets.insert(normalized);
         }
     }
-    // A channel joined before this request was not part of it. PLAY * 0
-    // already covers every target; a stored stamp was requested above.
+    // A channel joined before this request still needs its own PLAY when
+    // no playback batch for it has been kept. PLAY * 0 does not cover that
+    // retry: a channel that was not on yet never answered.
     const QStringList joined = m_zncJoinedChannels.value(networkId);
     for (const QString& channel : joined)
         requestZncChannelPlayback(session, channel);
@@ -4539,16 +4543,14 @@ void IrcController::requestZncChannelPlayback(IrcSession *session,
     const IrcServerFeatures& features = m_reducer.serverFeatures(networkId);
     if (!features.isChannel(utf8(channel)))
         return;
-    // Connect-time PLAY already asked for a target that has a stamp.
-    if (m_playbackTimes.noted(networkId, channel, features.caseMapping()))
+    // Covered only after a playback batch was spliced or deduped. A PLAY
+    // written at MOTD does not count, and neither does PLAY * 0: the module
+    // emits nothing for a channel that is not on.
+    if (m_reducer.playbackBatchKept(networkId, channel))
         return;
-    const QString normalized =
-        m_reducer.conversationKey(networkId, channel).normalizedTarget;
-    if (zncPlaybackCovers(networkId, normalized))
-        return;
-    if (!sendZncPlayback(session, channel, QStringLiteral("0")))
-        return;
-    m_zncPlaybackSent[networkId].targets.insert(normalized);
+    const QString from = ircPlaybackPlayStamp(
+        m_playbackTimes.noted(networkId, channel, features.caseMapping()));
+    sendZncPlayback(session, channel, from);
 }
 
 void IrcController::reloadModels()

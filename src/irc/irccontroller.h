@@ -530,8 +530,10 @@ private:
     IrcMuteStore m_mutes;
     IrcOpenDirectStore m_openDirects;
     IrcPlaybackTimeStore m_playbackTimes;
-    // Targets already requested with PLAY this connection. `all` is
-    // `PLAY * 0`, which covers every target. A per-target PLAY does not.
+    // PLAY lines already written this connection. `all` is `PLAY * 0`.
+    // Writing a channel PLAY does not cover it: the module drops a channel
+    // that is not on. `targets` keeps each query PLAY once and keeps a
+    // second MOTD pass from repeating a channel PLAY.
     struct ZncPlaybackSent {
         bool all = false;
         QSet<QString> targets;

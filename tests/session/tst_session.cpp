@@ -5144,9 +5144,11 @@ void SessionTest::zncPlaybackCapIsRequestedOnItsOwnLine()
     QVERIFY(fixture.session->capabilities().contains(IrcCapability::ZncPlayback));
     QVERIFY(fixture.session->capabilities().contains(IrcCapability::Batch));
     QVERIFY(!fixture.wrote(
-        QByteArrayLiteral("PRIVMSG *status :*playback PLAY * 0\r\n")));
+        QByteArrayLiteral("ZNC *playback PLAY * 0\r\n")));
     QVERIFY(!framesContain(fixture.transport->writtenFrames(),
                            QByteArrayLiteral("PRIVMSG *playback")));
+    QVERIFY(!framesContain(fixture.transport->writtenFrames(),
+                           QByteArrayLiteral("PRIVMSG *status :*playback")));
 }
 
 void SessionTest::zncPlaybackWithoutBatchIsNotRequested()

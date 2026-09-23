@@ -349,6 +349,7 @@ void IrcEventReducer::forgetNetwork(const QString& networkId)
     if (networkId.isEmpty())
         return;
     dropPendingPlayback(networkId);
+    dropKeptPlayback(networkId);
     m_queryRestorePending.erase(networkId);
     for (auto it = m_conversations.begin(); it != m_conversations.end(); ) {
         if (it->first.networkId == networkId)
@@ -983,9 +984,11 @@ std::vector<IrcRememberedQuery> IrcEventReducer::takeRememberedQueries()
 void IrcEventReducer::reduce(const IrcWelcomeEvent& event)
 {
     // Welcome is a new connection. Batches still held here belong to the
-    // previous one. Playback on this connection cannot have arrived yet, and
-    // open-direct restore is pending again until the next 376 or 422.
+    // previous one, and a channel covered by a kept batch is covered only
+    // for that connection. Playback on this connection cannot have arrived
+    // yet, and open-direct restore is pending again until the next 376 or 422.
     dropPendingPlayback(event.networkId);
+    dropKeptPlayback(event.networkId);
     m_queryRestorePending.insert(event.networkId);
     m_currentNicks[event.networkId] = event.currentNick;
     m_presence[event.networkId].clear();
@@ -1450,6 +1453,7 @@ void IrcEventReducer::spliceHistory(IrcConversationState& conversation,
     std::vector<IrcReducedMessage> run;
     run.reserve(event.lines.size());
     bool sawSelf = false;
+    bool keptPlaybackLine = false;
     for (const IrcReplayLine& line : event.lines) {
         if (bouncerQuery && !sawSelf && !line.author.isEmpty()
             && isSelf(event.conversation.networkId, line.author)) {
@@ -1464,8 +1468,10 @@ void IrcEventReducer::spliceHistory(IrcConversationState& conversation,
                 line.serverTime->toUTC(),
             });
         }
-        if (!line.msgid.isEmpty() && conversation.messageIds.count(line.msgid))
+        if (!line.msgid.isEmpty() && conversation.messageIds.count(line.msgid)) {
+            keptPlaybackLine = true;
             continue;
+        }
         const IrcMessageKind kind = line.kind == IrcMessageKindTag::Emote
             ? IrcMessageKind::Action
             : IrcMessageKind::Message;
@@ -1478,13 +1484,20 @@ void IrcEventReducer::spliceHistory(IrcConversationState& conversation,
                            [&](const IrcReducedMessage& message) {
                                return sameReplayLine(message, line, kind);
                            });
-        if (alreadyPresent)
+        if (alreadyPresent) {
+            keptPlaybackLine = true;
             continue;
+        }
         if (!line.msgid.isEmpty())
             conversation.messageIds.insert(line.msgid);
         run.push_back({line.author, line.body, line.timestamp, kind, false,
                        IrcOrigin::Replay, line.msgid});
         run.back().sequence = conversation.nextSequence++;
+        keptPlaybackLine = true;
+    }
+    if (keptPlaybackLine && event.kind == IrcHistoryKind::BouncerPlayback
+        && conversation.channel()) {
+        m_keptPlaybackChannels.insert(conversation.key);
     }
     if (sawSelf) {
         m_rememberedQueries.push_back(IrcRememberedQuery{
@@ -1518,6 +1531,54 @@ void IrcEventReducer::spliceHistory(IrcConversationState& conversation,
     }
 }
 
+bool IrcEventReducer::playbackBatchKept(const QString& networkId,
+                                        const QString& target) const
+{
+    if (networkId.isEmpty() || target.isEmpty())
+        return false;
+    return m_keptPlaybackChannels.count(conversationKey(networkId, target)) != 0;
+}
+
+void IrcEventReducer::dropKeptPlayback(const QString& networkId)
+{
+    if (networkId.isEmpty())
+        return;
+    for (auto it = m_keptPlaybackChannels.begin();
+         it != m_keptPlaybackChannels.end(); ) {
+        if (it->networkId == networkId)
+            it = m_keptPlaybackChannels.erase(it);
+        else
+            ++it;
+    }
+}
+
+bool IrcEventReducer::absorbPendingQueryPlayback(const IrcHistoryEvent& event)
+{
+    const auto found = m_pendingPlayback.find(event.conversation);
+    if (found == m_pendingPlayback.end())
+        return false;
+    if (!event.lines.empty()) {
+        auto& held = found->second.lines;
+        held.insert(held.end(), event.lines.begin(), event.lines.end());
+    }
+    if (!replayFromPeer(found->second)) {
+        if (!m_queryRestorePending.count(event.conversation.networkId))
+            m_pendingPlayback.erase(found);
+        return true;
+    }
+    IrcConversationState *conversation = findMutable(event.conversation);
+    if (!conversation) {
+        conversation = ensureConversation(event.conversation, found->second.target,
+                                          IrcConversationCause::InboundOther);
+        if (!conversation)
+            return true;
+    }
+    const IrcHistoryEvent combined = std::move(found->second);
+    m_pendingPlayback.erase(found);
+    spliceHistory(*conversation, combined, HistoryAnchorUse::Consume);
+    return true;
+}
+
 void IrcEventReducer::reduce(const IrcHistoryEvent& event)
 {
     const bool channelTarget = serverFeatures(event.conversation.networkId)
@@ -1540,6 +1601,16 @@ void IrcEventReducer::reduce(const IrcHistoryEvent& event)
             return;
         }
         spliceHistory(*conversation, event, HistoryAnchorUse::Keep);
+        return;
+    }
+
+    // A self-only query batch stays pending until restore. A later batch for
+    // that query is appended, and an empty append must not erase those lines.
+    // When the combined batch has a peer line, splice it once, in order.
+    // Releasing the older self lines afterwards would place them under the
+    // newer peer lines.
+    if (event.kind == IrcHistoryKind::BouncerPlayback && !channelTarget
+        && absorbPendingQueryPlayback(event)) {
         return;
     }
 

@@ -242,6 +242,9 @@ public:
     // batches into directs that now exist. A self-only batch whose query
     // still does not exist is a finished drop and does not move the clock.
     bool releasePendingQueryPlayback(const QString& networkId);
+    // A znc.in/playback batch for this channel was spliced, or deduped onto
+    // a row already in the transcript, on the current connection.
+    bool playbackBatchKept(const QString& networkId, const QString& target) const;
     bool releaseStaleNamesSync(const std::optional<IrcConversationKey>& key,
                                const QDateTime& now);
     bool dropDirectMessage(const IrcConversationKey& key);
@@ -325,10 +328,12 @@ private:
     std::optional<std::size_t> takeSpliceIndex(IrcConversationState& conversation);
     enum class HistoryAnchorUse { Consume, Keep };
     bool replayFromPeer(const IrcHistoryEvent& event) const;
+    bool absorbPendingQueryPlayback(const IrcHistoryEvent& event);
     void spliceHistory(IrcConversationState& conversation,
                        const IrcHistoryEvent& event,
                        HistoryAnchorUse anchorUse);
     void holdPendingPlayback(const IrcHistoryEvent& event);
+    void dropKeptPlayback(const QString& networkId);
     void releasePendingPlayback(IrcConversationState& conversation);
     void dropPendingPlayback(const QString& networkId);
 
@@ -380,6 +385,7 @@ private:
     std::set<IrcConversationKey> m_mutedKeys;
     IrcConversationLog *m_log = nullptr;
     std::map<IrcConversationKey, IrcHistoryEvent> m_pendingPlayback;
+    std::set<IrcConversationKey> m_keptPlaybackChannels;
     std::vector<IrcKeptReplay> m_keptReplay;
     std::vector<IrcRememberedQuery> m_rememberedQueries;
     // Set on welcome, cleared when open-direct restore finishes. A missing
