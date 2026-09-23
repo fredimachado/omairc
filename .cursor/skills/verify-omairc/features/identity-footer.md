@@ -21,11 +21,19 @@ Preconditions:
 - A default compiled launch shows an empty footer nick (`?` initials) and `offline` because Nick is still empty and the network is Offline. `fred` only appears under `--demo-server`, where it is the seeded live nick.
 - Demo chrome is also on `control-omairc launch --demo-server`. Live-fixture nicks are proven by `qml-suite`. Do not type a nick and Apply on the compiled window; that starts a real session.
 
-- **First-run fallback.** After `control-omairc launch`, run `control-omairc screenshot --feature identity-footer --name first-run-empty`. The footer nick is empty (the initials chip shows `?`) and the line under it is `offline`. There is no `fred` fallback. The app version is still on the right.
-- **Offscreen suite.** When proving the seeded and live labels, run `control-omairc doctor-qml` then `control-omairc qml-suite`. `bin/test` asserts `selfNickLabel` is `fred` on the seeded window and `live-nick` on the live fixture. The seeded `selfPresenceLabel` is `available` and `selfPresenceDot` is `#69b978`. A live fixture with `selfAway` true and `hasAwayPresence` false shows `away` and `#d6a552` while `connectionStatus` is `Connected`. A live fixture with `connectionStatus` `Offline` shows `offline` and the muted mark. `selfVersionLabel` is the non-empty app version on the seeded window. `qml-suite` copies the `#desktop` grab to `test-artifacts/verify/identity-footer/mock-fred.png`. That image must show `fred` / `available` and the version on the right of the sidebar footer. This does not prove the compiled-window first-run footer.
+```desktop-recipe
+launch
+wait-title --exact "irc.libera.chat Status"
+screenshot --feature identity-footer --name first-run-empty
+```
+
+- **First-run fallback.** After `control-omairc launch`, run `control-omairc wait-title --exact "irc.libera.chat Status"` then `control-omairc screenshot --feature identity-footer --name first-run-empty`. The footer nick is empty (the initials chip shows `?`) and the line under it is `offline`. There is no `fred` fallback. The app version is still on the right. Connect stays open on top of that footer.
+- **Offscreen suite.** When proving the seeded and live labels, run `control-omairc doctor-qml` then `control-omairc qml-suite`. `bin/test` asserts `selfNickLabel` is `fred` on the seeded window and `live-nick` on the live fixture. The seeded `selfPresenceLabel` is `available` and `selfPresenceDot` is `#69b978`. A live fixture with `selfAway` true and `hasAwayPresence` false shows `away` and `#d6a552` while `connectionStatus` is `Connected`. A live fixture with `connectionStatus` `Offline` shows `offline` and the muted mark. `selfVersionLabel` is the non-empty app version on the seeded window. `qml-suite` copies the `#desktop` grab to `test-artifacts/verify/identity-footer/mock-fred.png`. That image must show `fred` / `available` and the version on the right of the sidebar footer. This is not compiled-window proof.
 
 ## Gotchas
 
+- `run identity-footer` skips `launch` when `doctor` is already healthy and `demo=no`. It does not clear a nick you typed. A healthy `--demo-server` instance makes plain `launch` fail. Recipes that need the empty first-run footer need `cleanup` before `run`. Do not Apply.
+- `screenshot` retries a near-solid grab and fails the run if the frame stays flat. `first-run-empty` is the Connect footer with no key sent first.
 - The seeded footer stays `available` while `fred` is present and the demo session is Connected. Live chrome follows `irc.connectionStatus` first, then `irc.selfAway`.
 - Other members' dots still gate on `hasAwayPresence`. Our own member row and the footer mark do not, because the `305` / `306` numerics are authoritative for us when Connected.
 - An empty first-run Nick shows an empty footer nick and `?` initials. That is the fallback, not a saved profile. `fred` only appears on the demo server, where it is the seeded live nick.

@@ -23,21 +23,29 @@ Status is the network's server window. It shows handshake traffic, errors, notic
 
 Preconditions:
 
-- A default compiled launch (`control-omairc launch`) is titled `irc.libera.chat Status` with Connect on top of Status (`Offline`, no handshake). Finish Connect before looking for handshake lines on that window.
-- `control-omairc launch --demo-server` starts on `#omarchy · irc.example · fred - Omairc` with no Connect overlay. The sidebar subtitle is `Connected`. Open Status with `click-network` or `Ctrl+``. Demo Status already includes `-AUTH- *** Looking up your hostname...`. The edit control is visible; `click-edit` opens Connect.
-- After Connect, the window title and center header are `{displayName} Status`. On `--demo-server` they also read `{displayName} Status` because a connection is bound. A live QML fixture with `connection` null reads `Status`. Conversation titles stay `{conversation} - Omairc`, or `{conversation} · {displayName} - Omairc` when two conversations share a name.
+- A default compiled launch (`control-omairc launch`) is titled `irc.libera.chat Status` with Connect on top of Status (`Offline`, no handshake). Finish Connect before looking for handshake lines on that window. That launch is not this fence. One fence cannot also `launch --demo-server`.
+- `control-omairc launch --demo-server` starts on `#omarchy · irc.example · fred - Omairc` with no Connect overlay. The sidebar subtitle is `Connected`. Open Status with `Ctrl+``. Demo Status already includes `-AUTH- *** Looking up your hostname...`. The omarchy network's display name clashes with OFTC, so the Status title is `irc.example · fred Status`.
+- After Connect, the window title and center header are `{displayName} Status`. Conversation titles stay `{conversation} - Omairc`, or `{conversation} · {displayName} - Omairc` when two conversations share a name.
 
-- **First-run Status.** After `control-omairc launch`, the title is `irc.libera.chat Status`. The sidebar name is `irc.libera.chat`, the subtitle is `Offline`, CHANNELS and DIRECT MESSAGES are empty, and Connect sits on top of Status. There are no handshake lines yet. Run `control-omairc screenshot --feature status-console --name first-run-under-connect`.
-- **Toggle with no conversation.** Run `control-omairc key --key ctrl+grave`. The title stays `irc.libera.chat Status`. Status cannot close while nothing is selected.
-- **Open Status from the header.** After a conversation exists, click the network name. Run `control-omairc click-network`. In the suite this is `networkHeaderButton-omarchy`. The people control is gone, and the list shows server lines such as `-AUTH- *** Looking up your hostname...`. On `--demo-server` the center header reads `{displayName} Status`. After Connect it also reads `{displayName} Status`.
-- **Keep AUTH out of DIRECT MESSAGES.** After opening Status, the sidebar still has no `AUTH` row under DIRECT MESSAGES.
-- **Escape.** With a conversation already selected and Connect not required, press Escape. Run `control-omairc key --key Escape`. Status closes and the last conversation returns.
-- **Edit control.** Click `edit`. Run `control-omairc click-edit`. The connection sheet opens. Setup-required still opens that sheet on its own.
-- **Proof.** Capture Status showing server lines and no AUTH DM. The suite writes `test-artifacts/status-console.png` from the live fixture. When using a desktop instance that already has a conversation, run `control-omairc screenshot --feature status-console --name after-open`.
-- **Offscreen suite.** When Xvfb tools are missing, run `control-omairc doctor-qml` then `control-omairc qml-suite`. `bin/test` clicks `networkHeaderButton` on the live fixture, asserts `-AUTH- *** Looking up your hostname...` in `consoleList`, and keeps AUTH out of DIRECT MESSAGES. This does not prove the compiled-window header click.
+```desktop-recipe
+launch --demo-server
+wait-title --exact "#omarchy · irc.example · fred - Omairc"
+status
+wait-title --exact "irc.example · fred Status"
+screenshot --feature status-console --name after-open
+key --key Escape
+wait-title --exact "#omarchy · irc.example · fred - Omairc"
+```
+
+- **Open Status.** Press `Ctrl+``. Run `control-omairc status` then `control-omairc wait-title --exact "irc.example · fred Status"`. The people control is gone. The list shows server lines including `-AUTH- *** Looking up your hostname...`. There is no `AUTH` row under DIRECT MESSAGES. Capture it with `control-omairc screenshot --feature status-console --name after-open`.
+- **Escape.** Press Escape. Run `control-omairc key --key Escape` then `control-omairc wait-title --exact "#omarchy · irc.example · fred - Omairc"`. Status closes and the last conversation returns.
+- **First-run Status.** After `control-omairc launch` (no `--demo-server`), the title is `irc.libera.chat Status`. Connect sits on top of Status, the subtitle is `Offline`, and there are no handshake lines. `status` does not close Status while nothing is selected. That path is not this fence.
+- **Mouse path.** `control-omairc click-network` opens Status from the network name. `control-omairc click-edit` opens Connect from the small edit control. There is no chord for those pixels. They are not this recipe. The recipe uses `status`.
+- **Offscreen suite.** When Xvfb tools are missing, run `control-omairc doctor-qml` then `control-omairc qml-suite`. `bin/test` clicks `networkHeaderButton` on the live fixture, asserts `-AUTH- *** Looking up your hostname...` in `consoleList`, and keeps AUTH out of DIRECT MESSAGES. The suite writes `test-artifacts/status-console.png`. This is not compiled-window proof.
 
 ## Gotchas
 
+- `run status-console` skips `launch` when `doctor` is already healthy and `demo=yes`. It does not reset which pane is open. Recipes that need Status closed on a fresh demo need `cleanup` before `run`.
 - Status is not a CHANNELS or DIRECT MESSAGES row. Do not look for a sidebar `Status` item.
 - There is one composer. Enter goes to the visible pane. Do not look for a second input.
 - The network name opens Status. The small `edit` control opens Connect. Clicking the old full header is no longer the sheet path.

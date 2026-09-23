@@ -22,7 +22,8 @@ Preconditions:
 - A compiled window would call `Qt.openUrlExternally` on a real click. Do not use that as proof on the isolated display.
 - `control-omairc launch` without `--demo-server` is first-run Connect titled `irc.libera.chat Status` with no transcript URLs. Do not start this recipe there.
 
-- **Message and Status clicks.** Run `control-omairc doctor-qml` then `control-omairc qml-suite`. `test_messageBodyClickOpensHttpsUrl` appends `read https://example.com thanks` and clicks the hit; `lastOpenedUrl` is `https://example.com`. `test_consoleBodyClickOpensHttpUrl` does the same for `http://example.com` on Status. `test_httpUrlAllowlist` keeps `file:` and `javascript:` closed. There is no compiled-window screenshot for that path.
+- **No compiled-window recipe.** `control-omairc run open-links` fails closed. This file has no `desktop-recipe` fence. Do not add an empty fence or a `qml-suite` fence.
+- **Message and Status clicks.** Run `control-omairc doctor-qml` then `control-omairc qml-suite`. `test_messageBodyClickOpensHttpsUrl` appends `read https://example.com thanks` and clicks the hit; `lastOpenedUrl` is `https://example.com`. `test_consoleBodyClickOpensHttpUrl` does the same for `http://example.com` on Status. `test_httpUrlAllowlist` keeps `file:` and `javascript:` closed. `qml-suite` is not compiled-window proof.
 
 ## Gotchas
 

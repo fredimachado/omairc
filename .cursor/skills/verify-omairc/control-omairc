@@ -3,8 +3,21 @@ set -eu
 
 SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 ROOT="$(CDPATH= cd -- "$SCRIPT_DIR/../../.." && pwd)"
+SELF=$SCRIPT_DIR/$(basename -- "$0")
 STATE_FILE="${OMAIRC_VERIFY_STATE:-${TMPDIR:-/tmp}/omairc-verify-$USER/state}"
 EVIDENCE_DIR="${OMAIRC_VERIFY_EVIDENCE:-$ROOT/test-artifacts/verify}"
+# Jump, nick-jump, and composer focus need a pause after the chord before
+# type. The chord's own pause is not always enough on this Xvfb.
+JUMP_FIELD_DELAY=0.4
+# import can return a flat Xvfb frame before Qt has painted, or fail and
+# leave the previous PNG in place. Drop that destination before each grab
+# and retry. Near-solid means a non-finite or tiny standard deviation, or
+# very few colors. File size is not the test: a sparse painted window can
+# be a small PNG.
+SCREENSHOT_GRAB_ATTEMPTS=5
+SCREENSHOT_GRAB_DELAY=0.3
+SCREENSHOT_FLAT_STDDEV=0.005
+SCREENSHOT_FLAT_COLORS=16
 
 usage() {
   cat <<'EOF'
@@ -24,11 +37,21 @@ Usage:
   control-omairc click-version
   control-omairc click-send
   control-omairc focus-composer
+  control-omairc composer
+  control-omairc jump --query "<text>"
+  control-omairc walk --down|--up [--times N]
+  control-omairc unread
+  control-omairc toggle-members
+  control-omairc focus-members
+  control-omairc nick-jump --query "<text>"
+  control-omairc status
+  control-omairc connect
   control-omairc type --text "<text>"
   control-omairc key --key <xdotool-key>
   control-omairc send --text "<text>"
   control-omairc screenshot --feature <id> --name <stem>
   control-omairc compare --before <path> --after <path>
+  control-omairc run <feature> [--dry-run]
   control-omairc qml-suite
   control-omairc doctor-qml
   control-omairc cleanup
@@ -152,7 +175,7 @@ cmd_launch() {
 
   require_tools
   if [ -f "$STATE_FILE" ]; then
-    if "$0" doctor >/dev/null 2>&1; then
+    if "$SELF" doctor >/dev/null 2>&1; then
       die "an isolated instance is already running. Run cleanup first, or doctor to inspect it."
     fi
     echo "control-omairc: clearing stale run state" >&2
@@ -368,9 +391,10 @@ cmd_click_send() {
 }
 
 cmd_focus_composer() {
-  load_state
-  xdotool windowfocus --sync "$WINDOW"
-  xdotool key --window "$WINDOW" ctrl+l
+  require_no_args focus-composer "$@"
+  cmd_key --key ctrl+l
+  # Same settle jump uses before type, so a later type is not racing focus.
+  sleep "$JUMP_FIELD_DELAY"
 }
 
 cmd_type() {
@@ -401,6 +425,9 @@ cmd_key() {
   case $key in
     ctrl+slash) key=Control_L+slash ;;
     ctrl+k) key=Control_L+k ;;
+    ctrl+l) key=Control_L+l ;;
+    ctrl+grave) key=Control_L+grave ;;
+    ctrl+comma) key=Control_L+comma ;;
     ctrl+shift+k) key=Control_L+Shift_L+k ;;
     ctrl+shift+m) key=Control_L+Shift_L+m ;;
     ctrl+shift+p) key=Control_L+Shift_L+p ;;
@@ -427,9 +454,147 @@ cmd_send() {
     esac
   done
   [ -n "$text" ] || die "send requires --text"
-  cmd_focus_composer
+  cmd_key --key ctrl+l
+  sleep "$JUMP_FIELD_DELAY"
   cmd_type --text "$text"
   cmd_key --key Return
+}
+
+require_no_args() {
+  verb=$1
+  shift
+  [ $# -eq 0 ] || die "$verb does not take arguments"
+}
+
+cmd_composer() {
+  require_no_args composer "$@"
+  cmd_key --key ctrl+l
+  # Same settle jump uses before type, so a later type is not racing focus.
+  sleep "$JUMP_FIELD_DELAY"
+}
+
+cmd_query_chord() {
+  verb=$1
+  chord=$2
+  shift 2
+  query=
+  while [ $# -gt 0 ]; do
+    case $1 in
+      --query)
+        [ $# -ge 2 ] || die "$verb requires --query"
+        query=$2
+        shift 2
+        ;;
+      *) die "unknown $verb argument: $1" ;;
+    esac
+  done
+  [ -n "$query" ] || die "$verb requires --query"
+  cmd_key --key "$chord"
+  sleep "$JUMP_FIELD_DELAY"
+  cmd_type --text "$query"
+  cmd_key --key Return
+}
+
+cmd_jump() {
+  cmd_query_chord jump ctrl+k "$@"
+}
+
+cmd_nick_jump() {
+  cmd_query_chord nick-jump ctrl+shift+k "$@"
+}
+
+cmd_walk() {
+  direction=
+  times=1
+  while [ $# -gt 0 ]; do
+    case $1 in
+      --down|--up)
+        [ -z "$direction" ] || die "walk accepts only one of --down or --up"
+        direction=${1#--}
+        shift
+        ;;
+      --times)
+        [ $# -ge 2 ] || die "walk requires --times N"
+        times=$2
+        shift 2
+        ;;
+      *) die "unknown walk argument: $1" ;;
+    esac
+  done
+  [ -n "$direction" ] || die "walk requires --down or --up"
+  case $times in
+    *[!0-9]*|"") die "walk --times requires a positive integer" ;;
+  esac
+  times=$(printf '%s' "$times" | sed 's/^0*//')
+  [ -n "$times" ] || die "walk --times requires a positive integer"
+  if [ "$direction" = down ]; then
+    key=alt+Down
+  else
+    key=alt+Up
+  fi
+  step=0
+  while [ "$step" -lt "$times" ]; do
+    cmd_key --key "$key"
+    step=$((step + 1))
+  done
+}
+
+cmd_unread() {
+  require_no_args unread "$@"
+  cmd_key --key alt+a
+}
+
+cmd_toggle_members() {
+  require_no_args toggle-members "$@"
+  cmd_key --key ctrl+shift+m
+}
+
+cmd_focus_members() {
+  require_no_args focus-members "$@"
+  cmd_key --key ctrl+shift+p
+}
+
+cmd_status() {
+  require_no_args status "$@"
+  cmd_key --key ctrl+grave
+}
+
+cmd_connect() {
+  require_no_args connect "$@"
+  cmd_key --key ctrl+comma
+}
+
+# Print "stddev colors" or nothing when magick cannot read the file.
+screenshot_metrics() {
+  magick "$1" -format '%[fx:standard_deviation] %k' info: 2>/dev/null || true
+}
+
+# Missing, empty, unreadable, or near-solid. ImageMagick 6 prints "-nan"
+# for a low-variance frame. mawk treats that token as ordered, so match
+# nan/inf as text before the numeric test. A flat frame is also one color,
+# a handful of colors, or a field whose spread is ~0.
+screenshot_is_near_solid() {
+  _path=$1
+  [ -s "$_path" ] || return 0
+  _stats=$(screenshot_metrics "$_path")
+  [ -n "$_stats" ] || return 0
+  _std=$(printf '%s\n' "$_stats" | awk '{ print $1; exit }')
+  _colors=$(printf '%s\n' "$_stats" | awk '{ print $2; exit }')
+  awk -v std="$_std" -v colors="$_colors" \
+    -v max_std="$SCREENSHOT_FLAT_STDDEV" -v max_colors="$SCREENSHOT_FLAT_COLORS" \
+    'BEGIN {
+      token = tolower(std "")
+      sub(/^[+-]/, "", token)
+      if (token ~ /^(nan|inf)/)
+        exit 0
+      std += 0
+      colors += 0
+      max_std += 0
+      max_colors += 0
+      if (std != std || std < max_std || colors < max_colors)
+        exit 0
+      exit 1
+    }'
 }
 
 cmd_screenshot() {
@@ -447,8 +612,25 @@ cmd_screenshot() {
   dest="$EVIDENCE_DIR/$feature"
   mkdir -p "$dest"
   path="$dest/$name.png"
-  import -display "$DISPLAY" -window "$WINDOW" "$path"
-  echo "$path"
+  _attempt=1
+  while :; do
+    # A failed import must not classify the previous PNG as this grab.
+    rm -f -- "$path"
+    if import -display "$DISPLAY" -window "$WINDOW" "$path"; then
+      if ! screenshot_is_near_solid "$path"; then
+        echo "$path"
+        return 0
+      fi
+    else
+      rm -f -- "$path"
+    fi
+    [ "$_attempt" -lt "$SCREENSHOT_GRAB_ATTEMPTS" ] || break
+    _attempt=$((_attempt + 1))
+    sleep "$SCREENSHOT_GRAB_DELAY"
+  done
+  # Latest grab failed, or it succeeded and is still near-solid.
+  _stats=$(screenshot_metrics "$path")
+  die "screenshot is missing, empty, or still a flat frame: $path${_stats:+ ($_stats)}"
 }
 
 cmd_compare() {
@@ -544,6 +726,231 @@ cmd_cleanup() {
   echo "evidence kept at $EVIDENCE_DIR"
 }
 
+# Print one eval-safe word. Single quotes keep "#desktop" from becoming a comment.
+shell_quote_word() {
+  _word=$1
+  _escaped=$(printf '%s' "$_word" | sed "s/'/'\\\\''/g")
+  printf "'%s'" "$_escaped"
+}
+
+# Print the recipe line as eval-safe words for `eval "set -- ..."`.
+# Unbalanced quotes exit 1 after a message. A trailing unquoted # is a comment.
+shell_quote_line() {
+  _rest=$1
+  _built=
+  while :; do
+    while :; do
+      case $_rest in
+        "") break 2 ;;
+        " "*) _rest=${_rest# } ;;
+        "	"*) _rest=${_rest#	} ;;
+        *) break ;;
+      esac
+    done
+    case $_rest in
+      \#*) break ;;
+    esac
+    _token=
+    _mode=none
+    _skip_token=0
+    while [ -n "$_rest" ]; do
+      _char=${_rest%"${_rest#?}"}
+      _rest=${_rest#?}
+      case $_mode in
+        none)
+          case $_char in
+            " "|"	") break ;;
+            "'") _mode=single ;;
+            '"') _mode=double ;;
+            \#)
+              if [ -z "$_token" ]; then
+                _skip_token=1
+                _rest=
+              else
+                _token=$_token$_char
+              fi
+              ;;
+            *) _token=$_token$_char ;;
+          esac
+          ;;
+        single)
+          case $_char in
+            "'") _mode=none ;;
+            *) _token=$_token$_char ;;
+          esac
+          ;;
+        double)
+          case $_char in
+            '"') _mode=none ;;
+            *) _token=$_token$_char ;;
+          esac
+          ;;
+      esac
+    done
+    if [ "$_mode" != none ]; then
+      die "unbalanced quotes in desktop recipe"
+    fi
+    if [ "$_skip_token" -eq 1 ]; then
+      break
+    fi
+    _built="$_built $(shell_quote_word "$_token")"
+  done
+  printf '%s' "$_built"
+}
+
+trim_line() {
+  printf '%s' "$1" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//'
+}
+
+read_desktop_recipe() {
+  _feature_file=$1
+  awk '
+    in_fence && /^```[[:space:]]*$/ { in_fence = 0; closed = 1; next }
+    in_fence { print; next }
+    /^## Driving it with control-omairc[[:space:]]*$/ { section = 1; next }
+    /^## / { if (section) section = 0; next }
+    section && /^```desktop-recipe[[:space:]]*$/ { in_fence = 1; found = 1; next }
+    END {
+      if (!found || !closed)
+        exit 3
+    }
+  ' "$_feature_file"
+}
+
+reject_offscreen_recipe_line() {
+  case $1 in
+    qml-suite|qml-suite[[:space:]]*|doctor-qml|doctor-qml[[:space:]]*)
+      die "desktop recipe cannot run '$1': qml-suite and doctor-qml are not compiled-window proof"
+      ;;
+  esac
+}
+
+load_recipe_commands() {
+  _feature=$1
+  case $_feature in
+    *[!A-Za-z0-9_-]*|"") die "invalid feature id '$_feature'" ;;
+  esac
+  _file=$SCRIPT_DIR/features/$_feature.md
+  [ -f "$_file" ] || die "no feature file for '$_feature'"
+  if ! _recipe=$(read_desktop_recipe "$_file"); then
+    die "no desktop-recipe fence in $_file. Put it under ## Driving it with control-omairc, before ## Gotchas."
+  fi
+  _commands=$(mktemp)
+  _raw=$(mktemp)
+  printf '%s\n' "$_recipe" > "$_raw"
+  while IFS= read -r _line || [ -n "$_line" ]; do
+    _trimmed=$(trim_line "$_line")
+    [ -n "$_trimmed" ] || continue
+    case $_trimmed in
+      \#*) continue ;;
+    esac
+    reject_offscreen_recipe_line "$_trimmed"
+    if ! _quoted=$(shell_quote_line "$_trimmed"); then
+      rm -f "$_commands" "$_raw"
+      exit 1
+    fi
+    eval "set -- $_quoted"
+    [ $# -gt 0 ] || die "empty command in desktop recipe: $_trimmed"
+    case $1 in
+      qml-suite|doctor-qml)
+        die "desktop recipe cannot run '$1': it is not compiled-window proof"
+        ;;
+    esac
+    printf '%s\n' "$_trimmed" >> "$_commands"
+  done < "$_raw"
+  rm -f "$_raw"
+  if [ ! -s "$_commands" ]; then
+    rm -f "$_commands"
+    die "desktop-recipe fence is empty in $_file"
+  fi
+  RECIPE_COMMANDS=$_commands
+  RECIPE_FILE=$_file
+}
+
+# Skip launch when doctor is already healthy and DEMO matches.
+# Exit non-zero on a healthy instance in the other mode. Do not clean it up.
+# Return 0 to skip, 1 to launch.
+launch_should_skip() {
+  _want_demo=
+  shift
+  while [ $# -gt 0 ]; do
+    case $1 in
+      --demo-server) _want_demo=1; shift ;;
+      *) die "unknown launch argument: $1. Use launch or launch --demo-server." ;;
+    esac
+  done
+  if ! _doctor=$("$SELF" doctor 2>/dev/null); then
+    return 1
+  fi
+  _running=$(printf '%s\n' "$_doctor" | awk -F= '/^demo=/{ print $2; exit }')
+  if [ "$_want_demo" = 1 ]; then
+    if [ "$_running" != yes ]; then
+      die "isolated instance is already running without --demo-server. Refusing to cleanup a healthy instance."
+    fi
+  else
+    if [ "$_running" != no ]; then
+      die "isolated instance is already running with --demo-server. Refusing to cleanup a healthy instance."
+    fi
+  fi
+  echo "launch skipped; isolated instance already matches" >&2
+  return 0
+}
+
+cmd_run() {
+  _feature=
+  _dry=0
+  while [ $# -gt 0 ]; do
+    case $1 in
+      --dry-run) _dry=1; shift ;;
+      -*) die "unknown run argument: $1" ;;
+      *)
+        [ -z "$_feature" ] || die "unexpected argument: $1"
+        _feature=$1
+        shift
+        ;;
+    esac
+  done
+  [ -n "$_feature" ] || die "run requires a feature id"
+  load_recipe_commands "$_feature"
+  if [ "$_dry" -eq 1 ]; then
+    cat "$RECIPE_COMMANDS"
+    rm -f "$RECIPE_COMMANDS"
+    return 0
+  fi
+
+  cd "$ROOT"
+  _shots=$(mktemp)
+  while IFS= read -r _line || [ -n "$_line" ]; do
+    if ! _quoted=$(shell_quote_line "$_line"); then
+      exit 1
+    fi
+    eval "set -- $_quoted"
+    [ $# -gt 0 ] || die "empty command in desktop recipe: $_line"
+    if [ "$1" = launch ] && launch_should_skip "$@"; then
+      continue
+    fi
+    if [ "$1" = screenshot ]; then
+      set +e
+      _path=$("$SELF" "$@")
+      _status=$?
+      set -e
+      [ "$_status" -eq 0 ] || exit "$_status"
+      [ -n "$_path" ] || die "screenshot printed an empty path"
+      [ -s "$_path" ] || die "screenshot missing or empty: $_path"
+      printf '%s\n' "$_path"
+      printf '%s\n' "$_path" >> "$_shots"
+    else
+      "$SELF" "$@"
+    fi
+  done < "$RECIPE_COMMANDS"
+
+  while IFS= read -r _path || [ -n "$_path" ]; do
+    [ -n "$_path" ] || die "screenshot path is empty"
+    [ -s "$_path" ] || die "screenshot missing or empty: $_path"
+  done < "$_shots"
+  rm -f "$RECIPE_COMMANDS" "$_shots"
+}
+
 cmd=${1:-}
 if [ -n "$cmd" ]; then
   shift
@@ -563,11 +970,21 @@ case $cmd in
   click-version) cmd_click_version ;;
   click-send) cmd_click_send ;;
   focus-composer) cmd_focus_composer ;;
+  composer) cmd_composer "$@" ;;
+  jump) cmd_jump "$@" ;;
+  walk) cmd_walk "$@" ;;
+  unread) cmd_unread "$@" ;;
+  toggle-members) cmd_toggle_members "$@" ;;
+  focus-members) cmd_focus_members "$@" ;;
+  nick-jump) cmd_nick_jump "$@" ;;
+  status) cmd_status "$@" ;;
+  connect) cmd_connect "$@" ;;
   type) cmd_type "$@" ;;
   key) cmd_key "$@" ;;
   send) cmd_send "$@" ;;
   screenshot) cmd_screenshot "$@" ;;
   compare) cmd_compare "$@" ;;
+  run) cmd_run "$@" ;;
   qml-suite) cmd_qml_suite ;;
   doctor-qml) cmd_doctor_qml ;;
   cleanup) cmd_cleanup ;;

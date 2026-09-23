@@ -20,16 +20,31 @@ Slash complete shows matching commands above the composer after `/` plus a non-s
 
 Preconditions:
 
-- The compiled list needs `slashCommands` bound (`control-omairc launch --demo-server`). Default Connect also binds it, but the composer sits under the sheet.
-- `qml-suite` covers open, Tab, Escape, Up/Down, and history walk past a bare `/j` with a JS stand-in. Existing nick-complete and history cases omit `slashCommands` and stay on today's Tab / Up / Down paths.
+- The compiled list needs `slashCommands` bound (`control-omairc launch --demo-server`). Default Connect also binds it, but the composer sits under the sheet. Do not start this recipe there.
+- `qml-suite` covers open, Tab, Escape, Up/Down, and history walk past a bare `/j` with a JS stand-in. Existing nick-complete and history cases omit `slashCommands` and stay on today's Tab / Up / Down paths. That suite is not compiled-window proof.
 - There is no chord for this feature. Do not look for it on the `Ctrl+/` sheet. Tab there still says nick complete.
 
-- **List for `/j`.** Run `control-omairc launch --demo-server`, then `control-omairc doctor`, `control-omairc focus-composer`, `control-omairc type --text "/j"`, and `control-omairc screenshot --feature slash-complete --name after-slash-j`. The compiled list sits above the composer with one row, `/join`. Down and Up wrap on that row and do not change the highlight.
-- **Tab insert.** From `/j`, type `o` if Escape already dismissed the list, then run `control-omairc key --key Tab` and `control-omairc screenshot --feature slash-complete --name after-tab`. The composer is `/join ` and the list is gone.
-- **Offscreen suite.** Run `control-omairc doctor-qml` then `control-omairc qml-suite`. That run covers `test_slashCompleteListAppearsForSlashJ`, `test_slashCompleteTabInsertsCanonicalVerb`, `test_slashCompleteEscapeDismisses`, `test_slashCompleteUpDownMoveSelection`, and `test_slashCompleteHistoryUpWalksPastBareCommand`. The Up/Down test uses a two-row JS fake (`/join` and `/nick`). It does not prove the compiled C++ catalog.
+```desktop-recipe
+launch --demo-server
+wait-title --exact "#omarchy · irc.example · fred - Omairc"
+composer
+type --text "/j"
+screenshot --feature slash-complete --name after-slash-j
+key --key Tab
+screenshot --feature slash-complete --name after-tab
+compare --before test-artifacts/verify/slash-complete/after-slash-j.png --after test-artifacts/verify/slash-complete/after-tab.png
+key --key Escape
+wait-title --exact "#omarchy · irc.example · fred - Omairc"
+```
+
+- **List for `/j`.** Press `Ctrl+L` and type `/j`. Run `control-omairc composer`, `control-omairc type --text "/j"`, and `control-omairc screenshot --feature slash-complete --name after-slash-j`. The compiled list sits above the composer with one row, `/join`. The composer shows `/j`.
+- **Tab insert.** With `/j` still in the composer, press Tab. Run `control-omairc key --key Tab` then `control-omairc screenshot --feature slash-complete --name after-tab`. Tab inserts `/join ` and closes the list. Run `control-omairc compare --before test-artifacts/verify/slash-complete/after-slash-j.png --after test-artifacts/verify/slash-complete/after-tab.png`. `compare` must report a pixel change.
+- **Escape.** Press Escape only after that shot. Run `control-omairc key --key Escape` then `control-omairc wait-title --exact "#omarchy · irc.example · fred - Omairc"`. The conversation does not change. The composer holds the inserted `/join `.
+- **Offscreen suite.** Run `control-omairc doctor-qml` then `control-omairc qml-suite`. That run covers `test_slashCompleteListAppearsForSlashJ`, `test_slashCompleteTabInsertsCanonicalVerb`, `test_slashCompleteEscapeDismisses`, `test_slashCompleteUpDownMoveSelection`, and `test_slashCompleteHistoryUpWalksPastBareCommand`. The Up/Down test uses a two-row JS fake (`/join` and `/nick`). This is not compiled-window proof.
 
 ## Gotchas
 
+- `run slash-complete` skips `launch` when `doctor` is already healthy and `demo=yes`. It does not clear the composer. A leftover `/j` or `/close` changes what `type` appends. Recipes that need an empty composer need `cleanup` before `run`.
 - `//` and `///x` stay ordinary chat (`/` plus the rest). The list must not open.
 - `/` alone and `/join #omarchy` (space after the verb) keep the list closed.
 - Tab still nick-completes `mi` when the composer is not a slash query.
