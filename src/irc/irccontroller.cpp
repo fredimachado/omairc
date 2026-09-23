@@ -12,7 +12,10 @@
 #include "ircmute.h"
 #include "ircnetworkprofile.h"
 #include "ircopendirect.h"
+#include "ircplaybacktime.h"
+#include "ircprefixnick.h"
 #include "ircpresence.h"
+#include "ircservicenick.h"
 #include "ircjointarget.h"
 #include "ircviewnotify.h"
 #include "irctcp.h"
@@ -142,6 +145,24 @@ std::string utf8(const QString& value)
 {
     const QByteArray bytes = value.toUtf8();
     return std::string(bytes.constData(), std::size_t(bytes.size()));
+}
+
+std::optional<QDateTime> serverTimeOf(const IrcMessage& message)
+{
+    for (const IrcTag& tag : message.tags) {
+        if (tag.name != "time" || !tag.value)
+            continue;
+        const QString raw = ircWireText(*tag.value);
+        if (raw.isEmpty())
+            return std::nullopt;
+        QDateTime parsed = QDateTime::fromString(raw, Qt::ISODateWithMs);
+        if (!parsed.isValid())
+            parsed = QDateTime::fromString(raw, Qt::ISODate);
+        if (!parsed.isValid())
+            return std::nullopt;
+        return parsed.toUTC();
+    }
+    return std::nullopt;
 }
 
 bool ignoreNickIsUsable(const QString& nick, const IrcServerFeatures& features)
@@ -416,6 +437,7 @@ void IrcController::setEphemeral(bool ephemeral)
     if (ephemeral)
         m_reducer.setConversationLog(nullptr);
     m_openDirects.setEphemeral(ephemeral);
+    m_playbackTimes.setEphemeral(ephemeral);
 }
 
 void IrcController::loadStoredPreferences()
@@ -461,6 +483,7 @@ IrcSession *IrcController::addSession(const IrcSessionConfig& config,
         m_openDirectsMotdSeen.remove(networkId);
         applyProfileAvatarOnConnect(session);
         updateStatus(session);
+        requestZncPlayback(session);
     });
     connect(session, &IrcSession::messageReceived,
             this, &IrcController::handleMessage);
@@ -473,6 +496,7 @@ IrcSession *IrcController::addSession(const IrcSessionConfig& config,
         if (state != IrcSession::State::Registered) {
             forgetChannelList(session->networkId());
             m_appliedProfileAvatars.remove(session->networkId());
+            m_zncPlaybackSent.remove(session->networkId());
         }
         updateStatus(session);
     });
@@ -556,6 +580,7 @@ void IrcController::forgetNetworkState(const QString &networkId)
     m_monitors.forget(networkId);
     m_mutes.forget(networkId);
     m_openDirects.forget(networkId);
+    m_playbackTimes.forget(networkId);
     m_highlights.forget(networkId);
     m_inbox.purgeNetwork(networkId);
     syncInbox();
@@ -966,6 +991,7 @@ void IrcController::handleCapabilities(const QString& networkId,
     if (IrcSession *session = m_sessions.findSession(networkId)) {
         if (session->state() == IrcSession::State::Registered)
             applyProfileAvatarOnConnect(session);
+        requestZncPlayback(session);
     }
 }
 
@@ -4100,8 +4126,10 @@ void IrcController::apply(const IrcEvent& event)
         emit peerAccountChanged();
     }
     if (const auto *nick = std::get_if<IrcNickEvent>(&event)) {
-        m_openDirects.rekey(nick->networkId, nick->oldNick, nick->newNick,
-                            m_reducer.serverFeatures(nick->networkId).caseMapping());
+        const IrcCaseMapping& mapping =
+            m_reducer.serverFeatures(nick->networkId).caseMapping();
+        m_openDirects.rekey(nick->networkId, nick->oldNick, nick->newNick, mapping);
+        m_playbackTimes.rekey(nick->networkId, nick->oldNick, nick->newNick, mapping);
     } else if (const auto *message = std::get_if<IrcMessageEvent>(&event)) {
         if (m_reducer.serverFeatures(message->conversation.networkId)
                 .caseMapping()
@@ -4194,6 +4222,7 @@ void IrcController::publish(const IrcViewNotify& notify)
 void IrcController::handleMessage(const QString& networkId,
                                   const IrcMessage& message)
 {
+    notePlaybackClock(networkId, message);
     if (message.command == "FAIL")
         routeOwnMetadataFail(networkId, message);
     if (message.command == "005") {
@@ -4299,11 +4328,67 @@ void IrcController::handleMessage(const QString& networkId,
 void IrcController::handleHistoryBatch(const QString& networkId,
                                        const IrcHistoryBatch& batch)
 {
+    for (const IrcMessage& line : batch.lines)
+        notePlaybackClock(networkId, line);
     const auto event = IrcEventTranslator::translateHistory(
         networkId, m_currentNicks.value(networkId),
         m_reducer.serverFeatures(networkId), batch);
     if (event)
         apply(*event);
+}
+
+void IrcController::notePlaybackClock(const QString& networkId, const IrcMessage& message)
+{
+    if (networkId.isEmpty())
+        return;
+    if (ircWireText(message.command).compare(QLatin1String("PRIVMSG"), Qt::CaseInsensitive) != 0
+        || message.parameters.size() < 2) {
+        return;
+    }
+    const std::optional<QDateTime> when = serverTimeOf(message);
+    if (!when)
+        return;
+    const auto ctcp = parseCtcpRequest(parameter(message, 1));
+    if (ctcp && ctcp->command != QStringLiteral("ACTION"))
+        return;
+
+    const IrcServerFeatures& features = m_reducer.serverFeatures(networkId);
+    const QString currentNick = m_currentNicks.value(networkId);
+    const QString wireTarget = parameter(message, 0);
+    if (!ircConversationFor(networkId, wireTarget, message, currentNick, features))
+        return;
+
+    const QString sender = ircPrefixNick(message);
+    const bool channel = features.isChannel(utf8(wireTarget));
+    const QString displayTarget = channel
+        ? wireTarget
+        : (features.caseMapping().equals(utf8(sender), utf8(currentNick))
+               ? wireTarget
+               : sender);
+    if (displayTarget.isEmpty())
+        return;
+    if (!channel
+        && (!ircNickIsRoutable(displayTarget)
+            || ircTargetLooksLikeService(displayTarget, features))) {
+        return;
+    }
+    m_playbackTimes.note(networkId, displayTarget, *when, features.caseMapping());
+}
+
+void IrcController::requestZncPlayback(IrcSession *session)
+{
+    if (!session || session->state() != IrcSession::State::Registered)
+        return;
+    const QString networkId = session->networkId();
+    if (m_zncPlaybackSent.contains(networkId))
+        return;
+    if (!m_capabilities.value(networkId).contains(IrcCapability::ZncPlayback))
+        return;
+    const QString from = ircPlaybackPlayStamp(m_playbackTimes.newest(networkId));
+    const QString body = QStringLiteral("*playback PLAY * ") + from;
+    if (!session->sendPrivmsg(QStringLiteral("*status"), body))
+        return;
+    m_zncPlaybackSent.insert(networkId);
 }
 
 void IrcController::reloadModels()

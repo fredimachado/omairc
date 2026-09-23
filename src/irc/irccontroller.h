@@ -12,6 +12,7 @@
 #include "ircmonitor.h"
 #include "ircmute.h"
 #include "ircopendirect.h"
+#include "ircplaybacktime.h"
 #include "ircsessionmanager.h"
 #include "ircstatusconsole.h"
 #include "ircstatusentry.h"
@@ -301,6 +302,8 @@ private:
     void echoLocal(IrcMessageKind kind, const QString& body);
     void handleMessage(const QString& networkId, const IrcMessage& message);
     void handleHistoryBatch(const QString& networkId, const IrcHistoryBatch& batch);
+    void notePlaybackClock(const QString& networkId, const IrcMessage& message);
+    void requestZncPlayback(IrcSession *session);
     void reloadModels();
     IrcCommandOutcome dispatch(const IrcCommand& command,
                                IrcComposerSurface surface);
@@ -518,6 +521,8 @@ private:
     IrcMonitorStore m_monitors;
     IrcMuteStore m_mutes;
     IrcOpenDirectStore m_openDirects;
+    IrcPlaybackTimeStore m_playbackTimes;
+    QSet<QString> m_zncPlaybackSent;
     IrcHighlightStore m_highlights;
     IrcInbox m_inbox;
     IrcInboxModel m_inboxModel;

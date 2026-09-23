@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Omairc requests `znc.in/playback` when a bouncer offers it together with
+  `batch`. After registration it sends `PLAY *` through `*status`, starting
+  from the newest stored server-time, or `0` on the first attach. Replayed
+  lines stay muted backlog and are not duplicated. A bouncer that replays
+  without the cap is unchanged.
 - SASL uses SCRAM-SHA-256 when the server advertises it, and PLAIN otherwise.
 - IRCv3 `account-tag`, `account-notify`, and `extended-join`. Omairc keeps
   each nick's services account and shows it in the member list, on message

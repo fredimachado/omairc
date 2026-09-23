@@ -1313,6 +1313,22 @@ void IrcEventReducer::reduce(const IrcHistoryEvent& event)
     const std::size_t previousSize = conversation->messages.size();
     const std::size_t at = *spliceIndex;
 
+    const IrcCaseMapping mapping =
+        serverFeatures(event.conversation.networkId).caseMapping();
+    const auto sameReplayLine = [&](const IrcReducedMessage& message,
+                                    const IrcReplayLine& line,
+                                    IrcMessageKind kind) {
+        if (message.kind != kind || message.body != line.body)
+            return false;
+        if (!message.timestamp.isValid() || !line.timestamp.isValid())
+            return false;
+        if (message.timestamp.toUTC().toMSecsSinceEpoch()
+            != line.timestamp.toUTC().toMSecsSinceEpoch()) {
+            return false;
+        }
+        return mapping.equals(utf8(message.author), utf8(line.author));
+    };
+
     std::vector<IrcReducedMessage> run;
     run.reserve(event.lines.size());
     for (const IrcReplayLine& line : event.lines) {
@@ -1321,6 +1337,17 @@ void IrcEventReducer::reduce(const IrcHistoryEvent& event)
         const IrcMessageKind kind = line.kind == IrcMessageKindTag::Emote
             ? IrcMessageKind::Action
             : IrcMessageKind::Message;
+        const bool alreadyPresent = std::any_of(
+            conversation->messages.begin(), conversation->messages.end(),
+            [&](const IrcReducedMessage& message) {
+                return sameReplayLine(message, line, kind);
+            })
+            || std::any_of(run.begin(), run.end(),
+                           [&](const IrcReducedMessage& message) {
+                               return sameReplayLine(message, line, kind);
+                           });
+        if (alreadyPresent)
+            continue;
         if (!line.msgid.isEmpty())
             conversation->messageIds.insert(line.msgid);
         run.push_back({line.author, line.body, line.timestamp, kind, false,

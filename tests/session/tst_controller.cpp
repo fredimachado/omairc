@@ -21,6 +21,7 @@
 #include "irccapability.h"
 #include "ircconversationlog.h"
 #include "irccontroller.h"
+#include "ircplaybacktime.h"
 #include "ircmessage.h"
 #include "memberlistmodel.h"
 #include "messagelistmodel.h"
@@ -139,6 +140,16 @@ bool framesContain(const QByteArrayList& frames, const QByteArray& needle)
             return true;
     }
     return false;
+}
+
+int frameCount(const QByteArrayList& frames, const QByteArray& frame)
+{
+    int count = 0;
+    for (const QByteArray& written : frames) {
+        if (written == frame)
+            ++count;
+    }
+    return count;
 }
 
 bool logContains(QAbstractItemModel *lines, const QString& needle)
@@ -516,6 +527,13 @@ private slots:
     void transcriptHydrateDoesNotNotify();
     void transcriptSkipsSecretsAndKeepsSessionOnWriteError();
     void transcriptClearLeavesFile();
+    void zncPlaybackPlayUsesStoredServerTime();
+    void networkWithoutPlaybackCapDoesNotPlay();
+    void zncPlaybackLateCapPlaysOnce();
+    void playbackReplaySkipsLinesAlreadyInTheTranscript();
+    void ephemeralControllerSkipsPlaybackSettings();
+    void playbackTimeStoreRoundTripsNewestAndRekey();
+    void forgetNetworkDropsPlaybackTimes();
 
 private:
     std::unique_ptr<QTemporaryDir> m_settingsDir;
@@ -5915,6 +5933,381 @@ void ControllerTest::transcriptClearLeavesFile()
     missing.selectConversation(QStringLiteral("libera"), QStringLiteral("#fresh"));
     auto *fresh = qobject_cast<QAbstractItemModel *>(missing.messages());
     QCOMPARE(selectedBodies(fresh), QStringList{QStringLiteral("omairc joined")});
+}
+
+void ControllerTest::zncPlaybackPlayUsesStoredServerTime()
+{
+    const QByteArray playZero =
+        QByteArrayLiteral("PRIVMSG *status :*playback PLAY * 0\r\n");
+    const QByteArray playStamp =
+        QByteArrayLiteral("PRIVMSG *status :*playback PLAY * 1710000001.500\r\n");
+
+    {
+        IrcController controller;
+        IrcSessionConfig sessionConfig = config(QStringLiteral("libera"));
+        sessionConfig.reconnectEnabled = true;
+        auto *transport = new FakeIrcTransport;
+        auto *timer = new FakeReconnectTimer;
+        IrcSession *session = controller.addSession(sessionConfig, transport, timer);
+        QVERIFY(session);
+        QVERIFY(controller.start(QStringLiteral("libera")));
+        transport->completeConnect();
+        transport->injectBytes(
+            QByteArrayLiteral(":server CAP omairc LS :batch znc.in/playback\r\n"
+                              ":server CAP omairc ACK :batch znc.in/playback\r\n"));
+        QVERIFY(!framesContain(transport->writtenFrames(),
+                               QByteArrayLiteral("*playback PLAY")));
+        transport->injectBytes(QByteArrayLiteral(":server 001 omairc :Welcome\r\n"));
+        QCOMPARE(session->state(), IrcSession::State::Registered);
+        QCOMPARE(frameCount(transport->writtenFrames(), playZero), 1);
+        QVERIFY(!framesContain(transport->writtenFrames(),
+                               QByteArrayLiteral("PRIVMSG *playback")));
+
+        transport->injectBytes(QByteArrayLiteral(
+            "@time=nope :alice!u@h PRIVMSG #omarchy :badclock\r\n"
+            ":bob!u@h PRIVMSG #omarchy :untagged\r\n"
+            "@time=2024-03-09T16:00:00.620Z :lena!u@h PRIVMSG #omarchy :room\r\n"
+            "@time=2024-03-09T16:00:01.500Z :lena!u@h PRIVMSG omairc :dm\r\n"
+            "@time=2024-03-09T18:00:00.000Z :NickServ!NickServ@services "
+            "PRIVMSG omairc :registered\r\n"
+            "@time=2024-03-09T19:00:00.000Z :*status!znc@znc.in PRIVMSG omairc "
+            ":attached\r\n"));
+
+        auto *conversations =
+            qobject_cast<QAbstractItemModel *>(controller.conversations());
+        QVERIFY(conversations);
+        QCOMPARE(rowForTarget(conversations, QStringLiteral("*status")), -1);
+        QCOMPARE(rowForTarget(conversations, QStringLiteral("*playback")), -1);
+        QCOMPARE(rowForTarget(conversations, QStringLiteral("NickServ")), -1);
+        QVERIFY(rowForTarget(conversations, QStringLiteral("lena")) >= 0);
+
+        transport->remoteClose();
+        QCOMPARE(session->state(), IrcSession::State::Reconnecting);
+        QVERIFY(timer->active);
+        timer->fire();
+        transport->completeConnect();
+        transport->injectBytes(
+            QByteArrayLiteral(":server CAP omairc LS :batch znc.in/playback\r\n"
+                              ":server CAP omairc ACK :batch znc.in/playback\r\n"
+                              ":server 001 omairc :Welcome\r\n"));
+        QCOMPARE(frameCount(transport->writtenFrames(), playZero), 1);
+        QCOMPARE(frameCount(transport->writtenFrames(), playStamp), 1);
+        QVERIFY(!framesContain(transport->writtenFrames(),
+                               QByteArrayLiteral("PRIVMSG *playback")));
+    }
+
+    IrcController again;
+    auto *transport = new FakeIrcTransport;
+    QVERIFY(again.addSession(config(QStringLiteral("libera")), transport));
+    QVERIFY(again.start(QStringLiteral("libera")));
+    transport->completeConnect();
+    transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :batch znc.in/playback\r\n"
+                          ":server CAP omairc ACK :batch znc.in/playback\r\n"
+                          ":server 001 omairc :Welcome\r\n"));
+    QCOMPARE(frameCount(transport->writtenFrames(), playStamp), 1);
+    QCOMPARE(frameCount(transport->writtenFrames(), playZero), 0);
+    QVERIFY(!framesContain(transport->writtenFrames(),
+                           QByteArrayLiteral("PRIVMSG *playback")));
+}
+
+void ControllerTest::networkWithoutPlaybackCapDoesNotPlay()
+{
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    IrcSession *session = controller.addSession(config(QStringLiteral("libera")),
+                                                transport);
+    QVERIFY(session);
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    transport->completeConnect();
+    transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :batch chathistory\r\n"
+                          ":server CAP omairc ACK :batch chathistory\r\n"
+                          ":server 001 omairc :Welcome\r\n"
+                          ":omairc!u@h JOIN :#omarchy\r\n"
+                          ":znc.in BATCH +pb znc.in/playback #omarchy\r\n"
+                          "@batch=pb :lena!u@h PRIVMSG #omarchy :yesterday\r\n"
+                          ":znc.in BATCH -pb\r\n"));
+    QVERIFY(session->capabilities().contains(IrcCapability::Batch));
+    QVERIFY(session->capabilities().contains(IrcCapability::ChatHistory));
+    QVERIFY(!session->capabilities().contains(IrcCapability::ZncPlayback));
+    QVERIFY(framesContain(transport->writtenFrames(),
+                          QByteArrayLiteral("CHATHISTORY LATEST #omarchy * 100\r\n")));
+    QVERIFY(!framesContain(transport->writtenFrames(),
+                           QByteArrayLiteral("*playback PLAY")));
+
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
+    QVERIFY(messages);
+    QCOMPARE(selectedBodies(messages).count(QStringLiteral("yesterday")), 1);
+    QCOMPARE(roleAt(messages, bodyRow(messages, QStringLiteral("yesterday")),
+                    MessageListModel::OriginRole),
+             QStringLiteral("replay"));
+}
+
+void ControllerTest::zncPlaybackLateCapPlaysOnce()
+{
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    QVERIFY(controller.addSession(config(QStringLiteral("libera")), transport));
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    transport->completeConnect();
+    transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :batch\r\n"
+                          ":server CAP omairc ACK :batch\r\n"
+                          ":server 001 omairc :Welcome\r\n"));
+    QVERIFY(!framesContain(transport->writtenFrames(),
+                           QByteArrayLiteral("*playback PLAY")));
+
+    transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc NEW :znc.in/playback\r\n"));
+    QVERIFY(framesContain(transport->writtenFrames(),
+                          QByteArrayLiteral("CAP REQ :znc.in/playback\r\n")));
+    transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc ACK :znc.in/playback\r\n"));
+    const QByteArray playZero =
+        QByteArrayLiteral("PRIVMSG *status :*playback PLAY * 0\r\n");
+    QCOMPARE(frameCount(transport->writtenFrames(), playZero), 1);
+
+    transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc NEW :znc.in/playback\r\n"
+                          ":server CAP omairc ACK :znc.in/playback\r\n"));
+    QCOMPARE(frameCount(transport->writtenFrames(), playZero), 1);
+    QVERIFY(!framesContain(transport->writtenFrames(),
+                           QByteArrayLiteral("PRIVMSG *playback")));
+}
+
+void ControllerTest::playbackReplaySkipsLinesAlreadyInTheTranscript()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const QString root = dir.filePath(QStringLiteral("omairc/logs"));
+    ScopedTranscriptRoot scope(root);
+    IrcConversationLog paths(root);
+    const QString labPath =
+        paths.pathFor(QStringLiteral("libera"), QStringLiteral("#lab"));
+
+    {
+        IrcController controller;
+        auto *transport = new FakeIrcTransport;
+        QVERIFY(controller.addSession(config(QStringLiteral("libera")), transport));
+        QVERIFY(controller.start(QStringLiteral("libera")));
+        transport->completeConnect();
+        transport->injectBytes(
+            QByteArrayLiteral(":server CAP omairc LS :batch\r\n"
+                              ":server CAP omairc ACK :batch\r\n"
+                              ":server 001 omairc :Welcome\r\n"
+                              ":omairc!u@h JOIN :#omarchy\r\n"
+                              ":omairc!u@h JOIN :#lab\r\n"
+                              "@time=2024-03-09T16:00:00.620Z;msgid=room-1 "
+                              ":lena!u@h PRIVMSG #lab :yesterday\r\n"
+                              "@time=2024-03-09T16:00:00.620Z;msgid=room-2 "
+                              ":lena!u@h PRIVMSG #lab :yesterday\r\n"));
+
+        auto *conversations =
+            qobject_cast<QAbstractItemModel *>(controller.conversations());
+        QVERIFY(conversations);
+        const int lab = rowForTarget(conversations, QStringLiteral("#lab"));
+        QVERIFY(lab >= 0);
+        QCOMPARE(roleAt(conversations, lab, ConversationListModel::UnreadRole).toInt(),
+                 2);
+
+        transport->injectBytes(QByteArrayLiteral(
+            ":znc.in BATCH +c znc.in/playback #lab\r\n"
+            "@batch=c;msgid=room-1;time=2024-03-09T16:00:02.000Z "
+            ":lena!u@h PRIVMSG #lab :different body\r\n"
+            "@batch=c;time=2024-03-09T16:00:00.620Z "
+            ":Lena!u@h PRIVMSG #lab :yesterday\r\n"
+            "@batch=c;time=2024-03-09T16:00:03.000Z "
+            ":lena!u@h PRIVMSG #lab :newer\r\n"
+            ":znc.in BATCH -c\r\n"));
+
+        QCOMPARE(roleAt(conversations, lab, ConversationListModel::UnreadRole).toInt(),
+                 3);
+        controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#lab"));
+        auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
+        QVERIFY(messages);
+        const QStringList bodies = selectedBodies(messages);
+        QCOMPARE(bodies.count(QStringLiteral("yesterday")), 2);
+        QCOMPARE(bodies.count(QStringLiteral("different body")), 0);
+        QCOMPARE(bodies.count(QStringLiteral("newer")), 1);
+        QCOMPARE(roleAt(messages, bodyRow(messages, QStringLiteral("newer")),
+                        MessageListModel::OriginRole),
+                 QStringLiteral("replay"));
+        QCOMPARE(jsonlBodies(labPath).count(QStringLiteral("yesterday")), 2);
+        QCOMPARE(jsonlBodies(labPath).count(QStringLiteral("newer")), 1);
+        QCOMPARE(jsonlBodies(labPath).count(QStringLiteral("different body")), 0);
+    }
+
+    IrcController restarted;
+    auto *transport = new FakeIrcTransport;
+    QVERIFY(restarted.addSession(config(QStringLiteral("libera")), transport));
+    QVERIFY(restarted.start(QStringLiteral("libera")));
+    transport->completeConnect();
+    transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :batch\r\n"
+                          ":server CAP omairc ACK :batch\r\n"
+                          ":server 001 omairc :Welcome\r\n"
+                          ":omairc!u@h JOIN :#omarchy\r\n"
+                          ":omairc!u@h JOIN :#lab\r\n"
+                          ":znc.in BATCH +c znc.in/playback #lab\r\n"
+                          "@batch=c;msgid=replay-dup;time=2024-03-09T16:00:00.620Z "
+                          ":Lena!u@h PRIVMSG #lab :yesterday\r\n"
+                          "@batch=c;msgid=replay-new;time=2024-03-09T16:00:04.000Z "
+                          ":lena!u@h PRIVMSG #lab :after restart\r\n"
+                          ":znc.in BATCH -c\r\n"));
+
+    auto *conversations =
+        qobject_cast<QAbstractItemModel *>(restarted.conversations());
+    QVERIFY(conversations);
+    const int lab = rowForTarget(conversations, QStringLiteral("#lab"));
+    QVERIFY(lab >= 0);
+    QCOMPARE(roleAt(conversations, lab, ConversationListModel::UnreadRole).toInt(), 1);
+    restarted.selectConversation(QStringLiteral("libera"), QStringLiteral("#lab"));
+    auto *messages = qobject_cast<QAbstractItemModel *>(restarted.messages());
+    QVERIFY(messages);
+    const QStringList bodies = selectedBodies(messages);
+    QCOMPARE(bodies.count(QStringLiteral("yesterday")), 2);
+    QCOMPARE(bodies.count(QStringLiteral("after restart")), 1);
+    QCOMPARE(roleAt(messages, bodyRow(messages, QStringLiteral("after restart")),
+                    MessageListModel::OriginRole),
+             QStringLiteral("replay"));
+    QCOMPARE(jsonlBodies(labPath).count(QStringLiteral("yesterday")), 2);
+    QCOMPARE(jsonlBodies(labPath).count(QStringLiteral("after restart")), 1);
+}
+
+void ControllerTest::ephemeralControllerSkipsPlaybackSettings()
+{
+    {
+        IrcController controller;
+        controller.setEphemeral(true);
+        auto *transport = new FakeIrcTransport;
+        QVERIFY(controller.addSession(config(QStringLiteral("libera")), transport));
+        QVERIFY(controller.start(QStringLiteral("libera")));
+        transport->completeConnect();
+        transport->injectBytes(
+            QByteArrayLiteral(":server CAP omairc LS :batch znc.in/playback\r\n"
+                              ":server CAP omairc ACK :batch znc.in/playback\r\n"
+                              ":server 001 omairc :Welcome\r\n"
+                              "@time=2024-03-09T16:00:00.620Z :lena!u@h PRIVMSG #omarchy "
+                              ":room\r\n"));
+        QVERIFY(framesContain(
+            transport->writtenFrames(),
+            QByteArrayLiteral("PRIVMSG *status :*playback PLAY * 0\r\n")));
+    }
+
+    QSettings settings;
+    QFile file(settings.fileName());
+    if (file.exists()) {
+        QVERIFY(file.open(QIODevice::ReadOnly | QIODevice::Text));
+        QVERIFY(!QString::fromUtf8(file.readAll()).contains(
+            QLatin1String("playbackTimes")));
+    }
+    QVERIFY(!IrcPlaybackTimeStore().newest(QStringLiteral("libera")));
+
+    IrcController again;
+    auto *transport = new FakeIrcTransport;
+    QVERIFY(again.addSession(config(QStringLiteral("libera")), transport));
+    QVERIFY(again.start(QStringLiteral("libera")));
+    transport->completeConnect();
+    transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :batch znc.in/playback\r\n"
+                          ":server CAP omairc ACK :batch znc.in/playback\r\n"
+                          ":server 001 omairc :Welcome\r\n"));
+    QCOMPARE(frameCount(transport->writtenFrames(),
+                        QByteArrayLiteral("PRIVMSG *status :*playback PLAY * 0\r\n")),
+             1);
+    QVERIFY(!framesContain(
+        transport->writtenFrames(),
+        QByteArrayLiteral("PRIVMSG *status :*playback PLAY * 1710000000.620\r\n")));
+}
+
+void ControllerTest::playbackTimeStoreRoundTripsNewestAndRekey()
+{
+    const IrcCaseMapping mapping;
+    const QDateTime room = QDateTime::fromString(
+        QStringLiteral("2024-03-09T16:00:00.620Z"), Qt::ISODateWithMs);
+    const QDateTime later = QDateTime::fromString(
+        QStringLiteral("2024-03-09T16:00:01.500Z"), Qt::ISODateWithMs);
+    const QDateTime older = QDateTime::fromString(
+        QStringLiteral("2024-03-09T15:00:00.000Z"), Qt::ISODateWithMs);
+    QVERIFY(room.isValid());
+    QVERIFY(later.isValid());
+    QVERIFY(older.isValid());
+    QCOMPARE(ircPlaybackPlayStamp(room), QStringLiteral("1710000000.620"));
+    QCOMPARE(ircPlaybackPlayStamp(std::nullopt), QStringLiteral("0"));
+
+    {
+        IrcPlaybackTimeStore store;
+        QVERIFY(store.note(QStringLiteral("libera"), QStringLiteral("#omarchy"),
+                           room, mapping));
+        QVERIFY(!store.note(QStringLiteral("libera"), QStringLiteral("#Omarchy"),
+                            room, mapping));
+        QVERIFY(!store.note(QStringLiteral("libera"), QStringLiteral("#omarchy"),
+                            older, mapping));
+        QVERIFY(store.note(QStringLiteral("libera"), QStringLiteral("Lena"),
+                           later, mapping));
+        QVERIFY(!store.note(QStringLiteral("libera"), QStringLiteral("lena"),
+                            later, mapping));
+        QVERIFY(store.note(QStringLiteral("keep"), QStringLiteral("#lab"),
+                           room, mapping));
+        QCOMPARE(ircPlaybackPlayStamp(store.newest(QStringLiteral("libera"))),
+                 QStringLiteral("1710000001.500"));
+        QVERIFY(store.rekey(QStringLiteral("libera"), QStringLiteral("lena"),
+                            QStringLiteral("Helena"), mapping));
+        QCOMPARE(ircPlaybackPlayStamp(store.newest(QStringLiteral("libera"))),
+                 QStringLiteral("1710000001.500"));
+        store.forget(QStringLiteral("libera"));
+        QVERIFY(!store.newest(QStringLiteral("libera")));
+        QCOMPARE(ircPlaybackPlayStamp(store.newest(QStringLiteral("keep"))),
+                 QStringLiteral("1710000000.620"));
+    }
+
+    {
+        IrcPlaybackTimeStore reloaded;
+        QVERIFY(!reloaded.newest(QStringLiteral("libera")));
+        QCOMPARE(ircPlaybackPlayStamp(reloaded.newest(QStringLiteral("keep"))),
+                 QStringLiteral("1710000000.620"));
+        QSettings settings;
+        settings.beginGroup(QStringLiteral("playbackTimes"));
+        settings.beginGroup(QStringLiteral("keep"));
+        const QString stored = settings.value(QStringLiteral("times")).toString();
+        QVERIFY(stored.contains(QLatin1String("1710000000620")));
+        QVERIFY(stored.contains(QLatin1String("#lab")));
+        QVERIFY(!stored.contains(QLatin1String("1710000000.620")));
+    }
+
+    {
+        IrcPlaybackTimeStore ephemeral;
+        ephemeral.setEphemeral(true);
+        QVERIFY(ephemeral.note(QStringLiteral("libera"), QStringLiteral("#omarchy"),
+                               room, mapping));
+        QCOMPARE(ircPlaybackPlayStamp(ephemeral.newest(QStringLiteral("libera"))),
+                 QStringLiteral("1710000000.620"));
+    }
+    QVERIFY(!IrcPlaybackTimeStore().newest(QStringLiteral("libera")));
+    QCOMPARE(ircPlaybackPlayStamp(
+                 IrcPlaybackTimeStore().newest(QStringLiteral("keep"))),
+             QStringLiteral("1710000000.620"));
+}
+
+void ControllerTest::forgetNetworkDropsPlaybackTimes()
+{
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    QVERIFY(controller.addSession(config(QStringLiteral("libera")), transport));
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    transport->completeConnect();
+    transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :multi-prefix\r\n"
+                          ":server 001 omairc :Welcome\r\n"
+                          "@time=2024-03-09T16:00:00.620Z :lena!u@h PRIVMSG #omarchy "
+                          ":room\r\n"));
+    QCOMPARE(ircPlaybackPlayStamp(
+                 IrcPlaybackTimeStore().newest(QStringLiteral("libera"))),
+             QStringLiteral("1710000000.620"));
+    controller.forgetNetworkState(QStringLiteral("libera"));
+    QVERIFY(!IrcPlaybackTimeStore().newest(QStringLiteral("libera")));
 }
 
 int runControllerTests(int argc, char **argv)

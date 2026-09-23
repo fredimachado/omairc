@@ -44,6 +44,8 @@ private slots:
     void accountTagNeedsMessageTags();
     void partialAccountAdvertisementRequestsOnlyPresentCaps();
     void accountCapAckEnablesMatchingBits();
+    void zncPlaybackNeedsBatchAndItsOwnLine();
+    void zncPlaybackAbsentIsNotRequested();
 };
 
 void CapabilityTest::unwantedAdvertisementProducesNoRequest()
@@ -506,6 +508,40 @@ void CapabilityTest::accountCapAckEnablesMatchingBits()
     QVERIFY(negotiation.enabled().contains(IrcCapability::AccountNotify));
     QVERIFY(negotiation.enabled().contains(IrcCapability::ExtendedJoin));
     QVERIFY(negotiation.settled());
+}
+
+void CapabilityTest::zncPlaybackNeedsBatchAndItsOwnLine()
+{
+    IrcCapabilityNegotiation withoutBatch(false);
+    withoutBatch.advertise(tokens(QStringLiteral("znc.in/playback multi-prefix")));
+    QCOMPARE(withoutBatch.takeRequest().lines,
+             QStringList{QStringLiteral("multi-prefix")});
+    QVERIFY(!withoutBatch.enabled().contains(IrcCapability::ZncPlayback));
+
+    IrcCapabilityNegotiation negotiation(false);
+    negotiation.advertise(tokens(QStringLiteral("znc.in/playback batch server-time")));
+    QCOMPARE(negotiation.takeRequest().lines,
+             QStringList({QStringLiteral("server-time"),
+                          QStringLiteral("znc.in/playback"),
+                          QStringLiteral("batch")}));
+
+    const IrcCapabilitySet granted = negotiation.acknowledge(tokens(
+        QStringLiteral("znc.in/playback batch server-time")));
+    QVERIFY(granted.contains(IrcCapability::ZncPlayback));
+    QVERIFY(granted.contains(IrcCapability::Batch));
+    QVERIFY(granted.contains(IrcCapability::ServerTime));
+    QVERIFY(negotiation.enabled().contains(IrcCapability::ZncPlayback));
+    QVERIFY(negotiation.settled());
+}
+
+void CapabilityTest::zncPlaybackAbsentIsNotRequested()
+{
+    IrcCapabilityNegotiation negotiation(false);
+    negotiation.advertise(tokens(QStringLiteral("batch server-time multi-prefix")));
+    const QStringList lines = negotiation.takeRequest().lines;
+    QVERIFY(!lines.contains(QStringLiteral("znc.in/playback")));
+    negotiation.acknowledge(tokens(QStringLiteral("batch server-time multi-prefix")));
+    QVERIFY(!negotiation.enabled().contains(IrcCapability::ZncPlayback));
 }
 
 void CapabilityTest::labeledResponseNeedsMessageTags()

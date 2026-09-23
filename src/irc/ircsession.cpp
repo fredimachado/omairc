@@ -1540,8 +1540,9 @@ std::optional<IrcSession::ReplayKind> IrcSession::replayKindFor(
     return std::nullopt;
 }
 
-// Bouncer playback must not require `chathistory`. ZNC batches its buffer
-// replay behind `batch` alone and never advertises `chathistory`.
+// Bouncer playback must not require `chathistory` or `znc.in/playback`.
+// ZNC batches its buffer replay behind `batch` alone. Requesting
+// `znc.in/playback` asks for a bounded PLAY and must not drop that path.
 bool IrcSession::replayEnabled(ReplayKind kind) const
 {
     const IrcCapabilitySet enabled = m_capabilities.enabled();
