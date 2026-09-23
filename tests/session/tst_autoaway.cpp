@@ -86,6 +86,18 @@ bool logContains(QAbstractItemModel *lines, const QString& needle)
     return false;
 }
 
+int logCount(QAbstractItemModel *lines, const QString& needle)
+{
+    int hits = 0;
+    for (int row = 0; row < lines->rowCount(); ++row) {
+        const QString text =
+            lines->data(lines->index(row, 0), NetworkLogModel::TextRole).toString();
+        if (text.contains(needle))
+            ++hits;
+    }
+    return hits;
+}
+
 bool framesContain(const QByteArrayList& frames, const QByteArray& needle)
 {
     for (const QByteArray& frame : frames) {
@@ -1026,10 +1038,11 @@ void AutoawayTest::reconnectWhileTrippedDoesNotRetripStatus()
     controller.fireAutoawayIdleForTest();
     controller.fireAutoawayGraceForTest();
 
+    const QString trip = QStringLiteral("Auto-away triggered: AFK");
     console->setNetwork(QStringLiteral("network-a"));
-    const int tripsA = console->lines()->rowCount();
+    QCOMPARE(logCount(console->lines(), trip), 1);
     console->setNetwork(QStringLiteral("network-b"));
-    const int tripsB = console->lines()->rowCount();
+    QCOMPARE(logCount(console->lines(), trip), 1);
 
     transportA->remoteClose();
     QVERIFY(controller.start(QStringLiteral("network-a")));
@@ -1038,9 +1051,9 @@ void AutoawayTest::reconnectWhileTrippedDoesNotRetripStatus()
     QVERIFY(controller.selfAway());
 
     console->setNetwork(QStringLiteral("network-a"));
-    QCOMPARE(console->lines()->rowCount(), tripsA);
+    QCOMPARE(logCount(console->lines(), trip), 1);
     console->setNetwork(QStringLiteral("network-b"));
-    QCOMPARE(console->lines()->rowCount(), tripsB);
+    QCOMPARE(logCount(console->lines(), trip), 1);
 }
 
 void AutoawayTest::idleTimerUsesMillisecondInterval()
