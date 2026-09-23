@@ -11,6 +11,9 @@
         <file alias="qml/NickGlyph.qml">qml/NickGlyph.qml</file>
         <file alias="qml/MessageAvatar.qml">qml/MessageAvatar.qml</file>
         <file alias="qml/MessageHeader.qml">qml/MessageHeader.qml</file>
+        <file alias="qml/MessageRow.qml">qml/MessageRow.qml</file>
+        <file alias="qml/PlainUrlHit.qml">qml/PlainUrlHit.qml</file>
+        <file alias="qml/ConsoleLine.qml">qml/ConsoleLine.qml</file>
         <file alias="qml/NetworkSection.qml">qml/NetworkSection.qml</file>
         <file alias="qml/ConversationRow.qml">qml/ConversationRow.qml</file>
         <file alias="qml/TranscriptList.qml">qml/TranscriptList.qml</file>
