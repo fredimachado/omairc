@@ -46,23 +46,26 @@ Do not keep adding code to `src/OmaircWindow.qml`. New UI goes outside it.
 
 - New rows, sheets, panels, buttons, glyphs, and form fields live in
   `src/qml/` as their own file, registered in `src/resources.qrc`.
-- Do not add large inline `component { }` blocks or new column/overlay trees
-  inside `OmaircWindow.qml`.
+- Do not add new column/overlay trees inside `OmaircWindow.qml`. Named
+  `component Name:` blocks besides `PlainUrlHit` are gated by
+  `bin/check-conventions`.
 - If a change would add a substantial chunk to the window, extract a file
   (or extend an existing `src/qml/` type) in the same change, or as the first
   follow-up. Do not park "we'll split it later" in the window.
-- Window wiring is allowed: instantiate the type with `style: win.style`
-  (never `style: style`), explicit props, and signals. Window JS may use
-  `property alias` on the instance for ids it already owns (`composer`,
-  `sidebarScroll`, `membersList`, `messageList`, `consoleList`).
-- No `host: win`. Do not pass the window as a god-object. Pass `OmaircStyle`,
-  models/services, and callbacks/signals.
+- Window wiring is allowed: instantiate the type with `style: win.style`,
+  explicit props, and signals. `style: style` is gated by
+  `bin/check-conventions`. Window JS may use `property alias` on the instance
+  for ids it already owns (`composer`, `sidebarScroll`, `membersList`,
+  `messageList`, `consoleList`).
+- Pass `OmaircStyle`, models/services, and callbacks/signals. `host: win` is
+  gated by `bin/check-conventions`.
 - Extract by coupling, not line count. Keep `objectName`s so recursive
   `findChild` still works. File-based types stay QObject children of the same
   parent.
 - Message and console delegates currently still live in the window (they call
   `win.plainIrcText` / `win.emphasizedIrcText` / `PlainUrlHit`). That is
-  leftover, not a license to grow more delegate trees there. New transcript
+  leftover, not a license to grow more delegate trees there. A third delegate
+  tree in the window is gated by `bin/check-conventions`. New transcript
   chrome (headers, avatars, hits) already lives in `src/qml/`. Do not add
   new leaf visuals inline.
 
@@ -86,8 +89,8 @@ Do not keep adding code to `src/OmaircWindow.qml`. New UI goes outside it.
 - Sidebar walk is model-driven. `sidebarConversationRows()` and
   `sidebarNetworkSections()` read `irc.conversations` / `connection.networks`
   through `get()` and `hasDirects()`. Transcript rows use `get()` / `field()`.
-  Do not scan QML children and duck-type methods (`child.activate` caused
-  `QQmlVMEMetaObject`). Reveal by `objectName` + `visible` + `height`.
+  Do not scan QML children. `child.activate` / `.activate()` in QML is gated
+  by `bin/check-conventions`. Reveal by `objectName` + `visible` + `height`.
   `ConversationRow` has `signal activated()`, not `function activate()`.
 - Collapse the server list by width, not `visible: false`.
 - The Connect sheet is tabbed: `Connection` holds the per-network profile and
@@ -172,9 +175,10 @@ released delegates await deletion.
 
 Sidebar walk no longer scans QML children. `sidebarConversationRows()` and
 `sidebarNetworkSections()` read `irc.conversations` / `connection.networks`
-through `get()` and `hasDirects()`, so they never duck-type `child.activate`.
-Reveal looks up rows by `objectName` and only reads `objectName`, `visible`,
-and `height`. Do not silence leftover warnings with a message handler.
+through `get()` and `hasDirects()`. `child.activate` is gated by
+`bin/check-conventions`. Reveal looks up rows by `objectName` and only reads
+`objectName`, `visible`, and `height`. Do not silence leftover warnings with a
+message handler.
 
 Judge compiled-window claims against `$XDG_STATE_HOME/omairc/omairc.log`, not
 stderr: `OmaircFileLog` replaces Qt's default handler, and `qWarning` output

@@ -220,6 +220,87 @@ def check_retired_mock_sidebar():
     return problems
 
 
+def check_host_win():
+    problems = []
+    pattern = re.compile(r"\bhost\s*:\s*win\b")
+    for relative, source in sources("src/**/*.qml", "src/**/*.cpp", "src/**/*.h"):
+        for number, line in enumerate(source.splitlines(), 1):
+            if pattern.search(line):
+                problems.append(
+                    f"{relative}:{number}: host: win passes the window as a god-object")
+    return problems
+
+
+def check_style_exact_binding():
+    problems = []
+    # Value must be the identifier `style`. `style.something` and
+    # `styleColor` are different bindings; `\b` alone treats the dot as a boundary.
+    pattern = re.compile(r"\bstyle\s*:\s*style(?![A-Za-z0-9_.])")
+    for relative, source in sources("src/**/*.qml"):
+        for number, line in enumerate(source.splitlines(), 1):
+            if pattern.search(line):
+                problems.append(
+                    f"{relative}:{number}: style: style; instantiate with "
+                    f"style: win.style")
+    return problems
+
+
+def check_window_inline_components():
+    problems = []
+    pattern = re.compile(r"\bcomponent\s+([A-Za-z_][A-Za-z0-9_]*)\s*:")
+    allowed = {"PlainUrlHit"}
+    for relative, source in sources("src/OmaircWindow.qml"):
+        for number, line in enumerate(source.splitlines(), 1):
+            match = pattern.search(line)
+            if match and match.group(1) not in allowed:
+                problems.append(
+                    f"{relative}:{number}: component {match.group(1)} "
+                    f"belongs outside OmaircWindow.qml")
+    return problems
+
+
+ALLOWED_WINDOW_DELEGATES = {"messageDelegate", "consoleDelegate"}
+
+
+def check_window_delegate_trees():
+    problems = []
+    binding = re.compile(r"\b([A-Za-z_][A-Za-z0-9_]*Delegate)\s*:\s*Item\b")
+    ident = re.compile(r"\bid\s*:\s*([A-Za-z_][A-Za-z0-9_]*Delegate)\b")
+    for relative, source in sources("src/OmaircWindow.qml"):
+        for number, line in enumerate(source.splitlines(), 1):
+            for pattern in (binding, ident):
+                match = pattern.search(line)
+                if match and match.group(1) not in ALLOWED_WINDOW_DELEGATES:
+                    problems.append(
+                        f"{relative}:{number}: delegate tree {match.group(1)} "
+                        f"belongs outside OmaircWindow.qml")
+                    break
+    return problems
+
+
+def check_qml_activate_duck_type():
+    problems = []
+    call = re.compile(r"\b([A-Za-z_][A-Za-z0-9_]*)\s*\.\s*activate\s*\(")
+    child = re.compile(r"\bchild\s*\.\s*activate\b")
+    for relative, source in sources("src/**/*.qml"):
+        for number, line in enumerate(source.splitlines(), 1):
+            covered = []
+            for match in call.finditer(line):
+                if match.group(1) == "slashCommands":
+                    continue
+                problems.append(
+                    f"{relative}:{number}: {match.group(1)}.activate() "
+                    f"duck-types a QML object")
+                covered.append(match.span())
+            for match in child.finditer(line):
+                if any(start <= match.start() and match.end() <= end
+                       for start, end in covered):
+                    continue
+                problems.append(
+                    f"{relative}:{number}: child.activate duck-types a QML child")
+    return problems
+
+
 def check_hardcoded_chantypes():
     problems = []
     pattern = re.compile(
@@ -833,6 +914,11 @@ CHECKS = (
     ("OMAIRC_VERSION via omaircversion.h", check_omairc_version_header),
     ("CHANTYPES via IrcServerFeatures", check_hardcoded_chantypes),
     ("retired mock sidebar tokens", check_retired_mock_sidebar),
+    ("host: win god-object", check_host_win),
+    ("style: style binding", check_style_exact_binding),
+    ("OmaircWindow inline components", check_window_inline_components),
+    ("OmaircWindow delegate trees", check_window_delegate_trees),
+    ("QML child.activate duck-typing", check_qml_activate_duck_type),
     ("macOS ObjC ARC for notifications", check_macos_objc_arc),
     ("macOS CI Qt arch selection", check_macos_ci_arch_selection),
     ("CI packages only on tags and dispatch", check_ci_package_triggers),
