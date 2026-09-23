@@ -3057,6 +3057,11 @@ void CommandTest::listSendsAndCaches()
     QVERIFY(!logContains(controller.console()->lines(), QStringLiteral("#linux")));
     QVERIFY(!logContains(controller.console()->lines(), QStringLiteral("End of /LIST")));
 
+    QSignalSpy duplicateReset(model, &QAbstractItemModel::modelReset);
+    transport->injectBytes(QByteArrayLiteral(":server 323 omairc :End of /LIST\r\n"));
+    QCOMPARE(duplicateReset.size(), 0);
+    QVERIFY(model->complete());
+
     model->setFilter(QStringLiteral("lin"));
     QCOMPARE(model->rowCount(), 1);
     QCOMPARE(model->field(0, QStringLiteral("channel")).toString(),
@@ -3311,6 +3316,12 @@ void CommandTest::listTooManyMatchesUnwedges()
     QCOMPARE(model->sourceCount(), 1);
     QVERIFY(logContains(controller.console()->lines(), QStringLiteral("Too many matches")));
 
+    transport->injectBytes(QByteArrayLiteral(":server 323 omairc :End of /LIST\r\n"));
+    QVERIFY(!model->loading());
+    QVERIFY(!model->complete());
+    QCOMPARE(model->error(), QStringLiteral("Too many matches"));
+    QCOMPARE(model->sourceCount(), 1);
+
     const int framesAfterFail = transport->writtenFrames().size();
     QVERIFY(controller.sendMessage(QStringLiteral("/list")));
     QCOMPARE(transport->writtenFrames().size(), framesAfterFail + 1);
@@ -3329,16 +3340,21 @@ void CommandTest::listIdleTimeoutUnwedges()
     transport->injectBytes(QByteArrayLiteral(":omairc!u@h JOIN :#omarchy\r\n"));
     controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
 
-    controller.setChannelListIdleTimeoutMs(30);
     QVERIFY(controller.sendMessage(QStringLiteral("/list")));
     auto *model = qobject_cast<ChannelListModel *>(controller.channelList());
     QVERIFY(model);
     QVERIFY(model->loading());
-    QTest::qWait(200);
+    controller.fireChannelListIdleTimeoutForTest(QStringLiteral("libera"));
     QVERIFY(!model->loading());
     QVERIFY(!model->complete());
     QVERIFY(model->error().contains(QStringLiteral("timed out")));
     QVERIFY(logContains(controller.console()->lines(), QStringLiteral("timed out")));
+
+    const QString timeoutError = model->error();
+    transport->injectBytes(QByteArrayLiteral(":server 323 omairc :End of /LIST\r\n"));
+    QVERIFY(!model->loading());
+    QVERIFY(!model->complete());
+    QCOMPARE(model->error(), timeoutError);
 
     const int framesAfterFail = transport->writtenFrames().size();
     QVERIFY(controller.sendMessage(QStringLiteral("/list")));
@@ -3358,12 +3374,11 @@ void CommandTest::listIdleTimeoutLateEndDoesNotCompleteRetry()
     transport->injectBytes(QByteArrayLiteral(":omairc!u@h JOIN :#omarchy\r\n"));
     controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
 
-    controller.setChannelListIdleTimeoutMs(30);
     QVERIFY(controller.sendMessage(QStringLiteral("/list")));
     auto *model = qobject_cast<ChannelListModel *>(controller.channelList());
     QVERIFY(model);
     QVERIFY(model->loading());
-    QTest::qWait(200);
+    controller.fireChannelListIdleTimeoutForTest(QStringLiteral("libera"));
     QVERIFY(!model->loading());
     QVERIFY(!model->complete());
     QVERIFY(model->error().contains(QStringLiteral("timed out")));
@@ -3408,12 +3423,11 @@ void CommandTest::listIdleTimeoutLateEndAfterRetryStartDoesNotComplete()
     transport->injectBytes(QByteArrayLiteral(":omairc!u@h JOIN :#omarchy\r\n"));
     controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
 
-    controller.setChannelListIdleTimeoutMs(30);
     QVERIFY(controller.sendMessage(QStringLiteral("/list")));
     auto *model = qobject_cast<ChannelListModel *>(controller.channelList());
     QVERIFY(model);
     QVERIFY(model->loading());
-    QTest::qWait(200);
+    controller.fireChannelListIdleTimeoutForTest(QStringLiteral("libera"));
     QVERIFY(!model->loading());
     QVERIFY(!model->complete());
     QVERIFY(model->error().contains(QStringLiteral("timed out")));

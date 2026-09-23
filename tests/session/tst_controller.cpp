@@ -487,6 +487,9 @@ private slots:
     void networkIconUrlComesFromIsupport();
     void networkIconUrlClearsWhenReconnectOmitsDraftIcon();
     void forgetNetworkDropsGhostRowsAndLog();
+    void reselectingConversationPreservesProjectionAndUnreadMark();
+    void forgettingSelectedNetworkClearsSelectionProjection();
+    void statusAndCrossNetworkSelectionKeepProjectionConsistent();
     void backgroundChatBumpsConversationEpoch();
     void backgroundPlaybackBumpsUnreadAndMention();
     void focusedChannelPlaybackPlantsUnreadMark();
@@ -4695,6 +4698,138 @@ void ControllerTest::forgetNetworkDropsGhostRowsAndLog()
     QCOMPARE(controller.selectedTarget(), QString());
     QVERIFY(!logContains(controller.console()->lines(),
                          QStringLiteral("Looking up your hostname")));
+}
+
+void ControllerTest::reselectingConversationPreservesProjectionAndUnreadMark()
+{
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    QVERIFY(controller.addSession(config(QStringLiteral("libera")), transport));
+    registerSession(controller.session(QStringLiteral("libera")), transport);
+    transport->injectBytes(
+        QByteArrayLiteral(":server 005 omairc CHANTYPES=# PREFIX=(ov)@+ :supported\r\n"
+                          ":omairc!u@h JOIN :#room\r\n"
+                          ":server 353 omairc = #room :@omairc +Alice\r\n"
+                          ":server 366 omairc #room :End of NAMES\r\n"
+                          ":op!u@h TOPIC #room :Room topic\r\n"
+                          ":Alice!u@h PRIVMSG #room :first line\r\n"));
+    controller.setWindowActive(false);
+    transport->injectBytes(
+        QByteArrayLiteral(":Alice!u@h PRIVMSG #room :unread line\r\n"));
+    controller.setWindowActive(true);
+
+    auto *conversations =
+        qobject_cast<QAbstractItemModel *>(controller.conversations());
+    auto *messages = qobject_cast<MessageListModel *>(controller.messages());
+    auto *members = qobject_cast<QAbstractItemModel *>(controller.members());
+    QVERIFY(conversations);
+    QVERIFY(messages);
+    QVERIFY(members);
+    const int unreadMarkRow = messages->unreadMarkRow();
+    QVERIFY(unreadMarkRow >= 0);
+    QCOMPARE(controller.unreadCountFor(QStringLiteral("libera")), 0);
+    QSignalSpy conversationResets(conversations, &QAbstractItemModel::modelReset);
+    QSignalSpy messageResets(messages, &QAbstractItemModel::modelReset);
+    QSignalSpy memberResets(members, &QAbstractItemModel::modelReset);
+
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#room"));
+
+    QCOMPARE(conversationResets.size(), 0);
+    QCOMPARE(messageResets.size(), 0);
+    QCOMPARE(memberResets.size(), 0);
+    QCOMPARE(controller.selectedNetworkId(), QStringLiteral("libera"));
+    QCOMPARE(controller.selectedTarget(), QStringLiteral("#room"));
+    QCOMPARE(controller.selectedConversationId(), QStringLiteral("libera\n#room"));
+    QCOMPARE(controller.topic(), QStringLiteral("Room topic"));
+    QCOMPARE(controller.peopleCount(), 2);
+    QCOMPARE(members->rowCount(), 2);
+    QVERIFY(selectedBodies(messages).contains(QStringLiteral("first line")));
+    QVERIFY(selectedBodies(messages).contains(QStringLiteral("unread line")));
+    QCOMPARE(messages->unreadMarkRow(), unreadMarkRow);
+    QCOMPARE(controller.unreadCountFor(QStringLiteral("libera")), 0);
+}
+
+void ControllerTest::forgettingSelectedNetworkClearsSelectionProjection()
+{
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    QVERIFY(controller.addSession(config(QStringLiteral("libera")), transport));
+    registerSession(controller.session(QStringLiteral("libera")), transport);
+    transport->injectBytes(
+        QByteArrayLiteral(":omairc!u@h JOIN :#room\r\n"
+                          ":server 353 omairc = #room :omairc Alice\r\n"
+                          ":server 366 omairc #room :End of NAMES\r\n"
+                          ":op!u@h TOPIC #room :Room topic\r\n"
+                          ":Alice!u@h PRIVMSG #room :last line\r\n"));
+    QVERIFY(!controller.selectedConversationId().isEmpty());
+
+    controller.forgetNetworkState(QStringLiteral("libera"));
+
+    QCOMPARE(controller.selectedNetworkId(), QString());
+    QCOMPARE(controller.selectedTarget(), QString());
+    QCOMPARE(controller.selectedConversationId(), QString());
+    QCOMPARE(controller.topic(), QString());
+    QCOMPARE(controller.peopleCount(), 0);
+    QCOMPARE(controller.messages()->rowCount(), 0);
+    QCOMPARE(controller.members()->rowCount(), 0);
+    QCOMPARE(controller.unreadCountFor(QStringLiteral("libera")), 0);
+}
+
+void ControllerTest::statusAndCrossNetworkSelectionKeepProjectionConsistent()
+{
+    IrcController controller;
+    auto *transportA = new FakeIrcTransport;
+    auto *transportB = new FakeIrcTransport;
+    QVERIFY(controller.addSession(config(QStringLiteral("network-a")), transportA));
+    QVERIFY(controller.addSession(config(QStringLiteral("network-b")), transportB));
+    registerSession(controller.session(QStringLiteral("network-a")), transportA);
+    registerSession(controller.session(QStringLiteral("network-b")), transportB);
+    transportA->injectBytes(
+        QByteArrayLiteral(":omairc!u@h JOIN :#alpha\r\n"
+                          ":server 353 omairc = #alpha :omairc Alice\r\n"
+                          ":server 366 omairc #alpha :End\r\n"
+                          ":op!u@h TOPIC #alpha :Alpha topic\r\n"
+                          ":Alice!u@h PRIVMSG #alpha :alpha line\r\n"));
+    transportB->injectBytes(
+        QByteArrayLiteral(":omairc!u@h JOIN :#beta\r\n"
+                          ":server 353 omairc = #beta :omairc Bob Carol\r\n"
+                          ":server 366 omairc #beta :End\r\n"
+                          ":op!u@h TOPIC #beta :Beta topic\r\n"
+                          ":Bob!u@h PRIVMSG #beta :beta line\r\n"));
+    QCOMPARE(controller.unreadCountFor(QStringLiteral("network-b")), 1);
+
+    controller.openStatus(QStringLiteral("network-b"));
+    QVERIFY(controller.console()->isOpen());
+    QCOMPARE(controller.selectedNetworkId(), QStringLiteral("network-a"));
+    QCOMPARE(controller.topic(), QStringLiteral("Alpha topic"));
+    QCOMPARE(controller.peopleCount(), 2);
+    QVERIFY(selectedBodies(controller.messages()).contains(QStringLiteral("alpha line")));
+    QCOMPARE(controller.unreadCountFor(QStringLiteral("network-b")), 1);
+
+    controller.selectConversation(QStringLiteral("network-b"), QStringLiteral("#beta"));
+    QVERIFY(!controller.console()->isOpen());
+    QCOMPARE(controller.selectedNetworkId(), QStringLiteral("network-b"));
+    QCOMPARE(controller.selectedTarget(), QStringLiteral("#beta"));
+    QCOMPARE(controller.selectedConversationId(), QStringLiteral("network-b\n#beta"));
+    QCOMPARE(controller.topic(), QStringLiteral("Beta topic"));
+    QCOMPARE(controller.peopleCount(), 3);
+    QVERIFY(selectedBodies(controller.messages()).contains(QStringLiteral("beta line")));
+    QVERIFY(qobject_cast<MessageListModel *>(controller.messages())->unreadMarkRow() >= 0);
+    QCOMPARE(controller.unreadCountFor(QStringLiteral("network-b")), 0);
+
+    controller.openStatus(QStringLiteral("network-a"));
+    QVERIFY(controller.console()->isOpen());
+    QCOMPARE(controller.selectedNetworkId(), QStringLiteral("network-b"));
+    QCOMPARE(controller.topic(), QStringLiteral("Beta topic"));
+    QCOMPARE(controller.peopleCount(), 3);
+    controller.selectConversation(QStringLiteral("network-a"), QStringLiteral("#alpha"));
+    QCOMPARE(controller.selectedNetworkId(), QStringLiteral("network-a"));
+    QCOMPARE(controller.selectedConversationId(), QStringLiteral("network-a\n#alpha"));
+    QCOMPARE(controller.topic(), QStringLiteral("Alpha topic"));
+    QCOMPARE(controller.peopleCount(), 2);
+    QVERIFY(selectedBodies(controller.messages()).contains(QStringLiteral("alpha line")));
+    QCOMPARE(qobject_cast<MessageListModel *>(controller.messages())->unreadMarkRow(), -1);
+    QCOMPARE(controller.unreadCountFor(QStringLiteral("network-b")), 0);
 }
 
 void ControllerTest::backgroundChatBumpsConversationEpoch()

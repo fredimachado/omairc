@@ -1401,16 +1401,7 @@ ApplicationWindow {
         var list = consoleVisible ? conversation.consoleList : conversation.messageList;
         if (!list)
             return;
-        list.stick = list.stickDetached;
-        list.pinning = true;
-        var generation = ++list.pinGeneration;
-        list.positionViewAtIndex(index, ListView.Beginning);
-        Qt.callLater(function() {
-            if (generation !== list.pinGeneration)
-                return;
-            list.pinning = false;
-            list.adoptViewport();
-        });
+        list.revealRow(index);
     }
 
     function advanceFind(fromStart) {
@@ -1689,18 +1680,7 @@ ApplicationWindow {
             list.pinToEnd();
             return;
         }
-        // Same layout guard as revealFindMatch: detach immediately so a
-        // still-pinned viewport cannot re-pin before index 0 is realized.
-        list.stick = list.stickDetached;
-        list.pinning = true;
-        var generation = ++list.pinGeneration;
-        list.positionViewAtIndex(0, ListView.Beginning);
-        Qt.callLater(function() {
-            if (generation !== list.pinGeneration)
-                return;
-            list.pinning = false;
-            list.adoptViewport();
-        });
+        list.revealRow(0);
     }
 
     function dispatchComposerSend(fromConsole, original) {

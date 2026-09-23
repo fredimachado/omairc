@@ -12,6 +12,7 @@ int runStsTests(int argc, char **argv);
 int runSessionTests(int argc, char **argv);
 int runDemoServerTests(int argc, char **argv);
 int runControllerTests(int argc, char **argv);
+int runChannelListRequestTests(int argc, char **argv);
 int runCommandTests(int argc, char **argv);
 int runIgnoreTests(int argc, char **argv);
 int runMonitorTests(int argc, char **argv);
@@ -63,6 +64,7 @@ int main(int argc, char **argv)
     const int sessionStatus = runSessionTests(argc, argv);
     const int demoServerStatus = runDemoServerTests(argc, argv);
     const int controllerStatus = runControllerTests(argc, argv);
+    const int channelListRequestStatus = runChannelListRequestTests(argc, argv);
     const int commandStatus = runCommandTests(argc, argv);
     const int ignoreStatus = runIgnoreTests(argc, argv);
     const int monitorStatus = runMonitorTests(argc, argv);
@@ -101,6 +103,7 @@ int main(int argc, char **argv)
         sessionStatus,
         demoServerStatus,
         controllerStatus,
+        channelListRequestStatus,
         commandStatus,
         ignoreStatus,
         monitorStatus,
