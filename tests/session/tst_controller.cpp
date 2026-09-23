@@ -616,6 +616,7 @@ private slots:
     void zncPlaybackDiscoversUnknownOfflineDirect();
     void zncPlaybackWildcardSkipsStampedClearedDirect();
     void zncPlaybackKeepsDistinctMsgidAtSharedMillisecond();
+    void zncPlaybackKeepsDistinctMsgidAfterColdStart();
     void channelPlaybackPreviousNickDoesNotBumpUnread();
 
 private:
@@ -8585,6 +8586,96 @@ void ControllerTest::zncPlaybackKeepsDistinctMsgidAtSharedMillisecond()
     QCOMPARE(messages->rowCount(), 2);
     QCOMPARE(bodyRow(messages, QStringLiteral("seen")), 0);
     QCOMPARE(bodyRow(messages, QStringLiteral("unseen")), 1);
+}
+
+void ControllerTest::zncPlaybackKeepsDistinctMsgidAfterColdStart()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    ScopedTranscriptRoot scope(dir.filePath(QStringLiteral("logs")));
+
+    const QDateTime at = QDateTime::fromString(
+        QStringLiteral("2024-03-09T16:00:01.500Z"), Qt::ISODateWithMs);
+    QVERIFY(at.isValid());
+    const QString stamp = ircPlaybackPlayStamp(at);
+    const IrcCaseMapping mapping;
+    const QByteArray caps =
+        QByteArrayLiteral(":server CAP omairc LS :batch znc.in/playback\r\n"
+                          ":server CAP omairc ACK :batch znc.in/playback\r\n");
+    const QByteArray playAlice =
+        QByteArrayLiteral("ZNC *playback PLAY alice ")
+        + stamp.toUtf8() + QByteArrayLiteral("\r\n");
+    const QByteArray playZero =
+        QByteArrayLiteral("ZNC *playback PLAY * 0\r\n");
+
+    {
+        IrcController seeder;
+        auto *transport = new FakeIrcTransport;
+        QVERIFY(seeder.addSession(config(QStringLiteral("libera")), transport));
+        QVERIFY(seeder.start(QStringLiteral("libera")));
+        transport->completeConnect();
+        transport->injectBytes(QByteArrayLiteral(
+            ":server 001 omairc :Welcome\r\n"
+            "@time=2024-03-09T16:00:01.500Z;msgid=message-a "
+            ":alice!u@h PRIVMSG omairc :seen\r\n"));
+        QCOMPARE(ircPlaybackPlayStamp(
+                     IrcPlaybackTimeStore().noted(QStringLiteral("libera"),
+                                                  QStringLiteral("alice"),
+                                                  mapping)),
+                 stamp);
+        QVERIFY(!IrcOpenDirectStore().listed(QStringLiteral("libera"), mapping)
+                     .contains(QStringLiteral("alice")));
+    }
+
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    QVERIFY(controller.addSession(config(QStringLiteral("libera")), transport));
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    transport->completeConnect();
+    transport->injectBytes(caps);
+    transport->injectBytes(QByteArrayLiteral(":server 001 omairc :Welcome\r\n"));
+    QVERIFY(!framesContain(transport->writtenFrames(),
+                           QByteArrayLiteral("*playback PLAY")));
+    transport->injectBytes(QByteArrayLiteral(":server 376 omairc :End of MOTD\r\n"));
+    QCOMPARE(frameCount(transport->writtenFrames(), playAlice), 1);
+    QCOMPARE(frameCount(transport->writtenFrames(), playZero), 1);
+
+    transport->injectBytes(QByteArrayLiteral(":omairc!u@h JOIN :#omarchy\r\n"));
+    auto *conversations =
+        qobject_cast<QAbstractItemModel *>(controller.conversations());
+    QVERIFY(conversations);
+    QCOMPARE(rowForTarget(conversations, QStringLiteral("alice")), -1);
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+
+    transport->injectBytes(QByteArrayLiteral(
+        ":znc.in BATCH +b znc.in/playback alice\r\n"
+        "@batch=b;time=2024-03-09T16:00:01.500Z;msgid=message-b "
+        ":alice!u@h PRIVMSG omairc :unseen\r\n"
+        "@batch=b;time=2024-03-09T16:00:01.500Z;msgid=message-a "
+        ":alice!u@h PRIVMSG omairc :seen\r\n"
+        ":znc.in BATCH -b\r\n"));
+
+    const int aliceRow = rowForTarget(conversations, QStringLiteral("alice"));
+    QVERIFY(aliceRow >= 0);
+    QCOMPARE(roleAt(conversations, aliceRow, ConversationListModel::UnreadRole).toInt(),
+             1);
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("alice"));
+    const int aliceSelected = rowForTarget(conversations, QStringLiteral("alice"));
+    QVERIFY(aliceSelected >= 0);
+    auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
+    QVERIFY(messages);
+    QStringList bodies;
+    for (const QString& body : selectedBodies(messages)) {
+        if (!body.isEmpty())
+            bodies.append(body);
+    }
+    QCOMPARE(bodies, QStringList({QStringLiteral("seen"), QStringLiteral("unseen")}));
+    QCOMPARE(roleAt(messages, bodyRow(messages, QStringLiteral("unseen")),
+                    MessageListModel::OriginRole),
+             QStringLiteral("replay"));
+    QCOMPARE(roleAt(conversations, aliceSelected,
+                    ConversationListModel::UnreadRole).toInt(),
+             0);
 }
 
 void ControllerTest::channelPlaybackPreviousNickDoesNotBumpUnread()

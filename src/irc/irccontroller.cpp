@@ -4304,19 +4304,19 @@ void IrcController::handleHistoryBatch(const QString& networkId,
                 // microsecond buffer times, and FormatServerTime prints the
                 // tag with %E3S. cctz truncates those three digits, so a line
                 // still inside the exclusive bound can share the saved
-                // millisecond. Drop anything older. Drop an equal-millisecond
-                // line with no msgid, or after the conversation is gone: the
-                // repeat and a new line are the same on the wire, and keeping
-                // it would restore a message /clear or a closed query already
-                // removed. A nonempty msgid on a conversation that still
-                // exists is distinguishable. The reducer keeps an id it has
-                // not seen and skips one it has. /clear leaves those ids.
-                const IrcConversationState *known = m_reducer.find(
-                    m_reducer.conversationKey(networkId, batch.target));
+                // millisecond. Drop anything older. An equal-millisecond line
+                // with no msgid is the same on the wire as the one already
+                // read, so it stays dropped: keeping it would restore a
+                // cleared line, and dropping it can hide a new one. A
+                // nonempty msgid is kept even when this query was not
+                // restored. An inbound-only direct is absent after a cold
+                // start, and that absence does not mean the id was seen.
+                // The reducer opens the query, hydrates the log, and skips
+                // an id already stored. /clear leaves those ids in place.
                 event->lines.erase(
                     std::remove_if(
                         event->lines.begin(), event->lines.end(),
-                        [boundMs, known](const IrcReplayLine& line) {
+                        [boundMs](const IrcReplayLine& line) {
                             if (!line.serverTime || !line.serverTime->isValid())
                                 return false;
                             const qint64 lineMs =
@@ -4325,7 +4325,7 @@ void IrcController::handleHistoryBatch(const QString& networkId,
                                 return false;
                             if (lineMs < boundMs)
                                 return true;
-                            return line.msgid.isEmpty() || known == nullptr;
+                            return line.msgid.isEmpty();
                         }),
                     event->lines.end());
             }
