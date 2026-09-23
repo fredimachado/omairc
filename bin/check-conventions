@@ -280,21 +280,31 @@ def check_window_delegate_trees():
 
 def check_qml_activate_duck_type():
     problems = []
-    call = re.compile(r"\b([A-Za-z_][A-Za-z0-9_]*)\s*\.\s*activate\s*\(")
+    # Any receiver: kids[i].activate(), (child).activate(), get(i).activate().
+    # Whitespace between the dot and the name still counts as a call.
+    call = re.compile(r"\.\s*activate\s*\(")
     child = re.compile(r"\bchild\s*\.\s*activate\b")
+    allowed = re.compile(
+        r"\bslashCommands\s*\.\s*activate\s*\(\s*index\s*\)")
+    window = Path("src/OmaircWindow.qml")
     for relative, source in sources("src/**/*.qml"):
+        in_window = Path(relative) == window
         for number, line in enumerate(source.splitlines(), 1):
-            covered = []
+            call_spans = []
+            allowed_spans = [
+                match.span() for match in allowed.finditer(line)
+            ] if in_window else []
             for match in call.finditer(line):
-                if match.group(1) == "slashCommands":
+                call_spans.append(match.span())
+                if any(start <= match.start() and match.end() <= end
+                       for start, end in allowed_spans):
                     continue
                 problems.append(
-                    f"{relative}:{number}: {match.group(1)}.activate() "
-                    f"duck-types a QML object")
-                covered.append(match.span())
+                    f"{relative}:{number}: .activate() duck-types a QML object")
             for match in child.finditer(line):
-                if any(start <= match.start() and match.end() <= end
-                       for start, end in covered):
+                # child.activate() is already a call; do not report it again.
+                if any(match.start() < end and start < match.end()
+                       for start, end in call_spans):
                     continue
                 problems.append(
                     f"{relative}:{number}: child.activate duck-types a QML child")
