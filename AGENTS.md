@@ -38,7 +38,11 @@
 - Use the bundled `iA Writer Mono S` font for all custom interface text.
 - The public CLI skill lives in `skills/omairc/`. Install it with
   `npx skills add fredimachado/omairc/skills -g`. Proving the GUI uses
-  `.cursor/skills/verify-omairc`; that skill is internal.
+  `.cursor/skills/verify-omairc`; that skill is internal. Load
+  `.cursor/skills/change-qml` when adding or moving UI,
+  `.cursor/skills/conversation-cause` when touching `ensureConversation`,
+  conversation creation, or `/msg`, and `.cursor/skills/redact-secrets`
+  when touching Status lines, error previews, or `src/irc/ircsecretpolicy.cpp`.
 
 ## QML extraction / window growth
 
