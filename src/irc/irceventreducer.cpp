@@ -1460,16 +1460,20 @@ void IrcEventReducer::spliceHistory(IrcConversationState& conversation,
             sawSelf = true;
         }
         // Inserted or already present. A missing time tag stays off the
-        // PLAY clock; the transcript timestamp may be wall clock.
-        if (line.serverTime && line.serverTime->isValid()) {
-            m_keptReplay.push_back(IrcKeptReplay{
-                event.conversation.networkId,
-                event.target,
-                line.serverTime->toUTC(),
-            });
-        }
-        if (!line.msgid.isEmpty() && conversation.messageIds.count(line.msgid)) {
+        // PLAY clock; the transcript timestamp may be wall clock. A line
+        // translateHistory skipped never reaches this loop.
+        const auto noteKept = [&]() {
+            if (line.serverTime && line.serverTime->isValid()) {
+                m_keptReplay.push_back(IrcKeptReplay{
+                    event.conversation.networkId,
+                    event.target,
+                    line.serverTime->toUTC(),
+                });
+            }
             keptPlaybackLine = true;
+        };
+        if (!line.msgid.isEmpty() && conversation.messageIds.count(line.msgid)) {
+            noteKept();
             continue;
         }
         const IrcMessageKind kind = line.kind == IrcMessageKindTag::Emote
@@ -1485,7 +1489,7 @@ void IrcEventReducer::spliceHistory(IrcConversationState& conversation,
                                return sameReplayLine(message, line, kind);
                            });
         if (alreadyPresent) {
-            keptPlaybackLine = true;
+            noteKept();
             continue;
         }
         if (!line.msgid.isEmpty())
@@ -1493,7 +1497,7 @@ void IrcEventReducer::spliceHistory(IrcConversationState& conversation,
         run.push_back({line.author, line.body, line.timestamp, kind, false,
                        IrcOrigin::Replay, line.msgid});
         run.back().sequence = conversation.nextSequence++;
-        keptPlaybackLine = true;
+        noteKept();
     }
     if (keptPlaybackLine && event.kind == IrcHistoryKind::BouncerPlayback
         && conversation.channel()) {
