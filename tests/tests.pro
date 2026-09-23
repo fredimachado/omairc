@@ -89,6 +89,7 @@ HEADERS += \
     ../src/irc/messagelistmodel.h \
     ../src/irc/memberlistmodel.h \
     ../src/irc/channellistmodel.h \
+    ../src/irc/ircchannellistrequest.h \
     ../src/irc/irccontroller.h \
     ../src/irc/ircloopbacktransport.h \
     ../src/irc/ircdemoserver.h \
@@ -170,6 +171,7 @@ SOURCES += \
     ../src/irc/messagelistmodel.cpp \
     ../src/irc/memberlistmodel.cpp \
     ../src/irc/channellistmodel.cpp \
+    ../src/irc/ircchannellistrequest.cpp \
     ../src/irc/irccontroller.cpp \
     ../src/irc/ircloopbacktransport.cpp \
     ../src/irc/ircdemoserver.cpp \
@@ -191,6 +193,7 @@ SOURCES += \
     session/tst_connection.cpp \
     storage/tst_secretservice.cpp \
     session/tst_controller.cpp \
+    session/tst_channellistrequest.cpp \
     session/tst_command.cpp \
     session/tst_ignore.cpp \
     session/tst_monitor.cpp \

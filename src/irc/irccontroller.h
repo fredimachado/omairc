@@ -4,6 +4,7 @@
 #include "conversationlistmodel.h"
 #include "ircautoaway.h"
 #include "ircconversationlog.h"
+#include "ircchannellistrequest.h"
 #include "irceventreducer.h"
 #include "irchighlight.h"
 #include "ircignore.h"
@@ -410,11 +411,8 @@ private:
     void applyListRow(const QString& networkId, IrcChannelListRow row);
     void finishChannelList(const QString& networkId);
     bool failChannelList(const QString& networkId, const QString& text);
-    void armChannelListIdle(const QString& networkId);
-    void stopChannelListIdle(const QString& networkId);
     bool failChannelListFromNumeric(const QString& networkId,
                                     const IrcMessage& message);
-    bool sameListMask(const QString& left, const QString& right) const;
     struct IrcCtcpWatchKey
     {
         QString networkId;
@@ -525,20 +523,7 @@ private:
     MessageListModel m_messages;
     MemberListModel m_members;
     ChannelListModel m_channelList;
-    struct ChannelListCache {
-        QString mask;
-        QVector<IrcChannelListRow> rows;
-        bool complete = false;
-        bool loading = false;
-        QString error;
-        std::optional<QString> pendingMask;
-        // After idle timeout, a 323 from the unanswered LIST may still arrive
-        // after a retry's 321/322. Drain that one end; do not finish the retry.
-        bool drainTimedOutEnd = false;
-    };
-    QHash<QString, ChannelListCache> m_channelLists;
-    QHash<QString, QTimer *> m_channelListIdleTimers;
-    int m_channelListIdleTimeoutMs = 30000;
+    IrcChannelListRequest m_channelLists;
     bool m_channelListPresented = false;
     QHash<QString, QString> m_currentNicks;
     QHash<QString, QString> m_lastErrors;
