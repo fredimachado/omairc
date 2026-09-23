@@ -156,6 +156,27 @@ need judgment.
 - Fail closed when redacting secrets for Status or error previews. Do not
   enumerate one more well-formed bypass.
 
+## Correction loop
+
+When a review comment or a failing test shows a bad pattern, fix it in
+this order:
+
+1. Make the bad pattern impossible in the type, the model, or the call.
+   `IrcConversationCause` and `IrcServerFeatures` are the examples, or an
+   API that cannot express the mistake.
+2. Else add or extend a check in `bin/check-conventions`.
+3. Else add or adjust one of the internal playbooks:
+   `.cursor/skills/change-qml`, `.cursor/skills/conversation-cause`,
+   `.cursor/skills/redact-secrets`.
+4. A sentence in `AGENTS.md` is the last place, and only for judgment the
+   three layers cannot encode.
+
+Pick a GitHub issue, branch off `master`, run `bin/test`, and open the
+pull request against `master`. Also run `bin/test-san` when the change
+touches sanitizers, and `bin/test-live` when it touches real IRCd
+behavior. CI rejects a pull request whose base is not `master`. No new
+bot, workflow, or notification sink.
+
 ## Build and validation
 
 `bin/test` is the default gate. It runs `bin/check-conventions`, builds,
