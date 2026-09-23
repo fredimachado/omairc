@@ -4,6 +4,7 @@ import QtQuick.Window
 import QtTest
 import Omairc.Test 1.0
 import "../../src" as Omairc
+import "../../src/qml" as OmaircQml
 
 TestCase {
     id: testCase
@@ -204,6 +205,25 @@ TestCase {
         id: seededWindowComponent
 
         Omairc.OmaircWindow {
+        }
+    }
+
+    Component {
+        id: shortTranscriptComponent
+
+        OmaircQml.TranscriptList {
+            width: 400
+            height: 400
+            property alias rows: shortRows
+            model: ListModel {
+                id: shortRows
+                ListElement { body: "first" }
+            }
+            delegate: Rectangle {
+                required property string body
+                width: ListView.view.width
+                height: 20
+            }
         }
     }
 
@@ -2002,67 +2022,97 @@ TestCase {
         compare(appWindow.consoleVisible, true);
     }
 
-    function test_revealRowCancelsDeferredPinOnGrowthAndConversationSwitch() {
+    function test_shortRevealAdoptsViewportAfterGrowth() {
+        var list = createTemporaryObject(shortTranscriptComponent, testCase);
+        verify(list !== null);
+        verify(list.contentHeight <= list.height);
+
+        list.revealRow(0);
+        var shortGeneration = list.pinGeneration;
+        list.rows.append({ body: "appended" });
+        verify(list.contentHeight <= list.height);
+        compare(list.pinGeneration, shortGeneration,
+                "Appending should preserve deferred reveal cleanup");
+        wait(0);
+        compare(list.stick, list.stickFollowing);
+        tryCompare(list, "pinning", false);
+        verify(transcriptPinned(list));
+
+        list.pinToUnread(0);
+        var unreadGeneration = list.pinGeneration;
+        list.rows.append({ body: "after unread pin" });
+        compare(list.pinGeneration, unreadGeneration,
+                "Appending should preserve deferred unread-pin cleanup");
+        wait(0);
+        compare(list.stick, list.stickFollowing);
+        tryCompare(list, "pinning", false);
+
+    }
+
+    function test_revealRowPreservesGrowthAndCancelsOnReset() {
         openSeededAppWindow();
         var list = item("messageList");
         fillTranscriptUntilScrollable(list);
 
-        var generation = list.pinGeneration;
         list.revealRow(0);
+        var generation = list.pinGeneration;
         compare(list.stick, list.stickDetached);
         compare(list.pinning, true);
-        appendLiveMessages(list, 1, "reveal cancellation");
-        verify(list.pinGeneration > generation,
-               "A new row should cancel deferred reveal cleanup");
+        appendLiveMessages(list, 1, "reveal growth");
+        compare(list.pinGeneration, generation,
+                "A new row should not cancel deferred reveal cleanup");
         wait(0);
         compare(list.pinning, false);
         compare(list.stick, list.stickDetached);
         verify(!transcriptPinned(list));
 
-        list.pinToEnd();
+        list.firstUnseenIndex = 0;
+        list.jumpToUnseen();
+        var jumpGeneration = list.pinGeneration;
+        appendLiveMessages(list, 1, "unseen jump growth");
+        compare(list.pinGeneration, jumpGeneration,
+                "Appending should preserve deferred unseen-jump cleanup");
         wait(0);
-        var pinnedY = list.contentY;
-        appendLiveMessages(list, 1, "reveal follows again");
-        wait(0);
-        compare(list.stick, list.stickFollowing);
-        tryVerify(function() { return transcriptPinned(list); });
-        verify(list.contentY >= pinnedY);
+        compare(list.pinning, false);
+        compare(list.stick, list.stickDetached);
 
         list.revealRow(0);
+        var resetGeneration = list.pinGeneration;
+        prependLiveReplay(list, 1);
+        verify(list.pinGeneration > resetGeneration,
+               "A history-splice reset should cancel deferred reveal cleanup");
+        wait(0);
+        tryCompare(list, "pinning", false);
+
+        list.revealRow(0);
+        var switchGeneration = list.pinGeneration;
         compare(list.pinning, true);
         appWindow.selectConversation("#ricing", seed.omarchyNetworkId);
         tryCompare(appWindow, "currentConversation", "#ricing");
+        verify(list.pinGeneration > switchGeneration,
+               "A conversation switch should cancel deferred reveal cleanup");
         tryCompare(list, "pinning", false);
         compare(list.stick, list.stickFollowing);
     }
 
-    function test_statusRevealRowCancelsDeferredPinOnGrowthAndFollowsAgain() {
+    function test_statusRevealRowAdoptsViewportAfterGrowth() {
         openSeededAppWindow();
         var list = item("consoleList");
         keyClick(Qt.Key_QuoteLeft, Qt.ControlModifier);
         tryCompare(appWindow, "consoleVisible", true);
         fillConsoleUntilScrollable(list);
 
-        var generation = list.pinGeneration;
         list.revealRow(0);
+        var generation = list.pinGeneration;
         compare(list.stick, list.stickDetached);
         compare(list.pinning, true);
-        appendLiveConsoleLines(list, 1, "reveal cancellation");
-        verify(list.pinGeneration > generation,
-               "A new Status row should cancel deferred reveal cleanup");
+        appendLiveConsoleLines(list, 1, "reveal growth");
+        compare(list.pinGeneration, generation,
+                "A new Status row should preserve deferred reveal cleanup");
         wait(0);
         compare(list.pinning, false);
         compare(list.stick, list.stickDetached);
         verify(!transcriptPinned(list));
-
-        list.pinToEnd();
-        wait(0);
-        var pinnedY = list.contentY;
-        appendLiveConsoleLines(list, 1, "reveal follows again");
-        wait(0);
-        compare(list.stick, list.stickFollowing);
-        tryVerify(function() { return transcriptPinned(list); });
-        verify(list.contentY >= pinnedY);
     }
 
     function verticalScrollBar(list) {

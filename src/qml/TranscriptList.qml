@@ -240,7 +240,6 @@ ListView {
     onCountChanged: {
         rowRevision += 1;
         refreshUnreadMarkRow();
-        cancelDeferredPin();
         if (resetPending)
             return;
         noteGrowth(trackedCount, count);
