@@ -19,9 +19,10 @@ Keyboard is the window chord map: walk conversations, walk network headers, coll
 - `keyboard-members` focuses the member list with `Ctrl+Shift+P` and reopens a hidden panel. Enter on a focused member opens a DM.
 - `keyboard-server-list` collapses and restores the left server list column with `Ctrl+Shift+S`. That is the whole rail, not a per-network section. Collapsing is not hiding: `Alt+Down` / `Alt+Up` still walk conversations while the column is collapsed. It also drops the focused network header, so Enter in the composer sends again. `Alt+Left` / `Alt+Right` restores the column so the header highlight is visible.
 - `keyboard-close` closes the selected direct message with `Ctrl+W` and selects the next DM, or the previous row when that was the last. It is a no-op on a channel, Status, or the shortcut sheet.
-- `keyboard-sheet` toggles the shortcut list with `Ctrl+/`. Escape closes the sheet before Status. The list includes `Ctrl+W`, `Ctrl+F`, `Ctrl+K`, `Ctrl+Shift+K`, `Ctrl+Shift+A`, `Ctrl+Shift+S`, per-network collapse/expand/move, and collapse-all / expand-all. `Ctrl+Q` still quits the process.
+- `keyboard-sheet` toggles the shortcut list with `Ctrl+/`. Escape closes the sheet before Status. The list includes `Ctrl+W`, `Ctrl+C`, `Ctrl+F`, `Ctrl+K`, `Ctrl+Shift+K`, `Ctrl+Shift+A`, `Ctrl+Shift+S`, per-network collapse/expand/move, and collapse-all / expand-all. `Ctrl+Q` still quits the process.
 - `keyboard-connect` opens Connect with `Ctrl+,` when a connection exists.
 - `keyboard-scroll` pages the visible transcript with `Page Up` / `Page Down` while the composer stays focused. `Shift+Page Up` / `Shift+Page Down` hop about half as far. `Ctrl+Home` / `Ctrl+End` jump to the top / bottom.
+- `keyboard-copy` copies the selected transcript text with `Ctrl+C`. Message bodies, whois lines, and Status lines are selectable; the composer keeps focus. A selection in the composer copies that draft instead. Switching conversations or opening Status clears the transcript selection. The same chord still copies when the member list has focus.
 - `keyboard-find` finds text in the current conversation or Status with `Ctrl+F`. Empty first press enters find and waits. The composer shows Find and holds the query. Matches include author and body, or Status label and text. The current row uses the selection color. Enter or another `Ctrl+F` goes to the next match and wraps. Escape leaves find and restores the unsent draft.
 
 ## How to get to it (user POV)
@@ -42,6 +43,7 @@ Keyboard is the window chord map: walk conversations, walk network headers, coll
 - Press `Ctrl+,` to reopen Connect after a profile exists.
 - Press `Page Up` / `Page Down` to scroll without leaving the composer. `Shift+Page Up` / `Shift+Page Down` hop about half a page. `Ctrl+Home` / `Ctrl+End` jump to the top / bottom.
 - Press `Ctrl+F` to find in the current conversation or Status.
+- Press `Ctrl+C` to copy the selected transcript text. A selection in the composer copies the draft instead.
 
 ## Driving it with control-omairc
 
@@ -78,7 +80,7 @@ compare --before test-artifacts/verify/keyboard/server-list-collapsed.png --afte
 - **Chords with no verb.** `ctrl+w` and `ctrl+shift+s` are in the fence. These stay `key --key` and are not in the fence: `ctrl+slash`, `ctrl+shift+a`, `alt+Left`, `alt+Right`, `alt+shift+Left`, `alt+shift+Right`, `alt+shift+Up`, `alt+shift+Down`, `ctrl+alt+shift+Left`, `ctrl+alt+shift+Right`, `Escape`, `Tab`, `Page_Up`, `Page_Down`, and `ctrl+f`. Named verbs cover the rest: `walk`, `unread`, `jump`, `nick-jump`, `focus-members`, `status`, `connect`, and `composer`.
 - **Shortcut sheet on first run.** After `control-omairc launch` (no `--demo-server`), `control-omairc key --key ctrl+slash` opens the sheet and `control-omairc key --key Escape` leaves Connect open. That is a different launch from this fence. Do not put both launches in one recipe.
 - **Mouse path.** The header chevron (`networkCollapseButton-<id>`) toggles one network the way `Alt+Shift+Left` / `Alt+Shift+Right` do. There is no chord helper for that pixel. It is not this recipe.
-- **Offscreen suite.** When Xvfb tools are missing, run `control-omairc doctor-qml` then `control-omairc qml-suite`. The suite covers walk, network headers, collapse and reorder, `Ctrl+K`, `Ctrl+Shift+K`, `Ctrl+Shift+A`, `Alt+A`, nick complete, history, drafts, find, paging, `Ctrl+Shift+P`, `Ctrl+W`, and `Ctrl+/`. It also covers `test_toggleServerListWithShortcut`. This is not compiled-window proof.
+- **Offscreen suite.** When Xvfb tools are missing, run `control-omairc doctor-qml` then `control-omairc qml-suite`. The suite covers walk, network headers, collapse and reorder, `Ctrl+K`, `Ctrl+Shift+K`, `Ctrl+Shift+A`, `Alt+A`, nick complete, history, drafts, find, paging, `Ctrl+Shift+P`, `Ctrl+W`, `Ctrl+C` transcript copy, and `Ctrl+/`. It also covers `test_toggleServerListWithShortcut`. This is not compiled-window proof.
 
 ## Gotchas
 
@@ -95,6 +97,7 @@ compare --before test-artifacts/verify/keyboard/server-list-collapsed.png --afte
 - Page Up / Page Down, Shift+Page Up / Shift+Page Down, and Ctrl+Home / Ctrl+End are disabled while Connect is visible or the shortcuts overlay is open. Plain Home / End stay composer caret (and Connect's network rail).
 - `Alt+Down` / `Alt+Up`, `Alt+Left` / `Alt+Right`, `Alt+Shift+Left` / `Right` / `Up` / `Down`, `Ctrl+Alt+Shift+Left` / `Right`, `Alt+A`, `Ctrl+Shift+A`, `Ctrl+L`, `Ctrl+W`, `Ctrl+Shift+S`, and `Ctrl+`` are disabled while Connect is visible. Connect is a window-level modal; those chords must not walk servers or members behind it. `Ctrl+/` still opens the shortcuts overlay.
 - `Ctrl+F` enters find even with an empty composer. It jumps the current transcript to the match and leaves follow-the-end so the match stays put. Escape restores the draft, not the old scroll position.
+- `Ctrl+C` copies the transcript selection while the composer keeps focus. If the composer itself has a selection, that draft is what lands on the clipboard. Opening another conversation or Status drops the transcript selection.
 - Escape closes the sheet before Status. `Ctrl+/` toggles it.
 - `Ctrl+K` is disabled while Connect is visible, the same rule as `Ctrl+F`. Duplicate channel names show the network display name.
 - `Ctrl+Shift+K` is disabled on direct messages and Status. It does not open the member panel. Filter is a nick substring, same style as `Ctrl+K`. The sheet lists members in `PREFIX` rank order, including your own nick; Enter on yourself is a no-op.

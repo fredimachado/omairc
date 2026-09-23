@@ -32,6 +32,7 @@ Popup {
             title: "WRITE",
             rows: [
                 { keys: "Ctrl+L", action: "composer" },
+                { keys: "Ctrl+C", action: "copy selection" },
                 { keys: "Ctrl+F", action: "find" },
                 { keys: "Enter", action: "send" },
                 { keys: "Page Up / Page Down", action: "scroll" },

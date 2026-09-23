@@ -95,6 +95,7 @@ ApplicationWindow {
         ? (networkConsole.open || irc.selectedTarget.length === 0)
         : false
     onConsoleVisibleChanged: {
+        clearTranscriptSelection();
         resetNickComplete();
         if (!abandonFind() && !suppressComposerStash)
             stashComposerDraft();
@@ -113,6 +114,7 @@ ApplicationWindow {
     readonly property string currentNetworkId: irc ? irc.focusedNetworkId : ""
     readonly property string currentConversationId: irc ? irc.selectedConversationId : ""
     onCurrentConversationIdChanged: {
+        clearTranscriptSelection();
         resetNickComplete();
         if (!abandonFind() && !suppressComposerStash)
             stashComposerDraft();
@@ -1605,6 +1607,51 @@ ApplicationWindow {
             ? Qt.MetaModifier : Qt.ControlModifier;
     }
 
+    // The transcript TextEdits stay unfocused so the composer keeps the
+    // caret. Qt only copies on Ctrl+C when that edit has focus, so the
+    // selection is remembered here and copied from the composer key handler.
+    property Item transcriptSelection: null
+
+    function noteTranscriptSelection(edit) {
+        if (!edit)
+            return;
+        if (edit.selectedText.length === 0) {
+            if (transcriptSelection === edit)
+                transcriptSelection = null;
+            return;
+        }
+        var previous = transcriptSelection;
+        if (previous && previous !== edit)
+            previous.deselect();
+        transcriptSelection = edit;
+    }
+
+    function clearTranscriptSelection() {
+        var edit = transcriptSelection;
+        if (!edit)
+            return;
+        transcriptSelection = null;
+        edit.deselect();
+    }
+
+    function copyTranscriptSelection() {
+        var edit = transcriptSelection;
+        if (!edit || edit.selectedText.length === 0)
+            return false;
+        edit.copy();
+        return true;
+    }
+
+    function isCopyChord(event) {
+        if (event.key !== Qt.Key_C)
+            return false;
+        var mods = composerKeyModifiers(event);
+        if (mods === Qt.ControlModifier)
+            return true;
+        return (Qt.platform.os === "osx" || Qt.platform.os === "macos")
+            && mods === Qt.MetaModifier;
+    }
+
     function handleComposerSidebarShortcut(event) {
         if (win.connectionOverlayVisible || win.shortcutOverlayOpen)
             return false;
@@ -1781,6 +1828,23 @@ ApplicationWindow {
             return;
         }
 
+        // The composer TextInput accepts ShortcutOverride for Copy even when
+        // its selection is empty, so a window Shortcut never sees Ctrl+C
+        // while the caret is here. Copy the draft when it has a selection,
+        // otherwise the transcript selection.
+        if (isCopyChord(event)) {
+            if (conversation.composer.selectedText.length > 0) {
+                conversation.composer.copy();
+                event.accepted = true;
+                return;
+            }
+            if (!win.connectionOverlayVisible && !win.shortcutOverlayOpen
+                    && copyTranscriptSelection()) {
+                event.accepted = true;
+                return;
+            }
+        }
+
         // Keys.BeforeItem starts accepted. Ignore keys we did not handle so
         // the composer can still type, select, and move the caret.
         event.accepted = false;
@@ -1861,6 +1925,20 @@ ApplicationWindow {
         context: Qt.ApplicationShortcut
         enabled: !win.shortcutOverlayOpen
         onActivated: win.close()
+    }
+
+    Shortcut {
+        sequence: "Ctrl+C"
+        context: Qt.ApplicationShortcut
+        enabled: {
+            var edit = win.transcriptSelection;
+            return edit
+                && edit.selectedText.length > 0
+                && !conversation.composer.activeFocus
+                && !win.connectionOverlayVisible
+                && !win.shortcutOverlayOpen;
+        }
+        onActivated: win.copyTranscriptSelection()
     }
 
     Shortcut {
@@ -2559,6 +2637,9 @@ ApplicationWindow {
                 openAllowedUrl: function(url) { return win.openAllowedUrl(url) }
                 joinInviteChannel: function(channel) { return win.joinInviteChannel(channel) }
                 onDirectMessageRequested: function(nick) { win.openDirectMessage(nick) }
+                onTranscriptSelectionChanged: function(edit) {
+                    win.noteTranscriptSelection(edit);
+                }
             }
 
             messageFooter: Item {
@@ -2662,6 +2743,9 @@ ApplicationWindow {
                 inviteChannelAt: function(text, index) { return win.inviteChannelAt(text, index) }
                 openAllowedUrl: function(url) { return win.openAllowedUrl(url) }
                 joinInviteChannel: function(channel) { return win.joinInviteChannel(channel) }
+                onTranscriptSelectionChanged: function(edit) {
+                    win.noteTranscriptSelection(edit);
+                }
             }
             onMembersToggleRequested: win.membersVisible = !win.membersVisible
             onSendRequested: win.sendMessage()
