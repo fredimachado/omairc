@@ -3425,6 +3425,10 @@ TestCase {
 
     function test_copyRichTranscriptSelectionIsPlain() {
         openSeededAppWindow();
+        var composer = item("messageComposer");
+        mouseClick(composer);
+        verify(composer.activeFocus);
+
         var list = item("messageList");
         var previousCount = list.model.rowCount();
         var boldBody = "hello \x02world\x02";
@@ -3438,6 +3442,7 @@ TestCase {
         compare(body.textFormat, TextEdit.RichText);
         body.selectAll();
         compare(body.selectedText, "hello world");
+        verify(composer.activeFocus);
 
         clickCopy();
         verify(clipboardMatches("hello world"));
@@ -3477,6 +3482,10 @@ TestCase {
 
     function test_secondTranscriptSelectionReplacesTheFirst() {
         openSeededAppWindow();
+        var composer = item("messageComposer");
+        mouseClick(composer);
+        verify(composer.activeFocus);
+
         var list = item("messageList");
         var firstIndex = -1;
         var secondIndex = -1;
@@ -3506,6 +3515,7 @@ TestCase {
         compare(appWindow.transcriptSelection, second);
         verify(second.selectedText.length > 0);
         verify(firstText.length > 0);
+        verify(composer.activeFocus);
 
         clickCopy();
         verify(clipboardMatches(second.selectedText));
