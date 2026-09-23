@@ -2821,10 +2821,10 @@ void IrcController::clearAutoAwayNetworks(bool logCleared)
             if (session->state() == IrcSession::State::Registered
                 && session->clearAway()) {
                 m_unawaySent.insert(networkId);
+                if (logCleared)
+                    recordAutoawayStatus(networkId, status);
             }
         }
-        if (logCleared)
-            recordAutoawayStatus(networkId, status);
     }
     m_autoaway.oneShotReason.clear();
 }

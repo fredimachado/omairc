@@ -194,6 +194,7 @@ private slots:
     void activityLogsClearedStatus();
     void disableWhileActiveDoesNotLogClearedStatus();
     void reconnectWhileTrippedDoesNotRetripStatus();
+    void activityOnDisconnectedNetworkDoesNotLogClearedStatus();
 
 private:
     std::unique_ptr<QTemporaryDir> m_settingsDir;
@@ -1054,6 +1055,40 @@ void AutoawayTest::reconnectWhileTrippedDoesNotRetripStatus()
     QCOMPARE(logCount(console->lines(), trip), 1);
     console->setNetwork(QStringLiteral("network-b"));
     QCOMPARE(logCount(console->lines(), trip), 1);
+}
+
+void AutoawayTest::activityOnDisconnectedNetworkDoesNotLogClearedStatus()
+{
+    IrcController controller;
+    auto *transportA = joinNetwork(controller, QStringLiteral("network-a"));
+    auto *transportB = joinNetwork(controller, QStringLiteral("network-b"));
+    QVERIFY(transportA);
+    QVERIFY(transportB);
+    IrcStatusConsole *console = controller.console();
+    QVERIFY(console);
+    controller.selectConversation(QStringLiteral("network-a"),
+                                  QStringLiteral("#omarchy"));
+    QVERIFY(controller.sendMessage(QStringLiteral("/autoaway 15")));
+    controller.fireAutoawayIdleForTest();
+    controller.fireAutoawayGraceForTest();
+    injectNowAway(transportA);
+    injectNowAway(transportB);
+    QVERIFY(controller.selfAway());
+
+    const int afterTripA = transportA->writtenFrames().size();
+    const int afterTripB = transportB->writtenFrames().size();
+    transportA->remoteClose();
+
+    postAppEvent(QEvent::Wheel);
+    QCOMPARE(awayFrameCount(transportB->writtenFrames(), afterTripB), 1);
+    QCOMPARE(transportB->writtenFrames().last(), QByteArrayLiteral("AWAY\r\n"));
+    QCOMPARE(awayFrameCount(transportA->writtenFrames(), afterTripA), 0);
+
+    const QString cleared = QStringLiteral("Auto-away cleared — back online.");
+    console->setNetwork(QStringLiteral("network-b"));
+    QVERIFY(logContains(console->lines(), cleared));
+    console->setNetwork(QStringLiteral("network-a"));
+    QVERIFY(!logContains(console->lines(), cleared));
 }
 
 void AutoawayTest::idleTimerUsesMillisecondInterval()
