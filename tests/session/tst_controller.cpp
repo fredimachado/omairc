@@ -4718,16 +4718,25 @@ void ControllerTest::reselectingConversationPreservesProjectionAndUnreadMark()
         QByteArrayLiteral(":Alice!u@h PRIVMSG #room :unread line\r\n"));
     controller.setWindowActive(true);
 
+    auto *conversations =
+        qobject_cast<QAbstractItemModel *>(controller.conversations());
     auto *messages = qobject_cast<MessageListModel *>(controller.messages());
     auto *members = qobject_cast<QAbstractItemModel *>(controller.members());
+    QVERIFY(conversations);
     QVERIFY(messages);
     QVERIFY(members);
     const int unreadMarkRow = messages->unreadMarkRow();
     QVERIFY(unreadMarkRow >= 0);
     QCOMPARE(controller.unreadCountFor(QStringLiteral("libera")), 0);
+    QSignalSpy conversationResets(conversations, &QAbstractItemModel::modelReset);
+    QSignalSpy messageResets(messages, &QAbstractItemModel::modelReset);
+    QSignalSpy memberResets(members, &QAbstractItemModel::modelReset);
 
     controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#room"));
 
+    QCOMPARE(conversationResets.size(), 0);
+    QCOMPARE(messageResets.size(), 0);
+    QCOMPARE(memberResets.size(), 0);
     QCOMPARE(controller.selectedNetworkId(), QStringLiteral("libera"));
     QCOMPARE(controller.selectedTarget(), QStringLiteral("#room"));
     QCOMPARE(controller.selectedConversationId(), QStringLiteral("libera\n#room"));
