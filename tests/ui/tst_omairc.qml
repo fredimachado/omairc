@@ -2002,6 +2002,69 @@ TestCase {
         compare(appWindow.consoleVisible, true);
     }
 
+    function test_revealRowCancelsDeferredPinOnGrowthAndConversationSwitch() {
+        openSeededAppWindow();
+        var list = item("messageList");
+        fillTranscriptUntilScrollable(list);
+
+        var generation = list.pinGeneration;
+        list.revealRow(0);
+        compare(list.stick, list.stickDetached);
+        compare(list.pinning, true);
+        appendLiveMessages(list, 1, "reveal cancellation");
+        verify(list.pinGeneration > generation,
+               "A new row should cancel deferred reveal cleanup");
+        wait(0);
+        compare(list.pinning, false);
+        compare(list.stick, list.stickDetached);
+        verify(!transcriptPinned(list));
+
+        list.pinToEnd();
+        wait(0);
+        var pinnedY = list.contentY;
+        appendLiveMessages(list, 1, "reveal follows again");
+        wait(0);
+        compare(list.stick, list.stickFollowing);
+        tryVerify(function() { return transcriptPinned(list); });
+        verify(list.contentY >= pinnedY);
+
+        list.revealRow(0);
+        compare(list.pinning, true);
+        appWindow.selectConversation("#ricing", seed.omarchyNetworkId);
+        tryCompare(appWindow, "currentConversation", "#ricing");
+        tryCompare(list, "pinning", false);
+        compare(list.stick, list.stickFollowing);
+    }
+
+    function test_statusRevealRowCancelsDeferredPinOnGrowthAndFollowsAgain() {
+        openSeededAppWindow();
+        var list = item("consoleList");
+        keyClick(Qt.Key_QuoteLeft, Qt.ControlModifier);
+        tryCompare(appWindow, "consoleVisible", true);
+        fillConsoleUntilScrollable(list);
+
+        var generation = list.pinGeneration;
+        list.revealRow(0);
+        compare(list.stick, list.stickDetached);
+        compare(list.pinning, true);
+        appendLiveConsoleLines(list, 1, "reveal cancellation");
+        verify(list.pinGeneration > generation,
+               "A new Status row should cancel deferred reveal cleanup");
+        wait(0);
+        compare(list.pinning, false);
+        compare(list.stick, list.stickDetached);
+        verify(!transcriptPinned(list));
+
+        list.pinToEnd();
+        wait(0);
+        var pinnedY = list.contentY;
+        appendLiveConsoleLines(list, 1, "reveal follows again");
+        wait(0);
+        compare(list.stick, list.stickFollowing);
+        tryVerify(function() { return transcriptPinned(list); });
+        verify(list.contentY >= pinnedY);
+    }
+
     function verticalScrollBar(list) {
         var bar = list.Controls.ScrollBar.vertical;
         verify(bar !== null && bar !== undefined,

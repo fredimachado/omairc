@@ -81,6 +81,17 @@ ListView {
             stick = stickDetached;
     }
 
+    function cancelDeferredPin() {
+        if (!pinning)
+            return;
+        var generation = ++pinGeneration;
+        Qt.callLater(function() {
+            if (generation !== pinGeneration)
+                return;
+            pinning = false;
+        });
+    }
+
     function noteGrowth(previousCount, newCount) {
         if (newCount < previousCount) {
             if (newCount <= 0) {
@@ -191,6 +202,21 @@ ListView {
             pinToEnd();
     }
 
+    function revealRow(index) {
+        if (index < 0 || index >= modelRowCount())
+            return;
+        stick = stickDetached;
+        pinning = true;
+        var generation = ++pinGeneration;
+        positionViewAtIndex(index, ListView.Beginning);
+        Qt.callLater(function() {
+            if (generation !== pinGeneration)
+                return;
+            pinning = false;
+            adoptViewport();
+        });
+    }
+
     function pinToUnread(row) {
         var total = modelRowCount();
         if (row < 0 || row >= total) {
@@ -214,6 +240,7 @@ ListView {
     onCountChanged: {
         rowRevision += 1;
         refreshUnreadMarkRow();
+        cancelDeferredPin();
         if (resetPending)
             return;
         noteGrowth(trackedCount, count);
@@ -244,6 +271,7 @@ ListView {
         target: list.model
         ignoreUnknownSignals: true
         function onModelAboutToBeReset() {
+            list.cancelDeferredPin();
             list.resetPending = true;
             list.resetSavedCount = list.count;
             if (list.stick === list.stickDetached)
