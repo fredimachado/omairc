@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-09-23
+
 ### Added
 
 - Omairc requests `znc.in/playback` when a bouncer offers it together with
@@ -35,6 +37,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `Restart to update` and open the installer wizard. Closing the window after
   the download has finished opens that same wizard. Portable copies still open
   the GitHub release page.
+- A network remembers the `/avatar` URL and sends it again after connect when
+  the server offers metadata.
+- Connect preference toggles show help on hover and keyboard focus, the same
+  way the connection fields do.
+- `/autoaway` writes a Status line when the idle timer trips and when activity
+  clears it. Turning `/autoaway` off still clears AWAY without that return line.
 
 ### Fixed
 
@@ -46,6 +54,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   headers.
 - Message headers clamp long account labels like the member list and identity
   footer.
+- Windows builds ship `qsvg.dll` so the About logo loads. qmake no longer
+  uses a leftover Linux QtKeychain tree.
+- The Homebrew cask follows Homebrew 7, so `brew install` no longer warns
+  about deprecated `url` `verified` and `preflight`.
 
 ### Changed
 
@@ -427,7 +439,8 @@ First public release: a simple IRC client for Omarchy.
 - Keyboard map, slash-command complete, selectable transcript, and follow-unseen.
 - qmake Unix install tree and a GitHub Releases pacman repository.
 
-[Unreleased]: https://github.com/fredimachado/omairc/compare/v0.9.1...HEAD
+[Unreleased]: https://github.com/fredimachado/omairc/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/fredimachado/omairc/compare/v0.9.1...v1.0.0
 [0.9.1]: https://github.com/fredimachado/omairc/compare/v0.9.0...v0.9.1
 [0.9.0]: https://github.com/fredimachado/omairc/compare/v0.8.3...v0.9.0
 [0.8.3]: https://github.com/fredimachado/omairc/compare/v0.8.2...v0.8.3
