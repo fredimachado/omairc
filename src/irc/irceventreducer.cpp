@@ -436,7 +436,9 @@ void IrcEventReducer::clearMessages(const IrcConversationKey& key)
         return;
     conversation->trimmed += int(conversation->messages.size());
     conversation->messages.clear();
-    conversation->messageIds.clear();
+    // Ids stay. ZNC can repeat the last read line at the same millisecond
+    // with the same msgid. Forgetting the id would put that line back after
+    // /clear. A msgid this set does not hold still lands.
     ++conversation->spliceEpoch;
     if (IrcChannelState *channel = conversation->channel())
         channel->historyAnchor.reset();

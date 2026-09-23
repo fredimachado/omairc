@@ -1197,6 +1197,24 @@ void ReducerTest::clearMessagesWipesTranscriptKeepsRow()
     QVERIFY(!reducer.find(missing));
     QCOMPARE(reducer.conversations().size(), std::size_t(2));
 
+    reducer.apply(IrcMessageEvent{
+        lena, QStringLiteral("lena"), QStringLiteral("seen"), timestamp,
+        QStringLiteral("lena"), IrcMsgId{QStringLiteral("seen-id")}});
+    reducer.clearMessages(lena);
+    QCOMPARE(reducer.find(lena)->messages.size(), std::size_t(0));
+    QVERIFY(reducer.find(lena)->messageIds.count(IrcMsgId{QStringLiteral("seen-id")}) != 0);
+    reducer.apply(IrcHistoryEvent{
+        lena,
+        QStringLiteral("lena"),
+        {replayLine(QStringLiteral("lena"), QStringLiteral("seen"),
+                    QStringLiteral("seen-id")),
+         replayLine(QStringLiteral("lena"), QStringLiteral("later"),
+                    QStringLiteral("later-id"))},
+    });
+    QCOMPARE(reducer.find(lena)->messages.size(), std::size_t(1));
+    QCOMPARE(reducer.find(lena)->messages[0].body, QStringLiteral("later"));
+    QCOMPARE(reducer.find(lena)->messages[0].msgid.value, QStringLiteral("later-id"));
+
     QVERIFY(reducer.dropDirectMessage(lena));
     QVERIFY(!reducer.find(lena));
     QVERIFY(reducer.find(channel));
@@ -2065,9 +2083,9 @@ void ReducerTest::replayDistinctMsgidsWithIdenticalContentRetained()
         const IrcConversationState *conversation = reducer.find(room);
         QVERIFY(conversation);
         QCOMPARE(conversation->messages.size(), std::size_t(2));
-        QCOMPARE(conversation->messages[0].body, QStringLiteral("same"));
-        QCOMPARE(conversation->messages[0].origin, IrcOrigin::Live);
-        QCOMPARE(conversation->messages[1].body, QStringLiteral("omairc joined"));
+        QCOMPARE(conversation->messages[0].body, QStringLiteral("omairc joined"));
+        QCOMPARE(conversation->messages[1].body, QStringLiteral("same"));
+        QCOMPARE(conversation->messages[1].origin, IrcOrigin::Live);
     }
 
     {

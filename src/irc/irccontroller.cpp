@@ -4370,14 +4370,33 @@ void IrcController::handleHistoryBatch(const QString& networkId,
             if (const std::optional<QDateTime> bound =
                     playbackSnapshotTime(networkId, batch.target)) {
                 const qint64 boundMs = bound->toUTC().toMSecsSinceEpoch();
+                // PLAY * 0 answers every buffer, including ones a per-target
+                // PLAY just resumed. ZNC's lower bound is exclusive against
+                // microsecond buffer times, and FormatServerTime prints the
+                // tag with %E3S. cctz truncates those three digits, so a line
+                // still inside the exclusive bound can share the saved
+                // millisecond. Drop anything older. Drop an equal-millisecond
+                // line with no msgid, or after the conversation is gone: the
+                // repeat and a new line are the same on the wire, and keeping
+                // it would restore a message /clear or a closed query already
+                // removed. A nonempty msgid on a conversation that still
+                // exists is distinguishable. The reducer keeps an id it has
+                // not seen and skips one it has. /clear leaves those ids.
+                const IrcConversationState *known = m_reducer.find(
+                    m_reducer.conversationKey(networkId, batch.target));
                 event->lines.erase(
                     std::remove_if(
                         event->lines.begin(), event->lines.end(),
-                        [boundMs](const IrcReplayLine& line) {
+                        [boundMs, known](const IrcReplayLine& line) {
                             if (!line.serverTime || !line.serverTime->isValid())
                                 return false;
-                            return line.serverTime->toUTC().toMSecsSinceEpoch()
-                                <= boundMs;
+                            const qint64 lineMs =
+                                line.serverTime->toUTC().toMSecsSinceEpoch();
+                            if (lineMs > boundMs)
+                                return false;
+                            if (lineMs < boundMs)
+                                return true;
+                            return line.msgid.isEmpty() || known == nullptr;
                         }),
                     event->lines.end());
             }
@@ -4630,8 +4649,9 @@ void IrcController::requestZncPlayback(IrcSession *session)
         // directs, and autojoin. With znc.in/playback enabled the module
         // suppresses automatic delivery, so PLAY * 0 discovers them.
         // Known targets already got per-target PLAY with their resume
-        // bounds; wildcard batches for those targets are filtered in
-        // handleHistoryBatch by the registration snapshot stamp.
+        // bounds. handleHistoryBatch drops wildcard lines older than the
+        // registration stamp, and an equal-millisecond line that has no
+        // msgid. A distinct msgid at that millisecond is kept.
         if (!m_zncPlaybackSent[networkId].queries) {
             if (!sendZncPlayback(session, QStringLiteral("*"), QStringLiteral("0")))
                 return;
