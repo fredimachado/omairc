@@ -1320,6 +1320,39 @@ TestCase {
         return /[\u0002\u0003\u0004\u000f\u0011\u0016\u001d\u001e\u001f]/.test(text);
     }
 
+    TextEdit {
+        id: clipboardProbe
+        visible: false
+        textFormat: TextEdit.PlainText
+        width: 1
+        height: 1
+    }
+
+    function writeClipboard(text) {
+        clipboardProbe.clear();
+        clipboardProbe.text = text;
+        clipboardProbe.selectAll();
+        clipboardProbe.copy();
+    }
+
+    function readClipboard() {
+        clipboardProbe.clear();
+        clipboardProbe.paste();
+        return clipboardProbe.text;
+    }
+
+    function clipboardMatches(expected) {
+        var got = readClipboard();
+        if (got === expected || got === expected + "\n")
+            return true;
+        compare(got, expected);
+        return false;
+    }
+
+    function clickCopy() {
+        keyClick(Qt.Key_C, shortcutCommandModifier());
+    }
+
     function formattedIrcBody() {
         return "\u0002bold\u000f / \u000304red";
     }
@@ -3367,6 +3400,196 @@ TestCase {
         verify(body.selectedText.length > 0);
         verify(!containsMirc(body.selectedText));
         verify(item("messageComposer").activeFocus);
+    }
+
+    function test_copyTranscriptSelection() {
+        openSeededAppWindow();
+        var composer = item("messageComposer");
+        mouseClick(composer);
+        verify(composer.activeFocus);
+
+        var body = visibleListChild("messageList", "messageBody");
+        body.select(0, Math.min(4, body.length));
+        verify(body.selectedText.length > 0);
+        var expected = body.selectedText;
+        compare(appWindow.transcriptSelection, body);
+        verify(composer.activeFocus);
+        verify(composer.selectedText.length === 0);
+
+        clickCopy();
+        verify(clipboardMatches(expected));
+        compare(body.selectedText, expected);
+        verify(composer.activeFocus);
+        verify(!containsMirc(readClipboard()));
+    }
+
+    function test_copyRichTranscriptSelectionIsPlain() {
+        openSeededAppWindow();
+        var list = item("messageList");
+        var previousCount = list.model.rowCount();
+        var boldBody = "hello \x02world\x02";
+        injectOmarchyChat("anna", "#omarchy", boldBody);
+        waitForRowCount(list, previousCount + 1);
+        list.positionViewAtIndex(previousCount, ListView.Contain);
+        waitForRendering(appWindow.contentItem);
+
+        var body = findChild(list.itemAtIndex(previousCount), "messageBody");
+        verify(body !== null && body.visible, "Could not find bold messageBody");
+        compare(body.textFormat, TextEdit.RichText);
+        body.selectAll();
+        compare(body.selectedText, "hello world");
+
+        clickCopy();
+        verify(clipboardMatches("hello world"));
+        var copied = readClipboard();
+        verify(!containsMirc(copied));
+        verify(copied.indexOf("<") < 0);
+    }
+
+    function test_composerSelectionWinsOverTranscript() {
+        openSeededAppWindow();
+        var composer = item("messageComposer");
+        mouseClick(composer);
+        typeText("keep this draft");
+        var body = visibleListChild("messageList", "messageBody");
+        body.selectAll();
+        var transcript = body.selectedText;
+        verify(transcript.length > 0);
+        composer.selectAll();
+        compare(composer.selectedText, "keep this draft");
+
+        clickCopy();
+        verify(clipboardMatches("keep this draft"));
+        compare(body.selectedText, transcript);
+    }
+
+    function test_copyComposerWhenTranscriptHasNoSelection() {
+        openSeededAppWindow();
+        var composer = item("messageComposer");
+        mouseClick(composer);
+        typeText("only the draft");
+        composer.selectAll();
+        compare(appWindow.transcriptSelection, null);
+
+        clickCopy();
+        verify(clipboardMatches("only the draft"));
+    }
+
+    function test_secondTranscriptSelectionReplacesTheFirst() {
+        openSeededAppWindow();
+        var list = item("messageList");
+        var firstIndex = -1;
+        var secondIndex = -1;
+        var index = 0;
+        for (; index < list.count; ++index) {
+            var row = list.itemAtIndex(index);
+            if (!row)
+                continue;
+            var child = findChild(row, "messageBody");
+            if (!child || !child.visible)
+                continue;
+            if (firstIndex < 0)
+                firstIndex = index;
+            else {
+                secondIndex = index;
+                break;
+            }
+        }
+        verify(firstIndex >= 0 && secondIndex >= 0,
+               "two visible message bodies are required");
+        var first = findChild(list.itemAtIndex(firstIndex), "messageBody");
+        var second = findChild(list.itemAtIndex(secondIndex), "messageBody");
+        first.selectAll();
+        var firstText = first.selectedText;
+        second.selectAll();
+        compare(first.selectedText, "");
+        compare(appWindow.transcriptSelection, second);
+        verify(second.selectedText.length > 0);
+        verify(firstText.length > 0);
+
+        clickCopy();
+        verify(clipboardMatches(second.selectedText));
+    }
+
+    function test_switchingConversationClearsTranscriptSelection() {
+        openSeededAppWindow();
+        writeClipboard("sentinel");
+        var body = visibleListChild("messageList", "messageBody");
+        body.selectAll();
+        verify(appWindow.transcriptSelection !== null);
+
+        mouseClick(namedItem(liveConversation("anna")));
+        tryCompare(appWindow, "currentConversation", "anna");
+        compare(appWindow.transcriptSelection, null);
+
+        clickCopy();
+        verify(clipboardMatches("sentinel"));
+    }
+
+    function test_copyConsoleSelection() {
+        openSeededAppWindow();
+        keyClick(Qt.Key_QuoteLeft, Qt.ControlModifier);
+        tryCompare(appWindow, "consoleVisible", true);
+        var composer = item("messageComposer");
+        verify(composer.activeFocus);
+
+        var body = visibleListChild("consoleList", "consoleText");
+        body.selectAll();
+        var expected = body.selectedText;
+        verify(expected.length > 0);
+        compare(appWindow.transcriptSelection, body);
+
+        clickCopy();
+        verify(clipboardMatches(expected));
+        verify(!containsMirc(readClipboard()));
+        verify(composer.activeFocus);
+    }
+
+    function test_copyWhoisSelection() {
+        openSeededAppWindow();
+        var list = item("messageList");
+        var composer = item("messageComposer");
+        mouseClick(composer);
+        typeText("/whois lena");
+        if (item("slashCompleteList").visible)
+            keyClick(Qt.Key_Escape);
+        keyClick(Qt.Key_Return);
+        var label = seed.lastOmarchyRequestLabel();
+        verify(label.length > 0, "WHOIS should carry a labeled-response label");
+        seed.injectOmarchy("@label=" + label + " :server 319 fred lena :#omarchy\r\n");
+        tryVerify(function() {
+            var last = list.model.rowCount() - 1;
+            return last >= 0 && field(list.model, last, "kind") === "whois";
+        });
+        var whoisAt = list.model.rowCount() - 1;
+        list.positionViewAtIndex(whoisAt, ListView.Contain);
+        waitForRendering(appWindow.contentItem);
+        var whoisText = findChild(list.itemAtIndex(whoisAt), "messageWhois");
+        verify(whoisText !== null && whoisText.visible, "Could not find messageWhois");
+        whoisText.selectAll();
+        var expected = whoisText.selectedText;
+        verify(expected.length > 0);
+        compare(appWindow.transcriptSelection, whoisText);
+
+        clickCopy();
+        verify(clipboardMatches(expected));
+        verify(composer.activeFocus);
+    }
+
+    function test_copyTranscriptSelectionWhileMembersFocused() {
+        openSeededAppWindow();
+        var body = visibleListChild("messageList", "messageBody");
+        body.selectAll();
+        var expected = body.selectedText;
+        verify(expected.length > 0);
+
+        var members = item("membersList");
+        keyClick(Qt.Key_P, Qt.ControlModifier | Qt.ShiftModifier);
+        tryCompare(members, "activeFocus", true);
+        verify(!item("messageComposer").activeFocus);
+
+        keyClick(Qt.Key_C, Qt.ControlModifier);
+        verify(clipboardMatches(expected));
     }
 
     function test_consoleBodyStripsMircFormatting() {
@@ -8851,6 +9074,10 @@ TestCase {
                "shortcut sheet should list " + ctrl + "+Home / " + ctrl + "+End");
         verify(texts.indexOf("top / bottom") !== -1,
                "shortcut sheet should name top / bottom");
+        verify(texts.indexOf(ctrl + "+C") !== -1,
+               "shortcut sheet should list " + ctrl + "+C");
+        verify(texts.indexOf("copy selection") !== -1,
+               "shortcut sheet should name copy selection");
         saveScreenshot("shortcuts-sheet");
         keyClick(Qt.Key_Escape);
         tryCompare(sheet, "opened", false);

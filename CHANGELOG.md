@@ -32,6 +32,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `Ctrl+C` copies selected text in a message, whois line, or Status line. The composer keeps focus. A selection in the composer still copies that draft.
 - Demo `PRIVMSG` seed lines combine `account` and `time` in one IRCv3 tag
   section so tagged history replays parse.
 - Repeated `account` tags with the same value no longer repaint the open

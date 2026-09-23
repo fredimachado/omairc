@@ -30,6 +30,7 @@ Item {
     property int findIndex: -1
 
     signal directMessageRequested(string nick)
+    signal transcriptSelectionChanged(Item edit)
 
     // Read roles through model so MessageListModel dataChanged
     // refreshes them. Keep them optional so ListModel fixtures
@@ -138,6 +139,7 @@ Item {
         padding: 0
         font.family: "iA Writer Mono S"
         font.pixelSize: messageDelegate.style.scaledSize(12)
+        onSelectedTextChanged: messageDelegate.transcriptSelectionChanged(messageWhois)
 
         PlainUrlHit {
             edit: messageWhois
@@ -207,6 +209,7 @@ Item {
         font.family: transcriptBodyFont.family
         font.italic: messageDelegate.kind === "action"
         font.pixelSize: transcriptBodyFont.pixelSize
+        onSelectedTextChanged: messageDelegate.transcriptSelectionChanged(messageBody)
 
         PlainUrlHit {
             edit: messageBody

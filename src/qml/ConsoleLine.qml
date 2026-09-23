@@ -23,6 +23,8 @@ Item {
     required property var openAllowedUrl
     required property var joinInviteChannel
 
+    signal transcriptSelectionChanged(Item edit)
+
     width: transcriptView ? transcriptView.width : 0
     height: Math.max(style.scaledSize(22), consoleText.implicitHeight + style.scaledSize(8))
 
@@ -91,6 +93,7 @@ Item {
         padding: 0
         font.family: "iA Writer Mono S"
         font.pixelSize: consoleDelegate.style.scaledSize(12)
+        onSelectedTextChanged: consoleDelegate.transcriptSelectionChanged(consoleText)
 
         PlainUrlHit {
             edit: consoleText
