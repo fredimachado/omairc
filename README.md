@@ -20,7 +20,7 @@ A simple IRC client for Omarchy, built with Qt Quick and C++. The same binary is
 
 ## Limits
 
-- SASL is PLAIN only. Connect has no separate SASL account or bouncer-network fields.
+- SASL uses SCRAM-SHA-256 when the server advertises it and PLAIN otherwise, and Connect still has no separate SASL account or bouncer-network fields.
 - No DCC, file transfer, voice, video, plugins, or scripts.
 - No Soju or ZNC history-sync protocol.
 - The local CLI controls the running window. It is not a second IRC client.

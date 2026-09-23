@@ -40,6 +40,12 @@ QString saslSecret(const IrcSessionConfig &config)
                                              : config.nickServPassword;
 }
 
+constexpr QLatin1String kSaslScramSha256("SCRAM-SHA-256");
+constexpr qsizetype kSaslAuthenticateChunk = 400;
+// Encoded SCRAM-SHA-256 messages fit in a few kilobytes. Stop a peer
+// that keeps streaming 400-byte AUTHENTICATE chunks.
+constexpr qsizetype kSaslIncomingEncodedLimit = 4096;
+
 QString ctcpReplyHost(const IrcMessage &message)
 {
     if (!message.prefix)
@@ -849,6 +855,10 @@ void IrcSession::requestCapabilities()
     if (request.requestsSasl) {
         m_saslRequested = true;
         m_saslPending = true;
+        // Committed when AUTHENTICATE is sent. A later CAP DEL/NEW must
+        // not retarget an in-progress SCRAM-SHA-256 exchange to PLAIN.
+        if (!m_saslExchangeStarted)
+            m_saslMechanism = request.saslMechanism;
     }
 
     if (!request.lines.isEmpty()) {
@@ -1274,7 +1284,21 @@ void IrcSession::handleMessage(const IrcMessage &message)
         return;
     }
     if (message.command == "903") {
+        // Welcome before the verifier already failed the exchange.
+        // A later 903 must not move that session to Registering.
+        if (m_state != State::Sasl)
+            return;
         if (m_saslPending) {
+            // 903 is success only after the server-final verifier matches.
+            // A later CAP advertisement must not make an unfinished SCRAM
+            // exchange look like PLAIN.
+            if ((m_saslScramExchange || m_saslMechanism == kSaslScramSha256)
+                && m_saslScramStep != SaslScramStep::Verified) {
+                fail(ErrorKind::Authentication,
+                     QStringLiteral("SASL authentication failed"),
+                     false);
+                return;
+            }
             m_saslPending = false;
             m_saslSucceeded = true;
             endCapabilityNegotiation();
@@ -1823,9 +1847,17 @@ void IrcSession::handleCap(const IrcMessage &message)
                 m_metadataCapability = *metadata;
         }
         publishCapabilities();
-        if (granted.contains(IrcCapability::Sasl)) {
+        if (granted.contains(IrcCapability::Sasl) && !m_saslExchangeStarted) {
+            m_saslExchangeStarted = true;
             setState(State::Sasl);
-            sendLine(QByteArrayLiteral("AUTHENTICATE PLAIN\r\n"));
+            if (m_saslMechanism == kSaslScramSha256) {
+                m_saslScramExchange = true;
+                m_saslScramStep = SaslScramStep::AwaitPrompt;
+                m_saslIncoming.clear();
+                sendLine(QByteArrayLiteral("AUTHENTICATE SCRAM-SHA-256\r\n"));
+            } else {
+                sendLine(QByteArrayLiteral("AUTHENTICATE PLAIN\r\n"));
+            }
             return;
         }
         if (m_state == State::Registered)
@@ -1859,6 +1891,10 @@ void IrcSession::handleAuthenticate(const IrcMessage &message)
              false);
         return;
     }
+    if (m_saslScramExchange || m_saslMechanism == kSaslScramSha256) {
+        handleScramAuthenticate(QByteArray::fromStdString(message.parameters.front()));
+        return;
+    }
     if (message.parameters.front() != "+")
         return;
 
@@ -1882,6 +1918,126 @@ void IrcSession::handleAuthenticate(const IrcMessage &message)
     }
     sendLine(QByteArrayLiteral("AUTHENTICATE ") + encoded
              + QByteArrayLiteral("\r\n"));
+}
+
+void IrcSession::handleScramAuthenticate(const QByteArray &payload)
+{
+    if (m_saslScramStep == SaslScramStep::AwaitPrompt) {
+        if (payload != "+") {
+            fail(ErrorKind::Authentication,
+                 QStringLiteral("SASL authentication failed"),
+                 false);
+            return;
+        }
+        const QString account = m_config.saslAccount.isEmpty()
+            ? m_config.nick
+            : m_config.saslAccount;
+        const IrcSaslScram::Result started = m_scram.start(account, saslSecret(m_config));
+        if (!started.ok()) {
+            fail(ErrorKind::Authentication,
+                 QStringLiteral("SASL authentication failed"),
+                 false);
+            return;
+        }
+        m_saslScramStep = SaslScramStep::AwaitServerFirst;
+        sendSaslResponse(started.message);
+        return;
+    }
+
+    if (m_saslScramStep != SaslScramStep::AwaitServerFirst
+        && m_saslScramStep != SaslScramStep::AwaitServerFinal) {
+        return;
+    }
+
+    QByteArray message;
+    if (!takeSaslChunk(payload, &message))
+        return;
+
+    if (m_saslScramStep == SaslScramStep::AwaitServerFirst) {
+        const IrcSaslScram::Result clientFinal = m_scram.takeServerFirst(message);
+        if (!clientFinal.ok()) {
+            fail(ErrorKind::Authentication,
+                 QStringLiteral("SASL authentication failed"),
+                 false);
+            return;
+        }
+        m_saslScramStep = SaslScramStep::AwaitServerFinal;
+        sendSaslResponse(clientFinal.message);
+        return;
+    }
+
+    const IrcSaslScram::Result verified = m_scram.takeServerFinal(message);
+    if (!verified.ok()) {
+        fail(ErrorKind::Authentication,
+             QStringLiteral("SASL authentication failed"),
+             false);
+        return;
+    }
+    // The server-final challenge is non-empty. SASL 3.1 still requires an
+    // empty client response before the server sends 903.
+    m_saslScramStep = SaslScramStep::Verified;
+    sendSaslResponse(QByteArray());
+}
+
+void IrcSession::sendSaslResponse(const QByteArray &raw)
+{
+    const QByteArray encoded = raw.toBase64();
+    if (encoded.isEmpty()) {
+        sendLine(QByteArrayLiteral("AUTHENTICATE +\r\n"));
+        return;
+    }
+    for (qsizetype offset = 0; offset < encoded.size(); offset += kSaslAuthenticateChunk) {
+        const qsizetype length = qMin(kSaslAuthenticateChunk, encoded.size() - offset);
+        sendLine(QByteArrayLiteral("AUTHENTICATE ")
+                 + encoded.mid(offset, length)
+                 + QByteArrayLiteral("\r\n"));
+    }
+    if (encoded.size() % kSaslAuthenticateChunk == 0)
+        sendLine(QByteArrayLiteral("AUTHENTICATE +\r\n"));
+}
+
+bool IrcSession::takeSaslChunk(const QByteArray &payload, QByteArray *message)
+{
+    if (payload.isEmpty()
+        || (!m_saslIncoming.isEmpty()
+            && m_saslIncoming.size() % kSaslAuthenticateChunk != 0)) {
+        m_saslIncoming.clear();
+        fail(ErrorKind::Authentication,
+             QStringLiteral("SASL authentication failed"),
+             false);
+        return false;
+    }
+    if (payload != "+") {
+        if (payload.size() > kSaslIncomingEncodedLimit
+            || m_saslIncoming.size() > kSaslIncomingEncodedLimit - payload.size()) {
+            m_saslIncoming.clear();
+            fail(ErrorKind::Authentication,
+                 QStringLiteral("SASL authentication failed"),
+                 false);
+            return false;
+        }
+        m_saslIncoming.append(payload);
+        if (payload.size() == kSaslAuthenticateChunk)
+            return false;
+    }
+
+    const QByteArray encoded = m_saslIncoming;
+    m_saslIncoming.clear();
+    if (encoded.isEmpty()) {
+        message->clear();
+        return true;
+    }
+    // The default options skip illegal characters and still report Ok.
+    const QByteArray::FromBase64Result decoded = QByteArray::fromBase64Encoding(
+        encoded, QByteArray::AbortOnBase64DecodingErrors);
+    if (decoded.decodingStatus != QByteArray::Base64DecodingStatus::Ok) {
+        fail(ErrorKind::Authentication,
+             QStringLiteral("SASL authentication failed"),
+             false);
+        return false;
+    }
+    *message = decoded.decoded;
+    return true;
 }
 
 void IrcSession::applyIsupport(const IrcMessage &message)
@@ -1919,6 +2075,18 @@ void IrcSession::handleWelcome(const IrcMessage &message)
     if (m_state == State::Registered || m_state == State::Failed)
         return;
 
+    // 001 is not SASL success. Fail only while SCRAM is still outstanding.
+    // A capability timeout that already sent CAP END without AUTHENTICATE
+    // has ended negotiation, so that welcome registers. An exchange that
+    // has started must not IDENTIFY or join before the verifier.
+    if (m_saslMechanism == kSaslScramSha256 && !m_saslSucceeded
+        && (m_saslPending || m_state == State::Sasl || m_saslExchangeStarted)) {
+        fail(ErrorKind::Authentication,
+             QStringLiteral("SASL authentication failed"),
+             false);
+        return;
+    }
+
     const QString assigned = parameter(message, 0);
     if (!assigned.isEmpty())
         m_nick = assigned;
@@ -1931,7 +2099,10 @@ void IrcSession::handleWelcome(const IrcMessage &message)
     emit registered(m_config.networkId);
     armPingWatchdog();
     subscribeToMemberMetadata();
-    if (!m_config.nickServPassword.isEmpty() && !m_saslSucceeded) {
+    // SCRAM that did not succeed must not fall through to NickServ,
+    // including after negotiation was abandoned before AUTHENTICATE.
+    if (!m_config.nickServPassword.isEmpty() && !m_saslSucceeded
+        && m_saslMechanism != kSaslScramSha256) {
         if (!m_tlsEnabled) {
             emit statusEntry(IrcStatusEntry::lifecycle(
                 m_config.networkId, IrcLogSeverity::Alert,
@@ -2085,6 +2256,11 @@ void IrcSession::resetForConnection()
     m_saslRequested = false;
     m_saslPending = false;
     m_saslSucceeded = false;
+    m_saslMechanism.clear();
+    m_saslExchangeStarted = false;
+    m_saslScramExchange = false;
+    m_saslScramStep = SaslScramStep::Idle;
+    m_saslIncoming.clear();
     m_capabilityNegotiationEnded = false;
     m_capabilityListSeen = false;
     m_pendingSts.reset();

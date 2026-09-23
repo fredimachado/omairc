@@ -21,6 +21,7 @@ private slots:
     void messageTagsKeepsItsOwnLine();
     void serverTimeKeepsItsOwnLine();
     void saslNeedsCredentialsAndPlain();
+    void scramSha256IsPreferredWhenAdvertised();
     void memberMetadataNeedsBatch();
     void acknowledgeAndRejectSettleIndependently();
     void deletionWithdrawsAnEnabledCapability();
@@ -142,15 +143,72 @@ void CapabilityTest::saslNeedsCredentialsAndPlain()
 {
     IrcCapabilityNegotiation withoutCredentials(false);
     withoutCredentials.advertise(tokens(QStringLiteral("sasl=PLAIN")));
-    QVERIFY(withoutCredentials.takeRequest().lines.isEmpty());
+    const IrcCapabilityNegotiation::Request denied = withoutCredentials.takeRequest();
+    QVERIFY(denied.lines.isEmpty());
+    QVERIFY(!denied.requestsSasl);
+    QVERIFY(denied.saslMechanism.isEmpty());
 
     IrcCapabilityNegotiation externalOnly(true);
     externalOnly.advertise(tokens(QStringLiteral("sasl=EXTERNAL")));
-    QVERIFY(externalOnly.takeRequest().lines.isEmpty());
+    const IrcCapabilityNegotiation::Request external = externalOnly.takeRequest();
+    QVERIFY(external.lines.isEmpty());
+    QVERIFY(!external.requestsSasl);
+    QVERIFY(external.saslMechanism.isEmpty());
+
+    IrcCapabilityNegotiation plain(true);
+    plain.advertise(tokens(QStringLiteral("sasl=PLAIN")));
+    const IrcCapabilityNegotiation::Request plainRequest = plain.takeRequest();
+    QCOMPARE(plainRequest.lines, QStringList{QStringLiteral("sasl")});
+    QVERIFY(plainRequest.requestsSasl);
+    QCOMPARE(plainRequest.saslMechanism, QStringLiteral("PLAIN"));
 
     IrcCapabilityNegotiation bare(true);
     bare.advertise(tokens(QStringLiteral("sasl")));
-    QCOMPARE(bare.takeRequest().lines, QStringList{QStringLiteral("sasl")});
+    const IrcCapabilityNegotiation::Request bareRequest = bare.takeRequest();
+    QCOMPARE(bareRequest.lines, QStringList{QStringLiteral("sasl")});
+    QVERIFY(bareRequest.requestsSasl);
+    QCOMPARE(bareRequest.saslMechanism, QStringLiteral("PLAIN"));
+}
+
+void CapabilityTest::scramSha256IsPreferredWhenAdvertised()
+{
+    IrcCapabilityNegotiation both(true);
+    both.advertise(tokens(QStringLiteral("sasl=SCRAM-SHA-256,PLAIN")));
+    const IrcCapabilityNegotiation::Request request = both.takeRequest();
+    QCOMPARE(request.lines, QStringList{QStringLiteral("sasl")});
+    QVERIFY(request.requestsSasl);
+    QCOMPARE(request.saslMechanism, QStringLiteral("SCRAM-SHA-256"));
+    const IrcCapabilityNegotiation::Request again = both.takeRequest();
+    QVERIFY(again.lines.isEmpty());
+    QVERIFY(!again.requestsSasl);
+    QVERIFY(again.saslMechanism.isEmpty());
+
+    IrcCapabilityNegotiation reversed(true);
+    reversed.advertise(tokens(QStringLiteral("sasl=PLAIN,SCRAM-SHA-256")));
+    QCOMPARE(reversed.takeRequest().saslMechanism, QStringLiteral("SCRAM-SHA-256"));
+
+    IrcCapabilityNegotiation scramOnly(true);
+    scramOnly.advertise(tokens(QStringLiteral("sasl=SCRAM-SHA-256")));
+    const IrcCapabilityNegotiation::Request only = scramOnly.takeRequest();
+    QCOMPARE(only.lines, QStringList{QStringLiteral("sasl")});
+    QVERIFY(only.requestsSasl);
+    QCOMPARE(only.saslMechanism, QStringLiteral("SCRAM-SHA-256"));
+
+    IrcCapabilityNegotiation folded(true);
+    folded.advertise(tokens(QStringLiteral("sasl=scram-sha-256")));
+    QCOMPARE(folded.takeRequest().saslMechanism, QStringLiteral("SCRAM-SHA-256"));
+
+    IrcCapabilityNegotiation withExternal(true);
+    withExternal.advertise(tokens(QStringLiteral("sasl=EXTERNAL,SCRAM-SHA-256")));
+    QCOMPARE(withExternal.takeRequest().saslMechanism,
+             QStringLiteral("SCRAM-SHA-256"));
+
+    IrcCapabilityNegotiation withoutCredentials(false);
+    withoutCredentials.advertise(tokens(QStringLiteral("sasl=SCRAM-SHA-256,PLAIN")));
+    const IrcCapabilityNegotiation::Request denied = withoutCredentials.takeRequest();
+    QVERIFY(denied.lines.isEmpty());
+    QVERIFY(!denied.requestsSasl);
+    QVERIFY(denied.saslMechanism.isEmpty());
 }
 
 void CapabilityTest::memberMetadataNeedsBatch()

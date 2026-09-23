@@ -16,6 +16,9 @@ public:
     {
         QStringList lines;
         bool requestsSasl = false;
+        // Empty when requestsSasl is false. Otherwise PLAIN, or
+        // SCRAM-SHA-256 when that mechanism was listed. Fixed by takeRequest().
+        QString saslMechanism;
     };
 
     explicit IrcCapabilityNegotiation(bool saslCredentialsAvailable = false);
@@ -53,5 +56,6 @@ private:
     std::optional<TokenState> stateOf(const QString& foldedToken) const;
 
     QHash<QString, TokenState> m_tokens;
+    QString m_saslAdvertisedValue;
     bool m_saslCredentialsAvailable = false;
 };

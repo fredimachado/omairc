@@ -9,11 +9,28 @@ bool acceptsAnyValue(const QString&)
     return true;
 }
 
+bool saslValueLists(const QString& value, QLatin1String mechanism)
+{
+    const QStringList offered = value.split(QLatin1Char(','), Qt::SkipEmptyParts);
+    for (const QString& offeredMechanism : offered) {
+        if (offeredMechanism.compare(mechanism, Qt::CaseInsensitive) == 0)
+            return true;
+    }
+    return false;
+}
+
 bool acceptsSaslValue(const QString& value)
 {
     return value.isEmpty()
-        || value.split(QLatin1Char(','), Qt::SkipEmptyParts)
-               .contains(QStringLiteral("PLAIN"), Qt::CaseInsensitive);
+        || saslValueLists(value, QLatin1String("PLAIN"))
+        || saslValueLists(value, QLatin1String("SCRAM-SHA-256"));
+}
+
+QString chosenSaslMechanism(const QString& value)
+{
+    if (saslValueLists(value, QLatin1String("SCRAM-SHA-256")))
+        return QStringLiteral("SCRAM-SHA-256");
+    return QStringLiteral("PLAIN");
 }
 
 QString tokenName(const QString& token)
@@ -111,6 +128,7 @@ IrcCapabilityNegotiation::IrcCapabilityNegotiation(bool saslCredentialsAvailable
 void IrcCapabilityNegotiation::reset(bool saslCredentialsAvailable)
 {
     m_tokens.clear();
+    m_saslAdvertisedValue.clear();
     m_saslCredentialsAvailable = saslCredentialsAvailable;
 }
 
@@ -150,6 +168,8 @@ void IrcCapabilityNegotiation::advertise(const QStringList& tokens)
         const std::optional<TokenState> state = stateOf(name);
         if (state == TokenState::Enabled || state == TokenState::Requested)
             continue;
+        if (wanted->capability == IrcCapability::Sasl)
+            m_saslAdvertisedValue = tokenValue(token);
         m_tokens.insert(name, TokenState::Advertised);
     }
 }
@@ -159,7 +179,10 @@ void IrcCapabilityNegotiation::withdraw(const QStringList& tokens)
     for (const QString& token : tokens) {
         if (!wantedFor(tokenName(token)))
             continue;
-        m_tokens.remove(foldedName(token));
+        const QString name = foldedName(token);
+        if (name == QLatin1String("sasl"))
+            m_saslAdvertisedValue.clear();
+        m_tokens.remove(name);
     }
 }
 
@@ -191,8 +214,10 @@ IrcCapabilityNegotiation::Request IrcCapabilityNegotiation::takeRequest()
             request.lines.append(wanted.token);
         else
             presence.append(wanted.token);
-        if (wanted.capability == IrcCapability::Sasl)
+        if (wanted.capability == IrcCapability::Sasl) {
             request.requestsSasl = true;
+            request.saslMechanism = chosenSaslMechanism(m_saslAdvertisedValue);
+        }
         m_tokens.insert(foldedToken(wanted), TokenState::Requested);
     }
 

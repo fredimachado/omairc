@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- SASL uses SCRAM-SHA-256 when the server advertises it, and PLAIN otherwise.
 - IRCv3 `account-tag`, `account-notify`, and `extended-join`. Omairc keeps
   each nick's services account and shows it in the member list, on message
   headers, beside your nick, and on the join line only when it differs from
