@@ -8,9 +8,11 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonParseError>
+#include <QIODevice>
 #include <QStandardPaths>
 #include <QTemporaryDir>
 
+#include <algorithm>
 #include <optional>
 
 namespace
@@ -180,26 +182,61 @@ bool IrcConversationLog::append(const QString &networkId,
 std::vector<IrcTranscriptLine> IrcConversationLog::readTail(
     const QString &networkId, const QString &target, int maxLines) const
 {
-    std::vector<IrcTranscriptLine> lines;
     if (maxLines <= 0)
-        return lines;
+        return {};
     QFile file(pathFor(networkId, target));
-    if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
+    if (!file.open(QIODevice::ReadOnly))
+        return {};
+    return readTail(&file, maxLines);
+}
+
+std::vector<IrcTranscriptLine> IrcConversationLog::readTail(
+    QIODevice *device, int maxLines)
+{
+    std::vector<IrcTranscriptLine> lines;
+    if (!device || maxLines <= 0 || device->isSequential())
         return lines;
-    while (!file.atEnd()) {
-        const QByteArray raw = file.readLine().trimmed();
+
+    constexpr qint64 chunkSize = 4096;
+    qint64 position = device->size();
+    QByteArray pending;
+    const auto accept = [&lines, maxLines](QByteArray raw) {
+        raw = raw.trimmed();
         if (raw.isEmpty())
-            continue;
+            return false;
         const std::optional<IrcTranscriptLine> parsed = parseLine(raw);
         if (!parsed)
-            continue;
+            return false;
         if (!IrcSecretPolicy::allowsTranscript(parsed->body)
             || !IrcSecretPolicy::allowsTranscript(parsed->author)) {
-            continue;
+            return false;
         }
         lines.push_back(*parsed);
-        if (int(lines.size()) > maxLines)
-            lines.erase(lines.begin());
+        return int(lines.size()) == maxLines;
+    };
+
+    while (position > 0 && int(lines.size()) < maxLines) {
+        const qint64 bytes = std::min(position, chunkSize);
+        position -= bytes;
+        if (!device->seek(position))
+            break;
+        const QByteArray chunk = device->read(bytes);
+        if (chunk.size() != bytes)
+            break;
+        pending.prepend(chunk);
+
+        qsizetype newline = pending.lastIndexOf('\n');
+        while (newline >= 0) {
+            const QByteArray raw = pending.sliced(newline + 1);
+            pending.truncate(newline);
+            if (accept(raw))
+                break;
+            newline = pending.lastIndexOf('\n');
+        }
     }
+
+    if (position == 0 && int(lines.size()) < maxLines)
+        accept(pending);
+    std::reverse(lines.begin(), lines.end());
     return lines;
 }
