@@ -65,7 +65,7 @@ void IrcChannelListRequest::activity(const QString& id)
     if (it != m_states.cend() && it->loading) arm(id);
 }
 
-std::optional<QString> IrcChannelListRequest::finish(const QString& id)
+IrcChannelListRequest::FinishResult IrcChannelListRequest::finish(const QString& id)
 {
     auto it = m_states.find(id);
     if (it == m_states.end()) return {};
@@ -76,8 +76,7 @@ std::optional<QString> IrcChannelListRequest::finish(const QString& id)
     stop(id);
     const auto pending = it->pendingMask;
     it->pendingMask.reset(); it->loading = false; it->complete = true; it->error.clear();
-    if (pending && !sameMask(*pending, it->mask)) return pending;
-    return {};
+    return {true, pending && !sameMask(*pending, it->mask) ? pending : std::nullopt};
 }
 
 bool IrcChannelListRequest::fail(const QString& id, const QString& text, bool timeout)

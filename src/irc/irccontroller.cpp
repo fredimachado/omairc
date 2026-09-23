@@ -884,6 +884,13 @@ void IrcController::setChannelListIdleTimeoutMs(int milliseconds)
     m_channelLists.setIdleTimeoutMs(milliseconds);
 }
 
+#ifdef OMAIRC_TEST
+void IrcController::fireChannelListIdleTimeoutForTest(const QString& networkId)
+{
+    m_channelLists.fireIdleTimeout(networkId);
+}
+#endif
+
 bool IrcController::joinListedChannel(const QString& channel)
 {
     const QString networkId = m_channelList.networkId();
@@ -3529,14 +3536,16 @@ void IrcController::applyListRow(const QString& networkId, IrcChannelListRow row
 
 void IrcController::finishChannelList(const QString& networkId)
 {
-    const std::optional<QString> pending = m_channelLists.finish(networkId);
+    const IrcChannelListRequest::FinishResult result = m_channelLists.finish(networkId);
+    if (!result.completed)
+        return;
     const auto *cache = m_channelLists.state(networkId);
     if (!cache || cache->loading)
         return;
-    if (pending) {
+    if (result.pendingMask) {
         IrcSession *session = m_sessions.findSession(networkId);
         if (session && session->state() == IrcSession::State::Registered) {
-            if (beginChannelListLoad(session, networkId, *pending))
+            if (beginChannelListLoad(session, networkId, *result.pendingMask))
                 emit channelListRequested();
             return;
         }

@@ -17,8 +17,10 @@ void ChannelListRequestTest::cachePendingAndIsolation()
     QCOMPARE(lists.request("a", "#a*", false), IrcChannelListRequest::Request::Start);
     QCOMPARE(lists.request("a", "#b*", false), IrcChannelListRequest::Request::Loading);
     QCOMPARE(lists.request("b", {}, false), IrcChannelListRequest::Request::Start);
-    const auto pending = lists.finish("a");
-    QVERIFY(pending); QCOMPARE(*pending, QStringLiteral("#b*"));
+    const auto firstFinish = lists.finish("a");
+    QVERIFY(firstFinish.completed);
+    QVERIFY(firstFinish.pendingMask);
+    QCOMPARE(*firstFinish.pendingMask, QStringLiteral("#b*"));
     QCOMPARE(lists.request("a", "#b*", true), IrcChannelListRequest::Request::Start);
     lists.finish("a");
     QCOMPARE(lists.request("a", " #B* ", false), IrcChannelListRequest::Request::Cached);
@@ -45,10 +47,10 @@ void ChannelListRequestTest::rowsTimeoutRetryAndDrain()
     QCOMPARE(timeout.size(), 1);
     QVERIFY(!lists.state("a")->loading);
     QCOMPARE(lists.request("a", {}, true), IrcChannelListRequest::Request::Start);
-    QVERIFY(!lists.finish("a")); // drains the timed-out request's late END
+    QVERIFY(!lists.finish("a").completed); // drains the timed-out request's late END
     QVERIFY(lists.state("a")->loading);
     lists.row("a", {"#two", 3, {}});
-    QVERIFY(!lists.finish("a"));
+    QVERIFY(lists.finish("a").completed);
     QVERIFY(lists.state("a")->complete);
     QVERIFY(lists.fail("a", "ignored") == false);
 }

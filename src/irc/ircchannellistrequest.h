@@ -22,6 +22,10 @@ public:
         bool drainTimedOutEnd = false;
     };
     enum class Request { Start, Loading, Cached };
+    struct FinishResult {
+        bool completed = false;
+        std::optional<QString> pendingMask;
+    };
 
     explicit IrcChannelListRequest(QObject *parent = nullptr);
     const State *state(const QString& networkId) const;
@@ -29,7 +33,7 @@ public:
     void cancelStart(const QString& networkId);
     void row(const QString& networkId, IrcChannelListRow row);
     void activity(const QString& networkId);
-    std::optional<QString> finish(const QString& networkId);
+    FinishResult finish(const QString& networkId);
     bool fail(const QString& networkId, const QString& text, bool timedOut = false);
     void forget(const QString& networkId);
     void setIdleTimeoutMs(int milliseconds);

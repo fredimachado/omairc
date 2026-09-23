@@ -154,6 +154,9 @@ public:
     Q_INVOKABLE void setChannelListPresented(bool presented);
     Q_INVOKABLE bool joinListedChannel(const QString& channel);
     void setChannelListIdleTimeoutMs(int milliseconds);
+#ifdef OMAIRC_TEST
+    void fireChannelListIdleTimeoutForTest(const QString& networkId);
+#endif
     Q_INVOKABLE QVariantMap peerMetadata(const QString& networkId,
                                          const QString& nick) const;
     // Empty when the services account is unknown, logged out, or the same
