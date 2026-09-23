@@ -590,6 +590,7 @@ private slots:
     void playbackBatchOverCeilingKeepsNewestLines();
     void queryPlaybackPeerBatchFollowsHeldSelfLines();
     void queryPlaybackKeepsLinesFromPreviousNick();
+    void queryPlaybackPreviousNickEchoIsOwnLine();
     void networkWithoutPlaybackCapDoesNotPlay();
     void zncPlaybackLateCapPlaysOnce();
     void engagedQueryPlaybackPlaysAfterRestore();
@@ -6786,6 +6787,174 @@ void ControllerTest::queryPlaybackKeepsLinesFromPreviousNick()
     QCOMPARE(ircPlaybackPlayStamp(
                  IrcPlaybackTimeStore().newest(QStringLiteral("libera"))),
              mineStamp);
+}
+
+void ControllerTest::queryPlaybackPreviousNickEchoIsOwnLine()
+{
+    const IrcCaseMapping mapping;
+    const QString laterStamp = QStringLiteral("1710000001.500");
+    const QByteArray caps = QByteArrayLiteral(
+        ":server CAP omairc LS :batch znc.in/playback\r\n"
+        ":server CAP omairc ACK :batch znc.in/playback\r\n");
+    const auto forgetStores = [&]() {
+        IrcPlaybackTimeStore().forget(QStringLiteral("libera"));
+        IrcOpenDirectStore().forget(QStringLiteral("libera"));
+    };
+    const auto lenaStamp = [&]() {
+        return IrcPlaybackTimeStore().noted(QStringLiteral("libera"),
+                                            QStringLiteral("lena"),
+                                            mapping);
+    };
+
+    {
+        IrcController controller;
+        auto *transport = new FakeIrcTransport;
+        QVERIFY(controller.addSession(config(QStringLiteral("libera")), transport));
+        QVERIFY(controller.start(QStringLiteral("libera")));
+        transport->completeConnect();
+        transport->injectBytes(caps);
+        transport->injectBytes(QByteArrayLiteral(
+            ":server 001 omairc :Welcome\r\n"
+            ":znc.in BATCH +q znc.in/playback lena\r\n"
+            "@batch=q;time=2024-03-09T16:00:00.620Z "
+            ":oldnick!u@h PRIVMSG lena :mine\r\n"
+            ":znc.in BATCH -q\r\n"));
+
+        auto *conversations =
+            qobject_cast<QAbstractItemModel *>(controller.conversations());
+        QVERIFY(conversations);
+        QCOMPARE(rowForTarget(conversations, QStringLiteral("lena")), -1);
+        QVERIFY(!lenaStamp());
+
+        transport->injectBytes(QByteArrayLiteral(":server 376 omairc :End of MOTD\r\n"));
+        QCOMPARE(rowForTarget(conversations, QStringLiteral("lena")), -1);
+        QVERIFY(!IrcOpenDirectStore().listed(QStringLiteral("libera"), mapping)
+                     .contains(QStringLiteral("lena")));
+        QVERIFY(!lenaStamp());
+        QVERIFY(!IrcPlaybackTimeStore().newest(QStringLiteral("libera")));
+    }
+
+    forgetStores();
+
+    {
+        IrcController controller;
+        auto *transport = new FakeIrcTransport;
+        QVERIFY(controller.addSession(config(QStringLiteral("libera")), transport));
+        QVERIFY(controller.start(QStringLiteral("libera")));
+        transport->completeConnect();
+        transport->injectBytes(caps);
+        transport->injectBytes(QByteArrayLiteral(
+            ":server 001 omairc :Welcome\r\n"
+            ":znc.in BATCH +self znc.in/playback lena\r\n"
+            "@batch=self;time=2024-03-09T16:00:00.620Z "
+            ":omairc!u@h PRIVMSG lena :held\r\n"
+            ":znc.in BATCH -self\r\n"
+            ":znc.in BATCH +echo znc.in/playback lena\r\n"
+            "@batch=echo;time=2024-03-09T16:00:01.500Z "
+            ":oldnick!u@h PRIVMSG lena :mine\r\n"
+            ":znc.in BATCH -echo\r\n"));
+
+        auto *conversations =
+            qobject_cast<QAbstractItemModel *>(controller.conversations());
+        QVERIFY(conversations);
+        QCOMPARE(rowForTarget(conversations, QStringLiteral("lena")), -1);
+        QVERIFY(!lenaStamp());
+
+        transport->injectBytes(QByteArrayLiteral(":server 376 omairc :End of MOTD\r\n"));
+        QCOMPARE(rowForTarget(conversations, QStringLiteral("lena")), -1);
+        QVERIFY(!IrcOpenDirectStore().listed(QStringLiteral("libera"), mapping)
+                     .contains(QStringLiteral("lena")));
+        QVERIFY(!lenaStamp());
+        QVERIFY(!IrcPlaybackTimeStore().newest(QStringLiteral("libera")));
+    }
+
+    forgetStores();
+
+    QVERIFY(IrcOpenDirectStore().add(QStringLiteral("libera"),
+                                     QStringLiteral("lena"),
+                                     mapping));
+    {
+        IrcController controller;
+        auto *transport = new FakeIrcTransport;
+        QVERIFY(controller.addSession(config(QStringLiteral("libera")), transport));
+        QVERIFY(controller.start(QStringLiteral("libera")));
+        transport->completeConnect();
+        transport->injectBytes(caps);
+        transport->injectBytes(QByteArrayLiteral(
+            ":server 001 omairc :Welcome\r\n"
+            ":server 376 omairc :End of MOTD\r\n"));
+
+        auto *conversations =
+            qobject_cast<QAbstractItemModel *>(controller.conversations());
+        QVERIFY(conversations);
+        const int restored = rowForTarget(conversations, QStringLiteral("lena"));
+        QVERIFY(restored >= 0);
+        QCOMPARE(roleAt(conversations, restored, ConversationListModel::UnreadRole).toInt(),
+                 0);
+        controller.selectConversation(QStringLiteral("libera"), QStringLiteral("lena"));
+
+        transport->injectBytes(QByteArrayLiteral(
+            ":znc.in BATCH +q znc.in/playback lena\r\n"
+            "@batch=q;time=2024-03-09T16:00:00.620Z "
+            ":oldnick!u@h PRIVMSG lena :mine\r\n"
+            "@batch=q;time=2024-03-09T16:00:01.500Z "
+            ":lena!u@h PRIVMSG omairc :later\r\n"
+            ":znc.in BATCH -q\r\n"));
+
+        const int row = rowForTarget(conversations, QStringLiteral("lena"));
+        QVERIFY(row >= 0);
+        QCOMPARE(roleAt(conversations, row, ConversationListModel::UnreadRole).toInt(),
+                 0);
+        auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
+        QVERIFY(messages);
+        QCOMPARE(messageBodies(messages),
+                 QStringList({QStringLiteral("mine"), QStringLiteral("later")}));
+        const int mine = bodyRow(messages, QStringLiteral("mine"));
+        const int later = bodyRow(messages, QStringLiteral("later"));
+        QVERIFY(mine >= 0);
+        QVERIFY(later > mine);
+        QCOMPARE(roleAt(messages, mine, MessageListModel::AuthorRole),
+                 QStringLiteral("oldnick"));
+        QCOMPARE(roleAt(messages, later, MessageListModel::AuthorRole),
+                 QStringLiteral("lena"));
+        QCOMPARE(roleAt(messages, mine, MessageListModel::OriginRole),
+                 QStringLiteral("replay"));
+        QCOMPARE(roleAt(messages, later, MessageListModel::OriginRole),
+                 QStringLiteral("replay"));
+        QCOMPARE(ircPlaybackPlayStamp(lenaStamp()), laterStamp);
+        QVERIFY(IrcOpenDirectStore().listed(QStringLiteral("libera"), mapping)
+                    .contains(QStringLiteral("lena")));
+    }
+
+    forgetStores();
+
+    {
+        IrcController controller;
+        auto *transport = new FakeIrcTransport;
+        QVERIFY(controller.addSession(config(QStringLiteral("libera")), transport));
+        QVERIFY(controller.start(QStringLiteral("libera")));
+        transport->completeConnect();
+        transport->injectBytes(caps);
+        transport->injectBytes(QByteArrayLiteral(
+            ":server 001 omairc :Welcome\r\n"
+            ":znc.in BATCH +q znc.in/playback lena\r\n"
+            "@batch=q;time=2024-03-09T16:00:00.100Z "
+            ":lena!u@h PRIVMSG oldnick :before\r\n"
+            ":znc.in BATCH -q\r\n"));
+
+        auto *conversations =
+            qobject_cast<QAbstractItemModel *>(controller.conversations());
+        QVERIFY(conversations);
+        QVERIFY(rowForTarget(conversations, QStringLiteral("lena")) >= 0);
+        controller.selectConversation(QStringLiteral("libera"), QStringLiteral("lena"));
+        auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
+        QVERIFY(messages);
+        QCOMPARE(selectedBodies(messages), QStringList({QStringLiteral("before")}));
+        QCOMPARE(roleAt(messages, 0, MessageListModel::AuthorRole),
+                 QStringLiteral("lena"));
+        QCOMPARE(roleAt(messages, 0, MessageListModel::OriginRole),
+                 QStringLiteral("replay"));
+    }
 }
 
 void ControllerTest::networkWithoutPlaybackCapDoesNotPlay()

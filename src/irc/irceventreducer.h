@@ -172,8 +172,9 @@ struct IrcKeptReplay
     QDateTime serverTime;
 };
 
-// A bouncer query whose splice kept a self-authored line. The controller
-// remembers that direct so the next cold start can restore it before PLAY.
+// A bouncer query whose splice kept a line from the user, including a nick
+// they have since changed. The controller remembers that direct so the next
+// cold start can restore it before PLAY.
 struct IrcRememberedQuery
 {
     QString networkId;
@@ -313,7 +314,8 @@ private:
                          IrcMessageKind kind,
                          const IrcMsgId& msgid,
                          qint64 sequence,
-                         IrcOrigin origin);
+                         IrcOrigin origin,
+                         const IrcHistoryEvent *history = nullptr);
     void appendEvent(IrcConversationState& conversation,
                      const QString& body,
                      bool collapsible = false);
@@ -327,6 +329,8 @@ private:
         const IrcConversationState& conversation) const;
     std::optional<std::size_t> takeSpliceIndex(IrcConversationState& conversation);
     enum class HistoryAnchorUse { Consume, Keep };
+    bool bouncerQueryOwnLine(const IrcHistoryEvent& event,
+                             const QString& author) const;
     bool replayFromPeer(const IrcHistoryEvent& event) const;
     bool absorbPendingQueryPlayback(const IrcHistoryEvent& event);
     void spliceHistory(IrcConversationState& conversation,

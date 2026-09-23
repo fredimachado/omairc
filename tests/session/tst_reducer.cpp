@@ -11,6 +11,7 @@
 #include <QTemporaryDir>
 
 #include <algorithm>
+#include <initializer_list>
 #include <string_view>
 #include <vector>
 
@@ -134,6 +135,7 @@ private slots:
     void partThenJoinSplicesAboveThisJoin();
     void historicJoinInBatchDoesNotChangePeopleCount();
     void bouncerQueryPlaybackKeepsPreviousNick();
+    void bouncerQueryPreviousNickEchoIsOwnLine();
     void transcriptHydrateIsReplayWithoutNotify();
     void transcriptMsgidSkipsLaterLive();
     void historyAfterPartDoesNotSplice();
@@ -2418,6 +2420,27 @@ void ReducerTest::bouncerQueryPlaybackKeepsPreviousNick()
     QCOMPARE(omittedKept.back().serverTime.toMSecsSinceEpoch(),
              mineAt.toMSecsSinceEpoch());
 
+    IrcEventReducer existing;
+    welcome(existing, networkA);
+    const IrcConversationKey existingLena =
+        existing.conversationKey(networkA, QStringLiteral("lena"));
+    QVERIFY(existing.ensureConversation(
+        existingLena, QStringLiteral("lena"), IrcConversationCause::UserOpen));
+    existing.apply(*playback);
+    const IrcConversationState *alreadyOpen = existing.find(existingLena);
+    QVERIFY(alreadyOpen);
+    QCOMPARE(alreadyOpen->messages.size(), std::size_t(3));
+    QCOMPARE(alreadyOpen->messages[0].body, QStringLiteral("before"));
+    QCOMPARE(alreadyOpen->messages[0].author, QStringLiteral("lena"));
+    QCOMPARE(alreadyOpen->messages[1].body, QStringLiteral("mine"));
+    QCOMPARE(alreadyOpen->messages[1].author, QStringLiteral("oldnick"));
+    QCOMPARE(alreadyOpen->messages[2].body, QStringLiteral("after"));
+    QCOMPARE(alreadyOpen->messages[2].author, QStringLiteral("lena"));
+    const std::vector<IrcKeptReplay> existingKept = existing.takeKeptReplay();
+    QCOMPARE(existingKept.size(), std::size_t(3));
+    QCOMPARE(existingKept.back().serverTime.toMSecsSinceEpoch(),
+             afterAt.toMSecsSinceEpoch());
+
     const auto history = keptEvent(IrcHistoryKind::ChatHistory);
     QVERIFY(history);
     QCOMPARE(history->lines.size(), std::size_t(1));
@@ -2435,6 +2458,162 @@ void ReducerTest::bouncerQueryPlaybackKeepsPreviousNick()
     QVERIFY(channelEvent);
     QCOMPARE(channelEvent->lines.size(), std::size_t(1));
     QCOMPARE(channelEvent->lines.front().body, QStringLiteral("room"));
+}
+
+void ReducerTest::bouncerQueryPreviousNickEchoIsOwnLine()
+{
+    const auto at = [](const char *iso) {
+        return QDateTime::fromString(QString::fromLatin1(iso), Qt::ISODateWithMs);
+    };
+    const QDateTime mineAt = at("2024-03-09T16:00:00.620Z");
+    const QDateTime laterAt = at("2024-03-09T16:00:01.500Z");
+    QVERIFY(mineAt.isValid());
+    QVERIFY(laterAt.isValid());
+
+    const auto playback = [](std::initializer_list<const char *> lines) {
+        IrcHistoryBatch batch;
+        batch.target = QStringLiteral("lena");
+        batch.kind = IrcHistoryKind::BouncerPlayback;
+        for (const char *line : lines)
+            batch.lines.push_back(mustParse(line));
+        return IrcEventTranslator::translateHistory(
+            networkA, QStringLiteral("omairc"), IrcServerFeatures(), batch);
+    };
+
+    {
+        const auto echo = playback({
+            "@time=2024-03-09T16:00:00.620Z :oldnick!u@h PRIVMSG lena :mine",
+        });
+        QVERIFY(echo);
+        QCOMPARE(echo->lines.size(), std::size_t(1));
+        IrcEventReducer reducer;
+        welcome(reducer, networkA);
+        reducer.apply(*echo);
+        QVERIFY(!reducer.find(reducer.conversationKey(networkA, QStringLiteral("lena"))));
+        QVERIFY(reducer.takeKeptReplay().empty());
+        QVERIFY(reducer.takeRememberedQueries().empty());
+        QVERIFY(!reducer.releasePendingQueryPlayback(networkA));
+        QVERIFY(!reducer.find(reducer.conversationKey(networkA, QStringLiteral("lena"))));
+        QVERIFY(reducer.takeKeptReplay().empty());
+        QVERIFY(reducer.takeRememberedQueries().empty());
+    }
+
+    {
+        const auto held = playback({
+            "@time=2024-03-09T16:00:00.620Z :omairc!u@h PRIVMSG lena :held",
+        });
+        const auto echo = playback({
+            "@time=2024-03-09T16:00:01.500Z :oldnick!u@h PRIVMSG lena :mine",
+        });
+        QVERIFY(held);
+        QVERIFY(echo);
+        IrcEventReducer reducer;
+        welcome(reducer, networkA);
+        reducer.apply(*held);
+        reducer.apply(*echo);
+        QVERIFY(!reducer.find(reducer.conversationKey(networkA, QStringLiteral("lena"))));
+        QVERIFY(reducer.takeKeptReplay().empty());
+        QVERIFY(reducer.takeRememberedQueries().empty());
+        QVERIFY(!reducer.releasePendingQueryPlayback(networkA));
+        QVERIFY(!reducer.find(reducer.conversationKey(networkA, QStringLiteral("lena"))));
+        QVERIFY(reducer.takeKeptReplay().empty());
+    }
+
+    {
+        const auto echo = playback({
+            "@time=2024-03-09T16:00:00.620Z :oldnick!u@h PRIVMSG lena :omairc: backlog",
+        });
+        QVERIFY(echo);
+        IrcEventReducer reducer;
+        welcome(reducer, networkA);
+        const IrcConversationKey lena =
+            reducer.conversationKey(networkA, QStringLiteral("lena"));
+        QVERIFY(reducer.ensureConversation(
+            lena, QStringLiteral("lena"), IrcConversationCause::UserOpen));
+        reducer.apply(*echo);
+        const IrcConversationState *conversation = reducer.find(lena);
+        QVERIFY(conversation);
+        QCOMPARE(conversation->messages.size(), std::size_t(1));
+        QCOMPARE(conversation->messages.front().author, QStringLiteral("oldnick"));
+        QCOMPARE(conversation->messages.front().body, QStringLiteral("omairc: backlog"));
+        QCOMPARE(conversation->messages.front().origin, IrcOrigin::Replay);
+        QCOMPARE(conversation->unread, 0);
+        QCOMPARE(conversation->mentions, 0);
+        QVERIFY(!reducer.takeMentionArrival().has_value());
+        const std::vector<IrcKeptReplay> kept = reducer.takeKeptReplay();
+        QCOMPARE(kept.size(), std::size_t(1));
+        QCOMPARE(kept.front().target, QStringLiteral("lena"));
+        QCOMPARE(kept.front().serverTime.toMSecsSinceEpoch(),
+                 mineAt.toMSecsSinceEpoch());
+        const std::vector<IrcRememberedQuery> remembered =
+            reducer.takeRememberedQueries();
+        QCOMPARE(remembered.size(), std::size_t(1));
+        QCOMPARE(remembered.front().target, QStringLiteral("lena"));
+
+        reducer.apply(IrcMessageEvent{
+            lena, QStringLiteral("oldnick"), QStringLiteral("omairc: live"),
+            timestamp, QStringLiteral("lena")});
+        QCOMPARE(conversation->unread, 1);
+        QCOMPARE(conversation->mentions, 1);
+        const std::optional<IrcMentionArrival> live = reducer.takeMentionArrival();
+        QVERIFY(live.has_value());
+        QCOMPARE(live->author, QStringLiteral("oldnick"));
+        QCOMPARE(live->body, QStringLiteral("omairc: live"));
+    }
+
+    {
+        const auto both = playback({
+            "@time=2024-03-09T16:00:00.620Z :oldnick!u@h PRIVMSG lena :mine",
+            "@time=2024-03-09T16:00:01.500Z :lena!u@h PRIVMSG omairc :later",
+        });
+        QVERIFY(both);
+        QCOMPARE(both->lines.size(), std::size_t(2));
+        IrcEventReducer reducer;
+        welcome(reducer, networkA);
+        const IrcConversationKey lena =
+            reducer.conversationKey(networkA, QStringLiteral("lena"));
+        QVERIFY(reducer.ensureConversation(
+            lena, QStringLiteral("lena"), IrcConversationCause::UserOpen));
+        reducer.markSelected(lena);
+        reducer.apply(*both);
+        const IrcConversationState *conversation = reducer.find(lena);
+        QVERIFY(conversation);
+        QCOMPARE(conversation->messages.size(), std::size_t(2));
+        QCOMPARE(conversation->messages[0].author, QStringLiteral("oldnick"));
+        QCOMPARE(conversation->messages[0].body, QStringLiteral("mine"));
+        QCOMPARE(conversation->messages[0].origin, IrcOrigin::Replay);
+        QCOMPARE(conversation->messages[1].author, QStringLiteral("lena"));
+        QCOMPARE(conversation->messages[1].body, QStringLiteral("later"));
+        QCOMPARE(conversation->messages[1].origin, IrcOrigin::Replay);
+        QCOMPARE(conversation->unread, 0);
+        QCOMPARE(conversation->mentions, 0);
+        const std::vector<IrcKeptReplay> kept = reducer.takeKeptReplay();
+        QCOMPARE(kept.size(), std::size_t(2));
+        QCOMPARE(kept.back().serverTime.toMSecsSinceEpoch(),
+                 laterAt.toMSecsSinceEpoch());
+        QCOMPARE(reducer.takeRememberedQueries().size(), std::size_t(1));
+    }
+
+    {
+        const auto peer = playback({
+            "@time=2024-03-09T16:00:00.100Z :Lena!u@h PRIVMSG oldnick :before",
+        });
+        QVERIFY(peer);
+        IrcEventReducer reducer;
+        welcome(reducer, networkA);
+        reducer.apply(*peer);
+        const IrcConversationState *conversation =
+            reducer.find(reducer.conversationKey(networkA, QStringLiteral("lena")));
+        QVERIFY(conversation);
+        QCOMPARE(conversation->messages.size(), std::size_t(1));
+        QCOMPARE(conversation->messages.front().author, QStringLiteral("Lena"));
+        QCOMPARE(conversation->messages.front().body, QStringLiteral("before"));
+        QCOMPARE(conversation->messages.front().origin, IrcOrigin::Replay);
+        QVERIFY(reducer.takeRememberedQueries().empty());
+        const std::vector<IrcKeptReplay> kept = reducer.takeKeptReplay();
+        QCOMPARE(kept.size(), std::size_t(1));
+        QCOMPARE(kept.front().target, QStringLiteral("lena"));
+    }
 }
 
 void ReducerTest::transcriptHydrateIsReplayWithoutNotify()

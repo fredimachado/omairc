@@ -815,9 +815,13 @@ void IrcEventReducer::noteChatArrival(IrcConversationState& conversation,
                                       IrcMessageKind kind,
                                       const IrcMsgId& msgid,
                                       qint64 sequence,
-                                      IrcOrigin origin)
+                                      IrcOrigin origin,
+                                      const IrcHistoryEvent *history)
 {
-    const bool self = isSelf(key.networkId, author);
+    // A previous nick inside a bouncer query batch is backlog of our own
+    // lines. Live PRIVMSG still uses the current nick only.
+    const bool self = isSelf(key.networkId, author)
+        || (history && bouncerQueryOwnLine(*history, author));
     const bool nickHit = isNickMention(key.networkId, body);
     const bool highlightHit = !nickHit && isHighlightHit(key.networkId, body);
     const std::optional<ChatLineReason> reason = classifyChatLine(
@@ -1372,12 +1376,33 @@ void IrcEventReducer::releasePendingPlayback(IrcConversationState& conversation)
     spliceHistory(conversation, event, HistoryAnchorUse::Keep);
 }
 
+bool IrcEventReducer::bouncerQueryOwnLine(const IrcHistoryEvent& event,
+                                          const QString& author) const
+{
+    // The batch is named for the peer. An author who case-maps to that nick
+    // is the other person. Everyone else in the batch is the user: the
+    // current nick, or one they have since changed.
+    if (event.kind != IrcHistoryKind::BouncerPlayback || author.isEmpty())
+        return false;
+    if (serverFeatures(event.conversation.networkId)
+            .isChannel(utf8(event.conversation.normalizedTarget))) {
+        return false;
+    }
+    return !equals(event.conversation.networkId, author, event.target);
+}
+
 bool IrcEventReducer::replayFromPeer(const IrcHistoryEvent& event) const
 {
+    const bool bouncerQuery = event.kind == IrcHistoryKind::BouncerPlayback
+        && !serverFeatures(event.conversation.networkId)
+                .isChannel(utf8(event.conversation.normalizedTarget));
     return std::any_of(event.lines.begin(), event.lines.end(),
                        [&](const IrcReplayLine& line) {
-        return !line.author.isEmpty()
-            && !isSelf(event.conversation.networkId, line.author);
+        if (line.author.isEmpty())
+            return false;
+        if (bouncerQuery)
+            return !bouncerQueryOwnLine(event, line.author);
+        return !isSelf(event.conversation.networkId, line.author);
     });
 }
 
@@ -1431,8 +1456,6 @@ void IrcEventReducer::spliceHistory(IrcConversationState& conversation,
         return;
     const std::size_t previousSize = conversation.messages.size();
     const std::size_t at = *spliceIndex;
-    const bool bouncerQuery = event.kind == IrcHistoryKind::BouncerPlayback
-        && !conversation.channel();
 
     const IrcCaseMapping mapping =
         serverFeatures(event.conversation.networkId).caseMapping();
@@ -1455,10 +1478,8 @@ void IrcEventReducer::spliceHistory(IrcConversationState& conversation,
     bool sawSelf = false;
     bool keptPlaybackLine = false;
     for (const IrcReplayLine& line : event.lines) {
-        if (bouncerQuery && !sawSelf && !line.author.isEmpty()
-            && isSelf(event.conversation.networkId, line.author)) {
+        if (!sawSelf && bouncerQueryOwnLine(event, line.author))
             sawSelf = true;
-        }
         // Inserted or already present. A missing time tag stays off the
         // PLAY clock; the transcript timestamp may be wall clock. A line
         // translateHistory skipped never reaches this loop.
@@ -1531,7 +1552,7 @@ void IrcEventReducer::spliceHistory(IrcConversationState& conversation,
     for (const IrcReducedMessage& message : run) {
         noteChatArrival(conversation, event.conversation, message.author,
                         message.body, message.kind, message.msgid,
-                        message.sequence, IrcOrigin::Replay);
+                        message.sequence, IrcOrigin::Replay, &event);
     }
 }
 
@@ -1621,10 +1642,11 @@ void IrcEventReducer::reduce(const IrcHistoryEvent& event)
     if (!conversation) {
         // A join creates a channel, so replay must not resurrect one the user
         // closed or parted. A query buffer proves nothing by existing. Our own
-        // outbound /msg creates one on the bouncer too, so only a line's
-        // author proves the peer spoke. A self-only bouncer batch stays held
-        // until open directs are restored; dropping it first lets a later
-        // kept line move the exclusive PLAY clock past those lines.
+        // outbound /msg creates one on the bouncer too, so only a line from
+        // the query peer proves they spoke. A previous nick is still us. A
+        // self-only bouncer batch stays held until open directs are restored;
+        // dropping it first lets a later kept line move the exclusive PLAY
+        // clock past those lines.
         if (channelTarget)
             return;
         if (!replayFromPeer(event)) {
