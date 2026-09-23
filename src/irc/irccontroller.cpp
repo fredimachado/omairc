@@ -4359,11 +4359,33 @@ void IrcController::handleMessage(const QString& networkId,
 void IrcController::handleHistoryBatch(const QString& networkId,
                                        const IrcHistoryBatch& batch)
 {
-    const auto event = IrcEventTranslator::translateHistory(
+    std::optional<IrcHistoryEvent> event = IrcEventTranslator::translateHistory(
         networkId, m_currentNicks.value(networkId),
         m_reducer.serverFeatures(networkId), batch);
-    if (event)
-        apply(*event);
+    if (!event)
+        return;
+    if (event->kind == IrcHistoryKind::BouncerPlayback) {
+        const auto sent = m_zncPlaybackSent.constFind(networkId);
+        if (sent != m_zncPlaybackSent.cend() && sent->queries) {
+            if (const std::optional<QDateTime> bound =
+                    playbackSnapshotTime(networkId, batch.target)) {
+                const qint64 boundMs = bound->toUTC().toMSecsSinceEpoch();
+                event->lines.erase(
+                    std::remove_if(
+                        event->lines.begin(), event->lines.end(),
+                        [boundMs](const IrcReplayLine& line) {
+                            if (!line.serverTime || !line.serverTime->isValid())
+                                return false;
+                            return line.serverTime->toUTC().toMSecsSinceEpoch()
+                                <= boundMs;
+                        }),
+                    event->lines.end());
+            }
+        }
+        if (event->lines.empty())
+            return;
+    }
+    apply(*event);
 }
 
 void IrcController::noteKeptReplay()
@@ -4608,7 +4630,8 @@ void IrcController::requestZncPlayback(IrcSession *session)
         // directs, and autojoin. With znc.in/playback enabled the module
         // suppresses automatic delivery, so PLAY * 0 discovers them.
         // Known targets already got per-target PLAY with their resume
-        // bounds; duplicate channel lines dedupe.
+        // bounds; wildcard batches for those targets are filtered in
+        // handleHistoryBatch by the registration snapshot stamp.
         if (!m_zncPlaybackSent[networkId].queries) {
             if (!sendZncPlayback(session, QStringLiteral("*"), QStringLiteral("0")))
                 return;

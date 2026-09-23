@@ -1999,8 +1999,9 @@ void ReducerTest::replayDistinctMsgidsWithIdenticalContentRetained()
         const IrcConversationState *conversation = reducer.find(room);
         QVERIFY(conversation);
         QCOMPARE(conversation->messages.size(), std::size_t(3));
-        QCOMPARE(conversation->messages[1].msgid.value, QStringLiteral("message-a"));
-        QCOMPARE(conversation->messages[2].msgid.value, QStringLiteral("message-b"));
+        QCOMPARE(conversation->messages[0].msgid.value, QStringLiteral("message-a"));
+        QCOMPARE(conversation->messages[1].msgid.value, QStringLiteral("message-b"));
+        QCOMPARE(conversation->messages[2].body, QStringLiteral("omairc joined"));
     }
 
     {
@@ -2020,8 +2021,10 @@ void ReducerTest::replayDistinctMsgidsWithIdenticalContentRetained()
         const IrcConversationState *conversation = reducer.find(room);
         QVERIFY(conversation);
         QCOMPARE(conversation->messages.size(), std::size_t(3));
-        QCOMPARE(conversation->messages[1].msgid.value, QStringLiteral("message-a"));
-        QCOMPARE(conversation->messages[2].msgid.value, QStringLiteral("message-b"));
+        QCOMPARE(conversation->messages[0].msgid.value, QStringLiteral("message-b"));
+        QCOMPARE(conversation->messages[1].body, QStringLiteral("omairc joined"));
+        QCOMPARE(conversation->messages[2].msgid.value, QStringLiteral("message-a"));
+        QCOMPARE(conversation->messages[2].origin, IrcOrigin::Live);
     }
 
     {
@@ -2042,7 +2045,8 @@ void ReducerTest::replayDistinctMsgidsWithIdenticalContentRetained()
         const IrcConversationState *conversation = reducer.find(room);
         QVERIFY(conversation);
         QCOMPARE(conversation->messages.size(), std::size_t(2));
-        QCOMPARE(conversation->messages[1].msgid.value, QStringLiteral("same-id"));
+        QCOMPARE(conversation->messages[0].msgid.value, QStringLiteral("same-id"));
+        QCOMPARE(conversation->messages[1].body, QStringLiteral("omairc joined"));
     }
 
     {
@@ -2061,8 +2065,9 @@ void ReducerTest::replayDistinctMsgidsWithIdenticalContentRetained()
         const IrcConversationState *conversation = reducer.find(room);
         QVERIFY(conversation);
         QCOMPARE(conversation->messages.size(), std::size_t(2));
-        QCOMPARE(conversation->messages[1].body, QStringLiteral("same"));
-        QCOMPARE(conversation->messages[1].origin, IrcOrigin::Live);
+        QCOMPARE(conversation->messages[0].body, QStringLiteral("same"));
+        QCOMPARE(conversation->messages[0].origin, IrcOrigin::Live);
+        QCOMPARE(conversation->messages[1].body, QStringLiteral("omairc joined"));
     }
 
     {
@@ -2081,8 +2086,9 @@ void ReducerTest::replayDistinctMsgidsWithIdenticalContentRetained()
         const IrcConversationState *conversation = reducer.find(room);
         QVERIFY(conversation);
         QCOMPARE(conversation->messages.size(), std::size_t(3));
-        QCOMPARE(conversation->messages[1].msgid.value, QStringLiteral("history-a"));
-        QCOMPARE(conversation->messages[2].msgid.value, QStringLiteral("history-b"));
+        QCOMPARE(conversation->messages[0].msgid.value, QStringLiteral("history-a"));
+        QCOMPARE(conversation->messages[1].msgid.value, QStringLiteral("history-b"));
+        QCOMPARE(conversation->messages[2].body, QStringLiteral("omairc joined"));
     }
 }
 
@@ -2663,15 +2669,17 @@ void ReducerTest::channelPlaybackCasemappingRememberedSelfNick()
         const IrcConversationKey room =
             reducer.conversationKey(networkA, QStringLiteral("#omarchy"));
         playback(reducer, room, {
-            line(QStringLiteral("nick~"), QStringLiteral("omairc: mine")),
-            line(QStringLiteral("nick`"), QStringLiteral("omairc: ping")),
+            line(QStringLiteral("nick^"), QStringLiteral("omairc: mine")),
+            line(QStringLiteral("nick~"), QStringLiteral("omairc: ping")),
         });
         const IrcConversationState *conversation = reducer.find(room);
         QVERIFY(conversation);
         QCOMPARE(conversation->unread, 1);
         QCOMPARE(conversation->mentions, 1);
-        QCOMPARE(conversation->messages[0].author, QStringLiteral("nick~"));
-        QCOMPARE(conversation->messages[1].author, QStringLiteral("nick`"));
+        QVERIFY(conversation->unreadMark.has_value());
+        QCOMPARE(conversation->messages[0].author, QStringLiteral("nick^"));
+        QCOMPARE(conversation->messages[1].author, QStringLiteral("nick~"));
+        QCOMPARE(*conversation->unreadMark, conversation->messages[1].sequence);
     }
 }
 
