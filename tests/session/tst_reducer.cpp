@@ -1,5 +1,6 @@
 #include <QTest>
 
+#include "conversationlistmodel.h"
 #include "ircconversationlog.h"
 #include "irceventreducer.h"
 #include "irceventtranslator.h"
@@ -124,6 +125,7 @@ private slots:
     void identicalChannelsStayIsolated();
     void advertisedChannelTypesCreateChannels();
     void unreadMentionsRespectSelection();
+    void conversationModelProjectionDoesNotOwnSelection();
     void windowInactiveMarksSelectedChatUnread();
     void markReadConsumesUnreadButKeepsMark();
     void mentionArrivalSurvivesSelection();
@@ -442,6 +444,30 @@ void ReducerTest::unreadMentionsRespectSelection()
     reducer.markSelected(background);
     QCOMPARE(backgroundState->unread, 0);
     QCOMPARE(backgroundState->mentions, 0);
+}
+
+void ReducerTest::conversationModelProjectionDoesNotOwnSelection()
+{
+    IrcEventReducer reducer;
+    welcome(reducer, networkA);
+    const IrcConversationKey key =
+        reducer.conversationKey(networkA, QStringLiteral("#room"));
+    reducer.apply(IrcMessageEvent{
+        key,
+        QStringLiteral("Alice"),
+        QStringLiteral("unread"),
+        timestamp,
+        QStringLiteral("#room"),
+    });
+    QCOMPARE(reducer.find(key)->unread, 1);
+    QVERIFY(!reducer.selected().has_value());
+
+    ConversationListModel model(reducer);
+    model.select(key);
+
+    QCOMPARE(model.rowCount(), 1);
+    QCOMPARE(reducer.find(key)->unread, 1);
+    QVERIFY(!reducer.selected().has_value());
 }
 
 void ReducerTest::windowInactiveMarksSelectedChatUnread()

@@ -1087,6 +1087,7 @@ void IrcController::selectConversation(const QString& networkId,
     if (!features.isChannel(utf8(key.normalizedTarget)))
         m_inbox.consumeMonitor(networkId, target, features.caseMapping());
     syncInbox();
+    m_reducer.markSelected(key);
     m_conversations.select(key);
     m_messages.select(key);
     m_members.select(key);

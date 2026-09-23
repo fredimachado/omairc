@@ -263,7 +263,7 @@ void ConversationListModel::invalidateTyping()
 
 void ConversationListModel::select(const IrcConversationKey& key)
 {
-    m_reducer.markSelected(key);
+    Q_UNUSED(key)
     reload();
 }
 
