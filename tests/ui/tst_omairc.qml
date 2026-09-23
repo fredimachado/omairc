@@ -2714,6 +2714,13 @@ TestCase {
         compare(list.firstUnseenIndex, previousCount);
         var jump = item("messageUnseenJump");
         tryCompare(jump, "visible", true);
+        var burst = findChild(jump, "bounceBurst");
+        verify(burst !== null, "Could not find bounceBurst on the jump chip");
+        var dot = findChild(jump, "unseenJumpDot");
+        verify(dot !== null, "Could not find unseenJumpDot on the jump chip");
+        compare(dot.visible, true);
+        compare(jump.bounceArmed, true);
+        tryCompare(burst, "running", true);
 
         appendLiveMessages(list, 24, "later unseen");
         waitForRendering(appWindow.contentItem);
@@ -2726,6 +2733,9 @@ TestCase {
         waitForRendering(appWindow.contentItem);
         wait(0);
         tryCompare(jump, "visible", false);
+        compare(dot.visible, false);
+        compare(jump.bounceArmed, false);
+        compare(burst.running, false);
         compare(list.firstUnseenIndex, -1);
         tryVerify(function() {
             return unseenIsInView(list, unseen);
@@ -3090,9 +3100,12 @@ TestCase {
         var jump = item("messageUnseenJump");
         var burst = findChild(jump, "bounceBurst");
         verify(burst !== null, "Could not find bounceBurst on the jump chip");
+        var dot = findChild(jump, "unseenJumpDot");
+        verify(dot !== null, "Could not find unseenJumpDot on the jump chip");
         compare(jump.visible, false);
         compare(jump.bounceArmed, false);
         compare(burst.running, false);
+        compare(dot.visible, false);
 
         appWindow.windowFocusGained();
         waitForRendering(appWindow.contentItem);
@@ -3106,6 +3119,7 @@ TestCase {
         tryCompare(jump, "visible", true);
         compare(jump.bounceArmed, true);
         tryCompare(burst, "running", true);
+        compare(dot.visible, true);
 
         list.pinToEnd();
         waitForRendering(appWindow.contentItem);
@@ -3116,6 +3130,7 @@ TestCase {
         tryCompare(jump, "visible", false);
         compare(jump.bounceArmed, false);
         tryCompare(burst, "running", false);
+        compare(dot.visible, false);
 
         list.pinToUnread(markRow);
         waitForRendering(appWindow.contentItem);
@@ -3124,12 +3139,15 @@ TestCase {
         tryCompare(jump, "visible", true);
         compare(jump.bounceArmed, true);
         tryCompare(burst, "running", true);
+        compare(dot.visible, true);
 
         mouseClick(jump);
         waitForRendering(appWindow.contentItem);
         wait(0);
         tryCompare(jump, "visible", false);
         compare(jump.bounceArmed, false);
+        compare(dot.visible, false);
+        tryCompare(burst, "running", false);
         tryVerify(function() {
             return transcriptPinned(list);
         }, 1000, "Jump should scroll to the latest messages");
