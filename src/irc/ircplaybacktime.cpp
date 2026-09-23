@@ -148,6 +148,35 @@ std::optional<QDateTime> IrcPlaybackTimeStore::newest(const QString& networkId) 
     return QDateTime::fromMSecsSinceEpoch(maxMs, QTimeZone::utc());
 }
 
+QVector<IrcPlaybackTargetTime> IrcPlaybackTimeStore::targets(
+    const QString& networkId) const
+{
+    QVector<IrcPlaybackTargetTime> stamps;
+    const QVector<Entry> rows = entries(networkId);
+    stamps.reserve(rows.size());
+    for (const Entry& row : rows) {
+        stamps.append(IrcPlaybackTargetTime{
+            row.target,
+            QDateTime::fromMSecsSinceEpoch(row.epochMs, QTimeZone::utc()),
+        });
+    }
+    return stamps;
+}
+
+std::optional<QDateTime> IrcPlaybackTimeStore::noted(
+    const QString& networkId,
+    const QString& target,
+    const IrcCaseMapping& mapping) const
+{
+    if (networkId.isEmpty() || target.isEmpty())
+        return std::nullopt;
+    const QVector<Entry> rows = entries(networkId);
+    const int index = indexOfTarget(rows, target, mapping);
+    if (index < 0)
+        return std::nullopt;
+    return QDateTime::fromMSecsSinceEpoch(rows.at(index).epochMs, QTimeZone::utc());
+}
+
 bool IrcPlaybackTimeStore::note(const QString& networkId,
                                 const QString& target,
                                 const QDateTime& when,

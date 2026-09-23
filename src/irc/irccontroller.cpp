@@ -481,6 +481,8 @@ IrcSession *IrcController::addSession(const IrcSessionConfig& config,
         if (m_autoawayTripped && m_autoaway.enabled)
             markSessionAutoAway(session);
         m_openDirectsMotdSeen.remove(networkId);
+        m_zncAutojoin.insert(networkId, session->autojoinChannels());
+        m_zncJoinedChannels.remove(networkId);
         applyProfileAvatarOnConnect(session);
         updateStatus(session);
     });
@@ -496,6 +498,8 @@ IrcSession *IrcController::addSession(const IrcSessionConfig& config,
             forgetChannelList(session->networkId());
             m_appliedProfileAvatars.remove(session->networkId());
             m_zncPlaybackSent.remove(session->networkId());
+            m_zncAutojoin.remove(session->networkId());
+            m_zncJoinedChannels.remove(session->networkId());
         }
         updateStatus(session);
     });
@@ -4147,21 +4151,30 @@ void IrcController::apply(const IrcEvent& event)
                 .caseMapping()
                 .equals(utf8(message->author),
                         utf8(m_currentNicks.value(message->conversation.networkId)))) {
-            rememberOpenDirect(message->conversation.networkId, message->target);
+            const IrcConversationState *existing =
+                m_reducer.find(message->conversation);
+            if (existing && !existing->isChannel())
+                rememberOpenDirect(message->conversation.networkId, message->target);
         }
     } else if (const auto *notice = std::get_if<IrcNoticeEvent>(&event)) {
         if (m_reducer.serverFeatures(notice->conversation.networkId)
                 .caseMapping()
                 .equals(utf8(notice->author),
                         utf8(m_currentNicks.value(notice->conversation.networkId)))) {
-            rememberOpenDirect(notice->conversation.networkId, notice->target);
+            const IrcConversationState *existing =
+                m_reducer.find(notice->conversation);
+            if (existing && !existing->isChannel())
+                rememberOpenDirect(notice->conversation.networkId, notice->target);
         }
     } else if (const auto *action = std::get_if<IrcActionEvent>(&event)) {
         if (m_reducer.serverFeatures(action->conversation.networkId)
                 .caseMapping()
                 .equals(utf8(action->author),
                         utf8(m_currentNicks.value(action->conversation.networkId)))) {
-            rememberOpenDirect(action->conversation.networkId, action->target);
+            const IrcConversationState *existing =
+                m_reducer.find(action->conversation);
+            if (existing && !existing->isChannel())
+                rememberOpenDirect(action->conversation.networkId, action->target);
         }
     }
     if (selfAwayOnly) {
@@ -4331,6 +4344,8 @@ void IrcController::handleMessage(const QString& networkId,
                                           utf8(pending->channel)))
                             selectConversation(join->networkId, join->channel);
                     }
+                    noteZncJoinedChannel(join->networkId, join->channel);
+                    requestZncChannelPlayback(session, join->channel);
                 }
             }
         }
@@ -4403,13 +4418,30 @@ void IrcController::notePlaybackClock(const QString& networkId, const IrcMessage
         return;
     }
     // A self echo whose query or channel does not exist yet is InboundSelf,
-    // so the reducer drops it. PLAY is exclusive and uses the newest stamp,
-    // so noting that line would skip bouncer history that was never kept.
+    // so the reducer drops it. Each target's PLAY bound is exclusive, so
+    // noting that line would skip bouncer history that was never kept.
     // An admitted line, or one that matches an existing row, may still move
     // the clock.
     if (self && !m_reducer.find(m_reducer.conversationKey(networkId, displayTarget)))
         return;
     m_playbackTimes.note(networkId, displayTarget, *when, features.caseMapping());
+}
+
+bool IrcController::sendZncPlayback(IrcSession *session,
+                                    const QString& target,
+                                    const QString& from)
+{
+    const QString body = QStringLiteral("*playback PLAY %1 %2").arg(target, from);
+    return session->sendPrivmsg(QStringLiteral("*status"), body);
+}
+
+bool IrcController::zncPlaybackCovers(const QString& networkId,
+                                      const QString& normalizedTarget) const
+{
+    const auto found = m_zncPlaybackSent.constFind(networkId);
+    if (found == m_zncPlaybackSent.cend())
+        return false;
+    return found.value().all || found.value().targets.contains(normalizedTarget);
 }
 
 void IrcController::requestZncPlayback(IrcSession *session)
@@ -4421,15 +4453,102 @@ void IrcController::requestZncPlayback(IrcSession *session)
     // that can skip self-only lines whose direct does not exist yet.
     if (!m_openDirectsMotdSeen.contains(networkId))
         return;
-    if (m_zncPlaybackSent.contains(networkId))
+    if (!m_capabilities.value(networkId).contains(IrcCapability::ZncPlayback))
+        return;
+    const auto sent = m_zncPlaybackSent.constFind(networkId);
+    if (sent != m_zncPlaybackSent.cend() && sent.value().all)
+        return;
+
+    const IrcServerFeatures& features = m_reducer.serverFeatures(networkId);
+    const IrcCaseMapping& mapping = features.caseMapping();
+    const QVector<IrcPlaybackTargetTime> stored = m_playbackTimes.targets(networkId);
+
+    // Snapshot from registration, before this connection's JOIN echoes. A
+    // channel joined before the MOTD is not autojoin for this request.
+    QStringList unstampedAutojoin;
+    for (const QString& channel : m_zncAutojoin.value(networkId)) {
+        if (channel.isEmpty() || !features.isChannel(utf8(channel)))
+            continue;
+        if (m_playbackTimes.noted(networkId, channel, mapping))
+            continue;
+        unstampedAutojoin.append(channel);
+    }
+
+    if (stored.isEmpty() && unstampedAutojoin.isEmpty()) {
+        const bool alreadySpecific =
+            sent != m_zncPlaybackSent.cend() && !sent.value().targets.isEmpty();
+        if (!alreadySpecific) {
+            if (!sendZncPlayback(session, QStringLiteral("*"), QStringLiteral("0")))
+                return;
+            m_zncPlaybackSent[networkId].all = true;
+        }
+    } else {
+        for (const IrcPlaybackTargetTime& row : stored) {
+            const QString normalized =
+                m_reducer.conversationKey(networkId, row.target).normalizedTarget;
+            if (zncPlaybackCovers(networkId, normalized))
+                continue;
+            if (!sendZncPlayback(session, row.target, ircPlaybackPlayStamp(row.when)))
+                return;
+            m_zncPlaybackSent[networkId].targets.insert(normalized);
+        }
+        for (const QString& channel : unstampedAutojoin) {
+            const QString normalized =
+                m_reducer.conversationKey(networkId, channel).normalizedTarget;
+            if (zncPlaybackCovers(networkId, normalized))
+                continue;
+            if (!sendZncPlayback(session, channel, QStringLiteral("0")))
+                return;
+            m_zncPlaybackSent[networkId].targets.insert(normalized);
+        }
+    }
+    // A channel joined before this request was not part of it. PLAY * 0
+    // already covers every target; a stored stamp was requested above.
+    const QStringList joined = m_zncJoinedChannels.value(networkId);
+    for (const QString& channel : joined)
+        requestZncChannelPlayback(session, channel);
+}
+
+void IrcController::noteZncJoinedChannel(const QString& networkId,
+                                          const QString& channel)
+{
+    if (networkId.isEmpty() || channel.isEmpty())
+        return;
+    const IrcCaseMapping& mapping =
+        m_reducer.serverFeatures(networkId).caseMapping();
+    QStringList& channels = m_zncJoinedChannels[networkId];
+    for (const QString& existing : channels) {
+        if (mapping.equals(utf8(existing), utf8(channel)))
+            return;
+    }
+    channels.append(channel);
+}
+
+void IrcController::requestZncChannelPlayback(IrcSession *session,
+                                              const QString& channel)
+{
+    if (!session || channel.isEmpty()
+        || session->state() != IrcSession::State::Registered) {
+        return;
+    }
+    const QString networkId = session->networkId();
+    if (!m_openDirectsMotdSeen.contains(networkId))
         return;
     if (!m_capabilities.value(networkId).contains(IrcCapability::ZncPlayback))
         return;
-    const QString from = ircPlaybackPlayStamp(m_playbackTimes.newest(networkId));
-    const QString body = QStringLiteral("*playback PLAY * ") + from;
-    if (!session->sendPrivmsg(QStringLiteral("*status"), body))
+    const IrcServerFeatures& features = m_reducer.serverFeatures(networkId);
+    if (!features.isChannel(utf8(channel)))
         return;
-    m_zncPlaybackSent.insert(networkId);
+    // Connect-time PLAY already asked for a target that has a stamp.
+    if (m_playbackTimes.noted(networkId, channel, features.caseMapping()))
+        return;
+    const QString normalized =
+        m_reducer.conversationKey(networkId, channel).normalizedTarget;
+    if (zncPlaybackCovers(networkId, normalized))
+        return;
+    if (!sendZncPlayback(session, channel, QStringLiteral("0")))
+        return;
+    m_zncPlaybackSent[networkId].targets.insert(normalized);
 }
 
 void IrcController::reloadModels()

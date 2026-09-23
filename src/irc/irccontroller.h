@@ -305,6 +305,13 @@ private:
     void notePlaybackClock(const QString& networkId, const IrcMessage& message);
     void noteKeptReplay();
     void requestZncPlayback(IrcSession *session);
+    void requestZncChannelPlayback(IrcSession *session, const QString& channel);
+    void noteZncJoinedChannel(const QString& networkId, const QString& channel);
+    bool sendZncPlayback(IrcSession *session,
+                         const QString& target,
+                         const QString& from);
+    bool zncPlaybackCovers(const QString& networkId,
+                           const QString& normalizedTarget) const;
     void reloadModels();
     IrcCommandOutcome dispatch(const IrcCommand& command,
                                IrcComposerSurface surface);
@@ -523,7 +530,15 @@ private:
     IrcMuteStore m_mutes;
     IrcOpenDirectStore m_openDirects;
     IrcPlaybackTimeStore m_playbackTimes;
-    QSet<QString> m_zncPlaybackSent;
+    // Targets already requested with PLAY this connection. `all` is
+    // `PLAY * 0`, which covers every target. A per-target PLAY does not.
+    struct ZncPlaybackSent {
+        bool all = false;
+        QSet<QString> targets;
+    };
+    QHash<QString, ZncPlaybackSent> m_zncPlaybackSent;
+    QHash<QString, QStringList> m_zncAutojoin;
+    QHash<QString, QStringList> m_zncJoinedChannels;
     IrcHighlightStore m_highlights;
     IrcInbox m_inbox;
     IrcInboxModel m_inboxModel;

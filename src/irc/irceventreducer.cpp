@@ -1332,6 +1332,21 @@ void IrcEventReducer::reduce(const IrcTypingEvent& event)
     conversation->typing.insert_or_assign(normalizedNick, *hint);
 }
 
+void IrcEventReducer::holdPendingPlayback(const IrcHistoryEvent& event)
+{
+    const auto found = m_pendingPlayback.find(event.conversation);
+    if (found == m_pendingPlayback.end()) {
+        if (event.lines.empty())
+            return;
+        m_pendingPlayback.emplace(event.conversation, event);
+        return;
+    }
+    if (event.lines.empty())
+        return;
+    auto& held = found->second.lines;
+    held.insert(held.end(), event.lines.begin(), event.lines.end());
+}
+
 void IrcEventReducer::dropPendingPlayback(const QString& networkId)
 {
     if (networkId.isEmpty())
@@ -1508,10 +1523,12 @@ void IrcEventReducer::reduce(const IrcHistoryEvent& event)
     const bool channelTarget = serverFeatures(event.conversation.networkId)
         .isChannel(utf8(event.conversation.normalizedTarget));
     IrcConversationState *conversation = findMutable(event.conversation);
-    // ZNC answers PLAY before JOIN. Hold one batch until this connection's
-    // self-join, and hold a parted channel for the next one. Once joined,
-    // splice in this call: above the anchor when it is still there, and at
-    // the tail when CHATHISTORY, /clear, or the cap already removed it.
+    // ZNC answers PLAY before JOIN. Hold every batch until this connection's
+    // self-join, appending a later one onto lines already waiting. An empty
+    // batch must not replace those lines. A parted channel stays held for
+    // the next join. Once joined, splice in this call: above the anchor when
+    // it is still there, and at the tail when CHATHISTORY, /clear, or the
+    // cap already removed it.
     // Waiting for another join lets the next welcome drop the batch. A
     // never-joined buffer must not open a channel. CHATHISTORY before an
     // anchor still drops.
@@ -1519,7 +1536,7 @@ void IrcEventReducer::reduce(const IrcHistoryEvent& event)
         const IrcChannelState *channel =
             conversation ? conversation->channel() : nullptr;
         if (!channel || !channel->joined) {
-            m_pendingPlayback.insert_or_assign(event.conversation, event);
+            holdPendingPlayback(event);
             return;
         }
         spliceHistory(*conversation, event, HistoryAnchorUse::Keep);
@@ -1538,7 +1555,7 @@ void IrcEventReducer::reduce(const IrcHistoryEvent& event)
         if (!replayFromPeer(event)) {
             if (event.kind == IrcHistoryKind::BouncerPlayback
                 && m_queryRestorePending.count(event.conversation.networkId)) {
-                m_pendingPlayback.insert_or_assign(event.conversation, event);
+                holdPendingPlayback(event);
             }
             return;
         }

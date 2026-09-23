@@ -328,6 +328,7 @@ private:
     void spliceHistory(IrcConversationState& conversation,
                        const IrcHistoryEvent& event,
                        HistoryAnchorUse anchorUse);
+    void holdPendingPlayback(const IrcHistoryEvent& event);
     void releasePendingPlayback(IrcConversationState& conversation);
     void dropPendingPlayback(const QString& networkId);
 

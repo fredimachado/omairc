@@ -422,6 +422,11 @@ QString IrcSession::networkId() const
     return m_config.networkId;
 }
 
+QStringList IrcSession::autojoinChannels() const
+{
+    return m_autojoinChannels;
+}
+
 QString IrcSession::name() const
 {
     return IrcNetworkProfile::resolvedName(m_config.name, m_config.host);

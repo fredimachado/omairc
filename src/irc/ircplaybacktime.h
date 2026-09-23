@@ -9,12 +9,23 @@
 
 #include <optional>
 
-// Newest parseable server-time per target, per network. PLAY's wire stamp is
-// derived from newest(); the stored value stays a UTC millisecond instant.
+// Newest parseable server-time per target, per network. PLAY asks for each
+// target from its own stamp; newest() is the latest among them. The stored
+// value stays a UTC millisecond instant.
+struct IrcPlaybackTargetTime
+{
+    QString target;
+    QDateTime when;
+};
+
 class IrcPlaybackTimeStore
 {
 public:
     std::optional<QDateTime> newest(const QString& networkId) const;
+    QVector<IrcPlaybackTargetTime> targets(const QString& networkId) const;
+    std::optional<QDateTime> noted(const QString& networkId,
+                                   const QString& target,
+                                   const IrcCaseMapping& mapping) const;
     bool note(const QString& networkId,
               const QString& target,
               const QDateTime& when,
