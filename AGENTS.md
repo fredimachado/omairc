@@ -44,6 +44,17 @@
   conversation creation, or `/msg`, and `.cursor/skills/redact-secrets`
   when touching Status lines, error previews, or `src/irc/ircsecretpolicy.cpp`.
 
+`.cursor/skills/verify-omairc/features/*.md` is the map of how a user
+reaches a behavior: shortcuts, preconditions, and observables.
+`control-omairc` already drives that map against the isolated window.
+Proof of the GUI stays that window: title, screenshots, and chords. Do
+not compile the map into the binary, the product CLI, or a C++ catalog.
+Do not add `objectName` queries or a debug command so an agent can read
+the map from a running window. The product CLI is the existing `omairc`
+commands that control a user's running window: `connections`, `status`,
+`send`, `read`, `names`, and `raise`. It is not a test harness. Do not
+add a command that dumps the map. `bin/test` stays the offscreen gate.
+
 ## QML extraction / window growth
 
 Do not keep adding code to `src/OmaircWindow.qml`. New UI goes outside it.
