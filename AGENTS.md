@@ -66,9 +66,10 @@ Do not keep adding code to `src/OmaircWindow.qml`. New UI goes outside it.
 - Extract by coupling, not line count. Keep `objectName`s so recursive
   `findChild` still works. File-based types stay QObject children of the same
   parent.
-- Message and console delegates currently still live in the window (they call
-  `win.plainIrcText` / `win.emphasizedIrcText` / `PlainUrlHit`). That is
-  leftover, not a license to grow more delegate trees there. A third delegate
+- Message and console delegates live in `src/qml/` (`MessageRow.qml`,
+  `ConsoleLine.qml`). The window passes `style: win.style`, formatter
+  callbacks (`plainIrcText`, `emphasizedIrcText`, `hasIrcEmphasis`), and
+  row helpers. Those formatter names stay on the window. A third delegate
   tree in the window is gated by `bin/check-conventions`. New transcript
   chrome (headers, avatars, hits) already lives in `src/qml/`. Do not add
   new leaf visuals inline.

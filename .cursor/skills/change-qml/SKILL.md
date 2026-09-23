@@ -15,4 +15,4 @@ Keep `objectName`s. File-based types stay children of the same parent so `findCh
 
 Colors come from `backend.themeBackground`, `themeForeground`, `themeAccent`, and `themeSelection`, mixed through `OmaircStyle` (`mixColors` / `style`). Scale with `style.scaledSize` / `backend.textScale`.
 
-Message and console delegates still live in `src/OmaircWindow.qml` because they call `win.plainIrcText`, `win.emphasizedIrcText`, and `PlainUrlHit`. That is leftover, not a pattern to copy. New transcript chrome goes in `src/qml/`. Headers, avatars, and hits already live there: `MessageHeader.qml`, `MessageAvatar.qml`, `TranscriptNickHit.qml`.
+Message and console delegates live in `src/qml/`. The window passes style, formatter callbacks (`plainIrcText`, `emphasizedIrcText`, `hasIrcEmphasis`), and row helpers. Those formatter names stay on the window. A third delegate tree in the window is gated by `bin/check-conventions`. Headers, avatars, and hits already live there: `MessageHeader.qml`, `MessageAvatar.qml`, `TranscriptNickHit.qml`.
