@@ -131,6 +131,7 @@ private slots:
     void nickMergeAdoptsOrKeepsUnreadMark();
     void msgidDedupSkipsLiveThenReplay();
     void msgidDedupSkipsReplayThenLive();
+    void replayDistinctMsgidsWithIdenticalContentRetained();
     void nickMergeDropsDuplicateMsgids();
     void partThenJoinSplicesAboveThisJoin();
     void historicJoinInBatchDoesNotChangePeopleCount();
@@ -147,6 +148,7 @@ private slots:
     void playbackBatchKeptTracksSpliceAndDedup();
     void cappedPlaybackSpliceNotesOnlySurvivingLines();
     void channelPlaybackPreviousNickStaysMutedBacklog();
+    void channelPlaybackCasemappingRememberedSelfNick();
     void queryReplayAppendsAtTailOfExistingDirectMessage();
     void channelReplayWithoutConversationCreatesNothing();
     void nickCollisionMergesMessageIds();
@@ -1968,6 +1970,122 @@ void ReducerTest::msgidDedupSkipsReplayThenLive()
     QCOMPARE(conversation->messages[1].body, QStringLiteral("omairc joined"));
 }
 
+void ReducerTest::replayDistinctMsgidsWithIdenticalContentRetained()
+{
+    const auto history = [&](const IrcConversationKey& room,
+                             std::vector<IrcReplayLine> lines,
+                             IrcHistoryKind kind = IrcHistoryKind::BouncerPlayback) {
+        return IrcHistoryEvent{
+            room,
+            QStringLiteral("#omarchy"),
+            std::move(lines),
+            kind,
+        };
+    };
+
+    {
+        IrcEventReducer reducer;
+        welcome(reducer, networkA);
+        const IrcConversationKey room =
+            reducer.conversationKey(networkA, QStringLiteral("#omarchy"));
+        reducer.apply(IrcJoinEvent{
+            networkA, QStringLiteral("#omarchy"), QStringLiteral("omairc")});
+        reducer.apply(history(room, {
+            replayLine(QStringLiteral("alice"), QStringLiteral("same"),
+                       QStringLiteral("message-a")),
+            replayLine(QStringLiteral("alice"), QStringLiteral("same"),
+                       QStringLiteral("message-b")),
+        }));
+        const IrcConversationState *conversation = reducer.find(room);
+        QVERIFY(conversation);
+        QCOMPARE(conversation->messages.size(), std::size_t(3));
+        QCOMPARE(conversation->messages[1].msgid.value, QStringLiteral("message-a"));
+        QCOMPARE(conversation->messages[2].msgid.value, QStringLiteral("message-b"));
+    }
+
+    {
+        IrcEventReducer reducer;
+        welcome(reducer, networkA);
+        const IrcConversationKey room =
+            reducer.conversationKey(networkA, QStringLiteral("#omarchy"));
+        reducer.apply(IrcJoinEvent{
+            networkA, QStringLiteral("#omarchy"), QStringLiteral("omairc")});
+        reducer.apply(IrcMessageEvent{
+            room, QStringLiteral("alice"), QStringLiteral("same"), timestamp,
+            QStringLiteral("#omarchy"), IrcMsgId{QStringLiteral("message-a")}});
+        reducer.apply(history(room, {
+            replayLine(QStringLiteral("alice"), QStringLiteral("same"),
+                       QStringLiteral("message-b")),
+        }));
+        const IrcConversationState *conversation = reducer.find(room);
+        QVERIFY(conversation);
+        QCOMPARE(conversation->messages.size(), std::size_t(3));
+        QCOMPARE(conversation->messages[1].msgid.value, QStringLiteral("message-a"));
+        QCOMPARE(conversation->messages[2].msgid.value, QStringLiteral("message-b"));
+    }
+
+    {
+        IrcEventReducer reducer;
+        welcome(reducer, networkA);
+        const IrcConversationKey room =
+            reducer.conversationKey(networkA, QStringLiteral("#omarchy"));
+        reducer.apply(IrcJoinEvent{
+            networkA, QStringLiteral("#omarchy"), QStringLiteral("omairc")});
+        reducer.apply(history(room, {
+            replayLine(QStringLiteral("alice"), QStringLiteral("same"),
+                       QStringLiteral("same-id")),
+        }));
+        reducer.apply(history(room, {
+            replayLine(QStringLiteral("alice"), QStringLiteral("same"),
+                       QStringLiteral("same-id")),
+        }));
+        const IrcConversationState *conversation = reducer.find(room);
+        QVERIFY(conversation);
+        QCOMPARE(conversation->messages.size(), std::size_t(2));
+        QCOMPARE(conversation->messages[1].msgid.value, QStringLiteral("same-id"));
+    }
+
+    {
+        IrcEventReducer reducer;
+        welcome(reducer, networkA);
+        const IrcConversationKey room =
+            reducer.conversationKey(networkA, QStringLiteral("#omarchy"));
+        reducer.apply(IrcJoinEvent{
+            networkA, QStringLiteral("#omarchy"), QStringLiteral("omairc")});
+        reducer.apply(IrcMessageEvent{
+            room, QStringLiteral("alice"), QStringLiteral("same"), timestamp,
+            QStringLiteral("#omarchy")});
+        reducer.apply(history(room, {
+            replayLine(QStringLiteral("alice"), QStringLiteral("same")),
+        }));
+        const IrcConversationState *conversation = reducer.find(room);
+        QVERIFY(conversation);
+        QCOMPARE(conversation->messages.size(), std::size_t(2));
+        QCOMPARE(conversation->messages[1].body, QStringLiteral("same"));
+        QCOMPARE(conversation->messages[1].origin, IrcOrigin::Live);
+    }
+
+    {
+        IrcEventReducer reducer;
+        welcome(reducer, networkA);
+        const IrcConversationKey room =
+            reducer.conversationKey(networkA, QStringLiteral("#omarchy"));
+        reducer.apply(IrcJoinEvent{
+            networkA, QStringLiteral("#omarchy"), QStringLiteral("omairc")});
+        reducer.apply(history(room, {
+            replayLine(QStringLiteral("alice"), QStringLiteral("same"),
+                       QStringLiteral("history-a")),
+            replayLine(QStringLiteral("alice"), QStringLiteral("same"),
+                       QStringLiteral("history-b")),
+        }, IrcHistoryKind::ChatHistory));
+        const IrcConversationState *conversation = reducer.find(room);
+        QVERIFY(conversation);
+        QCOMPARE(conversation->messages.size(), std::size_t(3));
+        QCOMPARE(conversation->messages[1].msgid.value, QStringLiteral("history-a"));
+        QCOMPARE(conversation->messages[2].msgid.value, QStringLiteral("history-b"));
+    }
+}
+
 void ReducerTest::nickMergeDropsDuplicateMsgids()
 {
     IrcEventReducer reducer;
@@ -2475,6 +2593,85 @@ void ReducerTest::channelPlaybackPreviousNickStaysMutedBacklog()
         QCOMPARE(*conversation->unreadMark, conversation->messages[1].sequence);
         QCOMPARE(conversation->messages[0].author, QStringLiteral("oldnick"));
         QCOMPARE(conversation->messages[1].author, QStringLiteral("lena"));
+    }
+}
+
+void ReducerTest::channelPlaybackCasemappingRememberedSelfNick()
+{
+    const QDateTime when = QDateTime::fromString(
+        QStringLiteral("2024-03-09T16:00:00.620Z"), Qt::ISODateWithMs);
+    QVERIFY(when.isValid());
+    const auto line = [&](const QString& author, const QString& body) {
+        IrcReplayLine replay = replayLine(author, body);
+        replay.timestamp = when;
+        replay.serverTime = when;
+        return replay;
+    };
+    const auto playback = [&](IrcEventReducer& reducer,
+                              const IrcConversationKey& room,
+                              std::vector<IrcReplayLine> lines) {
+        reducer.apply(IrcHistoryEvent{
+            room,
+            QStringLiteral("#omarchy"),
+            std::move(lines),
+            IrcHistoryKind::BouncerPlayback,
+        });
+    };
+
+    {
+        IrcEventReducer reducer;
+        welcome(reducer, networkA, QStringLiteral("nick["));
+        IrcServerFeatures features;
+        features.applyTokens({std::string("CASEMAPPING=ascii")});
+        reducer.setServerFeatures(networkA, features);
+        reducer.apply(IrcWelcomeEvent{networkA, QStringLiteral("omairc")});
+        reducer.apply(IrcJoinEvent{
+            networkA, QStringLiteral("#omarchy"), QStringLiteral("omairc")});
+        const IrcConversationKey room =
+            reducer.conversationKey(networkA, QStringLiteral("#omarchy"));
+        playback(reducer, room, {
+            line(QStringLiteral("nick["), QStringLiteral("omairc: mine")),
+            line(QStringLiteral("nick{"), QStringLiteral("omairc: ping")),
+        });
+        const IrcConversationState *conversation = reducer.find(room);
+        QVERIFY(conversation);
+        QCOMPARE(conversation->unread, 1);
+        QCOMPARE(conversation->mentions, 1);
+        QVERIFY(conversation->unreadMark.has_value());
+        QCOMPARE(conversation->messages[0].author, QStringLiteral("nick["));
+        QCOMPARE(conversation->messages[1].author, QStringLiteral("nick{"));
+
+        reducer.apply(IrcMessageEvent{
+            room, QStringLiteral("nick["), QStringLiteral("omairc: live"),
+            timestamp, QStringLiteral("#omarchy")});
+        QCOMPARE(conversation->unread, 2);
+        QCOMPARE(conversation->mentions, 2);
+        const std::optional<IrcMentionArrival> live = reducer.takeMentionArrival();
+        QVERIFY(live.has_value());
+        QCOMPARE(live->author, QStringLiteral("nick["));
+    }
+
+    {
+        IrcEventReducer reducer;
+        welcome(reducer, networkA, QStringLiteral("nick^"));
+        IrcServerFeatures features;
+        features.applyTokens({std::string("CASEMAPPING=strict-rfc1459")});
+        reducer.setServerFeatures(networkA, features);
+        reducer.apply(IrcWelcomeEvent{networkA, QStringLiteral("omairc")});
+        reducer.apply(IrcJoinEvent{
+            networkA, QStringLiteral("#omarchy"), QStringLiteral("omairc")});
+        const IrcConversationKey room =
+            reducer.conversationKey(networkA, QStringLiteral("#omarchy"));
+        playback(reducer, room, {
+            line(QStringLiteral("nick~"), QStringLiteral("omairc: mine")),
+            line(QStringLiteral("nick`"), QStringLiteral("omairc: ping")),
+        });
+        const IrcConversationState *conversation = reducer.find(room);
+        QVERIFY(conversation);
+        QCOMPARE(conversation->unread, 1);
+        QCOMPARE(conversation->mentions, 1);
+        QCOMPARE(conversation->messages[0].author, QStringLiteral("nick~"));
+        QCOMPARE(conversation->messages[1].author, QStringLiteral("nick`"));
     }
 }
 

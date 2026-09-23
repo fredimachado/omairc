@@ -541,14 +541,19 @@ private:
     // first PLAY for each target reads this. Later live lines update
     // m_playbackTimes for the next attach and do not rewrite it.
     QHash<QString, QVector<IrcPlaybackTargetTime>> m_playbackSnapshot;
-    // PLAY lines already written this connection. `all` is `PLAY * 0`,
-    // which opens the clock for every target. `targets` is each per-target
-    // PLAY, including a channel PLAY, so lines after that request may move
-    // the clock. A channel PLAY still does not stop a self-JOIN retry: the
-    // module drops a channel that is not on, and the retry stops only once
-    // a playback batch was kept.
+    // PLAY lines already written this connection. `all` is `PLAY * 0` on a
+    // first attach with no saved stamps, which opens the clock for every
+    // target. `queries` is `PLAY * 0` after per-target requests on later
+    // attaches, which discovers offline query buffers. `targets` is each
+    // per-target PLAY, including a channel PLAY, so lines after that request
+    // may move the clock. A channel PLAY still does not stop a self-JOIN
+    // retry: the module drops a channel that is not on, and the retry stops
+    // only once a playback batch was kept.
     struct ZncPlaybackSent {
         bool all = false;
+        // PLAY * 0 after per-target requests discovers query buffers that
+        // appeared on ZNC while Omairc was offline.
+        bool queries = false;
         QSet<QString> targets;
     };
     QHash<QString, ZncPlaybackSent> m_zncPlaybackSent;

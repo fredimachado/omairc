@@ -4459,7 +4459,8 @@ bool IrcController::zncPlaybackCovers(const QString& networkId,
     const auto found = m_zncPlaybackSent.constFind(networkId);
     if (found == m_zncPlaybackSent.cend())
         return false;
-    return found.value().all || found.value().targets.contains(normalizedTarget);
+    return found.value().all || found.value().queries
+        || found.value().targets.contains(normalizedTarget);
 }
 
 std::optional<QDateTime> IrcController::playbackSnapshotTime(
@@ -4602,6 +4603,16 @@ void IrcController::requestZncPlayback(IrcSession *session)
             if (!sendZncPlayback(session, channel, QStringLiteral("0")))
                 return;
             m_zncPlaybackSent[networkId].targets.insert(normalized);
+        }
+        // Offline query buffers are absent from the snapshot, restored
+        // directs, and autojoin. With znc.in/playback enabled the module
+        // suppresses automatic delivery, so PLAY * 0 discovers them.
+        // Known targets already got per-target PLAY with their resume
+        // bounds; duplicate channel lines dedupe.
+        if (!m_zncPlaybackSent[networkId].queries) {
+            if (!sendZncPlayback(session, QStringLiteral("*"), QStringLiteral("0")))
+                return;
+            m_zncPlaybackSent[networkId].queries = true;
         }
     }
     // A channel joined before this request still needs its own PLAY when

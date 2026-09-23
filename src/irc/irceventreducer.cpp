@@ -1404,10 +1404,9 @@ bool IrcEventReducer::bouncerQueryOwnLine(const IrcHistoryEvent& event,
 void IrcEventReducer::rememberSelfNick(const QString& networkId,
                                        const QString& nick)
 {
-    const QString normalized = normalize(networkId, nick);
-    if (networkId.isEmpty() || normalized.isEmpty())
+    if (networkId.isEmpty() || nick.isEmpty())
         return;
-    m_selfNicks[networkId].insert(normalized);
+    m_selfNicks[networkId].insert(nick);
 }
 
 bool IrcEventReducer::bouncerChannelOwnLine(const IrcHistoryEvent& event,
@@ -1422,7 +1421,13 @@ bool IrcEventReducer::bouncerChannelOwnLine(const IrcHistoryEvent& event,
     const auto found = m_selfNicks.find(event.conversation.networkId);
     if (found == m_selfNicks.end())
         return false;
-    return found->second.count(normalize(event.conversation.networkId, author)) != 0;
+    const IrcCaseMapping& mapping =
+        serverFeatures(event.conversation.networkId).caseMapping();
+    for (const QString& selfNick : found->second) {
+        if (mapping.equals(utf8(selfNick), utf8(author)))
+            return true;
+    }
+    return false;
 }
 
 bool IrcEventReducer::replayFromPeer(const IrcHistoryEvent& event) const
@@ -1552,6 +1557,10 @@ void IrcEventReducer::spliceHistory(IrcConversationState& conversation,
             : IrcMessageKind::Message;
         if (const std::optional<qint64> sequence = matchedSequence(
                 [&](const IrcReducedMessage& message) {
+                    if (!line.msgid.isEmpty() && !message.msgid.isEmpty()
+                        && !(message.msgid == line.msgid)) {
+                        return false;
+                    }
                     return sameReplayLine(message, line, kind);
                 })) {
             queueNote(*sequence);
