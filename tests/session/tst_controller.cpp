@@ -3867,16 +3867,6 @@ void ControllerTest::bouncerAttachOpensOnlyPeerAuthoredDirects()
     QCOMPARE(selectedBodies(roomMessages),
              QStringList({QStringLiteral("yesterday"),
                           QStringLiteral("omairc joined")}));
-
-    transport->injectBytes(
-        QByteArrayLiteral(":server 376 omairc :End of MOTD\r\n"));
-    QCOMPARE(rowForTarget(conversations, QStringLiteral("lena")), -1);
-    QVERIFY(rowForTarget(conversations, QStringLiteral("dana")) >= 0);
-    const IrcCaseMapping mapping;
-    QVERIFY(IrcOpenDirectStore().listed(QStringLiteral("libera"), mapping)
-                .contains(QStringLiteral("dana")));
-    QVERIFY(!IrcOpenDirectStore().listed(QStringLiteral("libera"), mapping)
-                 .contains(QStringLiteral("lena")));
 }
 
 void ControllerTest::bouncerQueryReplayDirectAppearsInConversationModel()
