@@ -68,6 +68,7 @@ HEADERS += \
     ../../src/irc/messagelistmodel.h \
     ../../src/irc/memberlistmodel.h \
     ../../src/irc/channellistmodel.h \
+    ../../src/irc/ircchannellistrequest.h \
     ../../src/irc/irccontroller.h \
     ../../src/irc/ircnetworkprofile.h \
     ../../src/irc/qtirctransport.h \
@@ -129,6 +130,7 @@ SOURCES += \
     ../../src/irc/messagelistmodel.cpp \
     ../../src/irc/memberlistmodel.cpp \
     ../../src/irc/channellistmodel.cpp \
+    ../../src/irc/ircchannellistrequest.cpp \
     ../../src/irc/irccontroller.cpp \
     ../../src/irc/ircnetworkprofile.cpp \
     ../../src/irc/qtirctransport.cpp

@@ -7,6 +7,8 @@
 #include <vector>
 
 class QTemporaryDir;
+class QIODevice;
+class ReducerTest;
 
 struct IrcTranscriptLine
 {
@@ -37,6 +39,10 @@ public:
                                             int maxLines) const;
 
 private:
+    friend class ReducerTest;
+    static std::vector<IrcTranscriptLine> readTail(QIODevice *device,
+                                                   int maxLines);
+
     QString m_root;
     std::unique_ptr<QTemporaryDir> m_scratch;
 };

@@ -1,5 +1,6 @@
 #include <QTest>
 
+#include "conversationlistmodel.h"
 #include "ircconversationlog.h"
 #include "irceventreducer.h"
 #include "irceventtranslator.h"
@@ -8,6 +9,10 @@
 #include "ircsession.h"
 #include "ircviewnotify.h"
 
+#include <QBuffer>
+#include <QFile>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QTemporaryDir>
 
 #include <algorithm>
@@ -21,6 +26,36 @@ const QString networkA = QStringLiteral("network-a");
 const QString networkB = QStringLiteral("network-b");
 const QDateTime timestamp =
     QDateTime::fromString(QStringLiteral("2026-09-04T00:00:00Z"), Qt::ISODate);
+
+QByteArray transcriptRecord(const QString& body,
+                            const QString& author = QStringLiteral("alice"))
+{
+    return QJsonDocument(QJsonObject{
+        {QStringLiteral("timestamp"), QStringLiteral("2026-09-04T00:00:00.000Z")},
+        {QStringLiteral("author"), author},
+        {QStringLiteral("kind"), QStringLiteral("chat")},
+        {QStringLiteral("body"), body},
+    }).toJson(QJsonDocument::Compact);
+}
+
+class CountingBuffer : public QBuffer
+{
+public:
+    using QBuffer::QBuffer;
+    qint64 bytesRead = 0;
+    int reads = 0;
+
+protected:
+    qint64 readData(char *data, qint64 maxSize) override
+    {
+        const qint64 result = QBuffer::readData(data, maxSize);
+        if (result > 0) {
+            bytesRead += result;
+            ++reads;
+        }
+        return result;
+    }
+};
 
 void welcome(IrcEventReducer& reducer,
              const QString& network,
@@ -91,6 +126,7 @@ private slots:
     void identicalChannelsStayIsolated();
     void advertisedChannelTypesCreateChannels();
     void unreadMentionsRespectSelection();
+    void conversationModelProjectionDoesNotOwnSelection();
     void windowInactiveMarksSelectedChatUnread();
     void markReadConsumesUnreadButKeepsMark();
     void mentionArrivalSurvivesSelection();
@@ -159,6 +195,9 @@ private slots:
     void accountCommandAndTagShareOneField();
     void nickChangeKeepsServicesAccount();
     void accountChangeRefreshesMemberRowAndTranscript();
+    void conversationLogTailFiltersAndOrdersAcceptedRecords();
+    void conversationLogTailHandlesBoundariesAndEdgeCases();
+    void conversationLogTailStopsBeforeHistoricalPrefix();
 };
 
 void ReducerTest::namesFillAndCompleteWithoutDuplicates()
@@ -414,6 +453,30 @@ void ReducerTest::unreadMentionsRespectSelection()
     reducer.markSelected(background);
     QCOMPARE(backgroundState->unread, 0);
     QCOMPARE(backgroundState->mentions, 0);
+}
+
+void ReducerTest::conversationModelProjectionDoesNotOwnSelection()
+{
+    IrcEventReducer reducer;
+    welcome(reducer, networkA);
+    const IrcConversationKey key =
+        reducer.conversationKey(networkA, QStringLiteral("#room"));
+    reducer.apply(IrcMessageEvent{
+        key,
+        QStringLiteral("Alice"),
+        QStringLiteral("unread"),
+        timestamp,
+        QStringLiteral("#room"),
+    });
+    QCOMPARE(reducer.find(key)->unread, 1);
+    QVERIFY(!reducer.selected().has_value());
+
+    ConversationListModel model(reducer);
+    model.select(key);
+
+    QCOMPARE(model.rowCount(), 1);
+    QCOMPARE(reducer.find(key)->unread, 1);
+    QVERIFY(!reducer.selected().has_value());
 }
 
 void ReducerTest::windowInactiveMarksSelectedChatUnread()
@@ -3430,6 +3493,105 @@ void ReducerTest::accountChangeRefreshesMemberRowAndTranscript()
     QCOMPARE(notify.nick, QStringLiteral("alice"));
     QVERIFY(notify.messages);
     QVERIFY(!notify.conversations);
+}
+
+void ReducerTest::conversationLogTailFiltersAndOrdersAcceptedRecords()
+{
+    QByteArray content;
+    content += transcriptRecord(QStringLiteral("one")) + '\n';
+    content += transcriptRecord(QStringLiteral("two")) + '\n';
+    content += QByteArrayLiteral("{not json}\n");
+    content += transcriptRecord(QStringLiteral("PRIVMSG NickServ :IDENTIFY swordfish")) + '\n';
+    content += transcriptRecord(QStringLiteral("three")) + '\n';
+    content += transcriptRecord(QStringLiteral("hidden author"),
+                                QStringLiteral("PASS hunter2")) + '\n';
+    content += transcriptRecord(QStringLiteral("four")) + '\n';
+    CountingBuffer device(&content);
+    QVERIFY(device.open(QIODevice::ReadOnly));
+
+    const auto lines = IrcConversationLog::readTail(&device, 3);
+    QCOMPARE(lines.size(), std::size_t(3));
+    QCOMPARE(lines[0].body, QStringLiteral("two"));
+    QCOMPARE(lines[1].body, QStringLiteral("three"));
+    QCOMPARE(lines[2].body, QStringLiteral("four"));
+}
+
+void ReducerTest::conversationLogTailHandlesBoundariesAndEdgeCases()
+{
+    QString body = QString::fromUtf8("🙂");
+    QByteArray record = transcriptRecord(body);
+    const qsizetype emoji = record.indexOf(QByteArray::fromHex("f09f9982"));
+    QVERIFY(emoji >= 0);
+    const qsizetype bytesAfterEmoji = record.size() - emoji - 4;
+    QVERIFY(bytesAfterEmoji < 4095);
+    body += QString(4095 - bytesAfterEmoji, QLatin1Char('x'));
+    record = transcriptRecord(body);
+    QCOMPARE(record.size() - 4096,
+             record.indexOf(QByteArray::fromHex("f09f9982")) + 3);
+
+    QByteArray content = transcriptRecord(QStringLiteral("older")) + '\n';
+    content += record; // Deliberately no final newline.
+    CountingBuffer device(&content);
+    QVERIFY(device.open(QIODevice::ReadOnly));
+    const auto lines = IrcConversationLog::readTail(&device, 2);
+    QCOMPARE(lines.size(), std::size_t(2));
+    QCOMPARE(lines[0].body, QStringLiteral("older"));
+    QCOMPARE(lines[1].body, body);
+
+    QByteArray empty;
+    CountingBuffer emptyDevice(&empty);
+    QVERIFY(emptyDevice.open(QIODevice::ReadOnly));
+    QVERIFY(IrcConversationLog::readTail(&emptyDevice, 4).empty());
+
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    IrcConversationLog populated(dir.path());
+    for (const QString &recordBody : {
+             QStringLiteral("first"),
+             QStringLiteral("second"),
+             QStringLiteral("third")}) {
+        QVERIFY(populated.append(networkA, QStringLiteral("#room"),
+                                 IrcTranscriptLine{
+                                     timestamp,
+                                     QStringLiteral("alice"),
+                                     QStringLiteral("chat"),
+                                     recordBody,
+                                     {}}));
+    }
+    QVERIFY(populated.readTail(networkA, QStringLiteral("#room"), 0).empty());
+    QVERIFY(populated.readTail(networkA, QStringLiteral("#room"), -1).empty());
+
+    QByteArray populatedContent = transcriptRecord(QStringLiteral("first")) + '\n';
+    populatedContent += transcriptRecord(QStringLiteral("second")) + '\n';
+    CountingBuffer nonpositiveDevice(&populatedContent);
+    QVERIFY(nonpositiveDevice.open(QIODevice::ReadOnly));
+    QVERIFY(IrcConversationLog::readTail(&nonpositiveDevice, 0).empty());
+    QVERIFY(IrcConversationLog::readTail(&nonpositiveDevice, -1).empty());
+    QCOMPARE(nonpositiveDevice.reads, 0);
+    QCOMPARE(nonpositiveDevice.bytesRead, qint64(0));
+
+    IrcConversationLog missing(dir.path());
+    QVERIFY(missing.readTail(networkA, QStringLiteral("missing"), 2).empty());
+}
+
+void ReducerTest::conversationLogTailStopsBeforeHistoricalPrefix()
+{
+    QByteArray content;
+    for (int index = 0; index < 20000; ++index) {
+        content += transcriptRecord(QStringLiteral("history-%1").arg(index));
+        content += '\n';
+    }
+    CountingBuffer device(&content);
+    QVERIFY(device.open(QIODevice::ReadOnly));
+
+    const auto lines = IrcConversationLog::readTail(&device, 3);
+    QCOMPARE(lines.size(), std::size_t(3));
+    QCOMPARE(lines[0].body, QStringLiteral("history-19997"));
+    QCOMPARE(lines[1].body, QStringLiteral("history-19998"));
+    QCOMPARE(lines[2].body, QStringLiteral("history-19999"));
+    QCOMPARE(device.reads, 1);
+    QCOMPARE(device.bytesRead, qint64(4096));
+    QVERIFY(device.bytesRead < content.size() / 100);
 }
 
 int runReducerTests(int argc, char **argv)

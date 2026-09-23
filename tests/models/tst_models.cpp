@@ -106,7 +106,7 @@ private slots:
     void membersOrderByRankThenNick();
     void membersFollowServerPrefixOrder();
     void identicalChannelsStayDistinct();
-    void selectingZerosUnread();
+    void selectingDoesNotMutateUnread();
     void membersEmptyForDirectMessage();
     void messageKinds();
     void conversationsOrderChannelsThenDirect();
@@ -545,7 +545,7 @@ void ModelTest::identicalChannelsStayDistinct()
              QStringLiteral("network-b\n#chan"));
 }
 
-void ModelTest::selectingZerosUnread()
+void ModelTest::selectingDoesNotMutateUnread()
 {
     IrcEventReducer reducer;
     ConversationListModel conversations(reducer);
@@ -566,8 +566,8 @@ void ModelTest::selectingZerosUnread()
 
     conversations.select(room);
     QCOMPARE(conversations.rowCount(), 1);
-    QCOMPARE(roleAt(conversations, 0, ConversationListModel::UnreadRole), 0);
-    QCOMPARE(roleAt(conversations, 0, ConversationListModel::MentionRole), false);
+    QCOMPARE(roleAt(conversations, 0, ConversationListModel::UnreadRole), 1);
+    QCOMPARE(roleAt(conversations, 0, ConversationListModel::MentionRole), true);
 }
 
 void ModelTest::membersEmptyForDirectMessage()
