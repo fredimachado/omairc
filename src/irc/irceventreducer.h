@@ -172,6 +172,14 @@ struct IrcKeptReplay
     QDateTime serverTime;
 };
 
+// A bouncer query whose splice kept a self-authored line. The controller
+// remembers that direct so the next cold start can restore it before PLAY.
+struct IrcRememberedQuery
+{
+    QString networkId;
+    QString target;
+};
+
 enum class IrcConversationCause {
     UserOpen,
     ChannelState,
@@ -229,6 +237,11 @@ public:
 
     void apply(const IrcEvent& event);
     std::vector<IrcKeptReplay> takeKeptReplay();
+    std::vector<IrcRememberedQuery> takeRememberedQueries();
+    // MOTD-end restore has finished for this connection. Splice held query
+    // batches into directs that now exist. A self-only batch whose query
+    // still does not exist is a finished drop and does not move the clock.
+    bool releasePendingQueryPlayback(const QString& networkId);
     bool releaseStaleNamesSync(const std::optional<IrcConversationKey>& key,
                                const QDateTime& now);
     bool dropDirectMessage(const IrcConversationKey& key);
@@ -311,6 +324,7 @@ private:
         const IrcConversationState& conversation) const;
     std::optional<std::size_t> takeSpliceIndex(IrcConversationState& conversation);
     enum class HistoryAnchorUse { Consume, Keep };
+    bool replayFromPeer(const IrcHistoryEvent& event) const;
     void spliceHistory(IrcConversationState& conversation,
                        const IrcHistoryEvent& event,
                        HistoryAnchorUse anchorUse);
@@ -366,4 +380,8 @@ private:
     IrcConversationLog *m_log = nullptr;
     std::map<IrcConversationKey, IrcHistoryEvent> m_pendingPlayback;
     std::vector<IrcKeptReplay> m_keptReplay;
+    std::vector<IrcRememberedQuery> m_rememberedQueries;
+    // Set on welcome, cleared when open-direct restore finishes. A missing
+    // query is not a finished drop while this connection is still waiting.
+    std::set<QString> m_queryRestorePending;
 };

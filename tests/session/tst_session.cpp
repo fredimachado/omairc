@@ -5139,7 +5139,8 @@ void SessionTest::zncPlaybackCapIsRequestedOnItsOwnLine()
     QVERIFY(fixture.wrote(QByteArrayLiteral("CAP REQ :batch\r\n")));
     fixture.transport->injectBytes(
         QByteArrayLiteral(":server CAP omairc ACK :znc.in/playback batch\r\n"
-                          ":server 001 omairc :Welcome\r\n"));
+                          ":server 001 omairc :Welcome\r\n"
+                          ":server 376 omairc :End of MOTD\r\n"));
     QVERIFY(fixture.session->capabilities().contains(IrcCapability::ZncPlayback));
     QVERIFY(fixture.session->capabilities().contains(IrcCapability::Batch));
     QVERIFY(!fixture.wrote(

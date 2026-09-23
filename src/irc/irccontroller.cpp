@@ -483,7 +483,6 @@ IrcSession *IrcController::addSession(const IrcSessionConfig& config,
         m_openDirectsMotdSeen.remove(networkId);
         applyProfileAvatarOnConnect(session);
         updateStatus(session);
-        requestZncPlayback(session);
     });
     connect(session, &IrcSession::messageReceived,
             this, &IrcController::handleMessage);
@@ -2142,6 +2141,18 @@ void IrcController::noteOpenDirectsMotd(const QString& networkId)
         return;
     m_openDirectsMotdSeen.insert(networkId);
     restoreOpenDirects(networkId);
+    // Held self-only query batches splice into directs this restore just
+    // opened. Release after restore, and do not drop them first.
+    const bool spliced = m_reducer.releasePendingQueryPlayback(networkId);
+    noteKeptReplay();
+    if (spliced) {
+        IrcViewNotify notify;
+        notify.conversations = true;
+        notify.messages = true;
+        publish(notify);
+    }
+    if (IrcSession *session = m_sessions.findSession(networkId))
+        requestZncPlayback(session);
 }
 
 void IrcController::restoreOpenDirects(const QString& networkId)
@@ -4347,6 +4358,13 @@ void IrcController::noteKeptReplay()
             line.networkId, line.target, line.serverTime,
             m_reducer.serverFeatures(line.networkId).caseMapping());
     }
+    // A kept self line means the user replied in that query. Remember it
+    // only when the direct exists; a dropped self-only batch must not.
+    for (const IrcRememberedQuery& query : m_reducer.takeRememberedQueries()) {
+        if (!m_reducer.find(m_reducer.conversationKey(query.networkId, query.target)))
+            continue;
+        rememberOpenDirect(query.networkId, query.target);
+    }
 }
 
 void IrcController::notePlaybackClock(const QString& networkId, const IrcMessage& message)
@@ -4399,6 +4417,10 @@ void IrcController::requestZncPlayback(IrcSession *session)
     if (!session || session->state() != IrcSession::State::Registered)
         return;
     const QString networkId = session->networkId();
+    // Open queries are restored at MOTD end. PLAY before that uses a stamp
+    // that can skip self-only lines whose direct does not exist yet.
+    if (!m_openDirectsMotdSeen.contains(networkId))
+        return;
     if (m_zncPlaybackSent.contains(networkId))
         return;
     if (!m_capabilities.value(networkId).contains(IrcCapability::ZncPlayback))

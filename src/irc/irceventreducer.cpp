@@ -349,6 +349,7 @@ void IrcEventReducer::forgetNetwork(const QString& networkId)
     if (networkId.isEmpty())
         return;
     dropPendingPlayback(networkId);
+    m_queryRestorePending.erase(networkId);
     for (auto it = m_conversations.begin(); it != m_conversations.end(); ) {
         if (it->first.networkId == networkId)
             it = m_conversations.erase(it);
@@ -972,9 +973,20 @@ std::vector<IrcKeptReplay> IrcEventReducer::takeKeptReplay()
     return kept;
 }
 
+std::vector<IrcRememberedQuery> IrcEventReducer::takeRememberedQueries()
+{
+    std::vector<IrcRememberedQuery> remembered;
+    remembered.swap(m_rememberedQueries);
+    return remembered;
+}
+
 void IrcEventReducer::reduce(const IrcWelcomeEvent& event)
 {
+    // Welcome is a new connection. Batches still held here belong to the
+    // previous one. Playback on this connection cannot have arrived yet, and
+    // open-direct restore is pending again until the next 376 or 422.
     dropPendingPlayback(event.networkId);
+    m_queryRestorePending.insert(event.networkId);
     m_currentNicks[event.networkId] = event.currentNick;
     m_presence[event.networkId].clear();
     m_selfAway.erase(event.networkId);
@@ -1342,6 +1354,53 @@ void IrcEventReducer::releasePendingPlayback(IrcConversationState& conversation)
     spliceHistory(conversation, event, HistoryAnchorUse::Keep);
 }
 
+bool IrcEventReducer::replayFromPeer(const IrcHistoryEvent& event) const
+{
+    return std::any_of(event.lines.begin(), event.lines.end(),
+                       [&](const IrcReplayLine& line) {
+        return !line.author.isEmpty()
+            && !isSelf(event.conversation.networkId, line.author);
+    });
+}
+
+bool IrcEventReducer::releasePendingQueryPlayback(const QString& networkId)
+{
+    if (networkId.isEmpty())
+        return false;
+    m_queryRestorePending.erase(networkId);
+    std::vector<IrcConversationKey> keys;
+    for (const auto& entry : m_pendingPlayback) {
+        if (entry.first.networkId != networkId)
+            continue;
+        if (serverFeatures(networkId).isChannel(utf8(entry.first.normalizedTarget)))
+            continue;
+        keys.push_back(entry.first);
+    }
+    bool changed = false;
+    for (const IrcConversationKey& key : keys) {
+        const auto found = m_pendingPlayback.find(key);
+        if (found == m_pendingPlayback.end())
+            continue;
+        const IrcHistoryEvent event = std::move(found->second);
+        m_pendingPlayback.erase(found);
+        IrcConversationState *conversation = findMutable(event.conversation);
+        if (!conversation) {
+            // Same rule as a query batch that arrives after restore: open
+            // only when a peer wrote. A self-only batch with no conversation
+            // is finished and must not move the clock.
+            if (!replayFromPeer(event))
+                continue;
+            conversation = ensureConversation(event.conversation, event.target,
+                                              IrcConversationCause::InboundOther);
+            if (!conversation)
+                continue;
+        }
+        spliceHistory(*conversation, event, HistoryAnchorUse::Consume);
+        changed = true;
+    }
+    return changed;
+}
+
 void IrcEventReducer::spliceHistory(IrcConversationState& conversation,
                                     const IrcHistoryEvent& event,
                                     HistoryAnchorUse anchorUse)
@@ -1354,6 +1413,8 @@ void IrcEventReducer::spliceHistory(IrcConversationState& conversation,
         return;
     const std::size_t previousSize = conversation.messages.size();
     const std::size_t at = *spliceIndex;
+    const bool bouncerQuery = event.kind == IrcHistoryKind::BouncerPlayback
+        && !conversation.channel();
 
     const IrcCaseMapping mapping =
         serverFeatures(event.conversation.networkId).caseMapping();
@@ -1373,7 +1434,12 @@ void IrcEventReducer::spliceHistory(IrcConversationState& conversation,
 
     std::vector<IrcReducedMessage> run;
     run.reserve(event.lines.size());
+    bool sawSelf = false;
     for (const IrcReplayLine& line : event.lines) {
+        if (bouncerQuery && !sawSelf && !line.author.isEmpty()
+            && isSelf(event.conversation.networkId, line.author)) {
+            sawSelf = true;
+        }
         // Inserted or already present. A missing time tag stays off the
         // PLAY clock; the transcript timestamp may be wall clock.
         if (line.serverTime && line.serverTime->isValid()) {
@@ -1404,6 +1470,12 @@ void IrcEventReducer::spliceHistory(IrcConversationState& conversation,
         run.push_back({line.author, line.body, line.timestamp, kind, false,
                        IrcOrigin::Replay, line.msgid});
         run.back().sequence = conversation.nextSequence++;
+    }
+    if (sawSelf) {
+        m_rememberedQueries.push_back(IrcRememberedQuery{
+            event.conversation.networkId,
+            event.target.isEmpty() ? conversation.target : event.target,
+        });
     }
     if (run.empty())
         return;
@@ -1458,15 +1530,18 @@ void IrcEventReducer::reduce(const IrcHistoryEvent& event)
         // A join creates a channel, so replay must not resurrect one the user
         // closed or parted. A query buffer proves nothing by existing. Our own
         // outbound /msg creates one on the bouncer too, so only a line's
-        // author proves the peer spoke.
+        // author proves the peer spoke. A self-only bouncer batch stays held
+        // until open directs are restored; dropping it first lets a later
+        // kept line move the exclusive PLAY clock past those lines.
         if (channelTarget)
             return;
-        const auto fromPeer = [&](const IrcReplayLine& line) {
-            return !line.author.isEmpty()
-                && !isSelf(event.conversation.networkId, line.author);
-        };
-        if (std::none_of(event.lines.begin(), event.lines.end(), fromPeer))
+        if (!replayFromPeer(event)) {
+            if (event.kind == IrcHistoryKind::BouncerPlayback
+                && m_queryRestorePending.count(event.conversation.networkId)) {
+                m_pendingPlayback.insert_or_assign(event.conversation, event);
+            }
             return;
+        }
         conversation = ensureConversation(event.conversation, event.target,
                                           IrcConversationCause::InboundOther);
         if (!conversation)
