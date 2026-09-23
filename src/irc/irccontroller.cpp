@@ -4466,18 +4466,11 @@ void IrcController::requestZncPlayback(IrcSession *session)
     const IrcCaseMapping& mapping = features.caseMapping();
     const QVector<IrcPlaybackTargetTime> stored = m_playbackTimes.targets(networkId);
 
-    // Snapshot from registration, before this connection's JOIN echoes. A
-    // channel joined before the MOTD is not autojoin for this request.
-    QStringList unstampedAutojoin;
-    for (const QString& channel : m_zncAutojoin.value(networkId)) {
-        if (channel.isEmpty() || !features.isChannel(utf8(channel)))
-            continue;
-        if (m_playbackTimes.noted(networkId, channel, mapping))
-            continue;
-        unstampedAutojoin.append(channel);
-    }
-
-    if (stored.isEmpty() && unstampedAutojoin.isEmpty()) {
+    // Nothing stored yet: one PLAY * 0 fetches every buffer, including
+    // queries. Autojoin must not replace that with per-channel PLAY. The
+    // module drops a channel PLAY until that channel is on, and PLAY * 0
+    // does not mark the channel covered.
+    if (stored.isEmpty()) {
         const bool alreadySpecific =
             sent != m_zncPlaybackSent.cend() && !sent.value().targets.isEmpty();
         if (!alreadySpecific) {
@@ -4495,7 +4488,31 @@ void IrcController::requestZncPlayback(IrcSession *session)
                 return;
             m_zncPlaybackSent[networkId].targets.insert(normalized);
         }
-        for (const QString& channel : unstampedAutojoin) {
+        // A restored direct with no stamp is absent from the store, so the
+        // loop above skips it once any other target has one. Ask from the
+        // beginning. A nick the user never opened is not listed.
+        for (const QString& nick : m_openDirects.listed(networkId, mapping)) {
+            if (!persistableDirectTarget(networkId, nick))
+                continue;
+            if (m_playbackTimes.noted(networkId, nick, mapping))
+                continue;
+            const IrcConversationKey key =
+                m_reducer.conversationKey(networkId, nick);
+            if (!m_reducer.find(key))
+                continue;
+            if (zncPlaybackCovers(networkId, key.normalizedTarget))
+                continue;
+            if (!sendZncPlayback(session, nick, QStringLiteral("0")))
+                return;
+            m_zncPlaybackSent[networkId].targets.insert(key.normalizedTarget);
+        }
+        // Snapshot from registration, before this connection's JOIN echoes.
+        // A channel joined before the MOTD is not autojoin for this request.
+        for (const QString& channel : m_zncAutojoin.value(networkId)) {
+            if (channel.isEmpty() || !features.isChannel(utf8(channel)))
+                continue;
+            if (m_playbackTimes.noted(networkId, channel, mapping))
+                continue;
             const QString normalized =
                 m_reducer.conversationKey(networkId, channel).normalizedTarget;
             if (zncPlaybackCovers(networkId, normalized))

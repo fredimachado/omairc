@@ -1532,8 +1532,13 @@ bool IrcSession::captureInBatch(const IrcMessage& message)
     const auto root = m_openBatches.find(found.value().replayRoot);
     if (root == m_openBatches.end())
         return false;
-    if (int(root.value().collected.lines.size()) < kHistoryBufferCeiling)
-        root.value().collected.lines.push_back(message);
+    // Playback and CHATHISTORY LATEST are oldest-first. A full buffer keeps
+    // the newest lines. Overflow stays swallowed so it cannot surface as
+    // live traffic and move the exclusive PLAY bound past lines never kept.
+    auto& lines = root.value().collected.lines;
+    if (int(lines.size()) >= kHistoryBufferCeiling)
+        lines.erase(lines.begin());
+    lines.push_back(message);
     return true;
 }
 
