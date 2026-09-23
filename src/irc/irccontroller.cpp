@@ -4308,11 +4308,14 @@ void IrcController::handleHistoryBatch(const QString& networkId,
                 // with no msgid is the same on the wire as the one already
                 // read, so it stays dropped: keeping it would restore a
                 // cleared line, and dropping it can hide a new one. A
-                // nonempty msgid is kept even when this query was not
-                // restored. An inbound-only direct is absent after a cold
-                // start, and that absence does not mean the id was seen.
-                // The reducer opens the query, hydrates the log, and skips
-                // an id already stored. /clear leaves those ids in place.
+                    // nonempty msgid is kept even when this query was not
+                    // restored. An inbound-only direct is absent after a cold
+                    // start, and that absence does not mean the id was seen.
+                    // The reducer opens the query only when an id is not
+                    // already in the transcript log, then hydrates and skips
+                    // an id it stored. A batch of ids the log already holds
+                    // does not put a closed direct back. /clear leaves those
+                    // ids in place while the conversation still exists.
                 event->lines.erase(
                     std::remove_if(
                         event->lines.begin(), event->lines.end(),

@@ -1447,6 +1447,34 @@ bool IrcEventReducer::replayFromPeer(const IrcHistoryEvent& event) const
     });
 }
 
+bool IrcEventReducer::replayOnlyRepeatsPersistedIds(const IrcHistoryEvent& event) const
+{
+    // A closed direct and an inbound-only query after a cold start are both
+    // absent. Their ids live in the transcript log. Creating the row first
+    // and then skipping a known id puts the conversation back with nothing
+    // new. A line with no msgid cannot be told from a new one, so it still
+    // opens the query. An id the log does not hold does too.
+    if (!m_log || event.lines.empty())
+        return false;
+    for (const IrcReplayLine& line : event.lines) {
+        if (line.msgid.isEmpty())
+            return false;
+    }
+    const std::vector<IrcTranscriptLine> stored = m_log->readTail(
+        event.conversation.networkId, event.conversation.normalizedTarget,
+        kMaxMessages);
+    for (const IrcReplayLine& line : event.lines) {
+        const bool known = std::any_of(
+            stored.begin(), stored.end(),
+            [&](const IrcTranscriptLine& saved) {
+                return saved.msgid == line.msgid.value;
+            });
+        if (!known)
+            return false;
+    }
+    return true;
+}
+
 bool IrcEventReducer::releasePendingQueryPlayback(const QString& networkId)
 {
     if (networkId.isEmpty())
@@ -1473,6 +1501,8 @@ bool IrcEventReducer::releasePendingQueryPlayback(const QString& networkId)
             // only when a peer wrote. A self-only batch with no conversation
             // is finished and must not move the clock.
             if (!replayFromPeer(event))
+                continue;
+            if (replayOnlyRepeatsPersistedIds(event))
                 continue;
             conversation = ensureConversation(event.conversation, event.target,
                                               IrcConversationCause::InboundOther);
@@ -1666,6 +1696,11 @@ bool IrcEventReducer::absorbPendingQueryPlayback(const IrcHistoryEvent& event)
     }
     IrcConversationState *conversation = findMutable(event.conversation);
     if (!conversation) {
+        if (replayOnlyRepeatsPersistedIds(found->second)) {
+            if (!m_queryRestorePending.count(event.conversation.networkId))
+                m_pendingPlayback.erase(found);
+            return true;
+        }
         conversation = ensureConversation(event.conversation, found->second.target,
                                           IrcConversationCause::InboundOther);
         if (!conversation)
@@ -1729,6 +1764,8 @@ void IrcEventReducer::reduce(const IrcHistoryEvent& event)
             }
             return;
         }
+        if (replayOnlyRepeatsPersistedIds(event))
+            return;
         conversation = ensureConversation(event.conversation, event.target,
                                           IrcConversationCause::InboundOther);
         if (!conversation)

@@ -175,6 +175,7 @@ private slots:
     void bouncerQueryPreviousNickEchoIsOwnLine();
     void transcriptHydrateIsReplayWithoutNotify();
     void transcriptMsgidSkipsLaterLive();
+    void duplicatePlaybackDoesNotReopenDroppedDirect();
     void historyAfterPartDoesNotSplice();
     void historyAfterCapDoesNotSplice();
     void clearMessagesDropsPendingHistory();
@@ -3118,6 +3119,52 @@ void ReducerTest::bouncerQueryPreviousNickEchoIsOwnLine()
         QCOMPARE(kept.size(), std::size_t(1));
         QCOMPARE(kept.front().target, QStringLiteral("lena"));
     }
+}
+
+void ReducerTest::duplicatePlaybackDoesNotReopenDroppedDirect()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    IrcConversationLog log(dir.path());
+    IrcEventReducer reducer;
+    reducer.setConversationLog(&log);
+    welcome(reducer, networkA);
+    const IrcConversationKey alice =
+        reducer.conversationKey(networkA, QStringLiteral("alice"));
+    reducer.apply(IrcMessageEvent{
+        alice, QStringLiteral("alice"), QStringLiteral("seen"), timestamp,
+        QStringLiteral("alice"), IrcMsgId{QStringLiteral("message-a")}});
+    QVERIFY(reducer.dropDirectMessage(alice));
+    QVERIFY(!reducer.find(alice));
+
+    reducer.apply(IrcHistoryEvent{
+        alice,
+        QStringLiteral("alice"),
+        {replayLine(QStringLiteral("alice"), QStringLiteral("seen"),
+                    QStringLiteral("message-a"))},
+        IrcHistoryKind::BouncerPlayback,
+    });
+    QVERIFY(!reducer.find(alice));
+    QVERIFY(reducer.takeKeptReplay().empty());
+
+    reducer.apply(IrcHistoryEvent{
+        alice,
+        QStringLiteral("alice"),
+        {replayLine(QStringLiteral("alice"), QStringLiteral("seen"),
+                    QStringLiteral("message-a")),
+         replayLine(QStringLiteral("alice"), QStringLiteral("unseen"),
+                    QStringLiteral("message-b"))},
+        IrcHistoryKind::BouncerPlayback,
+    });
+    const IrcConversationState *conversation = reducer.find(alice);
+    QVERIFY(conversation);
+    QCOMPARE(conversation->messages.size(), std::size_t(2));
+    QCOMPARE(conversation->messages[0].body, QStringLiteral("seen"));
+    QCOMPARE(conversation->messages[0].origin, IrcOrigin::Replay);
+    QCOMPARE(conversation->messages[1].body, QStringLiteral("unseen"));
+    QCOMPARE(conversation->messages[1].origin, IrcOrigin::Replay);
+    QCOMPARE(conversation->messages[1].msgid.value, QStringLiteral("message-b"));
+    QCOMPARE(conversation->unread, 1);
 }
 
 void ReducerTest::transcriptHydrateIsReplayWithoutNotify()

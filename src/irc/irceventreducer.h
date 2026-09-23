@@ -335,6 +335,9 @@ private:
                                const QString& author) const;
     void rememberSelfNick(const QString& networkId, const QString& nick);
     bool replayFromPeer(const IrcHistoryEvent& event) const;
+    // True when every line carries a msgid the transcript log already
+    // stored. Opening a missing query would only hydrate those lines.
+    bool replayOnlyRepeatsPersistedIds(const IrcHistoryEvent& event) const;
     bool absorbPendingQueryPlayback(const IrcHistoryEvent& event);
     void spliceHistory(IrcConversationState& conversation,
                        const IrcHistoryEvent& event,
