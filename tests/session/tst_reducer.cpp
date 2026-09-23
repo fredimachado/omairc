@@ -2690,11 +2690,34 @@ void ReducerTest::conversationLogTailHandlesBoundariesAndEdgeCases()
     CountingBuffer emptyDevice(&empty);
     QVERIFY(emptyDevice.open(QIODevice::ReadOnly));
     QVERIFY(IrcConversationLog::readTail(&emptyDevice, 4).empty());
-    QVERIFY(IrcConversationLog::readTail(&emptyDevice, 0).empty());
-    QVERIFY(IrcConversationLog::readTail(&emptyDevice, -1).empty());
 
     QTemporaryDir dir;
     QVERIFY(dir.isValid());
+    IrcConversationLog populated(dir.path());
+    for (const QString &recordBody : {
+             QStringLiteral("first"),
+             QStringLiteral("second"),
+             QStringLiteral("third")}) {
+        QVERIFY(populated.append(networkA, QStringLiteral("#room"),
+                                 IrcTranscriptLine{
+                                     timestamp,
+                                     QStringLiteral("alice"),
+                                     QStringLiteral("chat"),
+                                     recordBody,
+                                     {}}));
+    }
+    QVERIFY(populated.readTail(networkA, QStringLiteral("#room"), 0).empty());
+    QVERIFY(populated.readTail(networkA, QStringLiteral("#room"), -1).empty());
+
+    QByteArray populatedContent = transcriptRecord(QStringLiteral("first")) + '\n';
+    populatedContent += transcriptRecord(QStringLiteral("second")) + '\n';
+    CountingBuffer nonpositiveDevice(&populatedContent);
+    QVERIFY(nonpositiveDevice.open(QIODevice::ReadOnly));
+    QVERIFY(IrcConversationLog::readTail(&nonpositiveDevice, 0).empty());
+    QVERIFY(IrcConversationLog::readTail(&nonpositiveDevice, -1).empty());
+    QCOMPARE(nonpositiveDevice.reads, 0);
+    QCOMPARE(nonpositiveDevice.bytesRead, qint64(0));
+
     IrcConversationLog missing(dir.path());
     QVERIFY(missing.readTail(networkA, QStringLiteral("missing"), 2).empty());
 }
