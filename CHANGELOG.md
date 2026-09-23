@@ -49,7 +49,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- The scroll-down chip shows an accent dot whenever it is visible, and keeps a slight bounce the whole time it is visible, including when you are scrolled up and new lines arrive without an unread mark.
+- The scroll-down chip keeps an accent dot while it is visible. The arrow bounces five times when a new line arrives below a scrolled-up transcript, including when there is no New messages mark. It does not bounce merely because the chip is on screen.
 - Open conversations at unread is on by default.
 - The shortcut sheet no longer lists `/disconnect`.
 - The public description now says simple.
