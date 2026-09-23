@@ -1280,7 +1280,7 @@ void ModelTest::originRoleNameAndValues()
         room,
         QStringLiteral("#room"),
         {{QStringLiteral("alice"), QStringLiteral("older"), timestamp,
-          IrcMessageKindTag::Chat, IrcMsgId{QStringLiteral("id-1")}}},
+          IrcMessageKindTag::Chat, IrcMsgId{QStringLiteral("id-1")}, {}}},
     });
     messages.select(room);
 
@@ -1340,7 +1340,7 @@ void ModelTest::spliceResetsSelectedConversation()
         room,
         QStringLiteral("#room"),
         {{QStringLiteral("alice"), QStringLiteral("older"), timestamp,
-          IrcMessageKindTag::Chat, IrcMsgId{QStringLiteral("id-1")}}},
+          IrcMessageKindTag::Chat, IrcMsgId{QStringLiteral("id-1")}, {}}},
     });
     messages.reload();
 
@@ -1451,10 +1451,10 @@ void ModelTest::dateSeparatorAfterHistorySplice()
         QStringLiteral("#room"),
         {{QStringLiteral("alice"), QStringLiteral("from-yesterday"),
           atLocal(yesterday, QTime(15, 4)), IrcMessageKindTag::Chat,
-          IrcMsgId{QStringLiteral("hist-1")}},
+          IrcMsgId{QStringLiteral("hist-1")}, {}},
          {QStringLiteral("bob"), QStringLiteral("also-yesterday"),
           atLocal(yesterday, QTime(16, 8)), IrcMessageKindTag::Chat,
-          IrcMsgId{QStringLiteral("hist-2")}}},
+          IrcMsgId{QStringLiteral("hist-2")}, {}}},
     });
     messages.reload();
 
@@ -1765,9 +1765,9 @@ void ModelTest::unreadMarkSurvivesHistorySpliceAbove()
         room,
         QStringLiteral("#room"),
         {{QStringLiteral("alice"), QStringLiteral("older-one"), atLocal(today),
-          IrcMessageKindTag::Chat, IrcMsgId{QStringLiteral("hist-a")}},
+          IrcMessageKindTag::Chat, IrcMsgId{QStringLiteral("hist-a")}, {}},
          {QStringLiteral("bob"), QStringLiteral("older-two"), atLocal(today),
-          IrcMessageKindTag::Chat, IrcMsgId{QStringLiteral("hist-b")}}},
+          IrcMessageKindTag::Chat, IrcMsgId{QStringLiteral("hist-b")}, {}}},
     });
     messages.reload();
 

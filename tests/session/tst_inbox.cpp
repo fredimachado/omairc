@@ -67,7 +67,7 @@ IrcReplayLine replayLine(const QString& author,
                          const QString& body,
                          const QString& msgid = {})
 {
-    return {author, body, timestamp, IrcMessageKindTag::Chat, IrcMsgId{msgid}};
+    return {author, body, timestamp, IrcMessageKindTag::Chat, IrcMsgId{msgid}, {}};
 }
 
 bool logContains(QAbstractItemModel *lines, const QString& needle)

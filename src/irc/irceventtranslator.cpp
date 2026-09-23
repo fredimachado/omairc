@@ -102,17 +102,24 @@ std::optional<QString> presentTagValue(const IrcMessage& message, const char *na
     return std::nullopt;
 }
 
-QDateTime timestampFor(const IrcMessage& message)
+std::optional<QDateTime> serverTimeOf(const IrcMessage& message)
 {
     const std::optional<QString> raw = tagValue(message, "time");
-    if (!raw)
-        return QDateTime::currentDateTimeUtc();
+    if (!raw || raw->isEmpty())
+        return std::nullopt;
     QDateTime parsed = QDateTime::fromString(*raw, Qt::ISODateWithMs);
     if (!parsed.isValid())
         parsed = QDateTime::fromString(*raw, Qt::ISODate);
     if (!parsed.isValid())
-        return QDateTime::currentDateTimeUtc();
+        return std::nullopt;
     return parsed.toUTC();
+}
+
+QDateTime timestampFor(const IrcMessage& message)
+{
+    if (const std::optional<QDateTime> serverTime = serverTimeOf(message))
+        return *serverTime;
+    return QDateTime::currentDateTimeUtc();
 }
 
 /// `<Target> <Key> <Visibility> [<Value>]` for `METADATA` and `761`.
@@ -374,21 +381,24 @@ std::optional<IrcHistoryEvent> IrcEventTranslator::translateHistory(
     if (batch.target.isEmpty())
         return std::nullopt;
     const IrcConversationKey conversation = key(networkId, batch.target, features);
-    IrcHistoryEvent event{conversation, batch.target, {}};
+    IrcHistoryEvent event{conversation, batch.target, {}, batch.kind};
     event.lines.reserve(batch.lines.size());
     for (const IrcMessage& line : batch.lines) {
+        const std::optional<QDateTime> serverTime = serverTimeOf(line);
         for (const IrcEvent& translated :
              translate(networkId, currentNick, features, line)) {
             if (const auto *message = std::get_if<IrcMessageEvent>(&translated)) {
                 if (message->conversation != conversation)
                     continue;
                 event.lines.push_back({message->author, message->body, message->timestamp,
-                                       IrcMessageKindTag::Chat, message->msgid});
+                                       IrcMessageKindTag::Chat, message->msgid,
+                                       serverTime});
             } else if (const auto *action = std::get_if<IrcActionEvent>(&translated)) {
                 if (action->conversation != conversation)
                     continue;
                 event.lines.push_back({action->author, action->body, action->timestamp,
-                                       IrcMessageKindTag::Emote, action->msgid});
+                                       IrcMessageKindTag::Emote, action->msgid,
+                                       serverTime});
             }
         }
     }

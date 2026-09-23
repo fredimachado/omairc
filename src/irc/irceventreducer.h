@@ -162,6 +162,16 @@ struct IrcInboxArrival
 
 class IrcConversationLog;
 
+// A replay line the reducer actually kept: inserted, or already present so
+// author/body/kind/time or msgid dedup skipped it. `serverTime` is the raw
+// time tag, never the translator's wall-clock fallback.
+struct IrcKeptReplay
+{
+    QString networkId;
+    QString target;
+    QDateTime serverTime;
+};
+
 enum class IrcConversationCause {
     UserOpen,
     ChannelState,
@@ -218,6 +228,7 @@ public:
     void setConversationLog(IrcConversationLog *log);
 
     void apply(const IrcEvent& event);
+    std::vector<IrcKeptReplay> takeKeptReplay();
     bool releaseStaleNamesSync(const std::optional<IrcConversationKey>& key,
                                const QDateTime& now);
     bool dropDirectMessage(const IrcConversationKey& key);
@@ -296,7 +307,15 @@ private:
     void persistMessage(const IrcConversationState& conversation,
                         const IrcReducedMessage& message);
     void capMessages(IrcConversationState& conversation);
+    std::optional<std::size_t> peekSpliceIndex(
+        const IrcConversationState& conversation) const;
     std::optional<std::size_t> takeSpliceIndex(IrcConversationState& conversation);
+    enum class HistoryAnchorUse { Consume, Keep };
+    void spliceHistory(IrcConversationState& conversation,
+                       const IrcHistoryEvent& event,
+                       HistoryAnchorUse anchorUse);
+    void releasePendingPlayback(IrcConversationState& conversation);
+    void dropPendingPlayback(const QString& networkId);
 
     void reduce(const IrcWelcomeEvent& event);
     void reduce(const IrcMessageEvent& event);
@@ -345,4 +364,6 @@ private:
     std::optional<IrcInboxArrival> m_inboxArrival;
     std::set<IrcConversationKey> m_mutedKeys;
     IrcConversationLog *m_log = nullptr;
+    std::map<IrcConversationKey, IrcHistoryEvent> m_pendingPlayback;
+    std::vector<IrcKeptReplay> m_keptReplay;
 };

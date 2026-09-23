@@ -4105,6 +4105,7 @@ void IrcController::apply(const IrcEvent& event)
         m_unawaySent.remove(selfAway->networkId);
     }
     m_reducer.apply(event);
+    noteKeptReplay();
     if (const auto *metadata = std::get_if<IrcMemberMetadataEvent>(&event)) {
         ++m_peerMetadataEpoch;
         emit peerMetadataChanged();
@@ -4328,13 +4329,24 @@ void IrcController::handleMessage(const QString& networkId,
 void IrcController::handleHistoryBatch(const QString& networkId,
                                        const IrcHistoryBatch& batch)
 {
-    for (const IrcMessage& line : batch.lines)
-        notePlaybackClock(networkId, line);
     const auto event = IrcEventTranslator::translateHistory(
         networkId, m_currentNicks.value(networkId),
         m_reducer.serverFeatures(networkId), batch);
     if (event)
         apply(*event);
+}
+
+void IrcController::noteKeptReplay()
+{
+    // PLAY's lower bound is exclusive. Only a replay line that landed, or
+    // matched one already there, may move it. A held, dropped, or never-joined
+    // channel batch stays eligible for the next PLAY.
+    const std::vector<IrcKeptReplay> kept = m_reducer.takeKeptReplay();
+    for (const IrcKeptReplay& line : kept) {
+        m_playbackTimes.note(
+            line.networkId, line.target, line.serverTime,
+            m_reducer.serverFeatures(line.networkId).caseMapping());
+    }
 }
 
 void IrcController::notePlaybackClock(const QString& networkId, const IrcMessage& message)

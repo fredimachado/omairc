@@ -303,6 +303,7 @@ private:
     void handleMessage(const QString& networkId, const IrcMessage& message);
     void handleHistoryBatch(const QString& networkId, const IrcHistoryBatch& batch);
     void notePlaybackClock(const QString& networkId, const IrcMessage& message);
+    void noteKeptReplay();
     void requestZncPlayback(IrcSession *session);
     void reloadModels();
     IrcCommandOutcome dispatch(const IrcCommand& command,

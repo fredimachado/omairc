@@ -10,6 +10,7 @@
 #include <cstddef>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 namespace
@@ -347,6 +348,7 @@ void IrcEventReducer::forgetNetwork(const QString& networkId)
 {
     if (networkId.isEmpty())
         return;
+    dropPendingPlayback(networkId);
     for (auto it = m_conversations.begin(); it != m_conversations.end(); ) {
         if (it->first.networkId == networkId)
             it = m_conversations.erase(it);
@@ -923,7 +925,22 @@ void IrcEventReducer::capMessages(IrcConversationState& conversation)
 }
 
 // A direct message has no join line to splice above, so its replay lands at
-// the tail.
+// the tail. The anchor is a position in the logical transcript: trimmed
+// messages plus the index of the join line.
+std::optional<std::size_t> IrcEventReducer::peekSpliceIndex(
+    const IrcConversationState& conversation) const
+{
+    const IrcChannelState *channel = conversation.channel();
+    if (!channel)
+        return conversation.messages.size();
+    if (!channel->historyAnchor)
+        return std::nullopt;
+    const qint64 index = channel->historyAnchor->sequence - conversation.trimmed;
+    if (index < 0 || index > qint64(conversation.messages.size()))
+        return std::nullopt;
+    return std::size_t(index);
+}
+
 std::optional<std::size_t> IrcEventReducer::takeSpliceIndex(
     IrcConversationState& conversation)
 {
@@ -939,8 +956,16 @@ std::optional<std::size_t> IrcEventReducer::takeSpliceIndex(
     return std::size_t(index);
 }
 
+std::vector<IrcKeptReplay> IrcEventReducer::takeKeptReplay()
+{
+    std::vector<IrcKeptReplay> kept;
+    kept.swap(m_keptReplay);
+    return kept;
+}
+
 void IrcEventReducer::reduce(const IrcWelcomeEvent& event)
 {
+    dropPendingPlayback(event.networkId);
     m_currentNicks[event.networkId] = event.currentNick;
     m_presence[event.networkId].clear();
     m_selfAway.erase(event.networkId);
@@ -1014,6 +1039,8 @@ void IrcEventReducer::reduce(const IrcJoinEvent& event)
         }
     }
     appendEvent(*conversation, body, !self);
+    if (self)
+        releasePendingPlayback(*conversation);
 }
 
 void IrcEventReducer::reduce(const IrcAccountEvent& event)
@@ -1284,33 +1311,39 @@ void IrcEventReducer::reduce(const IrcTypingEvent& event)
     conversation->typing.insert_or_assign(normalizedNick, *hint);
 }
 
-void IrcEventReducer::reduce(const IrcHistoryEvent& event)
+void IrcEventReducer::dropPendingPlayback(const QString& networkId)
 {
-    IrcConversationState *conversation = findMutable(event.conversation);
-    if (!conversation) {
-        // A join creates a channel, so replay must not resurrect one the user
-        // closed or parted. A query buffer proves nothing by existing. Our own
-        // outbound /msg creates one on the bouncer too, so only a line's
-        // author proves the peer spoke.
-        if (serverFeatures(event.conversation.networkId)
-                .isChannel(utf8(event.conversation.normalizedTarget))) {
-            return;
-        }
-        const auto fromPeer = [&](const IrcReplayLine& line) {
-            return !line.author.isEmpty()
-                && !isSelf(event.conversation.networkId, line.author);
-        };
-        if (std::none_of(event.lines.begin(), event.lines.end(), fromPeer))
-            return;
-        conversation = ensureConversation(event.conversation, event.target,
-                                          IrcConversationCause::InboundOther);
-        if (!conversation)
-            return;
+    if (networkId.isEmpty())
+        return;
+    for (auto it = m_pendingPlayback.begin(); it != m_pendingPlayback.end(); ) {
+        if (it->first.networkId == networkId)
+            it = m_pendingPlayback.erase(it);
+        else
+            ++it;
     }
-    const std::optional<std::size_t> spliceIndex = takeSpliceIndex(*conversation);
+}
+
+void IrcEventReducer::releasePendingPlayback(IrcConversationState& conversation)
+{
+    const auto found = m_pendingPlayback.find(conversation.key);
+    if (found == m_pendingPlayback.end())
+        return;
+    const IrcHistoryEvent event = std::move(found->second);
+    m_pendingPlayback.erase(found);
+    spliceHistory(conversation, event, HistoryAnchorUse::Keep);
+}
+
+void IrcEventReducer::spliceHistory(IrcConversationState& conversation,
+                                    const IrcHistoryEvent& event,
+                                    HistoryAnchorUse anchorUse)
+{
+    const std::optional<std::size_t> spliceIndex =
+        anchorUse == HistoryAnchorUse::Consume
+            ? takeSpliceIndex(conversation)
+            : peekSpliceIndex(conversation);
     if (!spliceIndex)
         return;
-    const std::size_t previousSize = conversation->messages.size();
+    const std::size_t previousSize = conversation.messages.size();
     const std::size_t at = *spliceIndex;
 
     const IrcCaseMapping mapping =
@@ -1332,13 +1365,22 @@ void IrcEventReducer::reduce(const IrcHistoryEvent& event)
     std::vector<IrcReducedMessage> run;
     run.reserve(event.lines.size());
     for (const IrcReplayLine& line : event.lines) {
-        if (!line.msgid.isEmpty() && conversation->messageIds.count(line.msgid))
+        // Inserted or already present. A missing time tag stays off the
+        // PLAY clock; the transcript timestamp may be wall clock.
+        if (line.serverTime && line.serverTime->isValid()) {
+            m_keptReplay.push_back(IrcKeptReplay{
+                event.conversation.networkId,
+                event.target,
+                line.serverTime->toUTC(),
+            });
+        }
+        if (!line.msgid.isEmpty() && conversation.messageIds.count(line.msgid))
             continue;
         const IrcMessageKind kind = line.kind == IrcMessageKindTag::Emote
             ? IrcMessageKind::Action
             : IrcMessageKind::Message;
         const bool alreadyPresent = std::any_of(
-            conversation->messages.begin(), conversation->messages.end(),
+            conversation.messages.begin(), conversation.messages.end(),
             [&](const IrcReducedMessage& message) {
                 return sameReplayLine(message, line, kind);
             })
@@ -1349,27 +1391,77 @@ void IrcEventReducer::reduce(const IrcHistoryEvent& event)
         if (alreadyPresent)
             continue;
         if (!line.msgid.isEmpty())
-            conversation->messageIds.insert(line.msgid);
+            conversation.messageIds.insert(line.msgid);
         run.push_back({line.author, line.body, line.timestamp, kind, false,
                        IrcOrigin::Replay, line.msgid});
-        run.back().sequence = conversation->nextSequence++;
+        run.back().sequence = conversation.nextSequence++;
     }
     if (run.empty())
         return;
-    conversation->messages.insert(
-        conversation->messages.begin() + std::ptrdiff_t(at),
+    conversation.messages.insert(
+        conversation.messages.begin() + std::ptrdiff_t(at),
         run.begin(),
         run.end());
     for (const IrcReducedMessage& message : run)
-        persistMessage(*conversation, message);
+        persistMessage(conversation, message);
+    // The anchor still names the join line. Inserting above it shifts that
+    // line forward by the number of messages that actually landed.
+    if (anchorUse == HistoryAnchorUse::Keep) {
+        if (IrcChannelState *channel = conversation.channel()) {
+            if (channel->historyAnchor)
+                channel->historyAnchor->sequence += qint64(run.size());
+        }
+    }
     if (at != previousSize)
-        ++conversation->spliceEpoch;
-    capMessages(*conversation);
+        ++conversation.spliceEpoch;
+    capMessages(conversation);
     for (const IrcReducedMessage& message : run) {
-        noteChatArrival(*conversation, event.conversation, message.author,
+        noteChatArrival(conversation, event.conversation, message.author,
                         message.body, message.kind, message.msgid,
                         message.sequence, IrcOrigin::Replay);
     }
+}
+
+void IrcEventReducer::reduce(const IrcHistoryEvent& event)
+{
+    const bool channelTarget = serverFeatures(event.conversation.networkId)
+        .isChannel(utf8(event.conversation.normalizedTarget));
+    IrcConversationState *conversation = findMutable(event.conversation);
+    // ZNC answers PLAY before JOIN, so a channel batch often has no anchor
+    // yet. Hold one batch per channel until this connection's self-join
+    // creates the conversation and plants the anchor. A parted or
+    // never-joined buffer must not open a channel by itself. CHATHISTORY
+    // before an anchor still drops.
+    if (event.kind == IrcHistoryKind::BouncerPlayback && channelTarget) {
+        const IrcChannelState *channel =
+            conversation ? conversation->channel() : nullptr;
+        if (!channel || !channel->historyAnchor) {
+            m_pendingPlayback.insert_or_assign(event.conversation, event);
+            return;
+        }
+        spliceHistory(*conversation, event, HistoryAnchorUse::Keep);
+        return;
+    }
+
+    if (!conversation) {
+        // A join creates a channel, so replay must not resurrect one the user
+        // closed or parted. A query buffer proves nothing by existing. Our own
+        // outbound /msg creates one on the bouncer too, so only a line's
+        // author proves the peer spoke.
+        if (channelTarget)
+            return;
+        const auto fromPeer = [&](const IrcReplayLine& line) {
+            return !line.author.isEmpty()
+                && !isSelf(event.conversation.networkId, line.author);
+        };
+        if (std::none_of(event.lines.begin(), event.lines.end(), fromPeer))
+            return;
+        conversation = ensureConversation(event.conversation, event.target,
+                                          IrcConversationCause::InboundOther);
+        if (!conversation)
+            return;
+    }
+    spliceHistory(*conversation, event, HistoryAnchorUse::Consume);
 }
 
 void IrcEventReducer::reduce(const IrcWhoisTranscriptEvent& event)

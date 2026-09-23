@@ -46,7 +46,7 @@ IrcReplayLine replayLine(const QString& author,
                          const QString& body,
                          const QString& msgid = {})
 {
-    return {author, body, timestamp, IrcMessageKindTag::Chat, IrcMsgId{msgid}};
+    return {author, body, timestamp, IrcMessageKindTag::Chat, IrcMsgId{msgid}, {}};
 }
 
 void applyWire(IrcEventReducer& reducer, std::string_view line)

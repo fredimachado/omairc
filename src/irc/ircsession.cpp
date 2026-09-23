@@ -1501,7 +1501,10 @@ void IrcSession::closeBatch(const QString& reference)
             m_historyPending.remove(foldChannel(frame.collected.target));
         if (!currentMembership)
             return;
-        emit historyBatchReceived(m_config.networkId, frame.collected);
+        IrcHistoryBatch batch = frame.collected;
+        if (frame.kind == ReplayKind::BouncerPlayback)
+            batch.kind = IrcHistoryKind::BouncerPlayback;
+        emit historyBatchReceived(m_config.networkId, batch);
     }
 }
 
