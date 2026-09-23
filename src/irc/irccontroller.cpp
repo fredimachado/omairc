@@ -473,6 +473,7 @@ IrcSession *IrcController::addSession(const IrcSessionConfig& config,
     syncHighlightWords(config.networkId);
     connect(session, &IrcSession::registered, this,
             [this, session](const QString& networkId) {
+        m_playbackSnapshot.insert(networkId, m_playbackTimes.targets(networkId));
         m_currentNicks[networkId] = session->nick();
         m_reducer.setServerFeatures(networkId, IrcServerFeatures{});
         forgetMonitorState(networkId);
@@ -498,6 +499,7 @@ IrcSession *IrcController::addSession(const IrcSessionConfig& config,
             forgetChannelList(session->networkId());
             m_appliedProfileAvatars.remove(session->networkId());
             m_zncPlaybackSent.remove(session->networkId());
+            m_playbackSnapshot.remove(session->networkId());
             m_zncAutojoin.remove(session->networkId());
             m_zncJoinedChannels.remove(session->networkId());
         }
@@ -584,6 +586,7 @@ void IrcController::forgetNetworkState(const QString &networkId)
     m_mutes.forget(networkId);
     m_openDirects.forget(networkId);
     m_playbackTimes.forget(networkId);
+    m_playbackSnapshot.remove(networkId);
     m_highlights.forget(networkId);
     m_inbox.purgeNetwork(networkId);
     syncInbox();
@@ -4146,6 +4149,7 @@ void IrcController::apply(const IrcEvent& event)
             m_reducer.serverFeatures(nick->networkId).caseMapping();
         m_openDirects.rekey(nick->networkId, nick->oldNick, nick->newNick, mapping);
         m_playbackTimes.rekey(nick->networkId, nick->oldNick, nick->newNick, mapping);
+        rekeyPlaybackSnapshot(nick->networkId, nick->oldNick, nick->newNick);
     } else if (const auto *message = std::get_if<IrcMessageEvent>(&event)) {
         if (m_reducer.serverFeatures(message->conversation.networkId)
                 .caseMapping()
@@ -4369,6 +4373,11 @@ void IrcController::noteKeptReplay()
     // channel batch stays eligible for the next PLAY.
     const std::vector<IrcKeptReplay> kept = m_reducer.takeKeptReplay();
     for (const IrcKeptReplay& line : kept) {
+        // A line spliced before this target's first PLAY must not move the
+        // exclusive bound that request is about to send, and must not be
+        // stored for the next attach either.
+        if (!mayNotePlaybackTime(line.networkId, line.target))
+            continue;
         m_playbackTimes.note(
             line.networkId, line.target, line.serverTime,
             m_reducer.serverFeatures(line.networkId).caseMapping());
@@ -4424,6 +4433,12 @@ void IrcController::notePlaybackClock(const QString& networkId, const IrcMessage
     // the clock.
     if (self && !m_reducer.find(m_reducer.conversationKey(networkId, displayTarget)))
         return;
+    // The first PLAY for this target reads the registration snapshot. A
+    // line before that request is not stored, or the next attach skips the
+    // same buffer. PLAY * 0 opens every target; a per-target PLAY opens
+    // only that one.
+    if (!mayNotePlaybackTime(networkId, displayTarget))
+        return;
     m_playbackTimes.note(networkId, displayTarget, *when, features.caseMapping());
 }
 
@@ -4447,6 +4462,71 @@ bool IrcController::zncPlaybackCovers(const QString& networkId,
     return found.value().all || found.value().targets.contains(normalizedTarget);
 }
 
+std::optional<QDateTime> IrcController::playbackSnapshotTime(
+    const QString& networkId,
+    const QString& target) const
+{
+    const auto found = m_playbackSnapshot.constFind(networkId);
+    if (found == m_playbackSnapshot.cend() || target.isEmpty())
+        return std::nullopt;
+    const IrcCaseMapping& mapping =
+        m_reducer.serverFeatures(networkId).caseMapping();
+    for (const IrcPlaybackTargetTime& row : found.value()) {
+        if (mapping.equals(utf8(row.target), utf8(target)))
+            return row.when;
+    }
+    return std::nullopt;
+}
+
+void IrcController::rekeyPlaybackSnapshot(const QString& networkId,
+                                          const QString& oldTarget,
+                                          const QString& newTarget)
+{
+    auto found = m_playbackSnapshot.find(networkId);
+    if (found == m_playbackSnapshot.end() || oldTarget.isEmpty() || newTarget.isEmpty())
+        return;
+    const IrcCaseMapping& mapping =
+        m_reducer.serverFeatures(networkId).caseMapping();
+    QVector<IrcPlaybackTargetTime>& rows = found.value();
+    int oldIndex = -1;
+    for (int index = 0; index < rows.size(); ++index) {
+        if (mapping.equals(utf8(rows.at(index).target), utf8(oldTarget))) {
+            oldIndex = index;
+            break;
+        }
+    }
+    if (oldIndex < 0)
+        return;
+    const QDateTime when = rows.at(oldIndex).when;
+    if (mapping.equals(utf8(oldTarget), utf8(newTarget))) {
+        rows[oldIndex].target = newTarget;
+        return;
+    }
+    rows.removeAt(oldIndex);
+    for (IrcPlaybackTargetTime& row : rows) {
+        if (!mapping.equals(utf8(row.target), utf8(newTarget)))
+            continue;
+        if (when.isValid() && (!row.when.isValid() || when > row.when))
+            row.when = when;
+        return;
+    }
+    rows.append(IrcPlaybackTargetTime{newTarget, when});
+}
+
+bool IrcController::mayNotePlaybackTime(const QString& networkId,
+                                        const QString& target) const
+{
+    if (networkId.isEmpty() || target.isEmpty())
+        return false;
+    // No playback request is coming. A line the user actually saw is the
+    // stamp a later playback-capable attach should resume from.
+    if (!m_capabilities.value(networkId).contains(IrcCapability::ZncPlayback))
+        return true;
+    return zncPlaybackCovers(
+        networkId,
+        m_reducer.conversationKey(networkId, target).normalizedTarget);
+}
+
 void IrcController::requestZncPlayback(IrcSession *session)
 {
     if (!session || session->state() != IrcSession::State::Registered)
@@ -4464,7 +4544,9 @@ void IrcController::requestZncPlayback(IrcSession *session)
 
     const IrcServerFeatures& features = m_reducer.serverFeatures(networkId);
     const IrcCaseMapping& mapping = features.caseMapping();
-    const QVector<IrcPlaybackTargetTime> stored = m_playbackTimes.targets(networkId);
+    // Registration snapshot, taken at numeric 001. Traffic on this
+    // connection must not replace the stamp this first PLAY sends.
+    const QVector<IrcPlaybackTargetTime> stored = m_playbackSnapshot.value(networkId);
 
     // Nothing stored yet: one PLAY * 0 fetches every buffer, including
     // queries. Autojoin must not replace that with per-channel PLAY. The
@@ -4494,7 +4576,7 @@ void IrcController::requestZncPlayback(IrcSession *session)
         for (const QString& nick : m_openDirects.listed(networkId, mapping)) {
             if (!persistableDirectTarget(networkId, nick))
                 continue;
-            if (m_playbackTimes.noted(networkId, nick, mapping))
+            if (playbackSnapshotTime(networkId, nick))
                 continue;
             const IrcConversationKey key =
                 m_reducer.conversationKey(networkId, nick);
@@ -4511,7 +4593,7 @@ void IrcController::requestZncPlayback(IrcSession *session)
         for (const QString& channel : m_zncAutojoin.value(networkId)) {
             if (channel.isEmpty() || !features.isChannel(utf8(channel)))
                 continue;
-            if (m_playbackTimes.noted(networkId, channel, mapping))
+            if (playbackSnapshotTime(networkId, channel))
                 continue;
             const QString normalized =
                 m_reducer.conversationKey(networkId, channel).normalizedTarget;
@@ -4565,9 +4647,14 @@ void IrcController::requestZncChannelPlayback(IrcSession *session,
     // emits nothing for a channel that is not on.
     if (m_reducer.playbackBatchKept(networkId, channel))
         return;
+    // A self-JOIN retry still uses the registration snapshot, not a live
+    // line from earlier in this connection.
     const QString from = ircPlaybackPlayStamp(
-        m_playbackTimes.noted(networkId, channel, features.caseMapping()));
-    sendZncPlayback(session, channel, from);
+        playbackSnapshotTime(networkId, channel));
+    if (!sendZncPlayback(session, channel, from))
+        return;
+    m_zncPlaybackSent[networkId].targets.insert(
+        m_reducer.conversationKey(networkId, channel).normalizedTarget);
 }
 
 void IrcController::reloadModels()

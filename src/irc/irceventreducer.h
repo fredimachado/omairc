@@ -331,6 +331,9 @@ private:
     enum class HistoryAnchorUse { Consume, Keep };
     bool bouncerQueryOwnLine(const IrcHistoryEvent& event,
                              const QString& author) const;
+    bool bouncerChannelOwnLine(const IrcHistoryEvent& event,
+                               const QString& author) const;
+    void rememberSelfNick(const QString& networkId, const QString& nick);
     bool replayFromPeer(const IrcHistoryEvent& event) const;
     bool absorbPendingQueryPlayback(const IrcHistoryEvent& event);
     void spliceHistory(IrcConversationState& conversation,
@@ -379,6 +382,9 @@ private:
     Store m_conversations;
     std::map<QString, IrcServerFeatures> m_features;
     std::map<QString, QString> m_currentNicks;
+    // Nicks welcomed on this network, plus any nick a self change left
+    // behind. Channel playback from one of them is our own backlog.
+    std::map<QString, std::set<QString>> m_selfNicks;
     std::map<QString, QStringList> m_highlightWords;
     std::map<QString, IrcNetworkPresence> m_presence;
     std::set<QString> m_selfAway;
