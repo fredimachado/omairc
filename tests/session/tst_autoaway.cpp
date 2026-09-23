@@ -43,14 +43,6 @@ void welcome(FakeIrcTransport *transport)
                           ":server 001 omairc :Welcome\r\n"));
 }
 
-void welcomeMetadata(FakeIrcTransport *transport)
-{
-    transport->completeConnect();
-    transport->injectBytes(
-        QByteArrayLiteral(":server CAP omairc LS :away-notify batch draft/metadata-2\r\n"
-                          ":server CAP omairc ACK :away-notify batch draft/metadata-2\r\n"
-                          ":server 001 omairc :Welcome\r\n"));
-}
 
 bool selectedBodiesContain(QAbstractItemModel *messages, const QString& needle)
 {
@@ -113,32 +105,6 @@ int awayFrameCount(const QByteArrayList& frames, int from = 0)
     return hits;
 }
 
-int metadataStatusFrameCount(const QByteArrayList& frames, int from = 0)
-{
-    int hits = 0;
-    for (int i = from; i < frames.size(); ++i) {
-        if (frames.at(i).startsWith("METADATA * SET status"))
-            ++hits;
-    }
-    return hits;
-}
-
-FakeIrcTransport *joinMetadataNetwork(IrcController& controller,
-                                      const QString& networkId,
-                                      const QString& channel = QStringLiteral("#omarchy"))
-{
-    auto *transport = new FakeIrcTransport;
-    IrcSession *session = controller.addSession(config(networkId), transport);
-    if (!session)
-        return nullptr;
-    if (!controller.start(networkId))
-        return nullptr;
-    welcomeMetadata(transport);
-    transport->injectBytes(
-        QByteArrayLiteral(":omairc!u@h JOIN :") + channel.toUtf8()
-        + QByteArrayLiteral("\r\n"));
-    return transport;
-}
 
 void injectNowAway(FakeIrcTransport *transport)
 {
@@ -212,10 +178,10 @@ private slots:
     void composerNotifyDoesNotClearAutoAway();
     void disableBeforeTripDropsOneShot();
     void idleTimerUsesMillisecondInterval();
-    void tripSetsStandingStatusOnAllNetworks();
-    void activityRestoresStandingStatus();
-    void reasonChangeWhileTrippedRewritesStandingStatus();
-    void skipsStandingStatusWithoutMetadataCap();
+    void tripLogsStatusOnAllNetworks();
+    void activityLogsClearedStatus();
+    void disableWhileActiveDoesNotLogClearedStatus();
+    void reconnectWhileTrippedDoesNotRetripStatus();
 
 private:
     std::unique_ptr<QTemporaryDir> m_settingsDir;
@@ -399,6 +365,12 @@ void AutoawayTest::confirmationAndQueryCopy()
     QCOMPARE(ircFormatAutoawayDuration(3600), QStringLiteral("1 hour"));
     QCOMPARE(ircAutoawayGraceSeconds(15 * 60), 10);
     QCOMPARE(ircAutoawayGraceSeconds(30), 5);
+    QCOMPARE(ircFormatAutoawayTrippedStatus(QStringLiteral("AFK")),
+             QStringLiteral("Auto-away triggered: AFK"));
+    QCOMPARE(ircFormatAutoawayTrippedStatus(QString()),
+             QStringLiteral("Auto-away triggered."));
+    QCOMPARE(ircFormatAutoawayClearedStatus(),
+             QStringLiteral("Auto-away cleared — back online."));
 }
 
 void AutoawayTest::parseAndCatalog()
@@ -963,105 +935,112 @@ void AutoawayTest::disableBeforeTripDropsOneShot()
     QCOMPARE(transport->writtenFrames().last(), QByteArrayLiteral("AWAY :AFK\r\n"));
 }
 
-void AutoawayTest::tripSetsStandingStatusOnAllNetworks()
-{
-    IrcController controller;
-    auto *transportA = joinMetadataNetwork(controller, QStringLiteral("network-a"));
-    auto *transportB = joinMetadataNetwork(controller, QStringLiteral("network-b"));
-    QVERIFY(transportA);
-    QVERIFY(transportB);
-    controller.selectConversation(QStringLiteral("network-a"),
-                                  QStringLiteral("#omarchy"));
-    QVERIFY(controller.sendMessage(QStringLiteral("/autoaway reason AFK")));
-    QVERIFY(controller.sendMessage(QStringLiteral("/autoaway 15")));
-
-    const int beforeA = transportA->writtenFrames().size();
-    const int beforeB = transportB->writtenFrames().size();
-    controller.fireAutoawayIdleForTest();
-    controller.fireAutoawayGraceForTest();
-    QCOMPARE(awayFrameCount(transportA->writtenFrames(), beforeA), 1);
-    QCOMPARE(awayFrameCount(transportB->writtenFrames(), beforeB), 1);
-    QCOMPARE(metadataStatusFrameCount(transportA->writtenFrames(), beforeA), 1);
-    QCOMPARE(metadataStatusFrameCount(transportB->writtenFrames(), beforeB), 1);
-    QCOMPARE(transportA->writtenFrames().last(),
-             QByteArrayLiteral("METADATA * SET status :AFK\r\n"));
-    QCOMPARE(transportB->writtenFrames().last(),
-             QByteArrayLiteral("METADATA * SET status :AFK\r\n"));
-}
-
-void AutoawayTest::activityRestoresStandingStatus()
-{
-    IrcController controller;
-    auto *transport = joinMetadataNetwork(controller, QStringLiteral("libera"));
-    QVERIFY(transport);
-    controller.selectConversation(QStringLiteral("libera"),
-                                  QStringLiteral("#omarchy"));
-    QVERIFY(controller.sendMessage(QStringLiteral("/status building Omairc")));
-    QCOMPARE(transport->writtenFrames().last(),
-             QByteArrayLiteral("METADATA * SET status :building Omairc\r\n"));
-    transport->injectBytes(
-        QByteArrayLiteral(":server 761 omairc omairc status * :building Omairc\r\n"));
-
-    QVERIFY(controller.sendMessage(QStringLiteral("/autoaway reason AFK")));
-    QVERIFY(controller.sendMessage(QStringLiteral("/autoaway 15")));
-    controller.fireAutoawayIdleForTest();
-    controller.fireAutoawayGraceForTest();
-    QCOMPARE(transport->writtenFrames().last(),
-             QByteArrayLiteral("METADATA * SET status :AFK\r\n"));
-
-    const int before = transport->writtenFrames().size();
-    postAppEvent(QEvent::Wheel);
-    QCOMPARE(awayFrameCount(transport->writtenFrames(), before), 1);
-    QCOMPARE(metadataStatusFrameCount(transport->writtenFrames(), before), 1);
-    QCOMPARE(transport->writtenFrames().at(before),
-             QByteArrayLiteral("AWAY\r\n"));
-    QCOMPARE(transport->writtenFrames().last(),
-             QByteArrayLiteral("METADATA * SET status :building Omairc\r\n"));
-}
-
-void AutoawayTest::reasonChangeWhileTrippedRewritesStandingStatus()
-{
-    IrcController controller;
-    auto *transport = joinMetadataNetwork(controller, QStringLiteral("libera"));
-    QVERIFY(transport);
-    controller.selectConversation(QStringLiteral("libera"),
-                                  QStringLiteral("#omarchy"));
-    QVERIFY(controller.sendMessage(QStringLiteral("/autoaway reason AFK")));
-    QVERIFY(controller.sendMessage(QStringLiteral("/autoaway 15")));
-    controller.fireAutoawayIdleForTest();
-    controller.fireAutoawayGraceForTest();
-    QCOMPARE(transport->writtenFrames().last(),
-             QByteArrayLiteral("METADATA * SET status :AFK\r\n"));
-    injectNowAway(transport);
-    QVERIFY(controller.selfAway());
-
-    QVERIFY(controller.sendMessage(QStringLiteral("/autoaway reason lunch")));
-    QCOMPARE(transport->writtenFrames().last(),
-             QByteArrayLiteral("METADATA * SET status :lunch\r\n"));
-}
-
-void AutoawayTest::skipsStandingStatusWithoutMetadataCap()
+void AutoawayTest::tripLogsStatusOnAllNetworks()
 {
     IrcController controller;
     auto *transportA = joinNetwork(controller, QStringLiteral("network-a"));
-    auto *transportB = joinMetadataNetwork(controller, QStringLiteral("network-b"));
+    auto *transportB = joinNetwork(controller, QStringLiteral("network-b"));
     QVERIFY(transportA);
     QVERIFY(transportB);
+    IrcStatusConsole *console = controller.console();
+    QVERIFY(console);
     controller.selectConversation(QStringLiteral("network-a"),
                                   QStringLiteral("#omarchy"));
     QVERIFY(controller.sendMessage(QStringLiteral("/autoaway reason AFK")));
     QVERIFY(controller.sendMessage(QStringLiteral("/autoaway 15")));
 
-    const int beforeA = transportA->writtenFrames().size();
-    const int beforeB = transportB->writtenFrames().size();
     controller.fireAutoawayIdleForTest();
     controller.fireAutoawayGraceForTest();
-    QCOMPARE(awayFrameCount(transportA->writtenFrames(), beforeA), 1);
-    QCOMPARE(awayFrameCount(transportB->writtenFrames(), beforeB), 1);
-    QCOMPARE(metadataStatusFrameCount(transportA->writtenFrames(), beforeA), 0);
-    QCOMPARE(metadataStatusFrameCount(transportB->writtenFrames(), beforeB), 1);
-    QCOMPARE(transportB->writtenFrames().last(),
-             QByteArrayLiteral("METADATA * SET status :AFK\r\n"));
+
+    console->setNetwork(QStringLiteral("network-a"));
+    QVERIFY(logContains(console->lines(),
+                        QStringLiteral("Auto-away triggered: AFK")));
+    console->setNetwork(QStringLiteral("network-b"));
+    QVERIFY(logContains(console->lines(),
+                        QStringLiteral("Auto-away triggered: AFK")));
+}
+
+void AutoawayTest::activityLogsClearedStatus()
+{
+    IrcController controller;
+    auto *transport = joinNetwork(controller, QStringLiteral("libera"));
+    QVERIFY(transport);
+    IrcStatusConsole *console = controller.console();
+    QVERIFY(console);
+    controller.selectConversation(QStringLiteral("libera"),
+                                  QStringLiteral("#omarchy"));
+    QVERIFY(controller.sendMessage(QStringLiteral("/autoaway 15")));
+    controller.fireAutoawayIdleForTest();
+    controller.fireAutoawayGraceForTest();
+    injectNowAway(transport);
+    QVERIFY(controller.selfAway());
+    console->setNetwork(QStringLiteral("libera"));
+    QVERIFY(logContains(console->lines(),
+                        QStringLiteral("Auto-away triggered.")));
+
+    postAppEvent(QEvent::Wheel);
+    QVERIFY(logContains(console->lines(),
+                        QStringLiteral("Auto-away cleared — back online.")));
+}
+
+void AutoawayTest::disableWhileActiveDoesNotLogClearedStatus()
+{
+    IrcController controller;
+    auto *transportA = joinNetwork(controller, QStringLiteral("network-a"));
+    auto *transportB = joinNetwork(controller, QStringLiteral("network-b"));
+    QVERIFY(transportA);
+    QVERIFY(transportB);
+    IrcStatusConsole *console = controller.console();
+    QVERIFY(console);
+    controller.selectConversation(QStringLiteral("network-a"),
+                                  QStringLiteral("#omarchy"));
+    QVERIFY(controller.sendMessage(QStringLiteral("/autoaway 15")));
+    controller.fireAutoawayIdleForTest();
+    controller.fireAutoawayGraceForTest();
+    injectNowAway(transportA);
+    injectNowAway(transportB);
+    QVERIFY(controller.selfAway());
+
+    QVERIFY(controller.sendMessage(QStringLiteral("/autoaway off")));
+    console->setNetwork(QStringLiteral("network-a"));
+    QVERIFY(!logContains(console->lines(),
+                         QStringLiteral("Auto-away cleared — back online.")));
+    console->setNetwork(QStringLiteral("network-b"));
+    QVERIFY(!logContains(console->lines(),
+                         QStringLiteral("Auto-away cleared — back online.")));
+}
+
+void AutoawayTest::reconnectWhileTrippedDoesNotRetripStatus()
+{
+    IrcController controller;
+    auto *transportA = joinNetwork(controller, QStringLiteral("network-a"));
+    auto *transportB = joinNetwork(controller, QStringLiteral("network-b"));
+    QVERIFY(transportA);
+    QVERIFY(transportB);
+    IrcStatusConsole *console = controller.console();
+    QVERIFY(console);
+    controller.selectConversation(QStringLiteral("network-a"),
+                                  QStringLiteral("#omarchy"));
+    QVERIFY(controller.sendMessage(QStringLiteral("/autoaway reason AFK")));
+    QVERIFY(controller.sendMessage(QStringLiteral("/autoaway 15")));
+    controller.fireAutoawayIdleForTest();
+    controller.fireAutoawayGraceForTest();
+
+    console->setNetwork(QStringLiteral("network-a"));
+    const int tripsA = console->lines()->rowCount();
+    console->setNetwork(QStringLiteral("network-b"));
+    const int tripsB = console->lines()->rowCount();
+
+    transportA->remoteClose();
+    QVERIFY(controller.start(QStringLiteral("network-a")));
+    welcome(transportA);
+    injectNowAway(transportA);
+    QVERIFY(controller.selfAway());
+
+    console->setNetwork(QStringLiteral("network-a"));
+    QCOMPARE(console->lines()->rowCount(), tripsA);
+    console->setNetwork(QStringLiteral("network-b"));
+    QCOMPARE(console->lines()->rowCount(), tripsB);
 }
 
 void AutoawayTest::idleTimerUsesMillisecondInterval()

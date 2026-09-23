@@ -546,7 +546,6 @@ bool IrcController::discardSession(const QString &networkId)
     m_unawaySent.remove(networkId);
     m_autoAwayNetworks.remove(networkId);
     m_manualAwayNetworks.remove(networkId);
-    m_autoawaySavedStatus.remove(networkId);
     m_openDirectsMotdSeen.remove(networkId);
     forgetMonitorState(networkId);
     m_currentNicks.remove(networkId);
@@ -587,7 +586,6 @@ void IrcController::forgetNetworkState(const QString &networkId)
     m_unawaySent.remove(networkId);
     m_autoAwayNetworks.remove(networkId);
     m_manualAwayNetworks.remove(networkId);
-    m_autoawaySavedStatus.remove(networkId);
     m_openDirectsMotdSeen.remove(networkId);
     forgetMonitorState(networkId);
     m_currentNicks.remove(networkId);
@@ -2557,7 +2555,7 @@ IrcCommandOutcome IrcController::dispatchAutoaway(const IrcCommand& command,
         persist = true;
         stopAutoawayTimers();
         m_autoawayTripped = false;
-        clearAutoAwayNetworks();
+        clearAutoAwayNetworks(false);
         text = ircFormatAutoawayConfirmation(m_autoaway);
         break;
     case IrcAutoawayKind::EnableOn:
@@ -2749,69 +2747,12 @@ QString IrcController::autoawayReason() const
         : m_autoaway.defaultReason;
 }
 
-bool IrcController::standingStatusSupported(IrcSession *session,
-                                            bool nonEmpty) const
+void IrcController::recordAutoawayStatus(const QString& networkId,
+                                         const QString& text)
 {
-    if (!session || session->state() != IrcSession::State::Registered)
-        return false;
-    const QString networkId = session->networkId();
-    const IrcCapabilitySet capabilities = m_capabilities.value(networkId);
-    if (!capabilities.contains(IrcCapability::MemberMetadata)
-            || !capabilities.contains(IrcCapability::Batch)) {
-        return false;
-    }
-    if (!nonEmpty)
-        return true;
-    return IrcMetadata::effectiveMaxValueBytes(
-               session->metadataCapability().maxValueBytes)
-        > 0;
-}
-
-void IrcController::applyAutoawayStandingStatus(IrcSession *session)
-{
-    if (!session)
+    if (networkId.isEmpty() || text.isEmpty())
         return;
-    const QString networkId = session->networkId();
-    if (!m_autoawaySavedStatus.contains(networkId)) {
-        m_autoawaySavedStatus.insert(
-            networkId,
-            peerMetadata(networkId, session->nick())
-                .value(IrcMetadata::statusKey())
-                .toString());
-    }
-    updateAutoawayStandingStatus(session, autoawayReason());
-}
-
-void IrcController::updateAutoawayStandingStatus(IrcSession *session,
-                                                 const QString& reason)
-{
-    if (!session)
-        return;
-    const QString trimmed = reason.trimmed();
-    if (trimmed.isEmpty()) {
-        if (standingStatusSupported(session, false))
-            session->clearOwnMetadata(IrcMetadata::statusKey());
-        return;
-    }
-    if (!standingStatusSupported(session, true))
-        return;
-    session->setOwnMetadata(IrcMetadata::statusKey(), trimmed);
-}
-
-void IrcController::restoreAutoawayStandingStatus(IrcSession *session)
-{
-    if (!session)
-        return;
-    const QString networkId = session->networkId();
-    if (!m_autoawaySavedStatus.contains(networkId))
-        return;
-    const QString saved = m_autoawaySavedStatus.take(networkId);
-    if (!standingStatusSupported(session, !saved.isEmpty()))
-        return;
-    if (saved.isEmpty())
-        session->clearOwnMetadata(IrcMetadata::statusKey());
-    else
-        session->setOwnMetadata(IrcMetadata::statusKey(), saved);
+    m_console.record(IrcStatusEntry::outcome(networkId, text));
 }
 
 bool IrcController::markSessionAutoAway(IrcSession *session)
@@ -2821,7 +2762,6 @@ bool IrcController::markSessionAutoAway(IrcSession *session)
     if (!session->markAway(autoawayReason()))
         return false;
     m_autoAwayNetworks.insert(session->networkId());
-    applyAutoawayStandingStatus(session);
     return true;
 }
 
@@ -2835,12 +2775,8 @@ void IrcController::noteAwayCleared(const QString& networkId)
 {
     const bool wasAuto = m_autoAwayNetworks.remove(networkId);
     m_manualAwayNetworks.remove(networkId);
-    if (wasAuto) {
-        if (IrcSession *session = m_sessions.findSession(networkId))
-            restoreAutoawayStandingStatus(session);
-        if (m_autoAwayNetworks.isEmpty())
-            m_autoaway.oneShotReason.clear();
-    }
+    if (wasAuto && m_autoAwayNetworks.isEmpty())
+        m_autoaway.oneShotReason.clear();
 }
 
 void IrcController::refreshAutoAwayReason()
@@ -2853,7 +2789,6 @@ void IrcController::refreshAutoAwayReason()
         if (!session || session->state() != IrcSession::State::Registered)
             continue;
         session->markAway(reason);
-        updateAutoawayStandingStatus(session, reason);
     }
 }
 
@@ -2862,30 +2797,34 @@ void IrcController::tripAutoaway()
     if (!m_autoaway.enabled)
         return;
     m_autoawayTripped = true;
+    const QString status = ircFormatAutoawayTrippedStatus(autoawayReason());
     for (const QString& networkId : m_sessions.networkIds()) {
         if (m_autoAwayNetworks.contains(networkId)
             || m_manualAwayNetworks.contains(networkId)
             || m_reducer.selfAway(networkId)) {
             continue;
         }
-        markSessionAutoAway(m_sessions.findSession(networkId));
+        if (markSessionAutoAway(m_sessions.findSession(networkId)))
+            recordAutoawayStatus(networkId, status);
     }
     stopAutoawayTimers();
 }
 
-void IrcController::clearAutoAwayNetworks()
+void IrcController::clearAutoAwayNetworks(bool logCleared)
 {
     m_autoawayTripped = false;
     const QSet<QString> networks = m_autoAwayNetworks;
     m_autoAwayNetworks.clear();
+    const QString status = logCleared ? ircFormatAutoawayClearedStatus() : QString{};
     for (const QString& networkId : networks) {
         if (IrcSession *session = m_sessions.findSession(networkId)) {
             if (session->state() == IrcSession::State::Registered
                 && session->clearAway()) {
                 m_unawaySent.insert(networkId);
             }
-            restoreAutoawayStandingStatus(session);
         }
+        if (logCleared)
+            recordAutoawayStatus(networkId, status);
     }
     m_autoaway.oneShotReason.clear();
 }
@@ -4121,7 +4060,6 @@ void IrcController::apply(const IrcEvent& event)
         m_unawaySent.remove(welcome->networkId);
         m_autoAwayNetworks.remove(welcome->networkId);
         m_manualAwayNetworks.remove(welcome->networkId);
-        m_autoawaySavedStatus.remove(welcome->networkId);
         forgetWhoisWatches(welcome->networkId);
         forgetCtcpWatches(welcome->networkId);
         forgetOwnMetadataWatches(welcome->networkId);

@@ -173,6 +173,19 @@ QString ircFormatAutoawayConfirmation(const IrcAutoawayConfig& config)
     return formatEnabled(config, false);
 }
 
+QString ircFormatAutoawayTrippedStatus(const QString& reason)
+{
+    const QString trimmed = reason.trimmed();
+    if (trimmed.isEmpty())
+        return QStringLiteral("Auto-away triggered.");
+    return QStringLiteral("Auto-away triggered: %1").arg(trimmed);
+}
+
+QString ircFormatAutoawayClearedStatus()
+{
+    return QStringLiteral("Auto-away cleared — back online.");
+}
+
 int ircAutoawayGraceSeconds(int timeoutSeconds)
 {
     if (timeoutSeconds <= 0)
