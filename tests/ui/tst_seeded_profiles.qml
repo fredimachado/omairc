@@ -52,6 +52,9 @@ TestCase {
     }
 
     function test_selectProfileKeepsConversationNavigationProductionBacked() {
+        compare(appWindow.currentConversation, "#omarchy");
+        compare(appWindow.currentNetworkId, world.omarchyNetworkId);
+
         keyClick(Qt.Key_Comma, Qt.ControlModifier);
         tryCompare(findChild(appWindow, "connectionSheet"), "visible", true);
         world.connection.select(world.oftcNetworkId);
@@ -60,9 +63,9 @@ TestCase {
 
         keyClick(Qt.Key_Escape);
         tryCompare(findChild(appWindow, "connectionSheet"), "visible", false);
-        appWindow.stepConversation(1);
-        tryVerify(function() { return appWindow.currentConversation.length > 0; });
-        compare(appWindow.currentNetworkId.length > 0, true);
+        keyClick(Qt.Key_Down, Qt.AltModifier);
+        tryCompare(appWindow, "currentConversation", "#ricing");
+        compare(appWindow.currentNetworkId, world.omarchyNetworkId);
     }
 
     function test_addAndDiscardRestoresSelectedProfile() {

@@ -8603,7 +8603,7 @@ TestCase {
         keyClick(Qt.Key_Up);
         compare(seed.slash.selectedIndex, 0);
         keyClick(Qt.Key_Up);
-        compare(seed.slash.selectedIndex > 0, true);
+        compare(seed.slash.selectedIndex, seed.slash.matches.length - 1);
         compare(composer.text, "/m");
         verify(findChild(window, "slashCompleteList").visible);
     }
