@@ -384,12 +384,13 @@ private:
     void onAutoawayIdle();
     void onAutoawayGrace();
     void tripAutoaway();
-    void clearAutoAwayNetworks();
+    void clearAutoAwayNetworks(bool logCleared = true);
     QString autoawayReason() const;
     bool markSessionAutoAway(IrcSession *session);
     void noteManualAway(const QString& networkId);
     void noteAwayCleared(const QString& networkId);
     void refreshAutoAwayReason();
+    void recordAutoawayStatus(const QString& networkId, const QString& text);
     void syncHighlightWords(const QString& networkId);
     IrcCommandOutcome dispatchChannelModeWrapper(const IrcCommand& command,
                                                 IrcComposerSurface surface);

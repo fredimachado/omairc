@@ -2555,7 +2555,7 @@ IrcCommandOutcome IrcController::dispatchAutoaway(const IrcCommand& command,
         persist = true;
         stopAutoawayTimers();
         m_autoawayTripped = false;
-        clearAutoAwayNetworks();
+        clearAutoAwayNetworks(false);
         text = ircFormatAutoawayConfirmation(m_autoaway);
         break;
     case IrcAutoawayKind::EnableOn:
@@ -2747,6 +2747,14 @@ QString IrcController::autoawayReason() const
         : m_autoaway.defaultReason;
 }
 
+void IrcController::recordAutoawayStatus(const QString& networkId,
+                                         const QString& text)
+{
+    if (networkId.isEmpty() || text.isEmpty())
+        return;
+    m_console.record(IrcStatusEntry::outcome(networkId, text));
+}
+
 bool IrcController::markSessionAutoAway(IrcSession *session)
 {
     if (!session || session->state() != IrcSession::State::Registered)
@@ -2789,27 +2797,32 @@ void IrcController::tripAutoaway()
     if (!m_autoaway.enabled)
         return;
     m_autoawayTripped = true;
+    const QString status = ircFormatAutoawayTrippedStatus(autoawayReason());
     for (const QString& networkId : m_sessions.networkIds()) {
         if (m_autoAwayNetworks.contains(networkId)
             || m_manualAwayNetworks.contains(networkId)
             || m_reducer.selfAway(networkId)) {
             continue;
         }
-        markSessionAutoAway(m_sessions.findSession(networkId));
+        if (markSessionAutoAway(m_sessions.findSession(networkId)))
+            recordAutoawayStatus(networkId, status);
     }
     stopAutoawayTimers();
 }
 
-void IrcController::clearAutoAwayNetworks()
+void IrcController::clearAutoAwayNetworks(bool logCleared)
 {
     m_autoawayTripped = false;
     const QSet<QString> networks = m_autoAwayNetworks;
     m_autoAwayNetworks.clear();
+    const QString status = logCleared ? ircFormatAutoawayClearedStatus() : QString{};
     for (const QString& networkId : networks) {
         if (IrcSession *session = m_sessions.findSession(networkId)) {
             if (session->state() == IrcSession::State::Registered
                 && session->clearAway()) {
                 m_unawaySent.insert(networkId);
+                if (logCleared)
+                    recordAutoawayStatus(networkId, status);
             }
         }
     }

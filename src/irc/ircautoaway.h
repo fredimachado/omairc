@@ -39,4 +39,6 @@ IrcAutoawayRequest ircParseAutoawayArgument(const QString& argument);
 QString ircFormatAutoawayDuration(int seconds);
 QString ircFormatAutoawayQuery(const IrcAutoawayConfig& config);
 QString ircFormatAutoawayConfirmation(const IrcAutoawayConfig& config);
+QString ircFormatAutoawayTrippedStatus(const QString& reason);
+QString ircFormatAutoawayClearedStatus();
 int ircAutoawayGraceSeconds(int timeoutSeconds);
