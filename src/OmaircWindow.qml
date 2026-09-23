@@ -201,45 +201,6 @@ ApplicationWindow {
     Material.accent: accentColor
     color: pageColor
 
-    component PlainUrlHit: MouseArea {
-        required property Item edit
-        property bool inviteHits: false
-
-        objectName: "urlHit"
-        anchors.fill: parent
-        hoverEnabled: true
-        acceptedButtons: Qt.LeftButton
-        cursorShape: {
-            var pos = edit.positionAt(mouseX, mouseY);
-            var visible = win.editVisibleText(edit);
-            if (win.httpUrlAt(visible, pos).length > 0)
-                return Qt.PointingHandCursor;
-            if (inviteHits && win.inviteChannelAt(visible, pos).length > 0)
-                return Qt.PointingHandCursor;
-            return Qt.IBeamCursor;
-        }
-        onPressed: function(mouse) {
-            var pos = edit.positionAt(mouse.x, mouse.y);
-            var visible = win.editVisibleText(edit);
-            if (win.httpUrlAt(visible, pos).length > 0)
-                return;
-            if (inviteHits && win.inviteChannelAt(visible, pos).length > 0)
-                return;
-            mouse.accepted = false;
-        }
-        onClicked: function(mouse) {
-            var pos = edit.positionAt(mouse.x, mouse.y);
-            var visible = win.editVisibleText(edit);
-            var url = win.httpUrlAt(visible, pos);
-            if (url.length > 0) {
-                win.openAllowedUrl(url);
-                return;
-            }
-            if (inviteHits)
-                win.joinInviteChannel(win.inviteChannelAt(visible, pos));
-        }
-    }
-
     Text {
         id: messageLineProbe
         visible: false
@@ -2569,174 +2530,35 @@ ApplicationWindow {
             slashCommands: win.slashCommands
             activeMessages: win.activeMessages
             consoleLines: win.networkConsole ? win.networkConsole.lines : null
-            messageDelegate: Item {
-                id: messageDelegate
-
-                required property int index
-                required property string author
-                required property string time
-                required property string body
-                required property string kind
-                required property var model
-                // Read roles through model so MessageListModel dataChanged
-                // refreshes them. Keep them optional so ListModel fixtures
-                // without avatar/bot roles still instantiate.
-                readonly property string authorAvatar: model && model.authorAvatar
-                    ? String(model.authorAvatar) : ""
-                readonly property bool authorBot: !!(model && model.authorBot)
-                readonly property string authorAccount: model && model.authorAccount
-                    ? String(model.authorAccount) : ""
-                // Wash: nick or /highlight hit. Not the sidebar `mention` badge.
-                readonly property bool mentioned: !!(model && model.mentioned)
-                readonly property string origin: win.transcriptField(conversation.messageList.model, index, "origin")
-                readonly property bool replayed: origin === "replay"
-                readonly property bool isChat: kind !== "event" && kind !== "whois" && kind !== "unread"
-                readonly property bool grouped: win.continuesMessageGroup(
-                    conversation.messageList.model, index, author, time, kind, origin)
-                readonly property bool findMatch: win.findActive
-                    && win.findIndex === index
-
-                width: conversation.messageList.width
-                height: win.transcriptRowHeight(
-                    kind === "event" || kind === "unread", grouped || kind === "whois",
-                    kind === "event"
-                        ? messageEvent.implicitHeight
-                        : (kind === "unread"
-                            ? unreadMark.implicitHeight
-                            : (kind === "whois"
-                                ? messageWhois.implicitHeight
-                                : messageBody.implicitHeight)))
-
-                MentionWash {
-                    style: win.style
-                    shown: messageDelegate.mentioned
-                    anchors.fill: parent
+            messageDelegate: MessageRow {
+                style: win.style
+                plainIrcText: function(text) { return win.plainIrcText(text) }
+                emphasizedIrcText: function(text) { return win.emphasizedIrcText(text) }
+                hasIrcEmphasis: function(text) { return win.hasIrcEmphasis(text) }
+                transcriptField: function(model, row, name) {
+                    return win.transcriptField(model, row, name)
                 }
-
-                Rectangle {
-                    objectName: "findMatch"
-                    anchors.fill: parent
-                    visible: messageDelegate.findMatch
-                    color: win.mixColors(win.pageColor, win.selectionColor, 0.42)
+                continuesMessageGroup: function(model, row, author, time, kind, origin) {
+                    return win.continuesMessageGroup(model, row, author, time, kind, origin)
                 }
-
-                UnreadMark {
-                    id: unreadMark
-                    visible: messageDelegate.kind === "unread"
-                    style: win.style
-                    width: parent.width
-                    y: Math.round((parent.height - implicitHeight) / 2)
+                transcriptRowHeight: function(isEvent, compact, contentHeight) {
+                    return win.transcriptRowHeight(isEvent, compact, contentHeight)
                 }
-
-                Text {
-                    id: messageEvent
-                    objectName: "messageEvent"
-                    visible: messageDelegate.kind === "event"
-                    x: win.scaledSize(24)
-                    y: Math.round((parent.height - implicitHeight) / 2)
-                    width: parent.width - win.scaledSize(48)
-                    horizontalAlignment: Text.AlignHCenter
-                    text: win.plainIrcText(messageDelegate.body)
-                    textFormat: Text.PlainText
-                    color: win.mutedColor
-                    wrapMode: Text.Wrap
-                    font.family: "iA Writer Mono S"
-                    font.pixelSize: win.scaledSize(10)
+                bodyTextTopMargin: function(grouped) {
+                    return win.bodyTextTopMargin(grouped)
                 }
-
-                TextEdit {
-                    id: messageWhois
-                    objectName: "messageWhois"
-                    visible: messageDelegate.kind === "whois"
-                    anchors.left: parent.left
-                    anchors.leftMargin: win.scaledSize(70)
-                    anchors.right: parent.right
-                    anchors.rightMargin: win.scaledSize(34)
-                    anchors.top: parent.top
-                        anchors.topMargin: win.transcriptField(
-                            conversation.messageList.model, messageDelegate.index - 1, "kind") === "whois"
-                        ? win.scaledSize(4)
-                        : win.scaledSize(8)
-                    horizontalAlignment: Text.AlignLeft
-                    text: win.plainIrcText(messageDelegate.body)
-                    textFormat: TextEdit.PlainText
-                    color: win.mutedColor
-                    wrapMode: TextEdit.Wrap
-                    readOnly: true
-                    selectByMouse: true
-                    selectionColor: win.selectionColor
-                    selectedTextColor: "#ffffff"
-                    cursorVisible: false
-                    activeFocusOnPress: false
-                    activeFocusOnTab: false
-                    padding: 0
-                    font.family: "iA Writer Mono S"
-                    font.pixelSize: win.scaledSize(12)
-
-                    PlainUrlHit { edit: messageWhois }
-                }
-
-                MessageAvatar {
-                    objectName: "messageAvatar"
-                    visible: messageDelegate.isChat && !messageDelegate.grouped
-                    style: win.style
-                    avatarStore: win.avatarStore
-                    loadPeerAvatars: win.peerAvatarsEnabled
-                    selfNick: win.selfNick
-                    author: messageDelegate.author
-                    avatarUrl: messageDelegate.authorAvatar
-                    replayed: messageDelegate.replayed
-                    nickOpensDirect: true
-                    onDirectMessageRequested: function(nick) { win.openDirectMessage(nick) }
-                }
-
-                MessageHeader {
-                    objectName: "messageHeader"
-                    visible: messageDelegate.isChat && !messageDelegate.grouped
-                    style: win.style
-                    selfNick: win.selfNick
-                    author: messageDelegate.author
-                    time: messageDelegate.time
-                    replayed: messageDelegate.replayed
-                    nickOpensDirect: true
-                    bot: messageDelegate.authorBot
-                    account: messageDelegate.authorAccount
-                    onDirectMessageRequested: function(nick) { win.openDirectMessage(nick) }
-                }
-
-                TextEdit {
-                    id: messageBody
-                    objectName: "messageBody"
-                    visible: messageDelegate.isChat
-                    anchors.left: parent.left
-                    anchors.leftMargin: win.scaledSize(70)
-                    anchors.right: parent.right
-                    anchors.rightMargin: win.scaledSize(34)
-                    anchors.top: parent.top
-                    anchors.topMargin: win.bodyTextTopMargin(messageDelegate.grouped)
-                    text: win.hasIrcEmphasis(messageDelegate.body)
-                        ? win.emphasizedIrcText(messageDelegate.body)
-                        : win.plainIrcText(messageDelegate.body)
-                    color: (messageDelegate.replayed || messageDelegate.kind === "action")
-                        ? win.mutedColor : win.inkColor
-                    selectionColor: win.selectionColor
-                    selectedTextColor: "#ffffff"
-                    wrapMode: TextEdit.Wrap
-                    readOnly: true
-                    selectByMouse: true
-                    cursorVisible: false
-                    activeFocusOnPress: false
-                    activeFocusOnTab: false
-                    textFormat: win.hasIrcEmphasis(messageDelegate.body)
-                        ? TextEdit.RichText
-                        : TextEdit.PlainText
-                    padding: 0
-                    font.family: win.transcriptBodyFont.family
-                    font.italic: messageDelegate.kind === "action"
-                    font.pixelSize: win.transcriptBodyFont.pixelSize
-
-                    PlainUrlHit { edit: messageBody }
-                }
+                transcriptBodyFont: win.transcriptBodyFont
+                findActive: win.findActive
+                findIndex: win.findIndex
+                avatarStore: win.avatarStore
+                peerAvatarsEnabled: win.peerAvatarsEnabled
+                selfNick: win.selfNick
+                editVisibleText: function(edit) { return win.editVisibleText(edit) }
+                httpUrlAt: function(text, index) { return win.httpUrlAt(text, index) }
+                inviteChannelAt: function(text, index) { return win.inviteChannelAt(text, index) }
+                openAllowedUrl: function(url) { return win.openAllowedUrl(url) }
+                joinInviteChannel: function(channel) { return win.joinInviteChannel(channel) }
+                onDirectMessageRequested: function(nick) { win.openDirectMessage(nick) }
             }
 
             messageFooter: Item {
@@ -2830,91 +2652,16 @@ ApplicationWindow {
                     pixelSize: win.scaledSize(16)
                 }
             }
-            consoleDelegate: Item {
-                id: consoleDelegate
-
-                required property int index
-                required property string time
-                required property string label
-                required property string text
-                required property string source
-                required property string severity
-                readonly property bool findMatch: win.findActive
-                    && win.findIndex === index
-
-                width: conversation.consoleList.width
-                height: Math.max(win.scaledSize(22), consoleText.implicitHeight + win.scaledSize(8))
-
-                readonly property color labelColor: consoleDelegate.severity === "alert"
-                    ? win.accentColor
-                    : (consoleDelegate.severity === "trace"
-                        ? win.mutedColor
-                        : win.mixColors(win.pageColor, win.inkColor, 0.62))
-                readonly property color bodyColor: consoleDelegate.severity === "trace"
-                    ? win.mutedColor
-                    : win.inkColor
-                readonly property string glyph: consoleDelegate.source === "client"
-                    ? ">>"
-                    : (consoleDelegate.source === "local" ? "--" : "<<")
-
-                Rectangle {
-                    objectName: "findMatch"
-                    anchors.fill: parent
-                    visible: consoleDelegate.findMatch
-                    color: win.mixColors(win.pageColor, win.selectionColor, 0.42)
-                }
-
-                Text {
-                    anchors.left: parent.left
-                    anchors.leftMargin: win.scaledSize(24)
-                    anchors.verticalCenter: parent.verticalCenter
-                    width: win.scaledSize(68)
-                    text: consoleDelegate.time
-                    color: win.mutedColor
-                    font.family: "iA Writer Mono S"
-                    font.pixelSize: win.scaledSize(10)
-                }
-
-                Text {
-                    anchors.left: parent.left
-                    anchors.leftMargin: win.scaledSize(96)
-                    anchors.verticalCenter: parent.verticalCenter
-                    width: win.scaledSize(88)
-                    text: consoleDelegate.glyph + " " + consoleDelegate.label
-                    color: consoleDelegate.labelColor
-                    elide: Text.ElideRight
-                    font.family: "iA Writer Mono S"
-                    font.pixelSize: win.scaledSize(10)
-                }
-
-                TextEdit {
-                    id: consoleText
-                    objectName: "consoleText"
-                    anchors.left: parent.left
-                    anchors.leftMargin: win.scaledSize(192)
-                    anchors.right: parent.right
-                    anchors.rightMargin: win.scaledSize(24)
-                    anchors.verticalCenter: parent.verticalCenter
-                    text: win.plainIrcText(consoleDelegate.text)
-                    color: consoleDelegate.bodyColor
-                    selectionColor: win.selectionColor
-                    selectedTextColor: "#ffffff"
-                    wrapMode: TextEdit.Wrap
-                    readOnly: true
-                    selectByMouse: true
-                    cursorVisible: false
-                    activeFocusOnPress: false
-                    activeFocusOnTab: false
-                    textFormat: TextEdit.PlainText
-                    padding: 0
-                    font.family: "iA Writer Mono S"
-                    font.pixelSize: win.scaledSize(12)
-
-                    PlainUrlHit {
-                        edit: consoleText
-                        inviteHits: consoleDelegate.label === "INVITE"
-                    }
-                }
+            consoleDelegate: ConsoleLine {
+                style: win.style
+                plainIrcText: function(text) { return win.plainIrcText(text) }
+                findActive: win.findActive
+                findIndex: win.findIndex
+                editVisibleText: function(edit) { return win.editVisibleText(edit) }
+                httpUrlAt: function(text, index) { return win.httpUrlAt(text, index) }
+                inviteChannelAt: function(text, index) { return win.inviteChannelAt(text, index) }
+                openAllowedUrl: function(url) { return win.openAllowedUrl(url) }
+                joinInviteChannel: function(channel) { return win.joinInviteChannel(channel) }
             }
             onMembersToggleRequested: win.membersVisible = !win.membersVisible
             onSendRequested: win.sendMessage()
