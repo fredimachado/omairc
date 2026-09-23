@@ -16,6 +16,9 @@ ListView {
             && firstUnseenIndex >= 0
             && firstUnseenIndex < count)
         || hasUnreadMark)
+    // Fired once when a bottom row arrives while detached. The following
+    // stick, shrinks, and noteSplice do not emit it.
+    signal detachedArrival()
 
     property bool pinning: false
     property int trackedCount: 0
@@ -119,6 +122,7 @@ ListView {
         if (firstUnseenIndex < 0)
             firstUnseenIndex = previousCount;
         trackedCount = newCount;
+        detachedArrival();
     }
 
     function noteSplice(previousCount, newCount) {

@@ -28,17 +28,18 @@ Rectangle {
         : "Jump to first new message"
     Accessible.onPressAction: jump.list.jumpToUnseen()
 
-    // Finite Animation.running bindings assign false when the loops end,
-    // which either drops the binding or starts another burst. Drive restart
-    // from the arming edge instead.
-    readonly property bool bounceArmed: jump.visible && jump.list.hasUnreadMark
-
-    onBounceArmedChanged: {
-        if (bounceArmed)
-            bounceBurst.restart()
-        else {
-            bounceBurst.stop()
-            arrow.bounceOffset = 0
+    // Five finite loops. `running` stays unbound. `stop()` writes
+    // `running = false` from C++, and a `running:` binding would be
+    // dropped by that assignment. Showing or hiding the chip does not
+    // start the burst. A detached bottom arrival does.
+    Connections {
+        target: jump.list
+        function onDetachedArrival() {
+            // jumpArmed can still be false in this same turn.
+            Qt.callLater(function() {
+                if (jump.visible)
+                    bounceBurst.restart()
+            })
         }
     }
 
@@ -56,7 +57,7 @@ Rectangle {
         SequentialAnimation {
             id: bounceBurst
             objectName: "bounceBurst"
-            loops: 3
+            loops: 5
             onStopped: arrow.bounceOffset = 0
 
             NumberAnimation {
@@ -76,6 +77,29 @@ Rectangle {
                 easing.type: Easing.InOutSine
             }
         }
+
+        Connections {
+            target: jump
+            function onVisibleChanged() {
+                if (jump.visible)
+                    return
+                bounceBurst.stop()
+                arrow.bounceOffset = 0
+            }
+        }
+    }
+
+    Rectangle {
+        objectName: "unseenJumpDot"
+        visible: jump.visible
+        width: jump.style.scaledSize(8)
+        height: width
+        radius: width / 2
+        color: jump.style.accentColor
+        anchors.top: parent.top
+        anchors.right: parent.right
+        anchors.topMargin: jump.style.scaledSize(2)
+        anchors.rightMargin: jump.style.scaledSize(2)
     }
 
     MouseArea {

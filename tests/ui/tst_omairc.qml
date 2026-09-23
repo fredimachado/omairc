@@ -2712,20 +2712,33 @@ TestCase {
 
         fuzzyCompare(list.contentY, frozenY, 2);
         compare(list.firstUnseenIndex, previousCount);
+        compare(list.hasUnreadMark, false);
         var jump = item("messageUnseenJump");
         tryCompare(jump, "visible", true);
+        var burst = findChild(jump, "bounceBurst");
+        verify(burst !== null, "Could not find bounceBurst on the jump chip");
+        var dot = findChild(jump, "unseenJumpDot");
+        verify(dot !== null, "Could not find unseenJumpDot on the jump chip");
+        compare(dot.visible, true);
+        compare(burst.loops, 5);
+        tryCompare(burst, "running", true);
 
         appendLiveMessages(list, 24, "later unseen");
         waitForRendering(appWindow.contentItem);
         wait(0);
         fuzzyCompare(list.contentY, frozenY, 2);
         compare(list.firstUnseenIndex, previousCount);
+        compare(burst.loops, 5);
+        tryCompare(burst, "running", true);
 
         var unseen = list.firstUnseenIndex;
         mouseClick(jump);
         waitForRendering(appWindow.contentItem);
         wait(0);
         tryCompare(jump, "visible", false);
+        compare(dot.visible, false);
+        compare(burst.loops, 5);
+        compare(burst.running, false);
         compare(list.firstUnseenIndex, -1);
         tryVerify(function() {
             return unseenIsInView(list, unseen);
@@ -3090,9 +3103,12 @@ TestCase {
         var jump = item("messageUnseenJump");
         var burst = findChild(jump, "bounceBurst");
         verify(burst !== null, "Could not find bounceBurst on the jump chip");
+        var dot = findChild(jump, "unseenJumpDot");
+        verify(dot !== null, "Could not find unseenJumpDot on the jump chip");
         compare(jump.visible, false);
-        compare(jump.bounceArmed, false);
+        compare(burst.loops, 5);
         compare(burst.running, false);
+        compare(dot.visible, false);
 
         appWindow.windowFocusGained();
         waitForRendering(appWindow.contentItem);
@@ -3104,8 +3120,9 @@ TestCase {
                "Unread backlog below the mark should leave room to scroll down");
 
         tryCompare(jump, "visible", true);
-        compare(jump.bounceArmed, true);
-        tryCompare(burst, "running", true);
+        compare(burst.loops, 5);
+        compare(burst.running, false);
+        compare(dot.visible, true);
 
         list.pinToEnd();
         waitForRendering(appWindow.contentItem);
@@ -3114,22 +3131,35 @@ TestCase {
             return transcriptPinned(list);
         }, 1000, "Pinning to end should reach the bottom");
         tryCompare(jump, "visible", false);
-        compare(jump.bounceArmed, false);
+        compare(burst.loops, 5);
         tryCompare(burst, "running", false);
+        compare(dot.visible, false);
 
         list.pinToUnread(markRow);
         waitForRendering(appWindow.contentItem);
         wait(0);
         verify(!transcriptPinned(list));
         tryCompare(jump, "visible", true);
-        compare(jump.bounceArmed, true);
+        compare(burst.loops, 5);
+        compare(burst.running, false);
+        compare(dot.visible, true);
+
+        appendLiveMessages(list, 1, "detached-arrival");
+        waitForRendering(appWindow.contentItem);
+        wait(0);
+        verify(!transcriptPinned(list));
+        tryCompare(jump, "visible", true);
+        compare(dot.visible, true);
+        compare(burst.loops, 5);
         tryCompare(burst, "running", true);
 
         mouseClick(jump);
         waitForRendering(appWindow.contentItem);
         wait(0);
         tryCompare(jump, "visible", false);
-        compare(jump.bounceArmed, false);
+        compare(dot.visible, false);
+        compare(burst.loops, 5);
+        tryCompare(burst, "running", false);
         tryVerify(function() {
             return transcriptPinned(list);
         }, 1000, "Jump should scroll to the latest messages");
