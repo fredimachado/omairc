@@ -4651,21 +4651,59 @@ TestCase {
         return last - first + 1;
     }
 
-    function focusOverflowingMemberList() {
+    function memberListLastVisible(list) {
+        var last = list.indexAt(list.width / 2, list.contentY + Math.max(1, list.height - 1));
+        if (last < 0)
+            last = list.count - 1;
+        return last;
+    }
+
+    function memberListPageSize(list, fraction) {
+        if (fraction === undefined)
+            fraction = 0.8;
+        return Math.max(1, Math.round(memberListVisibleRows(list) * fraction));
+    }
+
+    function memberListPageDownIndex(list, fraction) {
+        return Math.min(list.count - 1, memberListLastVisible(list) + memberListPageSize(list, fraction));
+    }
+
+    function focusOverflowingMemberList(memberCount) {
+        if (memberCount === undefined)
+            memberCount = 30;
         var members = item("membersList");
         var names = [];
         var index = 0;
-        for (; index < 30; ++index)
+        for (; index < memberCount; ++index)
             names.push("bulk" + index);
         seed.injectOmarchy(
             ":server 353 fred = #omarchy :" + names.join(" ") + "\r\n"
             + ":server 366 fred #omarchy :End of NAMES\r\n");
-        tryVerify(function() { return members.count === 30; });
+        tryVerify(function() { return members.count === memberCount; });
         waitForRendering(appWindow.contentItem);
         verify(members.contentHeight > members.height);
         keyClick(Qt.Key_P, Qt.ControlModifier | Qt.ShiftModifier);
         tryCompare(members, "activeFocus", true);
         return members;
+    }
+
+    function fillDirectMessageUntilScrollable(list) {
+        var composer = item("messageComposer");
+        mouseClick(composer);
+        verify(composer.activeFocus);
+        var start = list.model.rowCount();
+        var index = 0;
+        for (index = 0; index < 24; ++index) {
+            var minute = index < 10 ? "0" + index : "" + index;
+            injectOmarchyChat("anna", "fred", "scroll line " + index, "10:" + minute);
+        }
+        waitForRowCount(list, start + 24);
+        waitForRendering(appWindow.contentItem);
+        list.pinToEnd();
+        waitForRendering(appWindow.contentItem);
+        wait(0);
+        verify(list.contentHeight > list.height);
+        verify(transcriptPinned(list));
     }
 
     function test_memberListScrollbarAppearsWhenOverflowing() {
@@ -4697,46 +4735,87 @@ TestCase {
         openSeededAppWindow();
         var members = focusOverflowingMemberList();
         var transcript = item("messageList");
-        var visible = memberListVisibleRows(members);
-        var page = Math.max(1, Math.round(visible * 0.8));
-        compare(members.currentIndex, 0);
+        compare(firstVisibleIndex(members), 0);
 
         var transcriptY = transcript.contentY;
+        var expected = memberListPageDownIndex(members);
         keyClick(Qt.Key_PageDown);
         waitForRendering(appWindow.contentItem);
         wait(0);
-        tryCompare(members, "currentIndex", page);
+        tryCompare(members, "currentIndex", expected);
+        verify(firstVisibleIndex(members) > 0);
         compare(transcript.contentY, transcriptY,
                 "Page Down with member list focused should not scroll the transcript");
 
+        expected = memberListPageDownIndex(members);
         keyClick(Qt.Key_PageDown);
         waitForRendering(appWindow.contentItem);
         wait(0);
-        tryCompare(members, "currentIndex", Math.min(members.count - 1, page + page));
+        tryCompare(members, "currentIndex", expected);
         compare(transcript.contentY, transcriptY,
                 "another Page Down should still leave the transcript alone");
+    }
+
+    function test_memberListPageUpRestoresPriorViewport() {
+        openSeededAppWindow();
+        var members = focusOverflowingMemberList(60);
+
+        keyClick(Qt.Key_PageDown);
+        waitForRendering(appWindow.contentItem);
+        wait(0);
+        var firstAfterOneDown = firstVisibleIndex(members);
+
+        keyClick(Qt.Key_PageDown);
+        waitForRendering(appWindow.contentItem);
+        wait(0);
+        verify(firstVisibleIndex(members) > firstAfterOneDown,
+               "a second Page Down should move the viewport farther down");
+
+        keyClick(Qt.Key_PageUp);
+        waitForRendering(appWindow.contentItem);
+        wait(0);
+        compare(firstVisibleIndex(members), firstAfterOneDown,
+                "Page Up should undo one Page Down without overshooting");
+    }
+
+    function test_memberListPageDownUsesViewportNotSelection() {
+        openSeededAppWindow();
+        var members = focusOverflowingMemberList();
+        var step = 0;
+        for (step = 0; step < 5; ++step)
+            keyClick(Qt.Key_Down);
+        tryCompare(members, "currentIndex", 5);
+        compare(firstVisibleIndex(members), 0,
+                "arrow keys should not scroll the member viewport yet");
+
+        var expected = memberListPageDownIndex(members);
+        keyClick(Qt.Key_PageDown);
+        waitForRendering(appWindow.contentItem);
+        wait(0);
+        compare(members.currentIndex, expected,
+                "Page Down should page from the viewport edge, not the selection");
     }
 
     function test_memberListShiftPageMovesHalfViewport() {
         openSeededAppWindow();
         var members = focusOverflowingMemberList();
-        var visible = memberListVisibleRows(members);
-        var halfPage = Math.max(1, Math.round(visible * 0.35));
-        compare(members.currentIndex, 0);
+        var halfPage = memberListPageSize(members, 0.35);
+        compare(firstVisibleIndex(members), 0);
 
+        var expected = memberListPageDownIndex(members, 0.35);
         keyClick(Qt.Key_PageDown, Qt.ShiftModifier);
         waitForRendering(appWindow.contentItem);
         wait(0);
-        tryCompare(members, "currentIndex", halfPage);
+        tryCompare(members, "currentIndex", expected);
 
-        var mid = members.currentIndex;
+        var mid = firstVisibleIndex(members);
         keyClick(Qt.Key_PageDown);
         waitForRendering(appWindow.contentItem);
         wait(0);
-        var fullPage = Math.max(1, Math.round(visible * 0.8));
-        verify(members.currentIndex - mid > halfPage,
+        var fullPage = memberListPageSize(members);
+        verify(firstVisibleIndex(members) - mid > halfPage,
                "Page Down should hop farther than Shift+Page Down from the same start");
-        verify(members.currentIndex - mid <= fullPage + 1,
+        verify(firstVisibleIndex(members) - mid <= fullPage + 1,
                "Page Down should move by about one visible page");
     }
 
@@ -4774,6 +4853,105 @@ TestCase {
         tryCompare(composer, "activeFocus", true);
         verify(!item("membersList").activeFocus,
                "composer-focused paging should not move member list focus");
+    }
+
+    function test_ctrlHomeEndWithMembersFocusedJumpsTranscript() {
+        openSeededAppWindow();
+        focusOverflowingMemberList();
+        var list = item("messageList");
+        fillTranscriptUntilScrollable(list);
+        pageTranscriptToEnd(list);
+        verify(transcriptPinned(list));
+
+        keyClick(Qt.Key_Home, Qt.ControlModifier);
+        waitForRendering(appWindow.contentItem);
+        wait(0);
+        compare(firstVisibleIndex(list), 0,
+               "Ctrl+Home with members focused should jump transcript to top");
+
+        pageTranscriptToEnd(list);
+        keyClick(Qt.Key_End, Qt.ControlModifier);
+        waitForRendering(appWindow.contentItem);
+        wait(0);
+        verify(transcriptPinned(list),
+               "Ctrl+End with members focused should jump transcript to bottom");
+    }
+
+    function test_pageKeysWithHiddenMembersPanelStayHidden() {
+        openSeededAppWindow();
+        var list = item("messageList");
+        fillTranscriptUntilScrollable(list);
+        pageTranscriptToEnd(list);
+
+        keyClick(Qt.Key_M, Qt.ControlModifier | Qt.ShiftModifier);
+        tryCompare(item("membersPanel"), "visible", false);
+        compare(appWindow.membersVisible, false);
+
+        var before = list.contentY;
+        keyClick(Qt.Key_PageUp);
+        waitForRendering(appWindow.contentItem);
+        wait(0);
+        verify(list.contentY < before,
+               "Page Up with the members panel hidden should scroll the transcript");
+        compare(appWindow.membersVisible, false);
+        tryCompare(item("membersPanel"), "visible", false);
+
+        keyClick(Qt.Key_PageDown);
+        waitForRendering(appWindow.contentItem);
+        wait(0);
+        compare(appWindow.membersVisible, false,
+                "Page Down should not reopen the members panel");
+        tryCompare(item("membersPanel"), "visible", false);
+    }
+
+    function test_pageKeysOnDirectMessageScrollTranscript() {
+        openSeededAppWindow();
+        mouseClick(namedItem(liveConversation("anna")));
+        tryCompare(appWindow, "currentConversation", "anna");
+        verify(!item("membersPanel").visible);
+
+        var list = item("messageList");
+        fillDirectMessageUntilScrollable(list);
+        pageTranscriptToEnd(list);
+        verify(transcriptPinned(list));
+
+        var before = list.contentY;
+        keyClick(Qt.Key_PageUp);
+        waitForRendering(appWindow.contentItem);
+        wait(0);
+        verify(list.contentY < before,
+               "Page Up on a direct message should scroll the transcript");
+        var afterUp = list.contentY;
+
+        keyClick(Qt.Key_PageDown);
+        waitForRendering(appWindow.contentItem);
+        wait(0);
+        verify(list.contentY > afterUp,
+               "Page Down on a direct message should scroll the transcript");
+    }
+
+    function test_pageKeysOnStatusScrollTranscript() {
+        openSeededAppWindow();
+        var list = item("consoleList");
+        keyClick(Qt.Key_QuoteLeft, Qt.ControlModifier);
+        tryCompare(appWindow, "consoleVisible", true);
+        fillConsoleUntilScrollable(list);
+        pageTranscriptToEnd(list);
+
+        var before = list.contentY;
+        keyClick(Qt.Key_PageUp);
+        waitForRendering(appWindow.contentItem);
+        wait(0);
+        verify(list.contentY < before,
+               "Page Up on Status should scroll the console transcript");
+        var afterUp = list.contentY;
+
+        keyClick(Qt.Key_PageDown);
+        waitForRendering(appWindow.contentItem);
+        wait(0);
+        verify(list.contentY > afterUp,
+               "Page Down on Status should scroll the console transcript");
+        compare(appWindow.consoleVisible, true);
     }
 
     function test_memberEnterAfterSwitchingToSmallerChannel() {
@@ -9222,12 +9400,12 @@ TestCase {
                "shortcut sheet should list Shift+Page Up / Shift+Page Down");
         verify(texts.indexOf("scroll transcript half page") !== -1,
                "shortcut sheet should name scroll transcript half page");
-        verify(texts.indexOf("page members") !== -1,
-               "shortcut sheet should name page members");
-        verify(texts.indexOf("page members half") !== -1,
-               "shortcut sheet should name page members half");
-        verify(texts.indexOf("first / last nick") !== -1,
-               "shortcut sheet should name first / last nick");
+        verify(texts.indexOf("page focused members") !== -1,
+               "shortcut sheet should name page focused members");
+        verify(texts.indexOf("page focused members half page") !== -1,
+               "shortcut sheet should name page focused members half page");
+        verify(texts.indexOf("first / last focused nick") !== -1,
+               "shortcut sheet should name first / last focused nick");
         verify(texts.indexOf(ctrl + "+Home / " + ctrl + "+End") !== -1,
                "shortcut sheet should list " + ctrl + "+Home / " + ctrl + "+End");
         verify(texts.indexOf("top / bottom") !== -1,

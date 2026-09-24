@@ -59,9 +59,9 @@ Popup {
                 { keys: "Ctrl+Shift+S", action: "server list" },
                 { keys: "Ctrl+Shift+M", action: "members panel" },
                 { keys: "Ctrl+Shift+P", action: "focus members" },
-                { keys: "Page Up / Page Down", action: "page members" },
-                { keys: "Shift+Page Up / Shift+Page Down", action: "page members half" },
-                { keys: "Home / End", action: "first / last nick" },
+                { keys: "Page Up / Page Down", action: "page focused members" },
+                { keys: "Shift+Page Up / Shift+Page Down", action: "page focused members half page" },
+                { keys: "Home / End", action: "first / last focused nick" },
                 { keys: "Ctrl+/", action: "this sheet" },
                 { keys: "Ctrl+Q", action: "quit" }
             ]

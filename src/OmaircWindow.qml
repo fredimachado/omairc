@@ -1759,15 +1759,14 @@ ApplicationWindow {
             last = first;
 
         var page = Math.max(1, Math.round((last - first + 1) * fraction));
-        var current = list.currentIndex >= 0 ? list.currentIndex : first;
         if (direction < 0) {
-            var upIndex = Math.max(0, current - page);
+            var upIndex = Math.max(0, first - page);
+            list.positionViewAtIndex(upIndex, ListView.Beginning);
             list.currentIndex = upIndex;
-            list.positionViewAtIndex(upIndex, ListView.End);
         } else {
-            var downIndex = Math.min(list.count - 1, current + page);
+            var downIndex = Math.min(list.count - 1, last + page);
+            list.positionViewAtIndex(downIndex, ListView.End);
             list.currentIndex = downIndex;
-            list.positionViewAtIndex(downIndex, ListView.Beginning);
         }
     }
 
