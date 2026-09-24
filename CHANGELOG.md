@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.3] - 2026-09-24
+
+### Fixed
+
+- The About update checks click the status line after it can accept a click,
+  and the half-page transcript scroll test no longer times out the package
+  check.
+
 ## [1.0.2] - 2026-09-24
 
 ### Added
@@ -459,7 +467,8 @@ First public release: a simple IRC client for Omarchy.
 - Keyboard map, slash-command complete, selectable transcript, and follow-unseen.
 - qmake Unix install tree and a GitHub Releases pacman repository.
 
-[Unreleased]: https://github.com/fredimachado/omairc/compare/v1.0.2...HEAD
+[Unreleased]: https://github.com/fredimachado/omairc/compare/v1.0.3...HEAD
+[1.0.3]: https://github.com/fredimachado/omairc/compare/v1.0.2...v1.0.3
 [1.0.2]: https://github.com/fredimachado/omairc/compare/v1.0.1...v1.0.2
 [1.0.1]: https://github.com/fredimachado/omairc/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/fredimachado/omairc/compare/v0.9.1...v1.0.0
