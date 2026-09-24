@@ -1238,6 +1238,10 @@ TestCase {
             ? Qt.MetaModifier : Qt.ControlModifier;
     }
 
+    function shortcutAboutModifier() {
+        return shortcutCommandModifier() | Qt.ShiftModifier;
+    }
+
     function visibleListChild(listName, childName) {
         var list = item(listName);
         var index = 0;
@@ -8323,12 +8327,12 @@ TestCase {
         verify(!sheet.opened);
         verify(!sheet.visible);
 
-        keyClick(Qt.Key_Slash, Qt.ControlModifier | Qt.ShiftModifier);
+        keyClick(Qt.Key_Slash, shortcutAboutModifier());
         tryCompare(sheet, "opened", true);
         compare(item("aboutTitle").text, "About Omairc");
         compare(item("aboutVersion").text, appWindow.appVersion);
 
-        keyClick(Qt.Key_Slash, Qt.ControlModifier | Qt.ShiftModifier);
+        keyClick(Qt.Key_Slash, shortcutAboutModifier());
         compare(sheet.opened, true);
 
         keyClick(Qt.Key_Escape);
@@ -8349,7 +8353,7 @@ TestCase {
         verify(!sheet.opened);
         verify(window.connectionOverlayVisible);
 
-        keyClick(Qt.Key_Slash, Qt.ControlModifier | Qt.ShiftModifier);
+        keyClick(Qt.Key_Slash, shortcutAboutModifier());
         tryCompare(sheet, "opened", true);
         verify(window.connectionOverlayVisible);
 
@@ -8366,7 +8370,7 @@ TestCase {
         var sheet = item("aboutSheet");
         verify(!sheet.opened);
 
-        keyClick(Qt.Key_Slash, Qt.ControlModifier | Qt.ShiftModifier);
+        keyClick(Qt.Key_Slash, shortcutAboutModifier());
         tryCompare(sheet, "opened", true);
         compare(appWindow.connectionOverlayVisible, true);
 
@@ -8384,7 +8388,7 @@ TestCase {
         keyClick(Qt.Key_Slash, Qt.ControlModifier);
         tryCompare(shortcuts, "opened", true);
 
-        keyClick(Qt.Key_Slash, Qt.ControlModifier | Qt.ShiftModifier);
+        keyClick(Qt.Key_Slash, shortcutAboutModifier());
         compare(about.opened, false);
         verify(shortcuts.opened);
     }
@@ -8396,7 +8400,7 @@ TestCase {
 
         openJumpSheet();
 
-        keyClick(Qt.Key_Slash, Qt.ControlModifier | Qt.ShiftModifier);
+        keyClick(Qt.Key_Slash, shortcutAboutModifier());
         compare(about.opened, false);
         verify(item("jumpSheet").opened);
 
