@@ -1140,6 +1140,15 @@ TestCase {
         return result;
     }
 
+    function clickAboutUpdateStatus() {
+        // The line's mouse area does not take clicks on the frame it becomes
+        // enabled. The card background swallows that click.
+        var status = item("aboutUpdateStatus");
+        tryVerify(function() { return status.visible && status.height > 0; });
+        wait(0);
+        mouseClick(status);
+    }
+
     function shortcutSheetTexts(window) {
         var sheet = window ? findChild(window, "shortcutsSheet") : item("shortcutsSheet");
         var texts = [];
@@ -8485,7 +8494,7 @@ TestCase {
         verify(item("aboutUpdateStatus").visible);
 
         appWindow.lastOpenedUrl = "";
-        mouseClick(item("aboutUpdateStatus"));
+        clickAboutUpdateStatus();
         compare(appWindow.lastOpenedUrl,
                 "https://github.com/fredimachado/omairc/releases/tag/v9.9.9");
 
@@ -8508,7 +8517,7 @@ TestCase {
         compare(checker.installerUpdateAvailable, false);
         compare(item("aboutUpdateStatus").text, "Version 9.9.9 is available.");
         appWindow.lastOpenedUrl = "";
-        mouseClick(item("aboutUpdateStatus"));
+        clickAboutUpdateStatus();
         compare(appWindow.lastOpenedUrl,
                 "https://github.com/fredimachado/omairc/releases/tag/v9.9.9");
 
@@ -8518,7 +8527,7 @@ TestCase {
         checker.applyGithubPayload(payload, 200);
         compare(checker.installerUpdateAvailable, true);
         appWindow.lastOpenedUrl = "";
-        mouseClick(item("aboutUpdateStatus"));
+        clickAboutUpdateStatus();
         compare(appWindow.lastOpenedUrl, "");
         compare(checker.status, "readyToRestart");
         compare(item("aboutUpdateStatus").text, "Restart to update");
@@ -8561,7 +8570,7 @@ TestCase {
             200);
         mouseClick(item("selfVersionHit"));
         tryCompare(item("aboutSheet"), "opened", true);
-        mouseClick(item("aboutUpdateStatus"));
+        clickAboutUpdateStatus();
         compare(checker.status, "readyToRestart");
         compare(checker.launchAttempts, 0);
         appWindow.close();
