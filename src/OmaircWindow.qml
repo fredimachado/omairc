@@ -2118,6 +2118,17 @@ ApplicationWindow {
     }
 
     Shortcut {
+        sequence: "Ctrl+Shift+/"
+        context: Qt.ApplicationShortcut
+        enabled: !win.shortcutOverlayOpen
+        onActivated: {
+            if (aboutSheet.opened)
+                return;
+            win.activateVersionControl();
+        }
+    }
+
+    Shortcut {
         sequence: "Ctrl+`"
         context: Qt.ApplicationShortcut
         enabled: !win.connectionOverlayVisible && !win.shortcutOverlayOpen

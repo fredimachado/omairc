@@ -8317,6 +8317,22 @@ TestCase {
         verify(versionLeft >= nickRight);
     }
 
+    function test_aboutSheetOpensFromCtrlShiftSlashAndEscapeKeepsConversation() {
+        openSeededAppWindow();
+        var sheet = item("aboutSheet");
+        verify(!sheet.opened);
+        verify(!sheet.visible);
+
+        keyClick(Qt.Key_Slash, Qt.ControlModifier | Qt.ShiftModifier);
+        tryCompare(sheet, "opened", true);
+        compare(item("aboutTitle").text, "About Omairc");
+        compare(item("aboutVersion").text, appWindow.appVersion);
+
+        keyClick(Qt.Key_Escape);
+        tryCompare(sheet, "opened", false);
+        compare(appWindow.currentConversation, "#omarchy");
+    }
+
     function test_aboutSheetOpensFromVersionAndEscapeKeepsConversation() {
         openSeededAppWindow();
         var sheet = item("aboutSheet");

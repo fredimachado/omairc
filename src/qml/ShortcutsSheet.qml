@@ -63,6 +63,7 @@ Popup {
                 { keys: "Shift+Page Up / Shift+Page Down", action: "page focused members half page" },
                 { keys: "Home / End", action: "first / last focused nick" },
                 { keys: "Ctrl+/", action: "this sheet" },
+                { keys: "Ctrl+Shift+/", action: "About" },
                 { keys: "Ctrl+Q", action: "quit" }
             ]
         }
