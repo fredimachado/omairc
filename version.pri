@@ -1,8 +1,8 @@
 # Single version for --version, CTCP VERSION, tests, and packaging.
-# Arch pkgver cannot contain hyphens: use 1.0.0alpha, not 1.0.0-alpha.
+# Arch pkgver cannot contain hyphens: use 1.0.1alpha, not 1.0.1-alpha.
 # Tag releases as v plus this string. Letter suffixes (alpha, beta, rc)
-# compare older than the final 1.0.0, so pacman upgrades cleanly.
-VERSION = 1.0.0
+# compare older than the final 1.0.1, so pacman upgrades cleanly.
+VERSION = 1.0.1
 
 # Write a generated header so incremental builds recompile objects that embed
 # the version when VERSION changes. Regeneration is content-compared so an

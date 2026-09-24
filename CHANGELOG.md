@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-09-24
+
+### Fixed
+
+- An in-source build no longer hides the generated version header. A later
+  shadow build still reports `OMAIRC_BUILD_VERSION` from `omairc --version`,
+  so the Arch package check can see the override.
+
 ## [1.0.0] - 2026-09-23
 
 ### Added
@@ -439,7 +447,8 @@ First public release: a simple IRC client for Omarchy.
 - Keyboard map, slash-command complete, selectable transcript, and follow-unseen.
 - qmake Unix install tree and a GitHub Releases pacman repository.
 
-[Unreleased]: https://github.com/fredimachado/omairc/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/fredimachado/omairc/compare/v1.0.1...HEAD
+[1.0.1]: https://github.com/fredimachado/omairc/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/fredimachado/omairc/compare/v0.9.1...v1.0.0
 [0.9.1]: https://github.com/fredimachado/omairc/compare/v0.9.0...v0.9.1
 [0.9.0]: https://github.com/fredimachado/omairc/compare/v0.8.3...v0.9.0
