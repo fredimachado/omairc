@@ -2102,18 +2102,13 @@ ApplicationWindow {
         onActivated: win.submitConnection()
     }
 
+    // Ctrl+Tab cycles the Connect tabs. Ctrl+Shift+Tab is not bound: on this
+    // platform that chord arrives as Backtab and does not match a Shortcut.
     Shortcut {
         sequence: "Ctrl+Tab"
         context: Qt.ApplicationShortcut
         enabled: win.connectionOverlayVisible && !win.shortcutOverlayOpen
         onActivated: win.stepConnectionSheetTab(1)
-    }
-
-    Shortcut {
-        sequences: ["Ctrl+Shift+Tab", "Ctrl+Backtab"]
-        context: Qt.ApplicationShortcut
-        enabled: win.connectionOverlayVisible && !win.shortcutOverlayOpen
-        onActivated: win.stepConnectionSheetTab(-1)
     }
 
     Shortcut {
