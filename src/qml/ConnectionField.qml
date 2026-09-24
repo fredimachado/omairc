@@ -22,18 +22,30 @@ Column {
             | Qt.AltModifier | Qt.MetaModifier);
     }
 
-    function handleAboutShortcut(event) {
+    function commandModifier() {
+        return field.style.usesCommandModifier ? Qt.MetaModifier : Qt.ControlModifier;
+    }
+
+    function isAboutShortcut(event) {
         if (event.key !== Qt.Key_Slash)
             return false;
-        var mods = field.aboutShortcutModifiers(event);
-        if (mods === (Qt.ControlModifier | Qt.ShiftModifier)
-                || ((Qt.platform.os === "osx" || Qt.platform.os === "macos")
-                    && mods === (Qt.MetaModifier | Qt.ShiftModifier))) {
-            event.accepted = true;
-            field.aboutRequested();
-            return true;
-        }
-        return false;
+        return field.aboutShortcutModifiers(event)
+            === (field.commandModifier() | Qt.ShiftModifier);
+    }
+
+    function acceptAboutShortcut(event) {
+        if (!field.isAboutShortcut(event))
+            return false;
+        event.accepted = true;
+        return true;
+    }
+
+    function emitAboutShortcut(event) {
+        if (event.isAutoRepeat || !field.isAboutShortcut(event))
+            return false;
+        event.accepted = true;
+        field.aboutRequested();
+        return true;
     }
 
     function focusInput() {
@@ -113,7 +125,7 @@ Column {
             background: Item {}
             onTextEdited: field.textEdited(text)
             Keys.onShortcutOverride: function(event) {
-                if (field.handleAboutShortcut(event))
+                if (field.acceptAboutShortcut(event))
                     return;
                 var mods = event.modifiers & (Qt.ShiftModifier | Qt.ControlModifier
                     | Qt.AltModifier | Qt.MetaModifier);
@@ -122,7 +134,7 @@ Column {
                     event.accepted = true;
             }
             Keys.onPressed: function(event) {
-                if (field.handleAboutShortcut(event))
+                if (field.emitAboutShortcut(event))
                     return;
                 if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
                     field.applyKeyRequested(event);
