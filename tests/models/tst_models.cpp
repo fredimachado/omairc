@@ -6,7 +6,6 @@
 #include <QSignalSpy>
 #include <QTest>
 #include <QTime>
-#include <QTimeZone>
 #include <QVariantMap>
 
 #include "conversationlistmodel.h"
@@ -26,7 +25,10 @@ const QDateTime timestamp = QDateTime::currentDateTimeUtc();
 
 QDateTime atLocal(const QDate& date, const QTime& time = QTime(12, 0))
 {
-    return QDateTime(date, time, QTimeZone::systemTimeZone());
+    // The transcript formats Qt::LocalTime. systemTimeZone() is a different
+    // clock, and with no /etc/localtime it is a second early, so 23:59
+    // displays as 23:58.
+    return QDateTime(date, time);
 }
 
 QString expectedDateLabel(const QDate& date)
