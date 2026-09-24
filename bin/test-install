@@ -119,7 +119,7 @@ if command -v vercmp >/dev/null 2>&1; then
   test "$(vercmp "$VERSION-0.1" "$VERSION-0.237")" -lt 0
   test "$(vercmp "$VERSION-0.237" "$VERSION-1")" -lt 0
   # The previous release must sort before this one so pacman upgrades.
-  test "$(vercmp "1.0.0-1" "$VERSION-1")" -lt 0
+  test "$(vercmp "1.0.1-1" "$VERSION-1")" -lt 0
 fi
 
 printf '%s\n' "$dest_files"

@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.2] - 2026-09-24
+
 ### Added
 
 - Page Up / Page Down (and Shift variants) page the member nick list when it
@@ -457,7 +459,8 @@ First public release: a simple IRC client for Omarchy.
 - Keyboard map, slash-command complete, selectable transcript, and follow-unseen.
 - qmake Unix install tree and a GitHub Releases pacman repository.
 
-[Unreleased]: https://github.com/fredimachado/omairc/compare/v1.0.1...HEAD
+[Unreleased]: https://github.com/fredimachado/omairc/compare/v1.0.2...HEAD
+[1.0.2]: https://github.com/fredimachado/omairc/compare/v1.0.1...v1.0.2
 [1.0.1]: https://github.com/fredimachado/omairc/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/fredimachado/omairc/compare/v0.9.1...v1.0.0
 [0.9.1]: https://github.com/fredimachado/omairc/compare/v0.9.0...v0.9.1
