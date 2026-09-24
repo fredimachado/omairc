@@ -1047,6 +1047,15 @@ void IrcController::syncInbox()
     emit inboxChanged();
 }
 
+void IrcController::dismissInboxItem(int row)
+{
+    if (row < 0 || row >= m_inbox.count())
+        return;
+
+    m_inbox.consumeAt(row);
+    syncInbox();
+}
+
 void IrcController::activateInboxItem(int row)
 {
     if (row < 0 || row >= m_inbox.count())

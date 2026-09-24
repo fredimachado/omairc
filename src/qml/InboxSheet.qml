@@ -13,9 +13,10 @@ Popup {
     signal stepRequested(int delta)
     signal activateRequested()
     signal rowActivated(int index)
+    signal dismissRequested(int index)
 
     objectName: "inboxSheet"
-    width: sheet.style.scaledSize(348)
+    width: sheet.style.scaledSize(404)
     padding: sheet.style.scaledSize(16)
     modal: true
     focus: true
@@ -46,6 +47,11 @@ Popup {
             }
             if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
                 sheet.activateRequested();
+                event.accepted = true;
+                return;
+            }
+            if (event.key === Qt.Key_Delete) {
+                sheet.dismissRequested(sheet.selectedIndex);
                 event.accepted = true;
                 return;
             }
@@ -99,9 +105,9 @@ Popup {
 
                 Column {
                     anchors.left: parent.left
-                    anchors.right: parent.right
+                    anchors.right: dismissHit.left
                     anchors.leftMargin: sheet.style.scaledSize(8)
-                    anchors.rightMargin: sheet.style.scaledSize(8)
+                    anchors.rightMargin: sheet.style.scaledSize(4)
                     anchors.verticalCenter: parent.verticalCenter
                     spacing: sheet.style.scaledSize(1)
 
@@ -125,8 +131,41 @@ Popup {
                     }
                 }
 
+                Rectangle {
+                    id: dismissHit
+                    objectName: "inboxDismissButton"
+                    anchors.right: parent.right
+                    anchors.rightMargin: sheet.style.scaledSize(4)
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: sheet.style.scaledSize(44)
+                    height: sheet.style.scaledSize(24)
+                    radius: sheet.style.scaledSize(5)
+                    color: dismissMouse.containsMouse ? sheet.style.hoverColor : "transparent"
+                    border.width: 1
+                    border.color: sheet.style.dividerColor
+
+                    Text {
+                        anchors.centerIn: parent
+                        text: "delete"
+                        color: dismissMouse.containsMouse ? sheet.style.inkColor : sheet.style.mutedColor
+                        font.family: "iA Writer Mono S"
+                        font.pixelSize: sheet.style.scaledSize(10)
+                    }
+
+                    MouseArea {
+                        id: dismissMouse
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: sheet.dismissRequested(inboxDelegate.index)
+                    }
+                }
+
                 MouseArea {
-                    anchors.fill: parent
+                    anchors.left: parent.left
+                    anchors.right: dismissHit.left
+                    anchors.top: parent.top
+                    anchors.bottom: parent.bottom
                     hoverEnabled: true
                     cursorShape: Qt.PointingHandCursor
                     onClicked: sheet.rowActivated(inboxDelegate.index)

@@ -127,6 +127,7 @@ public:
     QAbstractItemModel *inbox();
     int inboxCount() const;
     Q_INVOKABLE void activateInboxItem(int row);
+    Q_INVOKABLE void dismissInboxItem(int row);
     const IrcServerFeatures &serverFeatures(const QString &networkId) const;
     Q_INVOKABLE QString networkIconUrl(const QString &networkId) const;
 

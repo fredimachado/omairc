@@ -4278,6 +4278,26 @@ TestCase {
         compare(item("inboxSheet").opened, false);
     }
 
+    function test_inboxDeleteDismissesSelectedRow() {
+        openSeededAppWindow();
+        appWindow.selectConversation("#ricing", seed.omarchyNetworkId);
+        tryCompare(appWindow, "currentConversation", "#ricing");
+        var inboxBeforeInject = seed.irc.inboxCount;
+        seed.injectOmarchy("@msgid=inbox-dismiss-1 :anna!u@h PRIVMSG #omarchy :fred: dismiss me\r\n");
+        tryVerify(function() { return seed.irc.inboxCount === inboxBeforeInject + 1; });
+
+        openInboxSheet();
+        var sheet = item("inboxSheet");
+        var list = item("inboxList");
+        compare(list.count, inboxBeforeInject + 1);
+        compare(field(seed.irc.inbox, 0, "kind"), "mention");
+        keyClick(Qt.Key_Delete);
+        tryVerify(function() { return seed.irc.inboxCount === inboxBeforeInject; });
+        compare(sheet.opened, true);
+        compare(appWindow.currentConversation, "#ricing");
+        compare(appWindow.currentNetworkId, seed.omarchyNetworkId);
+    }
+
     function test_eventRowAndTopicStripMirc() {
         openSeededAppWindow();
         seed.injectOmarchy(":anna!u@h TOPIC #omarchy :" + formattedIrcBody() + "\r\n");
