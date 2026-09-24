@@ -36,6 +36,7 @@ Rectangle {
     signal passwordEdited()
     signal nickServEdited()
     signal shortcutsRequested()
+    signal aboutRequested()
 
     objectName: "connectionSheet"
     color: sheet.style.overlayVeilColor
@@ -542,6 +543,7 @@ Rectangle {
                                     onNetworkWalkRequested: function(direction) {
                                         sheet.networkWalkRequested(direction);
                                     }
+                                    onAboutRequested: sheet.aboutRequested()
                                 }
 
                                 Row {
@@ -567,6 +569,7 @@ Rectangle {
                                         onNetworkWalkRequested: function(direction) {
                                             sheet.networkWalkRequested(direction);
                                         }
+                                        onAboutRequested: sheet.aboutRequested()
                                     }
 
                                     ConnectionField {
@@ -586,6 +589,7 @@ Rectangle {
                                         onNetworkWalkRequested: function(direction) {
                                             sheet.networkWalkRequested(direction);
                                         }
+                                        onAboutRequested: sheet.aboutRequested()
                                     }
 
                                     Item {
@@ -643,6 +647,7 @@ Rectangle {
                                         onNetworkWalkRequested: function(direction) {
                                             sheet.networkWalkRequested(direction);
                                         }
+                                        onAboutRequested: sheet.aboutRequested()
                                     }
 
                                     ConnectionField {
@@ -663,6 +668,7 @@ Rectangle {
                                         onNetworkWalkRequested: function(direction) {
                                             sheet.networkWalkRequested(direction);
                                         }
+                                        onAboutRequested: sheet.aboutRequested()
                                     }
                                 }
 
@@ -682,6 +688,7 @@ Rectangle {
                                     onNetworkWalkRequested: function(direction) {
                                         sheet.networkWalkRequested(direction);
                                     }
+                                    onAboutRequested: sheet.aboutRequested()
                                 }
 
                                 ConnectionField {
@@ -700,6 +707,7 @@ Rectangle {
                                     onNetworkWalkRequested: function(direction) {
                                         sheet.networkWalkRequested(direction);
                                     }
+                                    onAboutRequested: sheet.aboutRequested()
                                 }
 
                                 Row {
@@ -765,6 +773,7 @@ Rectangle {
                                     onNetworkWalkRequested: function(direction) {
                                         sheet.networkWalkRequested(direction);
                                     }
+                                    onAboutRequested: sheet.aboutRequested()
                                 }
 
                                 ConnectionField {
@@ -784,6 +793,7 @@ Rectangle {
                                     onNetworkWalkRequested: function(direction) {
                                         sheet.networkWalkRequested(direction);
                                     }
+                                    onAboutRequested: sheet.aboutRequested()
                                 }
 
                                 Text {

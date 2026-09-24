@@ -2120,6 +2120,7 @@ ApplicationWindow {
     Shortcut {
         sequence: "Ctrl+Shift+/"
         context: Qt.ApplicationShortcut
+        autoRepeat: false
         enabled: !win.shortcutOverlayOpen
         onActivated: {
             if (aboutSheet.opened)
@@ -2950,6 +2951,11 @@ ApplicationWindow {
         onPasswordEdited: win.connectionPasswordEdited = true
         onNickServEdited: win.connectionNickServEdited = true
         onShortcutsRequested: shortcutsSheet.open()
+        onAboutRequested: {
+            if (win.shortcutOverlayOpen || aboutSheet.opened)
+                return;
+            win.activateVersionControl();
+        }
     }
 
     UpdateCheck {

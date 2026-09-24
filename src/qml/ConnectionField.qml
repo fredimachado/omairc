@@ -15,6 +15,26 @@ Column {
     signal textEdited(string text)
     signal applyKeyRequested(var event)
     signal networkWalkRequested(int direction)
+    signal aboutRequested()
+
+    function aboutShortcutModifiers(event) {
+        return event.modifiers & (Qt.ShiftModifier | Qt.ControlModifier
+            | Qt.AltModifier | Qt.MetaModifier);
+    }
+
+    function handleAboutShortcut(event) {
+        if (event.key !== Qt.Key_Slash)
+            return false;
+        var mods = field.aboutShortcutModifiers(event);
+        if (mods === (Qt.ControlModifier | Qt.ShiftModifier)
+                || ((Qt.platform.os === "osx" || Qt.platform.os === "macos")
+                    && mods === (Qt.MetaModifier | Qt.ShiftModifier))) {
+            event.accepted = true;
+            field.aboutRequested();
+            return true;
+        }
+        return false;
+    }
 
     function focusInput() {
         input.forceActiveFocus();
@@ -93,6 +113,8 @@ Column {
             background: Item {}
             onTextEdited: field.textEdited(text)
             Keys.onShortcutOverride: function(event) {
+                if (field.handleAboutShortcut(event))
+                    return;
                 var mods = event.modifiers & (Qt.ShiftModifier | Qt.ControlModifier
                     | Qt.AltModifier | Qt.MetaModifier);
                 if (mods === Qt.AltModifier
@@ -100,6 +122,8 @@ Column {
                     event.accepted = true;
             }
             Keys.onPressed: function(event) {
+                if (field.handleAboutShortcut(event))
+                    return;
                 if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
                     field.applyKeyRequested(event);
                     return;
