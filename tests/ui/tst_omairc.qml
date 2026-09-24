@@ -4298,6 +4298,73 @@ TestCase {
         compare(appWindow.currentNetworkId, seed.omarchyNetworkId);
     }
 
+    function dismissInboxRowAboveSelectionViaDeleteButton() {
+        var list = item("inboxList");
+        waitForRendering(appWindow.contentItem);
+        var topRow = list.itemAtIndex(0);
+        verify(topRow !== null, "The top inbox row should be rendered");
+        var dismissButton = findChild(topRow, "inboxDismissButton");
+        verify(dismissButton !== null, "Could not find inboxDismissButton");
+        mouseClick(dismissButton);
+    }
+
+    function expectInboxSelectionAt(msgid, target) {
+        tryVerify(function() {
+            var index = appWindow.inboxSelectedIndex;
+            return index >= 0
+                && field(seed.irc.inbox, index, "msgid") === msgid
+                && field(seed.irc.inbox, index, "target") === target;
+        });
+        compare(field(seed.irc.inbox, appWindow.inboxSelectedIndex, "msgid"), msgid);
+        compare(field(seed.irc.inbox, appWindow.inboxSelectedIndex, "target"), target);
+    }
+
+    function test_inboxDismissAboveSelectionKeepsHighlight() {
+        openSeededAppWindow();
+        appWindow.selectConversation("#ricing", seed.omarchyNetworkId);
+        tryCompare(appWindow, "currentConversation", "#ricing");
+        var inboxBeforeInject = seed.irc.inboxCount;
+        seed.injectOmarchy("@msgid=inbox-keep-1 :anna!u@h PRIVMSG #omarchy :fred: oldest\r\n");
+        tryVerify(function() { return seed.irc.inboxCount === inboxBeforeInject + 1; });
+        seed.injectOmarchy("@msgid=inbox-keep-2 :bob!u@h PRIVMSG #omarchy :fred: middle\r\n");
+        tryVerify(function() { return seed.irc.inboxCount === inboxBeforeInject + 2; });
+        seed.injectOmarchy("@msgid=inbox-keep-3 :carl!u@h PRIVMSG #omarchy :fred: newest\r\n");
+        tryVerify(function() { return seed.irc.inboxCount === inboxBeforeInject + 3; });
+
+        openInboxSheet();
+        var list = item("inboxList");
+        compare(list.count, inboxBeforeInject + 3);
+        compare(field(seed.irc.inbox, 0, "msgid"), "inbox-keep-3");
+        compare(field(seed.irc.inbox, 1, "msgid"), "inbox-keep-2");
+        compare(field(seed.irc.inbox, 2, "msgid"), "inbox-keep-1");
+
+        keyClick(Qt.Key_Down);
+        tryCompare(appWindow, "inboxSelectedIndex", 1);
+        expectInboxSelectionAt("inbox-keep-2", "#omarchy");
+
+        dismissInboxRowAboveSelectionViaDeleteButton();
+        tryVerify(function() { return seed.irc.inboxCount === inboxBeforeInject + 2; });
+        compare(appWindow.inboxSelectedIndex, 0);
+        expectInboxSelectionAt("inbox-keep-2", "#omarchy");
+
+        seed.injectOmarchy("@msgid=inbox-keep-4 :dax!u@h PRIVMSG #omarchy :fred: refill top\r\n");
+        tryVerify(function() { return seed.irc.inboxCount === inboxBeforeInject + 3; });
+        compare(field(seed.irc.inbox, 0, "msgid"), "inbox-keep-4");
+        compare(field(seed.irc.inbox, 1, "msgid"), "inbox-keep-2");
+        compare(field(seed.irc.inbox, 2, "msgid"), "inbox-keep-1");
+
+        keyClick(Qt.Key_Down);
+        tryCompare(appWindow, "inboxSelectedIndex", 1);
+        expectInboxSelectionAt("inbox-keep-2", "#omarchy");
+
+        keyClick(Qt.Key_Up);
+        tryCompare(appWindow, "inboxSelectedIndex", 0);
+        keyClick(Qt.Key_Delete);
+        tryVerify(function() { return seed.irc.inboxCount === inboxBeforeInject + 2; });
+        compare(appWindow.inboxSelectedIndex, 0);
+        expectInboxSelectionAt("inbox-keep-2", "#omarchy");
+    }
+
     function test_eventRowAndTopicStripMirc() {
         openSeededAppWindow();
         seed.injectOmarchy(":anna!u@h TOPIC #omarchy :" + formattedIrcBody() + "\r\n");

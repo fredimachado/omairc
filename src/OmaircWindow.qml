@@ -1092,10 +1092,14 @@ ApplicationWindow {
             return;
         irc.dismissInboxItem(row);
         var newCount = inboxRowCount();
-        if (newCount === 0)
+        if (newCount === 0) {
             inboxSelectedIndex = 0;
-        else if (inboxSelectedIndex >= newCount)
-            inboxSelectedIndex = newCount - 1;
+        } else {
+            if (row < inboxSelectedIndex)
+                inboxSelectedIndex = inboxSelectedIndex - 1;
+            else if (inboxSelectedIndex >= newCount)
+                inboxSelectedIndex = newCount - 1;
+        }
     }
 
     function activateInboxSelection() {
