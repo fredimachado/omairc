@@ -27,6 +27,7 @@ concurrency:
   cancel-in-progress: false
 
 permissions:
+  actions: write
   contents: write
 
 defaults:
@@ -193,3 +194,8 @@ jobs:
             omairc.files.tar.zst \
             install.sh \
             --clobber
+
+      # A release created with GITHUB_TOKEN does not emit release events.
+      - name: Dispatch website rebuild
+        if: ${{ startsWith(github.ref, 'refs/tags/v') }}
+        run: gh workflow run rebuild-website.yml --ref master
