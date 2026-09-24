@@ -4639,6 +4639,35 @@ TestCase {
         tryCompare(appWindow, "currentConversation", "mira");
     }
 
+    function memberListVisibleRows(list) {
+        var first = list.indexAt(list.width / 2, list.contentY + 1);
+        var last = list.indexAt(list.width / 2, list.contentY + Math.max(1, list.height - 1));
+        if (first < 0)
+            first = 0;
+        if (last < 0)
+            last = list.count - 1;
+        if (last < first)
+            last = first;
+        return last - first + 1;
+    }
+
+    function focusOverflowingMemberList() {
+        var members = item("membersList");
+        var names = [];
+        var index = 0;
+        for (; index < 30; ++index)
+            names.push("bulk" + index);
+        seed.injectOmarchy(
+            ":server 353 fred = #omarchy :" + names.join(" ") + "\r\n"
+            + ":server 366 fred #omarchy :End of NAMES\r\n");
+        tryVerify(function() { return members.count === 30; });
+        waitForRendering(appWindow.contentItem);
+        verify(members.contentHeight > members.height);
+        keyClick(Qt.Key_P, Qt.ControlModifier | Qt.ShiftModifier);
+        tryCompare(members, "activeFocus", true);
+        return members;
+    }
+
     function test_memberListScrollbarAppearsWhenOverflowing() {
         openSeededAppWindow();
         verify(item("membersPanel").visible);
@@ -4662,6 +4691,89 @@ TestCase {
         tryCompare(members, "activeFocus", true);
         keyClick(Qt.Key_Down);
         tryCompare(members, "currentIndex", 1);
+    }
+
+    function test_memberListPageDownMovesByVisiblePage() {
+        openSeededAppWindow();
+        var members = focusOverflowingMemberList();
+        var transcript = item("messageList");
+        var visible = memberListVisibleRows(members);
+        var page = Math.max(1, Math.round(visible * 0.8));
+        compare(members.currentIndex, 0);
+
+        var transcriptY = transcript.contentY;
+        keyClick(Qt.Key_PageDown);
+        waitForRendering(appWindow.contentItem);
+        wait(0);
+        tryCompare(members, "currentIndex", page);
+        compare(transcript.contentY, transcriptY,
+                "Page Down with member list focused should not scroll the transcript");
+
+        keyClick(Qt.Key_PageDown);
+        waitForRendering(appWindow.contentItem);
+        wait(0);
+        tryCompare(members, "currentIndex", Math.min(members.count - 1, page + page));
+        compare(transcript.contentY, transcriptY,
+                "another Page Down should still leave the transcript alone");
+    }
+
+    function test_memberListShiftPageMovesHalfViewport() {
+        openSeededAppWindow();
+        var members = focusOverflowingMemberList();
+        var visible = memberListVisibleRows(members);
+        var halfPage = Math.max(1, Math.round(visible * 0.35));
+        compare(members.currentIndex, 0);
+
+        keyClick(Qt.Key_PageDown, Qt.ShiftModifier);
+        waitForRendering(appWindow.contentItem);
+        wait(0);
+        tryCompare(members, "currentIndex", halfPage);
+
+        var mid = members.currentIndex;
+        keyClick(Qt.Key_PageDown);
+        waitForRendering(appWindow.contentItem);
+        wait(0);
+        var fullPage = Math.max(1, Math.round(visible * 0.8));
+        verify(members.currentIndex - mid > halfPage,
+               "Page Down should hop farther than Shift+Page Down from the same start");
+        verify(members.currentIndex - mid <= fullPage + 1,
+               "Page Down should move by about one visible page");
+    }
+
+    function test_memberListHomeEndJumpToEnds() {
+        openSeededAppWindow();
+        var members = focusOverflowingMemberList();
+
+        keyClick(Qt.Key_End);
+        waitForRendering(appWindow.contentItem);
+        wait(0);
+        tryCompare(members, "currentIndex", members.count - 1);
+
+        keyClick(Qt.Key_Home);
+        waitForRendering(appWindow.contentItem);
+        wait(0);
+        tryCompare(members, "currentIndex", 0);
+    }
+
+    function test_pageDownWithComposerStillScrollsTranscript() {
+        openSeededAppWindow();
+        var composer = item("messageComposer");
+        var list = item("messageList");
+        mouseClick(composer);
+        tryCompare(composer, "activeFocus", true);
+        fillTranscriptUntilScrollable(list);
+        pageTranscriptToEnd(list);
+        verify(transcriptPinned(list));
+
+        var before = list.contentY;
+        keyClick(Qt.Key_PageUp);
+        waitForRendering(appWindow.contentItem);
+        wait(0);
+        verify(list.contentY < before,
+               "Page Up with composer focused should still scroll the transcript");
+        tryCompare(composer, "activeFocus", true);
+        verify(!item("membersList").activeFocus,
+               "composer-focused paging should not move member list focus");
     }
 
     function test_memberEnterAfterSwitchingToSmallerChannel() {
@@ -9104,12 +9216,18 @@ TestCase {
                "shortcut sheet should not keep the old apply connection label");
         verify(texts.indexOf("Page Up / Page Down") !== -1,
                "shortcut sheet should list Page Up / Page Down");
-        verify(texts.indexOf("scroll") !== -1,
-               "shortcut sheet should name scroll");
+        verify(texts.indexOf("scroll transcript") !== -1,
+               "shortcut sheet should name scroll transcript");
         verify(texts.indexOf("Shift+Page Up / Shift+Page Down") !== -1,
                "shortcut sheet should list Shift+Page Up / Shift+Page Down");
-        verify(texts.indexOf("scroll half page") !== -1,
-               "shortcut sheet should name scroll half page");
+        verify(texts.indexOf("scroll transcript half page") !== -1,
+               "shortcut sheet should name scroll transcript half page");
+        verify(texts.indexOf("page members") !== -1,
+               "shortcut sheet should name page members");
+        verify(texts.indexOf("page members half") !== -1,
+               "shortcut sheet should name page members half");
+        verify(texts.indexOf("first / last nick") !== -1,
+               "shortcut sheet should name first / last nick");
         verify(texts.indexOf(ctrl + "+Home / " + ctrl + "+End") !== -1,
                "shortcut sheet should list " + ctrl + "+Home / " + ctrl + "+End");
         verify(texts.indexOf("top / bottom") !== -1,

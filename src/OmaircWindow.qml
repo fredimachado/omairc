@@ -1730,6 +1730,60 @@ ApplicationWindow {
         list.revealRow(0);
     }
 
+    function membersListFocused() {
+        return membersPanel.membersList && membersPanel.membersList.activeFocus;
+    }
+
+    function membersIndexAt(list, y) {
+        var x = Math.max(1, list.width / 2);
+        var index = list.indexAt(x, y);
+        if (index >= 0)
+            return index;
+        return list.indexAt(x, y + 8);
+    }
+
+    function scrollMembersList(direction, fraction) {
+        var list = membersPanel.membersList;
+        if (!list || list.count <= 0 || !list.activeFocus)
+            return;
+        if (fraction === undefined)
+            fraction = 0.8;
+
+        var first = membersIndexAt(list, list.contentY + 1);
+        var last = membersIndexAt(list, list.contentY + Math.max(1, list.height - 1));
+        if (first < 0)
+            first = 0;
+        if (last < 0)
+            last = list.count - 1;
+        if (last < first)
+            last = first;
+
+        var page = Math.max(1, Math.round((last - first + 1) * fraction));
+        var current = list.currentIndex >= 0 ? list.currentIndex : first;
+        if (direction < 0) {
+            var upIndex = Math.max(0, current - page);
+            list.currentIndex = upIndex;
+            list.positionViewAtIndex(upIndex, ListView.End);
+        } else {
+            var downIndex = Math.min(list.count - 1, current + page);
+            list.currentIndex = downIndex;
+            list.positionViewAtIndex(downIndex, ListView.Beginning);
+        }
+    }
+
+    function jumpMembersList(toEnd) {
+        var list = membersPanel.membersList;
+        if (!list || list.count <= 0 || !list.activeFocus)
+            return;
+        if (toEnd) {
+            list.currentIndex = list.count - 1;
+            list.positionViewAtIndex(list.count - 1, ListView.End);
+            return;
+        }
+        list.currentIndex = 0;
+        list.positionViewAtIndex(0, ListView.Beginning);
+    }
+
     function dispatchComposerSend(fromConsole, original) {
         if (fromConsole) {
             return irc && networkConsole
@@ -2266,28 +2320,48 @@ ApplicationWindow {
         sequence: "PgUp"
         context: Qt.ApplicationShortcut
         enabled: !win.connectionOverlayVisible && !win.shortcutOverlayOpen
-        onActivated: scrollTranscript(-1)
+        onActivated: membersListFocused() ? scrollMembersList(-1) : scrollTranscript(-1)
     }
 
     Shortcut {
         sequence: "PgDown"
         context: Qt.ApplicationShortcut
         enabled: !win.connectionOverlayVisible && !win.shortcutOverlayOpen
-        onActivated: scrollTranscript(1)
+        onActivated: membersListFocused() ? scrollMembersList(1) : scrollTranscript(1)
     }
 
     Shortcut {
         sequence: "Shift+PgUp"
         context: Qt.ApplicationShortcut
         enabled: !win.connectionOverlayVisible && !win.shortcutOverlayOpen
-        onActivated: scrollTranscript(-1, 0.35)
+        onActivated: membersListFocused()
+            ? scrollMembersList(-1, 0.35)
+            : scrollTranscript(-1, 0.35)
     }
 
     Shortcut {
         sequence: "Shift+PgDown"
         context: Qt.ApplicationShortcut
         enabled: !win.connectionOverlayVisible && !win.shortcutOverlayOpen
-        onActivated: scrollTranscript(1, 0.35)
+        onActivated: membersListFocused()
+            ? scrollMembersList(1, 0.35)
+            : scrollTranscript(1, 0.35)
+    }
+
+    Shortcut {
+        sequence: "Home"
+        context: Qt.ApplicationShortcut
+        enabled: !win.connectionOverlayVisible && !win.shortcutOverlayOpen
+            && membersListFocused()
+        onActivated: jumpMembersList(false)
+    }
+
+    Shortcut {
+        sequence: "End"
+        context: Qt.ApplicationShortcut
+        enabled: !win.connectionOverlayVisible && !win.shortcutOverlayOpen
+            && membersListFocused()
+        onActivated: jumpMembersList(true)
     }
 
     Shortcut {
