@@ -17,6 +17,7 @@ Keyboard is the window chord map: walk conversations, walk network headers, coll
 - `keyboard-history` recalls sent lines with `Up` / `Down` and restores a typed draft on `Down`.
 - `keyboard-drafts` keeps unsent composer text per conversation and Status. Switching targets restores that draft. It does not follow you.
 - `keyboard-members` focuses the member list with `Ctrl+Shift+P` and reopens a hidden panel. Enter on a focused member opens a DM.
+- `keyboard-members-scroll` pages the focused member list with `Page Up` / `Page Down`. `Shift+Page Up` / `Shift+Page Down` hop about half a viewport. `Home` / `End` jump to the first or last nick. Transcript paging is unchanged while the composer stays focused. `Ctrl+Home` / `Ctrl+End` still jump the transcript.
 - `keyboard-server-list` collapses and restores the left server list column with `Ctrl+Shift+S`. That is the whole rail, not a per-network section. Collapsing is not hiding: `Alt+Down` / `Alt+Up` still walk conversations while the column is collapsed. It also drops the focused network header, so Enter in the composer sends again. `Alt+Left` / `Alt+Right` restores the column so the header highlight is visible.
 - `keyboard-close` closes the selected direct message with `Ctrl+W` and selects the next DM, or the previous row when that was the last. It is a no-op on a channel, Status, or the shortcut sheet.
 - `keyboard-sheet` toggles the shortcut list with `Ctrl+/`. Escape closes the sheet before Status. The list includes `Ctrl+W`, `Ctrl+C`, `Ctrl+F`, `Ctrl+K`, `Ctrl+Shift+K`, `Ctrl+Shift+A`, `Ctrl+Shift+S`, per-network collapse/expand/move, and collapse-all / expand-all. `Ctrl+Q` still quits the process.
@@ -37,7 +38,7 @@ Keyboard is the window chord map: walk conversations, walk network headers, coll
 - Press `Ctrl+Alt+Shift+Left` / `Ctrl+Alt+Shift+Right` to collapse or expand every network.
 - Press `Alt+Shift+Up` / `Alt+Shift+Down` on a focused header to move that network.
 - Press `Tab`, `Up`, or `Down` in the composer.
-- Press `Ctrl+Shift+P` on a channel, then arrows and Enter.
+- Press `Ctrl+Shift+P` on a channel, then arrows, Page Up / Page Down, Home / End, and Enter.
 - Press `Ctrl+Shift+S` to collapse or restore the left server list column.
 - Press `Ctrl+W` on a direct message to close it.
 - Press `Ctrl+,` to reopen Connect after a profile exists.
@@ -94,7 +95,7 @@ compare --before test-artifacts/verify/keyboard/server-list-collapsed.png --afte
 - `Ctrl+Shift+S` collapses the left column instead of hiding it, so `Alt+Down` / `Alt+Up` keep walking conversations while it is out of view. Collapsing drops the focused network header, so Enter in the composer sends again. `Alt+Left` / `Alt+Right` brings the column back because it highlights a rail row.
 - `Ctrl+W` is disabled on channels and Status. Typed `/close` on a channel is a rejected slash command and stays in the composer.
 - `Tab` completes a nick prefix in the composer. Prove it with `qml-suite` (`mi` → `mira: `).
-- Page Up / Page Down, Shift+Page Up / Shift+Page Down, and Ctrl+Home / Ctrl+End are disabled while Connect is visible or the shortcuts overlay is open. Plain Home / End stay composer caret (and Connect's network rail).
+- Page Up / Page Down and Shift+Page Up / Shift+Page Down page the transcript while the composer is focused, and page the member list while it has focus. Ctrl+Home / Ctrl+End always jump the transcript. Home / End jump to the first or last nick while the member list is focused; plain Home / End stay composer caret otherwise (and Connect's network rail). These paging chords are disabled while Connect is visible or the shortcuts overlay is open.
 - `Alt+Down` / `Alt+Up`, `Alt+Left` / `Alt+Right`, `Alt+Shift+Left` / `Right` / `Up` / `Down`, `Ctrl+Alt+Shift+Left` / `Right`, `Alt+A`, `Ctrl+Shift+A`, `Ctrl+L`, `Ctrl+W`, `Ctrl+Shift+S`, and `Ctrl+`` are disabled while Connect is visible. Connect is a window-level modal; those chords must not walk servers or members behind it. `Ctrl+/` still opens the shortcuts overlay.
 - `Ctrl+F` enters find even with an empty composer. It jumps the current transcript to the match and leaves follow-the-end so the match stays put. Escape restores the draft, not the old scroll position.
 - `Ctrl+C` copies the transcript selection while the composer keeps focus. If the composer itself has a selection, that draft is what lands on the clipboard. Opening another conversation or Status drops the transcript selection.

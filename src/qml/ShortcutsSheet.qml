@@ -35,8 +35,8 @@ Popup {
                 { keys: "Ctrl+C", action: "copy selection" },
                 { keys: "Ctrl+F", action: "find" },
                 { keys: "Enter", action: "send" },
-                { keys: "Page Up / Page Down", action: "scroll" },
-                { keys: "Shift+Page Up / Shift+Page Down", action: "scroll half page" },
+                { keys: "Page Up / Page Down", action: "scroll transcript" },
+                { keys: "Shift+Page Up / Shift+Page Down", action: "scroll transcript half page" },
                 { keys: "Ctrl+Home / Ctrl+End", action: "top / bottom" },
                 { keys: "Tab", action: "nick complete" },
                 { keys: "Up / Down", action: "history" },
@@ -59,6 +59,9 @@ Popup {
                 { keys: "Ctrl+Shift+S", action: "server list" },
                 { keys: "Ctrl+Shift+M", action: "members panel" },
                 { keys: "Ctrl+Shift+P", action: "focus members" },
+                { keys: "Page Up / Page Down", action: "page focused members" },
+                { keys: "Shift+Page Up / Shift+Page Down", action: "page focused members half page" },
+                { keys: "Home / End", action: "first / last focused nick" },
                 { keys: "Ctrl+/", action: "this sheet" },
                 { keys: "Ctrl+Q", action: "quit" }
             ]
