@@ -493,6 +493,15 @@ ApplicationWindow {
         return true;
     }
 
+    function aboutShortcutBlocked() {
+        return shortcutsSheet.opened
+            || jumpSheet.opened
+            || inboxSheet.opened
+            || nickSheet.opened
+            || aboutSheet.opened
+            || channelListSheet.opened;
+    }
+
     function activateVersionControl() {
         if (aboutUpdateCheck.status === "readyToRestart") {
             aboutUpdateCheck.launchInstaller();
@@ -2123,7 +2132,7 @@ ApplicationWindow {
         autoRepeat: false
         enabled: !win.shortcutOverlayOpen
         onActivated: {
-            if (aboutSheet.opened)
+            if (win.aboutShortcutBlocked())
                 return;
             win.activateVersionControl();
         }
@@ -2952,7 +2961,7 @@ ApplicationWindow {
         onNickServEdited: win.connectionNickServEdited = true
         onShortcutsRequested: shortcutsSheet.open()
         onAboutRequested: {
-            if (win.shortcutOverlayOpen || aboutSheet.opened)
+            if (win.aboutShortcutBlocked())
                 return;
             win.activateVersionControl();
         }

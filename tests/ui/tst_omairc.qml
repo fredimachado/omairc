@@ -8389,6 +8389,22 @@ TestCase {
         verify(shortcuts.opened);
     }
 
+    function test_aboutSheetCtrlShiftSlashBlockedByJumpSheet() {
+        openSeededAppWindow();
+        var about = item("aboutSheet");
+        verify(!about.opened);
+
+        openJumpSheet();
+
+        keyClick(Qt.Key_Slash, Qt.ControlModifier | Qt.ShiftModifier);
+        compare(about.opened, false);
+        verify(item("jumpSheet").opened);
+
+        keyClick(Qt.Key_Escape);
+        tryCompare(item("jumpSheet"), "opened", false);
+        compare(about.opened, false);
+    }
+
     function test_aboutSheetOpensFromVersionAndEscapeKeepsConversation() {
         openSeededAppWindow();
         var sheet = item("aboutSheet");
