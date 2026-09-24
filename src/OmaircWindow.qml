@@ -493,6 +493,15 @@ ApplicationWindow {
         return true;
     }
 
+    function aboutShortcutBlocked() {
+        return shortcutsSheet.opened
+            || jumpSheet.opened
+            || inboxSheet.opened
+            || nickSheet.opened
+            || aboutSheet.opened
+            || channelListSheet.opened;
+    }
+
     function activateVersionControl() {
         if (aboutUpdateCheck.status === "readyToRestart") {
             aboutUpdateCheck.launchInstaller();
@@ -2118,6 +2127,18 @@ ApplicationWindow {
     }
 
     Shortcut {
+        sequence: "Ctrl+Shift+/"
+        context: Qt.ApplicationShortcut
+        autoRepeat: false
+        enabled: !win.shortcutOverlayOpen
+        onActivated: {
+            if (win.aboutShortcutBlocked())
+                return;
+            win.activateVersionControl();
+        }
+    }
+
+    Shortcut {
         sequence: "Ctrl+`"
         context: Qt.ApplicationShortcut
         enabled: !win.connectionOverlayVisible && !win.shortcutOverlayOpen
@@ -2939,6 +2960,11 @@ ApplicationWindow {
         onPasswordEdited: win.connectionPasswordEdited = true
         onNickServEdited: win.connectionNickServEdited = true
         onShortcutsRequested: shortcutsSheet.open()
+        onAboutRequested: {
+            if (win.aboutShortcutBlocked())
+                return;
+            win.activateVersionControl();
+        }
     }
 
     UpdateCheck {

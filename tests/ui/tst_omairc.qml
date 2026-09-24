@@ -1238,6 +1238,17 @@ TestCase {
             ? Qt.MetaModifier : Qt.ControlModifier;
     }
 
+    // Window Shortcut sequences are exercised with Control in QTest even on macOS.
+    // Connect fields match commandModifier() instead, so first-run Connect tests
+    // need shortcutAboutConnectFieldModifier().
+    function shortcutAboutWindowModifier() {
+        return Qt.ControlModifier | Qt.ShiftModifier;
+    }
+
+    function shortcutAboutConnectFieldModifier() {
+        return shortcutCommandModifier() | Qt.ShiftModifier;
+    }
+
     function visibleListChild(listName, childName) {
         var list = item(listName);
         var index = 0;
@@ -8317,6 +8328,94 @@ TestCase {
         verify(versionLeft >= nickRight);
     }
 
+    function test_aboutSheetOpensFromCtrlShiftSlashAndEscapeKeepsConversation() {
+        openSeededAppWindow();
+        var sheet = item("aboutSheet");
+        verify(!sheet.opened);
+        verify(!sheet.visible);
+
+        keyClick(Qt.Key_Slash, shortcutAboutWindowModifier());
+        tryCompare(sheet, "opened", true);
+        compare(item("aboutTitle").text, "About Omairc");
+        compare(item("aboutVersion").text, appWindow.appVersion);
+
+        keyClick(Qt.Key_Slash, shortcutAboutWindowModifier());
+        compare(sheet.opened, true);
+
+        keyClick(Qt.Key_Escape);
+        tryCompare(sheet, "opened", false);
+        compare(appWindow.currentConversation, "#omarchy");
+    }
+
+    function test_aboutSheetOpensFromCtrlShiftSlashLeavesConnectVisible() {
+        var window = createTemporaryObject(setupWindowComponent, null);
+        verify(window !== null, "The setup window should load");
+        tryCompare(window, "visible", true);
+        waitForRendering(window.contentItem);
+        window.requestActivate();
+        tryCompare(window, "active", true);
+
+        var sheet = findChild(window, "aboutSheet");
+        verify(sheet !== null, "Could not find aboutSheet");
+        verify(!sheet.opened);
+        verify(window.connectionOverlayVisible);
+
+        keyClick(Qt.Key_Slash, shortcutAboutConnectFieldModifier());
+        tryCompare(sheet, "opened", true);
+        verify(window.connectionOverlayVisible);
+
+        keyClick(Qt.Key_Escape);
+        tryCompare(sheet, "opened", false);
+        verify(window.connectionOverlayVisible);
+        window.close();
+    }
+
+    function test_aboutSheetOpensFromCtrlShiftSlashWithConnectionSheetOpen() {
+        openSeededAppWindow();
+        keyClick(Qt.Key_Comma, Qt.ControlModifier);
+        tryCompare(appWindow, "connectionOverlayVisible", true);
+        var sheet = item("aboutSheet");
+        verify(!sheet.opened);
+
+        keyClick(Qt.Key_Slash, shortcutAboutConnectFieldModifier());
+        tryCompare(sheet, "opened", true);
+        compare(appWindow.connectionOverlayVisible, true);
+
+        keyClick(Qt.Key_Escape);
+        tryCompare(sheet, "opened", false);
+        compare(appWindow.connectionOverlayVisible, true);
+    }
+
+    function test_aboutSheetCtrlShiftSlashBlockedByShortcutsSheet() {
+        openSeededAppWindow();
+        var about = item("aboutSheet");
+        var shortcuts = item("shortcutsSheet");
+        verify(!about.opened);
+
+        keyClick(Qt.Key_Slash, Qt.ControlModifier);
+        tryCompare(shortcuts, "opened", true);
+
+        keyClick(Qt.Key_Slash, shortcutAboutWindowModifier());
+        compare(about.opened, false);
+        verify(shortcuts.opened);
+    }
+
+    function test_aboutSheetCtrlShiftSlashBlockedByJumpSheet() {
+        openSeededAppWindow();
+        var about = item("aboutSheet");
+        verify(!about.opened);
+
+        openJumpSheet();
+
+        keyClick(Qt.Key_Slash, shortcutAboutWindowModifier());
+        compare(about.opened, false);
+        verify(item("jumpSheet").opened);
+
+        keyClick(Qt.Key_Escape);
+        tryCompare(item("jumpSheet"), "opened", false);
+        compare(about.opened, false);
+    }
+
     function test_aboutSheetOpensFromVersionAndEscapeKeepsConversation() {
         openSeededAppWindow();
         var sheet = item("aboutSheet");
@@ -9350,6 +9449,10 @@ TestCase {
                "shortcut sheet should not list /disconnect");
         verify(texts.indexOf(ctrl + "+/") !== -1,
                "shortcut sheet should list " + ctrl + "+/");
+        verify(texts.indexOf(ctrl + "+Shift+/") !== -1,
+               "shortcut sheet should list " + ctrl + "+Shift+/");
+        verify(texts.indexOf("About") !== -1,
+               "shortcut sheet should name About");
         verify(texts.indexOf(ctrl + "+Tab") !== -1,
                "shortcut sheet should list " + ctrl + "+Tab");
         verify(texts.indexOf(ctrl + "+Shift+Tab") === -1,
