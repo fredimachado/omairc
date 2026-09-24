@@ -5,11 +5,31 @@ ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 "$ROOT/bin/check-conventions"
 python3 -m unittest -v tests.test_derive_build_versions
 TEST_STATE="$(mktemp -d "${TMPDIR:-/tmp}/omairc-tests.XXXXXX")"
+STALE_VERSION_HEADER="$ROOT/omaircversion.h"
+STALE_VERSION_BACKUP=""
+if [ -f "$STALE_VERSION_HEADER" ]; then
+  STALE_VERSION_BACKUP="$TEST_STATE/omaircversion.h.saved"
+  cp -- "$STALE_VERSION_HEADER" "$STALE_VERSION_BACKUP"
+fi
 
 cleanup() {
+  if [ -n "$STALE_VERSION_BACKUP" ]; then
+    mv -- "$STALE_VERSION_BACKUP" "$STALE_VERSION_HEADER"
+  else
+    rm -f -- "$STALE_VERSION_HEADER"
+  fi
   rm -rf -- "$TEST_STATE"
 }
 trap cleanup EXIT HUP INT TERM
+
+# An in-source build, such as Arch makepkg, leaves this header next to the
+# .pro file. Shadow builds must still compile the copy written for OUT_PWD.
+cat > "$STALE_VERSION_HEADER" << 'EOF'
+#ifndef OMAIRC_VERSION_H
+#define OMAIRC_VERSION_H
+#define OMAIRC_VERSION "stale-insource"
+#endif
+EOF
 
 if command -v qmake6 >/dev/null 2>&1; then
   QMAKE=qmake6

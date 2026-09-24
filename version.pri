@@ -24,5 +24,9 @@ win32: OMAIRC_PYTHON = python
 else: OMAIRC_PYTHON = python3
 system($$OMAIRC_PYTHON $$shell_quote($$OMAIRC_ROOT/bin/gen-omaircversion-h.py) $$OMAIRC_EFFECTIVE_VERSION $$shell_quote($$OMAIRC_VERSION_HEADER))
 
+# qmake always searches the .pro directory before INCLUDEPATH. An in-source
+# build leaves omaircversion.h there, and a later shadow build would compile
+# that copy. CXXFLAGS are applied before INCPATH, so this directory wins.
+QMAKE_CXXFLAGS += -I$$system_quote($$OUT_PWD)
 INCLUDEPATH += $$OUT_PWD
 HEADERS += $$OMAIRC_VERSION_HEADER
