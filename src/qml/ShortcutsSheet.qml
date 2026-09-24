@@ -47,7 +47,7 @@ Popup {
             title: "CONNECT",
             rows: [
                 { keys: "Ctrl+,", action: "Connect" },
-                { keys: "Ctrl+Tab / Ctrl+Shift+Tab", action: "Connect tabs" },
+                { keys: "Ctrl+Tab", action: "Connect tabs" },
                 { keys: "Ctrl+N", action: "add network" },
                 { keys: "Ctrl+Shift+Delete", action: "remove network" },
                 { keys: "Ctrl+Enter", action: "apply selected network" }

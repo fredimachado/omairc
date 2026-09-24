@@ -13,6 +13,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   has keyboard focus. Home / End jump to the first or last nick. Transcript
   paging is unchanged while the composer is focused.
 
+### Changed
+
+- Connect tabs cycle with `Ctrl+Tab`. `Ctrl+Shift+Tab` no longer switches them.
+
 ## [1.0.1] - 2026-09-24
 
 ### Fixed

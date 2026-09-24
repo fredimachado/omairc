@@ -5735,7 +5735,7 @@ TestCase {
         wait(0);
         compare(focusObjectName(window), "connectionReopenDirects");
 
-        keyClick(Qt.Key_Tab, Qt.ControlModifier | Qt.ShiftModifier);
+        keyClick(Qt.Key_Tab, Qt.ControlModifier);
         wait(0);
         compare(window.connectionSheetTab, "connection");
         tryCompare(connectionTab, "activeFocus", true);
@@ -5744,10 +5744,12 @@ TestCase {
 
         host.forceActiveFocus();
         tryCompare(host, "activeFocus", true);
+        keyClick(Qt.Key_Tab, Qt.ControlModifier | Qt.ShiftModifier);
+        wait(0);
+        compare(window.connectionSheetTab, "connection");
         keyClick(Qt.Key_Backtab, Qt.ControlModifier);
         wait(0);
-        compare(window.connectionSheetTab, "preferences");
-        tryCompare(preferencesTab, "activeFocus", true);
+        compare(window.connectionSheetTab, "connection");
 
         window.close();
         restoreNamedConnection();
@@ -9406,8 +9408,10 @@ TestCase {
                "shortcut sheet should not list /disconnect");
         verify(texts.indexOf(ctrl + "+/") !== -1,
                "shortcut sheet should list " + ctrl + "+/");
-        verify(texts.indexOf(ctrl + "+Tab / " + ctrl + "+Shift+Tab") !== -1,
-               "shortcut sheet should list " + ctrl + "+Tab / " + ctrl + "+Shift+Tab");
+        verify(texts.indexOf(ctrl + "+Tab") !== -1,
+               "shortcut sheet should list " + ctrl + "+Tab");
+        verify(texts.indexOf(ctrl + "+Shift+Tab") === -1,
+               "shortcut sheet should not list " + ctrl + "+Shift+Tab");
         verify(texts.indexOf("Connect tabs") !== -1,
                "shortcut sheet should name Connect tabs");
         verify(texts.indexOf(ctrl + "+N") !== -1,
