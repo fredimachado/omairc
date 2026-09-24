@@ -1090,6 +1090,27 @@ ApplicationWindow {
         selectConversation(name, networkId);
     }
 
+    function dismissInboxSelection(index) {
+        if (!irc)
+            return;
+        var row = index !== undefined ? index : inboxSelectedIndex;
+        if (row < 0)
+            return;
+        var count = inboxRowCount();
+        if (row >= count)
+            return;
+        irc.dismissInboxItem(row);
+        var newCount = inboxRowCount();
+        if (newCount === 0) {
+            inboxSelectedIndex = 0;
+        } else {
+            if (row < inboxSelectedIndex)
+                inboxSelectedIndex = inboxSelectedIndex - 1;
+            else if (inboxSelectedIndex >= newCount)
+                inboxSelectedIndex = newCount - 1;
+        }
+    }
+
     function activateInboxSelection() {
         if (!irc || inboxSelectedIndex < 0)
             return;
@@ -3069,6 +3090,7 @@ ApplicationWindow {
         }
         onStepRequested: function(delta) { win.stepInbox(delta); }
         onActivateRequested: win.activateInboxSelection()
+        onDismissRequested: function(index) { win.dismissInboxSelection(index); }
         onRowActivated: function(index) {
             win.inboxSelectedIndex = index;
             win.activateInboxSelection();

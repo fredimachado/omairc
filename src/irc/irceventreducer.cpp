@@ -843,7 +843,7 @@ void IrcEventReducer::noteChatArrival(IrcConversationState& conversation,
     // and focus-regain consumes the badge in place. An inbox row would
     // linger, because consume-on-select does not run on focus return.
     if (origin == IrcOrigin::Live && reason && !conversation.muted
-        && !selected) {
+        && !selected && *reason != ChatLineReason::DirectMessage) {
         m_inboxArrival = IrcInboxArrival{
             inboxKindFor(*reason),
             author,

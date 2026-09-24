@@ -126,6 +126,7 @@ private slots:
     void controllerInviteIgnoredReplaceAndJoinConsumes();
     void controllerKickSelectingConsumes();
     void controllerMonitorEdgeAppendsHydrationSkips();
+    void controllerDismissInboxItem();
     void controllerInboxCountTracksModel();
     void inviteCoalescesWithCaseMapping();
     void monitorCoalescesWithCaseMapping();
@@ -347,10 +348,20 @@ void InboxTest::reducerClassifiesMentionHighlightAndDirect()
         QStringLiteral("Alice"),
         IrcMsgId{QStringLiteral("dm-1")},
     });
-    const std::optional<IrcInboxArrival> direct = reducer.takeInboxArrival();
-    QVERIFY(direct.has_value());
-    QCOMPARE(direct->kind, IrcInboxKind::Direct);
-    QCOMPARE(direct->target, QStringLiteral("Alice"));
+    QVERIFY(!reducer.takeInboxArrival().has_value());
+
+    reducer.apply(IrcMessageEvent{
+        dm,
+        QStringLiteral("Alice"),
+        QStringLiteral("fred: ping"),
+        timestamp,
+        QStringLiteral("Alice"),
+        IrcMsgId{QStringLiteral("dm-mention-1")},
+    });
+    const std::optional<IrcInboxArrival> dmMention = reducer.takeInboxArrival();
+    QVERIFY(dmMention.has_value());
+    QCOMPARE(dmMention->kind, IrcInboxKind::Mention);
+    QCOMPARE(dmMention->target, QStringLiteral("Alice"));
 }
 
 void InboxTest::reducerNickMentionPrefersHighlightWord()
@@ -684,6 +695,37 @@ void InboxTest::forgetNetworkStatePurgesInbox()
     QCOMPARE(controller.inboxCount(), 1);
     controller.forgetNetworkState(networkA);
     QCOMPARE(controller.inboxCount(), 0);
+}
+
+void InboxTest::controllerDismissInboxItem()
+{
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    QVERIFY(controller.addSession(sessionConfig(), transport));
+    QVERIFY(controller.start(networkA));
+    welcome(transport);
+    transport->injectBytes(QByteArrayLiteral(":fred!u@h JOIN :#omarchy\r\n"
+                                             ":fred!u@h JOIN :#other\r\n"));
+    controller.selectConversation(networkA, QStringLiteral("#other"));
+
+    transport->injectBytes(
+        QByteArrayLiteral("@msgid=dismiss-1 :Alice!u@h PRIVMSG #omarchy :fred: first\r\n"));
+    transport->injectBytes(
+        QByteArrayLiteral("@msgid=dismiss-2 :Bob!u@h PRIVMSG #omarchy :fred: second\r\n"));
+    QCOMPARE(controller.inboxCount(), 2);
+    auto *model = qobject_cast<IrcInboxModel *>(controller.inbox());
+    QVERIFY(model);
+    QCOMPARE(model->field(0, QStringLiteral("msgid")), QStringLiteral("dismiss-2"));
+    QCOMPARE(model->field(1, QStringLiteral("msgid")), QStringLiteral("dismiss-1"));
+
+    controller.dismissInboxItem(0);
+    QCOMPARE(controller.inboxCount(), 1);
+    QCOMPARE(model->field(0, QStringLiteral("msgid")), QStringLiteral("dismiss-1"));
+    QCOMPARE(controller.selectedTarget(), QStringLiteral("#other"));
+
+    controller.dismissInboxItem(0);
+    QCOMPARE(controller.inboxCount(), 0);
+    QCOMPARE(controller.selectedTarget(), QStringLiteral("#other"));
 }
 
 void InboxTest::controllerInboxCountTracksModel()
