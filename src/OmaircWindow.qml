@@ -63,6 +63,12 @@ ApplicationWindow {
     readonly property var nickAvatarFills: style.nickAvatarFills
 
     property bool membersVisible: true
+    onMembersVisibleChanged: {
+        if (!membersVisible
+                && membersPanel.membersList
+                && membersPanel.membersList.activeFocus)
+            conversation.composer.forceActiveFocus();
+    }
     property bool serverListVisible: true
     property string sidebarNetworkFocusId: ""
     // The composer routes Enter to the focused network header, so a collapsed
@@ -1731,7 +1737,9 @@ ApplicationWindow {
     }
 
     function membersListFocused() {
-        return membersPanel.membersList && membersPanel.membersList.activeFocus;
+        return membersPanel.visible
+            && membersPanel.membersList
+            && membersPanel.membersList.activeFocus;
     }
 
     function membersIndexAt(list, y) {
@@ -1743,8 +1751,10 @@ ApplicationWindow {
     }
 
     function scrollMembersList(direction, fraction) {
+        if (!membersListFocused())
+            return;
         var list = membersPanel.membersList;
-        if (!list || list.count <= 0 || !list.activeFocus)
+        if (!list || list.count <= 0)
             return;
         if (fraction === undefined)
             fraction = 0.8;
@@ -1771,8 +1781,10 @@ ApplicationWindow {
     }
 
     function jumpMembersList(toEnd) {
+        if (!membersListFocused())
+            return;
         var list = membersPanel.membersList;
-        if (!list || list.count <= 0 || !list.activeFocus)
+        if (!list || list.count <= 0)
             return;
         if (toEnd) {
             list.currentIndex = list.count - 1;

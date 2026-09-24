@@ -4857,35 +4857,59 @@ TestCase {
 
     function test_ctrlHomeEndWithMembersFocusedJumpsTranscript() {
         openSeededAppWindow();
-        focusOverflowingMemberList();
+        var members = focusOverflowingMemberList();
         var list = item("messageList");
         fillTranscriptUntilScrollable(list);
         pageTranscriptToEnd(list);
         verify(transcriptPinned(list));
+
+        keyClick(Qt.Key_P, Qt.ControlModifier | Qt.ShiftModifier);
+        tryCompare(members, "activeFocus", true);
+        var memberIndex = members.currentIndex;
 
         keyClick(Qt.Key_Home, Qt.ControlModifier);
         waitForRendering(appWindow.contentItem);
         wait(0);
         compare(firstVisibleIndex(list), 0,
                "Ctrl+Home with members focused should jump transcript to top");
+        compare(members.currentIndex, memberIndex,
+               "Ctrl+Home should not move member list selection");
 
+        mouseClick(item("messageComposer"));
+        tryCompare(item("messageComposer"), "activeFocus", true);
         pageTranscriptToEnd(list);
+        keyClick(Qt.Key_P, Qt.ControlModifier | Qt.ShiftModifier);
+        tryCompare(members, "activeFocus", true);
+        memberIndex = members.currentIndex;
+
         keyClick(Qt.Key_End, Qt.ControlModifier);
         waitForRendering(appWindow.contentItem);
         wait(0);
         verify(transcriptPinned(list),
                "Ctrl+End with members focused should jump transcript to bottom");
+        compare(members.currentIndex, memberIndex,
+               "Ctrl+End should not move member list selection");
     }
 
     function test_pageKeysWithHiddenMembersPanelStayHidden() {
         openSeededAppWindow();
+        var members = focusOverflowingMemberList();
         var list = item("messageList");
         fillTranscriptUntilScrollable(list);
         pageTranscriptToEnd(list);
 
+        keyClick(Qt.Key_P, Qt.ControlModifier | Qt.ShiftModifier);
+        tryCompare(members, "activeFocus", true);
+        keyClick(Qt.Key_PageDown);
+        waitForRendering(appWindow.contentItem);
+        wait(0);
+        var memberIndex = members.currentIndex;
+        var memberContentY = members.contentY;
+
         keyClick(Qt.Key_M, Qt.ControlModifier | Qt.ShiftModifier);
         tryCompare(item("membersPanel"), "visible", false);
         compare(appWindow.membersVisible, false);
+        tryCompare(item("messageComposer"), "activeFocus", true);
 
         var before = list.contentY;
         keyClick(Qt.Key_PageUp);
@@ -4893,6 +4917,10 @@ TestCase {
         wait(0);
         verify(list.contentY < before,
                "Page Up with the members panel hidden should scroll the transcript");
+        compare(members.currentIndex, memberIndex,
+               "Page Up with hidden panel should not move member list selection");
+        compare(members.contentY, memberContentY,
+               "Page Up with hidden panel should not scroll the member list");
         compare(appWindow.membersVisible, false);
         tryCompare(item("membersPanel"), "visible", false);
 
@@ -4902,6 +4930,10 @@ TestCase {
         compare(appWindow.membersVisible, false,
                 "Page Down should not reopen the members panel");
         tryCompare(item("membersPanel"), "visible", false);
+        compare(members.currentIndex, memberIndex,
+               "Page Down with hidden panel should not move member list selection");
+        compare(members.contentY, memberContentY,
+               "Page Down with hidden panel should not scroll the member list");
     }
 
     function test_pageKeysOnDirectMessageScrollTranscript() {
