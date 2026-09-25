@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A failed profile save or remove is reported on the Connect sheet, and Apply
+  no longer closes the sheet when the settings file could not be written.
 - SASL PLAIN credentials longer than one `AUTHENTICATE` chunk are sent through
   the existing chunk framer, including the empty continuation when the base64
   encoding lands on a 400-byte boundary.

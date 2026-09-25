@@ -126,6 +126,7 @@ public:
     void setLoadPeerAvatars(bool enabled);
     bool openConversationsAtUnread() const;
     void setOpenConversationsAtUnread(bool enabled);
+    void persistProfileAvatarUrl(const QString& networkId, const QString& url);
     IrcStatusConsole *console();
     QAbstractItemModel *inbox();
     int inboxCount() const;
@@ -300,7 +301,6 @@ private:
     bool failChannelListFromNumeric(const QString& networkId,
                                     const IrcMessage& message);
     QString profileAvatarUrlForNetwork(const QString& networkId) const;
-    void persistProfileAvatarUrl(const QString& networkId, const QString& url);
     void applyProfileAvatarOnConnect(IrcSession *session);
 
     void unawayAfterChat(IrcSession *session);

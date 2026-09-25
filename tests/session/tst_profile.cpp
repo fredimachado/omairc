@@ -41,6 +41,19 @@ private slots:
     void missingNickServSavedDefaultsToFalse();
     void usernameAndRealnameStayAsTyped();
     void storeRemoveDropsTheNetworkGroup();
+#ifdef Q_OS_LINUX
+    void storeReadOnlyIniReturnsAccessError();
+    void storeRemoveMissingFileIsAbsent();
+    void storeRemoveMissingFileWithCachedIdIsAbsent();
+    void storeRemoveMissingEqualsWithoutGroupReturnsFormatError();
+    void storeRemoveMissingEqualsWithGroupReturnsFormatError();
+    void storeRemoveMissingEqualsInPreferencesReturnsFormatError();
+    void storeSaveMissingEqualsReturnsFormatError();
+    void storeSaveAfterRemoveMissingEqualsReturnsFormatError();
+    void storeUnreadableIniReturnsAccessError();
+    void storeWriteOnlyIniSaveReturnsAccessError();
+    void storeRemoveReadOnlyMissingGroupIsAbsent();
+#endif
 
 private:
 #ifdef Q_OS_LINUX
@@ -557,8 +570,8 @@ void ProfileTest::storeRemoveDropsTheNetworkGroup()
     store.save(drop);
     QCOMPARE(IrcProfileStore().profiles().size(), 2);
 
-    QVERIFY(store.remove(drop.networkId));
-    QVERIFY(!store.remove(drop.networkId));
+    QCOMPARE(store.remove(drop.networkId), IrcProfileStore::Status::Written);
+    QCOMPARE(store.remove(drop.networkId), IrcProfileStore::Status::Absent);
 
     const QList<IrcNetworkProfile> loaded = IrcProfileStore().profiles();
     QCOMPARE(loaded.size(), 1);
@@ -587,6 +600,340 @@ void ProfileTest::storeRemoveDropsTheNetworkGroup()
     QVERIFY(!values.join(QLatin1Char('\n')).contains(QLatin1String("irc.oftc.net")));
 #endif
 }
+
+#ifdef Q_OS_LINUX
+void ProfileTest::storeReadOnlyIniReturnsAccessError()
+{
+    IrcNetworkProfile profile = IrcNetworkProfile::create();
+    profile.host = QStringLiteral("irc.example.net");
+    profile.nick = QStringLiteral("omairc");
+    QVERIFY(profile.isComplete());
+
+    IrcProfileStore store;
+    QCOMPARE(store.save(profile), IrcProfileStore::Status::Written);
+
+    const QString path = settingsFile();
+    QFile ini(path);
+    QVERIFY(ini.exists());
+    const QFile::Permissions original = ini.permissions();
+    struct PermissionGuard
+    {
+        explicit PermissionGuard(QString filePath, QFile::Permissions saved)
+            : filePath(std::move(filePath))
+            , saved(saved)
+        {
+        }
+        ~PermissionGuard()
+        {
+            if (active)
+                QFile::setPermissions(filePath, saved);
+        }
+        void dismiss() { active = false; }
+
+        QString filePath;
+        QFile::Permissions saved;
+        bool active = true;
+    } guard(path, original);
+
+    const QFile::Permissions readOnly = original
+        & ~(QFile::WriteOwner | QFile::WriteUser | QFile::WriteGroup | QFile::WriteOther);
+    QVERIFY(ini.setPermissions(readOnly));
+
+    IrcNetworkProfile changed = profile;
+    changed.host = QStringLiteral("irc.changed.example");
+    QCOMPARE(store.save(changed), IrcProfileStore::Status::AccessError);
+    QCOMPARE(store.remove(profile.networkId), IrcProfileStore::Status::AccessError);
+
+    QVERIFY(QFile::setPermissions(path, original));
+    guard.dismiss();
+
+    const QList<IrcNetworkProfile> loaded = IrcProfileStore().profiles();
+    QCOMPARE(loaded.size(), 1);
+    QCOMPARE(loaded.first().networkId, profile.networkId);
+    QCOMPARE(loaded.first().host, profile.host);
+
+    QVERIFY(ini.open(QIODevice::ReadOnly | QIODevice::Text));
+    const QString contents = QString::fromUtf8(ini.readAll());
+    QVERIFY(contents.contains(profile.host));
+    QVERIFY(!contents.contains(changed.host));
+}
+
+void ProfileTest::storeRemoveMissingFileIsAbsent()
+{
+    QSettings settings;
+    const QString path = settings.fileName();
+    QVERIFY2(!QFile::exists(path), qPrintable(path));
+
+    QCOMPARE(IrcProfileStore().remove(QStringLiteral("missing-network")),
+             IrcProfileStore::Status::Absent);
+    QVERIFY(!QFile::exists(path));
+}
+
+void ProfileTest::storeRemoveMissingFileWithCachedIdIsAbsent()
+{
+    QSettings settings;
+    const QString path = settings.fileName();
+    QVERIFY2(!QFile::exists(path), qPrintable(path));
+
+    settings.beginGroup(QStringLiteral("preferences"));
+    settings.setValue(QStringLiteral("reopenDirectMessages"), true);
+    settings.endGroup();
+    settings.beginGroup(QStringLiteral("networks"));
+    settings.beginGroup(QStringLiteral("cached-network"));
+    settings.setValue(QStringLiteral("host"), QStringLiteral("irc.example.net"));
+    settings.endGroup();
+    settings.endGroup();
+
+    QCOMPARE(IrcProfileStore().remove(QStringLiteral("cached-network")),
+             IrcProfileStore::Status::Absent);
+    QVERIFY(!QFile::exists(path));
+}
+
+class SettingsModeGuard
+{
+public:
+    SettingsModeGuard(const QString &filePath, QFile::Permissions saved)
+        : filePath(filePath)
+        , saved(saved)
+    {
+    }
+
+    ~SettingsModeGuard()
+    {
+        if (active)
+            QFile::setPermissions(filePath, saved);
+    }
+
+    void dismiss() { active = false; }
+
+    QString filePath;
+    QFile::Permissions saved;
+    bool active = true;
+};
+
+static bool writeSettingsFile(const QString &path, const QByteArray &bytes)
+{
+    QFile file(path);
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate))
+        return false;
+    if (file.write(bytes) != bytes.size())
+        return false;
+    return file.flush();
+}
+
+static QByteArray readSettingsFile(const QString &path)
+{
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly))
+        return {};
+    return file.readAll();
+}
+
+void ProfileTest::storeRemoveMissingEqualsWithoutGroupReturnsFormatError()
+{
+    IrcNetworkProfile profile = IrcNetworkProfile::create();
+    profile.host = QStringLiteral("irc.example.net");
+    profile.nick = QStringLiteral("omairc");
+
+    IrcProfileStore store;
+    QCOMPARE(store.save(profile), IrcProfileStore::Status::Written);
+
+    // No '=' means the network is not a parsed key, so childGroups() drops it.
+    const QByteArray corrupt = QByteArrayLiteral("[networks]\n")
+        + profile.networkId.toUtf8()
+        + QByteArrayLiteral("\\host\n");
+    const QString path = settingsFile();
+    QVERIFY(writeSettingsFile(path, corrupt));
+
+    QCOMPARE(store.remove(profile.networkId), IrcProfileStore::Status::FormatError);
+    QCOMPARE(readSettingsFile(path), corrupt);
+}
+
+void ProfileTest::storeRemoveMissingEqualsWithGroupReturnsFormatError()
+{
+    IrcNetworkProfile profile = IrcNetworkProfile::create();
+    profile.host = QStringLiteral("irc.example.net");
+    profile.nick = QStringLiteral("omairc");
+
+    IrcProfileStore store;
+    QCOMPARE(store.save(profile), IrcProfileStore::Status::Written);
+
+    const QString path = settingsFile();
+    QByteArray corrupt = readSettingsFile(path);
+    QVERIFY(corrupt.contains(profile.networkId.toUtf8()));
+    QVERIFY(corrupt.contains('='));
+    if (!corrupt.endsWith('\n'))
+        corrupt.append('\n');
+    // A value line with no '=' beside real keys: the group stays listed.
+    corrupt.append(profile.networkId.toUtf8());
+    corrupt.append(QByteArrayLiteral("\\port\n"));
+    QVERIFY(writeSettingsFile(path, corrupt));
+
+    QCOMPARE(store.remove(profile.networkId), IrcProfileStore::Status::FormatError);
+
+    const QByteArray after = readSettingsFile(path);
+    QCOMPARE(after, corrupt);
+    QVERIFY(after.contains(profile.networkId.toUtf8()));
+}
+
+void ProfileTest::storeRemoveMissingEqualsInPreferencesReturnsFormatError()
+{
+    IrcNetworkProfile profile = IrcNetworkProfile::create();
+    profile.host = QStringLiteral("irc.example.net");
+    profile.nick = QStringLiteral("omairc");
+
+    IrcProfileStore store;
+    QCOMPARE(store.save(profile), IrcProfileStore::Status::Written);
+
+    const QString path = settingsFile();
+    QByteArray corrupt = readSettingsFile(path);
+    QVERIFY(corrupt.contains(profile.networkId.toUtf8()));
+    if (!corrupt.endsWith('\n'))
+        corrupt.append('\n');
+    // A missing '=' outside [networks] is invisible to childGroups() there.
+    corrupt.append(QByteArrayLiteral("[preferences]\nnetworkOrder\n"));
+    QVERIFY(writeSettingsFile(path, corrupt));
+
+    QCOMPARE(store.remove(profile.networkId), IrcProfileStore::Status::FormatError);
+
+    const QByteArray after = readSettingsFile(path);
+    QCOMPARE(after, corrupt);
+    QVERIFY(after.contains(profile.networkId.toUtf8()));
+    QVERIFY(after.contains(QByteArrayLiteral("networkOrder")));
+}
+
+void ProfileTest::storeSaveMissingEqualsReturnsFormatError()
+{
+    IrcNetworkProfile profile = IrcNetworkProfile::create();
+    profile.host = QStringLiteral("irc.example.net");
+    profile.nick = QStringLiteral("omairc");
+
+    IrcProfileStore store;
+    QCOMPARE(store.save(profile), IrcProfileStore::Status::Written);
+
+    const QByteArray corrupt = QByteArrayLiteral("[networks]\n")
+        + profile.networkId.toUtf8()
+        + QByteArrayLiteral("\\host\n");
+    const QString path = settingsFile();
+    QVERIFY(writeSettingsFile(path, corrupt));
+
+    profile.host = QStringLiteral("irc.changed.example");
+    QCOMPARE(store.save(profile), IrcProfileStore::Status::FormatError);
+    QCOMPARE(readSettingsFile(path), corrupt);
+}
+
+void ProfileTest::storeSaveAfterRemoveMissingEqualsReturnsFormatError()
+{
+    IrcNetworkProfile profile = IrcNetworkProfile::create();
+    profile.host = QStringLiteral("irc.example.net");
+    profile.nick = QStringLiteral("omairc");
+
+    IrcProfileStore store;
+    QCOMPARE(store.save(profile), IrcProfileStore::Status::Written);
+
+    const QByteArray corrupt = QByteArrayLiteral("[networks]\n")
+        + profile.networkId.toUtf8()
+        + QByteArrayLiteral("\\host\n");
+    const QString path = settingsFile();
+    QVERIFY(writeSettingsFile(path, corrupt));
+
+    QCOMPARE(store.remove(profile.networkId), IrcProfileStore::Status::FormatError);
+    QCOMPARE(readSettingsFile(path), corrupt);
+
+    profile.host = QStringLiteral("irc.changed.example");
+    QCOMPARE(store.save(profile), IrcProfileStore::Status::FormatError);
+    QCOMPARE(readSettingsFile(path), corrupt);
+}
+
+void ProfileTest::storeUnreadableIniReturnsAccessError()
+{
+    IrcNetworkProfile profile = IrcNetworkProfile::create();
+    profile.host = QStringLiteral("irc.example.net");
+    profile.nick = QStringLiteral("omairc");
+    QVERIFY(profile.isComplete());
+
+    IrcProfileStore store;
+    QCOMPARE(store.save(profile), IrcProfileStore::Status::Written);
+
+    const QString path = settingsFile();
+    const QByteArray original = readSettingsFile(path);
+    QVERIFY(!original.isEmpty());
+
+    QFile ini(path);
+    const QFile::Permissions saved = ini.permissions();
+    SettingsModeGuard guard(path, saved);
+    // Mode 000. A warm cache makes sync() NoError, so a missing group would
+    // be Absent unless open failure is AccessError first.
+    QVERIFY(ini.setPermissions(QFile::Permissions()));
+
+    QCOMPARE(store.remove(QStringLiteral("missing-network")),
+             IrcProfileStore::Status::AccessError);
+    profile.host = QStringLiteral("irc.changed.example");
+    QCOMPARE(store.save(profile), IrcProfileStore::Status::AccessError);
+
+    QVERIFY(QFile::setPermissions(path, saved));
+    guard.dismiss();
+    QCOMPARE(readSettingsFile(path), original);
+}
+
+void ProfileTest::storeWriteOnlyIniSaveReturnsAccessError()
+{
+    IrcNetworkProfile profile = IrcNetworkProfile::create();
+    profile.host = QStringLiteral("irc.example.net");
+    profile.nick = QStringLiteral("omairc");
+    QVERIFY(profile.isComplete());
+
+    IrcProfileStore store;
+    QCOMPARE(store.save(profile), IrcProfileStore::Status::Written);
+
+    const QString path = settingsFile();
+    const QByteArray original = readSettingsFile(path);
+    QVERIFY(original.contains(profile.host.toUtf8()));
+
+    QFile ini(path);
+    const QFile::Permissions saved = ini.permissions();
+    SettingsModeGuard guard(path, saved);
+    // Mode 0200 is writable, so the not-writable check does not fire.
+    QVERIFY(ini.setPermissions(QFile::WriteOwner));
+
+    profile.host = QStringLiteral("irc.changed.example");
+    QCOMPARE(store.save(profile), IrcProfileStore::Status::AccessError);
+
+    QVERIFY(QFile::setPermissions(path, saved));
+    guard.dismiss();
+    QCOMPARE(readSettingsFile(path), original);
+    QVERIFY(!readSettingsFile(path).contains(QByteArrayLiteral("irc.changed.example")));
+}
+
+void ProfileTest::storeRemoveReadOnlyMissingGroupIsAbsent()
+{
+    {
+        QSettings settings;
+        settings.beginGroup(QStringLiteral("preferences"));
+        settings.setValue(QStringLiteral("reopenDirectMessages"), true);
+        settings.endGroup();
+        settings.sync();
+        QCOMPARE(settings.status(), QSettings::NoError);
+    }
+
+    const QString path = settingsFile();
+    const QByteArray original = readSettingsFile(path);
+    QVERIFY(original.contains(QByteArrayLiteral("reopenDirectMessages")));
+    QVERIFY(!original.contains(QByteArrayLiteral("missing-network")));
+
+    QFile ini(path);
+    const QFile::Permissions saved = ini.permissions();
+    SettingsModeGuard guard(path, saved);
+    QVERIFY(ini.setPermissions(QFile::ReadOwner | QFile::ReadGroup | QFile::ReadOther));
+
+    QCOMPARE(IrcProfileStore().remove(QStringLiteral("missing-network")),
+             IrcProfileStore::Status::Absent);
+
+    QVERIFY(QFile::setPermissions(path, saved));
+    guard.dismiss();
+    QCOMPARE(readSettingsFile(path), original);
+}
+#endif
 
 int runProfileTests(int argc, char **argv)
 {

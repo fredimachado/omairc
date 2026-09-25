@@ -76,6 +76,7 @@ HEADERS += \
     ../../src/irc/ircchannellistrequest.h \
     ../../src/irc/irccontroller.h \
     ../../src/irc/ircnetworkprofile.h \
+    ../../src/irc/ircprofilestore.h \
     ../../src/irc/qtirctransport.h \
     liveharness.h \
     livepeer.h
@@ -143,4 +144,5 @@ SOURCES += \
     ../../src/irc/ircchannellistrequest.cpp \
     ../../src/irc/irccontroller.cpp \
     ../../src/irc/ircnetworkprofile.cpp \
+    ../../src/irc/ircprofilestore.cpp \
     ../../src/irc/qtirctransport.cpp

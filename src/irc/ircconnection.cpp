@@ -5,6 +5,7 @@
 
 #include <algorithm>
 
+#include <QFileInfo>
 #include <QHash>
 #include <QSettings>
 #include <QSet>
@@ -59,15 +60,44 @@ QStringList loadPreferenceList(const QString &key)
     return settings.value(key).toStringList();
 }
 
+bool existingSettingsFileIsNotWritable(const QString &path)
+{
+    const QFileInfo info(path);
+    return info.exists() && !info.isWritable();
+}
+
 void savePreferenceList(const QString &key, const QStringList &value)
 {
     QSettings settings;
+    // Same byte probe as IrcProfileStore::save. A writing sync() would emit
+    // the cleaned cache over a corrupt ini. Order and collapsed ids stay
+    // unreported, so return before setValue.
+    if (IrcProfileStore::probeSettingsIni(settings) != IrcProfileStore::IniProbe::Ok)
+        return;
+    // A failed sync() leaves pending keys in the process-wide cache.
+    // Refuse before setValue when the ini cannot accept the write.
+    if (existingSettingsFileIsNotWritable(settings.fileName()))
+        return;
     settings.beginGroup(preferencesGroup());
     if (settings.contains(key) && settings.value(key).toStringList() == value)
         return;
     settings.setValue(key, value);
     settings.endGroup();
     settings.sync();
+}
+
+QString settingsFileSentence(IrcProfileStore::Status status)
+{
+    switch (status) {
+    case IrcProfileStore::Status::AccessError:
+        return QStringLiteral("The settings file could not be written.");
+    case IrcProfileStore::Status::FormatError:
+        return QStringLiteral("The settings file could not be read.");
+    case IrcProfileStore::Status::Written:
+    case IrcProfileStore::Status::Absent:
+        break;
+    }
+    return {};
 }
 }
 
@@ -450,6 +480,76 @@ void IrcConnection::markSessionOnlyIfStoreUnavailable(IrcDraftSecret &secret,
     }
 }
 
+QString IrcConnection::persistenceStatus() const
+{
+    return m_persistenceMessages.value(m_selectedNetworkId);
+}
+
+void IrcConnection::storePersistence(const QString &networkId, const QString &message)
+{
+    m_persistenceMessages.insert(networkId, message);
+}
+
+void IrcConnection::clearStoredPersistence(const QString &networkId)
+{
+    m_persistenceMessages.remove(networkId);
+}
+
+void IrcConnection::publishPersistence(const QString &previous)
+{
+    if (persistenceStatus() != previous)
+        emit persistenceStatusChanged();
+}
+
+void IrcConnection::assignPersistenceStatus(const QString &networkId, const QString &message)
+{
+    const QString previous = persistenceStatus();
+    storePersistence(networkId, message);
+    publishPersistence(previous);
+}
+
+void IrcConnection::recordBackgroundSave(const QString &networkId,
+                                         IrcProfileStore::Status status)
+{
+    if (networkId.isEmpty() || status == IrcProfileStore::Status::Absent)
+        return;
+    if (status == IrcProfileStore::Status::Written) {
+        const QString previous = persistenceStatus();
+        clearStoredPersistence(networkId);
+        publishPersistence(previous);
+        return;
+    }
+    const QString sentence = settingsFileSentence(status);
+    if (!sentence.isEmpty())
+        assignPersistenceStatus(networkId, sentence);
+}
+
+void IrcConnection::recordApplyPersistence(const QString &networkId,
+                                           IrcProfileStore::Status status,
+                                           bool sessionAccepted)
+{
+    if (status == IrcProfileStore::Status::Absent)
+        return;
+    if (status == IrcProfileStore::Status::Written && sessionAccepted) {
+        clearStoredPersistence(networkId);
+        return;
+    }
+    if (status == IrcProfileStore::Status::Written) {
+        storePersistence(networkId,
+                         QStringLiteral("These settings were saved successfully."));
+        return;
+    }
+    const QString sentence = settingsFileSentence(status);
+    if (sentence.isEmpty())
+        return;
+    if (sessionAccepted) {
+        storePersistence(networkId,
+                         QStringLiteral("Connected using these settings. ") + sentence);
+        return;
+    }
+    storePersistence(networkId, sentence);
+}
+
 QString IrcConnection::credentialStatus() const
 {
     const IrcDraftSecret &password = selectedSecret();
@@ -653,6 +753,7 @@ bool IrcConnection::add()
 {
     if (!canAdd())
         return false;
+    const QString previousPersistence = persistenceStatus();
     m_addedFromNetworkId = m_selectedNetworkId;
     m_draft = IrcNetworkProfile::create();
     m_draft.port = 6697;
@@ -665,6 +766,7 @@ bool IrcConnection::add()
     emit credentialStateChanged();
     emit draftChanged();
     refreshRoster();
+    publishPersistence(previousPersistence);
     return true;
 }
 
@@ -767,8 +869,12 @@ bool IrcConnection::apply()
     const IrcNetworkProfile previousProfile = storedProfile(m_selectedNetworkId);
     const CredentialKey previousCredentialKey = credentialKey(previousProfile);
     const CredentialKey nextCredentialKey = credentialKey(profile);
-    if (!m_ephemeral)
-        m_store.save(profile);
+    bool savedProfile = false;
+    IrcProfileStore::Status saveStatus = IrcProfileStore::Status::Absent;
+    if (!m_ephemeral) {
+        saveStatus = m_store.save(profile);
+        savedProfile = true;
+    }
     bool found = false;
     for (IrcNetworkProfile &stored : m_stored) {
         if (stored.networkId == profile.networkId) {
@@ -779,10 +885,11 @@ bool IrcConnection::apply()
     }
     if (!found) {
         m_stored.append(profile);
-        if (!m_ephemeral)
+        if (!m_ephemeral && saveStatus == IrcProfileStore::Status::Written)
             persistNetworkOrder();
     }
     m_draft = profile;
+    const QString previousPersistence = persistenceStatus();
     m_selectedNetworkId = profile.networkId;
     emit draftChanged();
     emit selectedNetworkChanged();
@@ -802,14 +909,20 @@ bool IrcConnection::apply()
     const bool passwordBlocks = secretReadBlocksApply(password, true);
     const bool nickServBlocks = secretReadBlocksApply(
         nickServ, secretSlotTracked(nickServ, profile.nickServSaved));
+    bool sessionAccepted = false;
     if (passwordBlocks || nickServBlocks) {
         if (passwordBlocks)
             password.reconcileWhenReadSettles = true;
         if (nickServBlocks)
             nickServ.reconcileWhenReadSettles = true;
-        return true;
+        sessionAccepted = true;
+    } else {
+        sessionAccepted = reconcile(profile);
     }
-    return reconcile(profile);
+    if (savedProfile)
+        recordApplyPersistence(profile.networkId, saveStatus, sessionAccepted);
+    publishPersistence(previousPersistence);
+    return sessionAccepted;
 }
 
 void IrcConnection::applySecret(IrcDraftSecret &secret,
@@ -1124,8 +1237,21 @@ bool IrcConnection::removeSelected()
     if (!canRemove())
         return false;
 
-    const bool wasSetup = setupRequired();
     const QString id = m_selectedNetworkId;
+    const IrcProfileStore::Status removedStatus = m_store.remove(id);
+    if (removedStatus == IrcProfileStore::Status::AccessError
+        || removedStatus == IrcProfileStore::Status::FormatError) {
+        const QString sentence = settingsFileSentence(removedStatus);
+        assignPersistenceStatus(
+            id, QStringLiteral("This network could not be removed. ") + sentence);
+        return false;
+    }
+
+    const QString previousPersistence = persistenceStatus();
+    if (removedStatus == IrcProfileStore::Status::Written)
+        clearStoredPersistence(id);
+
+    const bool wasSetup = setupRequired();
     const IrcNetworkProfile removed = storedProfile(id);
     int removedIndex = 0;
     for (int i = 0; i < m_stored.size(); ++i) {
@@ -1145,7 +1271,6 @@ bool IrcConnection::removeSelected()
     m_secrets.remove(id);
     m_nickServSecrets.remove(id);
     m_applied.remove(id);
-    m_store.remove(id);
     m_stored.erase(std::remove_if(m_stored.begin(), m_stored.end(),
                                   [&id](const IrcNetworkProfile &profile) {
                                       return profile.networkId == id;
@@ -1175,6 +1300,7 @@ bool IrcConnection::removeSelected()
         emit setupRequiredChanged();
     refreshRoster();
     pushNetworkOrder();
+    publishPersistence(previousPersistence);
     return true;
 }
 
@@ -1408,7 +1534,7 @@ void IrcConnection::persistSavedFlag(const CredentialKey &key, bool saved)
             return;
         flag = saved;
         if (!m_ephemeral)
-            m_store.save(profile);
+            recordBackgroundSave(profile.networkId, m_store.save(profile));
         if (m_draft.networkId == key.networkId) {
             if (key.purpose.isEmpty())
                 m_draft.secretSaved = saved;
@@ -1504,7 +1630,8 @@ void IrcConnection::persistAvatarUrl(const QString &networkId, const QString &ur
         if (profile.avatarUrl == url)
             return;
         profile.avatarUrl = url;
-        m_store.save(profile);
+        if (!m_ephemeral)
+            recordBackgroundSave(networkId, m_store.save(profile));
         const auto applied = m_applied.find(networkId);
         if (applied != m_applied.end())
             applied->profile.avatarUrl = url;
@@ -1526,7 +1653,7 @@ void IrcConnection::persistAutojoin(const QString &networkId,
         profile.autojoinChannels = channels;
         profile.autojoinKeys = keys;
         if (!m_ephemeral)
-            m_store.save(profile);
+            recordBackgroundSave(profile.networkId, m_store.save(profile));
         const auto applied = m_applied.find(networkId);
         if (applied != m_applied.end()) {
             applied->profile.autojoinChannels = channels;
@@ -1576,6 +1703,7 @@ void IrcConnection::setStoredProfiles(const QList<IrcNetworkProfile> &profiles)
     applyNetworkOrder();
     loadCollapsedNetworks();
 
+    const QString previousPersistence = persistenceStatus();
     if (!m_stored.isEmpty()) {
         IrcNetworkProfile chosen = m_stored.first();
         for (const IrcNetworkProfile &profile : m_stored) {
@@ -1592,6 +1720,7 @@ void IrcConnection::setStoredProfiles(const QList<IrcNetworkProfile> &profiles)
         assignIconColor(m_draft, false);
     }
     pushNetworkOrder();
+    publishPersistence(previousPersistence);
 
     for (const IrcNetworkProfile &profile : m_stored) {
         if (profile.networkId.isEmpty())
@@ -1618,7 +1747,7 @@ void IrcConnection::assignIconColor(IrcNetworkProfile &profile, bool persist)
     if (!profile.ensureIconColor(usedIconColors(profile.networkId)))
         return;
     if (persist && !m_ephemeral && !profile.networkId.isEmpty())
-        m_store.save(profile);
+        recordBackgroundSave(profile.networkId, m_store.save(profile));
 }
 
 void IrcConnection::assignStoredIconColors()
@@ -1727,6 +1856,7 @@ int IrcConnection::storedIndex(const QString &networkId) const
 
 void IrcConnection::selectStored(const QString &networkId)
 {
+    const QString previousPersistence = persistenceStatus();
     if (isStored(networkId))
         m_draft = storedProfile(networkId);
     m_selectedNetworkId = networkId;
@@ -1736,6 +1866,7 @@ void IrcConnection::selectStored(const QString &networkId)
     emit credentialStateChanged();
     emit draftChanged();
     refreshRoster();
+    publishPersistence(previousPersistence);
 }
 
 void IrcConnection::pushNetworkOrder()

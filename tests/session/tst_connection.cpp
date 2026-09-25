@@ -1,5 +1,6 @@
 #include <QAbstractItemModel>
 #include <QCoreApplication>
+#include <QFile>
 #include <QList>
 #include <QMap>
 #include <QSettings>
@@ -28,6 +29,52 @@ class FakeCredentialStore;
 
 namespace
 {
+#ifdef Q_OS_LINUX
+class ReadOnlySettingsGuard
+{
+public:
+    ReadOnlySettingsGuard()
+    {
+        QSettings settings;
+        m_path = settings.fileName();
+        QFile file(m_path);
+        m_existed = file.exists();
+        m_original = file.permissions();
+    }
+
+    bool lock()
+    {
+        if (!m_existed)
+            return false;
+        const QFile::Permissions readOnly = m_original
+            & ~(QFile::WriteOwner | QFile::WriteUser | QFile::WriteGroup | QFile::WriteOther);
+        return QFile(m_path).setPermissions(readOnly);
+    }
+
+    bool restore()
+    {
+        if (!m_active)
+            return true;
+        if (!QFile::setPermissions(m_path, m_original))
+            return false;
+        m_active = false;
+        return true;
+    }
+
+    ~ReadOnlySettingsGuard()
+    {
+        if (m_active && m_existed)
+            QFile::setPermissions(m_path, m_original);
+    }
+
+private:
+    QString m_path;
+    QFile::Permissions m_original;
+    bool m_existed = false;
+    bool m_active = true;
+};
+#endif
+
 QByteArray decodedSaslPayload(const QByteArray &frame)
 {
     const qsizetype prefix = qsizetype(sizeof("AUTHENTICATE ") - 1);
@@ -88,6 +135,33 @@ bool logContains(QAbstractItemModel *lines, const QString &needle)
     }
     return false;
 }
+
+#ifdef Q_OS_LINUX
+bool writeSettingsFile(const QString &path, const QByteArray &bytes)
+{
+    QFile file(path);
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate))
+        return false;
+    if (file.write(bytes) != bytes.size())
+        return false;
+    return file.flush();
+}
+
+QByteArray readSettingsFile(const QString &path)
+{
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly))
+        return {};
+    return file.readAll();
+}
+
+QByteArray malformedSettings(const QString &networkId)
+{
+    return QByteArrayLiteral("[networks]\n")
+        + networkId.toUtf8()
+        + QByteArrayLiteral("\\host\n[preferences]\nnetworkOrder\n");
+}
+#endif
 
 bool framesContain(const QByteArrayList &frames, const QByteArray &needle)
 {
@@ -220,6 +294,18 @@ private slots:
     void missingIconColorIsAssignedOnce();
     void networkIconUrlComesFromIsupport();
     void removeSelectedDropsSessionAndStore();
+    void applyWithoutTransportReportsSavedSettings();
+    void persistenceStatusFollowsTheSelectedNetwork();
+#ifdef Q_OS_LINUX
+    void applyOnReadOnlyIniKeepsTheSessionAndReportsTheWrite();
+    void applyOnReadOnlyIniWithoutTransportReportsTheFileSentence();
+    void removeSelectedOnReadOnlyIniKeepsTheSessionAndStore();
+    void removeSelectedAbsentNetworkOnReadOnlyIniTearsDownSession();
+    void readOnlyApplyDoesNotCacheOrderForAnUnstoredNetwork();
+    void persistenceFailureStaysWithItsNetwork();
+    void loadStoredLeavesMalformedIniUntouched();
+    void preferenceWritesLeaveMalformedIniUntouched();
+#endif
     void removeSelectedDeletesStoredSecret();
     void usernameChangePersistsExistingPassword();
     void nickChangeKeepsKeyWhenUsernameIsSet();
@@ -254,6 +340,7 @@ private slots:
     void avatarUrlSurvivesConnectionApply();
     void avatarUrlSurvivesAutojoinPersist();
     void avatarUrlApplyDoesNotReconnect();
+    void ephemeralSessionSkipsAvatarSave();
 
 private:
     IrcConnection::TransportFactory capturingFactory();
@@ -2052,6 +2139,286 @@ void ConnectionTest::removeSelectedDropsSessionAndStore()
              QStringLiteral("irc.example"));
 }
 
+void ConnectionTest::applyWithoutTransportReportsSavedSettings()
+{
+    IrcController controller;
+    IrcConnection connection(controller, []() -> IrcTransport * { return nullptr; },
+                             credentialStore());
+    fillCompleteDraft(connection, QStringLiteral("irc.example"));
+    QVERIFY(!connection.apply());
+    QCOMPARE(connection.persistenceStatus(),
+             QStringLiteral("These settings were saved successfully."));
+    QCOMPARE(IrcProfileStore().profiles().size(), 1);
+    QCOMPARE(IrcProfileStore().profiles().first().host, QStringLiteral("irc.example"));
+    QCOMPARE(m_transports.size(), 0);
+}
+
+void ConnectionTest::persistenceStatusFollowsTheSelectedNetwork()
+{
+    IrcController controller;
+    IrcConnection connection(controller, []() -> IrcTransport * { return nullptr; },
+                             credentialStore());
+    fillCompleteDraft(connection, QStringLiteral("irc.example"));
+    QVERIFY(!connection.apply());
+    const QString saved = QStringLiteral("These settings were saved successfully.");
+    QCOMPARE(connection.persistenceStatus(), saved);
+
+    const QString firstId = connection.selectedNetworkId();
+    QVERIFY(connection.add());
+    QVERIFY(connection.selectedNetworkId() != firstId);
+    QCOMPARE(connection.persistenceStatus(), QString());
+
+    connection.discard();
+    QCOMPARE(connection.selectedNetworkId(), firstId);
+    QCOMPARE(connection.persistenceStatus(), saved);
+}
+
+#ifdef Q_OS_LINUX
+void ConnectionTest::applyOnReadOnlyIniKeepsTheSessionAndReportsTheWrite()
+{
+    IrcController controller;
+    IrcConnection connection(controller, capturingFactory(), credentialStore());
+    fillCompleteDraft(connection, QStringLiteral("irc.example"));
+    QVERIFY(connection.apply());
+    QCOMPARE(connection.persistenceStatus(), QString());
+    const QString networkId = connection.selectedNetworkId();
+    QVERIFY(controller.session(networkId) != nullptr);
+
+    ReadOnlySettingsGuard guard;
+    QVERIFY(guard.lock());
+
+    connection.setHost(QStringLiteral("irc.changed.example"));
+    QVERIFY(connection.apply());
+    QCOMPARE(connection.persistenceStatus(),
+             QStringLiteral("Connected using these settings. "
+                            "The settings file could not be written."));
+    QVERIFY(!connection.persistenceStatus().contains(QStringLiteral("saved successfully")));
+    QCOMPARE(connection.host(), QStringLiteral("irc.changed.example"));
+    QVERIFY(controller.session(networkId) != nullptr);
+    QCOMPARE(IrcProfileStore().profiles().size(), 1);
+    QCOMPARE(IrcProfileStore().profiles().first().host, QStringLiteral("irc.example"));
+
+    QVERIFY(guard.restore());
+    connection.setHost(QStringLiteral("irc.rewritten.example"));
+    QVERIFY(connection.apply());
+    QCOMPARE(connection.persistenceStatus(), QString());
+    QCOMPARE(IrcProfileStore().profiles().first().host,
+             QStringLiteral("irc.rewritten.example"));
+}
+
+void ConnectionTest::applyOnReadOnlyIniWithoutTransportReportsTheFileSentence()
+{
+    IrcController controller;
+    IrcConnection connection(controller, []() -> IrcTransport * { return nullptr; },
+                             credentialStore());
+    fillCompleteDraft(connection, QStringLiteral("irc.example"));
+    QVERIFY(!connection.apply());
+    QCOMPARE(connection.persistenceStatus(),
+             QStringLiteral("These settings were saved successfully."));
+
+    ReadOnlySettingsGuard guard;
+    QVERIFY(guard.lock());
+
+    connection.setHost(QStringLiteral("irc.changed.example"));
+    QVERIFY(!connection.apply());
+    QCOMPARE(connection.persistenceStatus(),
+             QStringLiteral("The settings file could not be written."));
+    QCOMPARE(connection.host(), QStringLiteral("irc.changed.example"));
+    QCOMPARE(IrcProfileStore().profiles().first().host, QStringLiteral("irc.example"));
+    QVERIFY(guard.restore());
+}
+
+void ConnectionTest::removeSelectedOnReadOnlyIniKeepsTheSessionAndStore()
+{
+    IrcController controller;
+    auto &secrets = static_cast<FakeCredentialStore &>(credentialStore());
+    IrcConnection connection(controller, capturingFactory(), secrets);
+    fillCompleteDraft(connection, QStringLiteral("irc.example"));
+    QVERIFY(connection.apply());
+    const QString networkId = connection.selectedNetworkId();
+    QCOMPARE(m_transports.size(), 1);
+    m_transports.last()->completeConnect();
+    QVERIFY(controller.session(networkId) != nullptr);
+
+    ReadOnlySettingsGuard guard;
+    QVERIFY(guard.lock());
+
+    QVERIFY(!connection.removeSelected());
+    QCOMPARE(connection.selectedNetworkId(), networkId);
+    QCOMPARE(connection.host(), QStringLiteral("irc.example"));
+    QCOMPARE(connection.networks()->rowCount(), 1);
+    QVERIFY(controller.session(networkId) != nullptr);
+    QCOMPARE(secrets.removeCalls(), 0);
+    QCOMPARE(IrcProfileStore().profiles().size(), 1);
+    QCOMPARE(IrcProfileStore().profiles().first().host, QStringLiteral("irc.example"));
+    QCOMPARE(IrcProfileStore().profiles().first().networkId, networkId);
+    QCOMPARE(connection.persistenceStatus(),
+             QStringLiteral("This network could not be removed. "
+                            "The settings file could not be written."));
+
+    QVERIFY(guard.restore());
+    QVERIFY(connection.removeSelected());
+    QCOMPARE(IrcProfileStore().profiles().size(), 0);
+    QVERIFY(controller.session(networkId) == nullptr);
+    QCOMPARE(connection.persistenceStatus(), QString());
+}
+
+void ConnectionTest::removeSelectedAbsentNetworkOnReadOnlyIniTearsDownSession()
+{
+    IrcController controller;
+    IrcConnection connection(controller, capturingFactory(), credentialStore());
+    fillCompleteDraft(connection, QStringLiteral("irc.example"));
+    QVERIFY(connection.apply());
+    const QString firstId = connection.selectedNetworkId();
+
+    controller.setReopenDirectMessages(!controller.reopenDirectMessages());
+
+    ReadOnlySettingsGuard guard;
+    QVERIFY(guard.lock());
+
+    QVERIFY(connection.add());
+    fillCompleteDraft(connection, QStringLiteral("irc.second.example"));
+    QVERIFY(connection.apply());
+    const QString secondId = connection.selectedNetworkId();
+    QVERIFY(secondId != firstId);
+    QVERIFY(controller.session(secondId) != nullptr);
+    QCOMPARE(IrcProfileStore().profiles().size(), 1);
+    QCOMPARE(IrcProfileStore().profiles().first().networkId, firstId);
+
+    QVERIFY(connection.removeSelected());
+    QCOMPARE(connection.networks()->rowCount(), 1);
+    QVERIFY(controller.session(secondId) == nullptr);
+    QCOMPARE(connection.selectedNetworkId(), firstId);
+    QCOMPARE(IrcProfileStore().profiles().size(), 1);
+    QVERIFY(!connection.persistenceStatus().contains(
+        QStringLiteral("This network could not be removed.")));
+
+    QVERIFY(guard.restore());
+}
+
+void ConnectionTest::readOnlyApplyDoesNotCacheOrderForAnUnstoredNetwork()
+{
+    IrcController controller;
+    IrcConnection connection(controller, capturingFactory(), credentialStore());
+    fillCompleteDraft(connection, QStringLiteral("irc.example"));
+    QVERIFY(connection.apply());
+    const QString firstId = connection.selectedNetworkId();
+    QCOMPARE(IrcProfileStore().profiles().size(), 1);
+    QCOMPARE(IrcProfileStore().profiles().first().host, QStringLiteral("irc.example"));
+
+    ReadOnlySettingsGuard guard;
+    QVERIFY(guard.lock());
+
+    QVERIFY(connection.add());
+    fillCompleteDraft(connection, QStringLiteral("irc.second.example"));
+    QVERIFY(connection.apply());
+    const QString secondId = connection.selectedNetworkId();
+    QVERIFY(secondId != firstId);
+    QVERIFY(connection.persistenceStatus().contains(
+        QStringLiteral("Connected using these settings")));
+    QVERIFY(!connection.persistenceStatus().contains(QStringLiteral("saved successfully")));
+
+    QVERIFY(guard.restore());
+    QSettings flush;
+    flush.sync();
+
+    QFile file(flush.fileName());
+    QVERIFY(file.open(QIODevice::ReadOnly));
+    const QByteArray bytes = file.readAll();
+    QVERIFY(!bytes.contains(secondId.toUtf8()));
+
+    const QList<IrcNetworkProfile> loaded = IrcProfileStore().profiles();
+    QCOMPARE(loaded.size(), 1);
+    QCOMPARE(loaded.first().host, QStringLiteral("irc.example"));
+    QCOMPARE(loaded.first().networkId, firstId);
+}
+
+void ConnectionTest::persistenceFailureStaysWithItsNetwork()
+{
+    int produced = 0;
+    IrcController controller;
+    IrcConnection connection(
+        controller,
+        [this, &produced]() -> IrcTransport * {
+            if (produced >= 2)
+                return nullptr;
+            ++produced;
+            auto *transport = new FakeIrcTransport;
+            m_transports.append(transport);
+            return transport;
+        },
+        credentialStore());
+
+    fillCompleteDraft(connection, QStringLiteral("irc.example"));
+    QVERIFY(connection.apply());
+    QCOMPARE(connection.persistenceStatus(), QString());
+    const QString networkA = connection.selectedNetworkId();
+    QVERIFY(controller.session(networkA) != nullptr);
+
+    ReadOnlySettingsGuard guard;
+    QVERIFY(guard.lock());
+
+    connection.setHost(QStringLiteral("irc.changed.example"));
+    QVERIFY(connection.apply());
+    QVERIFY(connection.persistenceStatus().contains(
+        QStringLiteral("Connected using these settings")));
+
+    QVERIFY(connection.add());
+    fillCompleteDraft(connection, QStringLiteral("irc.second.example"));
+    QVERIFY(!connection.apply());
+    QCOMPARE(connection.persistenceStatus(),
+             QStringLiteral("The settings file could not be written."));
+    QVERIFY(!connection.persistenceStatus().contains(
+        QStringLiteral("Connected using these settings")));
+    QVERIFY(!connection.persistenceStatus().contains(
+        QStringLiteral("saved successfully")));
+
+    if (connection.dirty())
+        connection.discard();
+    connection.select(networkA);
+    QCOMPARE(connection.selectedNetworkId(), networkA);
+    QVERIFY(connection.persistenceStatus().contains(
+        QStringLiteral("Connected using these settings")));
+
+    QVERIFY(guard.restore());
+}
+
+void ConnectionTest::loadStoredLeavesMalformedIniUntouched()
+{
+    const IrcNetworkProfile profile = storedTestProfile(QStringLiteral("irc.example"));
+    QCOMPARE(IrcProfileStore().save(profile), IrcProfileStore::Status::Written);
+
+    QSettings settings;
+    const QString path = settings.fileName();
+    const QByteArray corrupt = malformedSettings(profile.networkId);
+    QVERIFY(writeSettingsFile(path, corrupt));
+
+    IrcController controller;
+    IrcConnection connection(controller, capturingFactory(), credentialStore());
+    QCOMPARE(readSettingsFile(path), corrupt);
+    QCOMPARE(connection.persistenceStatus(), QString());
+}
+
+void ConnectionTest::preferenceWritesLeaveMalformedIniUntouched()
+{
+    const IrcNetworkProfile profile = storedTestProfile(QStringLiteral("irc.example"));
+    QCOMPARE(IrcProfileStore().save(profile), IrcProfileStore::Status::Written);
+
+    QSettings settings;
+    const QString path = settings.fileName();
+    const QByteArray corrupt = malformedSettings(profile.networkId);
+    QVERIFY(writeSettingsFile(path, corrupt));
+
+    IrcController controller;
+    controller.setReopenDirectMessages(!controller.reopenDirectMessages());
+    controller.setLoadPeerAvatars(!controller.loadPeerAvatars());
+    controller.setOpenConversationsAtUnread(!controller.openConversationsAtUnread());
+    // /autoaway persists even when the confirmation has no conversation to land in.
+    controller.sendMessage(QStringLiteral("/autoaway 15"));
+    QCOMPARE(readSettingsFile(path), corrupt);
+}
+#endif
+
 void ConnectionTest::removeSelectedDeletesStoredSecret()
 {
     IrcController controller;
@@ -2985,6 +3352,35 @@ void ConnectionTest::avatarUrlSurvivesAutojoinPersist()
     QCOMPARE(reloadedAvatarUrl(), QStringLiteral("https://example.com/a.png"));
     QCOMPARE(reloadedAutojoin(),
              QStringList({QStringLiteral("#omarchy"), QStringLiteral("#other")}));
+}
+
+void ConnectionTest::ephemeralSessionSkipsAvatarSave()
+{
+    const IrcNetworkProfile profile = storedTestProfile(QStringLiteral("irc.example"));
+    QCOMPARE(IrcProfileStore().save(profile), IrcProfileStore::Status::Written);
+
+    IrcController controller;
+    IrcConnection connection(controller, capturingFactory(), credentialStore(),
+                             nullptr, true);
+    connection.setStoredProfiles({profile});
+    QCOMPARE(connection.persistenceStatus(), QString());
+
+    QSettings settings;
+    QFile before(settings.fileName());
+    QVERIFY(before.open(QIODevice::ReadOnly));
+    const QByteArray original = before.readAll();
+    before.close();
+    QVERIFY(!original.contains(QByteArrayLiteral("avatarUrl")));
+
+    const QString url = QStringLiteral("https://example.com/a.png");
+    controller.persistProfileAvatarUrl(profile.networkId, url);
+    QCOMPARE(connection.persistenceStatus(), QString());
+
+    QFile after(settings.fileName());
+    QVERIFY(after.open(QIODevice::ReadOnly));
+    const QByteArray bytes = after.readAll();
+    QCOMPARE(bytes, original);
+    QVERIFY(!bytes.contains(url.toUtf8()));
 }
 
 void ConnectionTest::missingNetworkOrderAlphabetizesExistingProfiles()

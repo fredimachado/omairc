@@ -84,6 +84,7 @@ TestCase {
         property bool nickServSet: false
         property string credentialError: ""
         property string credentialStatus: "secure storage unavailable"
+        property string persistenceStatus: ""
         property bool canForgetPassword: false
         property bool canForgetNickServ: false
         property string problem: "Nick is required"
@@ -6125,46 +6126,55 @@ TestCase {
     }
 
     function test_connectionSheetOpensWhenSetupRequired() {
-        var window = createTemporaryObject(setupWindowComponent, null);
-        verify(window !== null, "The setup window should load");
-        tryCompare(window, "visible", true);
-        waitForRendering(window.contentItem);
-
-        var sheet = findChild(window, "connectionSheet");
-        verify(sheet !== null, "Could not find connectionSheet");
-        verify(sheet.visible);
-        compare(findChild(window, "connectionHost").text, "irc.libera.chat");
-        compare(findChild(window, "connectionName").text, "irc.libera.chat");
-        compare(findChild(window, "connectionNick").text, "");
-        compare(findChild(window, "connectionAutojoin").text, "#omarchy");
-        compare(findChild(window, "connectionConnectOnStartup").checked, false);
-        compare(findChild(window, "connectionProblem").text, "Nick is required");
-        compare(findChild(window, "connectionCredentialStatus").text,
-                "secure storage unavailable");
-        var forgetPassword = findChild(window, "connectionForgetPassword");
-        verify(forgetPassword !== null, "Could not find connectionForgetPassword");
-        compare(forgetPassword.visible, false);
-        compare(findChild(window, "networkChoiceList") !== null, true);
-        compare(findChild(window, "connectionAddNetwork").visible, false);
-        compare(findChild(window, "connectionRemove").visible, false);
-        var hiddenDisconnect = findChild(window, "connectionDisconnect");
-        verify(hiddenDisconnect !== null, "Could not find connectionDisconnect");
-        compare(hiddenDisconnect.visible, false);
-        var nameField = findChild(window, "connectionName");
-        var hostField = findChild(window, "connectionHost");
-        verify(nameField.mapToItem(sheet, 0, 0).y < hostField.mapToItem(sheet, 0, 0).y,
-               "Name field should sit above Host");
-        var password = findChild(window, "connectionPassword");
-        var formViewport = findChild(window, "sheetFlick");
-        verify(password.mapToItem(sheet, 0, password.height).y
-               <= formViewport.mapToItem(sheet, 0, formViewport.height).y,
-               "Password field should be visible without scrolling");
+        fakeConnection.persistenceStatus = "The settings file could not be written.";
         try {
-            grabImage(window.contentItem).save(artifactDirectory + "connection-sheet.png");
-        } catch (error) {
-            fail("Failed to save screenshot 'connection-sheet': " + error);
+            var window = createTemporaryObject(setupWindowComponent, null);
+            verify(window !== null, "The setup window should load");
+            tryCompare(window, "visible", true);
+            waitForRendering(window.contentItem);
+
+            var sheet = findChild(window, "connectionSheet");
+            verify(sheet !== null, "Could not find connectionSheet");
+            verify(sheet.visible);
+            compare(findChild(window, "connectionHost").text, "irc.libera.chat");
+            compare(findChild(window, "connectionName").text, "irc.libera.chat");
+            compare(findChild(window, "connectionNick").text, "");
+            compare(findChild(window, "connectionAutojoin").text, "#omarchy");
+            compare(findChild(window, "connectionConnectOnStartup").checked, false);
+            compare(findChild(window, "connectionProblem").text, "Nick is required");
+            compare(findChild(window, "connectionCredentialStatus").text,
+                    "secure storage unavailable");
+            var persistence = findChild(window, "connectionPersistenceStatus");
+            verify(persistence !== null, "Could not find connectionPersistenceStatus");
+            compare(persistence.text, "The settings file could not be written.");
+            verify(persistence.visible);
+            var forgetPassword = findChild(window, "connectionForgetPassword");
+            verify(forgetPassword !== null, "Could not find connectionForgetPassword");
+            compare(forgetPassword.visible, false);
+            compare(findChild(window, "networkChoiceList") !== null, true);
+            compare(findChild(window, "connectionAddNetwork").visible, false);
+            compare(findChild(window, "connectionRemove").visible, false);
+            var hiddenDisconnect = findChild(window, "connectionDisconnect");
+            verify(hiddenDisconnect !== null, "Could not find connectionDisconnect");
+            compare(hiddenDisconnect.visible, false);
+            var nameField = findChild(window, "connectionName");
+            var hostField = findChild(window, "connectionHost");
+            verify(nameField.mapToItem(sheet, 0, 0).y < hostField.mapToItem(sheet, 0, 0).y,
+                   "Name field should sit above Host");
+            var password = findChild(window, "connectionPassword");
+            var formViewport = findChild(window, "sheetFlick");
+            verify(password.mapToItem(sheet, 0, password.height).y
+                   <= formViewport.mapToItem(sheet, 0, formViewport.height).y,
+                   "Password field should be visible without scrolling");
+            try {
+                grabImage(window.contentItem).save(artifactDirectory + "connection-sheet.png");
+            } catch (error) {
+                fail("Failed to save screenshot 'connection-sheet': " + error);
+            }
+            window.close();
+        } finally {
+            fakeConnection.persistenceStatus = "";
         }
-        window.close();
     }
 
     function test_forgetPasswordShowsKeyboardFocus() {

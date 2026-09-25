@@ -11,6 +11,7 @@
 #include "ircmute.h"
 #include "ircnetworkprofile.h"
 #include "ircopendirect.h"
+#include "ircprofilestore.h"
 #include "ircplaybacktime.h"
 #include "ircprefixnick.h"
 #include "ircpresence.h"
@@ -23,6 +24,7 @@
 
 #include <QByteArray>
 #include <QDateTime>
+#include <QFileInfo>
 #include <QSettings>
 #include <QTimer>
 #include <QVariantMap>
@@ -111,9 +113,22 @@ bool loadReopenDirectMessages()
     return settings.value(reopenDirectMessagesKey(), true).toBool();
 }
 
+// Malformed, unreadable, or read-only ini: return before setValue. These
+// toggles stay unreported; persistenceStatus is only the profile save/remove
+// result.
+bool preferenceIniRefusesWrite(const QSettings &settings)
+{
+    if (IrcProfileStore::probeSettingsIni(settings) != IrcProfileStore::IniProbe::Ok)
+        return true;
+    const QFileInfo info(settings.fileName());
+    return info.exists() && !info.isWritable();
+}
+
 void saveReopenDirectMessages(bool enabled)
 {
     QSettings settings;
+    if (preferenceIniRefusesWrite(settings))
+        return;
     settings.beginGroup(QStringLiteral("preferences"));
     settings.setValue(reopenDirectMessagesKey(), enabled);
     settings.endGroup();
@@ -132,6 +147,8 @@ bool loadLoadPeerAvatars()
 void saveLoadPeerAvatars(bool enabled)
 {
     QSettings settings;
+    if (preferenceIniRefusesWrite(settings))
+        return;
     settings.beginGroup(QStringLiteral("preferences"));
     settings.setValue(loadPeerAvatarsKey(), enabled);
     settings.endGroup();
@@ -148,12 +165,13 @@ bool loadOpenConversationsAtUnread()
 void saveOpenConversationsAtUnread(bool enabled)
 {
     QSettings settings;
+    if (preferenceIniRefusesWrite(settings))
+        return;
     settings.beginGroup(QStringLiteral("preferences"));
     settings.setValue(openConversationsAtUnreadKey(), enabled);
     settings.endGroup();
     settings.sync();
 }
-
 
 QString stateText(IrcSession::State state)
 {

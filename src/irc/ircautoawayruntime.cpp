@@ -1,9 +1,11 @@
 #include "ircautoawayruntime.h"
 
+#include "ircprofilestore.h"
 #include "ircsession.h"
 
 #include <QCoreApplication>
 #include <QEvent>
+#include <QFileInfo>
 #ifdef QT_GUI_LIB
 #include <QGuiApplication>
 #endif
@@ -44,9 +46,19 @@ IrcAutoawayConfig loadAutoaway()
     return config;
 }
 
+bool preferenceIniRefusesWrite(const QSettings &settings)
+{
+    if (IrcProfileStore::probeSettingsIni(settings) != IrcProfileStore::IniProbe::Ok)
+        return true;
+    const QFileInfo info(settings.fileName());
+    return info.exists() && !info.isWritable();
+}
+
 void saveAutoawayConfig(const IrcAutoawayConfig& config)
 {
     QSettings settings;
+    if (preferenceIniRefusesWrite(settings))
+        return;
     settings.beginGroup(QStringLiteral("preferences"));
     settings.setValue(autoawayEnabledKey(), config.enabled);
     settings.setValue(autoawayTimeoutSecondsKey(), config.timeoutSeconds);
