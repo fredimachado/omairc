@@ -4,7 +4,9 @@
 
 #include <QCoreApplication>
 #include <QEvent>
+#ifdef QT_GUI_LIB
 #include <QGuiApplication>
+#endif
 #include <QSettings>
 
 namespace {
