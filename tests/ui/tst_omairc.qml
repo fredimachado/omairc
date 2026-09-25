@@ -1201,6 +1201,29 @@ TestCase {
         return kinds;
     }
 
+    function verifyHttpOnlyLinkLabels(labels) {
+        for (var index = 0; index < labels.length; ++index) {
+            var label = labels[index];
+            verify(label.indexOf("https://") === 0 || label.indexOf("http://") === 0,
+                   "Expected http(s) label, got: " + label);
+        }
+        var joined = labels.join(" | ");
+        verify(joined.indexOf("file:") < 0, "file: must not appear in labels: " + joined);
+        verify(joined.indexOf("javascript:") < 0,
+               "javascript: must not appear in labels: " + joined);
+    }
+
+    function linkListLabelText(row) {
+        var delegate = item("linkList").itemAtIndex(row);
+        verify(delegate !== null, "Could not find linkList row " + row);
+        for (var index = 0; index < delegate.children.length; ++index) {
+            var child = delegate.children[index];
+            if (child.text !== undefined && child.elide !== undefined)
+                return child;
+        }
+        verify(false, "Could not find link list label Text");
+    }
+
     function openNickSheet() {
         keyClick(Qt.Key_K, Qt.ControlModifier | Qt.ShiftModifier);
         var sheet = item("nickSheet");
@@ -5312,17 +5335,23 @@ TestCase {
             ":server 761 fred fred avatar * :https://whois.example.com/a.png\r\n");
         verify(appWindow.irc.sendMessage("/avatar"));
         waitForBody(list, "Standing avatar: https://whois.example.com/a.png");
+        injectOmarchyChat("anna", "#omarchy",
+                          "dup https://dup.example.com and https://dup.example.com");
+        injectOmarchyChat("dax", "#omarchy", "again https://dup.example.com");
 
         var sheet = openLinkSheet();
+        compare(sheet.width, appWindow.scaledSize(420));
+        compare(item("linkFilter").Accessible.name, "Open link");
+        compare(linkListLabelText(0).elide, Text.ElideMiddle);
         compare(item("linkFilterPlaceholder").visible, true);
         compare(item("linkFilterPlaceholder").text, "Open link…");
-        compare(linkModelLabels().join(" | "),
-                "https://whois.example.com/a.png | https://emph.example.com | "
+        var labels = linkModelLabels();
+        compare(labels.join(" | "),
+                "https://dup.example.com | https://dup.example.com | https://dup.example.com | "
+                + "https://whois.example.com/a.png | https://emph.example.com | "
                 + "https://second.example.com | https://first.example.com | "
                 + "https://older.example.com");
-        verify(linkModelLabels().indexOf("file:") < 0);
-        verify(linkModelLabels().indexOf("javascript:") < 0);
-        verify(linkModelLabels().indexOf("event.example.com") < 0);
+        verifyHttpOnlyLinkLabels(labels);
 
         typeText("second");
         tryCompare(item("linkFilter"), "text", "second");
@@ -5333,15 +5362,36 @@ TestCase {
         item("linkFilter").text = "";
         tryCompare(item("linkFilter"), "text", "");
         tryVerify(function() {
-            return item("linkModel").count === 5;
+            return item("linkModel").count === 8;
         });
+
+        typeText("HTTPS");
+        tryCompare(item("linkFilter"), "text", "HTTPS");
+        compare(linkModelLabels().join(" | "),
+                "https://dup.example.com | https://dup.example.com | https://dup.example.com | "
+                + "https://whois.example.com/a.png | https://emph.example.com | "
+                + "https://second.example.com | https://first.example.com | "
+                + "https://older.example.com");
+
+        item("linkFilter").text = "";
+        tryCompare(item("linkFilter"), "text", "");
+        typeText("Example");
+        tryCompare(item("linkFilter"), "text", "Example");
+        compare(linkModelLabels().join(" | "),
+                "https://dup.example.com | https://dup.example.com | https://dup.example.com | "
+                + "https://whois.example.com/a.png | https://emph.example.com | "
+                + "https://second.example.com | https://first.example.com | "
+                + "https://older.example.com");
+
+        item("linkFilter").text = "";
+        tryCompare(item("linkFilter"), "text", "");
 
         keyClick(Qt.Key_Down);
         compare(appWindow.linkSelectedIndex, 1);
         keyClick(Qt.Key_Up);
         compare(appWindow.linkSelectedIndex, 0);
         keyClick(Qt.Key_Up);
-        compare(appWindow.linkSelectedIndex, 4);
+        compare(appWindow.linkSelectedIndex, 7);
 
         keyClick(Qt.Key_Down);
         compare(appWindow.linkSelectedIndex, 0);
@@ -5349,7 +5399,7 @@ TestCase {
         appWindow.lastOpenedUrl = "";
         keyClick(Qt.Key_Return);
         tryCompare(sheet, "opened", false);
-        compare(appWindow.lastOpenedUrl, "https://whois.example.com/a.png");
+        compare(appWindow.lastOpenedUrl, "https://dup.example.com");
         tryCompare(composer, "activeFocus", true);
     }
 
@@ -5440,6 +5490,118 @@ TestCase {
         keyClick(Qt.Key_Escape);
         tryCompare(sheet, "opened", false);
         verify(!item("shortcutsSheet").opened);
+    }
+
+    function test_ctrlShiftOLinkSheetEmptyTranscript() {
+        openSeededAppWindow();
+        var sheet = openLinkSheet();
+        compare(item("linkModel").count, 0);
+        compare(appWindow.linkSelectedIndex, 0);
+
+        appWindow.lastOpenedUrl = "";
+        var framesBefore = seed.omarchyFrameCount();
+        keyClick(Qt.Key_Return);
+        verify(sheet.opened);
+        compare(appWindow.lastOpenedUrl, "");
+        verify(!seed.omarchyWroteFrom(framesBefore, "JOIN"));
+
+        injectOmarchyChat("anna", "#omarchy", "https://filter.example.com");
+        keyClick(Qt.Key_Escape);
+        tryCompare(sheet, "opened", false);
+        sheet = openLinkSheet();
+        compare(item("linkModel").count, 1);
+        typeText("nomatch");
+        tryCompare(item("linkFilter"), "text", "nomatch");
+        compare(item("linkModel").count, 0);
+
+        appWindow.lastOpenedUrl = "";
+        framesBefore = seed.omarchyFrameCount();
+        keyClick(Qt.Key_Return);
+        verify(sheet.opened);
+        compare(appWindow.lastOpenedUrl, "");
+        verify(!seed.omarchyWroteFrom(framesBefore, "JOIN"));
+
+        keyClick(Qt.Key_Escape);
+        tryCompare(sheet, "opened", false);
+    }
+
+    function test_ctrlShiftOLinkSheetToggleClearsFilter() {
+        openSeededAppWindow();
+        injectOmarchyChat("anna", "#omarchy", "https://toggle.example.com");
+        var sheet = openLinkSheet();
+        compare(item("linkModel").count, 1);
+        typeText("toggle");
+        tryCompare(item("linkFilter"), "text", "toggle");
+        compare(item("linkFilterPlaceholder").visible, false);
+
+        keyClick(Qt.Key_O, Qt.ControlModifier | Qt.ShiftModifier);
+        tryCompare(sheet, "opened", false);
+
+        sheet = openLinkSheet();
+        compare(item("linkFilter").text, "");
+        compare(item("linkFilterPlaceholder").visible, true);
+        compare(item("linkModel").count, 1);
+        tryCompare(item("linkFilter"), "activeFocus", true);
+    }
+
+    function test_ctrlShiftOLinkSheetRevealScroll() {
+        openSeededAppWindow();
+        var list = item("messageList");
+        fillTranscriptUntilScrollable(list);
+        injectOmarchyChat("anna", "#omarchy", "scroll https://scroll-a.example.com");
+        appendLiveMessages(list, 20, "scroll filler");
+        injectOmarchyChat("dax", "#omarchy", "scroll https://scroll-b.example.com");
+        waitForRendering(appWindow.contentItem);
+        list.pinToEnd();
+        waitForRendering(appWindow.contentItem);
+        wait(0);
+
+        var beforeOpenY = list.contentY;
+        var sheet = openLinkSheet();
+        compare(item("linkModel").count, 2);
+        compare(linkModelLabels().join(" | "),
+                "https://scroll-b.example.com | https://scroll-a.example.com");
+        waitForRendering(appWindow.contentItem);
+        wait(0);
+        var atNewestY = list.contentY;
+
+        keyClick(Qt.Key_Down);
+        compare(appWindow.linkSelectedIndex, 1);
+        waitForRendering(appWindow.contentItem);
+        wait(0);
+        verify(list.contentY < atNewestY,
+               "Up/Down should reveal an older link row in the transcript");
+
+        var atOlderY = list.contentY;
+        keyClick(Qt.Key_Escape);
+        tryCompare(sheet, "opened", false);
+        fuzzyCompare(list.contentY, atOlderY, 2,
+                     "Closing the link sheet should not restore the pre-open scroll");
+        verify(list.contentY + 2 < beforeOpenY,
+               "Link browsing should leave the transcript away from the pre-open pin");
+    }
+
+    function test_ctrlShiftOLinkSheetChatNotInvite() {
+        openSeededAppWindow();
+        var list = item("messageList");
+        injectOmarchyChat("alice", "#omarchy", "alice invited you to #not-invite");
+        injectOmarchyChat("anna", "#omarchy",
+                          "read https://en.wikipedia.org/wiki/IRC_(protocol)");
+        waitForBody(list, "read https://en.wikipedia.org/wiki/IRC_(protocol)");
+
+        var sheet = openLinkSheet();
+        compare(linkModelKinds().join(" "), "url");
+        compare(linkModelLabels().join(" | "),
+                "https://en.wikipedia.org/wiki/IRC_(protocol)");
+        compare(item("linkModel").count, 1);
+
+        appWindow.lastOpenedUrl = "";
+        var framesBefore = seed.omarchyFrameCount();
+        keyClick(Qt.Key_Return);
+        tryCompare(sheet, "opened", false);
+        compare(appWindow.lastOpenedUrl,
+                "https://en.wikipedia.org/wiki/IRC_(protocol)");
+        verify(!seed.omarchyWroteFrom(framesBefore, "JOIN #not-invite"));
     }
 
     function test_ctrlShiftKOpensFilteredNickAndCreatesDm() {
