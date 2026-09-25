@@ -2,7 +2,6 @@
 
 #include "channellistmodel.h"
 #include "conversationlistmodel.h"
-#include "ircautoaway.h"
 #include "ircconversationlog.h"
 #include "ircchannellistrequest.h"
 #include "irceventreducer.h"
@@ -13,6 +12,7 @@
 #include "ircmonitor.h"
 #include "irccommanddispatcher.h"
 #include "ircmonitorcoordinator.h"
+#include "ircautoawayruntime.h"
 #include "ircmute.h"
 #include "ircopendirect.h"
 #include "ircplaybackcoordinator.h"
@@ -74,7 +74,7 @@ class IrcController : public QObject
 
 public:
     explicit IrcController(QObject *parent = nullptr);
-    ~IrcController() override;
+    ~IrcController() override = default;
 
     void setTranscriptRoot(const QString &root);
     using ProfileAvatarUrlPersist =
@@ -282,28 +282,12 @@ private:
     bool applyMute(const QString& networkId,
                    const QString& target,
                    bool muted);
-    IrcCommandOutcome dispatchAutoaway(const IrcCommand& command,
-                                       IrcComposerSurface surface);
-    IrcCommandOutcome echoAutoawayFeedback(IrcComposerSurface surface,
-                                           const QString& text);
-    IrcCommandOutcome echoAutoawayUsage(IrcComposerSurface surface);
-    void saveAutoaway() const;
-    void armAutoawayIdle();
-    void stopAutoawayTimers();
-    void onAutoawayIdle();
-    void onAutoawayGrace();
-    void tripAutoaway();
-    void clearAutoAwayNetworks(bool logCleared = true);
-    QString autoawayReason() const;
-    bool markSessionAutoAway(IrcSession *session);
-    void noteManualAway(const QString& networkId);
-    void noteAwayCleared(const QString& networkId);
-    void refreshAutoAwayReason();
-    void recordAutoawayStatus(const QString& networkId, const QString& text);
     void syncHighlightWords(const QString& networkId);
     IrcCommandOutcome dispatchList(const IrcCommand& command,
                                    IrcComposerSurface surface);
     void noteNickDelivery(const QString& networkId, const QString& target);
+    void noteManualAway(const QString& networkId);
+    void noteAwayCleared(const QString& networkId);
     void handleStatusEntry(const IrcStatusEntry& entry);
     void onRequestLabelFinished(const QString& networkId, const QString& requestLabel);
     void forgetChannelList(const QString& networkId);
@@ -345,7 +329,6 @@ private:
     void armTypingRefresh();
     void appendInbox(IrcInboxItem item);
     void syncInbox();
-    bool eventFilter(QObject *watched, QEvent *event) override;
 
     IrcSessionManager m_sessions;
     IrcStatusConsole m_console;
@@ -360,6 +343,7 @@ private:
     IrcReplyRouter m_replies;
     IrcMonitorCoordinator m_monitorCoord;
     IrcCommandDispatcher m_commands;
+    IrcAutoawayRuntime m_autoawayRuntime;
     IrcHighlightStore m_highlights;
     IrcInbox m_inbox;
     IrcInboxModel m_inboxModel;
@@ -385,13 +369,6 @@ private:
     bool m_reopenDirectMessages = true;
     bool m_loadPeerAvatars = true;
     bool m_openConversationsAtUnread = true;
-    IrcAutoawayConfig m_autoaway;
-    QTimer m_autoawayIdle;
-    QTimer m_autoawayGrace;
-    bool m_autoawayGraceArmed = false;
-    bool m_autoawayTripped = false;
-    QSet<QString> m_autoAwayNetworks;
-    QSet<QString> m_manualAwayNetworks;
     QTimer m_typingRefresh;
     QString m_composerDraft;
     QString m_typingTarget;
