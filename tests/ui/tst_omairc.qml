@@ -1214,7 +1214,12 @@ TestCase {
     }
 
     function linkListLabelText(row) {
-        var delegate = item("linkList").itemAtIndex(row);
+        var list = item("linkList");
+        list.positionViewAtIndex(row, ListView.Contain);
+        waitForRendering(appWindow.contentItem);
+        tryVerify(function() { return list.itemAtIndex(row) !== null; },
+                  1000, "Link list row " + row + " should be rendered");
+        var delegate = list.itemAtIndex(row);
         verify(delegate !== null, "Could not find linkList row " + row);
         for (var index = 0; index < delegate.children.length; ++index) {
             var child = delegate.children[index];
