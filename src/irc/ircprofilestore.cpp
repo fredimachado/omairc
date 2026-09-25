@@ -83,7 +83,7 @@ bool settingsFileMissingOnDisk()
         : xdg;
     const QString path =
 #if defined(Q_OS_DARWIN)
-        root + QLatin1Char('/') + org + QLatin1Char('/') + app + QLatin1String(".plist");
+        root + QLatin1Char('/') + org + QLatin1Char('/') + app + QLatin1String(".ini");
 #else
         root + QLatin1Char('/') + org + QLatin1Char('/') + app + QLatin1String(".conf");
 #endif

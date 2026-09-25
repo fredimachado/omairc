@@ -2,7 +2,6 @@
 
 #include "channellistmodel.h"
 #include "conversationlistmodel.h"
-#include "ircautoaway.h"
 #include "ircconversationlog.h"
 #include "ircchannellistrequest.h"
 #include "irceventreducer.h"
@@ -11,9 +10,14 @@
 #include "ircinbox.h"
 #include "ircinboxmodel.h"
 #include "ircmonitor.h"
+#include "irccommanddispatcher.h"
+#include "ircmonitorcoordinator.h"
+#include "ircautoawayruntime.h"
 #include "ircmute.h"
 #include "ircopendirect.h"
+#include "ircplaybackcoordinator.h"
 #include "ircplaybacktime.h"
+#include "ircreplyrouter.h"
 #include "ircsessionmanager.h"
 #include "ircstatusconsole.h"
 #include "ircstatusentry.h"
@@ -30,7 +34,6 @@
 
 #include <QDateTime>
 #include <functional>
-#include <map>
 #include <optional>
 #include <set>
 #include <variant>
@@ -71,7 +74,7 @@ class IrcController : public QObject
 
 public:
     explicit IrcController(QObject *parent = nullptr);
-    ~IrcController() override;
+    ~IrcController() override = default;
 
     void setTranscriptRoot(const QString &root);
     using ProfileAvatarUrlPersist =
@@ -250,56 +253,6 @@ signals:
     void channelListRequested();
 
 private:
-    enum class QuietWire { Privmsg, Notice };
-    enum class QuietTarget { Nick, Any };
-    struct QuietSend {
-        QuietWire wire;
-        QuietTarget target;
-    };
-    static std::optional<QuietSend> quietSendFor(IrcCommand::Verb verb);
-
-    struct IrcWhoisWatchKey
-    {
-        QString networkId;
-        QString normalizedNick;
-
-        friend bool operator<(const IrcWhoisWatchKey& left,
-                              const IrcWhoisWatchKey& right)
-        {
-            if (left.networkId != right.networkId)
-                return left.networkId < right.networkId;
-            return left.normalizedNick < right.normalizedNick;
-        }
-    };
-    struct IrcWhoisStatusOnly {};
-    using IrcWhoisDestination = std::variant<IrcWhoisStatusOnly, IrcConversationKey>;
-    struct IrcWhoisWatch
-    {
-        IrcWhoisDestination destination;
-        bool failedIsAmbiguous = false;
-        bool metadataEmitted = false;
-    };
-    struct IrcLabeledWatchKey
-    {
-        QString networkId;
-        QString requestLabel;
-
-        friend bool operator<(const IrcLabeledWatchKey& left,
-                              const IrcLabeledWatchKey& right)
-        {
-            if (left.networkId != right.networkId)
-                return left.networkId < right.networkId;
-            return left.requestLabel < right.requestLabel;
-        }
-    };
-    enum class IrcLabeledWatchKind { Whois, Ctcp };
-    struct IrcLabeledWatch
-    {
-        IrcLabeledWatchKind kind = IrcLabeledWatchKind::Whois;
-        IrcWhoisDestination destination;
-        bool metadataEmitted = false;
-    };
-
     void apply(const IrcEvent& event);
     void adoptReducerSelection();
     void publish(const IrcViewNotify& notify);
@@ -310,55 +263,16 @@ private:
     void handleHistoryBatch(const QString& networkId, const IrcHistoryBatch& batch);
     void notePlaybackClock(const QString& networkId, const IrcMessage& message);
     void noteKeptReplay();
+    // Packs the capability, MOTD-seen, and open-direct lookups the
+    // coordinator takes as arguments at the call.
     void requestZncPlayback(IrcSession *session);
     void requestZncChannelPlayback(IrcSession *session, const QString& channel);
-    void noteZncJoinedChannel(const QString& networkId, const QString& channel);
-    bool sendZncPlayback(IrcSession *session,
-                         const QString& target,
-                         const QString& from);
-    bool zncPlaybackCovers(const QString& networkId,
-                           const QString& normalizedTarget) const;
-    std::optional<QDateTime> playbackSnapshotTime(const QString& networkId,
-                                                  const QString& target) const;
-    void rekeyPlaybackSnapshot(const QString& networkId,
-                               const QString& oldTarget,
-                               const QString& newTarget);
-    bool mayNotePlaybackTime(const QString& networkId,
-                             const QString& target) const;
     void reloadModels();
     IrcCommandOutcome dispatch(const IrcCommand& command,
                                IrcComposerSurface surface);
     QString queryNetworkId(IrcComposerSurface surface) const;
     IrcSession *sessionFor(IrcComposerSurface surface) const;
     IrcCommandOutcome sendSelectedMessage(const QString& body);
-    IrcCommandOutcome setSelectedTopic(const QString& topic);
-    IrcCommandOutcome dispatchQuery(const IrcCommand& command,
-                                    IrcComposerSurface surface);
-    IrcCommandOutcome dispatchQuietSend(const IrcCommand& command,
-                                        IrcComposerSurface surface);
-    IrcCommandOutcome dispatchMode(const IrcCommand& command,
-                                   IrcComposerSurface surface);
-    IrcCommandOutcome dispatchWhois(const IrcCommand& command,
-                                    IrcComposerSurface surface);
-    IrcCommandOutcome dispatchCtcp(const IrcCommand& command,
-                                   IrcComposerSurface surface);
-    IrcCommandOutcome dispatchIgnore(const IrcCommand& command,
-                                     IrcComposerSurface surface);
-    IrcCommandOutcome dispatchMonitor(const IrcCommand& command,
-                                      IrcComposerSurface surface);
-    void subscribeMonitors(const QString& networkId);
-    void forgetMonitorState(const QString& networkId);
-    QString monitorDisplayNick(const QString& networkId,
-                               const QString& nick) const;
-    bool monitorNotifyMuted(const QString& networkId,
-                            const QString& nick) const;
-    void handleMonitorPresence(const QString& networkId,
-                               const IrcMessage& message,
-                               bool online);
-    void handleMonitorListFull(const QString& networkId,
-                               const IrcMessage& message);
-    IrcCommandOutcome dispatchMute(const IrcCommand& command,
-                                     IrcComposerSurface surface);
     void hydrateMutes(const QString& networkId);
     bool persistableDirectTarget(const QString& networkId,
                                  const QString& target) const;
@@ -369,65 +283,14 @@ private:
     bool applyMute(const QString& networkId,
                    const QString& target,
                    bool muted);
-    IrcCommandOutcome dispatchHighlight(const IrcCommand& command,
-                                        IrcComposerSurface surface);
-    IrcCommandOutcome dispatchAutoaway(const IrcCommand& command,
-                                       IrcComposerSurface surface);
-    IrcCommandOutcome dispatchPref(const IrcCommand& command,
-                                   IrcComposerSurface surface);
-    IrcCommandOutcome echoAutoawayFeedback(IrcComposerSurface surface,
-                                           const QString& text);
-    IrcCommandOutcome echoPrefFeedback(IrcComposerSurface surface,
-                                       const QString& text);
-    IrcCommandOutcome echoAutoawayUsage(IrcComposerSurface surface);
-    void saveAutoaway() const;
-    void armAutoawayIdle();
-    void stopAutoawayTimers();
-    void onAutoawayIdle();
-    void onAutoawayGrace();
-    void tripAutoaway();
-    void clearAutoAwayNetworks(bool logCleared = true);
-    QString autoawayReason() const;
-    bool markSessionAutoAway(IrcSession *session);
-    void noteManualAway(const QString& networkId);
-    void noteAwayCleared(const QString& networkId);
-    void refreshAutoAwayReason();
-    void recordAutoawayStatus(const QString& networkId, const QString& text);
     void syncHighlightWords(const QString& networkId);
-    IrcCommandOutcome dispatchChannelModeWrapper(const IrcCommand& command,
-                                                IrcComposerSurface surface);
-    IrcCommandOutcome dispatchServiceMsg(const IrcCommand& command,
-                                         IrcComposerSurface surface);
-    IrcCommandOutcome dispatchRaw(const IrcCommand& command,
-                                  IrcComposerSurface surface);
-    IrcCommandOutcome dispatchHelp(IrcComposerSurface surface);
     IrcCommandOutcome dispatchList(const IrcCommand& command,
                                    IrcComposerSurface surface);
-    IrcCommandOutcome dispatchStatus(const IrcCommand& command,
-                                     IrcComposerSurface surface);
-    IrcCommandOutcome dispatchAvatar(const IrcCommand& command,
-                                     IrcComposerSurface surface);
-    std::optional<IrcWhoisWatchKey> whoisWatchKey(const QString& networkId,
-                                                  const QString& nick) const;
-    bool sendWhois(IrcSession& session,
-                   const QString& nick,
-                   IrcWhoisDestination destination);
     void noteNickDelivery(const QString& networkId, const QString& target);
+    void noteManualAway(const QString& networkId);
+    void noteAwayCleared(const QString& networkId);
     void handleStatusEntry(const IrcStatusEntry& entry);
-    void routeWhoisLine(const QString& networkId, const IrcWhoisLine& line);
-    void routeLabeledWhois(const QString& networkId,
-                           const QString& requestLabel,
-                           const IrcWhoisLine& line);
-    void routeLabeledCtcp(const QString& networkId,
-                          const QString& requestLabel,
-                          const IrcCtcpReplyLine& line,
-                          const QString& text);
-    void routeLabeledStandardReply(const IrcStatusEntry& entry);
     void onRequestLabelFinished(const QString& networkId, const QString& requestLabel);
-    void forgetLabeledWatches(const QString& networkId, IrcLabeledWatchKind kind);
-    QStringList whoisMetadataLines(const QString& networkId,
-                                   const QString& nick) const;
-    void forgetWhoisWatches(const QString& networkId);
     void forgetChannelList(const QString& networkId);
     bool beginChannelListLoad(IrcSession *session,
                               const QString& networkId,
@@ -437,77 +300,14 @@ private:
     bool failChannelList(const QString& networkId, const QString& text);
     bool failChannelListFromNumeric(const QString& networkId,
                                     const IrcMessage& message);
-    struct IrcCtcpWatchKey
-    {
-        QString networkId;
-        QString normalizedNick;
-        QString command;
-
-        friend bool operator<(const IrcCtcpWatchKey& left,
-                              const IrcCtcpWatchKey& right)
-        {
-            if (left.networkId != right.networkId)
-                return left.networkId < right.networkId;
-            if (left.normalizedNick != right.normalizedNick)
-                return left.normalizedNick < right.normalizedNick;
-            return left.command < right.command;
-        }
-    };
-    using IrcCtcpDestination = IrcWhoisDestination;
-    struct IrcCtcpWatch
-    {
-        IrcCtcpDestination destination;
-    };
-    std::optional<IrcCtcpWatchKey> ctcpWatchKey(const QString& networkId,
-                                                const QString& nick,
-                                                const QString& command) const;
-    QString ctcpQueryName(IrcCommand::Verb verb) const;
-    bool sendCtcpQuery(IrcSession& session,
-                       const QString& nick,
-                       const QString& command,
-                       const QString& argument,
-                       IrcCtcpDestination destination);
-    void routeCtcpReply(const QString& networkId,
-                        const IrcCtcpReplyLine& line,
-                        const QString& text);
-    void forgetCtcpWatches(const QString& networkId);
-    struct IrcOwnMetadataWatch
-    {
-        IrcWhoisDestination destination;
-        enum class Kind { Set, Clear };
-        Kind kind = Kind::Set;
-        QString value;
-    };
-    IrcCommandOutcome dispatchOwnMetadataClear(IrcSession *session,
-                                               const QString& metadataKey);
-    IrcCommandOutcome dispatchOwnMetadataSet(IrcSession *session,
-                                             const QString& metadataKey,
-                                             const QString& value);
-    IrcCommandOutcome echoMetadataCommandFeedback(IrcComposerSurface surface,
-                                                 const QString& networkId,
-                                                 const QString& text);
-    void armOwnMetadataWatch(const QString& networkId,
-                             const QString& metadataKey,
-                             IrcOwnMetadataWatch::Kind kind,
-                             const QString& value);
-    void forgetOwnMetadataWatches(const QString& networkId);
-    void echoOwnMetadataOutcome(const QString& networkId,
-                                const IrcWhoisDestination& destination,
-                                const QString& text);
-    void routeOwnMetadataReply(const QString& networkId,
-                               const QString& nick,
-                               const QString& key,
-                               const QString& value);
-    void routeOwnMetadataError(const IrcStatusEntry& entry);
-    void routeOwnMetadataFail(const QString& networkId,
-                              const IrcMessage& message);
     QString profileAvatarUrlForNetwork(const QString& networkId) const;
     void applyProfileAvatarOnConnect(IrcSession *session);
+
+    void unawayAfterChat(IrcSession *session);
     void echoIfPresent(IrcSession *session,
                        const QString& target,
                        const QString& body,
-                       QuietWire wire);
-    void unawayAfterChat(IrcSession *session);
+                       IrcCommandDispatcher::QuietWire wire);
     IrcCommandOutcome clearSurface(IrcComposerSurface surface);
     bool report(IrcCommandOutcome outcome, const IrcCommand& command);
     bool selectedIsCloseableDirect() const;
@@ -529,7 +329,6 @@ private:
     void armTypingRefresh();
     void appendInbox(IrcInboxItem item);
     void syncInbox();
-    bool eventFilter(QObject *watched, QEvent *event) override;
 
     IrcSessionManager m_sessions;
     IrcStatusConsole m_console;
@@ -540,28 +339,11 @@ private:
     IrcMuteStore m_mutes;
     IrcOpenDirectStore m_openDirects;
     IrcPlaybackTimeStore m_playbackTimes;
-    // Stamps saved at numeric 001, before this connection's traffic. The
-    // first PLAY for each target reads this. Later live lines update
-    // m_playbackTimes for the next attach and do not rewrite it.
-    QHash<QString, QVector<IrcPlaybackTargetTime>> m_playbackSnapshot;
-    // PLAY lines already written this connection. `all` is `PLAY * 0` on a
-    // first attach with no saved stamps, which opens the clock for every
-    // target. `queries` is `PLAY * 0` after per-target requests on later
-    // attaches, which discovers offline query buffers. `targets` is each
-    // per-target PLAY, including a channel PLAY, so lines after that request
-    // may move the clock. A channel PLAY still does not stop a self-JOIN
-    // retry: the module drops a channel that is not on, and the retry stops
-    // only once a playback batch was kept.
-    struct ZncPlaybackSent {
-        bool all = false;
-        // PLAY * 0 after per-target requests discovers query buffers that
-        // appeared on ZNC while Omairc was offline.
-        bool queries = false;
-        QSet<QString> targets;
-    };
-    QHash<QString, ZncPlaybackSent> m_zncPlaybackSent;
-    QHash<QString, QStringList> m_zncAutojoin;
-    QHash<QString, QStringList> m_zncJoinedChannels;
+    IrcPlaybackCoordinator m_playback;
+    IrcReplyRouter m_replies;
+    IrcMonitorCoordinator m_monitorCoord;
+    IrcCommandDispatcher m_commands;
+    IrcAutoawayRuntime m_autoawayRuntime;
     IrcHighlightStore m_highlights;
     IrcInbox m_inbox;
     IrcInboxModel m_inboxModel;
@@ -576,9 +358,6 @@ private:
     QHash<QString, IrcCapabilitySet> m_capabilities;
     QSet<QString> m_unawaySent;
     QSet<QString> m_openDirectsMotdSeen;
-    QSet<QString> m_monitorSubscribed;
-    enum class MonitorPresence { Unknown, Online, Offline };
-    QHash<QString, QHash<QString, MonitorPresence>> m_monitorPresence;
     std::optional<IrcConversationKey> m_selected;
     QString m_selectedTarget;
     QStringList m_networkOrder;
@@ -590,22 +369,10 @@ private:
     bool m_reopenDirectMessages = true;
     bool m_loadPeerAvatars = true;
     bool m_openConversationsAtUnread = true;
-    IrcAutoawayConfig m_autoaway;
-    QTimer m_autoawayIdle;
-    QTimer m_autoawayGrace;
-    bool m_autoawayGraceArmed = false;
-    bool m_autoawayTripped = false;
-    QSet<QString> m_autoAwayNetworks;
-    QSet<QString> m_manualAwayNetworks;
     QTimer m_typingRefresh;
     QString m_composerDraft;
     QString m_typingTarget;
-    std::map<IrcWhoisWatchKey, IrcWhoisWatch> m_whoisWatches;
-    std::map<IrcCtcpWatchKey, IrcCtcpWatch> m_ctcpWatches;
-    std::map<IrcLabeledWatchKey, IrcLabeledWatch> m_labeledWatches;
-    QHash<QString, QHash<QString, IrcOwnMetadataWatch>> m_ownMetadataWatches;
     QSet<QString> m_appliedProfileAvatars;
     ProfileAvatarUrlPersist m_profileAvatarUrlPersist;
     ProfileAvatarUrlLookup m_profileAvatarUrlLookup;
-    std::set<IrcConversationKey> m_cancelledPendingJoins;
 };
