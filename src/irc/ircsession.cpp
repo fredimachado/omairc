@@ -1927,15 +1927,7 @@ void IrcSession::handleAuthenticate(const IrcMessage &message)
     plain.append(account);
     plain.append('\0');
     plain.append(secret);
-    const QByteArray encoded = plain.toBase64();
-    if (encoded.size() > 400) {
-        fail(ErrorKind::Authentication,
-             QStringLiteral("SASL PLAIN credentials exceed one IRC payload"),
-             false);
-        return;
-    }
-    sendLine(QByteArrayLiteral("AUTHENTICATE ") + encoded
-             + QByteArrayLiteral("\r\n"));
+    sendSaslResponse(plain);
 }
 
 void IrcSession::handleScramAuthenticate(const QByteArray &payload)
