@@ -9,6 +9,7 @@
 class QTemporaryDir;
 class QIODevice;
 class ReducerTest;
+class IrcCaseMapping;
 
 struct IrcTranscriptLine
 {
@@ -29,13 +30,17 @@ public:
     static QString defaultRoot();
     void setRoot(QString root);
     const QString &root() const;
-    QString pathFor(const QString &networkId, const QString &target) const;
+    QString pathFor(const QString &networkId,
+                    const QString &target,
+                    const IrcCaseMapping &mapping) const;
 
     bool append(const QString &networkId,
                 const QString &target,
+                const IrcCaseMapping &mapping,
                 const IrcTranscriptLine &line);
     std::vector<IrcTranscriptLine> readTail(const QString &networkId,
                                             const QString &target,
+                                            const IrcCaseMapping &mapping,
                                             int maxLines) const;
 
 private:

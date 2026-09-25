@@ -80,6 +80,7 @@ HEADERS += \
     ../src/irc/ircservicenick.h \
     ../src/irc/ircprefixnick.h \
     ../src/irc/ircsecretpolicy.h \
+    ../src/irc/ircstoragepath.h \
     ../src/irc/ircconversationlog.h \
     ../src/irc/ircnetworklog.h \
     ../src/irc/networklogmodel.h \
@@ -169,6 +170,7 @@ SOURCES += \
     ../src/irc/ircservicenick.cpp \
     ../src/irc/ircprefixnick.cpp \
     ../src/irc/ircsecretpolicy.cpp \
+    ../src/irc/ircstoragepath.cpp \
     ../src/irc/ircconversationlog.cpp \
     ../src/irc/ircnetworklog.cpp \
     ../src/irc/networklogmodel.cpp \
@@ -204,6 +206,7 @@ SOURCES += \
     session/tst_profile.cpp \
     session/tst_connection.cpp \
     storage/tst_secretservice.cpp \
+    session/tst_storagepath.cpp \
     session/tst_controller.cpp \
     session/tst_channellistrequest.cpp \
     session/tst_command.cpp \

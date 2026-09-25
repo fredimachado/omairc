@@ -16,6 +16,8 @@ class CaseMappingTest : public QObject
 private slots:
     void normalizesAdvertisedMappings();
     void parsesServerFeatures();
+    void caseMappingKnownAfterTokenOrRegistration();
+    void invalidCaseMappingTokenDoesNotMarkKnown();
     void defaultPrefixStripsOwnerBefore005();
     void stackedNamesConvergeAndPaintHighest();
     void emptyLeftoverNickIsNotAParse();
@@ -45,6 +47,33 @@ void CaseMappingTest::normalizesAdvertisedMappings()
     QVERIFY(IrcCaseMapping::fromName("rfc1459-strict").has_value());
     QVERIFY(IrcCaseMapping::fromName("strict-rfc1459").has_value());
     QVERIFY(!IrcCaseMapping::fromName("unknown").has_value());
+}
+
+void CaseMappingTest::caseMappingKnownAfterTokenOrRegistration()
+{
+    IrcServerFeatures features;
+    QVERIFY(!features.caseMappingKnown());
+
+    features.applyToken("CASEMAPPING=ascii");
+    QVERIFY(features.caseMappingKnown());
+
+    IrcServerFeatures fresh;
+    fresh.markCaseMappingKnown();
+    QVERIFY(fresh.caseMappingKnown());
+}
+
+void CaseMappingTest::invalidCaseMappingTokenDoesNotMarkKnown()
+{
+    IrcServerFeatures features;
+    features.applyToken("CASEMAPPING=unknown");
+    QVERIFY(!features.caseMappingKnown());
+
+    IrcServerFeatures kept;
+    kept.applyToken("CASEMAPPING=rfc1459");
+    QVERIFY(kept.caseMappingKnown());
+    kept.applyToken("CASEMAPPING=unknown");
+    QVERIFY(kept.caseMappingKnown());
+    QCOMPARE(kept.caseMapping().kind(), IrcCaseMapping::Kind::Rfc1459);
 }
 
 void CaseMappingTest::parsesServerFeatures()

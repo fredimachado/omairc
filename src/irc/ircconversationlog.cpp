@@ -1,6 +1,7 @@
 #include "ircconversationlog.h"
 
 #include "ircsecretpolicy.h"
+#include "ircstoragepath.h"
 
 #include <QDir>
 #include <QFile>
@@ -14,6 +15,7 @@
 
 #include <algorithm>
 #include <optional>
+#include <string_view>
 
 namespace
 {
@@ -27,18 +29,6 @@ QString flattenText(QString text)
     text.replace(QLatin1Char('\n'), QLatin1Char(' '));
     text.replace(QLatin1Char('\r'), QLatin1Char(' '));
     return text;
-}
-
-QString safeSegment(QString name)
-{
-    // Encode '%' first so a/b and a%2fb do not share a path.
-    name.replace(QLatin1Char('%'), QLatin1String("%25"));
-    name.replace(QLatin1Char('/'), QLatin1String("%2f"));
-    name.replace(QLatin1Char('\\'), QLatin1String("%5c"));
-    name.replace(QChar(0), QLatin1String("%00"));
-    if (name.isEmpty() || name == QLatin1String(".") || name == QLatin1String(".."))
-        return QStringLiteral("_");
-    return name;
 }
 
 bool tightenOwnerDir(const QString &path)
@@ -118,6 +108,59 @@ QString xdgLogsRoot()
         state = QStandardPaths::writableLocation(QStandardPaths::TempLocation);
     return QDir(state).filePath(QStringLiteral("omairc/logs"));
 }
+
+QString migrateLegacyTranscriptPath(const QString &root,
+                                    const QString &networkId,
+                                    const QString &target,
+                                    const QString &newPath)
+{
+    const QString legacyNetworkDir = legacyStorageSegment(networkId);
+    const QString newNetworkDir = omaircStorageSegment(networkId);
+    QDir rootDir(root);
+    QString networkDirPath = rootDir.filePath(legacyNetworkDir);
+    if (legacyNetworkDir != newNetworkDir) {
+        const bool sharedNetworkDir = storageDirSegmentsShareLocation(
+            rootDir, legacyNetworkDir, newNetworkDir);
+        if (!sharedNetworkDir
+            && legacyStorageDirExists(rootDir, legacyNetworkDir)
+            && !rootDir.exists(newNetworkDir)) {
+            if (rootDir.rename(legacyNetworkDir, newNetworkDir))
+                networkDirPath = rootDir.filePath(newNetworkDir);
+        } else if (rootDir.exists(newNetworkDir)) {
+            networkDirPath = rootDir.filePath(newNetworkDir);
+        }
+    } else if (rootDir.exists(newNetworkDir)) {
+        networkDirPath = rootDir.filePath(newNetworkDir);
+    }
+
+    QString resolvedPath = newPath;
+
+    const auto tryMigrateFile = [&](const QString &legacyPath) {
+        if (!legacyStoragePathExists(legacyPath, target))
+            return;
+        if (QFile::exists(newPath) || storagePathsSameFile(legacyPath, newPath))
+            return;
+        prepareTree(newPath);
+        if (QFile::rename(legacyPath, newPath))
+            return;
+        if (QFile::exists(legacyPath))
+            resolvedPath = legacyPath;
+    };
+
+    const QString legacyPath =
+        QDir(networkDirPath).filePath(legacyStorageSegment(target));
+    tryMigrateFile(legacyPath);
+
+    if (legacyNetworkDir != newNetworkDir
+        && legacyStorageDirExists(rootDir, legacyNetworkDir)) {
+        const QString legacyDirPath = rootDir.filePath(legacyNetworkDir);
+        const QString legacyPathInLegacyDir =
+            QDir(legacyDirPath).filePath(legacyStorageSegment(target));
+        tryMigrateFile(legacyPathInLegacyDir);
+    }
+
+    return resolvedPath;
+}
 }
 
 IrcConversationLog::IrcConversationLog()
@@ -155,14 +198,20 @@ const QString &IrcConversationLog::root() const
 }
 
 QString IrcConversationLog::pathFor(const QString &networkId,
-                                    const QString &target) const
+                                    const QString &target,
+                                    const IrcCaseMapping &mapping) const
 {
-    return QDir(QDir(m_root).filePath(safeSegment(networkId)))
-        .filePath(safeSegment(target));
+    Q_UNUSED(mapping);
+    const QString newNetworkDir = omaircStorageSegment(networkId);
+    const QString newTarget = omaircWireStorageSegment(target);
+    const QString newPath =
+        QDir(QDir(m_root).filePath(newNetworkDir)).filePath(newTarget);
+    return migrateLegacyTranscriptPath(m_root, networkId, target, newPath);
 }
 
 bool IrcConversationLog::append(const QString &networkId,
                                 const QString &target,
+                                const IrcCaseMapping &mapping,
                                 const IrcTranscriptLine &line)
 {
     if (line.kind.isEmpty() || line.body.isEmpty())
@@ -172,7 +221,7 @@ bool IrcConversationLog::append(const QString &networkId,
     if (!IrcSecretPolicy::allowsTranscript(line.author))
         return true;
     const QByteArray bytes = formatLine(line);
-    if (appendBytes(pathFor(networkId, target), bytes))
+    if (appendBytes(pathFor(networkId, target, mapping), bytes))
         return true;
     qWarning("Could not append the conversation log for %s %s",
              qUtf8Printable(networkId), qUtf8Printable(target));
@@ -180,11 +229,14 @@ bool IrcConversationLog::append(const QString &networkId,
 }
 
 std::vector<IrcTranscriptLine> IrcConversationLog::readTail(
-    const QString &networkId, const QString &target, int maxLines) const
+    const QString &networkId,
+    const QString &target,
+    const IrcCaseMapping &mapping,
+    int maxLines) const
 {
     if (maxLines <= 0)
         return {};
-    QFile file(pathFor(networkId, target));
+    QFile file(pathFor(networkId, target, mapping));
     if (!file.open(QIODevice::ReadOnly))
         return {};
     return readTail(&file, maxLines);

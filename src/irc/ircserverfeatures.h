@@ -74,6 +74,8 @@ public:
     void applyTokens(const std::vector<std::string>& tokens);
 
     const IrcCaseMapping& caseMapping() const noexcept;
+    bool caseMappingKnown() const noexcept;
+    void markCaseMappingKnown() noexcept;
     std::string_view channelTypes() const noexcept;
     bool isChannel(std::string_view target) const noexcept;
     std::optional<std::size_t> nickLength() const noexcept;
@@ -110,6 +112,7 @@ private:
     void rebuildModeRules();
 
     IrcCaseMapping m_caseMapping;
+    bool m_caseMappingKnown = false;
     std::string m_channelTypes;
     std::vector<std::pair<char, char>> m_prefixPairs;
     std::string m_prefixModes;

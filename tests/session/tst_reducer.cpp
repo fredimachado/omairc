@@ -1,6 +1,7 @@
 #include <QTest>
 
 #include "conversationlistmodel.h"
+#include "irccasemapping.h"
 #include "ircconversationlog.h"
 #include "irceventreducer.h"
 #include "irceventtranslator.h"
@@ -3598,6 +3599,7 @@ void ReducerTest::conversationLogTailHandlesBoundariesAndEdgeCases()
              QStringLiteral("second"),
              QStringLiteral("third")}) {
         QVERIFY(populated.append(networkA, QStringLiteral("#room"),
+                                 IrcCaseMapping{},
                                  IrcTranscriptLine{
                                      timestamp,
                                      QStringLiteral("alice"),
@@ -3605,8 +3607,10 @@ void ReducerTest::conversationLogTailHandlesBoundariesAndEdgeCases()
                                      recordBody,
                                      {}}));
     }
-    QVERIFY(populated.readTail(networkA, QStringLiteral("#room"), 0).empty());
-    QVERIFY(populated.readTail(networkA, QStringLiteral("#room"), -1).empty());
+    QVERIFY(populated.readTail(networkA, QStringLiteral("#room"), IrcCaseMapping{}, 0)
+                .empty());
+    QVERIFY(populated.readTail(networkA, QStringLiteral("#room"), IrcCaseMapping{}, -1)
+                .empty());
 
     QByteArray populatedContent = transcriptRecord(QStringLiteral("first")) + '\n';
     populatedContent += transcriptRecord(QStringLiteral("second")) + '\n';
@@ -3618,7 +3622,8 @@ void ReducerTest::conversationLogTailHandlesBoundariesAndEdgeCases()
     QCOMPARE(nonpositiveDevice.bytesRead, qint64(0));
 
     IrcConversationLog missing(dir.path());
-    QVERIFY(missing.readTail(networkA, QStringLiteral("missing"), 2).empty());
+    QVERIFY(missing.readTail(networkA, QStringLiteral("missing"), IrcCaseMapping{}, 2)
+                .empty());
 }
 
 void ReducerTest::conversationLogTailStopsBeforeHistoricalPrefix()
