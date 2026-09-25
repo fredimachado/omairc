@@ -46,6 +46,11 @@ HEADERS += \
     ../../src/irc/ircmute.h \
     ../../src/irc/ircopendirect.h \
     ../../src/irc/ircplaybacktime.h \
+    ../../src/irc/ircreplyrouter.h \
+    ../../src/irc/ircmonitorcoordinator.h \
+    ../../src/irc/irccommanddispatcher.h \
+    ../../src/irc/ircautoawayruntime.h \
+    ../../src/irc/ircplaybackcoordinator.h \
     ../../src/irc/irchighlight.h \
     ../../src/irc/ircautoaway.h \
     ../../src/irc/ircpref.h \
@@ -120,6 +125,11 @@ SOURCES += \
     ../../src/irc/ircmute.cpp \
     ../../src/irc/ircopendirect.cpp \
     ../../src/irc/ircplaybacktime.cpp \
+    ../../src/irc/ircreplyrouter.cpp \
+    ../../src/irc/ircmonitorcoordinator.cpp \
+    ../../src/irc/irccommanddispatcher.cpp \
+    ../../src/irc/ircautoawayruntime.cpp \
+    ../../src/irc/ircplaybackcoordinator.cpp \
     ../../src/irc/irchighlight.cpp \
     ../../src/irc/ircautoaway.cpp \
     ../../src/irc/ircpref.cpp \
