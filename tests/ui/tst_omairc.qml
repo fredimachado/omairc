@@ -1178,6 +1178,58 @@ TestCase {
         return sheet;
     }
 
+    function openLinkSheet() {
+        keyClick(Qt.Key_O, Qt.ControlModifier | Qt.ShiftModifier);
+        var sheet = item("linkSheet");
+        tryCompare(sheet, "opened", true);
+        tryCompare(item("linkFilter"), "activeFocus", true);
+        return sheet;
+    }
+
+    function linkModelLabels() {
+        var model = item("linkModel");
+        var labels = [];
+        for (var index = 0; index < model.count; ++index)
+            labels.push(model.get(index).label);
+        return labels;
+    }
+
+    function linkModelKinds() {
+        var model = item("linkModel");
+        var kinds = [];
+        for (var index = 0; index < model.count; ++index)
+            kinds.push(model.get(index).kind);
+        return kinds;
+    }
+
+    function verifyHttpOnlyLinkLabels(labels) {
+        for (var index = 0; index < labels.length; ++index) {
+            var label = labels[index];
+            verify(label.indexOf("https://") === 0 || label.indexOf("http://") === 0,
+                   "Expected http(s) label, got: " + label);
+        }
+        var joined = labels.join(" | ");
+        verify(joined.indexOf("file:") < 0, "file: must not appear in labels: " + joined);
+        verify(joined.indexOf("javascript:") < 0,
+               "javascript: must not appear in labels: " + joined);
+    }
+
+    function linkListLabelText(row) {
+        var list = item("linkList");
+        list.positionViewAtIndex(row, ListView.Contain);
+        waitForRendering(appWindow.contentItem);
+        tryVerify(function() { return list.itemAtIndex(row) !== null; },
+                  1000, "Link list row " + row + " should be rendered");
+        var delegate = list.itemAtIndex(row);
+        verify(delegate !== null, "Could not find linkList row " + row);
+        for (var index = 0; index < delegate.children.length; ++index) {
+            var child = delegate.children[index];
+            if (child.text !== undefined && child.elide !== undefined)
+                return child;
+        }
+        verify(false, "Could not find link list label Text");
+    }
+
     function openNickSheet() {
         keyClick(Qt.Key_K, Qt.ControlModifier | Qt.ShiftModifier);
         var sheet = item("nickSheet");
@@ -3840,6 +3892,24 @@ TestCase {
         compare(appWindow.lastOpenedUrl, "http://example.com");
     }
 
+    function test_httpUrlAtTrimCases() {
+        compare(appWindow.httpUrlAt("https://en.wikipedia.org/wiki/IRC_(protocol)", 10),
+                "https://en.wikipedia.org/wiki/IRC_(protocol)");
+        compare(appWindow.httpUrlAt("https://example.com/foo_[bar]", 10),
+                "https://example.com/foo_[bar]");
+        compare(appWindow.httpUrlAt("(https://example.com)", 8), "https://example.com");
+        compare(appWindow.httpUrlAt("(https://example.com)", 20), "");
+        compare(appWindow.httpUrlAt("https://example.com/a_(b).", 8),
+                "https://example.com/a_(b)");
+        compare(appWindow.httpUrlAt("https://example.com/a_(b_(c))).", 8),
+                "https://example.com/a_(b_(c))");
+        compare(appWindow.httpUrlAt("https://example.com:", 8), "https://example.com");
+        compare(appWindow.httpUrlAt("see https://example.com. now", 6), "https://example.com");
+        compare(appWindow.httpUrlAt("see javascript:alert(1) now", 6), "");
+        compare(appWindow.httpUrlAt("see file:///etc/passwd now", 6), "");
+        compare(appWindow.httpUrlAt("see https://example.com now", 0), "");
+    }
+
     function test_unfocusedMentionNotifiesOnce() {
         appWindow.lastNotification = null;
         appWindow.notifyMentionIfUnfocused(false, "alice", "hey \x02fred");
@@ -5251,6 +5321,293 @@ TestCase {
         typeText("ric");
         tryCompare(item("jumpFilter"), "text", "ric");
         compare(item("jumpFilterPlaceholder").visible, false);
+    }
+
+    function test_ctrlShiftOLinkSheetListsAndOpensLinks() {
+        openSeededAppWindow();
+        var list = item("messageList");
+        var composer = item("messageComposer");
+        injectOmarchyChat("anna", "#omarchy", "older https://older.example.com");
+        injectOmarchyChat("dax", "#omarchy",
+                          "two https://first.example.com and https://second.example.com");
+        injectOmarchyChat("anna", "#omarchy", "see \x02https://emph.example.com\x02");
+        seed.injectOmarchy(
+            ":rio!u@h PART #omarchy :https://event.example.com\r\n");
+        waitForBody(list, "rio left");
+        seed.injectOmarchy(
+            ":anna!u@h PRIVMSG #omarchy :blocked file:///tmp/x javascript:alert(1)\r\n");
+        waitForBody(list, "blocked file:///tmp/x javascript:alert(1)");
+        seed.injectOmarchy(
+            ":server 761 fred fred avatar * :https://whois.example.com/a.png\r\n");
+        verify(appWindow.irc.sendMessage("/avatar"));
+        waitForBody(list, "Standing avatar: https://whois.example.com/a.png");
+        injectOmarchyChat("anna", "#omarchy",
+                          "dup https://dup.example.com and https://dup.example.com");
+        injectOmarchyChat("dax", "#omarchy", "again https://dup.example.com");
+
+        var sheet = openLinkSheet();
+        compare(sheet.width, appWindow.scaledSize(420));
+        compare(item("linkFilter").Accessible.name, "Open link");
+        compare(linkListLabelText(0).elide, Text.ElideMiddle);
+        compare(item("linkFilterPlaceholder").visible, true);
+        compare(item("linkFilterPlaceholder").text, "Open link…");
+        var labels = linkModelLabels();
+        compare(labels.join(" | "),
+                "https://dup.example.com | https://dup.example.com | https://dup.example.com | "
+                + "https://whois.example.com/a.png | https://emph.example.com | "
+                + "https://second.example.com | https://first.example.com | "
+                + "https://older.example.com");
+        verifyHttpOnlyLinkLabels(labels);
+
+        typeText("second");
+        tryCompare(item("linkFilter"), "text", "second");
+        compare(item("linkFilterPlaceholder").visible, false);
+        compare(linkModelLabels().join(" | "), "https://second.example.com");
+        compare(appWindow.linkSelectedIndex, 0);
+
+        item("linkFilter").text = "";
+        tryCompare(item("linkFilter"), "text", "");
+        tryVerify(function() {
+            return item("linkModel").count === 8;
+        });
+
+        typeText("HTTPS");
+        tryCompare(item("linkFilter"), "text", "HTTPS");
+        compare(linkModelLabels().join(" | "),
+                "https://dup.example.com | https://dup.example.com | https://dup.example.com | "
+                + "https://whois.example.com/a.png | https://emph.example.com | "
+                + "https://second.example.com | https://first.example.com | "
+                + "https://older.example.com");
+
+        item("linkFilter").text = "";
+        tryCompare(item("linkFilter"), "text", "");
+        typeText("Example");
+        tryCompare(item("linkFilter"), "text", "Example");
+        compare(linkModelLabels().join(" | "),
+                "https://dup.example.com | https://dup.example.com | https://dup.example.com | "
+                + "https://whois.example.com/a.png | https://emph.example.com | "
+                + "https://second.example.com | https://first.example.com | "
+                + "https://older.example.com");
+
+        item("linkFilter").text = "";
+        tryCompare(item("linkFilter"), "text", "");
+
+        keyClick(Qt.Key_Down);
+        compare(appWindow.linkSelectedIndex, 1);
+        keyClick(Qt.Key_Up);
+        compare(appWindow.linkSelectedIndex, 0);
+        keyClick(Qt.Key_Up);
+        compare(appWindow.linkSelectedIndex, 7);
+
+        keyClick(Qt.Key_Down);
+        compare(appWindow.linkSelectedIndex, 0);
+
+        appWindow.lastOpenedUrl = "";
+        keyClick(Qt.Key_Return);
+        tryCompare(sheet, "opened", false);
+        compare(appWindow.lastOpenedUrl, "https://dup.example.com");
+        tryCompare(composer, "activeFocus", true);
+    }
+
+    function test_ctrlShiftOLinkSheetEscapeKeepsDraft() {
+        openSeededAppWindow();
+        var composer = item("messageComposer");
+        mouseClick(composer);
+        typeText("keep link draft");
+        compare(composer.text, "keep link draft");
+        injectOmarchyChat("anna", "#omarchy", "https://draft.example.com");
+
+        var sheet = openLinkSheet();
+        compare(item("linkModel").count, 1);
+        keyClick(Qt.Key_Escape);
+        tryCompare(sheet, "opened", false);
+        compare(composer.text, "keep link draft");
+        compare(appWindow.lastOpenedUrl, "");
+        tryCompare(composer, "activeFocus", true);
+    }
+
+    function test_ctrlShiftOLinkSheetStatusInvite() {
+        openSeededAppWindow();
+        var list = item("consoleList");
+        keyClick(Qt.Key_QuoteLeft, Qt.ControlModifier);
+        tryCompare(appWindow, "consoleVisible", true);
+
+        var previousCount = list.model.rowCount();
+        seed.injectOmarchy(":server 404 fred #omarchy :motd http://status.example.com end\r\n");
+        waitForRowCount(list, previousCount + 1);
+        seed.injectOmarchy(":alice!u@h INVITE fred :#invited\r\n");
+        waitForRowCount(list, previousCount + 2);
+
+        var sheet = openLinkSheet();
+        compare(linkModelKinds().join(" "), "invite url");
+        compare(linkModelLabels().join(" | "), "#invited | http://status.example.com");
+
+        keyClick(Qt.Key_Down);
+        compare(appWindow.linkSelectedIndex, 1);
+        appWindow.lastOpenedUrl = "";
+        keyClick(Qt.Key_Return);
+        tryCompare(sheet, "opened", false);
+        compare(appWindow.lastOpenedUrl, "http://status.example.com");
+
+        openLinkSheet();
+        compare(appWindow.linkSelectedIndex, 0);
+        var framesBefore = seed.omarchyFrameCount();
+        keyClick(Qt.Key_Return);
+        tryCompare(sheet, "opened", false);
+        verify(seed.omarchyWroteFrom(framesBefore, "JOIN #invited"));
+    }
+
+    function test_ctrlShiftOIsNoOpWhenConnectIsVisible() {
+        var window = createTemporaryObject(setupWindowComponent, null);
+        verify(window !== null, "The setup window should load");
+        tryCompare(window, "visible", true);
+        waitForRendering(window.contentItem);
+        window.requestActivate();
+        tryCompare(window, "active", true);
+
+        var connectSheet = findChild(window, "connectionSheet");
+        verify(connectSheet !== null, "Could not find connectionSheet");
+        verify(connectSheet.visible);
+        var link = findChild(window, "linkSheet");
+        verify(link !== null, "Could not find linkSheet");
+        compare(link.opened, false);
+
+        keyClick(Qt.Key_O, Qt.ControlModifier | Qt.ShiftModifier);
+
+        compare(link.opened, false);
+        verify(connectSheet.visible);
+        window.close();
+    }
+
+    function test_ctrlShiftOLinkSheetBlocksWalkAndShortcuts() {
+        openSeededAppWindow();
+        injectOmarchyChat("anna", "#omarchy", "https://guard.example.com");
+        var sheet = openLinkSheet();
+        compare(appWindow.currentConversation, "#omarchy");
+
+        keyClick(Qt.Key_Down, Qt.AltModifier);
+        compare(appWindow.currentConversation, "#omarchy");
+        verify(sheet.opened);
+
+        keyClick(Qt.Key_Slash, Qt.ControlModifier);
+        verify(!item("shortcutsSheet").opened);
+        verify(sheet.opened);
+
+        keyClick(Qt.Key_Escape);
+        tryCompare(sheet, "opened", false);
+        verify(!item("shortcutsSheet").opened);
+    }
+
+    function test_ctrlShiftOLinkSheetEmptyTranscript() {
+        openSeededAppWindow();
+        var sheet = openLinkSheet();
+        compare(item("linkModel").count, 0);
+        compare(appWindow.linkSelectedIndex, 0);
+
+        appWindow.lastOpenedUrl = "";
+        var framesBefore = seed.omarchyFrameCount();
+        keyClick(Qt.Key_Return);
+        verify(sheet.opened);
+        compare(appWindow.lastOpenedUrl, "");
+        verify(!seed.omarchyWroteFrom(framesBefore, "JOIN"));
+
+        injectOmarchyChat("anna", "#omarchy", "https://filter.example.com");
+        keyClick(Qt.Key_Escape);
+        tryCompare(sheet, "opened", false);
+        sheet = openLinkSheet();
+        compare(item("linkModel").count, 1);
+        typeText("nomatch");
+        tryCompare(item("linkFilter"), "text", "nomatch");
+        compare(item("linkModel").count, 0);
+
+        appWindow.lastOpenedUrl = "";
+        framesBefore = seed.omarchyFrameCount();
+        keyClick(Qt.Key_Return);
+        verify(sheet.opened);
+        compare(appWindow.lastOpenedUrl, "");
+        verify(!seed.omarchyWroteFrom(framesBefore, "JOIN"));
+
+        keyClick(Qt.Key_Escape);
+        tryCompare(sheet, "opened", false);
+    }
+
+    function test_ctrlShiftOLinkSheetToggleClearsFilter() {
+        openSeededAppWindow();
+        injectOmarchyChat("anna", "#omarchy", "https://toggle.example.com");
+        var sheet = openLinkSheet();
+        compare(item("linkModel").count, 1);
+        typeText("toggle");
+        tryCompare(item("linkFilter"), "text", "toggle");
+        compare(item("linkFilterPlaceholder").visible, false);
+
+        keyClick(Qt.Key_O, Qt.ControlModifier | Qt.ShiftModifier);
+        tryCompare(sheet, "opened", false);
+
+        sheet = openLinkSheet();
+        compare(item("linkFilter").text, "");
+        compare(item("linkFilterPlaceholder").visible, true);
+        compare(item("linkModel").count, 1);
+        tryCompare(item("linkFilter"), "activeFocus", true);
+    }
+
+    function test_ctrlShiftOLinkSheetRevealScroll() {
+        openSeededAppWindow();
+        var list = item("messageList");
+        fillTranscriptUntilScrollable(list);
+        injectOmarchyChat("anna", "#omarchy", "scroll https://scroll-a.example.com");
+        appendLiveMessages(list, 20, "scroll filler");
+        injectOmarchyChat("dax", "#omarchy", "scroll https://scroll-b.example.com");
+        waitForRendering(appWindow.contentItem);
+        list.pinToEnd();
+        waitForRendering(appWindow.contentItem);
+        wait(0);
+
+        var beforeOpenY = list.contentY;
+        var sheet = openLinkSheet();
+        compare(item("linkModel").count, 2);
+        compare(linkModelLabels().join(" | "),
+                "https://scroll-b.example.com | https://scroll-a.example.com");
+        waitForRendering(appWindow.contentItem);
+        wait(0);
+        var atNewestY = list.contentY;
+
+        keyClick(Qt.Key_Down);
+        compare(appWindow.linkSelectedIndex, 1);
+        waitForRendering(appWindow.contentItem);
+        wait(0);
+        verify(list.contentY < atNewestY,
+               "Up/Down should reveal an older link row in the transcript");
+
+        var atOlderY = list.contentY;
+        keyClick(Qt.Key_Escape);
+        tryCompare(sheet, "opened", false);
+        fuzzyCompare(list.contentY, atOlderY, 2,
+                     "Closing the link sheet should not restore the pre-open scroll");
+        verify(list.contentY + 2 < beforeOpenY,
+               "Link browsing should leave the transcript away from the pre-open pin");
+    }
+
+    function test_ctrlShiftOLinkSheetChatNotInvite() {
+        openSeededAppWindow();
+        var list = item("messageList");
+        injectOmarchyChat("alice", "#omarchy", "alice invited you to #not-invite");
+        injectOmarchyChat("anna", "#omarchy",
+                          "read https://en.wikipedia.org/wiki/IRC_(protocol)");
+        waitForBody(list, "read https://en.wikipedia.org/wiki/IRC_(protocol)");
+
+        var sheet = openLinkSheet();
+        compare(linkModelKinds().join(" "), "url");
+        compare(linkModelLabels().join(" | "),
+                "https://en.wikipedia.org/wiki/IRC_(protocol)");
+        compare(item("linkModel").count, 1);
+
+        appWindow.lastOpenedUrl = "";
+        var framesBefore = seed.omarchyFrameCount();
+        keyClick(Qt.Key_Return);
+        tryCompare(sheet, "opened", false);
+        compare(appWindow.lastOpenedUrl,
+                "https://en.wikipedia.org/wiki/IRC_(protocol)");
+        verify(!seed.omarchyWroteFrom(framesBefore, "JOIN #not-invite"));
     }
 
     function test_ctrlShiftKOpensFilteredNickAndCreatesDm() {

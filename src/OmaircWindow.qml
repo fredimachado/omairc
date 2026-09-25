@@ -83,6 +83,7 @@ ApplicationWindow {
     property bool aboutSheetEscapeGuard: false
     property bool pickerEscapeGuard: false
     property int jumpSelectedIndex: 0
+    property int linkSelectedIndex: 0
     property int inboxSelectedIndex: 0
     property int nickSelectedIndex: 0
     property int channelListSelectedIndex: 0
@@ -90,6 +91,7 @@ ApplicationWindow {
     property var nickSourceRows: []
     readonly property bool shortcutOverlayOpen: shortcutsSheet.opened
         || jumpSheet.opened
+        || linkSheet.opened
         || inboxSheet.opened
         || nickSheet.opened
         || channelListSheet.opened
@@ -458,17 +460,73 @@ ApplicationWindow {
         return networkConsole.submit("/join " + channel);
     }
 
-    function httpUrlAt(text, index) {
-        if (!text || index < 0 || index >= text.length)
-            return "";
+    function trimHttpUrlMatch(raw) {
+        var end = raw.length;
+        while (end > 0) {
+            var ch = raw.charAt(end - 1);
+            if (".,;:!?".indexOf(ch) >= 0) {
+                end--;
+                continue;
+            }
+            if (ch === ")") {
+                var openParen = 0;
+                var closeParen = 0;
+                for (var pi = 0; pi < end; ++pi) {
+                    var pc = raw.charAt(pi);
+                    if (pc === "(")
+                        openParen++;
+                    else if (pc === ")")
+                        closeParen++;
+                }
+                if (closeParen > openParen) {
+                    end--;
+                    continue;
+                }
+            }
+            if (ch === "]") {
+                var openBracket = 0;
+                var closeBracket = 0;
+                for (var bi = 0; bi < end; ++bi) {
+                    var bc = raw.charAt(bi);
+                    if (bc === "[")
+                        openBracket++;
+                    else if (bc === "]")
+                        closeBracket++;
+                }
+                if (closeBracket > openBracket) {
+                    end--;
+                    continue;
+                }
+            }
+            break;
+        }
+        return raw.substring(0, end);
+    }
+
+    function httpUrlSpans(text) {
+        if (!text)
+            return [];
         var re = /https?:\/\/[^\s<>"']+/gi;
+        var spans = [];
         var match;
         while ((match = re.exec(text)) !== null) {
             var start = match.index;
-            var raw = match[0].replace(/[.,;:!?)\]>]+$/, "");
-            var end = start + raw.length;
-            if (index >= start && index < end && isAllowedHttpUrl(raw))
-                return raw;
+            var trimmed = trimHttpUrlMatch(match[0]);
+            var end = start + trimmed.length;
+            if (trimmed.length > 0)
+                spans.push({ start: start, end: end, url: trimmed });
+        }
+        return spans;
+    }
+
+    function httpUrlAt(text, index) {
+        if (!text || index < 0 || index >= text.length)
+            return "";
+        var spans = httpUrlSpans(text);
+        for (var i = 0; i < spans.length; ++i) {
+            var span = spans[i];
+            if (index >= span.start && index < span.end && isAllowedHttpUrl(span.url))
+                return span.url;
         }
         return "";
     }
@@ -496,6 +554,7 @@ ApplicationWindow {
     function aboutShortcutBlocked() {
         return shortcutsSheet.opened
             || jumpSheet.opened
+            || linkSheet.opened
             || inboxSheet.opened
             || nickSheet.opened
             || aboutSheet.opened
@@ -925,6 +984,76 @@ ApplicationWindow {
             jumpSelectedIndex = Math.max(0, jumpModel.count - 1);
     }
 
+    function appendLinkUrlsFromText(text, row, query) {
+        if (!text)
+            return;
+        var spans = httpUrlSpans(text);
+        for (var i = spans.length - 1; i >= 0; --i) {
+            var url = spans[i].url;
+            if (!isAllowedHttpUrl(url))
+                continue;
+            if (query.length > 0 && url.toLowerCase().indexOf(query) === -1)
+                continue;
+            linkModel.append({
+                kind: "url",
+                value: url,
+                label: url,
+                row: row
+            });
+        }
+    }
+
+    function refreshLinkMatches() {
+        var query = linkSheet.linkFilter ? linkSheet.linkFilter.text.trim().toLowerCase() : "";
+        linkModel.clear();
+        var list = consoleVisible ? conversation.consoleList : conversation.messageList;
+        if (!list || !list.model)
+            return;
+        var model = list.model;
+        var count = transcriptRowCount(model);
+        for (var row = count - 1; row >= 0; --row) {
+            if (!consoleVisible) {
+                var kind = transcriptField(model, row, "kind");
+                if (kind === "event" || kind === "unread")
+                    continue;
+                var body = plainIrcText(transcriptField(model, row, "body"));
+                appendLinkUrlsFromText(body, row, query);
+            } else {
+                var label = transcriptField(model, row, "label");
+                var text = plainIrcText(transcriptField(model, row, "text"));
+                appendLinkUrlsFromText(text, row, query);
+                if (label === "INVITE") {
+                    var marker = " invited you to ";
+                    var at = text.lastIndexOf(marker);
+                    if (at >= 0) {
+                        var channel = text.substring(at + marker.length);
+                        if (channel.length > 0
+                                && (query.length === 0
+                                    || channel.toLowerCase().indexOf(query) !== -1))
+                            linkModel.append({
+                                kind: "invite",
+                                value: channel,
+                                label: channel,
+                                row: row
+                            });
+                    }
+                }
+            }
+        }
+        if (linkSelectedIndex >= linkModel.count)
+            linkSelectedIndex = Math.max(0, linkModel.count - 1);
+    }
+
+    function revealLinkMatch(index) {
+        if (index < 0 || index >= linkModel.count)
+            return;
+        var entry = linkModel.get(index);
+        var list = consoleVisible ? conversation.consoleList : conversation.messageList;
+        if (!list)
+            return;
+        list.revealRow(entry.row);
+    }
+
     function liveMemberRow(row) {
         var empty = { nick: "", label: "", status: "", away: false, avatar: "", bot: false };
         if (!irc)
@@ -1002,6 +1131,11 @@ ApplicationWindow {
         jumpSheet.open();
     }
 
+    function openLinkSheet() {
+        linkSelectedIndex = 0;
+        linkSheet.open();
+    }
+
     function inboxRowCount() {
         if (!irc || !irc.inbox)
             return 0;
@@ -1037,6 +1171,15 @@ ApplicationWindow {
         jumpSelectedIndex = (jumpSelectedIndex + delta + jumpModel.count) % jumpModel.count;
         if (jumpSheet.jumpList)
             jumpSheet.jumpList.positionViewAtIndex(jumpSelectedIndex, ListView.Contain);
+    }
+
+    function stepLink(delta) {
+        if (linkModel.count === 0)
+            return;
+        linkSelectedIndex = (linkSelectedIndex + delta + linkModel.count) % linkModel.count;
+        if (linkSheet.linkList)
+            linkSheet.linkList.positionViewAtIndex(linkSelectedIndex, ListView.Contain);
+        revealLinkMatch(linkSelectedIndex);
     }
 
     function stepInbox(delta) {
@@ -1088,6 +1231,17 @@ ApplicationWindow {
             }
         }
         selectConversation(name, networkId);
+    }
+
+    function activateLinkSelection() {
+        if (linkSelectedIndex < 0 || linkSelectedIndex >= linkModel.count)
+            return;
+        var target = linkModel.get(linkSelectedIndex);
+        linkSheet.close();
+        if (target.kind === "invite")
+            joinInviteChannel(target.value);
+        else
+            openAllowedUrl(target.value);
     }
 
     function dismissInboxSelection(index) {
@@ -2058,6 +2212,7 @@ ApplicationWindow {
         context: Qt.ApplicationShortcut
         enabled: !win.connectionOverlayVisible
             && !shortcutsSheet.opened
+            && !linkSheet.opened
             && !inboxSheet.opened
             && !nickSheet.opened
             && !aboutSheet.opened
@@ -2071,11 +2226,31 @@ ApplicationWindow {
     }
 
     Shortcut {
+        sequence: "Ctrl+Shift+O"
+        context: Qt.ApplicationShortcut
+        enabled: !win.connectionOverlayVisible
+            && !shortcutsSheet.opened
+            && !jumpSheet.opened
+            && !inboxSheet.opened
+            && !nickSheet.opened
+            && !aboutSheet.opened
+            && !channelListSheet.opened
+            || linkSheet.opened
+        onActivated: {
+            if (linkSheet.opened)
+                linkSheet.close();
+            else
+                win.openLinkSheet();
+        }
+    }
+
+    Shortcut {
         sequence: "Ctrl+Shift+A"
         context: Qt.ApplicationShortcut
         enabled: !win.connectionOverlayVisible
             && !shortcutsSheet.opened
             && !jumpSheet.opened
+            && !linkSheet.opened
             && !nickSheet.opened
             && !aboutSheet.opened
         onActivated: {
@@ -2137,8 +2312,8 @@ ApplicationWindow {
         sequence: "Ctrl+/"
         context: Qt.ApplicationShortcut
         onActivated: {
-            if (jumpSheet.opened || inboxSheet.opened || nickSheet.opened || aboutSheet.opened
-                    || channelListSheet.opened)
+            if (jumpSheet.opened || linkSheet.opened || inboxSheet.opened || nickSheet.opened
+                    || aboutSheet.opened || channelListSheet.opened)
                 return;
             if (shortcutsSheet.opened)
                 shortcutsSheet.close();
@@ -2436,8 +2611,8 @@ ApplicationWindow {
                 return true;
             if (aboutSheet.opened || aboutSheetEscapeGuard)
                 return true;
-            if (jumpSheet.opened || inboxSheet.opened || nickSheet.opened || channelListSheet.opened
-                    || pickerEscapeGuard)
+            if (jumpSheet.opened || linkSheet.opened || inboxSheet.opened || nickSheet.opened
+                    || channelListSheet.opened || pickerEscapeGuard)
                 return true;
             if (win.connection && win.connection.setupRequired)
                 return false;
@@ -2464,9 +2639,10 @@ ApplicationWindow {
                 aboutSheetEscapeGuard = false;
                 return;
             }
-            if (jumpSheet.opened || inboxSheet.opened || nickSheet.opened || channelListSheet.opened
-                    || pickerEscapeGuard) {
+            if (jumpSheet.opened || linkSheet.opened || inboxSheet.opened || nickSheet.opened
+                    || channelListSheet.opened || pickerEscapeGuard) {
                 jumpSheet.close();
+                linkSheet.close();
                 inboxSheet.close();
                 nickSheet.close();
                 channelListSheet.close();
@@ -3039,6 +3215,11 @@ ApplicationWindow {
     }
 
     ListModel {
+        id: linkModel
+        objectName: "linkModel"
+    }
+
+    ListModel {
         id: nickModel
         objectName: "nickModel"
     }
@@ -3071,6 +3252,39 @@ ApplicationWindow {
         onFilterChanged: {
             win.jumpSelectedIndex = 0;
             win.refreshJumpMatches();
+        }
+    }
+
+    LinkSheet {
+        id: linkSheet
+        objectName: "linkSheet"
+        style: win.style
+        x: Math.round((win.width - width) / 2)
+        y: Math.round((win.height - height) / 2)
+        matches: linkModel
+        selectedIndex: win.linkSelectedIndex
+        onOpened: {
+            win.pickerEscapeGuard = true;
+            win.linkSelectedIndex = 0;
+            if (linkSheet.linkFilter.text.length > 0)
+                linkSheet.linkFilter.clear();
+            else
+                win.refreshLinkMatches();
+            linkSheet.linkFilter.forceActiveFocus();
+            win.revealLinkMatch(win.linkSelectedIndex);
+        }
+        onClosed: {
+            Qt.callLater(function() {
+                win.pickerEscapeGuard = false;
+                conversation.composer.forceActiveFocus();
+            });
+        }
+        onStepRequested: function(delta) { win.stepLink(delta); }
+        onActivateRequested: win.activateLinkSelection()
+        onFilterChanged: {
+            win.linkSelectedIndex = 0;
+            win.refreshLinkMatches();
+            win.revealLinkMatch(win.linkSelectedIndex);
         }
     }
 

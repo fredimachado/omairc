@@ -22,6 +22,7 @@ Popup {
             title: "JUMP",
             rows: [
                 { keys: "Ctrl+K", action: "jump to conversation" },
+                { keys: "Ctrl+Shift+O", action: "open link" },
                 { keys: "Ctrl+Shift+K", action: "jump to nick" },
                 { keys: "Ctrl+Shift+A", action: "inbox" },
                 { keys: "Ctrl+`", action: "Status" },
