@@ -22,6 +22,7 @@
 #include "testsettings.h"
 #include "irccontroller.h"
 #include "ircmessage.h"
+#include "ircstoragepath.h"
 #include "omairccli.h"
 #include "omaircclipcursor.h"
 #include "omaircipc.h"
@@ -1319,7 +1320,10 @@ void OmaircIpcTest::handlerUnreadSharesCursorAcrossTargetCasing()
     QVERIFY(OmaircIpc::responseMessages(firstUnread).size() >= 1);
 
     const QString cursorPath =
-        QDir(cursorDir.path()).filePath(QStringLiteral("net-1/#omarchy.json"));
+        QDir(QDir(cursorDir.path()).filePath(omaircStorageSegment(QStringLiteral("net-1"))))
+            .filePath(omaircWireStorageSegment(QStringLiteral("#Omarchy"),
+                                               QStringLiteral(".json"))
+                      + QStringLiteral(".json"));
     QVERIFY(QFileInfo::exists(cursorPath));
 
     const QByteArray secondUnread = handler.handleLine(

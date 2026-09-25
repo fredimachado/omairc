@@ -5,6 +5,7 @@
 
 #include <QDir>
 #include <QFile>
+#include <QFileInfo>
 #include <QCryptographicHash>
 
 #include <string_view>
@@ -143,6 +144,32 @@ QString decodeLegacySegment(QString text)
     return text;
 }
 
+QString decodeOmaircStorageSegment(QString segment)
+{
+    if (segment.startsWith(QLatin1Char('h')))
+        return segment;
+
+    QByteArray bytes;
+    bytes.reserve(segment.size());
+    for (qsizetype index = 0; index < segment.size();) {
+        if (segment.at(index) == QLatin1Char('%') && index + 2 < segment.size()) {
+            bool ok = false;
+            const int value = segment.sliced(index + 1, 2).toInt(&ok, 16);
+            if (ok) {
+                bytes.append(static_cast<char>(value));
+                index += 3;
+                continue;
+            }
+        }
+        bytes.append(segment.at(index).toLatin1());
+        ++index;
+    }
+    const QString decoded = QString::fromUtf8(bytes);
+    if (decoded.isEmpty() && !bytes.isEmpty())
+        return QString::fromLatin1(bytes);
+    return decoded;
+}
+
 QString omaircStorageSegment(QString text, QString extensionForDeviceCheck)
 {
     if (text.isEmpty() || text == QLatin1String(".") || text == QLatin1String(".."))
@@ -194,4 +221,35 @@ bool legacyStorageDirExists(const QDir &dir,
     Q_UNUSED(extensionForDeviceCheck);
 #endif
     return dir.exists(segment);
+}
+
+QString storageCanonicalPath(const QString &path)
+{
+    const QString canonical = QFileInfo(path).canonicalFilePath();
+    return canonical.isEmpty() ? QDir::cleanPath(path) : canonical;
+}
+
+bool storagePathsSameFile(const QString &left, const QString &right)
+{
+    const QString canonicalLeft = storageCanonicalPath(left);
+    const QString canonicalRight = storageCanonicalPath(right);
+    return !canonicalLeft.isEmpty() && canonicalLeft == canonicalRight;
+}
+
+bool storageDirSegmentsShareLocation(const QDir &root,
+                                     const QString &leftSegment,
+                                     const QString &rightSegment)
+{
+    if (leftSegment == rightSegment)
+        return true;
+    return storagePathsSameFile(root.filePath(leftSegment),
+                                root.filePath(rightSegment));
+}
+
+QString omaircWireStorageSegment(QString text, QString extensionForDeviceCheck)
+{
+    const QByteArray utf8 = text.toUtf8();
+    return omaircStorageSegment(
+        ircWireText(std::string_view(utf8.constData(), utf8.size())),
+        extensionForDeviceCheck);
 }

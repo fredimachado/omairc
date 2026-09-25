@@ -2,7 +2,6 @@
 
 #include "ircsecretpolicy.h"
 #include "ircstoragepath.h"
-#include "ircwiretext.h"
 
 #include <QDir>
 #include <QFile>
@@ -118,21 +117,28 @@ void migrateLegacyTranscriptPath(const QString &root,
     const QString legacyNetworkDir = legacyStorageSegment(networkId);
     const QString newNetworkDir = omaircStorageSegment(networkId);
     QDir rootDir(root);
-    QString networkDirPath = QDir(root).filePath(legacyNetworkDir);
-    if (legacyNetworkDir != newNetworkDir
-        && legacyStorageDirExists(rootDir, legacyNetworkDir)
-        && !rootDir.exists(newNetworkDir)) {
-        if (rootDir.rename(legacyNetworkDir, newNetworkDir))
-            networkDirPath = QDir(root).filePath(newNetworkDir);
+    QString networkDirPath = rootDir.filePath(legacyNetworkDir);
+    if (legacyNetworkDir != newNetworkDir) {
+        const bool sharedNetworkDir = storageDirSegmentsShareLocation(
+            rootDir, legacyNetworkDir, newNetworkDir);
+        if (!sharedNetworkDir
+            && legacyStorageDirExists(rootDir, legacyNetworkDir)
+            && !rootDir.exists(newNetworkDir)) {
+            if (rootDir.rename(legacyNetworkDir, newNetworkDir))
+                networkDirPath = rootDir.filePath(newNetworkDir);
+        } else if (rootDir.exists(newNetworkDir)) {
+            networkDirPath = rootDir.filePath(newNetworkDir);
+        }
     } else if (rootDir.exists(newNetworkDir)) {
-        networkDirPath = QDir(root).filePath(newNetworkDir);
+        networkDirPath = rootDir.filePath(newNetworkDir);
     }
 
     const auto tryMigrateFile = [&](const QString &legacyPath) {
         if (!legacyStoragePathExists(legacyPath, target))
             return;
-        if (!QFile::exists(newPath))
-            prepareTree(newPath);
+        if (QFile::exists(newPath) || storagePathsSameFile(legacyPath, newPath))
+            return;
+        prepareTree(newPath);
         QFile::rename(legacyPath, newPath);
     };
 
@@ -142,7 +148,7 @@ void migrateLegacyTranscriptPath(const QString &root,
 
     if (legacyNetworkDir != newNetworkDir
         && legacyStorageDirExists(rootDir, legacyNetworkDir)) {
-        const QString legacyDirPath = QDir(root).filePath(legacyNetworkDir);
+        const QString legacyDirPath = rootDir.filePath(legacyNetworkDir);
         const QString legacyPathInLegacyDir =
             QDir(legacyDirPath).filePath(legacyStorageSegment(target));
         tryMigrateFile(legacyPathInLegacyDir);
@@ -190,9 +196,7 @@ QString IrcConversationLog::pathFor(const QString &networkId,
 {
     Q_UNUSED(mapping);
     const QString newNetworkDir = omaircStorageSegment(networkId);
-    const QByteArray targetUtf8 = target.toUtf8();
-    const QString newTarget = omaircStorageSegment(ircWireText(
-        std::string_view(targetUtf8.constData(), targetUtf8.size())));
+    const QString newTarget = omaircWireStorageSegment(target);
     const QString newPath =
         QDir(QDir(m_root).filePath(newNetworkDir)).filePath(newTarget);
     migrateLegacyTranscriptPath(m_root, networkId, target, newPath);
