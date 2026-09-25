@@ -1,6 +1,7 @@
 #include "ircconversationlog.h"
 
 #include "ircsecretpolicy.h"
+#include "ircstoragepath.h"
 
 #include <QDir>
 #include <QFile>
@@ -27,18 +28,6 @@ QString flattenText(QString text)
     text.replace(QLatin1Char('\n'), QLatin1Char(' '));
     text.replace(QLatin1Char('\r'), QLatin1Char(' '));
     return text;
-}
-
-QString safeSegment(QString name)
-{
-    // Encode '%' first so a/b and a%2fb do not share a path.
-    name.replace(QLatin1Char('%'), QLatin1String("%25"));
-    name.replace(QLatin1Char('/'), QLatin1String("%2f"));
-    name.replace(QLatin1Char('\\'), QLatin1String("%5c"));
-    name.replace(QChar(0), QLatin1String("%00"));
-    if (name.isEmpty() || name == QLatin1String(".") || name == QLatin1String(".."))
-        return QStringLiteral("_");
-    return name;
 }
 
 bool tightenOwnerDir(const QString &path)
@@ -118,6 +107,35 @@ QString xdgLogsRoot()
         state = QStandardPaths::writableLocation(QStandardPaths::TempLocation);
     return QDir(state).filePath(QStringLiteral("omairc/logs"));
 }
+
+void migrateLegacyTranscriptPath(const QString &root,
+                                 const QString &networkId,
+                                 const QString &target,
+                                 const IrcCaseMapping &mapping,
+                                 const QString &newPath)
+{
+    if (QFile::exists(newPath))
+        return;
+
+    const QString legacyNetworkDir = legacyStorageSegment(networkId);
+    const QString newNetworkDir = omaircStorageSegment(networkId);
+    QDir rootDir(root);
+    QString networkDirPath = QDir(root).filePath(legacyNetworkDir);
+    if (legacyNetworkDir != newNetworkDir && rootDir.exists(legacyNetworkDir)
+        && !rootDir.exists(newNetworkDir)) {
+        rootDir.rename(legacyNetworkDir, newNetworkDir);
+        networkDirPath = QDir(root).filePath(newNetworkDir);
+    } else if (rootDir.exists(newNetworkDir)) {
+        networkDirPath = QDir(root).filePath(newNetworkDir);
+    }
+
+    const QString legacyPath =
+        QDir(networkDirPath).filePath(legacyStorageSegment(target));
+    if (QFile::exists(legacyPath) && !QFile::exists(newPath)) {
+        prepareTree(newPath);
+        QFile::rename(legacyPath, newPath);
+    }
+}
 }
 
 IrcConversationLog::IrcConversationLog()
@@ -155,14 +173,20 @@ const QString &IrcConversationLog::root() const
 }
 
 QString IrcConversationLog::pathFor(const QString &networkId,
-                                    const QString &target) const
+                                    const QString &target,
+                                    const IrcCaseMapping &mapping) const
 {
-    return QDir(QDir(m_root).filePath(safeSegment(networkId)))
-        .filePath(safeSegment(target));
+    const QString newNetworkDir = omaircStorageSegment(networkId);
+    const QString newTarget = omaircTargetSegment(target, mapping);
+    const QString newPath =
+        QDir(QDir(m_root).filePath(newNetworkDir)).filePath(newTarget);
+    migrateLegacyTranscriptPath(m_root, networkId, target, mapping, newPath);
+    return newPath;
 }
 
 bool IrcConversationLog::append(const QString &networkId,
                                 const QString &target,
+                                const IrcCaseMapping &mapping,
                                 const IrcTranscriptLine &line)
 {
     if (line.kind.isEmpty() || line.body.isEmpty())
@@ -172,7 +196,7 @@ bool IrcConversationLog::append(const QString &networkId,
     if (!IrcSecretPolicy::allowsTranscript(line.author))
         return true;
     const QByteArray bytes = formatLine(line);
-    if (appendBytes(pathFor(networkId, target), bytes))
+    if (appendBytes(pathFor(networkId, target, mapping), bytes))
         return true;
     qWarning("Could not append the conversation log for %s %s",
              qUtf8Printable(networkId), qUtf8Printable(target));
@@ -180,11 +204,14 @@ bool IrcConversationLog::append(const QString &networkId,
 }
 
 std::vector<IrcTranscriptLine> IrcConversationLog::readTail(
-    const QString &networkId, const QString &target, int maxLines) const
+    const QString &networkId,
+    const QString &target,
+    const IrcCaseMapping &mapping,
+    int maxLines) const
 {
     if (maxLines <= 0)
         return {};
-    QFile file(pathFor(networkId, target));
+    QFile file(pathFor(networkId, target, mapping));
     if (!file.open(QIODevice::ReadOnly))
         return {};
     return readTail(&file, maxLines);

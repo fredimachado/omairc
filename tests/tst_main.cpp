@@ -40,6 +40,7 @@ int runIrcTextFormatterTests(int argc, char **argv);
 int runOmaircUpdateCheckTests(int argc, char **argv);
 int runSecretServiceTests(int argc, char **argv);
 int runBackendTests(int argc, char **argv);
+int runStoragePathTests(int argc, char **argv);
 
 int main(int argc, char **argv)
 {
@@ -92,6 +93,7 @@ int main(int argc, char **argv)
     const int updateCheckStatus = runOmaircUpdateCheckTests(argc, argv);
     const int secretServiceStatus = runSecretServiceTests(argc, argv);
     const int backendStatus = runBackendTests(argc, argv);
+    const int storagePathStatus = runStoragePathTests(argc, argv);
     const int statuses[] = {
         protocolStatus,
         caseMappingStatus,
@@ -131,6 +133,7 @@ int main(int argc, char **argv)
         updateCheckStatus,
         secretServiceStatus,
         backendStatus,
+        storagePathStatus,
     };
     for (const int status : statuses) {
         if (status != 0)

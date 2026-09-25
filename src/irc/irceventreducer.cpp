@@ -384,7 +384,7 @@ void IrcEventReducer::hydrateFromLog(IrcConversationState& conversation)
         return;
     const std::vector<IrcTranscriptLine> lines = m_log->readTail(
         conversation.key.networkId, conversation.key.normalizedTarget,
-        kMaxMessages);
+        serverFeatures(conversation.key.networkId).caseMapping(), kMaxMessages);
     for (const IrcTranscriptLine& line : lines) {
         const std::optional<IrcMessageKind> kind = kindFromToken(line.kind);
         if (!kind)
@@ -410,6 +410,7 @@ void IrcEventReducer::persistMessage(const IrcConversationState& conversation,
     if (kind.isEmpty())
         return;
     m_log->append(conversation.key.networkId, conversation.key.normalizedTarget,
+                  serverFeatures(conversation.key.networkId).caseMapping(),
                   {message.timestamp, message.author, kind, message.body,
                    message.msgid.value});
 }
@@ -1462,6 +1463,7 @@ bool IrcEventReducer::replayOnlyRepeatsPersistedIds(const IrcHistoryEvent& event
     }
     const std::vector<IrcTranscriptLine> stored = m_log->readTail(
         event.conversation.networkId, event.conversation.normalizedTarget,
+        serverFeatures(event.conversation.networkId).caseMapping(),
         kMaxMessages);
     for (const IrcReplayLine& line : event.lines) {
         const bool known = std::any_of(

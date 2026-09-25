@@ -133,7 +133,9 @@ QByteArray OmaircIpcHandler::handleRead(const OmaircIpc::Request &request,
     IrcController::CliReadQuery query;
     std::optional<OmaircCliCursor> loaded;
     if (std::holds_alternative<OmaircIpc::UnreadWindow>(request.window)) {
-        loaded = m_cursors.load(networkId, request.target);
+        loaded = m_cursors.load(
+            networkId, request.target,
+            m_controller->serverFeatures(networkId).caseMapping());
         if (loaded) {
             query.mode = IrcController::CliReadQuery::Mode::After;
             query.afterUtc = loaded->timestamp;
@@ -167,7 +169,9 @@ QByteArray OmaircIpcHandler::handleRead(const OmaircIpc::Request &request,
         cursor.timestamp = newest.timestamp;
         cursor.msgid = newest.msgid;
         cursor.sequence = newest.sequence;
-        if (!m_cursors.save(networkId, request.target, cursor)) {
+        if (!m_cursors.save(
+                networkId, request.target,
+                m_controller->serverFeatures(networkId).caseMapping(), cursor)) {
             qWarning("Could not save the CLI cursor for %s %s",
                      qUtf8Printable(networkId),
                      qUtf8Printable(request.target));

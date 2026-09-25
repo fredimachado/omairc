@@ -1,5 +1,8 @@
 #include "omaircclipcursor.h"
 
+#include "irc/irccasemapping.h"
+#include "irc/ircstoragepath.h"
+
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
@@ -16,18 +19,7 @@ constexpr QFileDevice::Permissions kOwnerDir =
 constexpr QFileDevice::Permissions kOwnerFile =
     QFileDevice::ReadOwner | QFileDevice::WriteOwner;
 
-QString safeSegment(QString name)
-{
-    // Encode '%' first so a/b and a%2fb do not share a path. rfc1459
-    // #Chan and #chan stay distinct cursor files.
-    name.replace(QLatin1Char('%'), QLatin1String("%25"));
-    name.replace(QLatin1Char('/'), QLatin1String("%2f"));
-    name.replace(QLatin1Char('\\'), QLatin1String("%5c"));
-    name.replace(QChar(0), QLatin1String("%00"));
-    if (name.isEmpty() || name == QLatin1String(".") || name == QLatin1String(".."))
-        return QStringLiteral("_");
-    return name;
-}
+const QString kJsonExtension = QStringLiteral(".json");
 
 bool tightenOwnerDir(const QString &path)
 {
@@ -63,35 +55,9 @@ bool prepareTree(const QString &filePath)
     return true;
 }
 
-}
-
-QString OmaircCliCursorStore::defaultRoot()
+std::optional<OmaircCliCursor> readCursorFile(const QString &path)
 {
-    const QString scoped = QString::fromUtf8(qgetenv("OMAIRC_CURSOR_ROOT"));
-    if (!scoped.isEmpty())
-        return scoped;
-    QString state = QString::fromUtf8(qgetenv("XDG_STATE_HOME"));
-    if (state.isEmpty())
-        state = QStandardPaths::writableLocation(QStandardPaths::GenericStateLocation);
-    if (state.isEmpty())
-        state = QStandardPaths::writableLocation(QStandardPaths::TempLocation);
-    return QDir(state).filePath(QStringLiteral("omairc/cli-cursors"));
-}
-
-QString OmaircCliCursorStore::pathFor(const QString &networkId,
-                                      const QString &target) const
-{
-    const QString root = defaultRoot();
-    if (target.isEmpty())
-        return QDir(root).filePath(safeSegment(networkId) + QLatin1String(".json"));
-    return QDir(QDir(root).filePath(safeSegment(networkId)))
-        .filePath(safeSegment(target) + QLatin1String(".json"));
-}
-
-std::optional<OmaircCliCursor> OmaircCliCursorStore::load(
-    const QString &networkId, const QString &target) const
-{
-    QFile file(pathFor(networkId, target));
+    QFile file(path);
     if (!file.open(QIODevice::ReadOnly))
         return std::nullopt;
     QJsonParseError error;
@@ -110,11 +76,150 @@ std::optional<OmaircCliCursor> OmaircCliCursorStore::load(
     return cursor;
 }
 
+void migrateNetworkCursorRoot(const QString &root, const QString &networkId)
+{
+    QDir rootDir(root);
+    const QString legacyNetworkDir = legacyStorageSegment(networkId);
+    const QString newNetworkDir = omaircStorageSegment(networkId);
+    if (legacyNetworkDir != newNetworkDir && rootDir.exists(legacyNetworkDir)
+        && !rootDir.exists(newNetworkDir)) {
+        rootDir.rename(legacyNetworkDir, newNetworkDir);
+    }
+
+    const QString legacyRootCursor =
+        QDir(root).filePath(legacyStorageSegment(networkId) + kJsonExtension);
+    const QString newRootCursor = QDir(root).filePath(
+        omaircStorageSegment(networkId, kJsonExtension) + kJsonExtension);
+    if (QFile::exists(legacyRootCursor) && !QFile::exists(newRootCursor))
+        QFile::rename(legacyRootCursor, newRootCursor);
+}
+
+void collapseEquivalentCursorFiles(const QString &networkDirPath,
+                                   const QString &target,
+                                   const IrcCaseMapping &mapping,
+                                   const QString &canonicalPath)
+{
+    QDir networkDir(networkDirPath);
+    if (!networkDir.exists())
+        return;
+
+    struct Candidate
+    {
+        QString path;
+        OmaircCliCursor cursor;
+    };
+
+    QVector<Candidate> matches;
+    const QStringList files =
+        networkDir.entryList({QStringLiteral("*.json")}, QDir::Files);
+    for (const QString &fileName : files) {
+        QString stem = fileName;
+        if (!stem.endsWith(kJsonExtension))
+            continue;
+        stem.chop(kJsonExtension.size());
+        const QString decoded = decodeLegacySegment(stem);
+        if (!mapping.equals(decoded.toUtf8().constData(), target.toUtf8().constData()))
+            continue;
+        const QString path = networkDir.filePath(fileName);
+        const std::optional<OmaircCliCursor> cursor = readCursorFile(path);
+        if (!cursor)
+            continue;
+        matches.push_back({path, *cursor});
+    }
+
+    if (matches.isEmpty())
+        return;
+
+    auto newest = matches.begin();
+    for (auto it = matches.begin() + 1; it != matches.end(); ++it) {
+        if (it->cursor.timestamp > newest->cursor.timestamp)
+            newest = it;
+    }
+
+    for (const Candidate &candidate : matches) {
+        if (candidate.path == newest->path)
+            continue;
+        QFile::remove(candidate.path);
+    }
+
+    if (newest->path != canonicalPath && !QFile::exists(canonicalPath)) {
+        prepareTree(canonicalPath);
+        QFile::rename(newest->path, canonicalPath);
+    }
+}
+
+void migrateCursorTarget(const QString &root,
+                       const QString &networkId,
+                       const QString &target,
+                       const IrcCaseMapping &mapping,
+                       const QString &canonicalPath)
+{
+    migrateNetworkCursorRoot(root, networkId);
+
+    const QString legacyNetworkDir = legacyStorageSegment(networkId);
+    const QString newNetworkDir = omaircStorageSegment(networkId);
+    const QString legacyPath = QDir(QDir(root).filePath(legacyNetworkDir))
+        .filePath(legacyStorageSegment(target) + kJsonExtension);
+    if (QFile::exists(legacyPath) && !QFile::exists(canonicalPath)) {
+        prepareTree(canonicalPath);
+        QFile::rename(legacyPath, canonicalPath);
+    }
+
+    QString networkDirPath = QDir(root).filePath(newNetworkDir);
+    if (!QDir(networkDirPath).exists())
+        networkDirPath = QDir(root).filePath(legacyNetworkDir);
+    collapseEquivalentCursorFiles(networkDirPath, target, mapping, canonicalPath);
+}
+
+}
+
+QString OmaircCliCursorStore::defaultRoot()
+{
+    const QString scoped = QString::fromUtf8(qgetenv("OMAIRC_CURSOR_ROOT"));
+    if (!scoped.isEmpty())
+        return scoped;
+    QString state = QString::fromUtf8(qgetenv("XDG_STATE_HOME"));
+    if (state.isEmpty())
+        state = QStandardPaths::writableLocation(QStandardPaths::GenericStateLocation);
+    if (state.isEmpty())
+        state = QStandardPaths::writableLocation(QStandardPaths::TempLocation);
+    return QDir(state).filePath(QStringLiteral("omairc/cli-cursors"));
+}
+
+QString OmaircCliCursorStore::pathFor(const QString &networkId,
+                                      const QString &target,
+                                      const IrcCaseMapping &mapping) const
+{
+    const QString root = defaultRoot();
+    QString canonicalPath;
+    if (target.isEmpty()) {
+        canonicalPath = QDir(root).filePath(
+            omaircStorageSegment(networkId, kJsonExtension) + kJsonExtension);
+        migrateNetworkCursorRoot(root, networkId);
+        return canonicalPath;
+    }
+
+    canonicalPath =
+        QDir(QDir(root).filePath(omaircStorageSegment(networkId)))
+            .filePath(omaircTargetSegment(target, mapping) + kJsonExtension);
+    migrateCursorTarget(root, networkId, target, mapping, canonicalPath);
+    return canonicalPath;
+}
+
+std::optional<OmaircCliCursor> OmaircCliCursorStore::load(
+    const QString &networkId,
+    const QString &target,
+    const IrcCaseMapping &mapping) const
+{
+    return readCursorFile(pathFor(networkId, target, mapping));
+}
+
 bool OmaircCliCursorStore::save(const QString &networkId,
                                 const QString &target,
+                                const IrcCaseMapping &mapping,
                                 const OmaircCliCursor &cursor) const
 {
-    const QString path = pathFor(networkId, target);
+    const QString path = pathFor(networkId, target, mapping);
     if (!prepareTree(path))
         return false;
     QJsonObject object;

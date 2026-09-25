@@ -19,6 +19,7 @@
 #include "fakeirctransport.h"
 #include "testsettings.h"
 #include "irccapability.h"
+#include "irccasemapping.h"
 #include "ircconversationlog.h"
 #include "irccontroller.h"
 #include "ircopendirect.h"
@@ -5982,10 +5983,11 @@ void ControllerTest::transcriptPersistsAndReloadsMuted()
     const QString root = dir.filePath(QStringLiteral("omairc/logs"));
     ScopedTranscriptRoot scope(root);
     IrcConversationLog paths(root);
+    const IrcCaseMapping mapping;
     const QString channelPath =
-        paths.pathFor(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+        paths.pathFor(QStringLiteral("libera"), QStringLiteral("#omarchy"), mapping);
     const QString directPath =
-        paths.pathFor(QStringLiteral("libera"), QStringLiteral("alice"));
+        paths.pathFor(QStringLiteral("libera"), QStringLiteral("alice"), mapping);
 
     {
         IrcController controller;
@@ -6185,8 +6187,9 @@ void ControllerTest::transcriptClearLeavesFile()
     const QString root = dir.filePath(QStringLiteral("omairc/logs"));
     ScopedTranscriptRoot scope(root);
     IrcConversationLog paths(root);
+    const IrcCaseMapping mapping;
     const QString channelPath =
-        paths.pathFor(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+        paths.pathFor(QStringLiteral("libera"), QStringLiteral("#omarchy"), mapping);
 
     IrcController controller;
     auto *transport = new FakeIrcTransport;
@@ -7349,8 +7352,9 @@ void ControllerTest::playbackReplaySkipsLinesAlreadyInTheTranscript()
     const QString root = dir.filePath(QStringLiteral("omairc/logs"));
     ScopedTranscriptRoot scope(root);
     IrcConversationLog paths(root);
+    const IrcCaseMapping mapping;
     const QString labPath =
-        paths.pathFor(QStringLiteral("libera"), QStringLiteral("#lab"));
+        paths.pathFor(QStringLiteral("libera"), QStringLiteral("#lab"), mapping);
 
     {
         IrcController controller;

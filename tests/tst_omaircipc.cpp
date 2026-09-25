@@ -252,6 +252,7 @@ private slots:
     void handlerUnreadDoesNotChmodCursorRootParent();
     void handlerReadReportsTruncated();
     void handlerUnreadKeepsSameMillisecondLines();
+    void handlerUnreadSharesCursorAcrossTargetCasing();
     void uncertainResponseShape();
     void cliSendUncertainWhenReplyDropped();
     void cliSendNotUncertainWhenClientMissing();
@@ -1295,6 +1296,36 @@ void OmaircIpcTest::handlerUnreadKeepsSameMillisecondLines()
     QCOMPARE(OmaircIpc::responseMessages(legacyUnread).last().toObject()
                  .value(QStringLiteral("message")).toString(),
              QStringLiteral("legacy"));
+}
+
+void OmaircIpcTest::handlerUnreadSharesCursorAcrossTargetCasing()
+{
+    QTemporaryDir cursorDir;
+    QVERIFY(cursorDir.isValid());
+    const ScopedCursorRoot cursorRoot(cursorDir.path());
+
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    IrcSession *session =
+        controller.addSession(testConfig(QStringLiteral("net-1")), transport);
+    QVERIFY(session);
+    registerSession(session, transport);
+    seedChannelAndDirect(transport);
+
+    OmaircIpcHandler handler(&controller);
+    const QByteArray firstUnread = handler.handleLine(
+        QByteArrayLiteral("{\"cmd\":\"read\",\"target\":\"#Omarchy\",\"unread\":true}"));
+    QVERIFY(OmaircIpc::responseOk(firstUnread));
+    QVERIFY(OmaircIpc::responseMessages(firstUnread).size() >= 1);
+
+    const QString cursorPath =
+        QDir(cursorDir.path()).filePath(QStringLiteral("net-1/#omarchy.json"));
+    QVERIFY(QFileInfo::exists(cursorPath));
+
+    const QByteArray secondUnread = handler.handleLine(
+        QByteArrayLiteral("{\"cmd\":\"read\",\"target\":\"#omarchy\",\"unread\":true}"));
+    QVERIFY(OmaircIpc::responseOk(secondUnread));
+    QCOMPARE(OmaircIpc::responseMessages(secondUnread).size(), 0);
 }
 
 int runOmaircIpcTests(int argc, char **argv)
