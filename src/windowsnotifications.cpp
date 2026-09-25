@@ -1,0 +1,433 @@
+#include "windowsnotifications.h"
+
+#include <QCoreApplication>
+#include <QCryptographicHash>
+#include <QDir>
+#include <QFileInfo>
+#include <QMetaObject>
+#include <QStandardPaths>
+#include <QUrl>
+#include <QUrlQuery>
+
+#ifndef NOMINMAX
+#  define NOMINMAX
+#endif
+#ifndef WIN32_LEAN_AND_MEAN
+#  define WIN32_LEAN_AND_MEAN
+#endif
+
+#include <windows.h>
+
+#include <notificationactivationcallback.h>
+#include <propkey.h>
+#include <propsys.h>
+#include <shobjidl.h>
+
+#include <roapi.h>
+#include <windows.data.xml.dom.h>
+#include <windows.foundation.h>
+#include <windows.ui.notifications.h>
+
+#include <wrl/client.h>
+#include <wrl/implements.h>
+#include <wrl/wrappers/corewrappers.h>
+
+#include <atomic>
+#include <mutex>
+#include <thread>
+#include <vector>
+
+namespace {
+
+// The single AppUserModelID and toast activator CLSID for the app. Both are
+// stamped on the Start Menu shortcut, and the CLSID is written to
+// HKCU\SOFTWARE\Classes\CLSID\{...}\LocalServer32 so Action Center can start
+// the window from a lingering toast.
+constexpr wchar_t kAumid[] = L"FrediMachado.Omairc";
+constexpr wchar_t kActivatorClsidText[] = L"{DBE38477-5F87-42A1-AFA1-11FA12F2E5E5}";
+const CLSID kActivatorClassId = {0xDBE38477, 0x5F87, 0x42A1,
+                                 {0xAF, 0xA1, 0x11, 0xFA, 0x12, 0xF2, 0xE5, 0xE5}};
+
+constexpr UINT kMessageShowToast = WM_APP + 1;
+constexpr UINT kMessageQuit = WM_APP + 2;
+
+using namespace ABI::Windows::Data::Xml::Dom;
+using namespace ABI::Windows::UI::Notifications;
+using namespace Microsoft::WRL;
+using namespace Microsoft::WRL::Wrappers;
+
+// Set while an instance is alive so the COM activator can reach it from the
+// dedicated thread.
+std::atomic<WindowsNotifications *> g_notifications{nullptr};
+
+bool notificationsAvailable()
+{
+    if (!qEnvironmentVariableIsEmpty("OMAIRC_SKIP_NOTIFICATIONS"))
+        return false;
+    if (qgetenv("QT_QPA_PLATFORM") == "offscreen")
+        return false;
+    // A headless CLI invocation returns from main() before Backend exists, so
+    // this is the whole availability policy.
+    return true;
+}
+
+std::wstring toWide(const QString &value)
+{
+    return value.toStdWString();
+}
+
+// Windows caps a toast tag at 16 characters. Hash the conversation so a
+// conversation replaces its previous toast, matching the Linux replacesId and
+// the macOS notification identifier.
+QString conversationTag(const QString &networkId, const QString &target)
+{
+    const QByteArray digest = QCryptographicHash::hash(
+        (networkId + QLatin1Char('\n') + target).toUtf8(),
+        QCryptographicHash::Sha1);
+    return QString::fromLatin1(digest.toHex().left(16));
+}
+
+QString escapeXml(const QString &value)
+{
+    QString escaped = value;
+    escaped.replace(QLatin1Char('&'), QLatin1String("&amp;"));
+    escaped.replace(QLatin1Char('<'), QLatin1String("&lt;"));
+    escaped.replace(QLatin1Char('>'), QLatin1String("&gt;"));
+    escaped.replace(QLatin1Char('"'), QLatin1String("&quot;"));
+    escaped.replace(QLatin1Char('\''), QLatin1String("&apos;"));
+    escaped.replace(QLatin1Char('\n'), QLatin1String("&#10;"));
+    escaped.replace(QLatin1Char('\r'), QLatin1String("&#13;"));
+    return escaped;
+}
+
+QString buildLaunchArgs(const QString &networkId, const QString &target,
+                        const QString &msgid)
+{
+    QUrl url;
+    url.setScheme(QStringLiteral("omairc"));
+    url.setHost(QStringLiteral("notify"));
+    QUrlQuery query;
+    query.addQueryItem(QStringLiteral("network"), networkId);
+    query.addQueryItem(QStringLiteral("target"), target);
+    query.addQueryItem(QStringLiteral("msgid"), msgid);
+    url.setQuery(query);
+    return url.toString(QUrl::FullyEncoded);
+}
+
+void parseLaunchArgs(const QString &launch, QString *networkId, QString *target,
+                     QString *msgid)
+{
+    const QUrl url = QUrl::fromEncoded(launch.toUtf8());
+    const QUrlQuery query(url.query());
+    *networkId = query.queryItemValue(QStringLiteral("network"), QUrl::FullyDecoded);
+    *target = query.queryItemValue(QStringLiteral("target"), QUrl::FullyDecoded);
+    *msgid = query.queryItemValue(QStringLiteral("msgid"), QUrl::FullyDecoded);
+}
+
+QString buildToastXml(const QString &summary, const QString &body,
+                      const QString &launch)
+{
+    return QStringLiteral(
+               "<toast activationType=\"foreground\" launch=\"%1\">"
+               "<visual><binding template=\"ToastGeneric\">"
+               "<text>%2</text><text>%3</text>"
+               "</binding></visual></toast>")
+        .arg(escapeXml(launch), escapeXml(summary), escapeXml(body));
+}
+
+// Writes the Start Menu shortcut that carries the AUMID and the toast
+// activator CLSID. Without it CreateToastNotifierWithId fails and Action
+// Center cannot route a click back to this process.
+HRESULT installShortcut(const QString &linkPath, const QString &exePath)
+{
+    ComPtr<IShellLinkW> shellLink;
+    HRESULT hr = CoCreateInstance(CLSID_ShellLink, nullptr, CLSCTX_INPROC_SERVER,
+                                  IID_PPV_ARGS(&shellLink));
+    if (FAILED(hr))
+        return hr;
+
+    const std::wstring exe = toWide(QDir::toNativeSeparators(exePath));
+    hr = shellLink->SetPath(exe.c_str());
+    if (FAILED(hr))
+        return hr;
+    const std::wstring workingDir =
+        toWide(QDir::toNativeSeparators(QFileInfo(exePath).absolutePath()));
+    shellLink->SetWorkingDirectory(workingDir.c_str());
+    shellLink->SetIconLocation(exe.c_str(), 0);
+
+    ComPtr<IPropertyStore> store;
+    hr = shellLink.As(&store);
+    if (FAILED(hr))
+        return hr;
+
+    const std::wstring aumid = kAumid;
+    PROPVARIANT id = {};
+    id.vt = VT_LPWSTR;
+    id.pwszVal = const_cast<wchar_t *>(aumid.c_str());
+    hr = store->SetValue(PKEY_AppUserModel_ID, id);
+    if (FAILED(hr))
+        return hr;
+
+    PROPVARIANT activator = {};
+    activator.vt = VT_CLSID;
+    activator.puuid = const_cast<CLSID *>(&kActivatorClassId);
+    hr = store->SetValue(PKEY_AppUserModel_ToastActivatorCLSID, activator);
+    if (FAILED(hr))
+        return hr;
+
+    hr = store->Commit();
+    if (FAILED(hr))
+        return hr;
+
+    ComPtr<IPersistFile> persist;
+    hr = shellLink.As(&persist);
+    if (FAILED(hr))
+        return hr;
+    return persist->Save(toWide(QDir::toNativeSeparators(linkPath)).c_str(), TRUE);
+}
+
+// Registers the local COM server so the shell can relaunch this executable to
+// deliver a toast activation after the window has closed.
+void registerComServer(const QString &exePath)
+{
+    const QString subKey =
+        QStringLiteral("SOFTWARE\\Classes\\CLSID\\%1\\LocalServer32")
+            .arg(QString::fromWCharArray(kActivatorClsidText));
+    const QString command =
+        QLatin1Char('"') + QDir::toNativeSeparators(exePath) + QLatin1Char('"');
+    const std::wstring subKeyWide = subKey.toStdWString();
+    const std::wstring commandWide = command.toStdWString();
+    RegSetKeyValueW(HKEY_CURRENT_USER, subKeyWide.c_str(), nullptr, REG_SZ,
+                    commandWide.c_str(),
+                    static_cast<DWORD>((commandWide.size() + 1) * sizeof(wchar_t)));
+}
+
+void ensureNotificationRegistration()
+{
+    const QString programs =
+        QStandardPaths::writableLocation(QStandardPaths::ApplicationsLocation);
+    if (programs.isEmpty())
+        return;
+    QDir().mkpath(programs);
+    const QString exePath = QCoreApplication::applicationFilePath();
+    installShortcut(programs + QStringLiteral("/Omairc.lnk"), exePath);
+    registerComServer(exePath);
+}
+
+// The COM activator Windows invokes when the user clicks a toast, whether or
+// not the window is already running.
+class NotificationActivator
+    : public RuntimeClass<RuntimeClassFlags<ClassicCom>,
+                          INotificationActivationCallback> {
+public:
+    HRESULT STDMETHODCALLTYPE Activate(LPCWSTR /*appUserModelId*/,
+                                       LPCWSTR invokedArgs,
+                                       const NOTIFICATION_USER_INPUT_DATA * /*data*/,
+                                       ULONG /*count*/) override
+    {
+        WindowsNotifications *owner = g_notifications.load();
+        if (!owner || !invokedArgs)
+            return S_OK;
+        QString networkId;
+        QString target;
+        QString msgid;
+        parseLaunchArgs(QString::fromWCharArray(invokedArgs), &networkId, &target,
+                        &msgid);
+        QMetaObject::invokeMethod(
+            owner,
+            [owner, networkId, target, msgid]() {
+                emit owner->activated(networkId, target, msgid);
+            },
+            Qt::QueuedConnection);
+        return S_OK;
+    }
+};
+
+class ActivatorFactory
+    : public RuntimeClass<RuntimeClassFlags<ClassicCom>, IClassFactory> {
+public:
+    HRESULT STDMETHODCALLTYPE CreateInstance(IUnknown *outer, REFIID riid,
+                                             void **ppv) override
+    {
+        if (ppv)
+            *ppv = nullptr;
+        if (outer)
+            return CLASS_E_NOAGGREGATION;
+        ComPtr<NotificationActivator> activator = Make<NotificationActivator>();
+        if (!activator)
+            return E_OUTOFMEMORY;
+        return activator->QueryInterface(riid, ppv);
+    }
+
+    HRESULT STDMETHODCALLTYPE LockServer(BOOL lock) override
+    {
+        if (lock)
+            CoAddRefServerProcess();
+        else
+            CoReleaseServerProcess();
+        return S_OK;
+    }
+};
+
+void showToast(const QString &summary, const QString &body,
+               const QString &networkId, const QString &target,
+               const QString &msgid)
+{
+    ComPtr<IToastNotificationManagerStatics> manager;
+    if (FAILED(Windows::Foundation::GetActivationFactory(
+            HStringReference(RuntimeClass_Windows_UI_Notifications_ToastNotificationManager)
+                .Get(),
+            &manager)))
+        return;
+
+    ComPtr<IToastNotifier> notifier;
+    if (FAILED(manager->CreateToastNotifierWithId(HStringReference(kAumid).Get(),
+                                                  &notifier)))
+        return;
+
+    ComPtr<IXmlDocument> document;
+    if (FAILED(Windows::Foundation::ActivateInstance(
+            HStringReference(RuntimeClass_Windows_Data_Xml_Dom_XmlDocument).Get(),
+            &document)))
+        return;
+    ComPtr<IXmlDocumentIO> documentIo;
+    if (FAILED(document.As(&documentIo)))
+        return;
+
+    const std::wstring xml =
+        buildToastXml(summary, body, buildLaunchArgs(networkId, target, msgid))
+            .toStdWString();
+    if (FAILED(documentIo->LoadXml(HStringReference(xml.c_str()).Get())))
+        return;
+
+    ComPtr<IToastNotificationFactory> factory;
+    if (FAILED(Windows::Foundation::GetActivationFactory(
+            HStringReference(RuntimeClass_Windows_UI_Notifications_ToastNotification)
+                .Get(),
+            &factory)))
+        return;
+
+    ComPtr<IToastNotification> notification;
+    if (FAILED(factory->CreateToastNotification(document.Get(), &notification)))
+        return;
+
+    // put_Tag lives on IToastNotification2, not IToastNotification.
+    const std::wstring tag = conversationTag(networkId, target).toStdWString();
+    ComPtr<IToastNotification2> notification2;
+    if (SUCCEEDED(notification.As(&notification2)))
+        notification2->put_Tag(HStringReference(tag.c_str()).Get());
+    notifier->Show(notification.Get());
+}
+
+} // namespace
+
+struct WindowsNotificationsImpl {
+    struct Toast {
+        QString summary;
+        QString body;
+        QString networkId;
+        QString target;
+        QString msgid;
+    };
+
+    std::thread thread;
+    DWORD threadId = 0;
+    HANDLE ready = nullptr;
+    DWORD cookie = 0;
+    bool comServerAddRef = false;
+    std::mutex mutex;
+    std::vector<Toast> queue;
+};
+
+namespace {
+
+void runNotificationsThread(WindowsNotificationsImpl *impl)
+{
+    const HRESULT roHr = RoInitialize(RO_INIT_MULTITHREADED);
+    impl->threadId = GetCurrentThreadId();
+
+    // Create the thread's message queue before notify() can post to it.
+    MSG msg;
+    PeekMessageW(&msg, nullptr, WM_USER, WM_USER, PM_NOREMOVE);
+
+    if (SUCCEEDED(roHr)) {
+        ensureNotificationRegistration();
+        ComPtr<ActivatorFactory> factory = Make<ActivatorFactory>();
+        if (factory) {
+            if (SUCCEEDED(CoRegisterClassObject(kActivatorClassId, factory.Get(),
+                                                CLSCTX_LOCAL_SERVER,
+                                                REGCLS_MULTIPLEUSE, &impl->cookie))) {
+                CoAddRefServerProcess();
+                impl->comServerAddRef = true;
+            }
+        }
+    }
+    if (impl->ready)
+        SetEvent(impl->ready);
+
+    while (GetMessageW(&msg, nullptr, 0, 0) > 0) {
+        if (msg.message == kMessageQuit)
+            break;
+        if (msg.message != kMessageShowToast)
+            continue;
+        std::vector<WindowsNotificationsImpl::Toast> pending;
+        {
+            std::lock_guard<std::mutex> lock(impl->mutex);
+            pending.swap(impl->queue);
+        }
+        for (const auto &toast : pending)
+            showToast(toast.summary, toast.body, toast.networkId, toast.target,
+                      toast.msgid);
+    }
+
+    if (impl->cookie)
+        CoRevokeClassObject(impl->cookie);
+    if (impl->comServerAddRef)
+        CoReleaseServerProcess();
+    if (SUCCEEDED(roHr))
+        RoUninitialize();
+}
+
+} // namespace
+
+WindowsNotifications::WindowsNotifications(QObject *parent) : QObject(parent)
+{
+    if (!notificationsAvailable())
+        return;
+    m_impl = new WindowsNotificationsImpl;
+    m_impl->ready = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+    g_notifications.store(this);
+    m_impl->thread = std::thread(runNotificationsThread, m_impl);
+    if (m_impl->ready)
+        WaitForSingleObject(m_impl->ready, 10000);
+    m_enabled = true;
+}
+
+WindowsNotifications::~WindowsNotifications()
+{
+    if (!m_impl)
+        return;
+    if (m_impl->threadId != 0)
+        PostThreadMessageW(m_impl->threadId, kMessageQuit, 0, 0);
+    if (m_impl->thread.joinable())
+        m_impl->thread.join();
+    if (m_impl->ready)
+        CloseHandle(m_impl->ready);
+    g_notifications.store(nullptr);
+    delete m_impl;
+    m_impl = nullptr;
+}
+
+void WindowsNotifications::notify(const QString &summary, const QString &body,
+                                  const QString &networkId, const QString &target,
+                                  const QString &msgid)
+{
+    if (!m_enabled || !m_impl)
+        return;
+    {
+        std::lock_guard<std::mutex> lock(m_impl->mutex);
+        m_impl->queue.push_back({summary, body, networkId, target, msgid});
+    }
+    if (m_impl->threadId != 0)
+        PostThreadMessageW(m_impl->threadId, kMessageShowToast, 0, 0);
+}
