@@ -11,6 +11,7 @@
 #include "ircinbox.h"
 #include "ircinboxmodel.h"
 #include "ircmonitor.h"
+#include "ircmonitorcoordinator.h"
 #include "ircmute.h"
 #include "ircopendirect.h"
 #include "ircplaybackcoordinator.h"
@@ -291,19 +292,6 @@ private:
                                    IrcComposerSurface surface);
     IrcCommandOutcome dispatchIgnore(const IrcCommand& command,
                                      IrcComposerSurface surface);
-    IrcCommandOutcome dispatchMonitor(const IrcCommand& command,
-                                      IrcComposerSurface surface);
-    void subscribeMonitors(const QString& networkId);
-    void forgetMonitorState(const QString& networkId);
-    QString monitorDisplayNick(const QString& networkId,
-                               const QString& nick) const;
-    bool monitorNotifyMuted(const QString& networkId,
-                            const QString& nick) const;
-    void handleMonitorPresence(const QString& networkId,
-                               const IrcMessage& message,
-                               bool online);
-    void handleMonitorListFull(const QString& networkId,
-                               const IrcMessage& message);
     IrcCommandOutcome dispatchMute(const IrcCommand& command,
                                      IrcComposerSurface surface);
     void hydrateMutes(const QString& networkId);
@@ -404,6 +392,7 @@ private:
     IrcPlaybackTimeStore m_playbackTimes;
     IrcPlaybackCoordinator m_playback;
     IrcReplyRouter m_replies;
+    IrcMonitorCoordinator m_monitorCoord;
     IrcHighlightStore m_highlights;
     IrcInbox m_inbox;
     IrcInboxModel m_inboxModel;
@@ -418,9 +407,6 @@ private:
     QHash<QString, IrcCapabilitySet> m_capabilities;
     QSet<QString> m_unawaySent;
     QSet<QString> m_openDirectsMotdSeen;
-    QSet<QString> m_monitorSubscribed;
-    enum class MonitorPresence { Unknown, Online, Offline };
-    QHash<QString, QHash<QString, MonitorPresence>> m_monitorPresence;
     std::optional<IrcConversationKey> m_selected;
     QString m_selectedTarget;
     QStringList m_networkOrder;

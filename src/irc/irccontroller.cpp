@@ -92,47 +92,6 @@ bool muteTargetIsUsable(const QString& target, const IrcServerFeatures& features
     return ignoreNickIsUsable(target, features);
 }
 
-QString foldedNick(const IrcCaseMapping& mapping, const QString& nick)
-{
-    const std::string folded = mapping.normalize(utf8(nick));
-    return QString::fromUtf8(folded.data(), qsizetype(folded.size()));
-}
-
-QString monitorTargetNick(const QString& target)
-{
-    const int bang = target.indexOf(QLatin1Char('!'));
-    const QString nick = bang < 0 ? target : target.left(bang);
-    return nick.trimmed();
-}
-
-QStringList monitorTargetNicks(const IrcMessage& message)
-{
-    if (message.parameters.size() < 2)
-        return {};
-    const QString trailing = parameter(message, message.parameters.size() - 1);
-    QStringList nicks;
-    for (const QString& target :
-         trailing.split(QLatin1Char(','), Qt::SkipEmptyParts)) {
-        const QString nick = monitorTargetNick(target);
-        if (!nick.isEmpty())
-            nicks.append(nick);
-    }
-    return nicks;
-}
-
-QString monitorListFullText(const QString& limit, const QString& targets)
-{
-    QString text = QStringLiteral("Monitor list is full");
-    if (!limit.isEmpty())
-        text += QStringLiteral(" (%1)").arg(limit);
-    if (!targets.isEmpty()) {
-        QString shown = targets;
-        shown.replace(QLatin1Char(','), QStringLiteral(", "));
-        text += QStringLiteral(": %1").arg(shown);
-    }
-    return text + QLatin1Char('.');
-}
-
 QString reopenDirectMessagesKey()
 {
     return QStringLiteral("reopenDirectMessages");
@@ -300,6 +259,30 @@ IrcController::IrcController(QObject *parent)
           [this]() { return selectedIsCloseableDirect(); },
           [this]() { return !m_sessions.networkIds().isEmpty(); },
       })
+    , m_monitorCoord(m_reducer, m_monitors, m_mutes, IrcMonitorCoordinator::Host{
+          [this](const IrcStatusEntry& entry) { m_console.record(entry); },
+          [this](const QString& networkId, const QString& display,
+                 const QString& body, bool newlyOnline) {
+              emit monitorArrived(display, body, networkId, display);
+              if (newlyOnline) {
+                  appendInbox({
+                      IrcInboxKind::MonitorOnline,
+                      QDateTime::currentDateTimeUtc(),
+                      networkId,
+                      display,
+                      display,
+                      body,
+                      IrcMsgId{},
+                  });
+              }
+          },
+          [this](IrcComposerSurface surface) { return queryNetworkId(surface); },
+          [this](IrcComposerSurface surface) { return sessionFor(surface); },
+          [this](const QString& networkId) {
+              return m_sessions.findSession(networkId);
+          },
+          [this]() -> std::optional<IrcConversationKey> { return m_selected; },
+      })
 {
     connect(&m_channelLists, &IrcChannelListRequest::rowChanged, this,
             [this](const QString& networkId, const IrcChannelListRow& row, bool replaced) {
@@ -394,7 +377,7 @@ IrcSession *IrcController::addSession(const IrcSessionConfig& config,
         m_playback.onRegistered(networkId, session->autojoinChannels());
         m_currentNicks[networkId] = session->nick();
         m_reducer.setServerFeatures(networkId, IrcServerFeatures{});
-        forgetMonitorState(networkId);
+        m_monitorCoord.forgetPresence(networkId);
         emit serverFeaturesChanged();
         apply(IrcWelcomeEvent{networkId, session->nick()});
         if (m_autoawayTripped && m_autoaway.enabled)
@@ -447,7 +430,7 @@ bool IrcController::discardSession(const QString &networkId)
     m_autoAwayNetworks.remove(networkId);
     m_manualAwayNetworks.remove(networkId);
     m_openDirectsMotdSeen.remove(networkId);
-    forgetMonitorState(networkId);
+    m_monitorCoord.forgetPresence(networkId);
     m_currentNicks.remove(networkId);
     m_capabilities.remove(networkId);
     m_appliedProfileAvatars.remove(networkId);
@@ -485,7 +468,7 @@ void IrcController::forgetNetworkState(const QString &networkId)
     m_autoAwayNetworks.remove(networkId);
     m_manualAwayNetworks.remove(networkId);
     m_openDirectsMotdSeen.remove(networkId);
-    forgetMonitorState(networkId);
+    m_monitorCoord.forgetPresence(networkId);
     m_currentNicks.remove(networkId);
     m_capabilities.remove(networkId);
     m_appliedProfileAvatars.remove(networkId);
@@ -1555,7 +1538,7 @@ IrcCommandOutcome IrcController::dispatch(const IrcCommand& command,
     if (command.verb == IrcCommand::Verb::Monitor
         || command.verb == IrcCommand::Verb::Unmonitor
         || command.verb == IrcCommand::Verb::Monitored) {
-        return dispatchMonitor(command, surface);
+        return m_monitorCoord.dispatchMonitor(command, surface);
     }
 
     if (command.verb == IrcCommand::Verb::Mute
@@ -1814,213 +1797,6 @@ IrcCommandOutcome IrcController::dispatchIgnore(const IrcCommand& command,
             const bool removed = m_ignores.remove(networkId, nick, mapping);
             text = removed ? QStringLiteral("No longer ignoring %1").arg(nick)
                            : QStringLiteral("Not ignoring %1").arg(nick);
-        }
-    }
-    m_console.record(IrcStatusEntry::outcome(networkId, text));
-    return IrcCommandOutcome::Sent;
-}
-
-QString IrcController::monitorDisplayNick(const QString& networkId,
-                                          const QString& nick) const
-{
-    const IrcCaseMapping& mapping =
-        m_reducer.serverFeatures(networkId).caseMapping();
-    for (const QString& stored : m_monitors.nicks(networkId)) {
-        if (mapping.equals(utf8(stored), utf8(nick)))
-            return stored;
-    }
-    return nick;
-}
-
-bool IrcController::monitorNotifyMuted(const QString& networkId,
-                                       const QString& nick) const
-{
-    const IrcCaseMapping& mapping =
-        m_reducer.serverFeatures(networkId).caseMapping();
-    if (m_mutes.contains(networkId, nick, mapping))
-        return true;
-    const IrcConversationState *conversation =
-        m_reducer.find(m_reducer.conversationKey(networkId, nick));
-    return conversation && conversation->muted;
-}
-
-void IrcController::forgetMonitorState(const QString& networkId)
-{
-    m_monitorSubscribed.remove(networkId);
-    m_monitorPresence.remove(networkId);
-}
-
-void IrcController::subscribeMonitors(const QString& networkId)
-{
-    if (m_monitorSubscribed.contains(networkId))
-        return;
-    const IrcServerFeatures& features = m_reducer.serverFeatures(networkId);
-    if (!features.monitorAdvertised())
-        return;
-    IrcSession *session = m_sessions.findSession(networkId);
-    if (!session || session->state() != IrcSession::State::Registered)
-        return;
-
-    m_monitorSubscribed.insert(networkId);
-    m_monitorPresence.remove(networkId);
-
-    QStringList nicks = m_monitors.listed(networkId, features.caseMapping());
-    if (const std::optional<std::size_t> limit = features.monitorLimit()) {
-        if (nicks.size() > int(*limit))
-            nicks = nicks.mid(0, int(*limit));
-    }
-    if (nicks.isEmpty())
-        return;
-    session->sendMonitor(QLatin1Char('+'), nicks);
-}
-
-void IrcController::handleMonitorPresence(const QString& networkId,
-                                          const IrcMessage& message,
-                                          bool online)
-{
-    const IrcServerFeatures& features = m_reducer.serverFeatures(networkId);
-    const IrcCaseMapping& mapping = features.caseMapping();
-    QHash<QString, MonitorPresence>& states = m_monitorPresence[networkId];
-    for (const QString& nick : monitorTargetNicks(message)) {
-        if (!m_monitors.contains(networkId, nick, mapping))
-            continue;
-        const QString key = foldedNick(mapping, nick);
-        const MonitorPresence previous =
-            states.value(key, MonitorPresence::Unknown);
-        const MonitorPresence next =
-            online ? MonitorPresence::Online : MonitorPresence::Offline;
-        states.insert(key, next);
-        if (previous == MonitorPresence::Unknown || previous == next)
-            continue;
-        const QString display = monitorDisplayNick(networkId, nick);
-        const QString body = online ? QStringLiteral("is online")
-                                    : QStringLiteral("is offline");
-        m_console.record(IrcStatusEntry::outcome(
-            networkId, QStringLiteral("%1 %2").arg(display, body)));
-        if (monitorNotifyMuted(networkId, nick))
-            continue;
-        emit monitorArrived(display, body, networkId, display);
-        if (online && previous != MonitorPresence::Online) {
-            appendInbox({
-                IrcInboxKind::MonitorOnline,
-                QDateTime::currentDateTimeUtc(),
-                networkId,
-                display,
-                display,
-                body,
-                IrcMsgId{},
-            });
-        }
-    }
-}
-
-void IrcController::handleMonitorListFull(const QString& networkId,
-                                          const IrcMessage& message)
-{
-    const QString limit = parameter(message, 1);
-    const QString targets = parameter(message, 2);
-    const IrcCaseMapping& mapping =
-        m_reducer.serverFeatures(networkId).caseMapping();
-    for (const QString& nick :
-         targets.split(QLatin1Char(','), Qt::SkipEmptyParts)) {
-        const QString trimmed = monitorTargetNick(nick);
-        if (trimmed.isEmpty())
-            continue;
-        m_monitors.remove(networkId, trimmed, mapping);
-        m_monitorPresence[networkId].remove(foldedNick(mapping, trimmed));
-    }
-    m_console.record(IrcStatusEntry::outcome(
-        networkId, monitorListFullText(limit, targets)));
-}
-
-IrcCommandOutcome IrcController::dispatchMonitor(const IrcCommand& command,
-                                                 IrcComposerSurface surface)
-{
-    const QString networkId = queryNetworkId(surface);
-    if (networkId.isEmpty()) {
-        if (surface == IrcComposerSurface::Conversation && !m_selected)
-            return IrcCommandOutcome::WrongScope;
-        return IrcCommandOutcome::Refused;
-    }
-    IrcSession *session = sessionFor(surface);
-    if (!session || session->state() != IrcSession::State::Registered)
-        return IrcCommandOutcome::NotConnected;
-
-    const IrcServerFeatures& features = m_reducer.serverFeatures(networkId);
-    const IrcCaseMapping& mapping = features.caseMapping();
-    const bool advertised = features.monitorAdvertised();
-
-    QString text;
-    if (command.verb == IrcCommand::Verb::Monitored) {
-        if (!command.argument.isEmpty())
-            return IrcCommandOutcome::Refused;
-        const QStringList nicks = m_monitors.listed(networkId, mapping);
-        if (nicks.isEmpty()) {
-            text = QStringLiteral("Not watching anyone");
-        } else {
-            QStringList parts;
-            const QHash<QString, MonitorPresence> states =
-                m_monitorPresence.value(networkId);
-            for (const QString& nick : nicks) {
-                const MonitorPresence presence =
-                    states.value(foldedNick(mapping, nick),
-                                 MonitorPresence::Unknown);
-                const char *state = "unknown";
-                if (presence == MonitorPresence::Online)
-                    state = "online";
-                else if (presence == MonitorPresence::Offline)
-                    state = "offline";
-                parts.append(QStringLiteral("%1 (%2)").arg(
-                    nick, QLatin1String(state)));
-            }
-            text = QStringLiteral("Watching: %1").arg(
-                parts.join(QStringLiteral(", ")));
-        }
-        m_console.record(IrcStatusEntry::outcome(networkId, text));
-        return IrcCommandOutcome::Sent;
-    }
-
-    const QString nick = firstToken(command.argument);
-    if (!restAfterFirstToken(command.argument).isEmpty()
-        || !ignoreNickIsUsable(nick, features)) {
-        return IrcCommandOutcome::Refused;
-    }
-
-    if (!advertised) {
-        m_console.record(IrcStatusEntry::outcome(
-            networkId,
-            QStringLiteral("This network does not support MONITOR.")));
-        return IrcCommandOutcome::Sent;
-    }
-
-    if (command.verb == IrcCommand::Verb::Monitor) {
-        if (m_monitors.contains(networkId, nick, mapping)) {
-            text = QStringLiteral("Already watching %1").arg(nick);
-        } else if (const std::optional<std::size_t> limit = features.monitorLimit();
-                   limit
-                   && m_monitors.listed(networkId, mapping).size()
-                       >= int(*limit)) {
-            m_console.record(IrcStatusEntry::outcome(
-                networkId, monitorListFullText(QString::number(qulonglong(*limit)),
-                                               nick)));
-            return IrcCommandOutcome::Sent;
-        } else if (m_monitors.add(networkId, nick, mapping)) {
-            if (!session->sendMonitor(QLatin1Char('+'), {nick})) {
-                m_monitors.remove(networkId, nick, mapping);
-                return IrcCommandOutcome::Refused;
-            }
-            text = QStringLiteral("Watching %1").arg(nick);
-        } else {
-            text = QStringLiteral("Already watching %1").arg(nick);
-        }
-    } else {
-        const bool removed = m_monitors.remove(networkId, nick, mapping);
-        if (removed) {
-            m_monitorPresence[networkId].remove(foldedNick(mapping, nick));
-            session->sendMonitor(QLatin1Char('-'), {nick});
-            text = QStringLiteral("No longer watching %1").arg(nick);
-        } else {
-            text = QStringLiteral("Not watching %1").arg(nick);
         }
     }
     m_console.record(IrcStatusEntry::outcome(networkId, text));
@@ -3289,20 +3065,20 @@ void IrcController::handleMessage(const QString& networkId,
             features.applyTokens(tokens);
             m_reducer.setServerFeatures(networkId, features);
             emit serverFeaturesChanged();
-            subscribeMonitors(networkId);
+            m_monitorCoord.subscribeMonitors(networkId);
         }
         return;
     }
     if (message.command == "730") {
-        handleMonitorPresence(networkId, message, true);
+        m_monitorCoord.handleMonitorPresence(networkId, message, true);
         return;
     }
     if (message.command == "731") {
-        handleMonitorPresence(networkId, message, false);
+        m_monitorCoord.handleMonitorPresence(networkId, message, false);
         return;
     }
     if (message.command == "734") {
-        handleMonitorListFull(networkId, message);
+        m_monitorCoord.handleMonitorListFull(networkId, message);
         return;
     }
     if (message.command == "376" || message.command == "422")
