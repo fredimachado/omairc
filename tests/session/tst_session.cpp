@@ -172,6 +172,40 @@ struct Fixture
     int scheduledReconnects = 0;
 };
 
+struct StatusCollector
+{
+    explicit StatusCollector(IrcSession *session)
+    {
+        QObject::connect(session, &IrcSession::statusEntry, session,
+                         [this](const IrcStatusEntry& entry) {
+            entries.append(entry);
+        });
+    }
+
+    bool hasLabel(const QString& label) const
+    {
+        for (const IrcStatusEntry& entry : entries) {
+            if (entry.label() == label)
+                return true;
+        }
+        return false;
+    }
+
+    bool anyFieldContains(const QString& needle) const
+    {
+        for (const IrcStatusEntry& entry : entries) {
+            if (entry.text().contains(needle)
+                || entry.label().contains(needle)
+                || entry.networkId().contains(needle)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    QList<IrcStatusEntry> entries;
+};
+
 QByteArray decodedSaslPayload(const QByteArray& frame)
 {
     const qsizetype prefix = qsizetype(sizeof("AUTHENTICATE ") - 1);
@@ -322,6 +356,8 @@ private slots:
     void unansweredPresenceRequestStillRegisters();
     void withdrawnCapabilityIsPublished();
     void negotiatesSaslPlain();
+    void saslPlainReassemblesMultiChunkMessages();
+    void saslPlainExactChunkBoundaryRequiresPlus();
     void saslAccountAuthenticatesAsTheBouncerName();
     void emptySaslAccountAuthenticatesAsTheNick();
     void sendsPassWhenSaslIsUnavailable();
@@ -808,6 +844,105 @@ void SessionTest::negotiatesSaslPlain()
         QByteArrayLiteral(":server 903 omairc :SASL successful\r\n"));
     QCOMPARE(fixture.transport->writtenFrames().last(),
              QByteArrayLiteral("CAP END\r\n"));
+}
+
+void SessionTest::saslPlainReassemblesMultiChunkMessages()
+{
+    const QByteArray secret(287, 'x');
+    IrcSessionConfig saslConfig = config();
+    saslConfig.password = QString::fromUtf8(secret);
+    Fixture fixture(saslConfig);
+    QSignalSpy failed(fixture.session, &IrcSession::errorOccurred);
+    StatusCollector status(fixture.session);
+
+    fixture.connectTls();
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :sasl=PLAIN\r\n"
+                          ":server CAP omairc ACK :sasl\r\n"));
+    QCOMPARE(fixture.session->state(), IrcSession::State::Sasl);
+
+    const QByteArray plain = QByteArray("omairc\0omairc\0", 14) + secret;
+    const QByteArray encoded = plain.toBase64();
+    QCOMPARE(plain.size(), 301);
+    QCOMPARE(encoded.size(), 404);
+    QVERIFY(encoded.size() % 400 != 0);
+
+    const qsizetype before = fixture.transport->writtenFrames().size();
+    fixture.transport->injectBytes(QByteArrayLiteral("AUTHENTICATE +\r\n"));
+    const QByteArrayList frames = fixture.transport->writtenFrames();
+    QCOMPARE(frames.size(), before + 2);
+    QCOMPARE(saslAuthenticateBody(frames.at(before)).size(), 400);
+    QCOMPARE(saslAuthenticateBody(frames.at(before + 1)).size(), 4);
+    QCOMPARE(saslAuthenticateBody(frames.at(before))
+                 + saslAuthenticateBody(frames.at(before + 1)),
+             encoded);
+    QCOMPARE(QByteArray::fromBase64(encoded), plain);
+
+    QCOMPARE(failed.size(), 0);
+    QCOMPARE(fixture.session->state(), IrcSession::State::Sasl);
+
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(":server 903 omairc :SASL successful\r\n"));
+    QCOMPARE(fixture.transport->writtenFrames().last(),
+             QByteArrayLiteral("CAP END\r\n"));
+    QCOMPARE(fixture.session->state(), IrcSession::State::Registering);
+
+    QVERIFY(!status.hasLabel(QStringLiteral("AUTHENTICATE")));
+    QVERIFY(!status.anyFieldContains(QStringLiteral("AUTHENTICATE")));
+    QVERIFY(!status.anyFieldContains(QString::fromUtf8(secret)));
+    QVERIFY(!status.anyFieldContains(QString::fromUtf8(encoded)));
+}
+
+void SessionTest::saslPlainExactChunkBoundaryRequiresPlus()
+{
+    const QList<int> secretLengths = {286, 586};
+    for (const int secretLength : secretLengths) {
+        const QByteArray secret(secretLength, 'x');
+        IrcSessionConfig saslConfig = config();
+        saslConfig.password = QString::fromUtf8(secret);
+        Fixture fixture(saslConfig);
+        QSignalSpy failed(fixture.session, &IrcSession::errorOccurred);
+        StatusCollector status(fixture.session);
+
+        fixture.connectTls();
+        fixture.transport->injectBytes(
+            QByteArrayLiteral(":server CAP omairc LS :sasl=PLAIN\r\n"
+                              ":server CAP omairc ACK :sasl\r\n"));
+        QCOMPARE(fixture.session->state(), IrcSession::State::Sasl);
+
+        const QByteArray plain = QByteArray("omairc\0omairc\0", 14) + secret;
+        const QByteArray encoded = plain.toBase64();
+        QCOMPARE(encoded.size() % 400, 0);
+        const qsizetype chunks = encoded.size() / 400;
+
+        const qsizetype before = fixture.transport->writtenFrames().size();
+        fixture.transport->injectBytes(QByteArrayLiteral("AUTHENTICATE +\r\n"));
+        const QByteArrayList frames = fixture.transport->writtenFrames();
+        QCOMPARE(frames.size(), before + chunks + 1);
+        QByteArray reassembled;
+        for (qsizetype index = 0; index < chunks; ++index) {
+            const QByteArray body = saslAuthenticateBody(frames.at(before + index));
+            QCOMPARE(body.size(), 400);
+            reassembled += body;
+        }
+        QCOMPARE(frames.at(before + chunks), QByteArrayLiteral("AUTHENTICATE +\r\n"));
+        QCOMPARE(reassembled, encoded);
+        QCOMPARE(QByteArray::fromBase64(encoded), plain);
+
+        QCOMPARE(failed.size(), 0);
+        QCOMPARE(fixture.session->state(), IrcSession::State::Sasl);
+
+        fixture.transport->injectBytes(
+            QByteArrayLiteral(":server 903 omairc :SASL successful\r\n"));
+        QCOMPARE(fixture.transport->writtenFrames().last(),
+                 QByteArrayLiteral("CAP END\r\n"));
+        QCOMPARE(fixture.session->state(), IrcSession::State::Registering);
+
+        QVERIFY(!status.hasLabel(QStringLiteral("AUTHENTICATE")));
+        QVERIFY(!status.anyFieldContains(QStringLiteral("AUTHENTICATE")));
+        QVERIFY(!status.anyFieldContains(QString::fromUtf8(secret)));
+        QVERIFY(!status.anyFieldContains(QString::fromUtf8(encoded)));
+    }
 }
 
 void SessionTest::saslAccountAuthenticatesAsTheBouncerName()
@@ -2100,43 +2235,6 @@ void SessionTest::managerDiscardUnregistersImmediately()
     QCoreApplication::sendPostedEvents(session, QEvent::DeferredDelete);
     QVERIFY(guard.isNull());
     QCOMPARE(manager.findSession(QStringLiteral("network-a")), replacement);
-}
-
-namespace
-{
-struct StatusCollector
-{
-    explicit StatusCollector(IrcSession *session)
-    {
-        QObject::connect(session, &IrcSession::statusEntry, session,
-                         [this](const IrcStatusEntry& entry) {
-            entries.append(entry);
-        });
-    }
-
-    bool hasLabel(const QString& label) const
-    {
-        for (const IrcStatusEntry& entry : entries) {
-            if (entry.label() == label)
-                return true;
-        }
-        return false;
-    }
-
-    bool anyFieldContains(const QString& needle) const
-    {
-        for (const IrcStatusEntry& entry : entries) {
-            if (entry.text().contains(needle)
-                || entry.label().contains(needle)
-                || entry.networkId().contains(needle)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    QList<IrcStatusEntry> entries;
-};
 }
 
 void SessionTest::pingAndWelcomeProduceStatusEntries()
