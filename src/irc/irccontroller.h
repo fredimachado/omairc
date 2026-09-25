@@ -15,6 +15,7 @@
 #include "ircopendirect.h"
 #include "ircplaybackcoordinator.h"
 #include "ircplaybacktime.h"
+#include "ircreplyrouter.h"
 #include "ircsessionmanager.h"
 #include "ircstatusconsole.h"
 #include "ircstatusentry.h"
@@ -31,7 +32,6 @@
 
 #include <QDateTime>
 #include <functional>
-#include <map>
 #include <optional>
 #include <set>
 #include <variant>
@@ -258,48 +258,6 @@ private:
     };
     static std::optional<QuietSend> quietSendFor(IrcCommand::Verb verb);
 
-    struct IrcWhoisWatchKey
-    {
-        QString networkId;
-        QString normalizedNick;
-
-        friend bool operator<(const IrcWhoisWatchKey& left,
-                              const IrcWhoisWatchKey& right)
-        {
-            if (left.networkId != right.networkId)
-                return left.networkId < right.networkId;
-            return left.normalizedNick < right.normalizedNick;
-        }
-    };
-    struct IrcWhoisStatusOnly {};
-    using IrcWhoisDestination = std::variant<IrcWhoisStatusOnly, IrcConversationKey>;
-    struct IrcWhoisWatch
-    {
-        IrcWhoisDestination destination;
-        bool failedIsAmbiguous = false;
-        bool metadataEmitted = false;
-    };
-    struct IrcLabeledWatchKey
-    {
-        QString networkId;
-        QString requestLabel;
-
-        friend bool operator<(const IrcLabeledWatchKey& left,
-                              const IrcLabeledWatchKey& right)
-        {
-            if (left.networkId != right.networkId)
-                return left.networkId < right.networkId;
-            return left.requestLabel < right.requestLabel;
-        }
-    };
-    enum class IrcLabeledWatchKind { Whois, Ctcp };
-    struct IrcLabeledWatch
-    {
-        IrcLabeledWatchKind kind = IrcLabeledWatchKind::Whois;
-        IrcWhoisDestination destination;
-        bool metadataEmitted = false;
-    };
-
     void apply(const IrcEvent& event);
     void adoptReducerSelection();
     void publish(const IrcViewNotify& notify);
@@ -392,31 +350,9 @@ private:
     IrcCommandOutcome dispatchHelp(IrcComposerSurface surface);
     IrcCommandOutcome dispatchList(const IrcCommand& command,
                                    IrcComposerSurface surface);
-    IrcCommandOutcome dispatchStatus(const IrcCommand& command,
-                                     IrcComposerSurface surface);
-    IrcCommandOutcome dispatchAvatar(const IrcCommand& command,
-                                     IrcComposerSurface surface);
-    std::optional<IrcWhoisWatchKey> whoisWatchKey(const QString& networkId,
-                                                  const QString& nick) const;
-    bool sendWhois(IrcSession& session,
-                   const QString& nick,
-                   IrcWhoisDestination destination);
     void noteNickDelivery(const QString& networkId, const QString& target);
     void handleStatusEntry(const IrcStatusEntry& entry);
-    void routeWhoisLine(const QString& networkId, const IrcWhoisLine& line);
-    void routeLabeledWhois(const QString& networkId,
-                           const QString& requestLabel,
-                           const IrcWhoisLine& line);
-    void routeLabeledCtcp(const QString& networkId,
-                          const QString& requestLabel,
-                          const IrcCtcpReplyLine& line,
-                          const QString& text);
-    void routeLabeledStandardReply(const IrcStatusEntry& entry);
     void onRequestLabelFinished(const QString& networkId, const QString& requestLabel);
-    void forgetLabeledWatches(const QString& networkId, IrcLabeledWatchKind kind);
-    QStringList whoisMetadataLines(const QString& networkId,
-                                   const QString& nick) const;
-    void forgetWhoisWatches(const QString& networkId);
     void forgetChannelList(const QString& networkId);
     bool beginChannelListLoad(IrcSession *session,
                               const QString& networkId,
@@ -426,70 +362,6 @@ private:
     bool failChannelList(const QString& networkId, const QString& text);
     bool failChannelListFromNumeric(const QString& networkId,
                                     const IrcMessage& message);
-    struct IrcCtcpWatchKey
-    {
-        QString networkId;
-        QString normalizedNick;
-        QString command;
-
-        friend bool operator<(const IrcCtcpWatchKey& left,
-                              const IrcCtcpWatchKey& right)
-        {
-            if (left.networkId != right.networkId)
-                return left.networkId < right.networkId;
-            if (left.normalizedNick != right.normalizedNick)
-                return left.normalizedNick < right.normalizedNick;
-            return left.command < right.command;
-        }
-    };
-    using IrcCtcpDestination = IrcWhoisDestination;
-    struct IrcCtcpWatch
-    {
-        IrcCtcpDestination destination;
-    };
-    std::optional<IrcCtcpWatchKey> ctcpWatchKey(const QString& networkId,
-                                                const QString& nick,
-                                                const QString& command) const;
-    QString ctcpQueryName(IrcCommand::Verb verb) const;
-    bool sendCtcpQuery(IrcSession& session,
-                       const QString& nick,
-                       const QString& command,
-                       const QString& argument,
-                       IrcCtcpDestination destination);
-    void routeCtcpReply(const QString& networkId,
-                        const IrcCtcpReplyLine& line,
-                        const QString& text);
-    void forgetCtcpWatches(const QString& networkId);
-    struct IrcOwnMetadataWatch
-    {
-        IrcWhoisDestination destination;
-        enum class Kind { Set, Clear };
-        Kind kind = Kind::Set;
-        QString value;
-    };
-    IrcCommandOutcome dispatchOwnMetadataClear(IrcSession *session,
-                                               const QString& metadataKey);
-    IrcCommandOutcome dispatchOwnMetadataSet(IrcSession *session,
-                                             const QString& metadataKey,
-                                             const QString& value);
-    IrcCommandOutcome echoMetadataCommandFeedback(IrcComposerSurface surface,
-                                                 const QString& networkId,
-                                                 const QString& text);
-    void armOwnMetadataWatch(const QString& networkId,
-                             const QString& metadataKey,
-                             IrcOwnMetadataWatch::Kind kind,
-                             const QString& value);
-    void forgetOwnMetadataWatches(const QString& networkId);
-    void echoOwnMetadataOutcome(const QString& networkId,
-                                const IrcWhoisDestination& destination,
-                                const QString& text);
-    void routeOwnMetadataReply(const QString& networkId,
-                               const QString& nick,
-                               const QString& key,
-                               const QString& value);
-    void routeOwnMetadataError(const IrcStatusEntry& entry);
-    void routeOwnMetadataFail(const QString& networkId,
-                              const IrcMessage& message);
     QString profileAvatarUrlForNetwork(const QString& networkId) const;
     void persistProfileAvatarUrl(const QString& networkId, const QString& url);
     void applyProfileAvatarOnConnect(IrcSession *session);
@@ -531,6 +403,7 @@ private:
     IrcOpenDirectStore m_openDirects;
     IrcPlaybackTimeStore m_playbackTimes;
     IrcPlaybackCoordinator m_playback;
+    IrcReplyRouter m_replies;
     IrcHighlightStore m_highlights;
     IrcInbox m_inbox;
     IrcInboxModel m_inboxModel;
@@ -569,10 +442,6 @@ private:
     QTimer m_typingRefresh;
     QString m_composerDraft;
     QString m_typingTarget;
-    std::map<IrcWhoisWatchKey, IrcWhoisWatch> m_whoisWatches;
-    std::map<IrcCtcpWatchKey, IrcCtcpWatch> m_ctcpWatches;
-    std::map<IrcLabeledWatchKey, IrcLabeledWatch> m_labeledWatches;
-    QHash<QString, QHash<QString, IrcOwnMetadataWatch>> m_ownMetadataWatches;
     QSet<QString> m_appliedProfileAvatars;
     ProfileAvatarUrlPersist m_profileAvatarUrlPersist;
     ProfileAvatarUrlLookup m_profileAvatarUrlLookup;
