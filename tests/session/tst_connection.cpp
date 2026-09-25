@@ -300,6 +300,7 @@ private slots:
     void applyOnReadOnlyIniKeepsTheSessionAndReportsTheWrite();
     void applyOnReadOnlyIniWithoutTransportReportsTheFileSentence();
     void removeSelectedOnReadOnlyIniKeepsTheSessionAndStore();
+    void removeSelectedAbsentNetworkOnReadOnlyIniTearsDownSession();
     void readOnlyApplyDoesNotCacheOrderForAnUnstoredNetwork();
     void persistenceFailureStaysWithItsNetwork();
     void loadStoredLeavesMalformedIniUntouched();
@@ -2260,6 +2261,39 @@ void ConnectionTest::removeSelectedOnReadOnlyIniKeepsTheSessionAndStore()
     QCOMPARE(IrcProfileStore().profiles().size(), 0);
     QVERIFY(controller.session(networkId) == nullptr);
     QCOMPARE(connection.persistenceStatus(), QString());
+}
+
+void ConnectionTest::removeSelectedAbsentNetworkOnReadOnlyIniTearsDownSession()
+{
+    IrcController controller;
+    IrcConnection connection(controller, capturingFactory(), credentialStore());
+    fillCompleteDraft(connection, QStringLiteral("irc.example"));
+    QVERIFY(connection.apply());
+    const QString firstId = connection.selectedNetworkId();
+
+    controller.setReopenDirectMessages(!controller.reopenDirectMessages());
+
+    ReadOnlySettingsGuard guard;
+    QVERIFY(guard.lock());
+
+    QVERIFY(connection.add());
+    fillCompleteDraft(connection, QStringLiteral("irc.second.example"));
+    QVERIFY(connection.apply());
+    const QString secondId = connection.selectedNetworkId();
+    QVERIFY(secondId != firstId);
+    QVERIFY(controller.session(secondId) != nullptr);
+    QCOMPARE(IrcProfileStore().profiles().size(), 1);
+    QCOMPARE(IrcProfileStore().profiles().first().networkId, firstId);
+
+    QVERIFY(connection.removeSelected());
+    QCOMPARE(connection.networks()->rowCount(), 1);
+    QVERIFY(controller.session(secondId) == nullptr);
+    QCOMPARE(connection.selectedNetworkId(), firstId);
+    QCOMPARE(IrcProfileStore().profiles().size(), 1);
+    QVERIFY(!connection.persistenceStatus().contains(
+        QStringLiteral("This network could not be removed.")));
+
+    QVERIFY(guard.restore());
 }
 
 void ConnectionTest::readOnlyApplyDoesNotCacheOrderForAnUnstoredNetwork()

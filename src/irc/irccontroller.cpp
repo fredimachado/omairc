@@ -27,6 +27,7 @@
 #include <QCoreApplication>
 #include <QDateTime>
 #include <QEvent>
+#include <QFileInfo>
 #ifdef QT_GUI_LIB
 #include <QGuiApplication>
 #endif
@@ -266,11 +267,15 @@ bool loadReopenDirectMessages()
     return settings.value(reopenDirectMessagesKey(), true).toBool();
 }
 
-// Malformed or unreadable ini: return before setValue. These toggles stay
-// unreported; persistenceStatus is only the profile save/remove result.
+// Malformed, unreadable, or read-only ini: return before setValue. These
+// toggles stay unreported; persistenceStatus is only the profile save/remove
+// result.
 bool preferenceIniRefusesWrite(const QSettings &settings)
 {
-    return IrcProfileStore::probeSettingsIni(settings) != IrcProfileStore::IniProbe::Ok;
+    if (IrcProfileStore::probeSettingsIni(settings) != IrcProfileStore::IniProbe::Ok)
+        return true;
+    const QFileInfo info(settings.fileName());
+    return info.exists() && !info.isWritable();
 }
 
 void saveReopenDirectMessages(bool enabled)

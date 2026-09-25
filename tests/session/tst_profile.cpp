@@ -44,6 +44,7 @@ private slots:
 #ifdef Q_OS_LINUX
     void storeReadOnlyIniReturnsAccessError();
     void storeRemoveMissingFileIsAbsent();
+    void storeRemoveMissingFileWithCachedIdIsAbsent();
     void storeRemoveMissingEqualsWithoutGroupReturnsFormatError();
     void storeRemoveMissingEqualsWithGroupReturnsFormatError();
     void storeRemoveMissingEqualsInPreferencesReturnsFormatError();
@@ -664,6 +665,26 @@ void ProfileTest::storeRemoveMissingFileIsAbsent()
     QVERIFY2(!QFile::exists(path), qPrintable(path));
 
     QCOMPARE(IrcProfileStore().remove(QStringLiteral("missing-network")),
+             IrcProfileStore::Status::Absent);
+    QVERIFY(!QFile::exists(path));
+}
+
+void ProfileTest::storeRemoveMissingFileWithCachedIdIsAbsent()
+{
+    QSettings settings;
+    const QString path = settings.fileName();
+    QVERIFY2(!QFile::exists(path), qPrintable(path));
+
+    settings.beginGroup(QStringLiteral("preferences"));
+    settings.setValue(QStringLiteral("reopenDirectMessages"), true);
+    settings.endGroup();
+    settings.beginGroup(QStringLiteral("networks"));
+    settings.beginGroup(QStringLiteral("cached-network"));
+    settings.setValue(QStringLiteral("host"), QStringLiteral("irc.example.net"));
+    settings.endGroup();
+    settings.endGroup();
+
+    QCOMPARE(IrcProfileStore().remove(QStringLiteral("cached-network")),
              IrcProfileStore::Status::Absent);
     QVERIFY(!QFile::exists(path));
 }

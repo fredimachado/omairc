@@ -1,8 +1,10 @@
 #include "ircprofilestore.h"
 
+#include <QCoreApplication>
 #include <QFile>
 #include <QFileInfo>
 #include <QSettings>
+#include <QStandardPaths>
 
 #include <optional>
 
@@ -64,6 +66,29 @@ bool missingSettingsFile(const QSettings &settings)
         return false;
 #endif
     return !QFileInfo::exists(settings.fileName());
+}
+
+bool settingsFileMissingOnDisk()
+{
+#ifdef Q_OS_WIN
+    QSettings probe;
+    probe.setAtomicSyncRequired(true);
+    return missingSettingsFile(probe);
+#else
+    const QString org = QCoreApplication::organizationName();
+    const QString app = QCoreApplication::applicationName();
+    const QString xdg = QString::fromUtf8(qgetenv("XDG_CONFIG_HOME"));
+    const QString root = xdg.isEmpty()
+        ? QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation)
+        : xdg;
+    const QString path =
+#if defined(Q_OS_DARWIN)
+        root + QLatin1Char('/') + org + QLatin1Char('/') + app + QLatin1String(".plist");
+#else
+        root + QLatin1Char('/') + org + QLatin1Char('/') + app + QLatin1String(".conf");
+#endif
+    return !QFileInfo::exists(path);
+#endif
 }
 
 bool settingsFileIsIni(const QSettings &settings)
@@ -326,21 +351,12 @@ IrcProfileStore::Status IrcProfileStore::remove(const QString &networkId)
     if (networkId.isEmpty())
         return Status::Absent;
 
+    // Check before constructing QSettings. ~QSettings would flush pending keys
+    // from the process-wide cache and create a missing ini from cached data.
+    if (settingsFileMissingOnDisk())
+        return Status::Absent;
+
     QSettings settings;
-    // A missing ini or plist has no group to delete. sync() would try to
-    // create it and report AccessError when that directory cannot be created.
-    // QSettings's constructor can already set that status; ignore it unless
-    // a cached group was actually removed.
-    if (missingSettingsFile(settings)) {
-        settings.beginGroup(networksGroup);
-        const bool present = settings.childGroups().contains(networkId);
-        if (present)
-            settings.remove(networkId);
-        settings.endGroup();
-        if (present && settings.status() != QSettings::NoError)
-            return statusFrom(settings.status());
-        return present ? Status::Written : Status::Absent;
-    }
 
     // childGroups() is what parses every section. Once it has run, a later
     // QSettings on this path reports NoError and save() rewrites the file.
@@ -348,16 +364,6 @@ IrcProfileStore::Status IrcProfileStore::remove(const QString &networkId)
     // Open failure is AccessError, before a missing group can be Absent.
     if (const std::optional<Status> blocked = blockedIniWrite(settings))
         return *blocked;
-
-    settings.sync();
-    switch (settings.status()) {
-    case QSettings::AccessError:
-        return Status::AccessError;
-    case QSettings::FormatError:
-        return Status::FormatError;
-    case QSettings::NoError:
-        break;
-    }
 
     // childGroups() with an empty prefix parses every section. A missing
     // '=' outside [networks] stays NoError until that parse. Return before
