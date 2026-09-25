@@ -177,6 +177,28 @@ touches sanitizers, and `bin/test-live` when it touches real IRCd
 behavior. CI rejects a pull request whose base is not `master`. No new
 bot, workflow, or notification sink.
 
+## Release versioning
+
+`version.pri` is the single `VERSION` for `--version`, CTCP `VERSION`,
+tests, and packaging. A release bump touches at least these files:
+
+- `version.pri` — set `VERSION`.
+- `CHANGELOG.md` — move `[Unreleased]` into a dated `[x.y.z]` section and
+  update the compare links at the bottom.
+- `tests/test_derive_build_versions.py` — replace every hardcoded
+  `1.0.x` string and `refs/tags/v1.0.x` ref with the new version.
+  `bin/test` runs this suite before the C++ build; forgetting it fails
+  CI immediately with `'1.0.4' != '1.0.3'`-style assertions.
+
+Run `bin/test` (or at least
+`python3 -m unittest -v tests.test_derive_build_versions`) before
+tagging. Tag releases as `v` plus the `version.pri` string, for example
+`v1.0.4`. Version tags trigger release packaging and the Homebrew cask
+bump; do not hand-edit `Casks/omairc.rb` for a normal release. If a
+tagged commit needs a follow-up fix before artifacts ship, commit on
+`master`, delete and recreate the same tag on the new tip, and
+`git push origin vX.Y.Z --force`.
+
 ## Build and validation
 
 `bin/test` is the default gate. It runs `bin/check-conventions`, builds,
