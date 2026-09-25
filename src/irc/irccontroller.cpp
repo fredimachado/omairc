@@ -147,24 +147,6 @@ std::string utf8(const QString& value)
     return std::string(bytes.constData(), std::size_t(bytes.size()));
 }
 
-std::optional<QDateTime> serverTimeOf(const IrcMessage& message)
-{
-    for (const IrcTag& tag : message.tags) {
-        if (tag.name != "time" || !tag.value)
-            continue;
-        const QString raw = ircWireText(*tag.value);
-        if (raw.isEmpty())
-            return std::nullopt;
-        QDateTime parsed = QDateTime::fromString(raw, Qt::ISODateWithMs);
-        if (!parsed.isValid())
-            parsed = QDateTime::fromString(raw, Qt::ISODate);
-        if (!parsed.isValid())
-            return std::nullopt;
-        return parsed.toUTC();
-    }
-    return std::nullopt;
-}
-
 bool ignoreNickIsUsable(const QString& nick, const IrcServerFeatures& features)
 {
     if (nick.isEmpty())
@@ -393,6 +375,7 @@ IrcController::IrcController(QObject *parent)
     , m_conversations(m_reducer)
     , m_messages(m_reducer)
     , m_members(m_reducer)
+    , m_playback(m_playbackTimes, m_reducer)
 {
     connect(&m_channelLists, &IrcChannelListRequest::rowChanged, this,
             [this](const QString& networkId, const IrcChannelListRow& row, bool replaced) {
@@ -484,7 +467,7 @@ IrcSession *IrcController::addSession(const IrcSessionConfig& config,
     syncHighlightWords(config.networkId);
     connect(session, &IrcSession::registered, this,
             [this, session](const QString& networkId) {
-        m_playbackSnapshot.insert(networkId, m_playbackTimes.targets(networkId));
+        m_playback.onRegistered(networkId, session->autojoinChannels());
         m_currentNicks[networkId] = session->nick();
         m_reducer.setServerFeatures(networkId, IrcServerFeatures{});
         forgetMonitorState(networkId);
@@ -493,8 +476,6 @@ IrcSession *IrcController::addSession(const IrcSessionConfig& config,
         if (m_autoawayTripped && m_autoaway.enabled)
             markSessionAutoAway(session);
         m_openDirectsMotdSeen.remove(networkId);
-        m_zncAutojoin.insert(networkId, session->autojoinChannels());
-        m_zncJoinedChannels.remove(networkId);
         applyProfileAvatarOnConnect(session);
         updateStatus(session);
     });
@@ -509,10 +490,7 @@ IrcSession *IrcController::addSession(const IrcSessionConfig& config,
         if (state != IrcSession::State::Registered) {
             forgetChannelList(session->networkId());
             m_appliedProfileAvatars.remove(session->networkId());
-            m_zncPlaybackSent.remove(session->networkId());
-            m_playbackSnapshot.remove(session->networkId());
-            m_zncAutojoin.remove(session->networkId());
-            m_zncJoinedChannels.remove(session->networkId());
+            m_playback.onLeftRegistration(session->networkId());
         }
         updateStatus(session);
     });
@@ -597,7 +575,7 @@ void IrcController::forgetNetworkState(const QString &networkId)
     m_mutes.forget(networkId);
     m_openDirects.forget(networkId);
     m_playbackTimes.forget(networkId);
-    m_playbackSnapshot.remove(networkId);
+    m_playback.dropSnapshot(networkId);
     m_highlights.forget(networkId);
     m_inbox.purgeNetwork(networkId);
     syncInbox();
@@ -1018,7 +996,6 @@ void IrcController::handleCapabilities(const QString& networkId,
         requestZncPlayback(session);
     }
 }
-
 IrcStatusConsole *IrcController::console()
 {
     return &m_console;
@@ -4102,7 +4079,7 @@ void IrcController::apply(const IrcEvent& event)
             m_reducer.serverFeatures(nick->networkId).caseMapping();
         m_openDirects.rekey(nick->networkId, nick->oldNick, nick->newNick, mapping);
         m_playbackTimes.rekey(nick->networkId, nick->oldNick, nick->newNick, mapping);
-        rekeyPlaybackSnapshot(nick->networkId, nick->oldNick, nick->newNick);
+        m_playback.rekey(nick->networkId, nick->oldNick, nick->newNick);
     } else if (const auto *message = std::get_if<IrcMessageEvent>(&event)) {
         if (m_reducer.serverFeatures(message->conversation.networkId)
                 .caseMapping()
@@ -4299,7 +4276,7 @@ void IrcController::handleMessage(const QString& networkId,
                                           utf8(pending->channel)))
                             selectConversation(join->networkId, join->channel);
                     }
-                    noteZncJoinedChannel(join->networkId, join->channel);
+                    m_playback.noteJoinedChannel(join->networkId, join->channel);
                     requestZncChannelPlayback(session, join->channel);
                 }
             }
@@ -4316,45 +4293,7 @@ void IrcController::handleHistoryBatch(const QString& networkId,
     if (!event)
         return;
     if (event->kind == IrcHistoryKind::BouncerPlayback) {
-        const auto sent = m_zncPlaybackSent.constFind(networkId);
-        if (sent != m_zncPlaybackSent.cend() && sent->queries) {
-            if (const std::optional<QDateTime> bound =
-                    playbackSnapshotTime(networkId, batch.target)) {
-                const qint64 boundMs = bound->toUTC().toMSecsSinceEpoch();
-                // PLAY * 0 answers every buffer, including ones a per-target
-                // PLAY just resumed. ZNC's lower bound is exclusive against
-                // microsecond buffer times, and FormatServerTime prints the
-                // tag with %E3S. cctz truncates those three digits, so a line
-                // still inside the exclusive bound can share the saved
-                // millisecond. Drop anything older. An equal-millisecond line
-                // with no msgid is the same on the wire as the one already
-                // read, so it stays dropped: keeping it would restore a
-                // cleared line, and dropping it can hide a new one. A
-                    // nonempty msgid is kept even when this query was not
-                    // restored. An inbound-only direct is absent after a cold
-                    // start, and that absence does not mean the id was seen.
-                    // The reducer opens the query only when an id is not
-                    // already in the transcript log, then hydrates and skips
-                    // an id it stored. A batch of ids the log already holds
-                    // does not put a closed direct back. /clear leaves those
-                    // ids in place while the conversation still exists.
-                event->lines.erase(
-                    std::remove_if(
-                        event->lines.begin(), event->lines.end(),
-                        [boundMs](const IrcReplayLine& line) {
-                            if (!line.serverTime || !line.serverTime->isValid())
-                                return false;
-                            const qint64 lineMs =
-                                line.serverTime->toUTC().toMSecsSinceEpoch();
-                            if (lineMs > boundMs)
-                                return false;
-                            if (lineMs < boundMs)
-                                return true;
-                            return line.msgid.isEmpty();
-                        }),
-                    event->lines.end());
-            }
-        }
+        m_playback.trimBouncerBatch(networkId, *event);
         if (event->lines.empty())
             return;
     }
@@ -4363,20 +4302,10 @@ void IrcController::handleHistoryBatch(const QString& networkId,
 
 void IrcController::noteKeptReplay()
 {
-    // PLAY's lower bound is exclusive. Only a replay line that landed, or
-    // matched one already there, may move it. A held, dropped, or never-joined
-    // channel batch stays eligible for the next PLAY.
-    const std::vector<IrcKeptReplay> kept = m_reducer.takeKeptReplay();
-    for (const IrcKeptReplay& line : kept) {
-        // A line spliced before this target's first PLAY must not move the
-        // exclusive bound that request is about to send, and must not be
-        // stored for the next attach either.
-        if (!mayNotePlaybackTime(line.networkId, line.target))
-            continue;
-        m_playbackTimes.note(
-            line.networkId, line.target, line.serverTime,
-            m_reducer.serverFeatures(line.networkId).caseMapping());
-    }
+    m_playback.noteKeptReplay([this](const QString& networkId) {
+        return m_capabilities.value(networkId)
+            .contains(IrcCapability::ZncPlayback);
+    });
     // A kept self line means the user replied in that query. Remember it
     // only when the direct exists; a dropped self-only batch must not.
     for (const IrcRememberedQuery& query : m_reducer.takeRememberedQueries()) {
@@ -4388,281 +4317,40 @@ void IrcController::noteKeptReplay()
 
 void IrcController::notePlaybackClock(const QString& networkId, const IrcMessage& message)
 {
-    if (networkId.isEmpty())
-        return;
-    if (ircWireText(message.command).compare(QLatin1String("PRIVMSG"), Qt::CaseInsensitive) != 0
-        || message.parameters.size() < 2) {
-        return;
-    }
-    const std::optional<QDateTime> when = serverTimeOf(message);
-    if (!when)
-        return;
-    const auto ctcp = parseCtcpRequest(parameter(message, 1));
-    if (ctcp && ctcp->command != QStringLiteral("ACTION"))
-        return;
-
-    const IrcServerFeatures& features = m_reducer.serverFeatures(networkId);
-    const QString currentNick = m_currentNicks.value(networkId);
-    const QString wireTarget = parameter(message, 0);
-    if (!ircConversationFor(networkId, wireTarget, message, currentNick, features))
-        return;
-
-    const QString sender = ircPrefixNick(message);
-    const bool channel = features.isChannel(utf8(wireTarget));
-    const bool self =
-        features.caseMapping().equals(utf8(sender), utf8(currentNick));
-    const QString displayTarget = channel
-        ? wireTarget
-        : (self ? wireTarget : sender);
-    if (displayTarget.isEmpty())
-        return;
-    if (!channel
-        && (!ircNickIsRoutable(displayTarget)
-            || ircTargetLooksLikeService(displayTarget, features))) {
-        return;
-    }
-    // A self echo whose query or channel does not exist yet is InboundSelf,
-    // so the reducer drops it. Each target's PLAY bound is exclusive, so
-    // noting that line would skip bouncer history that was never kept.
-    // An admitted line, or one that matches an existing row, may still move
-    // the clock.
-    if (self && !m_reducer.find(m_reducer.conversationKey(networkId, displayTarget)))
-        return;
-    // The first PLAY for this target reads the registration snapshot. A
-    // line before that request is not stored, or the next attach skips the
-    // same buffer. PLAY * 0 opens every target; a per-target PLAY opens
-    // only that one.
-    if (!mayNotePlaybackTime(networkId, displayTarget))
-        return;
-    m_playbackTimes.note(networkId, displayTarget, *when, features.caseMapping());
-}
-
-bool IrcController::sendZncPlayback(IrcSession *session,
-                                    const QString& target,
-                                    const QString& from)
-{
-    // ZNC dispatches the IRC command ZNC to the named module. PRIVMSG
-    // *status :*playback is an unknown status command, so OnModCommand
-    // never runs. PRIVMSG *playback would open a query on other clients.
-    return session->sendRaw(
-        QStringLiteral("ZNC *playback PLAY %1 %2").arg(target, from));
-}
-
-bool IrcController::zncPlaybackCovers(const QString& networkId,
-                                      const QString& normalizedTarget) const
-{
-    const auto found = m_zncPlaybackSent.constFind(networkId);
-    if (found == m_zncPlaybackSent.cend())
-        return false;
-    return found.value().all || found.value().queries
-        || found.value().targets.contains(normalizedTarget);
-}
-
-std::optional<QDateTime> IrcController::playbackSnapshotTime(
-    const QString& networkId,
-    const QString& target) const
-{
-    const auto found = m_playbackSnapshot.constFind(networkId);
-    if (found == m_playbackSnapshot.cend() || target.isEmpty())
-        return std::nullopt;
-    const IrcCaseMapping& mapping =
-        m_reducer.serverFeatures(networkId).caseMapping();
-    for (const IrcPlaybackTargetTime& row : found.value()) {
-        if (mapping.equals(utf8(row.target), utf8(target)))
-            return row.when;
-    }
-    return std::nullopt;
-}
-
-void IrcController::rekeyPlaybackSnapshot(const QString& networkId,
-                                          const QString& oldTarget,
-                                          const QString& newTarget)
-{
-    auto found = m_playbackSnapshot.find(networkId);
-    if (found == m_playbackSnapshot.end() || oldTarget.isEmpty() || newTarget.isEmpty())
-        return;
-    const IrcCaseMapping& mapping =
-        m_reducer.serverFeatures(networkId).caseMapping();
-    QVector<IrcPlaybackTargetTime>& rows = found.value();
-    int oldIndex = -1;
-    for (int index = 0; index < rows.size(); ++index) {
-        if (mapping.equals(utf8(rows.at(index).target), utf8(oldTarget))) {
-            oldIndex = index;
-            break;
-        }
-    }
-    if (oldIndex < 0)
-        return;
-    const QDateTime when = rows.at(oldIndex).when;
-    if (mapping.equals(utf8(oldTarget), utf8(newTarget))) {
-        rows[oldIndex].target = newTarget;
-        return;
-    }
-    rows.removeAt(oldIndex);
-    for (IrcPlaybackTargetTime& row : rows) {
-        if (!mapping.equals(utf8(row.target), utf8(newTarget)))
-            continue;
-        if (when.isValid() && (!row.when.isValid() || when > row.when))
-            row.when = when;
-        return;
-    }
-    rows.append(IrcPlaybackTargetTime{newTarget, when});
-}
-
-bool IrcController::mayNotePlaybackTime(const QString& networkId,
-                                        const QString& target) const
-{
-    if (networkId.isEmpty() || target.isEmpty())
-        return false;
-    // No playback request is coming. A line the user actually saw is the
-    // stamp a later playback-capable attach should resume from.
-    if (!m_capabilities.value(networkId).contains(IrcCapability::ZncPlayback))
-        return true;
-    return zncPlaybackCovers(
-        networkId,
-        m_reducer.conversationKey(networkId, target).normalizedTarget);
+    m_playback.notePlaybackClock(networkId, message,
+                                 m_currentNicks.value(networkId),
+                                 m_capabilities.value(networkId)
+                                     .contains(IrcCapability::ZncPlayback));
 }
 
 void IrcController::requestZncPlayback(IrcSession *session)
 {
-    if (!session || session->state() != IrcSession::State::Registered)
+    if (!session)
         return;
     const QString networkId = session->networkId();
-    // Open queries are restored at MOTD end. PLAY before that uses a stamp
-    // that can skip self-only lines whose direct does not exist yet.
-    if (!m_openDirectsMotdSeen.contains(networkId))
-        return;
-    if (!m_capabilities.value(networkId).contains(IrcCapability::ZncPlayback))
-        return;
-    const auto sent = m_zncPlaybackSent.constFind(networkId);
-    if (sent != m_zncPlaybackSent.cend() && sent.value().all)
-        return;
-
     const IrcServerFeatures& features = m_reducer.serverFeatures(networkId);
-    const IrcCaseMapping& mapping = features.caseMapping();
-    // Registration snapshot, taken at numeric 001. Traffic on this
-    // connection must not replace the stamp this first PLAY sends.
-    const QVector<IrcPlaybackTargetTime> stored = m_playbackSnapshot.value(networkId);
-
-    // Nothing stored yet: one PLAY * 0 fetches every buffer, including
-    // queries. Autojoin must not replace that with per-channel PLAY. The
-    // module drops a channel PLAY until that channel is on, and PLAY * 0
-    // does not mark the channel covered.
-    if (stored.isEmpty()) {
-        const bool alreadySpecific =
-            sent != m_zncPlaybackSent.cend() && !sent.value().targets.isEmpty();
-        if (!alreadySpecific) {
-            if (!sendZncPlayback(session, QStringLiteral("*"), QStringLiteral("0")))
-                return;
-            m_zncPlaybackSent[networkId].all = true;
-        }
-    } else {
-        for (const IrcPlaybackTargetTime& row : stored) {
-            const QString normalized =
-                m_reducer.conversationKey(networkId, row.target).normalizedTarget;
-            if (zncPlaybackCovers(networkId, normalized))
-                continue;
-            if (!sendZncPlayback(session, row.target, ircPlaybackPlayStamp(row.when)))
-                return;
-            m_zncPlaybackSent[networkId].targets.insert(normalized);
-        }
-        // A restored direct with no stamp is absent from the store, so the
-        // loop above skips it once any other target has one. Ask from the
-        // beginning. A nick the user never opened is not listed.
-        for (const QString& nick : m_openDirects.listed(networkId, mapping)) {
-            if (!persistableDirectTarget(networkId, nick))
-                continue;
-            if (playbackSnapshotTime(networkId, nick))
-                continue;
-            const IrcConversationKey key =
-                m_reducer.conversationKey(networkId, nick);
-            if (!m_reducer.find(key))
-                continue;
-            if (zncPlaybackCovers(networkId, key.normalizedTarget))
-                continue;
-            if (!sendZncPlayback(session, nick, QStringLiteral("0")))
-                return;
-            m_zncPlaybackSent[networkId].targets.insert(key.normalizedTarget);
-        }
-        // Snapshot from registration, before this connection's JOIN echoes.
-        // A channel joined before the MOTD is not autojoin for this request.
-        for (const QString& channel : m_zncAutojoin.value(networkId)) {
-            if (channel.isEmpty() || !features.isChannel(utf8(channel)))
-                continue;
-            if (playbackSnapshotTime(networkId, channel))
-                continue;
-            const QString normalized =
-                m_reducer.conversationKey(networkId, channel).normalizedTarget;
-            if (zncPlaybackCovers(networkId, normalized))
-                continue;
-            if (!sendZncPlayback(session, channel, QStringLiteral("0")))
-                return;
-            m_zncPlaybackSent[networkId].targets.insert(normalized);
-        }
-        // Offline query buffers are absent from the snapshot, restored
-        // directs, and autojoin. With znc.in/playback enabled the module
-        // suppresses automatic delivery, so PLAY * 0 discovers them.
-        // Known targets already got per-target PLAY with their resume
-        // bounds. handleHistoryBatch drops wildcard lines older than the
-        // registration stamp, and an equal-millisecond line that has no
-        // msgid. A distinct msgid at that millisecond is kept.
-        if (!m_zncPlaybackSent[networkId].queries) {
-            if (!sendZncPlayback(session, QStringLiteral("*"), QStringLiteral("0")))
-                return;
-            m_zncPlaybackSent[networkId].queries = true;
-        }
-    }
-    // A channel joined before this request still needs its own PLAY when
-    // no playback batch for it has been kept. PLAY * 0 does not cover that
-    // retry: a channel that was not on yet never answered.
-    const QStringList joined = m_zncJoinedChannels.value(networkId);
-    for (const QString& channel : joined)
-        requestZncChannelPlayback(session, channel);
-}
-
-void IrcController::noteZncJoinedChannel(const QString& networkId,
-                                          const QString& channel)
-{
-    if (networkId.isEmpty() || channel.isEmpty())
-        return;
-    const IrcCaseMapping& mapping =
-        m_reducer.serverFeatures(networkId).caseMapping();
-    QStringList& channels = m_zncJoinedChannels[networkId];
-    for (const QString& existing : channels) {
-        if (mapping.equals(utf8(existing), utf8(channel)))
-            return;
-    }
-    channels.append(channel);
+    QStringList restoredDirects = m_openDirects.listed(networkId,
+                                                       features.caseMapping());
+    m_playback.request(
+        session,
+        m_capabilities.value(networkId).contains(IrcCapability::ZncPlayback),
+        m_openDirectsMotdSeen.contains(networkId),
+        restoredDirects,
+        [this, networkId](const QString& target) {
+            return persistableDirectTarget(networkId, target);
+        });
 }
 
 void IrcController::requestZncChannelPlayback(IrcSession *session,
                                               const QString& channel)
 {
-    if (!session || channel.isEmpty()
-        || session->state() != IrcSession::State::Registered) {
+    if (!session)
         return;
-    }
-    const QString networkId = session->networkId();
-    if (!m_openDirectsMotdSeen.contains(networkId))
-        return;
-    if (!m_capabilities.value(networkId).contains(IrcCapability::ZncPlayback))
-        return;
-    const IrcServerFeatures& features = m_reducer.serverFeatures(networkId);
-    if (!features.isChannel(utf8(channel)))
-        return;
-    // Covered only after a playback batch was spliced or deduped. A PLAY
-    // written at MOTD does not count, and neither does PLAY * 0: the module
-    // emits nothing for a channel that is not on.
-    if (m_reducer.playbackBatchKept(networkId, channel))
-        return;
-    // A self-JOIN retry still uses the registration snapshot, not a live
-    // line from earlier in this connection.
-    const QString from = ircPlaybackPlayStamp(
-        playbackSnapshotTime(networkId, channel));
-    if (!sendZncPlayback(session, channel, from))
-        return;
-    m_zncPlaybackSent[networkId].targets.insert(
-        m_reducer.conversationKey(networkId, channel).normalizedTarget);
+    m_playback.requestChannelPlayback(
+        session, channel,
+        m_capabilities.value(session->networkId())
+            .contains(IrcCapability::ZncPlayback),
+        m_openDirectsMotdSeen.contains(session->networkId()));
 }
 
 void IrcController::reloadModels()

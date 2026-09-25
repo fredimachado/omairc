@@ -38,6 +38,7 @@ HEADERS += \
     ../../src/irc/ircmute.h \
     ../../src/irc/ircopendirect.h \
     ../../src/irc/ircplaybacktime.h \
+    ../../src/irc/ircplaybackcoordinator.h \
     ../../src/irc/irchighlight.h \
     ../../src/irc/ircautoaway.h \
     ../../src/irc/ircpref.h \
@@ -104,6 +105,7 @@ SOURCES += \
     ../../src/irc/ircmute.cpp \
     ../../src/irc/ircopendirect.cpp \
     ../../src/irc/ircplaybacktime.cpp \
+    ../../src/irc/ircplaybackcoordinator.cpp \
     ../../src/irc/irchighlight.cpp \
     ../../src/irc/ircautoaway.cpp \
     ../../src/irc/ircpref.cpp \
