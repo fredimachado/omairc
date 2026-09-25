@@ -73,7 +73,13 @@ bool prepareTree(const QString &filePath)
     return true;
 }
 
-std::optional<OmaircCliCursor> readCursorFile(const QString &path)
+struct CursorFileContent
+{
+    OmaircCliCursor cursor;
+    QString target;
+};
+
+std::optional<CursorFileContent> readCursorFileContent(const QString &path)
 {
     QFile file(path);
     if (!file.open(QIODevice::ReadOnly))
@@ -83,15 +89,24 @@ std::optional<OmaircCliCursor> readCursorFile(const QString &path)
     if (error.error != QJsonParseError::NoError || !document.isObject())
         return std::nullopt;
     const QJsonObject object = document.object();
-    OmaircCliCursor cursor;
-    cursor.timestamp = QDateTime::fromString(
+    CursorFileContent content;
+    content.cursor.timestamp = QDateTime::fromString(
         object.value(QStringLiteral("timestamp")).toString(), Qt::ISODateWithMs);
-    if (!cursor.timestamp.isValid())
+    if (!content.cursor.timestamp.isValid())
         return std::nullopt;
-    cursor.timestamp = cursor.timestamp.toUTC();
-    cursor.msgid = object.value(QStringLiteral("msgid")).toString();
-    cursor.sequence = object.value(QStringLiteral("sequence")).toInteger();
-    return cursor;
+    content.cursor.timestamp = content.cursor.timestamp.toUTC();
+    content.cursor.msgid = object.value(QStringLiteral("msgid")).toString();
+    content.cursor.sequence = object.value(QStringLiteral("sequence")).toInteger();
+    content.target = object.value(QStringLiteral("target")).toString();
+    return content;
+}
+
+std::optional<OmaircCliCursor> readCursorFile(const QString &path)
+{
+    const std::optional<CursorFileContent> content = readCursorFileContent(path);
+    if (!content)
+        return std::nullopt;
+    return content->cursor;
 }
 
 int compareCliCursor(const OmaircCliCursor &left, const OmaircCliCursor &right)
@@ -154,17 +169,31 @@ void collectEquivalentCursorCandidates(const QString &networkDirPath,
         return decodeOmaircStorageSegment(stem);
     };
 
-    const QStringList files =
-        networkDir.entryList({QStringLiteral("*.json")}, QDir::Files);
+    const QStringList files = networkDir.entryList(
+        {QStringLiteral("*.json")}, QDir::Files | QDir::Hidden);
     for (const QString &fileName : files) {
         QString stem = fileName;
         if (!stem.endsWith(kJsonExtension))
             continue;
         stem.chop(kJsonExtension.size());
-        const QString decoded = decodedTargetFromStem(stem);
-        if (!cursorTargetsEquivalent(decoded, target, mapping, caseMappingKnown))
-            continue;
         const QString path = networkDir.filePath(fileName);
+        const std::optional<CursorFileContent> content = readCursorFileContent(path);
+        if (!content)
+            continue;
+
+        bool equivalent = false;
+        if (omaircStorageSegmentIsHash(stem)) {
+            if (!content->target.isEmpty())
+                equivalent = cursorTargetsEquivalent(
+                    content->target, target, mapping, caseMappingKnown);
+        } else {
+            const QString decoded = decodedTargetFromStem(stem);
+            equivalent = cursorTargetsEquivalent(
+                decoded, target, mapping, caseMappingKnown);
+        }
+        if (!equivalent)
+            continue;
+
         bool alreadyListed = false;
         for (const CursorCandidate &existing : matches) {
             if (storagePathsSameFile(existing.path, path)) {
@@ -174,10 +203,7 @@ void collectEquivalentCursorCandidates(const QString &networkDirPath,
         }
         if (alreadyListed)
             continue;
-        const std::optional<OmaircCliCursor> cursor = readCursorFile(path);
-        if (!cursor)
-            continue;
-        matches.push_back({path, *cursor});
+        matches.push_back({path, content->cursor});
     }
 }
 
@@ -320,6 +346,8 @@ bool OmaircCliCursorStore::save(const QString &networkId,
     if (!cursor.msgid.isEmpty())
         object.insert(QStringLiteral("msgid"), cursor.msgid);
     object.insert(QStringLiteral("sequence"), cursor.sequence);
+    if (!target.isEmpty())
+        object.insert(QStringLiteral("target"), target);
     QSaveFile file(path);
     if (!file.open(QIODevice::WriteOnly))
         return false;

@@ -109,10 +109,10 @@ QString xdgLogsRoot()
     return QDir(state).filePath(QStringLiteral("omairc/logs"));
 }
 
-void migrateLegacyTranscriptPath(const QString &root,
-                                 const QString &networkId,
-                                 const QString &target,
-                                 const QString &newPath)
+QString migrateLegacyTranscriptPath(const QString &root,
+                                    const QString &networkId,
+                                    const QString &target,
+                                    const QString &newPath)
 {
     const QString legacyNetworkDir = legacyStorageSegment(networkId);
     const QString newNetworkDir = omaircStorageSegment(networkId);
@@ -133,13 +133,18 @@ void migrateLegacyTranscriptPath(const QString &root,
         networkDirPath = rootDir.filePath(newNetworkDir);
     }
 
+    QString resolvedPath = newPath;
+
     const auto tryMigrateFile = [&](const QString &legacyPath) {
         if (!legacyStoragePathExists(legacyPath, target))
             return;
         if (QFile::exists(newPath) || storagePathsSameFile(legacyPath, newPath))
             return;
         prepareTree(newPath);
-        QFile::rename(legacyPath, newPath);
+        if (QFile::rename(legacyPath, newPath))
+            return;
+        if (QFile::exists(legacyPath))
+            resolvedPath = legacyPath;
     };
 
     const QString legacyPath =
@@ -153,6 +158,8 @@ void migrateLegacyTranscriptPath(const QString &root,
             QDir(legacyDirPath).filePath(legacyStorageSegment(target));
         tryMigrateFile(legacyPathInLegacyDir);
     }
+
+    return resolvedPath;
 }
 }
 
@@ -199,8 +206,7 @@ QString IrcConversationLog::pathFor(const QString &networkId,
     const QString newTarget = omaircWireStorageSegment(target);
     const QString newPath =
         QDir(QDir(m_root).filePath(newNetworkDir)).filePath(newTarget);
-    migrateLegacyTranscriptPath(m_root, networkId, target, newPath);
-    return newPath;
+    return migrateLegacyTranscriptPath(m_root, networkId, target, newPath);
 }
 
 bool IrcConversationLog::append(const QString &networkId,

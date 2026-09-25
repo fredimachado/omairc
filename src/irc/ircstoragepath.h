@@ -13,6 +13,7 @@ QString omaircTargetSegment(QString target,
 QString legacyStorageSegment(QString text);
 QString decodeLegacySegment(QString text);
 QString decodeOmaircStorageSegment(QString segment);
+bool omaircStorageSegmentIsHash(QString segment);
 
 bool legacyStoragePathExists(const QString &path,
                              const QString &segment,

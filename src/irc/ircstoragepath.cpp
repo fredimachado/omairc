@@ -144,9 +144,23 @@ QString decodeLegacySegment(QString text)
     return text;
 }
 
+bool omaircStorageSegmentIsHash(QString segment)
+{
+    if (!segment.startsWith(QLatin1Char('h')) || segment.size() != 65)
+        return false;
+    for (qsizetype index = 1; index < segment.size(); ++index) {
+        const QChar ch = segment.at(index);
+        if ((ch >= QLatin1Char('0') && ch <= QLatin1Char('9'))
+            || (ch >= QLatin1Char('a') && ch <= QLatin1Char('f')))
+            continue;
+        return false;
+    }
+    return true;
+}
+
 QString decodeOmaircStorageSegment(QString segment)
 {
-    if (segment.startsWith(QLatin1Char('h')))
+    if (omaircStorageSegmentIsHash(segment))
         return segment;
 
     QByteArray bytes;
