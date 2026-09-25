@@ -9,6 +9,12 @@ macx {
     include($$PWD/../packaging/macos/objc-arc.pri)
 }
 
+win32 {
+    HEADERS += ../src/windowsnotifications.h
+    SOURCES += ../src/windowsnotifications.cpp
+    LIBS += -lole32 -luuid -lruntimeobject -luser32 -ladvapi32
+}
+
 include(../qtkeychain.pri)
 
 CONFIG += c++17 console testcase

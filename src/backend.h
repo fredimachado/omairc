@@ -11,6 +11,9 @@
 #ifdef Q_OS_MACOS
 class MacOsNotifications;
 #endif
+#ifdef Q_OS_WIN
+class WindowsNotifications;
+#endif
 
 class Backend : public QObject {
     Q_OBJECT
@@ -83,5 +86,8 @@ private:
 #endif
 #ifdef Q_OS_MACOS
     MacOsNotifications *m_macNotifications = nullptr;
+#endif
+#ifdef Q_OS_WIN
+    WindowsNotifications *m_windowsNotifications = nullptr;
 #endif
 };
