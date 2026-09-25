@@ -101,9 +101,10 @@ void IrcServerFeatures::applyToken(std::string_view token)
         : token.substr(separator + 1);
 
     if (name == "CASEMAPPING") {
-        if (const auto mapping = IrcCaseMapping::fromName(value))
+        if (const auto mapping = IrcCaseMapping::fromName(value)) {
             m_caseMapping = *mapping;
-        m_caseMappingKnown = true;
+            m_caseMappingKnown = true;
+        }
         return;
     }
 

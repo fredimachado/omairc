@@ -45,6 +45,9 @@ private slots:
     void collapsesHashedCursorTargetsByStoredTarget();
     void loadsHiddenCursorFiles();
     void nulTargetsDoNotSharePaths();
+    void reservesHashShapedEncodedSegments();
+    void retriesLegacyCursorMigrationAfterRenameFailure();
+    void ignoresHashShapedCanonicalCursorForDifferentTarget();
 };
 
 void StoragePathTest::encodesReservedCharacters()
@@ -884,6 +887,139 @@ void StoragePathTest::nulTargetsDoNotSharePaths()
     const QString right = QStringLiteral("a") + QChar(0) + QChar(0) + QStringLiteral("b");
     QVERIFY(omaircTargetSegment(left, mapping)
             != omaircTargetSegment(right, mapping));
+}
+
+void StoragePathTest::reservesHashShapedEncodedSegments()
+{
+    const QString hashLike =
+        QStringLiteral("h") + QString(64, QLatin1Char('a'));
+    const QString encoded = omaircStorageSegment(hashLike);
+    QCOMPARE(encoded, QStringLiteral("%68") + QString(64, QLatin1Char('a')));
+    QVERIFY(!omaircStorageSegmentIsHash(encoded));
+    QCOMPARE(decodeOmaircStorageSegment(encoded), hashLike);
+
+    const QString overLimit(251, QLatin1Char('a'));
+    const QString hashed = omaircStorageSegment(overLimit, QStringLiteral(".json"));
+    QVERIFY(omaircStorageSegmentIsHash(hashed));
+}
+
+void StoragePathTest::retriesLegacyCursorMigrationAfterRenameFailure()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    qputenv("OMAIRC_CURSOR_ROOT", dir.path().toUtf8());
+
+    const QString networkDir =
+        QDir(dir.path()).filePath(omaircStorageSegment(QStringLiteral("net-1")));
+    QVERIFY(QDir().mkpath(networkDir));
+
+    const QString legacyPath =
+        QDir(networkDir).filePath(QStringLiteral("#Omarchy.json"));
+    {
+        QFile legacy(legacyPath);
+        QVERIFY(legacy.open(QIODevice::WriteOnly));
+        QJsonObject object;
+        object.insert(QStringLiteral("timestamp"),
+                      QStringLiteral("2011-10-19T16:42:00.000Z"));
+        object.insert(QStringLiteral("sequence"), 7);
+        legacy.write(QJsonDocument(object).toJson(QJsonDocument::Compact));
+        legacy.write("\n");
+    }
+
+    const QString canonicalPath = QDir(networkDir).filePath(
+        omaircWireStorageSegment(QStringLiteral("#omarchy"), QStringLiteral(".json"))
+        + QStringLiteral(".json"));
+    QVERIFY(QDir().mkpath(canonicalPath));
+
+    OmaircCliCursorStore store;
+    const IrcCaseMapping mapping;
+    const std::optional<OmaircCliCursor> loaded =
+        store.load(QStringLiteral("net-1"), QStringLiteral("#omarchy"), mapping,
+                   true);
+    QVERIFY(loaded.has_value());
+    QCOMPARE(loaded->sequence, 7);
+    QVERIFY(QFile::exists(legacyPath));
+
+    OmaircCliCursor cursor;
+    cursor.timestamp =
+        QDateTime::fromString(QStringLiteral("2011-10-19T16:43:00.000Z"),
+                              Qt::ISODateWithMs);
+    cursor.sequence = 8;
+    QVERIFY(store.save(QStringLiteral("net-1"), QStringLiteral("#omarchy"), mapping,
+                       true, cursor));
+    QVERIFY(QFile::exists(legacyPath));
+
+    const std::optional<OmaircCliCursor> reloaded =
+        store.load(QStringLiteral("net-1"), QStringLiteral("#omarchy"), mapping,
+                   true);
+    QVERIFY(reloaded.has_value());
+    QCOMPARE(reloaded->sequence, 8);
+
+    QVERIFY(QDir(canonicalPath).removeRecursively());
+    const std::optional<OmaircCliCursor> migrated =
+        store.load(QStringLiteral("net-1"), QStringLiteral("#omarchy"), mapping,
+                   true);
+    QVERIFY(migrated.has_value());
+    QCOMPARE(migrated->sequence, 8);
+    QVERIFY(QFile::exists(canonicalPath));
+    QVERIFY(!QFile::exists(legacyPath));
+
+    qunsetenv("OMAIRC_CURSOR_ROOT");
+}
+
+void StoragePathTest::ignoresHashShapedCanonicalCursorForDifferentTarget()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    qputenv("OMAIRC_CURSOR_ROOT", dir.path().toUtf8());
+
+    const QString networkDir =
+        QDir(dir.path()).filePath(omaircStorageSegment(QStringLiteral("net-1")));
+    QVERIFY(QDir().mkpath(networkDir));
+
+    const QString lowerTarget(251, QLatin1Char('a'));
+    const QString upperTarget(251, QLatin1Char('A'));
+    const QString canonicalPath = QDir(networkDir).filePath(
+        omaircWireStorageSegment(lowerTarget, QStringLiteral(".json"))
+        + QStringLiteral(".json"));
+    const QString siblingPath = QDir(networkDir).filePath(
+        omaircWireStorageSegment(upperTarget, QStringLiteral(".json"))
+        + QStringLiteral(".json"));
+    QVERIFY(omaircStorageSegmentIsHash(QFileInfo(canonicalPath).completeBaseName()));
+
+    {
+        QFile canonical(canonicalPath);
+        QVERIFY(canonical.open(QIODevice::WriteOnly));
+        QJsonObject object;
+        object.insert(QStringLiteral("timestamp"),
+                      QStringLiteral("2011-10-19T16:40:00.000Z"));
+        object.insert(QStringLiteral("sequence"), 1);
+        object.insert(QStringLiteral("target"), upperTarget);
+        canonical.write(QJsonDocument(object).toJson(QJsonDocument::Compact));
+        canonical.write("\n");
+    }
+    {
+        QFile sibling(siblingPath);
+        QVERIFY(sibling.open(QIODevice::WriteOnly));
+        QJsonObject object;
+        object.insert(QStringLiteral("timestamp"),
+                      QStringLiteral("2011-10-19T16:42:00.000Z"));
+        object.insert(QStringLiteral("sequence"), 2);
+        object.insert(QStringLiteral("target"), lowerTarget);
+        sibling.write(QJsonDocument(object).toJson(QJsonDocument::Compact));
+        sibling.write("\n");
+    }
+
+    OmaircCliCursorStore store;
+    const IrcCaseMapping ascii(IrcCaseMapping::Kind::Ascii);
+    const std::optional<OmaircCliCursor> loaded =
+        store.load(QStringLiteral("net-1"), lowerTarget, ascii, true);
+    QVERIFY(loaded.has_value());
+    QCOMPARE(loaded->sequence, 2);
+    QVERIFY(QFile::exists(canonicalPath));
+    QVERIFY(!QFile::exists(siblingPath));
+
+    qunsetenv("OMAIRC_CURSOR_ROOT");
 }
 
 int runStoragePathTests(int argc, char **argv)

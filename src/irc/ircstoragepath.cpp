@@ -197,6 +197,8 @@ QString omaircStorageSegment(QString text, QString extensionForDeviceCheck)
         segment = encodeStorageBytes(utf8);
     if (segment.size() + extensionForDeviceCheck.size() > 255)
         return hashLongSegment(utf8);
+    if (omaircStorageSegmentIsHash(segment))
+        segment = percentEncodeByte('h') + segment.sliced(1);
     return segment;
 }
 
