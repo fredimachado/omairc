@@ -283,6 +283,103 @@ IrcController::IrcController(QObject *parent)
           },
           [this]() -> std::optional<IrcConversationKey> { return m_selected; },
       })
+    , m_commands(m_reducer, m_ignores, m_mutes, m_highlights,
+                 IrcCommandDispatcher::Host{
+          [this](IrcComposerSurface surface) { return queryNetworkId(surface); },
+          [this](IrcComposerSurface surface) { return sessionFor(surface); },
+          [this](const QString& networkId) {
+              return m_sessions.findSession(networkId);
+          },
+          [this]() { return selectedSession(); },
+          [this]() { return selectedTarget(); },
+          [this]() { return isChannel(); },
+          [this]() { return selectedIsCloseableDirect(); },
+          [this]() -> std::optional<IrcConversationKey> { return m_selected; },
+          [this]() { return !m_sessions.networkIds().isEmpty(); },
+          [this]() { return m_console.networkId(); },
+          [this](IrcMessageKind kind, const QString& body) {
+              echoLocal(kind, body);
+          },
+          [this](const QString& networkId, const QString& channel) {
+              openJoinedChannel(networkId, channel);
+          },
+          [this](const QString& networkId, const QString& channel) {
+              return dismissChannel(networkId, channel);
+          },
+          [this]() { dropSelectedDirectAndReselect(); },
+          [this](IrcComposerSurface surface) { return clearSurface(surface); },
+          [this](const QString& networkId, const QString& target) {
+              rememberOpenDirect(networkId, target);
+          },
+          [this](const QString& networkId, const QString& target) {
+              noteNickDelivery(networkId, target);
+          },
+          [this]() { noteLocalActivity(); },
+          [this](IrcSession *session) { unawayAfterChat(session); },
+          [this](const QString& networkId) { noteManualAway(networkId); },
+          [this](const QString& networkId) { noteAwayCleared(networkId); },
+          [this]() { m_typingTarget.clear(); },
+          [this](const QString& body) { return sendSelectedMessage(body); },
+          [this](IrcSession *session, const QString& target, const QString& body,
+                 IrcCommandDispatcher::QuietWire wire) {
+              echoIfPresent(session, target, body, wire);
+          },
+          [this](const QString& networkId, const QString& target, bool muted) {
+              return applyMute(networkId, target, muted);
+          },
+          [this](const QString& networkId) { syncHighlightWords(networkId); },
+          [this]() { m_conversations.reload(); },
+          [this](const QString& networkId, const QString& target) {
+              selectConversation(networkId, target);
+          },
+          [this](const IrcWhoisTranscriptEvent& event) { apply(event); },
+          [this](const IrcStatusEntry& entry) { m_console.record(entry); },
+          [this](const IrcCommand& command, IrcComposerSurface surface) {
+              return dispatchList(command, surface);
+          },
+          [this](const IrcCommand& command, IrcComposerSurface surface) {
+              return dispatchAutoaway(command, surface);
+          },
+          [this](const IrcCommand& command, IrcComposerSurface surface) {
+              return m_replies.dispatchWhois(command, surface);
+          },
+          [this](const IrcCommand& command, IrcComposerSurface surface) {
+              return m_replies.dispatchCtcp(command, surface);
+          },
+          [this](const IrcCommand& command, IrcComposerSurface surface) {
+              return m_replies.dispatchStatus(command, surface);
+          },
+          [this](const IrcCommand& command, IrcComposerSurface surface) {
+              return m_replies.dispatchAvatar(command, surface);
+          },
+          [this](const IrcCommand& command, IrcComposerSurface surface) {
+              return m_monitorCoord.dispatchMonitor(command, surface);
+          },
+          [this](IrcPrefName name) {
+              switch (name) {
+              case IrcPrefName::Directs:
+                  return reopenDirectMessages();
+              case IrcPrefName::Avatars:
+                  return loadPeerAvatars();
+              case IrcPrefName::Unread:
+                  return openConversationsAtUnread();
+              }
+              return false;
+          },
+          [this](IrcPrefName name, bool enabled) {
+              switch (name) {
+              case IrcPrefName::Directs:
+                  setReopenDirectMessages(enabled);
+                  break;
+              case IrcPrefName::Avatars:
+                  setLoadPeerAvatars(enabled);
+                  break;
+              case IrcPrefName::Unread:
+                  setOpenConversationsAtUnread(enabled);
+                  break;
+              }
+          },
+      })
 {
     connect(&m_channelLists, &IrcChannelListRequest::rowChanged, this,
             [this](const QString& networkId, const IrcChannelListRow& row, bool replaced) {
@@ -457,13 +554,7 @@ void IrcController::forgetNetworkState(const QString &networkId)
         }
     }
     m_reducer.forgetNetwork(networkId);
-    for (auto it = m_cancelledPendingJoins.begin();
-         it != m_cancelledPendingJoins.end(); ) {
-        if (it->networkId == networkId)
-            it = m_cancelledPendingJoins.erase(it);
-        else
-            ++it;
-    }
+    m_commands.forgetNetwork(networkId);
     m_unawaySent.remove(networkId);
     m_autoAwayNetworks.remove(networkId);
     m_manualAwayNetworks.remove(networkId);
@@ -824,7 +915,7 @@ bool IrcController::joinListedChannel(const QString& channel)
     }
     const bool wrote = session->join(*target);
     if (wrote) {
-        m_cancelledPendingJoins.erase(key);
+        m_commands.takeCancelledSelfJoin(key);
         openJoinedChannel(networkId, target->channel());
     }
     return wrote;
@@ -1256,7 +1347,7 @@ bool IrcController::sendToTarget(const QString &networkId,
     const IrcConversationKey key = m_reducer.conversationKey(networkId, target);
     m_reducer.ensureConversation(key, target, IrcConversationCause::QuietSend);
     noteNickDelivery(networkId, target);
-    echoIfPresent(session, target, text, QuietWire::Privmsg);
+    echoIfPresent(session, target, text, IrcCommandDispatcher::QuietWire::Privmsg);
     noteLocalActivity();
     unawayAfterChat(session);
     setLastError(networkId, {});
@@ -1455,265 +1546,7 @@ IrcController::snapshotConversations(const QString &networkId) const
 IrcCommandOutcome IrcController::dispatch(const IrcCommand& command,
                                           IrcComposerSurface surface)
 {
-    if (command.verb == IrcCommand::Verb::Empty)
-        return IrcCommandOutcome::Sent;
-    if (command.verb == IrcCommand::Verb::Unknown)
-        return IrcCommandOutcome::Unsupported;
-    if (!command.allowedOn(surface))
-        return IrcCommandOutcome::WrongScope;
-
-    if (command.verb == IrcCommand::Verb::Say)
-        return sendSelectedMessage(command.argument);
-
-    if (command.verb == IrcCommand::Verb::Action) {
-        IrcSession *session = selectedSession();
-        if (!session || !m_selected)
-            return IrcCommandOutcome::WrongScope;
-        const bool sent = session->sendAction(selectedTarget(), command.argument);
-        if (sent) {
-            rememberOpenDirect(session->networkId(), selectedTarget());
-            noteNickDelivery(session->networkId(), selectedTarget());
-            echoLocal(IrcMessageKind::Action, command.argument);
-            m_typingTarget.clear();
-            noteLocalActivity();
-            unawayAfterChat(session);
-        }
-        return sent ? IrcCommandOutcome::Sent : IrcCommandOutcome::Refused;
-    }
-
-    if (command.verb == IrcCommand::Verb::Query)
-        return dispatchQuery(command, surface);
-
-    if (quietSendFor(command.verb))
-        return dispatchQuietSend(command, surface);
-
-    if (command.verb == IrcCommand::Verb::Mode)
-        return dispatchMode(command, surface);
-
-    if (command.verb == IrcCommand::Verb::Op
-        || command.verb == IrcCommand::Verb::Deop
-        || command.verb == IrcCommand::Verb::Voice
-        || command.verb == IrcCommand::Verb::Devoice
-        || command.verb == IrcCommand::Verb::Ban) {
-        return dispatchChannelModeWrapper(command, surface);
-    }
-
-    if (command.verb == IrcCommand::Verb::Ns
-        || command.verb == IrcCommand::Verb::Cs
-        || command.verb == IrcCommand::Verb::Znc) {
-        return dispatchServiceMsg(command, surface);
-    }
-
-    if (command.verb == IrcCommand::Verb::Raw)
-        return dispatchRaw(command, surface);
-
-    if (command.verb == IrcCommand::Verb::Whois)
-        return m_replies.dispatchWhois(command, surface);
-
-    if (command.verb == IrcCommand::Verb::Ping
-        || command.verb == IrcCommand::Verb::Time
-        || command.verb == IrcCommand::Verb::Version) {
-        return m_replies.dispatchCtcp(command, surface);
-    }
-
-    if (command.verb == IrcCommand::Verb::Clear)
-        return clearSurface(surface);
-
-    if (command.verb == IrcCommand::Verb::Close) {
-        if (!selectedIsCloseableDirect())
-            return IrcCommandOutcome::WrongScope;
-        dropSelectedDirectAndReselect();
-        return IrcCommandOutcome::Sent;
-    }
-
-    if (command.verb == IrcCommand::Verb::Topic)
-        return setSelectedTopic(command.argument);
-
-    if (command.verb == IrcCommand::Verb::Ignore
-        || command.verb == IrcCommand::Verb::Unignore
-        || command.verb == IrcCommand::Verb::Ignored) {
-        return dispatchIgnore(command, surface);
-    }
-
-    if (command.verb == IrcCommand::Verb::Monitor
-        || command.verb == IrcCommand::Verb::Unmonitor
-        || command.verb == IrcCommand::Verb::Monitored) {
-        return m_monitorCoord.dispatchMonitor(command, surface);
-    }
-
-    if (command.verb == IrcCommand::Verb::Mute
-        || command.verb == IrcCommand::Verb::Unmute
-        || command.verb == IrcCommand::Verb::Muted) {
-        return dispatchMute(command, surface);
-    }
-
-    if (command.verb == IrcCommand::Verb::Highlight
-        || command.verb == IrcCommand::Verb::Unhighlight
-        || command.verb == IrcCommand::Verb::Highlights) {
-        return dispatchHighlight(command, surface);
-    }
-
-    if (command.verb == IrcCommand::Verb::Help)
-        return dispatchHelp(surface);
-
-    if (command.verb == IrcCommand::Verb::Autoaway)
-        return dispatchAutoaway(command, surface);
-
-    if (command.verb == IrcCommand::Verb::Pref)
-        return dispatchPref(command, surface);
-
-    if (command.verb == IrcCommand::Verb::List)
-        return dispatchList(command, surface);
-
-    if (command.verb == IrcCommand::Verb::Status)
-        return m_replies.dispatchStatus(command, surface);
-
-    if (command.verb == IrcCommand::Verb::Avatar)
-        return m_replies.dispatchAvatar(command, surface);
-
-    IrcSession *active = sessionFor(surface);
-    if (!active) {
-        if (surface == IrcComposerSurface::Conversation && !m_selected
-                && !m_sessions.networkIds().isEmpty())
-            return IrcCommandOutcome::Refused;
-        return IrcCommandOutcome::NotConnected;
-    }
-    if (active->state() != IrcSession::State::Registered
-            && command.verb != IrcCommand::Verb::Quit)
-        return IrcCommandOutcome::NotConnected;
-
-    bool sent = false;
-    switch (command.verb) {
-    case IrcCommand::Verb::Join: {
-        const IrcServerFeatures& features =
-            m_reducer.serverFeatures(active->networkId());
-        std::optional<QVector<IrcJoinTarget>> targets;
-        if (command.argument.isEmpty()) {
-            const std::optional<IrcPendingInvite> pending = active->pendingInvite();
-            if (!pending)
-                return IrcCommandOutcome::Refused;
-            const std::optional<IrcJoinTarget> target =
-                IrcJoinTarget::make(pending->channel, std::nullopt, features);
-            if (!target)
-                return IrcCommandOutcome::Refused;
-            targets = QVector<IrcJoinTarget>{*target};
-        } else {
-            targets = ircParseJoinTargets(command.argument, features);
-            if (!targets)
-                return IrcCommandOutcome::Refused;
-        }
-        sent = true;
-        for (const IrcJoinTarget& target : *targets) {
-            const bool wrote = active->join(target);
-            if (wrote) {
-                m_cancelledPendingJoins.erase(
-                    m_reducer.conversationKey(active->networkId(),
-                                              target.channel()));
-            }
-            sent = wrote && sent;
-        }
-        if (sent)
-            openJoinedChannel(active->networkId(), targets->constLast().channel());
-        break;
-    }
-    case IrcCommand::Verb::Part: {
-        QString channel = firstToken(command.argument);
-        if (channel.isEmpty()) {
-            if (!m_selected || !isChannel())
-                return IrcCommandOutcome::WrongScope;
-            if (m_selected->networkId != queryNetworkId(surface))
-                return IrcCommandOutcome::Refused;
-            channel = selectedTarget();
-            if (channel.isEmpty())
-                return IrcCommandOutcome::Refused;
-        }
-        const IrcConversationKey key =
-            m_reducer.conversationKey(active->networkId(), channel);
-        const IrcConversationState *conversation = m_reducer.find(key);
-        const bool joined = conversation
-            && conversation->channel()
-            && conversation->channel()->joined;
-        if (dismissChannel(active->networkId(), channel)) {
-            if (joined)
-                active->part(channel);
-            else
-                m_cancelledPendingJoins.insert(key);
-            sent = true;
-            break;
-        }
-        sent = active->part(channel);
-        break;
-    }
-    case IrcCommand::Verb::Kick: {
-        const QString first = firstToken(command.argument);
-        if (first.isEmpty())
-            return IrcCommandOutcome::Refused;
-        const QString networkId = queryNetworkId(surface);
-        if (m_reducer.serverFeatures(networkId).isChannel(utf8(first))) {
-            const QString afterChannel = restAfterFirstToken(command.argument);
-            const QString nick = firstToken(afterChannel);
-            if (nick.isEmpty())
-                return IrcCommandOutcome::Refused;
-            sent = active->kick(first, nick, restAfterFirstToken(afterChannel));
-            break;
-        }
-        if (!m_selected || !isChannel())
-            return IrcCommandOutcome::WrongScope;
-        if (m_selected->networkId != networkId)
-            return IrcCommandOutcome::Refused;
-        const QString channel = selectedTarget();
-        sent = !channel.isEmpty()
-            && active->kick(channel, first, restAfterFirstToken(command.argument));
-        break;
-    }
-    case IrcCommand::Verb::Invite: {
-        const QString nick = firstToken(command.argument);
-        if (nick.isEmpty())
-            return IrcCommandOutcome::WrongScope;
-        const QString networkId = queryNetworkId(surface);
-        const IrcServerFeatures& features = m_reducer.serverFeatures(networkId);
-        if (features.isChannel(utf8(nick)))
-            return IrcCommandOutcome::Refused;
-        const QString rest = restAfterFirstToken(command.argument);
-        QString channel;
-        if (rest.isEmpty()) {
-            if (surface == IrcComposerSurface::Status || !m_selected || !isChannel())
-                return IrcCommandOutcome::WrongScope;
-            if (m_selected->networkId != networkId)
-                return IrcCommandOutcome::Refused;
-            channel = selectedTarget();
-        } else {
-            channel = firstToken(rest);
-            if (!features.isChannel(utf8(channel)) || !restAfterFirstToken(rest).isEmpty())
-                return IrcCommandOutcome::Refused;
-        }
-        sent = !channel.isEmpty() && active->invite(nick, channel);
-        break;
-    }
-    case IrcCommand::Verb::Nick:
-        sent = !command.argument.isEmpty() && active->changeNick(command.argument);
-        break;
-    case IrcCommand::Verb::Quit:
-        sent = active->quit(command.argument);
-        break;
-    case IrcCommand::Verb::Away:
-        sent = active->setAway(command.argument);
-        if (sent) {
-            if (command.argument.trimmed().isEmpty())
-                noteAwayCleared(active->networkId());
-            else
-                noteManualAway(active->networkId());
-        }
-        break;
-    case IrcCommand::Verb::Back:
-        sent = active->clearAway();
-        if (sent)
-            noteAwayCleared(active->networkId());
-        break;
-    default:
-        return IrcCommandOutcome::Unsupported;
-    }
-    return sent ? IrcCommandOutcome::Sent : IrcCommandOutcome::Refused;
+    return m_commands.dispatch(command, surface);
 }
 
 QString IrcController::queryNetworkId(IrcComposerSurface surface) const
@@ -1743,64 +1576,6 @@ IrcCommandOutcome IrcController::sendSelectedMessage(const QString& body)
         unawayAfterChat(session);
     }
     return sent ? IrcCommandOutcome::Sent : IrcCommandOutcome::Refused;
-}
-
-IrcCommandOutcome IrcController::setSelectedTopic(const QString& topic)
-{
-    if (!m_selected || !isChannel())
-        return IrcCommandOutcome::WrongScope;
-    if (topic.isEmpty())
-        return IrcCommandOutcome::Sent;
-    IrcSession *session = selectedSession();
-    if (!session || session->state() != IrcSession::State::Registered)
-        return IrcCommandOutcome::NotConnected;
-    return session->setTopic(selectedTarget(), topic)
-        ? IrcCommandOutcome::Sent
-        : IrcCommandOutcome::Refused;
-}
-
-IrcCommandOutcome IrcController::dispatchIgnore(const IrcCommand& command,
-                                                IrcComposerSurface surface)
-{
-    const QString networkId = queryNetworkId(surface);
-    if (networkId.isEmpty()) {
-        if (surface == IrcComposerSurface::Conversation && !m_selected)
-            return IrcCommandOutcome::WrongScope;
-        return IrcCommandOutcome::Refused;
-    }
-    IrcSession *session = sessionFor(surface);
-    if (!session || session->state() == IrcSession::State::Idle
-        || session->state() == IrcSession::State::Failed)
-        return IrcCommandOutcome::NotConnected;
-
-    const IrcServerFeatures& features = m_reducer.serverFeatures(networkId);
-    const IrcCaseMapping& mapping = features.caseMapping();
-    QString text;
-    if (command.verb == IrcCommand::Verb::Ignored) {
-        if (!command.argument.isEmpty())
-            return IrcCommandOutcome::Refused;
-        const QStringList nicks = m_ignores.listed(networkId, mapping);
-        text = nicks.isEmpty()
-            ? QStringLiteral("Not ignoring anyone")
-            : QStringLiteral("Ignoring: %1").arg(nicks.join(QStringLiteral(", ")));
-    } else {
-        const QString nick = firstToken(command.argument);
-        if (!restAfterFirstToken(command.argument).isEmpty()
-            || !ignoreNickIsUsable(nick, features)) {
-            return IrcCommandOutcome::Refused;
-        }
-        if (command.verb == IrcCommand::Verb::Ignore) {
-            const bool added = m_ignores.add(networkId, nick, mapping);
-            text = added ? QStringLiteral("Ignoring %1").arg(nick)
-                         : QStringLiteral("Already ignoring %1").arg(nick);
-        } else {
-            const bool removed = m_ignores.remove(networkId, nick, mapping);
-            text = removed ? QStringLiteral("No longer ignoring %1").arg(nick)
-                           : QStringLiteral("Not ignoring %1").arg(nick);
-        }
-    }
-    m_console.record(IrcStatusEntry::outcome(networkId, text));
-    return IrcCommandOutcome::Sent;
 }
 
 void IrcController::hydrateMutes(const QString& networkId)
@@ -1910,312 +1685,10 @@ bool IrcController::applyMute(const QString& networkId,
     return changed;
 }
 
-IrcCommandOutcome IrcController::dispatchMute(const IrcCommand& command,
-                                              IrcComposerSurface surface)
-{
-    const QString networkId = queryNetworkId(surface);
-    if (networkId.isEmpty()) {
-        if (surface == IrcComposerSurface::Conversation && !m_selected)
-            return IrcCommandOutcome::WrongScope;
-        return IrcCommandOutcome::Refused;
-    }
-    IrcSession *session = sessionFor(surface);
-    if (!session || session->state() == IrcSession::State::Idle
-        || session->state() == IrcSession::State::Failed)
-        return IrcCommandOutcome::NotConnected;
-
-    const IrcServerFeatures& features = m_reducer.serverFeatures(networkId);
-    const IrcCaseMapping& mapping = features.caseMapping();
-    QString text;
-    if (command.verb == IrcCommand::Verb::Muted) {
-        if (!command.argument.isEmpty())
-            return IrcCommandOutcome::Refused;
-        const QStringList targets = m_mutes.listed(networkId, mapping);
-        text = targets.isEmpty()
-            ? QStringLiteral("Not muting anything")
-            : QStringLiteral("Muted: %1").arg(targets.join(QStringLiteral(", ")));
-    } else {
-        QString target = firstToken(command.argument);
-        if (!restAfterFirstToken(command.argument).isEmpty())
-            return IrcCommandOutcome::Refused;
-        if (target.isEmpty()) {
-            if (surface == IrcComposerSurface::Status || !m_selected)
-                return IrcCommandOutcome::WrongScope;
-            target = selectedTarget();
-        }
-        if (!muteTargetIsUsable(target, features))
-            return IrcCommandOutcome::Refused;
-        if (command.verb == IrcCommand::Verb::Mute) {
-            const bool added = applyMute(networkId, target, true);
-            text = added ? QStringLiteral("Muted %1").arg(target)
-                         : QStringLiteral("Already muted %1").arg(target);
-        } else {
-            const bool removed = applyMute(networkId, target, false);
-            text = removed ? QStringLiteral("No longer muted %1").arg(target)
-                           : QStringLiteral("Not muted %1").arg(target);
-        }
-    }
-    m_console.record(IrcStatusEntry::outcome(networkId, text));
-    return IrcCommandOutcome::Sent;
-}
-
-IrcCommandOutcome IrcController::dispatchHighlight(const IrcCommand& command,
-                                                   IrcComposerSurface surface)
-{
-    const QString networkId = queryNetworkId(surface);
-    if (networkId.isEmpty()) {
-        if (surface == IrcComposerSurface::Conversation && !m_selected)
-            return IrcCommandOutcome::WrongScope;
-        return IrcCommandOutcome::Refused;
-    }
-    IrcSession *session = sessionFor(surface);
-    if (!session || session->state() == IrcSession::State::Idle
-        || session->state() == IrcSession::State::Failed)
-        return IrcCommandOutcome::NotConnected;
-
-    const IrcCaseMapping& mapping =
-        m_reducer.serverFeatures(networkId).caseMapping();
-    QString text;
-    if (command.verb == IrcCommand::Verb::Highlights) {
-        if (!command.argument.isEmpty())
-            return IrcCommandOutcome::Refused;
-        const QStringList words = m_highlights.listed(networkId, mapping);
-        text = words.isEmpty()
-            ? QStringLiteral("No highlight words")
-            : QStringLiteral("Highlights: %1").arg(words.join(QStringLiteral(", ")));
-    } else {
-        const QString word = firstToken(command.argument);
-        if (word.isEmpty() || !restAfterFirstToken(command.argument).isEmpty())
-            return IrcCommandOutcome::Refused;
-        if (command.verb == IrcCommand::Verb::Highlight) {
-            const bool added = m_highlights.add(networkId, word, mapping);
-            text = added ? QStringLiteral("Highlighting %1").arg(word)
-                         : QStringLiteral("Already highlighting %1").arg(word);
-        } else {
-            const bool removed = m_highlights.remove(networkId, word, mapping);
-            text = removed ? QStringLiteral("No longer highlighting %1").arg(word)
-                           : QStringLiteral("Not highlighting %1").arg(word);
-        }
-        syncHighlightWords(networkId);
-    }
-    m_console.record(IrcStatusEntry::outcome(networkId, text));
-    return IrcCommandOutcome::Sent;
-}
-
 void IrcController::syncHighlightWords(const QString& networkId)
 {
     m_reducer.setHighlightWords(networkId, m_highlights.words(networkId));
     m_messages.notifyMentioned();
-}
-
-IrcCommandOutcome IrcController::dispatchQuery(const IrcCommand& command,
-                                               IrcComposerSurface surface)
-{
-    const QString nick = firstToken(command.argument);
-    const QString rest = restAfterFirstToken(command.argument);
-    if (nick.isEmpty())
-        return IrcCommandOutcome::Refused;
-
-    const QString networkId = queryNetworkId(surface);
-    if (networkId.isEmpty()) {
-        if (surface == IrcComposerSurface::Conversation)
-            return IrcCommandOutcome::WrongScope;
-        return IrcCommandOutcome::Refused;
-    }
-
-    if (m_reducer.serverFeatures(networkId).isChannel(utf8(nick)))
-        return IrcCommandOutcome::Refused;
-
-    if (!rest.isEmpty()) {
-        IrcSession *session = m_sessions.findSession(networkId);
-        if (!session || session->state() != IrcSession::State::Registered)
-            return IrcCommandOutcome::NotConnected;
-    }
-
-    const IrcConversationKey key = m_reducer.conversationKey(networkId, nick);
-    if (!m_reducer.ensureConversation(key, nick, IrcConversationCause::UserOpen))
-        return IrcCommandOutcome::Refused;
-    rememberOpenDirect(networkId, nick);
-    m_conversations.reload();
-    selectConversation(networkId, nick);
-    if (rest.isEmpty())
-        return IrcCommandOutcome::Sent;
-    return sendSelectedMessage(rest);
-}
-
-std::optional<IrcController::QuietSend>
-IrcController::quietSendFor(IrcCommand::Verb verb)
-{
-    switch (verb) {
-    case IrcCommand::Verb::Msg:
-        return QuietSend{QuietWire::Privmsg, QuietTarget::Nick};
-    case IrcCommand::Verb::Notice:
-        return QuietSend{QuietWire::Notice, QuietTarget::Any};
-    default:
-        return std::nullopt;
-    }
-}
-
-IrcCommandOutcome IrcController::dispatchQuietSend(const IrcCommand& command,
-                                                   IrcComposerSurface surface)
-{
-    const std::optional<QuietSend> spec = quietSendFor(command.verb);
-    if (!spec)
-        return IrcCommandOutcome::Unsupported;
-
-    const QString target = firstToken(command.argument);
-    const QString body = restAfterFirstToken(command.argument);
-    if (target.isEmpty() || body.isEmpty())
-        return IrcCommandOutcome::Refused;
-
-    const QString networkId = queryNetworkId(surface);
-    if (networkId.isEmpty()) {
-        if (surface == IrcComposerSurface::Conversation)
-            return IrcCommandOutcome::WrongScope;
-        return IrcCommandOutcome::Refused;
-    }
-
-    if (spec->target == QuietTarget::Nick
-        && m_reducer.serverFeatures(networkId).isChannel(utf8(target))) {
-        return IrcCommandOutcome::Refused;
-    }
-
-    IrcSession *session = m_sessions.findSession(networkId);
-    if (!session || session->state() != IrcSession::State::Registered)
-        return IrcCommandOutcome::NotConnected;
-
-    const bool sent = spec->wire == QuietWire::Privmsg
-        ? session->sendPrivmsg(target, body)
-        : session->sendNotice(target, body);
-    if (!sent)
-        return IrcCommandOutcome::Refused;
-
-    noteNickDelivery(networkId, target);
-    const IrcConversationKey key = m_reducer.conversationKey(networkId, target);
-    m_reducer.ensureConversation(key, target, IrcConversationCause::QuietSend);
-    echoIfPresent(session, target, body, spec->wire);
-    if (spec->wire == QuietWire::Privmsg) {
-        noteLocalActivity();
-        unawayAfterChat(session);
-    }
-    return IrcCommandOutcome::Sent;
-}
-
-IrcCommandOutcome IrcController::dispatchMode(const IrcCommand& command,
-                                              IrcComposerSurface surface)
-{
-    if (command.argument.isEmpty())
-        return IrcCommandOutcome::Refused;
-
-    const QString networkId = queryNetworkId(surface);
-    if (networkId.isEmpty()) {
-        if (surface == IrcComposerSurface::Conversation)
-            return IrcCommandOutcome::WrongScope;
-        return IrcCommandOutcome::Refused;
-    }
-
-    const std::optional<IrcChannelModeRequest> request =
-        IrcChannelModeRequest::parse(command.argument, serverFeatures(networkId));
-    if (!request)
-        return IrcCommandOutcome::Refused;
-
-    IrcSession *session = m_sessions.findSession(networkId);
-    if (!session || session->state() != IrcSession::State::Registered)
-        return IrcCommandOutcome::NotConnected;
-    return session->sendChannelMode(*request) ? IrcCommandOutcome::Sent
-                                              : IrcCommandOutcome::Refused;
-}
-
-IrcCommandOutcome IrcController::dispatchChannelModeWrapper(
-    const IrcCommand& command, IrcComposerSurface surface)
-{
-    if (!m_selected || !isChannel())
-        return IrcCommandOutcome::WrongScope;
-    if (m_selected->networkId != queryNetworkId(surface))
-        return IrcCommandOutcome::Refused;
-
-    const QString token = firstToken(command.argument);
-    if (token.isEmpty() || !restAfterFirstToken(command.argument).isEmpty())
-        return IrcCommandOutcome::Refused;
-
-    QString modes;
-    switch (command.verb) {
-    case IrcCommand::Verb::Op:
-        modes = QStringLiteral("+o");
-        break;
-    case IrcCommand::Verb::Deop:
-        modes = QStringLiteral("-o");
-        break;
-    case IrcCommand::Verb::Voice:
-        modes = QStringLiteral("+v");
-        break;
-    case IrcCommand::Verb::Devoice:
-        modes = QStringLiteral("-v");
-        break;
-    case IrcCommand::Verb::Ban:
-        modes = QStringLiteral("+b");
-        break;
-    default:
-        return IrcCommandOutcome::Unsupported;
-    }
-
-    QString parameter = token;
-    if (command.verb == IrcCommand::Verb::Ban
-        && !token.contains(QLatin1Char('!'))
-        && !token.contains(QLatin1Char('@'))) {
-        parameter = token + QStringLiteral("!*@*");
-    }
-
-    IrcCommand mode;
-    mode.verb = IrcCommand::Verb::Mode;
-    mode.argument = QStringLiteral("%1 %2 %3")
-                        .arg(selectedTarget(), modes, parameter);
-    return dispatchMode(mode, surface);
-}
-
-IrcCommandOutcome IrcController::dispatchServiceMsg(const IrcCommand& command,
-                                                    IrcComposerSurface surface)
-{
-    QString nick;
-    switch (command.verb) {
-    case IrcCommand::Verb::Ns:
-        nick = QStringLiteral("NickServ");
-        break;
-    case IrcCommand::Verb::Cs:
-        nick = QStringLiteral("ChanServ");
-        break;
-    case IrcCommand::Verb::Znc:
-        nick = QStringLiteral("*status");
-        break;
-    default:
-        return IrcCommandOutcome::Unsupported;
-    }
-    IrcCommand msg = command;
-    msg.verb = IrcCommand::Verb::Msg;
-    msg.argument = command.argument.isEmpty()
-        ? nick
-        : nick + QLatin1Char(' ') + command.argument;
-    return dispatchQuietSend(msg, surface);
-}
-
-IrcCommandOutcome IrcController::dispatchRaw(const IrcCommand& command,
-                                             IrcComposerSurface surface)
-{
-    if (command.argument.isEmpty())
-        return IrcCommandOutcome::Refused;
-
-    const QString networkId = queryNetworkId(surface);
-    if (networkId.isEmpty()) {
-        if (surface == IrcComposerSurface::Conversation)
-            return IrcCommandOutcome::WrongScope;
-        return IrcCommandOutcome::Refused;
-    }
-
-    IrcSession *session = m_sessions.findSession(networkId);
-    if (!session || session->state() != IrcSession::State::Registered)
-        return IrcCommandOutcome::NotConnected;
-    return session->sendRaw(command.argument) ? IrcCommandOutcome::Sent
-                                              : IrcCommandOutcome::Refused;
 }
 
 IrcCommandOutcome IrcController::dispatchAutoaway(const IrcCommand& command,
@@ -2307,70 +1780,6 @@ IrcCommandOutcome IrcController::echoAutoawayUsage(IrcComposerSurface surface)
         surface,
         spec ? spec->usage
              : QStringLiteral("/autoaway [off|on|duration [reason]|reason [text]]"));
-}
-
-IrcCommandOutcome IrcController::echoPrefFeedback(IrcComposerSurface surface,
-                                                  const QString& text)
-{
-    if (surface == IrcComposerSurface::Conversation) {
-        if (m_selected)
-            apply(IrcWhoisTranscriptEvent{*m_selected, text});
-        return IrcCommandOutcome::Sent;
-    }
-    if (!m_console.networkId().isEmpty())
-        m_console.record(IrcStatusEntry::outcome(m_console.networkId(), text));
-    return IrcCommandOutcome::Sent;
-}
-
-IrcCommandOutcome IrcController::dispatchPref(const IrcCommand& command,
-                                              IrcComposerSurface surface)
-{
-    const IrcPrefRequest request = ircParsePrefArgument(command.argument);
-    if (request.kind == IrcPrefKind::Usage) {
-        const IrcVerbSpec *spec = IrcVerbTable::find(IrcCommand::Verb::Pref);
-        return echoPrefFeedback(surface, spec ? spec->usage : ircPrefUsage());
-    }
-
-    auto enabledFor = [this](IrcPrefName name) {
-        switch (name) {
-        case IrcPrefName::Directs:
-            return reopenDirectMessages();
-        case IrcPrefName::Avatars:
-            return loadPeerAvatars();
-        case IrcPrefName::Unread:
-            return openConversationsAtUnread();
-        }
-        return false;
-    };
-    auto applyPref = [this](IrcPrefName name, bool enabled) {
-        switch (name) {
-        case IrcPrefName::Directs:
-            setReopenDirectMessages(enabled);
-            break;
-        case IrcPrefName::Avatars:
-            setLoadPeerAvatars(enabled);
-            break;
-        case IrcPrefName::Unread:
-            setOpenConversationsAtUnread(enabled);
-            break;
-        }
-    };
-
-    if (request.kind == IrcPrefKind::Set)
-        applyPref(request.name, request.enabled);
-
-    if (request.kind == IrcPrefKind::QueryAll) {
-        return echoPrefFeedback(
-            surface,
-            ircFormatPrefList(reopenDirectMessages(), loadPeerAvatars(),
-                              openConversationsAtUnread()));
-    }
-    if (request.kind == IrcPrefKind::QueryOne) {
-        return echoPrefFeedback(
-            surface, ircFormatPrefQuery(request.name, enabledFor(request.name)));
-    }
-    return echoPrefFeedback(
-        surface, ircFormatPrefState(request.name, enabledFor(request.name)));
 }
 
 void IrcController::saveAutoaway() const
@@ -2579,30 +1988,6 @@ bool IrcController::eventFilter(QObject *watched, QEvent *event)
 #endif
     noteLocalActivity();
     return false;
-}
-
-IrcCommandOutcome IrcController::dispatchHelp(IrcComposerSurface surface)
-{
-    QString networkId = queryNetworkId(surface);
-    if (networkId.isEmpty())
-        networkId = m_console.networkId();
-    if (networkId.isEmpty())
-        return IrcCommandOutcome::Refused;
-
-    QStringList names;
-    for (const IrcVerbSpec& row : IrcVerbTable::all())
-        names.append(QLatin1Char('/') + row.name);
-    const QString text =
-        QStringLiteral("Commands: %1. Empty /join joins the latest invite.")
-            .arg(names.join(QStringLiteral(", ")));
-    if (surface == IrcComposerSurface::Conversation) {
-        if (!m_selected)
-            return IrcCommandOutcome::WrongScope;
-        apply(IrcWhoisTranscriptEvent{*m_selected, text});
-        return IrcCommandOutcome::Sent;
-    }
-    m_console.record(IrcStatusEntry::outcome(networkId, text));
-    return IrcCommandOutcome::Sent;
 }
 
 IrcCommandOutcome IrcController::dispatchList(const IrcCommand& command,
@@ -2824,9 +2209,9 @@ void IrcController::applyProfileAvatarOnConnect(IrcSession *session)
 void IrcController::echoIfPresent(IrcSession *session,
                                   const QString& target,
                                   const QString& body,
-                                  QuietWire wire)
+                                  IrcCommandDispatcher::QuietWire wire)
 {
-    if (wire == QuietWire::Privmsg
+    if (wire == IrcCommandDispatcher::QuietWire::Privmsg
         && session->capabilities().contains(IrcCapability::EchoMessage)) {
         return;
     }
@@ -2836,7 +2221,7 @@ void IrcController::echoIfPresent(IrcSession *session,
         return;
     const QDateTime now = QDateTime::currentDateTimeUtc();
     const QString nick = session->nick();
-    if (wire == QuietWire::Notice) {
+    if (wire == IrcCommandDispatcher::QuietWire::Notice) {
         apply(IrcNoticeEvent{key, nick, body, now, target, {}});
         return;
     }
@@ -3133,7 +2518,7 @@ void IrcController::handleMessage(const QString& networkId,
                 mapping.equals(utf8(join->nick), utf8(currentNick));
             const IrcConversationKey joinKey =
                 m_reducer.conversationKey(join->networkId, join->channel);
-            if (selfJoin && m_cancelledPendingJoins.erase(joinKey)) {
+            if (selfJoin && m_commands.takeCancelledSelfJoin(joinKey)) {
                 if (IrcSession *session = m_sessions.findSession(join->networkId))
                     session->part(join->channel);
                 dismissChannel(join->networkId, join->channel);

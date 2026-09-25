@@ -11,6 +11,7 @@
 #include "ircinbox.h"
 #include "ircinboxmodel.h"
 #include "ircmonitor.h"
+#include "irccommanddispatcher.h"
 #include "ircmonitorcoordinator.h"
 #include "ircmute.h"
 #include "ircopendirect.h"
@@ -251,14 +252,6 @@ signals:
     void channelListRequested();
 
 private:
-    enum class QuietWire { Privmsg, Notice };
-    enum class QuietTarget { Nick, Any };
-    struct QuietSend {
-        QuietWire wire;
-        QuietTarget target;
-    };
-    static std::optional<QuietSend> quietSendFor(IrcCommand::Verb verb);
-
     void apply(const IrcEvent& event);
     void adoptReducerSelection();
     void publish(const IrcViewNotify& notify);
@@ -279,21 +272,6 @@ private:
     QString queryNetworkId(IrcComposerSurface surface) const;
     IrcSession *sessionFor(IrcComposerSurface surface) const;
     IrcCommandOutcome sendSelectedMessage(const QString& body);
-    IrcCommandOutcome setSelectedTopic(const QString& topic);
-    IrcCommandOutcome dispatchQuery(const IrcCommand& command,
-                                    IrcComposerSurface surface);
-    IrcCommandOutcome dispatchQuietSend(const IrcCommand& command,
-                                        IrcComposerSurface surface);
-    IrcCommandOutcome dispatchMode(const IrcCommand& command,
-                                   IrcComposerSurface surface);
-    IrcCommandOutcome dispatchWhois(const IrcCommand& command,
-                                    IrcComposerSurface surface);
-    IrcCommandOutcome dispatchCtcp(const IrcCommand& command,
-                                   IrcComposerSurface surface);
-    IrcCommandOutcome dispatchIgnore(const IrcCommand& command,
-                                     IrcComposerSurface surface);
-    IrcCommandOutcome dispatchMute(const IrcCommand& command,
-                                     IrcComposerSurface surface);
     void hydrateMutes(const QString& networkId);
     bool persistableDirectTarget(const QString& networkId,
                                  const QString& target) const;
@@ -304,16 +282,10 @@ private:
     bool applyMute(const QString& networkId,
                    const QString& target,
                    bool muted);
-    IrcCommandOutcome dispatchHighlight(const IrcCommand& command,
-                                        IrcComposerSurface surface);
     IrcCommandOutcome dispatchAutoaway(const IrcCommand& command,
                                        IrcComposerSurface surface);
-    IrcCommandOutcome dispatchPref(const IrcCommand& command,
-                                   IrcComposerSurface surface);
     IrcCommandOutcome echoAutoawayFeedback(IrcComposerSurface surface,
                                            const QString& text);
-    IrcCommandOutcome echoPrefFeedback(IrcComposerSurface surface,
-                                       const QString& text);
     IrcCommandOutcome echoAutoawayUsage(IrcComposerSurface surface);
     void saveAutoaway() const;
     void armAutoawayIdle();
@@ -329,13 +301,6 @@ private:
     void refreshAutoAwayReason();
     void recordAutoawayStatus(const QString& networkId, const QString& text);
     void syncHighlightWords(const QString& networkId);
-    IrcCommandOutcome dispatchChannelModeWrapper(const IrcCommand& command,
-                                                IrcComposerSurface surface);
-    IrcCommandOutcome dispatchServiceMsg(const IrcCommand& command,
-                                         IrcComposerSurface surface);
-    IrcCommandOutcome dispatchRaw(const IrcCommand& command,
-                                  IrcComposerSurface surface);
-    IrcCommandOutcome dispatchHelp(IrcComposerSurface surface);
     IrcCommandOutcome dispatchList(const IrcCommand& command,
                                    IrcComposerSurface surface);
     void noteNickDelivery(const QString& networkId, const QString& target);
@@ -353,11 +318,12 @@ private:
     QString profileAvatarUrlForNetwork(const QString& networkId) const;
     void persistProfileAvatarUrl(const QString& networkId, const QString& url);
     void applyProfileAvatarOnConnect(IrcSession *session);
+
+    void unawayAfterChat(IrcSession *session);
     void echoIfPresent(IrcSession *session,
                        const QString& target,
                        const QString& body,
-                       QuietWire wire);
-    void unawayAfterChat(IrcSession *session);
+                       IrcCommandDispatcher::QuietWire wire);
     IrcCommandOutcome clearSurface(IrcComposerSurface surface);
     bool report(IrcCommandOutcome outcome, const IrcCommand& command);
     bool selectedIsCloseableDirect() const;
@@ -393,6 +359,7 @@ private:
     IrcPlaybackCoordinator m_playback;
     IrcReplyRouter m_replies;
     IrcMonitorCoordinator m_monitorCoord;
+    IrcCommandDispatcher m_commands;
     IrcHighlightStore m_highlights;
     IrcInbox m_inbox;
     IrcInboxModel m_inboxModel;
@@ -431,5 +398,4 @@ private:
     QSet<QString> m_appliedProfileAvatars;
     ProfileAvatarUrlPersist m_profileAvatarUrlPersist;
     ProfileAvatarUrlLookup m_profileAvatarUrlLookup;
-    std::set<IrcConversationKey> m_cancelledPendingJoins;
 };
