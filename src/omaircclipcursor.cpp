@@ -12,7 +12,31 @@
 #include <QSaveFile>
 #include <QStandardPaths>
 
+#include <string_view>
+
 namespace {
+
+const IrcCaseMapping kAsciiCaseMapping(IrcCaseMapping::Kind::Ascii);
+
+const IrcCaseMapping &cursorSegmentMapping(const IrcCaseMapping &mapping,
+                                           bool caseMappingKnown)
+{
+    return caseMappingKnown ? mapping : kAsciiCaseMapping;
+}
+
+bool cursorTargetsEquivalent(const QString &left,
+                             const QString &right,
+                             const IrcCaseMapping &mapping,
+                             bool caseMappingKnown)
+{
+    const QByteArray leftUtf8 = left.toUtf8();
+    const QByteArray rightUtf8 = right.toUtf8();
+    const std::string_view leftView(leftUtf8.constData(), leftUtf8.size());
+    const std::string_view rightView(rightUtf8.constData(), rightUtf8.size());
+    if (caseMappingKnown)
+        return mapping.equals(leftView, rightView);
+    return kAsciiCaseMapping.equals(leftView, rightView);
+}
 
 constexpr QFileDevice::Permissions kOwnerDir =
     QFileDevice::ReadOwner | QFileDevice::WriteOwner | QFileDevice::ExeOwner;
@@ -116,6 +140,7 @@ bool sameFile(const QString &a, const QString &b)
 void collectEquivalentCursorCandidates(const QString &networkDirPath,
                                        const QString &target,
                                        const IrcCaseMapping &mapping,
+                                       bool caseMappingKnown,
                                        QVector<CursorCandidate> &matches)
 {
     QDir networkDir(networkDirPath);
@@ -132,7 +157,7 @@ void collectEquivalentCursorCandidates(const QString &networkDirPath,
         if (legacyStorageSegment(decodeLegacySegment(stem)) != stem)
             continue;
         const QString decoded = decodeLegacySegment(stem);
-        if (!mapping.equals(decoded.toUtf8().constData(), target.toUtf8().constData()))
+        if (!cursorTargetsEquivalent(decoded, target, mapping, caseMappingKnown))
             continue;
         const QString path = networkDir.filePath(fileName);
         bool alreadyListed = false;
@@ -155,16 +180,19 @@ void collapseEquivalentCursorFiles(const QString &root,
                                    const QString &networkId,
                                    const QString &target,
                                    const IrcCaseMapping &mapping,
+                                   bool caseMappingKnown,
                                    const QString &canonicalPath)
 {
     QVector<CursorCandidate> matches;
     const QString legacyNetworkDir = legacyStorageSegment(networkId);
     const QString newNetworkDir = omaircStorageSegment(networkId);
     collectEquivalentCursorCandidates(
-        QDir(root).filePath(legacyNetworkDir), target, mapping, matches);
+        QDir(root).filePath(legacyNetworkDir), target, mapping, caseMappingKnown,
+        matches);
     if (legacyNetworkDir != newNetworkDir) {
         collectEquivalentCursorCandidates(
-            QDir(root).filePath(newNetworkDir), target, mapping, matches);
+            QDir(root).filePath(newNetworkDir), target, mapping, caseMappingKnown,
+            matches);
     }
 
     if (QFile::exists(canonicalPath)) {
@@ -213,10 +241,12 @@ void migrateCursorTarget(const QString &root,
                        const QString &networkId,
                        const QString &target,
                        const IrcCaseMapping &mapping,
+                       bool caseMappingKnown,
                        const QString &canonicalPath)
 {
     migrateNetworkCursorRoot(root, networkId);
-    collapseEquivalentCursorFiles(root, networkId, target, mapping, canonicalPath);
+    collapseEquivalentCursorFiles(
+        root, networkId, target, mapping, caseMappingKnown, canonicalPath);
 }
 
 }
@@ -236,7 +266,8 @@ QString OmaircCliCursorStore::defaultRoot()
 
 QString OmaircCliCursorStore::pathFor(const QString &networkId,
                                       const QString &target,
-                                      const IrcCaseMapping &mapping) const
+                                      const IrcCaseMapping &mapping,
+                                      bool caseMappingKnown) const
 {
     const QString root = defaultRoot();
     QString canonicalPath;
@@ -247,28 +278,33 @@ QString OmaircCliCursorStore::pathFor(const QString &networkId,
         return canonicalPath;
     }
 
+    const IrcCaseMapping &segmentMapping =
+        cursorSegmentMapping(mapping, caseMappingKnown);
     canonicalPath =
         QDir(QDir(root).filePath(omaircStorageSegment(networkId)))
-            .filePath(omaircTargetSegment(target, mapping, kJsonExtension)
+            .filePath(omaircTargetSegment(target, segmentMapping, kJsonExtension)
                       + kJsonExtension);
-    migrateCursorTarget(root, networkId, target, mapping, canonicalPath);
+    migrateCursorTarget(
+        root, networkId, target, mapping, caseMappingKnown, canonicalPath);
     return canonicalPath;
 }
 
 std::optional<OmaircCliCursor> OmaircCliCursorStore::load(
     const QString &networkId,
     const QString &target,
-    const IrcCaseMapping &mapping) const
+    const IrcCaseMapping &mapping,
+    bool caseMappingKnown) const
 {
-    return readCursorFile(pathFor(networkId, target, mapping));
+    return readCursorFile(pathFor(networkId, target, mapping, caseMappingKnown));
 }
 
 bool OmaircCliCursorStore::save(const QString &networkId,
                                 const QString &target,
                                 const IrcCaseMapping &mapping,
+                                bool caseMappingKnown,
                                 const OmaircCliCursor &cursor) const
 {
-    const QString path = pathFor(networkId, target, mapping);
+    const QString path = pathFor(networkId, target, mapping, caseMappingKnown);
     if (!prepareTree(path))
         return false;
     QJsonObject object;

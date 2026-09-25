@@ -5,6 +5,8 @@
 
 #include <QCryptographicHash>
 
+#include <string_view>
+
 namespace
 {
 
@@ -159,7 +161,8 @@ QString omaircTargetSegment(QString target,
                           const IrcCaseMapping &mapping,
                           QString extensionForDeviceCheck)
 {
-    const std::string normalized =
-        mapping.normalize(target.toUtf8().constData());
+    const QByteArray utf8 = target.toUtf8();
+    const std::string normalized = mapping.normalize(
+        std::string_view(utf8.constData(), utf8.size()));
     return omaircStorageSegment(ircWireText(normalized), extensionForDeviceCheck);
 }

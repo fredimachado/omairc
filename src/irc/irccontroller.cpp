@@ -4231,8 +4231,15 @@ void IrcController::handleMessage(const QString& networkId,
         handleMonitorListFull(networkId, message);
         return;
     }
-    if (message.command == "376" || message.command == "422")
+    if (message.command == "376" || message.command == "422") {
+        IrcServerFeatures features = m_reducer.serverFeatures(networkId);
+        if (!features.caseMappingKnown()) {
+            features.markCaseMappingKnown();
+            m_reducer.setServerFeatures(networkId, features);
+            emit serverFeaturesChanged();
+        }
         noteOpenDirectsMotd(networkId);
+    }
     if (message.command == "322") {
         if (message.parameters.size() >= 3) {
             bool ok = false;

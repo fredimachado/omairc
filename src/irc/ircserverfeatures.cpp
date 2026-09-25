@@ -103,6 +103,7 @@ void IrcServerFeatures::applyToken(std::string_view token)
     if (name == "CASEMAPPING") {
         if (const auto mapping = IrcCaseMapping::fromName(value))
             m_caseMapping = *mapping;
+        m_caseMappingKnown = true;
         return;
     }
 
@@ -183,6 +184,16 @@ void IrcServerFeatures::applyTokens(const std::vector<std::string>& tokens)
 const IrcCaseMapping& IrcServerFeatures::caseMapping() const noexcept
 {
     return m_caseMapping;
+}
+
+bool IrcServerFeatures::caseMappingKnown() const noexcept
+{
+    return m_caseMappingKnown;
+}
+
+void IrcServerFeatures::markCaseMappingKnown() noexcept
+{
+    m_caseMappingKnown = true;
 }
 
 std::string_view IrcServerFeatures::channelTypes() const noexcept
