@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.4] - 2026-09-25
+
+### Added
+
+- `Ctrl+Shift+O` opens a link sheet for the current transcript. It lists
+  `http`/`https` URLs newest first, filters as you type, and Enter opens
+  the URL or joins an INVITE channel on Status.
+- `Ctrl+Shift+/` opens About. The chord is blocked while Connect, find,
+  jump, nick, link, or inbox sheets are open.
+- The session inbox sheet dismisses a row with Delete or its delete
+  control without navigating.
+
+### Changed
+
+- The session inbox no longer appends rows for plain direct messages.
+  Mentions and highlight hits in a direct message still do.
+
 ### Fixed
 
 - A failed profile save or remove is reported on the Connect sheet, and Apply
@@ -14,6 +31,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - SASL PLAIN credentials longer than one `AUTHENTICATE` chunk are sent through
   the existing chunk framer, including the empty continuation when the base64
   encoding lands on a 400-byte boundary.
+- `httpUrlAt` keeps balanced parentheses and brackets in URL paths. Trailing
+  `)` or `]` is stripped only when the close count exceeds the open count
+  inside the match.
+- Transcript and CLI cursor filenames are Windows-safe and respect server
+  casemapping. Existing logs migrate on read.
 
 ## [1.0.3] - 2026-09-24
 
@@ -475,7 +497,8 @@ First public release: a simple IRC client for Omarchy.
 - Keyboard map, slash-command complete, selectable transcript, and follow-unseen.
 - qmake Unix install tree and a GitHub Releases pacman repository.
 
-[Unreleased]: https://github.com/fredimachado/omairc/compare/v1.0.3...HEAD
+[Unreleased]: https://github.com/fredimachado/omairc/compare/v1.0.4...HEAD
+[1.0.4]: https://github.com/fredimachado/omairc/compare/v1.0.3...v1.0.4
 [1.0.3]: https://github.com/fredimachado/omairc/compare/v1.0.2...v1.0.3
 [1.0.2]: https://github.com/fredimachado/omairc/compare/v1.0.1...v1.0.2
 [1.0.1]: https://github.com/fredimachado/omairc/compare/v1.0.0...v1.0.1
