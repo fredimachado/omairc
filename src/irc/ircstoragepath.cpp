@@ -3,6 +3,8 @@
 #include "irccasemapping.h"
 #include "ircwiretext.h"
 
+#include <QDir>
+#include <QFile>
 #include <QCryptographicHash>
 
 #include <string_view>
@@ -165,4 +167,31 @@ QString omaircTargetSegment(QString target,
     const std::string normalized = mapping.normalize(
         std::string_view(utf8.constData(), utf8.size()));
     return omaircStorageSegment(ircWireText(normalized), extensionForDeviceCheck);
+}
+
+bool legacyStoragePathExists(const QString &path,
+                             const QString &segment,
+                             QString extensionForDeviceCheck)
+{
+#ifdef Q_OS_WIN
+    if (isWin32DeviceName(segment, extensionForDeviceCheck))
+        return false;
+#else
+    Q_UNUSED(segment);
+    Q_UNUSED(extensionForDeviceCheck);
+#endif
+    return QFile::exists(path);
+}
+
+bool legacyStorageDirExists(const QDir &dir,
+                            const QString &segment,
+                            QString extensionForDeviceCheck)
+{
+#ifdef Q_OS_WIN
+    if (isWin32DeviceName(segment, extensionForDeviceCheck))
+        return false;
+#else
+    Q_UNUSED(extensionForDeviceCheck);
+#endif
+    return dir.exists(segment);
 }

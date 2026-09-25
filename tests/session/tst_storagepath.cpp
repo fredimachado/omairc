@@ -8,6 +8,7 @@
 #include "irccasemapping.h"
 #include "ircconversationlog.h"
 #include "ircstoragepath.h"
+#include "ircwiretext.h"
 #include "omaircclipcursor.h"
 
 class StoragePathTest : public QObject
@@ -27,6 +28,9 @@ private slots:
     void targetSegmentFollowsCaseMapping();
     void migratesLegacyTranscriptPaths();
     void migratesLegacyTranscriptWhenNewNetworkDirExists();
+    void transcriptPathPreservesNormalizedTarget();
+    void retriesLegacyTranscriptMigrationAfterRenameFailure();
+    void migratesLegacyTranscriptForDeviceLikeNames();
     void collapsesEquivalentCursorFiles();
     void keepsNewestLegacyCursorAcrossEncodings();
     void ignoresNewStyleCursorEncodingAsLegacy();
@@ -185,7 +189,7 @@ void StoragePathTest::migratesLegacyTranscriptPaths()
     const QString path =
         log.pathFor(QStringLiteral("Libera"), QStringLiteral("#a|b"), mapping);
     QCOMPARE(path, QDir(QDir(root).filePath(omaircStorageSegment(QStringLiteral("Libera"))))
-                        .filePath(omaircTargetSegment(QStringLiteral("#a|b"), mapping)));
+                        .filePath(omaircStorageSegment(ircWireText("#a|b"))));
     QVERIFY(QFile::exists(path));
     QVERIFY(!QFile::exists(legacyFile));
     QVERIFY(!QDir(root).exists(legacyStorageSegment(QStringLiteral("Libera"))));
@@ -218,9 +222,100 @@ void StoragePathTest::migratesLegacyTranscriptWhenNewNetworkDirExists()
     const QString path =
         log.pathFor(QStringLiteral("Libera"), QStringLiteral("#a|b"), mapping);
     QCOMPARE(path, QDir(newNetworkDir).filePath(
-                        omaircTargetSegment(QStringLiteral("#a|b"), mapping)));
+                        omaircStorageSegment(ircWireText("#a|b"))));
     QVERIFY(QFile::exists(path));
     QVERIFY(!QFile::exists(legacyFile));
+}
+
+void StoragePathTest::transcriptPathPreservesNormalizedTarget()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const QString root = dir.filePath(QStringLiteral("logs"));
+    QVERIFY(QDir().mkpath(root));
+
+    IrcConversationLog log(root);
+    const IrcCaseMapping rfc1459;
+    const QString path =
+        log.pathFor(QStringLiteral("libera"), QStringLiteral("#Omarchy"), rfc1459);
+    const QString expectedSegment =
+        omaircStorageSegment(ircWireText("#Omarchy"));
+    QCOMPARE(path, QDir(QDir(root).filePath(omaircStorageSegment(QStringLiteral("libera"))))
+                        .filePath(expectedSegment));
+    QVERIFY(expectedSegment != omaircTargetSegment(QStringLiteral("#Omarchy"), rfc1459));
+}
+
+void StoragePathTest::retriesLegacyTranscriptMigrationAfterRenameFailure()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const QString root = dir.filePath(QStringLiteral("logs"));
+    QVERIFY(QDir().mkpath(root));
+
+    const QString legacyNetworkDir =
+        QDir(root).filePath(legacyStorageSegment(QStringLiteral("Libera")));
+    QVERIFY(QDir().mkpath(legacyNetworkDir));
+    const QString legacyFile =
+        QDir(legacyNetworkDir).filePath(legacyStorageSegment(QStringLiteral("#a|b")));
+    {
+        QFile file(legacyFile);
+        QVERIFY(file.open(QIODevice::WriteOnly));
+        file.write("legacy\n");
+    }
+
+    const QString newPath =
+        QDir(QDir(root).filePath(omaircStorageSegment(QStringLiteral("Libera"))))
+            .filePath(omaircStorageSegment(ircWireText("#a|b")));
+    QVERIFY(QDir().mkpath(newPath));
+
+    IrcConversationLog log(root);
+    const IrcCaseMapping mapping;
+    const QString path =
+        log.pathFor(QStringLiteral("Libera"), QStringLiteral("#a|b"), mapping);
+    QCOMPARE(path, newPath);
+    QVERIFY(QFile::exists(legacyFile));
+
+    const QString secondPath =
+        log.pathFor(QStringLiteral("Libera"), QStringLiteral("#a|b"), mapping);
+    QCOMPARE(secondPath, newPath);
+    QVERIFY(QFile::exists(legacyFile));
+
+    QVERIFY(QDir(newPath).removeRecursively());
+    const QString migratedPath =
+        log.pathFor(QStringLiteral("Libera"), QStringLiteral("#a|b"), mapping);
+    QCOMPARE(migratedPath, newPath);
+    QVERIFY(QFile::exists(migratedPath));
+    QVERIFY(!QFile::exists(legacyFile));
+}
+
+void StoragePathTest::migratesLegacyTranscriptForDeviceLikeNames()
+{
+#ifndef Q_OS_WIN
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const QString root = dir.filePath(QStringLiteral("logs"));
+    QVERIFY(QDir().mkpath(root));
+
+    const QString legacyNetworkDir =
+        QDir(root).filePath(legacyStorageSegment(QStringLiteral("net-1")));
+    QVERIFY(QDir().mkpath(legacyNetworkDir));
+    const QString legacyFile =
+        QDir(legacyNetworkDir).filePath(legacyStorageSegment(QStringLiteral("con")));
+    {
+        QFile file(legacyFile);
+        QVERIFY(file.open(QIODevice::WriteOnly));
+        file.write("legacy\n");
+    }
+
+    IrcConversationLog log(root);
+    const IrcCaseMapping mapping;
+    const QString path =
+        log.pathFor(QStringLiteral("net-1"), QStringLiteral("con"), mapping);
+    QCOMPARE(path, QDir(QDir(root).filePath(omaircStorageSegment(QStringLiteral("net-1"))))
+                        .filePath(omaircStorageSegment(QStringLiteral("con"))));
+    QVERIFY(QFile::exists(path));
+    QVERIFY(!QFile::exists(legacyFile));
+#endif
 }
 
 void StoragePathTest::collapsesEquivalentCursorFiles()

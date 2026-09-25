@@ -105,7 +105,8 @@ void migrateNetworkCursorRoot(const QString &root, const QString &networkId)
     QDir rootDir(root);
     const QString legacyNetworkDir = legacyStorageSegment(networkId);
     const QString newNetworkDir = omaircStorageSegment(networkId);
-    if (legacyNetworkDir != newNetworkDir && rootDir.exists(legacyNetworkDir)
+    if (legacyNetworkDir != newNetworkDir
+        && legacyStorageDirExists(rootDir, legacyNetworkDir)
         && !rootDir.exists(newNetworkDir)) {
         rootDir.rename(legacyNetworkDir, newNetworkDir);
     }
@@ -114,8 +115,10 @@ void migrateNetworkCursorRoot(const QString &root, const QString &networkId)
         QDir(root).filePath(legacyStorageSegment(networkId) + kJsonExtension);
     const QString newRootCursor = QDir(root).filePath(
         omaircStorageSegment(networkId, kJsonExtension) + kJsonExtension);
-    if (QFile::exists(legacyRootCursor) && !QFile::exists(newRootCursor))
+    if (legacyStoragePathExists(legacyRootCursor, networkId, kJsonExtension)
+        && !QFile::exists(newRootCursor)) {
         QFile::rename(legacyRootCursor, newRootCursor);
+    }
 }
 
 struct CursorCandidate
