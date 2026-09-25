@@ -123,8 +123,8 @@ void migrateLegacyTranscriptPath(const QString &root,
     QString networkDirPath = QDir(root).filePath(legacyNetworkDir);
     if (legacyNetworkDir != newNetworkDir && rootDir.exists(legacyNetworkDir)
         && !rootDir.exists(newNetworkDir)) {
-        rootDir.rename(legacyNetworkDir, newNetworkDir);
-        networkDirPath = QDir(root).filePath(newNetworkDir);
+        if (rootDir.rename(legacyNetworkDir, newNetworkDir))
+            networkDirPath = QDir(root).filePath(newNetworkDir);
     } else if (rootDir.exists(newNetworkDir)) {
         networkDirPath = QDir(root).filePath(newNetworkDir);
     }
@@ -134,6 +134,17 @@ void migrateLegacyTranscriptPath(const QString &root,
     if (QFile::exists(legacyPath) && !QFile::exists(newPath)) {
         prepareTree(newPath);
         QFile::rename(legacyPath, newPath);
+        return;
+    }
+
+    if (legacyNetworkDir != newNetworkDir && rootDir.exists(legacyNetworkDir)) {
+        const QString legacyDirPath = QDir(root).filePath(legacyNetworkDir);
+        const QString legacyPathInLegacyDir =
+            QDir(legacyDirPath).filePath(legacyStorageSegment(target));
+        if (QFile::exists(legacyPathInLegacyDir) && !QFile::exists(newPath)) {
+            prepareTree(newPath);
+            QFile::rename(legacyPathInLegacyDir, newPath);
+        }
     }
 }
 }

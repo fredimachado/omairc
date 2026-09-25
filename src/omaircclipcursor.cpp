@@ -100,6 +100,19 @@ struct CursorCandidate
     OmaircCliCursor cursor;
 };
 
+QString canonicalPathOf(const QString &path)
+{
+    const QString canonical = QFileInfo(path).canonicalFilePath();
+    return canonical.isEmpty() ? QDir::cleanPath(path) : canonical;
+}
+
+bool sameFile(const QString &a, const QString &b)
+{
+    const QString canonicalA = canonicalPathOf(a);
+    const QString canonicalB = canonicalPathOf(b);
+    return !canonicalA.isEmpty() && canonicalA == canonicalB;
+}
+
 void collectEquivalentCursorCandidates(const QString &networkDirPath,
                                        const QString &target,
                                        const IrcCaseMapping &mapping,
@@ -116,13 +129,15 @@ void collectEquivalentCursorCandidates(const QString &networkDirPath,
         if (!stem.endsWith(kJsonExtension))
             continue;
         stem.chop(kJsonExtension.size());
+        if (legacyStorageSegment(decodeLegacySegment(stem)) != stem)
+            continue;
         const QString decoded = decodeLegacySegment(stem);
         if (!mapping.equals(decoded.toUtf8().constData(), target.toUtf8().constData()))
             continue;
         const QString path = networkDir.filePath(fileName);
         bool alreadyListed = false;
         for (const CursorCandidate &existing : matches) {
-            if (existing.path == path) {
+            if (sameFile(existing.path, path)) {
                 alreadyListed = true;
                 break;
             }
@@ -155,7 +170,7 @@ void collapseEquivalentCursorFiles(const QString &root,
     if (QFile::exists(canonicalPath)) {
         bool alreadyListed = false;
         for (const CursorCandidate &candidate : matches) {
-            if (candidate.path == canonicalPath) {
+            if (sameFile(candidate.path, canonicalPath)) {
                 alreadyListed = true;
                 break;
             }
@@ -177,16 +192,18 @@ void collapseEquivalentCursorFiles(const QString &root,
             newest = it;
     }
 
-    if (newest->path != canonicalPath) {
+    if (!sameFile(newest->path, canonicalPath)) {
         prepareTree(canonicalPath);
-        if (QFile::exists(canonicalPath) && !QFile::remove(canonicalPath))
+        if (QFile::exists(canonicalPath) && !sameFile(canonicalPath, newest->path)
+            && !QFile::remove(canonicalPath)) {
             return;
+        }
         if (!QFile::rename(newest->path, canonicalPath))
             return;
     }
 
     for (const CursorCandidate &candidate : matches) {
-        if (candidate.path == canonicalPath)
+        if (sameFile(candidate.path, canonicalPath))
             continue;
         QFile::remove(candidate.path);
     }
