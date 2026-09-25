@@ -150,6 +150,16 @@ int main(int argc, char *argv[]) {
         QStringLiteral("demo-server"),
         QStringLiteral("Open a furnished in-process demo session."));
     parser.addOption(demoOption);
+    // COM starts the local toast-activation server as `omairc.exe -Embedding`
+    // (LocalServer32 appends it). Without this the parser exits on the unknown
+    // option and a toast click could never reopen the window.
+    const QCommandLineOption embeddingOption(
+        QStringLiteral("Embedding"),
+        QStringLiteral("Internal: started by a Windows toast activation."));
+    parser.addOption(embeddingOption);
+    // Without this, the default compacted-short-options mode reads
+    // `-Embedding` as `-E -m -b -e -d -d -i -n -g` and still exits 1.
+    parser.setSingleDashWordOptionMode(QCommandLineParser::ParseAsLongOptions);
     parser.process(app);
     const bool demoMode = parser.isSet(demoOption);
 
