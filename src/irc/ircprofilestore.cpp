@@ -4,6 +4,8 @@
 #include <QFileInfo>
 #include <QSettings>
 
+#include <optional>
+
 namespace
 {
 const auto networksGroup = QStringLiteral("networks");
@@ -179,17 +181,17 @@ bool iniBytesAreMalformed(const QByteArray &data)
     return false;
 }
 
-bool settingsIniIsMalformed(const QSettings &settings)
+std::optional<IrcProfileStore::Status> blockedIniWrite(const QSettings &settings)
 {
-    if (!settingsFileIsIni(settings))
-        return false;
-    const QString path = settings.fileName();
-    if (path.isEmpty() || !QFileInfo::exists(path))
-        return false;
-    QFile file(path);
-    if (!file.open(QIODevice::ReadOnly))
-        return false;
-    return iniBytesAreMalformed(file.readAll());
+    switch (IrcProfileStore::probeSettingsIni(settings)) {
+    case IrcProfileStore::IniProbe::Malformed:
+        return IrcProfileStore::Status::FormatError;
+    case IrcProfileStore::IniProbe::Unreadable:
+        return IrcProfileStore::Status::AccessError;
+    case IrcProfileStore::IniProbe::Ok:
+        return std::nullopt;
+    }
+    return IrcProfileStore::Status::AccessError;
 }
 
 IrcProfileStore::Status statusFrom(QSettings::Status status)
@@ -207,6 +209,26 @@ IrcProfileStore::Status statusFrom(QSettings::Status status)
 }
 
 IrcProfileStore::IrcProfileStore() = default;
+
+IrcProfileStore::IniProbe IrcProfileStore::probeSettingsIni(const QSettings &settings)
+{
+    // Windows NativeFormat is the registry. Skip the read there. A missing
+    // file stays the missing-file shortcut in remove(), not Unreadable.
+    if (!settingsFileIsIni(settings))
+        return IniProbe::Ok;
+    const QString path = settings.fileName();
+    if (path.isEmpty() || !QFileInfo::exists(path))
+        return IniProbe::Ok;
+    QFile file(path);
+    // Exists but cannot be opened: unreadable, not a well-formed ini.
+    // QSettings::status() on a warm cache stays NoError because sync()
+    // short-circuits on size and mtime, so this has to be the file bytes.
+    if (!file.open(QIODevice::ReadOnly))
+        return IniProbe::Unreadable;
+    if (iniBytesAreMalformed(file.readAll()))
+        return IniProbe::Malformed;
+    return IniProbe::Ok;
+}
 
 QList<IrcNetworkProfile> IrcProfileStore::profiles() const
 {
@@ -258,9 +280,11 @@ IrcProfileStore::Status IrcProfileStore::save(const IrcNetworkProfile &profile)
 
     QSettings settings;
     // Refuse before setValue. A writing sync() parses the ini, drops a bad
-    // line from the process-wide cache, and still rewrites the file.
-    if (settingsIniIsMalformed(settings))
-        return Status::FormatError;
+    // line from the process-wide cache, and still rewrites the file. An
+    // unreadable file is AccessError for the same reason: setValue would
+    // overwrite it from that cache.
+    if (const std::optional<Status> blocked = blockedIniWrite(settings))
+        return *blocked;
     // Pending keys survive a failed sync() in the process-wide QSettings
     // cache, so refuse before mutating a file that cannot accept the write.
     if (existingSettingsFileIsNotWritable(settings.fileName()))
@@ -321,8 +345,9 @@ IrcProfileStore::Status IrcProfileStore::remove(const QString &networkId)
     // childGroups() is what parses every section. Once it has run, a later
     // QSettings on this path reports NoError and save() rewrites the file.
     // Read the bytes before sync() or childGroups() so a bad line stays put.
-    if (settingsIniIsMalformed(settings))
-        return Status::FormatError;
+    // Open failure is AccessError, before a missing group can be Absent.
+    if (const std::optional<Status> blocked = blockedIniWrite(settings))
+        return *blocked;
 
     settings.sync();
     switch (settings.status()) {

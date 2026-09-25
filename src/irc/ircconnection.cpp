@@ -69,6 +69,11 @@ bool existingSettingsFileIsNotWritable(const QString &path)
 void savePreferenceList(const QString &key, const QStringList &value)
 {
     QSettings settings;
+    // Same byte probe as IrcProfileStore::save. A writing sync() would emit
+    // the cleaned cache over a corrupt ini. Order and collapsed ids stay
+    // unreported, so return before setValue.
+    if (IrcProfileStore::probeSettingsIni(settings) != IrcProfileStore::IniProbe::Ok)
+        return;
     // A failed sync() leaves pending keys in the process-wide cache.
     // Refuse before setValue when the ini cannot accept the write.
     if (existingSettingsFileIsNotWritable(settings.fileName()))
@@ -1625,7 +1630,8 @@ void IrcConnection::persistAvatarUrl(const QString &networkId, const QString &ur
         if (profile.avatarUrl == url)
             return;
         profile.avatarUrl = url;
-        recordBackgroundSave(networkId, m_store.save(profile));
+        if (!m_ephemeral)
+            recordBackgroundSave(networkId, m_store.save(profile));
         const auto applied = m_applied.find(networkId);
         if (applied != m_applied.end())
             applied->profile.avatarUrl = url;

@@ -1,8 +1,6 @@
 #include <QAbstractItemModel>
 #include <QCoreApplication>
-#ifdef Q_OS_LINUX
 #include <QFile>
-#endif
 #include <QList>
 #include <QMap>
 #include <QSettings>
@@ -137,6 +135,33 @@ bool logContains(QAbstractItemModel *lines, const QString &needle)
     }
     return false;
 }
+
+#ifdef Q_OS_LINUX
+bool writeSettingsFile(const QString &path, const QByteArray &bytes)
+{
+    QFile file(path);
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate))
+        return false;
+    if (file.write(bytes) != bytes.size())
+        return false;
+    return file.flush();
+}
+
+QByteArray readSettingsFile(const QString &path)
+{
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly))
+        return {};
+    return file.readAll();
+}
+
+QByteArray malformedSettings(const QString &networkId)
+{
+    return QByteArrayLiteral("[networks]\n")
+        + networkId.toUtf8()
+        + QByteArrayLiteral("\\host\n[preferences]\nnetworkOrder\n");
+}
+#endif
 
 bool framesContain(const QByteArrayList &frames, const QByteArray &needle)
 {
@@ -277,6 +302,8 @@ private slots:
     void removeSelectedOnReadOnlyIniKeepsTheSessionAndStore();
     void readOnlyApplyDoesNotCacheOrderForAnUnstoredNetwork();
     void persistenceFailureStaysWithItsNetwork();
+    void loadStoredLeavesMalformedIniUntouched();
+    void preferenceWritesLeaveMalformedIniUntouched();
 #endif
     void removeSelectedDeletesStoredSecret();
     void usernameChangePersistsExistingPassword();
@@ -312,6 +339,7 @@ private slots:
     void avatarUrlSurvivesConnectionApply();
     void avatarUrlSurvivesAutojoinPersist();
     void avatarUrlApplyDoesNotReconnect();
+    void ephemeralSessionSkipsAvatarSave();
 
 private:
     IrcConnection::TransportFactory capturingFactory();
@@ -2320,6 +2348,41 @@ void ConnectionTest::persistenceFailureStaysWithItsNetwork()
 
     QVERIFY(guard.restore());
 }
+
+void ConnectionTest::loadStoredLeavesMalformedIniUntouched()
+{
+    const IrcNetworkProfile profile = storedTestProfile(QStringLiteral("irc.example"));
+    QCOMPARE(IrcProfileStore().save(profile), IrcProfileStore::Status::Written);
+
+    QSettings settings;
+    const QString path = settings.fileName();
+    const QByteArray corrupt = malformedSettings(profile.networkId);
+    QVERIFY(writeSettingsFile(path, corrupt));
+
+    IrcController controller;
+    IrcConnection connection(controller, capturingFactory(), credentialStore());
+    QCOMPARE(readSettingsFile(path), corrupt);
+    QCOMPARE(connection.persistenceStatus(), QString());
+}
+
+void ConnectionTest::preferenceWritesLeaveMalformedIniUntouched()
+{
+    const IrcNetworkProfile profile = storedTestProfile(QStringLiteral("irc.example"));
+    QCOMPARE(IrcProfileStore().save(profile), IrcProfileStore::Status::Written);
+
+    QSettings settings;
+    const QString path = settings.fileName();
+    const QByteArray corrupt = malformedSettings(profile.networkId);
+    QVERIFY(writeSettingsFile(path, corrupt));
+
+    IrcController controller;
+    controller.setReopenDirectMessages(!controller.reopenDirectMessages());
+    controller.setLoadPeerAvatars(!controller.loadPeerAvatars());
+    controller.setOpenConversationsAtUnread(!controller.openConversationsAtUnread());
+    // /autoaway persists even when the confirmation has no conversation to land in.
+    controller.sendMessage(QStringLiteral("/autoaway 15"));
+    QCOMPARE(readSettingsFile(path), corrupt);
+}
 #endif
 
 void ConnectionTest::removeSelectedDeletesStoredSecret()
@@ -3255,6 +3318,35 @@ void ConnectionTest::avatarUrlSurvivesAutojoinPersist()
     QCOMPARE(reloadedAvatarUrl(), QStringLiteral("https://example.com/a.png"));
     QCOMPARE(reloadedAutojoin(),
              QStringList({QStringLiteral("#omarchy"), QStringLiteral("#other")}));
+}
+
+void ConnectionTest::ephemeralSessionSkipsAvatarSave()
+{
+    const IrcNetworkProfile profile = storedTestProfile(QStringLiteral("irc.example"));
+    QCOMPARE(IrcProfileStore().save(profile), IrcProfileStore::Status::Written);
+
+    IrcController controller;
+    IrcConnection connection(controller, capturingFactory(), credentialStore(),
+                             nullptr, true);
+    connection.setStoredProfiles({profile});
+    QCOMPARE(connection.persistenceStatus(), QString());
+
+    QSettings settings;
+    QFile before(settings.fileName());
+    QVERIFY(before.open(QIODevice::ReadOnly));
+    const QByteArray original = before.readAll();
+    before.close();
+    QVERIFY(!original.contains(QByteArrayLiteral("avatarUrl")));
+
+    const QString url = QStringLiteral("https://example.com/a.png");
+    controller.persistProfileAvatarUrl(profile.networkId, url);
+    QCOMPARE(connection.persistenceStatus(), QString());
+
+    QFile after(settings.fileName());
+    QVERIFY(after.open(QIODevice::ReadOnly));
+    const QByteArray bytes = after.readAll();
+    QCOMPARE(bytes, original);
+    QVERIFY(!bytes.contains(url.toUtf8()));
 }
 
 void ConnectionTest::missingNetworkOrderAlphabetizesExistingProfiles()

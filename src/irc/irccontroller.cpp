@@ -12,6 +12,7 @@
 #include "ircmute.h"
 #include "ircnetworkprofile.h"
 #include "ircopendirect.h"
+#include "ircprofilestore.h"
 #include "ircplaybacktime.h"
 #include "ircprefixnick.h"
 #include "ircpresence.h"
@@ -265,9 +266,18 @@ bool loadReopenDirectMessages()
     return settings.value(reopenDirectMessagesKey(), true).toBool();
 }
 
+// Malformed or unreadable ini: return before setValue. These toggles stay
+// unreported; persistenceStatus is only the profile save/remove result.
+bool preferenceIniRefusesWrite(const QSettings &settings)
+{
+    return IrcProfileStore::probeSettingsIni(settings) != IrcProfileStore::IniProbe::Ok;
+}
+
 void saveReopenDirectMessages(bool enabled)
 {
     QSettings settings;
+    if (preferenceIniRefusesWrite(settings))
+        return;
     settings.beginGroup(QStringLiteral("preferences"));
     settings.setValue(reopenDirectMessagesKey(), enabled);
     settings.endGroup();
@@ -286,6 +296,8 @@ bool loadLoadPeerAvatars()
 void saveLoadPeerAvatars(bool enabled)
 {
     QSettings settings;
+    if (preferenceIniRefusesWrite(settings))
+        return;
     settings.beginGroup(QStringLiteral("preferences"));
     settings.setValue(loadPeerAvatarsKey(), enabled);
     settings.endGroup();
@@ -302,6 +314,8 @@ bool loadOpenConversationsAtUnread()
 void saveOpenConversationsAtUnread(bool enabled)
 {
     QSettings settings;
+    if (preferenceIniRefusesWrite(settings))
+        return;
     settings.beginGroup(QStringLiteral("preferences"));
     settings.setValue(openConversationsAtUnreadKey(), enabled);
     settings.endGroup();
@@ -329,6 +343,8 @@ IrcAutoawayConfig loadAutoaway()
 void saveAutoawayConfig(const IrcAutoawayConfig& config)
 {
     QSettings settings;
+    if (preferenceIniRefusesWrite(settings))
+        return;
     settings.beginGroup(QStringLiteral("preferences"));
     settings.setValue(autoawayEnabledKey(), config.enabled);
     settings.setValue(autoawayTimeoutSecondsKey(), config.timeoutSeconds);

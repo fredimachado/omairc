@@ -49,6 +49,9 @@ private slots:
     void storeRemoveMissingEqualsInPreferencesReturnsFormatError();
     void storeSaveMissingEqualsReturnsFormatError();
     void storeSaveAfterRemoveMissingEqualsReturnsFormatError();
+    void storeUnreadableIniReturnsAccessError();
+    void storeWriteOnlyIniSaveReturnsAccessError();
+    void storeRemoveReadOnlyMissingGroupIsAbsent();
 #endif
 
 private:
@@ -665,6 +668,28 @@ void ProfileTest::storeRemoveMissingFileIsAbsent()
     QVERIFY(!QFile::exists(path));
 }
 
+class SettingsModeGuard
+{
+public:
+    SettingsModeGuard(const QString &filePath, QFile::Permissions saved)
+        : filePath(filePath)
+        , saved(saved)
+    {
+    }
+
+    ~SettingsModeGuard()
+    {
+        if (active)
+            QFile::setPermissions(filePath, saved);
+    }
+
+    void dismiss() { active = false; }
+
+    QString filePath;
+    QFile::Permissions saved;
+    bool active = true;
+};
+
 static bool writeSettingsFile(const QString &path, const QByteArray &bytes)
 {
     QFile file(path);
@@ -797,6 +822,95 @@ void ProfileTest::storeSaveAfterRemoveMissingEqualsReturnsFormatError()
     profile.host = QStringLiteral("irc.changed.example");
     QCOMPARE(store.save(profile), IrcProfileStore::Status::FormatError);
     QCOMPARE(readSettingsFile(path), corrupt);
+}
+
+void ProfileTest::storeUnreadableIniReturnsAccessError()
+{
+    IrcNetworkProfile profile = IrcNetworkProfile::create();
+    profile.host = QStringLiteral("irc.example.net");
+    profile.nick = QStringLiteral("omairc");
+    QVERIFY(profile.isComplete());
+
+    IrcProfileStore store;
+    QCOMPARE(store.save(profile), IrcProfileStore::Status::Written);
+
+    const QString path = settingsFile();
+    const QByteArray original = readSettingsFile(path);
+    QVERIFY(!original.isEmpty());
+
+    QFile ini(path);
+    const QFile::Permissions saved = ini.permissions();
+    SettingsModeGuard guard(path, saved);
+    // Mode 000. A warm cache makes sync() NoError, so a missing group would
+    // be Absent unless open failure is AccessError first.
+    QVERIFY(ini.setPermissions(QFile::Permissions()));
+
+    QCOMPARE(store.remove(QStringLiteral("missing-network")),
+             IrcProfileStore::Status::AccessError);
+    profile.host = QStringLiteral("irc.changed.example");
+    QCOMPARE(store.save(profile), IrcProfileStore::Status::AccessError);
+
+    QVERIFY(QFile::setPermissions(path, saved));
+    guard.dismiss();
+    QCOMPARE(readSettingsFile(path), original);
+}
+
+void ProfileTest::storeWriteOnlyIniSaveReturnsAccessError()
+{
+    IrcNetworkProfile profile = IrcNetworkProfile::create();
+    profile.host = QStringLiteral("irc.example.net");
+    profile.nick = QStringLiteral("omairc");
+    QVERIFY(profile.isComplete());
+
+    IrcProfileStore store;
+    QCOMPARE(store.save(profile), IrcProfileStore::Status::Written);
+
+    const QString path = settingsFile();
+    const QByteArray original = readSettingsFile(path);
+    QVERIFY(original.contains(profile.host.toUtf8()));
+
+    QFile ini(path);
+    const QFile::Permissions saved = ini.permissions();
+    SettingsModeGuard guard(path, saved);
+    // Mode 0200 is writable, so the not-writable check does not fire.
+    QVERIFY(ini.setPermissions(QFile::WriteOwner));
+
+    profile.host = QStringLiteral("irc.changed.example");
+    QCOMPARE(store.save(profile), IrcProfileStore::Status::AccessError);
+
+    QVERIFY(QFile::setPermissions(path, saved));
+    guard.dismiss();
+    QCOMPARE(readSettingsFile(path), original);
+    QVERIFY(!readSettingsFile(path).contains(QByteArrayLiteral("irc.changed.example")));
+}
+
+void ProfileTest::storeRemoveReadOnlyMissingGroupIsAbsent()
+{
+    {
+        QSettings settings;
+        settings.beginGroup(QStringLiteral("preferences"));
+        settings.setValue(QStringLiteral("reopenDirectMessages"), true);
+        settings.endGroup();
+        settings.sync();
+        QCOMPARE(settings.status(), QSettings::NoError);
+    }
+
+    const QString path = settingsFile();
+    const QByteArray original = readSettingsFile(path);
+    QVERIFY(original.contains(QByteArrayLiteral("reopenDirectMessages")));
+    QVERIFY(!original.contains(QByteArrayLiteral("missing-network")));
+
+    QFile ini(path);
+    const QFile::Permissions saved = ini.permissions();
+    SettingsModeGuard guard(path, saved);
+    QVERIFY(ini.setPermissions(QFile::ReadOwner | QFile::ReadGroup | QFile::ReadOther));
+
+    QCOMPARE(IrcProfileStore().remove(QStringLiteral("missing-network")),
+             IrcProfileStore::Status::Absent);
+
+    QVERIFY(QFile::setPermissions(path, saved));
+    guard.dismiss();
+    QCOMPARE(readSettingsFile(path), original);
 }
 #endif
 
