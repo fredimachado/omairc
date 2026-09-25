@@ -2500,7 +2500,11 @@ ApplicationWindow {
             connection.setPassword(connectionSheet.connectionPassword.text);
         if (connectionNickServEdited)
             connection.setNickServPassword(connectionSheet.connectionNickServ.text);
-        if (connection.apply() && !connection.setupRequired) {
+        var applied = connection.apply();
+        var persistence = connection.persistenceStatus ? connection.persistenceStatus : "";
+        if (persistence.length > 0)
+            connectionSheetOpen = true;
+        if (applied && !connection.setupRequired && persistence.length === 0) {
             connectionSheetOpen = false;
             connectionRemoveArmed = false;
             clearConnectionPassword();
@@ -2566,7 +2570,8 @@ ApplicationWindow {
             connectionRemoveArmed = true;
             return;
         }
-        connection.removeSelected();
+        if (!connection.removeSelected())
+            return;
         clearConnectionPassword();
         connectionRemoveArmed = false;
         if (connection.setupRequired)

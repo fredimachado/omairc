@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- A failed profile save or remove is reported on the Connect sheet, and Apply
+  no longer closes the sheet when the settings file could not be written.
+
 ## [1.0.3] - 2026-09-24
 
 ### Fixed

@@ -80,6 +80,7 @@ class IrcConnection : public QObject
                NOTIFY credentialStateChanged)
     Q_PROPERTY(QString credentialError READ credentialError NOTIFY credentialStateChanged)
     Q_PROPERTY(QString credentialStatus READ credentialStatus NOTIFY credentialStateChanged)
+    Q_PROPERTY(QString persistenceStatus READ persistenceStatus NOTIFY persistenceStatusChanged)
     Q_PROPERTY(bool canForgetPassword READ canForgetPassword
                NOTIFY credentialStateChanged)
     Q_PROPERTY(bool canForgetNickServ READ canForgetNickServ
@@ -124,6 +125,7 @@ public:
     CredentialStore::State credentialState() const;
     QString credentialError() const;
     QString credentialStatus() const;
+    QString persistenceStatus() const;
     bool canForgetPassword() const;
     bool canForgetNickServ() const;
     QString problem() const;
@@ -177,6 +179,7 @@ signals:
     void focusPasswordChanged();
     void focusNickServChanged();
     void credentialStateChanged();
+    void persistenceStatusChanged();
 
 private:
     friend class NetworkListModel;
@@ -274,6 +277,13 @@ private:
     bool startupConnectAllowed(const IrcNetworkProfile &profile) const;
     void requestStartupPassword(const IrcNetworkProfile &profile);
     void persistSavedFlag(const CredentialKey &key, bool saved);
+    void recordBackgroundSave(const QString &networkId, IrcProfileStore::Status status);
+    void recordApplyPersistence(const QString &networkId, IrcProfileStore::Status status,
+                                bool sessionAccepted);
+    void storePersistence(const QString &networkId, const QString &message);
+    void clearStoredPersistence(const QString &networkId);
+    void assignPersistenceStatus(const QString &networkId, const QString &message);
+    void publishPersistence(const QString &previous);
     bool startMarkedStartupProfiles();
     void loadStored();
     QList<int> usedIconColors(const QString &exceptId) const;
@@ -315,6 +325,8 @@ private:
     IrcNetworkProfile m_draft;
     QString m_selectedNetworkId;
     QString m_addedFromNetworkId;
+    QString m_persistenceNetworkId;
+    QString m_persistenceMessage;
     QHash<QString, IrcDraftSecret> m_secrets;
     QHash<QString, IrcDraftSecret> m_nickServSecrets;
     QHash<QString, IrcAppliedSession> m_applied;

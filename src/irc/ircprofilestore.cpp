@@ -157,6 +157,17 @@ IrcProfileStore::Status IrcProfileStore::remove(const QString &networkId)
         return Status::Absent;
 
     QSettings settings;
+    // A missing file has no group to delete. sync() would try to create it
+    // and report AccessError when that directory cannot be created.
+    if (!QFileInfo::exists(settings.fileName())) {
+        settings.beginGroup(networksGroup);
+        const bool present = settings.childGroups().contains(networkId);
+        if (present)
+            settings.remove(networkId);
+        settings.endGroup();
+        return present ? Status::Written : Status::Absent;
+    }
+
     settings.sync();
     switch (settings.status()) {
     case QSettings::AccessError:

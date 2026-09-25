@@ -906,6 +906,19 @@ Rectangle {
                                     font.family: "iA Writer Mono S"
                                     font.pixelSize: sheet.style.scaledSize(11)
                                 }
+
+                                Text {
+                                    id: connectionPersistenceStatus
+                                    objectName: "connectionPersistenceStatus"
+                                    width: parent.width
+                                    visible: !!(sheet.connection && sheet.connection.persistenceStatus)
+                                    text: (sheet.connection && sheet.connection.persistenceStatus)
+                                          ? sheet.connection.persistenceStatus : ""
+                                    color: sheet.style.accentColor
+                                    wrapMode: Text.Wrap
+                                    font.family: "iA Writer Mono S"
+                                    font.pixelSize: sheet.style.scaledSize(11)
+                                }
                             }
                         }
                     }

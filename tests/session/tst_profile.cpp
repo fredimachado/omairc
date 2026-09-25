@@ -43,6 +43,7 @@ private slots:
     void storeRemoveDropsTheNetworkGroup();
 #ifdef Q_OS_LINUX
     void storeReadOnlyIniReturnsAccessError();
+    void storeRemoveMissingFileIsAbsent();
 #endif
 
 private:
@@ -646,6 +647,17 @@ void ProfileTest::storeReadOnlyIniReturnsAccessError()
     const QString contents = QString::fromUtf8(ini.readAll());
     QVERIFY(contents.contains(profile.host));
     QVERIFY(!contents.contains(changed.host));
+}
+
+void ProfileTest::storeRemoveMissingFileIsAbsent()
+{
+    QSettings settings;
+    const QString path = settings.fileName();
+    QVERIFY2(!QFile::exists(path), qPrintable(path));
+
+    QCOMPARE(IrcProfileStore().remove(QStringLiteral("missing-network")),
+             IrcProfileStore::Status::Absent);
+    QVERIFY(!QFile::exists(path));
 }
 #endif
 
