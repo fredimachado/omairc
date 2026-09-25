@@ -47,7 +47,7 @@ class DeriveBuildVersionsTest(unittest.TestCase):
 
     def test_tag_release_is_unsuffixed(self) -> None:
         proc = run_derive(
-            git_ref="refs/tags/v1.0.3",
+            git_ref="refs/tags/v1.0.4",
             sha="abcdef1234567890abcdef1234567890abcdef12",
             run_number=237,
             run_attempt=2,
@@ -57,9 +57,9 @@ class DeriveBuildVersionsTest(unittest.TestCase):
         self.assertEqual(
             values,
             {
-                "release": "1.0.3",
-                "display": "1.0.3",
-                "artifact": "1.0.3",
+                "release": "1.0.4",
+                "display": "1.0.4",
+                "artifact": "1.0.4",
                 "arch_pkgrel": "1",
             },
         )
@@ -73,9 +73,9 @@ class DeriveBuildVersionsTest(unittest.TestCase):
         )
         self.assertEqual(proc.returncode, 0, proc.stderr)
         values = json.loads(proc.stdout)
-        self.assertEqual(values["release"], "1.0.3")
-        self.assertEqual(values["display"], "1.0.3+master.gabcdef1")
-        self.assertEqual(values["artifact"], "1.0.3-master.gabcdef1.a1")
+        self.assertEqual(values["release"], "1.0.4")
+        self.assertEqual(values["display"], "1.0.4+master.gabcdef1")
+        self.assertEqual(values["artifact"], "1.0.4-master.gabcdef1.a1")
         self.assertEqual(values["arch_pkgrel"], "0.237")
 
     def test_pull_request_snapshot(self) -> None:
@@ -87,8 +87,8 @@ class DeriveBuildVersionsTest(unittest.TestCase):
         )
         self.assertEqual(proc.returncode, 0, proc.stderr)
         values = json.loads(proc.stdout)
-        self.assertEqual(values["display"], "1.0.3+pr235.gabcdef1")
-        self.assertEqual(values["artifact"], "1.0.3-pr235.gabcdef1.a1")
+        self.assertEqual(values["display"], "1.0.4+pr235.gabcdef1")
+        self.assertEqual(values["artifact"], "1.0.4-pr235.gabcdef1.a1")
         self.assertEqual(values["arch_pkgrel"], "1")
 
     def test_non_master_branch_snapshot(self) -> None:
@@ -102,11 +102,11 @@ class DeriveBuildVersionsTest(unittest.TestCase):
         values = json.loads(proc.stdout)
         self.assertEqual(
             values["display"],
-            "1.0.3+cursor-master-snapshot-versions-df37.gabcdef1",
+            "1.0.4+cursor-master-snapshot-versions-df37.gabcdef1",
         )
         self.assertEqual(
             values["artifact"],
-            "1.0.3-cursor-master-snapshot-versions-df37.gabcdef1.a1",
+            "1.0.4-cursor-master-snapshot-versions-df37.gabcdef1.a1",
         )
         self.assertEqual(values["arch_pkgrel"], "1")
 
@@ -129,10 +129,10 @@ class DeriveBuildVersionsTest(unittest.TestCase):
         )
         self.assertEqual(first["display"], second["display"])
         self.assertNotEqual(first["artifact"], second["artifact"])
-        self.assertEqual(second["artifact"], "1.0.3-master.gabcdef1.a3")
+        self.assertEqual(second["artifact"], "1.0.4-master.gabcdef1.a3")
 
     def test_arch_snapshot_ordering(self) -> None:
-        release = "1.0.3"
+        release = "1.0.4"
         early = self.module.derive(
             git_ref="refs/heads/master",
             sha="abcdef1",
@@ -148,7 +148,7 @@ class DeriveBuildVersionsTest(unittest.TestCase):
             canonical_version=release,
         )
         tagged = self.module.derive(
-            git_ref="refs/tags/v1.0.3",
+            git_ref="refs/tags/v1.0.4",
             sha="abcdef1",
             run_number=237,
             run_attempt=1,
@@ -187,7 +187,7 @@ class DeriveBuildVersionsTest(unittest.TestCase):
 
     def test_unsupported_ref(self) -> None:
         proc = run_derive(
-            git_ref="refs/tags/beta-1.0.3",
+            git_ref="refs/tags/beta-1.0.4",
             sha="abcdef1",
             run_number=1,
             run_attempt=1,
