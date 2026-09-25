@@ -84,21 +84,22 @@ bool deviceBaseMatches(QStringView stem)
         || suffix == QLatin1Char(u'\u00B3');
 }
 
-QString deviceStem(const QString &name)
+QStringView deviceBaseToken(QStringView fullName)
 {
-    const int dot = name.lastIndexOf(QLatin1Char('.'));
-    return dot >= 0 ? name.left(dot) : name;
+    while (!fullName.isEmpty()
+           && (fullName.back() == QLatin1Char(' ')
+               || fullName.back() == QLatin1Char('.'))) {
+        fullName.chop(1);
+    }
+    const qsizetype dot = fullName.indexOf(QLatin1Char('.'));
+    if (dot >= 0)
+        return fullName.first(dot);
+    return fullName;
 }
 
 bool isWin32DeviceName(const QString &segment, const QString &extension)
 {
-    if (deviceBaseMatches(deviceStem(segment)))
-        return true;
-    if (!extension.isEmpty()
-        && deviceBaseMatches(deviceStem(segment + extension))) {
-        return true;
-    }
-    return false;
+    return deviceBaseMatches(deviceBaseToken(QStringView(segment + extension)));
 }
 
 QString encodeWithLeadingEscape(QByteArrayView utf8)
@@ -149,14 +150,16 @@ QString omaircStorageSegment(QString text, QString extensionForDeviceCheck)
         segment = encodeWithLeadingEscape(utf8);
     else
         segment = encodeStorageBytes(utf8);
-    if (segment.size() > 255)
+    if (segment.size() + extensionForDeviceCheck.size() > 255)
         return hashLongSegment(utf8);
     return segment;
 }
 
-QString omaircTargetSegment(QString target, const IrcCaseMapping &mapping)
+QString omaircTargetSegment(QString target,
+                          const IrcCaseMapping &mapping,
+                          QString extensionForDeviceCheck)
 {
     const std::string normalized =
         mapping.normalize(target.toUtf8().constData());
-    return omaircStorageSegment(ircWireText(normalized));
+    return omaircStorageSegment(ircWireText(normalized), extensionForDeviceCheck);
 }

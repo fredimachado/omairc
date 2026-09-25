@@ -94,22 +94,21 @@ void migrateNetworkCursorRoot(const QString &root, const QString &networkId)
         QFile::rename(legacyRootCursor, newRootCursor);
 }
 
-void collapseEquivalentCursorFiles(const QString &networkDirPath,
-                                   const QString &target,
-                                   const IrcCaseMapping &mapping,
-                                   const QString &canonicalPath)
+struct CursorCandidate
+{
+    QString path;
+    OmaircCliCursor cursor;
+};
+
+void collectEquivalentCursorCandidates(const QString &networkDirPath,
+                                       const QString &target,
+                                       const IrcCaseMapping &mapping,
+                                       QVector<CursorCandidate> &matches)
 {
     QDir networkDir(networkDirPath);
     if (!networkDir.exists())
         return;
 
-    struct Candidate
-    {
-        QString path;
-        OmaircCliCursor cursor;
-    };
-
-    QVector<Candidate> matches;
     const QStringList files =
         networkDir.entryList({QStringLiteral("*.json")}, QDir::Files);
     for (const QString &fileName : files) {
@@ -121,10 +120,52 @@ void collapseEquivalentCursorFiles(const QString &networkDirPath,
         if (!mapping.equals(decoded.toUtf8().constData(), target.toUtf8().constData()))
             continue;
         const QString path = networkDir.filePath(fileName);
+        bool alreadyListed = false;
+        for (const CursorCandidate &existing : matches) {
+            if (existing.path == path) {
+                alreadyListed = true;
+                break;
+            }
+        }
+        if (alreadyListed)
+            continue;
         const std::optional<OmaircCliCursor> cursor = readCursorFile(path);
         if (!cursor)
             continue;
         matches.push_back({path, *cursor});
+    }
+}
+
+void collapseEquivalentCursorFiles(const QString &root,
+                                   const QString &networkId,
+                                   const QString &target,
+                                   const IrcCaseMapping &mapping,
+                                   const QString &canonicalPath)
+{
+    QVector<CursorCandidate> matches;
+    const QString legacyNetworkDir = legacyStorageSegment(networkId);
+    const QString newNetworkDir = omaircStorageSegment(networkId);
+    collectEquivalentCursorCandidates(
+        QDir(root).filePath(legacyNetworkDir), target, mapping, matches);
+    if (legacyNetworkDir != newNetworkDir) {
+        collectEquivalentCursorCandidates(
+            QDir(root).filePath(newNetworkDir), target, mapping, matches);
+    }
+
+    if (QFile::exists(canonicalPath)) {
+        bool alreadyListed = false;
+        for (const CursorCandidate &candidate : matches) {
+            if (candidate.path == canonicalPath) {
+                alreadyListed = true;
+                break;
+            }
+        }
+        if (!alreadyListed) {
+            const std::optional<OmaircCliCursor> cursor =
+                readCursorFile(canonicalPath);
+            if (cursor)
+                matches.push_back({canonicalPath, *cursor});
+        }
     }
 
     if (matches.isEmpty())
@@ -136,15 +177,18 @@ void collapseEquivalentCursorFiles(const QString &networkDirPath,
             newest = it;
     }
 
-    for (const Candidate &candidate : matches) {
-        if (candidate.path == newest->path)
-            continue;
-        QFile::remove(candidate.path);
+    if (newest->path != canonicalPath) {
+        prepareTree(canonicalPath);
+        if (QFile::exists(canonicalPath) && !QFile::remove(canonicalPath))
+            return;
+        if (!QFile::rename(newest->path, canonicalPath))
+            return;
     }
 
-    if (newest->path != canonicalPath && !QFile::exists(canonicalPath)) {
-        prepareTree(canonicalPath);
-        QFile::rename(newest->path, canonicalPath);
+    for (const CursorCandidate &candidate : matches) {
+        if (candidate.path == canonicalPath)
+            continue;
+        QFile::remove(candidate.path);
     }
 }
 
@@ -155,20 +199,7 @@ void migrateCursorTarget(const QString &root,
                        const QString &canonicalPath)
 {
     migrateNetworkCursorRoot(root, networkId);
-
-    const QString legacyNetworkDir = legacyStorageSegment(networkId);
-    const QString newNetworkDir = omaircStorageSegment(networkId);
-    const QString legacyPath = QDir(QDir(root).filePath(legacyNetworkDir))
-        .filePath(legacyStorageSegment(target) + kJsonExtension);
-    if (QFile::exists(legacyPath) && !QFile::exists(canonicalPath)) {
-        prepareTree(canonicalPath);
-        QFile::rename(legacyPath, canonicalPath);
-    }
-
-    QString networkDirPath = QDir(root).filePath(newNetworkDir);
-    if (!QDir(networkDirPath).exists())
-        networkDirPath = QDir(root).filePath(legacyNetworkDir);
-    collapseEquivalentCursorFiles(networkDirPath, target, mapping, canonicalPath);
+    collapseEquivalentCursorFiles(root, networkId, target, mapping, canonicalPath);
 }
 
 }
@@ -201,7 +232,8 @@ QString OmaircCliCursorStore::pathFor(const QString &networkId,
 
     canonicalPath =
         QDir(QDir(root).filePath(omaircStorageSegment(networkId)))
-            .filePath(omaircTargetSegment(target, mapping) + kJsonExtension);
+            .filePath(omaircTargetSegment(target, mapping, kJsonExtension)
+                      + kJsonExtension);
     migrateCursorTarget(root, networkId, target, mapping, canonicalPath);
     return canonicalPath;
 }

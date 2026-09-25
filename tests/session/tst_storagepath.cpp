@@ -20,11 +20,14 @@ private slots:
     void encodesTrailingDotAndSpace();
     void encodesEmptyAndDotSegments();
     void encodesDeviceNames();
+    void encodesDottedDeviceNames();
+    void capsSegmentLengthWithExtension();
     void preservesNetworkCaseAndLowercaseHex();
     void accentedCharactersEncodeDistinctly();
     void targetSegmentFollowsCaseMapping();
     void migratesLegacyTranscriptPaths();
     void collapsesEquivalentCursorFiles();
+    void keepsNewestLegacyCursorAcrossEncodings();
 };
 
 void StoragePathTest::encodesReservedCharacters()
@@ -77,6 +80,42 @@ void StoragePathTest::encodesDeviceNames()
              QStringLiteral("%70rn"));
     QCOMPARE(omaircStorageSegment(QStringLiteral("con.")),
              QStringLiteral("%63on%2e"));
+}
+
+void StoragePathTest::encodesDottedDeviceNames()
+{
+    QCOMPARE(omaircStorageSegment(QStringLiteral("nul.tar.gz")),
+             QStringLiteral("%6eul.tar.gz"));
+    QCOMPARE(omaircStorageSegment(QStringLiteral("com1.tar.gz")),
+             QStringLiteral("%63om1.tar.gz"));
+    QCOMPARE(omaircStorageSegment(QStringLiteral("aux.foo.bar")),
+             QStringLiteral("%61ux.foo.bar"));
+    QCOMPARE(omaircStorageSegment(QStringLiteral("con.txt.")),
+             QStringLiteral("%63on.txt%2e"));
+    QCOMPARE(omaircStorageSegment(QStringLiteral("com¹")),
+             QStringLiteral("%63om%c2%b9"));
+    QCOMPARE(omaircStorageSegment(QStringLiteral("lpt³")),
+             QStringLiteral("%6cpt%c2%b3"));
+}
+
+void StoragePathTest::capsSegmentLengthWithExtension()
+{
+    const QString extension = QStringLiteral(".json");
+    const QString withinLimit(250, QLatin1Char('a'));
+    const QString segmentWithin =
+        omaircStorageSegment(withinLimit, extension);
+    QVERIFY(segmentWithin.startsWith(QLatin1Char('a')));
+    QCOMPARE(segmentWithin.size() + extension.size(), 255);
+
+    const QString overLimit(251, QLatin1Char('a'));
+    const QString segmentOver = omaircStorageSegment(overLimit, extension);
+    QVERIFY(segmentOver.startsWith(QLatin1Char('h')));
+    QVERIFY(segmentOver.size() + extension.size() <= 255);
+
+    const IrcCaseMapping mapping;
+    const QString targetSegment =
+        omaircTargetSegment(overLimit, mapping, extension);
+    QCOMPARE(targetSegment, segmentOver);
 }
 
 void StoragePathTest::preservesNetworkCaseAndLowercaseHex()
@@ -191,9 +230,63 @@ void StoragePathTest::collapsesEquivalentCursorFiles()
     QVERIFY(!QFile::exists(olderPath));
 
     const QString canonicalPath = QDir(networkDir).filePath(
-        omaircTargetSegment(QStringLiteral("#omarchy"), mapping) + QStringLiteral(".json"));
+        omaircTargetSegment(QStringLiteral("#omarchy"), mapping, QStringLiteral(".json"))
+        + QStringLiteral(".json"));
     QVERIFY(QFile::exists(canonicalPath));
     QVERIFY(!QFile::exists(newerPath) || canonicalPath == newerPath);
+
+    qunsetenv("OMAIRC_CURSOR_ROOT");
+}
+
+void StoragePathTest::keepsNewestLegacyCursorAcrossEncodings()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    qputenv("OMAIRC_CURSOR_ROOT", dir.path().toUtf8());
+
+    const QString networkDir =
+        QDir(dir.path()).filePath(omaircStorageSegment(QStringLiteral("net-1")));
+    QVERIFY(QDir().mkpath(networkDir));
+
+    const QString olderPath =
+        QDir(networkDir).filePath(legacyStorageSegment(QStringLiteral("#foo|bar"))
+                                + QStringLiteral(".json"));
+    const QString newerPath =
+        QDir(networkDir).filePath(QStringLiteral("#Foo|bar.json"));
+    {
+        QFile older(olderPath);
+        QVERIFY(older.open(QIODevice::WriteOnly));
+        QJsonObject object;
+        object.insert(QStringLiteral("timestamp"),
+                      QStringLiteral("2011-10-19T16:40:00.000Z"));
+        object.insert(QStringLiteral("sequence"), 1);
+        older.write(QJsonDocument(object).toJson(QJsonDocument::Compact));
+        older.write("\n");
+    }
+    {
+        QFile newer(newerPath);
+        QVERIFY(newer.open(QIODevice::WriteOnly));
+        QJsonObject object;
+        object.insert(QStringLiteral("timestamp"),
+                      QStringLiteral("2011-10-19T16:42:00.000Z"));
+        object.insert(QStringLiteral("sequence"), 2);
+        newer.write(QJsonDocument(object).toJson(QJsonDocument::Compact));
+        newer.write("\n");
+    }
+
+    OmaircCliCursorStore store;
+    const IrcCaseMapping mapping;
+    const std::optional<OmaircCliCursor> loaded =
+        store.load(QStringLiteral("net-1"), QStringLiteral("#foo|bar"), mapping);
+    QVERIFY(loaded.has_value());
+    QCOMPARE(loaded->sequence, 2);
+    QVERIFY(!QFile::exists(olderPath));
+    QVERIFY(!QFile::exists(newerPath));
+
+    const QString canonicalPath = QDir(networkDir).filePath(
+        omaircTargetSegment(QStringLiteral("#foo|bar"), mapping, QStringLiteral(".json"))
+        + QStringLiteral(".json"));
+    QVERIFY(QFile::exists(canonicalPath));
 
     qunsetenv("OMAIRC_CURSOR_ROOT");
 }
