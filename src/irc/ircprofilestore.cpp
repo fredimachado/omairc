@@ -1,5 +1,6 @@
 #include "ircprofilestore.h"
 
+#include <QFile>
 #include <QFileInfo>
 #include <QSettings>
 
@@ -61,6 +62,134 @@ bool missingSettingsFile(const QSettings &settings)
         return false;
 #endif
     return !QFileInfo::exists(settings.fileName());
+}
+
+bool settingsFileIsIni(const QSettings &settings)
+{
+    const QSettings::Format format = settings.format();
+#if defined(Q_OS_WIN) || defined(Q_OS_DARWIN)
+    // Windows NativeFormat is the registry. Darwin NativeFormat is a plist.
+    if (format == QSettings::NativeFormat)
+        return false;
+#endif
+    return format <= QSettings::IniFormat;
+}
+
+bool iniSpace(char ch)
+{
+    return ch == ' ' || ch == '\t' || ch == '\n' || ch == '\r';
+}
+
+bool iniSpecial(unsigned char ch)
+{
+    return ch == '\n' || ch == '\r' || ch == '"' || ch == ';' || ch == '=' || ch == '\\';
+}
+
+// Qt 6.8 readIniLine. A leading ';' is a comment. '=' inside quotes does not
+// count, and a backslash consumes the next character (including a newline).
+bool nextIniLine(const QByteArray &data, qsizetype &dataPos, qsizetype &lineStart,
+                 qsizetype &lineLen, qsizetype &equalsPos)
+{
+    const qsizetype dataLen = data.size();
+    bool inQuotes = false;
+    equalsPos = -1;
+
+    lineStart = dataPos;
+    while (lineStart < dataLen && iniSpace(data.at(lineStart)))
+        ++lineStart;
+
+    qsizetype i = lineStart;
+    bool ended = false;
+    while (i < dataLen && !ended) {
+        const unsigned char ch = static_cast<unsigned char>(data.at(i));
+        if (!iniSpecial(ch)) {
+            ++i;
+            continue;
+        }
+
+        ++i;
+        if (ch == '=') {
+            if (!inQuotes && equalsPos == -1)
+                equalsPos = i - 1;
+        } else if (ch == '\n' || ch == '\r') {
+            if (i == lineStart + 1)
+                ++lineStart;
+            else if (!inQuotes) {
+                --i;
+                ended = true;
+            }
+        } else if (ch == '\\') {
+            if (i < dataLen) {
+                const char escaped = data.at(i++);
+                if (i < dataLen) {
+                    const char next = data.at(i);
+                    if ((escaped == '\n' && next == '\r')
+                        || (escaped == '\r' && next == '\n')) {
+                        ++i;
+                    }
+                }
+            }
+        } else if (ch == '"') {
+            inQuotes = !inQuotes;
+        } else if (i == lineStart + 1) {
+            while (i < dataLen) {
+                const char comment = data.at(i);
+                if (comment == '\n' || comment == '\r')
+                    break;
+                ++i;
+            }
+            while (i < dataLen && iniSpace(data.at(i)))
+                ++i;
+            lineStart = i;
+        } else if (!inQuotes) {
+            --i;
+            ended = true;
+        }
+    }
+
+    dataPos = i;
+    lineLen = i - lineStart;
+    return lineLen > 0;
+}
+
+// readIniFile rejects a '[' line with no ']'. readIniSection rejects a
+// non-empty, non-comment line whose equalsPos stays -1. Both set FormatError.
+// childGroups() and a writing sync() run that second parse, drop the bad
+// line from the process-wide cache, and the next QSettings reports NoError.
+bool iniBytesAreMalformed(const QByteArray &data)
+{
+    QByteArray bytes = data;
+    if (bytes.startsWith("\xEF\xBB\xBF"))
+        bytes.remove(0, 3);
+
+    qsizetype dataPos = 0;
+    qsizetype lineStart = 0;
+    qsizetype lineLen = 0;
+    qsizetype equalsPos = -1;
+    while (nextIniLine(bytes, dataPos, lineStart, lineLen, equalsPos)) {
+        if (bytes.at(lineStart) == '[') {
+            const qsizetype close = bytes.indexOf(']', lineStart);
+            if (close < 0 || close >= lineStart + lineLen)
+                return true;
+            continue;
+        }
+        if (equalsPos < 0 && bytes.at(lineStart) != ';')
+            return true;
+    }
+    return false;
+}
+
+bool settingsIniIsMalformed(const QSettings &settings)
+{
+    if (!settingsFileIsIni(settings))
+        return false;
+    const QString path = settings.fileName();
+    if (path.isEmpty() || !QFileInfo::exists(path))
+        return false;
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly))
+        return false;
+    return iniBytesAreMalformed(file.readAll());
 }
 
 IrcProfileStore::Status statusFrom(QSettings::Status status)
@@ -128,6 +257,10 @@ IrcProfileStore::Status IrcProfileStore::save(const IrcNetworkProfile &profile)
         return Status::Absent;
 
     QSettings settings;
+    // Refuse before setValue. A writing sync() parses the ini, drops a bad
+    // line from the process-wide cache, and still rewrites the file.
+    if (settingsIniIsMalformed(settings))
+        return Status::FormatError;
     // Pending keys survive a failed sync() in the process-wide QSettings
     // cache, so refuse before mutating a file that cannot accept the write.
     if (existingSettingsFileIsNotWritable(settings.fileName()))
@@ -184,6 +317,12 @@ IrcProfileStore::Status IrcProfileStore::remove(const QString &networkId)
             return statusFrom(settings.status());
         return present ? Status::Written : Status::Absent;
     }
+
+    // childGroups() is what parses every section. Once it has run, a later
+    // QSettings on this path reports NoError and save() rewrites the file.
+    // Read the bytes before sync() or childGroups() so a bad line stays put.
+    if (settingsIniIsMalformed(settings))
+        return Status::FormatError;
 
     settings.sync();
     switch (settings.status()) {

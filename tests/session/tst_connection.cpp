@@ -276,6 +276,7 @@ private slots:
     void applyOnReadOnlyIniWithoutTransportReportsTheFileSentence();
     void removeSelectedOnReadOnlyIniKeepsTheSessionAndStore();
     void readOnlyApplyDoesNotCacheOrderForAnUnstoredNetwork();
+    void persistenceFailureStaysWithItsNetwork();
 #endif
     void removeSelectedDeletesStoredSecret();
     void usernameChangePersistsExistingPassword();
@@ -2268,6 +2269,56 @@ void ConnectionTest::readOnlyApplyDoesNotCacheOrderForAnUnstoredNetwork()
     QCOMPARE(loaded.size(), 1);
     QCOMPARE(loaded.first().host, QStringLiteral("irc.example"));
     QCOMPARE(loaded.first().networkId, firstId);
+}
+
+void ConnectionTest::persistenceFailureStaysWithItsNetwork()
+{
+    int produced = 0;
+    IrcController controller;
+    IrcConnection connection(
+        controller,
+        [this, &produced]() -> IrcTransport * {
+            if (produced >= 2)
+                return nullptr;
+            ++produced;
+            auto *transport = new FakeIrcTransport;
+            m_transports.append(transport);
+            return transport;
+        },
+        credentialStore());
+
+    fillCompleteDraft(connection, QStringLiteral("irc.example"));
+    QVERIFY(connection.apply());
+    QCOMPARE(connection.persistenceStatus(), QString());
+    const QString networkA = connection.selectedNetworkId();
+    QVERIFY(controller.session(networkA) != nullptr);
+
+    ReadOnlySettingsGuard guard;
+    QVERIFY(guard.lock());
+
+    connection.setHost(QStringLiteral("irc.changed.example"));
+    QVERIFY(connection.apply());
+    QVERIFY(connection.persistenceStatus().contains(
+        QStringLiteral("Connected using these settings")));
+
+    QVERIFY(connection.add());
+    fillCompleteDraft(connection, QStringLiteral("irc.second.example"));
+    QVERIFY(!connection.apply());
+    QCOMPARE(connection.persistenceStatus(),
+             QStringLiteral("The settings file could not be written."));
+    QVERIFY(!connection.persistenceStatus().contains(
+        QStringLiteral("Connected using these settings")));
+    QVERIFY(!connection.persistenceStatus().contains(
+        QStringLiteral("saved successfully")));
+
+    if (connection.dirty())
+        connection.discard();
+    connection.select(networkA);
+    QCOMPARE(connection.selectedNetworkId(), networkA);
+    QVERIFY(connection.persistenceStatus().contains(
+        QStringLiteral("Connected using these settings")));
+
+    QVERIFY(guard.restore());
 }
 #endif
 

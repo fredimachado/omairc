@@ -47,6 +47,8 @@ private slots:
     void storeRemoveMissingEqualsWithoutGroupReturnsFormatError();
     void storeRemoveMissingEqualsWithGroupReturnsFormatError();
     void storeRemoveMissingEqualsInPreferencesReturnsFormatError();
+    void storeSaveMissingEqualsReturnsFormatError();
+    void storeSaveAfterRemoveMissingEqualsReturnsFormatError();
 #endif
 
 private:
@@ -752,6 +754,49 @@ void ProfileTest::storeRemoveMissingEqualsInPreferencesReturnsFormatError()
     QCOMPARE(after, corrupt);
     QVERIFY(after.contains(profile.networkId.toUtf8()));
     QVERIFY(after.contains(QByteArrayLiteral("networkOrder")));
+}
+
+void ProfileTest::storeSaveMissingEqualsReturnsFormatError()
+{
+    IrcNetworkProfile profile = IrcNetworkProfile::create();
+    profile.host = QStringLiteral("irc.example.net");
+    profile.nick = QStringLiteral("omairc");
+
+    IrcProfileStore store;
+    QCOMPARE(store.save(profile), IrcProfileStore::Status::Written);
+
+    const QByteArray corrupt = QByteArrayLiteral("[networks]\n")
+        + profile.networkId.toUtf8()
+        + QByteArrayLiteral("\\host\n");
+    const QString path = settingsFile();
+    QVERIFY(writeSettingsFile(path, corrupt));
+
+    profile.host = QStringLiteral("irc.changed.example");
+    QCOMPARE(store.save(profile), IrcProfileStore::Status::FormatError);
+    QCOMPARE(readSettingsFile(path), corrupt);
+}
+
+void ProfileTest::storeSaveAfterRemoveMissingEqualsReturnsFormatError()
+{
+    IrcNetworkProfile profile = IrcNetworkProfile::create();
+    profile.host = QStringLiteral("irc.example.net");
+    profile.nick = QStringLiteral("omairc");
+
+    IrcProfileStore store;
+    QCOMPARE(store.save(profile), IrcProfileStore::Status::Written);
+
+    const QByteArray corrupt = QByteArrayLiteral("[networks]\n")
+        + profile.networkId.toUtf8()
+        + QByteArrayLiteral("\\host\n");
+    const QString path = settingsFile();
+    QVERIFY(writeSettingsFile(path, corrupt));
+
+    QCOMPARE(store.remove(profile.networkId), IrcProfileStore::Status::FormatError);
+    QCOMPARE(readSettingsFile(path), corrupt);
+
+    profile.host = QStringLiteral("irc.changed.example");
+    QCOMPARE(store.save(profile), IrcProfileStore::Status::FormatError);
+    QCOMPARE(readSettingsFile(path), corrupt);
 }
 #endif
 

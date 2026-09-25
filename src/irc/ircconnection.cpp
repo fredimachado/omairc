@@ -477,23 +477,17 @@ void IrcConnection::markSessionOnlyIfStoreUnavailable(IrcDraftSecret &secret,
 
 QString IrcConnection::persistenceStatus() const
 {
-    if (m_persistenceNetworkId != m_selectedNetworkId)
-        return {};
-    return m_persistenceMessage;
+    return m_persistenceMessages.value(m_selectedNetworkId);
 }
 
 void IrcConnection::storePersistence(const QString &networkId, const QString &message)
 {
-    m_persistenceNetworkId = networkId;
-    m_persistenceMessage = message;
+    m_persistenceMessages.insert(networkId, message);
 }
 
 void IrcConnection::clearStoredPersistence(const QString &networkId)
 {
-    if (m_persistenceNetworkId != networkId)
-        return;
-    m_persistenceNetworkId.clear();
-    m_persistenceMessage.clear();
+    m_persistenceMessages.remove(networkId);
 }
 
 void IrcConnection::publishPersistence(const QString &previous)

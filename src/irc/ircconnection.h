@@ -325,8 +325,7 @@ private:
     IrcNetworkProfile m_draft;
     QString m_selectedNetworkId;
     QString m_addedFromNetworkId;
-    QString m_persistenceNetworkId;
-    QString m_persistenceMessage;
+    QHash<QString, QString> m_persistenceMessages;
     QHash<QString, IrcDraftSecret> m_secrets;
     QHash<QString, IrcDraftSecret> m_nickServSecrets;
     QHash<QString, IrcAppliedSession> m_applied;
