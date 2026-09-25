@@ -8,7 +8,9 @@
 #include <QFileInfo>
 #include <QCryptographicHash>
 
+#include <filesystem>
 #include <string_view>
+#include <system_error>
 
 namespace
 {
@@ -247,6 +249,12 @@ QString storageCanonicalPath(const QString &path)
 
 bool storagePathsSameFile(const QString &left, const QString &right)
 {
+    std::error_code error;
+    if (std::filesystem::equivalent(
+            QFileInfo(left).filesystemAbsoluteFilePath(),
+            QFileInfo(right).filesystemAbsoluteFilePath(), error)) {
+        return true;
+    }
     const QString canonicalLeft = storageCanonicalPath(left);
     const QString canonicalRight = storageCanonicalPath(right);
     return !canonicalLeft.isEmpty() && canonicalLeft == canonicalRight;

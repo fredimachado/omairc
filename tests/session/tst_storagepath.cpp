@@ -340,7 +340,10 @@ void StoragePathTest::collapsesEquivalentCursorFiles()
     QVERIFY(QDir().mkpath(networkDir));
 
     const QString olderPath =
-        QDir(networkDir).filePath(QStringLiteral("#Omarchy.json"));
+        QDir(networkDir).filePath(
+            omaircWireStorageSegment(QStringLiteral("#Omarchy"),
+                                     QStringLiteral(".json"))
+            + QStringLiteral(".json"));
     const QString newerPath =
         QDir(networkDir).filePath(QStringLiteral("#omarchy.json"));
     {
@@ -634,10 +637,15 @@ void StoragePathTest::migratesTranscriptFilesWithoutRenamingSharedNetworkDir()
     QVERIFY(QDir().mkpath(legacyNetworkDir));
     const QString sharedNetworkDir =
         QDir(root).filePath(omaircStorageSegment(QStringLiteral("libera")));
-    QVERIFY(QFile::link(legacyNetworkDir, sharedNetworkDir));
+    if (!storageDirSegmentsShareLocation(
+            QDir(root), legacyStorageSegment(QStringLiteral("Libera")),
+            omaircStorageSegment(QStringLiteral("libera")))) {
+        QVERIFY(QFile::link(legacyNetworkDir, sharedNetworkDir));
+    }
 
+    const QString target = QStringLiteral("#Omarchy");
     const QString legacyFile =
-        QDir(legacyNetworkDir).filePath(legacyStorageSegment(QStringLiteral("#a|b")));
+        QDir(legacyNetworkDir).filePath(legacyStorageSegment(target));
     {
         QFile file(legacyFile);
         QVERIFY(file.open(QIODevice::WriteOnly));
@@ -647,9 +655,9 @@ void StoragePathTest::migratesTranscriptFilesWithoutRenamingSharedNetworkDir()
     IrcConversationLog log(root);
     const IrcCaseMapping mapping;
     const QString path =
-        log.pathFor(QStringLiteral("libera"), QStringLiteral("#a|b"), mapping);
+        log.pathFor(QStringLiteral("libera"), target, mapping);
     const QString expectedPath =
-        QDir(sharedNetworkDir).filePath(omaircWireStorageSegment(QStringLiteral("#a|b")));
+        QDir(sharedNetworkDir).filePath(omaircWireStorageSegment(target));
     QCOMPARE(path, expectedPath);
     QVERIFY(QFile::exists(path));
     QVERIFY(!QFile::exists(legacyFile));
@@ -672,7 +680,10 @@ void StoragePathTest::cursorWinnerUsesMsgidAndSequence()
     const QString olderPath =
         QDir(networkDir).filePath(QStringLiteral("#chan.json"));
     const QString newerPath =
-        QDir(networkDir).filePath(QStringLiteral("#Chan.json"));
+        QDir(networkDir).filePath(
+            omaircWireStorageSegment(QStringLiteral("#Chan"),
+                                     QStringLiteral(".json"))
+            + QStringLiteral(".json"));
     const QString timestamp = QStringLiteral("2011-10-19T16:40:00.000Z");
     {
         QFile older(olderPath);
@@ -913,8 +924,10 @@ void StoragePathTest::retriesLegacyCursorMigrationAfterRenameFailure()
         QDir(dir.path()).filePath(omaircStorageSegment(QStringLiteral("net-1")));
     QVERIFY(QDir().mkpath(networkDir));
 
+    const QString target = QStringLiteral("#Omarchy");
     const QString legacyPath =
-        QDir(networkDir).filePath(QStringLiteral("#Omarchy.json"));
+        QDir(networkDir).filePath(legacyStorageSegment(target)
+                                 + QStringLiteral(".json"));
     {
         QFile legacy(legacyPath);
         QVERIFY(legacy.open(QIODevice::WriteOnly));
@@ -927,15 +940,14 @@ void StoragePathTest::retriesLegacyCursorMigrationAfterRenameFailure()
     }
 
     const QString canonicalPath = QDir(networkDir).filePath(
-        omaircWireStorageSegment(QStringLiteral("#omarchy"), QStringLiteral(".json"))
+        omaircWireStorageSegment(target, QStringLiteral(".json"))
         + QStringLiteral(".json"));
     QVERIFY(QDir().mkpath(canonicalPath));
 
     OmaircCliCursorStore store;
     const IrcCaseMapping mapping;
     const std::optional<OmaircCliCursor> loaded =
-        store.load(QStringLiteral("net-1"), QStringLiteral("#omarchy"), mapping,
-                   true);
+        store.load(QStringLiteral("net-1"), target, mapping, true);
     QVERIFY(loaded.has_value());
     QCOMPARE(loaded->sequence, 7);
     QVERIFY(QFile::exists(legacyPath));
@@ -945,20 +957,17 @@ void StoragePathTest::retriesLegacyCursorMigrationAfterRenameFailure()
         QDateTime::fromString(QStringLiteral("2011-10-19T16:43:00.000Z"),
                               Qt::ISODateWithMs);
     cursor.sequence = 8;
-    QVERIFY(store.save(QStringLiteral("net-1"), QStringLiteral("#omarchy"), mapping,
-                       true, cursor));
+    QVERIFY(store.save(QStringLiteral("net-1"), target, mapping, true, cursor));
     QVERIFY(QFile::exists(legacyPath));
 
     const std::optional<OmaircCliCursor> reloaded =
-        store.load(QStringLiteral("net-1"), QStringLiteral("#omarchy"), mapping,
-                   true);
+        store.load(QStringLiteral("net-1"), target, mapping, true);
     QVERIFY(reloaded.has_value());
     QCOMPARE(reloaded->sequence, 8);
 
     QVERIFY(QDir(canonicalPath).removeRecursively());
     const std::optional<OmaircCliCursor> migrated =
-        store.load(QStringLiteral("net-1"), QStringLiteral("#omarchy"), mapping,
-                   true);
+        store.load(QStringLiteral("net-1"), target, mapping, true);
     QVERIFY(migrated.has_value());
     QCOMPARE(migrated->sequence, 8);
     QVERIFY(QFile::exists(canonicalPath));
