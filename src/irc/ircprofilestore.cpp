@@ -50,6 +50,19 @@ bool existingSettingsFileIsNotWritable(const QString &path)
     return info.exists() && !info.isWritable();
 }
 
+bool missingSettingsFile(const QSettings &settings)
+{
+    // NativeFormat is the registry on Windows. fileName() is an
+    // \HKEY_... location, so QFileInfo::exists() is false and every
+    // remove would take the missing-file shortcut. On macOS and Linux,
+    // NativeFormat is a plist or ini file.
+#ifdef Q_OS_WIN
+    if (settings.format() == QSettings::NativeFormat)
+        return false;
+#endif
+    return !QFileInfo::exists(settings.fileName());
+}
+
 IrcProfileStore::Status statusFrom(QSettings::Status status)
 {
     switch (status) {
@@ -157,18 +170,35 @@ IrcProfileStore::Status IrcProfileStore::remove(const QString &networkId)
         return Status::Absent;
 
     QSettings settings;
-    // A missing file has no group to delete. sync() would try to create it
-    // and report AccessError when that directory cannot be created.
-    if (!QFileInfo::exists(settings.fileName())) {
+    // A missing ini or plist has no group to delete. sync() would try to
+    // create it and report AccessError when that directory cannot be created.
+    // QSettings's constructor can already set that status; ignore it unless
+    // a cached group was actually removed.
+    if (missingSettingsFile(settings)) {
         settings.beginGroup(networksGroup);
         const bool present = settings.childGroups().contains(networkId);
         if (present)
             settings.remove(networkId);
         settings.endGroup();
+        if (present && settings.status() != QSettings::NoError)
+            return statusFrom(settings.status());
         return present ? Status::Written : Status::Absent;
     }
 
     settings.sync();
+    switch (settings.status()) {
+    case QSettings::AccessError:
+        return Status::AccessError;
+    case QSettings::FormatError:
+        return Status::FormatError;
+    case QSettings::NoError:
+        break;
+    }
+
+    // childGroups() with an empty prefix parses every section. A missing
+    // '=' outside [networks] stays NoError until that parse. Return before
+    // remove() so a later sync() cannot write the merged map back.
+    settings.childGroups();
     switch (settings.status()) {
     case QSettings::AccessError:
         return Status::AccessError;
@@ -204,6 +234,8 @@ IrcProfileStore::Status IrcProfileStore::remove(const QString &networkId)
     }
     settings.remove(networkId);
     settings.endGroup();
+    if (settings.status() != QSettings::NoError)
+        return statusFrom(settings.status());
     settings.sync();
     return statusFrom(settings.status());
 }

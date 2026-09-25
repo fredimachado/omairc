@@ -5,6 +5,7 @@
 
 #include <algorithm>
 
+#include <QFileInfo>
 #include <QHash>
 #include <QSettings>
 #include <QSet>
@@ -59,9 +60,19 @@ QStringList loadPreferenceList(const QString &key)
     return settings.value(key).toStringList();
 }
 
+bool existingSettingsFileIsNotWritable(const QString &path)
+{
+    const QFileInfo info(path);
+    return info.exists() && !info.isWritable();
+}
+
 void savePreferenceList(const QString &key, const QStringList &value)
 {
     QSettings settings;
+    // A failed sync() leaves pending keys in the process-wide cache.
+    // Refuse before setValue when the ini cannot accept the write.
+    if (existingSettingsFileIsNotWritable(settings.fileName()))
+        return;
     settings.beginGroup(preferencesGroup());
     if (settings.contains(key) && settings.value(key).toStringList() == value)
         return;
@@ -875,7 +886,7 @@ bool IrcConnection::apply()
     }
     if (!found) {
         m_stored.append(profile);
-        if (!m_ephemeral)
+        if (!m_ephemeral && saveStatus == IrcProfileStore::Status::Written)
             persistNetworkOrder();
     }
     m_draft = profile;

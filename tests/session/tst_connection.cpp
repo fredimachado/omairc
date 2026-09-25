@@ -275,6 +275,7 @@ private slots:
     void applyOnReadOnlyIniKeepsTheSessionAndReportsTheWrite();
     void applyOnReadOnlyIniWithoutTransportReportsTheFileSentence();
     void removeSelectedOnReadOnlyIniKeepsTheSessionAndStore();
+    void readOnlyApplyDoesNotCacheOrderForAnUnstoredNetwork();
 #endif
     void removeSelectedDeletesStoredSecret();
     void usernameChangePersistsExistingPassword();
@@ -2230,6 +2231,43 @@ void ConnectionTest::removeSelectedOnReadOnlyIniKeepsTheSessionAndStore()
     QCOMPARE(IrcProfileStore().profiles().size(), 0);
     QVERIFY(controller.session(networkId) == nullptr);
     QCOMPARE(connection.persistenceStatus(), QString());
+}
+
+void ConnectionTest::readOnlyApplyDoesNotCacheOrderForAnUnstoredNetwork()
+{
+    IrcController controller;
+    IrcConnection connection(controller, capturingFactory(), credentialStore());
+    fillCompleteDraft(connection, QStringLiteral("irc.example"));
+    QVERIFY(connection.apply());
+    const QString firstId = connection.selectedNetworkId();
+    QCOMPARE(IrcProfileStore().profiles().size(), 1);
+    QCOMPARE(IrcProfileStore().profiles().first().host, QStringLiteral("irc.example"));
+
+    ReadOnlySettingsGuard guard;
+    QVERIFY(guard.lock());
+
+    QVERIFY(connection.add());
+    fillCompleteDraft(connection, QStringLiteral("irc.second.example"));
+    QVERIFY(connection.apply());
+    const QString secondId = connection.selectedNetworkId();
+    QVERIFY(secondId != firstId);
+    QVERIFY(connection.persistenceStatus().contains(
+        QStringLiteral("Connected using these settings")));
+    QVERIFY(!connection.persistenceStatus().contains(QStringLiteral("saved successfully")));
+
+    QVERIFY(guard.restore());
+    QSettings flush;
+    flush.sync();
+
+    QFile file(flush.fileName());
+    QVERIFY(file.open(QIODevice::ReadOnly));
+    const QByteArray bytes = file.readAll();
+    QVERIFY(!bytes.contains(secondId.toUtf8()));
+
+    const QList<IrcNetworkProfile> loaded = IrcProfileStore().profiles();
+    QCOMPARE(loaded.size(), 1);
+    QCOMPARE(loaded.first().host, QStringLiteral("irc.example"));
+    QCOMPARE(loaded.first().networkId, firstId);
 }
 #endif
 

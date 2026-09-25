@@ -46,6 +46,7 @@ private slots:
     void storeRemoveMissingFileIsAbsent();
     void storeRemoveMissingEqualsWithoutGroupReturnsFormatError();
     void storeRemoveMissingEqualsWithGroupReturnsFormatError();
+    void storeRemoveMissingEqualsInPreferencesReturnsFormatError();
 #endif
 
 private:
@@ -725,6 +726,32 @@ void ProfileTest::storeRemoveMissingEqualsWithGroupReturnsFormatError()
     const QByteArray after = readSettingsFile(path);
     QCOMPARE(after, corrupt);
     QVERIFY(after.contains(profile.networkId.toUtf8()));
+}
+
+void ProfileTest::storeRemoveMissingEqualsInPreferencesReturnsFormatError()
+{
+    IrcNetworkProfile profile = IrcNetworkProfile::create();
+    profile.host = QStringLiteral("irc.example.net");
+    profile.nick = QStringLiteral("omairc");
+
+    IrcProfileStore store;
+    QCOMPARE(store.save(profile), IrcProfileStore::Status::Written);
+
+    const QString path = settingsFile();
+    QByteArray corrupt = readSettingsFile(path);
+    QVERIFY(corrupt.contains(profile.networkId.toUtf8()));
+    if (!corrupt.endsWith('\n'))
+        corrupt.append('\n');
+    // A missing '=' outside [networks] is invisible to childGroups() there.
+    corrupt.append(QByteArrayLiteral("[preferences]\nnetworkOrder\n"));
+    QVERIFY(writeSettingsFile(path, corrupt));
+
+    QCOMPARE(store.remove(profile.networkId), IrcProfileStore::Status::FormatError);
+
+    const QByteArray after = readSettingsFile(path);
+    QCOMPARE(after, corrupt);
+    QVERIFY(after.contains(profile.networkId.toUtf8()));
+    QVERIFY(after.contains(QByteArrayLiteral("networkOrder")));
 }
 #endif
 
