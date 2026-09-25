@@ -44,6 +44,8 @@ private slots:
 #ifdef Q_OS_LINUX
     void storeReadOnlyIniReturnsAccessError();
     void storeRemoveMissingFileIsAbsent();
+    void storeRemoveMissingEqualsWithoutGroupReturnsFormatError();
+    void storeRemoveMissingEqualsWithGroupReturnsFormatError();
 #endif
 
 private:
@@ -658,6 +660,71 @@ void ProfileTest::storeRemoveMissingFileIsAbsent()
     QCOMPARE(IrcProfileStore().remove(QStringLiteral("missing-network")),
              IrcProfileStore::Status::Absent);
     QVERIFY(!QFile::exists(path));
+}
+
+static bool writeSettingsFile(const QString &path, const QByteArray &bytes)
+{
+    QFile file(path);
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate))
+        return false;
+    if (file.write(bytes) != bytes.size())
+        return false;
+    return file.flush();
+}
+
+static QByteArray readSettingsFile(const QString &path)
+{
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly))
+        return {};
+    return file.readAll();
+}
+
+void ProfileTest::storeRemoveMissingEqualsWithoutGroupReturnsFormatError()
+{
+    IrcNetworkProfile profile = IrcNetworkProfile::create();
+    profile.host = QStringLiteral("irc.example.net");
+    profile.nick = QStringLiteral("omairc");
+
+    IrcProfileStore store;
+    QCOMPARE(store.save(profile), IrcProfileStore::Status::Written);
+
+    // No '=' means the network is not a parsed key, so childGroups() drops it.
+    const QByteArray corrupt = QByteArrayLiteral("[networks]\n")
+        + profile.networkId.toUtf8()
+        + QByteArrayLiteral("\\host\n");
+    const QString path = settingsFile();
+    QVERIFY(writeSettingsFile(path, corrupt));
+
+    QCOMPARE(store.remove(profile.networkId), IrcProfileStore::Status::FormatError);
+    QCOMPARE(readSettingsFile(path), corrupt);
+}
+
+void ProfileTest::storeRemoveMissingEqualsWithGroupReturnsFormatError()
+{
+    IrcNetworkProfile profile = IrcNetworkProfile::create();
+    profile.host = QStringLiteral("irc.example.net");
+    profile.nick = QStringLiteral("omairc");
+
+    IrcProfileStore store;
+    QCOMPARE(store.save(profile), IrcProfileStore::Status::Written);
+
+    const QString path = settingsFile();
+    QByteArray corrupt = readSettingsFile(path);
+    QVERIFY(corrupt.contains(profile.networkId.toUtf8()));
+    QVERIFY(corrupt.contains('='));
+    if (!corrupt.endsWith('\n'))
+        corrupt.append('\n');
+    // A value line with no '=' beside real keys: the group stays listed.
+    corrupt.append(profile.networkId.toUtf8());
+    corrupt.append(QByteArrayLiteral("\\port\n"));
+    QVERIFY(writeSettingsFile(path, corrupt));
+
+    QCOMPARE(store.remove(profile.networkId), IrcProfileStore::Status::FormatError);
+
+    const QByteArray after = readSettingsFile(path);
+    QCOMPARE(after, corrupt);
+    QVERIFY(after.contains(profile.networkId.toUtf8()));
 }
 #endif
 

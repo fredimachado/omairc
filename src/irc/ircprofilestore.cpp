@@ -179,7 +179,22 @@ IrcProfileStore::Status IrcProfileStore::remove(const QString &networkId)
     }
 
     settings.beginGroup(networksGroup);
-    if (!settings.childGroups().contains(networkId)) {
+    // sync() leaves a value line with no '=' as NoError. childGroups()
+    // parses those lines and is what sets FormatError. Return that status
+    // before remove() and before a missing group is Absent, so the merged
+    // map is not written back over the file.
+    const QStringList groups = settings.childGroups();
+    switch (settings.status()) {
+    case QSettings::AccessError:
+        settings.endGroup();
+        return Status::AccessError;
+    case QSettings::FormatError:
+        settings.endGroup();
+        return Status::FormatError;
+    case QSettings::NoError:
+        break;
+    }
+    if (!groups.contains(networkId)) {
         settings.endGroup();
         return Status::Absent;
     }
