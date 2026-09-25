@@ -7,8 +7,15 @@
 class IrcProfileStore
 {
 public:
+    enum class Status {
+        Written,
+        Absent,
+        AccessError,
+        FormatError,
+    };
+
     IrcProfileStore();
     QList<IrcNetworkProfile> profiles() const;
-    void save(const IrcNetworkProfile &profile);
-    bool remove(const QString &networkId);
+    Status save(const IrcNetworkProfile &profile);
+    Status remove(const QString &networkId);
 };

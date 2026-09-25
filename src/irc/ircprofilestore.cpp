@@ -1,5 +1,6 @@
 #include "ircprofilestore.h"
 
+#include <QFileInfo>
 #include <QSettings>
 
 namespace
@@ -41,6 +42,25 @@ QMap<QString, QString> loadAutojoinKeys(const QStringList &channels,
         }
     }
     return keys;
+}
+
+bool existingSettingsFileIsNotWritable(const QString &path)
+{
+    const QFileInfo info(path);
+    return info.exists() && !info.isWritable();
+}
+
+IrcProfileStore::Status statusFrom(QSettings::Status status)
+{
+    switch (status) {
+    case QSettings::NoError:
+        return IrcProfileStore::Status::Written;
+    case QSettings::AccessError:
+        return IrcProfileStore::Status::AccessError;
+    case QSettings::FormatError:
+        return IrcProfileStore::Status::FormatError;
+    }
+    return IrcProfileStore::Status::AccessError;
 }
 }
 
@@ -89,12 +109,17 @@ QList<IrcNetworkProfile> IrcProfileStore::profiles() const
     return result;
 }
 
-void IrcProfileStore::save(const IrcNetworkProfile &profile)
+IrcProfileStore::Status IrcProfileStore::save(const IrcNetworkProfile &profile)
 {
     if (profile.networkId.isEmpty())
-        return;
+        return Status::Absent;
 
     QSettings settings;
+    // Pending keys survive a failed sync() in the process-wide QSettings
+    // cache, so refuse before mutating a file that cannot accept the write.
+    if (existingSettingsFileIsNotWritable(settings.fileName()))
+        return Status::AccessError;
+
     settings.beginGroup(networksGroup);
     settings.beginGroup(profile.networkId);
     settings.remove(QString());
@@ -123,21 +148,36 @@ void IrcProfileStore::save(const IrcNetworkProfile &profile)
     settings.endGroup();
     settings.endGroup();
     settings.sync();
+    return statusFrom(settings.status());
 }
 
-bool IrcProfileStore::remove(const QString &networkId)
+IrcProfileStore::Status IrcProfileStore::remove(const QString &networkId)
 {
     if (networkId.isEmpty())
-        return false;
+        return Status::Absent;
 
     QSettings settings;
+    settings.sync();
+    switch (settings.status()) {
+    case QSettings::AccessError:
+        return Status::AccessError;
+    case QSettings::FormatError:
+        return Status::FormatError;
+    case QSettings::NoError:
+        break;
+    }
+
     settings.beginGroup(networksGroup);
     if (!settings.childGroups().contains(networkId)) {
         settings.endGroup();
-        return false;
+        return Status::Absent;
+    }
+    if (existingSettingsFileIsNotWritable(settings.fileName())) {
+        settings.endGroup();
+        return Status::AccessError;
     }
     settings.remove(networkId);
     settings.endGroup();
     settings.sync();
-    return true;
+    return statusFrom(settings.status());
 }

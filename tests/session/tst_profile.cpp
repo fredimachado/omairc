@@ -41,6 +41,9 @@ private slots:
     void missingNickServSavedDefaultsToFalse();
     void usernameAndRealnameStayAsTyped();
     void storeRemoveDropsTheNetworkGroup();
+#ifdef Q_OS_LINUX
+    void storeReadOnlyIniReturnsAccessError();
+#endif
 
 private:
 #ifdef Q_OS_LINUX
@@ -557,8 +560,8 @@ void ProfileTest::storeRemoveDropsTheNetworkGroup()
     store.save(drop);
     QCOMPARE(IrcProfileStore().profiles().size(), 2);
 
-    QVERIFY(store.remove(drop.networkId));
-    QVERIFY(!store.remove(drop.networkId));
+    QCOMPARE(store.remove(drop.networkId), IrcProfileStore::Status::Written);
+    QCOMPARE(store.remove(drop.networkId), IrcProfileStore::Status::Absent);
 
     const QList<IrcNetworkProfile> loaded = IrcProfileStore().profiles();
     QCOMPARE(loaded.size(), 1);
@@ -587,6 +590,64 @@ void ProfileTest::storeRemoveDropsTheNetworkGroup()
     QVERIFY(!values.join(QLatin1Char('\n')).contains(QLatin1String("irc.oftc.net")));
 #endif
 }
+
+#ifdef Q_OS_LINUX
+void ProfileTest::storeReadOnlyIniReturnsAccessError()
+{
+    IrcNetworkProfile profile = IrcNetworkProfile::create();
+    profile.host = QStringLiteral("irc.example.net");
+    profile.nick = QStringLiteral("omairc");
+    QVERIFY(profile.isComplete());
+
+    IrcProfileStore store;
+    QCOMPARE(store.save(profile), IrcProfileStore::Status::Written);
+
+    const QString path = settingsFile();
+    QFile ini(path);
+    QVERIFY(ini.exists());
+    const QFile::Permissions original = ini.permissions();
+    struct PermissionGuard
+    {
+        explicit PermissionGuard(QString filePath, QFile::Permissions saved)
+            : filePath(std::move(filePath))
+            , saved(saved)
+        {
+        }
+        ~PermissionGuard()
+        {
+            if (active)
+                QFile::setPermissions(filePath, saved);
+        }
+        void dismiss() { active = false; }
+
+        QString filePath;
+        QFile::Permissions saved;
+        bool active = true;
+    } guard(path, original);
+
+    const QFile::Permissions readOnly = original
+        & ~(QFile::WriteOwner | QFile::WriteUser | QFile::WriteGroup | QFile::WriteOther);
+    QVERIFY(ini.setPermissions(readOnly));
+
+    IrcNetworkProfile changed = profile;
+    changed.host = QStringLiteral("irc.changed.example");
+    QCOMPARE(store.save(changed), IrcProfileStore::Status::AccessError);
+    QCOMPARE(store.remove(profile.networkId), IrcProfileStore::Status::AccessError);
+
+    QVERIFY(QFile::setPermissions(path, original));
+    guard.dismiss();
+
+    const QList<IrcNetworkProfile> loaded = IrcProfileStore().profiles();
+    QCOMPARE(loaded.size(), 1);
+    QCOMPARE(loaded.first().networkId, profile.networkId);
+    QCOMPARE(loaded.first().host, profile.host);
+
+    QVERIFY(ini.open(QIODevice::ReadOnly | QIODevice::Text));
+    const QString contents = QString::fromUtf8(ini.readAll());
+    QVERIFY(contents.contains(profile.host));
+    QVERIFY(!contents.contains(changed.host));
+}
+#endif
 
 int runProfileTests(int argc, char **argv)
 {
