@@ -1,0 +1,23 @@
+#!/usr/bin/env sh
+# Build the omairc-tui binary with the repository version injected.
+#
+# version.pri stays the single version source: this reads it through
+# bin/version (which also enforces the Arch pkgver shape) and injects the
+# result into internal/version.Value at link time. OMAIRC_BUILD_VERSION
+# overrides it so CI snapshot versions match the Qt build.
+#
+# The bare `omairc-tui` name is Linux-only for now; the Windows `.exe` suffix
+# (go env GOEXE) joins when that target lands.
+set -eu
+
+ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)"
+TUI="$ROOT/tui"
+cd "$TUI"
+
+VERSION="$("$ROOT/bin/version")"
+BUILD_VERSION="${OMAIRC_BUILD_VERSION:-$VERSION}"
+
+go build \
+  -ldflags "-X github.com/fredimachado/omairc/tui/internal/version.Value=$BUILD_VERSION" \
+  -o "$TUI/bin/omairc-tui" \
+  ./cmd/omairc-tui
