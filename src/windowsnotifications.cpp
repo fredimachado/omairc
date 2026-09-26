@@ -60,6 +60,11 @@ using namespace Microsoft::WRL::Wrappers;
 // dedicated thread.
 std::atomic<WindowsNotifications *> g_notifications{nullptr};
 
+// Serializes a COM activation against teardown. Activate holds this while it
+// borrows the live object, and the destructor holds it while it clears the
+// pointer, so a click that lands mid-shutdown cannot post to freed memory.
+std::mutex g_activationMutex;
+
 bool notificationsAvailable()
 {
     if (!qEnvironmentVariableIsEmpty("OMAIRC_SKIP_NOTIFICATIONS"))
@@ -227,6 +232,9 @@ public:
                                        const NOTIFICATION_USER_INPUT_DATA * /*data*/,
                                        ULONG /*count*/) override
     {
+        // Held across QMetaObject::invokeMethod so teardown cannot free the
+        // object between the pointer load and the post.
+        std::lock_guard<std::mutex> lock(g_activationMutex);
         WindowsNotifications *owner = g_notifications.load();
         if (!owner || !invokedArgs)
             return S_OK;
@@ -423,13 +431,19 @@ WindowsNotifications::~WindowsNotifications()
 {
     if (!m_impl)
         return;
+    // Retire the object from COM before joining, so an activation that is
+    // already in flight finishes while the object is still alive and any later
+    // one finds no owner.
+    {
+        std::lock_guard<std::mutex> lock(g_activationMutex);
+        g_notifications.store(nullptr);
+    }
     if (m_impl->threadId != 0)
         PostThreadMessageW(m_impl->threadId, kMessageQuit, 0, 0);
     if (m_impl->thread.joinable())
         m_impl->thread.join();
     if (m_impl->ready)
         CloseHandle(m_impl->ready);
-    g_notifications.store(nullptr);
     delete m_impl;
     m_impl = nullptr;
 }
