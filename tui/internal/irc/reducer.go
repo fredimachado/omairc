@@ -174,15 +174,18 @@ const MaxMessages = 2000
 // EventReducer folds translated Events into conversation state. It mirrors
 // IrcEventReducer.
 type EventReducer struct {
-	conversations       Store
-	features            map[string]ServerFeatures
-	currentNicks        map[string]string
-	selfNicks           map[string]map[string]struct{}
-	highlightWords      map[string][]string
-	presence            map[string]NetworkPresence
-	selfAway            map[string]struct{}
-	selected            *ConversationKey
-	windowActive        bool
+	conversations  Store
+	features       map[string]ServerFeatures
+	currentNicks   map[string]string
+	selfNicks      map[string]map[string]struct{}
+	highlightWords map[string][]string
+	presence       map[string]NetworkPresence
+	selfAway       map[string]struct{}
+	selected       *ConversationKey
+	// windowInactive is inverted so the zero value matches the C++ member
+	// initializer `bool m_windowActive = true`: a reducer is focused until
+	// something says otherwise.
+	windowInactive      bool
 	mentionArrival      *MentionArrival
 	inboxArrival        *InboxArrival
 	mutedKeys           map[ConversationKey]struct{}
@@ -318,7 +321,7 @@ func (r *EventReducer) MarkRead(key ConversationKey) bool {
 // consuming unread on focus regain is the controller's job. It mirrors
 // IrcEventReducer::setWindowActive.
 func (r *EventReducer) SetWindowActive(active bool) {
-	r.windowActive = active
+	r.windowInactive = !active
 }
 
 // ClearSelection forgets the selected conversation. It mirrors
@@ -1005,8 +1008,8 @@ func (r *EventReducer) noteChatArrival(conversation *ConversationState, key Conv
 	// unfocused is backlog, not "new since you left", so it must not plant
 	// the mark mid-splice. Focused replay still plants the mark without
 	// bumping unread.
-	skipLiveFocused := selected && origin == OriginLive && r.windowActive
-	skipReplayUnfocused := selected && origin != OriginLive && !r.windowActive
+	skipLiveFocused := selected && origin == OriginLive && !r.windowInactive
+	skipReplayUnfocused := selected && origin != OriginLive && r.windowInactive
 	if skipLiveFocused || skipReplayUnfocused {
 		return
 	}
