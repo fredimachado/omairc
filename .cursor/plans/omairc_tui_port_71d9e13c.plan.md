@@ -10,7 +10,7 @@ todos:
     status: completed
   - id: phase-2-reducer
     content: "Phase 2: session + event reducer — IrcEvent taxonomy, IrcEventReducer + IrcConversationCause, transport/session, Go IrcController API"
-    status: in_progress
+    status: completed
   - id: phase-3-demo
     content: "Phase 3: IrcDemoServer + loopback transport parity seed for --demo-server"
     status: pending
