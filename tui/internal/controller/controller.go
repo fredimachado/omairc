@@ -1,7 +1,6 @@
 package controller
 
 import (
-	"strings"
 	"time"
 
 	"github.com/fredimachado/omairc/tui/internal/irc"
@@ -36,6 +35,26 @@ type Controller struct {
 	networkCollapsed map[string]bool
 	connectionStatus string
 
+	// Phase 7 slash subsystems and their stores. commands, replies, monitor,
+	// and autoaway own their decisions; the controller owns the side effects.
+	ignores    *IgnoreStore
+	mutes      *MuteStore
+	highlights *HighlightStore
+	monitors   *MonitorStore
+	avatars    *AvatarStore
+	prefs      *Preferences
+
+	commands     *CommandDispatcher
+	replies      *ReplyRouter
+	monitor      *MonitorCoordinator
+	autoaway     *AutoawayRuntime
+	channelLists *ChannelListRequest
+	channelList  *ChannelListModel
+
+	channelListOpen bool
+	unawaySent      map[string]bool
+	typingTarget    string
+
 	conversationEpoch int
 	peerMetadataEpoch int
 	peerAccountEpoch  int
@@ -50,6 +69,10 @@ type Controller struct {
 	// OnInboxArrived is called for each inbox item the reducer hands up. It is
 	// nil-able; Phase 9 owns the inbox store and model.
 	OnInboxArrived func(arrival irc.InboxArrival)
+	// OnMonitorArrived is called for each MONITOR presence change the monitor
+	// coordinator reports. It is nil-able; Phase 9 owns the inbox append and
+	// the desktop notification.
+	OnMonitorArrived func(networkID, display, body string, newlyOnline bool)
 	// OnSelectionChanged fires when the selected conversation, the focused
 	// network, or the Status surface changes.
 	OnSelectionChanged func()
@@ -79,6 +102,7 @@ func New() *Controller {
 	// (src/irc/irceventreducer.h:395). NewEventReducer leaves the Go field at
 	// its zero value, so the controller restores the Qt default here.
 	c.reducer.SetWindowActive(true)
+	c.initSlashSubsystems()
 	return c
 }
 
@@ -92,6 +116,7 @@ func (c *Controller) SetClock(clock session.Clock) {
 		clock = session.RealClock{}
 	}
 	c.clock = clock
+	c.rebindClocks()
 }
 
 func (c *Controller) now() time.Time {
@@ -184,6 +209,9 @@ func (c *Controller) Registered(networkID string) {
 	}
 	c.reducer.SetServerFeatures(networkID, irc.NewServerFeatures())
 	c.Apply(irc.WelcomeEvent{NetworkID: networkID, CurrentNick: nick})
+	if s := c.manager.Find(networkID); s != nil {
+		c.autoaway.OnSessionRegistered(s)
+	}
 	c.refreshConnectionStatus()
 }
 
@@ -209,9 +237,11 @@ func (c *Controller) HistoryBatchReceived(networkID string, batch irc.HistoryBat
 	c.Apply(event)
 }
 
-// StatusEntry records one classified Status line.
+// StatusEntry records one classified Status line and routes its correlated
+// WHOIS, CTCP, and metadata replies.
 func (c *Controller) StatusEntry(entry irc.StatusEntry) {
 	c.statusConsole.Append(entry)
+	c.replies.RouteStatusEntry(entry)
 }
 
 // CapabilitiesChanged stores the set and clears presence/typing facts that a
@@ -221,8 +251,10 @@ func (c *Controller) CapabilitiesChanged(networkID string, capabilities irc.Capa
 	c.handleCapabilities(networkID, capabilities)
 }
 
-// RequestLabelFinished is a Phase 6 ReplyRouter seam.
-func (c *Controller) RequestLabelFinished(networkID, requestLabel string) {}
+// RequestLabelFinished drops the labeled watch for a finished request.
+func (c *Controller) RequestLabelFinished(networkID, requestLabel string) {
+	c.replies.RequestLabelFinished(networkID, requestLabel)
+}
 
 // AutojoinChannelsChanged is a Phase 7/9 profile seam.
 func (c *Controller) AutojoinChannelsChanged(networkID string, channels []string, keys map[string]string) {
@@ -249,11 +281,24 @@ func (c *Controller) Apply(event irc.Event) {
 	typingOnly := kind == irc.EventTyping
 	selfAwayOnly := kind == irc.EventSelfAway
 
+	// A welcome re-enters registration: reply watches, auto-away state, and
+	// the unaway latch all reset first. It mirrors the welcome branch in
+	// IrcController::apply (src/irc/irccontroller.cpp:2027-2032).
+	if welcome, ok := event.(irc.WelcomeEvent); ok {
+		delete(c.unawaySent, welcome.NetworkID)
+		c.autoaway.ForgetNetwork(welcome.NetworkID)
+		c.replies.Forget(welcome.NetworkID)
+	} else if selfAway, ok := event.(irc.SelfAwayEvent); ok {
+		delete(c.unawaySent, selfAway.NetworkID)
+	}
+
 	c.reducer.Apply(event, c.now())
 	c.noteKeptReplay()
 
-	if _, ok := event.(irc.MemberMetadataEvent); ok {
+	if metadata, ok := event.(irc.MemberMetadataEvent); ok {
 		c.peerMetadataEpoch++
+		c.replies.RouteOwnMetadataReply(metadata.NetworkID, metadata.Nick,
+			metadata.Key, metadata.Value)
 	}
 	if accountsMoved(kind, event) {
 		c.peerAccountEpoch++
@@ -552,16 +597,6 @@ func (c *Controller) dropSelectedDirectAndReselect() {
 
 // --- Send ----------------------------------------------------------------
 
-// SendMessage sends the selected conversation a plain PRIVMSG. Slash commands
-// are a Phase 7 concern: no parsing happens here, so a leading slash is sent
-// literally. An empty message is refused.
-func (c *Controller) SendMessage(text string) bool {
-	if strings.TrimSpace(text) == "" {
-		return false
-	}
-	return c.sendSelectedMessage(text)
-}
-
 // SendToTarget sends a plain PRIVMSG to an arbitrary network and target. It
 // uses the QuietSend cause, so it never invents a conversation. It mirrors
 // IrcController::sendToTarget (src/irc/irccontroller.cpp:1291-1329).
@@ -592,23 +627,6 @@ func (c *Controller) SendToTarget(networkID, target, text string) bool {
 	c.echoIfPresent(s, target, text)
 	c.setLastError(networkID, "")
 	c.notifyStatusChanged()
-	return true
-}
-
-func (c *Controller) sendSelectedMessage(body string) bool {
-	if c.selected == nil || body == "" {
-		return false
-	}
-	s := c.manager.Find(c.selected.NetworkID)
-	if s == nil {
-		return false
-	}
-	target := c.SelectedTarget()
-	if !s.SendPrivmsg(target, body) {
-		return false
-	}
-	c.rememberOpenDirect(s.NetworkID(), target)
-	c.echoLocal(irc.KindMessage, body)
 	return true
 }
 
@@ -860,6 +878,8 @@ func (c *Controller) AddSession(config session.SessionConfig, transport session.
 	}
 	c.currentNicks[config.NetworkID] = config.Nick
 	s.SetHandler(c)
+	c.hydrateMutes(config.NetworkID)
+	c.syncHighlightWords(config.NetworkID)
 	return s, nil
 }
 
@@ -874,6 +894,13 @@ func (c *Controller) DiscardSession(networkID string) bool {
 	delete(c.currentNicks, networkID)
 	delete(c.capabilities, networkID)
 	c.statusConsole.Clear(networkID)
+	c.autoaway.ForgetNetwork(networkID)
+	c.monitor.ForgetPresence(networkID)
+	c.channelLists.Forget(networkID)
+	if current := c.ChannelListSnapshot(); current.NetworkID == networkID {
+		c.channelList.Clear()
+		c.channelListOpen = false
+	}
 	c.manager.Discard(networkID)
 	c.notifyCapabilitiesChanged()
 	c.notifyStatusChanged()
@@ -891,6 +918,16 @@ func (c *Controller) ForgetNetworkState(networkID string) {
 	delete(c.currentNicks, networkID)
 	delete(c.capabilities, networkID)
 	delete(c.lastErrors, networkID)
+	delete(c.unawaySent, networkID)
+	c.commands.ForgetNetwork(networkID)
+	c.replies.Forget(networkID)
+	c.monitor.ForgetPresence(networkID)
+	c.autoaway.ForgetNetwork(networkID)
+	c.channelLists.Forget(networkID)
+	if current := c.ChannelListSnapshot(); current.NetworkID == networkID {
+		c.channelList.Clear()
+		c.channelListOpen = false
+	}
 	if c.selected != nil && c.selected.NetworkID == networkID {
 		c.ClearConversationSelection()
 	}
@@ -991,6 +1028,9 @@ func (c *Controller) MoveNetwork(networkID string, delta int) bool {
 // --- Message handling -----------------------------------------------------
 
 func (c *Controller) handleMessage(networkID string, message irc.Message) {
+	if message.Command == "FAIL" {
+		c.replies.RouteOwnMetadataFail(networkID, message)
+	}
 	switch message.Command {
 	case "005":
 		if len(message.Params) > 2 {
@@ -1000,9 +1040,23 @@ func (c *Controller) handleMessage(networkID string, message irc.Message) {
 				features.ApplyToken(irc.WireText([]byte(message.Params[index])))
 			}
 			c.reducer.SetServerFeatures(networkID, features)
+			c.monitor.SubscribeMonitors(networkID)
 		}
 		return
-	case "376", "422":
+	case "730":
+		c.monitor.HandleMonitorPresence(networkID, message, true)
+		return
+	case "731":
+		c.monitor.HandleMonitorPresence(networkID, message, false)
+		return
+	case "734":
+		c.monitor.HandleMonitorListFull(networkID, message)
+		return
+	}
+	if c.handleChannelListMessage(networkID, message) {
+		return
+	}
+	if message.Command == "376" || message.Command == "422" {
 		// A burst of 005 tokens is applied above without touching the models;
 		// MOTD end only latches the case mapping. Restoring open directs is
 		// Phase 9.
@@ -1022,6 +1076,26 @@ func (c *Controller) handleMessage(networkID string, message irc.Message) {
 			}
 		}
 		c.Apply(event)
+		if join, ok := event.(irc.JoinEvent); ok {
+			mapping := features.CaseMapping()
+			selfJoin := mapping.Equals(join.Nick, currentNick)
+			joinKey := c.reducer.ConversationKey(join.NetworkID, join.Channel)
+			if selfJoin && c.commands.TakeCancelledSelfJoin(joinKey) {
+				if s := c.manager.Find(join.NetworkID); s != nil {
+					s.Part(join.Channel)
+				}
+				c.dismissChannel(join.NetworkID, join.Channel)
+				continue
+			}
+			if selfJoin && features.IsChannel(join.Channel) {
+				if s := c.manager.Find(join.NetworkID); s != nil {
+					if pending, ok := s.PendingInvite(); ok &&
+						mapping.Equals(join.Channel, pending.Channel) {
+						c.SelectConversation(join.NetworkID, join.Channel)
+					}
+				}
+			}
+		}
 	}
 }
 

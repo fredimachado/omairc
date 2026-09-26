@@ -53,6 +53,9 @@ type Styles struct {
 	JumpRow      lipgloss.Style
 	JumpSelected lipgloss.Style
 	JumpEmpty    lipgloss.Style
+
+	SlashRow      lipgloss.Style
+	SlashSelected lipgloss.Style
 }
 
 // The palette mirrors Omarchy's calm, low-contrast terminal look: one blue
@@ -117,5 +120,8 @@ func defaultStyles() Styles {
 		JumpRow:      base,
 		JumpSelected: base.Bold(true),
 		JumpEmpty:    base.Foreground(colorDim).Faint(true),
+
+		SlashRow:      base.Foreground(colorMuted),
+		SlashSelected: base.Bold(true).Foreground(colorAccent),
 	}
 }
