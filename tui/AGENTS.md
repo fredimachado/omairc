@@ -47,10 +47,14 @@ When the two disagree about the shared contract, the root file wins.
   `SetAllNetworksCollapsed`, and `MoveNetwork` live here, mirroring the Qt
   `IrcConnection` collapse home; `internal/connection.MoveNetwork` is the
   Connect-sheet roster reorder only. It reads time only from an injected
-  `session.Clock`. Later subsystems (command dispatcher, playback,
-  persistence, monitor, ignore/mute, highlight, autoaway, avatars, inbox
-  store, channel list) sit behind the nil-able seams in
-  `internal/controller/seams.go` and land in their own phases.
+  `session.Clock`. Phase 7 lands the slash catalog: the command dispatcher
+  (`commanddispatcher.go`), the reply router (`replyrouter.go`), the monitor
+  coordinator (`monitorcoordinator.go`), the autoaway runtime
+  (`autoawayruntime.go`), the channel-list request/model (`channellist.go`),
+  and the in-memory ignore/mute/monitor/highlight/avatar/preference stores
+  (`stores.go`), all wired through the host adapters in `wiring.go`. Playback,
+  persistence, the inbox store, and avatars on disk remain behind the nil-able
+  seams in `internal/controller/seams.go` and land in their own phases.
 - `internal/connection` owns the Connect sheet's profile model and the
   draft/selection/apply/disconnect surface (`NetworkProfile`, `Connection`).
   It may import `internal/irc`, `internal/controller`, and `internal/session`
@@ -166,7 +170,10 @@ verb and the CSI-u bytes for `ctrl+shift+s`, `ctrl+shift+p`, `ctrl+shift+k`,
 is sent as a CSI-u sequence too, because the decoder does not map the legacy
 `0x1F` byte to `ctrl+/`. `key`, `type`, and `send` block until the child has
 repainted and the PTY has gone quiet, so a following `screenshot` or `compare`
-is deterministic instead of racing the redraw.
+is deterministic instead of racing the redraw. Phase 7 adds the `composer`
+verb (a no-op focus, so the shared `slash-complete` fence runs) and the
+`slash-commands` / `slash-complete` recipes; the slash catalog, the completer,
+and the `/list` overlay live in `internal/controller` and `internal/ui`.
 
 ## Chords
 

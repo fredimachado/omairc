@@ -88,11 +88,12 @@ title matches exactly and fails on a miss.
 
 ## Drive
 
-The gate is keyboard-first. It REJECTS pixel/mouse verbs (`click-*`) and
-`compare`, `qml-suite`, and `doctor-qml` in a recipe: `omairc-tui` has no
+The gate is keyboard-first. It REJECTS pixel/mouse verbs (`click-*`) and the
+QML suite verbs (`qml-suite`, `doctor-qml`) in a recipe: `omairc-tui` has no
 pointer path and no QML suite. The full Phase 6 chord map is live
 (`internal/ui/keys.go` is the chord table): `Ctrl+Q` is the only quit chord,
-`Ctrl+C` copies via OSC 52, and `Enter` sends.
+`Ctrl+C` copies via OSC 52, and `Enter` sends. Phase 7 adds the slash catalog,
+the completer, and the `/list` overlay.
 
 Use `run <feature>` instead of assembling raw `key` / `type` chords. Play the
 verbs directly when a feature has no fence yet:
@@ -127,6 +128,7 @@ Verb table:
 | `nick-jump --query TEXT` | Write `Ctrl+Shift+K`, type `TEXT` into the nick filter, then press `Enter` to open or create that direct message (channels only). |
 | `status` | Write `Ctrl+`` to toggle the Status console. |
 | `connect` | Write `Ctrl+,` to open the Connect sheet (a no-op with no connection model, as in `--demo-server`). |
+| `composer` | Focus the composer. The TUI composer owns focus unless a modal is open, so this is a no-op that keeps the shared desktop recipes runnable. |
 | `compare --before PATH --after PATH` | Assert two PNGs differ. The fence's `test-artifacts/verify/` paths are remapped to `test-artifacts/verify-tui/`. |
 | `screenshot [--feature NAME] [--name NAME]` | Render the current grid to a PNG. Default feature `shell`, default name `screenshot`. |
 | `run <feature> [--dry-run]` | Replay the feature's `desktop-recipe` fence. `--dry-run` prints it and exits. |
@@ -162,11 +164,11 @@ because the decoder does not map `0x1F` to `ctrl+/`.
 
 `run <feature> --dry-run` prints the fence and exits without launching. A
 missing file, a missing fence, or an empty fence exits non-zero. A recipe line
-whose verb the TUI does not support yet (for example `composer` or any
-`click-*`) FAILS the run rather than silently skipping, so a fence that moves
-on to later-phase verbs is expected to fail until that phase lands. The `run
-keyboard` fence now passes end to end over `--demo-server`. Do not soften a
-fence to make it pass.
+whose verb the TUI does not support yet (for example `click-*`) FAILS the run
+rather than silently skipping, so a fence that moves on to a later-phase verb
+is expected to fail until that phase lands. The `run keyboard`,
+`run slash-commands`, and `run slash-complete` fences pass end to end over
+`--demo-server`. Do not soften a fence to make it pass.
 
 ## Evidence
 
@@ -178,12 +180,19 @@ state: a final screenshot alone is not proof.
 
 ## Limits
 
-Phase 6 lands the full `keyboard.md` chord map; Phase 5 landed the Connect
-sheet and core conversation navigation. The shell renders all three columns:
-the sidebar (network sections with presence marks and typing ellipses), the
-transcript, and, for channels, a member column with status and away text. The
-`run keyboard` fence passes end to end over `--demo-server`. Do not claim what
-has not landed:
+Phase 7 lands the slash catalog and completer: `run slash-commands` and
+`run slash-complete` pass end to end over `--demo-server` (`/join`, refused
+`/close`, `/query`, CTCP `/ping`/`/time`/`/version`, `/list`, and the
+Tab/Escape/Up/Down completer). Phase 6 landed the full `keyboard.md` chord map;
+Phase 5 landed the Connect sheet and core conversation navigation. The shell
+renders all three columns: the sidebar (network sections with presence marks
+and typing ellipses), the transcript, and, for channels, a member column with
+status and away text.
+
+The store-backed verbs (`/pref /avatar /status /autoaway /monitor /ignore
+/mute /highlight`) are in-memory for this phase; disk persistence lands later.
+`/list` is a real overlay with streaming rows, a fuzzy filter, a users
+descending sort, and Enter to join. Do not claim what has not landed:
 
 - The Connect sheet is in-memory only: a plain `launch` shows first-run
   Connect, but there is no profile store, so nothing survives a restart
@@ -199,7 +208,6 @@ has not landed:
 - The `Ctrl+Shift+O` link sheet and `Ctrl+Shift+A` inbox sheet open, walk, and
   close with real chords and modal gating, but their backing data stores are
   empty: URL extraction lands in phase 10 and `InboxStore` in phase 9.
-- No slash commands. They land in phase 7.
 - No typing indicators, presence-driven navigation, notifications, avatars,
   or preferences beyond the Connect sheet's in-memory toggles. They land in
   later phases.

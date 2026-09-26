@@ -68,6 +68,8 @@ type Model struct {
 	nick                  nickJumpState
 	link                  linkState
 	inbox                 inboxState
+	slash                 slashSession
+	list                  channelListState
 
 	// drafts keeps unsent composer text per conversation id, or per Status
 	// surface ("status\n<networkID>").
@@ -108,6 +110,7 @@ func New(ctrl *controller.Controller, conn *connection.Connection) *Model {
 		nick:                 newNickJumpState(),
 		link:                 newLinkState(),
 		inbox:                newInboxState(),
+		list:                 newChannelListState(),
 		serverListVisible:    true,
 		transcriptFollowEnd:  true,
 		transcriptCursor:     -1,
@@ -154,6 +157,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 	var cmd tea.Cmd
 	m.composer, cmd = m.composer.Update(msg)
+	m.syncSlash()
 	m.saveDraft()
 	return m, cmd
 }
@@ -200,22 +204,36 @@ func (m *Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	}
 	var cmd tea.Cmd
 	m.composer, cmd = m.composer.Update(msg)
+	m.syncSlash()
 	m.resetHistoryBrowse()
 	m.saveDraft()
 	return m, cmd
 }
 
-// sendComposer sends the composer text to the selected conversation and clears
-// it, along with its stored draft. It records the sent line in the history.
+// sendComposer submits the composer text and clears it, along with its stored
+// draft, only when the controller accepted the submission. A refused command
+// (for example `/close` on a channel) stays in the composer. It mirrors
+// OmaircWindow.qml's sendMessage.
 func (m *Model) sendComposer() {
 	value := m.composer.Value()
 	if strings.TrimSpace(value) != "" && m.ctrl != nil {
-		m.ctrl.SendMessage(value)
+		sent := false
+		if m.ctrl.ConsoleOpen() {
+			sent = m.ctrl.ConsoleSubmit(value)
+		} else {
+			sent = m.ctrl.SendMessage(value)
+		}
+		if !sent {
+			m.syncChannelList()
+			return
+		}
 		m.rememberSentLine(value)
 	}
 	m.composer.Reset()
 	m.clearCurrentDraft()
 	m.resetHistoryBrowse()
+	m.slash.reset()
+	m.syncChannelList()
 }
 
 // refocusComposer restores composer focus after a chord when no modal is open.
@@ -246,6 +264,7 @@ func (m *Model) resize() {
 	m.jump.input.SetWidth(m.overlayInputWidth())
 	m.nick.input.SetWidth(m.overlayInputWidth())
 	m.link.input.SetWidth(m.overlayInputWidth())
+	m.list.input.SetWidth(m.overlayInputWidth())
 }
 
 // render composes the columns, the composer, and any open overlay. It never
@@ -276,13 +295,18 @@ func (m *Model) render() string {
 	}
 
 	body = strings.Join(bodyLines, "\n")
-	return lipgloss.JoinVertical(lipgloss.Left, body, m.composerView())
+	parts := []string{body}
+	if slash := m.slashLines(); len(slash) > 0 {
+		parts = append(parts, strings.Join(slash, "\n"))
+	}
+	parts = append(parts, m.composerView())
+	return lipgloss.JoinVertical(lipgloss.Left, parts...)
 }
 
 // bodyHeight is the row budget of the three columns: the window minus the
-// composer line.
+// composer line and any slash-completion rows above it.
 func (m *Model) bodyHeight() int {
-	height := m.height - 1
+	height := m.height - 1 - len(m.slashLines())
 	if height < 1 {
 		height = 1
 	}
@@ -303,6 +327,8 @@ func (m *Model) overlayCard() ([]string, bool) {
 		return m.linkCardLines(m.width), true
 	case m.inbox.open:
 		return m.inboxCardLines(m.width), true
+	case m.list.open:
+		return m.channelListCardLines(m.width), true
 	case m.jump.open:
 		return m.jumpCardLines(m.width), true
 	}
@@ -311,7 +337,7 @@ func (m *Model) overlayCard() ([]string, bool) {
 
 // overlaysVisible reports whether any of the filter overlays owns the keys.
 func (m *Model) overlaysVisible() bool {
-	return m != nil && (m.jump.open || m.nick.open || m.link.open || m.inbox.open)
+	return m != nil && (m.jump.open || m.nick.open || m.link.open || m.inbox.open || m.list.open)
 }
 
 // overlayInputUpdate folds a non-key message (a paste, for one) into the open
@@ -327,6 +353,8 @@ func (m *Model) overlayInputUpdate(msg tea.Msg) tea.Cmd {
 		m.link.input, cmd = m.link.input.Update(msg)
 	case m.inbox.open:
 		// The inbox has no filter input yet.
+	case m.list.open:
+		m.list.input, cmd = m.list.input.Update(msg)
 	}
 	return cmd
 }
@@ -348,6 +376,13 @@ func (m *Model) closeAllOverlays() {
 	}
 	if m.inbox.open {
 		m.inbox.open = false
+	}
+	if m.list.open {
+		m.list.open = false
+		m.list.input.Blur()
+		if m.ctrl != nil {
+			m.ctrl.DismissChannelList()
+		}
 	}
 }
 

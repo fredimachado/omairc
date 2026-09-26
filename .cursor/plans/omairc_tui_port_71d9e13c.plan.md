@@ -22,10 +22,10 @@ todos:
     status: completed
   - id: phase-6-keyboard
     content: "Phase 6: full keyboard chord map (keyboard.md)"
-    status: in_progress
+    status: completed
   - id: phase-7-slash
     content: "Phase 7: slash command catalog + /list overlay + completer"
-    status: pending
+    status: in_progress
   - id: phase-8-members
     content: "Phase 8: member panel, PREFIX ordering, presence, typing, DMs"
     status: pending

@@ -198,6 +198,8 @@ func (m *Model) handleOverlayKey(key string, msg tea.KeyPressMsg) (tea.Model, te
 		return m.handleLinkKey(key, msg)
 	case m.inbox.open:
 		return m.handleInboxKey(key, msg)
+	case m.list.open:
+		return m.handleChannelListKey(key, msg)
 	case m.jump.open:
 		return m.handleJumpKey(key, msg)
 	}
