@@ -76,10 +76,12 @@ std::wstring toWide(const QString &value)
     return value.toStdWString();
 }
 
-// Windows caps a toast tag at 16 characters. Hash the conversation so a
-// conversation replaces its previous toast, matching the Linux replacesId and
-// the macOS notification identifier.
-QString conversationTag(const QString &networkId, const QString &target)
+// Windows replaces a toast only when the new one repeats both its Tag and its
+// Group; toasts that share just a tag stack up in Action Center. Hash the
+// conversation into both so a conversation replaces its own toast, matching
+// the Linux replacesId and the macOS notification identifier. Sixteen hex
+// characters stay well inside the 64-character Tag and Group limit.
+QString conversationKey(const QString &networkId, const QString &target)
 {
     const QByteArray digest = QCryptographicHash::hash(
         (networkId + QLatin1Char('\n') + target).toUtf8(),
@@ -311,11 +313,15 @@ void showToast(const QString &summary, const QString &body,
     if (FAILED(factory->CreateToastNotification(document.Get(), &notification)))
         return;
 
-    // put_Tag lives on IToastNotification2, not IToastNotification.
-    const std::wstring tag = conversationTag(networkId, target).toStdWString();
+    // put_Tag and put_Group live on IToastNotification2, not IToastNotification.
+    // Setting both to the conversation key is what makes a later toast replace
+    // the earlier one instead of stacking beside it.
+    const std::wstring key = conversationKey(networkId, target).toStdWString();
     ComPtr<IToastNotification2> notification2;
-    if (SUCCEEDED(notification.As(&notification2)))
-        notification2->put_Tag(HStringReference(tag.c_str()).Get());
+    if (SUCCEEDED(notification.As(&notification2))) {
+        notification2->put_Tag(HStringReference(key.c_str()).Get());
+        notification2->put_Group(HStringReference(key.c_str()).Get());
+    }
     notifier->Show(notification.Get());
 }
 
