@@ -95,9 +95,38 @@ QString conversationKey(const QString &networkId, const QString &target)
     return QString::fromLatin1(digest.toHex().left(16));
 }
 
+// XML 1.0 content allows #x9, #xA, #xD, #x20-#xD7FF, #xE000-#xFFFD, and
+// supplementary code points. Anything else -- the other C0 controls, lone
+// surrogates, #xFFFE/#xFFFF -- makes IXmlDocumentIO::LoadXml reject the whole
+// document, which silently drops the toast. IRC text reaches this untrusted and
+// only has its formatting codes stripped upstream, so filter here rather than
+// let one control byte swallow a mention.
+QString sanitizeXmlText(const QString &value)
+{
+    QString sanitized;
+    sanitized.reserve(value.size());
+    for (int i = 0; i < value.size(); ++i) {
+        const ushort code = value.at(i).unicode();
+        if (code == 0x09 || code == 0x0A || code == 0x0D
+            || (code >= 0x20 && code <= 0xD7FF)
+            || (code >= 0xE000 && code <= 0xFFFD)) {
+            sanitized += value.at(i);
+            continue;
+        }
+        // A well-formed surrogate pair is a supplementary code point, which
+        // XML allows; a lone surrogate is not.
+        if (value.at(i).isHighSurrogate() && i + 1 < value.size()
+            && value.at(i + 1).isLowSurrogate()) {
+            sanitized += value.at(i);
+            sanitized += value.at(++i);
+        }
+    }
+    return sanitized;
+}
+
 QString escapeXml(const QString &value)
 {
-    QString escaped = value;
+    QString escaped = sanitizeXmlText(value);
     escaped.replace(QLatin1Char('&'), QLatin1String("&amp;"));
     escaped.replace(QLatin1Char('<'), QLatin1String("&lt;"));
     escaped.replace(QLatin1Char('>'), QLatin1String("&gt;"));
