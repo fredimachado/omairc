@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"strings"
 	"time"
 
 	"github.com/fredimachado/omairc/tui/internal/irc"
@@ -506,7 +507,7 @@ func (c *Controller) dropSelectedDirectAndReselect() {
 // are a Phase 7 concern: no parsing happens here, so a leading slash is sent
 // literally. An empty message is refused.
 func (c *Controller) SendMessage(text string) bool {
-	if text == "" {
+	if strings.TrimSpace(text) == "" {
 		return false
 	}
 	return c.sendSelectedMessage(text)
