@@ -426,8 +426,7 @@ func (c *Controller) OpenDirectMessage(nick string) bool {
 		return false
 	}
 	c.rememberOpenDirect(networkID, nick)
-	c.rebuildConversations()
-	c.conversationEpoch++
+	c.Publish(irc.ViewNotify{Conversations: true})
 	c.SelectConversation(networkID, nick)
 	return true
 }
@@ -746,8 +745,7 @@ func (c *Controller) SetWindowActive(active bool) {
 	if !c.reducer.MarkRead(*c.selected) {
 		return
 	}
-	c.rebuildConversations()
-	c.conversationEpoch++
+	c.Publish(irc.ViewNotify{Conversations: true})
 }
 
 // SetMuted records the muted flag for one conversation. Persistence is the
@@ -757,8 +755,7 @@ func (c *Controller) SetMuted(networkID, target string, muted bool) {
 		return
 	}
 	c.reducer.SetMuted(c.reducer.ConversationKey(networkID, target), muted)
-	c.rebuildConversations()
-	c.conversationEpoch++
+	c.Publish(irc.ViewNotify{Conversations: true})
 }
 
 // --- Lifecycle ------------------------------------------------------------
@@ -837,8 +834,7 @@ func (c *Controller) SetNetworkOrder(order []string) {
 		return
 	}
 	c.networkOrder = append([]string(nil), order...)
-	c.rebuildConversations()
-	c.conversationEpoch++
+	c.Publish(irc.ViewNotify{Conversations: true})
 }
 
 // --- Message handling -----------------------------------------------------
