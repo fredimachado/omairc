@@ -403,7 +403,42 @@ def check_go_build_uses_version_pri():
 
 
 GO_PLATFORM_IMPORTS = ("net", "os", "crypto/tls")
-GO_IMPORT_SPEC = re.compile(r'^\s*(?:[A-Za-z_.][A-Za-z0-9_.]*\s+)?"([^"]+)"\s*$')
+
+# A Go import target. The alias is optional and may be a bare identifier, a
+# dot alias, or a blank alias; the path is quoted and a trailing `// comment`
+# is allowed. One pattern covers a single-line `import ...` and a member of a
+# parenthesized block alike.
+GO_IMPORT_LINE = re.compile(
+    r'^\s*(?:import\s+)?(?:[A-Za-z_.][A-Za-z0-9_.]*\s+)?'
+    r'"([^"]+)"\s*(?://.*)?$')
+GO_IMPORT_BLOCK_OPEN = re.compile(r'^\s*import\s*\(\s*(?://.*)?$')
+GO_IMPORT_BLOCK_CLOSE = re.compile(r'^\s*\)\s*(?://.*)?$')
+
+
+def go_imports(source):
+    """Yield (line_number, import_path) for every Go import in source text.
+
+    Handles single-line imports (`import "p"`, `import alias "p"`,
+    `import . "p"`, `import _ "p"`) and parenthesized blocks, including
+    aliases, dot/blank aliases, blank lines, and trailing `// comments`.
+    Outside a block an `import` keyword is required so a statement such as
+    `return "yes"` is not mistaken for an import.
+    """
+    in_block = False
+    for number, line in enumerate(source.splitlines(), 1):
+        if in_block:
+            if GO_IMPORT_BLOCK_CLOSE.match(line):
+                in_block = False
+                continue
+        else:
+            if GO_IMPORT_BLOCK_OPEN.match(line):
+                in_block = True
+                continue
+            if not line.lstrip().startswith("import"):
+                continue
+        match = GO_IMPORT_LINE.match(line)
+        if match:
+            yield number, match.group(1)
 
 
 def check_go_irc_platform_neutrality():
@@ -413,22 +448,56 @@ def check_go_irc_platform_neutrality():
     for relative, source in sources("tui/internal/irc/*.go"):
         if relative.name.endswith("_test.go"):
             continue
-        in_block = False
-        for number, line in enumerate(source.splitlines(), 1):
-            if re.match(r"^\s*import\s*\(", line):
-                in_block = True
-                continue
-            if in_block and line.strip() == ")":
-                in_block = False
-                continue
-            match = GO_IMPORT_SPEC.match(line)
-            if not match:
-                continue
-            imported = match.group(1)
+        for number, imported in go_imports(source):
             if imported in GO_PLATFORM_IMPORTS or imported.startswith("net/"):
                 problems.append(
                     f"{relative}:{number}: internal/irc must stay platform "
                     f"neutral; {imported!r} belongs in internal/session")
+    return problems
+
+
+GO_INTERNAL_IRC_IMPORT = "github.com/fredimachado/omairc/tui/internal/irc"
+GO_VIEW_PACKAGES = (
+    ("tui/internal/ui/*.go", "internal/ui"),
+    ("tui/internal/gate/*.go", "internal/gate"),
+)
+
+
+def check_go_view_no_protocol():
+    # The view and the parity driver read controller snapshots and plain
+    # strings; protocol policy belongs in internal/controller. Test files may
+    # import what they assert against.
+    problems = []
+    for pattern, package in GO_VIEW_PACKAGES:
+        for relative, source in sources(pattern):
+            if relative.name.endswith("_test.go"):
+                continue
+            for number, imported in go_imports(source):
+                if imported == GO_INTERNAL_IRC_IMPORT:
+                    problems.append(
+                        f"{relative}:{number}: {package} must not import "
+                        f"internal/irc protocol policy; read controller "
+                        f"snapshots instead")
+    return problems
+
+
+GO_TITLE_STRINGS = ("- Omairc", '" Status"')
+GO_TITLE_SOURCE = Path("tui/internal/ui/title.go")
+
+
+def check_go_title_strings():
+    # The Qt window-title literals live only in title.go so the shell has one
+    # place to change them. Tests may assert titles.
+    problems = []
+    for relative, source in sources("tui/**/*.go"):
+        if Path(relative) == GO_TITLE_SOURCE or relative.name.endswith("_test.go"):
+            continue
+        for number, line in enumerate(source.splitlines(), 1):
+            for literal in GO_TITLE_STRINGS:
+                if literal in line:
+                    problems.append(
+                        f"{relative}:{number}: the window title literal "
+                        f"{literal!r} belongs only in tui/internal/ui/title.go")
     return problems
 
 
@@ -1016,6 +1085,8 @@ CHECKS = (
     ("Go version source", check_go_version_source),
     ("Go build reads version.pri", check_go_build_uses_version_pri),
     ("internal/irc platform neutrality", check_go_irc_platform_neutrality),
+    ("Go view/driver free of internal/irc", check_go_view_no_protocol),
+    ("Go title strings only in title.go", check_go_title_strings),
     ("OMAIRC_VERSION via omaircversion.h", check_omairc_version_header),
     ("CHANTYPES via IrcServerFeatures", check_hardcoded_chantypes),
     ("retired mock sidebar tokens", check_retired_mock_sidebar),
