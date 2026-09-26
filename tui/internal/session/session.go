@@ -1144,7 +1144,7 @@ func (s *Session) handleMessageLocked(message irc.Message) {
 
 	requestLabel := s.correlationLabelLocked(message)
 	if irc.StatusKeepsIncoming(message, s.nickname, s.channelTypes) {
-		entries := irc.IncomingAll(s.config.NetworkID, message, s.channelTypes)
+		entries := irc.IncomingAll(s.config.NetworkID, message, s.channelTypes, s.clock.Now())
 		for index := range entries {
 			if requestLabel != "" {
 				entries[index].SetRequestLabel(requestLabel)
@@ -1579,7 +1579,7 @@ func (s *Session) handleWelcomeLocked(message irc.Message) {
 		s.saslMechanism != kSaslScramSha256 {
 		if !s.tlsEnabled {
 			entry := irc.Lifecycle(networkID, irc.LogSeverityAlert, "identify",
-				"NickServ identify will be sent in clear text")
+				"NickServ identify will be sent in clear text", s.clock.Now())
 			s.emit(func(handler Handler) { handler.StatusEntry(entry) })
 		}
 		s.sendPrivmsgLocked("NickServ", "IDENTIFY "+s.config.NickServPassword)
@@ -1638,7 +1638,7 @@ func (s *Session) beginStsUpgradeLocked(port uint16) {
 	s.tlsEnabled = true
 	s.setStateLocked(StateStsUpgrading)
 	entry := irc.Lifecycle(s.config.NetworkID, irc.LogSeverityInfo, "sts",
-		fmt.Sprintf("Upgraded to TLS on port %d", port))
+		fmt.Sprintf("Upgraded to TLS on port %d", port), s.clock.Now())
 	s.emit(func(handler Handler) { handler.StatusEntry(entry) })
 	s.post(func() { s.transport.Shutdown() })
 }
@@ -2588,7 +2588,7 @@ func (s *Session) sendLineLocked(line []byte) {
 		return
 	}
 	if irc.StatusKeepsOutgoing(line) {
-		entry := irc.Outgoing(s.config.NetworkID, line, s.channelTypes)
+		entry := irc.Outgoing(s.config.NetworkID, line, s.channelTypes, s.clock.Now())
 		s.emit(func(handler Handler) { handler.StatusEntry(entry) })
 	}
 	frame := cloneBytes(line)

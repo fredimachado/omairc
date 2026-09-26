@@ -151,20 +151,13 @@ func statusCommandOf(message Message) string {
 	return strings.ToUpper(WireText([]byte(message.Command)))
 }
 
-// statusTimestamp uses the IRCv3 server-time tag when present and parseable.
-// It never reads the clock, so callers stay deterministic.
-func statusTimestamp(message Message) time.Time {
-	for _, tag := range message.Tags {
-		if tag.Name != "time" || tag.Value == nil {
-			continue
-		}
-		parsed, err := time.Parse(time.RFC3339Nano, *tag.Value)
-		if err != nil {
-			return time.Time{}
-		}
-		return parsed.UTC()
-	}
-	return time.Time{}
+// statusTimestamp stamps a Status entry. The Qt core stamps every entry with
+// the wall clock at classification time and never reads the IRCv3 time tag
+// (src/irc/ircstatusentry.cpp), so the injected now is the whole story. Time
+// is passed in rather than read from the clock to keep this package
+// deterministic, matching Translate and EventReducer.Apply.
+func statusTimestamp(now time.Time) time.Time {
+	return now.UTC()
 }
 
 func statusMessageParameters(message Message) []string {
@@ -894,10 +887,12 @@ func StatusKeepsOutgoing(line []byte) bool {
 
 // IncomingAll classifies one incoming message into every Status entry it
 // produces. Most messages yield one entry; a 004 yields one per advertised
-// field. It mirrors IrcStatusEntry::incomingAll.
-func IncomingAll(networkID string, message Message, channelTypes string) []StatusEntry {
+// field. now stamps every entry: the Qt core stamps the wall clock at
+// classification time and never reads the IRCv3 time tag. It mirrors
+// IrcStatusEntry::incomingAll.
+func IncomingAll(networkID string, message Message, channelTypes string, now time.Time) []StatusEntry {
 	command := statusCommandOf(message)
-	timestamp := statusTimestamp(message)
+	timestamp := statusTimestamp(now)
 
 	if command == "004" {
 		fields := []struct {
@@ -945,18 +940,18 @@ func IncomingAll(networkID string, message Message, channelTypes string) []Statu
 		}
 	}
 
-	return []StatusEntry{statusBuildDefaultIncoming(networkID, message, channelTypes)}
+	return []StatusEntry{statusBuildDefaultIncoming(networkID, message, channelTypes, now)}
 }
 
 // Incoming classifies one incoming message into its first Status entry. It
 // mirrors IrcStatusEntry::incoming.
-func Incoming(networkID string, message Message, channelTypes string) StatusEntry {
-	return IncomingAll(networkID, message, channelTypes)[0]
+func Incoming(networkID string, message Message, channelTypes string, now time.Time) StatusEntry {
+	return IncomingAll(networkID, message, channelTypes, now)[0]
 }
 
-func statusBuildDefaultIncoming(networkID string, message Message, channelTypes string) StatusEntry {
+func statusBuildDefaultIncoming(networkID string, message Message, channelTypes string, now time.Time) StatusEntry {
 	command := statusCommandOf(message)
-	timestamp := statusTimestamp(message)
+	timestamp := statusTimestamp(now)
 
 	if formatted, ok := statusFormatWhois(message); ok {
 		var line *WhoisLine
@@ -1028,8 +1023,9 @@ func statusBuildDefaultIncoming(networkID string, message Message, channelTypes 
 
 // Outgoing classifies one outgoing wire line. The stored text is redacted with
 // RedactWireLine, so a PASS, keyed JOIN, keyed MODE, or service request never
-// carries its secret into Status. It mirrors IrcStatusEntry::outgoing.
-func Outgoing(networkID string, line []byte, channelTypes string) StatusEntry {
+// carries its secret into Status. now stamps the entry. It mirrors
+// IrcStatusEntry::outgoing.
+func Outgoing(networkID string, line []byte, channelTypes string, now time.Time) StatusEntry {
 	wire := line
 	if len(wire) >= 2 && wire[len(wire)-2] == '\r' && wire[len(wire)-1] == '\n' {
 		wire = wire[:len(wire)-2]
@@ -1045,19 +1041,20 @@ func Outgoing(networkID string, line []byte, channelTypes string) StatusEntry {
 	} else if safe, ok := RedactWireLine(display, channelTypes); ok {
 		text = safe
 	}
-	return newStatusEntry(networkID, time.Time{}, LogSourceClient,
+	return newStatusEntry(networkID, statusTimestamp(now), LogSourceClient,
 		statusSeverityFor(verb), verb, text, nil, nil)
 }
 
-// Lifecycle builds a locally generated Status entry. It mirrors
+// Lifecycle builds a locally generated Status entry. now stamps the entry,
+// and the caller supplies it so the core stays deterministic. It mirrors
 // IrcStatusEntry::lifecycle.
-func Lifecycle(networkID string, severity LogSeverity, label, text string) StatusEntry {
-	return newStatusEntry(networkID, time.Time{}, LogSourceLocal, severity, label, text, nil, nil)
+func Lifecycle(networkID string, severity LogSeverity, label, text string, now time.Time) StatusEntry {
+	return newStatusEntry(networkID, statusTimestamp(now), LogSourceLocal, severity, label, text, nil, nil)
 }
 
 // Outcome builds a locally generated command-outcome Status entry. It mirrors
 // IrcStatusEntry::outcome.
-func Outcome(networkID, text string) StatusEntry {
-	return newStatusEntry(networkID, time.Time{}, LogSourceLocal,
+func Outcome(networkID, text string, now time.Time) StatusEntry {
+	return newStatusEntry(networkID, statusTimestamp(now), LogSourceLocal,
 		LogSeverityInfo, "command", text, nil, nil)
 }

@@ -9,6 +9,12 @@ import (
 	"github.com/fredimachado/omairc/tui/internal/irc"
 )
 
+// statusTestNow is the injected clock for direct status-entry classification.
+// Status entries are stamped with the wall clock at classification time (the
+// IRCv3 time tag is not consulted), so a fixed value keeps the tests
+// deterministic.
+var statusTestNow = time.Date(2026, 9, 26, 9, 0, 0, 0, time.UTC)
+
 // statusTextsOfLabel returns the text of every recorded entry with label.
 func statusTextsOfLabel(handler *sessionTestHandler, label string) []string {
 	var texts []string
@@ -112,7 +118,7 @@ func TestSessionStatusKeepListOmitsProtocolDump(t *testing.T) {
 // SessionTest::incomingCapMyinfoAndLusersFormatting.
 func TestSessionIncomingCapMyinfoAndLusersFormatting(t *testing.T) {
 	fourParam := irc.IncomingAll("libera",
-		mustParse(t, ":server 004 omairc demo.omairc OmaircDemo iw abc"), "")
+		mustParse(t, ":server 004 omairc demo.omairc OmaircDemo iw abc"), "", statusTestNow)
 	if len(fourParam) != 4 {
 		t.Fatalf("entries = %d, want 4", len(fourParam))
 	}
@@ -126,12 +132,12 @@ func TestSessionIncomingCapMyinfoAndLusersFormatting(t *testing.T) {
 	}
 
 	fiveParam := irc.IncomingAll("libera",
-		mustParse(t, ":server 004 omairc demo.omairc OmaircDemo iw abc ABC"), "")
+		mustParse(t, ":server 004 omairc demo.omairc OmaircDemo iw abc ABC"), "", statusTestNow)
 	if len(fiveParam) != 5 || fiveParam[4].Text() != "Parametric channel modes: ABC" {
 		t.Fatalf("fiveParam = %q", statusTexts(fiveParam))
 	}
 
-	capLs := irc.Incoming("libera", mustParse(t, ":server CAP omairc LS :batch chathistory echo-message"), "")
+	capLs := irc.Incoming("libera", mustParse(t, ":server CAP omairc LS :batch chathistory echo-message"), "", statusTestNow)
 	if capLs.Label() != "CAP" || capLs.Text() != "Server supports: batch | chathistory | echo-message" {
 		t.Fatalf("capLs = %q/%q", capLs.Label(), capLs.Text())
 	}
@@ -139,27 +145,27 @@ func TestSessionIncomingCapMyinfoAndLusersFormatting(t *testing.T) {
 		t.Fatalf("capLs severity = %v, want Info", capLs.Severity())
 	}
 
-	capAck := irc.Incoming("libera", mustParse(t, ":server CAP omairc ACK :batch chathistory"), "")
+	capAck := irc.Incoming("libera", mustParse(t, ":server CAP omairc ACK :batch chathistory"), "", statusTestNow)
 	if capAck.Text() != "Acknowledged: batch | chathistory" {
 		t.Fatalf("capAck = %q", capAck.Text())
 	}
 
-	capNickCollision := irc.Incoming("libera", mustParse(t, ":server CAP ACK LS :batch"), "")
+	capNickCollision := irc.Incoming("libera", mustParse(t, ":server CAP ACK LS :batch"), "", statusTestNow)
 	if capNickCollision.Label() != "CAP" || capNickCollision.Text() != "Server supports: batch" {
 		t.Fatalf("capNickCollision = %q/%q", capNickCollision.Label(), capNickCollision.Text())
 	}
 
-	capLsContinuation := irc.Incoming("libera", mustParse(t, ":server CAP * LS * :cap-one cap-two"), "")
+	capLsContinuation := irc.Incoming("libera", mustParse(t, ":server CAP * LS * :cap-one cap-two"), "", statusTestNow)
 	if capLsContinuation.Text() != "Server supports: cap-one | cap-two" {
 		t.Fatalf("capLsContinuation = %q", capLsContinuation.Text())
 	}
 
-	lusers252 := irc.Incoming("libera", mustParse(t, ":server 252 omairc 1 :IRC Operators online"), "")
+	lusers252 := irc.Incoming("libera", mustParse(t, ":server 252 omairc 1 :IRC Operators online"), "", statusTestNow)
 	if lusers252.Label() != "252" || lusers252.Text() != "1 IRC Operators online" {
 		t.Fatalf("lusers252 = %q/%q", lusers252.Label(), lusers252.Text())
 	}
 
-	lusers265 := irc.Incoming("libera", mustParse(t, ":server 265 omairc 10 20 :Current local users 10, max 20"), "")
+	lusers265 := irc.Incoming("libera", mustParse(t, ":server 265 omairc 10 20 :Current local users 10, max 20"), "", statusTestNow)
 	if lusers265.Label() != "265" || lusers265.Text() != "Current local users 10, max 20" {
 		t.Fatalf("lusers265 = %q/%q", lusers265.Label(), lusers265.Text())
 	}
@@ -215,7 +221,7 @@ func TestSessionOutgoingCapReqKeptCapEndDropped(t *testing.T) {
 		t.Fatal("CAP LS must be dropped")
 	}
 
-	entry := irc.Outgoing("libera", []byte("CAP REQ :multi-prefix chghost\r\n"), "")
+	entry := irc.Outgoing("libera", []byte("CAP REQ :multi-prefix chghost\r\n"), "", statusTestNow)
 	if entry.Label() != "CAP" || entry.Text() != "Requesting: multi-prefix | chghost" {
 		t.Fatalf("entry = %q/%q", entry.Label(), entry.Text())
 	}
@@ -343,11 +349,11 @@ func TestSessionKeyedJoinIsRedactedInStatusEntries(t *testing.T) {
 		t.Fatal("the channel key leaked into Status")
 	}
 
-	unkeyed := irc.Outgoing(sessionTestNetworkID, []byte("JOIN #omarchy\r\n"), "")
+	unkeyed := irc.Outgoing(sessionTestNetworkID, []byte("JOIN #omarchy\r\n"), "", statusTestNow)
 	if unkeyed.Text() != "JOIN #omarchy" {
 		t.Fatalf("unkeyed text = %q", unkeyed.Text())
 	}
-	keyed := irc.Outgoing(sessionTestNetworkID, []byte("JOIN #secret hunter2\r\n"), "")
+	keyed := irc.Outgoing(sessionTestNetworkID, []byte("JOIN #secret hunter2\r\n"), "", statusTestNow)
 	if keyed.Text() != "JOIN #secret ***" || strings.Contains(keyed.Text(), "hunter2") {
 		t.Fatalf("keyed text = %q, want the redacted key", keyed.Text())
 	}
@@ -358,7 +364,7 @@ func TestSessionKeyedJoinIsRedactedInStatusEntries(t *testing.T) {
 func TestSessionServiceIdentifyIsRedactedInStatusEntries(t *testing.T) {
 	assertOutgoing := func(want string, line, channelTypes string) {
 		t.Helper()
-		entry := irc.Outgoing(sessionTestNetworkID, []byte(line), channelTypes)
+		entry := irc.Outgoing(sessionTestNetworkID, []byte(line), channelTypes, statusTestNow)
 		if entry.Text() != want {
 			t.Fatalf("Outgoing(%q) = %q, want %q", line, entry.Text(), want)
 		}
@@ -393,36 +399,36 @@ func TestSessionServiceIdentifyIsRedactedInStatusEntries(t *testing.T) {
 	assertOutgoing("PRIVMSG NickServ!ns@services :IDENTIFY ***", "PRIVMSG NickServ!ns@services :identify my_nick s3cret\r\n", "")
 	assertOutgoing("PRIVMSG helper!u@services :IDENTIFY ***", "PRIVMSG helper!u@services :identify my_nick s3cret\r\n", "")
 
-	passTabs := irc.Outgoing(sessionTestNetworkID, []byte("PASS\thunter2\r\n"), "")
+	passTabs := irc.Outgoing(sessionTestNetworkID, []byte("PASS\thunter2\r\n"), "", statusTestNow)
 	if passTabs.Label() != "PASS" || strings.Contains(passTabs.Label(), "hunter2") {
 		t.Fatalf("PASS label = %q", passTabs.Label())
 	}
 
-	keyedModes := irc.Incoming(sessionTestNetworkID, mustParse(t, ":irc 324 omairc #omarchy +k s3cret"), "")
+	keyedModes := irc.Incoming(sessionTestNetworkID, mustParse(t, ":irc 324 omairc #omarchy +k s3cret"), "", statusTestNow)
 	if keyedModes.Text() != "#omarchy +k ***" {
 		t.Fatalf("keyedModes = %q", keyedModes.Text())
 	}
-	listedKeyLimit := irc.Incoming(sessionTestNetworkID, mustParse(t, ":irc 324 omairc #omarchy +kl s3cret 40"), "")
+	listedKeyLimit := irc.Incoming(sessionTestNetworkID, mustParse(t, ":irc 324 omairc #omarchy +kl s3cret 40"), "", statusTestNow)
 	if listedKeyLimit.Text() != "#omarchy +kl *** 40" {
 		t.Fatalf("listedKeyLimit = %q", listedKeyLimit.Text())
 	}
-	listedLimitKey := irc.Incoming(sessionTestNetworkID, mustParse(t, ":irc 324 omairc #omarchy +lk 40 s3cret"), "")
+	listedLimitKey := irc.Incoming(sessionTestNetworkID, mustParse(t, ":irc 324 omairc #omarchy +lk 40 s3cret"), "", statusTestNow)
 	if listedLimitKey.Text() != "#omarchy +lk 40 ***" {
 		t.Fatalf("listedLimitKey = %q", listedLimitKey.Text())
 	}
-	listedModes := irc.Incoming(sessionTestNetworkID, mustParse(t, ":irc 324 omairc #omarchy +nt"), "")
+	listedModes := irc.Incoming(sessionTestNetworkID, mustParse(t, ":irc 324 omairc #omarchy +nt"), "", statusTestNow)
 	if listedModes.Text() != "#omarchy +nt" {
 		t.Fatalf("listedModes = %q", listedModes.Text())
 	}
-	extendedJoin := irc.Incoming(sessionTestNetworkID, mustParse(t, ":alice!u@h JOIN #omarchy alice :Alice"), "")
+	extendedJoin := irc.Incoming(sessionTestNetworkID, mustParse(t, ":alice!u@h JOIN #omarchy alice :Alice"), "", statusTestNow)
 	if extendedJoin.Text() != "#omarchy alice Alice" {
 		t.Fatalf("extendedJoin = %q", extendedJoin.Text())
 	}
-	literalStar := irc.Incoming(sessionTestNetworkID, mustParse(t, ":irc MODE ***"), "")
+	literalStar := irc.Incoming(sessionTestNetworkID, mustParse(t, ":irc MODE ***"), "", statusTestNow)
 	if literalStar.Text() != "***" {
 		t.Fatalf("literalStar = %q", literalStar.Text())
 	}
-	incomingPass := irc.Incoming(sessionTestNetworkID, mustParse(t, "PASS hunter2"), "")
+	incomingPass := irc.Incoming(sessionTestNetworkID, mustParse(t, "PASS hunter2"), "", statusTestNow)
 	if incomingPass.Text() != "PASS ***" || strings.Contains(incomingPass.Text(), "hunter2") {
 		t.Fatalf("incomingPass = %q", incomingPass.Text())
 	}
@@ -432,36 +438,36 @@ func TestSessionServiceIdentifyIsRedactedInStatusEntries(t *testing.T) {
 // SessionTest::channelTalkAboutServicesStaysReadable.
 func TestSessionChannelTalkAboutServicesStaysReadable(t *testing.T) {
 	talk := irc.Outgoing(sessionTestNetworkID,
-		[]byte("PRIVMSG #discuss :I told NickServ to IDENTIFY later\r\n"), "")
+		[]byte("PRIVMSG #discuss :I told NickServ to IDENTIFY later\r\n"), "", statusTestNow)
 	if talk.Text() != "PRIVMSG #discuss :I told NickServ to IDENTIFY later" {
 		t.Fatalf("talk = %q", talk.Text())
 	}
 	channel := irc.Outgoing(sessionTestNetworkID,
-		[]byte("PRIVMSG #serv :identify my_nick s3cret\r\n"), "")
+		[]byte("PRIVMSG #serv :identify my_nick s3cret\r\n"), "", statusTestNow)
 	if channel.Text() != "PRIVMSG #serv :identify my_nick s3cret" {
 		t.Fatalf("channel = %q", channel.Text())
 	}
 	channelWithAt := irc.Outgoing(sessionTestNetworkID,
-		[]byte("PRIVMSG #help@services :IDENTIFY examples stay visible\r\n"), "#&")
+		[]byte("PRIVMSG #help@services :IDENTIFY examples stay visible\r\n"), "#&", statusTestNow)
 	if channelWithAt.Text() != "PRIVMSG #help@services :IDENTIFY examples stay visible" {
 		t.Fatalf("channelWithAt = %q", channelWithAt.Text())
 	}
 	tildeChannel := irc.Outgoing(sessionTestNetworkID,
-		[]byte("PRIVMSG ~serv :identify my_nick s3cret\r\n"), "")
+		[]byte("PRIVMSG ~serv :identify my_nick s3cret\r\n"), "", statusTestNow)
 	if tildeChannel.Text() != "PRIVMSG ~serv :identify my_nick s3cret" {
 		t.Fatalf("tildeChannel = %q", tildeChannel.Text())
 	}
 
 	dollarLine := []byte("PRIVMSG $serv :identify my_nick s3cret\r\n")
-	dollarChannel := irc.Outgoing(sessionTestNetworkID, dollarLine, "")
+	dollarChannel := irc.Outgoing(sessionTestNetworkID, dollarLine, "", statusTestNow)
 	if dollarChannel.Text() != "PRIVMSG $serv :identify my_nick s3cret" {
 		t.Fatalf("dollarChannel = %q", dollarChannel.Text())
 	}
-	dollarTyped := irc.Outgoing(sessionTestNetworkID, dollarLine, "$")
+	dollarTyped := irc.Outgoing(sessionTestNetworkID, dollarLine, "$", statusTestNow)
 	if dollarTyped.Text() != "PRIVMSG $serv :identify my_nick s3cret" {
 		t.Fatalf("dollarTyped = %q", dollarTyped.Text())
 	}
-	dollarAsNick := irc.Outgoing(sessionTestNetworkID, dollarLine, "#")
+	dollarAsNick := irc.Outgoing(sessionTestNetworkID, dollarLine, "#", statusTestNow)
 	if dollarAsNick.Text() != "PRIVMSG $serv :IDENTIFY ***" ||
 		strings.Contains(dollarAsNick.Text(), "s3cret") {
 		t.Fatalf("dollarAsNick = %q", dollarAsNick.Text())
@@ -483,7 +489,7 @@ func TestSessionNegotiatedChannelTypesClassifyDollarTargets(t *testing.T) {
 		t.Fatalf("last frame = %q", got)
 	}
 	dollarLine := []byte("PRIVMSG $serv :identify my_nick s3cret\r\n")
-	if got := irc.Outgoing(sessionTestNetworkID, dollarLine, fixture.session.ChannelTypes()).Text(); got != "PRIVMSG $serv :identify my_nick s3cret" {
+	if got := irc.Outgoing(sessionTestNetworkID, dollarLine, fixture.session.ChannelTypes(), statusTestNow).Text(); got != "PRIVMSG $serv :identify my_nick s3cret" {
 		t.Fatalf("dollar channel text = %q", got)
 	}
 
@@ -491,7 +497,7 @@ func TestSessionNegotiatedChannelTypesClassifyDollarTargets(t *testing.T) {
 	if !fixture.session.SendPrivmsg("$serv", "identify my_nick s3cret") {
 		t.Fatal("sendPrivmsg must succeed")
 	}
-	asNick := irc.Outgoing(sessionTestNetworkID, dollarLine, fixture.session.ChannelTypes())
+	asNick := irc.Outgoing(sessionTestNetworkID, dollarLine, fixture.session.ChannelTypes(), statusTestNow)
 	if asNick.Text() != "PRIVMSG $serv :IDENTIFY ***" || strings.Contains(asNick.Text(), "s3cret") {
 		t.Fatalf("asNick = %q", asNick.Text())
 	}
@@ -500,7 +506,7 @@ func TestSessionNegotiatedChannelTypesClassifyDollarTargets(t *testing.T) {
 	if !fixture.session.SendPrivmsg("$serv", "identify my_nick s3cret") {
 		t.Fatal("sendPrivmsg must succeed")
 	}
-	stillNick := irc.Outgoing(sessionTestNetworkID, dollarLine, fixture.session.ChannelTypes())
+	stillNick := irc.Outgoing(sessionTestNetworkID, dollarLine, fixture.session.ChannelTypes(), statusTestNow)
 	if stillNick.Text() != "PRIVMSG $serv :IDENTIFY ***" || strings.Contains(stillNick.Text(), "s3cret") {
 		t.Fatalf("stillNick = %q", stillNick.Text())
 	}
@@ -510,12 +516,12 @@ func TestSessionNegotiatedChannelTypesClassifyDollarTargets(t *testing.T) {
 // SessionTest::serviceRepliesStayReadable.
 func TestSessionServiceRepliesStayReadable(t *testing.T) {
 	notice := irc.Incoming("libera",
-		mustParse(t, ":NickServ!NickServ@services NOTICE me :Please identify"), "")
+		mustParse(t, ":NickServ!NickServ@services NOTICE me :Please identify"), "", statusTestNow)
 	if notice.Text() != "-NickServ- Please identify" {
 		t.Fatalf("notice = %q", notice.Text())
 	}
 	privmsg := irc.Incoming("libera",
-		mustParse(t, ":NickServ!NickServ@services PRIVMSG me :This nickname is registered."), "")
+		mustParse(t, ":NickServ!NickServ@services PRIVMSG me :This nickname is registered."), "", statusTestNow)
 	if privmsg.Text() != "This nickname is registered." {
 		t.Fatalf("privmsg = %q", privmsg.Text())
 	}
@@ -524,11 +530,11 @@ func TestSessionServiceRepliesStayReadable(t *testing.T) {
 // TestSessionIncomingInviteNamesNickAndChannel ports
 // SessionTest::incomingInviteNamesNickAndChannel.
 func TestSessionIncomingInviteNamesNickAndChannel(t *testing.T) {
-	invite := irc.Incoming("libera", mustParse(t, ":alice!u@h INVITE omairc :#lab"), "")
+	invite := irc.Incoming("libera", mustParse(t, ":alice!u@h INVITE omairc :#lab"), "", statusTestNow)
 	if invite.Label() != "INVITE" || invite.Text() != "alice invited you to #lab" {
 		t.Fatalf("invite = %q/%q", invite.Label(), invite.Text())
 	}
-	bare := irc.Incoming("libera", mustParse(t, "INVITE omairc :#lab"), "")
+	bare := irc.Incoming("libera", mustParse(t, "INVITE omairc :#lab"), "", statusTestNow)
 	if bare.Text() != "omairc #lab" {
 		t.Fatalf("bare = %q", bare.Text())
 	}
@@ -548,7 +554,7 @@ func TestSessionSelfEchoToServiceIsRedacted(t *testing.T) {
 		{":me!u@h PRIVMSG nickserv :set password s3cret", "SET PASSWORD ***"},
 	}
 	for _, testCase := range cases {
-		entry := irc.Incoming("libera", mustParse(t, testCase.line), "")
+		entry := irc.Incoming("libera", mustParse(t, testCase.line), "", statusTestNow)
 		if entry.Text() != testCase.want {
 			t.Fatalf("Incoming(%q) = %q, want %q", testCase.line, entry.Text(), testCase.want)
 		}
@@ -557,11 +563,11 @@ func TestSessionSelfEchoToServiceIsRedacted(t *testing.T) {
 		}
 	}
 
-	ctcp := irc.Incoming("libera", mustParse(t, ":me!u@h PRIVMSG nickserv :\x01IDENTIFY my_nick s3cret\x01"), "")
+	ctcp := irc.Incoming("libera", mustParse(t, ":me!u@h PRIVMSG nickserv :\x01IDENTIFY my_nick s3cret\x01"), "", statusTestNow)
 	if ctcp.Label() != "PRIVMSG" {
 		t.Fatalf("ctcp label = %q, want PRIVMSG", ctcp.Label())
 	}
-	setEmail := irc.Incoming("libera", mustParse(t, ":me!u@h PRIVMSG nickserv :set email user@example.net"), "")
+	setEmail := irc.Incoming("libera", mustParse(t, ":me!u@h PRIVMSG nickserv :set email user@example.net"), "", statusTestNow)
 	if setEmail.Text() != "set email user@example.net" {
 		t.Fatalf("setEmail = %q", setEmail.Text())
 	}
@@ -570,7 +576,7 @@ func TestSessionSelfEchoToServiceIsRedacted(t *testing.T) {
 // TestSessionWhoisStatusLinesFormatKnownNumerics ports
 // SessionTest::whoisStatusLinesFormatKnownNumerics.
 func TestSessionWhoisStatusLinesFormatKnownNumerics(t *testing.T) {
-	user := irc.Incoming("libera", mustParse(t, ":irc 311 omairc lena ~lena user/host * :Lena"), "")
+	user := irc.Incoming("libera", mustParse(t, ":irc 311 omairc lena ~lena user/host * :Lena"), "", statusTestNow)
 	if user.Label() != "whois" || user.Text() != "lena is ~lena@user/host (Lena)" {
 		t.Fatalf("311 = %q/%q", user.Label(), user.Text())
 	}
@@ -578,32 +584,32 @@ func TestSessionWhoisStatusLinesFormatKnownNumerics(t *testing.T) {
 		t.Fatalf("311 severity = %v, want Info", user.Severity())
 	}
 
-	channels := irc.Incoming("libera", mustParse(t, ":irc 319 omairc lena :#omarchy #desktop"), "")
+	channels := irc.Incoming("libera", mustParse(t, ":irc 319 omairc lena :#omarchy #desktop"), "", statusTestNow)
 	if channels.Label() != "whois" || channels.Text() != "lena is on #omarchy #desktop" {
 		t.Fatalf("319 = %q/%q", channels.Label(), channels.Text())
 	}
 
-	server := irc.Incoming("libera", mustParse(t, ":irc 312 omairc lena copper.libera.chat :London, UK"), "")
+	server := irc.Incoming("libera", mustParse(t, ":irc 312 omairc lena copper.libera.chat :London, UK"), "", statusTestNow)
 	if server.Text() != "lena using copper.libera.chat (London, UK)" {
 		t.Fatalf("312 = %q", server.Text())
 	}
 
-	away := irc.Incoming("libera", mustParse(t, ":irc 301 omairc lena :gone fishing"), "")
+	away := irc.Incoming("libera", mustParse(t, ":irc 301 omairc lena :gone fishing"), "", statusTestNow)
 	if away.Text() != "lena is away: gone fishing" {
 		t.Fatalf("301 = %q", away.Text())
 	}
 
-	idle := irc.Incoming("libera", mustParse(t, ":irc 317 omairc lena 84 :seconds idle"), "")
+	idle := irc.Incoming("libera", mustParse(t, ":irc 317 omairc lena 84 :seconds idle"), "", statusTestNow)
 	if idle.Text() != "lena idle 84s" {
 		t.Fatalf("317 = %q", idle.Text())
 	}
 
-	idleSignon := irc.Incoming("libera", mustParse(t, ":irc 317 omairc lena 84 1700000000 :seconds idle"), "")
+	idleSignon := irc.Incoming("libera", mustParse(t, ":irc 317 omairc lena 84 1700000000 :seconds idle"), "", statusTestNow)
 	if idleSignon.Text() != "lena idle 84s, signon 1700000000" {
 		t.Fatalf("317 signon = %q", idleSignon.Text())
 	}
 
-	end := irc.Incoming("libera", mustParse(t, ":irc 318 omairc lena :End of /WHOIS list."), "")
+	end := irc.Incoming("libera", mustParse(t, ":irc 318 omairc lena :End of /WHOIS list."), "", statusTestNow)
 	if end.Label() != "whois" || end.Text() != "End of WHOIS for lena" {
 		t.Fatalf("318 = %q/%q", end.Label(), end.Text())
 	}
@@ -612,27 +618,27 @@ func TestSessionWhoisStatusLinesFormatKnownNumerics(t *testing.T) {
 		t.Fatalf("318 whois line = %+v, want terminal", end.WhoisLine())
 	}
 
-	account := irc.Incoming("libera", mustParse(t, ":irc 330 omairc lena pinkieval :is logged in as"), "")
+	account := irc.Incoming("libera", mustParse(t, ":irc 330 omairc lena pinkieval :is logged in as"), "", statusTestNow)
 	if account.Text() != "lena is logged in as pinkieval" {
 		t.Fatalf("330 = %q", account.Text())
 	}
 
-	secure := irc.Incoming("libera", mustParse(t, ":irc 671 omairc lena :is using a secure connection"), "")
+	secure := irc.Incoming("libera", mustParse(t, ":irc 671 omairc lena :is using a secure connection"), "", statusTestNow)
 	if secure.Text() != "lena is using a secure connection" {
 		t.Fatalf("671 = %q", secure.Text())
 	}
 
-	unknown := irc.Incoming("libera", mustParse(t, ":irc 335 omairc lena :bot"), "")
+	unknown := irc.Incoming("libera", mustParse(t, ":irc 335 omairc lena :bot"), "", statusTestNow)
 	if unknown.Label() != "335" || unknown.Text() != "lena bot" {
 		t.Fatalf("335 = %q/%q", unknown.Label(), unknown.Text())
 	}
 
-	shortUser := irc.Incoming("libera", mustParse(t, ":irc 311 omairc lena"), "")
+	shortUser := irc.Incoming("libera", mustParse(t, ":irc 311 omairc lena"), "", statusTestNow)
 	if shortUser.Label() != "311" || shortUser.Text() != "lena" {
 		t.Fatalf("short 311 = %q/%q", shortUser.Label(), shortUser.Text())
 	}
 
-	missing := irc.Incoming("libera", mustParse(t, ":irc 401 omairc lena :No such nick/channel"), "")
+	missing := irc.Incoming("libera", mustParse(t, ":irc 401 omairc lena :No such nick/channel"), "", statusTestNow)
 	if missing.Label() != "401" || missing.Text() != "No such nick: lena" {
 		t.Fatalf("401 = %q/%q", missing.Label(), missing.Text())
 	}
@@ -643,7 +649,7 @@ func TestSessionWhoisStatusLinesFormatKnownNumerics(t *testing.T) {
 		t.Fatalf("401 whois line = %+v, want failed", missing.WhoisLine())
 	}
 
-	welcome := irc.Incoming("libera", mustParse(t, ":server 001 omairc :Welcome"), "")
+	welcome := irc.Incoming("libera", mustParse(t, ":server 001 omairc :Welcome"), "", statusTestNow)
 	if welcome.Label() != "001" || welcome.Text() != "Welcome" {
 		t.Fatalf("001 = %q/%q", welcome.Label(), welcome.Text())
 	}
@@ -652,27 +658,27 @@ func TestSessionWhoisStatusLinesFormatKnownNumerics(t *testing.T) {
 // TestSessionIncomingNoticeStatusLinesWrapSpeaker ports
 // SessionTest::incomingNoticeStatusLinesWrapSpeaker.
 func TestSessionIncomingNoticeStatusLinesWrapSpeaker(t *testing.T) {
-	nickserv := irc.Incoming("libera", mustParse(t, ":NickServ!NickServ@services NOTICE omairc :Please identify"), "")
+	nickserv := irc.Incoming("libera", mustParse(t, ":NickServ!NickServ@services NOTICE omairc :Please identify"), "", statusTestNow)
 	if nickserv.Label() != "NOTICE" || nickserv.Text() != "-NickServ- Please identify" {
 		t.Fatalf("nickserv = %q/%q", nickserv.Label(), nickserv.Text())
 	}
-	auth := irc.Incoming("libera", mustParse(t, "NOTICE AUTH :*** Looking up your hostname..."), "")
+	auth := irc.Incoming("libera", mustParse(t, "NOTICE AUTH :*** Looking up your hostname..."), "", statusTestNow)
 	if auth.Label() != "NOTICE" || auth.Text() != "-AUTH- *** Looking up your hostname..." {
 		t.Fatalf("auth = %q/%q", auth.Label(), auth.Text())
 	}
-	server := irc.Incoming("libera", mustParse(t, ":copper.libera.chat NOTICE * :*** Found your hostname"), "")
+	server := irc.Incoming("libera", mustParse(t, ":copper.libera.chat NOTICE * :*** Found your hostname"), "", statusTestNow)
 	if server.Text() != "-copper.libera.chat- *** Found your hostname" {
 		t.Fatalf("server = %q", server.Text())
 	}
-	channel := irc.Incoming("libera", mustParse(t, ":alice!u@h NOTICE #omarchy :heads up"), "")
+	channel := irc.Incoming("libera", mustParse(t, ":alice!u@h NOTICE #omarchy :heads up"), "", statusTestNow)
 	if channel.Text() != "-alice- heads up" {
 		t.Fatalf("channel = %q", channel.Text())
 	}
-	bare := irc.Incoming("libera", mustParse(t, "NOTICE * :hello"), "")
+	bare := irc.Incoming("libera", mustParse(t, "NOTICE * :hello"), "", statusTestNow)
 	if bare.Text() != "hello" || strings.HasPrefix(bare.Text(), "-- ") {
 		t.Fatalf("bare = %q", bare.Text())
 	}
-	oneParam := irc.Incoming("libera", mustParse(t, "NOTICE AUTH"), "")
+	oneParam := irc.Incoming("libera", mustParse(t, "NOTICE AUTH"), "", statusTestNow)
 	if oneParam.Text() != "-AUTH- " || oneParam.Text() == "-AUTH- AUTH" {
 		t.Fatalf("oneParam = %q", oneParam.Text())
 	}
@@ -681,7 +687,7 @@ func TestSessionIncomingNoticeStatusLinesWrapSpeaker(t *testing.T) {
 // TestSessionIncomingCtcpNoticeStatusLines ports
 // SessionTest::incomingCtcpNoticeStatusLines.
 func TestSessionIncomingCtcpNoticeStatusLines(t *testing.T) {
-	version := irc.Incoming("libera", mustParse(t, ":lena!u@h NOTICE omairc :\x01VERSION Omairc 0.4.0\x01"), "")
+	version := irc.Incoming("libera", mustParse(t, ":lena!u@h NOTICE omairc :\x01VERSION Omairc 0.4.0\x01"), "", statusTestNow)
 	if version.Label() != "CTCP" || version.Text() != "VERSION reply from lena: Omairc 0.4.0" {
 		t.Fatalf("version = %q/%q", version.Label(), version.Text())
 	}
@@ -691,17 +697,16 @@ func TestSessionIncomingCtcpNoticeStatusLines(t *testing.T) {
 		t.Fatalf("version ctcp line = %+v", version.CtcpReplyLine())
 	}
 
-	// The C++ suite relies on the Status timestamp defaulting to "now". The Go
-	// port only sets it from a server-time tag, so the test supplies one.
-	// Reported as an internal/irc divergence in the final notes.
-	sent := time.Now().UnixMilli() - 25
-	sentTime := time.UnixMilli(sent).UTC().Format(time.RFC3339Nano)
+	// PING reports lag against the injected clock, so a sent timestamp 25ms
+	// before statusTestNow renders exactly "25 ms". The server-time tag is
+	// deliberately absent: the Qt core stamps the wall clock, never the tag.
+	sent := statusTestNow.UnixMilli() - 25
 	ping := irc.Incoming("libera",
-		mustParse(t, "@time="+sentTime+" :lena!u@h NOTICE omairc :\x01PING "+strconv.FormatInt(sent, 10)+"\x01"), "")
+		mustParse(t, ":lena!u@h NOTICE omairc :\x01PING "+strconv.FormatInt(sent, 10)+"\x01"), "", statusTestNow)
 	if ping.Label() != "CTCP" {
 		t.Fatalf("ping label = %q, want CTCP", ping.Label())
 	}
-	if !strings.HasPrefix(ping.Text(), "PING reply from lena: ") || !strings.HasSuffix(ping.Text(), " ms") {
+	if ping.Text() != "PING reply from lena: 25 ms" {
 		t.Fatalf("ping text = %q", ping.Text())
 	}
 	if ping.CtcpReplyLine() == nil || ping.CtcpReplyLine().Command() != "PING" {
@@ -709,12 +714,12 @@ func TestSessionIncomingCtcpNoticeStatusLines(t *testing.T) {
 	}
 
 	clock := irc.Incoming("libera",
-		mustParse(t, ":lena!u@h NOTICE omairc :\x01TIME Tue, 15 Sep 2026 12:00:00 +0000\x01"), "")
+		mustParse(t, ":lena!u@h NOTICE omairc :\x01TIME Tue, 15 Sep 2026 12:00:00 +0000\x01"), "", statusTestNow)
 	if clock.Label() != "CTCP" || clock.Text() != "TIME reply from lena: Tue, 15 Sep 2026 12:00:00 +0000" {
 		t.Fatalf("time = %q/%q", clock.Label(), clock.Text())
 	}
 
-	action := irc.Incoming("libera", mustParse(t, ":lena!u@h NOTICE omairc :\x01ACTION waves\x01"), "")
+	action := irc.Incoming("libera", mustParse(t, ":lena!u@h NOTICE omairc :\x01ACTION waves\x01"), "", statusTestNow)
 	if action.Label() != "NOTICE" || action.CtcpReplyLine() != nil {
 		t.Fatalf("action = %q/%+v, want a plain NOTICE", action.Label(), action.CtcpReplyLine())
 	}
@@ -723,7 +728,7 @@ func TestSessionIncomingCtcpNoticeStatusLines(t *testing.T) {
 // TestSessionIncomingStandardRepliesShowDescriptionOnStatus ports
 // SessionTest::incomingStandardRepliesShowDescriptionOnStatus.
 func TestSessionIncomingStandardRepliesShowDescriptionOnStatus(t *testing.T) {
-	fail := irc.Incoming("libera", mustParse(t, "FAIL * NEED_REGISTRATION :You need to be registered to continue"), "")
+	fail := irc.Incoming("libera", mustParse(t, "FAIL * NEED_REGISTRATION :You need to be registered to continue"), "", statusTestNow)
 	if fail.Label() != "FAIL" || fail.Text() != "You need to be registered to continue" {
 		t.Fatalf("fail = %q/%q", fail.Label(), fail.Text())
 	}
@@ -732,7 +737,7 @@ func TestSessionIncomingStandardRepliesShowDescriptionOnStatus(t *testing.T) {
 	}
 
 	failWithContext := irc.Incoming("libera",
-		mustParse(t, "FAIL ACC REG_INVALID_CALLBACK REGISTER :Email address is not valid"), "")
+		mustParse(t, "FAIL ACC REG_INVALID_CALLBACK REGISTER :Email address is not valid"), "", statusTestNow)
 	if failWithContext.Label() != "FAIL" || failWithContext.Text() != "Email address is not valid" {
 		t.Fatalf("failWithContext = %q/%q", failWithContext.Label(), failWithContext.Text())
 	}
@@ -740,14 +745,14 @@ func TestSessionIncomingStandardRepliesShowDescriptionOnStatus(t *testing.T) {
 		t.Fatalf("failWithContext severity = %v", failWithContext.Severity())
 	}
 
-	warn := irc.Incoming("libera", mustParse(t, "WARN REHASH CERTS_EXPIRED :Certificate has expired"), "")
+	warn := irc.Incoming("libera", mustParse(t, "WARN REHASH CERTS_EXPIRED :Certificate has expired"), "", statusTestNow)
 	if warn.Label() != "WARN" || warn.Text() != "Certificate has expired" ||
 		warn.Severity() != irc.LogSeverityInfo {
 		t.Fatalf("warn = %q/%q/%v", warn.Label(), warn.Text(), warn.Severity())
 	}
 
 	note := irc.Incoming("libera",
-		mustParse(t, "NOTE * OPER_MESSAGE :Registering new accounts has been disabled"), "")
+		mustParse(t, "NOTE * OPER_MESSAGE :Registering new accounts has been disabled"), "", statusTestNow)
 	if note.Label() != "NOTE" || note.Text() != "Registering new accounts has been disabled" ||
 		note.Severity() != irc.LogSeverityInfo {
 		t.Fatalf("note = %q/%q/%v", note.Label(), note.Text(), note.Severity())
@@ -843,7 +848,7 @@ func TestSessionPlaintextIdentifyEmitsOneStatusWarning(t *testing.T) {
 		t.Fatal("an outgoing IDENTIFY must not reach Status")
 	}
 
-	identify := irc.Outgoing(sessionTestNetworkID, []byte("PRIVMSG NickServ :IDENTIFY nick-secret\r\n"), "")
+	identify := irc.Outgoing(sessionTestNetworkID, []byte("PRIVMSG NickServ :IDENTIFY nick-secret\r\n"), "", statusTestNow)
 	if identify.Text() != "PRIVMSG NickServ :IDENTIFY ***" ||
 		strings.Contains(identify.Text(), "nick-secret") {
 		t.Fatalf("identify = %q", identify.Text())
@@ -863,7 +868,7 @@ func TestSessionAutomaticIdentifyDoesNotAppearInStatusAsSecret(t *testing.T) {
 	if fixture.handler.anyFieldContains("PRIVMSG") || fixture.handler.anyFieldContains("nick-secret") {
 		t.Fatal("the automatic IDENTIFY leaked into Status")
 	}
-	identify := irc.Outgoing(sessionTestNetworkID, []byte("PRIVMSG NickServ :IDENTIFY nick-secret\r\n"), "")
+	identify := irc.Outgoing(sessionTestNetworkID, []byte("PRIVMSG NickServ :IDENTIFY nick-secret\r\n"), "", statusTestNow)
 	if identify.Text() != "PRIVMSG NickServ :IDENTIFY ***" {
 		t.Fatalf("identify = %q", identify.Text())
 	}
