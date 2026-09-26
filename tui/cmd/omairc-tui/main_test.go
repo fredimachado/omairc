@@ -41,31 +41,14 @@ func TestHelpPrintsUsageWithoutVersionLine(t *testing.T) {
 	}
 }
 
-func TestDemoServerSeeds(t *testing.T) {
-	code, stdout, stderr := runCapture(t, "--demo-server")
-	if code != 0 {
-		t.Fatalf("--demo-server exit = %d, want 0 (stderr: %q)", code, stderr)
-	}
-	if stderr != "" {
-		t.Fatalf("--demo-server stderr = %q, want empty", stderr)
-	}
-	if stdout == "" {
-		t.Fatal("--demo-server stdout must not be empty")
-	}
-	if strings.HasPrefix(stdout, "omairc-tui ") {
-		t.Fatalf("--demo-server must not print the version line, got %q", stdout)
-	}
-	for _, token := range []string{"omarchy", "oftc"} {
-		if !strings.Contains(stdout, token) {
-			t.Fatalf("--demo-server stdout must mention %q, got %q", token, stdout)
-		}
-	}
-}
-
 func TestNoArgumentsFailsClosed(t *testing.T) {
-	code, _, _ := runCapture(t)
+	code, _, stderr := runCapture(t)
 	if code == 0 {
-		t.Fatalf("no-argument invocation must fail while the TUI is unimplemented")
+		t.Fatalf("no-argument invocation must fail while the Connect sheet is unlanded")
+	}
+	lower := strings.ToLower(stderr)
+	if !strings.Contains(stderr, "--demo-server") && !strings.Contains(lower, "phase 5") {
+		t.Fatalf("no-argument stderr must point at --demo-server or Phase 5, got %q", stderr)
 	}
 }
 

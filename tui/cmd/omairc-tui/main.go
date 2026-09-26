@@ -1,21 +1,22 @@
 // Command omairc-tui is the terminal client entry point.
 //
-// Phase 3 ships the CLI shell plus the in-process demo seed: --version,
-// --help, and --demo-server, which seeds the two-network demo world through
-// internal/demo and exits 0 after printing a deterministic summary of the
-// seeded conversations. The Bubble Tea shell is still unimplemented, so a
-// no-argument invocation exits non-zero rather than pretending to work; the
-// IRC core lands in later phases. See tui/AGENTS.md.
+// Phase 4 ships the CLI flags plus the Bubble Tea shell: --version, --help, and
+// --demo-server, which seeds the two-network demo world through internal/demo
+// and then runs the interactive shell over it. A no-argument invocation still
+// exits non-zero rather than pretending to work, because the Connect sheet (and
+// with it the live IRC path) lands in Phase 5. See tui/AGENTS.md.
 package main
 
 import (
 	"fmt"
 	"io"
 	"os"
-	"strings"
+
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/fredimachado/omairc/tui/internal/controller"
 	"github.com/fredimachado/omairc/tui/internal/demo"
+	"github.com/fredimachado/omairc/tui/internal/ui"
 	"github.com/fredimachado/omairc/tui/internal/version"
 )
 
@@ -26,10 +27,10 @@ Omairc terminal client.
 Flags:
   --version      print the omairc-tui version and exit
   --help         print this help and exit
-  --demo-server  seed the in-process demo world and exit
+  --demo-server  seed the in-process demo world and run the shell
 
-The Bubble Tea shell is not implemented in this build; --demo-server seeds the
-IRC core and exits.`
+The Connect sheet lands in Phase 5; --demo-server runs the interactive shell
+over the seeded demo world.`
 
 func main() {
 	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
@@ -71,35 +72,22 @@ func run(args []string, stdout, stderr io.Writer) int {
 			fmt.Fprintf(stderr, "omairc-tui: demo server failed: %s\n", server.LastError())
 			return 1
 		}
-		writeDemoSummary(stdout, c)
+		// Wire the wake-up callbacks after NewProgram: p.Send needs the
+		// program, and demo.Attach fired the callbacks (still nil) while
+		// seeding. The shell reads the rebuilt snapshots directly on its
+		// first View, so nothing is missed.
+		p := tea.NewProgram(ui.New(c))
+		c.OnSelectionChanged = func() { p.Send(ui.NotifyMsg{}) }
+		c.OnStatusChanged = func() { p.Send(ui.NotifyMsg{}) }
+		c.OnCapabilitiesChanged = func() { p.Send(ui.NotifyMsg{}) }
+		if _, err := p.Run(); err != nil {
+			fmt.Fprintf(stderr, "omairc-tui: %v\n", err)
+			return 1
+		}
 		return 0
 	}
 
 	fmt.Fprintln(stderr,
-		"omairc-tui: the TUI is not implemented yet; run --help for usage")
+		"omairc-tui: no Connect sheet yet (Phase 5); run --demo-server for the seeded demo")
 	return 1
-}
-
-// writeDemoSummary prints a deterministic one-line-per-conversation summary of
-// the seeded demo world. The first line names every network the seed attached,
-// in the order the conversations first mention them; each following line names
-// one sidebar conversation with its unread and mention state.
-func writeDemoSummary(w io.Writer, c *controller.Controller) {
-	conversations := c.Conversations()
-
-	networks := make([]string, 0, 2)
-	seen := make(map[string]bool)
-	for _, row := range conversations {
-		if row.NetworkID == "" || seen[row.NetworkID] {
-			continue
-		}
-		seen[row.NetworkID] = true
-		networks = append(networks, row.NetworkID)
-	}
-
-	fmt.Fprintf(w, "demo server seeded: %s\n", strings.Join(networks, ", "))
-	for _, row := range conversations {
-		fmt.Fprintf(w, "%s %s unread=%d mention=%t\n",
-			row.NetworkID, row.Conversation, row.Unread, row.Mention)
-	}
 }

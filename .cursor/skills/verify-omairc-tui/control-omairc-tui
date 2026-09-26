@@ -1,0 +1,12 @@
+#!/usr/bin/env sh
+# Thin wrapper for the TUI parity driver. Builds the binary if it is missing,
+# then runs control-omairc-tui from the repository root so evidence paths are
+# repo-relative.
+set -eu
+
+ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/../../.." && pwd)"
+if [ ! -x "$ROOT/tui/bin/control-omairc-tui" ]; then
+  "$ROOT/tui/bin/build"
+fi
+cd "$ROOT"
+exec "$ROOT/tui/bin/control-omairc-tui" "$@"
