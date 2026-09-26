@@ -4,6 +4,10 @@ package session
 // IrcTransport::ConnectionState in src/irc/irctransport.h. The names and the
 // transition order are significant: the session reducer treats Encrypted as
 // "open and secure" and Connected as "open but plaintext".
+//
+// The constants are prefixed Connection* (not State*, as SessionState uses)
+// so a transport state and a session state can never be confused at a call
+// site; both types live in this package.
 type ConnectionState int
 
 const (
