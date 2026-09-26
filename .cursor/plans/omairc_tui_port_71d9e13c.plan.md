@@ -19,10 +19,10 @@ todos:
     status: completed
   - id: phase-5-connect
     content: "Phase 5: Connect sheet + conversation switching/send/Status"
-    status: in_progress
+    status: completed
   - id: phase-6-keyboard
     content: "Phase 6: full keyboard chord map (keyboard.md)"
-    status: pending
+    status: in_progress
   - id: phase-7-slash
     content: "Phase 7: slash command catalog + /list overlay + completer"
     status: pending
