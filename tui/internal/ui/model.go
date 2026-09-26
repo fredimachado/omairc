@@ -51,6 +51,24 @@ type Model struct {
 
 	jump jumpState
 
+	// Phase 6 keyboard state. Every field is a mirror of an OmaircWindow.qml
+	// property; the controller owns the network collapse/reorder facts.
+	sidebarNetworkFocusID string
+	serverListVisible     bool
+	transcriptScroll      int
+	transcriptFollowEnd   bool
+	transcriptCursor      int
+	find                  findState
+	composerHistory       []string
+	composerHistoryIndex  int
+	composerHistoryDraft  string
+	memberFocus           bool
+	memberIndex           int
+	shortcutsOpen         bool
+	nick                  nickJumpState
+	link                  linkState
+	inbox                 inboxState
+
 	// drafts keeps unsent composer text per conversation id, or per Status
 	// surface ("status\n<networkID>").
 	drafts   map[string]string
@@ -60,8 +78,8 @@ type Model struct {
 	statusReturnID string
 }
 
-// focusArea names where keyboard input goes. The Connect sheet and the jump
-// overlay are modal and own the keys while they are open.
+// focusArea names where keyboard input goes. The Connect sheet and the
+// overlays are modal and own the keys while they are open.
 type focusArea int
 
 const (
@@ -78,16 +96,23 @@ func New(ctrl *controller.Controller, conn *connection.Connection) *Model {
 	composer.Placeholder = "Message"
 	composer.Prompt = ""
 	m := &Model{
-		ctrl:     ctrl,
-		conn:     conn,
-		styles:   defaultStyles(),
-		width:    defaultWidth,
-		height:   defaultHeight,
-		focus:    focusComposer,
-		composer: composer,
-		sheet:    newConnectSheetState(),
-		jump:     newJumpState(),
-		drafts:   make(map[string]string),
+		ctrl:                 ctrl,
+		conn:                 conn,
+		styles:               defaultStyles(),
+		width:                defaultWidth,
+		height:               defaultHeight,
+		focus:                focusComposer,
+		composer:             composer,
+		sheet:                newConnectSheetState(),
+		jump:                 newJumpState(),
+		nick:                 newNickJumpState(),
+		link:                 newLinkState(),
+		inbox:                newInboxState(),
+		serverListVisible:    true,
+		transcriptFollowEnd:  true,
+		transcriptCursor:     -1,
+		composerHistoryIndex: -1,
+		drafts:               make(map[string]string),
 	}
 	m.resize()
 	m.draftKey = m.composerDraftKey()
@@ -105,8 +130,8 @@ func New(ctrl *controller.Controller, conn *connection.Connection) *Model {
 func (m *Model) Init() tea.Cmd { return nil }
 
 // Update folds one Bubble Tea message. Quit chords leave the program; the
-// Connect sheet and the jump overlay are modal; otherwise the navigation
-// chords run before the rest reaches the composer.
+// Connect sheet and the overlays are modal; otherwise the navigation chords
+// run before the rest reaches the composer.
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
@@ -124,61 +149,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.sheet.input, cmd = m.sheet.input.Update(msg)
 		return m, cmd
 	}
-	if m.jumpVisible() {
-		var cmd tea.Cmd
-		m.jump.input, cmd = m.jump.input.Update(msg)
-		return m, cmd
-	}
-	var cmd tea.Cmd
-	m.composer, cmd = m.composer.Update(msg)
-	return m, cmd
-}
-
-// handleKey routes one key press to the open overlay or the navigation chords.
-func (m *Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
-	key := msg.String()
-	if key == "ctrl+q" || key == "ctrl+c" {
-		return m, tea.Quit
-	}
-	if m.connectVisible() {
-		m.focus = focusConnect
-		return m.handleConnectKey(key, msg)
-	}
-	if m.jumpVisible() {
-		m.focus = focusJump
-		return m.handleJumpKey(key, msg)
-	}
-	m.focus = focusComposer
-	switch key {
-	case "enter":
-		m.sendComposer()
-		return m, nil
-	case "alt+down":
-		m.walk(1)
-		m.refocusComposer()
-		return m, nil
-	case "alt+up":
-		m.walk(-1)
-		m.refocusComposer()
-		return m, nil
-	case "alt+a":
-		m.jumpUnread()
-		m.refocusComposer()
-		return m, nil
-	case "ctrl+k":
-		m.openJump()
-		return m, nil
-	case "ctrl+`":
-		m.toggleStatus()
-		m.refocusComposer()
-		return m, nil
-	case "ctrl+,":
-		m.openConnect()
-		return m, nil
-	case "esc", "escape":
-		m.dismissOverlay()
-		m.refocusComposer()
-		return m, nil
+	if m.overlaysVisible() {
+		return m, m.overlayInputUpdate(msg)
 	}
 	var cmd tea.Cmd
 	m.composer, cmd = m.composer.Update(msg)
@@ -186,21 +158,69 @@ func (m *Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
+// handleKey routes one key press to the open modal, overlay, find session, or
+// the chord table. Ctrl+Q is the only quit chord; Ctrl+C copies.
+func (m *Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	key := msg.String()
+	if key == "ctrl+q" {
+		return m, tea.Quit
+	}
+	// The shortcuts sheet sits on top of everything; while it is open only the
+	// toggle and Escape close it.
+	if m.shortcutsOpen {
+		if key == "ctrl+/" || key == "esc" || key == "escape" {
+			m.closeShortcuts()
+		}
+		return m, nil
+	}
+	// Connect is a window-level modal. Ctrl+/ still opens the shortcuts sheet
+	// on top of it; Ctrl+C still reaches the copy path; every other chord is
+	// owned by the sheet.
+	if m.connectVisible() {
+		if key == "ctrl+/" {
+			m.openShortcuts()
+			return m, nil
+		}
+		if key == "ctrl+c" {
+			return m, m.copySelection()
+		}
+		m.focus = focusConnect
+		return m.handleConnectKey(key, msg)
+	}
+	// Overlays own the keys while they are open.
+	if m.overlaysVisible() {
+		return m.handleOverlayKey(key, msg)
+	}
+	m.focus = focusComposer
+	if m.find.active {
+		return m.handleFindKey(key, msg)
+	}
+	if handled, cmd := m.dispatchChord(key, msg); handled {
+		return m, cmd
+	}
+	var cmd tea.Cmd
+	m.composer, cmd = m.composer.Update(msg)
+	m.resetHistoryBrowse()
+	m.saveDraft()
+	return m, cmd
+}
+
 // sendComposer sends the composer text to the selected conversation and clears
-// it, along with its stored draft.
+// it, along with its stored draft. It records the sent line in the history.
 func (m *Model) sendComposer() {
 	value := m.composer.Value()
 	if strings.TrimSpace(value) != "" && m.ctrl != nil {
 		m.ctrl.SendMessage(value)
+		m.rememberSentLine(value)
 	}
 	m.composer.Reset()
 	m.clearCurrentDraft()
+	m.resetHistoryBrowse()
 }
 
-// refocusComposer restores composer focus after a chord when no overlay is
-// open.
+// refocusComposer restores composer focus after a chord when no modal is open.
 func (m *Model) refocusComposer() {
-	if m.connectVisible() || m.jumpVisible() {
+	if m.connectVisible() || m.overlaysVisible() || m.shortcutsOpen {
 		return
 	}
 	_ = m.composer.Focus()
@@ -215,8 +235,7 @@ func (m *Model) View() tea.View {
 	return v
 }
 
-// resize keeps the composer, sheet, and jump input widths in step with the
-// window.
+// resize keeps the composer and every overlay input in step with the window.
 func (m *Model) resize() {
 	width := m.width - composerPrefixWidth
 	if width < 1 {
@@ -225,11 +244,13 @@ func (m *Model) resize() {
 	m.composer.SetWidth(width)
 	m.sheet.input.SetWidth(m.overlayInputWidth())
 	m.jump.input.SetWidth(m.overlayInputWidth())
+	m.nick.input.SetWidth(m.overlayInputWidth())
+	m.link.input.SetWidth(m.overlayInputWidth())
 }
 
-// render composes the three columns, the composer, and any open overlay. It
-// never indexes a slice unguarded, so a tiny or empty terminal renders a short
-// line instead of panicking.
+// render composes the columns, the composer, and any open overlay. It never
+// indexes a slice unguarded, so a tiny or empty terminal renders a short line
+// instead of panicking.
 func (m *Model) render() string {
 	if m == nil || m.ctrl == nil {
 		return "Omairc"
@@ -237,29 +258,97 @@ func (m *Model) render() string {
 	if m.width < minWidth || m.height < minHeight {
 		return m.composerView()
 	}
-	bodyHeight := m.height - 1
-	if bodyHeight < 1 {
-		bodyHeight = 1
-	}
+	bodyHeight := m.bodyHeight()
 
-	columns := []string{
-		m.sidebarView(sidebarWidth(m.width), bodyHeight),
-		m.transcriptView(bodyHeight),
+	columns := make([]string, 0, 3)
+	if m.serverListVisible {
+		columns = append(columns, m.sidebarView(sidebarWidth(m.width), bodyHeight))
 	}
+	columns = append(columns, m.transcriptView(bodyHeight))
 	if m.membersVisible() {
 		columns = append(columns, m.membersView(membersWidth, bodyHeight))
 	}
 	body := lipgloss.JoinHorizontal(lipgloss.Top, columns...)
 	bodyLines := strings.Split(body, "\n")
 
-	if m.connectVisible() {
-		bodyLines = m.overlayLines(bodyLines, m.connectCardLines(m.width))
-	} else if m.jumpVisible() {
-		bodyLines = m.overlayLines(bodyLines, m.jumpCardLines(m.width))
+	if card, ok := m.overlayCard(); ok {
+		bodyLines = m.overlayLines(bodyLines, card)
 	}
 
 	body = strings.Join(bodyLines, "\n")
 	return lipgloss.JoinVertical(lipgloss.Left, body, m.composerView())
+}
+
+// bodyHeight is the row budget of the three columns: the window minus the
+// composer line.
+func (m *Model) bodyHeight() int {
+	height := m.height - 1
+	if height < 1 {
+		height = 1
+	}
+	return height
+}
+
+// overlayCard returns the lines of the topmost overlay card, if any. The
+// shortcuts sheet can sit on top of Connect, so it is checked first.
+func (m *Model) overlayCard() ([]string, bool) {
+	switch {
+	case m.shortcutsOpen:
+		return m.shortcutsCardLines(m.width), true
+	case m.connectVisible():
+		return m.connectCardLines(m.width), true
+	case m.nick.open:
+		return m.nickCardLines(m.width), true
+	case m.link.open:
+		return m.linkCardLines(m.width), true
+	case m.inbox.open:
+		return m.inboxCardLines(m.width), true
+	case m.jump.open:
+		return m.jumpCardLines(m.width), true
+	}
+	return nil, false
+}
+
+// overlaysVisible reports whether any of the filter overlays owns the keys.
+func (m *Model) overlaysVisible() bool {
+	return m != nil && (m.jump.open || m.nick.open || m.link.open || m.inbox.open)
+}
+
+// overlayInputUpdate folds a non-key message (a paste, for one) into the open
+// overlay's filter input.
+func (m *Model) overlayInputUpdate(msg tea.Msg) tea.Cmd {
+	var cmd tea.Cmd
+	switch {
+	case m.jump.open:
+		m.jump.input, cmd = m.jump.input.Update(msg)
+	case m.nick.open:
+		m.nick.input, cmd = m.nick.input.Update(msg)
+	case m.link.open:
+		m.link.input, cmd = m.link.input.Update(msg)
+	case m.inbox.open:
+		// The inbox has no filter input yet.
+	}
+	return cmd
+}
+
+// closeAllOverlays dismisses every filter overlay. Opening one overlay closes
+// the rest, so only one ever owns the keys.
+func (m *Model) closeAllOverlays() {
+	if m.jump.open {
+		m.jump.open = false
+		m.jump.input.Blur()
+	}
+	if m.nick.open {
+		m.nick.open = false
+		m.nick.input.Blur()
+	}
+	if m.link.open {
+		m.link.open = false
+		m.link.input.Blur()
+	}
+	if m.inbox.open {
+		m.inbox.open = false
+	}
 }
 
 // overlayLines dims the body and drops the card into its vertical middle. The
@@ -307,9 +396,12 @@ func sidebarWidth(width int) int {
 	return value
 }
 
-// transcriptWidth is whatever the sidebar and member column leave behind.
+// transcriptWidth is whatever the visible columns leave behind.
 func (m *Model) transcriptWidth() int {
-	width := m.width - sidebarWidth(m.width)
+	width := m.width
+	if m.serverListVisible {
+		width -= sidebarWidth(m.width)
+	}
 	if m.membersVisible() {
 		width -= membersWidth
 	}

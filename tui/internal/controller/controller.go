@@ -29,6 +29,11 @@ type Controller struct {
 	consoleNetworkID string
 	consoleOpen      bool
 	networkOrder     []string
+	// networkCollapsed holds the sidebar collapse state. Collapse/reorder
+	// state lives on the controller (mirroring the Qt IrcConnection home)
+	// because the sidebar reads NetworkOrder()/Conversations(), not
+	// connection.Networks().
+	networkCollapsed map[string]bool
 	connectionStatus string
 
 	conversationEpoch int
@@ -67,6 +72,7 @@ func New() *Controller {
 		currentNicks:     make(map[string]string),
 		lastErrors:       make(map[string]string),
 		capabilities:     make(map[string]irc.CapabilitySet),
+		networkCollapsed: make(map[string]bool),
 		connectionStatus: "Offline",
 	}
 	// IrcEventReducer starts with the window treated as active
@@ -901,6 +907,85 @@ func (c *Controller) SetNetworkOrder(order []string) {
 	}
 	c.networkOrder = append([]string(nil), order...)
 	c.Publish(irc.ViewNotify{Conversations: true})
+}
+
+// IsNetworkCollapsed reports whether the sidebar collapses one network. An
+// empty id is never collapsed.
+func (c *Controller) IsNetworkCollapsed(networkID string) bool {
+	return networkID != "" && c.networkCollapsed[networkID]
+}
+
+// SetNetworkCollapsed records whether the sidebar collapses one network and
+// republishes the sidebar when the flag moved. An empty id is a no-op.
+func (c *Controller) SetNetworkCollapsed(networkID string, collapsed bool) {
+	if networkID == "" {
+		return
+	}
+	if c.networkCollapsed[networkID] == collapsed {
+		return
+	}
+	if collapsed {
+		c.networkCollapsed[networkID] = true
+	} else {
+		delete(c.networkCollapsed, networkID)
+	}
+	c.Publish(irc.ViewNotify{Conversations: true})
+}
+
+// SetAllNetworksCollapsed collapses or expands every network in the current
+// display order, publishing the sidebar once. It is a no-op when every network
+// already has the requested value.
+func (c *Controller) SetAllNetworksCollapsed(collapsed bool) {
+	order := c.NetworkOrder()
+	changed := false
+	for _, id := range order {
+		if c.networkCollapsed[id] != collapsed {
+			changed = true
+			break
+		}
+	}
+	if !changed {
+		return
+	}
+	for _, id := range order {
+		if collapsed {
+			c.networkCollapsed[id] = true
+		} else {
+			delete(c.networkCollapsed, id)
+		}
+	}
+	c.Publish(irc.ViewNotify{Conversations: true})
+}
+
+// MoveNetwork moves one network by delta places in the effective display order
+// and reports whether the order changed. It returns false for a zero delta, an
+// unknown network, or a move past either end of the list. Focus stays with the
+// network id; the controller keeps no focus.
+func (c *Controller) MoveNetwork(networkID string, delta int) bool {
+	order := c.NetworkOrder()
+	idx := -1
+	for index, id := range order {
+		if id == networkID {
+			idx = index
+			break
+		}
+	}
+	if idx < 0 || delta == 0 {
+		return false
+	}
+	target := idx + delta
+	if target < 0 || target >= len(order) {
+		return false
+	}
+	moved := make([]string, 0, len(order))
+	moved = append(moved, order[:idx]...)
+	moved = append(moved, order[idx+1:]...)
+	newOrder := make([]string, 0, len(order))
+	newOrder = append(newOrder, moved[:target]...)
+	newOrder = append(newOrder, networkID)
+	newOrder = append(newOrder, moved[target:]...)
+	c.SetNetworkOrder(newOrder)
+	return true
 }
 
 // --- Message handling -----------------------------------------------------
