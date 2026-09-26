@@ -93,6 +93,6 @@ for %%P in (
   )
 )
 
-echo Inno Setup 6 is required to compile the Windows installer. >&2
+echo Inno Setup 6.1 or later is required to compile the Windows installer. >&2
 echo Install it, add ISCC.exe to PATH, or set ISCC to ISCC.exe. >&2
 exit /b 1

@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Native Windows toast notifications for mentions and direct messages. A click
+  opens the conversation that raised it, even when the window was closed.
+
 ## [1.0.4] - 2026-09-25
 
 ### Added

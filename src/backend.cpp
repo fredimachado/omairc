@@ -13,6 +13,9 @@
 #ifdef Q_OS_MACOS
 #include "macosnotifications.h"
 #endif
+#ifdef Q_OS_WIN
+#include "windowsnotifications.h"
+#endif
 #include <QDir>
 #include <QFile>
 #include <QRect>
@@ -59,6 +62,10 @@ Backend::Backend(QObject *parent) : QObject(parent) {
 #elif defined(Q_OS_MACOS)
     m_macNotifications = new MacOsNotifications(this);
     connect(m_macNotifications, &MacOsNotifications::activated, this,
+            &Backend::notificationActivated);
+#elif defined(Q_OS_WIN)
+    m_windowsNotifications = new WindowsNotifications(this);
+    connect(m_windowsNotifications, &WindowsNotifications::activated, this,
             &Backend::notificationActivated);
 #endif
 }
@@ -130,6 +137,9 @@ void Backend::notifyDesktop(const QString &summary, const QString &body,
 #elif defined(Q_OS_MACOS)
     if (m_macNotifications)
         m_macNotifications->notify(summary, body, networkId, target, msgid);
+#elif defined(Q_OS_WIN)
+    if (m_windowsNotifications)
+        m_windowsNotifications->notify(summary, body, networkId, target, msgid);
 #else
     Q_UNUSED(summary);
     Q_UNUSED(body);

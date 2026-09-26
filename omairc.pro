@@ -13,6 +13,9 @@ win32 {
     MOC_DIR = $$OUT_PWD/.moc
     RCC_DIR = $$OUT_PWD/.rcc
     RC_ICONS = $$PWD/data/icons/omairc.ico
+    HEADERS += src/windowsnotifications.h
+    SOURCES += src/windowsnotifications.cpp
+    LIBS += -lole32 -luuid -lruntimeobject -luser32 -ladvapi32
 }
 
 macx {

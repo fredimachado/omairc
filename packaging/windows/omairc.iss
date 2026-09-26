@@ -1,5 +1,6 @@
-; Inno Setup 6 script for the Windows tree produced by bin\build.bat.
+; Inno Setup 6.1+ script for the Windows tree produced by bin\build.bat.
 ; Compile through bin\package-windows.bat so MyAppVersion comes from version.pri.
+; The 6.1 floor is for the [Icons] AppUserModelToastActivatorCLSID parameter.
 ;
 ; Per-user is the default (no UAC). {autopf} is %LOCALAPPDATA%\Programs\Omairc
 ; then, or Program Files when the user picks "all users".
@@ -18,6 +19,13 @@
 
 #define MyAppName "Omairc"
 #define MyAppExeName "omairc.exe"
+
+; Stamp the Start Menu shortcut so Windows can deliver a toast and route a
+; click back to the app. Keep these in sync with kAumid and
+; kActivatorClsidText in src/windowsnotifications.cpp. Inno expects the CLSID
+; without braces.
+#define MyAppUserModelID "FrediMachado.Omairc"
+#define MyAppToastActivatorCLSID "DBE38477-5F87-42A1-AFA1-11FA12F2E5E5"
 
 [Setup]
 AppId={{37400F83-8332-4043-8DFF-1F69E51F6555}
@@ -58,7 +66,9 @@ Source: "..\..\LICENSE"; DestDir: "{app}"; DestName: "LICENSE.txt"
 
 [Icons]
 Name: "{autoprograms}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; \
-  Comment: "A simple IRC client for Omarchy"
+  Comment: "A simple IRC client for Omarchy"; \
+  AppUserModelID: "{#MyAppUserModelID}"; \
+  AppUserModelToastActivatorCLSID: "{#MyAppToastActivatorCLSID}"
 
 [Run]
 Filename: "{app}\{#MyAppExeName}"; Description: "Launch {#MyAppName}"; \

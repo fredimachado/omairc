@@ -274,13 +274,37 @@ void BackendNotifyTest::notifyDesktopAfterDisconnectDoesNotCrash()
 #endif
 
 #if !defined(Q_OS_LINUX) && !defined(Q_OS_MACOS)
+// The Windows toast backend registers a COM activator and writes a Start Menu
+// shortcut when it starts. Keep that out of the test run; delivery itself is
+// exercised by the offscreen smoke and a manual window.
 class BackendNotifySmokeTest : public QObject
 {
     Q_OBJECT
 
 private slots:
+    void initTestCase();
+    void cleanupTestCase();
     void notifyDesktopDoesNotCrash();
+
+private:
+    QByteArray m_previousSkip;
+    bool m_hadSkip = false;
 };
+
+void BackendNotifySmokeTest::initTestCase()
+{
+    m_hadSkip = qEnvironmentVariableIsSet("OMAIRC_SKIP_NOTIFICATIONS");
+    m_previousSkip = qgetenv("OMAIRC_SKIP_NOTIFICATIONS");
+    qputenv("OMAIRC_SKIP_NOTIFICATIONS", "1");
+}
+
+void BackendNotifySmokeTest::cleanupTestCase()
+{
+    if (m_hadSkip)
+        qputenv("OMAIRC_SKIP_NOTIFICATIONS", m_previousSkip);
+    else
+        qunsetenv("OMAIRC_SKIP_NOTIFICATIONS");
+}
 
 void BackendNotifySmokeTest::notifyDesktopDoesNotCrash()
 {
