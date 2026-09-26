@@ -6,6 +6,7 @@
 #include <QFileInfo>
 #include <QMetaObject>
 #include <QStandardPaths>
+#include <QStringList>
 #include <QUrl>
 #include <QUrlQuery>
 
@@ -193,6 +194,97 @@ HRESULT installShortcut(const QString &linkPath, const QString &exePath)
     return persist->Save(toWide(QDir::toNativeSeparators(linkPath)).c_str(), TRUE);
 }
 
+// The path a shortcut launches, or an empty string when it cannot be read.
+QString shortcutTarget(const QString &linkPath)
+{
+    ComPtr<IShellLinkW> shellLink;
+    if (FAILED(CoCreateInstance(CLSID_ShellLink, nullptr, CLSCTX_INPROC_SERVER,
+                                IID_PPV_ARGS(&shellLink))))
+        return {};
+    ComPtr<IPersistFile> persist;
+    if (FAILED(shellLink.As(&persist)))
+        return {};
+    if (FAILED(persist->Load(toWide(QDir::toNativeSeparators(linkPath)).c_str(),
+                             STGM_READ)))
+        return {};
+    wchar_t target[MAX_PATH] = {};
+    if (FAILED(shellLink->GetPath(target, MAX_PATH, nullptr, SLGP_RAWPATH)))
+        return {};
+    return QDir::fromNativeSeparators(QString::fromWCharArray(target));
+}
+
+// True when the shortcut already carries our AUMID and toast activator CLSID,
+// so a link the installer stamped can be left untouched. Rewriting one would
+// need elevation for an all-users install and would drop its comment.
+bool shortcutIsStamped(const QString &linkPath)
+{
+    ComPtr<IShellLinkW> shellLink;
+    if (FAILED(CoCreateInstance(CLSID_ShellLink, nullptr, CLSCTX_INPROC_SERVER,
+                                IID_PPV_ARGS(&shellLink))))
+        return false;
+    ComPtr<IPersistFile> persist;
+    if (FAILED(shellLink.As(&persist)))
+        return false;
+    if (FAILED(persist->Load(toWide(QDir::toNativeSeparators(linkPath)).c_str(),
+                             STGM_READ)))
+        return false;
+    ComPtr<IPropertyStore> store;
+    if (FAILED(shellLink.As(&store)))
+        return false;
+
+    PROPVARIANT id = {};
+    if (FAILED(store->GetValue(PKEY_AppUserModel_ID, &id)))
+        return false;
+    const bool aumidMatches =
+        id.vt == VT_LPWSTR && id.pwszVal
+        && QString::fromWCharArray(id.pwszVal) == QString::fromWCharArray(kAumid);
+    PropVariantClear(&id);
+    if (!aumidMatches)
+        return false;
+
+    PROPVARIANT clsid = {};
+    if (FAILED(store->GetValue(PKEY_AppUserModel_ToastActivatorCLSID, &clsid)))
+        return false;
+    const bool clsidMatches =
+        clsid.vt == VT_CLSID && clsid.puuid
+        && IsEqualGUID(*clsid.puuid, kActivatorClassId);
+    PropVariantClear(&clsid);
+    return clsidMatches;
+}
+
+// The per-user and all-users Start Menu Programs folders.
+QStringList startMenuProgramDirs()
+{
+    QStringList dirs;
+    const QString userPrograms =
+        QStandardPaths::writableLocation(QStandardPaths::ApplicationsLocation);
+    if (!userPrograms.isEmpty())
+        dirs.append(userPrograms);
+    const QString programData = qEnvironmentVariable("ProgramData");
+    if (!programData.isEmpty())
+        dirs.append(programData
+                    + QStringLiteral("/Microsoft/Windows/Start Menu/Programs"));
+    return dirs;
+}
+
+// The installed Start Menu shortcuts that launch this executable.
+QStringList installedShortcutPaths(const QString &exePath)
+{
+    const QString target = QDir::cleanPath(QDir::fromNativeSeparators(exePath));
+    QStringList links;
+    for (const QString &dir : startMenuProgramDirs()) {
+        const QString link = dir + QStringLiteral("/Omairc.lnk");
+        if (!QFileInfo::exists(link))
+            continue;
+        const QString linkTarget = shortcutTarget(link);
+        if (linkTarget.isEmpty())
+            continue;
+        if (QDir::cleanPath(linkTarget).compare(target, Qt::CaseInsensitive) == 0)
+            links.append(link);
+    }
+    return links;
+}
+
 // Registers the local COM server so the shell can relaunch this executable to
 // deliver a toast activation after the window has closed.
 void registerComServer(const QString &exePath)
@@ -211,14 +303,31 @@ void registerComServer(const QString &exePath)
 
 void ensureNotificationRegistration()
 {
+    const QString exePath = QCoreApplication::applicationFilePath();
+    registerComServer(exePath);
+
+    // packaging/windows/omairc.iss writes the Start Menu shortcut with the
+    // AUMID and the toast activator CLSID already stamped on it. Use that link
+    // instead of adding a second "Omairc" entry to the Start Menu, repairing
+    // one written before this feature existed when we can. Only a run with no
+    // installed shortcut (a portable or development tree) falls through and
+    // writes the per-user link itself.
+    const QStringList installed = installedShortcutPaths(exePath);
+    for (const QString &link : installed) {
+        if (shortcutIsStamped(link))
+            return;
+    }
+    for (const QString &link : installed) {
+        if (SUCCEEDED(installShortcut(link, exePath)))
+            return;
+    }
+
     const QString programs =
         QStandardPaths::writableLocation(QStandardPaths::ApplicationsLocation);
     if (programs.isEmpty())
         return;
     QDir().mkpath(programs);
-    const QString exePath = QCoreApplication::applicationFilePath();
     installShortcut(programs + QStringLiteral("/Omairc.lnk"), exePath);
-    registerComServer(exePath);
 }
 
 // The COM activator Windows invokes when the user clicks a toast, whether or
