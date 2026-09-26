@@ -49,9 +49,6 @@ constexpr wchar_t kActivatorClsidText[] = L"{DBE38477-5F87-42A1-AFA1-11FA12F2E5E
 const CLSID kActivatorClassId = {0xDBE38477, 0x5F87, 0x42A1,
                                  {0xAF, 0xA1, 0x11, 0xFA, 0x12, 0xF2, 0xE5, 0xE5}};
 
-constexpr UINT kMessageShowToast = WM_APP + 1;
-constexpr UINT kMessageQuit = WM_APP + 2;
-
 using namespace ABI::Windows::Data::Xml::Dom;
 using namespace ABI::Windows::UI::Notifications;
 using namespace Microsoft::WRL;
@@ -487,13 +484,16 @@ struct WindowsNotificationsImpl {
     };
 
     std::thread thread;
-    DWORD threadId = 0;
-    HANDLE ready = nullptr;
+    // Wake the notification thread for queued work, and for shutdown. Events
+    // replace PostThreadMessage so nothing races the thread's message queue.
+    HANDLE stopEvent = nullptr;
+    HANDLE toastEvent = nullptr;
     DWORD cookie = 0;
     bool comServerAddRef = false;
-    // Set by the notification thread before it signals ready, so the
-    // constructor only enables delivery once the COM activator is registered.
-    bool registered = false;
+    // Published by the notification thread once the COM activator is
+    // registered, so delivery only starts when a toast can actually render.
+    // Atomic because notify() reads it on the Qt main thread.
+    std::atomic<bool> enabled{false};
     std::mutex mutex;
     std::vector<Toast> queue;
 };
@@ -503,12 +503,11 @@ namespace {
 void runNotificationsThread(WindowsNotificationsImpl *impl)
 {
     const HRESULT roHr = RoInitialize(RO_INIT_MULTITHREADED);
-    impl->threadId = GetCurrentThreadId();
 
-    // Create the thread's message queue before notify() can post to it.
-    MSG msg;
-    PeekMessageW(&msg, nullptr, WM_USER, WM_USER, PM_NOREMOVE);
-
+    // Registration, the registry write, and the Start Menu shortcut all happen
+    // here rather than in the constructor, so opening the window never blocks
+    // the GUI thread on COM, the registry, or the filesystem. Delivery stays
+    // off until the class object is registered.
     if (SUCCEEDED(roHr)) {
         ensureNotificationRegistration();
         ComPtr<ActivatorFactory> factory = Make<ActivatorFactory>();
@@ -518,26 +517,39 @@ void runNotificationsThread(WindowsNotificationsImpl *impl)
                                                 REGCLS_MULTIPLEUSE, &impl->cookie))) {
                 CoAddRefServerProcess();
                 impl->comServerAddRef = true;
-                impl->registered = true;
+                impl->enabled.store(true, std::memory_order_release);
             }
         }
     }
-    if (impl->ready)
-        SetEvent(impl->ready);
 
-    while (GetMessageW(&msg, nullptr, 0, 0) > 0) {
-        if (msg.message == kMessageQuit)
+    const HANDLE handles[] = {impl->stopEvent, impl->toastEvent};
+    for (;;) {
+        const DWORD wait =
+            MsgWaitForMultipleObjects(2, handles, FALSE, INFINITE, QS_ALLINPUT);
+        if (wait == WAIT_OBJECT_0)
             break;
-        if (msg.message != kMessageShowToast)
+        if (wait == WAIT_OBJECT_0 + 1) {
+            std::vector<WindowsNotificationsImpl::Toast> pending;
+            {
+                std::lock_guard<std::mutex> lock(impl->mutex);
+                pending.swap(impl->queue);
+            }
+            for (const auto &toast : pending)
+                showToast(toast.summary, toast.body, toast.networkId,
+                          toast.target, toast.msgid);
             continue;
-        std::vector<WindowsNotificationsImpl::Toast> pending;
-        {
-            std::lock_guard<std::mutex> lock(impl->mutex);
-            pending.swap(impl->queue);
         }
-        for (const auto &toast : pending)
-            showToast(toast.summary, toast.body, toast.networkId, toast.target,
-                      toast.msgid);
+        if (wait == WAIT_OBJECT_0 + 2) {
+            // COM activation traffic. Pump it so an activation that arrives on
+            // this thread is dispatched instead of stalling the server.
+            MSG msg;
+            while (PeekMessageW(&msg, nullptr, 0, 0, PM_REMOVE)) {
+                TranslateMessage(&msg);
+                DispatchMessageW(&msg);
+            }
+            continue;
+        }
+        break; // WAIT_FAILED or WAIT_ABANDONED
     }
 
     if (impl->cookie)
@@ -555,18 +567,24 @@ WindowsNotifications::WindowsNotifications(QObject *parent) : QObject(parent)
     if (!notificationsAvailable())
         return;
     m_impl = new WindowsNotificationsImpl;
-    m_impl->ready = CreateEventW(nullptr, TRUE, FALSE, nullptr);
-    // Without the event there is no way to wait for the thread, so a failed
-    // registration could be read as success. Do without toasts instead.
-    if (!m_impl->ready) {
+    m_impl->stopEvent = CreateEventW(nullptr, FALSE, FALSE, nullptr);
+    m_impl->toastEvent = CreateEventW(nullptr, FALSE, FALSE, nullptr);
+    // Without the events there is no way to wake or stop the thread, so a
+    // failed registration could not be reported. Do without toasts instead.
+    if (!m_impl->stopEvent || !m_impl->toastEvent) {
+        if (m_impl->stopEvent)
+            CloseHandle(m_impl->stopEvent);
+        if (m_impl->toastEvent)
+            CloseHandle(m_impl->toastEvent);
         delete m_impl;
         m_impl = nullptr;
         return;
     }
     g_notifications.store(this);
+    // Do not wait for registration here. The notification thread enables
+    // delivery once the COM activator is registered; until then notify() is a
+    // no-op, which is correct for the first moments of startup.
     m_impl->thread = std::thread(runNotificationsThread, m_impl);
-    WaitForSingleObject(m_impl->ready, 10000);
-    m_enabled = m_impl->registered;
 }
 
 WindowsNotifications::~WindowsNotifications()
@@ -580,12 +598,11 @@ WindowsNotifications::~WindowsNotifications()
         std::lock_guard<std::mutex> lock(g_activationMutex);
         g_notifications.store(nullptr);
     }
-    if (m_impl->threadId != 0)
-        PostThreadMessageW(m_impl->threadId, kMessageQuit, 0, 0);
+    SetEvent(m_impl->stopEvent);
     if (m_impl->thread.joinable())
         m_impl->thread.join();
-    if (m_impl->ready)
-        CloseHandle(m_impl->ready);
+    CloseHandle(m_impl->stopEvent);
+    CloseHandle(m_impl->toastEvent);
     delete m_impl;
     m_impl = nullptr;
 }
@@ -594,12 +611,11 @@ void WindowsNotifications::notify(const QString &summary, const QString &body,
                                   const QString &networkId, const QString &target,
                                   const QString &msgid)
 {
-    if (!m_enabled || !m_impl)
+    if (!m_impl || !m_impl->enabled.load(std::memory_order_acquire))
         return;
     {
         std::lock_guard<std::mutex> lock(m_impl->mutex);
         m_impl->queue.push_back({summary, body, networkId, target, msgid});
     }
-    if (m_impl->threadId != 0)
-        PostThreadMessageW(m_impl->threadId, kMessageShowToast, 0, 0);
+    SetEvent(m_impl->toastEvent);
 }
