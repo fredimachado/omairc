@@ -1,5 +1,5 @@
 #!/usr/bin/env sh
-# TUI gate: vet, test, build, and assert the CLI contract.
+# TUI gate: build, vet, test, and assert the CLI and PTY-shell contracts.
 #
 # Run from anywhere. CI runs this directly (see .github/workflows/tui.yml),
 # and the root bin/test calls it when go is on PATH.
@@ -22,10 +22,14 @@ if ! command -v go >/dev/null 2>&1; then
   exit 1
 fi
 
+# Build before vet/test: internal/gate.TestPTYSmokeDemoShell only runs when
+# tui/bin/omairc-tui exists and is a shell build, so the freshly built binary
+# must be on disk. vet and test then still cover both binaries' packages.
+"$TUI/bin/build"
+
 go vet ./...
 go test ./...
 
-"$TUI/bin/build"
 BIN="$TUI/bin/omairc-tui"
 
 VERSION="$("$ROOT/bin/version")"
@@ -73,21 +77,6 @@ for token in --version --help --demo-server; do
   }
 done
 
-set +e
-DEMO_OUTPUT="$("$BIN" --demo-server 2>&1)"
-DEMO_STATUS=$?
-set -e
-if [ "$DEMO_STATUS" -ne 0 ]; then
-  echo "omairc-tui --demo-server must seed the demo world and exit 0." >&2
-  exit 1
-fi
-for token in omarchy oftc; do
-  printf '%s\n' "$DEMO_OUTPUT" | grep -Fq -- "$token" || {
-    echo "omairc-tui --demo-server output must mention $token" >&2
-    exit 1
-  }
-done
-
 # OMAIRC_BUILD_VERSION must override version.pri, matching the Qt contract.
 OVERRIDE_VERSION="${VERSION}+master.gdeadbeef"
 OMAIRC_BUILD_VERSION="$OVERRIDE_VERSION" "$TUI/bin/build"
@@ -100,3 +89,33 @@ test "$override_got" = "omairc-tui $OVERRIDE_VERSION" || {
 
 # Leave the tree with a normal build.
 "$TUI/bin/build"
+
+# PTY parity gate over the freshly built shell: launch it under a real PTY and
+# assert the OSC title, the seeded sidebar text, and a rendered screenshot.
+GATE="$TUI/bin/control-omairc-tui"
+cleanup_gate() { "$GATE" cleanup >/dev/null 2>&1 || true; }
+trap cleanup_gate EXIT INT TERM
+cleanup_gate
+"$GATE" launch --demo-server
+"$GATE" doctor
+"$GATE" wait-title --exact "#omarchy · irc.example · fred - Omairc"
+title_got="$("$GATE" title)"
+test "$title_got" = "#omarchy · irc.example · fred - Omairc" || {
+  echo "shell title must be #omarchy · irc.example · fred - Omairc" >&2
+  printf 'got: %s\n' "$title_got" >&2
+  exit 1
+}
+"$GATE" screenshot --feature shell --name smoke
+test -s "$ROOT/test-artifacts/verify-tui/shell/smoke.png" || {
+  echo "missing screenshot $ROOT/test-artifacts/verify-tui/shell/smoke.png" >&2
+  exit 1
+}
+# Assert the seeded sidebar rows through the daemon's reconstructed grid text.
+grid="$("$GATE" text)"
+for token in '#omarchy' '#ricing' anna dax; do
+  printf '%s\n' "$grid" | grep -Fq -- "$token" || {
+    echo "shell grid text must mention $token" >&2
+    exit 1
+  }
+done
+cleanup_gate

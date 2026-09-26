@@ -67,3 +67,17 @@ func (s *StatusConsole) Clear(networkID string) {
 	}
 	delete(s.lines, networkID)
 }
+
+// ConsoleText returns the display text of each Status console line for a
+// network, oldest first. The []irc.StatusEntry type stays in the core.
+func (c *Controller) ConsoleText(networkID string) []string {
+	entries := c.statusConsole.Lines(networkID)
+	if len(entries) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		out = append(out, entry.Text())
+	}
+	return out
+}

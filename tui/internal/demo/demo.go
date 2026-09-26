@@ -114,8 +114,13 @@ func (d *DemoServer) Attach(c *controller.Controller, autoEcho bool) bool {
 
 // startNetwork creates and starts one loopback session and completes its
 // connect. It mirrors IrcDemoServer::startNetwork.
+//
+// The profile name stays empty, exactly like the C++ seedProfile
+// (src/irc/ircdemoserver.cpp): resolvedName() then falls back to the host, so
+// both demo networks resolve to "irc.example" and the roster disambiguates
+// them by nick.
 func (d *DemoServer) startNetwork(c *controller.Controller, networkID, nick string, autojoin []string) (*session.LoopbackTransport, bool) {
-	config := session.DefaultSessionConfig(networkID, networkID, "irc.example", nick)
+	config := session.DefaultSessionConfig(networkID, "", "irc.example", nick)
 	config.TLSEnabled = true
 	config.AutojoinChannels = autojoin
 	config.ReconnectEnabled = false

@@ -8,18 +8,22 @@ When the two disagree about the shared contract, the root file wins.
 - `tui/` is a standalone Go module: `github.com/fredimachado/omairc/tui`.
   The repo root is not a Go module, so every `go` invocation must run with
   `tui/` as the working directory or `go` walks up and fails.
-- The `go` directive is `go 1.25`, the minimum `charm.land/bubbletea/v2`
-  v2.0.9 declares.
+- The `go` directive is `go 1.25.0`, the patch-level minimum that
+  `github.com/charmbracelet/ultraviolet` (pulled in by
+  `charm.land/bubbletea/v2` v2.0.9) declares. Do not lower it.
 - The module path is domain-qualified so Phase 12's `go install` for Linux
   works without a rename.
-- Layout: `cmd/omairc-tui/` (flags and `main`), `internal/irc/` (portable
-  core, mirrors `src/irc/`), `internal/session/` (transport, SCRAM, the
-  session state machine, the session manager, and the clock seam),
+- Layout: `cmd/omairc-tui/` (flags and `main`) and
+  `cmd/control-omairc-tui/` (its CLI), `internal/irc/` (portable core,
+  mirrors `src/irc/`), `internal/session/` (transport, SCRAM, the session
+  state machine, the session manager, and the clock seam),
   `internal/controller/` (the Go `IrcController` core and its view
   snapshots), `internal/demo/` (the `IrcDemoServer` seed harness behind
   `--demo-server`, mirrors `src/irc/ircdemoserver.cpp`), `internal/ui/`
   (Bubble Tea shell, mirrors `src/qml/` plus `OmaircWindow.qml`),
-  `internal/version/` (injected build version), and `bin/` (gate scripts).
+  `internal/gate/` (the PTY parity driver: VT grid, OSC title capture, key
+  writer, screenshot), `internal/version/` (injected build version), and
+  `bin/` (gate scripts).
 - `tui/bin/omairc-tui` is a build artifact and is gitignored.
 
 ## Package boundaries
@@ -28,10 +32,12 @@ When the two disagree about the shared contract, the root file wins.
   `crypto/tls`; sockets, the filesystem, and TLS live in `internal/session`.
   `bin/check-conventions` gates this mechanically (test files may read
   testdata with `os`).
-- `internal/session` is the only package that touches the network stack. All
-  timers, reconnects, the ping watchdog, the labeled-response timeout, and
-  typing pacing go through its `Clock`/`Timer` seam, so tests drive them
-  manually with `FakeClock` and `LoopbackTransport`.
+- `internal/session` is the only product package that opens sockets or TLS;
+  `internal/gate` is the dev-only PTY driver (a Unix socket plus `os/exec`),
+  not product code. All timers, reconnects, the ping watchdog, the
+  labeled-response timeout, and typing pacing go through `internal/session`'s
+  `Clock`/`Timer` seam, so tests drive them manually with `FakeClock` and
+  `LoopbackTransport`.
 - `internal/controller` holds the state the shell calls: sessions, the
   reducer, selection, sidebar order, send, and the Status ring buffer. It
   reads time only from an injected `session.Clock`. Later subsystems
@@ -52,6 +58,8 @@ version the moment its package is first imported — never earlier, because
 - `charm.land/bubbletea/v2` v2.0.9 — imported in Phase 4.
 - `charm.land/lipgloss/v2` v2.0.3 — imported in Phase 4.
 - `charm.land/bubbles/v2` v2.1.0 — imported in Phase 4.
+- `github.com/creack/pty` v1.1.24 — imported in Phase 4 by `internal/gate`
+  (Unix PTY, with Windows/ConPTY support).
 - `github.com/ergochat/irc-go` (`ircmsg`, `ircreader`, `ircfmt`, `ircutils`)
   — not imported in Phase 1: the wire layer is a hand-port of `src/irc/` so
   the byte-for-byte behavior and the mirrored test matrices stay the contract.
@@ -93,6 +101,11 @@ The four invariants are ported verbatim, not re-derived:
   not enumerate one more well-formed bypass.
 - `orderedMembers` sorts by PREFIX rank then nick, in the core. The view
   never sorts, and the member panel and the CLI names order must match.
+- Title parity: `internal/irc.RosterDisplayName` mirrors
+  `IrcConnection::rosterDisplayName`, and `internal/ui/title.go`'s `Title`
+  mirrors `OmaircWindow.qml`'s `conversationTitleText` / `statusTitleText`.
+  The terminal title is emitted as OSC 2 from the Bubble Tea v2
+  `View.WindowTitle` field.
 
 Phase 2 implements all four: `ConversationCauseInserts` and `TargetLooksLikeService`
 in `internal/irc/conversation.go`, `orderedMembers`/`OrderedMembers` in the
@@ -111,9 +124,20 @@ the view.
 ## Feature map
 
 `.cursor/skills/verify-omairc/features/*.md` is the single source of truth for
-behavior. `control-omairc` (Qt driver) and the future `control-omairc-tui`
-(driver over a PTY) play the same `desktop-recipe` fences. Do not compile the
-map into the binary or add a command that dumps it.
+behavior. `control-omairc` (Qt driver) and `control-omairc-tui` (driver over a
+PTY) play the same `desktop-recipe` fences. Do not compile the map into the
+binary or add a command that dumps it.
+
+## Parity gate
+
+`tui/bin/control-omairc-tui` (wrapped by
+`.cursor/skills/verify-omairc-tui/control-omairc-tui`) replays the same
+`desktop-recipe` fences as `control-omairc`, but over a fixed-size PTY instead
+of Xvfb and xdotool. It reconstructs a text grid from the VT stream, reads the
+OSC 2 title, writes key bytes, renders PNG evidence, and rejects pixel-click
+verbs: the TUI is keyboard-first and has no pointer path. Evidence goes under
+`test-artifacts/verify-tui/`. The internal skill lives at
+`.cursor/skills/verify-omairc-tui/`.
 
 ## Version
 
