@@ -554,16 +554,34 @@ void runNotificationsThread(WindowsNotificationsImpl *impl)
     // here rather than in the constructor, so opening the window never blocks
     // the GUI thread on COM, the registry, or the filesystem. Delivery stays
     // off until the class object is registered.
-    if (SUCCEEDED(roHr)) {
+    if (FAILED(roHr)) {
+        qWarning() << "WindowsNotifications: RoInitialize failed, so Windows "
+                      "toasts are unavailable:"
+                   << hexHresult(roHr);
+    } else {
         ensureNotificationRegistration();
         ComPtr<ActivatorFactory> factory = Make<ActivatorFactory>();
-        if (factory) {
-            if (SUCCEEDED(CoRegisterClassObject(kActivatorClassId, factory.Get(),
-                                                CLSCTX_LOCAL_SERVER,
-                                                REGCLS_MULTIPLEUSE, &impl->cookie))) {
+        if (!factory) {
+            qWarning() << "WindowsNotifications: could not create the toast "
+                          "activator factory, so toast clicks will not route "
+                          "back to this window";
+        } else {
+            // A second instance (OMAIRC_ALLOW_MULTI) registers its own class
+            // object; the shell then picks which running server receives an
+            // activation. Report a failure rather than drop toasts silently.
+            const HRESULT registerHr =
+                CoRegisterClassObject(kActivatorClassId, factory.Get(),
+                                      CLSCTX_LOCAL_SERVER, REGCLS_MULTIPLEUSE,
+                                      &impl->cookie);
+            if (SUCCEEDED(registerHr)) {
                 CoAddRefServerProcess();
                 impl->comServerAddRef = true;
                 impl->enabled.store(true, std::memory_order_release);
+            } else {
+                qWarning() << "WindowsNotifications: could not register the "
+                              "toast activator, so toast clicks will not route "
+                              "back to this window:"
+                           << hexHresult(registerHr);
             }
         }
     }
