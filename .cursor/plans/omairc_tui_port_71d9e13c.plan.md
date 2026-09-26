@@ -16,7 +16,7 @@ todos:
     status: completed
   - id: phase-4-shell
     content: "Phase 4: Bubble Tea shell (Model/Update/View, layout) + control-omairc-tui parity gate"
-    status: pending
+    status: in_progress
   - id: phase-5-connect
     content: "Phase 5: Connect sheet + conversation switching/send/Status"
     status: pending
