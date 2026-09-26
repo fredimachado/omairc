@@ -9,6 +9,7 @@ on:
       - '.cursor/**'
       - 'omairc.gif'
       - 'omairc.png'
+      - 'tui/**'
   push:
     branches:
       - master
@@ -19,6 +20,7 @@ on:
       - '.cursor/**'
       - 'omairc.gif'
       - 'omairc.png'
+      - 'tui/**'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}

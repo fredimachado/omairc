@@ -204,7 +204,10 @@ tagged commit needs a follow-up fix before artifacts ship, commit on
 `bin/test` is the default gate. It runs `bin/check-conventions`, builds,
 checks CLI help and version, runs the C++ suite, and runs the offscreen QML
 tests. CI runs `bin/test`, `bin/test-san`, and `bin/test-live` on every pull
-request, and rejects a pull request whose base is not `master`.
+request that touches anything outside `tui/**`, and rejects a pull request
+whose base is not `master`. A TUI-only pull request is gated by the TUI
+workflow alone: `test.yml` ignores `tui/**`, and `tui/bin/test` runs the shared
+`bin/check-conventions` so the TUI checks still hold. See `tui/AGENTS.md`.
 
 ```sh
 bin/test

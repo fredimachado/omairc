@@ -128,8 +128,15 @@ atomically. No TUI file needs editing for a version bump.
 
 - Base every pull request on `master`, or on another `tui-phase-*` branch when
   stacking phases in order; CI rejects any other base.
-- Run `tui/bin/test` (vet, tests, build, CLI contract) and the root `bin/test`
-  before opening a pull request. `tui/bin/test` is also wired into root
-  `bin/test` and skipped when `go` is absent.
+- Run `tui/bin/test` (conventions, vet, tests, build, CLI contract) and the
+  root `bin/test` before opening a pull request. `tui/bin/test` is also wired
+  into root `bin/test` and skipped when `go` is absent.
 - `.github/workflows/tui.yml` is the Linux gate. Do not add a notification
   sink or bot.
+- A TUI-only change is gated by `tui.yml` alone: `test.yml` ignores `tui/**`
+  so the Qt app is not rebuilt and the C++ suite does not run for the Go port.
+  That holds because `tui/bin/test` runs the shared `bin/check-conventions`,
+  which carries the TUI checks (the `internal/irc` platform-neutrality rule).
+  A change to `bin/check-conventions` itself still triggers both workflows,
+  because it is the shared contract. Root `bin/test` exports
+  `OMAIRC_CONVENTIONS_RAN` so the gate runs the shared checks only once.
