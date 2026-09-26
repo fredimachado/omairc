@@ -1,16 +1,21 @@
 package ui
 
-import "github.com/fredimachado/omairc/tui/internal/controller"
+import (
+	"github.com/fredimachado/omairc/tui/internal/connection"
+	"github.com/fredimachado/omairc/tui/internal/controller"
+)
 
 // Title reproduces the Qt window title byte-for-byte from OmaircWindow.qml:
-// consoleVisible ? statusTitleText() : conversationTitleText(). A nil or empty
-// controller has no selection and no focused network, so it renders "Omairc".
-func Title(ctrl *controller.Controller) string {
+// consoleVisible ? statusTitleText() : conversationTitleText(). Nothing
+// selected lands on the Status surface, exactly as the Qt shell does on first
+// run. A nil controller has no selection and no focused network, so it renders
+// "Omairc".
+func Title(ctrl *controller.Controller, conn *connection.Connection) string {
 	if ctrl == nil {
 		return "Omairc"
 	}
-	if ctrl.ConsoleOpen() {
-		return statusTitleText(ctrl)
+	if ctrl.ConsoleOpen() || ctrl.SelectedTarget() == "" {
+		return statusTitleText(ctrl, conn)
 	}
 	return conversationTitleText(ctrl)
 }
@@ -31,15 +36,30 @@ func conversationTitleText(ctrl *controller.Controller) string {
 	return current + " - Omairc"
 }
 
-// statusTitleText mirrors OmaircWindow.qml's statusTitleText. The Qt
-// connection.displayName fallback collapses into the focused network display
-// name here, so an empty name falls straight through to "Status".
-func statusTitleText(ctrl *controller.Controller) string {
-	networkName := focusedNetworkDisplayName(ctrl)
-	if networkName != "" {
+// statusTitleText mirrors OmaircWindow.qml's statusTitleText. When no session
+// is bound yet (first run, before Connect applies) it falls back to the
+// connection's draft display name, so a default launch is titled
+// "irc.libera.chat Status".
+func statusTitleText(ctrl *controller.Controller, conn *connection.Connection) string {
+	if networkName := focusedNetworkDisplayName(ctrl); networkName != "" {
 		return networkName + " Status"
 	}
+	if conn != nil {
+		if displayName := conn.DisplayName(); displayName != "" {
+			return displayName + " Status"
+		}
+	}
 	return "Status"
+}
+
+// statusJumpLabel is the jump overlay's label for a network's Status row. It
+// lives beside the window-title helpers so the " Status" literal stays in one
+// file (bin/check-conventions gates it to title.go).
+func statusJumpLabel(networkName string) string {
+	if networkName == "" {
+		return "Status"
+	}
+	return networkName + " Status"
 }
 
 // focusedNetworkDisplayName is the display name of the focused network, or ""

@@ -41,17 +41,6 @@ func TestHelpPrintsUsageWithoutVersionLine(t *testing.T) {
 	}
 }
 
-func TestNoArgumentsFailsClosed(t *testing.T) {
-	code, _, stderr := runCapture(t)
-	if code == 0 {
-		t.Fatalf("no-argument invocation must fail while the Connect sheet is unlanded")
-	}
-	lower := strings.ToLower(stderr)
-	if !strings.Contains(stderr, "--demo-server") && !strings.Contains(lower, "phase 5") {
-		t.Fatalf("no-argument stderr must point at --demo-server or Phase 5, got %q", stderr)
-	}
-}
-
 func TestUnknownArgumentFails(t *testing.T) {
 	code, _, stderr := runCapture(t, "--nope")
 	if code == 0 {

@@ -51,6 +51,17 @@ var keyNames = map[string]string{
 	"alt+Up":     "\x1b[1;3A",
 	"alt+Right":  "\x1b[1;3C",
 	"alt+Left":   "\x1b[1;3D",
+	// Kitty keyboard protocol CSI-u sequences. The legacy control bytes for
+	// these chords collide with other keys (Ctrl+` and Ctrl+, are NUL and
+	// Ctrl+L, Ctrl+Enter and Ctrl+Tab are CR and HT), so the terminal must
+	// disambiguate them. bubbletea v2's ultraviolet decoder parses CSI-u
+	// unconditionally: `CSI codepoint ; modifiers u`, where the modifier value
+	// is the kitty bitmask plus one (ctrl=5, ctrl+shift=6).
+	"ctrl+`":            "\x1b[96;5u",
+	"ctrl+,":            "\x1b[44;5u",
+	"ctrl+enter":        "\x1b[13;5u",
+	"ctrl+tab":          "\x1b[9;5u",
+	"ctrl+shift+delete": "\x1b[57349;6u",
 }
 
 // KeySequence encodes one chord name as terminal bytes.
