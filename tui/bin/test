@@ -74,13 +74,19 @@ for token in --version --help --demo-server; do
 done
 
 set +e
-"$BIN" --demo-server >/dev/null 2>&1
+DEMO_OUTPUT="$("$BIN" --demo-server 2>&1)"
 DEMO_STATUS=$?
 set -e
-if [ "$DEMO_STATUS" -eq 0 ]; then
-  echo "omairc-tui --demo-server must fail closed until Phase 3 seeds the demo world." >&2
+if [ "$DEMO_STATUS" -ne 0 ]; then
+  echo "omairc-tui --demo-server must seed the demo world and exit 0." >&2
   exit 1
 fi
+for token in omarchy oftc; do
+  printf '%s\n' "$DEMO_OUTPUT" | grep -Fq -- "$token" || {
+    echo "omairc-tui --demo-server output must mention $token" >&2
+    exit 1
+  }
+done
 
 # OMAIRC_BUILD_VERSION must override version.pri, matching the Qt contract.
 OVERRIDE_VERSION="${VERSION}+master.gdeadbeef"

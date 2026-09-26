@@ -16,9 +16,10 @@ When the two disagree about the shared contract, the root file wins.
   core, mirrors `src/irc/`), `internal/session/` (transport, SCRAM, the
   session state machine, the session manager, and the clock seam),
   `internal/controller/` (the Go `IrcController` core and its view
-  snapshots), `internal/ui/` (Bubble Tea shell, mirrors `src/qml/` plus
-  `OmaircWindow.qml`), `internal/version/` (injected build version), and
-  `bin/` (gate scripts).
+  snapshots), `internal/demo/` (the `IrcDemoServer` seed harness behind
+  `--demo-server`, mirrors `src/irc/ircdemoserver.cpp`), `internal/ui/`
+  (Bubble Tea shell, mirrors `src/qml/` plus `OmaircWindow.qml`),
+  `internal/version/` (injected build version), and `bin/` (gate scripts).
 - `tui/bin/omairc-tui` is a build artifact and is gitignored.
 
 ## Package boundaries

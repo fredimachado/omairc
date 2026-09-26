@@ -1,16 +1,21 @@
 // Command omairc-tui is the terminal client entry point.
 //
-// Phase 0 ships only the CLI shell: --version, --help, and a --demo-server
-// stub that fails closed. The Bubble Tea shell and the IRC core land in later
-// phases; see tui/AGENTS.md. A silent no-op would hide a wiring gap, so an
-// unimplemented path exits non-zero instead of pretending to work.
+// Phase 3 ships the CLI shell plus the in-process demo seed: --version,
+// --help, and --demo-server, which seeds the two-network demo world through
+// internal/demo and exits 0 after printing a deterministic summary of the
+// seeded conversations. The Bubble Tea shell is still unimplemented, so a
+// no-argument invocation exits non-zero rather than pretending to work; the
+// IRC core lands in later phases. See tui/AGENTS.md.
 package main
 
 import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 
+	"github.com/fredimachado/omairc/tui/internal/controller"
+	"github.com/fredimachado/omairc/tui/internal/demo"
 	"github.com/fredimachado/omairc/tui/internal/version"
 )
 
@@ -21,10 +26,10 @@ Omairc terminal client.
 Flags:
   --version      print the omairc-tui version and exit
   --help         print this help and exit
-  --demo-server  seed the in-process demo world (not implemented yet)
+  --demo-server  seed the in-process demo world and exit
 
-The TUI and the IRC core are not implemented in this build, so running with no
-flags exits non-zero until the Bubble Tea shell lands.`
+The Bubble Tea shell is not implemented in this build; --demo-server seeds the
+IRC core and exits.`
 
 func main() {
 	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
@@ -60,12 +65,41 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return 0
 	}
 	if demoServer {
-		fmt.Fprintln(stderr,
-			"omairc-tui: --demo-server is not implemented yet; failing closed")
-		return 1
+		c := controller.New()
+		server := demo.New()
+		if !server.Attach(c, true) {
+			fmt.Fprintf(stderr, "omairc-tui: demo server failed: %s\n", server.LastError())
+			return 1
+		}
+		writeDemoSummary(stdout, c)
+		return 0
 	}
 
 	fmt.Fprintln(stderr,
 		"omairc-tui: the TUI is not implemented yet; run --help for usage")
 	return 1
+}
+
+// writeDemoSummary prints a deterministic one-line-per-conversation summary of
+// the seeded demo world. The first line names every network the seed attached,
+// in the order the conversations first mention them; each following line names
+// one sidebar conversation with its unread and mention state.
+func writeDemoSummary(w io.Writer, c *controller.Controller) {
+	conversations := c.Conversations()
+
+	networks := make([]string, 0, 2)
+	seen := make(map[string]bool)
+	for _, row := range conversations {
+		if row.NetworkID == "" || seen[row.NetworkID] {
+			continue
+		}
+		seen[row.NetworkID] = true
+		networks = append(networks, row.NetworkID)
+	}
+
+	fmt.Fprintf(w, "demo server seeded: %s\n", strings.Join(networks, ", "))
+	for _, row := range conversations {
+		fmt.Fprintf(w, "%s %s unread=%d mention=%t\n",
+			row.NetworkID, row.Conversation, row.Unread, row.Mention)
+	}
 }
