@@ -1024,3 +1024,80 @@ func TestBackgroundChatBumpsConversationEpoch(t *testing.T) {
 		t.Fatalf("MentionFor(network-b) = true")
 	}
 }
+
+// --- selectConversationRefreshesSidebarUnread -----------------------------
+
+// TestSelectConversationRefreshesSidebarUnread pins that selecting a
+// conversation republishes the sidebar snapshot. ConversationListModel::select
+// calls reload(), which repaints every row's roles, so a selection consumes its
+// unread and mention badge immediately instead of leaving the cached snapshot
+// stale until the next conversation-dirtying event.
+func TestSelectConversationRefreshesSidebarUnread(t *testing.T) {
+	c, clock := newController(t)
+	transportA := addAndStart(t, c, clock, baseConfig("network-a", "omairc"))
+	transportB := addAndStart(t, c, clock, baseConfig("network-b", "omairc"))
+
+	registerNetwork(t, transportA, "omairc")
+	inject(t, transportA, ":omairc!u@h JOIN :#alpha\r\n")
+	c.SelectConversation("network-a", "#alpha")
+
+	registerNetwork(t, transportB, "omairc")
+	inject(t, transportB, ":omairc!u@h JOIN :#lab\r\n")
+	inject(t, transportB, ":zed!u@h PRIVMSG #lab :ping\r\n")
+
+	unreadFor := func(networkID, target string) (int, bool) {
+		for _, row := range c.Conversations() {
+			if row.NetworkID == networkID && row.Conversation == target {
+				return row.Unread, true
+			}
+		}
+		return 0, false
+	}
+
+	unread, found := unreadFor("network-b", "#lab")
+	if !found || unread != 1 {
+		t.Fatalf("network-b #lab unread = %d (found=%v), want 1", unread, found)
+	}
+
+	c.SelectConversation("network-b", "#lab")
+	if unread, _ := unreadFor("network-b", "#lab"); unread != 0 {
+		t.Fatalf("network-b #lab unread after select = %d, want 0", unread)
+	}
+	if got := c.UnreadCountFor("network-b"); got != 0 {
+		t.Fatalf("UnreadCountFor(network-b) after select = %d, want 0", got)
+	}
+}
+
+// --- typingEventRefreshesSidebarTyping ------------------------------------
+
+// TestTypingEventRefreshesSidebarTyping pins that a typing notification
+// repaints the sidebar's typing role. Qt emits typingChanged() and calls
+// ConversationListModel::invalidateTyping() when the conversation list was not
+// already reloaded; the Go snapshot materializes that role, so the direct row
+// must repaint for the hint to show.
+func TestTypingEventRefreshesSidebarTyping(t *testing.T) {
+	c, clock := newController(t)
+	transport := addAndStart(t, c, clock, baseConfig("libera", "omairc"))
+	registerNetwork(t, transport, "omairc")
+	inject(t, transport, ":omairc!u@h JOIN :#omarchy\r\n")
+	// The peer's line opens the direct message the typing hint belongs to.
+	inject(t, transport, ":lena!u@h PRIVMSG omairc :hey\r\n")
+	c.SelectConversation("libera", "lena")
+
+	typingFor := func(target string) (bool, bool) {
+		for _, row := range c.Conversations() {
+			if row.NetworkID == "libera" && row.Conversation == target {
+				return row.Typing, true
+			}
+		}
+		return false, false
+	}
+	if typing, found := typingFor("lena"); !found || typing {
+		t.Fatalf("lena sidebar typing before TAGMSG = %v (found=%v), want false", typing, found)
+	}
+
+	inject(t, transport, "@+typing=active :lena!u@h TAGMSG omairc\r\n")
+	if typing, found := typingFor("lena"); !found || !typing {
+		t.Fatalf("lena sidebar typing after TAGMSG = %v (found=%v), want true", typing, found)
+	}
+}
