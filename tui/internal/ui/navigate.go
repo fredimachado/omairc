@@ -7,8 +7,9 @@ import (
 	tea "charm.land/bubbletea/v2"
 )
 
-// This file holds the phase-5 conversation navigation: the walk and unread
-// chords, the Ctrl+K jump overlay, the Status toggle, and the per-conversation
+// This file holds the Phase 5/6 conversation and network navigation: the walk
+// and unread chords, the jump overlay, the Status toggle, the network header
+// walk/collapse/reorder, the direct-message close, and the per-conversation
 // composer drafts. It reads only controller snapshots, never internal/irc.
 
 // Jump entry kinds.
@@ -50,6 +51,7 @@ func (m *Model) openJump() {
 	if m.ctrl == nil {
 		return
 	}
+	m.closeAllOverlays()
 	m.jump.open = true
 	m.jump.input.SetValue("")
 	m.jump.selected = 0
@@ -140,7 +142,8 @@ func (m *Model) moveJump(delta int) {
 	m.jump.selected = ((m.jump.selected+delta)%len(entries) + len(entries)) % len(entries)
 }
 
-// activateJump opens the highlighted entry and dismisses the overlay.
+// activateJump opens the highlighted entry and dismisses the overlay. Landing
+// on a conversation under a collapsed network expands that network first.
 func (m *Model) activateJump() {
 	entries := m.jumpEntries()
 	if len(entries) == 0 {
@@ -156,6 +159,7 @@ func (m *Model) activateJump() {
 			m.ctrl.OpenStatus(entry.networkID)
 			return
 		}
+		m.ctrl.SetNetworkCollapsed(entry.networkID, false)
 		m.ctrl.SelectConversation(entry.networkID, entry.target)
 	})
 	m.closeJump()
@@ -184,12 +188,42 @@ func (m *Model) handleJumpKey(key string, msg tea.KeyPressMsg) (tea.Model, tea.C
 	return m, cmd
 }
 
+// handleOverlayKey routes one key to whichever filter overlay is open. Only
+// one overlay ever owns the keys; opening one closes the rest.
+func (m *Model) handleOverlayKey(key string, msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	switch {
+	case m.nick.open:
+		return m.handleNickKey(key, msg)
+	case m.link.open:
+		return m.handleLinkKey(key, msg)
+	case m.inbox.open:
+		return m.handleInboxKey(key, msg)
+	case m.jump.open:
+		return m.handleJumpKey(key, msg)
+	}
+	return m, nil
+}
+
 // walk moves to the next or previous visible conversation over the sidebar
-// order, wrapping. Status is not in the walk. It mirrors
-// OmaircWindow.qml's stepConversation.
+// order, wrapping. Status is not in the walk. Rows under a collapsed network
+// are skipped; a hidden current row still has a place in the full order, so
+// walking continues from there. It mirrors OmaircWindow.qml's stepConversation.
 func (m *Model) walk(delta int) {
+	if m.ctrl == nil {
+		return
+	}
 	rows := m.ctrl.Conversations()
 	if len(rows) == 0 {
+		return
+	}
+	visible := false
+	for _, row := range rows {
+		if !m.ctrl.IsNetworkCollapsed(row.NetworkID) {
+			visible = true
+			break
+		}
+	}
+	if !visible {
 		return
 	}
 	current := -1
@@ -210,6 +244,9 @@ func (m *Model) walk(delta int) {
 	for step := 1; step <= len(rows); step++ {
 		index := ((start+delta*step)%len(rows) + len(rows)) % len(rows)
 		row := rows[index]
+		if m.ctrl.IsNetworkCollapsed(row.NetworkID) {
+			continue
+		}
 		m.switchSelection(func() {
 			m.ctrl.SelectConversation(row.NetworkID, row.ConversationName)
 		})
@@ -219,8 +256,12 @@ func (m *Model) walk(delta int) {
 
 // jumpUnread selects the next unread conversation, mentions first, skipping
 // muted rows while hunting a mention. It mirrors OmaircWindow.qml's
-// jumpToNextUnread.
+// jumpToNextUnread: rows hidden under a collapsed network still count, and
+// landing on one expands that network.
 func (m *Model) jumpUnread() {
+	if m.ctrl == nil {
+		return
+	}
 	rows := m.ctrl.Conversations()
 	if len(rows) == 0 {
 		return
@@ -261,6 +302,7 @@ func (m *Model) jumpUnread() {
 	}
 	row := rows[target]
 	m.switchSelection(func() {
+		m.ctrl.SetNetworkCollapsed(row.NetworkID, false)
 		m.ctrl.SelectConversation(row.NetworkID, row.ConversationName)
 	})
 }
@@ -294,22 +336,170 @@ func (m *Model) toggleStatus() {
 	})
 }
 
-// dismissOverlay is the Escape handler when no overlay owns the key. It closes
-// Status when it is open and leaves everything else alone.
-func (m *Model) dismissOverlay() {
+// dismissEscape is the Escape handler when no modal or overlay owns the key.
+// It leaves find first, then clears member focus, then closes Status.
+func (m *Model) dismissEscape() {
+	if m.find.active {
+		m.leaveFind()
+		return
+	}
+	if m.memberFocus {
+		m.memberFocus = false
+		return
+	}
 	if m.ctrl != nil && m.ctrl.ConsoleOpen() {
 		m.toggleStatus()
 	}
 }
 
+// --- Network headers and the server list ----------------------------------
+
+// stepNetwork moves the network header focus with Alt+Left / Alt+Right,
+// wrapping. It restores the server list column so the highlight is visible.
+// It mirrors OmaircWindow.qml's stepNetwork.
+func (m *Model) stepNetwork(delta int) {
+	if m.ctrl == nil {
+		return
+	}
+	order := m.ctrl.NetworkOrder()
+	if len(order) == 0 {
+		return
+	}
+	current := indexOfString(order, m.sidebarNetworkFocusID)
+	if current < 0 {
+		current = indexOfString(order, m.ctrl.SelectedNetworkID())
+	}
+	var next int
+	if current < 0 {
+		if delta > 0 {
+			next = 0
+		} else {
+			next = len(order) - 1
+		}
+	} else {
+		next = ((current+delta)%len(order) + len(order)) % len(order)
+	}
+	m.serverListVisible = true
+	m.sidebarNetworkFocusID = order[next]
+}
+
+// openFocusedNetworkStatus opens the focused header's Status surface and
+// clears the header focus, matching openNetworkStatus.
+func (m *Model) openFocusedNetworkStatus() {
+	if m.sidebarNetworkFocusID == "" || m.ctrl == nil {
+		return
+	}
+	networkID := m.sidebarNetworkFocusID
+	m.sidebarNetworkFocusID = ""
+	m.switchSelection(func() {
+		m.ctrl.OpenStatus(networkID)
+	})
+}
+
+// collapseFocusedNetwork collapses or expands the focused network. It is a
+// no-op without a focused header.
+func (m *Model) collapseFocusedNetwork(collapsed bool) {
+	if m.sidebarNetworkFocusID == "" || m.ctrl == nil {
+		return
+	}
+	m.ctrl.SetNetworkCollapsed(m.sidebarNetworkFocusID, collapsed)
+}
+
+// collapseAllNetworks collapses or expands every network. Header focus is not
+// required and is not stolen.
+func (m *Model) collapseAllNetworks(collapsed bool) {
+	if m.ctrl == nil {
+		return
+	}
+	m.ctrl.SetAllNetworksCollapsed(collapsed)
+}
+
+// moveFocusedNetwork reorders the focused network with no wrap. Focus stays on
+// the moved network.
+func (m *Model) moveFocusedNetwork(delta int) {
+	if m.sidebarNetworkFocusID == "" || m.ctrl == nil {
+		return
+	}
+	m.ctrl.MoveNetwork(m.sidebarNetworkFocusID, delta)
+}
+
+// clearNetworkFocus is Ctrl+L: it drops the header focus so Enter sends again.
+func (m *Model) clearNetworkFocus() {
+	m.sidebarNetworkFocusID = ""
+}
+
+// toggleServerList collapses or restores the whole left rail. Collapsing drops
+// the focused header, so Enter in the composer sends again.
+func (m *Model) toggleServerList() {
+	m.serverListVisible = !m.serverListVisible
+	if !m.serverListVisible {
+		m.sidebarNetworkFocusID = ""
+	}
+}
+
+// closeDirectMessage closes the selected direct message with Ctrl+W. It is a
+// no-op on a channel or Status.
+func (m *Model) closeDirectMessage() {
+	if m.ctrl == nil || m.ctrl.ConsoleOpen() {
+		return
+	}
+	m.saveDraft()
+	if !m.ctrl.CloseDirectMessage() {
+		return
+	}
+	m.loadDraft()
+	m.afterSelectionChange()
+}
+
+// focusMembers focuses the member list with Ctrl+Shift+P, reopening a hidden
+// panel by making it visible when the window is wide enough. It is a no-op off
+// a channel or on Status.
+func (m *Model) focusMembers() {
+	if m.ctrl == nil || !m.ctrl.IsChannel() || m.ctrl.ConsoleOpen() {
+		return
+	}
+	m.memberFocus = true
+	m.clampMemberIndex()
+}
+
+// indexOfString returns the index of needle in values, or -1.
+func indexOfString(values []string, needle string) int {
+	if needle == "" {
+		return -1
+	}
+	for index, value := range values {
+		if value == needle {
+			return index
+		}
+	}
+	return -1
+}
+
 // --- Per-conversation drafts ----------------------------------------------
 
 // switchSelection stashes the current composer draft, runs apply (which changes
-// the selection or Status surface), then restores the draft for the new key.
+// the selection or Status surface), then restores the draft for the new key. It
+// also drops find, the transcript cursor, and the member focus, matching the Qt
+// selection side effects.
 func (m *Model) switchSelection(apply func()) {
+	if m.find.active {
+		m.leaveFind()
+	}
 	m.saveDraft()
 	apply()
 	m.loadDraft()
+	m.afterSelectionChange()
+}
+
+// afterSelectionChange resets the view state that does not survive a move to a
+// new conversation or Status surface.
+func (m *Model) afterSelectionChange() {
+	m.transcriptFollowEnd = true
+	m.transcriptScroll = 0
+	m.transcriptCursor = -1
+	m.resetHistoryBrowse()
+	m.memberFocus = false
+	m.memberIndex = 0
 }
 
 // saveDraft records the composer text under the current conversation key.
@@ -350,6 +540,8 @@ func (m *Model) clearCurrentDraft() {
 	m.drafts[m.draftKey] = ""
 }
 
+// --- Rendering ------------------------------------------------------------
+
 // jumpCardLines renders the jump overlay into a bordered block exactly width
 // cells wide.
 func (m *Model) jumpCardLines(width int) []string {
@@ -378,7 +570,7 @@ func (m *Model) jumpCard(inner int) []string {
 	return lines
 }
 
-// overlayInputWidth is the width the composer, sheet, and jump filters use
+// overlayInputWidth is the width the composer and the overlay filters use
 // inside the current window.
 func (m *Model) overlayInputWidth() int {
 	width := m.width - 8

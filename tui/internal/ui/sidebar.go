@@ -8,7 +8,9 @@ import (
 
 // sidebarView renders the network roster: one header per registered network,
 // then a CHANNELS group and a DIRECT MESSAGES group. It is data-driven from
-// the controller snapshots, never a scan of rendered children.
+// the controller snapshots, never a scan of rendered children. A collapsed
+// network keeps its header and hides its groups; the focused header is
+// highlighted so Alt+Left / Alt+Right land somewhere visible.
 func (m *Model) sidebarView(width, height int) string {
 	grouped := make(map[string][]controller.ConversationSnapshot)
 	for _, row := range m.ctrl.Conversations() {
@@ -22,16 +24,27 @@ func (m *Model) sidebarView(width, height int) string {
 			name = networkID
 		}
 		lines = append(lines, m.networkHeader(name, networkID))
+		if m.ctrl.IsNetworkCollapsed(networkID) {
+			continue
+		}
 		lines = append(lines, m.sidebarGroup("CHANNELS", grouped[networkID], false)...)
 		lines = append(lines, m.sidebarGroup("DIRECT MESSAGES", grouped[networkID], true)...)
 	}
 	return renderColumn(m.styles.Conversation, width, fitLines(lines, height, false))
 }
 
-// networkHeader names a network and carries its unread total and mention
-// marker.
+// networkHeader names a network and carries its collapse chevron, unread total,
+// and mention marker. The focused header uses the focus style.
 func (m *Model) networkHeader(name, networkID string) string {
-	header := m.styles.NetworkName.Render(name)
+	chevron := "▾"
+	if m.ctrl.IsNetworkCollapsed(networkID) {
+		chevron = "▸"
+	}
+	style := m.styles.NetworkName
+	if m.sidebarNetworkFocusID == networkID {
+		style = m.styles.NetworkNameFocused
+	}
+	header := style.Render(chevron + " " + name)
 	if m.ctrl.MentionFor(networkID) {
 		header += " " + m.styles.MentionRow.Render("@")
 	}
