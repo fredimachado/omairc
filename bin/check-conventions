@@ -402,6 +402,36 @@ def check_go_build_uses_version_pri():
     return problems
 
 
+GO_PLATFORM_IMPORTS = ("net", "os", "crypto/tls")
+GO_IMPORT_SPEC = re.compile(r'^\s*(?:[A-Za-z_.][A-Za-z0-9_.]*\s+)?"([^"]+)"\s*$')
+
+
+def check_go_irc_platform_neutrality():
+    # internal/irc is the portable core: sockets, clocks, the filesystem, and
+    # TLS belong in internal/session. Test files may read testdata with os.
+    problems = []
+    for relative, source in sources("tui/internal/irc/*.go"):
+        if relative.name.endswith("_test.go"):
+            continue
+        in_block = False
+        for number, line in enumerate(source.splitlines(), 1):
+            if re.match(r"^\s*import\s*\(", line):
+                in_block = True
+                continue
+            if in_block and line.strip() == ")":
+                in_block = False
+                continue
+            match = GO_IMPORT_SPEC.match(line)
+            if not match:
+                continue
+            imported = match.group(1)
+            if imported in GO_PLATFORM_IMPORTS or imported.startswith("net/"):
+                problems.append(
+                    f"{relative}:{number}: internal/irc must stay platform "
+                    f"neutral; {imported!r} belongs in internal/session")
+    return problems
+
+
 def check_omairc_version_header():
     problems = []
     for relative, source in sources("src/**/*.cpp", "tests/**/*.cpp"):
@@ -985,6 +1015,7 @@ CHECKS = (
     ("single version source", check_version_source),
     ("Go version source", check_go_version_source),
     ("Go build reads version.pri", check_go_build_uses_version_pri),
+    ("internal/irc platform neutrality", check_go_irc_platform_neutrality),
     ("OMAIRC_VERSION via omaircversion.h", check_omairc_version_header),
     ("CHANTYPES via IrcServerFeatures", check_hardcoded_chantypes),
     ("retired mock sidebar tokens", check_retired_mock_sidebar),

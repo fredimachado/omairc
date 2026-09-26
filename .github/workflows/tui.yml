@@ -1,11 +1,17 @@
 name: TUI
 
+# A TUI-only change is gated by this workflow alone: tui/bin/test runs the
+# shared bin/check-conventions (which carries the TUI checks), so test.yml
+# ignores tui/** and does not rebuild the Qt app for the Go port. Path filters
+# are evaluated over the whole pull-request diff, so a pull request that also
+# changes bin/check-conventions or bin/test still triggers both workflows.
 on:
   workflow_dispatch:
   pull_request:
     paths:
       - 'tui/**'
       - 'bin/version'
+      - 'bin/check-conventions'
       - 'version.pri'
       - '.github/workflows/tui.yml'
   push:
@@ -14,6 +20,7 @@ on:
     paths:
       - 'tui/**'
       - 'bin/version'
+      - 'bin/check-conventions'
       - 'version.pri'
       - '.github/workflows/tui.yml'
 
