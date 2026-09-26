@@ -2,6 +2,7 @@
 
 #include <QCoreApplication>
 #include <QCryptographicHash>
+#include <QDebug>
 #include <QDir>
 #include <QFileInfo>
 #include <QMetaObject>
@@ -77,6 +78,11 @@ bool notificationsAvailable()
 std::wstring toWide(const QString &value)
 {
     return value.toStdWString();
+}
+
+QString hexHresult(HRESULT hr)
+{
+    return QStringLiteral("0x") + QString::number(static_cast<quint32>(hr), 16);
 }
 
 // Windows replaces a toast only when the new one repeats both its Tag and its
@@ -322,9 +328,15 @@ void registerComServer(const QString &exePath)
         QLatin1Char('"') + QDir::toNativeSeparators(exePath) + QLatin1Char('"');
     const std::wstring subKeyWide = subKey.toStdWString();
     const std::wstring commandWide = command.toStdWString();
-    RegSetKeyValueW(HKEY_CURRENT_USER, subKeyWide.c_str(), nullptr, REG_SZ,
-                    commandWide.c_str(),
-                    static_cast<DWORD>((commandWide.size() + 1) * sizeof(wchar_t)));
+    const LSTATUS status =
+        RegSetKeyValueW(HKEY_CURRENT_USER, subKeyWide.c_str(), nullptr, REG_SZ,
+                        commandWide.c_str(),
+                        static_cast<DWORD>((commandWide.size() + 1) * sizeof(wchar_t)));
+    if (status != ERROR_SUCCESS) {
+        qWarning() << "WindowsNotifications: could not register the toast COM "
+                      "server, so a toast click cannot relaunch the window:"
+                   << hexHresult(static_cast<HRESULT>(status));
+    }
 }
 
 void ensureNotificationRegistration()
@@ -344,8 +356,12 @@ void ensureNotificationRegistration()
             return;
     }
     for (const QString &link : installed) {
-        if (SUCCEEDED(installShortcut(link, exePath)))
+        const HRESULT hr = installShortcut(link, exePath);
+        if (SUCCEEDED(hr))
             return;
+        qWarning() << "WindowsNotifications: could not stamp the installed Start "
+                      "Menu shortcut for toasts:"
+                   << link << hexHresult(hr);
     }
 
     const QString programs =
@@ -353,7 +369,13 @@ void ensureNotificationRegistration()
     if (programs.isEmpty())
         return;
     QDir().mkpath(programs);
-    installShortcut(programs + QStringLiteral("/Omairc.lnk"), exePath);
+    const HRESULT hr =
+        installShortcut(programs + QStringLiteral("/Omairc.lnk"), exePath);
+    if (FAILED(hr)) {
+        qWarning() << "WindowsNotifications: could not write the Start Menu "
+                      "shortcut for toasts:"
+                   << hexHresult(hr);
+    }
 }
 
 // The COM activator Windows invokes when the user clicks a toast, whether or
@@ -418,6 +440,19 @@ public:
     }
 };
 
+void logNotifierUnavailable(HRESULT hr)
+{
+    // CreateToastNotifierWithId fails on every toast until the AUMID-bearing
+    // Start Menu shortcut exists, so warn once instead of per notification.
+    static std::atomic<bool> logged{false};
+    if (logged.exchange(true))
+        return;
+    qWarning() << "WindowsNotifications: could not create the toast notifier, "
+                  "so no Windows toasts will show until the Start Menu shortcut "
+                  "carries the AppUserModelID:"
+               << hexHresult(hr);
+}
+
 void showToast(const QString &summary, const QString &body,
                const QString &networkId, const QString &target,
                const QString &msgid)
@@ -430,9 +465,13 @@ void showToast(const QString &summary, const QString &body,
         return;
 
     ComPtr<IToastNotifier> notifier;
-    if (FAILED(manager->CreateToastNotifierWithId(HStringReference(kAumid).Get(),
-                                                  &notifier)))
+    const HRESULT notifierHr =
+        manager->CreateToastNotifierWithId(HStringReference(kAumid).Get(),
+                                           &notifier);
+    if (FAILED(notifierHr)) {
+        logNotifierUnavailable(notifierHr);
         return;
+    }
 
     ComPtr<IXmlDocument> document;
     if (FAILED(Windows::Foundation::ActivateInstance(
@@ -446,8 +485,12 @@ void showToast(const QString &summary, const QString &body,
     const std::wstring xml =
         buildToastXml(summary, body, buildLaunchArgs(networkId, target, msgid))
             .toStdWString();
-    if (FAILED(documentIo->LoadXml(HStringReference(xml.c_str()).Get())))
+    const HRESULT loadHr = documentIo->LoadXml(HStringReference(xml.c_str()).Get());
+    if (FAILED(loadHr)) {
+        qWarning() << "WindowsNotifications: the shell rejected the toast XML:"
+                   << hexHresult(loadHr);
         return;
+    }
 
     ComPtr<IToastNotificationFactory> factory;
     if (FAILED(Windows::Foundation::GetActivationFactory(
@@ -469,7 +512,10 @@ void showToast(const QString &summary, const QString &body,
         notification2->put_Tag(HStringReference(key.c_str()).Get());
         notification2->put_Group(HStringReference(key.c_str()).Get());
     }
-    notifier->Show(notification.Get());
+    const HRESULT showHr = notifier->Show(notification.Get());
+    if (FAILED(showHr))
+        qWarning() << "WindowsNotifications: the shell refused to show a toast:"
+                   << hexHresult(showHr);
 }
 
 } // namespace
