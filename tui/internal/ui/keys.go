@@ -54,6 +54,15 @@ func (m *Model) dispatchChord(key string, msg tea.KeyPressMsg) (bool, tea.Cmd) {
 	if m.modalBlocksChord(key) {
 		return true, nil
 	}
+	// The slash-completion session owns Tab/Up/Down/Escape/Enter while it is
+	// open (and the composer, not the member panel or the sidebar, has focus).
+	// It runs before the chord table so Escape dismisses the list instead of
+	// the selection, and before nick-complete and history.
+	if m.slash.open() && !m.memberFocus && m.sidebarNetworkFocusID == "" {
+		if handled, cmd := m.routeSlashKey(key); handled {
+			return true, cmd
+		}
+	}
 	if fn, ok := chordTable[key]; ok {
 		cmd := fn(m)
 		m.refocusComposer()
@@ -74,6 +83,7 @@ func (m *Model) dispatchChord(key string, msg tea.KeyPressMsg) (bool, tea.Cmd) {
 		return true, nil
 	case "tab":
 		m.completeNick()
+		m.syncSlash()
 		return true, nil
 	case "up":
 		if m.memberFocus {
@@ -81,6 +91,7 @@ func (m *Model) dispatchChord(key string, msg tea.KeyPressMsg) (bool, tea.Cmd) {
 			return true, nil
 		}
 		m.recallHistory(-1)
+		m.syncSlash()
 		return true, nil
 	case "down":
 		if m.memberFocus {
@@ -88,6 +99,7 @@ func (m *Model) dispatchChord(key string, msg tea.KeyPressMsg) (bool, tea.Cmd) {
 			return true, nil
 		}
 		m.recallHistory(1)
+		m.syncSlash()
 		return true, nil
 	case "home":
 		if m.memberFocus {
