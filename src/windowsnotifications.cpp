@@ -341,6 +341,9 @@ struct WindowsNotificationsImpl {
     HANDLE ready = nullptr;
     DWORD cookie = 0;
     bool comServerAddRef = false;
+    // Set by the notification thread before it signals ready, so the
+    // constructor only enables delivery once the COM activator is registered.
+    bool registered = false;
     std::mutex mutex;
     std::vector<Toast> queue;
 };
@@ -365,6 +368,7 @@ void runNotificationsThread(WindowsNotificationsImpl *impl)
                                                 REGCLS_MULTIPLEUSE, &impl->cookie))) {
                 CoAddRefServerProcess();
                 impl->comServerAddRef = true;
+                impl->registered = true;
             }
         }
     }
@@ -402,11 +406,17 @@ WindowsNotifications::WindowsNotifications(QObject *parent) : QObject(parent)
         return;
     m_impl = new WindowsNotificationsImpl;
     m_impl->ready = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+    // Without the event there is no way to wait for the thread, so a failed
+    // registration could be read as success. Do without toasts instead.
+    if (!m_impl->ready) {
+        delete m_impl;
+        m_impl = nullptr;
+        return;
+    }
     g_notifications.store(this);
     m_impl->thread = std::thread(runNotificationsThread, m_impl);
-    if (m_impl->ready)
-        WaitForSingleObject(m_impl->ready, 10000);
-    m_enabled = true;
+    WaitForSingleObject(m_impl->ready, 10000);
+    m_enabled = m_impl->registered;
 }
 
 WindowsNotifications::~WindowsNotifications()
