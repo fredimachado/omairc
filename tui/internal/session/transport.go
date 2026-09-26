@@ -7,38 +7,38 @@ package session
 type ConnectionState int
 
 const (
-	// StateIdle is the initial, never-connected state.
-	StateIdle ConnectionState = iota
-	// StateConnecting covers the TCP connect and, for TLS, the handshake.
-	StateConnecting
-	// StateConnected is an open plaintext socket.
-	StateConnected
-	// StateEncrypted is an open TLS socket.
-	StateEncrypted
-	// StateClosing is a shutdown in progress.
-	StateClosing
-	// StateDisconnected is a cleanly ended connection.
-	StateDisconnected
-	// StateFailed is an error end; Sink.Error carries the reason.
-	StateFailed
+	// ConnectionIdle is the initial, never-connected state.
+	ConnectionIdle ConnectionState = iota
+	// ConnectionConnecting covers the TCP connect and, for TLS, the handshake.
+	ConnectionConnecting
+	// ConnectionConnected is an open plaintext socket.
+	ConnectionConnected
+	// ConnectionEncrypted is an open TLS socket.
+	ConnectionEncrypted
+	// ConnectionClosing is a shutdown in progress.
+	ConnectionClosing
+	// ConnectionDisconnected is a cleanly ended connection.
+	ConnectionDisconnected
+	// ConnectionFailed is an error end; Sink.Error carries the reason.
+	ConnectionFailed
 )
 
 // String renders the C++ enumerator name for logs and tests.
 func (s ConnectionState) String() string {
 	switch s {
-	case StateIdle:
+	case ConnectionIdle:
 		return "Idle"
-	case StateConnecting:
+	case ConnectionConnecting:
 		return "Connecting"
-	case StateConnected:
+	case ConnectionConnected:
 		return "Connected"
-	case StateEncrypted:
+	case ConnectionEncrypted:
 		return "Encrypted"
-	case StateClosing:
+	case ConnectionClosing:
 		return "Closing"
-	case StateDisconnected:
+	case ConnectionDisconnected:
 		return "Disconnected"
-	case StateFailed:
+	case ConnectionFailed:
 		return "Failed"
 	}
 	return "Unknown"

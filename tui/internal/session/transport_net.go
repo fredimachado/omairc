@@ -27,7 +27,7 @@ import (
 //     are additionally flagged by TLSFailed so the session can distinguish a
 //     certificate/handshake problem from a socket problem.
 //   - A read end (EOF or a locally closed socket) maps to Sink.Disconnected; a
-//     more specific read failure maps to StateFailed and Sink.Error.
+//     more specific read failure maps to ConnectionFailed and Sink.Error.
 //
 // The zero value is usable; NewNetTransport is the intended constructor.
 type NetTransport struct {
@@ -86,15 +86,15 @@ func (t *NetTransport) TLSFailed() bool {
 // in flight, matching QtIrcTransport::connectToHost.
 func (t *NetTransport) Connect(host string, port uint16, tlsEnabled bool) {
 	t.mu.Lock()
-	if t.state == StateConnecting || t.state == StateConnected ||
-		t.state == StateEncrypted || t.state == StateClosing {
+	if t.state == ConnectionConnecting || t.state == ConnectionConnected ||
+		t.state == ConnectionEncrypted || t.state == ConnectionClosing {
 		t.mu.Unlock()
 		return
 	}
 	t.pending = nil
 	t.tlsOn = tlsEnabled
 	t.tlsFailed = false
-	t.state = StateConnecting
+	t.state = ConnectionConnecting
 	t.epoch++
 	epoch := t.epoch
 	ctx, cancel := context.WithCancel(context.Background())
@@ -116,7 +116,7 @@ func (t *NetTransport) Write(frame []byte) {
 	}
 
 	t.mu.Lock()
-	if t.state == StateConnected || t.state == StateEncrypted {
+	if t.state == ConnectionConnected || t.state == ConnectionEncrypted {
 		conn := t.conn
 		epoch := t.epoch
 		t.mu.Unlock()
@@ -136,11 +136,11 @@ func (t *NetTransport) Write(frame []byte) {
 // Disconnected exactly once. Repeated calls are safe.
 func (t *NetTransport) Shutdown() {
 	t.mu.Lock()
-	if t.isFinishedLocked() || t.state == StateClosing {
+	if t.isFinishedLocked() || t.state == ConnectionClosing {
 		t.mu.Unlock()
 		return
 	}
-	t.state = StateClosing
+	t.state = ConnectionClosing
 	t.pending = nil
 	t.epoch++
 	cancel := t.cancel
@@ -157,8 +157,8 @@ func (t *NetTransport) Shutdown() {
 	}
 
 	t.mu.Lock()
-	if t.state == StateClosing {
-		t.state = StateDisconnected
+	if t.state == ConnectionClosing {
+		t.state = ConnectionDisconnected
 		sink := t.sink
 		t.mu.Unlock()
 		if sink != nil {
@@ -234,12 +234,12 @@ func tlsFailureMessage(err error) string {
 // attempt. Pending writes flush after the pipe is genuinely open.
 func (t *NetTransport) attach(epoch uint64, conn net.Conn, tlsEnabled bool) bool {
 	t.mu.Lock()
-	if t.epoch != epoch || t.state != StateConnecting {
+	if t.epoch != epoch || t.state != ConnectionConnecting {
 		t.mu.Unlock()
 		return false
 	}
 	t.conn = conn
-	t.state = StateConnected
+	t.state = ConnectionConnected
 	sink := t.sink
 	t.mu.Unlock()
 
@@ -253,11 +253,11 @@ func (t *NetTransport) attach(epoch uint64, conn net.Conn, tlsEnabled bool) bool
 	}
 
 	t.mu.Lock()
-	if t.epoch != epoch || t.state != StateConnected {
+	if t.epoch != epoch || t.state != ConnectionConnected {
 		t.mu.Unlock()
 		return false
 	}
-	t.state = StateEncrypted
+	t.state = ConnectionEncrypted
 	sink = t.sink
 	t.mu.Unlock()
 
@@ -316,8 +316,8 @@ func (t *NetTransport) deliver(epoch uint64, bytes []byte) {
 
 func (t *NetTransport) handleReadError(epoch uint64, err error) {
 	t.mu.Lock()
-	if t.epoch != epoch || t.state == StateClosing || t.state == StateFailed ||
-		t.state == StateDisconnected || t.state == StateIdle {
+	if t.epoch != epoch || t.state == ConnectionClosing || t.state == ConnectionFailed ||
+		t.state == ConnectionDisconnected || t.state == ConnectionIdle {
 		t.mu.Unlock()
 		return
 	}
@@ -325,7 +325,7 @@ func (t *NetTransport) handleReadError(epoch uint64, err error) {
 	t.pending = nil
 
 	if errors.Is(err, io.EOF) || errors.Is(err, net.ErrClosed) {
-		t.state = StateDisconnected
+		t.state = ConnectionDisconnected
 		sink := t.sink
 		t.mu.Unlock()
 		if sink != nil {
@@ -334,7 +334,7 @@ func (t *NetTransport) handleReadError(epoch uint64, err error) {
 		return
 	}
 
-	t.state = StateFailed
+	t.state = ConnectionFailed
 	sink := t.sink
 	t.mu.Unlock()
 	if sink != nil {
@@ -346,11 +346,11 @@ func (t *NetTransport) handleReadError(epoch uint64, err error) {
 // raises TLSFailed. It mirrors QtIrcTransport::fail.
 func (t *NetTransport) fail(epoch uint64, message string, tlsFailure bool) {
 	t.mu.Lock()
-	if t.epoch != epoch || t.state == StateFailed {
+	if t.epoch != epoch || t.state == ConnectionFailed {
 		t.mu.Unlock()
 		return
 	}
-	t.state = StateFailed
+	t.state = ConnectionFailed
 	if tlsFailure {
 		t.tlsFailed = true
 	}
@@ -374,9 +374,9 @@ func (t *NetTransport) fail(epoch uint64, message string, tlsFailure bool) {
 }
 
 func (t *NetTransport) isOpenLocked() bool {
-	return t.state == StateConnected || t.state == StateEncrypted
+	return t.state == ConnectionConnected || t.state == ConnectionEncrypted
 }
 
 func (t *NetTransport) isFinishedLocked() bool {
-	return t.state == StateIdle || t.state == StateDisconnected || t.state == StateFailed
+	return t.state == ConnectionIdle || t.state == ConnectionDisconnected || t.state == ConnectionFailed
 }

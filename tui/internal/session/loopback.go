@@ -38,15 +38,15 @@ func (t *LoopbackTransport) SetSink(sink Sink) {
 func (t *LoopbackTransport) Connect(host string, port uint16, tlsEnabled bool) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	if t.state == StateConnecting || t.state == StateConnected ||
-		t.state == StateEncrypted || t.state == StateClosing {
+	if t.state == ConnectionConnecting || t.state == ConnectionConnected ||
+		t.state == ConnectionEncrypted || t.state == ConnectionClosing {
 		return
 	}
 	t.host = host
 	t.port = port
 	t.tlsOn = tlsEnabled
 	t.lastError = ""
-	t.state = StateConnecting
+	t.state = ConnectionConnecting
 }
 
 // Write records the frame. It does not require an open connection, matching
@@ -64,14 +64,14 @@ func (t *LoopbackTransport) Write(frame []byte) {
 // Shutdown ends the connection synchronously and emits Disconnected once.
 func (t *LoopbackTransport) Shutdown() {
 	t.mu.Lock()
-	if t.isFinishedLocked() || t.state == StateClosing {
+	if t.isFinishedLocked() || t.state == ConnectionClosing {
 		t.mu.Unlock()
 		return
 	}
 	// QtIrcLoopbackTransport passes through Closing here, but it sets
 	// Disconnected in the same synchronous step before emitting, so no observer
 	// can see Closing.
-	t.state = StateDisconnected
+	t.state = ConnectionDisconnected
 	sink := t.sink
 	t.mu.Unlock()
 	if sink != nil {
@@ -90,11 +90,11 @@ func (t *LoopbackTransport) State() ConnectionState {
 // was requested, Encrypted immediately after.
 func (t *LoopbackTransport) CompleteConnect() {
 	t.mu.Lock()
-	if t.state != StateConnecting {
+	if t.state != ConnectionConnecting {
 		t.mu.Unlock()
 		return
 	}
-	t.state = StateConnected
+	t.state = ConnectionConnected
 	tlsOn := t.tlsOn
 	sink := t.sink
 	t.mu.Unlock()
@@ -107,7 +107,7 @@ func (t *LoopbackTransport) CompleteConnect() {
 	}
 
 	t.mu.Lock()
-	t.state = StateEncrypted
+	t.state = ConnectionEncrypted
 	sink = t.sink
 	t.mu.Unlock()
 	if sink != nil {
@@ -118,7 +118,7 @@ func (t *LoopbackTransport) CompleteConnect() {
 // FailConnect fails a connection that is still connecting.
 func (t *LoopbackTransport) FailConnect(message string) {
 	t.mu.Lock()
-	if t.state != StateConnecting {
+	if t.state != ConnectionConnecting {
 		t.mu.Unlock()
 		return
 	}
@@ -133,7 +133,7 @@ func (t *LoopbackTransport) FailConnect(message string) {
 // the plaintext socket opened but before encryption.
 func (t *LoopbackTransport) FailTLS(message string) {
 	t.mu.Lock()
-	if t.state != StateConnecting && t.state != StateConnected {
+	if t.state != ConnectionConnecting && t.state != ConnectionConnected {
 		t.mu.Unlock()
 		return
 	}
@@ -147,7 +147,7 @@ func (t *LoopbackTransport) FailTLS(message string) {
 // TimeoutConnect fails a pending connection with the timeout message.
 func (t *LoopbackTransport) TimeoutConnect() {
 	t.mu.Lock()
-	if t.state != StateConnecting {
+	if t.state != ConnectionConnecting {
 		t.mu.Unlock()
 		return
 	}
@@ -183,7 +183,7 @@ func (t *LoopbackTransport) RemoteClose() {
 		t.mu.Unlock()
 		return
 	}
-	t.state = StateDisconnected
+	t.state = ConnectionDisconnected
 	sink := t.sink
 	t.mu.Unlock()
 	if sink != nil {
@@ -233,18 +233,18 @@ func (t *LoopbackTransport) TLSRequested() bool {
 // failLocked assumes t.mu is held. It records the failure unless the transport
 // already failed, and returns the sink to notify.
 func (t *LoopbackTransport) failLocked(message string) (Sink, bool) {
-	if t.state == StateFailed {
+	if t.state == ConnectionFailed {
 		return nil, false
 	}
 	t.lastError = message
-	t.state = StateFailed
+	t.state = ConnectionFailed
 	return t.sink, true
 }
 
 func (t *LoopbackTransport) isOpenLocked() bool {
-	return t.state == StateConnected || t.state == StateEncrypted
+	return t.state == ConnectionConnected || t.state == ConnectionEncrypted
 }
 
 func (t *LoopbackTransport) isFinishedLocked() bool {
-	return t.state == StateIdle || t.state == StateDisconnected || t.state == StateFailed
+	return t.state == ConnectionIdle || t.state == ConnectionDisconnected || t.state == ConnectionFailed
 }
