@@ -88,6 +88,52 @@ func TestTransportRecordsWrites(t *testing.T) {
 	}
 }
 
+// TestTransportOnFrameWrittenHook covers the additive frameWritten hook the
+// demo server uses to answer outbound frames: it fires with the recorded copy
+// and may re-enter InjectBytes without deadlocking.
+func TestTransportOnFrameWrittenHook(t *testing.T) {
+	transport := NewLoopbackTransport()
+	sink := &recordingSink{}
+	transport.SetSink(sink)
+	transport.Connect("irc.example", 6697, true)
+	transport.CompleteConnect()
+
+	var seen [][]byte
+	transport.OnFrameWritten = func(frame []byte) {
+		seen = append(seen, cloneBytes(frame))
+		if bytes.Equal(frame, []byte("PING :x\r\n")) {
+			transport.InjectBytes([]byte(":server PONG irc.example :x\r\n"))
+		}
+	}
+
+	transport.Write([]byte("PING :x\r\n"))
+	transport.Write([]byte("LIST\r\n"))
+
+	if len(seen) != 2 {
+		t.Fatalf("hook fired %d times, want 2", len(seen))
+	}
+	if !bytes.Equal(seen[0], []byte("PING :x\r\n")) {
+		t.Fatalf("hook frame 0 = %q, want %q", seen[0], "PING :x\r\n")
+	}
+	if !bytes.Equal(seen[1], []byte("LIST\r\n")) {
+		t.Fatalf("hook frame 1 = %q, want %q", seen[1], "LIST\r\n")
+	}
+	if len(sink.received) != 1 {
+		t.Fatalf("received = %d, want 1 (hook re-entered InjectBytes)", len(sink.received))
+	}
+	if !bytes.Equal(sink.received[0], []byte(":server PONG irc.example :x\r\n")) {
+		t.Fatalf("received[0] = %q, want the injected PONG", sink.received[0])
+	}
+
+	// A nil hook stays a no-op, and the frame is still recorded.
+	transport.OnFrameWritten = nil
+	transport.Write([]byte("NICK omairc\r\n"))
+	frames := transport.WrittenFrames()
+	if len(frames) != 3 || !bytes.Equal(frames[2], []byte("NICK omairc\r\n")) {
+		t.Fatalf("WrittenFrames = %q, want three frames ending in NICK", frames)
+	}
+}
+
 // TestTransportInjectsInboundBytes ports
 // TransportTest::injectsInboundBytes.
 func TestTransportInjectsInboundBytes(t *testing.T) {

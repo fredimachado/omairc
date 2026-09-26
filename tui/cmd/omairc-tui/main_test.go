@@ -41,16 +41,24 @@ func TestHelpPrintsUsageWithoutVersionLine(t *testing.T) {
 	}
 }
 
-func TestDemoServerFailsClosed(t *testing.T) {
+func TestDemoServerSeeds(t *testing.T) {
 	code, stdout, stderr := runCapture(t, "--demo-server")
-	if code == 0 {
-		t.Fatalf("--demo-server must fail closed until Phase 3")
+	if code != 0 {
+		t.Fatalf("--demo-server exit = %d, want 0 (stderr: %q)", code, stderr)
 	}
-	if stdout != "" {
-		t.Fatalf("--demo-server stdout = %q, want empty", stdout)
+	if stderr != "" {
+		t.Fatalf("--demo-server stderr = %q, want empty", stderr)
 	}
-	if !strings.Contains(stderr, "demo-server") {
-		t.Fatalf("--demo-server stderr must name the flag, got %q", stderr)
+	if stdout == "" {
+		t.Fatal("--demo-server stdout must not be empty")
+	}
+	if strings.HasPrefix(stdout, "omairc-tui ") {
+		t.Fatalf("--demo-server must not print the version line, got %q", stdout)
+	}
+	for _, token := range []string{"omarchy", "oftc"} {
+		if !strings.Contains(stdout, token) {
+			t.Fatalf("--demo-server stdout must mention %q, got %q", token, stdout)
+		}
 	}
 }
 
