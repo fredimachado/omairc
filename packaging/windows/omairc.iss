@@ -1,5 +1,6 @@
-; Inno Setup 6 script for the Windows tree produced by bin\build.bat.
+; Inno Setup 6.1+ script for the Windows tree produced by bin\build.bat.
 ; Compile through bin\package-windows.bat so MyAppVersion comes from version.pri.
+; The 6.1 floor is for the [Icons] AppUserModelToastActivatorCLSID parameter.
 ;
 ; Per-user is the default (no UAC). {autopf} is %LOCALAPPDATA%\Programs\Omairc
 ; then, or Program Files when the user picks "all users".
