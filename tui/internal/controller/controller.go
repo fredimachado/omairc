@@ -819,6 +819,28 @@ func (c *Controller) Start(networkID string) bool {
 	return started
 }
 
+// Disconnect stops the live session for networkID while keeping it registered,
+// so the model can start it again with Apply. It mirrors
+// IrcConnection::disconnectSelected -> IrcSession::quit: a missing session or an
+// already-idle one reports false. Returns true when a session was stopped.
+func (c *Controller) Disconnect(networkID string) bool {
+	s := c.manager.Find(networkID)
+	if s == nil {
+		return false
+	}
+	if !s.Quit("") {
+		return false
+	}
+	c.refreshConnectionStatus()
+	return true
+}
+
+// SessionIsLive reports whether networkID is registered and its session is not
+// Idle or Failed.
+func (c *Controller) SessionIsLive(networkID string) bool {
+	return c.manager.IsLive(networkID)
+}
+
 // AddSession creates and registers a session for config, wires this controller
 // as its handler, and records the configured nick. A nil clock falls back to
 // the controller's clock.

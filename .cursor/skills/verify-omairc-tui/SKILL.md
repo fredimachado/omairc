@@ -1,6 +1,6 @@
 ---
 name: verify-omairc-tui
-description: Drive the Omairc TUI (omairc-tui) in a PTY with control-omairc-tui. Use when proving the seeded demo shell, the window title, the sidebar, the transcript, or the composer in the Go terminal client.
+description: Drive the Omairc TUI (omairc-tui) in a PTY with control-omairc-tui. Use when proving the seeded demo shell, the first-run Connect sheet, the window title, conversation switching (walk/unread/jump), the Status console, the sidebar, the transcript, or the composer in the Go terminal client.
 metadata:
   internal: true
 ---
@@ -27,10 +27,10 @@ that owns the PTY; every later verb talks to that daemon.
 .cursor/skills/verify-omairc-tui/control-omairc-tui launch --demo-server --size 118x30
 ```
 
-In phase 4 the only launch that reaches a shell is `launch --demo-server`: a
-plain `launch` (no `--demo-server`) runs a no-argument `omairc-tui`, which
-exits non-zero because the Connect sheet (and the live IRC path) does not land
-until phase 5. The PTY defaults to `118x30` (columns x rows) to match the Qt
+A plain `launch` (no `--demo-server`) runs a no-argument `omairc-tui`, which
+starts on the Connect sheet over an empty controller and is titled
+`irc.libera.chat Status`. `launch --demo-server` skips Connect and shows the
+seeded sidebar. The PTY defaults to `118x30` (columns x rows) to match the Qt
 window's character budget. `--size WxH` overrides it.
 
 Run state lives in `$OMAIRC_TUI_STATE` when set, otherwise
@@ -76,6 +76,8 @@ Contract:
 - `{conversation} - Omairc`, or `{conversation} · {displayName} - Omairc` when
   two conversations share a name across networks.
 - Status is `{displayName} Status`, or `Status` when no connection is bound.
+  On a plain `launch` (first-run Connect, no live session) it falls back to
+  the sheet's draft display name, so it is `irc.libera.chat Status`.
 - On the seeded demo, both networks resolve to host `irc.example`, so their
   display names are `irc.example · fred` and `irc.example · oak`. `#omarchy`
   exists on both networks, so its title carries the display name; `#ricing`
@@ -99,32 +101,39 @@ verbs directly when a feature has no fence yet:
 .cursor/skills/verify-omairc-tui/control-omairc-tui type --text "Hello from verify"
 .cursor/skills/verify-omairc-tui/control-omairc-tui key --key return
 .cursor/skills/verify-omairc-tui/control-omairc-tui send --text "Hello from verify"
-# walk and unread are accepted but NO-OPS in the phase-4 shell (phase 6 chords):
+# walk, unread, jump, and status are real in the phase-5 shell:
 .cursor/skills/verify-omairc-tui/control-omairc-tui walk --down --times 2
 .cursor/skills/verify-omairc-tui/control-omairc-tui unread
+.cursor/skills/verify-omairc-tui/control-omairc-tui jump --query "#desktop"
+.cursor/skills/verify-omairc-tui/control-omairc-tui status
 ```
 
 Verb table:
 
 | Verb | Meaning |
 |---|---|
-| `launch [--demo-server] [--size 118x30]` | Start the detached PTY daemon and the shell. Phase 4 needs `--demo-server` to seed a world; a plain `launch` exits the child non-zero. `--size` is columns x rows; default `118x30`. |
+| `launch [--demo-server] [--size 118x30]` | Start the detached PTY daemon and the shell. A plain `launch` starts on the Connect sheet (`irc.libera.chat Status`); `--demo-server` seeds the two-network world. `--size` is columns x rows; default `118x30`. |
 | `doctor` | Print `ok omairc-tui` plus `binary=`, `pid=`, `title=`, `size=`, `demo=`. |
 | `title` | Print the current OSC 2 title. |
 | `text` | Print the reconstructed grid text (the rows actually on screen). |
 | `wait-title --exact TEXT` | Poll until the title equals `TEXT`; fail on a miss. |
-| `key --key NAME` | Write one key chord (for example `ctrl+q`, `ctrl+c`, `return`, `escape`). |
+| `key --key NAME` | Write one key chord (for example `ctrl+q`, `ctrl+c`, `ctrl+k`, `ctrl+``, `return`, `Escape`, `alt+Down`). |
 | `type --text TEXT` | Type literal text into the focused input. |
-| `send --text TEXT` | Write `TEXT` into the focused composer, then press `Enter`. The composer already holds focus in phase 4. |
-| `walk --down` / `walk --up [--times N]` | Accepted, but a NO-OP in the phase-4 shell: it writes `Alt+Down` / `Alt+Up` `--times N` (default 1), and the chord map lands in phase 6. |
-| `unread` | Accepted, but a NO-OP in the phase-4 shell: it writes `Alt+A`, and the chord map lands in phase 6. |
+| `send --text TEXT` | Write `TEXT` into the focused composer, then press `Enter`. |
+| `walk --down` / `walk --up [--times N]` | Write `Alt+Down` / `Alt+Up` `--times N` (default 1) to walk conversations in sidebar order, wrapping. Status is not in the walk. |
+| `unread` | Write `Alt+A` for the next unread conversation (mentions first, muted skipped). |
+| `jump --query TEXT` | Write `Ctrl+K`, type `TEXT` into the filter, then press `Enter` to open the first match (conversation or Status). |
+| `status` | Write `Ctrl+`` to toggle the Status console. |
+| `connect` | Write `Ctrl+,` to open the Connect sheet (a no-op with no connection model, as in `--demo-server`). |
+| `compare --before PATH --after PATH` | Assert two PNGs differ. The fence's `test-artifacts/verify/` paths are remapped to `test-artifacts/verify-tui/`. |
 | `screenshot [--feature NAME] [--name NAME]` | Render the current grid to a PNG. Default feature `shell`, default name `screenshot`. |
 | `run <feature> [--dry-run]` | Replay the feature's `desktop-recipe` fence. `--dry-run` prints it and exits. |
 | `cleanup` | Kill the daemon and the PTY; removes the state file. Keeps evidence. |
 | `--help` | Print the verb list. |
 
 Key names are case-sensitive Bubble Tea key names, not `xdotool` keysyms.
-Accepted names are `ctrl+q`, `ctrl+c`, `ctrl+l`, `ctrl+slash`, `enter` /
+Accepted names are `ctrl+q`, `ctrl+c`, `ctrl+l`, `ctrl+slash`, `ctrl+k`,
+`ctrl+``, `ctrl+,`, `ctrl+enter`, `ctrl+tab`, `ctrl+shift+delete`, `enter` /
 `Return` / `return`, `tab`, `space`, `backspace`, `Escape` / `escape`, `Up` /
 `Down` / `Left` / `Right` / `up` / `down` / `left` / `right`, `Page_Up` /
 `Page_Down` / `page_up` / `page_down`, `Home` / `End` / `home` / `end`,
@@ -145,10 +154,10 @@ the verb with `unknown key "NAME"` instead of sending nothing.
 
 `run <feature> --dry-run` prints the fence and exits without launching. A
 missing file, a missing fence, or an empty fence exits non-zero. A recipe line
-whose verb the TUI does not support yet (for example `jump`, `composer`,
-`compare`, or any `click-*`) FAILS the run rather than silently skipping, so a
-fence that moves on to later-phase chords is expected to fail until that phase
-lands. Do not soften a fence to make it pass.
+whose verb the TUI does not support yet (for example `composer`, `nick-jump`,
+or any `click-*`) FAILS the run rather than silently skipping, so a fence that
+moves on to later-phase chords is expected to fail until that phase lands. Do
+not soften a fence to make it pass.
 
 ## Evidence
 
@@ -160,17 +169,23 @@ state: a final screenshot alone is not proof.
 
 ## Limits
 
-Phase 4 is the shell only. It does render all three columns: the sidebar
-(network sections with presence marks and typing ellipses), the transcript,
-and, for channels, a member column with status and away text. Do not claim
-what has not landed:
+Phase 5 lands the Connect sheet and core conversation navigation. The shell
+renders all three columns: the sidebar (network sections with presence marks
+and typing ellipses), the transcript, and, for channels, a member column with
+status and away text. Do not claim what has not landed:
 
-- No Connect sheet. It lands in phase 5; a plain `launch` (no `--demo-server`)
-  exits non-zero rather than showing a shell.
+- The Connect sheet is in-memory only: a plain `launch` shows first-run
+  Connect, but there is no profile store, so nothing survives a restart
+  (phase 11). There is no credential/keychain store and no Disconnect proof in
+  a fence yet.
+- `Ctrl+K` jump, `Alt+Down`/`Alt+Up` walk, `Alt+A` unread, `Ctrl+`` Status,
+  `Ctrl+,` Connect (with a bound connection), per-conversation drafts, and
+  send/receive are real. The rest of `keyboard.md` (network collapse/reorder,
+  nick jump, inbox, find, copy, paging) lands in phase 6.
 - No slash commands. They land in phase 7.
-- No full keyboard map. It lands in phase 6; phase 4 keeps only `Ctrl+Q` /
-  `Ctrl+C` quit and `Enter`-to-send.
-- No avatars, links, notifications, preferences, or a Connect sheet yet.
+- No members/DM creation, typing, presence-driven navigation, notifications,
+  avatars, links, or preferences beyond the Connect sheet's in-memory toggles.
+  They land in later phases.
 
 There is no Xvfb, `xdotool`, or X display involved, and never attach to a Qt
 instance. If a mapped feature needs a later phase, report the unmet

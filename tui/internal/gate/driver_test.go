@@ -2,6 +2,9 @@ package gate
 
 import (
 	"encoding/json"
+	"image"
+	"image/color"
+	"image/png"
 	"net"
 	"os"
 	"os/exec"
@@ -104,7 +107,7 @@ func TestSplitRecipeLineUnbalancedQuotes(t *testing.T) {
 }
 
 func TestRejectRecipeVerb(t *testing.T) {
-	for _, verb := range []string{"click-conversation", "click-member", "click", "qml-suite", "doctor-qml", "compare"} {
+	for _, verb := range []string{"click-conversation", "click-member", "click", "qml-suite", "doctor-qml"} {
 		if verb == "click" {
 			// `click` alone is not a "click-" verb; it falls through to the
 			// generic unsupported-verb error during replay.
@@ -117,7 +120,8 @@ func TestRejectRecipeVerb(t *testing.T) {
 			t.Fatalf("rejectRecipeVerb(%q) should error", verb)
 		}
 	}
-	for _, verb := range []string{"launch", "wait-title", "walk", "unread", "screenshot", "send"} {
+	for _, verb := range []string{"launch", "wait-title", "walk", "unread", "screenshot", "send",
+		"jump", "status", "connect", "compare"} {
 		if err := rejectRecipeVerb(verb); err != nil {
 			t.Fatalf("rejectRecipeVerb(%q) = %v, want nil", verb, err)
 		}
@@ -133,6 +137,75 @@ func TestParseSize(t *testing.T) {
 		if _, _, err := parseSize(bad); err == nil {
 			t.Fatalf("parseSize(%q) should error", bad)
 		}
+	}
+}
+
+func writeTestPNG(t *testing.T, path string, img image.Image) {
+	t.Helper()
+	f, err := os.Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := png.Encode(f, img); err != nil {
+		_ = f.Close()
+		t.Fatal(err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestRemapVerifyPath(t *testing.T) {
+	cases := map[string]string{
+		"test-artifacts/verify/keyboard/before.png":     "test-artifacts/verify-tui/keyboard/before.png",
+		"test-artifacts/verify-tui/keyboard/before.png": "test-artifacts/verify-tui/keyboard/before.png",
+		"other/before.png":                              "other/before.png",
+	}
+	for input, want := range cases {
+		if got := remapVerifyPath(input); got != want {
+			t.Fatalf("remapVerifyPath(%q) = %q, want %q", input, got, want)
+		}
+	}
+}
+
+func TestCompareImages(t *testing.T) {
+	dir := t.TempDir()
+	red := image.NewRGBA(image.Rect(0, 0, 2, 2))
+	red.Set(0, 0, color.RGBA{R: 0xff, A: 0xff})
+	blue := image.NewRGBA(image.Rect(0, 0, 2, 2))
+	blue.Set(0, 0, color.RGBA{B: 0xff, A: 0xff})
+	wide := image.NewRGBA(image.Rect(0, 0, 3, 2))
+
+	redPath := filepath.Join(dir, "red.png")
+	redCopyPath := filepath.Join(dir, "red-copy.png")
+	bluePath := filepath.Join(dir, "blue.png")
+	widePath := filepath.Join(dir, "wide.png")
+	writeTestPNG(t, redPath, red)
+	writeTestPNG(t, redCopyPath, red)
+	writeTestPNG(t, bluePath, blue)
+	writeTestPNG(t, widePath, wide)
+
+	var out strings.Builder
+	if err := cmdCompare([]string{"--before", redPath, "--after", redCopyPath}, &out); err == nil ||
+		!strings.Contains(err.Error(), "images are identical") {
+		t.Fatalf("identical compare error = %v", err)
+	}
+
+	out.Reset()
+	if err := cmdCompare([]string{"--before", redPath, "--after", bluePath}, &out); err != nil {
+		t.Fatalf("differing compare error = %v", err)
+	}
+	if got := out.String(); !strings.Contains(got, "images differ (2x2)") {
+		t.Fatalf("differing compare output = %q", got)
+	}
+
+	if err := cmdCompare([]string{"--before", redPath, "--after", widePath}, &out); err == nil ||
+		!strings.Contains(err.Error(), "image sizes differ") {
+		t.Fatalf("size-mismatch compare error = %v", err)
+	}
+
+	if err := cmdCompare([]string{"--before", filepath.Join(dir, "missing.png"), "--after", redPath}, &out); err == nil {
+		t.Fatalf("missing-file compare should error")
 	}
 }
 
@@ -312,7 +385,7 @@ func TestRunFailureKeepsPreexistingDaemon(t *testing.T) {
 	}
 	md := "## Driving it with control-omairc\n\n```desktop-recipe\n" +
 		"launch --demo-server\n" +
-		"status\n" +
+		"bogus-verb\n" +
 		"```\n"
 	if err := os.WriteFile(filepath.Join(features, "demo.md"), []byte(md), 0o644); err != nil {
 		t.Fatal(err)
@@ -324,9 +397,9 @@ func TestRunFailureKeepsPreexistingDaemon(t *testing.T) {
 
 	var out, errBuf strings.Builder
 	if code := Run([]string{"run", "demo"}, &out, &errBuf); code == 0 {
-		t.Fatalf("run should fail on the unsupported status verb")
+		t.Fatalf("run should fail on the unsupported verb")
 	}
-	if !strings.Contains(errBuf.String(), "status") {
+	if !strings.Contains(errBuf.String(), "bogus-verb") {
 		t.Fatalf("error = %q, want it to name the unsupported verb", errBuf.String())
 	}
 	if !strings.Contains(errBuf.String(), filepath.Join("features", "demo.md")) {

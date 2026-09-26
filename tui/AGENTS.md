@@ -18,8 +18,11 @@ When the two disagree about the shared contract, the root file wins.
   mirrors `src/irc/`), `internal/session/` (transport, SCRAM, the session
   state machine, the session manager, and the clock seam),
   `internal/controller/` (the Go `IrcController` core and its view
-  snapshots), `internal/demo/` (the `IrcDemoServer` seed harness behind
-  `--demo-server`, mirrors `src/irc/ircdemoserver.cpp`), `internal/ui/`
+  snapshots), `internal/connection/` (the `NetworkProfile` + in-memory
+  `Connection` port of `IrcNetworkProfile`/`IrcConnection`; persistence and
+  credentials are phase-11 seams), `internal/demo/` (the `IrcDemoServer` seed
+  harness behind `--demo-server`, mirrors `src/irc/ircdemoserver.cpp`),
+  `internal/ui/`
   (Bubble Tea shell, mirrors `src/qml/` plus `OmaircWindow.qml`),
   `internal/gate/` (the PTY parity driver: VT grid, OSC title capture, key
   writer, screenshot), `internal/version/` (injected build version), and
@@ -45,6 +48,17 @@ When the two disagree about the shared contract, the root file wins.
   highlight, autoaway, avatars, inbox store, channel list) sit behind the
   nil-able seams in `internal/controller/seams.go` and land in their own
   phases.
+- `internal/connection` owns the Connect sheet's profile model and the
+  draft/selection/apply/disconnect surface (`NetworkProfile`, `Connection`).
+  It may import `internal/irc`, `internal/controller`, and `internal/session`
+  (the transport factory), and must not import `net`, `os`, or `crypto/tls`;
+  sockets stay in `internal/session`. Phase 5 keeps it in memory — the
+  profile store and the credential/keychain store are phase-11 seams.
+- The controller and connection callbacks fire both from `Update` and from
+  session goroutines. Never call `p.Send` synchronously from a callback: it
+  blocks on the program message channel and deadlocks the event loop the
+  moment a navigation chord republishes a snapshot. Coalesce wake-ups onto one
+  dispatcher goroutine, as `cmd/omairc-tui/main.go` does.
 - Phase 2 adds **zero external Go dependencies**: everything is stdlib
   (`crypto/pbkdf2` ships in Go 1.24+ and the module is `go 1.25`). Do not add
   a `require` until the phase that first imports it.
@@ -137,7 +151,11 @@ of Xvfb and xdotool. It reconstructs a text grid from the VT stream, reads the
 OSC 2 title, writes key bytes, renders PNG evidence, and rejects pixel-click
 verbs: the TUI is keyboard-first and has no pointer path. Evidence goes under
 `test-artifacts/verify-tui/`. The internal skill lives at
-`.cursor/skills/verify-omairc-tui/`.
+`.cursor/skills/verify-omairc-tui/`. Phase 5 adds the `jump`, `status`,
+`connect`, and `compare` verbs (the fence's `test-artifacts/verify/` paths are
+remapped to `test-artifacts/verify-tui/`), plus the Kitty CSI-u bytes for
+`Ctrl+\``, `Ctrl+,`, `Ctrl+Enter`, `Ctrl+Tab`, and `Ctrl+Shift+Delete`, whose
+legacy control bytes collide with other keys.
 
 ## Version
 
