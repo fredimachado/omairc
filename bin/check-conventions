@@ -340,6 +340,68 @@ def check_version_source():
     return problems
 
 
+# A version-looking string literal: major.minor with an optional patch and an
+# optional letter or -/+ suffix (1.0.4, 1.0.4alpha, 1.0.4+master.g1). The
+# trailing negative lookahead rejects a further dotted group so an IP address
+# like 127.0.0.1 is not mistaken for a version.
+GO_VERSION_STRING = (
+    r'"(?P<number>v?[0-9]+\.[0-9]+(?:\.[0-9]+)?'
+    r'(?:[A-Za-z][0-9A-Za-z]*|[-+][0-9A-Za-z.\-]+)?)'
+    r'(?![0-9A-Za-z.\-])"'
+)
+GO_VERSION_DECL = re.compile(r"\b(?:const|var)\b[^\n=]*=\s*" + GO_VERSION_STRING)
+GO_VERSION_BLOCK_DECL = re.compile(
+    r"^\s*[A-Za-z_][A-Za-z0-9_]*\s*=\s*" + GO_VERSION_STRING + r"\s*(?://.*)?$")
+GO_VERSION_BLOCK_OPEN = re.compile(r"\b(?:const|var)\s*\(")
+GO_VERSION_BLOCK_CLOSE = re.compile(r"^\s*\)\s*$")
+GO_VERSION_SOURCE = Path("tui/internal/version/version.go")
+
+
+def check_go_version_source():
+    problems = []
+    for relative, source in sources("tui/**/*.go"):
+        if Path(relative) == GO_VERSION_SOURCE:
+            continue
+        in_block = False
+        for number, line in enumerate(source.splitlines(), 1):
+            if GO_VERSION_BLOCK_OPEN.search(line):
+                in_block = True
+            if in_block and GO_VERSION_BLOCK_CLOSE.match(line):
+                in_block = False
+                continue
+            match = GO_VERSION_DECL.search(line)
+            if not match and in_block:
+                match = GO_VERSION_BLOCK_DECL.search(line)
+            if not match:
+                continue
+            problems.append(
+                f"{relative}:{number}: hard-coded version "
+                f"{match.group('number')!r}; read internal/version.Value "
+                f"(injected from version.pri) instead")
+    return problems
+
+
+def check_go_build_uses_version_pri():
+    problems = []
+    build = ROOT / "tui" / "bin" / "build"
+    if not build.is_file():
+        return ["tui/bin/build: missing; omairc-tui must build through it so "
+                "version.Value is injected"]
+    text = build.read_text(encoding="utf-8", errors="replace")
+    if "bin/version" not in text:
+        problems.append(
+            "tui/bin/build: read the version from bin/version, not a second "
+            "source")
+    if "internal/version.Value" not in text:
+        problems.append(
+            "tui/bin/build: inject internal/version.Value so Go has one "
+            "version source")
+    if "-ldflags" not in text:
+        problems.append(
+            "tui/bin/build: inject version.Value through -ldflags")
+    return problems
+
+
 def check_omairc_version_header():
     problems = []
     for relative, source in sources("src/**/*.cpp", "tests/**/*.cpp"):
@@ -921,6 +983,8 @@ CHECKS = (
     ("formatted messageDelegate.body", check_message_delegate_body),
     ("bounded IPC socket reads", check_socket_reads),
     ("single version source", check_version_source),
+    ("Go version source", check_go_version_source),
+    ("Go build reads version.pri", check_go_build_uses_version_pri),
     ("OMAIRC_VERSION via omaircversion.h", check_omairc_version_header),
     ("CHANTYPES via IrcServerFeatures", check_hardcoded_chantypes),
     ("retired mock sidebar tokens", check_retired_mock_sidebar),

@@ -22,3 +22,6 @@ test-artifacts/
 
 .arena-omairc-pacman/
 aqtinstall.log
+
+# tui/bin/test builds the omairc-tui binary into the module's bin/ dir.
+/tui/bin/omairc-tui
