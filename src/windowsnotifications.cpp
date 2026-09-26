@@ -352,6 +352,10 @@ public:
         QString msgid;
         parseLaunchArgs(QString::fromWCharArray(invokedArgs), &networkId, &target,
                         &msgid);
+        // Match the macOS delegate: a launch string that names no conversation
+        // must not reach Backend::notificationActivated and the window.
+        if (networkId.isEmpty() || target.isEmpty())
+            return S_OK;
         QMetaObject::invokeMethod(
             owner,
             [owner, networkId, target, msgid]() {
