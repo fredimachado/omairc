@@ -17,6 +17,12 @@ type LoopbackTransport struct {
 	port      uint16
 	written   [][]byte
 	lastError string
+
+	// OnFrameWritten mirrors the IrcLoopbackTransport::frameWritten signal: it
+	// fires after every Write, with the recorded copy of the frame. It is
+	// invoked outside the mutex because a handler typically calls back into
+	// InjectBytes (which takes the mutex). A nil hook means no behavior.
+	OnFrameWritten func(frame []byte)
 }
 
 // LoopbackTransport satisfies Transport.
@@ -49,8 +55,9 @@ func (t *LoopbackTransport) Connect(host string, port uint16, tlsEnabled bool) {
 	t.state = ConnectionConnecting
 }
 
-// Write records the frame. It does not require an open connection, matching
-// IrcLoopbackTransport::write.
+// Write records the frame and, when installed, invokes OnFrameWritten with the
+// recorded copy. It does not require an open connection, matching
+// IrcLoopbackTransport::write and its frameWritten signal.
 func (t *LoopbackTransport) Write(frame []byte) {
 	copied := cloneBytes(frame)
 	if copied == nil {
@@ -58,7 +65,11 @@ func (t *LoopbackTransport) Write(frame []byte) {
 	}
 	t.mu.Lock()
 	t.written = append(t.written, copied)
+	hook := t.OnFrameWritten
 	t.mu.Unlock()
+	if hook != nil {
+		hook(copied)
+	}
 }
 
 // Shutdown ends the connection synchronously and emits Disconnected once.

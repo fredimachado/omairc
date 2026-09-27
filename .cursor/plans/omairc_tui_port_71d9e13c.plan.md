@@ -13,7 +13,7 @@ todos:
     status: completed
   - id: phase-3-demo
     content: "Phase 3: IrcDemoServer + loopback transport parity seed for --demo-server"
-    status: pending
+    status: completed
   - id: phase-4-shell
     content: "Phase 4: Bubble Tea shell (Model/Update/View, layout) + control-omairc-tui parity gate"
     status: pending

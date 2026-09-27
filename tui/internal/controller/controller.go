@@ -278,6 +278,15 @@ func (c *Controller) Publish(notify irc.ViewNotify) {
 	if notify.Selection {
 		c.notifySelectionChanged()
 	}
+	// A typing event repaints the sidebar's typing role. Qt emits
+	// typingChanged() and calls ConversationListModel::invalidateTyping() only
+	// when the conversation list was not already reloaded. The Go snapshot
+	// materializes that role, so rebuild it here; the typing-changed
+	// notification itself is the Phase 8 seam.
+	if notify.Typing && !notify.Conversations {
+		c.rebuildConversations()
+		c.conversationEpoch++
+	}
 }
 
 // adoptReducerSelection pulls a selection the reducer moved on its own (a NICK
@@ -291,13 +300,17 @@ func (c *Controller) adoptReducerSelection() {
 	c.selected = &key
 }
 
-// selectionNotify reloads the transcript and member panel alongside the
-// selection, matching the model selects in IrcController::selectConversation.
+// selectionNotify reloads the sidebar, transcript, and member panel alongside
+// the selection, matching the model selects in IrcController::selectConversation.
+// ConversationListModel::select calls reload(), which repaints every row's
+// roles, so the unread and mention counts a selection just consumed clear
+// immediately rather than waiting for the next conversation-dirtying event.
 func selectionNotify() irc.ViewNotify {
 	return irc.ViewNotify{
-		Messages:  true,
-		Members:   irc.MemberSurfaceReset,
-		Selection: true,
+		Conversations: true,
+		Messages:      true,
+		Members:       irc.MemberSurfaceReset,
+		Selection:     true,
 	}
 }
 
