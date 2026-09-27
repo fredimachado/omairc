@@ -28,7 +28,9 @@ version the moment its package is first imported — never earlier, because
 - `charm.land/lipgloss/v2` v2.0.3 — imported in Phase 4.
 - `charm.land/bubbles/v2` v2.1.0 — imported in Phase 4.
 - `github.com/ergochat/irc-go` (`ircmsg`, `ircreader`, `ircfmt`, `ircutils`)
-  — imported in Phase 1.
+  — not imported in Phase 1: the wire layer is a hand-port of `src/irc/` so
+  the byte-for-byte behavior and the mirrored test matrices stay the contract.
+  Its first import is expected in Phase 10 (`ircfmt`) and later (`ircreader`).
 
 Update this list and the import that pulls the dependency in the same change.
 Do not pre-add requires to `go.mod`; tidy will revert them.
@@ -91,7 +93,8 @@ atomically. No TUI file needs editing for a version bump.
 
 ## CI and review
 
-- Base every pull request on `master`; CI rejects any other base.
+- Base every pull request on `master`, or on another `tui-phase-*` branch when
+  stacking phases in order; CI rejects any other base.
 - Run `tui/bin/test` (vet, tests, build, CLI contract) and the root `bin/test`
   before opening a pull request. `tui/bin/test` is also wired into root
   `bin/test` and skipped when `go` is absent.

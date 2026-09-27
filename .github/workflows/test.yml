@@ -36,12 +36,12 @@ jobs:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
-      - name: Require master as the pull request base
+      - name: Require master or a phase branch as the pull request base
         run: |
-          test "${{ github.base_ref }}" = master || {
-            echo "This pull request targets ${{ github.base_ref }}, not master." >&2
-            exit 1
-          }
+          case "${{ github.base_ref }}" in
+            master|tui-phase-*) ;;
+            *) echo "This pull request targets ${{ github.base_ref }}, not master or a tui-phase branch." >&2; exit 1 ;;
+          esac
 
   test:
     runs-on: ubuntu-latest

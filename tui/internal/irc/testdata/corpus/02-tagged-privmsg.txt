@@ -1,0 +1,1 @@
+@msgid=abc;+typing=active :n!u@h PRIVMSG #c :tagged

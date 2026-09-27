@@ -7,7 +7,7 @@ todos:
     status: pending
   - id: phase-1-protocol
     content: "Phase 1: IRC protocol core — parser/framer/message, case mapping, IrcServerFeatures (ISUPPORT), capability negotiation, wire text"
-    status: pending
+    status: in_progress
   - id: phase-2-reducer
     content: "Phase 2: session + event reducer — IrcEvent taxonomy, IrcEventReducer + IrcConversationCause, transport/session, Go IrcController API"
     status: pending
@@ -114,13 +114,29 @@ flowchart TD
 
 ### Phase 1 — IRC protocol core (pure Go, no UI)
 
-Port faithfully, with the existing test matrices as the spec:
+Hand-port the wire layer faithfully, with the existing test matrices as the
+spec. Decision: **do not** import `irc-go/ircmsg` + `ircreader` here. A
+hand-port keeps `internal/irc` byte-for-byte with `src/irc/` and lets the
+mirrored `tests/protocol/` and `tests/session/tst_capability.cpp` matrices be
+the contract. The irc-go import moves to Phase 10 (`ircfmt`) and later
+(`ircreader`).
 
-- Message model, parser, framer — `src/irc/ircmessage.h`, `ircparser.*`, `ircframer.*`. Use `irc-go/ircmsg` + `ircreader` for raw line parse/create, then map into an Omairc-shaped `Message`.
-- Case mapping — `src/irc/irccasemapping.*` (rfc1459, ascii, strict-rfc1459). Match `tests/protocol/tst_casemapping.cpp`.
-- Server features / ISUPPORT — `src/irc/ircserverfeatures.*` (`applyToken`, `parseNamesToken`, `prefixChanges`, `rankPriority`, `memberLabel`). Do not hard-code PREFIX/CHANTYPES.
-- Capability negotiation — `src/irc/irccapabilitynegotiation.*` (CAP LS/REQ/ACK/NAK/END, SASL).
-- Wire text — `src/irc/ircwiretext.*`.
+- Message model, parser, framer — `src/irc/ircmessage.h`, `ircparser.*`,
+  `ircframer.*` → `message.go`, `parser.go`, `framer.go`. `Parse` returns
+  `(Message, error)` with an `Error` value instead of `IrcResult<Message>`.
+- Case mapping — `irccasemapping.*` → `casemapping.go` (rfc1459, ascii,
+  strict-rfc1459). Match `tests/protocol/tst_casemapping.cpp`.
+- Server features / ISUPPORT — `ircserverfeatures.*` → `serverfeatures.go`
+  (`ApplyToken`, `ParseNamesToken`, `PrefixChanges`, `RankPriority`,
+  `MemberLabel`). Do not hard-code PREFIX/CHANTYPES/CHANMODES.
+- Capability negotiation — `irccapability.*`, `irccapabilitynegotiation.*` →
+  `capability.go`, `capabilitynegotiation.go` (CAP LS/REQ/ACK/NAK/END, SASL),
+  mirroring `tests/session/tst_capability.cpp`.
+- Outbound builder — `irccommandbuilder.*` → `commandbuilder.go` (line, split,
+  nick, user, pass, join, registration).
+- CTCP, prefix nick, wire text — `irctcp.*`, `ircprefixnick.*`,
+  `ircwiretext.*` → `ctcp.go`, `prefixnick.go`, `wiretext.go`.
+- Corner corpus copied verbatim to `internal/irc/testdata/corpus/`.
 
 Exit criteria: Go tests mirror `tests/protocol/` and pass.
 
