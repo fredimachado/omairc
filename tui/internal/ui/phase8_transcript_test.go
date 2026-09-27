@@ -120,6 +120,78 @@ func TestPhase8TranscriptDirectTypingFooterUngrouped(t *testing.T) {
 	}
 }
 
+// TestPhase8TranscriptMentionRowWash proves a highlighted row is a full-width
+// wash band, one line per message, with the palette-colored bold nick and the
+// dimmed timestamp inside it.
+func TestPhase8TranscriptMentionRowWash(t *testing.T) {
+	m := seededModel(t)
+	msg := controller.MessageSnapshot{
+		Author:    "mira",
+		Kind:      "message",
+		Body:      "hello there",
+		Time:      time.Date(2026, 9, 27, 12, 0, 0, 0, time.UTC),
+		Mentioned: true,
+	}
+
+	row := m.messageRow(0, msg)
+	if strings.Count(row, "\n") != 0 {
+		t.Fatalf("mention row = %q, want a single line", row)
+	}
+	if got, want := lipgloss.Width(row), m.transcriptWidth(); got != want {
+		t.Fatalf("mention row width = %d, want %d (the wash spans the column)", got, want)
+	}
+	for _, want := range []string{"12:00", "mira", "hello there"} {
+		if !strings.Contains(row, want) {
+			t.Fatalf("mention row = %q, want it to contain %q", row, want)
+		}
+	}
+	wash := m.mentionWash()
+	nick := wash.Foreground(nickColor("mira")).Bold(true).Render("mira ")
+	if !strings.Contains(row, nick) {
+		t.Fatalf("mention row = %q, want the palette-colored bold nick %q", row, nick)
+	}
+	if tinted := wash.Foreground(m.styles.Colors.Mention).Render("mira "); strings.Contains(row, tinted) {
+		t.Fatalf("mention row = %q, want the nick in its palette color, not the mention tint", row)
+	}
+	if stamped := wash.Foreground(m.styles.Colors.TextDim).Render("12:00 "); !strings.Contains(row, stamped) {
+		t.Fatalf("mention row = %q, want the dimmed timestamp %q", row, stamped)
+	}
+}
+
+// TestPhase8TranscriptActionNoticeEventShapes proves the three non-chat kinds
+// keep their distinct shapes: the action marker, the dashed notice byline, and
+// the centered event line, each one line per message.
+func TestPhase8TranscriptActionNoticeEventShapes(t *testing.T) {
+	m := seededModel(t)
+	at := time.Date(2026, 9, 27, 12, 0, 0, 0, time.UTC)
+
+	action := m.messageRow(0, controller.MessageSnapshot{Author: "mira", Kind: "action", Body: "waves", Time: at})
+	if !strings.HasPrefix(action, m.styles.Action.Render("* ")) {
+		t.Fatalf("action row = %q, want the %q marker", action, "* ")
+	}
+	if want := m.nickStyle("mira").Render("mira"); !strings.Contains(action, want) {
+		t.Fatalf("action row = %q, want the palette-colored bold nick %q", action, want)
+	}
+
+	notice := m.messageRow(0, controller.MessageSnapshot{Author: "mira", Kind: "notice", Body: "hi", Time: at})
+	if !strings.HasPrefix(notice, m.styles.Notice.Render("-")) {
+		t.Fatalf("notice row = %q, want the dashed %q byline", notice, "-")
+	}
+	if want := m.nickStyle("mira").Render("mira"); !strings.Contains(notice, want) {
+		t.Fatalf("notice row = %q, want the palette-colored bold nick %q", notice, want)
+	}
+
+	event := m.messageRow(0, controller.MessageSnapshot{Kind: "event", Body: "mira joined", Time: at})
+	if !strings.HasPrefix(event, " ") {
+		t.Fatalf("event row = %q, want it centered in the column", event)
+	}
+	for _, row := range []string{action, notice, event} {
+		if strings.Count(row, "\n") != 0 {
+			t.Fatalf("row = %q, want a single line", row)
+		}
+	}
+}
+
 // TestPhase8TranscriptChannelHasNoTypingFooter proves the typing footer stays
 // DM-only. anna is typing in #omarchy, but the channel keeps the member-panel
 // glyph and appends nothing to the transcript.
@@ -165,8 +237,11 @@ func TestPhase8TranscriptPeopleCountHasColumnGutter(t *testing.T) {
 	if got, want := lipgloss.Width(header), m.transcriptWidth()-peopleCountGutter; got != want {
 		t.Fatalf("channel header width = %d, want %d (headroom for the gutter)", got, want)
 	}
-	if !strings.HasSuffix(header, m.styles.PeopleCount.Render("12 PEOPLE")) {
-		t.Fatalf("channel header = %q, want it to end with the rendered count %q", header, "12 PEOPLE")
+	if !strings.HasSuffix(header, m.peopleChip(12)) {
+		t.Fatalf("channel header = %q, want it to end with the filled chip %q", header, "12 PEOPLE")
+	}
+	if chip := m.peopleChip(12); lipgloss.Width(chip) != lipgloss.Width("12 PEOPLE")+2 {
+		t.Fatalf("people chip width = %d, want the label width plus a one-cell pad each side", lipgloss.Width(chip))
 	}
 
 	content := m.View().Content
