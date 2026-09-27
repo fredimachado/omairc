@@ -441,6 +441,14 @@ def go_imports(source):
             yield number, match.group(1)
 
 
+# URL and IP-literal parsing are pure functions, not a socket or TLS stack.
+# avatarurl.go ports src/irc/ircavatarurl.cpp (QUrl + QHostAddress), so it needs
+# net/url and net/netip; every other internal/irc file stays fully neutral.
+GO_IRC_PLATFORM_NEUTRAL_EXEMPT = {
+    "tui/internal/irc/avatarurl.go": {"net/url", "net/netip"},
+}
+
+
 def check_go_irc_platform_neutrality():
     # internal/irc is the portable core: sockets, clocks, the filesystem, and
     # TLS belong in internal/session. Test files may read testdata with os.
@@ -448,7 +456,11 @@ def check_go_irc_platform_neutrality():
     for relative, source in sources("tui/internal/irc/*.go"):
         if relative.name.endswith("_test.go"):
             continue
+        exempt = GO_IRC_PLATFORM_NEUTRAL_EXEMPT.get(
+            Path(relative).as_posix(), set())
         for number, imported in go_imports(source):
+            if imported in exempt:
+                continue
             if imported in GO_PLATFORM_IMPORTS or imported.startswith("net/"):
                 problems.append(
                     f"{relative}:{number}: internal/irc must stay platform "

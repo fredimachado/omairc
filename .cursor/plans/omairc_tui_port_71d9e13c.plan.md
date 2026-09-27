@@ -34,7 +34,7 @@ todos:
     status: completed
   - id: phase-10-format
     content: "Phase 10: IrcTextFormatter, URL policy/links, avatars (identicon + half-block)"
-    status: pending
+    status: in_progress
   - id: phase-11-prefs
     content: "Phase 11: /pref, profile store, storage path, open-direct restore, playback, secret redaction"
     status: pending

@@ -3,7 +3,16 @@ package ui
 import (
 	"fmt"
 
+	"charm.land/lipgloss/v2"
+
 	"github.com/fredimachado/omairc/tui/internal/controller"
+)
+
+// The sidebar's direct-message avatar is two half-block cells, matching the
+// 22px QML avatar; internal/avatar quantizes that layout size to a 32px fetch.
+const (
+	avatarGlyphCols      = 2
+	avatarGlyphPixelSize = 22
 )
 
 // sidebarView renders the network roster: one header per registered network,
@@ -142,5 +151,32 @@ func (m *Model) conversationRow(row controller.ConversationSnapshot) string {
 	if row.ConversationID != "" && row.ConversationID == m.ctrl.SelectedConversationID() {
 		style = m.styles.Selected
 	}
-	return style.Render(text)
+	return m.avatarGlyph(row) + style.Render(text)
+}
+
+// avatarGlyph is the sidebar's direct-message avatar: two half-block cells
+// rasterized from the cached peer image, or the nick identicon when avatars are
+// off, the row carries no image, or the image is not cached yet. A channel row
+// has no glyph. The glyph is rendered separately from the row text so its
+// trailing reset cannot clear the row style.
+func (m *Model) avatarGlyph(row controller.ConversationSnapshot) string {
+	if !row.Direct {
+		return ""
+	}
+	if m.ctrl != nil && m.ctrl.PrefAvatarsEnabled() && row.Avatar != "" && m.avatars != nil {
+		if block, ok := m.avatars.Block(row.Avatar, avatarGlyphPixelSize, avatarGlyphCols); ok {
+			return block + " "
+		}
+	}
+	return m.identiconGlyph(row.Conversation) + " "
+}
+
+// identiconGlyph is the fallback avatar: one cell showing the nick initial,
+// nickColor on an avatarFill background, followed by a separating space.
+func (m *Model) identiconGlyph(nick string) string {
+	return lipgloss.NewStyle().
+		Foreground(nickColor(nick)).
+		Background(avatarFill(nick)).
+		Bold(true).
+		Render(initials(nick))
 }

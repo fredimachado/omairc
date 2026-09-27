@@ -165,7 +165,7 @@ func (m *Model) transcriptRowTexts() []string {
 	messages := m.ctrl.Messages()
 	rows := make([]string, 0, len(messages))
 	for _, message := range messages {
-		rows = append(rows, message.Author+" "+message.Body)
+		rows = append(rows, message.Author+" "+m.ctrl.PlainIrcText(message.Body))
 	}
 	return rows
 }
@@ -290,8 +290,39 @@ func visibleRowCursor(headerCount, n, height, offset int) int {
 	return lastRow
 }
 
+// renderMessageBody renders a message body with its IRC emphasis (bold,
+// italic, underline) applied to the body portion only. The author/timestamp
+// prefix is rendered by the caller, so a bold run can never leak into it.
+// Control codes never reach the output: a body with no emphasis just renders
+// its plain text, and an emphasized body is split into styled runs.
+func (m *Model) renderMessageBody(body string, base lipgloss.Style) string {
+	if m.ctrl == nil {
+		return base.Render(body)
+	}
+	plain := m.ctrl.PlainIrcText(body)
+	if !m.ctrl.HasIrcEmphasis(body) {
+		return base.Render(plain)
+	}
+	var builder strings.Builder
+	for _, run := range m.ctrl.EmphasizedRuns(body) {
+		style := base
+		if run.Bold {
+			style = style.Bold(true)
+		}
+		if run.Italic {
+			style = style.Italic(true)
+		}
+		if run.Underline {
+			style = style.Underline(true)
+		}
+		builder.WriteString(style.Render(run.Text))
+	}
+	return builder.String()
+}
+
 // messageRow renders one transcript line. Actions, events, and notices get
-// their own shape; a mention is emphasized. The current find match wins over
+// their own shape; a mention is emphasized. The author prefix stays plain and
+// the body carries its own IRC emphasis. The current find match wins over
 // every other style.
 func (m *Model) messageRow(index int, message controller.MessageSnapshot) string {
 	if m.findMatchAt(index) {
@@ -299,29 +330,37 @@ func (m *Model) messageRow(index int, message controller.MessageSnapshot) string
 	}
 	switch message.Kind {
 	case "action":
-		return m.styles.Action.Render("* " + message.Author + " " + message.Body)
+		return m.styles.Action.Render("* "+message.Author+" ") +
+			m.renderMessageBody(message.Body, m.styles.Action)
 	case "event":
-		return m.styles.Event.Render(message.Body)
+		return m.renderMessageBody(message.Body, m.styles.Event)
 	case "notice":
-		return m.styles.Notice.Render("-" + message.Author + "- " + message.Body)
+		return m.styles.Notice.Render("-"+message.Author+"- ") +
+			m.renderMessageBody(message.Body, m.styles.Notice)
 	}
-	line := message.Time.Format("15:04") + " " + message.Author + " " + message.Body
+	prefix := message.Time.Format("15:04") + " " + message.Author + " "
 	if message.Mentioned {
-		return m.styles.MentionBody.Render(line)
+		return m.styles.MentionBody.Render(prefix) +
+			m.renderMessageBody(message.Body, m.styles.MentionBody)
 	}
-	return line
+	return prefix + m.renderMessageBody(message.Body, lipgloss.NewStyle())
 }
 
 // transcriptLine is the unstyled text of a message row, matching the find
-// haystack.
+// haystack. The body is read through PlainIrcText so control codes never enter
+// the haystack.
 func (m *Model) transcriptLine(message controller.MessageSnapshot) string {
+	body := message.Body
+	if m.ctrl != nil {
+		body = m.ctrl.PlainIrcText(message.Body)
+	}
 	switch message.Kind {
 	case "action":
-		return "* " + message.Author + " " + message.Body
+		return "* " + message.Author + " " + body
 	case "event":
-		return message.Body
+		return body
 	case "notice":
-		return "-" + message.Author + "- " + message.Body
+		return "-" + message.Author + "- " + body
 	}
-	return message.Time.Format("15:04") + " " + message.Author + " " + message.Body
+	return message.Time.Format("15:04") + " " + message.Author + " " + body
 }
