@@ -594,11 +594,23 @@ func (s *Session) stopLocked() {
 	})
 }
 
-// SendChannelMode is intentionally absent. Channel-mode dispatch (the C++
-// IrcChannelModeRequest and IrcSession::sendChannelMode) depends on
-// irc.ChannelModeRequest, which is not part of the Phase 1 core. Channel-mode
-// commands land in Phase 7 with the slash-command catalog
-// (/mode, /op, /deop, /voice, /devoice, /ban).
+// SendChannelMode writes a MODE query or change. It mirrors
+// IrcSession::sendChannelMode (src/irc/ircsession.cpp:586).
+func (s *Session) SendChannelMode(request irc.ChannelModeRequest) bool {
+	var sent bool
+	s.locked(func() { sent = s.sendChannelModeLocked(request) })
+	return sent
+}
+
+func (s *Session) sendChannelModeLocked(request irc.ChannelModeRequest) bool {
+	if request.Query {
+		return s.sendCommandLocked("MODE "+request.Channel, "")
+	}
+	parts := make([]string, 0, 3+len(request.Parameters))
+	parts = append(parts, "MODE", request.Channel, request.Modes)
+	parts = append(parts, request.Parameters...)
+	return s.sendCommandLocked(strings.Join(parts, " "), "")
+}
 
 // SendPrivmsg writes a PRIVMSG, splitting an overlong body across frames. It
 // mirrors IrcSession::sendPrivmsg (src/irc/ircsession.cpp:568-576).

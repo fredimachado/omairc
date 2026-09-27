@@ -555,6 +555,8 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		err = cmdStatus(rest)
 	case "connect":
 		err = cmdConnect(rest)
+	case "composer":
+		err = cmdComposer(rest)
 	case "compare":
 		err = cmdCompare(rest, stdout)
 	case "screenshot":
@@ -598,6 +600,8 @@ Verbs:
   nick-jump --query TEXT           Ctrl+Shift+K, type the query, then Enter
   status                           Ctrl+backtick (toggle the Status console)
   connect                          Ctrl+, (open the Connect sheet)
+  composer                         focus the composer (no-op; keeps shared
+                                   recipes runnable)
   compare --before PATH --after PATH
                                    assert two PNGs differ
   screenshot [--feature NAME] [--name NAME]
@@ -1051,6 +1055,17 @@ func cmdConnect(args []string) error {
 	return err
 }
 
+// cmdComposer focuses the composer. The TUI composer owns focus unless a modal
+// is open, so this is a no-op that keeps the shared desktop recipes runnable
+// (the Qt driver's `composer` clicks the text field).
+func cmdComposer(args []string) error {
+	if len(args) != 0 {
+		return errors.New("composer takes no arguments")
+	}
+	_, err := newClient().do(Request{Verb: "status"})
+	return err
+}
+
 func cmdScreenshot(args []string, stdout io.Writer) error {
 	feature := defaultFeature
 	name := defaultShotName
@@ -1376,6 +1391,8 @@ func runRecipeLine(tokens []string, stdout, stderr io.Writer, launchedByRun *boo
 		return cmdStatus(tokens[1:])
 	case "connect":
 		return cmdConnect(tokens[1:])
+	case "composer":
+		return cmdComposer(tokens[1:])
 	case "compare":
 		return cmdCompare(tokens[1:], stdout)
 	case "screenshot":
