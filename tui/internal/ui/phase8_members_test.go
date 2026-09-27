@@ -206,3 +206,50 @@ func TestMemberActivationOpensDirectMessageAndIgnoresSelf(t *testing.T) {
 		t.Fatalf("Enter on fred title = %q, want the channel unchanged", got)
 	}
 }
+
+// TestMembersPanelHeadingRule covers the restyled card content: the
+// "ONLINE - N" heading is followed by a hairline rule before the member rows.
+func TestMembersPanelHeadingRule(t *testing.T) {
+	m := seededModel(t)
+	panel := m.membersView(membersWidth, m.bodyHeight())
+	rule := m.styles.Divider.Render(strings.Repeat("─", membersWidth))
+	if !strings.Contains(panel, rule) {
+		t.Fatalf("member panel missing the heading rule %q:\n%s", rule, panel)
+	}
+}
+
+// TestMemberRowFocusAccentsOnlyTheFocusedRow covers the focus accent: the
+// focused member's first line starts with the accent bar, every other row
+// leaves that gutter blank so the rows never shift when the cursor moves.
+func TestMemberRowFocusAccentsOnlyTheFocusedRow(t *testing.T) {
+	m := seededModel(t)
+	if line := phase8MemberLine(t, m, "anna")[0]; strings.Contains(line, "▌") {
+		t.Fatalf("unfocused anna row must not carry an accent bar: %q", line)
+	}
+
+	m = press(t, m, ctrlShiftKey('p'))
+	m.memberIndex = phase8MemberIndex(t, m, "anna")
+	focused := phase8MemberLine(t, m, "anna")[0]
+	if !strings.HasPrefix(focused, m.memberFocusBar()) {
+		t.Fatalf("focused anna row must start with the accent bar, got %q", focused)
+	}
+	// Every non-focused row keeps a blank gutter of the same width.
+	if other := phase8MemberLine(t, m, "dax")[0]; strings.Contains(other, "▌") {
+		t.Fatalf("unfocused dax row must not carry an accent bar: %q", other)
+	}
+}
+
+// TestMemberStatusSublineAlignsUnderTheLabel covers the status subline restyle:
+// it stays a separate muted line, blanked past the focus gutter and (with
+// away-notify on) the presence dot, so it hangs under the nick.
+func TestMemberStatusSublineAlignsUnderTheLabel(t *testing.T) {
+	m := seededModel(t)
+	anna := phase8MemberLine(t, m, "anna")
+	if len(anna) < 2 {
+		t.Fatalf("anna must render a status subline: %#v", anna)
+	}
+	want := m.styles.MemberStatus.Render("    · writing docs")
+	if anna[1] != want {
+		t.Fatalf("anna's status subline = %q, want the indented muted line %q", anna[1], want)
+	}
+}

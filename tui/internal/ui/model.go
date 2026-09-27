@@ -3,6 +3,8 @@ package ui
 import (
 	"strings"
 
+	"charm.land/bubbles/v2/help"
+	"charm.land/bubbles/v2/spinner"
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
@@ -10,6 +12,7 @@ import (
 	"github.com/fredimachado/omairc/tui/internal/connection"
 	"github.com/fredimachado/omairc/tui/internal/controller"
 	"github.com/fredimachado/omairc/tui/internal/notify"
+	"github.com/fredimachado/omairc/tui/internal/theme"
 )
 
 // Layout constants. The column widths are proportional with clamps, so a
@@ -53,6 +56,12 @@ type NotificationActivatedMsg = notify.Activation
 // and it should re-render.
 type AvatarReadyMsg struct{}
 
+// ThemeChangedMsg carries a new palette read from the theme watcher. It takes
+// the same program hop as AvatarReadyMsg: the watcher read is a tea.Cmd whose
+// message the runtime delivers to Update, which rebuilds the styles and
+// re-arms the read for the next change.
+type ThemeChangedMsg struct{ Colors theme.Colors }
+
 // AvatarSource is the nil-able avatar seam. The shell asks it to schedule a
 // peer image fetch and, once cached, to rasterize it into a half-block glyph.
 // The real implementation is internal/avatar; the interface keeps the network
@@ -80,6 +89,19 @@ type Model struct {
 	focus  focusArea
 
 	composer textinput.Model
+
+	// Footer chrome. help renders the contextual chord hint from footerKeyMap;
+	// spinner animates while the focused network is disconnected. spinning
+	// latches the single tick chain so repeated starts cannot multiply frames.
+	help     help.Model
+	spinner  spinner.Model
+	spinning bool
+
+	// Theme wiring. themeWatcher streams live palette changes; themeArmed
+	// records whether the read loop has been started (once, on the first
+	// WindowSizeMsg, because Init is reserved for StartupMsg).
+	themeWatcher *theme.Watcher
+	themeArmed   bool
 
 	// connectOpen reopens the sheet after a profile exists. On first run the
 	// sheet is visible because the connection still requires setup.
@@ -153,17 +175,17 @@ const (
 // focused. A nil controller renders the empty state. conn may be nil (the
 // seeded demo), in which case the Connect sheet is unavailable.
 func New(ctrl *controller.Controller, conn *connection.Connection) *Model {
-	composer := textinput.New()
-	composer.Placeholder = "Message"
-	composer.Prompt = ""
+	styles := defaultStyles()
+	composer := newComposerInput(styles)
 	m := &Model{
 		ctrl:                 ctrl,
 		conn:                 conn,
-		styles:               defaultStyles(),
 		width:                defaultWidth,
 		height:               defaultHeight,
 		focus:                focusComposer,
 		composer:             composer,
+		help:                 help.New(),
+		spinner:              spinner.New(spinner.WithSpinner(spinner.MiniDot)),
 		sheet:                newConnectSheetState(),
 		jump:                 newJumpState(),
 		nick:                 newNickJumpState(),
@@ -179,6 +201,9 @@ func New(ctrl *controller.Controller, conn *connection.Connection) *Model {
 		// OmaircWindow.qml's win.active default.
 		windowActive: true,
 	}
+	// applyStyles also wires the help and spinner chrome, and defaults to the
+	// fixed fallback palette so New keeps its signature with no theme wired.
+	m.applyStyles(styles)
 	m.resize()
 	m.draftKey = m.composerDraftKey()
 	if m.connectVisible() {
@@ -209,6 +234,102 @@ func (m *Model) SetNotifier(n notify.Notifier) { m.notifier = n }
 // row on its identicon.
 func (m *Model) SetAvatarSource(s AvatarSource) { m.avatars = s }
 
+// SetTheme rebuilds every style from colors. It is the manual counterpart to a
+// ThemeChangedMsg and the entry point for an initial palette.
+func (m *Model) SetTheme(colors theme.Colors) {
+	if m == nil {
+		return
+	}
+	m.applyStyles(buildStyles(colors))
+}
+
+// SetThemeWatcher installs the live theme watcher and immediately adopts its
+// current palette. The read loop is armed on the first WindowSizeMsg (see
+// startBackgroundWork), so the watcher only needs to be set before the program
+// runs; its changes then arrive as ThemeChangedMsg.
+func (m *Model) SetThemeWatcher(w *theme.Watcher) {
+	if m == nil {
+		return
+	}
+	m.themeWatcher = w
+	if w != nil {
+		m.applyStyles(buildStyles(w.Current()))
+	}
+}
+
+// applyStyles swaps in a rebuilt palette and re-derives the chrome that lives
+// outside Styles: the composer's input styles, the help hint styles, and the
+// spinner's frame color. The composer keeps its value and focus.
+func (m *Model) applyStyles(styles Styles) {
+	m.styles = styles
+	m.composer.SetStyles(styles.Input)
+	m.help.Styles = helpStyles(styles)
+	m.spinner.Style = styles.StatusWarn
+	m.restyleOverlayInputs()
+}
+
+// restyleOverlayInputs re-applies the shared input style set to the overlay
+// filters and the Connect sheet. Those text inputs are built when their sheet
+// opens (or, for Connect, when a field takes focus), so without this a live
+// ThemeChangedMsg would restyle only the composer and leave an already-open
+// sheet on the previous palette. SetStyles keeps each input's value, width,
+// and focus, so the call is behavior-neutral while the sheet is closed.
+func (m *Model) restyleOverlayInputs() {
+	input := m.styles.Input
+	m.jump.input.SetStyles(input)
+	m.nick.input.SetStyles(input)
+	m.link.input.SetStyles(input)
+	m.list.input.SetStyles(input)
+	m.sheet.input.SetStyles(input)
+}
+
+// nextThemeChange arms one read from the watcher's channel. The read blocks off
+// the Update goroutine; its ThemeChangedMsg triggers the next arm.
+func (m *Model) nextThemeChange() tea.Cmd {
+	watcher := m.themeWatcher
+	if watcher == nil {
+		return nil
+	}
+	return func() tea.Msg {
+		change, ok := <-watcher.Changes()
+		if !ok {
+			return nil
+		}
+		return ThemeChangedMsg{Colors: change.Colors}
+	}
+}
+
+// disconnected reports whether the focused network is not registered yet.
+func (m *Model) disconnected() bool {
+	return m.ctrl == nil || m.ctrl.ConnectionStatus() != "Connected"
+}
+
+// spinnerRunning reports whether the footer's spinner should be animating: the
+// focused network is disconnected and the footer is on screen.
+func (m *Model) spinnerRunning() bool {
+	return m.disconnected() && m.footerVisible()
+}
+
+// startBackgroundWork arms the spinner and the theme read exactly once each,
+// from the first WindowSizeMsg and from status changes that may have left the
+// network disconnected. It returns nil when there is nothing to start.
+func (m *Model) startBackgroundWork() tea.Cmd {
+	var cmds []tea.Cmd
+	if m.spinnerRunning() && !m.spinning {
+		m.spinning = true
+		// Tick is a method value: a func() tea.Msg, i.e. a tea.Cmd.
+		cmds = append(cmds, m.spinner.Tick)
+	}
+	if m.themeWatcher != nil && !m.themeArmed {
+		m.themeArmed = true
+		cmds = append(cmds, m.nextThemeChange())
+	}
+	if len(cmds) == 0 {
+		return nil
+	}
+	return tea.Batch(cmds...)
+}
+
 // ensureAvatars schedules a fetch for every direct-message peer with an avatar
 // URL. It is a no-op without a controller, a source, or the /pref avatars
 // toggle, and it never blocks.
@@ -232,7 +353,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 		m.resize()
-		return m, nil
+		// The program always sends a size message on start; it is the first
+		// test-safe place to arm the spinner and the theme read, because Init
+		// stays reserved for StartupMsg.
+		return m, m.startBackgroundWork()
 	case StartupMsg:
 		// Runs on the Update goroutine, so ActivateStartup mutating the
 		// controller and the session manager stays single-threaded.
@@ -242,7 +366,22 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case NotifyMsg:
 		m.ensureAvatars()
-		return m, nil
+		// A status change may have left the focused network disconnected, so
+		// restart the spinner if it stopped.
+		return m, m.startBackgroundWork()
+	case ThemeChangedMsg:
+		// A live theme swap. Rebuild every style from the new palette, then
+		// re-arm the read for the next change.
+		m.applyStyles(buildStyles(msg.Colors))
+		return m, m.nextThemeChange()
+	case spinner.TickMsg:
+		if !m.spinnerRunning() {
+			m.spinning = false
+			return m, nil
+		}
+		var cmd tea.Cmd
+		m.spinner, cmd = m.spinner.Update(msg)
+		return m, cmd
 	case AvatarReadyMsg:
 		// A background avatar fetch cached an image; the next render reads it.
 		return m, nil
@@ -381,6 +520,15 @@ func (m *Model) View() tea.View {
 	// Focus reporting drives FocusMsg/BlurMsg, which the shell needs to decide
 	// whether an arrival earns a desktop notification (win.active in the QML).
 	v.ReportFocus = true
+	// Paint the terminal from the live palette so the surface behind the
+	// columns matches the theme instead of the terminal default.
+	v.BackgroundColor = m.styles.Colors.Background
+	v.ForegroundColor = m.styles.Colors.Foreground
+	// Place the composer's real terminal cursor at its frame row. The row is
+	// the shell's, because the footer sits below the composer; composerCursor
+	// returns nil while the composer is blurred (an overlay or modal owns the
+	// keys), so the cursor never floats over a sheet.
+	v.Cursor = m.composerCursor(m.composerRow())
 	return v
 }
 
@@ -398,9 +546,9 @@ func (m *Model) resize() {
 	m.list.input.SetWidth(m.overlayInputWidth())
 }
 
-// render composes the columns, the composer, and any open overlay. It never
-// indexes a slice unguarded, so a tiny or empty terminal renders a short line
-// instead of panicking.
+// render composes the columns, the composer, any open overlay, and the status
+// footer. It never indexes a slice unguarded, so a tiny or empty terminal
+// renders a short line instead of panicking.
 func (m *Model) render() string {
 	if m == nil || m.ctrl == nil {
 		return "Omairc"
@@ -412,58 +560,124 @@ func (m *Model) render() string {
 
 	columns := make([]string, 0, 3)
 	if m.serverListVisible {
-		columns = append(columns, m.sidebarView(sidebarWidth(m.width), bodyHeight))
+		columns = append(columns, m.framedColumn(
+			m.sidebarView, sidebarWidth(m.width), bodyHeight, m.sidebarNetworkFocusID != ""))
 	}
-	columns = append(columns, m.transcriptView(bodyHeight))
+	columns = append(columns, m.transcriptColumn(bodyHeight))
 	if m.membersVisible() {
-		columns = append(columns, m.membersView(membersWidth, bodyHeight))
+		columns = append(columns, m.framedColumn(
+			m.membersView, membersWidth, bodyHeight, m.memberFocus))
 	}
 	body := lipgloss.JoinHorizontal(lipgloss.Top, columns...)
-	bodyLines := strings.Split(body, "\n")
 
 	if card, ok := m.overlayCard(); ok {
-		bodyLines = m.overlayLines(bodyLines, card)
+		body = m.compositeOverlay(body, card)
 	}
 
-	body = strings.Join(bodyLines, "\n")
 	parts := []string{body}
 	if slash := m.slashLines(); len(slash) > 0 {
 		parts = append(parts, strings.Join(slash, "\n"))
 	}
 	parts = append(parts, m.composerView())
+	if m.footerVisible() {
+		parts = append(parts, m.footerView())
+	}
 	return lipgloss.JoinVertical(lipgloss.Left, parts...)
 }
 
+// framedColumn wraps one side column in a rounded card. outerWidth and
+// outerHeight are the invariant outer sizes the layout arithmetic assumes
+// (sidebarWidth() / membersWidth and bodyHeight); the border consumes its
+// frame, so the leaf renderer receives the remainder and produces inner lines
+// only. That keeps the transcript, which stays unframed, on the same grid.
+func (m *Model) framedColumn(render func(width, height int) string, outerWidth, outerHeight int, focused bool) string {
+	style := m.styles.Panel
+	if focused {
+		style = m.styles.PanelFocused
+	}
+	frameX, frameY := style.GetFrameSize()
+	innerWidth := outerWidth - frameX
+	innerHeight := outerHeight - frameY
+	if innerWidth < 1 || innerHeight < 1 {
+		// No room for a border: fall back to the bare column so the grid stays
+		// aligned on a tiny terminal.
+		return render(outerWidth, outerHeight)
+	}
+	// Panel Width/Height set the total block size, border included, so the leaf
+	// gets the remainder as its content box.
+	return style.Width(outerWidth).Height(outerHeight).Render(render(innerWidth, innerHeight))
+}
+
+// transcriptColumn renders the transcript, or a centered calm state when the
+// selected conversation has nothing to show yet. The transcript itself stays
+// unframed, so transcriptWidth() remains the exact content width.
+func (m *Model) transcriptColumn(height int) string {
+	lines, _ := m.transcriptLines()
+	if len(lines) == 0 {
+		return m.emptyTranscript(height)
+	}
+	return m.transcriptView(height)
+}
+
+// emptyTranscript centers a short muted caption through lipgloss.Place, so an
+// empty conversation reads as calm space rather than a blank column.
+func (m *Model) emptyTranscript(height int) string {
+	caption := "No messages yet"
+	if m.ctrl == nil || m.ctrl.SelectedTarget() == "" {
+		caption = "Pick a conversation"
+	}
+	block := m.styles.Empty.Render(caption)
+	return lipgloss.Place(m.transcriptWidth(), height, lipgloss.Center, lipgloss.Center, block)
+}
+
 // bodyHeight is the row budget of the three columns: the window minus the
-// composer line and any slash-completion rows above it.
+// composer line, the status footer when it fits, and any slash-completion rows
+// above the composer.
 func (m *Model) bodyHeight() int {
 	height := m.height - 1 - len(m.slashLines())
+	if m.footerVisible() {
+		height -= footerHeight
+	}
 	if height < 1 {
 		height = 1
 	}
 	return height
 }
 
-// overlayCard returns the lines of the topmost overlay card, if any. The
-// shortcuts sheet can sit on top of Connect, so it is checked first.
-func (m *Model) overlayCard() ([]string, bool) {
+// composerRow is the composer line's zero-based row in the rendered frame. The
+// composer sits below the body and any slash-completion rows and above the
+// footer, so View derives the cursor's Y from the same layout render() builds.
+// The tiny-terminal path renders only the composer, so its row is 0.
+func (m *Model) composerRow() int {
+	if m == nil || m.width < minWidth || m.height < minHeight {
+		return 0
+	}
+	return m.bodyHeight() + len(m.slashLines())
+}
+
+// overlayCard returns the topmost overlay card as one rendered block, if any.
+// Every overlay renders through its own <name>Card method, which wraps its
+// content with the shared overlayCardBlock frame, so model.go owns the single
+// framing path. The shortcuts sheet can sit on top of Connect, so it is
+// checked first.
+func (m *Model) overlayCard() (string, bool) {
 	switch {
 	case m.shortcutsOpen:
-		return m.shortcutsCardLines(m.width), true
+		return m.shortcutsCard(m.width), true
 	case m.connectVisible():
-		return m.connectCardLines(m.width), true
+		return m.connectCard(m.width), true
 	case m.nick.open:
-		return m.nickCardLines(m.width), true
+		return m.nickCard(m.width), true
 	case m.link.open:
-		return m.linkCardLines(m.width), true
+		return m.linkCard(m.width), true
 	case m.inbox.open:
-		return m.inboxCardLines(m.width), true
+		return m.inboxCard(m.width), true
 	case m.list.open:
-		return m.channelListCardLines(m.width), true
+		return m.channelListCard(m.width), true
 	case m.jump.open:
-		return m.jumpCardLines(m.width), true
+		return m.jumpCard(m.width), true
 	}
-	return nil, false
+	return "", false
 }
 
 // overlaysVisible reports whether any of the filter overlays owns the keys.
@@ -517,28 +731,97 @@ func (m *Model) closeAllOverlays() {
 	}
 }
 
-// overlayLines dims the body and drops the card into its vertical middle. The
-// card lines are already exact-width bordered rows, so no ANSI compositing is
-// needed.
-func (m *Model) overlayLines(body, card []string) []string {
-	if len(card) == 0 {
-		return body
+// overlayCardInset is the blank margin the shared overlay frame leaves on each
+// side of the window, so a card border never sits on the terminal's edge cell.
+// The compositor centers the narrower card over the dimmed body.
+const overlayCardInset = 2
+
+// overlayCardBlock is the single framing path for every overlay card: it
+// clamps the card width, lays the overlay's content lines into the shared
+// panel style, and returns the one block the compositor composites with the
+// shadow. build receives the content width inside the border, so an overlay
+// body never re-derives the frame inset and a later restyle stays inside the
+// overlay's own file without editing this wrapper.
+func (m *Model) overlayCardBlock(width int, build func(inner int) []string) string {
+	frameX, _ := m.styles.Panel.GetFrameSize()
+	inner := width - 2*overlayCardInset - frameX
+	if inner < 8 {
+		inner = 8
 	}
-	out := make([]string, len(body))
-	for index, line := range body {
-		out[index] = m.styles.Dimmer.Render(line)
+	return m.styles.Panel.Width(inner + frameX).Render(strings.Join(build(inner), "\n"))
+}
+
+// compositeOverlay dims the body and composites the overlay card over it, with
+// a solid surface shadow one cell down and two right. The card is centered on
+// the body and the offsets clamp at the top-left on a tiny terminal. The
+// result is re-fitted to the body box so the card and shadow can never push the
+// composer or the footer off the grid.
+func (m *Model) compositeOverlay(body, card string) string {
+	width := lipgloss.Width(body)
+	height := lipgloss.Height(body)
+	dimmed := m.styles.Dimmed.Render(body)
+
+	cardWidth := lipgloss.Width(card)
+	cardHeight := lipgloss.Height(card)
+	x := (width - cardWidth) / 2
+	y := (height - cardHeight) / 2
+	if x < 0 {
+		x = 0
 	}
-	start := (len(out) - len(card)) / 2
-	if start < 0 {
-		start = 0
+	if y < 0 {
+		y = 0
 	}
-	for index, line := range card {
-		if start+index >= len(out) {
-			break
-		}
-		out[start+index] = line
+
+	shadow := m.shadowBlock(cardWidth, cardHeight)
+	rendered := lipgloss.NewCompositor(
+		lipgloss.NewLayer(dimmed),
+		lipgloss.NewLayer(shadow).X(x+2).Y(y+1).Z(1),
+		lipgloss.NewLayer(card).X(x).Y(y).Z(2),
+	).Render()
+	return fitBlock(rendered, width, height)
+}
+
+// shadowBlock is the card-sized solid surface block drawn under the overlay to
+// lift it off the dimmed body.
+func (m *Model) shadowBlock(width, height int) string {
+	if width < 1 {
+		width = 1
 	}
-	return out
+	if height < 1 {
+		height = 1
+	}
+	blank := strings.Repeat(" ", width)
+	rows := make([]string, height)
+	for index := range rows {
+		rows[index] = blank
+	}
+	style := lipgloss.NewStyle().Background(m.styles.Colors.SurfaceRaised)
+	return style.Render(strings.Join(rows, "\n"))
+}
+
+// fitBlock clamps a composited block to exactly width cells by height lines,
+// padding with spaces. It keeps the body box invariant when a card or its
+// shadow overhangs the edge.
+func fitBlock(content string, width, height int) string {
+	if width < 1 {
+		width = 1
+	}
+	if height < 1 {
+		height = 1
+	}
+	lines := strings.Split(content, "\n")
+	if len(lines) > height {
+		lines = lines[:height]
+	}
+	out := make([]string, 0, height)
+	for _, line := range lines {
+		out = append(out, truncateLine(line, width))
+	}
+	blank := strings.Repeat(" ", width)
+	for len(out) < height {
+		out = append(out, blank)
+	}
+	return strings.Join(out, "\n")
 }
 
 // membersVisible reports whether the member column fits and applies. It is

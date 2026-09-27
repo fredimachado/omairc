@@ -1,10 +1,12 @@
 package ui
 
 import (
+	"strconv"
 	"strings"
 
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 )
 
 // This file holds the Phase 5/6 conversation and network navigation: the walk
@@ -35,11 +37,18 @@ type jumpState struct {
 	selected int
 }
 
+// Overlay filter chrome. Every filter sheet shares one prompt glyph, so the
+// fields line up inside the card, and one placeholder per sheet. The state
+// constructors run before the model has a palette, so each open* rebuilds its
+// filter through newTextInput with the live styles; defaultStyles seeds the
+// never-rendered pre-open value.
+const (
+	overlayFilterPrompt = "› "
+	jumpPlaceholder     = "Jump to"
+)
+
 func newJumpState() jumpState {
-	input := textinput.New()
-	input.Placeholder = "Jump to"
-	input.Prompt = "› "
-	return jumpState{input: input}
+	return jumpState{input: newTextInput(defaultStyles(), jumpPlaceholder, overlayFilterPrompt)}
 }
 
 // jumpVisible reports whether the jump overlay is open.
@@ -53,7 +62,7 @@ func (m *Model) openJump() {
 	}
 	m.closeAllOverlays()
 	m.jump.open = true
-	m.jump.input.SetValue("")
+	m.jump.input = newTextInput(m.styles, jumpPlaceholder, overlayFilterPrompt)
 	m.jump.selected = 0
 	m.jump.input.SetWidth(m.overlayInputWidth())
 	m.composer.Blur()
@@ -548,32 +557,81 @@ func (m *Model) clearCurrentDraft() {
 
 // --- Rendering ------------------------------------------------------------
 
-// jumpCardLines renders the jump overlay into a bordered block exactly width
-// cells wide.
-func (m *Model) jumpCardLines(width int) []string {
-	inner := width - 4
-	if inner < 8 {
-		inner = 8
-	}
-	rendered := m.styles.JumpCard.Width(inner).Render(strings.Join(m.jumpCard(inner), "\n"))
-	return strings.Split(rendered, "\n")
+// jumpCard renders the jump overlay as one card block through the shared
+// overlay frame in model.go.
+func (m *Model) jumpCard(width int) string {
+	return m.overlayCardBlock(width, m.jumpCardBody)
 }
 
-// jumpCard is the overlay's content, before the border.
-func (m *Model) jumpCard(inner int) []string {
-	lines := []string{m.styles.JumpQuery.Render("Jump") + "  " + m.jump.input.View()}
+// jumpCardBody is the jump overlay's content, before the shared frame. inner is
+// the content width inside the border.
+func (m *Model) jumpCardBody(inner int) []string {
 	entries := m.jumpEntries()
+	lines := m.overlaySheetHeader(inner, "Jump", len(entries))
+	lines = append(lines, truncateLine(m.jump.input.View(), inner))
 	if len(entries) == 0 {
-		return append(lines, m.styles.JumpEmpty.Render("No matches"))
+		return append(lines, m.overlaySheetEmpty("No matches"))
 	}
 	for index, entry := range entries {
-		style := m.styles.JumpRow
-		if index == m.jump.selected {
-			style = m.styles.JumpSelected
-		}
-		lines = append(lines, style.Render(truncateLine(entry.label, inner)))
+		lines = append(lines, m.overlayToggleRow(inner, index == m.jump.selected, entry.label))
 	}
 	return lines
+}
+
+// --- Shared overlay chrome ------------------------------------------------
+
+// The sheet rows read as a check list: the highlighted row carries the accent
+// bar, a checked [x] chip, and a raised-surface fill that reaches the card's
+// inner width, while every other row carries an unchecked [ ] chip.
+const (
+	overlayChipOn  = "[x]"
+	overlayChipOff = "[ ]"
+)
+
+// overlaySheetHeader renders the heading every filter sheet opens with: a
+// title, a muted count pill when the sheet has rows, and a divider rule that
+// reaches the card's inner width.
+func (m *Model) overlaySheetHeader(inner int, title string, count int) []string {
+	head := m.styles.PanelTitle.Render(title)
+	if count > 0 {
+		head += " " + m.badge(m.styles.BadgeMuted, strconv.Itoa(count))
+	}
+	lines := []string{head}
+	if inner > 0 {
+		lines = append(lines, m.styles.Divider.Render(strings.Repeat("─", inner)))
+	}
+	return lines
+}
+
+// overlaySheetEmpty renders one sheet's empty state in the shared muted style.
+func (m *Model) overlaySheetEmpty(text string) string {
+	return m.styles.JumpEmpty.Render(text)
+}
+
+// overlayToggleRow renders one sheet row through the shared chrome: a leading
+// accent bar on the highlighted row, an [x]/[ ] toggle chip, the label, and a
+// raised-surface fill that reaches inner. label is plain text; the caller never
+// passes pre-styled text, whose reset would clear the row fill.
+func (m *Model) overlayToggleRow(inner int, selected bool, label string) string {
+	bar := " "
+	barStyle := m.styles.Divider
+	chip := overlayChipOff
+	chipStyle := m.styles.SheetLabel
+	rowStyle := m.styles.JumpRow
+	if selected {
+		fill := m.styles.Colors.SurfaceRaised
+		bar = "▌"
+		barStyle = m.styles.JumpQuery.Background(fill)
+		chip = overlayChipOn
+		chipStyle = m.styles.SheetToggleOn.Background(fill)
+		rowStyle = m.styles.JumpSelected.Background(fill)
+	}
+	prefix := barStyle.Render(bar) + chipStyle.Render(chip) + rowStyle.Render(" ")
+	line := prefix + rowStyle.Render(truncateLine(label, inner-lipgloss.Width(prefix)))
+	if pad := inner - lipgloss.Width(line); pad > 0 {
+		line += rowStyle.Render(strings.Repeat(" ", pad))
+	}
+	return line
 }
 
 // overlayInputWidth is the width the composer and the overlay filters use

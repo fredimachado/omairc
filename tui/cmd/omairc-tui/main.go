@@ -22,6 +22,7 @@ import (
 	"github.com/fredimachado/omairc/tui/internal/notify"
 	"github.com/fredimachado/omairc/tui/internal/session"
 	"github.com/fredimachado/omairc/tui/internal/storage"
+	"github.com/fredimachado/omairc/tui/internal/theme"
 	"github.com/fredimachado/omairc/tui/internal/ui"
 	"github.com/fredimachado/omairc/tui/internal/version"
 )
@@ -123,6 +124,16 @@ func run(args []string, stdout, stderr io.Writer) int {
 	// rebuilt a snapshot. Coalesce the wake-ups onto one dispatcher instead.
 	model := ui.New(c, conn)
 	p := tea.NewProgram(model)
+
+	// The live Omarchy theme watcher. SetThemeWatcher adopts the current
+	// palette immediately; the shell then arms one blocking Changes() read as a
+	// tea.Cmd on the first WindowSizeMsg, and the Bubble Tea runtime delivers
+	// each ThemeChangedMsg on the Update goroutine. The watcher therefore never
+	// calls p.Send itself, so it stays off the synchronous-callback path that
+	// would block the event loop.
+	watcher := theme.NewWatcher(nil, 0)
+	defer watcher.Close()
+	model.SetThemeWatcher(watcher)
 
 	// Peer avatars need 24-bit color for the half-block raster. Without it the
 	// shell falls back to the nick identicon, so no store is created.

@@ -112,10 +112,13 @@ type connectSheetState struct {
 	armedRemove bool
 }
 
+// newConnectSheetState builds the sheet's one live text field through the
+// shared newTextInput factory, so the focused field renders with the same
+// theme-driven input styles as the composer and the filter overlays. It starts
+// on the fixed fallback palette because New builds the sheet before a theme is
+// wired; syncSheetField re-applies the live palette whenever focus moves.
 func newConnectSheetState() connectSheetState {
-	input := textinput.New()
-	input.Prompt = ""
-	return connectSheetState{input: input}
+	return connectSheetState{input: newTextInput(defaultStyles(), "", "")}
 }
 
 // connectVisible reports whether the sheet is on top: first run cannot dismiss
@@ -416,6 +419,9 @@ func (m *Model) syncSheetField() {
 		m.sheet.input.Blur()
 		return
 	}
+	// The field keeps the live palette across a theme change without rebuilding
+	// the sheet state, because applyStyles cannot reach into the sheet.
+	m.sheet.input.SetStyles(m.styles.Input)
 	m.sheet.input.SetWidth(m.overlayInputWidth())
 	m.sheet.input.Placeholder = ""
 	m.sheet.input.EchoMode = textinput.EchoNormal
@@ -551,45 +557,46 @@ func (m *Model) handleConnectKey(key string, msg tea.KeyPressMsg) (tea.Model, te
 
 // --- Rendering ------------------------------------------------------------
 
-// connectCardLines renders the sheet into a bordered block exactly width cells
-// wide.
-func (m *Model) connectCardLines(width int) []string {
-	inner := width - 4
-	if inner < 8 {
-		inner = 8
-	}
-	lines := m.connectCard(inner)
-	rendered := m.styles.SheetCard.Width(inner).Render(strings.Join(lines, "\n"))
-	return strings.Split(rendered, "\n")
+// connectCard renders the Connect sheet as one card block through the shared
+// overlay frame in model.go.
+func (m *Model) connectCard(width int) string {
+	return m.overlayCardBlock(width, m.connectCardBody)
 }
 
-// connectCard is the sheet's content, before the border.
-func (m *Model) connectCard(inner int) []string {
-	lines := []string{m.connectTitleLine()}
-	lines = append(lines, m.styles.SheetLabel.Render("NETWORKS"))
+// connectCardBody is the sheet's content, before the shared frame. inner is the
+// content width inside the border. Every line is truncated to inner cells,
+// because the shared frame in model.go owns the border and the outer width.
+func (m *Model) connectCardBody(inner int) []string {
+	lines := []string{
+		truncateLine(m.connectTitleLine(), inner),
+		truncateLine(m.connectTabLine(), inner),
+		truncateLine(m.sectionHeader("NETWORKS", inner), inner),
+	}
 
 	for index, row := range m.conn.Networks() {
 		stop := connectStop{kind: stopNetwork, index: index}
 		marker := "  "
+		markerStyle := m.styles.SheetField
 		if row.Selected {
 			marker = "▸ "
-		}
-		suffix := ""
-		if !row.Stored {
-			suffix = "  (new)"
+			markerStyle = m.styles.SheetRowFocused
 		}
 		style := m.styles.SheetRow
 		if m.stopFocused(stop) {
-			style = m.styles.SheetRowFocused
+			style = m.styles.SheetRowFocused.Background(m.styles.Colors.SurfaceRaised)
 		}
-		lines = append(lines, style.Render(truncateLine(marker+row.DisplayName+suffix, inner)))
+		line := markerStyle.Render(marker) + style.Render(row.DisplayName)
+		if !row.Stored {
+			line += " " + m.styles.BadgeMuted.Render("new")
+		}
+		lines = append(lines, truncateLine(line, inner))
 	}
 	if m.conn.CanAdd() {
-		style := m.styles.SheetRow
+		style := m.styles.SheetField
 		if m.stopFocused(connectStop{kind: stopAddNetwork}) {
-			style = m.styles.SheetRowFocused
+			style = m.styles.SheetRowFocused.Background(m.styles.Colors.SurfaceRaised)
 		}
-		lines = append(lines, style.Render("  + Add network"))
+		lines = append(lines, truncateLine(style.Render("  + Add network"), inner))
 	}
 	lines = append(lines, "")
 
@@ -598,7 +605,9 @@ func (m *Model) connectCard(inner int) []string {
 			lines = append(lines, m.connectFieldLine(connectField(index), inner))
 		}
 	} else {
-		lines = append(lines, m.preferencesLines()...)
+		for _, line := range m.preferencesLines() {
+			lines = append(lines, truncateLine(line, inner))
+		}
 	}
 
 	// The persistence and credential sentences render beside the validation
@@ -612,46 +621,73 @@ func (m *Model) connectCard(inner int) []string {
 	}
 
 	if problem := m.conn.Problem(); problem != "" {
-		lines = append(lines, m.styles.SheetProblem.Render(truncateLine(problem, inner)))
+		lines = append(lines, m.styles.StatusErr.Render(truncateLine("✗ "+problem, inner)))
 	} else {
 		lines = append(lines, "")
 	}
 
 	if m.sheet.tab == connectTabConnection {
-		lines = append(lines, m.connectFooterLine())
+		lines = append(lines, truncateLine(m.connectFooterLine(), inner))
 	}
 	return lines
 }
 
-// connectTitleLine is the "Connect" heading plus the two tab labels.
+// connectTitleLine is the "Connect" heading.
 func (m *Model) connectTitleLine() string {
-	connectionTab := m.styles.SheetTab.Render("Connection")
-	preferencesTab := m.styles.SheetTab.Render("Preferences")
-	if m.sheet.tab == connectTabConnection {
-		connectionTab = m.styles.SheetTabActive.Render("Connection")
-	} else {
-		preferencesTab = m.styles.SheetTabActive.Render("Preferences")
-	}
-	return m.styles.SheetTitle.Render("Connect") + "    " + connectionTab + "  " + preferencesTab
+	return m.styles.SheetTitle.Render("Connect")
 }
 
-// connectFieldLine renders one Connection-tab field.
+// connectTabLine renders the two sheet tabs as one segmented rail: the active
+// tab is accented and underlined, the inactive one stays dim, and both sit on
+// the raised surface so the pair reads as a tab strip.
+func (m *Model) connectTabLine() string {
+	return m.connectTab("Connection", m.sheet.tab == connectTabConnection) + " " +
+		m.connectTab("Preferences", m.sheet.tab == connectTabPreferences)
+}
+
+// connectTab renders one tab label.
+func (m *Model) connectTab(label string, active bool) string {
+	style := m.styles.SheetTab
+	if active {
+		style = m.styles.SheetTabActive
+	}
+	return style.Background(m.styles.Colors.SurfaceRaised).Render(" " + label + " ")
+}
+
+// connectChip renders a toggle as an on/off pill on the raised surface, so the
+// state reads as a switch instead of a bracketed checkbox.
+func (m *Model) connectChip(on bool) string {
+	style := m.styles.SheetButtonMuted
+	label := "off"
+	if on {
+		style = m.styles.SheetToggleOn
+		label = "on"
+	}
+	return style.Background(m.styles.Colors.SurfaceRaised).Render(" " + label + " ")
+}
+
+// connectFieldLine renders one Connection-tab field: a label column, then
+// either a toggle chip or the bracketed value box.
 func (m *Model) connectFieldLine(field connectField, inner int) string {
 	stop := connectStop{kind: stopField, index: int(field)}
-	label := fmt.Sprintf("%-17s ", connectFieldLabels[field])
-	style := m.styles.SheetField
-	if m.stopFocused(stop) {
-		style = m.styles.SheetFieldActive
+	focused := m.stopFocused(stop)
+	labelStyle := m.styles.SheetField
+	if focused {
+		labelStyle = m.styles.SheetFieldActive.Foreground(m.styles.Colors.Accent)
 	}
+	label := labelStyle.Render(fmt.Sprintf("%-21s", connectFieldLabels[field]))
 	switch field {
 	case fieldTLS:
-		return style.Render(label) + toggleMark(m.conn.TLSEnabled())
+		return truncateLine(label+" "+m.connectChip(m.conn.TLSEnabled()), inner)
 	case fieldConnectOnStartup:
-		return style.Render(label) + toggleMark(m.conn.ConnectOnStartup())
+		return truncateLine(label+" "+m.connectChip(m.conn.ConnectOnStartup()), inner)
 	}
-	value := m.fieldDisplayValue(stop)
-	line := label + "[" + value + "]"
-	return style.Render(truncateLine(line, inner))
+	boxStyle := m.styles.SheetField
+	if focused {
+		boxStyle = m.styles.SheetFieldActive.Foreground(m.styles.Colors.Accent)
+	}
+	box := boxStyle.Render("[" + m.fieldDisplayValue(stop) + "]")
+	return truncateLine(label+" "+box, inner)
 }
 
 // preferencesLines renders the Preferences-tab toggles.
@@ -666,9 +702,9 @@ func (m *Model) preferencesLines() []string {
 		stop := connectStop{kind: stopField, index: index}
 		style := m.styles.SheetField
 		if m.stopFocused(stop) {
-			style = m.styles.SheetFieldActive
+			style = m.styles.SheetFieldActive.Foreground(m.styles.Colors.Accent)
 		}
-		lines = append(lines, style.Render(toggleMark(on[prefField(index)])+" "+prefFieldLabels[prefField(index)]))
+		lines = append(lines, m.connectChip(on[prefField(index)])+" "+style.Render(prefFieldLabels[prefField(index)]))
 	}
 	return lines
 }
@@ -704,8 +740,9 @@ func (m *Model) secretSet(field connectField) bool {
 	return false
 }
 
-// connectFooterLine renders the footer buttons. Apply is muted while the draft
-// has a problem.
+// connectFooterLine renders the footer buttons as raised-surface pills. Apply
+// is muted while the draft has a problem, and the focused button is accented
+// (or underlined while muted) so the keyboard walk stays visible.
 func (m *Model) connectFooterLine() string {
 	actions := m.footerActions()
 	parts := make([]string, 0, len(actions))
@@ -723,14 +760,7 @@ func (m *Model) connectFooterLine() string {
 				style = m.styles.SheetButtonFocus
 			}
 		}
-		parts = append(parts, style.Render("["+label+"]"))
+		parts = append(parts, style.Background(m.styles.Colors.SurfaceRaised).Render(" "+label+" "))
 	}
 	return strings.Join(parts, " ")
-}
-
-func toggleMark(on bool) string {
-	if on {
-		return "[x]"
-	}
-	return "[ ]"
 }

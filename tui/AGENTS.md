@@ -27,6 +27,10 @@ When the two disagree about the shared contract, the root file wins.
   harness behind `--demo-server`, mirrors `src/irc/ircdemoserver.cpp`),
   `internal/ui/`
   (Bubble Tea shell, mirrors `src/qml/` plus `OmaircWindow.qml`),
+  `internal/theme/` (the Omarchy palette: `colors.toml` parsing, the derived
+  structural colors plus the fixed semantic/nick block, `Fallback`, and the
+  live mtime-poll `Watcher`; lipgloss-free, wrapped by `internal/ui` at the
+  rendering edge),
   `internal/avatar/` (peer-avatar fetch, bounded decode, cache, and
   half-block raster), `internal/openurl/` (the OS URL-handler seam),
   `internal/gate/` (the PTY parity driver: VT grid, OSC title capture, key
@@ -43,12 +47,34 @@ When the two disagree about the shared contract, the root file wins.
   ports `src/irc/ircavatarurl.cpp` (QUrl + QHostAddress), so it may import
   `net/url` and `net/netip` — pure URL and IP-literal parsing, not a socket.
   The gate lists that file explicitly; do not widen the exemption.
-- `internal/avatar` and `internal/openurl` are integration packages like
-  `internal/notify`. `internal/avatar` owns `net/http`, the DNS-pinned
-  (SSRF-safe) fetch, bounded png/jpeg/gif decode, the 64-entry cache, and the
-  half-block raster; it never renders lipgloss. `internal/openurl` is the
-  `xdg-open` seam on Linux with no-op stubs elsewhere. `internal/ui` may
-  import both; it still must not import `internal/irc`.
+- `internal/avatar`, `internal/openurl`, and `internal/theme` are integration
+  packages like `internal/notify`. `internal/avatar` owns `net/http`, the
+  DNS-pinned (SSRF-safe) fetch, bounded png/jpeg/gif decode, the 64-entry
+  cache, and the half-block raster; it never renders lipgloss.
+  `internal/openurl` is the `xdg-open` seam on Linux with no-op stubs
+  elsewhere. `internal/theme` reads Omarchy's `colors.toml`, derives the
+  structural palette, keeps the fixed semantic and nick colors, and polls the
+  theme tree through a `session.Clock`; it stays lipgloss-free and imports no
+  view code. `internal/ui` may import all three; it still must not import
+  `internal/irc` — that is the only import the view/driver gate forbids.
+- Visual divergence from Qt is a deliberate policy, not drift. Behavior,
+  chords, the window title, and the controller contract stay identical; only
+  presentation may diverge. `internal/theme` encodes the split: the semantic
+  colors (`good` / `warning` / `danger` / `mention` / `unread`) and the nick
+  palette are fixed and shared with `OmaircStyle.qml`, while the surfaces,
+  borders, and secondary text are derived from the live theme's
+  background/foreground/accent. `Fallback()` pins the dark Tokyo-Night palette
+  for a missing or unreadable `colors.toml`, so the TUI keeps its exact old
+  literals when no Omarchy theme is installed. `internal/ui.buildStyles` is
+  the only place lipgloss sees `theme.Colors`.
+- The controller and connection callbacks fire both from `Update` and from
+  session goroutines. Never call `p.Send` synchronously from a callback: it
+  blocks on the program message channel and deadlocks the event loop the
+  moment a navigation chord republishes a snapshot. Coalesce wake-ups onto one
+  dispatcher goroutine, as `cmd/omairc-tui/main.go` does. The live theme
+  watcher follows the same rule: `SetThemeWatcher` adopts the current palette
+  and the shell arms one blocking `Changes()` read as a `tea.Cmd`, so the
+  runtime — not a callback — delivers each `ThemeChangedMsg`.
 - `internal/session` is the only product package that opens sockets or TLS;
   `internal/gate` is the dev-only PTY driver (a Unix socket plus `os/exec`),
   not product code. All timers, reconnects, the ping watchdog, the

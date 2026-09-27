@@ -1,8 +1,10 @@
 package ui
 
 import (
-	"fmt"
 	"strings"
+
+	"charm.land/bubbles/v2/key"
+	"charm.land/lipgloss/v2"
 )
 
 // This file is the Ctrl+/ shortcuts sheet. It lists the full chord map,
@@ -102,25 +104,68 @@ func (m *Model) closeShortcuts() {
 	m.refocusComposer()
 }
 
-// shortcutsCardLines renders the sheet into a bordered block exactly width
-// cells wide.
-func (m *Model) shortcutsCardLines(width int) []string {
-	inner := width - 4
-	if inner < 8 {
-		inner = 8
-	}
-	keyWidth := inner / 2
-	if keyWidth < 12 {
-		keyWidth = 12
-	}
-	lines := []string{m.styles.JumpQuery.Render("Shortcuts")}
+// shortcutsCard renders the shortcuts sheet as one card block through the
+// shared overlay frame in model.go.
+func (m *Model) shortcutsCard(width int) string {
+	return m.overlayCardBlock(width, m.shortcutsCardBody)
+}
+
+// shortcutsMenuGutter is the two-cell gutter between the keycap column and the
+// action column.
+const shortcutsMenuGutter = 2
+
+// shortcutsCardBody is the sheet's content, before the shared frame. Every chord
+// is a key.Binding whose Help drives a keycap chip in the left column with the
+// action in the right column, under a per-group header. inner is the content
+// width inside the border.
+func (m *Model) shortcutsCardBody(inner int) []string {
+	lines := []string{truncateLine(m.styles.SheetTitle.Render("Shortcuts"), inner)}
+
+	// Size the keycap column to the widest key label (chip padding included),
+	// capped so the action column always keeps a few cells of its own.
+	keyText := 0
 	for _, group := range shortcutGroups {
-		lines = append(lines, m.styles.JumpEmpty.Render(group.title))
 		for _, row := range group.rows {
-			label := fmt.Sprintf("%-*s %s", keyWidth, row.keys, row.action)
-			lines = append(lines, m.styles.JumpRow.Render(truncateLine(label, inner)))
+			if width := lipgloss.Width(row.keys); width > keyText {
+				keyText = width
+			}
 		}
 	}
-	rendered := m.styles.JumpCard.Width(inner).Render(strings.Join(lines, "\n"))
-	return strings.Split(rendered, "\n")
+	column := keyText + 2 + shortcutsMenuGutter
+	if limit := inner - 4; column > limit {
+		column = limit
+	}
+	if column < 4 {
+		column = 4
+	}
+	if column > inner {
+		column = inner
+	}
+	labelWidth := column - shortcutsMenuGutter
+	actionWidth := inner - column
+	if actionWidth < 1 {
+		actionWidth = 1
+	}
+	actionStyle := lipgloss.NewStyle().Foreground(m.styles.Colors.TextMuted)
+
+	for groupIndex, group := range shortcutGroups {
+		if groupIndex > 0 {
+			lines = append(lines, "")
+		}
+		lines = append(lines, truncateLine(m.styles.SectionHeader.Render(group.title), inner))
+		for _, row := range group.rows {
+			// The binding is the single source for both cells, so the chip and
+			// its action can never drift from the chord map.
+			help := key.NewBinding(
+				key.WithKeys(row.keys),
+				key.WithHelp(row.keys, row.action),
+			).Help()
+			chip := truncateLine(m.styles.Keycap.Render(" "+help.Key+" "), labelWidth)
+			label := lipgloss.NewStyle().Width(labelWidth).Render(chip)
+			action := truncateLine(actionStyle.Render(help.Desc), actionWidth)
+			line := label + strings.Repeat(" ", shortcutsMenuGutter) + action
+			lines = append(lines, truncateLine(line, inner))
+		}
+	}
+	return lines
 }

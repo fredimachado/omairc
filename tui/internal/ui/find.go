@@ -31,7 +31,7 @@ func (m *Model) beginOrAdvanceFind() {
 		m.find.active = true
 		m.find.index = -1
 		m.transcriptCursor = -1
-		m.composer.Placeholder = "Find"
+		m.composer.Placeholder = findPlaceholder
 		m.advanceFind(true)
 		return
 	}
@@ -74,7 +74,7 @@ func (m *Model) leaveFind() {
 	}
 	m.find.active = false
 	m.find.index = -1
-	m.composer.Placeholder = "Message"
+	m.composer.Placeholder = composerPlaceholder
 	m.composer.SetValue(m.find.draft)
 	m.composer.CursorEnd()
 }

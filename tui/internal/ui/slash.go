@@ -1,7 +1,10 @@
 package ui
 
 import (
+	"strings"
+
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 
 	"github.com/fredimachado/omairc/tui/internal/controller"
 )
@@ -175,23 +178,83 @@ func (s *slashSession) move(delta int) {
 	s.selected = next
 }
 
-// slashLines renders the completion list above the composer: a compact list of
-// the highlighted row plus its usage. It returns nil when the list is closed.
+// slashMenuGap is the two-cell gutter between a completion's label and its
+// usage, preserving the previous inline format.
+const slashMenuGap = 2
+
+// slashMenuChrome is the horizontal space the floating menu spends outside its
+// content: one cell of left indent, the rounded border (2), and one cell of
+// padding on each side (2).
+const slashMenuChrome = 5
+
+// slashMenuBorderRows is the vertical space the framed menu adds: one row for
+// the top border and one for the bottom.
+const slashMenuBorderRows = 2
+
+// slashLines renders the completion list above the composer as a floating
+// bordered menu: one row per hit with its label and usage, a filled band on the
+// highlighted row, and the theme's raised surface and focus border behind it.
+// It returns nil when the list is closed. The menu is inline (not a composited
+// overlay card), so it builds its own small frame here rather than through
+// overlayCardBlock.
 func (m *Model) slashLines() []string {
 	if !m.slash.open() {
 		return nil
 	}
 	hits := m.slash.probe.Hits
+	if len(hits) == 0 {
+		return nil
+	}
+	labelWidth, usageWidth := 0, 0
+	for _, hit := range hits {
+		if width := lipgloss.Width(hit.Label); width > labelWidth {
+			labelWidth = width
+		}
+		if width := lipgloss.Width(hit.Usage); width > usageWidth {
+			usageWidth = width
+		}
+	}
+	// The menu hugs its longest row but never wider than the window leaves for
+	// its indent, border, and padding.
+	width := labelWidth + slashMenuGap + usageWidth
+	if limit := m.width - slashMenuChrome; width > limit {
+		width = limit
+	}
+	if width < 1 {
+		width = 1
+	}
+	row := m.styles.SlashRow.Background(m.styles.Colors.SurfaceRaised)
+	// The selected row is a filled band with the window background as ink: the
+	// accent-on-selection pairing reads too softly, so the fill carries the
+	// row and the label stays legible on it.
+	selected := lipgloss.NewStyle().
+		Bold(true).
+		Foreground(m.styles.Colors.Background).
+		Background(m.styles.Colors.Selection)
 	lines := make([]string, 0, len(hits))
 	for index, hit := range hits {
-		label := hit.Label
+		style := row
 		if index == m.slash.selected {
-			lines = append(lines, m.styles.SlashSelected.Render(label+"  "+hit.Usage))
-			continue
+			style = selected
 		}
-		lines = append(lines, m.styles.SlashRow.Render(label+"  "+hit.Usage))
+		text := truncateLine(hit.Label+strings.Repeat(" ", slashMenuGap)+hit.Usage, width)
+		lines = append(lines, style.Width(width).Render(text))
 	}
-	return lines
+	// The frame costs a top and bottom row. Framed only when the window can also
+	// keep one body row above and the composer below; otherwise fall back to the
+	// bare filled rows so the composer stays on the last row instead of
+	// scrolling off.
+	if m.height < len(hits)+slashMenuBorderRows+2 {
+		return lines
+	}
+	menu := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(m.styles.Colors.BorderFocus).
+		Background(m.styles.Colors.SurfaceRaised).
+		Padding(0, 1).
+		MarginLeft(1).
+		Render(strings.Join(lines, "\n"))
+	return strings.Split(menu, "\n")
 }
 
 // slashInsert applies a routed insertion to the composer and syncs the
