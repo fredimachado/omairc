@@ -102,6 +102,44 @@ func TestOverlayCardInterface(t *testing.T) {
 	}
 }
 
+// TestOverlayCardTopIsAnchoredAgainstContent pins the zero-jitter anchor: the
+// card's top border sits on the fixed overlayCardTopInset row and does not move
+// when the card's own height changes. Centering the card on its own height let a
+// narrowing jump filter shrink the card and drag it down the body a row at a
+// time while the user typed.
+func TestOverlayCardTopIsAnchoredAgainstContent(t *testing.T) {
+	m := seededModel(t)
+	m.openJump()
+
+	topRow := func() int {
+		t.Helper()
+		for index, line := range strings.Split(m.render(), "\n") {
+			plain := []rune(ansiPattern.ReplaceAllString(line, ""))
+			if len(plain) > overlayCardInset && plain[overlayCardInset] == '╭' {
+				return index
+			}
+		}
+		t.Fatal("no overlay card top border in the render")
+		return -1
+	}
+
+	wideRow, wideHeight := topRow(), lipgloss.Height(m.jumpCard(m.width))
+	m.jump.input.SetValue("#desktop")
+	narrowRow, narrowHeight := topRow(), lipgloss.Height(m.jumpCard(m.width))
+
+	if narrowHeight >= wideHeight {
+		t.Fatalf("the filter did not shrink the card (%d -> %d lines); the proof needs a height change",
+			wideHeight, narrowHeight)
+	}
+	if wideRow != narrowRow {
+		t.Fatalf("card top row moved %d -> %d as its height changed %d -> %d lines",
+			wideRow, narrowRow, wideHeight, narrowHeight)
+	}
+	if want := overlayCardTopInset; wideRow != want {
+		t.Fatalf("card top row = %d, want the anchored row %d", wideRow, want)
+	}
+}
+
 // TestMemberPanelHasSingleInnerRule reconciles L2's heading rule with F2's
 // frame: the panel border owns the outer rule and the heading is the one inner
 // separator, drawn at the frame's content width, so the column shows neither a

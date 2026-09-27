@@ -738,6 +738,14 @@ func (m *Model) closeAllOverlays() {
 // The compositor centers the narrower card over the dimmed body.
 const overlayCardInset = 2
 
+// overlayCardTopInset is the fixed row the overlay card's top border occupies,
+// the vertical counterpart to overlayCardInset. The card is anchored to this row
+// rather than centered on its own height, so a content-length change — a
+// narrowing jump filter, a shorter Connect tab, a taller network roster — cannot
+// bounce the card up and down while the user works in it. Horizontal centering
+// stays safe because every card shares one fixed outer width, so x never moves.
+const overlayCardTopInset = 1
+
 // overlayCardBlock is the single framing path for every overlay card: it
 // clamps the card width, lays the overlay's content lines into the shared
 // panel style, and returns the one block the compositor composites with the
@@ -754,10 +762,11 @@ func (m *Model) overlayCardBlock(width int, build func(inner int) []string) stri
 }
 
 // compositeOverlay dims the body and composites the overlay card over it, with
-// a solid surface shadow one cell down and two right. The card is centered on
-// the body and the offsets clamp at the top-left on a tiny terminal. The
-// result is re-fitted to the body box so the card and shadow can never push the
-// composer or the footer off the grid.
+// a solid surface shadow one cell down and two right. The card is centered
+// horizontally and anchored to a fixed top row (overlayCardTopInset) so its own
+// height never moves it; the offsets clamp at the top-left on a tiny terminal.
+// The result is re-fitted to the body box so the card and shadow can never push
+// the composer or the footer off the grid.
 func (m *Model) compositeOverlay(body, card string) string {
 	width := lipgloss.Width(body)
 	height := lipgloss.Height(body)
@@ -766,13 +775,12 @@ func (m *Model) compositeOverlay(body, card string) string {
 	cardWidth := lipgloss.Width(card)
 	cardHeight := lipgloss.Height(card)
 	x := (width - cardWidth) / 2
-	y := (height - cardHeight) / 2
 	if x < 0 {
 		x = 0
 	}
-	if y < 0 {
-		y = 0
-	}
+	// Anchor the top edge; do not derive it from cardHeight. Centering on the
+	// card's own height made a shorter list drag the whole card down the body.
+	y := overlayCardTopInset
 
 	shadow := m.shadowBlock(cardWidth, cardHeight)
 	rendered := lipgloss.NewCompositor(
