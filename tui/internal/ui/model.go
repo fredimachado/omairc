@@ -863,10 +863,11 @@ func (m *Model) compositeOverlay(body, card string) string {
 }
 
 // compositeSlashMenu floats the open slash-completion menu over the bottom of
-// the body, hugging the composer it belongs to, instead of taking rows from the
-// column budget. The menu rows and frame carry the raised-surface fill, so it
-// reads as a dropdown opening upward while the sidebar, transcript, and member
-// columns keep their height. height is the body row count the caller rendered.
+// the body, just above the composer it belongs to, instead of taking rows from
+// the column budget. The menu is placed at slashMenuLeft with an X offset rather
+// than as a pre-indented layer: an indented layer is drawn from column zero, so
+// its leading spaces would overwrite the body and erase the sidebar beneath it.
+// height is the body row count the caller rendered.
 func (m *Model) compositeSlashMenu(body string, height int) string {
 	menu := m.slashLines()
 	if len(menu) == 0 {
@@ -877,13 +878,9 @@ func (m *Model) compositeSlashMenu(body string, height int) string {
 	if y < 0 {
 		y = 0
 	}
-	// alignToComposer indents the menu under the transcript column; the layer
-	// then sits at column zero, so the menu's styled rows are the only thing
-	// drawn over the body.
-	layer := strings.Join(m.alignToComposer(menu), "\n")
 	rendered := lipgloss.NewCompositor(
 		lipgloss.NewLayer(body),
-		lipgloss.NewLayer(layer).Y(y).Z(1),
+		lipgloss.NewLayer(strings.Join(menu, "\n")).X(m.slashMenuLeft()).Y(y).Z(1),
 	).Render()
 	return fitBlock(rendered, width, height)
 }
@@ -969,49 +966,49 @@ func (m *Model) transcriptWidth() int {
 	return width
 }
 
-// composerInset is the blank cell margin the composer field leaves inside the
-// transcript column on each side, so it sits centered under the transcript it
-// belongs to. It mirrors ConversationColumn.qml's composerShell margins.
+// composerInset is the blank cell margin the composer bar leaves inside the
+// window on each side. The composer is a window-level element like the footer:
+// its left edge and width are derived from the window alone, never from the
+// sidebar or the member panel, so hiding or showing a column never moves it.
 const composerInset = 2
 
-// composerColumnLeft is the left edge of the transcript column: past the
-// sidebar when that rail is visible, else the window edge.
-func (m *Model) composerColumnLeft() int {
+// transcriptLeft is the left edge of the transcript column: past the sidebar when
+// that rail is visible, else the window edge. Only the floating slash menu and
+// the column arithmetic read it; the composer no longer does, so its position is
+// independent of the sidebar.
+func (m *Model) transcriptLeft() int {
 	if m.serverListVisible {
 		return sidebarWidth(m.width)
 	}
 	return 0
 }
 
-// composerLeft is the composer field's left cell: the transcript column plus its
-// inset. composerView pads to it and composerCursor moves the real cursor by it.
+// composerLeft is the composer bar's left cell: the window inset, independent of
+// the sidebar. composerView pads to it and composerCursor moves the real cursor
+// by it.
 func (m *Model) composerLeft() int {
-	return m.composerColumnLeft() + composerInset
+	return composerInset
 }
 
-// composerWidth is the composer field's total visible width: the transcript
-// column minus both insets, clamped so a narrow window still yields one cell.
+// composerWidth is the composer bar's total visible width: the window minus both
+// insets, clamped so a narrow window still yields one cell. It does not subtract
+// the sidebar or the member panel.
 func (m *Model) composerWidth() int {
-	width := m.transcriptWidth() - 2*composerInset
+	width := m.width - 2*composerInset
 	if width < 1 {
 		width = 1
 	}
 	return width
 }
 
-// alignToComposer shifts inline composer chrome (the slash menu) so it opens
-// over the field it belongs to instead of the window's left edge. The tiny
-// full-width fallback leaves the lines at the left edge.
-func (m *Model) alignToComposer(lines []string) []string {
-	if len(lines) == 0 || m.width < minWidth || m.height < minHeight {
-		return lines
+// slashMenuLeft is the floating slash menu's left cell. The menu opens over the
+// transcript column rather than the window edge, so it never covers the sidebar
+// or blanks it while it is open.
+func (m *Model) slashMenuLeft() int {
+	if m.width < minWidth || m.height < minHeight {
+		return 0
 	}
-	indent := strings.Repeat(" ", m.composerLeft())
-	shifted := make([]string, len(lines))
-	for index, line := range lines {
-		shifted[index] = indent + line
-	}
-	return shifted
+	return m.transcriptLeft() + composerInset
 }
 
 // fitLines clamps lines to limit, keeping the tail (the newest transcript

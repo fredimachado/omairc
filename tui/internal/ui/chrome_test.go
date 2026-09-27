@@ -35,34 +35,45 @@ func TestComposerRowFitsTheGrid(t *testing.T) {
 	}
 }
 
-// TestComposerGroupsWithTranscript pins the new layout: the composer field is
-// inset under the transcript column, so its visible block is a subset of the
-// transcript's span rather than the full window width starting at the sidebar.
-func TestComposerGroupsWithTranscript(t *testing.T) {
+// TestComposerIsIndependentOfTheSidebar pins the layout contract: the composer is
+// a window-level bar whose left edge and width come from the window alone. It
+// spans the window (minus the two insets) and does not move or resize when the
+// sidebar is toggled, so a column change can never drag the composer around.
+func TestComposerIsIndependentOfTheSidebar(t *testing.T) {
 	m := seededModel(t)
 	if !m.serverListVisible {
 		t.Fatal("seeded layout must show the sidebar")
 	}
 
-	field := m.composerWidth()
-	if field >= m.width {
-		t.Fatalf("composer width = %d, want narrower than the %d-cell window", field, m.width)
+	shownLeft, shownWidth := m.composerLeft(), m.composerWidth()
+	if want := composerInset; shownLeft != want {
+		t.Fatalf("composer left = %d, want the window inset %d", shownLeft, want)
 	}
-	if field != m.transcriptWidth()-2*composerInset {
-		t.Fatalf("composer width = %d, want transcript column %d minus both insets",
-			field, m.transcriptWidth())
+	if want := m.width - 2*composerInset; shownWidth != want {
+		t.Fatalf("composer width = %d, want the window minus both insets %d", shownWidth, want)
 	}
-	// It sits inside the transcript column and leaves the inset on each side.
-	if left := m.composerLeft(); left != sidebarWidth(m.width)+composerInset {
-		t.Fatalf("composer left = %d, want sidebar + inset", left)
-	}
-	if right := m.composerLeft() + m.composerWidth(); right > m.width {
+	if right := shownLeft + shownWidth; right > m.width {
 		t.Fatalf("composer reaches %d, past the %d-cell window", right, m.width)
 	}
-	// The slash menu, when open, opens over the same column.
-	shifted := m.alignToComposer([]string{"menu"})
-	if got := strings.Index(shifted[0], "menu"); got != m.composerLeft() {
-		t.Fatalf("slash menu indent = %d, want composerLeft() %d", got, m.composerLeft())
+
+	// Hiding the sidebar must not move or resize the composer.
+	m.toggleServerList()
+	if m.serverListVisible {
+		t.Fatal("Ctrl+Shift+S must hide the sidebar")
+	}
+	if got := m.composerLeft(); got != shownLeft {
+		t.Fatalf("composer left moved %d -> %d when the sidebar hid", shownLeft, got)
+	}
+	if got := m.composerWidth(); got != shownWidth {
+		t.Fatalf("composer width changed %d -> %d when the sidebar hid", shownWidth, got)
+	}
+
+	// The slash menu still opens over the transcript column, right of the
+	// sidebar, so it never covers the sidebar it is independent of.
+	m.toggleServerList()
+	if m.slashMenuLeft() < sidebarWidth(m.width) {
+		t.Fatalf("slash menu left = %d, must clear the %d-wide sidebar",
+			m.slashMenuLeft(), sidebarWidth(m.width))
 	}
 }
 
@@ -97,6 +108,25 @@ func TestSlashMenuFloatsWithoutResizingColumns(t *testing.T) {
 	}
 	if plain := ansiPattern.ReplaceAllString(content, ""); !strings.Contains(plain, "/join") {
 		t.Fatalf("the floated slash menu is not rendered:\n%s", plain)
+	}
+
+	// The menu floats over the transcript column, so every sidebar row keeps its
+	// left and right border cells. An indented layer drawn from column zero used
+	// to blank them out and erase the sidebar on the menu's rows.
+	sidebar := sidebarWidth(m.width)
+	for index, line := range strings.Split(content, "\n") {
+		if index >= closedBody {
+			break // the composer and footer sit below the body
+		}
+		plain := []rune(ansiPattern.ReplaceAllString(line, ""))
+		if len(plain) < sidebar {
+			t.Fatalf("sidebar row %d is narrower than the %d-cell column:\n%s", index, sidebar, line)
+		}
+		left, right := plain[0], plain[sidebar-1]
+		if !strings.ContainsRune("│╭╮╰╯", left) || !strings.ContainsRune("│╭╮╰╯", right) {
+			t.Fatalf("sidebar borders erased on row %d (menu rows are %d..%d): %q",
+				index, closedBody-len(m.slashLines()), closedBody-1, string(plain[:sidebar]))
+		}
 	}
 }
 

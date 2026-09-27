@@ -49,16 +49,15 @@ func newComposerInput(styles Styles) textinput.Model {
 	return input
 }
 
-// composerView renders the composer as a filled block centered under the
-// transcript column. newComposerInput puts the prompt and placeholder inside the
-// input, so the field is just the input clipped to the composer width
-// (composerWidth in model.go). The block is inset within the transcript column
-// and joined with blank cells outside it, so it groups with the transcript it
-// belongs to instead of running the full window width. PaddingTop/PaddingBottom
-// give it its own vertical breathing room, with the surface fill carrying
-// through the padding rows. A terminal too small for the columns keeps the old
-// bare, single-row full-width field. While find is active the composer is the
-// find query box.
+// composerView renders the composer as a filled bar across the window. It is a
+// window-level element like the footer: newComposerInput puts the prompt and
+// placeholder inside the input, so the bar is just the input clipped to the
+// composer width (composerWidth in model.go) with composerInset on each side. It
+// never depends on the sidebar, so toggling a column does not move it.
+// PaddingTop/PaddingBottom give it its own vertical breathing room, with the
+// surface fill carrying through the padding rows. A terminal too small for the
+// columns keeps the old bare, single-row field. While find is active the composer
+// is the find query box.
 func (m *Model) composerView() string {
 	if m == nil {
 		return ""
@@ -95,9 +94,10 @@ func (m *Model) composerCursor(row int) *tea.Cursor {
 		return nil
 	}
 	cursor.Position.Y = row
-	// The composer is inset under the transcript column, so the real cursor
-	// moves with the field. A terminal too small for the columns renders the
-	// bare full-width field at the left edge and needs no offset.
+	// The composer bar is inset from the window edge, so the real cursor moves
+	// with it. The bar is window-level, so the offset is the window inset and
+	// does not depend on the sidebar. A terminal too small for the columns
+	// renders the bare full-width field at the left edge and needs no offset.
 	if m.width >= minWidth && m.height >= minHeight {
 		cursor.Position.X += m.composerLeft()
 	}
