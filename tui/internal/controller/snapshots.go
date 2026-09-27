@@ -50,6 +50,18 @@ type MemberSnapshot struct {
 	Bot     bool
 }
 
+// InboxSnapshot is one session-inbox row for the shell. It mirrors the
+// IrcInboxModel roles (kind, networkId, actor, target, preview, msgid, label).
+type InboxSnapshot struct {
+	Kind      string
+	NetworkID string
+	Actor     string
+	Target    string
+	Preview   string
+	MsgID     string
+	Label     string
+}
+
 // Conversations returns the sidebar rows in sidebar order: joined channels,
 // then parted channels, then direct messages, grouped by the controller's
 // network order. The slice is the cached snapshot Publish last rebuilt; callers

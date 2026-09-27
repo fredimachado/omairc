@@ -53,8 +53,9 @@ When the two disagree about the shared contract, the root file wins.
   (`autoawayruntime.go`), the channel-list request/model (`channellist.go`),
   and the in-memory ignore/mute/monitor/highlight/avatar/preference stores
   (`stores.go`), all wired through the host adapters in `wiring.go`. Playback,
-  persistence, the inbox store, and avatars on disk remain behind the nil-able
-  seams in `internal/controller/seams.go` and land in their own phases.
+  persistence, and avatars on disk remain behind the nil-able seams in
+  `internal/controller/seams.go` and land in their own phases; the session-inbox
+  store now lives on the controller.
 - `internal/connection` owns the Connect sheet's profile model and the
   draft/selection/apply/disconnect surface (`NetworkProfile`, `Connection`).
   It may import `internal/irc`, `internal/controller`, and `internal/session`
@@ -99,9 +100,11 @@ platform-neutral and defer OS specifics behind `//go:build` files in
 - Windows: extend the matrix with `windows-latest`, emit
   `omairc-tui$(go env GOEXE)` from `tui/bin/build`, and drive Windows Terminal
   only (no legacy conhost).
-- Platform behavior (D-Bus vs osascript vs Toast notifications, clipboard,
-  image raster) lives behind build tags in `internal/`, mirroring how
-  `src/irc/` stays portable while `Backend` owns desktop integration.
+- Platform behavior (notifications, clipboard, image raster) lives behind
+  build tags in `internal/`, mirroring how `src/irc/` stays portable while
+  `Backend` owns desktop integration. D-Bus notifications are implemented in
+  `internal/notify/notify_linux.go`; osascript and Windows Toast remain no-op
+  stubs behind the same `Notifier`.
 
 Nothing in Phase 0 hardcodes a Linux-only assumption into `internal/irc`.
 
@@ -179,6 +182,9 @@ Phase 8 adds the `toggle-members` verb and the `toggle-members`,
 chrome (`ONLINE - N` heading, presence dots, away dimming, status lines, bot
 mark, typing ellipsis) and the DM transcript typing footer live in
 `internal/ui`, over presence and typing state in `internal/controller`.
+Phase 9 adds the session-inbox store, the `internal/notify` desktop notifier
+(D-Bus on Linux, no-op stubs elsewhere), the `Ctrl+Shift+A` sheet, the identity
+footer badge, and terminal-focus gating via `tea.View.ReportFocus`.
 
 ## Chords
 

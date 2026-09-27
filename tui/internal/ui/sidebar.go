@@ -7,30 +7,62 @@ import (
 )
 
 // sidebarView renders the network roster: one header per registered network,
-// then a CHANNELS group and a DIRECT MESSAGES group. It is data-driven from
-// the controller snapshots, never a scan of rendered children. A collapsed
-// network keeps its header and hides its groups; the focused header is
-// highlighted so Alt+Left / Alt+Right land somewhere visible.
+// then a CHANNELS group and a DIRECT MESSAGES group, then the identity footer
+// pinned to the bottom row. It is data-driven from the controller snapshots,
+// never a scan of rendered children. A collapsed network keeps its header and
+// hides its groups; the focused header is highlighted so Alt+Left / Alt+Right
+// land somewhere visible.
 func (m *Model) sidebarView(width, height int) string {
 	grouped := make(map[string][]controller.ConversationSnapshot)
 	for _, row := range m.ctrl.Conversations() {
 		grouped[row.NetworkID] = append(grouped[row.NetworkID], row)
 	}
 
-	lines := make([]string, 0, height)
+	roster := make([]string, 0, height)
 	for _, networkID := range m.ctrl.NetworkOrder() {
 		name := m.ctrl.NetworkDisplayName(networkID)
 		if name == "" {
 			name = networkID
 		}
-		lines = append(lines, m.networkHeader(name, networkID))
+		roster = append(roster, m.networkHeader(name, networkID))
 		if m.ctrl.IsNetworkCollapsed(networkID) {
 			continue
 		}
-		lines = append(lines, m.sidebarGroup("CHANNELS", grouped[networkID], false)...)
-		lines = append(lines, m.sidebarGroup("DIRECT MESSAGES", grouped[networkID], true)...)
+		roster = append(roster, m.sidebarGroup("CHANNELS", grouped[networkID], false)...)
+		roster = append(roster, m.sidebarGroup("DIRECT MESSAGES", grouped[networkID], true)...)
 	}
-	return renderColumn(m.styles.Conversation, width, fitLines(lines, height, false))
+	// Reserve the bottom row for the identity footer: clamp the roster to
+	// height-1 and append the footer, so the column is exactly height lines.
+	lines := fitLines(roster, height-1, false)
+	lines = append(lines, m.identityFooterLine())
+	return renderColumn(m.styles.Conversation, width, lines)
+}
+
+// identityFooterLine renders the sidebar's bottom identity row: the focused
+// network's self nick, its presence word, and an "inbox N" badge when the
+// waiting list is non-empty. It mirrors ServerListColumn.qml's identityFooter
+// (selfNickLabel, selfPresenceLabel, inboxBadge) as one muted line. The footer
+// is visual only; Ctrl+Shift+A reaches the sheet.
+func (m *Model) identityFooterLine() string {
+	if m.ctrl == nil {
+		return ""
+	}
+	presence := "offline"
+	if m.ctrl.ConnectionStatus() == "Connected" {
+		if m.ctrl.SelfAway() {
+			presence = "away"
+		} else {
+			presence = "available"
+		}
+	}
+	text := presence
+	if nick := m.ctrl.CurrentNick(); nick != "" {
+		text = nick + " · " + presence
+	}
+	if count := m.ctrl.InboxCount(); count > 0 {
+		text += fmt.Sprintf(" · inbox %d", count)
+	}
+	return m.styles.MutedLine.Render(text)
 }
 
 // networkHeader names a network and carries its collapse chevron, unread total,

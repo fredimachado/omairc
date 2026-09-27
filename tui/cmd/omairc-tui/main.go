@@ -17,6 +17,7 @@ import (
 	"github.com/fredimachado/omairc/tui/internal/connection"
 	"github.com/fredimachado/omairc/tui/internal/controller"
 	"github.com/fredimachado/omairc/tui/internal/demo"
+	"github.com/fredimachado/omairc/tui/internal/notify"
 	"github.com/fredimachado/omairc/tui/internal/session"
 	"github.com/fredimachado/omairc/tui/internal/ui"
 	"github.com/fredimachado/omairc/tui/internal/version"
@@ -85,7 +86,17 @@ func run(args []string, stdout, stderr io.Writer) int {
 	// the program's message channel, so calling it synchronously from a
 	// callback would deadlock the event loop the moment a navigation chord
 	// rebuilt a snapshot. Coalesce the wake-ups onto one dispatcher instead.
-	p := tea.NewProgram(ui.New(c, conn))
+	model := ui.New(c, conn)
+	p := tea.NewProgram(model)
+
+	// The desktop notifier is platform-specific (internal/notify). Its activation
+	// callback fires from the D-Bus goroutine, so p.Send is the normal path.
+	desktop := notify.New(func(a notify.Activation) {
+		p.Send(ui.NotificationActivatedMsg(a))
+	})
+	model.SetNotifier(desktop)
+	defer desktop.Close()
+
 	wake := make(chan struct{}, 1)
 	go func() {
 		for range wake {
@@ -106,6 +117,17 @@ func run(args []string, stdout, stderr io.Writer) int {
 	c.OnSelectionChanged = notify
 	c.OnStatusChanged = notify
 	c.OnCapabilitiesChanged = notify
+	// Only session goroutines raise these, so a direct p.Send is safe here (unlike
+	// the navigation callbacks, which coalesce onto `wake`).
+	c.OnMentionArrived = func(author, body, networkID, target, msgid string) {
+		p.Send(ui.MentionArrivalMsg{
+			Author: author, Body: body, NetworkID: networkID, Target: target, MsgID: msgid,
+		})
+	}
+	c.OnMonitorArrived = func(networkID, display, body string, _ bool) {
+		p.Send(ui.MonitorArrivalMsg{NetworkID: networkID, Author: display, Body: body})
+	}
+	c.OnInboxChanged = notify
 	if _, err := p.Run(); err != nil {
 		fmt.Fprintf(stderr, "omairc-tui: %v\n", err)
 		return 1

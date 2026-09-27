@@ -9,6 +9,7 @@ import (
 
 	"github.com/fredimachado/omairc/tui/internal/connection"
 	"github.com/fredimachado/omairc/tui/internal/controller"
+	"github.com/fredimachado/omairc/tui/internal/notify"
 )
 
 // Layout constants. The column widths are proportional with clamps, so a
@@ -29,6 +30,20 @@ const (
 // re-render. The main program sends it with p.Send(ui.NotifyMsg{}); Update
 // treats it as a no-op that leaves the snapshots already rebuilt.
 type NotifyMsg struct{}
+
+// MentionArrivalMsg carries one reducer mention arrival to the shell. It is
+// the session-goroutine-to-Bubble-Tea hop that mirrors the QML
+// onMentionArrived handler: the loop handles it on the shell goroutine, where
+// the notifier and the composer live.
+type MentionArrivalMsg struct{ Author, Body, NetworkID, Target, MsgID string }
+
+// MonitorArrivalMsg carries one MONITOR presence change to the shell. Target
+// and MsgID stay empty, mirroring the QML onMonitorArrived handler.
+type MonitorArrivalMsg struct{ NetworkID, Author, Body string }
+
+// NotificationActivatedMsg is a notification activation (body click or Open),
+// mirroring Backend's notificationActivated signal.
+type NotificationActivatedMsg = notify.Activation
 
 // Model is the Bubble Tea shell state over one controller and the Connect
 // sheet's connection model. conn is nil in the seeded demo, which has no
@@ -75,6 +90,16 @@ type Model struct {
 	slash                slashSession
 	list                 channelListState
 
+	// Phase 9 desktop-notification state. notifier is the nil-able desktop
+	// seam (mirroring backend.notifyDesktop); windowActive mirrors win.active;
+	// lastNotification mirrors OmaircWindow.qml's lastNotification;
+	// suppressDesktopNotification is the test latch mirroring the QML
+	// property of the same name.
+	notifier                    notify.Notifier
+	windowActive                bool
+	lastNotification            *notificationRecord
+	suppressDesktopNotification bool
+
 	// drafts keeps unsent composer text per conversation id, or per Status
 	// surface ("status\n<networkID>").
 	drafts   map[string]string
@@ -120,6 +145,9 @@ func New(ctrl *controller.Controller, conn *connection.Connection) *Model {
 		transcriptCursor:     -1,
 		composerHistoryIndex: -1,
 		drafts:               make(map[string]string),
+		// The terminal starts focused until a Blur arrives, mirroring
+		// OmaircWindow.qml's win.active default.
+		windowActive: true,
 	}
 	m.resize()
 	m.draftKey = m.composerDraftKey()
@@ -136,6 +164,9 @@ func New(ctrl *controller.Controller, conn *connection.Connection) *Model {
 // Init starts the shell. Phase 4 has no startup command.
 func (m *Model) Init() tea.Cmd { return nil }
 
+// SetNotifier installs the desktop notifier. A nil notifier is a no-op.
+func (m *Model) SetNotifier(n notify.Notifier) { m.notifier = n }
+
 // Update folds one Bubble Tea message. Quit chords leave the program; the
 // Connect sheet and the overlays are modal; otherwise the navigation chords
 // run before the rest reaches the composer.
@@ -147,6 +178,32 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.resize()
 		return m, nil
 	case NotifyMsg:
+		return m, nil
+	case tea.FocusMsg:
+		// The terminal regained focus. Mirror win.active and consume the
+		// selected conversation's unread through the controller.
+		m.windowActive = true
+		if m.ctrl != nil {
+			m.ctrl.SetWindowActive(true)
+		}
+		return m, nil
+	case tea.BlurMsg:
+		// The terminal lost focus; arrivals now earn a desktop notification.
+		m.windowActive = false
+		if m.ctrl != nil {
+			m.ctrl.SetWindowActive(false)
+		}
+		return m, nil
+	case MentionArrivalMsg:
+		m.notifyMentionIfUnfocused(m.windowActive, msg.Author, msg.Body,
+			msg.NetworkID, msg.Target, msg.MsgID)
+		return m, nil
+	case MonitorArrivalMsg:
+		m.notifyMentionIfUnfocused(m.windowActive, msg.Author, msg.Body,
+			msg.NetworkID, "", "")
+		return m, nil
+	case NotificationActivatedMsg:
+		m.activateNotifiedConversation(msg.NetworkID, msg.Target, msg.MsgID)
 		return m, nil
 	case tea.KeyPressMsg:
 		return m.handleKey(msg)
@@ -254,6 +311,9 @@ func (m *Model) View() tea.View {
 	v := tea.NewView(m.render())
 	v.AltScreen = true
 	v.WindowTitle = Title(m.ctrl, m.conn)
+	// Focus reporting drives FocusMsg/BlurMsg, which the shell needs to decide
+	// whether an arrival earns a desktop notification (win.active in the QML).
+	v.ReportFocus = true
 	return v
 }
 
