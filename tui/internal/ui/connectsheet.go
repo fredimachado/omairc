@@ -601,6 +601,16 @@ func (m *Model) connectCard(inner int) []string {
 		lines = append(lines, m.preferencesLines()...)
 	}
 
+	// The persistence and credential sentences render beside the validation
+	// problem, muted, on both tabs. IrcConnection carries the same two
+	// sentences to the Qt sheet; an empty value renders nothing.
+	if status := m.conn.PersistenceStatus(); status != "" {
+		lines = append(lines, m.styles.MutedLine.Render(truncateLine(status, inner)))
+	}
+	if status := m.conn.CredentialStatus(); status != "" {
+		lines = append(lines, m.styles.MutedLine.Render(truncateLine(status, inner)))
+	}
+
 	if problem := m.conn.Problem(); problem != "" {
 		lines = append(lines, m.styles.SheetProblem.Render(truncateLine(problem, inner)))
 	} else {

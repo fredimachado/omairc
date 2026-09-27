@@ -89,7 +89,7 @@ type sessionTestHandler struct {
 
 var _ Handler = (*sessionTestHandler)(nil)
 
-func (h *sessionTestHandler) StateChanged(state SessionState) {
+func (h *sessionTestHandler) StateChanged(networkID string, state SessionState) {
 	h.states = append(h.states, state)
 }
 

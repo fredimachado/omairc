@@ -404,6 +404,17 @@ func ircServerTimeOf(message Message) *time.Time {
 	return &utc
 }
 
+// ServerTimeOf parses the IRCv3 time tag, or reports false when it is absent,
+// empty, or unparseable. The result is UTC. It wraps ircServerTimeOf for the
+// controller's playback clock.
+func ServerTimeOf(message Message) (time.Time, bool) {
+	when := ircServerTimeOf(message)
+	if when == nil || when.IsZero() {
+		return time.Time{}, false
+	}
+	return when.UTC(), true
+}
+
 // timestampFor prefers the parsed server time tag and falls back to now, the
 // caller-supplied wall clock.
 func timestampFor(message Message, now time.Time) time.Time {

@@ -10,23 +10,15 @@ import "github.com/fredimachado/omairc/tui/internal/irc"
 // coordinator, the autoaway runtime, the in-memory ignore/mute/highlight/
 // avatar/preference stores, and the channel-list request/model inside this
 // package (see commanddispatcher.go, replyrouter.go, monitorcoordinator.go,
-// autoawayruntime.go, channellist.go, and stores.go). What remains here is
-// still deferred.
-//
-// Phase 9 implements the inbox store in Controller (see inbox.go and
-// controller.go), so it is no longer a seam; playback and persistence remain
-// deferred. Desktop integration and the suppressDesktopNotification test
-// latch live on the shell (internal/ui), mirroring OmaircWindow.qml calling
+// autoawayruntime.go, channellist.go, and stores.go). Phase 9 implements the
+// inbox store in Controller (see inbox.go and controller.go). Phase 11
+// implements the bouncer playback coordinator (playback.go) and wires the
+// on-disk stores, so what remains here is only the transcript log alias.
+// Desktop integration and the suppressDesktopNotification test latch live on
+// the shell (internal/ui), mirroring OmaircWindow.qml calling
 // backend.notifyDesktop; the controller only emits the arrival signals.
 
 // ConversationLog is the transcript persistence seam. It is the reducer's own
 // irc.ConversationLog, already consumed by irc.EventReducer.SetConversationLog;
-// Phase 10 owns the on-disk implementation.
+// Phase 10 owns the on-disk implementation and Phase 11 wires it.
 type ConversationLog = irc.ConversationLog
-
-// PlaybackCoordinator is the Phase 11 bouncer (znc.in/playback) seam. It owns
-// the per-network playback clock, held query batches, and the PLAY request.
-type PlaybackCoordinator interface {
-	// OnRegistered begins playback for a freshly registered network.
-	OnRegistered(networkID string, autojoinChannels []string)
-}

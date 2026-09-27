@@ -2,9 +2,10 @@
 //
 // It ships the CLI flags plus the Bubble Tea shell: --version, --help, and
 // --demo-server, which seeds the two-network demo world through internal/demo
-// and then runs the interactive shell over it. A plain launch shows the
-// Connect sheet over an empty controller and applies a real session; the sheet
-// is in-memory only until the phase-11 profile store lands. See tui/AGENTS.md.
+// and then runs the interactive shell over it. A plain launch wires the disk
+// stores, shows the Connect sheet over an empty controller, applies a real
+// session, loads the stored profiles and preferences, and connects the
+// connectOnStartup networks once the program starts. See tui/AGENTS.md.
 package main
 
 import (
@@ -20,6 +21,7 @@ import (
 	"github.com/fredimachado/omairc/tui/internal/demo"
 	"github.com/fredimachado/omairc/tui/internal/notify"
 	"github.com/fredimachado/omairc/tui/internal/session"
+	"github.com/fredimachado/omairc/tui/internal/storage"
 	"github.com/fredimachado/omairc/tui/internal/ui"
 	"github.com/fredimachado/omairc/tui/internal/version"
 )
@@ -33,8 +35,9 @@ Flags:
   --help         print this help and exit
   --demo-server  seed the in-process demo world and run the shell
 
-Without --demo-server the shell starts on the Connect sheet and applies a
-live IRC session once a network profile is complete.`
+Without --demo-server the shell loads the stored profiles and preferences,
+applies a live IRC session once a network profile is complete, and connects
+the connectOnStartup networks after launch.`
 
 func main() {
 	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
@@ -73,13 +76,44 @@ func run(args []string, stdout, stderr io.Writer) int {
 	c := controller.New()
 	var conn *connection.Connection
 	if demoServer {
+		// The demo stays ephemeral: it must never read or write the user's
+		// config or transcripts.
 		server := demo.New()
 		if !server.Attach(c, true) {
 			fmt.Fprintf(stderr, "omairc-tui: demo server failed: %s\n", server.LastError())
 			return 1
 		}
 	} else {
+		// Phase 11 disk stores. New() starts ephemeral so unit tests and the
+		// demo never touch the config; the shell opts in and wires the stores
+		// before the first session is applied.
+		profiles := storage.NewProfileStore()
+		credentials := storage.NewCredentialStore()
+		openDirects := storage.NewOpenDirectStore()
+		playbackTimes := storage.NewPlaybackTimeStore()
+		transcripts := storage.NewConversationLog("")
+
+		c.SetEphemeral(false)
+		c.SetOpenDirectStore(openDirects)
+		c.SetPlaybackTimeStore(playbackTimes)
+		c.SetConversationLog(transcripts)
+		c.LoadStoredPreferences()
+
 		conn = connection.New(c, func() session.Transport { return session.NewNetTransport() })
+		conn.SetProfileStore(profiles)
+		conn.SetCredentialStore(credentials)
+		// The session moves a network's standing avatar URL or autojoin list;
+		// the controller forwards it here so the profile store stays current.
+		c.OnAvatarURLChanged = func(networkID, url string) {
+			if conn != nil {
+				conn.PersistAvatarURL(networkID, url)
+			}
+		}
+		c.OnAutojoinChanged = func(networkID string, channels []string, keys map[string]string) {
+			if conn != nil {
+				conn.PersistAutojoin(networkID, channels, keys)
+			}
+		}
 	}
 
 	// Controller and connection callbacks fire both from the Bubble Tea
@@ -124,6 +158,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 		conn.OnDraftChanged = notify
 		conn.OnNetworksChanged = notify
 		conn.OnSetupRequiredChanged = notify
+		conn.OnPersistenceChanged = notify
+		conn.OnCredentialChanged = notify
 	}
 	c.OnSelectionChanged = notify
 	c.OnStatusChanged = notify
@@ -139,6 +175,15 @@ func run(args []string, stdout, stderr io.Writer) int {
 		p.Send(ui.MonitorArrivalMsg{NetworkID: networkID, Author: display, Body: body})
 	}
 	c.OnInboxChanged = notify
+	if !demoServer {
+		// ActivateStartup runs from the Update goroutine (the StartupMsg
+		// handler), so controller mutation stays single-threaded; notify
+		// coalesces the wake-up that repaints the connected networks.
+		model.SetOnStartup(func() {
+			conn.ActivateStartup()
+			notify()
+		})
+	}
 	if _, err := p.Run(); err != nil {
 		fmt.Fprintf(stderr, "omairc-tui: %v\n", err)
 		return 1

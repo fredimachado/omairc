@@ -1,10 +1,13 @@
 package controller
 
 import (
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/fredimachado/omairc/tui/internal/irc"
 	"github.com/fredimachado/omairc/tui/internal/session"
+	"github.com/fredimachado/omairc/tui/internal/storage"
 )
 
 // Controller is the Go port of IrcController for the Phase 2 state model. It
@@ -45,6 +48,15 @@ type Controller struct {
 	avatars    *AvatarStore
 	prefs      *Preferences
 
+	// Phase 11 persistence. New starts ephemeral so unit tests never touch the
+	// user's config; the shell opts in with SetEphemeral(false) and then loads
+	// the persisted stores and preferences.
+	ephemeral           bool
+	openDirects         *storage.OpenDirectStore
+	playbackTimes       *storage.PlaybackTimeStore
+	playback            *PlaybackCoordinator
+	openDirectsMotdSeen map[string]bool
+
 	commands     *CommandDispatcher
 	replies      *ReplyRouter
 	monitor      *MonitorCoordinator
@@ -71,6 +83,12 @@ type Controller struct {
 	// was appended, or a row was consumed/dismissed/purged. It is the UI's
 	// re-render wake-up. It is nil-able.
 	OnInboxChanged func()
+	// OnAvatarURLChanged fires when the standing avatar URL for a network
+	// moves. Nil-able; the shell wires it to the profile store.
+	OnAvatarURLChanged func(networkID, url string)
+	// OnAutojoinChanged fires when a network's autojoin list changes.
+	// Nil-able; the shell wires it to the profile store.
+	OnAutojoinChanged func(networkID string, channels []string, keys map[string]string)
 	// OnMonitorArrived is called for each MONITOR presence change the monitor
 	// coordinator reports. It is nil-able; Phase 9 owns the inbox append and
 	// the desktop notification.
@@ -100,11 +118,21 @@ func New() *Controller {
 		capabilities:     make(map[string]irc.CapabilitySet),
 		networkCollapsed: make(map[string]bool),
 		connectionStatus: "Offline",
+		ephemeral:        true,
 	}
 	// IrcEventReducer starts with the window treated as active
 	// (src/irc/irceventreducer.h:395). NewEventReducer leaves the Go field at
 	// its zero value, so the controller restores the Qt default here.
 	c.reducer.SetWindowActive(true)
+	c.openDirectsMotdSeen = make(map[string]bool)
+	c.openDirects = storage.NewOpenDirectStore()
+	c.openDirects.SetEphemeral(true)
+	c.playbackTimes = storage.NewPlaybackTimeStore()
+	c.playbackTimes.SetEphemeral(true)
+	c.playback = NewPlaybackCoordinator(c.playbackTimes, c.reducer)
+	// New starts ephemeral, like the Qt constructor before the shell opts in
+	// (src/irc/irccontroller.cpp:400-411): no transcript log until asked.
+	c.reducer.SetConversationLog(nil)
 	c.initSlashSubsystems()
 	return c
 }
@@ -127,6 +155,243 @@ func (c *Controller) now() time.Time {
 		return time.Time{}
 	}
 	return c.clock.Now()
+}
+
+// --- Phase 11 persistence -------------------------------------------------
+
+// Group and key names match src/irc/irccontroller.cpp and ircconnection.cpp so
+// the Qt client and the terminal client share one INI section.
+const (
+	preferencesGroup             = "preferences"
+	reopenDirectMessagesKey      = "reopenDirectMessages"
+	loadPeerAvatarsKey           = "loadPeerAvatars"
+	openConversationsAtUnreadKey = "openConversationsAtUnread"
+	networkOrderKey              = "networkOrder"
+	collapsedNetworksKey         = "collapsedNetworks"
+)
+
+// SetEphemeral turns disk persistence on/off. New() starts ephemeral so unit
+// tests never touch the user's config; the shell opts in. It mirrors
+// IrcController::setEphemeral (src/irc/irccontroller.cpp:408-415).
+func (c *Controller) SetEphemeral(ephemeral bool) {
+	c.ephemeral = ephemeral
+	if ephemeral {
+		c.reducer.SetConversationLog(nil)
+	}
+	c.openDirects.SetEphemeral(ephemeral)
+	c.playbackTimes.SetEphemeral(ephemeral)
+	c.autoaway.SetEphemeral(ephemeral)
+}
+
+// SetConversationLog wires the reducer's transcript log.
+func (c *Controller) SetConversationLog(log irc.ConversationLog) {
+	c.reducer.SetConversationLog(log)
+}
+
+// SetOpenDirectStore installs the persisted open-direct store, mapping nil to
+// an ephemeral in-memory store.
+func (c *Controller) SetOpenDirectStore(store *storage.OpenDirectStore) {
+	if store == nil {
+		store = storage.NewOpenDirectStore()
+		store.SetEphemeral(true)
+	}
+	c.openDirects = store
+}
+
+// SetPlaybackTimeStore installs the persisted playback-time store, mapping nil
+// to an ephemeral in-memory store. The playback coordinator reads the same
+// pointer, so it is re-pointed here.
+func (c *Controller) SetPlaybackTimeStore(store *storage.PlaybackTimeStore) {
+	if store == nil {
+		store = storage.NewPlaybackTimeStore()
+		store.SetEphemeral(true)
+	}
+	c.playbackTimes = store
+	if c.playback != nil {
+		c.playback.times = store
+	}
+}
+
+// LoadStoredPreferences reads the preferences group into c.prefs and restores
+// the sidebar order and collapse set. It is a no-op when ephemeral. It mirrors
+// IrcController::loadStoredPreferences (src/irc/irccontroller.cpp:417-425).
+func (c *Controller) LoadStoredPreferences() {
+	if c.ephemeral {
+		return
+	}
+	settings := storage.OpenSettings("")
+	c.prefs.SetEnabled(irc.PrefDirects, settings.Bool(preferencesGroup, reopenDirectMessagesKey, true))
+	c.prefs.SetEnabled(irc.PrefAvatars, settings.Bool(preferencesGroup, loadPeerAvatarsKey, true))
+	c.prefs.SetEnabled(irc.PrefUnread, settings.Bool(preferencesGroup, openConversationsAtUnreadKey, true))
+	c.loadStoredNetworkOrder(settings)
+}
+
+// savePreferenceBool persists one preferences-group bool with the fail-closed
+// probe from preferenceIniRefusesWrite: a malformed or unwritable ini is left
+// alone instead of being rebuilt from the in-process cache.
+func savePreferenceBool(key string, enabled bool) {
+	settings := storage.OpenSettings("")
+	if settings.WriteBlocked() != storage.StatusWritten {
+		return
+	}
+	settings.SetBool(preferencesGroup, key, enabled)
+	settings.Sync()
+}
+
+// savePreferenceList persists one preferences-group string list. It shares the
+// fail-closed probe and only writes when the value changed, mirroring
+// IrcConnection's savePreferenceList (src/irc/ircconnection.cpp:69-87).
+func savePreferenceList(key string, value []string) {
+	settings := storage.OpenSettings("")
+	if settings.WriteBlocked() != storage.StatusWritten {
+		return
+	}
+	if existing := settings.StringList(preferencesGroup, key); stringSlicesEqual(existing, value) {
+		return
+	}
+	settings.SetStringList(preferencesGroup, key, value)
+	settings.Sync()
+}
+
+// ReopenDirects reports whether direct messages reopen at startup.
+func (c *Controller) ReopenDirects() bool { return c.prefs.Enabled(irc.PrefDirects) }
+
+// ShowAvatars reports whether peer avatars are shown.
+func (c *Controller) ShowAvatars() bool { return c.prefs.Enabled(irc.PrefAvatars) }
+
+// OpenAtUnread reports whether conversations open at their unread start.
+func (c *Controller) OpenAtUnread() bool { return c.prefs.Enabled(irc.PrefUnread) }
+
+// SetReopenDirects stores the reopen-directs toggle, persists it unless
+// ephemeral, and restores the open directs of every registered network when it
+// turns back on. It mirrors IrcController::setReopenDirectMessages
+// (src/irc/irccontroller.cpp:753-767).
+func (c *Controller) SetReopenDirects(enabled bool) {
+	if c.ReopenDirects() == enabled {
+		return
+	}
+	c.prefs.SetEnabled(irc.PrefDirects, enabled)
+	if !c.ephemeral {
+		savePreferenceBool(reopenDirectMessagesKey, enabled)
+	}
+	if !enabled {
+		return
+	}
+	for _, networkID := range c.manager.NetworkIDs() {
+		if s := c.manager.Find(networkID); s != nil && s.State() == session.StateRegistered {
+			c.restoreOpenDirects(networkID)
+		}
+	}
+}
+
+// SetShowAvatars stores the avatar toggle and persists it unless ephemeral.
+func (c *Controller) SetShowAvatars(enabled bool) {
+	if c.ShowAvatars() == enabled {
+		return
+	}
+	c.prefs.SetEnabled(irc.PrefAvatars, enabled)
+	if !c.ephemeral {
+		savePreferenceBool(loadPeerAvatarsKey, enabled)
+	}
+}
+
+// SetOpenAtUnread stores the open-at-unread toggle and persists it unless
+// ephemeral.
+func (c *Controller) SetOpenAtUnread(enabled bool) {
+	if c.OpenAtUnread() == enabled {
+		return
+	}
+	c.prefs.SetEnabled(irc.PrefUnread, enabled)
+	if !c.ephemeral {
+		savePreferenceBool(openConversationsAtUnreadKey, enabled)
+	}
+}
+
+// PrefEnabled maps one /pref toggle to its getter. It mirrors the prefEnabled
+// lambda in IrcController (src/irc/irccontroller.cpp:330-340).
+func (c *Controller) PrefEnabled(name irc.PrefName) bool {
+	switch name {
+	case irc.PrefDirects:
+		return c.ReopenDirects()
+	case irc.PrefAvatars:
+		return c.ShowAvatars()
+	case irc.PrefUnread:
+		return c.OpenAtUnread()
+	}
+	return false
+}
+
+// PrefApply maps one /pref toggle to its setter. It mirrors the prefApply
+// lambda in IrcController (src/irc/irccontroller.cpp:341-351).
+func (c *Controller) PrefApply(name irc.PrefName, enabled bool) {
+	switch name {
+	case irc.PrefDirects:
+		c.SetReopenDirects(enabled)
+	case irc.PrefAvatars:
+		c.SetShowAvatars(enabled)
+	case irc.PrefUnread:
+		c.SetOpenAtUnread(enabled)
+	}
+}
+
+// loadStoredNetworkOrder restores networkOrder and networkCollapsed from the
+// preferences group. Saved ids without a session are dropped; the remaining
+// registered networks keep NetworkIDs() order but are re-sorted by the
+// profileLess fallback (case-insensitive resolved name, then trimmed nick, then
+// network id) using the session's own name and nick. Sort by network id only
+// would lose the Qt profile ordering, and the controller cannot import
+// internal/connection because connection imports controller.
+func (c *Controller) loadStoredNetworkOrder(settings *storage.Settings) {
+	registered := c.manager.NetworkIDs()
+	seen := make(map[string]bool, len(registered))
+	order := make([]string, 0, len(registered))
+	for _, id := range settings.StringList(preferencesGroup, networkOrderKey) {
+		if id == "" || seen[id] || c.manager.Find(id) == nil {
+			continue
+		}
+		seen[id] = true
+		order = append(order, id)
+	}
+	leftovers := make([]string, 0, len(registered))
+	for _, id := range registered {
+		if !seen[id] {
+			leftovers = append(leftovers, id)
+		}
+	}
+	sort.SliceStable(leftovers, func(i, j int) bool {
+		return c.profileLessNetwork(leftovers[i], leftovers[j])
+	})
+	c.networkOrder = append(order, leftovers...)
+
+	collapsed := make(map[string]bool)
+	for _, id := range settings.StringList(preferencesGroup, collapsedNetworksKey) {
+		if id != "" && c.manager.Find(id) != nil {
+			collapsed[id] = true
+		}
+	}
+	c.networkCollapsed = collapsed
+}
+
+// profileLessNetwork ports profileLess from src/irc/ircconnection.cpp:21-33
+// over the controller's sessions: case-insensitive resolved name, then trimmed
+// nick, then network id.
+func (c *Controller) profileLessNetwork(left, right string) bool {
+	leftSession := c.manager.Find(left)
+	rightSession := c.manager.Find(right)
+	if leftSession == nil || rightSession == nil {
+		return left < right
+	}
+	leftName := strings.ToLower(leftSession.Name())
+	rightName := strings.ToLower(rightSession.Name())
+	if leftName != rightName {
+		return leftName < rightName
+	}
+	leftNick := strings.ToLower(strings.TrimSpace(leftSession.Nick()))
+	rightNick := strings.ToLower(strings.TrimSpace(rightSession.Nick()))
+	if leftNick != rightNick {
+		return leftNick < rightNick
+	}
+	return left < right
 }
 
 // Reducer returns the event reducer the controller folds into.
@@ -188,10 +453,14 @@ func (c *Controller) NetworkOrder() []string {
 
 // --- Session handler ------------------------------------------------------
 
-// StateChanged refreshes the focused connection status. The session Handler
-// signature carries no network id, so the controller derives it from the
-// focused network; per-network status is read live from the session.
-func (c *Controller) StateChanged(state session.SessionState) {
+// StateChanged refreshes the focused connection status. A non-Registered
+// transition also tells the playback coordinator that the connection ended, so
+// a reconnect replays as if it never happened. It mirrors the stateChanged
+// lambda in IrcController::addSession (src/irc/irccontroller.cpp:467-473).
+func (c *Controller) StateChanged(networkID string, state session.SessionState) {
+	if networkID != "" && state != session.StateRegistered {
+		c.playback.OnLeftRegistration(networkID)
+	}
 	c.refreshConnectionStatus()
 }
 
@@ -205,16 +474,23 @@ func (c *Controller) ErrorOccurred(networkID string, kind session.ErrorKind, mes
 // folds the welcome into the reducer. It mirrors the registered lambda in
 // IrcController::addSession (src/irc/irccontroller.cpp:449-461).
 func (c *Controller) Registered(networkID string) {
+	s := c.manager.Find(networkID)
+	if s != nil {
+		c.playback.OnRegistered(networkID, s.AutojoinChannels())
+	}
 	nick := c.currentNicks[networkID]
-	if s := c.manager.Find(networkID); s != nil {
+	if s != nil {
 		nick = s.Nick()
 		c.currentNicks[networkID] = nick
 	}
 	c.reducer.SetServerFeatures(networkID, irc.NewServerFeatures())
 	c.Apply(irc.WelcomeEvent{NetworkID: networkID, CurrentNick: nick})
-	if s := c.manager.Find(networkID); s != nil {
+	if s != nil {
 		c.autoaway.OnSessionRegistered(s)
 	}
+	// A fresh registration forgets the previous connection's MOTD latch so the
+	// next 376/422 restores open directs again.
+	delete(c.openDirectsMotdSeen, networkID)
 	c.refreshConnectionStatus()
 }
 
@@ -229,13 +505,20 @@ func (c *Controller) MessageReceived(networkID string, message irc.Message) {
 	c.handleMessage(networkID, message)
 }
 
-// HistoryBatchReceived replays one history batch into the reducer. Playback
-// trimming is Phase 11.
+// HistoryBatchReceived replays one history batch into the reducer. A bouncer
+// playback batch is trimmed against the registration stamp first. It mirrors
+// IrcController::handleHistoryBatch (src/irc/irccontroller.cpp:2273-2285).
 func (c *Controller) HistoryBatchReceived(networkID string, batch irc.HistoryBatch) {
 	features := c.reducer.ServerFeatures(networkID)
 	event, ok := irc.TranslateHistory(networkID, c.currentNicks[networkID], features, batch, c.now())
 	if !ok {
 		return
+	}
+	if event.Kind == irc.HistoryBouncerPlayback {
+		c.playback.TrimBouncerBatch(networkID, &event)
+		if len(event.Lines) == 0 {
+			return
+		}
 	}
 	c.Apply(event)
 }
@@ -277,8 +560,12 @@ func (c *Controller) RequestLabelFinished(networkID, requestLabel string) {
 	c.replies.RequestLabelFinished(networkID, requestLabel)
 }
 
-// AutojoinChannelsChanged is a Phase 7/9 profile seam.
+// AutojoinChannelsChanged forwards a session's autojoin edit to the shell's
+// profile store. Nil-able, so it stays a no-op without a wired callback.
 func (c *Controller) AutojoinChannelsChanged(networkID string, channels []string, keys map[string]string) {
+	if c.OnAutojoinChanged != nil {
+		c.OnAutojoinChanged(networkID, channels, keys)
+	}
 }
 
 // --- Apply / Publish ------------------------------------------------------
@@ -323,6 +610,24 @@ func (c *Controller) Apply(event irc.Event) {
 	}
 	if accountsMoved(kind, event) {
 		c.peerAccountEpoch++
+	}
+
+	// A NICK moves the persisted open-direct and playback clocks with it. A
+	// self-authored line in an existing direct is proof the user engaged the
+	// query, so it is remembered for restore. It mirrors IrcController::apply
+	// (src/irc/irccontroller.cpp:2056-2091).
+	if nick, ok := nickEventOf(event); ok {
+		features := c.reducer.ServerFeatures(nick.NetworkID)
+		mapping := features.CaseMapping()
+		c.openDirects.Rekey(nick.NetworkID, nick.OldNick, nick.NewNick, mapping)
+		c.playbackTimes.Rekey(nick.NetworkID, nick.OldNick, nick.NewNick, mapping)
+		c.playback.Rekey(nick.NetworkID, nick.OldNick, nick.NewNick)
+	} else if message, ok := messageEventOf(event); ok {
+		c.noteSelfAuthoredDirect(message.Conversation.NetworkID, message.Author, message.Target)
+	} else if notice, ok := noticeEventOf(event); ok {
+		c.noteSelfAuthoredDirect(notice.Conversation.NetworkID, notice.Author, notice.Target)
+	} else if action, ok := actionEventOf(event); ok {
+		c.noteSelfAuthoredDirect(action.Conversation.NetworkID, action.Author, action.Target)
 	}
 
 	if selfAwayOnly {
@@ -1042,6 +1347,7 @@ func (c *Controller) DiscardSession(networkID string) bool {
 	delete(c.capabilities, networkID)
 	c.statusConsole.Clear(networkID)
 	c.autoaway.ForgetNetwork(networkID)
+	delete(c.openDirectsMotdSeen, networkID)
 	c.monitor.ForgetPresence(networkID)
 	c.channelLists.Forget(networkID)
 	if current := c.ChannelListSnapshot(); current.NetworkID == networkID {
@@ -1070,6 +1376,10 @@ func (c *Controller) ForgetNetworkState(networkID string) {
 	c.replies.Forget(networkID)
 	c.monitor.ForgetPresence(networkID)
 	c.autoaway.ForgetNetwork(networkID)
+	delete(c.openDirectsMotdSeen, networkID)
+	c.openDirects.Forget(networkID)
+	c.playbackTimes.Forget(networkID)
+	c.playback.DropSnapshot(networkID)
 	c.channelLists.Forget(networkID)
 	c.inbox.PurgeNetwork(networkID)
 	c.notifyInboxChanged()
@@ -1085,14 +1395,46 @@ func (c *Controller) ForgetNetworkState(networkID string) {
 	c.notifyStatusChanged()
 }
 
-// SetNetworkOrder records the network display order and republishes the
-// sidebar.
+// SetNetworkOrder records the network display order, republishes the sidebar,
+// and persists the order unless ephemeral. An unchanged order is a no-op. It
+// mirrors IrcController::setNetworkOrder (src/irc/irccontroller.cpp:559-564)
+// plus IrcConnection::persistNetworkOrder.
 func (c *Controller) SetNetworkOrder(order []string) {
 	if stringSlicesEqual(c.networkOrder, order) {
 		return
 	}
 	c.networkOrder = append([]string(nil), order...)
+	c.persistNetworkOrder()
 	c.Publish(irc.ViewNotify{Conversations: true})
+}
+
+// persistNetworkOrder saves the recorded sidebar order. An ephemeral
+// controller never touches disk.
+func (c *Controller) persistNetworkOrder() {
+	if c.ephemeral {
+		return
+	}
+	savePreferenceList(networkOrderKey, c.networkOrder)
+}
+
+// persistCollapsedNetworks saves the collapsed ids in display order.
+func (c *Controller) persistCollapsedNetworks() {
+	if c.ephemeral {
+		return
+	}
+	savePreferenceList(collapsedNetworksKey, c.collapsedNetworkIDs())
+}
+
+// collapsedNetworkIDs returns the ids currently collapsed, in display order.
+func (c *Controller) collapsedNetworkIDs() []string {
+	order := c.NetworkOrder()
+	ids := make([]string, 0, len(order))
+	for _, id := range order {
+		if c.networkCollapsed[id] {
+			ids = append(ids, id)
+		}
+	}
+	return ids
 }
 
 // IsNetworkCollapsed reports whether the sidebar collapses one network. An
@@ -1115,6 +1457,7 @@ func (c *Controller) SetNetworkCollapsed(networkID string, collapsed bool) {
 	} else {
 		delete(c.networkCollapsed, networkID)
 	}
+	c.persistCollapsedNetworks()
 	c.Publish(irc.ViewNotify{Conversations: true})
 }
 
@@ -1140,6 +1483,7 @@ func (c *Controller) SetAllNetworksCollapsed(collapsed bool) {
 			delete(c.networkCollapsed, id)
 		}
 	}
+	c.persistCollapsedNetworks()
 	c.Publish(irc.ViewNotify{Conversations: true})
 }
 
@@ -1177,6 +1521,9 @@ func (c *Controller) MoveNetwork(networkID string, delta int) bool {
 // --- Message handling -----------------------------------------------------
 
 func (c *Controller) handleMessage(networkID string, message irc.Message) {
+	// The playback clock reads every inbound PRIVMSG before routing, so a line
+	// that only lands on another client's transcript still resumes there.
+	c.notePlaybackClock(networkID, message)
 	if message.Command == "FAIL" {
 		c.replies.RouteOwnMetadataFail(networkID, message)
 	}
@@ -1207,13 +1554,13 @@ func (c *Controller) handleMessage(networkID string, message irc.Message) {
 	}
 	if message.Command == "376" || message.Command == "422" {
 		// A burst of 005 tokens is applied above without touching the models;
-		// MOTD end only latches the case mapping. Restoring open directs is
-		// Phase 9.
+		// MOTD end latches the case mapping and restores open directs.
 		features := c.reducer.ServerFeatures(networkID)
 		if !features.CaseMappingKnown() {
 			features.MarkCaseMappingKnown()
 			c.reducer.SetServerFeatures(networkID, features)
 		}
+		c.noteOpenDirectsMotd(networkID)
 	}
 
 	features := c.reducer.ServerFeatures(networkID)
@@ -1244,6 +1591,10 @@ func (c *Controller) handleMessage(networkID string, message irc.Message) {
 						mapping.Equals(join.Channel, pending.Channel) {
 						c.SelectConversation(join.NetworkID, join.Channel)
 					}
+					// A channel joined before the playback request still
+					// needs its own PLAY; a batch already kept ends the retry.
+					c.playback.NoteJoinedChannel(join.NetworkID, join.Channel)
+					c.requestChannelPlayback(s, join.Channel)
 				}
 			}
 		}
@@ -1272,21 +1623,175 @@ func (c *Controller) handleCapabilities(networkID string, capabilities irc.Capab
 }
 
 // noteKeptReplay drains the replay/remembered-query hand-offs the reducer
-// produces. Their consumers are the Phase 11 PlaybackCoordinator and the
-// Phase 9 open-direct store, so Phase 2 only keeps the lists bounded.
+// produces: keeping playback clocks for landed replay lines, and remembering
+// queries the user replied to. It mirrors IrcController::noteKeptReplay
+// (src/irc/irccontroller.cpp:2288-2302).
 func (c *Controller) noteKeptReplay() {
-	c.reducer.TakeKeptReplay()
-	c.reducer.TakeRememberedQueries()
+	c.playback.NoteKeptReplay(func(networkID string) bool {
+		return c.capabilities[networkID].Contains(irc.CapabilityZncPlayback)
+	})
+	// A kept self line means the user replied in that query. Remember it only
+	// when the direct exists; a dropped self-only batch must not.
+	for _, query := range c.reducer.TakeRememberedQueries() {
+		if c.reducer.Find(c.reducer.ConversationKey(query.NetworkID, query.Target)) == nil {
+			continue
+		}
+		c.rememberOpenDirect(query.NetworkID, query.Target)
+	}
 }
 
-// --- Open-direct and mute seams (deferred) --------------------------------
+// notePlaybackClock forwards one inbound line to the playback coordinator. It
+// mirrors IrcController::notePlaybackClock.
+func (c *Controller) notePlaybackClock(networkID string, message irc.Message) {
+	c.playback.NotePlaybackClock(networkID, message,
+		c.currentNicks[networkID],
+		c.capabilities[networkID].Contains(irc.CapabilityZncPlayback))
+}
 
-// rememberOpenDirect records a direct message worth restoring. Phase 9 owns the
-// IrcOpenDirectStore equivalent; Phase 2 keeps nothing.
-func (c *Controller) rememberOpenDirect(networkID, target string) {}
+// --- Open directs and playback --------------------------------------------
 
-// forgetOpenDirect drops a remembered direct message. Phase 9 owns the store.
-func (c *Controller) forgetOpenDirect(networkID, target string) {}
+// persistableDirectTarget reports whether target is a direct message worth
+// persisting: non-empty, not a channel, and not a network service. It mirrors
+// IrcController::persistableDirectTarget (src/irc/irccontroller.cpp:1561-1569).
+func (c *Controller) persistableDirectTarget(networkID, target string) bool {
+	if networkID == "" || target == "" {
+		return false
+	}
+	features := c.reducer.ServerFeatures(networkID)
+	if features.IsChannel(target) {
+		return false
+	}
+	return !irc.TargetLooksLikeService(target, features)
+}
+
+// rememberOpenDirect records a direct message worth restoring. It mirrors
+// IrcController::rememberOpenDirect (src/irc/irccontroller.cpp:1571-1585).
+func (c *Controller) rememberOpenDirect(networkID, target string) {
+	if !c.persistableDirectTarget(networkID, target) {
+		return
+	}
+	conversation := c.reducer.Find(c.reducer.ConversationKey(networkID, target))
+	if conversation != nil && conversation.IsChannel() {
+		return
+	}
+	stored := target
+	if conversation != nil && conversation.Target != "" {
+		stored = conversation.Target
+	}
+	features := c.reducer.ServerFeatures(networkID)
+	c.openDirects.Add(networkID, stored, features.CaseMapping())
+}
+
+// forgetOpenDirect drops a remembered direct message. It mirrors
+// IrcController::forgetOpenDirect (src/irc/irccontroller.cpp:1587-1593).
+func (c *Controller) forgetOpenDirect(networkID, target string) {
+	if networkID == "" || target == "" {
+		return
+	}
+	features := c.reducer.ServerFeatures(networkID)
+	c.openDirects.Remove(networkID, target, features.CaseMapping())
+}
+
+// noteSelfAuthoredDirect remembers target when the event author is our own
+// current nick and the conversation is an existing non-channel. It mirrors the
+// message/notice/action branches of IrcController::apply
+// (src/irc/irccontroller.cpp:2064-2091).
+func (c *Controller) noteSelfAuthoredDirect(networkID, author, target string) {
+	features := c.reducer.ServerFeatures(networkID)
+	mapping := features.CaseMapping()
+	if !mapping.Equals(author, c.currentNicks[networkID]) {
+		return
+	}
+	conversation := c.reducer.Find(c.reducer.ConversationKey(networkID, target))
+	if conversation != nil && !conversation.IsChannel() {
+		c.rememberOpenDirect(networkID, target)
+	}
+}
+
+// noteOpenDirectsMotd restores the network's open directs once, at MOTD end,
+// then releases held query playback and asks the bouncer for buffers. It
+// mirrors IrcController::noteOpenDirectsMotd (src/irc/irccontroller.cpp:1595-1612).
+func (c *Controller) noteOpenDirectsMotd(networkID string) {
+	if networkID == "" || c.openDirectsMotdSeen[networkID] {
+		return
+	}
+	c.openDirectsMotdSeen[networkID] = true
+	c.restoreOpenDirects(networkID)
+	// Held self-only query batches splice into directs this restore just
+	// opened. Release after restore, and do not drop them first.
+	spliced := c.reducer.ReleasePendingQueryPlayback(networkID)
+	c.noteKeptReplay()
+	if spliced {
+		c.Publish(irc.ViewNotify{Conversations: true, Messages: true})
+	}
+	if s := c.manager.Find(networkID); s != nil {
+		c.requestZncPlayback(s)
+	}
+}
+
+// restoreOpenDirects reopens the persisted direct messages that are not already
+// loaded. It mirrors IrcController::restoreOpenDirects
+// (src/irc/irccontroller.cpp:1614-1642).
+func (c *Controller) restoreOpenDirects(networkID string) {
+	if !c.ReopenDirects() || networkID == "" {
+		return
+	}
+	prune := c.openDirectsMotdSeen[networkID]
+	features := c.reducer.ServerFeatures(networkID)
+	mapping := features.CaseMapping()
+	created := false
+	for _, target := range c.openDirects.Listed(networkID, mapping) {
+		if !c.persistableDirectTarget(networkID, target) {
+			if prune {
+				c.openDirects.Remove(networkID, target, mapping)
+			}
+			continue
+		}
+		key := c.reducer.ConversationKey(networkID, target)
+		if c.reducer.Find(key) != nil {
+			continue
+		}
+		if c.reducer.EnsureConversation(key, target, irc.CauseRestore) != nil {
+			created = true
+		} else if prune {
+			c.openDirects.Remove(networkID, target, mapping)
+		}
+	}
+	if !created {
+		return
+	}
+	c.reloadModels()
+}
+
+// requestZncPlayback asks the session's bouncer for the buffers it may hold. It
+// mirrors IrcController::requestZncPlayback (src/irc/irccontroller.cpp:2311-2328).
+func (c *Controller) requestZncPlayback(s *session.Session) {
+	if s == nil {
+		return
+	}
+	networkID := s.NetworkID()
+	features := c.reducer.ServerFeatures(networkID)
+	restoredDirects := c.openDirects.Listed(networkID, features.CaseMapping())
+	c.playback.Request(s,
+		c.capabilities[networkID].Contains(irc.CapabilityZncPlayback),
+		c.openDirectsMotdSeen[networkID],
+		restoredDirects,
+		func(target string) bool {
+			return c.persistableDirectTarget(networkID, target)
+		})
+}
+
+// requestChannelPlayback retries one joined channel's PLAY. It mirrors
+// IrcController::requestZncChannelPlayback (src/irc/irccontroller.cpp:2330-2338).
+func (c *Controller) requestChannelPlayback(s *session.Session, channel string) {
+	if s == nil {
+		return
+	}
+	networkID := s.NetworkID()
+	c.playback.RequestChannelPlayback(s, channel,
+		c.capabilities[networkID].Contains(irc.CapabilityZncPlayback),
+		c.openDirectsMotdSeen[networkID])
+}
 
 // --- Status callbacks -----------------------------------------------------
 
@@ -1370,6 +1875,59 @@ func canonicalAccount(value string) string {
 		return ""
 	}
 	return value
+}
+
+// nickEventOf unwraps a NickEvent value or pointer. It mirrors the reducer's
+// dereferenceEvent so Controller.Apply handles either shape.
+func nickEventOf(event irc.Event) (irc.NickEvent, bool) {
+	switch value := event.(type) {
+	case irc.NickEvent:
+		return value, true
+	case *irc.NickEvent:
+		if value != nil {
+			return *value, true
+		}
+	}
+	return irc.NickEvent{}, false
+}
+
+// messageEventOf unwraps a MessageEvent value or pointer.
+func messageEventOf(event irc.Event) (irc.MessageEvent, bool) {
+	switch value := event.(type) {
+	case irc.MessageEvent:
+		return value, true
+	case *irc.MessageEvent:
+		if value != nil {
+			return *value, true
+		}
+	}
+	return irc.MessageEvent{}, false
+}
+
+// noticeEventOf unwraps a NoticeEvent value or pointer.
+func noticeEventOf(event irc.Event) (irc.NoticeEvent, bool) {
+	switch value := event.(type) {
+	case irc.NoticeEvent:
+		return value, true
+	case *irc.NoticeEvent:
+		if value != nil {
+			return *value, true
+		}
+	}
+	return irc.NoticeEvent{}, false
+}
+
+// actionEventOf unwraps an ActionEvent value or pointer.
+func actionEventOf(event irc.Event) (irc.ActionEvent, bool) {
+	switch value := event.(type) {
+	case irc.ActionEvent:
+		return value, true
+	case *irc.ActionEvent:
+		if value != nil {
+			return *value, true
+		}
+	}
+	return irc.ActionEvent{}, false
 }
 
 // firstConversation picks the (network, normalized target) minimum so the
