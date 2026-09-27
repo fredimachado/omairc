@@ -31,6 +31,10 @@ const (
 // treats it as a no-op that leaves the snapshots already rebuilt.
 type NotifyMsg struct{}
 
+// StartupMsg is delivered once after the program starts, so the shell can
+// reconcile stored profiles that connect on startup.
+type StartupMsg struct{}
+
 // MentionArrivalMsg carries one reducer mention arrival to the shell. It is
 // the session-goroutine-to-Bubble-Tea hop that mirrors the QML
 // onMentionArrived handler: the loop handles it on the shell goroutine, where
@@ -66,6 +70,10 @@ type Model struct {
 	conn    *connection.Connection
 	avatars AvatarSource
 	styles  Styles
+
+	// onStartup runs once when StartupMsg arrives. It fires from the Update
+	// goroutine so controller mutation stays single-threaded. Nil-able.
+	onStartup func()
 
 	width  int
 	height int
@@ -184,8 +192,15 @@ func New(ctrl *controller.Controller, conn *connection.Connection) *Model {
 	return m
 }
 
-// Init starts the shell. Phase 4 has no startup command.
-func (m *Model) Init() tea.Cmd { return nil }
+// Init starts the shell and delivers StartupMsg once, so the shell can
+// reconcile stored profiles that connect on startup.
+func (m *Model) Init() tea.Cmd {
+	return func() tea.Msg { return StartupMsg{} }
+}
+
+// SetOnStartup installs the startup callback invoked by Update when StartupMsg
+// arrives. It runs on the Update goroutine. A nil callback is a no-op.
+func (m *Model) SetOnStartup(fn func()) { m.onStartup = fn }
 
 // SetNotifier installs the desktop notifier. A nil notifier is a no-op.
 func (m *Model) SetNotifier(n notify.Notifier) { m.notifier = n }
@@ -217,6 +232,13 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 		m.resize()
+		return m, nil
+	case StartupMsg:
+		// Runs on the Update goroutine, so ActivateStartup mutating the
+		// controller and the session manager stays single-threaded.
+		if m.onStartup != nil {
+			m.onStartup()
+		}
 		return m, nil
 	case NotifyMsg:
 		m.ensureAvatars()

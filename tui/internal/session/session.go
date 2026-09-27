@@ -131,7 +131,7 @@ type IgnoreFilter func(message irc.Message, networkID string) bool
 // transport delivers bytes from a reader goroutine, and blocking it stalls the
 // socket.
 type Handler interface {
-	StateChanged(state SessionState)
+	StateChanged(networkID string, state SessionState)
 	ErrorOccurred(networkID string, kind ErrorKind, message string)
 	Registered(networkID string)
 	ReconnectScheduled(networkID string, delayMs, attempt int)
@@ -1369,7 +1369,7 @@ func (s *Session) setStateLocked(state SessionState) {
 		s.pendingInvite = nil
 	}
 	s.sessionState = state
-	s.emit(func(handler Handler) { handler.StateChanged(state) })
+	s.emit(func(handler Handler) { handler.StateChanged(s.config.NetworkID, state) })
 }
 
 func (s *Session) beginCapabilityNegotiationLocked() {

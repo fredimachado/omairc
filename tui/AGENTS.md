@@ -18,9 +18,12 @@ When the two disagree about the shared contract, the root file wins.
   mirrors `src/irc/`), `internal/session/` (transport, SCRAM, the session
   state machine, the session manager, and the clock seam),
   `internal/controller/` (the Go `IrcController` core and its view
-  snapshots), `internal/connection/` (the `NetworkProfile` + in-memory
-  `Connection` port of `IrcNetworkProfile`/`IrcConnection`; persistence and
-  credentials are phase-11 seams), `internal/demo/` (the `IrcDemoServer` seed
+  snapshots),   `internal/connection/` (the `NetworkProfile` + `Connection` port of
+  `IrcNetworkProfile`/`IrcConnection`; persistence and credentials now persist
+  through `internal/storage`), `internal/storage/` (the filesystem and
+  keychain leaf: a QSettings-compatible INI store, the profile store, the
+  open-direct and playback-time stores, the on-disk conversation log, and the
+  credential store), `internal/demo/` (the `IrcDemoServer` seed
   harness behind `--demo-server`, mirrors `src/irc/ircdemoserver.cpp`),
   `internal/ui/`
   (Bubble Tea shell, mirrors `src/qml/` plus `OmaircWindow.qml`),
@@ -62,17 +65,31 @@ When the two disagree about the shared contract, the root file wins.
   (`commanddispatcher.go`), the reply router (`replyrouter.go`), the monitor
   coordinator (`monitorcoordinator.go`), the autoaway runtime
   (`autoawayruntime.go`), the channel-list request/model (`channellist.go`),
-  and the in-memory ignore/mute/monitor/highlight/avatar/preference stores
-  (`stores.go`), all wired through the host adapters in `wiring.go`. Playback,
-  persistence, and avatars on disk remain behind the nil-able seams in
-  `internal/controller/seams.go` and land in their own phases; the session-inbox
-  store now lives on the controller.
+  and the in-memory ignore/mute/monitor/highlight/avatar stores
+  (`stores.go`), all wired through the host adapters in `wiring.go`. Phase 11
+  lands the bouncer playback coordinator (`playback.go`), the disk-backed
+  `/pref` toggles, the open-direct restore after ISUPPORT, and the on-disk
+  transcript log wiring; the session-inbox store lives on the controller. The
+  controller owns `networkOrder`/`collapsedNetworks` persistence because it
+  owns that state in the TUI (see `AGENTS.md` at the repo root). `seams.go`
+  now names only the transcript-log alias.
+- `internal/storage` is a leaf below `internal/controller` and
+  `internal/connection`: filesystem and keychain integration. It imports `os`,
+  `internal/irc`, and `github.com/godbus/dbus/v5`, and never imports
+  `internal/controller`, `internal/connection`, `internal/session`, or
+  `internal/ui`, so no import cycle forms. It owns the QSettings-compatible
+  INI store (`settings.go`, byte-compatible with the Qt client's
+  `omairc.conf`), the XDG paths (`paths*.go`, build-tagged per OS), the
+  profile store, the open-direct and playback-time stores, the on-disk
+  conversation log, and the credential store. A malformed or unreadable ini is
+  never overwritten from cache (`WriteBlocked`/`ProbeSettingsIni`).
 - `internal/connection` owns the Connect sheet's profile model and the
   draft/selection/apply/disconnect surface (`NetworkProfile`, `Connection`).
-  It may import `internal/irc`, `internal/controller`, and `internal/session`
-  (the transport factory), and must not import `net`, `os`, or `crypto/tls`;
-  sockets stay in `internal/session`. Phase 5 keeps it in memory — the
-  profile store and the credential/keychain store are phase-11 seams.
+  It may import `internal/irc`, `internal/controller`, `internal/session`
+  (the transport factory), and `internal/storage` (the profile and credential
+  stores), and must not import `net`, `os`, or `crypto/tls`; sockets stay in
+  `internal/session`. Persistence goes through the injected stores; `New`
+  starts in memory until the shell installs them.
 - The controller and connection callbacks fire both from `Update` and from
   session goroutines. Never call `p.Send` synchronously from a callback: it
   blocks on the program message channel and deadlocks the event loop the
@@ -113,11 +130,16 @@ platform-neutral and defer OS specifics behind `//go:build` files in
 - Windows: extend the matrix with `windows-latest`, emit
   `omairc-tui$(go env GOEXE)` from `tui/bin/build`, and drive Windows Terminal
   only (no legacy conhost).
-- Platform behavior (notifications, clipboard, image raster) lives behind
-  build tags in `internal/`, mirroring how `src/irc/` stays portable while
-  `Backend` owns desktop integration. D-Bus notifications are implemented in
-  `internal/notify/notify_linux.go`; osascript and Windows Toast remain no-op
-  stubs behind the same `Notifier`.
+- Platform behavior (notifications, clipboard, image raster, storage paths,
+  keychain) lives behind build tags in `internal/`, mirroring how `src/irc/`
+  stays portable while `Backend` owns desktop integration. D-Bus notifications
+  are implemented in `internal/notify/notify_linux.go`; osascript and Windows
+  Toast remain no-op stubs behind the same `Notifier`. `internal/storage` ships
+  Linux XDG paths (`paths_linux.go`) and a Linux Secret Service credential
+  store (`secretservice.go`) now; macOS `GenericConfigLocation`/Keychain and
+  Windows `%LOCALAPPDATA%`/Credential Manager slot into the build-tagged
+  `paths_other.go`/`secretservice_other.go` seams later without touching
+  `internal/irc`, `internal/controller`, or `internal/ui`.
 
 Nothing in Phase 0 hardcodes a Linux-only assumption into `internal/irc`.
 
@@ -205,6 +227,13 @@ wired through `internal/ui/transcript.go`), the URL allowlist and the real
 direct-message avatar glyph: an identicon by default, or a half-block
 truecolor raster when `internal/avatar` has the peer image cached and the
 terminal advertises 24-bit color.
+Phase 11 adds `internal/storage` (the QSettings-compatible INI store, the XDG
+paths, the profile store, the open-direct and playback-time stores, the on-disk
+JSONL conversation log, and the Linux Secret Service credential store behind
+the `CredentialStore` interface), the controller's disk-backed `/pref` toggles,
+open-direct restore after ISUPPORT, the `PlaybackCoordinator`, and the shell's
+store wiring plus the `connectOnStartup` activation after the first render. The
+Connect sheet surfaces persistence and credential status.
 
 ## Chords
 

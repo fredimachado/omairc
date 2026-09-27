@@ -69,3 +69,28 @@ func TestEmptyViewAtTinySizeDoesNotPanic(t *testing.T) {
 		t.Fatal("View content empty at tiny size")
 	}
 }
+
+func TestStartupMsgRunsCallbackOnce(t *testing.T) {
+	m := New(controller.New(), nil)
+
+	cmd := m.Init()
+	if cmd == nil {
+		t.Fatal("Init() = nil, want a StartupMsg command")
+	}
+	if msg := cmd(); msg != (StartupMsg{}) {
+		t.Fatalf("Init() command message = %#v, want StartupMsg{}", msg)
+	}
+
+	calls := 0
+	m.SetOnStartup(func() { calls++ })
+	updated, next := m.Update(StartupMsg{})
+	if next != nil {
+		t.Fatalf("Update(StartupMsg) cmd = %v, want nil", next)
+	}
+	if updated.(*Model) != m {
+		t.Fatal("Update(StartupMsg) returned a different model")
+	}
+	if calls != 1 {
+		t.Fatalf("startup callback calls = %d, want 1", calls)
+	}
+}

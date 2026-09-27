@@ -135,14 +135,19 @@ func (h ctrlHost) DispatchMonitor(command irc.Command, surface irc.ComposerSurfa
 	return h.c.monitor.DispatchMonitor(command, surface)
 }
 
-func (h ctrlHost) PrefEnabled(name irc.PrefName) bool { return h.c.prefs.Enabled(name) }
+func (h ctrlHost) PrefEnabled(name irc.PrefName) bool { return h.c.PrefEnabled(name) }
 
-func (h ctrlHost) PrefApply(name irc.PrefName, enabled bool) { h.c.prefs.SetEnabled(name, enabled) }
+func (h ctrlHost) PrefApply(name irc.PrefName, enabled bool) { h.c.PrefApply(name, enabled) }
 
 // ReplyHost extras.
 func (h ctrlHost) SelfNick(networkID string) string { return h.c.currentNicks[networkID] }
 
-func (h ctrlHost) PersistAvatarURL(networkID, url string) { h.c.avatars.SetURL(networkID, url) }
+func (h ctrlHost) PersistAvatarURL(networkID, url string) {
+	h.c.avatars.SetURL(networkID, url)
+	if h.c.OnAvatarURLChanged != nil {
+		h.c.OnAvatarURLChanged(networkID, url)
+	}
+}
 
 func (h ctrlHost) Capabilities(networkID string) irc.CapabilitySet {
 	return h.c.capabilities[networkID]
