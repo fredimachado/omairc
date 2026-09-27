@@ -262,7 +262,7 @@ func (m *Model) SetThemeWatcher(w *theme.Watcher) {
 // spinner's frame color. The composer keeps its value and focus.
 func (m *Model) applyStyles(styles Styles) {
 	m.styles = styles
-	m.composer.SetStyles(styles.Input)
+	m.composer.SetStyles(styles.ComposerInput)
 	m.help.Styles = helpStyles(styles)
 	m.spinner.Style = styles.StatusWarn
 	m.restyleOverlayInputs()
@@ -534,7 +534,7 @@ func (m *Model) View() tea.View {
 
 // resize keeps the composer and every overlay input in step with the window.
 func (m *Model) resize() {
-	width := m.width - composerPrefixWidth
+	width := m.composerWidth() - composerPrefixWidth
 	if width < 1 {
 		width = 1
 	}
@@ -576,7 +576,7 @@ func (m *Model) render() string {
 
 	parts := []string{body}
 	if slash := m.slashLines(); len(slash) > 0 {
-		parts = append(parts, strings.Join(slash, "\n"))
+		parts = append(parts, strings.Join(m.alignToComposer(slash), "\n"))
 	}
 	parts = append(parts, m.composerView())
 	if m.footerVisible() {
@@ -860,6 +860,51 @@ func (m *Model) transcriptWidth() int {
 		width = 1
 	}
 	return width
+}
+
+// composerInset is the blank cell margin the composer field leaves inside the
+// transcript column on each side, so it sits centered under the transcript it
+// belongs to. It mirrors ConversationColumn.qml's composerShell margins.
+const composerInset = 2
+
+// composerColumnLeft is the left edge of the transcript column: past the
+// sidebar when that rail is visible, else the window edge.
+func (m *Model) composerColumnLeft() int {
+	if m.serverListVisible {
+		return sidebarWidth(m.width)
+	}
+	return 0
+}
+
+// composerLeft is the composer field's left cell: the transcript column plus its
+// inset. composerView pads to it and composerCursor moves the real cursor by it.
+func (m *Model) composerLeft() int {
+	return m.composerColumnLeft() + composerInset
+}
+
+// composerWidth is the composer field's total visible width: the transcript
+// column minus both insets, clamped so a narrow window still yields one cell.
+func (m *Model) composerWidth() int {
+	width := m.transcriptWidth() - 2*composerInset
+	if width < 1 {
+		width = 1
+	}
+	return width
+}
+
+// alignToComposer shifts inline composer chrome (the slash menu) so it opens
+// over the field it belongs to instead of the window's left edge. The tiny
+// full-width fallback leaves the lines at the left edge.
+func (m *Model) alignToComposer(lines []string) []string {
+	if len(lines) == 0 || m.width < minWidth || m.height < minHeight {
+		return lines
+	}
+	indent := strings.Repeat(" ", m.composerLeft())
+	shifted := make([]string, len(lines))
+	for index, line := range lines {
+		shifted[index] = indent + line
+	}
+	return shifted
 }
 
 // fitLines clamps lines to limit, keeping the tail (the newest transcript

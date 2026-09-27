@@ -60,8 +60,9 @@ func TestComposerCursorFollowsFocusAndRow(t *testing.T) {
 	if cursor == nil {
 		t.Fatal("cursor after typing = nil, want a cursor")
 	}
-	// composerPrompt is two cells wide, so the caret sits two cells past the text.
-	if want := composerPrefixWidth + len("hello"); cursor.Position.X != want {
+	// composerPrompt is two cells wide, so the caret sits two cells past the
+	// text, shifted by the field's inset under the transcript column.
+	if want := m.composerLeft() + composerPrefixWidth + len("hello"); cursor.Position.X != want {
 		t.Fatalf("cursor column = %d, want %d", cursor.Position.X, want)
 	}
 

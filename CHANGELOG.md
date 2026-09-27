@@ -12,6 +12,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Native Windows toast notifications for mentions and direct messages. A click
   opens the conversation that raised it, even when the window was closed.
 
+### Changed
+
+- The TUI composer is inset and centered under the transcript column with a
+  raised surface fill, so it reads as chrome grouped with the transcript
+  instead of a bare line spanning the window. The slash-completion menu opens
+  over the same column.
+- The TUI sidebar draws a divider rule above every network section after the
+  first, so a multi-network roster reads as distinct blocks.
+
 ## [1.0.4] - 2026-09-25
 
 ### Added

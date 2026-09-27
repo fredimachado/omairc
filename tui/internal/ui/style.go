@@ -61,6 +61,13 @@ type Styles struct {
 	Prompt   lipgloss.Style
 	Composer lipgloss.Style
 
+	// ComposerField is the fill behind the composer's one-row surface block,
+	// and ComposerInput is the composer's own input style set: the shared
+	// Input look plus that same surface fill, so the field reads as one block
+	// under the transcript. The overlay filters keep Input (no fill).
+	ComposerField lipgloss.Style
+	ComposerInput textinput.Styles
+
 	Dimmer lipgloss.Style
 
 	SheetCard        lipgloss.Style
@@ -206,6 +213,7 @@ func buildStyles(colors theme.Colors) Styles {
 	input.Blurred.Suggestion = base.Foreground(colors.TextDim)
 	input.Blurred.Prompt = base.Foreground(colors.TextDim)
 	input.Cursor.Color = colors.Accent
+	composerField := base.Background(colors.Surface)
 	return Styles{
 		Colors: colors,
 
@@ -239,8 +247,10 @@ func buildStyles(colors theme.Colors) Styles {
 
 		PeopleCount: base.Bold(true).Foreground(colors.TextMuted),
 
-		Prompt:   base.Foreground(colors.Accent),
-		Composer: base,
+		Prompt:        base.Foreground(colors.Accent),
+		Composer:      base,
+		ComposerField: composerField,
+		ComposerInput: composerInputStyles(input, colors.Surface),
 
 		Dimmer: base.Foreground(colors.TextDim).Faint(true),
 
@@ -292,6 +302,26 @@ func buildStyles(colors theme.Colors) Styles {
 
 		Input: input,
 	}
+}
+
+// composerInputStyles derives the composer's input style set from the shared
+// one: the same prompt, placeholder, and caret, plus the surface fill on every
+// state so the field's own glyphs carry the block background instead of
+// punching a window-coloured hole in it. The overlay filters keep the
+// unfilled Input set.
+func composerInputStyles(input textinput.Styles, surface color.Color) textinput.Styles {
+	fill := func(style lipgloss.Style) lipgloss.Style {
+		return style.Background(surface)
+	}
+	input.Focused.Text = fill(input.Focused.Text)
+	input.Focused.Placeholder = fill(input.Focused.Placeholder)
+	input.Focused.Suggestion = fill(input.Focused.Suggestion)
+	input.Focused.Prompt = fill(input.Focused.Prompt)
+	input.Blurred.Text = fill(input.Blurred.Text)
+	input.Blurred.Placeholder = fill(input.Blurred.Placeholder)
+	input.Blurred.Suggestion = fill(input.Blurred.Suggestion)
+	input.Blurred.Prompt = fill(input.Blurred.Prompt)
+	return input
 }
 
 // newTextInput builds a text input from the shell styles. Leaf overlays adopt

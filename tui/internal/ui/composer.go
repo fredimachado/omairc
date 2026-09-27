@@ -6,6 +6,7 @@ import (
 
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 )
 
 // The composer's prompt and placeholder are rendered by the text input itself,
@@ -20,26 +21,44 @@ const (
 )
 
 // newComposerInput builds the composer's text input from the shell styles.
-// model.go's New must build the composer with this instead of textinput.New, so
-// the field matches the overlay filters' theme-driven look (see newTextInput in
-// style.go). It also switches the input to a real terminal cursor; composerCursor
-// returns nil while the virtual cursor is on, and View should place the real one.
-// The styles are a snapshot: model.go's SetTheme must re-apply
-// m.composer.SetStyles(m.styles.Input) after it rebuilds the shell styles.
+// model.go's New must build the composer with this instead of textinput.New. It
+// uses the composer's own input set (ComposerInput in style.go), which is the
+// shared theme-driven look plus the surface fill that makes the field read as
+// its own block under the transcript. It also switches the input to a real
+// terminal cursor; composerCursor returns nil while the virtual cursor is on,
+// and View should place the real one. The styles are a snapshot: model.go's
+// SetTheme must re-apply m.composer.SetStyles(m.styles.ComposerInput) after it
+// rebuilds the shell styles.
 func newComposerInput(styles Styles) textinput.Model {
-	input := newTextInput(styles, composerPlaceholder, composerPrompt)
+	input := textinput.New()
+	input.SetStyles(styles.ComposerInput)
+	input.Placeholder = composerPlaceholder
+	input.Prompt = composerPrompt
 	input.SetVirtualCursor(false)
 	return input
 }
 
-// composerView renders the single-line composer. newComposerInput puts the
-// prompt and placeholder inside the input, so the line is just the styled field
-// clipped to the window: the input's width already excludes composerPrefixWidth
-// and MaxWidth drops a stray wide glyph instead of wrapping to a second line. A
-// leading "/" is still plain text until the slash catalog lands. While find is
-// active the composer is the find query box.
+// composerView renders the single-line composer as a filled block centered
+// under the transcript column. newComposerInput puts the prompt and
+// placeholder inside the input, so the field is just the input clipped to the
+// composer width (composerWidth in model.go). The block is inset within the
+// transcript column and joined with blank cells outside it, so it groups with
+// the transcript it belongs to instead of running the full window width. A
+// terminal too small for the columns keeps the old bare full-width field. While
+// find is active the composer is the find query box.
 func (m *Model) composerView() string {
-	return m.styles.Composer.MaxWidth(m.width).Inline(true).Render(m.composer.View())
+	if m == nil {
+		return ""
+	}
+	if m.width < minWidth || m.height < minHeight {
+		return m.styles.Composer.Inline(true).MaxWidth(m.width).Render(m.composer.View())
+	}
+	width := m.composerWidth()
+	field := truncateLine(m.composer.View(), width)
+	if pad := width - lipgloss.Width(field); pad > 0 {
+		field += m.styles.ComposerField.Render(strings.Repeat(" ", pad))
+	}
+	return strings.Repeat(" ", m.composerLeft()) + field
 }
 
 // composerCursor is the composer's real terminal cursor at row, the composer
@@ -57,6 +76,12 @@ func (m *Model) composerCursor(row int) *tea.Cursor {
 		return nil
 	}
 	cursor.Position.Y = row
+	// The composer is inset under the transcript column, so the real cursor
+	// moves with the field. A terminal too small for the columns renders the
+	// bare full-width field at the left edge and needs no offset.
+	if m.width >= minWidth && m.height >= minHeight {
+		cursor.Position.X += m.composerLeft()
+	}
 	return cursor
 }
 

@@ -214,10 +214,12 @@ func (m *Model) slashLines() []string {
 			usageWidth = width
 		}
 	}
-	// The menu hugs its longest row but never wider than the window leaves for
-	// its indent, border, and padding.
+	// The menu hugs its longest row but never wider than its composer column
+	// leaves for the composer inset, the indent, the border, and the padding.
+	// render shifts the block by composerLeft, so clamping to the column keeps
+	// it inside the window instead of wrapping the frame.
 	width := labelWidth + slashMenuGap + usageWidth
-	if limit := m.width - slashMenuChrome; width > limit {
+	if limit := m.transcriptWidth() - composerInset - slashMenuChrome; width > limit {
 		width = limit
 	}
 	if width < 1 {

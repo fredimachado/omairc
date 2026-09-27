@@ -34,7 +34,13 @@ func (m *Model) sidebarView(width, height int) string {
 	}
 
 	roster := make([]string, 0, height)
-	for _, networkID := range m.ctrl.NetworkOrder() {
+	for index, networkID := range m.ctrl.NetworkOrder() {
+		// A rule between networks, and above the second onward, so a
+		// multi-network roster reads as distinct blocks instead of one
+		// continuous list.
+		if index > 0 {
+			roster = append(roster, m.networkSeparator(width))
+		}
 		name := m.ctrl.NetworkDisplayName(networkID)
 		if name == "" {
 			name = networkID
@@ -94,6 +100,16 @@ func (m *Model) identityFooterLine(width int) string {
 		footer += " " + label
 	}
 	return footer
+}
+
+// networkSeparator is the rule drawn between two network sections in the
+// sidebar. It reaches the column width like the section-header rule, so the
+// divider and the section titles share one visual language.
+func (m *Model) networkSeparator(width int) string {
+	if width < 1 {
+		return ""
+	}
+	return m.styles.Divider.Render(strings.Repeat("─", width))
 }
 
 // networkHeader names a network and carries its collapse chevron, mention pill,
