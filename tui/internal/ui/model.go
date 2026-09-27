@@ -55,21 +55,25 @@ type Model struct {
 	// property; the controller owns the network collapse/reorder facts.
 	sidebarNetworkFocusID string
 	serverListVisible     bool
-	transcriptScroll      int
-	transcriptFollowEnd   bool
-	transcriptCursor      int
-	find                  findState
-	composerHistory       []string
-	composerHistoryIndex  int
-	composerHistoryDraft  string
-	memberFocus           bool
-	memberIndex           int
-	shortcutsOpen         bool
-	nick                  nickJumpState
-	link                  linkState
-	inbox                 inboxState
-	slash                 slashSession
-	list                  channelListState
+	// membersHidden is the window-level Ctrl+Shift+M state. It survives
+	// channel switches and is moot on a direct message; membersVisible() also
+	// requires the column to fit and the target to be a channel.
+	membersHidden        bool
+	transcriptScroll     int
+	transcriptFollowEnd  bool
+	transcriptCursor     int
+	find                 findState
+	composerHistory      []string
+	composerHistoryIndex int
+	composerHistoryDraft string
+	memberFocus          bool
+	memberIndex          int
+	shortcutsOpen        bool
+	nick                 nickJumpState
+	link                 linkState
+	inbox                inboxState
+	slash                slashSession
+	list                 channelListState
 
 	// drafts keeps unsent composer text per conversation id, or per Status
 	// surface ("status\n<networkID>").
@@ -411,12 +415,14 @@ func (m *Model) overlayLines(body, card []string) []string {
 }
 
 // membersVisible reports whether the member column fits and applies. It is
-// shown only for channels, matching the Qt panel.
+// shown only for channels, matching the Qt panel, and Ctrl+Shift+M can hide it
+// for good. The toggle is window-level, so it survives channel switches and is
+// moot on a direct message.
 func (m *Model) membersVisible() bool {
 	if m.ctrl == nil || !m.ctrl.IsChannel() {
 		return false
 	}
-	return m.width >= membersMinTotal
+	return m.width >= membersMinTotal && !m.membersHidden
 }
 
 // sidebarWidth clamps the sidebar's share of the window.

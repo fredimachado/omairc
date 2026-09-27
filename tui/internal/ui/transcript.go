@@ -2,9 +2,19 @@ package ui
 
 import (
 	"fmt"
+	"strings"
+
+	"charm.land/lipgloss/v2"
 
 	"github.com/fredimachado/omairc/tui/internal/controller"
 )
+
+// peopleCountGutter is the blank separation between the transcript's
+// right-aligned "N PEOPLE" count and the member column joined immediately
+// after it. Without it the two columns' text runs together in the grid
+// ("12 PEOPLEONLINE - 12"), so the header is built one gutter short of
+// transcriptWidth() and renderColumn pads the rest.
+const peopleCountGutter = 2
 
 // transcriptView renders the selected conversation: its topic, then either the
 // Status console lines when the console is open or the live transcript. The
@@ -29,11 +39,7 @@ func (m *Model) transcriptView(height int) string {
 func (m *Model) transcriptLines() ([]string, int) {
 	lines := make([]string, 0, 32)
 	if topic := m.ctrl.Topic(); topic != "" {
-		header := topic
-		if m.ctrl.IsChannel() {
-			header = fmt.Sprintf("%s  (%d)", topic, m.ctrl.PeopleCount())
-		}
-		lines = append(lines, m.styles.Topic.Render(header))
+		lines = append(lines, m.topicHeaderLine(topic))
 		lines = append(lines, "")
 	}
 	headerCount := len(lines)
@@ -50,8 +56,72 @@ func (m *Model) transcriptLines() ([]string, int) {
 		for index, message := range m.ctrl.Messages() {
 			lines = append(lines, m.messageRow(index, message))
 		}
+		lines = m.appendTranscriptTypingFooter(lines, headerCount)
 	}
 	return lines, headerCount
+}
+
+// topicHeaderLine renders the conversation's header. A channel appends a
+// right-aligned "N PEOPLE" count mirroring ConversationColumn.qml's people
+// control, sized to transcriptWidth() minus peopleCountGutter so the count
+// sits at the right edge but never touches the member column that follows. A
+// long topic is truncated so the count stays visible; a direct message is just
+// the caption, with no count.
+func (m *Model) topicHeaderLine(topic string) string {
+	topicRendered := m.styles.Topic.Render(topic)
+	if !m.ctrl.IsChannel() {
+		return topicRendered
+	}
+	countRendered := m.styles.PeopleCount.Render(fmt.Sprintf("%d PEOPLE", m.ctrl.PeopleCount()))
+	width := m.transcriptWidth() - peopleCountGutter
+	if width < 0 {
+		width = 0
+	}
+	gap := width - lipgloss.Width(topicRendered) - lipgloss.Width(countRendered)
+	if gap < 1 {
+		// Spend the topic until the count and one space fit. If the count
+		// alone is wider than the column there is nothing left to give, but
+		// the count is still emitted last so it is never the thing cut.
+		maxTopic := width - lipgloss.Width(countRendered) - 1
+		if maxTopic < 0 {
+			maxTopic = 0
+		}
+		topicRendered = truncateLine(topicRendered, maxTopic)
+		gap = width - lipgloss.Width(topicRendered) - lipgloss.Width(countRendered)
+		if gap < 0 {
+			gap = 0
+		}
+	}
+	return topicRendered + strings.Repeat(" ", gap) + countRendered
+}
+
+// appendTranscriptTypingFooter adds the direct-message typing hint after the
+// message rows. A grouped hint belongs to the peer's last live chat row, so it
+// extends that rendered line; an ungrouped hint gets the peer's header line and
+// an indented dots line. It is display-only: transcriptRowTexts keeps one entry
+// per controller message, and the footer sits past every message index.
+func (m *Model) appendTranscriptTypingFooter(lines []string, headerCount int) []string {
+	nick, grouped, show := m.ctrl.TranscriptTypingIndicator()
+	if !show {
+		return lines
+	}
+	dots := m.styles.MutedLine.Render(" ...")
+	if grouped {
+		if len(lines) <= headerCount {
+			return lines
+		}
+		// Keep the dots on screen even when the peer's line is at the column
+		// edge: renderColumn would otherwise truncate them away.
+		available := m.transcriptWidth() - lipgloss.Width(dots)
+		if available < 0 {
+			available = 0
+		}
+		lines[len(lines)-1] = truncateLine(lines[len(lines)-1], available) + dots
+		return lines
+	}
+	lines = append(lines, m.styles.MutedLine.Render(nick))
+	lines = append(lines, m.styles.MutedLine.Render("   ..."))
+	return lines
 }
 
 // transcriptWindow returns the [start, end) slice of lines the viewport shows,

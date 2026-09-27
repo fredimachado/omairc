@@ -267,6 +267,9 @@ func TestHelpAndUnknownVerb(t *testing.T) {
 	if !strings.Contains(out.String(), "usage: control-omairc-tui") {
 		t.Fatalf("help = %q", out.String())
 	}
+	if !strings.Contains(out.String(), "toggle-members") {
+		t.Fatalf("help should list the toggle-members verb: %q", out.String())
+	}
 	out.Reset()
 	errBuf.Reset()
 	if code := Run([]string{"nope"}, &out, &errBuf); code == 0 {
@@ -274,6 +277,12 @@ func TestHelpAndUnknownVerb(t *testing.T) {
 	}
 	if !strings.Contains(errBuf.String(), "unknown verb") {
 		t.Fatalf("stderr = %q", errBuf.String())
+	}
+}
+
+func TestToggleMembersRejectsArguments(t *testing.T) {
+	if err := cmdToggleMembers([]string{"extra"}); err == nil {
+		t.Fatalf("toggle-members with an argument should error")
 	}
 }
 

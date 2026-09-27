@@ -35,6 +35,7 @@ var chordTable = map[string]chordFunc{
 	"alt+a":        func(m *Model) tea.Cmd { m.jumpUnread(); return nil },
 	"ctrl+shift+k": func(m *Model) tea.Cmd { m.openNickJump(); return nil },
 	"ctrl+shift+p": func(m *Model) tea.Cmd { m.focusMembers(); return nil },
+	"ctrl+shift+m": func(m *Model) tea.Cmd { m.toggleMembers(); return nil },
 	"ctrl+shift+s": func(m *Model) tea.Cmd { m.toggleServerList(); return nil },
 	"ctrl+w":       func(m *Model) tea.Cmd { m.closeDirectMessage(); return nil },
 	"ctrl+/":       func(m *Model) tea.Cmd { m.openShortcuts(); return nil },

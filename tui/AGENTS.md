@@ -174,6 +174,11 @@ is deterministic instead of racing the redraw. Phase 7 adds the `composer`
 verb (a no-op focus, so the shared `slash-complete` fence runs) and the
 `slash-commands` / `slash-complete` recipes; the slash catalog, the completer,
 and the `/list` overlay live in `internal/controller` and `internal/ui`.
+Phase 8 adds the `toggle-members` verb and the `toggle-members`,
+`member-presence`, `typing`, and `open-direct-message` recipes; the member
+chrome (`ONLINE - N` heading, presence dots, away dimming, status lines, bot
+mark, typing ellipsis) and the DM transcript typing footer live in
+`internal/ui`, over presence and typing state in `internal/controller`.
 
 ## Chords
 

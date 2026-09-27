@@ -28,6 +28,20 @@ type Styles struct {
 	MemberAway     lipgloss.Style
 	MemberSelected lipgloss.Style
 
+	// Phase 8 member chrome. The presence dot is green when available and
+	// amber when away; the bot mark, account, status subline, and typing
+	// ellipsis stay muted so the nick remains the loudest thing in the row.
+	MemberPresenceOnline lipgloss.Style
+	MemberPresenceAway   lipgloss.Style
+	MemberBot            lipgloss.Style
+	MemberAccount        lipgloss.Style
+	MemberStatus         lipgloss.Style
+	MemberTyping         lipgloss.Style
+
+	// PeopleCount is the transcript header's "N PEOPLE" label beside the
+	// topic (ConversationColumn.qml's people control).
+	PeopleCount lipgloss.Style
+
 	Prompt   lipgloss.Style
 	Composer lipgloss.Style
 
@@ -94,6 +108,15 @@ func defaultStyles() Styles {
 		MembersHeader:  base.Bold(true).Foreground(colorAccent),
 		MemberAway:     base.Foreground(colorDim),
 		MemberSelected: base.Bold(true).Foreground(colorUnread),
+
+		MemberPresenceOnline: base.Foreground(colorGood),
+		MemberPresenceAway:   base.Foreground(colorUnread),
+		MemberBot:            base.Foreground(colorMuted),
+		MemberAccount:        base.Foreground(colorMuted),
+		MemberStatus:         base.Foreground(colorMuted),
+		MemberTyping:         base.Foreground(colorMuted),
+
+		PeopleCount: base.Bold(true).Foreground(colorMuted),
 
 		Prompt:   base.Foreground(colorAccent),
 		Composer: base,

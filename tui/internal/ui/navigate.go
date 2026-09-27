@@ -460,6 +460,10 @@ func (m *Model) focusMembers() {
 	if m.ctrl == nil || !m.ctrl.IsChannel() || m.ctrl.ConsoleOpen() {
 		return
 	}
+	// The focus path reopens the panel if Ctrl+Shift+M hid it, mirroring the
+	// feature map's "Press Ctrl+Shift+P to focus the list (and reopen it if it
+	// was hidden)".
+	m.membersHidden = false
 	m.memberFocus = true
 	m.clampMemberIndex()
 }
