@@ -261,10 +261,27 @@ open-direct restore after ISUPPORT, the `PlaybackCoordinator`, and the shell's
 store wiring plus the `connectOnStartup` activation after the first render. The
 Connect sheet surfaces persistence and credential status.
 
+The transcript carries the reducer's `New messages` boundary: `internal/ui`
+reads the mark through `Controller.UnreadMarkRow` (which mirrors
+`MessageListModel::unreadMarkRow`, including its needs-a-row-above guard) and
+attaches `UnreadMark.qml`'s accent-mixed rule to the marked row's block, so the
+rendered row count keeps matching the message count find and copy index by.
+`Open conversations at unread` places the viewport like
+`placeTranscriptAfterSelect`: Status follows the end, a conversation lands on its
+mark, and re-selecting the same conversation keeps the reader's place. `Alt+U`
+jumps to the first row that arrived while the reader was scrolled up, else to
+the newest row, with a `↓ new` marker in the transcript header. Because the
+runtime only repaints on a message, `Controller.Publish` calls `OnViewChanged`
+for any non-empty notify; the shell wires it to the same coalescing wake-up as
+the selection and status callbacks, so live chat and membership changes reach
+the screen.
+
 ## Chords
 
 - The full chord map lives in `internal/ui/keys.go`. `Ctrl+Q` is the only quit
   chord; `Ctrl+C` copies via OSC 52 (`tea.SetClipboard`), not quit.
+- `Alt+A` walks to the next unread conversation; `Alt+U` jumps to the first new
+  message in the current transcript.
 
 ## Version
 

@@ -175,6 +175,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	c.OnSelectionChanged = notify
 	c.OnStatusChanged = notify
 	c.OnCapabilitiesChanged = notify
+	c.OnViewChanged = notify
 	// Only session goroutines raise these, so a direct p.Send is safe here (unlike
 	// the navigation callbacks, which coalesce onto `wake`).
 	c.OnMentionArrived = func(author, body, networkID, target, msgid string) {

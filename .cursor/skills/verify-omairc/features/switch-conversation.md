@@ -9,6 +9,7 @@ Switch conversation lets a user leave the current mock chat and open another cha
 - `switch-topic` updates the header topic for the selected conversation.
 - `switch-people` shows a people count only on channels.
 - `switch-unread` clears a channel row's unread badge when that channel is opened.
+- `switch-unread-start` opens a conversation at its `New messages` boundary when `Open conversations at unread` is on, else at the bottom. Status always opens at the bottom, and re-selecting the current conversation keeps the reader's place.
 
 ## How to get to it (user POV)
 

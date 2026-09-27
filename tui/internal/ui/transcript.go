@@ -187,14 +187,14 @@ func (m *Model) transcriptView(height int) string {
 }
 
 // transcriptHeader renders the pinned header block: the topic line plus its
-// trailing blank, or nothing when the conversation has no topic. It stays put
-// while the rows scroll under it.
+// trailing blank, or nothing when the conversation has neither a topic nor an
+// armed jump hint. It stays put while the rows scroll under it.
 func (m *Model) transcriptHeader() []string {
 	if m.ctrl == nil {
 		return nil
 	}
 	topic := m.ctrl.Topic()
-	if topic == "" {
+	if topic == "" && m.unseenMarker() == "" {
 		return nil
 	}
 	return []string{m.topicHeaderLine(topic), ""}
@@ -224,38 +224,50 @@ func (m *Model) transcriptLines() ([]string, int) {
 }
 
 // topicHeaderLine renders the conversation's header: the muted topic caption
-// on the left and, for a channel, a right-aligned, filled "N PEOPLE" chip
-// mirroring ConversationColumn.qml's people control. The line is sized to
-// transcriptWidth() minus peopleCountGutter so the chip sits at the right edge
-// but never touches the member column that follows. A long topic is truncated
-// so the chip stays visible; a direct message is just the caption, with no
-// count.
+// on the left and, right-aligned, the "↓ new" jump marker and then a filled
+// "N PEOPLE" chip for a channel. The line is sized to transcriptWidth() minus
+// peopleCountGutter so the tail sits at the right edge but never touches the
+// member column that follows. A long topic is truncated so the tail stays
+// visible; a direct message has no count.
 func (m *Model) topicHeaderLine(topic string) string {
 	topicRendered := m.styles.Topic.Render(topic)
-	if !m.ctrl.IsChannel() {
+	tail := m.headerTail()
+	if tail == "" {
 		return topicRendered
 	}
-	countRendered := m.peopleChip(m.ctrl.PeopleCount())
 	width := m.transcriptWidth() - peopleCountGutter
 	if width < 0 {
 		width = 0
 	}
-	gap := width - lipgloss.Width(topicRendered) - lipgloss.Width(countRendered)
+	gap := width - lipgloss.Width(topicRendered) - lipgloss.Width(tail)
 	if gap < 1 {
-		// Spend the topic until the count and one space fit. If the count
-		// alone is wider than the column there is nothing left to give, but
-		// the count is still emitted last so it is never the thing cut.
-		maxTopic := width - lipgloss.Width(countRendered) - 1
+		// Spend the topic until the tail and one space fit. If the tail alone
+		// is wider than the column there is nothing left to give, but the tail
+		// is still emitted last so it is never the thing cut.
+		maxTopic := width - lipgloss.Width(tail) - 1
 		if maxTopic < 0 {
 			maxTopic = 0
 		}
 		topicRendered = truncateLine(topicRendered, maxTopic)
-		gap = width - lipgloss.Width(topicRendered) - lipgloss.Width(countRendered)
+		gap = width - lipgloss.Width(topicRendered) - lipgloss.Width(tail)
 		if gap < 0 {
 			gap = 0
 		}
 	}
-	return topicRendered + strings.Repeat(" ", gap) + countRendered
+	return topicRendered + strings.Repeat(" ", gap) + tail
+}
+
+// headerTail is the transcript header's right-aligned content: the "↓ new" jump
+// marker when a jump is armed, then the "N PEOPLE" chip on a channel.
+func (m *Model) headerTail() string {
+	parts := make([]string, 0, 2)
+	if marker := m.unseenMarker(); marker != "" {
+		parts = append(parts, marker)
+	}
+	if m.ctrl != nil && m.ctrl.IsChannel() {
+		parts = append(parts, m.peopleChip(m.ctrl.PeopleCount()))
+	}
+	return strings.Join(parts, " ")
 }
 
 // appendTranscriptTypingFooter adds the direct-message typing hint after the
@@ -391,6 +403,9 @@ func (m *Model) pageTranscript(direction int, fraction float64) {
 	}
 	m.transcriptScroll = offset
 	m.transcriptFollowEnd = offset == 0
+	if m.transcriptFollowEnd {
+		m.firstUnseenRow = -1
+	}
 	start := n - height - offset
 	if start < 0 {
 		start = 0
@@ -413,6 +428,7 @@ func (m *Model) jumpTranscript(toEnd bool) {
 		m.transcriptFollowEnd = true
 		m.transcriptScroll = 0
 		m.transcriptCursor = m.transcriptRowTotal() - 1
+		m.firstUnseenRow = -1
 		return
 	}
 	maxOffset := n - height
@@ -482,6 +498,7 @@ func (m *Model) pinTranscriptToRow(row int) {
 	if maxOffset <= 0 || row < 0 || row >= area.count() {
 		m.transcriptFollowEnd = true
 		m.transcriptScroll = 0
+		m.firstUnseenRow = -1
 		return
 	}
 	start := area.line(row)
@@ -496,6 +513,72 @@ func (m *Model) pinTranscriptToRow(row int) {
 	if m.transcriptScroll < 0 {
 		m.transcriptScroll = 0
 	}
+}
+
+// noteTranscriptGrowth arms the first-new-row marker when rows arrive while the
+// reader is scrolled up, and clears it while they follow the end or the
+// transcript shrank. It mirrors TranscriptList.noteGrowth, which is driven by
+// count changes rather than by the model's own notification.
+func (m *Model) noteTranscriptGrowth() {
+	count := m.transcriptRowTotal()
+	switch {
+	case count < m.transcriptCount:
+		if m.firstUnseenRow >= count {
+			m.firstUnseenRow = -1
+		}
+	case count > m.transcriptCount:
+		if m.transcriptFollowEnd {
+			m.firstUnseenRow = -1
+		} else if m.firstUnseenRow < 0 {
+			m.firstUnseenRow = m.transcriptCount
+		}
+	default:
+		m.transcriptCount = count
+		return
+	}
+	m.transcriptCount = count
+}
+
+// jumpArmed reports whether a jump-to-newest affordance applies: the reader is
+// scrolled up and either rows arrived below them or the transcript carries a
+// "New messages" mark. It mirrors TranscriptList.jumpArmed with canScrollDown
+// standing in for !transcriptFollowEnd.
+func (m *Model) jumpArmed() bool {
+	if m.ctrl == nil || m.transcriptFollowEnd {
+		return false
+	}
+	if m.firstUnseenRow >= 0 && m.firstUnseenRow < m.transcriptRowTotal() {
+		return true
+	}
+	if m.ctrl.ConsoleOpen() {
+		return false
+	}
+	return m.ctrl.UnreadMarkRow() >= 0
+}
+
+// jumpToUnseen lands on the first row that arrived while the reader was
+// scrolled up, else on the newest row. It mirrors TranscriptList.jumpToUnseen.
+func (m *Model) jumpToUnseen() {
+	if !m.jumpArmed() {
+		return
+	}
+	if m.firstUnseenRow >= 0 {
+		row := m.firstUnseenRow
+		m.firstUnseenRow = -1
+		m.pinTranscriptToRow(row)
+		return
+	}
+	m.jumpTranscript(true)
+}
+
+// unseenMarker is the transcript header's "↓ new" hint, shown while a jump is
+// armed. It is the keyboard-first stand-in for the Qt list's floating jump
+// button, which a terminal cannot place over the rows.
+func (m *Model) unseenMarker() string {
+	if !m.jumpArmed() {
+		return ""
+	}
+	return m.styles.UnseenJump.Render("↓ new")
 }
 
 // renderMessageBody renders a message body with its IRC emphasis (bold,

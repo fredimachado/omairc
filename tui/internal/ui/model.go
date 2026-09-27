@@ -117,10 +117,16 @@ type Model struct {
 	// membersHidden is the window-level Ctrl+Shift+M state. It survives
 	// channel switches and is moot on a direct message; membersVisible() also
 	// requires the column to fit and the target to be a channel.
-	membersHidden        bool
-	transcriptScroll     int
-	transcriptFollowEnd  bool
-	transcriptCursor     int
+	membersHidden       bool
+	transcriptScroll    int
+	transcriptFollowEnd bool
+	transcriptCursor    int
+	// firstUnseenRow is the row that first arrived while the reader was scrolled
+	// up, or -1 when nothing is waiting below. transcriptCount tracks the row
+	// count between notifications so a growth can be detected. They mirror
+	// TranscriptList's firstUnseenIndex and trackedCount.
+	firstUnseenRow       int
+	transcriptCount      int
 	find                 findState
 	composerHistory      []string
 	composerHistoryIndex int
@@ -196,6 +202,7 @@ func New(ctrl *controller.Controller, conn *connection.Connection) *Model {
 		serverListVisible:    true,
 		transcriptFollowEnd:  true,
 		transcriptCursor:     -1,
+		firstUnseenRow:       -1,
 		composerHistoryIndex: -1,
 		drafts:               make(map[string]string),
 		// The terminal starts focused until a Blur arrives, mirroring
@@ -207,6 +214,7 @@ func New(ctrl *controller.Controller, conn *connection.Connection) *Model {
 	m.applyStyles(styles)
 	m.resize()
 	m.draftKey = m.composerDraftKey()
+	m.transcriptCount = m.transcriptRowTotal()
 	if m.connectVisible() {
 		m.focus = focusConnect
 		m.composer.Blur()
@@ -368,7 +376,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case NotifyMsg:
 		m.ensureAvatars()
 		// A status change may have left the focused network disconnected, so
-		// restart the spinner if it stopped.
+		// restart the spinner if it stopped. A chat or membership publish may
+		// have grown the transcript while the reader was scrolled up, which
+		// arms the jump-to-first-new marker.
+		m.noteTranscriptGrowth()
 		return m, m.startBackgroundWork()
 	case ThemeChangedMsg:
 		// A live theme swap. Rebuild every style from the new palette, then

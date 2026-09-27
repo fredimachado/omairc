@@ -36,6 +36,7 @@ var chordTable = map[string]chordFunc{
 	"ctrl+l":       func(m *Model) tea.Cmd { m.clearNetworkFocus(); return nil },
 	"ctrl+k":       func(m *Model) tea.Cmd { m.openJump(); return nil },
 	"alt+a":        func(m *Model) tea.Cmd { m.jumpUnread(); return nil },
+	"alt+u":        func(m *Model) tea.Cmd { m.jumpToUnseen(); return nil },
 	"ctrl+shift+k": func(m *Model) tea.Cmd { m.openNickJump(); return nil },
 	"ctrl+shift+p": func(m *Model) tea.Cmd { m.focusMembers(); return nil },
 	"ctrl+shift+m": func(m *Model) tea.Cmd { m.toggleMembers(); return nil },

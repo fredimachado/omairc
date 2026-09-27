@@ -102,6 +102,12 @@ type Controller struct {
 	// OnCapabilitiesChanged fires when the negotiated capability set changes or
 	// the selection moves to a network with a different set.
 	OnCapabilitiesChanged func()
+	// OnViewChanged fires whenever Publish dirtied a view surface, so the shell
+	// re-renders. Publish runs on both the Update goroutine and session
+	// goroutines; the shell must coalesce this wake-up rather than call Send
+	// synchronously, the same rule as the selection and status callbacks. It
+	// carries no payload: the shell re-reads the snapshots. Nil-able.
+	OnViewChanged func()
 }
 
 // New returns an empty controller with a real clock, an empty reducer, and an
@@ -698,6 +704,13 @@ func (c *Controller) Publish(notify irc.ViewNotify) {
 	if notify.Typing && !notify.Conversations {
 		c.rebuildConversations()
 		c.conversationEpoch++
+	}
+	// Wake the shell for any surface this publish dirtied. The selection,
+	// status, and capability callbacks above cover their own surfaces, but a
+	// chat line or a membership change has no other wake-up: without this the
+	// runtime never repaints the transcript or the sidebar for them.
+	if notify != (irc.ViewNotify{}) && c.OnViewChanged != nil {
+		c.OnViewChanged()
 	}
 }
 

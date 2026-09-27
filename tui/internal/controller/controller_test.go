@@ -1101,3 +1101,29 @@ func TestTypingEventRefreshesSidebarTyping(t *testing.T) {
 		t.Fatalf("lena sidebar typing after TAGMSG = %v (found=%v), want true", typing, found)
 	}
 }
+
+// --- OnViewChanged --------------------------------------------------------
+
+// TestOnViewChangedFiresForViewSurfaces ports the shell repaint wake-up: a chat
+// line or a membership change has no dedicated callback, so Publish must call
+// OnViewChanged for any non-empty notify. A no-op publish must not.
+func TestOnViewChangedFiresForViewSurfaces(t *testing.T) {
+	c, clock := newController(t)
+	transport := addAndStart(t, c, clock, baseConfig("libera", "omairc"))
+	registerNetwork(t, transport, "omairc")
+	inject(t, transport, ":omairc!u@h JOIN :#omarchy\r\n")
+	c.SelectConversation("libera", "#omarchy")
+
+	woken := 0
+	c.OnViewChanged = func() { woken++ }
+
+	inject(t, transport, ":anna!u@h PRIVMSG #omarchy :hello\r\n")
+	if woken == 0 {
+		t.Fatal("OnViewChanged must fire for a chat line")
+	}
+	woken = 0
+	c.Publish(irc.ViewNotify{})
+	if woken != 0 {
+		t.Fatalf("OnViewChanged fired %d times for an empty publish, want 0", woken)
+	}
+}

@@ -35,6 +35,7 @@ var shortcutGroups = []shortcutGroup{
 			{"Ctrl+Alt+Shift+Left / Right", "collapse / expand all"},
 			{"Alt+Shift+Up / Down", "move network"},
 			{"Alt+A", "next unread"},
+			{"Alt+U", "first new message"},
 		},
 	},
 	{

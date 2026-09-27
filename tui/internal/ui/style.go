@@ -45,6 +45,10 @@ type Styles struct {
 	UnreadMark     lipgloss.Style
 	UnreadMarkRule lipgloss.Style
 
+	// UnseenJump is the transcript header's "↓ new" hint, shown while rows are
+	// waiting below the reader.
+	UnseenJump lipgloss.Style
+
 	MembersHeader lipgloss.Style
 
 	// Phase 8 member chrome. The presence dot is green when available and
@@ -239,6 +243,7 @@ func buildStyles(colors theme.Colors) Styles {
 
 		UnreadMark:     base.Foreground(colors.UnreadMark).Bold(true),
 		UnreadMarkRule: base.Foreground(colors.UnreadMarkRule),
+		UnseenJump:     base.Foreground(colors.Accent).Bold(true),
 
 		MembersHeader: base.Bold(true).Foreground(colors.Accent),
 
