@@ -81,16 +81,11 @@ func (m *Model) memberRow(index int, member controller.MemberSnapshot) []string 
 		line.WriteString(dot.Render("●"))
 		line.WriteString(" ")
 	}
-	// The focused row wins over the away dim on the first line; an away member
-	// keeps its status subline either way.
-	labelStyle := m.styles.Conversation
-	switch {
-	case focused:
-		labelStyle = m.styles.MemberSelected
-	case away:
-		labelStyle = m.styles.MemberAway
-	}
-	line.WriteString(labelStyle.Render(label))
+	// The label carries the nick's fixed palette color — the same hash the
+	// transcript byline uses — so one nick reads as the same person in both
+	// places. An away member keeps the hue but is washed toward the page, and the
+	// focused row is bold; the accent bar already marks focus.
+	line.WriteString(m.memberNickStyle(member.Nick, focused, away).Render(label))
 	if member.Bot {
 		// The mark sits beside the name so the presence dot stays visible.
 		line.WriteString(" ")
@@ -110,6 +105,29 @@ func (m *Model) memberRow(index int, member controller.MemberSnapshot) []string 
 		lines = append(lines, m.memberStatusLine(member.Status, presenceShown))
 	}
 	return lines
+}
+
+// memberAwayNickMix is how far an away member's nick color is mixed toward the
+// page background. The member panel keeps the nick's palette color and washes it
+// out for away, instead of dropping to a flat muted gray, so the hue still reads.
+const memberAwayNickMix = 0.5
+
+// memberNickStyle is the member panel's label style: the nick's fixed palette
+// color, mixed toward the page background when the member is away, and bold when
+// the row holds the member focus. It is the member-panel counterpart of the
+// transcript's nickStyle, so a nick keeps one color everywhere. The color hashes
+// on the nick, not the PREFIX label the row renders, so "@mira" and the
+// transcript's "mira" agree.
+func (m *Model) memberNickStyle(nick string, focused, away bool) lipgloss.Style {
+	ink := nickColor(nick)
+	if away {
+		ink = mixColors(ink, m.styles.Colors.Background, memberAwayNickMix)
+	}
+	style := lipgloss.NewStyle().Foreground(ink)
+	if focused {
+		style = style.Bold(true)
+	}
+	return style
 }
 
 // memberFocusBar is the focused member's gutter cell: an accent block plus the

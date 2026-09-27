@@ -40,9 +40,7 @@ type Styles struct {
 	ConsoleLine lipgloss.Style
 	FindMatch   lipgloss.Style
 
-	MembersHeader  lipgloss.Style
-	MemberAway     lipgloss.Style
-	MemberSelected lipgloss.Style
+	MembersHeader lipgloss.Style
 
 	// Phase 8 member chrome. The presence dot is green when available and
 	// amber when away; the bot mark, account, status subline, and typing
@@ -234,9 +232,7 @@ func buildStyles(colors theme.Colors) Styles {
 		ConsoleLine: base.Foreground(colors.TextMuted),
 		FindMatch:   base.Reverse(true).Bold(true),
 
-		MembersHeader:  base.Bold(true).Foreground(colors.Accent),
-		MemberAway:     base.Foreground(colors.TextDim),
-		MemberSelected: base.Bold(true).Foreground(colors.Unread),
+		MembersHeader: base.Bold(true).Foreground(colors.Accent),
 
 		MemberPresenceOnline: base.Foreground(colors.Good),
 		MemberPresenceAway:   base.Foreground(colors.Unread),

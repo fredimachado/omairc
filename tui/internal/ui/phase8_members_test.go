@@ -171,20 +171,48 @@ func TestMemberChromePresenceBotTypingAndStatus(t *testing.T) {
 	}
 }
 
+// TestMemberNicksUseTheTranscriptPalette pins the feature: a nick keeps one
+// palette color everywhere. The member panel's label carries the same nickColor
+// hash as the transcript byline, so "mira" in the member list is the same color
+// as "mira" in the transcript. The label's PREFIX ("@" ) is colored with the
+// nick too, because the row renders the member's whole label.
+func TestMemberNicksUseTheTranscriptPalette(t *testing.T) {
+	m := seededModel(t)
+	for _, nick := range []string{"mira", "anna", "dax"} {
+		if got, want := m.memberNickStyle(nick, false, false).GetForeground(),
+			m.nickStyle(nick).GetForeground(); got != want {
+			t.Fatalf("member %q color = %v, want the transcript byline color %v", nick, got, want)
+		}
+		member := m.ctrl.Members()[phase8MemberIndex(t, m, nick)]
+		line := phase8MemberLine(t, m, nick)[0]
+		if want := m.memberNickStyle(nick, false, false).Render(member.Label); !strings.Contains(line, want) {
+			t.Fatalf("member %q label is not rendered in its nick color: %q", nick, line)
+		}
+	}
+}
+
+// TestAwayMemberIsDimmed pins that an away member keeps its nick hue but is
+// washed toward the page background, while an available member keeps the full
+// palette color.
 func TestAwayMemberIsDimmed(t *testing.T) {
 	m := seededModel(t)
 
 	teoLine := phase8MemberLine(t, m, "teo")[0]
-	if !strings.Contains(teoLine, m.styles.MemberAway.Render("+teo")) {
+	if !strings.Contains(teoLine, m.memberNickStyle("teo", false, true).Render("+teo")) {
 		t.Fatalf("away member teo is not dimmed: %q", teoLine)
+	}
+	// The dim is still the nick's hue, not a flat gray.
+	if dimmed, full := m.memberNickStyle("teo", false, true).GetForeground(),
+		m.memberNickStyle("teo", false, false).GetForeground(); dimmed == full {
+		t.Fatal("an away nick must be mixed away from its full palette color")
 	}
 
 	annaLine := phase8MemberLine(t, m, "anna")[0]
-	if strings.Contains(annaLine, m.styles.MemberAway.Render("&anna")) {
+	if strings.Contains(annaLine, m.memberNickStyle("anna", false, true).Render("&anna")) {
 		t.Fatalf("available member anna must not be dimmed: %q", annaLine)
 	}
-	if !strings.Contains(annaLine, m.styles.Conversation.Render("&anna")) {
-		t.Fatalf("anna's label is not the plain style: %q", annaLine)
+	if !strings.Contains(annaLine, m.memberNickStyle("anna", false, false).Render("&anna")) {
+		t.Fatalf("anna's label is not her full nick color: %q", annaLine)
 	}
 }
 
