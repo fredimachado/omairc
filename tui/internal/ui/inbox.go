@@ -146,17 +146,13 @@ func (m *Model) inboxCard(width int) string {
 // inboxCardBody is the inbox sheet's content, before the shared frame. inner is
 // the content width inside the border.
 func (m *Model) inboxCardBody(inner int) []string {
-	lines := []string{m.styles.JumpQuery.Render("Inbox")}
 	entries := m.inboxEntries()
+	lines := m.overlaySheetHeader(inner, "Inbox", len(entries))
 	if len(entries) == 0 {
-		lines = append(lines, m.styles.JumpEmpty.Render("No mentions"))
+		return append(lines, m.overlaySheetEmpty("No mentions"))
 	}
 	for index, entry := range entries {
-		style := m.styles.JumpRow
-		if index == m.inbox.selected {
-			style = m.styles.JumpSelected
-		}
-		lines = append(lines, style.Render(truncateLine(entry, inner)))
+		lines = append(lines, m.overlayToggleRow(inner, index == m.inbox.selected, entry))
 	}
 	return lines
 }
