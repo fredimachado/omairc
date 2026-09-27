@@ -125,6 +125,33 @@ func (c *Controller) NetworkIDs() []string {
 	return c.manager.NetworkIDs()
 }
 
+// NetworkOrder returns the network ids in display order: the order recorded
+// by SetNetworkOrder first (only ids that still have a session), then any
+// remaining registered networks in NetworkIDs() order.
+func (c *Controller) NetworkOrder() []string {
+	registered := c.manager.NetworkIDs()
+	if len(c.networkOrder) == 0 {
+		return registered
+	}
+	seen := make(map[string]bool, len(registered))
+	order := make([]string, 0, len(registered))
+	for _, id := range c.networkOrder {
+		if seen[id] || c.manager.Find(id) == nil {
+			continue
+		}
+		seen[id] = true
+		order = append(order, id)
+	}
+	for _, id := range registered {
+		if seen[id] {
+			continue
+		}
+		seen[id] = true
+		order = append(order, id)
+	}
+	return order
+}
+
 // --- Session handler ------------------------------------------------------
 
 // StateChanged refreshes the focused connection status. The session Handler
@@ -413,6 +440,10 @@ func (c *Controller) OpenStatus(networkID string) {
 	c.refreshConnectionStatus()
 	c.notifySelectionChanged()
 }
+
+// ConsoleOpen reports whether the Status surface is open. The window title and
+// the shell use it to decide between the Status and conversation surfaces.
+func (c *Controller) ConsoleOpen() bool { return c.consoleOpen }
 
 // ClearConversationSelection forgets the selection, leaving the Status surface
 // as the focused network. It mirrors IrcController::clearConversationSelection
