@@ -1,6 +1,9 @@
 package ui
 
-import tea "charm.land/bubbletea/v2"
+import (
+	"charm.land/bubbles/v2/key"
+	tea "charm.land/bubbletea/v2"
+)
 
 // This file is the Phase 6 chord map: every window chord from
 // `.cursor/skills/verify-omairc/features/keyboard.md`, plus the modal gating
@@ -163,4 +166,84 @@ func (m *Model) modalBlocksChord(key string) bool {
 		return false
 	}
 	return true
+}
+
+// footerShortcutBinding is the tail of the footer's help: the Ctrl+/ toggle
+// that opens the shortcuts sheet. Every ShortHelp ends with it so the way to
+// learn the rest of the map is always visible.
+var footerShortcutBinding = key.NewBinding(
+	key.WithKeys("ctrl+/"),
+	key.WithHelp("Ctrl+/", "shortcuts"),
+)
+
+// footerKeyMap is the bubbles/help KeyMap behind the footer's right side. It
+// mirrors the chords in chordTable and dispatchChord so the footer can never
+// drift into a parallel hand-written hint string. ShortHelp is contextual: it
+// lists the chords that apply where focus sits and always ends with the Ctrl+/
+// shortcuts binding.
+type footerKeyMap struct{ m *Model }
+
+// binding is a tiny constructor so the context table below stays one line per
+// chord.
+func binding(keys []string, helpKey, helpDesc string) key.Binding {
+	return key.NewBinding(key.WithKeys(keys...), key.WithHelp(helpKey, helpDesc))
+}
+
+// ShortHelp returns the contextual single-line help. It always appends the
+// Ctrl+/ shortcuts binding last.
+func (k footerKeyMap) ShortHelp() []key.Binding {
+	return append(k.contextBindings(), footerShortcutBinding)
+}
+
+// FullHelp groups the same context bindings next to the shortcuts toggle.
+func (k footerKeyMap) FullHelp() [][]key.Binding {
+	return [][]key.Binding{k.contextBindings(), {footerShortcutBinding}}
+}
+
+// contextBindings is the chord set for the current focus, read from the same
+// state dispatchChord routes on.
+func (k footerKeyMap) contextBindings() []key.Binding {
+	m := k.m
+	switch {
+	case m == nil || m.ctrl == nil:
+		return nil
+	case m.shortcutsOpen:
+		return []key.Binding{
+			binding([]string{"esc", "escape", "ctrl+/"}, "Esc", "close"),
+		}
+	case m.connectVisible():
+		return []key.Binding{
+			binding([]string{"tab"}, "Tab", "next field"),
+			binding([]string{"enter", "return"}, "Enter", "next"),
+			binding([]string{"ctrl+enter", "ctrl+return"}, "Ctrl+Enter", "apply"),
+		}
+	case m.find.active:
+		return []key.Binding{
+			binding([]string{"ctrl+f"}, "Ctrl+F", "next match"),
+			binding([]string{"esc", "escape"}, "Esc", "dismiss"),
+		}
+	case m.overlaysVisible():
+		return []key.Binding{
+			binding([]string{"enter", "return"}, "Enter", "select"),
+			binding([]string{"esc", "escape"}, "Esc", "dismiss"),
+		}
+	case m.memberFocus:
+		return []key.Binding{
+			binding([]string{"enter", "return"}, "Enter", "open DM"),
+			binding([]string{"up", "down"}, "↑/↓", "move"),
+			binding([]string{"pgup", "pgdown"}, "PgUp/PgDn", "page"),
+		}
+	case m.sidebarNetworkFocusID != "":
+		return []key.Binding{
+			binding([]string{"enter", "return"}, "Enter", "Status"),
+			binding([]string{"alt+left", "alt+right"}, "Alt+←/→", "networks"),
+			binding([]string{"alt+up", "alt+down"}, "Alt+↑/↓", "walk"),
+		}
+	default:
+		return []key.Binding{
+			binding([]string{"enter", "return"}, "Enter", "send"),
+			binding([]string{"tab"}, "Tab", "complete nick"),
+			binding([]string{"ctrl+k"}, "Ctrl+K", "jump"),
+		}
+	}
 }

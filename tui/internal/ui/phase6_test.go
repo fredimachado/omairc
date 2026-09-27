@@ -6,10 +6,12 @@ import (
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 
 	"github.com/fredimachado/omairc/tui/internal/connection"
 	"github.com/fredimachado/omairc/tui/internal/controller"
 	"github.com/fredimachado/omairc/tui/internal/demo"
+	"github.com/fredimachado/omairc/tui/internal/theme"
 )
 
 // pressCmd folds one key press into the shell and returns the model and the
@@ -395,5 +397,73 @@ func TestModalBlocksChord(t *testing.T) {
 		if m.modalBlocksChord(key) {
 			t.Fatalf("shortcuts sheet must let %q through", key)
 		}
+	}
+}
+
+// TestSideColumnOuterWidthsAreInvariant pins the F2 card contract: framing the
+// sidebar and member column must not change their outer sizes, because
+// transcriptWidth() and the width tests are built on those constants.
+func TestSideColumnOuterWidthsAreInvariant(t *testing.T) {
+	m := seededModel(t)
+	height := m.bodyHeight()
+
+	sidebar := m.framedColumn(m.sidebarView, sidebarWidth(m.width), height, false)
+	if got := lipgloss.Width(sidebar); got != sidebarWidth(m.width) {
+		t.Fatalf("framed sidebar width = %d, want %d", got, sidebarWidth(m.width))
+	}
+	if got := lipgloss.Height(sidebar); got != height {
+		t.Fatalf("framed sidebar height = %d, want %d", got, height)
+	}
+
+	members := m.framedColumn(m.membersView, membersWidth, height, false)
+	if got := lipgloss.Width(members); got != membersWidth {
+		t.Fatalf("framed members width = %d, want %d", got, membersWidth)
+	}
+	// The transcript stays unframed, so its content width is unchanged by the
+	// surrounding cards.
+	if got := lipgloss.Width(m.transcriptView(height)); got != m.transcriptWidth() {
+		t.Fatalf("transcript width = %d, want %d", got, m.transcriptWidth())
+	}
+}
+
+// TestFooterUsesHelpKeyMap checks the footer's chrome: it costs one row, its
+// left side reports the focused network, and its right side is the contextual
+// help ending with the Ctrl+/ shortcuts binding.
+func TestFooterUsesHelpKeyMap(t *testing.T) {
+	m := seededModel(t)
+	if !m.footerVisible() {
+		t.Fatal("footer must be visible at the default size")
+	}
+	if got, want := m.bodyHeight(), m.height-1-footerHeight; got != want {
+		t.Fatalf("bodyHeight = %d, want %d with the footer and no slash rows", got, want)
+	}
+	view := m.View().Content
+	if !strings.Contains(view, "Connected") {
+		t.Fatalf("footer must report the connection state:\n%s", view)
+	}
+	if !strings.Contains(view, "Ctrl+/") {
+		t.Fatalf("footer help must end with the Ctrl+/ binding:\n%s", view)
+	}
+}
+
+// TestThemeChangedRebuildsStyles covers the live-theme hop: a ThemeChangedMsg
+// swaps the palette, and View paints the new background and foreground.
+func TestThemeChangedRebuildsStyles(t *testing.T) {
+	m := seededModel(t)
+	colors := theme.Derive(theme.Spec{Mode: theme.ModeLight})
+	if theme.Hex(colors.Background) == theme.Hex(m.styles.Colors.Background) {
+		t.Fatal("light palette unexpectedly matches the fallback background")
+	}
+	updated, cmd := m.Update(ThemeChangedMsg{Colors: colors})
+	m = updated.(*Model)
+	if cmd != nil {
+		t.Fatalf("ThemeChangedMsg cmd = %v, want nil without a watcher", cmd)
+	}
+	if got := theme.Hex(m.styles.Colors.Background); got != theme.Hex(colors.Background) {
+		t.Fatalf("background = %s, want %s", got, theme.Hex(colors.Background))
+	}
+	view := m.View()
+	if view.BackgroundColor != colors.Background {
+		t.Fatalf("View.BackgroundColor did not follow the theme")
 	}
 }
