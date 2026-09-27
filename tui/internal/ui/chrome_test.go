@@ -9,6 +9,8 @@ package ui
 import (
 	"strings"
 	"testing"
+
+	"charm.land/lipgloss/v2"
 )
 
 // composerRowOf returns the rendered composer line from the framed frame, so a
@@ -61,6 +63,40 @@ func TestComposerGroupsWithTranscript(t *testing.T) {
 	shifted := m.alignToComposer([]string{"menu"})
 	if got := strings.Index(shifted[0], "menu"); got != m.composerLeft() {
 		t.Fatalf("slash menu indent = %d, want composerLeft() %d", got, m.composerLeft())
+	}
+}
+
+// TestSlashMenuFloatsWithoutResizingColumns pins that opening the
+// slash-completion menu does not resize the columns. The menu used to be a band
+// stacked between the body and the composer, so it took its rows from the column
+// budget and shrank the sidebar (and the transcript and member panel) while the
+// user typed a slash command. It now floats over the body's last rows, so the
+// columns keep their height and the menu still renders on screen.
+func TestSlashMenuFloatsWithoutResizingColumns(t *testing.T) {
+	m := seededModel(t)
+	sidebarHeight := func(mm *Model) int {
+		return lipgloss.Height(mm.framedColumn(mm.sidebarView, sidebarWidth(mm.width), mm.bodyHeight(), false))
+	}
+	closedBody, closedSidebar := m.bodyHeight(), sidebarHeight(m)
+
+	m.composer.SetValue("/j")
+	m.syncSlash()
+	if !m.slash.open() {
+		t.Fatal("/j must open the slash menu")
+	}
+	if got := m.bodyHeight(); got != closedBody {
+		t.Fatalf("body height changed %d -> %d when the menu opened", closedBody, got)
+	}
+	if got := sidebarHeight(m); got != closedSidebar {
+		t.Fatalf("sidebar height changed %d -> %d when the menu opened", closedSidebar, got)
+	}
+	// The floated menu is still rendered, and the grid still fits exactly.
+	content := m.render()
+	if got, want := len(strings.Split(content, "\n")), m.height; got != want {
+		t.Fatalf("frame = %d rows, want the %d-row window", got, want)
+	}
+	if plain := ansiPattern.ReplaceAllString(content, ""); !strings.Contains(plain, "/join") {
+		t.Fatalf("the floated slash menu is not rendered:\n%s", plain)
 	}
 }
 

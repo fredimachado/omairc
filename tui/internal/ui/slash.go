@@ -194,9 +194,10 @@ const slashMenuBorderRows = 2
 // slashLines renders the completion list above the composer as a floating
 // bordered menu: one row per hit with its label and usage, a filled band on the
 // highlighted row, and the theme's raised surface and focus border behind it.
-// It returns nil when the list is closed. The menu is inline (not a composited
-// overlay card), so it builds its own small frame here rather than through
-// overlayCardBlock.
+// It returns nil when the list is closed. The menu builds its own small frame
+// here rather than through overlayCardBlock, and render() floats it over the
+// body's last rows through compositeSlashMenu, so opening it never resizes the
+// columns.
 func (m *Model) slashLines() []string {
 	if !m.slash.open() {
 		return nil
@@ -205,14 +206,14 @@ func (m *Model) slashLines() []string {
 	if len(hits) == 0 {
 		return nil
 	}
-	// The menu shares the grid with the composer block and at least one body
-	// row. Cap the visible rows so it can never push the composer off the
-	// bottom, which would scroll the top of the frame out of the alternate
-	// screen. The probe keeps every hit; only the display is capped.
-	if room := m.height - composerFieldHeight - 1; len(hits) > room {
-		if room < 1 {
-			return nil
-		}
+	// The menu floats over the body, so it may never be taller than the body it
+	// covers: cap the visible rows there. The probe keeps every hit; only the
+	// display is capped.
+	room := m.bodyHeight()
+	if room < 1 {
+		return nil
+	}
+	if len(hits) > room {
 		hits = hits[:room]
 	}
 	labelWidth, usageWidth := 0, 0
@@ -252,11 +253,10 @@ func (m *Model) slashLines() []string {
 		text := truncateLine(hit.Label+strings.Repeat(" ", slashMenuGap)+hit.Usage, width)
 		lines = append(lines, style.Width(width).Render(text))
 	}
-	// The frame costs a top and bottom row, plus the composer block and one body
-	// row that must stay on screen. Framed only when the window can afford all
-	// of them; otherwise fall back to the bare filled rows so the composer stays
-	// on the last rows instead of scrolling off.
-	if m.height < len(hits)+slashMenuBorderRows+composerFieldHeight+1 {
+	// The frame costs a top and bottom row. Drop it when the body cannot hold
+	// the framed menu, so the bare filled rows cover fewer rows instead of
+	// spilling past the body over the composer.
+	if room < len(hits)+slashMenuBorderRows {
 		return lines
 	}
 	menu := lipgloss.NewStyle().

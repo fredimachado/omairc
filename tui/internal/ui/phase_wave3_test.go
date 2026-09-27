@@ -40,22 +40,23 @@ func TestComposerCursorRowMatchesFrame(t *testing.T) {
 		t.Fatal("an open overlay must hide the composer cursor")
 	}
 
-	// With slash-completion rows crowding out the footer, the composer block is
-	// the last thing on the grid instead of sitting above the footer.
+	// A slash-completion menu floats over the body instead of stacking above the
+	// composer, so it no longer crowds out the footer; the composer keeps its
+	// row above the footer and the grid stays exactly the window height.
 	short := resizeModel(t, seededModel(t), defaultWidth, minHeight)
 	short.slash.probe = controller.SlashProbe{Open: true, Needle: "/", Hits: []controller.SlashHit{
 		{Label: "/a", Usage: "one"},
 		{Label: "/b", Usage: "two"},
 		{Label: "/c", Usage: "three"},
 	}}
-	if short.footerVisible() {
-		t.Fatal("footer must drop when the slash rows fill the window")
+	if !short.footerVisible() {
+		t.Fatal("the floating slash menu must not push the footer off the grid")
 	}
-	if want := short.height - 1 - composerFieldPad; short.View().Cursor == nil ||
+	if want := short.height - 1 - footerHeight - composerFieldPad; short.View().Cursor == nil ||
 		short.View().Cursor.Position.Y != want {
-		t.Fatalf("no-footer cursor = %v, want row %d", short.View().Cursor, want)
+		t.Fatalf("slash-open cursor = %v, want row %d above the footer", short.View().Cursor, want)
 	}
-	// The menu is capped so the frame still fits the window exactly.
+	// The menu is capped to the body and the frame still fits the window exactly.
 	if got, want := len(strings.Split(short.render(), "\n")), short.height; got != want {
 		t.Fatalf("cramped frame = %d rows, want the %d-row window", got, want)
 	}

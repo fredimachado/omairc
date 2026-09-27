@@ -573,11 +573,12 @@ func (m *Model) render() string {
 	if card, ok := m.overlayCard(); ok {
 		body = m.compositeOverlay(body, card)
 	}
+	// The slash menu floats over the body's last rows instead of spending rows
+	// from the column budget, so the sidebar, transcript, and member columns
+	// keep their height while the completion list is open.
+	body = m.compositeSlashMenu(body, bodyHeight)
 
 	parts := []string{body}
-	if slash := m.slashLines(); len(slash) > 0 {
-		parts = append(parts, strings.Join(m.alignToComposer(slash), "\n"))
-	}
 	parts = append(parts, m.composerView())
 	if m.footerVisible() {
 		parts = append(parts, m.footerView())
@@ -631,10 +632,11 @@ func (m *Model) emptyTranscript(height int) string {
 }
 
 // bodyHeight is the row budget of the three columns: the window minus the
-// composer block, the status footer when it fits, and any slash-completion rows
-// above the composer.
+// composer block and the status footer when it fits. The slash-completion menu
+// is deliberately not subtracted: it floats over the bottom of the body (see
+// compositeSlashMenu), so opening it never resizes the columns.
 func (m *Model) bodyHeight() int {
-	height := m.height - composerFieldHeight - len(m.slashLines())
+	height := m.height - composerFieldHeight
 	if m.footerVisible() {
 		height -= footerHeight
 	}
@@ -646,15 +648,14 @@ func (m *Model) bodyHeight() int {
 
 // composerRow is the composer input line's zero-based row in the rendered frame
 // — the text row inside the composer block, not the block's top row. The
-// composer sits below the body and any slash-completion rows and above the
-// footer, so View derives the cursor's Y from the same layout render() builds.
-// The tiny-terminal path renders only the bare single-row composer, so its row
-// is 0.
+// composer sits directly below the body and above the footer; the slash menu
+// floats over the body rather than between them, so it adds no rows. The
+// tiny-terminal path renders only the bare single-row composer, so its row is 0.
 func (m *Model) composerRow() int {
 	if m == nil || m.width < minWidth || m.height < minHeight {
 		return 0
 	}
-	return m.bodyHeight() + len(m.slashLines()) + composerFieldPad
+	return m.bodyHeight() + composerFieldPad
 }
 
 // overlayCard returns the topmost overlay card as one rendered block, if any.
@@ -857,6 +858,32 @@ func (m *Model) compositeOverlay(body, card string) string {
 		lipgloss.NewLayer(dimmed),
 		lipgloss.NewLayer(shadow).X(x+2).Y(y+1).Z(1),
 		lipgloss.NewLayer(card).X(x).Y(y).Z(2),
+	).Render()
+	return fitBlock(rendered, width, height)
+}
+
+// compositeSlashMenu floats the open slash-completion menu over the bottom of
+// the body, hugging the composer it belongs to, instead of taking rows from the
+// column budget. The menu rows and frame carry the raised-surface fill, so it
+// reads as a dropdown opening upward while the sidebar, transcript, and member
+// columns keep their height. height is the body row count the caller rendered.
+func (m *Model) compositeSlashMenu(body string, height int) string {
+	menu := m.slashLines()
+	if len(menu) == 0 {
+		return body
+	}
+	width := lipgloss.Width(body)
+	y := height - len(menu)
+	if y < 0 {
+		y = 0
+	}
+	// alignToComposer indents the menu under the transcript column; the layer
+	// then sits at column zero, so the menu's styled rows are the only thing
+	// drawn over the body.
+	layer := strings.Join(m.alignToComposer(menu), "\n")
+	rendered := lipgloss.NewCompositor(
+		lipgloss.NewLayer(body),
+		lipgloss.NewLayer(layer).Y(y).Z(1),
 	).Render()
 	return fitBlock(rendered, width, height)
 }
