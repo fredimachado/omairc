@@ -20,6 +20,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   over the same column.
 - The TUI sidebar draws a divider rule above every network section after the
   first, so a multi-network roster reads as distinct blocks.
+- The TUI transcript separates adjacent rows with a blank line and keeps the
+  topic header pinned above the scrolling rows. The sidebar separates its
+  CHANNELS and DIRECT MESSAGES groups and its networks with blank lines.
+- The TUI composer carries a row of surface fill above and below its input, and
+  a highlighted transcript row carries a row of wash fill above and below its
+  text, so both blocks have internal breathing room instead of a one-row band.
+  A highlighted row is therefore taller than a plain one, and the transcript's
+  row-to-line mapping resolves rows through an index rather than a fixed stride.
 
 ## [1.0.4] - 2026-09-25
 

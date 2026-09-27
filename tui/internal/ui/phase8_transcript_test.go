@@ -109,13 +109,15 @@ func TestPhase8TranscriptDirectTypingFooterUngrouped(t *testing.T) {
 		t.Fatal("the anna DM must have at least one seeded message row")
 	}
 	lines, headerCount := m.transcriptLines()
-	if got, want := len(lines), headerCount+rows+2; got != want {
+	area := m.transcriptArea()
+	// The two footer lines follow the last row directly, past its wash padding.
+	if got, want := len(lines), headerCount+area.end()+2; got != want {
 		t.Fatalf("line count = %d, want %d (rows plus the two footer lines)", got, want)
 	}
-	if got, want := lines[headerCount+rows], m.styles.MutedLine.Render("anna"); got != want {
+	if got, want := lines[headerCount+area.end()], m.styles.MutedLine.Render("anna"); got != want {
 		t.Fatalf("footer header = %q, want muted %q", got, "anna")
 	}
-	if dots := lines[headerCount+rows+1]; !strings.Contains(dots, "...") {
+	if dots := lines[headerCount+area.end()+1]; !strings.Contains(dots, "...") {
 		t.Fatalf("footer dots = %q, want three periods", dots)
 	}
 }
@@ -134,27 +136,30 @@ func TestPhase8TranscriptMentionRowWash(t *testing.T) {
 	}
 
 	row := m.messageRow(0, msg)
-	if strings.Count(row, "\n") != 0 {
-		t.Fatalf("mention row = %q, want a single line", row)
+	lines := strings.Split(row, "\n")
+	if got, want := len(lines), 1+2*mentionWashPad; got != want {
+		t.Fatalf("mention block = %d lines, want %d (text plus its wash padding)", got, want)
 	}
-	if got, want := lipgloss.Width(row), m.transcriptWidth(); got != want {
-		t.Fatalf("mention row width = %d, want %d (the wash spans the column)", got, want)
+	// The text is the middle line; the rows around it are the wash padding.
+	text := lines[mentionWashPad]
+	if got, want := lipgloss.Width(text), m.transcriptWidth(); got != want {
+		t.Fatalf("mention text line width = %d, want %d (the wash spans the column)", got, want)
 	}
 	for _, want := range []string{"12:00", "mira", "hello there"} {
-		if !strings.Contains(row, want) {
-			t.Fatalf("mention row = %q, want it to contain %q", row, want)
+		if !strings.Contains(text, want) {
+			t.Fatalf("mention row = %q, want it to contain %q", text, want)
 		}
 	}
 	wash := m.mentionWash()
 	nick := wash.Foreground(nickColor("mira")).Bold(true).Render("mira ")
-	if !strings.Contains(row, nick) {
-		t.Fatalf("mention row = %q, want the palette-colored bold nick %q", row, nick)
+	if !strings.Contains(text, nick) {
+		t.Fatalf("mention row = %q, want the palette-colored bold nick %q", text, nick)
 	}
-	if tinted := wash.Foreground(m.styles.Colors.Mention).Render("mira "); strings.Contains(row, tinted) {
-		t.Fatalf("mention row = %q, want the nick in its palette color, not the mention tint", row)
+	if tinted := wash.Foreground(m.styles.Colors.Mention).Render("mira "); strings.Contains(text, tinted) {
+		t.Fatalf("mention row = %q, want the nick in its palette color, not the mention tint", text)
 	}
-	if stamped := wash.Foreground(m.styles.Colors.TextDim).Render("12:00 "); !strings.Contains(row, stamped) {
-		t.Fatalf("mention row = %q, want the dimmed timestamp %q", row, stamped)
+	if stamped := wash.Foreground(m.styles.Colors.TextDim).Render("12:00 "); !strings.Contains(text, stamped) {
+		t.Fatalf("mention row = %q, want the dimmed timestamp %q", text, stamped)
 	}
 }
 
@@ -201,9 +206,9 @@ func TestPhase8TranscriptChannelHasNoTypingFooter(t *testing.T) {
 		t.Fatal("the transcript typing footer must be DM-only")
 	}
 
-	rows := len(m.ctrl.Messages())
 	lines, headerCount := m.transcriptLines()
-	if got, want := len(lines), headerCount+rows; got != want {
+	area := m.transcriptArea()
+	if got, want := len(lines), headerCount+area.end(); got != want {
 		t.Fatalf("line count = %d, want %d; a channel must append no footer", got, want)
 	}
 	dots := m.styles.MutedLine.Render("   ...")

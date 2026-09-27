@@ -434,7 +434,7 @@ func TestFooterUsesHelpKeyMap(t *testing.T) {
 	if !m.footerVisible() {
 		t.Fatal("footer must be visible at the default size")
 	}
-	if got, want := m.bodyHeight(), m.height-1-footerHeight; got != want {
+	if got, want := m.bodyHeight(), m.height-composerFieldHeight-footerHeight; got != want {
 		t.Fatalf("bodyHeight = %d, want %d with the footer and no slash rows", got, want)
 	}
 	view := m.View().Content

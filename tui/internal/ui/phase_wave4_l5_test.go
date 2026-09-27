@@ -164,10 +164,11 @@ func TestSlashMenuFloatsWithSelectedFill(t *testing.T) {
 }
 
 // TestSlashMenuDropsFrameWhenCramped pins the tiny-window degradation: when the
-// frame would push the composer off the last row, the menu renders the bare
-// filled rows so the previous cursor-row invariant still holds.
+// frame would push the composer block off the grid, the menu renders the bare
+// filled rows. It also pins the row cap, so a window this short can never
+// scroll the top of the frame away.
 func TestSlashMenuDropsFrameWhenCramped(t *testing.T) {
-	m := resizeModel(t, seededModel(t), defaultWidth, minHeight)
+	m := resizeModel(t, seededModel(t), defaultWidth, 8)
 	m.slash.probe = controller.SlashProbe{Open: true, Needle: "/", Hits: []controller.SlashHit{
 		{Label: "/a", Usage: "one"},
 		{Label: "/b", Usage: "two"},
@@ -180,5 +181,37 @@ func TestSlashMenuDropsFrameWhenCramped(t *testing.T) {
 	plain := ansiPattern.ReplaceAllString(strings.Join(lines, "\n"), "")
 	if strings.ContainsAny(plain, "╭╰") {
 		t.Fatalf("cramped slash menu must drop the frame:\n%s", plain)
+	}
+	// The whole frame still fits the window, so nothing scrolls away.
+	if got, want := len(strings.Split(m.render(), "\n")), m.height; got != want {
+		t.Fatalf("cramped frame = %d rows, want the %d-row window", got, want)
+	}
+}
+
+// TestSlashMenuCapsRowsToTheGrid pins the cap itself: a window too short for
+// every hit shows only what fits above the composer block and one body row,
+// instead of overflowing the frame and scrolling its top off-screen.
+func TestSlashMenuCapsRowsToTheGrid(t *testing.T) {
+	m := resizeModel(t, seededModel(t), defaultWidth, minHeight)
+	hits := make([]controller.SlashHit, 0, 12)
+	for _, label := range []string{"/a", "/b", "/c", "/d", "/e", "/f"} {
+		hits = append(hits, controller.SlashHit{Label: label, Usage: "usage"})
+	}
+	m.slash.probe = controller.SlashProbe{Open: true, Needle: "/", Hits: hits}
+
+	lines := m.slashLines()
+	if room := m.height - composerFieldHeight - 1; len(lines) != room {
+		t.Fatalf("capped slash menu has %d lines, want the %d rows that fit", len(lines), room)
+	}
+	if len(lines) >= len(hits) {
+		t.Fatalf("the %d-hit menu was not capped at %d rows", len(hits), len(lines))
+	}
+	// The probe is untouched: the cap is display-only, so completion still sees
+	// every hit.
+	if got := len(m.slash.probe.Hits); got != len(hits) {
+		t.Fatalf("probe hits = %d, want the %d real hits", got, len(hits))
+	}
+	if got, want := len(strings.Split(m.render(), "\n")), m.height; got != want {
+		t.Fatalf("capped frame = %d rows, want the %d-row window", got, want)
 	}
 }

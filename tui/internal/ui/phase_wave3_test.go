@@ -28,7 +28,9 @@ func TestComposerCursorRowMatchesFrame(t *testing.T) {
 	if want := m.composerRow(); cursor.Position.Y != want {
 		t.Fatalf("cursor row = %d, want composerRow() %d", cursor.Position.Y, want)
 	}
-	if want := m.height - 1 - footerHeight; cursor.Position.Y != want {
+	// The composer's text row sits composerFieldPad rows above the block's
+	// bottom padding row, which is itself just above the footer.
+	if want := m.height - 1 - footerHeight - composerFieldPad; cursor.Position.Y != want {
 		t.Fatalf("cursor row = %d, want %d with the footer", cursor.Position.Y, want)
 	}
 
@@ -38,8 +40,8 @@ func TestComposerCursorRowMatchesFrame(t *testing.T) {
 		t.Fatal("an open overlay must hide the composer cursor")
 	}
 
-	// With slash-completion rows crowding out the footer, the composer is the
-	// last row instead of one above it.
+	// With slash-completion rows crowding out the footer, the composer block is
+	// the last thing on the grid instead of sitting above the footer.
 	short := resizeModel(t, seededModel(t), defaultWidth, minHeight)
 	short.slash.probe = controller.SlashProbe{Open: true, Needle: "/", Hits: []controller.SlashHit{
 		{Label: "/a", Usage: "one"},
@@ -49,8 +51,13 @@ func TestComposerCursorRowMatchesFrame(t *testing.T) {
 	if short.footerVisible() {
 		t.Fatal("footer must drop when the slash rows fill the window")
 	}
-	if got := short.View().Cursor; got == nil || got.Position.Y != short.height-1 {
-		t.Fatalf("no-footer cursor = %v, want row %d", got, short.height-1)
+	if want := short.height - 1 - composerFieldPad; short.View().Cursor == nil ||
+		short.View().Cursor.Position.Y != want {
+		t.Fatalf("no-footer cursor = %v, want row %d", short.View().Cursor, want)
+	}
+	// The menu is capped so the frame still fits the window exactly.
+	if got, want := len(strings.Split(short.render(), "\n")), short.height; got != want {
+		t.Fatalf("cramped frame = %d rows, want the %d-row window", got, want)
 	}
 
 	// The tiny-terminal path renders only the composer, so its row is 0.

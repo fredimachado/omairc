@@ -27,7 +27,7 @@ func helpStyles(styles Styles) help.Styles {
 	}
 }
 
-// footerVisible reports whether the footer fits: the composer row, the footer
+// footerVisible reports whether the footer fits: the composer block, the footer
 // row, and at least one row of body above them. A short terminal drops the
 // footer before it starves the columns. It is false without a controller, so
 // the empty render stays a single line.
@@ -35,7 +35,7 @@ func (m *Model) footerVisible() bool {
 	if m == nil || m.ctrl == nil {
 		return false
 	}
-	return m.height-len(m.slashLines())-1-footerHeight >= 1
+	return m.height-len(m.slashLines())-composerFieldHeight-footerHeight >= 1
 }
 
 // footerStatusView renders the footer's left side: a spinner while the focused

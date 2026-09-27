@@ -205,6 +205,16 @@ func (m *Model) slashLines() []string {
 	if len(hits) == 0 {
 		return nil
 	}
+	// The menu shares the grid with the composer block and at least one body
+	// row. Cap the visible rows so it can never push the composer off the
+	// bottom, which would scroll the top of the frame out of the alternate
+	// screen. The probe keeps every hit; only the display is capped.
+	if room := m.height - composerFieldHeight - 1; len(hits) > room {
+		if room < 1 {
+			return nil
+		}
+		hits = hits[:room]
+	}
 	labelWidth, usageWidth := 0, 0
 	for _, hit := range hits {
 		if width := lipgloss.Width(hit.Label); width > labelWidth {
@@ -242,11 +252,11 @@ func (m *Model) slashLines() []string {
 		text := truncateLine(hit.Label+strings.Repeat(" ", slashMenuGap)+hit.Usage, width)
 		lines = append(lines, style.Width(width).Render(text))
 	}
-	// The frame costs a top and bottom row. Framed only when the window can also
-	// keep one body row above and the composer below; otherwise fall back to the
-	// bare filled rows so the composer stays on the last row instead of
-	// scrolling off.
-	if m.height < len(hits)+slashMenuBorderRows+2 {
+	// The frame costs a top and bottom row, plus the composer block and one body
+	// row that must stay on screen. Framed only when the window can afford all
+	// of them; otherwise fall back to the bare filled rows so the composer stays
+	// on the last rows instead of scrolling off.
+	if m.height < len(hits)+slashMenuBorderRows+composerFieldHeight+1 {
 		return lines
 	}
 	menu := lipgloss.NewStyle().

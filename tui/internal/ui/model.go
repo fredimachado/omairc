@@ -631,10 +631,10 @@ func (m *Model) emptyTranscript(height int) string {
 }
 
 // bodyHeight is the row budget of the three columns: the window minus the
-// composer line, the status footer when it fits, and any slash-completion rows
+// composer block, the status footer when it fits, and any slash-completion rows
 // above the composer.
 func (m *Model) bodyHeight() int {
-	height := m.height - 1 - len(m.slashLines())
+	height := m.height - composerFieldHeight - len(m.slashLines())
 	if m.footerVisible() {
 		height -= footerHeight
 	}
@@ -644,15 +644,17 @@ func (m *Model) bodyHeight() int {
 	return height
 }
 
-// composerRow is the composer line's zero-based row in the rendered frame. The
+// composerRow is the composer input line's zero-based row in the rendered frame
+// — the text row inside the composer block, not the block's top row. The
 // composer sits below the body and any slash-completion rows and above the
 // footer, so View derives the cursor's Y from the same layout render() builds.
-// The tiny-terminal path renders only the composer, so its row is 0.
+// The tiny-terminal path renders only the bare single-row composer, so its row
+// is 0.
 func (m *Model) composerRow() int {
 	if m == nil || m.width < minWidth || m.height < minHeight {
 		return 0
 	}
-	return m.bodyHeight() + len(m.slashLines())
+	return m.bodyHeight() + len(m.slashLines()) + composerFieldPad
 }
 
 // overlayCard returns the topmost overlay card as one rendered block, if any.

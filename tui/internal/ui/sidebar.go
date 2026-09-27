@@ -34,12 +34,15 @@ func (m *Model) sidebarView(width, height int) string {
 	}
 
 	roster := make([]string, 0, height)
+	groups := []struct {
+		label  string
+		direct bool
+	}{{"CHANNELS", false}, {"DIRECT MESSAGES", true}}
 	for index, networkID := range m.ctrl.NetworkOrder() {
-		// A rule between networks, and above the second onward, so a
-		// multi-network roster reads as distinct blocks instead of one
-		// continuous list.
+		// Networks are separate blocks: a blank row then a rule, above the
+		// second onward, so the roster never reads as one continuous list.
 		if index > 0 {
-			roster = append(roster, m.networkSeparator(width))
+			roster = append(roster, "", m.networkSeparator(width))
 		}
 		name := m.ctrl.NetworkDisplayName(networkID)
 		if name == "" {
@@ -49,8 +52,21 @@ func (m *Model) sidebarView(width, height int) string {
 		if m.ctrl.IsNetworkCollapsed(networkID) {
 			continue
 		}
-		roster = append(roster, m.sidebarGroup("CHANNELS", grouped[networkID], false, width)...)
-		roster = append(roster, m.sidebarGroup("DIRECT MESSAGES", grouped[networkID], true, width)...)
+		// Groups are separate blocks too: a blank row before each heading after
+		// the first, so the sections breathe. The network header stays tight
+		// against its first group, which then reads as the header's subtitle.
+		firstGroup := true
+		for _, group := range groups {
+			lines := m.sidebarGroup(group.label, grouped[networkID], group.direct, width)
+			if len(lines) == 0 {
+				continue
+			}
+			if !firstGroup {
+				roster = append(roster, "")
+			}
+			firstGroup = false
+			roster = append(roster, lines...)
+		}
 	}
 	// Reserve the bottom row for the identity footer: clamp the roster to
 	// height-1 and append the footer, so the column is exactly height lines.

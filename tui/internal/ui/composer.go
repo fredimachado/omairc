@@ -20,6 +20,17 @@ const (
 	findPlaceholder     = "Find"
 )
 
+// composerFieldPad is the blank fill rows the composer block carries above and
+// below its input line, so the field reads as a panel instead of a thin line.
+// It goes on ComposerField as lipgloss PaddingTop/PaddingBottom: vertical
+// padding renders inside the block, so the surface fill covers the padding rows,
+// which a plain blank row cannot do. It costs two grid rows, so every row-budget
+// calculation goes through composerFieldHeight instead of assuming one row.
+const composerFieldPad = 1
+
+// composerFieldHeight is the composer block's total row span.
+const composerFieldHeight = 1 + 2*composerFieldPad
+
 // newComposerInput builds the composer's text input from the shell styles.
 // model.go's New must build the composer with this instead of textinput.New. It
 // uses the composer's own input set (ComposerInput in style.go), which is the
@@ -38,14 +49,16 @@ func newComposerInput(styles Styles) textinput.Model {
 	return input
 }
 
-// composerView renders the single-line composer as a filled block centered
-// under the transcript column. newComposerInput puts the prompt and
-// placeholder inside the input, so the field is just the input clipped to the
-// composer width (composerWidth in model.go). The block is inset within the
-// transcript column and joined with blank cells outside it, so it groups with
-// the transcript it belongs to instead of running the full window width. A
-// terminal too small for the columns keeps the old bare full-width field. While
-// find is active the composer is the find query box.
+// composerView renders the composer as a filled block centered under the
+// transcript column. newComposerInput puts the prompt and placeholder inside the
+// input, so the field is just the input clipped to the composer width
+// (composerWidth in model.go). The block is inset within the transcript column
+// and joined with blank cells outside it, so it groups with the transcript it
+// belongs to instead of running the full window width. PaddingTop/PaddingBottom
+// give it its own vertical breathing room, with the surface fill carrying
+// through the padding rows. A terminal too small for the columns keeps the old
+// bare, single-row full-width field. While find is active the composer is the
+// find query box.
 func (m *Model) composerView() string {
 	if m == nil {
 		return ""
@@ -58,7 +71,13 @@ func (m *Model) composerView() string {
 	if pad := width - lipgloss.Width(field); pad > 0 {
 		field += m.styles.ComposerField.Render(strings.Repeat(" ", pad))
 	}
-	return strings.Repeat(" ", m.composerLeft()) + field
+	indent := strings.Repeat(" ", m.composerLeft())
+	block := m.styles.ComposerField.Padding(composerFieldPad, 0).Render(field)
+	lines := strings.Split(block, "\n")
+	for index, line := range lines {
+		lines[index] = indent + line
+	}
+	return strings.Join(lines, "\n")
 }
 
 // composerCursor is the composer's real terminal cursor at row, the composer
