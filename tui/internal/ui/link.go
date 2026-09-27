@@ -19,11 +19,10 @@ type linkState struct {
 	selected int
 }
 
+const linkPlaceholder = "Filter links"
+
 func newLinkState() linkState {
-	input := textinput.New()
-	input.Placeholder = "Filter links"
-	input.Prompt = "› "
-	return linkState{input: input}
+	return linkState{input: newTextInput(defaultStyles(), linkPlaceholder, overlayFilterPrompt)}
 }
 
 // linkVisible reports whether the link sheet is open.
@@ -42,8 +41,8 @@ func (m *Model) toggleLink() {
 	}
 	m.closeAllOverlays()
 	m.link.open = true
+	m.link.input = newTextInput(m.styles, linkPlaceholder, overlayFilterPrompt)
 	m.link.selected = 0
-	m.link.input.SetValue("")
 	m.link.input.SetWidth(m.overlayInputWidth())
 	m.composer.Blur()
 	_ = m.link.input.Focus()
@@ -129,17 +128,14 @@ func (m *Model) linkCard(width int) string {
 // linkCardBody is the link sheet's content, before the shared frame. inner is
 // the content width inside the border.
 func (m *Model) linkCardBody(inner int) []string {
-	lines := []string{m.styles.JumpQuery.Render("Links") + "  " + m.link.input.View()}
 	matches := m.linkMatches()
+	lines := m.overlaySheetHeader(inner, "Links", len(matches))
+	lines = append(lines, truncateLine(m.link.input.View(), inner))
 	if len(matches) == 0 {
-		lines = append(lines, m.styles.JumpEmpty.Render("No links"))
+		return append(lines, m.overlaySheetEmpty("No links"))
 	}
 	for index, entry := range matches {
-		style := m.styles.JumpRow
-		if index == m.link.selected {
-			style = m.styles.JumpSelected
-		}
-		lines = append(lines, style.Render(truncateLine(entry.label, inner)))
+		lines = append(lines, m.overlayToggleRow(inner, index == m.link.selected, entry.label))
 	}
 	return lines
 }

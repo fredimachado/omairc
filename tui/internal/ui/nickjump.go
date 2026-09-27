@@ -19,11 +19,10 @@ type nickJumpState struct {
 	selected int
 }
 
+const nickPlaceholder = "Nick"
+
 func newNickJumpState() nickJumpState {
-	input := textinput.New()
-	input.Placeholder = "Nick"
-	input.Prompt = "› "
-	return nickJumpState{input: input}
+	return nickJumpState{input: newTextInput(defaultStyles(), nickPlaceholder, overlayFilterPrompt)}
 }
 
 // nickVisible reports whether the nick jump overlay is open.
@@ -37,7 +36,7 @@ func (m *Model) openNickJump() {
 	}
 	m.closeAllOverlays()
 	m.nick.open = true
-	m.nick.input.SetValue("")
+	m.nick.input = newTextInput(m.styles, nickPlaceholder, overlayFilterPrompt)
 	m.nick.selected = 0
 	m.nick.input.SetWidth(m.overlayInputWidth())
 	m.composer.Blur()
@@ -143,18 +142,14 @@ func (m *Model) nickCard(width int) string {
 // nickCardBody is the nick overlay's content, before the shared frame. inner is
 // the content width inside the border.
 func (m *Model) nickCardBody(inner int) []string {
-	lines := []string{m.styles.JumpQuery.Render("Nick") + "  " + m.nick.input.View()}
 	entries := m.nickEntries()
+	lines := m.overlaySheetHeader(inner, "Nick", len(entries))
+	lines = append(lines, truncateLine(m.nick.input.View(), inner))
 	if len(entries) == 0 {
-		lines = append(lines, m.styles.JumpEmpty.Render("No matches"))
-	} else {
-		for index, nick := range entries {
-			style := m.styles.JumpRow
-			if index == m.nick.selected {
-				style = m.styles.JumpSelected
-			}
-			lines = append(lines, style.Render(truncateLine(nick, inner)))
-		}
+		return append(lines, m.overlaySheetEmpty("No matches"))
+	}
+	for index, nick := range entries {
+		lines = append(lines, m.overlayToggleRow(inner, index == m.nick.selected, nick))
 	}
 	return lines
 }
