@@ -563,18 +563,49 @@ func (m *Model) connectCard(width int) string {
 	return m.overlayCardBlock(width, m.connectCardBody)
 }
 
-// connectCardBody is the sheet's content, before the shared frame. inner is the
-// content width inside the border. Every line is truncated to inner cells,
-// because the shared frame in model.go owns the border and the outer width.
+// connectCardContent is the sheet's rows plus the metadata the viewport needs:
+// how many leading rows are the pinned header, how many trailing rows are the
+// pinned footer, and the row the focused stop landed on (-1 when none did).
+type connectCardContent struct {
+	lines      []string
+	headerRows int
+	footerRows int
+	focusRow   int
+}
+
+// connectCardBody is the sheet's content, before the shared frame. It windows
+// the rows through windowCardRows so a short terminal scrolls the fields between
+// the pinned title/tabs and the pinned validation/action rows, keeping the
+// focused control reachable instead of clipping the action row off the bottom.
 func (m *Model) connectCardBody(inner int) []string {
-	lines := []string{
-		truncateLine(m.connectTitleLine(), inner),
-		truncateLine(m.connectTabLine(), inner),
-		truncateLine(m.sectionHeader("NETWORKS", inner), inner),
+	content := m.connectCardContent(inner)
+	return windowCardRows(content.lines, content.headerRows, content.footerRows,
+		content.focusRow, m.overlayCardRowBudget())
+}
+
+// connectCardContent builds the sheet's rows and records where the focused stop
+// renders, so connectCardBody can scroll it into view. inner is the content
+// width inside the border; every line is truncated to inner cells, because the
+// shared frame in model.go owns the border and the outer width.
+func (m *Model) connectCardContent(inner int) connectCardContent {
+	content := connectCardContent{focusRow: -1}
+	add := func(line string) {
+		content.lines = append(content.lines, truncateLine(line, inner))
+	}
+	markFocus := func(stop connectStop) {
+		if m.stopFocused(stop) {
+			content.focusRow = len(content.lines)
+		}
 	}
 
+	add(m.connectTitleLine())
+	add(m.connectTabLine())
+	content.headerRows = len(content.lines)
+
+	add(m.sectionHeader("NETWORKS", inner))
 	for index, row := range m.conn.Networks() {
 		stop := connectStop{kind: stopNetwork, index: index}
+		markFocus(stop)
 		marker := "  "
 		markerStyle := m.styles.SheetField
 		if row.Selected {
@@ -589,24 +620,27 @@ func (m *Model) connectCardBody(inner int) []string {
 		if !row.Stored {
 			line += " " + m.styles.BadgeMuted.Render("new")
 		}
-		lines = append(lines, truncateLine(line, inner))
+		add(line)
 	}
 	if m.conn.CanAdd() {
+		markFocus(connectStop{kind: stopAddNetwork})
 		style := m.styles.SheetField
 		if m.stopFocused(connectStop{kind: stopAddNetwork}) {
 			style = m.styles.SheetRowFocused.Background(m.styles.Colors.SurfaceRaised)
 		}
-		lines = append(lines, truncateLine(style.Render("  + Add network"), inner))
+		add(style.Render("  + Add network"))
 	}
-	lines = append(lines, "")
+	add("")
 
 	if m.sheet.tab == connectTabConnection {
 		for index := 0; index < int(connectFieldCount); index++ {
-			lines = append(lines, m.connectFieldLine(connectField(index), inner))
+			markFocus(connectStop{kind: stopField, index: index})
+			add(m.connectFieldLine(connectField(index), inner))
 		}
 	} else {
-		for _, line := range m.preferencesLines() {
-			lines = append(lines, truncateLine(line, inner))
+		for index, line := range m.preferencesLines() {
+			markFocus(connectStop{kind: stopField, index: index})
+			add(line)
 		}
 	}
 
@@ -614,22 +648,40 @@ func (m *Model) connectCardBody(inner int) []string {
 	// problem, muted, on both tabs. IrcConnection carries the same two
 	// sentences to the Qt sheet; an empty value renders nothing.
 	if status := m.conn.PersistenceStatus(); status != "" {
-		lines = append(lines, m.styles.MutedLine.Render(truncateLine(status, inner)))
+		add(m.styles.MutedLine.Render(truncateLine(status, inner)))
 	}
 	if status := m.conn.CredentialStatus(); status != "" {
-		lines = append(lines, m.styles.MutedLine.Render(truncateLine(status, inner)))
+		add(m.styles.MutedLine.Render(truncateLine(status, inner)))
 	}
 
+	// The validation problem is the first pinned footer row, so a scrolled
+	// sheet never hides why Apply is unavailable. It is present on both tabs.
 	if problem := m.conn.Problem(); problem != "" {
-		lines = append(lines, m.styles.StatusErr.Render(truncateLine("✗ "+problem, inner)))
+		add(m.styles.StatusErr.Render(truncateLine("✗ "+problem, inner)))
 	} else {
-		lines = append(lines, "")
+		add("")
 	}
+	content.footerRows = 1
 
 	if m.sheet.tab == connectTabConnection {
-		lines = append(lines, truncateLine(m.connectFooterLine(), inner))
+		if m.footerFocused() {
+			content.focusRow = len(content.lines)
+		}
+		add(truncateLine(m.connectFooterLine(), inner))
+		content.footerRows = 2
 	}
-	return lines
+	return content
+}
+
+// footerFocused reports whether any footer action holds the sheet focus, so the
+// viewport can treat the action row as the focused one.
+func (m *Model) footerFocused() bool {
+	for index := range m.footerActions() {
+		if m.stopFocused(connectStop{kind: stopFooter, index: index}) {
+			return true
+		}
+	}
+	return false
 }
 
 // connectTitleLine is the "Connect" heading.

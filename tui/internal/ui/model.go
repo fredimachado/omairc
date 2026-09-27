@@ -761,6 +761,76 @@ func (m *Model) overlayCardBlock(width int, build func(inner int) []string) stri
 	return m.styles.Panel.Width(inner + frameX).Render(strings.Join(build(inner), "\n"))
 }
 
+// overlayCardRowBudget is the number of content rows an overlay card may render:
+// the body box minus the fixed top inset and the card's own border rows. A sheet
+// windows its content to this through windowCardRows, so a card can never
+// overhang the grid and clip its own action row off the bottom.
+func (m *Model) overlayCardRowBudget() int {
+	_, frameY := m.styles.Panel.GetFrameSize()
+	budget := m.bodyHeight() - overlayCardTopInset - frameY
+	if budget < 1 {
+		budget = 1
+	}
+	return budget
+}
+
+// windowCardRows fits rows into budget with a fixed header and footer, scrolling
+// the middle just enough to keep focusRow visible. The first headerRows rows and
+// the last footerRows rows stay pinned, so a sheet's title, tabs, validation
+// line, and action row stay on screen while a short terminal windows the fields
+// between them; focusRow is an index into rows, and a focus inside either pin
+// needs no scrolling. Rows that already fit come back unchanged, so a
+// normal-size window renders exactly what the sheet built. It is pure so the
+// arithmetic is testable without a terminal.
+func windowCardRows(rows []string, headerRows, footerRows, focusRow, budget int) []string {
+	if budget < 1 || len(rows) <= budget {
+		return rows
+	}
+	headerRows = clampInt(headerRows, 0, len(rows))
+	footerRows = clampInt(footerRows, 0, len(rows)-headerRows)
+	if budget <= headerRows+footerRows {
+		// Too short to hold both pins plus one middle row: keep the header, then
+		// fill the remainder from the tail so the action row survives.
+		out := make([]string, 0, budget)
+		out = append(out, rows[:min(headerRows, budget)]...)
+		if len(out) < budget {
+			out = append(out, rows[len(rows)-(budget-len(out)):]...)
+		}
+		return out
+	}
+	tail := len(rows) - footerRows
+	middle := rows[headerRows:tail]
+	middleBudget := budget - headerRows - footerRows
+	offset := 0
+	switch {
+	case focusRow >= tail:
+		// The focus is pinned in the footer; show the end of the middle so the
+		// fields beside the action row stay in view.
+		offset = len(middle) - middleBudget
+	case focusRow >= headerRows:
+		if focus := focusRow - headerRows; focus >= middleBudget {
+			offset = focus - middleBudget + 1
+		}
+	}
+	offset = clampInt(offset, 0, len(middle)-middleBudget)
+	out := make([]string, 0, budget)
+	out = append(out, rows[:headerRows]...)
+	out = append(out, middle[offset:offset+middleBudget]...)
+	out = append(out, rows[tail:]...)
+	return out
+}
+
+// clampInt clamps value to [low, high]. A high below low yields low.
+func clampInt(value, low, high int) int {
+	if value < low {
+		return low
+	}
+	if value > high {
+		return high
+	}
+	return value
+}
+
 // compositeOverlay dims the body and composites the overlay card over it, with
 // a solid surface shadow one cell down and two right. The card is centered
 // horizontally and anchored to a fixed top row (overlayCardTopInset) so its own
