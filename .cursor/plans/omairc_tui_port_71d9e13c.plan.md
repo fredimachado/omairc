@@ -28,10 +28,10 @@ todos:
     status: completed
   - id: phase-8-members
     content: "Phase 8: member panel, PREFIX ordering, presence, typing, DMs"
-    status: in_progress
+    status: completed
   - id: phase-9-notify
     content: "Phase 9: mentions, inbox sheet, notifications"
-    status: pending
+    status: completed
   - id: phase-10-format
     content: "Phase 10: IrcTextFormatter, URL policy/links, avatars (identicon + half-block)"
     status: pending

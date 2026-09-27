@@ -6,12 +6,13 @@ import (
 	tea "charm.land/bubbletea/v2"
 )
 
-// This file is the Ctrl+Shift+A session inbox sheet. The InboxStore is a Phase
-// 9 seam: the sheet opens, walks, and closes and the chord is real, but the row
-// list is empty today. It is a no-op while Connect is visible.
+// This file is the Ctrl+Shift+A session inbox sheet. It mirrors the Qt
+// IrcInboxModel-backed sheet: it opens, walks, activates, and dismisses the
+// controller's waiting list. The rows come from the controller snapshots as
+// plain labels; it is a no-op while Connect is visible.
 
-// inboxState is the inbox sheet. The selected row index is kept even though
-// the store is empty, so the row walk lands correctly once Phase 9 fills it.
+// inboxState is the inbox sheet. The selected row index is clamped to the
+// waiting list so the highlight always names a real row.
 type inboxState struct {
 	open     bool
 	selected int
@@ -47,9 +48,53 @@ func (m *Model) closeInbox() {
 	m.loadDraft()
 }
 
-// inboxEntries is the Phase 9 InboxStore seam. It is empty today.
+// inboxEntries returns the waiting rows' labels, newest first, for the sheet.
+// It reads the controller snapshot; a nil controller has no rows.
 func (m *Model) inboxEntries() []string {
-	return nil
+	if m.ctrl == nil {
+		return nil
+	}
+	items := m.ctrl.InboxItems()
+	entries := make([]string, 0, len(items))
+	for _, item := range items {
+		entries = append(entries, item.Label)
+	}
+	return entries
+}
+
+// dismissInboxRow drops one waiting row and keeps the highlight on the same
+// logical row: a dismissal above the selection shifts it up. It mirrors
+// inboxDismissAboveSelectionKeepsHighlight.
+func (m *Model) dismissInboxRow(index int) {
+	if m.ctrl == nil {
+		return
+	}
+	before := len(m.inboxEntries())
+	m.ctrl.DismissInboxItem(index)
+	after := len(m.inboxEntries())
+	if after == before {
+		return
+	}
+	if index < m.inbox.selected {
+		m.inbox.selected--
+	}
+	m.clampInboxSelection()
+}
+
+// clampInboxSelection keeps the highlight inside the waiting list: 0 when the
+// list is empty, else clamped to [0, count-1].
+func (m *Model) clampInboxSelection() {
+	count := len(m.inboxEntries())
+	if count == 0 {
+		m.inbox.selected = 0
+		return
+	}
+	if m.inbox.selected < 0 {
+		m.inbox.selected = 0
+	}
+	if m.inbox.selected >= count {
+		m.inbox.selected = count - 1
+	}
 }
 
 // moveInbox moves the highlighted row by delta, wrapping at both ends.
@@ -62,10 +107,16 @@ func (m *Model) moveInbox(delta int) {
 	m.inbox.selected = ((m.inbox.selected+delta)%count + count) % count
 }
 
-// handleInboxKey folds one key while the sheet is open. Up/Down walk rows,
-// Enter activates, Delete dismisses, and Escape closes.
+// handleInboxKey folds one key while the sheet is open. Ctrl+Shift+A toggles
+// the sheet closed, Up/Down walk rows, Enter activates the highlighted row and
+// closes, Delete dismisses it and keeps the sheet open, and Escape closes.
 func (m *Model) handleInboxKey(key string, _ tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch key {
+	case "ctrl+shift+a":
+		// The overlay owns every key while it is open, so a second chord must
+		// be handled here rather than in the chord table.
+		m.toggleInbox()
+		return m, nil
 	case "esc", "escape":
 		m.closeInbox()
 		return m, nil
@@ -76,10 +127,13 @@ func (m *Model) handleInboxKey(key string, _ tea.KeyPressMsg) (tea.Model, tea.Cm
 		m.moveInbox(1)
 		return m, nil
 	case "enter", "return":
-		// Enter activates the selected arrival once the Phase 9 store lands.
+		if m.ctrl != nil {
+			m.ctrl.ActivateInboxItem(m.inbox.selected)
+		}
+		m.closeInbox()
 		return m, nil
 	case "delete":
-		// Delete dismisses the selected arrival once the Phase 9 store lands.
+		m.dismissInboxRow(m.inbox.selected)
 		return m, nil
 	}
 	return m, nil

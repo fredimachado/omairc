@@ -18,6 +18,7 @@ type Controller struct {
 	manager       *session.Manager
 	reducer       *irc.EventReducer
 	statusConsole *StatusConsole
+	inbox         *irc.Inbox
 
 	currentNicks map[string]string
 	lastErrors   map[string]string
@@ -66,9 +67,10 @@ type Controller struct {
 	// OnMentionArrived is called for each mention the reducer hands up. It is
 	// nil-able; Phase 9 wires the inbox and notifications.
 	OnMentionArrived func(author, body, networkID, target, msgid string)
-	// OnInboxArrived is called for each inbox item the reducer hands up. It is
-	// nil-able; Phase 9 owns the inbox store and model.
-	OnInboxArrived func(arrival irc.InboxArrival)
+	// OnInboxChanged fires when the session waiting list changes: an arrival
+	// was appended, or a row was consumed/dismissed/purged. It is the UI's
+	// re-render wake-up. It is nil-able.
+	OnInboxChanged func()
 	// OnMonitorArrived is called for each MONITOR presence change the monitor
 	// coordinator reports. It is nil-able; Phase 9 owns the inbox append and
 	// the desktop notification.
@@ -92,6 +94,7 @@ func New() *Controller {
 		manager:          session.NewManager(),
 		reducer:          irc.NewEventReducer(),
 		statusConsole:    NewStatusConsole(0),
+		inbox:            irc.NewInbox(),
 		currentNicks:     make(map[string]string),
 		lastErrors:       make(map[string]string),
 		capabilities:     make(map[string]irc.CapabilitySet),
@@ -242,6 +245,24 @@ func (c *Controller) HistoryBatchReceived(networkID string, batch irc.HistoryBat
 func (c *Controller) StatusEntry(entry irc.StatusEntry) {
 	c.statusConsole.Append(entry)
 	c.replies.RouteStatusEntry(entry)
+	if entry.Label() == "INVITE" {
+		s := c.manager.Find(entry.NetworkID())
+		if s == nil {
+			return
+		}
+		pending, ok := s.PendingInvite()
+		if !ok {
+			return
+		}
+		c.appendInbox(irc.InboxItem{
+			Kind:      irc.InboxInvite,
+			Timestamp: c.now(),
+			NetworkID: entry.NetworkID(),
+			Actor:     pending.Nick,
+			Target:    pending.Channel,
+			Preview:   entry.Text(),
+		})
+	}
 }
 
 // CapabilitiesChanged stores the set and clears presence/typing facts that a
@@ -334,8 +355,16 @@ func (c *Controller) Apply(event irc.Event) {
 		c.OnMentionArrived(mention.Author, mention.Body, mention.NetworkID,
 			mention.Target, mention.MsgID.Value)
 	}
-	if arrival, ok := c.reducer.TakeInboxArrival(); ok && c.OnInboxArrived != nil {
-		c.OnInboxArrived(arrival)
+	if arrival, ok := c.reducer.TakeInboxArrival(); ok {
+		c.appendInbox(irc.InboxItem{
+			Kind:      arrival.Kind,
+			Timestamp: c.now(),
+			NetworkID: arrival.NetworkID,
+			Actor:     arrival.Actor,
+			Target:    arrival.Target,
+			Preview:   arrival.Body,
+			MsgID:     arrival.MsgID,
+		})
 	}
 }
 
@@ -365,6 +394,118 @@ func (c *Controller) Publish(notify irc.ViewNotify) {
 		c.rebuildConversations()
 		c.conversationEpoch++
 	}
+}
+
+// --- Session inbox --------------------------------------------------------
+
+// appendInbox stores one arrival stamped with the controller clock, then
+// wakes the UI. It mirrors IrcController::appendInbox/syncInbox.
+func (c *Controller) appendInbox(item irc.InboxItem) {
+	features := c.reducer.ServerFeatures(item.NetworkID)
+	c.inbox.Append(item, features.CaseMapping())
+	c.notifyInboxChanged()
+}
+
+func (c *Controller) notifyInboxChanged() {
+	if c.OnInboxChanged != nil {
+		c.OnInboxChanged()
+	}
+}
+
+// InboxCount returns the number of waiting session-inbox rows.
+func (c *Controller) InboxCount() int {
+	return c.inbox.Count()
+}
+
+// InboxItems returns the waiting rows newest first.
+func (c *Controller) InboxItems() []InboxSnapshot {
+	items := c.inbox.Items()
+	rows := make([]InboxSnapshot, 0, len(items))
+	for _, item := range items {
+		rows = append(rows, InboxSnapshot{
+			Kind:      irc.KindName(item.Kind),
+			NetworkID: item.NetworkID,
+			Actor:     item.Actor,
+			Target:    item.Target,
+			Preview:   item.Preview,
+			MsgID:     item.MsgID.Value,
+			Label:     item.Label(),
+		})
+	}
+	return rows
+}
+
+// DismissInboxItem drops one waiting row. An out-of-range index is a no-op. It
+// mirrors IrcController::dismissInboxItem (src/irc/irccontroller.cpp:995-1004).
+func (c *Controller) DismissInboxItem(index int) {
+	if index < 0 || index >= c.inbox.Count() {
+		return
+	}
+	c.inbox.ConsumeAt(index)
+	c.notifyInboxChanged()
+}
+
+// ActivateInboxItem consumes one waiting row and reveals its target, joining
+// an invited channel. An out-of-range index is a no-op. It mirrors
+// IrcController::activateInboxItem (src/irc/irccontroller.cpp:1006-1039).
+func (c *Controller) ActivateInboxItem(index int) {
+	if index < 0 || index >= c.inbox.Count() {
+		return
+	}
+	item := c.inbox.At(index)
+	c.inbox.ConsumeAt(index)
+	c.notifyInboxChanged()
+
+	switch item.Kind {
+	case irc.InboxMention, irc.InboxHighlight, irc.InboxDirect:
+		c.RevealConversation(item.NetworkID, item.Target)
+	case irc.InboxInvite:
+		s := c.manager.Find(item.NetworkID)
+		if s == nil {
+			break
+		}
+		features := c.reducer.ServerFeatures(item.NetworkID)
+		target, ok := irc.MakeJoinTarget(item.Target, nil, features)
+		if !ok {
+			break
+		}
+		if s.Join(target) {
+			c.openJoinedChannel(item.NetworkID, item.Target)
+		}
+	case irc.InboxMonitorOnline:
+		c.RevealConversation(item.NetworkID, item.Actor)
+	case irc.InboxKick:
+		c.RevealConversation(item.NetworkID, item.Target)
+	}
+}
+
+// RevealConversation opens or creates a conversation and selects it, clearing
+// any monitor row for a direct message. It mirrors
+// IrcController::revealConversation (src/irc/irccontroller.cpp:1143-1161).
+func (c *Controller) RevealConversation(networkID, target string) {
+	if networkID == "" || target == "" {
+		return
+	}
+	key := c.reducer.ConversationKey(networkID, target)
+	if c.reducer.Find(key) == nil {
+		if c.reducer.EnsureConversation(key, target, irc.CauseUserOpen) == nil {
+			return
+		}
+		c.rememberOpenDirect(networkID, target)
+		c.Publish(irc.ViewNotify{Conversations: true})
+	}
+	features := c.reducer.ServerFeatures(networkID)
+	if !features.IsChannel(key.NormalizedTarget) {
+		c.inbox.ConsumeMonitor(networkID, target, features.CaseMapping())
+		c.notifyInboxChanged()
+	}
+	c.SelectConversation(networkID, target)
+}
+
+// PlainIrcText strips mIRC colors and formatting control codes, mirroring
+// IrcTextFormatter::plainIrcText.
+func (c *Controller) PlainIrcText(text string) string {
+	return irc.PlainIrcText(text)
 }
 
 // adoptReducerSelection pulls a selection the reducer moved on its own (a NICK
@@ -459,6 +600,12 @@ func (c *Controller) SelectConversation(networkID, target string) {
 	key := c.reducer.ConversationKey(networkID, target)
 	c.selected = &key
 	c.selectedTarget = target
+	features := c.reducer.ServerFeatures(networkID)
+	c.inbox.ConsumeConversation(networkID, target, features.CaseMapping())
+	if !features.IsChannel(key.NormalizedTarget) {
+		c.inbox.ConsumeMonitor(networkID, target, features.CaseMapping())
+	}
+	c.notifyInboxChanged()
 	c.reducer.MarkSelected(key)
 	c.Publish(selectionNotify())
 	c.refreshConnectionStatus()
@@ -924,6 +1071,8 @@ func (c *Controller) ForgetNetworkState(networkID string) {
 	c.monitor.ForgetPresence(networkID)
 	c.autoaway.ForgetNetwork(networkID)
 	c.channelLists.Forget(networkID)
+	c.inbox.PurgeNetwork(networkID)
+	c.notifyInboxChanged()
 	if current := c.ChannelListSnapshot(); current.NetworkID == networkID {
 		c.channelList.Clear()
 		c.channelListOpen = false
@@ -1088,6 +1237,8 @@ func (c *Controller) handleMessage(networkID string, message irc.Message) {
 				continue
 			}
 			if selfJoin && features.IsChannel(join.Channel) {
+				c.inbox.ConsumeInvite(join.NetworkID, join.Channel, mapping)
+				c.notifyInboxChanged()
 				if s := c.manager.Find(join.NetworkID); s != nil {
 					if pending, ok := s.PendingInvite(); ok &&
 						mapping.Equals(join.Channel, pending.Channel) {

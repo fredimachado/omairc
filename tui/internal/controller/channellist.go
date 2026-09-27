@@ -5,14 +5,14 @@ import (
 	"strings"
 	"time"
 
+	"github.com/fredimachado/omairc/tui/internal/irc"
 	"github.com/fredimachado/omairc/tui/internal/session"
 )
 
 // This file is the Go port of src/irc/ircchannellistrequest.{h,cpp} and
 // src/irc/channellistmodel.{h,cpp}: the per-network /list request state
-// machine, the row cache, and the /list overlay model. It also carries a
-// private port of the two IrcTextFormatter helpers the channel list needs
-// (stripIrcColors and plainIrcText); phase 10 moves those to a real formatter.
+// machine, the row cache, and the /list overlay model. The topic strip it
+// needs is irc.PlainIrcText.
 //
 // All timers go through the injected session.Clock so tests drive the 30s idle
 // timeout with session.FakeClock.
@@ -473,7 +473,7 @@ func (m *ChannelListModel) State() ChannelListModelState {
 // PlainTopic strips mIRC colors and formatting from topic, mirroring
 // plainIrcText.
 func (m *ChannelListModel) PlainTopic(topic string) string {
-	return channelListPlainText(topic)
+	return irc.PlainIrcText(topic)
 }
 
 // rebuildVisible recomputes the visible index set and sorts it by users
@@ -514,7 +514,7 @@ func (m *ChannelListModel) matches(row ChannelListRow) bool {
 		return true
 	}
 	return strings.Contains(strings.ToLower(row.Channel), m.filterQuery) ||
-		strings.Contains(strings.ToLower(channelListPlainText(row.Topic)), m.filterQuery)
+		strings.Contains(strings.ToLower(irc.PlainIrcText(row.Topic)), m.filterQuery)
 }
 
 // channelListLess orders rows by users descending then channel
@@ -526,114 +526,5 @@ func channelListLess(left, right ChannelListRow) bool {
 	return strings.ToLower(left.Channel) < strings.ToLower(right.Channel)
 }
 
-// The mIRC control codes stripIrcColors and plainIrcText understand.
-const (
-	channelListBold          = 0x02
-	channelListColor         = 0x03
-	channelListHexColor      = 0x04
-	channelListReset         = 0x0f
-	channelListMonospace     = 0x11
-	channelListReverse       = 0x16
-	channelListItalic        = 0x1d
-	channelListStrikethrough = 0x1e
-	channelListUnderline     = 0x1f
-)
-
-// channelListStripColors removes mIRC color and hex-color codes, mirroring
-// IrcTextFormatter::stripIrcColors. It walks bytes: the consumed sequence is
-// always ASCII, and no UTF-8 continuation byte can equal a control code, so
-// byte indexing preserves the rest of the UTF-8 text.
-func channelListStripColors(text string) string {
-	var out strings.Builder
-	out.Grow(len(text))
-	for index := 0; index < len(text); index++ {
-		switch text[index] {
-		case channelListColor:
-			index = channelListConsumeMircColor(text, index)
-		case channelListHexColor:
-			index = channelListConsumeHexColor(text, index)
-		default:
-			out.WriteByte(text[index])
-		}
-	}
-	return out.String()
-}
-
-// channelListPlainText strips colors and then drops the formatting control
-// codes, keeping everything else. It mirrors IrcTextFormatter::plainIrcText.
-func channelListPlainText(text string) string {
-	stripped := channelListStripColors(text)
-	var out strings.Builder
-	out.Grow(len(stripped))
-	for index := 0; index < len(stripped); index++ {
-		switch stripped[index] {
-		case channelListBold, channelListReset, channelListMonospace,
-			channelListReverse, channelListItalic, channelListStrikethrough,
-			channelListUnderline:
-		default:
-			out.WriteByte(stripped[index])
-		}
-	}
-	return out.String()
-}
-
-func channelListASCIIDigit(code byte) bool {
-	return code >= '0' && code <= '9'
-}
-
-func channelListASCIIHex(code byte) bool {
-	return channelListASCIIDigit(code) ||
-		(code >= 'A' && code <= 'F') ||
-		(code >= 'a' && code <= 'f')
-}
-
-// channelListSixHexAt reports whether text carries six hex digits at start.
-func channelListSixHexAt(text string, start int) bool {
-	if start+5 >= len(text) {
-		return false
-	}
-	for offset := 0; offset < 6; offset++ {
-		if !channelListASCIIHex(text[start+offset]) {
-			return false
-		}
-	}
-	return true
-}
-
-// channelListConsumeMircColor returns the last index of
-// \x03(?:\d{1,2}(?:,\d{1,2})?)?, or index when nothing follows. It mirrors
-// consumeMircColor.
-func channelListConsumeMircColor(text string, index int) int {
-	size := len(text)
-	i := index + 1
-	if i >= size || !channelListASCIIDigit(text[i]) {
-		return index
-	}
-	i++
-	if i < size && channelListASCIIDigit(text[i]) {
-		i++
-	}
-	if i < size && text[i] == ',' && i+1 < size && channelListASCIIDigit(text[i+1]) {
-		i += 2
-		if i < size && channelListASCIIDigit(text[i]) {
-			i++
-		}
-	}
-	return i - 1
-}
-
-// channelListConsumeHexColor returns the last index of
-// \x04(?:[0-9A-Fa-f]{6}(?:,[0-9A-Fa-f]{6})?)?, or index when nothing follows.
-// It mirrors consumeHexColor.
-func channelListConsumeHexColor(text string, index int) int {
-	size := len(text)
-	i := index + 1
-	if !channelListSixHexAt(text, i) {
-		return index
-	}
-	i += 6
-	if i < size && text[i] == ',' && channelListSixHexAt(text, i+1) {
-		i += 7
-	}
-	return i - 1
-}
+// The mIRC strip helpers now live in internal/irc.PlainIrcText, shared with
+// the formatter; this file keeps only the channel-list model.

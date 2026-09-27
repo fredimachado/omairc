@@ -12,6 +12,12 @@ import "github.com/fredimachado/omairc/tui/internal/irc"
 // package (see commanddispatcher.go, replyrouter.go, monitorcoordinator.go,
 // autoawayruntime.go, channellist.go, and stores.go). What remains here is
 // still deferred.
+//
+// Phase 9 implements the inbox store in Controller (see inbox.go and
+// controller.go), so it is no longer a seam; playback and persistence remain
+// deferred. Desktop integration and the suppressDesktopNotification test
+// latch live on the shell (internal/ui), mirroring OmaircWindow.qml calling
+// backend.notifyDesktop; the controller only emits the arrival signals.
 
 // ConversationLog is the transcript persistence seam. It is the reducer's own
 // irc.ConversationLog, already consumed by irc.EventReducer.SetConversationLog;
@@ -23,11 +29,4 @@ type ConversationLog = irc.ConversationLog
 type PlaybackCoordinator interface {
 	// OnRegistered begins playback for a freshly registered network.
 	OnRegistered(networkID string, autojoinChannels []string)
-}
-
-// InboxStore is the Phase 9 inbox seam. The controller surfaces arrivals
-// through Controller.OnInboxArrived and stores nothing yet.
-type InboxStore interface {
-	// Append stores one inbox item.
-	Append(item irc.InboxItem)
 }
