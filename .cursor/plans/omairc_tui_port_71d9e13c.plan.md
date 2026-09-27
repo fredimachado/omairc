@@ -4,13 +4,13 @@ overview: A phased port of Omairc to a Go terminal client (Bubble Tea v2 + Lip G
 todos:
   - id: phase-0-scaffold
     content: "Phase 0: scaffolding, go.mod, module layout, version plumbing, CI skeleton, tui/AGENTS.md"
-    status: pending
+    status: completed
   - id: phase-1-protocol
     content: "Phase 1: IRC protocol core — parser/framer/message, case mapping, IrcServerFeatures (ISUPPORT), capability negotiation, wire text"
-    status: in_progress
+    status: completed
   - id: phase-2-reducer
     content: "Phase 2: session + event reducer — IrcEvent taxonomy, IrcEventReducer + IrcConversationCause, transport/session, Go IrcController API"
-    status: pending
+    status: completed
   - id: phase-3-demo
     content: "Phase 3: IrcDemoServer + loopback transport parity seed for --demo-server"
     status: pending

@@ -13,10 +13,34 @@ When the two disagree about the shared contract, the root file wins.
 - The module path is domain-qualified so Phase 12's `go install` for Linux
   works without a rename.
 - Layout: `cmd/omairc-tui/` (flags and `main`), `internal/irc/` (portable
-  core, mirrors `src/irc/`), `internal/ui/` (Bubble Tea shell, mirrors
-  `src/qml/` plus `OmaircWindow.qml`), `internal/version/` (injected build
-  version), and `bin/` (gate scripts).
+  core, mirrors `src/irc/`), `internal/session/` (transport, SCRAM, the
+  session state machine, the session manager, and the clock seam),
+  `internal/controller/` (the Go `IrcController` core and its view
+  snapshots), `internal/ui/` (Bubble Tea shell, mirrors `src/qml/` plus
+  `OmaircWindow.qml`), `internal/version/` (injected build version), and
+  `bin/` (gate scripts).
 - `tui/bin/omairc-tui` is a build artifact and is gitignored.
+
+## Package boundaries
+
+- `internal/irc` is the portable core. It never imports `net`, `os`, or
+  `crypto/tls`; sockets, the filesystem, and TLS live in `internal/session`.
+  `bin/check-conventions` gates this mechanically (test files may read
+  testdata with `os`).
+- `internal/session` is the only package that touches the network stack. All
+  timers, reconnects, the ping watchdog, the labeled-response timeout, and
+  typing pacing go through its `Clock`/`Timer` seam, so tests drive them
+  manually with `FakeClock` and `LoopbackTransport`.
+- `internal/controller` holds the state the shell calls: sessions, the
+  reducer, selection, sidebar order, send, and the Status ring buffer. It
+  reads time only from an injected `session.Clock`. Later subsystems
+  (command dispatcher, playback, persistence, monitor, ignore/mute,
+  highlight, autoaway, avatars, inbox store, channel list) sit behind the
+  nil-able seams in `internal/controller/seams.go` and land in their own
+  phases.
+- Phase 2 adds **zero external Go dependencies**: everything is stdlib
+  (`crypto/pbkdf2` ships in Go 1.24+ and the module is `go 1.25`). Do not add
+  a `require` until the phase that first imports it.
 
 ## Pinned stack
 
@@ -69,6 +93,15 @@ The four invariants are ported verbatim, not re-derived:
 - `orderedMembers` sorts by PREFIX rank then nick, in the core. The view
   never sorts, and the member panel and the CLI names order must match.
 
+Phase 2 implements all four: `ConversationCauseInserts` and `TargetLooksLikeService`
+in `internal/irc/conversation.go`, `orderedMembers`/`OrderedMembers` in the
+reducer, and `RedactWireLine`/`RedactPreviewLine`/`RedactMessage`/`AllowsTranscript`
+in `internal/irc/secretpolicy.go` (redaction is applied at Status
+classification time, so the session may emit raw lines but a `StatusEntry`
+never stores an unredacted secret). The session reuses Phase 1's
+`CapabilityNegotiation` for CAP LS/REQ/ACK/NAK and SASL; do not duplicate
+capability policy in the session or the controller.
+
 `internal/ui` mirrors `src/qml/` plus `OmaircWindow.qml` as a thin shell over
 the Go controller. Keep the window-growth discipline: extract file-based
 components instead of growing one god-object, and keep protocol policy out of
@@ -95,8 +128,18 @@ atomically. No TUI file needs editing for a version bump.
 
 - Base every pull request on `master`, or on another `tui-phase-*` branch when
   stacking phases in order; CI rejects any other base.
-- Run `tui/bin/test` (vet, tests, build, CLI contract) and the root `bin/test`
-  before opening a pull request. `tui/bin/test` is also wired into root
-  `bin/test` and skipped when `go` is absent.
+- Run `tui/bin/test` (conventions, vet, tests, build, CLI contract) and the
+  root `bin/test` before opening a pull request. `tui/bin/test` is also wired
+  into root `bin/test` and skipped when `go` is absent.
 - `.github/workflows/tui.yml` is the Linux gate. Do not add a notification
   sink or bot.
+- A pull request whose whole diff is TUI-only is gated by `tui.yml` alone:
+  `test.yml` ignores `tui/**`, so the Qt app is not rebuilt and the C++ suite
+  does not run for the Go port. That holds because `tui/bin/test` runs the
+  shared `bin/check-conventions`, which carries the TUI checks (the
+  `internal/irc` platform-neutrality rule). Path filters are evaluated over the
+  entire pull-request diff, not the last commit, so a pull request that also
+  changes the shared `bin/check-conventions` or `bin/test` still runs the Qt
+  workflow. That is intended: changing the shared gate must validate it. Root
+  `bin/test` exports `OMAIRC_CONVENTIONS_RAN` so the gate runs the shared
+  checks only once.

@@ -1,11 +1,17 @@
 name: TUI
 
+# A TUI-only change is gated by this workflow alone: tui/bin/test runs the
+# shared bin/check-conventions (which carries the TUI checks), so test.yml
+# ignores tui/** and does not rebuild the Qt app for the Go port. Path filters
+# are evaluated over the whole pull-request diff, so a pull request that also
+# changes bin/check-conventions or bin/test still triggers both workflows.
 on:
   workflow_dispatch:
   pull_request:
     paths:
       - 'tui/**'
       - 'bin/version'
+      - 'bin/check-conventions'
       - 'version.pri'
       - '.github/workflows/tui.yml'
   push:
@@ -14,6 +20,7 @@ on:
     paths:
       - 'tui/**'
       - 'bin/version'
+      - 'bin/check-conventions'
       - 'version.pri'
       - '.github/workflows/tui.yml'
 
@@ -33,12 +40,12 @@ jobs:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
-      - name: Require master as the pull request base
+      - name: Require master or a phase branch as the pull request base
         run: |
-          test "${{ github.base_ref }}" = master || {
-            echo "This pull request targets ${{ github.base_ref }}, not master." >&2
-            exit 1
-          }
+          case "${{ github.base_ref }}" in
+            master|tui-phase-*) ;;
+            *) echo "This pull request targets ${{ github.base_ref }}, not master or a tui-phase branch." >&2; exit 1 ;;
+          esac
 
   # No `needs: base`: `base` is skipped on push, and a skipped dependency skips
   # its dependents too, so the TUI job would never run on master. Keep the two

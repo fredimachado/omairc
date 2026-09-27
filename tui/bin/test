@@ -9,6 +9,14 @@ ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)"
 TUI="$ROOT/tui"
 cd "$TUI"
 
+# The shared conventions gate carries the TUI checks too (the internal/irc
+# platform-neutrality rule). Run it here so a TUI-only change is fully gated by
+# tui.yml without the Qt workflow rebuilding the app. The root bin/test exports
+# OMAIRC_CONVENTIONS_RAN after it runs the gate, so it is not run twice.
+if [ "${OMAIRC_CONVENTIONS_RAN:-}" != "1" ]; then
+  "$ROOT/bin/check-conventions"
+fi
+
 if ! command -v go >/dev/null 2>&1; then
   echo "go is required to test omairc-tui." >&2
   exit 1
