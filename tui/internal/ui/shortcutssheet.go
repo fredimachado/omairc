@@ -2,7 +2,6 @@ package ui
 
 import (
 	"fmt"
-	"strings"
 )
 
 // This file is the Ctrl+/ shortcuts sheet. It lists the full chord map,
@@ -102,13 +101,15 @@ func (m *Model) closeShortcuts() {
 	m.refocusComposer()
 }
 
-// shortcutsCardLines renders the sheet into a bordered block exactly width
-// cells wide.
-func (m *Model) shortcutsCardLines(width int) []string {
-	inner := width - 4
-	if inner < 8 {
-		inner = 8
-	}
+// shortcutsCard renders the shortcuts sheet as one card block through the
+// shared overlay frame in model.go.
+func (m *Model) shortcutsCard(width int) string {
+	return m.overlayCardBlock(width, m.shortcutsCardBody)
+}
+
+// shortcutsCardBody is the sheet's content, before the shared frame. inner is
+// the content width inside the border.
+func (m *Model) shortcutsCardBody(inner int) []string {
 	keyWidth := inner / 2
 	if keyWidth < 12 {
 		keyWidth = 12
@@ -121,6 +122,5 @@ func (m *Model) shortcutsCardLines(width int) []string {
 			lines = append(lines, m.styles.JumpRow.Render(truncateLine(label, inner)))
 		}
 	}
-	rendered := m.styles.JumpCard.Width(inner).Render(strings.Join(lines, "\n"))
-	return strings.Split(rendered, "\n")
+	return lines
 }

@@ -551,20 +551,15 @@ func (m *Model) handleConnectKey(key string, msg tea.KeyPressMsg) (tea.Model, te
 
 // --- Rendering ------------------------------------------------------------
 
-// connectCardLines renders the sheet into a bordered block exactly width cells
-// wide.
-func (m *Model) connectCardLines(width int) []string {
-	inner := width - 4
-	if inner < 8 {
-		inner = 8
-	}
-	lines := m.connectCard(inner)
-	rendered := m.styles.SheetCard.Width(inner).Render(strings.Join(lines, "\n"))
-	return strings.Split(rendered, "\n")
+// connectCard renders the Connect sheet as one card block through the shared
+// overlay frame in model.go.
+func (m *Model) connectCard(width int) string {
+	return m.overlayCardBlock(width, m.connectCardBody)
 }
 
-// connectCard is the sheet's content, before the border.
-func (m *Model) connectCard(inner int) []string {
+// connectCardBody is the sheet's content, before the shared frame. inner is the
+// content width inside the border.
+func (m *Model) connectCardBody(inner int) []string {
 	lines := []string{m.connectTitleLine()}
 	lines = append(lines, m.styles.SheetLabel.Render("NETWORKS"))
 

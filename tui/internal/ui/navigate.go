@@ -548,19 +548,15 @@ func (m *Model) clearCurrentDraft() {
 
 // --- Rendering ------------------------------------------------------------
 
-// jumpCardLines renders the jump overlay into a bordered block exactly width
-// cells wide.
-func (m *Model) jumpCardLines(width int) []string {
-	inner := width - 4
-	if inner < 8 {
-		inner = 8
-	}
-	rendered := m.styles.JumpCard.Width(inner).Render(strings.Join(m.jumpCard(inner), "\n"))
-	return strings.Split(rendered, "\n")
+// jumpCard renders the jump overlay as one card block through the shared
+// overlay frame in model.go.
+func (m *Model) jumpCard(width int) string {
+	return m.overlayCardBlock(width, m.jumpCardBody)
 }
 
-// jumpCard is the overlay's content, before the border.
-func (m *Model) jumpCard(inner int) []string {
+// jumpCardBody is the jump overlay's content, before the shared frame. inner is
+// the content width inside the border.
+func (m *Model) jumpCardBody(inner int) []string {
 	lines := []string{m.styles.JumpQuery.Render("Jump") + "  " + m.jump.input.View()}
 	entries := m.jumpEntries()
 	if len(entries) == 0 {

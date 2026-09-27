@@ -2,7 +2,6 @@ package ui
 
 import (
 	"fmt"
-	"strings"
 
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
@@ -136,19 +135,15 @@ func (m *Model) handleChannelListKey(key string, msg tea.KeyPressMsg) (tea.Model
 	return m, cmd
 }
 
-// channelListCardLines renders the overlay into a bordered block exactly width
-// cells wide.
-func (m *Model) channelListCardLines(width int) []string {
-	inner := width - 4
-	if inner < 8 {
-		inner = 8
-	}
-	rendered := m.styles.SheetCard.Width(inner).Render(strings.Join(m.channelListCard(inner), "\n"))
-	return strings.Split(rendered, "\n")
+// channelListCard renders the /list overlay as one card block through the
+// shared overlay frame in model.go.
+func (m *Model) channelListCard(width int) string {
+	return m.overlayCardBlock(width, m.channelListCardBody)
 }
 
-// channelListCard is the overlay's content, before the border.
-func (m *Model) channelListCard(inner int) []string {
+// channelListCardBody is the /list overlay's content, before the shared frame.
+// inner is the content width inside the border.
+func (m *Model) channelListCardBody(inner int) []string {
 	snapshot := ChannelListSnapshot{}
 	if m.ctrl != nil {
 		snapshot = m.ctrl.ChannelListSnapshot()

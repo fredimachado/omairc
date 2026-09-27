@@ -39,22 +39,15 @@ func newComposerInput(styles Styles) textinput.Model {
 // leading "/" is still plain text until the slash catalog lands. While find is
 // active the composer is the find query box.
 func (m *Model) composerView() string {
-	line := m.composer.View()
-	// model.go still builds the composer with textinput.New and no prompt in
-	// this worktree. newComposerInput moves the prompt into the input; until the
-	// integrator wires it, render the chip here so the line never loses it.
-	if m.composer.Prompt == "" {
-		line = m.styles.Prompt.Render(composerPrompt) + line
-	}
-	return m.styles.Composer.MaxWidth(m.width).Inline(true).Render(line)
+	return m.styles.Composer.MaxWidth(m.width).Inline(true).Render(m.composer.View())
 }
 
 // composerCursor is the composer's real terminal cursor at row, the composer
 // line's zero-based index in the rendered frame, or nil when the composer is
 // not focused or still uses its virtual cursor. model.go's View sets
 // v.Cursor = m.composerCursor(row); the row is model.go's, because the footer
-// sits below the composer. The input's own Cursor already accounts for a prompt
-// it owns, so only the composerView chip fallback needs an extra offset.
+// sits below the composer. The prompt is part of the input, so its own Cursor
+// already carries the prompt offset.
 func (m *Model) composerCursor(row int) *tea.Cursor {
 	if m == nil || m.ctrl == nil {
 		return nil
@@ -62,9 +55,6 @@ func (m *Model) composerCursor(row int) *tea.Cursor {
 	cursor := m.composer.Cursor()
 	if cursor == nil {
 		return nil
-	}
-	if m.composer.Prompt == "" {
-		cursor.Position.X += composerPrefixWidth
 	}
 	cursor.Position.Y = row
 	return cursor

@@ -1,8 +1,6 @@
 package ui
 
 import (
-	"strings"
-
 	tea "charm.land/bubbletea/v2"
 )
 
@@ -139,13 +137,15 @@ func (m *Model) handleInboxKey(key string, _ tea.KeyPressMsg) (tea.Model, tea.Cm
 	return m, nil
 }
 
-// inboxCardLines renders the sheet into a bordered block exactly width cells
-// wide.
-func (m *Model) inboxCardLines(width int) []string {
-	inner := width - 4
-	if inner < 8 {
-		inner = 8
-	}
+// inboxCard renders the inbox sheet as one card block through the shared
+// overlay frame in model.go.
+func (m *Model) inboxCard(width int) string {
+	return m.overlayCardBlock(width, m.inboxCardBody)
+}
+
+// inboxCardBody is the inbox sheet's content, before the shared frame. inner is
+// the content width inside the border.
+func (m *Model) inboxCardBody(inner int) []string {
 	lines := []string{m.styles.JumpQuery.Render("Inbox")}
 	entries := m.inboxEntries()
 	if len(entries) == 0 {
@@ -158,6 +158,5 @@ func (m *Model) inboxCardLines(width int) []string {
 		}
 		lines = append(lines, style.Render(truncateLine(entry, inner)))
 	}
-	rendered := m.styles.JumpCard.Width(inner).Render(strings.Join(lines, "\n"))
-	return strings.Split(rendered, "\n")
+	return lines
 }

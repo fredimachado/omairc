@@ -134,13 +134,15 @@ func (m *Model) handleNickKey(key string, msg tea.KeyPressMsg) (tea.Model, tea.C
 	return m, cmd
 }
 
-// nickCardLines renders the overlay into a bordered block exactly width cells
-// wide.
-func (m *Model) nickCardLines(width int) []string {
-	inner := width - 4
-	if inner < 8 {
-		inner = 8
-	}
+// nickCard renders the nick overlay as one card block through the shared
+// overlay frame in model.go.
+func (m *Model) nickCard(width int) string {
+	return m.overlayCardBlock(width, m.nickCardBody)
+}
+
+// nickCardBody is the nick overlay's content, before the shared frame. inner is
+// the content width inside the border.
+func (m *Model) nickCardBody(inner int) []string {
 	lines := []string{m.styles.JumpQuery.Render("Nick") + "  " + m.nick.input.View()}
 	entries := m.nickEntries()
 	if len(entries) == 0 {
@@ -154,6 +156,5 @@ func (m *Model) nickCardLines(width int) []string {
 			lines = append(lines, style.Render(truncateLine(nick, inner)))
 		}
 	}
-	rendered := m.styles.JumpCard.Width(inner).Render(strings.Join(lines, "\n"))
-	return strings.Split(rendered, "\n")
+	return lines
 }

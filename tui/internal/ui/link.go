@@ -1,8 +1,6 @@
 package ui
 
 import (
-	"strings"
-
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 )
@@ -122,13 +120,15 @@ func (m *Model) handleLinkKey(key string, msg tea.KeyPressMsg) (tea.Model, tea.C
 	return m, cmd
 }
 
-// linkCardLines renders the sheet into a bordered block exactly width cells
-// wide.
-func (m *Model) linkCardLines(width int) []string {
-	inner := width - 4
-	if inner < 8 {
-		inner = 8
-	}
+// linkCard renders the link sheet as one card block through the shared overlay
+// frame in model.go.
+func (m *Model) linkCard(width int) string {
+	return m.overlayCardBlock(width, m.linkCardBody)
+}
+
+// linkCardBody is the link sheet's content, before the shared frame. inner is
+// the content width inside the border.
+func (m *Model) linkCardBody(inner int) []string {
 	lines := []string{m.styles.JumpQuery.Render("Links") + "  " + m.link.input.View()}
 	matches := m.linkMatches()
 	if len(matches) == 0 {
@@ -141,6 +141,5 @@ func (m *Model) linkCardLines(width int) []string {
 		}
 		lines = append(lines, style.Render(truncateLine(entry.label, inner)))
 	}
-	rendered := m.styles.JumpCard.Width(inner).Render(strings.Join(lines, "\n"))
-	return strings.Split(rendered, "\n")
+	return lines
 }

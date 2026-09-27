@@ -176,7 +176,7 @@ const (
 // seeded demo), in which case the Connect sheet is unavailable.
 func New(ctrl *controller.Controller, conn *connection.Connection) *Model {
 	styles := defaultStyles()
-	composer := newTextInput(styles, "Message", "")
+	composer := newComposerInput(styles)
 	m := &Model{
 		ctrl:                 ctrl,
 		conn:                 conn,
@@ -508,6 +508,11 @@ func (m *Model) View() tea.View {
 	// columns matches the theme instead of the terminal default.
 	v.BackgroundColor = m.styles.Colors.Background
 	v.ForegroundColor = m.styles.Colors.Foreground
+	// Place the composer's real terminal cursor at its frame row. The row is
+	// the shell's, because the footer sits below the composer; composerCursor
+	// returns nil while the composer is blurred (an overlay or modal owns the
+	// keys), so the cursor never floats over a sheet.
+	v.Cursor = m.composerCursor(m.composerRow())
 	return v
 }
 
@@ -623,24 +628,38 @@ func (m *Model) bodyHeight() int {
 	return height
 }
 
+// composerRow is the composer line's zero-based row in the rendered frame. The
+// composer sits below the body and any slash-completion rows and above the
+// footer, so View derives the cursor's Y from the same layout render() builds.
+// The tiny-terminal path renders only the composer, so its row is 0.
+func (m *Model) composerRow() int {
+	if m == nil || m.width < minWidth || m.height < minHeight {
+		return 0
+	}
+	return m.bodyHeight() + len(m.slashLines())
+}
+
 // overlayCard returns the topmost overlay card as one rendered block, if any.
-// The shortcuts sheet can sit on top of Connect, so it is checked first.
+// Every overlay renders through its own <name>Card method, which wraps its
+// content with the shared overlayCardBlock frame, so model.go owns the single
+// framing path. The shortcuts sheet can sit on top of Connect, so it is
+// checked first.
 func (m *Model) overlayCard() (string, bool) {
 	switch {
 	case m.shortcutsOpen:
-		return cardBlock(m.shortcutsCardLines(m.width)), true
+		return m.shortcutsCard(m.width), true
 	case m.connectVisible():
-		return cardBlock(m.connectCardLines(m.width)), true
+		return m.connectCard(m.width), true
 	case m.nick.open:
-		return cardBlock(m.nickCardLines(m.width)), true
+		return m.nickCard(m.width), true
 	case m.link.open:
-		return cardBlock(m.linkCardLines(m.width)), true
+		return m.linkCard(m.width), true
 	case m.inbox.open:
-		return cardBlock(m.inboxCardLines(m.width)), true
+		return m.inboxCard(m.width), true
 	case m.list.open:
-		return cardBlock(m.channelListCardLines(m.width)), true
+		return m.channelListCard(m.width), true
 	case m.jump.open:
-		return cardBlock(m.jumpCardLines(m.width)), true
+		return m.jumpCard(m.width), true
 	}
 	return "", false
 }
@@ -696,12 +715,24 @@ func (m *Model) closeAllOverlays() {
 	}
 }
 
-// cardBlock adapts an overlay's already-bordered lines into the single block
-// string the compositor consumes. Overlay workstreams (L5-L7) replace their
-// `*CardLines(width int) []string` helper with `*Card(width int) string`
-// returning this same block; this adapter and its call sites then disappear.
-func cardBlock(lines []string) string {
-	return strings.Join(lines, "\n")
+// overlayCardInset is the blank margin the shared overlay frame leaves on each
+// side of the window, so a card border never sits on the terminal's edge cell.
+// The compositor centers the narrower card over the dimmed body.
+const overlayCardInset = 2
+
+// overlayCardBlock is the single framing path for every overlay card: it
+// clamps the card width, lays the overlay's content lines into the shared
+// panel style, and returns the one block the compositor composites with the
+// shadow. build receives the content width inside the border, so an overlay
+// body never re-derives the frame inset and a later restyle stays inside the
+// overlay's own file without editing this wrapper.
+func (m *Model) overlayCardBlock(width int, build func(inner int) []string) string {
+	frameX, _ := m.styles.Panel.GetFrameSize()
+	inner := width - 2*overlayCardInset - frameX
+	if inner < 8 {
+		inner = 8
+	}
+	return m.styles.Panel.Width(inner + frameX).Render(strings.Join(build(inner), "\n"))
 }
 
 // compositeOverlay dims the body and composites the overlay card over it, with
