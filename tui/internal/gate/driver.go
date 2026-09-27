@@ -1,9 +1,12 @@
 package gate
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"image"
+	"image/png"
 	"io"
 	"net"
 	"os"
@@ -484,6 +487,14 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		err = cmdWalk(rest)
 	case "unread":
 		err = cmdUnread(rest)
+	case "jump":
+		err = cmdJump(rest)
+	case "status":
+		err = cmdStatus(rest)
+	case "connect":
+		err = cmdConnect(rest)
+	case "compare":
+		err = cmdCompare(rest, stdout)
 	case "screenshot":
 		err = cmdScreenshot(rest, stdout)
 	case "run":
@@ -521,6 +532,11 @@ Verbs:
   send --text TEXT                 send text then Enter
   walk --down|--up [--times N]     Alt+Down / Alt+Up N times
   unread                           Alt+A (next unread)
+  jump --query TEXT                Ctrl+K, type the query, then Enter
+  status                           Ctrl+backtick (toggle the Status console)
+  connect                          Ctrl+, (open the Connect sheet)
+  compare --before PATH --after PATH
+                                   assert two PNGs differ
   screenshot [--feature NAME] [--name NAME]
                                    write a PNG of the grid under
                                    test-artifacts/verify-tui/<feature>/
@@ -895,6 +911,53 @@ func cmdUnread(args []string) error {
 	return err
 }
 
+// cmdJump drives the Ctrl+K jump overlay: open it, type the query, then Enter.
+func cmdJump(args []string) error {
+	query := ""
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--query":
+			if i+1 >= len(args) {
+				return errors.New("jump --query needs text")
+			}
+			i++
+			query = args[i]
+		default:
+			return fmt.Errorf("unknown jump argument %q", args[i])
+		}
+	}
+	if query == "" {
+		return errors.New("jump requires --query")
+	}
+	c := newClient()
+	if _, err := c.do(Request{Verb: "key", Key: "ctrl+k"}); err != nil {
+		return err
+	}
+	if _, err := c.do(Request{Verb: "type", Text: query}); err != nil {
+		return err
+	}
+	_, err := c.do(Request{Verb: "key", Key: "return"})
+	return err
+}
+
+// cmdStatus toggles the Status console with Ctrl+`.
+func cmdStatus(args []string) error {
+	if len(args) != 0 {
+		return errors.New("status takes no arguments")
+	}
+	_, err := newClient().do(Request{Verb: "key", Key: "ctrl+`"})
+	return err
+}
+
+// cmdConnect opens the Connect sheet with Ctrl+,.
+func cmdConnect(args []string) error {
+	if len(args) != 0 {
+		return errors.New("connect takes no arguments")
+	}
+	_, err := newClient().do(Request{Verb: "key", Key: "ctrl+,"})
+	return err
+}
+
 func cmdScreenshot(args []string, stdout io.Writer) error {
 	feature := defaultFeature
 	name := defaultShotName
@@ -922,6 +985,103 @@ func cmdScreenshot(args []string, stdout io.Writer) error {
 	}
 	fmt.Fprintln(stdout, resp.Path)
 	return nil
+}
+
+// qtVerifyRoot is the evidence root the shared Qt recipes write to. The PTY
+// driver keeps its screenshots under tuiVerifyRoot instead, so a compare on a
+// Qt fence path is remapped before the files are opened. The trailing slash
+// keeps it from matching the "verify-tui" root.
+const (
+	qtVerifyRoot  = "test-artifacts/verify/"
+	tuiVerifyRoot = "test-artifacts/verify-tui/"
+)
+
+func remapVerifyPath(path string) string {
+	if rest, ok := strings.CutPrefix(path, qtVerifyRoot); ok {
+		return tuiVerifyRoot + rest
+	}
+	return path
+}
+
+// cmdCompare asserts two PNG screenshots differ. It is client-side only: it
+// never touches the daemon, so it can run after cleanup.
+func cmdCompare(args []string, stdout io.Writer) error {
+	before := ""
+	after := ""
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--before":
+			if i+1 >= len(args) {
+				return errors.New("compare --before needs a path")
+			}
+			i++
+			before = args[i]
+		case "--after":
+			if i+1 >= len(args) {
+				return errors.New("compare --after needs a path")
+			}
+			i++
+			after = args[i]
+		default:
+			return fmt.Errorf("unknown compare argument %q", args[i])
+		}
+	}
+	if before == "" {
+		return errors.New("compare requires --before")
+	}
+	if after == "" {
+		return errors.New("compare requires --after")
+	}
+	before = remapVerifyPath(before)
+	after = remapVerifyPath(after)
+
+	beforeImage, err := readPNG(before)
+	if err != nil {
+		return err
+	}
+	afterImage, err := readPNG(after)
+	if err != nil {
+		return err
+	}
+	beforeBounds, afterBounds := beforeImage.Bounds(), afterImage.Bounds()
+	if beforeBounds.Dx() != afterBounds.Dx() || beforeBounds.Dy() != afterBounds.Dy() {
+		return fmt.Errorf("image sizes differ: %s is %dx%d, %s is %dx%d",
+			before, beforeBounds.Dx(), beforeBounds.Dy(), after, afterBounds.Dx(), afterBounds.Dy())
+	}
+	if samePixels(beforeImage, afterImage) {
+		return fmt.Errorf("images are identical: %s and %s", before, after)
+	}
+	fmt.Fprintf(stdout, "images differ (%dx%d)\n", beforeBounds.Dx(), beforeBounds.Dy())
+	return nil
+}
+
+func readPNG(path string) (image.Image, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	decoded, err := png.Decode(bytes.NewReader(data))
+	if err != nil {
+		return nil, fmt.Errorf("decode %s: %w", path, err)
+	}
+	return decoded, nil
+}
+
+// samePixels compares two same-sized images pixel by pixel. color.Color.RGBA
+// yields 16-bit premultiplied channels, so the comparison does not depend on
+// the decoded color model.
+func samePixels(left, right image.Image) bool {
+	bounds := left.Bounds()
+	for y := 0; y < bounds.Dy(); y++ {
+		for x := 0; x < bounds.Dx(); x++ {
+			lr, lg, lb, la := left.At(bounds.Min.X+x, bounds.Min.Y+y).RGBA()
+			rr, rg, rb, ra := right.At(bounds.Min.X+x, bounds.Min.Y+y).RGBA()
+			if lr != rr || lg != rg || lb != rb || la != ra {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 func cmdCleanup(args []string, stdout io.Writer) error {
@@ -1115,6 +1275,14 @@ func runRecipeLine(tokens []string, stdout, stderr io.Writer, launchedByRun *boo
 		return cmdWalk(tokens[1:])
 	case "unread":
 		return cmdUnread(tokens[1:])
+	case "jump":
+		return cmdJump(tokens[1:])
+	case "status":
+		return cmdStatus(tokens[1:])
+	case "connect":
+		return cmdConnect(tokens[1:])
+	case "compare":
+		return cmdCompare(tokens[1:], stdout)
 	case "screenshot":
 		return cmdScreenshot(tokens[1:], stdout)
 	case "cleanup":
@@ -1160,8 +1328,6 @@ func rejectRecipeVerb(verb string) error {
 	switch verb {
 	case "qml-suite", "doctor-qml":
 		return fmt.Errorf("recipe verb %q is the offscreen QML suite, not compiled-window proof", verb)
-	case "compare":
-		return fmt.Errorf("recipe verb %q is image comparison; the TUI driver has no compare", verb)
 	}
 	return nil
 }

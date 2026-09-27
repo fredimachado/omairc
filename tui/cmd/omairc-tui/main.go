@@ -1,10 +1,10 @@
 // Command omairc-tui is the terminal client entry point.
 //
-// Phase 4 ships the CLI flags plus the Bubble Tea shell: --version, --help, and
+// It ships the CLI flags plus the Bubble Tea shell: --version, --help, and
 // --demo-server, which seeds the two-network demo world through internal/demo
-// and then runs the interactive shell over it. A no-argument invocation still
-// exits non-zero rather than pretending to work, because the Connect sheet (and
-// with it the live IRC path) lands in Phase 5. See tui/AGENTS.md.
+// and then runs the interactive shell over it. A plain launch shows the
+// Connect sheet over an empty controller and applies a real session; the sheet
+// is in-memory only until the phase-11 profile store lands. See tui/AGENTS.md.
 package main
 
 import (
@@ -14,8 +14,10 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
+	"github.com/fredimachado/omairc/tui/internal/connection"
 	"github.com/fredimachado/omairc/tui/internal/controller"
 	"github.com/fredimachado/omairc/tui/internal/demo"
+	"github.com/fredimachado/omairc/tui/internal/session"
 	"github.com/fredimachado/omairc/tui/internal/ui"
 	"github.com/fredimachado/omairc/tui/internal/version"
 )
@@ -29,8 +31,8 @@ Flags:
   --help         print this help and exit
   --demo-server  seed the in-process demo world and run the shell
 
-The Connect sheet lands in Phase 5; --demo-server runs the interactive shell
-over the seeded demo world.`
+Without --demo-server the shell starts on the Connect sheet and applies a
+live IRC session once a network profile is complete.`
 
 func main() {
 	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
@@ -65,29 +67,49 @@ func run(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stdout, "omairc-tui %s\n", version.Value)
 		return 0
 	}
+
+	c := controller.New()
+	var conn *connection.Connection
 	if demoServer {
-		c := controller.New()
 		server := demo.New()
 		if !server.Attach(c, true) {
 			fmt.Fprintf(stderr, "omairc-tui: demo server failed: %s\n", server.LastError())
 			return 1
 		}
-		// Wire the wake-up callbacks after NewProgram: p.Send needs the
-		// program, and demo.Attach fired the callbacks (still nil) while
-		// seeding. The shell reads the rebuilt snapshots directly on its
-		// first View, so nothing is missed.
-		p := tea.NewProgram(ui.New(c))
-		c.OnSelectionChanged = func() { p.Send(ui.NotifyMsg{}) }
-		c.OnStatusChanged = func() { p.Send(ui.NotifyMsg{}) }
-		c.OnCapabilitiesChanged = func() { p.Send(ui.NotifyMsg{}) }
-		if _, err := p.Run(); err != nil {
-			fmt.Fprintf(stderr, "omairc-tui: %v\n", err)
-			return 1
-		}
-		return 0
+	} else {
+		conn = connection.New(c, func() session.Transport { return session.NewNetTransport() })
 	}
 
-	fmt.Fprintln(stderr,
-		"omairc-tui: no Connect sheet yet (Phase 5); run --demo-server for the seeded demo")
-	return 1
+	// Controller and connection callbacks fire both from the Bubble Tea
+	// goroutine (inside Update) and from session goroutines. p.Send blocks on
+	// the program's message channel, so calling it synchronously from a
+	// callback would deadlock the event loop the moment a navigation chord
+	// rebuilt a snapshot. Coalesce the wake-ups onto one dispatcher instead.
+	p := tea.NewProgram(ui.New(c, conn))
+	wake := make(chan struct{}, 1)
+	go func() {
+		for range wake {
+			p.Send(ui.NotifyMsg{})
+		}
+	}()
+	notify := func() {
+		select {
+		case wake <- struct{}{}:
+		default:
+		}
+	}
+	if conn != nil {
+		conn.OnDraftChanged = notify
+		conn.OnNetworksChanged = notify
+		conn.OnSetupRequiredChanged = notify
+	}
+	c.OnSelectionChanged = notify
+	c.OnStatusChanged = notify
+	c.OnCapabilitiesChanged = notify
+	if _, err := p.Run(); err != nil {
+		fmt.Fprintf(stderr, "omairc-tui: %v\n", err)
+		return 1
+	}
+	close(wake)
+	return 0
 }

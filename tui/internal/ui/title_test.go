@@ -3,6 +3,7 @@ package ui
 import (
 	"testing"
 
+	"github.com/fredimachado/omairc/tui/internal/connection"
 	"github.com/fredimachado/omairc/tui/internal/controller"
 	"github.com/fredimachado/omairc/tui/internal/demo"
 )
@@ -57,18 +58,26 @@ func TestTitleSeededCases(t *testing.T) {
 			} else {
 				ctrl.SelectConversation(test.networkID, test.target)
 			}
-			if got := Title(ctrl); got != test.want {
+			if got := Title(ctrl, nil); got != test.want {
 				t.Fatalf("Title() = %q, want %q", got, test.want)
 			}
 		})
 	}
 }
 
-func TestTitleEmptyController(t *testing.T) {
-	if got := Title(controller.New()); got != "Omairc" {
-		t.Fatalf("Title(empty) = %q, want %q", got, "Omairc")
+func TestTitleFirstRunUsesConnectionDisplayName(t *testing.T) {
+	ctrl := controller.New()
+	conn := connection.New(ctrl, nil)
+	if got := Title(ctrl, conn); got != "irc.libera.chat Status" {
+		t.Fatalf("Title(first run) = %q, want %q", got, "irc.libera.chat Status")
 	}
-	if got := Title(nil); got != "Omairc" {
+}
+
+func TestTitleEmptyController(t *testing.T) {
+	if got := Title(controller.New(), nil); got != "Status" {
+		t.Fatalf("Title(empty) = %q, want %q", got, "Status")
+	}
+	if got := Title(nil, nil); got != "Omairc" {
 		t.Fatalf("Title(nil) = %q, want %q", got, "Omairc")
 	}
 }

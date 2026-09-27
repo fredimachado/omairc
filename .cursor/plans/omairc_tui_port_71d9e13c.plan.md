@@ -19,7 +19,7 @@ todos:
     status: completed
   - id: phase-5-connect
     content: "Phase 5: Connect sheet + conversation switching/send/Status"
-    status: pending
+    status: in_progress
   - id: phase-6-keyboard
     content: "Phase 6: full keyboard chord map (keyboard.md)"
     status: pending

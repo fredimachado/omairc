@@ -50,6 +50,11 @@ func TestKeySequenceTable(t *testing.T) {
 		{"ctrl+a", []byte{0x01}},
 		{"ctrl+z", []byte{0x1a}},
 		{"ctrl+A", []byte{0x01}},
+		{"ctrl+`", []byte("\x1b[96;5u")},
+		{"ctrl+,", []byte("\x1b[44;5u")},
+		{"ctrl+enter", []byte("\x1b[13;5u")},
+		{"ctrl+tab", []byte("\x1b[9;5u")},
+		{"ctrl+shift+delete", []byte("\x1b[57349;6u")},
 	}
 	for _, tc := range cases {
 		got, err := KeySequence(tc.name)
