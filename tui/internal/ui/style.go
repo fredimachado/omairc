@@ -40,6 +40,11 @@ type Styles struct {
 	ConsoleLine lipgloss.Style
 	FindMatch   lipgloss.Style
 
+	// UnreadMark* paint the transcript's "New messages" boundary: the caption
+	// and the accent-mixed rules on either side of it.
+	UnreadMark     lipgloss.Style
+	UnreadMarkRule lipgloss.Style
+
 	MembersHeader lipgloss.Style
 
 	// Phase 8 member chrome. The presence dot is green when available and
@@ -231,6 +236,9 @@ func buildStyles(colors theme.Colors) Styles {
 		MentionBody: base.Foreground(colors.Mention),
 		ConsoleLine: base.Foreground(colors.TextMuted),
 		FindMatch:   base.Reverse(true).Bold(true),
+
+		UnreadMark:     base.Foreground(colors.UnreadMark).Bold(true),
+		UnreadMarkRule: base.Foreground(colors.UnreadMarkRule),
 
 		MembersHeader: base.Bold(true).Foreground(colors.Accent),
 

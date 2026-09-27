@@ -77,6 +77,32 @@ func (c *Controller) Messages() []MessageSnapshot {
 	return c.messages
 }
 
+// UnreadMarkRow reports the transcript row the "New messages" boundary sits
+// above: the index into Messages() of the message whose sequence equals the
+// conversation's unread mark. It returns -1 when there is no mark, or when the
+// mark is on the first row, which has nothing above it to separate from. It
+// mirrors MessageListModel::unreadMarkRow, whose buildView only inserts the
+// boundary when a preceding row exists.
+func (c *Controller) UnreadMarkRow() int {
+	if c.selected == nil {
+		return -1
+	}
+	conversation := c.reducer.Find(*c.selected)
+	if conversation == nil || conversation.UnreadMark == nil {
+		return -1
+	}
+	for index, message := range conversation.Messages {
+		if message.Sequence != *conversation.UnreadMark {
+			continue
+		}
+		if index <= 0 || index >= len(c.messages) {
+			return -1
+		}
+		return index
+	}
+	return -1
+}
+
 // Members returns the selected channel's member rows in the reducer's
 // orderedMembers order (PREFIX rank, then nick). A direct message has no
 // members. The slice is the cached snapshot Publish last rebuilt; callers must

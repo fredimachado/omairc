@@ -113,8 +113,9 @@ func (m *Model) activateChannelList() {
 	if m.ctrl == nil {
 		return
 	}
+	previousID := m.selectedConversationID()
 	if m.ctrl.JoinChannelListRow(index) {
-		m.afterSelectionChange()
+		m.afterSelectionChange(previousID)
 	}
 }
 

@@ -106,9 +106,10 @@ func (m *Model) activateNick() {
 	m.saveDraft()
 	m.nick.open = false
 	m.nick.input.Blur()
+	previousID := m.selectedConversationID()
 	m.ctrl.OpenDirectMessage(nick)
 	m.loadDraft()
-	m.afterSelectionChange()
+	m.afterSelectionChange(previousID)
 }
 
 // handleNickKey folds one key while the overlay is open.

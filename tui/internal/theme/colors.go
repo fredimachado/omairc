@@ -44,6 +44,13 @@ type Colors struct {
 	TextDim       color.Color
 	AvatarPage    color.Color
 
+	// UnreadMark and UnreadMarkRule paint the transcript's "New messages"
+	// boundary, mirroring UnreadMark.qml's markColor/lineColor: the caption
+	// mixed from the theme ink toward the accent, and the rule mixed from the
+	// page toward the accent.
+	UnreadMark     color.Color
+	UnreadMarkRule color.Color
+
 	// Fixed colors shared with the Qt client.
 	Good          color.Color
 	Warning       color.Color
@@ -126,6 +133,11 @@ func Derive(spec Spec) Colors {
 			background, foreground,
 			shadeAmount(dark, 0.34, 0.30), dimContrastRatio, fixedDim),
 		AvatarPage: background,
+
+		// UnreadMark.qml mixes ink toward the accent for the caption and the
+		// page toward the accent for the rule, with mode-specific amounts.
+		UnreadMark:     mixColors(foreground, accent, shadeAmount(dark, 0.55, 0.42)),
+		UnreadMarkRule: mixColors(background, accent, shadeAmount(dark, 0.48, 0.36)),
 
 		Good:          fixedGood,
 		Warning:       fixedWarning,

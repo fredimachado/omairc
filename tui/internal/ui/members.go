@@ -225,7 +225,8 @@ func (m *Model) activateFocusedMember() {
 	}
 	m.memberFocus = false
 	m.saveDraft()
+	previousID := m.selectedConversationID()
 	m.ctrl.OpenDirectMessage(nick)
 	m.loadDraft()
-	m.afterSelectionChange()
+	m.afterSelectionChange(previousID)
 }

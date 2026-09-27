@@ -455,11 +455,12 @@ func (m *Model) closeDirectMessage() {
 		return
 	}
 	m.saveDraft()
+	previousID := m.selectedConversationID()
 	if !m.ctrl.CloseDirectMessage() {
 		return
 	}
 	m.loadDraft()
-	m.afterSelectionChange()
+	m.afterSelectionChange(previousID)
 }
 
 // focusMembers focuses the member list with Ctrl+Shift+P, reopening a hidden
@@ -495,26 +496,94 @@ func indexOfString(values []string, needle string) int {
 // switchSelection stashes the current composer draft, runs apply (which changes
 // the selection or Status surface), then restores the draft for the new key. It
 // also drops find, the transcript cursor, and the member focus, matching the Qt
-// selection side effects.
+// selection side effects. The previous conversation id is captured before apply
+// so the landing step can tell a real move from a re-select.
 func (m *Model) switchSelection(apply func()) {
 	if m.find.active {
 		m.leaveFind()
 	}
+	previousID := m.selectedConversationID()
 	m.saveDraft()
 	apply()
 	m.loadDraft()
-	m.afterSelectionChange()
+	m.afterSelectionChange(previousID)
+}
+
+// selectedConversationID is the selected conversation's stable id, or "" for
+// Status or no selection.
+func (m *Model) selectedConversationID() string {
+	if m.ctrl == nil {
+		return ""
+	}
+	return m.ctrl.SelectedConversationID()
 }
 
 // afterSelectionChange resets the view state that does not survive a move to a
-// new conversation or Status surface.
-func (m *Model) afterSelectionChange() {
+// new conversation or Status surface, then places the transcript. previousID is
+// the conversation id before the change: re-selecting the same conversation
+// while "Open conversations at unread" is on keeps the reader's viewport. It
+// mirrors OmaircWindow.qml's placeTranscriptAfterSelect.
+func (m *Model) afterSelectionChange(previousID string) {
+	if m.keepsViewportOnReselect(previousID) {
+		m.transcriptCursor = -1
+		m.resetHistoryBrowse()
+		m.memberFocus = false
+		m.memberIndex = 0
+		return
+	}
 	m.transcriptFollowEnd = true
 	m.transcriptScroll = 0
 	m.transcriptCursor = -1
 	m.resetHistoryBrowse()
 	m.memberFocus = false
 	m.memberIndex = 0
+	m.placeTranscriptAfterSelect()
+}
+
+// keepsViewportOnReselect reports whether re-selecting the current conversation
+// must leave the transcript where it was. It mirrors the openConversationsAtUnread
+// guard at the head of OmaircWindow.qml's placeTranscriptAfterSelect; Status
+// always repositions.
+func (m *Model) keepsViewportOnReselect(previousID string) bool {
+	if m.ctrl == nil || !m.ctrl.OpenAtUnread() || m.ctrl.ConsoleOpen() {
+		return false
+	}
+	return previousID != "" && previousID == m.ctrl.SelectedConversationID()
+}
+
+// placeTranscriptAfterSelect lands the transcript for a new selection: the
+// Status console follows the end, and a conversation follows the end unless
+// "Open conversations at unread" is on and a "New messages" mark exists, in
+// which case it lands on that mark. It mirrors OmaircWindow.qml's
+// placeTranscriptAfterSelect and pinTranscriptToUnreadOr.
+func (m *Model) placeTranscriptAfterSelect() {
+	if m.ctrl == nil {
+		return
+	}
+	if m.ctrl.ConsoleOpen() || !m.ctrl.OpenAtUnread() {
+		return
+	}
+	if row := m.ctrl.UnreadMarkRow(); row >= 0 {
+		m.pinTranscriptToRow(row)
+	}
+}
+
+// pinTranscriptOnFocusReturn lands the transcript when the window regains
+// focus: Status follows the end, and a conversation with a "New messages" mark
+// lands on it. A conversation without a mark keeps its place, so a focus regain
+// never yanks a reader who is scrolled up mid-history. It mirrors
+// OmaircWindow.qml's pinTranscriptOnFocusReturn.
+func (m *Model) pinTranscriptOnFocusReturn() {
+	if m.ctrl == nil {
+		return
+	}
+	if m.ctrl.ConsoleOpen() {
+		m.jumpTranscript(true)
+		return
+	}
+	if row := m.ctrl.UnreadMarkRow(); row >= 0 {
+		m.pinTranscriptToRow(row)
+	}
 }
 
 // saveDraft records the composer text under the current conversation key.

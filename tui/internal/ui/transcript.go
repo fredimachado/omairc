@@ -110,10 +110,36 @@ func (m *Model) transcriptRowArea() transcriptRows {
 		}
 		return area
 	}
+	markRow := m.ctrl.UnreadMarkRow()
 	for index, message := range m.ctrl.Messages() {
-		area.append(m.messageRow(index, message))
+		block := m.messageRow(index, message)
+		// The "New messages" boundary sits above the first unread row, attached
+		// to that row's block so the rendered row count still matches the
+		// message count find and copy index by.
+		if index == markRow {
+			block = m.unreadMarkLine() + "\n" + block
+		}
+		area.append(block)
 	}
 	return area
+}
+
+// unreadMarkLine renders the "New messages" boundary: a centered caption
+// between two accent-mixed rules sized to the transcript column, mirroring
+// UnreadMark.qml. A column too narrow for the caption plus a rule on each side
+// shows the caption alone.
+func (m *Model) unreadMarkLine() string {
+	width := m.transcriptWidth()
+	label := m.styles.UnreadMark.Render("New messages")
+	remaining := width - lipgloss.Width(label) - 2
+	if remaining < 2 {
+		return truncateLine(label, width)
+	}
+	left := remaining / 2
+	right := remaining - left
+	return m.styles.UnreadMarkRule.Render(strings.Repeat("─", left)) + " " +
+		label + " " +
+		m.styles.UnreadMarkRule.Render(strings.Repeat("─", right))
 }
 
 // transcriptRowTotal is the current transcript's row count: the number of
@@ -263,12 +289,15 @@ func (m *Model) appendTranscriptTypingFooter(area transcriptRows) transcriptRows
 
 // lastRowCarriesWashPad reports whether the last row ends in the wash columns a
 // highlighted message adds below its text. The typing hint is built to extend a
-// plain text row, so it must not land on a wash padding line.
+// plain text row, so it must not land on a wash padding line. A washed row is
+// mentionWashPad rows above and below its single text line; a "New messages"
+// boundary also makes a row taller than one line, so the height test is the
+// wash height rather than "more than one line".
 func (m *Model) lastRowCarriesWashPad(area transcriptRows) bool {
 	if area.count() == 0 {
 		return false
 	}
-	return area.heights[area.count()-1] > 1
+	return area.heights[area.count()-1] >= 1+2*mentionWashPad
 }
 
 // transcriptWindow returns the [start, end) slice of lines the viewport shows,
@@ -422,6 +451,40 @@ func (m *Model) revealTranscriptRow(row int) {
 	if start+height <= index {
 		start = index - height + 1
 	}
+	if start < 0 {
+		start = 0
+	}
+	if start > maxOffset {
+		start = maxOffset
+	}
+	m.transcriptFollowEnd = false
+	m.transcriptScroll = n - height - start
+	if m.transcriptScroll < 0 {
+		m.transcriptScroll = 0
+	}
+}
+
+// pinTranscriptToRow scrolls the viewport so row sits at the top and leaves
+// follow-the-end, so the reader keeps their place. It mirrors
+// TranscriptList.pinToUnread: a row that cannot fill a viewport, or an
+// out-of-range row, falls back to following the end.
+func (m *Model) pinTranscriptToRow(row int) {
+	if m.ctrl == nil {
+		return
+	}
+	area := m.transcriptArea()
+	n := len(area.lines)
+	height := m.bodyHeight() - len(m.transcriptHeader())
+	if height < 1 {
+		height = 1
+	}
+	maxOffset := n - height
+	if maxOffset <= 0 || row < 0 || row >= area.count() {
+		m.transcriptFollowEnd = true
+		m.transcriptScroll = 0
+		return
+	}
+	start := area.line(row)
 	if start < 0 {
 		start = 0
 	}

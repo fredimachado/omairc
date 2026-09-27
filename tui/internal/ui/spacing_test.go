@@ -277,7 +277,7 @@ func groupedTypingMentionModel(t *testing.T) *Model {
 			ctrl.SelectConversationByID(row.ConversationID)
 		}
 	}
-	m.afterSelectionChange()
+	m.afterSelectionChange("")
 	return m
 }
 
