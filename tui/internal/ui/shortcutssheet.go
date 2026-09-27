@@ -83,6 +83,7 @@ var shortcutGroups = []shortcutGroup{
 			{"Shift+Page Up / Shift+Page Down", "page focused members half page"},
 			{"Home / End", "first / last focused nick"},
 			{"Ctrl+/", "this sheet"},
+			{"Ctrl+Shift+/", "About"},
 			{"Ctrl+Q", "quit"},
 		},
 	},

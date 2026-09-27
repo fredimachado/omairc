@@ -128,6 +128,7 @@ type Model struct {
 	memberFocus          bool
 	memberIndex          int
 	shortcutsOpen        bool
+	aboutOpen            bool
 	nick                 nickJumpState
 	link                 linkState
 	inbox                inboxState
@@ -436,6 +437,12 @@ func (m *Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	if key == "ctrl+q" {
 		return m, tea.Quit
 	}
+	// About is an informational modal that can sit on top of the Connect
+	// sheet. While it is open every other chord is blocked; Escape, Enter, or
+	// Space dismiss it (see handleAboutKey).
+	if m.aboutOpen {
+		return m.handleAboutKey(key)
+	}
 	// The shortcuts sheet sits on top of everything; while it is open only the
 	// toggle and Escape close it.
 	if m.shortcutsOpen {
@@ -445,11 +452,15 @@ func (m *Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	// Connect is a window-level modal. Ctrl+/ still opens the shortcuts sheet
-	// on top of it; Ctrl+C still reaches the copy path; every other chord is
-	// owned by the sheet.
+	// on top of it, Ctrl+Shift+/ opens About, and Ctrl+C still reaches the copy
+	// path; every other chord is owned by the sheet.
 	if m.connectVisible() {
 		if key == "ctrl+/" {
 			m.openShortcuts()
+			return m, nil
+		}
+		if key == "ctrl+shift+/" {
+			m.openAbout()
 			return m, nil
 		}
 		if key == "ctrl+c" {
@@ -505,7 +516,7 @@ func (m *Model) sendComposer() {
 
 // refocusComposer restores composer focus after a chord when no modal is open.
 func (m *Model) refocusComposer() {
-	if m.connectVisible() || m.overlaysVisible() || m.shortcutsOpen {
+	if m.connectVisible() || m.overlaysVisible() || m.shortcutsOpen || m.aboutOpen {
 		return
 	}
 	_ = m.composer.Focus()
@@ -661,10 +672,12 @@ func (m *Model) composerRow() int {
 // overlayCard returns the topmost overlay card as one rendered block, if any.
 // Every overlay renders through its own <name>Card method, which wraps its
 // content with the shared overlayCardBlock frame, so model.go owns the single
-// framing path. The shortcuts sheet can sit on top of Connect, so it is
-// checked first.
+// framing path. About and the shortcuts sheet can sit on top of Connect, so
+// they are checked first.
 func (m *Model) overlayCard() (string, bool) {
 	switch {
+	case m.aboutOpen:
+		return m.aboutCard(m.width), true
 	case m.shortcutsOpen:
 		return m.shortcutsCard(m.width), true
 	case m.connectVisible():

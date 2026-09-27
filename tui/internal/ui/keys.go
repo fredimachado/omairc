@@ -42,6 +42,7 @@ var chordTable = map[string]chordFunc{
 	"ctrl+shift+s": func(m *Model) tea.Cmd { m.toggleServerList(); return nil },
 	"ctrl+w":       func(m *Model) tea.Cmd { m.closeDirectMessage(); return nil },
 	"ctrl+/":       func(m *Model) tea.Cmd { m.openShortcuts(); return nil },
+	"ctrl+shift+/": func(m *Model) tea.Cmd { m.openAbout(); return nil },
 	"ctrl+,":       func(m *Model) tea.Cmd { m.openConnect(); return nil },
 	"ctrl+shift+o": func(m *Model) tea.Cmd { m.toggleLink(); return nil },
 	"ctrl+shift+a": func(m *Model) tea.Cmd { m.toggleInbox(); return nil },
@@ -156,9 +157,10 @@ func (m *Model) dispatchChord(key string, msg tea.KeyPressMsg) (bool, tea.Cmd) {
 // modalBlocksChord reports whether the open Connect sheet or shortcuts sheet
 // must swallow key. Every navigation chord is disabled under those modals;
 // only the keys the modal itself owns, plus Ctrl+Q (quit), Ctrl+/ (toggle the
-// shortcuts sheet), Ctrl+C (copy), and Escape, are let through.
+// shortcuts sheet), Ctrl+C (copy), and Escape, are let through. About is
+// handled before this runs, but it is included so the gate stays total.
 func (m *Model) modalBlocksChord(key string) bool {
-	if !m.connectVisible() && !m.shortcutsOpen {
+	if !m.connectVisible() && !m.shortcutsOpen && !m.aboutOpen {
 		return false
 	}
 	switch key {
@@ -210,6 +212,10 @@ func (k footerKeyMap) contextBindings() []key.Binding {
 	case m.shortcutsOpen:
 		return []key.Binding{
 			binding([]string{"esc", "escape", "ctrl+/"}, "Esc", "close"),
+		}
+	case m.aboutOpen:
+		return []key.Binding{
+			binding([]string{"enter", "return", "esc", "escape"}, "Esc", "close"),
 		}
 	case m.connectVisible():
 		return []key.Binding{
