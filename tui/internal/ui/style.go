@@ -6,14 +6,23 @@ import (
 	"unicode"
 	"unicode/utf16"
 
+	"charm.land/bubbles/v2/textinput"
 	"charm.land/lipgloss/v2"
+
+	"github.com/fredimachado/omairc/tui/internal/theme"
 )
 
-// Styles is the shell's small, calm palette. Every color is a fixed hex value:
-// this file never reads the OS, the environment, or the terminal, and lipgloss
-// down-samples the colors to whatever the terminal supports. A later phase
-// feeds Omarchy theme colors in here.
+// Styles is the shell's palette, built from the theme package's derived colors.
+// buildStyles wraps a theme.Colors in lipgloss at the rendering edge; the theme
+// package itself stays lipgloss-free and knows nothing about the widgets below.
+//
+// Colors is kept on the struct so leaf files can derive one-off styles (a
+// background here, a highlight there) without editing this file. Every style
+// below is a fixed render of those colors; a rebuild replaces the palette.
 type Styles struct {
+	// Colors is the source palette every style below is derived from.
+	Colors theme.Colors
+
 	NetworkName        lipgloss.Style
 	NetworkNameFocused lipgloss.Style
 	GroupLabel         lipgloss.Style
@@ -77,37 +86,46 @@ type Styles struct {
 
 	SlashRow      lipgloss.Style
 	SlashSelected lipgloss.Style
+
+	// F1 visual-overhaul chrome. These are additive: the fields above keep
+	// their names and purposes, and every render is derived from theme.Colors.
+	AppTitle      lipgloss.Style
+	Panel         lipgloss.Style
+	PanelFocused  lipgloss.Style
+	PanelTitle    lipgloss.Style
+	SectionHeader lipgloss.Style
+	Badge         lipgloss.Style
+	BadgeUnread   lipgloss.Style
+	BadgeMention  lipgloss.Style
+	BadgeMuted    lipgloss.Style
+	Keycap        lipgloss.Style
+	Footer        lipgloss.Style
+	FooterHint    lipgloss.Style
+	Divider       lipgloss.Style
+	Time          lipgloss.Style
+	Empty         lipgloss.Style
+	Shadow        lipgloss.Style
+	Dimmed        lipgloss.Style
+	StatusOK      lipgloss.Style
+	StatusWarn    lipgloss.Style
+	StatusErr     lipgloss.Style
+	Link          lipgloss.Style
+
+	// Input is the shared text-input style set. newTextInput applies it so the
+	// overlay filters and the composer render the same theme-driven field.
+	Input textinput.Styles
 }
 
-// The palette mirrors Omarchy's calm, low-contrast terminal look: one blue
-// accent, a dim slate for secondary text, amber for unread, rose for mentions.
+// fixedColors is the fixed Tokyo-Night palette the TUI has always rendered.
+// Nick colors, the identicon page fill, and the avatar mix amount are fixed
+// presentation shared with OmaircStyle.qml, so they read Fallback() rather than
+// the live theme.
 var (
-	colorAccent  = lipgloss.Color("#7aa2f7")
-	colorMuted   = lipgloss.Color("#6c7086")
-	colorDim     = lipgloss.Color("#565f89")
-	colorUnread  = lipgloss.Color("#e0af68")
-	colorMention = lipgloss.Color("#f7768e")
-	colorGood    = lipgloss.Color("#9ece6a")
+	fixedColors   = theme.Fallback()
+	nickPalette   = fixedColors.NickPalette
+	nickAvatarMix = fixedColors.NickAvatarMix
+	colorPage     = fixedColors.Page
 )
-
-// nickPalette is the identicon palette. It mirrors nickPalette in
-// src/qml/OmaircStyle.qml. The TUI is dark-only, so only the dark palette
-// values are ported: index 0 is the shared accent, then violet, mint, amber,
-// and rose.
-var nickPalette = []color.Color{
-	colorAccent,
-	lipgloss.Color("#c099ff"),
-	lipgloss.Color("#7fc8a9"),
-	lipgloss.Color("#efb366"),
-	lipgloss.Color("#ed8f9d"),
-}
-
-// nickAvatarMix is the dark-mode mix amount from OmaircStyle.qml.
-const nickAvatarMix = 0.23
-
-// colorPage stands in for the QML pageColor, which the terminal does not have.
-// It is a Tokyo-Night-like background the identicon fill is mixed against.
-var colorPage = lipgloss.Color("#1a1b26")
 
 // avatarFill is the identicon background: nickColor mixed into colorPage. Since
 // there is no terminal page color, this approximates the QML
@@ -127,7 +145,9 @@ func nickPaletteIndex(nick string) int {
 	return hash
 }
 
-// nickColor is the palette color for a nick.
+// nickColor is the palette color for a nick. Nick colors are fixed
+// presentation, never theme-derived, so this reads theme.Colors.NickPalette
+// from the fixed fallback palette.
 func nickColor(nick string) color.Color {
 	return nickPalette[nickPaletteIndex(nick)]
 }
@@ -142,7 +162,9 @@ func initials(nick string) string {
 }
 
 // mixColors linearly mixes tint into base by amount and formats the result as
-// "#rrggbb". It mirrors mixColors in OmaircStyle.qml for opaque colors.
+// "#rrggbb". It mirrors mixColors in OmaircStyle.qml for opaque colors. The
+// theme package keeps its own unexported copy; this thin local helper is only
+// for one-off presentation mixes such as the identicon fill.
 func mixColors(base, tint color.Color, amount float64) color.Color {
 	baseR, baseG, baseB, _ := base.RGBA()
 	tintR, tintG, tintB, _ := tint.RGBA()
@@ -164,68 +186,121 @@ func mixColors(base, tint color.Color, amount float64) color.Color {
 		mix(baseR, tintR), mix(baseG, tintG), mix(baseB, tintB)))
 }
 
-// defaultStyles builds the shell's styles from the fixed palette.
+// defaultStyles builds the shell's styles from the fixed fallback palette.
 func defaultStyles() Styles {
+	return buildStyles(theme.Fallback())
+}
+
+// buildStyles derives every style from colors. The theme package owns the
+// palette; this file is the only place lipgloss sees it.
+func buildStyles(colors theme.Colors) Styles {
 	base := lipgloss.NewStyle()
 	card := base.Border(lipgloss.RoundedBorder()).Padding(0, 1)
+	input := textinput.DefaultDarkStyles()
+	input.Focused.Text = base.Foreground(colors.Foreground)
+	input.Focused.Placeholder = base.Foreground(colors.TextDim)
+	input.Focused.Suggestion = base.Foreground(colors.TextDim)
+	input.Focused.Prompt = base.Foreground(colors.Accent)
+	input.Blurred.Text = base.Foreground(colors.TextMuted)
+	input.Blurred.Placeholder = base.Foreground(colors.TextDim)
+	input.Blurred.Suggestion = base.Foreground(colors.TextDim)
+	input.Blurred.Prompt = base.Foreground(colors.TextDim)
+	input.Cursor.Color = colors.Accent
 	return Styles{
-		NetworkName:        base.Bold(true).Foreground(colorAccent),
-		NetworkNameFocused: base.Bold(true).Foreground(colorUnread),
-		GroupLabel:         base.Foreground(colorDim).Faint(true),
+		Colors: colors,
+
+		NetworkName:        base.Bold(true).Foreground(colors.Accent),
+		NetworkNameFocused: base.Bold(true).Foreground(colors.Unread),
+		GroupLabel:         base.Foreground(colors.TextDim).Faint(true),
 		Conversation:       base,
 		Selected:           base.Bold(true),
-		MutedLine:          base.Foreground(colorDim).Faint(true),
-		MentionRow:         base.Foreground(colorMention),
-		Unread:             base.Foreground(colorUnread),
+		MutedLine:          base.Foreground(colors.TextDim).Faint(true),
+		MentionRow:         base.Foreground(colors.Mention),
+		Unread:             base.Foreground(colors.Unread),
 
-		Topic:       base.Foreground(colorMuted),
-		Action:      base.Foreground(colorMuted).Italic(true),
-		Event:       base.Foreground(colorDim),
-		Notice:      base.Foreground(colorMuted),
-		MentionBody: base.Foreground(colorMention),
-		ConsoleLine: base.Foreground(colorMuted),
+		Topic:       base.Foreground(colors.TextMuted),
+		Action:      base.Foreground(colors.TextMuted).Italic(true),
+		Event:       base.Foreground(colors.TextDim),
+		Notice:      base.Foreground(colors.TextMuted),
+		MentionBody: base.Foreground(colors.Mention),
+		ConsoleLine: base.Foreground(colors.TextMuted),
 		FindMatch:   base.Reverse(true).Bold(true),
 
-		MembersHeader:  base.Bold(true).Foreground(colorAccent),
-		MemberAway:     base.Foreground(colorDim),
-		MemberSelected: base.Bold(true).Foreground(colorUnread),
+		MembersHeader:  base.Bold(true).Foreground(colors.Accent),
+		MemberAway:     base.Foreground(colors.TextDim),
+		MemberSelected: base.Bold(true).Foreground(colors.Unread),
 
-		MemberPresenceOnline: base.Foreground(colorGood),
-		MemberPresenceAway:   base.Foreground(colorUnread),
-		MemberBot:            base.Foreground(colorMuted),
-		MemberAccount:        base.Foreground(colorMuted),
-		MemberStatus:         base.Foreground(colorMuted),
-		MemberTyping:         base.Foreground(colorMuted),
+		MemberPresenceOnline: base.Foreground(colors.Good),
+		MemberPresenceAway:   base.Foreground(colors.Unread),
+		MemberBot:            base.Foreground(colors.TextMuted),
+		MemberAccount:        base.Foreground(colors.TextMuted),
+		MemberStatus:         base.Foreground(colors.TextMuted),
+		MemberTyping:         base.Foreground(colors.TextMuted),
 
-		PeopleCount: base.Bold(true).Foreground(colorMuted),
+		PeopleCount: base.Bold(true).Foreground(colors.TextMuted),
 
-		Prompt:   base.Foreground(colorAccent),
+		Prompt:   base.Foreground(colors.Accent),
 		Composer: base,
 
-		Dimmer: base.Foreground(colorDim).Faint(true),
+		Dimmer: base.Foreground(colors.TextDim).Faint(true),
 
 		SheetCard:        card,
-		SheetTitle:       base.Bold(true).Foreground(colorAccent),
-		SheetTab:         base.Foreground(colorDim),
-		SheetTabActive:   base.Bold(true).Foreground(colorAccent).Underline(true),
-		SheetLabel:       base.Foreground(colorDim).Faint(true),
+		SheetTitle:       base.Bold(true).Foreground(colors.Accent),
+		SheetTab:         base.Foreground(colors.TextDim),
+		SheetTabActive:   base.Bold(true).Foreground(colors.Accent).Underline(true),
+		SheetLabel:       base.Foreground(colors.TextDim).Faint(true),
 		SheetRow:         base,
-		SheetRowFocused:  base.Bold(true).Foreground(colorAccent),
-		SheetField:       base.Foreground(colorMuted),
+		SheetRowFocused:  base.Bold(true).Foreground(colors.Accent),
+		SheetField:       base.Foreground(colors.TextMuted),
 		SheetFieldActive: base.Bold(true),
-		SheetToggleOn:    base.Foreground(colorGood),
-		SheetProblem:     base.Foreground(colorMention),
+		SheetToggleOn:    base.Foreground(colors.Good),
+		SheetProblem:     base.Foreground(colors.Mention),
 		SheetButton:      base,
-		SheetButtonMuted: base.Foreground(colorDim).Faint(true),
-		SheetButtonFocus: base.Bold(true).Foreground(colorAccent),
+		SheetButtonMuted: base.Foreground(colors.TextDim).Faint(true),
+		SheetButtonFocus: base.Bold(true).Foreground(colors.Accent),
 
 		JumpCard:     card,
-		JumpQuery:    base.Foreground(colorAccent),
+		JumpQuery:    base.Foreground(colors.Accent),
 		JumpRow:      base,
 		JumpSelected: base.Bold(true),
-		JumpEmpty:    base.Foreground(colorDim).Faint(true),
+		JumpEmpty:    base.Foreground(colors.TextDim).Faint(true),
 
-		SlashRow:      base.Foreground(colorMuted),
-		SlashSelected: base.Bold(true).Foreground(colorAccent),
+		SlashRow:      base.Foreground(colors.TextMuted),
+		SlashSelected: base.Bold(true).Foreground(colors.Accent),
+
+		AppTitle:      base.Bold(true).Foreground(colors.Accent),
+		Panel:         base.Border(lipgloss.RoundedBorder()).BorderForeground(colors.Border),
+		PanelFocused:  base.Border(lipgloss.RoundedBorder()).BorderForeground(colors.BorderFocus),
+		PanelTitle:    base.Bold(true).Foreground(colors.Foreground),
+		SectionHeader: base.Bold(true).Foreground(colors.TextMuted),
+		Badge:         base.Bold(true).Foreground(colors.Foreground).Background(colors.SurfaceRaised),
+		BadgeUnread:   base.Bold(true).Foreground(colors.Unread),
+		BadgeMention:  base.Bold(true).Foreground(colors.Mention),
+		BadgeMuted:    base.Foreground(colors.TextDim),
+		Keycap:        base.Foreground(colors.Foreground).Background(colors.SurfaceRaised),
+		Footer:        base.Foreground(colors.TextMuted),
+		FooterHint:    base.Foreground(colors.TextDim),
+		Divider:       base.Foreground(colors.Border),
+		Time:          base.Foreground(colors.TextDim),
+		Empty:         base.Foreground(colors.TextDim).Faint(true),
+		Shadow:        base.Foreground(colors.Border),
+		Dimmed:        base.Faint(true),
+		StatusOK:      base.Foreground(colors.Good),
+		StatusWarn:    base.Foreground(colors.Warning),
+		StatusErr:     base.Foreground(colors.Danger),
+		Link:          base.Foreground(colors.Accent).Underline(true),
+
+		Input: input,
 	}
+}
+
+// newTextInput builds a text input from the shell styles. Leaf overlays adopt
+// it so the placeholder, prompt, and theme-driven input styles live in one
+// place instead of each call site rebuilding them.
+func newTextInput(styles Styles, placeholder string, prompt string) textinput.Model {
+	input := textinput.New()
+	input.SetStyles(styles.Input)
+	input.Placeholder = placeholder
+	input.Prompt = prompt
+	return input
 }
