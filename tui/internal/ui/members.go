@@ -4,17 +4,28 @@ import (
 	"fmt"
 	"strings"
 
+	"charm.land/lipgloss/v2"
+
 	"github.com/fredimachado/omairc/tui/internal/controller"
 )
 
-// membersView renders the member column. It is shown only for channels (see
-// Model.membersVisible); the rows already arrive in PREFIX-rank then nick
-// order from the controller, so the view never sorts. A focused member row is
-// highlighted and was chosen with Ctrl+Shift+P. The heading reads
-// "ONLINE - N" like MembersColumn.qml:43.
+// memberGutter is the fixed-width focus column at the left of every member
+// row. A focused row paints an accent bar in it; every other row leaves it
+// blank, so the rows never shift when the member cursor moves.
+const memberGutter = 2
+
+// membersView renders the member column's inner content: the "ONLINE - N"
+// heading, a hairline rule, then one row per member. It is shown only for
+// channels (see Model.membersVisible); the rows already arrive in PREFIX-rank
+// then nick order from the controller, so the view never sorts. A focused
+// member row carries an accent bar and was chosen with Ctrl+Shift+P. The
+// heading reads "ONLINE - N" like MembersColumn.qml:43. The outer card frame
+// is drawn around these lines by the panel chrome, so this returns inner
+// content only.
 func (m *Model) membersView(width, height int) string {
 	lines := []string{
 		m.styles.MembersHeader.Render(fmt.Sprintf("ONLINE - %d", m.ctrl.PeopleCount())),
+		m.styles.Divider.Render(strings.Repeat("─", width)),
 	}
 	for index, member := range m.ctrl.Members() {
 		lines = append(lines, m.memberRow(index, member)...)
@@ -38,10 +49,11 @@ func (m *Model) toggleMembers() {
 }
 
 // memberRow renders one member as one or two physical lines: the chrome line
-// (presence dot, PREFIX label, bot mark, account, typing dots) and, when the
-// network advertises member status, an indented status subline. It mirrors the
-// Row plus the status Text in MembersColumn.qml:184-250. Each sub-line is its
-// own entry so renderColumn/truncateLine keep them from wrapping.
+// (focus bar, presence dot, PREFIX label, bot mark, account, typing dots) and,
+// when the network advertises member status, a muted status subline indented
+// under the label. It mirrors the Row plus the status Text in
+// MembersColumn.qml:184-250. Each sub-line is its own entry so
+// renderColumn/truncateLine keep them from wrapping.
 func (m *Model) memberRow(index int, member controller.MemberSnapshot) []string {
 	label := member.Label
 	if label == "" {
@@ -56,6 +68,11 @@ func (m *Model) memberRow(index int, member controller.MemberSnapshot) []string 
 	focused := m.memberFocus && index == m.memberIndex
 
 	var line strings.Builder
+	if focused {
+		line.WriteString(m.memberFocusBar())
+	} else {
+		line.WriteString(strings.Repeat(" ", memberGutter))
+	}
 	if presenceShown {
 		dot := m.styles.MemberPresenceOnline
 		if member.Away {
@@ -90,9 +107,29 @@ func (m *Model) memberRow(index int, member controller.MemberSnapshot) []string 
 
 	lines := []string{line.String()}
 	if m.ctrl.HasMemberStatus() && member.Status != "" {
-		lines = append(lines, m.styles.MemberStatus.Render("  "+member.Status))
+		lines = append(lines, m.memberStatusLine(member.Status, presenceShown))
 	}
 	return lines
+}
+
+// memberFocusBar is the focused member's gutter cell: an accent block plus the
+// gutter's trailing space. It is a one-off style derived from the live theme
+// accent, matching the other focus affordances, instead of a fixed constant.
+func (m *Model) memberFocusBar() string {
+	bar := lipgloss.NewStyle().Bold(true).Foreground(m.styles.Colors.Accent).Render("▌")
+	return bar + " "
+}
+
+// memberStatusLine renders a member's status as a muted subline aligned under
+// the label. The focus gutter and, when shown, the presence dot's cells are
+// blanked first and the text gets a quiet marker, so the status reads as
+// belonging to the nick above it rather than as a second member row.
+func (m *Model) memberStatusLine(status string, presenceShown bool) string {
+	indent := memberGutter
+	if presenceShown {
+		indent += 2
+	}
+	return m.styles.MemberStatus.Render(strings.Repeat(" ", indent) + "· " + status)
 }
 
 // moveMember moves the focused member row by delta, wrapping at both ends.
