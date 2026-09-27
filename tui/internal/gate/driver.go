@@ -555,6 +555,8 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		err = cmdStatus(rest)
 	case "connect":
 		err = cmdConnect(rest)
+	case "toggle-members":
+		err = cmdToggleMembers(rest)
 	case "composer":
 		err = cmdComposer(rest)
 	case "compare":
@@ -600,6 +602,7 @@ Verbs:
   nick-jump --query TEXT           Ctrl+Shift+K, type the query, then Enter
   status                           Ctrl+backtick (toggle the Status console)
   connect                          Ctrl+, (open the Connect sheet)
+  toggle-members                   Ctrl+Shift+M (toggle the member column)
   composer                         focus the composer (no-op; keeps shared
                                    recipes runnable)
   compare --before PATH --after PATH
@@ -1055,6 +1058,15 @@ func cmdConnect(args []string) error {
 	return err
 }
 
+// cmdToggleMembers hides or shows the channel member column with Ctrl+Shift+M.
+func cmdToggleMembers(args []string) error {
+	if len(args) != 0 {
+		return errors.New("toggle-members takes no arguments")
+	}
+	_, err := newClient().do(Request{Verb: "key", Key: "ctrl+shift+m"})
+	return err
+}
+
 // cmdComposer focuses the composer. The TUI composer owns focus unless a modal
 // is open, so this is a no-op that keeps the shared desktop recipes runnable
 // (the Qt driver's `composer` clicks the text field).
@@ -1391,6 +1403,8 @@ func runRecipeLine(tokens []string, stdout, stderr io.Writer, launchedByRun *boo
 		return cmdStatus(tokens[1:])
 	case "connect":
 		return cmdConnect(tokens[1:])
+	case "toggle-members":
+		return cmdToggleMembers(tokens[1:])
 	case "composer":
 		return cmdComposer(tokens[1:])
 	case "compare":

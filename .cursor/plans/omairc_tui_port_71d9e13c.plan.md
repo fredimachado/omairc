@@ -25,10 +25,10 @@ todos:
     status: completed
   - id: phase-7-slash
     content: "Phase 7: slash command catalog + /list overlay + completer"
-    status: in_progress
+    status: completed
   - id: phase-8-members
     content: "Phase 8: member panel, PREFIX ordering, presence, typing, DMs"
-    status: pending
+    status: in_progress
   - id: phase-9-notify
     content: "Phase 9: mentions, inbox sheet, notifications"
     status: pending

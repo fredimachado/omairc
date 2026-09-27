@@ -128,6 +128,7 @@ Verb table:
 | `nick-jump --query TEXT` | Write `Ctrl+Shift+K`, type `TEXT` into the nick filter, then press `Enter` to open or create that direct message (channels only). |
 | `status` | Write `Ctrl+`` to toggle the Status console. |
 | `connect` | Write `Ctrl+,` to open the Connect sheet (a no-op with no connection model, as in `--demo-server`). |
+| `toggle-members` | Write `Ctrl+Shift+M` to hide/show the channel member column (a no-op on a direct message). |
 | `composer` | Focus the composer. The TUI composer owns focus unless a modal is open, so this is a no-op that keeps the shared desktop recipes runnable. |
 | `compare --before PATH --after PATH` | Assert two PNGs differ. The fence's `test-artifacts/verify/` paths are remapped to `test-artifacts/verify-tui/`. |
 | `screenshot [--feature NAME] [--name NAME]` | Render the current grid to a PNG. Default feature `shell`, default name `screenshot`. |
@@ -167,8 +168,9 @@ missing file, a missing fence, or an empty fence exits non-zero. A recipe line
 whose verb the TUI does not support yet (for example `click-*`) FAILS the run
 rather than silently skipping, so a fence that moves on to a later-phase verb
 is expected to fail until that phase lands. The `run keyboard`,
-`run slash-commands`, and `run slash-complete` fences pass end to end over
-`--demo-server`. Do not soften a fence to make it pass.
+`run slash-commands`, `run slash-complete`, `run toggle-members`,
+`run member-presence`, `run typing`, and `run open-direct-message` fences pass
+end to end over `--demo-server`. Do not soften a fence to make it pass.
 
 ## Evidence
 
@@ -186,8 +188,10 @@ Phase 7 lands the slash catalog and completer: `run slash-commands` and
 Tab/Escape/Up/Down completer). Phase 6 landed the full `keyboard.md` chord map;
 Phase 5 landed the Connect sheet and core conversation navigation. The shell
 renders all three columns: the sidebar (network sections with presence marks
-and typing ellipses), the transcript, and, for channels, a member column with
-status and away text.
+and typing ellipses), the transcript, and, for channels, the Phase 8 member
+column — an `ONLINE - N` heading, green/amber presence dots, away dimming,
+per-member status lines, and the bot mark — with the typing ellipsis beside a
+typing member and a typing footer on the direct-message transcript.
 
 The store-backed verbs (`/pref /avatar /status /autoaway /monitor /ignore
 /mute /highlight`) are in-memory for this phase; disk persistence lands later.
@@ -208,9 +212,8 @@ descending sort, and Enter to join. Do not claim what has not landed:
 - The `Ctrl+Shift+O` link sheet and `Ctrl+Shift+A` inbox sheet open, walk, and
   close with real chords and modal gating, but their backing data stores are
   empty: URL extraction lands in phase 10 and `InboxStore` in phase 9.
-- No typing indicators, presence-driven navigation, notifications, avatars,
-  or preferences beyond the Connect sheet's in-memory toggles. They land in
-  later phases.
+- Notifications, avatars, and preferences beyond the Connect sheet's
+  in-memory toggles land in later phases.
 
 There is no Xvfb, `xdotool`, or X display involved, and never attach to a Qt
 instance. If a mapped feature needs a later phase, report the unmet

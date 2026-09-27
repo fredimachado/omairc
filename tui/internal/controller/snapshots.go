@@ -39,13 +39,15 @@ type MessageSnapshot struct {
 }
 
 // MemberSnapshot is one member-panel row of the selected channel. The fields
-// mirror the roles MemberListModel exposes (src/irc/memberlistmodel.h).
+// mirror the roles MemberListModel exposes (src/irc/memberlistmodel.h),
+// including BotRole.
 type MemberSnapshot struct {
 	Nick    string
 	Label   string
 	Status  string
 	Away    bool
 	Account string
+	Bot     bool
 }
 
 // Conversations returns the sidebar rows in sidebar order: joined channels,
@@ -89,6 +91,7 @@ func (c *Controller) rebuildConversations() {
 
 func (c *Controller) conversationSnapshot(key irc.ConversationKey,
 	conversation *irc.ConversationState, now time.Time) ConversationSnapshot {
+	awayNotify := c.capabilities[key.NetworkID].Contains(irc.CapabilityAwayNotify)
 	row := ConversationSnapshot{
 		Conversation:     conversation.Target,
 		Unread:           conversation.Unread,
@@ -99,7 +102,7 @@ func (c *Controller) conversationSnapshot(key irc.ConversationKey,
 		ConversationName: conversation.Target,
 		Typing:           c.reducer.DirectPeerIsTyping(key, now),
 		Muted:            conversation.Muted,
-		Presence:         conversationPresence(c.reducer, conversation),
+		Presence:         conversationPresence(c.reducer, conversation, awayNotify),
 	}
 	// Avatar and bot are peer facts; a channel row leaves both at the zero
 	// value, matching ConversationListModel.
@@ -112,11 +115,14 @@ func (c *Controller) conversationSnapshot(key irc.ConversationKey,
 }
 
 // conversationPresence maps the reducer's PeerPresence to the sidebar's
-// presence role. A channel row carries no presence. It mirrors
-// conversationPresence in conversationlistmodel.cpp, whose PeerUnknown case is
-// the zero value here because Phase 2 leaves an unreachable peer unpainted.
-func conversationPresence(reducer *irc.EventReducer, conversation *irc.ConversationState) string {
-	if conversation.IsChannel() {
+// presence role. A channel row carries no presence. A direct-message row only
+// paints a dot when the network negotiated away-notify, the same gate that
+// hides another member's away dot; without it the server never pushes AWAY, so
+// a visible peer would look permanently online. It mirrors conversationPresence
+// in conversationlistmodel.cpp, whose PeerUnknown case is the zero value here
+// because Phase 2 leaves an unreachable peer unpainted.
+func conversationPresence(reducer *irc.EventReducer, conversation *irc.ConversationState, awayNotify bool) string {
+	if conversation.IsChannel() || !awayNotify {
 		return ""
 	}
 	switch reducer.PeerPresence(conversation.Key.NetworkID, conversation.Key.NormalizedTarget) {
@@ -177,6 +183,7 @@ func (c *Controller) rebuildMembers() {
 			Status:  view.Status,
 			Away:    view.IsAway(),
 			Account: view.Account,
+			Bot:     view.Bot,
 		})
 	}
 	c.members = rows
