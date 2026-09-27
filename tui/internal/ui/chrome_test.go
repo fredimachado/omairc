@@ -11,6 +11,8 @@ import (
 	"testing"
 
 	"charm.land/lipgloss/v2"
+
+	"github.com/fredimachado/omairc/tui/internal/version"
 )
 
 // composerRowOf returns the rendered composer line from the framed frame, so a
@@ -127,6 +129,45 @@ func TestSlashMenuFloatsWithoutResizingColumns(t *testing.T) {
 			t.Fatalf("sidebar borders erased on row %d (menu rows are %d..%d): %q",
 				index, closedBody-len(m.slashLines()), closedBody-1, string(plain[:sidebar]))
 		}
+	}
+}
+
+// TestFooterVersionSitsAfterTheShortcuts pins the build version's placement: it
+// trails the shortcut list at the far right of the shell footer, flush to the
+// window edge, and it is gone from the sidebar identity footer.
+func TestFooterVersionSitsAfterTheShortcuts(t *testing.T) {
+	m := seededModel(t)
+	rows := strings.Split(m.render(), "\n")
+	footer := ansiPattern.ReplaceAllString(rows[len(rows)-1], "")
+
+	if !strings.HasSuffix(footer, version.Value) {
+		t.Fatalf("footer must end with the version %q: %q", version.Value, footer)
+	}
+	if got := lipgloss.Width(rows[len(rows)-1]); got != m.width {
+		t.Fatalf("footer width = %d, want the version flush to the %d-cell window", got, m.width)
+	}
+	// It follows the shortcut list, not the status line.
+	versionAt := strings.Index(footer, version.Value)
+	shortcutsAt := strings.Index(footer, "Ctrl+/")
+	if shortcutsAt < 0 || versionAt <= shortcutsAt {
+		t.Fatalf("the version must trail the shortcut list: %q", footer)
+	}
+
+	sidebar := ansiPattern.ReplaceAllString(m.sidebarView(sidebarWidth(m.width), m.bodyHeight()), "")
+	if strings.Contains(sidebar, version.Value) {
+		t.Fatalf("the sidebar identity footer still shows the version:\n%s", sidebar)
+	}
+}
+
+// TestFooterVersionDropsWhenTooNarrow pins the degradation: a window too narrow
+// for the status line, the shortcut list, and the version keeps the status and
+// drops the version, rather than rendering it cut in half.
+func TestFooterVersionDropsWhenTooNarrow(t *testing.T) {
+	m := resizeModel(t, seededModel(t), 40, 24)
+	rows := strings.Split(m.render(), "\n")
+	footer := ansiPattern.ReplaceAllString(rows[len(rows)-1], "")
+	if strings.Contains(footer, version.Value) {
+		t.Fatalf("a %d-cell footer must drop the version: %q", m.width, footer)
 	}
 }
 

@@ -14,10 +14,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- The TUI composer is inset and centered under the transcript column with a
-  raised surface fill, so it reads as chrome grouped with the transcript
-  instead of a bare line spanning the window. The slash-completion menu opens
-  over the same column.
+- The TUI composer is a window-level bar spanning the window, independent of
+  the sidebar and the member panel, so toggling a column never moves it. The
+  slash-completion menu floats over the transcript column without resizing any
+  column.
 - The TUI sidebar draws a divider rule above every network section after the
   first, so a multi-network roster reads as distinct blocks.
 - The TUI transcript separates adjacent rows with a blank line and keeps the
@@ -28,6 +28,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   text, so both blocks have internal breathing room instead of a one-row band.
   A highlighted row is therefore taller than a plain one, and the transcript's
   row-to-line mapping resolves rows through an index rather than a fixed stride.
+- TUI overlay cards are anchored to a fixed top row, so a shorter jump filter
+  or a Connect tab switch no longer moves the card while you work in it.
+- The TUI Connect sheet windows its fields on a short terminal, pinning the
+  title and the validation and action rows, so the focused field and Apply stay
+  reachable.
+- TUI member-list nicks carry the transcript's per-nick palette color, so one
+  nick reads as the same person in both places.
+- The TUI build version moved from the sidebar identity footer to the bottom
+  right of the shell footer, trailing the shortcut list.
 
 ## [1.0.4] - 2026-09-25
 

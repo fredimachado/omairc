@@ -5,6 +5,8 @@ import (
 
 	"charm.land/bubbles/v2/help"
 	"charm.land/lipgloss/v2"
+
+	"github.com/fredimachado/omairc/tui/internal/version"
 )
 
 // footerHeight is the single row the status/help footer occupies below the
@@ -68,11 +70,27 @@ func (m *Model) footerStatusView() string {
 }
 
 // footerView lays the status line on the left and the contextual help on the
-// right, separated out to the window width. The help is rendered from
-// footerKeyMap, so the hint set is the chord map, never a hand-written string.
+// right, separated out to the window width, with the build version trailing the
+// help at the far right. The help is rendered from footerKeyMap, so the hint set
+// is the chord map, never a hand-written string.
 func (m *Model) footerView() string {
 	left := m.footerStatusView()
-	available := m.width - lipgloss.Width(left) - 1
+	// The build version sits at the bottom right, after the shortcut list. It is
+	// dropped only when the status line and two gutters already fill the row, so
+	// it is never rendered cut in half on a narrow terminal.
+	label := m.styles.FooterHint.Render(version.Value)
+	version := ""
+	if m.width-lipgloss.Width(left)-2 >= lipgloss.Width(label) {
+		version = label
+	}
+	// The help gets whatever is left once the status, the version, and the
+	// separating space are reserved, so the help model can never crowd the
+	// version off the right edge.
+	reserved := lipgloss.Width(version)
+	if version != "" {
+		reserved++ // the space between the shortcut list and the version
+	}
+	available := m.width - lipgloss.Width(left) - 1 - reserved
 	if available < 0 {
 		available = 0
 	}
@@ -80,9 +98,13 @@ func (m *Model) footerView() string {
 	h := m.help
 	h.SetWidth(available)
 	right := h.View(footerKeyMap{m: m})
-	gap := m.width - lipgloss.Width(left) - lipgloss.Width(right)
+	gap := m.width - lipgloss.Width(left) - lipgloss.Width(right) - reserved
 	if gap < 1 {
 		gap = 1
 	}
-	return truncateLine(left+strings.Repeat(" ", gap)+right, m.width)
+	line := left + strings.Repeat(" ", gap) + right
+	if version != "" {
+		line += " " + version
+	}
+	return truncateLine(line, m.width)
 }

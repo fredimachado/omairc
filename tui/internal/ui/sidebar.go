@@ -8,7 +8,6 @@ import (
 	"charm.land/lipgloss/v2"
 
 	"github.com/fredimachado/omairc/tui/internal/controller"
-	"github.com/fredimachado/omairc/tui/internal/version"
 )
 
 // The sidebar's direct-message avatar is two half-block cells, matching the
@@ -71,18 +70,18 @@ func (m *Model) sidebarView(width, height int) string {
 	// Reserve the bottom row for the identity footer: clamp the roster to
 	// height-1 and append the footer, so the column is exactly height lines.
 	lines := fitLines(roster, height-1, false)
-	lines = append(lines, m.identityFooterLine(width))
+	lines = append(lines, m.identityFooterLine())
 	return renderColumn(m.styles.Conversation, width, lines)
 }
 
 // identityFooterLine renders the sidebar's bottom identity row as an initials
 // chip, the self nick, its presence word, and an "inbox N" pill when the
-// waiting list is non-empty, with the build version trailing when the column is
-// wide enough. The chip shows "?" for an empty nick, matching the direct-message
-// identicon. It mirrors ServerListColumn.qml's identityFooter
+// waiting list is non-empty. The chip shows "?" for an empty nick, matching the
+// direct-message identicon. It mirrors ServerListColumn.qml's identityFooter
 // (selfNickLabel, selfPresenceLabel, inboxBadge). The footer is visual only;
-// Ctrl+Shift+A reaches the sheet.
-func (m *Model) identityFooterLine(width int) string {
+// Ctrl+Shift+A reaches the sheet. The build version is not here: it sits at the
+// bottom right of the shell footer, after the shortcut list.
+func (m *Model) identityFooterLine() string {
 	if m.ctrl == nil {
 		return ""
 	}
@@ -111,11 +110,7 @@ func (m *Model) identityFooterLine(width int) string {
 		segments = append(segments, m.badge(m.styles.BadgeUnread, fmt.Sprintf("inbox %d", count)))
 	}
 
-	footer := strings.Join(segments, " ")
-	if label := m.styles.FooterHint.Render(version.Value); lipgloss.Width(footer)+lipgloss.Width(label)+1 <= width {
-		footer += " " + label
-	}
-	return footer
+	return strings.Join(segments, " ")
 }
 
 // networkSeparator is the rule drawn between two network sections in the
