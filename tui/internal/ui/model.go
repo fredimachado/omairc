@@ -45,13 +45,27 @@ type MonitorArrivalMsg struct{ NetworkID, Author, Body string }
 // mirroring Backend's notificationActivated signal.
 type NotificationActivatedMsg = notify.Activation
 
+// AvatarReadyMsg tells the shell a background avatar fetch cached a new image
+// and it should re-render.
+type AvatarReadyMsg struct{}
+
+// AvatarSource is the nil-able avatar seam. The shell asks it to schedule a
+// peer image fetch and, once cached, to rasterize it into a half-block glyph.
+// The real implementation is internal/avatar; the interface keeps the network
+// path out of the view package.
+type AvatarSource interface {
+	Ensure(rawURL string, layoutPixels int)
+	Block(rawURL string, layoutPixels, cols int) (string, bool)
+}
+
 // Model is the Bubble Tea shell state over one controller and the Connect
 // sheet's connection model. conn is nil in the seeded demo, which has no
 // profile to edit.
 type Model struct {
-	ctrl   *controller.Controller
-	conn   *connection.Connection
-	styles Styles
+	ctrl    *controller.Controller
+	conn    *connection.Connection
+	avatars AvatarSource
+	styles  Styles
 
 	width  int
 	height int
@@ -107,6 +121,14 @@ type Model struct {
 
 	// statusReturnID is the conversation Escape returns to after Status.
 	statusReturnID string
+
+	// Phase 10 URL policy state. lastOpenedURL mirrors OmaircWindow.qml's
+	// lastOpenedUrl (the most recent URL openAllowedURL allowed);
+	// suppressExternalOpen mirrors suppressExternalUrlOpen, the latch that
+	// keeps tests from launching a real OS handler while still exercising the
+	// allowlist.
+	lastOpenedURL        string
+	suppressExternalOpen bool
 }
 
 // focusArea names where keyboard input goes. The Connect sheet and the
@@ -158,6 +180,7 @@ func New(ctrl *controller.Controller, conn *connection.Connection) *Model {
 	} else {
 		_ = m.composer.Focus()
 	}
+	m.ensureAvatars()
 	return m
 }
 
@@ -166,6 +189,24 @@ func (m *Model) Init() tea.Cmd { return nil }
 
 // SetNotifier installs the desktop notifier. A nil notifier is a no-op.
 func (m *Model) SetNotifier(n notify.Notifier) { m.notifier = n }
+
+// SetAvatarSource installs the avatar store. A nil source leaves every direct
+// row on its identicon.
+func (m *Model) SetAvatarSource(s AvatarSource) { m.avatars = s }
+
+// ensureAvatars schedules a fetch for every direct-message peer with an avatar
+// URL. It is a no-op without a controller, a source, or the /pref avatars
+// toggle, and it never blocks.
+func (m *Model) ensureAvatars() {
+	if m.ctrl == nil || m.avatars == nil || !m.ctrl.PrefAvatarsEnabled() {
+		return
+	}
+	for _, row := range m.ctrl.Conversations() {
+		if row.Direct && row.Avatar != "" {
+			m.avatars.Ensure(row.Avatar, avatarGlyphPixelSize)
+		}
+	}
+}
 
 // Update folds one Bubble Tea message. Quit chords leave the program; the
 // Connect sheet and the overlays are modal; otherwise the navigation chords
@@ -178,6 +219,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.resize()
 		return m, nil
 	case NotifyMsg:
+		m.ensureAvatars()
+		return m, nil
+	case AvatarReadyMsg:
+		// A background avatar fetch cached an image; the next render reads it.
 		return m, nil
 	case tea.FocusMsg:
 		// The terminal regained focus. Mirror win.active and consume the

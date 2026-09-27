@@ -24,6 +24,8 @@ When the two disagree about the shared contract, the root file wins.
   harness behind `--demo-server`, mirrors `src/irc/ircdemoserver.cpp`),
   `internal/ui/`
   (Bubble Tea shell, mirrors `src/qml/` plus `OmaircWindow.qml`),
+  `internal/avatar/` (peer-avatar fetch, bounded decode, cache, and
+  half-block raster), `internal/openurl/` (the OS URL-handler seam),
   `internal/gate/` (the PTY parity driver: VT grid, OSC title capture, key
   writer, screenshot), `internal/version/` (injected build version), and
   `bin/` (gate scripts).
@@ -34,7 +36,16 @@ When the two disagree about the shared contract, the root file wins.
 - `internal/irc` is the portable core. It never imports `net`, `os`, or
   `crypto/tls`; sockets, the filesystem, and TLS live in `internal/session`.
   `bin/check-conventions` gates this mechanically (test files may read
-  testdata with `os`).
+  testdata with `os`). One documented exception: `internal/irc/avatarurl.go`
+  ports `src/irc/ircavatarurl.cpp` (QUrl + QHostAddress), so it may import
+  `net/url` and `net/netip` — pure URL and IP-literal parsing, not a socket.
+  The gate lists that file explicitly; do not widen the exemption.
+- `internal/avatar` and `internal/openurl` are integration packages like
+  `internal/notify`. `internal/avatar` owns `net/http`, the DNS-pinned
+  (SSRF-safe) fetch, bounded png/jpeg/gif decode, the 64-entry cache, and the
+  half-block raster; it never renders lipgloss. `internal/openurl` is the
+  `xdg-open` seam on Linux with no-op stubs elsewhere. `internal/ui` may
+  import both; it still must not import `internal/irc`.
 - `internal/session` is the only product package that opens sockets or TLS;
   `internal/gate` is the dev-only PTY driver (a Unix socket plus `os/exec`),
   not product code. All timers, reconnects, the ping watchdog, the
@@ -83,9 +94,11 @@ version the moment its package is first imported — never earlier, because
 - `github.com/creack/pty` v1.1.24 — imported in Phase 4 by `internal/gate`
   (Unix PTY, with Windows/ConPTY support).
 - `github.com/ergochat/irc-go` (`ircmsg`, `ircreader`, `ircfmt`, `ircutils`)
-  — not imported in Phase 1: the wire layer is a hand-port of `src/irc/` so
-  the byte-for-byte behavior and the mirrored test matrices stay the contract.
-  Its first import is expected in Phase 10 (`ircfmt`) and later (`ircreader`).
+  — still not imported. The wire layer stays a hand-port of `src/irc/` so the
+  byte-for-byte behavior and the mirrored test matrices stay the contract.
+  Phase 10 hand-ported the emphasis half of `IrcTextFormatter` as well
+  (`internal/irc/textformat.go`, consistent with `plaintext.go`), so `ircfmt`
+  was not needed; a later `ircreader` import is the remaining candidate.
 
 Update this list and the import that pulls the dependency in the same change.
 Do not pre-add requires to `go.mod`; tidy will revert them.
@@ -185,6 +198,13 @@ mark, typing ellipsis) and the DM transcript typing footer live in
 Phase 9 adds the session-inbox store, the `internal/notify` desktop notifier
 (D-Bus on Linux, no-op stubs elsewhere), the `Ctrl+Shift+A` sheet, the identity
 footer badge, and terminal-focus gating via `tea.View.ReportFocus`.
+Phase 10 adds the hand-ported emphasis renderer (`internal/irc/textformat.go`,
+wired through `internal/ui/transcript.go`), the URL allowlist and the real
+`Ctrl+Shift+O` link-sheet source (`internal/ui/urllinks.go`), the
+`internal/openurl` seam behind `openAllowedUrl`, and the sidebar
+direct-message avatar glyph: an identicon by default, or a half-block
+truecolor raster when `internal/avatar` has the peer image cached and the
+terminal advertises 24-bit color.
 
 ## Chords
 

@@ -785,7 +785,7 @@ func (r *ReplyRouter) DispatchAvatar(command irc.Command, surface irc.ComposerSu
 		return r.replyDispatchOwnMetadataClear(sess, irc.AvatarKey())
 	}
 
-	resolved := avatarMetadataValue(command.Argument)
+	resolved := irc.AvatarMetadataValue(command.Argument)
 	if resolved == "" {
 		return r.replyEchoMetadataCommandFeedback(surface, networkID,
 			"Avatar must be an HTTPS URL or an email address.")

@@ -14,6 +14,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
+	"github.com/fredimachado/omairc/tui/internal/avatar"
 	"github.com/fredimachado/omairc/tui/internal/connection"
 	"github.com/fredimachado/omairc/tui/internal/controller"
 	"github.com/fredimachado/omairc/tui/internal/demo"
@@ -88,6 +89,16 @@ func run(args []string, stdout, stderr io.Writer) int {
 	// rebuilt a snapshot. Coalesce the wake-ups onto one dispatcher instead.
 	model := ui.New(c, conn)
 	p := tea.NewProgram(model)
+
+	// Peer avatars need 24-bit color for the half-block raster. Without it the
+	// shell falls back to the nick identicon, so no store is created.
+	if avatar.TruecolorSupported() {
+		avatars := avatar.New(true, func(string) {
+			p.Send(ui.AvatarReadyMsg{})
+		})
+		model.SetAvatarSource(avatars)
+		defer avatars.Close()
+	}
 
 	// The desktop notifier is platform-specific (internal/notify). Its activation
 	// callback fires from the D-Bus goroutine, so p.Send is the normal path.
