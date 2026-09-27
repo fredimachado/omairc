@@ -1,0 +1,88 @@
+#!/usr/bin/env sh
+# TUI gate: vet, test, build, and assert the CLI contract.
+#
+# Run from anywhere. CI runs this directly (see .github/workflows/tui.yml),
+# and the root bin/test calls it when go is on PATH.
+set -eu
+
+ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)"
+TUI="$ROOT/tui"
+cd "$TUI"
+
+if ! command -v go >/dev/null 2>&1; then
+  echo "go is required to test omairc-tui." >&2
+  exit 1
+fi
+
+go vet ./...
+go test ./...
+
+"$TUI/bin/build"
+BIN="$TUI/bin/omairc-tui"
+
+VERSION="$("$ROOT/bin/version")"
+got="$("$BIN" --version)"
+test "$got" = "omairc-tui $VERSION" || {
+  echo "omairc-tui --version must print exactly omairc-tui $VERSION" >&2
+  printf 'got: %s\n' "$got" >&2
+  exit 1
+}
+
+assert_not_version_line() {
+  first_line=$(printf '%s\n' "$1" | head -n 1)
+  case "$first_line" in
+    omairc-tui\ [0-9]*)
+      echo "$2 printed the version line." >&2
+      exit 1
+      ;;
+  esac
+}
+
+is_json_object() {
+  case "$1" in
+    \{*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+set +e
+HELP_OUTPUT="$("$BIN" --help 2>&1)"
+HELP_STATUS=$?
+set -e
+if [ "$HELP_STATUS" -ne 0 ]; then
+  echo "omairc-tui --help failed." >&2
+  exit 1
+fi
+assert_not_version_line "$HELP_OUTPUT" "omairc-tui --help"
+if is_json_object "$HELP_OUTPUT"; then
+  echo "omairc-tui --help must not print JSON." >&2
+  exit 1
+fi
+for token in --version --help --demo-server; do
+  printf '%s\n' "$HELP_OUTPUT" | grep -Fq -- "$token" || {
+    echo "omairc-tui --help must mention $token" >&2
+    exit 1
+  }
+done
+
+set +e
+"$BIN" --demo-server >/dev/null 2>&1
+DEMO_STATUS=$?
+set -e
+if [ "$DEMO_STATUS" -eq 0 ]; then
+  echo "omairc-tui --demo-server must fail closed until Phase 3 seeds the demo world." >&2
+  exit 1
+fi
+
+# OMAIRC_BUILD_VERSION must override version.pri, matching the Qt contract.
+OVERRIDE_VERSION="${VERSION}+master.gdeadbeef"
+OMAIRC_BUILD_VERSION="$OVERRIDE_VERSION" "$TUI/bin/build"
+override_got="$("$BIN" --version)"
+test "$override_got" = "omairc-tui $OVERRIDE_VERSION" || {
+  echo "OMAIRC_BUILD_VERSION must appear in omairc-tui --version" >&2
+  printf 'got: %s\n' "$override_got" >&2
+  exit 1
+}
+
+# Leave the tree with a normal build.
+"$TUI/bin/build"

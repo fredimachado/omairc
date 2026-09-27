@@ -214,6 +214,14 @@ bin/test-desktop
 bin/test-live
 ```
 
+The TUI port lives in `tui/` as its own Go module; its gate is `tui/bin/test`
+(vet, tests, build, CLI contract), which root `bin/test` runs when `go` is on
+`PATH`. The shared contract now spans both binaries: `version.pri` stays the
+single version source, and `IrcConversationCause`, `IrcServerFeatures`,
+`IrcSecretPolicy`, `orderedMembers`, and the feature map under
+`.cursor/skills/verify-omairc/features/*.md` must stay identical between Qt
+and TUI. TUI-scoped rules live in `tui/AGENTS.md`.
+
 `bin/test-desktop` needs Xvfb, Xauthority, xdotool, and ImageMagick. It
 launches `./build/omairc --demo-server` as a black box and is not in CI.
 `bin/test-live` needs Docker. It drives Ergo, Solanum, and ngIRCd, then the

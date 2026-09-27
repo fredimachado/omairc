@@ -3,6 +3,11 @@ set -eu
 
 ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 "$ROOT/bin/check-conventions"
+if command -v go >/dev/null 2>&1; then
+  "$ROOT/tui/bin/test"
+else
+  echo "Skipping tui/bin/test: go is not on PATH." >&2
+fi
 python3 -m unittest -v tests.test_derive_build_versions
 TEST_STATE="$(mktemp -d "${TMPDIR:-/tmp}/omairc-tests.XXXXXX")"
 STALE_VERSION_HEADER="$ROOT/omaircversion.h"

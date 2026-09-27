@@ -1,0 +1,64 @@
+name: TUI
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'tui/**'
+      - 'bin/version'
+      - 'version.pri'
+      - '.github/workflows/tui.yml'
+  push:
+    branches:
+      - master
+    paths:
+      - 'tui/**'
+      - 'bin/version'
+      - 'version.pri'
+      - '.github/workflows/tui.yml'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  base:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require master as the pull request base
+        run: |
+          test "${{ github.base_ref }}" = master || {
+            echo "This pull request targets ${{ github.base_ref }}, not master." >&2
+            exit 1
+          }
+
+  # No `needs: base`: `base` is skipped on push, and a skipped dependency skips
+  # its dependents too, so the TUI job would never run on master. Keep the two
+  # jobs independent, matching test.yml. The matrix stays a single entry so
+  # macOS/Windows are a one-line extension when those targets land.
+  tui:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+          cache-dependency-path: tui/go.sum
+
+      - name: Run tui/bin/test
+        run: tui/bin/test
