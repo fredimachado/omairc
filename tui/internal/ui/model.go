@@ -265,6 +265,22 @@ func (m *Model) applyStyles(styles Styles) {
 	m.composer.SetStyles(styles.Input)
 	m.help.Styles = helpStyles(styles)
 	m.spinner.Style = styles.StatusWarn
+	m.restyleOverlayInputs()
+}
+
+// restyleOverlayInputs re-applies the shared input style set to the overlay
+// filters and the Connect sheet. Those text inputs are built when their sheet
+// opens (or, for Connect, when a field takes focus), so without this a live
+// ThemeChangedMsg would restyle only the composer and leave an already-open
+// sheet on the previous palette. SetStyles keeps each input's value, width,
+// and focus, so the call is behavior-neutral while the sheet is closed.
+func (m *Model) restyleOverlayInputs() {
+	input := m.styles.Input
+	m.jump.input.SetStyles(input)
+	m.nick.input.SetStyles(input)
+	m.link.input.SetStyles(input)
+	m.list.input.SetStyles(input)
+	m.sheet.input.SetStyles(input)
 }
 
 // nextThemeChange arms one read from the watcher's channel. The read blocks off
