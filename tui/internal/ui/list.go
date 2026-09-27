@@ -2,9 +2,12 @@ package ui
 
 import (
 	"fmt"
+	"strings"
 
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
+	"charm.land/lipgloss/v2/table"
 
 	"github.com/fredimachado/omairc/tui/internal/controller"
 )
@@ -22,11 +25,17 @@ type channelListState struct {
 	selected int
 }
 
+// channelListRowCap bounds how many streamed rows the overlay renders. The
+// controller can report thousands of channels; the cap keeps one render cheap
+// while the visible window stays the real limiter (the shared card frame
+// clips it).
+const channelListRowCap = 200
+
 func newChannelListState() channelListState {
-	input := textinput.New()
-	input.Placeholder = "Filter channels"
-	input.Prompt = "› "
-	return channelListState{input: input}
+	// The filter adopts the shared text input. Its styles are re-applied from
+	// the live palette when the overlay opens, because model.go owns
+	// construction and does not know this input's styles.
+	return channelListState{input: newTextInput(defaultStyles(), "Filter channels", "› ")}
 }
 
 // channelListVisible reports whether the /list overlay is open.
@@ -40,6 +49,7 @@ func (m *Model) openChannelList() {
 	m.closeAllOverlays()
 	m.list.open = true
 	m.list.selected = 0
+	m.list.input.SetStyles(m.styles.Input)
 	m.list.input.SetValue(m.ctrl.ChannelListSnapshot().Filter)
 	m.list.input.SetWidth(m.overlayInputWidth())
 	m.composer.Blur()
@@ -152,27 +162,96 @@ func (m *Model) channelListCardBody(inner int) []string {
 	if snapshot.Mask != "" {
 		title += " · " + snapshot.Mask
 	}
-	lines := []string{m.styles.SheetTitle.Render(title) + "  " + m.list.input.View()}
+	header := m.styles.SheetTitle.Render(title) + "  " + m.list.input.View()
+	lines := []string{truncateLine(header, inner)}
 	switch {
 	case snapshot.Loading:
-		lines = append(lines, m.styles.JumpEmpty.Render("Loading..."))
+		lines = append(lines, m.styles.Empty.Render("Loading..."))
 	case snapshot.Error != "":
-		lines = append(lines, m.styles.SheetProblem.Render(snapshot.Error))
+		lines = append(lines, m.styles.StatusErr.Render(snapshot.Error))
 	case len(snapshot.Rows) == 0:
-		lines = append(lines, m.styles.JumpEmpty.Render("No matches"))
+		lines = append(lines, m.styles.Empty.Render("No matches"))
 	default:
-		for index, row := range snapshot.Rows {
-			if index >= 200 {
-				break
-			}
-			style := m.styles.JumpRow
-			if index == m.list.selected {
-				style = m.styles.JumpSelected
-			}
-			label := fmt.Sprintf("%-24s %5d  %s", row.Channel, row.Users,
-				m.ctrl.PlainChannelTopic(row.Topic))
-			lines = append(lines, style.Render(truncateLine(label, inner)))
-		}
+		lines = append(lines, m.channelListTableLines(snapshot.Rows, inner)...)
 	}
 	return lines
+}
+
+// channelListTableLines lays the streamed rows into a lipgloss table: one
+// CHANNEL / USERS / TOPIC header row, a hairline rule under it, zebra-striped
+// rows, right-aligned user counts, and a full-width fill on the highlighted
+// row. Each element is one rendered line, truncated to inner so the shared card
+// frame never widens. It mirrors the Qt list's columns and keeps the
+// controller's 200-row cap.
+func (m *Model) channelListTableLines(rows []controller.ChannelListRow, inner int) []string {
+	t := table.New().
+		Headers("CHANNEL", "USERS", "TOPIC").
+		Border(lipgloss.NormalBorder()).
+		BorderStyle(m.styles.Divider).
+		BorderTop(false).
+		BorderBottom(false).
+		BorderLeft(false).
+		BorderRight(false).
+		BorderColumn(false).
+		BorderHeader(true).
+		Wrap(false).
+		Width(inner)
+	for index, row := range rows {
+		if index >= channelListRowCap {
+			break
+		}
+		t.Row(row.Channel, fmt.Sprintf("%d", row.Users),
+			m.ctrl.PlainChannelTopic(row.Topic))
+	}
+	t.StyleFunc(func(row, col int) lipgloss.Style {
+		switch {
+		case row == table.HeaderRow:
+			return channelListCellStyle(col, m.styles.SectionHeader)
+		case row == m.list.selected:
+			return channelListCellStyle(col, m.channelListSelectedStyle())
+		case row%2 == 1:
+			return channelListCellStyle(col, m.channelListZebraStyle())
+		default:
+			return channelListCellStyle(col, m.channelListRowStyle())
+		}
+	})
+	// The shared card frame is the one visible box, so the table keeps only its
+	// header rule and every rendered line is clamped to the content width.
+	rendered := strings.Split(t.String(), "\n")
+	for index, line := range rendered {
+		rendered[index] = truncateLine(line, inner)
+	}
+	return rendered
+}
+
+// channelListCellStyle gives every cell a one-cell gutter (so adjacent columns
+// never touch) and right-aligns the USERS column.
+func channelListCellStyle(col int, style lipgloss.Style) lipgloss.Style {
+	style = style.Padding(0, 1)
+	if col == 1 {
+		style = style.Align(lipgloss.Right)
+	}
+	return style
+}
+
+// channelListRowStyle is a plain table cell: the theme's foreground on its
+// default surface.
+func (m *Model) channelListRowStyle() lipgloss.Style {
+	return lipgloss.NewStyle().Foreground(m.styles.Colors.Foreground)
+}
+
+// channelListZebraStyle is the alternating row fill.
+func (m *Model) channelListZebraStyle() lipgloss.Style {
+	return lipgloss.NewStyle().
+		Foreground(m.styles.Colors.Foreground).
+		Background(m.styles.Colors.Surface)
+}
+
+// channelListSelectedStyle is the highlighted row: the selection surface with
+// the window background as ink, so the whole row reads as one filled band.
+func (m *Model) channelListSelectedStyle() lipgloss.Style {
+	return lipgloss.NewStyle().
+		Bold(true).
+		Foreground(m.styles.Colors.Background).
+		Background(m.styles.Colors.Selection)
 }
