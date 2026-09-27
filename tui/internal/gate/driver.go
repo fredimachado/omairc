@@ -201,6 +201,7 @@ type daemon struct {
 	proc     *Process
 	screen   *Screen
 	mu       sync.Mutex
+	lastOut  time.Time
 	listener net.Listener
 	quitOnce sync.Once
 	quitCh   chan struct{}
@@ -234,7 +235,7 @@ func Serve(opts ServeOptions) error {
 		return fmt.Errorf("listen on %s: %w", opts.Socket, err)
 	}
 
-	d := &daemon{opts: opts, screen: NewScreen(opts.Cols, opts.Rows), listener: listener, quitCh: make(chan struct{})}
+	d := &daemon{opts: opts, screen: NewScreen(opts.Cols, opts.Rows), listener: listener, quitCh: make(chan struct{}), lastOut: time.Now()}
 
 	args := []string{}
 	if opts.Demo {
@@ -257,6 +258,7 @@ func Serve(opts ServeOptions) error {
 	proc.OnOutput(func(b []byte) {
 		d.mu.Lock()
 		d.screen.Feed(b)
+		d.lastOut = time.Now()
 		d.mu.Unlock()
 	})
 	// The daemon must not outlive its PTY child. Watch the child and stop the
@@ -346,19 +348,25 @@ func (d *daemon) respond(req Request) Response {
 		if err != nil {
 			return failure(err)
 		}
+		after := time.Now()
 		if _, err := d.proc.Write(b); err != nil {
 			return failure(err)
 		}
+		d.waitRedraw(after)
 		return Response{OK: true}
 	case "type":
+		after := time.Now()
 		if _, err := d.proc.Write([]byte(req.Text)); err != nil {
 			return failure(err)
 		}
+		d.waitRedraw(after)
 		return Response{OK: true}
 	case "send":
+		after := time.Now()
 		if _, err := d.proc.Write(append([]byte(req.Text), '\r')); err != nil {
 			return failure(err)
 		}
+		d.waitRedraw(after)
 		return Response{OK: true}
 	case "screenshot":
 		return d.screenshot(req)
@@ -376,6 +384,57 @@ func (d *daemon) title() string {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	return d.screen.Title()
+}
+
+// screenQuiet is how long the PTY must be silent before the grid is considered
+// settled; screenSettleMax bounds the wait for a screen that never redraws.
+const (
+	screenQuiet     = 80 * time.Millisecond
+	screenSettleMax = 2 * time.Second
+)
+
+// waitRedraw blocks until the PTY has repainted after `after` and then stayed
+// quiet for screenQuiet. A key/type/send request calls it so a following
+// screenshot or compare sees the new frame instead of racing the redraw. A
+// chord that produces no output returns after screenQuiet.
+func (d *daemon) waitRedraw(after time.Time) {
+	deadline := time.Now().Add(screenSettleMax)
+	sawOutput := false
+	for {
+		d.mu.Lock()
+		last := d.lastOut
+		d.mu.Unlock()
+		if last.After(after) {
+			sawOutput = true
+		}
+		if sawOutput && time.Since(last) >= screenQuiet {
+			return
+		}
+		if !sawOutput && time.Since(after) >= screenQuiet {
+			return
+		}
+		if time.Now().After(deadline) {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+// waitQuiet blocks until the PTY has been silent for screenQuiet.
+func (d *daemon) waitQuiet() {
+	deadline := time.Now().Add(screenSettleMax)
+	for {
+		d.mu.Lock()
+		last := d.lastOut
+		d.mu.Unlock()
+		if time.Since(last) >= screenQuiet {
+			return
+		}
+		if time.Now().After(deadline) {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
 }
 
 func (d *daemon) status() Response {
@@ -404,6 +463,7 @@ func (d *daemon) screenshot(req Request) Response {
 	if !validSegment(name) {
 		return failure(fmt.Errorf("invalid screenshot name %q", name))
 	}
+	d.waitQuiet()
 	d.mu.Lock()
 	pngBytes, err := d.screen.PNG()
 	d.mu.Unlock()
@@ -489,6 +549,8 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		err = cmdUnread(rest)
 	case "jump":
 		err = cmdJump(rest)
+	case "nick-jump":
+		err = cmdNickJump(rest)
 	case "status":
 		err = cmdStatus(rest)
 	case "connect":
@@ -533,6 +595,7 @@ Verbs:
   walk --down|--up [--times N]     Alt+Down / Alt+Up N times
   unread                           Alt+A (next unread)
   jump --query TEXT                Ctrl+K, type the query, then Enter
+  nick-jump --query TEXT           Ctrl+Shift+K, type the query, then Enter
   status                           Ctrl+backtick (toggle the Status console)
   connect                          Ctrl+, (open the Connect sheet)
   compare --before PATH --after PATH
@@ -940,6 +1003,36 @@ func cmdJump(args []string) error {
 	return err
 }
 
+// cmdNickJump drives the Ctrl+Shift+K nick-jump overlay: open it, type the
+// query, then Enter.
+func cmdNickJump(args []string) error {
+	query := ""
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--query":
+			if i+1 >= len(args) {
+				return errors.New("nick-jump --query needs text")
+			}
+			i++
+			query = args[i]
+		default:
+			return fmt.Errorf("unknown nick-jump argument %q", args[i])
+		}
+	}
+	if query == "" {
+		return errors.New("nick-jump requires --query")
+	}
+	c := newClient()
+	if _, err := c.do(Request{Verb: "key", Key: "ctrl+shift+k"}); err != nil {
+		return err
+	}
+	if _, err := c.do(Request{Verb: "type", Text: query}); err != nil {
+		return err
+	}
+	_, err := c.do(Request{Verb: "key", Key: "return"})
+	return err
+}
+
 // cmdStatus toggles the Status console with Ctrl+`.
 func cmdStatus(args []string) error {
 	if len(args) != 0 {
@@ -1277,6 +1370,8 @@ func runRecipeLine(tokens []string, stdout, stderr io.Writer, launchedByRun *boo
 		return cmdUnread(tokens[1:])
 	case "jump":
 		return cmdJump(tokens[1:])
+	case "nick-jump":
+		return cmdNickJump(tokens[1:])
 	case "status":
 		return cmdStatus(tokens[1:])
 	case "connect":

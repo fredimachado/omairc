@@ -90,8 +90,9 @@ title matches exactly and fails on a miss.
 
 The gate is keyboard-first. It REJECTS pixel/mouse verbs (`click-*`) and
 `compare`, `qml-suite`, and `doctor-qml` in a recipe: `omairc-tui` has no
-pointer path and no QML suite. Phase 4 keeps only `Ctrl+Q` / `Ctrl+C` quit and
-`Enter`-to-send; the rest of the chord map lands in later phases (see Limits).
+pointer path and no QML suite. The full Phase 6 chord map is live
+(`internal/ui/keys.go` is the chord table): `Ctrl+Q` is the only quit chord,
+`Ctrl+C` copies via OSC 52, and `Enter` sends.
 
 Use `run <feature>` instead of assembling raw `key` / `type` chords. Play the
 verbs directly when a feature has no fence yet:
@@ -101,7 +102,7 @@ verbs directly when a feature has no fence yet:
 .cursor/skills/verify-omairc-tui/control-omairc-tui type --text "Hello from verify"
 .cursor/skills/verify-omairc-tui/control-omairc-tui key --key return
 .cursor/skills/verify-omairc-tui/control-omairc-tui send --text "Hello from verify"
-# walk, unread, jump, and status are real in the phase-5 shell:
+# walk, unread, jump, and status are real:
 .cursor/skills/verify-omairc-tui/control-omairc-tui walk --down --times 2
 .cursor/skills/verify-omairc-tui/control-omairc-tui unread
 .cursor/skills/verify-omairc-tui/control-omairc-tui jump --query "#desktop"
@@ -123,6 +124,7 @@ Verb table:
 | `walk --down` / `walk --up [--times N]` | Write `Alt+Down` / `Alt+Up` `--times N` (default 1) to walk conversations in sidebar order, wrapping. Status is not in the walk. |
 | `unread` | Write `Alt+A` for the next unread conversation (mentions first, muted skipped). |
 | `jump --query TEXT` | Write `Ctrl+K`, type `TEXT` into the filter, then press `Enter` to open the first match (conversation or Status). |
+| `nick-jump --query TEXT` | Write `Ctrl+Shift+K`, type `TEXT` into the nick filter, then press `Enter` to open or create that direct message (channels only). |
 | `status` | Write `Ctrl+`` to toggle the Status console. |
 | `connect` | Write `Ctrl+,` to open the Connect sheet (a no-op with no connection model, as in `--demo-server`). |
 | `compare --before PATH --after PATH` | Assert two PNGs differ. The fence's `test-artifacts/verify/` paths are remapped to `test-artifacts/verify-tui/`. |
@@ -133,13 +135,19 @@ Verb table:
 
 Key names are case-sensitive Bubble Tea key names, not `xdotool` keysyms.
 Accepted names are `ctrl+q`, `ctrl+c`, `ctrl+l`, `ctrl+slash`, `ctrl+k`,
-`ctrl+``, `ctrl+,`, `ctrl+enter`, `ctrl+tab`, `ctrl+shift+delete`, `enter` /
-`Return` / `return`, `tab`, `space`, `backspace`, `Escape` / `escape`, `Up` /
-`Down` / `Left` / `Right` / `up` / `down` / `left` / `right`, `Page_Up` /
-`Page_Down` / `page_up` / `page_down`, `Home` / `End` / `home` / `end`,
-`alt+Down` / `alt+Up` / `alt+Right` / `alt+Left`, any `alt+<letter>` /
+`ctrl+``, `ctrl+,`, `ctrl+enter`, `ctrl+tab`, `ctrl+shift+delete`,
+`ctrl+shift+s`, `ctrl+shift+p`, `ctrl+shift+k`, `ctrl+shift+a`,
+`ctrl+shift+o`, `ctrl+shift+m`, `ctrl+home`, `ctrl+end`, `enter` / `Return` /
+`return`, `tab`, `space`, `backspace`, `Escape` / `escape`, `Up` / `Down` /
+`Left` / `Right` / `up` / `down` / `left` / `right`, `Page_Up` / `Page_Down` /
+`page_up` / `page_down`, `shift+Page_Up` / `shift+Page_Down`, `Home` / `End` /
+`home` / `end`, `alt+Down` / `alt+Up` / `alt+Right` / `alt+Left`,
+`alt+shift+Left` / `alt+shift+Right` / `alt+shift+Up` / `alt+shift+Down`,
+`ctrl+alt+shift+Left` / `ctrl+alt+shift+Right`, any `alt+<letter>` /
 `alt+<Letter>`, any `ctrl+<letter>`, and `shift+Tab`. An unknown name fails
-the verb with `unknown key "NAME"` instead of sending nothing.
+the verb with `unknown key "NAME"` instead of sending nothing. `ctrl+slash`
+is sent as the Kitty CSI-u sequence, not the legacy `0x1F` control byte,
+because the decoder does not map `0x1F` to `ctrl+/`.
 
 ## Run
 
@@ -154,10 +162,11 @@ the verb with `unknown key "NAME"` instead of sending nothing.
 
 `run <feature> --dry-run` prints the fence and exits without launching. A
 missing file, a missing fence, or an empty fence exits non-zero. A recipe line
-whose verb the TUI does not support yet (for example `composer`, `nick-jump`,
-or any `click-*`) FAILS the run rather than silently skipping, so a fence that
-moves on to later-phase chords is expected to fail until that phase lands. Do
-not soften a fence to make it pass.
+whose verb the TUI does not support yet (for example `composer` or any
+`click-*`) FAILS the run rather than silently skipping, so a fence that moves
+on to later-phase verbs is expected to fail until that phase lands. The `run
+keyboard` fence now passes end to end over `--demo-server`. Do not soften a
+fence to make it pass.
 
 ## Evidence
 
@@ -169,23 +178,31 @@ state: a final screenshot alone is not proof.
 
 ## Limits
 
-Phase 5 lands the Connect sheet and core conversation navigation. The shell
-renders all three columns: the sidebar (network sections with presence marks
-and typing ellipses), the transcript, and, for channels, a member column with
-status and away text. Do not claim what has not landed:
+Phase 6 lands the full `keyboard.md` chord map; Phase 5 landed the Connect
+sheet and core conversation navigation. The shell renders all three columns:
+the sidebar (network sections with presence marks and typing ellipses), the
+transcript, and, for channels, a member column with status and away text. The
+`run keyboard` fence passes end to end over `--demo-server`. Do not claim what
+has not landed:
 
 - The Connect sheet is in-memory only: a plain `launch` shows first-run
   Connect, but there is no profile store, so nothing survives a restart
   (phase 11). There is no credential/keychain store and no Disconnect proof in
   a fence yet.
-- `Ctrl+K` jump, `Alt+Down`/`Alt+Up` walk, `Alt+A` unread, `Ctrl+`` Status,
-  `Ctrl+,` Connect (with a bound connection), per-conversation drafts, and
-  send/receive are real. The rest of `keyboard.md` (network collapse/reorder,
-  nick jump, inbox, find, copy, paging) lands in phase 6.
+- The chord map is real: `Ctrl+K` jump, `Alt+Down`/`Alt+Up` walk,
+  `Alt+Left`/`Alt+Right` network walk, per-network and collapse-all collapse,
+  network reorder, `Alt+A` unread, `Ctrl+`` Status, `Ctrl+,` Connect (with a
+  bound connection), `Ctrl+Shift+K` nick jump (which opens or creates a DM),
+  `Ctrl+Shift+P` member focus with member paging, `Ctrl+Shift+S` server-list
+  collapse, `Ctrl+W` close, `Ctrl+F` find, `Ctrl+C` copy, transcript and
+  member paging, Tab nick complete, history, drafts, and send/receive.
+- The `Ctrl+Shift+O` link sheet and `Ctrl+Shift+A` inbox sheet open, walk, and
+  close with real chords and modal gating, but their backing data stores are
+  empty: URL extraction lands in phase 10 and `InboxStore` in phase 9.
 - No slash commands. They land in phase 7.
-- No members/DM creation, typing, presence-driven navigation, notifications,
-  avatars, links, or preferences beyond the Connect sheet's in-memory toggles.
-  They land in later phases.
+- No typing indicators, presence-driven navigation, notifications, avatars,
+  or preferences beyond the Connect sheet's in-memory toggles. They land in
+  later phases.
 
 There is no Xvfb, `xdotool`, or X display involved, and never attach to a Qt
 instance. If a mapped feature needs a later phase, report the unmet

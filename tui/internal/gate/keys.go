@@ -15,11 +15,18 @@ import (
 // use. A name outside it is rejected with a descriptive error instead of
 // silently sending nothing. Both the capitalised arrow/Home/End/Page spellings
 // and their lowercase aliases are accepted, because the skill uses both.
+//
+// Arrows with modifiers use the xterm form `CSI 1 ; modifier D/A/B/C`, where
+// the modifier is 1 + shift(1) + alt(2) + ctrl(4). Letters with ctrl+shift
+// use the kitty CSI-u form (see below), because their legacy control bytes
+// would collide.
 var keyNames = map[string]string{
-	"ctrl+q":     "\x11",
-	"ctrl+c":     "\x03",
-	"ctrl+l":     "\x0c",
-	"ctrl+slash": "\x1f",
+	"ctrl+q": "\x11",
+	"ctrl+c": "\x03",
+	"ctrl+l": "\x0c",
+	// Ctrl+/ is 0x1F (US), which the ultraviolet decoder does not map to
+	// ctrl+/; the kitty CSI-u form below is what the shell actually sees.
+	"ctrl+slash": "\x1b[47;5u",
 	"enter":      "\r",
 	"Return":     "\r",
 	"return":     "\r",
@@ -51,6 +58,17 @@ var keyNames = map[string]string{
 	"alt+Up":     "\x1b[1;3A",
 	"alt+Right":  "\x1b[1;3C",
 	"alt+Left":   "\x1b[1;3D",
+	// xterm arrow modifiers: 1 + shift(1) + alt(2) + ctrl(4).
+	"alt+shift+Left":       "\x1b[1;4D",
+	"alt+shift+Right":      "\x1b[1;4C",
+	"alt+shift+Up":         "\x1b[1;4A",
+	"alt+shift+Down":       "\x1b[1;4B",
+	"ctrl+alt+shift+Left":  "\x1b[1;8D",
+	"ctrl+alt+shift+Right": "\x1b[1;8C",
+	"ctrl+home":            "\x1b[1;5H",
+	"ctrl+end":             "\x1b[1;5F",
+	"shift+Page_Up":        "\x1b[5;2~",
+	"shift+Page_Down":      "\x1b[6;2~",
 	// Kitty keyboard protocol CSI-u sequences. The legacy control bytes for
 	// these chords collide with other keys (Ctrl+` and Ctrl+, are NUL and
 	// Ctrl+L, Ctrl+Enter and Ctrl+Tab are CR and HT), so the terminal must
@@ -62,6 +80,12 @@ var keyNames = map[string]string{
 	"ctrl+enter":        "\x1b[13;5u",
 	"ctrl+tab":          "\x1b[9;5u",
 	"ctrl+shift+delete": "\x1b[57349;6u",
+	"ctrl+shift+s":      "\x1b[115;6u",
+	"ctrl+shift+p":      "\x1b[112;6u",
+	"ctrl+shift+k":      "\x1b[107;6u",
+	"ctrl+shift+a":      "\x1b[97;6u",
+	"ctrl+shift+o":      "\x1b[111;6u",
+	"ctrl+shift+m":      "\x1b[109;6u",
 }
 
 // KeySequence encodes one chord name as terminal bytes.

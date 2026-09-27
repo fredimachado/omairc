@@ -7,13 +7,14 @@ import "charm.land/lipgloss/v2"
 // down-samples the colors to whatever the terminal supports. A later phase
 // feeds Omarchy theme colors in here.
 type Styles struct {
-	NetworkName  lipgloss.Style
-	GroupLabel   lipgloss.Style
-	Conversation lipgloss.Style
-	Selected     lipgloss.Style
-	MutedLine    lipgloss.Style
-	MentionRow   lipgloss.Style
-	Unread       lipgloss.Style
+	NetworkName        lipgloss.Style
+	NetworkNameFocused lipgloss.Style
+	GroupLabel         lipgloss.Style
+	Conversation       lipgloss.Style
+	Selected           lipgloss.Style
+	MutedLine          lipgloss.Style
+	MentionRow         lipgloss.Style
+	Unread             lipgloss.Style
 
 	Topic       lipgloss.Style
 	Action      lipgloss.Style
@@ -21,9 +22,11 @@ type Styles struct {
 	Notice      lipgloss.Style
 	MentionBody lipgloss.Style
 	ConsoleLine lipgloss.Style
+	FindMatch   lipgloss.Style
 
-	MembersHeader lipgloss.Style
-	MemberAway    lipgloss.Style
+	MembersHeader  lipgloss.Style
+	MemberAway     lipgloss.Style
+	MemberSelected lipgloss.Style
 
 	Prompt   lipgloss.Style
 	Composer lipgloss.Style
@@ -68,13 +71,14 @@ func defaultStyles() Styles {
 	base := lipgloss.NewStyle()
 	card := base.Border(lipgloss.RoundedBorder()).Padding(0, 1)
 	return Styles{
-		NetworkName:  base.Bold(true).Foreground(colorAccent),
-		GroupLabel:   base.Foreground(colorDim).Faint(true),
-		Conversation: base,
-		Selected:     base.Bold(true),
-		MutedLine:    base.Foreground(colorDim).Faint(true),
-		MentionRow:   base.Foreground(colorMention),
-		Unread:       base.Foreground(colorUnread),
+		NetworkName:        base.Bold(true).Foreground(colorAccent),
+		NetworkNameFocused: base.Bold(true).Foreground(colorUnread),
+		GroupLabel:         base.Foreground(colorDim).Faint(true),
+		Conversation:       base,
+		Selected:           base.Bold(true),
+		MutedLine:          base.Foreground(colorDim).Faint(true),
+		MentionRow:         base.Foreground(colorMention),
+		Unread:             base.Foreground(colorUnread),
 
 		Topic:       base.Foreground(colorMuted),
 		Action:      base.Foreground(colorMuted).Italic(true),
@@ -82,9 +86,11 @@ func defaultStyles() Styles {
 		Notice:      base.Foreground(colorMuted),
 		MentionBody: base.Foreground(colorMention),
 		ConsoleLine: base.Foreground(colorMuted),
+		FindMatch:   base.Reverse(true).Bold(true),
 
-		MembersHeader: base.Bold(true).Foreground(colorAccent),
-		MemberAway:    base.Foreground(colorDim),
+		MembersHeader:  base.Bold(true).Foreground(colorAccent),
+		MemberAway:     base.Foreground(colorDim),
+		MemberSelected: base.Bold(true).Foreground(colorUnread),
 
 		Prompt:   base.Foreground(colorAccent),
 		Composer: base,

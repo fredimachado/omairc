@@ -42,12 +42,15 @@ When the two disagree about the shared contract, the root file wins.
   `Clock`/`Timer` seam, so tests drive them manually with `FakeClock` and
   `LoopbackTransport`.
 - `internal/controller` holds the state the shell calls: sessions, the
-  reducer, selection, sidebar order, send, and the Status ring buffer. It
-  reads time only from an injected `session.Clock`. Later subsystems
-  (command dispatcher, playback, persistence, monitor, ignore/mute,
-  highlight, autoaway, avatars, inbox store, channel list) sit behind the
-  nil-able seams in `internal/controller/seams.go` and land in their own
-  phases.
+  reducer, selection, sidebar order, sidebar network collapse/reorder, send,
+  and the Status ring buffer. `IsNetworkCollapsed`, `SetNetworkCollapsed`,
+  `SetAllNetworksCollapsed`, and `MoveNetwork` live here, mirroring the Qt
+  `IrcConnection` collapse home; `internal/connection.MoveNetwork` is the
+  Connect-sheet roster reorder only. It reads time only from an injected
+  `session.Clock`. Later subsystems (command dispatcher, playback,
+  persistence, monitor, ignore/mute, highlight, autoaway, avatars, inbox
+  store, channel list) sit behind the nil-able seams in
+  `internal/controller/seams.go` and land in their own phases.
 - `internal/connection` owns the Connect sheet's profile model and the
   draft/selection/apply/disconnect surface (`NetworkProfile`, `Connection`).
   It may import `internal/irc`, `internal/controller`, and `internal/session`
@@ -155,7 +158,20 @@ verbs: the TUI is keyboard-first and has no pointer path. Evidence goes under
 `connect`, and `compare` verbs (the fence's `test-artifacts/verify/` paths are
 remapped to `test-artifacts/verify-tui/`), plus the Kitty CSI-u bytes for
 `Ctrl+\``, `Ctrl+,`, `Ctrl+Enter`, `Ctrl+Tab`, and `Ctrl+Shift+Delete`, whose
-legacy control bytes collide with other keys.
+legacy control bytes collide with other keys. Phase 6 adds the `nick-jump`
+verb and the CSI-u bytes for `ctrl+shift+s`, `ctrl+shift+p`, `ctrl+shift+k`,
+`ctrl+shift+a`, `ctrl+shift+o`, and `ctrl+shift+m`, the xterm modifier forms
+`alt+shift+Left`/`Right`/`Up`/`Down` and `ctrl+alt+shift+Left`/`Right`, and
+`ctrl+home`, `ctrl+end`, `shift+Page_Up`, and `shift+Page_Down`. `ctrl+slash`
+is sent as a CSI-u sequence too, because the decoder does not map the legacy
+`0x1F` byte to `ctrl+/`. `key`, `type`, and `send` block until the child has
+repainted and the PTY has gone quiet, so a following `screenshot` or `compare`
+is deterministic instead of racing the redraw.
+
+## Chords
+
+- The full chord map lives in `internal/ui/keys.go`. `Ctrl+Q` is the only quit
+  chord; `Ctrl+C` copies via OSC 52 (`tea.SetClipboard`), not quit.
 
 ## Version
 
