@@ -37,6 +37,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   nick reads as the same person in both places.
 - The TUI build version moved from the sidebar identity footer to the bottom
   right of the shell footer, trailing the shortcut list.
+- The TUI sidebar identity footer is two rows: the initials chip and nick on
+  their own row, with the presence word and inbox pill indented below.
 
 ## [1.0.4] - 2026-09-25
 

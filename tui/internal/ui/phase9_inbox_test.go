@@ -317,4 +317,9 @@ func TestIdentityFooterShowsNickPresenceAndInboxBadge(t *testing.T) {
 	if !strings.Contains(sidebar, "inbox 1") {
 		t.Fatalf("identity footer missing inbox badge:\n%s", sidebar)
 	}
+	// The badge sits on the status row, below the nick's own row.
+	rows := strings.Split(ansiPattern.ReplaceAllString(sidebar, ""), "\n")
+	if last := rows[len(rows)-1]; !strings.Contains(last, "inbox 1") {
+		t.Fatalf("the inbox pill must sit on the status row: %q", last)
+	}
 }

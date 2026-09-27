@@ -171,6 +171,39 @@ func TestFooterVersionDropsWhenTooNarrow(t *testing.T) {
 	}
 }
 
+// TestIdentityFooterGivesTheNickItsOwnRow pins the two-row identity block: the
+// initials chip and the nick own one row, and the presence word sits on the row
+// below, indented under the nick, instead of being packed beside it.
+func TestIdentityFooterGivesTheNickItsOwnRow(t *testing.T) {
+	m := seededModel(t)
+	footer := m.identityFooterLines(sidebarWidth(m.width))
+	if len(footer) != 2 {
+		t.Fatalf("identity footer = %d rows, want 2", len(footer))
+	}
+	nickRow := ansiPattern.ReplaceAllString(footer[0], "")
+	statusRow := ansiPattern.ReplaceAllString(footer[1], "")
+	if !strings.Contains(nickRow, "fred") {
+		t.Fatalf("the nick must be on its own row: %q", nickRow)
+	}
+	if strings.Contains(nickRow, "available") {
+		t.Fatalf("the presence word must not share the nick's row: %q", nickRow)
+	}
+	if !strings.Contains(statusRow, "available") {
+		t.Fatalf("the status row must show the presence word: %q", statusRow)
+	}
+	if !strings.HasPrefix(statusRow, "  ") {
+		t.Fatalf("the status row must be indented under the nick: %q", statusRow)
+	}
+
+	// The block stays the sidebar's last two rows and the column is exactly the
+	// body height, so the split never overflows the grid.
+	rows := strings.Split(ansiPattern.ReplaceAllString(
+		m.sidebarView(sidebarWidth(m.width), m.bodyHeight()), ""), "\n")
+	if len(rows) != m.bodyHeight() {
+		t.Fatalf("sidebar = %d rows, want the body height %d", len(rows), m.bodyHeight())
+	}
+}
+
 // TestComposerFieldCarriesSurfaceFill pins that the field's fill is the raised
 // surface and that it reaches the end of the field, so the composer reads as
 // its own block instead of a window-coloured bare line.

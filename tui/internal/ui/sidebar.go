@@ -67,23 +67,31 @@ func (m *Model) sidebarView(width, height int) string {
 			roster = append(roster, lines...)
 		}
 	}
-	// Reserve the bottom row for the identity footer: clamp the roster to
-	// height-1 and append the footer, so the column is exactly height lines.
-	lines := fitLines(roster, height-1, false)
-	lines = append(lines, m.identityFooterLine())
+	// Reserve the bottom rows for the identity footer: clamp the roster to what
+	// is left and append the footer block, so the column is exactly height lines.
+	// The footer gives the nick its own row, so it is two rows when the column
+	// has room and one on a very short sidebar.
+	footer := m.identityFooterLines(width)
+	if len(footer) > height {
+		footer = footer[:clampInt(height, 0, len(footer))]
+	}
+	lines := fitLines(roster, height-len(footer), false)
+	lines = append(lines, footer...)
 	return renderColumn(m.styles.Conversation, width, lines)
 }
 
-// identityFooterLine renders the sidebar's bottom identity row as an initials
-// chip, the self nick, its presence word, and an "inbox N" pill when the
-// waiting list is non-empty. The chip shows "?" for an empty nick, matching the
+// identityFooterLines renders the sidebar's bottom identity block as two rows:
+// the initials chip and the self nick on the first, then the presence word and
+// the "inbox N" pill on the second, indented under the nick. Keeping the nick on
+// its own row leaves the status room to breathe instead of pushing the inbox pill
+// past the column edge. The chip shows "?" for an empty nick, matching the
 // direct-message identicon. It mirrors ServerListColumn.qml's identityFooter
 // (selfNickLabel, selfPresenceLabel, inboxBadge). The footer is visual only;
 // Ctrl+Shift+A reaches the sheet. The build version is not here: it sits at the
 // bottom right of the shell footer, after the shortcut list.
-func (m *Model) identityFooterLine() string {
+func (m *Model) identityFooterLines(width int) []string {
 	if m.ctrl == nil {
-		return ""
+		return nil
 	}
 	presence := "offline"
 	if m.ctrl.ConnectionStatus() == "Connected" {
@@ -101,16 +109,31 @@ func (m *Model) identityFooterLine() string {
 		Bold(true).
 		Render(initials(nick))
 
-	segments := []string{chip}
+	nickLine := chip
 	if nick != "" {
-		segments = append(segments, m.styles.Conversation.Bold(true).Render(nick))
-	}
-	segments = append(segments, m.styles.MutedLine.Render(presence))
-	if count := m.ctrl.InboxCount(); count > 0 {
-		segments = append(segments, m.badge(m.styles.BadgeUnread, fmt.Sprintf("inbox %d", count)))
+		nickLine += " " + m.styles.Conversation.Bold(true).Render(nick)
 	}
 
-	return strings.Join(segments, " ")
+	// The status row is indented under the nick, past the chip and its space, so
+	// it reads as belonging to the nick above it.
+	indent := lipgloss.Width(chip) + 1
+	available := width - indent
+	presenceLabel := m.styles.MutedLine.Render(presence)
+	statusSegments := []string{presenceLabel}
+	if count := m.ctrl.InboxCount(); count > 0 {
+		badge := m.badge(m.styles.BadgeUnread, fmt.Sprintf("inbox %d", count))
+		// The presence word is also on the shell footer, but the inbox pill is
+		// only here, so drop the word rather than let the column cut the pill in
+		// half when both cannot fit.
+		if lipgloss.Width(presenceLabel)+1+lipgloss.Width(badge) > available {
+			statusSegments = []string{badge}
+		} else {
+			statusSegments = append(statusSegments, badge)
+		}
+	}
+	statusLine := strings.Repeat(" ", indent) + strings.Join(statusSegments, " ")
+
+	return []string{nickLine, statusLine}
 }
 
 // networkSeparator is the rule drawn between two network sections in the
