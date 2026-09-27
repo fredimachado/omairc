@@ -61,18 +61,19 @@ func (m *Model) transcriptLines() ([]string, int) {
 	return lines, headerCount
 }
 
-// topicHeaderLine renders the conversation's header. A channel appends a
-// right-aligned "N PEOPLE" count mirroring ConversationColumn.qml's people
-// control, sized to transcriptWidth() minus peopleCountGutter so the count
-// sits at the right edge but never touches the member column that follows. A
-// long topic is truncated so the count stays visible; a direct message is just
-// the caption, with no count.
+// topicHeaderLine renders the conversation's header: the muted topic caption
+// on the left and, for a channel, a right-aligned, filled "N PEOPLE" chip
+// mirroring ConversationColumn.qml's people control. The line is sized to
+// transcriptWidth() minus peopleCountGutter so the chip sits at the right edge
+// but never touches the member column that follows. A long topic is truncated
+// so the chip stays visible; a direct message is just the caption, with no
+// count.
 func (m *Model) topicHeaderLine(topic string) string {
 	topicRendered := m.styles.Topic.Render(topic)
 	if !m.ctrl.IsChannel() {
 		return topicRendered
 	}
-	countRendered := m.styles.PeopleCount.Render(fmt.Sprintf("%d PEOPLE", m.ctrl.PeopleCount()))
+	countRendered := m.peopleChip(m.ctrl.PeopleCount())
 	width := m.transcriptWidth() - peopleCountGutter
 	if width < 0 {
 		width = 0
@@ -321,29 +322,93 @@ func (m *Model) renderMessageBody(body string, base lipgloss.Style) string {
 }
 
 // messageRow renders one transcript line. Actions, events, and notices get
-// their own shape; a mention is emphasized. The author prefix stays plain and
-// the body carries its own IRC emphasis. The current find match wins over
-// every other style.
+// their own shape; a mention is washed as a full-width row. Every chat byline
+// leads with a dimmed timestamp and the author in its fixed palette color,
+// mirroring MessageHeader.qml. The body carries its own IRC emphasis. The
+// current find match wins over every other style. It stays one line per
+// message: find/copy index the rows and the typing footer extends the last
+// row.
 func (m *Model) messageRow(index int, message controller.MessageSnapshot) string {
 	if m.findMatchAt(index) {
 		return m.styles.FindMatch.Render(m.transcriptLine(message))
 	}
 	switch message.Kind {
 	case "action":
-		return m.styles.Action.Render("* "+message.Author+" ") +
+		// "* nick body": an italic, muted action shape with the nick still
+		// carrying its palette color.
+		return m.styles.Action.Render("* ") +
+			m.nickStyle(message.Author).Render(message.Author) +
+			m.styles.Action.Render(" ") +
 			m.renderMessageBody(message.Body, m.styles.Action)
 	case "event":
-		return m.renderMessageBody(message.Body, m.styles.Event)
+		// A dim, centered server event, mirroring MessageRow.qml's centered
+		// messageEvent.
+		return m.eventRow(message.Body)
 	case "notice":
-		return m.styles.Notice.Render("-"+message.Author+"- ") +
+		// "-nick- body": the notice marker stays muted while the nick keeps its
+		// palette color.
+		return m.styles.Notice.Render("-") +
+			m.nickStyle(message.Author).Render(message.Author) +
+			m.styles.Notice.Render("- ") +
 			m.renderMessageBody(message.Body, m.styles.Notice)
 	}
-	prefix := message.Time.Format("15:04") + " " + message.Author + " "
 	if message.Mentioned {
-		return m.styles.MentionBody.Render(prefix) +
-			m.renderMessageBody(message.Body, m.styles.MentionBody)
+		return m.mentionRow(message)
 	}
-	return prefix + m.renderMessageBody(message.Body, lipgloss.NewStyle())
+	return m.styles.Time.Render(message.Time.Format("15:04")) + " " +
+		m.nickStyle(message.Author).Render(message.Author) + " " +
+		m.renderMessageBody(message.Body, lipgloss.NewStyle())
+}
+
+// nickStyle is the transcript byline style: the nick's fixed NickPalette color
+// in bold, mirroring OmaircStyle.qml's nickColor and MessageHeader.qml's bold
+// author label. Nick colors never move with the theme.
+func (m *Model) nickStyle(nick string) lipgloss.Style {
+	return lipgloss.NewStyle().Foreground(nickColor(nick)).Bold(true)
+}
+
+// peopleChip renders the "N PEOPLE" label as a filled chip: the F1 badge chrome
+// (bold ink on the raised surface) plus a one-cell pad on each side, mirroring
+// ConversationColumn.qml's peopleButton. The pad is part of the rendered width,
+// so topicHeaderLine's gutter math stays exact.
+func (m *Model) peopleChip(count int) string {
+	return m.styles.Badge.Padding(0, 1).Render(fmt.Sprintf("%d PEOPLE", count))
+}
+
+// mentionWash is the background of a highlighted row: the page color mixed
+// toward the mention tint, mirroring MentionWash.qml's washColor. It is a
+// one-off derivation from Styles.Colors, not a new style field.
+func (m *Model) mentionWash() lipgloss.Style {
+	return lipgloss.NewStyle().Background(
+		mixColors(m.styles.Colors.Background, m.styles.Colors.Mention, 0.09))
+}
+
+// eventRow centers a dim server event within the transcript column. A body
+// wider than the column is left to renderColumn's truncation.
+func (m *Model) eventRow(body string) string {
+	text := m.renderMessageBody(body, m.styles.Event)
+	pad := (m.transcriptWidth() - lipgloss.Width(text)) / 2
+	if pad < 1 {
+		return text
+	}
+	return strings.Repeat(" ", pad) + text
+}
+
+// mentionRow renders a highlighted message as a full-width band. Every cell
+// carries the wash background so the tint spans the column like MentionWash.qml
+// rather than stopping at the end of the text; the padding is part of the line
+// so it survives renderColumn. The nick keeps its palette color and the body
+// keeps its IRC emphasis on top of the wash.
+func (m *Model) mentionRow(message controller.MessageSnapshot) string {
+	wash := m.mentionWash()
+	colors := m.styles.Colors
+	line := wash.Foreground(colors.TextDim).Render(message.Time.Format("15:04")+" ") +
+		wash.Foreground(nickColor(message.Author)).Bold(true).Render(message.Author+" ") +
+		m.renderMessageBody(message.Body, wash.Foreground(colors.Mention))
+	if width := m.transcriptWidth(); lipgloss.Width(line) < width {
+		line += wash.Render(strings.Repeat(" ", width-lipgloss.Width(line)))
+	}
+	return line
 }
 
 // transcriptLine is the unstyled text of a message row, matching the find
