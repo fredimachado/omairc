@@ -110,7 +110,7 @@ func TestPhase8TranscriptDirectTypingFooterUngrouped(t *testing.T) {
 	}
 	lines, headerCount := m.transcriptLines()
 	area := m.transcriptArea()
-	// The two footer lines follow the last row directly, past its wash padding.
+	// The two footer lines follow the last row directly.
 	if got, want := len(lines), headerCount+area.end()+2; got != want {
 		t.Fatalf("line count = %d, want %d (rows plus the two footer lines)", got, want)
 	}
@@ -136,30 +136,27 @@ func TestPhase8TranscriptMentionRowWash(t *testing.T) {
 	}
 
 	row := m.messageRow(0, msg)
-	lines := strings.Split(row, "\n")
-	if got, want := len(lines), 1+2*mentionWashPad; got != want {
-		t.Fatalf("mention block = %d lines, want %d (text plus its wash padding)", got, want)
+	if strings.Count(row, "\n") != 0 {
+		t.Fatalf("mention row = %q, want a single line", row)
 	}
-	// The text is the middle line; the rows around it are the wash padding.
-	text := lines[mentionWashPad]
-	if got, want := lipgloss.Width(text), m.transcriptWidth(); got != want {
-		t.Fatalf("mention text line width = %d, want %d (the wash spans the column)", got, want)
+	if got, want := lipgloss.Width(row), m.transcriptWidth(); got != want {
+		t.Fatalf("mention row width = %d, want %d (the wash spans the column)", got, want)
 	}
 	for _, want := range []string{"12:00", "mira", "hello there"} {
-		if !strings.Contains(text, want) {
-			t.Fatalf("mention row = %q, want it to contain %q", text, want)
+		if !strings.Contains(row, want) {
+			t.Fatalf("mention row = %q, want it to contain %q", row, want)
 		}
 	}
 	wash := m.mentionWash()
 	nick := wash.Foreground(nickColor("mira")).Bold(true).Render("mira ")
-	if !strings.Contains(text, nick) {
-		t.Fatalf("mention row = %q, want the palette-colored bold nick %q", text, nick)
+	if !strings.Contains(row, nick) {
+		t.Fatalf("mention row = %q, want the palette-colored bold nick %q", row, nick)
 	}
-	if tinted := wash.Foreground(m.styles.Colors.Mention).Render("mira "); strings.Contains(text, tinted) {
-		t.Fatalf("mention row = %q, want the nick in its palette color, not the mention tint", text)
+	if tinted := wash.Foreground(m.styles.Colors.Mention).Render("mira "); strings.Contains(row, tinted) {
+		t.Fatalf("mention row = %q, want the nick in its palette color, not the mention tint", row)
 	}
-	if stamped := wash.Foreground(m.styles.Colors.TextDim).Render("12:00 "); !strings.Contains(text, stamped) {
-		t.Fatalf("mention row = %q, want the dimmed timestamp %q", text, stamped)
+	if stamped := wash.Foreground(m.styles.Colors.TextDim).Render("12:00 "); !strings.Contains(row, stamped) {
+		t.Fatalf("mention row = %q, want the dimmed timestamp %q", row, stamped)
 	}
 }
 

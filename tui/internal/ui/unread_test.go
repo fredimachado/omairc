@@ -41,7 +41,9 @@ func unreadDemoModel(t *testing.T) (*Model, *demo.DemoServer) {
 		t.Fatal("demo Attach failed")
 	}
 	m := New(ctrl, nil)
-	m = resizeModel(t, m, 118, 30)
+	// A short viewport keeps the packed #omarchy transcript taller than the
+	// window, so pinning to the unread mark has rows to scroll past.
+	m = resizeModel(t, m, 118, 20)
 	return m, d
 }
 

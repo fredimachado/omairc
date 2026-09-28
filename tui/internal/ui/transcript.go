@@ -17,20 +17,6 @@ import (
 // transcriptWidth() and renderColumn pads the rest.
 const peopleCountGutter = 2
 
-// transcriptRowGap is the number of blank lines rendered between two adjacent
-// transcript rows, so messages read as separate blocks instead of a dense wall
-// of text. A terminal cell has no line height to tune, so the gap is blank
-// rows; it is the one lever for inter-line breathing room.
-const transcriptRowGap = 1
-
-// mentionWashPad is the number of washed rows a highlighted message carries
-// above and below its text. It goes on the wash style as lipgloss
-// PaddingTop/PaddingBottom rather than as separate blank rows: vertical padding
-// renders inside the block, so the tint covers the padding rows, which a plain
-// blank row cannot do. It also means a highlighted row is taller than a plain
-// one, so rows do not share a stride and every row-to-line lookup is an index.
-const mentionWashPad = 1
-
 // isMentionRow reports whether a message renders as a full-width wash band. Only
 // a plain chat message can be a mention: the action, event, and notice shapes
 // return from messageRow before it checks Mentioned.
@@ -43,10 +29,10 @@ func isMentionRow(message controller.MessageSnapshot) bool {
 }
 
 // transcriptRows is the rendered scrolling row area: the lines themselves, plus
-// the line index and the height of every row. A highlighted row carries
-// mentionWashPad washed rows above and below its text, so rows are not a uniform
-// height; find, copy, and the scroll offsets all resolve a row through this
-// structure instead of a stride.
+// the line index and the height of every row. Rows are packed edge to edge, but
+// a row is not always one line: the "New messages" boundary rides above its
+// row. Find, copy, and the scroll offsets all resolve a row through this index
+// rather than a stride.
 type transcriptRows struct {
 	lines   []string
 	starts  []int
@@ -60,8 +46,7 @@ func (r transcriptRows) count() int { return len(r.starts) }
 func (r transcriptRows) line(row int) int { return r.starts[row] }
 
 // rowAt is the row containing a line index, or -1 when the line precedes every
-// row. A line inside a row's wash padding or in a gap between rows belongs to
-// the row it follows.
+// row. A line inside a taller row belongs to that row.
 func (r transcriptRows) rowAt(line int) int {
 	index := sort.Search(len(r.starts), func(i int) bool { return r.starts[i] > line })
 	return index - 1
@@ -79,13 +64,10 @@ func (r transcriptRows) end() int {
 	return r.endOf(len(r.starts) - 1)
 }
 
-// append adds one row block, separated from the previous row by the row gap.
-// The row's height comes from the rendered block itself, so the index can never
-// drift from the lines that are actually emitted.
+// append adds one row block. The row's height comes from the rendered block
+// itself, so the index can never drift from the lines that are actually
+// emitted.
 func (r *transcriptRows) append(block string) {
-	if len(r.starts) > 0 {
-		r.lines = append(r.lines, "")
-	}
 	lines := strings.Split(block, "\n")
 	r.starts = append(r.starts, len(r.lines))
 	r.heights = append(r.heights, len(lines))
@@ -93,8 +75,8 @@ func (r *transcriptRows) append(block string) {
 }
 
 // transcriptRowArea builds the scrolling row area: one block per message or
-// Status line, each preceded by the row gap. It does not include the pinned
-// header, so its first row starts at line 0.
+// Status line. It does not include the pinned header, so its first row starts
+// at line 0.
 func (m *Model) transcriptRowArea() transcriptRows {
 	var area transcriptRows
 	if m.ctrl == nil {
@@ -274,9 +256,7 @@ func (m *Model) headerTail() string {
 // message rows. A grouped hint belongs to the peer's last live chat row, so it
 // extends that rendered line; an ungrouped hint gets the peer's header line and
 // an indented dots line. It is display-only: transcriptRowTexts keeps one entry
-// per controller message, and the footer sits past every message index. A
-// highlighted last row owns wash padding below its text, so the grouped hint
-// cannot extend it cleanly and falls back to the ungrouped shape.
+// per controller message, and the footer sits past every message index.
 func (m *Model) appendTranscriptTypingFooter(area transcriptRows) transcriptRows {
 	nick, grouped, show := m.ctrl.TranscriptTypingIndicator()
 	if !show {
@@ -284,7 +264,7 @@ func (m *Model) appendTranscriptTypingFooter(area transcriptRows) transcriptRows
 	}
 	dots := m.styles.MutedLine.Render(" ...")
 	last := len(area.lines) - 1
-	if grouped && last >= 0 && !m.lastRowCarriesWashPad(area) {
+	if grouped && last >= 0 {
 		// Keep the dots on screen even when the peer's line is at the column
 		// edge: renderColumn would otherwise truncate them away.
 		available := m.transcriptWidth() - lipgloss.Width(dots)
@@ -297,19 +277,6 @@ func (m *Model) appendTranscriptTypingFooter(area transcriptRows) transcriptRows
 	area.lines = append(area.lines, m.styles.MutedLine.Render(nick))
 	area.lines = append(area.lines, m.styles.MutedLine.Render("   ..."))
 	return area
-}
-
-// lastRowCarriesWashPad reports whether the last row ends in the wash columns a
-// highlighted message adds below its text. The typing hint is built to extend a
-// plain text row, so it must not land on a wash padding line. A washed row is
-// mentionWashPad rows above and below its single text line; a "New messages"
-// boundary also makes a row taller than one line, so the height test is the
-// wash height rather than "more than one line".
-func (m *Model) lastRowCarriesWashPad(area transcriptRows) bool {
-	if area.count() == 0 {
-		return false
-	}
-	return area.heights[area.count()-1] >= 1+2*mentionWashPad
 }
 
 // transcriptWindow returns the [start, end) slice of lines the viewport shows,
@@ -460,8 +427,8 @@ func (m *Model) revealTranscriptRow(row int) {
 		return
 	}
 	// The row area starts at row 0, past the pinned header, so the row's line
-	// index needs no header offset. A highlighted row is taller than a plain
-	// one, so the index comes from the row structure, not a stride.
+	// index needs no header offset. A row can be more than one line, so the
+	// index comes from the row structure, not a stride.
 	index := area.line(row)
 	start := index - height/2
 	if start+height <= index {
@@ -689,11 +656,6 @@ func (m *Model) eventRow(body string) string {
 // rather than stopping at the end of the text; the horizontal padding is part
 // of the line so it survives renderColumn. Nick keeps its palette color and the
 // body keeps its IRC emphasis on top of the wash.
-//
-// PaddingTop/PaddingBottom give the band its breathing room, with the wash
-// covering the padding rows. That makes a highlighted row taller than a plain
-// one, which transcriptRows tracks; the row is no longer one line, so find and
-// copy resolve it through that index rather than assuming a stride.
 func (m *Model) mentionRow(message controller.MessageSnapshot) string {
 	wash := m.mentionWash()
 	colors := m.styles.Colors
@@ -703,7 +665,7 @@ func (m *Model) mentionRow(message controller.MessageSnapshot) string {
 	if width := m.transcriptWidth(); lipgloss.Width(line) < width {
 		line += wash.Render(strings.Repeat(" ", width-lipgloss.Width(line)))
 	}
-	return wash.Padding(mentionWashPad, 0).Render(line)
+	return line
 }
 
 // transcriptLine is the unstyled text of a message row, matching the find

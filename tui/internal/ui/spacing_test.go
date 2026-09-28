@@ -1,22 +1,19 @@
 package ui
 
-// This file covers the inter-line spacing: transcript rows are separated by a
-// blank row, a highlighted row carries wash padding above and below its text,
-// the topic header stays pinned at the top of the column while those rows
-// scroll, and the sidebar's groups carry a blank row between them. A terminal
-// cell has no line height, so a blank row is the only spacing lever.
+// This file covers the transcript and sidebar rhythm: transcript rows render
+// edge to edge with no blank line between them, a highlighted row stays a
+// single washed line, the topic header stays pinned at the top of the column
+// while the rows scroll, and the sidebar's groups carry a blank row between
+// them.
 
 import (
 	"strings"
 	"testing"
 	"time"
 
-	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 
 	"github.com/fredimachado/omairc/tui/internal/controller"
-	"github.com/fredimachado/omairc/tui/internal/demo"
-	"github.com/fredimachado/omairc/tui/internal/session"
 )
 
 // plainLine is one rendered line with its ANSI stripped and its trailing
@@ -25,65 +22,43 @@ func plainLine(line string) string {
 	return strings.TrimRight(ansiPattern.ReplaceAllString(line, ""), " ")
 }
 
-// TestTranscriptRowsAreSpaced pins the row gap and the index that goes with it:
-// every row starts one blank line after the previous row ends, and the row
-// structure points at the lines that were actually emitted.
-func TestTranscriptRowsAreSpaced(t *testing.T) {
+// TestTranscriptRowsArePacked pins that rows render edge to edge: every row
+// starts where the previous row ended, and the row index points at the lines
+// that were actually emitted.
+func TestTranscriptRowsArePacked(t *testing.T) {
 	m := seededModel(t)
-	if transcriptRowGap < 1 {
-		t.Fatal("the transcript must render a gap between rows")
-	}
-
 	area := m.transcriptArea()
 	if got, want := area.count(), m.transcriptRowTotal(); got != want {
 		t.Fatalf("row count = %d, want transcriptRowTotal() %d", got, want)
 	}
 	if area.count() < 3 {
-		t.Fatalf("the seeded transcript has %d rows, too few to prove spacing", area.count())
+		t.Fatalf("the seeded transcript has %d rows, too few to prove packing", area.count())
 	}
 	allLines, headerCount := m.transcriptLines()
 	if len(area.lines) != len(allLines)-headerCount {
 		t.Fatal("the row area and the rendered rows disagree on length")
 	}
-
-	for row := 0; row < area.count(); row++ {
-		start := area.line(row)
-		height := area.heights[row]
-		if height < 1 {
-			t.Fatalf("row %d has height %d", row, height)
-		}
-		if start+height > len(area.lines) {
-			t.Fatalf("row %d spans past the %d rendered lines", row, len(area.lines))
-		}
-		if row == 0 {
-			if start != 0 {
-				t.Fatalf("row 0 starts at line %d, want 0 (the header is not part of the area)", start)
-			}
-			continue
-		}
-		// The gap is the single line between the previous row's end and this
-		// row's start.
-		if start-height != area.endOf(row-1) {
-			t.Fatalf("row %d starts at %d, want one gap line after row %d", row, start, row-1)
+	if area.line(0) != 0 {
+		t.Fatalf("row 0 starts at line %d, want 0 (the header is not part of the area)", area.line(0))
+	}
+	for row := 1; row < area.count(); row++ {
+		if start := area.line(row); start != area.endOf(row-1) {
+			t.Fatalf("row %d starts at %d, want %d: rows must be packed, not spaced",
+				row, start, area.endOf(row-1))
 		}
 	}
 }
 
-// TestMentionRowsCarryWashPadding pins that a highlighted message is a taller
-// block: its text plus mentionWashPad washed rows above and below, every one of
-// them painted with the wash fill so the band has breathing room instead of
-// striping the column with the window color.
-func TestMentionRowsCarryWashPadding(t *testing.T) {
+// TestMentionRowsStaySingleLine pins that a highlighted message is one washed
+// line, not a padded block: the tint spans the column but adds no rows above or
+// below it.
+func TestMentionRowsStaySingleLine(t *testing.T) {
 	m := seededModel(t)
-	if mentionWashPad < 1 {
-		t.Fatal("the mention wash must have vertical padding")
-	}
-	at := time.Date(2026, 9, 27, 12, 0, 0, 0, time.UTC)
 	msg := controller.MessageSnapshot{
 		Author:    "mira",
 		Kind:      "message",
 		Body:      "hello there",
-		Time:      at,
+		Time:      time.Date(2026, 9, 27, 12, 0, 0, 0, time.UTC),
 		Mentioned: true,
 	}
 	if !isMentionRow(msg) {
@@ -91,40 +66,19 @@ func TestMentionRowsCarryWashPadding(t *testing.T) {
 	}
 
 	row := m.messageRow(0, msg)
-	lines := strings.Split(row, "\n")
-	if got, want := len(lines), 1+2*mentionWashPad; got != want {
-		t.Fatalf("mention block = %d lines, want %d", got, want)
+	if strings.Count(row, "\n") != 0 {
+		t.Fatalf("mention row = %q, want a single line", row)
 	}
-	wash := m.mentionWash()
-	// Every line of the block spans the column and carries the wash: the padding
-	// rows differ from the text row only in their content, not their background.
-	for index, line := range lines {
-		if width := lipgloss.Width(line); width != m.transcriptWidth() {
-			t.Fatalf("mention line %d width = %d, want the column width %d",
-				index, width, m.transcriptWidth())
-		}
-		if index == mentionWashPad {
-			if plainLine(line) == "" {
-				t.Fatalf("mention text line %d is blank", index)
-			}
-			continue
-		}
-		if plainLine(line) != "" {
-			t.Fatalf("mention padding line %d = %q, want blank", index, plainLine(line))
-		}
+	if got, want := lipgloss.Width(row), m.transcriptWidth(); got != want {
+		t.Fatalf("mention row width = %d, want the column width %d", got, want)
 	}
-	if !strings.Contains(lines[mentionWashPad], "hello there") {
-		t.Fatalf("mention text is not on the middle line: %q", lines[mentionWashPad])
-	}
-	// The padding rows are a solid fill: the wash style rendered over spaces.
-	if want := wash.Render(strings.Repeat(" ", m.transcriptWidth())); lines[0] != want {
-		t.Fatalf("mention top padding = %q, want the wash fill %q", lines[0], want)
+	if !strings.Contains(row, "hello there") {
+		t.Fatalf("mention row = %q, want the message body", row)
 	}
 }
 
-// TestNonMentionKindsStaySingleLine pins that the padding is the mention shape
-// only: actions, notices, events, and plain chat stay one line, so the taller
-// block is what a highlight costs.
+// TestNonMentionKindsStaySingleLine pins that actions, notices, and events also
+// stay one line, so no kind gains a blank row.
 func TestNonMentionKindsStaySingleLine(t *testing.T) {
 	m := seededModel(t)
 	at := time.Date(2026, 9, 27, 12, 0, 0, 0, time.UTC)
@@ -143,13 +97,10 @@ func TestNonMentionKindsStaySingleLine(t *testing.T) {
 	}
 }
 
-// TestFindRevealsAcrossWashPadding pins that find still lands on the right row
-// once rows have different heights: the cursor is set to the matching row, and
-// the reveal scrolls that row's block into view.
-func TestFindRevealsAcrossWashPadding(t *testing.T) {
+// TestFindRevealsMatchingRow pins that find sets the cursor to the matching row
+// and scrolls that row into view.
+func TestFindRevealsMatchingRow(t *testing.T) {
 	m := seededModel(t)
-	// Make a mid-transcript row a mention so a taller block sits above the
-	// target and a stride-based lookup would drift.
 	messages := m.ctrl.Messages()
 	if len(messages) < 4 {
 		t.Fatal("the seeded transcript is too short for this proof")
@@ -218,67 +169,6 @@ func TestTranscriptHeaderStaysPinned(t *testing.T) {
 	if !strings.Contains(firstRow, "A cozy corner for Omarchy users and builders.") {
 		t.Fatalf("first rendered row is not the topic header: %q", firstRow)
 	}
-}
-
-// TestGroupedTypingFooterFallsBackOnWashedRow pins the edge the wash padding
-// creates: the typing hint normally extends the peer's last chat line, but a
-// highlighted last row owns washed padding below its text, so the hint would be
-// written onto a fill row. It must fall back to the ungrouped shape instead.
-func TestGroupedTypingFooterFallsBackOnWashedRow(t *testing.T) {
-	// A clock in the seeded anna DM row's own minute makes the typing indicator
-	// group under it, and that row is a mention.
-	m := groupedTypingMentionModel(t)
-	nick, grouped, show := m.ctrl.TranscriptTypingIndicator()
-	if nick != "anna" || !grouped || !show {
-		t.Fatalf("indicator = (%q,%v,%v), want the grouped anna footer", nick, grouped, show)
-	}
-
-	area := m.transcriptArea()
-	if got := area.count(); got != 1 {
-		t.Fatalf("the anna DM has %d rows, want the single seeded mention", got)
-	}
-	if area.heights[0] <= 1 {
-		t.Fatal("the seeded last row must be a mention to reach this fallback")
-	}
-	// The hint lines sit past the row's wash padding, not inside it.
-	if got, want := len(area.lines), area.end()+2; got != want {
-		t.Fatalf("row area = %d lines, want %d past the wash padding", got, want)
-	}
-	for index := area.end(); index < len(area.lines); index++ {
-		line := area.lines[index]
-		if !strings.Contains(line, "anna") && !strings.Contains(line, "...") {
-			t.Fatalf("footer line %d = %q, want the ungrouped nick or dots", index, line)
-		}
-	}
-	// No wash fill may be printed onto a footer line.
-	wash := backgroundParams(m.mentionWash().GetBackground())
-	for index := area.end(); index < len(area.lines); index++ {
-		if strings.Contains(area.lines[index], wash) {
-			t.Fatalf("footer line %d carries the wash fill: %q", index, area.lines[index])
-		}
-	}
-}
-
-// groupedTypingMentionModel is the seeded demo with the clock pinned inside the
-// anna DM's only row's minute, so the typing hint groups under that row, and
-// that row selected. The row is a mention, so it is taller than one line.
-func groupedTypingMentionModel(t *testing.T) *Model {
-	t.Helper()
-	ctrl := controller.New()
-	ctrl.SetClock(session.NewFakeClock(time.Date(2026, 9, 12, 10, 12, 0, 0, time.UTC)))
-	if !demo.New().Attach(ctrl, true) {
-		t.Fatal("demo Attach failed")
-	}
-	m := New(ctrl, nil)
-	updated, _ := m.Update(tea.WindowSizeMsg{Width: 118, Height: 30})
-	m = updated.(*Model)
-	for _, row := range ctrl.Conversations() {
-		if row.Conversation == "anna" {
-			ctrl.SelectConversationByID(row.ConversationID)
-		}
-	}
-	m.afterSelectionChange("")
-	return m
 }
 
 // TestSidebarGroupsHaveABlankRow pins the sidebar rhythm: a blank row separates
