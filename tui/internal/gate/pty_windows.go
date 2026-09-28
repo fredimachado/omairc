@@ -14,39 +14,43 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-const procThreadAttributePseudoConsole = 0x00020016
+const procThreadAttributePseudoConsole = windows.PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE
 
 func startPty(opts Options) (*Process, error) {
-	ptyIn, inOur, err := os.Pipe()
-	if err != nil {
+	sa := &windows.SecurityAttributes{
+		Length:        uint32(unsafe.Sizeof(windows.SecurityAttributes{})),
+		InheritHandle: 1,
+	}
+
+	var inRead, inWrite windows.Handle
+	if err := windows.CreatePipe(&inRead, &inWrite, sa, 0); err != nil {
 		return nil, fmt.Errorf("create conpty input pipe: %w", err)
 	}
-	outOur, ptyOut, err := os.Pipe()
-	if err != nil {
-		_ = ptyIn.Close()
-		_ = inOur.Close()
+	var outRead, outWrite windows.Handle
+	if err := windows.CreatePipe(&outRead, &outWrite, sa, 0); err != nil {
+		closeHandles(inRead, inWrite)
 		return nil, fmt.Errorf("create conpty output pipe: %w", err)
 	}
 
 	var hpc windows.Handle
 	coord := windows.Coord{X: int16(opts.Cols), Y: int16(opts.Rows)}
-	if err := windows.CreatePseudoConsole(coord, windows.Handle(ptyIn.Fd()), windows.Handle(ptyOut.Fd()), 0, &hpc); err != nil {
-		closeAll(ptyIn, inOur, outOur, ptyOut)
+	if err := windows.CreatePseudoConsole(coord, inRead, outWrite, 0, &hpc); err != nil {
+		closeHandles(inRead, inWrite, outRead, outWrite)
 		return nil, fmt.Errorf("create pseudo console: %w", err)
 	}
-	_ = ptyIn.Close()
-	_ = ptyOut.Close()
+	_ = windows.CloseHandle(inRead)
+	_ = windows.CloseHandle(outWrite)
 
 	binary, err := resolveWindowsBinary(opts.Binary, opts.Dir)
 	if err != nil {
-		closeAll(inOur, outOur)
+		closeHandles(outRead, inWrite)
 		windows.ClosePseudoConsole(hpc)
 		return nil, err
 	}
 	argv := append([]string{binary}, opts.Args...)
 	cmdline, err := windows.UTF16PtrFromString(windows.ComposeCommandLine(argv))
 	if err != nil {
-		closeAll(inOur, outOur)
+		closeHandles(outRead, inWrite)
 		windows.ClosePseudoConsole(hpc)
 		return nil, err
 	}
@@ -55,25 +59,24 @@ func startPty(opts Options) (*Process, error) {
 	if opts.Dir != "" {
 		dirp, err = windows.UTF16PtrFromString(opts.Dir)
 		if err != nil {
-			closeAll(inOur, outOur)
+			closeHandles(outRead, inWrite)
 			windows.ClosePseudoConsole(hpc)
 			return nil, err
 		}
 	}
 
-	env := ensureCriticalEnv(opts.Env)
-	envBlock := createEnvBlock(env)
+	envBlock := createEnvBlock(ensureCriticalEnv(opts.Env))
 
 	attrs, err := windows.NewProcThreadAttributeList(1)
 	if err != nil {
-		closeAll(inOur, outOur)
+		closeHandles(outRead, inWrite)
 		windows.ClosePseudoConsole(hpc)
 		return nil, fmt.Errorf("initialize proc thread attribute list: %w", err)
 	}
 	defer attrs.Delete()
 
 	if err := attrs.Update(procThreadAttributePseudoConsole, unsafe.Pointer(&hpc), unsafe.Sizeof(hpc)); err != nil {
-		closeAll(inOur, outOur)
+		closeHandles(outRead, inWrite)
 		windows.ClosePseudoConsole(hpc)
 		return nil, fmt.Errorf("attach pseudo console to process attributes: %w", err)
 	}
@@ -82,52 +85,71 @@ func startPty(opts Options) (*Process, error) {
 	siEx.Cb = uint32(unsafe.Sizeof(*siEx))
 	siEx.ProcThreadAttributeList = attrs.List()
 
-	flags := uint32(windows.CREATE_UNICODE_ENVIRONMENT | windows.EXTENDED_STARTUPINFO_PRESENT)
+	flags := uint32(windows.EXTENDED_STARTUPINFO_PRESENT | windows.CREATE_UNICODE_ENVIRONMENT)
 	pi := &windows.ProcessInformation{}
 	if err := windows.CreateProcess(nil, cmdline, nil, nil, false, flags, envBlock, dirp, &siEx.StartupInfo, pi); err != nil {
-		closeAll(inOur, outOur)
+		closeHandles(outRead, inWrite)
 		windows.ClosePseudoConsole(hpc)
 		return nil, fmt.Errorf("start %s on a conpty: %w", opts.Binary, err)
 	}
 	_ = windows.CloseHandle(pi.Thread)
 
-	proc, err := os.FindProcess(int(pi.ProcessId))
-	if err != nil {
-		_ = windows.TerminateProcess(pi.Process, 1)
-		closeAll(inOur, outOur)
-		windows.ClosePseudoConsole(hpc)
-		return nil, fmt.Errorf("find child process: %w", err)
-	}
+	readFd := os.NewFile(uintptr(outRead), "conpty-out")
+	writeFd := os.NewFile(uintptr(inWrite), "conpty-in")
+	procHandle := pi.Process
 
-	cmd := &exec.Cmd{Process: proc}
+	cmd := &exec.Cmd{Process: mustFindProcess(int(pi.ProcessId))}
 	p := &Process{
-		readFd:  outOur,
-		writeFd: inOur,
+		readFd:  readFd,
+		writeFd: writeFd,
 		cmd:     cmd,
 		exited:  make(chan struct{}),
 		cleanup: func() error {
 			windows.ClosePseudoConsole(hpc)
+			_ = windows.CloseHandle(procHandle)
 			return nil
 		},
 	}
 	go func() {
-		p.waitErr = cmd.Wait()
+		p.waitErr = waitForProcess(procHandle)
 		close(p.exited)
 	}()
 	go p.readLoop()
 	return p, nil
 }
 
-func closeAll(files ...*os.File) {
-	for _, f := range files {
-		if f != nil {
-			_ = f.Close()
+func mustFindProcess(pid int) *os.Process {
+	proc, err := os.FindProcess(pid)
+	if err != nil {
+		return &os.Process{Pid: pid}
+	}
+	return proc
+}
+
+func waitForProcess(handle windows.Handle) error {
+	if _, err := windows.WaitForSingleObject(handle, windows.INFINITE); err != nil {
+		return err
+	}
+	var code uint32
+	if err := windows.GetExitCodeProcess(handle, &code); err != nil {
+		return err
+	}
+	if code != 0 {
+		return fmt.Errorf("exit status 0x%x", code)
+	}
+	return nil
+}
+
+func closeHandles(handles ...windows.Handle) {
+	for _, h := range handles {
+		if h != 0 {
+			_ = windows.CloseHandle(h)
 		}
 	}
 }
 
 // resolveWindowsBinary returns an absolute path CreateProcess can start. A bare
-// name such as cmd.exe is not searched on PATH when lpApplicationName is set.
+// name such as cmd.exe is not searched on PATH when lpApplicationName is nil.
 func resolveWindowsBinary(binary, dir string) (string, error) {
 	if filepath.IsAbs(binary) {
 		return binary, nil
@@ -170,8 +192,7 @@ func ensureCriticalEnv(env []string) []string {
 
 func createEnvBlock(envv []string) *uint16 {
 	if len(envv) == 0 {
-		z := []uint16{0}
-		return &z[0]
+		return nil
 	}
 	var block []uint16
 	for _, entry := range envv {
