@@ -155,11 +155,37 @@ func (m *Model) recallHistory(delta int) {
 	m.composer.CursorEnd()
 }
 
+// nickCompleteSession is the composer's Tab-completion cursor. It mirrors
+// OmaircWindow.qml's nickCompleteMatches / nickCompleteIndex /
+// nickCompleteOrigin: the first Tab picks the alphabetically first matching
+// nick, and each further Tab advances through the candidates, wrapping. Any
+// other key, a conversation switch, or a send resets it (see
+// resetNickComplete).
+type nickCompleteSession struct {
+	matches []string
+	index   int
+	origin  int
+	active  bool
+}
+
+// resetNickComplete ends a nick-completion session. It mirrors
+// OmaircWindow.qml's resetNickComplete.
+func (m *Model) resetNickComplete() {
+	m.nickComplete = nickCompleteSession{}
+}
+
 // completeNick completes the composer's current word with Tab. It mirrors
-// OmaircWindow.qml's completeNick with the plan's simpler rule: exactly one
-// candidate completes; no candidate or an ambiguous prefix leaves the draft.
+// OmaircWindow.qml's completeNick: a first Tab starts a session from the
+// matched nicks (even when the prefix is ambiguous) and repeated Tabs cycle
+// through them. So the plan's earlier "exactly one candidate" rule is gone;
+// it left Tab dead in any channel where two nicks shared a prefix.
 func (m *Model) completeNick() {
 	if m.ctrl == nil || m.ctrl.ConsoleOpen() {
+		return
+	}
+	if m.nickComplete.active && len(m.nickComplete.matches) > 0 {
+		m.nickComplete.index = (m.nickComplete.index + 1) % len(m.nickComplete.matches)
+		m.applyNickComplete()
 		return
 	}
 	runes := []rune(m.composer.Value())
@@ -182,14 +208,42 @@ func (m *Model) completeNick() {
 		return
 	}
 	matches := m.nickMatchesForPrefix(token)
-	if len(matches) != 1 {
+	if len(matches) == 0 {
 		return
 	}
-	insertion := []rune(matches[0] + " ")
-	if origin == 0 {
-		insertion = []rune(matches[0] + ": ")
+	m.nickComplete = nickCompleteSession{matches: matches, index: 0, origin: origin, active: true}
+	m.applyNickComplete()
+}
+
+// applyNickComplete replaces the in-progress word (from the session's origin
+// through the cursor) with the selected nick and a separator: a leading colon
+// and space when the completion opens the line, otherwise a trailing space. It
+// mirrors OmaircWindow.qml's applyNickComplete.
+func (m *Model) applyNickComplete() {
+	if !m.nickComplete.active || len(m.nickComplete.matches) == 0 {
+		return
 	}
-	result := make([]rune, 0, len(runes)+len(insertion))
+	origin := m.nickComplete.origin
+	if origin < 0 {
+		return
+	}
+	runes := []rune(m.composer.Value())
+	if origin > len(runes) {
+		return
+	}
+	cursor := m.composer.Position()
+	if cursor < origin {
+		cursor = origin
+	}
+	if cursor > len(runes) {
+		cursor = len(runes)
+	}
+	nick := m.nickComplete.matches[m.nickComplete.index]
+	insertion := []rune(nick + " ")
+	if origin == 0 {
+		insertion = []rune(nick + ": ")
+	}
+	result := make([]rune, 0, origin+len(insertion)+len(runes)-cursor)
 	result = append(result, runes[:origin]...)
 	result = append(result, insertion...)
 	result = append(result, runes[cursor:]...)

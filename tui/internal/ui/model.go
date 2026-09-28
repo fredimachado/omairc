@@ -128,6 +128,7 @@ type Model struct {
 	firstUnseenRow       int
 	transcriptCount      int
 	find                 findState
+	nickComplete         nickCompleteSession
 	composerHistory      []string
 	composerHistoryIndex int
 	composerHistoryDraft string
@@ -489,6 +490,12 @@ func (m *Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	m.focus = focusComposer
 	if m.find.active {
 		return m.handleFindKey(key, msg)
+	}
+	// Any key but Tab ends a nick-completion session, mirroring the QML's
+	// resetNickComplete before its non-Tab branches. Tab alone starts or
+	// advances the session.
+	if key != "tab" {
+		m.resetNickComplete()
 	}
 	if handled, cmd := m.dispatchChord(key, msg); handled {
 		return m, cmd

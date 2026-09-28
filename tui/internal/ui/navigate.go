@@ -602,6 +602,7 @@ func (m *Model) loadDraft() {
 	m.draftKey = key
 	m.composer.SetValue(m.drafts[key])
 	m.composer.CursorEnd()
+	m.resetNickComplete()
 }
 
 // composerDraftKey is the stable key unsent text belongs to: the Status key for

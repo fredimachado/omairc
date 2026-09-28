@@ -267,6 +267,56 @@ func TestTabCompletesNick(t *testing.T) {
 	}
 }
 
+// TestTabCompletesAmbiguousNickAndCycles pins the Qt contract: a prefix with
+// more than one match still completes (to the alphabetically first nick) and
+// repeated Tabs cycle through the candidates. The old "exactly one candidate"
+// rule left Tab dead in #ricing, where "s" matches both sam and sol.
+func TestTabCompletesAmbiguousNickAndCycles(t *testing.T) {
+	m := seededModel(t)
+	m.ctrl.SelectConversation("omarchy", "#ricing")
+	if got := m.ctrl.SelectedTarget(); got != "#ricing" {
+		t.Fatalf("selected target = %q, want #ricing", got)
+	}
+	m.composer.SetValue("s")
+	m.composer.CursorEnd()
+
+	m = press(t, m, tea.KeyPressMsg{Code: tea.KeyTab})
+	if got := m.composer.Value(); got != "sam: " {
+		t.Fatalf("first Tab = %q, want %q", got, "sam: ")
+	}
+	m = press(t, m, tea.KeyPressMsg{Code: tea.KeyTab})
+	if got := m.composer.Value(); got != "sol: " {
+		t.Fatalf("second Tab = %q, want %q", got, "sol: ")
+	}
+	m = press(t, m, tea.KeyPressMsg{Code: tea.KeyTab})
+	if got := m.composer.Value(); got != "sam: " {
+		t.Fatalf("third Tab (wrap) = %q, want %q", got, "sam: ")
+	}
+}
+
+// TestTabCompletionResetsOnOtherKeys proves a keystroke other than Tab ends the
+// session, so a later Tab starts a fresh completion instead of cycling stale
+// candidates.
+func TestTabCompletionResetsOnOtherKeys(t *testing.T) {
+	m := seededModel(t)
+	m.ctrl.SelectConversation("omarchy", "#ricing")
+	m.composer.SetValue("s")
+	m.composer.CursorEnd()
+	m = press(t, m, tea.KeyPressMsg{Code: tea.KeyTab})
+	if got := m.composer.Value(); got != "sam: " {
+		t.Fatalf("first Tab = %q, want %q", got, "sam: ")
+	}
+	// Backspace edits the line and must end the session.
+	m = press(t, m, tea.KeyPressMsg{Code: tea.KeyBackspace})
+	if got := m.composer.Value(); got != "sam:" {
+		t.Fatalf("after backspace = %q, want %q", got, "sam:")
+	}
+	m = press(t, m, tea.KeyPressMsg{Code: tea.KeyTab})
+	if got := m.composer.Value(); got != "sam:" {
+		t.Fatalf("Tab after edit = %q, want unchanged %q", got, "sam:")
+	}
+}
+
 func TestComposerHistoryRecallsAndRestores(t *testing.T) {
 	m := seededModel(t)
 	m.composer.SetValue("hello there")

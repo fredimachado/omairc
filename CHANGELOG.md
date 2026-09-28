@@ -44,6 +44,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The TUI sidebar identity footer is two rows: the initials chip and nick on
   their own row, with the presence word and inbox pill indented below.
 
+### Fixed
+
+- TUI Tab nick completion now matches Qt: an ambiguous prefix completes to the
+  first matching nick, and repeated Tabs cycle through the candidates. It used
+  to require exactly one match, so Tab did nothing in a channel where two nicks
+  shared a prefix (for example `s` in `#ricing` matching `sam` and `sol`).
+
 ## [1.0.4] - 2026-09-25
 
 ### Added
