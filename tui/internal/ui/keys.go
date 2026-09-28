@@ -10,7 +10,7 @@ import (
 // that disables the chords while Connect or the shortcuts sheet is open.
 //
 // The pure navigation chords live in chordTable, keyed by bubbletea's
-// key.String() (lowercase arrows and special keys, "ctrl+" / "alt+" /
+// key.Keystroke() (lowercase arrows and special keys, "ctrl+" / "alt+" /
 // "shift+" prefixes in that order). Chords that need the raw key press, the
 // composer, or a mode check are handled in dispatchChord directly.
 

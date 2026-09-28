@@ -235,7 +235,12 @@ verbs: the TUI is keyboard-first and has no pointer path. Evidence goes under
 `connect`, and `compare` verbs (the fence's `test-artifacts/verify/` paths are
 remapped to `test-artifacts/verify-tui/`), plus the Kitty CSI-u bytes for
 `Ctrl+\``, `Ctrl+,`, `Ctrl+Enter`, `Ctrl+Tab`, and `Ctrl+Shift+Delete`, whose
-legacy control bytes collide with other keys. Phase 6 adds the `nick-jump`
+legacy control bytes collide with other keys. On Windows, `internal/ui/chords_windows.go`
+also accepts Windows Terminal aliases (`Ctrl+]` for Connect, ConPTY `ctrl+_` for
+`Ctrl+/`, `Ctrl+Alt+arrows`
+for sidebar walk, `Ctrl+Shift+Left/Right` and `Ctrl+Alt+Shift+Up/Down` for
+network collapse and reorder, `Ctrl+PgDn` for Connect tabs); the shortcuts sheet
+lists them beside the shared chords. Phase 6 adds the `nick-jump`
 verb and the CSI-u bytes for `ctrl+shift+s`, `ctrl+shift+p`, `ctrl+shift+k`,
 `ctrl+shift+a`, `ctrl+shift+o`, and `ctrl+shift+m`, the xterm modifier forms
 `alt+shift+Left`/`Right`/`Up`/`Down` and `ctrl+alt+shift+Left`/`Right`, and

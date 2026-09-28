@@ -2356,14 +2356,17 @@ ApplicationWindow {
         sequence: "Ctrl+,"
         context: Qt.ApplicationShortcut
         enabled: win.connection !== null && !win.shortcutOverlayOpen
-        onActivated: {
-            var id = win.sidebarNetworkFocusId;
-            if (id.length === 0)
-                id = win.irc ? win.irc.focusedNetworkId : "";
-            if (id.length > 0)
-                win.selectSheetNetwork(id);
-            win.connectionSheetOpen = true;
-        }
+        onActivated: win.openConnectSheet()
+    }
+
+    // Windows Terminal keeps Ctrl+, for Settings; Ctrl+] reopens Connect there.
+    Shortcut {
+        sequence: "Ctrl+]"
+        context: Qt.ApplicationShortcut
+        enabled: Qt.platform.os === "windows"
+            && win.connection !== null
+            && !win.shortcutOverlayOpen
+        onActivated: win.openConnectSheet()
     }
 
     // Apply is a window-level action, not a per-control one. Wiring it into
@@ -2390,6 +2393,16 @@ ApplicationWindow {
         sequence: "Ctrl+Tab"
         context: Qt.ApplicationShortcut
         enabled: win.connectionOverlayVisible && !win.shortcutOverlayOpen
+        onActivated: win.stepConnectionSheetTab(1)
+    }
+
+    // Windows Terminal keeps Ctrl+Tab for the next tab; Ctrl+PgDn cycles here.
+    Shortcut {
+        sequence: "Ctrl+PgDown"
+        context: Qt.ApplicationShortcut
+        enabled: Qt.platform.os === "windows"
+            && win.connectionOverlayVisible
+            && !win.shortcutOverlayOpen
         onActivated: win.stepConnectionSheetTab(1)
     }
 
@@ -2685,6 +2698,15 @@ ApplicationWindow {
             connectionRemoveArmed = false;
             clearConnectionPassword();
         }
+    }
+
+    function openConnectSheet() {
+        var id = sidebarNetworkFocusId;
+        if (id.length === 0)
+            id = irc ? irc.focusedNetworkId : "";
+        if (id.length > 0)
+            selectSheetNetwork(id);
+        connectionSheetOpen = true;
     }
 
     function selectSheetNetwork(networkId) {

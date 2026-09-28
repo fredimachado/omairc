@@ -116,8 +116,9 @@ func TestShortcutsSheetRendersKeycaps(t *testing.T) {
 			t.Fatalf("shortcuts sheet missing group %q:\n%s", group.title, plain)
 		}
 		for _, row := range group.rows {
-			if !strings.Contains(plain, row.keys) {
-				t.Fatalf("shortcuts sheet missing keys %q:\n%s", row.keys, plain)
+			keys := displayShortcutKeys(row.keys)
+			if !strings.Contains(plain, keys) {
+				t.Fatalf("shortcuts sheet missing keys %q:\n%s", keys, plain)
 			}
 			if !strings.Contains(plain, row.action) {
 				t.Fatalf("shortcuts sheet missing action %q:\n%s", row.action, plain)

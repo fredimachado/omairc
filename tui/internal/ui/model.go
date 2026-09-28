@@ -447,7 +447,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // handleKey routes one key press to the open modal, overlay, find session, or
 // the chord table. Ctrl+Q is the only quit chord; Ctrl+C copies.
 func (m *Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
-	key := msg.String()
+	// Keystroke, not String: kitty and ConPTY can populate Text on ctrl+printable
+	// chords, and String returns "." for ctrl+. instead of "ctrl+.".
+	key := normalizeChordKey(msg.Keystroke())
 	if key == "ctrl+q" {
 		return m, tea.Quit
 	}

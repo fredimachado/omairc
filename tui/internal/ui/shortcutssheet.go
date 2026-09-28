@@ -128,7 +128,7 @@ func (m *Model) shortcutsCardBody(inner int) []string {
 	keyText := 0
 	for _, group := range shortcutGroups {
 		for _, row := range group.rows {
-			if width := lipgloss.Width(row.keys); width > keyText {
+			if width := lipgloss.Width(displayShortcutKeys(row.keys)); width > keyText {
 				keyText = width
 			}
 		}
@@ -158,14 +158,15 @@ func (m *Model) shortcutsCardBody(inner int) []string {
 		for _, row := range group.rows {
 			// The binding is the single source for both cells, so the chip and
 			// its action can never drift from the chord map.
+			keysLabel := displayShortcutKeys(row.keys)
 			help := key.NewBinding(
-				key.WithKeys(row.keys),
-				key.WithHelp(row.keys, row.action),
+				key.WithKeys(keysLabel),
+				key.WithHelp(keysLabel, row.action),
 			).Help()
 			chip := truncateLine(m.styles.Keycap.Render(" "+help.Key+" "), labelWidth)
-			label := lipgloss.NewStyle().Width(labelWidth).Render(chip)
+			keyColumn := lipgloss.NewStyle().Width(labelWidth).Render(chip)
 			action := truncateLine(actionStyle.Render(help.Desc), actionWidth)
-			line := label + strings.Repeat(" ", shortcutsMenuGutter) + action
+			line := keyColumn + strings.Repeat(" ", shortcutsMenuGutter) + action
 			lines = append(lines, truncateLine(line, inner))
 		}
 	}

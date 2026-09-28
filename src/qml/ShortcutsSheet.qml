@@ -6,15 +6,24 @@ Popup {
 
     required property OmaircStyle style
 
+    readonly property bool windowsTerminalAliases: Qt.platform.os === "windows"
+
+    function chordLabel(primary, windowsExtra) {
+        var label = primary
+        if (windowsTerminalAliases && windowsExtra !== undefined)
+            label = primary + " / " + windowsExtra
+        return style.shortcutKeys(label)
+    }
+
     readonly property var shortcutGroups: [
         {
             title: "MOVE",
             rows: [
-                { keys: "Alt+Down / Alt+Up", action: "walk conversations" },
-                { keys: "Alt+Left / Alt+Right", action: "walk networks" },
-                { keys: "Alt+Shift+Left / Right", action: "collapse / expand network" },
+                { keys: "Alt+Down / Alt+Up", winKeys: "Ctrl+Alt+Down / Up", action: "walk conversations" },
+                { keys: "Alt+Left / Alt+Right", winKeys: "Ctrl+Alt+Left / Right", action: "walk networks" },
+                { keys: "Alt+Shift+Left / Right", winKeys: "Ctrl+Shift+Left / Right", action: "collapse / expand network" },
                 { keys: "Ctrl+Alt+Shift+Left / Right", action: "collapse / expand all" },
-                { keys: "Alt+Shift+Up / Down", action: "move network" },
+                { keys: "Alt+Shift+Up / Down", winKeys: "Ctrl+Alt+Shift+Up / Down", action: "move network" },
                 { keys: "Alt+A", action: "next unread" }
             ]
         },
@@ -47,8 +56,8 @@ Popup {
         {
             title: "CONNECT",
             rows: [
-                { keys: "Ctrl+,", action: "Connect" },
-                { keys: "Ctrl+Tab", action: "Connect tabs" },
+                { keys: "Ctrl+,", winKeys: "Ctrl+]", action: "Connect" },
+                { keys: "Ctrl+Tab", winKeys: "Ctrl+PgDn", action: "Connect tabs" },
                 { keys: "Ctrl+N", action: "add network" },
                 { keys: "Ctrl+Shift+Delete", action: "remove network" },
                 { keys: "Ctrl+Enter", action: "apply selected network" }
@@ -119,7 +128,7 @@ Popup {
 
                         Text {
                             width: sheet.style.scaledSize(220)
-                            text: sheet.style.shortcutKeys(modelData.keys)
+                            text: sheet.chordLabel(modelData.keys, modelData.winKeys)
                             color: sheet.style.inkColor
                             font.family: "iA Writer Mono S"
                             font.pixelSize: sheet.style.scaledSize(11)
