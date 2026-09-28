@@ -8,8 +8,6 @@
 # overrides it so CI snapshot versions match the Qt build; both binaries see
 # the same value.
 #
-# The bare names are Linux-only for now; the Windows `.exe` suffix
-# (go env GOEXE) joins when that target lands.
 set -eu
 
 ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)"
@@ -19,6 +17,7 @@ cd "$TUI"
 VERSION="$("$ROOT/bin/version")"
 BUILD_VERSION="${OMAIRC_BUILD_VERSION:-$VERSION}"
 LDFLAGS="-X github.com/fredimachado/omairc/tui/internal/version.Value=$BUILD_VERSION"
+GOEXE="$(go env GOEXE)"
 
-go build -ldflags "$LDFLAGS" -o "$TUI/bin/omairc-tui" ./cmd/omairc-tui
-go build -ldflags "$LDFLAGS" -o "$TUI/bin/control-omairc-tui" ./cmd/control-omairc-tui
+go build -ldflags "$LDFLAGS" -o "$TUI/bin/omairc-tui$GOEXE" ./cmd/omairc-tui
+go build -ldflags "$LDFLAGS" -o "$TUI/bin/control-omairc-tui$GOEXE" ./cmd/control-omairc-tui

@@ -7,8 +7,7 @@ import (
 	"os/exec"
 )
 
-// detachProcess is a no-op on Windows: there is no session to leave, and the
-// gate only fully supports Unix PTYs (creack/pty returns ErrUnsupported).
+// detachProcess is a no-op on Windows: there is no session to leave.
 func detachProcess(cmd *exec.Cmd) {}
 
 // terminateProcess falls back to Kill on Windows, which has no SIGTERM.

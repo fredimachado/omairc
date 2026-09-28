@@ -1,6 +1,9 @@
 package storage
 
-import "testing"
+import (
+	"runtime"
+	"testing"
+)
 
 func TestCredentialKeyName(t *testing.T) {
 	cases := []struct {
@@ -124,6 +127,9 @@ func TestCredentialStoreUnavailableStateIsNotAnError(t *testing.T) {
 }
 
 func TestNewCredentialStoreUnavailableWithoutSessionBus(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("Secret Service is Linux-only")
+	}
 	// Clear the session bus address so a headless run cannot reach a secret
 	// service. godbus may still discover a bus under /run/user/<uid>/bus, so a
 	// busy developer desktop can legitimately skip this assertion.

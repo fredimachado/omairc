@@ -3,6 +3,7 @@ package storage
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -137,13 +138,13 @@ func TestConversationLogPathForPreservesTargetCase(t *testing.T) {
 func TestConversationLogMigratesLegacyTranscriptPaths(t *testing.T) {
 	root := t.TempDir()
 	legacyDir := filepath.Join(root, irc.LegacyStorageSegment("Libera"))
-	legacyFile := filepath.Join(legacyDir, irc.LegacyStorageSegment("#a|b"))
+	legacyFile := filepath.Join(legacyDir, irc.LegacyStorageSegment("#a/b"))
 	conversationLogTestWrite(t, legacyFile, "legacy\n")
 
 	log := NewConversationLog(root)
 	mapping := irc.CaseMapping{}
-	path := log.PathFor("Libera", "#a|b", mapping)
-	want := filepath.Join(root, irc.OmaircStorageSegment("Libera"), irc.OmaircWireStorageSegment("#a|b"))
+	path := log.PathFor("Libera", "#a/b", mapping)
+	want := filepath.Join(root, irc.OmaircStorageSegment("Libera"), irc.OmaircWireStorageSegment("#a/b"))
 	if path != want {
 		t.Fatalf("PathFor = %q, want %q", path, want)
 	}
@@ -157,7 +158,7 @@ func TestConversationLogMigratesLegacyTranscriptPaths(t *testing.T) {
 		t.Errorf("legacy network dir %q still exists", legacyDir)
 	}
 
-	if again := log.PathFor("Libera", "#a|b", mapping); again != want {
+	if again := log.PathFor("Libera", "#a/b", mapping); again != want {
 		t.Errorf("second PathFor = %q, want %q (migration must be idempotent)", again, want)
 	}
 }
@@ -165,15 +166,15 @@ func TestConversationLogMigratesLegacyTranscriptPaths(t *testing.T) {
 func TestConversationLogDoesNotOverwriteExistingTranscriptDuringMigration(t *testing.T) {
 	root := t.TempDir()
 	legacyDir := filepath.Join(root, irc.LegacyStorageSegment("Libera"))
-	legacyFile := filepath.Join(legacyDir, irc.LegacyStorageSegment("#a|b"))
+	legacyFile := filepath.Join(legacyDir, irc.LegacyStorageSegment("#a/b"))
 	conversationLogTestWrite(t, legacyFile, "legacy\n")
 
-	newPath := filepath.Join(root, irc.OmaircStorageSegment("Libera"), irc.OmaircWireStorageSegment("#a|b"))
+	newPath := filepath.Join(root, irc.OmaircStorageSegment("Libera"), irc.OmaircWireStorageSegment("#a/b"))
 	conversationLogTestWrite(t, newPath, "newer\n")
 
 	log := NewConversationLog(root)
 	mapping := irc.CaseMapping{}
-	if path := log.PathFor("Libera", "#a|b", mapping); path != newPath {
+	if path := log.PathFor("Libera", "#a/b", mapping); path != newPath {
 		t.Fatalf("PathFor = %q, want %q", path, newPath)
 	}
 	if !conversationLogTestExists(legacyFile) {
@@ -186,7 +187,7 @@ func TestConversationLogDoesNotOverwriteExistingTranscriptDuringMigration(t *tes
 	if string(contents) != "newer\n" {
 		t.Fatalf("new file = %q, want %q (must not be overwritten)", contents, "newer\n")
 	}
-	if again := log.PathFor("Libera", "#a|b", mapping); again != newPath {
+	if again := log.PathFor("Libera", "#a/b", mapping); again != newPath {
 		t.Errorf("second PathFor = %q, want %q", again, newPath)
 	}
 }
@@ -233,15 +234,19 @@ func TestConversationLogAppendTightensPermissions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("stat %s: %v", path, err)
 	}
-	if got := fileInfo.Mode().Perm(); got != 0o600 {
-		t.Errorf("file mode = %o, want 600", got)
+	if runtime.GOOS != "windows" {
+		if got := fileInfo.Mode().Perm(); got != 0o600 {
+			t.Errorf("file mode = %o, want 600", got)
+		}
 	}
 	dirInfo, err := os.Stat(filepath.Dir(path))
 	if err != nil {
 		t.Fatalf("stat %s: %v", filepath.Dir(path), err)
 	}
-	if got := dirInfo.Mode().Perm(); got != 0o700 {
-		t.Errorf("directory mode = %o, want 700", got)
+	if runtime.GOOS != "windows" {
+		if got := dirInfo.Mode().Perm(); got != 0o700 {
+			t.Errorf("directory mode = %o, want 700", got)
+		}
 	}
 }
 

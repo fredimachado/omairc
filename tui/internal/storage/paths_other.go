@@ -1,15 +1,10 @@
-//go:build !linux
+//go:build !linux && !darwin && !windows
 
 package storage
 
-// TODO(phase 11+): resolve the real per-platform roots. macOS maps
-// GenericConfigRoot/GenericStateRoot to the ~/Library locations QStandardPaths
-// uses, and Windows uses %LOCALAPPDATA% (and QSettings' NativeFormat registry
-// path). Those land in a later phase; until then the roots are empty so
-// ConfigPath and TranscriptRoot return "". The OMAIRC_TRANSCRIPT_ROOT
-// override in paths.go still applies on every platform.
+// GenericConfigRoot and GenericStateRoot are unimplemented on this platform.
+// ConfigPath and TranscriptRoot return "" unless OMAIRC_TRANSCRIPT_ROOT is set.
 func GenericConfigRoot() string { return "" }
 
-// GenericStateRoot is the macOS/Windows counterpart of the Linux XDG base
-// state directory. It is unimplemented for now; see the TODO above.
+// GenericStateRoot is the counterpart of the Linux XDG base state directory.
 func GenericStateRoot() string { return "" }
