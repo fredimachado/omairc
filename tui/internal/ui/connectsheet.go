@@ -330,6 +330,30 @@ func (m *Model) activateFooter(index int) {
 	m.syncSheetField()
 }
 
+// isConnectApplyKey reports whether a key press is the window-level Apply
+// chord. OmaircWindow.qml binds Ctrl+Return and Ctrl+Enter separately; the
+// keystroke string can read ctrl+enter or ctrl+return, and the raw message
+// must be checked when a terminal strips the ctrl+ prefix from Enter.
+//
+// Windows Terminal and ConPTY have no distinct VT encoding for Ctrl+Enter:
+// they send LF (0x0a), which ultraviolet decodes as ctrl+j
+// (microsoft/terminal#6912). Treat that alias while the Connect sheet is
+// open so Apply works from any field on Windows.
+func isConnectApplyKey(key string, msg tea.KeyPressMsg) bool {
+	switch key {
+	case "ctrl+enter", "ctrl+return", "ctrl+j", "ctrl+m":
+		return true
+	}
+	if msg.Mod&tea.ModCtrl == 0 {
+		return false
+	}
+	switch msg.Code {
+	case tea.KeyEnter, tea.KeyKpEnter, 'j', 'J', 'm', 'M':
+		return true
+	}
+	return false
+}
+
 // applyConnect is Ctrl+Enter: apply the selected network from any tab. It
 // dismisses the sheet only when a session was accepted, mirrors the stored
 // roster into the sidebar order, and opens that network's Status transcript.
@@ -522,9 +546,6 @@ func (m *Model) handleConnectKey(key string, msg tea.KeyPressMsg) (tea.Model, te
 		return m, nil
 	case "enter":
 		m.activateConnectStop()
-		return m, nil
-	case "ctrl+enter":
-		m.applyConnect()
 		return m, nil
 	case "ctrl+tab":
 		m.toggleConnectTab()

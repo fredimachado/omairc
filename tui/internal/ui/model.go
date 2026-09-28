@@ -472,6 +472,14 @@ func (m *Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	// on top of it, Ctrl+Shift+/ opens About, and Ctrl+C still reaches the copy
 	// path; every other chord is owned by the sheet.
 	if m.connectVisible() {
+		// Apply is window-level, like OmaircWindow.qml's Ctrl+Enter shortcut,
+		// not a per-control handler. Check it before the sheet walk consumes
+		// Enter or before Windows VT ctrl+j (Ctrl+Enter) reaches a text field.
+		if isConnectApplyKey(key, msg) {
+			m.focus = focusConnect
+			m.applyConnect()
+			return m, nil
+		}
 		if key == "ctrl+/" {
 			m.openShortcuts()
 			return m, nil
@@ -554,6 +562,12 @@ func (m *Model) View() tea.View {
 	// Focus reporting drives FocusMsg/BlurMsg, which the shell needs to decide
 	// whether an arrival earns a desktop notification (win.active in the QML).
 	v.ReportFocus = true
+	// The Connect sheet needs Ctrl+Enter disambiguated from Enter on every
+	// field. Request escape-coded keys while it is open so ConPTY and legacy
+	// terminals report the ctrl modifier instead of a bare CR.
+	if m.connectVisible() {
+		v.KeyboardEnhancements.ReportAllKeysAsEscapeCodes = true
+	}
 	// Paint the terminal from the live palette so the surface behind the
 	// columns matches the theme instead of the terminal default.
 	v.BackgroundColor = m.styles.Colors.Background

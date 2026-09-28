@@ -99,6 +99,62 @@ func TestStoredProfilesListedInSidebarBeforeConnect(t *testing.T) {
 	}
 }
 
+func TestConnectCtrlJAppliesFromField(t *testing.T) {
+	ctrl := controller.New()
+	conn := connection.New(ctrl, func() session.Transport { return session.NewLoopbackTransport() })
+	conn.SetStoredProfiles([]connection.NetworkProfile{storedProfile("net-a", "irc.a.example")})
+	conn.Select("net-a")
+	m := New(ctrl, conn)
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 118, Height: 30})
+	m = updated.(*Model)
+	m.connectOpen = true
+	// Windows Terminal encodes Ctrl+Enter as LF, which ultraviolet maps to ctrl+j.
+	m = press(t, m, tea.KeyPressMsg{Code: 'j', Mod: tea.ModCtrl})
+	if !ctrl.ConsoleOpen() {
+		t.Fatal("ctrl+j must apply from a Connect field on Windows VT")
+	}
+	if m.connectVisible() {
+		t.Fatal("Connect sheet must close after ctrl+j apply")
+	}
+}
+
+func TestConnectCtrlEnterAppliesFromField(t *testing.T) {
+	ctrl := controller.New()
+	conn := connection.New(ctrl, func() session.Transport { return session.NewLoopbackTransport() })
+	conn.SetStoredProfiles([]connection.NetworkProfile{storedProfile("net-a", "irc.a.example")})
+	conn.Select("net-a")
+	m := New(ctrl, conn)
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 118, Height: 30})
+	m = updated.(*Model)
+	m.connectOpen = true
+	m = press(t, m, tea.KeyPressMsg{Code: tea.KeyEnter, Mod: tea.ModCtrl})
+	if !ctrl.ConsoleOpen() {
+		t.Fatal("Ctrl+Enter must apply from a Connect field")
+	}
+	if m.connectVisible() {
+		t.Fatal("Connect sheet must close after Ctrl+Enter apply")
+	}
+}
+
+func TestConnectApplyKeyMatchesReturnAlias(t *testing.T) {
+	ctrlEnter := tea.KeyPressMsg{Code: tea.KeyEnter, Mod: tea.ModCtrl}
+	if !isConnectApplyKey("ctrl+return", ctrlEnter) {
+		t.Fatal("ctrl+return must count as Connect apply")
+	}
+	if !isConnectApplyKey("ctrl+j", tea.KeyPressMsg{Code: 'j', Mod: tea.ModCtrl}) {
+		t.Fatal("ctrl+j must count as Connect apply")
+	}
+	if !isConnectApplyKey("enter", ctrlEnter) {
+		t.Fatal("enter keystroke with ctrl modifier must count as Connect apply")
+	}
+	if isConnectApplyKey("enter", tea.KeyPressMsg{Code: tea.KeyEnter}) {
+		t.Fatal("plain Enter must not count as Connect apply")
+	}
+	if isConnectApplyKey("j", tea.KeyPressMsg{Code: 'j'}) {
+		t.Fatal("j without ctrl modifier must not count as Connect apply")
+	}
+}
+
 func TestApplyOpensStatusTranscript(t *testing.T) {
 	ctrl := controller.New()
 	conn := connection.New(ctrl, func() session.Transport { return session.NewLoopbackTransport() })
