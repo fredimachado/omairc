@@ -2,6 +2,7 @@ package theme
 
 import (
 	"image/color"
+	"slices"
 	"testing"
 )
 
@@ -25,14 +26,19 @@ func TestFallbackMatchesStyleGoLiterals(t *testing.T) {
 	if colors.NickAvatarMix != 0.23 {
 		t.Fatalf("NickAvatarMix = %v, want 0.23", colors.NickAvatarMix)
 	}
-	want := [5]color.Color{
+	want := []color.Color{
 		mustHex("#7aa2f7"),
 		mustHex("#c099ff"),
 		mustHex("#7fc8a9"),
 		mustHex("#efb366"),
 		mustHex("#ed8f9d"),
+		mustHex("#9ece6a"),
+		mustHex("#7dcfff"),
+		mustHex("#ddd06e"),
+		mustHex("#ea76cb"),
+		mustHex("#7c7cf0"),
 	}
-	if colors.NickPalette != want {
+	if !slices.Equal(colors.NickPalette, want) {
 		t.Fatalf("NickPalette = %v, want %v", colors.NickPalette, want)
 	}
 }
