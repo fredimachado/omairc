@@ -20,7 +20,7 @@ QtObject {
         var veil = mixColors(pageColor, inkColor, darkMode ? 0.18 : 0.12);
         return Qt.rgba(veil.r, veil.g, veil.b, 0.5);
     }
-    // Ten fixed hue families, dark and light variants one per slot. Slot 0 is
+    // Eight fixed hue families, dark and light variants one per slot. Slot 0 is
     // the live theme accent; the rest are fixed and mirrored by nickPaletteDark
     // / nickPaletteLight in tui/internal/theme/colors.go.
     readonly property var nickPalette: [
@@ -31,9 +31,7 @@ QtObject {
         darkMode ? "#ed8f9d" : "#b44355",
         darkMode ? "#9ece6a" : "#4d7c0f",
         darkMode ? "#7dcfff" : "#0f7b8f",
-        darkMode ? "#ddd06e" : "#7c6a0a",
-        darkMode ? "#ea76cb" : "#b0308c",
-        darkMode ? "#7c7cf0" : "#3730a3"
+        darkMode ? "#ddd06e" : "#7c6a0a"
     ]
     readonly property real nickAvatarMix: darkMode ? 0.23 : 0.16
     readonly property var nickAvatarFills: nickPalette.map(function (color) {

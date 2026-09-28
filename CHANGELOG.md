@@ -14,10 +14,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Per-nick colors grew from five hue families to ten in both clients: green,
-  cyan, gold, magenta, and indigo join blue, violet, teal, orange, and rose.
-  A nick's exact color can change once on upgrade, because the palette index is
-  the nick hash modulo the palette length.
+- Per-nick colors grew from five hue families to eight in both clients: green,
+  cyan, and gold join blue, violet, teal, orange, and rose. A nick's exact color
+  can change once on upgrade, because the palette index is the nick hash modulo
+  the palette length.
 - The TUI composer is a window-level bar spanning the window, independent of
   the sidebar and the member panel, so toggling a column never moves it. The
   slash-completion menu floats over the transcript column without resizing any

@@ -121,9 +121,9 @@ func TestDeriveFallsBackWhenContrastCannotBeReached(t *testing.T) {
 	}
 }
 
-func TestNickPaletteHasTenEntries(t *testing.T) {
+func TestNickPaletteHasEightEntries(t *testing.T) {
 	palette := Derive(Spec{Mode: ModeDark}).NickPalette
-	if len(palette) != 10 {
-		t.Fatalf("len(NickPalette) = %d, want 10", len(palette))
+	if len(palette) != 8 {
+		t.Fatalf("len(NickPalette) = %d, want 8", len(palette))
 	}
 }

@@ -35,8 +35,6 @@ func TestFallbackMatchesStyleGoLiterals(t *testing.T) {
 		mustHex("#9ece6a"),
 		mustHex("#7dcfff"),
 		mustHex("#ddd06e"),
-		mustHex("#ea76cb"),
-		mustHex("#7c7cf0"),
 	}
 	if !slices.Equal(colors.NickPalette, want) {
 		t.Fatalf("NickPalette = %v, want %v", colors.NickPalette, want)

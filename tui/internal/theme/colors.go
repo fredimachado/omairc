@@ -317,10 +317,10 @@ var (
 )
 
 // Nick palette per mode, mirroring nickPalette in OmaircStyle.qml. The dark
-// entries are today's style.go constants. Ten fixed hue families; slot 0 is the
-// theme accent in QML but the fixed fallback accent here, and slots 5-9 are the
-// green/cyan/gold/magenta/indigo additions. Both modes stay parallel: slot i is
-// the same family in either mode. The slice length is the hash modulus.
+// entries are today's style.go constants. Eight fixed hue families; slot 0 is
+// the theme accent in QML but the fixed fallback accent here, and slots 5-7 are
+// the green/cyan/gold additions. Both modes stay parallel: slot i is the same
+// family in either mode. The slice length is the hash modulus.
 var (
 	nickPaletteDark = []color.Color{
 		fixedAccent,
@@ -331,8 +331,6 @@ var (
 		mustHex("#9ece6a"),
 		mustHex("#7dcfff"),
 		mustHex("#ddd06e"),
-		mustHex("#ea76cb"),
-		mustHex("#7c7cf0"),
 	}
 	nickPaletteLight = []color.Color{
 		mustHex("#7aa2f7"),
@@ -343,7 +341,5 @@ var (
 		mustHex("#4d7c0f"),
 		mustHex("#0f7b8f"),
 		mustHex("#7c6a0a"),
-		mustHex("#b0308c"),
-		mustHex("#3730a3"),
 	}
 )
