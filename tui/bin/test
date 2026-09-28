@@ -30,7 +30,8 @@ fi
 go vet ./...
 go test ./...
 
-BIN="$TUI/bin/omairc-tui"
+GOEXE="$(go env GOEXE)"
+BIN="$TUI/bin/omairc-tui$GOEXE"
 
 VERSION="$("$ROOT/bin/version")"
 got="$("$BIN" --version)"
@@ -92,7 +93,9 @@ test "$override_got" = "omairc-tui $OVERRIDE_VERSION" || {
 
 # PTY parity gate over the freshly built shell: launch it under a real PTY and
 # assert the OSC title, the seeded sidebar text, and a rendered screenshot.
-GATE="$TUI/bin/control-omairc-tui"
+# Windows uses ConPTY (creack/pty) and AF_UNIX sockets on Win10+; the Linux
+# matrix remains the primary gate when this runner is unavailable.
+GATE="$TUI/bin/control-omairc-tui$GOEXE"
 cleanup_gate() { "$GATE" cleanup >/dev/null 2>&1 || true; }
 trap cleanup_gate EXIT INT TERM
 cleanup_gate

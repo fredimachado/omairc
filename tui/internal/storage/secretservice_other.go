@@ -1,4 +1,4 @@
-//go:build !linux && !darwin
+//go:build !linux && !darwin && !windows
 
 package storage
 
@@ -21,8 +21,7 @@ func (unavailableCredentialStore) Remove(CredentialKey) CredentialResult {
 	return CredentialResult{State: CredentialUnavailable}
 }
 
-// NewCredentialStore returns the unavailable stub on platforms without a
-// credential backend.
+// NewCredentialStore returns the unavailable stub on this platform.
 func NewCredentialStore() CredentialStore {
 	return unavailableCredentialStore{}
 }
