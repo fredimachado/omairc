@@ -20,21 +20,25 @@ QtObject {
         var veil = mixColors(pageColor, inkColor, darkMode ? 0.18 : 0.12);
         return Qt.rgba(veil.r, veil.g, veil.b, 0.5);
     }
+    // Ten fixed hue families, dark and light variants one per slot. Slot 0 is
+    // the live theme accent; the rest are fixed and mirrored by nickPaletteDark
+    // / nickPaletteLight in tui/internal/theme/colors.go.
     readonly property var nickPalette: [
         accentColor,
         darkMode ? "#c099ff" : "#7950b8",
         darkMode ? "#7fc8a9" : "#237a58",
         darkMode ? "#efb366" : "#a45f14",
-        darkMode ? "#ed8f9d" : "#b44355"
+        darkMode ? "#ed8f9d" : "#b44355",
+        darkMode ? "#9ece6a" : "#4d7c0f",
+        darkMode ? "#7dcfff" : "#0f7b8f",
+        darkMode ? "#ddd06e" : "#7c6a0a",
+        darkMode ? "#ea76cb" : "#b0308c",
+        darkMode ? "#7c7cf0" : "#3730a3"
     ]
     readonly property real nickAvatarMix: darkMode ? 0.23 : 0.16
-    readonly property var nickAvatarFills: [
-        mixColors(pageColor, nickPalette[0], nickAvatarMix),
-        mixColors(pageColor, nickPalette[1], nickAvatarMix),
-        mixColors(pageColor, nickPalette[2], nickAvatarMix),
-        mixColors(pageColor, nickPalette[3], nickAvatarMix),
-        mixColors(pageColor, nickPalette[4], nickAvatarMix)
-    ]
+    readonly property var nickAvatarFills: nickPalette.map(function (color) {
+        return mixColors(pageColor, color, nickAvatarMix);
+    })
 
     // Qt maps "Ctrl" in Shortcut sequences to Command and "Alt" to Option
     // on macOS. The physical Control key is Meta. Show Cmd and Option in
@@ -77,7 +81,7 @@ QtObject {
     function nickPaletteIndex(nick) {
         var hash = 0;
         for (var index = 0; index < nick.length; ++index)
-            hash = (hash + nick.charCodeAt(index)) % 5;
+            hash = (hash + nick.charCodeAt(index)) % nickPalette.length;
         return hash;
     }
 

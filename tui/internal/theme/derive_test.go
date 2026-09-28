@@ -1,7 +1,7 @@
 package theme
 
 import (
-	"image/color"
+	"slices"
 	"testing"
 )
 
@@ -15,7 +15,7 @@ func TestDeriveDefaultsDark(t *testing.T) {
 	if colors.NickAvatarMix != 0.23 {
 		t.Fatalf("NickAvatarMix = %v, want 0.23", colors.NickAvatarMix)
 	}
-	if colors.NickPalette != nickPaletteDark {
+	if !slices.Equal(colors.NickPalette, nickPaletteDark) {
 		t.Fatalf("NickPalette = %v, want the dark palette", colors.NickPalette)
 	}
 }
@@ -29,7 +29,7 @@ func TestDeriveDefaultsLight(t *testing.T) {
 	if colors.NickAvatarMix != 0.16 {
 		t.Fatalf("NickAvatarMix = %v, want 0.16", colors.NickAvatarMix)
 	}
-	if colors.NickPalette != nickPaletteLight {
+	if !slices.Equal(colors.NickPalette, nickPaletteLight) {
 		t.Fatalf("NickPalette = %v, want the light palette", colors.NickPalette)
 	}
 }
@@ -121,9 +121,9 @@ func TestDeriveFallsBackWhenContrastCannotBeReached(t *testing.T) {
 	}
 }
 
-func TestNickPaletteHasFiveEntries(t *testing.T) {
-	var palette [5]color.Color = Derive(Spec{Mode: ModeDark}).NickPalette
-	if len(palette) != 5 {
-		t.Fatalf("len(NickPalette) = %d, want 5", len(palette))
+func TestNickPaletteHasTenEntries(t *testing.T) {
+	palette := Derive(Spec{Mode: ModeDark}).NickPalette
+	if len(palette) != 10 {
+		t.Fatalf("len(NickPalette) = %d, want 10", len(palette))
 	}
 }

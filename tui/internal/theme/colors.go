@@ -58,7 +58,7 @@ type Colors struct {
 	Mention       color.Color
 	Unread        color.Color
 	Page          color.Color
-	NickPalette   [5]color.Color
+	NickPalette   []color.Color
 	NickAvatarMix float64
 }
 
@@ -317,20 +317,33 @@ var (
 )
 
 // Nick palette per mode, mirroring nickPalette in OmaircStyle.qml. The dark
-// entries are today's style.go constants.
+// entries are today's style.go constants. Ten fixed hue families; slot 0 is the
+// theme accent in QML but the fixed fallback accent here, and slots 5-9 are the
+// green/cyan/gold/magenta/indigo additions. Both modes stay parallel: slot i is
+// the same family in either mode. The slice length is the hash modulus.
 var (
-	nickPaletteDark = [5]color.Color{
+	nickPaletteDark = []color.Color{
 		fixedAccent,
 		mustHex("#c099ff"),
 		mustHex("#7fc8a9"),
 		mustHex("#efb366"),
 		mustHex("#ed8f9d"),
+		mustHex("#9ece6a"),
+		mustHex("#7dcfff"),
+		mustHex("#ddd06e"),
+		mustHex("#ea76cb"),
+		mustHex("#7c7cf0"),
 	}
-	nickPaletteLight = [5]color.Color{
+	nickPaletteLight = []color.Color{
 		mustHex("#7aa2f7"),
 		mustHex("#7950b8"),
 		mustHex("#237a58"),
 		mustHex("#a45f14"),
 		mustHex("#b44355"),
+		mustHex("#4d7c0f"),
+		mustHex("#0f7b8f"),
+		mustHex("#7c6a0a"),
+		mustHex("#b0308c"),
+		mustHex("#3730a3"),
 	}
 )
