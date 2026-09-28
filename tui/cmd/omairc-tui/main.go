@@ -18,6 +18,7 @@ import (
 	"github.com/fredimachado/omairc/tui/internal/avatar"
 	"github.com/fredimachado/omairc/tui/internal/connection"
 	"github.com/fredimachado/omairc/tui/internal/controller"
+	"github.com/fredimachado/omairc/tui/internal/crashlog"
 	"github.com/fredimachado/omairc/tui/internal/demo"
 	"github.com/fredimachado/omairc/tui/internal/notify"
 	"github.com/fredimachado/omairc/tui/internal/session"
@@ -72,6 +73,16 @@ func run(args []string, stdout, stderr io.Writer) int {
 	if versionRequested {
 		fmt.Fprintf(stdout, "omairc-tui %s\n", version.Value)
 		return 0
+	}
+
+	// Keep a crash record on disk. Bubble Tea recovers panics and prints them
+	// to stderr, and the runtime prints unrecovered panics on its own, so a
+	// crash leaves no trace once the terminal scrolls or closes. --help and
+	// --version return above, so neither creates a log.
+	if restore, err := crashlog.Install(); err != nil {
+		fmt.Fprintf(stderr, "omairc-tui: crash log disabled: %v\n", err)
+	} else {
+		defer restore()
 	}
 
 	c := controller.New()
@@ -197,7 +208,10 @@ func run(args []string, stdout, stderr io.Writer) int {
 		})
 	}
 	if _, err := p.Run(); err != nil {
-		fmt.Fprintf(stderr, "omairc-tui: %v\n", err)
+		// Report through os.Stderr, which crashlog.Install replaced with the
+		// tee: a recovered Bubble Tea panic arrives here as ErrProgramPanic
+		// and must reach the log, not just the parameter's pre-install file.
+		fmt.Fprintf(os.Stderr, "omairc-tui: %v\n", err)
 		return 1
 	}
 	close(wake)

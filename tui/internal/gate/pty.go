@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"sync"
 	"time"
 )
@@ -175,13 +176,16 @@ func (p *Process) closeFds() error {
 }
 
 // terminalEnv returns the process environment plus the terminal variables a
-// full-screen TUI needs. exec.Cmd deduplicates Env with the last value
-// winning, so appending here overrides an inherited value.
-func terminalEnv() []string {
+// full-screen TUI needs, with the app's XDG state rooted under stateDir so a
+// launched shell never touches the developer's state directory (the crash log
+// in particular). exec.Cmd deduplicates Env with the last value winning, so
+// appending here overrides an inherited value.
+func terminalEnv(stateDir string) []string {
 	env := os.Environ()
 	return append(env,
 		"TERM=xterm-256color",
 		"COLORTERM=truecolor",
 		"LANG=C.UTF-8",
+		"XDG_STATE_HOME="+filepath.Join(stateDir, "app-state"),
 	)
 }

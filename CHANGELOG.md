@@ -11,6 +11,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Native Windows toast notifications for mentions and direct messages. A click
   opens the conversation that raised it, even when the window was closed.
+- The TUI writes a crash log to `<state>/omairc/omairc-tui.log`, beside the Qt
+  client's `omairc.log`. A recovered Bubble Tea panic and an unrecovered
+  runtime fatal both land there with the full stack, so a crash is diagnosable
+  after the terminal that printed it is gone. The file stays empty until
+  something crashes.
 
 ### Changed
 

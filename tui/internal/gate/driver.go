@@ -261,7 +261,7 @@ func Serve(opts ServeOptions) error {
 		Cols:   opts.Cols,
 		Rows:   opts.Rows,
 		Dir:    opts.Root,
-		Env:    terminalEnv(),
+		Env:    terminalEnv(opts.StateDir),
 	})
 	if err != nil {
 		_ = listener.Close()

@@ -45,7 +45,7 @@ func TestPTYSmokeDemoShell(t *testing.T) {
 		Cols:   cols,
 		Rows:   rows,
 		Dir:    root,
-		Env:    terminalEnv(),
+		Env:    terminalEnv(t.TempDir()),
 	})
 	if err != nil {
 		t.Fatalf("start omairc-tui: %v", err)
