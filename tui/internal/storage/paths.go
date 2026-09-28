@@ -32,3 +32,15 @@ func TranscriptRoot() string {
 	}
 	return filepath.Join(root, "omairc", "logs")
 }
+
+// CrashLogPath is the TUI crash log: <GenericStateRoot>/omairc/omairc-tui.log.
+// It sits beside the Qt client's omairc.log (OmaircFileLog::defaultPath) so
+// either client's crash record is in the same state directory. It returns ""
+// when the platform state root is unknown.
+func CrashLogPath() string {
+	root := GenericStateRoot()
+	if root == "" {
+		return ""
+	}
+	return filepath.Join(root, "omairc", "omairc-tui.log")
+}

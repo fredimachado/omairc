@@ -34,7 +34,8 @@ When the two disagree about the shared contract, the root file wins.
   `internal/avatar/` (peer-avatar fetch, bounded decode, cache, and
   half-block raster), `internal/openurl/` (the OS URL-handler seam),
   `internal/gate/` (the PTY parity driver: VT grid, OSC title capture, key
-  writer, screenshot), `internal/version/` (injected build version), and
+  writer, screenshot), `internal/crashlog/` (the durable crash record),
+  `internal/version/` (injected build version), and
   `bin/` (gate scripts).
 - `tui/bin/omairc-tui` is a build artifact and is gitignored.
 
@@ -81,6 +82,19 @@ When the two disagree about the shared contract, the root file wins.
   labeled-response timeout, and typing pacing go through `internal/session`'s
   `Clock`/`Timer` seam, so tests drive them manually with `FakeClock` and
   `LoopbackTransport`.
+- `internal/crashlog` is the crash-record leaf. `Install` tees `os.Stderr`
+  into `<GenericStateRoot>/omairc/omairc-tui.log` (owner-only, 0600) and points
+  `debug.SetCrashOutput` at the same file, so both a Bubble Tea recovered
+  panic (which only ever reaches stderr) and an unrecovered runtime fatal
+  survive the terminal that printed them. It is crash-only: a clean run writes
+  nothing, so the file stays empty until something dies and its mtime is the
+  crash time. The log takes raw stderr, so never pass secret material to
+  `panic`: a panic value is written verbatim. `cmd/omairc-tui` installs it after
+  `--help`/`--version` return, so neither flag creates a log, and
+  `--demo-server` logs too because a demo crash is still a crash. To keep a
+  gate launch out of the developer's state directory, the PTY driver's
+  `terminalEnv` roots the child's `XDG_STATE_HOME` under its own state
+  directory.
 - `internal/controller` holds the state the shell calls: sessions, the
   reducer, selection, sidebar order, sidebar network collapse/reorder, send,
   and the Status ring buffer. `IsNetworkCollapsed`, `SetNetworkCollapsed`,
