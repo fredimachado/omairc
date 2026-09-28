@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
 	"charm.land/lipgloss/v2"
 
@@ -93,8 +94,12 @@ func (m *Model) transcriptRowArea() transcriptRows {
 		return area
 	}
 	markRow := m.ctrl.UnreadMarkRow()
-	for index, message := range m.ctrl.Messages() {
-		block := m.messageRow(index, message)
+	messages := m.ctrl.Messages()
+	// The nick column is one width for the whole transcript, so it is measured
+	// once per render rather than per row.
+	nickWidth := nickColumnWidth(messages)
+	for index, message := range messages {
+		block := m.messageRowAt(messages, index, message, nickWidth)
 		// The "New messages" boundary sits above the first unread row, attached
 		// to that row's block so the rendered row count still matches the
 		// message count find and copy index by.
@@ -254,19 +259,21 @@ func (m *Model) headerTail() string {
 
 // appendTranscriptTypingFooter adds the direct-message typing hint after the
 // message rows. A grouped hint belongs to the peer's last live chat row, so it
-// extends that rendered line; an ungrouped hint gets the peer's header line and
-// an indented dots line. It is display-only: transcriptRowTexts keeps one entry
-// per controller message, and the footer sits past every message index.
+// extends that rendered line; an ungrouped hint gets the peer's byline (a blank
+// clock, the nick, and the separator) and an indented dots line. It is
+// display-only: transcriptRowTexts keeps one entry per controller message, and
+// the footer sits past every message index.
 func (m *Model) appendTranscriptTypingFooter(area transcriptRows) transcriptRows {
 	nick, grouped, show := m.ctrl.TranscriptTypingIndicator()
 	if !show {
 		return area
 	}
-	dots := m.styles.MutedLine.Render(" ...")
+	nickWidth := nickColumnWidth(m.ctrl.Messages())
 	last := len(area.lines) - 1
 	if grouped && last >= 0 {
 		// Keep the dots on screen even when the peer's line is at the column
 		// edge: renderColumn would otherwise truncate them away.
+		dots := m.styles.MutedLine.Render(" ...")
 		available := m.transcriptWidth() - lipgloss.Width(dots)
 		if available < 0 {
 			available = 0
@@ -274,8 +281,10 @@ func (m *Model) appendTranscriptTypingFooter(area transcriptRows) transcriptRows
 		area.lines[last] = truncateLine(area.lines[last], available) + dots
 		return area
 	}
-	area.lines = append(area.lines, m.styles.MutedLine.Render(nick))
-	area.lines = append(area.lines, m.styles.MutedLine.Render("   ..."))
+	first, indent := m.chatByline(nick, time.Time{}, false, nickWidth,
+		bylineStyle{clock: m.styles.Time, nick: m.nickStyle(nick), rule: m.styles.MutedLine})
+	area.lines = append(area.lines, first)
+	area.lines = append(area.lines, indent+m.styles.MutedLine.Render("..."))
 	return area
 }
 
@@ -578,14 +587,136 @@ func (m *Model) renderMessageBody(body string, base lipgloss.Style) string {
 	return builder.String()
 }
 
-// messageRow renders one transcript line. Actions, events, and notices get
-// their own shape; a mention is washed as a full-width row. Every chat byline
-// leads with a dimmed timestamp and the author in its fixed palette color,
-// mirroring MessageHeader.qml. The body carries its own IRC emphasis. The
-// current find match wins over every other style. It stays one line per
-// message: find/copy index the rows and the typing footer extends the last
-// row.
+// transcriptClockFormat is the byline timestamp's fixed HH:mm shape, and
+// transcriptClockWidth its cell width, so the nick column never moves.
+const (
+	transcriptClockFormat = "15:04"
+	transcriptClockWidth  = len(transcriptClockFormat)
+)
+
+// transcriptSeparator is the vertical rule between the nick column and the
+// message body: a space, the rule, and a space.
+const transcriptSeparator = " │ "
+
+// isChatRow reports whether a message renders with the time/nick column and a
+// wrapped body. The action, notice, and event shapes keep their own single-line
+// chrome.
+func isChatRow(message controller.MessageSnapshot) bool {
+	switch message.Kind {
+	case "action", "event", "notice":
+		return false
+	}
+	return true
+}
+
+// groupableChatRow reports whether a row may continue the run above it. A whois
+// row carries the column but is a distinct shape in Qt, so it never groups.
+func groupableChatRow(message controller.MessageSnapshot) bool {
+	return isChatRow(message) && message.Kind != "whois"
+}
+
+// continuesChatGroup reports whether message continues previous as one group:
+// the same nick in the same minute from the same origin. It mirrors
+// continuesMessageGroup in OmaircWindow.qml. The later rows of a group blank
+// the timestamp and nick so the run reads as one block.
+func continuesChatGroup(previous *controller.MessageSnapshot, message controller.MessageSnapshot) bool {
+	if !groupableChatRow(message) || previous == nil || !groupableChatRow(*previous) {
+		return false
+	}
+	if message.Author == "" || previous.Author == "" || message.Origin != previous.Origin {
+		return false
+	}
+	return message.Author == previous.Author &&
+		message.Time.Format(transcriptClockFormat) == previous.Time.Format(transcriptClockFormat)
+}
+
+// nickColumnWidth is the width of the right-aligned nick column: the widest chat
+// row's nick in one transcript, so every separator lands in the same column.
+func nickColumnWidth(messages []controller.MessageSnapshot) int {
+	width := 0
+	for _, message := range messages {
+		if !isChatRow(message) {
+			continue
+		}
+		if cell := lipgloss.Width(message.Author); cell > width {
+			width = cell
+		}
+	}
+	return width
+}
+
+// bylineStyle is one byline's styling: the clock, the nick, and the separator
+// runs. The plain chat row uses the shell palette; the mention row swaps in its
+// wash so no cell of the band is left unwashed.
+type bylineStyle struct {
+	clock lipgloss.Style
+	nick  lipgloss.Style
+	rule  lipgloss.Style
+}
+
+// chatByline renders a chat row's byline: the dimmed timestamp, the
+// right-aligned nick in its palette color, and the separator. It returns the
+// opening run and the matching blank indent, both the same width, so a wrapped
+// body and a grouped row line up under the first line. A grouped or zero-time
+// row blanks the clock; a grouped row blanks the nick too.
+func (m *Model) chatByline(nick string, at time.Time, grouped bool, nickWidth int, style bylineStyle) (first, indent string) {
+	clock := strings.Repeat(" ", transcriptClockWidth)
+	if !grouped && !at.IsZero() {
+		clock = style.clock.Render(at.Format(transcriptClockFormat))
+	}
+	nickColumn := strings.Repeat(" ", nickWidth)
+	if !grouped {
+		nickColumn = strings.Repeat(" ", max(0, nickWidth-lipgloss.Width(nick))) +
+			style.nick.Render(nick)
+	}
+	first = clock + " " + nickColumn + style.rule.Render(transcriptSeparator)
+	indent = strings.Repeat(" ",
+		transcriptClockWidth+1+nickWidth+lipgloss.Width(transcriptSeparator))
+	return first, indent
+}
+
+// chatRow renders a plain chat row: the byline column, then the body wrapped
+// under the body column.
+func (m *Model) chatRow(message controller.MessageSnapshot, grouped bool, nickWidth int) string {
+	first, indent := m.chatByline(message.Author, message.Time, grouped, nickWidth,
+		bylineStyle{clock: m.styles.Time, nick: m.nickStyle(message.Author), rule: m.styles.MutedLine})
+	body := m.renderMessageBody(message.Body, lipgloss.NewStyle())
+	return joinWrappedBody(first, indent, body, m.transcriptWidth())
+}
+
+// joinWrappedBody hangs a wrapped body off a byline: the first wrapped line
+// follows the byline, every later line is indented to the body column, and a
+// body wider than the column wraps instead of being truncated by renderColumn.
+func joinWrappedBody(first, indent, body string, width int) string {
+	available := width - lipgloss.Width(indent)
+	if available < 1 {
+		available = 1
+	}
+	lines := strings.Split(lipgloss.Wrap(body, available, ""), "\n")
+	joined := first + lines[0]
+	for _, line := range lines[1:] {
+		joined += "\n" + indent + line
+	}
+	return joined
+}
+
+// messageRow renders one transcript row. It measures the transcript's column
+// geometry for the caller, so a direct call reads the same layout the view
+// does. The current find match wins over every other style.
 func (m *Model) messageRow(index int, message controller.MessageSnapshot) string {
+	var messages []controller.MessageSnapshot
+	if m.ctrl != nil && !m.ctrl.ConsoleOpen() {
+		messages = m.ctrl.Messages()
+	}
+	return m.messageRowAt(messages, index, message, nickColumnWidth(messages))
+}
+
+// messageRowAt renders one row against a measured transcript. messages is the
+// slice index points into, so the row reads the one above it for grouping, and
+// nickWidth is the shared nick column, measured once for the whole render.
+// Actions, events, and notices keep their own shape; chat rows carry the
+// time/nick column and a wrapped body.
+func (m *Model) messageRowAt(messages []controller.MessageSnapshot, index int, message controller.MessageSnapshot, nickWidth int) string {
 	if m.findMatchAt(index) {
 		return m.styles.FindMatch.Render(m.transcriptLine(message))
 	}
@@ -609,12 +740,15 @@ func (m *Model) messageRow(index int, message controller.MessageSnapshot) string
 			m.styles.Notice.Render("- ") +
 			m.renderMessageBody(message.Body, m.styles.Notice)
 	}
-	if message.Mentioned {
-		return m.mentionRow(message)
+	var previous *controller.MessageSnapshot
+	if index > 0 && index-1 < len(messages) {
+		previous = &messages[index-1]
 	}
-	return m.styles.Time.Render(message.Time.Format("15:04")) + " " +
-		m.nickStyle(message.Author).Render(message.Author) + " " +
-		m.renderMessageBody(message.Body, lipgloss.NewStyle())
+	grouped := continuesChatGroup(previous, message)
+	if message.Mentioned {
+		return m.mentionRow(message, grouped, nickWidth)
+	}
+	return m.chatRow(message, grouped, nickWidth)
 }
 
 // nickStyle is the transcript byline style: the nick's fixed NickPalette color
@@ -651,21 +785,29 @@ func (m *Model) eventRow(body string) string {
 	return strings.Repeat(" ", pad) + text
 }
 
-// mentionRow renders a highlighted message as a full-width band. Every cell
-// carries the wash background so the tint spans the column like MentionWash.qml
-// rather than stopping at the end of the text; the horizontal padding is part
-// of the line so it survives renderColumn. Nick keeps its palette color and the
-// body keeps its IRC emphasis on top of the wash.
-func (m *Model) mentionRow(message controller.MessageSnapshot) string {
+// mentionRow renders a highlighted message as a full-width wash band: the same
+// time/nick column as a plain chat row, the body in the mention tint, and every
+// cell carrying the wash background so the tint spans the column like
+// MentionWash.qml rather than stopping at the end of the text. Nick keeps its
+// palette color and the body keeps its IRC emphasis on top of the wash.
+func (m *Model) mentionRow(message controller.MessageSnapshot, grouped bool, nickWidth int) string {
 	wash := m.mentionWash()
 	colors := m.styles.Colors
-	line := wash.Foreground(colors.TextDim).Render(message.Time.Format("15:04")+" ") +
-		wash.Foreground(nickColor(message.Author)).Bold(true).Render(message.Author+" ") +
-		m.renderMessageBody(message.Body, wash.Foreground(colors.Mention))
-	if width := m.transcriptWidth(); lipgloss.Width(line) < width {
-		line += wash.Render(strings.Repeat(" ", width-lipgloss.Width(line)))
+	first, indent := m.chatByline(message.Author, message.Time, grouped, nickWidth, bylineStyle{
+		clock: wash.Foreground(colors.TextDim),
+		nick:  wash.Foreground(nickColor(message.Author)).Bold(true),
+		rule:  wash.Foreground(colors.TextDim),
+	})
+	body := m.renderMessageBody(message.Body, wash.Foreground(colors.Mention))
+	width := m.transcriptWidth()
+	// Every wrapped line is padded to the column so the band never stops short.
+	lines := strings.Split(joinWrappedBody(first, indent, body, width), "\n")
+	for index, line := range lines {
+		if pad := width - lipgloss.Width(line); pad > 0 {
+			lines[index] = line + wash.Render(strings.Repeat(" ", pad))
+		}
 	}
-	return line
+	return strings.Join(lines, "\n")
 }
 
 // transcriptLine is the unstyled text of a message row, matching the find

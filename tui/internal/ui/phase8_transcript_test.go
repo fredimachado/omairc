@@ -114,11 +114,20 @@ func TestPhase8TranscriptDirectTypingFooterUngrouped(t *testing.T) {
 	if got, want := len(lines), headerCount+area.end()+2; got != want {
 		t.Fatalf("line count = %d, want %d (rows plus the two footer lines)", got, want)
 	}
-	if got, want := lines[headerCount+area.end()], m.styles.MutedLine.Render("anna"); got != want {
-		t.Fatalf("footer header = %q, want muted %q", got, "anna")
+	footerByline := lines[headerCount+area.end()]
+	if want := m.nickStyle("anna").Render("anna"); !strings.Contains(footerByline, want) {
+		t.Fatalf("footer byline = %q, want the peer's nickname %q", footerByline, want)
 	}
-	if dots := lines[headerCount+area.end()+1]; !strings.Contains(dots, "...") {
+	if !strings.Contains(footerByline, transcriptSeparator) {
+		t.Fatalf("footer byline = %q, want the column separator %q",
+			footerByline, transcriptSeparator)
+	}
+	dots := lines[headerCount+area.end()+1]
+	if !strings.Contains(dots, "...") {
 		t.Fatalf("footer dots = %q, want three periods", dots)
+	}
+	if plain := ansiPattern.ReplaceAllString(dots, ""); !strings.HasPrefix(plain, " ") {
+		t.Fatalf("footer dots = %q, want it indented to the body column", plain)
 	}
 }
 
@@ -148,15 +157,18 @@ func TestPhase8TranscriptMentionRowWash(t *testing.T) {
 		}
 	}
 	wash := m.mentionWash()
-	nick := wash.Foreground(nickColor("mira")).Bold(true).Render("mira ")
+	nick := wash.Foreground(nickColor("mira")).Bold(true).Render("mira")
 	if !strings.Contains(row, nick) {
 		t.Fatalf("mention row = %q, want the palette-colored bold nick %q", row, nick)
 	}
-	if tinted := wash.Foreground(m.styles.Colors.Mention).Render("mira "); strings.Contains(row, tinted) {
+	if tinted := wash.Foreground(m.styles.Colors.Mention).Render("mira"); strings.Contains(row, tinted) {
 		t.Fatalf("mention row = %q, want the nick in its palette color, not the mention tint", row)
 	}
-	if stamped := wash.Foreground(m.styles.Colors.TextDim).Render("12:00 "); !strings.Contains(row, stamped) {
+	if stamped := wash.Foreground(m.styles.Colors.TextDim).Render("12:00"); !strings.Contains(row, stamped) {
 		t.Fatalf("mention row = %q, want the dimmed timestamp %q", row, stamped)
+	}
+	if !strings.Contains(row, transcriptSeparator) {
+		t.Fatalf("mention row = %q, want the column separator %q", row, transcriptSeparator)
 	}
 }
 
