@@ -9,8 +9,6 @@ import (
 	"strings"
 )
 
-const notifyAppName = "Omairc"
-
 // darwinNotifier mirrors Backend::notifyDesktop through osascript. It fails
 // closed: when osascript is unavailable it degrades to noopNotifier rather
 // than panicking. display notification does not surface activation callbacks,
