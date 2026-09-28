@@ -240,8 +240,20 @@ also accepts Windows Terminal aliases (`Ctrl+]` for Connect, ConPTY `ctrl+_` for
 `Ctrl+/`, `Ctrl+Alt+arrows`
 for sidebar walk, `Ctrl+Shift+Left/Right` and `Ctrl+Alt+Shift+Up/Down` for
 network collapse and reorder, `Ctrl+PgDn` for Connect tabs); the shortcuts sheet
-lists them beside the shared chords. Windows Terminal intercepts `Ctrl+Shift+K` (Clear buffer) before it reaches the
-TUI; unbind that binding in WT settings. `nickJumpChordKey` rewires ConPTY's
+lists them beside the shared chords. On Windows Terminal the picture splits by
+version. WT before 1.25 has no kitty keyboard protocol, so its default
+keybindings intercept four of the shared chords before they reach the TUI:
+`Ctrl+Shift+P` (command palette), `Ctrl+Shift+A` (select all), `Ctrl+Shift+M`
+(mark mode), and `Ctrl+Shift+K` (clear buffer); unbind those in WT settings
+(the TUI cannot see keys the terminal consumes). WT 1.25+ negotiates the kitty
+protocol (`flags=9`: disambiguate + report-all-keys) and then passes those
+chords through as CSI-u, so no unbinding is needed there. One chord still never
+arrives on any WT build: `Ctrl+\`` is ConPTY's NUL key, which WT drops instead
+of encoding as `CSI 96;5u`; the TUI receives nothing. Work around it with a WT
+`sendInput` binding that emits the CSI-u bytes directly (mirrors the WT
+`Ctrl+Space` workaround for the same NUL drop):
+`{ "command": { "action": "sendInput", "input": "\u001b[96;5u" }, "keys": "ctrl+`" }`.
+`nickJumpChordKey` rewires ConPTY's
 collapsed `ctrl+j` encoding to nick jump outside Connect. The shell requests
 `ReportAllKeysAsEscapeCodes` so shift chords disambiguate when the terminal
 supports it. Phase 6 adds the `nick-jump`
