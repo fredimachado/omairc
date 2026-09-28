@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"strings"
 	"unicode/utf16"
 	"unsafe"
 
@@ -35,14 +37,14 @@ func startPty(opts Options) (*Process, error) {
 	_ = ptyIn.Close()
 	_ = ptyOut.Close()
 
-	argv := append([]string{opts.Binary}, opts.Args...)
-	cmdline, err := windows.UTF16PtrFromString(windows.ComposeCommandLine(argv))
+	binary, err := resolveWindowsBinary(opts.Binary, opts.Dir)
 	if err != nil {
 		closeAll(inOur, outOur)
 		windows.ClosePseudoConsole(hpc)
 		return nil, err
 	}
-	argv0, err := windows.UTF16PtrFromString(opts.Binary)
+	argv := append([]string{binary}, opts.Args...)
+	cmdline, err := windows.UTF16PtrFromString(windows.ComposeCommandLine(argv))
 	if err != nil {
 		closeAll(inOur, outOur)
 		windows.ClosePseudoConsole(hpc)
@@ -59,10 +61,7 @@ func startPty(opts Options) (*Process, error) {
 		}
 	}
 
-	env := opts.Env
-	if env == nil {
-		env = os.Environ()
-	}
+	env := ensureCriticalEnv(opts.Env)
 	envBlock := createEnvBlock(env)
 
 	attrs, err := windows.NewProcThreadAttributeList(1)
@@ -85,7 +84,7 @@ func startPty(opts Options) (*Process, error) {
 
 	flags := uint32(windows.CREATE_UNICODE_ENVIRONMENT | windows.EXTENDED_STARTUPINFO_PRESENT)
 	pi := &windows.ProcessInformation{}
-	if err := windows.CreateProcess(argv0, cmdline, nil, nil, false, flags, envBlock, dirp, &siEx.StartupInfo, pi); err != nil {
+	if err := windows.CreateProcess(nil, cmdline, nil, nil, false, flags, envBlock, dirp, &siEx.StartupInfo, pi); err != nil {
 		closeAll(inOur, outOur)
 		windows.ClosePseudoConsole(hpc)
 		return nil, fmt.Errorf("start %s on a conpty: %w", opts.Binary, err)
@@ -127,24 +126,58 @@ func closeAll(files ...*os.File) {
 	}
 }
 
+// resolveWindowsBinary returns an absolute path CreateProcess can start. A bare
+// name such as cmd.exe is not searched on PATH when lpApplicationName is set.
+func resolveWindowsBinary(binary, dir string) (string, error) {
+	if filepath.IsAbs(binary) {
+		return binary, nil
+	}
+	if dir != "" && !strings.ContainsAny(binary, `/\`) {
+		candidate := filepath.Join(dir, binary)
+		if _, err := os.Stat(candidate); err == nil {
+			return candidate, nil
+		}
+	}
+	if path, err := exec.LookPath(binary); err == nil {
+		return path, nil
+	}
+	systemRoot := os.Getenv("SystemRoot")
+	if systemRoot != "" {
+		candidate := filepath.Join(systemRoot, "System32", binary)
+		if _, err := os.Stat(candidate); err == nil {
+			return candidate, nil
+		}
+	}
+	return binary, nil
+}
+
+// ensureCriticalEnv returns opts.Env or the current environment, guaranteeing
+// SYSTEMROOT is present so ConPTY children can resolve system binaries.
+func ensureCriticalEnv(env []string) []string {
+	if env == nil {
+		env = os.Environ()
+	}
+	for _, kv := range env {
+		if eq := strings.IndexByte(kv, '='); eq > 0 && strings.EqualFold(kv[:eq], "SYSTEMROOT") {
+			return env
+		}
+	}
+	if root := os.Getenv("SYSTEMROOT"); root != "" {
+		return append(env, "SYSTEMROOT="+root)
+	}
+	return env
+}
+
 func createEnvBlock(envv []string) *uint16 {
 	if len(envv) == 0 {
-		return &utf16.Encode([]rune("\x00\x00"))[0]
+		z := []uint16{0}
+		return &z[0]
 	}
-	length := 0
-	for _, s := range envv {
-		length += len(s) + 1
+	var block []uint16
+	for _, entry := range envv {
+		block = append(block, utf16.Encode([]rune(entry))...)
+		block = append(block, 0)
 	}
-	length++
-
-	b := make([]byte, length)
-	i := 0
-	for _, s := range envv {
-		l := len(s)
-		copy(b[i:i+l], s)
-		b[i+l] = 0
-		i += l + 1
-	}
-	b[i] = 0
-	return &utf16.Encode([]rune(string(b)))[0]
+	block = append(block, 0)
+	return &block[0]
 }
