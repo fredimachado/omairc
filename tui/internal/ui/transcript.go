@@ -281,10 +281,10 @@ func (m *Model) appendTranscriptTypingFooter(area transcriptRows) transcriptRows
 		area.lines[last] = truncateLine(area.lines[last], available) + dots
 		return area
 	}
-	first, indent := m.chatByline(nick, time.Time{}, false, nickWidth,
+	first, continuation := m.chatByline(nick, time.Time{}, false, nickWidth,
 		bylineStyle{clock: m.styles.Time, nick: m.nickStyle(nick), rule: m.styles.MutedLine})
 	area.lines = append(area.lines, first)
-	area.lines = append(area.lines, indent+m.styles.MutedLine.Render("..."))
+	area.lines = append(area.lines, continuation+m.styles.MutedLine.Render("..."))
 	return area
 }
 
@@ -656,46 +656,52 @@ type bylineStyle struct {
 
 // chatByline renders a chat row's byline: the dimmed timestamp, the
 // right-aligned nick in its palette color, and the separator. It returns the
-// opening run and the matching blank indent, both the same width, so a wrapped
-// body and a grouped row line up under the first line. A grouped or zero-time
-// row blanks the clock; a grouped row blanks the nick too.
-func (m *Model) chatByline(nick string, at time.Time, grouped bool, nickWidth int, style bylineStyle) (first, indent string) {
+// opening run and the matching continuation prefix, both the same width, so a
+// wrapped body and a grouped row line up under the first line. A grouped row and
+// every wrapped continuation line carry the separator on its own, which keeps
+// the rule an unbroken column down the transcript. A grouped or zero-time row
+// blanks the clock; a grouped row blanks the nick too.
+func (m *Model) chatByline(nick string, at time.Time, grouped bool, nickWidth int, style bylineStyle) (first, continuation string) {
+	// The continuation prefix is the blank time and nick columns, then the
+	// separator: the same rule the first line carries, so the column never
+	// breaks across a wrap or a grouped run.
+	continuation = strings.Repeat(" ", transcriptClockWidth+1+nickWidth) +
+		style.rule.Render(transcriptSeparator)
+	if grouped {
+		return continuation, continuation
+	}
 	clock := strings.Repeat(" ", transcriptClockWidth)
-	if !grouped && !at.IsZero() {
+	if !at.IsZero() {
 		clock = style.clock.Render(at.Format(transcriptClockFormat))
 	}
-	nickColumn := strings.Repeat(" ", nickWidth)
-	if !grouped {
-		nickColumn = strings.Repeat(" ", max(0, nickWidth-lipgloss.Width(nick))) +
-			style.nick.Render(nick)
-	}
+	nickColumn := strings.Repeat(" ", max(0, nickWidth-lipgloss.Width(nick))) +
+		style.nick.Render(nick)
 	first = clock + " " + nickColumn + style.rule.Render(transcriptSeparator)
-	indent = strings.Repeat(" ",
-		transcriptClockWidth+1+nickWidth+lipgloss.Width(transcriptSeparator))
-	return first, indent
+	return first, continuation
 }
 
 // chatRow renders a plain chat row: the byline column, then the body wrapped
 // under the body column.
 func (m *Model) chatRow(message controller.MessageSnapshot, grouped bool, nickWidth int) string {
-	first, indent := m.chatByline(message.Author, message.Time, grouped, nickWidth,
+	first, continuation := m.chatByline(message.Author, message.Time, grouped, nickWidth,
 		bylineStyle{clock: m.styles.Time, nick: m.nickStyle(message.Author), rule: m.styles.MutedLine})
 	body := m.renderMessageBody(message.Body, lipgloss.NewStyle())
-	return joinWrappedBody(first, indent, body, m.transcriptWidth())
+	return joinWrappedBody(first, continuation, body, m.transcriptWidth())
 }
 
 // joinWrappedBody hangs a wrapped body off a byline: the first wrapped line
-// follows the byline, every later line is indented to the body column, and a
-// body wider than the column wraps instead of being truncated by renderColumn.
-func joinWrappedBody(first, indent, body string, width int) string {
-	available := width - lipgloss.Width(indent)
+// follows the byline, every later line is prefixed with the continuation (the
+// blanked columns plus the separator), and a body wider than the column wraps
+// instead of being truncated by renderColumn.
+func joinWrappedBody(first, continuation, body string, width int) string {
+	available := width - lipgloss.Width(continuation)
 	if available < 1 {
 		available = 1
 	}
 	lines := strings.Split(lipgloss.Wrap(body, available, ""), "\n")
 	joined := first + lines[0]
 	for _, line := range lines[1:] {
-		joined += "\n" + indent + line
+		joined += "\n" + continuation + line
 	}
 	return joined
 }
@@ -793,7 +799,7 @@ func (m *Model) eventRow(body string) string {
 func (m *Model) mentionRow(message controller.MessageSnapshot, grouped bool, nickWidth int) string {
 	wash := m.mentionWash()
 	colors := m.styles.Colors
-	first, indent := m.chatByline(message.Author, message.Time, grouped, nickWidth, bylineStyle{
+	first, continuation := m.chatByline(message.Author, message.Time, grouped, nickWidth, bylineStyle{
 		clock: wash.Foreground(colors.TextDim),
 		nick:  wash.Foreground(nickColor(message.Author)).Bold(true),
 		rule:  wash.Foreground(colors.TextDim),
@@ -801,7 +807,7 @@ func (m *Model) mentionRow(message controller.MessageSnapshot, grouped bool, nic
 	body := m.renderMessageBody(message.Body, wash.Foreground(colors.Mention))
 	width := m.transcriptWidth()
 	// Every wrapped line is padded to the column so the band never stops short.
-	lines := strings.Split(joinWrappedBody(first, indent, body, width), "\n")
+	lines := strings.Split(joinWrappedBody(first, continuation, body, width), "\n")
 	for index, line := range lines {
 		if pad := width - lipgloss.Width(line); pad > 0 {
 			lines[index] = line + wash.Render(strings.Repeat(" ", pad))

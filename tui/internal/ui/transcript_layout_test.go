@@ -68,8 +68,9 @@ func TestTranscriptChatRowColumns(t *testing.T) {
 }
 
 // TestTranscriptChatRowWrapsUnderBody pins that a body wider than the column
-// wraps and every continuation line is indented to the body column instead of
-// being truncated by renderColumn.
+// wraps and every continuation line keeps the separator at the shared column,
+// so the rule stays an unbroken line down the transcript while the body wraps
+// under the first line.
 func TestTranscriptChatRowWrapsUnderBody(t *testing.T) {
 	m := seededModel(t)
 	at := time.Date(2026, 9, 27, 12, 5, 0, 0, time.UTC)
@@ -78,22 +79,28 @@ func TestTranscriptChatRowWrapsUnderBody(t *testing.T) {
 			Body: strings.TrimSpace(strings.Repeat("word ", 60)), Time: at},
 	}
 	nickWidth := nickColumnWidth(messages)
+	separatorOffset := transcriptClockWidth + 1 + nickWidth + 1
+
 	block := plainText(m.messageRowAt(messages, 0, messages[0], nickWidth))
 	lines := strings.Split(block, "\n")
 	if len(lines) < 2 {
 		t.Fatalf("wrapped row = %q, want more than one line", block)
 	}
-	indent := strings.Repeat(" ",
-		transcriptClockWidth+1+nickWidth+lipgloss.Width(transcriptSeparator))
 	for index, line := range lines {
 		if width := lipgloss.Width(line); width > m.transcriptWidth() {
 			t.Fatalf("wrapped line %d width = %d, want <= %d: %q",
 				index, width, m.transcriptWidth(), line)
 		}
-		if index > 0 && !strings.HasPrefix(line, indent) {
-			t.Fatalf("continuation line %d = %q, want the %d-cell body indent",
-				index, line, len(indent))
+		if got := strings.Index(line, "│"); got != separatorOffset {
+			t.Fatalf("line %d separator at %d, want %d (unbroken column): %q",
+				index, got, separatorOffset, line)
 		}
+	}
+	// The body of every continuation line follows the blank columns plus the
+	// separator, so it aligns with the first line's body.
+	wantPrefix := strings.Repeat(" ", separatorOffset) + "│ "
+	if !strings.HasPrefix(lines[1], wantPrefix) {
+		t.Fatalf("continuation line = %q, want the prefix %q", lines[1], wantPrefix)
 	}
 }
 
