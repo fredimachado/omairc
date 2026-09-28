@@ -162,7 +162,11 @@ func isRepoRoot(dir string) bool {
 }
 
 func defaultBinary(root string) string {
-	return filepath.Join(root, "tui", "bin", "omairc-tui")
+	name := "omairc-tui"
+	if runtime.GOOS == "windows" {
+		name += ".exe"
+	}
+	return filepath.Join(root, "tui", "bin", name)
 }
 
 // client talks to the daemon over the Unix socket.
