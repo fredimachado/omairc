@@ -1,11 +1,9 @@
-//go:build !linux
+//go:build !linux && !darwin && !windows
 
 package storage
 
-// This file provides the non-Linux credential store. There is no Secret
-// Service outside Linux, so every operation fails closed as unavailable. The
-// macOS Keychain and Windows Credential Manager backends land in a later
-// phase.
+// This file provides the credential store on platforms without a secret
+// backend. Every operation fails closed as unavailable.
 type unavailableCredentialStore struct{}
 
 // Read reports that no credential backend is available.
@@ -23,8 +21,7 @@ func (unavailableCredentialStore) Remove(CredentialKey) CredentialResult {
 	return CredentialResult{State: CredentialUnavailable}
 }
 
-// NewCredentialStore returns the platform store: the Secret Service client on
-// Linux, or the unavailable stub elsewhere.
+// NewCredentialStore returns the unavailable stub on this platform.
 func NewCredentialStore() CredentialStore {
 	return unavailableCredentialStore{}
 }
