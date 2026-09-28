@@ -1,6 +1,6 @@
 ---
 name: record-omairc-demo
-description: Records the Omairc README demo on Omarchy workspace 1 from ./build/omairc --demo-server, injects real keyboard chords so Omakeycast overlays them, then encodes a looping 1600x900 GIF. Use when regenerating omairc.gif, recording the demo walkthrough, recording a custom demo scenario the user describes, or changing the demo GIF script, timings, or key sequence.
+description: Records the Omairc README demo on Omarchy workspace 1 from ./build/omairc --demo-server (or the Go TUI via record-demo-tui), injects real keyboard chords so Omakeycast overlays them, then encodes a looping 1600x900 GIF. Use when regenerating omairc.gif or omairc-tui.gif, recording the demo walkthrough, recording a custom demo scenario the user describes, or changing the demo GIF script, timings, or key sequence.
 ---
 
 # Record Omairc demo GIF
@@ -27,6 +27,34 @@ Re-encode an existing capture without recording:
 
 Encode knobs (`GIF_WIDTH`, `GIF_HEIGHT`, `GIF_FPS`, `GIF_DITHER`, `GIF_DIFF_MODE`)
 live at the top of [scripts/record-demo](scripts/record-demo).
+
+## TUI variant
+
+[scripts/record-demo-tui](scripts/record-demo-tui) is the sibling for the Go
+terminal client. It mirrors this script — workspace 1, `omarchy screenrecord
+--fullscreen`, evdev chords, the same walkthrough, the same 1600×900 encode —
+but runs `omairc-tui --demo-server` in the default Omarchy terminal. The TUI is
+a terminal program with no Wayland toplevel of its own, so the terminal owns the
+window that gets focused and filmed.
+
+Launch through Omarchy's `$TERMINAL` (`xdg-terminal-exec`), which resolves the
+user's default terminal and its theme; do not hardcode a terminal. Pass **no**
+window-mode flag: Hyprland tiles the window, so it keeps Omarchy's gaps and
+borders instead of covering them with `--fullscreen`.
+
+Strip `NO_COLOR`, `FORCE_COLOR`, `CLICOLOR`, and `CLICOLOR_FORCE` from the
+child environment. An agent shell exports them to suppress color in captured
+output, and lipgloss honors `NO_COLOR`, which renders the whole client
+monochrome. The terminal's own themed background still looks correct, so the
+GIF looks plausible at a glance; check saturation, not just the palette. The
+script does this already (`COLOR_CLEAN`).
+
+Output defaults to `omairc-tui.gif`; the flags and `OMAIRC_DEMO_*` env knobs are
+the same, plus `OMAIRC_DEMO_TERMINAL`.
+
+```sh
+.cursor/skills/record-omairc-demo/scripts/record-demo-tui
+```
 
 ## A different scenario
 
@@ -72,6 +100,7 @@ handles all printable ASCII, assuming a US QWERTY layout.
 ## Hard rules
 
 - Drive **only** `$ROOT/build/omairc --demo-server`. Never `/usr/bin/omairc` or any window whose title lacks `irc.example`.
+- `record-demo-tui` drives **only** `$ROOT/tui/bin/omairc-tui --demo-server`, inside the terminal window. Never `/usr/bin/omairc-tui`.
 - Launch with `env -u XDG_CONFIG_HOME OMAIRC_ALLOW_MULTI=1`. `--demo-server` isolates XDG **only when `XDG_CONFIG_HOME` is unset**. On Omarchy it is set to `~/.config`; leaving it set writes demo `omarchy` / `oftc` profiles into the user's real `omairc.conf`.
 - Record on **workspace 1**. Leave the user's live Omairc and Cursor on workspace 2.
 - Do **not** change Hyprland monitor mode or scale. The user sets that up.
@@ -155,4 +184,5 @@ Do not crush to 128 colors unless the user asks. Capture stays native; only the 
 
 - Encode history, XDG leak, and why `wtype` fails: [reference.md](reference.md)
 - Driver and timings: [scripts/record-demo](scripts/record-demo)
+- TUI sibling: [scripts/record-demo-tui](scripts/record-demo-tui)
 - Evdev injector: [scripts/inject-evdev.py](scripts/inject-evdev.py)
