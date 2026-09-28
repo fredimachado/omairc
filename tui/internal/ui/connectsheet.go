@@ -331,11 +331,18 @@ func (m *Model) activateFooter(index int) {
 }
 
 // applyConnect is Ctrl+Enter: apply the selected network from any tab. It
-// dismisses the sheet only when a session was accepted.
+// dismisses the sheet only when a session was accepted, mirrors the stored
+// roster into the sidebar order, and opens that network's Status transcript.
 func (m *Model) applyConnect() {
-	if m.conn.Apply() {
-		m.closeConnect()
+	if !m.conn.Apply() {
+		return
 	}
+	networkID := m.conn.SelectedNetworkID()
+	m.syncSidebarNetworkOrder()
+	m.closeConnect()
+	m.switchSelection(func() {
+		m.ctrl.OpenStatus(networkID)
+	})
 }
 
 // armRemoveSelected is Ctrl+Shift+Delete: the first press arms, the second

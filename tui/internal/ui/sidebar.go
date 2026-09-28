@@ -17,12 +17,62 @@ const (
 	avatarGlyphPixelSize = 22
 )
 
-// sidebarView renders the network roster: one header per registered network,
-// then a CHANNELS group and a DIRECT MESSAGES group, then the identity footer
-// pinned to the bottom row. It is data-driven from the controller snapshots,
-// never a scan of rendered children. A collapsed network keeps its header and
-// hides its groups; the focused header is highlighted so Alt+Left / Alt+Right
-// land somewhere visible.
+// sidebarNetworkIDs returns the network ids shown in the left sidebar, in
+// display order. Stored profiles from the connection model are listed even
+// before a session exists, matching ServerListColumn.qml's connection.networks
+// repeater. The demo shell (conn == nil) falls back to registered sessions.
+func (m *Model) sidebarNetworkIDs() []string {
+	if m.conn != nil {
+		rows := m.conn.Networks()
+		ids := make([]string, 0, len(rows))
+		for _, row := range rows {
+			ids = append(ids, row.NetworkID)
+		}
+		return ids
+	}
+	if m.ctrl == nil {
+		return nil
+	}
+	return m.ctrl.NetworkOrder()
+}
+
+// sidebarNetworkDisplayName returns the roster label for one sidebar network.
+// It prefers the connection roster, then a live session, then the raw id.
+func (m *Model) sidebarNetworkDisplayName(networkID string) string {
+	if networkID == "" {
+		return ""
+	}
+	if m.conn != nil {
+		for _, row := range m.conn.Networks() {
+			if row.NetworkID == networkID {
+				return row.DisplayName
+			}
+		}
+	}
+	if m.ctrl != nil {
+		if name := m.ctrl.NetworkDisplayName(networkID); name != "" {
+			return name
+		}
+	}
+	return networkID
+}
+
+// syncSidebarNetworkOrder copies the connection roster order into the
+// controller so collapse, reorder, and jump overlays stay aligned with the
+// sidebar. The demo shell has no connection model to mirror.
+func (m *Model) syncSidebarNetworkOrder() {
+	if m.conn == nil || m.ctrl == nil {
+		return
+	}
+	m.ctrl.SetNetworkOrder(m.sidebarNetworkIDs())
+}
+
+// sidebarView renders the network roster: one header per stored or registered
+// network, then a CHANNELS group and a DIRECT MESSAGES group, then the
+// identity footer pinned to the bottom row. It is data-driven from the
+// connection roster and controller snapshots, never a scan of rendered
+// children. A collapsed network keeps its header and hides its groups; the
+// focused header is highlighted so Alt+Left / Alt+Right land somewhere visible.
 //
 // The view returns inner content lines only: the outer panel card (border and
 // title) is drawn by the frame that embeds this column.
@@ -37,16 +87,13 @@ func (m *Model) sidebarView(width, height int) string {
 		label  string
 		direct bool
 	}{{"CHANNELS", false}, {"DIRECT MESSAGES", true}}
-	for index, networkID := range m.ctrl.NetworkOrder() {
+	for index, networkID := range m.sidebarNetworkIDs() {
 		// Networks are separate blocks: a blank row then a rule, above the
 		// second onward, so the roster never reads as one continuous list.
 		if index > 0 {
 			roster = append(roster, "", m.networkSeparator(width))
 		}
-		name := m.ctrl.NetworkDisplayName(networkID)
-		if name == "" {
-			name = networkID
-		}
+		name := m.sidebarNetworkDisplayName(networkID)
 		roster = append(roster, m.networkHeader(name, networkID))
 		if m.ctrl.IsNetworkCollapsed(networkID) {
 			continue

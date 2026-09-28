@@ -9,7 +9,19 @@ import (
 	"github.com/fredimachado/omairc/tui/internal/connection"
 	"github.com/fredimachado/omairc/tui/internal/controller"
 	"github.com/fredimachado/omairc/tui/internal/demo"
+	"github.com/fredimachado/omairc/tui/internal/session"
 )
+
+func storedProfile(id, host string) connection.NetworkProfile {
+	profile := connection.CreateProfile()
+	profile.NetworkID = id
+	profile.Name = host
+	profile.Host = host
+	profile.Port = 6697
+	profile.TLSEnabled = true
+	profile.Nick = "omairc"
+	return profile
+}
 
 // press folds one key press into the shell and returns the updated model.
 func press(t *testing.T, m *Model, msg tea.KeyPressMsg) *Model {
@@ -66,6 +78,47 @@ func TestFirstRunConnectSheet(t *testing.T) {
 	}
 	if !strings.Contains(m.View().Content, "Nick is required") {
 		t.Fatal("the focus walk must keep the Nick is required problem line")
+	}
+}
+
+func TestStoredProfilesListedInSidebarBeforeConnect(t *testing.T) {
+	ctrl := controller.New()
+	conn := connection.New(ctrl, nil)
+	conn.SetStoredProfiles([]connection.NetworkProfile{
+		storedProfile("net-a", "irc.a.example"),
+		storedProfile("net-b", "irc.b.example"),
+	})
+	m := New(ctrl, conn)
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 118, Height: 30})
+	m = updated.(*Model)
+	sidebar := m.sidebarView(sidebarWidth(m.width), m.bodyHeight())
+	for _, wanted := range []string{"irc.a.example", "irc.b.example"} {
+		if !strings.Contains(sidebar, wanted) {
+			t.Fatalf("sidebar missing %q before connect:\n%s", wanted, sidebar)
+		}
+	}
+}
+
+func TestApplyOpensStatusTranscript(t *testing.T) {
+	ctrl := controller.New()
+	conn := connection.New(ctrl, func() session.Transport { return session.NewLoopbackTransport() })
+	conn.SetStoredProfiles([]connection.NetworkProfile{storedProfile("net-a", "irc.a.example")})
+	conn.Select("net-a")
+	m := New(ctrl, conn)
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 118, Height: 30})
+	m = updated.(*Model)
+	m.applyConnect()
+	if !ctrl.ConsoleOpen() {
+		t.Fatal("ConsoleOpen = false after Apply, want true")
+	}
+	if got := ctrl.FocusedNetworkID(); got != "net-a" {
+		t.Fatalf("FocusedNetworkID = %q, want net-a", got)
+	}
+	if got := m.View().WindowTitle; got != "irc.a.example Status" {
+		t.Fatalf("title after Apply = %q, want %q", got, "irc.a.example Status")
+	}
+	if m.connectVisible() {
+		t.Fatal("Connect sheet still open after successful Apply")
 	}
 }
 

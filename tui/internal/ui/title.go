@@ -17,19 +17,19 @@ func Title(ctrl *controller.Controller, conn *connection.Connection) string {
 	if ctrl.ConsoleOpen() || ctrl.SelectedTarget() == "" {
 		return statusTitleText(ctrl, conn)
 	}
-	return conversationTitleText(ctrl)
+	return conversationTitleText(ctrl, conn)
 }
 
 // conversationTitleText mirrors OmaircWindow.qml's conversationTitleText. It
 // prefixes the focused network display name only when the selected target
 // appears on more than one network, so a duplicated #omarchy is never
 // ambiguous.
-func conversationTitleText(ctrl *controller.Controller) string {
+func conversationTitleText(ctrl *controller.Controller, conn *connection.Connection) string {
 	current := ctrl.SelectedTarget()
 	if current == "" {
 		return "Omairc"
 	}
-	networkName := focusedNetworkDisplayName(ctrl)
+	networkName := focusedNetworkDisplayName(ctrl, conn)
 	if duplicateTargetName(ctrl, current) && networkName != "" {
 		return current + " · " + networkName + " - Omairc"
 	}
@@ -41,7 +41,7 @@ func conversationTitleText(ctrl *controller.Controller) string {
 // connection's draft display name, so a default launch is titled
 // "irc.libera.chat Status".
 func statusTitleText(ctrl *controller.Controller, conn *connection.Connection) string {
-	if networkName := focusedNetworkDisplayName(ctrl); networkName != "" {
+	if networkName := focusedNetworkDisplayName(ctrl, conn); networkName != "" {
 		return networkName + " Status"
 	}
 	if conn != nil {
@@ -63,9 +63,24 @@ func statusJumpLabel(networkName string) string {
 }
 
 // focusedNetworkDisplayName is the display name of the focused network, or ""
-// when the controller has no focused network.
-func focusedNetworkDisplayName(ctrl *controller.Controller) string {
-	return ctrl.NetworkDisplayName(ctrl.FocusedNetworkID())
+// when the controller has no focused network. It falls back to the connection
+// roster so a stored profile titles Status before its session is live.
+func focusedNetworkDisplayName(ctrl *controller.Controller, conn *connection.Connection) string {
+	networkID := ""
+	if ctrl != nil {
+		networkID = ctrl.FocusedNetworkID()
+		if name := ctrl.NetworkDisplayName(networkID); name != "" {
+			return name
+		}
+	}
+	if conn != nil && networkID != "" {
+		for _, row := range conn.Networks() {
+			if row.NetworkID == networkID {
+				return row.DisplayName
+			}
+		}
+	}
+	return ""
 }
 
 // duplicateTargetName counts the sidebar rows whose ConversationName matches

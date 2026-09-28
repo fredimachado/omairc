@@ -52,10 +52,7 @@ func (m *Model) footerStatusView() string {
 			state = got
 		}
 		if id := m.ctrl.FocusedNetworkID(); id != "" {
-			network = m.ctrl.NetworkDisplayName(id)
-			if network == "" {
-				network = id
-			}
+			network = m.sidebarNetworkDisplayName(id)
 		}
 	}
 	mark := m.spinner.View()

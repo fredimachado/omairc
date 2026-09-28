@@ -290,7 +290,7 @@ func TestSidebarSeparatorCount(t *testing.T) {
 			rules++
 		}
 	}
-	if want := len(m.ctrl.NetworkOrder()) - 1; rules != want {
+	if want := len(m.sidebarNetworkIDs()) - 1; rules != want {
 		t.Fatalf("sidebar separators = %d, want %d", rules, want)
 	}
 	if rules == 0 {

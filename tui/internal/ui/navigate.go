@@ -90,8 +90,8 @@ func (m *Model) jumpEntries() []jumpEntry {
 	query := strings.ToLower(strings.TrimSpace(m.jump.input.Value()))
 	conversations := m.ctrl.Conversations()
 	var entries []jumpEntry
-	for _, networkID := range m.ctrl.NetworkOrder() {
-		networkName := m.ctrl.NetworkDisplayName(networkID)
+	for _, networkID := range m.sidebarNetworkIDs() {
+		networkName := m.sidebarNetworkDisplayName(networkID)
 		for _, row := range conversations {
 			if row.NetworkID != networkID {
 				continue
@@ -372,13 +372,16 @@ func (m *Model) stepNetwork(delta int) {
 	if m.ctrl == nil {
 		return
 	}
-	order := m.ctrl.NetworkOrder()
+	order := m.sidebarNetworkIDs()
 	if len(order) == 0 {
 		return
 	}
 	current := indexOfString(order, m.sidebarNetworkFocusID)
 	if current < 0 {
-		current = indexOfString(order, m.ctrl.SelectedNetworkID())
+		current = indexOfString(order, m.ctrl.FocusedNetworkID())
+		if current < 0 && m.conn != nil {
+			current = indexOfString(order, m.conn.SelectedNetworkID())
+		}
 	}
 	var next int
 	if current < 0 {
@@ -422,16 +425,26 @@ func (m *Model) collapseAllNetworks(collapsed bool) {
 	if m.ctrl == nil {
 		return
 	}
-	m.ctrl.SetAllNetworksCollapsed(collapsed)
+	for _, networkID := range m.sidebarNetworkIDs() {
+		m.ctrl.SetNetworkCollapsed(networkID, collapsed)
+	}
 }
 
 // moveFocusedNetwork reorders the focused network with no wrap. Focus stays on
 // the moved network.
 func (m *Model) moveFocusedNetwork(delta int) {
-	if m.sidebarNetworkFocusID == "" || m.ctrl == nil {
+	if m.sidebarNetworkFocusID == "" {
 		return
 	}
-	m.ctrl.MoveNetwork(m.sidebarNetworkFocusID, delta)
+	if m.conn != nil {
+		if m.conn.MoveNetwork(m.sidebarNetworkFocusID, delta) {
+			m.syncSidebarNetworkOrder()
+		}
+		return
+	}
+	if m.ctrl != nil {
+		m.ctrl.MoveNetwork(m.sidebarNetworkFocusID, delta)
+	}
 }
 
 // clearNetworkFocus is Ctrl+L: it drops the header focus so Enter sends again.
