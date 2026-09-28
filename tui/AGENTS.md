@@ -148,23 +148,25 @@ Do not pre-add requires to `go.mod`; tidy will revert them.
 
 ## Target platforms
 
-Omarchy/Linux is the only target until those platforms land. Keep the core
-platform-neutral and defer OS specifics behind `//go:build` files in
-`internal/`, never inline in `internal/irc`:
+Omarchy/Linux is the primary target. Keep the core platform-neutral and defer OS
+specifics behind `//go:build` files in `internal/`, never inline in
+`internal/irc`:
 
 - macOS: extend the `tui.yml` matrix with `macos-latest`, bundle the app.
-- Windows: extend the matrix with `windows-latest`, emit
-  `omairc-tui$(go env GOEXE)` from `tui/bin/build`, and drive Windows Terminal
-  only (no legacy conhost).
+- Windows: `tui.yml` includes `windows-latest`; `tui/bin/build` emits
+  `omairc-tui$(go env GOEXE)` and `control-omairc-tui$(go env GOEXE)`. Drive
+  Windows Terminal only (no legacy conhost). Storage uses `%LOCALAPPDATA%`
+  (`paths_windows.go`), credentials use the Windows Credential Manager with
+  QtKeychain-compatible `key@omairc` targets (`secretservice_windows.go`), and
+  URLs open through `cmd /c start` (`openurl_windows.go`).
 - Platform behavior (notifications, clipboard, image raster, storage paths,
   keychain) lives behind build tags in `internal/`, mirroring how `src/irc/`
   stays portable while `Backend` owns desktop integration. D-Bus notifications
   are implemented in `internal/notify/notify_linux.go`; osascript and Windows
   Toast remain no-op stubs behind the same `Notifier`. `internal/storage` ships
-  Linux XDG paths (`paths_linux.go`) and a Linux Secret Service credential
-  store (`secretservice.go`) now; macOS `GenericConfigLocation`/Keychain and
-  Windows `%LOCALAPPDATA%`/Credential Manager slot into the build-tagged
-  `paths_other.go`/`secretservice_other.go` seams later without touching
+  Linux XDG paths (`paths_linux.go`), a Linux Secret Service credential store
+  (`secretservice.go`), and Windows paths plus Credential Manager; macOS
+  `GenericConfigLocation`/Keychain slot into build-tagged files without touching
   `internal/irc`, `internal/controller`, or `internal/ui`.
 
 Nothing in Phase 0 hardcodes a Linux-only assumption into `internal/irc`.

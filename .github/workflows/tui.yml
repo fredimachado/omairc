@@ -49,13 +49,12 @@ jobs:
 
   # No `needs: base`: `base` is skipped on push, and a skipped dependency skips
   # its dependents too, so the TUI job would never run on master. Keep the two
-  # jobs independent, matching test.yml. The matrix stays a single entry so
-  # macOS/Windows are a one-line extension when those targets land.
+  # jobs independent, matching test.yml.
   tui:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest]
+        os: [ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
     steps:
