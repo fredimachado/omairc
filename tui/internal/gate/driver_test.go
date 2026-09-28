@@ -2,6 +2,7 @@ package gate
 
 import (
 	"encoding/json"
+	"fmt"
 	"image"
 	"image/color"
 	"image/png"
@@ -14,6 +15,18 @@ import (
 	"testing"
 	"time"
 )
+
+var gateStateCounter atomic.Uint64
+
+func shortGateStateDir(t *testing.T) string {
+	t.Helper()
+	dir := fmt.Sprintf("/tmp/otg-%d-%d", os.Getpid(), gateStateCounter.Add(1))
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	return dir
+}
 
 func TestExtractDesktopRecipe(t *testing.T) {
 	md := "# Switch conversation\n\n" +
@@ -366,7 +379,7 @@ func startFakeDaemon(t *testing.T, demo bool) *atomic.Bool {
 // TestStopSpawnedDaemonQuitsAndCleansState covers the launch-teardown helper:
 // it asks a running daemon to quit and removes the state files it left behind.
 func TestStopSpawnedDaemonQuitsAndCleansState(t *testing.T) {
-	t.Setenv("OMAIRC_TUI_STATE", t.TempDir())
+	t.Setenv("OMAIRC_TUI_STATE", shortGateStateDir(t))
 	quit := startFakeDaemon(t, true)
 	if err := os.WriteFile(stateFilePath(), []byte(`{"pid":0}`), 0o644); err != nil {
 		t.Fatal(err)
@@ -400,7 +413,7 @@ func TestRunFailureKeepsPreexistingDaemon(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("OMAIRC_TUI_ROOT", root)
-	t.Setenv("OMAIRC_TUI_STATE", t.TempDir())
+	t.Setenv("OMAIRC_TUI_STATE", shortGateStateDir(t))
 
 	quit := startFakeDaemon(t, true)
 
