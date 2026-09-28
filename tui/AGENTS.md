@@ -240,7 +240,11 @@ also accepts Windows Terminal aliases (`Ctrl+]` for Connect, ConPTY `ctrl+_` for
 `Ctrl+/`, `Ctrl+Alt+arrows`
 for sidebar walk, `Ctrl+Shift+Left/Right` and `Ctrl+Alt+Shift+Up/Down` for
 network collapse and reorder, `Ctrl+PgDn` for Connect tabs); the shortcuts sheet
-lists them beside the shared chords. Phase 6 adds the `nick-jump`
+lists them beside the shared chords. Windows Terminal intercepts `Ctrl+Shift+K` (Clear buffer) before it reaches the
+TUI; unbind that binding in WT settings. `nickJumpChordKey` rewires ConPTY's
+collapsed `ctrl+j` encoding to nick jump outside Connect. The shell requests
+`ReportAllKeysAsEscapeCodes` so shift chords disambiguate when the terminal
+supports it. Phase 6 adds the `nick-jump`
 verb and the CSI-u bytes for `ctrl+shift+s`, `ctrl+shift+p`, `ctrl+shift+k`,
 `ctrl+shift+a`, `ctrl+shift+o`, and `ctrl+shift+m`, the xterm modifier forms
 `alt+shift+Left`/`Right`/`Up`/`Down` and `ctrl+alt+shift+Left`/`Right`, and

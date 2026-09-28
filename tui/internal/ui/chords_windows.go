@@ -2,6 +2,16 @@
 
 package ui
 
+// nickJumpChordKey maps ConPTY's collapsed Ctrl+Shift+K encoding onto ctrl+shift+k.
+// Connect still owns bare ctrl+j for Apply; handleKey never calls this while
+// the sheet is open.
+func nickJumpChordKey(key string) string {
+	if key == "ctrl+j" {
+		return "ctrl+shift+k"
+	}
+	return key
+}
+
 // normalizeChordKey maps Windows Terminal aliases and ConPTY legacy control-byte
 // names onto the shared chord names from keyboard.md. The originals stay in the
 // table for terminals that deliver them; these aliases reach Omairc when WT
@@ -51,4 +61,9 @@ func displayShortcutKeys(keys string) string {
 		return label
 	}
 	return keys
+}
+
+// displayShortcutAction returns the shortcuts-sheet action text for one row.
+func displayShortcutAction(action string) string {
+	return action
 }

@@ -340,6 +340,9 @@ func (m *Model) activateFooter(index int) {
 // (microsoft/terminal#6912). Treat that alias while the Connect sheet is
 // open so Apply works from any field on Windows.
 func isConnectApplyKey(key string, msg tea.KeyPressMsg) bool {
+	if msg.Mod&tea.ModShift != 0 {
+		return false
+	}
 	switch key {
 	case "ctrl+enter", "ctrl+return", "ctrl+j", "ctrl+m":
 		return true

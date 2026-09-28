@@ -165,7 +165,7 @@ func (m *Model) shortcutsCardBody(inner int) []string {
 			).Help()
 			chip := truncateLine(m.styles.Keycap.Render(" "+help.Key+" "), labelWidth)
 			keyColumn := lipgloss.NewStyle().Width(labelWidth).Render(chip)
-			action := truncateLine(actionStyle.Render(help.Desc), actionWidth)
+			action := truncateLine(actionStyle.Render(displayShortcutAction(help.Desc)), actionWidth)
 			line := keyColumn + strings.Repeat(" ", shortcutsMenuGutter) + action
 			lines = append(lines, truncateLine(line, inner))
 		}

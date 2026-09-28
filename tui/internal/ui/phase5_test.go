@@ -150,6 +150,9 @@ func TestConnectApplyKeyMatchesReturnAlias(t *testing.T) {
 	if isConnectApplyKey("enter", tea.KeyPressMsg{Code: tea.KeyEnter}) {
 		t.Fatal("plain Enter must not count as Connect apply")
 	}
+	if isConnectApplyKey("ctrl+shift+j", tea.KeyPressMsg{Code: 'j', Mod: tea.ModCtrl | tea.ModShift}) {
+		t.Fatal("ctrl+shift+j must not count as Connect apply")
+	}
 	if isConnectApplyKey("j", tea.KeyPressMsg{Code: 'j'}) {
 		t.Fatal("j without ctrl modifier must not count as Connect apply")
 	}

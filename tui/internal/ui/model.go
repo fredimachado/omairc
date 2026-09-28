@@ -508,6 +508,7 @@ func (m *Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	if key != "tab" {
 		m.resetNickComplete()
 	}
+	key = nickJumpChordKey(key)
 	if handled, cmd := m.dispatchChord(key, msg); handled {
 		return m, cmd
 	}
@@ -562,12 +563,10 @@ func (m *Model) View() tea.View {
 	// Focus reporting drives FocusMsg/BlurMsg, which the shell needs to decide
 	// whether an arrival earns a desktop notification (win.active in the QML).
 	v.ReportFocus = true
-	// The Connect sheet needs Ctrl+Enter disambiguated from Enter on every
-	// field. Request escape-coded keys while it is open so ConPTY and legacy
-	// terminals report the ctrl modifier instead of a bare CR.
-	if m.connectVisible() {
-		v.KeyboardEnhancements.ReportAllKeysAsEscapeCodes = true
-	}
+	// ConPTY collapses ctrl+shift+letter to ctrl+letter and Ctrl+Enter to
+	// ctrl+j. Request escape-coded keys so shift chords (nick jump, server
+	// list, inbox, …) and Connect Apply stay distinct on Windows Terminal.
+	v.KeyboardEnhancements.ReportAllKeysAsEscapeCodes = true
 	// Paint the terminal from the live palette so the surface behind the
 	// columns matches the theme instead of the terminal default.
 	v.BackgroundColor = m.styles.Colors.Background

@@ -43,6 +43,28 @@ func TestDisplayShortcutKeysWindowsAliases(t *testing.T) {
 	}
 }
 
+func TestWindowsCtrlJOpensNickJumpOutsideConnect(t *testing.T) {
+	m := seededModel(t)
+	m.closeConnect()
+	m = press(t, m, tea.KeyPressMsg{Code: 'j', Mod: tea.ModCtrl})
+	if !m.nickVisible() {
+		t.Fatal("ctrl+j must open nick jump outside Connect on Windows (ConPTY Ctrl+Shift+K alias)")
+	}
+}
+
+func TestNickJumpChordKeyWindowsAliases(t *testing.T) {
+	cases := map[string]string{
+		"ctrl+j":       "ctrl+shift+k",
+		"ctrl+shift+k": "ctrl+shift+k",
+		"ctrl+k":       "ctrl+k",
+	}
+	for in, want := range cases {
+		if got := nickJumpChordKey(in); got != want {
+			t.Fatalf("nickJumpChordKey(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
 func TestWindowsLegacyCtrlSlashOpensShortcuts(t *testing.T) {
 	m := seededModel(t)
 	m = press(t, m, tea.KeyPressMsg{Code: '_', Mod: tea.ModCtrl})
