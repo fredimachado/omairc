@@ -148,23 +148,26 @@ Do not pre-add requires to `go.mod`; tidy will revert them.
 
 ## Target platforms
 
-Omarchy/Linux is the only target until those platforms land. Keep the core
-platform-neutral and defer OS specifics behind `//go:build` files in
+Omarchy/Linux and macOS are supported targets; Windows remains planned. Keep
+the core platform-neutral and defer OS specifics behind `//go:build` files in
 `internal/`, never inline in `internal/irc`:
 
-- macOS: extend the `tui.yml` matrix with `macos-latest`, bundle the app.
+- macOS: `tui.yml` runs on `macos-latest`; `tui/bin/package-macos` emits a
+  minimal `omairc-tui.app` around the Go binary.
 - Windows: extend the matrix with `windows-latest`, emit
   `omairc-tui$(go env GOEXE)` from `tui/bin/build`, and drive Windows Terminal
   only (no legacy conhost).
 - Platform behavior (notifications, clipboard, image raster, storage paths,
   keychain) lives behind build tags in `internal/`, mirroring how `src/irc/`
   stays portable while `Backend` owns desktop integration. D-Bus notifications
-  are implemented in `internal/notify/notify_linux.go`; osascript and Windows
-  Toast remain no-op stubs behind the same `Notifier`. `internal/storage` ships
-  Linux XDG paths (`paths_linux.go`) and a Linux Secret Service credential
-  store (`secretservice.go`) now; macOS `GenericConfigLocation`/Keychain and
-  Windows `%LOCALAPPDATA%`/Credential Manager slot into the build-tagged
-  `paths_other.go`/`secretservice_other.go` seams later without touching
+  are implemented in `internal/notify/notify_linux.go`; macOS uses osascript in
+  `notify_darwin.go`; Windows Toast remains a no-op stub behind the same
+  `Notifier`. `internal/storage` ships Linux XDG paths (`paths_linux.go`) and a
+  Linux Secret Service credential store (`secretservice.go`); macOS uses
+  `~/Library/Preferences` roots (`paths_darwin.go`) and the Keychain
+  (`secretservice_darwin.go`, service `omairc`, account=key name). Windows
+  `%LOCALAPPDATA%`/Credential Manager still slot into the build-tagged
+  `paths_other.go`/`secretservice_other.go` seams without touching
   `internal/irc`, `internal/controller`, or `internal/ui`.
 
 Nothing in Phase 0 hardcodes a Linux-only assumption into `internal/irc`.
