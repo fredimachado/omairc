@@ -3,6 +3,7 @@ package storage
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -471,8 +472,10 @@ func TestSyncCreatesMissingFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Stat: %v", err)
 	}
-	if perm := info.Mode().Perm(); perm != 0o600 {
-		t.Errorf("permissions = %o, want 600", perm)
+	if runtime.GOOS != "windows" {
+		if perm := info.Mode().Perm(); perm != 0o600 {
+			t.Errorf("permissions = %o, want 600", perm)
+		}
 	}
 	reopened := OpenSettings(path)
 	if !reopened.Bool("preferences", "directs", false) {

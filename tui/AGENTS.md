@@ -135,7 +135,7 @@ version the moment its package is first imported — never earlier, because
 - `charm.land/lipgloss/v2` v2.0.3 — imported in Phase 4.
 - `charm.land/bubbles/v2` v2.1.0 — imported in Phase 4.
 - `github.com/creack/pty` v1.1.24 — imported in Phase 4 by `internal/gate`
-  (Unix PTY, with Windows/ConPTY support).
+  for Unix PTYs; Windows uses ConPTY directly in `pty_windows.go`.
 - `github.com/ergochat/irc-go` (`ircmsg`, `ircreader`, `ircfmt`, `ircutils`)
   — still not imported. The wire layer stays a hand-port of `src/irc/` so the
   byte-for-byte behavior and the mirrored test matrices stay the contract.
