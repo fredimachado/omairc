@@ -38,3 +38,9 @@ func TestProcessDefaultsSize(t *testing.T) {
 		t.Fatalf("Wait: %v", err)
 	}
 }
+
+func TestStartRejectsEmptyBinary(t *testing.T) {
+	if _, err := Start(Options{}); err == nil {
+		t.Fatalf("Start with no binary should error")
+	}
+}
