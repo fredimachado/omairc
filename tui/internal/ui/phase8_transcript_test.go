@@ -46,6 +46,24 @@ func openPhase8AnnaDirect(t *testing.T, m *Model) *Model {
 	return m
 }
 
+// assertHeaderBandGutter checks a banded transcript header spans the column and
+// stops peopleCountGutter blank cells short of the member column, so the
+// "N PEOPLE" chip never runs into the member heading.
+func assertHeaderBandGutter(t *testing.T, width int, header string) {
+	t.Helper()
+	if got := lipgloss.Width(header); got != width {
+		t.Fatalf("header band width = %d, want the full %d-cell column", got, width)
+	}
+	plain := []rune(ansiPattern.ReplaceAllString(header, ""))
+	if len(plain) < peopleCountGutter {
+		t.Fatalf("header = %q, too narrow for the %d-cell gutter", string(plain), peopleCountGutter)
+	}
+	if trailing := string(plain[len(plain)-peopleCountGutter:]); strings.TrimSpace(trailing) != "" {
+		t.Fatalf("header = %q, want the chip to end %d gutter cells short of the column edge",
+			string(plain), peopleCountGutter)
+	}
+}
+
 // TestPhase8TranscriptChannelHeaderPeopleCount proves the channel header
 // carries the right-aligned "N PEOPLE" people control, not the old "(N)" form,
 // and that it fills the transcript column, one gutter short, so the label sits
@@ -70,9 +88,9 @@ func TestPhase8TranscriptChannelHeaderPeopleCount(t *testing.T) {
 	if strings.Contains(header, "(12)") {
 		t.Fatalf("channel header = %q, the old (12) form must be gone", header)
 	}
-	if got, want := lipgloss.Width(header), m.transcriptWidth()-peopleCountGutter; got != want {
-		t.Fatalf("channel header width = %d, want %d (transcript width less the gutter)", got, want)
-	}
+	// The band spans the column, so the count keeps one gutter of band before
+	// the member column instead of touching it.
+	assertHeaderBandGutter(t, m.transcriptWidth(), header)
 }
 
 // TestPhase8TranscriptDirectHeaderHasNoPeopleCount proves a direct message
@@ -228,6 +246,55 @@ func TestPhase8TranscriptChannelHasNoTypingFooter(t *testing.T) {
 	}
 }
 
+// TestTranscriptHeaderCarriesTheTopicBand pins the header's read as a title: the
+// topic row is a band spanning the transcript column, so the caption and the
+// count sit on a surface instead of looking like one more transcript line. The
+// band stays clear of the page (or it is invisible) and of the chip's raised fill
+// (or the count disappears into it), and the blank separator row stays unfilled.
+func TestTranscriptHeaderCarriesTheTopicBand(t *testing.T) {
+	m := seededModel(t)
+	band := backgroundParams(m.styles.TopicBar.GetBackground())
+	if want := backgroundParams(mixColors(m.styles.Colors.Background, m.styles.Colors.Accent, topicBarTint)); band != want {
+		t.Fatalf("band = %q, want the page mixed %.2f toward the accent (%q)", band, topicBarTint, want)
+	}
+	if band == backgroundParams(m.styles.Colors.Background) {
+		t.Fatal("the band must differ from the page, or the header shows no band at all")
+	}
+	if band == backgroundParams(m.styles.Colors.SurfaceRaised) {
+		t.Fatal("the band must differ from the chip's raised fill, or the count disappears into it")
+	}
+
+	header := m.transcriptHeader()
+	if len(header) < 2 {
+		t.Fatalf("channel header = %d rows, want the band plus its blank separator", len(header))
+	}
+	line := header[0]
+	if got, want := lipgloss.Width(line), m.transcriptWidth(); got != want {
+		t.Fatalf("band width = %d, want it to span the %d-cell transcript column", got, want)
+	}
+	if !strings.Contains(line, band) {
+		t.Fatalf("header row carries no band background %q:\n%q", band, line)
+	}
+	// The band starts at the row's first cell: the topic is not rendered on the
+	// page with the fill starting somewhere later.
+	firstSGR := line
+	if at := strings.Index(line, "m"); at >= 0 {
+		firstSGR = line[:at]
+	}
+	if !strings.Contains(firstSGR, band) {
+		t.Fatalf("header row does not open with the band:\n%q", line)
+	}
+	plain := ansiPattern.ReplaceAllString(line, "")
+	for _, want := range []string{"A cozy corner for Omarchy users and builders.", "12 PEOPLE"} {
+		if !strings.Contains(plain, want) {
+			t.Fatalf("band row missing %q: %q", want, plain)
+		}
+	}
+	if header[1] != "" {
+		t.Fatalf("the row under the band must stay blank and unfilled: %q", header[1])
+	}
+}
+
 // TestPhase8TranscriptPeopleCountHasColumnGutter is the regression test for the
 // merged-column bug: the right-aligned count must stop peopleCountGutter cells
 // short of the transcript edge so the member column's "ONLINE - N" heading does
@@ -247,13 +314,9 @@ func TestPhase8TranscriptPeopleCountHasColumnGutter(t *testing.T) {
 		t.Fatal("a channel transcript must have a topic header")
 	}
 	header := lines[0]
-	// State the invariant directly: the count ends before the gutter.
-	if got, want := lipgloss.Width(header), m.transcriptWidth()-peopleCountGutter; got != want {
-		t.Fatalf("channel header width = %d, want %d (headroom for the gutter)", got, want)
-	}
-	if !strings.HasSuffix(header, m.peopleChip(12)) {
-		t.Fatalf("channel header = %q, want it to end with the filled chip %q", header, "12 PEOPLE")
-	}
+	// State the invariant directly: the band spans the column and the count
+	// still ends one gutter before the member column.
+	assertHeaderBandGutter(t, m.transcriptWidth(), header)
 	if chip := m.peopleChip(12); lipgloss.Width(chip) != lipgloss.Width("12 PEOPLE")+2 {
 		t.Fatalf("people chip width = %d, want the label width plus a one-cell pad each side", lipgloss.Width(chip))
 	}

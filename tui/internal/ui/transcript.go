@@ -14,8 +14,8 @@ import (
 // peopleCountGutter is the blank separation between the transcript's
 // right-aligned "N PEOPLE" count and the member column joined immediately
 // after it. Without it the two columns' text runs together in the grid
-// ("12 PEOPLEONLINE - 12"), so the header is built one gutter short of
-// transcriptWidth() and renderColumn pads the rest.
+// ("12 PEOPLEONLINE - 12"), so the header band spans transcriptWidth() and the
+// count stops one gutter short of its right edge.
 const peopleCountGutter = 2
 
 // isMentionRow reports whether a message renders as a full-width wash band. Only
@@ -210,38 +210,50 @@ func (m *Model) transcriptLines() ([]string, int) {
 	return lines, len(header)
 }
 
-// topicHeaderLine renders the conversation's header: the muted topic caption
-// on the left and, right-aligned, the "↓ new" jump marker and then a filled
-// "N PEOPLE" chip for a channel. The line is sized to transcriptWidth() minus
-// peopleCountGutter so the tail sits at the right edge but never touches the
-// member column that follows. A long topic is truncated so the tail stays
-// visible; a direct message has no count.
+// topicBarTint is how far the transcript header's band mixes from the page
+// toward the theme accent. Enough to read as a title strip, faint enough to stay
+// a surface rather than a banner, and clear of SurfaceRaised so the "N PEOPLE"
+// chip that sits on the band keeps its own fill.
+const topicBarTint = 0.20
+
+// topicHeaderLine renders the conversation's header as a full-width band: the
+// topic caption on the left and, right-aligned, the "↓ new" jump marker and then
+// a filled "N PEOPLE" chip for a channel. The band spans transcriptWidth(), so
+// the tail ends peopleCountGutter cells short of the member column that follows
+// instead of touching it. A long topic is truncated so the tail stays visible; a
+// direct message has no count.
 func (m *Model) topicHeaderLine(topic string) string {
-	topicRendered := m.styles.Topic.Render(topic)
+	width := m.transcriptWidth()
+	content := m.styles.Topic.Render(topic)
 	tail := m.headerTail()
-	if tail == "" {
-		return topicRendered
-	}
-	width := m.transcriptWidth() - peopleCountGutter
-	if width < 0 {
-		width = 0
-	}
-	gap := width - lipgloss.Width(topicRendered) - lipgloss.Width(tail)
-	if gap < 1 {
-		// Spend the topic until the tail and one space fit. If the tail alone
-		// is wider than the column there is nothing left to give, but the tail
-		// is still emitted last so it is never the thing cut.
-		maxTopic := width - lipgloss.Width(tail) - 1
-		if maxTopic < 0 {
-			maxTopic = 0
+	if tail != "" {
+		// The tail owns the right end, one gutter short of the member column.
+		available := width - peopleCountGutter
+		if available < 0 {
+			available = 0
 		}
-		topicRendered = truncateLine(topicRendered, maxTopic)
-		gap = width - lipgloss.Width(topicRendered) - lipgloss.Width(tail)
-		if gap < 0 {
-			gap = 0
+		gap := available - lipgloss.Width(content) - lipgloss.Width(tail)
+		if gap < 1 {
+			// Spend the topic until the tail and one space fit. If the tail alone
+			// is wider than the column there is nothing left to give, but the tail
+			// is still emitted last so it is never the thing cut.
+			maxTopic := available - lipgloss.Width(tail) - 1
+			if maxTopic < 0 {
+				maxTopic = 0
+			}
+			content = truncateLine(content, maxTopic)
+			gap = available - lipgloss.Width(content) - lipgloss.Width(tail)
+			if gap < 0 {
+				gap = 0
+			}
 		}
+		content += strings.Repeat(" ", gap) + tail
+	} else {
+		content = truncateLine(content, width)
 	}
-	return topicRendered + strings.Repeat(" ", gap) + tail
+	// The band is the block's own background, so it covers the caption, the gap,
+	// and the padding out to the column edge rather than stopping at the text.
+	return m.styles.TopicBar.Width(width).Render(content)
 }
 
 // headerTail is the transcript header's right-aligned content: the "↓ new" jump

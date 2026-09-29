@@ -32,6 +32,10 @@ type Styles struct {
 	MentionRow         lipgloss.Style
 	Unread             lipgloss.Style
 
+	// Topic is the transcript header's caption, drawn on the TopicBar band. It
+	// carries the page ink rather than the muted tone it had as a plain caption:
+	// the band marks the row as the conversation's title, and muted text on a
+	// lighter band loses contrast instead of gaining it.
 	Topic       lipgloss.Style
 	Action      lipgloss.Style
 	Event       lipgloss.Style
@@ -50,6 +54,13 @@ type Styles struct {
 	UnseenJump lipgloss.Style
 
 	MembersHeader lipgloss.Style
+
+	// TopicBar is the band behind the transcript header. The topic caption and
+	// its right-aligned tail sit on it, so the conversation's topic reads as a
+	// title strip rather than another transcript line. It is mixed from the page
+	// toward the theme accent: far enough to register as a surface, and clear of
+	// SurfaceRaised so the "N PEOPLE" chip still stands out of the band.
+	TopicBar lipgloss.Style
 
 	// Phase 8 member chrome. The presence dot is green when available and
 	// amber when away; the bot mark, account, status subline, and typing
@@ -225,7 +236,7 @@ func buildStyles(colors theme.Colors) Styles {
 		MentionRow:         base.Foreground(colors.Mention),
 		Unread:             base.Foreground(colors.Unread),
 
-		Topic:       base.Foreground(colors.TextMuted),
+		Topic:       base.Foreground(colors.Foreground),
 		Action:      base.Foreground(colors.TextMuted).Italic(true),
 		Event:       base.Foreground(colors.TextDim),
 		Notice:      base.Foreground(colors.TextMuted),
@@ -238,6 +249,8 @@ func buildStyles(colors theme.Colors) Styles {
 		UnseenJump:     base.Foreground(colors.Accent).Bold(true),
 
 		MembersHeader: base.Bold(true).Foreground(colors.Accent),
+
+		TopicBar: base.Background(mixColors(colors.Background, colors.Accent, topicBarTint)),
 
 		MemberPresenceOnline: base.Foreground(colors.Good),
 		MemberPresenceAway:   base.Foreground(colors.Unread),
