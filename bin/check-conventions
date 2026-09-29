@@ -1066,6 +1066,48 @@ def check_tui_static_package():
     return problems
 
 
+def check_tui_install_script():
+    problems = []
+    path = ROOT / "install-tui.sh"
+    if not path.is_file():
+        return ["install-tui.sh: missing the portable terminal-client installer"]
+    if not path.stat().st_mode & 0o111:
+        problems.append("install-tui.sh: must be executable")
+    text = path.read_text(encoding="utf-8", errors="replace")
+    required = (
+        ("set -eu", "must fail fast"),
+        ("https://github.com/fredimachado/omairc/releases",
+         "must install from the GitHub release"),
+        ("url_effective",
+         "must resolve the latest release from the /latest redirect"),
+        ("OMAIRC_TUI_VERSION", "must let a caller pin the version"),
+        ("OMAIRC_TUI_BIN_DIR", "must let a caller choose the install directory"),
+        ("$HOME/.local/bin", "must default to a user-local install directory"),
+        ("Linux)", "must support Linux"),
+        ("Darwin)", "must support macOS"),
+        ("amd64", "must install the amd64 archive on x86_64"),
+        ("arm64", "must install the arm64 archive on arm64 and aarch64"),
+        ("tar.gz", "must install the .tar.gz release archive"),
+        ("--version", "must verify the downloaded binary before installing it"),
+        ("install -m 0755", "must install the binary executable"),
+    )
+    for needle, message in required:
+        if needle not in text:
+            problems.append(f"install-tui.sh: {message}")
+    if re.search(r"(?m)(?:^|\s)sudo(?:\s|$)", text):
+        problems.append(
+            "install-tui.sh: must not require sudo; install under $HOME")
+    if "raw.githubusercontent.com/fredimachado/omairc/master/install-tui.sh" \
+            not in text:
+        problems.append("install-tui.sh: usage must show the curl one-liner")
+    for relative in ("README.md", "tui/README.md"):
+        doc = ROOT / relative
+        if not doc.is_file() or "install-tui.sh" not in doc.read_text(
+                encoding="utf-8", errors="replace"):
+            problems.append(f"{relative}: document install-tui.sh for omairc-tui")
+    return problems
+
+
 def check_tui_release_assets():
     problems = []
     # Anything that acts on release asset names, plus the user-facing install
@@ -1076,6 +1118,7 @@ def check_tui_release_assets():
         ".github/workflows/release-package.yml",
         ".github/workflows/tui.yml",
         "install.sh",
+        "install-tui.sh",
         "README.md",
     )
     for relative in files:
@@ -1099,6 +1142,10 @@ def check_tui_release_assets():
             problems.append(
                 ".github/workflows/release-package.yml: repo-add the "
                 "omairc-tui package into omairc.db")
+        if "install-tui.sh" not in text:
+            problems.append(
+                ".github/workflows/release-package.yml: filter and upload "
+                "install-tui.sh beside install.sh")
         if re.search(r"(?m)^  push:\n    branches:\n      - master\b", text):
             problems.append(
                 ".github/workflows/release-package.yml: do not package on "
@@ -1360,6 +1407,7 @@ CHECKS = (
     ("Go build reads version.pri", check_go_build_uses_version_pri),
     ("Go ReadBuildInfo version fallback", check_go_read_build_info),
     ("TUI static package script", check_tui_static_package),
+    ("TUI install script", check_tui_install_script),
     ("TUI release assets", check_tui_release_assets),
     ("internal/irc platform neutrality", check_go_irc_platform_neutrality),
     ("Go view/driver free of internal/irc", check_go_view_no_protocol),

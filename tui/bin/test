@@ -105,6 +105,28 @@ test -f "$archive" || {
   exit 1
 }
 
+# install-tui.sh installs the archive the package step just built, offline.
+# Windows has no POSIX uname path, so the installer skips it there.
+case "$host_os" in
+  windows)
+    echo "Skipping the install-tui.sh check on Windows." >&2
+    ;;
+  *)
+    install_dir="$(mktemp -d "${TMPDIR:-/tmp}/omairc-tui-install.XXXXXX")"
+    OMAIRC_TUI_VERSION="$VERSION" \
+    OMAIRC_TUI_DOWNLOAD_URL="file://$archive" \
+    OMAIRC_TUI_BIN_DIR="$install_dir" \
+      "$ROOT/install-tui.sh"
+    installed="$("$install_dir/omairc-tui" --version)"
+    test "$installed" = "omairc-tui $VERSION" || {
+      echo "install-tui.sh must install omairc-tui $VERSION" >&2
+      printf 'got: %s\n' "$installed" >&2
+      exit 1
+    }
+    rm -rf -- "$install_dir"
+    ;;
+esac
+
 # PTY parity gate over the freshly built shell: launch it under a real PTY and
 # assert the OSC title, the seeded sidebar text, and a rendered screenshot.
 # Windows uses ConPTY (creack/pty) and AF_UNIX sockets on Win10+; the Linux
