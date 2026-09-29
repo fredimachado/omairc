@@ -20,6 +20,7 @@ on:
       - 'data/**'
       - 'LICENSE'
       - 'install.sh'
+      - 'install-tui.sh'
       - 'tui/**'
       - 'packaging/tui/**'
   workflow_dispatch:
@@ -257,6 +258,7 @@ jobs:
             omairc.files \
             omairc.files.tar.zst \
             install.sh \
+            install-tui.sh \
             --clobber
 
       # A release created with GITHUB_TOKEN does not emit release events.

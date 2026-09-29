@@ -8,6 +8,14 @@ The Go terminal client. Same behavior, chords, and window title as the Qt app.
 
 `omairc-tui` ships as a static binary on the same GitHub release as the Qt app. These installs need a release that carries `omairc-tui` assets, so check the [latest release](https://github.com/fredimachado/omairc/releases/latest) first.
 
+On Linux or macOS, without a package manager:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/fredimachado/omairc/master/install-tui.sh | sh
+```
+
+That resolves the latest release, downloads the static binary for your OS and architecture, checks its version, and installs it to `~/.local/bin`. Re-running upgrades. `install-tui.sh` is also attached to each release.
+
 Arch, after the omairc pacman repository is configured. `install.sh` installs the Qt client only:
 
 ```sh

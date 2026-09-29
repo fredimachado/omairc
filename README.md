@@ -49,6 +49,18 @@ On Omarchy you can also run `omarchy pkg add omairc`.
 
 The terminal client, `omairc-tui`, ships as a separate static binary on the same GitHub release as the Qt app; `install.sh` still installs the Qt client only. The installs below need a release that carries `omairc-tui` assets, so check the [latest release](https://github.com/fredimachado/omairc/releases/latest) first.
 
+On Linux or macOS, without a package manager:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/fredimachado/omairc/master/install-tui.sh | sh
+```
+
+That resolves the latest release, downloads the static binary for your OS and architecture, checks its version, and installs it to `~/.local/bin`. Re-running upgrades. Read [`install-tui.sh`](install-tui.sh) first if you prefer. The same script is a release asset:
+
+```sh
+curl -fsSL https://github.com/fredimachado/omairc/releases/latest/download/install-tui.sh | sh
+```
+
 Arch, once that pacman repository is configured:
 
 ```sh
@@ -75,7 +87,7 @@ scoop bucket add omairc https://github.com/fredimachado/omairc
 scoop install omairc-tui
 ```
 
-Or unzip `omairc-tui-<version>-windows-amd64.zip` from the [GitHub release](https://github.com/fredimachado/omairc/releases/latest) and run `omairc-tui.exe` in Windows Terminal. There is no setup program for the terminal client.
+Or unzip `omairc-tui-<version>-windows-amd64.zip` from the [GitHub release](https://github.com/fredimachado/omairc/releases/latest) and run `omairc-tui.exe` in Windows Terminal. Windows has no setup program for the terminal client.
 
 From source:
 

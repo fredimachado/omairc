@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `install-tui.sh` installs the `omairc-tui` terminal client on Linux or macOS
+  without a package manager. It resolves the latest release, downloads the
+  static binary for the host OS and architecture, checks its `--version`, and
+  installs it under `~/.local/bin`. `install.sh` still installs the Qt client
+  only, and now publishes `install-tui.sh` as a release asset too.
+
 ## [1.0.6] - 2026-09-30
 
 ### Fixed
