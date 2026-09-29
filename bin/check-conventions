@@ -399,6 +399,9 @@ def check_go_build_uses_version_pri():
     if "-ldflags" not in text:
         problems.append(
             "tui/bin/build: inject version.Value through -ldflags")
+    if "GOTOOLCHAIN=local" not in text:
+        problems.append(
+            "tui/bin/build: pin GOTOOLCHAIN=local like packaging/tui/PKGBUILD")
     return problems
 
 
@@ -866,7 +869,7 @@ def check_ci_package_triggers():
             problems.append(
                 ".github/workflows/tui.yml: tag concurrency must not cancel "
                 "an in-progress release")
-        if tui_text.count("contents: write") != 2:
+        if len(re.findall(r"(?m)^\s+contents: write\s*$", tui_text)) != 2:
             problems.append(
                 ".github/workflows/tui.yml: contents: write belongs on the "
                 "package and bump jobs only")
@@ -1046,11 +1049,13 @@ def check_tui_static_package():
         ("bin/version", "read the version from bin/version"),
         ("OMAIRC_BUILD_VERSION", "honor OMAIRC_BUILD_VERSION"),
         ("CGO_ENABLED=0", "set CGO_ENABLED=0"),
+        ("GOTOOLCHAIN=local", "pin GOTOOLCHAIN=local like packaging/tui/PKGBUILD"),
         ("-trimpath", "pass -trimpath"),
         ("internal/version.Value", "inject internal/version.Value"),
         ("-ldflags", "inject the version through -ldflags"),
         ("-s -w", "strip the release binary with -s -w"),
         ('./cmd/omairc-tui', "build only ./cmd/omairc-tui"),
+        ("--mtime", "pin the archive mtime so release tarballs are reproducible"),
     )
     for needle, message in required:
         if needle not in text:
@@ -1063,20 +1068,24 @@ def check_tui_static_package():
 
 def check_tui_release_assets():
     problems = []
-    workflows = (
+    # Anything that acts on release asset names, plus the user-facing install
+    # instructions, must not use an omairc-* glob that also matches omairc-tui.
+    files = (
         ".github/workflows/windows.yml",
         ".github/workflows/macos.yml",
         ".github/workflows/release-package.yml",
         ".github/workflows/tui.yml",
+        "install.sh",
+        "README.md",
     )
-    for relative in workflows:
+    for relative in files:
         path = ROOT / relative
         if not path.is_file():
-            problems.append(f"{relative}: missing workflow")
+            problems.append(f"{relative}: missing file")
             continue
         for line in _omairc_star_globs(path.read_text(encoding="utf-8", errors="replace")):
             problems.append(
-                f"{relative}: omairc-* glob can delete or upload an "
+                f"{relative}: omairc-* glob can also match an "
                 f"omairc-tui asset: {line}")
 
     release = ROOT / ".github" / "workflows" / "release-package.yml"
@@ -1287,7 +1296,7 @@ def check_homebrew_cask():
         "brew tap fredimachado/omairc https://github.com/fredimachado/omairc")
     qualified_pos = section.find("brew install --cask fredimachado/omairc/omairc")
     official = re.search(r"(?m)^brew install --cask omairc$", section)
-    zip_pos = section.find("omairc-*-macos-arm64.zip")
+    zip_pos = section.find("omairc-<version>-macos-arm64.zip")
     source_pos = section.find("bin/build-macos")
     if tap_pos < 0:
         problems.append(

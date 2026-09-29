@@ -74,7 +74,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install Go
         uses: actions/setup-go@v5
@@ -84,6 +84,32 @@ jobs:
 
       - name: Run tui/bin/test
         run: tui/bin/test
+
+      # The tag-time package job cross-compiles these five targets, and a
+      # pull request would otherwise never exercise that path. Keep the list
+      # in step with the package job below.
+      - name: Cross-compile the five release targets
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          set -euo pipefail
+          targets=(
+            "linux amd64"
+            "linux arm64"
+            "darwin amd64"
+            "darwin arm64"
+            "windows amd64"
+          )
+          for target in "${targets[@]}"; do
+            read -r os arch <<<"$target"
+            GOOS="$os" GOARCH="$arch" tui/bin/package
+          done
+          shopt -s nullglob
+          archives=(tui/dist/omairc-tui-*)
+          if [ "${#archives[@]}" -ne 5 ]; then
+            echo "Expected 5 omairc-tui archives, found ${#archives[@]}" >&2
+            printf '%s\n' "${archives[@]}" >&2
+            exit 1
+          fi
 
   # Dry-build packaging/tui/PKGBUILD in an Arch container so a PKGBUILD
   # regression fails the pull request instead of release-package.yml's tag
@@ -103,7 +129,7 @@ jobs:
           pacman -Syu --noconfirm
           pacman -S --noconfirm base-devel git sudo
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Create build user
         run: |
@@ -181,7 +207,7 @@ jobs:
     env:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install Go
         uses: actions/setup-go@v5
@@ -214,7 +240,7 @@ jobs:
 
       - name: Upload static archives
         if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: omairc-tui-${{ github.ref_name }}
           path: tui/dist/omairc-tui-*
@@ -276,13 +302,13 @@ jobs:
     env:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: master
           fetch-depth: 0
 
       - name: Download static archives
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: omairc-tui-${{ github.ref_name }}
           path: tui/dist

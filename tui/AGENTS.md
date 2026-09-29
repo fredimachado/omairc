@@ -11,6 +11,9 @@ When the two disagree about the shared contract, the root file wins.
 - The `go` directive is `go 1.25.0`, the patch-level minimum that
   `github.com/charmbracelet/ultraviolet` (pulled in by
   `charm.land/bubbletea/v2` v2.0.9) declares. Do not lower it.
+  `tui/bin/build`, `tui/bin/package`, and `packaging/tui/PKGBUILD` all set
+  `GOTOOLCHAIN=local`, so a build on an older toolchain fails loudly instead
+  of silently downloading a different one.
 - The module path is domain-qualified so `go install` works. The module
   version is the git tag `tui/vX.Y.Z` on the same commit as `vX.Y.Z`.
   GitHub's `v*` filter does not match `tui/v*`, so that tag does not open
@@ -38,7 +41,8 @@ When the two disagree about the shared contract, the root file wins.
   `internal/gate/` (the PTY parity driver: VT grid, OSC title capture, key
   writer, screenshot), `internal/crashlog/` (the durable crash record),
   `internal/version/` (injected build version), and
-  `bin/` (gate scripts).
+  `bin/` (gate scripts, plus `bin/writezip` — the Windows zip writer that
+  `bin/package` calls).
 - `tui/bin/omairc-tui` is a build artifact and is gitignored.
 
 ## Package boundaries
@@ -350,7 +354,10 @@ A release bump touches `version.pri`, `CHANGELOG.md`, and
 `tests/test_derive_build_versions.py` once, and both binaries pick it up
 atomically. Tag `vX.Y.Z` and `tui/vX.Y.Z` on that commit. No TUI source
 file needs editing for a version bump. Do not hand-edit
-`Formula/omairc-tui.rb` or `bucket/omairc-tui.json`.
+`Formula/omairc-tui.rb` or `bucket/omairc-tui.json`: the tag job rewrites
+them. Their committed hashes are placeholders until a release carries the
+archives. `tui/bin/package` pins ownership, order, and mtime, so a given
+commit and toolchain produce byte-identical archives.
 
 ## CI and review
 
@@ -363,11 +370,13 @@ file needs editing for a version bump. Do not hand-edit
   `workflow_dispatch` it cross-compiles static archives with
   `tui/bin/package` and uploads them onto the GitHub Release that
   `release-package.yml` creates. Pull requests and master merges do not
-  upload archives. The same workflow dry-builds `packaging/tui/PKGBUILD`
-  in an Arch container on pull requests, master, and dispatch, so a
-  PKGBUILD regression fails the pull request instead of the tag job that
-  also creates the release. Do not add a notification sink, a new
-  workflow, or a bot.
+  upload archives, but the ubuntu leg of the `tui` matrix cross-compiles the
+  five release targets on every run, so a broken cross-build fails the pull
+  request instead of the tag. The same workflow dry-builds
+  `packaging/tui/PKGBUILD` in an Arch container on pull requests, master,
+  and dispatch, so a PKGBUILD regression fails the pull request instead of
+  the tag job that also creates the release. Do not add a notification
+  sink, a new workflow, or a bot.
 - A pull request whose whole diff is TUI-only is gated by `tui.yml` alone:
   `test.yml` ignores `tui/**`, so the Qt app is not rebuilt and the C++ suite
   does not run for the Go port. That holds because `tui/bin/test` runs the

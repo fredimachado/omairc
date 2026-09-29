@@ -8,7 +8,8 @@
 #
 # Output is tui/dist/omairc-tui-$VERSION-$GOOS-$GOARCH.tar.gz, or .zip when
 # GOOS is windows. The archive contains only the binary. The Windows zip also
-# carries LICENSE.
+# carries LICENSE. Archives are reproducible: ownership, order, and mtime are
+# pinned, so the same commit and toolchain produce the same bytes.
 #
 # On Linux, a linux target fails when ldd reports a dynamic interpreter.
 # A binary built for the host must print "omairc-tui $BUILD_VERSION".
@@ -17,6 +18,11 @@ set -eu
 ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)"
 TUI="$ROOT/tui"
 cd "$TUI"
+
+# The module requires go 1.25.0. Pin the toolchain so a release build fails
+# loudly instead of silently downloading a different one, matching
+# packaging/tui/PKGBUILD.
+export GOTOOLCHAIN=local
 
 VERSION="$("$ROOT/bin/version")"
 BUILD_VERSION="${OMAIRC_BUILD_VERSION:-$VERSION}"
@@ -70,12 +76,13 @@ if [ "$GOOS" = "windows" ]; then
   ARCHIVE="$DIST/omairc-tui-${BUILD_VERSION}-${GOOS}-${GOARCH}.zip"
   rm -f "$ARCHIVE"
   # writezip must run on the host. GOOS/GOARCH are the archive target.
-  GOOS="$HOST_OS" GOARCH="$HOST_ARCH" go run ./bin/writezip.go "$ARCHIVE" "$STAGE"
+  GOOS="$HOST_OS" GOARCH="$HOST_ARCH" go run ./bin/writezip "$ARCHIVE" "$STAGE"
 else
   ARCHIVE="$DIST/omairc-tui-${BUILD_VERSION}-${GOOS}-${GOARCH}.tar.gz"
   rm -f "$ARCHIVE"
   if tar --version 2>/dev/null | head -n 1 | grep -q 'GNU tar'; then
-    tar -C "$STAGE" --sort=name --owner=0 --group=0 --numeric-owner -czf "$ARCHIVE" "$BIN_NAME"
+    tar -C "$STAGE" --sort=name --owner=0 --group=0 --numeric-owner \
+      --mtime='1980-01-01 00:00:00 UTC' -czf "$ARCHIVE" "$BIN_NAME"
   else
     tar -C "$STAGE" -czf "$ARCHIVE" "$BIN_NAME"
   fi
