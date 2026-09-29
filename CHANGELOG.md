@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.6] - 2026-09-30
+
+### Fixed
+
+- The TUI sends after a sidebar walk. `Alt+Down` / `Alt+Up` moved to a
+  conversation but left a previously focused network header armed, so the next
+  `Enter` opened that network's Status instead of sending, and the typed line
+  stayed in the composer as a draft until a second attempt. A selection change
+  now clears the header focus, matching the desktop client.
+- The TUI hides the channel member column on the Status console. Connecting a
+  second network opens Status while the previous channel stays selected, so the
+  old channel's member panel lingered beside the console transcript. Status now
+  hides the panel and the console transcript takes the freed width, matching
+  the desktop client.
+
 ## [1.0.5] - 2026-09-29
 
 ### Added
@@ -579,7 +594,8 @@ First public release: a simple IRC client for Omarchy.
 - Keyboard map, slash-command complete, selectable transcript, and follow-unseen.
 - qmake Unix install tree and a GitHub Releases pacman repository.
 
-[Unreleased]: https://github.com/fredimachado/omairc/compare/v1.0.5...HEAD
+[Unreleased]: https://github.com/fredimachado/omairc/compare/v1.0.6...HEAD
+[1.0.6]: https://github.com/fredimachado/omairc/compare/v1.0.5...v1.0.6
 [1.0.5]: https://github.com/fredimachado/omairc/compare/v1.0.4...v1.0.5
 [1.0.4]: https://github.com/fredimachado/omairc/compare/v1.0.3...v1.0.4
 [1.0.3]: https://github.com/fredimachado/omairc/compare/v1.0.2...v1.0.3
