@@ -884,6 +884,16 @@ def check_ci_package_triggers():
             problems.append(
                 ".github/workflows/tui.yml: manifest bump must fetch and "
                 "rebase onto origin/master, retrying a raced push")
+        if "packaging/tui/PKGBUILD" not in tui_text or "makepkg" not in tui_text:
+            problems.append(
+                ".github/workflows/tui.yml: dry-build packaging/tui/PKGBUILD "
+                "on pull requests; release-package.yml's tag job must not be "
+                "its first build")
+        if "if: ${{ !startsWith(github.ref, 'refs/tags/v') }}" not in tui_text:
+            problems.append(
+                ".github/workflows/tui.yml: the packaging/tui/PKGBUILD dry "
+                "build must skip tags; release-package.yml builds the package "
+                "there")
     return problems
 
 

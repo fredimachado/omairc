@@ -363,8 +363,11 @@ file needs editing for a version bump. Do not hand-edit
   `workflow_dispatch` it cross-compiles static archives with
   `tui/bin/package` and uploads them onto the GitHub Release that
   `release-package.yml` creates. Pull requests and master merges do not
-  upload archives. Do not add a notification sink, a new workflow, or a
-  bot.
+  upload archives. The same workflow dry-builds `packaging/tui/PKGBUILD`
+  in an Arch container on pull requests, master, and dispatch, so a
+  PKGBUILD regression fails the pull request instead of the tag job that
+  also creates the release. Do not add a notification sink, a new
+  workflow, or a bot.
 - A pull request whose whole diff is TUI-only is gated by `tui.yml` alone:
   `test.yml` ignores `tui/**`, so the Qt app is not rebuilt and the C++ suite
   does not run for the Go port. That holds because `tui/bin/test` runs the

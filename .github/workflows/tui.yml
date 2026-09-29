@@ -85,6 +85,92 @@ jobs:
       - name: Run tui/bin/test
         run: tui/bin/test
 
+  # Dry-build packaging/tui/PKGBUILD in an Arch container so a PKGBUILD
+  # regression fails the pull request instead of release-package.yml's tag
+  # job, which both builds this package and creates the GitHub Release. Tags
+  # skip it; release-package.yml builds the same package there.
+  dry-build:
+    name: Arch package
+    if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+    runs-on: ubuntu-latest
+    container: archlinux:latest
+    timeout-minutes: 20
+    steps:
+      - name: Bootstrap pacman
+        run: |
+          pacman-key --init
+          pacman-key --populate archlinux
+          pacman -Syu --noconfirm
+          pacman -S --noconfirm base-devel git sudo
+
+      - uses: actions/checkout@v4
+
+      - name: Create build user
+        run: |
+          useradd -m builder
+          echo 'builder ALL=(ALL) NOPASSWD: ALL' >/etc/sudoers.d/builder
+          chown -R builder:builder "$GITHUB_WORKSPACE"
+
+      - name: Install Go
+        run: |
+          set -euo pipefail
+          pacman -S --noconfirm go
+          raw=$(go version | awk '{print $3}')
+          ver=${raw#go}
+          major=${ver%%.*}
+          rest=${ver#*.}
+          minor=${rest%%.*}
+          if [ "$major" -lt 1 ] || { [ "$major" -eq 1 ] && [ "$minor" -lt 25 ]; }; then
+            echo "go $ver is older than 1.25" >&2
+            exit 1
+          fi
+          echo "Using go $ver"
+
+      - name: Prepare dry-build packaging/tui/PKGBUILD source
+        run: |
+          set -euo pipefail
+          pkgver=$(./bin/version)
+          tag_source="omairc-${pkgver}.tar.gz::https://github.com/fredimachado/omairc/archive/refs/tags/v${pkgver}.tar.gz"
+          source0=$(bash -c 'source packaging/tui/PKGBUILD; printf %s "${source[0]}"')
+          test "$source0" = "$tag_source" || {
+            echo "packaging/tui/PKGBUILD must fetch the tag tarball $tag_source" >&2
+            printf 'got: %s\n' "$source0" >&2
+            exit 1
+          }
+          source_tar=$(mktemp "/tmp/omairc-${pkgver}.XXXXXX.tar.gz")
+          tar --exclude='.git' --exclude='.arena-omairc-pacman' \
+            -czf "$source_tar" \
+            --transform "s,^\.,omairc-${pkgver}," .
+          mv "$source_tar" "omairc-${pkgver}.tar.gz"
+          ln -sfn "$GITHUB_WORKSPACE/omairc-${pkgver}.tar.gz" \
+            "packaging/tui/omairc-${pkgver}.tar.gz"
+          sed -i "s|^source=.*|source=(\"omairc-${pkgver}.tar.gz\")|" \
+            packaging/tui/PKGBUILD
+          chown -R builder:builder packaging/tui
+          chown builder:builder "omairc-${pkgver}.tar.gz"
+
+      - name: makepkg packaging/tui/PKGBUILD
+        run: |
+          set -euo pipefail
+          chown -R builder:builder packaging/tui
+          cd packaging/tui
+          sudo -u builder makepkg -s --noconfirm
+
+      - name: Verify the omairc-tui package
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          pkgs=(packaging/tui/omairc-tui-*-x86_64.pkg.tar.zst)
+          test "${#pkgs[@]}" -eq 1
+          version=$(./bin/version)
+          meta=$(pacman -Qp "${pkgs[0]}")
+          test "$meta" = "omairc-tui ${version}-1"
+          tmp=$(mktemp -d)
+          tar -xf "${pkgs[0]}" -C "$tmp" usr/bin/omairc-tui
+          got=$("$tmp/usr/bin/omairc-tui" --version)
+          rm -rf "$tmp"
+          test "$got" = "omairc-tui $version"
+
   package:
     needs: tui
     if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
