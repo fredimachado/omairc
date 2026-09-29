@@ -187,10 +187,14 @@ func (c *Controller) rebuildMessages() {
 		return
 	}
 	rows := make([]MessageSnapshot, 0, len(conversation.Messages))
+	// The view renders and groups on Time, so it is handed a display clock:
+	// the reducer's stored instant read in the clock's zone, matching
+	// MessageListModel::displayTime's toLocalTime.
+	location := c.displayLocation()
 	for _, message := range conversation.Messages {
 		rows = append(rows, MessageSnapshot{
 			Author:    message.Author,
-			Time:      message.Timestamp,
+			Time:      message.Timestamp.In(location),
 			Body:      message.Body,
 			Kind:      messageKindName(message.Kind),
 			Origin:    originName(message.Origin),

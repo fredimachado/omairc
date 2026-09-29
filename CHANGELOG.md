@@ -45,9 +45,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   right of the shell footer, trailing the shortcut list.
 - The TUI sidebar identity footer is two rows: the initials chip and nick on
   their own row, with the presence word and inbox pill indented below.
+- The TUI typing indicator animates in all three surfaces — the member panel,
+  the direct-message transcript footer, and the sidebar direct row — with the
+  Bubbles Points spinner instead of a static ellipsis.
 
 ### Fixed
 
+- The TUI direct-message typing dots keep their own line under the peer's
+  message instead of being appended to the end of it. A wrapped body left them
+  glued to the last word, as if the text were part of the message. Grouping still
+  drops the repeated nickname and avatar, matching the desktop client.
+- TUI transcript clocks are shown in the reader's timezone, matching the
+  desktop client. A parsed `server-time` tag is stored in UTC, so a message
+  carried the wrong hour on any non-UTC machine. The row's clock is localized
+  once, which also restores the same-minute grouping the transcript rows and the
+  direct-message typing footer share.
+- The TUI direct-message typing footer groups under the peer's last message
+  again, matching Qt, instead of repeating the peer's nickname and avatar. The
+  footer compares the row's clock cell against the current minute, but the two
+  were read in different zones, so outside UTC they never matched.
 - TUI Tab nick completion now matches Qt: an ambiguous prefix completes to the
   first matching nick, and repeated Tabs cycle through the candidates. It used
   to require exactly one match, so Tab did nothing in a channel where two nicks

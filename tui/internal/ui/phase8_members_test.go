@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"charm.land/bubbles/v2/spinner"
 	tea "charm.land/bubbletea/v2"
 )
 
@@ -151,11 +152,11 @@ func TestMemberChromePresenceBotTypingAndStatus(t *testing.T) {
 		t.Fatalf("anna must not show a bot mark: %q", annaLines[0])
 	}
 
-	// Typing ellipsis: only anna is typing on #omarchy.
-	if !strings.Contains(annaLines[0], m.styles.MemberTyping.Render("...")) {
-		t.Fatalf("anna must show the typing ellipsis: %q", annaLines[0])
+	// Typing dots: only anna is typing on #omarchy.
+	if !strings.Contains(annaLines[0], m.typingDots()) {
+		t.Fatalf("anna must show the typing dots: %q", annaLines[0])
 	}
-	if strings.Contains(daxLines[0], m.styles.MemberTyping.Render("...")) {
+	if strings.Contains(daxLines[0], m.typingDots()) {
 		t.Fatalf("dax must not show typing dots: %q", daxLines[0])
 	}
 
@@ -168,6 +169,73 @@ func TestMemberChromePresenceBotTypingAndStatus(t *testing.T) {
 	}
 	if len(teoLines) != 1 {
 		t.Fatalf("teo has no status, want a single line, got %#v", teoLines)
+	}
+}
+
+// TestTypingIndicatorAnimatesWithTheSpinner proves the old static ellipsis is
+// now a Bubbles Points frame: one tick advances the member-panel dots, and the
+// sidebar pulse follows as the frame's first cell, so all three surfaces share
+// one beat.
+func TestTypingIndicatorAnimatesWithTheSpinner(t *testing.T) {
+	m := seededModel(t)
+	if !m.typingSpinnerRunning() {
+		t.Fatal("the seeded #omarchy has anna typing, so the typing spinner must run")
+	}
+	first := m.typingDots()
+
+	updated, cmd := m.Update(spinner.TickMsg{ID: m.typingSpinner.ID()})
+	m = updated.(*Model)
+	if cmd == nil {
+		t.Fatal("a typing tick must schedule the next frame")
+	}
+	second := m.typingDots()
+	if second == first {
+		t.Fatalf("typing dots did not advance past %q", first)
+	}
+
+	anna := phase8MemberLine(t, m, "anna")
+	if !strings.Contains(anna[0], second) {
+		t.Fatalf("anna's row = %q, want the advanced frame %q", anna[0], second)
+	}
+	if got, want := m.typingPulse(), truncateLine(second, 1); got != want {
+		t.Fatalf("sidebar pulse = %q, want the frame's first cell %q", got, want)
+	}
+}
+
+// TestTypingDotsFollowThePointsSpinner walks the Bubbles Points frames and
+// proves the member/transcript glyph is exactly the library frame, while the
+// sidebar pulse is that frame's first cell.
+func TestTypingDotsFollowThePointsSpinner(t *testing.T) {
+	m := seededModel(t)
+	for index, frame := range spinner.Points.Frames {
+		stamped := m.styles.MemberTyping.Render(frame)
+		if got := m.typingDots(); got != stamped {
+			t.Fatalf("frame %d dots = %q, want %q", index, got, stamped)
+		}
+		if got, want := m.typingPulse(), truncateLine(stamped, 1); got != want {
+			t.Fatalf("frame %d pulse = %q, want the first cell %q", index, got, want)
+		}
+		updated, _ := m.Update(spinner.TickMsg{ID: m.typingSpinner.ID()})
+		m = updated.(*Model)
+	}
+}
+
+// TestSidebarDirectTypingRendersThePulse pins the third typing surface: the
+// seeded anna direct row carries the animated one-cell pulse.
+func TestSidebarDirectTypingRendersThePulse(t *testing.T) {
+	m := seededModel(t)
+	rendered := ""
+	for _, row := range m.ctrl.Conversations() {
+		if row.Direct && row.Typing {
+			rendered = m.conversationRow(row)
+			break
+		}
+	}
+	if rendered == "" {
+		t.Fatal("the seeded demo must mark a direct row as typing")
+	}
+	if !strings.Contains(rendered, m.typingPulse()) {
+		t.Fatalf("sidebar row = %q, want the typing pulse %q", rendered, m.typingPulse())
 	}
 }
 

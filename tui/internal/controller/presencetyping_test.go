@@ -123,6 +123,69 @@ func TestTranscriptTypingIndicatorSeededDemo(t *testing.T) {
 	}
 }
 
+// TestTranscriptTypingIndicatorGroupsInTheClockZone proves the footer's minute
+// comparison is zone-correct. The reducer keeps a parsed server-time tag in UTC
+// (translator.go's ircServerTimeOf) while the clock is local, so formatting both
+// raw compared two different zones and never grouped outside UTC: a peer whose
+// message arrived in the current minute still repeated its nick. Qt localizes
+// both sides (displayTime calls toLocalTime; currentTranscriptMinute reads the
+// local date), so the row and the placeholder must be compared in the clock's
+// own zone.
+func TestTranscriptTypingIndicatorGroupsInTheClockZone(t *testing.T) {
+	// The anna DM's only seeded row is 2026-09-12T10:12:00Z, and the clock sits
+	// 20 seconds later, so the row and the footer share one displayed minute in
+	// every zone below.
+	seeded := time.Date(2026, 9, 12, 10, 12, 0, 0, time.UTC)
+	zones := []*time.Location{
+		time.UTC,
+		time.FixedZone("UTC+10", 10*60*60),
+		time.FixedZone("UTC-05", -5*60*60),
+	}
+	for _, zone := range zones {
+		c := controller.New()
+		c.SetClock(session.NewFakeClock(seeded.Add(20 * time.Second).In(zone)))
+		d := demo.New()
+		if !d.Attach(c, true) {
+			t.Fatalf("%s: demo Attach failed: %q", zone, d.LastError())
+		}
+		c.SelectConversation("omarchy", "anna")
+
+		nick, grouped, show := c.TranscriptTypingIndicator()
+		if nick != "anna" || !show {
+			t.Fatalf("%s: indicator = (%q, show %v), want anna shown", zone, nick, show)
+		}
+		if !grouped {
+			t.Fatalf("%s: a peer row in the current displayed minute must group", zone)
+		}
+	}
+}
+
+// TestTranscriptTypingIndicatorUngroupsThePreviousMinute keeps the minute gate
+// itself intact in a non-UTC zone: the footer still takes its own header once
+// the peer's row is a different displayed minute, matching Qt's 1s minute-roll
+// timer. The hint is seeded fresh under each clock so it stays live and the
+// assertion cannot pass vacuously on a pruned hint.
+func TestTranscriptTypingIndicatorUngroupsThePreviousMinute(t *testing.T) {
+	zone := time.FixedZone("UTC+10", 10*60*60)
+	// The seeded row is 20:12 local; the clock is one displayed minute later.
+	clock := time.Date(2026, 9, 12, 10, 13, 0, 0, time.UTC).In(zone)
+	c := controller.New()
+	c.SetClock(session.NewFakeClock(clock))
+	d := demo.New()
+	if !d.Attach(c, true) {
+		t.Fatalf("demo Attach failed: %q", d.LastError())
+	}
+	c.SelectConversation("omarchy", "anna")
+
+	_, grouped, show := c.TranscriptTypingIndicator()
+	if !show {
+		t.Fatal("the typing hint must stay live for the assertion to mean anything")
+	}
+	if grouped {
+		t.Fatal("a peer row from the previous displayed minute must not group")
+	}
+}
+
 // TestMemberBotFlagSeededDemo covers MemberSnapshot.Bot: the demo marks dax a
 // bot via draft/metadata-2 and leaves anna a normal member.
 func TestMemberBotFlagSeededDemo(t *testing.T) {

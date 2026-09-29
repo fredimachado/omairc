@@ -316,7 +316,7 @@ func (m *Model) conversationRowWidth(row controller.ConversationSnapshot, width 
 
 	if row.Typing {
 		line.WriteString(rowStyle.Render(" "))
-		line.WriteString(m.styles.MemberTyping.Render("…"))
+		line.WriteString(m.typingPulse())
 	}
 	if row.Mention {
 		line.WriteString(rowStyle.Render(" "))

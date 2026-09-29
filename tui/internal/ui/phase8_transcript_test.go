@@ -142,11 +142,130 @@ func TestPhase8TranscriptDirectTypingFooterUngrouped(t *testing.T) {
 			footerByline, transcriptSeparator)
 	}
 	dots := lines[headerCount+area.end()+1]
-	if !strings.Contains(dots, "...") {
-		t.Fatalf("footer dots = %q, want three periods", dots)
+	if !strings.Contains(dots, m.typingDots()) {
+		t.Fatalf("footer dots = %q, want the animated typing glyph", dots)
 	}
 	if plain := ansiPattern.ReplaceAllString(dots, ""); !strings.HasPrefix(plain, " ") {
 		t.Fatalf("footer dots = %q, want it indented to the body column", plain)
+	}
+}
+
+// groupedTypingModel seeds the demo on a clock inside the anna DM row's
+// displayed minute, in UTC+10, so the typing footer groups under that row. It
+// mirrors the grouped case Qt reaches while the peer has just spoken.
+func groupedTypingModel(t *testing.T) *Model {
+	t.Helper()
+	zone := time.FixedZone("UTC+10", 10*60*60)
+	ctrl := controller.New()
+	ctrl.SetClock(session.NewFakeClock(
+		time.Date(2026, 9, 12, 10, 12, 30, 0, time.UTC).In(zone)))
+	if !demo.New().Attach(ctrl, true) {
+		t.Fatal("demo Attach failed")
+	}
+	m := New(ctrl, nil)
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 118, Height: 30})
+	return updated.(*Model)
+}
+
+// TestPhase8TranscriptDirectTypingFooterGrouped proves the grouped footer drops
+// the byline but keeps the dots on their own line at the body column. Grouping
+// must not fold them into the peer's message: cover the avatar/header only.
+func TestPhase8TranscriptDirectTypingFooterGrouped(t *testing.T) {
+	m := openPhase8AnnaDirect(t, groupedTypingModel(t))
+
+	nick, grouped, show := m.ctrl.TranscriptTypingIndicator()
+	if nick != "anna" || !grouped || !show {
+		t.Fatalf("indicator = (%q, %v, %v), want (anna, true, true)", nick, grouped, show)
+	}
+
+	lines, headerCount := m.transcriptLines()
+	area := m.transcriptArea()
+	// Only the dots line follows the last row; the byline is suppressed.
+	if got, want := len(lines), headerCount+area.end()+1; got != want {
+		t.Fatalf("line count = %d, want %d (rows plus the one grouped dots line)", got, want)
+	}
+	dots := lines[headerCount+area.end()]
+	if !strings.Contains(dots, m.typingDots()) {
+		t.Fatalf("grouped footer = %q, want the typing dots", dots)
+	}
+	if repeated := m.nickStyle("anna").Render("anna"); strings.Contains(dots, repeated) {
+		t.Fatalf("grouped footer = %q, must not repeat the peer's nick", dots)
+	}
+	if plain := ansiPattern.ReplaceAllString(dots, ""); !strings.HasPrefix(plain, " ") {
+		t.Fatalf("grouped footer = %q, want it indented to the body column", plain)
+	}
+}
+
+// TestGroupedTypingFooterStaysOffTheWrappedBody proves the dots never share a
+// line with the peer's body. A message row is one entry that can hold several
+// physical lines once the body wraps, so folding the dots into it left them
+// glued to the last word of the body instead of standing on their own row,
+// which is what Qt's typingRow renders (avatar and header hidden, dots still on
+// their own row).
+func TestGroupedTypingFooterStaysOffTheWrappedBody(t *testing.T) {
+	// A narrow window wraps the seeded anna body across several lines, which is
+	// the shape that made the folded footer visible.
+	ctrl := controller.New()
+	ctrl.SetClock(session.NewFakeClock(
+		time.Date(2026, 9, 12, 10, 12, 30, 0, time.UTC).In(time.FixedZone("UTC+10", 10*60*60))))
+	if !demo.New().Attach(ctrl, true) {
+		t.Fatal("demo Attach failed")
+	}
+	narrow := New(ctrl, nil)
+	updated, _ := narrow.Update(tea.WindowSizeMsg{Width: 58, Height: 30})
+	m := openPhase8AnnaDirect(t, updated.(*Model))
+
+	if _, grouped, show := m.ctrl.TranscriptTypingIndicator(); !grouped || !show {
+		t.Fatalf("indicator = (grouped %v, show %v), want the grouped footer", grouped, show)
+	}
+
+	area := m.transcriptArea()
+	lastRow := area.count() - 1
+	if lastRow < 0 {
+		t.Fatal("the anna DM must have a message row")
+	}
+	if area.heights[lastRow] < 2 {
+		t.Fatalf("the seeded body must wrap to exercise the bug (row height %d)",
+			area.heights[lastRow])
+	}
+
+	lines, _ := m.transcriptLines()
+	dots := m.typingDots()
+	body := "Nice work."
+	for index, line := range lines {
+		if strings.Contains(line, dots) && strings.Contains(line, body) {
+			t.Fatalf("line %d mixes the body and the dots: %q",
+				index, ansiPattern.ReplaceAllString(line, ""))
+		}
+	}
+	if footer := lines[len(lines)-1]; !strings.Contains(footer, dots) {
+		t.Fatalf("last line = %q, want the dots on their own footer line",
+			ansiPattern.ReplaceAllString(footer, ""))
+	}
+}
+
+// TestTranscriptRendersClocksInTheClockZone pins the displayed clock end to
+// end. The seeded anna DM row carries a 10:12Z server-time tag, and the byline
+// must read that instant in the reader's zone, the way Qt's displayTime calls
+// toLocalTime, instead of echoing the raw UTC cell.
+func TestTranscriptRendersClocksInTheClockZone(t *testing.T) {
+	zone := time.FixedZone("UTC+10", 10*60*60)
+	ctrl := controller.New()
+	ctrl.SetClock(session.NewFakeClock(time.Date(2026, 9, 12, 10, 12, 30, 0, time.UTC).In(zone)))
+	if !demo.New().Attach(ctrl, true) {
+		t.Fatal("demo Attach failed")
+	}
+	m := New(ctrl, nil)
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 118, Height: 30})
+	m = openPhase8AnnaDirect(t, updated.(*Model))
+
+	lines, _ := m.transcriptLines()
+	plain := ansiPattern.ReplaceAllString(strings.Join(lines, "\n"), "")
+	if !strings.Contains(plain, "20:12") {
+		t.Fatalf("transcript clock = %q, want the local 20:12", plain)
+	}
+	if strings.Contains(plain, "10:12") {
+		t.Fatalf("transcript clock = %q, want the UTC cell localized away", plain)
 	}
 }
 
@@ -239,10 +358,12 @@ func TestPhase8TranscriptChannelHasNoTypingFooter(t *testing.T) {
 	if got, want := len(lines), headerCount+area.end(); got != want {
 		t.Fatalf("line count = %d, want %d; a channel must append no footer", got, want)
 	}
-	dots := m.styles.MutedLine.Render("   ...")
-	for _, line := range lines {
-		if line == dots {
-			t.Fatalf("channel transcript contains a typing dots row: %q", line)
+	for _, frame := range m.typingSpinner.Spinner.Frames {
+		stamped := m.styles.MemberTyping.Render(frame)
+		for _, line := range lines {
+			if strings.Contains(line, stamped) {
+				t.Fatalf("channel transcript contains a typing dots row: %q", line)
+			}
 		}
 	}
 }

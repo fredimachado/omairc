@@ -41,11 +41,21 @@ func (c *Controller) TranscriptTypingIndicator() (nick string, grouped bool, sho
 	return nick, grouped, show
 }
 
+// displayClockFormat is the footer comparison's HH:mm shape, matching
+// MessageListModel::displayTime and OmaircWindow.qml's currentTranscriptMinute.
+const displayClockFormat = "15:04"
+
 // typingFollowsPeerChat decides whether the typing footer groups under the
 // previous transcript row. The footer has no timestamp of its own, so it is
 // treated as the next live chat row from the peer arriving now, using the same
 // local HH:mm MessageListModel::displayTime would assign that row. It mirrors
 // typingFollowsPeerChat and continuesMessageGroup (src/OmaircWindow.qml:382-421).
+//
+// displayTime localizes with QDateTime::toLocalTime, and the reducer keeps a
+// parsed server-time tag in UTC (translator.go's ircServerTimeOf). Both sides
+// are therefore formatted in the clock's location: a raw Format compared a UTC
+// clock cell against a local one, so outside UTC a peer whose message arrived in
+// the current minute never grouped and the footer repeated the nick.
 func (c *Controller) typingFollowsPeerChat(nick string) bool {
 	if c.selected == nil || nick == "" {
 		return false
@@ -68,5 +78,7 @@ func (c *Controller) typingFollowsPeerChat(nick string) bool {
 	if !features.CaseMapping().Equals(last.Author, nick) {
 		return false
 	}
-	return last.Timestamp.Format("15:04") == c.now().Format("15:04")
+	location := c.displayLocation()
+	return last.Timestamp.In(location).Format(displayClockFormat) ==
+		c.now().In(location).Format(displayClockFormat)
 }

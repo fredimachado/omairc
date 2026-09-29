@@ -256,33 +256,31 @@ func (m *Model) topicHeaderLine(topic string) string {
 }
 
 // appendTranscriptTypingFooter adds the direct-message typing hint after the
-// message rows. A grouped hint belongs to the peer's last live chat row, so it
-// extends that rendered line; an ungrouped hint gets the peer's byline (a blank
-// clock, the nick, and the separator) and an indented dots line. It is
-// display-only: transcriptRowTexts keeps one entry per controller message, and
-// the footer sits past every message index.
+// message rows: an ungrouped hint gets the peer's byline (a blank clock, the
+// nick, and the separator), and a grouped one drops it. The dots are always on
+// their own line at the body column. It is display-only: transcriptRowTexts
+// keeps one entry per controller message, and the footer sits past every
+// message index.
+//
+// The dots never extend the peer's message line. A message row is one entry
+// that can hold several physical lines once the body wraps, so appending to it
+// left the dots glued to the last word of the body. Qt's typingRow hides the
+// avatar and the header on a grouped footer but keeps TypingDots on its own
+// row, which is the shape reproduced here.
 func (m *Model) appendTranscriptTypingFooter(area transcriptRows) transcriptRows {
 	nick, grouped, show := m.ctrl.TranscriptTypingIndicator()
 	if !show {
 		return area
 	}
 	nickWidth := nickColumnWidth(m.ctrl.Messages())
-	last := len(area.lines) - 1
-	if grouped && last >= 0 {
-		// Keep the dots on screen even when the peer's line is at the column
-		// edge: renderColumn would otherwise truncate them away.
-		dots := m.styles.MutedLine.Render(" ...")
-		available := m.transcriptWidth() - lipgloss.Width(dots)
-		if available < 0 {
-			available = 0
-		}
-		area.lines[last] = truncateLine(area.lines[last], available) + dots
-		return area
-	}
 	first, continuation := m.chatByline(nick, time.Time{}, false, nickWidth,
 		bylineStyle{clock: m.styles.Time, nick: m.nickStyle(nick), rule: m.styles.MutedLine})
-	area.lines = append(area.lines, first)
-	area.lines = append(area.lines, continuation+m.styles.MutedLine.Render("..."))
+	if !grouped {
+		// The peer did not speak in the current displayed minute, so the footer
+		// reintroduces them: the blank clock, the nick, and the separator.
+		area.lines = append(area.lines, first)
+	}
+	area.lines = append(area.lines, continuation+m.typingDots())
 	return area
 }
 
@@ -586,7 +584,10 @@ func (m *Model) renderMessageBody(body string, base lipgloss.Style) string {
 }
 
 // transcriptClockFormat is the byline timestamp's fixed HH:mm shape, and
-// transcriptClockWidth its cell width, so the nick column never moves.
+// transcriptClockWidth its cell width, so the nick column never moves. It is
+// read from MessageSnapshot.Time, which the controller already localizes to the
+// clock's zone (the Qt displayTime / currentTranscriptMinute rule), so the
+// render and continuesChatGroup compare display cells and must not re-localize.
 const (
 	transcriptClockFormat = "15:04"
 	transcriptClockWidth  = len(transcriptClockFormat)

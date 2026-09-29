@@ -97,7 +97,7 @@ func (m *Model) memberRow(index int, member controller.MemberSnapshot) []string 
 	}
 	if m.ctrl.HasTyping() && m.ctrl.NickIsTyping(member.Nick) {
 		line.WriteString(" ")
-		line.WriteString(m.styles.MemberTyping.Render("..."))
+		line.WriteString(m.typingDots())
 	}
 
 	lines := []string{line.String()}

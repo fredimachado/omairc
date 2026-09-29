@@ -163,6 +163,19 @@ func (c *Controller) now() time.Time {
 	return c.clock.Now()
 }
 
+// displayLocation is the zone every displayed clock is read in: the clock's own
+// location, which is the system local zone for the real clock. The reducer keeps
+// a parsed server-time tag in UTC (translator.go's ircServerTimeOf), so the zone
+// has to be applied before a row's HH:mm is rendered or compared. Qt localizes
+// the same way, with QDateTime::toLocalTime in MessageListModel::displayTime and
+// with new Date() in OmaircWindow.qml's currentTranscriptMinute.
+func (c *Controller) displayLocation() *time.Location {
+	if now := c.now(); !now.IsZero() {
+		return now.Location()
+	}
+	return time.Local
+}
+
 // --- Phase 11 persistence -------------------------------------------------
 
 // Group and key names match src/irc/irccontroller.cpp and ircconnection.cpp so

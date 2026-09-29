@@ -97,6 +97,13 @@ type Model struct {
 	spinner  spinner.Model
 	spinning bool
 
+	// Typing chrome. typingSpinner animates every typing indicator from one
+	// frame: the three-cell Points dots in the member panel and the DM
+	// transcript footer, and the sidebar's one-cell pulse (the frame's first
+	// cell). typingSpinning latches that single tick chain.
+	typingSpinner  spinner.Model
+	typingSpinning bool
+
 	// Theme wiring. themeWatcher streams live palette changes; themeArmed
 	// records whether the read loop has been started (once, on the first
 	// WindowSizeMsg, because Init is reserved for StartupMsg).
@@ -194,6 +201,7 @@ func New(ctrl *controller.Controller, conn *connection.Connection) *Model {
 		composer:             composer,
 		help:                 help.New(),
 		spinner:              spinner.New(spinner.WithSpinner(spinner.MiniDot)),
+		typingSpinner:        spinner.New(spinner.WithSpinner(spinner.Points)),
 		sheet:                newConnectSheetState(),
 		jump:                 newJumpState(),
 		nick:                 newNickJumpState(),
@@ -276,6 +284,7 @@ func (m *Model) applyStyles(styles Styles) {
 	m.composer.SetStyles(styles.Input)
 	m.help.Styles = helpStyles(styles)
 	m.spinner.Style = styles.StatusWarn
+	m.typingSpinner.Style = styles.MemberTyping
 	m.restyleOverlayInputs()
 }
 
@@ -321,15 +330,64 @@ func (m *Model) spinnerRunning() bool {
 	return m.disconnected() && m.footerVisible()
 }
 
-// startBackgroundWork arms the spinner and the theme read exactly once each,
-// from the first WindowSizeMsg and from status changes that may have left the
-// network disconnected. It returns nil when there is nothing to start.
+// typingSpinnerRunning reports whether the typing indicator should animate:
+// the selected conversation has a typing peer, or a sidebar direct row is
+// marked typing. The tick chain stops once the last indicator clears, so an
+// idle shell does not repaint.
+func (m *Model) typingSpinnerRunning() bool {
+	if m.ctrl == nil {
+		return false
+	}
+	if len(m.ctrl.TypingNicks()) > 0 {
+		return true
+	}
+	for _, row := range m.ctrl.Conversations() {
+		if row.Typing {
+			return true
+		}
+	}
+	return false
+}
+
+// tickTyping advances the typing spinner one frame. It stops the chain when the
+// last indicator cleared, so a stray tick cannot keep the shell repainting.
+func (m *Model) tickTyping(msg spinner.TickMsg) tea.Cmd {
+	if !m.typingSpinnerRunning() {
+		m.typingSpinning = false
+		return nil
+	}
+	var cmd tea.Cmd
+	m.typingSpinner, cmd = m.typingSpinner.Update(msg)
+	return cmd
+}
+
+// typingDots renders the animated three-cell typing glyph: the member panel's
+// dots and the direct-message transcript footer share this one frame.
+func (m *Model) typingDots() string {
+	return m.typingSpinner.View()
+}
+
+// typingPulse is the sidebar row's one-cell typing glyph. It is the first cell
+// of the same frame, so the sidebar can never drift out of phase with the dots
+// and the DM row keeps its single-column budget.
+func (m *Model) typingPulse() string {
+	return truncateLine(m.typingDots(), 1)
+}
+
+// startBackgroundWork arms the spinner, the typing spinner, and the theme read
+// exactly once each, from the first WindowSizeMsg and from status changes that
+// may have left the network disconnected or a peer typing. It returns nil when
+// there is nothing to start.
 func (m *Model) startBackgroundWork() tea.Cmd {
 	var cmds []tea.Cmd
 	if m.spinnerRunning() && !m.spinning {
 		m.spinning = true
 		// Tick is a method value: a func() tea.Msg, i.e. a tea.Cmd.
 		cmds = append(cmds, m.spinner.Tick)
+	}
+	if m.typingSpinnerRunning() && !m.typingSpinning {
+		m.typingSpinning = true
+		cmds = append(cmds, m.typingSpinner.Tick)
 	}
 	if m.themeWatcher != nil && !m.themeArmed {
 		m.themeArmed = true
@@ -389,6 +447,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.applyStyles(buildStyles(msg.Colors))
 		return m, m.nextThemeChange()
 	case spinner.TickMsg:
+		// Both spinners emit the same message type; the ID routes each tick to
+		// its own chain so the typing frames never advance the footer spinner.
+		if msg.ID == m.typingSpinner.ID() {
+			return m, m.tickTyping(msg)
+		}
 		if !m.spinnerRunning() {
 			m.spinning = false
 			return m, nil
