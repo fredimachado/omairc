@@ -20,6 +20,8 @@ on:
       - 'data/**'
       - 'LICENSE'
       - 'install.sh'
+      - 'tui/**'
+      - 'packaging/tui/**'
   workflow_dispatch:
 
 concurrency:
@@ -74,7 +76,9 @@ jobs:
           set -euo pipefail
           VER=$(./bin/version)
           PKG=$(bash -c 'source ./PKGBUILD && printf %s "$pkgver"')
+          TUI_PKGVER=$(bash -c 'source ./packaging/tui/PKGBUILD && printf %s "$pkgver"')
           test "$PKG" = "$VER"
+          test "$TUI_PKGVER" = "$VER"
           test "$VER" = "$OMAIRC_VERSION"
           if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
             TAG="${GITHUB_REF_NAME#v}"
@@ -131,13 +135,65 @@ jobs:
             esac
           fi
 
+      - name: Install Go
+        run: |
+          set -euo pipefail
+          pacman -S --noconfirm go
+          raw=$(go version | awk '{print $3}')
+          ver=${raw#go}
+          major=${ver%%.*}
+          rest=${ver#*.}
+          minor=${rest%%.*}
+          if [ "$major" -lt 1 ] || { [ "$major" -eq 1 ] && [ "$minor" -lt 25 ]; }; then
+            echo "go $ver is older than 1.25" >&2
+            exit 1
+          fi
+          echo "Using go $ver"
+
+      - name: Prepare dry-build TUI source
+        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+        run: |
+          set -euo pipefail
+          pkgver=$(./bin/version)
+          ln -sfn "$GITHUB_WORKSPACE/omairc-${pkgver}.tar.gz" "packaging/tui/omairc-${pkgver}.tar.gz"
+          sed -i "s|^source=.*|source=(\"omairc-${pkgver}.tar.gz\")|" packaging/tui/PKGBUILD
+          if [[ "$GITHUB_REF" == refs/heads/master ]]; then
+            sed -i "s/^pkgrel=.*/pkgrel=${OMAIRC_ARCH_PKGREL}/" packaging/tui/PKGBUILD
+          fi
+          chown -R builder:builder packaging/tui
+
+      - name: makepkg TUI
+        run: |
+          set -euo pipefail
+          chown -R builder:builder packaging/tui
+          cd packaging/tui
+          sudo -u builder env OMAIRC_BUILD_VERSION="$OMAIRC_BUILD_VERSION" makepkg -s --noconfirm
+
+      - name: Verify TUI package metadata
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          pkgs=(packaging/tui/omairc-tui-*-x86_64.pkg.tar.zst)
+          test "${#pkgs[@]}" -eq 1
+          PKG="${pkgs[0]}"
+          meta=$(pacman -Qp "$PKG")
+          test "$meta" = "omairc-tui $OMAIRC_VERSION-$OMAIRC_ARCH_PKGREL"
+          tmp=$(mktemp -d)
+          tar -xf "$PKG" -C "$tmp" usr/bin/omairc-tui
+          got=$("$tmp/usr/bin/omairc-tui" --version)
+          rm -rf "$tmp"
+          want="omairc-tui $OMAIRC_DISPLAY_VERSION"
+          test "$got" = "$want"
+
       - name: Build ReleaseAssetSet
         run: |
           set -euo pipefail
           shopt -s nullglob
           pkgs=(omairc-[0-9]*-x86_64.pkg.tar.zst)
+          tui_pkgs=(packaging/tui/omairc-tui-*-x86_64.pkg.tar.zst)
           test "${#pkgs[@]}" -eq 1
-          sudo -u builder repo-add omairc.db.tar.zst "${pkgs[0]}"
+          test "${#tui_pkgs[@]}" -eq 1
+          sudo -u builder repo-add omairc.db.tar.zst "${pkgs[0]}" "${tui_pkgs[0]}"
           rm -f omairc.db omairc.files
           cp omairc.db.tar.zst omairc.db
           cp omairc.files.tar.zst omairc.files
@@ -148,7 +204,7 @@ jobs:
         with:
           name: omairc-${{ env.OMAIRC_ARTIFACT_VERSION }}-x86_64
           path: |
-            omairc-*-x86_64.pkg.tar.zst
+            omairc-[0-9]*-x86_64.pkg.tar.zst
             omairc.db
             omairc.db.tar.zst
             omairc.files
@@ -163,9 +219,13 @@ jobs:
           TAG="$GITHUB_REF_NAME"
           shopt -s nullglob
           pkgs=(omairc-[0-9]*-x86_64.pkg.tar.zst)
+          tui_pkgs=(packaging/tui/omairc-tui-*-x86_64.pkg.tar.zst)
           test "${#pkgs[@]}" -eq 1
+          test "${#tui_pkgs[@]}" -eq 1
           PKG="${pkgs[0]}"
           PKG_BASE=$(basename "$PKG")
+          TUI_PKG="${tui_pkgs[0]}"
+          TUI_BASE=$(basename "$TUI_PKG")
 
           VER="${TAG#v}"
           case "$VER" in
@@ -181,13 +241,17 @@ jobs:
 
           mapfile -t assets < <(gh release view "$TAG" --json assets --jq '.assets[].name' || true)
           for asset in "${assets[@]}"; do
-            if [[ "$asset" == omairc-*-x86_64.pkg.tar.zst && "$asset" != "$PKG_BASE" ]]; then
+            if [[ "$asset" == omairc-[0-9]*-x86_64.pkg.tar.zst && "$asset" != "$PKG_BASE" ]]; then
+              gh release delete-asset "$TAG" "$asset" --yes
+            fi
+            if [[ "$asset" == omairc-tui-*-x86_64.pkg.tar.zst && "$asset" != "$TUI_BASE" ]]; then
               gh release delete-asset "$TAG" "$asset" --yes
             fi
           done
 
           gh release upload "$TAG" \
             "$PKG" \
+            "$TUI_PKG" \
             omairc.db \
             omairc.db.tar.zst \
             omairc.files \

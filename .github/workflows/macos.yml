@@ -579,7 +579,7 @@ jobs:
           while IFS= read -r asset || [ -n "$asset" ]; do
             [ -n "$asset" ] || continue
             case "$asset" in
-              omairc-*-"$OMAIRC_MAC_SUFFIX".zip)
+              omairc-[0-9]*-"$OMAIRC_MAC_SUFFIX".zip)
                 if [ "$asset" != "$zip_name" ]; then
                   gh release delete-asset "$tag" "$asset" --yes
                 fi
@@ -608,7 +608,7 @@ jobs:
         if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
         uses: actions/download-artifact@v8
         with:
-          pattern: omairc-*-macos-*
+          pattern: omairc-[0-9]*-macos-*
           merge-multiple: true
           path: dist
 
@@ -618,8 +618,8 @@ jobs:
           set -euo pipefail
           shopt -s nullglob
           ls -la dist || true
-          arm=(dist/omairc-*-macos-arm64.zip)
-          intel=(dist/omairc-*-macos-x64.zip)
+          arm=(dist/omairc-[0-9]*-macos-arm64.zip)
+          intel=(dist/omairc-[0-9]*-macos-x64.zip)
           if [ "${#arm[@]}" -ne 1 ] || [ ! -f "${arm[0]}" ]; then
             echo "Expected one macos-arm64 zip artifact" >&2
             exit 1
@@ -669,7 +669,7 @@ jobs:
       - name: Download architecture zips
         uses: actions/download-artifact@v8
         with:
-          pattern: omairc-*-macos-*
+          pattern: omairc-[0-9]*-macos-*
           merge-multiple: true
           path: dist
 
@@ -683,8 +683,8 @@ jobs:
           set -euo pipefail
           tag="${GITHUB_REF_NAME#v}"
           shopt -s nullglob
-          arm=(dist/omairc-*-macos-arm64.zip)
-          intel=(dist/omairc-*-macos-x64.zip)
+          arm=(dist/omairc-[0-9]*-macos-arm64.zip)
+          intel=(dist/omairc-[0-9]*-macos-x64.zip)
           if [ "${#arm[@]}" -ne 1 ] || [ ! -f "${arm[0]}" ]; then
             echo "Expected one macos-arm64 zip artifact" >&2
             exit 1

@@ -1,0 +1,94 @@
+#!/usr/bin/env python3
+"""Rewrite bucket/omairc-tui.json version and hash from the Windows zip."""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import re
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+MANIFEST = ROOT / "bucket" / "omairc-tui.json"
+CASK = ROOT / "Casks" / "omairc.rb"
+CHUNK = 1024 * 1024
+VERSION_RE = re.compile(r'("version": ")([^"]+)(")')
+HASH_RE = re.compile(r'("hash": ")([0-9a-f]{64})(")')
+
+
+def refuse_cask(path: Path) -> None:
+    if path.resolve() == CASK.resolve():
+        raise ValueError("refusing to open Casks/omairc.rb")
+    if path.name == "omairc.rb" and "Casks" in path.parts:
+        raise ValueError("refusing to open Casks/omairc.rb")
+
+
+def sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        while True:
+            chunk = handle.read(CHUNK)
+            if not chunk:
+                break
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def require_zip(path: Path, version: str) -> Path:
+    expected = f"omairc-tui-{version}-windows-amd64.zip"
+    resolved = path.resolve()
+    if not resolved.is_file():
+        raise ValueError(f"missing zip: {path}")
+    if resolved.name != expected:
+        raise ValueError(f"expected {expected}, got {resolved.name}")
+    return resolved
+
+
+def bump(manifest: Path, version: str, zip_path: Path) -> str:
+    refuse_cask(manifest)
+    text = manifest.read_text(encoding="utf-8")
+    if VERSION_RE.search(text) is None:
+        raise ValueError(f"{manifest}: missing version")
+    if HASH_RE.search(text) is None:
+        raise ValueError(f"{manifest}: missing hash")
+    if "omairc-tui-$version-windows-amd64.zip" not in text:
+        raise ValueError(
+            f"{manifest}: url must keep omairc-tui-$version-windows-amd64.zip")
+
+    digest = sha256_file(zip_path)
+    text, version_count = VERSION_RE.subn(rf"\g<1>{version}\3", text, count=1)
+    text, hash_count = HASH_RE.subn(rf"\g<1>{digest}\3", text, count=1)
+    if version_count != 1 or hash_count != 1:
+        raise ValueError(f"{manifest}: expected to rewrite one version and one hash")
+    manifest.write_text(text, encoding="utf-8")
+    return f"version {version}\nhash {digest}\n"
+
+
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Point bucket/omairc-tui.json at a Windows amd64 zip.")
+    parser.add_argument("--version", required=True)
+    parser.add_argument("--zip", type=Path, required=True)
+    parser.add_argument("--manifest", type=Path, default=MANIFEST)
+    return parser.parse_args(argv)
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = parse_args(argv)
+    try:
+        if not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", args.version):
+            raise ValueError(f"version must look like 1.0.4, got {args.version!r}")
+        refuse_cask(args.manifest)
+        zip_path = require_zip(args.zip, args.version)
+        if not args.manifest.is_file():
+            raise ValueError(f"missing manifest: {args.manifest}")
+        sys.stdout.write(bump(args.manifest, args.version, zip_path))
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

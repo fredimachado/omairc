@@ -1,0 +1,110 @@
+#!/usr/bin/env python3
+"""Rewrite Formula/omairc-tui.rb version and sha256 from darwin tarballs.
+
+This script never opens Casks/omairc.rb. The Qt cask stays on
+bin/bump-homebrew-cask.
+"""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import re
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+FORMULA = ROOT / "Formula" / "omairc-tui.rb"
+CASK = ROOT / "Casks" / "omairc.rb"
+CHUNK = 1024 * 1024
+VERSION_RE = re.compile(r'^  version "([^"]+)"$', re.MULTILINE)
+ARM_SHA_RE = re.compile(
+    r'(on_arm do\n      url "[^"]+"\n      sha256 ")([0-9a-f]{64})(")',
+)
+INTEL_SHA_RE = re.compile(
+    r'(on_intel do\n      url "[^"]+"\n      sha256 ")([0-9a-f]{64})(")',
+)
+
+
+def refuse_cask(path: Path) -> None:
+    if path.resolve() == CASK.resolve():
+        raise ValueError("refusing to open Casks/omairc.rb")
+    if path.name == "omairc.rb" and "Casks" in path.parts:
+        raise ValueError("refusing to open Casks/omairc.rb")
+
+
+def sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        while True:
+            chunk = handle.read(CHUNK)
+            if not chunk:
+                break
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def require_archive(path: Path, version: str, goarch: str) -> Path:
+    expected = f"omairc-tui-{version}-darwin-{goarch}.tar.gz"
+    resolved = path.resolve()
+    if not resolved.is_file():
+        raise ValueError(f"missing archive: {path}")
+    if resolved.name != expected:
+        raise ValueError(f"expected {expected}, got {resolved.name}")
+    return resolved
+
+
+def bump(formula: Path, version: str, arm_archive: Path, intel_archive: Path) -> str:
+    refuse_cask(formula)
+    text = formula.read_text(encoding="utf-8")
+    if 'class OmaircTui < Formula' not in text:
+        raise ValueError(f"{formula}: expected class OmaircTui")
+    if 'cask "omairc"' in text:
+        raise ValueError(f"{formula}: this is a cask, not the omairc-tui formula")
+    if VERSION_RE.search(text) is None:
+        raise ValueError(f"{formula}: missing version stanza")
+    if ARM_SHA_RE.search(text) is None or INTEL_SHA_RE.search(text) is None:
+        raise ValueError(f"{formula}: missing on_arm and on_intel sha256 stanzas")
+
+    arm_sha = sha256_file(arm_archive)
+    intel_sha = sha256_file(intel_archive)
+    text = VERSION_RE.sub(f'  version "{version}"', text, count=1)
+    text = ARM_SHA_RE.sub(rf"\g<1>{arm_sha}\3", text, count=1)
+    text = INTEL_SHA_RE.sub(rf"\g<1>{intel_sha}\3", text, count=1)
+    formula.write_text(text, encoding="utf-8")
+    return (
+        f"version {version}\n"
+        f"sha256 arm:   {arm_sha}\n"
+        f"       intel: {intel_sha}\n"
+    )
+
+
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Point Formula/omairc-tui.rb at a pair of darwin tarballs.")
+    parser.add_argument("--version", required=True)
+    parser.add_argument("--arm-archive", type=Path, required=True)
+    parser.add_argument("--intel-archive", type=Path, required=True)
+    parser.add_argument("--formula", type=Path, default=FORMULA)
+    return parser.parse_args(argv)
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = parse_args(argv)
+    try:
+        if not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", args.version):
+            raise ValueError(f"version must look like 1.0.4, got {args.version!r}")
+        refuse_cask(args.formula)
+        arm = require_archive(args.arm_archive, args.version, "arm64")
+        intel = require_archive(args.intel_archive, args.version, "amd64")
+        if not args.formula.is_file():
+            raise ValueError(f"missing formula: {args.formula}")
+        sys.stdout.write(bump(args.formula, args.version, arm, intel))
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

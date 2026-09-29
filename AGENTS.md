@@ -192,12 +192,18 @@ tests, and packaging. A release bump touches at least these files:
 
 Run `bin/test` (or at least
 `python3 -m unittest -v tests.test_derive_build_versions`) before
-tagging. Tag releases as `v` plus the `version.pri` string, for example
-`v1.0.4`. Version tags trigger release packaging and the Homebrew cask
-bump; do not hand-edit `Casks/omairc.rb` for a normal release. If a
-tagged commit needs a follow-up fix before artifacts ship, commit on
-`master`, delete and recreate the same tag on the new tip, and
-`git push origin vX.Y.Z --force`.
+tagging. One bump of `version.pri`, `CHANGELOG.md`, and
+`tests/test_derive_build_versions.py` ships both binaries. Tag that
+commit as `v` plus the `version.pri` string, for example `v1.0.4`, and
+as `tui/v1.0.4` so `go install` sees the module version. GitHub's `v*`
+filter does not match `tui/v*`, so the module tag does not open a second
+release. Version tags trigger release packaging, the Homebrew cask bump,
+and the omairc-tui formula and Scoop manifest bumps. Do not hand-edit
+`Casks/omairc.rb`, `Formula/omairc-tui.rb`, or `bucket/omairc-tui.json`
+for a normal release. If a tagged commit needs a follow-up fix before
+artifacts ship, commit on `master`, delete and recreate both tags on the
+new tip, and `git push origin vX.Y.Z --force` (and the same for
+`tui/vX.Y.Z`).
 
 ## Build and validation
 

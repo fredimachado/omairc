@@ -47,6 +47,34 @@ sudo pacman -Sy omairc
 
 On Omarchy you can also run `omarchy pkg add omairc`.
 
+The terminal client, `omairc-tui`, is a separate static binary on the same release. `install.sh` still installs the Qt client only. Once that pacman repository is configured:
+
+```sh
+sudo pacman -S omairc-tui
+```
+
+With Go 1.25 or newer. `@vX.Y.Z` is the module version; the git tag on that same commit is `tui/vX.Y.Z`:
+
+```sh
+go install github.com/fredimachado/omairc/tui/cmd/omairc-tui@vX.Y.Z
+```
+
+Homebrew, from this same tap:
+
+```sh
+brew tap fredimachado/omairc https://github.com/fredimachado/omairc
+brew install fredimachado/omairc/omairc-tui
+```
+
+Scoop:
+
+```sh
+scoop bucket add omairc https://github.com/fredimachado/omairc
+scoop install omairc-tui
+```
+
+Or unzip `omairc-tui-*-windows-amd64.zip` from the [GitHub release](https://github.com/fredimachado/omairc/releases/latest) and run `omairc-tui.exe` in Windows Terminal. There is no setup program for the terminal client.
+
 From source:
 
 ```sh
