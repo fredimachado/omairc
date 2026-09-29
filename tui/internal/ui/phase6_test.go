@@ -74,6 +74,40 @@ func TestHeaderEnterOpensStatus(t *testing.T) {
 	}
 }
 
+// TestWalkClearsNetworkFocusSoEnterSends pins the Qt parity of selectConversation
+// clearing sidebarNetworkFocusId (src/OmaircWindow.qml). After walking a network
+// header (Alt+Left) and then a conversation (Alt+Down), Enter must send in the
+// composer. The old bug left the header armed, so Enter ran
+// openFocusedNetworkStatus instead: the transcript jumped to Status and the
+// typed line stayed in the composer as a draft until a second attempt.
+func TestWalkClearsNetworkFocusSoEnterSends(t *testing.T) {
+	m := seededModel(t)
+	m = press(t, m, altKey(tea.KeyLeft)) // focus a network header
+	if m.sidebarNetworkFocusID == "" {
+		t.Fatal("Alt+Left must focus a network header")
+	}
+	m = press(t, m, altKey(tea.KeyDown)) // walk to a conversation
+	if m.sidebarNetworkFocusID != "" {
+		t.Fatalf("walk left header focus = %q, want cleared", m.sidebarNetworkFocusID)
+	}
+	if m.ctrl.SelectedTarget() == "" {
+		t.Fatal("walk must select a conversation")
+	}
+	m.composer.SetValue("hello from the walk")
+	m.composer.CursorEnd()
+	m = press(t, m, tea.KeyPressMsg{Code: tea.KeyEnter})
+	if got := m.composer.Value(); got != "" {
+		t.Fatalf("composer after Enter = %q, want cleared", got)
+	}
+	if m.ctrl.ConsoleOpen() {
+		t.Fatal("Enter must send, not open Status")
+	}
+	messages := m.ctrl.Messages()
+	if len(messages) == 0 || messages[len(messages)-1].Body != "hello from the walk" {
+		t.Fatalf("transcript did not receive the line: %+v", messages)
+	}
+}
+
 func TestCollapseFocusedNetworkHidesRows(t *testing.T) {
 	m := seededModel(t)
 	m = press(t, m, altKey(tea.KeyLeft))  // focus oftc

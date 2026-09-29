@@ -511,10 +511,17 @@ func indexOfString(values []string, needle string) int {
 // also drops find, the transcript cursor, and the member focus, matching the Qt
 // selection side effects. The previous conversation id is captured before apply
 // so the landing step can tell a real move from a re-select.
+//
+// It clears the network-header focus first. Qt's selectConversation and
+// openNetworkStatus both do this (src/OmaircWindow.qml), so the composer's Enter
+// sends again after a walk. Leaving the header armed made Enter open Status
+// instead: the walk was a no-op for the header focus, so the typed line stayed
+// in the composer as a draft while the transcript jumped away.
 func (m *Model) switchSelection(apply func()) {
 	if m.find.active {
 		m.leaveFind()
 	}
+	m.sidebarNetworkFocusID = ""
 	previousID := m.selectedConversationID()
 	m.saveDraft()
 	apply()
