@@ -177,34 +177,60 @@ type_slow() {
 # press and type_slow return as soon as the keys are injected.
 drive_walkthrough() {
   sleep 1.2
-  press ctrl+slash
+  press ctrl+slash          # Ctrl+/ shortcuts sheet
   sleep 1.9
   press escape
   sleep 0.55
-  press alt+down
-  sleep 1.4
-  press ctrl+k
+  press alt+a               # Alt+A next unread lands on #ricing (mention)
+  sleep 1.5
+  press ctrl+k              # back to #omarchy
   sleep 0.65
   type_slow "omarchy"
   sleep 0.2
   press return
   sleep 1.2
-  press ctrl+shift+m
-  sleep 1.4
-  press ctrl+l
-  sleep 0.35
-  type_slow "mi"
+  press ctrl+l              # focus the composer
+  sleep 0.3
+  type_slow "mi"            # Tab completes the nick, then send
   press tab
-  sleep 0.5
-  type_slow " optional it is."
+  sleep 0.45
+  type_slow "optional it is."
   press return
-  sleep 1.1
-  press ctrl+k
+  sleep 1.2
+  press ctrl+l
+  sleep 0.3
+  type_slow "/list"         # /list channel browser overlay
+  sleep 0.3
+  press return
+  sleep 1.6
+  type_slow "ran"           # fuzzy filter narrows the table
+  sleep 1.0
+  press escape
+  sleep 0.6
+  press ctrl+k              # open the seeded anna direct message
   sleep 0.6
   type_slow "anna"
   sleep 0.2
   press return
   sleep 1.6
+  press ctrl+k              # second network: OFTC #lab
+  sleep 0.6
+  type_slow "lab"
+  sleep 0.2
+  press return
+  sleep 1.5
+  press ctrl+shift+o        # Ctrl+Shift+O link sheet (seeded https link)
+  sleep 2.0
+  press escape
+  sleep 0.6
+  press ctrl+shift+a        # Ctrl+Shift+A session inbox (seeded invite)
+  sleep 2.0
+  press escape
+  sleep 0.6
+  press ctrl+shift+s        # Ctrl+Shift+S collapses the server rail
+  sleep 1.4
+  press ctrl+shift+s        # and restores it
+  sleep 1.4
 }
 
 # A --scenario file redefines drive_walkthrough, so one-off clips never have to

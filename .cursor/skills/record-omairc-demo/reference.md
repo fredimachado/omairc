@@ -37,9 +37,14 @@ Injector CLI:
 
 ```sh
 python3 scripts/inject-evdev.py chord ctrl+slash
+python3 scripts/inject-evdev.py chord alt+a
 python3 scripts/inject-evdev.py chord alt+down
 python3 scripts/inject-evdev.py chord ctrl+k
 python3 scripts/inject-evdev.py chord ctrl+shift+m
+python3 scripts/inject-evdev.py chord ctrl+shift+o
+python3 scripts/inject-evdev.py chord ctrl+shift+a
+python3 scripts/inject-evdev.py chord ctrl+shift+s
+python3 scripts/inject-evdev.py chord ctrl+grave
 python3 scripts/inject-evdev.py chord ctrl+l
 python3 scripts/inject-evdev.py chord escape
 python3 scripts/inject-evdev.py type --delay 0.08 "omarchy"
@@ -107,8 +112,18 @@ hyprctl eval 'hl.config({ cursor = { invisible = false } })'
 `IrcDemoServer` seeds in-process IRC. Walkthrough assumes:
 
 - Start conversation `#omarchy` on `irc.example`, nick `fred`
-- Next channel `#ricing` via `Alt+Down`
+- `Alt+A` lands on `#ricing` (12 unread, one mention)
 - Member `mira` completes from `mi`+Tab
+- `/list` shows the seeded directory (`#linux`, `#random`), so `ran` filters to `#random`
 - DM `anna` via jump (`Ctrl+K`)
+- OFTC `#lab` carries the one seeded `https://ci.example.com/omairc/42` link
+- Both operators advertise `https://omairc.app/omairc128.png` as their avatar, so
+  the identity footer and their own transcript rows show the Omairc mark
+- A live OFTC `INVITE` (`rio` → `#debian`) is injected at attach. The seeded
+  `#ricing` mention already appends an inbox row, but the walkthrough visits
+  `#ricing` (Alt+A) before the inbox beat, which consumes it — the invite is the
+  row that survives
 
-If the seed changes, edit `drive_walkthrough` in `scripts/record-demo`.
+The link lives on OFTC `#lab`, not omarchy `#omarchy`, because the omarchy
+Status link-sheet tests pin an exact, link-free transcript. If the seed changes,
+edit `drive_walkthrough` in `scripts/record-demo` and `scripts/record-demo-tui`.

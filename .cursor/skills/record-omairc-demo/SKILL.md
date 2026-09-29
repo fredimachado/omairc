@@ -134,18 +134,38 @@ pid is what guarantees we never drive or kill the user's live client.
 ## Walkthrough
 
 Seeded start: `#omarchy`, members visible, nick `fred`. `drive_walkthrough` is
-the source of truth for timing; every pause there is explicit. The beats that
-landed:
+the source of truth for timing; every pause there is explicit. The beats:
 
 1. Hold on `#omarchy` (~1.2s after the screenrecord toast).
 2. `Ctrl+/` shortcuts sheet → wait ~1.9s → Escape.
-3. `Alt+Down` → `#ricing` (~1.4s).
-4. `Ctrl+K`, type `omarchy` (80ms/char), Return.
-5. `Ctrl+Shift+M` hide members (~1.2s).
-6. `Ctrl+L`, type `mi`, Tab, type ` optional it is.`, Return.
-7. `Ctrl+K`, type `anna`, Return (DM).
+3. `Alt+A` next unread → `#ricing` (~1.5s), landing on the mention boundary.
+4. `Ctrl+K`, type `omarchy`, Return (back to `#omarchy`).
+5. `Ctrl+L`, type `mi`, Tab, type `optional it is.`, Return (nick complete + send).
+6. `Ctrl+L`, type `/list`, Return → channel browser overlay, type `ran` to filter
+   the table (seeded `#random`), Escape.
+7. `Ctrl+K`, type `anna`, Return (DM: avatar and the seeded typing hint, no members panel).
+8. `Ctrl+K`, type `lab`, Return (second network: OFTC `#lab`).
+9. `Ctrl+Shift+O` link sheet over the seeded `https://ci.example.com/omairc/42`
+   line in `#lab` (~2.0s) → Escape.
+10. `Ctrl+Shift+A` session inbox over the seeded OFTC invite row (~2.0s) → Escape.
+11. `Ctrl+Shift+S` collapses the server rail (~1.4s), then again to restore (~1.4s).
 
-Omakeycast shows Super/Ctrl/Alt chords (`Ctrl + /`, `Alt + Down`, `Ctrl + K`, `Ctrl + Shift + M`, `Ctrl + L`). Bare keys (typing, Escape, Tab, Return) stay hidden by design.
+Beat 9 needs seed content: `IrcDemoServer` seeds one `https://` link in OFTC
+`#lab`. It lives on the secondary network because the omarchy Status link-sheet
+tests pin an exact, link-free transcript. Beat 10 needs no new seed on its own —
+the seeded `#ricing` mention already appends an inbox row because the seeded
+transcript arrives as live frames — but step 3 (Alt+A) opens `#ricing` and
+**consumes** that row, so `IrcDemoServer` also injects a live OFTC `INVITE`
+(`rio` → `#debian`) at attach to leave the inbox non-empty at step 10. See
+`.cursor/skills/verify-omairc/features/inbox.md`.
+
+The Status console (Ctrl+backtick) is deliberately not in the walkthrough: it is
+the network's server window, and opening it would blank the transcript the demo
+just built. Prove it with `verify-omairc`, not the GIF.
+
+Omakeycast shows Super/Ctrl/Alt chords: `Ctrl + /`, `Alt + A`, `Ctrl + K`,
+`Ctrl + L`, `Ctrl + Shift + O`, `Ctrl + Shift + A`, and `Ctrl + Shift + S`.
+Bare keys (typing, Escape, Tab, Return) stay hidden by design.
 
 Wait ~2.4s after `omarchy screenrecord --fullscreen` so the start toast is gone before step 1.
 
