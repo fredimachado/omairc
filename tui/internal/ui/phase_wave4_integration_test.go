@@ -102,7 +102,7 @@ func TestFramedSlashMenuKeepsComposerCursorRow(t *testing.T) {
 	if want := m.composerRow(); cursor.Position.Y != want {
 		t.Fatalf("cursor row = %d, want composerRow() %d", cursor.Position.Y, want)
 	}
-	if want := m.height - 1 - footerHeight - composerFieldPad; cursor.Position.Y != want {
+	if want := m.height - 1 - footerHeight - composerFrameRows; cursor.Position.Y != want {
 		t.Fatalf("cursor row = %d, want %d above the footer", cursor.Position.Y, want)
 	}
 }

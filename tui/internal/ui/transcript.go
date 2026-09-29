@@ -348,7 +348,7 @@ func (m *Model) pageTranscript(direction int, fraction float64) {
 	}
 	area := m.transcriptArea()
 	n := len(area.lines)
-	height := m.bodyHeight() - len(m.transcriptHeader())
+	height := m.transcriptRowsHeight()
 	if height < 1 {
 		return
 	}
@@ -396,7 +396,7 @@ func (m *Model) jumpTranscript(toEnd bool) {
 	}
 	area := m.transcriptArea()
 	n := len(area.lines)
-	height := m.bodyHeight() - len(m.transcriptHeader())
+	height := m.transcriptRowsHeight()
 	if height < 1 {
 		height = 1
 	}
@@ -424,7 +424,7 @@ func (m *Model) revealTranscriptRow(row int) {
 	}
 	area := m.transcriptArea()
 	n := len(area.lines)
-	height := m.bodyHeight() - len(m.transcriptHeader())
+	height := m.transcriptRowsHeight()
 	if height < 1 {
 		height = 1
 	}
@@ -466,7 +466,7 @@ func (m *Model) pinTranscriptToRow(row int) {
 	}
 	area := m.transcriptArea()
 	n := len(area.lines)
-	height := m.bodyHeight() - len(m.transcriptHeader())
+	height := m.transcriptRowsHeight()
 	if height < 1 {
 		height = 1
 	}

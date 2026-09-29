@@ -126,7 +126,7 @@ func TestFindRevealsMatchingRow(t *testing.T) {
 	if m.transcriptFollowEnd {
 		t.Fatal("revealing a match must leave follow-the-end")
 	}
-	height := m.bodyHeight() - len(m.transcriptHeader())
+	height := m.transcriptRowsHeight()
 	start := len(area.lines) - height - m.transcriptScroll
 	if rowStart := area.line(row); rowStart < start || rowStart >= start+height {
 		t.Fatalf("matched row %d at line %d is outside the window [%d,%d)",
@@ -146,13 +146,13 @@ func TestTranscriptHeaderStaysPinned(t *testing.T) {
 	if headerCount == 0 {
 		t.Fatal("a channel transcript must have a pinned header")
 	}
-	if m.bodyHeight() <= headerCount {
-		t.Fatalf("body height %d leaves no room for rows past the %d-line header",
-			m.bodyHeight(), headerCount)
+	if m.transcriptHeight() <= headerCount {
+		t.Fatalf("transcript height %d leaves no room for rows past the %d-line header",
+			m.transcriptHeight(), headerCount)
 	}
 	// The seeded channel has far more rows than the short viewport shows.
-	if area := m.transcriptArea(); len(area.lines) <= m.bodyHeight()-headerCount {
-		t.Fatalf("row area of %d lines fits the body; the proof needs an overflow", len(area.lines))
+	if area := m.transcriptArea(); len(area.lines) <= m.transcriptHeight()-headerCount {
+		t.Fatalf("row area of %d lines fits the transcript; the proof needs an overflow", len(area.lines))
 	}
 
 	content := m.View().Content

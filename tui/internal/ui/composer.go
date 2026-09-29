@@ -20,16 +20,14 @@ const (
 	findPlaceholder     = "Find"
 )
 
-// composerFieldPad is the blank fill rows the composer block carries above and
-// below its input line, so the field reads as a panel instead of a thin line.
-// It goes on ComposerField as lipgloss PaddingTop/PaddingBottom: vertical
-// padding renders inside the block, so the surface fill covers the padding rows,
-// which a plain blank row cannot do. It costs two grid rows, so every row-budget
-// calculation goes through composerFieldHeight instead of assuming one row.
-const composerFieldPad = 1
+// composerFrameRows is the border row the framed composer wears above and below
+// its input line. The frame replaced the blank fill rows the field used to
+// carry, so the block still spans composerFieldHeight rows and the input still
+// sits on composerRow().
+const composerFrameRows = 1
 
 // composerFieldHeight is the composer block's total row span.
-const composerFieldHeight = 1 + 2*composerFieldPad
+const composerFieldHeight = 1 + 2*composerFrameRows
 
 // newComposerInput builds the composer's text input from the shell styles.
 // model.go's New must build the composer with this instead of textinput.New. It
@@ -49,15 +47,18 @@ func newComposerInput(styles Styles) textinput.Model {
 	return input
 }
 
-// composerView renders the composer as a filled bar across the window. It is a
-// window-level element like the footer: newComposerInput puts the prompt and
-// placeholder inside the input, so the bar is just the input clipped to the
-// composer width (composerWidth in model.go) with composerInset on each side. It
-// never depends on the sidebar, so toggling a column does not move it.
-// PaddingTop/PaddingBottom give it its own vertical breathing room, with the
-// surface fill carrying through the padding rows. A terminal too small for the
-// columns keeps the old bare, single-row field. While find is active the composer
-// is the find query box.
+// composerView renders the composer as a framed box inside the transcript
+// column, sized and indented to that column rather than the window.
+// newComposerInput puts the prompt and placeholder inside the input, so the
+// interior is just the input clipped to the box's inner width (composerWidth in
+// model.go minus the border). The frame wears the same rounded border as the
+// side rails — lit while the composer owns the keyboard, plain while a modal or
+// overlay does — so the field reads as a framed panel with the surface fill
+// inside it, and its bottom border lands on the line the rails bottom out on.
+// The block is padded to the transcript width so it joins the transcript grid
+// exactly and never bleeds into the member column. A terminal too small for the
+// columns keeps the old bare, single-row field. While find is active the
+// composer is the find query box.
 func (m *Model) composerView() string {
 	if m == nil {
 		return ""
@@ -65,18 +66,52 @@ func (m *Model) composerView() string {
 	if m.width < minWidth || m.height < minHeight {
 		return m.styles.Composer.Inline(true).MaxWidth(m.width).Render(m.composer.View())
 	}
-	width := m.composerWidth()
-	field := truncateLine(m.composer.View(), width)
-	if pad := width - lipgloss.Width(field); pad > 0 {
+	inner := m.composerInteriorWidth()
+	field := truncateLine(m.composer.View(), inner)
+	if pad := inner - lipgloss.Width(field); pad > 0 {
 		field += m.styles.ComposerField.Render(strings.Repeat(" ", pad))
 	}
-	indent := strings.Repeat(" ", m.composerLeft())
-	block := m.styles.ComposerField.Padding(composerFieldPad, 0).Render(field)
-	lines := strings.Split(block, "\n")
+	indent := strings.Repeat(" ", composerInset)
+	frame := m.composerFrameStyle().Background(m.styles.Colors.Surface)
+	box := frame.Width(m.composerWidth()).Render(field)
+	lines := strings.Split(box, "\n")
 	for index, line := range lines {
 		lines[index] = indent + line
 	}
-	return strings.Join(lines, "\n")
+	return lipgloss.NewStyle().Width(m.transcriptWidth()).Render(strings.Join(lines, "\n"))
+}
+
+// composerFrameStyle is the composer box's border style: the side rails' frame
+// with the focus border while the composer owns the keyboard, dropped to the
+// plain border while a modal or an overlay does. It mirrors the QML composer's
+// accent-while-focused border.
+func (m *Model) composerFrameStyle() lipgloss.Style {
+	if m.composer.Focused() {
+		return m.styles.PanelFocused
+	}
+	return m.styles.Panel
+}
+
+// composerBorderWidth is the frame thickness on one side of the box.
+func (m *Model) composerBorderWidth() int {
+	frameX, _ := m.composerFrameStyle().GetFrameSize()
+	return frameX / 2
+}
+
+// composerInteriorWidth is the box's inner width: composerWidth minus both
+// border cells. It is what the input and its fill are clipped to.
+func (m *Model) composerInteriorWidth() int {
+	width := m.composerWidth() - 2*m.composerBorderWidth()
+	if width < 1 {
+		width = 1
+	}
+	return width
+}
+
+// composerTextLeft is the left cell of the box's interior: past the border, where
+// the input's prompt starts. composerCursor offsets the real cursor by it.
+func (m *Model) composerTextLeft() int {
+	return m.composerLeft() + m.composerBorderWidth()
 }
 
 // composerCursor is the composer's real terminal cursor at row, the composer
@@ -94,12 +129,12 @@ func (m *Model) composerCursor(row int) *tea.Cursor {
 		return nil
 	}
 	cursor.Position.Y = row
-	// The composer bar is inset from the window edge, so the real cursor moves
-	// with it. The bar is window-level, so the offset is the window inset and
-	// does not depend on the sidebar. A terminal too small for the columns
-	// renders the bare full-width field at the left edge and needs no offset.
+	// The box is inset inside the transcript column and bordered, so the real
+	// cursor moves with the column's left edge, its inset, and the border. A
+	// terminal too small for the columns renders the bare full-width field at
+	// the left edge and needs no offset.
 	if m.width >= minWidth && m.height >= minHeight {
-		cursor.Position.X += m.composerLeft()
+		cursor.Position.X += m.composerTextLeft()
 	}
 	return cursor
 }

@@ -471,7 +471,7 @@ func TestSideColumnOuterWidthsAreInvariant(t *testing.T) {
 	}
 	// The transcript stays unframed, so its content width is unchanged by the
 	// surrounding cards.
-	if got := lipgloss.Width(m.transcriptView(height)); got != m.transcriptWidth() {
+	if got := lipgloss.Width(m.transcriptView(m.transcriptHeight())); got != m.transcriptWidth() {
 		t.Fatalf("transcript width = %d, want %d", got, m.transcriptWidth())
 	}
 }
@@ -484,7 +484,7 @@ func TestFooterUsesHelpKeyMap(t *testing.T) {
 	if !m.footerVisible() {
 		t.Fatal("footer must be visible at the default size")
 	}
-	if got, want := m.bodyHeight(), m.height-composerFieldHeight-footerHeight; got != want {
+	if got, want := m.bodyHeight(), m.height-footerHeight; got != want {
 		t.Fatalf("bodyHeight = %d, want %d with the footer and no slash rows", got, want)
 	}
 	view := m.View().Content

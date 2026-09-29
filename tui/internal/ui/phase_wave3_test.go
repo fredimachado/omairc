@@ -28,9 +28,9 @@ func TestComposerCursorRowMatchesFrame(t *testing.T) {
 	if want := m.composerRow(); cursor.Position.Y != want {
 		t.Fatalf("cursor row = %d, want composerRow() %d", cursor.Position.Y, want)
 	}
-	// The composer's text row sits composerFieldPad rows above the block's
+	// The composer's text row sits composerFrameRows rows above the block's
 	// bottom padding row, which is itself just above the footer.
-	if want := m.height - 1 - footerHeight - composerFieldPad; cursor.Position.Y != want {
+	if want := m.height - 1 - footerHeight - composerFrameRows; cursor.Position.Y != want {
 		t.Fatalf("cursor row = %d, want %d with the footer", cursor.Position.Y, want)
 	}
 
@@ -52,7 +52,7 @@ func TestComposerCursorRowMatchesFrame(t *testing.T) {
 	if !short.footerVisible() {
 		t.Fatal("the floating slash menu must not push the footer off the grid")
 	}
-	if want := short.height - 1 - footerHeight - composerFieldPad; short.View().Cursor == nil ||
+	if want := short.height - 1 - footerHeight - composerFrameRows; short.View().Cursor == nil ||
 		short.View().Cursor.Position.Y != want {
 		t.Fatalf("slash-open cursor = %v, want row %d above the footer", short.View().Cursor, want)
 	}

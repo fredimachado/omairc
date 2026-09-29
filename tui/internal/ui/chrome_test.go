@@ -37,45 +37,94 @@ func TestComposerRowFitsTheGrid(t *testing.T) {
 	}
 }
 
-// TestComposerIsIndependentOfTheSidebar pins the layout contract: the composer is
-// a window-level bar whose left edge and width come from the window alone. It
-// spans the window (minus the two insets) and does not move or resize when the
-// sidebar is toggled, so a column change can never drag the composer around.
-func TestComposerIsIndependentOfTheSidebar(t *testing.T) {
+// TestComposerLivesInTheTranscriptColumn pins the layout contract: the composer
+// is the middle column's last block, not a window-level bar. Its left edge and
+// width come from the transcript column, so toggling the sidebar carries the
+// field with the transcript instead of leaving it behind.
+func TestComposerLivesInTheTranscriptColumn(t *testing.T) {
 	m := seededModel(t)
 	if !m.serverListVisible {
 		t.Fatal("seeded layout must show the sidebar")
 	}
 
 	shownLeft, shownWidth := m.composerLeft(), m.composerWidth()
-	if want := composerInset; shownLeft != want {
-		t.Fatalf("composer left = %d, want the window inset %d", shownLeft, want)
+	if want := m.transcriptLeft() + composerInset; shownLeft != want {
+		t.Fatalf("composer left = %d, want the transcript column edge plus inset %d", shownLeft, want)
 	}
-	if want := m.width - 2*composerInset; shownWidth != want {
-		t.Fatalf("composer width = %d, want the window minus both insets %d", shownWidth, want)
+	if want := m.transcriptWidth() - 2*composerInset; shownWidth != want {
+		t.Fatalf("composer width = %d, want the transcript column minus both insets %d", shownWidth, want)
 	}
-	if right := shownLeft + shownWidth; right > m.width {
-		t.Fatalf("composer reaches %d, past the %d-cell window", right, m.width)
+	if right := shownLeft + shownWidth; right > m.transcriptLeft()+m.transcriptWidth() {
+		t.Fatalf("composer reaches %d, past the %d-cell transcript column",
+			right, m.transcriptLeft()+m.transcriptWidth())
 	}
 
-	// Hiding the sidebar must not move or resize the composer.
+	// Hiding the sidebar carries the composer left and widens it: it follows the
+	// transcript column it belongs to.
 	m.toggleServerList()
 	if m.serverListVisible {
 		t.Fatal("Ctrl+Shift+S must hide the sidebar")
 	}
-	if got := m.composerLeft(); got != shownLeft {
-		t.Fatalf("composer left moved %d -> %d when the sidebar hid", shownLeft, got)
+	if got, want := m.composerLeft(), m.transcriptLeft()+composerInset; got != want {
+		t.Fatalf("composer left = %d after the sidebar hid, want the column edge %d", got, want)
 	}
-	if got := m.composerWidth(); got != shownWidth {
-		t.Fatalf("composer width changed %d -> %d when the sidebar hid", shownWidth, got)
+	if got := m.composerLeft(); got >= shownLeft {
+		t.Fatalf("composer left did not move left with the column: %d -> %d", shownLeft, got)
+	}
+	if got := m.composerWidth(); got <= shownWidth {
+		t.Fatalf("composer width did not grow with the column: %d -> %d", shownWidth, got)
 	}
 
-	// The slash menu still opens over the transcript column, right of the
-	// sidebar, so it never covers the sidebar it is independent of.
+	// The slash menu opens over the composer's own column, right of the sidebar,
+	// so it never covers the sidebar the field no longer spans.
 	m.toggleServerList()
+	if got, want := m.slashMenuLeft(), m.composerLeft(); got != want {
+		t.Fatalf("slash menu left = %d, want the composer's column edge %d", got, want)
+	}
 	if m.slashMenuLeft() < sidebarWidth(m.width) {
 		t.Fatalf("slash menu left = %d, must clear the %d-wide sidebar",
 			m.slashMenuLeft(), sidebarWidth(m.width))
+	}
+}
+
+// TestSideColumnsRunBesideTheComposer pins that the floor under the composer
+// belongs to the side rails too: because the composer is the middle column's
+// last block, the sidebar and member cards run the full body height and still
+// frame the composer's own row instead of stopping above the field.
+func TestSideColumnsRunBesideTheComposer(t *testing.T) {
+	m := seededModel(t)
+	if !m.membersVisible() {
+		t.Fatal("seeded channel must show the member column")
+	}
+	footerRows := 0
+	if m.footerVisible() {
+		footerRows = footerHeight
+	}
+	want := m.height - footerRows
+	if got := lipgloss.Height(m.framedColumn(m.sidebarView, sidebarWidth(m.width), m.bodyHeight(), false)); got != want {
+		t.Fatalf("framed sidebar = %d rows, want the %d-row body", got, want)
+	}
+	if got := lipgloss.Height(m.framedColumn(m.membersView, membersWidth, m.bodyHeight(), false)); got != want {
+		t.Fatalf("framed member panel = %d rows, want the %d-row body", got, want)
+	}
+
+	// On the composer's own row the two side rails are still present, with the
+	// field between them.
+	row := ansiPattern.ReplaceAllString(strings.Split(m.View().Content, "\n")[m.composerRow()], "")
+	runes := []rune(row)
+	if len(runes) != m.width {
+		t.Fatalf("composer row = %d cells, want the %d-cell window: %q", len(runes), m.width, row)
+	}
+	sidebarEdge := m.transcriptLeft() - 1
+	if runes[sidebarEdge] != '│' {
+		t.Fatalf("sidebar rail missing on the composer row (cell %d = %q): %q", sidebarEdge, runes[sidebarEdge], row)
+	}
+	membersEdge := m.transcriptLeft() + m.transcriptWidth()
+	if runes[membersEdge] != '│' {
+		t.Fatalf("member rail missing on the composer row (cell %d = %q): %q", membersEdge, runes[membersEdge], row)
+	}
+	if field := string(runes[m.composerLeft():membersEdge]); !strings.Contains(field, composerPrompt) {
+		t.Fatalf("composer box is not between the side rails: %q", field)
 	}
 }
 
@@ -83,8 +132,9 @@ func TestComposerIsIndependentOfTheSidebar(t *testing.T) {
 // slash-completion menu does not resize the columns. The menu used to be a band
 // stacked between the body and the composer, so it took its rows from the column
 // budget and shrank the sidebar (and the transcript and member panel) while the
-// user typed a slash command. It now floats over the body's last rows, so the
-// columns keep their height and the menu still renders on screen.
+// user typed a slash command. It now floats over the transcript just above the
+// composer, so the columns keep their height, the field stays visible, and the
+// menu still renders on screen.
 func TestSlashMenuFloatsWithoutResizingColumns(t *testing.T) {
 	m := seededModel(t)
 	sidebarHeight := func(mm *Model) int {
@@ -112,13 +162,25 @@ func TestSlashMenuFloatsWithoutResizingColumns(t *testing.T) {
 		t.Fatalf("the floated slash menu is not rendered:\n%s", plain)
 	}
 
+	// The menu floats above the composer block, so it never covers the field:
+	// its rows end on the row before the composer starts.
+	plainRows := strings.Split(ansiPattern.ReplaceAllString(content, ""), "\n")
+	menuTop := closedBody - composerFieldHeight - len(m.slashLines())
+	if !strings.Contains(plainRows[menuTop], "╭") {
+		t.Fatalf("slash menu top row %d is not above the composer:\n%s", menuTop, plainRows[menuTop])
+	}
+	composerRow := plainRows[m.composerRow()]
+	if strings.ContainsAny(composerRow, "╭╰") || strings.Contains(composerRow, "/join") {
+		t.Fatalf("slash menu must not cover the composer row %d: %q", m.composerRow(), composerRow)
+	}
+
 	// The menu floats over the transcript column, so every sidebar row keeps its
 	// left and right border cells. An indented layer drawn from column zero used
 	// to blank them out and erase the sidebar on the menu's rows.
 	sidebar := sidebarWidth(m.width)
 	for index, line := range strings.Split(content, "\n") {
 		if index >= closedBody {
-			break // the composer and footer sit below the body
+			break // the footer sits below the body
 		}
 		plain := []rune(ansiPattern.ReplaceAllString(line, ""))
 		if len(plain) < sidebar {
@@ -129,6 +191,65 @@ func TestSlashMenuFloatsWithoutResizingColumns(t *testing.T) {
 			t.Fatalf("sidebar borders erased on row %d (menu rows are %d..%d): %q",
 				index, closedBody-len(m.slashLines()), closedBody-1, string(plain[:sidebar]))
 		}
+	}
+}
+
+// TestComposerBottomBorderSharesTheRailRow pins the composer's bottom edge: the
+// field is a framed box, and its bottom border lands on the very row the side
+// rails bottom out on. A terminal cell fills whole, so an unframed fill stopped
+// half a cell below the rails' rounded border line and the composer read as
+// hanging past them; a border row is a line at the same height as theirs.
+func TestComposerBottomBorderSharesTheRailRow(t *testing.T) {
+	m := seededModel(t)
+	if !m.serverListVisible || !m.membersVisible() {
+		t.Fatal("seeded layout must show both side rails")
+	}
+	rows := strings.Split(m.View().Content, "\n")
+	last := m.bodyHeight() - 1
+	if last < 0 || last >= len(rows) {
+		t.Fatalf("body bottom row %d outside the %d rendered rows", last, len(rows))
+	}
+	row := rows[last]
+	plain := []rune(ansiPattern.ReplaceAllString(row, ""))
+
+	// The sidebar's bottom-left corner: the rails bottom out on this very row.
+	if plain[0] != '╰' {
+		t.Fatalf("body bottom row does not start with the sidebar's bottom corner: %q", string(plain[0]))
+	}
+	// The member panel's bottom-left corner, at the transcript column's end.
+	memberStart := m.transcriptLeft() + m.transcriptWidth()
+	if memberStart >= len(plain) || plain[memberStart] != '╰' {
+		t.Fatalf("member rail bottom corner is not on row %d at cell %d: %q",
+			last, memberStart, string(plain))
+	}
+	// The composer's own bottom border sits between them, in the same row, so
+	// all three boxes bottom out together.
+	if got := plain[m.composerLeft()]; got != '╰' {
+		t.Fatalf("composer bottom-left corner at cell %d is %q, want ╰:\n%q",
+			m.composerLeft(), string(got), string(plain))
+	}
+	if got := plain[m.composerLeft()+m.composerWidth()-1]; got != '╯' {
+		t.Fatalf("composer bottom-right corner is %q, want ╯:\n%q", string(got), string(plain))
+	}
+	// The interior above the bottom border still carries the surface fill.
+	if above := rows[last-1]; !strings.Contains(above, backgroundParams(m.styles.Colors.Surface)) {
+		t.Fatalf("the composer's input row lost its surface fill:\n%q", above)
+	}
+}
+
+// TestComposerFrameTracksFocus pins the box's border: it wears the focused panel
+// border while the composer owns the keyboard, like the focused side rail, and
+// drops to the plain border while an overlay does.
+func TestComposerFrameTracksFocus(t *testing.T) {
+	m := seededModel(t)
+	if got, want := m.composerFrameStyle().GetBorderStyle(), m.styles.PanelFocused.GetBorderStyle(); got != want {
+		t.Fatalf("focused composer border = %v, want the focused panel border", got)
+	}
+	// A blur that no overlay compensates for must drop the frame to the plain
+	// border, so a modal never leaves the composer lit as if it still had keys.
+	m.composer.Blur()
+	if got, want := m.composerFrameStyle().GetBorderStyle(), m.styles.Panel.GetBorderStyle(); got != want {
+		t.Fatalf("blurred composer border = %v, want the plain panel border", got)
 	}
 }
 
@@ -204,45 +325,58 @@ func TestIdentityFooterGivesTheNickItsOwnRow(t *testing.T) {
 	}
 }
 
-// TestComposerFieldCarriesSurfaceFill pins that the field's fill is the raised
-// surface and that it reaches the end of the field, so the composer reads as
-// its own block instead of a window-coloured bare line.
+// TestComposerFieldCarriesSurfaceFill pins that the box's interior fill is the
+// raised surface and that it reaches the far border, so the composer reads as
+// its own framed block instead of a window-coloured bare line.
 func TestComposerFieldCarriesSurfaceFill(t *testing.T) {
 	m := seededModel(t)
 	row := composerRowOf(t, m)
-	plain := ansiPattern.ReplaceAllString(row, "")
+	plain := []rune(ansiPattern.ReplaceAllString(row, ""))
 
-	if !strings.HasPrefix(plain, strings.Repeat(" ", m.composerLeft())) {
-		t.Fatalf("composer row must start with the column indent:\n%q", plain)
+	if got := len(plain); got < m.composerLeft()+m.composerWidth() {
+		t.Fatalf("composer row is %d cells, want the whole box inside the transcript column", got)
 	}
-	if got := len([]rune(strings.TrimRight(plain, " "))); got == 0 {
+	// The box starts at its inset inside the transcript column, not at the
+	// window edge: the sidebar occupies the cells before it. The border owns the
+	// first cell and the prompt follows it.
+	if got, want := plain[m.composerLeft()], '│'; got != want {
+		t.Fatalf("composer box left border = %q, want %q:\n%q", string(got), string(want), string(plain))
+	}
+	interior := string(plain[m.composerTextLeft():])
+	if !strings.HasPrefix(interior, composerPrompt) {
+		t.Fatalf("composer interior must start past the border with the prompt:\n%q", interior)
+	}
+	if got := len([]rune(strings.TrimRight(interior, " "))); got == 0 {
 		t.Fatal("composer row rendered no content")
 	}
-	// The fill covers the whole field, not just its glyphs: the prompt, the
-	// typed text, and the blank padding to the field's end each carry it.
+	if got, want := plain[m.composerLeft()+m.composerWidth()-1], '│'; got != want {
+		t.Fatalf("composer box right border = %q, want %q:\n%q", string(got), string(want), string(plain))
+	}
+	// The fill covers the whole interior, not just its glyphs: the prompt, the
+	// typed text, and the blank padding to the border each carry it.
 	fill := backgroundParams(m.styles.Colors.Surface)
 	if !strings.Contains(row, fill) {
 		t.Fatalf("composer row missing the ComposerField fill %q:\n%q", fill, row)
 	}
 	if got := strings.Count(row, fill); got < 2 {
-		t.Fatalf("surface fill appears %d times, want it behind the whole field:\n%q", got, row)
+		t.Fatalf("surface fill appears %d times, want it behind the whole interior:\n%q", got, row)
 	}
 }
 
-// TestComposerCursorSitsInTheField pins that the real cursor follows the field's
-// inset instead of staying at the window's left edge.
+// TestComposerCursorSitsInTheField pins that the real cursor follows the box's
+// inset and border instead of staying at the window's left edge.
 func TestComposerCursorSitsInTheField(t *testing.T) {
 	m := seededModel(t)
 	cursor := m.View().Cursor
 	if cursor == nil {
 		t.Fatal("focused composer must expose a terminal cursor")
 	}
-	if cursor.Position.X < m.composerLeft()+composerPrefixWidth {
-		t.Fatalf("cursor column = %d, want at least composerLeft()+prompt = %d",
-			cursor.Position.X, m.composerLeft()+composerPrefixWidth)
+	if want := m.composerTextLeft() + composerPrefixWidth; cursor.Position.X < want {
+		t.Fatalf("cursor column = %d, want at least composerTextLeft()+prompt = %d",
+			cursor.Position.X, want)
 	}
-	if limit := m.composerLeft() + m.composerWidth(); cursor.Position.X >= limit {
-		t.Fatalf("cursor column = %d, past the field end %d", cursor.Position.X, limit)
+	if limit := m.composerTextLeft() + m.composerInteriorWidth(); cursor.Position.X >= limit {
+		t.Fatalf("cursor column = %d, past the interior end %d", cursor.Position.X, limit)
 	}
 	if cursor.Position.Y != m.composerRow() {
 		t.Fatalf("cursor row = %d, want composerRow() %d", cursor.Position.Y, m.composerRow())

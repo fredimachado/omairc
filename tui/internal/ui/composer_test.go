@@ -62,7 +62,7 @@ func TestComposerCursorFollowsFocusAndRow(t *testing.T) {
 	}
 	// composerPrompt is two cells wide, so the caret sits two cells past the
 	// text, shifted by the field's inset under the transcript column.
-	if want := m.composerLeft() + composerPrefixWidth + len("hello"); cursor.Position.X != want {
+	if want := m.composerTextLeft() + composerPrefixWidth + len("hello"); cursor.Position.X != want {
 		t.Fatalf("cursor column = %d, want %d", cursor.Position.X, want)
 	}
 

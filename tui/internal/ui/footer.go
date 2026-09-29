@@ -29,11 +29,12 @@ func helpStyles(styles Styles) help.Styles {
 	}
 }
 
-// footerVisible reports whether the footer fits: the composer block, the footer
-// row, and at least one row of body above them. A short terminal drops the
-// footer before it starves the columns. The slash menu does not affect it — the
-// menu floats over the body instead of stacking above the composer. It is false
-// without a controller, so the empty render stays a single line.
+// footerVisible reports whether the footer fits: the footer row, the composer
+// block inside the middle column, and at least one transcript row above it. A
+// short terminal drops the footer before it starves the transcript. The slash
+// menu does not affect it — the menu floats over the transcript instead of
+// stacking above the composer. It is false without a controller, so the empty
+// render stays a single line.
 func (m *Model) footerVisible() bool {
 	if m == nil || m.ctrl == nil {
 		return false

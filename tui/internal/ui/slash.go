@@ -196,8 +196,8 @@ const slashMenuBorderRows = 2
 // highlighted row, and the theme's raised surface and focus border behind it.
 // It returns nil when the list is closed. The menu builds its own small frame
 // here rather than through overlayCardBlock, and render() floats it over the
-// body's last rows through compositeSlashMenu, so opening it never resizes the
-// columns.
+// transcript just above the composer through compositeSlashMenu, so opening it
+// never resizes the columns or covers the field.
 func (m *Model) slashLines() []string {
 	if !m.slash.open() {
 		return nil
@@ -206,10 +206,10 @@ func (m *Model) slashLines() []string {
 	if len(hits) == 0 {
 		return nil
 	}
-	// The menu floats over the body, so it may never be taller than the body it
-	// covers: cap the visible rows there. The probe keeps every hit; only the
-	// display is capped.
-	room := m.bodyHeight()
+	// The menu floats over the transcript just above the composer, so it may
+	// never be taller than the transcript budget: cap the visible rows there.
+	// The probe keeps every hit; only the display is capped.
+	room := m.transcriptHeight()
 	if room < 1 {
 		return nil
 	}

@@ -581,7 +581,7 @@ func (m *Model) View() tea.View {
 
 // resize keeps the composer and every overlay input in step with the window.
 func (m *Model) resize() {
-	width := m.composerWidth() - composerPrefixWidth
+	width := m.composerInteriorWidth() - composerPrefixWidth
 	if width < 1 {
 		width = 1
 	}
@@ -593,8 +593,10 @@ func (m *Model) resize() {
 	m.list.input.SetWidth(m.overlayInputWidth())
 }
 
-// render composes the columns, the composer, any open overlay, and the status
-// footer. It never indexes a slice unguarded, so a tiny or empty terminal
+// render composes the columns, any open overlay, and the status footer. The
+// composer is not a window-level part here: transcriptColumn carries it at the
+// bottom of the middle column, so the side columns run the full body height
+// beside it. It never indexes a slice unguarded, so a tiny or empty terminal
 // renders a short line instead of panicking.
 func (m *Model) render() string {
 	if m == nil || m.ctrl == nil {
@@ -626,7 +628,6 @@ func (m *Model) render() string {
 	body = m.compositeSlashMenu(body, bodyHeight)
 
 	parts := []string{body}
-	parts = append(parts, m.composerView())
 	if m.footerVisible() {
 		parts = append(parts, m.footerView())
 	}
@@ -656,15 +657,25 @@ func (m *Model) framedColumn(render func(width, height int) string, outerWidth, 
 	return style.Width(outerWidth).Height(outerHeight).Render(render(innerWidth, innerHeight))
 }
 
-// transcriptColumn renders the transcript, or a centered calm state when the
-// selected conversation has nothing to show yet. The transcript itself stays
-// unframed, so transcriptWidth() remains the exact content width.
+// transcriptColumn renders the middle column: the transcript, or a centered
+// calm state when the selected conversation has nothing to show yet, with the
+// composer pinned under it. The composer is part of this column rather than a
+// window-level bar, so the side columns run the full body height beside it and
+// the field spans only the transcript width. The column stays unframed, so
+// transcriptWidth() remains the exact content width. height is the full body
+// height; the transcript gets everything but the composer block.
 func (m *Model) transcriptColumn(height int) string {
-	lines, _ := m.transcriptLines()
-	if len(lines) == 0 {
-		return m.emptyTranscript(height)
+	content := height - composerFieldHeight
+	if content < 1 {
+		content = 1
 	}
-	return m.transcriptView(height)
+	var transcript string
+	if lines, _ := m.transcriptLines(); len(lines) == 0 {
+		transcript = m.emptyTranscript(content)
+	} else {
+		transcript = m.transcriptView(content)
+	}
+	return lipgloss.JoinVertical(lipgloss.Left, transcript, m.composerView())
 }
 
 // emptyTranscript centers a short muted caption through lipgloss.Place, so an
@@ -679,11 +690,13 @@ func (m *Model) emptyTranscript(height int) string {
 }
 
 // bodyHeight is the row budget of the three columns: the window minus the
-// composer block and the status footer when it fits. The slash-completion menu
-// is deliberately not subtracted: it floats over the bottom of the body (see
+// status footer when it fits. The composer lives inside the middle column (see
+// transcriptColumn), so it is part of this budget instead of a separate
+// window-level bar. The slash-completion menu is deliberately not subtracted:
+// it floats over the transcript just above the composer (see
 // compositeSlashMenu), so opening it never resizes the columns.
 func (m *Model) bodyHeight() int {
-	height := m.height - composerFieldHeight
+	height := m.height
 	if m.footerVisible() {
 		height -= footerHeight
 	}
@@ -693,16 +706,36 @@ func (m *Model) bodyHeight() int {
 	return height
 }
 
+// transcriptHeight is the transcript's own row budget: the body minus the
+// composer block pinned under it. It spans the pinned header plus the scrolling
+// rows, so transcriptRowsHeight() subtracts the header before the scroll, find,
+// and copy arithmetic measures against it.
+func (m *Model) transcriptHeight() int {
+	height := m.bodyHeight() - composerFieldHeight
+	if height < 1 {
+		height = 1
+	}
+	return height
+}
+
+// transcriptRowsHeight is the scrolling row budget: the transcript budget minus
+// its pinned header. A column whose header alone fills it can make this zero, so
+// each caller clamps as it did before.
+func (m *Model) transcriptRowsHeight() int {
+	return m.transcriptHeight() - len(m.transcriptHeader())
+}
+
 // composerRow is the composer input line's zero-based row in the rendered frame
 // — the text row inside the composer block, not the block's top row. The
-// composer sits directly below the body and above the footer; the slash menu
-// floats over the body rather than between them, so it adds no rows. The
-// tiny-terminal path renders only the bare single-row composer, so its row is 0.
+// composer is the last block of the middle column, directly above the footer;
+// the slash menu floats over the transcript above it rather than between them,
+// so it adds no rows. The tiny-terminal path renders only the bare single-row
+// composer, so its row is 0.
 func (m *Model) composerRow() int {
 	if m == nil || m.width < minWidth || m.height < minHeight {
 		return 0
 	}
-	return m.bodyHeight() + composerFieldPad
+	return m.transcriptHeight() + composerFrameRows
 }
 
 // overlayCard returns the topmost overlay card as one rendered block, if any.
@@ -911,9 +944,11 @@ func (m *Model) compositeOverlay(body, card string) string {
 	return fitBlock(rendered, width, height)
 }
 
-// compositeSlashMenu floats the open slash-completion menu over the bottom of
-// the body, just above the composer it belongs to, instead of taking rows from
-// the column budget. The menu is placed at slashMenuLeft with an X offset rather
+// compositeSlashMenu floats the open slash-completion menu over the transcript,
+// just above the composer block it belongs to, instead of taking rows from the
+// column budget. The composer is the middle column's last block, so the menu's
+// bottom edge sits composerFieldHeight rows above the body's bottom and never
+// covers the field. The menu is placed at slashMenuLeft with an X offset rather
 // than as a pre-indented layer: an indented layer is drawn from column zero, so
 // its leading spaces would overwrite the body and erase the sidebar beneath it.
 // height is the body row count the caller rendered.
@@ -923,7 +958,7 @@ func (m *Model) compositeSlashMenu(body string, height int) string {
 		return body
 	}
 	width := lipgloss.Width(body)
-	y := height - len(menu)
+	y := height - composerFieldHeight - len(menu)
 	if y < 0 {
 		y = 0
 	}
@@ -1015,16 +1050,15 @@ func (m *Model) transcriptWidth() int {
 	return width
 }
 
-// composerInset is the blank cell margin the composer bar leaves inside the
-// window on each side. The composer is a window-level element like the footer:
-// its left edge and width are derived from the window alone, never from the
-// sidebar or the member panel, so hiding or showing a column never moves it.
+// composerInset is the blank cell margin the composer field leaves inside the
+// transcript column on each side. The composer belongs to the middle column, so
+// its left edge and width follow the column rather than the window: toggling a
+// side rail carries the field with the transcript instead of leaving it behind.
 const composerInset = 2
 
-// transcriptLeft is the left edge of the transcript column: past the sidebar when
-// that rail is visible, else the window edge. Only the floating slash menu and
-// the column arithmetic read it; the composer no longer does, so its position is
-// independent of the sidebar.
+// transcriptLeft is the left edge of the transcript column: past the sidebar
+// when that rail is visible, else the window edge. The floating slash menu and
+// the composer cursor offset read it.
 func (m *Model) transcriptLeft() int {
 	if m.serverListVisible {
 		return sidebarWidth(m.width)
@@ -1032,32 +1066,41 @@ func (m *Model) transcriptLeft() int {
 	return 0
 }
 
-// composerLeft is the composer bar's left cell: the window inset, independent of
-// the sidebar. composerView pads to it and composerCursor moves the real cursor
-// by it.
+// composerLeft is the composer field's absolute left cell in the frame: the
+// transcript column's left edge plus its own inset. composerCursor moves the
+// real cursor by it. composerView indents by composerInset instead, because it
+// renders inside the column rather than at the frame edge.
 func (m *Model) composerLeft() int {
-	return composerInset
+	if m.width < minWidth || m.height < minHeight {
+		return composerInset
+	}
+	return m.transcriptLeft() + composerInset
 }
 
-// composerWidth is the composer bar's total visible width: the window minus both
-// insets, clamped so a narrow window still yields one cell. It does not subtract
-// the sidebar or the member panel.
+// composerWidth is the composer field's total visible width: the transcript
+// column minus the inset on each side, clamped so a narrow column still yields
+// one cell. It never reaches into the sidebar or the member column. The
+// tiny-terminal path renders a bare full-width field, so it keeps the old
+// window-based width.
 func (m *Model) composerWidth() int {
 	width := m.width - 2*composerInset
+	if m.width >= minWidth && m.height >= minHeight {
+		width = m.transcriptWidth() - 2*composerInset
+	}
 	if width < 1 {
 		width = 1
 	}
 	return width
 }
 
-// slashMenuLeft is the floating slash menu's left cell. The menu opens over the
-// transcript column rather than the window edge, so it never covers the sidebar
-// or blanks it while it is open.
+// slashMenuLeft is the floating slash menu's left cell: the composer field's
+// left edge, so the menu opens over the transcript column and never covers the
+// sidebar or blanks it while it is open.
 func (m *Model) slashMenuLeft() int {
 	if m.width < minWidth || m.height < minHeight {
 		return 0
 	}
-	return m.transcriptLeft() + composerInset
+	return m.composerLeft()
 }
 
 // fitLines clamps lines to limit, keeping the tail (the newest transcript
