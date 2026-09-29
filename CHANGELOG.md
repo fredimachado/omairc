@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.5] - 2026-09-29
+
 ### Added
 
 - The terminal client ships as a static `omairc-tui` binary on the same
@@ -577,7 +579,8 @@ First public release: a simple IRC client for Omarchy.
 - Keyboard map, slash-command complete, selectable transcript, and follow-unseen.
 - qmake Unix install tree and a GitHub Releases pacman repository.
 
-[Unreleased]: https://github.com/fredimachado/omairc/compare/v1.0.4...HEAD
+[Unreleased]: https://github.com/fredimachado/omairc/compare/v1.0.5...HEAD
+[1.0.5]: https://github.com/fredimachado/omairc/compare/v1.0.4...v1.0.5
 [1.0.4]: https://github.com/fredimachado/omairc/compare/v1.0.3...v1.0.4
 [1.0.3]: https://github.com/fredimachado/omairc/compare/v1.0.2...v1.0.3
 [1.0.2]: https://github.com/fredimachado/omairc/compare/v1.0.1...v1.0.2
