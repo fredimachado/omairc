@@ -15,6 +15,7 @@ private slots:
     void answersMonitorAdd();
     void answersList();
     void seedsServiceAccounts();
+    void seedsSelfAvatars();
     void skipsRedundantAccountTag();
 };
 
@@ -87,6 +88,33 @@ void DemoServerTest::skipsRedundantAccountTag()
                                     QStringLiteral("kai")),
              QStringLiteral("kaidev"));
     QCOMPARE(controller.peerAccountEpoch(), epoch);
+}
+
+void DemoServerTest::seedsSelfAvatars()
+{
+    IrcController controller;
+    IrcDemoServer demo;
+    QVERIFY(demo.attach(controller, false));
+    // Both operators advertise the Omairc mark. The value is a real HTTPS URL so
+    // the demo exercises the avatar store's network path, unlike the bundled
+    // peer art.
+    const QString avatar = QStringLiteral("https://omairc.app/omairc128.png");
+    QCOMPARE(controller.peerMetadata(IrcDemoServer::omarchyNetworkId(),
+                                    QStringLiteral("fred"))
+                 .value(QStringLiteral("avatar"))
+                 .toString(),
+             avatar);
+    QCOMPARE(controller.peerMetadata(IrcDemoServer::oftcNetworkId(),
+                                    QStringLiteral("oak"))
+                 .value(QStringLiteral("avatar"))
+                 .toString(),
+             avatar);
+    // A peer keeps the bundled resource, so the demo shows both paths at once.
+    QCOMPARE(controller.peerMetadata(IrcDemoServer::omarchyNetworkId(),
+                                    QStringLiteral("mira"))
+                 .value(QStringLiteral("avatar"))
+                 .toString(),
+             QStringLiteral("qrc:/demo/mira-avatar.png"));
 }
 
 void DemoServerTest::answersList()

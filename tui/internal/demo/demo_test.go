@@ -262,6 +262,42 @@ func TestSeedsParityWorld(t *testing.T) {
 	if !containsString(c.TypingNicks(), "anna") {
 		t.Fatalf("typing in anna = %v, want anna", c.TypingNicks())
 	}
+
+	// The operator's own avatar is a real HTTPS URL so the demo exercises the
+	// avatar store's network path; a peer keeps the bundled resource.
+	if got := c.Reducer().NickPresence("omarchy", "fred").Avatar(); got != kDemoSelfAvatarURL {
+		t.Fatalf("fred avatar = %q, want %q", got, kDemoSelfAvatarURL)
+	}
+	if got := c.Reducer().NickPresence("oftc", "oak").Avatar(); got != kDemoSelfAvatarURL {
+		t.Fatalf("oak avatar = %q, want %q", got, kDemoSelfAvatarURL)
+	}
+	if got := c.Reducer().NickPresence("omarchy", "mira").Avatar(); got != "qrc:/demo/mira-avatar.png" {
+		t.Fatalf("mira avatar = %q, want the bundled resource", got)
+	}
+
+	// The recording walkthrough depends on two seeded edges: the one https link
+	// in OFTC #lab (Ctrl+Shift+O) and the OFTC INVITE. The invite matters because
+	// the walkthrough visits #ricing first (Alt+A), which consumes the seeded
+	// #ricing mention row; the invite is what still gives Ctrl+Shift+A a row.
+	c.SelectConversation("oftc", "#lab")
+	foundLink := false
+	for _, message := range c.Messages() {
+		if strings.Contains(message.Body, "https://ci.example.com/omairc/42") {
+			foundLink = true
+		}
+	}
+	if !foundLink {
+		t.Fatal("oftc #lab must carry the seeded demo link")
+	}
+	invites := 0
+	for _, item := range c.InboxItems() {
+		if item.Kind == "invite" && item.NetworkID == "oftc" && item.Target == "#debian" {
+			invites++
+		}
+	}
+	if invites != 1 {
+		t.Fatalf("seeded OFTC invite rows = %d, want 1: %+v", invites, c.InboxItems())
+	}
 }
 
 func TestEchoLastPrivmsg(t *testing.T) {

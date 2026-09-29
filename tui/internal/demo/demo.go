@@ -104,6 +104,11 @@ func (d *DemoServer) Attach(c *controller.Controller, autoEcho bool) bool {
 	c.SelectConversation(omarchy.NetworkID, "#omarchy")
 	d.omarchy.InjectBytes(typingBytes(omarchy))
 	d.omarchy.InjectBytes(liveAccountBytes(omarchy))
+	// A live background INVITE (not replayed history) leaves one row in the
+	// session inbox at launch, so the demo can show Ctrl+Shift+A with real
+	// content. It lands on OFTC so the omarchy Status link sheet keeps only
+	// what a test injects.
+	d.oftc.InjectBytes(line(":rio!u@h INVITE oak :#debian"))
 
 	if autoEcho {
 		d.omarchy.OnFrameWritten = d.hookAutoEcho(omarchy.NetworkID, omarchy.Nick, demoOnlineNicks(omarchy))

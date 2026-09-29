@@ -33,6 +33,10 @@ constexpr auto kCaps =
     "draft/metadata-2 server-time account-tag account-notify extended-join";
 constexpr auto kIsupport = "CHANTYPES=# PREFIX=(qaohv)~&@%+ MONITOR=100";
 constexpr int kMonitorLimit = 100;
+// The operator's own avatar, advertised for both seeded networks. Real HTTPS on
+// purpose: the identity footer shows the Omairc mark and the demo exercises the
+// avatar store's network path. See presenceBytes().
+constexpr auto kDemoSelfAvatarUrl = "https://omairc.app/omairc128.png";
 
 struct SeedLine
 {
@@ -320,6 +324,13 @@ QByteArray presenceBytes(const SeedNetwork &network)
                 ":server 761 %1 kai avatar * :qrc:/demo/kai-avatar.png")
                 .arg(network.nick));
     }
+    // The operator's own avatar is a real HTTPS URL, unlike the bundled peer
+    // art above: the identity footer and the operator's transcript rows show
+    // the Omairc mark, and the demo exercises the store's network path
+    // (ircAvatarUrlIsSafe plus the pinned-address GET). Best-effort: the
+    // initials chip stays if the fetch fails.
+    out += line(QStringLiteral(":server 761 %1 %1 avatar * :%2")
+                    .arg(network.nick, kDemoSelfAvatarUrl));
     return out;
 }
 
@@ -609,8 +620,10 @@ SeedNetwork oftcWorld()
     lab.away = {QStringLiteral("pip")};
     lab.markRead = true;
     lab.lines = {
+        // The one seeded transcript link. It lives on the secondary network so
+        // the omarchy Status link sheet keeps only URLs a test injects.
         chat(QStringLiteral("ness"),
-             QStringLiteral("Package build is green on the new runner."),
+             QStringLiteral("Package build is green: https://ci.example.com/omairc/42"),
              QStringLiteral("10:18")),
         chat(QStringLiteral("rio"),
              QStringLiteral("Leave the log in #build if it fails after sunset."),
@@ -1255,6 +1268,12 @@ bool IrcDemoServer::attach(IrcController &controller, bool autoEcho)
     controller.selectConversation(omarchy.networkId, QStringLiteral("#omarchy"));
     m_omarchyTransport->injectBytes(typingBytes(omarchy));
     m_omarchyTransport->injectBytes(liveAccountBytes(omarchy));
+    // A live background INVITE (not replayed history) leaves one row in the
+    // session inbox at launch, so the demo can show Ctrl+Shift+A with real
+    // content. It lands on OFTC so the omarchy Status link sheet keeps only
+    // what a test injects.
+    m_oftcTransport->injectBytes(
+        line(QStringLiteral(":rio!u@h INVITE oak :#debian")));
     if (autoEcho) {
         hookAutoEcho(m_omarchyTransport, omarchy.nick, demoOnlineNicks(omarchy));
         hookAutoEcho(m_oftcTransport, oftc.nick, demoOnlineNicks(oftc));

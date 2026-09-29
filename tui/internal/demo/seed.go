@@ -22,6 +22,11 @@ const (
 
 	// kMonitorLimit is the MONITOR entry ceiling, mirroring IrcServerFeatures.
 	kMonitorLimit = 100
+
+	// kDemoSelfAvatarURL is the operator's own avatar, advertised for both seeded
+	// networks. Real HTTPS on purpose: the identity footer shows the Omairc mark
+	// and the demo exercises the avatar store's network path. See presenceBytes().
+	kDemoSelfAvatarURL = "https://omairc.app/omairc128.png"
 )
 
 // SeedKind distinguishes a transcript chat line from a join line. It mirrors
@@ -289,7 +294,9 @@ func oftcWorld() SeedNetwork {
 		Away:     []string{"pip"},
 		MarkRead: true,
 		Lines: []SeedLine{
-			chat("ness", "Package build is green on the new runner.", "10:18"),
+			// The one seeded transcript link. It lives on the secondary network so
+			// the omarchy Status link sheet keeps only URLs a test injects.
+			chat("ness", "Package build is green: https://ci.example.com/omairc/42", "10:18"),
 			chat("rio", "Leave the log in #build if it fails after sunset.", "10:21"),
 		},
 	}

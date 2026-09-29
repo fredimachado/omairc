@@ -3,6 +3,7 @@
 #include "fakeirctransport.h"
 #include "irccapability.h"
 #include "ircavatarstore.h"
+#include "ircinboxmodel.h"
 #include "ircconnection.h"
 #include "irccontroller.h"
 #include "ircnetworkprofile.h"
@@ -1376,6 +1377,28 @@ void LiveUiTest::seededIrcFixtureFurnishesDemoWorld()
                                   QStringLiteral("anna"));
     QVERIFY(selectedBodies(messages).contains(
         QStringLiteral("fred: The prototype already feels at home. Nice work.")));
+
+    // The recording walkthrough depends on the same two seeded edges as the TUI:
+    // the OFTC #lab link (Ctrl+Shift+O) and the OFTC INVITE. The invite is the
+    // row Ctrl+Shift+A still has after the walkthrough visits #ricing (Alt+A),
+    // which consumes the seeded #ricing mention.
+    controller.selectConversation(SeededIrcFixture::oftcNetworkId(),
+                                  QStringLiteral("#lab"));
+    QVERIFY(selectedBodies(messages).contains(
+        QStringLiteral("Package build is green: https://ci.example.com/omairc/42")));
+    auto *inbox = qobject_cast<IrcInboxModel *>(controller.inbox());
+    QVERIFY(inbox);
+    int inviteRows = 0;
+    for (int row = 0; row < inbox->rowCount(); ++row) {
+        if (inbox->field(row, QStringLiteral("kind")) == QStringLiteral("invite")
+                && inbox->field(row, QStringLiteral("networkId"))
+                       == SeededIrcFixture::oftcNetworkId()
+                && inbox->field(row, QStringLiteral("target"))
+                       == QStringLiteral("#debian")) {
+            ++inviteRows;
+        }
+    }
+    QCOMPARE(inviteRows, 1);
 
     controller.selectConversation(SeededIrcFixture::omarchyNetworkId(),
                                   QStringLiteral("#omarchy"));

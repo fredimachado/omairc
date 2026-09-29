@@ -20,9 +20,9 @@ The session inbox is a waiting list of background arrivals: mentions, highlight 
 
 Preconditions:
 
-- Use the seeded UI (`control-omairc launch --demo-server` or `qml-suite`). The demo seeds live conversations but does not produce new inbox rows after launch unless you inject frames or switch away first. Do not inject frames for this proof.
+- Use the seeded UI (`control-omairc launch --demo-server` or `qml-suite`). A fresh `--demo-server` already holds two rows: the seeded `#ricing` mention (the seeded transcript arrives as live frames, so it appends) and a live OFTC `INVITE` (`rio` → `#debian`) injected at attach. Everything past that still needs an injected frame or a switch away first. Do not inject frames for this proof.
 
-- **No compiled-window recipe.** `control-omairc run inbox` fails closed. This file has no `desktop-recipe` fence. Do not add an empty fence or a `qml-suite` fence. `Ctrl+Shift+A` can open an empty sheet on `--demo-server`, and that is not the waiting list.
+- **No compiled-window recipe.** `control-omairc run inbox` fails closed. This file has no `desktop-recipe` fence. Do not add an empty fence or a `qml-suite` fence. `Ctrl+Shift+A` on a fresh `--demo-server` opens a non-empty sheet (the `#ricing` mention plus the OFTC invite); `inboxCount` starts at 2.
 - **Offscreen suite.** Run `control-omairc doctor-qml` then `control-omairc qml-suite`. `test_inboxSheetTogglesWithShortcut` covers `Ctrl+Shift+A` toggle, Escape, and Connect no-op. `test_inboxMarkShowsCountAndOpensSheet` covers the footer badge and click path. `test_inboxMentionEnterJumpsToMsgid` and `test_inboxInviteEnterJoinsChannel` cover Enter activation. `test_inboxSelectingConversationClearsMatchingRows` covers sidebar consume. `qml-suite` is not compiled-window proof.
 
 ## Gotchas

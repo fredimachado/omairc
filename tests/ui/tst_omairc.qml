@@ -8117,7 +8117,11 @@ TestCase {
         compare(selfBot.shown, false);
         compare(selfBot.visible, false);
         compare(appWindow.peerBot(appWindow.selfNick), false);
-        compare(appWindow.peerAvatar(appWindow.selfNick), "");
+        // The seed advertises the operator's avatar; only bot is empty.
+        compare(appWindow.peerAvatar(appWindow.selfNick),
+                "https://omairc.app/omairc128.png");
+        var seededGlyph = item("selfNickGlyph");
+        compare(seededGlyph.avatarUrl, "https://omairc.app/omairc128.png");
 
         seed.injectOmarchy(":server 761 fred fred bot * :ReviewBot\r\n");
         tryCompare(selfBot, "shown", true);

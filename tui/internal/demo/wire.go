@@ -236,6 +236,12 @@ func presenceBytes(network SeedNetwork) []byte {
 	if hasMember("kai") {
 		out = append(out, line(":server 761 "+network.Nick+" kai avatar * :qrc:/demo/kai-avatar.png")...)
 	}
+	// The operator's own avatar is a real HTTPS URL, unlike the bundled peer art
+	// above: the identity footer and the operator's transcript rows show the
+	// Omairc mark, and the demo exercises the store's network path
+	// (ircAvatarUrlIsSafe plus the pinned-address GET). Best-effort: the initials
+	// chip stays if the fetch fails.
+	out = append(out, line(":server 761 "+network.Nick+" "+network.Nick+" avatar * :"+kDemoSelfAvatarURL)...)
 	return out
 }
 
