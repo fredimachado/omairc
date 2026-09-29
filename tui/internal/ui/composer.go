@@ -31,16 +31,16 @@ const composerFieldHeight = 1 + 2*composerFrameRows
 
 // newComposerInput builds the composer's text input from the shell styles.
 // model.go's New must build the composer with this instead of textinput.New. It
-// uses the composer's own input set (ComposerInput in style.go), which is the
-// shared theme-driven look plus the surface fill that makes the field read as
-// its own block under the transcript. It also switches the input to a real
-// terminal cursor; composerCursor returns nil while the virtual cursor is on,
-// and View should place the real one. The styles are a snapshot: model.go's
-// SetTheme must re-apply m.composer.SetStyles(m.styles.ComposerInput) after it
-// rebuilds the shell styles.
+// uses the shared input set (Input in style.go), so the composer's prompt,
+// placeholder, and caret follow the theme like every other field and the
+// interior stays unfilled. It also switches the input to a real terminal cursor;
+// composerCursor returns nil while the virtual cursor is on, and View should
+// place the real one. The styles are a snapshot: model.go's SetTheme must
+// re-apply m.composer.SetStyles(m.styles.Input) after it rebuilds the
+// shell styles.
 func newComposerInput(styles Styles) textinput.Model {
 	input := textinput.New()
-	input.SetStyles(styles.ComposerInput)
+	input.SetStyles(styles.Input)
 	input.Placeholder = composerPlaceholder
 	input.Prompt = composerPrompt
 	input.SetVirtualCursor(false)
@@ -53,12 +53,12 @@ func newComposerInput(styles Styles) textinput.Model {
 // interior is just the input clipped to the box's inner width (composerWidth in
 // model.go minus the border). The frame wears the same rounded border as the
 // side rails — lit while the composer owns the keyboard, plain while a modal or
-// overlay does — so the field reads as a framed panel with the surface fill
-// inside it, and its bottom border lands on the line the rails bottom out on.
-// The block is padded to the transcript width so it joins the transcript grid
-// exactly and never bleeds into the member column. A terminal too small for the
-// columns keeps the old bare, single-row field. While find is active the
-// composer is the find query box.
+// overlay does — and the interior carries no fill of its own, so the field reads
+// as framed text over the window background and its bottom border lands on the
+// line the rails bottom out on. The block is padded to the transcript width so
+// it joins the transcript grid exactly and never bleeds into the member column.
+// A terminal too small for the columns keeps the old bare, single-row field.
+// While find is active the composer is the find query box.
 func (m *Model) composerView() string {
 	if m == nil {
 		return ""
@@ -69,11 +69,10 @@ func (m *Model) composerView() string {
 	inner := m.composerInteriorWidth()
 	field := truncateLine(m.composer.View(), inner)
 	if pad := inner - lipgloss.Width(field); pad > 0 {
-		field += m.styles.ComposerField.Render(strings.Repeat(" ", pad))
+		field += strings.Repeat(" ", pad)
 	}
 	indent := strings.Repeat(" ", composerInset)
-	frame := m.composerFrameStyle().Background(m.styles.Colors.Surface)
-	box := frame.Width(m.composerWidth()).Render(field)
+	box := m.composerFrameStyle().Width(m.composerWidth()).Render(field)
 	lines := strings.Split(box, "\n")
 	for index, line := range lines {
 		lines[index] = indent + line

@@ -7,6 +7,7 @@ package ui
 // the first.
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 
@@ -231,9 +232,15 @@ func TestComposerBottomBorderSharesTheRailRow(t *testing.T) {
 	if got := plain[m.composerLeft()+m.composerWidth()-1]; got != '╯' {
 		t.Fatalf("composer bottom-right corner is %q, want ╯:\n%q", string(got), string(plain))
 	}
-	// The interior above the bottom border still carries the surface fill.
-	if above := rows[last-1]; !strings.Contains(above, backgroundParams(m.styles.Colors.Surface)) {
-		t.Fatalf("the composer's input row lost its surface fill:\n%q", above)
+	// The interior above the bottom border is the input row, framed by the box's
+	// vertical borders and carrying no fill.
+	above := ansiPattern.ReplaceAllString(rows[last-1], "")
+	aboveRunes := []rune(above)
+	if got, want := aboveRunes[m.composerLeft()], '│'; got != want {
+		t.Fatalf("composer input row left border = %q, want %q:\n%q", string(got), string(want), above)
+	}
+	if strings.Contains(above, backgroundParams(m.styles.Colors.Surface)) {
+		t.Fatalf("the composer's input row carries a surface fill:\n%q", above)
 	}
 }
 
@@ -325,10 +332,11 @@ func TestIdentityFooterGivesTheNickItsOwnRow(t *testing.T) {
 	}
 }
 
-// TestComposerFieldCarriesSurfaceFill pins that the box's interior fill is the
-// raised surface and that it reaches the far border, so the composer reads as
-// its own framed block instead of a window-coloured bare line.
-func TestComposerFieldCarriesSurfaceFill(t *testing.T) {
+// TestComposerInteriorHasNoSurfaceFill pins that the box's interior carries no
+// fill: the composer is framed text over the window background, not a filled
+// block. The border still marks its edges and the prompt still starts past the
+// left border.
+func TestComposerInteriorHasNoSurfaceFill(t *testing.T) {
 	m := seededModel(t)
 	row := composerRowOf(t, m)
 	plain := []rune(ansiPattern.ReplaceAllString(row, ""))
@@ -352,14 +360,38 @@ func TestComposerFieldCarriesSurfaceFill(t *testing.T) {
 	if got, want := plain[m.composerLeft()+m.composerWidth()-1], '│'; got != want {
 		t.Fatalf("composer box right border = %q, want %q:\n%q", string(got), string(want), string(plain))
 	}
-	// The fill covers the whole interior, not just its glyphs: the prompt, the
-	// typed text, and the blank padding to the border each carry it.
-	fill := backgroundParams(m.styles.Colors.Surface)
-	if !strings.Contains(row, fill) {
-		t.Fatalf("composer row missing the ComposerField fill %q:\n%q", fill, row)
+	// No state carries a background: not the interior padding, the prompt, the
+	// typed text, nor the box frame. A fill would make the composer read as its
+	// own block again instead of framed text on the window background. The check
+	// reads the composer's own block rather than the whole grid row, which also
+	// carries the sidebar's badge fills.
+	box := m.composerView()
+	fills := []struct {
+		name   string
+		params string
+	}{
+		{"surface", backgroundParams(m.styles.Colors.Surface)},
+		{"raised surface", backgroundParams(m.styles.Colors.SurfaceRaised)},
+		{"window", backgroundParams(m.styles.Colors.Background)},
+		{"selection", backgroundParams(m.styles.Colors.Selection)},
+		{"accent", backgroundParams(m.styles.Colors.Accent)},
 	}
-	if got := strings.Count(row, fill); got < 2 {
-		t.Fatalf("surface fill appears %d times, want it behind the whole interior:\n%q", got, row)
+	for _, fill := range fills {
+		if strings.Contains(box, fill.params) {
+			t.Fatalf("composer carries the %s background %q:\n%q", fill.name, fill.params, box)
+		}
+	}
+}
+
+// TestComposerInputStylesAreUnfilled pins the style seam: the live composer
+// input wears exactly the shared Input set, so its prompt, placeholder, text,
+// and caret carry no background in any focus state. Deriving a filled variant
+// for the composer was how the field's glyphs painted a block behind themselves;
+// now there is no composer-only input set, so a fill cannot come back that way.
+func TestComposerInputStylesAreUnfilled(t *testing.T) {
+	m := seededModel(t)
+	if got, want := m.composer.Styles(), m.styles.Input; !reflect.DeepEqual(got, want) {
+		t.Fatalf("composer input styles diverged from the shared unfilled Input set\ngot:  %#v\nwant: %#v", got, want)
 	}
 }
 

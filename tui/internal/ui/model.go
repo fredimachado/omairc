@@ -273,7 +273,7 @@ func (m *Model) SetThemeWatcher(w *theme.Watcher) {
 // spinner's frame color. The composer keeps its value and focus.
 func (m *Model) applyStyles(styles Styles) {
 	m.styles = styles
-	m.composer.SetStyles(styles.ComposerInput)
+	m.composer.SetStyles(styles.Input)
 	m.help.Styles = helpStyles(styles)
 	m.spinner.Style = styles.StatusWarn
 	m.restyleOverlayInputs()
