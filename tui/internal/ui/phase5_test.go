@@ -100,6 +100,38 @@ func TestStoredProfilesListedInSidebarBeforeConnect(t *testing.T) {
 	}
 }
 
+// TestConnectOpensOnFocusedNetworkHeader pins the Qt parity of
+// openConnectSheet: a walked-to network header (Alt+Left / Alt+Right) wins over
+// the selected conversation's network, so Ctrl+, lands the sheet on the row the
+// user is standing on.
+func TestConnectOpensOnFocusedNetworkHeader(t *testing.T) {
+	ctrl := controller.New()
+	conn := connection.New(ctrl, func() session.Transport { return session.NewLoopbackTransport() })
+	conn.SetStoredProfiles([]connection.NetworkProfile{
+		storedProfile("net-a", "irc.a.example"),
+		storedProfile("net-b", "irc.b.example"),
+	})
+	conn.Select("net-a")
+	m := New(ctrl, conn)
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 118, Height: 30})
+	m = updated.(*Model)
+	m.closeConnect()
+
+	// Walk the network headers from net-a to net-b without selecting a
+	// conversation, then reopen Connect with Ctrl+,.
+	m = press(t, m, tea.KeyPressMsg{Code: tea.KeyRight, Mod: tea.ModAlt})
+	if got := m.sidebarNetworkFocusID; got != "net-b" {
+		t.Fatalf("header focus = %q, want net-b", got)
+	}
+	m = press(t, m, tea.KeyPressMsg{Code: ',', Mod: tea.ModCtrl})
+	if !m.connectVisible() {
+		t.Fatal("Ctrl+, must open Connect")
+	}
+	if got := conn.SelectedNetworkID(); got != "net-b" {
+		t.Fatalf("sheet selected network = %q, want net-b", got)
+	}
+}
+
 func TestConnectCtrlJAppliesFromField(t *testing.T) {
 	ctrl := controller.New()
 	conn := connection.New(ctrl, func() session.Transport { return session.NewLoopbackTransport() })

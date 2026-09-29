@@ -130,12 +130,19 @@ func (m *Model) connectVisible() bool {
 	return m.conn.SetupRequired() || m.connectOpen
 }
 
-// openConnect reopens the sheet for the focused network.
+// openConnect reopens the sheet for the focused network. A walked-to network
+// header (Alt+Left / Alt+Right) wins over the controller's focused network, so
+// the sheet opens on the row the user is standing on; it mirrors
+// OmaircWindow.qml's openConnectSheet.
 func (m *Model) openConnect() {
 	if m.conn == nil {
 		return
 	}
-	if networkID := m.ctrl.FocusedNetworkID(); networkID != "" {
+	networkID := m.sidebarNetworkFocusID
+	if networkID == "" {
+		networkID = m.ctrl.FocusedNetworkID()
+	}
+	if networkID != "" {
 		m.conn.Select(networkID)
 	}
 	m.connectOpen = true

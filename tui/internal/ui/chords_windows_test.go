@@ -76,17 +76,28 @@ func TestWindowsLegacyCtrlSlashOpensShortcuts(t *testing.T) {
 func TestWindowsCtrlBracketOpensConnect(t *testing.T) {
 	ctrl := controller.New()
 	conn := connection.New(ctrl, func() session.Transport { return session.NewLoopbackTransport() })
-	conn.SetNick("omairc")
-	if !conn.Apply() {
-		t.Fatal("Apply() = false, want true")
-	}
+	conn.SetStoredProfiles([]connection.NetworkProfile{
+		storedProfile("net-a", "irc.a.example"),
+		storedProfile("net-b", "irc.b.example"),
+	})
+	conn.Select("net-a")
 	m := New(ctrl, conn)
 	updated, _ := m.Update(tea.WindowSizeMsg{Width: 118, Height: 30})
 	m = updated.(*Model)
 	m.closeConnect()
+
+	// Walk to net-b's header, then reopen Connect with the WT Ctrl+] alias.
+	// It must open on the walked-to network, not the selected one (net-a).
+	m = press(t, m, tea.KeyPressMsg{Code: tea.KeyRight, Mod: tea.ModAlt})
+	if got := m.sidebarNetworkFocusID; got != "net-b" {
+		t.Fatalf("header focus = %q, want net-b", got)
+	}
 	m = press(t, m, tea.KeyPressMsg{Code: ']', Mod: tea.ModCtrl})
 	if !m.connectVisible() {
 		t.Fatal("ctrl+] must open Connect on Windows")
+	}
+	if got := conn.SelectedNetworkID(); got != "net-b" {
+		t.Fatalf("sheet selected network = %q, want net-b", got)
 	}
 }
 
