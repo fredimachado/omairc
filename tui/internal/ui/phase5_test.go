@@ -3,6 +3,7 @@ package ui
 import (
 	"strings"
 	"testing"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 
@@ -178,6 +179,64 @@ func TestApplyOpensStatusTranscript(t *testing.T) {
 	}
 	if m.connectVisible() {
 		t.Fatal("Connect sheet still open after successful Apply")
+	}
+}
+
+// TestAutoJoinShowsTheChannelNotStatus pins the real-server connect order in the
+// shell: Apply puts Status on screen, the server then auto-joins the configured
+// channel, and the transcript must follow that channel. The sidebar and the
+// member panel already followed the joined channel; the transcript stayed on
+// Status because the console model was still flagged open.
+func TestAutoJoinShowsTheChannelNotStatus(t *testing.T) {
+	clock := session.NewFakeClock(time.Date(2026, 9, 26, 9, 0, 0, 0, time.UTC))
+	ctrl := controller.New()
+	ctrl.SetClock(clock)
+	transport := session.NewLoopbackTransport()
+	config := session.DefaultSessionConfig("libera", "irc.example", "irc.example", "fred")
+	config.TLSEnabled = true
+	config.ReconnectEnabled = false
+	if _, err := ctrl.AddSession(config, transport, clock); err != nil {
+		t.Fatalf("AddSession: %v", err)
+	}
+	m := New(ctrl, nil)
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 118, Height: 30})
+	m = updated.(*Model)
+	if !ctrl.Start("libera") {
+		t.Fatal("Start(libera) = false")
+	}
+	transport.CompleteConnect()
+	transport.InjectBytes([]byte(":server CAP fred LS :multi-prefix\r\n" +
+		":server 001 fred :Welcome\r\n" +
+		":server 005 fred CHANTYPES=# PREFIX=(ov)@+ :are supported by this server\r\n"))
+
+	// Apply opened Status for the freshly applied profile.
+	ctrl.OpenStatus("libera")
+	if !ctrl.ConsoleOpen() {
+		t.Fatal("ConsoleOpen = false on Status after Apply")
+	}
+
+	// The server auto-joins the configured channel.
+	transport.InjectBytes([]byte(":fred!u@h JOIN :#omarchy\r\n" +
+		":server 353 fred = #omarchy :@fred anna\r\n" +
+		":server 366 fred #omarchy :End of NAMES\r\n" +
+		":anna!u@h PRIVMSG #omarchy :hello from autojoin\r\n"))
+
+	if ctrl.ConsoleOpen() {
+		t.Fatal("the transcript is still on Status after the auto-join")
+	}
+	if got := ctrl.SelectedTarget(); got != "#omarchy" {
+		t.Fatalf("SelectedTarget = %q, want #omarchy", got)
+	}
+	if !m.membersVisible() {
+		t.Fatal("the member panel must show for the auto-joined channel")
+	}
+	var rows []string
+	for _, row := range m.transcriptRowArea().lines {
+		rows = append(rows, ansiPattern.ReplaceAllString(row, ""))
+	}
+	rendered := strings.Join(rows, "\n")
+	if !strings.Contains(rendered, "hello from autojoin") {
+		t.Fatalf("the transcript must render the auto-joined channel:\n%s", rendered)
 	}
 }
 

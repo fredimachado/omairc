@@ -1068,6 +1068,96 @@ func TestSelectConversationRefreshesSidebarUnread(t *testing.T) {
 	}
 }
 
+// --- firstConversationClaimsOffStatus -------------------------------------
+
+// TestFirstConversationClaimsOffStatus pins the real-server connect order. The
+// shell opens the Status console when a profile is applied; the server then
+// auto-joins the configured channel, and that first conversation claims the
+// selection. Claiming it must close the console model, or the sidebar and member
+// panel follow the joined channel while the transcript stays on Status.
+func TestFirstConversationClaimsOffStatus(t *testing.T) {
+	c, clock := newController(t)
+	transport := addAndStart(t, c, clock, baseConfig("libera", "omairc"))
+	registerNetwork(t, transport, "omairc")
+
+	// Apply opens Status for the freshly registered session.
+	c.OpenStatus("libera")
+	if !c.ConsoleOpen() {
+		t.Fatal("ConsoleOpen = false on Status after Apply")
+	}
+	if c.SelectedTarget() != "" {
+		t.Fatalf("SelectedTarget = %q before any conversation", c.SelectedTarget())
+	}
+
+	// The server auto-joins the configured channel; nothing was selected yet,
+	// so this first conversation claims the selection.
+	inject(t, transport, ":omairc!u@h JOIN :#omarchy\r\n"+
+		":server 353 omairc = #omarchy :@omairc anna\r\n"+
+		":server 366 omairc #omarchy :End of NAMES\r\n"+
+		":anna!u@h PRIVMSG #omarchy :hello from autojoin\r\n")
+
+	if got := c.SelectedTarget(); got != "#omarchy" {
+		t.Fatalf("SelectedTarget = %q after auto-join, want #omarchy", got)
+	}
+	if c.ConsoleOpen() {
+		t.Fatal("ConsoleOpen = true after auto-join: the transcript would still show Status")
+	}
+	if !c.IsChannel() {
+		t.Fatal("IsChannel = false on the auto-joined channel")
+	}
+	if got := len(c.Members()); got != 2 {
+		t.Fatalf("Members = %d rows, want 2 (omairc, anna)", got)
+	}
+	bodies := messageBodies(c)
+	if len(bodies) == 0 || bodies[len(bodies)-1] != "hello from autojoin" {
+		t.Fatalf("transcript = %v, want the auto-joined channel's last line", bodies)
+	}
+}
+
+// TestClearedSelectionFallsBackToStatus pins the other half of the derived
+// visibility. Closing the last conversation clears the selection; with nothing
+// else to show, Status is the surface again even though the console model was
+// never re-opened.
+func TestClearedSelectionFallsBackToStatus(t *testing.T) {
+	c, clock := newController(t)
+	transport := addAndStart(t, c, clock, baseConfig("network-a", "omairc"))
+	registerNetwork(t, transport, "omairc")
+	inject(t, transport, ":omairc!u@h JOIN :#chan\r\n")
+
+	if c.ConsoleOpen() {
+		t.Fatal("ConsoleOpen = true after the first conversation claimed the selection")
+	}
+	c.ClearConversationSelection()
+	if !c.ConsoleOpen() {
+		t.Fatal("ConsoleOpen = false after clearing the selection, want the Status fallback")
+	}
+	if c.StatusConsoleOpen() {
+		t.Fatal("StatusConsoleOpen = true: clearing a selection must not open the console model")
+	}
+}
+
+// TestExplicitSelectionStillClosesConsole pins that the fallback's close does
+// not replace the ordinary path: selecting a conversation by hand keeps closing
+// the console and landing on the conversation surface.
+func TestExplicitSelectionStillClosesConsole(t *testing.T) {
+	c, clock := newController(t)
+	transport := addAndStart(t, c, clock, baseConfig("network-a", "omairc"))
+	registerNetwork(t, transport, "omairc")
+	inject(t, transport, ":omairc!u@h JOIN :#chan\r\n")
+
+	c.OpenStatus("network-a")
+	if !c.ConsoleOpen() {
+		t.Fatal("ConsoleOpen = false after OpenStatus")
+	}
+	c.SelectConversation("network-a", "#chan")
+	if c.ConsoleOpen() {
+		t.Fatal("ConsoleOpen = true after selecting the channel")
+	}
+	if got := c.SelectedTarget(); got != "#chan" {
+		t.Fatalf("SelectedTarget = %q, want #chan", got)
+	}
+}
+
 // --- typingEventRefreshesSidebarTyping ------------------------------------
 
 // TestTypingEventRefreshesSidebarTyping pins that a typing notification

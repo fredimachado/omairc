@@ -540,7 +540,7 @@ func (c *Controller) JoinChannelListRow(row int) bool {
 		return true
 	}
 	surface := irc.SurfaceConversation
-	if c.consoleOpen {
+	if c.StatusConsoleOpen() {
 		surface = irc.SurfaceStatus
 	}
 	return c.commands.Dispatch(irc.ParseCommand("/join "+channel), surface) == irc.OutcomeSent

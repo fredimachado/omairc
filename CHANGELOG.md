@@ -69,6 +69,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   first matching nick, and repeated Tabs cycle through the candidates. It used
   to require exactly one match, so Tab did nothing in a channel where two nicks
   shared a prefix (for example `s` in `#ricing` matching `sam` and `sol`).
+- The TUI transcript follows the first conversation to arrive instead of staying
+  on Status. Connecting opens Status with nothing selected, so a server's
+  auto-join was the first event to claim the selection, and the sidebar and
+  member panel switched to the joined channel while the transcript did not.
+  Claiming a conversation now closes the console model, and the Status surface
+  is derived the way the desktop client derives `consoleVisible`, so clearing the
+  selection also returns to Status.
 
 ## [1.0.4] - 2026-09-25
 

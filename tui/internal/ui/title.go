@@ -6,15 +6,15 @@ import (
 )
 
 // Title reproduces the Qt window title byte-for-byte from OmaircWindow.qml:
-// consoleVisible ? statusTitleText() : conversationTitleText(). Nothing
-// selected lands on the Status surface, exactly as the Qt shell does on first
-// run. A nil controller has no selection and no focused network, so it renders
-// "Omairc".
+// consoleVisible ? statusTitleText() : conversationTitleText(). ConsoleOpen
+// carries that derivation, including the fall back to Status when nothing is
+// selected, exactly as the Qt shell does on first run. A nil controller has no
+// selection and no focused network, so it renders "Omairc".
 func Title(ctrl *controller.Controller, conn *connection.Connection) string {
 	if ctrl == nil {
 		return "Omairc"
 	}
-	if ctrl.ConsoleOpen() || ctrl.SelectedTarget() == "" {
+	if ctrl.ConsoleOpen() {
 		return statusTitleText(ctrl, conn)
 	}
 	return conversationTitleText(ctrl, conn)

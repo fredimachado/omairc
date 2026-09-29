@@ -30,8 +30,14 @@ type Controller struct {
 	selected         *irc.ConversationKey
 	selectedTarget   string
 	consoleNetworkID string
-	consoleOpen      bool
-	networkOrder     []string
+	// consoleOpen is the raw Status-console model flag, mirroring
+	// IrcStatusConsole::isOpen. It is not the surface the transcript shows:
+	// ConsoleOpen() derives that the way OmaircWindow.qml's consoleVisible does,
+	// so a cleared selection falls back to Status. Only the two callers that
+	// mirror Qt's m_console.isOpen() reads (FocusedNetworkID and the /join
+	// dispatch surface) want the raw flag; they ask StatusConsoleOpen.
+	consoleOpen  bool
+	networkOrder []string
 	// networkCollapsed holds the sidebar collapse state. Collapse/reorder
 	// state lives on the controller (mirroring the Qt IrcConnection home)
 	// because the sidebar reads NetworkOrder()/Conversations(), not
@@ -662,6 +668,13 @@ func (c *Controller) Apply(event irc.Event) {
 		c.selected = &key
 		c.selectedTarget = conversation.Target
 		c.reducer.MarkSelected(key)
+		// Claiming a conversation means the transcript leaves Status, so the
+		// console model closes here exactly as it does in selectConversation.
+		// The shell opens Status when a profile is applied (before any
+		// conversation exists), and a real server's auto-join is what first
+		// reaches this branch; without the close the sidebar and member panel
+		// would follow the joined channel while the transcript stayed on Status.
+		c.consoleOpen = false
 	}
 	c.adoptReducerSelection()
 
@@ -906,10 +919,12 @@ func (c *Controller) SelectedConversationID() string {
 }
 
 // FocusedNetworkID returns the network the identity footer and connection
-// status follow: the Status surface when it is open, else the selected
-// conversation's network, else the last Status network.
+// status follow: the Status console when its model is open, else the selected
+// conversation's network, else the last Status network. It reads the raw console
+// flag, mirroring IrcController::focusedNetworkId's m_console.isOpen()
+// (src/irc/irccontroller.cpp:606-612).
 func (c *Controller) FocusedNetworkID() string {
-	if c.consoleOpen {
+	if c.StatusConsoleOpen() {
 		return c.consoleNetworkID
 	}
 	if c.selected != nil {
@@ -970,9 +985,26 @@ func (c *Controller) OpenStatus(networkID string) {
 	c.notifySelectionChanged()
 }
 
-// ConsoleOpen reports whether the Status surface is open. The window title and
-// the shell use it to decide between the Status and conversation surfaces.
-func (c *Controller) ConsoleOpen() bool { return c.consoleOpen }
+// ConsoleOpen reports whether the Status surface is on screen. It mirrors
+// OmaircWindow.qml's consoleVisible:
+//
+//	networkConsole ? (networkConsole.open || irc.selectedTarget.length === 0) : false
+//
+// The raw console flag alone is not enough. A cleared selection leaves nothing
+// else to show, so Status is the surface again; and selecting a conversation
+// closes the console (see SelectConversation and the first-conversation fallback
+// in Apply), so the transcript follows the conversation. Every view predicate
+// reads this derived value; only the callers that mirror Qt's m_console.isOpen()
+// reads want the raw flag, via StatusConsoleOpen.
+func (c *Controller) ConsoleOpen() bool {
+	return c.consoleOpen || c.SelectedTarget() == ""
+}
+
+// StatusConsoleOpen reports the raw Status-console model flag, mirroring
+// IrcStatusConsole::isOpen. It stays true after a cleared selection, exactly as
+// in the Qt client, so the focused network still follows the console and a
+// command typed on the console surface is still dispatched as a Status command.
+func (c *Controller) StatusConsoleOpen() bool { return c.consoleOpen }
 
 // ClearConversationSelection forgets the selection, leaving the Status surface
 // as the focused network. It mirrors IrcController::clearConversationSelection
