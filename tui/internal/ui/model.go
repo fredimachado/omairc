@@ -1086,9 +1086,12 @@ func fitBlock(content string, width, height int) string {
 // membersVisible reports whether the member column fits and applies. It is
 // shown only for channels, matching the Qt panel, and Ctrl+Shift+M can hide it
 // for good. The toggle is window-level, so it survives channel switches and is
-// moot on a direct message.
+// moot on a direct message. Status hides it too: Qt's MembersColumn gates on
+// !consoleVisible, and a selection retained under the Status console (for
+// example after connecting a second network) left the channel's panel beside
+// the console transcript.
 func (m *Model) membersVisible() bool {
-	if m.ctrl == nil || !m.ctrl.IsChannel() {
+	if m.ctrl == nil || !m.ctrl.IsChannel() || m.ctrl.ConsoleOpen() {
 		return false
 	}
 	return m.width >= membersMinTotal && !m.membersHidden

@@ -129,6 +129,33 @@ func TestSideColumnsRunBesideTheComposer(t *testing.T) {
 	}
 }
 
+// TestStatusConsoleHidesMembersColumn pins the Qt parity of MembersColumn's
+// !consoleVisible gate (src/OmaircWindow.qml). Opening Status keeps the last
+// channel as the controller's selection, so IsChannel() stays true; the member
+// column must still hide. Connecting a second network was the visible symptom:
+// applying a profile opens Status while the previous channel's panel stayed on
+// screen beside the console transcript.
+func TestStatusConsoleHidesMembersColumn(t *testing.T) {
+	m := seededModel(t)
+	if !m.membersVisible() {
+		t.Fatal("precondition: seeded channel must show the member column")
+	}
+	widthWithMembers := m.transcriptWidth()
+	m.toggleStatus()
+	if !m.ctrl.ConsoleOpen() {
+		t.Fatal("Ctrl+` must open the Status console")
+	}
+	if m.membersVisible() {
+		t.Fatal("Status console must hide the member column")
+	}
+	if got := m.transcriptWidth(); got <= widthWithMembers {
+		t.Fatalf("transcript width = %d, want it to grow past %d once the member column hides", got, widthWithMembers)
+	}
+	if strings.Contains(ansiPattern.ReplaceAllString(m.View().Content, ""), "ONLINE - ") {
+		t.Fatalf("Status transcript still renders the member column:\n%s", m.View().Content)
+	}
+}
+
 // TestSlashMenuFloatsWithoutResizingColumns pins that opening the
 // slash-completion menu does not resize the columns. The menu used to be a band
 // stacked between the body and the composer, so it took its rows from the column
