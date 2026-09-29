@@ -91,6 +91,20 @@ test "$override_got" = "omairc-tui $OVERRIDE_VERSION" || {
 # Leave the tree with a normal build.
 "$TUI/bin/build"
 
+# Host-arch static archive. A dynamic link or a missed ldflag fails the gate.
+"$TUI/bin/package"
+host_os="$(go env GOHOSTOS)"
+host_arch="$(go env GOHOSTARCH)"
+case "$host_os" in
+  windows) archive_ext=zip ;;
+  *) archive_ext=tar.gz ;;
+esac
+archive="$TUI/dist/omairc-tui-${VERSION}-${host_os}-${host_arch}.${archive_ext}"
+test -f "$archive" || {
+  echo "missing static archive $archive" >&2
+  exit 1
+}
+
 # PTY parity gate over the freshly built shell: launch it under a real PTY and
 # assert the OSC title, the seeded sidebar text, and a rendered screenshot.
 # Windows uses ConPTY (creack/pty) and AF_UNIX sockets on Win10+; the Linux

@@ -47,6 +47,36 @@ sudo pacman -Sy omairc
 
 On Omarchy you can also run `omarchy pkg add omairc`.
 
+The terminal client, `omairc-tui`, ships as a separate static binary on the same GitHub release as the Qt app; `install.sh` still installs the Qt client only. The installs below need a release that carries `omairc-tui` assets, so check the [latest release](https://github.com/fredimachado/omairc/releases/latest) first.
+
+Arch, once that pacman repository is configured:
+
+```sh
+sudo pacman -S omairc-tui
+```
+
+With Go 1.25 or newer. `@vX.Y.Z` is the module version; the git tag on that same commit is `tui/vX.Y.Z`:
+
+```sh
+go install github.com/fredimachado/omairc/tui/cmd/omairc-tui@vX.Y.Z
+```
+
+Homebrew, from this same tap:
+
+```sh
+brew tap fredimachado/omairc https://github.com/fredimachado/omairc
+brew install fredimachado/omairc/omairc-tui
+```
+
+Scoop:
+
+```sh
+scoop bucket add omairc https://github.com/fredimachado/omairc
+scoop install omairc-tui
+```
+
+Or unzip `omairc-tui-<version>-windows-amd64.zip` from the [GitHub release](https://github.com/fredimachado/omairc/releases/latest) and run `omairc-tui.exe` in Windows Terminal. There is no setup program for the terminal client.
+
 From source:
 
 ```sh
@@ -60,7 +90,7 @@ Run that as your user. `makepkg` calls `sudo` when it needs to.
 Or install a [release package](https://github.com/fredimachado/omairc/releases/latest) directly:
 
 ```sh
-sudo pacman -U omairc-*.pkg.tar.zst
+sudo pacman -U omairc-<version>-1-x86_64.pkg.tar.zst
 ```
 
 Depends on `qt6-base`, `qt6-declarative`, `qt6-svg`, `qt6-wayland`, `qtkeychain-qt6`, and `xdg-desktop-portal`.
@@ -117,7 +147,7 @@ bin/test-live
 
 A native Windows build works. It is not the focus.
 
-Each version tag publishes `omairc-*-windows-x64.zip` and `omairc-*-windows-x64-setup.exe` on the [GitHub release](https://github.com/fredimachado/omairc/releases/latest). The installer is per-user by default. Unzip and run `omairc.exe` for a portable tree.
+Each version tag publishes `omairc-<version>-windows-x64.zip` and `omairc-<version>-windows-x64-setup.exe` on the [GitHub release](https://github.com/fredimachado/omairc/releases/latest). The installer is per-user by default. Unzip and run `omairc.exe` for a portable tree.
 
 ```bat
 bin\build.bat
@@ -150,7 +180,7 @@ Once Homebrew carries the cask:
 brew install --cask omairc
 ```
 
-Each version tag also publishes `omairc-*-macos-arm64.zip` and `omairc-*-macos-x64.zip` on the [GitHub release](https://github.com/fredimachado/omairc/releases/latest).
+Each version tag also publishes `omairc-<version>-macos-arm64.zip` and `omairc-<version>-macos-x64.zip` on the [GitHub release](https://github.com/fredimachado/omairc/releases/latest).
 
 From the repo:
 

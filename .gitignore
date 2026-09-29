@@ -23,6 +23,10 @@ test-artifacts/
 .arena-omairc-pacman/
 aqtinstall.log
 
+# tui/bin/package writes release archives here. tui/bin/package-macos writes
+# its local .app here too.
+/tui/dist/
+
 # tui/bin/build writes both module binaries into the module's bin/ dir.
 /tui/bin/omairc-tui
 /tui/bin/omairc-tui.exe

@@ -1,0 +1,42 @@
+# Maintainer: Fredi Machado
+pkgname=omairc-tui
+# pkgver is read from version.pri so a release bump is a one-line change.
+# The file lives at the repository root; resolve it from this PKGBUILD so
+# makepkg and `source ./packaging/tui/PKGBUILD` agree.
+_omairc_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+pkgver=$(awk '/^VERSION / { print $3; exit }' "$_omairc_root/version.pri")
+pkgrel=1
+pkgdesc='Keyboard-first IRC client for the terminal'
+arch=('x86_64')
+url='https://github.com/fredimachado/omairc'
+license=('MIT')
+options=(!debug)
+makedepends=('go')
+source=("omairc-$pkgver.tar.gz::https://github.com/fredimachado/omairc/archive/refs/tags/v$pkgver.tar.gz")
+sha256sums=('SKIP')
+
+build() {
+  cd "$srcdir/omairc-$pkgver/tui"
+  local go_ver major minor rest
+  go_ver="$(go env GOVERSION)"
+  go_ver="${go_ver#go}"
+  major="${go_ver%%.*}"
+  rest="${go_ver#*.}"
+  minor="${rest%%.*}"
+  if [ "$major" -lt 1 ] || { [ "$major" -eq 1 ] && [ "$minor" -lt 25 ]; }; then
+    echo "go $go_ver is older than 1.25" >&2
+    return 1
+  fi
+  export CGO_ENABLED=0
+  export GOTOOLCHAIN=local
+  local build_version="${OMAIRC_BUILD_VERSION:-$pkgver}"
+  go build -trimpath \
+    -ldflags "-s -w -X github.com/fredimachado/omairc/tui/internal/version.Value=${build_version}" \
+    -o omairc-tui ./cmd/omairc-tui
+}
+
+package() {
+  cd "$srcdir/omairc-$pkgver"
+  install -Dm755 tui/omairc-tui "$pkgdir/usr/bin/omairc-tui"
+  install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}

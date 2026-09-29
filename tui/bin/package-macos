@@ -1,5 +1,7 @@
 #!/usr/bin/env sh
-# Build a minimal omairc-tui.app bundle around the Go binary.
+# Local helper: wrap a host build in a minimal omairc-tui.app.
+# The release artifact is the static binary from tui/bin/package, not this
+# bundle. Release jobs do not call this script.
 set -eu
 
 ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)"

@@ -11,8 +11,13 @@ When the two disagree about the shared contract, the root file wins.
 - The `go` directive is `go 1.25.0`, the patch-level minimum that
   `github.com/charmbracelet/ultraviolet` (pulled in by
   `charm.land/bubbletea/v2` v2.0.9) declares. Do not lower it.
-- The module path is domain-qualified so Phase 12's `go install` for Linux
-  works without a rename.
+  `tui/bin/build`, `tui/bin/package`, and `packaging/tui/PKGBUILD` all set
+  `GOTOOLCHAIN=local`, so a build on an older toolchain fails loudly instead
+  of silently downloading a different one.
+- The module path is domain-qualified so `go install` works. The module
+  version is the git tag `tui/vX.Y.Z` on the same commit as `vX.Y.Z`.
+  GitHub's `v*` filter does not match `tui/v*`, so that tag does not open
+  a second release.
 - Layout: `cmd/omairc-tui/` (flags and `main`) and
   `cmd/control-omairc-tui/` (its CLI), `internal/irc/` (portable core,
   mirrors `src/irc/`), `internal/session/` (transport, SCRAM, the session
@@ -36,7 +41,8 @@ When the two disagree about the shared contract, the root file wins.
   `internal/gate/` (the PTY parity driver: VT grid, OSC title capture, key
   writer, screenshot), `internal/crashlog/` (the durable crash record),
   `internal/version/` (injected build version), and
-  `bin/` (gate scripts).
+  `bin/` (gate scripts, plus `bin/writezip` — the Windows zip writer that
+  `bin/package` calls).
 - `tui/bin/omairc-tui` is a build artifact and is gitignored.
 
 ## Package boundaries
@@ -150,8 +156,8 @@ version the moment its package is first imported — never earlier, because
 - `charm.land/bubbles/v2` v2.1.0 — imported in Phase 4.
 - `github.com/creack/pty` v1.1.24 — imported in Phase 4 by `internal/gate`
   for Unix PTYs (`pty_unix.go`).
-- `github.com/aymanbagabas/go-pty` v0.2.3 — imported in Phase 12 by
-  `internal/gate` for Windows ConPTY (`pty_windows.go`).
+- `github.com/aymanbagabas/go-pty` v0.2.3 — imported by `internal/gate`
+  for Windows ConPTY (`pty_windows.go`).
 - `github.com/ergochat/irc-go` (`ircmsg`, `ircreader`, `ircfmt`, `ircutils`)
   — still not imported. The wire layer stays a hand-port of `src/irc/` so the
   byte-for-byte behavior and the mirrored test matrices stay the contract.
@@ -168,8 +174,10 @@ Omarchy/Linux, macOS, and Windows are supported targets. Keep the core
 platform-neutral and defer OS specifics behind `//go:build` files in
 `internal/`, never inline in `internal/irc`:
 
-- macOS: `tui.yml` runs on `macos-latest`; `tui/bin/package-macos` emits a
-  minimal `omairc-tui.app` around the Go binary. Storage uses
+- macOS: `tui.yml` runs on `macos-latest`. The release artifact is a
+  static `omairc-tui` binary from `tui/bin/package` (`CGO_ENABLED=0`,
+  `-trimpath`). `tui/bin/package-macos` is a local `.app` helper; release
+  jobs do not call it. Storage uses
   `~/Library/Preferences` roots (`paths_darwin.go`) and the Keychain
   (`secretservice_darwin.go`, service `omairc`, account=key name). Notifications
   use osascript in `notify_darwin.go`; URLs open through `open` in
@@ -329,13 +337,27 @@ the screen.
 
 ## Version
 
-The version comes only from `version.pri` through `bin/version`. No Go file
-hardcodes a version; `internal/version.Value` is injected at link time by
-`tui/bin/build`, and `bin/check-conventions` gates both rules.
+The version comes only from `version.pri` through `bin/version`.
+`internal/version.Value` is injected at link time by `tui/bin/build` and
+`tui/bin/package`. `bin/check-conventions` keeps any other hard-coded
+version out of Go source. The sentinel `0.0.0-dev` lives only in
+`internal/version/version.go`.
+
+`go install` does not run those scripts, so the sentinel stays. That file
+is the one exception: when `Value` is still `0.0.0-dev`,
+`debug.ReadBuildInfo` supplies `Main.Version`. A module tag `v1.0.4`
+(git tag `tui/v1.0.4`) displays as `1.0.4`. A pseudo-version is shown
+as-is. This is not a second version source; nothing in Go parses
+`version.pri`. `ReadBuildInfo` is allowed only in that file.
 
 A release bump touches `version.pri`, `CHANGELOG.md`, and
 `tests/test_derive_build_versions.py` once, and both binaries pick it up
-atomically. No TUI file needs editing for a version bump.
+atomically. Tag `vX.Y.Z` and `tui/vX.Y.Z` on that commit. No TUI source
+file needs editing for a version bump. Do not hand-edit
+`Formula/omairc-tui.rb` or `bucket/omairc-tui.json`: the tag job rewrites
+them. Their committed hashes are placeholders until a release carries the
+archives. `tui/bin/package` pins ownership, order, and mtime, so a given
+commit and toolchain produce byte-identical archives.
 
 ## CI and review
 
@@ -344,8 +366,17 @@ atomically. No TUI file needs editing for a version bump.
 - Run `tui/bin/test` (conventions, vet, tests, build, CLI contract) and the
   root `bin/test` before opening a pull request. `tui/bin/test` is also wired
   into root `bin/test` and skipped when `go` is absent.
-- `.github/workflows/tui.yml` is the Linux gate. Do not add a notification
-  sink or bot.
+- `.github/workflows/tui.yml` is the Linux gate. On `v*` tags and
+  `workflow_dispatch` it cross-compiles static archives with
+  `tui/bin/package` and uploads them onto the GitHub Release that
+  `release-package.yml` creates. Pull requests and master merges do not
+  upload archives, but the ubuntu leg of the `tui` matrix cross-compiles the
+  five release targets on every run, so a broken cross-build fails the pull
+  request instead of the tag. The same workflow dry-builds
+  `packaging/tui/PKGBUILD` in an Arch container on pull requests, master,
+  and dispatch, so a PKGBUILD regression fails the pull request instead of
+  the tag job that also creates the release. Do not add a notification
+  sink, a new workflow, or a bot.
 - A pull request whose whole diff is TUI-only is gated by `tui.yml` alone:
   `test.yml` ignores `tui/**`, so the Qt app is not rebuilt and the C++ suite
   does not run for the Go port. That holds because `tui/bin/test` runs the

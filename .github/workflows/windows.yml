@@ -351,11 +351,11 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "gh release view $tag failed" }
           foreach ($asset in @($assetList)) {
             if (-not $asset) { continue }
-            if ($asset -like 'omairc-*-windows-x64.zip' -and $asset -ne $zipName) {
+            if ($asset -like 'omairc-[0-9]*-windows-x64.zip' -and $asset -ne $zipName) {
               gh release delete-asset $tag $asset --yes
               if ($LASTEXITCODE -ne 0) { throw "Failed to delete stale asset $asset" }
             }
-            if ($asset -like 'omairc-*-windows-x64-setup.exe' -and $asset -ne $setupName) {
+            if ($asset -like 'omairc-[0-9]*-windows-x64-setup.exe' -and $asset -ne $setupName) {
               gh release delete-asset $tag $asset --yes
               if ($LASTEXITCODE -ne 0) { throw "Failed to delete stale asset $asset" }
             }

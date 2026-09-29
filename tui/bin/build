@@ -14,6 +14,11 @@ ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)"
 TUI="$ROOT/tui"
 cd "$TUI"
 
+# The module requires go 1.25.0. Pin the toolchain so a build fails loudly
+# instead of silently downloading a different one, matching
+# packaging/tui/PKGBUILD and tui/bin/package.
+export GOTOOLCHAIN=local
+
 VERSION="$("$ROOT/bin/version")"
 BUILD_VERSION="${OMAIRC_BUILD_VERSION:-$VERSION}"
 LDFLAGS="-X github.com/fredimachado/omairc/tui/internal/version.Value=$BUILD_VERSION"

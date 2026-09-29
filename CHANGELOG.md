@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- The terminal client ships as a static `omairc-tui` binary on the same
+  GitHub release as the Qt app. Arch installs it with `pacman -S omairc-tui`
+  after the existing repository is configured. `go install`, a Homebrew
+  formula, and a Scoop manifest point at that same tag. `install.sh` still
+  installs the Qt client.
 - Native Windows toast notifications for mentions and direct messages. A click
   opens the conversation that raised it, even when the window was closed.
 - The TUI writes a crash log to `<state>/omairc/omairc-tui.log`, beside the Qt
