@@ -139,7 +139,11 @@ type Model struct {
 	composerHistory      []string
 	composerHistoryIndex int
 	composerHistoryDraft string
-	memberFocus          bool
+	// lastComposerText is the composer text last reported to the controller for
+	// the outbound typing hint. Update's deferred notifyComposerTyping compares
+	// against it, so only a real change publishes.
+	lastComposerText string
+	memberFocus      bool
 	memberIndex          int
 	shortcutsOpen        bool
 	aboutOpen            bool
@@ -417,6 +421,10 @@ func (m *Model) ensureAvatars() {
 // Connect sheet and the overlays are modal; otherwise the navigation chords
 // run before the rest reaches the composer.
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	// Every composer mutation happens inside this call, so one deferred compare
+	// covers them all. It reports a real text change to the controller for the
+	// outbound typing hint (see notifyComposerTyping).
+	defer m.notifyComposerTyping()
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width

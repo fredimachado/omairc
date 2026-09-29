@@ -2,6 +2,8 @@
 
 Typing is the bouncing ellipsis that shows someone is composing. On a channel it sits beside that member's nick in the member panel. On a direct message it sits at the end of the transcript on its own line, indented to the body column. When the peer spoke last **in the current displayed minute** the dots follow their message directly, with no repeated nickname; otherwise the peer's avatar and nick header come back above them. The gate is the minute, not just the author, the same rule that joins consecutive transcript rows: a peer who spoke at an earlier minute gets the nickname back, and the header reappears on its own if the minute rolls over while they keep typing. The dots never share a line with the peer's message text. It is DM-only in the transcript and stays visible through a `typing=paused` hold of 30s (IRCv3 typing client-tag SHOULD). Mock UI shows it for `anna` on `#omarchy` and the `anna` DM. A live session hides it unless the server granted `message-tags`.
 
+The mirror image is outbound: editing the composer in a conversation on a network that granted `message-tags` sends `@+typing=active TAGMSG <target>`, paced to at most one per target every 3s. A non-live line (a slash command, or clearing the composer) withdraws a hint that target was publishing with `@+typing=done TAGMSG <target>`, and a sent message suppresses that done. Moving to another conversation withdraws the previous target's hint. The Status composer never publishes in either client.
+
 ## Sub-features
 
 - `typing-member` shows bouncing dots beside a channel member who is composing (`anna` on seeded `#omarchy`).

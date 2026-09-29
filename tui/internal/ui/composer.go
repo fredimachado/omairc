@@ -138,6 +138,26 @@ func (m *Model) composerCursor(row int) *tea.Cursor {
 	return cursor
 }
 
+// notifyComposerTyping reports the composer's current text to the controller so
+// it can publish an outbound typing hint for the selected conversation. It
+// mirrors OmaircWindow.qml's handleComposerText -> irc.notifyComposerText, but
+// compares against the last value so it fires only on a real change, the way
+// QML's textChanged does. Update defers it, so no composer mutation needs its
+// own call site: a keystroke, history recall, nick completion, a restored
+// draft, a slash insertion, and the post-send clear are all covered by the one
+// place the runtime delivers every message.
+func (m *Model) notifyComposerTyping() {
+	if m == nil || m.ctrl == nil {
+		return
+	}
+	value := m.composer.Value()
+	if value == m.lastComposerText {
+		return
+	}
+	m.lastComposerText = value
+	m.ctrl.NotifyComposerText(value)
+}
+
 // composerHistoryLimit is how many sent lines the Up/Down recall keeps.
 const composerHistoryLimit = 50
 

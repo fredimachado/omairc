@@ -274,6 +274,35 @@ func (c *Controller) selectedIsCloseableDirect() bool {
 	return conversation == nil || !conversation.IsChannel()
 }
 
+// --- Composer typing ------------------------------------------------------
+
+// NotifyComposerText records one composer text change and publishes an outbound
+// typing hint for the selected conversation. A live message (plain text or
+// /me) sends typing=active and remembers the target; anything else withdraws a
+// hint that target was publishing with typing=done. It mirrors
+// IrcController::notifyComposerText (src/irc/irccontroller.cpp:832-851). The
+// Status console and a network without message-tags never publish.
+func (c *Controller) NotifyComposerText(text string) {
+	if c.StatusConsoleOpen() {
+		return
+	}
+	s := c.selectedSession()
+	if s == nil || c.selected == nil || !c.HasTyping() {
+		return
+	}
+	target := c.SelectedTarget()
+	if irc.ParseCommand(text).IsLiveMessage() {
+		s.SendTyping(target, irc.TypingActive)
+		c.typingTarget = target
+		return
+	}
+	if c.typingTarget != target {
+		return
+	}
+	s.SendTyping(target, irc.TypingDone)
+	c.typingTarget = ""
+}
+
 // --- Send and submit ------------------------------------------------------
 
 // SendMessage parses one composer submission and dispatches it on the
@@ -344,7 +373,6 @@ func (c *Controller) sendSelectedMessageOutcome(body string) irc.CommandOutcome 
 	c.rememberOpenDirect(s.NetworkID(), target)
 	c.replies.NoteNickDelivery(s.NetworkID(), target)
 	c.echoLocal(irc.KindMessage, body)
-	c.typingTarget = ""
 	c.autoaway.NoteLocalActivity()
 	c.unawayAfterChat(s)
 	return irc.OutcomeSent

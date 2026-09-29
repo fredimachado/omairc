@@ -52,6 +52,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The TUI composer publishes typing again: editing a channel or direct message
+  on a network that granted `message-tags` sends `+typing=active` TAGMSG and
+  clearing or sending the line withdraws it, matching the desktop client. The
+  session already built the frames, but nothing in the shell ever reported
+  composer text to the controller, so no hint reached the wire.
 - The TUI direct-message typing dots keep their own line under the peer's
   message instead of being appended to the end of it. A wrapped body left them
   glued to the last word, as if the text were part of the message. Grouping still

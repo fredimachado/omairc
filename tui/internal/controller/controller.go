@@ -944,6 +944,18 @@ func (c *Controller) SelectConversation(networkID, target string) {
 	c.consoleOpen = false
 
 	key := c.reducer.ConversationKey(networkID, target)
+	// Moving to a different conversation withdraws a hint the previous target
+	// was still publishing. It mirrors IrcController::selectConversation
+	// (src/irc/irccontroller.cpp:1079-1086).
+	changed := c.selected == nil ||
+		c.selected.NetworkID != key.NetworkID ||
+		c.selected.NormalizedTarget != key.NormalizedTarget
+	if changed && c.typingTarget != "" {
+		if previous := c.selectedSession(); previous != nil {
+			previous.SendTyping(c.typingTarget, irc.TypingDone)
+		}
+		c.typingTarget = ""
+	}
 	c.selected = &key
 	c.selectedTarget = target
 	features := c.reducer.ServerFeatures(networkID)
@@ -1010,6 +1022,15 @@ func (c *Controller) StatusConsoleOpen() bool { return c.consoleOpen }
 // as the focused network. It mirrors IrcController::clearConversationSelection
 // (src/irc/irccontroller.cpp:1252-1271).
 func (c *Controller) ClearConversationSelection() {
+	// Clearing the selection withdraws a hint the previous target was still
+	// publishing. It mirrors IrcController::clearConversationSelection
+	// (src/irc/irccontroller.cpp:1255-1260).
+	if c.typingTarget != "" {
+		if previous := c.selectedSession(); previous != nil {
+			previous.SendTyping(c.typingTarget, irc.TypingDone)
+		}
+		c.typingTarget = ""
+	}
 	c.selected = nil
 	c.selectedTarget = ""
 	c.reducer.ClearSelection()
