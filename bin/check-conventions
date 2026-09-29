@@ -1071,7 +1071,8 @@ def check_tui_install_script():
     path = ROOT / "install-tui.sh"
     if not path.is_file():
         return ["install-tui.sh: missing the portable terminal-client installer"]
-    if not path.stat().st_mode & 0o111:
+    # Git records 100755, but a Windows checkout cannot show it; skip there.
+    if sys.platform != "win32" and not path.stat().st_mode & 0o111:
         problems.append("install-tui.sh: must be executable")
     text = path.read_text(encoding="utf-8", errors="replace")
     required = (
