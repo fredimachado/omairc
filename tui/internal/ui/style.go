@@ -58,8 +58,8 @@ type Styles struct {
 	// TopicBar is the band behind the transcript header. The topic caption and
 	// its right-aligned tail sit on it, so the conversation's topic reads as a
 	// title strip rather than another transcript line. It is mixed from the page
-	// toward the theme accent: far enough to register as a surface, and clear of
-	// SurfaceRaised so the "N PEOPLE" chip still stands out of the band.
+	// toward the theme accent: far enough to register as a surface, faint enough
+	// to stay background.
 	TopicBar lipgloss.Style
 
 	// Phase 8 member chrome. The presence dot is green when available and
@@ -71,10 +71,6 @@ type Styles struct {
 	MemberAccount        lipgloss.Style
 	MemberStatus         lipgloss.Style
 	MemberTyping         lipgloss.Style
-
-	// PeopleCount is the transcript header's "N PEOPLE" label beside the
-	// topic (ConversationColumn.qml's people control).
-	PeopleCount lipgloss.Style
 
 	Prompt   lipgloss.Style
 	Composer lipgloss.Style
@@ -258,8 +254,6 @@ func buildStyles(colors theme.Colors) Styles {
 		MemberAccount:        base.Foreground(colors.TextMuted),
 		MemberStatus:         base.Foreground(colors.TextMuted),
 		MemberTyping:         base.Foreground(colors.TextMuted),
-
-		PeopleCount: base.Bold(true).Foreground(colors.TextMuted),
 
 		Prompt:   base.Foreground(colors.Accent),
 		Composer: base,

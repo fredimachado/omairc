@@ -159,10 +159,13 @@ func TestTranscriptHeaderStaysPinned(t *testing.T) {
 	if !m.transcriptFollowEnd {
 		t.Fatal("the seeded view starts pinned to the tail")
 	}
-	for _, want := range []string{"A cozy corner for Omarchy users and builders.", "12 PEOPLE"} {
+	for _, want := range []string{"A cozy corner for Omarchy users and builders."} {
 		if !strings.Contains(content, want) {
 			t.Fatalf("pinned header missing %q:\n%s", want, content)
 		}
+	}
+	if strings.Contains(content, "PEOPLE") {
+		t.Fatalf("the transcript header must not repeat the member count:\n%s", content)
 	}
 	// The header is the column's first rendered row, above every message.
 	firstRow := strings.SplitN(content, "\n", 2)[0]
