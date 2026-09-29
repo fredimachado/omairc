@@ -332,6 +332,28 @@ func TestIdentityFooterGivesTheNickItsOwnRow(t *testing.T) {
 	}
 }
 
+// TestIdentityFooterHasARuleAboveTheNick pins the divider the Qt identityFooter
+// draws along its top edge: a full-width rule sits directly above the nick row
+// and separates the roster from the identity block, so the nick is not flush
+// with the last conversation.
+func TestIdentityFooterHasARuleAboveTheNick(t *testing.T) {
+	m := seededModel(t)
+	const width = 30
+	rows := strings.Split(ansiPattern.ReplaceAllString(
+		m.sidebarView(width, m.bodyHeight()), ""), "\n")
+	if len(rows) < 3 {
+		t.Fatalf("sidebar = %d rows, too short for the footer block", len(rows))
+	}
+	rule := rows[len(rows)-3]
+	nickRow := rows[len(rows)-2]
+	if strings.TrimRight(rule, " ") != strings.Repeat("─", width) {
+		t.Fatalf("row above the nick is not a rule: %q", rule)
+	}
+	if !strings.Contains(nickRow, "fred") {
+		t.Fatalf("the rule must sit directly above the nick: %q", nickRow)
+	}
+}
+
 // TestComposerInteriorHasNoSurfaceFill pins that the box's interior carries no
 // fill: the composer is framed text over the window background, not a filled
 // block. The border still marks its edges and the prompt still starts past the
@@ -446,33 +468,42 @@ func TestSidebarSeparatesNetworks(t *testing.T) {
 }
 
 // TestSidebarSeparatorCount pins that a roster of N networks draws exactly N-1
-// rules: one above each network after the first, never a leading one.
+// network rules: one above each network after the first, never a leading one.
+// The identity footer adds one more rule above the nick, so the net count is N.
 func TestSidebarSeparatorCount(t *testing.T) {
 	m := seededModel(t)
 	const width = 30
+	rows := strings.Split(m.sidebarView(width, m.bodyHeight()), "\n")
+	plain := make([]string, len(rows))
+	rule := strings.Repeat("─", width)
 	rules := 0
-	for _, row := range strings.Split(m.sidebarView(width, m.bodyHeight()), "\n") {
-		if strings.TrimRight(ansiPattern.ReplaceAllString(row, ""), " ") == strings.Repeat("─", width) {
+	for index, row := range rows {
+		plain[index] = strings.TrimRight(ansiPattern.ReplaceAllString(row, ""), " ")
+		if plain[index] == rule {
 			rules++
 		}
 	}
-	if want := len(m.sidebarNetworkIDs()) - 1; rules != want {
-		t.Fatalf("sidebar separators = %d, want %d", rules, want)
+	// The footer rule is the last rule in the column, directly above the nick.
+	if len(plain) < 3 || plain[len(plain)-3] != rule {
+		t.Fatalf("no rule above the identity nick:\n%s", strings.Join(plain, "\n"))
 	}
-	if rules == 0 {
+	if want := len(m.sidebarNetworkIDs()) - 1; rules-1 != want {
+		t.Fatalf("network separators = %d, want %d", rules-1, want)
+	}
+	if len(m.sidebarNetworkIDs()) < 2 {
 		t.Fatal("seeded roster must have more than one network to separate")
 	}
 }
 
-// TestNetworkSeparatorWidth pins the rule renderer: a rule reaches the column
+// TestSidebarDividerWidth pins the rule renderer: a rule reaches the column
 // width, and a zero width yields no line so a tiny column never draws a stray
 // glyph.
-func TestNetworkSeparatorWidth(t *testing.T) {
+func TestSidebarDividerWidth(t *testing.T) {
 	m := seededModel(t)
-	if got := ansiPattern.ReplaceAllString(m.networkSeparator(20), ""); got != strings.Repeat("─", 20) {
+	if got := ansiPattern.ReplaceAllString(m.sidebarDivider(20), ""); got != strings.Repeat("─", 20) {
 		t.Fatalf("separator = %q, want a 20-cell rule", got)
 	}
-	if got := m.networkSeparator(0); got != "" {
+	if got := m.sidebarDivider(0); got != "" {
 		t.Fatalf("zero-width separator = %q, want empty", got)
 	}
 }

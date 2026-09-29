@@ -44,7 +44,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The TUI build version moved from the sidebar identity footer to the bottom
   right of the shell footer, trailing the shortcut list.
 - The TUI sidebar identity footer is two rows: the initials chip and nick on
-  their own row, with the presence word and inbox pill indented below.
+  their own row, with the presence word and inbox pill indented below. A divider
+  rule above the nick mirrors the desktop identity footer.
 - The TUI typing indicator animates in all three surfaces — the member panel,
   the direct-message transcript footer, and the sidebar direct row — with the
   Bubbles Points spinner instead of a static ellipsis.

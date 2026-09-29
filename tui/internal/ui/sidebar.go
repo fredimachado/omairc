@@ -91,7 +91,7 @@ func (m *Model) sidebarView(width, height int) string {
 		// Networks are separate blocks: a blank row then a rule, above the
 		// second onward, so the roster never reads as one continuous list.
 		if index > 0 {
-			roster = append(roster, "", m.networkSeparator(width))
+			roster = append(roster, "", m.sidebarDivider(width))
 		}
 		name := m.sidebarNetworkDisplayName(networkID)
 		roster = append(roster, m.networkHeader(name, networkID))
@@ -116,11 +116,15 @@ func (m *Model) sidebarView(width, height int) string {
 	}
 	// Reserve the bottom rows for the identity footer: clamp the roster to what
 	// is left and append the footer block, so the column is exactly height lines.
-	// The footer gives the nick its own row, so it is two rows when the column
-	// has room and one on a very short sidebar.
+	// The footer gives the nick its own row and, when the column can spare one
+	// more, draws a rule above the nick that mirrors ServerListColumn.qml's
+	// identityFooter divider. A sidebar too short for the rule drops it before
+	// the presence row; a tiny one keeps only the nick.
 	footer := m.identityFooterLines(width)
 	if len(footer) > height {
 		footer = footer[:clampInt(height, 0, len(footer))]
+	} else if len(footer) < height {
+		footer = append([]string{m.sidebarDivider(width)}, footer...)
 	}
 	lines := fitLines(roster, height-len(footer), false)
 	lines = append(lines, footer...)
@@ -183,10 +187,11 @@ func (m *Model) identityFooterLines(width int) []string {
 	return []string{nickLine, statusLine}
 }
 
-// networkSeparator is the rule drawn between two network sections in the
-// sidebar. It reaches the column width like the section-header rule, so the
-// divider and the section titles share one visual language.
-func (m *Model) networkSeparator(width int) string {
+// sidebarDivider is the full-width rule shared by the network separators and
+// the identity footer's top rule. It reaches the column width, so the dividers
+// and the section titles share one visual language, and a sub-cell width yields
+// no line so a tiny column never draws a stray glyph.
+func (m *Model) sidebarDivider(width int) string {
 	if width < 1 {
 		return ""
 	}
