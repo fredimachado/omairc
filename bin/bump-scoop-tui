@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
-"""Rewrite bucket/omairc-tui.json version and hash from the Windows zip."""
+"""Rewrite bucket/omairc-tui.json version, install url, and hash.
+
+Scoop resolves the top-level architecture url verbatim at install time; only
+the autoupdate block understands $version. The install url is therefore
+filled from the autoupdate $version template, which stays symbolic so Scoop's
+checkver can keep bumping it.
+"""
 
 from __future__ import annotations
 
@@ -15,6 +21,10 @@ CASK = ROOT / "Casks" / "omairc.rb"
 CHUNK = 1024 * 1024
 VERSION_RE = re.compile(r'("version": ")([^"]+)(")')
 HASH_RE = re.compile(r'("hash": ")([0-9a-f]{64})(")')
+INSTALL_URL_RE = re.compile(
+    r'("architecture":\s*\{\s*"64bit":\s*\{\s*"url": ")([^"]+)(")')
+AUTOUPDATE_URL_RE = re.compile(
+    r'("autoupdate":\s*\{\s*"architecture":\s*\{\s*"64bit":\s*\{\s*"url": ")([^"]+)(")')
 
 
 def refuse_cask(path: Path) -> None:
@@ -52,17 +62,35 @@ def bump(manifest: Path, version: str, zip_path: Path) -> str:
         raise ValueError(f"{manifest}: missing version")
     if HASH_RE.search(text) is None:
         raise ValueError(f"{manifest}: missing hash")
-    if "omairc-tui-$version-windows-amd64.zip" not in text:
+
+    install_section, _, autoupdate_section = text.partition('"autoupdate"')
+    if not autoupdate_section:
+        raise ValueError(f"{manifest}: missing autoupdate section")
+    if INSTALL_URL_RE.search(install_section) is None:
+        raise ValueError(f"{manifest}: missing architecture 64bit url")
+    template_match = AUTOUPDATE_URL_RE.search(text)
+    if template_match is None:
+        raise ValueError(f"{manifest}: missing autoupdate 64bit url")
+    template = template_match.group(2)
+    if "$version" not in template:
         raise ValueError(
-            f"{manifest}: url must keep omairc-tui-$version-windows-amd64.zip")
+            f"{manifest}: autoupdate url must keep $version for checkver")
+    install_url = template.replace("$version", version)
+    expected = f"omairc-tui-{version}-windows-amd64.zip"
+    if not install_url.endswith(expected):
+        raise ValueError(f"{manifest}: install url must end with {expected}")
 
     digest = sha256_file(zip_path)
+    install_section, install_count = INSTALL_URL_RE.subn(
+        rf"\g<1>{install_url}\3", install_section, count=1)
+    text = install_section + '"autoupdate"' + autoupdate_section
     text, version_count = VERSION_RE.subn(rf"\g<1>{version}\3", text, count=1)
     text, hash_count = HASH_RE.subn(rf"\g<1>{digest}\3", text, count=1)
-    if version_count != 1 or hash_count != 1:
-        raise ValueError(f"{manifest}: expected to rewrite one version and one hash")
+    if install_count != 1 or version_count != 1 or hash_count != 1:
+        raise ValueError(
+            f"{manifest}: expected to rewrite one url, one version, and one hash")
     manifest.write_text(text, encoding="utf-8")
-    return f"version {version}\nhash {digest}\n"
+    return f"version {version}\nurl {install_url}\nhash {digest}\n"
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
