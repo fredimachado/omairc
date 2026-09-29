@@ -1133,12 +1133,34 @@ def check_tui_release_assets():
         text = manifest.read_text(encoding="utf-8", errors="replace")
         if '"bin": "omairc-tui.exe"' not in text:
             problems.append('bucket/omairc-tui.json: bin must be omairc-tui.exe')
-        if "omairc-tui-$version-windows-amd64.zip" not in text:
-            problems.append(
-                "bucket/omairc-tui.json: url must be the windows-amd64 zip")
         if '"checkver"' not in text or '"autoupdate"' not in text:
             problems.append(
                 "bucket/omairc-tui.json: keep checkver and autoupdate")
+        install_section, _, autoupdate_section = text.partition('"autoupdate"')
+        version_match = re.search(r'"version"\s*:\s*"([^"]+)"', text)
+        install_url_match = re.search(
+            r'"architecture"\s*:\s*\{\s*"64bit"\s*:\s*\{\s*"url"\s*:\s*"([^"]+)"',
+            install_section)
+        if version_match is None:
+            problems.append("bucket/omairc-tui.json: missing version")
+        elif install_url_match is None:
+            problems.append(
+                "bucket/omairc-tui.json: missing architecture 64bit url")
+        else:
+            install_url = install_url_match.group(1)
+            if "$version" in install_url:
+                problems.append(
+                    "bucket/omairc-tui.json: install url must be literal; "
+                    "$version belongs in autoupdate only")
+            elif not install_url.endswith(
+                    f"omairc-tui-{version_match.group(1)}-windows-amd64.zip"):
+                problems.append(
+                    "bucket/omairc-tui.json: install url must be the "
+                    "windows-amd64 zip")
+        if "omairc-tui-$version-windows-amd64.zip" not in autoupdate_section:
+            problems.append(
+                "bucket/omairc-tui.json: autoupdate url must keep "
+                "omairc-tui-$version-windows-amd64.zip")
 
     homebrew = ROOT / "bin" / "bump-homebrew-tui"
     scoop = ROOT / "bin" / "bump-scoop-tui"
@@ -1166,6 +1188,10 @@ def check_tui_release_assets():
             problems.append(
                 "bin/bump-scoop-tui: must rewrite the windows-amd64 hash in "
                 "bucket/omairc-tui.json")
+        if "autoupdate" not in text or "$version" not in text:
+            problems.append(
+                "bin/bump-scoop-tui: fill the literal install url from the "
+                "autoupdate $version template")
         if "Casks" in text and "refusing to open" not in text:
             problems.append(
                 "bin/bump-scoop-tui: must refuse to open Casks/omairc.rb")

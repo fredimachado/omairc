@@ -5,7 +5,7 @@
     "license": "MIT",
     "architecture": {
         "64bit": {
-            "url": "https://github.com/fredimachado/omairc/releases/download/v$version/omairc-tui-$version-windows-amd64.zip",
+            "url": "https://github.com/fredimachado/omairc/releases/download/v1.0.5/omairc-tui-1.0.5-windows-amd64.zip",
             "hash": "c09f87a79cfe9f48078d46e92ad29431345f0d56f08fc13c602f08a802230a47"
         }
     },
