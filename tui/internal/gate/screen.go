@@ -955,15 +955,25 @@ var ascii5x7 = [95][5]byte{
 	{0x08, 0x04, 0x04, 0x08, 0x08}, // ~
 }
 
-// extraGlyphs covers the handful of non-ASCII runes the TUI draws: the title
-// separator, composer prompt, sidebar marks, and member status dash. They use
-// the same 5x7 column layout as ascii5x7.
+// extraGlyphs covers the non-ASCII runes the TUI draws: the title separator, the
+// composer prompt, the rounded frame the columns and cards are built from, the
+// half-block focus bars, and the sidebar's marks. They use the same 5x7 column
+// layout as ascii5x7, where bit 0 is a column's top row. Without the frame runes
+// every border fell back to a solid box, so a screenshot could not show where a
+// line sits inside its cell.
 var extraGlyphs = map[rune][5]byte{
 	'\u00b7': {0x00, 0x00, 0x08, 0x00, 0x00}, // · middle dot
 	'\u2014': {0x08, 0x08, 0x08, 0x08, 0x08}, // — em dash
 	'\u2022': {0x00, 0x0c, 0x0c, 0x00, 0x00}, // • bullet
 	'\u2026': {0x40, 0x00, 0x40, 0x00, 0x40}, // … ellipsis
 	'\u203a': {0x00, 0x08, 0x14, 0x22, 0x00}, // › single right angle quote
+	'\u2500': {0x08, 0x08, 0x08, 0x08, 0x08}, // ─ box drawing light horizontal
+	'\u2502': {0x00, 0x00, 0x7f, 0x00, 0x00}, // │ box drawing light vertical
+	'\u256d': {0x00, 0x00, 0x78, 0x08, 0x08}, // ╭ rounded corner top left
+	'\u256e': {0x08, 0x08, 0x78, 0x00, 0x00}, // ╮ rounded corner top right
+	'\u256f': {0x08, 0x08, 0x0f, 0x00, 0x00}, // ╯ rounded corner bottom right
+	'\u2570': {0x00, 0x00, 0x0f, 0x08, 0x08}, // ╰ rounded corner bottom left
+	'\u258c': {0x7f, 0x7f, 0x00, 0x00, 0x00}, // ▌ left half block (the focus bar)
 	'\u25cf': {0x3e, 0x7f, 0x7f, 0x7f, 0x3e}, // ● black circle
 	'\u25cb': {0x3e, 0x41, 0x41, 0x41, 0x3e}, // ○ white circle
 }

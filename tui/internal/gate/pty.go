@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 )
@@ -180,12 +181,38 @@ func (p *Process) closeFds() error {
 // launched shell never touches the developer's state directory (the crash log
 // in particular). exec.Cmd deduplicates Env with the last value winning, so
 // appending here overrides an inherited value.
+//
+// The inherited no-color hints are dropped rather than overridden. NO_COLOR and
+// CLICOLOR are presence checks in the color libraries the shell renders
+// through, not values, so a developer's or CI runner's hint cannot be beaten by
+// appending a replacement. Letting one through stripped every SGR from the
+// child and made the gate's PNG evidence mono, which cannot show the composer's
+// surface fill, the nick colors, or the presence dots the screenshots exist to
+// prove. TERM and COLORTERM are pinned below, so the child always drives a
+// color-capable terminal.
 func terminalEnv(stateDir string) []string {
-	env := os.Environ()
+	inherited := os.Environ()
+	env := make([]string, 0, len(inherited)+4)
+	for _, entry := range inherited {
+		if envNames(entry, "NO_COLOR") || envNames(entry, "CLICOLOR") {
+			continue
+		}
+		env = append(env, entry)
+	}
 	return append(env,
 		"TERM=xterm-256color",
 		"COLORTERM=truecolor",
 		"LANG=C.UTF-8",
 		"XDG_STATE_HOME="+filepath.Join(stateDir, "app-state"),
 	)
+}
+
+// envNames reports whether an "NAME=value" environment entry names name.
+// Windows environment names are case-insensitive, so the comparison folds case.
+// CLICOLOR_FORCE is a different name and is deliberately left alone.
+func envNames(entry, name string) bool {
+	if len(entry) <= len(name) {
+		return false
+	}
+	return strings.EqualFold(entry[:len(name)], name) && entry[len(name)] == '='
 }
