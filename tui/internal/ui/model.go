@@ -1050,11 +1050,13 @@ func (m *Model) transcriptWidth() int {
 	return width
 }
 
-// composerInset is the blank cell margin the composer field leaves inside the
+// composerInset is the blank cell margin the composer box leaves inside the
 // transcript column on each side. The composer belongs to the middle column, so
 // its left edge and width follow the column rather than the window: toggling a
 // side rail carries the field with the transcript instead of leaving it behind.
-const composerInset = 2
+// One cell keeps the box close to the column edges while still separating its
+// border from the side rails.
+const composerInset = 1
 
 // transcriptLeft is the left edge of the transcript column: past the sidebar
 // when that rail is visible, else the window edge. The floating slash menu and
