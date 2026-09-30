@@ -74,6 +74,12 @@ func (m *Model) syncSidebarNetworkOrder() {
 // children. A collapsed network keeps its header and hides its groups; the
 // focused header is highlighted so Alt+Left / Alt+Right land somewhere visible.
 //
+// A roster taller than the column scrolls as one window: the focused network
+// header, or else the selected conversation, is kept on screen so a walk,
+// unread jump, or header focus never lands on a clipped row. It mirrors
+// OmaircWindow.qml's revealSidebarRow / revealNamedSidebarItem over the
+// sidebarScroll Flickable.
+//
 // The view returns inner content lines only: the outer panel card (border and
 // title) is drawn by the frame that embeds this column.
 func (m *Model) sidebarView(width, height int) string {
@@ -83,6 +89,11 @@ func (m *Model) sidebarView(width, height int) string {
 	}
 
 	roster := make([]string, 0, height)
+	// headerSpans and rowSpans record where each revealable element landed in
+	// the roster as [start, end) line indexes, so the window can slide to keep
+	// the focused header or the selected conversation visible.
+	headerSpans := make(map[string][2]int)
+	rowSpans := make(map[string][2]int)
 	groups := []struct {
 		label  string
 		direct bool
@@ -95,6 +106,7 @@ func (m *Model) sidebarView(width, height int) string {
 		}
 		name := m.sidebarNetworkDisplayName(networkID)
 		roster = append(roster, m.networkHeader(name, networkID))
+		headerSpans[networkID] = [2]int{len(roster) - 1, len(roster)}
 		if m.ctrl.IsNetworkCollapsed(networkID) {
 			continue
 		}
@@ -103,7 +115,7 @@ func (m *Model) sidebarView(width, height int) string {
 		// against its first group, which then reads as the header's subtitle.
 		firstGroup := true
 		for _, group := range groups {
-			lines := m.sidebarGroup(group.label, grouped[networkID], group.direct, width)
+			lines, members := m.sidebarGroup(group.label, grouped[networkID], group.direct, width)
 			if len(lines) == 0 {
 				continue
 			}
@@ -111,7 +123,14 @@ func (m *Model) sidebarView(width, height int) string {
 				roster = append(roster, "")
 			}
 			firstGroup = false
+			base := len(roster)
 			roster = append(roster, lines...)
+			// lines[0] is the section heading, so the members start one row
+			// past the block's base and follow in render order.
+			for offset, member := range members {
+				line := base + 1 + offset
+				rowSpans[member.ConversationID] = [2]int{line, line + 1}
+			}
 		}
 	}
 	// Reserve the bottom rows for the identity footer: clamp the roster to what
@@ -126,9 +145,63 @@ func (m *Model) sidebarView(width, height int) string {
 	} else if len(footer) < height {
 		footer = append([]string{m.sidebarDivider(width)}, footer...)
 	}
-	lines := fitLines(roster, height-len(footer), false)
+	rosterHeight := height - len(footer)
+	if rosterHeight > 0 {
+		start := m.sidebarRevealStart(len(roster), rosterHeight, headerSpans, rowSpans)
+		end := start + rosterHeight
+		if end > len(roster) {
+			end = len(roster)
+		}
+		roster = roster[start:end]
+	} else {
+		roster = nil
+	}
+	lines := fitLines(roster, rosterHeight, false)
 	lines = append(lines, footer...)
 	return renderColumn(m.styles.Conversation, width, lines)
+}
+
+// sidebarRevealStart returns the first roster line the sidebar shows, so the
+// focused network header, or else the selected conversation, stays on screen.
+// It mirrors OmaircWindow.qml's revealSidebarRow: the window slides the least it
+// can, resting at the top while the target already fits the first page. With
+// neither a focused header nor a rendered selection it starts at the top, the
+// same resting state as the QML Flickable at contentY 0.
+func (m *Model) sidebarRevealStart(total, height int, headerSpans, rowSpans map[string][2]int) int {
+	maxStart := total - height
+	if maxStart < 0 {
+		maxStart = 0
+	}
+	top, bottom, found := 0, 0, false
+	if m.sidebarNetworkFocusID != "" {
+		if span, ok := headerSpans[m.sidebarNetworkFocusID]; ok {
+			top, bottom, found = span[0], span[1], true
+		}
+	}
+	if !found {
+		if id := m.ctrl.SelectedConversationID(); id != "" {
+			if span, ok := rowSpans[id]; ok {
+				top, bottom, found = span[0], span[1], true
+			}
+		}
+	}
+	if !found {
+		return 0
+	}
+	start := 0
+	if bottom > height {
+		start = bottom - height
+	}
+	if top < start {
+		start = top
+	}
+	if start > maxStart {
+		start = maxStart
+	}
+	if start < 0 {
+		start = 0
+	}
+	return start
 }
 
 // identityFooterLines renders the sidebar's bottom identity block as two rows:
@@ -221,9 +294,11 @@ func (m *Model) networkHeader(name, networkID string) string {
 }
 
 // sidebarGroup filters one network's rows into a channel or direct-message
-// group and renders the section header plus each row. An empty group renders
-// nothing, so a network with only channels has no direct-message heading.
-func (m *Model) sidebarGroup(label string, rows []controller.ConversationSnapshot, direct bool, width int) []string {
+// group and renders the section header plus each row. It returns the rendered
+// lines and the members in render order, so the caller can map each row back to
+// its conversation id for reveal. An empty group renders nothing, so a network
+// with only channels has no direct-message heading.
+func (m *Model) sidebarGroup(label string, rows []controller.ConversationSnapshot, direct bool, width int) ([]string, []controller.ConversationSnapshot) {
 	var members []controller.ConversationSnapshot
 	for _, row := range rows {
 		if row.Direct == direct {
@@ -231,13 +306,13 @@ func (m *Model) sidebarGroup(label string, rows []controller.ConversationSnapsho
 		}
 	}
 	if len(members) == 0 {
-		return nil
+		return nil, nil
 	}
 	lines := []string{m.sectionHeader(label, width)}
 	for _, row := range members {
 		lines = append(lines, m.conversationRowWidth(row, width))
 	}
-	return lines
+	return lines, members
 }
 
 // sectionHeader renders an uppercase group label followed by a subtle rule that

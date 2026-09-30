@@ -21,6 +21,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   from the top, so `Page Up` / `Page Down`, `Home` / `End`, and the arrow keys
   moved the member cursor off-screen with no way to see it. The column now
   slides to keep the focused row visible, matching the desktop client.
+- The TUI sidebar scrolls. A roster taller than the left column always rendered
+  from the top, so `Alt+Down` / `Alt+Up` walked to a conversation below the fold
+  and `Alt+Left` / `Alt+Right` focused a network header below it, both off-screen
+  and unreachable without a mouse. The column now slides to keep the selected
+  conversation, or the focused network header, visible, matching the desktop
+  client's `revealSidebarRow`.
 
 ## [1.0.6] - 2026-09-30
 

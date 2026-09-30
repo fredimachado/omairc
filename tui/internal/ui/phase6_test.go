@@ -551,3 +551,84 @@ func TestThemeChangedRebuildsStyles(t *testing.T) {
 		t.Fatalf("View.BackgroundColor did not follow the theme")
 	}
 }
+
+// shortSidebar renders the left column through a short viewport, so the seeded
+// two-network roster overflows and the window has to scroll.
+func shortSidebar(m *Model) string {
+	return m.sidebarView(sidebarWidth(m.width), 8)
+}
+
+// selectedSidebarLabel returns the sidebar label of the selected conversation,
+// or "".
+func selectedSidebarLabel(m *Model) string {
+	id := m.ctrl.SelectedConversationID()
+	for _, row := range m.ctrl.Conversations() {
+		if id != "" && row.ConversationID == id {
+			return row.Conversation
+		}
+	}
+	return ""
+}
+
+// sidebarShowsSelected reports whether the selected row and its accent bar are
+// both on the rendered sidebar.
+func sidebarShowsSelected(m *Model, panel string) bool {
+	label := selectedSidebarLabel(m)
+	if label == "" {
+		return false
+	}
+	for _, line := range strings.Split(ansiPattern.ReplaceAllString(panel, ""), "\n") {
+		if strings.Contains(line, "▌") && strings.Contains(line, label) {
+			return true
+		}
+	}
+	return false
+}
+
+// TestSidebarRevealsWalkedConversation covers the sidebar window: a walk that
+// lands below the fold must scroll the selected row into view, so Alt+Down never
+// selects an off-screen conversation. It runs across the omarchy rows, that
+// network's direct messages, and into the second network.
+func TestSidebarRevealsWalkedConversation(t *testing.T) {
+	m := seededModel(t)
+	for step := 0; step < 8; step++ {
+		m = press(t, m, altKey(tea.KeyDown))
+		if !sidebarShowsSelected(m, shortSidebar(m)) {
+			t.Fatalf("step %d: walked to %q but its row is off-screen:\n%s",
+				step, selectedSidebarLabel(m), shortSidebar(m))
+		}
+	}
+}
+
+// TestSidebarRevealsFocusedNetworkHeader covers Alt+Left / Alt+Right: focusing a
+// network header that starts below the fold scrolls it into view, so the
+// highlight never lands on a clipped header.
+func TestSidebarRevealsFocusedNetworkHeader(t *testing.T) {
+	m := seededModel(t)
+	header := "▾ " + m.sidebarNetworkDisplayName("oftc")
+	if before := ansiPattern.ReplaceAllString(shortSidebar(m), ""); strings.Contains(before, header) {
+		t.Fatalf("precondition: the %q header already fits the short viewport:\n%s", header, before)
+	}
+
+	m = press(t, m, altKey(tea.KeyLeft))
+	if m.sidebarNetworkFocusID != "oftc" {
+		t.Fatalf("Alt+Left focus = %q, want oftc", m.sidebarNetworkFocusID)
+	}
+	panel := ansiPattern.ReplaceAllString(shortSidebar(m), "")
+	if !strings.Contains(panel, header) {
+		t.Fatalf("focused header %q is off-screen:\n%s", header, panel)
+	}
+}
+
+// TestSidebarShortRosterStaysAtTop pins the resting state: when the roster fits,
+// moving the selection does not slide the window or blank the first rows.
+func TestSidebarShortRosterStaysAtTop(t *testing.T) {
+	m := seededModel(t)
+	m = press(t, m, altKey(tea.KeyDown))
+	panel := ansiPattern.ReplaceAllString(m.sidebarView(sidebarWidth(m.width), m.bodyHeight()), "")
+	first := strings.SplitN(panel, "\n", 2)[0]
+	want := "▾ " + m.sidebarNetworkDisplayName("omarchy")
+	if !strings.Contains(first, want) {
+		t.Fatalf("a fitting roster must start at the first network header %q: %q", want, first)
+	}
+}
