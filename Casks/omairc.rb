@@ -1,9 +1,9 @@
 cask "omairc" do
   arch arm: "arm64", intel: "x64"
 
-  version "1.0.6"
-  sha256 arm:   "95fd870457e01ca01c614df50c2c609b8d8608329d3975b1ba9903ef0b3d9d4c",
-         intel: "a0a079c5bd7742ddb3ab2c71eea41b4b6b8750a063caf0bc25017f5bda40a54d"
+  version "1.0.7"
+  sha256 arm:   "0d7b9e10addeb39b4e05aaa337c2d49fa713049043d8be57526ca5b8a265cac5",
+         intel: "9d053d97477fb9d230471836b90b0b6bf66f91b07ac482d888a7f30f22233ce3"
 
   url "https://github.com/fredimachado/omairc/releases/download/v#{version}/omairc-#{version}-macos-#{arch}.zip"
   name "Omairc"
