@@ -15,6 +15,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   installs it under `~/.local/bin`. `install.sh` still installs the Qt client
   only, and now publishes `install-tui.sh` as a release asset too.
 
+### Fixed
+
+- The TUI member column scrolls. A roster taller than the panel always rendered
+  from the top, so `Page Up` / `Page Down`, `Home` / `End`, and the arrow keys
+  moved the member cursor off-screen with no way to see it. The column now
+  slides to keep the focused row visible, matching the desktop client.
+
 ## [1.0.6] - 2026-09-30
 
 ### Fixed

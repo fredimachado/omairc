@@ -19,18 +19,75 @@ const memberGutter = 2
 // channels (see Model.membersVisible); the rows already arrive in PREFIX-rank
 // then nick order from the controller, so the view never sorts. A focused
 // member row carries an accent bar and was chosen with Ctrl+Shift+P. The
-// heading reads "ONLINE - N" like MembersColumn.qml:43. The outer card frame
-// is drawn around these lines by the panel chrome, so this returns inner
+// heading reads "ONLINE - N" like MembersColumn.qml:43 and stays pinned above
+// the rows, the way the QML ListView sits under its heading. The outer card
+// frame is drawn around these lines by the panel chrome, so this returns inner
 // content only.
+//
+// A roster taller than the panel scrolls as one window: Page Up/Down, Home/End,
+// and the arrow keys move the member cursor, and the window slides to keep the
+// focused row visible, mirroring the QML ListView's highlightFollowsCurrentItem.
 func (m *Model) membersView(width, height int) string {
-	lines := []string{
+	heading := []string{
 		m.styles.MembersHeader.Render(fmt.Sprintf("ONLINE - %d", m.ctrl.PeopleCount())),
 		m.styles.Divider.Render(strings.Repeat("─", width)),
 	}
-	for index, member := range m.ctrl.Members() {
-		lines = append(lines, m.memberRow(index, member)...)
+	if height <= len(heading) {
+		// No room for rows: show as much of the heading as fits rather than
+		// letting the pinned block push the grid over its budget.
+		return renderColumn(m.styles.Conversation, width, fitLines(heading, height, false))
 	}
-	return renderColumn(m.styles.Conversation, width, fitLines(lines, height, false))
+	rowsHeight := height - len(heading)
+
+	// A member block is one line, or two once the network advertises member
+	// status, so the window is measured in lines and each block records its
+	// span. That keeps the focused row fully visible instead of a line short.
+	members := m.ctrl.Members()
+	rows := make([]string, 0, len(members)*2)
+	spans := make([][2]int, len(members))
+	for index, member := range members {
+		start := len(rows)
+		rows = append(rows, m.memberRow(index, member)...)
+		spans[index] = [2]int{start, len(rows)}
+	}
+
+	start := memberWindowStart(len(rows), spans, m.memberIndex, m.memberFocus, rowsHeight)
+	end := start + rowsHeight
+	if end > len(rows) {
+		end = len(rows)
+	}
+	lines := make([]string, 0, len(heading)+rowsHeight)
+	lines = append(lines, heading...)
+	lines = append(lines, fitLines(rows[start:end], rowsHeight, false)...)
+	return renderColumn(m.styles.Conversation, width, lines)
+}
+
+// memberWindowStart returns the first member line the panel shows. It keeps the
+// focused member's block in view: while the block fits in the first page the
+// list stays at the top, then the window slides so the block sits on the bottom
+// edge. A block taller than the viewport keeps its first line on screen. Without
+// member focus there is no cursor, so the list shows from the top (the same
+// resting state as the QML list at currentIndex 0).
+func memberWindowStart(total int, spans [][2]int, focusIndex int, focused bool, height int) int {
+	maxStart := total - height
+	if maxStart < 0 {
+		maxStart = 0
+	}
+	if !focused || focusIndex < 0 || focusIndex >= len(spans) {
+		return 0
+	}
+	start, end := spans[focusIndex][0], spans[focusIndex][1]
+	window := 0
+	if end > height {
+		window = end - height
+	}
+	if start < window {
+		window = start
+	}
+	if window > maxStart {
+		window = maxStart
+	}
+	return window
 }
 
 // toggleMembers is Ctrl+Shift+M: it hides or shows the whole member panel. It

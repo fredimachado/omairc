@@ -349,3 +349,68 @@ func TestMemberStatusSublineAlignsUnderTheLabel(t *testing.T) {
 		t.Fatalf("anna's status subline = %q, want the indented muted line %q", anna[1], want)
 	}
 }
+
+// shortMemberPanel renders the member column through a short viewport, so the
+// seeded twelve-nick roster overflows and the window has to scroll.
+func shortMemberPanel(t *testing.T, m *Model) string {
+	t.Helper()
+	return m.membersView(membersWidth, 6)
+}
+
+// TestMemberListRevealsFocusedMember covers the member window: a roster taller
+// than the panel shows the tail once End moves the cursor there, instead of
+// leaving the focused row off-screen.
+func TestMemberListRevealsFocusedMember(t *testing.T) {
+	m := seededModel(t)
+	last := m.ctrl.Members()[len(m.ctrl.Members())-1].Nick
+	if got := shortMemberPanel(t, m); strings.Contains(got, last) {
+		t.Fatalf("the tail of the roster should start below the fold:\n%s", got)
+	}
+
+	m = press(t, m, ctrlShiftKey('p'))
+	m = press(t, m, tea.KeyPressMsg{Code: tea.KeyEnd})
+	if m.memberIndex != len(m.ctrl.Members())-1 {
+		t.Fatalf("End member index = %d, want the last index", m.memberIndex)
+	}
+	panel := shortMemberPanel(t, m)
+	if !strings.Contains(panel, last) {
+		t.Fatalf("End must scroll the last member %q into view:\n%s", last, panel)
+	}
+	if !strings.Contains(panel, m.memberFocusBar()) {
+		t.Fatalf("the focused member's accent bar must be on screen:\n%s", panel)
+	}
+}
+
+// TestMemberListPageDownScrollsWindow covers the paging path: Page Down moves
+// the cursor and the window follows, so the focused row never scrolls away.
+func TestMemberListPageDownScrollsWindow(t *testing.T) {
+	m := seededModel(t)
+	m = press(t, m, ctrlShiftKey('p'))
+	before := shortMemberPanel(t, m)
+
+	m = press(t, m, tea.KeyPressMsg{Code: tea.KeyPgDown})
+	after := shortMemberPanel(t, m)
+	if before == after {
+		t.Fatalf("Page Down must scroll the member window:\n%s", before)
+	}
+	if !strings.Contains(after, m.memberFocusBar()) {
+		t.Fatalf("the focused member must stay visible after paging:\n%s", after)
+	}
+}
+
+// TestMemberListShortRosterStaysAtTop pins the resting state: when every member
+// fits, moving the cursor does not introduce blank rows or clip the heading.
+func TestMemberListShortRosterStaysAtTop(t *testing.T) {
+	m := seededModel(t)
+	m = press(t, m, ctrlShiftKey('p'))
+	m.memberIndex = phase8MemberIndex(t, m, "anna")
+	panel := m.membersView(membersWidth, 40)
+	if !strings.Contains(panel, "ONLINE - 12") {
+		t.Fatalf("the heading must stay pinned:\n%s", panel)
+	}
+	for _, nick := range []string{"fred", "anna", "max"} {
+		if !strings.Contains(panel, nick) {
+			t.Fatalf("a roster that fits must show %q:\n%s", nick, panel)
+		}
+	}
+}
