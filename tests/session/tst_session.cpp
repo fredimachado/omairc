@@ -523,6 +523,9 @@ private slots:
     void chatHistoryEmptyBeforeBatchStopsFurtherPagesUntilRejoin();
     void chatHistoryFailStopsBeforeWithoutDisconnecting();
     void chatHistoryBeforeRequiresLatestOnChannel();
+    void chatHistoryDedupedBeforeBatchExhaustsTarget();
+    void chatHistoryBeforeRejectsClientTimestampOnly();
+    void chatHistoryUnsolicitedBatchLeavesBeforePending();
 };
 
 void SessionTest::registersAndAutojoins()
@@ -5491,6 +5494,88 @@ void SessionTest::chatHistoryFailStopsBeforeWithoutDisconnecting()
                                                   QStringLiteral("anchor"),
                                                   {}));
     QCOMPARE(fixture.session->state(), IrcSession::State::Registered);
+}
+
+void SessionTest::chatHistoryDedupedBeforeBatchExhaustsTarget()
+{
+    IrcSessionConfig sessionConfig = config();
+    sessionConfig.autojoinChannels = {};
+    Fixture fixture(sessionConfig);
+    fixture.connectTls();
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :batch chathistory\r\n"
+                          ":server CAP omairc ACK :batch chathistory\r\n"
+                          ":server 001 omairc :Welcome\r\n"
+                          ":omairc!u@h JOIN :#omarchy\r\n"
+                          ":irc.host BATCH +hx chathistory #omarchy\r\n"
+                          "@batch=hx;msgid=anchor :alice!u@h PRIVMSG #omarchy :latest\r\n"
+                          ":irc.host BATCH -hx\r\n"));
+    QVERIFY(fixture.session->requestOlderHistory(QStringLiteral("#omarchy"),
+                                                 QStringLiteral("anchor"),
+                                                 {}));
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(":irc.host BATCH +dup chathistory #omarchy\r\n"
+                          "@batch=dup;msgid=anchor :alice!u@h PRIVMSG #omarchy :dup\r\n"
+                          ":irc.host BATCH -dup\r\n"));
+    QVERIFY(!fixture.session->requestOlderHistory(QStringLiteral("#omarchy"),
+                                                  QStringLiteral("anchor"),
+                                                  {}));
+}
+
+void SessionTest::chatHistoryUnsolicitedBatchLeavesBeforePending()
+{
+    IrcSessionConfig sessionConfig = config();
+    sessionConfig.autojoinChannels = {};
+    Fixture fixture(sessionConfig);
+    QList<IrcHistoryBatch> batches;
+    QObject::connect(fixture.session, &IrcSession::historyBatchReceived, fixture.session,
+                     [&](const QString&, const IrcHistoryBatch& batch) {
+        batches.append(batch);
+    });
+    fixture.connectTls();
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :batch chathistory\r\n"
+                          ":server CAP omairc ACK :batch chathistory\r\n"
+                          ":server 001 omairc :Welcome\r\n"
+                          ":omairc!u@h JOIN :#omarchy\r\n"
+                          ":irc.host BATCH +hx chathistory #omarchy\r\n"
+                          "@batch=hx;msgid=anchor :alice!u@h PRIVMSG #omarchy :latest\r\n"
+                          ":irc.host BATCH -hx\r\n"));
+    QVERIFY(fixture.session->requestOlderHistory(QStringLiteral("#omarchy"),
+                                                 QStringLiteral("anchor"),
+                                                 {}));
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(":irc.host BATCH +noise chathistory #omarchy\r\n"
+                          ":irc.host BATCH -noise\r\n"));
+    QVERIFY(fixture.session->historyPendingForTarget(QStringLiteral("#omarchy")));
+    QVERIFY(!fixture.session->requestOlderHistory(QStringLiteral("#omarchy"),
+                                                  QStringLiteral("anchor"),
+                                                  {}));
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(":irc.host BATCH +before chathistory #omarchy\r\n"
+                          "@batch=before;msgid=older :alice!u@h PRIVMSG #omarchy :page\r\n"
+                          ":irc.host BATCH -before\r\n"));
+    QCOMPARE(batches.size(), 2);
+    QVERIFY(batches.back().olderPage);
+    QCOMPARE(QString::fromStdString(batches.back().lines.front().parameters.back()),
+             QStringLiteral("page"));
+}
+
+void SessionTest::chatHistoryBeforeRejectsClientTimestampOnly()
+{
+    IrcSessionConfig sessionConfig = config();
+    sessionConfig.autojoinChannels = {};
+    Fixture fixture(sessionConfig);
+    fixture.connectTls();
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :batch chathistory\r\n"
+                          ":server CAP omairc ACK :batch chathistory\r\n"
+                          ":server 001 omairc :Welcome\r\n"
+                          ":omairc!u@h JOIN :#omarchy\r\n"
+                          ":irc.host BATCH +hx chathistory #omarchy\r\n"
+                          "@batch=hx :alice!u@h PRIVMSG #omarchy :latest\r\n"
+                          ":irc.host BATCH -hx\r\n"));
+    QVERIFY(!fixture.session->requestOlderHistory(QStringLiteral("#omarchy"), {}, {}));
 }
 
 void SessionTest::chatHistoryBeforeRequiresLatestOnChannel()

@@ -34,6 +34,7 @@ public:
         // Transcript wash for a nick or /highlight hit. Not the sidebar
         // `mention` badge, which also flags every direct message.
         MentionedRole,
+        SequenceRole,
     };
 
     static QHash<int, QByteArray> staticRoleNames();

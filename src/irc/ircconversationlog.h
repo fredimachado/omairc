@@ -38,6 +38,10 @@ public:
                 const QString &target,
                 const IrcCaseMapping &mapping,
                 const IrcTranscriptLine &line);
+    bool prepend(const QString &networkId,
+                 const QString &target,
+                 const IrcCaseMapping &mapping,
+                 const std::vector<IrcTranscriptLine> &lines);
     std::vector<IrcTranscriptLine> readTail(const QString &networkId,
                                             const QString &target,
                                             const IrcCaseMapping &mapping,

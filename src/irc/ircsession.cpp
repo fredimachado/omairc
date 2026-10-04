@@ -1468,6 +1468,11 @@ void IrcSession::handleBatch(const IrcMessage &message)
             frame.kind = kind;
             frame.collected.target = parameter(message, 2);
             frame.generation = historyGeneration(frame.collected.target);
+            if (kind == ReplayKind::ChatHistory
+                && answersPendingHistory(frame.collected.target)) {
+                frame.historyRequestKind = m_historyPendingKind.value(
+                    foldChannel(frame.collected.target), HistoryRequestKind::Latest);
+            }
         }
         m_openBatches.insert(reference, frame);
         return;
@@ -1503,9 +1508,8 @@ void IrcSession::closeBatch(const QString& reference)
         const QString folded = foldChannel(frame.collected.target);
         const bool currentMembership =
             frame.generation == historyGeneration(frame.collected.target);
-        const HistoryRequestKind requestKind =
-            m_historyPendingKind.value(folded, HistoryRequestKind::Latest);
-        if (currentMembership && frame.kind == ReplayKind::ChatHistory) {
+        const std::optional<HistoryRequestKind> requestKind = frame.historyRequestKind;
+        if (currentMembership && frame.kind == ReplayKind::ChatHistory && requestKind) {
             if (frame.collected.lines.empty())
                 m_historyExhausted.insert(folded);
             m_historyPending.remove(folded);
@@ -1662,7 +1666,7 @@ void IrcSession::requestChannelHistory(const QString& channel)
 
 bool IrcSession::requestOlderHistory(const QString& target,
                                      const QString& oldestMsgid,
-                                     const QDateTime& oldestTimestamp)
+                                     const std::optional<QDateTime>& oldestServerTime)
 {
     if (target.isEmpty() || !replayEnabled(ReplayKind::ChatHistory))
         return false;
@@ -1682,8 +1686,8 @@ bool IrcSession::requestOlderHistory(const QString& target,
     if (!oldestMsgid.isEmpty()) {
         command = QStringLiteral("CHATHISTORY BEFORE %1 msgid=%2 %3")
                       .arg(target, oldestMsgid, QString::number(m_historyLimit));
-    } else if (oldestTimestamp.isValid()) {
-        const QString stamp = oldestTimestamp.toUTC().toString(Qt::ISODateWithMs);
+    } else if (oldestServerTime && oldestServerTime->isValid()) {
+        const QString stamp = oldestServerTime->toUTC().toString(Qt::ISODateWithMs);
         command = QStringLiteral("CHATHISTORY BEFORE %1 timestamp=%2 %3")
                       .arg(target, stamp, QString::number(m_historyLimit));
     } else {
@@ -1693,6 +1697,20 @@ bool IrcSession::requestOlderHistory(const QString& target,
     m_historyPendingKind.insert(key, HistoryRequestKind::Before);
     sendCommand(command);
     return true;
+}
+
+bool IrcSession::historyPendingForTarget(const QString& target) const
+{
+    if (target.isEmpty())
+        return false;
+    return m_historyPending.contains(foldChannel(target));
+}
+
+void IrcSession::markHistoryExhausted(const QString& target)
+{
+    if (target.isEmpty())
+        return;
+    m_historyExhausted.insert(foldChannel(target));
 }
 
 void IrcSession::forgetChannelHistory(const QString& channel)
@@ -1764,7 +1782,9 @@ void IrcSession::ignoreBatch(const QString& reference)
 
 void IrcSession::clearHistoryPending(const QString& channel)
 {
-    m_historyPending.remove(foldChannel(channel));
+    const QString folded = foldChannel(channel);
+    m_historyPending.remove(folded);
+    m_historyPendingKind.remove(folded);
 }
 
 bool IrcSession::nicksEqual(const QString& left, const QString& right) const

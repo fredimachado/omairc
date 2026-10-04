@@ -144,7 +144,9 @@ public:
     bool historyPending() const;
     bool requestOlderHistory(const QString& target,
                              const QString& oldestMsgid,
-                             const QDateTime& oldestTimestamp);
+                             const std::optional<QDateTime>& oldestServerTime);
+    bool historyPendingForTarget(const QString& target) const;
+    void markHistoryExhausted(const QString& target);
     QStringList autojoinChannels() const;
 
     using IgnoreFilter = std::function<bool(const IrcMessage&, const QString&)>;
@@ -341,6 +343,7 @@ private:
         IrcHistoryBatch collected;
         int generation = 0;
         QString requestLabel;
+        std::optional<HistoryRequestKind> historyRequestKind;
     };
     QHash<QString, OpenBatch> m_openBatches;
     QSet<QString> m_ignoredBatches;

@@ -1079,6 +1079,8 @@ void IrcController::selectConversation(const QString& networkId,
     const bool changed = !m_selected
         || m_selected->networkId != networkId
         || m_selected->normalizedTarget != key.normalizedTarget;
+    if (changed && m_selected)
+        m_reducer.clearTrimTailOnCap(*m_selected);
     if (changed && !m_typingTarget.isEmpty()) {
         if (IrcSession *previous = selectedSession())
             previous->sendTyping(m_typingTarget, IrcTypingPhase::Done);
@@ -1120,6 +1122,8 @@ void IrcController::openStatus(const QString& networkId)
         return;
     const QString previousId = identityNetworkId();
     const bool previousAway = selfAway();
+    if (m_selected)
+        m_reducer.clearTrimTailOnCap(*m_selected);
     m_console.setNetwork(networkId);
     m_console.setOpen(true);
     notifyFocusedConnectionStatus();
@@ -1300,7 +1304,17 @@ bool IrcController::requestOlderTranscriptHistory()
             return false;
     }
     const IrcReducedMessage& oldest = conversation->messages.front();
-    return session->requestOlderHistory(target, oldest.msgid.value, oldest.timestamp);
+    return session->requestOlderHistory(target, oldest.msgid.value, oldest.serverTime);
+}
+
+bool IrcController::transcriptHistoryPendingForSelection() const
+{
+    if (!m_selected)
+        return false;
+    IrcSession *session = m_sessions.findSession(m_selected->networkId);
+    if (!session)
+        return false;
+    return session->historyPendingForTarget(selectedTarget());
 }
 
 void IrcController::noteTranscriptFollowsEnd()
@@ -2316,6 +2330,11 @@ void IrcController::handleHistoryBatch(const QString& networkId,
             return;
     }
     apply(*event);
+    if (IrcSession *session = m_sessions.findSession(networkId)) {
+        const QStringList exhaust = m_reducer.takeHistoryBeforeExhaustTargets();
+        for (const QString& target : exhaust)
+            session->markHistoryExhausted(target);
+    }
 }
 
 void IrcController::noteKeptReplay()

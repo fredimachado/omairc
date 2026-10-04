@@ -28,6 +28,7 @@ ListView {
     // count unchanged.
     property int rowRevision: 0
     property int restoreOffset: -1
+    property int restoreAnchorSequence: -1
     property var onPinnedToEnd: null
     property int pinGeneration: 0
     property bool resetPending: false
@@ -160,14 +161,27 @@ ListView {
             index = indexAt(Math.max(1, width / 2), contentY + 8);
         if (index < 0)
             index = 0;
-        // A history splice inserts replay rows above the reader and may trim
-        // the front, so a raw index names a different message afterwards.
-        // Distance from the last row survives both.
-        restoreOffset = count - index;
+        restoreAnchorSequence = -1;
+        restoreOffset = -1;
+        if (!model || typeof model.field !== "function")
+            return;
+        for (var row = index; row < count; ++row) {
+            var seqText = model.field(row, "sequence");
+            if (seqText !== undefined && seqText !== null && seqText !== "") {
+                restoreAnchorSequence = parseInt(seqText, 10);
+                return;
+            }
+        }
+    }
+
+    function clearAnchorSnapshot() {
+        restoreAnchorSequence = -1;
+        restoreOffset = -1;
     }
 
     function restoreAnchor() {
-        var offset = restoreOffset;
+        var sequence = restoreAnchorSequence;
+        restoreAnchorSequence = -1;
         restoreOffset = -1;
         if (stick === stickFollowing) {
             pinToEnd();
@@ -175,10 +189,20 @@ ListView {
         }
         pinning = true;
         var generation = ++pinGeneration;
-        var total = modelRowCount();
-        var target = total - offset;
-        if (offset >= 0 && target >= 0 && target < total)
-            positionViewAtIndex(target, ListView.Beginning);
+        var targetRow = -1;
+        if (sequence >= 0 && model && typeof model.field === "function") {
+            var total = modelRowCount();
+            for (var row = 0; row < total; ++row) {
+                var seqText = model.field(row, "sequence");
+                if (seqText !== undefined && seqText !== null && seqText !== ""
+                        && parseInt(seqText, 10) === sequence) {
+                    targetRow = row;
+                    break;
+                }
+            }
+        }
+        if (targetRow >= 0)
+            positionViewAtIndex(targetRow, ListView.Beginning);
         Qt.callLater(function() {
             if (generation !== pinGeneration)
                 return;

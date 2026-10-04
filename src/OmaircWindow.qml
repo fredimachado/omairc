@@ -1903,8 +1903,13 @@ ApplicationWindow {
 
         if (direction < 0 && !consoleVisible && first === 0 && list.contentY <= 2) {
             list.snapshotAnchor();
-            if (irc.requestOlderTranscriptHistory())
+            if (irc.requestOlderTranscriptHistory()) {
+                list.stick = list.stickDetached;
                 return;
+            }
+            if (irc.transcriptHistoryPendingForSelection())
+                return;
+            list.clearAnchorSnapshot();
         }
 
         var page = Math.max(1, Math.round((last - first + 1) * fraction));
