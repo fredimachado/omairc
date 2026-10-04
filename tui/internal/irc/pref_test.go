@@ -4,13 +4,14 @@ import "testing"
 
 func TestPrefCatalog(t *testing.T) {
 	catalog := PrefCatalog()
-	if len(catalog) != 3 {
-		t.Fatalf("pref catalog has %d rows, want 3", len(catalog))
+	if len(catalog) != 4 {
+		t.Fatalf("pref catalog has %d rows, want 4", len(catalog))
 	}
 	want := []PrefSpec{
-		{PrefDirects, "directs", "Reopen direct messages on startup"},
-		{PrefAvatars, "avatars", "Show peer avatars"},
-		{PrefUnread, "unread", "Open conversations at unread"},
+		{PrefDirects, "directs", "Reopen direct messages on startup", PrefValueToggle},
+		{PrefAvatars, "avatars", "Show peer avatars", PrefValueToggle},
+		{PrefUnread, "unread", "Open conversations at unread", PrefValueToggle},
+		{PrefJoins, "joins", "Join, part, quit, and nick lines", PrefValueNoise},
 	}
 	for index, spec := range catalog {
 		if spec != want[index] {
@@ -32,7 +33,7 @@ func TestPrefFind(t *testing.T) {
 }
 
 func TestPrefStrings(t *testing.T) {
-	if got := PrefUsage(); got != "/pref [directs|avatars|unread] [on|off]" {
+	if got := PrefUsage(); got != "/pref [directs|avatars|unread] [on|off] | joins [folded|every|hidden]" {
 		t.Errorf("PrefUsage() = %q", got)
 	}
 	if got := PrefAvatarNote(); got != "Turn off to keep avatar hosts from seeing your IP on busy channels." {
@@ -62,8 +63,9 @@ func TestFormatPrefQuery(t *testing.T) {
 func TestFormatPrefList(t *testing.T) {
 	want := "Reopen direct messages on startup: on\n" +
 		"Show peer avatars: off\n" +
-		"Open conversations at unread: on"
-	if got := FormatPrefList(true, false, true); got != want {
+		"Open conversations at unread: on\n" +
+		"Join, part, quit, and nick lines: every"
+	if got := FormatPrefList(true, false, true, MembershipNoiseEvery); got != want {
 		t.Errorf("FormatPrefList = %q, want %q", got, want)
 	}
 }
@@ -83,6 +85,10 @@ func TestParsePrefArgument(t *testing.T) {
 		{"directs on extra", PrefRequest{Kind: PrefUsageKind}},
 		{"bogus", PrefRequest{Kind: PrefUsageKind}},
 		{"bogus on", PrefRequest{Kind: PrefUsageKind}},
+		{"joins on", PrefRequest{Kind: PrefUsageKind, Name: PrefJoins}},
+		{"directs folded", PrefRequest{Kind: PrefUsageKind, Name: PrefDirects}},
+		{"JOINS every", PrefRequest{Kind: PrefSet, Name: PrefJoins, Noise: MembershipNoiseEvery}},
+		{"joins hidden", PrefRequest{Kind: PrefSet, Name: PrefJoins, Noise: MembershipNoiseHidden}},
 	}
 	for _, test := range cases {
 		if got := ParsePrefArgument(test.argument); got != test.want {

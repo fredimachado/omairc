@@ -56,7 +56,7 @@ const QVector<IrcVerbSpec>& IrcVerbTable::all()
          QStringLiteral("/autoaway [off|on|duration [reason]|reason [text]]"),
          IrcVerbScope::Either, {}},
         {IrcCommand::Verb::Pref, QStringLiteral("pref"), {},
-         QStringLiteral("/pref [directs|avatars|unread] [on|off]"),
+         QStringLiteral("/pref [directs|avatars|unread] [on|off] | joins [folded|every|hidden]"),
          IrcVerbScope::Either, {}},
         {IrcCommand::Verb::Status, QStringLiteral("status"), {},
          QStringLiteral("/status [text]"), IrcVerbScope::Either, {}},

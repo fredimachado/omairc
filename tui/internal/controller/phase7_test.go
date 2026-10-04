@@ -217,6 +217,7 @@ func TestPhase7PrefOnStatus(t *testing.T) {
 		"Reopen direct messages on startup",
 		"Show peer avatars",
 		"Open conversations at unread",
+		"Join, part, quit, and nick lines",
 	} {
 		if !strings.Contains(text, label) {
 			t.Fatalf("/pref console text missing %q:\n%s", label, text)

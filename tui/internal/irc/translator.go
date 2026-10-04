@@ -271,8 +271,9 @@ func TranslateHistory(networkID, currentNick string, features ServerFeatures, ba
 	for _, line := range batch.Lines {
 		serverTime := ircServerTimeOf(line)
 		kept := false
-		for _, translated := range Translate(networkID, currentNick, features, line, now) {
-			switch value := translated.(type) {
+		translated := Translate(networkID, currentNick, features, line, now)
+		for _, translatedEvent := range translated {
+			switch value := translatedEvent.(type) {
 			case MessageEvent:
 				if value.Conversation != conversation {
 					continue
@@ -298,6 +299,12 @@ func TranslateHistory(networkID, currentNick string, features ServerFeatures, ba
 					MsgID:      value.MsgID,
 					ServerTime: serverTime,
 				})
+				kept = true
+			}
+		}
+		if !kept {
+			if membership, ok := channelMembershipReplayLine(batch.Target, features, line, translated, serverTime, now); ok {
+				event.Lines = append(event.Lines, membership)
 				kept = true
 			}
 		}
@@ -500,6 +507,73 @@ func isAmbiguousJoinFailureNumeric(command string) bool {
 		return true
 	}
 	return false
+}
+
+// channelMembershipReplayLine files a join, part, quit, or nick line on a
+// channel batch. The author stays empty so playback does not open a query.
+// Membership is not changed. It mirrors channelMembershipReplayLine.
+func channelMembershipReplayLine(batchTarget string, features ServerFeatures, message Message, translated []Event, serverTime *time.Time, now time.Time) (ReplayLine, bool) {
+	if !features.IsChannel(batchTarget) {
+		return ReplayLine{}, false
+	}
+	msgid := MsgID{Value: ircTagValueOrEmpty(message, "msgid")}
+	timestamp := timestampFor(message, now)
+	sameTarget := func(channel string) bool {
+		return features.CaseMapping().Equals(channel, batchTarget)
+	}
+	for _, translatedEvent := range translated {
+		switch value := translatedEvent.(type) {
+		case JoinEvent:
+			if value.Nick == "" || !sameTarget(value.Channel) {
+				return ReplayLine{}, false
+			}
+			shown := ""
+			if value.Account != nil {
+				shown = ShownAccount(features.CaseMapping().Equals(*value.Account, value.Nick), *value.Account)
+			}
+			return ReplayLine{
+				Body:       JoinLine(value.Nick, shown),
+				Timestamp:  timestamp,
+				Kind:       MessageKindEvent,
+				MsgID:      msgid,
+				ServerTime: serverTime,
+			}, true
+		case PartEvent:
+			if value.Nick == "" || !sameTarget(value.Channel) {
+				return ReplayLine{}, false
+			}
+			return ReplayLine{
+				Body:       PartLine(value.Nick),
+				Timestamp:  timestamp,
+				Kind:       MessageKindEvent,
+				MsgID:      msgid,
+				ServerTime: serverTime,
+			}, true
+		case QuitEvent:
+			if value.Nick == "" {
+				return ReplayLine{}, false
+			}
+			return ReplayLine{
+				Body:       QuitLine(value.Nick),
+				Timestamp:  timestamp,
+				Kind:       MessageKindEvent,
+				MsgID:      msgid,
+				ServerTime: serverTime,
+			}, true
+		case NickEvent:
+			if value.OldNick == "" || value.NewNick == "" {
+				return ReplayLine{}, false
+			}
+			return ReplayLine{
+				Body:       NickLine(value.OldNick, value.NewNick),
+				Timestamp:  timestamp,
+				Kind:       MessageKindEvent,
+				MsgID:      msgid,
+				ServerTime: serverTime,
+			}, true
+		}
+	}
+	return ReplayLine{}, false
 }
 
 // bouncerQueryReplayLine files a znc.in/playback query line on the batch

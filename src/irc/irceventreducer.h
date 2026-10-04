@@ -2,6 +2,7 @@
 
 #include "ircinbox.h"
 #include "ircevent.h"
+#include "ircmembershipnoise.h"
 #include "ircpresence.h"
 #include "ircserverfeatures.h"
 #include "irctyping.h"
@@ -240,6 +241,8 @@ public:
     std::optional<QDateTime> newestServerTime(
         const IrcConversationKey& key) const;
     void setWindowActive(bool active);
+    void setMembershipNoise(IrcMembershipNoise noise);
+    IrcMembershipNoise membershipNoise() const;
     void clearSelection();
     std::optional<IrcConversationKey> selected() const;
 
@@ -335,7 +338,24 @@ private:
                          const std::optional<QDateTime>& serverTime = std::nullopt);
     void appendEvent(IrcConversationState& conversation,
                      const QString& body,
-                     bool collapsible = false);
+                     bool collapsible = false,
+                     bool membership = false);
+    // History playback of one join, part, quit, or nick line. run collects rows
+    // inserted at `at`. A folded line may rewrite or remove the row just
+    // before `at` when the batch has not started a new run yet.
+    struct MembershipReplayResult {
+        bool addedRow = false;
+        qint64 sequence = 0;
+        std::optional<qint64> droppedSequence;
+    };
+    MembershipReplayResult admitMembershipReplay(
+        IrcConversationState& conversation,
+        std::vector<IrcReducedMessage>& run,
+        std::size_t& at,
+        const QString& body,
+        const QDateTime& timestamp,
+        const IrcMsgId& msgid,
+        const std::optional<QDateTime>& serverTime);
     void appendWhois(IrcConversationState& conversation, const QString& body);
     void appendError(IrcConversationState& conversation, const QString& body);
     void hydrateFromLog(IrcConversationState& conversation);
@@ -414,6 +434,7 @@ private:
     std::set<QString> m_selfAway;
     std::optional<IrcConversationKey> m_selected;
     bool m_windowActive = true;
+    IrcMembershipNoise m_membershipNoise = IrcMembershipNoise::Folded;
     std::optional<IrcMentionArrival> m_mentionArrival;
     std::optional<IrcInboxArrival> m_inboxArrival;
     std::set<IrcConversationKey> m_mutedKeys;

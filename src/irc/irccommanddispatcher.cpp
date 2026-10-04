@@ -753,21 +753,32 @@ IrcCommandOutcome IrcCommandDispatcher::dispatchPref(const IrcCommand& command,
     }
 
     auto enabledFor = [this](IrcPrefName name) {
-        return m_host.prefEnabled(name);
+        return m_host.prefEnabled ? m_host.prefEnabled(name) : false;
     };
-    auto applyPref = [this](IrcPrefName name, bool enabled) {
-        m_host.prefApply(name, enabled);
+    auto noiseFor = [this]() {
+        return m_host.membershipNoise ? m_host.membershipNoise()
+                                      : IrcMembershipNoise::Folded;
     };
 
-    if (request.kind == IrcPrefKind::Set)
-        applyPref(request.name, request.enabled);
+    if (request.kind == IrcPrefKind::Set) {
+        if (request.name == IrcPrefName::Joins) {
+            if (m_host.setMembershipNoise)
+                m_host.setMembershipNoise(request.noise);
+        } else if (m_host.prefApply) {
+            m_host.prefApply(request.name, request.enabled);
+        }
+    }
 
     if (request.kind == IrcPrefKind::QueryAll) {
         return echoPrefFeedback(
             surface,
-            ircFormatPrefList(m_host.prefEnabled(IrcPrefName::Directs),
-                              m_host.prefEnabled(IrcPrefName::Avatars),
-                              m_host.prefEnabled(IrcPrefName::Unread)));
+            ircFormatPrefList(enabledFor(IrcPrefName::Directs),
+                              enabledFor(IrcPrefName::Avatars),
+                              enabledFor(IrcPrefName::Unread),
+                              noiseFor()));
+    }
+    if (request.name == IrcPrefName::Joins) {
+        return echoPrefFeedback(surface, ircFormatPrefNoise(noiseFor()));
     }
     if (request.kind == IrcPrefKind::QueryOne) {
         return echoPrefFeedback(

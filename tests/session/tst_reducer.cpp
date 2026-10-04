@@ -159,6 +159,11 @@ private slots:
     void privmsgBreaksJoinCollapse();
     void kickAndModeStaySeparateFromJoinLine();
     void mixedJoinPartQuitNickCollapse();
+    void partThenJoinOfSameNickIsDropped();
+    void lineBetweenPartAndJoinKeepsBoth();
+    void nickChainKeepsFinalName();
+    void membershipNoiseShowsEveryOrHidesIncludingHistory();
+    void loneMembershipLineKeepsTodayWording();
     void forgetNetworkLeavesTheOtherNetwork();
     void historySplicesAboveSelfJoin();
     void historyMarksUnreadLikeLiveWhenUnselected();
@@ -193,6 +198,7 @@ private slots:
     void chatHistoryBeforeShiftsHistoryAnchor();
     void chatHistoryBeforePrependPersistsLogOrder();
     void chatHistoryBeforeDroppedLinesExhaustsTarget();
+    void hiddenMembershipPageDoesNotExhaustHistory();
     void selfPartClearsTrimTailOnCap();
     void selfKickClearsTrimTailOnCap();
     void chatHistoryBeforeDisarmedSkipsTailTrim();
@@ -1707,6 +1713,200 @@ void ReducerTest::mixedJoinPartQuitNickCollapse()
              QStringLiteral("Alice, Bob joined, Alice left, Bob quit, Carol joined, Carol is now Caroline"));
 }
 
+void ReducerTest::partThenJoinOfSameNickIsDropped()
+{
+    IrcEventReducer reducer;
+    welcome(reducer, networkA);
+    reducer.apply(IrcJoinEvent{
+        networkA, QStringLiteral("#room"), QStringLiteral("omairc")});
+    reducer.apply(IrcPartEvent{
+        networkA, QStringLiteral("#room"), QStringLiteral("Alice"), QString()});
+    reducer.apply(IrcJoinEvent{
+        networkA, QStringLiteral("#room"), QStringLiteral("Alice")});
+
+    const IrcConversationState *conversation = reducer.find(
+        reducer.conversationKey(networkA, QStringLiteral("#room")));
+    QVERIFY(conversation);
+    QCOMPARE(conversation->messages.size(), std::size_t(1));
+    QCOMPARE(conversation->messages[0].body, QStringLiteral("omairc joined"));
+    QCOMPARE(conversation->peopleCount(), 2);
+
+    reducer.apply(IrcJoinEvent{
+        networkA, QStringLiteral("#room"), QStringLiteral("Bob")});
+    reducer.apply(IrcQuitEvent{
+        networkA, QStringLiteral("Bob"), QStringLiteral("gone")});
+    reducer.apply(IrcJoinEvent{
+        networkA, QStringLiteral("#room"), QStringLiteral("Bob")});
+    QCOMPARE(conversation->messages.size(), std::size_t(2));
+    QCOMPARE(conversation->messages[1].body, QStringLiteral("Bob joined"));
+    QCOMPARE(conversation->peopleCount(), 3);
+}
+
+void ReducerTest::lineBetweenPartAndJoinKeepsBoth()
+{
+    IrcEventReducer reducer;
+    welcome(reducer, networkA);
+    const IrcConversationKey room =
+        reducer.conversationKey(networkA, QStringLiteral("#room"));
+    reducer.apply(IrcJoinEvent{
+        networkA, QStringLiteral("#room"), QStringLiteral("omairc")});
+    reducer.apply(IrcPartEvent{
+        networkA, QStringLiteral("#room"), QStringLiteral("Alice"), QString()});
+    reducer.apply(IrcMessageEvent{
+        room, QStringLiteral("omairc"), QStringLiteral("hello"), timestamp,
+        QStringLiteral("#room")});
+    reducer.apply(IrcJoinEvent{
+        networkA, QStringLiteral("#room"), QStringLiteral("Alice")});
+
+    const IrcConversationState *conversation = reducer.find(room);
+    QVERIFY(conversation);
+    QCOMPARE(conversation->messages.size(), std::size_t(4));
+    QCOMPARE(conversation->messages[1].body, QStringLiteral("Alice left"));
+    QCOMPARE(conversation->messages[2].body, QStringLiteral("hello"));
+    QCOMPARE(conversation->messages[3].body, QStringLiteral("Alice joined"));
+}
+
+void ReducerTest::nickChainKeepsFinalName()
+{
+    IrcEventReducer reducer;
+    welcome(reducer, networkA);
+    reducer.apply(IrcJoinEvent{
+        networkA, QStringLiteral("#room"), QStringLiteral("Alice")});
+    reducer.apply(IrcNickEvent{
+        networkA, QStringLiteral("Alice"), QStringLiteral("Bob")});
+    reducer.apply(IrcNickEvent{
+        networkA, QStringLiteral("Bob"), QStringLiteral("Carol")});
+
+    const IrcConversationState *conversation = reducer.find(
+        reducer.conversationKey(networkA, QStringLiteral("#room")));
+    QVERIFY(conversation);
+    QCOMPARE(conversation->messages.size(), std::size_t(1));
+    QCOMPARE(conversation->messages[0].body,
+             QStringLiteral("Alice joined, Alice is now Carol"));
+}
+
+void ReducerTest::membershipNoiseShowsEveryOrHidesIncludingHistory()
+{
+    IrcEventReducer every;
+    welcome(every, networkA);
+    every.setMembershipNoise(IrcMembershipNoise::Every);
+    every.apply(IrcJoinEvent{
+        networkA, QStringLiteral("#room"), QStringLiteral("Alice")});
+    every.apply(IrcJoinEvent{
+        networkA, QStringLiteral("#room"), QStringLiteral("Bob")});
+    const IrcConversationKey room =
+        every.conversationKey(networkA, QStringLiteral("#room"));
+    const IrcConversationState *shown = every.find(room);
+    QVERIFY(shown);
+    QCOMPARE(shown->messages.size(), std::size_t(2));
+    QCOMPARE(shown->messages[0].body, QStringLiteral("Alice joined"));
+    QCOMPARE(shown->messages[1].body, QStringLiteral("Bob joined"));
+    QVERIFY(!shown->messages[0].collapsible);
+
+    IrcEventReducer hidden;
+    welcome(hidden, networkA);
+    hidden.setMembershipNoise(IrcMembershipNoise::Hidden);
+    hidden.apply(IrcJoinEvent{
+        networkA, QStringLiteral("#room"), QStringLiteral("omairc")});
+    hidden.apply(IrcJoinEvent{
+        networkA, QStringLiteral("#room"), QStringLiteral("Alice")});
+    hidden.apply(IrcPartEvent{
+        networkA, QStringLiteral("#room"), QStringLiteral("Alice"), QString()});
+    hidden.apply(IrcKickEvent{
+        networkA, QStringLiteral("#room"), QStringLiteral("Bob"),
+        QStringLiteral("op"), QString()});
+    hidden.apply(IrcModeEvent{
+        networkA, QStringLiteral("#room"), QStringLiteral("op"),
+        QStringLiteral("+v"), {}});
+    const IrcConversationState *quiet = hidden.find(room);
+    QVERIFY(quiet);
+    QCOMPARE(quiet->peopleCount(), 1);
+    QCOMPARE(quiet->messages.size(), std::size_t(2));
+    QCOMPARE(quiet->messages[0].body, QStringLiteral("Bob was kicked"));
+    QCOMPARE(quiet->messages[1].body, QStringLiteral("op set mode +v"));
+
+    IrcHistoryBatch batch;
+    batch.target = QStringLiteral("#room");
+    batch.kind = IrcHistoryKind::BouncerPlayback;
+    batch.lines.push_back(mustParse("@time=2026-09-04T00:00:00.000Z :alice!u@h JOIN :#room"));
+    batch.lines.push_back(mustParse("@time=2026-09-04T00:00:01.000Z :bob!u@h JOIN :#room"));
+    batch.lines.push_back(mustParse("@time=2026-09-04T00:00:02.000Z :alice!u@h PRIVMSG #room :from history"));
+    const auto played = IrcEventTranslator::translateHistory(
+        networkA, QStringLiteral("omairc"), IrcServerFeatures(), batch);
+    QVERIFY(played);
+    QCOMPARE(played->lines.size(), std::size_t(3));
+    hidden.apply(*played);
+    QCOMPARE(quiet->peopleCount(), 1);
+    QCOMPARE(quiet->messages.size(), std::size_t(3));
+    QCOMPARE(quiet->messages[0].body, QStringLiteral("from history"));
+    QVERIFY(hidden.playbackBatchKept(networkA, QStringLiteral("#room")));
+
+    IrcEventReducer folded;
+    welcome(folded, networkA);
+    folded.apply(IrcJoinEvent{
+        networkA, QStringLiteral("#room"), QStringLiteral("omairc")});
+    folded.apply(*played);
+    const IrcConversationState *foldedRoom = folded.find(room);
+    QVERIFY(foldedRoom);
+    QCOMPARE(foldedRoom->peopleCount(), 1);
+    QCOMPARE(foldedRoom->messages.size(), std::size_t(3));
+    QCOMPARE(foldedRoom->messages[0].body, QStringLiteral("alice, bob joined"));
+    QCOMPARE(foldedRoom->messages[1].body, QStringLiteral("from history"));
+    QCOMPARE(foldedRoom->messages[2].body, QStringLiteral("omairc joined"));
+
+    every.apply(IrcJoinEvent{
+        networkA, QStringLiteral("#room"), QStringLiteral("omairc")});
+    every.apply(*played);
+    QCOMPARE(shown->peopleCount(), 3);
+    QCOMPARE(shown->messages[2].body, QStringLiteral("alice joined"));
+    QCOMPARE(shown->messages[3].body, QStringLiteral("bob joined"));
+    QCOMPARE(shown->messages[4].body, QStringLiteral("from history"));
+}
+
+void ReducerTest::loneMembershipLineKeepsTodayWording()
+{
+    IrcEventReducer reducer;
+    welcome(reducer, networkA);
+    const IrcConversationKey room =
+        reducer.conversationKey(networkA, QStringLiteral("#room"));
+    reducer.apply(IrcJoinEvent{
+        networkA, QStringLiteral("#room"), QStringLiteral("Alice")});
+    reducer.apply(IrcMessageEvent{
+        room, QStringLiteral("Alice"), QStringLiteral("hello"), timestamp,
+        QStringLiteral("#room")});
+    reducer.apply(IrcPartEvent{
+        networkA, QStringLiteral("#room"), QStringLiteral("Alice"), QString()});
+    reducer.apply(IrcMessageEvent{
+        room, QStringLiteral("Alice"), QStringLiteral("gap"), timestamp,
+        QStringLiteral("#room")});
+    reducer.apply(IrcJoinEvent{
+        networkA, QStringLiteral("#room"), QStringLiteral("Alice")});
+    reducer.apply(IrcMessageEvent{
+        room, QStringLiteral("Alice"), QStringLiteral("back"), timestamp,
+        QStringLiteral("#room")});
+    reducer.apply(IrcQuitEvent{
+        networkA, QStringLiteral("Alice"), QStringLiteral("bye")});
+    reducer.apply(IrcMessageEvent{
+        room, QStringLiteral("Alice"), QStringLiteral("next"), timestamp,
+        QStringLiteral("#room")});
+    reducer.apply(IrcJoinEvent{
+        networkA, QStringLiteral("#room"), QStringLiteral("Bob")});
+    reducer.apply(IrcMessageEvent{
+        room, QStringLiteral("Bob"), QStringLiteral("hi"), timestamp,
+        QStringLiteral("#room")});
+    reducer.apply(IrcNickEvent{
+        networkA, QStringLiteral("Bob"), QStringLiteral("Bobby")});
+
+    const IrcConversationState *conversation = reducer.find(room);
+    QVERIFY(conversation);
+    QCOMPARE(conversation->messages[0].body, QStringLiteral("Alice joined"));
+    QCOMPARE(conversation->messages[2].body, QStringLiteral("Alice left"));
+    QCOMPARE(conversation->messages[4].body, QStringLiteral("Alice joined"));
+    QCOMPARE(conversation->messages[6].body, QStringLiteral("Alice quit"));
+    QCOMPARE(conversation->messages[8].body, QStringLiteral("Bob joined"));
+    QCOMPARE(conversation->messages[10].body, QStringLiteral("Bob is now Bobby"));
+}
+
 void ReducerTest::forgetNetworkLeavesTheOtherNetwork()
 {
     IrcEventReducer reducer;
@@ -2241,13 +2441,12 @@ void ReducerTest::partThenJoinSplicesAboveThisJoin()
 
     const IrcConversationState *conversation = reducer.find(room);
     QVERIFY(conversation);
-    QCOMPARE(conversation->messages.size(), std::size_t(4));
+    // The part and the immediate rejoin cancel, so neither line is a row.
+    // Playback lands after the earlier join.
+    QCOMPARE(conversation->messages.size(), std::size_t(2));
     QCOMPARE(conversation->messages[0].body, QStringLiteral("omairc joined"));
-    QCOMPARE(conversation->messages[1].body, QStringLiteral("omairc left"));
-    QCOMPARE(conversation->messages[2].body, QStringLiteral("backlog"));
-    QCOMPARE(conversation->messages[2].origin, IrcOrigin::Replay);
-    QCOMPARE(conversation->messages[3].body, QStringLiteral("omairc joined"));
-    QVERIFY(!conversation->messages[3].collapsible);
+    QCOMPARE(conversation->messages[1].body, QStringLiteral("backlog"));
+    QCOMPARE(conversation->messages[1].origin, IrcOrigin::Replay);
 }
 
 void ReducerTest::historyAfterPartDoesNotSplice()
@@ -2809,6 +3008,38 @@ void ReducerTest::chatHistoryBeforeDroppedLinesExhaustsTarget()
              QStringList{QStringLiteral("#omarchy")});
 }
 
+void ReducerTest::hiddenMembershipPageDoesNotExhaustHistory()
+{
+    IrcEventReducer reducer;
+    welcome(reducer, networkA);
+    const IrcConversationKey room =
+        reducer.conversationKey(networkA, QStringLiteral("#omarchy"));
+    reducer.apply(IrcJoinEvent{
+        networkA, QStringLiteral("#omarchy"), QStringLiteral("omairc")});
+    reducer.setMembershipNoise(IrcMembershipNoise::Hidden);
+
+    IrcReplayLine join;
+    join.body = QStringLiteral("alice joined");
+    join.timestamp = timestamp;
+    join.kind = IrcMessageKindTag::Event;
+    join.msgid = IrcMsgId{QStringLiteral("join-page")};
+    IrcHistoryEvent older{
+        room,
+        QStringLiteral("#omarchy"),
+        {join},
+        IrcHistoryKind::ChatHistory,
+    };
+    older.prependAtHead = true;
+    reducer.apply(older);
+
+    QCOMPARE(reducer.takeHistoryBeforeExhaustTargets(), QStringList());
+    const IrcConversationState *conversation = reducer.find(room);
+    QVERIFY(conversation);
+    QCOMPARE(conversation->messages.size(), std::size_t(1));
+    QCOMPARE(conversation->messages[0].body, QStringLiteral("omairc joined"));
+    QCOMPARE(conversation->peopleCount(), 1);
+}
+
 void ReducerTest::selfPartClearsTrimTailOnCap()
 {
     IrcEventReducer reducer;
@@ -3189,14 +3420,20 @@ void ReducerTest::historicJoinInBatchDoesNotChangePeopleCount()
     const auto event = IrcEventTranslator::translateHistory(
         networkA, QStringLiteral("omairc"), IrcServerFeatures(), batch);
     QVERIFY(event);
-    QCOMPARE(event->lines.size(), std::size_t(1));
-    QCOMPARE(event->lines.front().body, QStringLiteral("from history"));
+    QCOMPARE(event->lines.size(), std::size_t(2));
+    QCOMPARE(event->lines.front().author, QString());
+    QCOMPARE(event->lines.front().kind, IrcMessageKindTag::Event);
+    QCOMPARE(event->lines.front().body, QStringLiteral("alice joined"));
+    QCOMPARE(event->lines.back().body, QStringLiteral("from history"));
     reducer.apply(*event);
 
     const IrcConversationState *conversation = reducer.find(room);
     QVERIFY(conversation);
     QCOMPARE(conversation->peopleCount(), 1);
-    QCOMPARE(conversation->messages[0].body, QStringLiteral("from history"));
+    QCOMPARE(conversation->messages.size(), std::size_t(3));
+    QCOMPARE(conversation->messages[0].body, QStringLiteral("alice joined"));
+    QCOMPARE(conversation->messages[1].body, QStringLiteral("from history"));
+    QCOMPARE(conversation->messages[2].body, QStringLiteral("omairc joined"));
 }
 
 void ReducerTest::bouncerQueryPlaybackKeepsPreviousNick()

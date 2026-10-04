@@ -96,6 +96,8 @@ const (
 	MessageKindChat MessageKindTag = iota
 	// MessageKindEmote is a CTCP ACTION line.
 	MessageKindEmote
+	// MessageKindEvent is a join, part, quit, or nick line.
+	MessageKindEvent
 )
 
 // HistoryKind identifies which reply produced a replay batch. It mirrors

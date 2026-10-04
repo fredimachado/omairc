@@ -11,6 +11,9 @@ const QVector<IrcPrefSpec>& ircPrefCatalog()
          QStringLiteral("Show peer avatars")},
         {IrcPrefName::Unread, QStringLiteral("unread"),
          QStringLiteral("Open conversations at unread")},
+        {IrcPrefName::Joins, QStringLiteral("joins"),
+         QStringLiteral("Join, part, quit, and nick lines"),
+         IrcPrefValueKind::Noise},
     };
     return rows;
 }
@@ -27,7 +30,8 @@ const IrcPrefSpec *ircPrefFind(const QString& token)
 
 QString ircPrefUsage()
 {
-    return QStringLiteral("/pref [directs|avatars|unread] [on|off]");
+    return QStringLiteral(
+        "/pref [directs|avatars|unread] [on|off] | joins [folded|every|hidden]");
 }
 
 QString ircPrefAvatarNote()
@@ -58,11 +62,21 @@ QString ircFormatPrefQuery(IrcPrefName name, bool enabled)
     return text;
 }
 
-QString ircFormatPrefList(bool directs, bool avatars, bool unread)
+QString ircFormatPrefNoise(IrcMembershipNoise noise)
+{
+    return QStringLiteral("Join, part, quit, and nick lines: %1")
+        .arg(ircMembershipNoiseToken(noise));
+}
+
+QString ircFormatPrefList(bool directs,
+                          bool avatars,
+                          bool unread,
+                          IrcMembershipNoise noise)
 {
     return ircFormatPrefState(IrcPrefName::Directs, directs) + QLatin1Char('\n')
         + ircFormatPrefState(IrcPrefName::Avatars, avatars) + QLatin1Char('\n')
-        + ircFormatPrefState(IrcPrefName::Unread, unread);
+        + ircFormatPrefState(IrcPrefName::Unread, unread) + QLatin1Char('\n')
+        + ircFormatPrefNoise(noise);
 }
 
 IrcPrefRequest ircParsePrefArgument(const QString& argument)
@@ -87,6 +101,15 @@ IrcPrefRequest ircParsePrefArgument(const QString& argument)
     }
 
     const QString value = parts.at(1).toLower();
+    if (spec->valueKind == IrcPrefValueKind::Noise) {
+        const std::optional<IrcMembershipNoise> noise =
+            ircMembershipNoiseFromToken(value);
+        if (!noise)
+            return request;
+        request.kind = IrcPrefKind::Set;
+        request.noise = *noise;
+        return request;
+    }
     if (value == QLatin1String("on")) {
         request.kind = IrcPrefKind::Set;
         request.enabled = true;

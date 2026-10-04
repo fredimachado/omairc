@@ -94,6 +94,8 @@ public:
                                         IrcComposerSurface surface)> dispatchMonitor;
         std::function<bool(IrcPrefName name)> prefEnabled;
         std::function<void(IrcPrefName name, bool enabled)> prefApply;
+        std::function<IrcMembershipNoise()> membershipNoise;
+        std::function<void(IrcMembershipNoise noise)> setMembershipNoise;
     };
 
     IrcCommandDispatcher(IrcEventReducer& reducer,

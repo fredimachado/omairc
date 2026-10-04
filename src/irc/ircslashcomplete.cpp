@@ -187,10 +187,10 @@ IrcSlashProbe IrcSlashComplete::projectPref(const QString& composerText)
 
     const QString prefix =
         QStringLiteral("/pref ") + spec->token + QLatin1Char(' ');
-    static const QStringList values = {
-        QStringLiteral("on"),
-        QStringLiteral("off"),
-    };
+    const QStringList values = spec->valueKind == IrcPrefValueKind::Noise
+        ? QStringList{QStringLiteral("folded"), QStringLiteral("every"),
+                      QStringLiteral("hidden")}
+        : QStringList{QStringLiteral("on"), QStringLiteral("off")};
     QVector<IrcSlashHit> hits;
     const QString foldedValue = value.toLower();
     if (foldedValue.isEmpty()) {

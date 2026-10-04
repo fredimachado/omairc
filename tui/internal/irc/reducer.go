@@ -191,6 +191,7 @@ type EventReducer struct {
 	// initializer `bool m_windowActive = true`: a reducer is focused until
 	// something says otherwise.
 	windowInactive      bool
+	membershipNoise     MembershipNoise
 	mentionArrival      *MentionArrival
 	inboxArrival        *InboxArrival
 	mutedKeys           map[ConversationKey]struct{}
@@ -320,6 +321,18 @@ func (r *EventReducer) MarkRead(key ConversationKey) bool {
 	conversation.Unread = 0
 	conversation.Mentions = 0
 	return true
+}
+
+// SetMembershipNoise chooses how join, part, quit, and nick lines are shown.
+// Folded is the ordinary case. Lines already on screen stay as they are.
+func (r *EventReducer) SetMembershipNoise(noise MembershipNoise) {
+	r.ensure()
+	r.membershipNoise = noise
+}
+
+// MembershipNoise reports the current join, part, quit, and nick display.
+func (r *EventReducer) MembershipNoise() MembershipNoise {
+	return r.membershipNoise
 }
 
 // SetWindowActive records whether the window has focus. It is flag-only;
@@ -1060,15 +1073,53 @@ func (r *EventReducer) noteChatArrival(conversation *ConversationState, key Conv
 	}
 }
 
-// appendEvent adds one event line, collapsing it into a trailing collapsible
-// event row when possible. It persists the row and caps the transcript. It
-// mirrors IrcEventReducer::appendEvent.
-func (r *EventReducer) appendEvent(conversation *ConversationState, body string, collapsible bool) {
-	if collapsible && len(conversation.Messages) > 0 {
+func dropLastTranscriptRow(conversation *ConversationState) {
+	if len(conversation.Messages) == 0 {
+		return
+	}
+	last := conversation.Messages[len(conversation.Messages)-1]
+	if !last.MsgID.IsEmpty() {
+		delete(conversation.MessageIDs, last.MsgID)
+	}
+	removedIndex := int64(len(conversation.Messages) - 1)
+	conversation.Messages = conversation.Messages[:len(conversation.Messages)-1]
+	if conversation.channel != nil && conversation.channel.HistoryAnchor != nil {
+		anchorIndex := conversation.channel.HistoryAnchor.Sequence - int64(conversation.Trimmed)
+		if anchorIndex > removedIndex {
+			conversation.channel.HistoryAnchor.Sequence--
+		}
+	}
+}
+
+// appendEvent adds one event line. Membership lines follow the noise setting:
+// folded lines merge, a leave followed at once by the same nick rejoining is
+// dropped, every line stays separate, and hidden lines are skipped. It mirrors
+// IrcEventReducer::appendEvent.
+func (r *EventReducer) appendEvent(conversation *ConversationState, body string, collapsible, membership bool) {
+	if membership && r.membershipNoise == MembershipNoiseHidden {
+		return
+	}
+	if membership && r.membershipNoise == MembershipNoiseEvery {
+		collapsible = false
+	}
+	if membership && r.membershipNoise == MembershipNoiseFolded && len(conversation.Messages) > 0 {
 		last := &conversation.Messages[len(conversation.Messages)-1]
 		if last.Kind == KindEvent && last.Collapsible {
-			last.Body = collapseEventBody(last.Body, body)
-			return
+			folded := FoldMembership(last.Body, body, func(left, right string) bool {
+				return r.equals(conversation.Key.NetworkID, left, right)
+			})
+			if folded.Kind == FoldCancel {
+				if folded.DropRow {
+					dropLastTranscriptRow(conversation)
+				} else {
+					last.Body = folded.Body
+				}
+				return
+			}
+			if collapsible {
+				last.Body = folded.Body
+				return
+			}
 		}
 	}
 	admitMessage(conversation, ReducedMessage{
@@ -1079,6 +1130,82 @@ func (r *EventReducer) appendEvent(conversation *ConversationState, body string,
 	})
 	r.persistMessage(conversation, conversation.Messages[len(conversation.Messages)-1])
 	r.capMessages(conversation)
+}
+
+type membershipReplayResult struct {
+	addedRow        bool
+	sequence        int64
+	dropped         bool
+	droppedSequence int64
+}
+
+// admitMembershipReplay places one played-back membership line. It mirrors
+// IrcEventReducer::admitMembershipReplay.
+func (r *EventReducer) admitMembershipReplay(conversation *ConversationState, run *[]ReducedMessage, at *int, body string, timestamp time.Time, msgid MsgID, serverTime *time.Time) membershipReplayResult {
+	var result membershipReplayResult
+	if r.membershipNoise == MembershipNoiseHidden {
+		return result
+	}
+	sameNick := func(left, right string) bool {
+		return r.equals(conversation.Key.NetworkID, left, right)
+	}
+	showEach := r.membershipNoise == MembershipNoiseEvery
+	pushRow := func(collapsible bool) {
+		message := ReducedMessage{
+			Body:        body,
+			Timestamp:   timestamp,
+			ServerTime:  serverTime,
+			Kind:        KindEvent,
+			Collapsible: collapsible,
+			Origin:      OriginReplay,
+			MsgID:       msgid,
+		}
+		message.Sequence = conversation.NextSequence
+		conversation.NextSequence++
+		*run = append(*run, message)
+		result.addedRow = true
+		result.sequence = message.Sequence
+	}
+	foldInto := func(row *ReducedMessage) bool {
+		if row.Kind != KindEvent || !row.Collapsible {
+			return false
+		}
+		folded := FoldMembership(row.Body, body, sameNick)
+		if folded.Kind == FoldCancel && folded.DropRow {
+			result.dropped = true
+			result.droppedSequence = row.Sequence
+			if !row.MsgID.IsEmpty() {
+				delete(conversation.MessageIDs, row.MsgID)
+			}
+			return true
+		}
+		row.Body = folded.Body
+		result.dropped = false
+		return true
+	}
+	if !showEach && len(*run) > 0 && foldInto(&(*run)[len(*run)-1]) {
+		if result.dropped {
+			*run = (*run)[:len(*run)-1]
+		}
+		return result
+	}
+	if !showEach && len(*run) == 0 && *at > 0 && *at <= len(conversation.Messages) && foldInto(&conversation.Messages[*at-1]) {
+		if result.dropped {
+			removedIndex := int64(*at - 1)
+			index := *at - 1
+			conversation.Messages = append(conversation.Messages[:index], conversation.Messages[index+1:]...)
+			*at = *at - 1
+			if conversation.channel != nil && conversation.channel.HistoryAnchor != nil {
+				anchorIndex := conversation.channel.HistoryAnchor.Sequence - int64(conversation.Trimmed)
+				if anchorIndex > removedIndex {
+					conversation.channel.HistoryAnchor.Sequence--
+				}
+			}
+		}
+		return result
+	}
+	pushRow(!showEach)
+	return result
 }
 
 // appendWhois adds one WHOIS transcript row. It mirrors
@@ -1467,12 +1594,18 @@ func (r *EventReducer) spliceHistory(conversation *ConversationState, event Hist
 	}
 
 	type pendingPlaybackNote struct {
-		sequence   int64
-		serverTime *time.Time
+		sequence       int64
+		serverTime     *time.Time
+		keepWithoutRow bool
 	}
 	var run []ReducedMessage
 	var pendingNotes []pendingPlaybackNote
 	sawSelf := false
+	// A page of only join, part, quit, and nick lines can leave no new row
+	// when those lines are hidden or folded away. That is not an empty page:
+	// the reader is still paging, so the tail cap stays armed.
+	sawLine := false
+	membershipOnly := true
 
 	matchedSequence := func(predicate func(ReducedMessage) bool) (int64, bool) {
 		for _, message := range conversation.Messages {
@@ -1489,11 +1622,18 @@ func (r *EventReducer) spliceHistory(conversation *ConversationState, event Hist
 	}
 
 	for _, line := range event.Lines {
+		sawLine = true
+		if line.Kind != MessageKindEvent {
+			membershipOnly = false
+		}
 		if !sawSelf && r.bouncerQueryOwnLine(event, line.Author) {
 			sawSelf = true
 		}
 		queueNote := func(sequence int64) {
 			pendingNotes = append(pendingNotes, pendingPlaybackNote{sequence: sequence, serverTime: line.ServerTime})
+		}
+		queueKeptWithoutRow := func() {
+			pendingNotes = append(pendingNotes, pendingPlaybackNote{serverTime: line.ServerTime, keepWithoutRow: true})
 		}
 		if !line.MsgID.IsEmpty() {
 			if _, exists := conversation.MessageIDs[line.MsgID]; exists {
@@ -1504,6 +1644,25 @@ func (r *EventReducer) spliceHistory(conversation *ConversationState, event Hist
 				}
 				continue
 			}
+		}
+		if line.Kind == MessageKindEvent {
+			if !line.MsgID.IsEmpty() {
+				conversation.MessageIDs[line.MsgID] = struct{}{}
+			}
+			admitted := r.admitMembershipReplay(conversation, &run, &at, line.Body, line.Timestamp, line.MsgID, line.ServerTime)
+			if admitted.dropped {
+				for index := range pendingNotes {
+					if pendingNotes[index].sequence == admitted.droppedSequence {
+						pendingNotes[index].keepWithoutRow = true
+					}
+				}
+			}
+			if admitted.addedRow {
+				queueNote(admitted.sequence)
+			} else {
+				queueKeptWithoutRow()
+			}
+			continue
 		}
 		kind := KindMessage
 		if line.Kind == MessageKindEmote {
@@ -1578,19 +1737,24 @@ func (r *EventReducer) spliceHistory(conversation *ConversationState, event Hist
 			r.capMessages(conversation)
 		}
 		for _, message := range run {
+			if message.Kind == KindEvent {
+				continue
+			}
 			r.noteChatArrival(conversation, event.Conversation, message.Author, message.Body, message.Kind, message.MsgID, message.Sequence, message.ServerTime, OriginReplay, &event)
 		}
-	} else if event.Kind == HistoryChat && (conversation.HistoryPageCapTail || olderPage) {
+	} else if event.Kind == HistoryChat && (conversation.HistoryPageCapTail || olderPage) && !(sawLine && membershipOnly) {
 		conversation.HistoryPageCapTail = false
 	}
 
 	keptPlaybackLine := false
 	for _, pending := range pendingNotes {
-		stillPresent := false
-		for _, message := range conversation.Messages {
-			if message.Sequence == pending.sequence {
-				stillPresent = true
-				break
+		stillPresent := pending.keepWithoutRow
+		if !stillPresent {
+			for _, message := range conversation.Messages {
+				if message.Sequence == pending.sequence {
+					stillPresent = true
+					break
+				}
 			}
 		}
 		if !stillPresent {
@@ -1753,7 +1917,7 @@ func (r *EventReducer) reduceJoin(event JoinEvent) {
 			body = event.Nick + " (" + shown + ") joined"
 		}
 	}
-	r.appendEvent(conversation, body, !self)
+	r.appendEvent(conversation, body, !self, true)
 	if self {
 		r.releasePendingPlayback(conversation)
 	}
@@ -1793,7 +1957,7 @@ func (r *EventReducer) reducePart(event PartEvent) {
 		stopNamesSync(channel)
 	}
 	r.forgetUnseen(event.NetworkID, departed)
-	r.appendEvent(conversation, event.Nick+" left", true)
+	r.appendEvent(conversation, event.Nick+" left", true, true)
 	if self {
 		conversation.Typing = make(map[string]TypingHint)
 	} else {
@@ -1817,7 +1981,7 @@ func (r *EventReducer) reduceQuit(event QuitEvent) {
 			continue
 		}
 		delete(channel.Members, normalizedNick)
-		r.appendEvent(conversation, event.Nick+" quit", true)
+		r.appendEvent(conversation, event.Nick+" quit", true, true)
 	}
 	r.forgetUnseen(event.NetworkID, []string{normalizedNick})
 	r.clearTypingEverywhere(event.NetworkID, normalizedNick)
@@ -1852,7 +2016,7 @@ func (r *EventReducer) reduceNick(event NickEvent) {
 		updated.DisplayNick = event.NewNick
 		delete(channel.Members, oldNormalized)
 		channel.Members[newNormalized] = updated
-		r.appendEvent(conversation, event.OldNick+" is now "+event.NewNick, true)
+		r.appendEvent(conversation, NickLine(event.OldNick, event.NewNick), true, true)
 	}
 
 	oldKey := ConversationKey{NetworkID: event.NetworkID, NormalizedTarget: oldNormalized}
@@ -1863,7 +2027,7 @@ func (r *EventReducer) reduceNick(event NickEvent) {
 	}
 
 	direct.Target = event.NewNick
-	r.appendEvent(direct, event.OldNick+" is now "+event.NewNick, true)
+	r.appendEvent(direct, NickLine(event.OldNick, event.NewNick), true, true)
 	if oldKey == newKey {
 		return
 	}
@@ -1935,7 +2099,7 @@ func (r *EventReducer) reduceKick(event KickEvent) {
 		stopNamesSync(channel)
 	}
 	r.forgetUnseen(event.NetworkID, departed)
-	r.appendEvent(conversation, event.Target+" was kicked", false)
+	r.appendEvent(conversation, event.Target+" was kicked", false, false)
 	if self {
 		conversation.Typing = make(map[string]TypingHint)
 		preview := event.Reason
@@ -2005,7 +2169,7 @@ func (r *EventReducer) reduceMode(event ModeEvent) {
 	if conversation == nil {
 		return
 	}
-	r.appendEvent(conversation, event.Author+" set mode "+event.Mode, false)
+	r.appendEvent(conversation, event.Author+" set mode "+event.Mode, false, false)
 	channel := conversation.channel
 	if channel == nil {
 		return

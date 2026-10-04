@@ -89,6 +89,7 @@ HEADERS += \
     src/irc/irchighlight.h \
     src/irc/ircautoaway.h \
     src/irc/ircpref.h \
+    src/irc/ircmembershipnoise.h \
     src/irc/ircinbox.h \
     src/irc/ircinboxmodel.h \
     src/irc/ircevent.h \

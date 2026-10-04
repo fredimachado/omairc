@@ -394,6 +394,9 @@ private:
     bool m_reopenDirectMessages = true;
     bool m_loadPeerAvatars = true;
     bool m_openConversationsAtUnread = true;
+    IrcMembershipNoise m_membershipNoise = IrcMembershipNoise::Folded;
+    IrcMembershipNoise membershipNoise() const;
+    void setMembershipNoise(IrcMembershipNoise noise);
     bool m_transcriptCaughtUp = true;
     bool m_windowActive = true;
     QHash<QString, ReadMarkerOutbound> m_readMarkerOutbound;

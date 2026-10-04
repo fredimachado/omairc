@@ -1034,7 +1034,7 @@ void CommandTest::catalogLookupAndScope()
     QVERIFY(pref);
     QCOMPARE(pref->verb, IrcCommand::Verb::Pref);
     QCOMPARE(pref->name, QStringLiteral("pref"));
-    QCOMPARE(pref->usage, QStringLiteral("/pref [directs|avatars|unread] [on|off]"));
+    QCOMPARE(pref->usage, QStringLiteral("/pref [directs|avatars|unread] [on|off] | joins [folded|every|hidden]"));
     QCOMPARE(pref->scope, IrcVerbScope::Either);
     QVERIFY(pref->wrongScopeText.isEmpty());
     QVERIFY(pref->aliases.isEmpty());

@@ -103,6 +103,11 @@ QString openConversationsAtUnreadKey()
     return QStringLiteral("openConversationsAtUnread");
 }
 
+QString membershipNoiseKey()
+{
+    return QStringLiteral("membershipNoise");
+}
+
 
 
 
@@ -111,6 +116,15 @@ bool loadReopenDirectMessages()
     QSettings settings;
     settings.beginGroup(QStringLiteral("preferences"));
     return settings.value(reopenDirectMessagesKey(), true).toBool();
+}
+
+IrcMembershipNoise loadMembershipNoise()
+{
+    QSettings settings;
+    settings.beginGroup(QStringLiteral("preferences"));
+    const auto parsed = ircMembershipNoiseFromToken(
+        settings.value(membershipNoiseKey()).toString());
+    return parsed.value_or(IrcMembershipNoise::Folded);
 }
 
 // Malformed, unreadable, or read-only ini: return before setValue. These
@@ -131,6 +145,17 @@ void saveReopenDirectMessages(bool enabled)
         return;
     settings.beginGroup(QStringLiteral("preferences"));
     settings.setValue(reopenDirectMessagesKey(), enabled);
+    settings.endGroup();
+    settings.sync();
+}
+
+void saveMembershipNoise(IrcMembershipNoise noise)
+{
+    QSettings settings;
+    if (preferenceIniRefusesWrite(settings))
+        return;
+    settings.beginGroup(QStringLiteral("preferences"));
+    settings.setValue(membershipNoiseKey(), ircMembershipNoiseToken(noise));
     settings.endGroup();
     settings.sync();
 }
@@ -335,6 +360,8 @@ IrcController::IrcController(QObject *parent)
                   return loadPeerAvatars();
               case IrcPrefName::Unread:
                   return openConversationsAtUnread();
+              case IrcPrefName::Joins:
+                  break;
               }
               return false;
           },
@@ -349,8 +376,12 @@ IrcController::IrcController(QObject *parent)
               case IrcPrefName::Unread:
                   setOpenConversationsAtUnread(enabled);
                   break;
+              case IrcPrefName::Joins:
+                  break;
               }
           },
+          [this]() { return membershipNoise(); },
+          [this](IrcMembershipNoise noise) { setMembershipNoise(noise); },
       })
     , m_autoawayRuntime(IrcAutoawayRuntime::Host{
           [this](const QString& networkId) {
@@ -423,6 +454,8 @@ void IrcController::loadStoredPreferences()
     m_reopenDirectMessages = loadReopenDirectMessages();
     m_loadPeerAvatars = loadLoadPeerAvatars();
     m_openConversationsAtUnread = loadOpenConversationsAtUnread();
+    m_membershipNoise = loadMembershipNoise();
+    m_reducer.setMembershipNoise(m_membershipNoise);
     m_autoawayRuntime.loadStored();
 }
 
@@ -803,6 +836,21 @@ void IrcController::setOpenConversationsAtUnread(bool enabled)
     if (!m_ephemeral)
         saveOpenConversationsAtUnread(enabled);
     emit openConversationsAtUnreadChanged();
+}
+
+IrcMembershipNoise IrcController::membershipNoise() const
+{
+    return m_membershipNoise;
+}
+
+void IrcController::setMembershipNoise(IrcMembershipNoise noise)
+{
+    if (m_membershipNoise == noise)
+        return;
+    m_membershipNoise = noise;
+    m_reducer.setMembershipNoise(noise);
+    if (!m_ephemeral)
+        saveMembershipNoise(noise);
 }
 
 void IrcController::setTranscriptCaughtUp(bool caughtUp)
