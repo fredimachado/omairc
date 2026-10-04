@@ -32,11 +32,14 @@ ListView {
     property bool resetPending: false
     property int resetSavedCount: 0
     property real previousContentHeight: 0
+    property var readMarkerSync: null
 
     boundsBehavior: Flickable.StopAtBounds
     clip: true
     spacing: 0
     highlightFollowsCurrentItem: false
+
+    onContentYChanged: if (visible) syncReadMarkerViewport()
 
     function endContentY() {
         return originY + Math.max(0, contentHeight - height);
@@ -51,6 +54,12 @@ ListView {
         if (count === 0 || contentHeight <= height || atYEnd)
             return true;
         return contentY >= endContentY() - 2;
+    }
+
+    function syncReadMarkerViewport() {
+        if (!readMarkerSync || typeof readMarkerSync.setTranscriptCaughtUp !== "function")
+            return;
+        readMarkerSync.setTranscriptCaughtUp(viewportPinned());
     }
 
     function stickToEnd() {
@@ -72,7 +81,9 @@ ListView {
             positionViewAtEnd();
             pinning = false;
             trackedCount = count;
+            syncReadMarkerViewport();
         });
+        syncReadMarkerViewport();
     }
 
     function adoptViewport() {
@@ -82,6 +93,7 @@ ListView {
             pinToEnd();
         else
             stick = stickDetached;
+        syncReadMarkerViewport();
     }
 
     function cancelDeferredPin() {

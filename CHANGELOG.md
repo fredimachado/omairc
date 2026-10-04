@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Cross-client read markers (`draft/read-marker`, and `soju.im/read` when that
+  is the only token the server offers) clear unread that another client already
+  read, and publish a marker when this window is caught up.
+
 ## [1.0.7] - 2026-09-30
 
 ### Added

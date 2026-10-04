@@ -27,6 +27,8 @@ private slots:
     void deletionWithdrawsAnEnabledCapability();
     void timeoutAbandonsOutstandingRequests();
     void requestIsIdempotentUntilSomethingNewIsAdvertised();
+    void dualReadMarkerOfferRequestsDraftToken();
+    void sojuOnlyReadMarkerRequestsSojuToken();
     void dualChatHistoryOfferRequestsStableToken();
     void draftOnlyChatHistoryRequestsDraftToken();
     void chatHistoryWithoutBatchIsNotRequested();
@@ -290,6 +292,27 @@ void CapabilityTest::requestIsIdempotentUntilSomethingNewIsAdvertised()
     negotiation.reset(false);
     QVERIFY(negotiation.enabled().isEmpty());
     QVERIFY(negotiation.takeRequest().lines.isEmpty());
+}
+
+void CapabilityTest::dualReadMarkerOfferRequestsDraftToken()
+{
+    IrcCapabilityNegotiation negotiation(false);
+    negotiation.advertise(tokens(QStringLiteral(
+        "draft/read-marker soju.im/read")));
+
+    const IrcCapabilityNegotiation::Request request = negotiation.takeRequest();
+    QCOMPARE(request.lines, QStringList{QStringLiteral("draft/read-marker")});
+    QVERIFY(!request.lines.join(QLatin1Char(' ')).contains(
+        QLatin1String("soju.im/read")));
+}
+
+void CapabilityTest::sojuOnlyReadMarkerRequestsSojuToken()
+{
+    IrcCapabilityNegotiation negotiation(false);
+    negotiation.advertise(tokens(QStringLiteral("soju.im/read")));
+
+    const IrcCapabilityNegotiation::Request request = negotiation.takeRequest();
+    QCOMPARE(request.lines, QStringList{QStringLiteral("soju.im/read")});
 }
 
 void CapabilityTest::dualChatHistoryOfferRequestsStableToken()

@@ -517,6 +517,9 @@ private slots:
     void zncPlaybackCapStillEmitsUnsolicitedBatch();
     void chatHistoryJoinSurvivesZncPlayback();
     void selfJoinKeepsOpenPlaybackAndDropsStaleChatHistory();
+    void readMarkerFailDoesNotFailSession();
+    void readMarkerAbsentIgnoresInboundCommand();
+    void sojuReadCapUsesReadCommand();
 };
 
 void SessionTest::registersAndAutojoins()
@@ -5356,6 +5359,50 @@ void SessionTest::chatHistoryJoinSurvivesZncPlayback()
     QVERIFY(fixture.wrote(
         QByteArrayLiteral("CHATHISTORY LATEST #omarchy * 100\r\n")));
     QVERIFY(fixture.session->historyPending());
+}
+
+void SessionTest::readMarkerFailDoesNotFailSession()
+{
+    IrcSessionConfig sessionConfig = config();
+    sessionConfig.autojoinChannels = {};
+    Fixture fixture(sessionConfig);
+    fixture.connectTls();
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :draft/read-marker\r\n"
+                          ":server CAP omairc ACK :draft/read-marker\r\n"
+                          ":server 001 omairc :Welcome\r\n"
+                          ":omairc!u@h JOIN :#omarchy\r\n"));
+    fixture.transport->injectBytes(QByteArrayLiteral(
+        ":server FAIL MARKREAD INVALID_TARGET #omarchy :nope\r\n"));
+    QCOMPARE(fixture.session->state(), IrcSession::State::Registered);
+}
+
+void SessionTest::readMarkerAbsentIgnoresInboundCommand()
+{
+    IrcSessionConfig sessionConfig = config();
+    sessionConfig.autojoinChannels = {};
+    Fixture fixture(sessionConfig);
+    fixture.registerWithWelcome();
+    QSignalSpy marker(fixture.session, &IrcSession::readMarkerReceived);
+    fixture.transport->injectBytes(QByteArrayLiteral(
+        ":server MARKREAD #omarchy timestamp=2026-06-01T10:00:00.000Z\r\n"));
+    QCOMPARE(marker.size(), 0);
+    QCOMPARE(fixture.session->state(), IrcSession::State::Registered);
+}
+
+void SessionTest::sojuReadCapUsesReadCommand()
+{
+    IrcSessionConfig sessionConfig = config();
+    sessionConfig.autojoinChannels = {};
+    Fixture fixture(sessionConfig);
+    fixture.connectTls();
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :soju.im/read\r\n"
+                          ":server CAP omairc ACK :soju.im/read\r\n"
+                          ":server 001 omairc :Welcome\r\n"));
+    QVERIFY(fixture.session->capabilities().contains(IrcCapability::ReadMarker));
+    QVERIFY(fixture.session->requestReadMarker(QStringLiteral("#omarchy")));
+    QVERIFY(fixture.wrote(QByteArrayLiteral("READ #omarchy\r\n")));
 }
 
 int runSessionTests(int argc, char **argv)

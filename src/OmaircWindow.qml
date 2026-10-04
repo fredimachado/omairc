@@ -2928,6 +2928,7 @@ ApplicationWindow {
                     ? win.irc.lastError : win.irc.connectionStatus)
                 : ""
             currentConversation: win.currentConversation
+            readMarkerSync: win.irc
             findActive: win.findActive
             composerEnabled: !win.connectionOverlayVisible
             slashCommands: win.slashCommands

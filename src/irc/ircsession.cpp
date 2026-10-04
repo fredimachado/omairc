@@ -13,6 +13,7 @@
 #include "ircsecretpolicy.h"
 #include "irctcp.h"
 #include "irctyping.h"
+#include "ircreadmarker.h"
 #include "ircwiretext.h"
 
 #include <QByteArray>
@@ -1367,8 +1368,25 @@ void IrcSession::handleMessage(const IrcMessage &message)
         }
     }
 
-    if (message.command == "FAIL")
+    if (message.command == "FAIL") {
         handleChatHistoryFail(message);
+        handleReadMarkerFail(message);
+    }
+
+    if ((message.command == QLatin1String("MARKREAD")
+         || message.command == QLatin1String("READ"))
+        && capabilities().contains(IrcCapability::ReadMarker)) {
+        const QString command = readMarkerCommand();
+        if (!command.isEmpty()) {
+            if (const auto parsed = parseIrcReadMarkerLine(message, command)) {
+                const bool hasMarker = parsed->second.has_value();
+                const QDateTime when = hasMarker ? parsed->second->toUTC() : QDateTime{};
+                emit readMarkerReceived(m_config.networkId, parsed->first,
+                                        hasMarker, when);
+            }
+            return;
+        }
+    }
 
     if (message.command == "366" && message.parameters.size() >= 2)
         probeChannelAway(parameter(message, 1));
@@ -1781,6 +1799,57 @@ bool IrcSession::isHistoryBatch(const QString& type, const QString& parent) cons
     return found != m_openBatches.cend() && !found.value().replayRoot.isEmpty();
 }
 
+QString IrcSession::readMarkerCommand() const
+{
+    if (!capabilities().contains(IrcCapability::ReadMarker))
+        return {};
+    return m_readMarkerCommand;
+}
+
+void IrcSession::noteReadMarkerCommand(const QStringList& tokens)
+{
+    for (const QString& token : tokens) {
+        const QString name = token.startsWith(QLatin1Char('-'))
+            ? token.mid(1)
+            : token;
+        if (name.compare(QLatin1String("draft/read-marker"), Qt::CaseInsensitive)
+            == 0) {
+            m_readMarkerCommand = QStringLiteral("MARKREAD");
+            return;
+        }
+        if (name.compare(QLatin1String("soju.im/read"), Qt::CaseInsensitive) == 0) {
+            m_readMarkerCommand = QStringLiteral("READ");
+            return;
+        }
+    }
+}
+
+bool IrcSession::requestReadMarker(const QString& target)
+{
+    const QString command = readMarkerCommand();
+    if (command.isEmpty() || target.isEmpty())
+        return false;
+    return sendCommand(command + QLatin1Char(' ') + target);
+}
+
+bool IrcSession::publishReadMarker(const QString& target, const QDateTime& when)
+{
+    const QString command = readMarkerCommand();
+    if (command.isEmpty() || target.isEmpty() || !when.isValid())
+        return false;
+    return sendCommand(command + QLatin1Char(' ') + target + QLatin1Char(' ')
+                       + formatIrcReadMarkerTimestamp(when));
+}
+
+void IrcSession::handleReadMarkerFail(const IrcMessage& message)
+{
+    const QString command = readMarkerCommand();
+    if (command.isEmpty())
+        return;
+    if (parameter(message, 0).compare(command, Qt::CaseInsensitive) != 0)
+        return;
+}
+
 void IrcSession::handleChatHistoryFail(const IrcMessage& message)
 {
     if (parameter(message, 0).compare(QLatin1String("CHATHISTORY"),
@@ -1849,6 +1918,8 @@ void IrcSession::handleCap(const IrcMessage &message)
         publishCapabilities();
         if (!m_capabilities.enabled().contains(IrcCapability::MemberMetadata))
             m_metadataCapability = {};
+        if (!m_capabilities.enabled().contains(IrcCapability::ReadMarker))
+            m_readMarkerCommand.clear();
         if (!replayEnabled(ReplayKind::ChatHistory))
             abandonHistoryRequests();
         requestCapabilities();
@@ -1864,6 +1935,7 @@ void IrcSession::handleCap(const IrcMessage &message)
             if (metadata->maxSubs || metadata->maxValueBytes)
                 m_metadataCapability = *metadata;
         }
+        noteReadMarkerCommand(tokens);
         publishCapabilities();
         if (granted.contains(IrcCapability::Sasl) && !m_saslExchangeStarted) {
             m_saslExchangeStarted = true;
@@ -2282,6 +2354,7 @@ void IrcSession::resetForConnection()
     clearPendingRequestLabels(true);
     m_capabilities.reset(!saslSecret(m_config).isEmpty());
     m_metadataCapability = {};
+    m_readMarkerCommand.clear();
     m_typing.reset();
     publishCapabilities();
 }
