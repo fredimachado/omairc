@@ -171,6 +171,21 @@ func TestSessionBeforeBatchIsDelivered(t *testing.T) {
 	}
 }
 
+func TestSessionBeforeIgnoresStaleHistoryPendingGeneration(t *testing.T) {
+	fixture := newSessionFixture(t, historyConfig())
+	fixture.connectTLS()
+	completeHistoryJoin(fixture)
+	finishLatestBatch(fixture)
+	fixture.session.locked(func() {
+		folded := fixture.session.foldChannelLocked("#omarchy")
+		fixture.session.historyPending[folded] = 0
+		fixture.session.historyGeneration[folded] = 2
+	})
+	if !fixture.session.RequestOlderHistory("#omarchy", "old", time.Time{}) {
+		t.Fatal("BEFORE must ignore a stale historyPending generation")
+	}
+}
+
 func TestSessionBeforeBlockedUntilLatestOnChannel(t *testing.T) {
 	fixture := newSessionFixture(t, historyConfig())
 	fixture.connectTLS()

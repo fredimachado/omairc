@@ -2093,7 +2093,7 @@ func (s *Session) requestOlderHistoryLocked(target, msgid string, timestamp time
 	if _, exhausted := s.historyExhausted[key]; exhausted {
 		return false
 	}
-	if _, ok := s.historyPending[key]; ok {
+	if s.historyInflightLocked(target) {
 		return false
 	}
 	if s.features.IsChannel(target) {
@@ -2157,6 +2157,27 @@ func (s *Session) dropHistoryBatchesLocked(channel string) {
 func (s *Session) bumpHistoryGenerationLocked(channel string) {
 	folded := s.foldChannelLocked(channel)
 	s.historyGeneration[folded] = s.historyGenerationLocked(channel) + 1
+	delete(s.historyPending, folded)
+}
+
+func (s *Session) historyInflightLocked(target string) bool {
+	if target == "" {
+		return false
+	}
+	folded := s.foldChannelLocked(target)
+	pending, ok := s.historyPending[folded]
+	if !ok {
+		return false
+	}
+	return pending == s.historyGenerationLocked(target)
+}
+
+// HistoryInflightFor reports whether a CHATHISTORY request is outstanding for
+// the current membership generation of target.
+func (s *Session) HistoryInflightFor(target string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.historyInflightLocked(target)
 }
 
 func (s *Session) historyGenerationLocked(channel string) int {

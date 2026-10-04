@@ -19,6 +19,9 @@ type TranscriptLine struct {
 type ConversationLog interface {
 	// Append stores one line, reporting whether it was written.
 	Append(networkID, target string, mapping CaseMapping, line TranscriptLine) bool
+	// Prepend stores lines at the front of the transcript file in the order
+	// given (oldest first). It reports whether every line was written.
+	Prepend(networkID, target string, mapping CaseMapping, lines []TranscriptLine) bool
 	// ReadTail returns up to maxLines most recent lines, oldest first.
 	ReadTail(networkID, target string, mapping CaseMapping, maxLines int) []TranscriptLine
 }

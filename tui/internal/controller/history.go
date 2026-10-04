@@ -26,16 +26,60 @@ func (c *Controller) RequestOlderTranscriptHistory() bool {
 	if s == nil {
 		return false
 	}
-	c.reducer.MarkHistoryPageCapTail(key)
 	target := conversation.Target
 	if target == "" {
 		target = key.NormalizedTarget
 	}
 	if !s.RequestOlderHistory(target, msgid, timestamp) {
-		conversation.HistoryPageCapTail = false
 		return false
 	}
+	c.reducer.MarkHistoryPageCapTail(key)
 	return true
+}
+
+// OlderTranscriptHistoryInflight reports whether a CHATHISTORY page is already
+// in flight for the selected conversation.
+func (c *Controller) OlderTranscriptHistoryInflight() bool {
+	key, ok := c.reducer.Selected()
+	if !ok {
+		return false
+	}
+	conversation := c.reducer.Find(key)
+	if conversation == nil {
+		return false
+	}
+	s := c.manager.Find(key.NetworkID)
+	if s == nil {
+		return false
+	}
+	target := conversation.Target
+	if target == "" {
+		target = key.NormalizedTarget
+	}
+	return s.HistoryInflightFor(target)
+}
+
+// ClearHistoryPageCapTail drops tail-first trimming when the reader returns to
+// the live end of the transcript.
+func (c *Controller) ClearHistoryPageCapTail() {
+	key, ok := c.reducer.Selected()
+	if !ok {
+		return
+	}
+	c.reducer.ClearHistoryPageCapTail(key)
+}
+
+// TranscriptSpliceEpoch is the selected conversation's splice generation.
+func (c *Controller) TranscriptSpliceEpoch() int {
+	key, ok := c.reducer.Selected()
+	if !ok {
+		return 0
+	}
+	conversation := c.reducer.Find(key)
+	if conversation == nil {
+		return 0
+	}
+	return conversation.SpliceEpoch
 }
 
 // ChatHistoryEnabled reports whether the focused network negotiated batch and
@@ -51,14 +95,13 @@ func (c *Controller) ChatHistoryEnabled() bool {
 
 func oldestHistoryCursor(messages []irc.ReducedMessage) (msgid string, timestamp time.Time, ok bool) {
 	for _, message := range messages {
-		switch message.Kind {
-		case irc.KindMessage, irc.KindAction:
-			if !message.MsgID.IsEmpty() {
-				return message.MsgID.Value, message.Timestamp, true
-			}
-			if !message.Timestamp.IsZero() {
-				return "", message.Timestamp, true
-			}
+		if !message.MsgID.IsEmpty() {
+			return message.MsgID.Value, message.Timestamp, true
+		}
+	}
+	for _, message := range messages {
+		if !message.Timestamp.IsZero() {
+			return "", message.Timestamp, true
 		}
 	}
 	return "", time.Time{}, false

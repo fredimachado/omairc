@@ -553,9 +553,10 @@ func (m *Model) afterSelectionChange(previousID string) {
 		m.memberIndex = 0
 		return
 	}
-	m.transcriptFollowEnd = true
+	m.setTranscriptFollowEnd(true)
 	m.transcriptScroll = 0
 	m.transcriptCursor = -1
+	m.clearTranscriptAnchor()
 	m.resetHistoryBrowse()
 	m.memberFocus = false
 	m.memberIndex = 0

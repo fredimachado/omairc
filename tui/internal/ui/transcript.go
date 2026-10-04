@@ -351,11 +351,12 @@ func (m *Model) pageTranscript(direction int, fraction float64) {
 	maxOffset := n - height
 	if maxOffset <= 0 {
 		if direction < 0 {
+			m.transcriptFollowEnd = false
 			m.maybeRequestOlderTranscript()
 		}
 		if direction > 0 {
 			m.transcriptScroll = 0
-			m.transcriptFollowEnd = true
+			m.setTranscriptFollowEnd(true)
 			m.firstUnseenRow = -1
 		}
 		return
@@ -383,7 +384,7 @@ func (m *Model) pageTranscript(direction int, fraction float64) {
 		offset = maxOffset
 	}
 	m.transcriptScroll = offset
-	m.transcriptFollowEnd = offset == 0
+	m.setTranscriptFollowEnd(offset == 0)
 	if m.transcriptFollowEnd {
 		m.firstUnseenRow = -1
 	}
@@ -402,52 +403,76 @@ func (m *Model) maybeRequestOlderTranscript() {
 	if m.ctrl.RequestOlderTranscriptHistory() {
 		return
 	}
-	m.transcriptAnchorFromEnd = -1
+	if m.ctrl.OlderTranscriptHistoryInflight() {
+		return
+	}
+	m.clearTranscriptAnchor()
+}
+
+func (m *Model) setTranscriptFollowEnd(follow bool) {
+	if follow && !m.transcriptFollowEnd && m.ctrl != nil {
+		m.ctrl.ClearHistoryPageCapTail()
+	}
+	m.transcriptFollowEnd = follow
+}
+
+func (m *Model) clearTranscriptAnchor() {
+	m.transcriptAnchorSequence = -1
+	m.transcriptAnchorSpliceEpoch = -1
 }
 
 func (m *Model) snapshotTranscriptAnchor() {
-	if m.ctrl == nil || m.transcriptFollowEnd {
-		m.transcriptAnchorFromEnd = -1
+	if m.ctrl == nil {
+		m.clearTranscriptAnchor()
 		return
 	}
-	area := m.transcriptArea()
-	n := len(area.lines)
-	height := m.transcriptRowsHeight()
-	if height < 1 || n <= height {
-		m.transcriptAnchorFromEnd = m.transcriptRowTotal()
+	messages := m.ctrl.Messages()
+	if len(messages) == 0 {
+		m.clearTranscriptAnchor()
 		return
 	}
-	offset := m.transcriptScroll
-	start := n - height - offset
-	if start < 0 {
-		start = 0
+	row := 0
+	if !m.transcriptFollowEnd {
+		area := m.transcriptArea()
+		n := len(area.lines)
+		height := m.transcriptRowsHeight()
+		if height >= 1 && n > height {
+			offset := m.transcriptScroll
+			start := n - height - offset
+			if start < 0 {
+				start = 0
+			}
+			row = area.rowAt(start)
+			if row < 0 {
+				row = 0
+			}
+		}
 	}
-	row := area.rowAt(start)
-	if row < 0 {
-		row = 0
+	if row >= len(messages) {
+		m.clearTranscriptAnchor()
+		return
 	}
-	m.transcriptAnchorFromEnd = m.transcriptRowTotal() - row
+	m.transcriptAnchorSequence = messages[row].Sequence
+	m.transcriptAnchorSpliceEpoch = m.ctrl.TranscriptSpliceEpoch()
 }
 
 func (m *Model) restoreTranscriptAnchor() {
-	if m.transcriptAnchorFromEnd < 0 {
+	if m.transcriptAnchorSequence < 0 || m.ctrl == nil {
 		return
 	}
 	if m.transcriptFollowEnd {
-		m.transcriptAnchorFromEnd = -1
+		m.clearTranscriptAnchor()
 		return
 	}
-	total := m.transcriptRowTotal()
-	target := total - m.transcriptAnchorFromEnd
-	m.transcriptAnchorFromEnd = -1
-	if target < 0 {
-		target = 0
+	sequence := m.transcriptAnchorSequence
+	m.clearTranscriptAnchor()
+	messages := m.ctrl.Messages()
+	for index, message := range messages {
+		if message.Sequence == sequence {
+			m.pinTranscriptToRow(index)
+			return
+		}
 	}
-	if target >= total {
-		m.jumpTranscript(true)
-		return
-	}
-	m.pinTranscriptToRow(target)
 }
 
 // jumpTranscript jumps to the top or the bottom of the transcript.
@@ -462,7 +487,7 @@ func (m *Model) jumpTranscript(toEnd bool) {
 		height = 1
 	}
 	if toEnd {
-		m.transcriptFollowEnd = true
+		m.setTranscriptFollowEnd(true)
 		m.transcriptScroll = 0
 		m.transcriptCursor = m.transcriptRowTotal() - 1
 		m.firstUnseenRow = -1
@@ -533,7 +558,7 @@ func (m *Model) pinTranscriptToRow(row int) {
 	}
 	maxOffset := n - height
 	if maxOffset <= 0 || row < 0 || row >= area.count() {
-		m.transcriptFollowEnd = true
+		m.setTranscriptFollowEnd(true)
 		m.transcriptScroll = 0
 		m.firstUnseenRow = -1
 		return
@@ -558,10 +583,20 @@ func (m *Model) pinTranscriptToRow(row int) {
 // count changes rather than by the model's own notification.
 func (m *Model) noteTranscriptGrowth() {
 	count := m.transcriptRowTotal()
-	if m.transcriptAnchorFromEnd >= 0 && count > m.transcriptCount {
-		m.restoreTranscriptAnchor()
-		m.transcriptCount = count
-		return
+	if m.ctrl != nil && m.transcriptAnchorSequence >= 0 {
+		spliceEpoch := m.ctrl.TranscriptSpliceEpoch()
+		if spliceEpoch > m.transcriptAnchorSpliceEpoch {
+			inserted := count - m.transcriptCount
+			m.restoreTranscriptAnchor()
+			if m.firstUnseenRow >= 0 {
+				m.firstUnseenRow += inserted
+				if m.firstUnseenRow < 0 || m.firstUnseenRow >= count {
+					m.firstUnseenRow = -1
+				}
+			}
+			m.transcriptCount = count
+			return
+		}
 	}
 	switch {
 	case count < m.transcriptCount:

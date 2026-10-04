@@ -35,6 +35,7 @@ type MessageSnapshot struct {
 	Kind      string
 	Origin    string
 	MsgID     string
+	Sequence  int64
 	Mentioned bool
 }
 
@@ -199,6 +200,7 @@ func (c *Controller) rebuildMessages() {
 			Kind:      messageKindName(message.Kind),
 			Origin:    originName(message.Origin),
 			MsgID:     message.MsgID.Value,
+			Sequence:  message.Sequence,
 			Mentioned: c.reducer.IsTranscriptHighlight(conversation.Key.NetworkID, message.Author, message.Kind, message.Body),
 		})
 	}

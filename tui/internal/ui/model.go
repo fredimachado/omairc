@@ -128,10 +128,12 @@ type Model struct {
 	transcriptScroll    int
 	transcriptFollowEnd bool
 	transcriptCursor    int
-	// transcriptAnchorFromEnd is rows from the transcript end to preserve across
-	// a CHATHISTORY prepend, or -1 when inactive. It mirrors
-	// TranscriptList.restoreOffset.
-	transcriptAnchorFromEnd int
+	// transcriptAnchorSequence names the top visible row to pin after a
+	// CHATHISTORY prepend, or -1 when inactive.
+	transcriptAnchorSequence int64
+	// transcriptAnchorSpliceEpoch is the splice generation when the anchor was
+	// armed; restore runs only after the epoch advances.
+	transcriptAnchorSpliceEpoch int
 	// firstUnseenRow is the row that first arrived while the reader was scrolled
 	// up, or -1 when nothing is waiting below. transcriptCount tracks the row
 	// count between notifications so a growth can be detected. They mirror
@@ -217,9 +219,11 @@ func New(ctrl *controller.Controller, conn *connection.Connection) *Model {
 		inbox:                newInboxState(),
 		list:                 newChannelListState(),
 		serverListVisible:    true,
-		transcriptFollowEnd:  true,
-		transcriptCursor:     -1,
-		firstUnseenRow:       -1,
+		transcriptFollowEnd:         true,
+		transcriptCursor:            -1,
+		transcriptAnchorSequence:    -1,
+		transcriptAnchorSpliceEpoch: -1,
+		firstUnseenRow:              -1,
 		composerHistoryIndex: -1,
 		drafts:               make(map[string]string),
 		// The terminal starts focused until a Blur arrives, mirroring
