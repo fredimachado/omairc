@@ -140,6 +140,9 @@ type ConversationState struct {
 	MessageIDs   map[MsgID]struct{}
 	SpliceEpoch  int
 	NextSequence int64
+	// HistoryPageCapTail drops an overfull transcript from the tail after a
+	// CHATHISTORY older page lands while the reader is parked at the top.
+	HistoryPageCapTail bool
 
 	// channel is non-nil only for channels; a nil channel means a direct
 	// message.
@@ -633,6 +636,21 @@ func (r *EventReducer) Conversations() Store {
 	return r.conversations
 }
 
+// MarkHistoryPageCapTail arms tail-first trimming for the next CHATHISTORY
+// splice into key.
+func (r *EventReducer) MarkHistoryPageCapTail(key ConversationKey) {
+	if conversation := r.Find(key); conversation != nil {
+		conversation.HistoryPageCapTail = true
+	}
+}
+
+// ClearHistoryPageCapTail drops tail-first trimming for the selected transcript.
+func (r *EventReducer) ClearHistoryPageCapTail(key ConversationKey) {
+	if conversation := r.Find(key); conversation != nil {
+		conversation.HistoryPageCapTail = false
+	}
+}
+
 // Find returns a conversation, or nil when absent. It mirrors
 // IrcEventReducer::find.
 func (r *EventReducer) Find(key ConversationKey) *ConversationState {
@@ -978,6 +996,9 @@ func (r *EventReducer) appendChat(key ConversationKey, displayTarget, author, bo
 // accounting for one admitted chat line. It mirrors
 // IrcEventReducer::noteChatArrival.
 func (r *EventReducer) noteChatArrival(conversation *ConversationState, key ConversationKey, author, body string, kind MessageKind, msgid MsgID, sequence int64, serverTime *time.Time, origin Origin, history *HistoryEvent) {
+	if history != nil && history.OlderPage {
+		return
+	}
 	// A previous nick inside a bouncer query is our own backlog, as is
 	// channel playback from a nick this network has welcomed or changed away
 	// from. Live PRIVMSG still uses only the current nick.
@@ -1124,44 +1145,92 @@ func (r *EventReducer) persistMessage(conversation *ConversationState, message R
 	if r.log == nil || !persistableKind(message.Kind) {
 		return
 	}
-	kind := kindToken(message.Kind)
-	if kind == "" {
+	line := r.transcriptLineFromMessage(conversation, message)
+	if line.Kind == "" {
 		return
 	}
 	r.log.Append(
 		conversation.Key.NetworkID,
 		conversation.Key.NormalizedTarget,
 		featuresCaseMapping(r.ServerFeatures(conversation.Key.NetworkID)),
-		TranscriptLine{
-			Timestamp: message.Timestamp,
-			Author:    message.Author,
-			Kind:      kind,
-			Body:      message.Body,
-			MsgID:     message.MsgID.Value,
-		},
+		line,
 	)
+}
+
+func (r *EventReducer) transcriptLineFromMessage(conversation *ConversationState, message ReducedMessage) TranscriptLine {
+	kind := kindToken(message.Kind)
+	if kind == "" {
+		return TranscriptLine{}
+	}
+	return TranscriptLine{
+		Timestamp: message.Timestamp,
+		Author:    message.Author,
+		Kind:      kind,
+		Body:      message.Body,
+		MsgID:     message.MsgID.Value,
+	}
+}
+
+func (r *EventReducer) persistMessagesPrepend(conversation *ConversationState, messages []ReducedMessage) {
+	if r.log == nil || len(messages) == 0 {
+		return
+	}
+	mapping := featuresCaseMapping(r.ServerFeatures(conversation.Key.NetworkID))
+	lines := make([]TranscriptLine, 0, len(messages))
+	for _, message := range messages {
+		if !persistableKind(message.Kind) {
+			continue
+		}
+		line := r.transcriptLineFromMessage(conversation, message)
+		if line.Kind == "" {
+			continue
+		}
+		lines = append(lines, line)
+	}
+	if len(lines) == 0 {
+		return
+	}
+	r.log.Prepend(conversation.Key.NetworkID, conversation.Key.NormalizedTarget, mapping, lines)
 }
 
 // capMessages trims the transcript to MaxMessages, dropping trimmed msgids and
 // accounting for the removed prefix. It mirrors IrcEventReducer::capMessages.
 func (r *EventReducer) capMessages(conversation *ConversationState) {
+	r.capMessagesWithPolicy(conversation, true)
+}
+
+func (r *EventReducer) capMessagesPreferTail(conversation *ConversationState) {
+	r.capMessagesWithPolicy(conversation, false)
+}
+
+func (r *EventReducer) capMessagesWithPolicy(conversation *ConversationState, dropFromHead bool) {
 	extra := len(conversation.Messages) - MaxMessages
 	if extra <= 0 {
 		return
 	}
-	for index := 0; index < extra; index++ {
+	if dropFromHead {
+		for index := 0; index < extra; index++ {
+			msgid := conversation.Messages[index].MsgID
+			if !msgid.IsEmpty() {
+				delete(conversation.MessageIDs, msgid)
+			}
+		}
+		conversation.Messages = conversation.Messages[extra:]
+		conversation.Trimmed += extra
+		if conversation.channel != nil && conversation.channel.HistoryAnchor != nil {
+			if conversation.channel.HistoryAnchor.Sequence < int64(conversation.Trimmed) {
+				conversation.channel.HistoryAnchor = nil
+			}
+		}
+		return
+	}
+	for index := len(conversation.Messages) - extra; index < len(conversation.Messages); index++ {
 		msgid := conversation.Messages[index].MsgID
 		if !msgid.IsEmpty() {
 			delete(conversation.MessageIDs, msgid)
 		}
 	}
-	conversation.Messages = conversation.Messages[extra:]
-	conversation.Trimmed += extra
-	if conversation.channel != nil && conversation.channel.HistoryAnchor != nil {
-		if conversation.channel.HistoryAnchor.Sequence < int64(conversation.Trimmed) {
-			conversation.channel.HistoryAnchor = nil
-		}
-	}
+	conversation.Messages = conversation.Messages[:len(conversation.Messages)-extra]
 }
 
 // peekSpliceIndex returns where a replay batch should land without consuming
@@ -1362,13 +1431,18 @@ const (
 // msgids and matching rows, notes arrivals, and records kept replay lines. It
 // mirrors IrcEventReducer::spliceHistory.
 func (r *EventReducer) spliceHistory(conversation *ConversationState, event HistoryEvent, anchorUse historyAnchorUse) {
+	olderPage := event.Kind == HistoryChat && event.OlderPage
 	var at int
 	if anchorUse == historyAnchorConsume {
-		index, ok := r.takeSpliceIndex(conversation)
-		if !ok {
-			return
+		if olderPage {
+			at = 0
+		} else {
+			index, ok := r.takeSpliceIndex(conversation)
+			if !ok {
+				return
+			}
+			at = index
 		}
-		at = index
 	} else {
 		index, ok := r.peekSpliceIndex(conversation)
 		if !ok {
@@ -1474,14 +1548,22 @@ func (r *EventReducer) spliceHistory(conversation *ConversationState, event Hist
 	}
 	if len(run) > 0 {
 		conversation.Messages = insertMessages(conversation.Messages, at, run)
-		for _, message := range run {
-			r.persistMessage(conversation, message)
+		if at == 0 {
+			r.persistMessagesPrepend(conversation, run)
+		} else {
+			for _, message := range run {
+				r.persistMessage(conversation, message)
+			}
 		}
 		// Consume drops the anchor only once a replay line has landed. Keep
 		// still names the join line, shifted forward by what landed.
 		if conversation.channel != nil {
 			if anchorUse == historyAnchorConsume {
-				conversation.channel.HistoryAnchor = nil
+				if !olderPage {
+					conversation.channel.HistoryAnchor = nil
+				} else if conversation.channel.HistoryAnchor != nil {
+					conversation.channel.HistoryAnchor.Sequence += int64(len(run))
+				}
 			} else if conversation.channel.HistoryAnchor != nil {
 				conversation.channel.HistoryAnchor.Sequence += int64(len(run))
 			}
@@ -1489,10 +1571,17 @@ func (r *EventReducer) spliceHistory(conversation *ConversationState, event Hist
 		if at != previousSize {
 			conversation.SpliceEpoch++
 		}
-		r.capMessages(conversation)
+		if conversation.HistoryPageCapTail && event.Kind == HistoryChat {
+			conversation.HistoryPageCapTail = false
+			r.capMessagesPreferTail(conversation)
+		} else {
+			r.capMessages(conversation)
+		}
 		for _, message := range run {
 			r.noteChatArrival(conversation, event.Conversation, message.Author, message.Body, message.Kind, message.MsgID, message.Sequence, message.ServerTime, OriginReplay, &event)
 		}
+	} else if event.Kind == HistoryChat && (conversation.HistoryPageCapTail || olderPage) {
+		conversation.HistoryPageCapTail = false
 	}
 
 	keptPlaybackLine := false
@@ -1603,6 +1692,7 @@ func (r *EventReducer) reduceWelcome(event WelcomeEvent) {
 			conversation.channel.HistoryAnchor = nil
 			stopNamesSync(conversation.channel)
 		}
+		conversation.HistoryPageCapTail = false
 		conversation.Typing = make(map[string]TypingHint)
 	}
 }
@@ -1695,6 +1785,7 @@ func (r *EventReducer) reducePart(event PartEvent) {
 	if self {
 		channel.Joined = false
 		channel.HistoryAnchor = nil
+		conversation.HistoryPageCapTail = false
 		for member := range channel.Members {
 			departed = append(departed, member)
 		}
@@ -1836,6 +1927,7 @@ func (r *EventReducer) reduceKick(event KickEvent) {
 	if self {
 		channel.Joined = false
 		channel.HistoryAnchor = nil
+		conversation.HistoryPageCapTail = false
 		for member := range channel.Members {
 			departed = append(departed, member)
 		}
@@ -1993,7 +2085,7 @@ func (r *EventReducer) reduceHistory(event HistoryEvent) {
 		return
 	}
 	if conversation == nil {
-		if channelTarget {
+		if channelTarget || event.Kind == HistoryChat {
 			return
 		}
 		if !r.replayFromPeer(event) {

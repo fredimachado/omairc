@@ -311,6 +311,8 @@ type HistoryEvent struct {
 	Target       string
 	Lines        []ReplayLine
 	Kind         HistoryKind
+	// OlderPage is true for a solicited CHATHISTORY BEFORE page.
+	OlderPage bool
 }
 
 func (HistoryEvent) eventKind() EventKind { return EventHistory }

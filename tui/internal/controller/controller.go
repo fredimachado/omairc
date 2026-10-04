@@ -553,6 +553,15 @@ func (c *Controller) HistoryBatchReceived(networkID string, batch irc.HistoryBat
 	c.Apply(event)
 }
 
+// ChatHistoryRequestFinished clears browse flags when a BEFORE request ends
+// without a delivered batch.
+func (c *Controller) ChatHistoryRequestFinished(networkID, target string, failed bool, before bool) {
+	if !failed || !before {
+		return
+	}
+	c.reducer.ClearHistoryPageCapTail(c.reducer.ConversationKey(networkID, target))
+}
+
 // StatusEntry records one classified Status line and routes its correlated
 // WHOIS, CTCP, and metadata replies.
 func (c *Controller) StatusEntry(entry irc.StatusEntry) {

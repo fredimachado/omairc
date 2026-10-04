@@ -12,6 +12,8 @@ type HistoryBatch struct {
 	Target string
 	Lines  []Message
 	Kind   HistoryKind
+	// OlderPage is true for a solicited CHATHISTORY BEFORE answer.
+	OlderPage bool
 }
 
 // ConversationFor resolves the conversation an inbound message belongs to, or
@@ -260,7 +262,12 @@ func TranslateHistory(networkID, currentNick string, features ServerFeatures, ba
 	// Channel batches already key off the channel. CHATHISTORY keeps the
 	// live nick check; only a bouncer query needs the previous-nick rule.
 	bouncerQuery := batch.Kind == HistoryBouncerPlayback && !features.IsChannel(batch.Target)
-	event := HistoryEvent{Conversation: conversation, Target: batch.Target, Kind: batch.Kind}
+	event := HistoryEvent{
+		Conversation: conversation,
+		Target:       batch.Target,
+		Kind:         batch.Kind,
+		OlderPage:    batch.OlderPage,
+	}
 	for _, line := range batch.Lines {
 		serverTime := ircServerTimeOf(line)
 		kept := false
