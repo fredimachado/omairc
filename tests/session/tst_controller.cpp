@@ -658,7 +658,7 @@ private slots:
     void readMarkerAbsentSendsNoCommand();
     void selectConversationWaitsForTranscriptCaughtUp();
     void readMarkerPublishWaitsForInFlightEcho();
-    void readMarkerFailRetriesPublish();
+    void readMarkerFailDoesNotRepublishSameTimestamp();
     void nickRekeyTargetsReadMarkerSet();
     void incomingReadMarkerReloadsMessages();
     void pinnedPlaybackAdvancePublishesReadMarker();
@@ -8984,6 +8984,12 @@ void ControllerTest::newerServerTimePublishesReadMarkerAgain()
         QByteArrayLiteral("@time=2026-06-01T11:00:00.000Z :alice!u@h PRIVMSG #room :two\r\n"));
     QCOMPARE(countFramesContaining(transport->writtenFrames().mid(before),
                                    QByteArrayLiteral("MARKREAD #room timestamp=")),
+             0);
+    echoReadMarker(transport, QStringLiteral("#room"),
+                   QDateTime::fromString(QStringLiteral("2026-06-01T10:00:00.000Z"),
+                                         Qt::ISODateWithMs));
+    QCOMPARE(countFramesContaining(transport->writtenFrames().mid(before),
+                                   QByteArrayLiteral("MARKREAD #room timestamp=")),
              1);
     echoReadMarker(transport, QStringLiteral("#room"),
                    QDateTime::fromString(QStringLiteral("2026-06-01T11:00:00.000Z"),
@@ -9070,7 +9076,7 @@ void ControllerTest::readMarkerPublishWaitsForInFlightEcho()
     echoReadMarker(transport, QStringLiteral("#room"), second);
 }
 
-void ControllerTest::readMarkerFailRetriesPublish()
+void ControllerTest::readMarkerFailDoesNotRepublishSameTimestamp()
 {
     IrcController controller;
     auto *transport = new FakeIrcTransport;
@@ -9094,6 +9100,11 @@ void ControllerTest::readMarkerFailRetriesPublish()
              1);
     transport->injectBytes(QByteArrayLiteral(
         ":server FAIL MARKREAD INVALID_TARGET #room :nope\r\n"));
+    QCOMPARE(countFramesContaining(transport->writtenFrames().mid(before),
+                                   QByteArrayLiteral("MARKREAD #room timestamp=")),
+             1);
+    transport->injectBytes(
+        QByteArrayLiteral("@time=2026-06-01T11:00:00.000Z :alice!u@h PRIVMSG #room :two\r\n"));
     QCOMPARE(countFramesContaining(transport->writtenFrames().mid(before),
                                    QByteArrayLiteral("MARKREAD #room timestamp=")),
              2);
@@ -9206,6 +9217,9 @@ void ControllerTest::readMarkerGetDoesNotAckOutboundSet()
     controller.selectConversation(QStringLiteral("net"), QStringLiteral("alice"));
     controller.setWindowActive(true);
     controller.setTranscriptCaughtUp(true);
+    echoReadMarker(transport, QStringLiteral("alice"),
+                   QDateTime::fromString(QStringLiteral("2026-06-01T10:00:00.000Z"),
+                                         Qt::ISODateWithMs));
     const int beforeSet = transport->writtenFrames().size();
     transport->injectBytes(
         QByteArrayLiteral("@time=2026-06-01T12:00:00.000Z :alice!u@h PRIVMSG omairc :new\r\n"));
@@ -9248,6 +9262,11 @@ void ControllerTest::readMarkerFailNeedMoreParamsClearsInFlight()
         ":server FAIL MARKREAD NEED_MORE_PARAMS :missing timestamp\r\n"));
     QCOMPARE(countFramesContaining(transport->writtenFrames().mid(before),
                                    QByteArrayLiteral("MARKREAD #room timestamp=")),
+             1);
+    transport->injectBytes(
+        QByteArrayLiteral("@time=2026-06-01T11:00:00.000Z :alice!u@h PRIVMSG #room :two\r\n"));
+    QCOMPARE(countFramesContaining(transport->writtenFrames().mid(before),
+                                   QByteArrayLiteral("MARKREAD #room timestamp=")),
              2);
 }
 
@@ -9277,17 +9296,17 @@ void ControllerTest::readMarkerFailDoesNotLoopSameTimestamp()
         ":server FAIL MARKREAD INVALID_TARGET #room :nope\r\n"));
     QCOMPARE(countFramesContaining(transport->writtenFrames().mid(before),
                                    QByteArrayLiteral("MARKREAD #room timestamp=")),
-             2);
+             1);
     transport->injectBytes(QByteArrayLiteral(
         ":server FAIL MARKREAD INVALID_TARGET #room :still bad\r\n"));
     QCOMPARE(countFramesContaining(transport->writtenFrames().mid(before),
                                    QByteArrayLiteral("MARKREAD #room timestamp=")),
-             2);
+             1);
     transport->injectBytes(
         QByteArrayLiteral("@time=2026-06-01T11:00:00.000Z :alice!u@h PRIVMSG #room :two\r\n"));
     QCOMPARE(countFramesContaining(transport->writtenFrames().mid(before),
                                    QByteArrayLiteral("MARKREAD #room timestamp=")),
-             3);
+             2);
 }
 
 void ControllerTest::implicitSelectResetsCaughtUpAndFetchesMarker()
