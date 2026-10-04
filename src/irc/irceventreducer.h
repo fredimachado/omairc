@@ -253,6 +253,7 @@ public:
     bool dropChannel(const IrcConversationKey& key);
     void forgetNetwork(const QString& networkId);
     void clearMessages(const IrcConversationKey& key);
+    void clearTrimTailOnCap(const IrcConversationKey& key);
     void setMuted(const IrcConversationKey& key, bool muted);
     IrcConversationState *ensureConversation(const IrcConversationKey& key,
                                              const QString& displayTarget,
@@ -326,7 +327,6 @@ private:
     void persistMessage(const IrcConversationState& conversation,
                         const IrcReducedMessage& message);
     void capMessages(IrcConversationState& conversation);
-    void clearTrimTailOnCap(const IrcConversationKey& key);
     std::optional<std::size_t> peekSpliceIndex(
         const IrcConversationState& conversation) const;
     std::optional<std::size_t> takeSpliceIndex(IrcConversationState& conversation);
