@@ -137,6 +137,10 @@ type Handler interface {
 	ReconnectScheduled(networkID string, delayMs, attempt int)
 	MessageReceived(networkID string, message irc.Message)
 	HistoryBatchReceived(networkID string, batch irc.HistoryBatch)
+	// ChatHistoryRequestFinished reports a CHATHISTORY request that ended
+	// without delivering a batch. failed is true on FAIL; before is true when
+	// the outstanding request was CHATHISTORY BEFORE.
+	ChatHistoryRequestFinished(networkID string, target string, failed bool, before bool)
 	StatusEntry(entry irc.StatusEntry)
 	CapabilitiesChanged(networkID string, capabilities irc.CapabilitySet)
 	RequestLabelFinished(networkID, requestLabel string)
@@ -245,8 +249,9 @@ type Session struct {
 	ignoredBatches    map[string]struct{}
 	historyGeneration map[string]int
 	historyAsked      map[string]struct{}
-	historyPending    map[string]int
-	historyExhausted  map[string]struct{}
+	historyPending       map[string]int
+	historyPendingBefore map[string]bool
+	historyExhausted     map[string]struct{}
 
 	pendingLabels    map[string]time.Time
 	nextRequestLabel uint64
@@ -325,8 +330,9 @@ func NewSession(config SessionConfig, transport Transport, clock Clock) *Session
 		ignoredBatches:    map[string]struct{}{},
 		historyGeneration: map[string]int{},
 		historyAsked:      map[string]struct{}{},
-		historyPending:    map[string]int{},
-		historyExhausted:  map[string]struct{}{},
+		historyPending:       map[string]int{},
+		historyPendingBefore: map[string]bool{},
+		historyExhausted:     map[string]struct{}{},
 		pendingLabels:     map[string]time.Time{},
 		ctcpReplyClock:    map[string]time.Time{},
 		scram:             NewSASLScram(),
@@ -1993,6 +1999,11 @@ func (s *Session) closeBatchLocked(reference string) {
 			return
 		}
 		batch := frame.collected
+		if frame.hasKind && frame.kind == irc.HistoryChat {
+			folded := s.foldChannelLocked(frame.collected.Target)
+			batch.OlderPage = s.historyPendingBefore[folded]
+			delete(s.historyPendingBefore, folded)
+		}
 		if frame.hasKind && frame.kind == irc.HistoryBouncerPlayback {
 			batch.Kind = irc.HistoryBouncerPlayback
 		}
@@ -2110,8 +2121,10 @@ func (s *Session) requestOlderHistoryLocked(target, msgid string, timestamp time
 		return false
 	}
 	s.historyPending[key] = s.historyGenerationLocked(target)
+	s.historyPendingBefore[key] = true
 	if !s.sendCommandLocked(fmt.Sprintf("CHATHISTORY BEFORE %s %s %d", target, cursor, s.historyLimit), "") {
 		delete(s.historyPending, key)
+		delete(s.historyPendingBefore, key)
 		return false
 	}
 	return true
@@ -2125,6 +2138,7 @@ func (s *Session) forgetChannelHistoryLocked(channel string) {
 	folded := s.foldChannelLocked(channel)
 	delete(s.historyAsked, folded)
 	delete(s.historyPending, folded)
+	delete(s.historyPendingBefore, folded)
 	delete(s.historyExhausted, folded)
 	s.dropHistoryBatchesLocked(channel)
 }
@@ -2158,6 +2172,7 @@ func (s *Session) bumpHistoryGenerationLocked(channel string) {
 	folded := s.foldChannelLocked(channel)
 	s.historyGeneration[folded] = s.historyGenerationLocked(channel) + 1
 	delete(s.historyPending, folded)
+	delete(s.historyPendingBefore, folded)
 }
 
 func (s *Session) historyInflightLocked(target string) bool {
@@ -2189,7 +2204,9 @@ func (s *Session) foldChannelLocked(channel string) string {
 }
 
 func (s *Session) clearHistoryPendingLocked(channel string) {
-	delete(s.historyPending, s.foldChannelLocked(channel))
+	folded := s.foldChannelLocked(channel)
+	delete(s.historyPending, folded)
+	delete(s.historyPendingBefore, folded)
 }
 
 func (s *Session) answersPendingHistoryLocked(channel string) bool {
@@ -2234,6 +2251,7 @@ func (s *Session) abandonHistoryRequestsLocked() {
 		s.dropHistoryBatchesLocked(target)
 	}
 	s.historyPending = map[string]int{}
+	s.historyPendingBefore = map[string]bool{}
 }
 
 func (s *Session) isHistoryBatchLocked(batchType, parent string) bool {
@@ -2267,8 +2285,14 @@ func (s *Session) handleChatHistoryFailLocked(message irc.Message) {
 			continue
 		}
 		folded := s.foldChannelLocked(channel)
+		before := s.historyPendingBefore[folded]
 		delete(s.historyPending, folded)
+		delete(s.historyPendingBefore, folded)
 		s.historyExhausted[folded] = struct{}{}
+		networkID := s.config.NetworkID
+		s.emit(func(handler Handler) {
+			handler.ChatHistoryRequestFinished(networkID, channel, true, before)
+		})
 		return
 	}
 }

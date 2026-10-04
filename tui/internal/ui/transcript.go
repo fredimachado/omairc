@@ -351,8 +351,9 @@ func (m *Model) pageTranscript(direction int, fraction float64) {
 	maxOffset := n - height
 	if maxOffset <= 0 {
 		if direction < 0 {
-			m.transcriptFollowEnd = false
-			m.maybeRequestOlderTranscript()
+			if m.requestOlderTranscriptPage() {
+				m.transcriptFollowEnd = false
+			}
 		}
 		if direction > 0 {
 			m.transcriptScroll = 0
@@ -396,17 +397,26 @@ func (m *Model) pageTranscript(direction int, fraction float64) {
 }
 
 func (m *Model) maybeRequestOlderTranscript() {
+	if m.requestOlderTranscriptPage() {
+		m.transcriptFollowEnd = false
+	}
+}
+
+// requestOlderTranscriptPage snapshots the viewport and asks for one older
+// page. It reports whether a request was sent or is already in flight.
+func (m *Model) requestOlderTranscriptPage() bool {
 	if m.ctrl == nil || m.connectVisible() || m.ctrl.ConsoleOpen() || !m.ctrl.ChatHistoryEnabled() {
-		return
+		return false
 	}
 	m.snapshotTranscriptAnchor()
 	if m.ctrl.RequestOlderTranscriptHistory() {
-		return
+		return true
 	}
 	if m.ctrl.OlderTranscriptHistoryInflight() {
-		return
+		return true
 	}
 	m.clearTranscriptAnchor()
+	return false
 }
 
 func (m *Model) setTranscriptFollowEnd(follow bool) {
@@ -419,6 +429,7 @@ func (m *Model) setTranscriptFollowEnd(follow bool) {
 func (m *Model) clearTranscriptAnchor() {
 	m.transcriptAnchorSequence = -1
 	m.transcriptAnchorSpliceEpoch = -1
+	m.firstUnseenSequenceAtAnchor = -1
 }
 
 func (m *Model) snapshotTranscriptAnchor() {
@@ -454,6 +465,11 @@ func (m *Model) snapshotTranscriptAnchor() {
 	}
 	m.transcriptAnchorSequence = messages[row].Sequence
 	m.transcriptAnchorSpliceEpoch = m.ctrl.TranscriptSpliceEpoch()
+	if m.firstUnseenRow >= 0 && m.firstUnseenRow < len(messages) {
+		m.firstUnseenSequenceAtAnchor = messages[m.firstUnseenRow].Sequence
+	} else {
+		m.firstUnseenSequenceAtAnchor = -1
+	}
 }
 
 func (m *Model) restoreTranscriptAnchor() {
@@ -586,13 +602,20 @@ func (m *Model) noteTranscriptGrowth() {
 	if m.ctrl != nil && m.transcriptAnchorSequence >= 0 {
 		spliceEpoch := m.ctrl.TranscriptSpliceEpoch()
 		if spliceEpoch > m.transcriptAnchorSpliceEpoch {
-			inserted := count - m.transcriptCount
 			m.restoreTranscriptAnchor()
-			if m.firstUnseenRow >= 0 {
-				m.firstUnseenRow += inserted
-				if m.firstUnseenRow < 0 || m.firstUnseenRow >= count {
+			if m.firstUnseenSequenceAtAnchor >= 0 {
+				resolved := false
+				for index, message := range m.ctrl.Messages() {
+					if message.Sequence == m.firstUnseenSequenceAtAnchor {
+						m.firstUnseenRow = index
+						resolved = true
+						break
+					}
+				}
+				if !resolved {
 					m.firstUnseenRow = -1
 				}
+				m.firstUnseenSequenceAtAnchor = -1
 			}
 			m.transcriptCount = count
 			return

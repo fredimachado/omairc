@@ -134,6 +134,9 @@ type Model struct {
 	// transcriptAnchorSpliceEpoch is the splice generation when the anchor was
 	// armed; restore runs only after the epoch advances.
 	transcriptAnchorSpliceEpoch int
+	// firstUnseenSequenceAtAnchor remembers the unseen marker row across a
+	// prepend that tail-caps without growing the row count.
+	firstUnseenSequenceAtAnchor int64
 	// firstUnseenRow is the row that first arrived while the reader was scrolled
 	// up, or -1 when nothing is waiting below. transcriptCount tracks the row
 	// count between notifications so a growth can be detected. They mirror
@@ -223,6 +226,7 @@ func New(ctrl *controller.Controller, conn *connection.Connection) *Model {
 		transcriptCursor:            -1,
 		transcriptAnchorSequence:    -1,
 		transcriptAnchorSpliceEpoch: -1,
+		firstUnseenSequenceAtAnchor: -1,
 		firstUnseenRow:              -1,
 		composerHistoryIndex: -1,
 		drafts:               make(map[string]string),

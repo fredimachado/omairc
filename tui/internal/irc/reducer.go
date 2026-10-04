@@ -987,6 +987,9 @@ func (r *EventReducer) appendChat(key ConversationKey, displayTarget, author, bo
 // accounting for one admitted chat line. It mirrors
 // IrcEventReducer::noteChatArrival.
 func (r *EventReducer) noteChatArrival(conversation *ConversationState, key ConversationKey, author, body string, kind MessageKind, msgid MsgID, sequence int64, origin Origin, history *HistoryEvent) {
+	if history != nil && history.OlderPage {
+		return
+	}
 	// A previous nick inside a bouncer query is our own backlog, as is
 	// channel playback from a nick this network has welcomed or changed away
 	// from. Live PRIVMSG still uses only the current nick.
@@ -1416,9 +1419,10 @@ const (
 // msgids and matching rows, notes arrivals, and records kept replay lines. It
 // mirrors IrcEventReducer::spliceHistory.
 func (r *EventReducer) spliceHistory(conversation *ConversationState, event HistoryEvent, anchorUse historyAnchorUse) {
+	olderPage := event.Kind == HistoryChat && event.OlderPage
 	var at int
 	if anchorUse == historyAnchorConsume {
-		if conversation.HistoryPageCapTail && event.Kind == HistoryChat {
+		if olderPage {
 			at = 0
 		} else {
 			index, ok := r.takeSpliceIndex(conversation)
@@ -1542,7 +1546,7 @@ func (r *EventReducer) spliceHistory(conversation *ConversationState, event Hist
 		// still names the join line, shifted forward by what landed.
 		if conversation.channel != nil {
 			if anchorUse == historyAnchorConsume {
-				if !(conversation.HistoryPageCapTail && event.Kind == HistoryChat) {
+				if !olderPage {
 					conversation.channel.HistoryAnchor = nil
 				}
 			} else if conversation.channel.HistoryAnchor != nil {
@@ -1561,7 +1565,7 @@ func (r *EventReducer) spliceHistory(conversation *ConversationState, event Hist
 		for _, message := range run {
 			r.noteChatArrival(conversation, event.Conversation, message.Author, message.Body, message.Kind, message.MsgID, message.Sequence, OriginReplay, &event)
 		}
-	} else if conversation.HistoryPageCapTail && event.Kind == HistoryChat {
+	} else if event.Kind == HistoryChat && (conversation.HistoryPageCapTail || olderPage) {
 		conversation.HistoryPageCapTail = false
 	}
 
@@ -1673,6 +1677,7 @@ func (r *EventReducer) reduceWelcome(event WelcomeEvent) {
 			conversation.channel.HistoryAnchor = nil
 			stopNamesSync(conversation.channel)
 		}
+		conversation.HistoryPageCapTail = false
 		conversation.Typing = make(map[string]TypingHint)
 	}
 }
@@ -1907,6 +1912,7 @@ func (r *EventReducer) reduceKick(event KickEvent) {
 	if self {
 		channel.Joined = false
 		channel.HistoryAnchor = nil
+		conversation.HistoryPageCapTail = false
 		for member := range channel.Members {
 			departed = append(departed, member)
 		}

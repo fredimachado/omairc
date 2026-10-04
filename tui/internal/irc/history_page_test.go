@@ -42,11 +42,11 @@ func TestHistoryPageCapTailSplicesOlderChatAtHead(t *testing.T) {
 	conversation := stateOf(t, reducer, room)
 	requireTrue(t, "join anchor", conversation.Channel().HistoryAnchor != nil)
 
-	reducer.MarkHistoryPageCapTail(room)
 	reducer.Apply(HistoryEvent{
 		Conversation: room,
 		Target:       "#room",
 		Kind:         HistoryChat,
+		OlderPage:    true,
 		Lines:        []ReplayLine{replayLine("bob", "older", "old")},
 	}, reducerTimestamp)
 
@@ -69,11 +69,11 @@ func TestHistoryPageCapTailSplicesDirectMessageAtHead(t *testing.T) {
 		MsgID:        MsgID{Value: "live"},
 	}, reducerTimestamp)
 
-	reducer.MarkHistoryPageCapTail(dm)
 	reducer.Apply(HistoryEvent{
 		Conversation: dm,
 		Target:       "alice",
 		Kind:         HistoryChat,
+		OlderPage:    true,
 		Lines:        []ReplayLine{replayLine("alice", "older", "old")},
 	}, reducerTimestamp)
 
@@ -112,11 +112,11 @@ func TestHistoryPagePrependPersistsTranscriptOrder(t *testing.T) {
 		MsgID:        MsgID{Value: "live"},
 	}, reducerTimestamp)
 
-	reducer.MarkHistoryPageCapTail(room)
 	reducer.Apply(HistoryEvent{
 		Conversation: room,
 		Target:       "#room",
 		Kind:         HistoryChat,
+		OlderPage:    true,
 		Lines:        []ReplayLine{replayLine("bob", "older", "old")},
 	}, reducerTimestamp)
 
@@ -125,4 +125,62 @@ func TestHistoryPagePrependPersistsTranscriptOrder(t *testing.T) {
 	}
 	requireString(t, "log[0]", log.lines[0].Body, "older")
 	requireString(t, "log tail", log.lines[len(log.lines)-1].Body, "live")
+}
+
+func TestOlderPageSplicesAtHeadWithoutTailCapFlag(t *testing.T) {
+	reducer := NewEventReducer()
+	welcome(reducer, networkA)
+	room := reducer.ConversationKey(networkA, "#room")
+	reducer.Apply(JoinEvent{NetworkID: networkA, Channel: "#room", Nick: "omairc"}, reducerTimestamp)
+	reducer.Apply(MessageEvent{
+		Conversation: room,
+		Target:       "#room",
+		Author:       "alice",
+		Body:         "live",
+		MsgID:        MsgID{Value: "live"},
+	}, reducerTimestamp)
+	conversation := stateOf(t, reducer, room)
+	conversation.channel.HistoryAnchor = nil
+
+	reducer.Apply(HistoryEvent{
+		Conversation: room,
+		Target:       "#room",
+		Kind:         HistoryChat,
+		OlderPage:    true,
+		Lines:        []ReplayLine{replayLine("bob", "older", "old")},
+	}, reducerTimestamp)
+
+	requireString(t, "messages[0]", conversation.Messages[0].Body, "older")
+}
+
+func TestOlderPageReplaySkipsUnreadMark(t *testing.T) {
+	reducer := NewEventReducer()
+	welcome(reducer, networkA)
+	room := reducer.ConversationKey(networkA, "#room")
+	reducer.Apply(JoinEvent{NetworkID: networkA, Channel: "#room", Nick: "omairc"}, reducerTimestamp)
+	selected := room
+	reducer.MarkSelected(selected)
+	conversation := stateOf(t, reducer, room)
+
+	reducer.Apply(HistoryEvent{
+		Conversation: room,
+		Target:       "#room",
+		Kind:         HistoryChat,
+		OlderPage:    true,
+		Lines:        []ReplayLine{replayLine("bob", "older", "old")},
+	}, reducerTimestamp)
+
+	requireFalse(t, "unread mark", conversation.UnreadMark != nil)
+	requireInt(t, "unread", conversation.Unread, 0)
+}
+
+func TestWelcomeClearsHistoryPageCapTail(t *testing.T) {
+	reducer := NewEventReducer()
+	welcome(reducer, networkA)
+	room := reducer.ConversationKey(networkA, "#room")
+	reducer.Apply(JoinEvent{NetworkID: networkA, Channel: "#room", Nick: "omairc"}, reducerTimestamp)
+	conversation := stateOf(t, reducer, room)
+	conversation.HistoryPageCapTail = true
+	welcome(reducer, networkA)
+	requireFalse(t, "tail cap cleared", conversation.HistoryPageCapTail)
 }

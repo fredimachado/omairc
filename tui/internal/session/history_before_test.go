@@ -155,6 +155,25 @@ func TestSessionNoCapPageUpSendsNothing(t *testing.T) {
 	}
 }
 
+func TestSessionBeforeBatchSetsOlderPage(t *testing.T) {
+	fixture := newSessionFixture(t, historyConfig())
+	fixture.connectTLS()
+	completeHistoryJoin(fixture)
+	finishLatestBatch(fixture)
+	if !fixture.session.RequestOlderHistory("#omarchy", "old", time.Time{}) {
+		t.Fatal("BEFORE must succeed")
+	}
+	fixture.inject(":irc.host BATCH +older chathistory #omarchy\r\n" +
+		"@batch=older;msgid=page :bob!u@h PRIVMSG #omarchy :backlog\r\n" +
+		":irc.host BATCH -older\r\n")
+	if len(fixture.handler.batches) != 2 {
+		t.Fatalf("batches = %d, want 2", len(fixture.handler.batches))
+	}
+	if !fixture.handler.batches[1].OlderPage {
+		t.Fatal("BEFORE batch must set OlderPage")
+	}
+}
+
 func TestSessionBeforeBatchIsDelivered(t *testing.T) {
 	fixture := newSessionFixture(t, historyConfig())
 	fixture.connectTLS()
