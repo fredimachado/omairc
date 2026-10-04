@@ -34,6 +34,8 @@ ListView {
     property int pinGeneration: 0
     property bool resetPending: false
     property int resetSavedCount: 0
+    property bool prependPending: false
+    property int prependSavedCount: 0
     property real previousContentHeight: 0
 
     boundsBehavior: Flickable.StopAtBounds
@@ -195,7 +197,7 @@ ListView {
         if (index < 0)
             index = 0;
         restoreAnchorSequence = -1;
-        restoreOffset = -1;
+        restoreOffset = count - index;
         if (!model || typeof model.field !== "function")
             return;
         for (var row = index; row < count; ++row) {
@@ -214,6 +216,7 @@ ListView {
 
     function restoreAnchor() {
         var sequence = restoreAnchorSequence;
+        var offset = restoreOffset;
         restoreAnchorSequence = -1;
         restoreOffset = -1;
         if (stick === stickFollowing) {
@@ -233,6 +236,12 @@ ListView {
                     break;
                 }
             }
+        }
+        if (targetRow < 0 && offset >= 0) {
+            var total = modelRowCount();
+            targetRow = total - offset;
+            if (targetRow < 0 || targetRow >= total)
+                targetRow = -1;
         }
         if (targetRow >= 0)
             positionViewAtIndex(targetRow, ListView.Beginning);
@@ -357,8 +366,25 @@ ListView {
                 list.restoreAnchor();
             });
         }
+        function onRowsAboutToBeInserted(parent, first, last) {
+            if (first === 0 && list.stick === list.stickDetached) {
+                list.prependPending = true;
+                list.prependSavedCount = list.count;
+                list.snapshotAnchor();
+            }
+        }
         function onRowsInserted(parent, first, last) {
-            list.noteGrowth(list.trackedCount, list.count);
+            if (list.prependPending && first === 0) {
+                var previous = list.prependSavedCount;
+                var newCount = list.count;
+                list.noteSplice(previous, newCount);
+                Qt.callLater(function() {
+                    list.prependPending = false;
+                    list.restoreAnchor();
+                });
+            } else {
+                list.noteGrowth(list.trackedCount, list.count);
+            }
         }
         function onDataChanged(topLeft, bottomRight) {
             // The typing footer reads the last row through
