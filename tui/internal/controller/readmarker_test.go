@@ -100,6 +100,46 @@ func TestCaughtUpSelectionSendsReadMarkerOnce(t *testing.T) {
 	}
 }
 
+func TestStatusOpenDoesNotPublishReadMarker(t *testing.T) {
+	c, clock := newController(t)
+	transport := addAndStart(t, c, clock, baseConfig("net", "omairc"))
+	registerNetwork(t, transport, "omairc", "draft/read-marker")
+	c.NoteTranscriptViewport(true, true)
+	key := c.reducer.ConversationKey("net", "#room")
+	c.reducer.EnsureConversation(key, "#room", irc.CauseChannelState)
+	c.SelectConversation("net", "#room")
+	first := time.Date(2024, 6, 1, 12, 0, 0, 123000000, time.UTC)
+	c.Apply(irc.MessageEvent{
+		Conversation: key,
+		Target:       "#room",
+		Author:       "peer",
+		Body:         "one",
+		Timestamp:    first,
+		ServerTime:   &first,
+	})
+	if !writtenFramesContain(transport, "MARKREAD #room timestamp=") {
+		t.Fatalf("frames = %v, want MARKREAD when caught up", transport.WrittenFrames())
+	}
+	before := countFramesContaining(transport, "MARKREAD")
+	c.OpenStatus("net")
+	second := first.Add(time.Minute)
+	c.Apply(irc.MessageEvent{
+		Conversation: key,
+		Target:       "#room",
+		Author:       "peer",
+		Body:         "two",
+		Timestamp:    second,
+		ServerTime:   &second,
+	})
+	if countFramesContaining(transport, "MARKREAD") != before {
+		t.Fatalf("Status must not publish read markers, frames=%v", transport.WrittenFrames())
+	}
+	c.NoteTranscriptViewport(true, true)
+	if countFramesContaining(transport, "MARKREAD") != before {
+		t.Fatalf("viewport sync on Status must not publish, frames=%v", transport.WrittenFrames())
+	}
+}
+
 func TestReadMarkerScrolledUpDoesNotSend(t *testing.T) {
 	c, clock := newController(t)
 	transport := addAndStart(t, c, clock, baseConfig("net", "omairc"))

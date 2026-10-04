@@ -560,7 +560,9 @@ func (m *Model) afterSelectionChange(previousID string) {
 	m.memberFocus = false
 	m.memberIndex = 0
 	m.placeTranscriptAfterSelect()
-	m.syncReadMarkerViewport()
+	if m.ctrl == nil || !m.ctrl.ConsoleOpen() {
+		m.syncReadMarkerViewport()
+	}
 }
 
 // keepsViewportOnReselect reports whether re-selecting the current conversation

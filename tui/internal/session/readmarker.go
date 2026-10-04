@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"strings"
 	"time"
-	"unicode"
 
 	"github.com/fredimachado/omairc/tui/internal/irc"
 )
@@ -72,67 +71,25 @@ func (s *Session) deliverReadMarkerLocked(message irc.Message) bool {
 	return true
 }
 
-func readMarkerFailTargets(message irc.Message) []string {
-	if len(message.Params) < 3 {
-		return nil
-	}
-	if len(message.Params) == 3 {
-		candidate := parameter(message, 2)
-		if readMarkerFailContextTarget(candidate) {
-			return []string{candidate}
-		}
-		return nil
-	}
-	end := len(message.Params) - 1
-	var targets []string
-	for index := 2; index < end; index++ {
-		candidate := parameter(message, index)
-		if readMarkerFailContextTarget(candidate) {
-			targets = append(targets, candidate)
-		}
-	}
-	return targets
-}
-
-func readMarkerFailContextTarget(candidate string) bool {
-	if candidate == "" {
-		return false
-	}
-	if strings.Contains(candidate, " ") {
-		return false
-	}
-	if strings.Contains(candidate, "_") && strings.ToUpper(candidate) == candidate {
-		return false
-	}
-	for _, r := range candidate {
-		if !unicode.IsLetter(r) && !unicode.IsDigit(r) && r != '#' && r != '&' && r != '+' && r != '-' && r != '.' && r != '@' {
-			return false
-		}
-	}
-	return true
-}
-
 func (s *Session) handleReadMarkerFailLocked(message irc.Message) {
 	command := parameter(message, 0)
 	if !strings.EqualFold(command, "MARKREAD") && !strings.EqualFold(command, "READ") {
 		return
 	}
-	targets := readMarkerFailTargets(message)
-	if len(targets) == 0 {
+	if len(message.Params) < 4 {
 		for folded := range s.readMarkerInFlight {
 			delete(s.readMarkerInFlight, folded)
 			s.flushReadMarkerSetLocked(folded)
 		}
 		return
 	}
-	for _, target := range targets {
-		folded := s.foldReadMarkerTargetLocked(target)
-		if folded == "" {
-			continue
-		}
-		delete(s.readMarkerInFlight, folded)
-		s.flushReadMarkerSetLocked(folded)
+	target := parameter(message, 2)
+	folded := s.foldReadMarkerTargetLocked(target)
+	if folded == "" {
+		return
 	}
+	delete(s.readMarkerInFlight, folded)
+	s.flushReadMarkerSetLocked(folded)
 }
 
 // RequestReadMarkerGet asks the server for the stored marker on one target.

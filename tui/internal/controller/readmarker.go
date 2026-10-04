@@ -37,7 +37,7 @@ func (c *Controller) ReadMarkerReceived(networkID, target string, marker *time.T
 }
 
 func (c *Controller) syncReadMarkerForSelection() {
-	if c.selected == nil || !c.transcriptFollowEnd || !c.transcriptFocused || !c.reducer.WindowActive() {
+	if c.selected == nil || c.consoleOpen || !c.transcriptFollowEnd || !c.transcriptFocused || !c.reducer.WindowActive() {
 		return
 	}
 	session := c.manager.Find(c.selected.NetworkID)

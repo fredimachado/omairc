@@ -178,6 +178,27 @@ func TestReadMarkerFailNamedTargetOnlyClearsThatEntry(t *testing.T) {
 	if countReadMarkerFrame(fixture.frames(), "MARKREAD #omarchy timestamp=") != 1 {
 		t.Fatalf("#omarchy set must stay in-flight, got %v", fixture.frames())
 	}
+	// A full-map clear would drop #omarchy in-flight and resend on the next queue.
+	fixture.session.QueueReadMarkerSet("#omarchy", when.Add(2*time.Minute))
+	if countReadMarkerFrame(fixture.frames(), "MARKREAD #omarchy timestamp=") != 1 {
+		t.Fatalf("untargeted-style clear must not resend #omarchy, got %v", fixture.frames())
+	}
+}
+
+func TestReadMarkerFailNamedTargetWithUnusualChars(t *testing.T) {
+	fixture := newSessionFixture(t, sessionTestConfig(sessionTestNetworkID))
+	registerWithReadMarker(fixture, "draft/read-marker")
+	when := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
+	fixture.session.QueueReadMarkerSet("!channel", when)
+	fixture.session.QueueReadMarkerSet("#omarchy", when.Add(time.Minute))
+	fixture.inject(":server FAIL MARKREAD INVALID_TARGET !channel :nope\r\n")
+	fixture.session.QueueReadMarkerSet("!channel", when.Add(2*time.Minute))
+	if countReadMarkerFrame(fixture.frames(), "MARKREAD !channel timestamp=") != 2 {
+		t.Fatalf("named FAIL must clear only !channel, got %v", fixture.frames())
+	}
+	if countReadMarkerFrame(fixture.frames(), "MARKREAD #omarchy timestamp=") != 1 {
+		t.Fatalf("#omarchy must stay in-flight, got %v", fixture.frames())
+	}
 }
 
 func TestReadMarkerFailWithoutTargetClearsInFlight(t *testing.T) {
