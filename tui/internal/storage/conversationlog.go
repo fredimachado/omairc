@@ -75,6 +75,29 @@ func (l *ConversationLog) Append(networkID, target string, mapping irc.CaseMappi
 	return conversationLogAppendBytes(l.PathFor(networkID, target, mapping), conversationLogFormatLine(line))
 }
 
+// Prepend stores lines at the front of the transcript file in the order given
+// (oldest first).
+func (l *ConversationLog) Prepend(networkID, target string, mapping irc.CaseMapping, lines []irc.TranscriptLine) bool {
+	if len(lines) == 0 {
+		return true
+	}
+	channelTypes := conversationLogChannelTypes()
+	encoded := make([][]byte, 0, len(lines))
+	for _, line := range lines {
+		if line.Kind == "" || line.Body == "" {
+			continue
+		}
+		if !irc.AllowsTranscript(line.Body, channelTypes) || !irc.AllowsTranscript(line.Author, channelTypes) {
+			continue
+		}
+		encoded = append(encoded, conversationLogFormatLine(line))
+	}
+	if len(encoded) == 0 {
+		return true
+	}
+	return conversationLogPrependBytes(l.PathFor(networkID, target, mapping), encoded)
+}
+
 // ReadTail returns up to maxLines most recent lines, oldest first. It returns
 // nil when maxLines is not positive, when the file is missing, or when no line
 // survives the secret-policy filter.
@@ -216,6 +239,22 @@ func conversationLogAppendBytes(path string, line []byte) bool {
 	}
 	written, err := file.Write(line)
 	return err == nil && written == len(line)
+}
+
+func conversationLogPrependBytes(path string, lines [][]byte) bool {
+	if !conversationLogPrepareTree(path) {
+		return false
+	}
+	existing, err := os.ReadFile(path)
+	if err != nil && !os.IsNotExist(err) {
+		return false
+	}
+	var buf bytes.Buffer
+	for _, line := range lines {
+		buf.Write(line)
+	}
+	buf.Write(existing)
+	return os.WriteFile(path, buf.Bytes(), 0o600) == nil
 }
 
 // conversationLogReadTail ports IrcConversationLog::readTail(QIODevice*,int):

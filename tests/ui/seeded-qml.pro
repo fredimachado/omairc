@@ -32,6 +32,7 @@ HEADERS += \
     ../../src/irc/ircserverfeatures.h \
     ../../src/irc/irccapability.h \
     ../../src/irc/irccapabilitynegotiation.h \
+    ../../src/irc/ircreadmarker.h \
     ../../src/irc/ircsaslscram.h \
     ../../src/irc/ircsts.h \
     ../../src/irc/irctyping.h \
@@ -111,6 +112,7 @@ SOURCES += \
     ../../src/irc/ircserverfeatures.cpp \
     ../../src/irc/irccapability.cpp \
     ../../src/irc/irccapabilitynegotiation.cpp \
+    ../../src/irc/ircreadmarker.cpp \
     ../../src/irc/ircsaslscram.cpp \
     ../../src/omaircpaths.cpp \
     ../../src/irc/ircsts.cpp \

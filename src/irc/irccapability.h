@@ -20,6 +20,7 @@ enum class IrcCapability {
     AccountTag,
     AccountNotify,
     ExtendedJoin,
+    ReadMarker,
     ZncPlayback,
 };
 

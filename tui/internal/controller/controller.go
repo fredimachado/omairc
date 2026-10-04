@@ -108,6 +108,9 @@ type Controller struct {
 	// OnCapabilitiesChanged fires when the negotiated capability set changes or
 	// the selection moves to a network with a different set.
 	OnCapabilitiesChanged func()
+	transcriptFocused   bool
+	transcriptFollowEnd bool
+
 	// OnViewChanged fires whenever Publish dirtied a view surface, so the shell
 	// re-renders. Publish runs on both the Update goroutine and session
 	// goroutines; the shell must coalesce this wake-up rather than call Send
@@ -136,6 +139,8 @@ func New() *Controller {
 	// (src/irc/irceventreducer.h:395). NewEventReducer leaves the Go field at
 	// its zero value, so the controller restores the Qt default here.
 	c.reducer.SetWindowActive(true)
+	c.transcriptFocused = true
+	c.transcriptFollowEnd = true
 	c.openDirectsMotdSeen = make(map[string]bool)
 	c.openDirects = storage.NewOpenDirectStore()
 	c.openDirects.SetEphemeral(true)
@@ -548,6 +553,15 @@ func (c *Controller) HistoryBatchReceived(networkID string, batch irc.HistoryBat
 	c.Apply(event)
 }
 
+// ChatHistoryRequestFinished clears browse flags when a BEFORE request ends
+// without a delivered batch.
+func (c *Controller) ChatHistoryRequestFinished(networkID, target string, failed bool, before bool) {
+	if !failed || !before {
+		return
+	}
+	c.reducer.ClearHistoryPageCapTail(c.reducer.ConversationKey(networkID, target))
+}
+
 // StatusEntry records one classified Status line and routes its correlated
 // WHOIS, CTCP, and metadata replies.
 func (c *Controller) StatusEntry(entry irc.StatusEntry) {
@@ -675,6 +689,10 @@ func (c *Controller) Apply(event irc.Event) {
 		// reaches this branch; without the close the sidebar and member panel
 		// would follow the joined channel while the transcript stayed on Status.
 		c.consoleOpen = false
+		features := c.reducer.ServerFeatures(key.NetworkID)
+		if c.reducer.Find(key) != nil && !features.IsChannel(key.NormalizedTarget) {
+			c.requestReadMarkerGet(c.manager.Find(key.NetworkID), key.NetworkID, conversation.Target)
+		}
 	}
 	c.adoptReducerSelection()
 
@@ -692,6 +710,8 @@ func (c *Controller) Apply(event irc.Event) {
 		c.OnMentionArrived(mention.Author, mention.Body, mention.NetworkID,
 			mention.Target, mention.MsgID.Value)
 	}
+	c.syncReadMarkerForSelection()
+
 	if arrival, ok := c.reducer.TakeInboxArrival(); ok {
 		c.appendInbox(irc.InboxItem{
 			Kind:      arrival.Kind,
@@ -968,6 +988,9 @@ func (c *Controller) SelectConversation(networkID, target string) {
 	c.Publish(selectionNotify())
 	c.refreshConnectionStatus()
 	c.notifyCapabilitiesChanged()
+	if conversation := c.reducer.Find(key); conversation != nil && !features.IsChannel(key.NormalizedTarget) {
+		c.requestReadMarkerGet(c.manager.Find(networkID), networkID, target)
+	}
 }
 
 // SelectConversationByID resolves a irc.ConversationID and selects it. It
@@ -1338,13 +1361,13 @@ func (c *Controller) MentionFor(networkID string) bool {
 // IrcController::setWindowActive (src/irc/irccontroller.cpp:800-817).
 func (c *Controller) SetWindowActive(active bool) {
 	c.reducer.SetWindowActive(active)
+	c.transcriptFocused = active
 	if !active || c.selected == nil {
 		return
 	}
-	if !c.reducer.MarkRead(*c.selected) {
-		return
+	if c.reducer.MarkRead(*c.selected) {
+		c.Publish(irc.ViewNotify{Conversations: true})
 	}
-	c.Publish(irc.ViewNotify{Conversations: true})
 }
 
 // SetMuted records the muted flag for one conversation. Persistence is the

@@ -276,6 +276,7 @@ std::vector<IrcEvent> IrcEventTranslator::translate(
     std::vector<IrcEvent> events;
     const QString command = ircWireText(message.command).toUpper();
     const QString sender = author(message);
+    const std::optional<QDateTime> serverTime = serverTimeOf(message);
     const QDateTime timestamp = timestampFor(message);
 
     // The account tag names the sender. Record it before command handling so
@@ -307,10 +308,11 @@ std::vector<IrcEvent> IrcEventTranslator::translate(
             events.emplace_back(IrcActionEvent{
                 *conversation, sender,
                 body.mid(actionPrefix.size(), body.size() - actionPrefix.size() - 1),
-                timestamp, displayTarget, msgid});
+                timestamp, displayTarget, msgid, serverTime});
         } else {
             events.emplace_back(IrcMessageEvent{
-                *conversation, sender, body, timestamp, displayTarget, msgid});
+                *conversation, sender, body, timestamp, displayTarget, msgid,
+                serverTime});
         }
     } else if (command == QStringLiteral("TAGMSG") && !message.parameters.empty()) {
         const std::optional<QString> value = tagValue(message, "+typing");

@@ -23,6 +23,7 @@ Item {
     property Component messageDelegate
     property Component messageFooter
     property Component consoleDelegate
+    property var readMarkerSync: null
 
     property alias composer: composer
     property alias messageList: messageList
@@ -175,6 +176,7 @@ Item {
         model: column.activeMessages
         delegate: column.messageDelegate
         footer: column.messageFooter
+        readMarkerSync: column.readMarkerSync
     }
 
     UnseenJumpButton {

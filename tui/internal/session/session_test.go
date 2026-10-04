@@ -114,6 +114,9 @@ func (h *sessionTestHandler) HistoryBatchReceived(networkID string, batch irc.Hi
 	h.batches = append(h.batches, batch)
 }
 
+func (h *sessionTestHandler) ChatHistoryRequestFinished(networkID string, target string, failed bool, before bool) {
+}
+
 func (h *sessionTestHandler) StatusEntry(entry irc.StatusEntry) {
 	h.status = append(h.status, entry)
 }
@@ -129,6 +132,8 @@ func (h *sessionTestHandler) RequestLabelFinished(networkID, requestLabel string
 func (h *sessionTestHandler) AutojoinChannelsChanged(networkID string, channels []string, keys map[string]string) {
 	h.autojoins = append(h.autojoins, sessionRecordedAutojoin{networkID, channels, keys})
 }
+
+func (h *sessionTestHandler) ReadMarkerReceived(networkID, target string, marker *time.Time) {}
 
 // hasLabel reports whether any recorded Status entry carried label.
 func (h *sessionTestHandler) hasLabel(label string) bool {

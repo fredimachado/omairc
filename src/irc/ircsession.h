@@ -187,6 +187,8 @@ public slots:
     bool sendMonitor(QChar modifier, const QStringList& nicks = {});
     bool list(const QString& mask = {});
     bool sendRaw(const QString& line);
+    bool requestReadMarker(const QString& target);
+    bool publishReadMarker(const QString& target, const QDateTime& when);
 
 signals:
     void stateChanged(IrcSession::State state);
@@ -198,6 +200,10 @@ signals:
                             int delayMilliseconds,
                             int attempt);
     void messageReceived(const QString& networkId, const IrcMessage& message);
+    void readMarkerReceived(const QString& networkId,
+                            const QString& target,
+                            bool hasMarker,
+                            const QDateTime& markerUtc);
     void historyBatchReceived(const QString& networkId, const IrcHistoryBatch& batch);
     void statusEntry(const IrcStatusEntry& entry);
     void capabilitiesChanged(const QString& networkId,
@@ -238,6 +244,9 @@ private:
     bool hasOpenCurrentHistoryBatch(const QString& channel) const;
     void abandonHistoryRequests();
     void handleChatHistoryFail(const IrcMessage& message);
+    void handleReadMarkerFail(const IrcMessage& message);
+    void noteReadMarkerCommand(const QStringList& tokens);
+    QString readMarkerCommand() const;
 
     enum class ReplayKind {
         ChatHistory,      // an answer to a CHATHISTORY we sent
@@ -333,6 +342,7 @@ private:
     std::optional<qint64> m_stsDuration;
     IrcCapabilitySet m_publishedCapabilities;
     IrcMetadataCapability m_metadataCapability;
+    QString m_readMarkerCommand;
     IrcTypingPublisher m_typing;
     struct OpenBatch
     {

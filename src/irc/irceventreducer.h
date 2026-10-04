@@ -132,6 +132,7 @@ struct IrcConversationState
     int unread = 0;
     int mentions = 0;
     std::optional<qint64> unreadMark;
+    std::optional<QDateTime> readMarker;
     bool muted = false;
     int trimmed = 0;
     std::set<IrcMsgId> messageIds;
@@ -232,6 +233,12 @@ public:
                                        const QString& target) const;
     void markSelected(const IrcConversationKey& key);
     bool markRead(const IrcConversationKey& key);
+    bool applyReadMarker(const IrcConversationKey& key,
+                         const std::optional<QDateTime>& marker);
+    void notePublishedReadMarker(const IrcConversationKey& key,
+                                 const QDateTime& when);
+    std::optional<QDateTime> newestServerTime(
+        const IrcConversationKey& key) const;
     void setWindowActive(bool active);
     void clearSelection();
     std::optional<IrcConversationKey> selected() const;
@@ -314,7 +321,8 @@ private:
                     const QString& body,
                     const QDateTime& timestamp,
                     IrcMessageKind kind,
-                    const IrcMsgId& msgid);
+                    const IrcMsgId& msgid,
+                    const std::optional<QDateTime>& serverTime = std::nullopt);
     void noteChatArrival(IrcConversationState& conversation,
                          const IrcConversationKey& key,
                          const QString& author,
@@ -323,7 +331,8 @@ private:
                          const IrcMsgId& msgid,
                          qint64 sequence,
                          IrcOrigin origin,
-                         const IrcHistoryEvent *history = nullptr);
+                         const IrcHistoryEvent *history = nullptr,
+                         const std::optional<QDateTime>& serverTime = std::nullopt);
     void appendEvent(IrcConversationState& conversation,
                      const QString& body,
                      bool collapsible = false);
@@ -386,6 +395,8 @@ private:
                      const QString& oldNormalized,
                      const QString& newNormalized,
                      const QString& newDisplay);
+    void recomputeUnreadFromReadMarker(IrcConversationState& conversation,
+                                       const IrcConversationKey& key);
     void pruneExpiredTyping(IrcConversationState& conversation,
                             const QDateTime& now);
 

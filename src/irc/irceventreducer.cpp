@@ -268,6 +268,121 @@ bool IrcEventReducer::markRead(const IrcConversationKey& key)
     return true;
 }
 
+namespace
+{
+bool chatCountsTowardUnread(IrcMessageKind kind)
+{
+    return kind == IrcMessageKind::Message || kind == IrcMessageKind::Action
+        || kind == IrcMessageKind::Notice;
+}
+
+bool coveredByReadMarker(const IrcConversationState& conversation,
+                         const IrcReducedMessage& message)
+{
+    if (!conversation.readMarker || !message.serverTime
+        || !message.serverTime->isValid()) {
+        return false;
+    }
+    return message.serverTime->toUTC() <= conversation.readMarker->toUTC();
+}
+
+}
+
+void IrcEventReducer::recomputeUnreadFromReadMarker(
+    IrcConversationState& conversation,
+    const IrcConversationKey& key)
+{
+    int unread = 0;
+    int mentions = 0;
+    std::optional<qint64> unreadMark;
+    const bool selected = m_selected && *m_selected == key;
+    for (const IrcReducedMessage& message : conversation.messages) {
+        if (!chatCountsTowardUnread(message.kind))
+            continue;
+        if (isSelf(key.networkId, message.author))
+            continue;
+        if (coveredByReadMarker(conversation, message))
+            continue;
+        const bool skipLiveFocused =
+            selected && message.origin == IrcOrigin::Live && m_windowActive;
+        const bool skipReplayUnfocused =
+            selected && message.origin != IrcOrigin::Live && !m_windowActive;
+        const bool focusedReplay =
+            selected && message.origin != IrcOrigin::Live && m_windowActive;
+        if (skipLiveFocused || skipReplayUnfocused)
+            continue;
+        if (focusedReplay) {
+            if (!unreadMark.has_value())
+                unreadMark = message.sequence;
+            continue;
+        }
+        if (unread == 0)
+            unreadMark = message.sequence;
+        ++unread;
+        const bool nickHit = isNickMention(key.networkId, message.body);
+        const bool highlightHit =
+            !nickHit && isHighlightHit(key.networkId, message.body);
+        const std::optional<ChatLineReason> reason = classifyChatLine(
+            conversation, message.kind, false, nickHit, highlightHit);
+        if (reason
+            && (*reason == ChatLineReason::NickMention
+                || *reason == ChatLineReason::Highlight)
+            && !conversation.muted) {
+            ++mentions;
+        }
+    }
+    conversation.unread = unread;
+    conversation.mentions = mentions;
+    conversation.unreadMark =
+        (unread > 0 || unreadMark.has_value()) ? unreadMark : std::nullopt;
+}
+
+void IrcEventReducer::notePublishedReadMarker(const IrcConversationKey& key,
+                                              const QDateTime& when)
+{
+    IrcConversationState *conversation = findMutable(key);
+    if (!conversation)
+        return;
+    const QDateTime utc = when.toUTC();
+    if (conversation->readMarker && *conversation->readMarker >= utc)
+        return;
+    conversation->readMarker = utc;
+    recomputeUnreadFromReadMarker(*conversation, key);
+}
+
+bool IrcEventReducer::applyReadMarker(const IrcConversationKey& key,
+                                      const std::optional<QDateTime>& marker)
+{
+    if (!marker)
+        return false;
+    IrcConversationState *conversation = findMutable(key);
+    if (!conversation)
+        return false;
+    const QDateTime utc = marker->toUTC();
+    if (conversation->readMarker && *conversation->readMarker >= utc)
+        return false;
+    conversation->readMarker = utc;
+    recomputeUnreadFromReadMarker(*conversation, key);
+    return true;
+}
+
+std::optional<QDateTime> IrcEventReducer::newestServerTime(
+    const IrcConversationKey& key) const
+{
+    const IrcConversationState *conversation = find(key);
+    if (!conversation)
+        return std::nullopt;
+    std::optional<QDateTime> newest;
+    for (const IrcReducedMessage& message : conversation->messages) {
+        if (!message.serverTime || !message.serverTime->isValid())
+            continue;
+        const QDateTime utc = message.serverTime->toUTC();
+        if (!newest || utc > *newest)
+            newest = utc;
+    }
+    return newest;
+}
+
 void IrcEventReducer::setWindowActive(bool active)
 {
     // Flag only. Consuming unread on focus-regain is
@@ -813,7 +928,8 @@ void IrcEventReducer::appendChat(const IrcConversationKey& key,
                                  const QString& body,
                                  const QDateTime& timestamp,
                                  IrcMessageKind kind,
-                                 const IrcMsgId& msgid)
+                                 const IrcMsgId& msgid,
+                                 const std::optional<QDateTime>& serverTime)
 {
     const bool self = isSelf(key.networkId, author);
     IrcConversationState *conversation = ensureConversation(
@@ -827,13 +943,15 @@ void IrcEventReducer::appendChat(const IrcConversationKey& key,
         return;
     if (!msgid.isEmpty())
         conversation->messageIds.insert(msgid);
-    admitMessage(*conversation, {author, body, timestamp, kind, false,
-                                IrcOrigin::Live, msgid});
+    admitMessage(*conversation,
+                 {author, body, timestamp, kind, false, IrcOrigin::Live, msgid,
+                  0, serverTime});
     persistMessage(*conversation, conversation->messages.back());
     capMessages(*conversation);
     clearTyping(*conversation, normalize(key.networkId, author));
     noteChatArrival(*conversation, key, author, body, kind, msgid,
-                    conversation->messages.back().sequence, IrcOrigin::Live);
+                    conversation->messages.back().sequence, IrcOrigin::Live,
+                    nullptr, serverTime);
 }
 
 void IrcEventReducer::noteChatArrival(IrcConversationState& conversation,
@@ -844,7 +962,8 @@ void IrcEventReducer::noteChatArrival(IrcConversationState& conversation,
                                       const IrcMsgId& msgid,
                                       qint64 sequence,
                                       IrcOrigin origin,
-                                      const IrcHistoryEvent *history)
+                                      const IrcHistoryEvent *history,
+                                      const std::optional<QDateTime>& serverTime)
 {
     // A previous nick inside a bouncer query batch is backlog of our own
     // lines. Channel playback from a nick this network has welcomed, or
@@ -857,7 +976,9 @@ void IrcEventReducer::noteChatArrival(IrcConversationState& conversation,
     const bool highlightHit = !nickHit && isHighlightHit(key.networkId, body);
     const std::optional<ChatLineReason> reason = classifyChatLine(
         conversation, kind, self, nickHit, highlightHit);
-    if (reason && !conversation.muted) {
+    const bool readAlready = serverTime && conversation.readMarker
+        && serverTime->toUTC() <= conversation.readMarker->toUTC();
+    if (reason && !conversation.muted && !readAlready) {
         m_mentionArrival = IrcMentionArrival{
             author, body, key.networkId, conversation.target, msgid};
     }
@@ -867,7 +988,7 @@ void IrcEventReducer::noteChatArrival(IrcConversationState& conversation,
     // buffer already plants unread, mentionArrived still desktop-notifies,
     // and focus-regain consumes the badge in place. An inbox row would
     // linger, because consume-on-select does not run on focus return.
-    if (origin == IrcOrigin::Live && reason && !conversation.muted
+    if (origin == IrcOrigin::Live && reason && !conversation.muted && !readAlready
         && !selected && *reason != ChatLineReason::DirectMessage) {
         m_inboxArrival = IrcInboxArrival{
             inboxKindFor(*reason),
@@ -884,6 +1005,8 @@ void IrcEventReducer::noteChatArrival(IrcConversationState& conversation,
     // Focused replay (for example ZNC playback on the first auto-selected
     // channel) still plants the mark without bumping unread.
     if (self)
+        return;
+    if (readAlready)
         return;
     const bool skipLiveFocused =
         selected && origin == IrcOrigin::Live && m_windowActive;
@@ -1080,21 +1203,24 @@ void IrcEventReducer::reduce(const IrcMessageEvent& event)
 {
     appendChat(event.conversation, displayTarget(event.conversation, event.target),
                event.author, event.body,
-               event.timestamp, IrcMessageKind::Message, event.msgid);
+               event.timestamp, IrcMessageKind::Message, event.msgid,
+               event.serverTime);
 }
 
 void IrcEventReducer::reduce(const IrcNoticeEvent& event)
 {
     appendChat(event.conversation, displayTarget(event.conversation, event.target),
                event.author, event.body,
-               event.timestamp, IrcMessageKind::Notice, event.msgid);
+               event.timestamp, IrcMessageKind::Notice, event.msgid,
+               event.serverTime);
 }
 
 void IrcEventReducer::reduce(const IrcActionEvent& event)
 {
     appendChat(event.conversation, displayTarget(event.conversation, event.target),
                event.author, event.body,
-               event.timestamp, IrcMessageKind::Action, event.msgid);
+               event.timestamp, IrcMessageKind::Action, event.msgid,
+               event.serverTime);
 }
 
 void IrcEventReducer::reduce(const IrcJoinEvent& event)
@@ -1664,7 +1790,7 @@ void IrcEventReducer::spliceHistory(IrcConversationState& conversation,
         if (!line.msgid.isEmpty())
             conversation.messageIds.insert(line.msgid);
         run.push_back({line.author, line.body, line.timestamp, kind, false,
-                       IrcOrigin::Replay, line.msgid});
+                       IrcOrigin::Replay, line.msgid, 0, line.serverTime});
         run.back().sequence = conversation.nextSequence++;
         if (line.serverTime && line.serverTime->isValid())
             run.back().serverTime = *line.serverTime;
@@ -1709,7 +1835,8 @@ void IrcEventReducer::spliceHistory(IrcConversationState& conversation,
             for (const IrcReducedMessage& message : run) {
                 noteChatArrival(conversation, event.conversation, message.author,
                                 message.body, message.kind, message.msgid,
-                                message.sequence, IrcOrigin::Replay, &event);
+                                message.sequence, IrcOrigin::Replay, &event,
+                                message.serverTime);
             }
         }
     } else if (event.prependAtHead) {
