@@ -246,6 +246,7 @@ type Session struct {
 	historyGeneration map[string]int
 	historyAsked      map[string]struct{}
 	historyPending    map[string]int
+	historyExhausted  map[string]struct{}
 
 	pendingLabels    map[string]time.Time
 	nextRequestLabel uint64
@@ -325,6 +326,7 @@ func NewSession(config SessionConfig, transport Transport, clock Clock) *Session
 		historyGeneration: map[string]int{},
 		historyAsked:      map[string]struct{}{},
 		historyPending:    map[string]int{},
+		historyExhausted:  map[string]struct{}{},
 		pendingLabels:     map[string]time.Time{},
 		ctcpReplyClock:    map[string]time.Time{},
 		scram:             NewSASLScram(),
@@ -485,6 +487,17 @@ func (s *Session) HistoryPending() bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return len(s.historyPending) > 0
+}
+
+// RequestOlderHistory asks the server for one page of transcript older than the
+// cursor. msgid names the oldest loaded line when non-empty; otherwise
+// timestamp is sent as timestamp=. It returns false when no request is sent.
+func (s *Session) RequestOlderHistory(target, msgid string, timestamp time.Time) bool {
+	var ok bool
+	s.locked(func() {
+		ok = s.requestOlderHistoryLocked(target, msgid, timestamp)
+	})
+	return ok
 }
 
 // AutojoinChannels returns a copy of the current autojoin channel list.
@@ -1966,7 +1979,12 @@ func (s *Session) closeBatchLocked(reference string) {
 	if frame.replayRoot == reference && frame.collected.Target != "" {
 		currentMembership := frame.generation == s.historyGenerationLocked(frame.collected.Target)
 		if currentMembership && frame.hasKind && frame.kind == irc.HistoryChat {
-			delete(s.historyPending, s.foldChannelLocked(frame.collected.Target))
+			folded := s.foldChannelLocked(frame.collected.Target)
+			solicited := s.answersPendingHistoryLocked(frame.collected.Target)
+			delete(s.historyPending, folded)
+			if solicited && len(frame.collected.Lines) == 0 {
+				s.historyExhausted[folded] = struct{}{}
+			}
 		}
 		// Self-join bumps history generation while a znc.in/playback batch can
 		// still be open. That batch is not a CHATHISTORY answer, so deliver it
@@ -2067,10 +2085,47 @@ func (s *Session) requestChannelHistoryLocked(channel string) {
 	s.sendCommandLocked(fmt.Sprintf("CHATHISTORY LATEST %s * %d", channel, s.historyLimit), "")
 }
 
+func (s *Session) requestOlderHistoryLocked(target, msgid string, timestamp time.Time) bool {
+	if target == "" || !s.replayEnabledLocked(irc.HistoryChat) {
+		return false
+	}
+	key := s.foldChannelLocked(target)
+	if _, exhausted := s.historyExhausted[key]; exhausted {
+		return false
+	}
+	if _, ok := s.historyPending[key]; ok {
+		return false
+	}
+	if s.features.IsChannel(target) {
+		if _, asked := s.historyAsked[key]; !asked {
+			return false
+		}
+	}
+	cursor := ""
+	if msgid != "" {
+		cursor = "msgid=" + msgid
+	} else if !timestamp.IsZero() {
+		cursor = "timestamp=" + formatChatHistoryTimestamp(timestamp)
+	} else {
+		return false
+	}
+	s.historyPending[key] = s.historyGenerationLocked(target)
+	if !s.sendCommandLocked(fmt.Sprintf("CHATHISTORY BEFORE %s %s %d", target, cursor, s.historyLimit), "") {
+		delete(s.historyPending, key)
+		return false
+	}
+	return true
+}
+
+func formatChatHistoryTimestamp(when time.Time) string {
+	return when.UTC().Format("2006-01-02T15:04:05.000Z")
+}
+
 func (s *Session) forgetChannelHistoryLocked(channel string) {
 	folded := s.foldChannelLocked(channel)
 	delete(s.historyAsked, folded)
 	delete(s.historyPending, folded)
+	delete(s.historyExhausted, folded)
 	s.dropHistoryBatchesLocked(channel)
 }
 
@@ -2190,7 +2245,9 @@ func (s *Session) handleChatHistoryFailLocked(message irc.Message) {
 		if !s.answersPendingHistoryLocked(channel) {
 			continue
 		}
-		delete(s.historyPending, s.foldChannelLocked(channel))
+		folded := s.foldChannelLocked(channel)
+		delete(s.historyPending, folded)
+		s.historyExhausted[folded] = struct{}{}
 		return
 	}
 }
@@ -2564,6 +2621,7 @@ func (s *Session) resetForConnectionLocked() {
 	s.ignoredBatches = map[string]struct{}{}
 	s.historyAsked = map[string]struct{}{}
 	s.historyPending = map[string]int{}
+	s.historyExhausted = map[string]struct{}{}
 	s.historyGeneration = map[string]int{}
 	s.historyLimit = kHistoryLimit
 	s.features = irc.NewServerFeatures()

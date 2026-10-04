@@ -128,6 +128,10 @@ type Model struct {
 	transcriptScroll    int
 	transcriptFollowEnd bool
 	transcriptCursor    int
+	// transcriptAnchorFromEnd is rows from the transcript end to preserve across
+	// a CHATHISTORY prepend, or -1 when inactive. It mirrors
+	// TranscriptList.restoreOffset.
+	transcriptAnchorFromEnd int
 	// firstUnseenRow is the row that first arrived while the reader was scrolled
 	// up, or -1 when nothing is waiting below. transcriptCount tracks the row
 	// count between notifications so a growth can be detected. They mirror

@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- The terminal client loads an older page when paging to the top of a
+  conversation whose server offers chathistory.
+
 ## [1.0.7] - 2026-09-30
 
 ### Added
