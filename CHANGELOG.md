@@ -9,9 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Cross-client read markers (`draft/read-marker`, and `soju.im/read` when that
-  is the only token the server offers) clear unread that another client already
-  read, and publish a marker when this window is caught up.
+- The terminal client supports IRC read markers (`draft/read-marker`, and
+  `soju.im/read` when that is the only token offered): a server marker clears
+  unread another client already read, and Omairc publishes a marker when this
+  window is caught up on the selected conversation.
+- The terminal client loads an older page when paging to the top of a
+  conversation whose server offers chathistory.
+- The desktop client supports IRC read markers (`draft/read-marker`, and
+  `soju.im/read` when that is the only token offered): a server marker clears
+  unread another client already read, and Omairc publishes a marker when this
+  window is caught up on the selected conversation.
 
 ## [1.0.7] - 2026-09-30
 

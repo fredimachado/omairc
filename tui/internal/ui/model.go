@@ -128,6 +128,15 @@ type Model struct {
 	transcriptScroll    int
 	transcriptFollowEnd bool
 	transcriptCursor    int
+	// transcriptAnchorSequence names the top visible row to pin after a
+	// CHATHISTORY prepend, or -1 when inactive.
+	transcriptAnchorSequence int64
+	// transcriptAnchorSpliceEpoch is the splice generation when the anchor was
+	// armed; restore runs only after the epoch advances.
+	transcriptAnchorSpliceEpoch int
+	// firstUnseenSequenceAtAnchor remembers the unseen marker row across a
+	// prepend that tail-caps without growing the row count.
+	firstUnseenSequenceAtAnchor int64
 	// firstUnseenRow is the row that first arrived while the reader was scrolled
 	// up, or -1 when nothing is waiting below. transcriptCount tracks the row
 	// count between notifications so a growth can be detected. They mirror
@@ -213,9 +222,12 @@ func New(ctrl *controller.Controller, conn *connection.Connection) *Model {
 		inbox:                newInboxState(),
 		list:                 newChannelListState(),
 		serverListVisible:    true,
-		transcriptFollowEnd:  true,
-		transcriptCursor:     -1,
-		firstUnseenRow:       -1,
+		transcriptFollowEnd:         true,
+		transcriptCursor:            -1,
+		transcriptAnchorSequence:    -1,
+		transcriptAnchorSpliceEpoch: -1,
+		firstUnseenSequenceAtAnchor: -1,
+		firstUnseenRow:              -1,
 		composerHistoryIndex: -1,
 		drafts:               make(map[string]string),
 		// The terminal starts focused until a Blur arrives, mirroring
@@ -448,6 +460,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// have grown the transcript while the reader was scrolled up, which
 		// arms the jump-to-first-new marker.
 		m.noteTranscriptGrowth()
+		m.syncReadMarkerViewport()
 		return m, m.startBackgroundWork()
 	case ThemeChangedMsg:
 		// A live theme swap. Rebuild every style from the new palette, then
@@ -471,14 +484,14 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// A background avatar fetch cached an image; the next render reads it.
 		return m, nil
 	case tea.FocusMsg:
-		// The terminal regained focus. Mirror win.active, consume the
-		// selected conversation's unread through the controller, then land on
-		// the "New messages" mark when one is planted.
+		// The terminal regained focus. Land on the unread mark before
+		// consuming unread or publishing a read marker.
 		m.windowActive = true
+		m.pinTranscriptOnFocusReturn()
 		if m.ctrl != nil {
 			m.ctrl.SetWindowActive(true)
 		}
-		m.pinTranscriptOnFocusReturn()
+		m.syncReadMarkerViewport()
 		return m, nil
 	case tea.BlurMsg:
 		// The terminal lost focus; arrivals now earn a desktop notification.

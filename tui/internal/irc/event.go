@@ -124,6 +124,7 @@ type MessageEvent struct {
 	Author       string
 	Body         string
 	Timestamp    time.Time
+	ServerTime   *time.Time
 	Target       string
 	MsgID        MsgID
 }
@@ -136,6 +137,7 @@ type NoticeEvent struct {
 	Author       string
 	Body         string
 	Timestamp    time.Time
+	ServerTime   *time.Time
 	Target       string
 	MsgID        MsgID
 }
@@ -148,6 +150,7 @@ type ActionEvent struct {
 	Author       string
 	Body         string
 	Timestamp    time.Time
+	ServerTime   *time.Time
 	Target       string
 	MsgID        MsgID
 }
@@ -308,6 +311,8 @@ type HistoryEvent struct {
 	Target       string
 	Lines        []ReplayLine
 	Kind         HistoryKind
+	// OlderPage is true for a solicited CHATHISTORY BEFORE page.
+	OlderPage bool
 }
 
 func (HistoryEvent) eventKind() EventKind { return EventHistory }
