@@ -148,6 +148,7 @@ public:
     Q_INVOKABLE bool nickIsTyping(const QString& nick) const;
     Q_INVOKABLE void notifyComposerText(const QString& text);
     Q_INVOKABLE void setWindowActive(bool active);
+    Q_INVOKABLE void setTranscriptCaughtUp(bool caughtUp);
     void noteLocalActivity();
 #ifdef OMAIRC_TEST
     void fireAutoawayIdleForTest();
@@ -329,6 +330,27 @@ private:
     void armTypingRefresh();
     void appendInbox(IrcInboxItem item);
     void syncInbox();
+    void handleReadMarkerReceived(const QString& networkId,
+                                  const QString& target,
+                                  bool hasMarker,
+                                  const QDateTime& markerUtc);
+    void maybePublishReadMarker(const QString& networkId);
+    void clearReadMarkerInFlight(const QString& networkId,
+                                 const IrcMessage& message);
+    void requestDirectReadMarkerOnce(const QString& networkId,
+                                     const IrcConversationKey& key,
+                                     const QString& wireTarget);
+    QString readMarkerOutboundKey(const QString& networkId,
+                                  const QString& normalizedTarget) const;
+
+    struct ReadMarkerOutbound
+    {
+        std::optional<QDateTime> pending;
+        std::optional<QDateTime> inFlightAt;
+        std::optional<QDateTime> failedAt;
+        bool inFlight = false;
+        bool directGetSent = false;
+    };
 
     IrcSessionManager m_sessions;
     IrcStatusConsole m_console;
@@ -369,6 +391,9 @@ private:
     bool m_reopenDirectMessages = true;
     bool m_loadPeerAvatars = true;
     bool m_openConversationsAtUnread = true;
+    bool m_transcriptCaughtUp = true;
+    bool m_windowActive = true;
+    QHash<QString, ReadMarkerOutbound> m_readMarkerOutbound;
     QTimer m_typingRefresh;
     QString m_composerDraft;
     QString m_typingTarget;

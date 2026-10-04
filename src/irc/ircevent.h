@@ -74,6 +74,7 @@ struct IrcMessageEvent
     QDateTime timestamp;
     QString target;
     IrcMsgId msgid{};
+    std::optional<QDateTime> serverTime;
 };
 
 struct IrcNoticeEvent
@@ -84,6 +85,7 @@ struct IrcNoticeEvent
     QDateTime timestamp;
     QString target;
     IrcMsgId msgid{};
+    std::optional<QDateTime> serverTime;
 };
 
 struct IrcActionEvent
@@ -94,6 +96,7 @@ struct IrcActionEvent
     QDateTime timestamp;
     QString target;
     IrcMsgId msgid{};
+    std::optional<QDateTime> serverTime;
 };
 
 struct IrcJoinEvent

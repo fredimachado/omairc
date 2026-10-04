@@ -200,6 +200,10 @@ private slots:
     void conversationLogTailFiltersAndOrdersAcceptedRecords();
     void conversationLogTailHandlesBoundariesAndEdgeCases();
     void conversationLogTailStopsBeforeHistoricalPrefix();
+    void readMarkerSkipsUnreadForCoveredServerTimes();
+    void applyReadMarkerClearsUnreadWithoutDeletingMessages();
+    void olderIncomingReadMarkerDoesNotMoveBadgeBack();
+    void recomputeReadMarkerSkipsFocusedReplayUnread();
 };
 
 void ReducerTest::namesFillAndCompleteWithoutDuplicates()
@@ -3644,6 +3648,140 @@ void ReducerTest::conversationLogTailStopsBeforeHistoricalPrefix()
     QCOMPARE(device.reads, 1);
     QCOMPARE(device.bytesRead, qint64(4096));
     QVERIFY(device.bytesRead < content.size() / 100);
+}
+
+void ReducerTest::readMarkerSkipsUnreadForCoveredServerTimes()
+{
+    IrcEventReducer reducer;
+    welcome(reducer, networkA);
+    const IrcConversationKey room =
+        reducer.conversationKey(networkA, QStringLiteral("#room"));
+    reducer.apply(IrcJoinEvent{
+        networkA, QStringLiteral("#room"), QStringLiteral("omairc")});
+    const QDateTime early = QDateTime::fromString(
+        QStringLiteral("2026-06-01T10:00:00.000Z"), Qt::ISODateWithMs);
+    const QDateTime late = QDateTime::fromString(
+        QStringLiteral("2026-06-01T11:00:00.000Z"), Qt::ISODateWithMs);
+    QVERIFY(early.isValid());
+    QVERIFY(late.isValid());
+    reducer.apply(IrcMessageEvent{
+        room,
+        QStringLiteral("alice"),
+        QStringLiteral("early"),
+        timestamp,
+        QStringLiteral("#room"),
+        IrcMsgId{},
+        std::optional<QDateTime>{early}});
+    reducer.apply(IrcMessageEvent{
+        room,
+        QStringLiteral("alice"),
+        QStringLiteral("late"),
+        timestamp,
+        QStringLiteral("#room"),
+        IrcMsgId{},
+        std::optional<QDateTime>{late}});
+    const IrcConversationState *before = roomOf(reducer);
+    QVERIFY(before);
+    QCOMPARE(before->unread, 2);
+    for (const IrcReducedMessage& line : before->messages) {
+        if (line.body == QStringLiteral("early"))
+            QCOMPARE(line.serverTime, std::optional<QDateTime>{early});
+        if (line.body == QStringLiteral("late"))
+            QCOMPARE(line.serverTime, std::optional<QDateTime>{late});
+    }
+
+    QVERIFY(reducer.applyReadMarker(room, std::optional<QDateTime>{early}));
+    const IrcConversationState *after = roomOf(reducer);
+    QVERIFY(after);
+    QCOMPARE(after->unread, 1);
+    QCOMPARE(after->messages.size(), before->messages.size());
+}
+
+void ReducerTest::applyReadMarkerClearsUnreadWithoutDeletingMessages()
+{
+    IrcEventReducer reducer;
+    welcome(reducer, networkA);
+    const IrcConversationKey room =
+        reducer.conversationKey(networkA, QStringLiteral("#room"));
+    reducer.apply(IrcJoinEvent{
+        networkA, QStringLiteral("#room"), QStringLiteral("omairc")});
+    const QDateTime when = QDateTime::fromString(
+        QStringLiteral("2026-06-01T12:00:00.000Z"), Qt::ISODate);
+    reducer.apply(IrcMessageEvent{
+        room, QStringLiteral("alice"), QStringLiteral("line"), timestamp,
+        QStringLiteral("#room"), {}, when});
+    QVERIFY(reducer.applyReadMarker(room, when));
+    const IrcConversationState *conversation = roomOf(reducer);
+    QVERIFY(conversation);
+    QCOMPARE(conversation->unread, 0);
+    QCOMPARE(conversation->messages.back().body, QStringLiteral("line"));
+}
+
+void ReducerTest::recomputeReadMarkerSkipsFocusedReplayUnread()
+{
+    IrcEventReducer reducer;
+    welcome(reducer, networkA);
+    const IrcConversationKey room =
+        reducer.conversationKey(networkA, QStringLiteral("#room"));
+    reducer.apply(IrcJoinEvent{
+        networkA, QStringLiteral("#room"), QStringLiteral("omairc")});
+    reducer.markSelected(room);
+    reducer.setWindowActive(true);
+    const QDateTime early = QDateTime::fromString(
+        QStringLiteral("2026-06-01T10:00:00.000Z"), Qt::ISODateWithMs);
+    const QDateTime late = QDateTime::fromString(
+        QStringLiteral("2026-06-01T11:00:00.000Z"), Qt::ISODateWithMs);
+    reducer.apply(IrcMessageEvent{
+        room, QStringLiteral("alice"), QStringLiteral("live"), timestamp,
+        QStringLiteral("#room"), {}, early});
+    reducer.apply(IrcHistoryEvent{
+        room,
+        QStringLiteral("#room"),
+        {IrcReplayLine{QStringLiteral("bob"),
+                       QStringLiteral("replay"),
+                       timestamp,
+                       IrcMessageKindTag::Chat,
+                       IrcMsgId{QStringLiteral("replay-1")},
+                       late}},
+    });
+    const IrcConversationState *before = roomOf(reducer);
+    QVERIFY(before);
+    QCOMPARE(before->unread, 0);
+    QVERIFY(before->unreadMark.has_value());
+    const qint64 replayMark = *before->unreadMark;
+    QVERIFY(reducer.applyReadMarker(room, early));
+    const IrcConversationState *after = roomOf(reducer);
+    QVERIFY(after);
+    QCOMPARE(after->unread, 0);
+    QVERIFY(after->unreadMark.has_value());
+    QCOMPARE(*after->unreadMark, replayMark);
+}
+
+void ReducerTest::olderIncomingReadMarkerDoesNotMoveBadgeBack()
+{
+    IrcEventReducer reducer;
+    welcome(reducer, networkA);
+    const IrcConversationKey room =
+        reducer.conversationKey(networkA, QStringLiteral("#room"));
+    reducer.apply(IrcJoinEvent{
+        networkA, QStringLiteral("#room"), QStringLiteral("omairc")});
+    const QDateTime newer = QDateTime::fromString(
+        QStringLiteral("2026-06-01T12:00:00.000Z"), Qt::ISODate);
+    const QDateTime older = QDateTime::fromString(
+        QStringLiteral("2026-06-01T10:00:00.000Z"), Qt::ISODate);
+    reducer.apply(IrcMessageEvent{
+        room, QStringLiteral("alice"), QStringLiteral("one"), timestamp,
+        QStringLiteral("#room"), {}, newer});
+    reducer.apply(IrcMessageEvent{
+        room, QStringLiteral("alice"), QStringLiteral("two"), timestamp,
+        QStringLiteral("#room"), {}, newer});
+    QVERIFY(reducer.applyReadMarker(room, newer));
+    QVERIFY(!reducer.applyReadMarker(room, older));
+    const IrcConversationState *conversation = roomOf(reducer);
+    QVERIFY(conversation);
+    QCOMPARE(conversation->unread, 0);
+    QVERIFY(conversation->readMarker);
+    QCOMPARE(conversation->readMarker->toUTC(), newer.toUTC());
 }
 
 int runReducerTests(int argc, char **argv)
