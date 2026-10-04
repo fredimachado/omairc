@@ -323,6 +323,46 @@ func TestSessionRegistrationRefusalFailsVisibly(t *testing.T) {
 	if fixture.handler.errors[0].kind != ErrorRegistration {
 		t.Fatalf("error kind = %v, want Registration", fixture.handler.errors[0].kind)
 	}
+	if got := fixture.handler.errors[0].message; got != "Erroneous nickname" {
+		t.Fatalf("error = %q, want the server sentence", got)
+	}
+	if len(fixture.handler.reconnects) != 0 {
+		t.Fatalf("reconnects = %d, want 0", len(fixture.handler.reconnects))
+	}
+}
+
+// TestSessionRegistrationRefusalWithoutSentenceKeepsNumeric ports
+// SessionTest::registrationRefusalWithoutSentenceKeepsNumeric.
+func TestSessionRegistrationRefusalWithoutSentenceKeepsNumeric(t *testing.T) {
+	fixture := newSessionFixture(t, sessionTestConfig(sessionTestNetworkID))
+	fixture.connectTLS()
+	fixture.inject(":server 432 * omairc :\r\n")
+	if got := fixture.session.State(); got != StateFailed {
+		t.Fatalf("state = %v, want Failed", got)
+	}
+	if len(fixture.handler.errors) != 1 {
+		t.Fatalf("errors = %d, want 1", len(fixture.handler.errors))
+	}
+	if got := fixture.handler.errors[0].message; got != "IRC registration was refused (432)" {
+		t.Fatalf("error = %q, want the numeric fallback", got)
+	}
+}
+
+// TestSessionRegistrationRefusalDropsSecretSentence ports
+// SessionTest::registrationRefusalDropsSecretSentence.
+func TestSessionRegistrationRefusalDropsSecretSentence(t *testing.T) {
+	fixture := newSessionFixture(t, sessionTestConfig(sessionTestNetworkID))
+	fixture.connectTLS()
+	fixture.inject(":server 432 * omairc :IDENTIFY hunter2\r\n")
+	if got := fixture.session.State(); got != StateFailed {
+		t.Fatalf("state = %v, want Failed", got)
+	}
+	if got := fixture.handler.errors[0].message; got != "IRC registration was refused (432)" {
+		t.Fatalf("error = %q, want the numeric fallback", got)
+	}
+	if strings.Contains(fixture.handler.errors[0].message, "hunter2") {
+		t.Fatal("the secret sentence must not be shown")
+	}
 }
 
 // TestSessionNickInUseBeforeWelcomeRetriesThenRegisters ports
@@ -395,8 +435,14 @@ func TestSessionNickInUseFallbacksExhaustedFails(t *testing.T) {
 	if fixture.handler.errors[0].kind != ErrorRegistration {
 		t.Fatalf("error kind = %v, want Registration", fixture.handler.errors[0].kind)
 	}
+	if got := fixture.handler.errors[0].message; got != "Nickname in use" {
+		t.Fatalf("error = %q, want the server sentence", got)
+	}
 	if got := fixture.lastFrame(); got != "NICK omairc2\r\n" {
 		t.Fatalf("last frame = %q, want NICK omairc2", got)
+	}
+	if len(fixture.handler.reconnects) != 0 {
+		t.Fatalf("reconnects = %d, want 0", len(fixture.handler.reconnects))
 	}
 }
 
@@ -472,6 +518,82 @@ func TestSessionUnavailableResourceBeforeWelcomeFails(t *testing.T) {
 	}
 	if fixture.handler.errors[0].kind != ErrorRegistration {
 		t.Fatalf("error kind = %v, want Registration", fixture.handler.errors[0].kind)
+	}
+	if got := fixture.handler.errors[0].message; got != "Nick/channel is temporarily unavailable" {
+		t.Fatalf("error = %q, want the server sentence", got)
+	}
+	if len(fixture.handler.reconnects) != 0 {
+		t.Fatalf("reconnects = %d, want 0", len(fixture.handler.reconnects))
+	}
+}
+
+// TestSessionRegistrationErrorBeforeWelcomeShowsReasonAndStops ports
+// SessionTest::registrationErrorBeforeWelcomeShowsReasonAndStops.
+func TestSessionRegistrationErrorBeforeWelcomeShowsReasonAndStops(t *testing.T) {
+	fixture := newSessionFixture(t, sessionTestConfig(sessionTestNetworkID))
+	fixture.connectTLS()
+	written := len(fixture.frames())
+	fixture.inject(":server ERROR :Closing Link: 127.0.0.1 (Invalid nickname)\r\n")
+	if got := fixture.session.State(); got != StateFailed {
+		t.Fatalf("state = %v, want Failed", got)
+	}
+	if len(fixture.handler.errors) != 1 {
+		t.Fatalf("errors = %d, want 1", len(fixture.handler.errors))
+	}
+	if fixture.handler.errors[0].kind != ErrorRegistration {
+		t.Fatalf("error kind = %v, want Registration", fixture.handler.errors[0].kind)
+	}
+	if got := fixture.handler.errors[0].message; got != "Closing Link: 127.0.0.1 (Invalid nickname)" {
+		t.Fatalf("error = %q, want the server sentence", got)
+	}
+	if len(fixture.handler.reconnects) != 0 {
+		t.Fatalf("reconnects = %d, want 0", len(fixture.handler.reconnects))
+	}
+	if got := len(fixture.frames()); got != written {
+		t.Fatalf("frames = %d, want %d (no further nick)", got, written)
+	}
+}
+
+// TestSessionRegistrationErrorBeforeWelcomeDropsSecretSentence ports
+// SessionTest::registrationErrorBeforeWelcomeDropsSecretSentence.
+func TestSessionRegistrationErrorBeforeWelcomeDropsSecretSentence(t *testing.T) {
+	fixture := newSessionFixture(t, sessionTestConfig(sessionTestNetworkID))
+	fixture.connectTLS()
+	fixture.inject(":server ERROR :IDENTIFY hunter2\r\n")
+	if got := fixture.session.State(); got != StateFailed {
+		t.Fatalf("state = %v, want Failed", got)
+	}
+	if fixture.handler.errors[0].kind != ErrorRegistration {
+		t.Fatalf("error kind = %v, want Registration", fixture.handler.errors[0].kind)
+	}
+	if got := fixture.handler.errors[0].message; got != "IRC server reported an error" {
+		t.Fatalf("error = %q, want the generic fallback", got)
+	}
+	if strings.Contains(fixture.handler.errors[0].message, "hunter2") {
+		t.Fatal("the secret sentence must not be shown")
+	}
+}
+
+// TestSessionRegistrationErrorAfterWelcomeReconnectsWithReason ports
+// SessionTest::registrationErrorAfterWelcomeReconnectsWithReason.
+func TestSessionRegistrationErrorAfterWelcomeReconnectsWithReason(t *testing.T) {
+	fixture := newSessionFixture(t, sessionTestConfig(sessionTestNetworkID))
+	fixture.registerWithWelcome()
+	fixture.inject(":server ERROR :Closing Link: 127.0.0.1 (Quit)\r\n")
+	if got := fixture.session.State(); got != StateReconnecting {
+		t.Fatalf("state = %v, want Reconnecting", got)
+	}
+	if len(fixture.handler.errors) != 1 {
+		t.Fatalf("errors = %d, want 1", len(fixture.handler.errors))
+	}
+	if fixture.handler.errors[0].kind != ErrorNetwork {
+		t.Fatalf("error kind = %v, want Network", fixture.handler.errors[0].kind)
+	}
+	if got := fixture.handler.errors[0].message; got != "Closing Link: 127.0.0.1 (Quit)" {
+		t.Fatalf("error = %q, want the server sentence", got)
+	}
+	if len(fixture.handler.reconnects) != 1 {
+		t.Fatalf("reconnects = %d, want 1", len(fixture.handler.reconnects))
 	}
 }
 

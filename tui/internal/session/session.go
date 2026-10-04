@@ -1319,16 +1319,18 @@ func (s *Session) handleMessageLocked(message irc.Message) {
 			if message.Command == "433" && s.tryRegistrationNickFallbackLocked() {
 				return
 			}
-			s.failLocked(ErrorRegistration,
-				"IRC registration was refused ("+irc.WireText([]byte(message.Command))+")", false)
+			s.failLocked(ErrorRegistration, serverSentenceOr(
+				message, s.channelTypes,
+				"IRC registration was refused ("+irc.WireText([]byte(message.Command))+")"), false)
 			return
 		}
 	}
 	if message.Command == "ERROR" {
 		s.emitMessageReceived(message)
-		text := "IRC server reported an error"
-		if len(message.Params) > 0 {
-			text = irc.WireText([]byte(message.Params[len(message.Params)-1]))
+		text := serverSentenceOr(message, s.channelTypes, "IRC server reported an error")
+		if registrationHandshake(s.sessionState) {
+			s.failLocked(ErrorRegistration, text, false)
+			return
 		}
 		s.failLocked(ErrorNetwork, text, true)
 		return
@@ -2874,6 +2876,32 @@ func isRegistrationRefusalNumeric(command string) bool {
 		return true
 	}
 	return false
+}
+
+// registrationHandshake reports a connection that has not reached welcome.
+// ERROR in that window is a registration refusal. A later ERROR is a network
+// drop and still reconnects.
+func registrationHandshake(state SessionState) bool {
+	switch state {
+	case StateConnecting, StateStsUpgrading, StateCapLs, StateCapReq, StateSasl, StateRegistering:
+		return true
+	default:
+		return false
+	}
+}
+
+// serverSentenceOr returns the server's trailing sentence. A sentence
+// AllowsTranscript rejects is secret-shaped, so the fallback stays and the
+// sentence is dropped.
+func serverSentenceOr(message irc.Message, channelTypes, fallback string) string {
+	if len(message.Params) == 0 {
+		return fallback
+	}
+	reason := strings.TrimSpace(parameter(message, len(message.Params)-1))
+	if reason == "" || !irc.AllowsTranscript(reason, channelTypes) {
+		return fallback
+	}
+	return reason
 }
 
 func isTagSafeLabel(label string) bool {

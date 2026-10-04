@@ -394,11 +394,16 @@ private slots:
     void matchingPongKeepsSessionRegistered();
     void answersServerPingAfterWelcome();
     void registrationRefusalFailsVisibly();
+    void registrationRefusalWithoutSentenceKeepsNumeric();
+    void registrationRefusalDropsSecretSentence();
     void nickInUseBeforeWelcomeRetriesThenRegisters();
     void nickInUseFallbacksExhaustedFails();
     void nickInUseAfterWelcomeKeepsSession();
     void unavailableResourceAfterWelcomeKeepsSession();
     void unavailableResourceBeforeWelcomeFails();
+    void registrationErrorBeforeWelcomeShowsReasonAndStops();
+    void registrationErrorBeforeWelcomeDropsSecretSentence();
+    void registrationErrorAfterWelcomeReconnectsWithReason();
     void connectionTimeoutSchedulesReconnect();
     void remoteCloseSchedulesReconnect();
     void reachabilityStartsReconnectWithoutWaiting();
@@ -1617,6 +1622,37 @@ void SessionTest::registrationRefusalFailsVisibly()
     QCOMPARE(errors.size(), 1);
     QCOMPARE(qvariant_cast<IrcSession::ErrorKind>(errors.at(0).at(1)),
              IrcSession::ErrorKind::Registration);
+    QCOMPARE(errors.at(0).at(2).toString(), QStringLiteral("Erroneous nickname"));
+    QVERIFY(fixture.timer->delays.isEmpty());
+    QVERIFY(!fixture.timer->active);
+}
+
+void SessionTest::registrationRefusalWithoutSentenceKeepsNumeric()
+{
+    Fixture fixture;
+    QSignalSpy errors(fixture.session, &IrcSession::errorOccurred);
+    fixture.connectTls();
+    fixture.transport->injectBytes(QByteArrayLiteral(":server 432 * omairc :\r\n"));
+
+    QCOMPARE(fixture.session->state(), IrcSession::State::Failed);
+    QCOMPARE(errors.size(), 1);
+    QCOMPARE(errors.at(0).at(2).toString(),
+             QStringLiteral("IRC registration was refused (432)"));
+}
+
+void SessionTest::registrationRefusalDropsSecretSentence()
+{
+    Fixture fixture;
+    QSignalSpy errors(fixture.session, &IrcSession::errorOccurred);
+    fixture.connectTls();
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(":server 432 * omairc :IDENTIFY hunter2\r\n"));
+
+    QCOMPARE(fixture.session->state(), IrcSession::State::Failed);
+    QCOMPARE(errors.size(), 1);
+    QCOMPARE(errors.at(0).at(2).toString(),
+             QStringLiteral("IRC registration was refused (432)"));
+    QVERIFY(!errors.at(0).at(2).toString().contains(QStringLiteral("hunter2")));
 }
 
 void SessionTest::nickInUseBeforeWelcomeRetriesThenRegisters()
@@ -1669,8 +1705,10 @@ void SessionTest::nickInUseFallbacksExhaustedFails()
     QCOMPARE(errors.size(), 1);
     QCOMPARE(qvariant_cast<IrcSession::ErrorKind>(errors.at(0).at(1)),
              IrcSession::ErrorKind::Registration);
+    QCOMPARE(errors.at(0).at(2).toString(), QStringLiteral("Nickname in use"));
     QCOMPARE(fixture.transport->writtenFrames().last(),
              QByteArrayLiteral("NICK omairc2\r\n"));
+    QVERIFY(fixture.timer->delays.isEmpty());
 }
 
 void SessionTest::nickInUseAfterWelcomeKeepsSession()
@@ -1734,6 +1772,65 @@ void SessionTest::unavailableResourceBeforeWelcomeFails()
     QCOMPARE(errors.size(), 1);
     QCOMPARE(qvariant_cast<IrcSession::ErrorKind>(errors.at(0).at(1)),
              IrcSession::ErrorKind::Registration);
+    QCOMPARE(errors.at(0).at(2).toString(),
+             QStringLiteral("Nick/channel is temporarily unavailable"));
+    QVERIFY(fixture.timer->delays.isEmpty());
+}
+
+void SessionTest::registrationErrorBeforeWelcomeShowsReasonAndStops()
+{
+    Fixture fixture;
+    QSignalSpy errors(fixture.session, &IrcSession::errorOccurred);
+    QSignalSpy scheduled(fixture.session, &IrcSession::reconnectScheduled);
+    fixture.connectTls();
+    const int written = fixture.transport->writtenFrames().size();
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(":server ERROR :Closing Link: 127.0.0.1 (Invalid nickname)\r\n"));
+
+    QCOMPARE(fixture.session->state(), IrcSession::State::Failed);
+    QCOMPARE(errors.size(), 1);
+    QCOMPARE(qvariant_cast<IrcSession::ErrorKind>(errors.at(0).at(1)),
+             IrcSession::ErrorKind::Registration);
+    QCOMPARE(errors.at(0).at(2).toString(),
+             QStringLiteral("Closing Link: 127.0.0.1 (Invalid nickname)"));
+    QCOMPARE(scheduled.size(), 0);
+    QVERIFY(fixture.timer->delays.isEmpty());
+    QCOMPARE(fixture.transport->writtenFrames().size(), written);
+}
+
+void SessionTest::registrationErrorBeforeWelcomeDropsSecretSentence()
+{
+    Fixture fixture;
+    QSignalSpy errors(fixture.session, &IrcSession::errorOccurred);
+    fixture.connectTls();
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(":server ERROR :IDENTIFY hunter2\r\n"));
+
+    QCOMPARE(fixture.session->state(), IrcSession::State::Failed);
+    QCOMPARE(errors.size(), 1);
+    QCOMPARE(qvariant_cast<IrcSession::ErrorKind>(errors.at(0).at(1)),
+             IrcSession::ErrorKind::Registration);
+    QCOMPARE(errors.at(0).at(2).toString(),
+             QStringLiteral("IRC server reported an error"));
+    QVERIFY(!errors.at(0).at(2).toString().contains(QStringLiteral("hunter2")));
+}
+
+void SessionTest::registrationErrorAfterWelcomeReconnectsWithReason()
+{
+    Fixture fixture;
+    QSignalSpy errors(fixture.session, &IrcSession::errorOccurred);
+    QSignalSpy scheduled(fixture.session, &IrcSession::reconnectScheduled);
+    fixture.registerWithWelcome();
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(":server ERROR :Closing Link: 127.0.0.1 (Quit)\r\n"));
+
+    QCOMPARE(fixture.session->state(), IrcSession::State::Reconnecting);
+    QCOMPARE(errors.size(), 1);
+    QCOMPARE(qvariant_cast<IrcSession::ErrorKind>(errors.at(0).at(1)),
+             IrcSession::ErrorKind::Network);
+    QCOMPARE(errors.at(0).at(2).toString(),
+             QStringLiteral("Closing Link: 127.0.0.1 (Quit)"));
+    QCOMPARE(scheduled.size(), 1);
 }
 
 void SessionTest::connectionTimeoutSchedulesReconnect()

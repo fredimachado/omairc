@@ -179,6 +179,13 @@ func (m *Model) transcriptHeader() []string {
 	if m.ctrl == nil {
 		return nil
 	}
+	// Status is the open pane during registration. Its subtitle is the
+	// server's refusal sentence, matching ConversationColumn's statusSubtitle.
+	if m.ctrl.ConsoleOpen() {
+		if reason := m.ctrl.LastError(); reason != "" {
+			return []string{m.topicHeaderLine(reason), ""}
+		}
+	}
 	topic := m.ctrl.Topic()
 	if topic == "" && m.unseenMarker() == "" {
 		return nil

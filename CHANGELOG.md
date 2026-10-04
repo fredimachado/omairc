@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- A refused nick, including 432, 433 after the `nick_` and `nick2` fallback,
+  and the other registration refusals, or a registration `ERROR`, shows the
+  server's reason on that network and in the open pane. The desktop client and
+  the terminal client both stop instead of retrying. A sentence that would
+  expose a secret is left off.
+
 ### Added
 
 - The terminal client supports IRC read markers (`draft/read-marker`, and
