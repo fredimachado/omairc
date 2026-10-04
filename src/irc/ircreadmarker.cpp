@@ -3,8 +3,22 @@
 #include "ircmessage.h"
 #include "ircwiretext.h"
 
+#include <QRegularExpression>
+
 namespace
 {
+bool hasExplicitTimeZone(const QString& raw)
+{
+    if (raw.endsWith(QLatin1Char('Z'), Qt::CaseInsensitive))
+        return true;
+    const int t = raw.indexOf(QLatin1Char('T'));
+    if (t < 0)
+        return false;
+    static const QRegularExpression offset(
+        QStringLiteral("[+-]\\d{2}(:?\\d{2})?$"));
+    return offset.match(raw.mid(t + 1)).hasMatch();
+}
+
 QString parameter(const IrcMessage& message, std::size_t index)
 {
     if (index >= message.parameters.size())
@@ -23,10 +37,7 @@ std::optional<std::optional<QDateTime>> parseIrcReadMarkerParameter(
     const QString raw = parameter.mid(QStringLiteral("timestamp=").size());
     if (raw.isEmpty())
         return std::nullopt;
-    const bool hasZone = raw.endsWith(QLatin1Char('Z'), Qt::CaseInsensitive)
-        || (raw.contains(QLatin1Char('T'))
-            && (raw.contains(QLatin1Char('+')) || raw.contains(QLatin1Char('-'))));
-    if (!hasZone)
+    if (!hasExplicitTimeZone(raw))
         return std::nullopt;
     QDateTime parsed = QDateTime::fromString(raw, Qt::ISODateWithMs);
     if (!parsed.isValid())

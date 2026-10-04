@@ -39,8 +39,6 @@ ListView {
     spacing: 0
     highlightFollowsCurrentItem: false
 
-    onContentYChanged: if (visible) syncReadMarkerViewport()
-
     function endContentY() {
         return originY + Math.max(0, contentHeight - height);
     }
@@ -57,6 +55,8 @@ ListView {
     }
 
     function syncReadMarkerViewport() {
+        if (resetPending || pinning)
+            return;
         if (!readMarkerSync || typeof readMarkerSync.setTranscriptCaughtUp !== "function")
             return;
         readMarkerSync.setTranscriptCaughtUp(viewportPinned());
@@ -83,7 +83,6 @@ ListView {
             trackedCount = count;
             syncReadMarkerViewport();
         });
-        syncReadMarkerViewport();
     }
 
     function adoptViewport() {

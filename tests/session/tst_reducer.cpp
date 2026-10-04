@@ -3748,10 +3748,13 @@ void ReducerTest::recomputeReadMarkerSkipsFocusedReplayUnread()
     QVERIFY(before);
     QCOMPARE(before->unread, 0);
     QVERIFY(before->unreadMark.has_value());
+    const qint64 replayMark = *before->unreadMark;
     QVERIFY(reducer.applyReadMarker(room, early));
     const IrcConversationState *after = roomOf(reducer);
     QVERIFY(after);
     QCOMPARE(after->unread, 0);
+    QVERIFY(after->unreadMark.has_value());
+    QCOMPARE(*after->unreadMark, replayMark);
 }
 
 void ReducerTest::olderIncomingReadMarkerDoesNotMoveBadgeBack()

@@ -2472,20 +2472,6 @@ void IrcController::requestDirectReadMarkerOnce(const QString& networkId,
     session->requestReadMarker(wireTarget);
 }
 
-void IrcController::completeReadMarkerOutbound(const QString& networkId,
-                                             const IrcConversationKey& key)
-{
-    ReadMarkerOutbound& outbound = m_readMarkerOutbound[readMarkerOutboundKey(
-        networkId, key.normalizedTarget)];
-    if (!outbound.inFlight)
-        return;
-    outbound.inFlight = false;
-    if (outbound.inFlightAt) {
-        m_reducer.notePublishedReadMarker(key, *outbound.inFlightAt);
-        outbound.inFlightAt.reset();
-    }
-}
-
 void IrcController::handleReadMarkerReceived(const QString& networkId,
                                              const QString& target,
                                              bool hasMarker,
@@ -2498,10 +2484,14 @@ void IrcController::handleReadMarkerReceived(const QString& networkId,
         return;
     ReadMarkerOutbound& outbound = m_readMarkerOutbound[readMarkerOutboundKey(
         networkId, key.normalizedTarget)];
-    const bool completingOutbound = outbound.inFlight;
-    const bool applied = m_reducer.applyReadMarker(key, markerUtc);
-    if (completingOutbound)
-        completeReadMarkerOutbound(networkId, key);
+    const QDateTime marker = markerUtc.toUTC();
+    const bool applied = m_reducer.applyReadMarker(key, marker);
+    const bool acksOutbound = outbound.inFlight && outbound.inFlightAt
+        && marker >= outbound.inFlightAt->toUTC();
+    if (acksOutbound) {
+        outbound.inFlight = false;
+        outbound.inFlightAt.reset();
+    }
     if (applied) {
         m_conversations.reload();
         ++m_conversationEpoch;
@@ -2520,7 +2510,15 @@ void IrcController::clearReadMarkerInFlight(const QString& networkId,
         && command.compare(QLatin1String("READ"), Qt::CaseInsensitive) != 0) {
         return;
     }
-    const QString target = parameter(message, 2);
+    const QString code = parameter(message, 1);
+    QString target;
+    if (code.compare(QLatin1String("INTERNAL_ERROR"), Qt::CaseInsensitive) == 0
+        || code.compare(QLatin1String("INVALID_TARGET"), Qt::CaseInsensitive)
+            == 0) {
+        target = parameter(message, 2);
+    }
+    if (target.isEmpty() && m_selected && m_selected->networkId == networkId)
+        target = selectedTarget();
     if (target.isEmpty())
         return;
     const IrcConversationKey key = m_reducer.conversationKey(networkId, target);

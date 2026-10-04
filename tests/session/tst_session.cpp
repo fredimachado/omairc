@@ -5403,6 +5403,11 @@ void SessionTest::zonelessReadMarkerParameterIsRejected()
             QStringLiteral("timestamp=2026-06-01T12:00:00.000Z"));
     QVERIFY(zulu);
     QVERIFY(zulu->has_value());
+    const std::optional<std::optional<QDateTime>> offset =
+        parseIrcReadMarkerParameter(
+            QStringLiteral("timestamp=2026-06-01T12:00:00.000+05:30"));
+    QVERIFY(offset);
+    QVERIFY(offset->has_value());
 }
 
 void SessionTest::sojuReadCapUsesReadCommand()
