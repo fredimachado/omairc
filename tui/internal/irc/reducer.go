@@ -133,6 +133,7 @@ type ConversationState struct {
 	Unread       int
 	Mentions     int
 	UnreadMark   *int64
+	ReadMarker   *time.Time
 	Muted        bool
 	Trimmed      int
 	MessageIDs   map[MsgID]struct{}
@@ -322,6 +323,12 @@ func (r *EventReducer) MarkRead(key ConversationKey) bool {
 // IrcEventReducer::setWindowActive.
 func (r *EventReducer) SetWindowActive(active bool) {
 	r.windowInactive = !active
+}
+
+// WindowActive reports whether the terminal window is focused. It mirrors the
+// reducer's m_windowActive flag.
+func (r *EventReducer) WindowActive() bool {
+	return !r.windowInactive
 }
 
 // ClearSelection forgets the selected conversation. It mirrors
@@ -962,13 +969,13 @@ func (r *EventReducer) appendChat(key ConversationKey, displayTarget, author, bo
 	r.persistMessage(conversation, last)
 	r.capMessages(conversation)
 	r.clearTyping(conversation, r.normalize(key.NetworkID, author))
-	r.noteChatArrival(conversation, key, author, body, kind, msgid, last.Sequence, OriginLive, nil)
+	r.noteChatArrival(conversation, key, author, body, kind, msgid, last.Sequence, last.Timestamp, OriginLive, nil)
 }
 
 // noteChatArrival plants the mention/inbox arrivals and advances the unread
 // accounting for one admitted chat line. It mirrors
 // IrcEventReducer::noteChatArrival.
-func (r *EventReducer) noteChatArrival(conversation *ConversationState, key ConversationKey, author, body string, kind MessageKind, msgid MsgID, sequence int64, origin Origin, history *HistoryEvent) {
+func (r *EventReducer) noteChatArrival(conversation *ConversationState, key ConversationKey, author, body string, kind MessageKind, msgid MsgID, sequence int64, msgTime time.Time, origin Origin, history *HistoryEvent) {
 	// A previous nick inside a bouncer query is our own backlog, as is
 	// channel playback from a nick this network has welcomed or changed away
 	// from. Live PRIVMSG still uses only the current nick.
@@ -1002,6 +1009,9 @@ func (r *EventReducer) noteChatArrival(conversation *ConversationState, key Conv
 		}
 	}
 	if self {
+		return
+	}
+	if r.coveredByReadMarker(conversation, msgTime) {
 		return
 	}
 	// Selected live chat is unread only while unfocused. Replay while
@@ -1478,7 +1488,7 @@ func (r *EventReducer) spliceHistory(conversation *ConversationState, event Hist
 		}
 		r.capMessages(conversation)
 		for _, message := range run {
-			r.noteChatArrival(conversation, event.Conversation, message.Author, message.Body, message.Kind, message.MsgID, message.Sequence, OriginReplay, &event)
+			r.noteChatArrival(conversation, event.Conversation, message.Author, message.Body, message.Kind, message.MsgID, message.Sequence, message.Timestamp, OriginReplay, &event)
 		}
 	}
 

@@ -20,6 +20,7 @@ const (
 	CapabilityAccountTag
 	CapabilityAccountNotify
 	CapabilityExtendedJoin
+	CapabilityReadMarker
 	CapabilityZncPlayback
 )
 

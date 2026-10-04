@@ -264,6 +264,8 @@ var wantedTable = []wantedCapability{
 	{CapabilityAccountTag, "account-tag", CapabilityMessageTags, true, false, false, acceptsAnyValue},
 	{CapabilityAccountNotify, "account-notify", 0, false, false, false, acceptsAnyValue},
 	{CapabilityExtendedJoin, "extended-join", 0, false, false, false, acceptsAnyValue},
+	{CapabilityReadMarker, "draft/read-marker", 0, false, false, false, acceptsAnyValue},
+	{CapabilityReadMarker, "soju.im/read", 0, false, false, false, acceptsAnyValue},
 }
 
 func wantedFor(name string) *wantedCapability {

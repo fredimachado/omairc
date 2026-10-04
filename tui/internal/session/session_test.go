@@ -130,6 +130,8 @@ func (h *sessionTestHandler) AutojoinChannelsChanged(networkID string, channels 
 	h.autojoins = append(h.autojoins, sessionRecordedAutojoin{networkID, channels, keys})
 }
 
+func (h *sessionTestHandler) ReadMarkerReceived(networkID, target string, marker *time.Time) {}
+
 // hasLabel reports whether any recorded Status entry carried label.
 func (h *sessionTestHandler) hasLabel(label string) bool {
 	for _, entry := range h.status {

@@ -378,6 +378,7 @@ func (m *Model) pageTranscript(direction int, fraction float64) {
 	if m.transcriptFollowEnd {
 		m.firstUnseenRow = -1
 	}
+	m.syncReadMarkerViewport()
 	start := n - height - offset
 	if start < 0 {
 		start = 0
@@ -401,6 +402,7 @@ func (m *Model) jumpTranscript(toEnd bool) {
 		m.transcriptScroll = 0
 		m.transcriptCursor = m.transcriptRowTotal() - 1
 		m.firstUnseenRow = -1
+		m.syncReadMarkerViewport()
 		return
 	}
 	maxOffset := n - height

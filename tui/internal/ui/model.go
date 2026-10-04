@@ -448,6 +448,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// have grown the transcript while the reader was scrolled up, which
 		// arms the jump-to-first-new marker.
 		m.noteTranscriptGrowth()
+		m.syncReadMarkerViewport()
 		return m, m.startBackgroundWork()
 	case ThemeChangedMsg:
 		// A live theme swap. Rebuild every style from the new palette, then
