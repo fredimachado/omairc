@@ -40,6 +40,22 @@ func conversationLogTestDirExists(path string) bool {
 	return err == nil && info.IsDir()
 }
 
+func TestConversationLogPrependPreservesOrderOnDisk(t *testing.T) {
+	log := NewConversationLog(t.TempDir())
+	mapping := irc.CaseMapping{}
+	log.Append("net", "#room", mapping, irc.TranscriptLine{Kind: "message", Body: "live", Author: "a"})
+	log.Prepend("net", "#room", mapping, []irc.TranscriptLine{
+		{Kind: "message", Body: "older", Author: "b"},
+	})
+	lines := log.ReadTail("net", "#room", mapping, 10)
+	if len(lines) != 2 {
+		t.Fatalf("ReadTail returned %d lines, want 2", len(lines))
+	}
+	if lines[0].Body != "older" || lines[1].Body != "live" {
+		t.Fatalf("ReadTail = %+v, want older then live", lines)
+	}
+}
+
 func TestConversationLogAppendReadTailRoundTrip(t *testing.T) {
 	root := t.TempDir()
 	log := NewConversationLog(root)

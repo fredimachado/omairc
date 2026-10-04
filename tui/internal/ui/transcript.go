@@ -339,7 +339,7 @@ func (m *Model) findMatchAt(row int) bool {
 // Scrolling up leaves follow-the-end; scrolling back to the bottom restores
 // it.
 func (m *Model) pageTranscript(direction int, fraction float64) {
-	if m.ctrl == nil {
+	if m.ctrl == nil || m.ctrl.ConsoleOpen() {
 		return
 	}
 	area := m.transcriptArea()
@@ -350,13 +350,24 @@ func (m *Model) pageTranscript(direction int, fraction float64) {
 	}
 	maxOffset := n - height
 	if maxOffset <= 0 {
-		m.transcriptScroll = 0
-		m.transcriptFollowEnd = true
+		if direction < 0 {
+			if m.requestOlderTranscriptPage() {
+				m.transcriptFollowEnd = false
+			}
+		}
+		if direction > 0 {
+			m.transcriptScroll = 0
+			m.setTranscriptFollowEnd(true)
+			m.firstUnseenRow = -1
+		}
 		return
 	}
 	offset := m.transcriptScroll
 	if m.transcriptFollowEnd {
 		offset = 0
+	}
+	if direction < 0 && offset >= maxOffset {
+		m.maybeRequestOlderTranscript()
 	}
 	page := int(float64(height)*fraction + 0.5)
 	if page < 1 {
@@ -374,7 +385,7 @@ func (m *Model) pageTranscript(direction int, fraction float64) {
 		offset = maxOffset
 	}
 	m.transcriptScroll = offset
-	m.transcriptFollowEnd = offset == 0
+	m.setTranscriptFollowEnd(offset == 0)
 	if m.transcriptFollowEnd {
 		m.firstUnseenRow = -1
 	}
@@ -383,6 +394,101 @@ func (m *Model) pageTranscript(direction int, fraction float64) {
 		start = 0
 	}
 	m.transcriptCursor = area.rowAt(start + height - 1)
+}
+
+func (m *Model) maybeRequestOlderTranscript() {
+	if m.requestOlderTranscriptPage() {
+		m.transcriptFollowEnd = false
+	}
+}
+
+// requestOlderTranscriptPage snapshots the viewport and asks for one older
+// page. It reports whether a request was sent or is already in flight.
+func (m *Model) requestOlderTranscriptPage() bool {
+	if m.ctrl == nil || m.connectVisible() || m.ctrl.ConsoleOpen() || !m.ctrl.ChatHistoryEnabled() {
+		return false
+	}
+	m.snapshotTranscriptAnchor()
+	if m.ctrl.RequestOlderTranscriptHistory() {
+		return true
+	}
+	if m.ctrl.OlderTranscriptHistoryInflight() {
+		return true
+	}
+	m.clearTranscriptAnchor()
+	return false
+}
+
+func (m *Model) setTranscriptFollowEnd(follow bool) {
+	if follow && !m.transcriptFollowEnd && m.ctrl != nil {
+		m.ctrl.ClearHistoryPageCapTail()
+	}
+	m.transcriptFollowEnd = follow
+}
+
+func (m *Model) clearTranscriptAnchor() {
+	m.transcriptAnchorSequence = -1
+	m.transcriptAnchorSpliceEpoch = -1
+	m.firstUnseenSequenceAtAnchor = -1
+}
+
+func (m *Model) snapshotTranscriptAnchor() {
+	if m.ctrl == nil {
+		m.clearTranscriptAnchor()
+		return
+	}
+	messages := m.ctrl.Messages()
+	if len(messages) == 0 {
+		m.clearTranscriptAnchor()
+		return
+	}
+	row := 0
+	if !m.transcriptFollowEnd {
+		area := m.transcriptArea()
+		n := len(area.lines)
+		height := m.transcriptRowsHeight()
+		if height >= 1 && n > height {
+			offset := m.transcriptScroll
+			start := n - height - offset
+			if start < 0 {
+				start = 0
+			}
+			row = area.rowAt(start)
+			if row < 0 {
+				row = 0
+			}
+		}
+	}
+	if row >= len(messages) {
+		m.clearTranscriptAnchor()
+		return
+	}
+	m.transcriptAnchorSequence = messages[row].Sequence
+	m.transcriptAnchorSpliceEpoch = m.ctrl.TranscriptSpliceEpoch()
+	if m.firstUnseenRow >= 0 && m.firstUnseenRow < len(messages) {
+		m.firstUnseenSequenceAtAnchor = messages[m.firstUnseenRow].Sequence
+	} else {
+		m.firstUnseenSequenceAtAnchor = -1
+	}
+}
+
+func (m *Model) restoreTranscriptAnchor() {
+	if m.transcriptAnchorSequence < 0 || m.ctrl == nil {
+		return
+	}
+	if m.transcriptFollowEnd {
+		m.clearTranscriptAnchor()
+		return
+	}
+	sequence := m.transcriptAnchorSequence
+	m.clearTranscriptAnchor()
+	messages := m.ctrl.Messages()
+	for index, message := range messages {
+		if message.Sequence == sequence {
+			m.pinTranscriptToRow(index)
+			return
+		}
+	}
 }
 
 // jumpTranscript jumps to the top or the bottom of the transcript.
@@ -397,7 +503,7 @@ func (m *Model) jumpTranscript(toEnd bool) {
 		height = 1
 	}
 	if toEnd {
-		m.transcriptFollowEnd = true
+		m.setTranscriptFollowEnd(true)
 		m.transcriptScroll = 0
 		m.transcriptCursor = m.transcriptRowTotal() - 1
 		m.firstUnseenRow = -1
@@ -468,7 +574,7 @@ func (m *Model) pinTranscriptToRow(row int) {
 	}
 	maxOffset := n - height
 	if maxOffset <= 0 || row < 0 || row >= area.count() {
-		m.transcriptFollowEnd = true
+		m.setTranscriptFollowEnd(true)
 		m.transcriptScroll = 0
 		m.firstUnseenRow = -1
 		return
@@ -493,6 +599,28 @@ func (m *Model) pinTranscriptToRow(row int) {
 // count changes rather than by the model's own notification.
 func (m *Model) noteTranscriptGrowth() {
 	count := m.transcriptRowTotal()
+	if m.ctrl != nil && m.transcriptAnchorSequence >= 0 {
+		spliceEpoch := m.ctrl.TranscriptSpliceEpoch()
+		if spliceEpoch > m.transcriptAnchorSpliceEpoch {
+			unseenSequence := m.firstUnseenSequenceAtAnchor
+			m.restoreTranscriptAnchor()
+			if unseenSequence >= 0 && !m.transcriptFollowEnd {
+				resolved := false
+				for index, message := range m.ctrl.Messages() {
+					if message.Sequence == unseenSequence {
+						m.firstUnseenRow = index
+						resolved = true
+						break
+					}
+				}
+				if !resolved {
+					m.firstUnseenRow = -1
+				}
+			}
+			m.transcriptCount = count
+			return
+		}
+	}
 	switch {
 	case count < m.transcriptCount:
 		if m.firstUnseenRow >= count {
