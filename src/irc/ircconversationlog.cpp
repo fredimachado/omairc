@@ -6,6 +6,7 @@
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QSaveFile>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonParseError>
@@ -235,16 +236,16 @@ bool IrcConversationLog::prepend(const QString &networkId,
     QFile file(path);
     if (file.open(QIODevice::ReadOnly))
         existing = file.readAll();
-    QFile out(path);
-    if (!out.open(QIODevice::WriteOnly | QIODevice::Truncate))
-        return false;
-    if (!out.setPermissions(kOwnerFile))
+    QSaveFile out(path);
+    if (!out.open(QIODevice::WriteOnly))
         return false;
     if (out.write(prefix) != prefix.size())
         return false;
     if (!existing.isEmpty() && out.write(existing) != existing.size())
         return false;
-    return true;
+    if (!out.commit())
+        return false;
+    return QFile::setPermissions(path, kOwnerFile);
 }
 
 bool IrcConversationLog::append(const QString &networkId,

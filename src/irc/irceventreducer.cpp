@@ -1277,6 +1277,8 @@ void IrcEventReducer::reduce(const IrcKickEvent& event)
         stopNamesSync(channel);
     }
     forgetUnseen(event.networkId, departed);
+    if (isSelf(event.networkId, event.target))
+        clearTrimTailOnCap(key);
     appendEvent(*conversation, event.target + QStringLiteral(" was kicked"));
     if (isSelf(event.networkId, event.target)) {
         conversation->typing.clear();
@@ -1702,7 +1704,7 @@ void IrcEventReducer::spliceHistory(IrcConversationState& conversation,
                                 message.sequence, IrcOrigin::Replay, &event);
             }
         }
-    } else if (event.prependAtHead && !event.lines.empty()) {
+    } else if (event.prependAtHead) {
         const QString exhaustTarget = event.target.isEmpty()
             ? conversation.target
             : event.target;

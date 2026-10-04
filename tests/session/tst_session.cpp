@@ -5517,9 +5517,9 @@ void SessionTest::chatHistoryDedupedBeforeBatchExhaustsTarget()
         QByteArrayLiteral(":irc.host BATCH +dup chathistory #omarchy\r\n"
                           "@batch=dup;msgid=anchor :alice!u@h PRIVMSG #omarchy :dup\r\n"
                           ":irc.host BATCH -dup\r\n"));
-    QVERIFY(!fixture.session->requestOlderHistory(QStringLiteral("#omarchy"),
-                                                  QStringLiteral("anchor"),
-                                                  {}));
+    QVERIFY(fixture.session->requestOlderHistory(QStringLiteral("#omarchy"),
+                                                 QStringLiteral("anchor"),
+                                                 {}));
 }
 
 void SessionTest::chatHistoryUnsolicitedBatchLeavesBeforePending()
@@ -5534,8 +5534,8 @@ void SessionTest::chatHistoryUnsolicitedBatchLeavesBeforePending()
     });
     fixture.connectTls();
     fixture.transport->injectBytes(
-        QByteArrayLiteral(":server CAP omairc LS :batch chathistory\r\n"
-                          ":server CAP omairc ACK :batch chathistory\r\n"
+        QByteArrayLiteral(":server CAP omairc LS :batch chathistory znc.in/playback\r\n"
+                          ":server CAP omairc ACK :batch chathistory znc.in/playback\r\n"
                           ":server 001 omairc :Welcome\r\n"
                           ":omairc!u@h JOIN :#omarchy\r\n"
                           ":irc.host BATCH +hx chathistory #omarchy\r\n"
@@ -5545,8 +5545,8 @@ void SessionTest::chatHistoryUnsolicitedBatchLeavesBeforePending()
                                                  QStringLiteral("anchor"),
                                                  {}));
     fixture.transport->injectBytes(
-        QByteArrayLiteral(":irc.host BATCH +noise chathistory #omarchy\r\n"
-                          ":irc.host BATCH -noise\r\n"));
+        QByteArrayLiteral(":znc.in BATCH +noise znc.in/playback #omarchy\r\n"
+                          ":znc.in BATCH -noise\r\n"));
     QVERIFY(fixture.session->historyPendingForTarget(QStringLiteral("#omarchy")));
     QVERIFY(!fixture.session->requestOlderHistory(QStringLiteral("#omarchy"),
                                                   QStringLiteral("anchor"),
@@ -5555,7 +5555,7 @@ void SessionTest::chatHistoryUnsolicitedBatchLeavesBeforePending()
         QByteArrayLiteral(":irc.host BATCH +before chathistory #omarchy\r\n"
                           "@batch=before;msgid=older :alice!u@h PRIVMSG #omarchy :page\r\n"
                           ":irc.host BATCH -before\r\n"));
-    QCOMPARE(batches.size(), 2);
+    QCOMPARE(batches.size(), 3);
     QVERIFY(batches.back().olderPage);
     QCOMPARE(QString::fromStdString(batches.back().lines.front().parameters.back()),
              QStringLiteral("page"));

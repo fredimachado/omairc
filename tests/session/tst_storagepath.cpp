@@ -37,6 +37,7 @@ private slots:
     void keepsNewestLegacyCursorAcrossEncodings();
     void cursorWinnerUsesMsgidAndSequence();
     void conversationLogPrependPreservesReadTailOrder();
+    void conversationLogPrependKeepsExistingOnFailure();
     void cursorPathStableAcrossCaseMappingKnown();
     void ignoresNewStyleCursorEncodingAsLegacy();
     void doesNotCollapseBracketCursorsBeforeCaseMappingKnown();
@@ -690,6 +691,32 @@ void StoragePathTest::conversationLogPrependPreservesReadTailOrder()
     QCOMPARE(tail.size(), std::size_t(2));
     QCOMPARE(tail.front().body, QStringLiteral("older"));
     QCOMPARE(tail.back().body, QStringLiteral("newer"));
+}
+
+void StoragePathTest::conversationLogPrependKeepsExistingOnFailure()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    IrcConversationLog log(dir.path());
+    const IrcCaseMapping mapping;
+    const QString network = QStringLiteral("net");
+    const QString target = QStringLiteral("#room");
+    const QDateTime when = QDateTime::fromString(
+        QStringLiteral("2024-01-02T12:00:00.000Z"), Qt::ISODateWithMs);
+    QVERIFY(when.isValid());
+    const auto line = [&](const QString& body) {
+        return IrcTranscriptLine{when, QStringLiteral("alice"),
+                                 QStringLiteral("message"), body, {}};
+    };
+    QVERIFY(log.append(network, target, mapping, line(QStringLiteral("newer"))));
+    const QString path = log.pathFor(network, target, mapping);
+    QVERIFY(QFile::setPermissions(path, QFile::ReadOwner));
+    QVERIFY(!log.prepend(network, target, mapping,
+                         {line(QStringLiteral("older"))}));
+    QVERIFY(QFile::setPermissions(path, QFile::ReadOwner | QFile::WriteOwner));
+    const std::vector<IrcTranscriptLine> tail = log.readTail(network, target, mapping, 10);
+    QCOMPARE(tail.size(), std::size_t(1));
+    QCOMPARE(tail.front().body, QStringLiteral("newer"));
 }
 
 void StoragePathTest::cursorWinnerUsesMsgidAndSequence()

@@ -192,7 +192,9 @@ private slots:
     void chatHistoryBeforeDedupedExhaustsTarget();
     void chatHistoryBeforeShiftsHistoryAnchor();
     void chatHistoryBeforePrependPersistsLogOrder();
+    void chatHistoryBeforeDroppedLinesExhaustsTarget();
     void selfPartClearsTrimTailOnCap();
+    void selfKickClearsTrimTailOnCap();
     void channelPlaybackCasemappingRememberedSelfNick();
     void queryReplayAppendsAtTailOfExistingDirectMessage();
     void channelReplayWithoutConversationCreatesNothing();
@@ -2774,9 +2776,31 @@ void ReducerTest::chatHistoryBeforePrependPersistsLogOrder()
 
     const std::vector<IrcTranscriptLine> tail =
         log.readTail(networkA, QStringLiteral("#omarchy"), IrcCaseMapping{}, 10);
-    QCOMPARE(tail.size(), std::size_t(2));
+    QCOMPARE(tail.size(), std::size_t(3));
     QCOMPARE(tail.front().body, QStringLiteral("older head"));
     QCOMPARE(tail.back().body, QStringLiteral("live tail"));
+    QCOMPARE(tail[1].body, QStringLiteral("omairc joined"));
+}
+
+void ReducerTest::chatHistoryBeforeDroppedLinesExhaustsTarget()
+{
+    IrcEventReducer reducer;
+    welcome(reducer, networkA);
+    const IrcConversationKey room =
+        reducer.conversationKey(networkA, QStringLiteral("#omarchy"));
+    reducer.apply(IrcJoinEvent{
+        networkA, QStringLiteral("#omarchy"), QStringLiteral("omairc")});
+
+    IrcHistoryEvent older{
+        room,
+        QStringLiteral("#omarchy"),
+        {},
+        IrcHistoryKind::ChatHistory,
+    };
+    older.prependAtHead = true;
+    reducer.apply(older);
+    QCOMPARE(reducer.takeHistoryBeforeExhaustTargets(),
+             QStringList{QStringLiteral("#omarchy")});
 }
 
 void ReducerTest::selfPartClearsTrimTailOnCap()
@@ -2806,6 +2830,54 @@ void ReducerTest::selfPartClearsTrimTailOnCap()
 
     reducer.apply(IrcPartEvent{
         networkA, QStringLiteral("#omarchy"), QStringLiteral("omairc"), QString()});
+    conversation = reducer.find(room);
+    QVERIFY(conversation);
+    QVERIFY(!conversation->trimTailOnCap);
+
+    reducer.apply(IrcJoinEvent{
+        networkA, QStringLiteral("#omarchy"), QStringLiteral("omairc")});
+    for (int index = 0; index < IrcEventReducer::kMaxMessages; ++index) {
+        reducer.apply(IrcMessageEvent{
+            room, QStringLiteral("alice"),
+            QStringLiteral("after-%1").arg(index), timestamp,
+            QStringLiteral("#omarchy")});
+    }
+    conversation = reducer.find(room);
+    QVERIFY(conversation);
+    QCOMPARE(conversation->messages.back().body,
+             QStringLiteral("after-%1").arg(IrcEventReducer::kMaxMessages - 1));
+    QCOMPARE(conversation->messages.front().body,
+             QStringLiteral("after-0"));
+}
+
+void ReducerTest::selfKickClearsTrimTailOnCap()
+{
+    IrcEventReducer reducer;
+    welcome(reducer, networkA);
+    const IrcConversationKey room =
+        reducer.conversationKey(networkA, QStringLiteral("#omarchy"));
+    reducer.apply(IrcJoinEvent{
+        networkA, QStringLiteral("#omarchy"), QStringLiteral("omairc")});
+    for (int index = 0; index < IrcEventReducer::kMaxMessages - 1; ++index) {
+        reducer.apply(IrcMessageEvent{
+            room, QStringLiteral("alice"), QString::number(index), timestamp,
+            QStringLiteral("#omarchy")});
+    }
+    IrcHistoryEvent older{
+        room,
+        QStringLiteral("#omarchy"),
+        {replayLine(QStringLiteral("alice"), QStringLiteral("backfill"))},
+        IrcHistoryKind::ChatHistory,
+    };
+    older.prependAtHead = true;
+    reducer.apply(older);
+    const IrcConversationState *conversation = reducer.find(room);
+    QVERIFY(conversation);
+    QVERIFY(conversation->trimTailOnCap);
+
+    reducer.apply(IrcKickEvent{
+        networkA, QStringLiteral("#omarchy"), QStringLiteral("omairc"),
+        QStringLiteral("op"), QString()});
     conversation = reducer.find(room);
     QVERIFY(conversation);
     QVERIFY(!conversation->trimTailOnCap);

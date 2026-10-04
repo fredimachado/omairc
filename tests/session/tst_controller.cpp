@@ -8925,6 +8925,7 @@ void ControllerTest::chatHistoryBeforeDedupesMsgid()
                           ":irc.host BATCH -old\r\n"));
     QVERIFY(bodyRow(messages, QStringLiteral("dup")) < 0);
     QCOMPARE(bodyRow(messages, QStringLiteral("seen")), 0);
+    QVERIFY(!controller.requestOlderTranscriptHistory());
 }
 
 void ControllerTest::chatHistoryBeforeNoCapIsNoOp()
