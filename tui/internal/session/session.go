@@ -145,6 +145,7 @@ type Handler interface {
 	CapabilitiesChanged(networkID string, capabilities irc.CapabilitySet)
 	RequestLabelFinished(networkID, requestLabel string)
 	AutojoinChannelsChanged(networkID string, channels []string, keys map[string]string)
+	ReadMarkerReceived(networkID, target string, marker *time.Time)
 }
 
 // ReachabilitySource reports when the host's network becomes reachable again,
@@ -252,6 +253,9 @@ type Session struct {
 	historyPending       map[string]int
 	historyPendingBefore map[string]bool
 	historyExhausted     map[string]struct{}
+
+	readMarkerPending  map[string]readMarkerQueue
+	readMarkerInFlight map[string]time.Time
 
 	pendingLabels    map[string]time.Time
 	nextRequestLabel uint64
@@ -1220,6 +1224,10 @@ func (s *Session) handleMessageLocked(message irc.Message) {
 		return
 	}
 
+	if s.deliverReadMarkerLocked(message) {
+		return
+	}
+
 	if message.Command == "PRIVMSG" && len(message.Params) >= 2 &&
 		s.nicksEqualLocked(parameter(message, 0), s.nickname) {
 		if request, ok := irc.ParseCtcpRequest(parameter(message, 1)); ok && request.Command != "ACTION" {
@@ -1335,6 +1343,7 @@ func (s *Session) handleMessageLocked(message irc.Message) {
 
 	if message.Command == "FAIL" {
 		s.handleChatHistoryFailLocked(message)
+		s.handleReadMarkerFailLocked(message)
 	}
 	if message.Command == "366" && len(message.Params) >= 2 {
 		s.probeChannelAwayLocked(parameter(message, 1))

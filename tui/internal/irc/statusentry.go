@@ -665,6 +665,8 @@ var statusKeepRows = []statusKeepRow{
 	{"TAGMSG", statusKeepDrop, statusKeepDrop},
 	{"AWAY", statusKeepDrop, statusKeepDrop},
 	{"CHATHISTORY", statusKeepDrop, statusKeepDrop},
+	{"MARKREAD", statusKeepDrop, statusKeepDrop},
+	{"READ", statusKeepDrop, statusKeepDrop},
 	{"PRIVMSG", statusKeepIncomingPrivmsg, statusKeepDrop},
 	{"NOTICE", statusKeepKeep, statusKeepDrop},
 	{"FAIL", statusKeepKeep, statusKeepDrop},

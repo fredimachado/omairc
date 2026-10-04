@@ -389,6 +389,7 @@ func (m *Model) pageTranscript(direction int, fraction float64) {
 	if m.transcriptFollowEnd {
 		m.firstUnseenRow = -1
 	}
+	m.syncReadMarkerViewport()
 	start := n - height - offset
 	if start < 0 {
 		start = 0
@@ -507,6 +508,7 @@ func (m *Model) jumpTranscript(toEnd bool) {
 		m.transcriptScroll = 0
 		m.transcriptCursor = m.transcriptRowTotal() - 1
 		m.firstUnseenRow = -1
+		m.syncReadMarkerViewport()
 		return
 	}
 	maxOffset := n - height
@@ -516,6 +518,7 @@ func (m *Model) jumpTranscript(toEnd bool) {
 	m.transcriptFollowEnd = false
 	m.transcriptScroll = maxOffset
 	m.transcriptCursor = 0
+	m.syncReadMarkerViewport()
 }
 
 // revealTranscriptRow scrolls the viewport so one message/console row is
@@ -556,6 +559,7 @@ func (m *Model) revealTranscriptRow(row int) {
 	if m.transcriptScroll < 0 {
 		m.transcriptScroll = 0
 	}
+	m.syncReadMarkerViewport()
 }
 
 // pinTranscriptToRow scrolls the viewport so row sits at the top and leaves
@@ -577,6 +581,7 @@ func (m *Model) pinTranscriptToRow(row int) {
 		m.setTranscriptFollowEnd(true)
 		m.transcriptScroll = 0
 		m.firstUnseenRow = -1
+		m.syncReadMarkerViewport()
 		return
 	}
 	start := area.line(row)
@@ -591,6 +596,7 @@ func (m *Model) pinTranscriptToRow(row int) {
 	if m.transcriptScroll < 0 {
 		m.transcriptScroll = 0
 	}
+	m.syncReadMarkerViewport()
 }
 
 // noteTranscriptGrowth arms the first-new-row marker when rows arrive while the
