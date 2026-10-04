@@ -125,6 +125,61 @@ func TestReadMarkerEchoDoesNotResendEqualPending(t *testing.T) {
 	}
 }
 
+func TestReadMarkerStarDoesNotClearInFlight(t *testing.T) {
+	fixture := newSessionFixture(t, sessionTestConfig(sessionTestNetworkID))
+	handler := &readMarkerHandler{}
+	fixture.session.SetHandler(handler)
+	registerWithReadMarker(fixture, "draft/read-marker")
+	when := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
+	fixture.session.QueueReadMarkerSet("#omarchy", when)
+	fixture.inject(":server MARKREAD #omarchy :*\r\n")
+	if len(handler.markers) != 1 || handler.markers[0].marker != nil {
+		t.Fatalf("star reply must deliver nil marker, got %+v", handler.markers)
+	}
+	later := when.Add(time.Minute)
+	fixture.session.QueueReadMarkerSet("#omarchy", later)
+	if countReadMarkerFrame(fixture.frames(), "timestamp=") != 1 {
+		t.Fatalf("star must not flush a newer pending set: %v", fixture.frames())
+	}
+}
+
+func TestReadMarkerOlderGetReplyLeavesInFlightSet(t *testing.T) {
+	fixture := newSessionFixture(t, sessionTestConfig(sessionTestNetworkID))
+	registerWithReadMarker(fixture, "draft/read-marker")
+	newer := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
+	fixture.session.QueueReadMarkerSet("alice", newer)
+	fixture.inject(":server MARKREAD alice :timestamp=2024-06-01T11:00:00.000Z\r\n")
+	fixture.session.QueueReadMarkerSet("alice", newer.Add(time.Minute))
+	if countReadMarkerFrame(fixture.frames(), "timestamp=") != 1 {
+		t.Fatalf("older get reply must not clear newer in-flight set: %v", fixture.frames())
+	}
+}
+
+func TestReadMarkerBadEchoFlushesPending(t *testing.T) {
+	fixture := newSessionFixture(t, sessionTestConfig(sessionTestNetworkID))
+	registerWithReadMarker(fixture, "draft/read-marker")
+	when := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
+	fixture.session.QueueReadMarkerSet("#omarchy", when)
+	fixture.inject(":server MARKREAD #omarchy :timestamp=not-a-time\r\n")
+	later := when.Add(time.Minute)
+	fixture.session.QueueReadMarkerSet("#omarchy", later)
+	if countReadMarkerFrame(fixture.frames(), "timestamp=2024-06-01T12:01:00.000Z") != 1 {
+		t.Fatalf("bad echo must clear in-flight and allow pending flush: %v", fixture.frames())
+	}
+}
+
+func TestReadMarkerFailNamedTargetOnlyClearsThatEntry(t *testing.T) {
+	fixture := newSessionFixture(t, sessionTestConfig(sessionTestNetworkID))
+	registerWithReadMarker(fixture, "draft/read-marker")
+	when := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
+	fixture.session.QueueReadMarkerSet("#omarchy", when)
+	fixture.session.QueueReadMarkerSet("alice", when.Add(time.Minute))
+	fixture.inject(":server FAIL MARKREAD INTERNAL_ERROR the_given_target :failed\r\n")
+	if countReadMarkerFrame(fixture.frames(), "MARKREAD #omarchy timestamp=") != 1 {
+		t.Fatalf("#omarchy set must stay in-flight, got %v", fixture.frames())
+	}
+}
+
 func TestReadMarkerFailWithoutTargetClearsInFlight(t *testing.T) {
 	fixture := newSessionFixture(t, sessionTestConfig(sessionTestNetworkID))
 	registerWithReadMarker(fixture, "draft/read-marker")

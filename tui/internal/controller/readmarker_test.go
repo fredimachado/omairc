@@ -181,8 +181,31 @@ func TestOpenExistingDirectRequestsReadMarkerGet(t *testing.T) {
 	if !c.OpenDirectMessage("alice") {
 		t.Fatal("OpenDirectMessage failed")
 	}
-	if !writtenFramesContain(transport, "MARKREAD alice\r\n") {
-		t.Fatalf("opening existing DM must send MARKREAD get, frames=%v", transport.WrittenFrames())
+	if countFramesContaining(transport, "MARKREAD alice\r\n") != 1 {
+		t.Fatalf("opening existing DM must send one MARKREAD get, frames=%v", transport.WrittenFrames())
+	}
+}
+
+func TestFirstConversationClaimRequestsReadMarkerGetForDirect(t *testing.T) {
+	c, clock := newController(t)
+	transport := addAndStart(t, c, clock, baseConfig("net", "omairc"))
+	registerNetwork(t, transport, "omairc", "draft/read-marker")
+	key := c.reducer.ConversationKey("net", "alice")
+	when := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
+	c.reducer.EnsureConversation(key, "alice", irc.CauseInboundOther)
+	c.Apply(irc.MessageEvent{
+		Conversation: key,
+		Target:       "alice",
+		Author:       "alice",
+		Body:         "hi",
+		Timestamp:    when,
+		ServerTime:   &when,
+	})
+	if c.SelectedTarget() != "alice" {
+		t.Fatalf("selected = %q, want alice", c.SelectedTarget())
+	}
+	if countFramesContaining(transport, "MARKREAD alice\r\n") != 1 {
+		t.Fatalf("first conversation claim must send one MARKREAD get, frames=%v", transport.WrittenFrames())
 	}
 }
 

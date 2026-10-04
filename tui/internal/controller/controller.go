@@ -680,6 +680,10 @@ func (c *Controller) Apply(event irc.Event) {
 		// reaches this branch; without the close the sidebar and member panel
 		// would follow the joined channel while the transcript stayed on Status.
 		c.consoleOpen = false
+		features := c.reducer.ServerFeatures(key.NetworkID)
+		if c.reducer.Find(key) != nil && !features.IsChannel(key.NormalizedTarget) {
+			c.requestReadMarkerGet(c.manager.Find(key.NetworkID), key.NetworkID, conversation.Target)
+		}
 	}
 	c.adoptReducerSelection()
 
@@ -1058,12 +1062,8 @@ func (c *Controller) OpenDirectMessage(nick string) bool {
 	}
 	networkID := c.selected.NetworkID
 	key := c.reducer.ConversationKey(networkID, nick)
-	existing := c.reducer.Find(key) != nil
 	if c.reducer.EnsureConversation(key, nick, irc.CauseUserOpen) == nil {
 		return false
-	}
-	if existing {
-		c.requestReadMarkerGet(c.manager.Find(networkID), networkID, nick)
 	}
 	c.rememberOpenDirect(networkID, nick)
 	c.Publish(irc.ViewNotify{Conversations: true})

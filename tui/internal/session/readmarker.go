@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/fredimachado/omairc/tui/internal/irc"
 )
@@ -40,26 +41,74 @@ func (s *Session) deliverReadMarkerLocked(message irc.Message) bool {
 		return true
 	}
 	folded := s.foldReadMarkerTargetLocked(target)
+	networkID := s.config.NetworkID
 	if len(message.Params) < 2 {
-		networkID := s.config.NetworkID
 		s.emit(func(handler Handler) { handler.ReadMarkerReceived(networkID, target, nil) })
 		return true
 	}
 	marker, ok := irc.ParseReadMarkerParameter(parameter(message, 1))
 	if !ok {
 		delete(s.readMarkerInFlight, folded)
+		s.flushReadMarkerSetLocked(folded)
+		return true
+	}
+	if marker == nil {
+		s.emit(func(handler Handler) { handler.ReadMarkerReceived(networkID, target, nil) })
 		return true
 	}
 	echoed := irc.ReadMarkerTimeMillis(*marker)
-	networkID := s.config.NetworkID
 	s.emit(func(handler Handler) { handler.ReadMarkerReceived(networkID, target, &echoed) })
-	delete(s.readMarkerInFlight, folded)
-	if pending, hasPending := s.readMarkerPending[folded]; hasPending {
-		if !irc.ReadMarkerTimeAfter(pending.timestamp, echoed) {
-			delete(s.readMarkerPending, folded)
+	if inFlight, hasInFlight := s.readMarkerInFlight[folded]; hasInFlight {
+		if !irc.ReadMarkerTimeAfter(inFlight, echoed) {
+			delete(s.readMarkerInFlight, folded)
+			if pending, hasPending := s.readMarkerPending[folded]; hasPending {
+				if !irc.ReadMarkerTimeAfter(pending.timestamp, echoed) {
+					delete(s.readMarkerPending, folded)
+				}
+			}
+			s.flushReadMarkerSetLocked(folded)
 		}
 	}
-	s.flushReadMarkerSetLocked(folded)
+	return true
+}
+
+func readMarkerFailTargets(message irc.Message) []string {
+	if len(message.Params) < 3 {
+		return nil
+	}
+	if len(message.Params) == 3 {
+		candidate := parameter(message, 2)
+		if readMarkerFailContextTarget(candidate) {
+			return []string{candidate}
+		}
+		return nil
+	}
+	end := len(message.Params) - 1
+	var targets []string
+	for index := 2; index < end; index++ {
+		candidate := parameter(message, index)
+		if readMarkerFailContextTarget(candidate) {
+			targets = append(targets, candidate)
+		}
+	}
+	return targets
+}
+
+func readMarkerFailContextTarget(candidate string) bool {
+	if candidate == "" {
+		return false
+	}
+	if strings.Contains(candidate, " ") {
+		return false
+	}
+	if strings.Contains(candidate, "_") && strings.ToUpper(candidate) == candidate {
+		return false
+	}
+	for _, r := range candidate {
+		if !unicode.IsLetter(r) && !unicode.IsDigit(r) && r != '#' && r != '&' && r != '+' && r != '-' && r != '.' && r != '@' {
+			return false
+		}
+	}
 	return true
 }
 
@@ -68,23 +117,19 @@ func (s *Session) handleReadMarkerFailLocked(message irc.Message) {
 	if !strings.EqualFold(command, "MARKREAD") && !strings.EqualFold(command, "READ") {
 		return
 	}
-	cleared := false
-	for index := 1; index < len(message.Params); index++ {
-		target := parameter(message, index)
-		if target == "" {
-			continue
-		}
-		folded := s.foldReadMarkerTargetLocked(target)
-		if _, inFlight := s.readMarkerInFlight[folded]; inFlight {
+	targets := readMarkerFailTargets(message)
+	if len(targets) == 0 {
+		for folded := range s.readMarkerInFlight {
 			delete(s.readMarkerInFlight, folded)
 			s.flushReadMarkerSetLocked(folded)
-			cleared = true
 		}
-	}
-	if cleared {
 		return
 	}
-	for folded := range s.readMarkerInFlight {
+	for _, target := range targets {
+		folded := s.foldReadMarkerTargetLocked(target)
+		if folded == "" {
+			continue
+		}
 		delete(s.readMarkerInFlight, folded)
 		s.flushReadMarkerSetLocked(folded)
 	}
