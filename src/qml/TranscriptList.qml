@@ -28,6 +28,7 @@ ListView {
     // count unchanged.
     property int rowRevision: 0
     property int restoreOffset: -1
+    property var onPinnedToEnd: null
     property int pinGeneration: 0
     property bool resetPending: false
     property int resetSavedCount: 0
@@ -64,6 +65,8 @@ ListView {
         trackedCount = count;
         stickToEnd();
         positionViewAtEnd();
+        if (onPinnedToEnd)
+            onPinnedToEnd();
         var generation = ++pinGeneration;
         Qt.callLater(function() {
             if (generation !== pinGeneration)

@@ -1278,6 +1278,38 @@ bool IrcController::sendMessage(const QString& text)
     return report(dispatch(command, IrcComposerSurface::Conversation), command);
 }
 
+bool IrcController::requestOlderTranscriptHistory()
+{
+    if (m_console.isOpen() || !m_selected)
+        return false;
+    const QString networkId = m_selected->networkId;
+    const QString target = selectedTarget();
+    if (target.isEmpty())
+        return false;
+    IrcSession *session = m_sessions.findSession(networkId);
+    if (!session || session->state() != IrcSession::State::Registered)
+        return false;
+    if (!m_capabilities.value(networkId).contains(IrcCapability::ChatHistory))
+        return false;
+    const IrcConversationState *conversation = m_reducer.find(*m_selected);
+    if (!conversation || conversation->messages.empty())
+        return false;
+    if (conversation->isChannel()) {
+        const IrcChannelState *channel = conversation->channel();
+        if (!channel || !channel->joined)
+            return false;
+    }
+    const IrcReducedMessage& oldest = conversation->messages.front();
+    return session->requestOlderHistory(target, oldest.msgid.value, oldest.timestamp);
+}
+
+void IrcController::noteTranscriptFollowsEnd()
+{
+    if (!m_selected)
+        return;
+    m_reducer.clearTrimTailOnCap(*m_selected);
+}
+
 QStringList IrcController::networkIds() const
 {
     return m_sessions.networkIds();

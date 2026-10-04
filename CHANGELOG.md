@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Page Up at the top of a channel transcript requests older `CHATHISTORY` when the
+  server advertises the capability. Replayed lines prepend above what you were
+  reading, stay muted, and do not raise unread counts or desktop notifications.
+
 ## [1.0.7] - 2026-09-30
 
 ### Added

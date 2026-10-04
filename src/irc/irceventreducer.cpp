@@ -923,6 +923,15 @@ void IrcEventReducer::capMessages(IrcConversationState& conversation)
     const int extra = int(messages.size()) - kMaxMessages;
     if (extra <= 0)
         return;
+    if (conversation.trimTailOnCap) {
+        for (int index = int(messages.size()) - extra; index < int(messages.size());
+             ++index) {
+            if (!messages[std::size_t(index)].msgid.isEmpty())
+                conversation.messageIds.erase(messages[std::size_t(index)].msgid);
+        }
+        messages.erase(messages.end() - extra, messages.end());
+        return;
+    }
     for (int index = 0; index < extra; ++index) {
         if (!messages[std::size_t(index)].msgid.isEmpty())
             conversation.messageIds.erase(messages[std::size_t(index)].msgid);
@@ -935,6 +944,12 @@ void IrcEventReducer::capMessages(IrcConversationState& conversation)
             channel->historyAnchor.reset();
         }
     }
+}
+
+void IrcEventReducer::clearTrimTailOnCap(const IrcConversationKey& key)
+{
+    if (IrcConversationState *conversation = findMutable(key))
+        conversation->trimTailOnCap = false;
 }
 
 // A direct message has no join line to splice above, so its replay lands at
@@ -1521,10 +1536,14 @@ void IrcEventReducer::spliceHistory(IrcConversationState& conversation,
                                     const IrcHistoryEvent& event,
                                     HistoryAnchorUse anchorUse)
 {
-    const std::optional<std::size_t> spliceIndex =
-        anchorUse == HistoryAnchorUse::Consume
+    std::optional<std::size_t> spliceIndex;
+    if (event.prependAtHead) {
+        spliceIndex = 0;
+    } else {
+        spliceIndex = anchorUse == HistoryAnchorUse::Consume
             ? takeSpliceIndex(conversation)
             : peekSpliceIndex(conversation);
+    }
     if (!spliceIndex)
         return;
     const std::size_t previousSize = conversation.messages.size();
@@ -1622,13 +1641,17 @@ void IrcEventReducer::spliceHistory(IrcConversationState& conversation,
             persistMessage(conversation, message);
         // Consume drops the anchor only once a replay line has landed. Keep
         // still names the join line, shifted forward by what actually landed.
-        if (IrcChannelState *channel = conversation.channel()) {
-            if (anchorUse == HistoryAnchorUse::Consume)
-                channel->historyAnchor.reset();
-            else if (channel->historyAnchor)
-                channel->historyAnchor->sequence += qint64(run.size());
+        if (!event.prependAtHead) {
+            if (IrcChannelState *channel = conversation.channel()) {
+                if (anchorUse == HistoryAnchorUse::Consume)
+                    channel->historyAnchor.reset();
+                else if (channel->historyAnchor)
+                    channel->historyAnchor->sequence += qint64(run.size());
+            }
         }
-        if (at != previousSize)
+        if (event.prependAtHead)
+            conversation.trimTailOnCap = true;
+        if (at != previousSize || event.prependAtHead)
             ++conversation.spliceEpoch;
         capMessages(conversation);
         for (const IrcReducedMessage& message : run) {

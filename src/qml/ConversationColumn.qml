@@ -19,6 +19,7 @@ Item {
     property var slashCommands: null
     property var activeMessages: null
     property var consoleLines: null
+    property var onTranscriptPinnedToEnd: null
     property Component messageDelegate
     property Component messageFooter
     property Component consoleDelegate
@@ -163,6 +164,7 @@ Item {
     TranscriptList {
         id: messageList
         objectName: "messageList"
+        onPinnedToEnd: column.onTranscriptPinnedToEnd
         visible: !column.consoleVisible
         Accessible.name: "Messages in " + column.currentConversation
         anchors.top: conversationHeader.bottom

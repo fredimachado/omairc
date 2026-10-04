@@ -223,6 +223,7 @@ struct IrcHistoryEvent
     QString target;
     std::vector<IrcReplayLine> lines;
     IrcHistoryKind kind = IrcHistoryKind::ChatHistory;
+    bool prependAtHead = false;
 };
 
 struct IrcWhoisTranscriptEvent

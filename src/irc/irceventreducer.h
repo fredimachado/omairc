@@ -134,6 +134,7 @@ struct IrcConversationState
     std::set<IrcMsgId> messageIds;
     int spliceEpoch = 0;
     qint64 nextSequence = 0;
+    bool trimTailOnCap = false;
 
     bool isChannel() const noexcept;
     const IrcChannelState *channel() const noexcept;
@@ -325,6 +326,7 @@ private:
     void persistMessage(const IrcConversationState& conversation,
                         const IrcReducedMessage& message);
     void capMessages(IrcConversationState& conversation);
+    void clearTrimTailOnCap(const IrcConversationKey& key);
     std::optional<std::size_t> peekSpliceIndex(
         const IrcConversationState& conversation) const;
     std::optional<std::size_t> takeSpliceIndex(IrcConversationState& conversation);

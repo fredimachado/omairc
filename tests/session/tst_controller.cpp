@@ -596,6 +596,10 @@ private slots:
     void queryPlaybackKeepsLinesFromPreviousNick();
     void queryPlaybackPreviousNickEchoIsOwnLine();
     void networkWithoutPlaybackCapDoesNotPlay();
+    void chatHistoryBeforePageMutedWithoutUnread();
+    void chatHistoryBeforeDedupesMsgid();
+    void chatHistoryBeforeNoCapIsNoOp();
+    void chatHistoryBeforePrependsAboveAnchorLine();
     void zncPlaybackLateCapPlaysOnce();
     void engagedQueryPlaybackPlaysAfterRestore();
     void selfOnlyStoredQueryPlaybackLandsAfterMotd();
@@ -8859,6 +8863,114 @@ void ControllerTest::channelPlaybackPreviousNickDoesNotBumpUnread()
              QStringLiteral("oldnick"));
     QCOMPARE(roleAt(messages, live, MessageListModel::OriginRole),
              QStringLiteral("live"));
+}
+
+void ControllerTest::chatHistoryBeforePageMutedWithoutUnread()
+{
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    IrcSession *session = controller.addSession(config(QStringLiteral("libera")), transport);
+    QVERIFY(session);
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    transport->completeConnect();
+    transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :batch chathistory\r\n"
+                          ":server CAP omairc ACK :batch chathistory\r\n"
+                          ":server 001 omairc :Welcome\r\n"
+                          ":omairc!u@h JOIN :#omarchy\r\n"
+                          ":irc.host BATCH +hx chathistory #omarchy\r\n"
+                          "@batch=hx;msgid=live-1 :alice!u@h PRIVMSG #omarchy :seen\r\n"
+                          ":irc.host BATCH -hx\r\n"));
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
+    QVERIFY(messages);
+    const int unreadBefore = controller.unreadCountFor(QStringLiteral("libera"));
+    QVERIFY(controller.requestOlderTranscriptHistory());
+    transport->injectBytes(
+        QByteArrayLiteral(":irc.host BATCH +old chathistory #omarchy\r\n"
+                          "@batch=old;msgid=old-1 :alice!u@h PRIVMSG #omarchy :older\r\n"
+                          ":irc.host BATCH -old\r\n"));
+    QCOMPARE(bodyRow(messages, QStringLiteral("older")), 0);
+    QCOMPARE(bodyRow(messages, QStringLiteral("seen")), 1);
+    QCOMPARE(roleAt(messages, 0, MessageListModel::OriginRole),
+             QStringLiteral("replay"));
+    QCOMPARE(controller.unreadCountFor(QStringLiteral("libera")), unreadBefore);
+}
+
+void ControllerTest::chatHistoryBeforeDedupesMsgid()
+{
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    QVERIFY(controller.addSession(config(QStringLiteral("libera")), transport));
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    transport->completeConnect();
+    transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :batch chathistory\r\n"
+                          ":server CAP omairc ACK :batch chathistory\r\n"
+                          ":server 001 omairc :Welcome\r\n"
+                          ":omairc!u@h JOIN :#omarchy\r\n"
+                          ":irc.host BATCH +hx chathistory #omarchy\r\n"
+                          "@batch=hx;msgid=live-1 :alice!u@h PRIVMSG #omarchy :seen\r\n"
+                          ":irc.host BATCH -hx\r\n"));
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
+    QVERIFY(messages);
+    QVERIFY(controller.requestOlderTranscriptHistory());
+    transport->injectBytes(
+        QByteArrayLiteral(":irc.host BATCH +old chathistory #omarchy\r\n"
+                          "@batch=old;msgid=live-1 :alice!u@h PRIVMSG #omarchy :dup\r\n"
+                          ":irc.host BATCH -old\r\n"));
+    QCOMPARE(messages->rowCount(), 1);
+    QCOMPARE(roleAt(messages, 0, MessageListModel::BodyRole), QStringLiteral("seen"));
+}
+
+void ControllerTest::chatHistoryBeforeNoCapIsNoOp()
+{
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    QVERIFY(controller.addSession(config(QStringLiteral("libera")), transport));
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    transport->completeConnect();
+    transport->injectBytes(
+        QByteArrayLiteral(":server 001 omairc :Welcome\r\n"
+                          ":omairc!u@h JOIN :#omarchy\r\n"));
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    const int before = transport->writtenFrames().size();
+    QVERIFY(!controller.requestOlderTranscriptHistory());
+    QCOMPARE(transport->writtenFrames().size(), before);
+}
+
+void ControllerTest::chatHistoryBeforePrependsAboveAnchorLine()
+{
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    QVERIFY(controller.addSession(config(QStringLiteral("libera")), transport));
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    transport->completeConnect();
+    transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :batch chathistory\r\n"
+                          ":server CAP omairc ACK :batch chathistory\r\n"
+                          ":server 001 omairc :Welcome\r\n"
+                          ":omairc!u@h JOIN :#omarchy\r\n"
+                          ":irc.host BATCH +hx chathistory #omarchy\r\n"
+                          "@batch=hx;msgid=anchor :alice!u@h PRIVMSG #omarchy :join replay\r\n"
+                          ":irc.host BATCH -hx\r\n"
+                          "@msgid=live-1 :bob!u@h PRIVMSG #omarchy :live line\r\n"));
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
+    QVERIFY(messages);
+    const int anchorRow = bodyRow(messages, QStringLiteral("join replay"));
+    const int liveRow = bodyRow(messages, QStringLiteral("live line"));
+    QVERIFY(anchorRow >= 0);
+    QVERIFY(liveRow > anchorRow);
+    QVERIFY(controller.requestOlderTranscriptHistory());
+    transport->injectBytes(
+        QByteArrayLiteral(":irc.host BATCH +old chathistory #omarchy\r\n"
+                          "@batch=old;msgid=older-1 :alice!u@h PRIVMSG #omarchy :older page\r\n"
+                          ":irc.host BATCH -old\r\n"));
+    QCOMPARE(bodyRow(messages, QStringLiteral("older page")), 0);
+    QCOMPARE(bodyRow(messages, QStringLiteral("join replay")), 1);
+    QCOMPARE(bodyRow(messages, QStringLiteral("live line")), 2);
 }
 
 int runControllerTests(int argc, char **argv)

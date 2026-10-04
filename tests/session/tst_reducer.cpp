@@ -186,6 +186,7 @@ private slots:
     void playbackBatchKeptTracksSpliceAndDedup();
     void cappedPlaybackSpliceNotesOnlySurvivingLines();
     void channelPlaybackPreviousNickStaysMutedBacklog();
+    void chatHistoryBeforePrependsAtHeadAndTrimsTail();
     void channelPlaybackCasemappingRememberedSelfNick();
     void queryReplayAppendsAtTailOfExistingDirectMessage();
     void channelReplayWithoutConversationCreatesNothing();
@@ -2578,6 +2579,48 @@ void ReducerTest::cappedPlaybackSpliceNotesOnlySurvivingLines()
         QCOMPARE(kept.front().serverTime.toMSecsSinceEpoch(),
                  keptAt.toMSecsSinceEpoch());
     }
+}
+
+void ReducerTest::chatHistoryBeforePrependsAtHeadAndTrimsTail()
+{
+    IrcEventReducer reducer;
+    welcome(reducer, networkA);
+    const IrcConversationKey room =
+        reducer.conversationKey(networkA, QStringLiteral("#omarchy"));
+    reducer.apply(IrcJoinEvent{
+        networkA, QStringLiteral("#omarchy"), QStringLiteral("omairc")});
+    const auto fillTo = [&](int count) {
+        for (int index = 0; index < count; ++index) {
+            reducer.apply(IrcMessageEvent{
+                room, QStringLiteral("alice"), QString::number(index), timestamp,
+                QStringLiteral("#omarchy")});
+        }
+    };
+    fillTo(IrcEventReducer::kMaxMessages - 1);
+    const IrcConversationState *before = reducer.find(room);
+    QVERIFY(before);
+    QCOMPARE(before->messages.size(), std::size_t(IrcEventReducer::kMaxMessages));
+    const qint64 anchorSequence = before->messages.front().sequence;
+
+    IrcHistoryEvent older{
+        room,
+        QStringLiteral("#omarchy"),
+        {replayLine(QStringLiteral("alice"), QStringLiteral("older page"))},
+        IrcHistoryKind::ChatHistory,
+    };
+    older.prependAtHead = true;
+    reducer.apply(older);
+    const IrcConversationState *after = reducer.find(room);
+    QVERIFY(after);
+    QCOMPARE(after->messages.size(), std::size_t(IrcEventReducer::kMaxMessages));
+    QCOMPARE(after->messages.front().body, QStringLiteral("older page"));
+    QVERIFY(after->trimTailOnCap);
+    const bool anchorStillPresent = std::any_of(
+        after->messages.begin(), after->messages.end(),
+        [&](const IrcReducedMessage& message) {
+            return message.sequence == anchorSequence;
+        });
+    QVERIFY(anchorStillPresent);
 }
 
 void ReducerTest::channelPlaybackPreviousNickStaysMutedBacklog()
