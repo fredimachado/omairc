@@ -38,6 +38,8 @@ struct IrcReducedMessage
     IrcOrigin origin = IrcOrigin::Live;
     IrcMsgId msgid{};
     qint64 sequence = 0;
+    // Parsed IRCv3 time tag only. timestamp may be wall clock when the tag
+    // was missing; do not send that value as CHATHISTORY timestamp=.
     std::optional<QDateTime> serverTime;
 };
 
@@ -136,6 +138,8 @@ struct IrcConversationState
     std::set<IrcMsgId> messageIds;
     int spliceEpoch = 0;
     qint64 nextSequence = 0;
+    bool trimTailOnCap = false;
+    bool trimTailCapArmed = false;
 
     bool isChannel() const noexcept;
     const IrcChannelState *channel() const noexcept;
@@ -260,6 +264,9 @@ public:
     bool dropChannel(const IrcConversationKey& key);
     void forgetNetwork(const QString& networkId);
     void clearMessages(const IrcConversationKey& key);
+    void armTrimTailOnCap(const IrcConversationKey& key);
+    void clearTrimTailOnCap(const IrcConversationKey& key);
+    QStringList takeHistoryBeforeExhaustTargets();
     void setMuted(const IrcConversationKey& key, bool muted);
     IrcConversationState *ensureConversation(const IrcConversationKey& key,
                                              const QString& displayTarget,
@@ -334,6 +341,8 @@ private:
     void hydrateFromLog(IrcConversationState& conversation);
     void persistMessage(const IrcConversationState& conversation,
                         const IrcReducedMessage& message);
+    void persistPrependedMessages(const IrcConversationState& conversation,
+                                  const std::vector<IrcReducedMessage>& messages);
     void capMessages(IrcConversationState& conversation);
     std::optional<std::size_t> peekSpliceIndex(
         const IrcConversationState& conversation) const;
@@ -416,4 +425,5 @@ private:
     // Set on welcome, cleared when open-direct restore finishes. A missing
     // query is not a finished drop while this connection is still waiting.
     std::set<QString> m_queryRestorePending;
+    QStringList m_historyBeforeExhaustTargets;
 };

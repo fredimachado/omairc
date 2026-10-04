@@ -1901,6 +1901,17 @@ ApplicationWindow {
         if (last < first)
             last = first;
 
+        if (direction < 0 && !consoleVisible && first === 0 && list.contentY <= 2) {
+            list.snapshotAnchor();
+            if (irc.requestOlderTranscriptHistory()) {
+                list.stick = list.stickDetached;
+                return;
+            }
+            if (irc.transcriptHistoryPendingForSelection())
+                return;
+            list.clearAnchorSnapshot();
+        }
+
         var page = Math.max(1, Math.round((last - first + 1) * fraction));
         if (direction < 0)
             list.positionViewAtIndex(Math.max(0, first - page), ListView.Beginning);
@@ -2934,6 +2945,10 @@ ApplicationWindow {
             slashCommands: win.slashCommands
             activeMessages: win.activeMessages
             consoleLines: win.networkConsole ? win.networkConsole.lines : null
+            onTranscriptPinnedToEnd: function() {
+                if (win.irc)
+                    win.irc.noteTranscriptFollowsEnd();
+            }
             messageDelegate: MessageRow {
                 style: win.style
                 plainIrcText: function(text) { return win.plainIrcText(text) }

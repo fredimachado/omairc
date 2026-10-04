@@ -8,6 +8,7 @@ ListView {
     readonly property int stickDetached: 1
     property int stick: 0
     property int firstUnseenIndex: -1
+    property int firstUnseenSequence: -1
     property int unreadMarkRow: -1
     readonly property bool hasUnreadMark: unreadMarkRow >= 0
     readonly property bool canScrollDown: !viewportPinned()
@@ -28,9 +29,15 @@ ListView {
     // count unchanged.
     property int rowRevision: 0
     property int restoreOffset: -1
+    property int restoreAnchorSequence: -1
+    property int detachedViewportSequence: -1
+    property int detachedViewportOffset: -1
+    property var onPinnedToEnd: null
     property int pinGeneration: 0
     property bool resetPending: false
     property int resetSavedCount: 0
+    property bool prependPending: false
+    property int prependSavedCount: 0
     property real previousContentHeight: 0
     property var readMarkerSync: null
 
@@ -66,13 +73,62 @@ ListView {
         contentY = endContentY();
     }
 
+    function rowSequence(row) {
+        if (!model || typeof model.field !== "function" || row < 0)
+            return -1;
+        if (row >= modelRowCount())
+            return -1;
+        var seqText = model.field(row, "sequence");
+        if (seqText === undefined || seqText === null || seqText === "")
+            return -1;
+        return parseInt(seqText, 10);
+    }
+
+    function syncFirstUnseenIndex() {
+        if (firstUnseenSequence < 0)
+            return;
+        var total = modelRowCount();
+        for (var row = 0; row < total; ++row) {
+            if (rowSequence(row) === firstUnseenSequence) {
+                firstUnseenIndex = row;
+                return;
+            }
+        }
+        firstUnseenIndex = -1;
+        firstUnseenSequence = -1;
+    }
+
+    function rememberDetachedViewportSequence() {
+        if (!model || typeof model.field !== "function")
+            return;
+        var index = indexAt(Math.max(1, width / 2), contentY + 1);
+        if (index < 0)
+            index = indexAt(Math.max(1, width / 2), contentY + 8);
+        if (index < 0)
+            return;
+        detachedViewportOffset = count - index;
+        var total = modelRowCount();
+        for (var row = index; row < total; ++row) {
+            var seqText = model.field(row, "sequence");
+            if (seqText !== undefined && seqText !== null && seqText !== "") {
+                detachedViewportSequence = parseInt(seqText, 10);
+                return;
+            }
+        }
+    }
+
     function pinToEnd() {
         stick = stickFollowing;
         firstUnseenIndex = -1;
+        firstUnseenSequence = -1;
+        detachedViewportSequence = -1;
+        detachedViewportOffset = -1;
         pinning = true;
         trackedCount = count;
         stickToEnd();
         positionViewAtEnd();
+        if (onPinnedToEnd)
+            onPinnedToEnd();
         var generation = ++pinGeneration;
         Qt.callLater(function() {
             if (generation !== pinGeneration)
@@ -90,8 +146,10 @@ ListView {
             return;
         if (viewportPinned())
             pinToEnd();
-        else
+        else {
             stick = stickDetached;
+            rememberDetachedViewportSequence();
+        }
         syncReadMarkerViewport();
     }
 
@@ -112,8 +170,10 @@ ListView {
                 pinToEnd();
                 return;
             }
-            if (firstUnseenIndex >= newCount)
+            if (firstUnseenIndex >= newCount) {
                 firstUnseenIndex = -1;
+                firstUnseenSequence = -1;
+            }
             trackedCount = newCount;
             return;
         }
@@ -132,6 +192,7 @@ ListView {
         }
         if (firstUnseenIndex < 0)
             firstUnseenIndex = previousCount;
+        firstUnseenSequence = rowSequence(firstUnseenIndex);
         trackedCount = newCount;
         detachedArrival();
     }
@@ -148,8 +209,11 @@ ListView {
         }
         // Replay rows land above the reader, so nothing new arrived at the
         // bottom. Carry an armed marker along with its row rather than
-        // arming a fresh one over backfilled history.
-        if (firstUnseenIndex >= 0) {
+        // arming a fresh one over backfilled history. At capacity a prepend
+        // and tail-trim can leave the count unchanged while every row shifts.
+        if (firstUnseenSequence >= 0)
+            syncFirstUnseenIndex();
+        else if (firstUnseenIndex >= 0) {
             firstUnseenIndex += newCount - previousCount;
             if (firstUnseenIndex < 0 || firstUnseenIndex >= newCount)
                 firstUnseenIndex = -1;
@@ -163,19 +227,43 @@ ListView {
     }
 
     function snapshotAnchor() {
+        restoreAnchorSequence = -1;
+        restoreOffset = -1;
+        if (detachedViewportSequence >= 0)
+            restoreAnchorSequence = detachedViewportSequence;
+        if (detachedViewportOffset >= 0)
+            restoreOffset = detachedViewportOffset;
+        if (restoreAnchorSequence >= 0 || restoreOffset >= 0)
+            return;
+
         var index = indexAt(Math.max(1, width / 2), contentY + 1);
         if (index < 0)
             index = indexAt(Math.max(1, width / 2), contentY + 8);
         if (index < 0)
-            index = 0;
-        // A history splice inserts replay rows above the reader and may trim
-        // the front, so a raw index names a different message afterwards.
-        // Distance from the last row survives both.
+            return;
         restoreOffset = count - index;
+        if (!model || typeof model.field !== "function")
+            return;
+        var total = modelRowCount();
+        for (var row = index; row < total; ++row) {
+            var seqText = model.field(row, "sequence");
+            if (seqText !== undefined && seqText !== null && seqText !== "") {
+                restoreAnchorSequence = parseInt(seqText, 10);
+                detachedViewportSequence = restoreAnchorSequence;
+                return;
+            }
+        }
+    }
+
+    function clearAnchorSnapshot() {
+        restoreAnchorSequence = -1;
+        restoreOffset = -1;
     }
 
     function restoreAnchor() {
+        var sequence = restoreAnchorSequence;
         var offset = restoreOffset;
+        restoreAnchorSequence = -1;
         restoreOffset = -1;
         if (stick === stickFollowing) {
             pinToEnd();
@@ -183,13 +271,31 @@ ListView {
         }
         pinning = true;
         var generation = ++pinGeneration;
-        var total = modelRowCount();
-        var target = total - offset;
-        if (offset >= 0 && target >= 0 && target < total)
-            positionViewAtIndex(target, ListView.Beginning);
+        var targetRow = -1;
+        if (sequence >= 0 && model && typeof model.field === "function") {
+            var total = modelRowCount();
+            for (var row = 0; row < total; ++row) {
+                var seqText = model.field(row, "sequence");
+                if (seqText !== undefined && seqText !== null && seqText !== ""
+                        && parseInt(seqText, 10) === sequence) {
+                    targetRow = row;
+                    break;
+                }
+            }
+        }
+        if (targetRow < 0 && offset >= 0) {
+            var total = modelRowCount();
+            targetRow = total - offset;
+            if (targetRow < 0 || targetRow >= total)
+                targetRow = -1;
+        }
+        if (targetRow >= 0)
+            positionViewAtIndex(targetRow, ListView.Beginning);
         Qt.callLater(function() {
             if (generation !== pinGeneration)
                 return;
+            if (targetRow >= 0)
+                positionViewAtIndex(targetRow, ListView.Beginning);
             pinning = false;
         });
     }
@@ -197,11 +303,13 @@ ListView {
     function jumpToUnseen() {
         if (!jumpArmed)
             return;
+        syncFirstUnseenIndex();
         if (stick === stickDetached
                 && firstUnseenIndex >= 0
                 && firstUnseenIndex < count) {
             var target = firstUnseenIndex;
             firstUnseenIndex = -1;
+            firstUnseenSequence = -1;
             pinning = true;
             var generation = ++pinGeneration;
             positionViewAtIndex(target, ListView.Beginning);
@@ -240,6 +348,7 @@ ListView {
         }
         stick = stickDetached;
         firstUnseenIndex = -1;
+        firstUnseenSequence = -1;
         pinning = true;
         var generation = ++pinGeneration;
         positionViewAtIndex(row, ListView.Beginning);
@@ -305,8 +414,25 @@ ListView {
                 list.restoreAnchor();
             });
         }
+        function onRowsAboutToBeInserted(parent, first, last) {
+            if (first === 0 && list.stick === list.stickDetached) {
+                list.prependPending = true;
+                list.prependSavedCount = list.count;
+                list.snapshotAnchor();
+            }
+        }
         function onRowsInserted(parent, first, last) {
-            list.noteGrowth(list.trackedCount, list.count);
+            if (list.prependPending && first === 0) {
+                var previous = list.prependSavedCount;
+                var newCount = list.count;
+                list.noteSplice(previous, newCount);
+                Qt.callLater(function() {
+                    list.prependPending = false;
+                    list.restoreAnchor();
+                });
+            } else {
+                list.noteGrowth(list.trackedCount, list.count);
+            }
         }
         function onDataChanged(topLeft, bottomRight) {
             // The typing footer reads the last row through
@@ -318,9 +444,14 @@ ListView {
                 list.rowRevision += 1;
         }
         function onRowsRemoved(parent, first, last) {
-            if (first === 0
-                    && list.stick === list.stickDetached
-                    && list.firstUnseenIndex >= 0) {
+            if (first !== 0
+                    || list.stick !== list.stickDetached
+                    || list.firstUnseenIndex < 0) {
+                return;
+            }
+            if (list.firstUnseenSequence >= 0)
+                list.syncFirstUnseenIndex();
+            else {
                 list.firstUnseenIndex -= (last - first + 1);
                 if (list.firstUnseenIndex < 0)
                     list.firstUnseenIndex = -1;

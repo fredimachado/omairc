@@ -1099,6 +1099,8 @@ void IrcController::selectConversation(const QString& networkId,
     const bool changed = !m_selected
         || m_selected->networkId != networkId
         || m_selected->normalizedTarget != key.normalizedTarget;
+    if (changed && m_selected)
+        m_reducer.clearTrimTailOnCap(*m_selected);
     if (changed && !m_typingTarget.isEmpty()) {
         if (IrcSession *previous = selectedSession())
             previous->sendTyping(m_typingTarget, IrcTypingPhase::Done);
@@ -1146,6 +1148,8 @@ void IrcController::openStatus(const QString& networkId)
         return;
     const QString previousId = identityNetworkId();
     const bool previousAway = selfAway();
+    if (m_selected)
+        m_reducer.clearTrimTailOnCap(*m_selected);
     m_console.setNetwork(networkId);
     m_console.setOpen(true);
     notifyFocusedConnectionStatus();
@@ -1304,6 +1308,51 @@ bool IrcController::sendMessage(const QString& text)
     if (command.verb == IrcCommand::Verb::Empty)
         return false;
     return report(dispatch(command, IrcComposerSurface::Conversation), command);
+}
+
+bool IrcController::requestOlderTranscriptHistory()
+{
+    if (m_console.isOpen() || !m_selected)
+        return false;
+    const QString networkId = m_selected->networkId;
+    const QString target = selectedTarget();
+    if (target.isEmpty())
+        return false;
+    IrcSession *session = m_sessions.findSession(networkId);
+    if (!session || session->state() != IrcSession::State::Registered)
+        return false;
+    if (!m_capabilities.value(networkId).contains(IrcCapability::ChatHistory))
+        return false;
+    const IrcConversationState *conversation = m_reducer.find(*m_selected);
+    if (!conversation || conversation->messages.empty())
+        return false;
+    if (conversation->isChannel()) {
+        const IrcChannelState *channel = conversation->channel();
+        if (!channel || !channel->joined)
+            return false;
+    }
+    const IrcReducedMessage& oldest = conversation->messages.front();
+    if (!session->requestOlderHistory(target, oldest.msgid.value, oldest.serverTime))
+        return false;
+    m_reducer.armTrimTailOnCap(*m_selected);
+    return true;
+}
+
+bool IrcController::transcriptHistoryPendingForSelection() const
+{
+    if (!m_selected)
+        return false;
+    IrcSession *session = m_sessions.findSession(m_selected->networkId);
+    if (!session)
+        return false;
+    return session->historyPendingForTarget(selectedTarget());
+}
+
+void IrcController::noteTranscriptFollowsEnd()
+{
+    if (!m_selected)
+        return;
+    m_reducer.clearTrimTailOnCap(*m_selected);
 }
 
 QStringList IrcController::networkIds() const
@@ -2329,6 +2378,11 @@ void IrcController::handleHistoryBatch(const QString& networkId,
             return;
     }
     apply(*event);
+    if (IrcSession *session = m_sessions.findSession(networkId)) {
+        const QStringList exhaust = m_reducer.takeHistoryBeforeExhaustTargets();
+        for (const QString& target : exhaust)
+            session->markHistoryExhausted(target);
+    }
 }
 
 void IrcController::noteKeptReplay()

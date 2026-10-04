@@ -208,6 +208,8 @@ QVariant MessageListModel::data(const QModelIndex& index, int role) const
             : QStringLiteral("live");
     case MsgidRole:
         return message.msgid.value;
+    case SequenceRole:
+        return message.sequence;
     case AuthorAvatarRole:
         if (message.author.isEmpty())
             return QString();
@@ -245,6 +247,7 @@ QHash<int, QByteArray> MessageListModel::staticRoleNames()
         {AuthorBotRole, "authorBot"},
         {AuthorAccountRole, "authorAccount"},
         {MentionedRole, "mentioned"},
+        {SequenceRole, "sequence"},
     };
 }
 

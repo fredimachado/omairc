@@ -3386,14 +3386,22 @@ TestCase {
         waitForRendering(appWindow.contentItem);
         wait(0);
         compare(list.firstUnseenIndex, previousCount);
+        compare(list.firstUnseenSequence,
+                parseInt(field(list.model, previousCount, "sequence"), 10));
         var unseenBody = field(list.model, list.firstUnseenIndex, "body");
 
         prependLiveReplay(list, 9);
         waitForRendering(appWindow.contentItem);
         wait(0);
         compare(field(list.model, list.firstUnseenIndex, "body"), unseenBody);
+        compare(list.firstUnseenSequence,
+                parseInt(field(list.model, list.firstUnseenIndex, "sequence"), 10));
+
+        list.noteSplice(list.count, list.count);
+        compare(field(list.model, list.firstUnseenIndex, "body"), unseenBody);
 
         list.firstUnseenIndex = -1;
+        list.firstUnseenSequence = -1;
         list.noteSplice(list.count, list.count + 9);
         compare(list.firstUnseenIndex, -1);
     }

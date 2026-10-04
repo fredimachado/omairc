@@ -6,6 +6,7 @@
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QSaveFile>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonParseError>
@@ -207,6 +208,44 @@ QString IrcConversationLog::pathFor(const QString &networkId,
     const QString newPath =
         QDir(QDir(m_root).filePath(newNetworkDir)).filePath(newTarget);
     return migrateLegacyTranscriptPath(m_root, networkId, target, newPath);
+}
+
+bool IrcConversationLog::prepend(const QString &networkId,
+                                 const QString &target,
+                                 const IrcCaseMapping &mapping,
+                                 const std::vector<IrcTranscriptLine> &lines)
+{
+    if (lines.empty())
+        return true;
+    const QString path = pathFor(networkId, target, mapping);
+    QByteArray prefix;
+    for (const IrcTranscriptLine &line : lines) {
+        if (line.kind.isEmpty() || line.body.isEmpty())
+            continue;
+        if (!IrcSecretPolicy::allowsTranscript(line.body))
+            continue;
+        if (!IrcSecretPolicy::allowsTranscript(line.author))
+            continue;
+        prefix.append(formatLine(line));
+    }
+    if (prefix.isEmpty())
+        return true;
+    if (!prepareTree(path))
+        return false;
+    QByteArray existing;
+    QFile file(path);
+    if (file.open(QIODevice::ReadOnly))
+        existing = file.readAll();
+    QSaveFile out(path);
+    if (!out.open(QIODevice::WriteOnly))
+        return false;
+    if (out.write(prefix) != prefix.size())
+        return false;
+    if (!existing.isEmpty() && out.write(existing) != existing.size())
+        return false;
+    if (!out.commit())
+        return false;
+    return QFile::setPermissions(path, kOwnerFile);
 }
 
 bool IrcConversationLog::append(const QString &networkId,

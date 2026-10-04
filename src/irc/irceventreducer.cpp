@@ -530,6 +530,30 @@ void IrcEventReducer::persistMessage(const IrcConversationState& conversation,
                    message.msgid.value});
 }
 
+void IrcEventReducer::persistPrependedMessages(
+    const IrcConversationState& conversation,
+    const std::vector<IrcReducedMessage>& messages)
+{
+    if (!m_log || messages.empty())
+        return;
+    std::vector<IrcTranscriptLine> lines;
+    lines.reserve(messages.size());
+    for (const IrcReducedMessage& message : messages) {
+        if (!persistableKind(message.kind))
+            continue;
+        const QString kind = kindToken(message.kind);
+        if (kind.isEmpty())
+            continue;
+        lines.push_back({message.timestamp, message.author, kind, message.body,
+                         message.msgid.value});
+    }
+    if (lines.empty())
+        return;
+    m_log->prepend(conversation.key.networkId, conversation.key.normalizedTarget,
+                   serverFeatures(conversation.key.networkId).caseMapping(),
+                   lines);
+}
+
 void IrcEventReducer::setMuted(const IrcConversationKey& key, bool muted)
 {
     if (key.networkId.isEmpty() || key.normalizedTarget.isEmpty())
@@ -1046,6 +1070,15 @@ void IrcEventReducer::capMessages(IrcConversationState& conversation)
     const int extra = int(messages.size()) - kMaxMessages;
     if (extra <= 0)
         return;
+    if (conversation.trimTailOnCap) {
+        for (int index = int(messages.size()) - extra; index < int(messages.size());
+             ++index) {
+            if (!messages[std::size_t(index)].msgid.isEmpty())
+                conversation.messageIds.erase(messages[std::size_t(index)].msgid);
+        }
+        messages.erase(messages.end() - extra, messages.end());
+        return;
+    }
     for (int index = 0; index < extra; ++index) {
         if (!messages[std::size_t(index)].msgid.isEmpty())
             conversation.messageIds.erase(messages[std::size_t(index)].msgid);
@@ -1058,6 +1091,27 @@ void IrcEventReducer::capMessages(IrcConversationState& conversation)
             channel->historyAnchor.reset();
         }
     }
+}
+
+void IrcEventReducer::armTrimTailOnCap(const IrcConversationKey& key)
+{
+    if (IrcConversationState *conversation = findMutable(key))
+        conversation->trimTailCapArmed = true;
+}
+
+void IrcEventReducer::clearTrimTailOnCap(const IrcConversationKey& key)
+{
+    if (IrcConversationState *conversation = findMutable(key)) {
+        conversation->trimTailCapArmed = false;
+        conversation->trimTailOnCap = false;
+    }
+}
+
+QStringList IrcEventReducer::takeHistoryBeforeExhaustTargets()
+{
+    QStringList targets;
+    targets.swap(m_historyBeforeExhaustTargets);
+    return targets;
 }
 
 // A direct message has no join line to splice above, so its replay lands at
@@ -1228,6 +1282,7 @@ void IrcEventReducer::reduce(const IrcPartEvent& event)
     if (isSelf(event.networkId, event.nick)) {
         channel.joined = false;
         channel.historyAnchor.reset();
+        clearTrimTailOnCap(key);
         for (const auto& member : channel.members)
             departed.append(member.first);
         channel.members.clear();
@@ -1356,6 +1411,8 @@ void IrcEventReducer::reduce(const IrcKickEvent& event)
         stopNamesSync(channel);
     }
     forgetUnseen(event.networkId, departed);
+    if (isSelf(event.networkId, event.target))
+        clearTrimTailOnCap(key);
     appendEvent(*conversation, event.target + QStringLiteral(" was kicked"));
     if (isSelf(event.networkId, event.target)) {
         conversation->typing.clear();
@@ -1647,10 +1704,14 @@ void IrcEventReducer::spliceHistory(IrcConversationState& conversation,
                                     const IrcHistoryEvent& event,
                                     HistoryAnchorUse anchorUse)
 {
-    const std::optional<std::size_t> spliceIndex =
-        anchorUse == HistoryAnchorUse::Consume
+    std::optional<std::size_t> spliceIndex;
+    if (event.prependAtHead) {
+        spliceIndex = 0;
+    } else {
+        spliceIndex = anchorUse == HistoryAnchorUse::Consume
             ? takeSpliceIndex(conversation)
             : peekSpliceIndex(conversation);
+    }
     if (!spliceIndex)
         return;
     const std::size_t previousSize = conversation.messages.size();
@@ -1731,6 +1792,8 @@ void IrcEventReducer::spliceHistory(IrcConversationState& conversation,
         run.push_back({line.author, line.body, line.timestamp, kind, false,
                        IrcOrigin::Replay, line.msgid, 0, line.serverTime});
         run.back().sequence = conversation.nextSequence++;
+        if (line.serverTime && line.serverTime->isValid())
+            run.back().serverTime = *line.serverTime;
         queueNote(run.back().sequence);
     }
     if (sawSelf) {
@@ -1744,25 +1807,44 @@ void IrcEventReducer::spliceHistory(IrcConversationState& conversation,
             conversation.messages.begin() + std::ptrdiff_t(at),
             run.begin(),
             run.end());
-        for (const IrcReducedMessage& message : run)
-            persistMessage(conversation, message);
+        if (event.prependAtHead)
+            persistPrependedMessages(conversation, run);
+        else {
+            for (const IrcReducedMessage& message : run)
+                persistMessage(conversation, message);
+        }
         // Consume drops the anchor only once a replay line has landed. Keep
         // still names the join line, shifted forward by what actually landed.
         if (IrcChannelState *channel = conversation.channel()) {
-            if (anchorUse == HistoryAnchorUse::Consume)
-                channel->historyAnchor.reset();
-            else if (channel->historyAnchor)
-                channel->historyAnchor->sequence += qint64(run.size());
+            if (event.prependAtHead) {
+                if (channel->historyAnchor)
+                    channel->historyAnchor->sequence += qint64(run.size());
+            } else {
+                if (anchorUse == HistoryAnchorUse::Consume)
+                    channel->historyAnchor.reset();
+                else if (channel->historyAnchor)
+                    channel->historyAnchor->sequence += qint64(run.size());
+            }
         }
-        if (at != previousSize)
+        if (event.prependAtHead && conversation.trimTailCapArmed)
+            conversation.trimTailOnCap = true;
+        if (at != previousSize || event.prependAtHead)
             ++conversation.spliceEpoch;
         capMessages(conversation);
-        for (const IrcReducedMessage& message : run) {
-            noteChatArrival(conversation, event.conversation, message.author,
-                            message.body, message.kind, message.msgid,
-                            message.sequence, IrcOrigin::Replay, &event,
-                            message.serverTime);
+        if (!event.prependAtHead) {
+            for (const IrcReducedMessage& message : run) {
+                noteChatArrival(conversation, event.conversation, message.author,
+                                message.body, message.kind, message.msgid,
+                                message.sequence, IrcOrigin::Replay, &event,
+                                message.serverTime);
+            }
         }
+    } else if (event.prependAtHead) {
+        const QString exhaustTarget = event.target.isEmpty()
+            ? conversation.target
+            : event.target;
+        if (!exhaustTarget.isEmpty())
+            m_historyBeforeExhaustTargets.append(exhaustTarget);
     }
     bool keptPlaybackLine = false;
     for (const PendingPlaybackNote& pending : pendingNotes) {
@@ -1877,6 +1959,8 @@ void IrcEventReducer::reduce(const IrcHistoryEvent& event)
     }
 
     if (!conversation) {
+        if (event.prependAtHead && event.kind == IrcHistoryKind::ChatHistory)
+            return;
         // A join creates a channel, so replay must not resurrect one the user
         // closed or parted. A query buffer proves nothing by existing. Our own
         // outbound /msg creates one on the bouncer too, so only a line from

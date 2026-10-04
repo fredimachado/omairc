@@ -145,6 +145,9 @@ public:
                                         const QString& target);
     Q_INVOKABLE void closeDirectMessage();
     Q_INVOKABLE bool sendMessage(const QString& text);
+    Q_INVOKABLE bool requestOlderTranscriptHistory();
+    Q_INVOKABLE bool transcriptHistoryPendingForSelection() const;
+    Q_INVOKABLE void noteTranscriptFollowsEnd();
     Q_INVOKABLE bool nickIsTyping(const QString& nick) const;
     Q_INVOKABLE void notifyComposerText(const QString& text);
     Q_INVOKABLE void setWindowActive(bool active);

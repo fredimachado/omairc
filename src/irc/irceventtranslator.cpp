@@ -436,6 +436,7 @@ std::optional<IrcHistoryEvent> IrcEventTranslator::translateHistory(
     const bool bouncerQuery = batch.kind == IrcHistoryKind::BouncerPlayback
         && !features.isChannel(utf8(batch.target));
     IrcHistoryEvent event{conversation, batch.target, {}, batch.kind};
+    event.prependAtHead = batch.olderPage;
     event.lines.reserve(batch.lines.size());
     for (const IrcMessage& line : batch.lines) {
         const std::optional<QDateTime> serverTime = serverTimeOf(line);

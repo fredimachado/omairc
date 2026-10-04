@@ -142,6 +142,11 @@ public:
     IrcCapabilitySet capabilities() const;
     IrcMetadataCapability metadataCapability() const;
     bool historyPending() const;
+    bool requestOlderHistory(const QString& target,
+                             const QString& oldestMsgid,
+                             const std::optional<QDateTime>& oldestServerTime);
+    bool historyPendingForTarget(const QString& target) const;
+    void markHistoryExhausted(const QString& target);
     QStringList autojoinChannels() const;
 
     using IgnoreFilter = std::function<bool(const IrcMessage&, const QString&)>;
@@ -248,6 +253,11 @@ private:
         BouncerPlayback,  // volunteered by the bouncer on attach
     };
 
+    enum class HistoryRequestKind {
+        Latest,
+        Before,
+    };
+
     static std::optional<ReplayKind> replayKindFor(const QString& batchType) noexcept;
     bool replayEnabled(ReplayKind kind) const;
 
@@ -343,12 +353,15 @@ private:
         IrcHistoryBatch collected;
         int generation = 0;
         QString requestLabel;
+        std::optional<HistoryRequestKind> historyRequestKind;
     };
     QHash<QString, OpenBatch> m_openBatches;
     QSet<QString> m_ignoredBatches;
     QHash<QString, int> m_historyGeneration;
     QSet<QString> m_historyAsked;
     QHash<QString, int> m_historyPending;
+    QHash<QString, HistoryRequestKind> m_historyPendingKind;
+    QSet<QString> m_historyExhausted;
     IrcCaseMapping m_caseMapping{IrcCaseMapping::Kind::Rfc1459};
     static constexpr int kHistoryLimit = 100;
     int m_historyLimit = kHistoryLimit;

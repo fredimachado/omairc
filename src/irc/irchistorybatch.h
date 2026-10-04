@@ -23,5 +23,7 @@ struct IrcHistoryBatch
     QString target;
     std::vector<IrcMessage> lines;
     IrcHistoryKind kind = IrcHistoryKind::ChatHistory;
+    // True for CHATHISTORY BEFORE pages requested while reading older lines.
+    bool olderPage = false;
 };
 Q_DECLARE_METATYPE(IrcHistoryBatch)
