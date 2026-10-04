@@ -1548,6 +1548,8 @@ func (r *EventReducer) spliceHistory(conversation *ConversationState, event Hist
 			if anchorUse == historyAnchorConsume {
 				if !olderPage {
 					conversation.channel.HistoryAnchor = nil
+				} else if conversation.channel.HistoryAnchor != nil {
+					conversation.channel.HistoryAnchor.Sequence += int64(len(run))
 				}
 			} else if conversation.channel.HistoryAnchor != nil {
 				conversation.channel.HistoryAnchor.Sequence += int64(len(run))

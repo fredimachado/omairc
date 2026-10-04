@@ -602,11 +602,12 @@ func (m *Model) noteTranscriptGrowth() {
 	if m.ctrl != nil && m.transcriptAnchorSequence >= 0 {
 		spliceEpoch := m.ctrl.TranscriptSpliceEpoch()
 		if spliceEpoch > m.transcriptAnchorSpliceEpoch {
+			unseenSequence := m.firstUnseenSequenceAtAnchor
 			m.restoreTranscriptAnchor()
-			if m.firstUnseenSequenceAtAnchor >= 0 {
+			if unseenSequence >= 0 && !m.transcriptFollowEnd {
 				resolved := false
 				for index, message := range m.ctrl.Messages() {
-					if message.Sequence == m.firstUnseenSequenceAtAnchor {
+					if message.Sequence == unseenSequence {
 						m.firstUnseenRow = index
 						resolved = true
 						break
@@ -615,7 +616,6 @@ func (m *Model) noteTranscriptGrowth() {
 				if !resolved {
 					m.firstUnseenRow = -1
 				}
-				m.firstUnseenSequenceAtAnchor = -1
 			}
 			m.transcriptCount = count
 			return

@@ -205,6 +205,46 @@ func TestSessionBeforeIgnoresStaleHistoryPendingGeneration(t *testing.T) {
 	}
 }
 
+func TestSessionReconnectClearsHistoryPendingBefore(t *testing.T) {
+	fixture := newSessionFixture(t, historyConfig())
+	fixture.connectTLS()
+	completeHistoryJoin(fixture)
+	finishLatestBatch(fixture)
+	if !fixture.session.RequestOlderHistory("#omarchy", "old", time.Time{}) {
+		t.Fatal("BEFORE must succeed")
+	}
+	fixture.session.locked(func() {
+		if !fixture.session.historyPendingBefore[fixture.session.foldChannelLocked("#omarchy")] {
+			t.Fatal("pending BEFORE must be set while the page is in flight")
+		}
+	})
+	fixture.inject(":server ERROR :gone\r\n")
+	if fixture.session.State() != StateReconnecting {
+		t.Fatalf("state = %v, want Reconnecting", fixture.session.State())
+	}
+	fixture.fireReconnect()
+	fixture.transport.CompleteConnect()
+	fixture.inject(":server CAP omairc LS :batch chathistory\r\n" +
+		":server CAP omairc ACK :batch chathistory\r\n" +
+		":server 001 omairc :Welcome\r\n" +
+		":server 376 omairc :End of MOTD\r\n")
+	fixture.session.locked(func() {
+		if len(fixture.session.historyPendingBefore) != 0 {
+			t.Fatalf("historyPendingBefore = %v, want empty after reconnect", fixture.session.historyPendingBefore)
+		}
+	})
+	fixture.inject(":irc.host BATCH +unsol chathistory #omarchy\r\n" +
+		"@batch=unsol;msgid=fresh :alice!u@h PRIVMSG #omarchy :latest\r\n" +
+		":irc.host BATCH -unsol\r\n")
+	if len(fixture.handler.batches) == 0 {
+		t.Fatal("unsolicited batch must be delivered")
+	}
+	last := fixture.handler.batches[len(fixture.handler.batches)-1]
+	if last.OlderPage {
+		t.Fatal("unsolicited LATEST after reconnect must not set OlderPage")
+	}
+}
+
 func TestSessionBeforeBlockedUntilLatestOnChannel(t *testing.T) {
 	fixture := newSessionFixture(t, historyConfig())
 	fixture.connectTLS()

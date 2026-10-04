@@ -544,6 +544,9 @@ func (m *Model) selectedConversationID() string {
 // while "Open conversations at unread" is on keeps the reader's viewport. It
 // mirrors OmaircWindow.qml's placeTranscriptAfterSelect.
 func (m *Model) afterSelectionChange(previousID string) {
+	if previousID != "" && m.ctrl != nil && previousID != m.ctrl.SelectedConversationID() {
+		m.ctrl.ClearHistoryPageCapTailForConversationID(previousID)
+	}
 	m.firstUnseenRow = -1
 	m.transcriptCount = m.transcriptRowTotal()
 	if m.keepsViewportOnReselect(previousID) {

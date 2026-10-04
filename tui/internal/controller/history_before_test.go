@@ -150,3 +150,132 @@ func TestControllerRequestOlderTranscriptHistoryUsesOldestRow(t *testing.T) {
 		t.Fatalf("last frame = %q, want %q", last, want)
 	}
 }
+
+func TestRequestOlderTranscriptHistoryArmsTailCapBeforeSend(t *testing.T) {
+	c := New()
+	transport := session.NewLoopbackTransport()
+	clock := session.NewFakeClock(time.Unix(0, 0))
+	config := session.SessionConfig{
+		NetworkID:  "libera",
+		Host:       "irc.example",
+		Port:       6697,
+		TLSEnabled: true,
+		Nick:       "omairc",
+		Username:   "omairc",
+		Realname:   "Omairc User",
+	}
+	s, err := c.AddSession(config, transport, clock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.Start()
+	transport.CompleteConnect()
+	transport.InjectBytes([]byte(
+		":server CAP omairc LS :batch chathistory\r\n" +
+			":server CAP omairc ACK :batch chathistory\r\n" +
+			":server 001 omairc :Welcome\r\n" +
+			":server 376 omairc :End of MOTD\r\n" +
+			":omairc!u@h JOIN :#omarchy\r\n" +
+			":irc.host BATCH +hx chathistory #omarchy\r\n" +
+			"@batch=hx;msgid=anchor :alice!u@h PRIVMSG #omarchy :first\r\n" +
+			":irc.host BATCH -hx\r\n"))
+	c.SelectConversation("libera", "#omarchy")
+	c.Publish(irc.ViewNotify{Messages: true})
+	key := c.Reducer().ConversationKey("libera", "#omarchy")
+	if !c.RequestOlderTranscriptHistory() {
+		t.Fatal("RequestOlderTranscriptHistory must succeed")
+	}
+	conversation := c.Reducer().Find(key)
+	if conversation == nil || !conversation.HistoryPageCapTail {
+		t.Fatal("tail cap must be armed when the BEFORE request is sent")
+	}
+}
+
+func TestRequestOlderTranscriptHistoryKeepsTailCapWhenBeforeInflight(t *testing.T) {
+	c := New()
+	transport := session.NewLoopbackTransport()
+	clock := session.NewFakeClock(time.Unix(0, 0))
+	config := session.SessionConfig{
+		NetworkID:  "libera",
+		Host:       "irc.example",
+		Port:       6697,
+		TLSEnabled: true,
+		Nick:       "omairc",
+		Username:   "omairc",
+		Realname:   "Omairc User",
+	}
+	s, err := c.AddSession(config, transport, clock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.Start()
+	transport.CompleteConnect()
+	transport.InjectBytes([]byte(
+		":server CAP omairc LS :batch chathistory\r\n" +
+			":server CAP omairc ACK :batch chathistory\r\n" +
+			":server 001 omairc :Welcome\r\n" +
+			":server 376 omairc :End of MOTD\r\n" +
+			":omairc!u@h JOIN :#omarchy\r\n" +
+			":irc.host BATCH +hx chathistory #omarchy\r\n" +
+			"@batch=hx;msgid=anchor :alice!u@h PRIVMSG #omarchy :first\r\n" +
+			":irc.host BATCH -hx\r\n"))
+	c.SelectConversation("libera", "#omarchy")
+	c.Publish(irc.ViewNotify{Messages: true})
+	key := c.Reducer().ConversationKey("libera", "#omarchy")
+	if !c.RequestOlderTranscriptHistory() {
+		t.Fatal("first BEFORE must succeed")
+	}
+	if c.RequestOlderTranscriptHistory() {
+		t.Fatal("second BEFORE while in flight must fail")
+	}
+	conversation := c.Reducer().Find(key)
+	if conversation == nil || !conversation.HistoryPageCapTail {
+		t.Fatal("tail cap must stay armed while a BEFORE page is in flight")
+	}
+}
+
+func TestRequestOlderTranscriptHistoryClearsTailCapWhenRefused(t *testing.T) {
+	c := New()
+	transport := session.NewLoopbackTransport()
+	clock := session.NewFakeClock(time.Unix(0, 0))
+	config := session.SessionConfig{
+		NetworkID:  "libera",
+		Host:       "irc.example",
+		Port:       6697,
+		TLSEnabled: true,
+		Nick:       "omairc",
+		Username:   "omairc",
+		Realname:   "Omairc User",
+	}
+	s, err := c.AddSession(config, transport, clock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.Start()
+	transport.CompleteConnect()
+	transport.InjectBytes([]byte(
+		":server CAP omairc LS :batch chathistory\r\n" +
+			":server CAP omairc ACK :batch chathistory\r\n" +
+			":server 001 omairc :Welcome\r\n" +
+			":server 376 omairc :End of MOTD\r\n" +
+			":omairc!u@h JOIN :#omarchy\r\n" +
+			":irc.host BATCH +hx chathistory #omarchy\r\n" +
+			"@batch=hx;msgid=anchor :alice!u@h PRIVMSG #omarchy :first\r\n" +
+			":irc.host BATCH -hx\r\n"))
+	c.SelectConversation("libera", "#omarchy")
+	c.Publish(irc.ViewNotify{Messages: true})
+	key := c.Reducer().ConversationKey("libera", "#omarchy")
+	if !c.RequestOlderTranscriptHistory() {
+		t.Fatal("first BEFORE must succeed")
+	}
+	transport.InjectBytes([]byte(":irc.host BATCH +empty chathistory #omarchy\r\n" +
+		":irc.host BATCH -empty\r\n"))
+	c.Publish(irc.ViewNotify{Messages: true})
+	if c.RequestOlderTranscriptHistory() {
+		t.Fatal("BEFORE after exhaustion must fail")
+	}
+	conversation := c.Reducer().Find(key)
+	if conversation == nil || conversation.HistoryPageCapTail {
+		t.Fatal("tail cap must clear when BEFORE is refused and nothing is in flight")
+	}
+}

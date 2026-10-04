@@ -30,10 +30,13 @@ func (c *Controller) RequestOlderTranscriptHistory() bool {
 	if target == "" {
 		target = key.NormalizedTarget
 	}
+	c.reducer.MarkHistoryPageCapTail(key)
 	if !s.RequestOlderHistory(target, msgid, timestamp) {
+		if !s.HistoryInflightFor(target) {
+			c.reducer.ClearHistoryPageCapTail(key)
+		}
 		return false
 	}
-	c.reducer.MarkHistoryPageCapTail(key)
 	return true
 }
 
@@ -57,6 +60,19 @@ func (c *Controller) OlderTranscriptHistoryInflight() bool {
 		target = key.NormalizedTarget
 	}
 	return s.HistoryInflightFor(target)
+}
+
+// ClearHistoryPageCapTailForConversationID drops tail-first trimming on one
+// conversation when the reader leaves it while a BEFORE page is armed.
+func (c *Controller) ClearHistoryPageCapTailForConversationID(conversationID string) {
+	if conversationID == "" {
+		return
+	}
+	key, ok := irc.ParseConversationID(conversationID)
+	if !ok {
+		return
+	}
+	c.reducer.ClearHistoryPageCapTail(key)
 }
 
 // ClearHistoryPageCapTail drops tail-first trimming when the reader returns to

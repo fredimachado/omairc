@@ -2666,6 +2666,7 @@ func (s *Session) resetForConnectionLocked() {
 	s.ignoredBatches = map[string]struct{}{}
 	s.historyAsked = map[string]struct{}{}
 	s.historyPending = map[string]int{}
+	s.historyPendingBefore = map[string]bool{}
 	s.historyExhausted = map[string]struct{}{}
 	s.historyGeneration = map[string]int{}
 	s.historyLimit = kHistoryLimit
