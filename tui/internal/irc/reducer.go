@@ -43,6 +43,7 @@ type ReducedMessage struct {
 	Author      string
 	Body        string
 	Timestamp   time.Time
+	ServerTime  *time.Time
 	Kind        MessageKind
 	Collapsible bool
 	Origin      Origin
@@ -941,7 +942,7 @@ func (r *EventReducer) presenceOf(networkID, normalizedNick string) NickPresence
 // appendChat admits one live chat line, dedupes by msgid, persists it, caps the
 // transcript, clears the author's typing hint, and notes the arrival. It
 // mirrors IrcEventReducer::appendChat.
-func (r *EventReducer) appendChat(key ConversationKey, displayTarget, author, body string, timestamp time.Time, kind MessageKind, msgid MsgID) {
+func (r *EventReducer) appendChat(key ConversationKey, displayTarget, author, body string, timestamp time.Time, serverTime *time.Time, kind MessageKind, msgid MsgID) {
 	self := r.isSelf(key.NetworkID, author)
 	cause := CauseInboundOther
 	if self {
@@ -958,24 +959,25 @@ func (r *EventReducer) appendChat(key ConversationKey, displayTarget, author, bo
 		conversation.MessageIDs[msgid] = struct{}{}
 	}
 	admitMessage(conversation, ReducedMessage{
-		Author:    author,
-		Body:      body,
-		Timestamp: timestamp,
-		Kind:      kind,
-		Origin:    OriginLive,
-		MsgID:     msgid,
+		Author:     author,
+		Body:       body,
+		Timestamp:  timestamp,
+		ServerTime: serverTime,
+		Kind:       kind,
+		Origin:     OriginLive,
+		MsgID:      msgid,
 	})
 	last := conversation.Messages[len(conversation.Messages)-1]
 	r.persistMessage(conversation, last)
 	r.capMessages(conversation)
 	r.clearTyping(conversation, r.normalize(key.NetworkID, author))
-	r.noteChatArrival(conversation, key, author, body, kind, msgid, last.Sequence, last.Timestamp, OriginLive, nil)
+	r.noteChatArrival(conversation, key, author, body, kind, msgid, last.Sequence, last.ServerTime, OriginLive, nil)
 }
 
 // noteChatArrival plants the mention/inbox arrivals and advances the unread
 // accounting for one admitted chat line. It mirrors
 // IrcEventReducer::noteChatArrival.
-func (r *EventReducer) noteChatArrival(conversation *ConversationState, key ConversationKey, author, body string, kind MessageKind, msgid MsgID, sequence int64, msgTime time.Time, origin Origin, history *HistoryEvent) {
+func (r *EventReducer) noteChatArrival(conversation *ConversationState, key ConversationKey, author, body string, kind MessageKind, msgid MsgID, sequence int64, serverTime *time.Time, origin Origin, history *HistoryEvent) {
 	// A previous nick inside a bouncer query is our own backlog, as is
 	// channel playback from a nick this network has welcomed or changed away
 	// from. Live PRIVMSG still uses only the current nick.
@@ -984,6 +986,13 @@ func (r *EventReducer) noteChatArrival(conversation *ConversationState, key Conv
 	nickHit := r.isNickMention(key.NetworkID, body)
 	highlightHit := !nickHit && r.isHighlightHit(key.NetworkID, body)
 	reason, hasReason := classifyChatLine(conversation, kind, self, nickHit, highlightHit)
+	if self {
+		return
+	}
+	if r.coveredByReadMarker(conversation, serverTime) {
+		return
+	}
+	selected := r.selected != nil && *r.selected == key
 	if hasReason && !conversation.Muted {
 		r.mentionArrival = &MentionArrival{
 			Author:    author,
@@ -993,7 +1002,6 @@ func (r *EventReducer) noteChatArrival(conversation *ConversationState, key Conv
 			MsgID:     msgid,
 		}
 	}
-	selected := r.selected != nil && *r.selected == key
 	// Inbox is the waiting list for conversations the user is not looking
 	// at. Selection still skips it while the window is unfocused. Direct
 	// messages never enter the inbox.
@@ -1007,12 +1015,6 @@ func (r *EventReducer) noteChatArrival(conversation *ConversationState, key Conv
 			Target:    conversation.Target,
 			MsgID:     msgid,
 		}
-	}
-	if self {
-		return
-	}
-	if r.coveredByReadMarker(conversation, msgTime) {
-		return
 	}
 	// Selected live chat is unread only while unfocused. Replay while
 	// unfocused is backlog, not "new since you left", so it must not plant
@@ -1446,12 +1448,13 @@ func (r *EventReducer) spliceHistory(conversation *ConversationState, event Hist
 			conversation.MessageIDs[line.MsgID] = struct{}{}
 		}
 		message := ReducedMessage{
-			Author:    line.Author,
-			Body:      line.Body,
-			Timestamp: line.Timestamp,
-			Kind:      kind,
-			Origin:    OriginReplay,
-			MsgID:     line.MsgID,
+			Author:     line.Author,
+			Body:       line.Body,
+			Timestamp:  line.Timestamp,
+			ServerTime: line.ServerTime,
+			Kind:       kind,
+			Origin:     OriginReplay,
+			MsgID:      line.MsgID,
 		}
 		message.Sequence = conversation.NextSequence
 		conversation.NextSequence++
@@ -1488,7 +1491,7 @@ func (r *EventReducer) spliceHistory(conversation *ConversationState, event Hist
 		}
 		r.capMessages(conversation)
 		for _, message := range run {
-			r.noteChatArrival(conversation, event.Conversation, message.Author, message.Body, message.Kind, message.MsgID, message.Sequence, message.Timestamp, OriginReplay, &event)
+			r.noteChatArrival(conversation, event.Conversation, message.Author, message.Body, message.Kind, message.MsgID, message.Sequence, message.ServerTime, OriginReplay, &event)
 		}
 	}
 
@@ -1608,21 +1611,21 @@ func (r *EventReducer) reduceWelcome(event WelcomeEvent) {
 // IrcEventReducer::reduce(IrcMessageEvent).
 func (r *EventReducer) reduceMessage(event MessageEvent) {
 	r.appendChat(event.Conversation, displayTarget(event.Conversation, event.Target),
-		event.Author, event.Body, event.Timestamp, KindMessage, event.MsgID)
+		event.Author, event.Body, event.Timestamp, event.ServerTime, KindMessage, event.MsgID)
 }
 
 // reduceNotice admits a NOTICE. It mirrors
 // IrcEventReducer::reduce(IrcNoticeEvent).
 func (r *EventReducer) reduceNotice(event NoticeEvent) {
 	r.appendChat(event.Conversation, displayTarget(event.Conversation, event.Target),
-		event.Author, event.Body, event.Timestamp, KindNotice, event.MsgID)
+		event.Author, event.Body, event.Timestamp, event.ServerTime, KindNotice, event.MsgID)
 }
 
 // reduceAction admits a CTCP ACTION. It mirrors
 // IrcEventReducer::reduce(IrcActionEvent).
 func (r *EventReducer) reduceAction(event ActionEvent) {
 	r.appendChat(event.Conversation, displayTarget(event.Conversation, event.Target),
-		event.Author, event.Body, event.Timestamp, KindAction, event.MsgID)
+		event.Author, event.Body, event.Timestamp, event.ServerTime, KindAction, event.MsgID)
 }
 
 // reduceJoin records a JOIN, its account, and a self-join's history anchor. It

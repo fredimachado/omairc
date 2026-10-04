@@ -39,6 +39,7 @@ func (s *Session) deliverReadMarkerLocked(message irc.Message) bool {
 	if target == "" {
 		return true
 	}
+	folded := s.foldReadMarkerTargetLocked(target)
 	if len(message.Params) < 2 {
 		networkID := s.config.NetworkID
 		s.emit(func(handler Handler) { handler.ReadMarkerReceived(networkID, target, nil) })
@@ -46,15 +47,19 @@ func (s *Session) deliverReadMarkerLocked(message irc.Message) bool {
 	}
 	marker, ok := irc.ParseReadMarkerParameter(parameter(message, 1))
 	if !ok {
+		delete(s.readMarkerInFlight, folded)
 		return true
 	}
-	folded := s.foldReadMarkerTargetLocked(target)
-	delete(s.readMarkerInFlight, folded)
-	if s.readMarkerPending != nil {
-		s.flushReadMarkerSetLocked(folded)
-	}
+	echoed := irc.ReadMarkerTimeMillis(*marker)
 	networkID := s.config.NetworkID
-	s.emit(func(handler Handler) { handler.ReadMarkerReceived(networkID, target, marker) })
+	s.emit(func(handler Handler) { handler.ReadMarkerReceived(networkID, target, &echoed) })
+	delete(s.readMarkerInFlight, folded)
+	if pending, hasPending := s.readMarkerPending[folded]; hasPending {
+		if !irc.ReadMarkerTimeAfter(pending.timestamp, echoed) {
+			delete(s.readMarkerPending, folded)
+		}
+	}
+	s.flushReadMarkerSetLocked(folded)
 	return true
 }
 
@@ -63,17 +68,25 @@ func (s *Session) handleReadMarkerFailLocked(message irc.Message) {
 	if !strings.EqualFold(command, "MARKREAD") && !strings.EqualFold(command, "READ") {
 		return
 	}
+	cleared := false
 	for index := 1; index < len(message.Params); index++ {
 		target := parameter(message, index)
 		if target == "" {
 			continue
 		}
 		folded := s.foldReadMarkerTargetLocked(target)
-		if s.readMarkerInFlight[folded] {
+		if _, inFlight := s.readMarkerInFlight[folded]; inFlight {
 			delete(s.readMarkerInFlight, folded)
 			s.flushReadMarkerSetLocked(folded)
-			return
+			cleared = true
 		}
+	}
+	if cleared {
+		return
+	}
+	for folded := range s.readMarkerInFlight {
+		delete(s.readMarkerInFlight, folded)
+		s.flushReadMarkerSetLocked(folded)
 	}
 }
 
@@ -110,13 +123,19 @@ func (s *Session) queueReadMarkerSetLocked(target string, when time.Time) {
 	if folded == "" {
 		return
 	}
+	when = irc.ReadMarkerTimeMillis(when)
 	if s.readMarkerPending == nil {
 		s.readMarkerPending = make(map[string]readMarkerQueue)
 	}
 	if s.readMarkerInFlight == nil {
-		s.readMarkerInFlight = make(map[string]bool)
+		s.readMarkerInFlight = make(map[string]time.Time)
 	}
-	if pending, ok := s.readMarkerPending[folded]; ok && !when.After(pending.timestamp) {
+	if inFlight, ok := s.readMarkerInFlight[folded]; ok {
+		if !irc.ReadMarkerTimeAfter(when, inFlight) {
+			return
+		}
+	}
+	if pending, ok := s.readMarkerPending[folded]; ok && !irc.ReadMarkerTimeAfter(when, pending.timestamp) {
 		return
 	}
 	s.readMarkerPending[folded] = readMarkerQueue{target: target, timestamp: when}
@@ -124,7 +143,7 @@ func (s *Session) queueReadMarkerSetLocked(target string, when time.Time) {
 }
 
 func (s *Session) flushReadMarkerSetLocked(folded string) {
-	if s.readMarkerInFlight[folded] {
+	if _, ok := s.readMarkerInFlight[folded]; ok {
 		return
 	}
 	pending, ok := s.readMarkerPending[folded]
@@ -139,5 +158,5 @@ func (s *Session) flushReadMarkerSetLocked(folded string) {
 	line := fmt.Sprintf("%s %s timestamp=%s", command, pending.target, irc.FormatReadMarkerTime(pending.timestamp))
 	s.sendCommandLocked(line, "")
 	delete(s.readMarkerPending, folded)
-	s.readMarkerInFlight[folded] = true
+	s.readMarkerInFlight[folded] = pending.timestamp
 }

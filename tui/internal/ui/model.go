@@ -472,14 +472,14 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// A background avatar fetch cached an image; the next render reads it.
 		return m, nil
 	case tea.FocusMsg:
-		// The terminal regained focus. Mirror win.active, consume the
-		// selected conversation's unread through the controller, then land on
-		// the "New messages" mark when one is planted.
+		// The terminal regained focus. Land on the unread mark before
+		// consuming unread or publishing a read marker.
 		m.windowActive = true
+		m.pinTranscriptOnFocusReturn()
 		if m.ctrl != nil {
 			m.ctrl.SetWindowActive(true)
 		}
-		m.pinTranscriptOnFocusReturn()
+		m.syncReadMarkerViewport()
 		return m, nil
 	case tea.BlurMsg:
 		// The terminal lost focus; arrivals now earn a desktop notification.

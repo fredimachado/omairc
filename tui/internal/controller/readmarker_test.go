@@ -80,6 +80,7 @@ func TestCaughtUpSelectionSendsReadMarkerOnce(t *testing.T) {
 		Author:       "peer",
 		Body:         "hi",
 		Timestamp:    when,
+		ServerTime:   &when,
 	})
 	want := "MARKREAD #room timestamp=2024-06-01T12:00:00.123Z\r\n"
 	if !writtenFramesContain(transport, want) {
@@ -92,6 +93,7 @@ func TestCaughtUpSelectionSendsReadMarkerOnce(t *testing.T) {
 		Author:       "peer",
 		Body:         "again",
 		Timestamp:    when,
+		ServerTime:   &when,
 	})
 	if len(transport.WrittenFrames()) != before {
 		t.Fatal("equal timestamp must not send another MARKREAD")
@@ -113,6 +115,7 @@ func TestReadMarkerScrolledUpDoesNotSend(t *testing.T) {
 		Author:       "peer",
 		Body:         "hi",
 		Timestamp:    when,
+		ServerTime:   &when,
 	})
 	if writtenFramesContain(transport, "MARKREAD") {
 		t.Fatal("scrolled up must not publish a read marker")
@@ -135,6 +138,7 @@ func TestReadMarkerLaterTimestampSendsOnceMore(t *testing.T) {
 		Author:       "peer",
 		Body:         "one",
 		Timestamp:    first,
+		ServerTime:   &first,
 	})
 	inject(t, transport, ":server FAIL MARKREAD RATE_LIMITED #room :slow\r\n")
 	c.Apply(irc.MessageEvent{
@@ -143,9 +147,25 @@ func TestReadMarkerLaterTimestampSendsOnceMore(t *testing.T) {
 		Author:       "peer",
 		Body:         "two",
 		Timestamp:    second,
+		ServerTime:   &second,
 	})
 	if countFramesContaining(transport, "MARKREAD") != 2 {
 		t.Fatalf("expected two MARKREAD frames, got %v", transport.WrittenFrames())
+	}
+}
+
+func TestSelectExistingDirectRequestsReadMarkerGet(t *testing.T) {
+	c, clock := newController(t)
+	transport := addAndStart(t, c, clock, baseConfig("net", "omairc"))
+	registerNetwork(t, transport, "omairc", "draft/read-marker")
+	roomKey := c.reducer.ConversationKey("net", "#room")
+	c.reducer.EnsureConversation(roomKey, "#room", irc.CauseChannelState)
+	c.SelectConversation("net", "#room")
+	key := c.reducer.ConversationKey("net", "alice")
+	c.reducer.EnsureConversation(key, "alice", irc.CauseInboundOther)
+	c.SelectConversation("net", "alice")
+	if !writtenFramesContain(transport, "MARKREAD alice\r\n") {
+		t.Fatalf("selecting existing DM must send MARKREAD get, frames=%v", transport.WrittenFrames())
 	}
 }
 
@@ -173,6 +193,7 @@ func applyMessage(c *Controller, key irc.ConversationKey, author, body string, w
 		Author:       author,
 		Body:         body,
 		Timestamp:    when,
+		ServerTime:   &when,
 	}, when)
 }
 

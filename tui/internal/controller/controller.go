@@ -975,6 +975,9 @@ func (c *Controller) SelectConversation(networkID, target string) {
 	c.Publish(selectionNotify())
 	c.refreshConnectionStatus()
 	c.notifyCapabilitiesChanged()
+	if conversation := c.reducer.Find(key); conversation != nil && !features.IsChannel(key.NormalizedTarget) {
+		c.requestReadMarkerGet(c.manager.Find(networkID), networkID, target)
+	}
 }
 
 // SelectConversationByID resolves a irc.ConversationID and selects it. It
@@ -1356,7 +1359,6 @@ func (c *Controller) SetWindowActive(active bool) {
 	if c.reducer.MarkRead(*c.selected) {
 		c.Publish(irc.ViewNotify{Conversations: true})
 	}
-	c.syncReadMarkerForSelection()
 }
 
 // SetMuted records the muted flag for one conversation. Persistence is the

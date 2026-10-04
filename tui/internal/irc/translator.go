@@ -50,6 +50,7 @@ func Translate(networkID, currentNick string, features ServerFeatures, message M
 	command := uppercaseASCII(message.Command)
 	sender := ircAuthor(message)
 	timestamp := timestampFor(message, now)
+	serverTime := ircServerTimeOf(message)
 
 	// The account tag names the sender. Record it before command handling so
 	// NOTICE, which produces no transcript event, still updates the nick.
@@ -86,6 +87,7 @@ func Translate(networkID, currentNick string, features ServerFeatures, message M
 				Author:       sender,
 				Body:         body[len(actionPrefix) : len(body)-1],
 				Timestamp:    timestamp,
+				ServerTime:   serverTime,
 				Target:       displayTarget,
 				MsgID:        msgid,
 			})
@@ -95,6 +97,7 @@ func Translate(networkID, currentNick string, features ServerFeatures, message M
 				Author:       sender,
 				Body:         body,
 				Timestamp:    timestamp,
+				ServerTime:   serverTime,
 				Target:       displayTarget,
 				MsgID:        msgid,
 			})

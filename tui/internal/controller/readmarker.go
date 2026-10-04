@@ -52,7 +52,7 @@ func (c *Controller) syncReadMarkerForSelection() {
 	if !ok {
 		return
 	}
-	if conversation.ReadMarker != nil && !when.After(*conversation.ReadMarker) {
+	if conversation.ReadMarker != nil && !irc.ReadMarkerTimeAfter(when, *conversation.ReadMarker) {
 		return
 	}
 	target := conversation.Target

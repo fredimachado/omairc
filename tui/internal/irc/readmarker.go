@@ -29,20 +29,43 @@ func (n *CapabilityNegotiation) tokenEnabled(token string) bool {
 
 // FormatReadMarkerTime renders a UTC timestamp for MARKREAD/READ set lines.
 func FormatReadMarkerTime(when time.Time) string {
-	return when.UTC().Format(readMarkerTimeLayout)
+	return ReadMarkerTimeMillis(when).Format(readMarkerTimeLayout)
+}
+
+// ReadMarkerTimeMillis truncates a timestamp to whole UTC milliseconds for
+// read-marker comparisons and outbound formatting.
+func ReadMarkerTimeMillis(when time.Time) time.Time {
+	if when.IsZero() {
+		return time.Time{}
+	}
+	ms := when.UTC().UnixMilli()
+	return time.Unix(0, ms*int64(time.Millisecond)).UTC()
+}
+
+// ReadMarkerTimeAfter reports whether a is strictly newer than b at millisecond
+// precision.
+func ReadMarkerTimeAfter(a, b time.Time) bool {
+	if a.IsZero() || b.IsZero() {
+		return false
+	}
+	return ReadMarkerTimeMillis(a).After(ReadMarkerTimeMillis(b))
 }
 
 // ParseReadMarkerTime parses the timestamp= value from a read-marker line.
+// Fractional seconds may use any precision; only a trailing Z is accepted.
 func ParseReadMarkerTime(value string) (time.Time, bool) {
 	value = strings.TrimSpace(value)
-	if value == "" {
+	if value == "" || !strings.HasSuffix(value, "Z") {
 		return time.Time{}, false
 	}
-	when, err := time.Parse(readMarkerTimeLayout, value)
+	parsed, err := time.Parse(time.RFC3339Nano, value)
 	if err != nil {
-		return time.Time{}, false
+		parsed, err = time.Parse(time.RFC3339, value)
+		if err != nil {
+			return time.Time{}, false
+		}
 	}
-	return when.UTC(), true
+	return ReadMarkerTimeMillis(parsed), true
 }
 
 // ParseReadMarkerParameter parses the trailing parameter on a MARKREAD/READ
@@ -64,11 +87,11 @@ func ParseReadMarkerParameter(parameter string) (*time.Time, bool) {
 	return &when, true
 }
 
-func (r *EventReducer) coveredByReadMarker(conversation *ConversationState, msgTime time.Time) bool {
-	if conversation == nil || conversation.ReadMarker == nil || msgTime.IsZero() {
+func (r *EventReducer) coveredByReadMarker(conversation *ConversationState, serverTime *time.Time) bool {
+	if conversation == nil || conversation.ReadMarker == nil || serverTime == nil || serverTime.IsZero() {
 		return false
 	}
-	return !msgTime.After(*conversation.ReadMarker)
+	return !ReadMarkerTimeAfter(*serverTime, *conversation.ReadMarker)
 }
 
 // ApplyServerReadMarker stores a newer server read marker and recounts unread
@@ -78,11 +101,13 @@ func (r *EventReducer) ApplyServerReadMarker(key ConversationKey, marker *time.T
 	if marker == nil {
 		return false
 	}
+	normalized := ReadMarkerTimeMillis(*marker)
+	marker = &normalized
 	conversation := r.findMutable(key)
 	if conversation == nil {
 		return false
 	}
-	if conversation.ReadMarker != nil && !marker.After(*conversation.ReadMarker) {
+	if conversation.ReadMarker != nil && !ReadMarkerTimeAfter(*marker, *conversation.ReadMarker) {
 		return false
 	}
 	conversation.ReadMarker = marker
@@ -90,20 +115,20 @@ func (r *EventReducer) ApplyServerReadMarker(key ConversationKey, marker *time.T
 	return true
 }
 
-// LatestServerMessageTime returns the newest chat line timestamp that carries a
-// server time, or false when none exist.
+// LatestServerMessageTime returns the newest chat line server-time tag that
+// carries a parsed server time, or false when none exist.
 func LatestServerMessageTime(conversation *ConversationState) (time.Time, bool) {
 	if conversation == nil {
 		return time.Time{}, false
 	}
 	for index := len(conversation.Messages) - 1; index >= 0; index-- {
 		message := conversation.Messages[index]
-		if message.Timestamp.IsZero() {
+		if message.ServerTime == nil || message.ServerTime.IsZero() {
 			continue
 		}
 		switch message.Kind {
 		case KindMessage, KindAction, KindNotice:
-			return message.Timestamp, true
+			return ReadMarkerTimeMillis(*message.ServerTime), true
 		default:
 			continue
 		}
@@ -123,7 +148,7 @@ func (r *EventReducer) recountUnreadFromReadMarker(conversation *ConversationSta
 		if r.isSelf(key.NetworkID, message.Author) {
 			continue
 		}
-		if r.coveredByReadMarker(conversation, message.Timestamp) {
+		if r.coveredByReadMarker(conversation, message.ServerTime) {
 			continue
 		}
 		nickHit := r.isNickMention(key.NetworkID, message.Body)

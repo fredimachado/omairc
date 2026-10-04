@@ -109,6 +109,35 @@ func TestReadMarkerGetOnDirect(t *testing.T) {
 	}
 }
 
+func TestReadMarkerEchoDoesNotResendEqualPending(t *testing.T) {
+	fixture := newSessionFixture(t, sessionTestConfig(sessionTestNetworkID))
+	registerWithReadMarker(fixture, "draft/read-marker")
+	when := time.Date(2024, 6, 1, 12, 0, 0, 123000000, time.UTC)
+	fixture.session.QueueReadMarkerSet("#omarchy", when)
+	want := "MARKREAD #omarchy timestamp=2024-06-01T12:00:00.123Z\r\n"
+	if !fixture.wrote(want) {
+		t.Fatalf("frames = %q", fixture.frames())
+	}
+	fixture.session.QueueReadMarkerSet("#omarchy", when)
+	fixture.inject(":server MARKREAD #omarchy :timestamp=2024-06-01T12:00:00.123Z\r\n")
+	if countReadMarkerFrame(fixture.frames(), want) != 1 {
+		t.Fatalf("echo must not resend equal timestamp: %v", fixture.frames())
+	}
+}
+
+func TestReadMarkerFailWithoutTargetClearsInFlight(t *testing.T) {
+	fixture := newSessionFixture(t, sessionTestConfig(sessionTestNetworkID))
+	registerWithReadMarker(fixture, "draft/read-marker")
+	when := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
+	fixture.session.QueueReadMarkerSet("#omarchy", when)
+	fixture.inject(":server FAIL MARKREAD NEED_MORE_PARAMS :Missing parameters\r\n")
+	later := when.Add(time.Minute)
+	fixture.session.QueueReadMarkerSet("#omarchy", later)
+	if countReadMarkerFrame(fixture.frames(), "MARKREAD") != 2 {
+		t.Fatalf("expected resend after untargeted FAIL, got %v", fixture.frames())
+	}
+}
+
 func countReadMarkerFrame(frames []string, needle string) int {
 	count := 0
 	for _, frame := range frames {

@@ -249,7 +249,7 @@ type Session struct {
 	historyPending    map[string]int
 
 	readMarkerPending  map[string]readMarkerQueue
-	readMarkerInFlight map[string]bool
+	readMarkerInFlight map[string]time.Time
 
 	pendingLabels    map[string]time.Time
 	nextRequestLabel uint64
