@@ -347,6 +347,7 @@ private:
     {
         std::optional<QDateTime> pending;
         std::optional<QDateTime> inFlightAt;
+        std::optional<QDateTime> failedAt;
         bool inFlight = false;
         bool directGetSent = false;
     };

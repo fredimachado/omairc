@@ -333,7 +333,8 @@ void IrcEventReducer::recomputeUnreadFromReadMarker(
     }
     conversation.unread = unread;
     conversation.mentions = mentions;
-    conversation.unreadMark = unread > 0 ? unreadMark : std::nullopt;
+    conversation.unreadMark =
+        (unread > 0 || unreadMark.has_value()) ? unreadMark : std::nullopt;
 }
 
 void IrcEventReducer::notePublishedReadMarker(const IrcConversationKey& key,

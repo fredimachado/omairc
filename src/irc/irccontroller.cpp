@@ -1247,6 +1247,8 @@ void IrcController::dropConversationAndReselect(const IrcConversationKey& key,
         m_reducer.dropChannel(key);
     else
         m_reducer.dropDirectMessage(key);
+    m_readMarkerOutbound.remove(
+        readMarkerOutboundKey(key.networkId, key.normalizedTarget));
     reloadModels();
     if (!wasSelected)
         return;
@@ -2128,9 +2130,15 @@ void IrcController::apply(const IrcEvent& event)
             m_reducer.conversations().begin()->second;
         m_selected = conversation.key;
         m_selectedTarget = conversation.target;
+        m_transcriptCaughtUp = false;
         m_reducer.markSelected(conversation.key);
         m_messages.setSelected(conversation.key);
         m_members.setSelected(conversation.key);
+        if (!conversation.isChannel()) {
+            requestDirectReadMarkerOnce(conversation.key.networkId,
+                                        conversation.key,
+                                        conversation.target);
+        }
     }
     adoptReducerSelection();
     const bool releasedStale = m_reducer.releaseStaleNamesSync(
@@ -2491,6 +2499,7 @@ void IrcController::handleReadMarkerReceived(const QString& networkId,
     if (acksOutbound) {
         outbound.inFlight = false;
         outbound.inFlightAt.reset();
+        outbound.failedAt.reset();
     }
     if (applied) {
         m_conversations.reload();
@@ -2526,6 +2535,8 @@ void IrcController::clearReadMarkerInFlight(const QString& networkId,
         networkId, key.normalizedTarget)];
     if (!outbound.inFlight)
         return;
+    if (outbound.inFlightAt)
+        outbound.failedAt = *outbound.inFlightAt;
     outbound.inFlight = false;
     outbound.inFlightAt.reset();
     if (m_selected && m_selected->networkId == networkId)
@@ -2556,6 +2567,11 @@ void IrcController::maybePublishReadMarker(const QString& networkId)
     }
     ReadMarkerOutbound& outbound = m_readMarkerOutbound[readMarkerOutboundKey(
         networkId, m_selected->normalizedTarget)];
+    if (outbound.failedAt) {
+        if (*newest <= *outbound.failedAt)
+            return;
+        outbound.failedAt.reset();
+    }
     if (outbound.inFlight) {
         if (!outbound.pending || *newest > *outbound.pending)
             outbound.pending = newest;
