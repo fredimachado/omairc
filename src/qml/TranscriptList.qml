@@ -30,6 +30,8 @@ ListView {
     property int rowRevision: 0
     property int restoreOffset: -1
     property int restoreAnchorSequence: -1
+    property int detachedViewportSequence: -1
+    property int detachedViewportOffset: -1
     property var onPinnedToEnd: null
     property int pinGeneration: 0
     property bool resetPending: false
@@ -72,7 +74,9 @@ ListView {
     }
 
     function rowSequence(row) {
-        if (!model || typeof model.field !== "function" || row < 0 || row >= count)
+        if (!model || typeof model.field !== "function" || row < 0)
+            return -1;
+        if (row >= modelRowCount())
             return -1;
         var seqText = model.field(row, "sequence");
         if (seqText === undefined || seqText === null || seqText === "")
@@ -81,10 +85,8 @@ ListView {
     }
 
     function syncFirstUnseenIndex() {
-        if (firstUnseenSequence < 0) {
-            firstUnseenIndex = -1;
+        if (firstUnseenSequence < 0)
             return;
-        }
         var total = modelRowCount();
         for (var row = 0; row < total; ++row) {
             if (rowSequence(row) === firstUnseenSequence) {
@@ -96,10 +98,31 @@ ListView {
         firstUnseenSequence = -1;
     }
 
+    function rememberDetachedViewportSequence() {
+        if (!model || typeof model.field !== "function")
+            return;
+        var index = indexAt(Math.max(1, width / 2), contentY + 1);
+        if (index < 0)
+            index = indexAt(Math.max(1, width / 2), contentY + 8);
+        if (index < 0)
+            return;
+        detachedViewportOffset = count - index;
+        var total = modelRowCount();
+        for (var row = index; row < total; ++row) {
+            var seqText = model.field(row, "sequence");
+            if (seqText !== undefined && seqText !== null && seqText !== "") {
+                detachedViewportSequence = parseInt(seqText, 10);
+                return;
+            }
+        }
+    }
+
     function pinToEnd() {
         stick = stickFollowing;
         firstUnseenIndex = -1;
         firstUnseenSequence = -1;
+        detachedViewportSequence = -1;
+        detachedViewportOffset = -1;
         pinning = true;
         trackedCount = count;
         stickToEnd();
@@ -123,8 +146,10 @@ ListView {
             return;
         if (viewportPinned())
             pinToEnd();
-        else
+        else {
             stick = stickDetached;
+            rememberDetachedViewportSequence();
+        }
         syncReadMarkerViewport();
     }
 
@@ -202,19 +227,29 @@ ListView {
     }
 
     function snapshotAnchor() {
+        restoreAnchorSequence = -1;
+        restoreOffset = -1;
+        if (detachedViewportSequence >= 0)
+            restoreAnchorSequence = detachedViewportSequence;
+        if (detachedViewportOffset >= 0)
+            restoreOffset = detachedViewportOffset;
+        if (restoreAnchorSequence >= 0 || restoreOffset >= 0)
+            return;
+
         var index = indexAt(Math.max(1, width / 2), contentY + 1);
         if (index < 0)
             index = indexAt(Math.max(1, width / 2), contentY + 8);
         if (index < 0)
-            index = 0;
-        restoreAnchorSequence = -1;
+            return;
         restoreOffset = count - index;
         if (!model || typeof model.field !== "function")
             return;
-        for (var row = index; row < count; ++row) {
+        var total = modelRowCount();
+        for (var row = index; row < total; ++row) {
             var seqText = model.field(row, "sequence");
             if (seqText !== undefined && seqText !== null && seqText !== "") {
                 restoreAnchorSequence = parseInt(seqText, 10);
+                detachedViewportSequence = restoreAnchorSequence;
                 return;
             }
         }
@@ -259,6 +294,8 @@ ListView {
         Qt.callLater(function() {
             if (generation !== pinGeneration)
                 return;
+            if (targetRow >= 0)
+                positionViewAtIndex(targetRow, ListView.Beginning);
             pinning = false;
         });
     }
