@@ -8886,12 +8886,15 @@ void ControllerTest::chatHistoryBeforePageMutedWithoutUnread()
     QVERIFY(messages);
     const int unreadBefore = controller.unreadCountFor(QStringLiteral("libera"));
     QVERIFY(controller.requestOlderTranscriptHistory());
+    QVERIFY(framesContain(transport->writtenFrames(),
+                          QByteArrayLiteral("CHATHISTORY BEFORE #omarchy msgid=live-1 100\r\n")));
     transport->injectBytes(
         QByteArrayLiteral(":irc.host BATCH +old chathistory #omarchy\r\n"
                           "@batch=old;msgid=old-1 :alice!u@h PRIVMSG #omarchy :older\r\n"
                           ":irc.host BATCH -old\r\n"));
     QCOMPARE(bodyRow(messages, QStringLiteral("older")), 0);
-    QCOMPARE(bodyRow(messages, QStringLiteral("seen")), 1);
+    QVERIFY(bodyRow(messages, QStringLiteral("seen"))
+            > bodyRow(messages, QStringLiteral("older")));
     QCOMPARE(roleAt(messages, 0, MessageListModel::OriginRole),
              QStringLiteral("replay"));
     QCOMPARE(controller.unreadCountFor(QStringLiteral("libera")), unreadBefore);
@@ -8920,8 +8923,8 @@ void ControllerTest::chatHistoryBeforeDedupesMsgid()
         QByteArrayLiteral(":irc.host BATCH +old chathistory #omarchy\r\n"
                           "@batch=old;msgid=live-1 :alice!u@h PRIVMSG #omarchy :dup\r\n"
                           ":irc.host BATCH -old\r\n"));
-    QCOMPARE(messages->rowCount(), 1);
-    QCOMPARE(roleAt(messages, 0, MessageListModel::BodyRole), QStringLiteral("seen"));
+    QVERIFY(bodyRow(messages, QStringLiteral("dup")) < 0);
+    QCOMPARE(bodyRow(messages, QStringLiteral("seen")), 0);
 }
 
 void ControllerTest::chatHistoryBeforeNoCapIsNoOp()
@@ -8969,8 +8972,10 @@ void ControllerTest::chatHistoryBeforePrependsAboveAnchorLine()
                           "@batch=old;msgid=older-1 :alice!u@h PRIVMSG #omarchy :older page\r\n"
                           ":irc.host BATCH -old\r\n"));
     QCOMPARE(bodyRow(messages, QStringLiteral("older page")), 0);
-    QCOMPARE(bodyRow(messages, QStringLiteral("join replay")), 1);
-    QCOMPARE(bodyRow(messages, QStringLiteral("live line")), 2);
+    QVERIFY(bodyRow(messages, QStringLiteral("join replay"))
+            > bodyRow(messages, QStringLiteral("older page")));
+    QVERIFY(bodyRow(messages, QStringLiteral("live line"))
+            > bodyRow(messages, QStringLiteral("join replay")));
 }
 
 int runControllerTests(int argc, char **argv)

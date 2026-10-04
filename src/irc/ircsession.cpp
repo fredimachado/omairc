@@ -1669,17 +1669,14 @@ bool IrcSession::requestOlderHistory(const QString& target,
     const QString key = foldChannel(target);
     if (m_historyExhausted.contains(key) || m_historyPending.contains(key))
         return false;
-    bool channelTarget = false;
-    if (!target.isEmpty()) {
-        const QChar lead = target.at(0);
-        for (const QChar type : channelTypes()) {
-            if (type == lead) {
-                channelTarget = true;
-                break;
-            }
-        }
+    IrcServerFeatures features;
+    if (!m_channelTypes.isEmpty()) {
+        const QByteArray token =
+            QByteArrayLiteral("CHANTYPES=") + m_channelTypes.toUtf8();
+        features.applyToken(
+            std::string_view(token.constData(), std::size_t(token.size())));
     }
-    if (channelTarget && !m_historyAsked.contains(key))
+    if (features.isChannel(utf8(target)) && !m_historyAsked.contains(key))
         return false;
     QString command;
     if (!oldestMsgid.isEmpty()) {
