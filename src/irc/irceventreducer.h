@@ -138,6 +138,7 @@ struct IrcConversationState
     int spliceEpoch = 0;
     qint64 nextSequence = 0;
     bool trimTailOnCap = false;
+    bool trimTailCapArmed = false;
 
     bool isChannel() const noexcept;
     const IrcChannelState *channel() const noexcept;
@@ -256,6 +257,7 @@ public:
     bool dropChannel(const IrcConversationKey& key);
     void forgetNetwork(const QString& networkId);
     void clearMessages(const IrcConversationKey& key);
+    void armTrimTailOnCap(const IrcConversationKey& key);
     void clearTrimTailOnCap(const IrcConversationKey& key);
     QStringList takeHistoryBeforeExhaustTargets();
     void setMuted(const IrcConversationKey& key, bool muted);

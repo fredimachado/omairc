@@ -970,10 +970,18 @@ void IrcEventReducer::capMessages(IrcConversationState& conversation)
     }
 }
 
-void IrcEventReducer::clearTrimTailOnCap(const IrcConversationKey& key)
+void IrcEventReducer::armTrimTailOnCap(const IrcConversationKey& key)
 {
     if (IrcConversationState *conversation = findMutable(key))
+        conversation->trimTailCapArmed = true;
+}
+
+void IrcEventReducer::clearTrimTailOnCap(const IrcConversationKey& key)
+{
+    if (IrcConversationState *conversation = findMutable(key)) {
+        conversation->trimTailCapArmed = false;
         conversation->trimTailOnCap = false;
+    }
 }
 
 QStringList IrcEventReducer::takeHistoryBeforeExhaustTargets()
@@ -1692,7 +1700,7 @@ void IrcEventReducer::spliceHistory(IrcConversationState& conversation,
                     channel->historyAnchor->sequence += qint64(run.size());
             }
         }
-        if (event.prependAtHead)
+        if (event.prependAtHead && conversation.trimTailCapArmed)
             conversation.trimTailOnCap = true;
         if (at != previousSize || event.prependAtHead)
             ++conversation.spliceEpoch;

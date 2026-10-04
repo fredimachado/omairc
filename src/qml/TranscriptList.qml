@@ -8,6 +8,7 @@ ListView {
     readonly property int stickDetached: 1
     property int stick: 0
     property int firstUnseenIndex: -1
+    property int firstUnseenSequence: -1
     property int unreadMarkRow: -1
     readonly property bool hasUnreadMark: unreadMarkRow >= 0
     readonly property bool canScrollDown: !viewportPinned()
@@ -59,9 +60,35 @@ ListView {
         contentY = endContentY();
     }
 
+    function rowSequence(row) {
+        if (!model || typeof model.field !== "function" || row < 0 || row >= count)
+            return -1;
+        var seqText = model.field(row, "sequence");
+        if (seqText === undefined || seqText === null || seqText === "")
+            return -1;
+        return parseInt(seqText, 10);
+    }
+
+    function syncFirstUnseenIndex() {
+        if (firstUnseenSequence < 0) {
+            firstUnseenIndex = -1;
+            return;
+        }
+        var total = modelRowCount();
+        for (var row = 0; row < total; ++row) {
+            if (rowSequence(row) === firstUnseenSequence) {
+                firstUnseenIndex = row;
+                return;
+            }
+        }
+        firstUnseenIndex = -1;
+        firstUnseenSequence = -1;
+    }
+
     function pinToEnd() {
         stick = stickFollowing;
         firstUnseenIndex = -1;
+        firstUnseenSequence = -1;
         pinning = true;
         trackedCount = count;
         stickToEnd();
@@ -105,8 +132,10 @@ ListView {
                 pinToEnd();
                 return;
             }
-            if (firstUnseenIndex >= newCount)
+            if (firstUnseenIndex >= newCount) {
                 firstUnseenIndex = -1;
+                firstUnseenSequence = -1;
+            }
             trackedCount = newCount;
             return;
         }
@@ -125,6 +154,7 @@ ListView {
         }
         if (firstUnseenIndex < 0)
             firstUnseenIndex = previousCount;
+        firstUnseenSequence = rowSequence(firstUnseenIndex);
         trackedCount = newCount;
         detachedArrival();
     }
@@ -141,8 +171,11 @@ ListView {
         }
         // Replay rows land above the reader, so nothing new arrived at the
         // bottom. Carry an armed marker along with its row rather than
-        // arming a fresh one over backfilled history.
-        if (firstUnseenIndex >= 0) {
+        // arming a fresh one over backfilled history. At capacity a prepend
+        // and tail-trim can leave the count unchanged while every row shifts.
+        if (firstUnseenSequence >= 0)
+            syncFirstUnseenIndex();
+        else if (firstUnseenIndex >= 0) {
             firstUnseenIndex += newCount - previousCount;
             if (firstUnseenIndex < 0 || firstUnseenIndex >= newCount)
                 firstUnseenIndex = -1;
@@ -213,11 +246,13 @@ ListView {
     function jumpToUnseen() {
         if (!jumpArmed)
             return;
+        syncFirstUnseenIndex();
         if (stick === stickDetached
                 && firstUnseenIndex >= 0
                 && firstUnseenIndex < count) {
             var target = firstUnseenIndex;
             firstUnseenIndex = -1;
+            firstUnseenSequence = -1;
             pinning = true;
             var generation = ++pinGeneration;
             positionViewAtIndex(target, ListView.Beginning);
@@ -256,6 +291,7 @@ ListView {
         }
         stick = stickDetached;
         firstUnseenIndex = -1;
+        firstUnseenSequence = -1;
         pinning = true;
         var generation = ++pinGeneration;
         positionViewAtIndex(row, ListView.Beginning);
@@ -334,9 +370,14 @@ ListView {
                 list.rowRevision += 1;
         }
         function onRowsRemoved(parent, first, last) {
-            if (first === 0
-                    && list.stick === list.stickDetached
-                    && list.firstUnseenIndex >= 0) {
+            if (first !== 0
+                    || list.stick !== list.stickDetached
+                    || list.firstUnseenIndex < 0) {
+                return;
+            }
+            if (list.firstUnseenSequence >= 0)
+                list.syncFirstUnseenIndex();
+            else {
                 list.firstUnseenIndex -= (last - first + 1);
                 if (list.firstUnseenIndex < 0)
                     list.firstUnseenIndex = -1;

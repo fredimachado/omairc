@@ -1304,7 +1304,10 @@ bool IrcController::requestOlderTranscriptHistory()
             return false;
     }
     const IrcReducedMessage& oldest = conversation->messages.front();
-    return session->requestOlderHistory(target, oldest.msgid.value, oldest.serverTime);
+    if (!session->requestOlderHistory(target, oldest.msgid.value, oldest.serverTime))
+        return false;
+    m_reducer.armTrimTailOnCap(*m_selected);
+    return true;
 }
 
 bool IrcController::transcriptHistoryPendingForSelection() const
