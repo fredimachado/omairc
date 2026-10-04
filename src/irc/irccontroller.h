@@ -336,7 +336,9 @@ private:
                                   const QDateTime& markerUtc);
     void maybePublishReadMarker(const QString& networkId);
     void clearReadMarkerInFlight(const QString& networkId,
-                                 const QString& command);
+                                 const IrcMessage& message);
+    void completeReadMarkerOutbound(const QString& networkId,
+                                    const IrcConversationKey& key);
     void requestDirectReadMarkerOnce(const QString& networkId,
                                      const IrcConversationKey& key,
                                      const QString& wireTarget);
@@ -346,6 +348,7 @@ private:
     struct ReadMarkerOutbound
     {
         std::optional<QDateTime> pending;
+        std::optional<QDateTime> inFlightAt;
         bool inFlight = false;
         bool directGetSent = false;
     };

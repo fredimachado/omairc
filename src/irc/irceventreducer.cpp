@@ -307,7 +307,9 @@ void IrcEventReducer::recomputeUnreadFromReadMarker(
             selected && message.origin == IrcOrigin::Live && m_windowActive;
         const bool skipReplayUnfocused =
             selected && message.origin != IrcOrigin::Live && !m_windowActive;
-        if (skipLiveFocused || skipReplayUnfocused)
+        const bool skipFocusedReplay =
+            selected && message.origin != IrcOrigin::Live && m_windowActive;
+        if (skipLiveFocused || skipReplayUnfocused || skipFocusedReplay)
             continue;
         if (unread == 0)
             unreadMark = message.sequence;

@@ -203,6 +203,7 @@ private slots:
     void readMarkerSkipsUnreadForCoveredServerTimes();
     void applyReadMarkerClearsUnreadWithoutDeletingMessages();
     void olderIncomingReadMarkerDoesNotMoveBadgeBack();
+    void recomputeReadMarkerSkipsFocusedReplayUnread();
 };
 
 void ReducerTest::namesFillAndCompleteWithoutDuplicates()
@@ -3714,6 +3715,43 @@ void ReducerTest::applyReadMarkerClearsUnreadWithoutDeletingMessages()
     QVERIFY(conversation);
     QCOMPARE(conversation->unread, 0);
     QCOMPARE(conversation->messages.back().body, QStringLiteral("line"));
+}
+
+void ReducerTest::recomputeReadMarkerSkipsFocusedReplayUnread()
+{
+    IrcEventReducer reducer;
+    welcome(reducer, networkA);
+    const IrcConversationKey room =
+        reducer.conversationKey(networkA, QStringLiteral("#room"));
+    reducer.apply(IrcJoinEvent{
+        networkA, QStringLiteral("#room"), QStringLiteral("omairc")});
+    reducer.markSelected(room);
+    reducer.setWindowActive(true);
+    const QDateTime early = QDateTime::fromString(
+        QStringLiteral("2026-06-01T10:00:00.000Z"), Qt::ISODateWithMs);
+    const QDateTime late = QDateTime::fromString(
+        QStringLiteral("2026-06-01T11:00:00.000Z"), Qt::ISODateWithMs);
+    reducer.apply(IrcMessageEvent{
+        room, QStringLiteral("alice"), QStringLiteral("live"), timestamp,
+        QStringLiteral("#room"), {}, early});
+    reducer.apply(IrcHistoryEvent{
+        room,
+        QStringLiteral("#room"),
+        {IrcReplayLine{QStringLiteral("bob"),
+                       QStringLiteral("replay"),
+                       timestamp,
+                       IrcMessageKindTag::Chat,
+                       IrcMsgId{QStringLiteral("replay-1")},
+                       late}},
+    });
+    const IrcConversationState *before = roomOf(reducer);
+    QVERIFY(before);
+    QCOMPARE(before->unread, 0);
+    QVERIFY(before->unreadMark.has_value());
+    QVERIFY(reducer.applyReadMarker(room, early));
+    const IrcConversationState *after = roomOf(reducer);
+    QVERIFY(after);
+    QCOMPARE(after->unread, 0);
 }
 
 void ReducerTest::olderIncomingReadMarkerDoesNotMoveBadgeBack()

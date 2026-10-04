@@ -163,6 +163,15 @@ QByteArray readMarkerCapBootstrap()
         ":server 005 omairc CHANTYPES=# :supported\r\n");
 }
 
+void echoReadMarker(FakeIrcTransport *transport,
+                    const QString& target,
+                    const QDateTime& when)
+{
+    transport->injectBytes(QStringLiteral(":server MARKREAD %1 timestamp=%2\r\n")
+                               .arg(target, when.toUTC().toString(Qt::ISODateWithMs))
+                               .toUtf8());
+}
+
 int frameCount(const QByteArrayList& frames, const QByteArray& frame)
 {
     int count = 0;
@@ -647,6 +656,12 @@ private slots:
     void incomingReadMarkerUpdatesBadge();
     void openingDirectSendsOneReadMarkerGet();
     void readMarkerAbsentSendsNoCommand();
+    void selectConversationWaitsForTranscriptCaughtUp();
+    void readMarkerPublishWaitsForInFlightEcho();
+    void readMarkerFailRetriesPublish();
+    void nickRekeyTargetsReadMarkerSet();
+    void incomingReadMarkerReloadsMessages();
+    void pinnedPlaybackAdvancePublishesReadMarker();
 
 private:
     std::unique_ptr<QTemporaryDir> m_settingsDir;
@@ -8966,6 +8981,9 @@ void ControllerTest::newerServerTimePublishesReadMarkerAgain()
     QCOMPARE(countFramesContaining(transport->writtenFrames().mid(before),
                                    QByteArrayLiteral("MARKREAD #room timestamp=")),
              1);
+    echoReadMarker(transport, QStringLiteral("#room"),
+                   QDateTime::fromString(QStringLiteral("2026-06-01T11:00:00.000Z"),
+                                         Qt::ISODateWithMs));
     const int mid = transport->writtenFrames().size();
     transport->injectBytes(
         QByteArrayLiteral("@time=2026-06-01T09:00:00.000Z :alice!u@h PRIVMSG #room :old\r\n"));
@@ -8977,6 +8995,193 @@ void ControllerTest::newerServerTimePublishesReadMarkerAgain()
         QByteArrayLiteral("@time=2026-06-01T12:00:00.000Z :alice!u@h PRIVMSG #room :three\r\n"));
     QCOMPARE(countFramesContaining(transport->writtenFrames().mid(afterOld),
                                    QByteArrayLiteral("MARKREAD #room timestamp=")),
+             1);
+}
+
+void ControllerTest::selectConversationWaitsForTranscriptCaughtUp()
+{
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    QVERIFY(controller.addSession(config(QStringLiteral("net")), transport));
+    IrcSession *session = controller.session(QStringLiteral("net"));
+    session->start();
+    transport->completeConnect();
+    transport->injectBytes(readMarkerCapBootstrap());
+    transport->injectBytes(
+        QByteArrayLiteral(":omairc!u@h JOIN :#room\r\n"
+                          ":server 353 omairc = #room :@omairc\r\n"
+                          ":server 366 omairc #room :End\r\n"
+                          "@time=2026-06-01T10:00:00.000Z :alice!u@h PRIVMSG #room :seed\r\n"));
+    const int beforeSelect = transport->writtenFrames().size();
+    controller.selectConversation(QStringLiteral("net"), QStringLiteral("#room"));
+    controller.setWindowActive(true);
+    const int beforeLive = transport->writtenFrames().size();
+    transport->injectBytes(
+        QByteArrayLiteral("@time=2026-06-01T11:00:00.000Z :alice!u@h PRIVMSG #room :live\r\n"));
+    QVERIFY(!framesContain(transport->writtenFrames().mid(beforeSelect),
+                           QByteArrayLiteral("MARKREAD #room timestamp=")));
+    QVERIFY(!framesContain(transport->writtenFrames().mid(beforeLive),
+                           QByteArrayLiteral("MARKREAD #room timestamp=")));
+    controller.setTranscriptCaughtUp(true);
+    QCOMPARE(countFramesContaining(transport->writtenFrames(),
+                                   QByteArrayLiteral("MARKREAD #room timestamp=")),
+             1);
+}
+
+void ControllerTest::readMarkerPublishWaitsForInFlightEcho()
+{
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    QVERIFY(controller.addSession(config(QStringLiteral("net")), transport));
+    IrcSession *session = controller.session(QStringLiteral("net"));
+    session->start();
+    transport->completeConnect();
+    transport->injectBytes(readMarkerCapBootstrap());
+    transport->injectBytes(
+        QByteArrayLiteral(":omairc!u@h JOIN :#room\r\n"
+                          ":server 353 omairc = #room :@omairc\r\n"
+                          ":server 366 omairc #room :End\r\n"));
+    controller.selectConversation(QStringLiteral("net"), QStringLiteral("#room"));
+    controller.setWindowActive(true);
+    controller.setTranscriptCaughtUp(true);
+    const QDateTime first = QDateTime::fromString(
+        QStringLiteral("2026-06-01T10:00:00.000Z"), Qt::ISODateWithMs);
+    const QDateTime second = QDateTime::fromString(
+        QStringLiteral("2026-06-01T11:00:00.000Z"), Qt::ISODateWithMs);
+    const int before = transport->writtenFrames().size();
+    transport->injectBytes(
+        QByteArrayLiteral("@time=2026-06-01T10:00:00.000Z :alice!u@h PRIVMSG #room :one\r\n"));
+    QCOMPARE(countFramesContaining(transport->writtenFrames().mid(before),
+                                   QByteArrayLiteral("MARKREAD #room timestamp=")),
+             1);
+    transport->injectBytes(
+        QByteArrayLiteral("@time=2026-06-01T11:00:00.000Z :alice!u@h PRIVMSG #room :two\r\n"));
+    QCOMPARE(countFramesContaining(transport->writtenFrames().mid(before),
+                                   QByteArrayLiteral("MARKREAD #room timestamp=")),
+             1);
+    echoReadMarker(transport, QStringLiteral("#room"), first);
+    QCOMPARE(countFramesContaining(transport->writtenFrames().mid(before),
+                                   QByteArrayLiteral("MARKREAD #room timestamp=")),
+             2);
+    echoReadMarker(transport, QStringLiteral("#room"), second);
+}
+
+void ControllerTest::readMarkerFailRetriesPublish()
+{
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    QVERIFY(controller.addSession(config(QStringLiteral("net")), transport));
+    IrcSession *session = controller.session(QStringLiteral("net"));
+    session->start();
+    transport->completeConnect();
+    transport->injectBytes(readMarkerCapBootstrap());
+    transport->injectBytes(
+        QByteArrayLiteral(":omairc!u@h JOIN :#room\r\n"
+                          ":server 353 omairc = #room :@omairc\r\n"
+                          ":server 366 omairc #room :End\r\n"));
+    controller.selectConversation(QStringLiteral("net"), QStringLiteral("#room"));
+    controller.setWindowActive(true);
+    controller.setTranscriptCaughtUp(true);
+    const int before = transport->writtenFrames().size();
+    transport->injectBytes(
+        QByteArrayLiteral("@time=2026-06-01T10:00:00.000Z :alice!u@h PRIVMSG #room :one\r\n"));
+    QCOMPARE(countFramesContaining(transport->writtenFrames().mid(before),
+                                   QByteArrayLiteral("MARKREAD #room timestamp=")),
+             1);
+    transport->injectBytes(QByteArrayLiteral(
+        ":server FAIL MARKREAD INVALID_TARGET #room :nope\r\n"));
+    QCOMPARE(countFramesContaining(transport->writtenFrames().mid(before),
+                                   QByteArrayLiteral("MARKREAD #room timestamp=")),
+             2);
+}
+
+void ControllerTest::nickRekeyTargetsReadMarkerSet()
+{
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    QVERIFY(controller.addSession(config(QStringLiteral("net")), transport));
+    IrcSession *session = controller.session(QStringLiteral("net"));
+    session->start();
+    transport->completeConnect();
+    transport->injectBytes(readMarkerCapBootstrap());
+    transport->injectBytes(
+        QByteArrayLiteral(":omairc!u@h JOIN :#room\r\n"
+                          ":server 353 omairc = #room :@omairc alice\r\n"
+                          ":server 366 omairc #room :End\r\n"
+                          "@time=2026-06-01T10:00:00.000Z :alice!u@h PRIVMSG omairc :hi\r\n"));
+    controller.selectConversation(QStringLiteral("net"), QStringLiteral("alice"));
+    controller.setWindowActive(true);
+    controller.setTranscriptCaughtUp(true);
+    transport->injectBytes(
+        QByteArrayLiteral(":alice!u@h NICK :alicia\r\n"));
+    QCOMPARE(controller.selectedTarget(), QStringLiteral("alicia"));
+    const int before = transport->writtenFrames().size();
+    transport->injectBytes(
+        QByteArrayLiteral("@time=2026-06-01T11:00:00.000Z :alicia!u@h PRIVMSG omairc :ping\r\n"));
+    QVERIFY(framesContain(transport->writtenFrames().mid(before),
+                          QByteArrayLiteral("MARKREAD alicia timestamp=")));
+    QVERIFY(!framesContain(transport->writtenFrames().mid(before),
+                           QByteArrayLiteral("MARKREAD alice timestamp=")));
+}
+
+void ControllerTest::incomingReadMarkerReloadsMessages()
+{
+    IrcController controller;
+    controller.setWindowActive(false);
+    auto *transport = new FakeIrcTransport;
+    QVERIFY(controller.addSession(config(QStringLiteral("net")), transport));
+    IrcSession *session = controller.session(QStringLiteral("net"));
+    session->start();
+    transport->completeConnect();
+    transport->injectBytes(readMarkerCapBootstrap());
+    transport->injectBytes(
+        QByteArrayLiteral(":omairc!u@h JOIN :#room\r\n"
+                          ":server 353 omairc = #room :@omairc\r\n"
+                          ":server 366 omairc #room :End\r\n"
+                          "@time=2026-06-01T10:00:00.000Z :alice!u@h PRIVMSG #room :one\r\n"
+                          "@time=2026-06-01T12:00:00.000Z :alice!u@h PRIVMSG #room :two\r\n"));
+    controller.selectConversation(QStringLiteral("net"), QStringLiteral("#room"));
+    auto *messages = qobject_cast<MessageListModel *>(controller.messages());
+    QVERIFY(messages);
+    QSignalSpy messageResets(messages, &QAbstractItemModel::modelReset);
+    transport->injectBytes(QByteArrayLiteral(
+        ":server MARKREAD #room timestamp=2026-06-01T11:00:00.000Z\r\n"));
+    QCOMPARE(messageResets.size(), 1);
+    QVERIFY(messages->unreadMarkRow() >= 0);
+}
+
+void ControllerTest::pinnedPlaybackAdvancePublishesReadMarker()
+{
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    QVERIFY(controller.addSession(config(QStringLiteral("net")), transport));
+    IrcSession *session = controller.session(QStringLiteral("net"));
+    session->start();
+    transport->completeConnect();
+    transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :batch draft/read-marker server-time message-tags\r\n"
+                          ":server CAP omairc ACK :batch draft/read-marker server-time message-tags\r\n"
+                          ":server 001 omairc :Welcome\r\n"
+                          ":server 005 omairc CHANTYPES=# :supported\r\n"));
+    transport->injectBytes(
+        QByteArrayLiteral(":omairc!u@h JOIN :#room\r\n"
+                          ":server 353 omairc = #room :@omairc\r\n"
+                          ":server 366 omairc #room :End\r\n"
+                          "@time=2026-06-01T10:00:00.000Z :alice!u@h PRIVMSG #room :live\r\n"));
+    controller.selectConversation(QStringLiteral("net"), QStringLiteral("#room"));
+    controller.setWindowActive(true);
+    controller.setTranscriptCaughtUp(true);
+    echoReadMarker(transport, QStringLiteral("#room"),
+                   QDateTime::fromString(QStringLiteral("2026-06-01T10:00:00.000Z"),
+                                         Qt::ISODateWithMs));
+    const int before = transport->writtenFrames().size();
+    transport->injectBytes(
+        QByteArrayLiteral(":znc.in BATCH +b znc.in/playback #room\r\n"
+                          "@batch=b;time=2026-06-01T13:00:00.000Z :bob!u@h PRIVMSG #room :replay\r\n"
+                          ":znc.in BATCH -b\r\n"));
+    QCOMPARE(countFramesContaining(transport->writtenFrames().mid(before),
+                                   QByteArrayLiteral(
+                                       "MARKREAD #room timestamp=2026-06-01T13:00:00.000Z")),
              1);
 }
 

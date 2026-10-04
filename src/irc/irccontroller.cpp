@@ -820,6 +820,7 @@ void IrcController::setWindowActive(bool active)
     m_reducer.setWindowActive(active);
     if (!active)
         return;
+    m_transcriptCaughtUp = false;
     // Focus returned: consume the unread that piled up in the open
     // conversation while the window was unfocused. The "New messages" mark
     // survives so the transcript still shows where the backlog starts.
@@ -828,16 +829,11 @@ void IrcController::setWindowActive(bool active)
     bool changed = false;
     if (m_selected)
         changed = m_reducer.markRead(*m_selected);
-    if (!changed) {
-        if (m_selected)
-            maybePublishReadMarker(m_selected->networkId);
+    if (!changed)
         return;
-    }
     m_conversations.reload();
     ++m_conversationEpoch;
     emit conversationStateChanged();
-    if (m_selected)
-        maybePublishReadMarker(m_selected->networkId);
 }
 
 bool IrcController::nickIsTyping(const QString& nick) const
@@ -1110,6 +1106,8 @@ void IrcController::selectConversation(const QString& networkId,
     }
     m_selected = key;
     m_selectedTarget = target;
+    if (changed)
+        m_transcriptCaughtUp = false;
     const IrcServerFeatures& features = m_reducer.serverFeatures(networkId);
     m_inbox.consumeConversation(networkId, target, features.caseMapping());
     if (!features.isChannel(utf8(key.normalizedTarget)))
@@ -1130,7 +1128,6 @@ void IrcController::selectConversation(const QString& networkId,
         && !features.isChannel(utf8(key.normalizedTarget))) {
         requestDirectReadMarkerOnce(networkId, key, target);
     }
-    maybePublishReadMarker(networkId);
 }
 
 void IrcController::selectConversationById(const QString& conversationId)
@@ -2037,6 +2034,8 @@ void IrcController::adoptReducerSelection()
     if (!key)
         return;
     m_selected = *key;
+    if (const IrcConversationState *conversation = m_reducer.find(*key))
+        m_selectedTarget = conversation->target;
     m_messages.setSelected(*key);
     m_members.setSelected(*key);
 }
@@ -2165,7 +2164,8 @@ void IrcController::apply(const IrcEvent& event)
     if (m_selected
         && (std::holds_alternative<IrcMessageEvent>(event)
             || std::holds_alternative<IrcActionEvent>(event)
-            || std::holds_alternative<IrcNoticeEvent>(event))) {
+            || std::holds_alternative<IrcNoticeEvent>(event)
+            || std::holds_alternative<IrcHistoryEvent>(event))) {
         maybePublishReadMarker(m_selected->networkId);
     }
 }
@@ -2198,7 +2198,7 @@ void IrcController::handleMessage(const QString& networkId,
     notePlaybackClock(networkId, message);
     if (message.command == "FAIL") {
         m_replies.routeOwnMetadataFail(networkId, message);
-        clearReadMarkerInFlight(networkId, parameter(message, 0));
+        clearReadMarkerInFlight(networkId, message);
     }
     if (message.command == "005") {
         IrcServerFeatures features = m_reducer.serverFeatures(networkId);
@@ -2472,6 +2472,20 @@ void IrcController::requestDirectReadMarkerOnce(const QString& networkId,
     session->requestReadMarker(wireTarget);
 }
 
+void IrcController::completeReadMarkerOutbound(const QString& networkId,
+                                             const IrcConversationKey& key)
+{
+    ReadMarkerOutbound& outbound = m_readMarkerOutbound[readMarkerOutboundKey(
+        networkId, key.normalizedTarget)];
+    if (!outbound.inFlight)
+        return;
+    outbound.inFlight = false;
+    if (outbound.inFlightAt) {
+        m_reducer.notePublishedReadMarker(key, *outbound.inFlightAt);
+        outbound.inFlightAt.reset();
+    }
+}
+
 void IrcController::handleReadMarkerReceived(const QString& networkId,
                                              const QString& target,
                                              bool hasMarker,
@@ -2482,33 +2496,40 @@ void IrcController::handleReadMarkerReceived(const QString& networkId,
         return;
     if (!hasMarker)
         return;
-    if (!m_reducer.applyReadMarker(key, markerUtc)) {
-        if (m_selected && *m_selected == key)
-            maybePublishReadMarker(networkId);
-        return;
+    ReadMarkerOutbound& outbound = m_readMarkerOutbound[readMarkerOutboundKey(
+        networkId, key.normalizedTarget)];
+    const bool completingOutbound = outbound.inFlight;
+    const bool applied = m_reducer.applyReadMarker(key, markerUtc);
+    if (completingOutbound)
+        completeReadMarkerOutbound(networkId, key);
+    if (applied) {
+        m_conversations.reload();
+        ++m_conversationEpoch;
+        emit conversationStateChanged();
+        m_messages.reload();
     }
-    m_conversations.reload();
-    ++m_conversationEpoch;
-    emit conversationStateChanged();
     if (m_selected && *m_selected == key)
         maybePublishReadMarker(networkId);
 }
 
 void IrcController::clearReadMarkerInFlight(const QString& networkId,
-                                            const QString& command)
+                                            const IrcMessage& message)
 {
+    const QString command = parameter(message, 0);
     if (command.compare(QLatin1String("MARKREAD"), Qt::CaseInsensitive) != 0
         && command.compare(QLatin1String("READ"), Qt::CaseInsensitive) != 0) {
         return;
     }
-    for (auto it = m_readMarkerOutbound.begin(); it != m_readMarkerOutbound.end();) {
-        if (!it.key().startsWith(networkId + QLatin1Char('\n'))) {
-            ++it;
-            continue;
-        }
-        it.value().inFlight = false;
-        ++it;
-    }
+    const QString target = parameter(message, 2);
+    if (target.isEmpty())
+        return;
+    const IrcConversationKey key = m_reducer.conversationKey(networkId, target);
+    ReadMarkerOutbound& outbound = m_readMarkerOutbound[readMarkerOutboundKey(
+        networkId, key.normalizedTarget)];
+    if (!outbound.inFlight)
+        return;
+    outbound.inFlight = false;
+    outbound.inFlightAt.reset();
     if (m_selected && m_selected->networkId == networkId)
         maybePublishReadMarker(networkId);
 }
@@ -2547,16 +2568,9 @@ void IrcController::maybePublishReadMarker(const QString& networkId)
         : *newest;
     outbound.pending.reset();
     outbound.inFlight = true;
-    if (!session->publishReadMarker(m_selectedTarget, publishAt)) {
+    outbound.inFlightAt = publishAt;
+    if (!session->publishReadMarker(selectedTarget(), publishAt)) {
         outbound.inFlight = false;
-        return;
-    }
-    m_reducer.notePublishedReadMarker(*m_selected, publishAt);
-    outbound.inFlight = false;
-    if (outbound.pending) {
-        const QDateTime queued = *outbound.pending;
-        outbound.pending.reset();
-        if (queued > publishAt)
-            maybePublishReadMarker(networkId);
+        outbound.inFlightAt.reset();
     }
 }

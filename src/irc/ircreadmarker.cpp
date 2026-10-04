@@ -23,6 +23,11 @@ std::optional<std::optional<QDateTime>> parseIrcReadMarkerParameter(
     const QString raw = parameter.mid(QStringLiteral("timestamp=").size());
     if (raw.isEmpty())
         return std::nullopt;
+    const bool hasZone = raw.endsWith(QLatin1Char('Z'), Qt::CaseInsensitive)
+        || (raw.contains(QLatin1Char('T'))
+            && (raw.contains(QLatin1Char('+')) || raw.contains(QLatin1Char('-'))));
+    if (!hasZone)
+        return std::nullopt;
     QDateTime parsed = QDateTime::fromString(raw, Qt::ISODateWithMs);
     if (!parsed.isValid())
         parsed = QDateTime::fromString(raw, Qt::ISODate);

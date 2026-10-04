@@ -23,6 +23,7 @@
 #include "ircpresence.h"
 #include "ircsaslscram.h"
 #include "ircserverfeatures.h"
+#include "ircreadmarker.h"
 #include "ircsession.h"
 #include "ircsessionmanager.h"
 #include "ircstatusentry.h"
@@ -520,6 +521,7 @@ private slots:
     void readMarkerFailDoesNotFailSession();
     void readMarkerAbsentIgnoresInboundCommand();
     void sojuReadCapUsesReadCommand();
+    void zonelessReadMarkerParameterIsRejected();
 };
 
 void SessionTest::registersAndAutojoins()
@@ -5388,6 +5390,19 @@ void SessionTest::readMarkerAbsentIgnoresInboundCommand()
         ":server MARKREAD #omarchy timestamp=2026-06-01T10:00:00.000Z\r\n"));
     QCOMPARE(marker.size(), 0);
     QCOMPARE(fixture.session->state(), IrcSession::State::Registered);
+}
+
+void SessionTest::zonelessReadMarkerParameterIsRejected()
+{
+    const std::optional<std::optional<QDateTime>> parsed =
+        parseIrcReadMarkerParameter(
+            QStringLiteral("timestamp=2026-06-01T12:00:00.000"));
+    QVERIFY(!parsed);
+    const std::optional<std::optional<QDateTime>> zulu =
+        parseIrcReadMarkerParameter(
+            QStringLiteral("timestamp=2026-06-01T12:00:00.000Z"));
+    QVERIFY(zulu);
+    QVERIFY(zulu->has_value());
 }
 
 void SessionTest::sojuReadCapUsesReadCommand()
