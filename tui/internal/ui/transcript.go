@@ -672,8 +672,10 @@ func (m *Model) pinTranscriptToRow(row int) {
 // noteTranscriptGrowth arms the first-new-row marker when rows arrive while the
 // reader is scrolled up, and clears it while they follow the end or the
 // transcript shrank. It mirrors TranscriptList.noteGrowth, which is driven by
-// count changes rather than by the model's own notification.
+// count changes rather than by the model's own notification. A detached append
+// keeps the top line put by adding the new rendered lines to transcriptScroll.
 func (m *Model) noteTranscriptGrowth() {
+	defer m.syncTranscriptLineCount()
 	count := m.transcriptRowTotal()
 	if m.ctrl != nil && m.transcriptAnchorSequence >= 0 {
 		spliceEpoch := m.ctrl.TranscriptSpliceEpoch()
@@ -705,14 +707,52 @@ func (m *Model) noteTranscriptGrowth() {
 	case count > m.transcriptCount:
 		if m.transcriptFollowEnd {
 			m.firstUnseenRow = -1
-		} else if m.firstUnseenRow < 0 {
-			m.firstUnseenRow = m.transcriptCount
+		} else {
+			if m.firstUnseenRow < 0 {
+				m.firstUnseenRow = m.transcriptCount
+			}
+			m.holdDetachedTranscript()
 		}
 	default:
 		m.transcriptCount = count
 		return
 	}
 	m.transcriptCount = count
+}
+
+// holdDetachedTranscript adds newly rendered lines to the offset so a longer
+// buffer does not slide the top line down. transcriptScroll counts lines
+// hidden below the window. The follow-end branch never calls this.
+func (m *Model) holdDetachedTranscript() {
+	area := m.transcriptArea()
+	delta := len(area.lines) - m.transcriptLineCount
+	if delta > 0 {
+		m.transcriptScroll += delta
+	}
+	n := len(area.lines)
+	height := m.transcriptRowsHeight()
+	if height < 1 {
+		height = 1
+	}
+	maxOffset := n - height
+	if maxOffset < 0 {
+		maxOffset = 0
+	}
+	if m.transcriptScroll > maxOffset {
+		m.transcriptScroll = maxOffset
+	}
+	if m.transcriptScroll < 0 {
+		m.transcriptScroll = 0
+	}
+}
+
+// syncTranscriptLineCount records the rendered line count so the next detached
+// append can add only the increase.
+func (m *Model) syncTranscriptLineCount() {
+	if m == nil {
+		return
+	}
+	m.transcriptLineCount = len(m.transcriptArea().lines)
 }
 
 // jumpArmed reports whether a jump-to-newest affordance applies: the reader is

@@ -65,18 +65,24 @@ func (m *Model) activateNotifiedConversation(networkID, target, msgid string) {
 	m.switchSelection(func() {
 		m.ctrl.RevealConversation(networkID, target)
 	})
-	// The notification's own landing wins over a saved scroll place: the
-	// msgid when it resolves, otherwise the open-at-unread mark.
+	// The notification's own landing wins over a saved scroll place, and it
+	// matches the Qt window: open-at-unread lands on the mark when the
+	// conversation changed, and a resolved msgid is revealed only when that
+	// setting is off, including when the conversation is already open.
 	if m.ctrl != nil && !m.ctrl.ConsoleOpen() {
 		same := previousID != "" && previousID == m.ctrl.SelectedConversationID()
-		if !same {
+		if !same && m.ctrl.OpenAtUnread() {
+			m.setTranscriptFollowEnd(true)
+			m.transcriptScroll = 0
+			m.placeTranscriptAfterSelect()
+			m.rememberOpenTranscript()
+		} else if !m.ctrl.OpenAtUnread() {
 			if row := m.msgidRow(msgid); row >= 0 {
 				m.revealTranscriptRow(row)
 				m.rememberOpenTranscript()
-			} else if m.ctrl.OpenAtUnread() {
+			} else if !same {
 				m.setTranscriptFollowEnd(true)
 				m.transcriptScroll = 0
-				m.placeTranscriptAfterSelect()
 				m.rememberOpenTranscript()
 			}
 		}

@@ -170,6 +170,37 @@ func TestInboxMentionEnterJumpsToMsgid(t *testing.T) {
 	}
 }
 
+func TestInboxMentionWithoutMsgidKeepsSavedPlace(t *testing.T) {
+	m, d := phase9DemoModel(t)
+	m.switchSelection(func() {
+		m.ctrl.SelectConversation("omarchy", "#desktop")
+	})
+	for index := 0; index < 40; index++ {
+		d.InjectOmarchy([]byte(fmt.Sprintf(":dax!u@h PRIVMSG #desktop :desktop filler %d\r\n", index)))
+	}
+	m.noteTranscriptGrowth()
+	m = press(t, m, tea.KeyPressMsg{Code: tea.KeyPgUp})
+	if m.transcriptFollowEnd {
+		t.Fatal("Page Up must leave follow-the-end")
+	}
+	body := m.ctrl.Messages()[m.firstVisibleMessageRow()].Body
+	m.switchSelection(func() {
+		m.ctrl.SelectConversation("omarchy", "#ricing")
+	})
+	d.InjectOmarchy([]byte(":anna!u@h PRIVMSG #desktop :fred: inbox without id\r\n"))
+	if m.ctrl.InboxCount() == 0 {
+		t.Fatal("a mention while away must enter the inbox")
+	}
+	m = press(t, m, ctrlShiftKey('a'))
+	m = press(t, m, tea.KeyPressMsg{Code: tea.KeyEnter})
+	if got := m.ctrl.SelectedTarget(); got != "#desktop" {
+		t.Fatalf("SelectedTarget = %q, want #desktop", got)
+	}
+	if got := m.ctrl.Messages()[m.firstVisibleMessageRow()].Body; got != body {
+		t.Fatalf("top body = %q, want the saved line %q", got, body)
+	}
+}
+
 func TestInboxInviteEnterJoinsChannel(t *testing.T) {
 	m, d := phase9DemoModel(t)
 	before := m.ctrl.InboxCount()

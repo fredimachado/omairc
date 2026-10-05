@@ -84,7 +84,22 @@ func (m *Model) activateInboxSelection() {
 	}
 	same := previousID != "" && previousID == m.ctrl.SelectedConversationID()
 	scrollKind := item.Kind == "mention" || item.Kind == "highlight" || item.Kind == "direct"
-	if !scrollKind || same {
+	if !scrollKind {
+		return
+	}
+	// No msgid keeps the afterSelectionChange landing, including a saved
+	// place. Qt only takes the special landing when the msgid is non-empty.
+	if item.MsgID == "" {
+		return
+	}
+	if same && !m.ctrl.OpenAtUnread() {
+		if row := m.msgidRow(item.MsgID); row >= 0 {
+			m.revealTranscriptRow(row)
+			m.rememberOpenTranscript()
+		}
+		return
+	}
+	if same {
 		return
 	}
 	if m.ctrl.OpenAtUnread() {
@@ -97,7 +112,11 @@ func (m *Model) activateInboxSelection() {
 	if row := m.msgidRow(item.MsgID); row >= 0 {
 		m.revealTranscriptRow(row)
 		m.rememberOpenTranscript()
+		return
 	}
+	m.setTranscriptFollowEnd(true)
+	m.transcriptScroll = 0
+	m.rememberOpenTranscript()
 }
 
 // dismissInboxRow drops one waiting row and keeps the highlight on the same

@@ -8,6 +8,8 @@ import (
 
 	"github.com/fredimachado/omairc/tui/internal/controller"
 	"github.com/fredimachado/omairc/tui/internal/demo"
+	"github.com/fredimachado/omairc/tui/internal/irc"
+	"github.com/fredimachado/omairc/tui/internal/storage"
 )
 
 func TestScrollPlaceSwitchRestoresLine(t *testing.T) {
@@ -110,5 +112,72 @@ func TestScrollPlaceSurvivesRestart(t *testing.T) {
 	}
 	if strings.TrimSpace(body) == "" {
 		t.Fatal("restart anchor must be a real line")
+	}
+}
+
+func plantUnloadedScrollPlace(t *testing.T) (*Model, storage.ScrollPlace) {
+	t.Helper()
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	want := storage.ScrollPlace{
+		Author: "anna",
+		Body:   "not-in-transcript",
+		Kind:   "message",
+	}
+	mapping := irc.NewCaseMapping(irc.KindRfc1459)
+	storage.NewScrollPlaceStore().Remember("omarchy", "#omarchy", want, mapping)
+
+	ctrl := controller.New()
+	ctrl.SetEphemeral(false)
+	if !demo.New().Attach(ctrl, true) {
+		t.Fatal("demo Attach failed")
+	}
+	m := resizeModel(t, New(ctrl, nil), 118, 20)
+	place := m.ctrl.CurrentScrollPlace()
+	if !place.Known || place.Follow || place.Row != -1 {
+		t.Fatalf("place = %+v, want a known unloaded line", place)
+	}
+	return m, want
+}
+
+func TestPendingScrollPlaceSurvivesSwitch(t *testing.T) {
+	m, want := plantUnloadedScrollPlace(t)
+	if m.transcriptFollowEnd || m.transcriptScroll != 0 {
+		t.Fatalf("pending viewport follow=%v scroll=%d, want the last loaded page",
+			m.transcriptFollowEnd, m.transcriptScroll)
+	}
+	m.switchSelection(func() {
+		m.ctrl.SelectConversation("omarchy", "#desktop")
+	})
+	m.switchSelection(func() {
+		m.ctrl.SelectConversation("omarchy", "#omarchy")
+	})
+	place := m.ctrl.CurrentScrollPlace()
+	if !place.Known || place.Follow || place.Row != -1 {
+		t.Fatalf("after switch place = %+v, want the unloaded line", place)
+	}
+	mapping := irc.NewCaseMapping(irc.KindRfc1459)
+	stored, ok := storage.NewScrollPlaceStore().Place("omarchy", "#omarchy", mapping)
+	if !ok || stored.FollowEnd || stored.Body != want.Body || stored.Author != want.Author {
+		t.Fatalf("stored = %+v ok=%v, want %+v", stored, ok, want)
+	}
+}
+
+func TestUserScrollReplacesPendingScrollPlace(t *testing.T) {
+	m, want := plantUnloadedScrollPlace(t)
+	m.noteViewportSettled()
+	m.switchSelection(func() {
+		m.ctrl.SelectConversation("omarchy", "#desktop")
+	})
+	m.switchSelection(func() {
+		m.ctrl.SelectConversation("omarchy", "#omarchy")
+	})
+	place := m.ctrl.CurrentScrollPlace()
+	if !place.Known || place.Row < 0 {
+		t.Fatalf("place = %+v, want the visible line", place)
+	}
+	mapping := irc.NewCaseMapping(irc.KindRfc1459)
+	stored, ok := storage.NewScrollPlaceStore().Place("omarchy", "#omarchy", mapping)
+	if !ok || stored.Body == want.Body {
+		t.Fatalf("stored = %+v ok=%v, want a line other than %q", stored, ok, want.Body)
 	}
 }

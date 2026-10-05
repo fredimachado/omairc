@@ -813,9 +813,10 @@ ApplicationWindow {
         if (!irc)
             return;
         var previousConversationId = currentConversationId;
+        beginTranscriptSwitch();
         irc.closeConversationRow(networkId, target);
         Qt.callLater(function() {
-            placeTranscriptAfterSelect(previousConversationId);
+            finishTranscriptSwitch(previousConversationId);
             conversation.composer.forceActiveFocus();
         });
     }
@@ -849,6 +850,8 @@ ApplicationWindow {
         if (suspendScrollMemory || !irc || consoleVisible)
             return;
         if (typeof irc.rememberScrollPlace !== "function")
+            return;
+        if (scrollRestorePending)
             return;
         var list = conversation.messageList;
         if (!list)
@@ -944,7 +947,7 @@ ApplicationWindow {
         else if (fallbackPinToEnd)
             list.pinToEnd();
         else
-            list.adoptViewport();
+            list.adoptViewport(false);
     }
 
     // While the window is unfocused, new chat in the open channel or DM is
@@ -2340,7 +2343,7 @@ ApplicationWindow {
             list.positionViewAtIndex(Math.max(0, first - page), ListView.Beginning);
         else
             list.positionViewAtIndex(Math.min(list.count - 1, last + page), ListView.End);
-        Qt.callLater(function() { list.adoptViewport(); });
+        Qt.callLater(function() { list.adoptViewport(true); });
     }
 
     function jumpTranscript(toEnd) {
@@ -3628,6 +3631,10 @@ ApplicationWindow {
         Connections {
             target: conversation.messageList
             function onViewportSettled() {
+                win.rememberOpenTranscript();
+            }
+            function onUserViewportSettled() {
+                win.scrollRestorePending = false;
                 win.rememberOpenTranscript();
             }
             function onCountChanged() {

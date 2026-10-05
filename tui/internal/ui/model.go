@@ -146,8 +146,12 @@ type Model struct {
 	// up, or -1 when nothing is waiting below. transcriptCount tracks the row
 	// count between notifications so a growth can be detected. They mirror
 	// TranscriptList's firstUnseenIndex and trackedCount.
-	firstUnseenRow       int
-	transcriptCount      int
+	firstUnseenRow  int
+	transcriptCount int
+	// transcriptLineCount is the rendered line count of transcriptArea(),
+	// including the typing footer. A detached append adds the increase to
+	// transcriptScroll so the top line stays put.
+	transcriptLineCount  int
 	find                 findState
 	nickComplete         nickCompleteSession
 	composerHistory      []string

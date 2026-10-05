@@ -44,6 +44,7 @@ ListView {
     // {known, follow, row} matches IrcController.currentScrollPlace.
     property var rememberedPlace: null
     signal viewportSettled()
+    signal userViewportSettled()
 
     boundsBehavior: Flickable.StopAtBounds
     clip: true
@@ -145,7 +146,7 @@ ListView {
         });
     }
 
-    function adoptViewport() {
+    function adoptViewport(fromUser) {
         if (pinning)
             return;
         if (viewportPinned())
@@ -155,7 +156,10 @@ ListView {
             rememberDetachedViewportSequence();
         }
         syncReadMarkerViewport();
-        viewportSettled();
+        if (fromUser)
+            userViewportSettled();
+        else
+            viewportSettled();
     }
 
     function applyRememberedPlace() {
@@ -341,7 +345,7 @@ ListView {
                 if (generation !== pinGeneration)
                     return;
                 pinning = false;
-                adoptViewport();
+                adoptViewport(false);
             });
             return;
         }
@@ -360,7 +364,7 @@ ListView {
             if (generation !== pinGeneration)
                 return;
             pinning = false;
-            adoptViewport();
+            adoptViewport(false);
         });
     }
 
@@ -381,7 +385,7 @@ ListView {
                 return;
             positionViewAtIndex(row, ListView.Beginning);
             pinning = false;
-            adoptViewport();
+            adoptViewport(false);
         });
     }
 
@@ -399,8 +403,8 @@ ListView {
             pinToEnd();
     }
 
-    onMovementEnded: adoptViewport()
-    onFlickEnded: adoptViewport()
+    onMovementEnded: adoptViewport(true)
+    onFlickEnded: adoptViewport(true)
     onContentHeightChanged: {
         var wasAtEnd = previousContentHeight <= height
             || contentY + height >= originY + previousContentHeight - 2;
@@ -412,7 +416,7 @@ ListView {
         if (stick === stickFollowing)
             stickToEnd();
         else
-            adoptViewport();
+            adoptViewport(false);
     }
 
     Connections {
@@ -495,7 +499,7 @@ ListView {
             ? ScrollBar.AlwaysOn : ScrollBar.AlwaysOff
         onPressedChanged: {
             if (!pressed)
-                list.adoptViewport();
+                list.adoptViewport(true);
         }
     }
 }

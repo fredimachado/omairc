@@ -621,6 +621,7 @@ func (m *Model) selectedConversationID() string {
 // viewport, so that return is not a re-select. A saved scroll place wins over
 // open-at-unread. It mirrors OmaircWindow.qml's finishTranscriptSwitch.
 func (m *Model) afterSelectionChange(previousID string, wasConsole bool) {
+	defer m.syncTranscriptLineCount()
 	// Every selection change, including a return from Status onto the
 	// conversation that was already selected. clearTitleMarkIfOpened itself
 	// keeps the mark while Status is open.

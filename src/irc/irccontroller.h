@@ -149,6 +149,10 @@ public:
     // known/follow/row for the selected conversation. row is the visual index
     // of the saved line, or -1 when that line is not in the loaded transcript.
     Q_INVOKABLE QVariantMap currentScrollPlace() const;
+    // Stores a message anchor the loaded transcript does not contain, so a
+    // pending restore can be exercised without a product command.
+    void plantScrollPlace(const QString& networkId, const QString& target,
+                          const QString& body);
     void persistProfileAvatarUrl(const QString& networkId, const QString& url);
     IrcStatusConsole *console();
     QAbstractItemModel *inbox();

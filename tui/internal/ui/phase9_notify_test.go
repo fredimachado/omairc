@@ -7,7 +7,10 @@ package ui
 // the conversation and scrolls to the exact msgid.
 
 import (
+	"strings"
 	"testing"
+
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/fredimachado/omairc/tui/internal/notify"
 )
@@ -130,5 +133,75 @@ func TestActivateNotifiedConversationRevealsAndScrolls(t *testing.T) {
 	}
 	if got := m.ctrl.Messages()[row].Body; got != "secret" {
 		t.Fatalf("direct row body = %q, want %q", got, "secret")
+	}
+}
+
+func TestNotifyOpenAtUnreadLandsOnTheFirstNewLine(t *testing.T) {
+	m, d := phase9DemoModel(t)
+	m = resizeModel(t, m, 100, 14)
+	if !m.ctrl.OpenAtUnread() {
+		t.Fatal("default must open at the unread mark")
+	}
+	m.switchSelection(func() {
+		m.ctrl.SelectConversation("omarchy", "#ricing")
+	})
+	d.InjectOmarchy([]byte(":anna!u@h PRIVMSG #omarchy :first unseen line\r\n"))
+	for index := 0; index < 20; index++ {
+		d.InjectOmarchy([]byte(":dax!u@h PRIVMSG #omarchy :unread filler\r\n"))
+	}
+	d.InjectOmarchy([]byte("@msgid=later-id :anna!u@h PRIVMSG #omarchy :fred: the notified line\r\n"))
+	m.activateNotifiedConversation("omarchy", "#omarchy", "later-id")
+	if got := m.ctrl.Messages()[m.firstVisibleMessageRow()].Body; got != "first unseen line" {
+		t.Fatalf("top body = %q, want the first unseen line", got)
+	}
+}
+
+func TestNotifyRevealsMsgidWhenUnreadIsOff(t *testing.T) {
+	m, d := phase9DemoModel(t)
+	m = resizeModel(t, m, 100, 14)
+	m.ctrl.SetOpenAtUnread(false)
+	m.switchSelection(func() {
+		m.ctrl.SelectConversation("omarchy", "#ricing")
+	})
+	d.InjectOmarchy([]byte(":anna!u@h PRIVMSG #omarchy :first unseen line\r\n"))
+	for index := 0; index < 20; index++ {
+		d.InjectOmarchy([]byte(":dax!u@h PRIVMSG #omarchy :unread filler\r\n"))
+	}
+	d.InjectOmarchy([]byte("@msgid=later-id :anna!u@h PRIVMSG #omarchy :fred: the notified line\r\n"))
+	m.activateNotifiedConversation("omarchy", "#omarchy", "later-id")
+	if got := m.ctrl.Messages()[m.firstVisibleMessageRow()].Body; got == "first unseen line" {
+		t.Fatal("open-at-unread off must reveal the msgid, not the mark")
+	}
+	if !strings.Contains(m.transcriptView(m.height), "the notified line") {
+		t.Fatal("the notified line must be on screen")
+	}
+}
+
+func TestNotifyRevealsMsgidWhenAlreadyOpen(t *testing.T) {
+	m, d := phase9DemoModel(t)
+	m = resizeModel(t, m, 100, 14)
+	m.ctrl.SetOpenAtUnread(false)
+	d.InjectOmarchy([]byte("@msgid=open-id :anna!u@h PRIVMSG #omarchy :already-open-ping\r\n"))
+	m = press(t, m, tea.KeyPressMsg{Code: tea.KeyHome, Mod: tea.ModCtrl})
+	if strings.Contains(m.transcriptView(m.height), "already-open-ping") {
+		t.Fatal("Ctrl+Home must leave the new line below the window")
+	}
+	m.activateNotifiedConversation("omarchy", "#omarchy", "open-id")
+	if !strings.Contains(m.transcriptView(m.height), "already-open-ping") {
+		t.Fatal("an already-open conversation must still reveal the msgid")
+	}
+}
+
+func TestNotifyOpenAtUnreadKeepsAlreadyOpenViewport(t *testing.T) {
+	m, d := phase9DemoModel(t)
+	m = resizeModel(t, m, 100, 14)
+	d.InjectOmarchy([]byte("@msgid=open-id :anna!u@h PRIVMSG #omarchy :already-open-ping\r\n"))
+	m = press(t, m, tea.KeyPressMsg{Code: tea.KeyHome, Mod: tea.ModCtrl})
+	if strings.Contains(m.transcriptView(m.height), "already-open-ping") {
+		t.Fatal("Ctrl+Home must leave the new line below the window")
+	}
+	m.activateNotifiedConversation("omarchy", "#omarchy", "open-id")
+	if strings.Contains(m.transcriptView(m.height), "already-open-ping") {
+		t.Fatal("open-at-unread must leave an already-open transcript where it was")
 	}
 }

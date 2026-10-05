@@ -982,6 +982,20 @@ void IrcController::rememberScrollPlace(bool followEnd, int anchorRow)
     m_scrollPlaces.remember(m_selected->networkId, m_selectedTarget, place, mapping);
 }
 
+void IrcController::plantScrollPlace(const QString& networkId, const QString& target,
+                                     const QString& body)
+{
+    if (networkId.isEmpty() || target.isEmpty())
+        return;
+    IrcScrollPlace place;
+    place.followEnd = false;
+    place.author = QStringLiteral("anna");
+    place.body = body;
+    place.kind = QStringLiteral("message");
+    const IrcCaseMapping& mapping = m_reducer.serverFeatures(networkId).caseMapping();
+    m_scrollPlaces.remember(networkId, target, place, mapping);
+}
+
 QVariantMap IrcController::currentScrollPlace() const
 {
     QVariantMap result;

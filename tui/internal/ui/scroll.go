@@ -7,7 +7,7 @@ package ui
 // conversation, and leaving Status must restore the saved line.
 
 func (m *Model) rememberOpenTranscript() {
-	if m == nil || m.suspendScrollMemory || m.ctrl == nil || m.ctrl.ConsoleOpen() {
+	if m == nil || m.suspendScrollMemory || m.scrollRestorePending || m.ctrl == nil || m.ctrl.ConsoleOpen() {
 		return
 	}
 	if m.transcriptFollowEnd {
@@ -79,7 +79,12 @@ func (m *Model) applyRememberedTranscript() string {
 		m.pinTranscriptToRow(place.Row)
 		return "applied"
 	}
+	// The line is not loaded. Show the last page without entering follow,
+	// which would drop the history page cap, and without writing this
+	// interim page over the anchor.
 	m.scrollRestorePending = true
+	m.transcriptFollowEnd = false
+	m.transcriptScroll = 0
 	return "pending"
 }
 
@@ -87,6 +92,7 @@ func (m *Model) applyRememberedTranscript() string {
 // and a resize both use it so the same line stays at the top when the width
 // changes. A conversation with no saved place is left where the caller put it.
 func (m *Model) landSavedTranscript() {
+	defer m.syncTranscriptLineCount()
 	if m == nil || m.suspendScrollMemory || m.ctrl == nil || m.ctrl.ConsoleOpen() {
 		return
 	}
@@ -111,6 +117,10 @@ func (m *Model) maybeLandSavedTranscript() {
 // noteViewportSettled records the viewport after a user scroll. A selection
 // change sets suspendScrollMemory so the transitional pin is not stored.
 func (m *Model) noteViewportSettled() {
+	// A real scroll retires a pending anchor. beginTranscriptSwitch calls
+	// rememberOpenTranscript directly, so an anchor that has not loaded yet
+	// stays stored.
+	m.scrollRestorePending = false
 	m.rememberOpenTranscript()
 }
 
