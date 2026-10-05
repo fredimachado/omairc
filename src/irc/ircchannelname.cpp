@@ -12,11 +12,11 @@ std::string utf8(const QString& value)
     return std::string(bytes.constData(), std::size_t(bytes.size()));
 }
 
-bool isChannelPrefix(QChar character, std::string_view types)
+bool isAsciiMember(QChar character, std::string_view letters)
 {
     if (character.unicode() > 0x7F)
         return false;
-    return types.find(static_cast<char>(character.unicode())) != std::string_view::npos;
+    return letters.find(static_cast<char>(character.unicode())) != std::string_view::npos;
 }
 
 bool stopsChannelName(QChar character)
@@ -52,7 +52,7 @@ QString trimChannelName(const QString& raw)
     int end = raw.size();
     while (end > 0) {
         const QChar character = raw.at(end - 1);
-        if (QStringLiteral(".,;:!?").contains(character)) {
+        if (QStringLiteral(".,;:!?\"'").contains(character)) {
             --end;
             continue;
         }
@@ -63,6 +63,8 @@ QString trimChannelName(const QString& raw)
             open = QLatin1Char('[');
         else if (character == QLatin1Char('}'))
             open = QLatin1Char('{');
+        else if (character == QLatin1Char('>'))
+            open = QLatin1Char('<');
         else
             break;
         int opens = 0;
@@ -94,8 +96,11 @@ QVector<IrcChannelNameSpan> ircChannelNameSpans(const QString& text,
 
     for (int index = 0; index < text.size();) {
         const QChar character = text.at(index);
-        const bool boundary = index == 0 || isChannelBoundary(text.at(index - 1));
-        if (!boundary || !isChannelPrefix(character, types)) {
+        const bool rankBefore = index > 0
+            && isAsciiMember(text.at(index - 1), features.prefixSymbols());
+        const bool boundary = index == 0 || rankBefore
+            || isChannelBoundary(text.at(index - 1));
+        if (!boundary || !isAsciiMember(character, types)) {
             ++index;
             continue;
         }

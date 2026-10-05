@@ -31,5 +31,6 @@ Preconditions:
 
 - The prefix comes from the network's `CHANTYPES`. A `#` name is not a channel when the server did not advertise `#`.
 - A name glued to a word, or a `#` inside an `http` or `https` URL, is not a channel.
+- A trailing quote or an unmatched `>` is outside the name. A PREFIX rank such as `@` in front of the name is outside the span too, and the rank comes from the server, not a hard-coded `@`.
 - Status lines are not this path. An invite still joins from its own row.
 - Confirming the ask joins. Cancelling it, or clicking outside the ask, does not.

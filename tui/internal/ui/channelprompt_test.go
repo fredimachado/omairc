@@ -32,13 +32,28 @@ func TestChannelNameAsksBeforeOpening(t *testing.T) {
 		t.Fatal("Ctrl+Shift+O must open the link sheet")
 	}
 	help := channelMatch(t, m, "#help")
-	desktop := channelMatch(t, m, "#Desktop")
-	fresh := channelMatch(t, m, "#brand-new")
 	if help.row != -1 {
 		t.Fatalf("topic channel row = %d, want -1", help.row)
 	}
 
 	framesBefore := len(d.OmarchyTransport().WrittenFrames())
+	m.link.selected = help.index
+	m = press(t, m, tea.KeyPressMsg{Code: tea.KeyEnter})
+	if m.channelPrompt.open {
+		t.Fatal("an open topic buffer must switch without asking")
+	}
+	if got := m.ctrl.SelectedTarget(); got != "#help" {
+		t.Fatalf("selected = %q, want #help", got)
+	}
+	if joinedSince(d, framesBefore, "JOIN #help") {
+		t.Fatal("switching to #help sent JOIN")
+	}
+
+	m.ctrl.SelectConversation(m.ctrl.FocusedNetworkID(), "#omarchy")
+	m = press(t, m, ctrlShiftKey('o'))
+	desktop := channelMatch(t, m, "#Desktop")
+	fresh := channelMatch(t, m, "#brand-new")
+	framesBefore = len(d.OmarchyTransport().WrittenFrames())
 	m.link.selected = fresh.index
 	m = press(t, m, tea.KeyPressMsg{Code: tea.KeyEnter})
 	if m.linkVisible() {
@@ -94,8 +109,8 @@ func TestChannelNameAsksBeforeOpening(t *testing.T) {
 	if m.channelPrompt.open {
 		t.Fatal("Enter must confirm the prompt")
 	}
-	if !joinedSince(d, framesBefore, "JOIN #brand-new") {
-		t.Fatal("confirm did not join #brand-new")
+	if !joinedSince(d, framesBefore, "JOIN #brand-new") || !wroteJoinCommand(d, framesBefore, "#brand-new") {
+		t.Fatalf("ConsoleSubmit(%q) did not write %q", "/join #brand-new", "JOIN #brand-new\r\n")
 	}
 	if got := m.ctrl.SelectedTarget(); got != "#brand-new" {
 		t.Fatalf("selected after confirm = %q, want #brand-new", got)
@@ -117,6 +132,20 @@ func channelMatch(t *testing.T, m *Model, name string) channelHit {
 	}
 	t.Fatalf("link sheet missing channel %q: %+v", name, matches)
 	return channelHit{}
+}
+
+func wroteJoinCommand(d *demo.DemoServer, before int, channel string) bool {
+	want := "JOIN " + channel + "\r\n"
+	frames := d.OmarchyTransport().WrittenFrames()
+	if before > len(frames) {
+		before = 0
+	}
+	for _, frame := range frames[before:] {
+		if string(frame) == want {
+			return true
+		}
+	}
+	return false
 }
 
 func joinedSince(d *demo.DemoServer, before int, text string) bool {

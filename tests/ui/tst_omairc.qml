@@ -4296,6 +4296,41 @@ TestCase {
         compare(appWindow.lastOpenedUrl, "https://example.com/a.png");
     }
 
+    function test_whoisRowClickAsksBeforeJoiningChannel() {
+        openSeededAppWindow();
+        var list = item("messageList");
+        var composer = item("messageComposer");
+        mouseClick(composer);
+        typeText("/whois lena");
+        if (item("slashCompleteList").visible)
+            keyClick(Qt.Key_Escape);
+        keyClick(Qt.Key_Return);
+        var label = seed.lastOmarchyRequestLabel();
+        verify(label.length > 0, "WHOIS should carry a labeled-response label");
+        seed.injectOmarchy("@label=" + label
+                           + " :server 319 fred lena :@#brand-new\r\n");
+        waitForBody(list, "lena is on @#brand-new");
+        var whoisAt = rowForBody(list.model, "lena is on @#brand-new");
+        compare(field(list.model, whoisAt, "kind"), "whois");
+        list.positionViewAtIndex(whoisAt, ListView.Contain);
+        waitForRendering(appWindow.contentItem);
+        var row = list.itemAtIndex(whoisAt);
+        var body = findChild(row, "messageWhois");
+        verify(body !== null && body.visible, "Could not find messageWhois");
+
+        var framesBefore = seed.omarchyFrameCount();
+        clickTextHit(body, "#brand-new");
+        tryCompare(item("channelOpenSheet"), "opened", true);
+        compare(item("channelOpenPrompt").text, "Open #brand-new?");
+        compare(appWindow.currentConversation, "#omarchy");
+        verify(!seed.omarchyWroteFrom(framesBefore, "JOIN #brand-new"));
+
+        keyClick(Qt.Key_Return);
+        tryCompare(item("channelOpenSheet"), "opened", false);
+        verifySubmittedJoin(framesBefore, "#brand-new");
+        tryCompare(appWindow, "currentConversation", "#brand-new");
+    }
+
     function test_ctrlFFindsEmphasizedVisibleText() {
         openSeededAppWindow();
         var list = item("messageList");
@@ -4470,6 +4505,13 @@ TestCase {
         compare(appWindow.channelNameAt("try #foo,#bar", 9), "#bar");
     }
 
+    function verifySubmittedJoin(framesBefore, channel) {
+        verify(seed.omarchyWroteFrom(framesBefore, "JOIN " + channel),
+               "missing JOIN " + channel);
+        verify(seed.omarchyWroteFrom(framesBefore, "JOIN " + channel + "\r\n"),
+               "networkConsole.submit(\"/join " + channel + "\") should write that JOIN line");
+    }
+
     function clickTextHit(body, needle) {
         var start = body.text.indexOf(needle);
         verify(start >= 0, "Missing " + needle + " in " + body.text);
@@ -4528,6 +4570,14 @@ TestCase {
         compare(appWindow.currentConversation, "#omarchy");
         verify(!seed.omarchyWroteFrom(framesBefore, "JOIN #brand-new"));
 
+        mouseClick(appWindow.contentItem, 8, 8);
+        tryCompare(item("channelOpenSheet"), "opened", false);
+        tryCompare(appWindow, "pendingChannelName", "");
+        compare(appWindow.currentConversation, "#omarchy");
+        verify(!seed.omarchyWroteFrom(framesBefore, "JOIN #brand-new"));
+
+        clickTextHit(body, "#brand-new");
+        tryCompare(item("channelOpenSheet"), "opened", true);
         keyClick(Qt.Key_Escape);
         tryCompare(item("channelOpenSheet"), "opened", false);
         tryCompare(appWindow, "pendingChannelName", "");
@@ -4538,7 +4588,7 @@ TestCase {
         tryCompare(item("channelOpenSheet"), "opened", true);
         keyClick(Qt.Key_Return);
         tryCompare(item("channelOpenSheet"), "opened", false);
-        verify(seed.omarchyWroteFrom(framesBefore, "JOIN #brand-new"));
+        verifySubmittedJoin(framesBefore, "#brand-new");
         tryCompare(appWindow, "currentConversation", "#brand-new");
     }
 
@@ -4578,7 +4628,7 @@ TestCase {
         verify(!seed.omarchyWroteFrom(framesBefore, "JOIN #brand-new"));
         keyClick(Qt.Key_Return);
         tryCompare(item("channelOpenSheet"), "opened", false);
-        verify(seed.omarchyWroteFrom(framesBefore, "JOIN #brand-new"));
+        verifySubmittedJoin(framesBefore, "#brand-new");
         tryCompare(appWindow, "currentConversation", "#brand-new");
     }
 

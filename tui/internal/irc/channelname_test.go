@@ -83,6 +83,65 @@ func TestChannelNameSpansBoundariesAndTrim(t *testing.T) {
 	if got := ChannelNameAt(kept, 0, features); got != "#foo_(bar)" {
 		t.Fatalf("balanced parens = %q, want #foo_(bar)", got)
 	}
+
+	quoted := "try \"#desktop\" today"
+	if got := ChannelNameAt(quoted, indexOf(t, quoted, "#desktop"), features); got != "#desktop" {
+		t.Fatalf("quoted channel = %q, want #desktop", got)
+	}
+	if got := ChannelNameAt(quoted, indexOf(t, quoted, "\" today"), features); got != "" {
+		t.Fatalf("closing quote = %q, want empty", got)
+	}
+
+	apos := "try '#ops' today"
+	if got := ChannelNameAt(apos, indexOf(t, apos, "#ops"), features); got != "#ops" {
+		t.Fatalf("single-quoted channel = %q, want #ops", got)
+	}
+	if got := ChannelNameAt(apos, indexOf(t, apos, "' today"), features); got != "" {
+		t.Fatalf("closing apostrophe = %q, want empty", got)
+	}
+
+	angle := "see <#desktop> now"
+	if got := ChannelNameAt(angle, indexOf(t, angle, "#desktop"), features); got != "#desktop" {
+		t.Fatalf("angle-wrapped channel = %q, want #desktop", got)
+	}
+	if got := ChannelNameAt(angle, indexOf(t, angle, ">"), features); got != "" {
+		t.Fatalf("closing angle = %q, want empty", got)
+	}
+
+	keptAngle := "#foo<bar>"
+	if got := ChannelNameAt(keptAngle, 0, features); got != "#foo<bar>" {
+		t.Fatalf("balanced angles = %q, want #foo<bar>", got)
+	}
+	if got := ChannelNameAt(keptAngle, len(keptAngle)-1, features); got != "#foo<bar>" {
+		t.Fatalf("balanced closing angle = %q, want #foo<bar>", got)
+	}
+
+	if got := ChannelNameAt("#foo's", 0, features); got != "#foo's" {
+		t.Fatalf("interior apostrophe = %q, want #foo's", got)
+	}
+
+	ranked := "on @#chan today"
+	if got := ChannelNameAt(ranked, indexOf(t, ranked, "#chan"), features); got != "#chan" {
+		t.Fatalf("ranked channel = %q, want #chan", got)
+	}
+	if got := ChannelNameAt(ranked, indexOf(t, ranked, "@"), features); got != "" {
+		t.Fatalf("rank mark = %q, want empty", got)
+	}
+
+	voice := NewServerFeatures()
+	voice.ApplyToken("CHANTYPES=#")
+	voice.ApplyToken("PREFIX=(v)+")
+	atRank := "on @#chan"
+	if got := ChannelNameAt(atRank, indexOf(t, atRank, "#"), voice); got != "" {
+		t.Fatalf("@ is not a voice rank, got %q", got)
+	}
+	plusRank := "on +#chan"
+	if got := ChannelNameAt(plusRank, indexOf(t, plusRank, "#chan"), voice); got != "#chan" {
+		t.Fatalf("voice rank channel = %q, want #chan", got)
+	}
+	if got := ChannelNameAt(plusRank, indexOf(t, plusRank, "+"), voice); got != "" {
+		t.Fatalf("voice mark = %q, want empty", got)
+	}
 }
 
 func indexOf(t *testing.T, text, needle string) int {

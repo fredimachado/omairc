@@ -18,11 +18,17 @@ type ChannelNameSpan struct {
 
 // ChannelNameSpans returns every channel name in text. The prefix comes from
 // features, never a hard-coded CHANTYPES. An empty CHANTYPES matches nothing.
-// A token starts with an advertised channel type, only at the start of text or
-// after whitespace or an opening delimiter, and runs until a space, comma,
-// colon, or control character. Trailing ".,;:!?" and an unmatched trailing
-// bracket are stripped. A result shorter than two characters, or one
-// features.IsChannel rejects, is dropped.
+// A token starts with an advertised channel type, only at the start of text,
+// after whitespace or an opening delimiter, or immediately after a PREFIX
+// rank character. The span does not include that rank. The rank comes from
+// features, never a hard-coded "@". The token runs until a space, comma,
+// colon, or control character. Trailing .,;:!? and a trailing " or ' are
+// stripped one mark at a time, not as a pair. Do not count " as a bracket.
+// An unmatched trailing ), ], }, or > is stripped; > pairs with <.
+// #foo<bar> stays #foo<bar>. "#desktop" becomes #desktop. <#desktop> becomes
+// #desktop, and the > is outside the span. #foo's stays #foo's. The result
+// is empty unless features.IsChannel accepts it and it is at least two
+// characters.
 func ChannelNameSpans(text string, features ServerFeatures) []ChannelNameSpan {
 	types := features.ChannelTypes()
 	if text == "" || types == "" {
@@ -34,7 +40,7 @@ func ChannelNameSpans(text string, features ServerFeatures) []ChannelNameSpan {
 		if size < 1 {
 			break
 		}
-		boundary := index == 0 || channelBoundaryBefore(text, index)
+		boundary := index == 0 || rankBefore(text, index, features.PrefixSymbols()) || channelBoundaryBefore(text, index)
 		if !boundary || !isChannelPrefix(character, types) {
 			index += size
 			continue
@@ -72,6 +78,14 @@ func ChannelNameAt(text string, index int, features ServerFeatures) string {
 		}
 	}
 	return ""
+}
+
+func rankBefore(text string, index int, symbols string) bool {
+	if index <= 0 || symbols == "" {
+		return false
+	}
+	character, _ := utf8.DecodeLastRuneInString(text[:index])
+	return isChannelPrefix(character, symbols)
 }
 
 func isChannelPrefix(character rune, types string) bool {
@@ -115,7 +129,7 @@ func trimChannelName(raw string) string {
 		if size < 1 {
 			break
 		}
-		if strings.ContainsRune(".,;:!?", character) {
+		if strings.ContainsRune(".,;:!?\"'", character) {
 			end -= size
 			continue
 		}
@@ -127,6 +141,8 @@ func trimChannelName(raw string) string {
 			open = '['
 		case '}':
 			open = '{'
+		case '>':
+			open = '<'
 		default:
 			return raw[:end]
 		}

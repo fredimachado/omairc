@@ -15,11 +15,17 @@ struct IrcChannelNameSpan
     QString name;
 };
 
-// Channel names in text, using features for the prefix. An empty CHANTYPES
-// matches nothing. A token starts with an advertised channel type, only at
-// the start of text or after whitespace or an opening delimiter, and runs
-// until a space, comma, colon, or control character. Trailing .,;:!? and an
-// unmatched trailing bracket are stripped. The result is empty unless
+// Channel names in text. The prefix comes from features, never a hard-coded
+// CHANTYPES. An empty CHANTYPES matches nothing. A token starts with an
+// advertised channel type, only at the start of text, after whitespace or an
+// opening delimiter, or immediately after a PREFIX rank character. The span
+// does not include that rank. The rank comes from features, never a
+// hard-coded "@". The token runs until a space, comma, colon, or control
+// character. Trailing .,;:!? and a trailing " or ' are stripped one mark at
+// a time, not as a pair. Do not count " as a bracket. An unmatched trailing
+// ), ], }, or > is stripped; > pairs with <. #foo<bar> stays #foo<bar>.
+// "#desktop" becomes #desktop. <#desktop> becomes #desktop, and the > is
+// outside the span. #foo's stays #foo's. The result is empty unless
 // features.isChannel accepts it and it is at least two characters.
 QVector<IrcChannelNameSpan> ircChannelNameSpans(const QString& text,
                                                 const IrcServerFeatures& features);

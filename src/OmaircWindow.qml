@@ -2483,7 +2483,8 @@ ApplicationWindow {
         context: Qt.ApplicationShortcut
         onActivated: {
             if (jumpSheet.opened || linkSheet.opened || inboxSheet.opened || nickSheet.opened
-                    || aboutSheet.opened || channelListSheet.opened)
+                    || aboutSheet.opened || channelListSheet.opened
+                    || channelOpenSheet.opened)
                 return;
             if (shortcutsSheet.opened)
                 shortcutsSheet.close();
