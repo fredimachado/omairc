@@ -130,6 +130,7 @@ private slots:
     void conversationModelProjectionDoesNotOwnSelection();
     void windowInactiveMarksSelectedChatUnread();
     void markReadConsumesUnreadButKeepsMark();
+    void markAllReadClearsEveryConversation();
     void mentionArrivalSurvivesSelection();
     void mentionArrivalOnDirectMessage();
     void mentionArrivalCarriesNetworkTargetAndMsgid();
@@ -600,6 +601,50 @@ void ReducerTest::markReadConsumesUnreadButKeepsMark()
     reducer.markSelected(other);
     reducer.markSelected(selected);
     QVERIFY(!selectedState->unreadMark.has_value());
+}
+
+void ReducerTest::markAllReadClearsEveryConversation()
+{
+    IrcEventReducer reducer;
+    welcome(reducer, networkA);
+    const IrcConversationKey selected =
+        reducer.conversationKey(networkA, QStringLiteral("#selected"));
+    const IrcConversationKey background =
+        reducer.conversationKey(networkA, QStringLiteral("#background"));
+    reducer.markSelected(selected);
+    reducer.setWindowActive(false);
+
+    reducer.apply(IrcMessageEvent{
+        selected,
+        QStringLiteral("Alice"),
+        QStringLiteral("omairc: away ping"),
+        timestamp,
+        QStringLiteral("#selected"),
+    });
+    reducer.apply(IrcMessageEvent{
+        background,
+        QStringLiteral("Bob"),
+        QStringLiteral("ordinary"),
+        timestamp,
+        QStringLiteral("#background"),
+    });
+    const IrcConversationState *selectedState = reducer.find(selected);
+    const IrcConversationState *backgroundState = reducer.find(background);
+    QCOMPARE(selectedState->unread, 1);
+    QCOMPARE(selectedState->mentions, 1);
+    QVERIFY(selectedState->unreadMark.has_value());
+    QCOMPARE(backgroundState->unread, 1);
+    QCOMPARE(backgroundState->mentions, 0);
+    QVERIFY(backgroundState->unreadMark.has_value());
+
+    QVERIFY(reducer.markAllRead());
+    QCOMPARE(selectedState->unread, 0);
+    QCOMPARE(selectedState->mentions, 0);
+    QVERIFY(selectedState->unreadMark.has_value());
+    QCOMPARE(backgroundState->unread, 0);
+    QCOMPARE(backgroundState->mentions, 0);
+    QVERIFY(backgroundState->unreadMark.has_value());
+    QVERIFY(!reducer.markAllRead());
 }
 
 void ReducerTest::mentionArrivalSurvivesSelection()

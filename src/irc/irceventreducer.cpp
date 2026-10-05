@@ -431,6 +431,20 @@ bool IrcEventReducer::markRead(const IrcConversationKey& key)
     return true;
 }
 
+bool IrcEventReducer::markAllRead()
+{
+    bool changed = false;
+    for (auto& entry : m_conversations) {
+        IrcConversationState& conversation = entry.second;
+        if (conversation.unread == 0 && conversation.mentions == 0)
+            continue;
+        conversation.unread = 0;
+        conversation.mentions = 0;
+        changed = true;
+    }
+    return changed;
+}
+
 namespace
 {
 bool chatCountsTowardUnread(IrcMessageKind kind)

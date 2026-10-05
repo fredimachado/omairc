@@ -1592,8 +1592,15 @@ ApplicationWindow {
         }
 
         var target = mentionRow ? mentionRow : unreadRow;
-        if (target)
+        if (target) {
             activateSidebarConversation(target);
+            return;
+        }
+        var id = irc
+            ? (irc.focusedNetworkId || irc.selectedNetworkId)
+            : "";
+        if (id && id.length > 0)
+            openNetworkStatus(id);
     }
 
     function composerHistoryKey() {
@@ -2641,6 +2648,17 @@ ApplicationWindow {
         context: Qt.ApplicationShortcut
         enabled: !win.connectionOverlayVisible && !win.shortcutOverlayOpen
         onActivated: jumpToNextUnread()
+    }
+
+    Shortcut {
+        sequence: "Alt+Shift+A"
+        context: Qt.ApplicationShortcut
+        enabled: !win.connectionOverlayVisible && !win.shortcutOverlayOpen
+        onActivated: {
+            if (win.irc && typeof win.irc.markAllRead === "function")
+                win.irc.markAllRead();
+            titleMark.clear();
+        }
     }
 
     Shortcut {

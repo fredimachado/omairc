@@ -41,6 +41,7 @@ func TestKeySequenceTable(t *testing.T) {
 		{"End", []byte("\x1b[F")},
 		{"end", []byte("\x1b[F")},
 		{"alt+a", []byte("\x1b" + "a")},
+		{"alt+shift+a", []byte("\x1b[97;4u")},
 		{"alt+A", []byte("\x1b" + "A")},
 		{"alt+Down", []byte("\x1b[1;3B")},
 		{"alt+Up", []byte("\x1b[1;3A")},

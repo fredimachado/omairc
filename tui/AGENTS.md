@@ -334,8 +334,11 @@ the screen.
 
 - The full chord map lives in `internal/ui/keys.go`. `Ctrl+Q` is the only quit
   chord; `Ctrl+C` copies via OSC 52 (`tea.SetClipboard`), not quit.
-- `Alt+A` walks to the next unread conversation; `Alt+U` jumps to the first new
-  message in the current transcript.
+- `Alt+A` walks to the next unread conversation. When nothing is unread, it
+  opens Status for the selected conversation's network. When Status is already
+  open, it opens that Status network. `Alt+Shift+A` marks every conversation
+  read and clears a background title.
+  `Alt+U` jumps to the first new message in the current transcript.
 
 ## Version
 

@@ -432,6 +432,41 @@ func TestMarkReadConsumesUnreadButKeepsMark(t *testing.T) {
 	requireFalse(t, "mark cleared on reselect", selectedState.UnreadMark != nil)
 }
 
+func TestMarkAllReadClearsEveryConversation(t *testing.T) {
+	reducer := NewEventReducer()
+	welcome(reducer, networkA)
+	selected := reducer.ConversationKey(networkA, "#selected")
+	background := reducer.ConversationKey(networkA, "#background")
+	reducer.MarkSelected(selected)
+	reducer.SetWindowActive(false)
+
+	reducer.Apply(MessageEvent{
+		Conversation: selected, Author: "Alice", Body: "omairc: away ping",
+		Timestamp: reducerTimestamp, Target: "#selected",
+	}, reducerTimestamp)
+	reducer.Apply(MessageEvent{
+		Conversation: background, Author: "Bob", Body: "ordinary",
+		Timestamp: reducerTimestamp, Target: "#background",
+	}, reducerTimestamp)
+	selectedState := stateOf(t, reducer, selected)
+	backgroundState := stateOf(t, reducer, background)
+	requireInt(t, "selected unread", selectedState.Unread, 1)
+	requireInt(t, "selected mentions", selectedState.Mentions, 1)
+	requireTrue(t, "selected mark", selectedState.UnreadMark != nil)
+	requireInt(t, "background unread", backgroundState.Unread, 1)
+	requireInt(t, "background mentions", backgroundState.Mentions, 0)
+	requireTrue(t, "background mark", backgroundState.UnreadMark != nil)
+
+	requireTrue(t, "markAllRead changed", reducer.MarkAllRead())
+	requireInt(t, "selected unread after", selectedState.Unread, 0)
+	requireInt(t, "selected mentions after", selectedState.Mentions, 0)
+	requireTrue(t, "selected mark kept", selectedState.UnreadMark != nil)
+	requireInt(t, "background unread after", backgroundState.Unread, 0)
+	requireInt(t, "background mentions after", backgroundState.Mentions, 0)
+	requireTrue(t, "background mark kept", backgroundState.UnreadMark != nil)
+	requireFalse(t, "second markAllRead", reducer.MarkAllRead())
+}
+
 func TestMentionArrivalSurvivesSelection(t *testing.T) {
 	reducer := NewEventReducer()
 	welcome(reducer, networkA)

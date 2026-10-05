@@ -1431,6 +1431,15 @@ func (c *Controller) MentionFor(networkID string) bool {
 	return false
 }
 
+// MarkAllRead marks every conversation read. Sidebar badges follow the cleared
+// unread and mention counts. It mirrors IrcController::markAllRead.
+func (c *Controller) MarkAllRead() {
+	if !c.reducer.MarkAllRead() {
+		return
+	}
+	c.Publish(irc.ViewNotify{Conversations: true})
+}
+
 // SetWindowActive records focus. Gaining focus consumes the selected
 // conversation's unread; the "new messages" mark survives. It mirrors
 // IrcController::setWindowActive (src/irc/irccontroller.cpp:800-817).
