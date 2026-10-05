@@ -184,7 +184,54 @@ std::optional<QString> formatLusersNumeric(int code, const QStringList& params)
     }
 }
 
-QString incomingText(const IrcMessage& message, const QString& command, bool redacted)
+bool nickRefusalStatusCommand(const QString& command)
+{
+    return command == QLatin1String("ERROR")
+        || command == QLatin1String("432") || command == QLatin1String("433")
+        || command == QLatin1String("436") || command == QLatin1String("437")
+        || command == QLatin1String("451") || command == QLatin1String("462")
+        || command == QLatin1String("465");
+}
+
+// 432/433/436/437 carry <client> <nick> :<reason>. 451/462/465 carry
+// <client> :<reason>. Fewer parameters means there is no sentence.
+bool nickRefusalSentencePresent(const QString& command, std::size_t count)
+{
+    if (command == QLatin1String("432") || command == QLatin1String("433")
+        || command == QLatin1String("436") || command == QLatin1String("437"))
+        return count >= 3;
+    if (command == QLatin1String("451") || command == QLatin1String("462")
+        || command == QLatin1String("465"))
+        return count >= 2;
+    return count >= 1;
+}
+
+// Same two checks as the session's refusal sentence. A preview replacement
+// is what Status stores. A transcript rejection with no preview is omitted.
+// The registration fallback string stays on the session error.
+struct NickRefusalTail
+{
+    bool omit = false;
+    QString text;
+};
+
+NickRefusalTail nickRefusalStatusTail(const QString& raw, QStringView channelTypes)
+{
+    const QString reason = raw.trimmed();
+    if (reason.isEmpty())
+        return {true, {}};
+    if (const auto masked = IrcSecretPolicy::redactPreviewLine(
+            QStringView(reason), channelTypes))
+        return {false, *masked};
+    if (!IrcSecretPolicy::allowsTranscript(reason, channelTypes))
+        return {true, {}};
+    return {false, reason};
+}
+
+QString incomingText(const IrcMessage& message,
+                     const QString& command,
+                     bool redacted,
+                     QStringView channelTypes)
 {
     if (message.parameters.empty())
         return command;
@@ -194,15 +241,31 @@ QString incomingText(const IrcMessage& message, const QString& command, bool red
         return command + QStringLiteral(" ***");
     }
 
-    if (trailingBodyOnly(command))
-        return ircWireText(message.parameters.back());
+    const QString trailing = ircWireText(message.parameters.back());
+    if (trailingBodyOnly(command)) {
+        if (!nickRefusalStatusCommand(command))
+            return trailing;
+        const NickRefusalTail tail = nickRefusalStatusTail(trailing, channelTypes);
+        return tail.omit ? command : tail.text;
+    }
 
     QStringList parts;
     parts.reserve(int(message.parameters.size()));
     for (const std::string& parameter : message.parameters)
         parts.append(ircWireText(parameter));
-    if (command[0].isDigit() && parts.size() >= 2)
+    if (!command.isEmpty() && command[0].isDigit() && parts.size() >= 2)
         parts.removeFirst();
+    if (nickRefusalStatusCommand(command)) {
+        // No usable sentence: the numeric itself, the way ERROR falls back
+        // to the command. A leftover nick is not the reason.
+        if (!nickRefusalSentencePresent(command, message.parameters.size()))
+            return command;
+        const NickRefusalTail tail = nickRefusalStatusTail(trailing, channelTypes);
+        if (tail.omit)
+            return command;
+        if (!parts.isEmpty())
+            parts.last() = tail.text;
+    }
     return parts.join(QLatin1Char(' '));
 }
 
@@ -980,7 +1043,10 @@ IrcStatusEntry IrcStatusEntry::buildDefaultIncoming(const QString& networkId,
                           IrcLogSource::Server,
                           severityFor(command),
                           command,
-                          incomingText(*display, commandOf(*display), overlay.has_value()));
+                          incomingText(*display,
+                                       commandOf(*display),
+                                       overlay.has_value(),
+                                       channelTypes));
 }
 
 IrcStatusEntry IrcStatusEntry::outgoing(const QString& networkId,

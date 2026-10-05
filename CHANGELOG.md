@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- A refused nick, including 432, 433 after the `nick_` and `nick2` fallback,
+  and the other registration refusals, or a registration `ERROR`, shows the
+  server's reason on that network and in the open pane. The desktop client and
+  the terminal client both stop instead of retrying. A sentence the existing
+  transcript or preview redactors reject is left off the connection error and
+  off the Status line. A refusal with no usable sentence shows the numeric
+  on Status.
+
 ### Added
 
 - Join, part, quit, and nick lines fold together. A leave followed at once by the same nick rejoining is omitted, and a nick chain keeps the final name. `/pref joins` shows every line or hides these lines, including history playback.

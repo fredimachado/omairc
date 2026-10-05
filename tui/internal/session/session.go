@@ -1319,16 +1319,18 @@ func (s *Session) handleMessageLocked(message irc.Message) {
 			if message.Command == "433" && s.tryRegistrationNickFallbackLocked() {
 				return
 			}
-			s.failLocked(ErrorRegistration,
-				"IRC registration was refused ("+irc.WireText([]byte(message.Command))+")", false)
+			s.failLocked(ErrorRegistration, serverSentenceOr(
+				message, s.channelTypes,
+				"IRC registration was refused ("+irc.WireText([]byte(message.Command))+")"), false)
 			return
 		}
 	}
 	if message.Command == "ERROR" {
 		s.emitMessageReceived(message)
-		text := "IRC server reported an error"
-		if len(message.Params) > 0 {
-			text = irc.WireText([]byte(message.Params[len(message.Params)-1]))
+		text := serverSentenceOr(message, s.channelTypes, "IRC server reported an error")
+		if registrationHandshake(s.sessionState) {
+			s.failLocked(ErrorRegistration, text, false)
+			return
 		}
 		s.failLocked(ErrorNetwork, text, true)
 		return
@@ -2874,6 +2876,59 @@ func isRegistrationRefusalNumeric(command string) bool {
 		return true
 	}
 	return false
+}
+
+// registrationHandshake reports a connection that has not reached welcome.
+// ERROR in that window is a registration refusal. A later ERROR is a network
+// drop and still reconnects.
+func registrationHandshake(state SessionState) bool {
+	switch state {
+	case StateConnecting, StateStsUpgrading, StateCapLs, StateCapReq, StateSasl, StateRegistering:
+		return true
+	default:
+		return false
+	}
+}
+
+// registrationSentence reports the trailing reason. 432/433/436/437 carry
+// <client> <nick> :<reason>. 451/462/465 carry <client> :<reason>. ERROR's
+// sentence is whatever parameter it has. A nick with no trailing sentence
+// is not the reason.
+func registrationSentence(message irc.Message) (string, bool) {
+	count := len(message.Params)
+	minimum := 1
+	switch message.Command {
+	case "432", "433", "436", "437":
+		minimum = 3
+	case "451", "462", "465":
+		minimum = 2
+	}
+	if count < minimum {
+		return "", false
+	}
+	reason := strings.TrimSpace(parameter(message, count-1))
+	if reason == "" {
+		return "", false
+	}
+	return reason, true
+}
+
+// serverSentenceOr returns the server's trailing sentence. Either existing
+// check drops it: AllowsTranscript rejects a service body such as IDENTIFY,
+// and RedactPreviewLine catches a near-miss, a later command, or a leading
+// secret verb. The fallback stays. No third redactor.
+func serverSentenceOr(message irc.Message, channelTypes, fallback string) string {
+	reason, ok := registrationSentence(message)
+	if !ok {
+		return fallback
+	}
+	if !irc.AllowsTranscript(reason, channelTypes) {
+		return fallback
+	}
+	if _, replaced := irc.RedactPreviewLine(reason, channelTypes); replaced {
+		return fallback
+	}
+	return reason
 }
 
 func isTagSafeLabel(label string) bool {

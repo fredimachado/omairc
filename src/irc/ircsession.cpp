@@ -268,6 +268,66 @@ public:
         });
     }
 };
+
+// ERROR before welcome is a registration refusal. A later ERROR is a network
+// drop and still reconnects.
+bool registrationHandshake(IrcSession::State state)
+{
+    switch (state) {
+    case IrcSession::State::Connecting:
+    case IrcSession::State::StsUpgrading:
+    case IrcSession::State::CapLs:
+    case IrcSession::State::CapReq:
+    case IrcSession::State::Sasl:
+    case IrcSession::State::Registering:
+        return true;
+    case IrcSession::State::Idle:
+    case IrcSession::State::Registered:
+    case IrcSession::State::Closing:
+    case IrcSession::State::Reconnecting:
+    case IrcSession::State::Failed:
+        return false;
+    }
+    return false;
+}
+
+// 432/433/436/437 carry <client> <nick> :<reason>. 451/462/465 carry
+// <client> :<reason>. ERROR's sentence is whatever parameter it has. A nick
+// with no trailing sentence is not the reason.
+bool registrationSentence(const IrcMessage &message, QString *reason)
+{
+    const QString command = ircWireText(message.command);
+    const std::size_t count = message.parameters.size();
+    std::size_t minimum = 1;
+    if (command == QLatin1String("432") || command == QLatin1String("433")
+        || command == QLatin1String("436") || command == QLatin1String("437"))
+        minimum = 3;
+    else if (command == QLatin1String("451") || command == QLatin1String("462")
+             || command == QLatin1String("465"))
+        minimum = 2;
+    if (count < minimum)
+        return false;
+    *reason = ircWireText(message.parameters.back()).trimmed();
+    return !reason->isEmpty();
+}
+
+// The trailing sentence is the refusal the user reads. Either existing
+// check drops it: allowsTranscript rejects a service body such as
+// IDENTIFY, and redactPreviewLine catches a near-miss, a later command,
+// or a leading secret verb. The fallback stays. No third redactor.
+QString serverSentenceOr(const IrcMessage &message,
+                         QStringView channelTypes,
+                         const QString &fallback)
+{
+    QString reason;
+    if (!registrationSentence(message, &reason))
+        return fallback;
+    if (!IrcSecretPolicy::allowsTranscript(reason, channelTypes))
+        return fallback;
+    if (IrcSecretPolicy::redactPreviewLine(QStringView(reason), channelTypes))
+        return fallback;
+    return reason;
+}
 }
 
 IrcReconnectTimer::IrcReconnectTimer(QObject *parent)
@@ -1344,19 +1404,24 @@ void IrcSession::handleMessage(const IrcMessage &message)
             if (message.command == "433" && tryRegistrationNickFallback())
                 return;
             fail(ErrorKind::Registration,
-                 QStringLiteral("IRC registration was refused (%1)")
-                     .arg(ircWireText(message.command)),
+                 serverSentenceOr(
+                     message, m_channelTypes,
+                     QStringLiteral("IRC registration was refused (%1)")
+                         .arg(ircWireText(message.command))),
                  false);
             return;
         }
     }
     if (message.command == "ERROR") {
         emit messageReceived(m_config.networkId, message);
-        fail(ErrorKind::Network,
-             message.parameters.empty()
-                 ? QStringLiteral("IRC server reported an error")
-                 : ircWireText(message.parameters.back()),
-             true);
+        const QString text = serverSentenceOr(
+            message, m_channelTypes,
+            QStringLiteral("IRC server reported an error"));
+        if (registrationHandshake(m_state)) {
+            fail(ErrorKind::Registration, text, false);
+            return;
+        }
+        fail(ErrorKind::Network, text, true);
         return;
     }
     if (message.command == "NICK") {

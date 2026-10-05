@@ -327,7 +327,47 @@ func statusFormatLusersNumeric(code int, parameters []string) (string, bool) {
 	return "", false
 }
 
-func statusIncomingText(message Message, command string, redacted bool) string {
+func nickRefusalStatusCommand(command string) bool {
+	switch command {
+	case "ERROR", "432", "433", "436", "437", "451", "462", "465":
+		return true
+	}
+	return false
+}
+
+// nickRefusalSentencePresent matches the session sentence rule.
+// 432/433/436/437 carry <client> <nick> :<reason>. 451/462/465 carry
+// <client> :<reason>. Fewer parameters means there is no sentence.
+func nickRefusalSentencePresent(command string, count int) bool {
+	switch command {
+	case "432", "433", "436", "437":
+		return count >= 3
+	case "451", "462", "465":
+		return count >= 2
+	default:
+		return count >= 1
+	}
+}
+
+// nickRefusalStatusTail applies the same two checks as the session refusal
+// sentence. A preview replacement is what Status stores. A transcript
+// rejection with no preview is omitted. The registration fallback string
+// stays on the session error.
+func nickRefusalStatusTail(raw, channelTypes string) (string, bool) {
+	reason := strings.TrimSpace(raw)
+	if reason == "" {
+		return "", true
+	}
+	if masked, ok := RedactPreviewLine(reason, channelTypes); ok {
+		return masked, false
+	}
+	if !AllowsTranscript(reason, channelTypes) {
+		return "", true
+	}
+	return reason, false
+}
+
+func statusIncomingText(message Message, command string, redacted bool, channelTypes string) string {
 	if len(message.Params) == 0 {
 		return command
 	}
@@ -335,12 +375,34 @@ func statusIncomingText(message Message, command string, redacted bool) string {
 		WireText([]byte(message.Params[0])) == "***" && !statusTrailingBodyOnly(command) {
 		return command + " ***"
 	}
+	trailing := WireText([]byte(message.Params[len(message.Params)-1]))
 	if statusTrailingBodyOnly(command) {
-		return WireText([]byte(message.Params[len(message.Params)-1]))
+		if !nickRefusalStatusCommand(command) {
+			return trailing
+		}
+		tail, omit := nickRefusalStatusTail(trailing, channelTypes)
+		if omit {
+			return command
+		}
+		return tail
 	}
 	parts := statusMessageParameters(message)
 	if command != "" && isASCIIDigit(command[0]) && len(parts) >= 2 {
 		parts = parts[1:]
+	}
+	if nickRefusalStatusCommand(command) {
+		// No usable sentence: the numeric itself, the way ERROR falls back
+		// to the command. A leftover nick is not the reason.
+		if !nickRefusalSentencePresent(command, len(message.Params)) {
+			return command
+		}
+		tail, omit := nickRefusalStatusTail(trailing, channelTypes)
+		if omit {
+			return command
+		}
+		if len(parts) > 0 {
+			parts[len(parts)-1] = tail
+		}
 	}
 	return strings.Join(parts, " ")
 }
@@ -1020,7 +1082,7 @@ func statusBuildDefaultIncoming(networkID string, message Message, channelTypes 
 
 	return newStatusEntry(networkID, timestamp, LogSourceServer,
 		statusSeverityFor(command), command,
-		statusIncomingText(display, statusCommandOf(display), overlaid), nil, nil)
+		statusIncomingText(display, statusCommandOf(display), overlaid, channelTypes), nil, nil)
 }
 
 // Outgoing classifies one outgoing wire line. The stored text is redacted with

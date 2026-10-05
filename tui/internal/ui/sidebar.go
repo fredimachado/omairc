@@ -105,8 +105,14 @@ func (m *Model) sidebarView(width, height int) string {
 			roster = append(roster, "", m.sidebarDivider(width))
 		}
 		name := m.sidebarNetworkDisplayName(networkID)
+		headerStart := len(roster)
 		roster = append(roster, m.networkHeader(name, networkID))
-		headerSpans[networkID] = [2]int{len(roster) - 1, len(roster)}
+		// A refused nick or registration ERROR is that network's status line,
+		// the same slot as NetworkSection.qml's liveStatus.
+		if reason := m.ctrl.LastErrorFor(networkID); reason != "" {
+			roster = append(roster, m.styles.MutedLine.Render(reason))
+		}
+		headerSpans[networkID] = [2]int{headerStart, len(roster)}
 		if m.ctrl.IsNetworkCollapsed(networkID) {
 			continue
 		}
