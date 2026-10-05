@@ -2369,8 +2369,7 @@ func (s *Session) sendHistoryLatestBoundLocked(target string, cursor historyCurs
 	s.historyPendingKind[key] = historyRequestAfterTail
 	if !s.sendCommandLocked(fmt.Sprintf("CHATHISTORY LATEST %s %s %d",
 		target, selector, s.historyLimit), "") {
-		delete(s.historyPending, key)
-		delete(s.historyPendingKind, key)
+		s.clearHistoryAfterAttemptLocked(key)
 		return false
 	}
 	return true

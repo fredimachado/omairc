@@ -187,6 +187,8 @@ func TestChatHistoryAfterFillsLinesFromWhileAway(t *testing.T) {
 
 func TestZncPlaybackWithoutChatHistoryDoesNotCatchUp(t *testing.T) {
 	c := New()
+	clock := session.NewFakeClock(time.Date(2026, 10, 4, 12, 0, 0, 0, time.UTC))
+	c.SetClock(clock)
 	transport := session.NewLoopbackTransport()
 	config := session.SessionConfig{
 		NetworkID:  "libera",
@@ -197,7 +199,7 @@ func TestZncPlaybackWithoutChatHistoryDoesNotCatchUp(t *testing.T) {
 		Username:   "omairc",
 		Realname:   "Omairc User",
 	}
-	s, err := c.AddSession(config, transport, nil)
+	s, err := c.AddSession(config, transport, clock)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -221,6 +223,80 @@ func TestZncPlaybackWithoutChatHistoryDoesNotCatchUp(t *testing.T) {
 	}
 	if byteFramesContain(frames, "CHATHISTORY ") {
 		t.Fatalf("znc-only server sent CHATHISTORY: %q", frames)
+	}
+}
+
+func TestCatchUpReconnectAsksStampedGhostNotDismissed(t *testing.T) {
+	c := New()
+	clock := session.NewFakeClock(time.Date(2026, 10, 4, 12, 0, 0, 0, time.UTC))
+	c.SetClock(clock)
+	transport := session.NewLoopbackTransport()
+	config := session.SessionConfig{
+		NetworkID:  "libera",
+		Host:       "irc.example",
+		Port:       6697,
+		TLSEnabled: true,
+		Nick:       "omairc",
+		Username:   "omairc",
+		Realname:   "Omairc User",
+	}
+	s, err := c.AddSession(config, transport, clock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	when := time.Date(2024, 3, 9, 16, 0, 0, 620000000, time.UTC)
+	features := c.reducer.ServerFeatures("libera")
+	if !c.playbackTimes.Note("libera", "ghost", when, features.CaseMapping()) {
+		t.Fatal("Note")
+	}
+	s.Start()
+	transport.CompleteConnect()
+	transport.InjectBytes([]byte(
+		":server CAP omairc LS :batch chathistory\r\n" +
+			":server CAP omairc ACK :batch chathistory\r\n" +
+			":server 001 omairc :Welcome\r\n" +
+			":server 376 omairc :End of MOTD\r\n" +
+			":omairc!u@h JOIN :#omarchy\r\n"))
+	c.SelectConversation("libera", "#omarchy")
+	if !c.OpenDirectMessage("gone") || !c.CloseDirectMessage() {
+		t.Fatal("close gone")
+	}
+	transport.InjectBytes([]byte(
+		":irc.host BATCH +t draft/chathistory-targets\r\n" +
+			"@batch=t :irc.host CHATHISTORY TARGETS ghost 2024-03-09T16:00:00.620Z\r\n" +
+			"@batch=t :irc.host CHATHISTORY TARGETS gone 2024-03-09T16:00:00.620Z\r\n" +
+			":irc.host BATCH -t\r\n"))
+	if byteFrameCount(transport.WrittenFrames(), "CHATHISTORY AFTER ghost timestamp=2024-03-09T16:00:00.620Z 100\r\n") != 1 {
+		t.Fatalf("first ghost AFTER: %q", transport.WrittenFrames())
+	}
+	if byteFrameCount(transport.WrittenFrames(), "CHATHISTORY AFTER gone ") != 0 {
+		t.Fatal("dismissed nick was asked")
+	}
+	transport.InjectBytes([]byte(
+		":irc.host BATCH +g chathistory ghost\r\n" +
+			"@batch=g;time=2024-03-09T16:00:05.000Z;msgid=later :ghost!u@h PRIVMSG omairc :later\r\n" +
+			":irc.host BATCH -g\r\n"))
+	transport.RemoteClose()
+	if s.State() != session.StateFailed {
+		t.Fatalf("state = %v, want failed", s.State())
+	}
+	s.Start()
+	transport.CompleteConnect()
+	transport.InjectBytes([]byte(
+		":server CAP omairc LS :batch chathistory\r\n" +
+			":server CAP omairc ACK :batch chathistory\r\n" +
+			":server 001 omairc :Welcome\r\n" +
+			":server 376 omairc :End of MOTD\r\n"))
+	transport.InjectBytes([]byte(
+		":irc.host BATCH +t2 draft/chathistory-targets\r\n" +
+			"@batch=t2 :irc.host CHATHISTORY TARGETS ghost 2024-03-09T16:00:05.000Z\r\n" +
+			"@batch=t2 :irc.host CHATHISTORY TARGETS gone 2024-03-09T16:00:05.000Z\r\n" +
+			":irc.host BATCH -t2\r\n"))
+	if byteFrameCount(transport.WrittenFrames(), "CHATHISTORY AFTER ghost timestamp=2024-03-09T16:00:05.000Z 100\r\n") != 1 {
+		t.Fatalf("second ghost AFTER: %q", transport.WrittenFrames())
+	}
+	if byteFrameCount(transport.WrittenFrames(), "CHATHISTORY AFTER gone ") != 0 {
+		t.Fatal("dismissed nick was asked after reconnect")
 	}
 }
 
@@ -373,6 +449,51 @@ func TestCatchUpTargetsEndTagSendsNoFollowUp(t *testing.T) {
 	}
 	if !byteFramesContain(transport.WrittenFrames(), "CHATHISTORY AFTER nora ") {
 		t.Fatal("end tag still fills the named nick")
+	}
+}
+
+func TestCatchUpTargetsLargerThanLimitStillPages(t *testing.T) {
+	c := New()
+	c.SetClock(session.NewFakeClock(time.Date(2026, 10, 4, 12, 0, 0, 0, time.UTC)))
+	transport := session.NewLoopbackTransport()
+	when := time.Date(2024, 3, 9, 16, 0, 0, 620000000, time.UTC)
+	features := c.reducer.ServerFeatures("libera")
+	if !c.playbackTimes.Note("libera", "#omarchy", when, features.CaseMapping()) {
+		t.Fatal("Note")
+	}
+	connectChathistory(t, c, transport,
+		":server 005 omairc CHATHISTORY=1 :are supported\r\n"+
+			":server 376 omairc :End of MOTD\r\n")
+	transport.InjectBytes([]byte(
+		":irc.host BATCH +t1 draft/chathistory-targets\r\n" +
+			"@batch=t1 :irc.host CHATHISTORY TARGETS nora 2024-03-09T16:00:04.000Z\r\n" +
+			"@batch=t1 :irc.host CHATHISTORY TARGETS ada 2024-03-09T16:00:02.000Z\r\n" +
+			":irc.host BATCH -t1\r\n"))
+	if !byteFramesContain(transport.WrittenFrames(), "CHATHISTORY TARGETS timestamp=2024-03-09T15:59:59.620Z timestamp=2024-03-09T16:00:02.000Z 1\r\n") {
+		t.Fatalf("over-full page did not continue: %q", transport.WrittenFrames())
+	}
+	if !byteFramesContain(transport.WrittenFrames(), "CHATHISTORY AFTER nora ") ||
+		!byteFramesContain(transport.WrittenFrames(), "CHATHISTORY AFTER ada ") {
+		t.Fatalf("both nicks need AFTER: %q", transport.WrittenFrames())
+	}
+
+	ended := New()
+	ended.SetClock(session.NewFakeClock(time.Date(2026, 10, 4, 12, 0, 0, 0, time.UTC)))
+	endedTransport := session.NewLoopbackTransport()
+	endedFeatures := ended.reducer.ServerFeatures("libera")
+	if !ended.playbackTimes.Note("libera", "#omarchy", when, endedFeatures.CaseMapping()) {
+		t.Fatal("Note")
+	}
+	connectChathistory(t, ended, endedTransport,
+		":server 005 omairc CHATHISTORY=1 :are supported\r\n"+
+			":server 376 omairc :End of MOTD\r\n")
+	endedTransport.InjectBytes([]byte(
+		"@draft/chathistory-end :irc.host BATCH +t draft/chathistory-targets\r\n" +
+			"@batch=t :irc.host CHATHISTORY TARGETS nora 2024-03-09T16:00:04.000Z\r\n" +
+			"@batch=t :irc.host CHATHISTORY TARGETS ada 2024-03-09T16:00:02.000Z\r\n" +
+			":irc.host BATCH -t\r\n"))
+	if byteFrameCount(endedTransport.WrittenFrames(), "CHATHISTORY TARGETS ") != 1 {
+		t.Fatalf("end tag on an over-full page continued: %q", endedTransport.WrittenFrames())
 	}
 }
 

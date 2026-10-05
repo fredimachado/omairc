@@ -607,7 +607,8 @@ void IrcPlaybackCoordinator::noteTargetsPage(
 {
     if (!session || limit <= 0 || historyEnded)
         return;
-    if (int(targets.size()) != limit)
+    // A server may return more than limit. A short page is the end of the list.
+    if (int(targets.size()) < limit)
         return;
     const QString networkId = session->networkId();
     CatchUpSent& sent = m_catchUpSent[networkId];

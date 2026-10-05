@@ -195,6 +195,34 @@ func TestSessionAfterSendFailureDoesNotStick(t *testing.T) {
 	}
 }
 
+func TestSessionCapLatestSendFailureClearsAsked(t *testing.T) {
+	fixture := newSessionFixture(t, historyConfig())
+	when := time.Date(2024, 3, 9, 16, 0, 0, 620000000, time.UTC)
+	fixture.session.SetHistoryAfterPageCap(1)
+	resumeOmarchy(fixture, when)
+	fixture.connectTLS()
+	fixture.inject(":server CAP omairc LS :batch chathistory\r\n" +
+		":server CAP omairc ACK :batch chathistory\r\n" +
+		":server 001 omairc :Welcome\r\n" +
+		":server 005 omairc CHATHISTORY=1 :are supported\r\n" +
+		":omairc!u@h JOIN :#omarchy\r\n")
+	msgid := strings.Repeat("a", 480)
+	fixture.inject(":irc.host BATCH +p chathistory #omarchy\r\n" +
+		"@batch=p;time=2024-03-09T16:00:01.000Z;msgid=" + msgid + " :bob!u@h PRIVMSG #omarchy :line\r\n" +
+		":irc.host BATCH -p\r\n")
+	for _, frame := range fixture.frames() {
+		if strings.Contains(frame, "CHATHISTORY LATEST ") {
+			t.Fatalf("oversized LATEST was sent: %q", fixture.frames())
+		}
+	}
+	if !fixture.session.RequestHistoryLatest("#omarchy") {
+		t.Fatal("failed cap LATEST left the target asked")
+	}
+	if !fixture.wrote("CHATHISTORY LATEST #omarchy * 1\r\n") {
+		t.Fatalf("frames = %q", fixture.frames())
+	}
+}
+
 func TestSessionHistoryTargetsCommandAndBatch(t *testing.T) {
 	fixture := newSessionFixture(t, historyConfig())
 	fixture.connectTLS()

@@ -619,7 +619,8 @@ func (p *PlaybackCoordinator) markCatchUpTargets(networkID string) {
 // draft/chathistory-end is absent. At most two extra pages are sent. It
 // mirrors noteTargetsPage.
 func (p *PlaybackCoordinator) NoteTargetsPage(s *session.Session, targets []irc.HistoryTarget, historyEnded bool, limit int) {
-	if s == nil || limit <= 0 || historyEnded || len(targets) != limit {
+	// A server may return more than limit. A short page is the end of the list.
+	if s == nil || limit <= 0 || historyEnded || len(targets) < limit {
 		return
 	}
 	networkID := s.NetworkID()

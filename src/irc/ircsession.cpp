@@ -1971,8 +1971,7 @@ bool IrcSession::sendHistoryLatestBound(const QString& target,
     m_historyPendingKind.insert(key, HistoryRequestKind::AfterTail);
     if (!sendCommand(QStringLiteral("CHATHISTORY LATEST %1 %2 %3")
                          .arg(target, selector, QString::number(m_historyLimit)))) {
-        m_historyPending.remove(key);
-        m_historyPendingKind.remove(key);
+        clearHistoryAfterAttempt(key);
         return false;
     }
     return true;

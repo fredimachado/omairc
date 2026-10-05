@@ -502,6 +502,7 @@ private slots:
     void chatHistoryAfterShortBatchAndEndTagStop();
     void chatHistoryAfterSameTimeUsesMsgid();
     void chatHistoryAfterSendFailureDoesNotStick();
+    void chatHistoryCapLatestSendFailureClearsAsked();
     void chatHistoryTargetsNamesTheBatch();
     void failedChatHistoryTargetsCanBeAskedAgain();
     void selfJoinWithBarePrefixRequestsChatHistory();
@@ -4557,6 +4558,39 @@ void SessionTest::chatHistoryAfterSendFailureDoesNotStick()
     QVERIFY(fixture.session->requestHistoryAfter(QStringLiteral("#omarchy"), when));
     QVERIFY(fixture.transport->writtenFrames().contains(QByteArrayLiteral(
         "CHATHISTORY AFTER #omarchy timestamp=2024-03-09T16:00:00.620Z 100\r\n")));
+}
+
+void SessionTest::chatHistoryCapLatestSendFailureClearsAsked()
+{
+    IrcSessionConfig sessionConfig = config();
+    sessionConfig.autojoinChannels = {};
+    Fixture fixture(sessionConfig);
+    fixture.session->setHistoryAfterPageCap(1);
+    const QDateTime when = QDateTime::fromString(
+        QStringLiteral("2024-03-09T16:00:00.620Z"), Qt::ISODateWithMs);
+    QVERIFY(when.isValid());
+    fixture.session->setChatHistoryResume(
+        [when](const QString&) -> std::optional<QDateTime> { return when; });
+    fixture.connectTls();
+    fixture.transport->injectBytes(QByteArrayLiteral(
+        ":server CAP omairc LS :batch chathistory\r\n"
+        ":server CAP omairc ACK :batch chathistory\r\n"
+        ":server 001 omairc :Welcome\r\n"
+        ":server 005 omairc CHATHISTORY=1 :are supported\r\n"
+        ":omairc!u@h JOIN :#omarchy\r\n"));
+    const QString msgid(480, QLatin1Char('a'));
+    fixture.transport->injectBytes(
+        (QStringLiteral(":irc.host BATCH +p chathistory #omarchy\r\n"
+                        "@batch=p;time=2024-03-09T16:00:01.000Z;msgid=")
+         + msgid
+         + QStringLiteral(" :bob!u@h PRIVMSG #omarchy :line\r\n"
+                          ":irc.host BATCH -p\r\n"))
+            .toUtf8());
+    QVERIFY(!framesContain(fixture.transport->writtenFrames(),
+                           QByteArrayLiteral("CHATHISTORY LATEST ")));
+    QVERIFY(fixture.session->requestHistoryLatest(QStringLiteral("#omarchy")));
+    QVERIFY(fixture.transport->writtenFrames().contains(
+        QByteArrayLiteral("CHATHISTORY LATEST #omarchy * 1\r\n")));
 }
 
 void SessionTest::chatHistoryTargetsNamesTheBatch()
