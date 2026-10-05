@@ -377,6 +377,9 @@ func TestTranslatesHistoryChannelBatchKeepsOnlyChat(t *testing.T) {
 	}
 	event, ok := TranslateHistory(networkA, "omairc", NewServerFeatures(), batch, reducerTimestamp)
 	requireTrue(t, "ok", ok)
-	requireInt(t, "lines", len(event.Lines), 1)
-	requireString(t, "body", event.Lines[0].Body, "from history")
+	requireInt(t, "lines", len(event.Lines), 2)
+	requireString(t, "join author", event.Lines[0].Author, "")
+	requireInt(t, "join kind", int(event.Lines[0].Kind), int(MessageKindEvent))
+	requireString(t, "join body", event.Lines[0].Body, "alice joined")
+	requireString(t, "body", event.Lines[1].Body, "from history")
 }

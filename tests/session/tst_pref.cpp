@@ -1,5 +1,6 @@
 #include <QAbstractItemModel>
 #include <QCoreApplication>
+#include <QSettings>
 #include <QTemporaryDir>
 #include <QTest>
 
@@ -145,6 +146,12 @@ void PrefTest::parseQuerySetAndUsage()
     QCOMPARE(ircParsePrefArgument(QStringLiteral("directs off extra")).kind,
              IrcPrefKind::Usage);
     QCOMPARE(ircParsePrefArgument(QStringLiteral("on")).kind, IrcPrefKind::Usage);
+    QCOMPARE(ircParsePrefArgument(QStringLiteral("joins on")).kind, IrcPrefKind::Usage);
+    QCOMPARE(ircParsePrefArgument(QStringLiteral("directs folded")).kind, IrcPrefKind::Usage);
+    const IrcPrefRequest joins = ircParsePrefArgument(QStringLiteral("JOINS every"));
+    QCOMPARE(joins.kind, IrcPrefKind::Set);
+    QCOMPARE(joins.name, IrcPrefName::Joins);
+    QCOMPARE(joins.noise, IrcMembershipNoise::Every);
 
     QCOMPARE(IrcCommand::parse(QStringLiteral("/pref")).verb, IrcCommand::Verb::Pref);
     QCOMPARE(IrcCommand::parse(QStringLiteral("/PREF directs off")).argument,
@@ -161,7 +168,7 @@ void PrefTest::completeNamesThenValues()
     const auto names = IrcSlashComplete::project(
         QStringLiteral("/pref "), IrcComposerSurface::Conversation);
     QVERIFY(names.isOpen());
-    QCOMPARE(names.hits().size(), 3);
+    QCOMPARE(names.hits().size(), 4);
     QCOMPARE(names.hits().at(0).label, QStringLiteral("/pref directs"));
     QCOMPARE(names.hits().at(0).usage,
              QStringLiteral("Reopen direct messages on startup"));
@@ -170,6 +177,9 @@ void PrefTest::completeNamesThenValues()
     QCOMPARE(names.hits().at(2).label, QStringLiteral("/pref unread"));
     QCOMPARE(names.hits().at(2).usage,
              QStringLiteral("Open conversations at unread"));
+    QCOMPARE(names.hits().at(3).label, QStringLiteral("/pref joins"));
+    QCOMPARE(names.hits().at(3).usage,
+             QStringLiteral("Join, part, quit, and nick lines"));
 
     const auto folded = IrcSlashComplete::project(
         QStringLiteral("  /PREF a"), IrcComposerSurface::Status);
@@ -190,6 +200,14 @@ void PrefTest::completeNamesThenValues()
     QCOMPARE(values.hits().size(), 2);
     QCOMPARE(values.hits().at(0).label, QStringLiteral("/pref directs on"));
     QCOMPARE(values.hits().at(1).label, QStringLiteral("/pref directs off"));
+
+    const auto noise = IrcSlashComplete::project(
+        QStringLiteral("/pref joins "), IrcComposerSurface::Conversation);
+    QVERIFY(noise.isOpen());
+    QCOMPARE(noise.hits().size(), 3);
+    QCOMPARE(noise.hits().at(0).label, QStringLiteral("/pref joins folded"));
+    QCOMPARE(noise.hits().at(1).label, QStringLiteral("/pref joins every"));
+    QCOMPARE(noise.hits().at(2).label, QStringLiteral("/pref joins hidden"));
 
     const auto off = IrcSlashComplete::project(
         QStringLiteral("/pref directs of"), IrcComposerSurface::Conversation);
@@ -251,7 +269,8 @@ void PrefTest::queryAndSetFromConversation()
     QCOMPARE(lastWhoisBody(messages),
              QStringLiteral("Reopen direct messages on startup: on\n"
                             "Show peer avatars: on\n"
-                            "Open conversations at unread: on"));
+                            "Open conversations at unread: on\n"
+                            "Join, part, quit, and nick lines: folded"));
     QVERIFY(!lastWhoisBody(messages).contains(ircPrefAvatarNote()));
 
     QVERIFY(controller.sendMessage(QStringLiteral("/pref avatars")));
@@ -266,6 +285,15 @@ void PrefTest::queryAndSetFromConversation()
 
     QVERIFY(controller.sendMessage(QStringLiteral("/pref avatars off")));
     QCOMPARE(lastWhoisBody(messages), QStringLiteral("Show peer avatars: off"));
+
+    QVERIFY(controller.sendMessage(QStringLiteral("/pref joins every")));
+    QCOMPARE(lastWhoisBody(messages),
+             QStringLiteral("Join, part, quit, and nick lines: every"));
+    QVERIFY(controller.sendMessage(QStringLiteral("/pref joins on")));
+    QCOMPARE(lastWhoisBody(messages), ircPrefUsage());
+    QVERIFY(controller.sendMessage(QStringLiteral("/pref joins hidden")));
+    QCOMPARE(lastWhoisBody(messages),
+             QStringLiteral("Join, part, quit, and nick lines: hidden"));
 
     QVERIFY(controller.sendMessage(QStringLiteral("/pref banana")));
     QCOMPARE(lastWhoisBody(messages), ircPrefUsage());
@@ -319,6 +347,7 @@ void PrefTest::settingPersists()
         IrcController controller;
         QVERIFY(controller.sendMessage(QStringLiteral("/pref unread off")));
         QVERIFY(controller.sendMessage(QStringLiteral("/pref avatars off")));
+        QVERIFY(controller.sendMessage(QStringLiteral("/pref joins hidden")));
         QVERIFY(!controller.openConversationsAtUnread());
         QVERIFY(!controller.loadPeerAvatars());
     }
@@ -327,6 +356,10 @@ void PrefTest::settingPersists()
     QVERIFY(!reloaded.openConversationsAtUnread());
     QVERIFY(!reloaded.loadPeerAvatars());
     QVERIFY(reloaded.reopenDirectMessages());
+    QSettings settings;
+    settings.beginGroup(QStringLiteral("preferences"));
+    QCOMPARE(settings.value(QStringLiteral("membershipNoise")).toString(),
+             QStringLiteral("hidden"));
 }
 
 int runPrefTests(int argc, char **argv)

@@ -1,6 +1,7 @@
 #include "irceventreducer.h"
 
 #include "ircconversationlog.h"
+#include "ircmembershipnoise.h"
 #include "ircservicenick.h"
 #include "ircwiretext.h"
 
@@ -77,6 +78,168 @@ QString collapseEventBody(const QString& existing, const QString& incoming)
         }
     }
     return existing + QStringLiteral(", ") + incoming;
+}
+
+enum class MembershipFoldKind { Merge, Cancel, Chain };
+
+struct MembershipFold
+{
+    MembershipFoldKind kind = MembershipFoldKind::Merge;
+    bool dropRow = false;
+    QString body;
+};
+
+enum class MembershipClauseKind { Joined, Left, Quit, Nick };
+
+struct MembershipClause
+{
+    MembershipClauseKind kind = MembershipClauseKind::Joined;
+    QStringList tokens;
+};
+
+QString membershipNick(const QString& token)
+{
+    const QString marker = QStringLiteral(" (");
+    if (token.endsWith(QLatin1Char(')')) && token.contains(marker)) {
+        const qsizetype at = token.indexOf(marker);
+        if (at > 0)
+            return token.left(at);
+    }
+    return token;
+}
+
+QString renderMembershipClause(const MembershipClause& clause)
+{
+    switch (clause.kind) {
+    case MembershipClauseKind::Left:
+        return clause.tokens.join(QStringLiteral(", ")) + QStringLiteral(" left");
+    case MembershipClauseKind::Quit:
+        return clause.tokens.join(QStringLiteral(", ")) + QStringLiteral(" quit");
+    case MembershipClauseKind::Nick:
+        return clause.tokens.at(0) + QStringLiteral(" is now ") + clause.tokens.at(1);
+    case MembershipClauseKind::Joined:
+        break;
+    }
+    return clause.tokens.join(QStringLiteral(", ")) + QStringLiteral(" joined");
+}
+
+QString renderMembershipClauses(const std::vector<MembershipClause>& clauses)
+{
+    QStringList parts;
+    parts.reserve(int(clauses.size()));
+    for (const MembershipClause& clause : clauses)
+        parts.append(renderMembershipClause(clause));
+    return parts.join(QStringLiteral(", "));
+}
+
+QStringList splitCommaSpace(const QString& text)
+{
+    const QStringList parts = text.split(QStringLiteral(", "), Qt::SkipEmptyParts);
+    return parts;
+}
+
+std::optional<std::vector<MembershipClause>> parseMembershipClauses(const QString& body)
+{
+    if (body.isEmpty())
+        return std::nullopt;
+    std::vector<MembershipClause> clauses;
+    qsizetype index = 0;
+    const QString joinedSuffix = QStringLiteral(" joined");
+    const QString leftSuffix = QStringLiteral(" left");
+    const QString quitSuffix = QStringLiteral(" quit");
+    const QString nickSuffix = QStringLiteral(" is now ");
+    while (index < body.size()) {
+        const QString rest = body.mid(index);
+        const qsizetype joinedAt = rest.indexOf(joinedSuffix);
+        const qsizetype leftAt = rest.indexOf(leftSuffix);
+        const qsizetype quitAt = rest.indexOf(quitSuffix);
+        const qsizetype nickAt = rest.indexOf(nickSuffix);
+        qsizetype best = -1;
+        MembershipClauseKind kind = MembershipClauseKind::Joined;
+        qsizetype suffixLen = 0;
+        const auto consider = [&](qsizetype pos, MembershipClauseKind next, qsizetype length) {
+            if (pos >= 0 && (best < 0 || pos < best)) {
+                best = pos;
+                kind = next;
+                suffixLen = length;
+            }
+        };
+        consider(joinedAt, MembershipClauseKind::Joined, joinedSuffix.size());
+        consider(leftAt, MembershipClauseKind::Left, leftSuffix.size());
+        consider(quitAt, MembershipClauseKind::Quit, quitSuffix.size());
+        consider(nickAt, MembershipClauseKind::Nick, nickSuffix.size());
+        if (best <= 0)
+            return std::nullopt;
+        if (kind == MembershipClauseKind::Nick) {
+            const QString oldNick = rest.left(best);
+            const qsizetype cursor = best + suffixLen;
+            qsizetype end = cursor;
+            while (end < rest.size() && rest.at(end) != QLatin1Char(','))
+                ++end;
+            const QString newNick = rest.mid(cursor, end - cursor);
+            if (newNick.isEmpty() || newNick.contains(QLatin1Char(' ')))
+                return std::nullopt;
+            clauses.push_back(MembershipClause{kind, {oldNick, newNick}});
+            index += end;
+        } else {
+            const QStringList tokens = splitCommaSpace(rest.left(best));
+            if (tokens.isEmpty())
+                return std::nullopt;
+            clauses.push_back(MembershipClause{kind, tokens});
+            index += best + suffixLen;
+        }
+        if (index >= body.size())
+            break;
+        if (!body.mid(index).startsWith(QStringLiteral(", ")))
+            return std::nullopt;
+        index += 2;
+        if (index >= body.size())
+            return std::nullopt;
+    }
+    if (clauses.empty() || renderMembershipClauses(clauses) != body)
+        return std::nullopt;
+    return clauses;
+}
+
+template <typename SameNick>
+MembershipFold foldMembership(const QString& existing,
+                              const QString& incoming,
+                              SameNick sameNick)
+{
+    const auto current = parseMembershipClauses(existing);
+    const auto next = parseMembershipClauses(incoming);
+    if (!current || !next || next->size() != 1)
+        return MembershipFold{MembershipFoldKind::Merge, false,
+                              collapseEventBody(existing, incoming)};
+    std::vector<MembershipClause> clauses = *current;
+    const MembershipClause incomingClause = next->front();
+    MembershipClause& last = clauses.back();
+    if (incomingClause.kind == MembershipClauseKind::Joined
+        && incomingClause.tokens.size() == 1
+        && (last.kind == MembershipClauseKind::Left
+            || last.kind == MembershipClauseKind::Quit)
+        && !last.tokens.isEmpty()
+        && sameNick(membershipNick(last.tokens.back()),
+                    membershipNick(incomingClause.tokens.front()))) {
+        last.tokens.removeLast();
+        if (last.tokens.isEmpty())
+            clauses.pop_back();
+        if (clauses.empty())
+            return MembershipFold{MembershipFoldKind::Cancel, true, {}};
+        return MembershipFold{MembershipFoldKind::Cancel, false,
+                              renderMembershipClauses(clauses)};
+    }
+    if (incomingClause.kind == MembershipClauseKind::Nick
+        && last.kind == MembershipClauseKind::Nick
+        && last.tokens.size() == 2
+        && incomingClause.tokens.size() == 2
+        && sameNick(last.tokens.at(1), incomingClause.tokens.at(0))) {
+        last.tokens[1] = incomingClause.tokens.at(1);
+        return MembershipFold{MembershipFoldKind::Chain, false,
+                              renderMembershipClauses(clauses)};
+    }
+    return MembershipFold{MembershipFoldKind::Merge, false,
+                          collapseEventBody(existing, incoming)};
 }
 
 QString kindToken(IrcMessageKind kind)
@@ -1028,15 +1191,68 @@ void IrcEventReducer::noteChatArrival(IrcConversationState& conversation,
     }
 }
 
+namespace
+{
+void dropLastTranscriptRow(IrcConversationState& conversation)
+{
+    if (conversation.messages.empty())
+        return;
+    const IrcReducedMessage& last = conversation.messages.back();
+    if (!last.msgid.isEmpty())
+        conversation.messageIds.erase(last.msgid);
+    const qint64 removedIndex = qint64(conversation.messages.size()) - 1;
+    conversation.messages.pop_back();
+    if (IrcChannelState *channel = conversation.channel()) {
+        if (channel->historyAnchor) {
+            const qint64 anchorIndex =
+                channel->historyAnchor->sequence - conversation.trimmed;
+            if (anchorIndex > removedIndex)
+                --channel->historyAnchor->sequence;
+        }
+    }
+}
+}
+
+void IrcEventReducer::setMembershipNoise(IrcMembershipNoise noise)
+{
+    m_membershipNoise = noise;
+}
+
+IrcMembershipNoise IrcEventReducer::membershipNoise() const
+{
+    return m_membershipNoise;
+}
+
 void IrcEventReducer::appendEvent(IrcConversationState& conversation,
                                   const QString& body,
-                                  bool collapsible)
+                                  bool collapsible,
+                                  bool membership)
 {
-    if (collapsible && !conversation.messages.empty()) {
+    if (membership && m_membershipNoise == IrcMembershipNoise::Hidden)
+        return;
+    if (membership && m_membershipNoise == IrcMembershipNoise::Every)
+        collapsible = false;
+
+    if (membership && m_membershipNoise == IrcMembershipNoise::Folded
+        && !conversation.messages.empty()) {
         IrcReducedMessage& last = conversation.messages.back();
         if (last.kind == IrcMessageKind::Event && last.collapsible) {
-            last.body = collapseEventBody(last.body, body);
-            return;
+            const auto sameNick = [this, &conversation](const QString& left,
+                                                        const QString& right) {
+                return equals(conversation.key.networkId, left, right);
+            };
+            const MembershipFold folded = foldMembership(last.body, body, sameNick);
+            if (folded.kind == MembershipFoldKind::Cancel) {
+                if (folded.dropRow)
+                    dropLastTranscriptRow(conversation);
+                else
+                    last.body = folded.body;
+                return;
+            }
+            if (collapsible) {
+                last.body = folded.body;
+                return;
+            }
         }
     }
     admitMessage(conversation,
@@ -1044,6 +1260,81 @@ void IrcEventReducer::appendEvent(IrcConversationState& conversation,
                   IrcOrigin::Live, IrcMsgId{}});
     persistMessage(conversation, conversation.messages.back());
     capMessages(conversation);
+}
+
+IrcEventReducer::MembershipReplayResult IrcEventReducer::admitMembershipReplay(
+    IrcConversationState& conversation,
+    std::vector<IrcReducedMessage>& run,
+    std::size_t& at,
+    const QString& body,
+    const QDateTime& timestamp,
+    const IrcMsgId& msgid,
+    const std::optional<QDateTime>& serverTime)
+{
+    MembershipReplayResult result;
+    if (m_membershipNoise == IrcMembershipNoise::Hidden)
+        return result;
+
+    const auto sameNick = [this, &conversation](const QString& left,
+                                                const QString& right) {
+        return equals(conversation.key.networkId, left, right);
+    };
+    const bool showEach = m_membershipNoise == IrcMembershipNoise::Every;
+    const auto pushRow = [&](bool collapsible) {
+        IrcReducedMessage message{
+            QString(), body, timestamp, IrcMessageKind::Event, collapsible,
+            IrcOrigin::Replay, msgid, 0, serverTime};
+        if (serverTime && serverTime->isValid())
+            message.serverTime = *serverTime;
+        message.sequence = conversation.nextSequence++;
+        run.push_back(std::move(message));
+        result.addedRow = true;
+        result.sequence = run.back().sequence;
+    };
+    const auto eraseRow = [&](IrcReducedMessage& row) {
+        result.droppedSequence = row.sequence;
+        if (!row.msgid.isEmpty())
+            conversation.messageIds.erase(row.msgid);
+    };
+
+    const auto foldInto = [&](IrcReducedMessage& row) -> bool {
+        if (row.kind != IrcMessageKind::Event || !row.collapsible)
+            return false;
+        const MembershipFold folded = foldMembership(row.body, body, sameNick);
+        if (folded.kind == MembershipFoldKind::Cancel && folded.dropRow) {
+            eraseRow(row);
+            return true;
+        }
+        row.body = folded.body;
+        result.droppedSequence.reset();
+        return true;
+    };
+
+    if (!showEach && !run.empty() && foldInto(run.back())) {
+        if (result.droppedSequence)
+            run.pop_back();
+        return result;
+    }
+    if (!showEach && run.empty() && at > 0 && at <= conversation.messages.size()
+        && foldInto(conversation.messages[at - 1])) {
+        if (result.droppedSequence) {
+            const qint64 removedIndex = qint64(at) - 1;
+            conversation.messages.erase(
+                conversation.messages.begin() + std::ptrdiff_t(at - 1));
+            --at;
+            if (IrcChannelState *channel = conversation.channel()) {
+                if (channel->historyAnchor) {
+                    const qint64 anchorIndex =
+                        channel->historyAnchor->sequence - conversation.trimmed;
+                    if (anchorIndex > removedIndex)
+                        --channel->historyAnchor->sequence;
+                }
+            }
+        }
+        return result;
+    }
+    pushRow(!showEach);
+    return result;
 }
 
 void IrcEventReducer::appendWhois(IrcConversationState& conversation,
@@ -1257,7 +1548,7 @@ void IrcEventReducer::reduce(const IrcJoinEvent& event)
                 + QStringLiteral(") joined");
         }
     }
-    appendEvent(*conversation, body, !self);
+    appendEvent(*conversation, body, !self, true);
     if (self)
         releasePendingPlayback(*conversation);
 }
@@ -1289,7 +1580,7 @@ void IrcEventReducer::reduce(const IrcPartEvent& event)
         stopNamesSync(channel);
     }
     forgetUnseen(event.networkId, departed);
-    appendEvent(*conversation, event.nick + QStringLiteral(" left"), true);
+    appendEvent(*conversation, event.nick + QStringLiteral(" left"), true, true);
     if (isSelf(event.networkId, event.nick))
         conversation->typing.clear();
     else
@@ -1306,7 +1597,7 @@ void IrcEventReducer::reduce(const IrcQuitEvent& event)
         IrcChannelState *channel = conversation.channel();
         if (!channel || channel->members.erase(normalizedNick) == 0)
             continue;
-        appendEvent(conversation, event.nick + QStringLiteral(" quit"), true);
+        appendEvent(conversation, event.nick + QStringLiteral(" quit"), true, true);
     }
     forgetUnseen(event.networkId, {normalizedNick});
     clearTypingEverywhere(event.networkId, normalizedNick);
@@ -1337,8 +1628,9 @@ void IrcEventReducer::reduce(const IrcNickEvent& event)
         updated.displayNick = event.newNick;
         channel->members.erase(member);
         channel->members.insert_or_assign(newNormalized, std::move(updated));
-        appendEvent(conversation, event.oldNick + QStringLiteral(" is now ")
-                         + event.newNick, true);
+        appendEvent(conversation,
+                    event.oldNick + QStringLiteral(" is now ") + event.newNick,
+                    true, true);
     }
 
     const IrcConversationKey oldKey{event.networkId, oldNormalized};
@@ -1350,7 +1642,7 @@ void IrcEventReducer::reduce(const IrcNickEvent& event)
     direct->second.target = event.newNick;
     appendEvent(direct->second,
                 event.oldNick + QStringLiteral(" is now ") + event.newNick,
-                true);
+                true, true);
     if (oldKey == newKey)
         return;
 
@@ -1715,7 +2007,7 @@ void IrcEventReducer::spliceHistory(IrcConversationState& conversation,
     if (!spliceIndex)
         return;
     const std::size_t previousSize = conversation.messages.size();
-    const std::size_t at = *spliceIndex;
+    std::size_t at = *spliceIndex;
 
     const IrcCaseMapping mapping =
         serverFeatures(event.conversation.networkId).caseMapping();
@@ -1736,12 +2028,17 @@ void IrcEventReducer::spliceHistory(IrcConversationState& conversation,
     struct PendingPlaybackNote {
         qint64 sequence = 0;
         std::optional<QDateTime> serverTime;
+        // A hidden, folded, or dropped membership line still advances the
+        // playback clock even though no row with this sequence survives.
+        bool keepWithoutRow = false;
     };
     std::vector<IrcReducedMessage> run;
     std::vector<PendingPlaybackNote> pendingNotes;
     run.reserve(event.lines.size());
     pendingNotes.reserve(event.lines.size());
     bool sawSelf = false;
+    bool consumedMembership = false;
+    bool sawNonMembership = false;
     const auto matchedSequence = [&](const auto& pred) -> std::optional<qint64> {
         for (const IrcReducedMessage& message : conversation.messages) {
             if (pred(message))
@@ -1762,8 +2059,16 @@ void IrcEventReducer::spliceHistory(IrcConversationState& conversation,
         // may delete a prefix inserted above the join, so the clock and
         // the covered set wait until the surviving rows are known.
         const auto queueNote = [&](qint64 sequence) {
-            pendingNotes.push_back(PendingPlaybackNote{sequence, line.serverTime});
+            pendingNotes.push_back(PendingPlaybackNote{sequence, line.serverTime, false});
         };
+        const auto queueKeptWithoutRow = [&]() {
+            pendingNotes.push_back(PendingPlaybackNote{0, line.serverTime, true});
+        };
+        const bool membershipLine = line.kind == IrcMessageKindTag::Event;
+        if (membershipLine)
+            consumedMembership = true;
+        else
+            sawNonMembership = true;
         if (!line.msgid.isEmpty() && conversation.messageIds.count(line.msgid)) {
             if (const std::optional<qint64> sequence = matchedSequence(
                     [&](const IrcReducedMessage& message) {
@@ -1771,6 +2076,24 @@ void IrcEventReducer::spliceHistory(IrcConversationState& conversation,
                     })) {
                 queueNote(*sequence);
             }
+            continue;
+        }
+        if (membershipLine) {
+            if (!line.msgid.isEmpty())
+                conversation.messageIds.insert(line.msgid);
+            const MembershipReplayResult admitted = admitMembershipReplay(
+                conversation, run, at, line.body, line.timestamp, line.msgid,
+                line.serverTime);
+            if (admitted.droppedSequence) {
+                for (PendingPlaybackNote& note : pendingNotes) {
+                    if (note.sequence == *admitted.droppedSequence)
+                        note.keepWithoutRow = true;
+                }
+            }
+            if (admitted.addedRow)
+                queueNote(admitted.sequence);
+            else
+                queueKeptWithoutRow();
             continue;
         }
         const IrcMessageKind kind = line.kind == IrcMessageKindTag::Emote
@@ -1833,13 +2156,15 @@ void IrcEventReducer::spliceHistory(IrcConversationState& conversation,
         capMessages(conversation);
         if (!event.prependAtHead) {
             for (const IrcReducedMessage& message : run) {
+                if (message.kind == IrcMessageKind::Event)
+                    continue;
                 noteChatArrival(conversation, event.conversation, message.author,
                                 message.body, message.kind, message.msgid,
                                 message.sequence, IrcOrigin::Replay, &event,
                                 message.serverTime);
             }
         }
-    } else if (event.prependAtHead) {
+    } else if (event.prependAtHead && (!consumedMembership || sawNonMembership)) {
         const QString exhaustTarget = event.target.isEmpty()
             ? conversation.target
             : event.target;
@@ -1848,7 +2173,7 @@ void IrcEventReducer::spliceHistory(IrcConversationState& conversation,
     }
     bool keptPlaybackLine = false;
     for (const PendingPlaybackNote& pending : pendingNotes) {
-        const bool stillPresent = std::any_of(
+        const bool stillPresent = pending.keepWithoutRow || std::any_of(
             conversation.messages.begin(), conversation.messages.end(),
             [&](const IrcReducedMessage& message) {
                 return message.sequence == pending.sequence;

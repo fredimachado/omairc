@@ -210,7 +210,7 @@ var verbCatalog = []VerbSpec{
 	{VerbBack, "back", nil, "/back", ScopeEither, ""},
 	{VerbAutoaway, "autoaway", nil,
 		"/autoaway [off|on|duration [reason]|reason [text]]", ScopeEither, ""},
-	{VerbPref, "pref", nil, "/pref [directs|avatars|unread] [on|off]", ScopeEither, ""},
+	{VerbPref, "pref", nil, "/pref [directs|avatars|unread] [on|off] | joins [folded|every|hidden]", ScopeEither, ""},
 	{VerbStatus, "status", nil, "/status [text]", ScopeEither, ""},
 	{VerbAvatar, "avatar", nil, "/avatar [url|email]", ScopeEither, ""},
 	{VerbWhois, "whois", nil, "/whois [nick]", ScopeEither, "Name a nick"},

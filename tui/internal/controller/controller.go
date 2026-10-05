@@ -47,12 +47,13 @@ type Controller struct {
 
 	// Phase 7 slash subsystems and their stores. commands, replies, monitor,
 	// and autoaway own their decisions; the controller owns the side effects.
-	ignores    *IgnoreStore
-	mutes      *MuteStore
-	highlights *HighlightStore
-	monitors   *MonitorStore
-	avatars    *AvatarStore
-	prefs      *Preferences
+	ignores         *IgnoreStore
+	mutes           *MuteStore
+	highlights      *HighlightStore
+	monitors        *MonitorStore
+	avatars         *AvatarStore
+	prefs           *Preferences
+	membershipNoise irc.MembershipNoise
 
 	// Phase 11 persistence. New starts ephemeral so unit tests never touch the
 	// user's config; the shell opts in with SetEphemeral(false) and then loads
@@ -108,8 +109,8 @@ type Controller struct {
 	// OnCapabilitiesChanged fires when the negotiated capability set changes or
 	// the selection moves to a network with a different set.
 	OnCapabilitiesChanged func()
-	transcriptFocused   bool
-	transcriptFollowEnd bool
+	transcriptFocused     bool
+	transcriptFollowEnd   bool
 
 	// OnViewChanged fires whenever Publish dirtied a view surface, so the shell
 	// re-renders. Publish runs on both the Update goroutine and session
@@ -196,6 +197,7 @@ const (
 	reopenDirectMessagesKey      = "reopenDirectMessages"
 	loadPeerAvatarsKey           = "loadPeerAvatars"
 	openConversationsAtUnreadKey = "openConversationsAtUnread"
+	membershipNoiseKey           = "membershipNoise"
 	networkOrderKey              = "networkOrder"
 	collapsedNetworksKey         = "collapsedNetworks"
 )
@@ -253,6 +255,10 @@ func (c *Controller) LoadStoredPreferences() {
 	c.prefs.SetEnabled(irc.PrefDirects, settings.Bool(preferencesGroup, reopenDirectMessagesKey, true))
 	c.prefs.SetEnabled(irc.PrefAvatars, settings.Bool(preferencesGroup, loadPeerAvatarsKey, true))
 	c.prefs.SetEnabled(irc.PrefUnread, settings.Bool(preferencesGroup, openConversationsAtUnreadKey, true))
+	if noise, ok := irc.ParseMembershipNoise(settings.Value(preferencesGroup, membershipNoiseKey)); ok {
+		c.membershipNoise = noise
+	}
+	c.reducer.SetMembershipNoise(c.membershipNoise)
 	c.loadStoredNetworkOrder(settings)
 }
 
@@ -265,6 +271,15 @@ func savePreferenceBool(key string, enabled bool) {
 		return
 	}
 	settings.SetBool(preferencesGroup, key, enabled)
+	settings.Sync()
+}
+
+func savePreferenceValue(key, value string) {
+	settings := storage.OpenSettings("")
+	if settings.WriteBlocked() != storage.StatusWritten {
+		return
+	}
+	settings.SetValue(preferencesGroup, key, value)
 	settings.Sync()
 }
 
@@ -347,8 +362,28 @@ func (c *Controller) PrefEnabled(name irc.PrefName) bool {
 		return c.ShowAvatars()
 	case irc.PrefUnread:
 		return c.OpenAtUnread()
+	case irc.PrefJoins:
+		return false
 	}
 	return false
+}
+
+// MembershipNoise reports how join, part, quit, and nick lines are shown.
+func (c *Controller) MembershipNoise() irc.MembershipNoise {
+	return c.membershipNoise
+}
+
+// SetMembershipNoise stores the membership-noise setting and applies it to
+// later lines. Lines already on screen stay as they are.
+func (c *Controller) SetMembershipNoise(noise irc.MembershipNoise) {
+	if c.membershipNoise == noise {
+		return
+	}
+	c.membershipNoise = noise
+	c.reducer.SetMembershipNoise(noise)
+	if !c.ephemeral {
+		savePreferenceValue(membershipNoiseKey, irc.MembershipNoiseToken(noise))
+	}
 }
 
 // PrefApply maps one /pref toggle to its setter. It mirrors the prefApply
@@ -361,6 +396,7 @@ func (c *Controller) PrefApply(name irc.PrefName, enabled bool) {
 		c.SetShowAvatars(enabled)
 	case irc.PrefUnread:
 		c.SetOpenAtUnread(enabled)
+	case irc.PrefJoins:
 	}
 }
 

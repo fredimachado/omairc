@@ -1229,6 +1229,144 @@ func TestMixedJoinPartQuitNickCollapse(t *testing.T) {
 		"Alice, Bob joined, Alice left, Bob quit, Carol joined, Carol is now Caroline")
 }
 
+func TestPartThenJoinOfSameNickIsDropped(t *testing.T) {
+	reducer := NewEventReducer()
+	welcome(reducer, networkA)
+	room := reducer.ConversationKey(networkA, "#room")
+	reducer.Apply(JoinEvent{NetworkID: networkA, Channel: "#room", Nick: "omairc"}, reducerTimestamp)
+	reducer.Apply(PartEvent{NetworkID: networkA, Channel: "#room", Nick: "Alice"}, reducerTimestamp)
+	reducer.Apply(JoinEvent{NetworkID: networkA, Channel: "#room", Nick: "Alice"}, reducerTimestamp)
+
+	conversation := stateOf(t, reducer, room)
+	requireInt(t, "messages", len(conversation.Messages), 1)
+	requireString(t, "body", conversation.Messages[0].Body, "omairc joined")
+	requireInt(t, "people", conversation.PeopleCount(), 2)
+
+	reducer.Apply(JoinEvent{NetworkID: networkA, Channel: "#room", Nick: "Bob"}, reducerTimestamp)
+	reducer.Apply(QuitEvent{NetworkID: networkA, Nick: "Bob", Reason: "gone"}, reducerTimestamp)
+	reducer.Apply(JoinEvent{NetworkID: networkA, Channel: "#room", Nick: "Bob"}, reducerTimestamp)
+	requireInt(t, "messages after quit", len(conversation.Messages), 2)
+	requireString(t, "bob", conversation.Messages[1].Body, "Bob joined")
+	requireInt(t, "people after rejoin", conversation.PeopleCount(), 3)
+}
+
+func TestLineBetweenPartAndJoinKeepsBoth(t *testing.T) {
+	reducer := NewEventReducer()
+	welcome(reducer, networkA)
+	room := reducer.ConversationKey(networkA, "#room")
+	reducer.Apply(JoinEvent{NetworkID: networkA, Channel: "#room", Nick: "omairc"}, reducerTimestamp)
+	reducer.Apply(PartEvent{NetworkID: networkA, Channel: "#room", Nick: "Alice"}, reducerTimestamp)
+	reducer.Apply(MessageEvent{Conversation: room, Author: "omairc", Body: "hello", Timestamp: reducerTimestamp, Target: "#room"}, reducerTimestamp)
+	reducer.Apply(JoinEvent{NetworkID: networkA, Channel: "#room", Nick: "Alice"}, reducerTimestamp)
+
+	conversation := stateOf(t, reducer, room)
+	requireInt(t, "messages", len(conversation.Messages), 4)
+	requireString(t, "left", conversation.Messages[1].Body, "Alice left")
+	requireString(t, "chat", conversation.Messages[2].Body, "hello")
+	requireString(t, "joined", conversation.Messages[3].Body, "Alice joined")
+}
+
+func TestNickChainKeepsFinalName(t *testing.T) {
+	reducer := NewEventReducer()
+	welcome(reducer, networkA)
+	reducer.Apply(JoinEvent{NetworkID: networkA, Channel: "#room", Nick: "Alice"}, reducerTimestamp)
+	reducer.Apply(NickEvent{NetworkID: networkA, OldNick: "Alice", NewNick: "Bob"}, reducerTimestamp)
+	reducer.Apply(NickEvent{NetworkID: networkA, OldNick: "Bob", NewNick: "Carol"}, reducerTimestamp)
+
+	conversation := stateOf(t, reducer, reducer.ConversationKey(networkA, "#room"))
+	requireInt(t, "messages", len(conversation.Messages), 1)
+	requireString(t, "body", conversation.Messages[0].Body, "Alice joined, Alice is now Carol")
+}
+
+func TestMembershipNoiseShowsEveryOrHidesIncludingHistory(t *testing.T) {
+	every := NewEventReducer()
+	welcome(every, networkA)
+	every.SetMembershipNoise(MembershipNoiseEvery)
+	every.Apply(JoinEvent{NetworkID: networkA, Channel: "#room", Nick: "Alice"}, reducerTimestamp)
+	every.Apply(JoinEvent{NetworkID: networkA, Channel: "#room", Nick: "Bob"}, reducerTimestamp)
+	room := every.ConversationKey(networkA, "#room")
+	shown := stateOf(t, every, room)
+	requireInt(t, "every messages", len(shown.Messages), 2)
+	requireString(t, "alice", shown.Messages[0].Body, "Alice joined")
+	requireString(t, "bob", shown.Messages[1].Body, "Bob joined")
+	requireFalse(t, "not collapsible", shown.Messages[0].Collapsible)
+
+	hidden := NewEventReducer()
+	welcome(hidden, networkA)
+	hidden.SetMembershipNoise(MembershipNoiseHidden)
+	hidden.Apply(JoinEvent{NetworkID: networkA, Channel: "#room", Nick: "omairc"}, reducerTimestamp)
+	hidden.Apply(JoinEvent{NetworkID: networkA, Channel: "#room", Nick: "Alice"}, reducerTimestamp)
+	hidden.Apply(PartEvent{NetworkID: networkA, Channel: "#room", Nick: "Alice"}, reducerTimestamp)
+	hidden.Apply(KickEvent{NetworkID: networkA, Channel: "#room", Target: "Bob", Author: "op"}, reducerTimestamp)
+	hidden.Apply(ModeEvent{NetworkID: networkA, Target: "#room", Author: "op", Mode: "+v"}, reducerTimestamp)
+	quiet := stateOf(t, hidden, room)
+	requireInt(t, "people", quiet.PeopleCount(), 1)
+	requireInt(t, "hidden messages", len(quiet.Messages), 2)
+	requireString(t, "kick", quiet.Messages[0].Body, "Bob was kicked")
+	requireString(t, "mode", quiet.Messages[1].Body, "op set mode +v")
+
+	batch := HistoryBatch{
+		Target: "#room",
+		Kind:   HistoryBouncerPlayback,
+		Lines: []Message{
+			mustParse(t, "@time=2026-09-04T00:00:00.000Z :alice!u@h JOIN :#room"),
+			mustParse(t, "@time=2026-09-04T00:00:01.000Z :bob!u@h JOIN :#room"),
+			mustParse(t, "@time=2026-09-04T00:00:02.000Z :alice!u@h PRIVMSG #room :from history"),
+		},
+	}
+	played, ok := TranslateHistory(networkA, "omairc", NewServerFeatures(), batch, reducerTimestamp)
+	requireTrue(t, "history", ok)
+	requireInt(t, "played lines", len(played.Lines), 3)
+	hidden.Apply(played, reducerTimestamp)
+	requireInt(t, "people after history", quiet.PeopleCount(), 1)
+	requireInt(t, "hidden history messages", len(quiet.Messages), 3)
+	requireString(t, "history chat", quiet.Messages[0].Body, "from history")
+	requireTrue(t, "playback kept", hidden.PlaybackBatchKept(networkA, "#room"))
+
+	folded := NewEventReducer()
+	welcome(folded, networkA)
+	folded.Apply(JoinEvent{NetworkID: networkA, Channel: "#room", Nick: "omairc"}, reducerTimestamp)
+	folded.Apply(played, reducerTimestamp)
+	foldedRoom := stateOf(t, folded, room)
+	requireInt(t, "folded people", foldedRoom.PeopleCount(), 1)
+	requireInt(t, "folded messages", len(foldedRoom.Messages), 3)
+	requireString(t, "folded joins", foldedRoom.Messages[0].Body, "alice, bob joined")
+	requireString(t, "folded chat", foldedRoom.Messages[1].Body, "from history")
+	requireString(t, "self join", foldedRoom.Messages[2].Body, "omairc joined")
+
+	every.Apply(JoinEvent{NetworkID: networkA, Channel: "#room", Nick: "omairc"}, reducerTimestamp)
+	every.Apply(played, reducerTimestamp)
+	requireInt(t, "every people", shown.PeopleCount(), 3)
+	requireString(t, "historic alice", shown.Messages[2].Body, "alice joined")
+	requireString(t, "historic bob", shown.Messages[3].Body, "bob joined")
+	requireString(t, "historic chat", shown.Messages[4].Body, "from history")
+}
+
+func TestLoneMembershipLineKeepsTodayWording(t *testing.T) {
+	reducer := NewEventReducer()
+	welcome(reducer, networkA)
+	room := reducer.ConversationKey(networkA, "#room")
+	reducer.Apply(JoinEvent{NetworkID: networkA, Channel: "#room", Nick: "Alice"}, reducerTimestamp)
+	reducer.Apply(MessageEvent{Conversation: room, Author: "Alice", Body: "hello", Timestamp: reducerTimestamp, Target: "#room"}, reducerTimestamp)
+	reducer.Apply(PartEvent{NetworkID: networkA, Channel: "#room", Nick: "Alice"}, reducerTimestamp)
+	reducer.Apply(MessageEvent{Conversation: room, Author: "Alice", Body: "gap", Timestamp: reducerTimestamp, Target: "#room"}, reducerTimestamp)
+	reducer.Apply(JoinEvent{NetworkID: networkA, Channel: "#room", Nick: "Alice"}, reducerTimestamp)
+	reducer.Apply(MessageEvent{Conversation: room, Author: "Alice", Body: "back", Timestamp: reducerTimestamp, Target: "#room"}, reducerTimestamp)
+	reducer.Apply(QuitEvent{NetworkID: networkA, Nick: "Alice", Reason: "bye"}, reducerTimestamp)
+	reducer.Apply(MessageEvent{Conversation: room, Author: "Alice", Body: "next", Timestamp: reducerTimestamp, Target: "#room"}, reducerTimestamp)
+	reducer.Apply(JoinEvent{NetworkID: networkA, Channel: "#room", Nick: "Bob"}, reducerTimestamp)
+	reducer.Apply(MessageEvent{Conversation: room, Author: "Bob", Body: "hi", Timestamp: reducerTimestamp, Target: "#room"}, reducerTimestamp)
+	reducer.Apply(NickEvent{NetworkID: networkA, OldNick: "Bob", NewNick: "Bobby"}, reducerTimestamp)
+
+	conversation := stateOf(t, reducer, room)
+	requireString(t, "join", conversation.Messages[0].Body, "Alice joined")
+	requireString(t, "part", conversation.Messages[2].Body, "Alice left")
+	requireString(t, "rejoin", conversation.Messages[4].Body, "Alice joined")
+	requireString(t, "quit", conversation.Messages[6].Body, "Alice quit")
+	requireString(t, "bob", conversation.Messages[8].Body, "Bob joined")
+	requireString(t, "nick", conversation.Messages[10].Body, "Bob is now Bobby")
+}
+
 func TestForgetNetworkLeavesTheOtherNetwork(t *testing.T) {
 	reducer := NewEventReducer()
 	welcome(reducer, networkA)

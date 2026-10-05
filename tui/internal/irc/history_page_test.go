@@ -222,12 +222,12 @@ func TestHistoryPageCapTailKeepsPrependedHeadAtMaxMessages(t *testing.T) {
 	for i := range conversation.Messages {
 		msgid := MsgID{Value: fmt.Sprintf("fill-%d", i)}
 		conversation.Messages[i] = ReducedMessage{
-			Author:    "alice",
-			Body:      fmt.Sprintf("fill-%d", i),
-			MsgID:     msgid,
-			Sequence:  int64(i + 1),
-			Kind:      KindMessage,
-			Origin:    OriginLive,
+			Author:   "alice",
+			Body:     fmt.Sprintf("fill-%d", i),
+			MsgID:    msgid,
+			Sequence: int64(i + 1),
+			Kind:     KindMessage,
+			Origin:   OriginLive,
 		}
 		conversation.MessageIDs[msgid] = struct{}{}
 	}
@@ -255,4 +255,32 @@ func TestWelcomeClearsHistoryPageCapTail(t *testing.T) {
 	conversation.HistoryPageCapTail = true
 	welcome(reducer, networkA)
 	requireFalse(t, "tail cap cleared", conversation.HistoryPageCapTail)
+}
+
+func TestHiddenMembershipOlderPageKeepsHistoryPageCapTail(t *testing.T) {
+	reducer := NewEventReducer()
+	welcome(reducer, networkA)
+	room := reducer.ConversationKey(networkA, "#room")
+	reducer.Apply(JoinEvent{NetworkID: networkA, Channel: "#room", Nick: "omairc"}, reducerTimestamp)
+	reducer.SetMembershipNoise(MembershipNoiseHidden)
+	conversation := stateOf(t, reducer, room)
+	conversation.HistoryPageCapTail = true
+
+	reducer.Apply(HistoryEvent{
+		Conversation: room,
+		Target:       "#room",
+		Kind:         HistoryChat,
+		OlderPage:    true,
+		Lines: []ReplayLine{{
+			Body:      "alice joined",
+			Timestamp: reducerTimestamp,
+			Kind:      MessageKindEvent,
+			MsgID:     MsgID{Value: "join-page"},
+		}},
+	}, reducerTimestamp)
+
+	requireTrue(t, "cap tail stays armed", conversation.HistoryPageCapTail)
+	requireInt(t, "messages", len(conversation.Messages), 1)
+	requireString(t, "self join", conversation.Messages[0].Body, "omairc joined")
+	requireInt(t, "people", conversation.PeopleCount(), 1)
 }

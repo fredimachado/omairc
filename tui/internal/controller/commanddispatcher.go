@@ -103,6 +103,8 @@ type CommandHost interface {
 
 	PrefEnabled(name irc.PrefName) bool
 	PrefApply(name irc.PrefName, enabled bool)
+	MembershipNoise() irc.MembershipNoise
+	SetMembershipNoise(noise irc.MembershipNoise)
 
 	Now() time.Time
 }
@@ -932,14 +934,22 @@ func (d *CommandDispatcher) dispatchPref(command irc.Command, surface irc.Compos
 	}
 
 	if request.Kind == irc.PrefSet {
-		d.host.PrefApply(request.Name, request.Enabled)
+		if request.Name == irc.PrefJoins {
+			d.host.SetMembershipNoise(request.Noise)
+		} else {
+			d.host.PrefApply(request.Name, request.Enabled)
+		}
 	}
 
 	if request.Kind == irc.PrefQueryAll {
 		return d.echoPrefFeedback(surface, irc.FormatPrefList(
 			d.host.PrefEnabled(irc.PrefDirects),
 			d.host.PrefEnabled(irc.PrefAvatars),
-			d.host.PrefEnabled(irc.PrefUnread)))
+			d.host.PrefEnabled(irc.PrefUnread),
+			d.host.MembershipNoise()))
+	}
+	if request.Name == irc.PrefJoins {
+		return d.echoPrefFeedback(surface, irc.FormatPrefNoise(d.host.MembershipNoise()))
 	}
 	if request.Kind == irc.PrefQueryOne {
 		return d.echoPrefFeedback(surface,

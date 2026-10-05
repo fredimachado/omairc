@@ -34,6 +34,7 @@ type commandFakeHost struct {
 	mapping irc.CaseMapping
 	prefs   map[irc.PrefName]bool
 	prefSet map[irc.PrefName]bool
+	noise   irc.MembershipNoise
 
 	now time.Time
 
@@ -227,6 +228,10 @@ func (h *commandFakeHost) PrefApply(name irc.PrefName, enabled bool) {
 	h.prefs[name] = enabled
 	h.prefSet[name] = true
 }
+
+func (h *commandFakeHost) MembershipNoise() irc.MembershipNoise { return h.noise }
+
+func (h *commandFakeHost) SetMembershipNoise(noise irc.MembershipNoise) { h.noise = noise }
 
 func (h *commandFakeHost) Now() time.Time { return h.now }
 
@@ -717,7 +722,7 @@ func TestCommandDispatcherPref(t *testing.T) {
 	fixture := newCommandFixture()
 
 	commandRequireOutcome(t, fixture.dispatcher.Dispatch(irc.Command{Verb: irc.VerbPref}, irc.SurfaceStatus), irc.OutcomeSent, "pref list")
-	commandRequireText(t, fixture.host.statusTexts[0], irc.FormatPrefList(true, true, true), "pref list text")
+	commandRequireText(t, fixture.host.statusTexts[0], irc.FormatPrefList(true, true, true, irc.MembershipNoiseFolded), "pref list text")
 
 	fixture.host.statusTexts = nil
 	fixture.dispatcher.Dispatch(irc.Command{Verb: irc.VerbPref, Argument: "avatars"}, irc.SurfaceStatus)

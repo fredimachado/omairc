@@ -16,6 +16,19 @@ const (
 	PrefAvatars
 	// PrefUnread opens conversations at unread.
 	PrefUnread
+	// PrefJoins chooses how join, part, quit, and nick lines are shown.
+	PrefJoins
+)
+
+// PrefValueKind says whether a catalog row is an on/off toggle or the
+// membership-noise choice. It mirrors IrcPrefValueKind.
+type PrefValueKind int
+
+const (
+	// PrefValueToggle is on or off.
+	PrefValueToggle PrefValueKind = iota
+	// PrefValueNoise is folded, every, or hidden.
+	PrefValueNoise
 )
 
 // PrefKind is the parsed shape of a /pref argument. It mirrors IrcPrefKind.
@@ -37,9 +50,10 @@ const (
 
 // PrefSpec is one /pref catalog row. It mirrors IrcPrefSpec.
 type PrefSpec struct {
-	Name  PrefName
-	Token string
-	Label string
+	Name      PrefName
+	Token     string
+	Label     string
+	ValueKind PrefValueKind
 }
 
 // PrefRequest is a parsed /pref argument. It mirrors IrcPrefRequest.
@@ -47,13 +61,15 @@ type PrefRequest struct {
 	Kind    PrefKind
 	Name    PrefName
 	Enabled bool
+	Noise   MembershipNoise
 }
 
 // prefCatalog is the static ordered /pref table.
 var prefCatalog = []PrefSpec{
-	{PrefDirects, "directs", "Reopen direct messages on startup"},
-	{PrefAvatars, "avatars", "Show peer avatars"},
-	{PrefUnread, "unread", "Open conversations at unread"},
+	{PrefDirects, "directs", "Reopen direct messages on startup", PrefValueToggle},
+	{PrefAvatars, "avatars", "Show peer avatars", PrefValueToggle},
+	{PrefUnread, "unread", "Open conversations at unread", PrefValueToggle},
+	{PrefJoins, "joins", "Join, part, quit, and nick lines", PrefValueNoise},
 }
 
 // PrefCatalog returns a copy of the ordered /pref catalog. It mirrors
@@ -78,7 +94,7 @@ func PrefFind(token string) *PrefSpec {
 
 // PrefUsage returns the /pref usage line. It mirrors ircPrefUsage.
 func PrefUsage() string {
-	return "/pref [directs|avatars|unread] [on|off]"
+	return "/pref [directs|avatars|unread] [on|off] | joins [folded|every|hidden]"
 }
 
 // PrefAvatarNote returns the avatar privacy note. It mirrors ircPrefAvatarNote.
@@ -112,12 +128,19 @@ func FormatPrefQuery(name PrefName, enabled bool) string {
 	return text
 }
 
-// FormatPrefList renders all three toggles, one per line. It mirrors
-// ircFormatPrefList.
-func FormatPrefList(directs, avatars, unread bool) string {
+// FormatPrefNoise renders the membership-noise setting. It mirrors
+// ircFormatPrefNoise.
+func FormatPrefNoise(noise MembershipNoise) string {
+	return "Join, part, quit, and nick lines: " + MembershipNoiseToken(noise)
+}
+
+// FormatPrefList renders the toggles and the membership-noise setting, one
+// per line. It mirrors ircFormatPrefList.
+func FormatPrefList(directs, avatars, unread bool, noise MembershipNoise) string {
 	return FormatPrefState(PrefDirects, directs) + "\n" +
 		FormatPrefState(PrefAvatars, avatars) + "\n" +
-		FormatPrefState(PrefUnread, unread)
+		FormatPrefState(PrefUnread, unread) + "\n" +
+		FormatPrefNoise(noise)
 }
 
 // ParsePrefArgument parses a /pref argument. It mirrors ircParsePrefArgument:
@@ -144,7 +167,17 @@ func ParsePrefArgument(argument string) PrefRequest {
 		return request
 	}
 
-	switch strings.ToLower(parts[1]) {
+	value := strings.ToLower(parts[1])
+	if spec.ValueKind == PrefValueNoise {
+		noise, ok := ParseMembershipNoise(value)
+		if !ok {
+			return request
+		}
+		request.Kind = PrefSet
+		request.Noise = noise
+		return request
+	}
+	switch value {
 	case "on":
 		request.Kind = PrefSet
 		request.Enabled = true

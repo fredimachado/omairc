@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Join, part, quit, and nick lines fold together. A leave followed at once by the same nick rejoining is omitted, and a nick chain keeps the final name. `/pref joins` shows every line or hides these lines, including history playback.
 - The terminal client supports IRC read markers (`draft/read-marker`, and
   `soju.im/read` when that is the only token offered): a server marker clears
   unread another client already read, and Omairc publishes a marker when this

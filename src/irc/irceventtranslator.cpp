@@ -1,6 +1,7 @@
 #include "irceventtranslator.h"
 
 #include "irchistorybatch.h"
+#include "ircmembershipnoise.h"
 #include "ircprefixnick.h"
 #include "ircpresence.h"
 #include "ircservicenick.h"
@@ -237,6 +238,61 @@ std::optional<IrcReplayLine> bouncerQueryReplayLine(
         sender, body, timestampFor(message), IrcMessageKindTag::Chat, msgid,
         serverTime};
 }
+
+// A channel batch also replays join, part, quit, and nick lines. The author
+// stays empty so playback does not open a query. Membership is not changed.
+std::optional<IrcReplayLine> channelMembershipReplayLine(
+    const QString& batchTarget,
+    const IrcServerFeatures& features,
+    const IrcMessage& message,
+    const std::vector<IrcEvent>& translated,
+    const std::optional<QDateTime>& serverTime)
+{
+    if (!features.isChannel(utf8(batchTarget)))
+        return std::nullopt;
+    const IrcMsgId msgid{tagValue(message, "msgid").value_or(QString{})};
+    const QDateTime timestamp = timestampFor(message);
+    const auto sameTarget = [&](const QString& channel) {
+        return features.caseMapping().equals(utf8(channel), utf8(batchTarget));
+    };
+    for (const IrcEvent& event : translated) {
+        if (const auto *join = std::get_if<IrcJoinEvent>(&event)) {
+            if (join->nick.isEmpty() || !sameTarget(join->channel))
+                return std::nullopt;
+            QString shown;
+            if (join->account) {
+                const bool sameAsNick = features.caseMapping().equals(
+                    utf8(*join->account), utf8(join->nick));
+                shown = ircShownAccount(sameAsNick, *join->account);
+            }
+            return IrcReplayLine{
+                QString(), ircJoinLine(join->nick, shown), timestamp,
+                IrcMessageKindTag::Event, msgid, serverTime};
+        }
+        if (const auto *part = std::get_if<IrcPartEvent>(&event)) {
+            if (part->nick.isEmpty() || !sameTarget(part->channel))
+                return std::nullopt;
+            return IrcReplayLine{
+                QString(), ircPartLine(part->nick), timestamp,
+                IrcMessageKindTag::Event, msgid, serverTime};
+        }
+        if (const auto *quit = std::get_if<IrcQuitEvent>(&event)) {
+            if (quit->nick.isEmpty())
+                return std::nullopt;
+            return IrcReplayLine{
+                QString(), ircQuitLine(quit->nick), timestamp,
+                IrcMessageKindTag::Event, msgid, serverTime};
+        }
+        if (const auto *nick = std::get_if<IrcNickEvent>(&event)) {
+            if (nick->oldNick.isEmpty() || nick->newNick.isEmpty())
+                return std::nullopt;
+            return IrcReplayLine{
+                QString(), ircNickLine(nick->oldNick, nick->newNick), timestamp,
+                IrcMessageKindTag::Event, msgid, serverTime};
+        }
+    }
+    return std::nullopt;
+}
 }
 
 std::optional<IrcConversationKey> ircConversationFor(
@@ -441,21 +497,30 @@ std::optional<IrcHistoryEvent> IrcEventTranslator::translateHistory(
     for (const IrcMessage& line : batch.lines) {
         const std::optional<QDateTime> serverTime = serverTimeOf(line);
         bool kept = false;
-        for (const IrcEvent& translated :
-             translate(networkId, currentNick, features, line)) {
-            if (const auto *message = std::get_if<IrcMessageEvent>(&translated)) {
+        const std::vector<IrcEvent> translated =
+            translate(networkId, currentNick, features, line);
+        for (const IrcEvent& translatedEvent : translated) {
+            if (const auto *message = std::get_if<IrcMessageEvent>(&translatedEvent)) {
                 if (message->conversation != conversation)
                     continue;
                 event.lines.push_back({message->author, message->body, message->timestamp,
                                        IrcMessageKindTag::Chat, message->msgid,
                                        serverTime});
                 kept = true;
-            } else if (const auto *action = std::get_if<IrcActionEvent>(&translated)) {
+            } else if (const auto *action = std::get_if<IrcActionEvent>(&translatedEvent)) {
                 if (action->conversation != conversation)
                     continue;
                 event.lines.push_back({action->author, action->body, action->timestamp,
                                        IrcMessageKindTag::Emote, action->msgid,
                                        serverTime});
+                kept = true;
+            }
+        }
+        if (!kept) {
+            if (const std::optional<IrcReplayLine> membership =
+                    channelMembershipReplayLine(batch.target, features, line,
+                                                translated, serverTime)) {
+                event.lines.push_back(*membership);
                 kept = true;
             }
         }

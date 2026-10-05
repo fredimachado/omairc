@@ -139,6 +139,10 @@ func (h ctrlHost) PrefEnabled(name irc.PrefName) bool { return h.c.PrefEnabled(n
 
 func (h ctrlHost) PrefApply(name irc.PrefName, enabled bool) { h.c.PrefApply(name, enabled) }
 
+func (h ctrlHost) MembershipNoise() irc.MembershipNoise { return h.c.MembershipNoise() }
+
+func (h ctrlHost) SetMembershipNoise(noise irc.MembershipNoise) { h.c.SetMembershipNoise(noise) }
+
 // ReplyHost extras.
 func (h ctrlHost) SelfNick(networkID string) string { return h.c.currentNicks[networkID] }
 
