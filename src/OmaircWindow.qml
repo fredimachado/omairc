@@ -114,11 +114,16 @@ ApplicationWindow {
         ? (networkConsole.open || irc.selectedTarget.length === 0)
         : false
     onConsoleVisibleChanged: {
-        // Opening Status keeps the mark. Closing it, including a return to the
-        // conversation that was already selected, drops the mark when that
-        // conversation is the one the title names.
-        if (!consoleVisible && irc)
-            titleMark.clearIfOpened(irc.focusedNetworkId, irc.selectedTarget);
+        // setOpen emits before selectConversation stores the new target, so a
+        // synchronous clear would match the conversation that was under Status.
+        // The clear waits until that selection is stored. Opening Status keeps
+        // the mark. Draft stash and the console pin stay in this turn.
+        if (!consoleVisible && irc) {
+            Qt.callLater(function() {
+                if (!consoleVisible && irc)
+                    titleMark.clearIfOpened(irc.focusedNetworkId, irc.selectedTarget);
+            });
+        }
         clearTranscriptSelection();
         resetNickComplete();
         if (!abandonFind() && !suppressComposerStash)
