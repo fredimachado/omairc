@@ -2,6 +2,7 @@ package demo
 
 import (
 	"bytes"
+	"strings"
 
 	"github.com/fredimachado/omairc/tui/internal/controller"
 	"github.com/fredimachado/omairc/tui/internal/session"
@@ -195,12 +196,31 @@ func (d *DemoServer) injectSelfJoin(networkID, nick string, frame []byte) {
 	if space := bytes.IndexByte(rest, ' '); space >= 0 {
 		channelField = rest[:space]
 	}
+	seed := seedFor(networkID)
 	for _, raw := range bytes.Split(channelField, []byte(",")) {
 		if len(raw) == 0 {
 			continue
 		}
-		d.inject(networkID, joinLine(nick, string(raw), ""))
+		name := string(raw)
+		d.inject(networkID, joinLine(nick, name, ""))
+		// A real server follows the self JOIN with the current topic. The demo
+		// still does not send a fresh 353, so the member column stays the nick
+		// who just joined. The topic is what the header slot shows.
+		if topic := seedChannelTopic(seed, name); topic != "" {
+			d.inject(networkID, line(":server 332 "+nick+" "+name+" :"+topic))
+		}
 	}
+}
+
+// seedChannelTopic returns the seeded topic for one channel, matched
+// case-insensitively. An unknown channel has no topic to echo.
+func seedChannelTopic(network SeedNetwork, channel string) string {
+	for _, item := range network.Channels {
+		if strings.EqualFold(item.Name, channel) {
+			return item.Topic
+		}
+	}
+	return ""
 }
 
 // inject delivers reply bytes on one network. An empty payload is a handled

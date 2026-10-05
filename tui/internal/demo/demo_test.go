@@ -398,9 +398,23 @@ func TestClosedChannelsRejoinFromDemoEcho(t *testing.T) {
 	if !containsString(conversationNames(c), "#desktop") || !containsString(conversationNames(c), "#omarchy") {
 		t.Fatalf("rows = %v", conversationNames(c))
 	}
+	// The echo restores the seeded topic and does not send a fresh 353, so the
+	// member column stays the nick who just joined.
+	if c.Topic() != "A cozy corner for Omarchy users and builders." {
+		t.Fatalf("topic = %q", c.Topic())
+	}
+	if c.PeopleCount() != 1 {
+		t.Fatalf("people = %d, want 1", c.PeopleCount())
+	}
 	c.SelectConversation("omarchy", "#desktop")
 	if c.SelectedTarget() != "#desktop" || !c.ChannelJoined() {
 		t.Fatal("#desktop was not joined by the demo echo")
+	}
+	if c.Topic() != "Desktops should feel personal, fast, and calm." {
+		t.Fatalf("#desktop topic = %q", c.Topic())
+	}
+	if c.PeopleCount() != 1 {
+		t.Fatalf("#desktop people = %d, want 1", c.PeopleCount())
 	}
 }
 

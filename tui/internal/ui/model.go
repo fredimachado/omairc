@@ -715,8 +715,9 @@ func (m *Model) View() tea.View {
 	// Place the composer's real terminal cursor at its frame row. The row is
 	// the shell's, because the footer sits below the composer; composerCursor
 	// returns nil while the composer is blurred (an overlay or modal owns the
-	// keys), so the cursor never floats over a sheet.
-	v.Cursor = m.composerCursor(m.composerRow())
+	// keys), so the cursor never floats over a sheet. cursorRow keeps that
+	// row inside the terminal when the layout math would land past the last line.
+	v.Cursor = m.composerCursor(m.cursorRow())
 	return v
 }
 
@@ -773,7 +774,11 @@ func (m *Model) render() string {
 	if m.footerVisible() {
 		parts = append(parts, m.footerView())
 	}
-	return lipgloss.JoinVertical(lipgloss.Left, parts...)
+	// Clamp the joined frame to the terminal. A column that runs past the body
+	// budget would otherwise make the alt screen taller than the window, and
+	// the next paint scrolls. compositeSlashMenu already fits its overlay this
+	// way; the footer join needs the same bound.
+	return fitBlock(lipgloss.JoinVertical(lipgloss.Left, parts...), m.width, m.height)
 }
 
 // framedColumn wraps one side column in a rounded card. outerWidth and
@@ -878,6 +883,22 @@ func (m *Model) composerRow() int {
 		return 0
 	}
 	return m.transcriptHeight() + composerFrameRows
+}
+
+// cursorRow is the composer cursor's row clamped into the terminal. composerRow
+// is the layout's text row; this is the row View may hand to the terminal.
+func (m *Model) cursorRow() int {
+	if m == nil || m.height <= 1 {
+		return 0
+	}
+	row := m.composerRow()
+	if row < 0 {
+		return 0
+	}
+	if row > m.height-1 {
+		return m.height - 1
+	}
+	return row
 }
 
 // overlayCard returns the topmost overlay card as one rendered block, if any.
