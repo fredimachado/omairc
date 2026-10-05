@@ -14,6 +14,7 @@
 #include "ircmonitorcoordinator.h"
 #include "ircautoawayruntime.h"
 #include "ircmute.h"
+#include "ircclosedconversation.h"
 #include "ircopendirect.h"
 #include "ircplaybackcoordinator.h"
 #include "ircplaybacktime.h"
@@ -197,6 +198,7 @@ public:
     Q_INVOKABLE void setTranscriptCaughtUp(bool caughtUp);
     void noteLocalActivity();
 #ifdef OMAIRC_TEST
+    void applyForTest(const IrcEvent& event) { apply(event); }
     void fireAutoawayIdleForTest();
     void fireAutoawayGraceForTest();
     int autoawayIdleIntervalMsForTest() const;
@@ -319,7 +321,14 @@ signals:
     void channelListRequested();
 
 private:
+    struct ReopenedDirect
+    {
+        QString networkId;
+        QString target;
+    };
+
     void apply(const IrcEvent& event);
+    std::optional<ReopenedDirect> otherReopenedDirect(const IrcEvent& event) const;
     void adoptReducerSelection();
     void publish(const IrcViewNotify& notify);
     void handleCapabilities(const QString& networkId,
@@ -445,6 +454,7 @@ private:
     IrcMonitorStore m_monitors;
     IrcMuteStore m_mutes;
     IrcOpenDirectStore m_openDirects;
+    IrcClosedConversationStore m_closed;
     IrcPlaybackTimeStore m_playbackTimes;
     IrcScrollPlaceStore m_scrollPlaces;
     IrcPlaybackCoordinator m_playback;

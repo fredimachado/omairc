@@ -40,6 +40,7 @@ HEADERS += \
     ../../src/irc/ircmonitor.h \
     ../../src/irc/ircmute.h \
     ../../src/irc/ircopendirect.h \
+    ../../src/irc/ircclosedconversation.h \
     ../../src/irc/ircplaybacktime.h \
     ../../src/irc/ircscrollplace.h \
     ../../src/irc/ircreplyrouter.h \
@@ -116,6 +117,7 @@ SOURCES += \
     ../../src/irc/ircmonitor.cpp \
     ../../src/irc/ircmute.cpp \
     ../../src/irc/ircopendirect.cpp \
+    ../../src/irc/ircclosedconversation.cpp \
     ../../src/irc/ircplaybacktime.cpp \
     ../../src/irc/ircscrollplace.cpp \
     ../../src/irc/ircreplyrouter.cpp \

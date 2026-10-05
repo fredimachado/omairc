@@ -211,6 +211,10 @@ type EventReducer struct {
 	// recreate them. An explicit join clears one key; welcome and
 	// forgetting the network clear the set.
 	closedChannels map[ConversationKey]struct{}
+	// persistClosed writes the mark that survives welcome. containsClosed
+	// reads it back so a restart still refuses the channel.
+	persistClosed  func(key ConversationKey, closed bool)
+	containsClosed func(key ConversationKey) bool
 }
 
 // defaultServerFeatures is returned for a network the caller never configured.
@@ -576,6 +580,17 @@ func (r *EventReducer) DropChannel(key ConversationKey) bool {
 	return true
 }
 
+// SetClosedPersistence wires the mark that survives welcome. persist records
+// or forgets one key. contains reports a mark welcome already dropped from
+// memory. Nil callbacks leave the reducer on its in-memory set alone.
+func (r *EventReducer) SetClosedPersistence(
+	persist func(key ConversationKey, closed bool),
+	contains func(key ConversationKey) bool,
+) {
+	r.persistClosed = persist
+	r.containsClosed = contains
+}
+
 // NoteClosed records that the user closed this channel, so catch-up cannot
 // bring the row back. It mirrors IrcEventReducer::noteClosed.
 func (r *EventReducer) NoteClosed(key ConversationKey) {
@@ -584,6 +599,9 @@ func (r *EventReducer) NoteClosed(key ConversationKey) {
 		return
 	}
 	r.closedChannels[key] = struct{}{}
+	if r.persistClosed != nil {
+		r.persistClosed(key, true)
+	}
 }
 
 // ClearClosed forgets a closed channel so an explicit join may open it. It
@@ -591,6 +609,9 @@ func (r *EventReducer) NoteClosed(key ConversationKey) {
 func (r *EventReducer) ClearClosed(key ConversationKey) {
 	r.ensure()
 	delete(r.closedChannels, key)
+	if r.persistClosed != nil {
+		r.persistClosed(key, false)
+	}
 }
 
 // Closed reports whether key was closed and not yet joined again. It mirrors
@@ -715,8 +736,12 @@ func (r *EventReducer) EnsureConversation(key ConversationKey, displayTarget str
 		return nil
 	}
 	// A closed channel stays closed. Join clears the mark before it inserts.
+	// Welcome drops only the in-memory set, so a persisted close still refuses.
 	if targetIsChannel {
 		if _, closed := r.closedChannels[key]; closed {
+			return nil
+		}
+		if r.containsClosed != nil && r.containsClosed(key) {
 			return nil
 		}
 	}
