@@ -123,6 +123,35 @@ func TestScreenEraseInDisplay(t *testing.T) {
 	}
 }
 
+func TestScreenScrollRegionLimitsScrollDown(t *testing.T) {
+	s := NewScreen(5, 6)
+	s.Feed([]byte("aaaa\r\nbbbb\r\ncccc\r\ndddd\r\neeee\r\nffff"))
+	// Rows 3-5 scroll; row 6 is outside the region and must stay put.
+	// Bubble Tea shifts an inserted sidebar block with CSI r plus CSI T.
+	s.Feed([]byte("\x1b[3;5r\x1b[1T\x1b[1;6r"))
+	got := s.Lines()
+	want := []string{"aaaa", "bbbb", "", "cccc", "dddd", "ffff"}
+	if len(got) != len(want) {
+		t.Fatalf("lines = %d, want %d", len(got), len(want))
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("region scroll = %q, want %q", got, want)
+		}
+	}
+
+	full := NewScreen(5, 6)
+	full.Feed([]byte("aaaa\r\nbbbb\r\ncccc\r\ndddd\r\neeee\r\nffff"))
+	full.Feed([]byte("\x1b[1T"))
+	got = full.Lines()
+	want = []string{"", "aaaa", "bbbb", "cccc", "dddd", "eeee"}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("full-screen scroll = %q, want %q", got, want)
+		}
+	}
+}
+
 func TestScreenInsertAndDeleteLines(t *testing.T) {
 	ins := NewScreen(4, 3)
 	ins.Feed([]byte("aa\r\nbb\r\ncc"))

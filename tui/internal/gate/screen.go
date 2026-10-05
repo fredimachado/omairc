@@ -63,6 +63,12 @@ type Screen struct {
 	curX, curY     int
 	savedX, savedY int
 
+	// scrollTop and scrollBottom are the inclusive DECSTBM margins, 0-based.
+	// Index, reverse index, and CSI S / CSI T scroll this band. The default is
+	// the whole grid. Bubble Tea's diff uses a short region plus CSI T to shift
+	// a few rows; ignoring the region scrolls the entire alt screen instead.
+	scrollTop, scrollBottom int
+
 	// wrapPending implements the VT "deferred wrap": printing in the last
 	// column parks the cursor there and only the next printable rune wraps.
 	// Without it a full-width line would scroll the screen on its last rune.
@@ -91,6 +97,7 @@ func NewScreen(width, height int) *Screen {
 	s := &Screen{width: width, height: height, pen: defaultAttrs(), savedX: -1, savedY: -1}
 	s.cells = make([]Cell, width*height)
 	s.resetCells()
+	s.resetScrollRegion()
 	return s
 }
 
@@ -137,6 +144,7 @@ func (s *Screen) Resize(width, height int) {
 	s.cells = next
 	s.clampCursor()
 	s.wrapPending = false
+	s.resetScrollRegion()
 }
 
 func (s *Screen) clampCursor() {
@@ -374,6 +382,11 @@ func (s *Screen) dispatchCSI(final byte, raw []byte) {
 		s.scrollUp(csiNum(p, 0, 1))
 	case 'T':
 		s.scrollDown(csiNum(p, 0, 1))
+	case 'r':
+		if private != 0 {
+			return
+		}
+		s.setScrollRegion(csiNum(p, 0, 1), csiNum(p, 1, s.height))
 	case 'Z':
 		n := csiNum(p, 0, 1)
 		s.curX -= 8 * n
@@ -423,6 +436,7 @@ func (s *Screen) clearGrid() {
 	s.curX, s.curY = 0, 0
 	s.pen = defaultAttrs()
 	s.wrapPending = false
+	s.resetScrollRegion()
 }
 
 // applyOSC records the window title for selectors 0 (icon + title), 1 (icon),
@@ -562,10 +576,13 @@ func (s *Screen) lineFeed() {
 	if s.height == 0 {
 		return
 	}
-	s.curY++
-	if s.curY >= s.height {
+	_, bottom := s.scrollRegion()
+	if s.curY == bottom {
 		s.scrollUp(1)
-		s.curY = s.height - 1
+		return
+	}
+	if s.curY < s.height-1 {
+		s.curY++
 	}
 }
 
@@ -573,10 +590,13 @@ func (s *Screen) reverseIndex() {
 	if s.height == 0 {
 		return
 	}
-	s.curY--
-	if s.curY < 0 {
+	top, _ := s.scrollRegion()
+	if s.curY == top {
 		s.scrollDown(1)
-		s.curY = 0
+		return
+	}
+	if s.curY > 0 {
+		s.curY--
 	}
 }
 
@@ -602,16 +622,58 @@ func (s *Screen) blankRow(y int) {
 	}
 }
 
+// resetScrollRegion restores DECSTBM to the whole grid.
+func (s *Screen) resetScrollRegion() {
+	s.scrollTop = 0
+	if s.height == 0 {
+		s.scrollBottom = 0
+		return
+	}
+	s.scrollBottom = s.height - 1
+}
+
+// setScrollRegion applies DECSTBM (CSI top;bottom r). top and bottom are
+// 1-based and inclusive. An inverted or out-of-range pair is ignored, matching
+// xterm. A valid pair homes the cursor.
+func (s *Screen) setScrollRegion(top, bottom int) {
+	if s.height == 0 || top < 1 || bottom > s.height || top >= bottom {
+		return
+	}
+	s.scrollTop = top - 1
+	s.scrollBottom = bottom - 1
+	s.wrapPending = false
+	s.curX, s.curY = 0, 0
+}
+
+// scrollRegion returns the inclusive row band CSI S / CSI T scroll.
+func (s *Screen) scrollRegion() (int, int) {
+	top, bottom := s.scrollTop, s.scrollBottom
+	if s.height == 0 {
+		return 0, 0
+	}
+	if top < 0 {
+		top = 0
+	}
+	if bottom >= s.height || bottom < top {
+		bottom = s.height - 1
+	}
+	return top, bottom
+}
+
 func (s *Screen) scrollUp(n int) {
 	if n <= 0 || s.width == 0 || s.height == 0 {
 		return
 	}
-	if n > s.height {
-		n = s.height
+	top, bottom := s.scrollRegion()
+	height := bottom - top + 1
+	if n > height {
+		n = height
 	}
-	copy(s.cells, s.cells[n*s.width:])
-	for i := (s.height - n) * s.width; i < len(s.cells); i++ {
-		s.cells[i] = s.blank()
+	for y := top; y <= bottom-n; y++ {
+		copy(s.row(y), s.row(y+n))
+	}
+	for y := bottom - n + 1; y <= bottom; y++ {
+		s.blankRow(y)
 	}
 }
 
@@ -619,12 +681,16 @@ func (s *Screen) scrollDown(n int) {
 	if n <= 0 || s.width == 0 || s.height == 0 {
 		return
 	}
-	if n > s.height {
-		n = s.height
+	top, bottom := s.scrollRegion()
+	height := bottom - top + 1
+	if n > height {
+		n = height
 	}
-	copy(s.cells[n*s.width:], s.cells[:(s.height-n)*s.width])
-	for i := 0; i < n*s.width; i++ {
-		s.cells[i] = s.blank()
+	for y := bottom; y >= top+n; y-- {
+		copy(s.row(y), s.row(y-n))
+	}
+	for y := top; y < top+n; y++ {
+		s.blankRow(y)
 	}
 }
 
