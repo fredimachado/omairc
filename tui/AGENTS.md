@@ -351,6 +351,10 @@ The version comes only from `version.pri` through `bin/version`.
 version out of Go source. The sentinel `0.0.0-dev` lives only in
 `internal/version/version.go`.
 
+CTCP `VERSION` omits the build number. The terminal client answers
+`omairc-tui https://omairc.app` so a remote query can tell it from the
+desktop client's `https://omairc.app`.
+
 `go install` does not run those scripts, so the sentinel stays. That file
 is the one exception: when `Value` is still `0.0.0-dev`,
 `debug.ReadBuildInfo` supplies `Main.Version`. A module tag `v1.0.4`

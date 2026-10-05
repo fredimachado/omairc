@@ -49,9 +49,11 @@ func CtcpPayload(request CtcpRequest) string {
 	return string(ctcpDelimiter) + body + string(ctcpDelimiter)
 }
 
-// CtcpVersionReplyText advertises the project URL, not the build number.
+// CtcpVersionReplyText is the argument of our CTCP VERSION reply. It names
+// the terminal client and the project URL, and omits the build number. The
+// desktop reply in src/irc/irctcp.cpp is the URL alone.
 func CtcpVersionReplyText() string {
-	return "https://omairc.app"
+	return "omairc-tui https://omairc.app"
 }
 
 // FormatCtcpReplyText renders the local Status line for one CTCP reply. PING

@@ -99,6 +99,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The desktop client loads an older page when paging to the top of a
   conversation whose server offers chathistory.
 
+### Changed
+
+- The terminal client's CTCP `VERSION` reply names the client:
+  `omairc-tui https://omairc.app`. The desktop client answers
+  `https://omairc.app`. Neither reply includes the build number.
+
 ## [1.0.7] - 2026-09-30
 
 ### Added

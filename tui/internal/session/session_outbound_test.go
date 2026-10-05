@@ -10,7 +10,7 @@ import (
 
 // ctcpVersionReply renders the expected VERSION reply for nick.
 func ctcpVersionReply(nick string) string {
-	return "NOTICE " + nick + " :\x01VERSION https://omairc.app\x01\r\n"
+	return "NOTICE " + nick + " :\x01VERSION omairc-tui https://omairc.app\x01\r\n"
 }
 
 func countFrame(frames []string, frame string) int {
