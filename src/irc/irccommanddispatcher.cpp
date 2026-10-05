@@ -239,15 +239,23 @@ IrcCommandOutcome IrcCommandDispatcher::dispatch(const IrcCommand& command,
         }
         sent = true;
         for (const IrcJoinTarget& target : *targets) {
+            const IrcConversationKey key =
+                m_reducer.conversationKey(active->networkId(),
+                                          target.channel());
+            // Demo servers echo JOIN on the write stack, before join
+            // returns. Clear the closed mark and the close cancellation
+            // first, or that echo is dropped or parted. Put both back when
+            // the session cannot build the line. openJoinedChannel still
+            // opens only the last target.
+            const bool wasClosed = m_reducer.isClosed(key);
+            m_reducer.clearClosed(key);
+            const bool wasCancelled = m_cancelledPendingJoins.erase(key) > 0;
             const bool wrote = active->join(target);
-            if (wrote) {
-                const IrcConversationKey key =
-                    m_reducer.conversationKey(active->networkId(),
-                                              target.channel());
-                m_cancelledPendingJoins.erase(key);
-                // Each target must be allowed back. openJoinedChannel clears
-                // only the last name, which is the one that stays selected.
-                m_reducer.clearClosed(key);
+            if (!wrote) {
+                if (wasClosed)
+                    m_reducer.noteClosed(key);
+                if (wasCancelled)
+                    m_cancelledPendingJoins.insert(key);
             }
             sent = wrote && sent;
         }

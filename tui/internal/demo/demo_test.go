@@ -320,6 +320,40 @@ func TestRejoinEchoesSelfJoin(t *testing.T) {
 	}
 }
 
+func TestClosedChannelsRejoinFromDemoEcho(t *testing.T) {
+	c, _ := attachController(t, true)
+	c.SelectConversation("omarchy", "#desktop")
+	if !c.SendMessage("/part") || !c.SendMessage("/close") {
+		t.Fatalf("close #desktop: %s", c.LastError())
+	}
+	c.SelectConversation("omarchy", "#omarchy")
+	if !c.SendMessage("/part") || !c.SendMessage("/close") {
+		t.Fatalf("close #omarchy: %s", c.LastError())
+	}
+	c.SelectConversation("omarchy", "#help")
+	if !c.SendMessage("/join #desktop,#omarchy") {
+		t.Fatalf("join: %s", c.LastError())
+	}
+	if c.SelectedTarget() != "#omarchy" || !c.ChannelJoined() {
+		t.Fatalf("selected %q joined=%v", c.SelectedTarget(), c.ChannelJoined())
+	}
+	if !containsString(conversationNames(c), "#desktop") || !containsString(conversationNames(c), "#omarchy") {
+		t.Fatalf("rows = %v", conversationNames(c))
+	}
+	c.SelectConversation("omarchy", "#desktop")
+	if c.SelectedTarget() != "#desktop" || !c.ChannelJoined() {
+		t.Fatal("#desktop was not joined by the demo echo")
+	}
+}
+
+func conversationNames(c *controller.Controller) []string {
+	names := make([]string, 0, len(c.Conversations()))
+	for _, row := range c.Conversations() {
+		names = append(names, row.Conversation)
+	}
+	return names
+}
+
 func TestEchoLastPrivmsg(t *testing.T) {
 	c, d := attachController(t, true)
 	c.SelectConversation("omarchy", "#omarchy")

@@ -985,12 +985,22 @@ bool IrcController::joinListedChannel(const QString& channel)
             return true;
         }
     }
+    // Demo servers echo JOIN on the write stack, before join returns.
+    // Clear the closed mark and the close cancellation first, or that echo
+    // is dropped or parted. A JOIN the session cannot build puts both back.
+    const bool wasClosed = m_reducer.isClosed(key);
+    m_reducer.clearClosed(key);
+    const bool wasCancelled = m_commands.takeCancelledSelfJoin(key);
     const bool wrote = session->join(*target);
-    if (wrote) {
-        m_commands.takeCancelledSelfJoin(key);
-        openJoinedChannel(networkId, target->channel());
+    if (!wrote) {
+        if (wasClosed)
+            m_reducer.noteClosed(key);
+        if (wasCancelled)
+            m_commands.noteCancelled(key);
+        return false;
     }
-    return wrote;
+    openJoinedChannel(networkId, target->channel());
+    return true;
 }
 
 QVariantMap IrcController::peerMetadata(const QString& networkId,
@@ -1157,8 +1167,19 @@ void IrcController::activateInboxItem(int row)
             IrcJoinTarget::make(item.target, std::nullopt, features);
         if (!target)
             break;
+        const IrcConversationKey key =
+            m_reducer.conversationKey(item.networkId, item.target);
+        const bool wasClosed = m_reducer.isClosed(key);
+        m_reducer.clearClosed(key);
+        const bool wasCancelled = m_commands.takeCancelledSelfJoin(key);
         if (session->join(*target))
             openJoinedChannel(item.networkId, item.target);
+        else {
+            if (wasClosed)
+                m_reducer.noteClosed(key);
+            if (wasCancelled)
+                m_commands.noteCancelled(key);
+        }
         break;
     }
     case IrcInboxKind::MonitorOnline:

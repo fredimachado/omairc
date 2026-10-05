@@ -369,13 +369,23 @@ func (d *CommandDispatcher) dispatchJoin(active *session.Session, command irc.Co
 	}
 	sent := true
 	for _, target := range targets {
+		key := d.reducer.ConversationKey(active.NetworkID(), target.Channel())
+		// Demo servers echo JOIN on the write stack, before Join returns.
+		// Clear the closed mark and the close cancellation first, or that
+		// echo is dropped or parted. Put both back when the session cannot
+		// build the line. OpenJoinedChannel still opens only the last target.
+		wasClosed := d.reducer.Closed(key)
+		d.reducer.ClearClosed(key)
+		_, wasCancelled := d.cancelled[key]
+		delete(d.cancelled, key)
 		wrote := active.Join(target)
-		if wrote {
-			key := d.reducer.ConversationKey(active.NetworkID(), target.Channel())
-			delete(d.cancelled, key)
-			// Each target must be allowed back. OpenJoinedChannel clears only
-			// the last name, which is the one that stays selected.
-			d.reducer.ClearClosed(key)
+		if !wrote {
+			if wasClosed {
+				d.reducer.NoteClosed(key)
+			}
+			if wasCancelled {
+				d.NoteCancelled(key)
+			}
 		}
 		sent = wrote && sent
 	}

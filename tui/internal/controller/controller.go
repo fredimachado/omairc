@@ -934,8 +934,19 @@ func (c *Controller) ActivateInboxItem(index int) {
 		if !ok {
 			break
 		}
+		key := c.reducer.ConversationKey(item.NetworkID, item.Target)
+		wasClosed := c.reducer.Closed(key)
+		c.reducer.ClearClosed(key)
+		wasCancelled := c.commands.TakeCancelledSelfJoin(key)
 		if s.Join(target) {
 			c.openJoinedChannel(item.NetworkID, item.Target)
+		} else {
+			if wasClosed {
+				c.reducer.NoteClosed(key)
+			}
+			if wasCancelled {
+				c.commands.NoteCancelled(key)
+			}
 		}
 	case irc.InboxMonitorOnline:
 		c.RevealConversation(item.NetworkID, item.Actor)
