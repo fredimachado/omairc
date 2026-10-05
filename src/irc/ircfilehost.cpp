@@ -108,19 +108,13 @@ bool IrcFileUploader::readJob(IrcFileUploadJob &job, QString *message) const
             *message = QStringLiteral("The file is too large.");
             return false;
         }
-        QFile file(job.path);
-        if (!file.open(QIODevice::ReadOnly)) {
-            *message = QStringLiteral("Could not upload the file.");
-            return false;
-        }
-        job.body = file.readAll();
         job.fileName = safeFileName(info.fileName());
         job.contentType = contentTypeFor(job.path, job.contentType);
-    } else {
-        job.fileName = safeFileName(job.fileName);
-        if (job.contentType.isEmpty())
-            job.contentType = QStringLiteral("application/octet-stream");
+        return true;
     }
+    job.fileName = safeFileName(job.fileName);
+    if (job.contentType.isEmpty())
+        job.contentType = QStringLiteral("application/octet-stream");
     if (job.body.isEmpty()) {
         *message = QStringLiteral("The file is empty.");
         return false;
@@ -160,7 +154,6 @@ void IrcFileUploader::startNext()
     request.setAttribute(QNetworkRequest::RedirectPolicyAttribute,
                          QNetworkRequest::ManualRedirectPolicy);
     request.setHeader(QNetworkRequest::ContentTypeHeader, job.contentType);
-    request.setHeader(QNetworkRequest::ContentLengthHeader, job.body.size());
     request.setRawHeader("Content-Disposition",
                          QByteArray("attachment; filename=\"")
                              + job.fileName.toUtf8()
@@ -176,9 +169,33 @@ void IrcFileUploader::startNext()
     job.secret.clear();
     job.user.clear();
 
+    QFile *file = nullptr;
+    if (!job.fromBytes) {
+        file = new QFile(job.path);
+        if (!file->open(QIODevice::ReadOnly)) {
+            delete file;
+            emit failed(QStringLiteral("Could not upload the file."));
+            continue;
+        }
+        request.setHeader(QNetworkRequest::ContentLengthHeader, file->size());
+    } else {
+        request.setHeader(QNetworkRequest::ContentLengthHeader, job.body.size());
+    }
+
     m_sending = true;
     const QString endpointText = job.endpoint;
-    m_reply = m_nam->post(request, job.body);
+    if (file)
+        m_reply = m_nam->post(request, file);
+    else
+        m_reply = m_nam->post(request, job.body);
+    if (!m_reply) {
+        delete file;
+        m_sending = false;
+        emit failed(QStringLiteral("Could not upload the file."));
+        continue;
+    }
+    if (file)
+        file->setParent(m_reply);
     connect(m_reply, &QNetworkReply::finished, this, [this, endpointText] {
         QNetworkReply *reply = m_reply;
         m_reply = nullptr;
@@ -218,16 +235,29 @@ std::optional<IrcClipboardOffer> ircClipboardOffer(const QMimeData *mime)
         return std::nullopt;
 
     QStringList paths;
+    bool sawLocal = false;
+    bool sawNonRegular = false;
+    bool sawMissing = false;
     const QList<QUrl> urls = mime->urls();
     for (const QUrl &url : urls) {
         if (!url.isLocalFile())
             continue;
+        sawLocal = true;
         const QString path = url.toLocalFile();
+        const QFileInfo info(path);
+        if (!info.exists()) {
+            sawMissing = true;
+            continue;
+        }
         if (regularFile(path))
             paths.append(path);
+        else
+            sawNonRegular = true;
     }
+    if (sawLocal && sawNonRegular && !sawMissing)
+        return IrcClipboardOffer{{}, {}, true};
     if (!paths.isEmpty())
-        return IrcClipboardOffer{paths, {}};
+        return IrcClipboardOffer{paths, {}, false};
 
     const QString text = mime->text().trimmed();
     if (mime->hasImage() && text.isEmpty()) {

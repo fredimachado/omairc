@@ -160,7 +160,8 @@ type Model struct {
 	nick             nickJumpState
 	link             linkState
 	file             filePickState
-	fileQueue        []string
+	fileQueue        []queuedFile
+	fileActive       *queuedFile
 	inbox            inboxState
 	slash            slashSession
 	list             channelListState

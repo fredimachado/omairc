@@ -749,3 +749,25 @@ func TestSessionWithdrawnCapabilityIsPublished(t *testing.T) {
 		t.Fatal("withdrawn away-notify must not probe")
 	}
 }
+
+func TestUploadCredentialUsesTheServerPasswordUntilSasl(t *testing.T) {
+	config := sessionTestConfig(sessionTestNetworkID)
+	config.Password = "server-secret"
+	config.NickServPassword = "nick-secret"
+	config.SASLAccount = "acct"
+	fixture := newSessionFixture(t, config)
+	user, secret, _, _ := fixture.session.UploadCredential()
+	if user != "acct" || secret != "server-secret" {
+		t.Fatalf("before SASL account=%q secret=%q", user, secret)
+	}
+
+	fixture.connectTLS()
+	fixture.inject(":server CAP omairc LS :sasl=PLAIN\r\n" +
+		":server CAP omairc ACK :sasl\r\n" +
+		"AUTHENTICATE +\r\n" +
+		":server 903 omairc :SASL successful\r\n")
+	user, secret, _, _ = fixture.session.UploadCredential()
+	if user != "acct" || secret != "nick-secret" {
+		t.Fatalf("after SASL account=%q secret=%q", user, secret)
+	}
+}

@@ -3,6 +3,7 @@ import QtQuick.Controls
 
 Item {
     id: column
+    objectName: "conversationColumn"
 
     required property OmaircStyle style
     property bool consoleVisible: false
@@ -52,11 +53,16 @@ Item {
     signal slashHitHovered(int index)
     signal slashHitActivated(int index)
     signal filePicked(string path)
-    signal filesDropped(var urls)
 
     function openFilePick() {
-        if (column.fileHostOffered && !column.findActive)
+        if (column.fileHostOffered && !column.findActive && column.composerEnabled)
             filePick.open();
+    }
+
+    function acceptDroppedUrls(urls) {
+        var i = 0
+        for (; i < urls.length; ++i)
+            column.filePicked(urls[i].toString())
     }
 
     Item {
@@ -399,7 +405,7 @@ Item {
         FilePickButton {
             id: filePick
             style: column.style
-            visible: column.fileHostOffered && !column.findActive
+            visible: column.fileHostOffered && !column.findActive && column.composerEnabled
             width: visible ? implicitWidth : 0
             anchors.right: sendButton.left
             anchors.rightMargin: visible ? column.style.scaledSize(8) : 0
@@ -452,11 +458,12 @@ Item {
 
     DropArea {
         id: fileDrop
+        objectName: "fileDrop"
         anchors.fill: parent
-        enabled: column.fileHostOffered && !column.findActive
+        enabled: column.fileHostOffered && !column.findActive && column.composerEnabled
         onDropped: function(drop) {
             if (drop.hasUrls)
-                column.filesDropped(drop.urls);
+                column.acceptDroppedUrls(drop.urls);
         }
     }
 

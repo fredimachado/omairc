@@ -40,14 +40,14 @@ func TestFileHostSendsBasicAuth(t *testing.T) {
 	if !FileHostSendsBasicAuth("irc.example", "http://IRC.EXAMPLE./upload", false) {
 		t.Fatal("matching http host on a cleartext connection should authenticate")
 	}
-	if FileHostSendsBasicAuth("irc.example", "https://uploads.example/upload", true) {
-		t.Fatal("a different host should not authenticate")
+	if !FileHostSendsBasicAuth("irc.example", "https://uploads.example/upload", true) {
+		t.Fatal("a different https host should authenticate")
 	}
 	if FileHostSendsBasicAuth("irc.example", "https://user:pw@irc.example/upload", true) {
 		t.Fatal("userinfo should not authenticate")
 	}
-	if FileHostSendsBasicAuth("", "https://irc.example/upload", true) {
-		t.Fatal("an empty server host should not authenticate")
+	if !FileHostSendsBasicAuth("", "https://irc.example/upload", true) {
+		t.Fatal("an empty server host should still authenticate over https")
 	}
 }
 

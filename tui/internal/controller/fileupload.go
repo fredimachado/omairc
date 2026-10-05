@@ -70,20 +70,11 @@ func (c *Controller) FinishFileUpload() {
 	c.fileUploadBusy = false
 }
 
-// NoteFileUploadFailure records a fixed failure line on Status. The text
-// must already be one of the uploader's fixed strings.
-func (c *Controller) NoteFileUploadFailure(message string) {
-	if c == nil || message == "" {
-		return
-	}
-	networkID := ""
-	if c.selected != nil {
-		networkID = c.selected.NetworkID
-	}
-	if networkID == "" {
-		networkID = c.consoleNetworkID
-	}
-	if networkID == "" {
+// NoteFileUploadFailure records a fixed failure line on Status for networkID.
+// The text must already be one of the uploader's fixed strings. It does not
+// read the conversation that is open now.
+func (c *Controller) NoteFileUploadFailure(networkID, message string) {
+	if c == nil || message == "" || networkID == "" {
 		return
 	}
 	c.statusConsole.Append(irc.Outcome(networkID, message, c.now()))

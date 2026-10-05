@@ -9,20 +9,6 @@ QString fromView(std::string_view text)
     return QString::fromUtf8(text.data(), static_cast<qsizetype>(text.size()));
 }
 
-QString strippedHost(QString host)
-{
-    while (host.endsWith(QLatin1Char('.')))
-        host.chop(1);
-    return host;
-}
-
-bool hostsMatch(const QString& left, const QString& right)
-{
-    const QString a = strippedHost(left);
-    const QString b = strippedHost(right);
-    return !a.isEmpty() && a.compare(b, Qt::CaseInsensitive) == 0;
-}
-
 bool hasControlCharacter(std::string_view text)
 {
     for (unsigned char character : text) {
@@ -66,11 +52,11 @@ std::optional<std::string> absoluteFileLink(std::string_view endpoint,
     return text.toStdString();
 }
 
-bool fileHostSendsBasicAuth(std::string_view serverHost,
+bool fileHostSendsBasicAuth(std::string_view,
                             std::string_view uploadUrl,
                             bool serverEncrypted)
 {
-    if (serverHost.empty() || uploadUrl.empty())
+    if (uploadUrl.empty())
         return false;
     const QUrl url(fromView(uploadUrl));
     if (!url.isValid() || url.host().isEmpty() || !url.userInfo().isEmpty())
@@ -81,7 +67,7 @@ bool fileHostSendsBasicAuth(std::string_view serverHost,
         return false;
     if (serverEncrypted && !https)
         return false;
-    return hostsMatch(fromView(serverHost), url.host());
+    return true;
 }
 
 std::string basicAuthorizationValue(std::string_view user, std::string_view secret)

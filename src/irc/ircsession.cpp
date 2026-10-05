@@ -580,7 +580,9 @@ QString IrcSession::fileHostAccount() const
 
 QString IrcSession::fileHostSecret() const
 {
-    return saslSecret(m_config);
+    if (m_saslSucceeded)
+        return saslSecret(m_config);
+    return m_config.password;
 }
 
 QString IrcSession::nick() const

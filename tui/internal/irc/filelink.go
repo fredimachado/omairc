@@ -57,18 +57,13 @@ func AbsoluteFileLink(endpoint, location string) string {
 	return text
 }
 
-func hostsMatch(left, right string) bool {
-	a := strings.TrimRight(left, ".")
-	b := strings.TrimRight(right, ".")
-	return a != "" && strings.EqualFold(a, b)
-}
-
 // FileHostSendsBasicAuth reports whether the IRC password may be sent to
-// this upload endpoint. The host must be the server we connected to, and a
-// cleartext upload is refused when the IRC connection is encrypted. It
-// mirrors fileHostSendsBasicAuth.
+// this upload endpoint. The scheme must be http or https, the URL must have
+// no userinfo, and a cleartext upload is refused when the IRC connection is
+// encrypted. serverHost is unused; a different https host still authenticates.
+// It mirrors fileHostSendsBasicAuth.
 func FileHostSendsBasicAuth(serverHost, uploadURL string, serverEncrypted bool) bool {
-	if serverHost == "" || uploadURL == "" {
+	if uploadURL == "" {
 		return false
 	}
 	parsed, err := url.Parse(uploadURL)
@@ -83,7 +78,7 @@ func FileHostSendsBasicAuth(serverHost, uploadURL string, serverEncrypted bool) 
 	if serverEncrypted && !https {
 		return false
 	}
-	return hostsMatch(serverHost, parsed.Hostname())
+	return true
 }
 
 // BasicAuthorization is the Authorization header value, or "" when the pair

@@ -465,9 +465,13 @@ IrcController::IrcController(QObject *parent)
     m_uploads = new IrcFileUploader(this);
     connect(this, &IrcController::selectionChanged, this, &IrcController::fileHostChanged);
     connect(this, &IrcController::serverFeaturesChanged, this, &IrcController::fileHostChanged);
-    connect(m_uploads, &IrcFileUploader::linkReady, this, &IrcController::fileLinkReady);
+    connect(m_uploads, &IrcFileUploader::linkReady, this, [this](const QString& url) {
+        const FileUploadTarget target = takeFileUploadTarget();
+        emit fileLinkReady(url, target.draftKey);
+    });
     connect(m_uploads, &IrcFileUploader::failed, this, [this](const QString& message) {
-        noteFileUploadFailure(message);
+        const FileUploadTarget target = takeFileUploadTarget();
+        noteFileUploadFailure(target.networkId, message);
     });
     loadStoredPreferences();
 }
@@ -2994,19 +2998,21 @@ bool IrcController::fillUploadTarget(QString *endpoint, QString *user, QString *
     return true;
 }
 
-void IrcController::noteFileUploadFailure(const QString &message)
+void IrcController::noteFileUploadFailure(const QString &networkId, const QString &message)
 {
-    if (message.isEmpty())
-        return;
-    const QString networkId = m_selected
-        ? m_selected->networkId
-        : m_console.networkId();
-    if (networkId.isEmpty())
+    if (message.isEmpty() || networkId.isEmpty())
         return;
     m_console.record(IrcStatusEntry::outcome(networkId, message));
 }
 
-void IrcController::enqueueLocalFile(const QString &path)
+IrcController::FileUploadTarget IrcController::takeFileUploadTarget()
+{
+    if (m_fileUploadTargets.isEmpty())
+        return {};
+    return m_fileUploadTargets.takeFirst();
+}
+
+void IrcController::enqueueLocalFile(const QString &path, const QString &draftKey)
 {
     if (!m_uploads)
         return;
@@ -3021,11 +3027,12 @@ void IrcController::enqueueLocalFile(const QString &path)
                           &job.serverHost, &job.serverEncrypted))
         return;
     job.path = local;
+    m_fileUploadTargets.append(FileUploadTarget{focusedNetworkId(), draftKey});
     m_uploads->enqueue(std::move(job));
 }
 
 void IrcController::enqueueUploadBytes(const QByteArray &body, const QString &fileName,
-                                       const QString &contentType)
+                                       const QString &contentType, const QString &draftKey)
 {
     if (!m_uploads || body.isEmpty())
         return;
@@ -3037,12 +3044,14 @@ void IrcController::enqueueUploadBytes(const QByteArray &body, const QString &fi
     job.body = body;
     job.fileName = fileName;
     job.contentType = contentType;
+    m_fileUploadTargets.append(FileUploadTarget{focusedNetworkId(), draftKey});
     m_uploads->enqueue(std::move(job));
 }
 
-bool IrcController::uploadClipboard()
+bool IrcController::uploadClipboard(const QString &draftKey)
 {
 #if !defined(QT_GUI_LIB)
+    Q_UNUSED(draftKey);
     return false;
 #else
     if (fileHost().isEmpty())
@@ -3053,35 +3062,26 @@ bool IrcController::uploadClipboard()
     const std::optional<IrcClipboardOffer> offer = ircClipboardOffer(clipboard->mimeData());
     if (!offer)
         return false;
+    if (offer->notAFile) {
+        noteFileUploadFailure(focusedNetworkId(), QStringLiteral("That is not a file."));
+        return true;
+    }
     if (!offer->png.isEmpty()) {
         enqueueUploadBytes(offer->png, QStringLiteral("image.png"),
-                           QStringLiteral("image/png"));
+                           QStringLiteral("image/png"), draftKey);
         return true;
     }
     if (offer->paths.isEmpty())
         return false;
     for (const QString &path : offer->paths)
-        enqueueLocalFile(path);
+        enqueueLocalFile(path, draftKey);
     return true;
 #endif
 }
 
-void IrcController::uploadLocalFile(const QString &path)
+void IrcController::uploadLocalFile(const QString &path, const QString &draftKey)
 {
-    enqueueLocalFile(path);
-}
-
-void IrcController::uploadDroppedUrls(const QVariantList &urls)
-{
-    for (const QVariant &item : urls) {
-        const QUrl url = item.toUrl();
-        if (!url.isValid())
-            continue;
-        if (url.isLocalFile())
-            enqueueLocalFile(url.toLocalFile());
-        else if (url.scheme().isEmpty())
-            enqueueLocalFile(item.toString());
-    }
+    enqueueLocalFile(path, draftKey);
 }
 
 void IrcController::setLastError(const QString& networkId, const QString& message)

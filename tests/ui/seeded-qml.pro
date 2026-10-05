@@ -18,6 +18,8 @@ greaterThan(QMAKE_GCC_MAJOR_VERSION, 15): QMAKE_CXXFLAGS += -Wno-sfinae-incomple
 
 INCLUDEPATH += ../../src ../../src/irc ../support
 
+DEFINES += TEST_CERT_DIR=\\\"$$PWD/../support/certs\\\"
+
 HEADERS += \
     ../../src/backend.h \
     ../../src/linuxsessionbus.h \
@@ -95,12 +97,14 @@ HEADERS += \
     ../../src/irc/ircconnection.h \
     ../../src/irc/qtirctransport.h \
     ../support/fakeirctransport.h \
-    ../support/seededircfixture.h
+    ../support/seededircfixture.h \
+    ../support/fileuploadcatcher.h
 
 SOURCES += \
     tst_main.cpp \
     ../support/fakeirctransport.cpp \
     ../support/seededircfixture.cpp \
+    ../support/fileuploadcatcher.cpp \
     ../support/testsettings.cpp \
     ../../src/irc/ircloopbacktransport.cpp \
     ../../src/irc/ircdemoserver.cpp \

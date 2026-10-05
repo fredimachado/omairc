@@ -2124,19 +2124,42 @@ ApplicationWindow {
         return event.key === Qt.Key_Insert && mods === Qt.ShiftModifier;
     }
 
-    function insertFileLink(url) {
-        if (findActive || !isAllowedHttpUrl(url) || !conversation.composer)
+    function appendStoredFileLink(stored, url) {
+        if (!stored || stored.length === 0)
+            return url;
+        if (stored.charAt(stored.length - 1) === " ")
+            return stored + url;
+        return stored + " " + url;
+    }
+
+    function insertFileLink(url, draftKey) {
+        if (!isAllowedHttpUrl(url))
             return;
-        var field = conversation.composer;
-        var text = field.text;
-        var pos = field.cursorPosition;
-        var piece = url;
-        if (pos > 0 && text.charAt(pos - 1) !== " ")
-            piece = " " + piece;
-        if (pos < text.length && text.charAt(pos) !== " ")
-            piece = piece + " ";
-        field.insert(pos, piece);
-        field.forceActiveFocus();
+        var current = composerHistoryKey();
+        if (draftKey === current && !findActive && composerHistoryIndex < 0) {
+            if (!conversation.composer)
+                return;
+            var field = conversation.composer;
+            var text = field.text;
+            var pos = field.cursorPosition;
+            var piece = url;
+            if (pos > 0 && text.charAt(pos - 1) !== " ")
+                piece = " " + piece;
+            if (pos < text.length && text.charAt(pos) !== " ")
+                piece = piece + " ";
+            field.insert(pos, piece);
+            field.forceActiveFocus();
+            return;
+        }
+        if (draftKey === current && findActive) {
+            composerDrafts[draftKey] = appendStoredFileLink(composerDrafts[draftKey] || "", url);
+            return;
+        }
+        if (draftKey === current && composerHistoryIndex >= 0) {
+            composerHistoryDraft = appendStoredFileLink(composerHistoryDraft || "", url);
+            return;
+        }
+        composerDrafts[draftKey] = appendStoredFileLink(composerDrafts[draftKey] || "", url);
     }
 
     function isCopyChord(event) {
@@ -2331,8 +2354,9 @@ ApplicationWindow {
             return;
         }
 
-        if (!findActive && isPasteChord(event) && irc && irc.fileHost.length > 0) {
-            if (irc.uploadClipboard()) {
+        if (!win.connectionOverlayVisible && !findActive && isPasteChord(event)
+                && irc && irc.fileHost.length > 0) {
+            if (irc.uploadClipboard(win.composerHistoryKey())) {
                 event.accepted = true;
                 return;
             }
@@ -2540,13 +2564,6 @@ ApplicationWindow {
         context: Qt.ApplicationShortcut
         enabled: !win.connectionOverlayVisible && !win.shortcutOverlayOpen && !win.findActive
         onActivated: conversation.openFilePick()
-    }
-
-    Connections {
-        target: win.irc
-        function onFileLinkReady(url) {
-            win.insertFileLink(url);
-        }
     }
 
     Shortcut {
@@ -3241,6 +3258,9 @@ ApplicationWindow {
                 return;
             win.clampComposerToSendLimit(conversation.composer.text);
         }
+        function onFileLinkReady(url, draftKey) {
+            win.insertFileLink(url, draftKey);
+        }
     }
 
     RowLayout {
@@ -3494,11 +3514,7 @@ ApplicationWindow {
             }
             onFilePicked: function(path) {
                 if (win.irc)
-                    win.irc.uploadLocalFile(path);
-            }
-            onFilesDropped: function(urls) {
-                if (win.irc)
-                    win.irc.uploadDroppedUrls(urls);
+                    win.irc.uploadLocalFile(path, win.composerHistoryKey());
             }
             onSlashHitHovered: function(index) {
                 win.handleSlashHitHovered(index);

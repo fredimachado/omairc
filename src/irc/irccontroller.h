@@ -27,6 +27,7 @@
 #include <cstddef>
 #include <QByteArray>
 #include <QHash>
+#include <QList>
 #include <QObject>
 #include <QSet>
 #include <QStringList>
@@ -171,9 +172,8 @@ public:
     Q_INVOKABLE int composerByteBudget() const;
     Q_INVOKABLE int composerByteBudgetFor(const QString& draft) const;
     Q_INVOKABLE QString clampUtf8Prefix(const QString& text, int maxBytes) const;
-    Q_INVOKABLE bool uploadClipboard();
-    Q_INVOKABLE void uploadLocalFile(const QString& path);
-    Q_INVOKABLE void uploadDroppedUrls(const QVariantList& urls);
+    Q_INVOKABLE bool uploadClipboard(const QString& draftKey);
+    Q_INVOKABLE void uploadLocalFile(const QString& path, const QString& draftKey);
     Q_INVOKABLE bool requestOlderTranscriptHistory();
     Q_INVOKABLE bool transcriptHistoryPendingForSelection() const;
     Q_INVOKABLE void noteTranscriptFollowsEnd();
@@ -289,7 +289,7 @@ signals:
     void capabilitiesChanged();
     void serverFeaturesChanged();
     void fileHostChanged();
-    void fileLinkReady(const QString& url);
+    void fileLinkReady(const QString& url, const QString& draftKey);
     void typingChanged();
     void reopenDirectMessagesChanged();
     void loadPeerAvatarsChanged();
@@ -402,10 +402,16 @@ private:
     QString readMarkerOutboundKey(const QString& networkId,
                                   const QString& normalizedTarget) const;
     QString fileHost() const;
-    void enqueueLocalFile(const QString& path);
+    struct FileUploadTarget
+    {
+        QString networkId;
+        QString draftKey;
+    };
+    void enqueueLocalFile(const QString& path, const QString& draftKey);
     void enqueueUploadBytes(const QByteArray& body, const QString& fileName,
-                            const QString& contentType);
-    void noteFileUploadFailure(const QString& message);
+                            const QString& contentType, const QString& draftKey);
+    void noteFileUploadFailure(const QString& networkId, const QString& message);
+    FileUploadTarget takeFileUploadTarget();
     bool fillUploadTarget(QString *endpoint, QString *user, QString *secret,
                           QString *serverHost, bool *serverEncrypted) const;
 
@@ -474,4 +480,5 @@ private:
     ProfileAvatarUrlPersist m_profileAvatarUrlPersist;
     ProfileAvatarUrlLookup m_profileAvatarUrlLookup;
     IrcFileUploader *m_uploads = nullptr;
+    QList<FileUploadTarget> m_fileUploadTargets;
 };

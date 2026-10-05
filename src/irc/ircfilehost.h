@@ -27,13 +27,15 @@ struct IrcFileUploadJob
     bool fromBytes = false;
 };
 
-// ircClipboardFiles describes a clipboard that should become an upload.
+// ircClipboardOffer describes a clipboard that should become an upload.
 // paths are local files. png is set when the clipboard is an image and
-// not ordinary text. A null return means the paste should stay text.
+// not ordinary text. notAFile is set when every local path exists and at
+// least one is not a regular file. A null return means the paste stays text.
 struct IrcClipboardOffer
 {
     QStringList paths;
     QByteArray png;
+    bool notAFile = false;
 };
 
 class IrcFileUploader : public QObject

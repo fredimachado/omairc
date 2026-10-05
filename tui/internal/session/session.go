@@ -475,13 +475,17 @@ func (s *Session) Host() string { return s.config.Host }
 
 // UploadCredential returns the account, secret, host, and TLS state used to
 // authenticate a file upload. The account is the SASL account or the
-// configured nick, never the live nick. The secret is the NickServ password
-// when set, otherwise the server password.
+// configured nick, never the live nick. After SASL succeeds the secret is
+// the one SASL sent. Otherwise it is the server password only.
 func (s *Session) UploadCredential() (user, secret, host string, encrypted bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	user = s.config.SASLAccountName()
-	secret = s.config.saslSecret()
+	if s.saslSucceeded {
+		secret = s.config.saslSecret()
+	} else {
+		secret = s.config.Password
+	}
 	host = s.config.Host
 	encrypted = s.tlsEnabled
 	return

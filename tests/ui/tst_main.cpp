@@ -1,6 +1,7 @@
 #include "ircavatarstore.h"
 #include "irctextformatter.h"
 #include "omaircupdatecheck.h"
+#include "fileuploadcatcher.h"
 #include "seededircfixture.h"
 
 #include <QCoreApplication>
@@ -35,6 +36,7 @@ public slots:
     void qmlEngineAvailable(QQmlEngine *engine)
     {
         qmlRegisterType<SeededIrcFixture>("Omairc.Test", 1, 0, "SeededIrcFixture");
+        qmlRegisterType<FileUploadCatcher>("Omairc.Test", 1, 0, "FileUploadCatcher");
         omaircRegisterUpdateCheck();
         omaircRegisterIrcTextFormatter();
         IrcAvatarStore *store = ircInstallAvatarStore(engine);

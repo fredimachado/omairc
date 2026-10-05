@@ -11,8 +11,9 @@ std::optional<std::string> absoluteFileLink(std::string_view endpoint,
                                             std::string_view location);
 
 // fileHostSendsBasicAuth reports whether the IRC password may be sent to
-// this upload endpoint. The host must be the server we connected to, and a
-// cleartext upload is refused when the IRC connection is encrypted.
+// this upload endpoint. The scheme must be http or https, the URL must have
+// no userinfo, and a cleartext upload is refused when the IRC connection is
+// encrypted. serverHost is unused; a different https host still authenticates.
 bool fileHostSendsBasicAuth(std::string_view serverHost,
                             std::string_view uploadUrl,
                             bool serverEncrypted);

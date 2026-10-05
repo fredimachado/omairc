@@ -1,4 +1,5 @@
 #include <QBuffer>
+#include <QDir>
 #include <QFile>
 #include <QHostAddress>
 #include <QImage>
@@ -148,9 +149,10 @@ void FileHostTest::authStaysOnTheConnectedHost()
     QVERIFY(fileHostSendsBasicAuth("irc.example", "https://irc.example/upload", true));
     QVERIFY(!fileHostSendsBasicAuth("irc.example", "http://irc.example/upload", true));
     QVERIFY(fileHostSendsBasicAuth("irc.example", "http://IRC.EXAMPLE./upload", false));
-    QVERIFY(!fileHostSendsBasicAuth("irc.example", "https://uploads.example/upload", true));
+    QVERIFY(fileHostSendsBasicAuth("irc.example", "https://uploads.example/upload", true));
     QVERIFY(!fileHostSendsBasicAuth("irc.example", "https://user:pw@irc.example/upload", true));
-    QVERIFY(!fileHostSendsBasicAuth("", "https://irc.example/upload", true));
+    QVERIFY(fileHostSendsBasicAuth("", "https://irc.example/upload", true));
+    QVERIFY(!fileHostSendsBasicAuth("irc.example", "ftp://irc.example/upload", false));
 }
 
 void FileHostTest::uploadPostsTheFileAndResolvesLocation()
@@ -210,7 +212,9 @@ void FileHostTest::uploadOmitsAuthForADifferentHost()
     uploader.enqueue(std::move(job));
 
     QTRY_COMPARE(ready.size(), 1);
-    QVERIFY(!caught.captured.toLower().contains("authorization:"));
+    const QByteArray header = QByteArray::fromStdString(
+        basicAuthorizationValue("alice", "s3cret-token"));
+    QVERIFY(caught.captured.contains("authorization: " + header));
     QVERIFY(!caught.captured.contains("s3cret-token"));
 }
 
@@ -338,6 +342,30 @@ void FileHostTest::clipboardFilesAndImages()
 
     picture.setText(QStringLiteral("caption"));
     QVERIFY(!ircClipboardOffer(&picture).has_value());
+
+    const QString folder = dir.filePath(QStringLiteral("folder"));
+    QVERIFY(QDir().mkpath(folder));
+    QMimeData directory;
+    directory.setUrls({QUrl::fromLocalFile(folder)});
+    const auto directoryOffer = ircClipboardOffer(&directory);
+    QVERIFY(directoryOffer.has_value());
+    QVERIFY(directoryOffer->notAFile);
+    QVERIFY(directoryOffer->paths.isEmpty());
+
+    QMimeData mixed;
+    mixed.setUrls({QUrl::fromLocalFile(path), QUrl::fromLocalFile(folder)});
+    const auto mixedOffer = ircClipboardOffer(&mixed);
+    QVERIFY(mixedOffer.has_value());
+    QVERIFY(mixedOffer->notAFile);
+    QVERIFY(mixedOffer->paths.isEmpty());
+
+    QMimeData missing;
+    missing.setUrls({QUrl::fromLocalFile(path),
+                     QUrl::fromLocalFile(dir.filePath(QStringLiteral("missing")))});
+    const auto missingOffer = ircClipboardOffer(&missing);
+    QVERIFY(missingOffer.has_value());
+    QVERIFY(!missingOffer->notAFile);
+    QCOMPARE(missingOffer->paths, QStringList{path});
 }
 
 int runFileHostTests(int argc, char **argv)

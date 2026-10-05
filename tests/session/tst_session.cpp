@@ -386,6 +386,7 @@ private slots:
     void bothSecretsSaslSendsPassAndPlainFromNickServ();
     void bothSecretsWithoutSaslPassThenIdentifyBeforeJoin();
     void saslSuccessDoesNotIdentify();
+    void fileHostSecretUsesServerPasswordUntilSasl();
     void saslFailureDoesNotFallThroughToIdentify();
     void negotiatesSaslScramSha256();
     void scramNumericBeforeServerFinalFails();
@@ -1163,6 +1164,26 @@ void SessionTest::saslSuccessDoesNotIdentify()
     QVERIFY(!fixture.wrote(QByteArrayLiteral(
         "PRIVMSG NickServ :IDENTIFY nick-secret\r\n")));
     QVERIFY(fixture.wrote(QByteArrayLiteral("JOIN #omarchy\r\n")));
+}
+
+void SessionTest::fileHostSecretUsesServerPasswordUntilSasl()
+{
+    IrcSessionConfig sessionConfig = config();
+    sessionConfig.password = QStringLiteral("server-secret");
+    sessionConfig.nickServPassword = QStringLiteral("nick-secret");
+    sessionConfig.saslAccount = QStringLiteral("acct");
+    Fixture fixture(sessionConfig);
+    QCOMPARE(fixture.session->fileHostAccount(), QStringLiteral("acct"));
+    QCOMPARE(fixture.session->fileHostSecret(), QStringLiteral("server-secret"));
+
+    fixture.connectTls();
+    fixture.transport->injectBytes(
+        QByteArrayLiteral(":server CAP omairc LS :sasl=PLAIN\r\n"
+                          ":server CAP omairc ACK :sasl\r\n"
+                          "AUTHENTICATE +\r\n"
+                          ":server 903 omairc :SASL successful\r\n"));
+    QCOMPARE(fixture.session->fileHostAccount(), QStringLiteral("acct"));
+    QCOMPARE(fixture.session->fileHostSecret(), QStringLiteral("nick-secret"));
 }
 
 void SessionTest::saslFailureDoesNotFallThroughToIdentify()

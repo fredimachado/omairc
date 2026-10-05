@@ -118,7 +118,7 @@ func TestFileUploadFailureStaysOnStatus(t *testing.T) {
 	select {
 	case got := <-done:
 		c.FinishFileUpload()
-		c.NoteFileUploadFailure(got.message)
+		c.NoteFileUploadFailure("net", got.message)
 		if got.url != "" {
 			t.Fatalf("url = %q, want empty", got.url)
 		}

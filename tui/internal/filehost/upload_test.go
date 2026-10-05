@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/fredimachado/omairc/tui/internal/irc"
 )
 
 func TestUploadPostsFileAndResolvesLocation(t *testing.T) {
@@ -79,8 +81,9 @@ func TestUploadOmitsAuthForADifferentHost(t *testing.T) {
 	}); message != "" {
 		t.Fatalf("message = %q", message)
 	}
-	if gotAuth != "" {
-		t.Fatalf("authorization = %q, want none", gotAuth)
+	want := irc.BasicAuthorization("alice", "s3cret-token")
+	if gotAuth != want {
+		t.Fatalf("authorization = %q, want %q", gotAuth, want)
 	}
 }
 
