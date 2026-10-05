@@ -473,6 +473,7 @@ IrcController::IrcController(QObject *parent)
         const FileUploadTarget target = takeFileUploadTarget();
         noteFileUploadFailure(target.networkId, message);
     });
+    m_reducer.setClosedConversations(&m_closed);
     loadStoredPreferences();
 }
 
@@ -492,6 +493,7 @@ void IrcController::setEphemeral(bool ephemeral)
     if (ephemeral)
         m_reducer.setConversationLog(nullptr);
     m_openDirects.setEphemeral(ephemeral);
+    m_closed.setEphemeral(ephemeral);
     m_playbackTimes.setEphemeral(ephemeral);
     m_scrollPlaces.setEphemeral(ephemeral);
     m_autoawayRuntime.setEphemeral(ephemeral);
@@ -633,6 +635,7 @@ void IrcController::forgetNetworkState(const QString &networkId)
     m_monitors.forget(networkId);
     m_mutes.forget(networkId);
     m_openDirects.forget(networkId);
+    m_closed.forget(networkId);
     m_playbackTimes.forget(networkId);
     m_scrollPlaces.forget(networkId);
     m_playback.dropSnapshot(networkId);
@@ -2189,6 +2192,7 @@ void IrcController::rememberOpenDirect(const QString& networkId, const QString& 
         m_reducer.serverFeatures(networkId).caseMapping();
     m_openDirects.undismiss(networkId, stored, mapping);
     m_openDirects.add(networkId, stored, mapping);
+    m_closed.remove(networkId, stored, mapping);
 }
 
 void IrcController::forgetOpenDirect(const QString& networkId, const QString& target)
@@ -2199,6 +2203,7 @@ void IrcController::forgetOpenDirect(const QString& networkId, const QString& ta
         m_reducer.serverFeatures(networkId).caseMapping();
     m_openDirects.remove(networkId, target, mapping);
     m_openDirects.dismiss(networkId, target, mapping);
+    m_closed.add(networkId, target, mapping);
 }
 
 void IrcController::noteOpenDirectsMotd(const QString& networkId)
@@ -2638,6 +2643,38 @@ void IrcController::adoptReducerSelection()
     m_members.setSelected(*key);
 }
 
+std::optional<IrcController::ReopenedDirect>
+IrcController::otherReopenedDirect(const IrcEvent& event) const
+{
+    const IrcMessageEvent *message = std::get_if<IrcMessageEvent>(&event);
+    const IrcNoticeEvent *notice = std::get_if<IrcNoticeEvent>(&event);
+    const IrcActionEvent *action = std::get_if<IrcActionEvent>(&event);
+    if (!message && !notice && !action)
+        return std::nullopt;
+    const IrcConversationKey& key = message ? message->conversation
+        : notice ? notice->conversation
+                 : action->conversation;
+    const QString& author = message ? message->author
+        : notice ? notice->author
+                 : action->author;
+    const QString& target = message ? message->target
+        : notice ? notice->target
+                 : action->target;
+    const IrcServerFeatures& features = m_reducer.serverFeatures(key.networkId);
+    if (features.isChannel(utf8(key.normalizedTarget)))
+        return std::nullopt;
+    const IrcCaseMapping& mapping = features.caseMapping();
+    if (mapping.equals(utf8(author), utf8(m_currentNicks.value(key.networkId))))
+        return std::nullopt;
+    if (m_reducer.find(key))
+        return std::nullopt;
+    const QString stored = target.isEmpty() ? key.normalizedTarget : target;
+    if (!m_closed.contains(key.networkId, stored, mapping)
+        && !m_closed.contains(key.networkId, key.normalizedTarget, mapping))
+        return std::nullopt;
+    return ReopenedDirect{key.networkId, stored};
+}
+
 void IrcController::apply(const IrcEvent& event)
 {
     if (const auto *account = std::get_if<IrcAccountEvent>(&event)) {
@@ -2661,6 +2698,7 @@ void IrcController::apply(const IrcEvent& event)
     } else if (const auto *selfAway = std::get_if<IrcSelfAwayEvent>(&event)) {
         m_unawaySent.remove(selfAway->networkId);
     }
+    const std::optional<ReopenedDirect> reopened = otherReopenedDirect(event);
     m_reducer.apply(event);
     noteKeptReplay();
     if (const auto *metadata = std::get_if<IrcMemberMetadataEvent>(&event)) {
@@ -2691,6 +2729,7 @@ void IrcController::apply(const IrcEvent& event)
             m_reducer.serverFeatures(nick->networkId).caseMapping();
         m_openDirects.rekey(nick->networkId, nick->oldNick, nick->newNick, mapping);
         m_openDirects.rekeyDismissed(nick->networkId, nick->oldNick, nick->newNick, mapping);
+        m_closed.rekey(nick->networkId, nick->oldNick, nick->newNick, mapping);
         m_playbackTimes.rekey(nick->networkId, nick->oldNick, nick->newNick, mapping);
         m_scrollPlaces.rekey(nick->networkId, nick->oldNick, nick->newNick, mapping);
         m_playback.rekey(nick->networkId, nick->oldNick, nick->newNick);
@@ -2724,6 +2763,12 @@ void IrcController::apply(const IrcEvent& event)
             if (existing && !existing->isChannel())
                 rememberOpenDirect(action->conversation.networkId, action->target);
         }
+    }
+    if (reopened) {
+        const IrcConversationState *existing = m_reducer.find(
+            m_reducer.conversationKey(reopened->networkId, reopened->target));
+        if (existing && !existing->isChannel())
+            rememberOpenDirect(reopened->networkId, reopened->target);
     }
     if (selfAwayOnly) {
         publish(classifyViewNotify(event, m_reducer, m_selected));

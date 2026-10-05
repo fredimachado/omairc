@@ -172,6 +172,7 @@ struct IrcInboxArrival
     IrcMsgId msgid{};
 };
 
+class IrcClosedConversationStore;
 class IrcConversationLog;
 
 // A replay line the reducer actually kept: inserted, or already present so
@@ -256,6 +257,8 @@ public:
     static constexpr int kMaxMessages = 2000;
 
     void setConversationLog(IrcConversationLog *log);
+    // Persisted closes survive welcome. The in-memory set does not.
+    void setClosedConversations(IrcClosedConversationStore *closed);
 
     void apply(const IrcEvent& event);
     std::vector<IrcKeptReplay> takeKeptReplay();
@@ -272,7 +275,8 @@ public:
     bool dropDirectMessage(const IrcConversationKey& key);
     bool dropChannel(const IrcConversationKey& key);
     // A channel the user closed. Catch-up must not insert it again. A later
-    // join clears the mark first. Welcome clears the network.
+    // join clears the mark first. Welcome clears the in-memory set. A
+    // persisted close still refuses the insert after that.
     void noteClosed(const IrcConversationKey& key);
     void clearClosed(const IrcConversationKey& key);
     bool isClosed(const IrcConversationKey& key) const;
@@ -464,5 +468,7 @@ private:
     // query is not a finished drop while this connection is still waiting.
     std::set<QString> m_queryRestorePending;
     std::set<IrcConversationKey> m_closedChannels;
+    IrcClosedConversationStore *m_closedStore = nullptr;
+    bool persistedClosed(const IrcConversationKey& key) const;
     QStringList m_historyBeforeExhaustTargets;
 };

@@ -1,5 +1,6 @@
 #include "irceventreducer.h"
 
+#include "ircclosedconversation.h"
 #include "ircconversationlog.h"
 #include "ircmembershipnoise.h"
 #include "ircservicenick.h"
@@ -641,11 +642,19 @@ void IrcEventReducer::noteClosed(const IrcConversationKey& key)
     if (key.networkId.isEmpty() || key.normalizedTarget.isEmpty())
         return;
     m_closedChannels.insert(key);
+    if (m_closedStore) {
+        m_closedStore->add(key.networkId, key.normalizedTarget,
+                           serverFeatures(key.networkId).caseMapping());
+    }
 }
 
 void IrcEventReducer::clearClosed(const IrcConversationKey& key)
 {
     m_closedChannels.erase(key);
+    if (!m_closedStore || key.networkId.isEmpty() || key.normalizedTarget.isEmpty())
+        return;
+    m_closedStore->remove(key.networkId, key.normalizedTarget,
+                          serverFeatures(key.networkId).caseMapping());
 }
 
 bool IrcEventReducer::isClosed(const IrcConversationKey& key) const
@@ -715,6 +724,19 @@ void IrcEventReducer::forgetNetwork(const QString& networkId)
 void IrcEventReducer::setConversationLog(IrcConversationLog *log)
 {
     m_log = log;
+}
+
+void IrcEventReducer::setClosedConversations(IrcClosedConversationStore *closed)
+{
+    m_closedStore = closed;
+}
+
+bool IrcEventReducer::persistedClosed(const IrcConversationKey& key) const
+{
+    if (!m_closedStore || key.networkId.isEmpty() || key.normalizedTarget.isEmpty())
+        return false;
+    return m_closedStore->contains(key.networkId, key.normalizedTarget,
+                                   serverFeatures(key.networkId).caseMapping());
 }
 
 void IrcEventReducer::hydrateFromLog(IrcConversationState& conversation)
@@ -1072,7 +1094,8 @@ IrcConversationState *IrcEventReducer::ensureConversation(
     if (!ircConversationCauseInserts(cause, targetIsChannel, targetLooksLikeService))
         return nullptr;
     // A closed channel stays closed. Join clears the mark before it inserts.
-    if (targetIsChannel && m_closedChannels.count(key) != 0)
+    // Welcome drops only the in-memory set, so a persisted close still refuses.
+    if (targetIsChannel && (m_closedChannels.count(key) != 0 || persistedClosed(key)))
         return nullptr;
 
     IrcConversationState conversation;

@@ -60,6 +60,7 @@ type Controller struct {
 	// the persisted stores and preferences.
 	ephemeral           bool
 	openDirects         *storage.OpenDirectStore
+	closed              *storage.ClosedConversationStore
 	playbackTimes       *storage.PlaybackTimeStore
 	scrollPlaces        *storage.ScrollPlaceStore
 	playback            *PlaybackCoordinator
@@ -155,6 +156,9 @@ func New() *Controller {
 	c.openDirectsMotdSeen = make(map[string]bool)
 	c.openDirects = storage.NewOpenDirectStore()
 	c.openDirects.SetEphemeral(true)
+	c.closed = storage.NewClosedConversationStore()
+	c.closed.SetEphemeral(true)
+	c.reducer.SetClosedPersistence(c.persistClosed, c.containsClosed)
 	c.playbackTimes = storage.NewPlaybackTimeStore()
 	c.playbackTimes.SetEphemeral(true)
 	c.scrollPlaces = storage.NewScrollPlaceStore()
@@ -223,6 +227,7 @@ func (c *Controller) SetEphemeral(ephemeral bool) {
 		c.reducer.SetConversationLog(nil)
 	}
 	c.openDirects.SetEphemeral(ephemeral)
+	c.closed.SetEphemeral(ephemeral)
 	c.playbackTimes.SetEphemeral(ephemeral)
 	c.scrollPlaces.SetEphemeral(ephemeral)
 	c.autoaway.SetEphemeral(ephemeral)
@@ -754,6 +759,7 @@ func (c *Controller) Apply(event irc.Event) {
 		delete(c.unawaySent, selfAway.NetworkID)
 	}
 
+	reopenNetwork, reopenTarget, reopen := c.otherReopenedDirect(event)
 	c.reducer.Apply(event, c.now())
 	c.noteKeptReplay()
 
@@ -777,6 +783,7 @@ func (c *Controller) Apply(event irc.Event) {
 		mapping := features.CaseMapping()
 		c.openDirects.Rekey(nick.NetworkID, nick.OldNick, nick.NewNick, mapping)
 		c.openDirects.RekeyDismissed(nick.NetworkID, nick.OldNick, nick.NewNick, mapping)
+		c.closed.Rekey(nick.NetworkID, nick.OldNick, nick.NewNick, mapping)
 		c.playbackTimes.Rekey(nick.NetworkID, nick.OldNick, nick.NewNick, mapping)
 		c.scrollPlaces.Rekey(nick.NetworkID, nick.OldNick, nick.NewNick, mapping)
 		c.playback.Rekey(nick.NetworkID, nick.OldNick, nick.NewNick)
@@ -786,6 +793,12 @@ func (c *Controller) Apply(event irc.Event) {
 		c.noteSelfAuthoredDirect(notice.Conversation.NetworkID, notice.Author, notice.Target)
 	} else if action, ok := actionEventOf(event); ok {
 		c.noteSelfAuthoredDirect(action.Conversation.NetworkID, action.Author, action.Target)
+	}
+	if reopen {
+		key := c.reducer.ConversationKey(reopenNetwork, reopenTarget)
+		if conversation := c.reducer.Find(key); conversation != nil && !conversation.IsChannel() {
+			c.rememberOpenDirect(reopenNetwork, reopenTarget)
+		}
 	}
 
 	if selfAwayOnly {
@@ -1794,6 +1807,7 @@ func (c *Controller) ForgetNetworkState(networkID string) {
 	c.autoaway.ForgetNetwork(networkID)
 	delete(c.openDirectsMotdSeen, networkID)
 	c.openDirects.Forget(networkID)
+	c.closed.Forget(networkID)
 	c.playbackTimes.Forget(networkID)
 	c.scrollPlaces.Forget(networkID)
 	c.playback.DropSnapshot(networkID)
@@ -2103,6 +2117,69 @@ func (c *Controller) persistableDirectTarget(networkID, target string) bool {
 	return !irc.TargetLooksLikeService(target, features)
 }
 
+// persistClosed writes one closed channel into the store that survives welcome.
+func (c *Controller) persistClosed(key irc.ConversationKey, closed bool) {
+	if c.closed == nil || key.NetworkID == "" || key.NormalizedTarget == "" {
+		return
+	}
+	features := c.reducer.ServerFeatures(key.NetworkID)
+	mapping := features.CaseMapping()
+	if closed {
+		c.closed.Add(key.NetworkID, key.NormalizedTarget, mapping)
+		return
+	}
+	c.closed.Remove(key.NetworkID, key.NormalizedTarget, mapping)
+}
+
+// containsClosed reports a channel close that welcome already dropped from memory.
+func (c *Controller) containsClosed(key irc.ConversationKey) bool {
+	if c.closed == nil || key.NetworkID == "" || key.NormalizedTarget == "" {
+		return false
+	}
+	features := c.reducer.ServerFeatures(key.NetworkID)
+	mapping := features.CaseMapping()
+	return c.closed.Contains(key.NetworkID, key.NormalizedTarget, mapping)
+}
+
+// otherReopenedDirect reports a live message, notice, or action from someone
+// else that is about to recreate a query the user closed. The check runs
+// before the reducer inserts the row and clears nothing on its own.
+func (c *Controller) otherReopenedDirect(event irc.Event) (networkID, target string, ok bool) {
+	var key irc.ConversationKey
+	var author, stored string
+	if message, matched := messageEventOf(event); matched {
+		key, author, stored = message.Conversation, message.Author, message.Target
+	} else if notice, matched := noticeEventOf(event); matched {
+		key, author, stored = notice.Conversation, notice.Author, notice.Target
+	} else if action, matched := actionEventOf(event); matched {
+		key, author, stored = action.Conversation, action.Author, action.Target
+	} else {
+		return "", "", false
+	}
+	features := c.reducer.ServerFeatures(key.NetworkID)
+	if features.IsChannel(key.NormalizedTarget) {
+		return "", "", false
+	}
+	mapping := features.CaseMapping()
+	if mapping.Equals(author, c.currentNicks[key.NetworkID]) {
+		return "", "", false
+	}
+	if c.reducer.Find(key) != nil {
+		return "", "", false
+	}
+	if stored == "" {
+		stored = key.NormalizedTarget
+	}
+	if c.closed == nil {
+		return "", "", false
+	}
+	if !c.closed.Contains(key.NetworkID, stored, mapping) &&
+		!c.closed.Contains(key.NetworkID, key.NormalizedTarget, mapping) {
+		return "", "", false
+	}
+	return key.NetworkID, stored, true
+}
+
 // rememberOpenDirect records a direct message worth restoring. It mirrors
 // IrcController::rememberOpenDirect (src/irc/irccontroller.cpp:1571-1585).
 func (c *Controller) rememberOpenDirect(networkID, target string) {
@@ -2121,6 +2198,9 @@ func (c *Controller) rememberOpenDirect(networkID, target string) {
 	mapping := features.CaseMapping()
 	c.openDirects.Undismiss(networkID, stored, mapping)
 	c.openDirects.Add(networkID, stored, mapping)
+	if c.closed != nil {
+		c.closed.Remove(networkID, stored, mapping)
+	}
 }
 
 // forgetOpenDirect drops a remembered direct message. It mirrors
@@ -2133,6 +2213,9 @@ func (c *Controller) forgetOpenDirect(networkID, target string) {
 	mapping := features.CaseMapping()
 	c.openDirects.Remove(networkID, target, mapping)
 	c.openDirects.Dismiss(networkID, target, mapping)
+	if c.closed != nil {
+		c.closed.Add(networkID, target, mapping)
+	}
 }
 
 // noteSelfAuthoredDirect remembers target when the event author is our own

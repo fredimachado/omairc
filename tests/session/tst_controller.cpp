@@ -472,6 +472,8 @@ private slots:
     void joinedPartSendsAndKeepsSelected();
     void joinListedChannelRejoinsLeftRow();
     void joinClearsClosedOnEveryTarget();
+    void reopenedDirectIsRememberedAcrossRestart();
+    void unsolicitedSelfJoinKeepsClosedChannel();
     void partMissingChannelStillSends();
     void partNonSelectedUnjoinedDropsWithoutPart();
     void partUnjoinedDropsMute();
@@ -1393,6 +1395,178 @@ void ControllerTest::joinClearsClosedOnEveryTarget()
     QVERIFY(controller.channelJoined());
     controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#alpha"));
     QVERIFY(controller.channelJoined());
+}
+
+void ControllerTest::reopenedDirectIsRememberedAcrossRestart()
+{
+    const IrcCaseMapping mapping;
+    const QString network = QStringLiteral("libera");
+    const auto listed = [&](const QString& target) {
+        return IrcOpenDirectStore().listed(network, mapping).contains(target);
+    };
+    const auto closed = [&](const QString& target) {
+        return IrcClosedConversationStore().contains(network, target, mapping);
+    };
+    {
+        IrcController controller;
+        auto *transport = new FakeIrcTransport;
+        IrcSession *session = controller.addSession(config(network), transport);
+        QVERIFY(session);
+        QVERIFY(controller.start(network));
+        registerSession(session, transport);
+        transport->injectBytes(QByteArrayLiteral(
+            ":lena!u@h PRIVMSG omairc :hi\r\n"
+            ":rio!u@h PRIVMSG omairc :\x01" "ACTION waves\x01\r\n"
+            ":kai!u@h PRIVMSG omairc :once\r\n"));
+        IrcNoticeEvent notice;
+        notice.conversation = IrcConversationKey{network, QStringLiteral("nia")};
+        notice.author = QStringLiteral("nia");
+        notice.body = QStringLiteral("psst");
+        notice.timestamp = QDateTime::currentDateTimeUtc();
+        notice.target = QStringLiteral("nia");
+        controller.applyForTest(notice);
+
+        auto *conversations =
+            qobject_cast<QAbstractItemModel *>(controller.conversations());
+        QVERIFY(conversations);
+        QVERIFY(rowForTarget(conversations, QStringLiteral("lena")) >= 0);
+        QVERIFY(rowForTarget(conversations, QStringLiteral("nia")) >= 0);
+        QVERIFY(rowForTarget(conversations, QStringLiteral("rio")) >= 0);
+        QVERIFY(rowForTarget(conversations, QStringLiteral("kai")) >= 0);
+        QVERIFY(!listed(QStringLiteral("lena")));
+        QVERIFY(!listed(QStringLiteral("nia")));
+        QVERIFY(!listed(QStringLiteral("rio")));
+        QVERIFY(!listed(QStringLiteral("kai")));
+
+        controller.closeConversationRow(network, QStringLiteral("lena"));
+        controller.closeConversationRow(network, QStringLiteral("nia"));
+        controller.closeConversationRow(network, QStringLiteral("rio"));
+        QVERIFY(rowForTarget(conversations, QStringLiteral("lena")) < 0);
+        QVERIFY(rowForTarget(conversations, QStringLiteral("nia")) < 0);
+        QVERIFY(rowForTarget(conversations, QStringLiteral("rio")) < 0);
+        QVERIFY(closed(QStringLiteral("lena")));
+        QVERIFY(closed(QStringLiteral("nia")));
+        QVERIFY(closed(QStringLiteral("rio")));
+
+        transport->injectBytes(QByteArrayLiteral(
+            ":lena!u@h PRIVMSG omairc :again\r\n"
+            ":rio!u@h PRIVMSG omairc :\x01" "ACTION waves again\x01\r\n"));
+        notice.body = QStringLiteral("again");
+        controller.applyForTest(notice);
+        QVERIFY(rowForTarget(conversations, QStringLiteral("lena")) >= 0);
+        QVERIFY(rowForTarget(conversations, QStringLiteral("nia")) >= 0);
+        QVERIFY(rowForTarget(conversations, QStringLiteral("rio")) >= 0);
+        QVERIFY(!closed(QStringLiteral("lena")));
+        QVERIFY(!closed(QStringLiteral("nia")));
+        QVERIFY(!closed(QStringLiteral("rio")));
+        QVERIFY(listed(QStringLiteral("lena")));
+        QVERIFY(listed(QStringLiteral("nia")));
+        QVERIFY(listed(QStringLiteral("rio")));
+        QVERIFY(!listed(QStringLiteral("kai")));
+    }
+
+    IrcController again;
+    auto *transport = new FakeIrcTransport;
+    QVERIFY(again.addSession(config(network), transport));
+    QVERIFY(again.start(network));
+    registerSession(again.session(network), transport);
+    auto *conversations =
+        qobject_cast<QAbstractItemModel *>(again.conversations());
+    QVERIFY(conversations);
+    QCOMPARE(rowForTarget(conversations, QStringLiteral("lena")), -1);
+    QCOMPARE(rowForTarget(conversations, QStringLiteral("nia")), -1);
+    QCOMPARE(rowForTarget(conversations, QStringLiteral("rio")), -1);
+    QCOMPARE(rowForTarget(conversations, QStringLiteral("kai")), -1);
+
+    transport->injectBytes(QByteArrayLiteral(":server 376 omairc :End of MOTD\r\n"));
+    QVERIFY(rowForTarget(conversations, QStringLiteral("lena")) >= 0);
+    QVERIFY(rowForTarget(conversations, QStringLiteral("nia")) >= 0);
+    QVERIFY(rowForTarget(conversations, QStringLiteral("rio")) >= 0);
+    QCOMPARE(rowForTarget(conversations, QStringLiteral("kai")), -1);
+    QVERIFY(listed(QStringLiteral("lena")));
+    QVERIFY(listed(QStringLiteral("nia")));
+    QVERIFY(listed(QStringLiteral("rio")));
+    QVERIFY(!listed(QStringLiteral("kai")));
+}
+
+void ControllerTest::unsolicitedSelfJoinKeepsClosedChannel()
+{
+    const IrcCaseMapping mapping;
+    const QString network = QStringLiteral("libera");
+    const auto closed = [&](const QString& target) {
+        return IrcClosedConversationStore().contains(network, target, mapping);
+    };
+    {
+        IrcController controller;
+        auto *transport = new FakeIrcTransport;
+        IrcSession *session = controller.addSession(config(network), transport);
+        QVERIFY(session);
+        QVERIFY(controller.start(network));
+        registerSession(session, transport);
+        transport->injectBytes(QByteArrayLiteral(
+            ":omairc!u@h JOIN :#omarchy\r\n"
+            ":omairc!u@h JOIN :#lab\r\n"
+            ":omairc!u@h JOIN :#desk\r\n"));
+        controller.selectConversation(network, QStringLiteral("#omarchy"));
+        controller.closeConversationRow(network, QStringLiteral("#lab"));
+        controller.closeConversationRow(network, QStringLiteral("#desk"));
+        auto *conversations =
+            qobject_cast<QAbstractItemModel *>(controller.conversations());
+        QVERIFY(conversations);
+        QVERIFY(rowForTarget(conversations, QStringLiteral("#lab")) < 0);
+        QVERIFY(rowForTarget(conversations, QStringLiteral("#desk")) < 0);
+        QVERIFY(closed(QStringLiteral("#lab")));
+        QVERIFY(closed(QStringLiteral("#desk")));
+        const int labParts = countFramesContaining(
+            transport->writtenFrames(), QByteArrayLiteral("PART #lab"));
+        QCOMPARE(labParts, 1);
+
+        transport->injectBytes(QByteArrayLiteral(
+            ":omairc!u@h JOIN :#lab\r\n"
+            ":server 353 omairc = #lab :omairc\r\n"
+            ":server 366 omairc #lab :End of NAMES\r\n"
+            ":lena!u@h PRIVMSG #lab :still\r\n"));
+        QVERIFY(rowForTarget(conversations, QStringLiteral("#lab")) < 0);
+        QVERIFY(closed(QStringLiteral("#lab")));
+        QCOMPARE(countFramesContaining(transport->writtenFrames(),
+                                       QByteArrayLiteral("PART #lab")),
+                 labParts);
+
+        QVERIFY(controller.sendMessage(QStringLiteral("/join #desk,#gamma")));
+        QVERIFY(rowForTarget(conversations, QStringLiteral("#gamma")) >= 0);
+        QVERIFY(!closed(QStringLiteral("#desk")));
+        QVERIFY(closed(QStringLiteral("#lab")));
+        transport->injectBytes(QByteArrayLiteral(
+            ":omairc!u@h JOIN :#desk\r\n"
+            ":server 353 omairc = #desk :omairc\r\n"
+            ":server 366 omairc #desk :End of NAMES\r\n"));
+        QVERIFY(rowForTarget(conversations, QStringLiteral("#desk")) >= 0);
+        QVERIFY(!closed(QStringLiteral("#desk")));
+        QVERIFY(closed(QStringLiteral("#lab")));
+    }
+
+    IrcController again;
+    auto *transport = new FakeIrcTransport;
+    QVERIFY(again.addSession(config(network), transport));
+    QVERIFY(again.start(network));
+    registerSession(again.session(network), transport);
+    transport->injectBytes(QByteArrayLiteral(
+        ":omairc!u@h JOIN :#lab\r\n"
+        ":server 353 omairc = #lab :omairc\r\n"
+        ":server 366 omairc #lab :End of NAMES\r\n"
+        ":lena!u@h PRIVMSG #lab :still\r\n"));
+    auto *conversations =
+        qobject_cast<QAbstractItemModel *>(again.conversations());
+    QVERIFY(conversations);
+    QVERIFY(rowForTarget(conversations, QStringLiteral("#lab")) < 0);
+    QVERIFY(closed(QStringLiteral("#lab")));
+    QVERIFY(!framesContain(transport->writtenFrames(),
+                           QByteArrayLiteral("PART #lab")));
+
+    again.openStatus(network);
+    QVERIFY(again.joinNewChannel(QStringLiteral("#lab")));
+    QVERIFY(rowForTarget(conversations, QStringLiteral("#lab")) >= 0);
+    QVERIFY(!closed(QStringLiteral("#lab")));
 }
 
 void ControllerTest::partMissingChannelStillSends()
