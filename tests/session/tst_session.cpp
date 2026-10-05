@@ -204,6 +204,15 @@ struct StatusCollector
         return false;
     }
 
+    QString textFor(const QString& label) const
+    {
+        for (const IrcStatusEntry& entry : entries) {
+            if (entry.label() == label)
+                return entry.text();
+        }
+        return {};
+    }
+
     QList<IrcStatusEntry> entries;
 };
 
@@ -1635,6 +1644,7 @@ void SessionTest::registrationRefusalWithoutSentenceKeepsNumeric()
 {
     Fixture fixture;
     QSignalSpy errors(fixture.session, &IrcSession::errorOccurred);
+    StatusCollector status(fixture.session);
     fixture.connectTls();
     fixture.transport->injectBytes(QByteArrayLiteral(":server 432 * omairc :\r\n"));
 
@@ -1642,12 +1652,14 @@ void SessionTest::registrationRefusalWithoutSentenceKeepsNumeric()
     QCOMPARE(errors.size(), 1);
     QCOMPARE(errors.at(0).at(2).toString(),
              QStringLiteral("IRC registration was refused (432)"));
+    QCOMPARE(status.textFor(QStringLiteral("432")), QStringLiteral("432"));
 }
 
 void SessionTest::registrationRefusalWithoutColonKeepsNumeric()
 {
     Fixture fixture;
     QSignalSpy errors(fixture.session, &IrcSession::errorOccurred);
+    StatusCollector status(fixture.session);
     fixture.connectTls();
     fixture.transport->injectBytes(QByteArrayLiteral(":server 432 * omairc\r\n"));
 
@@ -1656,6 +1668,7 @@ void SessionTest::registrationRefusalWithoutColonKeepsNumeric()
     QCOMPARE(errors.at(0).at(2).toString(),
              QStringLiteral("IRC registration was refused (432)"));
     QVERIFY(!errors.at(0).at(2).toString().contains(QStringLiteral("omairc")));
+    QCOMPARE(status.textFor(QStringLiteral("432")), QStringLiteral("432"));
 }
 
 void SessionTest::registrationRefusalKeepsOneWordSentence()
@@ -1696,6 +1709,11 @@ void SessionTest::registrationRefusalDropsSecretSentence()
         QVERIFY(!errors.at(0).at(2).toString().contains(QStringLiteral("hunter2")));
         QVERIFY(fixture.timer->delays.isEmpty());
         QVERIFY(!status.anyFieldContains(QStringLiteral("hunter2")));
+        const QString statusText = status.textFor(QStringLiteral("432"));
+        if (sentence == QLatin1String("IDENTIFY hunter2"))
+            QCOMPARE(statusText, QStringLiteral("432"));
+        else
+            QVERIFY(statusText.contains(QStringLiteral("PASS ***")));
     }
 }
 
@@ -1803,6 +1821,7 @@ void SessionTest::nickInUseFallbackDropsSecretStatusSentence()
              QByteArrayLiteral("NICK omairc_\r\n"));
     QVERIFY(!status.anyFieldContains(QStringLiteral("hunter2")));
     QVERIFY(!status.anyFieldContains(QStringLiteral("IRC registration was refused")));
+    QCOMPARE(status.textFor(QStringLiteral("433")), QStringLiteral("433"));
 }
 
 void SessionTest::nickInUseAfterWelcomeDropsSecretStatusSentence()
@@ -1908,6 +1927,11 @@ void SessionTest::registrationErrorBeforeWelcomeDropsSecretSentence()
         QVERIFY(!errors.at(0).at(2).toString().contains(QStringLiteral("hunter2")));
         QVERIFY(fixture.timer->delays.isEmpty());
         QVERIFY(!status.anyFieldContains(QStringLiteral("hunter2")));
+        const QString statusText = status.textFor(QStringLiteral("ERROR"));
+        if (sentence == QLatin1String("IDENTIFY hunter2"))
+            QCOMPARE(statusText, QStringLiteral("ERROR"));
+        else
+            QVERIFY(statusText.contains(QStringLiteral("PASS ***")));
     }
 }
 

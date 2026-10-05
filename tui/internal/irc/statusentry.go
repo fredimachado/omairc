@@ -335,6 +335,20 @@ func nickRefusalStatusCommand(command string) bool {
 	return false
 }
 
+// nickRefusalSentencePresent matches the session sentence rule.
+// 432/433/436/437 carry <client> <nick> :<reason>. 451/462/465 carry
+// <client> :<reason>. Fewer parameters means there is no sentence.
+func nickRefusalSentencePresent(command string, count int) bool {
+	switch command {
+	case "432", "433", "436", "437":
+		return count >= 3
+	case "451", "462", "465":
+		return count >= 2
+	default:
+		return count >= 1
+	}
+}
+
 // nickRefusalStatusTail applies the same two checks as the session refusal
 // sentence. A preview replacement is what Status stores. A transcript
 // rejection with no preview is omitted. The registration fallback string
@@ -351,18 +365,6 @@ func nickRefusalStatusTail(raw, channelTypes string) (string, bool) {
 		return "", true
 	}
 	return reason, false
-}
-
-func applyNickRefusalTail(parts []string, raw, channelTypes string) []string {
-	if len(parts) == 0 {
-		return parts
-	}
-	tail, omit := nickRefusalStatusTail(raw, channelTypes)
-	if omit {
-		return parts[:len(parts)-1]
-	}
-	parts[len(parts)-1] = tail
-	return parts
 }
 
 func statusIncomingText(message Message, command string, redacted bool, channelTypes string) string {
@@ -389,7 +391,18 @@ func statusIncomingText(message Message, command string, redacted bool, channelT
 		parts = parts[1:]
 	}
 	if nickRefusalStatusCommand(command) {
-		parts = applyNickRefusalTail(parts, trailing, channelTypes)
+		// No usable sentence: the numeric itself, the way ERROR falls back
+		// to the command. A leftover nick is not the reason.
+		if !nickRefusalSentencePresent(command, len(message.Params)) {
+			return command
+		}
+		tail, omit := nickRefusalStatusTail(trailing, channelTypes)
+		if omit {
+			return command
+		}
+		if len(parts) > 0 {
+			parts[len(parts)-1] = tail
+		}
 	}
 	return strings.Join(parts, " ")
 }

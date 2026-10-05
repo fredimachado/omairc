@@ -346,6 +346,9 @@ func TestSessionRegistrationRefusalWithoutSentenceKeepsNumeric(t *testing.T) {
 	if got := fixture.handler.errors[0].message; got != "IRC registration was refused (432)" {
 		t.Fatalf("error = %q, want the numeric fallback", got)
 	}
+	if got := fixture.handler.textFor("432"); got != "432" {
+		t.Fatalf("status = %q, want the numeric", got)
+	}
 }
 
 // TestSessionRegistrationRefusalWithoutColonKeepsNumeric ports
@@ -365,6 +368,9 @@ func TestSessionRegistrationRefusalWithoutColonKeepsNumeric(t *testing.T) {
 	}
 	if strings.Contains(fixture.handler.errors[0].message, "omairc") {
 		t.Fatal("the nick must not stand in for a missing sentence")
+	}
+	if got := fixture.handler.textFor("432"); got != "432" {
+		t.Fatalf("status = %q, want the numeric", got)
 	}
 }
 
@@ -416,6 +422,14 @@ func TestSessionRegistrationRefusalDropsSecretSentence(t *testing.T) {
 			}
 			if fixture.handler.anyFieldContains("hunter2") {
 				t.Fatal("Status stored the secret sentence")
+			}
+			statusText := fixture.handler.textFor("432")
+			if sentence == "IDENTIFY hunter2" {
+				if statusText != "432" {
+					t.Fatalf("status = %q, want the numeric", statusText)
+				}
+			} else if !strings.Contains(statusText, "PASS ***") {
+				t.Fatalf("status = %q, want the masked preview", statusText)
 			}
 		})
 	}
@@ -562,6 +576,9 @@ func TestSessionNickInUseFallbackDropsSecretStatusSentence(t *testing.T) {
 	if fixture.handler.anyFieldContains("IRC registration was refused") {
 		t.Fatal("a 433 that still falls back must not use the registration fallback")
 	}
+	if got := fixture.handler.textFor("433"); got != "433" {
+		t.Fatalf("status = %q, want the numeric", got)
+	}
 }
 
 // TestSessionNickInUseAfterWelcomeDropsSecretStatusSentence ports
@@ -699,6 +716,14 @@ func TestSessionRegistrationErrorBeforeWelcomeDropsSecretSentence(t *testing.T) 
 			}
 			if fixture.handler.anyFieldContains("hunter2") {
 				t.Fatal("Status stored the secret sentence")
+			}
+			statusText := fixture.handler.textFor("ERROR")
+			if sentence == "IDENTIFY hunter2" {
+				if statusText != "ERROR" {
+					t.Fatalf("status = %q, want the command", statusText)
+				}
+			} else if !strings.Contains(statusText, "PASS ***") {
+				t.Fatalf("status = %q, want the masked preview", statusText)
 			}
 		})
 	}

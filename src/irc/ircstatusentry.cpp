@@ -193,6 +193,19 @@ bool nickRefusalStatusCommand(const QString& command)
         || command == QLatin1String("465");
 }
 
+// 432/433/436/437 carry <client> <nick> :<reason>. 451/462/465 carry
+// <client> :<reason>. Fewer parameters means there is no sentence.
+bool nickRefusalSentencePresent(const QString& command, std::size_t count)
+{
+    if (command == QLatin1String("432") || command == QLatin1String("433")
+        || command == QLatin1String("436") || command == QLatin1String("437"))
+        return count >= 3;
+    if (command == QLatin1String("451") || command == QLatin1String("462")
+        || command == QLatin1String("465"))
+        return count >= 2;
+    return count >= 1;
+}
+
 // Same two checks as the session's refusal sentence. A preview replacement
 // is what Status stores. A transcript rejection with no preview is omitted.
 // The registration fallback string stays on the session error.
@@ -213,19 +226,6 @@ NickRefusalTail nickRefusalStatusTail(const QString& raw, QStringView channelTyp
     if (!IrcSecretPolicy::allowsTranscript(reason, channelTypes))
         return {true, {}};
     return {false, reason};
-}
-
-void applyNickRefusalTail(QStringList *parts,
-                          const QString& raw,
-                          QStringView channelTypes)
-{
-    if (parts->isEmpty())
-        return;
-    const NickRefusalTail tail = nickRefusalStatusTail(raw, channelTypes);
-    if (tail.omit)
-        parts->removeLast();
-    else
-        parts->last() = tail.text;
 }
 
 QString incomingText(const IrcMessage& message,
@@ -253,10 +253,19 @@ QString incomingText(const IrcMessage& message,
     parts.reserve(int(message.parameters.size()));
     for (const std::string& parameter : message.parameters)
         parts.append(ircWireText(parameter));
-    if (command[0].isDigit() && parts.size() >= 2)
+    if (!command.isEmpty() && command[0].isDigit() && parts.size() >= 2)
         parts.removeFirst();
-    if (nickRefusalStatusCommand(command))
-        applyNickRefusalTail(&parts, trailing, channelTypes);
+    if (nickRefusalStatusCommand(command)) {
+        // No usable sentence: the numeric itself, the way ERROR falls back
+        // to the command. A leftover nick is not the reason.
+        if (!nickRefusalSentencePresent(command, message.parameters.size()))
+            return command;
+        const NickRefusalTail tail = nickRefusalStatusTail(trailing, channelTypes);
+        if (tail.omit)
+            return command;
+        if (!parts.isEmpty())
+            parts.last() = tail.text;
+    }
     return parts.join(QLatin1Char(' '));
 }
 

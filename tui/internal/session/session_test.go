@@ -158,6 +158,15 @@ func (h *sessionTestHandler) anyFieldContains(needle string) bool {
 	return false
 }
 
+func (h *sessionTestHandler) textFor(label string) string {
+	for _, entry := range h.status {
+		if entry.Label() == label {
+			return entry.Text()
+		}
+	}
+	return ""
+}
+
 // statusTexts returns the text of every recorded Status entry.
 func (h *sessionTestHandler) statusTexts() []string {
 	texts := make([]string, len(h.status))

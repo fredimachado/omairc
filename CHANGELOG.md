@@ -14,7 +14,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   server's reason on that network and in the open pane. The desktop client and
   the terminal client both stop instead of retrying. A sentence the existing
   transcript or preview redactors reject is left off the connection error and
-  off the Status line.
+  off the Status line. A refusal with no usable sentence shows the numeric
+  on Status.
 
 ### Added
 
