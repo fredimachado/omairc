@@ -220,8 +220,10 @@ The four invariants are ported verbatim, not re-derived:
 - Title parity: `internal/irc.RosterDisplayName` mirrors
   `IrcConnection::rosterDisplayName`, and `internal/ui/title.go`'s `Title`
   mirrors `OmaircWindow.qml`'s `conversationTitleText` / `statusTitleText`.
-  The terminal title is emitted as OSC 2 from the Bubble Tea v2
-  `View.WindowTitle` field.
+  An unfocused mention or direct message replaces that title until the
+  window is focused or that conversation is opened. Muted conversations
+  stay on the plain title. The terminal title is emitted as OSC 2 from the
+  Bubble Tea v2 `View.WindowTitle` field.
 
 Phase 2 implements all four: `ConversationCauseInserts` and `TargetLooksLikeService`
 in `internal/irc/conversation.go`, `orderedMembers`/`OrderedMembers` in the

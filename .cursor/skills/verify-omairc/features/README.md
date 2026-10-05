@@ -59,4 +59,5 @@ Keep implementation details out of the map. Name only user paths, stable handles
 - [Typing](./typing.md) covers bouncing ellipsis on channel members and in direct messages, plus the `message-tags` gate.
 - [Slash commands](./slash-commands.md) covers live catalog verbs from the composer, including `/kick` and `/ignore`. Mock treats them as chat except `/me `.
 - [Mention notify](./mention-notify.md) covers the desktop notification for an unfocused mention or direct message.
+- [Title mention](./title-mention.md) covers the window title for an unfocused mention or direct message.
 - [Open links](./open-links.md) covers clicking allowlisted `http`/`https` URLs in transcripts and Status.

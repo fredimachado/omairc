@@ -187,6 +187,16 @@ TestCase {
     }
 
     Component {
+        id: coverWindowComponent
+
+        Window {
+            width: 120
+            height: 80
+            title: "cover"
+        }
+    }
+
+    Component {
         id: nullIrcWindowComponent
 
         Omairc.OmaircWindow {
@@ -3931,6 +3941,68 @@ TestCase {
         appWindow.notifyMentionIfUnfocused(false, "alice", "hello");
         compare(appWindow.lastNotification.author, "alice");
         compare(appWindow.lastNotification.body, "hello");
+    }
+
+    function test_unfocusedTitleMarksMention() {
+        openSeededAppWindow();
+        var openTitle = "#omarchy · " + networkDisplayName(seed.omarchyNetworkId) + " - Omairc";
+        compare(appWindow.title, openTitle);
+
+        appWindow.noteUnfocusedTitle(true, "alice", "hey \x02fred",
+                                     seed.omarchyNetworkId, "#ricing");
+        compare(appWindow.title, openTitle);
+
+        appWindow.noteUnfocusedTitle(false, "alice", "hey \x02fred\x07",
+                                     seed.omarchyNetworkId, "#ricing");
+        var ricingMark = "alice: hey fred · #ricing - Omairc";
+        compare(appWindow.title, ricingMark);
+
+        appWindow.selectConversation("#desktop", seed.omarchyNetworkId);
+        tryCompare(appWindow, "currentConversation", "#desktop");
+        compare(appWindow.title, ricingMark);
+
+        appWindow.selectConversation("#ricing", seed.omarchyNetworkId);
+        tryCompare(appWindow, "currentConversation", "#ricing");
+        compare(appWindow.title, "#ricing - Omairc");
+
+        appWindow.noteUnfocusedTitle(false, "dax", "hello\nthere",
+                                     seed.omarchyNetworkId, "dax");
+        compare(appWindow.title, "dax: hello there - Omairc");
+
+        appWindow.noteUnfocusedTitle(false, "alice", "hey \x1ffred",
+                                     seed.omarchyNetworkId, "#omarchy");
+        compare(appWindow.title,
+                "alice: hey fred · #omarchy · "
+                + networkDisplayName(seed.omarchyNetworkId) + " - Omairc");
+
+        appWindow.windowFocusGained();
+        compare(appWindow.title, "#ricing - Omairc");
+    }
+
+    function leaveAppWindowUnfocused() {
+        if (!appWindow.active)
+            return null;
+        var cover = coverWindowComponent.createObject(testCase);
+        verify(cover !== null, "A cover window should load");
+        cover.show();
+        cover.requestActivate();
+        tryCompare(appWindow, "active", false);
+        return cover;
+    }
+
+    function test_unfocusedArrivalMarksTitle() {
+        openSeededAppWindow();
+        appWindow.suppressDesktopNotification = true;
+        var cover = leaveAppWindowUnfocused();
+        verify(!appWindow.active);
+        var openTitle = appWindow.title;
+        injectOmarchyChat("alice", "#ricing", "hey \x02fred");
+        compare(appWindow.title, "alice: hey fred · #ricing - Omairc");
+        appWindow.requestActivate();
+        tryCompare(appWindow, "active", true);
+        compare(appWindow.title, openTitle);
+        if (cover)
+            cover.destroy();
     }
 
     function test_notificationActivateOpensLiveChannelMention() {
