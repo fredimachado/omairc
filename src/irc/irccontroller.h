@@ -86,6 +86,8 @@ public:
     void setProfileAvatarUrlCallbacks(ProfileAvatarUrlPersist persist,
                                       ProfileAvatarUrlLookup lookup);
     void setEphemeral(bool ephemeral);
+    // Tests inject the clock requestCatchUp compares with the snapshot.
+    void setCatchUpClock(std::function<QDateTime()> clock);
     void loadStoredPreferences();
     IrcSession *addSession(const IrcSessionConfig& config,
                            IrcTransport *transport,
@@ -289,6 +291,10 @@ private:
     void echoLocal(IrcMessageKind kind, const QString& body);
     void handleMessage(const QString& networkId, const IrcMessage& message);
     void handleHistoryBatch(const QString& networkId, const IrcHistoryBatch& batch);
+    void handleChatHistoryFailed(const QString& networkId,
+                                 const QString& subcommand,
+                                 const QString& target);
+    void dropEmptyDiscoveredDirect(const QString& networkId, const QString& target);
     void notePlaybackClock(const QString& networkId, const IrcMessage& message);
     void noteKeptReplay();
     // Packs the capability, MOTD-seen, and open-direct lookups the
@@ -408,6 +414,7 @@ private:
     QHash<QString, IrcCapabilitySet> m_capabilities;
     QSet<QString> m_unawaySent;
     QSet<QString> m_openDirectsMotdSeen;
+    std::function<QDateTime()> m_catchUpClock;
     std::optional<IrcConversationKey> m_selected;
     QString m_selectedTarget;
     QStringList m_networkOrder;

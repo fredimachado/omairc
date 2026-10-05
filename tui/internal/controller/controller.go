@@ -579,19 +579,27 @@ func (c *Controller) HistoryBatchReceived(networkID string, batch irc.HistoryBat
 	if batch.Kind == irc.HistoryTargets {
 		s := c.manager.Find(networkID)
 		features := c.reducer.ServerFeatures(networkID)
+		mapping := features.CaseMapping()
 		created := c.playback.NoteDiscoveredTargets(
 			s,
 			batch.Targets,
 			c.currentNicks[networkID],
-			c.openDirects.Listed(networkID, features.CaseMapping()),
+			c.openDirects.Listed(networkID, mapping),
+			c.openDirects.DismissedListed(networkID, mapping),
 			func(target string) bool {
 				return c.persistableDirectTarget(networkID, target)
 			},
 		)
+		if s != nil {
+			c.playback.NoteTargetsPage(s, batch.Targets, batch.HistoryEnded, s.HistoryLimit())
+		}
 		if created > 0 {
 			c.reloadModels()
 		}
 		return
+	}
+	if batch.AfterRequest && len(batch.Lines) == 0 {
+		c.dropEmptyDiscoveredDirect(networkID, batch.Target)
 	}
 	features := c.reducer.ServerFeatures(networkID)
 	event, ok := irc.TranslateHistory(networkID, c.currentNicks[networkID], features, batch, c.now())
@@ -614,6 +622,44 @@ func (c *Controller) ChatHistoryRequestFinished(networkID, target string, failed
 		return
 	}
 	c.reducer.ClearHistoryPageCapTail(c.reducer.ConversationKey(networkID, target))
+}
+
+// ChatHistoryFailed retries one failed TARGETS query and drops a discovered
+// direct whose AFTER came back empty or failed. It mirrors
+// IrcController::handleChatHistoryFailed.
+func (c *Controller) ChatHistoryFailed(networkID, subcommand, target string) {
+	if strings.EqualFold(subcommand, "TARGETS") {
+		if !c.playback.RetryTargets(networkID) {
+			return
+		}
+		if s := c.manager.Find(networkID); s != nil {
+			c.requestChatHistoryCatchUp(s)
+		}
+		return
+	}
+	if strings.EqualFold(subcommand, "AFTER") {
+		c.dropEmptyDiscoveredDirect(networkID, target)
+	}
+}
+
+func (c *Controller) dropEmptyDiscoveredDirect(networkID, target string) {
+	if !c.playback.WasDiscovered(networkID, target) {
+		return
+	}
+	features := c.reducer.ServerFeatures(networkID)
+	mapping := features.CaseMapping()
+	for _, nick := range c.openDirects.Listed(networkID, mapping) {
+		if mapping.Equals(nick, target) {
+			return
+		}
+	}
+	key := c.reducer.ConversationKey(networkID, target)
+	conversation := c.reducer.Find(key)
+	if conversation == nil || len(conversation.Messages) > 0 {
+		return
+	}
+	c.reducer.DropDirectMessage(key)
+	c.reloadModels()
 }
 
 // StatusEntry records one classified Status line and routes its correlated
@@ -713,6 +759,7 @@ func (c *Controller) Apply(event irc.Event) {
 		features := c.reducer.ServerFeatures(nick.NetworkID)
 		mapping := features.CaseMapping()
 		c.openDirects.Rekey(nick.NetworkID, nick.OldNick, nick.NewNick, mapping)
+		c.openDirects.RekeyDismissed(nick.NetworkID, nick.OldNick, nick.NewNick, mapping)
 		c.playbackTimes.Rekey(nick.NetworkID, nick.OldNick, nick.NewNick, mapping)
 		c.playback.Rekey(nick.NetworkID, nick.OldNick, nick.NewNick)
 	} else if message, ok := messageEventOf(event); ok {
@@ -1940,7 +1987,9 @@ func (c *Controller) rememberOpenDirect(networkID, target string) {
 		stored = conversation.Target
 	}
 	features := c.reducer.ServerFeatures(networkID)
-	c.openDirects.Add(networkID, stored, features.CaseMapping())
+	mapping := features.CaseMapping()
+	c.openDirects.Undismiss(networkID, stored, mapping)
+	c.openDirects.Add(networkID, stored, mapping)
 }
 
 // forgetOpenDirect drops a remembered direct message. It mirrors
@@ -1950,7 +1999,9 @@ func (c *Controller) forgetOpenDirect(networkID, target string) {
 		return
 	}
 	features := c.reducer.ServerFeatures(networkID)
-	c.openDirects.Remove(networkID, target, features.CaseMapping())
+	mapping := features.CaseMapping()
+	c.openDirects.Remove(networkID, target, mapping)
+	c.openDirects.Dismiss(networkID, target, mapping)
 }
 
 // noteSelfAuthoredDirect remembers target when the event author is our own

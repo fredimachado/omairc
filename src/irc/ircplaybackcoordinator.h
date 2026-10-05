@@ -78,15 +78,27 @@ public:
         const QStringList& restoredDirects,
         const std::function<bool(const QString& target)>& persistableDirect,
         const QDateTime& now);
-    // Opens a direct the server named that this client has never reached.
-    // A closed query, a channel, and the bouncer stay closed. Returns how
-    // many queries this call inserted.
+    // Opens a direct the server named. A user-dismissed query, a channel,
+    // and the bouncer stay closed. A stamp or a transcript is the AFTER
+    // bound, not a close. Returns how many queries this call inserted.
     int noteDiscoveredTargets(
         IrcSession *session,
         const std::vector<IrcHistoryTarget>& targets,
         const QString& currentNick,
         const QStringList& restoredDirects,
+        const QStringList& dismissedDirects,
         const std::function<bool(const QString& target)>& persistableDirect);
+    // A full TARGETS page without draft/chathistory-end asks for the next
+    // page. At most two extra pages are sent. The lower bound stays the
+    // original; the upper bound is the oldest latest in this page.
+    void noteTargetsPage(IrcSession *session,
+                         const std::vector<IrcHistoryTarget>& targets,
+                         bool historyEnded,
+                         int limit);
+    // One FAIL TARGETS clears the sent flag and allows requestCatchUp again.
+    // A second FAIL returns false.
+    bool retryTargets(const QString& networkId);
+    bool wasDiscovered(const QString& networkId, const QString& target) const;
 
 private:
     bool sendZncPlayback(IrcSession *session,
@@ -131,10 +143,15 @@ private:
     // CHATHISTORY catch-up already sent this connection. targets means the
     // TARGETS query went out (or there was no last place to ask from).
     // asked is each direct AFTER or LATEST, so a later TARGETS reply does
-    // not ask twice.
+    // not ask twice. discovered is each query this connection inserted from
+    // TARGETS. targetsRetried stops a second FAIL TARGETS from looping.
     struct CatchUpSent {
         bool targets = false;
+        bool targetsRetried = false;
         QSet<QString> asked;
+        QSet<QString> discovered;
+        QDateTime targetsLower;
+        int targetsExtraPages = 0;
     };
     QHash<QString, CatchUpSent> m_catchUpSent;
 };

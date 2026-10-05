@@ -440,6 +440,11 @@ void IrcController::setTranscriptRoot(const QString &root)
     m_transcripts.setRoot(root);
 }
 
+void IrcController::setCatchUpClock(std::function<QDateTime()> clock)
+{
+    m_catchUpClock = std::move(clock);
+}
+
 void IrcController::setEphemeral(bool ephemeral)
 {
     m_ephemeral = ephemeral;
@@ -503,6 +508,8 @@ IrcSession *IrcController::addSession(const IrcSessionConfig& config,
             this, &IrcController::handleMessage);
     connect(session, &IrcSession::historyBatchReceived,
             this, &IrcController::handleHistoryBatch);
+    connect(session, &IrcSession::chatHistoryFailed,
+            this, &IrcController::handleChatHistoryFailed);
     connect(session, &IrcSession::capabilitiesChanged,
             this, &IrcController::handleCapabilities);
     connect(session, &IrcSession::stateChanged, this,
@@ -1820,16 +1827,20 @@ void IrcController::rememberOpenDirect(const QString& networkId, const QString& 
     const QString stored =
         (conversation && !conversation->target.isEmpty()) ? conversation->target
                                                           : target;
-    m_openDirects.add(networkId, stored,
-                      m_reducer.serverFeatures(networkId).caseMapping());
+    const IrcCaseMapping& mapping =
+        m_reducer.serverFeatures(networkId).caseMapping();
+    m_openDirects.undismiss(networkId, stored, mapping);
+    m_openDirects.add(networkId, stored, mapping);
 }
 
 void IrcController::forgetOpenDirect(const QString& networkId, const QString& target)
 {
     if (networkId.isEmpty() || target.isEmpty())
         return;
-    m_openDirects.remove(networkId, target,
-                         m_reducer.serverFeatures(networkId).caseMapping());
+    const IrcCaseMapping& mapping =
+        m_reducer.serverFeatures(networkId).caseMapping();
+    m_openDirects.remove(networkId, target, mapping);
+    m_openDirects.dismiss(networkId, target, mapping);
 }
 
 void IrcController::noteOpenDirectsMotd(const QString& networkId)
@@ -2301,6 +2312,7 @@ void IrcController::apply(const IrcEvent& event)
         const IrcCaseMapping& mapping =
             m_reducer.serverFeatures(nick->networkId).caseMapping();
         m_openDirects.rekey(nick->networkId, nick->oldNick, nick->newNick, mapping);
+        m_openDirects.rekeyDismissed(nick->networkId, nick->oldNick, nick->newNick, mapping);
         m_playbackTimes.rekey(nick->networkId, nick->oldNick, nick->newNick, mapping);
         m_playback.rekey(nick->networkId, nick->oldNick, nick->newNick);
     } else if (const auto *message = std::get_if<IrcMessageEvent>(&event)) {
@@ -2534,18 +2546,26 @@ void IrcController::handleHistoryBatch(const QString& networkId,
 {
     if (batch.kind == IrcHistoryKind::ChatHistoryTargets) {
         const IrcServerFeatures& features = m_reducer.serverFeatures(networkId);
+        IrcSession *session = m_sessions.findSession(networkId);
+        const IrcCaseMapping& mapping = features.caseMapping();
         const int created = m_playback.noteDiscoveredTargets(
-            m_sessions.findSession(networkId),
+            session,
             batch.targets,
             m_currentNicks.value(networkId),
-            m_openDirects.listed(networkId, features.caseMapping()),
+            m_openDirects.listed(networkId, mapping),
+            m_openDirects.dismissedListed(networkId, mapping),
             [this, networkId](const QString& target) {
                 return persistableDirectTarget(networkId, target);
             });
+        if (session)
+            m_playback.noteTargetsPage(session, batch.targets, batch.historyEnded,
+                                       session->historyLimit());
         if (created > 0)
             reloadModels();
         return;
     }
+    if (batch.afterRequest && batch.lines.empty())
+        dropEmptyDiscoveredDirect(networkId, batch.target);
     std::optional<IrcHistoryEvent> event = IrcEventTranslator::translateHistory(
         networkId, m_currentNicks.value(networkId),
         m_reducer.serverFeatures(networkId), batch);
@@ -2622,7 +2642,41 @@ void IrcController::requestChatHistoryCatchUp(IrcSession *session)
         [this, networkId](const QString& target) {
             return persistableDirectTarget(networkId, target);
         },
-        QDateTime::currentDateTimeUtc());
+        m_catchUpClock ? m_catchUpClock() : QDateTime::currentDateTimeUtc());
+}
+
+void IrcController::handleChatHistoryFailed(const QString& networkId,
+                                            const QString& subcommand,
+                                            const QString& target)
+{
+    if (subcommand.compare(QLatin1String("TARGETS"), Qt::CaseInsensitive) == 0) {
+        if (!m_playback.retryTargets(networkId))
+            return;
+        if (IrcSession *session = m_sessions.findSession(networkId))
+            requestChatHistoryCatchUp(session);
+        return;
+    }
+    if (subcommand.compare(QLatin1String("AFTER"), Qt::CaseInsensitive) == 0)
+        dropEmptyDiscoveredDirect(networkId, target);
+}
+
+void IrcController::dropEmptyDiscoveredDirect(const QString& networkId,
+                                              const QString& target)
+{
+    if (!m_playback.wasDiscovered(networkId, target))
+        return;
+    const IrcCaseMapping& mapping =
+        m_reducer.serverFeatures(networkId).caseMapping();
+    for (const QString& nick : m_openDirects.listed(networkId, mapping)) {
+        if (mapping.equals(utf8(nick), utf8(target)))
+            return;
+    }
+    const IrcConversationKey key = m_reducer.conversationKey(networkId, target);
+    const IrcConversationState *conversation = m_reducer.find(key);
+    if (!conversation || !conversation->messages.empty())
+        return;
+    m_reducer.dropDirectMessage(key);
+    reloadModels();
 }
 
 void IrcController::requestZncChannelPlayback(IrcSession *session,

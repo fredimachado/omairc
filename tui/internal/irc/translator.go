@@ -23,6 +23,10 @@ type HistoryBatch struct {
 	Kind   HistoryKind
 	// OlderPage is true for a solicited CHATHISTORY BEFORE answer.
 	OlderPage bool
+	// HistoryEnded is draft/chathistory-end on the opening BATCH.
+	HistoryEnded bool
+	// AfterRequest is true when the batch answers CHATHISTORY AFTER.
+	AfterRequest bool
 	// Targets is set for a CHATHISTORY TARGETS answer. Lines stays empty.
 	Targets []HistoryTarget
 }

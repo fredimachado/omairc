@@ -141,6 +141,9 @@ type Handler interface {
 	// without delivering a batch. failed is true on FAIL; before is true when
 	// the outstanding request was CHATHISTORY BEFORE.
 	ChatHistoryRequestFinished(networkID string, target string, failed bool, before bool)
+	// ChatHistoryFailed reports FAIL CHATHISTORY. subcommand is TARGETS or
+	// AFTER. target is empty for TARGETS.
+	ChatHistoryFailed(networkID, subcommand, target string)
 	StatusEntry(entry irc.StatusEntry)
 	CapabilitiesChanged(networkID string, capabilities irc.CapabilitySet)
 	RequestLabelFinished(networkID, requestLabel string)
@@ -205,7 +208,17 @@ const (
 	historyRequestLatest historyRequestKind = iota
 	historyRequestBefore
 	historyRequestAfter
+	// historyRequestAfterTail is the one LATEST sent when the AFTER page cap
+	// is hit. It is not the end of older history.
+	historyRequestAfterTail
 )
+
+// historyCursor is the exclusive bound of the next CHATHISTORY AFTER page.
+// msgid wins. time is used only when no line in the page carried a msgid.
+type historyCursor struct {
+	msgid string
+	when  time.Time
+}
 
 type openBatch struct {
 	batchType    string
@@ -272,7 +285,8 @@ type Session struct {
 	historyPendingKind    map[string]historyRequestKind
 	historyExhausted      map[string]struct{}
 	historyAfterPages     map[string]int
-	historyAfterCursor    map[string]time.Time
+	historyAfterCursor    map[string]historyCursor
+	historyAfterPageCap   int
 	historyTargetsPending bool
 	historyResume         func(target string) (time.Time, bool)
 
@@ -361,7 +375,8 @@ func NewSession(config SessionConfig, transport Transport, clock Clock) *Session
 		historyPendingKind:   map[string]historyRequestKind{},
 		historyExhausted:     map[string]struct{}{},
 		historyAfterPages:    map[string]int{},
-		historyAfterCursor:   map[string]time.Time{},
+		historyAfterCursor:   map[string]historyCursor{},
+		historyAfterPageCap:  kHistoryAfterPageCap,
 		pendingLabels:        map[string]time.Time{},
 		ctcpReplyClock:       map[string]time.Time{},
 		scram:                NewSASLScram(),
@@ -572,6 +587,24 @@ func (s *Session) RequestHistoryTargets(from, until time.Time) bool {
 		ok = s.requestHistoryTargetsLocked(from, until)
 	})
 	return ok
+}
+
+// HistoryLimit is the CHATHISTORY page size, capped by ISUPPORT CHATHISTORY=.
+func (s *Session) HistoryLimit() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.historyLimit
+}
+
+// SetHistoryAfterPageCap lowers the AFTER page cap for tests. Production stays
+// at kHistoryAfterPageCap.
+func (s *Session) SetHistoryAfterPageCap(cap int) {
+	if cap <= 0 {
+		return
+	}
+	s.mu.Lock()
+	s.historyAfterPageCap = cap
+	s.mu.Unlock()
 }
 
 // AutojoinChannels returns a copy of the current autojoin channel list.
@@ -2073,8 +2106,9 @@ func (s *Session) closeBatchLocked(reference string) {
 	if frame.replayRoot == reference && frame.hasKind && frame.kind == irc.HistoryTargets {
 		s.historyTargetsPending = false
 		batch := irc.HistoryBatch{
-			Kind:    irc.HistoryTargets,
-			Targets: historyTargetsFrom(frame.collected.Lines),
+			Kind:         irc.HistoryTargets,
+			HistoryEnded: frame.historyEnded,
+			Targets:      historyTargetsFrom(frame.collected.Lines),
 		}
 		networkID := s.config.NetworkID
 		s.emit(func(handler Handler) { handler.HistoryBatchReceived(networkID, batch) })
@@ -2084,12 +2118,14 @@ func (s *Session) closeBatchLocked(reference string) {
 		currentMembership := frame.generation == s.historyGenerationLocked(frame.collected.Target)
 		folded := s.foldChannelLocked(frame.collected.Target)
 		after := frame.hasHistoryRequest && frame.historyRequestKind == historyRequestAfter
+		afterTail := frame.hasHistoryRequest && frame.historyRequestKind == historyRequestAfterTail
 		if currentMembership && frame.hasKind && frame.kind == irc.HistoryChat && frame.hasHistoryRequest {
 			delete(s.historyPending, folded)
 			delete(s.historyPendingKind, folded)
-			// An empty AFTER means nothing new arrived. It is not the end of
-			// the older page, so scrolling up must still send BEFORE.
-			if len(frame.collected.Lines) == 0 && !after {
+			// An empty AFTER, and the one LATEST sent when the AFTER page cap
+			// is hit, are not the end of the older page. Scrolling up must
+			// still send BEFORE.
+			if len(frame.collected.Lines) == 0 && !after && !afterTail {
 				s.historyExhausted[folded] = struct{}{}
 			}
 		}
@@ -2107,6 +2143,8 @@ func (s *Session) closeBatchLocked(reference string) {
 			if currentMembership && after {
 				s.maybeChainHistoryAfterLocked(frame.collected.Target, batch, frame.historyEnded)
 			}
+			batch.AfterRequest = currentMembership && after
+			batch.HistoryEnded = frame.historyEnded
 		}
 		if frame.hasKind && frame.kind == irc.HistoryBouncerPlayback {
 			batch.Kind = irc.HistoryBouncerPlayback
@@ -2224,7 +2262,13 @@ func (s *Session) requestHistoryLatestLocked(target string) bool {
 	s.historyAsked[key] = struct{}{}
 	s.historyPending[key] = s.historyGenerationLocked(target)
 	s.historyPendingKind[key] = historyRequestLatest
-	return s.sendCommandLocked(fmt.Sprintf("CHATHISTORY LATEST %s * %d", target, s.historyLimit), "")
+	if !s.sendCommandLocked(fmt.Sprintf("CHATHISTORY LATEST %s * %d", target, s.historyLimit), "") {
+		delete(s.historyAsked, key)
+		delete(s.historyPending, key)
+		delete(s.historyPendingKind, key)
+		return false
+	}
+	return true
 }
 
 func (s *Session) requestHistoryAfterLocked(target string, after time.Time) bool {
@@ -2237,20 +2281,107 @@ func (s *Session) requestHistoryAfterLocked(target string, after time.Time) bool
 	key := s.foldChannelLocked(target)
 	s.historyAsked[key] = struct{}{}
 	s.historyAfterPages[key] = 1
-	s.historyAfterCursor[key] = after.UTC()
-	return s.sendHistoryAfterLocked(target, after)
+	s.historyAfterCursor[key] = historyCursor{when: after.UTC()}
+	return s.sendHistoryAfterLocked(target, s.historyAfterCursor[key])
 }
 
-func (s *Session) sendHistoryAfterLocked(target string, after time.Time) bool {
+func (s *Session) clearHistoryAfterAttemptLocked(key string) {
+	delete(s.historyPending, key)
+	delete(s.historyPendingKind, key)
+	delete(s.historyAsked, key)
+	delete(s.historyAfterPages, key)
+	delete(s.historyAfterCursor, key)
+}
+
+func messageMsgID(message irc.Message) string {
+	for _, tag := range message.Tags {
+		if tag.Name == "msgid" && tag.Value != nil {
+			return *tag.Value
+		}
+	}
+	return ""
+}
+
+func cursorFromAfterPage(lines []irc.Message) historyCursor {
+	if len(lines) == 0 {
+		return historyCursor{}
+	}
+	anyMsgid := false
+	lastMsgid := ""
+	for _, line := range lines {
+		id := messageMsgID(line)
+		if id == "" {
+			continue
+		}
+		anyMsgid = true
+		lastMsgid = id
+	}
+	if id := messageMsgID(lines[len(lines)-1]); id != "" {
+		return historyCursor{msgid: id}
+	}
+	if anyMsgid {
+		return historyCursor{msgid: lastMsgid}
+	}
+	if when, ok := irc.ServerTimeOf(lines[len(lines)-1]); ok {
+		return historyCursor{when: when.UTC()}
+	}
+	for index := len(lines) - 1; index >= 0; index-- {
+		if when, ok := irc.ServerTimeOf(lines[index]); ok {
+			return historyCursor{when: when.UTC()}
+		}
+	}
+	return historyCursor{}
+}
+
+func historySelector(cursor historyCursor) string {
+	if cursor.msgid != "" {
+		return "msgid=" + cursor.msgid
+	}
+	if !cursor.when.IsZero() {
+		return "timestamp=" + formatChatHistoryTimestamp(cursor.when)
+	}
+	return ""
+}
+
+func (s *Session) sendHistoryAfterLocked(target string, cursor historyCursor) bool {
+	selector := historySelector(cursor)
+	if selector == "" {
+		return false
+	}
 	key := s.foldChannelLocked(target)
 	s.historyPending[key] = s.historyGenerationLocked(target)
 	s.historyPendingKind[key] = historyRequestAfter
-	return s.sendCommandLocked(fmt.Sprintf("CHATHISTORY AFTER %s timestamp=%s %d",
-		target, formatChatHistoryTimestamp(after), s.historyLimit), "")
+	if !s.sendCommandLocked(fmt.Sprintf("CHATHISTORY AFTER %s %s %d",
+		target, selector, s.historyLimit), "") {
+		s.clearHistoryAfterAttemptLocked(key)
+		return false
+	}
+	return true
+}
+
+func (s *Session) sendHistoryLatestBoundLocked(target string, cursor historyCursor) bool {
+	selector := historySelector(cursor)
+	if selector == "" {
+		return false
+	}
+	key := s.foldChannelLocked(target)
+	s.historyPending[key] = s.historyGenerationLocked(target)
+	s.historyPendingKind[key] = historyRequestAfterTail
+	if !s.sendCommandLocked(fmt.Sprintf("CHATHISTORY LATEST %s %s %d",
+		target, selector, s.historyLimit), "") {
+		delete(s.historyPending, key)
+		delete(s.historyPendingKind, key)
+		return false
+	}
+	return true
 }
 
 func (s *Session) maybeChainHistoryAfterLocked(target string, batch irc.HistoryBatch, historyEnded bool) {
-	if target == "" || historyEnded {
+	if target == "" || historyEnded || len(batch.Lines) < s.historyLimit {
+		return
+	}
+	next := cursorFromAfterPage(batch.Lines)
+	if next.msgid == "" && next.when.IsZero() {
 		return
 	}
 	key := s.foldChannelLocked(target)
@@ -2258,31 +2389,25 @@ func (s *Session) maybeChainHistoryAfterLocked(target string, batch irc.HistoryB
 	if pages == 0 {
 		pages = 1
 	}
-	if pages >= kHistoryAfterPageCap || len(batch.Lines) < s.historyLimit {
+	cap := s.historyAfterPageCap
+	if cap <= 0 {
+		cap = kHistoryAfterPageCap
+	}
+	if pages >= cap {
+		s.sendHistoryLatestBoundLocked(target, next)
 		return
 	}
-	var newest time.Time
-	found := false
-	for _, line := range batch.Lines {
-		when, ok := irc.ServerTimeOf(line)
-		if !ok {
-			continue
+	// A timestamp bound that does not move would ask for the same page again.
+	// A msgid always moves, including when two lines share a time.
+	if next.msgid == "" {
+		previous := s.historyAfterCursor[key]
+		if !previous.when.IsZero() && !next.when.After(previous.when) {
+			return
 		}
-		if !found || when.After(newest) {
-			newest = when
-			found = true
-		}
-	}
-	if !found {
-		return
-	}
-	cursor := s.historyAfterCursor[key]
-	if !cursor.IsZero() && !newest.After(cursor) {
-		return
 	}
 	s.historyAfterPages[key] = pages + 1
-	s.historyAfterCursor[key] = newest.UTC()
-	s.sendHistoryAfterLocked(target, newest)
+	s.historyAfterCursor[key] = next
+	s.sendHistoryAfterLocked(target, next)
 }
 
 func (s *Session) requestHistoryTargetsLocked(from, until time.Time) bool {
@@ -2466,7 +2591,7 @@ func (s *Session) abandonHistoryRequestsLocked() {
 	s.historyPendingKind = map[string]historyRequestKind{}
 	s.historyTargetsPending = false
 	s.historyAfterPages = map[string]int{}
-	s.historyAfterCursor = map[string]time.Time{}
+	s.historyAfterCursor = map[string]historyCursor{}
 }
 
 func (s *Session) isHistoryBatchLocked(batchType, parent string) bool {
@@ -2492,6 +2617,10 @@ func (s *Session) handleChatHistoryFailLocked(message irc.Message) {
 	}
 	if strings.EqualFold(parameter(message, 2), "TARGETS") {
 		s.historyTargetsPending = false
+		networkID := s.config.NetworkID
+		s.emit(func(handler Handler) {
+			handler.ChatHistoryFailed(networkID, "TARGETS", "")
+		})
 		return
 	}
 	// FAIL CHATHISTORY <code> <subcommand> [<target>] [<context>] :description.
@@ -2505,17 +2634,23 @@ func (s *Session) handleChatHistoryFailLocked(message irc.Message) {
 		}
 		folded := s.foldChannelLocked(channel)
 		before := s.historyPendingBefore[folded]
-		after := s.historyPendingKind[folded] == historyRequestAfter
+		kind := s.historyPendingKind[folded]
+		after := kind == historyRequestAfter
 		delete(s.historyPending, folded)
 		delete(s.historyPendingBefore, folded)
 		delete(s.historyPendingKind, folded)
-		if !after {
+		if kind != historyRequestAfter && kind != historyRequestAfterTail {
 			s.historyExhausted[folded] = struct{}{}
 		}
 		networkID := s.config.NetworkID
 		s.emit(func(handler Handler) {
 			handler.ChatHistoryRequestFinished(networkID, channel, true, before)
 		})
+		if after {
+			s.emit(func(handler Handler) {
+				handler.ChatHistoryFailed(networkID, "AFTER", channel)
+			})
+		}
 		return
 	}
 }
@@ -2894,7 +3029,7 @@ func (s *Session) resetForConnectionLocked() {
 	s.historyExhausted = map[string]struct{}{}
 	s.historyTargetsPending = false
 	s.historyAfterPages = map[string]int{}
-	s.historyAfterCursor = map[string]time.Time{}
+	s.historyAfterCursor = map[string]historyCursor{}
 	s.historyGeneration = map[string]int{}
 	s.historyLimit = kHistoryLimit
 	s.features = irc.NewServerFeatures()

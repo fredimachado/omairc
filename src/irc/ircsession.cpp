@@ -1664,6 +1664,7 @@ void IrcSession::closeBatch(const QString& reference)
         m_targetsPending = false;
         IrcHistoryBatch batch;
         batch.kind = IrcHistoryKind::ChatHistoryTargets;
+        batch.historyEnded = frame.historyEnded;
         batch.targets = historyTargetsFrom(frame.collected.lines);
         emit historyBatchReceived(m_config.networkId, batch);
         return;
@@ -1674,10 +1675,12 @@ void IrcSession::closeBatch(const QString& reference)
             frame.generation == historyGeneration(frame.collected.target);
         const std::optional<HistoryRequestKind> requestKind = frame.historyRequestKind;
         const bool after = requestKind == HistoryRequestKind::After;
+        const bool afterTail = requestKind == HistoryRequestKind::AfterTail;
         if (currentMembership && frame.kind == ReplayKind::ChatHistory && requestKind) {
-            // An empty AFTER means nothing new arrived. It is not the end of
-            // the older page, so scrolling up must still send BEFORE.
-            if (frame.collected.lines.empty() && !after)
+            // An empty AFTER, and the one LATEST sent when the AFTER page cap
+            // is hit, are not the end of the older page. Scrolling up must
+            // still send BEFORE.
+            if (frame.collected.lines.empty() && !after && !afterTail)
                 m_historyExhausted.insert(folded);
             m_historyPending.remove(folded);
             m_historyPendingKind.remove(folded);
@@ -1696,6 +1699,8 @@ void IrcSession::closeBatch(const QString& reference)
             batch.olderPage = true;
         if (after && currentMembership)
             maybeChainHistoryAfter(frame.collected.target, batch, frame.historyEnded);
+        batch.afterRequest = after && currentMembership;
+        batch.historyEnded = frame.historyEnded;
         emit historyBatchReceived(m_config.networkId, batch);
     }
 }
@@ -1852,8 +1857,14 @@ bool IrcSession::requestHistoryLatest(const QString& target)
     m_historyPendingKind.insert(key, HistoryRequestKind::Latest);
     // Both placeholders are filled in one pass. Chaining arg() would let a
     // channel name containing %2 swallow the limit.
-    return sendCommand(QStringLiteral("CHATHISTORY LATEST %1 * %2")
-                           .arg(target, QString::number(m_historyLimit)));
+    if (!sendCommand(QStringLiteral("CHATHISTORY LATEST %1 * %2")
+                         .arg(target, QString::number(m_historyLimit)))) {
+        m_historyAsked.remove(key);
+        m_historyPending.remove(key);
+        m_historyPendingKind.remove(key);
+        return false;
+    }
+    return true;
 }
 
 bool IrcSession::requestHistoryAfter(const QString& target, const QDateTime& after)
@@ -1865,20 +1876,106 @@ bool IrcSession::requestHistoryAfter(const QString& target, const QDateTime& aft
     const QString key = foldChannel(target);
     if (m_historyPending.contains(key))
         return false;
+    HistoryAfterCursor cursor;
+    cursor.time = after.toUTC();
     m_historyAsked.insert(key);
     m_historyAfterPages.insert(key, 1);
-    m_historyAfterCursor.insert(key, after.toUTC());
-    return sendHistoryAfter(target, after);
+    m_historyAfterCursor.insert(key, cursor);
+    return sendHistoryAfter(target, cursor);
 }
 
-bool IrcSession::sendHistoryAfter(const QString& target, const QDateTime& after)
+void IrcSession::setHistoryAfterPageCap(int cap)
 {
+    if (cap > 0)
+        m_historyAfterPageCap = cap;
+}
+
+void IrcSession::clearHistoryAfterAttempt(const QString& key)
+{
+    m_historyPending.remove(key);
+    m_historyPendingKind.remove(key);
+    m_historyAsked.remove(key);
+    m_historyAfterPages.remove(key);
+    m_historyAfterCursor.remove(key);
+}
+
+IrcSession::HistoryAfterCursor IrcSession::cursorFromAfterPage(
+    const std::vector<IrcMessage>& lines) const
+{
+    HistoryAfterCursor cursor;
+    if (lines.empty())
+        return cursor;
+    bool anyMsgid = false;
+    QString lastMsgid;
+    for (const IrcMessage& line : lines) {
+        const QString id = tagValue(line, "msgid");
+        if (id.isEmpty())
+            continue;
+        anyMsgid = true;
+        lastMsgid = id;
+    }
+    const QString lastLineId = tagValue(lines.back(), "msgid");
+    if (!lastLineId.isEmpty()) {
+        cursor.msgid = lastLineId;
+        return cursor;
+    }
+    if (anyMsgid) {
+        cursor.msgid = lastMsgid;
+        return cursor;
+    }
+    if (const std::optional<QDateTime> when = messageServerTime(lines.back())) {
+        cursor.time = when->toUTC();
+        return cursor;
+    }
+    for (auto it = lines.rbegin(); it != lines.rend(); ++it) {
+        if (const std::optional<QDateTime> when = messageServerTime(*it)) {
+            cursor.time = when->toUTC();
+            break;
+        }
+    }
+    return cursor;
+}
+
+bool IrcSession::sendHistoryAfter(const QString& target, const HistoryAfterCursor& cursor)
+{
+    QString selector;
+    if (!cursor.msgid.isEmpty())
+        selector = QStringLiteral("msgid=") + cursor.msgid;
+    else if (cursor.time.isValid())
+        selector = QStringLiteral("timestamp=") + chatHistoryStamp(cursor.time);
+    else
+        return false;
     const QString key = foldChannel(target);
     m_historyPending.insert(key, historyGeneration(target));
     m_historyPendingKind.insert(key, HistoryRequestKind::After);
-    return sendCommand(QStringLiteral("CHATHISTORY AFTER %1 timestamp=%2 %3")
-                           .arg(target, chatHistoryStamp(after),
-                                QString::number(m_historyLimit)));
+    if (!sendCommand(QStringLiteral("CHATHISTORY AFTER %1 %2 %3")
+                         .arg(target, selector, QString::number(m_historyLimit)))) {
+        clearHistoryAfterAttempt(key);
+        return false;
+    }
+    return true;
+}
+
+bool IrcSession::sendHistoryLatestBound(const QString& target,
+                                        const HistoryAfterCursor& cursor)
+{
+    QString selector;
+    if (!cursor.msgid.isEmpty())
+        selector = QStringLiteral("msgid=") + cursor.msgid;
+    else if (cursor.time.isValid())
+        selector = QStringLiteral("timestamp=") + chatHistoryStamp(cursor.time);
+    else
+        return false;
+    const QString key = foldChannel(target);
+    m_historyPending.insert(key, historyGeneration(target));
+    m_historyPendingKind.insert(key, HistoryRequestKind::AfterTail);
+    if (!sendCommand(QStringLiteral("CHATHISTORY LATEST %1 %2 %3")
+                         .arg(target, selector, QString::number(m_historyLimit)))) {
+        m_historyPending.remove(key);
+        m_historyPendingKind.remove(key);
+        return false;
+    }
+    return true;
 }
 
 void IrcSession::maybeChainHistoryAfter(const QString& target,
@@ -1887,28 +1984,27 @@ void IrcSession::maybeChainHistoryAfter(const QString& target,
 {
     if (target.isEmpty() || historyEnded)
         return;
-    const QString key = foldChannel(target);
-    const int pages = m_historyAfterPages.value(key, 1);
-    if (pages >= kHistoryAfterPageCap)
-        return;
     if (int(batch.lines.size()) < m_historyLimit)
         return;
-    std::optional<QDateTime> newest;
-    for (const IrcMessage& line : batch.lines) {
-        const std::optional<QDateTime> when = messageServerTime(line);
-        if (!when)
-            continue;
-        if (!newest || *when > *newest)
-            newest = when;
+    const HistoryAfterCursor next = cursorFromAfterPage(batch.lines);
+    if (next.msgid.isEmpty() && !next.time.isValid())
+        return;
+    const QString key = foldChannel(target);
+    const int pages = m_historyAfterPages.value(key, 1);
+    if (pages >= m_historyAfterPageCap) {
+        sendHistoryLatestBound(target, next);
+        return;
     }
-    if (!newest)
-        return;
-    const QDateTime cursor = m_historyAfterCursor.value(key);
-    if (cursor.isValid() && *newest <= cursor)
-        return;
+    // A timestamp bound that does not move would ask for the same page again.
+    // A msgid always moves, including when two lines share a time.
+    if (next.msgid.isEmpty()) {
+        const HistoryAfterCursor previous = m_historyAfterCursor.value(key);
+        if (previous.time.isValid() && next.time <= previous.time)
+            return;
+    }
     m_historyAfterPages.insert(key, pages + 1);
-    m_historyAfterCursor.insert(key, newest->toUTC());
-    sendHistoryAfter(target, *newest);
+    m_historyAfterCursor.insert(key, next);
+    sendHistoryAfter(target, next);
 }
 
 bool IrcSession::requestHistoryTargets(const QDateTime& from, const QDateTime& until)
@@ -2180,6 +2276,7 @@ void IrcSession::handleChatHistoryFail(const IrcMessage& message)
     if (parameter(message, 2).compare(QLatin1String("TARGETS"),
                                       Qt::CaseInsensitive) == 0) {
         m_targetsPending = false;
+        emit chatHistoryFailed(m_config.networkId, QStringLiteral("TARGETS"), {});
         return;
     }
     // FAIL CHATHISTORY <code> <subcommand> [<target>] [<context>] :description.
@@ -2196,8 +2293,10 @@ void IrcSession::handleChatHistoryFail(const IrcMessage& message)
         m_historyPending.remove(folded);
         m_historyPendingKind.remove(folded);
         // AFTER failing is not the end of older history.
-        if (kind != HistoryRequestKind::After)
+        if (kind != HistoryRequestKind::After && kind != HistoryRequestKind::AfterTail)
             m_historyExhausted.insert(folded);
+        if (kind == HistoryRequestKind::After)
+            emit chatHistoryFailed(m_config.networkId, QStringLiteral("AFTER"), channel);
         return;
     }
 }

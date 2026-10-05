@@ -507,7 +507,7 @@ void IrcPlaybackCoordinator::requestCatchUp(
         else
             sent = session->requestHistoryLatest(nick);
         if (!sent)
-            return;
+            continue;
         markCatchUp(networkId, key.normalizedTarget);
     }
 
@@ -518,14 +518,19 @@ void IrcPlaybackCoordinator::requestCatchUp(
     }
     // BETWEEN is exclusive at both ends. One second of slop keeps a message
     // whose stored millisecond was truncated. Ten seconds past now covers
-    // clock skew on the upper end.
+    // clock skew on the upper end. A client clock behind the snapshot still
+    // asks, with a far upper bound, instead of skipping the list.
     const QDateTime lower = newest->toUTC().addSecs(-1);
-    const QDateTime upper = now.toUTC().addSecs(10);
-    if (lower >= upper || !session->requestHistoryTargets(lower, upper)) {
-        m_catchUpSent[networkId].targets = true;
-        return;
+    QDateTime upper = now.toUTC().addSecs(10);
+    if (lower >= upper) {
+        upper = QDateTime::fromString(QStringLiteral("9999-01-01T00:00:00.000Z"),
+                                      Qt::ISODateWithMs);
     }
-    m_catchUpSent[networkId].targets = true;
+    if (!session->requestHistoryTargets(lower, upper))
+        return;
+    CatchUpSent& sent = m_catchUpSent[networkId];
+    sent.targets = true;
+    sent.targetsLower = lower;
 }
 
 int IrcPlaybackCoordinator::noteDiscoveredTargets(
@@ -533,6 +538,7 @@ int IrcPlaybackCoordinator::noteDiscoveredTargets(
     const std::vector<IrcHistoryTarget>& targets,
     const QString& currentNick,
     const QStringList& restoredDirects,
+    const QStringList& dismissedDirects,
     const std::function<bool(const QString& target)>& persistableDirect)
 {
     if (!session || session->state() != IrcSession::State::Registered)
@@ -551,16 +557,13 @@ int IrcPlaybackCoordinator::noteDiscoveredTargets(
             continue;
         if (!currentNick.isEmpty() && mapping.equals(utf8(name), utf8(currentNick)))
             continue;
+        if (listContains(dismissedDirects, name, mapping))
+            continue;
         const IrcConversationKey key = m_reducer.conversationKey(networkId, name);
         if (catchUpAsked(networkId, key.normalizedTarget))
             continue;
         const bool openNow = m_reducer.find(key) != nullptr;
         const bool restored = listContains(restoredDirects, name, mapping);
-        const bool reached = playbackSnapshotTime(networkId, name).has_value()
-            || m_reducer.hasStoredTranscript(networkId, name);
-        // Closed: the user reached it, and it is not open now.
-        if (!openNow && !restored && reached)
-            continue;
         if (!openNow && !restored) {
             if (!persistableDirect(name) || !newest)
                 continue;
@@ -568,15 +571,20 @@ int IrcPlaybackCoordinator::noteDiscoveredTargets(
                 key, name, IrcConversationCause::InboundOther);
             if (!conversation)
                 continue;
-            if (!session->requestHistoryAfter(name, newest->toUTC().addSecs(-1))) {
+            QDateTime bound = newest->toUTC().addSecs(-1);
+            if (const std::optional<QDateTime> own = playbackSnapshotTime(networkId, name))
+                bound = own->toUTC();
+            if (!session->requestHistoryAfter(name, bound)) {
                 if (conversation->messages.empty())
                     m_reducer.dropDirectMessage(key);
                 continue;
             }
             markCatchUp(networkId, key.normalizedTarget);
+            m_catchUpSent[networkId].discovered.insert(key.normalizedTarget);
             ++created;
             continue;
         }
+        // Listed in the open-direct store but not in the reducer: reopen is off.
         if (!openNow)
             continue;
         bool sent = false;
@@ -589,4 +597,53 @@ int IrcPlaybackCoordinator::noteDiscoveredTargets(
         markCatchUp(networkId, key.normalizedTarget);
     }
     return created;
+}
+
+void IrcPlaybackCoordinator::noteTargetsPage(
+    IrcSession *session,
+    const std::vector<IrcHistoryTarget>& targets,
+    bool historyEnded,
+    int limit)
+{
+    if (!session || limit <= 0 || historyEnded)
+        return;
+    if (int(targets.size()) != limit)
+        return;
+    const QString networkId = session->networkId();
+    CatchUpSent& sent = m_catchUpSent[networkId];
+    if (!sent.targetsLower.isValid() || sent.targetsExtraPages >= 2)
+        return;
+    std::optional<QDateTime> oldest;
+    for (const IrcHistoryTarget& row : targets) {
+        if (!row.latest.isValid())
+            continue;
+        if (!oldest || row.latest < *oldest)
+            oldest = row.latest.toUTC();
+    }
+    if (!oldest || *oldest <= sent.targetsLower)
+        return;
+    if (!session->requestHistoryTargets(sent.targetsLower, *oldest))
+        return;
+    ++sent.targetsExtraPages;
+}
+
+bool IrcPlaybackCoordinator::retryTargets(const QString& networkId)
+{
+    CatchUpSent& sent = m_catchUpSent[networkId];
+    if (sent.targetsRetried)
+        return false;
+    sent.targetsRetried = true;
+    sent.targets = false;
+    return true;
+}
+
+bool IrcPlaybackCoordinator::wasDiscovered(const QString& networkId,
+                                           const QString& target) const
+{
+    const auto found = m_catchUpSent.constFind(networkId);
+    if (found == m_catchUpSent.cend() || target.isEmpty())
+        return false;
+    const QString normalized =
+        m_reducer.conversationKey(networkId, target).normalizedTarget;
+    return found->discovered.contains(normalized);
 }

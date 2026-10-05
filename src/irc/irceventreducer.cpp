@@ -670,16 +670,6 @@ void IrcEventReducer::setConversationLog(IrcConversationLog *log)
     m_log = log;
 }
 
-bool IrcEventReducer::hasStoredTranscript(const QString& networkId,
-                                          const QString& target) const
-{
-    if (!m_log || networkId.isEmpty() || target.isEmpty())
-        return false;
-    return !m_log->readTail(networkId, target,
-                            serverFeatures(networkId).caseMapping(), 1)
-                .empty();
-}
-
 void IrcEventReducer::hydrateFromLog(IrcConversationState& conversation)
 {
     if (!m_log)

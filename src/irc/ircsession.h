@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QByteArray>
+#include <QDateTime>
 #include <QElapsedTimer>
 #include <QHash>
 #include <QMap>
@@ -154,6 +155,9 @@ public:
     bool requestHistoryAfter(const QString& target, const QDateTime& after);
     bool requestHistoryLatest(const QString& target);
     bool requestHistoryTargets(const QDateTime& from, const QDateTime& until);
+    int historyLimit() const { return m_historyLimit; }
+    // Tests lower the AFTER page cap. Production stays at kHistoryAfterPageCap.
+    void setHistoryAfterPageCap(int cap);
     bool historyPendingForTarget(const QString& target) const;
     void markHistoryExhausted(const QString& target);
     QStringList autojoinChannels() const;
@@ -214,6 +218,11 @@ signals:
                             bool hasMarker,
                             const QDateTime& markerUtc);
     void historyBatchReceived(const QString& networkId, const IrcHistoryBatch& batch);
+    // FAIL CHATHISTORY. subcommand is TARGETS or AFTER. target is empty for
+    // TARGETS.
+    void chatHistoryFailed(const QString& networkId,
+                           const QString& subcommand,
+                           const QString& target);
     void statusEntry(const IrcStatusEntry& entry);
     void capabilitiesChanged(const QString& networkId,
                              IrcCapabilitySet capabilities);
@@ -240,7 +249,14 @@ private:
     bool captureInBatch(const IrcMessage &message);
     void closeBatch(const QString& reference);
     void requestChannelHistory(const QString& channel);
-    bool sendHistoryAfter(const QString& target, const QDateTime& after);
+    struct HistoryAfterCursor {
+        QString msgid;
+        QDateTime time;
+    };
+    bool sendHistoryAfter(const QString& target, const HistoryAfterCursor& cursor);
+    bool sendHistoryLatestBound(const QString& target, const HistoryAfterCursor& cursor);
+    void clearHistoryAfterAttempt(const QString& key);
+    HistoryAfterCursor cursorFromAfterPage(const std::vector<IrcMessage>& lines) const;
     void maybeChainHistoryAfter(const QString& target, const IrcHistoryBatch& batch,
                                 bool historyEnded);
     void forgetChannelHistory(const QString& channel);
@@ -270,6 +286,8 @@ private:
         Latest,
         Before,
         After,
+        // Cap-hit CHATHISTORY LATEST. It is not the end of older history.
+        AfterTail,
     };
 
     static std::optional<ReplayKind> replayKindFor(const QString& batchType) noexcept;
@@ -381,8 +399,9 @@ private:
     ChatHistoryResume m_historyResume;
     bool m_targetsPending = false;
     QHash<QString, int> m_historyAfterPages;
-    QHash<QString, QDateTime> m_historyAfterCursor;
+    QHash<QString, HistoryAfterCursor> m_historyAfterCursor;
     static constexpr int kHistoryAfterPageCap = 10;
+    int m_historyAfterPageCap = kHistoryAfterPageCap;
     IrcCaseMapping m_caseMapping{IrcCaseMapping::Kind::Rfc1459};
     static constexpr int kHistoryLimit = 100;
     int m_historyLimit = kHistoryLimit;

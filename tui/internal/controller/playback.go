@@ -46,8 +46,12 @@ type PlaybackCoordinator struct {
 // catchUpSent is the catch-up book for one connection. It mirrors
 // IrcPlaybackCoordinator::CatchUpSent.
 type catchUpSent struct {
-	targets bool
-	asked   map[string]bool
+	targets           bool
+	targetsRetried    bool
+	asked             map[string]bool
+	discovered        map[string]bool
+	targetsLower      time.Time
+	targetsExtraPages int
 }
 
 // zncPlaybackSent is the PLAY book for one connection. all is `PLAY * 0` on a
@@ -461,7 +465,7 @@ func (p *PlaybackCoordinator) RequestCatchUp(s *session.Session, chatHistory, mo
 			sent = s.RequestHistoryLatest(nick)
 		}
 		if !sent {
-			return
+			continue
 		}
 		p.markCatchUp(networkID, key.NormalizedTarget)
 	}
@@ -472,22 +476,28 @@ func (p *PlaybackCoordinator) RequestCatchUp(s *session.Session, chatHistory, mo
 	}
 	// BETWEEN is exclusive at both ends. One second of slop keeps a message
 	// whose stored millisecond was truncated. Ten seconds past now covers
-	// clock skew on the upper end.
+	// clock skew on the upper end. A client clock behind the snapshot still
+	// asks, with a far upper bound, instead of skipping the list.
 	lower := newest.UTC().Add(-time.Second)
 	upper := now.UTC().Add(10 * time.Second)
-	if !upper.After(lower) || !s.RequestHistoryTargets(lower, upper) {
-		p.markCatchUpTargets(networkID)
+	if !upper.After(lower) {
+		upper = time.Date(9999, 1, 1, 0, 0, 0, 0, time.UTC)
+	}
+	if !s.RequestHistoryTargets(lower, upper) {
 		return
 	}
-	p.markCatchUpTargets(networkID)
+	sent := p.catchUpSent[networkID]
+	sent.targets = true
+	sent.targetsLower = lower
+	p.catchUpSent[networkID] = sent
 }
 
-// NoteDiscoveredTargets opens a direct the server named that this client has
-// never reached. A closed query, a channel, and the bouncer stay closed. It
-// returns how many queries this call inserted. It mirrors
-// noteDiscoveredTargets.
+// NoteDiscoveredTargets opens a direct the server named. A user-dismissed
+// query, a channel, and the bouncer stay closed. A stamp or a transcript is
+// the AFTER bound, not a close. It returns how many queries this call
+// inserted. It mirrors noteDiscoveredTargets.
 func (p *PlaybackCoordinator) NoteDiscoveredTargets(s *session.Session, targets []irc.HistoryTarget,
-	currentNick string, restoredDirects []string, persistableDirect func(target string) bool) int {
+	currentNick string, restoredDirects, dismissedDirects []string, persistableDirect func(target string) bool) int {
 	if s == nil || s.State() != session.StateRegistered {
 		return 0
 	}
@@ -508,18 +518,15 @@ func (p *PlaybackCoordinator) NoteDiscoveredTargets(s *session.Session, targets 
 		if currentNick != "" && mapping.Equals(name, currentNick) {
 			continue
 		}
+		if listContains(dismissedDirects, name, mapping) {
+			continue
+		}
 		key := p.reducer.ConversationKey(networkID, name)
 		if p.catchUpAsked(networkID, key.NormalizedTarget) {
 			continue
 		}
 		openNow := p.reducer.Find(key) != nil
 		restored := listContains(restoredDirects, name, mapping)
-		_, stamped := p.playbackSnapshotTime(networkID, name)
-		reached := stamped || p.reducer.HasStoredTranscript(networkID, name)
-		// Closed: the user reached it, and it is not open now.
-		if !openNow && !restored && reached {
-			continue
-		}
 		if !openNow && !restored {
 			if !persistableDirect(name) || !hasNewest {
 				continue
@@ -528,16 +535,27 @@ func (p *PlaybackCoordinator) NoteDiscoveredTargets(s *session.Session, targets 
 			if conversation == nil {
 				continue
 			}
-			if !s.RequestHistoryAfter(name, newest.UTC().Add(-time.Second)) {
+			bound := newest.UTC().Add(-time.Second)
+			if own, ok := p.playbackSnapshotTime(networkID, name); ok {
+				bound = own.UTC()
+			}
+			if !s.RequestHistoryAfter(name, bound) {
 				if len(conversation.Messages) == 0 {
 					p.reducer.DropDirectMessage(key)
 				}
 				continue
 			}
 			p.markCatchUp(networkID, key.NormalizedTarget)
+			book := p.catchUpSent[networkID]
+			if book.discovered == nil {
+				book.discovered = map[string]bool{}
+			}
+			book.discovered[key.NormalizedTarget] = true
+			p.catchUpSent[networkID] = book
 			created++
 			continue
 		}
+		// Listed in the open-direct store but not in the reducer: reopen is off.
 		if !openNow {
 			continue
 		}
@@ -595,6 +613,64 @@ func (p *PlaybackCoordinator) markCatchUpTargets(networkID string) {
 	sent := p.catchUpSent[networkID]
 	sent.targets = true
 	p.catchUpSent[networkID] = sent
+}
+
+// NoteTargetsPage sends the next TARGETS page when this page is full and
+// draft/chathistory-end is absent. At most two extra pages are sent. It
+// mirrors noteTargetsPage.
+func (p *PlaybackCoordinator) NoteTargetsPage(s *session.Session, targets []irc.HistoryTarget, historyEnded bool, limit int) {
+	if s == nil || limit <= 0 || historyEnded || len(targets) != limit {
+		return
+	}
+	networkID := s.NetworkID()
+	sent := p.catchUpSent[networkID]
+	if sent.targetsLower.IsZero() || sent.targetsExtraPages >= 2 {
+		return
+	}
+	var oldest time.Time
+	found := false
+	for _, row := range targets {
+		if row.Latest.IsZero() {
+			continue
+		}
+		if !found || row.Latest.Before(oldest) {
+			oldest = row.Latest.UTC()
+			found = true
+		}
+	}
+	if !found || !oldest.After(sent.targetsLower) {
+		return
+	}
+	if !s.RequestHistoryTargets(sent.targetsLower, oldest) {
+		return
+	}
+	sent = p.catchUpSent[networkID]
+	sent.targetsExtraPages++
+	p.catchUpSent[networkID] = sent
+}
+
+// RetryTargets clears the TARGETS flag once so requestCatchUp can ask again.
+// A second call returns false. It mirrors retryTargets.
+func (p *PlaybackCoordinator) RetryTargets(networkID string) bool {
+	sent := p.catchUpSent[networkID]
+	if sent.targetsRetried {
+		return false
+	}
+	sent.targetsRetried = true
+	sent.targets = false
+	p.catchUpSent[networkID] = sent
+	return true
+}
+
+// WasDiscovered reports whether this connection inserted target from TARGETS.
+// It mirrors wasDiscovered.
+func (p *PlaybackCoordinator) WasDiscovered(networkID, target string) bool {
+	sent, ok := p.catchUpSent[networkID]
+	if !ok || target == "" {
+		return false
+	}
+	key := p.reducer.ConversationKey(networkID, target)
+	return sent.discovered[key.NormalizedTarget]
 }
 
 func listContains(rows []string, target string, mapping irc.CaseMapping) bool {

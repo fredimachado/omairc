@@ -251,9 +251,6 @@ public:
     static constexpr int kMaxMessages = 2000;
 
     void setConversationLog(IrcConversationLog *log);
-    // True when the transcript log already holds a line for this target.
-    // A closed query keeps that file after the sidebar row is gone.
-    bool hasStoredTranscript(const QString& networkId, const QString& target) const;
 
     void apply(const IrcEvent& event);
     std::vector<IrcKeptReplay> takeKeptReplay();

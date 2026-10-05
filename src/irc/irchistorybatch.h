@@ -36,6 +36,10 @@ struct IrcHistoryBatch
     IrcHistoryKind kind = IrcHistoryKind::ChatHistory;
     // True for CHATHISTORY BEFORE pages requested while reading older lines.
     bool olderPage = false;
+    // draft/chathistory-end was on the opening BATCH.
+    bool historyEnded = false;
+    // The batch answers CHATHISTORY AFTER.
+    bool afterRequest = false;
     // Set for a CHATHISTORY TARGETS answer. lines stays empty.
     std::vector<IrcHistoryTarget> targets;
 };
