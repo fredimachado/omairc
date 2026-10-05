@@ -1151,6 +1151,19 @@ TestCase {
         return result;
     }
 
+    function queryFactTexts() {
+        // Repeater delegates sit on the title row. A window-level findChild
+        // does not see them, so read the row the presence dot lives in.
+        var row = item("queryPresenceDot").parent.parent;
+        var texts = [];
+        for (var index = 0; index < row.children.length; ++index) {
+            var child = row.children[index];
+            if (child.objectName === "queryFactLabel")
+                texts.push(String(child.text));
+        }
+        return texts;
+    }
+
     function clickAboutUpdateStatus() {
         // The line's mouse area does not take clicks on the frame it becomes
         // enabled. The card background swallows that click.
@@ -1583,8 +1596,10 @@ TestCase {
         verify(fredTip.indexOf("Fred Machado") >= 0);
         verify(fredTip.indexOf("fredm") >= 0);
         verify(fredTip.indexOf("server operator") >= 0);
-        verify(item("member-bot-dax").visible);
-        compare(item("member-account-lena").text, "pinkieval");
+        var daxRow = members.itemAtIndex(memberIndex("dax"));
+        var lenaRow = members.itemAtIndex(memberIndex("lena"));
+        verify(findChild(daxRow, "member-bot-dax").visible);
+        compare(findChild(lenaRow, "member-account-lena").text, "pinkieval");
 
         keyClick(Qt.Key_Down, Qt.AltModifier);
         keyClick(Qt.Key_Down, Qt.AltModifier);
@@ -1593,14 +1608,14 @@ TestCase {
         compare(item("conversationTopic").text, "Anna Vale");
         verify(item("conversationTopic").text.indexOf("Anna Docs") < 0);
         compare(item("queryPresenceDot").color, "#69b978");
-        verify(findChild(appWindow, "queryFactLabel") === null);
+        compare(queryFactTexts().length, 0);
 
         appWindow.openDirectMessage("ivy");
         tryCompare(appWindow, "currentConversation", "ivy");
         compare(appWindow.currentTopic, "Direct message with ivy");
         compare(item("conversationTopic").text, "");
         compare(item("queryPresenceDot").color, "#d6a552");
-        compare(findChild(appWindow, "queryFactLabel").text, "unauthenticated");
+        compare(queryFactTexts().join("\n"), "unauthenticated");
     }
 
     function test_walkConversationsWrapsToLast() {
