@@ -187,6 +187,8 @@ ApplicationWindow {
     readonly property int messageLineHeight: messageLineProbe.implicitHeight
     readonly property bool currentConversationIsChannel: irc
         ? irc.isChannel : currentConversation.charAt(0) === "#"
+    readonly property bool currentChannelJoined: irc ? irc.channelJoined : false
+    readonly property bool canCloseSelection: irc ? irc.canCloseSelection : false
     readonly property int currentPeopleCount: irc ? irc.peopleCount : 0
     readonly property bool memberStatusVisible: !irc || irc.hasMemberStatus
     readonly property bool awayPresenceVisible: !irc || irc.hasAwayPresence
@@ -732,6 +734,44 @@ ApplicationWindow {
             return;
         var previousConversationId = currentConversationId;
         irc.closeDirectMessage();
+        Qt.callLater(function() {
+            placeTranscriptAfterSelect(previousConversationId);
+            conversation.composer.forceActiveFocus();
+        });
+    }
+
+    function leaveSelectedChannel() {
+        if (!irc)
+            return;
+        irc.leaveSelectedChannel();
+        Qt.callLater(function() {
+            conversation.composer.forceActiveFocus();
+        });
+    }
+
+    function joinSelectedChannel() {
+        if (!irc)
+            return;
+        irc.joinSelectedChannel();
+        Qt.callLater(function() {
+            conversation.composer.forceActiveFocus();
+        });
+    }
+
+    function joinNewChannel(channel) {
+        if (!irc)
+            return;
+        irc.joinNewChannel(channel);
+        Qt.callLater(function() {
+            conversation.composer.forceActiveFocus();
+        });
+    }
+
+    function closeConversationRow(networkId, target) {
+        if (!irc)
+            return;
+        var previousConversationId = currentConversationId;
+        irc.closeConversationRow(networkId, target);
         Qt.callLater(function() {
             placeTranscriptAfterSelect(previousConversationId);
             conversation.composer.forceActiveFocus();
@@ -2514,6 +2554,7 @@ ApplicationWindow {
         sequence: "Ctrl+Shift+M"
         context: Qt.ApplicationShortcut
         enabled: currentConversationIsChannel
+            && currentChannelJoined
             && !consoleVisible
             && !win.connectionOverlayVisible
             && !win.shortcutOverlayOpen
@@ -2524,6 +2565,7 @@ ApplicationWindow {
         sequence: "Ctrl+Shift+P"
         context: Qt.ApplicationShortcut
         enabled: currentConversationIsChannel
+            && currentChannelJoined
             && !consoleVisible
             && !win.connectionOverlayVisible
             && !win.shortcutOverlayOpen
@@ -2542,7 +2584,7 @@ ApplicationWindow {
     Shortcut {
         sequence: "Ctrl+W"
         context: Qt.ApplicationShortcut
-        enabled: !currentConversationIsChannel && !consoleVisible
+        enabled: canCloseSelection && !consoleVisible
             && !win.connectionOverlayVisible && !win.shortcutOverlayOpen
         onActivated: win.closeDirectMessage()
     }
@@ -3159,6 +3201,9 @@ ApplicationWindow {
             onConversationActivated: function(row) {
                 win.activateSidebarConversation(row);
             }
+            onConversationCloseRequested: function(networkId, target) {
+                win.closeConversationRow(networkId, target);
+            }
             onStatusRequested: function(networkId) {
                 win.openNetworkStatus(networkId);
             }
@@ -3178,6 +3223,9 @@ ApplicationWindow {
             Layout.fillHeight: true
             consoleVisible: win.consoleVisible
             currentConversationIsChannel: win.currentConversationIsChannel
+            channelJoined: win.currentChannelJoined
+            canCloseSelection: win.canCloseSelection
+            serverJoinEnabled: win.irc !== null
             membersVisible: win.membersVisible
             currentPeopleCount: win.currentPeopleCount
             headerTitle: {
@@ -3351,6 +3399,10 @@ ApplicationWindow {
                 }
             }
             onMembersToggleRequested: win.membersVisible = !win.membersVisible
+            onLeaveRequested: win.leaveSelectedChannel()
+            onJoinRequested: win.joinSelectedChannel()
+            onCloseRequested: win.closeDirectMessage()
+            onServerJoinRequested: function(channel) { win.joinNewChannel(channel) }
             onSendRequested: win.sendMessage()
             onComposerTextEdited: function(text) {
                 win.handleComposerText(text);
@@ -3371,6 +3423,7 @@ ApplicationWindow {
             objectName: "membersPanel"
             style: win.style
             visible: win.currentConversationIsChannel
+                && win.currentChannelJoined
                 && win.membersVisible
                 && !win.consoleVisible
                 && win.width >= win.scaledSize(980)

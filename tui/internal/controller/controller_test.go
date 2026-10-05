@@ -1217,3 +1217,56 @@ func TestOnViewChangedFiresForViewSurfaces(t *testing.T) {
 		t.Fatalf("OnViewChanged fired %d times for an empty publish, want 0", woken)
 	}
 }
+
+// TestLeaveKeepsRowCloseDropsAndCatchupStaysClosed ports the leave/close
+// contract: /part keeps the row, /close drops a channel you have left, and
+// a later JOIN or PRIVMSG does not bring a closed channel back.
+func TestLeaveKeepsRowCloseDropsAndCatchupStaysClosed(t *testing.T) {
+	c, clock := newController(t)
+	transport := addAndStart(t, c, clock, baseConfig("libera", "omairc"))
+	registerNetwork(t, transport, "omairc")
+	inject(t, transport, ":omairc!u@h JOIN :#omarchy\r\n:omairc!u@h JOIN :#lab\r\n")
+	c.SelectConversation("libera", "#omarchy")
+	if !c.ChannelJoined() {
+		t.Fatal("selected channel should start joined")
+	}
+
+	if !c.SendMessage("/part") {
+		t.Fatalf("part outcome error %q", c.LastError())
+	}
+	if got := lastWrittenFrame(t, transport); got != "PART #omarchy\r\n" {
+		t.Fatalf("last frame = %q, want PART", got)
+	}
+	key := c.reducer.ConversationKey("libera", "#omarchy")
+	if c.reducer.Find(key) == nil {
+		t.Fatal("/part dropped the row")
+	}
+	if c.SelectedTarget() != "#omarchy" || c.ChannelJoined() {
+		t.Fatalf("after part target=%q joined=%v", c.SelectedTarget(), c.ChannelJoined())
+	}
+	framesBefore := len(transport.WrittenFrames())
+	if c.SendMessage("hello") {
+		t.Fatal("plain chat on a left channel must be refused")
+	}
+	if len(transport.WrittenFrames()) != framesBefore {
+		t.Fatal("refused chat wrote a frame")
+	}
+
+	if !c.SendMessage("/close") {
+		t.Fatalf("close outcome error %q", c.LastError())
+	}
+	if c.reducer.Find(key) != nil {
+		t.Fatal("/close kept the left channel")
+	}
+	inject(t, transport, ":alice!u@h JOIN :#omarchy\r\n:alice!u@h PRIVMSG #omarchy :back\r\n")
+	if c.reducer.Find(key) != nil {
+		t.Fatal("catch-up reopened a closed channel")
+	}
+
+	if !c.SendMessage("/join #omarchy") {
+		t.Fatalf("join outcome error %q", c.LastError())
+	}
+	if c.reducer.Find(key) == nil {
+		t.Fatal("/join did not reopen the closed channel")
+	}
+}

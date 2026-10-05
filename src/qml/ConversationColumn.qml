@@ -7,6 +7,9 @@ Item {
     required property OmaircStyle style
     property bool consoleVisible: false
     property bool currentConversationIsChannel: false
+    property bool channelJoined: false
+    property bool canCloseSelection: false
+    property bool serverJoinEnabled: false
     property bool membersVisible: true
     property int currentPeopleCount: 0
     property string headerTitle: ""
@@ -34,6 +37,10 @@ Item {
     property alias consoleList: consoleList
 
     signal membersToggleRequested()
+    signal leaveRequested()
+    signal joinRequested()
+    signal closeRequested()
+    signal serverJoinRequested(string channel)
     signal sendRequested()
     signal composerTextEdited(string text)
     signal composerKeyPressed(var event)
@@ -51,8 +58,8 @@ Item {
         Column {
             anchors.left: parent.left
             anchors.leftMargin: column.style.scaledSize(24)
-            anchors.right: column.currentConversationIsChannel ? peopleButton.left : parent.right
-            anchors.rightMargin: column.style.scaledSize(column.currentConversationIsChannel ? 18 : 24)
+            anchors.right: headerChrome.visible ? headerChrome.left : parent.right
+            anchors.rightMargin: column.style.scaledSize(headerChrome.visible ? 18 : 24)
             anchors.verticalCenter: parent.verticalCenter
             spacing: column.style.scaledSize(3)
 
@@ -77,39 +84,58 @@ Item {
             }
         }
 
-        Rectangle {
-            id: peopleButton
-            objectName: "peopleButton"
-            Accessible.name: column.membersVisible ? "Hide members" : "Show members"
-            Accessible.role: Accessible.Button
-            Accessible.onPressAction: column.membersToggleRequested()
-            visible: column.currentConversationIsChannel && !column.consoleVisible
+        Row {
+            id: headerChrome
             anchors.right: parent.right
             anchors.rightMargin: column.style.scaledSize(19)
             anchors.verticalCenter: parent.verticalCenter
-            width: column.style.scaledSize(74)
-            height: column.style.scaledSize(30)
-            radius: column.style.scaledSize(7)
-            color: peopleMouse.containsMouse || column.membersVisible
-                ? column.style.raisedColor : "transparent"
-            border.width: 1
-            border.color: column.membersVisible ? column.style.dividerColor : "transparent"
+            spacing: column.style.scaledSize(8)
+            visible: headerActions.visible || peopleButton.visible
 
-            Text {
-                anchors.centerIn: parent
-                text: column.currentPeopleCount + " PEOPLE"
-                color: column.membersVisible ? column.style.inkColor : column.style.mutedColor
-                font.family: "iA Writer Mono S"
-                font.bold: true
-                font.pixelSize: column.style.scaledSize(9)
+            ConversationHeaderActions {
+                id: headerActions
+                style: column.style
+                channel: column.currentConversationIsChannel
+                joined: column.channelJoined
+                canClose: column.canCloseSelection
+                onLeaveRequested: column.leaveRequested()
+                onJoinRequested: column.joinRequested()
+                onCloseRequested: column.closeRequested()
             }
 
-            MouseArea {
-                id: peopleMouse
-                anchors.fill: parent
-                hoverEnabled: true
-                cursorShape: Qt.PointingHandCursor
-                onClicked: column.membersToggleRequested()
+            Rectangle {
+                id: peopleButton
+                objectName: "peopleButton"
+                Accessible.name: column.membersVisible ? "Hide members" : "Show members"
+                Accessible.role: Accessible.Button
+                Accessible.onPressAction: column.membersToggleRequested()
+                visible: column.currentConversationIsChannel
+                    && column.channelJoined
+                    && !column.consoleVisible
+                width: column.style.scaledSize(74)
+                height: column.style.scaledSize(30)
+                radius: column.style.scaledSize(7)
+                color: peopleMouse.containsMouse || column.membersVisible
+                    ? column.style.raisedColor : "transparent"
+                border.width: 1
+                border.color: column.membersVisible ? column.style.dividerColor : "transparent"
+
+                Text {
+                    anchors.centerIn: parent
+                    text: column.currentPeopleCount + " PEOPLE"
+                    color: column.membersVisible ? column.style.inkColor : column.style.mutedColor
+                    font.family: "iA Writer Mono S"
+                    font.bold: true
+                    font.pixelSize: column.style.scaledSize(9)
+                }
+
+                MouseArea {
+                    id: peopleMouse
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: column.membersToggleRequested()
+                }
             }
         }
 
@@ -132,8 +158,8 @@ Item {
         Column {
             anchors.left: parent.left
             anchors.leftMargin: column.style.scaledSize(24)
-            anchors.right: parent.right
-            anchors.rightMargin: column.style.scaledSize(24)
+            anchors.right: serverJoin.visible ? serverJoin.left : parent.right
+            anchors.rightMargin: column.style.scaledSize(serverJoin.visible ? 18 : 24)
             anchors.verticalCenter: parent.verticalCenter
             spacing: column.style.scaledSize(3)
 
@@ -155,6 +181,17 @@ Item {
                 font.family: "iA Writer Mono S"
                 font.pixelSize: column.style.scaledSize(11)
             }
+        }
+
+        ServerJoinField {
+            id: serverJoin
+            style: column.style
+            joinEnabled: column.serverJoinEnabled
+            visible: column.serverJoinEnabled
+            anchors.right: parent.right
+            anchors.rightMargin: column.style.scaledSize(19)
+            anchors.verticalCenter: parent.verticalCenter
+            onSubmitted: function(channel) { column.serverJoinRequested(channel) }
         }
 
         Rectangle {

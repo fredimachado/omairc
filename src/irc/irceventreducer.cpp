@@ -636,6 +636,52 @@ bool IrcEventReducer::dropChannel(const IrcConversationKey& key)
     return true;
 }
 
+void IrcEventReducer::noteClosed(const IrcConversationKey& key)
+{
+    if (key.networkId.isEmpty() || key.normalizedTarget.isEmpty())
+        return;
+    m_closedChannels.insert(key);
+}
+
+void IrcEventReducer::clearClosed(const IrcConversationKey& key)
+{
+    m_closedChannels.erase(key);
+}
+
+bool IrcEventReducer::isClosed(const IrcConversationKey& key) const
+{
+    return m_closedChannels.count(key) != 0;
+}
+
+void IrcEventReducer::clearClosedNetwork(const QString& networkId)
+{
+    if (networkId.isEmpty())
+        return;
+    for (auto it = m_closedChannels.begin(); it != m_closedChannels.end(); ) {
+        if (it->networkId == networkId)
+            it = m_closedChannels.erase(it);
+        else
+            ++it;
+    }
+}
+
+bool IrcEventReducer::markChannelLeft(const IrcConversationKey& key)
+{
+    IrcConversationState *conversation = findMutable(key);
+    if (!conversation)
+        return false;
+    IrcChannelState *channel = conversation->channel();
+    if (!channel)
+        return false;
+    channel->joined = false;
+    channel->historyAnchor.reset();
+    clearTrimTailOnCap(key);
+    channel->members.clear();
+    stopNamesSync(*channel);
+    conversation->typing.clear();
+    return true;
+}
+
 void IrcEventReducer::forgetNetwork(const QString& networkId)
 {
     if (networkId.isEmpty())
@@ -643,6 +689,7 @@ void IrcEventReducer::forgetNetwork(const QString& networkId)
     dropPendingPlayback(networkId);
     dropKeptPlayback(networkId);
     m_queryRestorePending.erase(networkId);
+    clearClosedNetwork(networkId);
     for (auto it = m_conversations.begin(); it != m_conversations.end(); ) {
         if (it->first.networkId == networkId)
             it = m_conversations.erase(it);
@@ -1005,6 +1052,9 @@ IrcConversationState *IrcEventReducer::ensureConversation(
     const bool targetIsChannel = features.isChannel(utf8(key.normalizedTarget));
     const bool targetLooksLikeService = ircTargetLooksLikeService(displayTarget, features);
     if (!ircConversationCauseInserts(cause, targetIsChannel, targetLooksLikeService))
+        return nullptr;
+    // A closed channel stays closed. Join clears the mark before it inserts.
+    if (targetIsChannel && m_closedChannels.count(key) != 0)
         return nullptr;
 
     IrcConversationState conversation;
@@ -1483,6 +1533,7 @@ void IrcEventReducer::reduce(const IrcWelcomeEvent& event)
     dropPendingPlayback(event.networkId);
     dropKeptPlayback(event.networkId);
     m_queryRestorePending.insert(event.networkId);
+    clearClosedNetwork(event.networkId);
     const auto existingNick = m_currentNicks.find(event.networkId);
     if (existingNick != m_currentNicks.end())
         rememberSelfNick(event.networkId, existingNick->second);

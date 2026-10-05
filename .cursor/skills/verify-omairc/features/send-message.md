@@ -64,7 +64,7 @@ compare --before test-artifacts/verify/send-message/after-button.png --after tes
 
 - `Enter` sends. There is no multiline composer. Do not hold Shift+Enter expecting a newline.
 - Empty or whitespace-only input is ignored. A screenshot of an unchanged transcript is the empty-submit proof.
-- `/me` is a live ACTION. Other catalog verbs are slash-commands. A rejected command such as `/close` on a channel stays in the composer. A successful `/join` or `/query` is consumed before the window switches, so it cannot remain as a draft.
+- `/me` is a live ACTION. Other catalog verbs are slash-commands. A rejected command such as `/close` on a channel you are in stays in the composer. A successful `/join` or `/query` is consumed before the window switches, so it cannot remain as a draft.
 - Messages are session-local. Relaunching the isolated instance resets the seeded session. Prove persistence inside one launch.
 - `run send-message` skips `launch` when `doctor` is already healthy and `demo=yes`. It does not reset the member panel. A hidden panel makes `click-send` miss and leaves `Sent with the button` in the composer. The following `send --text "/me waves"` would append to that draft. Run `cleanup` before `run` when reusing a dirty instance.
 - `click-send` is only aimed while the member panel is visible. `/me waves` is a separate `send` after the `after-button` shot, so it is not typed into a draft the button was supposed to clear.

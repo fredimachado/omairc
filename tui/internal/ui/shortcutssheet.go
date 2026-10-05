@@ -47,7 +47,7 @@ var shortcutGroups = []shortcutGroup{
 			{"Ctrl+Shift+K", "jump to nick"},
 			{"Ctrl+Shift+A", "inbox"},
 			{"Ctrl+`", "Status"},
-			{"Ctrl+W", "close direct message"},
+			{"Ctrl+W", "close conversation"},
 		},
 	},
 	{

@@ -959,6 +959,35 @@ func TestDropChannelErasesOnlyChannelRows(t *testing.T) {
 	requireTrue(t, "recreated joined", recreated.Channel().Joined)
 }
 
+func TestClosedChannelStaysClosedUntilJoin(t *testing.T) {
+	reducer := NewEventReducer()
+	welcome(reducer, networkA)
+	channel := reducer.ConversationKey(networkA, "#room")
+	reducer.Apply(JoinEvent{NetworkID: networkA, Channel: "#room", Nick: "omairc"}, reducerTimestamp)
+	reducer.Apply(JoinEvent{NetworkID: networkA, Channel: "#room", Nick: "Alice"}, reducerTimestamp)
+	requireTrue(t, "mark left", reducer.MarkChannelLeft(channel))
+	left := stateOf(t, reducer, channel)
+	requireFalse(t, "left is not joined", left.Channel().Joined)
+	requireInt(t, "left has no members", len(left.Channel().Members), 0)
+
+	reducer.NoteClosed(channel)
+	requireTrue(t, "drop closed", reducer.DropChannel(channel))
+	reducer.Apply(JoinEvent{NetworkID: networkA, Channel: "#room", Nick: "Alice"}, reducerTimestamp)
+	reducer.Apply(MessageEvent{Conversation: channel, Author: "Alice", Body: "back", Timestamp: reducerTimestamp, Target: "#room"}, reducerTimestamp)
+	reducer.Apply(HistoryEvent{Conversation: channel, Target: "#room", Kind: HistoryChat}, reducerTimestamp)
+	requireFalse(t, "catch-up stayed closed", reducer.Find(channel) != nil)
+
+	reducer.ClearClosed(channel)
+	opened := reducer.EnsureConversation(channel, "#room", CauseChannelState)
+	requireTrue(t, "explicit join inserts", opened != nil)
+
+	reducer.NoteClosed(channel)
+	requireTrue(t, "drop again", reducer.DropChannel(channel))
+	welcome(reducer, networkA)
+	reducer.Apply(JoinEvent{NetworkID: networkA, Channel: "#room", Nick: "omairc"}, reducerTimestamp)
+	requireTrue(t, "welcome lets autojoin back", reducer.Find(channel) != nil)
+}
+
 func TestClearMessagesWipesTranscriptKeepsRow(t *testing.T) {
 	reducer := NewEventReducer()
 	welcome(reducer, networkA)

@@ -200,7 +200,7 @@ var verbCatalog = []VerbSpec{
 	{VerbQuit, "disconnect", []string{"quit"}, "/disconnect [reason]", ScopeEither, ""},
 	{VerbClear, "clear", nil, "/clear", ScopeEither, ""},
 	{VerbClose, "close", nil, "/close", ScopeConversation,
-		"Close applies to direct messages"},
+		"Close applies to direct messages and channels you have left"},
 	{VerbQuery, "query", nil, "/query <nick> [text]", ScopeEither, ""},
 	{VerbMsg, "msg", nil, "/msg <nick> <text>", ScopeEither, ""},
 	{VerbTopic, "topic", nil, "/topic [text]", ScopeConversation,

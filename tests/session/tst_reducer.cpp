@@ -146,6 +146,7 @@ private slots:
     void joinOfListedNickKeepsRanks();
     void dropDirectMessageErasesOnlyDirectRows();
     void dropChannelErasesOnlyChannelRows();
+    void closedChannelStaysClosedUntilJoin();
     void clearMessagesWipesTranscriptKeepsRow();
     void messagesCapAtTwoThousandFifo();
     void clearMessagesEmptiesAfterCap();
@@ -1269,6 +1270,50 @@ void ReducerTest::dropChannelErasesOnlyChannelRows()
     QVERIFY(recreated);
     QVERIFY(recreated->isChannel());
     QVERIFY(recreated->channel()->joined);
+}
+
+void ReducerTest::closedChannelStaysClosedUntilJoin()
+{
+    IrcEventReducer reducer;
+    welcome(reducer, networkA);
+    const IrcConversationKey channel =
+        reducer.conversationKey(networkA, QStringLiteral("#room"));
+    reducer.apply(IrcJoinEvent{
+        networkA, QStringLiteral("#room"), QStringLiteral("omairc")});
+    reducer.apply(IrcJoinEvent{
+        networkA, QStringLiteral("#room"), QStringLiteral("Alice")});
+    QVERIFY(reducer.markChannelLeft(channel));
+    const IrcConversationState *left = reducer.find(channel);
+    QVERIFY(left);
+    QVERIFY(left->channel());
+    QVERIFY(!left->channel()->joined);
+    QCOMPARE(left->channel()->members.size(), std::size_t(0));
+
+    reducer.noteClosed(channel);
+    QVERIFY(reducer.dropChannel(channel));
+    reducer.apply(IrcJoinEvent{
+        networkA, QStringLiteral("#room"), QStringLiteral("Alice")});
+    reducer.apply(IrcMessageEvent{
+        channel, QStringLiteral("Alice"), QStringLiteral("back"), timestamp,
+        QStringLiteral("#room")});
+    reducer.apply(IrcHistoryEvent{
+        channel,
+        QStringLiteral("#room"),
+        {replayLine(QStringLiteral("alice"), QStringLiteral("older"),
+                    QStringLiteral("id-closed"))},
+    });
+    QVERIFY(!reducer.find(channel));
+
+    reducer.clearClosed(channel);
+    QVERIFY(reducer.ensureConversation(channel, QStringLiteral("#room"),
+                                       IrcConversationCause::ChannelState));
+
+    reducer.noteClosed(channel);
+    QVERIFY(reducer.dropChannel(channel));
+    welcome(reducer, networkA);
+    reducer.apply(IrcJoinEvent{
+        networkA, QStringLiteral("#room"), QStringLiteral("omairc")});
+    QVERIFY(reducer.find(channel));
 }
 
 void ReducerTest::clearMessagesWipesTranscriptKeepsRow()

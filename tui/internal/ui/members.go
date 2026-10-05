@@ -96,7 +96,7 @@ func memberWindowStart(total int, spans [][2]int, focusIndex int, focused bool, 
 // direct message has no panel to flip). Hiding clears the member focus so a
 // stale cursor does not swallow keys; showing does not steal focus.
 func (m *Model) toggleMembers() {
-	if m.ctrl == nil || !m.ctrl.IsChannel() || m.ctrl.ConsoleOpen() {
+	if m.ctrl == nil || !m.ctrl.IsChannel() || !m.ctrl.ChannelJoined() || m.ctrl.ConsoleOpen() {
 		return
 	}
 	m.membersHidden = !m.membersHidden

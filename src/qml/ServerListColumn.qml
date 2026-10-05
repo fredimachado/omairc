@@ -27,6 +27,7 @@ Rectangle {
     property alias selfVersionHit: selfVersionHit
 
     signal conversationActivated(var row)
+    signal conversationCloseRequested(string networkId, string target)
     signal statusRequested(string networkId)
     signal editRequested(string networkId)
     signal versionClicked()
@@ -180,6 +181,8 @@ Rectangle {
                             width: column.width
                             height: visible ? column.style.scaledSize(36) : 0
                             onActivated: column.conversationActivated(channelRow)
+                            onCloseRequested: column.conversationCloseRequested(
+                                channelRow.networkId, channelRow.conversationName)
                         }
                     }
 
@@ -239,6 +242,8 @@ Rectangle {
                             width: column.width
                             height: visible ? column.style.scaledSize(36) : 0
                             onActivated: column.conversationActivated(directRow)
+                            onCloseRequested: column.conversationCloseRequested(
+                                directRow.networkId, directRow.conversationName)
                         }
                     }
                 }

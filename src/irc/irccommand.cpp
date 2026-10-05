@@ -38,7 +38,7 @@ const QVector<IrcVerbSpec>& IrcVerbTable::all()
          QStringLiteral("/clear"), IrcVerbScope::Either, {}},
         {IrcCommand::Verb::Close, QStringLiteral("close"), {},
          QStringLiteral("/close"), IrcVerbScope::Conversation,
-         QStringLiteral("Close applies to direct messages")},
+         QStringLiteral("Close applies to direct messages and channels you have left")},
         {IrcCommand::Verb::Query, QStringLiteral("query"), {},
          QStringLiteral("/query <nick> [text]"), IrcVerbScope::Either, {}},
         {IrcCommand::Verb::Msg, QStringLiteral("msg"), {},

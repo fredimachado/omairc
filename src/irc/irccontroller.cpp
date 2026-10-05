@@ -385,6 +385,10 @@ IrcController::IrcController(QObject *parent)
           },
           [this]() { return membershipNoise(); },
           [this](IrcMembershipNoise noise) { setMembershipNoise(noise); },
+          [this](const QString& networkId, const QString& channel) {
+              markChannelLeft(networkId, channel);
+          },
+          [this]() { return closeSelectedConversation(); },
       })
     , m_autoawayRuntime(IrcAutoawayRuntime::Host{
           [this](const QString& networkId) {
@@ -1337,6 +1341,8 @@ void IrcController::openJoinedChannel(const QString& networkId,
     if (networkId.isEmpty() || channel.isEmpty())
         return;
     const IrcConversationKey key = m_reducer.conversationKey(networkId, channel);
+    // An explicit join is allowed to bring a closed channel back.
+    m_reducer.clearClosed(key);
     if (!m_reducer.ensureConversation(key, channel, IrcConversationCause::ChannelState))
         return;
     m_conversations.reload();
@@ -1345,14 +1351,108 @@ void IrcController::openJoinedChannel(const QString& networkId,
 
 void IrcController::closeDirectMessage()
 {
-    if (!selectedIsCloseableDirect())
-        return;
     const QString networkId = identityNetworkId();
-    dropSelectedDirectAndReselect();
+    if (!closeSelectedConversation())
+        return;
     if (lastErrorForNetwork(networkId).isEmpty())
         return;
     setLastError(networkId, {});
     emit statusChanged();
+}
+
+bool IrcController::channelJoined() const
+{
+    if (!m_selected)
+        return false;
+    const IrcConversationState *conversation = m_reducer.find(*m_selected);
+    const IrcChannelState *channel = conversation ? conversation->channel() : nullptr;
+    return channel && channel->joined;
+}
+
+bool IrcController::canCloseSelection() const
+{
+    if (!m_selected)
+        return false;
+    const IrcConversationState *conversation = m_reducer.find(*m_selected);
+    if (!conversation || !conversation->isChannel())
+        return conversation != nullptr;
+    const IrcChannelState *channel = conversation->channel();
+    return channel && !channel->joined;
+}
+
+void IrcController::leaveSelectedChannel()
+{
+    sendMessage(QStringLiteral("/part"));
+}
+
+void IrcController::joinSelectedChannel()
+{
+    if (!isChannel() || channelJoined())
+        return;
+    sendMessage(QStringLiteral("/join ") + selectedTarget());
+}
+
+bool IrcController::joinNewChannel(const QString& channel)
+{
+    const QString argument = channel.trimmed();
+    const QString networkId = !m_console.networkId().isEmpty()
+        ? m_console.networkId()
+        : focusedNetworkId();
+    auto refuse = [this, &networkId](const QString& message) {
+        setLastError(networkId.isEmpty() ? identityNetworkId() : networkId, message);
+        emit statusChanged();
+        return false;
+    };
+    if (argument.isEmpty() || networkId.isEmpty())
+        return refuse(QStringLiteral("Name a channel"));
+    const auto targets = ircParseJoinTargets(argument, m_reducer.serverFeatures(networkId));
+    if (!targets || targets->isEmpty())
+        return refuse(QStringLiteral("Name a channel"));
+    for (const IrcJoinTarget& target : *targets) {
+        if (m_reducer.find(m_reducer.conversationKey(networkId, target.channel())))
+            return refuse(QStringLiteral("Already open"));
+    }
+    const IrcCommand command = IrcCommand::parse(QStringLiteral("/join ") + argument);
+    return report(dispatch(command, IrcComposerSurface::Status), command);
+}
+
+void IrcController::closeConversationRow(const QString& networkId, const QString& target)
+{
+    if (networkId.isEmpty() || target.isEmpty())
+        return;
+    const IrcConversationKey key = m_reducer.conversationKey(networkId, target);
+    const IrcConversationState *conversation = m_reducer.find(key);
+    if (!conversation)
+        return;
+    const QString display = conversation->target.isEmpty() ? target : conversation->target;
+    if (!conversation->isChannel()) {
+        dropConversationAndReselect(key, true);
+        if (lastErrorForNetwork(networkId).isEmpty())
+            return;
+        setLastError(networkId, {});
+        emit statusChanged();
+        return;
+    }
+    const IrcChannelState *channel = conversation->channel();
+    if (channel && channel->joined) {
+        if (IrcSession *session = m_sessions.findSession(networkId)) {
+            if (session->state() == IrcSession::State::Registered)
+                session->part(display);
+        }
+    } else {
+        m_commands.noteCancelled(key);
+    }
+    m_reducer.noteClosed(key);
+    dismissChannel(networkId, display);
+}
+
+void IrcController::markChannelLeft(const QString& networkId, const QString& channel)
+{
+    if (networkId.isEmpty() || channel.isEmpty())
+        return;
+    if (!m_reducer.markChannelLeft(m_reducer.conversationKey(networkId, channel)))
+        return;
+    reloadModels();
 }
 
 bool IrcController::selectedIsCloseableDirect() const
@@ -1361,6 +1461,28 @@ bool IrcController::selectedIsCloseableDirect() const
         return false;
     const IrcConversationState *conversation = m_reducer.find(*m_selected);
     return !conversation || !conversation->isChannel();
+}
+
+bool IrcController::closeSelectedConversation()
+{
+    if (!m_selected)
+        return false;
+    const IrcConversationState *conversation = m_reducer.find(*m_selected);
+    if (conversation && conversation->isChannel()) {
+        const IrcChannelState *channel = conversation->channel();
+        if (!channel || channel->joined)
+            return false;
+        const QString display = conversation->target.isEmpty()
+            ? m_selectedTarget
+            : conversation->target;
+        m_commands.noteCancelled(*m_selected);
+        m_reducer.noteClosed(*m_selected);
+        return dismissChannel(m_selected->networkId, display);
+    }
+    if (!selectedIsCloseableDirect())
+        return false;
+    dropSelectedDirectAndReselect();
+    return true;
 }
 
 void IrcController::dropConversationAndReselect(const IrcConversationKey& key,
@@ -1787,6 +1909,12 @@ IrcCommandOutcome IrcController::sendSelectedMessage(const QString& body)
     IrcSession *session = selectedSession();
     if (!session || !m_selected)
         return IrcCommandOutcome::WrongScope;
+    const IrcConversationState *conversation = m_reducer.find(*m_selected);
+    if (conversation && conversation->isChannel()) {
+        const IrcChannelState *channel = conversation->channel();
+        if (!channel || !channel->joined)
+            return IrcCommandOutcome::Refused;
+    }
     const bool sent = session->sendPrivmsg(selectedTarget(), body);
     if (sent) {
         rememberOpenDirect(session->networkId(), selectedTarget());
@@ -2520,7 +2648,11 @@ void IrcController::handleMessage(const QString& networkId,
             if (selfJoin && m_commands.takeCancelledSelfJoin(joinKey)) {
                 if (IrcSession *session = m_sessions.findSession(join->networkId))
                     session->part(join->channel);
-                dismissChannel(join->networkId, join->channel);
+                // Close drops the row. Leave keeps it, just not joined.
+                if (m_reducer.isClosed(joinKey))
+                    dismissChannel(join->networkId, join->channel);
+                else
+                    markChannelLeft(join->networkId, join->channel);
                 continue;
             }
             if (selfJoin

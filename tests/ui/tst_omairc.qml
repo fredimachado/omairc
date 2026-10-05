@@ -9909,6 +9909,70 @@ TestCase {
         compare(visibleDirects(seed.omarchyNetworkId).length, 2);
     }
 
+    function test_leaveKeepsChannelRow() {
+        openSeededAppWindow();
+        mouseClick(namedItem(liveConversation("anna")));
+        tryCompare(appWindow, "currentConversation", "anna");
+        compare(item("headerCloseButton").visible, true);
+        compare(item("headerLeaveButton").visible, false);
+        compare(item("headerJoinButton").visible, false);
+
+        mouseClick(namedItem(liveConversation("#omarchy")));
+        tryCompare(appWindow, "currentConversation", "#omarchy");
+        compare(item("headerLeaveButton").visible, true);
+        compare(item("peopleButton").visible, true);
+        compare(item("headerJoinButton").visible, false);
+        compare(item("headerCloseButton").visible, false);
+        compare(item("membersPanel").visible, true);
+
+        mouseClick(item("headerLeaveButton"));
+        tryCompare(appWindow, "currentChannelJoined", false);
+        compare(appWindow.currentConversation, "#omarchy");
+        verify(namedItem(liveConversation("#omarchy")) !== null);
+        compare(item("headerJoinButton").visible, true);
+        compare(item("headerCloseButton").visible, true);
+        compare(item("headerLeaveButton").visible, false);
+        compare(item("peopleButton").visible, false);
+        compare(item("membersPanel").visible, false);
+
+        var desktop = namedItem(liveConversation("#desktop"));
+        mouseClick(desktop, desktop.width / 2, desktop.height / 2, Qt.MiddleButton);
+        tryVerify(function() {
+            return namedItem(liveConversation("#desktop")) === null;
+        });
+        compare(appWindow.currentConversation, "#omarchy");
+
+        mouseClick(item("headerJoinButton"));
+        seed.injectOmarchy(":fred!u@h JOIN :#omarchy\r\n");
+        tryCompare(appWindow, "currentChannelJoined", true);
+        compare(item("headerLeaveButton").visible, true);
+        compare(item("peopleButton").visible, true);
+
+        mouseClick(item("headerLeaveButton"));
+        tryCompare(appWindow, "currentChannelJoined", false);
+        mouseClick(item("headerCloseButton"));
+        tryVerify(function() {
+            return namedItem(liveConversation("#omarchy")) === null;
+        });
+
+        keyClick(Qt.Key_QuoteLeft, Qt.ControlModifier);
+        tryCompare(appWindow, "consoleVisible", true);
+        var joinField = item("serverJoinField");
+        mouseClick(joinField);
+        typeText("#ricing");
+        mouseClick(item("serverJoinButton"));
+        tryCompare(seed.irc, "lastError", "Already open");
+        compare(appWindow.consoleVisible, true);
+        verify(namedItem(liveConversation("#ricing")) !== null);
+
+        mouseClick(joinField);
+        typeText("#leaveprobe");
+        mouseClick(item("serverJoinButton"));
+        tryCompare(appWindow, "currentConversation", "#leaveprobe");
+        compare(appWindow.consoleVisible, false);
+        verify(namedItem(liveConversation("#leaveprobe")) !== null);
+    }
+
     function test_typedQueryOpensDirectAndClearsComposer() {
         openSeededAppWindow();
         var composer = item("messageComposer");

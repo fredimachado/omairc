@@ -146,12 +146,10 @@ IrcCommandOutcome IrcCommandDispatcher::dispatch(const IrcCommand& command,
     if (command.verb == IrcCommand::Verb::Clear)
         return m_host.clearSurface(surface);
 
-    if (command.verb == IrcCommand::Verb::Close) {
-        if (!m_host.selectedIsCloseableDirect())
-            return IrcCommandOutcome::WrongScope;
-        m_host.dropSelectedDirectAndReselect();
-        return IrcCommandOutcome::Sent;
-    }
+    if (command.verb == IrcCommand::Verb::Close)
+        return m_host.closeSelected()
+            ? IrcCommandOutcome::Sent
+            : IrcCommandOutcome::WrongScope;
 
     if (command.verb == IrcCommand::Verb::Topic)
         return setSelectedTopic(command.argument);
@@ -260,15 +258,18 @@ IrcCommandOutcome IrcCommandDispatcher::dispatch(const IrcCommand& command,
         const IrcConversationKey key =
             m_reducer.conversationKey(active->networkId(), channel);
         const IrcConversationState *conversation = m_reducer.find(key);
-        const bool joined = conversation
-            && conversation->channel()
-            && conversation->channel()->joined;
-        if (m_host.dismissChannel(active->networkId(), channel)) {
-            if (joined)
-                active->part(channel);
-            else
+        const IrcChannelState *state = conversation ? conversation->channel() : nullptr;
+        if (state) {
+            // Leave keeps the row. Part only when the buffer is actually
+            // joined, so a channel you have already left does not 442.
+            // An in-flight join is cancelled so its echo cannot rejoin.
+            if (state->joined) {
+                m_host.markChannelLeft(active->networkId(), channel);
+                sent = active->part(channel);
+            } else {
                 m_cancelledPendingJoins.insert(key);
-            sent = true;
+                sent = true;
+            }
             break;
         }
         sent = active->part(channel);

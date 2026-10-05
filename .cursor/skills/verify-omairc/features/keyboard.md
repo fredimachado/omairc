@@ -22,7 +22,7 @@ Keyboard is the window chord map: walk conversations, walk network headers, coll
 - `keyboard-members` focuses the member list with `Ctrl+Shift+P` and reopens a hidden panel. Enter on a focused member opens a DM.
 - `keyboard-members-scroll` pages the focused member list with `Page Up` / `Page Down`. `Shift+Page Up` / `Shift+Page Down` hop about half a viewport. `Home` / `End` jump to the first or last nick. Transcript paging is unchanged while the composer stays focused. `Ctrl+Home` / `Ctrl+End` still jump the transcript.
 - `keyboard-server-list` collapses and restores the left server list column with `Ctrl+Shift+S`. That is the whole rail, not a per-network section. Collapsing is not hiding: `Alt+Down` / `Alt+Up` still walk conversations while the column is collapsed. It also drops the focused network header, so Enter in the composer sends again. `Alt+Left` / `Alt+Right` restores the column so the header highlight is visible.
-- `keyboard-close` closes the selected direct message with `Ctrl+W` and selects the next DM, or the previous row when that was the last. It is a no-op on a channel, Status, or the shortcut sheet.
+- `keyboard-close` closes the selected direct message, or a channel you have left, with `Ctrl+W` and selects the next row, or the previous row when that was the last. It is a no-op on a channel you are in, Status, or the shortcut sheet.
 - `keyboard-sheet` toggles the shortcut list with `Ctrl+/`. Escape closes the sheet before Status. The list includes `Ctrl+W`, `Ctrl+C`, `Ctrl+F`, `Ctrl+K`, `Ctrl+Shift+O`, `Ctrl+Shift+K`, `Ctrl+Shift+A`, `Ctrl+Shift+S`, `Alt+A`, `Alt+Shift+A`, `Alt+U`, per-network collapse/expand/move, and collapse-all / expand-all. `Ctrl+Q` still quits the process.
 - `keyboard-connect` opens Connect with `Ctrl+,` when a connection exists.
 - `keyboard-scroll` pages the visible transcript with `Page Up` / `Page Down` while the composer stays focused. `Shift+Page Up` / `Shift+Page Down` hop about half as far. `Ctrl+Home` / `Ctrl+End` jump to the top / bottom. Paging up while the transcript is already at the top requests an older page when the server offers chathistory.
@@ -46,7 +46,7 @@ Keyboard is the window chord map: walk conversations, walk network headers, coll
 - Press `Tab` or `Shift+Tab`, `Up`, or `Down` in the composer.
 - Press `Ctrl+Shift+P` on a channel, then arrows, Page Up / Page Down, Home / End, and Enter.
 - Press `Ctrl+Shift+S` to collapse or restore the left server list column.
-- Press `Ctrl+W` on a direct message to close it.
+- Press `Ctrl+W` on a direct message, or on a channel you have left, to close it. On a channel you are in it does nothing.
 - Press `Ctrl+,` to reopen Connect after a profile exists.
 - Press `Page Up` / `Page Down` to scroll without leaving the composer. `Shift+Page Up` / `Shift+Page Down` hop about half a page. `Ctrl+Home` / `Ctrl+End` jump to the top / bottom.
 - Press `Ctrl+F` to find in the current conversation or Status.
@@ -99,7 +99,7 @@ compare --before test-artifacts/verify/keyboard/server-list-collapsed.png --afte
 - Unsent composer text stays with the conversation or Status. Switching away and back restores it. Status uses its own key, not the conversation name.
 - `Ctrl+Shift+M` still toggles the panel. That is toggle-members. `Ctrl+Shift+P` focuses the list.
 - `Ctrl+Shift+S` collapses the left column instead of hiding it, so `Alt+Down` / `Alt+Up` keep walking conversations while it is out of view. Collapsing drops the focused network header, so Enter in the composer sends again. `Alt+Left` / `Alt+Right` brings the column back because it highlights a rail row.
-- `Ctrl+W` is disabled on channels and Status. Typed `/close` on a channel is a rejected slash command and stays in the composer.
+- `Ctrl+W` is disabled on a channel you are in, and on Status. It closes a channel you have left. Typed `/close` on a channel you are in is a rejected slash command and stays in the composer. Typed `/close` on a channel you have left drops the row. Middle-click closes a sidebar row. `/part` keeps the row.
 - `Alt+U` follows the reducer's `New messages` mark and the arrivals that land while the transcript is scrolled up. The seeded demo carries unread and mention counts but no marks, so a mark-driven `Alt+U` needs live frames; it is covered by the TUI UI suite (`internal/ui/unseen_test.go`, `internal/ui/unread_test.go`), not by the demo fence. The TUI drives it from the header `↓ new` marker; Qt uses the floating `↓` button.
 - `Tab` completes a nick or channel prefix in the composer. `Shift+Tab` cycles those matches backward. Prove nicks with `qml-suite` (`mi` → `mira: `). The first token still gets a colon.
 - The composer stops at the focused network's `LINELEN`, including a paste. That token is client-to-server octets, CRLF included, tags excluded. An absent token means 512, so Status holds 510 bytes and a conversation holds the PRIVMSG body that fits (`#omarchy` is 492, `#place` is 494). A larger token raises the cap. A smaller token lowers it. `/me ` counts the CTCP ACTION wrapper, so a filled action still fits in one frame.

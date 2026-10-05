@@ -143,6 +143,12 @@ func (h ctrlHost) MembershipNoise() irc.MembershipNoise { return h.c.MembershipN
 
 func (h ctrlHost) SetMembershipNoise(noise irc.MembershipNoise) { h.c.SetMembershipNoise(noise) }
 
+func (h ctrlHost) MarkChannelLeft(networkID, channel string) {
+	h.c.markChannelLeft(networkID, channel)
+}
+
+func (h ctrlHost) CloseSelected() bool { return h.c.closeSelectedConversation() }
+
 // ReplyHost extras.
 func (h ctrlHost) SelfNick(networkID string) string { return h.c.currentNicks[networkID] }
 
@@ -278,6 +284,41 @@ func (c *Controller) selectedIsCloseableDirect() bool {
 	return conversation == nil || !conversation.IsChannel()
 }
 
+func (c *Controller) closeSelectedConversation() bool {
+	if c.selected == nil {
+		return false
+	}
+	conversation := c.reducer.Find(*c.selected)
+	if conversation != nil && conversation.IsChannel() {
+		channel := conversation.Channel()
+		if channel == nil || channel.Joined {
+			return false
+		}
+		display := conversation.Target
+		if display == "" {
+			display = c.selectedTarget
+		}
+		c.commands.NoteCancelled(*c.selected)
+		c.reducer.NoteClosed(*c.selected)
+		return c.dismissChannel(c.selected.NetworkID, display)
+	}
+	if !c.selectedIsCloseableDirect() {
+		return false
+	}
+	c.dropSelectedDirectAndReselect()
+	return true
+}
+
+func (c *Controller) markChannelLeft(networkID, channel string) {
+	if networkID == "" || channel == "" {
+		return
+	}
+	if !c.reducer.MarkChannelLeft(c.reducer.ConversationKey(networkID, channel)) {
+		return
+	}
+	c.reloadModels()
+}
+
 // --- Composer typing ------------------------------------------------------
 
 // NotifyComposerText records one composer text change and publishes an outbound
@@ -370,6 +411,12 @@ func (c *Controller) sendSelectedMessageOutcome(body string) irc.CommandOutcome 
 	if s == nil || c.selected == nil {
 		return irc.OutcomeWrongScope
 	}
+	if conversation := c.reducer.Find(*c.selected); conversation != nil && conversation.IsChannel() {
+		channel := conversation.Channel()
+		if channel == nil || !channel.Joined {
+			return irc.OutcomeRefused
+		}
+	}
 	target := c.SelectedTarget()
 	if !s.SendPrivmsg(target, body) {
 		return irc.OutcomeRefused
@@ -425,6 +472,8 @@ func (c *Controller) openJoinedChannel(networkID, channel string) {
 		return
 	}
 	key := c.reducer.ConversationKey(networkID, channel)
+	// An explicit join is allowed to bring a closed channel back.
+	c.reducer.ClearClosed(key)
 	if c.reducer.EnsureConversation(key, channel, irc.CauseChannelState) == nil {
 		return
 	}

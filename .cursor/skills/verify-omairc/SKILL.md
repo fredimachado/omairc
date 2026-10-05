@@ -112,7 +112,7 @@ Chords that do not have a named verb still use `key --key`:
 | Handle | Meaning |
 |---|---|
 | `key --key ctrl+shift+s` | Collapse or restore the left server list column |
-| `key --key ctrl+w` | Close the selected direct message. No-op on a channel or Status. |
+| `key --key ctrl+w` | Close the selected direct message, or a channel you have left. No-op on a channel you are in, or on Status. |
 | `key --key ctrl+slash` | Toggle the shortcuts overlay |
 | `key --key alt+Right` | Next network header. Headers stay walkable when that section is collapsed. |
 | `key --key alt+Left` | Previous network header |

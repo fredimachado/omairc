@@ -106,6 +106,9 @@ type CommandHost interface {
 	MembershipNoise() irc.MembershipNoise
 	SetMembershipNoise(noise irc.MembershipNoise)
 
+	MarkChannelLeft(networkID, channel string)
+	CloseSelected() bool
+
 	Now() time.Time
 }
 
@@ -216,11 +219,10 @@ func (d *CommandDispatcher) Dispatch(command irc.Command, surface irc.ComposerSu
 	}
 
 	if command.Verb == irc.VerbClose {
-		if !d.host.SelectedIsCloseableDirect() {
-			return irc.OutcomeWrongScope
+		if d.host.CloseSelected() {
+			return irc.OutcomeSent
 		}
-		d.host.DropSelectedDirectAndReselect()
-		return irc.OutcomeSent
+		return irc.OutcomeWrongScope
 	}
 
 	if command.Verb == irc.VerbTopic {
@@ -399,13 +401,15 @@ func (d *CommandDispatcher) dispatchPart(
 	}
 	key := d.reducer.ConversationKey(active.NetworkID(), channel)
 	conversation := d.reducer.Find(key)
-	joined := conversation != nil && conversation.Channel() != nil && conversation.Channel().Joined
-	if d.host.DismissChannel(active.NetworkID(), channel) {
-		if joined {
-			active.Part(channel)
-		} else {
-			d.NoteCancelled(key)
+	// Leave keeps the row. Part only when the buffer is actually joined, so
+	// a channel you have already left does not 442. An in-flight join is
+	// cancelled so its echo cannot rejoin.
+	if conversation != nil && conversation.Channel() != nil {
+		if conversation.Channel().Joined {
+			d.host.MarkChannelLeft(active.NetworkID(), channel)
+			return active.Part(channel), irc.OutcomeSent, false
 		}
+		d.NoteCancelled(key)
 		return true, irc.OutcomeSent, false
 	}
 	return active.Part(channel), irc.OutcomeSent, false

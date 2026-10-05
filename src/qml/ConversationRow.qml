@@ -23,6 +23,7 @@ Item {
     property bool loadPeerAvatars: true
 
     signal activated()
+    signal closeRequested()
 
     objectName: networkId.length > 0
         ? "conversation-" + networkId + "-" + conversationName
@@ -192,7 +193,13 @@ Item {
         id: rowMouse
         anchors.fill: parent
         hoverEnabled: true
+        acceptedButtons: Qt.LeftButton | Qt.MiddleButton
         cursorShape: Qt.PointingHandCursor
-        onClicked: conversationRow.activated()
+        onClicked: function(mouse) {
+            if (mouse.button === Qt.MiddleButton)
+                conversationRow.closeRequested();
+            else
+                conversationRow.activated();
+        }
     }
 }
