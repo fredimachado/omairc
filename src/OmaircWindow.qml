@@ -27,7 +27,13 @@ ApplicationWindow {
     minimumWidth: 760
     minimumHeight: 540
     visible: true
-    title: consoleVisible ? statusTitleText() : conversationTitleText()
+    // arrivalWindowActive follows focus. A test can assign false while the
+    // offscreen window stays active, so a live mention takes the unfocused path.
+    property bool arrivalWindowActive: active
+    title: titleMark.target.length > 0
+           ? titleMark.format(titleMark.author, titleMark.plainBody,
+                              titlePlace(titleMark.networkId, titleMark.target))
+           : (consoleVisible ? statusTitleText() : conversationTitleText())
     onActiveChanged: {
         if (active) {
             Qt.callLater(focusConnectionSheetStart);
@@ -40,6 +46,9 @@ ApplicationWindow {
     OmaircStyle {
         id: omaircStyle
         backend: win.backend
+    }
+    TitleMark {
+        id: titleMark
     }
     IrcTextFormatter {
         id: ircText
@@ -103,6 +112,11 @@ ApplicationWindow {
         ? (networkConsole.open || irc.selectedTarget.length === 0)
         : false
     onConsoleVisibleChanged: {
+        // Opening Status keeps the mark. Closing it, including a return to the
+        // conversation that was already selected, drops the mark when that
+        // conversation is the one the title names.
+        if (!consoleVisible && irc)
+            titleMark.clearIfOpened(irc.focusedNetworkId, irc.selectedTarget);
         clearTranscriptSelection();
         resetNickComplete();
         if (!abandonFind() && !suppressComposerStash)
@@ -122,6 +136,10 @@ ApplicationWindow {
     readonly property string currentNetworkId: irc ? irc.focusedNetworkId : ""
     readonly property string currentConversationId: irc ? irc.selectedConversationId : ""
     onCurrentConversationIdChanged: {
+        // Read the controller, not the sibling bindings: they share
+        // selectionChanged and may not have refreshed yet.
+        if (irc)
+            titleMark.clearIfOpened(irc.focusedNetworkId, irc.selectedTarget);
         clearTranscriptSelection();
         resetNickComplete();
         if (!abandonFind() && !suppressComposerStash)
@@ -231,17 +249,21 @@ ApplicationWindow {
         return style.presenceMarkColor(kind);
     }
 
-    function focusedNetworkDisplayName() {
+    function networkDisplayNameFor(networkId) {
         var count = modelRowCount(connection ? connection.networks : null);
         for (var row = 0; row < count; ++row) {
             var item = networkAt(row);
-            if (item && item.networkId === currentNetworkId)
+            if (item && item.networkId === networkId)
                 return item.displayName || "";
         }
         if (connection && connection.displayName
-                && connection.selectedNetworkId === currentNetworkId)
+                && connection.selectedNetworkId === networkId)
             return connection.displayName;
         return "";
+    }
+
+    function focusedNetworkDisplayName() {
+        return networkDisplayNameFor(currentNetworkId);
     }
 
     function duplicateTargetName(name) {
@@ -265,6 +287,18 @@ ApplicationWindow {
         if (duplicateTargetName(currentConversation) && networkName.length > 0)
             return currentConversation + " · " + networkName + " - Omairc";
         return currentConversation + " - Omairc";
+    }
+
+    function titlePlace(networkId, target) {
+        var networkName = networkDisplayNameFor(networkId);
+        if (duplicateTargetName(target) && networkName.length > 0)
+            return target + " · " + networkName;
+        return target || "";
+    }
+
+    function noteUnfocusedTitle(windowActive, author, body, networkId, target) {
+        titleMark.note(windowActive, author, plainIrcText(body),
+                       networkId || "", target || "");
     }
 
     function statusTitleText() {
@@ -730,6 +764,7 @@ ApplicationWindow {
     }
 
     function windowFocusGained() {
+        titleMark.clear();
         if (irc && typeof irc.setWindowActive === "function")
             irc.setWindowActive(true);
         Qt.callLater(pinTranscriptOnFocusReturn);
@@ -1557,8 +1592,15 @@ ApplicationWindow {
         }
 
         var target = mentionRow ? mentionRow : unreadRow;
-        if (target)
+        if (target) {
             activateSidebarConversation(target);
+            return;
+        }
+        var id = irc
+            ? (irc.focusedNetworkId || irc.selectedNetworkId)
+            : "";
+        if (id && id.length > 0)
+            openNetworkStatus(id);
     }
 
     function composerHistoryKey() {
@@ -2608,6 +2650,20 @@ ApplicationWindow {
         onActivated: jumpToNextUnread()
     }
 
+    // Stay enabled while Connect is open. A disabled shortcut lets the Name
+    // field take the letter, and Escape hides the sheet without discarding it.
+    Shortcut {
+        sequence: "Alt+Shift+A"
+        context: Qt.ApplicationShortcut
+        onActivated: {
+            if (win.connectionOverlayVisible || win.shortcutOverlayOpen)
+                return;
+            if (win.irc && typeof win.irc.markAllRead === "function")
+                win.irc.markAllRead();
+            titleMark.clear();
+        }
+    }
+
     Shortcut {
         sequence: "PgUp"
         context: Qt.ApplicationShortcut
@@ -2909,10 +2965,11 @@ ApplicationWindow {
         target: win.irc
         ignoreUnknownSignals: true
         function onMentionArrived(author, body, networkId, target, msgid) {
-            win.notifyMentionIfUnfocused(win.active, author, body, networkId, target, msgid);
+            win.notifyMentionIfUnfocused(win.arrivalWindowActive, author, body, networkId, target, msgid);
+            win.noteUnfocusedTitle(win.arrivalWindowActive, author, body, networkId, target);
         }
         function onMonitorArrived(author, body, networkId, target) {
-            win.notifyMentionIfUnfocused(win.active, author, body, networkId, "", "");
+            win.notifyMentionIfUnfocused(win.arrivalWindowActive, author, body, networkId, "", "");
         }
     }
 

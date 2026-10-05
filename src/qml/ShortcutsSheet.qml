@@ -24,7 +24,8 @@ Popup {
                 { keys: "Alt+Shift+Left / Right", winKeys: "Ctrl+Shift+Left / Right", action: "collapse / expand network" },
                 { keys: "Ctrl+Alt+Shift+Left / Right", action: "collapse / expand all" },
                 { keys: "Alt+Shift+Up / Down", winKeys: "Ctrl+Alt+Shift+Up / Down", action: "move network" },
-                { keys: "Alt+A", action: "next unread" }
+                { keys: "Alt+A", action: "next unread" },
+                { keys: "Alt+Shift+A", action: "mark all read" }
             ]
         },
         {

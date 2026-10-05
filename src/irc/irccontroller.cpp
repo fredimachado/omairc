@@ -885,6 +885,15 @@ void IrcController::setWindowActive(bool active)
     emit conversationStateChanged();
 }
 
+void IrcController::markAllRead()
+{
+    if (!m_reducer.markAllRead())
+        return;
+    m_conversations.reload();
+    ++m_conversationEpoch;
+    emit conversationStateChanged();
+}
+
 bool IrcController::nickIsTyping(const QString& nick) const
 {
     if (!m_selected || nick.isEmpty())

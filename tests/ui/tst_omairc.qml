@@ -1640,6 +1640,91 @@ TestCase {
         compare(namedItem(liveOftcConversation("#build")).current, true);
     }
 
+    function test_markAllReadClearsBadgesAndBackgroundTitle() {
+        openSeededAppWindow();
+        var ricing = namedItem(liveConversation("#ricing"));
+        verify(ricing.unread > 0);
+        verify(namedItem("networkUnreadMark-" + seed.omarchyNetworkId).visible);
+        appWindow.noteUnfocusedTitle(false, "alice", "hey fred",
+                                     seed.omarchyNetworkId, "#ricing");
+        tryCompare(appWindow, "title", "alice: hey fred · #ricing - Omairc");
+
+        keyClick(Qt.Key_A, Qt.AltModifier | Qt.ShiftModifier);
+
+        tryCompare(ricing, "unread", 0);
+        compare(ricing.mention, false);
+        compare(namedItem(liveConversation("anna")).unread, 0);
+        compare(namedItem(liveConversation("#desktop")).unread, 0);
+        compare(namedItem(liveOftcConversation("#build")).unread, 0);
+        compare(appWindow.irc.unreadCountFor(seed.omarchyNetworkId), 0);
+        compare(appWindow.irc.unreadCountFor(seed.oftcNetworkId), 0);
+        compare(appWindow.irc.mentionFor(seed.omarchyNetworkId), false);
+        tryCompare(namedItem("networkUnreadMark-" + seed.omarchyNetworkId),
+                   "visible", false);
+        tryCompare(namedItem("networkUnreadMark-" + seed.oftcNetworkId),
+                   "visible", false);
+        compare(appWindow.currentConversation, "#omarchy");
+        compare(appWindow.title,
+                "#omarchy · " + networkDisplayName(seed.omarchyNetworkId) + " - Omairc");
+    }
+
+    function test_jumpToNextUnreadLandsOnStatusWhenNothingIsUnread() {
+        openSeededAppWindow();
+        mouseClick(namedItem(liveOftcConversation("#lab")));
+        tryCompare(appWindow, "currentConversation", "#lab");
+
+        keyClick(Qt.Key_A, Qt.AltModifier | Qt.ShiftModifier);
+        compare(appWindow.irc.unreadCountFor(seed.omarchyNetworkId), 0);
+        compare(appWindow.irc.unreadCountFor(seed.oftcNetworkId), 0);
+
+        keyClick(Qt.Key_A, Qt.AltModifier);
+
+        tryCompare(appWindow, "consoleVisible", true);
+        compare(appWindow.title, statusTitle(seed.oftcNetworkId));
+        compare(appWindow.currentConversation, "#lab");
+    }
+
+    function test_shortcutsSheetBlocksMarkAllRead() {
+        openSeededAppWindow();
+        var sheet = item("shortcutsSheet");
+        var before = appWindow.irc.unreadCountFor(seed.omarchyNetworkId);
+        verify(before > 0);
+
+        keyClick(Qt.Key_Slash, Qt.ControlModifier);
+        tryCompare(sheet, "opened", true);
+        keyClick(Qt.Key_A, Qt.AltModifier | Qt.ShiftModifier);
+
+        compare(appWindow.irc.unreadCountFor(seed.omarchyNetworkId), before);
+        verify(sheet.opened);
+    }
+
+    function test_connectSheetBlocksMarkAllRead() {
+        openSeededAppWindow();
+        var before = appWindow.irc.unreadCountFor(seed.omarchyNetworkId);
+        verify(before > 0);
+
+        keyClick(Qt.Key_Comma, Qt.ControlModifier);
+        tryCompare(appWindow, "connectionOverlayVisible", true);
+        tryCompare(item("connectionSheet"), "visible", true);
+        var nameField = item("connectionName");
+        tryCompare(nameField, "activeFocus", true);
+        var nameBefore = nameField.text;
+        var labelBefore = appWindow.connection.displayName;
+
+        keyClick(Qt.Key_A, Qt.AltModifier | Qt.ShiftModifier);
+
+        compare(appWindow.irc.unreadCountFor(seed.omarchyNetworkId), before);
+        compare(nameField.text, nameBefore);
+        compare(appWindow.connection.name, nameBefore);
+        compare(appWindow.connection.displayName, labelBefore);
+        compare(appWindow.connectionOverlayVisible, true);
+        verify(item("connectionSheet").visible);
+
+        keyClick(Qt.Key_Escape);
+        tryCompare(appWindow, "connectionOverlayVisible", false);
+        compare(appWindow.connection.displayName, labelBefore);
+    }
+
     function test_tabCompletesChannelNick() {
         openSeededAppWindow();
         var composer = item("messageComposer");
@@ -3931,6 +4016,109 @@ TestCase {
         appWindow.notifyMentionIfUnfocused(false, "alice", "hello");
         compare(appWindow.lastNotification.author, "alice");
         compare(appWindow.lastNotification.body, "hello");
+    }
+
+    function test_unfocusedTitleMarksMention() {
+        openSeededAppWindow();
+        var openTitle = "#omarchy · " + networkDisplayName(seed.omarchyNetworkId) + " - Omairc";
+        compare(appWindow.title, openTitle);
+
+        appWindow.noteUnfocusedTitle(true, "alice", "hey \x02fred",
+                                     seed.omarchyNetworkId, "#ricing");
+        compare(appWindow.title, openTitle);
+
+        appWindow.noteUnfocusedTitle(false, "alice", "hey \x02fred\x07",
+                                     seed.omarchyNetworkId, "#ricing");
+        var ricingMark = "alice: hey fred · #ricing - Omairc";
+        compare(appWindow.title, ricingMark);
+
+        appWindow.selectConversation("#desktop", seed.omarchyNetworkId);
+        tryCompare(appWindow, "currentConversation", "#desktop");
+        compare(appWindow.title, ricingMark);
+
+        appWindow.selectConversation("#ricing", seed.omarchyNetworkId);
+        tryCompare(appWindow, "currentConversation", "#ricing");
+        compare(appWindow.title, "#ricing - Omairc");
+
+        appWindow.noteUnfocusedTitle(false, "alice", "hey \x02fred\x07",
+                                     seed.omarchyNetworkId, "#ricing");
+        compare(appWindow.title, ricingMark);
+        appWindow.openNetworkStatus(seed.omarchyNetworkId);
+        tryCompare(appWindow, "consoleVisible", true);
+        compare(appWindow.title, ricingMark);
+        appWindow.selectConversation("#ricing", seed.omarchyNetworkId);
+        tryCompare(appWindow, "currentConversation", "#ricing");
+        tryCompare(appWindow, "consoleVisible", false);
+        compare(appWindow.title, "#ricing - Omairc");
+
+        appWindow.noteUnfocusedTitle(false, "dax", "hello\nthere",
+                                     seed.omarchyNetworkId, "dax");
+        compare(appWindow.title, "dax: hello there - Omairc");
+
+        appWindow.noteUnfocusedTitle(false, "alice", "hey \x1ffred",
+                                     seed.omarchyNetworkId, "#omarchy");
+        compare(appWindow.title,
+                "alice: hey fred · #omarchy · "
+                + networkDisplayName(seed.omarchyNetworkId) + " - Omairc");
+
+        appWindow.noteUnfocusedTitle(false, "alice", "hey\u009cfred",
+                                     seed.omarchyNetworkId, "#ricing");
+        compare(appWindow.title, "alice: hey fred · #ricing - Omairc");
+
+        appWindow.windowFocusGained();
+        compare(appWindow.title, "#ricing - Omairc");
+    }
+
+    function test_mutedArrivalLeavesTitle() {
+        openSeededAppWindow();
+        appWindow.arrivalWindowActive = false;
+        var plain = appWindow.title;
+        verify(appWindow.irc.sendMessage("/mute #ricing"));
+        var ricing = namedItem(liveConversation("#ricing"));
+        tryCompare(ricing, "muted", true);
+
+        injectOmarchyChat("alice", "#ricing", "hey \x02fred");
+        compare(appWindow.title, plain);
+
+        appWindow.selectConversation("#ricing", seed.omarchyNetworkId);
+        tryCompare(appWindow, "currentConversation", "#ricing");
+        verify(rowForBody(item("messageList").model, "hey \x02fred") >= 0);
+
+        injectOmarchyChat("alice", "#desktop", "hey \x02fred");
+        compare(appWindow.title, "alice: hey fred · #desktop - Omairc");
+
+        injectOmarchyChat("dax", "fred", "hello there");
+        compare(appWindow.title, "dax: hello there - Omairc");
+    }
+
+    function test_unfocusedStatusAndInviteLeaveTitle() {
+        openSeededAppWindow();
+        appWindow.arrivalWindowActive = false;
+        injectOmarchyChat("alice", "#ricing", "hey \x02fred");
+        var ricingMark = "alice: hey fred · #ricing - Omairc";
+        compare(appWindow.title, ricingMark);
+
+        appWindow.openNetworkStatus(seed.omarchyNetworkId);
+        tryCompare(appWindow, "consoleVisible", true);
+        compare(appWindow.title, ricingMark);
+
+        appWindow.selectConversation("#desktop", seed.omarchyNetworkId);
+        tryCompare(appWindow, "currentConversation", "#desktop");
+        compare(appWindow.title, ricingMark);
+
+        seed.injectOmarchy(":alice!u@h INVITE fred :#lab\r\n");
+        compare(appWindow.title, ricingMark);
+    }
+
+    function test_focusedArrivalLeavesTitle() {
+        openSeededAppWindow();
+        appWindow.suppressDesktopNotification = true;
+        appWindow.requestActivate();
+        tryCompare(appWindow, "active", true);
+        var openTitle = appWindow.title;
+        injectOmarchyChat("alice", "#ricing", "hey \x02fred");
+        compare(appWindow.title, openTitle);
+        compare(appWindow.lastNotification, null);
     }
 
     function test_notificationActivateOpensLiveChannelMention() {
@@ -9976,6 +10164,14 @@ TestCase {
                "shortcut sheet should list " + alt + "+Shift+Up / Down");
         verify(texts.indexOf("move network") !== -1,
                "shortcut sheet should name move network");
+        verify(texts.indexOf(alt + "+A") !== -1,
+               "shortcut sheet should list " + alt + "+A");
+        verify(texts.indexOf("next unread") !== -1,
+               "shortcut sheet should name next unread");
+        verify(texts.indexOf(alt + "+Shift+A") !== -1,
+               "shortcut sheet should list " + alt + "+Shift+A");
+        verify(texts.indexOf("mark all read") !== -1,
+               "shortcut sheet should name mark all read");
         verify(texts.indexOf("collapse network") === -1,
                "shortcut sheet should not keep a separate collapse network row");
         verify(texts.indexOf("expand network") === -1,

@@ -62,6 +62,9 @@ var keyNames = map[string]string{
 	"alt+Up":           "\x1b[1;3A",
 	"alt+Right":        "\x1b[1;3C",
 	"alt+Left":         "\x1b[1;3D",
+	// Alt+Shift+A is kitty CSI-u: codepoint 97 ('a'), modifier 4
+	// (1 + shift + alt). The legacy ESC form cannot carry both modifiers.
+	"alt+shift+a": "\x1b[97;4u",
 	// xterm arrow modifiers: 1 + shift(1) + alt(2) + ctrl(4).
 	"alt+shift+Left":       "\x1b[1;4D",
 	"alt+shift+Right":      "\x1b[1;4C",

@@ -23,13 +23,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   clients. Name matches stay above those, sidebar order holds inside each
   group, the list stays at most 20 rows, and a shared name still shows its
   network.
+- While the window is unfocused, the title shows a mention or direct message
+  with IRC formatting stripped. A muted conversation stays quiet. Focusing the
+  window, or opening that conversation, clears it. The terminal client puts
+  the same text in the title it already sets.
 - Join, part, quit, and nick lines fold together. A leave followed at once by the same nick rejoining is omitted, and a nick chain keeps the final name. `/pref joins` shows every line or hides these lines, including history playback.
+- The terminal client marks every conversation read with `Alt+Shift+A`. Sidebar
+  badges clear, and that background title clears with them. `Alt+A` still
+  prefers a mention, then ordinary unread. When nothing is unread, it opens
+  Status for the selected conversation's network. When Status is already open,
+  it opens that Status network.
 - The terminal client supports IRC read markers (`draft/read-marker`, and
   `soju.im/read` when that is the only token offered): a server marker clears
   unread another client already read, and Omairc publishes a marker when this
   window is caught up on the selected conversation.
 - The terminal client loads an older page when paging to the top of a
   conversation whose server offers chathistory.
+- The desktop client marks every conversation read with `Alt+Shift+A`. Sidebar
+  badges clear, and that background title clears with them. `Alt+A` still
+  prefers a mention, then ordinary unread. When nothing is unread, it opens
+  Status for the selected conversation's network. When Status is already open,
+  it opens that Status network.
 - The desktop client supports IRC read markers (`draft/read-marker`, and
   `soju.im/read` when that is the only token offered): a server marker clears
   unread another client already read, and Omairc publishes a marker when this

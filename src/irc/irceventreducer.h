@@ -234,6 +234,7 @@ public:
                                        const QString& target) const;
     void markSelected(const IrcConversationKey& key);
     bool markRead(const IrcConversationKey& key);
+    bool markAllRead();
     bool applyReadMarker(const IrcConversationKey& key,
                          const std::optional<QDateTime>& marker);
     void notePublishedReadMarker(const IrcConversationKey& key,

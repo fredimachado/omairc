@@ -1,9 +1,19 @@
 package ui
 
 import (
+	"strings"
+
 	"github.com/fredimachado/omairc/tui/internal/connection"
 	"github.com/fredimachado/omairc/tui/internal/controller"
 )
+
+// TitleMark is an unfocused mention or direct message held in the window
+// title. Body is plain IRC text; attentionTitle collapses leftover controls.
+// Opening that conversation, or focusing the window, drops the mark. The
+// formatted string matches src/qml/TitleMark.qml.
+type TitleMark struct {
+	Author, Body, NetworkID, Target string
+}
 
 // Title reproduces the Qt window title byte-for-byte from OmaircWindow.qml:
 // consoleVisible ? statusTitleText() : conversationTitleText(). ConsoleOpen
@@ -34,6 +44,103 @@ func conversationTitleText(ctrl *controller.Controller, conn *connection.Connect
 		return current + " · " + networkName + " - Omairc"
 	}
 	return current + " - Omairc"
+}
+
+// attentionTitle formats an unfocused mention or direct message. place is the
+// conversation, plus the network display name when that target is duplicated.
+// An author that already is the place (a direct message) is not repeated.
+func attentionTitle(author, body, place string) string {
+	who := collapseTitleSpace(author)
+	text := collapseTitleSpace(body)
+	if who == "" {
+		who = place
+	}
+	lead := who
+	if text != "" {
+		lead = who + ": " + text
+	}
+	if place != "" && place != who {
+		return lead + " · " + place + " - Omairc"
+	}
+	return lead + " - Omairc"
+}
+
+// collapseTitleSpace drops C0, C1, and DEL (ESC, BEL, newlines) and folds
+// the gap into one space. It matches TitleMark.qml's collapse. IRC formatting
+// is stripped before this runs.
+func collapseTitleSpace(text string) string {
+	var out strings.Builder
+	pendingSpace := false
+	for _, r := range text {
+		if r <= 0x20 || r == 0x7f || (r >= 0x80 && r <= 0x9f) {
+			if out.Len() > 0 {
+				pendingSpace = true
+			}
+			continue
+		}
+		if pendingSpace {
+			out.WriteByte(' ')
+			pendingSpace = false
+		}
+		out.WriteRune(r)
+	}
+	return out.String()
+}
+
+// noteTitleMark records an unfocused mention or direct message. A focused
+// window, or an arrival with no conversation, leaves the title alone. body
+// still carries IRC formatting; PlainIrcText strips it before display.
+func (m *Model) noteTitleMark(windowActive bool, author, body, networkID, target string) {
+	if windowActive || target == "" || m.ctrl == nil {
+		return
+	}
+	m.titleMark = &TitleMark{
+		Author:    author,
+		Body:      m.ctrl.PlainIrcText(body),
+		NetworkID: networkID,
+		Target:    target,
+	}
+}
+
+// clearTitleMark drops the attention line so the title is the open
+// conversation or Status again.
+func (m *Model) clearTitleMark() {
+	m.titleMark = nil
+}
+
+// clearTitleMarkIfOpened drops the mark when the open conversation is the one
+// it names. Status is not that conversation, so a console stays marked.
+func (m *Model) clearTitleMarkIfOpened() {
+	if m.titleMark == nil || m.ctrl == nil || m.ctrl.ConsoleOpen() {
+		return
+	}
+	if m.ctrl.FocusedNetworkID() == m.titleMark.NetworkID &&
+		m.ctrl.SelectedTarget() == m.titleMark.Target {
+		m.titleMark = nil
+	}
+}
+
+// titleMarkPlace is the conversation label inside the attention title, with
+// the network display name when that target exists on more than one network.
+func (m *Model) titleMarkPlace() string {
+	if m.titleMark == nil {
+		return ""
+	}
+	target := m.titleMark.Target
+	networkName := networkDisplayName(m.ctrl, m.conn, m.titleMark.NetworkID)
+	if duplicateTargetName(m.ctrl, target) && networkName != "" {
+		return target + " · " + networkName
+	}
+	return target
+}
+
+// windowTitle is the OSC title: the attention line while a mark is set, and
+// Title otherwise.
+func (m *Model) windowTitle() string {
+	if m.titleMark == nil {
+		return Title(m.ctrl, m.conn)
+	}
+	return attentionTitle(m.titleMark.Author, m.titleMark.Body, m.titleMarkPlace())
 }
 
 // statusTitleText mirrors OmaircWindow.qml's statusTitleText. When no session
@@ -69,11 +176,22 @@ func focusedNetworkDisplayName(ctrl *controller.Controller, conn *connection.Con
 	networkID := ""
 	if ctrl != nil {
 		networkID = ctrl.FocusedNetworkID()
+	}
+	return networkDisplayName(ctrl, conn, networkID)
+}
+
+// networkDisplayName is the roster name for one network. It falls back to the
+// connection roster when the controller has not published one yet.
+func networkDisplayName(ctrl *controller.Controller, conn *connection.Connection, networkID string) string {
+	if networkID == "" {
+		return ""
+	}
+	if ctrl != nil {
 		if name := ctrl.NetworkDisplayName(networkID); name != "" {
 			return name
 		}
 	}
-	if conn != nil && networkID != "" {
+	if conn != nil {
 		for _, row := range conn.Networks() {
 			if row.NetworkID == networkID {
 				return row.DisplayName

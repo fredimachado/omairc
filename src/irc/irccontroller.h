@@ -151,6 +151,7 @@ public:
     Q_INVOKABLE bool nickIsTyping(const QString& nick) const;
     Q_INVOKABLE void notifyComposerText(const QString& text);
     Q_INVOKABLE void setWindowActive(bool active);
+    Q_INVOKABLE void markAllRead();
     Q_INVOKABLE void setTranscriptCaughtUp(bool caughtUp);
     void noteLocalActivity();
 #ifdef OMAIRC_TEST

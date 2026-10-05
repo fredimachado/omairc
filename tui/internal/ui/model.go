@@ -171,6 +171,9 @@ type Model struct {
 	windowActive                bool
 	lastNotification            *notificationRecord
 	suppressDesktopNotification bool
+	// titleMark is the unfocused mention or direct message in the OSC title.
+	// A muted conversation never sets it: the reducer does not emit the arrival.
+	titleMark *TitleMark
 
 	// drafts keeps unsent composer text per conversation id, or per Status
 	// surface ("status\n<networkID>").
@@ -485,8 +488,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case tea.FocusMsg:
 		// The terminal regained focus. Land on the unread mark before
-		// consuming unread or publishing a read marker.
+		// consuming unread or publishing a read marker. Focus also clears
+		// an unfocused mention from the window title.
 		m.windowActive = true
+		m.clearTitleMark()
 		m.pinTranscriptOnFocusReturn()
 		if m.ctrl != nil {
 			m.ctrl.SetWindowActive(true)
@@ -503,6 +508,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case MentionArrivalMsg:
 		m.notifyMentionIfUnfocused(m.windowActive, msg.Author, msg.Body,
 			msg.NetworkID, msg.Target, msg.MsgID)
+		m.noteTitleMark(m.windowActive, msg.Author, msg.Body, msg.NetworkID, msg.Target)
 		return m, nil
 	case MonitorArrivalMsg:
 		m.notifyMentionIfUnfocused(m.windowActive, msg.Author, msg.Body,
@@ -643,7 +649,7 @@ func (m *Model) refocusComposer() {
 func (m *Model) View() tea.View {
 	v := tea.NewView(m.render())
 	v.AltScreen = true
-	v.WindowTitle = Title(m.ctrl, m.conn)
+	v.WindowTitle = m.windowTitle()
 	// Focus reporting drives FocusMsg/BlurMsg, which the shell needs to decide
 	// whether an arrival earns a desktop notification (win.active in the QML).
 	v.ReportFocus = true

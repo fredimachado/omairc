@@ -323,6 +323,22 @@ func (r *EventReducer) MarkRead(key ConversationKey) bool {
 	return true
 }
 
+// MarkAllRead clears unread and mention counts on every conversation, keeping
+// each "New messages" boundary. It reports whether any conversation changed.
+// It mirrors IrcEventReducer::markAllRead.
+func (r *EventReducer) MarkAllRead() bool {
+	changed := false
+	for _, conversation := range r.conversations {
+		if conversation == nil || (conversation.Unread == 0 && conversation.Mentions == 0) {
+			continue
+		}
+		conversation.Unread = 0
+		conversation.Mentions = 0
+		changed = true
+	}
+	return changed
+}
+
 // SetMembershipNoise chooses how join, part, quit, and nick lines are shown.
 // Folded is the ordinary case. Lines already on screen stay as they are.
 func (r *EventReducer) SetMembershipNoise(noise MembershipNoise) {

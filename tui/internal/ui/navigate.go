@@ -308,7 +308,9 @@ func (m *Model) walk(delta int) {
 // jumpUnread selects the next unread conversation, mentions first, skipping
 // muted rows while hunting a mention. It mirrors OmaircWindow.qml's
 // jumpToNextUnread: rows hidden under a collapsed network still count, and
-// landing on one expands that network.
+// landing on one expands that network. When nothing is unread, Alt+A opens
+// Status for the selected conversation's network. When Status is already
+// open, it opens that Status network.
 func (m *Model) jumpUnread() {
 	if m.ctrl == nil {
 		return
@@ -349,12 +351,42 @@ func (m *Model) jumpUnread() {
 		target = unread
 	}
 	if target < 0 {
+		m.openCurrentNetworkStatus()
 		return
 	}
 	row := rows[target]
 	m.switchSelection(func() {
 		m.ctrl.SetNetworkCollapsed(row.NetworkID, false)
 		m.ctrl.SelectConversation(row.NetworkID, row.ConversationName)
+	})
+}
+
+// markAllRead marks every conversation read and drops the attention title.
+// It mirrors the Alt+Shift+A shortcut in OmaircWindow.qml.
+func (m *Model) markAllRead() {
+	m.clearTitleMark()
+	if m.ctrl == nil {
+		return
+	}
+	m.ctrl.MarkAllRead()
+}
+
+// openCurrentNetworkStatus opens Status for the selected conversation's
+// network. When Status is already open, it opens that Status network. It
+// mirrors the empty-unread landing in OmaircWindow.qml's jumpToNextUnread.
+func (m *Model) openCurrentNetworkStatus() {
+	if m.ctrl == nil {
+		return
+	}
+	networkID := m.ctrl.FocusedNetworkID()
+	if networkID == "" {
+		networkID = m.ctrl.SelectedNetworkID()
+	}
+	if networkID == "" {
+		return
+	}
+	m.switchSelection(func() {
+		m.ctrl.OpenStatus(networkID)
 	})
 }
 
@@ -584,6 +616,10 @@ func (m *Model) selectedConversationID() string {
 // while "Open conversations at unread" is on keeps the reader's viewport. It
 // mirrors OmaircWindow.qml's placeTranscriptAfterSelect.
 func (m *Model) afterSelectionChange(previousID string) {
+	// Every selection change, including a return from Status onto the
+	// conversation that was already selected. clearTitleMarkIfOpened itself
+	// keeps the mark while Status is open.
+	m.clearTitleMarkIfOpened()
 	if previousID != "" && m.ctrl != nil && previousID != m.ctrl.SelectedConversationID() {
 		m.ctrl.ClearHistoryPageCapTailForConversationID(previousID)
 	}

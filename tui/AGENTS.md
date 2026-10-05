@@ -220,8 +220,10 @@ The four invariants are ported verbatim, not re-derived:
 - Title parity: `internal/irc.RosterDisplayName` mirrors
   `IrcConnection::rosterDisplayName`, and `internal/ui/title.go`'s `Title`
   mirrors `OmaircWindow.qml`'s `conversationTitleText` / `statusTitleText`.
-  The terminal title is emitted as OSC 2 from the Bubble Tea v2
-  `View.WindowTitle` field.
+  An unfocused mention or direct message replaces that title until the
+  window is focused or that conversation is opened. Muted conversations
+  stay on the plain title. The terminal title is emitted as OSC 2 from the
+  Bubble Tea v2 `View.WindowTitle` field.
 
 Phase 2 implements all four: `ConversationCauseInserts` and `TargetLooksLikeService`
 in `internal/irc/conversation.go`, `orderedMembers`/`OrderedMembers` in the
@@ -332,8 +334,11 @@ the screen.
 
 - The full chord map lives in `internal/ui/keys.go`. `Ctrl+Q` is the only quit
   chord; `Ctrl+C` copies via OSC 52 (`tea.SetClipboard`), not quit.
-- `Alt+A` walks to the next unread conversation; `Alt+U` jumps to the first new
-  message in the current transcript.
+- `Alt+A` walks to the next unread conversation. When nothing is unread, it
+  opens Status for the selected conversation's network. When Status is already
+  open, it opens that Status network. `Alt+Shift+A` marks every conversation
+  read and clears a background title.
+  `Alt+U` jumps to the first new message in the current transcript.
 
 ## Version
 
