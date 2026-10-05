@@ -3265,6 +3265,7 @@ ApplicationWindow {
             }
             queryIdentity: !win.currentConversationIsChannel
                 && win.currentConversation.length > 0
+            awayPresenceVisible: win.awayPresenceVisible
             queryPresence: win.queryPeerHeader().presence
             queryLabels: win.queryPeerHeader().labels
             topicText: win.currentConversationIsChannel

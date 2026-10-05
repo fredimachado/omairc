@@ -164,19 +164,25 @@ func (m *Model) memberRow(index int, member controller.MemberSnapshot) []string 
 	// The focused row is the keyboard tooltip: the same facts the Qt hover
 	// tip shows, without adding them to the unfocused chrome.
 	if focused {
-		if tip := m.memberTooltip(member, away); tip != "" {
-			lines = append(lines, m.memberFactLine(tip, presenceShown))
+		for _, fact := range m.memberTooltip(member, presenceShown, away) {
+			lines = append(lines, m.memberFactLine(fact, presenceShown))
 		}
 	}
 	return lines
 }
 
-// memberTooltip joins the presence word, meaningful real name, and short
-// labels. A listed member is online or away, never offline.
-func (m *Model) memberTooltip(member controller.MemberSnapshot, away bool) string {
-	parts := []string{"online"}
-	if away {
-		parts[0] = "away"
+// memberTooltip lists one fact per line: presence when the row shows it, then
+// the meaningful real name, then each short label. A listed member is online
+// or away, never offline. Presence is omitted when away-notify is off and the
+// row is not our own nick, matching MembersColumn.qml.
+func (m *Model) memberTooltip(member controller.MemberSnapshot, presenceShown, away bool) []string {
+	var parts []string
+	if presenceShown {
+		if away {
+			parts = append(parts, "away")
+		} else {
+			parts = append(parts, "online")
+		}
 	}
 	if name := strings.TrimSpace(m.ctrl.PlainIrcText(member.Realname)); name != "" {
 		parts = append(parts, name)
@@ -186,7 +192,7 @@ func (m *Model) memberTooltip(member controller.MemberSnapshot, away bool) strin
 			parts = append(parts, label)
 		}
 	}
-	return strings.Join(parts, " · ")
+	return parts
 }
 
 // memberFactLine indents the tooltip under the nick, matching the status

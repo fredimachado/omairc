@@ -11,6 +11,7 @@ import (
 
 	"github.com/fredimachado/omairc/tui/internal/controller"
 	"github.com/fredimachado/omairc/tui/internal/demo"
+	"github.com/fredimachado/omairc/tui/internal/irc"
 	"github.com/fredimachado/omairc/tui/internal/session"
 )
 
@@ -69,6 +70,9 @@ func TestPhase8TranscriptChannelHeaderHasNoPeopleCount(t *testing.T) {
 	}
 	header := lines[0]
 	plain := ansiPattern.ReplaceAllString(header, "")
+	if !strings.Contains(plain, "A cozy corner for Omarchy users and builders.") {
+		t.Fatalf("channel header = %q, want the seeded topic", plain)
+	}
 	for _, unwanted := range []string{"PEOPLE", "(12)"} {
 		if strings.Contains(plain, unwanted) {
 			t.Fatalf("channel header = %q, must not carry %q", plain, unwanted)
@@ -151,6 +155,97 @@ func TestPhase8TranscriptDirectHeaderShowsPeerFacts(t *testing.T) {
 	if strings.TrimSpace(ansiPattern.ReplaceAllString(lines[1], "")) != "" {
 		t.Fatalf("ivy has no real name, so the next header line must be blank: %q", lines[1])
 	}
+
+	assertQueryHeader(t, m, "dax", "Packet Bot", []string{"bot"},
+		m.styles.MemberPresenceOnline.Render("●"))
+	assertQueryHeader(t, m, "lena", "Lena Pink", []string{"pinkieval"},
+		m.styles.MemberPresenceAway.Render("●"))
+	assertQueryHeader(t, m, "fred", "Fred Machado", []string{"fredm", "server operator"},
+		m.styles.MemberPresenceOnline.Render("●"))
+	assertQueryHeader(t, m, "ghost", "", nil, m.styles.MemberAccount.Render("●"))
+
+	// rio already has a query on OFTC. Opening one on Omarchy makes the nick
+	// ambiguous, so the title uses the same network suffix as the jump list.
+	m.ctrl.SelectConversation("omarchy", "#omarchy")
+	if !m.ctrl.OpenDirectMessage("rio") {
+		t.Fatal("opening rio on omarchy failed")
+	}
+	lines, _ = m.transcriptLines()
+	rio := ansiPattern.ReplaceAllString(lines[0], "")
+	if !strings.Contains(rio, "rio · irc.example · fred") {
+		t.Fatalf("duplicated rio header = %q, want the jump-list network suffix", rio)
+	}
+
+	dropAwayNotify(m)
+	if !m.ctrl.OpenDirectMessage("anna") {
+		t.Fatal("reopening anna after dropping away-notify failed")
+	}
+	lines, _ = m.transcriptLines()
+	anna := ansiPattern.ReplaceAllString(lines[0], "")
+	if strings.Contains(anna, "●") {
+		t.Fatalf("anna header without away-notify still paints a presence glyph: %q", anna)
+	}
+	if !strings.Contains(anna, "anna") || !strings.Contains(lines[1], "Anna Vale") {
+		t.Fatalf("anna header without away-notify = %q / %q, want the nick and real name",
+			anna, ansiPattern.ReplaceAllString(lines[1], ""))
+	}
+	m.ctrl.SelectConversation("omarchy", "#omarchy")
+	m.memberFocus = true
+	m.memberIndex = phase8MemberIndex(t, m, "dax")
+	panel := ansiPattern.ReplaceAllString(m.membersView(membersWidth, 40), "")
+	if !panelHasFact(panel, "Packet Bot") {
+		t.Fatalf("dax tip without away-notify = %q, want it to start at the real name", panel)
+	}
+	for _, line := range strings.Split(panel, "\n") {
+		if strings.TrimSpace(line) == "online" {
+			t.Fatalf("member tip without away-notify starts with online:\n%s", panel)
+		}
+	}
+}
+
+// assertQueryHeader opens nick and checks the painted title, subtitle, labels,
+// and presence glyph.
+func assertQueryHeader(t *testing.T, m *Model, nick, realname string, labels []string, dot string) {
+	t.Helper()
+	if !m.ctrl.OpenDirectMessage(nick) {
+		t.Fatalf("opening %s failed", nick)
+	}
+	lines, _ := m.transcriptLines()
+	if len(lines) < 2 {
+		t.Fatalf("%s header has %d lines", nick, len(lines))
+	}
+	title := ansiPattern.ReplaceAllString(lines[0], "")
+	if !strings.Contains(title, nick) {
+		t.Fatalf("%s title = %q, want the nick", nick, title)
+	}
+	for _, label := range labels {
+		if !strings.Contains(title, label) {
+			t.Fatalf("%s title = %q, want label %q", nick, title, label)
+		}
+	}
+	if !strings.Contains(lines[0], dot) {
+		t.Fatalf("%s presence glyph missing from %q", nick, lines[0])
+	}
+	subtitle := strings.TrimSpace(ansiPattern.ReplaceAllString(lines[1], ""))
+	if subtitle != realname {
+		t.Fatalf("%s subtitle = %q, want %q", nick, subtitle, realname)
+	}
+}
+
+// dropAwayNotify replaces the negotiated set with one that lacks away-notify
+// and keeps the capabilities that do not gate the header glyph.
+func dropAwayNotify(m *Model) {
+	replacement := irc.CapabilitySet(0)
+	for _, capability := range []irc.Capability{
+		irc.CapabilityBatch,
+		irc.CapabilityMemberMetadata,
+		irc.CapabilityMessageTags,
+		irc.CapabilityAccountNotify,
+		irc.CapabilityExtendedJoin,
+	} {
+		replacement.Insert(capability)
+	}
+	m.ctrl.CapabilitiesChanged("omarchy", replacement)
 }
 
 // TestPhase8TranscriptDirectTypingFooterUngrouped proves the seeded anna DM

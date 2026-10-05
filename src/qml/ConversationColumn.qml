@@ -19,6 +19,7 @@ Item {
     property var openAllowedUrl: null
     property var openChannelName: null
     property bool queryIdentity: false
+    property bool awayPresenceVisible: false
     property string queryPresence: "offline"
     property var queryLabels: []
     property string statusTitle: ""
@@ -58,6 +59,19 @@ Item {
         anchors.right: parent.right
         height: visible ? column.style.scaledSize(72) : 0
 
+        TextMetrics {
+            id: queryLabelMetrics
+            font.family: "iA Writer Mono S"
+            font.pixelSize: column.style.scaledSize(11)
+            text: {
+                var labels = column.queryLabels || [];
+                var joined = "";
+                for (var index = 0; index < labels.length; ++index)
+                    joined += String(labels[index]);
+                return joined;
+            }
+        }
+
         Column {
             anchors.left: parent.left
             anchors.leftMargin: column.style.scaledSize(24)
@@ -84,12 +98,14 @@ Item {
                 spacing: column.style.scaledSize(8)
 
                 Item {
-                    width: column.style.scaledSize(8)
+                    id: queryPresenceSlot
+                    visible: column.queryIdentity && column.awayPresenceVisible
+                    width: visible ? column.style.scaledSize(8) : 0
                     height: queryNick.implicitHeight
 
                     Rectangle {
                         objectName: "queryPresenceDot"
-                        visible: column.queryIdentity
+                        visible: queryPresenceSlot.visible
                         anchors.verticalCenter: parent.verticalCenter
                         anchors.horizontalCenter: parent.horizontalCenter
                         width: column.style.scaledSize(8)
@@ -108,13 +124,19 @@ Item {
                     font.bold: true
                     font.pixelSize: column.style.scaledSize(17)
                     width: {
-                        var used = column.style.scaledSize(8) + queryTitleRow.spacing;
-                        for (var index = 0; index < queryLabelRepeater.count; ++index) {
-                            var label = queryLabelRepeater.itemAt(index);
-                            if (label)
-                                used += label.implicitWidth + queryTitleRow.spacing;
+                        // The face is monospace, so the joined advance width is
+                        // the sum of the label widths. Reading the repeater's
+                        // itemAt() misses the pass that creates the delegates.
+                        var used = 0;
+                        var labels = column.queryLabels || [];
+                        if (queryPresenceSlot.visible)
+                            used += queryPresenceSlot.width + queryTitleRow.spacing;
+                        if (labels.length > 0) {
+                            used += queryLabelMetrics.width
+                                + labels.length * queryTitleRow.spacing;
                         }
-                        return Math.max(0, Math.min(implicitWidth, queryTitleRow.width - used));
+                        return Math.max(0, Math.min(implicitWidth,
+                                                    queryTitleRow.width - used));
                     }
                 }
 

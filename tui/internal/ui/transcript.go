@@ -210,19 +210,27 @@ func (m *Model) queryTranscriptHeader(header controller.PeerHeader) []string {
 	return lines
 }
 
-// queryTitleContent renders the presence dot, nick, and muted labels.
+// queryTitleContent renders the nick and muted labels. The presence dot is
+// painted only when the network negotiated away-notify. A name that also
+// exists on another network takes the same suffix the jump list uses.
 func (m *Model) queryTitleContent(header controller.PeerHeader) string {
-	dot := m.styles.MemberAccount
-	switch header.Presence {
-	case "online":
-		dot = m.styles.MemberPresenceOnline
-	case "away":
-		dot = m.styles.MemberPresenceAway
+	nick := header.Nick
+	if m.ctrl != nil {
+		nick = m.jumpConversationLabel(nick, m.sidebarNetworkDisplayName(m.ctrl.FocusedNetworkID()))
 	}
 	var line strings.Builder
-	line.WriteString(dot.Render("●"))
-	line.WriteString(" ")
-	line.WriteString(m.styles.Topic.Bold(true).Render(header.Nick))
+	if m.ctrl != nil && m.ctrl.HasAwayPresence() {
+		dot := m.styles.MemberAccount
+		switch header.Presence {
+		case "online":
+			dot = m.styles.MemberPresenceOnline
+		case "away":
+			dot = m.styles.MemberPresenceAway
+		}
+		line.WriteString(dot.Render("●"))
+		line.WriteString(" ")
+	}
+	line.WriteString(m.styles.Topic.Bold(true).Render(nick))
 	for _, label := range header.Labels {
 		if label == "" {
 			continue

@@ -1616,6 +1616,44 @@ TestCase {
         compare(item("conversationTopic").text, "");
         compare(item("queryPresenceDot").color, "#d6a552");
         compare(queryFactTexts().join("\n"), "unauthenticated");
+
+        appWindow.openDirectMessage("dax");
+        tryCompare(appWindow, "currentConversation", "dax");
+        compare(item("conversationTopic").text, "Packet Bot");
+        compare(item("queryPresenceDot").color, "#69b978");
+        compare(queryFactTexts().join("\n"), "bot");
+
+        appWindow.openDirectMessage("lena");
+        tryCompare(appWindow, "currentConversation", "lena");
+        compare(item("conversationTopic").text, "Lena Pink");
+        compare(item("queryPresenceDot").color, "#d6a552");
+        compare(queryFactTexts().join("\n"), "pinkieval");
+
+        appWindow.openDirectMessage("fred");
+        tryCompare(appWindow, "currentConversation", "fred");
+        compare(item("conversationTopic").text, "Fred Machado");
+        compare(item("queryPresenceDot").color, "#69b978");
+        compare(queryFactTexts().join("\n"), "fredm\nserver operator");
+
+        appWindow.openDirectMessage("ghost");
+        tryCompare(appWindow, "currentConversation", "ghost");
+        compare(item("conversationTopic").text, "");
+        verify(Qt.colorEqual(item("queryPresenceDot").color, appWindow.mutedColor));
+        compare(queryFactTexts().length, 0);
+
+        // away-notify dropped: the presence string stays, the glyph does not,
+        // and another member's tip no longer starts with online.
+        compare(appWindow.queryPeerHeader().presence, "offline");
+        seed.injectOmarchy(":server CAP fred DEL :away-notify\r\n");
+        tryCompare(appWindow, "awayPresenceVisible", false);
+        verify(!item("queryPresenceDot").visible);
+        compare(appWindow.queryPeerHeader().presence, "offline");
+
+        appWindow.selectConversation("#omarchy", appWindow.irc.selectedNetworkId);
+        tryCompare(appWindow, "currentConversation", "#omarchy");
+        var gatedTip = tip("dax");
+        verify(gatedTip.indexOf("online") !== 0);
+        verify(gatedTip.indexOf("Packet Bot") === 0);
     }
 
     function test_walkConversationsWrapsToLast() {

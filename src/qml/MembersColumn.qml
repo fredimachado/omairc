@@ -106,7 +106,9 @@ Rectangle {
             readonly property string realname: memberData.realname || ""
             readonly property var factLabels: memberData.factLabels || []
             readonly property string memberTip: {
-                var lines = [memberDelegate.away ? "away" : "online"];
+                var lines = [];
+                if (column.awayPresenceVisible || memberDelegate.isSelf)
+                    lines.push(memberDelegate.away ? "away" : "online");
                 var name = column.plainIrcText
                     ? column.plainIrcText(memberDelegate.realname)
                     : memberDelegate.realname;

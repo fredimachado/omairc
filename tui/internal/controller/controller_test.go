@@ -1355,3 +1355,41 @@ func TestJoinClearsClosedOnEveryTarget(t *testing.T) {
 		t.Fatal("#alpha stayed unjoined after its self JOIN")
 	}
 }
+
+// TestWhoReplyRebuildsMemberSnapshotOnce proves one WHO reply (away, then nick
+// facts) repaints the member snapshot a single time.
+func TestWhoReplyRebuildsMemberSnapshotOnce(t *testing.T) {
+	c, clock := newController(t)
+	transport := addAndStart(t, c, clock, baseConfig("libera", "omairc"))
+	registerNetwork(t, transport, "omairc", "away-notify")
+	inject(t, transport, ":omairc!u@h JOIN :#room\r\n:Alice!a@h JOIN :#room\r\n")
+	c.SelectConversation("libera", "#room")
+
+	before := append([]MemberSnapshot(nil), c.Members()...)
+	rebuilds := 0
+	c.OnViewChanged = func() {
+		now := c.Members()
+		if !memberSnapshotsEqual(before, now) {
+			rebuilds++
+			before = append([]MemberSnapshot(nil), now...)
+		}
+	}
+	inject(t, transport, ":server 352 omairc #room u h server Alice G :0 Alice Example\r\n")
+	if rebuilds != 1 {
+		t.Fatalf("one 352 rebuilt the member snapshot %d times, want 1", rebuilds)
+	}
+	var alice MemberSnapshot
+	found := false
+	for _, member := range c.Members() {
+		if member.Nick == "Alice" {
+			alice = member
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("Alice missing after WHO: %+v", c.Members())
+	}
+	if !alice.Away || alice.Realname != "Alice Example" {
+		t.Fatalf("Alice snapshot = %+v, want away and Alice Example", alice)
+	}
+}
