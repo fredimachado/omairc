@@ -7979,6 +7979,22 @@ void ControllerTest::catchUpTargetsLargerThanLimitStillPages()
                           QByteArrayLiteral("CHATHISTORY AFTER nora ")));
     QVERIFY(framesContain(transport->writtenFrames(),
                           QByteArrayLiteral("CHATHISTORY AFTER ada ")));
+    transport->injectBytes(QByteArrayLiteral(
+        ":irc.host BATCH +t2 draft/chathistory-targets\r\n"
+        "@batch=t2 :irc.host CHATHISTORY TARGETS bea 2024-03-09T16:00:01.500Z\r\n"
+        "@batch=t2 :irc.host CHATHISTORY TARGETS cleo 2024-03-09T16:00:01.000Z\r\n"
+        ":irc.host BATCH -t2\r\n"));
+    QVERIFY(framesContain(transport->writtenFrames(), QByteArrayLiteral(
+        "CHATHISTORY TARGETS timestamp=2024-03-09T15:59:59.620Z "
+        "timestamp=2024-03-09T16:00:01.000Z 1\r\n")));
+    transport->injectBytes(QByteArrayLiteral(
+        ":irc.host BATCH +t3 draft/chathistory-targets\r\n"
+        "@batch=t3 :irc.host CHATHISTORY TARGETS dina 2024-03-09T16:00:00.800Z\r\n"
+        "@batch=t3 :irc.host CHATHISTORY TARGETS elsa 2024-03-09T16:00:00.700Z\r\n"
+        ":irc.host BATCH -t3\r\n"));
+    QCOMPARE(countFramesContaining(transport->writtenFrames(),
+                                   QByteArrayLiteral("CHATHISTORY TARGETS ")),
+             3);
 
     IrcController ended;
     ended.setCatchUpClock([] {
