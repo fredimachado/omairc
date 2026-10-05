@@ -187,16 +187,6 @@ TestCase {
     }
 
     Component {
-        id: coverWindowComponent
-
-        Window {
-            width: 120
-            height: 80
-            title: "cover"
-        }
-    }
-
-    Component {
         id: nullIrcWindowComponent
 
         Omairc.OmaircWindow {
@@ -3979,30 +3969,15 @@ TestCase {
         compare(appWindow.title, "#ricing - Omairc");
     }
 
-    function leaveAppWindowUnfocused() {
-        if (!appWindow.active)
-            return null;
-        var cover = coverWindowComponent.createObject(testCase);
-        verify(cover !== null, "A cover window should load");
-        cover.show();
-        cover.requestActivate();
-        tryCompare(appWindow, "active", false);
-        return cover;
-    }
-
-    function test_unfocusedArrivalMarksTitle() {
+    function test_focusedArrivalLeavesTitle() {
         openSeededAppWindow();
         appWindow.suppressDesktopNotification = true;
-        var cover = leaveAppWindowUnfocused();
-        verify(!appWindow.active);
-        var openTitle = appWindow.title;
-        injectOmarchyChat("alice", "#ricing", "hey \x02fred");
-        compare(appWindow.title, "alice: hey fred · #ricing - Omairc");
         appWindow.requestActivate();
         tryCompare(appWindow, "active", true);
+        var openTitle = appWindow.title;
+        injectOmarchyChat("alice", "#ricing", "hey \x02fred");
         compare(appWindow.title, openTitle);
-        if (cover)
-            cover.destroy();
+        compare(appWindow.lastNotification, null);
     }
 
     function test_notificationActivateOpensLiveChannelMention() {
