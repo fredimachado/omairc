@@ -184,24 +184,16 @@ func TestUploadAcceptsARelativePath(t *testing.T) {
 	defer server.Close()
 
 	dir := t.TempDir()
-	abs := filepath.Join(dir, "note.txt")
-	if err := os.WriteFile(abs, []byte("x"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "note.txt"), []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	wd, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	rel, err := filepath.Rel(wd, abs)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if filepath.IsAbs(rel) {
-		t.Skip("temp dir is not under the working directory")
-	}
+	// The temp directory can sit on another Windows volume from the module,
+	// where filepath.Rel cannot build a relative path. Run from the file's
+	// own directory so the relative name is real on every host.
+	t.Chdir(dir)
 	link, message := Upload(Request{
 		Endpoint:        server.URL + "/upload",
-		Path:            rel,
+		Path:            "note.txt",
 		ServerEncrypted: false,
 	})
 	if message != "" || link != "https://cdn.example/note.txt" {

@@ -4,6 +4,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"charm.land/bubbles/v2/textinput"
@@ -304,24 +305,81 @@ func nonRegularPastePaths(text string) []string {
 }
 
 func localPathToken(token string) (string, bool) {
+	path, ok := convertFileToken(token, runtime.GOOS == "windows")
+	if !ok {
+		return "", false
+	}
+	if runtime.GOOS == "windows" {
+		return path, true
+	}
+	if !filepath.IsAbs(path) {
+		return "", false
+	}
+	return path, true
+}
+
+// convertFileToken turns a pasted file URL into a local path. windows selects
+// the drive-letter form so the same cases can be tested on any host. A host
+// other than localhost or a drive letter is refused.
+func convertFileToken(token string, windows bool) (string, bool) {
 	path := token
 	if strings.HasPrefix(strings.ToLower(token), "file://") {
-		parsed, err := url.Parse(token)
+		// A Windows paste keeps backslashes. Those are not a URL, and Go
+		// reads the colon in `file://C:\...` as a port.
+		parsed, err := url.Parse(strings.ReplaceAll(token, `\`, `/`))
 		if err != nil || !strings.EqualFold(parsed.Scheme, "file") {
-			return "", false
-		}
-		if parsed.Host != "" && !strings.EqualFold(parsed.Host, "localhost") {
 			return "", false
 		}
 		path = parsed.Path
 		if decoded, err := url.PathUnescape(path); err == nil {
 			path = decoded
 		}
+		if windows {
+			return windowsPathFromFileURL(parsed.Host, path)
+		}
+		if parsed.Host != "" && !strings.EqualFold(parsed.Host, "localhost") {
+			return "", false
+		}
+		return path, path != ""
 	}
-	if !filepath.IsAbs(path) {
+	if windows {
+		return path, windowsAbsolute(path)
+	}
+	return path, true
+}
+
+func windowsPathFromFileURL(host, path string) (string, bool) {
+	if drive, ok := windowsDriveHost(host); ok {
+		path = drive + path
+	} else if host != "" && !strings.EqualFold(host, "localhost") {
+		return "", false
+	}
+	path = strings.TrimPrefix(path, "/")
+	path = strings.ReplaceAll(path, "/", `\`)
+	if !windowsAbsolute(path) {
 		return "", false
 	}
 	return path, true
+}
+
+func windowsDriveHost(host string) (string, bool) {
+	trimmed := strings.TrimSuffix(host, ":")
+	if len(trimmed) != 1 || !isASCIIAlpha(trimmed[0]) {
+		return "", false
+	}
+	return trimmed + ":", true
+}
+
+func windowsAbsolute(path string) bool {
+	if len(path) >= 3 && isASCIIAlpha(path[0]) && path[1] == ':' &&
+		(path[2] == '\\' || path[2] == '/') {
+		return true
+	}
+	return false
+}
+
+func isASCIIAlpha(b byte) bool {
+	return (b >= 'A' && b <= 'Z') || (b >= 'a' && b <= 'z')
 }
 
 func absoluteRegularFile(token string) (string, bool) {

@@ -403,10 +403,16 @@ ApplicationWindow {
         var header = irc.peerHeader(networkId, currentConversation);
         if (!header)
             return empty;
+        var labels = [];
+        var rawLabels = header.labels;
+        if (rawLabels) {
+            for (var index = 0; index < rawLabels.length; ++index)
+                labels.push(String(rawLabels[index]));
+        }
         return {
             presence: header.presence ? String(header.presence) : "offline",
             realname: header.realname ? String(header.realname) : "",
-            labels: header.labels ? header.labels : []
+            labels: labels
         };
     }
 

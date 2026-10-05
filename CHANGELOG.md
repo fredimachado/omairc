@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The Windows build keeps Qt Quick Dialogs, so choosing a file can load.
+  The terminal client accepts a pasted `file://` path on Windows, including
+  a drive letter.
 - A refused nick, including 432, 433 after the `nick_` and `nick2` fallback,
   and the other registration refusals, or a registration `ERROR`, shows the
   server's reason on that network and in the open pane. The desktop client and
