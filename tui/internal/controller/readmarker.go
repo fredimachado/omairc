@@ -18,6 +18,8 @@ func (c *Controller) NoteTranscriptViewport(focused bool, followEnd bool) {
 
 // ReadMarkerReceived applies a server read marker for one target.
 func (c *Controller) ReadMarkerReceived(networkID, target string, marker *time.Time) {
+	c.lock()
+	defer c.unlock()
 	if networkID == "" || target == "" {
 		return
 	}

@@ -3,6 +3,7 @@ package controller
 import (
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/fredimachado/omairc/tui/internal/irc"
@@ -14,8 +15,15 @@ import (
 // owns the sessions, the event reducer, the selection, and the cached
 // snapshots. See doc.go for scope and seams.go for the deferred behaviour.
 //
-// A Controller is not safe for concurrent use.
+// The shell goroutine (Model.Update / Model.View, which hold Lock) and the
+// session read loops (handler methods, which lock internally) share this
+// state. See lock.go.
 type Controller struct {
+	mu          sync.Mutex
+	lockOwner   uint64
+	lockDepth   int
+	afterUnlock []func()
+
 	clock session.Clock
 
 	manager       *session.Manager
@@ -542,6 +550,8 @@ func (c *Controller) NetworkOrder() []string {
 // a reconnect replays as if it never happened. It mirrors the stateChanged
 // lambda in IrcController::addSession (src/irc/irccontroller.cpp:467-473).
 func (c *Controller) StateChanged(networkID string, state session.SessionState) {
+	c.lock()
+	defer c.unlock()
 	if networkID != "" && state != session.StateRegistered {
 		c.playback.OnLeftRegistration(networkID)
 	}
@@ -550,6 +560,8 @@ func (c *Controller) StateChanged(networkID string, state session.SessionState) 
 
 // ErrorOccurred records the last error for the network and notifies.
 func (c *Controller) ErrorOccurred(networkID string, kind session.ErrorKind, message string) {
+	c.lock()
+	defer c.unlock()
 	c.setLastError(networkID, message)
 	c.notifyStatusChanged()
 }
@@ -558,6 +570,8 @@ func (c *Controller) ErrorOccurred(networkID string, kind session.ErrorKind, mes
 // folds the welcome into the reducer. It mirrors the registered lambda in
 // IrcController::addSession (src/irc/irccontroller.cpp:449-461).
 func (c *Controller) Registered(networkID string) {
+	c.lock()
+	defer c.unlock()
 	s := c.manager.Find(networkID)
 	if s != nil {
 		c.playback.OnRegistered(networkID, s.AutojoinChannels())
@@ -581,11 +595,15 @@ func (c *Controller) Registered(networkID string) {
 // ReconnectScheduled refreshes the status text. The backoff itself is the
 // session's.
 func (c *Controller) ReconnectScheduled(networkID string, delayMs, attempt int) {
+	c.lock()
+	defer c.unlock()
 	c.refreshConnectionStatus()
 }
 
 // MessageReceived translates and folds one inbound line.
 func (c *Controller) MessageReceived(networkID string, message irc.Message) {
+	c.lock()
+	defer c.unlock()
 	c.handleMessage(networkID, message)
 }
 
@@ -594,6 +612,8 @@ func (c *Controller) MessageReceived(networkID string, message irc.Message) {
 // answer discovers directs instead of splicing lines. It mirrors
 // IrcController::handleHistoryBatch (src/irc/irccontroller.cpp:2373-2405).
 func (c *Controller) HistoryBatchReceived(networkID string, batch irc.HistoryBatch) {
+	c.lock()
+	defer c.unlock()
 	if batch.Kind == irc.HistoryTargets {
 		s := c.manager.Find(networkID)
 		features := c.reducer.ServerFeatures(networkID)
@@ -636,6 +656,8 @@ func (c *Controller) HistoryBatchReceived(networkID string, batch irc.HistoryBat
 // ChatHistoryRequestFinished clears browse flags when a BEFORE request ends
 // without a delivered batch.
 func (c *Controller) ChatHistoryRequestFinished(networkID, target string, failed bool, before bool) {
+	c.lock()
+	defer c.unlock()
 	if !failed || !before {
 		return
 	}
@@ -646,6 +668,8 @@ func (c *Controller) ChatHistoryRequestFinished(networkID, target string, failed
 // direct whose AFTER came back empty or failed. It mirrors
 // IrcController::handleChatHistoryFailed.
 func (c *Controller) ChatHistoryFailed(networkID, subcommand, target string) {
+	c.lock()
+	defer c.unlock()
 	if strings.EqualFold(subcommand, "TARGETS") {
 		if !c.playback.RetryTargets(networkID) {
 			return
@@ -683,6 +707,8 @@ func (c *Controller) dropEmptyDiscoveredDirect(networkID, target string) {
 // StatusEntry records one classified Status line and routes its correlated
 // WHOIS, CTCP, and metadata replies.
 func (c *Controller) StatusEntry(entry irc.StatusEntry) {
+	c.lock()
+	defer c.unlock()
 	c.statusConsole.Append(entry)
 	c.replies.RouteStatusEntry(entry)
 	if entry.Label() == "INVITE" {
@@ -709,17 +735,23 @@ func (c *Controller) StatusEntry(entry irc.StatusEntry) {
 // dropped capability can no longer maintain. It mirrors IrcController::
 // handleCapabilities (src/irc/irccontroller.cpp:931-967).
 func (c *Controller) CapabilitiesChanged(networkID string, capabilities irc.CapabilitySet) {
+	c.lock()
+	defer c.unlock()
 	c.handleCapabilities(networkID, capabilities)
 }
 
 // RequestLabelFinished drops the labeled watch for a finished request.
 func (c *Controller) RequestLabelFinished(networkID, requestLabel string) {
+	c.lock()
+	defer c.unlock()
 	c.replies.RequestLabelFinished(networkID, requestLabel)
 }
 
 // AutojoinChannelsChanged forwards a session's autojoin edit to the shell's
 // profile store. Nil-able, so it stays a no-op without a wired callback.
 func (c *Controller) AutojoinChannelsChanged(networkID string, channels []string, keys map[string]string) {
+	c.lock()
+	defer c.unlock()
 	if c.OnAutojoinChanged != nil {
 		c.OnAutojoinChanged(networkID, channels, keys)
 	}
@@ -839,8 +871,14 @@ func (c *Controller) Apply(event irc.Event) {
 	c.Publish(notify)
 
 	if mention, ok := c.reducer.TakeMentionArrival(); ok && c.OnMentionArrived != nil {
-		c.OnMentionArrived(mention.Author, mention.Body, mention.NetworkID,
-			mention.Target, mention.MsgID.Value)
+		// p.Send blocks until the shell turn finishes. Run it after the
+		// outermost unlock so a shell turn waiting on this mutex cannot
+		// deadlock against the session goroutine waiting on p.Send.
+		fn := c.OnMentionArrived
+		c.deferAfterUnlock(func() {
+			fn(mention.Author, mention.Body, mention.NetworkID,
+				mention.Target, mention.MsgID.Value)
+		})
 	}
 	c.syncReadMarkerForSelection()
 
@@ -1744,6 +1782,10 @@ func (c *Controller) AddSession(config session.SessionConfig, transport session.
 	c.currentNicks[config.NetworkID] = config.Nick
 	networkID := config.NetworkID
 	s.SetChatHistoryResume(func(target string) (time.Time, bool) {
+		// The session invokes this after releasing its own mutex. Take the
+		// controller lock so the lookup does not race a shell turn.
+		c.Lock()
+		defer c.Unlock()
 		if when, ok := c.playback.ResumeTime(networkID, target); ok {
 			return when, true
 		}

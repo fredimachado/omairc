@@ -15,6 +15,8 @@
 // only the standard library plus the module's internal/irc and internal/session
 // packages.
 //
-// A Controller is not safe for concurrent use. The Qt original lives on one
-// thread; drive this from one goroutine (the shell's update loop) the same way.
+// The shell goroutine and the session read loops both call a Controller. The
+// shell holds Lock across Model.Update and Model.View; each session handler
+// method locks internally. That mutex is reentrant on the holding goroutine.
+// Callbacks that block on the shell run after the outermost Unlock.
 package controller

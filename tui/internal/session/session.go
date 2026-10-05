@@ -2257,13 +2257,39 @@ func (s *Session) requestChannelHistoryLocked(channel string) {
 		return
 	}
 	if s.historyResume != nil {
-		if when, ok := s.historyResume(channel); ok && !when.IsZero() {
-			if s.requestHistoryAfterLocked(channel, when) {
-				return
-			}
+		// The callback reads the controller. Drop mu first so a shell turn
+		// holding the controller lock can take mu without inverting the order.
+		// The deferred queue is parked so that gap cannot steal it. Lines
+		// after this JOIN in the same read are parsed only once mu is back,
+		// so an empty CHATHISTORY batch still sees the AFTER already asked.
+		when, ok := s.historyResumeOutsideLock(channel)
+		if _, asked := s.historyAsked[key]; asked {
+			return
+		}
+		if ok && !when.IsZero() && s.requestHistoryAfterLocked(channel, when) {
+			return
 		}
 	}
 	s.requestHistoryLatestLocked(channel)
+}
+
+// historyResumeOutsideLock runs the resume callback without mu. Caller holds mu.
+func (s *Session) historyResumeOutsideLock(channel string) (time.Time, bool) {
+	resume := s.historyResume
+	if resume == nil {
+		return time.Time{}, false
+	}
+	parked := s.deferred
+	s.deferred = nil
+	s.mu.Unlock()
+	when, ok := resume(channel)
+	s.mu.Lock()
+	if len(s.deferred) == 0 {
+		s.deferred = parked
+	} else {
+		s.deferred = append(parked, s.deferred...)
+	}
+	return when, ok
 }
 
 func (s *Session) requestHistoryLatestLocked(target string) bool {

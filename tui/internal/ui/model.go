@@ -452,6 +452,12 @@ func (m *Model) ensureAvatars() {
 // Connect sheet and the overlays are modal; otherwise the navigation chords
 // run before the rest reaches the composer.
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	// Hold the controller lock for the whole turn. Session handlers take the
+	// same lock, so a walk cannot read presence while an inbound line writes it.
+	if m.ctrl != nil {
+		m.ctrl.Lock()
+		defer m.ctrl.Unlock()
+	}
 	// Every composer mutation happens inside this call, so one deferred compare
 	// covers them all. It reports a real text change to the controller for the
 	// outbound typing hint (see notifyComposerTyping). The send-limit clamp
@@ -698,6 +704,10 @@ func (m *Model) refocusComposer() {
 // View renders the shell into the declarative View: the alternate screen and
 // the Qt-equivalent window title.
 func (m *Model) View() tea.View {
+	if m.ctrl != nil {
+		m.ctrl.Lock()
+		defer m.ctrl.Unlock()
+	}
 	v := tea.NewView(m.render())
 	v.AltScreen = true
 	v.WindowTitle = m.windowTitle()

@@ -166,7 +166,10 @@ func (h ctrlHost) Capabilities(networkID string) irc.CapabilitySet {
 // MonitorHost extras.
 func (h ctrlHost) NotifyMonitor(networkID, display, body string, newlyOnline bool) {
 	if h.c.OnMonitorArrived != nil {
-		h.c.OnMonitorArrived(networkID, display, body, newlyOnline)
+		fn := h.c.OnMonitorArrived
+		h.c.deferAfterUnlock(func() {
+			fn(networkID, display, body, newlyOnline)
+		})
 	}
 	if newlyOnline {
 		h.c.appendInbox(irc.InboxItem{
