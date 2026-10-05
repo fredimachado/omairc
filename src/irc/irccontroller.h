@@ -438,6 +438,9 @@ private:
     int m_conversationEpoch = 0;
     int m_peerMetadataEpoch = 0;
     int m_peerAccountEpoch = 0;
+    // A WHO reply is an away event and a nick-facts event for one nick.
+    // The following event repaints that same row, so this one does not.
+    bool m_coalesceMemberRow = false;
     bool m_ephemeral = false;
     bool m_reopenDirectMessages = true;
     bool m_loadPeerAvatars = true;
