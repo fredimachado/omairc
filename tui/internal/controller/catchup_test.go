@@ -476,6 +476,22 @@ func TestCatchUpTargetsLargerThanLimitStillPages(t *testing.T) {
 		!byteFramesContain(transport.WrittenFrames(), "CHATHISTORY AFTER ada ") {
 		t.Fatalf("both nicks need AFTER: %q", transport.WrittenFrames())
 	}
+	transport.InjectBytes([]byte(
+		":irc.host BATCH +t2 draft/chathistory-targets\r\n" +
+			"@batch=t2 :irc.host CHATHISTORY TARGETS bea 2024-03-09T16:00:01.500Z\r\n" +
+			"@batch=t2 :irc.host CHATHISTORY TARGETS cleo 2024-03-09T16:00:01.000Z\r\n" +
+			":irc.host BATCH -t2\r\n"))
+	if !byteFramesContain(transport.WrittenFrames(), "CHATHISTORY TARGETS timestamp=2024-03-09T15:59:59.620Z timestamp=2024-03-09T16:00:01.000Z 1\r\n") {
+		t.Fatalf("second extra page was not sent: %q", transport.WrittenFrames())
+	}
+	transport.InjectBytes([]byte(
+		":irc.host BATCH +t3 draft/chathistory-targets\r\n" +
+			"@batch=t3 :irc.host CHATHISTORY TARGETS dina 2024-03-09T16:00:00.800Z\r\n" +
+			"@batch=t3 :irc.host CHATHISTORY TARGETS elsa 2024-03-09T16:00:00.700Z\r\n" +
+			":irc.host BATCH -t3\r\n"))
+	if byteFrameCount(transport.WrittenFrames(), "CHATHISTORY TARGETS ") != 3 {
+		t.Fatalf("TARGETS count = %d, want 3", byteFrameCount(transport.WrittenFrames(), "CHATHISTORY TARGETS "))
+	}
 
 	ended := New()
 	ended.SetClock(session.NewFakeClock(time.Date(2026, 10, 4, 12, 0, 0, 0, time.UTC)))
