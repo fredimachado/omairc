@@ -5882,18 +5882,10 @@ TestCase {
 
     function test_ctrlKCapsAfterRank() {
         openSeededAppWindow();
-        var sheet = openJumpSheet();
-        var first = item("jumpModel").get(0);
-        var firstKind = first.kind;
-        var firstName = first.name;
-        var firstNetwork = first.networkId;
-        keyClick(Qt.Key_Escape);
-        tryCompare(sheet, "opened", false);
 
-        // Joined channels sort by name, so a joined #c00 becomes the first
-        // sidebar row. Parting after the self join keeps the channel and
-        // parks it after the channels that were already joined. #zzcap is
-        // then past the 20-row cap until a name match pulls it forward.
+        // Every channel ranks together, joined or not, so the parted #c00
+        // rows stay in name order and fill the 20-row cap. #zzcap is past
+        // that cap until a name match pulls it forward.
         var wire = "";
         for (var index = 0; index < 20; ++index) {
             var suffix = index < 10 ? "0" + index : String(index);
@@ -5906,12 +5898,11 @@ TestCase {
         wire += ":fred!u@h PART #zzcap\r\n";
         seed.injectOmarchy(wire);
 
-        sheet = openJumpSheet();
+        openJumpSheet();
         var model = item("jumpModel");
         compare(model.count, 20);
-        compare(model.get(0).kind, firstKind);
-        compare(model.get(0).name, firstName);
-        compare(model.get(0).networkId, firstNetwork);
+        compare(model.get(0).name, "#c00");
+        compare(model.get(0).networkId, seed.omarchyNetworkId);
 
         item("jumpFilter").clear();
         typeText("zzcap");

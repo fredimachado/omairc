@@ -71,22 +71,13 @@ func TestJumpMatchesTopicAboveNameAndKeepsNetwork(t *testing.T) {
 
 func TestJumpCapsAfterRank(t *testing.T) {
 	m := seededModel(t)
-	m.openJump()
-	before := m.jumpEntries()
-	if len(before) == 0 {
-		t.Fatal("jump entries are empty before the extra channels")
-	}
-	first := before[0]
-	m.closeJump()
-
 	nick := m.ctrl.CurrentNick()
 	if nick == "" {
 		t.Fatal("demo nick is empty")
 	}
-	// Joined channels sort by name, so a joined #c00 becomes the first
-	// sidebar row. Parting after the self join keeps the channel and parks
-	// it after the channels that were already joined. #zzcap is then past
-	// the 20-row cap until a name match pulls it forward.
+	// Every channel ranks together, joined or not, so the parted #c00 rows
+	// stay in name order and fill the 20-row cap. #zzcap is past that cap
+	// until a name match pulls it forward.
 	for index := 0; index < 20; index++ {
 		channel := fmt.Sprintf("#c%02d", index)
 		m.ctrl.Apply(irc.JoinEvent{NetworkID: "omarchy", Channel: channel, Nick: nick})
@@ -98,8 +89,8 @@ func TestJumpCapsAfterRank(t *testing.T) {
 
 	m.openJump()
 	entries := m.jumpEntries()
-	if len(entries) != 20 || entries[0] != first {
-		t.Fatalf("empty jump = %+v, want 20 rows starting at %+v", entries, first)
+	if len(entries) != 20 || entries[0].target != "#c00" || entries[0].networkID != "omarchy" {
+		t.Fatalf("empty jump = %+v, want 20 rows starting at #c00", entries)
 	}
 
 	m.jump.input.SetValue("zzcap")
