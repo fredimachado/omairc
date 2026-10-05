@@ -4135,11 +4135,14 @@ TestCase {
         appWindow.arrivalWindowActive = false;
         var plain = appWindow.title;
         appWindow.lastNotification = null;
-        verify(appWindow.irc.sendMessage("/monitor + alice"));
-        // The first MONITOR reply only hydrates. A later edge is monitorArrived.
+        verify(appWindow.irc.sendMessage("/monitor alice"));
+        // Composer /monitor <nick> sends MONITOR +. The first presence only
+        // hydrates. A later edge is monitorArrived, and that must not mark.
+        seed.injectOmarchy(":server 731 fred :alice\r\n");
         seed.injectOmarchy(":server 730 fred :alice!u@h\r\n");
         tryVerify(function() { return appWindow.lastNotification !== null; });
         compare(appWindow.lastNotification.author, "alice");
+        compare(appWindow.lastNotification.body, "is online");
         compare(appWindow.title, plain);
     }
 
