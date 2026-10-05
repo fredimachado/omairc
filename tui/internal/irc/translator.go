@@ -6,6 +6,14 @@ import (
 	"time"
 )
 
+// HistoryTarget is one name from CHATHISTORY TARGETS. Latest is the server's
+// time of that target's newest stored message, when the reply included one.
+// It mirrors IrcHistoryTarget.
+type HistoryTarget struct {
+	Name   string
+	Latest time.Time
+}
+
 // HistoryBatch is one completed replay batch. The lines are still raw protocol
 // so the translator can reuse the same rules it applies to live traffic. It
 // mirrors IrcHistoryBatch.
@@ -15,6 +23,12 @@ type HistoryBatch struct {
 	Kind   HistoryKind
 	// OlderPage is true for a solicited CHATHISTORY BEFORE answer.
 	OlderPage bool
+	// HistoryEnded is draft/chathistory-end on the opening BATCH.
+	HistoryEnded bool
+	// AfterRequest is true when the batch answers CHATHISTORY AFTER.
+	AfterRequest bool
+	// Targets is set for a CHATHISTORY TARGETS answer. Lines stays empty.
+	Targets []HistoryTarget
 }
 
 // whoReplyRealname reads the GECOS from an RPL_WHOREPLY trailing parameter.
@@ -298,7 +312,7 @@ func Translate(networkID, currentNick string, features ServerFeatures, message M
 // TranslateHistory replays a batch of raw lines into one HistoryEvent. It
 // mirrors IrcEventTranslator::translateHistory.
 func TranslateHistory(networkID, currentNick string, features ServerFeatures, batch HistoryBatch, now time.Time) (HistoryEvent, bool) {
-	if batch.Target == "" {
+	if batch.Kind == HistoryTargets || batch.Target == "" {
 		return HistoryEvent{}, false
 	}
 	conversation := ircKey(networkID, batch.Target, features)

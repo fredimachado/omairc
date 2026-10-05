@@ -625,6 +625,17 @@ private slots:
     void queryPlaybackKeepsLinesFromPreviousNick();
     void queryPlaybackPreviousNickEchoIsOwnLine();
     void networkWithoutPlaybackCapDoesNotPlay();
+    void chatHistoryAfterFillsLinesFromWhileAway();
+    void catchUpContinuesWhenOneDirectCannotSend();
+    void catchUpRetriesTargetsOnce();
+    void catchUpClockBehindUsesFarFuture();
+    void catchUpTargetsPagesUntilEnd();
+    void catchUpTargetsEndTagSendsNoFollowUp();
+    void discoveredEmptyAfterDropsQuery();
+    void discoveredFailAfterDropsQuery();
+    void catchUpReconnectAsksStampedGhostNotDismissed();
+    void catchUpTargetsLargerThanLimitStillPages();
+    void zncPlaybackWithoutChatHistoryDoesNotCatchUp();
     void chatHistoryBeforePageMutedWithoutUnread();
     void chatHistoryBeforeDedupesMsgid();
     void chatHistoryBeforeNoCapIsNoOp();
@@ -7193,6 +7204,519 @@ void ControllerTest::networkWithoutPlaybackCapDoesNotPlay()
     QCOMPARE(roleAt(messages, bodyRow(messages, QStringLiteral("yesterday")),
                     MessageListModel::OriginRole),
              QStringLiteral("replay"));
+}
+
+void ControllerTest::chatHistoryAfterFillsLinesFromWhileAway()
+{
+    const IrcCaseMapping mapping;
+    const QDateTime when = QDateTime::fromString(
+        QStringLiteral("2024-03-09T16:00:00.620Z"), Qt::ISODateWithMs);
+    QVERIFY(when.isValid());
+    QVERIFY(IrcPlaybackTimeStore().note(QStringLiteral("libera"),
+                                        QStringLiteral("#omarchy"), when, mapping));
+    QVERIFY(IrcPlaybackTimeStore().note(QStringLiteral("libera"),
+                                        QStringLiteral("lena"), when, mapping));
+    QVERIFY(IrcPlaybackTimeStore().note(QStringLiteral("libera"),
+                                        QStringLiteral("ghost"), when, mapping));
+    QVERIFY(IrcOpenDirectStore().add(QStringLiteral("libera"),
+                                     QStringLiteral("lena"), mapping));
+    QVERIFY(IrcOpenDirectStore().add(QStringLiteral("libera"),
+                                     QStringLiteral("bob"), mapping));
+    QTemporaryDir transcripts;
+    QVERIFY(transcripts.isValid());
+    IrcConversationLog log(transcripts.path());
+    IrcTranscriptLine kept;
+    kept.timestamp = when;
+    kept.author = QStringLiteral("someone");
+    kept.kind = QStringLiteral("message");
+    kept.body = QStringLiteral("kept");
+    QVERIFY(log.append(QStringLiteral("libera"), QStringLiteral("filed"), mapping, kept));
+
+    IrcController controller;
+    controller.setTranscriptRoot(transcripts.path());
+    auto *transport = new FakeIrcTransport;
+    QVERIFY(controller.addSession(config(QStringLiteral("libera")), transport));
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    transport->completeConnect();
+    transport->injectBytes(QByteArrayLiteral(
+        ":server CAP omairc LS :batch chathistory\r\n"
+        ":server CAP omairc ACK :batch chathistory\r\n"
+        ":server 001 omairc :Welcome\r\n"
+        ":server 376 omairc :End of MOTD\r\n"
+        ":omairc!u@h JOIN :#omarchy\r\n"));
+
+    const QByteArrayList frames = transport->writtenFrames();
+    QVERIFY(framesContain(frames, QByteArrayLiteral(
+        "CHATHISTORY AFTER #omarchy timestamp=2024-03-09T16:00:00.620Z 100\r\n")));
+    QVERIFY(!framesContain(frames, QByteArrayLiteral("CHATHISTORY LATEST #omarchy ")));
+    QVERIFY(framesContain(frames, QByteArrayLiteral(
+        "CHATHISTORY AFTER lena timestamp=2024-03-09T16:00:00.620Z 100\r\n")));
+    QVERIFY(framesContain(frames, QByteArrayLiteral("CHATHISTORY LATEST bob * 100\r\n")));
+    QVERIFY(framesContain(frames, QByteArrayLiteral(
+        "CHATHISTORY TARGETS timestamp=2024-03-09T15:59:59.620Z timestamp=")));
+    QCOMPARE(countFramesContaining(frames, QByteArrayLiteral("CHATHISTORY AFTER ghost ")), 0);
+    QCOMPARE(countFramesContaining(frames, QByteArrayLiteral("CHATHISTORY AFTER filed ")), 0);
+    QVERIFY(!framesContain(frames, QByteArrayLiteral("*playback PLAY")));
+
+    auto *conversations =
+        qobject_cast<QAbstractItemModel *>(controller.conversations());
+    QVERIFY(conversations);
+    QVERIFY(rowForTarget(conversations, QStringLiteral("lena")) >= 0);
+    QVERIFY(rowForTarget(conversations, QStringLiteral("bob")) >= 0);
+    QCOMPARE(rowForTarget(conversations, QStringLiteral("ghost")), -1);
+    QCOMPARE(rowForTarget(conversations, QStringLiteral("filed")), -1);
+
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.openDirectMessage(QStringLiteral("gone"));
+    controller.closeDirectMessage();
+
+    transport->injectBytes(QByteArrayLiteral(
+        ":irc.host BATCH +t draft/chathistory-targets\r\n"
+        "@batch=t :irc.host CHATHISTORY TARGETS lena 2024-03-09T16:00:00.620Z\r\n"
+        "@batch=t :irc.host CHATHISTORY TARGETS ghost 2024-03-09T16:00:00.620Z\r\n"
+        "@batch=t :irc.host CHATHISTORY TARGETS filed 2024-03-09T16:00:00.620Z\r\n"
+        "@batch=t :irc.host CHATHISTORY TARGETS gone 2024-03-09T16:00:00.620Z\r\n"
+        "@batch=t :irc.host CHATHISTORY TARGETS BouncerServ 2024-03-09T16:00:00.620Z\r\n"
+        "@batch=t :irc.host CHATHISTORY TARGETS alice 2024-03-09T16:00:01.000Z\r\n"
+        "@batch=t :irc.host CHATHISTORY TARGETS #parted 2024-03-09T16:00:00.620Z\r\n"
+        "@batch=t :irc.host CHATHISTORY TARGETS omairc 2024-03-09T16:00:00.620Z\r\n"
+        ":irc.host BATCH -t\r\n"));
+
+    QVERIFY(rowForTarget(conversations, QStringLiteral("alice")) >= 0);
+    QVERIFY(rowForTarget(conversations, QStringLiteral("ghost")) >= 0);
+    QVERIFY(rowForTarget(conversations, QStringLiteral("filed")) >= 0);
+    QCOMPARE(rowForTarget(conversations, QStringLiteral("gone")), -1);
+    QCOMPARE(rowForTarget(conversations, QStringLiteral("BouncerServ")), -1);
+    QCOMPARE(rowForTarget(conversations, QStringLiteral("#parted")), -1);
+    const QByteArrayList afterTargets = transport->writtenFrames();
+    QCOMPARE(countFramesContaining(
+                 afterTargets, QByteArrayLiteral("CHATHISTORY AFTER lena ")),
+             1);
+    QCOMPARE(countFramesContaining(
+                 afterTargets,
+                 QByteArrayLiteral(
+                     "CHATHISTORY AFTER ghost timestamp=2024-03-09T16:00:00.620Z 100\r\n")),
+             1);
+    QCOMPARE(countFramesContaining(
+                 afterTargets,
+                 QByteArrayLiteral(
+                     "CHATHISTORY AFTER filed timestamp=2024-03-09T15:59:59.620Z 100\r\n")),
+             1);
+    QCOMPARE(countFramesContaining(
+                 afterTargets, QByteArrayLiteral("CHATHISTORY AFTER gone ")),
+             0);
+    QCOMPARE(countFramesContaining(
+                 afterTargets, QByteArrayLiteral("CHATHISTORY AFTER BouncerServ ")),
+             0);
+    QCOMPARE(countFramesContaining(
+                 afterTargets, QByteArrayLiteral(
+                     "CHATHISTORY AFTER alice timestamp=2024-03-09T15:59:59.620Z 100\r\n")),
+             1);
+    const QStringList open = IrcOpenDirectStore().listed(QStringLiteral("libera"), mapping);
+    QVERIFY(!open.contains(QStringLiteral("alice")));
+    QVERIFY(!open.contains(QStringLiteral("ghost")));
+    QVERIFY(!open.contains(QStringLiteral("filed")));
+
+    transport->injectBytes(QByteArrayLiteral(
+        ":alice!u@h PRIVMSG #omarchy :seen\r\n"
+        ":irc.host BATCH +gap chathistory #omarchy\r\n"
+        "@batch=gap;time=2024-03-09T16:00:01.000Z;msgid=gap :bob!u@h PRIVMSG #omarchy :gap\r\n"
+        ":irc.host BATCH -gap\r\n"
+        ":irc.host BATCH +away chathistory alice\r\n"
+        "@batch=away;time=2024-03-09T16:00:01.000Z;msgid=away :alice!u@h PRIVMSG omairc :while away\r\n"
+        ":irc.host BATCH -away\r\n"));
+
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    auto *messages = qobject_cast<QAbstractItemModel *>(controller.messages());
+    QVERIFY(messages);
+    QVERIFY(selectedBodies(messages).contains(QStringLiteral("seen")));
+    QVERIFY(selectedBodies(messages).contains(QStringLiteral("gap")));
+
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("alice"));
+    messages = qobject_cast<QAbstractItemModel *>(controller.messages());
+    QVERIFY(messages);
+    QVERIFY(selectedBodies(messages).contains(QStringLiteral("while away")));
+}
+
+void ControllerTest::catchUpContinuesWhenOneDirectCannotSend()
+{
+    const IrcCaseMapping mapping;
+    const QDateTime when = QDateTime::fromString(
+        QStringLiteral("2024-03-09T16:00:00.620Z"), Qt::ISODateWithMs);
+    QVERIFY(when.isValid());
+    QVERIFY(IrcPlaybackTimeStore().note(QStringLiteral("libera"),
+                                        QStringLiteral("#omarchy"), when, mapping));
+    QVERIFY(IrcOpenDirectStore().add(QStringLiteral("libera"),
+                                     QStringLiteral("lena"), mapping));
+    QVERIFY(IrcOpenDirectStore().add(QStringLiteral("libera"),
+                                     QStringLiteral("bob"), mapping));
+    IrcController controller;
+    controller.setCatchUpClock([] {
+        return QDateTime::fromString(QStringLiteral("2026-10-04T12:00:00.000Z"),
+                                     Qt::ISODateWithMs);
+    });
+    auto *transport = new FakeIrcTransport;
+    IrcSession *session = controller.addSession(config(QStringLiteral("libera")), transport);
+    QVERIFY(session);
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    transport->completeConnect();
+    transport->injectBytes(QByteArrayLiteral(
+        ":server CAP omairc LS :batch chathistory\r\n"
+        ":server CAP omairc ACK :batch chathistory\r\n"
+        ":server 001 omairc :Welcome\r\n"));
+    QVERIFY(session->requestHistoryAfter(QStringLiteral("lena"), when));
+    transport->injectBytes(QByteArrayLiteral(":server 376 omairc :End of MOTD\r\n"));
+    const QByteArrayList frames = transport->writtenFrames();
+    QCOMPARE(countFramesContaining(frames, QByteArrayLiteral("CHATHISTORY AFTER lena ")), 1);
+    QVERIFY(framesContain(frames, QByteArrayLiteral("CHATHISTORY LATEST bob * 100\r\n")));
+    QVERIFY(framesContain(frames, QByteArrayLiteral("CHATHISTORY TARGETS ")));
+}
+
+void ControllerTest::catchUpRetriesTargetsOnce()
+{
+    const IrcCaseMapping mapping;
+    const QDateTime when = QDateTime::fromString(
+        QStringLiteral("2024-03-09T16:00:00.620Z"), Qt::ISODateWithMs);
+    QVERIFY(IrcPlaybackTimeStore().note(QStringLiteral("libera"),
+                                        QStringLiteral("#omarchy"), when, mapping));
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    QVERIFY(controller.addSession(config(QStringLiteral("libera")), transport));
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    transport->completeConnect();
+    transport->injectBytes(QByteArrayLiteral(
+        ":server CAP omairc LS :batch chathistory\r\n"
+        ":server CAP omairc ACK :batch chathistory\r\n"
+        ":server 001 omairc :Welcome\r\n"
+        ":server 376 omairc :End of MOTD\r\n"));
+    QCOMPARE(countFramesContaining(transport->writtenFrames(),
+                                   QByteArrayLiteral("CHATHISTORY TARGETS ")),
+             1);
+    transport->injectBytes(QByteArrayLiteral(
+        ":server FAIL CHATHISTORY MESSAGE_ERROR TARGETS :no\r\n"));
+    QCOMPARE(countFramesContaining(transport->writtenFrames(),
+                                   QByteArrayLiteral("CHATHISTORY TARGETS ")),
+             2);
+    transport->injectBytes(QByteArrayLiteral(
+        ":server FAIL CHATHISTORY MESSAGE_ERROR TARGETS :no\r\n"));
+    QCOMPARE(countFramesContaining(transport->writtenFrames(),
+                                   QByteArrayLiteral("CHATHISTORY TARGETS ")),
+             2);
+}
+
+void ControllerTest::catchUpClockBehindUsesFarFuture()
+{
+    const IrcCaseMapping mapping;
+    const QDateTime when = QDateTime::fromString(
+        QStringLiteral("2026-10-04T12:00:00.000Z"), Qt::ISODateWithMs);
+    QVERIFY(when.isValid());
+    QVERIFY(IrcPlaybackTimeStore().note(QStringLiteral("libera"),
+                                        QStringLiteral("#omarchy"), when, mapping));
+    IrcController controller;
+    controller.setCatchUpClock([] {
+        return QDateTime::fromString(QStringLiteral("2026-10-04T11:59:30.000Z"),
+                                     Qt::ISODateWithMs);
+    });
+    auto *transport = new FakeIrcTransport;
+    QVERIFY(controller.addSession(config(QStringLiteral("libera")), transport));
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    transport->completeConnect();
+    transport->injectBytes(QByteArrayLiteral(
+        ":server CAP omairc LS :batch chathistory\r\n"
+        ":server CAP omairc ACK :batch chathistory\r\n"
+        ":server 001 omairc :Welcome\r\n"
+        ":server 376 omairc :End of MOTD\r\n"));
+    QVERIFY(framesContain(transport->writtenFrames(),
+                          QByteArrayLiteral("timestamp=9999-01-01T00:00:00.000Z")));
+}
+
+void ControllerTest::catchUpTargetsPagesUntilEnd()
+{
+    const IrcCaseMapping mapping;
+    const QDateTime when = QDateTime::fromString(
+        QStringLiteral("2024-03-09T16:00:00.620Z"), Qt::ISODateWithMs);
+    QVERIFY(IrcPlaybackTimeStore().note(QStringLiteral("libera"),
+                                        QStringLiteral("#omarchy"), when, mapping));
+    IrcController controller;
+    controller.setCatchUpClock([] {
+        return QDateTime::fromString(QStringLiteral("2026-10-04T12:00:00.000Z"),
+                                     Qt::ISODateWithMs);
+    });
+    auto *transport = new FakeIrcTransport;
+    QVERIFY(controller.addSession(config(QStringLiteral("libera")), transport));
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    transport->completeConnect();
+    transport->injectBytes(QByteArrayLiteral(
+        ":server CAP omairc LS :batch chathistory\r\n"
+        ":server CAP omairc ACK :batch chathistory\r\n"
+        ":server 001 omairc :Welcome\r\n"
+        ":server 005 omairc CHATHISTORY=1 :are supported\r\n"
+        ":server 376 omairc :End of MOTD\r\n"));
+    QVERIFY(framesContain(transport->writtenFrames(), QByteArrayLiteral(
+        "CHATHISTORY TARGETS timestamp=2024-03-09T15:59:59.620Z "
+        "timestamp=2026-10-04T12:00:10.000Z 1\r\n")));
+    transport->injectBytes(QByteArrayLiteral(
+        ":irc.host BATCH +t1 draft/chathistory-targets\r\n"
+        "@batch=t1 :irc.host CHATHISTORY TARGETS nora 2024-03-09T16:00:02.000Z\r\n"
+        ":irc.host BATCH -t1\r\n"));
+    QVERIFY(framesContain(transport->writtenFrames(), QByteArrayLiteral(
+        "CHATHISTORY TARGETS timestamp=2024-03-09T15:59:59.620Z "
+        "timestamp=2024-03-09T16:00:02.000Z 1\r\n")));
+    transport->injectBytes(QByteArrayLiteral(
+        "@draft/chathistory-end :irc.host BATCH +t2 draft/chathistory-targets\r\n"
+        "@batch=t2 :irc.host CHATHISTORY TARGETS ada 2024-03-09T16:00:03.000Z\r\n"
+        ":irc.host BATCH -t2\r\n"));
+    QCOMPARE(countFramesContaining(transport->writtenFrames(),
+                                   QByteArrayLiteral("CHATHISTORY TARGETS ")),
+             2);
+    QVERIFY(framesContain(transport->writtenFrames(),
+                          QByteArrayLiteral("CHATHISTORY AFTER nora ")));
+    QVERIFY(framesContain(transport->writtenFrames(),
+                          QByteArrayLiteral("CHATHISTORY AFTER ada ")));
+}
+
+void ControllerTest::catchUpTargetsEndTagSendsNoFollowUp()
+{
+    const IrcCaseMapping mapping;
+    const QDateTime when = QDateTime::fromString(
+        QStringLiteral("2024-03-09T16:00:00.620Z"), Qt::ISODateWithMs);
+    QVERIFY(IrcPlaybackTimeStore().note(QStringLiteral("libera"),
+                                        QStringLiteral("#omarchy"), when, mapping));
+    IrcController controller;
+    controller.setCatchUpClock([] {
+        return QDateTime::fromString(QStringLiteral("2026-10-04T12:00:00.000Z"),
+                                     Qt::ISODateWithMs);
+    });
+    auto *transport = new FakeIrcTransport;
+    QVERIFY(controller.addSession(config(QStringLiteral("libera")), transport));
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    transport->completeConnect();
+    transport->injectBytes(QByteArrayLiteral(
+        ":server CAP omairc LS :batch chathistory\r\n"
+        ":server CAP omairc ACK :batch chathistory\r\n"
+        ":server 001 omairc :Welcome\r\n"
+        ":server 005 omairc CHATHISTORY=1 :are supported\r\n"
+        ":server 376 omairc :End of MOTD\r\n"
+        "@draft/chathistory-end :irc.host BATCH +t draft/chathistory-targets\r\n"
+        "@batch=t :irc.host CHATHISTORY TARGETS nora 2024-03-09T16:00:02.000Z\r\n"
+        ":irc.host BATCH -t\r\n"));
+    QCOMPARE(countFramesContaining(transport->writtenFrames(),
+                                   QByteArrayLiteral("CHATHISTORY TARGETS ")),
+             1);
+    QVERIFY(framesContain(transport->writtenFrames(),
+                          QByteArrayLiteral("CHATHISTORY AFTER nora ")));
+}
+
+void ControllerTest::discoveredEmptyAfterDropsQuery()
+{
+    const IrcCaseMapping mapping;
+    const QDateTime when = QDateTime::fromString(
+        QStringLiteral("2024-03-09T16:00:00.620Z"), Qt::ISODateWithMs);
+    QVERIFY(IrcPlaybackTimeStore().note(QStringLiteral("libera"),
+                                        QStringLiteral("#omarchy"), when, mapping));
+    QVERIFY(IrcOpenDirectStore().add(QStringLiteral("libera"),
+                                     QStringLiteral("lena"), mapping));
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    QVERIFY(controller.addSession(config(QStringLiteral("libera")), transport));
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    transport->completeConnect();
+    transport->injectBytes(QByteArrayLiteral(
+        ":server CAP omairc LS :batch chathistory\r\n"
+        ":server CAP omairc ACK :batch chathistory\r\n"
+        ":server 001 omairc :Welcome\r\n"
+        ":server 376 omairc :End of MOTD\r\n"
+        ":irc.host BATCH +t draft/chathistory-targets\r\n"
+        "@batch=t :irc.host CHATHISTORY TARGETS nobody 2024-03-09T16:00:01.000Z\r\n"
+        ":irc.host BATCH -t\r\n"
+        ":irc.host BATCH +n chathistory nobody\r\n"
+        ":irc.host BATCH -n\r\n"
+        ":irc.host BATCH +l chathistory lena\r\n"
+        ":irc.host BATCH -l\r\n"));
+    auto *conversations =
+        qobject_cast<QAbstractItemModel *>(controller.conversations());
+    QVERIFY(conversations);
+    QCOMPARE(rowForTarget(conversations, QStringLiteral("nobody")), -1);
+    QVERIFY(rowForTarget(conversations, QStringLiteral("lena")) >= 0);
+}
+
+void ControllerTest::discoveredFailAfterDropsQuery()
+{
+    const IrcCaseMapping mapping;
+    const QDateTime when = QDateTime::fromString(
+        QStringLiteral("2024-03-09T16:00:00.620Z"), Qt::ISODateWithMs);
+    QVERIFY(IrcPlaybackTimeStore().note(QStringLiteral("libera"),
+                                        QStringLiteral("#omarchy"), when, mapping));
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    QVERIFY(controller.addSession(config(QStringLiteral("libera")), transport));
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    transport->completeConnect();
+    transport->injectBytes(QByteArrayLiteral(
+        ":server CAP omairc LS :batch chathistory\r\n"
+        ":server CAP omairc ACK :batch chathistory\r\n"
+        ":server 001 omairc :Welcome\r\n"
+        ":server 376 omairc :End of MOTD\r\n"
+        ":irc.host BATCH +t draft/chathistory-targets\r\n"
+        "@batch=t :irc.host CHATHISTORY TARGETS nobody 2024-03-09T16:00:01.000Z\r\n"
+        ":irc.host BATCH -t\r\n"
+        ":server FAIL CHATHISTORY MESSAGE_ERROR AFTER nobody :no\r\n"));
+    auto *conversations =
+        qobject_cast<QAbstractItemModel *>(controller.conversations());
+    QVERIFY(conversations);
+    QCOMPARE(rowForTarget(conversations, QStringLiteral("nobody")), -1);
+}
+
+void ControllerTest::catchUpReconnectAsksStampedGhostNotDismissed()
+{
+    const IrcCaseMapping mapping;
+    const QDateTime when = QDateTime::fromString(
+        QStringLiteral("2024-03-09T16:00:00.620Z"), Qt::ISODateWithMs);
+    QVERIFY(when.isValid());
+    QVERIFY(IrcPlaybackTimeStore().note(QStringLiteral("libera"),
+                                        QStringLiteral("ghost"), when, mapping));
+    IrcController controller;
+    controller.setCatchUpClock([] {
+        return QDateTime::fromString(QStringLiteral("2026-10-04T12:00:00.000Z"),
+                                     Qt::ISODateWithMs);
+    });
+    auto *transport = new FakeIrcTransport;
+    IrcSession *session = controller.addSession(config(QStringLiteral("libera")), transport);
+    QVERIFY(session);
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    transport->completeConnect();
+    transport->injectBytes(QByteArrayLiteral(
+        ":server CAP omairc LS :batch chathistory\r\n"
+        ":server CAP omairc ACK :batch chathistory\r\n"
+        ":server 001 omairc :Welcome\r\n"
+        ":server 376 omairc :End of MOTD\r\n"
+        ":omairc!u@h JOIN :#omarchy\r\n"));
+    controller.selectConversation(QStringLiteral("libera"), QStringLiteral("#omarchy"));
+    controller.openDirectMessage(QStringLiteral("gone"));
+    controller.closeDirectMessage();
+    transport->injectBytes(QByteArrayLiteral(
+        ":irc.host BATCH +t draft/chathistory-targets\r\n"
+        "@batch=t :irc.host CHATHISTORY TARGETS ghost 2024-03-09T16:00:00.620Z\r\n"
+        "@batch=t :irc.host CHATHISTORY TARGETS gone 2024-03-09T16:00:00.620Z\r\n"
+        ":irc.host BATCH -t\r\n"));
+    QCOMPARE(countFramesContaining(
+                 transport->writtenFrames(),
+                 QByteArrayLiteral(
+                     "CHATHISTORY AFTER ghost timestamp=2024-03-09T16:00:00.620Z 100\r\n")),
+             1);
+    QCOMPARE(countFramesContaining(transport->writtenFrames(),
+                                   QByteArrayLiteral("CHATHISTORY AFTER gone ")),
+             0);
+    transport->injectBytes(QByteArrayLiteral(
+        ":irc.host BATCH +g chathistory ghost\r\n"
+        "@batch=g;time=2024-03-09T16:00:05.000Z;msgid=later :ghost!u@h PRIVMSG omairc :later\r\n"
+        ":irc.host BATCH -g\r\n"));
+    transport->remoteClose();
+    QCOMPARE(session->state(), IrcSession::State::Failed);
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    transport->completeConnect();
+    transport->injectBytes(QByteArrayLiteral(
+        ":server CAP omairc LS :batch chathistory\r\n"
+        ":server CAP omairc ACK :batch chathistory\r\n"
+        ":server 001 omairc :Welcome\r\n"
+        ":server 376 omairc :End of MOTD\r\n"));
+    transport->injectBytes(QByteArrayLiteral(
+        ":irc.host BATCH +t2 draft/chathistory-targets\r\n"
+        "@batch=t2 :irc.host CHATHISTORY TARGETS ghost 2024-03-09T16:00:05.000Z\r\n"
+        "@batch=t2 :irc.host CHATHISTORY TARGETS gone 2024-03-09T16:00:05.000Z\r\n"
+        ":irc.host BATCH -t2\r\n"));
+    QCOMPARE(countFramesContaining(
+                 transport->writtenFrames(),
+                 QByteArrayLiteral(
+                     "CHATHISTORY AFTER ghost timestamp=2024-03-09T16:00:05.000Z 100\r\n")),
+             1);
+    QCOMPARE(countFramesContaining(transport->writtenFrames(),
+                                   QByteArrayLiteral("CHATHISTORY AFTER gone ")),
+             0);
+}
+
+void ControllerTest::catchUpTargetsLargerThanLimitStillPages()
+{
+    const IrcCaseMapping mapping;
+    const QDateTime when = QDateTime::fromString(
+        QStringLiteral("2024-03-09T16:00:00.620Z"), Qt::ISODateWithMs);
+    QVERIFY(IrcPlaybackTimeStore().note(QStringLiteral("libera"),
+                                        QStringLiteral("#omarchy"), when, mapping));
+    IrcController controller;
+    controller.setCatchUpClock([] {
+        return QDateTime::fromString(QStringLiteral("2026-10-04T12:00:00.000Z"),
+                                     Qt::ISODateWithMs);
+    });
+    auto *transport = new FakeIrcTransport;
+    QVERIFY(controller.addSession(config(QStringLiteral("libera")), transport));
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    transport->completeConnect();
+    transport->injectBytes(QByteArrayLiteral(
+        ":server CAP omairc LS :batch chathistory\r\n"
+        ":server CAP omairc ACK :batch chathistory\r\n"
+        ":server 001 omairc :Welcome\r\n"
+        ":server 005 omairc CHATHISTORY=1 :are supported\r\n"
+        ":server 376 omairc :End of MOTD\r\n"));
+    transport->injectBytes(QByteArrayLiteral(
+        ":irc.host BATCH +t1 draft/chathistory-targets\r\n"
+        "@batch=t1 :irc.host CHATHISTORY TARGETS nora 2024-03-09T16:00:04.000Z\r\n"
+        "@batch=t1 :irc.host CHATHISTORY TARGETS ada 2024-03-09T16:00:02.000Z\r\n"
+        ":irc.host BATCH -t1\r\n"));
+    QVERIFY(framesContain(transport->writtenFrames(), QByteArrayLiteral(
+        "CHATHISTORY TARGETS timestamp=2024-03-09T15:59:59.620Z "
+        "timestamp=2024-03-09T16:00:02.000Z 1\r\n")));
+    QVERIFY(framesContain(transport->writtenFrames(),
+                          QByteArrayLiteral("CHATHISTORY AFTER nora ")));
+    QVERIFY(framesContain(transport->writtenFrames(),
+                          QByteArrayLiteral("CHATHISTORY AFTER ada ")));
+
+    IrcController ended;
+    ended.setCatchUpClock([] {
+        return QDateTime::fromString(QStringLiteral("2026-10-04T12:00:00.000Z"),
+                                     Qt::ISODateWithMs);
+    });
+    auto *endedTransport = new FakeIrcTransport;
+    QVERIFY(ended.addSession(config(QStringLiteral("libera")), endedTransport));
+    QVERIFY(ended.start(QStringLiteral("libera")));
+    endedTransport->completeConnect();
+    endedTransport->injectBytes(QByteArrayLiteral(
+        ":server CAP omairc LS :batch chathistory\r\n"
+        ":server CAP omairc ACK :batch chathistory\r\n"
+        ":server 001 omairc :Welcome\r\n"
+        ":server 005 omairc CHATHISTORY=1 :are supported\r\n"
+        ":server 376 omairc :End of MOTD\r\n"
+        "@draft/chathistory-end :irc.host BATCH +t draft/chathistory-targets\r\n"
+        "@batch=t :irc.host CHATHISTORY TARGETS nora 2024-03-09T16:00:04.000Z\r\n"
+        "@batch=t :irc.host CHATHISTORY TARGETS ada 2024-03-09T16:00:02.000Z\r\n"
+        ":irc.host BATCH -t\r\n"));
+    QCOMPARE(countFramesContaining(endedTransport->writtenFrames(),
+                                   QByteArrayLiteral("CHATHISTORY TARGETS ")),
+             1);
+}
+
+void ControllerTest::zncPlaybackWithoutChatHistoryDoesNotCatchUp()
+{
+    const IrcCaseMapping mapping;
+    const QDateTime when = QDateTime::fromString(
+        QStringLiteral("2024-03-09T16:00:00.620Z"), Qt::ISODateWithMs);
+    QVERIFY(when.isValid());
+    QVERIFY(IrcPlaybackTimeStore().note(QStringLiteral("libera"),
+                                        QStringLiteral("#omarchy"), when, mapping));
+
+    IrcController controller;
+    auto *transport = new FakeIrcTransport;
+    QVERIFY(controller.addSession(config(QStringLiteral("libera")), transport));
+    QVERIFY(controller.start(QStringLiteral("libera")));
+    transport->completeConnect();
+    transport->injectBytes(QByteArrayLiteral(
+        ":server CAP omairc LS :batch znc.in/playback\r\n"
+        ":server CAP omairc ACK :batch znc.in/playback\r\n"
+        ":server 001 omairc :Welcome\r\n"
+        ":server 376 omairc :End of MOTD\r\n"
+        ":omairc!u@h JOIN :#omarchy\r\n"));
+    const QByteArrayList frames = transport->writtenFrames();
+    QVERIFY(framesContain(frames, QByteArrayLiteral("*playback PLAY")));
+    QVERIFY(!framesContain(frames, QByteArrayLiteral("CHATHISTORY ")));
 }
 
 void ControllerTest::zncPlaybackLateCapPlaysOnce()

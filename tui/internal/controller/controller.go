@@ -572,9 +572,35 @@ func (c *Controller) MessageReceived(networkID string, message irc.Message) {
 }
 
 // HistoryBatchReceived replays one history batch into the reducer. A bouncer
-// playback batch is trimmed against the registration stamp first. It mirrors
-// IrcController::handleHistoryBatch (src/irc/irccontroller.cpp:2273-2285).
+// playback batch is trimmed against the registration stamp first. A TARGETS
+// answer discovers directs instead of splicing lines. It mirrors
+// IrcController::handleHistoryBatch (src/irc/irccontroller.cpp:2373-2405).
 func (c *Controller) HistoryBatchReceived(networkID string, batch irc.HistoryBatch) {
+	if batch.Kind == irc.HistoryTargets {
+		s := c.manager.Find(networkID)
+		features := c.reducer.ServerFeatures(networkID)
+		mapping := features.CaseMapping()
+		created := c.playback.NoteDiscoveredTargets(
+			s,
+			batch.Targets,
+			c.currentNicks[networkID],
+			c.openDirects.Listed(networkID, mapping),
+			c.openDirects.DismissedListed(networkID, mapping),
+			func(target string) bool {
+				return c.persistableDirectTarget(networkID, target)
+			},
+		)
+		if s != nil {
+			c.playback.NoteTargetsPage(s, batch.Targets, batch.HistoryEnded, s.HistoryLimit())
+		}
+		if created > 0 {
+			c.reloadModels()
+		}
+		return
+	}
+	if batch.AfterRequest && len(batch.Lines) == 0 {
+		c.dropEmptyDiscoveredDirect(networkID, batch.Target)
+	}
 	features := c.reducer.ServerFeatures(networkID)
 	event, ok := irc.TranslateHistory(networkID, c.currentNicks[networkID], features, batch, c.now())
 	if !ok {
@@ -596,6 +622,44 @@ func (c *Controller) ChatHistoryRequestFinished(networkID, target string, failed
 		return
 	}
 	c.reducer.ClearHistoryPageCapTail(c.reducer.ConversationKey(networkID, target))
+}
+
+// ChatHistoryFailed retries one failed TARGETS query and drops a discovered
+// direct whose AFTER came back empty or failed. It mirrors
+// IrcController::handleChatHistoryFailed.
+func (c *Controller) ChatHistoryFailed(networkID, subcommand, target string) {
+	if strings.EqualFold(subcommand, "TARGETS") {
+		if !c.playback.RetryTargets(networkID) {
+			return
+		}
+		if s := c.manager.Find(networkID); s != nil {
+			c.requestChatHistoryCatchUp(s)
+		}
+		return
+	}
+	if strings.EqualFold(subcommand, "AFTER") {
+		c.dropEmptyDiscoveredDirect(networkID, target)
+	}
+}
+
+func (c *Controller) dropEmptyDiscoveredDirect(networkID, target string) {
+	if !c.playback.WasDiscovered(networkID, target) {
+		return
+	}
+	features := c.reducer.ServerFeatures(networkID)
+	mapping := features.CaseMapping()
+	for _, nick := range c.openDirects.Listed(networkID, mapping) {
+		if mapping.Equals(nick, target) {
+			return
+		}
+	}
+	key := c.reducer.ConversationKey(networkID, target)
+	conversation := c.reducer.Find(key)
+	if conversation == nil || len(conversation.Messages) > 0 {
+		return
+	}
+	c.reducer.DropDirectMessage(key)
+	c.reloadModels()
 }
 
 // StatusEntry records one classified Status line and routes its correlated
@@ -695,6 +759,7 @@ func (c *Controller) Apply(event irc.Event) {
 		features := c.reducer.ServerFeatures(nick.NetworkID)
 		mapping := features.CaseMapping()
 		c.openDirects.Rekey(nick.NetworkID, nick.OldNick, nick.NewNick, mapping)
+		c.openDirects.RekeyDismissed(nick.NetworkID, nick.OldNick, nick.NewNick, mapping)
 		c.playbackTimes.Rekey(nick.NetworkID, nick.OldNick, nick.NewNick, mapping)
 		c.playback.Rekey(nick.NetworkID, nick.OldNick, nick.NewNick)
 	} else if message, ok := messageEventOf(event); ok {
@@ -1555,6 +1620,22 @@ func (c *Controller) AddSession(config session.SessionConfig, transport session.
 		return nil, err
 	}
 	c.currentNicks[config.NetworkID] = config.Nick
+	networkID := config.NetworkID
+	s.SetChatHistoryResume(func(target string) (time.Time, bool) {
+		if when, ok := c.playback.ResumeTime(networkID, target); ok {
+			return when, true
+		}
+		// Registered is delivered after the read that carried 001 is released.
+		// A self-JOIN in that same read runs first. The store still holds the
+		// previous connection's stamps, which is the snapshot that delivery
+		// is about to take. Once the snapshot exists, a missing target stays
+		// missing so a live line cannot move this connection's AFTER bound.
+		if c.playback.snapshotTaken(networkID) {
+			return time.Time{}, false
+		}
+		features := c.reducer.ServerFeatures(networkID)
+		return c.playbackTimes.Noted(networkID, target, features.CaseMapping())
+	})
 	s.SetHandler(c)
 	c.hydrateMutes(config.NetworkID)
 	c.syncHighlightWords(config.NetworkID)
@@ -1906,7 +1987,9 @@ func (c *Controller) rememberOpenDirect(networkID, target string) {
 		stored = conversation.Target
 	}
 	features := c.reducer.ServerFeatures(networkID)
-	c.openDirects.Add(networkID, stored, features.CaseMapping())
+	mapping := features.CaseMapping()
+	c.openDirects.Undismiss(networkID, stored, mapping)
+	c.openDirects.Add(networkID, stored, mapping)
 }
 
 // forgetOpenDirect drops a remembered direct message. It mirrors
@@ -1916,7 +1999,9 @@ func (c *Controller) forgetOpenDirect(networkID, target string) {
 		return
 	}
 	features := c.reducer.ServerFeatures(networkID)
-	c.openDirects.Remove(networkID, target, features.CaseMapping())
+	mapping := features.CaseMapping()
+	c.openDirects.Remove(networkID, target, mapping)
+	c.openDirects.Dismiss(networkID, target, mapping)
 }
 
 // noteSelfAuthoredDirect remembers target when the event author is our own
@@ -1936,8 +2021,9 @@ func (c *Controller) noteSelfAuthoredDirect(networkID, author, target string) {
 }
 
 // noteOpenDirectsMotd restores the network's open directs once, at MOTD end,
-// then releases held query playback and asks the bouncer for buffers. It
-// mirrors IrcController::noteOpenDirectsMotd (src/irc/irccontroller.cpp:1595-1612).
+// then releases held query playback, asks the bouncer for buffers, and catches
+// up with CHATHISTORY from the last place reached. It mirrors
+// IrcController::noteOpenDirectsMotd (src/irc/irccontroller.cpp:1676-1696).
 func (c *Controller) noteOpenDirectsMotd(networkID string) {
 	if networkID == "" || c.openDirectsMotdSeen[networkID] {
 		return
@@ -1953,6 +2039,7 @@ func (c *Controller) noteOpenDirectsMotd(networkID string) {
 	}
 	if s := c.manager.Find(networkID); s != nil {
 		c.requestZncPlayback(s)
+		c.requestChatHistoryCatchUp(s)
 	}
 }
 
@@ -2006,6 +2093,28 @@ func (c *Controller) requestZncPlayback(s *session.Session) {
 		func(target string) bool {
 			return c.persistableDirectTarget(networkID, target)
 		})
+}
+
+// requestChatHistoryCatchUp fills lines that arrived while away when the
+// server offers chathistory. It mirrors IrcController::requestChatHistoryCatchUp.
+func (c *Controller) requestChatHistoryCatchUp(s *session.Session) {
+	if s == nil {
+		return
+	}
+	networkID := s.NetworkID()
+	caps := c.capabilities[networkID]
+	chatHistory := caps.Contains(irc.CapabilityChatHistory) && caps.Contains(irc.CapabilityBatch)
+	features := c.reducer.ServerFeatures(networkID)
+	c.playback.RequestCatchUp(
+		s,
+		chatHistory,
+		c.openDirectsMotdSeen[networkID],
+		c.openDirects.Listed(networkID, features.CaseMapping()),
+		func(target string) bool {
+			return c.persistableDirectTarget(networkID, target)
+		},
+		c.now(),
+	)
 }
 
 // requestChannelPlayback retries one joined channel's PLAY. It mirrors

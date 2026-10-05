@@ -1,6 +1,7 @@
 #pragma once
 
 #include "ircevent.h"
+#include "irchistorybatch.h"
 #include "ircmessage.h"
 #include "ircplaybacktime.h"
 
@@ -63,6 +64,41 @@ public:
                                 const QString& channel,
                                 bool zncPlaybackCap,
                                 bool motdSeen);
+    // Registration snapshot for one target. A self-JOIN uses it as the
+    // CHATHISTORY AFTER bound. Empty when this connection has no stamp.
+    std::optional<QDateTime> resumeTime(const QString& networkId,
+                                        const QString& target) const;
+    // CHATHISTORY AFTER for directs left open, then CHATHISTORY TARGETS from
+    // the last place reached. A server without chathistory is a no-op so
+    // ZNC PLAY stays the playback it already has.
+    void requestCatchUp(
+        IrcSession *session,
+        bool chatHistory,
+        bool motdSeen,
+        const QStringList& restoredDirects,
+        const std::function<bool(const QString& target)>& persistableDirect,
+        const QDateTime& now);
+    // Opens a direct the server named. A user-dismissed query, a channel,
+    // and the bouncer stay closed. A stamp or a transcript is the AFTER
+    // bound, not a close. Returns how many queries this call inserted.
+    int noteDiscoveredTargets(
+        IrcSession *session,
+        const std::vector<IrcHistoryTarget>& targets,
+        const QString& currentNick,
+        const QStringList& restoredDirects,
+        const QStringList& dismissedDirects,
+        const std::function<bool(const QString& target)>& persistableDirect);
+    // A full TARGETS page without draft/chathistory-end asks for the next
+    // page. At most two extra pages are sent. The lower bound stays the
+    // original; the upper bound is the oldest latest in this page.
+    void noteTargetsPage(IrcSession *session,
+                         const std::vector<IrcHistoryTarget>& targets,
+                         bool historyEnded,
+                         int limit);
+    // One FAIL TARGETS clears the sent flag and allows requestCatchUp again.
+    // A second FAIL returns false.
+    bool retryTargets(const QString& networkId);
+    bool wasDiscovered(const QString& networkId, const QString& target) const;
 
 private:
     bool sendZncPlayback(IrcSession *session,
@@ -75,6 +111,10 @@ private:
     bool mayNotePlaybackTime(const QString& networkId,
                              const QString& target,
                              bool zncPlaybackCap) const;
+    std::optional<QDateTime> newestSnapshot(const QString& networkId) const;
+    bool catchUpAsked(const QString& networkId,
+                      const QString& normalizedTarget) const;
+    void markCatchUp(const QString& networkId, const QString& normalizedTarget);
 
     IrcPlaybackTimeStore& m_times;
     IrcEventReducer& m_reducer;
@@ -100,4 +140,18 @@ private:
     QHash<QString, ZncPlaybackSent> m_zncPlaybackSent;
     QHash<QString, QStringList> m_zncAutojoin;
     QHash<QString, QStringList> m_zncJoinedChannels;
+    // CHATHISTORY catch-up already sent this connection. targets means the
+    // TARGETS query went out (or there was no last place to ask from).
+    // asked is each direct AFTER or LATEST, so a later TARGETS reply does
+    // not ask twice. discovered is each query this connection inserted from
+    // TARGETS. targetsRetried stops a second FAIL TARGETS from looping.
+    struct CatchUpSent {
+        bool targets = false;
+        bool targetsRetried = false;
+        QSet<QString> asked;
+        QSet<QString> discovered;
+        QDateTime targetsLower;
+        int targetsExtraPages = 0;
+    };
+    QHash<QString, CatchUpSent> m_catchUpSent;
 };

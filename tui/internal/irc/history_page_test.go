@@ -246,6 +246,37 @@ func TestHistoryPageCapTailKeepsPrependedHeadAtMaxMessages(t *testing.T) {
 	requireString(t, "messages[0]", conversation.Messages[0].Body, "page-head")
 }
 
+func TestChatHistoryAfterKeepsLinesFromBeforeRejoin(t *testing.T) {
+	reducer := NewEventReducer()
+	welcome(reducer, networkA)
+	room := reducer.ConversationKey(networkA, "#omarchy")
+	reducer.Apply(JoinEvent{NetworkID: networkA, Channel: "#omarchy", Nick: "omairc"}, reducerTimestamp)
+	reducer.Apply(MessageEvent{
+		Conversation: room,
+		Target:       "#omarchy",
+		Author:       "alice",
+		Body:         "seen",
+	}, reducerTimestamp)
+	welcome(reducer, networkA)
+	reducer.Apply(JoinEvent{NetworkID: networkA, Channel: "#omarchy", Nick: "omairc"}, reducerTimestamp)
+	reducer.Apply(HistoryEvent{
+		Conversation: room,
+		Target:       "#omarchy",
+		Kind:         HistoryChat,
+		Lines:        []ReplayLine{replayLine("alice", "gap", "gap-id")},
+	}, reducerTimestamp)
+
+	conversation := stateOf(t, reducer, room)
+	requireInt(t, "messages", len(conversation.Messages), 4)
+	requireString(t, "messages[0]", conversation.Messages[0].Body, "omairc joined")
+	requireString(t, "messages[1]", conversation.Messages[1].Body, "seen")
+	requireString(t, "messages[2]", conversation.Messages[2].Body, "gap")
+	requireString(t, "messages[3]", conversation.Messages[3].Body, "omairc joined")
+	if conversation.Messages[2].Origin != OriginReplay {
+		t.Fatalf("gap origin = %v, want replay", conversation.Messages[2].Origin)
+	}
+}
+
 func TestWelcomeClearsHistoryPageCapTail(t *testing.T) {
 	reducer := NewEventReducer()
 	welcome(reducer, networkA)

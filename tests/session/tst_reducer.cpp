@@ -177,6 +177,7 @@ private slots:
     void replayDistinctMsgidsWithIdenticalContentRetained();
     void nickMergeDropsDuplicateMsgids();
     void partThenJoinSplicesAboveThisJoin();
+    void chatHistoryAfterKeepsLinesFromBeforeRejoin();
     void historicJoinInBatchDoesNotChangePeopleCount();
     void bouncerQueryPlaybackKeepsPreviousNick();
     void bouncerQueryPreviousNickEchoIsOwnLine();
@@ -2493,6 +2494,37 @@ void ReducerTest::partThenJoinSplicesAboveThisJoin()
     QCOMPARE(conversation->messages[0].body, QStringLiteral("omairc joined"));
     QCOMPARE(conversation->messages[1].body, QStringLiteral("backlog"));
     QCOMPARE(conversation->messages[1].origin, IrcOrigin::Replay);
+}
+
+void ReducerTest::chatHistoryAfterKeepsLinesFromBeforeRejoin()
+{
+    IrcEventReducer reducer;
+    welcome(reducer, networkA);
+    const IrcConversationKey room =
+        reducer.conversationKey(networkA, QStringLiteral("#omarchy"));
+    reducer.apply(IrcJoinEvent{
+        networkA, QStringLiteral("#omarchy"), QStringLiteral("omairc")});
+    reducer.apply(IrcMessageEvent{
+        room, QStringLiteral("alice"), QStringLiteral("seen"), timestamp,
+        QStringLiteral("#omarchy")});
+    welcome(reducer, networkA);
+    reducer.apply(IrcJoinEvent{
+        networkA, QStringLiteral("#omarchy"), QStringLiteral("omairc")});
+    reducer.apply(IrcHistoryEvent{
+        room,
+        QStringLiteral("#omarchy"),
+        {replayLine(QStringLiteral("alice"), QStringLiteral("gap"),
+                    QStringLiteral("gap-id"))},
+    });
+
+    const IrcConversationState *conversation = reducer.find(room);
+    QVERIFY(conversation);
+    QCOMPARE(conversation->messages.size(), std::size_t(4));
+    QCOMPARE(conversation->messages[0].body, QStringLiteral("omairc joined"));
+    QCOMPARE(conversation->messages[1].body, QStringLiteral("seen"));
+    QCOMPARE(conversation->messages[2].body, QStringLiteral("gap"));
+    QCOMPARE(conversation->messages[2].origin, IrcOrigin::Replay);
+    QCOMPARE(conversation->messages[3].body, QStringLiteral("omairc joined"));
 }
 
 void ReducerTest::historyAfterPartDoesNotSplice()

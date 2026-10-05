@@ -8,6 +8,7 @@
 namespace
 {
 const auto openDirectsGroup = QStringLiteral("openDirects");
+const auto dismissedDirectsGroup = QStringLiteral("dismissedDirects");
 const auto targetsKey = QStringLiteral("targets");
 
 std::string utf8(const QString& value)
@@ -43,35 +44,42 @@ bool listContains(const QStringList& targets,
 void IrcOpenDirectStore::setEphemeral(bool ephemeral)
 {
     m_ephemeral = ephemeral;
-    if (ephemeral)
+    if (ephemeral) {
         m_cache.clear();
+        m_dismissed.clear();
+    }
 }
 
-QStringList IrcOpenDirectStore::load(const QString& networkId) const
+QStringList IrcOpenDirectStore::load(const QString& group,
+                                     const QString& networkId,
+                                     const QHash<QString, QStringList>& cache) const
 {
     if (networkId.isEmpty())
         return {};
     if (m_ephemeral)
-        return m_cache.value(networkId);
+        return cache.value(networkId);
     QSettings settings;
-    settings.beginGroup(openDirectsGroup);
+    settings.beginGroup(group);
     settings.beginGroup(networkId);
     return settings.value(targetsKey).toStringList();
 }
 
-void IrcOpenDirectStore::save(const QString& networkId, const QStringList& targets)
+void IrcOpenDirectStore::save(const QString& group,
+                              const QString& networkId,
+                              const QStringList& targets,
+                              QHash<QString, QStringList>& cache)
 {
     if (networkId.isEmpty())
         return;
     if (m_ephemeral) {
         if (targets.isEmpty())
-            m_cache.remove(networkId);
+            cache.remove(networkId);
         else
-            m_cache.insert(networkId, targets);
+            cache.insert(networkId, targets);
         return;
     }
     QSettings settings;
-    settings.beginGroup(openDirectsGroup);
+    settings.beginGroup(group);
     if (targets.isEmpty()) {
         settings.remove(networkId);
     } else {
@@ -83,19 +91,21 @@ void IrcOpenDirectStore::save(const QString& networkId, const QStringList& targe
     settings.sync();
 }
 
-const QStringList& IrcOpenDirectStore::cached(const QString& networkId) const
+const QStringList& IrcOpenDirectStore::cached(const QString& group,
+                                              QHash<QString, QStringList>& cache,
+                                              const QString& networkId) const
 {
-    const auto found = m_cache.constFind(networkId);
-    if (found != m_cache.cend())
+    const auto found = cache.constFind(networkId);
+    if (found != cache.cend())
         return found.value();
-    return m_cache.insert(networkId, load(networkId)).value();
+    return cache.insert(networkId, load(group, networkId, cache)).value();
 }
 
 QStringList IrcOpenDirectStore::targets(const QString& networkId) const
 {
     if (networkId.isEmpty())
         return {};
-    return cached(networkId);
+    return cached(openDirectsGroup, m_cache, networkId);
 }
 
 QStringList IrcOpenDirectStore::listed(const QString& networkId,
@@ -109,28 +119,32 @@ QStringList IrcOpenDirectStore::listed(const QString& networkId,
     return unique;
 }
 
-bool IrcOpenDirectStore::add(const QString& networkId,
-                             const QString& target,
-                             const IrcCaseMapping& mapping)
+bool IrcOpenDirectStore::addTo(const QString& group,
+                               QHash<QString, QStringList>& cache,
+                               const QString& networkId,
+                               const QString& target,
+                               const IrcCaseMapping& mapping)
 {
     if (networkId.isEmpty() || target.isEmpty())
         return false;
-    QStringList current = cached(networkId);
+    QStringList current = cached(group, cache, networkId);
     if (listContains(current, target, mapping))
         return false;
     current.append(target);
-    m_cache.insert(networkId, current);
-    save(networkId, current);
+    cache.insert(networkId, current);
+    save(group, networkId, current, cache);
     return true;
 }
 
-bool IrcOpenDirectStore::remove(const QString& networkId,
-                                const QString& target,
-                                const IrcCaseMapping& mapping)
+bool IrcOpenDirectStore::removeFrom(const QString& group,
+                                    QHash<QString, QStringList>& cache,
+                                    const QString& networkId,
+                                    const QString& target,
+                                    const IrcCaseMapping& mapping)
 {
     if (networkId.isEmpty() || target.isEmpty())
         return false;
-    QStringList current = cached(networkId);
+    QStringList current = cached(group, cache, networkId);
     bool changed = false;
     for (int i = current.size() - 1; i >= 0; --i) {
         if (targetEquals(mapping, current.at(i), target)) {
@@ -140,19 +154,21 @@ bool IrcOpenDirectStore::remove(const QString& networkId,
     }
     if (!changed)
         return false;
-    m_cache.insert(networkId, current);
-    save(networkId, current);
+    cache.insert(networkId, current);
+    save(group, networkId, current, cache);
     return true;
 }
 
-bool IrcOpenDirectStore::rekey(const QString& networkId,
-                               const QString& oldTarget,
-                               const QString& newTarget,
-                               const IrcCaseMapping& mapping)
+bool IrcOpenDirectStore::rekeyIn(const QString& group,
+                                 QHash<QString, QStringList>& cache,
+                                 const QString& networkId,
+                                 const QString& oldTarget,
+                                 const QString& newTarget,
+                                 const IrcCaseMapping& mapping)
 {
     if (networkId.isEmpty() || oldTarget.isEmpty() || newTarget.isEmpty())
         return false;
-    QStringList current = cached(networkId);
+    QStringList current = cached(group, cache, networkId);
     const int oldIndex = indexOfTarget(current, oldTarget, mapping);
     if (oldIndex < 0)
         return false;
@@ -165,9 +181,77 @@ bool IrcOpenDirectStore::rekey(const QString& networkId,
         if (!listContains(current, newTarget, mapping))
             current.append(newTarget);
     }
-    m_cache.insert(networkId, current);
-    save(networkId, current);
+    cache.insert(networkId, current);
+    save(group, networkId, current, cache);
     return true;
+}
+
+bool IrcOpenDirectStore::add(const QString& networkId,
+                             const QString& target,
+                             const IrcCaseMapping& mapping)
+{
+    return addTo(openDirectsGroup, m_cache, networkId, target, mapping);
+}
+
+bool IrcOpenDirectStore::remove(const QString& networkId,
+                                const QString& target,
+                                const IrcCaseMapping& mapping)
+{
+    return removeFrom(openDirectsGroup, m_cache, networkId, target, mapping);
+}
+
+bool IrcOpenDirectStore::rekey(const QString& networkId,
+                               const QString& oldTarget,
+                               const QString& newTarget,
+                               const IrcCaseMapping& mapping)
+{
+    return rekeyIn(openDirectsGroup, m_cache, networkId, oldTarget, newTarget, mapping);
+}
+
+bool IrcOpenDirectStore::isDismissed(const QString& networkId,
+                                     const QString& target,
+                                     const IrcCaseMapping& mapping) const
+{
+    if (networkId.isEmpty() || target.isEmpty())
+        return false;
+    return listContains(cached(dismissedDirectsGroup, m_dismissed, networkId),
+                        target, mapping);
+}
+
+QStringList IrcOpenDirectStore::dismissedListed(const QString& networkId,
+                                                const IrcCaseMapping& mapping) const
+{
+    QStringList unique;
+    if (networkId.isEmpty())
+        return unique;
+    for (const QString& target : cached(dismissedDirectsGroup, m_dismissed, networkId)) {
+        if (!listContains(unique, target, mapping))
+            unique.append(target);
+    }
+    return unique;
+}
+
+bool IrcOpenDirectStore::dismiss(const QString& networkId,
+                                 const QString& target,
+                                 const IrcCaseMapping& mapping)
+{
+    return addTo(dismissedDirectsGroup, m_dismissed, networkId, target, mapping);
+}
+
+bool IrcOpenDirectStore::undismiss(const QString& networkId,
+                                   const QString& target,
+                                   const IrcCaseMapping& mapping)
+{
+    return removeFrom(dismissedDirectsGroup, m_dismissed, networkId, target, mapping);
+}
+
+bool IrcOpenDirectStore::rekeyDismissed(const QString& networkId,
+                                        const QString& oldTarget,
+                                        const QString& newTarget,
+                                        const IrcCaseMapping& mapping)
+{
+    return rekeyIn(dismissedDirectsGroup, m_dismissed, networkId,
+                   oldTarget, newTarget, mapping);
 }
 
 void IrcOpenDirectStore::forget(const QString& networkId)
@@ -175,5 +259,7 @@ void IrcOpenDirectStore::forget(const QString& networkId)
     if (networkId.isEmpty())
         return;
     m_cache.remove(networkId);
-    save(networkId, {});
+    m_dismissed.remove(networkId);
+    save(openDirectsGroup, networkId, {}, m_cache);
+    save(dismissedDirectsGroup, networkId, {}, m_dismissed);
 }

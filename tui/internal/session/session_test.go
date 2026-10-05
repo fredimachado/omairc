@@ -117,6 +117,9 @@ func (h *sessionTestHandler) HistoryBatchReceived(networkID string, batch irc.Hi
 func (h *sessionTestHandler) ChatHistoryRequestFinished(networkID string, target string, failed bool, before bool) {
 }
 
+func (h *sessionTestHandler) ChatHistoryFailed(networkID, subcommand, target string) {
+}
+
 func (h *sessionTestHandler) StatusEntry(entry irc.StatusEntry) {
 	h.status = append(h.status, entry)
 }
