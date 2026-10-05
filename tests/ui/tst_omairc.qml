@@ -5321,14 +5321,16 @@ TestCase {
         tryCompare(item("jumpFilter"), "text", "#omarchy");
         var model = item("jumpModel");
         compare(model.count, 2);
+        // The OFTC topic also contains "#omarchy", so that row ranks above
+        // the name-only omarchy channel. Both rows still carry the network.
         compare(model.get(0).name, "#omarchy");
-        compare(model.get(0).networkId, seed.omarchyNetworkId);
+        compare(model.get(0).networkId, seed.oftcNetworkId);
         compare(model.get(0).label,
-                "#omarchy · " + networkDisplayName(seed.omarchyNetworkId));
-        compare(model.get(1).name, "#omarchy");
-        compare(model.get(1).networkId, seed.oftcNetworkId);
-        compare(model.get(1).label,
                 "#omarchy · " + networkDisplayName(seed.oftcNetworkId));
+        compare(model.get(1).name, "#omarchy");
+        compare(model.get(1).networkId, seed.omarchyNetworkId);
+        compare(model.get(1).label,
+                "#omarchy · " + networkDisplayName(seed.omarchyNetworkId));
         compare(appWindow.jumpSelectedIndex, 0);
 
         keyClick(Qt.Key_Down);
@@ -5337,10 +5339,10 @@ TestCase {
         keyClick(Qt.Key_Return);
         tryCompare(sheet, "opened", false);
         tryCompare(appWindow, "currentConversationId",
-                   seed.oftcNetworkId + "\n#omarchy");
+                   seed.omarchyNetworkId + "\n#omarchy");
         compare(appWindow.currentConversation, "#omarchy");
         compare(appWindow.title,
-                "#omarchy · " + networkDisplayName(seed.oftcNetworkId) + " - Omairc");
+                "#omarchy · " + networkDisplayName(seed.omarchyNetworkId) + " - Omairc");
         tryCompare(item("messageComposer"), "activeFocus", true);
     }
 

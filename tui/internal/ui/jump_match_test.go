@@ -19,6 +19,17 @@ func TestJumpMatchesTopicAboveNameAndKeepsNetwork(t *testing.T) {
 		t.Fatalf("duplicate channel label = %q, want the network name on the row", entries[0].label)
 	}
 
+	m.jump.input.SetValue("#omarchy")
+	entries = m.jumpEntries()
+	// The OFTC topic also contains "#omarchy", so that row ranks above the
+	// name-only omarchy channel. Both rows still carry the network.
+	if len(entries) != 2 ||
+		entries[0].target != "#omarchy" || entries[0].networkID != "oftc" ||
+		entries[1].target != "#omarchy" || entries[1].networkID != "omarchy" ||
+		entries[0].label == "#omarchy" || entries[1].label == "#omarchy" {
+		t.Fatalf("#omarchy entries = %+v, want oftc then omarchy, each with its network", entries)
+	}
+
 	m.jump.input.SetValue("build")
 	entries = m.jumpEntries()
 	// "build" is inside #omarchy's "builders" topic, so that row ties with
