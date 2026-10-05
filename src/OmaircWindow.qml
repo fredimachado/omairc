@@ -2650,11 +2650,14 @@ ApplicationWindow {
         onActivated: jumpToNextUnread()
     }
 
+    // Stay enabled while Connect is open. A disabled shortcut lets the Name
+    // field take the letter, and Escape hides the sheet without discarding it.
     Shortcut {
         sequence: "Alt+Shift+A"
         context: Qt.ApplicationShortcut
-        enabled: !win.connectionOverlayVisible && !win.shortcutOverlayOpen
         onActivated: {
+            if (win.connectionOverlayVisible || win.shortcutOverlayOpen)
+                return;
             if (win.irc && typeof win.irc.markAllRead === "function")
                 win.irc.markAllRead();
             titleMark.clear();

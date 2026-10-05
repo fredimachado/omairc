@@ -1706,11 +1706,23 @@ TestCase {
         keyClick(Qt.Key_Comma, Qt.ControlModifier);
         tryCompare(appWindow, "connectionOverlayVisible", true);
         tryCompare(item("connectionSheet"), "visible", true);
+        var nameField = item("connectionName");
+        tryCompare(nameField, "activeFocus", true);
+        var nameBefore = nameField.text;
+        var labelBefore = appWindow.connection.displayName;
+
         keyClick(Qt.Key_A, Qt.AltModifier | Qt.ShiftModifier);
 
         compare(appWindow.irc.unreadCountFor(seed.omarchyNetworkId), before);
+        compare(nameField.text, nameBefore);
+        compare(appWindow.connection.name, nameBefore);
+        compare(appWindow.connection.displayName, labelBefore);
         compare(appWindow.connectionOverlayVisible, true);
         verify(item("connectionSheet").visible);
+
+        keyClick(Qt.Key_Escape);
+        tryCompare(appWindow, "connectionOverlayVisible", false);
+        compare(appWindow.connection.displayName, labelBefore);
     }
 
     function test_tabCompletesChannelNick() {
