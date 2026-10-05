@@ -2890,15 +2890,42 @@ func registrationHandshake(state SessionState) bool {
 	}
 }
 
-// serverSentenceOr returns the server's trailing sentence. A sentence
-// AllowsTranscript rejects is secret-shaped, so the fallback stays and the
-// sentence is dropped.
+// registrationSentence reports the trailing reason. 432/433/436/437 carry
+// <client> <nick> :<reason>. 451/462/465 carry <client> :<reason>. ERROR's
+// sentence is whatever parameter it has. A nick with no trailing sentence
+// is not the reason.
+func registrationSentence(message irc.Message) (string, bool) {
+	count := len(message.Params)
+	minimum := 1
+	switch message.Command {
+	case "432", "433", "436", "437":
+		minimum = 3
+	case "451", "462", "465":
+		minimum = 2
+	}
+	if count < minimum {
+		return "", false
+	}
+	reason := strings.TrimSpace(parameter(message, count-1))
+	if reason == "" {
+		return "", false
+	}
+	return reason, true
+}
+
+// serverSentenceOr returns the server's trailing sentence. Either existing
+// check drops it: AllowsTranscript rejects a service body such as IDENTIFY,
+// and RedactPreviewLine catches a near-miss, a later command, or a leading
+// secret verb. The fallback stays. No third redactor.
 func serverSentenceOr(message irc.Message, channelTypes, fallback string) string {
-	if len(message.Params) == 0 {
+	reason, ok := registrationSentence(message)
+	if !ok {
 		return fallback
 	}
-	reason := strings.TrimSpace(parameter(message, len(message.Params)-1))
-	if reason == "" || !irc.AllowsTranscript(reason, channelTypes) {
+	if !irc.AllowsTranscript(reason, channelTypes) {
+		return fallback
+	}
+	if _, replaced := irc.RedactPreviewLine(reason, channelTypes); replaced {
 		return fallback
 	}
 	return reason

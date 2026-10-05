@@ -184,7 +184,54 @@ std::optional<QString> formatLusersNumeric(int code, const QStringList& params)
     }
 }
 
-QString incomingText(const IrcMessage& message, const QString& command, bool redacted)
+bool nickRefusalStatusCommand(const QString& command)
+{
+    return command == QLatin1String("ERROR")
+        || command == QLatin1String("432") || command == QLatin1String("433")
+        || command == QLatin1String("436") || command == QLatin1String("437")
+        || command == QLatin1String("451") || command == QLatin1String("462")
+        || command == QLatin1String("465");
+}
+
+// Same two checks as the session's refusal sentence. A preview replacement
+// is what Status stores. A transcript rejection with no preview is omitted.
+// The registration fallback string stays on the session error.
+struct NickRefusalTail
+{
+    bool omit = false;
+    QString text;
+};
+
+NickRefusalTail nickRefusalStatusTail(const QString& raw, QStringView channelTypes)
+{
+    const QString reason = raw.trimmed();
+    if (reason.isEmpty())
+        return {true, {}};
+    if (const auto masked = IrcSecretPolicy::redactPreviewLine(
+            QStringView(reason), channelTypes))
+        return {false, *masked};
+    if (!IrcSecretPolicy::allowsTranscript(reason, channelTypes))
+        return {true, {}};
+    return {false, reason};
+}
+
+void applyNickRefusalTail(QStringList *parts,
+                          const QString& raw,
+                          QStringView channelTypes)
+{
+    if (parts->isEmpty())
+        return;
+    const NickRefusalTail tail = nickRefusalStatusTail(raw, channelTypes);
+    if (tail.omit)
+        parts->removeLast();
+    else
+        parts->last() = tail.text;
+}
+
+QString incomingText(const IrcMessage& message,
+                     const QString& command,
+                     bool redacted,
+                     QStringView channelTypes)
 {
     if (message.parameters.empty())
         return command;
@@ -194,8 +241,13 @@ QString incomingText(const IrcMessage& message, const QString& command, bool red
         return command + QStringLiteral(" ***");
     }
 
-    if (trailingBodyOnly(command))
-        return ircWireText(message.parameters.back());
+    const QString trailing = ircWireText(message.parameters.back());
+    if (trailingBodyOnly(command)) {
+        if (!nickRefusalStatusCommand(command))
+            return trailing;
+        const NickRefusalTail tail = nickRefusalStatusTail(trailing, channelTypes);
+        return tail.omit ? command : tail.text;
+    }
 
     QStringList parts;
     parts.reserve(int(message.parameters.size()));
@@ -203,6 +255,8 @@ QString incomingText(const IrcMessage& message, const QString& command, bool red
         parts.append(ircWireText(parameter));
     if (command[0].isDigit() && parts.size() >= 2)
         parts.removeFirst();
+    if (nickRefusalStatusCommand(command))
+        applyNickRefusalTail(&parts, trailing, channelTypes);
     return parts.join(QLatin1Char(' '));
 }
 
@@ -980,7 +1034,10 @@ IrcStatusEntry IrcStatusEntry::buildDefaultIncoming(const QString& networkId,
                           IrcLogSource::Server,
                           severityFor(command),
                           command,
-                          incomingText(*display, commandOf(*display), overlay.has_value()));
+                          incomingText(*display,
+                                       commandOf(*display),
+                                       overlay.has_value(),
+                                       channelTypes));
 }
 
 IrcStatusEntry IrcStatusEntry::outgoing(const QString& networkId,

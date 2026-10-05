@@ -291,17 +291,40 @@ bool registrationHandshake(IrcSession::State state)
     return false;
 }
 
-// The trailing sentence is the refusal the user reads. A sentence
-// allowsTranscript rejects is secret-shaped, so the fallback stays and the
-// sentence is dropped.
+// 432/433/436/437 carry <client> <nick> :<reason>. 451/462/465 carry
+// <client> :<reason>. ERROR's sentence is whatever parameter it has. A nick
+// with no trailing sentence is not the reason.
+bool registrationSentence(const IrcMessage &message, QString *reason)
+{
+    const QString command = ircWireText(message.command);
+    const std::size_t count = message.parameters.size();
+    std::size_t minimum = 1;
+    if (command == QLatin1String("432") || command == QLatin1String("433")
+        || command == QLatin1String("436") || command == QLatin1String("437"))
+        minimum = 3;
+    else if (command == QLatin1String("451") || command == QLatin1String("462")
+             || command == QLatin1String("465"))
+        minimum = 2;
+    if (count < minimum)
+        return false;
+    *reason = ircWireText(message.parameters.back()).trimmed();
+    return !reason->isEmpty();
+}
+
+// The trailing sentence is the refusal the user reads. Either existing
+// check drops it: allowsTranscript rejects a service body such as
+// IDENTIFY, and redactPreviewLine catches a near-miss, a later command,
+// or a leading secret verb. The fallback stays. No third redactor.
 QString serverSentenceOr(const IrcMessage &message,
                          QStringView channelTypes,
                          const QString &fallback)
 {
-    if (message.parameters.empty())
+    QString reason;
+    if (!registrationSentence(message, &reason))
         return fallback;
-    const QString reason = ircWireText(message.parameters.back()).trimmed();
-    if (reason.isEmpty() || !IrcSecretPolicy::allowsTranscript(reason, channelTypes))
+    if (!IrcSecretPolicy::allowsTranscript(reason, channelTypes))
+        return fallback;
+    if (IrcSecretPolicy::redactPreviewLine(QStringView(reason), channelTypes))
         return fallback;
     return reason;
 }
