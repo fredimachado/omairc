@@ -106,6 +106,32 @@ Rectangle {
                     width: parent ? parent.width : 0
                     spacing: 0
 
+                    // A sidebar model reset leaves repeater rows at y=0. The
+                    // column positioner does not run again. Changing spacing
+                    // across two turns makes it place the rows, then restores
+                    // the real spacing.
+                    property int rowEpoch: column.irc ? column.irc.conversationEpoch : 0
+                    property bool repositioning: false
+                    function rowsNeedPlace() {
+                        for (var i = 0; i < children.length; ++i) {
+                            var child = children[i];
+                            if (i > 0 && child.visible && child.height > 0 && child.y === 0)
+                                return true;
+                        }
+                        return false;
+                    }
+                    function repositionRows() {
+                        if (repositioning || !rowsNeedPlace())
+                            return;
+                        repositioning = true;
+                        spacing = 1;
+                        Qt.callLater(function() {
+                            spacing = 0;
+                            repositioning = false;
+                        });
+                    }
+                    onRowEpochChanged: Qt.callLater(repositionRows)
+
                     NetworkSection {
                         style: column.style
                         networkId: liveNet.networkId

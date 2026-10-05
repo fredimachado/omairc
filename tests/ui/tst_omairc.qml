@@ -320,6 +320,8 @@ TestCase {
         property string selectedNetworkId: "libera"
         property string topic: "A cozy corner for Omarchy users and builders."
         property bool isChannel: true
+        property bool channelJoined: true
+        property bool canCloseSelection: false
         property int peopleCount: 1
         property string connectionStatus: "Connected"
         property string lastError: ""
@@ -374,6 +376,8 @@ TestCase {
             selectedTarget = name;
             selectedConversationId = networkId + "\n" + name;
             isChannel = name.charAt(0) === "#";
+            channelJoined = isChannel;
+            canCloseSelection = !isChannel;
             topic = isChannel ? "" : "Direct message with " + name;
             peopleCount = isChannel ? 1 : 0;
             liveConsole.open = false;
@@ -405,6 +409,8 @@ TestCase {
         property string selectedNetworkId: "libera"
         property string topic: ""
         property bool isChannel: true
+        property bool channelJoined: true
+        property bool canCloseSelection: false
         property int peopleCount: 1
         property string connectionStatus: "Connected"
         property string lastError: ""
@@ -499,6 +505,8 @@ TestCase {
         property string selectedNetworkId: "libera"
         property string topic: "A cozy corner for Omarchy users and builders."
         property bool isChannel: true
+        property bool channelJoined: true
+        property bool canCloseSelection: false
         property int peopleCount: 1
         property string connectionStatus: "Connected"
         property string lastError: ""
@@ -570,6 +578,8 @@ TestCase {
         property string selectedNetworkId: "libera"
         property string topic: "A cozy corner for Omarchy users and builders."
         property bool isChannel: true
+        property bool channelJoined: true
+        property bool canCloseSelection: false
         property int peopleCount: 3
         property string connectionStatus: "Connected"
         property string lastError: ""
@@ -9935,10 +9945,14 @@ TestCase {
         compare(item("peopleButton").visible, false);
         compare(item("membersPanel").visible, false);
 
-        var desktop = namedItem(liveConversation("#desktop"));
+        var desktop = null;
+        tryVerify(function() {
+            desktop = findNamed(liveConversation("#desktop"));
+            return desktop !== null && desktop.y > 0;
+        });
         mouseClick(desktop, desktop.width / 2, desktop.height / 2, Qt.MiddleButton);
         tryVerify(function() {
-            return namedItem(liveConversation("#desktop")) === null;
+            return findNamed(liveConversation("#desktop")) === null;
         });
         compare(appWindow.currentConversation, "#omarchy");
 
@@ -9952,7 +9966,7 @@ TestCase {
         tryCompare(appWindow, "currentChannelJoined", false);
         mouseClick(item("headerCloseButton"));
         tryVerify(function() {
-            return namedItem(liveConversation("#omarchy")) === null;
+            return findNamed(liveConversation("#omarchy")) === null;
         });
 
         keyClick(Qt.Key_QuoteLeft, Qt.ControlModifier);

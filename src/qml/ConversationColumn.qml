@@ -90,7 +90,9 @@ Item {
             anchors.rightMargin: column.style.scaledSize(19)
             anchors.verticalCenter: parent.verticalCenter
             spacing: column.style.scaledSize(8)
-            visible: headerActions.visible || peopleButton.visible
+            // Do not read headerActions.visible here. A parent visible flag
+            // that depends on a child's visible breaks that child's binding.
+            visible: column.currentConversationIsChannel || column.canCloseSelection
 
             ConversationHeaderActions {
                 id: headerActions

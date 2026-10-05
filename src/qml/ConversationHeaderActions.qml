@@ -11,12 +11,18 @@ Row {
     property bool joined: false
     property bool canClose: false
 
+    // Size and visibility come from these flags. Reading a child's visible
+    // to decide the row's visible breaks the child's binding.
+    readonly property bool showLeave: actions.channel && actions.joined
+    readonly property bool showJoin: actions.channel && !actions.joined
+    readonly property bool showClose: actions.canClose
+
     signal leaveRequested()
     signal joinRequested()
     signal closeRequested()
 
     spacing: actions.style.scaledSize(8)
-    visible: leaveButton.visible || joinButton.visible || closeButton.visible
+    visible: actions.showLeave || actions.showJoin || actions.showClose
 
     function press(kind) {
         if (kind === "leave")
@@ -30,8 +36,8 @@ Row {
     Rectangle {
         id: leaveButton
         objectName: "headerLeaveButton"
-        visible: actions.channel && actions.joined
-        width: visible ? actions.style.scaledSize(58) : 0
+        visible: actions.showLeave
+        width: actions.showLeave ? actions.style.scaledSize(58) : 0
         height: actions.style.scaledSize(30)
         radius: actions.style.scaledSize(7)
         color: leaveMouse.containsMouse ? actions.style.raisedColor : "transparent"
@@ -62,8 +68,8 @@ Row {
     Rectangle {
         id: joinButton
         objectName: "headerJoinButton"
-        visible: actions.channel && !actions.joined
-        width: visible ? actions.style.scaledSize(58) : 0
+        visible: actions.showJoin
+        width: actions.showJoin ? actions.style.scaledSize(58) : 0
         height: actions.style.scaledSize(30)
         radius: actions.style.scaledSize(7)
         color: joinMouse.containsMouse ? actions.style.raisedColor : "transparent"
@@ -94,8 +100,8 @@ Row {
     Rectangle {
         id: closeButton
         objectName: "headerCloseButton"
-        visible: actions.canClose
-        width: visible ? actions.style.scaledSize(64) : 0
+        visible: actions.showClose
+        width: actions.showClose ? actions.style.scaledSize(64) : 0
         height: actions.style.scaledSize(30)
         radius: actions.style.scaledSize(7)
         color: closeMouse.containsMouse ? actions.style.raisedColor : "transparent"

@@ -187,8 +187,8 @@ ApplicationWindow {
     readonly property int messageLineHeight: messageLineProbe.implicitHeight
     readonly property bool currentConversationIsChannel: irc
         ? irc.isChannel : currentConversation.charAt(0) === "#"
-    readonly property bool currentChannelJoined: irc ? irc.channelJoined : false
-    readonly property bool canCloseSelection: irc ? irc.canCloseSelection : false
+    readonly property bool currentChannelJoined: !!(irc && irc.channelJoined)
+    readonly property bool canCloseSelection: !!(irc && irc.canCloseSelection)
     readonly property int currentPeopleCount: irc ? irc.peopleCount : 0
     readonly property bool memberStatusVisible: !irc || irc.hasMemberStatus
     readonly property bool awayPresenceVisible: !irc || irc.hasAwayPresence
@@ -761,7 +761,8 @@ ApplicationWindow {
     function joinNewChannel(channel) {
         if (!irc)
             return;
-        irc.joinNewChannel(channel);
+        if (!irc.joinNewChannel(channel))
+            return;
         Qt.callLater(function() {
             conversation.composer.forceActiveFocus();
         });
