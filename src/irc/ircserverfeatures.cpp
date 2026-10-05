@@ -32,8 +32,9 @@ int hexValue(char character)
     return -1;
 }
 
-// ISUPPORT encodes a space inside one token as \x20. Decode that and \\
-// before splitting a file-host list. Any other backslash stays literal.
+// ISUPPORT encodes a space inside one token as \x20. Decode that, and a
+// doubled backslash, before splitting a file-host list. Any other
+// backslash stays literal.
 std::string unescapeIsupportValue(std::string_view value)
 {
     std::string decoded;
