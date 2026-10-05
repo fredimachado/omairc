@@ -301,6 +301,9 @@ void SeededIrcFixture::offerClipboardFile(const QString &path)
         url = QUrl::fromLocalFile(path);
     auto *mime = new QMimeData;
     mime->setUrls(QList<QUrl>{url});
+    // Paste inserts text/plain. setUrls only stores text/uri-list, so Name
+    // stays unchanged if the file-paste handler stops swallowing the chord.
+    mime->setText(url.toString());
     if (QClipboard *clipboard = QGuiApplication::clipboard())
         clipboard->setMimeData(mime);
     else
