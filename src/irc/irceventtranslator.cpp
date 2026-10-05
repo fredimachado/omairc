@@ -311,6 +311,31 @@ std::optional<IrcReplayLine> channelMembershipReplayLine(
     }
     return std::nullopt;
 }
+
+// RPL_WHOREPLY's trailing parameter is "<hopcount> <real name>". A numeric
+// first token is the hop count. Anything else is the name itself.
+// whoReplyRealname is the reader WHO replies store; this one stays for the
+// all-digits hop form the query-header path already named.
+QString realnameFromWho(const QString& trailing)
+{
+    const QString trimmed = trailing.trimmed();
+    if (trimmed.isEmpty())
+        return {};
+    const int space = trimmed.indexOf(QLatin1Char(' '));
+    const QString head = space < 0 ? trimmed : trimmed.left(space);
+    bool digits = !head.isEmpty();
+    for (const QChar mark : head) {
+        if (!mark.isDigit()) {
+            digits = false;
+            break;
+        }
+    }
+    if (space < 0)
+        return digits ? QString{} : trimmed;
+    if (!digits)
+        return trimmed;
+    return trimmed.mid(space + 1).trimmed();
+}
 }
 
 std::optional<IrcConversationKey> ircConversationFor(
@@ -470,16 +495,25 @@ std::vector<IrcEvent> IrcEventTranslator::translate(
         events.emplace_back(IrcSelfAwayEvent{networkId, false});
     } else if (command == QStringLiteral("352") && message.parameters.size() >= 7) {
         const QString nick = parameter(message, 5);
-        const bool away = parameter(message, 6).startsWith(QLatin1Char('G'));
+        const QString flags = parameter(message, 6);
+        const bool away = flags.startsWith(QLatin1Char('G'));
         if (!nick.isEmpty()) {
             IrcAwayEvent event{
                 networkId,
                 nick,
                 away ? std::optional<IrcAway>(IrcAway{}) : std::nullopt};
-            const QString realname = whoReplyRealname(parameter(message, 7));
+            const QString trailing = parameter(message, 7);
+            const QString fromJump = whoReplyRealname(trailing);
+            const QString realname = !fromJump.isEmpty() ? fromJump
+                                                         : realnameFromWho(trailing);
             if (!realname.isEmpty())
                 event.realname = realname;
             events.emplace_back(std::move(event));
+            // Operator is a separate fact. Realname stays on the away event
+            // so a placeholder cannot wipe a name jump already stored.
+            events.emplace_back(IrcNickFactsEvent{
+                networkId, nick, std::nullopt,
+                flags.contains(QLatin1Char('*'))});
         }
     } else if (command == QStringLiteral("311") && message.parameters.size() >= 6) {
         const QString nick = parameter(message, 1);
@@ -491,6 +525,12 @@ std::vector<IrcEvent> IrcEventTranslator::translate(
             event.realname = realname;
             event.realnameOnly = true;
             events.emplace_back(std::move(event));
+        }
+    } else if (command == QStringLiteral("313") && message.parameters.size() >= 2) {
+        const QString nick = parameter(message, 1);
+        if (!nick.isEmpty()) {
+            events.emplace_back(IrcNickFactsEvent{
+                networkId, nick, std::nullopt, true});
         }
     } else if (command == QStringLiteral("CHGHOST")) {
         // Members store nick plus ranks. User and host are not modeled.

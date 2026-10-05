@@ -15,6 +15,7 @@ Rectangle {
     property bool memberStatusVisible: false
     property bool typingVisible: false
     property var typingNicks: []
+    property var plainIrcText: null
 
     property alias membersList: membersList
 
@@ -92,15 +93,36 @@ Rectangle {
             readonly property var memberData: column.irc
                 ? ({nick: model.nick, label: model.label, status: model.status,
                     away: model.away, avatar: model.avatar || "", bot: !!model.bot,
-                    account: model.account || ""})
+                    account: model.account || "", realname: model.realname || "",
+                    factLabels: model.factLabels || []})
                 : ({nick: "", label: "", status: "", away: false, avatar: "",
-                    bot: false, account: ""})
+                    bot: false, account: "", realname: "", factLabels: []})
             readonly property string nick: memberData.nick
             readonly property string label: memberData.label
             readonly property string status: memberData.status
             readonly property string avatar: memberData.avatar
             readonly property bool bot: memberData.bot
             readonly property string account: memberData.account || ""
+            readonly property string realname: memberData.realname || ""
+            readonly property var factLabels: memberData.factLabels || []
+            readonly property string memberTip: {
+                var lines = [];
+                if (column.awayPresenceVisible || memberDelegate.isSelf)
+                    lines.push(memberDelegate.away ? "away" : "online");
+                var name = column.plainIrcText
+                    ? column.plainIrcText(memberDelegate.realname)
+                    : memberDelegate.realname;
+                if (name && String(name).length > 0)
+                    lines.push(String(name));
+                var labels = memberDelegate.factLabels;
+                if (labels) {
+                    for (var index = 0; index < labels.length; ++index) {
+                        if (labels[index] && String(labels[index]).length > 0)
+                            lines.push(String(labels[index]));
+                    }
+                }
+                return lines.join("\n");
+            }
             // Exact match, like `openable`; the reducer's overlay is the CASEMAPPING-aware path.
             readonly property bool isSelf: nick.length > 0 && nick === column.selfNick
             // Other members' away state needs away-notify, but our own
@@ -253,11 +275,18 @@ Rectangle {
             MouseArea {
                 id: memberMouse
                 anchors.fill: parent
-                enabled: memberDelegate.nick.length > 0
+                hoverEnabled: memberDelegate.nick.length > 0
+                cursorShape: memberDelegate.nick.length > 0
                     && memberDelegate.nick !== column.selfNick
-                hoverEnabled: true
-                cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
-                onClicked: column.directMessageRequested(memberDelegate.nick)
+                    ? Qt.PointingHandCursor : Qt.ArrowCursor
+                onClicked: {
+                    if (memberDelegate.nick.length > 0
+                            && memberDelegate.nick !== column.selfNick)
+                        column.directMessageRequested(memberDelegate.nick);
+                }
+                ToolTip.visible: containsMouse && memberDelegate.memberTip.length > 0
+                ToolTip.text: memberDelegate.memberTip
+                ToolTip.delay: 400
             }
         }
     }

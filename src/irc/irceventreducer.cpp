@@ -859,7 +859,9 @@ std::optional<IrcMemberView> IrcEventReducer::memberView(
         facts.metadata(IrcMetadata::pronounsKey()),
         facts.metadata(IrcMetadata::homepageKey()),
         facts.metadata(IrcMetadata::colorKey()),
-        displayAccount(key.networkId, member->second.displayNick)};
+        displayAccount(key.networkId, member->second.displayNick),
+        ircDisplayedRealname(facts.realname, member->second.displayNick),
+        peerFactLabels(key.networkId, member->second.displayNick)};
 }
 
 IrcNickPresence IrcEventReducer::nickPresence(const QString& networkId,
@@ -882,6 +884,22 @@ QString IrcEventReducer::displayAccount(const QString& networkId,
     if (serverFeatures(networkId).caseMapping().equals(utf8(account), utf8(nick)))
         return {};
     return account;
+}
+
+QString IrcEventReducer::meaningfulRealname(const QString& networkId,
+                                            const QString& nick) const
+{
+    return ircDisplayedRealname(nickPresence(networkId, nick).realname, nick);
+}
+
+QStringList IrcEventReducer::peerFactLabels(const QString& networkId,
+                                            const QString& nick) const
+{
+    const IrcNickPresence facts = nickPresence(networkId, nick);
+    const bool matches = !facts.account.isEmpty()
+        && serverFeatures(networkId).caseMapping().equals(
+            utf8(facts.account), utf8(nick));
+    return ircPeerFactLabels(facts, matches);
 }
 
 IrcPeerPresence IrcEventReducer::peerPresence(const QString& networkId,
@@ -2407,5 +2425,17 @@ void IrcEventReducer::reduce(const IrcChannelErrorEvent& event)
     if (!conversation)
         return;
     appendError(*conversation, event.body);
+}
+
+void IrcEventReducer::reduce(const IrcNickFactsEvent& event)
+{
+    const QString normalizedNick = normalize(event.networkId, event.nick);
+    if (normalizedNick.isEmpty())
+        return;
+    if (event.realname)
+        m_presence[event.networkId].setRealname(normalizedNick, *event.realname);
+    if (event.serverOperator)
+        m_presence[event.networkId].setServerOperator(
+            normalizedNick, *event.serverOperator);
 }
 

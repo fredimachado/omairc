@@ -19,6 +19,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- A direct message shows who you are talking to. The header paints a presence
+  dot when the server offers away-notify, the real name under the nick, and
+  short labels for an account, an unauthenticated nick, a server operator, and
+  a bot. The member tooltip lists the same facts, one per line. A channel
+  header keeps the topic.
 - Ctrl+K jump matches a channel topic and a person's real name, in both
   clients. Name matches stay above those, sidebar order holds inside each
   group, the list stays at most 20 rows, and a shared name still shows its

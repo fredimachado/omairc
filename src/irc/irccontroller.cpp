@@ -33,11 +33,30 @@
 #include <QVariantMap>
 
 #include <algorithm>
+#include <optional>
 #include <string>
 #include <variant>
+#include <vector>
 
 namespace
 {
+std::optional<QString> memberRowNick(const IrcEventReducer& reducer,
+                                     const IrcEvent& event)
+{
+    const auto normalized = [&](const QString& networkId, const QString& nick) {
+        return reducer.conversationKey(networkId, nick).normalizedTarget;
+    };
+    if (const auto *away = std::get_if<IrcAwayEvent>(&event))
+        return normalized(away->networkId, away->nick);
+    if (const auto *account = std::get_if<IrcAccountEvent>(&event))
+        return normalized(account->networkId, account->nick);
+    if (const auto *metadata = std::get_if<IrcMemberMetadataEvent>(&event))
+        return normalized(metadata->networkId, metadata->nick);
+    if (const auto *facts = std::get_if<IrcNickFactsEvent>(&event))
+        return normalized(facts->networkId, facts->nick);
+    return std::nullopt;
+}
+
 QString firstToken(const QString& argument)
 {
     const int space = argument.indexOf(QLatin1Char(' '));
@@ -1069,6 +1088,34 @@ int IrcController::jumpScore(const QString& query,
 int IrcController::jumpResultLimit() const
 {
     return ircJumpResultLimit;
+}
+
+QVariantMap IrcController::peerHeader(const QString& networkId,
+                                      const QString& nick) const
+{
+    QVariantMap result;
+    result.insert(QStringLiteral("presence"), QStringLiteral("offline"));
+    result.insert(QStringLiteral("realname"), QString());
+    result.insert(QStringLiteral("labels"), QStringList());
+    if (networkId.isEmpty() || nick.isEmpty())
+        return result;
+    const QString normalized =
+        m_reducer.conversationKey(networkId, nick).normalizedTarget;
+    switch (m_reducer.peerPresence(networkId, normalized)) {
+    case IrcPeerPresence::Online:
+        result.insert(QStringLiteral("presence"), QStringLiteral("online"));
+        break;
+    case IrcPeerPresence::Away:
+        result.insert(QStringLiteral("presence"), QStringLiteral("away"));
+        break;
+    case IrcPeerPresence::Unknown:
+        break;
+    }
+    result.insert(QStringLiteral("realname"),
+                  m_reducer.meaningfulRealname(networkId, nick));
+    result.insert(QStringLiteral("labels"),
+                  m_reducer.peerFactLabels(networkId, nick));
+    return result;
 }
 
 void IrcController::handleCapabilities(const QString& networkId,
@@ -2441,10 +2488,14 @@ void IrcController::adoptReducerSelection()
 void IrcController::apply(const IrcEvent& event)
 {
     if (const auto *account = std::get_if<IrcAccountEvent>(&event)) {
-        const QString stored =
-            m_reducer.nickPresence(account->networkId, account->nick).account;
-        if (servicesAccountMatches(stored, account->account))
+        const IrcNickPresence stored =
+            m_reducer.nickPresence(account->networkId, account->nick);
+        // A first `*` is a logout we have not stored yet. A repeat of the
+        // same account, including a second logout, still changes nothing.
+        if (stored.accountKnown
+            && servicesAccountMatches(stored.account, account->account)) {
             return;
+        }
     }
     const QString previousId = identityNetworkId();
     const bool previousAway = selfAway();
@@ -2466,6 +2517,9 @@ void IrcController::apply(const IrcEvent& event)
                                  metadata->nick,
                                  metadata->key,
                                  metadata->value);
+    } else if (std::holds_alternative<IrcNickFactsEvent>(event)) {
+        ++m_peerMetadataEpoch;
+        emit peerMetadataChanged();
     }
     const bool accountsMoved = std::holds_alternative<IrcAccountEvent>(event)
         || std::holds_alternative<IrcWelcomeEvent>(event)
@@ -2586,7 +2640,7 @@ void IrcController::publish(const IrcViewNotify& notify)
         m_messages.reload();
     if (notify.members == IrcMemberSurface::Reset)
         m_members.reload();
-    else if (notify.members == IrcMemberSurface::Row)
+    else if (notify.members == IrcMemberSurface::Row && !m_coalesceMemberRow)
         m_members.touch(notify.nick);
     if (notify.selection)
         emit selectionChanged();
@@ -2673,15 +2727,31 @@ void IrcController::handleMessage(const QString& networkId,
 
     const IrcServerFeatures& features = m_reducer.serverFeatures(networkId);
     const QString currentNick = m_currentNicks.value(networkId);
-    for (const IrcEvent& event :
-         IrcEventTranslator::translate(networkId, currentNick, features, message)) {
+    const std::vector<IrcEvent> events =
+        IrcEventTranslator::translate(networkId, currentNick, features, message);
+    for (size_t index = 0; index < events.size(); ++index) {
+        const IrcEvent& event = events[index];
         if (const auto *nick = std::get_if<IrcNickEvent>(&event)) {
             if (features.caseMapping().equals(
                     utf8(nick->oldNick), utf8(currentNick))) {
                 m_currentNicks[networkId] = nick->newNick;
             }
         }
+        // A WHO line is away, then nick facts, for one person. The row reads
+        // both from the reducer, so it repaints once after the nick facts.
+        // Other pairs stay separate: a repeated account event can return
+        // before it publishes, and skipping the first row would drop it.
+        m_coalesceMemberRow = false;
+        if (index + 1 < events.size()
+            && std::holds_alternative<IrcAwayEvent>(event)
+            && std::holds_alternative<IrcNickFactsEvent>(events[index + 1])) {
+            const std::optional<QString> nick = memberRowNick(m_reducer, event);
+            const std::optional<QString> next =
+                memberRowNick(m_reducer, events[index + 1]);
+            m_coalesceMemberRow = nick && next && *nick == *next;
+        }
         apply(event);
+        m_coalesceMemberRow = false;
         if (const auto *join = std::get_if<IrcJoinEvent>(&event)) {
             const auto& mapping = features.caseMapping();
             const bool selfJoin =

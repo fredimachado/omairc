@@ -49,6 +49,18 @@ type MemberSnapshot struct {
 	Away    bool
 	Account string
 	Bot     bool
+	// Realname is the meaningful gecos. Labels are the query-header facts.
+	Realname string
+	Labels   []string
+}
+
+// PeerHeader is the direct-message header: presence, meaningful real name,
+// and the short account, operator, and bot labels. Nick is the display nick.
+type PeerHeader struct {
+	Nick     string
+	Presence string
+	Realname string
+	Labels   []string
 }
 
 // InboxSnapshot is one session-inbox row for the shell. It mirrors the
@@ -222,12 +234,14 @@ func (c *Controller) rebuildMembers() {
 			continue
 		}
 		rows = append(rows, MemberSnapshot{
-			Nick:    view.Nick,
-			Label:   view.Label,
-			Status:  view.Status,
-			Away:    view.IsAway(),
-			Account: view.Account,
-			Bot:     view.Bot,
+			Nick:     view.Nick,
+			Label:    view.Label,
+			Status:   view.Status,
+			Away:     view.IsAway(),
+			Account:  view.Account,
+			Bot:      view.Bot,
+			Realname: view.Realname,
+			Labels:   view.Labels,
 		})
 	}
 	c.members = rows

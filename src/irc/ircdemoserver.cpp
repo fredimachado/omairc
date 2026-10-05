@@ -271,17 +271,62 @@ QByteArray channelStateBytes(const SeedNetwork &network, const SeedChannel &chan
     return out;
 }
 
+struct SeedIdentity
+{
+    const char *nick;
+    const char *realname;
+    bool operOnOmarchy;
+};
+
+// WHO replies land before AWAY so a later away notice restores the reason.
+// The list is fixed so the Qt and Go demos emit the same nicks in the same
+// order. Only omarchy's own nick is a server operator.
+QByteArray identityBytes(const SeedNetwork &network, const QSet<QString> &members)
+{
+    static constexpr SeedIdentity kIdentities[] = {
+        {"anna", "Anna Vale", false},
+        {"dax", "Packet Bot", false},
+        {"fred", "Fred Machado", true},
+        {"lena", "Lena Pink", false},
+        {"mira", "Mira Chen", false},
+    };
+    if (network.channels.isEmpty())
+        return {};
+    const QString channel = network.channels.first().name;
+    const bool omarchy = network.networkId == QStringLiteral("omarchy");
+    QByteArray out;
+    for (const SeedIdentity &identity : kIdentities) {
+        const QString nick = QString::fromLatin1(identity.nick);
+        if (!members.contains(nick))
+            continue;
+        const QString flags = identity.operOnOmarchy && omarchy
+            ? QStringLiteral("H*")
+            : QStringLiteral("H");
+        out += line(QStringLiteral(":server 352 %1 %2 u h server %3 %4 :0 %5")
+                        .arg(network.nick,
+                             channel,
+                             nick,
+                             flags,
+                             QString::fromLatin1(identity.realname)));
+    }
+    return out;
+}
+
 QByteArray presenceBytes(const SeedNetwork &network)
 {
     QByteArray out;
     QSet<QString> away;
     QHash<QString, QString> status;
+    QSet<QString> members;
     for (const SeedChannel &channel : network.channels) {
         for (const QString &nick : channel.away)
             away.insert(nick);
         for (const auto &entry : channel.statuses)
             status.insert(entry.first, entry.second);
+        for (const QString &nick : channel.members)
+            members.insert(nick);
     }
+    out += identityBytes(network, members);
     const QStringList awayNicks = away.values();
     for (const QString &nick : awayNicks)
         out += line(QStringLiteral(":%1!u@h AWAY :away").arg(nick));
@@ -289,11 +334,6 @@ QByteArray presenceBytes(const SeedNetwork &network)
     for (const QString &nick : statusNicks) {
         out += line(QStringLiteral(":server 761 %1 %2 status * :%3")
                         .arg(network.nick, nick, status.value(nick)));
-    }
-    QSet<QString> members;
-    for (const SeedChannel &channel : network.channels) {
-        for (const QString &nick : channel.members)
-            members.insert(nick);
     }
     if (members.contains(QStringLiteral("dax"))) {
         out += line(QStringLiteral(":server 761 %1 dax bot * :PacketBot")
@@ -343,6 +383,8 @@ QByteArray accountBytes(const SeedNetwork &network)
     out += accountLine(QStringLiteral("lena"), QStringLiteral("pinkieval"));
     // Self row in the identity footer.
     out += accountLine(network.nick, QStringLiteral("fredm"));
+    // A known logout, so the member tooltip can say unauthenticated.
+    out += accountLine(QStringLiteral("ivy"), QStringLiteral("*"));
     return out;
 }
 

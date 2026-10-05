@@ -216,12 +216,18 @@ type NickPresence struct {
 	// Keys holds canonical metadata keys mapped to their values.
 	Keys map[string]string
 	// Account is the services account from account-tag, account-notify,
-	// extended-join, or WHOIS 330. Empty means unknown or logged out; both
+	// extended-join, or WHOIS 330. Empty with AccountKnown means logged out.
+	// Empty without AccountKnown means no account fact has arrived. Both
 	// display as nothing.
 	Account string
+	// AccountKnown is true once an account fact has been stored, including a
+	// logout. It distinguishes "logged out" from "never heard".
+	AccountKnown bool
 	// Realname is the GECOS from extended-join, WHO (352), or WHOIS (311).
 	// Empty means unknown.
 	Realname string
+	// ServerOperator is the WHO `*` flag or WHOIS 313.
+	ServerOperator bool
 }
 
 // Metadata returns the stored value for key, or "" when unset. The key is
@@ -270,7 +276,8 @@ func (p NickPresence) Avatar() string {
 
 // IsDefault reports whether the presence carries no fact worth keeping.
 func (p NickPresence) IsDefault() bool {
-	return p.Away == nil && len(p.Keys) == 0 && p.Account == "" && p.Realname == ""
+	return p.Away == nil && len(p.Keys) == 0 && p.Account == "" &&
+		!p.AccountKnown && p.Realname == "" && !p.ServerOperator
 }
 
 // MeaningfulRealname reports whether realname is worth matching in jump.
@@ -281,6 +288,41 @@ func MeaningfulRealname(realname, nick string) bool {
 	}
 	folded := strings.ToLower(realname)
 	return folded != "realname" && folded != "unknown" && folded != "fullname"
+}
+
+// DisplayedRealname returns a gecos worth showing on a query header. Empty,
+// equal to nick, and the placeholders "realname", "unknown", and "fullname"
+// are hidden. Comparison is case-insensitive. Jump matching stays on
+// MeaningfulRealname. It mirrors ircDisplayedRealname.
+func DisplayedRealname(realname, nick string) string {
+	trimmed := strings.TrimSpace(realname)
+	if trimmed == "" || strings.EqualFold(trimmed, nick) {
+		return ""
+	}
+	switch strings.ToLower(trimmed) {
+	case "realname", "unknown", "fullname":
+		return ""
+	}
+	return trimmed
+}
+
+// PeerFactLabels returns the short query-header labels in display order.
+// accountMatchesNick uses the network case mapping. An unknown account adds
+// nothing; a known logout adds "unauthenticated". It mirrors ircPeerFactLabels.
+func PeerFactLabels(facts NickPresence, accountMatchesNick bool) []string {
+	labels := []string{}
+	if facts.Account != "" && !accountMatchesNick {
+		labels = append(labels, facts.Account)
+	} else if facts.AccountKnown && facts.Account == "" {
+		labels = append(labels, "unauthenticated")
+	}
+	if facts.ServerOperator {
+		labels = append(labels, "server operator")
+	}
+	if facts.IsBot() {
+		labels = append(labels, "bot")
+	}
+	return labels
 }
 
 func (p NickPresence) clone() NickPresence {
@@ -296,7 +338,14 @@ func (p NickPresence) clone() NickPresence {
 			keys[key] = value
 		}
 	}
-	return NickPresence{Away: away, Keys: keys, Account: p.Account, Realname: p.Realname}
+	return NickPresence{
+		Away:           away,
+		Keys:           keys,
+		Account:        p.Account,
+		AccountKnown:   p.AccountKnown,
+		Realname:       p.Realname,
+		ServerOperator: p.ServerOperator,
+	}
 }
 
 // NetworkPresence is the per-network presence store. It mirrors
@@ -359,26 +408,34 @@ func (n *NetworkPresence) SetMetadata(normalizedNick, key, value string) {
 }
 
 // SetAccount stores the services account for normalizedNick. `*` and an empty
-// value clear it; a missing tag must never call this.
+// value clear it and record that the fact is known. A missing tag must never
+// call this.
 func (n *NetworkPresence) SetAccount(normalizedNick, account string) {
 	if normalizedNick == "" {
 		return
 	}
-	clear := account == "" || account == "*"
-	if clear {
-		presence, ok := n.nicks[normalizedNick]
-		if !ok {
-			return
-		}
+	n.ensure()
+	presence := n.nicks[normalizedNick]
+	presence.AccountKnown = true
+	if account == "" || account == "*" {
 		presence.Account = ""
-		n.nicks[normalizedNick] = presence
-		n.eraseIfDefault(normalizedNick)
+	} else {
+		presence.Account = account
+	}
+	n.nicks[normalizedNick] = presence
+	n.eraseIfDefault(normalizedNick)
+}
+
+// SetServerOperator stores whether normalizedNick is a server operator.
+func (n *NetworkPresence) SetServerOperator(normalizedNick string, operator bool) {
+	if normalizedNick == "" {
 		return
 	}
 	n.ensure()
 	presence := n.nicks[normalizedNick]
-	presence.Account = account
+	presence.ServerOperator = operator
 	n.nicks[normalizedNick] = presence
+	n.eraseIfDefault(normalizedNick)
 }
 
 // SetRealname stores the GECOS for normalizedNick. An empty value clears it.

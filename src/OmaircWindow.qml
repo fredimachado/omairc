@@ -374,6 +374,31 @@ ApplicationWindow {
         return account ? String(account) : "";
     }
 
+    function queryPeerHeader() {
+        var empty = { presence: "offline", realname: "", labels: [] };
+        if (!irc || typeof irc.peerHeader !== "function" || !currentConversation
+                || currentConversationIsChannel)
+            return empty;
+        // peerHeader is a plain invokable. Read the epochs that move when
+        // presence, account, or WHO/WHOIS facts change.
+        var _metadata = irc.peerMetadataEpoch;
+        var _account = irc.peerAccountEpoch;
+        var _conversations = irc.conversationEpoch;
+        var networkId = irc.selectedNetworkId;
+        if (!networkId || networkId.length === 0)
+            networkId = win.currentNetworkId;
+        if (!networkId)
+            return empty;
+        var header = irc.peerHeader(networkId, currentConversation);
+        if (!header)
+            return empty;
+        return {
+            presence: header.presence ? String(header.presence) : "offline",
+            realname: header.realname ? String(header.realname) : "",
+            labels: header.labels ? header.labels : []
+        };
+    }
+
     function stripIrcColors(text) {
         return ircText.stripIrcColors(text);
     }
@@ -3238,7 +3263,14 @@ ApplicationWindow {
                 }
                 return win.currentConversation;
             }
-            topicText: win.plainIrcText(win.currentTopic)
+            queryIdentity: !win.currentConversationIsChannel
+                && win.currentConversation.length > 0
+            awayPresenceVisible: win.awayPresenceVisible
+            queryPresence: win.queryPeerHeader().presence
+            queryLabels: win.queryPeerHeader().labels
+            topicText: win.currentConversationIsChannel
+                ? win.plainIrcText(win.currentTopic)
+                : win.plainIrcText(win.queryPeerHeader().realname)
             httpUrlAt: function(text, index) { return win.httpUrlAt(text, index) }
             channelNameAt: function(text, index) { return win.channelNameAt(text, index) }
             openAllowedUrl: function(url) { return win.openAllowedUrl(url) }
@@ -3442,6 +3474,7 @@ ApplicationWindow {
             memberStatusVisible: win.memberStatusVisible
             typingVisible: win.typingVisible
             typingNicks: win.typingNicks
+            plainIrcText: function(text) { return win.plainIrcText(text) }
             onNickSheetRequested: win.openNickSheet()
             onDirectMessageRequested: function(nick) {
                 win.openDirectMessage(nick);

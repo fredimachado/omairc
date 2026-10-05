@@ -264,17 +264,31 @@ func Translate(networkID, currentNick string, features ServerFeatures, message M
 		events = append(events, SelfAwayEvent{NetworkID: networkID, Away: false})
 	case command == "352" && len(message.Params) >= 7:
 		nick := ircParameter(message, 5)
-		away := strings.HasPrefix(ircParameter(message, 6), "G")
+		flags := ircParameter(message, 6)
+		away := strings.HasPrefix(flags, "G")
 		if nick != "" {
 			var state *Away
 			if away {
 				state = &Away{}
 			}
 			event := AwayEvent{NetworkID: networkID, Nick: nick, Away: state}
-			if realname := whoReplyRealname(ircParameter(message, 7)); realname != "" {
+			trailing := ircParameter(message, 7)
+			realname := whoReplyRealname(trailing)
+			if realname == "" {
+				realname = realnameFromWho(trailing)
+			}
+			if realname != "" {
 				event.Realname = &realname
 			}
 			events = append(events, event)
+			// Operator is a separate fact. Realname stays on the away event
+			// so a placeholder cannot wipe a name jump already stored.
+			oper := strings.Contains(flags, "*")
+			events = append(events, NickFactsEvent{
+				NetworkID:      networkID,
+				Nick:           nick,
+				ServerOperator: &oper,
+			})
 		}
 	case command == "311" && len(message.Params) >= 6:
 		nick := ircParameter(message, 1)
@@ -285,6 +299,16 @@ func Translate(networkID, currentNick string, features ServerFeatures, message M
 				Nick:         nick,
 				Realname:     &realname,
 				RealnameOnly: true,
+			})
+		}
+	case command == "313" && len(message.Params) >= 2:
+		nick := ircParameter(message, 1)
+		if nick != "" {
+			oper := true
+			events = append(events, NickFactsEvent{
+				NetworkID:      networkID,
+				Nick:           nick,
+				ServerOperator: &oper,
 			})
 		}
 	case command == "CHGHOST":
@@ -680,4 +704,37 @@ func bouncerQueryReplayLine(batchTarget string, features ServerFeatures, message
 		MsgID:      msgid,
 		ServerTime: serverTime,
 	}, true
+}
+
+// realnameFromWho splits RPL_WHOREPLY's trailing "<hopcount> <real name>".
+// A numeric first token is the hop count. Anything else is the name itself.
+// It mirrors realnameFromWho in irceventtranslator.cpp.
+func realnameFromWho(trailing string) string {
+	trimmed := strings.TrimSpace(trailing)
+	if trimmed == "" {
+		return ""
+	}
+	head, rest, split := strings.Cut(trimmed, " ")
+	if !split {
+		if allDigits(head) {
+			return ""
+		}
+		return trimmed
+	}
+	if !allDigits(head) {
+		return trimmed
+	}
+	return strings.TrimSpace(rest)
+}
+
+func allDigits(value string) bool {
+	if value == "" {
+		return false
+	}
+	for _, mark := range value {
+		if mark < '0' || mark > '9' {
+			return false
+		}
+	}
+	return true
 }

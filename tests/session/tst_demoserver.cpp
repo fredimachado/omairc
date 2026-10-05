@@ -18,6 +18,7 @@ private slots:
     void rejoinEchoesSelfJoin();
     void closedChannelsRejoinFromDemoEcho();
     void seedsServiceAccounts();
+    void seedsQueryHeaderFacts();
     void seedsSelfAvatars();
     void skipsRedundantAccountTag();
 };
@@ -91,6 +92,53 @@ void DemoServerTest::skipsRedundantAccountTag()
                                     QStringLiteral("kai")),
              QStringLiteral("kaidev"));
     QCOMPARE(controller.peerAccountEpoch(), epoch);
+}
+
+void DemoServerTest::seedsQueryHeaderFacts()
+{
+    IrcController controller;
+    IrcDemoServer demo;
+    QVERIFY(demo.attach(controller, false));
+    const QString network = IrcDemoServer::omarchyNetworkId();
+
+    const QVariantMap anna = controller.peerHeader(network, QStringLiteral("anna"));
+    QCOMPARE(anna.value(QStringLiteral("presence")).toString(), QStringLiteral("online"));
+    QCOMPARE(anna.value(QStringLiteral("realname")).toString(), QStringLiteral("Anna Vale"));
+    QCOMPARE(anna.value(QStringLiteral("labels")).toStringList(), QStringList());
+
+    const QVariantMap ivy = controller.peerHeader(network, QStringLiteral("ivy"));
+    QCOMPARE(ivy.value(QStringLiteral("presence")).toString(), QStringLiteral("away"));
+    QStringList ivyLabels;
+    ivyLabels << QStringLiteral("unauthenticated");
+    QCOMPARE(ivy.value(QStringLiteral("labels")).toStringList(), ivyLabels);
+
+    const QVariantMap fred = controller.peerHeader(network, QStringLiteral("fred"));
+    QCOMPARE(fred.value(QStringLiteral("presence")).toString(), QStringLiteral("online"));
+    QCOMPARE(fred.value(QStringLiteral("realname")).toString(), QStringLiteral("Fred Machado"));
+    QStringList fredLabels;
+    fredLabels << QStringLiteral("fredm") << QStringLiteral("server operator");
+    QCOMPARE(fred.value(QStringLiteral("labels")).toStringList(), fredLabels);
+
+    const QVariantMap dax = controller.peerHeader(network, QStringLiteral("dax"));
+    QCOMPARE(dax.value(QStringLiteral("realname")).toString(), QStringLiteral("Packet Bot"));
+    QStringList daxLabels;
+    daxLabels << QStringLiteral("bot");
+    QCOMPARE(dax.value(QStringLiteral("labels")).toStringList(), daxLabels);
+
+    const QVariantMap lena = controller.peerHeader(network, QStringLiteral("lena"));
+    QCOMPARE(lena.value(QStringLiteral("presence")).toString(), QStringLiteral("away"));
+    QCOMPARE(lena.value(QStringLiteral("realname")).toString(), QStringLiteral("Lena Pink"));
+    QStringList lenaLabels;
+    lenaLabels << QStringLiteral("pinkieval");
+    QCOMPARE(lena.value(QStringLiteral("labels")).toStringList(), lenaLabels);
+
+    const QVariantMap ghost = controller.peerHeader(network, QStringLiteral("ghost"));
+    QCOMPARE(ghost.value(QStringLiteral("presence")).toString(), QStringLiteral("offline"));
+
+    const QVariantMap oak = controller.peerHeader(IrcDemoServer::oftcNetworkId(),
+                                                  QStringLiteral("oak"));
+    QCOMPARE(oak.value(QStringLiteral("labels")).toStringList(), QStringList());
+    QCOMPARE(oak.value(QStringLiteral("realname")).toString(), QString());
 }
 
 void DemoServerTest::seedsSelfAvatars()

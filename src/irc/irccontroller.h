@@ -208,6 +208,11 @@ public:
                               const QString& name,
                               const QString& detail) const;
     Q_INVOKABLE int jumpResultLimit() const;
+    // Query-header facts for one nick. `presence` is "online", "away", or
+    // "offline". `realname` is the meaningful gecos. `labels` is the short
+    // account, operator, and bot list. A nick who shares no channel is offline.
+    Q_INVOKABLE QVariantMap peerHeader(const QString& networkId,
+                                       const QString& nick) const;
 
     QStringList networkIds() const;
     IrcSession *session(const QString &networkId) const;
@@ -433,6 +438,9 @@ private:
     int m_conversationEpoch = 0;
     int m_peerMetadataEpoch = 0;
     int m_peerAccountEpoch = 0;
+    // A WHO reply is an away event and a nick-facts event for one nick.
+    // The following event repaints that same row, so this one does not.
+    bool m_coalesceMemberRow = false;
     bool m_ephemeral = false;
     bool m_reopenDirectMessages = true;
     bool m_loadPeerAvatars = true;

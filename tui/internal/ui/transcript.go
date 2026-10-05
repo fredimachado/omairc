@@ -185,12 +185,60 @@ func (m *Model) transcriptHeader() []string {
 		if reason := m.ctrl.LastError(); reason != "" {
 			return []string{m.topicHeaderLine(reason), ""}
 		}
+	} else if header, ok := m.ctrl.SelectedPeerHeader(); ok {
+		// A direct message replaces the topic caption with the peer's
+		// presence, nick, labels, and real name.
+		return m.queryTranscriptHeader(header)
 	}
 	topic := m.ctrl.Topic()
 	if topic == "" && m.unseenMarker() == "" {
 		return nil
 	}
 	return []string{m.topicHeaderLine(topic), ""}
+}
+
+// queryTranscriptHeader is the direct-message header: a presence dot, the
+// nick, the short labels, and the real name on the following band when one
+// is worth showing. The unseen marker stays on the last content line.
+func (m *Model) queryTranscriptHeader(header controller.PeerHeader) []string {
+	realname := strings.TrimSpace(m.ctrl.PlainIrcText(header.Realname))
+	lines := []string{m.headerBand(m.queryTitleContent(header), realname == "")}
+	if realname != "" {
+		lines = append(lines, m.headerBand(m.styles.MemberAccount.Render(realname), true))
+	}
+	lines = append(lines, "")
+	return lines
+}
+
+// queryTitleContent renders the nick and muted labels. The presence dot is
+// painted only when the network negotiated away-notify. A name that also
+// exists on another network takes the same suffix the jump list uses.
+func (m *Model) queryTitleContent(header controller.PeerHeader) string {
+	nick := header.Nick
+	if m.ctrl != nil {
+		nick = m.jumpConversationLabel(nick, m.sidebarNetworkDisplayName(m.ctrl.FocusedNetworkID()))
+	}
+	var line strings.Builder
+	if m.ctrl != nil && m.ctrl.HasAwayPresence() {
+		dot := m.styles.MemberAccount
+		switch header.Presence {
+		case "online":
+			dot = m.styles.MemberPresenceOnline
+		case "away":
+			dot = m.styles.MemberPresenceAway
+		}
+		line.WriteString(dot.Render("●"))
+		line.WriteString(" ")
+	}
+	line.WriteString(m.styles.Topic.Bold(true).Render(nick))
+	for _, label := range header.Labels {
+		if label == "" {
+			continue
+		}
+		line.WriteString(" ")
+		line.WriteString(m.styles.MemberAccount.Render(label))
+	}
+	return line.String()
 }
 
 // transcriptArea is the scrolling row area with the direct-message typing footer
@@ -230,33 +278,41 @@ const topicBarTint = 0.20
 // The member count is deliberately not repeated here: a channel's count belongs
 // to the member column's "ONLINE - N" heading, so the header stays the topic.
 func (m *Model) topicHeaderLine(topic string) string {
+	return m.headerBand(m.styles.Topic.Render(topic), true)
+}
+
+// headerBand paints one full-width transcript header row. withMarker places
+// the unseen jump hint on this row; the title row of a query that also has a
+// real name leaves the hint for that second band.
+func (m *Model) headerBand(content string, withMarker bool) string {
 	width := m.transcriptWidth()
-	content := m.styles.Topic.Render(topic)
-	if marker := m.unseenMarker(); marker != "" {
-		// The tail owns the right end, one gutter short of the member column.
-		available := width - headerTailGutter
-		if available < 0 {
-			available = 0
-		}
-		gap := available - lipgloss.Width(content) - lipgloss.Width(marker)
-		if gap < 1 {
-			// Spend the topic until the tail and one space fit. If the tail alone
-			// is wider than the column there is nothing left to give, but the tail
-			// is still emitted last so it is never the thing cut.
-			maxTopic := available - lipgloss.Width(marker) - 1
-			if maxTopic < 0 {
-				maxTopic = 0
+	if withMarker {
+		if marker := m.unseenMarker(); marker != "" {
+			// The tail owns the right end, one gutter short of the member column.
+			available := width - headerTailGutter
+			if available < 0 {
+				available = 0
 			}
-			content = truncateLine(content, maxTopic)
-			gap = available - lipgloss.Width(content) - lipgloss.Width(marker)
-			if gap < 0 {
-				gap = 0
+			gap := available - lipgloss.Width(content) - lipgloss.Width(marker)
+			if gap < 1 {
+				// Spend the topic until the tail and one space fit. If the tail alone
+				// is wider than the column there is nothing left to give, but the tail
+				// is still emitted last so it is never the thing cut.
+				maxTopic := available - lipgloss.Width(marker) - 1
+				if maxTopic < 0 {
+					maxTopic = 0
+				}
+				content = truncateLine(content, maxTopic)
+				gap = available - lipgloss.Width(content) - lipgloss.Width(marker)
+				if gap < 0 {
+					gap = 0
+				}
 			}
+			content += strings.Repeat(" ", gap) + marker
+			return m.styles.TopicBar.Width(width).Render(content)
 		}
-		content += strings.Repeat(" ", gap) + marker
-	} else {
-		content = truncateLine(content, width)
 	}
+	content = truncateLine(content, width)
 	// The band is the block's own background, so it covers the caption, the gap,
 	// and the padding out to the column edge rather than stopping at the text.
 	return m.styles.TopicBar.Width(width).Render(content)

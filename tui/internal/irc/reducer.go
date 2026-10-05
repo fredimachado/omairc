@@ -75,6 +75,12 @@ type MemberView struct {
 	// Account is empty when unknown, logged out, or the same as the nick
 	// under the network case mapping.
 	Account string
+	// Realname is the meaningful gecos. Empty when the stored name is blank
+	// or a placeholder.
+	Realname string
+	// Labels are the query-header labels: account or "unauthenticated", then
+	// "server operator", then "bot".
+	Labels []string
 }
 
 // IsAway reports whether the member is marked away.
@@ -442,6 +448,8 @@ func (r *EventReducer) Apply(event Event, now time.Time) {
 		r.reduceWhoisTranscript(value)
 	case ChannelErrorEvent:
 		r.reduceChannelError(value)
+	case NickFactsEvent:
+		r.reduceNickFacts(value)
 	}
 }
 
@@ -793,6 +801,8 @@ func (r *EventReducer) MemberView(key ConversationKey, normalizedNick string) (M
 		Homepage:    facts.Metadata(HomepageKey()),
 		Color:       facts.Metadata(ColorKey()),
 		Account:     r.DisplayAccount(key.NetworkID, member.DisplayNick),
+		Realname:    DisplayedRealname(facts.Realname, member.DisplayNick),
+		Labels:      r.PeerFactLabels(key.NetworkID, member.DisplayNick),
 	}, true
 }
 
@@ -817,6 +827,21 @@ func (r *EventReducer) DisplayAccount(networkID, nick string) string {
 		return ""
 	}
 	return account
+}
+
+// MeaningfulRealname returns the stored gecos when it is worth showing. It
+// mirrors IrcEventReducer::meaningfulRealname.
+func (r *EventReducer) MeaningfulRealname(networkID, nick string) string {
+	return DisplayedRealname(r.NickPresence(networkID, nick).Realname, nick)
+}
+
+// PeerFactLabels returns the short identity labels for nick. It mirrors
+// IrcEventReducer::peerFactLabels.
+func (r *EventReducer) PeerFactLabels(networkID, nick string) []string {
+	facts := r.NickPresence(networkID, nick)
+	matches := facts.Account != "" &&
+		featuresCaseMapping(r.ServerFeatures(networkID)).Equals(facts.Account, nick)
+	return PeerFactLabels(facts, matches)
 }
 
 // PeerPresence reports what the network proves about a nick: Unknown without a
@@ -2011,6 +2036,21 @@ func (r *EventReducer) reduceJoin(event JoinEvent) {
 	}
 }
 
+// reduceNickFacts stores a WHO or WHOIS identity fact. A nil field is left
+// unchanged. It mirrors IrcEventReducer::reduce(IrcNickFactsEvent).
+func (r *EventReducer) reduceNickFacts(event NickFactsEvent) {
+	normalizedNick := r.normalize(event.NetworkID, event.Nick)
+	if normalizedNick == "" {
+		return
+	}
+	if event.Realname != nil {
+		r.setPresenceRealname(event.NetworkID, normalizedNick, *event.Realname)
+	}
+	if event.ServerOperator != nil {
+		r.setPresenceOperator(event.NetworkID, normalizedNick, *event.ServerOperator)
+	}
+}
+
 // reduceAccount records an account-notify change. It mirrors
 // IrcEventReducer::reduce(IrcAccountEvent).
 func (r *EventReducer) reduceAccount(event AccountEvent) {
@@ -2491,9 +2531,17 @@ func (r *EventReducer) setPresenceAccount(networkID, normalizedNick, account str
 	r.presence[networkID] = presence
 }
 
+// setPresenceRealname stores a nick's gecos.
 func (r *EventReducer) setPresenceRealname(networkID, normalizedNick, realname string) {
 	presence := r.presence[networkID]
 	presence.SetRealname(normalizedNick, realname)
+	r.presence[networkID] = presence
+}
+
+// setPresenceOperator stores whether a nick is a server operator.
+func (r *EventReducer) setPresenceOperator(networkID, normalizedNick string, operator bool) {
+	presence := r.presence[networkID]
+	presence.SetServerOperator(normalizedNick, operator)
 	r.presence[networkID] = presence
 }
 
@@ -2604,6 +2652,11 @@ func dereferenceEvent(event Event) Event {
 		}
 		return *value
 	case *ChannelErrorEvent:
+		if value == nil {
+			return nil
+		}
+		return *value
+	case *NickFactsEvent:
 		if value == nil {
 			return nil
 		}

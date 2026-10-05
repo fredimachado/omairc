@@ -78,6 +78,10 @@ type Controller struct {
 	conversationEpoch int
 	peerMetadataEpoch int
 	peerAccountEpoch  int
+	// coalesceMemberRow skips one member-row rebuild when the next event in
+	// the same IRC line repaints that nick. A WHO reply is away, then nick
+	// facts, and the row should rebuild once with both.
+	coalesceMemberRow bool
 
 	conversations []ConversationSnapshot
 	messages      []MessageSnapshot
@@ -719,8 +723,10 @@ func (c *Controller) Apply(event irc.Event) {
 	// A redundant account tag never lands: the reducer would re-store the same
 	// value and the view would repaint for nothing.
 	if account, ok := event.(irc.AccountEvent); ok {
-		stored := c.reducer.NickPresence(account.NetworkID, account.Nick).Account
-		if servicesAccountMatches(stored, account.Account) {
+		stored := c.reducer.NickPresence(account.NetworkID, account.Nick)
+		// A first `*` is a logout we have not stored yet. A repeat of the
+		// same account, including a second logout, still changes nothing.
+		if stored.AccountKnown && servicesAccountMatches(stored.Account, account.Account) {
 			return
 		}
 	}
@@ -746,6 +752,8 @@ func (c *Controller) Apply(event irc.Event) {
 		c.peerMetadataEpoch++
 		c.replies.RouteOwnMetadataReply(metadata.NetworkID, metadata.Nick,
 			metadata.Key, metadata.Value)
+	} else if _, ok := event.(irc.NickFactsEvent); ok {
+		c.peerMetadataEpoch++
 	}
 	if accountsMoved(kind, event) {
 		c.peerAccountEpoch++
@@ -826,6 +834,23 @@ func (c *Controller) Apply(event irc.Event) {
 	}
 }
 
+// memberRowNick is the normalized nick a member-row notify would repaint.
+// Events that reset the panel, or do not touch it, return false.
+func memberRowNick(reducer *irc.EventReducer, event irc.Event) (string, bool) {
+	switch value := event.(type) {
+	case irc.AwayEvent:
+		return reducer.ConversationKey(value.NetworkID, value.Nick).NormalizedTarget, true
+	case irc.AccountEvent:
+		return reducer.ConversationKey(value.NetworkID, value.Nick).NormalizedTarget, true
+	case irc.MemberMetadataEvent:
+		return reducer.ConversationKey(value.NetworkID, value.Nick).NormalizedTarget, true
+	case irc.NickFactsEvent:
+		return reducer.ConversationKey(value.NetworkID, value.Nick).NormalizedTarget, true
+	default:
+		return "", false
+	}
+}
+
 // Publish is the only place the snapshots refresh. It rebuilds the surfaces a
 // notify names and bumps the matching epochs. It mirrors IrcController::publish
 // (src/irc/irccontroller.cpp:2137-2158).
@@ -837,7 +862,8 @@ func (c *Controller) Publish(notify irc.ViewNotify) {
 	if notify.Messages {
 		c.rebuildMessages()
 	}
-	if notify.Members != irc.MemberSurfaceNone {
+	if notify.Members != irc.MemberSurfaceNone &&
+		!(c.coalesceMemberRow && notify.Members == irc.MemberSurfaceRow) {
 		c.rebuildMembers()
 	}
 	if notify.Selection {
@@ -1499,6 +1525,37 @@ func JumpScore(query, name, detail string) int {
 // JumpResultLimit is how many Ctrl+K rows the overlay keeps.
 func JumpResultLimit() int { return irc.JumpResultLimit }
 
+// SelectedPeerHeader returns the query header for the selected direct message.
+// A channel, the console, and an empty selection report false. Presence is
+// "online", "away", or "offline". Realname is the meaningful gecos. Labels
+// are the short account, operator, and bot list.
+func (c *Controller) SelectedPeerHeader() (PeerHeader, bool) {
+	if c.consoleOpen || c.selected == nil || c.IsChannel() {
+		return PeerHeader{}, false
+	}
+	nick := c.SelectedTarget()
+	if conversation := c.reducer.Find(*c.selected); conversation != nil && conversation.Target != "" {
+		nick = conversation.Target
+	}
+	if nick == "" {
+		return PeerHeader{}, false
+	}
+	normalized := c.reducer.ConversationKey(c.selected.NetworkID, nick).NormalizedTarget
+	presence := "offline"
+	switch c.reducer.PeerPresence(c.selected.NetworkID, normalized) {
+	case irc.PeerOnline:
+		presence = "online"
+	case irc.PeerAway:
+		presence = "away"
+	}
+	return PeerHeader{
+		Nick:     nick,
+		Presence: presence,
+		Realname: c.reducer.MeaningfulRealname(c.selected.NetworkID, nick),
+		Labels:   c.reducer.PeerFactLabels(c.selected.NetworkID, nick),
+	}, true
+}
+
 // IsChannel reports whether the selected target is a channel under the
 // network's advertised CHANTYPES.
 func (c *Controller) IsChannel() bool {
@@ -1915,13 +1972,29 @@ func (c *Controller) handleMessage(networkID string, message irc.Message) {
 
 	features := c.reducer.ServerFeatures(networkID)
 	currentNick := c.currentNicks[networkID]
-	for _, event := range irc.Translate(networkID, currentNick, features, message, c.now()) {
+	events := irc.Translate(networkID, currentNick, features, message, c.now())
+	for index, event := range events {
 		if nick, ok := event.(irc.NickEvent); ok {
 			if features.CaseMapping().Equals(nick.OldNick, currentNick) {
 				c.currentNicks[networkID] = nick.NewNick
 			}
 		}
+		// A WHO line is away, then nick facts, for one person. The member
+		// snapshot reads both from the reducer, so it rebuilds once.
+		// Other pairs stay separate: a repeated account event can return
+		// before it publishes, and skipping the first row would drop it.
+		c.coalesceMemberRow = false
+		if index+1 < len(events) {
+			_, away := event.(irc.AwayEvent)
+			_, facts := events[index+1].(irc.NickFactsEvent)
+			if away && facts {
+				nick, nickOK := memberRowNick(c.reducer, event)
+				next, nextOK := memberRowNick(c.reducer, events[index+1])
+				c.coalesceMemberRow = nickOK && nextOK && nick == next
+			}
+		}
 		c.Apply(event)
+		c.coalesceMemberRow = false
 		if join, ok := event.(irc.JoinEvent); ok {
 			mapping := features.CaseMapping()
 			selfJoin := mapping.Equals(join.Nick, currentNick)

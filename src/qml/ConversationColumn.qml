@@ -18,6 +18,10 @@ Item {
     property var channelNameAt: null
     property var openAllowedUrl: null
     property var openChannelName: null
+    property bool queryIdentity: false
+    property bool awayPresenceVisible: false
+    property string queryPresence: "offline"
+    property var queryLabels: []
     property string statusTitle: ""
     property string statusSubtitle: ""
     property string currentConversation: ""
@@ -55,6 +59,19 @@ Item {
         anchors.right: parent.right
         height: visible ? column.style.scaledSize(72) : 0
 
+        TextMetrics {
+            id: queryLabelMetrics
+            font.family: "iA Writer Mono S"
+            font.pixelSize: column.style.scaledSize(11)
+            text: {
+                var labels = column.queryLabels || [];
+                var joined = "";
+                for (var index = 0; index < labels.length; ++index)
+                    joined += String(labels[index]);
+                return joined;
+            }
+        }
+
         Column {
             anchors.left: parent.left
             anchors.leftMargin: column.style.scaledSize(24)
@@ -64,6 +81,7 @@ Item {
             spacing: column.style.scaledSize(3)
 
             Text {
+                visible: !column.queryIdentity
                 width: parent.width
                 text: column.headerTitle
                 color: column.style.inkColor
@@ -71,6 +89,71 @@ Item {
                 font.family: "iA Writer Mono S"
                 font.bold: true
                 font.pixelSize: column.style.scaledSize(17)
+            }
+
+            Row {
+                id: queryTitleRow
+                visible: column.queryIdentity
+                width: parent.width
+                spacing: column.style.scaledSize(8)
+
+                Item {
+                    id: queryPresenceSlot
+                    visible: column.queryIdentity && column.awayPresenceVisible
+                    width: visible ? column.style.scaledSize(8) : 0
+                    height: queryNick.implicitHeight
+
+                    Rectangle {
+                        objectName: "queryPresenceDot"
+                        visible: queryPresenceSlot.visible
+                        anchors.verticalCenter: parent.verticalCenter
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        width: column.style.scaledSize(8)
+                        height: width
+                        radius: width / 2
+                        color: column.style.presenceMarkColor(column.queryPresence)
+                    }
+                }
+
+                Text {
+                    id: queryNick
+                    text: column.headerTitle
+                    color: column.style.inkColor
+                    elide: Text.ElideRight
+                    font.family: "iA Writer Mono S"
+                    font.bold: true
+                    font.pixelSize: column.style.scaledSize(17)
+                    width: {
+                        // The face is monospace, so the joined advance width is
+                        // the sum of the label widths. Reading the repeater's
+                        // itemAt() misses the pass that creates the delegates.
+                        var used = 0;
+                        var labels = column.queryLabels || [];
+                        if (queryPresenceSlot.visible)
+                            used += queryPresenceSlot.width + queryTitleRow.spacing;
+                        if (labels.length > 0) {
+                            used += queryLabelMetrics.width
+                                + labels.length * queryTitleRow.spacing;
+                        }
+                        return Math.max(0, Math.min(implicitWidth,
+                                                    queryTitleRow.width - used));
+                    }
+                }
+
+                Repeater {
+                    id: queryLabelRepeater
+                    model: column.queryLabels
+
+                    Text {
+                        objectName: "queryFactLabel"
+                        text: modelData
+                        color: column.style.mutedColor
+                        font.family: "iA Writer Mono S"
+                        font.pixelSize: column.style.scaledSize(11)
+                        height: queryNick.implicitHeight
+                        verticalAlignment: Text.AlignVCenter
+                    }
+                }
             }
 
             TopicLine {

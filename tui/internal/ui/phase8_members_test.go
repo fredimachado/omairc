@@ -335,9 +335,63 @@ func TestMemberRowFocusAccentsOnlyTheFocusedRow(t *testing.T) {
 	}
 }
 
-// TestMemberStatusSublineAlignsUnderTheLabel covers the status subline restyle:
-// it stays a separate muted line, blanked past the focus gutter and (with
-// away-notify on) the presence dot, so it hangs under the nick.
+// panelHasFact reports whether the rendered member panel has one line whose
+// trimmed text is fact. Truncation happens before this check.
+func panelHasFact(panel, fact string) bool {
+	for _, line := range strings.Split(panel, "\n") {
+		if strings.TrimSpace(line) == fact {
+			return true
+		}
+	}
+	return false
+}
+
+func focusedMemberPanel(t *testing.T, m *Model, nick string) string {
+	t.Helper()
+	m.memberFocus = true
+	m.memberIndex = phase8MemberIndex(t, m, nick)
+	return ansiPattern.ReplaceAllString(m.membersView(membersWidth, 40), "")
+}
+
+// TestMemberFocusShowsIdentityTooltip covers the keyboard tooltip after
+// truncateLine. Each fact is its own line, so a 22-cell column still shows
+// the real name and every label.
+func TestMemberFocusShowsIdentityTooltip(t *testing.T) {
+	m := seededModel(t)
+	unfocused := ansiPattern.ReplaceAllString(m.membersView(membersWidth, 40), "")
+	if panelHasFact(unfocused, "Packet Bot") {
+		t.Fatal("an unfocused member panel must not show the real name")
+	}
+
+	dax := focusedMemberPanel(t, m, "dax")
+	for _, want := range []string{"online", "Packet Bot", "bot"} {
+		if !panelHasFact(dax, want) {
+			t.Fatalf("dax panel missing %q:\n%s", want, dax)
+		}
+	}
+
+	ivy := focusedMemberPanel(t, m, "ivy")
+	for _, want := range []string{"away", "unauthenticated"} {
+		if !panelHasFact(ivy, want) {
+			t.Fatalf("ivy panel missing %q:\n%s", want, ivy)
+		}
+	}
+
+	fred := focusedMemberPanel(t, m, "fred")
+	for _, want := range []string{"Fred Machado", "fredm", "server operator"} {
+		if !panelHasFact(fred, want) {
+			t.Fatalf("fred panel missing %q:\n%s", want, fred)
+		}
+	}
+
+	lena := focusedMemberPanel(t, m, "lena")
+	for _, want := range []string{"Lena Pink", "pinkieval"} {
+		if !panelHasFact(lena, want) {
+			t.Fatalf("lena panel missing %q:\n%s", want, lena)
+		}
+	}
+}
+
 func TestMemberStatusSublineAlignsUnderTheLabel(t *testing.T) {
 	m := seededModel(t)
 	anna := phase8MemberLine(t, m, "anna")
