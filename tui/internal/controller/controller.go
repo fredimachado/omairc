@@ -1313,6 +1313,45 @@ func (c *Controller) Topic() string {
 	return "Direct message with " + conversation.Target
 }
 
+// ConversationTopic returns the plain channel topic for one conversation. A
+// direct message has none; the "Direct message with" caption is not a topic.
+// It mirrors IrcController::conversationTopic.
+func (c *Controller) ConversationTopic(networkID, target string) string {
+	if c == nil || networkID == "" || target == "" {
+		return ""
+	}
+	conversation := c.reducer.Find(c.reducer.ConversationKey(networkID, target))
+	if conversation == nil {
+		return ""
+	}
+	channel := conversation.Channel()
+	if channel == nil {
+		return ""
+	}
+	return irc.PlainIrcText(channel.Topic)
+}
+
+// PeerRealname returns a nick's meaningful GECOS, or "" when it is unknown
+// or a placeholder. It mirrors IrcController::peerRealname.
+func (c *Controller) PeerRealname(networkID, nick string) string {
+	if c == nil || networkID == "" || nick == "" {
+		return ""
+	}
+	stored := c.reducer.NickPresence(networkID, nick).Realname
+	if !irc.MeaningfulRealname(stored, nick) {
+		return ""
+	}
+	return stored
+}
+
+// JumpScore ranks one jump row. It mirrors IrcController::jumpScore.
+func JumpScore(query, name, detail string) int {
+	return irc.JumpScore(query, name, detail)
+}
+
+// JumpResultLimit is how many Ctrl+K rows the overlay keeps.
+func JumpResultLimit() int { return irc.JumpResultLimit }
+
 // IsChannel reports whether the selected target is a channel under the
 // network's advertised CHANTYPES.
 func (c *Controller) IsChannel() bool {

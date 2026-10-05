@@ -131,6 +131,10 @@ func classifyViewNotifyUnchecked(event Event, reducer *EventReducer) ViewNotify 
 		notify.RearmTyping = false
 		return notify
 	case AwayEvent:
+		// A WHOIS real name does not change away, so the member list stays.
+		if e.RealnameOnly {
+			return ViewNotifyNone()
+		}
 		key := reducer.ConversationKey(e.NetworkID, e.Nick)
 		notify := ViewNotifyMemberRow(key.NormalizedTarget)
 		// A direct message row paints this peer's presence from the same

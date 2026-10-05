@@ -173,6 +173,18 @@ public:
     // as the nick under the network case mapping.
     Q_INVOKABLE QString peerAccount(const QString& networkId,
                                     const QString& nick) const;
+    // Plain channel topic. A direct message has none; the "Direct message
+    // with" caption is not a topic.
+    Q_INVOKABLE QString conversationTopic(const QString& networkId,
+                                          const QString& target) const;
+    // Meaningful GECOS for a nick, or empty when unknown or a placeholder.
+    Q_INVOKABLE QString peerRealname(const QString& networkId,
+                                     const QString& nick) const;
+    // Name hits score 2, a topic or real name scores 1. Empty query scores 0.
+    Q_INVOKABLE int jumpScore(const QString& query,
+                              const QString& name,
+                              const QString& detail) const;
+    Q_INVOKABLE int jumpResultLimit() const;
 
     QStringList networkIds() const;
     IrcSession *session(const QString &networkId) const;

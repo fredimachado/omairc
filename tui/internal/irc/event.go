@@ -161,12 +161,14 @@ func (ActionEvent) eventKind() EventKind { return EventAction }
 
 // JoinEvent reports a JOIN. Account is set only when the JOIN carried the
 // extended-join account parameter; nil means a classic one-parameter JOIN,
-// which must not clear a known account.
+// which must not clear a known account. Realname is set only when a third
+// parameter exists. Nil leaves a stored real name alone.
 type JoinEvent struct {
 	NetworkID string
 	Channel   string
 	Nick      string
 	Account   *string
+	Realname  *string
 }
 
 func (JoinEvent) eventKind() EventKind { return EventJoin }
@@ -248,11 +250,15 @@ type ModeEvent struct {
 func (ModeEvent) eventKind() EventKind { return EventMode }
 
 // AwayEvent reports an away-notify change for one nick. A nil Away means the
-// nick is back.
+// nick is back. Realname is set by RPL_WHOREPLY and RPL_WHOISUSER; nil leaves
+// a stored real name alone. RealnameOnly is a WHOIS 311 line, which must not
+// change away.
 type AwayEvent struct {
-	NetworkID string
-	Nick      string
-	Away      *Away
+	NetworkID    string
+	Nick         string
+	Away         *Away
+	Realname     *string
+	RealnameOnly bool
 }
 
 func (AwayEvent) eventKind() EventKind { return EventAway }

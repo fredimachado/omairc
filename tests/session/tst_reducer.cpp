@@ -211,6 +211,7 @@ private slots:
     void nickShapedJoinDoesNotInventDirect();
     void extendedJoinRecordsAccountOnOneLine();
     void accountCommandAndTagShareOneField();
+    void whoAndWhoisStoreRealnameForJump();
     void nickChangeKeepsServicesAccount();
     void accountChangeRefreshesMemberRowAndTranscript();
     void conversationLogTailFiltersAndOrdersAcceptedRecords();
@@ -4075,6 +4076,98 @@ void ReducerTest::accountCommandAndTagShareOneField()
     applyWire(reducer, ":server 311 omairc Alice user host * :Alice Example");
     QCOMPARE(reducer.nickPresence(networkA, QStringLiteral("Alice")).account,
              QStringLiteral("whoisacct"));
+    QCOMPARE(reducer.nickPresence(networkA, QStringLiteral("Alice")).realname,
+             QStringLiteral("Alice Example"));
+}
+
+void ReducerTest::whoAndWhoisStoreRealnameForJump()
+{
+    IrcEventReducer reducer;
+    welcome(reducer, networkA);
+    applyWire(reducer, ":Alice!a@h JOIN #room");
+    applyWire(reducer, ":Alice!a@h AWAY :lunch");
+    applyWire(reducer, ":server 352 omairc #room u h s Alice H :0 Alice");
+    QVERIFY(!reducer.nickPresence(networkA, QStringLiteral("Alice")).away.has_value());
+    QCOMPARE(reducer.nickPresence(networkA, QStringLiteral("Alice")).realname,
+             QStringLiteral("Alice"));
+    QVERIFY(!ircMeaningfulRealname(
+        reducer.nickPresence(networkA, QStringLiteral("Alice")).realname,
+        QStringLiteral("Alice")));
+
+    applyWire(reducer, ":server 311 omairc Alice u h * :Alice Example");
+    QVERIFY(!reducer.nickPresence(networkA, QStringLiteral("Alice")).away.has_value());
+    QCOMPARE(reducer.nickPresence(networkA, QStringLiteral("Alice")).realname,
+             QStringLiteral("Alice Example"));
+    QVERIFY(ircMeaningfulRealname(QStringLiteral("Alice Example"),
+                                  QStringLiteral("Alice")));
+    QVERIFY(!ircMeaningfulRealname(QStringLiteral("unknown"),
+                                   QStringLiteral("Alice")));
+    QVERIFY(!ircMeaningfulRealname(QStringLiteral("Realname"),
+                                   QStringLiteral("Alice")));
+    QVERIFY(!ircMeaningfulRealname(QStringLiteral("fullname"),
+                                   QStringLiteral("dax")));
+    QVERIFY(!ircMeaningfulRealname(QStringLiteral("FULLNAME"),
+                                   QStringLiteral("Alice")));
+
+    applyWire(reducer, ":Alice!a@h AWAY :back later");
+    QCOMPARE(reducer.nickPresence(networkA, QStringLiteral("Alice")).realname,
+             QStringLiteral("Alice Example"));
+    QVERIFY(reducer.nickPresence(networkA, QStringLiteral("Alice")).away.has_value());
+
+    applyWire(reducer, ":server 352 omairc #room u h s Alice G :2");
+    QVERIFY(reducer.nickPresence(networkA, QStringLiteral("Alice")).away.has_value());
+    QCOMPARE(reducer.nickPresence(networkA, QStringLiteral("Alice")).realname,
+             QStringLiteral("Alice Example"));
+
+    applyWire(reducer, ":server 352 omairc #room u h s Alice G :0 Alice Example");
+    QCOMPARE(reducer.nickPresence(networkA, QStringLiteral("Alice")).realname,
+             QStringLiteral("Alice Example"));
+    applyWire(reducer, ":server 311 omairc Alice u h * :unknown");
+    QCOMPARE(reducer.nickPresence(networkA, QStringLiteral("Alice")).realname,
+             QStringLiteral("Alice Example"));
+
+    applyWire(reducer, ":Alice!a@h NICK Alicia");
+    QCOMPARE(reducer.nickPresence(networkA, QStringLiteral("Alicia")).realname,
+             QStringLiteral("Alice Example"));
+    QCOMPARE(reducer.nickPresence(networkA, QStringLiteral("Alice")).realname,
+             QString());
+
+    QCOMPARE(ircJumpScore(QStringLiteral("alice"), QStringLiteral("#desktop"),
+                          QStringLiteral("Alice wrote this")),
+             1);
+    QCOMPARE(ircJumpScore(QStringLiteral("desk"), QStringLiteral("#desktop"),
+                          QStringLiteral("Alice wrote this")),
+             2);
+    QCOMPARE(ircJumpScore(QStringLiteral("alice"), QStringLiteral("#desktop"),
+                          QStringLiteral("notes from Alice")),
+             1);
+    QCOMPARE(ircJumpScore(QStringLiteral("desk"), QStringLiteral("#desktop"),
+                          QStringLiteral("desktop notes")),
+             3);
+    QCOMPARE(ircJumpScore(QString(), QStringLiteral("#desktop"),
+                          QStringLiteral("topic")),
+             0);
+    QCOMPARE(ircJumpScore(QStringLiteral("zzz"), QStringLiteral("#desktop"),
+                          QStringLiteral("topic")),
+             0);
+    QCOMPARE(ircJumpResultLimit, 20);
+
+    IrcEventReducer joined;
+    welcome(joined, networkA);
+    applyWire(joined, ":Alice!a@h JOIN #room acct :Alice Example");
+    QCOMPARE(joined.nickPresence(networkA, QStringLiteral("Alice")).realname,
+             QStringLiteral("Alice Example"));
+    QCOMPARE(joined.nickPresence(networkA, QStringLiteral("Alice")).account,
+             QStringLiteral("acct"));
+    QVERIFY(!joined.nickPresence(networkA, QStringLiteral("Alice")).away.has_value());
+    QVERIFY(ircMeaningfulRealname(QStringLiteral("Alice Example"),
+                                  QStringLiteral("Alice")));
+    applyWire(joined, ":Alice!a@h JOIN :#room");
+    QCOMPARE(joined.nickPresence(networkA, QStringLiteral("Alice")).realname,
+             QStringLiteral("Alice Example"));
+    QCOMPARE(joined.nickPresence(networkA, QStringLiteral("Alice")).account,
+             QStringLiteral("acct"));
+    QVERIFY(!joined.nickPresence(networkA, QStringLiteral("Alice")).away.has_value());
 }
 
 void ReducerTest::nickChangeKeepsServicesAccount()

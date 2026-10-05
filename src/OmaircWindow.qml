@@ -949,7 +949,11 @@ ApplicationWindow {
         var query = jumpSheet.jumpFilter ? jumpSheet.jumpFilter.text.trim().toLowerCase() : "";
         var rows = sidebarConversationRows();
         var sections = sidebarNetworkSections();
-        jumpModel.clear();
+        var candidates = [];
+        var order = 0;
+        var limit = irc && typeof irc.jumpResultLimit === "function"
+            ? irc.jumpResultLimit() : 20;
+        var canScore = irc && typeof irc.jumpScore === "function";
         for (var sectionIndex = 0; sectionIndex < sections.length; ++sectionIndex) {
             var section = sections[sectionIndex];
             var networkName = section.displayName || "";
@@ -959,26 +963,67 @@ ApplicationWindow {
                     continue;
                 var conversationLabel = jumpTargetLabel("conversation",
                     rows[rowIndex].conversationName, networkName);
-                if (query.length === 0
-                        || conversationLabel.toLowerCase().indexOf(query) !== -1)
-                    jumpModel.append({
-                        kind: "conversation",
-                        name: rows[rowIndex].conversationName,
-                        networkId: rows[rowIndex].networkId,
-                        conversationId: rows[rowIndex].conversationId,
-                        label: conversationLabel
-                    });
+                var detail = "";
+                if (canScore) {
+                    detail = rows[rowIndex].direct
+                        ? (irc.peerRealname(rows[rowIndex].networkId,
+                                            rows[rowIndex].conversationName) || "")
+                        : (irc.conversationTopic(rows[rowIndex].networkId,
+                                                 rows[rowIndex].conversationName) || "");
+                }
+                var score = canScore
+                    ? irc.jumpScore(query, conversationLabel, detail)
+                    : (query.length === 0
+                       || conversationLabel.toLowerCase().indexOf(query) !== -1
+                       ? 2 : 0);
+                if (query.length > 0 && score <= 0)
+                    continue;
+                candidates.push({
+                    kind: "conversation",
+                    name: rows[rowIndex].conversationName,
+                    networkId: rows[rowIndex].networkId,
+                    conversationId: rows[rowIndex].conversationId,
+                    label: conversationLabel,
+                    score: score,
+                    order: order++
+                });
             }
             var statusLabel = jumpTargetLabel("status", "Status", networkName);
-            if (query.length === 0
-                    || statusLabel.toLowerCase().indexOf(query) !== -1)
-                jumpModel.append({
+            var statusScore = canScore
+                ? irc.jumpScore(query, statusLabel, "")
+                : (query.length === 0
+                   || statusLabel.toLowerCase().indexOf(query) !== -1 ? 2 : 0);
+            if (query.length === 0 || statusScore > 0)
+                candidates.push({
                     kind: "status",
                     name: "Status",
                     networkId: section.networkId,
                     conversationId: "",
-                    label: statusLabel
+                    label: statusLabel,
+                    score: statusScore,
+                    order: order++
                 });
+        }
+        // A name hit is 2 or 3. A detail-only hit is 1. The extra point for a
+        // topic or real name must not reorder two name matches.
+        candidates.sort(function(left, right) {
+            var leftName = left.score >= 2 ? 1 : 0;
+            var rightName = right.score >= 2 ? 1 : 0;
+            if (leftName !== rightName)
+                return rightName - leftName;
+            return left.order - right.order;
+        });
+        if (candidates.length > limit)
+            candidates = candidates.slice(0, limit);
+        jumpModel.clear();
+        for (var index = 0; index < candidates.length; ++index) {
+            jumpModel.append({
+                kind: candidates[index].kind,
+                name: candidates[index].name,
+                networkId: candidates[index].networkId,
+                conversationId: candidates[index].conversationId,
+                label: candidates[index].label
+            });
         }
         if (jumpSelectedIndex >= jumpModel.count)
             jumpSelectedIndex = Math.max(0, jumpModel.count - 1);

@@ -5268,6 +5268,52 @@ TestCase {
         tryCompare(composer, "activeFocus", true);
     }
 
+    function test_ctrlKMatchesTopicAndRealname() {
+        openSeededAppWindow();
+        var sheet = openJumpSheet();
+        typeText("builders");
+        tryCompare(item("jumpFilter"), "text", "builders");
+        var model = item("jumpModel");
+        compare(model.count, 1);
+        compare(model.get(0).name, "#omarchy");
+        compare(model.get(0).networkId, seed.omarchyNetworkId);
+        compare(model.get(0).label,
+                "#omarchy · " + networkDisplayName(seed.omarchyNetworkId));
+
+        keyClick(Qt.Key_Return);
+        tryCompare(sheet, "opened", false);
+        tryCompare(appWindow, "currentConversationId",
+                   seed.omarchyNetworkId + "\n#omarchy");
+
+        sheet = openJumpSheet();
+        typeText("personal");
+        tryCompare(item("jumpFilter"), "text", "personal");
+        model = item("jumpModel");
+        compare(model.count, 1);
+        compare(model.get(0).name, "#desktop");
+        compare(model.get(0).networkId, seed.omarchyNetworkId);
+        keyClick(Qt.Key_Escape);
+        tryCompare(sheet, "opened", false);
+
+        seed.injectOmarchy(
+            ":server 311 fred anna u h * :Anna Vale\r\n");
+        seed.injectOmarchy(
+            ":server 311 fred dax u h * :unknown\r\n");
+        sheet = openJumpSheet();
+        typeText("vale");
+        tryCompare(item("jumpFilter"), "text", "vale");
+        model = item("jumpModel");
+        compare(model.count, 1);
+        compare(model.get(0).name, "anna");
+        compare(model.get(0).networkId, seed.omarchyNetworkId);
+        compare(model.get(0).label, "anna");
+
+        item("jumpFilter").clear();
+        typeText("unknown");
+        tryCompare(item("jumpFilter"), "text", "unknown");
+        compare(item("jumpModel").count, 0);
+    }
+
     function test_ctrlKDisambiguatesDuplicateChannels() {
         openSeededAppWindow();
         var sheet = openJumpSheet();
@@ -5275,6 +5321,8 @@ TestCase {
         tryCompare(item("jumpFilter"), "text", "#omarchy");
         var model = item("jumpModel");
         compare(model.count, 2);
+        // The OFTC topic also contains "#omarchy". That detail hit must not
+        // reorder the two name matches, so the sidebar-first row stays first.
         compare(model.get(0).name, "#omarchy");
         compare(model.get(0).networkId, seed.omarchyNetworkId);
         compare(model.get(0).label,
@@ -5285,17 +5333,58 @@ TestCase {
                 "#omarchy · " + networkDisplayName(seed.oftcNetworkId));
         compare(appWindow.jumpSelectedIndex, 0);
 
-        keyClick(Qt.Key_Down);
-        compare(appWindow.jumpSelectedIndex, 1);
-
         keyClick(Qt.Key_Return);
         tryCompare(sheet, "opened", false);
         tryCompare(appWindow, "currentConversationId",
-                   seed.oftcNetworkId + "\n#omarchy");
+                   seed.omarchyNetworkId + "\n#omarchy");
         compare(appWindow.currentConversation, "#omarchy");
         compare(appWindow.title,
-                "#omarchy · " + networkDisplayName(seed.oftcNetworkId) + " - Omairc");
+                "#omarchy · " + networkDisplayName(seed.omarchyNetworkId) + " - Omairc");
         tryCompare(item("messageComposer"), "activeFocus", true);
+    }
+
+    function test_ctrlKCapsAfterRank() {
+        openSeededAppWindow();
+        var sheet = openJumpSheet();
+        var first = item("jumpModel").get(0);
+        var firstKind = first.kind;
+        var firstName = first.name;
+        var firstNetwork = first.networkId;
+        keyClick(Qt.Key_Escape);
+        tryCompare(sheet, "opened", false);
+
+        // Joined channels sort by name, so a joined #c00 becomes the first
+        // sidebar row. Parting after the self join keeps the channel and
+        // parks it after the channels that were already joined. #zzcap is
+        // then past the 20-row cap until a name match pulls it forward.
+        var wire = "";
+        for (var index = 0; index < 20; ++index) {
+            var suffix = index < 10 ? "0" + index : String(index);
+            var channel = "#c" + suffix;
+            wire += ":fred!u@h JOIN :" + channel + "\r\n";
+            wire += ":server 332 fred " + channel + " :zzcap notes\r\n";
+            wire += ":fred!u@h PART " + channel + "\r\n";
+        }
+        wire += ":fred!u@h JOIN :#zzcap\r\n";
+        wire += ":fred!u@h PART #zzcap\r\n";
+        seed.injectOmarchy(wire);
+
+        sheet = openJumpSheet();
+        var model = item("jumpModel");
+        compare(model.count, 20);
+        compare(model.get(0).kind, firstKind);
+        compare(model.get(0).name, firstName);
+        compare(model.get(0).networkId, firstNetwork);
+
+        item("jumpFilter").clear();
+        typeText("zzcap");
+        tryCompare(item("jumpFilter"), "text", "zzcap");
+        model = item("jumpModel");
+        compare(model.count, 20);
+        compare(model.get(0).name, "#zzcap");
+        compare(model.get(0).networkId, seed.omarchyNetworkId);
+        for (var row = 0; row < model.count; ++row)
+            verify(model.get(row).name !== "#c19");
     }
 
     function test_ctrlKIsNoOpWhenConnectIsVisible() {
@@ -10308,9 +10397,15 @@ TestCase {
         typeText("build");
         tryCompare(item("jumpFilter"), "text", "build");
         var model = item("jumpModel");
-        compare(model.count, 1);
+        // "build" is inside #omarchy's "builders" topic, so that row ties
+        // with #lab. #build wins on the name, then sidebar order.
+        compare(model.count, 3);
         compare(model.get(0).name, "#build");
         compare(model.get(0).networkId, seed.oftcNetworkId);
+        compare(model.get(1).name, "#omarchy");
+        compare(model.get(1).networkId, seed.omarchyNetworkId);
+        compare(model.get(2).name, "#lab");
+        compare(model.get(2).networkId, seed.oftcNetworkId);
 
         keyClick(Qt.Key_Return);
 

@@ -1889,6 +1889,9 @@ func (r *EventReducer) reduceJoin(event JoinEvent) {
 	if event.Account != nil && normalizedNick != "" {
 		r.setPresenceAccount(event.NetworkID, normalizedNick, *event.Account)
 	}
+	if event.Realname != nil && *event.Realname != "" && normalizedNick != "" {
+		r.setPresenceRealname(event.NetworkID, normalizedNick, *event.Realname)
+	}
 
 	key := r.ConversationKey(event.NetworkID, event.Channel)
 	conversation := r.EnsureConversation(key, event.Channel, CauseChannelState)
@@ -2188,7 +2191,20 @@ func (r *EventReducer) reduceMode(event ModeEvent) {
 // reduceAway records an away-notify change. It mirrors
 // IrcEventReducer::reduce(IrcAwayEvent).
 func (r *EventReducer) reduceAway(event AwayEvent) {
-	r.setPresenceAway(event.NetworkID, r.normalize(event.NetworkID, event.Nick), event.Away)
+	normalized := r.normalize(event.NetworkID, event.Nick)
+	if !event.RealnameOnly {
+		r.setPresenceAway(event.NetworkID, normalized, event.Away)
+	}
+	if event.Realname != nil {
+		incoming := *event.Realname
+		stored := r.NickPresence(event.NetworkID, event.Nick).Realname
+		// A placeholder must not erase a name jump can already match. An
+		// empty or placeholder stored name still takes the incoming value,
+		// so a later real WHOIS can replace "unknown".
+		if MeaningfulRealname(incoming, event.Nick) || !MeaningfulRealname(stored, event.Nick) {
+			r.setPresenceRealname(event.NetworkID, normalized, incoming)
+		}
+	}
 }
 
 // reduceSelfAway records the local user's own away state. It mirrors
@@ -2387,6 +2403,12 @@ func (r *EventReducer) setPresenceMetadata(networkID, normalizedNick, key, value
 func (r *EventReducer) setPresenceAccount(networkID, normalizedNick, account string) {
 	presence := r.presence[networkID]
 	presence.SetAccount(normalizedNick, account)
+	r.presence[networkID] = presence
+}
+
+func (r *EventReducer) setPresenceRealname(networkID, normalizedNick, realname string) {
+	presence := r.presence[networkID]
+	presence.SetRealname(normalizedNick, realname)
 	r.presence[networkID] = presence
 }
 

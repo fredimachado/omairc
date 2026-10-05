@@ -219,6 +219,9 @@ type NickPresence struct {
 	// extended-join, or WHOIS 330. Empty means unknown or logged out; both
 	// display as nothing.
 	Account string
+	// Realname is the GECOS from extended-join, WHO (352), or WHOIS (311).
+	// Empty means unknown.
+	Realname string
 }
 
 // Metadata returns the stored value for key, or "" when unset. The key is
@@ -267,7 +270,17 @@ func (p NickPresence) Avatar() string {
 
 // IsDefault reports whether the presence carries no fact worth keeping.
 func (p NickPresence) IsDefault() bool {
-	return p.Away == nil && len(p.Keys) == 0 && p.Account == ""
+	return p.Away == nil && len(p.Keys) == 0 && p.Account == "" && p.Realname == ""
+}
+
+// MeaningfulRealname reports whether realname is worth matching in jump.
+// A mandatory GECOS is often a placeholder. Equality with nick is exact.
+func MeaningfulRealname(realname, nick string) bool {
+	if realname == "" || realname == nick {
+		return false
+	}
+	folded := strings.ToLower(realname)
+	return folded != "realname" && folded != "unknown" && folded != "fullname"
 }
 
 func (p NickPresence) clone() NickPresence {
@@ -283,7 +296,7 @@ func (p NickPresence) clone() NickPresence {
 			keys[key] = value
 		}
 	}
-	return NickPresence{Away: away, Keys: keys, Account: p.Account}
+	return NickPresence{Away: away, Keys: keys, Account: p.Account, Realname: p.Realname}
 }
 
 // NetworkPresence is the per-network presence store. It mirrors
@@ -365,6 +378,28 @@ func (n *NetworkPresence) SetAccount(normalizedNick, account string) {
 	n.ensure()
 	presence := n.nicks[normalizedNick]
 	presence.Account = account
+	n.nicks[normalizedNick] = presence
+}
+
+// SetRealname stores the GECOS for normalizedNick. An empty value clears it.
+// Callers skip a blank WHO or WHOIS field instead of wiping a stored name.
+func (n *NetworkPresence) SetRealname(normalizedNick, realname string) {
+	if normalizedNick == "" {
+		return
+	}
+	if realname == "" {
+		presence, ok := n.nicks[normalizedNick]
+		if !ok {
+			return
+		}
+		presence.Realname = ""
+		n.nicks[normalizedNick] = presence
+		n.eraseIfDefault(normalizedNick)
+		return
+	}
+	n.ensure()
+	presence := n.nicks[normalizedNick]
+	presence.Realname = realname
 	n.nicks[normalizedNick] = presence
 }
 

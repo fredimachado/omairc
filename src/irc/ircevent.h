@@ -108,6 +108,9 @@ struct IrcJoinEvent
     // Set when JOIN carries the extended-join account parameter. Null means
     // a classic one-parameter JOIN, which must not clear a known account.
     std::optional<QString> account = std::nullopt;
+    // Set only when a third parameter exists (the extended-join GECOS).
+    // Unset leaves a stored real name alone. Empty does not clear one.
+    std::optional<QString> realname = std::nullopt;
 };
 
 struct IrcPartEvent
@@ -177,6 +180,11 @@ struct IrcAwayEvent
     QString networkId;
     QString nick;
     std::optional<IrcAway> away;
+    // Set by RPL_WHOREPLY and RPL_WHOISUSER. Unset leaves a stored real name
+    // alone. A WHOIS line must not clear a known away state, so realnameOnly
+    // skips the away update.
+    std::optional<QString> realname;
+    bool realnameOnly = false;
 };
 
 struct IrcSelfAwayEvent
