@@ -1071,6 +1071,46 @@ func (c *Controller) ConsoleOpen() bool {
 	return c.consoleOpen || c.SelectedTarget() == ""
 }
 
+// outboundFrameBytes is the focused network's LINELEN, or 512 when no
+// network is focused. It mirrors IrcController::focusedFrameBytes.
+func (c *Controller) outboundFrameBytes() int {
+	if c == nil {
+		return irc.MaxClassicFrameBytes
+	}
+	id := c.FocusedNetworkID()
+	if id == "" {
+		return irc.MaxClassicFrameBytes
+	}
+	return c.reducer.ServerFeatures(id).LineLength()
+}
+
+// ComposerByteBudget is the UTF-8 byte cap for the composer on the current
+// surface. Status is a raw line. A conversation is the PRIVMSG body that fits
+// in one frame of the focused network's LINELEN. It mirrors
+// IrcController::composerByteBudget.
+func (c *Controller) ComposerByteBudget() int {
+	if c == nil {
+		return irc.ComposerByteBudget("")
+	}
+	return c.ComposerByteBudgetFor("")
+}
+
+// ComposerByteBudgetFor is ComposerByteBudget, tightened when draft is a
+// `/me` action. It mirrors IrcController::composerByteBudgetFor.
+func (c *Controller) ComposerByteBudgetFor(draft string) int {
+	frame := c.outboundFrameBytes()
+	if c == nil || c.ConsoleOpen() {
+		return irc.ComposerByteBudget("", frame)
+	}
+	return irc.ComposerByteBudgetForDraft(c.SelectedTarget(), draft, frame)
+}
+
+// ClampUtf8Prefix keeps a UTF-8 prefix inside maxBytes. It mirrors
+// IrcController::clampUtf8Prefix.
+func (c *Controller) ClampUtf8Prefix(text string, maxBytes int) string {
+	return irc.ClampUtf8Prefix(text, maxBytes)
+}
+
 // StatusConsoleOpen reports the raw Status-console model flag, mirroring
 // IrcStatusConsole::isOpen. It stays true after a cleared selection, exactly as
 // in the Qt client, so the focused network still follows the console and a
@@ -1723,6 +1763,7 @@ func (c *Controller) handleMessage(networkID string, message irc.Message) {
 			}
 			c.reducer.SetServerFeatures(networkID, features)
 			c.monitor.SubscribeMonitors(networkID)
+			c.notifyViewChanged()
 		}
 		return
 	case "730":
@@ -2011,6 +2052,12 @@ func (c *Controller) notifyStatusChanged() {
 func (c *Controller) notifyCapabilitiesChanged() {
 	if c.OnCapabilitiesChanged != nil {
 		c.OnCapabilitiesChanged()
+	}
+}
+
+func (c *Controller) notifyViewChanged() {
+	if c.OnViewChanged != nil {
+		c.OnViewChanged()
 	}
 }
 

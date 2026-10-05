@@ -1073,7 +1073,8 @@ bool IrcSession::sendCommand(const QString& command, const QString& requestLabel
             return false;
         wire = QStringLiteral("@label=%1 %2").arg(requestLabel, command);
     }
-    const QByteArray line = builtLine(IrcCommandBuilder::line(wire.toStdString()));
+    const QByteArray line = builtLine(IrcCommandBuilder::line(
+        wire.toStdString(), m_serverFeatures.lineLength()));
     if (line.isEmpty())
         return false;
     sendLine(line);
@@ -1086,7 +1087,7 @@ bool IrcSession::sendTrailingBody(const QString& prefix,
                                  const QString& requestLabel)
 {
     const std::vector<std::string> chunks = IrcCommandBuilder::splitTrailingParam(
-        utf8(prefix), utf8(body), utf8(suffix));
+        utf8(prefix), utf8(body), utf8(suffix), m_serverFeatures.lineLength());
     if (chunks.empty())
         return false;
     if (!requestLabel.isEmpty() && chunks.size() != 1)
@@ -2269,6 +2270,8 @@ void IrcSession::applyIsupport(const IrcMessage &message)
     const auto last = message.parameters.end() - 1;
     for (auto it = message.parameters.begin() + 1; it != last; ++it) {
         const QString token = ircWireText(*it);
+        const std::string tokenUtf8 = utf8(token);
+        m_serverFeatures.applyToken(tokenUtf8);
         if (token.startsWith(channelTypes)) {
             m_channelTypes = token.mid(channelTypes.size());
         } else if (token.startsWith(caseMapping)) {
@@ -2488,6 +2491,7 @@ void IrcSession::resetForConnection()
     m_pendingInvite.reset();
     m_pendingJoinKeys.clear();
     m_channelTypes.clear();
+    m_serverFeatures = IrcServerFeatures{};
     m_capabilityTimer->cancel();
     cancelPingWatchdog();
     clearPendingRequestLabels(true);

@@ -331,6 +331,165 @@ func TestTabCompletesAmbiguousNickAndCycles(t *testing.T) {
 // TestTabCompletionResetsOnOtherKeys proves a keystroke other than Tab ends the
 // session, so a later Tab starts a fresh completion instead of cycling stale
 // candidates.
+func TestShiftTabCyclesNicksBackward(t *testing.T) {
+	m := seededModel(t)
+	m.ctrl.SelectConversation("omarchy", "#ricing")
+	m.composer.SetValue("s")
+	m.composer.CursorEnd()
+
+	m = press(t, m, tea.KeyPressMsg{Code: tea.KeyTab, Mod: tea.ModShift})
+	if got := m.composer.Value(); got != "sol: " {
+		t.Fatalf("first Shift+Tab = %q, want %q", got, "sol: ")
+	}
+	m = press(t, m, tea.KeyPressMsg{Code: tea.KeyTab, Mod: tea.ModShift})
+	if got := m.composer.Value(); got != "sam: " {
+		t.Fatalf("second Shift+Tab = %q, want %q", got, "sam: ")
+	}
+	m = press(t, m, tea.KeyPressMsg{Code: tea.KeyTab})
+	if got := m.composer.Value(); got != "sol: " {
+		t.Fatalf("Tab after Shift+Tab = %q, want %q", got, "sol: ")
+	}
+}
+
+func TestTabCompletesChannelName(t *testing.T) {
+	m := seededModel(t)
+	m.composer.SetValue("#d")
+	m.composer.CursorEnd()
+	m = press(t, m, tea.KeyPressMsg{Code: tea.KeyTab})
+	if got := m.composer.Value(); got != "#desktop: " {
+		t.Fatalf("channel Tab = %q, want %q", got, "#desktop: ")
+	}
+}
+
+func TestTabCompletesChannelAfterText(t *testing.T) {
+	m := seededModel(t)
+	m.composer.SetValue("see #d")
+	m.composer.CursorEnd()
+	m = press(t, m, tea.KeyPressMsg{Code: tea.KeyTab})
+	if got := m.composer.Value(); got != "see #desktop " {
+		t.Fatalf("mid-line channel Tab = %q, want %q", got, "see #desktop ")
+	}
+}
+
+func TestTabDoesNotCompleteAnotherNetworksChannel(t *testing.T) {
+	m := seededModel(t)
+	m.composer.SetValue("#b")
+	m.composer.CursorEnd()
+	m = press(t, m, tea.KeyPressMsg{Code: tea.KeyTab})
+	if got := m.composer.Value(); got != "#b" {
+		t.Fatalf("cross-network Tab = %q, want unchanged %q", got, "#b")
+	}
+}
+
+func TestComposerPasteStopsAtSendLimit(t *testing.T) {
+	m := seededModel(t)
+	if got := m.ctrl.ComposerByteBudget(); got != 492 {
+		t.Fatalf("#omarchy budget = %d, want 492", got)
+	}
+	paste := func(text string) {
+		t.Helper()
+		m.composer.SetValue("")
+		m.composer.CursorEnd()
+		updated, _ := m.Update(tea.PasteMsg{Content: text})
+		m = updated.(*Model)
+	}
+	paste(strings.Repeat("a", 800))
+	if got := m.composer.Value(); got != strings.Repeat("a", 492) {
+		t.Fatalf("paste length = %d, want 492", len(got))
+	}
+	m = press(t, m, tea.KeyPressMsg{Code: 'b', Text: "b"})
+	if got := m.composer.Value(); got != strings.Repeat("a", 492) {
+		t.Fatalf("extra key length = %d, want 492", len(got))
+	}
+
+	kept := strings.Repeat("a", 490) + "é"
+	paste(kept)
+	if got := m.composer.Value(); got != kept {
+		t.Fatalf("2-byte rune at the limit = %q, want %d bytes", got, len(kept))
+	}
+	paste(strings.Repeat("a", 491) + "é")
+	if got := m.composer.Value(); got != strings.Repeat("a", 491) {
+		t.Fatalf("rune past the limit = %q, want 491 a's", got)
+	}
+
+	m = press(t, m, tea.KeyPressMsg{Code: '`', Mod: tea.ModCtrl})
+	if !m.ctrl.ConsoleOpen() {
+		t.Fatal("Ctrl+` must open Status")
+	}
+	if got := m.ctrl.ComposerByteBudget(); got != 510 {
+		t.Fatalf("status budget = %d, want 510", got)
+	}
+	paste(strings.Repeat("c", 700))
+	if got := m.composer.Value(); got != strings.Repeat("c", 510) {
+		t.Fatalf("status paste length = %d, want 510", len(got))
+	}
+}
+
+func TestComposerPasteHonorsAdvertisedLineLength(t *testing.T) {
+	ctrl := controller.New()
+	d := demo.New()
+	if !d.Attach(ctrl, true) {
+		t.Fatal("demo Attach failed")
+	}
+	m := New(ctrl, nil)
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 118, Height: 30})
+	m = updated.(*Model)
+	notified := false
+	ctrl.OnViewChanged = func() { notified = true }
+
+	paste := func(text string) {
+		t.Helper()
+		m.composer.SetValue("")
+		m.composer.CursorEnd()
+		updated, _ := m.Update(tea.PasteMsg{Content: text})
+		m = updated.(*Model)
+	}
+	paste(strings.Repeat("a", 400))
+	if got := m.composer.Value(); len(got) != 400 {
+		t.Fatalf("draft before LINELEN = %d, want 400", len(got))
+	}
+	d.InjectOmarchy([]byte(":server 005 fred LINELEN=300 :are supported by this server\r\n"))
+	if !notified {
+		t.Fatal("LINELEN must publish a view change")
+	}
+	updated, _ = m.Update(NotifyMsg{})
+	m = updated.(*Model)
+	if got := m.composer.Value(); got != strings.Repeat("a", 280) {
+		t.Fatalf("reclamp length = %d, want 280", len(got))
+	}
+	paste(strings.Repeat("a", 800))
+	if got := m.composer.Value(); got != strings.Repeat("a", 280) {
+		t.Fatalf("LINELEN 300 paste = %d, want 280", len(got))
+	}
+
+	m = press(t, m, tea.KeyPressMsg{Code: '`', Mod: tea.ModCtrl})
+	if !m.ctrl.ConsoleOpen() {
+		t.Fatal("Ctrl+` must open Status")
+	}
+	if got := m.ctrl.ComposerByteBudget(); got != 298 {
+		t.Fatalf("LINELEN 300 status budget = %d, want 298", got)
+	}
+	paste(strings.Repeat("c", 700))
+	if got := m.composer.Value(); got != strings.Repeat("c", 298) {
+		t.Fatalf("LINELEN 300 status paste = %d, want 298", len(got))
+	}
+}
+
+func TestFilledMeStopsAtOneFrame(t *testing.T) {
+	m := seededModel(t)
+	if got := m.ctrl.ComposerByteBudgetFor("/me "); got != 487 {
+		t.Fatalf("action budget = %d, want 487", got)
+	}
+	m.composer.SetValue("")
+	m.composer.CursorEnd()
+	updated, _ := m.Update(tea.PasteMsg{Content: "/me " + strings.Repeat("a", 800)})
+	m = updated.(*Model)
+	want := "/me " + strings.Repeat("a", 483)
+	if got := m.composer.Value(); got != want {
+		t.Fatalf("filled /me length = %d, want %d", len(got), len(want))
+	}
+}
+
 func TestTabCompletionResetsOnOtherKeys(t *testing.T) {
 	m := seededModel(t)
 	m.ctrl.SelectConversation("omarchy", "#ricing")
@@ -527,6 +686,9 @@ func TestFooterUsesHelpKeyMap(t *testing.T) {
 	}
 	if !strings.Contains(view, "Ctrl+/") {
 		t.Fatalf("footer help must end with the Ctrl+/ binding:\n%s", view)
+	}
+	if !strings.Contains(view, "Tab / Shift+Tab") || !strings.Contains(view, "complete nick or channel") {
+		t.Fatalf("footer help must match the shortcuts sheet:\n%s", view)
 	}
 }
 

@@ -212,8 +212,8 @@ func (m *Model) recallHistory(delta int) {
 // nickCompleteSession is the composer's Tab-completion cursor. It mirrors
 // OmaircWindow.qml's nickCompleteMatches / nickCompleteIndex /
 // nickCompleteOrigin: the first Tab picks the alphabetically first matching
-// nick, and each further Tab advances through the candidates, wrapping. Any
-// other key, a conversation switch, or a send resets it (see
+// nick or channel, Shift+Tab starts at the last, and further presses cycle,
+// wrapping. Any other key, a conversation switch, or a send resets it (see
 // resetNickComplete).
 type nickCompleteSession struct {
 	matches []string
@@ -230,15 +230,20 @@ func (m *Model) resetNickComplete() {
 
 // completeNick completes the composer's current word with Tab. It mirrors
 // OmaircWindow.qml's completeNick: a first Tab starts a session from the
-// matched nicks (even when the prefix is ambiguous) and repeated Tabs cycle
-// through them. So the plan's earlier "exactly one candidate" rule is gone;
-// it left Tab dead in any channel where two nicks shared a prefix.
-func (m *Model) completeNick() {
+// matched nicks and channel names (even when the prefix is ambiguous) and
+// repeated Tabs cycle through them. backward starts at the last match and
+// walks toward the first. Shift+Tab is that direction.
+func (m *Model) completeNick(backward bool) {
 	if m.ctrl == nil || m.ctrl.ConsoleOpen() {
 		return
 	}
 	if m.nickComplete.active && len(m.nickComplete.matches) > 0 {
-		m.nickComplete.index = (m.nickComplete.index + 1) % len(m.nickComplete.matches)
+		count := len(m.nickComplete.matches)
+		if backward {
+			m.nickComplete.index = (m.nickComplete.index + count - 1) % count
+		} else {
+			m.nickComplete.index = (m.nickComplete.index + 1) % count
+		}
 		m.applyNickComplete()
 		return
 	}
@@ -265,7 +270,11 @@ func (m *Model) completeNick() {
 	if len(matches) == 0 {
 		return
 	}
-	m.nickComplete = nickCompleteSession{matches: matches, index: 0, origin: origin, active: true}
+	index := 0
+	if backward {
+		index = len(matches) - 1
+	}
+	m.nickComplete = nickCompleteSession{matches: matches, index: index, origin: origin, active: true}
 	m.applyNickComplete()
 }
 
@@ -305,30 +314,68 @@ func (m *Model) applyNickComplete() {
 	m.composer.SetCursor(origin + len(insertion))
 }
 
-// nickMatchesForPrefix returns the channel members whose nick starts with
-// prefix, sorted by nick. On a direct message the target nick is the only
-// candidate; Status has none.
+// nickMatchesForPrefix returns channel members and the current network's
+// channel names whose text starts with prefix, sorted by that text. On a
+// direct message the target nick is a candidate too. Status has none.
 func (m *Model) nickMatchesForPrefix(prefix string) []string {
 	if m.ctrl == nil || m.ctrl.ConsoleOpen() {
 		return nil
 	}
 	lower := strings.ToLower(prefix)
+	seen := make(map[string]struct{})
 	candidates := make([]string, 0, len(m.ctrl.Members()))
+	add := func(name string) {
+		if name == "" {
+			return
+		}
+		if _, ok := seen[name]; ok {
+			return
+		}
+		seen[name] = struct{}{}
+		candidates = append(candidates, name)
+	}
 	if m.ctrl.IsChannel() {
 		for _, member := range m.ctrl.Members() {
-			if member.Nick != "" {
-				candidates = append(candidates, member.Nick)
-			}
+			add(member.Nick)
 		}
-	} else if target := m.ctrl.SelectedTarget(); target != "" {
-		candidates = append(candidates, target)
+	} else {
+		add(m.ctrl.SelectedTarget())
+	}
+	networkID := m.ctrl.SelectedNetworkID()
+	for _, row := range m.ctrl.Conversations() {
+		if row.Direct || row.NetworkID != networkID {
+			continue
+		}
+		add(row.Conversation)
 	}
 	matches := make([]string, 0, len(candidates))
-	for _, nick := range candidates {
-		if strings.HasPrefix(strings.ToLower(nick), lower) {
-			matches = append(matches, nick)
+	for _, name := range candidates {
+		if strings.HasPrefix(strings.ToLower(name), lower) {
+			matches = append(matches, name)
 		}
 	}
 	sort.Strings(matches)
 	return matches
+}
+
+// clampComposer stops the composer at the current surface's send budget,
+// including a paste. A `/me` draft uses the expanded ACTION cap. Find reuses
+// the field and is not a send, so a query is left alone. It mirrors
+// OmaircWindow.qml's clampComposerToSendLimit.
+func (m *Model) clampComposer() {
+	if m == nil || m.ctrl == nil || m.find.active {
+		return
+	}
+	value := m.composer.Value()
+	budget := m.ctrl.ComposerByteBudgetFor(value)
+	if m.composer.CharLimit != budget {
+		m.composer.CharLimit = budget
+	}
+	clamped := m.ctrl.ClampUtf8Prefix(value, budget)
+	if clamped == value {
+		return
+	}
+	pos := m.composer.Position()
+	m.composer.SetValue(clamped)
+	m.composer.SetCursor(pos)
 }

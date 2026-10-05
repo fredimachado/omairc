@@ -16,7 +16,7 @@ Keyboard is the window chord map: walk conversations, walk network headers, coll
 - `keyboard-mark-read` marks every conversation read with `Alt+Shift+A`. Sidebar badges and mention marks clear on every network, including collapsed headers. The open conversation stays put. A background attention title clears too. It is a no-op while Connect or the shortcuts sheet is open.
 - `keyboard-unseen` jumps to the first row that arrived while the reader was scrolled up with `Alt+U`, else to the newest row when a `New messages` mark is open. A `↓ new` marker in the transcript header shows while a jump is armed. It is a no-op while following the end.
 - `keyboard-inbox` toggles the session inbox sheet with `Ctrl+Shift+A`. Up/Down walk rows, Enter activates, Delete dismisses the selected row without navigating, Escape closes the sheet and returns to the composer. It is a no-op while Connect is visible.
-- `keyboard-complete` completes a nick prefix in the composer with `Tab`.
+- `keyboard-complete` completes a nick or channel prefix in the composer with `Tab`. `Shift+Tab` cycles the same matches backward. Channel names are the current network's channels. The first token of a message still gets a colon; a later token gets a space.
 - `keyboard-history` recalls sent lines with `Up` / `Down` and restores a typed draft on `Down`.
 - `keyboard-drafts` keeps unsent composer text per conversation and Status. Switching targets restores that draft. It does not follow you.
 - `keyboard-members` focuses the member list with `Ctrl+Shift+P` and reopens a hidden panel. Enter on a focused member opens a DM.
@@ -43,7 +43,7 @@ Keyboard is the window chord map: walk conversations, walk network headers, coll
 - Press `Alt+Shift+Left` / `Alt+Shift+Right` on a focused header to collapse or expand that network. Click the header chevron for the same toggle.
 - Press `Ctrl+Alt+Shift+Left` / `Ctrl+Alt+Shift+Right` to collapse or expand every network.
 - Press `Alt+Shift+Up` / `Alt+Shift+Down` on a focused header to move that network.
-- Press `Tab`, `Up`, or `Down` in the composer.
+- Press `Tab` or `Shift+Tab`, `Up`, or `Down` in the composer.
 - Press `Ctrl+Shift+P` on a channel, then arrows, Page Up / Page Down, Home / End, and Enter.
 - Press `Ctrl+Shift+S` to collapse or restore the left server list column.
 - Press `Ctrl+W` on a direct message to close it.
@@ -101,7 +101,8 @@ compare --before test-artifacts/verify/keyboard/server-list-collapsed.png --afte
 - `Ctrl+Shift+S` collapses the left column instead of hiding it, so `Alt+Down` / `Alt+Up` keep walking conversations while it is out of view. Collapsing drops the focused network header, so Enter in the composer sends again. `Alt+Left` / `Alt+Right` brings the column back because it highlights a rail row.
 - `Ctrl+W` is disabled on channels and Status. Typed `/close` on a channel is a rejected slash command and stays in the composer.
 - `Alt+U` follows the reducer's `New messages` mark and the arrivals that land while the transcript is scrolled up. The seeded demo carries unread and mention counts but no marks, so a mark-driven `Alt+U` needs live frames; it is covered by the TUI UI suite (`internal/ui/unseen_test.go`, `internal/ui/unread_test.go`), not by the demo fence. The TUI drives it from the header `↓ new` marker; Qt uses the floating `↓` button.
-- `Tab` completes a nick prefix in the composer. Prove it with `qml-suite` (`mi` → `mira: `).
+- `Tab` completes a nick or channel prefix in the composer. `Shift+Tab` cycles those matches backward. Prove nicks with `qml-suite` (`mi` → `mira: `). The first token still gets a colon.
+- The composer stops at the focused network's `LINELEN`, including a paste. That token is client-to-server octets, CRLF included, tags excluded. An absent token means 512, so Status holds 510 bytes and a conversation holds the PRIVMSG body that fits (`#omarchy` is 492, `#place` is 494). A larger token raises the cap. A smaller token lowers it. `/me ` counts the CTCP ACTION wrapper, so a filled action still fits in one frame.
 - Page Up / Page Down and Shift+Page Up / Shift+Page Down page the transcript while the composer is focused, and page the member list while it has focus. Ctrl+Home / Ctrl+End always jump the transcript. Home / End jump to the first or last nick while the member list is focused; plain Home / End stay composer caret otherwise (and Connect's network rail). These paging chords are disabled while Connect is visible or the shortcuts overlay is open.
 - `Alt+Down` / `Alt+Up`, `Alt+Left` / `Alt+Right`, `Alt+Shift+Left` / `Right` / `Up` / `Down`, `Ctrl+Alt+Shift+Left` / `Right`, `Alt+A`, `Alt+Shift+A`, `Ctrl+Shift+A`, `Ctrl+L`, `Ctrl+W`, `Ctrl+Shift+S`, and `Ctrl+`` are disabled while Connect is visible. Connect is a window-level modal; those chords must not walk servers or members behind it. `Ctrl+/` still opens the shortcuts overlay.
 - `Ctrl+F` enters find even with an empty composer. It jumps the current transcript to the match and leaves follow-the-end so the match stays put. Escape restores the draft, not the old scroll position.

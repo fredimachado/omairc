@@ -32,6 +32,7 @@ func (m *Model) beginOrAdvanceFind() {
 		m.find.index = -1
 		m.transcriptCursor = -1
 		m.composer.Placeholder = findPlaceholder
+		m.composer.CharLimit = 0
 		m.advanceFind(true)
 		return
 	}
@@ -94,7 +95,7 @@ func (m *Model) handleFindKey(key string, msg tea.KeyPressMsg) (tea.Model, tea.C
 	case "ctrl+f":
 		m.advanceFind(false)
 		return m, nil
-	case "up", "down", "tab":
+	case "up", "down", "tab", "shift+tab":
 		return m, nil
 	}
 	if handled, cmd := m.dispatchChord(key, msg); handled {

@@ -57,13 +57,13 @@ bool isJoinField(std::string_view field)
 }
 }
 
-IrcBuildResult IrcCommandBuilder::line(std::string_view command)
+IrcBuildResult IrcCommandBuilder::line(std::string_view command, std::size_t frameBytes)
 {
     if (command.empty())
         return IrcBuildResult::failure(IrcError::EmptyInput);
     if (containsForbidden(command))
         return IrcBuildResult::failure(IrcError::InvalidCharacter);
-    if (command.size() + 2 > kMaxFrameBytes)
+    if (frameBytes < 2 || command.size() + 2 > frameBytes)
         return IrcBuildResult::failure(IrcError::TooManyBytes);
 
     std::string result(command);
@@ -71,17 +71,110 @@ IrcBuildResult IrcCommandBuilder::line(std::string_view command)
     return IrcBuildResult::success(std::move(result));
 }
 
+int IrcCommandBuilder::composerByteBudget(std::string_view target, std::size_t frameBytes)
+{
+    if (frameBytes < 2)
+        return 0;
+    if (target.empty())
+        return int(frameBytes) - 2;
+
+    // Same residual as splitTrailingParam for prefix "PRIVMSG <target> :"
+    // and an empty suffix: one chunk, including CRLF, stays within the frame.
+    const std::string prefix = std::string("PRIVMSG ") + std::string(target) + " :";
+    if (prefix.size() + 3 > frameBytes)
+        return 0;
+    return int(frameBytes - prefix.size() - 2);
+}
+
+int IrcCommandBuilder::actionComposerByteBudget(std::string_view target,
+                                                std::size_t frameBytes)
+{
+    // `\x01ACTION ` is 8 bytes and the closing `\x01` is 1. `/me ` is 4.
+    constexpr int kActionWrapper = 9;
+    constexpr int kMePrefix = 4;
+    const int privmsg = composerByteBudget(target, frameBytes);
+    if (privmsg < kActionWrapper)
+        return 0;
+    return privmsg - kActionWrapper + kMePrefix;
+}
+
+namespace
+{
+bool draftIsAction(std::string_view draft)
+{
+    std::size_t begin = 0;
+    while (begin < draft.size()
+           && (draft[begin] == ' ' || draft[begin] == '\t')) {
+        ++begin;
+    }
+    if (begin >= draft.size() || draft[begin] != '/')
+        return false;
+    const std::size_t space = draft.find(' ', begin);
+    if (space == std::string_view::npos)
+        return false;
+    const std::string_view token = draft.substr(begin, space - begin);
+    if (token.size() != 3)
+        return false;
+    const char m = token[1];
+    const char e = token[2];
+    return (m == 'm' || m == 'M') && (e == 'e' || e == 'E');
+}
+}
+
+int IrcCommandBuilder::composerByteBudgetForDraft(std::string_view target,
+                                                  std::string_view draft,
+                                                  std::size_t frameBytes)
+{
+    if (target.empty() || !draftIsAction(draft))
+        return composerByteBudget(target, frameBytes);
+    return actionComposerByteBudget(target, frameBytes);
+}
+
+std::string IrcCommandBuilder::clampUtf8Prefix(std::string_view text, int maxBytes)
+{
+    if (maxBytes <= 0 || text.empty())
+        return {};
+    std::size_t end = 0;
+    while (end < text.size()) {
+        const auto lead = static_cast<unsigned char>(text[end]);
+        std::size_t size = 1;
+        if (lead >= 0x80) {
+            if ((lead & 0xE0) == 0xC0)
+                size = 2;
+            else if ((lead & 0xF0) == 0xE0)
+                size = 3;
+            else if ((lead & 0xF8) == 0xF0)
+                size = 4;
+            if (end + size > text.size())
+                size = 1;
+            else {
+                for (std::size_t index = 1; index < size; ++index) {
+                    if ((static_cast<unsigned char>(text[end + index]) & 0xC0) != 0x80) {
+                        size = 1;
+                        break;
+                    }
+                }
+            }
+        }
+        if (end + size > static_cast<std::size_t>(maxBytes))
+            break;
+        end += size;
+    }
+    return std::string(text.substr(0, end));
+}
+
 std::vector<std::string> IrcCommandBuilder::splitTrailingParam(std::string_view prefix,
                                                               std::string_view body,
-                                                              std::string_view suffix)
+                                                              std::string_view suffix,
+                                                              std::size_t frameBytes)
 {
     if (body.empty() || containsForbidden(prefix) || containsForbidden(body)
         || containsForbidden(suffix)) {
         return {};
     }
-    if (prefix.size() + suffix.size() + 3 > kMaxFrameBytes)
+    if (frameBytes < 3 || prefix.size() + suffix.size() + 3 > frameBytes)
         return {};
-    const std::size_t maxBody = kMaxFrameBytes - prefix.size() - suffix.size() - 2;
+    const std::size_t maxBody = frameBytes - prefix.size() - suffix.size() - 2;
 
     std::vector<std::string> chunks;
     std::size_t offset = 0;

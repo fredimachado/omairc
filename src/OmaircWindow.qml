@@ -1864,20 +1864,33 @@ ApplicationWindow {
     function nickCompleteCandidates() {
         if (consoleVisible)
             return [];
-        if (!currentConversationIsChannel)
-            return currentConversation.length > 0 ? [currentConversation] : [];
 
-        var nicks = [];
-        if (!irc)
-            return nicks;
-        var model = irc.members;
-        var count = liveMemberCount(model);
-        for (var row = 0; row < count; ++row) {
-            var liveNick = liveMemberNick(model, row);
-            if (liveNick.length > 0)
-                nicks.push(liveNick);
+        var names = [];
+        var seen = {};
+        function add(name) {
+            if (!name || name.length === 0 || seen[name])
+                return;
+            seen[name] = true;
+            names.push(name);
         }
-        return nicks;
+
+        if (!currentConversationIsChannel) {
+            add(currentConversation);
+        } else if (irc) {
+            var model = irc.members;
+            var count = liveMemberCount(model);
+            for (var row = 0; row < count; ++row)
+                add(liveMemberNick(model, row));
+        }
+
+        var rows = sidebarConversationRows();
+        for (var index = 0; index < rows.length; ++index) {
+            var channel = rows[index];
+            if (!channel || channel.direct || channel.networkId !== currentNetworkId)
+                continue;
+            add(channel.conversationName);
+        }
+        return names;
     }
 
     function nickMatchesForPrefix(prefix) {
@@ -1911,9 +1924,12 @@ ApplicationWindow {
         conversation.composer.cursorPosition = nickCompleteOrigin + insertion.length;
     }
 
-    function completeNick() {
-        if (nickCompleteMatches.length > 0 && nickCompleteIndex >= 0) {
-            nickCompleteIndex = (nickCompleteIndex + 1) % nickCompleteMatches.length;
+    function completeNick(backward) {
+        var count = nickCompleteMatches.length;
+        if (count > 0 && nickCompleteIndex >= 0) {
+            nickCompleteIndex = backward
+                ? (nickCompleteIndex + count - 1) % count
+                : (nickCompleteIndex + 1) % count;
             applyNickComplete();
             return;
         }
@@ -1930,9 +1946,47 @@ ApplicationWindow {
 
         nickCompletePrefix = token;
         nickCompleteMatches = matches;
-        nickCompleteIndex = 0;
+        nickCompleteIndex = backward ? matches.length - 1 : 0;
         nickCompleteOrigin = origin;
         applyNickComplete();
+    }
+
+    function composerByteBudget() {
+        if (!irc || !irc.composerByteBudget)
+            return -1;
+        return irc.composerByteBudget();
+    }
+
+    function composerByteBudgetFor(text) {
+        if (!irc || !irc.composerByteBudget)
+            return -1;
+        if (irc.composerByteBudgetFor)
+            return irc.composerByteBudgetFor(text);
+        return irc.composerByteBudget();
+    }
+
+    function clampComposerToSendLimit(text) {
+        var budget = composerByteBudgetFor(text);
+        if (budget < 0 || !irc || !irc.clampUtf8Prefix)
+            return false;
+        var clamped = irc.clampUtf8Prefix(text, budget);
+        if (clamped === text)
+            return false;
+        var cursor = conversation.composer.cursorPosition;
+        conversation.composer.text = clamped;
+        conversation.composer.cursorPosition = Math.min(cursor, clamped.length);
+        return true;
+    }
+
+    function isForwardCompleteKey(event) {
+        return event.key === Qt.Key_Tab && composerHasPlainModifier(event);
+    }
+
+    function isBackwardCompleteKey(event) {
+        var mods = composerKeyModifiers(event);
+        if (event.key === Qt.Key_Backtab)
+            return mods === Qt.NoModifier || mods === Qt.ShiftModifier;
+        return event.key === Qt.Key_Tab && mods === Qt.ShiftModifier;
     }
 
     function composerHasPlainModifier(event) {
@@ -2162,6 +2216,8 @@ ApplicationWindow {
             advanceFind(true);
             return;
         }
+        if (clampComposerToSendLimit(text))
+            return;
         if (slashCommands) {
             if (composerHistoryIndex >= 0)
                 slashCommands.dismiss();
@@ -2191,7 +2247,7 @@ ApplicationWindow {
         }
 
         if (findActive) {
-            if (event.key === Qt.Key_Tab
+            if (event.key === Qt.Key_Tab || event.key === Qt.Key_Backtab
                 || ((event.key === Qt.Key_Up || event.key === Qt.Key_Down)
                     && composerHasPlainModifier(event))) {
                 event.accepted = true;
@@ -2215,11 +2271,19 @@ ApplicationWindow {
             }
         }
 
-        if (event.key === Qt.Key_Tab && composerHasPlainModifier(event)) {
-            completeNick();
+        if (isForwardCompleteKey(event) || isBackwardCompleteKey(event)) {
+            completeNick(isBackwardCompleteKey(event));
             event.accepted = true;
             return;
         }
+
+        // A real Shift+Tab is Shift press, Backtab, Shift release. The release
+        // is not an edit. Resetting here drops the match list, and the caret
+        // is already past the inserted space, so the next chord has an empty
+        // token and sticks.
+        if (event.key === Qt.Key_Shift || event.key === Qt.Key_Control
+                || event.key === Qt.Key_Alt || event.key === Qt.Key_Meta)
+            return;
 
         resetNickComplete();
 
@@ -3049,6 +3113,12 @@ ApplicationWindow {
         }
         function onMonitorArrived(author, body, networkId, target) {
             win.notifyMentionIfUnfocused(win.arrivalWindowActive, author, body, networkId, "", "");
+        }
+        function onServerFeaturesChanged() {
+            // conversation is a document id, not a property of the window.
+            if (win.findActive || !conversation || !conversation.composer)
+                return;
+            win.clampComposerToSendLimit(conversation.composer.text);
         }
     }
 

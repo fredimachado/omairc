@@ -246,10 +246,10 @@ type Session struct {
 
 	framer irc.Framer
 
-	openBatches       map[string]*openBatch
-	ignoredBatches    map[string]struct{}
-	historyGeneration map[string]int
-	historyAsked      map[string]struct{}
+	openBatches          map[string]*openBatch
+	ignoredBatches       map[string]struct{}
+	historyGeneration    map[string]int
+	historyAsked         map[string]struct{}
 	historyPending       map[string]int
 	historyPendingBefore map[string]bool
 	historyExhausted     map[string]struct{}
@@ -316,31 +316,31 @@ func NewSession(config SessionConfig, transport Transport, clock Clock) *Session
 		clock = RealClock{}
 	}
 	s := &Session{
-		config:            config,
-		transport:         transport,
-		clock:             clock,
-		portNumber:        config.Port,
-		tlsEnabled:        config.TLSEnabled,
-		autojoinChannels:  append([]string(nil), config.AutojoinChannels...),
-		autojoinKeys:      cloneStringMap(config.AutojoinKeys),
-		pendingJoinKeys:   map[string]string{},
-		nickname:          config.Nick,
-		sts:               NewSTSStore(clock),
-		historyLimit:      kHistoryLimit,
-		features:          irc.NewServerFeatures(),
-		capabilities:      irc.NewCapabilityNegotiation(config.saslSecret() != ""),
-		typing:            newTypingPublisher(),
-		openBatches:       map[string]*openBatch{},
-		ignoredBatches:    map[string]struct{}{},
-		historyGeneration: map[string]int{},
-		historyAsked:      map[string]struct{}{},
+		config:               config,
+		transport:            transport,
+		clock:                clock,
+		portNumber:           config.Port,
+		tlsEnabled:           config.TLSEnabled,
+		autojoinChannels:     append([]string(nil), config.AutojoinChannels...),
+		autojoinKeys:         cloneStringMap(config.AutojoinKeys),
+		pendingJoinKeys:      map[string]string{},
+		nickname:             config.Nick,
+		sts:                  NewSTSStore(clock),
+		historyLimit:         kHistoryLimit,
+		features:             irc.NewServerFeatures(),
+		capabilities:         irc.NewCapabilityNegotiation(config.saslSecret() != ""),
+		typing:               newTypingPublisher(),
+		openBatches:          map[string]*openBatch{},
+		ignoredBatches:       map[string]struct{}{},
+		historyGeneration:    map[string]int{},
+		historyAsked:         map[string]struct{}{},
 		historyPending:       map[string]int{},
 		historyPendingBefore: map[string]bool{},
 		historyExhausted:     map[string]struct{}{},
-		pendingLabels:     map[string]time.Time{},
-		ctcpReplyClock:    map[string]time.Time{},
-		scram:             NewSASLScram(),
-		sessionState:      StateIdle,
+		pendingLabels:        map[string]time.Time{},
+		ctcpReplyClock:       map[string]time.Time{},
+		scram:                NewSASLScram(),
+		sessionState:         StateIdle,
 	}
 	if transport != nil {
 		transport.SetSink(s)
@@ -2733,7 +2733,7 @@ func (s *Session) sendCommandLocked(command, requestLabel string) bool {
 		}
 		wire = "@label=" + requestLabel + " " + command
 	}
-	line, err := irc.Line(wire)
+	line, err := irc.Line(wire, s.features.LineLength())
 	if err != nil {
 		return false
 	}
@@ -2742,7 +2742,7 @@ func (s *Session) sendCommandLocked(command, requestLabel string) bool {
 }
 
 func (s *Session) sendTrailingBodyLocked(prefix, body, suffix, requestLabel string) bool {
-	chunks := irc.SplitTrailingParam(prefix, body, suffix)
+	chunks := irc.SplitTrailingParam(prefix, body, suffix, s.features.LineLength())
 	if len(chunks) == 0 {
 		return false
 	}
