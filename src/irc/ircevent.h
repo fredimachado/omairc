@@ -177,6 +177,11 @@ struct IrcAwayEvent
     QString networkId;
     QString nick;
     std::optional<IrcAway> away;
+    // Set by RPL_WHOREPLY and RPL_WHOISUSER. Unset leaves a stored real name
+    // alone. A WHOIS line must not clear a known away state, so realnameOnly
+    // skips the away update.
+    std::optional<QString> realname;
+    bool realnameOnly = false;
 };
 
 struct IrcSelfAwayEvent

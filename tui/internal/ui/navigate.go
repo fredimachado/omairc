@@ -1,12 +1,15 @@
 package ui
 
 import (
+	"sort"
 	"strconv"
 	"strings"
 
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+
+	"github.com/fredimachado/omairc/tui/internal/controller"
 )
 
 // This file holds the Phase 5/6 conversation and network navigation: the walk
@@ -82,14 +85,22 @@ func (m *Model) closeJump() {
 
 // jumpEntries builds the filtered overlay rows: every network's conversations
 // in sidebar order, then that network's Status row, matching
-// OmaircWindow.qml's refreshJumpMatches.
+// OmaircWindow.qml's refreshJumpMatches. A channel also matches its topic and
+// a direct message matches a meaningful real name. Name matches rank first.
+// The list stays short.
 func (m *Model) jumpEntries() []jumpEntry {
 	if m.ctrl == nil {
 		return nil
 	}
-	query := strings.ToLower(strings.TrimSpace(m.jump.input.Value()))
+	query := strings.TrimSpace(m.jump.input.Value())
 	conversations := m.ctrl.Conversations()
-	var entries []jumpEntry
+	type ranked struct {
+		entry jumpEntry
+		score int
+		order int
+	}
+	var rows []ranked
+	order := 0
 	for _, networkID := range m.sidebarNetworkIDs() {
 		networkName := m.sidebarNetworkDisplayName(networkID)
 		for _, row := range conversations {
@@ -97,25 +108,58 @@ func (m *Model) jumpEntries() []jumpEntry {
 				continue
 			}
 			label := m.jumpConversationLabel(row.ConversationName, networkName)
-			if !jumpMatches(query, label) {
+			detail := ""
+			if row.Direct {
+				detail = m.ctrl.PeerRealname(row.NetworkID, row.ConversationName)
+			} else {
+				detail = m.ctrl.ConversationTopic(row.NetworkID, row.ConversationName)
+			}
+			score := controller.JumpScore(query, label, detail)
+			if query != "" && score <= 0 {
 				continue
 			}
-			entries = append(entries, jumpEntry{
-				kind:           jumpKindConversation,
-				label:          label,
-				networkID:      networkID,
-				target:         row.ConversationName,
-				conversationID: row.ConversationID,
+			rows = append(rows, ranked{
+				entry: jumpEntry{
+					kind:           jumpKindConversation,
+					label:          label,
+					networkID:      networkID,
+					target:         row.ConversationName,
+					conversationID: row.ConversationID,
+				},
+				score: score,
+				order: order,
 			})
+			order++
 		}
 		statusLabel := statusJumpLabel(networkName)
-		if jumpMatches(query, statusLabel) {
-			entries = append(entries, jumpEntry{
+		statusScore := controller.JumpScore(query, statusLabel, "")
+		if query != "" && statusScore <= 0 {
+			continue
+		}
+		rows = append(rows, ranked{
+			entry: jumpEntry{
 				kind:      jumpKindStatus,
 				label:     statusLabel,
 				networkID: networkID,
-			})
+			},
+			score: statusScore,
+			order: order,
+		})
+		order++
+	}
+	sort.SliceStable(rows, func(left, right int) bool {
+		if rows[left].score != rows[right].score {
+			return rows[left].score > rows[right].score
 		}
+		return rows[left].order < rows[right].order
+	})
+	limit := controller.JumpResultLimit()
+	if len(rows) > limit {
+		rows = rows[:limit]
+	}
+	entries := make([]jumpEntry, 0, len(rows))
+	for _, row := range rows {
+		entries = append(entries, row.entry)
 	}
 	return entries
 }
@@ -130,15 +174,6 @@ func (m *Model) jumpConversationLabel(name, networkName string) string {
 		return name + " · " + networkName
 	}
 	return name
-}
-
-// jumpMatches reports whether the lower-cased query is a substring of the
-// label.
-func jumpMatches(query, label string) bool {
-	if query == "" {
-		return true
-	}
-	return strings.Contains(strings.ToLower(label), query)
 }
 
 // moveJump moves the highlighted row by delta, wrapping at both ends.

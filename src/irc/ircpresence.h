@@ -46,6 +46,8 @@ struct IrcNickPresence
     // Services account from account-tag, account-notify, extended-join, or
     // WHOIS 330. Empty means unknown or logged out; both display as nothing.
     QString account;
+    // GECOS from WHO (352) or WHOIS (311). Empty means unknown.
+    QString realname;
 
     QString metadata(const QString& key) const;
     bool hasKey(const QString& key) const;
@@ -64,6 +66,9 @@ public:
                      const QString& value);
     // `*` and an empty value clear. A missing tag never calls this.
     void setAccount(const QString& normalizedNick, const QString& account);
+    // An empty value clears. Callers skip a blank WHO or WHOIS field instead
+    // of wiping a name they already stored.
+    void setRealname(const QString& normalizedNick, const QString& realname);
 
     void rekey(const QString& fromNormalized, const QString& toNormalized);
 
@@ -81,3 +86,16 @@ private:
 
     std::map<QString, IrcNickPresence> m_nicks;
 };
+
+// A mandatory GECOS is often a placeholder. Those names do not belong in
+// jump results. Equality with the nick is exact, matching the buffer name
+// the user sees.
+inline bool ircMeaningfulRealname(const QString& realname, const QString& nick)
+{
+    if (realname.isEmpty() || realname == nick)
+        return false;
+    const QString folded = realname.toLower();
+    return folded != QLatin1String("realname")
+        && folded != QLatin1String("unknown")
+        && folded != QLatin1String("fullname");
+}

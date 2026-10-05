@@ -2188,7 +2188,13 @@ func (r *EventReducer) reduceMode(event ModeEvent) {
 // reduceAway records an away-notify change. It mirrors
 // IrcEventReducer::reduce(IrcAwayEvent).
 func (r *EventReducer) reduceAway(event AwayEvent) {
-	r.setPresenceAway(event.NetworkID, r.normalize(event.NetworkID, event.Nick), event.Away)
+	normalized := r.normalize(event.NetworkID, event.Nick)
+	if !event.RealnameOnly {
+		r.setPresenceAway(event.NetworkID, normalized, event.Away)
+	}
+	if event.Realname != nil {
+		r.setPresenceRealname(event.NetworkID, normalized, *event.Realname)
+	}
 }
 
 // reduceSelfAway records the local user's own away state. It mirrors
@@ -2387,6 +2393,12 @@ func (r *EventReducer) setPresenceMetadata(networkID, normalizedNick, key, value
 func (r *EventReducer) setPresenceAccount(networkID, normalizedNick, account string) {
 	presence := r.presence[networkID]
 	presence.SetAccount(normalizedNick, account)
+	r.presence[networkID] = presence
+}
+
+func (r *EventReducer) setPresenceRealname(networkID, normalizedNick, realname string) {
+	presence := r.presence[networkID]
+	presence.SetRealname(normalizedNick, realname)
 	r.presence[networkID] = presence
 }
 

@@ -1738,6 +1738,44 @@ func TestAccountCommandAndTagShareOneField(t *testing.T) {
 	requireString(t, "whois account", reducer.NickPresence(networkA, "Alice").Account, "whoisacct")
 	applyWire(t, reducer, ":server 311 omairc Alice user host * :Alice Example")
 	requireString(t, "whois account kept", reducer.NickPresence(networkA, "Alice").Account, "whoisacct")
+	requireString(t, "whois realname", reducer.NickPresence(networkA, "Alice").Realname, "Alice Example")
+}
+
+func TestWhoAndWhoisStoreRealnameForJump(t *testing.T) {
+	reducer := NewEventReducer()
+	welcome(reducer, networkA)
+	applyWire(t, reducer, ":Alice!a@h JOIN #room")
+	applyWire(t, reducer, ":Alice!a@h AWAY :lunch")
+	applyWire(t, reducer, ":server 352 omairc #room u h s Alice H :0 Alice")
+	if reducer.NickPresence(networkA, "Alice").Away != nil {
+		t.Fatal("an H WHO reply must clear away")
+	}
+	requireString(t, "who realname", reducer.NickPresence(networkA, "Alice").Realname, "Alice")
+	if MeaningfulRealname(reducer.NickPresence(networkA, "Alice").Realname, "Alice") {
+		t.Fatal("a real name equal to the nick must not be meaningful")
+	}
+
+	applyWire(t, reducer, ":server 311 omairc Alice u h * :Alice Example")
+	if reducer.NickPresence(networkA, "Alice").Away != nil {
+		t.Fatal("WHOIS must not mark the nick away")
+	}
+	requireString(t, "whois realname", reducer.NickPresence(networkA, "Alice").Realname, "Alice Example")
+
+	applyWire(t, reducer, ":Alice!a@h AWAY :back later")
+	requireString(t, "away keeps realname", reducer.NickPresence(networkA, "Alice").Realname, "Alice Example")
+	if reducer.NickPresence(networkA, "Alice").Away == nil {
+		t.Fatal("AWAY must still record away")
+	}
+
+	applyWire(t, reducer, ":server 352 omairc #room u h s Alice G :2")
+	if reducer.NickPresence(networkA, "Alice").Away == nil {
+		t.Fatal("a G WHO reply must mark away")
+	}
+	requireString(t, "hop-only who keeps realname", reducer.NickPresence(networkA, "Alice").Realname, "Alice Example")
+
+	applyWire(t, reducer, ":Alice!a@h NICK Alicia")
+	requireString(t, "renamed realname", reducer.NickPresence(networkA, "Alicia").Realname, "Alice Example")
+	requireString(t, "old nick realname", reducer.NickPresence(networkA, "Alice").Realname, "")
 }
 
 func TestNickChangeKeepsServicesAccount(t *testing.T) {

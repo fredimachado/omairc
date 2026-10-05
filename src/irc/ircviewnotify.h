@@ -163,6 +163,9 @@ struct IrcViewClassifier {
 
     IrcViewNotify operator()(const IrcAwayEvent& event) const
     {
+        // A WHOIS real name does not change away, so the member list stays.
+        if (event.realnameOnly)
+            return IrcViewNotify::none();
         const IrcConversationKey key =
             reducer.conversationKey(event.networkId, event.nick);
         IrcViewNotify notify = IrcViewNotify::memberRow(key.normalizedTarget);

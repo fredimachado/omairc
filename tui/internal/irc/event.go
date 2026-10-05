@@ -248,11 +248,15 @@ type ModeEvent struct {
 func (ModeEvent) eventKind() EventKind { return EventMode }
 
 // AwayEvent reports an away-notify change for one nick. A nil Away means the
-// nick is back.
+// nick is back. Realname is set by RPL_WHOREPLY and RPL_WHOISUSER; nil leaves
+// a stored real name alone. RealnameOnly is a WHOIS 311 line, which must not
+// change away.
 type AwayEvent struct {
-	NetworkID string
-	Nick      string
-	Away      *Away
+	NetworkID    string
+	Nick         string
+	Away         *Away
+	Realname     *string
+	RealnameOnly bool
 }
 
 func (AwayEvent) eventKind() EventKind { return EventAway }

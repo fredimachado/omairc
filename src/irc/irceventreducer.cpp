@@ -1789,8 +1789,12 @@ void IrcEventReducer::reduce(const IrcModeEvent& event)
 
 void IrcEventReducer::reduce(const IrcAwayEvent& event)
 {
-    m_presence[event.networkId].setAway(
-        normalize(event.networkId, event.nick), event.away);
+    const QString normalized = normalize(event.networkId, event.nick);
+    if (!event.realnameOnly) {
+        m_presence[event.networkId].setAway(normalized, event.away);
+    }
+    if (event.realname)
+        m_presence[event.networkId].setRealname(normalized, *event.realname);
 }
 
 void IrcEventReducer::reduce(const IrcSelfAwayEvent& event)

@@ -197,7 +197,8 @@ QString IrcNickPresence::avatar() const
 
 bool IrcNickPresence::isDefault() const noexcept
 {
-    return !away.has_value() && keys.empty() && account.isEmpty();
+    return !away.has_value() && keys.empty() && account.isEmpty()
+        && realname.isEmpty();
 }
 
 IrcNickPresence& IrcNetworkPresence::entry(const QString& normalizedNick)
@@ -257,6 +258,22 @@ void IrcNetworkPresence::setAccount(const QString& normalizedNick,
         return;
     }
     entry(normalizedNick).account = account;
+}
+
+void IrcNetworkPresence::setRealname(const QString& normalizedNick,
+                                     const QString& realname)
+{
+    if (normalizedNick.isEmpty())
+        return;
+    if (realname.isEmpty()) {
+        const auto found = m_nicks.find(normalizedNick);
+        if (found == m_nicks.end())
+            return;
+        found->second.realname.clear();
+        eraseIfDefault(normalizedNick);
+        return;
+    }
+    entry(normalizedNick).realname = realname;
 }
 
 void IrcNetworkPresence::rekey(const QString& fromNormalized,

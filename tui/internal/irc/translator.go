@@ -1,6 +1,7 @@
 package irc
 
 import (
+	"strconv"
 	"strings"
 	"time"
 )
@@ -14,6 +15,27 @@ type HistoryBatch struct {
 	Kind   HistoryKind
 	// OlderPage is true for a solicited CHATHISTORY BEFORE answer.
 	OlderPage bool
+}
+
+// whoReplyRealname reads the GECOS from an RPL_WHOREPLY trailing parameter.
+// The standard form is "<hopcount> <real name>". A lone hop count is empty.
+// A trailing value with no hop count is the real name itself.
+func whoReplyRealname(trailing string) string {
+	trimmed := strings.TrimSpace(trailing)
+	if trimmed == "" {
+		return ""
+	}
+	hop, rest, ok := strings.Cut(trimmed, " ")
+	if !ok {
+		if _, err := strconv.Atoi(hop); err == nil {
+			return ""
+		}
+		return trimmed
+	}
+	if _, err := strconv.Atoi(hop); err != nil {
+		return trimmed
+	}
+	return strings.TrimSpace(rest)
 }
 
 // ConversationFor resolves the conversation an inbound message belongs to, or
@@ -228,7 +250,22 @@ func Translate(networkID, currentNick string, features ServerFeatures, message M
 			if away {
 				state = &Away{}
 			}
-			events = append(events, AwayEvent{NetworkID: networkID, Nick: nick, Away: state})
+			event := AwayEvent{NetworkID: networkID, Nick: nick, Away: state}
+			if realname := whoReplyRealname(ircParameter(message, 7)); realname != "" {
+				event.Realname = &realname
+			}
+			events = append(events, event)
+		}
+	case command == "311" && len(message.Params) >= 6:
+		nick := ircParameter(message, 1)
+		realname := strings.TrimSpace(ircParameter(message, 5))
+		if nick != "" && realname != "" {
+			events = append(events, AwayEvent{
+				NetworkID:    networkID,
+				Nick:         nick,
+				Realname:     &realname,
+				RealnameOnly: true,
+			})
 		}
 	case command == "CHGHOST":
 		// Members store nick plus ranks. User and host are not modeled.

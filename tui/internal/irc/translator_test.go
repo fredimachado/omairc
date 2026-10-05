@@ -153,10 +153,19 @@ func TestTranslatesAwayNumerics(t *testing.T) {
 	requireTrue(t, "352 event", ok)
 	requireString(t, "352 nick", away.Nick, "Alice")
 	requireTrue(t, "352 away", away.Away != nil)
+	requireTrue(t, "352 realname set", away.Realname != nil)
+	requireString(t, "352 realname", *away.Realname, "Alice")
+	requireFalse(t, "352 is not whois-only", away.RealnameOnly)
 
 	events = translateLine(t, ":server 352 omairc #room user host server Alice H :0 Alice")
 	away = events[0].(AwayEvent)
 	requireTrue(t, "352 here", away.Away == nil)
+
+	events = translateLine(t, ":server 311 omairc Alice user host * :Alice Example")
+	away = events[0].(AwayEvent)
+	requireTrue(t, "311 realname only", away.RealnameOnly)
+	requireTrue(t, "311 leaves away alone", away.Away == nil)
+	requireString(t, "311 realname", *away.Realname, "Alice Example")
 
 	events = translateLine(t, ":alice!u@h AWAY :lunch")
 	away = events[0].(AwayEvent)

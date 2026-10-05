@@ -19,6 +19,7 @@
 #include "ircjointarget.h"
 #include "ircviewnotify.h"
 #include "irctcp.h"
+#include "irctextformatter.h"
 #include "irctyping.h"
 #include "ircwiretext.h"
 
@@ -994,6 +995,40 @@ QString IrcController::peerAccount(const QString& networkId,
                                    const QString& nick) const
 {
     return m_reducer.displayAccount(networkId, nick);
+}
+
+QString IrcController::conversationTopic(const QString& networkId,
+                                         const QString& target) const
+{
+    if (networkId.isEmpty() || target.isEmpty())
+        return {};
+    const IrcConversationKey key = m_reducer.conversationKey(networkId, target);
+    const IrcConversationState *conversation = m_reducer.find(key);
+    const IrcChannelState *channel = conversation ? conversation->channel() : nullptr;
+    if (!channel)
+        return {};
+    return IrcTextFormatter{}.plainIrcText(channel->topic);
+}
+
+QString IrcController::peerRealname(const QString& networkId,
+                                    const QString& nick) const
+{
+    const QString stored = m_reducer.nickPresence(networkId, nick).realname;
+    if (!ircMeaningfulRealname(stored, nick))
+        return {};
+    return stored;
+}
+
+int IrcController::jumpScore(const QString& query,
+                             const QString& name,
+                             const QString& detail) const
+{
+    return ircJumpScore(query, name, detail);
+}
+
+int IrcController::jumpResultLimit() const
+{
+    return ircJumpResultLimit;
 }
 
 void IrcController::handleCapabilities(const QString& networkId,

@@ -28,6 +28,24 @@ QString author(const IrcMessage& message)
     return ircPrefixNick(message);
 }
 
+QString whoReplyRealname(const QString& trailing)
+{
+    const QString trimmed = trailing.trimmed();
+    if (trimmed.isEmpty())
+        return {};
+    const int space = trimmed.indexOf(QLatin1Char(' '));
+    if (space < 0) {
+        bool hops = false;
+        trimmed.toInt(&hops);
+        return hops ? QString{} : trimmed;
+    }
+    bool hops = false;
+    trimmed.left(space).toInt(&hops);
+    if (!hops)
+        return trimmed;
+    return trimmed.mid(space + 1).trimmed();
+}
+
 std::string utf8(const QString& value)
 {
     const QByteArray bytes = value.toUtf8();
@@ -451,10 +469,25 @@ std::vector<IrcEvent> IrcEventTranslator::translate(
         const QString nick = parameter(message, 5);
         const bool away = parameter(message, 6).startsWith(QLatin1Char('G'));
         if (!nick.isEmpty()) {
-            events.emplace_back(IrcAwayEvent{
+            IrcAwayEvent event{
                 networkId,
                 nick,
-                away ? std::optional<IrcAway>(IrcAway{}) : std::nullopt});
+                away ? std::optional<IrcAway>(IrcAway{}) : std::nullopt};
+            const QString realname = whoReplyRealname(parameter(message, 7));
+            if (!realname.isEmpty())
+                event.realname = realname;
+            events.emplace_back(std::move(event));
+        }
+    } else if (command == QStringLiteral("311") && message.parameters.size() >= 6) {
+        const QString nick = parameter(message, 1);
+        const QString realname = parameter(message, 5).trimmed();
+        if (!nick.isEmpty() && !realname.isEmpty()) {
+            IrcAwayEvent event;
+            event.networkId = networkId;
+            event.nick = nick;
+            event.realname = realname;
+            event.realnameOnly = true;
+            events.emplace_back(std::move(event));
         }
     } else if (command == QStringLiteral("CHGHOST")) {
         // Members store nick plus ranks. User and host are not modeled.
