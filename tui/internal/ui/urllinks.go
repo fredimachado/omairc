@@ -184,8 +184,9 @@ func inviteChannelAfter(text string) string {
 
 // Link-match kinds.
 const (
-	linkKindURL    = "url"
-	linkKindInvite = "invite"
+	linkKindURL     = "url"
+	linkKindInvite  = "invite"
+	linkKindChannel = "channel"
 )
 
 // linkMatch is one row of the link sheet. row is the source transcript or
@@ -217,6 +218,33 @@ func appendLinkURLsFromText(matches []linkMatch, text string, row int, query str
 			kind:  linkKindURL,
 			value: url,
 			label: url,
+			row:   row,
+		})
+	}
+	return matches
+}
+
+// appendChannelNames mirrors appendChannelNamesFromText in src/OmaircWindow.qml.
+// Channel names come from the controller, which reads CHANTYPES from the
+// focused network. A name that sits on an allowed URL is left to that URL.
+// Names are appended last-in-text first.
+func (m *Model) appendChannelNames(matches []linkMatch, text string, row int, query string) []linkMatch {
+	if m == nil || m.ctrl == nil || text == "" {
+		return matches
+	}
+	spans := m.ctrl.ChannelNameSpans(text)
+	for index := len(spans) - 1; index >= 0; index-- {
+		name := spans[index].Name
+		if name == "" || httpURLAt(text, spans[index].Start) != "" {
+			continue
+		}
+		if query != "" && !strings.Contains(strings.ToLower(name), query) {
+			continue
+		}
+		matches = append(matches, linkMatch{
+			kind:  linkKindChannel,
+			value: name,
+			label: name,
 			row:   row,
 		})
 	}
@@ -255,12 +283,17 @@ func (m *Model) linkMatches() []linkMatch {
 		}
 		return matches
 	}
+	topic := m.ctrl.PlainIrcText(m.ctrl.Topic())
+	matches = appendLinkURLsFromText(matches, topic, -1, query)
+	matches = m.appendChannelNames(matches, topic, -1, query)
 	messages := m.ctrl.Messages()
 	for row := len(messages) - 1; row >= 0; row-- {
 		if messages[row].Kind == "event" {
 			continue
 		}
-		matches = appendLinkURLsFromText(matches, m.ctrl.PlainIrcText(messages[row].Body), row, query)
+		body := m.ctrl.PlainIrcText(messages[row].Body)
+		matches = appendLinkURLsFromText(matches, body, row, query)
+		matches = m.appendChannelNames(matches, body, row, query)
 	}
 	return matches
 }

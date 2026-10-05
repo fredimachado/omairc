@@ -162,7 +162,7 @@ func (m *Model) dispatchChord(key string, msg tea.KeyPressMsg) (bool, tea.Cmd) {
 // shortcuts sheet), Ctrl+C (copy), and Escape, are let through. About is
 // handled before this runs, but it is included so the gate stays total.
 func (m *Model) modalBlocksChord(key string) bool {
-	if !m.connectVisible() && !m.shortcutsOpen && !m.aboutOpen {
+	if !m.connectVisible() && !m.shortcutsOpen && !m.aboutOpen && !m.channelPrompt.open {
 		return false
 	}
 	switch key {
@@ -214,6 +214,11 @@ func (k footerKeyMap) contextBindings() []key.Binding {
 	case m.shortcutsOpen:
 		return []key.Binding{
 			binding([]string{"esc", "escape", "ctrl+/"}, "Esc", "close"),
+		}
+	case m.channelPrompt.open:
+		return []key.Binding{
+			binding([]string{"enter", "return"}, "Enter", "open"),
+			binding([]string{"esc", "escape"}, "Esc", "cancel"),
 		}
 	case m.aboutOpen:
 		return []key.Binding{

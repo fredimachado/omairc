@@ -65,6 +65,7 @@ HEADERS += \
     ../../src/irc/irccommand.h \
     ../../src/irc/ircavatarurl.h \
     ../../src/irc/ircchannelmode.h \
+    ../../src/irc/ircchannelname.h \
     ../../src/irc/ircjointarget.h \
     ../../src/irc/ircslashcomplete.h \
     ../../src/irc/ircstatusconsole.h \
@@ -136,6 +137,7 @@ SOURCES += \
     ../../src/irc/irccommand.cpp \
     ../../src/irc/ircavatarurl.cpp \
     ../../src/irc/ircchannelmode.cpp \
+    ../../src/irc/ircchannelname.cpp \
     ../../src/irc/ircjointarget.cpp \
     ../../src/irc/ircslashcomplete.cpp \
     ../../src/irc/ircstatusconsole.cpp \

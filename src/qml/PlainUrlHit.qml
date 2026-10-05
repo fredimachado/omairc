@@ -10,17 +10,28 @@ MouseArea {
     required property var inviteChannelAt
     required property var openAllowedUrl
     required property var joinInviteChannel
+    property var channelNameAt: null
+    property var openChannelName: null
 
     objectName: "urlHit"
     anchors.fill: parent
     hoverEnabled: true
     acceptedButtons: Qt.LeftButton
+    function channelAt(visible, pos) {
+        if (!hit.channelNameAt)
+            return "";
+        var name = hit.channelNameAt(visible, pos);
+        return name ? name : "";
+    }
+
     cursorShape: {
         var pos = edit.positionAt(mouseX, mouseY);
         var visible = hit.editVisibleText(edit);
         if (hit.httpUrlAt(visible, pos).length > 0)
             return Qt.PointingHandCursor;
         if (inviteHits && hit.inviteChannelAt(visible, pos).length > 0)
+            return Qt.PointingHandCursor;
+        if (hit.channelAt(visible, pos).length > 0)
             return Qt.PointingHandCursor;
         return Qt.IBeamCursor;
     }
@@ -30,6 +41,8 @@ MouseArea {
         if (hit.httpUrlAt(visible, pos).length > 0)
             return;
         if (inviteHits && hit.inviteChannelAt(visible, pos).length > 0)
+            return;
+        if (hit.channelAt(visible, pos).length > 0)
             return;
         mouse.accepted = false;
     }
@@ -41,7 +54,12 @@ MouseArea {
             hit.openAllowedUrl(url);
             return;
         }
-        if (inviteHits)
+        if (inviteHits && hit.inviteChannelAt(visible, pos).length > 0) {
             hit.joinInviteChannel(hit.inviteChannelAt(visible, pos));
+            return;
+        }
+        var channel = hit.channelAt(visible, pos);
+        if (channel.length > 0 && hit.openChannelName)
+            hit.openChannelName(channel);
     }
 }

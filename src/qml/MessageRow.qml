@@ -23,6 +23,8 @@ Item {
     required property var inviteChannelAt
     required property var openAllowedUrl
     required property var joinInviteChannel
+    required property var channelNameAt
+    required property var openChannelName
     property var avatarStore: null
     property bool peerAvatarsEnabled: true
     property string selfNick: ""
@@ -148,6 +150,8 @@ Item {
             inviteChannelAt: function(text, at) { return messageDelegate.inviteChannelAt(text, at) }
             openAllowedUrl: function(url) { return messageDelegate.openAllowedUrl(url) }
             joinInviteChannel: function(channel) { return messageDelegate.joinInviteChannel(channel) }
+            channelNameAt: function(text, at) { return messageDelegate.channelNameAt(text, at) }
+            openChannelName: function(channel) { return messageDelegate.openChannelName(channel) }
         }
     }
 
@@ -218,6 +222,8 @@ Item {
             inviteChannelAt: function(text, at) { return messageDelegate.inviteChannelAt(text, at) }
             openAllowedUrl: function(url) { return messageDelegate.openAllowedUrl(url) }
             joinInviteChannel: function(channel) { return messageDelegate.joinInviteChannel(channel) }
+            channelNameAt: function(text, at) { return messageDelegate.channelNameAt(text, at) }
+            openChannelName: function(channel) { return messageDelegate.openChannelName(channel) }
         }
     }
 }

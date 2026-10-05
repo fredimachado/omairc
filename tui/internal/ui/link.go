@@ -56,6 +56,10 @@ func (m *Model) closeLink() {
 	}
 	m.link.open = false
 	m.link.input.Blur()
+	if m.channelPrompt.open {
+		m.composer.Blur()
+		return
+	}
 	_ = m.composer.Focus()
 	m.loadDraft()
 }
@@ -85,11 +89,14 @@ func (m *Model) activateLink() {
 		index = 0
 	}
 	entry := matches[index]
-	if entry.kind == linkKindInvite {
+	switch entry.kind {
+	case linkKindInvite:
 		if m.ctrl != nil {
 			m.ctrl.ConsoleSubmit("/join " + entry.value)
 		}
-	} else {
+	case linkKindChannel:
+		m.openChannelName(entry.value)
+	default:
 		m.openAllowedURL(entry.value)
 	}
 	m.closeLink()
