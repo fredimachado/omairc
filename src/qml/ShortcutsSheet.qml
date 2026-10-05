@@ -36,7 +36,7 @@ Popup {
                 { keys: "Ctrl+Shift+K", action: "jump to nick" },
                 { keys: "Ctrl+Shift+A", action: "inbox" },
                 { keys: "Ctrl+`", action: "Status" },
-                { keys: "Ctrl+W", action: "close direct message" }
+                { keys: "Ctrl+W", action: "close conversation" }
             ]
         },
         {

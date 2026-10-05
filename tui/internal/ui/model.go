@@ -1121,7 +1121,7 @@ func fitBlock(content string, width, height int) string {
 // example after connecting a second network) left the channel's panel beside
 // the console transcript.
 func (m *Model) membersVisible() bool {
-	if m.ctrl == nil || !m.ctrl.IsChannel() || m.ctrl.ConsoleOpen() {
+	if m.ctrl == nil || !m.ctrl.IsChannel() || !m.ctrl.ChannelJoined() || m.ctrl.ConsoleOpen() {
 		return false
 	}
 	return m.width >= membersMinTotal && !m.membersHidden

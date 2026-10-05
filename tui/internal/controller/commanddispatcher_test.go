@@ -63,6 +63,7 @@ type commandFakeHost struct {
 	selectedConvs      []string
 	whoisEvents        []irc.WhoisTranscriptEvent
 	statusTexts        []string
+	markLeft           []string
 }
 
 type commandMuteCall struct {
@@ -232,6 +233,18 @@ func (h *commandFakeHost) PrefApply(name irc.PrefName, enabled bool) {
 func (h *commandFakeHost) MembershipNoise() irc.MembershipNoise { return h.noise }
 
 func (h *commandFakeHost) SetMembershipNoise(noise irc.MembershipNoise) { h.noise = noise }
+
+func (h *commandFakeHost) MarkChannelLeft(networkID, channel string) {
+	h.markLeft = append(h.markLeft, commandPair(networkID, channel))
+}
+
+func (h *commandFakeHost) CloseSelected() bool {
+	if h.selectedIsChannel || !h.selectedCloseable {
+		return false
+	}
+	h.dropCalls++
+	return true
+}
 
 func (h *commandFakeHost) Now() time.Time { return h.now }
 
@@ -485,25 +498,43 @@ func TestCommandDispatcherPart(t *testing.T) {
 	active, transport := commandRegisteredSession(t, "libera")
 	fixture.host.sessionForSurface = active
 
-	// An unjoined channel dismissed from the sidebar records a cancellation and
+	// An unjoined channel stays in the sidebar, records a cancellation, and
 	// never writes PART.
 	channelKey := fixture.reducer.ConversationKey("libera", "#room")
 	fixture.reducer.EnsureConversation(channelKey, "#room", irc.CauseChannelState)
-	fixture.host.dismissResult = true
+	framesBefore := len(commandFrames(transport))
 	outcome := fixture.dispatcher.Dispatch(irc.Command{Verb: irc.VerbPart, Argument: "#room"}, irc.SurfaceConversation)
 	commandRequireOutcome(t, outcome, irc.OutcomeSent, "part unjoined")
-	if fixture.host.dismissCalls != 1 {
-		t.Fatalf("dismiss calls = %d, want 1", fixture.host.dismissCalls)
+	if fixture.host.dismissCalls != 0 {
+		t.Fatalf("dismiss calls = %d, want 0", fixture.host.dismissCalls)
+	}
+	if len(fixture.host.markLeft) != 0 {
+		t.Fatalf("mark left = %q, want none", fixture.host.markLeft)
 	}
 	if !fixture.dispatcher.TakeCancelledSelfJoin(channelKey) {
-		t.Fatalf("unjoined dismiss did not record a cancellation")
+		t.Fatalf("unjoined part did not record a cancellation")
+	}
+	if len(commandFrames(transport)) != framesBefore {
+		t.Fatalf("unjoined part wrote %q", commandFrames(transport)[framesBefore:])
 	}
 
-	// A channel the host does not dismiss is parted on the wire.
-	fixture.host.dismissResult = false
+	// A channel with no local buffer is still parted on the wire.
 	outcome = fixture.dispatcher.Dispatch(irc.Command{Verb: irc.VerbPart, Argument: "#other"}, irc.SurfaceConversation)
 	commandRequireOutcome(t, outcome, irc.OutcomeSent, "part wire")
 	commandWrote(t, transport, "PART #other\r\n")
+
+	// A joined channel is marked left and parted, and the row is not dismissed.
+	fixture.reducer.Apply(irc.WelcomeEvent{NetworkID: "libera", CurrentNick: "me"}, time.Time{})
+	fixture.reducer.Apply(irc.JoinEvent{NetworkID: "libera", Channel: "#joined", Nick: "me"}, time.Time{})
+	outcome = fixture.dispatcher.Dispatch(irc.Command{Verb: irc.VerbPart, Argument: "#joined"}, irc.SurfaceConversation)
+	commandRequireOutcome(t, outcome, irc.OutcomeSent, "part joined")
+	commandWrote(t, transport, "PART #joined\r\n")
+	if len(fixture.host.markLeft) != 1 || fixture.host.markLeft[0] != commandPair("libera", "#joined") {
+		t.Fatalf("mark left = %q, want libera/#joined", fixture.host.markLeft)
+	}
+	if fixture.host.dismissCalls != 0 {
+		t.Fatalf("joined part dismissed the row")
+	}
 
 	// An empty argument with no selected channel is the wrong scope.
 	commandRequireOutcome(t, fixture.dispatcher.Dispatch(irc.Command{Verb: irc.VerbPart}, irc.SurfaceConversation), irc.OutcomeWrongScope, "part no selection")

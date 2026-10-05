@@ -96,6 +96,9 @@ public:
         std::function<void(IrcPrefName name, bool enabled)> prefApply;
         std::function<IrcMembershipNoise()> membershipNoise;
         std::function<void(IrcMembershipNoise noise)> setMembershipNoise;
+        std::function<void(const QString& networkId, const QString& channel)>
+            markChannelLeft;
+        std::function<bool()> closeSelected;
     };
 
     IrcCommandDispatcher(IrcEventReducer& reducer,

@@ -28,10 +28,10 @@ func newNickJumpState() nickJumpState {
 // nickVisible reports whether the nick jump overlay is open.
 func (m *Model) nickVisible() bool { return m != nil && m.nick.open }
 
-// openNickJump opens the overlay on a channel. It is a no-op on a direct
-// message or Status, matching the chord's gate.
+// openNickJump opens the overlay on a channel you are in. It is a no-op on a
+// direct message, Status, or a channel you have left, matching the chord's gate.
 func (m *Model) openNickJump() {
-	if m.ctrl == nil || !m.ctrl.IsChannel() || m.ctrl.ConsoleOpen() {
+	if m.ctrl == nil || !m.ctrl.IsChannel() || !m.ctrl.ChannelJoined() || m.ctrl.ConsoleOpen() {
 		return
 	}
 	m.closeAllOverlays()

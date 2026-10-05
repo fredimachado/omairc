@@ -201,6 +201,10 @@ type EventReducer struct {
 	keptReplay          []KeptReplay
 	rememberedQueries   []RememberedQuery
 	queryRestorePending map[string]struct{}
+	// closedChannels are channels the user closed. Catch-up must not
+	// recreate them. An explicit join clears one key; welcome and
+	// forgetting the network clear the set.
+	closedChannels map[ConversationKey]struct{}
 }
 
 // defaultServerFeatures is returned for a network the caller never configured.
@@ -249,6 +253,9 @@ func (r *EventReducer) ensure() {
 	}
 	if r.queryRestorePending == nil {
 		r.queryRestorePending = make(map[string]struct{})
+	}
+	if r.closedChannels == nil {
+		r.closedChannels = make(map[ConversationKey]struct{})
 	}
 }
 
@@ -561,6 +568,60 @@ func (r *EventReducer) DropChannel(key ConversationKey) bool {
 	return true
 }
 
+// NoteClosed records that the user closed this channel, so catch-up cannot
+// bring the row back. It mirrors IrcEventReducer::noteClosed.
+func (r *EventReducer) NoteClosed(key ConversationKey) {
+	r.ensure()
+	if key.NetworkID == "" || key.NormalizedTarget == "" {
+		return
+	}
+	r.closedChannels[key] = struct{}{}
+}
+
+// ClearClosed forgets a closed channel so an explicit join may open it. It
+// mirrors IrcEventReducer::clearClosed.
+func (r *EventReducer) ClearClosed(key ConversationKey) {
+	r.ensure()
+	delete(r.closedChannels, key)
+}
+
+// Closed reports whether key was closed and not yet joined again. It mirrors
+// IrcEventReducer::isClosed.
+func (r *EventReducer) Closed(key ConversationKey) bool {
+	r.ensure()
+	_, ok := r.closedChannels[key]
+	return ok
+}
+
+// clearClosedNetwork drops every closed channel on one network.
+func (r *EventReducer) clearClosedNetwork(networkID string) {
+	if networkID == "" {
+		return
+	}
+	for key := range r.closedChannels {
+		if key.NetworkID == networkID {
+			delete(r.closedChannels, key)
+		}
+	}
+}
+
+// MarkChannelLeft keeps the channel row and marks it not joined. The PART
+// echo still appends the leave line. It mirrors IrcEventReducer::markChannelLeft.
+func (r *EventReducer) MarkChannelLeft(key ConversationKey) bool {
+	conversation := r.findMutable(key)
+	if conversation == nil || conversation.channel == nil {
+		return false
+	}
+	channel := conversation.channel
+	channel.Joined = false
+	channel.HistoryAnchor = nil
+	r.ClearHistoryPageCapTail(key)
+	channel.Members = map[string]MemberState{}
+	stopNamesSync(channel)
+	conversation.Typing = map[string]TypingHint{}
+	return true
+}
+
 // ForgetNetwork drops every fact about one network: conversations, features,
 // nicks, presence, mutes, and held playback. It mirrors
 // IrcEventReducer::forgetNetwork.
@@ -572,6 +633,7 @@ func (r *EventReducer) ForgetNetwork(networkID string) {
 	r.dropPendingPlayback(networkID)
 	r.dropKeptPlayback(networkID)
 	delete(r.queryRestorePending, networkID)
+	r.clearClosedNetwork(networkID)
 	for key := range r.conversations {
 		if key.NetworkID == networkID {
 			delete(r.conversations, key)
@@ -643,6 +705,12 @@ func (r *EventReducer) EnsureConversation(key ConversationKey, displayTarget str
 	targetLooksLikeService := TargetLooksLikeService(displayTarget, features)
 	if !ConversationCauseInserts(cause, targetIsChannel, targetLooksLikeService) {
 		return nil
+	}
+	// A closed channel stays closed. Join clears the mark before it inserts.
+	if targetIsChannel {
+		if _, closed := r.closedChannels[key]; closed {
+			return nil
+		}
 	}
 	conversation := &ConversationState{
 		Key:        key,
@@ -1851,6 +1919,7 @@ func (r *EventReducer) dropPendingPlayback(networkID string) {
 func (r *EventReducer) reduceWelcome(event WelcomeEvent) {
 	r.dropPendingPlayback(event.NetworkID)
 	r.dropKeptPlayback(event.NetworkID)
+	r.clearClosedNetwork(event.NetworkID)
 	r.queryRestorePending[event.NetworkID] = struct{}{}
 	if current, ok := r.currentNicks[event.NetworkID]; ok {
 		r.rememberSelfNick(event.NetworkID, current)

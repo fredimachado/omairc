@@ -741,6 +741,22 @@ void injectClientEcho(IrcLoopbackTransport *transport, const QString &nick,
     transport->injectBytes(":" + nick.toUtf8() + "!u@h " + frame);
 }
 
+void injectSelfJoin(IrcLoopbackTransport *transport, const QString &nick,
+                    const QByteArray &frame)
+{
+    QByteArray rest = frame.mid(5);
+    while (!rest.isEmpty() && (rest.endsWith('\n') || rest.endsWith('\r')))
+        rest.chop(1);
+    const int space = rest.indexOf(' ');
+    const QByteArray channels = space < 0 ? rest : rest.left(space);
+    const QList<QByteArray> names = channels.split(',');
+    for (const QByteArray &raw : names) {
+        if (raw.isEmpty())
+            continue;
+        transport->injectBytes(joinLine(nick, QString::fromUtf8(raw)));
+    }
+}
+
 QStringList demoOnlineNicks(const SeedNetwork &network)
 {
     QSet<QString> nicks;
@@ -1235,6 +1251,8 @@ void IrcDemoServer::hookAutoEcho(IrcLoopbackTransport *transport,
                              m_monitorLists[transport])) {
             return;
         }
+        if (frame.startsWith("JOIN "))
+            injectSelfJoin(transport, nick, frame);
         if (frame.startsWith("PRIVMSG ") || frame.startsWith("NOTICE "))
             injectClientEcho(transport, nick, frame);
     });

@@ -56,6 +56,8 @@ class IrcController : public QObject
     Q_PROPERTY(QString focusedNetworkId READ focusedNetworkId NOTIFY selectionChanged)
     Q_PROPERTY(QString topic READ topic NOTIFY selectionChanged)
     Q_PROPERTY(bool isChannel READ isChannel NOTIFY selectionChanged)
+    Q_PROPERTY(bool channelJoined READ channelJoined NOTIFY selectionChanged)
+    Q_PROPERTY(bool canCloseSelection READ canCloseSelection NOTIFY selectionChanged)
     Q_PROPERTY(int peopleCount READ peopleCount NOTIFY selectionChanged)
     Q_PROPERTY(QString connectionStatus READ connectionStatus NOTIFY statusChanged)
     Q_PROPERTY(QString lastError READ lastError NOTIFY statusChanged)
@@ -108,6 +110,8 @@ public:
     std::size_t focusedFrameBytes() const;
     QString topic() const;
     bool isChannel() const;
+    bool channelJoined() const;
+    bool canCloseSelection() const;
     int peopleCount() const;
     QString connectionStatus() const;
     QString lastError() const;
@@ -154,6 +158,11 @@ public:
     Q_INVOKABLE void revealConversation(const QString& networkId,
                                         const QString& target);
     Q_INVOKABLE void closeDirectMessage();
+    Q_INVOKABLE void leaveSelectedChannel();
+    Q_INVOKABLE void joinSelectedChannel();
+    Q_INVOKABLE bool joinNewChannel(const QString& channel);
+    Q_INVOKABLE void closeConversationRow(const QString& networkId,
+                                          const QString& target);
     Q_INVOKABLE bool sendMessage(const QString& text);
     Q_INVOKABLE int composerByteBudget() const;
     Q_INVOKABLE int composerByteBudgetFor(const QString& draft) const;
@@ -346,6 +355,8 @@ private:
     IrcCommandOutcome clearSurface(IrcComposerSurface surface);
     bool report(IrcCommandOutcome outcome, const IrcCommand& command);
     bool selectedIsCloseableDirect() const;
+    bool closeSelectedConversation();
+    void markChannelLeft(const QString& networkId, const QString& channel);
     void dropConversationAndReselect(const IrcConversationKey& key,
                                      bool forgetDirect);
     void dropSelectedDirectAndReselect();

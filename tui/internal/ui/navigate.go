@@ -533,8 +533,8 @@ func (m *Model) toggleServerList() {
 	}
 }
 
-// closeDirectMessage closes the selected direct message with Ctrl+W. It is a
-// no-op on a channel or Status.
+// closeDirectMessage closes the selected direct message, or a channel you
+// have left, with Ctrl+W. It is a no-op on a channel you are in, or on Status.
 func (m *Model) closeDirectMessage() {
 	if m.ctrl == nil || m.ctrl.ConsoleOpen() {
 		return
@@ -552,7 +552,7 @@ func (m *Model) closeDirectMessage() {
 // panel by making it visible when the window is wide enough. It is a no-op off
 // a channel or on Status.
 func (m *Model) focusMembers() {
-	if m.ctrl == nil || !m.ctrl.IsChannel() || m.ctrl.ConsoleOpen() {
+	if m.ctrl == nil || !m.ctrl.IsChannel() || !m.ctrl.ChannelJoined() || m.ctrl.ConsoleOpen() {
 		return
 	}
 	// The focus path reopens the panel if Ctrl+Shift+M hid it, mirroring the

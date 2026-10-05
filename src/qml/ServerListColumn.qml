@@ -27,6 +27,7 @@ Rectangle {
     property alias selfVersionHit: selfVersionHit
 
     signal conversationActivated(var row)
+    signal conversationCloseRequested(string networkId, string target)
     signal statusRequested(string networkId)
     signal editRequested(string networkId)
     signal versionClicked()
@@ -105,6 +106,42 @@ Rectangle {
                     width: parent ? parent.width : 0
                     spacing: 0
 
+                    // A sidebar model reset leaves repeater rows at y=0. The
+                    // column positioner does not run again. Changing spacing
+                    // across two turns makes it place the rows, then restores
+                    // the real spacing.
+                    property int rowEpoch: column.irc ? column.irc.conversationEpoch : 0
+                    property bool repositioning: false
+                    property bool repositionAgain: false
+                    function rowsNeedPlace() {
+                        for (var i = 0; i < children.length; ++i) {
+                            var child = children[i];
+                            if (i > 0 && child.visible && child.height > 0 && child.y === 0)
+                                return true;
+                        }
+                        return false;
+                    }
+                    function repositionRows() {
+                        if (!rowsNeedPlace())
+                            return;
+                        if (repositioning) {
+                            repositionAgain = true;
+                            return;
+                        }
+                        repositioning = true;
+                        repositionAgain = false;
+                        spacing = 1;
+                        Qt.callLater(function() {
+                            spacing = 0;
+                            repositioning = false;
+                            if (repositionAgain || rowsNeedPlace()) {
+                                repositionAgain = false;
+                                repositionRows();
+                            }
+                        });
+                    }
+                    onRowEpochChanged: Qt.callLater(repositionRows)
+
                     NetworkSection {
                         style: column.style
                         networkId: liveNet.networkId
@@ -180,6 +217,8 @@ Rectangle {
                             width: column.width
                             height: visible ? column.style.scaledSize(36) : 0
                             onActivated: column.conversationActivated(channelRow)
+                            onCloseRequested: column.conversationCloseRequested(
+                                channelRow.networkId, channelRow.conversationName)
                         }
                     }
 
@@ -239,6 +278,8 @@ Rectangle {
                             width: column.width
                             height: visible ? column.style.scaledSize(36) : 0
                             onActivated: column.conversationActivated(directRow)
+                            onCloseRequested: column.conversationCloseRequested(
+                                directRow.networkId, directRow.conversationName)
                         }
                     }
                 }

@@ -143,6 +143,12 @@ func (h ctrlHost) MembershipNoise() irc.MembershipNoise { return h.c.MembershipN
 
 func (h ctrlHost) SetMembershipNoise(noise irc.MembershipNoise) { h.c.SetMembershipNoise(noise) }
 
+func (h ctrlHost) MarkChannelLeft(networkID, channel string) {
+	h.c.markChannelLeft(networkID, channel)
+}
+
+func (h ctrlHost) CloseSelected() bool { return h.c.closeSelectedConversation() }
+
 // ReplyHost extras.
 func (h ctrlHost) SelfNick(networkID string) string { return h.c.currentNicks[networkID] }
 
@@ -278,6 +284,41 @@ func (c *Controller) selectedIsCloseableDirect() bool {
 	return conversation == nil || !conversation.IsChannel()
 }
 
+func (c *Controller) closeSelectedConversation() bool {
+	if c.selected == nil {
+		return false
+	}
+	conversation := c.reducer.Find(*c.selected)
+	if conversation != nil && conversation.IsChannel() {
+		channel := conversation.Channel()
+		if channel == nil || channel.Joined {
+			return false
+		}
+		display := conversation.Target
+		if display == "" {
+			display = c.selectedTarget
+		}
+		c.commands.NoteCancelled(*c.selected)
+		c.reducer.NoteClosed(*c.selected)
+		return c.dismissChannel(c.selected.NetworkID, display)
+	}
+	if !c.selectedIsCloseableDirect() {
+		return false
+	}
+	c.dropSelectedDirectAndReselect()
+	return true
+}
+
+func (c *Controller) markChannelLeft(networkID, channel string) {
+	if networkID == "" || channel == "" {
+		return
+	}
+	if !c.reducer.MarkChannelLeft(c.reducer.ConversationKey(networkID, channel)) {
+		return
+	}
+	c.reloadModels()
+}
+
 // --- Composer typing ------------------------------------------------------
 
 // NotifyComposerText records one composer text change and publishes an outbound
@@ -349,10 +390,25 @@ func (c *Controller) report(outcome irc.CommandOutcome, command irc.Command,
 	if outcome == irc.OutcomeSent {
 		c.setLastError(networkID, "")
 	} else {
-		c.setLastError(networkID, irc.CommandOutcomeText(outcome, command))
+		c.setLastError(networkID, c.outcomeError(outcome, command))
 	}
 	c.notifyStatusChanged()
 	return outcome == irc.OutcomeSent
+}
+
+// outcomeError is the subtitle for a refused command. Chat on a channel you
+// have left names that state; every other refusal keeps the shared outcome text.
+func (c *Controller) outcomeError(outcome irc.CommandOutcome, command irc.Command) string {
+	chat := command.Verb == irc.VerbSay || command.Verb == irc.VerbAction
+	if chat && c.selected != nil {
+		if conversation := c.reducer.Find(*c.selected); conversation != nil && conversation.IsChannel() {
+			channel := conversation.Channel()
+			if channel == nil || !channel.Joined {
+				return "You have left this channel"
+			}
+		}
+	}
+	return irc.CommandOutcomeText(outcome, command)
 }
 
 func (c *Controller) errorNetworkID(surface irc.ComposerSurface) string {
@@ -369,6 +425,12 @@ func (c *Controller) sendSelectedMessageOutcome(body string) irc.CommandOutcome 
 	s := c.selectedSession()
 	if s == nil || c.selected == nil {
 		return irc.OutcomeWrongScope
+	}
+	if conversation := c.reducer.Find(*c.selected); conversation != nil && conversation.IsChannel() {
+		channel := conversation.Channel()
+		if channel == nil || !channel.Joined {
+			return irc.OutcomeRefused
+		}
 	}
 	target := c.SelectedTarget()
 	if !s.SendPrivmsg(target, body) {
@@ -425,6 +487,8 @@ func (c *Controller) openJoinedChannel(networkID, channel string) {
 		return
 	}
 	key := c.reducer.ConversationKey(networkID, channel)
+	// An explicit join is allowed to bring a closed channel back.
+	c.reducer.ClearClosed(key)
 	if c.reducer.EnsureConversation(key, channel, irc.CauseChannelState) == nil {
 		return
 	}

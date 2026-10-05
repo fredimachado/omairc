@@ -934,8 +934,19 @@ func (c *Controller) ActivateInboxItem(index int) {
 		if !ok {
 			break
 		}
+		key := c.reducer.ConversationKey(item.NetworkID, item.Target)
+		wasClosed := c.reducer.Closed(key)
+		c.reducer.ClearClosed(key)
+		wasCancelled := c.commands.TakeCancelledSelfJoin(key)
 		if s.Join(target) {
 			c.openJoinedChannel(item.NetworkID, item.Target)
+		} else {
+			if wasClosed {
+				c.reducer.NoteClosed(key)
+			}
+			if wasCancelled {
+				c.commands.NoteCancelled(key)
+			}
 		}
 	case irc.InboxMonitorOnline:
 		c.RevealConversation(item.NetworkID, item.Actor)
@@ -1221,17 +1232,48 @@ func (c *Controller) OpenDirectMessage(nick string) bool {
 	return true
 }
 
-// CloseDirectMessage drops the selected direct message and selects its
-// neighbor. It returns false when a channel or nothing is selected.
+// CloseDirectMessage drops the selected direct message, or a channel you have
+// left, and selects its neighbor. A channel you are in stays. It returns
+// false when nothing closeable is selected.
 func (c *Controller) CloseDirectMessage() bool {
+	networkID := c.FocusedNetworkID()
+	if !c.closeSelectedConversation() {
+		return false
+	}
+	if c.LastErrorFor(networkID) == "" {
+		return true
+	}
+	c.setLastError(networkID, "")
+	c.notifyStatusChanged()
+	return true
+}
+
+// ChannelJoined reports whether the selected conversation is a channel the
+// user is currently in.
+func (c *Controller) ChannelJoined() bool {
 	if c.selected == nil {
 		return false
 	}
-	if conversation := c.reducer.Find(*c.selected); conversation != nil && conversation.IsChannel() {
+	conversation := c.reducer.Find(*c.selected)
+	if conversation == nil {
 		return false
 	}
-	c.dropSelectedDirectAndReselect()
-	return true
+	channel := conversation.Channel()
+	return channel != nil && channel.Joined
+}
+
+// CanCloseSelection reports whether Close applies: a direct message, or a
+// channel the user has left.
+func (c *Controller) CanCloseSelection() bool {
+	if c.selected == nil {
+		return false
+	}
+	conversation := c.reducer.Find(*c.selected)
+	if conversation == nil || !conversation.IsChannel() {
+		return conversation != nil
+	}
+	channel := conversation.Channel()
+	return channel != nil && !channel.Joined
 }
 
 // DropConversationAndReselect removes one conversation and, when it was the
@@ -1888,7 +1930,12 @@ func (c *Controller) handleMessage(networkID string, message irc.Message) {
 				if s := c.manager.Find(join.NetworkID); s != nil {
 					s.Part(join.Channel)
 				}
-				c.dismissChannel(join.NetworkID, join.Channel)
+				// Close drops the row. Leave keeps it, just not joined.
+				if c.reducer.Closed(joinKey) {
+					c.dismissChannel(join.NetworkID, join.Channel)
+				} else {
+					c.markChannelLeft(join.NetworkID, join.Channel)
+				}
 				continue
 			}
 			if selfJoin && features.IsChannel(join.Channel) {

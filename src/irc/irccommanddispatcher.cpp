@@ -94,6 +94,14 @@ IrcCommandOutcome IrcCommandDispatcher::dispatch(const IrcCommand& command,
         IrcSession *session = m_host.selectedSession();
         if (!session || !m_host.selected())
             return IrcCommandOutcome::WrongScope;
+        if (const IrcConversationState *conversation =
+                m_reducer.find(*m_host.selected())) {
+            if (conversation->isChannel()) {
+                const IrcChannelState *channel = conversation->channel();
+                if (!channel || !channel->joined)
+                    return IrcCommandOutcome::Refused;
+            }
+        }
         const bool sent = session->sendAction(m_host.selectedTarget(),
                                               command.argument);
         if (sent) {
@@ -146,12 +154,10 @@ IrcCommandOutcome IrcCommandDispatcher::dispatch(const IrcCommand& command,
     if (command.verb == IrcCommand::Verb::Clear)
         return m_host.clearSurface(surface);
 
-    if (command.verb == IrcCommand::Verb::Close) {
-        if (!m_host.selectedIsCloseableDirect())
-            return IrcCommandOutcome::WrongScope;
-        m_host.dropSelectedDirectAndReselect();
-        return IrcCommandOutcome::Sent;
-    }
+    if (command.verb == IrcCommand::Verb::Close)
+        return m_host.closeSelected()
+            ? IrcCommandOutcome::Sent
+            : IrcCommandOutcome::WrongScope;
 
     if (command.verb == IrcCommand::Verb::Topic)
         return setSelectedTopic(command.argument);
@@ -233,11 +239,23 @@ IrcCommandOutcome IrcCommandDispatcher::dispatch(const IrcCommand& command,
         }
         sent = true;
         for (const IrcJoinTarget& target : *targets) {
+            const IrcConversationKey key =
+                m_reducer.conversationKey(active->networkId(),
+                                          target.channel());
+            // Demo servers echo JOIN on the write stack, before join
+            // returns. Clear the closed mark and the close cancellation
+            // first, or that echo is dropped or parted. Put both back when
+            // the session cannot build the line. openJoinedChannel still
+            // opens only the last target.
+            const bool wasClosed = m_reducer.isClosed(key);
+            m_reducer.clearClosed(key);
+            const bool wasCancelled = m_cancelledPendingJoins.erase(key) > 0;
             const bool wrote = active->join(target);
-            if (wrote) {
-                m_cancelledPendingJoins.erase(
-                    m_reducer.conversationKey(active->networkId(),
-                                              target.channel()));
+            if (!wrote) {
+                if (wasClosed)
+                    m_reducer.noteClosed(key);
+                if (wasCancelled)
+                    m_cancelledPendingJoins.insert(key);
             }
             sent = wrote && sent;
         }
@@ -260,15 +278,19 @@ IrcCommandOutcome IrcCommandDispatcher::dispatch(const IrcCommand& command,
         const IrcConversationKey key =
             m_reducer.conversationKey(active->networkId(), channel);
         const IrcConversationState *conversation = m_reducer.find(key);
-        const bool joined = conversation
-            && conversation->channel()
-            && conversation->channel()->joined;
-        if (m_host.dismissChannel(active->networkId(), channel)) {
-            if (joined)
-                active->part(channel);
-            else
+        const IrcChannelState *state = conversation ? conversation->channel() : nullptr;
+        if (state) {
+            // Leave keeps the row. Part only when the buffer is actually
+            // joined, so a channel you have already left does not 442.
+            // An in-flight join is cancelled so its echo cannot rejoin.
+            if (state->joined) {
+                sent = active->part(channel);
+                if (sent)
+                    m_host.markChannelLeft(active->networkId(), channel);
+            } else {
                 m_cancelledPendingJoins.insert(key);
-            sent = true;
+                sent = true;
+            }
             break;
         }
         sent = active->part(channel);

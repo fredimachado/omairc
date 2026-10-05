@@ -266,6 +266,13 @@ public:
                                const QDateTime& now);
     bool dropDirectMessage(const IrcConversationKey& key);
     bool dropChannel(const IrcConversationKey& key);
+    // A channel the user closed. Catch-up must not insert it again. A later
+    // join clears the mark first. Welcome clears the network.
+    void noteClosed(const IrcConversationKey& key);
+    void clearClosed(const IrcConversationKey& key);
+    bool isClosed(const IrcConversationKey& key) const;
+    // Flip a channel to not-joined and drop its member list, keeping the row.
+    bool markChannelLeft(const IrcConversationKey& key);
     void forgetNetwork(const QString& networkId);
     void clearMessages(const IrcConversationKey& key);
     void armTrimTailOnCap(const IrcConversationKey& key);
@@ -421,6 +428,7 @@ private:
     void pruneExpiredTyping(IrcConversationState& conversation,
                             const QDateTime& now);
 
+    void clearClosedNetwork(const QString& networkId);
     void forgetUnseen(const QString& networkId, const QStringList& normalizedNicks);
     bool isVisible(const QString& networkId, const QString& normalizedNick) const;
 
@@ -447,5 +455,6 @@ private:
     // Set on welcome, cleared when open-direct restore finishes. A missing
     // query is not a finished drop while this connection is still waiting.
     std::set<QString> m_queryRestorePending;
+    std::set<IrcConversationKey> m_closedChannels;
     QStringList m_historyBeforeExhaustTargets;
 };

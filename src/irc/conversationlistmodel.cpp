@@ -31,10 +31,9 @@ int groupRank(const IrcConversationState *conversation)
 {
     if (!conversation || !conversation->isChannel())
         return 2;
-    const IrcChannelState *channel = conversation->channel();
-    if (channel && channel->joined)
-        return 0;
-    return 1;
+    // A channel you have left stays with the other channels. The name sort
+    // keeps the row in place.
+    return 0;
 }
 
 int networkRank(const QString& networkId, const QStringList& networkOrder)

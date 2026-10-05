@@ -2,6 +2,7 @@
 #include <QTest>
 
 #include "channellistmodel.h"
+#include "conversationlistmodel.h"
 #include "irccontroller.h"
 #include "ircdemoserver.h"
 #include "ircloopbacktransport.h"
@@ -14,6 +15,8 @@ private slots:
     void answersClientPing();
     void answersMonitorAdd();
     void answersList();
+    void rejoinEchoesSelfJoin();
+    void closedChannelsRejoinFromDemoEcho();
     void seedsServiceAccounts();
     void seedsSelfAvatars();
     void skipsRedundantAccountTag();
@@ -143,6 +146,60 @@ void DemoServerTest::answersList()
     QCOMPARE(model->rowCount(), 1);
     QCOMPARE(model->field(0, QStringLiteral("channel")).toString(),
              QStringLiteral("#linux"));
+}
+
+void DemoServerTest::rejoinEchoesSelfJoin()
+{
+    IrcController controller;
+    IrcDemoServer demo;
+    QVERIFY(demo.attach(controller, true));
+    controller.selectConversation(IrcDemoServer::omarchyNetworkId(),
+                                  QStringLiteral("#omarchy"));
+    QVERIFY(controller.channelJoined());
+
+    QVERIFY(controller.sendMessage(QStringLiteral("/part")));
+    QVERIFY(!controller.channelJoined());
+    QVERIFY(controller.sendMessage(QStringLiteral("/join #omarchy")));
+    QVERIFY(controller.channelJoined());
+}
+
+void DemoServerTest::closedChannelsRejoinFromDemoEcho()
+{
+    IrcController controller;
+    IrcDemoServer demo;
+    QVERIFY(demo.attach(controller, true));
+    const QString network = IrcDemoServer::omarchyNetworkId();
+
+    controller.selectConversation(network, QStringLiteral("#desktop"));
+    QVERIFY(controller.sendMessage(QStringLiteral("/part")));
+    controller.closeConversationRow(network, QStringLiteral("#desktop"));
+    controller.selectConversation(network, QStringLiteral("#omarchy"));
+    QVERIFY(controller.sendMessage(QStringLiteral("/part")));
+    controller.closeConversationRow(network, QStringLiteral("#omarchy"));
+
+    controller.selectConversation(network, QStringLiteral("#help"));
+    QVERIFY(controller.sendMessage(QStringLiteral("/join #desktop,#omarchy")));
+    QCOMPARE(controller.selectedTarget(), QStringLiteral("#omarchy"));
+    QVERIFY(controller.channelJoined());
+
+    auto *model = qobject_cast<QAbstractItemModel *>(controller.conversations());
+    QVERIFY(model);
+    bool sawDesktop = false;
+    bool sawOmarchy = false;
+    for (int row = 0; row < model->rowCount(); ++row) {
+        const QString name = model->data(
+            model->index(row, 0), ConversationListModel::ConversationRole).toString();
+        if (name == QLatin1String("#desktop"))
+            sawDesktop = true;
+        if (name == QLatin1String("#omarchy"))
+            sawOmarchy = true;
+    }
+    QVERIFY(sawDesktop);
+    QVERIFY(sawOmarchy);
+
+    controller.selectConversation(network, QStringLiteral("#desktop"));
+    QCOMPARE(controller.selectedTarget(), QStringLiteral("#desktop"));
+    QVERIFY(controller.channelJoined());
 }
 
 int runDemoServerTests(int argc, char **argv)

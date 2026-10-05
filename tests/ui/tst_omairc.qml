@@ -320,6 +320,8 @@ TestCase {
         property string selectedNetworkId: "libera"
         property string topic: "A cozy corner for Omarchy users and builders."
         property bool isChannel: true
+        property bool channelJoined: true
+        property bool canCloseSelection: false
         property int peopleCount: 1
         property string connectionStatus: "Connected"
         property string lastError: ""
@@ -374,6 +376,8 @@ TestCase {
             selectedTarget = name;
             selectedConversationId = networkId + "\n" + name;
             isChannel = name.charAt(0) === "#";
+            channelJoined = isChannel;
+            canCloseSelection = !isChannel;
             topic = isChannel ? "" : "Direct message with " + name;
             peopleCount = isChannel ? 1 : 0;
             liveConsole.open = false;
@@ -405,6 +409,8 @@ TestCase {
         property string selectedNetworkId: "libera"
         property string topic: ""
         property bool isChannel: true
+        property bool channelJoined: true
+        property bool canCloseSelection: false
         property int peopleCount: 1
         property string connectionStatus: "Connected"
         property string lastError: ""
@@ -499,6 +505,8 @@ TestCase {
         property string selectedNetworkId: "libera"
         property string topic: "A cozy corner for Omarchy users and builders."
         property bool isChannel: true
+        property bool channelJoined: true
+        property bool canCloseSelection: false
         property int peopleCount: 1
         property string connectionStatus: "Connected"
         property string lastError: ""
@@ -570,6 +578,8 @@ TestCase {
         property string selectedNetworkId: "libera"
         property string topic: "A cozy corner for Omarchy users and builders."
         property bool isChannel: true
+        property bool channelJoined: true
+        property bool canCloseSelection: false
         property int peopleCount: 3
         property string connectionStatus: "Connected"
         property string lastError: ""
@@ -5872,18 +5882,10 @@ TestCase {
 
     function test_ctrlKCapsAfterRank() {
         openSeededAppWindow();
-        var sheet = openJumpSheet();
-        var first = item("jumpModel").get(0);
-        var firstKind = first.kind;
-        var firstName = first.name;
-        var firstNetwork = first.networkId;
-        keyClick(Qt.Key_Escape);
-        tryCompare(sheet, "opened", false);
 
-        // Joined channels sort by name, so a joined #c00 becomes the first
-        // sidebar row. Parting after the self join keeps the channel and
-        // parks it after the channels that were already joined. #zzcap is
-        // then past the 20-row cap until a name match pulls it forward.
+        // Every channel ranks together, joined or not, so the parted #c00
+        // rows stay in name order and fill the 20-row cap. #zzcap is past
+        // that cap until a name match pulls it forward.
         var wire = "";
         for (var index = 0; index < 20; ++index) {
             var suffix = index < 10 ? "0" + index : String(index);
@@ -5896,12 +5898,11 @@ TestCase {
         wire += ":fred!u@h PART #zzcap\r\n";
         seed.injectOmarchy(wire);
 
-        sheet = openJumpSheet();
+        openJumpSheet();
         var model = item("jumpModel");
         compare(model.count, 20);
-        compare(model.get(0).kind, firstKind);
-        compare(model.get(0).name, firstName);
-        compare(model.get(0).networkId, firstNetwork);
+        compare(model.get(0).name, "#c00");
+        compare(model.get(0).networkId, seed.omarchyNetworkId);
 
         item("jumpFilter").clear();
         typeText("zzcap");
@@ -9907,6 +9908,82 @@ TestCase {
         compare(composer.text, "/close");
         compare(appWindow.currentConversation, "#omarchy");
         compare(visibleDirects(seed.omarchyNetworkId).length, 2);
+    }
+
+    function test_leaveKeepsChannelRow() {
+        openSeededAppWindow();
+        mouseClick(namedItem(liveConversation("anna")));
+        tryCompare(appWindow, "currentConversation", "anna");
+        compare(item("headerCloseButton").visible, true);
+        compare(item("headerLeaveButton").visible, false);
+        compare(item("headerJoinButton").visible, false);
+
+        mouseClick(namedItem(liveConversation("#omarchy")));
+        tryCompare(appWindow, "currentConversation", "#omarchy");
+        compare(item("headerLeaveButton").visible, true);
+        compare(item("peopleButton").visible, true);
+        compare(item("headerJoinButton").visible, false);
+        compare(item("headerCloseButton").visible, false);
+        compare(item("membersPanel").visible, true);
+
+        mouseClick(item("headerLeaveButton"));
+        tryCompare(appWindow, "currentChannelJoined", false);
+        compare(appWindow.currentConversation, "#omarchy");
+        verify(namedItem(liveConversation("#omarchy")) !== null);
+        compare(item("headerJoinButton").visible, true);
+        compare(item("headerCloseButton").visible, true);
+        compare(item("headerLeaveButton").visible, false);
+        compare(item("peopleButton").visible, false);
+        compare(item("membersPanel").visible, false);
+
+        var desktop = null;
+        tryVerify(function() {
+            desktop = findNamed(liveConversation("#desktop"));
+            var column = desktop ? desktop.parent : null;
+            return desktop !== null && desktop.y > 0
+                && column && column.spacing === 0;
+        });
+        var point = desktop.mapToItem(appWindow.contentItem,
+                                       desktop.width / 2, desktop.height / 2);
+        mouseClick(appWindow.contentItem, point.x, point.y, Qt.MiddleButton);
+        tryVerify(function() {
+            return findNamed(liveConversation("#desktop")) === null;
+        });
+        compare(appWindow.currentConversation, "#omarchy");
+
+        var framesBeforeJoin = seed.omarchyFrameCount();
+        mouseClick(item("headerJoinButton"));
+        tryVerify(function() {
+            return seed.omarchyWroteFrom(framesBeforeJoin, "JOIN #omarchy");
+        });
+        seed.injectOmarchy(":fred!u@h JOIN :#omarchy\r\n");
+        tryCompare(appWindow, "currentChannelJoined", true);
+        compare(item("headerLeaveButton").visible, true);
+        compare(item("peopleButton").visible, true);
+
+        mouseClick(item("headerLeaveButton"));
+        tryCompare(appWindow, "currentChannelJoined", false);
+        mouseClick(item("headerCloseButton"));
+        tryVerify(function() {
+            return findNamed(liveConversation("#omarchy")) === null;
+        });
+
+        keyClick(Qt.Key_QuoteLeft, Qt.ControlModifier);
+        tryCompare(appWindow, "consoleVisible", true);
+        var joinField = item("serverJoinField");
+        mouseClick(joinField);
+        typeText("#ricing");
+        mouseClick(item("serverJoinButton"));
+        tryCompare(seed.irc, "lastError", "Already open");
+        compare(appWindow.consoleVisible, true);
+        verify(namedItem(liveConversation("#ricing")) !== null);
+
+        mouseClick(joinField);
+        typeText("#leaveprobe");
+        mouseClick(item("serverJoinButton"));
+        tryCompare(appWindow, "currentConversation", "#leaveprobe");
+        compare(appWindow.consoleVisible, false);
+        verify(namedItem(liveConversation("#leaveprobe")) !== null);
     }
 
     function test_typedQueryOpensDirectAndClearsComposer() {

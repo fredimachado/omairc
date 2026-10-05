@@ -42,6 +42,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   AFTER`, and a direct message that was never opened is discovered and filled.
   A closed conversation stays closed. A server without chathistory keeps the
   playback it already had.
+- Leaving a channel keeps its row. Join brings that channel back, and Close
+  drops a channel you have left. A closed channel stays closed until you join
+  it again. The desktop header offers Leave, Join, and Close. Middle-click
+  closes a sidebar row. The server buffer can join a channel that is not
+  already open.
+- The terminal client keeps the same row: `/part` leaves without dropping it,
+  `/join` brings it back, and `/close` drops a channel you have left.
 - The terminal client marks every conversation read with `Alt+Shift+A`. Sidebar
   badges clear, and that background title clears with them. `Alt+A` still
   prefers a mention, then ordinary unread. When nothing is unread, it opens

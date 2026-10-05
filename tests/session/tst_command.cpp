@@ -983,7 +983,7 @@ void CommandTest::catalogLookupAndScope()
     QCOMPARE(close->usage, QStringLiteral("/close"));
     QVERIFY(close->aliases.isEmpty());
     QCOMPARE(close->scope, IrcVerbScope::Conversation);
-    QCOMPARE(close->wrongScopeText, QStringLiteral("Close applies to direct messages"));
+    QCOMPARE(close->wrongScopeText, QStringLiteral("Close applies to direct messages and channels you have left"));
 
     const IrcVerbSpec *topic = IrcVerbTable::lookup(QStringLiteral("topic"));
     QVERIFY(topic);
@@ -1434,7 +1434,7 @@ void CommandTest::closeWrongScopeUsesCatalogSentence()
 {
     const IrcCommand close = IrcCommand::parse(QStringLiteral("/close"));
     QCOMPARE(ircCommandOutcomeText(IrcCommandOutcome::WrongScope, close),
-             QStringLiteral("Close applies to direct messages"));
+             QStringLiteral("Close applies to direct messages and channels you have left"));
 
     const IrcCommand part = IrcCommand::parse(QStringLiteral("/part"));
     QCOMPARE(ircCommandOutcomeText(IrcCommandOutcome::WrongScope, part),
@@ -1637,7 +1637,7 @@ void CommandTest::statusSubmitDoesNotSendAction()
 
     QVERIFY(console->submit(QStringLiteral("/close")));
     QVERIFY(logContains(console->lines(),
-                        QStringLiteral("Close applies to direct messages")));
+                        QStringLiteral("Close applies to direct messages and channels you have left")));
 
     const int beforeTopic = transport->writtenFrames().size();
     QVERIFY(console->submit(QStringLiteral("/topic hello")));

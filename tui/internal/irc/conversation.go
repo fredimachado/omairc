@@ -174,17 +174,14 @@ func networkRank(networkID string, order []string) int {
 	return len(order)
 }
 
-// groupRank places joined channels first (0), then unjoined channels (1), then
-// direct messages (2). It mirrors the anonymous groupRank in
-// conversationlistmodel.cpp.
+// groupRank places every channel first (0), then direct messages (2). A channel
+// you have left stays with the other channels so the name sort keeps its place.
+// It mirrors the anonymous groupRank in conversationlistmodel.cpp.
 func groupRank(conversation *ConversationState) int {
 	if conversation == nil || !conversation.IsChannel() {
 		return 2
 	}
-	if conversation.Channel() != nil && conversation.Channel().Joined {
-		return 0
-	}
-	return 1
+	return 0
 }
 
 // compareCaseInsensitive orders two display targets the way
