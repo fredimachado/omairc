@@ -112,6 +112,9 @@ if not exist "!REL!\omairc.exe" exit /b 0
 
 rem qmlimportscanner still copies every Controls style even when the matching
 rem libraries are skipped. Keep Material plus Basic as a load fallback.
+rem Keep Qt Quick Dialogs. FilePickButton imports that module, and the
+rem deployed qt.conf points the exe at this tree, so deleting it makes
+rem the window fail to load.
 for %%D in (
   "!REL!\qml\QtQuick\Controls\FluentWinUI3"
   "!REL!\qml\QtQuick\Controls\Fusion"
@@ -121,7 +124,6 @@ for %%D in (
   "!REL!\qml\QtQuick\NativeStyle"
   "!REL!\qml\QtQuick\Effects"
   "!REL!\qml\QtQuick\Shapes"
-  "!REL!\qml\QtQuick\Dialogs"
   "!REL!\qml\QtQuick\Particles"
   "!REL!\qml\QtQuick\LocalStorage"
   "!REL!\qml\QtQuick\Timeline"

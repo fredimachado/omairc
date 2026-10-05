@@ -1259,8 +1259,15 @@ QVariantMap IrcController::peerHeader(const QString& networkId,
     }
     result.insert(QStringLiteral("realname"),
                   m_reducer.meaningfulRealname(networkId, nick));
-    result.insert(QStringLiteral("labels"),
-                  m_reducer.peerFactLabels(networkId, nick));
+    // A QStringList inside this map is a temporary. Copy it into a
+    // QVariantList so the query header can keep the labels after the
+    // invokable returns.
+    QVariantList labels;
+    const QStringList facts = m_reducer.peerFactLabels(networkId, nick);
+    labels.reserve(facts.size());
+    for (const QString& label : facts)
+        labels.append(label);
+    result.insert(QStringLiteral("labels"), labels);
     return result;
 }
 

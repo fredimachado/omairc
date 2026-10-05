@@ -160,6 +160,8 @@ jobs:
           }
           $svg = Get-ChildItem 'build\release' -Recurse -Filter 'qsvg.dll' -File
           if (-not $svg) { throw 'qsvg.dll was not deployed (About overlay SVG)' }
+          $dialogs = Get-ChildItem 'build\release\qml\QtQuick\Dialogs' -Recurse -Filter '*.dll' -File -ErrorAction SilentlyContinue
+          if (-not $dialogs) { throw 'QtQuick.Dialogs was not deployed (file picker)' }
           $version = (& $exe --version 2>&1 | Out-String).Trim()
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $expected = "omairc $($env:OMAIRC_DISPLAY_VERSION)"
@@ -175,12 +177,20 @@ jobs:
           $qtPlugins = Join-Path $env:RUNNER_TEMP "Qt\$env:QT_VERSION\msvc2022_64\plugins"
           if (Test-Path $qtPlugins) { $env:QT_PLUGIN_PATH = $qtPlugins }
           $full = (Resolve-Path $exe).Path
-          $p = Start-Process -FilePath $full -ArgumentList '--demo-server' -PassThru -NoNewWindow
+          $smokeOut = Join-Path $env:RUNNER_TEMP 'omairc-smoke-out.txt'
+          $smokeErr = Join-Path $env:RUNNER_TEMP 'omairc-smoke-err.txt'
+          $p = Start-Process -FilePath $full -ArgumentList '--demo-server' -PassThru -RedirectStandardOutput $smokeOut -RedirectStandardError $smokeErr
           if (-not $p.WaitForExit(30000)) {
             Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
             throw 'demo-server smoke did not exit within 30s'
           }
-          if ($p.ExitCode -ne 0) { throw "demo-server smoke exited $($p.ExitCode)" }
+          if ($p.ExitCode -ne 0) {
+            Write-Host '--- demo-server stdout ---'
+            if (Test-Path $smokeOut) { Get-Content $smokeOut -ErrorAction SilentlyContinue }
+            Write-Host '--- demo-server stderr ---'
+            if (Test-Path $smokeErr) { Get-Content $smokeErr -ErrorAction SilentlyContinue }
+            throw "demo-server smoke exited $($p.ExitCode)"
+          }
 
           $junk = @('*.obj','*.pdb','*.res','*.ilk','moc_*.cpp','moc_predefs.h','qrc_*.cpp')
           Get-ChildItem 'build\release' -File | Where-Object {

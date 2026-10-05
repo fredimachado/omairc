@@ -607,6 +607,30 @@ def check_windows_about_svg_plugin():
     return problems
 
 
+def check_windows_file_dialog():
+    problems = []
+    button = ROOT / "src" / "qml" / "FilePickButton.qml"
+    build = ROOT / "bin" / "build.bat"
+    workflow = ROOT / ".github" / "workflows" / "windows.yml"
+    button_text = button.read_text(encoding="utf-8", errors="replace") \
+        if button.is_file() else ""
+    build_text = build.read_text(encoding="utf-8", errors="replace") \
+        if build.is_file() else ""
+    windows_text = workflow.read_text(encoding="utf-8", errors="replace") \
+        if workflow.is_file() else ""
+    if "import QtQuick.Dialogs" not in button_text or "FileDialog" not in button_text:
+        problems.append(
+            "src/qml/FilePickButton.qml: the file picker uses QtQuick.Dialogs FileDialog")
+    if re.search(r'"!REL!\\qml\\QtQuick\\Dialogs"', build_text):
+        problems.append(
+            "bin/build.bat: do not prune qml\\QtQuick\\Dialogs; "
+            "FilePickButton imports it and qt.conf keeps the exe on that tree")
+    if "QtQuick\\Dialogs" not in windows_text and "QtQuick/Dialogs" not in windows_text:
+        problems.append(
+            ".github/workflows/windows.yml: Smoke must assert Qt Quick Dialogs is deployed")
+    return problems
+
+
 def check_macos_notarization():
     problems = []
     workflow = ROOT / ".github" / "workflows" / "macos.yml"
@@ -1429,6 +1453,7 @@ CHECKS = (
     ("macOS CI Bash 3.2 builtins", check_macos_ci_bash32),
     ("Windows ignores Linux QtKeychain .deps", check_windows_ignores_linux_qtkeychain_deps),
     ("Windows About SVG plugin", check_windows_about_svg_plugin),
+    ("Windows file dialog plugin", check_windows_file_dialog),
     ("macOS Developer ID notarization", check_macos_notarization),
     ("macOS CI Xcode and Actions majors", check_macos_ci_xcode_and_actions),
     ("macOS SDK compat arch gate", check_macos_sdk_compat),

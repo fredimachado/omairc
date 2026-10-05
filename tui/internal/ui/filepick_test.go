@@ -4,8 +4,10 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -491,6 +493,9 @@ func TestLocalFileLinesRequireEveryLine(t *testing.T) {
 	if got := localFileLines("file://" + path); len(got) != 1 || got[0] != path {
 		t.Fatalf("file url lines = %#v", got)
 	}
+	if got := localFileLines(localFileURL(path)); len(got) != 1 || got[0] != path {
+		t.Fatalf("canonical file url lines = %#v", got)
+	}
 	if localFileLines("hello") != nil {
 		t.Fatal("text was treated as a file")
 	}
@@ -499,6 +504,45 @@ func TestLocalFileLinesRequireEveryLine(t *testing.T) {
 	}
 	if localFileLines(path+"\nhello") != nil {
 		t.Fatal("a mixed paste was treated as files")
+	}
+}
+
+func localFileURL(path string) string {
+	slash := filepath.ToSlash(path)
+	if runtime.GOOS == "windows" && !strings.HasPrefix(slash, "/") {
+		slash = "/" + slash
+	}
+	return (&url.URL{Scheme: "file", Path: slash}).String()
+}
+
+func TestConvertFileTokenWindowsDrive(t *testing.T) {
+	cases := []struct {
+		token string
+		want  string
+	}{
+		{`file://C:\Users\note.txt`, `C:\Users\note.txt`},
+		{"file:///C:/Users/note.txt", `C:\Users\note.txt`},
+		{"file://C:/Users/note.txt", `C:\Users\note.txt`},
+		{"file://localhost/C:/Users/My%20Notes/a.txt", `C:\Users\My Notes\a.txt`},
+		{`C:\Users\note.txt`, `C:\Users\note.txt`},
+	}
+	for _, tc := range cases {
+		got, ok := convertFileToken(tc.token, true)
+		if !ok || got != tc.want {
+			t.Fatalf("convertFileToken(%q) = %q, %v; want %q", tc.token, got, ok, tc.want)
+		}
+	}
+	if _, ok := convertFileToken("file://evil.com/etc/passwd", true); ok {
+		t.Fatal("a remote file host was accepted")
+	}
+	if _, ok := convertFileToken("note.txt", true); ok {
+		t.Fatal("a relative path was accepted")
+	}
+	if _, ok := convertFileToken("file://evil.com/etc/passwd", false); ok {
+		t.Fatal("a remote file host was accepted on unix")
+	}
+	if got, ok := convertFileToken("file:///tmp/note.txt", false); !ok || got != "/tmp/note.txt" {
+		t.Fatalf("unix file url = %q, %v", got, ok)
 	}
 }
 

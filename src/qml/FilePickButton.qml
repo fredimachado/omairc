@@ -10,7 +10,9 @@ Rectangle {
     signal picked(string path)
 
     function open() {
-        dialog.open();
+        dialogLoader.active = true;
+        if (dialogLoader.item)
+            dialogLoader.item.open();
     }
 
     objectName: "filePickButton"
@@ -43,10 +45,18 @@ Rectangle {
         onClicked: button.open()
     }
 
-    FileDialog {
-        id: dialog
-        title: "Choose a file"
-        fileMode: FileDialog.OpenFile
-        onAccepted: button.picked(dialog.selectedFile)
+    // Created on open. A native dialog constructed with the window, under
+    // the offscreen platform, takes the process down before the first frame.
+    Loader {
+        id: dialogLoader
+        active: false
+
+        sourceComponent: Component {
+            FileDialog {
+                title: "Choose a file"
+                fileMode: FileDialog.OpenFile
+                onAccepted: button.picked(selectedFile)
+            }
+        }
     }
 }

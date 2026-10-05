@@ -22,6 +22,17 @@ QVector<int> refreshRoles()
             MemberListModel::BotRole, MemberListModel::AccountRole,
             MemberListModel::RealnameRole, MemberListModel::FactLabelsRole};
 }
+
+// QML list roles read a QVariantList. A QStringList stays a container the
+// Windows QML engine can use after the temporary is gone.
+QVariantList variantStrings(const QStringList& labels)
+{
+    QVariantList values;
+    values.reserve(labels.size());
+    for (const QString& label : labels)
+        values.append(label);
+    return values;
+}
 }
 
 MemberListModel::MemberListModel(IrcEventReducer& reducer, QObject *parent)
@@ -65,7 +76,7 @@ QVariant MemberListModel::data(const QModelIndex& index, int role) const
     case RealnameRole:
         return member->realname;
     case FactLabelsRole:
-        return member->factLabels;
+        return variantStrings(member->factLabels);
     default:
         return {};
     }
