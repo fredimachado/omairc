@@ -573,6 +573,18 @@ bool IrcSession::tlsEnabled() const
     return m_tlsEnabled;
 }
 
+QString IrcSession::fileHostAccount() const
+{
+    return m_config.saslAccount.isEmpty() ? m_config.nick : m_config.saslAccount;
+}
+
+QString IrcSession::fileHostSecret() const
+{
+    if (m_saslSucceeded)
+        return saslSecret(m_config);
+    return m_config.password;
+}
+
 QString IrcSession::nick() const
 {
     return m_nick;

@@ -48,6 +48,7 @@ Keep implementation details out of the map. Name only user paths, stable handles
 - [Connect](./connect.md) covers the first-run Connect sheet, Libera defaults, and the nick-required state.
 - [Switch conversation](./switch-conversation.md) covers sidebar channels, seeded direct messages, topic, people count, and message history.
 - [Send a message](./send-message.md) covers composer focus, Enter, SEND, empty input, and `/me` actions.
+- [File link](./file-link.md) covers inserting an ordinary web link when a server offers a file host.
 - [Toggle members](./toggle-members.md) covers the people control, `Ctrl+Shift+M`, and hiding the panel on direct messages.
 - [Open a direct message](./open-direct-message.md) covers opening or creating a DM from a member row and clearing unread state.
 - [Status console](./status-console.md) covers the network Status pane, header entry points, AUTH notices, and the shared composer.

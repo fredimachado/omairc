@@ -91,6 +91,10 @@ public:
     std::string_view chanModesC() const noexcept;
     std::string_view chanModesD() const noexcept;
     std::string_view iconUrl() const noexcept;
+    // The upload URI for this connection, or empty when the server offered
+    // none that this connection may use. An encrypted IRC connection refuses
+    // a plain http URI.
+    std::string fileHost(bool encrypted) const;
 
     std::optional<IrcParsedName> parseNamesToken(std::string_view token) const;
     std::vector<IrcPrefixChange> prefixChanges(
@@ -129,5 +133,6 @@ private:
     std::string m_chanModesC;
     std::string m_chanModesD;
     std::string m_iconUrl;
+    std::vector<std::string> m_fileHosts;
     std::array<ModeParamRule, 256> m_modeRules{};
 };

@@ -386,6 +386,91 @@ func TestParsesDraftIconFromIsupport(t *testing.T) {
 	}
 }
 
+func TestParsesFileHostFromIsupport(t *testing.T) {
+	empty := NewServerFeatures()
+	if empty.FileHost(true) != "" || empty.FileHost(false) != "" {
+		t.Fatalf("file host = %q / %q, want empty", empty.FileHost(true), empty.FileHost(false))
+	}
+
+	https := NewServerFeatures()
+	https.ApplyToken("soju.im/FILEHOST=https://uploads.example/upload")
+	if got := https.FileHost(true); got != "https://uploads.example/upload" {
+		t.Fatalf("encrypted file host = %q", got)
+	}
+	if got := https.FileHost(false); got != "https://uploads.example/upload" {
+		t.Fatalf("cleartext file host = %q", got)
+	}
+
+	httpHost := NewServerFeatures()
+	httpHost.ApplyToken("soju.im/FILEHOST=http://uploads.example/upload")
+	if got := httpHost.FileHost(true); got != "" {
+		t.Fatalf("encrypted http file host = %q, want empty", got)
+	}
+	if got := httpHost.FileHost(false); got != "http://uploads.example/upload" {
+		t.Fatalf("cleartext http file host = %q", got)
+	}
+
+	listed := NewServerFeatures()
+	listed.ApplyToken("draft/FILEHOST=http://plain.example/up\\x20https://safe.example/up")
+	if got := listed.FileHost(true); got != "https://safe.example/up" {
+		t.Fatalf("listed file host = %q", got)
+	}
+	if got := listed.FileHost(false); got != "https://safe.example/up" {
+		t.Fatalf("listed cleartext file host = %q", got)
+	}
+
+	replaced := NewServerFeatures()
+	replaced.ApplyToken("soju.im/FILEHOST=https://uploads.example/upload")
+	replaced.ApplyToken("soju.im/FILEHOST=ftp://files.example/up")
+	if got := replaced.FileHost(false); got != "" {
+		t.Fatalf("ftp replacement file host = %q, want empty", got)
+	}
+
+	icon := NewServerFeatures()
+	icon.ApplyToken("ICON=https://example.org/x.png")
+	icon.ApplyToken("draft/ICON=https://example.org/icon.svg")
+	if got := icon.FileHost(true); got != "" {
+		t.Fatalf("icon token set file host %q", got)
+	}
+	if got := icon.IconURL(); got != "https://example.org/icon.svg" {
+		t.Fatalf("icon url = %q", got)
+	}
+
+	removed := NewServerFeatures()
+	removed.ApplyToken("soju.im/FILEHOST=https://uploads.example/upload")
+	removed.ApplyToken("-soju.im/FILEHOST")
+	if got := removed.FileHost(false); got != "" {
+		t.Fatalf("file host after -soju.im/FILEHOST = %q", got)
+	}
+	removed.ApplyToken("draft/FILEHOST=https://uploads.example/upload")
+	removed.ApplyToken("-draft/FILEHOST")
+	if got := removed.FileHost(false); got != "" {
+		t.Fatalf("file host after -draft/FILEHOST = %q", got)
+	}
+
+	kept := NewServerFeatures()
+	kept.ApplyToken("soju.im/FILEHOST=https://uploads.example/upload")
+	kept.ApplyToken("-FILEHOST")
+	kept.ApplyToken("-ICON")
+	kept.ApplyToken("CHANTYPES=#")
+	if got := kept.FileHost(true); got != "https://uploads.example/upload" {
+		t.Fatalf("kept file host = %q", got)
+	}
+
+	userinfo := NewServerFeatures()
+	userinfo.ApplyToken("soju.im/FILEHOST=https://user:pw@uploads.example/upload")
+	if got := userinfo.FileHost(false); got != "" {
+		t.Fatalf("userinfo file host = %q, want empty", got)
+	}
+
+	cleared := NewServerFeatures()
+	cleared.ApplyToken("soju.im/FILEHOST=https://uploads.example/upload")
+	cleared.ApplyToken("soju.im/FILEHOST=")
+	if got := cleared.FileHost(false); got != "" {
+		t.Fatalf("empty value file host = %q, want empty", got)
+	}
+}
+
 func TestDraftIconRemovalClearsAdvertisedURL(t *testing.T) {
 	features := NewServerFeatures()
 	features.ApplyToken("draft/ICON=https://example.org/icon.svg")

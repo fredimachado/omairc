@@ -61,6 +61,8 @@ HEADERS += \
     ../src/irc/ircpresence.h \
     ../src/irc/ircavatarurl.h \
     ../src/irc/ircavatarhttp.h \
+    ../src/irc/ircfilelink.h \
+    ../src/irc/ircfilehost.h \
     ../src/irc/ircavatarstore.h \
     ../src/irc/irctcp.h \
     ../src/irc/ircignore.h \
@@ -139,6 +141,7 @@ SOURCES += \
     protocol/tst_protocol.cpp \
     protocol/tst_casemapping.cpp \
     protocol/tst_channelname.cpp \
+    protocol/tst_filehost.cpp \
     protocol/tst_corpus.cpp \
     ../src/irc/ircparser.cpp \
     ../src/irc/ircframer.cpp \
@@ -157,6 +160,8 @@ SOURCES += \
     ../src/irc/ircpresence.cpp \
     ../src/irc/ircavatarurl.cpp \
     ../src/irc/ircavatarhttp.cpp \
+    ../src/irc/ircfilelink.cpp \
+    ../src/irc/ircfilehost.cpp \
     ../src/irc/ircavatarstore.cpp \
     ../src/irc/irctcp.cpp \
     ../src/irc/ircignore.cpp \

@@ -153,15 +153,18 @@ type Model struct {
 	// against it, so only a real change publishes.
 	lastComposerText string
 	memberFocus      bool
-	memberIndex          int
-	shortcutsOpen        bool
-	aboutOpen            bool
-	channelPrompt        channelPromptState
-	nick                 nickJumpState
-	link                 linkState
-	inbox                inboxState
-	slash                slashSession
-	list                 channelListState
+	memberIndex      int
+	shortcutsOpen    bool
+	aboutOpen        bool
+	channelPrompt    channelPromptState
+	nick             nickJumpState
+	link             linkState
+	file             filePickState
+	fileQueue        []queuedFile
+	fileActive       *queuedFile
+	inbox            inboxState
+	slash            slashSession
+	list             channelListState
 
 	// Phase 9 desktop-notification state. notifier is the nil-able desktop
 	// seam (mirroring backend.notifyDesktop); windowActive mirrors win.active;
@@ -210,30 +213,31 @@ func New(ctrl *controller.Controller, conn *connection.Connection) *Model {
 	styles := defaultStyles()
 	composer := newComposerInput(styles)
 	m := &Model{
-		ctrl:                 ctrl,
-		conn:                 conn,
-		width:                defaultWidth,
-		height:               defaultHeight,
-		focus:                focusComposer,
-		composer:             composer,
-		help:                 help.New(),
-		spinner:              spinner.New(spinner.WithSpinner(spinner.MiniDot)),
-		typingSpinner:        spinner.New(spinner.WithSpinner(spinner.Points)),
-		sheet:                newConnectSheetState(),
-		jump:                 newJumpState(),
-		nick:                 newNickJumpState(),
-		link:                 newLinkState(),
-		inbox:                newInboxState(),
-		list:                 newChannelListState(),
-		serverListVisible:    true,
+		ctrl:                        ctrl,
+		conn:                        conn,
+		width:                       defaultWidth,
+		height:                      defaultHeight,
+		focus:                       focusComposer,
+		composer:                    composer,
+		help:                        help.New(),
+		spinner:                     spinner.New(spinner.WithSpinner(spinner.MiniDot)),
+		typingSpinner:               spinner.New(spinner.WithSpinner(spinner.Points)),
+		sheet:                       newConnectSheetState(),
+		jump:                        newJumpState(),
+		nick:                        newNickJumpState(),
+		link:                        newLinkState(),
+		file:                        newFilePickState(),
+		inbox:                       newInboxState(),
+		list:                        newChannelListState(),
+		serverListVisible:           true,
 		transcriptFollowEnd:         true,
 		transcriptCursor:            -1,
 		transcriptAnchorSequence:    -1,
 		transcriptAnchorSpliceEpoch: -1,
 		firstUnseenSequenceAtAnchor: -1,
 		firstUnseenRow:              -1,
-		composerHistoryIndex: -1,
-		drafts:               make(map[string]string),
+		composerHistoryIndex:        -1,
+		drafts:                      make(map[string]string),
 		// The terminal starts focused until a Blur arrives, mirroring
 		// OmaircWindow.qml's win.active default.
 		windowActive: true,
@@ -319,6 +323,7 @@ func (m *Model) restyleOverlayInputs() {
 	m.jump.input.SetStyles(input)
 	m.nick.input.SetStyles(input)
 	m.link.input.SetStyles(input)
+	m.file.input.SetStyles(input)
 	m.list.input.SetStyles(input)
 	m.sheet.input.SetStyles(input)
 }
@@ -461,6 +466,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case NotifyMsg:
 		m.ensureAvatars()
+		// A controller-driven selection, including the autojoin that claims
+		// the first channel, does not pass through switchSelection. Move the
+		// composer onto that conversation before the next keystroke.
+		m.followControllerSelection()
 		// A status change may have left the focused network disconnected, so
 		// restart the spinner if it stopped. A chat or membership publish may
 		// have grown the transcript while the reader was scrolled up, which
@@ -520,11 +529,20 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case NotificationActivatedMsg:
 		m.activateNotifiedConversation(msg.NetworkID, msg.Target, msg.MsgID)
 		return m, nil
+	case FileLinkMsg:
+		m.finishFileLink(msg)
+		return m, nil
 	case tea.KeyPressMsg:
 		return m.handleKey(msg)
 	}
 	if m.channelPrompt.open {
 		return m, nil
+	}
+	if pasted, ok := msg.(tea.PasteMsg); ok &&
+		!m.connectVisible() && !m.overlaysVisible() && !m.shortcutsOpen && !m.aboutOpen {
+		if m.tryUploadPastedText(pasted.Content) {
+			return m, nil
+		}
 	}
 	if m.connectVisible() {
 		var cmd tea.Cmd
@@ -611,6 +629,9 @@ func (m *Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	if handled, cmd := m.dispatchChord(key, msg); handled {
 		return m, cmd
 	}
+	if key == "ctrl+v" && m.tryUploadClipboard() {
+		return m, nil
+	}
 	var cmd tea.Cmd
 	m.composer, cmd = m.composer.Update(msg)
 	m.syncSlash()
@@ -689,6 +710,7 @@ func (m *Model) resize() {
 	m.jump.input.SetWidth(m.overlayInputWidth())
 	m.nick.input.SetWidth(m.overlayInputWidth())
 	m.link.input.SetWidth(m.overlayInputWidth())
+	m.file.input.SetWidth(m.overlayInputWidth())
 	m.list.input.SetWidth(m.overlayInputWidth())
 }
 
@@ -862,13 +884,15 @@ func (m *Model) overlayCard() (string, bool) {
 		return m.channelListCard(m.width), true
 	case m.jump.open:
 		return m.jumpCard(m.width), true
+	case m.file.open:
+		return m.fileCard(m.width), true
 	}
 	return "", false
 }
 
 // overlaysVisible reports whether any of the filter overlays owns the keys.
 func (m *Model) overlaysVisible() bool {
-	return m != nil && (m.jump.open || m.nick.open || m.link.open || m.inbox.open || m.list.open)
+	return m != nil && (m.jump.open || m.nick.open || m.link.open || m.inbox.open || m.list.open || m.file.open)
 }
 
 // overlayInputUpdate folds a non-key message (a paste, for one) into the open
@@ -886,6 +910,8 @@ func (m *Model) overlayInputUpdate(msg tea.Msg) tea.Cmd {
 		// The inbox has no filter input yet.
 	case m.list.open:
 		m.list.input, cmd = m.list.input.Update(msg)
+	case m.file.open:
+		m.file.input, cmd = m.file.input.Update(msg)
 	}
 	return cmd
 }
@@ -914,6 +940,10 @@ func (m *Model) closeAllOverlays() {
 		if m.ctrl != nil {
 			m.ctrl.DismissChannelList()
 		}
+	}
+	if m.file.open {
+		m.file.open = false
+		m.file.input.Blur()
 	}
 }
 

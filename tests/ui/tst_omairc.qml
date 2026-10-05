@@ -203,6 +203,13 @@ TestCase {
     }
 
     Component {
+        id: fileUploadCatcherComponent
+
+        FileUploadCatcher {
+        }
+    }
+
+    Component {
         id: seededWindowComponent
 
         Omairc.OmaircWindow {
@@ -11653,5 +11660,115 @@ TestCase {
         compare(namedConnection.selectedNetworkId, "oftc");
         window.close();
         restoreNamedConnection();
+    }
+
+    function test_filePickHiddenWithoutFileHost() {
+        openSeededAppWindow();
+        var button = findChild(appWindow, "filePickButton");
+        verify(button !== null, "file pick button should exist");
+        compare(button.visible, false);
+    }
+
+    function consoleTextContains(needle) {
+        var list = item("consoleList");
+        var row = 0;
+        for (; row < list.count; ++row) {
+            if (field(list.model, row, "text").indexOf(needle) >= 0)
+                return true;
+        }
+        return false;
+    }
+
+    function offerFileHost(catcher) {
+        seed.injectOmarchy(":server 005 fred soju.im/FILEHOST=" + catcher.endpoint
+            + " :are supported by this server\r\n");
+        tryVerify(function() {
+            return appWindow.irc.fileHost === catcher.endpoint;
+        });
+    }
+
+    function test_fileLinkFollowsTheDraftItWasQueuedFor() {
+        openSeededAppWindow();
+        var composer = findChild(appWindow, "messageComposer");
+        verify(composer !== null, "composer should exist");
+        composer.text = "keep";
+        var current = appWindow.composerHistoryKey();
+        appWindow.insertFileLink("https://uploads.example/a.png", "other-draft");
+        compare(composer.text, "keep");
+        compare(appWindow.composerDrafts["other-draft"], "https://uploads.example/a.png");
+        appWindow.insertFileLink("javascript:alert(1)", "other-draft");
+        compare(appWindow.composerDrafts["other-draft"], "https://uploads.example/a.png");
+        appWindow.beginOrAdvanceFind();
+        var query = composer.text;
+        appWindow.insertFileLink("https://uploads.example/b.png", current);
+        compare(composer.text, query);
+        verify(String(appWindow.composerDrafts[current]).indexOf("https://uploads.example/b.png") >= 0);
+    }
+
+    function test_droppedFileUploadsAndInsertsTheLink() {
+        var catcher = createTemporaryObject(fileUploadCatcherComponent, testCase);
+        verify(catcher.listen(), catcher.lastError);
+        openSeededAppWindow();
+        var start = seed.omarchyFrameCount();
+        offerFileHost(catcher);
+        var column = findChild(appWindow, "conversationColumn");
+        verify(column !== null, "conversation column should exist");
+        column.acceptDroppedUrls([Qt.resolvedUrl("../../version.pri")]);
+        tryCompare(catcher, "uploads", 1, 15000);
+        var composer = findChild(appWindow, "messageComposer");
+        verify(composer.text.indexOf("/files/note.txt") >= 0, composer.text);
+        verify(!seed.omarchyWroteFrom(start, "PRIVMSG"));
+        catcher.destroy();
+    }
+
+    function test_fileUploadFailureStaysOnTheNetworkThatQueuedIt() {
+        var catcher = createTemporaryObject(fileUploadCatcherComponent, testCase);
+        verify(catcher.listen(), catcher.lastError);
+        catcher.refuse = true;
+        openSeededAppWindow();
+        offerFileHost(catcher);
+        var column = findChild(appWindow, "conversationColumn");
+        column.acceptDroppedUrls([Qt.resolvedUrl("../../version.pri")]);
+        appWindow.irc.selectConversation(seed.oftcNetworkId, "#omarchy");
+        tryCompare(catcher, "uploads", 1, 15000);
+        appWindow.openNetworkStatus(seed.omarchyNetworkId);
+        tryVerify(function() {
+            return appWindow.consoleVisible
+                && consoleTextContains("Could not upload the file.");
+        });
+        appWindow.openNetworkStatus(seed.oftcNetworkId);
+        tryVerify(function() {
+            return appWindow.consoleVisible;
+        });
+        verify(!consoleTextContains("Could not upload the file."));
+        catcher.destroy();
+    }
+
+    function test_filePickHiddenWhileConnectIsOpen() {
+        openSeededAppWindow();
+        seed.injectOmarchy(":server 005 fred soju.im/FILEHOST=https://uploads.example/upload :are supported by this server\r\n");
+        tryVerify(function() {
+            return appWindow.irc.fileHost === "https://uploads.example/upload";
+        });
+        var button = findChild(appWindow, "filePickButton");
+        tryCompare(button, "visible", true);
+        var drop = findChild(appWindow, "fileDrop");
+        compare(drop.enabled, true);
+        keyClick(Qt.Key_Comma, Qt.ControlModifier);
+        tryVerify(function() {
+            return appWindow.connectionOverlayVisible;
+        });
+        compare(button.visible, false);
+        compare(drop.enabled, false);
+        var name = appWindow.connection.name;
+        var nameField = findChild(appWindow, "connectionName");
+        nameField.forceActiveFocus();
+        seed.offerClipboardFile(Qt.resolvedUrl("../../version.pri").toString());
+        keyClick(Qt.Key_V, Qt.ControlModifier);
+        compare(appWindow.connection.name, name);
+        compare(nameField.text, name);
+        keyClick(Qt.Key_Insert, Qt.ShiftModifier);
+        compare(appWindow.connection.name, name);
+        compare(nameField.text, name);
     }
 }

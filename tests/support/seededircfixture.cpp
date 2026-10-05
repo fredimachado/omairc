@@ -13,8 +13,12 @@
 #include "storage/credentialstore.h"
 
 #include <QByteArray>
+#include <QClipboard>
 #include <QCoreApplication>
 #include <QDir>
+#include <QGuiApplication>
+#include <QMimeData>
+#include <QUrl>
 #include <QMetaObject>
 #include <QtGlobal>
 #include <QQmlApplicationEngine>
@@ -280,6 +284,19 @@ void SeededIrcFixture::injectOftc(const QString &bytes)
 {
     if (m_demo)
         m_demo->injectOftc(bytes.toUtf8());
+}
+
+void SeededIrcFixture::offerClipboardFile(const QString &path)
+{
+    QUrl url(path);
+    if (!url.isLocalFile())
+        url = QUrl::fromLocalFile(path);
+    auto *mime = new QMimeData;
+    mime->setUrls(QList<QUrl>{url});
+    if (QClipboard *clipboard = QGuiApplication::clipboard())
+        clipboard->setMimeData(mime);
+    else
+        delete mime;
 }
 
 bool SeededIrcFixture::echoLastOmarchyPrivmsg()

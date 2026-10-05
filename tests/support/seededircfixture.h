@@ -45,6 +45,7 @@ public:
     Q_INVOKABLE bool createWindow();
     Q_INVOKABLE void injectOmarchy(const QString &bytes);
     Q_INVOKABLE void injectOftc(const QString &bytes);
+    Q_INVOKABLE void offerClipboardFile(const QString &path);
     Q_INVOKABLE bool echoLastOmarchyPrivmsg();
     Q_INVOKABLE bool echoLastOftcPrivmsg();
     Q_INVOKABLE int omarchyFrameCount() const;

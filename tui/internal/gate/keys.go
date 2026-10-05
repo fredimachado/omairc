@@ -105,6 +105,7 @@ var keyNames = map[string]string{
 	"ctrl+shift+k":      "\x1b[107;6u",
 	"ctrl+shift+a":      "\x1b[97;6u",
 	"ctrl+shift+o":      "\x1b[111;6u",
+	"ctrl+shift+u":      "\x1b[117;6u",
 	"ctrl+shift+m":      "\x1b[109;6u",
 }
 

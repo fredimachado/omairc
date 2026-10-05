@@ -446,9 +446,11 @@ def go_imports(source):
 
 # URL and IP-literal parsing are pure functions, not a socket or TLS stack.
 # avatarurl.go ports src/irc/ircavatarurl.cpp (QUrl + QHostAddress), so it needs
-# net/url and net/netip; every other internal/irc file stays fully neutral.
+# net/url and net/netip. filelink.go ports src/irc/ircfilelink.cpp (QUrl).
+# Every other internal/irc file stays fully neutral.
 GO_IRC_PLATFORM_NEUTRAL_EXEMPT = {
     "tui/internal/irc/avatarurl.go": {"net/url", "net/netip"},
+    "tui/internal/irc/filelink.go": {"net/url"},
 }
 
 

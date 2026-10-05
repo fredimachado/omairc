@@ -194,6 +194,9 @@ func run(args []string, stdout, stderr io.Writer) int {
 			Author: author, Body: body, NetworkID: networkID, Target: target, MsgID: msgid,
 		})
 	}
+	c.OnFileLink = func(url, message string) {
+		p.Send(ui.FileLinkMsg{URL: url, Message: message})
+	}
 	c.OnMonitorArrived = func(networkID, display, body string, _ bool) {
 		p.Send(ui.MonitorArrivalMsg{NetworkID: networkID, Author: display, Body: body})
 	}

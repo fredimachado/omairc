@@ -54,6 +54,7 @@ var shortcutGroups = []shortcutGroup{
 		title: "WRITE",
 		rows: []shortcutRow{
 			{"Ctrl+L", "composer"},
+			{"Ctrl+Shift+U", "insert a file link"},
 			{"Ctrl+C", "copy selection"},
 			{"Ctrl+F", "find"},
 			{"Enter", "send"},

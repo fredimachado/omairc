@@ -18,6 +18,8 @@ greaterThan(QMAKE_GCC_MAJOR_VERSION, 15): QMAKE_CXXFLAGS += -Wno-sfinae-incomple
 
 INCLUDEPATH += ../../src ../../src/irc ../support
 
+DEFINES += TEST_CERT_DIR=\\\"$$PWD/../support/certs\\\"
+
 HEADERS += \
     ../../src/backend.h \
     ../../src/linuxsessionbus.h \
@@ -40,6 +42,8 @@ HEADERS += \
     ../../src/irc/ircpresence.h \
     ../../src/irc/ircavatarurl.h \
     ../../src/irc/ircavatarhttp.h \
+    ../../src/irc/ircfilelink.h \
+    ../../src/irc/ircfilehost.h \
     ../../src/irc/ircavatarstore.h \
     ../../src/irc/irctcp.h \
     ../../src/irc/ircignore.h \
@@ -93,12 +97,14 @@ HEADERS += \
     ../../src/irc/ircconnection.h \
     ../../src/irc/qtirctransport.h \
     ../support/fakeirctransport.h \
-    ../support/seededircfixture.h
+    ../support/seededircfixture.h \
+    ../support/fileuploadcatcher.h
 
 SOURCES += \
     tst_main.cpp \
     ../support/fakeirctransport.cpp \
     ../support/seededircfixture.cpp \
+    ../support/fileuploadcatcher.cpp \
     ../support/testsettings.cpp \
     ../../src/irc/ircloopbacktransport.cpp \
     ../../src/irc/ircdemoserver.cpp \
@@ -122,6 +128,8 @@ SOURCES += \
     ../../src/irc/ircpresence.cpp \
     ../../src/irc/ircavatarurl.cpp \
     ../../src/irc/ircavatarhttp.cpp \
+    ../../src/irc/ircfilelink.cpp \
+    ../../src/irc/ircfilehost.cpp \
     ../../src/irc/ircavatarstore.cpp \
     ../../src/irc/irctcp.cpp \
     ../../src/irc/ircignore.cpp \

@@ -251,6 +251,8 @@ func (m *Model) handleOverlayKey(key string, msg tea.KeyPressMsg) (tea.Model, te
 		return m.handleChannelListKey(key, msg)
 	case m.jump.open:
 		return m.handleJumpKey(key, msg)
+	case m.file.open:
+		return m.handleFilePickKey(key, msg)
 	}
 	return m, nil
 }
@@ -697,6 +699,27 @@ func (m *Model) saveDraft() {
 		return
 	}
 	m.drafts[m.draftKey] = m.composer.Value()
+}
+
+// followControllerSelection keeps an unsent line on the conversation that was
+// showing when the controller moves the selection on its own. Apply opens
+// Status and loadDraft records that key; autojoin then selects the channel
+// without another loadDraft, so a later save would keep writing under Status
+// while a queued file snapshots the channel. Save the visible composer under
+// the old key, then load the draft for the key the controller is on now.
+func (m *Model) followControllerSelection() {
+	if m.ctrl == nil {
+		return
+	}
+	next := m.composerDraftKey()
+	if next == m.draftKey {
+		return
+	}
+	if m.find.active {
+		m.leaveFind()
+	}
+	m.saveDraft()
+	m.loadDraft()
 }
 
 // loadDraft restores the composer text for the current conversation key.

@@ -5,6 +5,7 @@
 #include "ircchannelmode.h"
 #include "irccommand.h"
 #include "irccommandbuilder.h"
+#include "ircfilehost.h"
 #include "irceventtranslator.h"
 #include "irchighlight.h"
 #include "ircignore.h"
@@ -29,7 +30,13 @@
 #include <QDateTime>
 #include <QFileInfo>
 #include <QSettings>
+#if defined(QT_GUI_LIB)
+#include <QClipboard>
+#include <QGuiApplication>
+#include <QMimeData>
+#endif
 #include <QTimer>
+#include <QUrl>
 #include <QVariantMap>
 
 #include <algorithm>
@@ -455,6 +462,17 @@ IrcController::IrcController(QObject *parent)
     connect(&m_console, &IrcStatusConsole::alertsChanged, this,
             &IrcController::statusChanged);
     m_reducer.setConversationLog(&m_transcripts);
+    m_uploads = new IrcFileUploader(this);
+    connect(this, &IrcController::selectionChanged, this, &IrcController::fileHostChanged);
+    connect(this, &IrcController::serverFeaturesChanged, this, &IrcController::fileHostChanged);
+    connect(m_uploads, &IrcFileUploader::linkReady, this, [this](const QString& url) {
+        const FileUploadTarget target = takeFileUploadTarget();
+        emit fileLinkReady(url, target.draftKey);
+    });
+    connect(m_uploads, &IrcFileUploader::failed, this, [this](const QString& message) {
+        const FileUploadTarget target = takeFileUploadTarget();
+        noteFileUploadFailure(target.networkId, message);
+    });
     loadStoredPreferences();
 }
 
@@ -2948,6 +2966,134 @@ void IrcController::reloadModels()
 IrcSession *IrcController::selectedSession() const
 {
     return m_selected ? m_sessions.findSession(m_selected->networkId) : nullptr;
+}
+
+QString IrcController::fileHost() const
+{
+    if (!m_selected)
+        return {};
+    const IrcSession *session = selectedSession();
+    const bool encrypted = session ? session->tlsEnabled() : true;
+    return QString::fromStdString(
+        m_reducer.serverFeatures(m_selected->networkId).fileHost(encrypted));
+}
+
+bool IrcController::fillUploadTarget(QString *endpoint, QString *user, QString *secret,
+                                     QString *serverHost, bool *serverEncrypted) const
+{
+    const QString upload = fileHost();
+    if (upload.isEmpty())
+        return false;
+    *endpoint = upload;
+    *user = {};
+    *secret = {};
+    *serverHost = {};
+    *serverEncrypted = true;
+    if (const IrcSession *session = selectedSession()) {
+        *user = session->fileHostAccount();
+        *secret = session->fileHostSecret();
+        *serverHost = session->host();
+        *serverEncrypted = session->tlsEnabled();
+    }
+    return true;
+}
+
+void IrcController::noteFileUploadFailure(const QString &networkId, const QString &message)
+{
+    if (message.isEmpty() || networkId.isEmpty())
+        return;
+    m_console.record(IrcStatusEntry::outcome(networkId, message));
+}
+
+IrcController::FileUploadTarget IrcController::takeFileUploadTarget()
+{
+    if (m_fileUploadTargets.isEmpty())
+        return {};
+    return m_fileUploadTargets.takeFirst();
+}
+
+void IrcController::enqueueLocalFile(const QString &path, const QString &draftKey)
+{
+    if (!m_uploads)
+        return;
+    QString local = path;
+    const QUrl url(path);
+    if (url.isLocalFile())
+        local = url.toLocalFile();
+    if (local.isEmpty())
+        return;
+    IrcFileUploadJob job;
+    if (!fillUploadTarget(&job.endpoint, &job.user, &job.secret,
+                          &job.serverHost, &job.serverEncrypted))
+        return;
+    job.path = local;
+    m_fileUploadTargets.append(FileUploadTarget{focusedNetworkId(), draftKey});
+    m_uploads->enqueue(std::move(job));
+}
+
+void IrcController::enqueueUploadBytes(const QByteArray &body, const QString &fileName,
+                                       const QString &contentType, const QString &draftKey)
+{
+    if (!m_uploads || body.isEmpty())
+        return;
+    IrcFileUploadJob job;
+    if (!fillUploadTarget(&job.endpoint, &job.user, &job.secret,
+                          &job.serverHost, &job.serverEncrypted))
+        return;
+    job.fromBytes = true;
+    job.body = body;
+    job.fileName = fileName;
+    job.contentType = contentType;
+    m_fileUploadTargets.append(FileUploadTarget{focusedNetworkId(), draftKey});
+    m_uploads->enqueue(std::move(job));
+}
+
+bool IrcController::clipboardOffersFile() const
+{
+#if !defined(QT_GUI_LIB)
+    return false;
+#else
+    const QClipboard *clipboard = QGuiApplication::clipboard();
+    if (!clipboard)
+        return false;
+    return ircClipboardOffer(clipboard->mimeData()).has_value();
+#endif
+}
+
+bool IrcController::uploadClipboard(const QString &draftKey)
+{
+#if !defined(QT_GUI_LIB)
+    Q_UNUSED(draftKey);
+    return false;
+#else
+    if (fileHost().isEmpty())
+        return false;
+    const QClipboard *clipboard = QGuiApplication::clipboard();
+    if (!clipboard)
+        return false;
+    const std::optional<IrcClipboardOffer> offer = ircClipboardOffer(clipboard->mimeData());
+    if (!offer)
+        return false;
+    if (offer->notAFile) {
+        noteFileUploadFailure(focusedNetworkId(), QStringLiteral("That is not a file."));
+        return true;
+    }
+    if (!offer->png.isEmpty()) {
+        enqueueUploadBytes(offer->png, QStringLiteral("image.png"),
+                           QStringLiteral("image/png"), draftKey);
+        return true;
+    }
+    if (offer->paths.isEmpty())
+        return false;
+    for (const QString &path : offer->paths)
+        enqueueLocalFile(path, draftKey);
+    return true;
+#endif
+}
+
+void IrcController::uploadLocalFile(const QString &path, const QString &draftKey)
+{
+    enqueueLocalFile(path, draftKey);
 }
 
 void IrcController::setLastError(const QString& networkId, const QString& message)

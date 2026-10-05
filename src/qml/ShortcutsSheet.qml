@@ -43,6 +43,7 @@ Popup {
             title: "WRITE",
             rows: [
                 { keys: "Ctrl+L", action: "composer" },
+                { keys: "Ctrl+Shift+U", action: "insert a file link" },
                 { keys: "Ctrl+C", action: "copy selection" },
                 { keys: "Ctrl+F", action: "find" },
                 { keys: "Enter", action: "send" },

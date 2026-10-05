@@ -36,6 +36,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   that is already open switches to it. A channel that is not already a row
   asks first, and only then joins. The name is recognized from the network's
   advertised `CHANTYPES`.
+- The desktop client inserts a web link when you paste, drop, or pick a file
+  on a server that offers a file host.
+- The terminal client inserts a web link when you paste a file path or pick a
+  file (`Ctrl+Shift+U`) on a server that offers a file host. It has no drop
+  target.
 - Join, part, quit, and nick lines fold together. A leave followed at once by the same nick rejoining is omitted, and a nick chain keeps the final name. `/pref joins` shows every line or hides these lines, including history playback.
 - The terminal client catches up on lines that arrived while it was away when
   the server offers chathistory. Open conversations resume with `CHATHISTORY

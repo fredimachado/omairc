@@ -66,6 +66,7 @@ type ServerFeatures struct {
 	chanModesC        string
 	chanModesD        string
 	iconURL           string
+	fileHosts         []string
 	modeRules         [256]ModeParamRule
 }
 
@@ -91,6 +92,104 @@ func NewServerFeatures() ServerFeatures {
 	return features
 }
 
+func hexValue(character byte) int {
+	switch {
+	case character >= '0' && character <= '9':
+		return int(character - '0')
+	case character >= 'a' && character <= 'f':
+		return int(character-'a') + 10
+	case character >= 'A' && character <= 'F':
+		return int(character-'A') + 10
+	default:
+		return -1
+	}
+}
+
+// unescapeIsupportValue decodes \x20 and \\ inside one ISUPPORT value.
+func unescapeIsupportValue(value string) string {
+	var decoded strings.Builder
+	decoded.Grow(len(value))
+	for index := 0; index < len(value); index++ {
+		if value[index] != '\\' || index+1 >= len(value) {
+			decoded.WriteByte(value[index])
+			continue
+		}
+		next := value[index+1]
+		if next == '\\' {
+			decoded.WriteByte('\\')
+			index++
+			continue
+		}
+		if next == 'x' && index+3 < len(value) {
+			high := hexValue(value[index+2])
+			low := hexValue(value[index+3])
+			if high >= 0 && low >= 0 {
+				decoded.WriteByte(byte((high << 4) | low))
+				index += 3
+				continue
+			}
+		}
+		decoded.WriteByte(value[index])
+	}
+	return decoded.String()
+}
+
+func schemeIs(uri, scheme string) bool {
+	if len(uri) < len(scheme) {
+		return false
+	}
+	return strings.EqualFold(uri[:len(scheme)], scheme)
+}
+
+// usableFileHostURI accepts http or https with a host and no userinfo.
+func usableFileHostURI(uri string) bool {
+	if uri == "" {
+		return false
+	}
+	for index := 0; index < len(uri); index++ {
+		if uri[index] <= 0x20 || uri[index] >= 0x7F {
+			return false
+		}
+	}
+	rest := ""
+	switch {
+	case schemeIs(uri, "https://"):
+		rest = uri[len("https://"):]
+	case schemeIs(uri, "http://"):
+		rest = uri[len("http://"):]
+	default:
+		return false
+	}
+	if rest == "" {
+		return false
+	}
+	authority := rest
+	if slash := strings.IndexByte(rest, '/'); slash >= 0 {
+		authority = rest[:slash]
+	}
+	if authority == "" || strings.Contains(authority, "@") {
+		return false
+	}
+	host := authority
+	if colon := strings.IndexByte(authority, ':'); colon >= 0 {
+		host = authority[:colon]
+	}
+	return host != ""
+}
+
+func parseFileHostList(value string) []string {
+	decoded := unescapeIsupportValue(value)
+	var hosts []string
+	for _, token := range strings.FieldsFunc(decoded, func(character rune) bool {
+		return character == ' ' || character == '\t'
+	}) {
+		if usableFileHostURI(token) {
+			hosts = append(hosts, token)
+		}
+	}
+	return hosts
+}
+
 // ApplyToken consumes one ISUPPORT token, with or without its leading '-'
 // removal form.
 func (f *ServerFeatures) ApplyToken(token string) {
@@ -107,6 +206,9 @@ func (f *ServerFeatures) ApplyToken(token string) {
 		}
 		if name == "draft/ICON" {
 			f.iconURL = ""
+		}
+		if name == "soju.im/FILEHOST" || name == "draft/FILEHOST" {
+			f.fileHosts = nil
 		}
 		if name == "MONITOR" {
 			f.monitorAdvertised = false
@@ -172,6 +274,8 @@ func (f *ServerFeatures) ApplyToken(token string) {
 		if value != "" {
 			f.iconURL = value
 		}
+	case "soju.im/FILEHOST", "draft/FILEHOST":
+		f.fileHosts = parseFileHostList(value)
 	}
 }
 
@@ -290,6 +394,24 @@ func (f *ServerFeatures) ChanModesD() string {
 // IconURL returns the advertised draft/ICON template, or "".
 func (f *ServerFeatures) IconURL() string {
 	return f.iconURL
+}
+
+// FileHost returns the upload URI this connection may use, or "". An
+// encrypted IRC connection refuses a plain http URI.
+func (f *ServerFeatures) FileHost(encrypted bool) string {
+	cleartext := ""
+	for _, uri := range f.fileHosts {
+		if schemeIs(uri, "https://") {
+			return uri
+		}
+		if cleartext == "" && schemeIs(uri, "http://") {
+			cleartext = uri
+		}
+	}
+	if encrypted {
+		return ""
+	}
+	return cleartext
 }
 
 // ParseNamesToken splits one 353 NAMES token into ranks and nick. ok is false
