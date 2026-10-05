@@ -151,11 +151,17 @@ func Translate(networkID, currentNick string, features ServerFeatures, message M
 			value := ircParameter(message, 1)
 			account = &value
 		}
+		var realname *string
+		if len(message.Params) >= 3 {
+			value := ircParameter(message, 2)
+			realname = &value
+		}
 		events = append(events, JoinEvent{
 			NetworkID: networkID,
 			Channel:   ircParameter(message, 0),
 			Nick:      sender,
 			Account:   account,
+			Realname:  realname,
 		})
 	case command == "ACCOUNT" && sender != "":
 		account := ""

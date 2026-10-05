@@ -109,10 +109,13 @@ func TestTranslatesJoinExtendedJoinAccount(t *testing.T) {
 	requireString(t, "extended nick", join.Nick, "alice")
 	requireTrue(t, "extended account present", join.Account != nil)
 	requireString(t, "extended account", *join.Account, "account")
+	requireTrue(t, "extended realname present", join.Realname != nil)
+	requireString(t, "extended realname", *join.Realname, "Alice Example")
 
 	events = translateLine(t, ":alice!u@h JOIN #room")
 	join = events[0].(JoinEvent)
 	requireTrue(t, "classic account nil", join.Account == nil)
+	requireTrue(t, "classic realname nil", join.Realname == nil)
 }
 
 func TestTranslatesNamesAndEndOfNames(t *testing.T) {

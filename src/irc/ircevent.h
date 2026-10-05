@@ -108,6 +108,9 @@ struct IrcJoinEvent
     // Set when JOIN carries the extended-join account parameter. Null means
     // a classic one-parameter JOIN, which must not clear a known account.
     std::optional<QString> account = std::nullopt;
+    // Set only when a third parameter exists (the extended-join GECOS).
+    // Unset leaves a stored real name alone. Empty does not clear one.
+    std::optional<QString> realname = std::nullopt;
 };
 
 struct IrcPartEvent

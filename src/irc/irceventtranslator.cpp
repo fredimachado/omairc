@@ -405,8 +405,11 @@ std::vector<IrcEvent> IrcEventTranslator::translate(
         std::optional<QString> account;
         if (message.parameters.size() >= 2)
             account = parameter(message, 1);
-        events.emplace_back(IrcJoinEvent{
-            networkId, parameter(message, 0), sender, std::move(account)});
+        IrcJoinEvent event{
+            networkId, parameter(message, 0), sender, std::move(account)};
+        if (message.parameters.size() >= 3)
+            event.realname = parameter(message, 2);
+        events.emplace_back(std::move(event));
     } else if (command == QStringLiteral("ACCOUNT") && !sender.isEmpty()) {
         const QString account = message.parameters.empty()
             ? QString{}

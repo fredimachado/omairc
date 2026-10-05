@@ -1519,6 +1519,8 @@ void IrcEventReducer::reduce(const IrcJoinEvent& event)
     const QString normalizedNick = normalize(event.networkId, event.nick);
     if (event.account && !normalizedNick.isEmpty())
         m_presence[event.networkId].setAccount(normalizedNick, *event.account);
+    if (event.realname && !event.realname->isEmpty() && !normalizedNick.isEmpty())
+        m_presence[event.networkId].setRealname(normalizedNick, *event.realname);
 
     const IrcConversationKey key = conversationKey(event.networkId, event.channel);
     IrcConversationState *conversation =
@@ -1793,8 +1795,17 @@ void IrcEventReducer::reduce(const IrcAwayEvent& event)
     if (!event.realnameOnly) {
         m_presence[event.networkId].setAway(normalized, event.away);
     }
-    if (event.realname)
-        m_presence[event.networkId].setRealname(normalized, *event.realname);
+    if (event.realname) {
+        const QString incoming = *event.realname;
+        const QString stored = nickPresence(event.networkId, event.nick).realname;
+        // A placeholder must not erase a name jump can already match. An
+        // empty or placeholder stored name still takes the incoming value,
+        // so a later real WHOIS can replace "unknown".
+        if (ircMeaningfulRealname(incoming, event.nick)
+            || !ircMeaningfulRealname(stored, event.nick)) {
+            m_presence[event.networkId].setRealname(normalized, incoming);
+        }
+    }
 }
 
 void IrcEventReducer::reduce(const IrcSelfAwayEvent& event)

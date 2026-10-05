@@ -1889,6 +1889,9 @@ func (r *EventReducer) reduceJoin(event JoinEvent) {
 	if event.Account != nil && normalizedNick != "" {
 		r.setPresenceAccount(event.NetworkID, normalizedNick, *event.Account)
 	}
+	if event.Realname != nil && *event.Realname != "" && normalizedNick != "" {
+		r.setPresenceRealname(event.NetworkID, normalizedNick, *event.Realname)
+	}
 
 	key := r.ConversationKey(event.NetworkID, event.Channel)
 	conversation := r.EnsureConversation(key, event.Channel, CauseChannelState)
@@ -2193,7 +2196,14 @@ func (r *EventReducer) reduceAway(event AwayEvent) {
 		r.setPresenceAway(event.NetworkID, normalized, event.Away)
 	}
 	if event.Realname != nil {
-		r.setPresenceRealname(event.NetworkID, normalized, *event.Realname)
+		incoming := *event.Realname
+		stored := r.NickPresence(event.NetworkID, event.Nick).Realname
+		// A placeholder must not erase a name jump can already match. An
+		// empty or placeholder stored name still takes the incoming value,
+		// so a later real WHOIS can replace "unknown".
+		if MeaningfulRealname(incoming, event.Nick) || !MeaningfulRealname(stored, event.Nick) {
+			r.setPresenceRealname(event.NetworkID, normalized, incoming)
+		}
 	}
 }
 

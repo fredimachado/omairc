@@ -161,12 +161,14 @@ func (ActionEvent) eventKind() EventKind { return EventAction }
 
 // JoinEvent reports a JOIN. Account is set only when the JOIN carried the
 // extended-join account parameter; nil means a classic one-parameter JOIN,
-// which must not clear a known account.
+// which must not clear a known account. Realname is set only when a third
+// parameter exists. Nil leaves a stored real name alone.
 type JoinEvent struct {
 	NetworkID string
 	Channel   string
 	Nick      string
 	Account   *string
+	Realname  *string
 }
 
 func (JoinEvent) eventKind() EventKind { return EventJoin }

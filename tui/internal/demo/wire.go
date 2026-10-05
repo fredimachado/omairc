@@ -99,7 +99,7 @@ func privmsg(row SeedLine, target string) []byte {
 // form, mirroring joinLine().
 func joinLine(nick, channel, account string) []byte {
 	if account != "" {
-		return line(":" + nick + "!u@h JOIN " + channel + " " + account + " :joined")
+		return line(":" + nick + "!u@h JOIN " + channel + " " + account + " :" + nick + " Example")
 	}
 	return line(":" + nick + "!u@h JOIN :" + channel)
 }

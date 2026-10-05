@@ -1773,9 +1773,32 @@ func TestWhoAndWhoisStoreRealnameForJump(t *testing.T) {
 	}
 	requireString(t, "hop-only who keeps realname", reducer.NickPresence(networkA, "Alice").Realname, "Alice Example")
 
+	applyWire(t, reducer, ":server 352 omairc #room u h s Alice G :0 Alice Example")
+	requireString(t, "who stores example", reducer.NickPresence(networkA, "Alice").Realname, "Alice Example")
+	applyWire(t, reducer, ":server 311 omairc Alice u h * :unknown")
+	requireString(t, "placeholder whois keeps example", reducer.NickPresence(networkA, "Alice").Realname, "Alice Example")
+
 	applyWire(t, reducer, ":Alice!a@h NICK Alicia")
 	requireString(t, "renamed realname", reducer.NickPresence(networkA, "Alicia").Realname, "Alice Example")
 	requireString(t, "old nick realname", reducer.NickPresence(networkA, "Alice").Realname, "")
+
+	joined := NewEventReducer()
+	welcome(joined, networkA)
+	applyWire(t, joined, ":Alice!a@h JOIN #room acct :Alice Example")
+	requireString(t, "join realname", joined.NickPresence(networkA, "Alice").Realname, "Alice Example")
+	requireString(t, "join account", joined.NickPresence(networkA, "Alice").Account, "acct")
+	if joined.NickPresence(networkA, "Alice").Away != nil {
+		t.Fatal("extended-join must not mark Alice away")
+	}
+	if !MeaningfulRealname("Alice Example", "Alice") {
+		t.Fatal("Alice Example must stay meaningful")
+	}
+	applyWire(t, joined, ":Alice!a@h JOIN :#room")
+	requireString(t, "classic join keeps realname", joined.NickPresence(networkA, "Alice").Realname, "Alice Example")
+	requireString(t, "classic join keeps account", joined.NickPresence(networkA, "Alice").Account, "acct")
+	if joined.NickPresence(networkA, "Alice").Away != nil {
+		t.Fatal("a classic JOIN must not mark Alice away")
+	}
 }
 
 func TestNickChangeKeepsServicesAccount(t *testing.T) {

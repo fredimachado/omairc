@@ -46,7 +46,7 @@ struct IrcNickPresence
     // Services account from account-tag, account-notify, extended-join, or
     // WHOIS 330. Empty means unknown or logged out; both display as nothing.
     QString account;
-    // GECOS from WHO (352) or WHOIS (311). Empty means unknown.
+    // GECOS from extended-join, WHO (352), or WHOIS (311). Empty means unknown.
     QString realname;
 
     QString metadata(const QString& key) const;

@@ -4102,8 +4102,12 @@ void ReducerTest::whoAndWhoisStoreRealnameForJump()
                                   QStringLiteral("Alice")));
     QVERIFY(!ircMeaningfulRealname(QStringLiteral("unknown"),
                                    QStringLiteral("Alice")));
+    QVERIFY(!ircMeaningfulRealname(QStringLiteral("Realname"),
+                                   QStringLiteral("Alice")));
     QVERIFY(!ircMeaningfulRealname(QStringLiteral("fullname"),
                                    QStringLiteral("dax")));
+    QVERIFY(!ircMeaningfulRealname(QStringLiteral("FULLNAME"),
+                                   QStringLiteral("Alice")));
 
     applyWire(reducer, ":Alice!a@h AWAY :back later");
     QCOMPARE(reducer.nickPresence(networkA, QStringLiteral("Alice")).realname,
@@ -4112,6 +4116,13 @@ void ReducerTest::whoAndWhoisStoreRealnameForJump()
 
     applyWire(reducer, ":server 352 omairc #room u h s Alice G :2");
     QVERIFY(reducer.nickPresence(networkA, QStringLiteral("Alice")).away.has_value());
+    QCOMPARE(reducer.nickPresence(networkA, QStringLiteral("Alice")).realname,
+             QStringLiteral("Alice Example"));
+
+    applyWire(reducer, ":server 352 omairc #room u h s Alice G :0 Alice Example");
+    QCOMPARE(reducer.nickPresence(networkA, QStringLiteral("Alice")).realname,
+             QStringLiteral("Alice Example"));
+    applyWire(reducer, ":server 311 omairc Alice u h * :unknown");
     QCOMPARE(reducer.nickPresence(networkA, QStringLiteral("Alice")).realname,
              QStringLiteral("Alice Example"));
 
@@ -4140,6 +4151,23 @@ void ReducerTest::whoAndWhoisStoreRealnameForJump()
                           QStringLiteral("topic")),
              0);
     QCOMPARE(ircJumpResultLimit, 20);
+
+    IrcEventReducer joined;
+    welcome(joined, networkA);
+    applyWire(joined, ":Alice!a@h JOIN #room acct :Alice Example");
+    QCOMPARE(joined.nickPresence(networkA, QStringLiteral("Alice")).realname,
+             QStringLiteral("Alice Example"));
+    QCOMPARE(joined.nickPresence(networkA, QStringLiteral("Alice")).account,
+             QStringLiteral("acct"));
+    QVERIFY(!joined.nickPresence(networkA, QStringLiteral("Alice")).away.has_value());
+    QVERIFY(ircMeaningfulRealname(QStringLiteral("Alice Example"),
+                                  QStringLiteral("Alice")));
+    applyWire(joined, ":Alice!a@h JOIN :#room");
+    QCOMPARE(joined.nickPresence(networkA, QStringLiteral("Alice")).realname,
+             QStringLiteral("Alice Example"));
+    QCOMPARE(joined.nickPresence(networkA, QStringLiteral("Alice")).account,
+             QStringLiteral("acct"));
+    QVERIFY(!joined.nickPresence(networkA, QStringLiteral("Alice")).away.has_value());
 }
 
 void ReducerTest::nickChangeKeepsServicesAccount()

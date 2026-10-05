@@ -219,7 +219,8 @@ type NickPresence struct {
 	// extended-join, or WHOIS 330. Empty means unknown or logged out; both
 	// display as nothing.
 	Account string
-	// Realname is the GECOS from WHO (352) or WHOIS (311). Empty means unknown.
+	// Realname is the GECOS from extended-join, WHO (352), or WHOIS (311).
+	// Empty means unknown.
 	Realname string
 }
 

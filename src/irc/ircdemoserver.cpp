@@ -179,8 +179,8 @@ QByteArray joinLine(const QString &nick,
                     const QString &account = {})
 {
     if (!account.isEmpty())
-        return line(QStringLiteral(":%1!u@h JOIN %2 %3 :joined")
-                        .arg(nick, channel, account));
+        return line(QStringLiteral(":%1!u@h JOIN %2 %3 :%4")
+                        .arg(nick, channel, account, nick + QStringLiteral(" Example")));
     return line(QStringLiteral(":%1!u@h JOIN :%2").arg(nick, channel));
 }
 
