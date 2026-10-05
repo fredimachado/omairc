@@ -6,6 +6,7 @@ package ui
 // and MessageListModel::unreadMarkRow.
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -80,25 +81,35 @@ func TestUnreadMarkRowSkipsFirstRow(t *testing.T) {
 	}
 }
 
+// fillDesktopUnread injects enough lines into the never-selected #desktop that
+// a first visit can pin its unread mark away from the bottom.
+func fillDesktopUnread(d *demo.DemoServer) {
+	for index := 0; index < 40; index++ {
+		d.InjectOmarchy([]byte(fmt.Sprintf(
+			"@msgid=desk-%d :anna!u@h PRIVMSG #desktop :desk line %d\r\n", index, index)))
+	}
+}
+
 // TestOpenAtUnreadLandsOnMark renders the boundary and lands the viewport on it
-// when the preference is on.
+// when the preference is on and the conversation has no saved scroll place.
 func TestOpenAtUnreadLandsOnMark(t *testing.T) {
 	m, d := unreadDemoModel(t)
 	if !m.ctrl.OpenAtUnread() {
 		t.Fatal("open-at-unread must default on")
 	}
-	m = plantOmarchyUnread(t, m, d)
-
-	m = press(t, m, altKey(tea.KeyUp))
-	if got := m.ctrl.SelectedTarget(); got != "#omarchy" {
-		t.Fatalf("walk selection = %q, want #omarchy", got)
+	fillDesktopUnread(d)
+	m.switchSelection(func() {
+		m.ctrl.SelectConversation("omarchy", "#desktop")
+	})
+	if got := m.ctrl.SelectedTarget(); got != "#desktop" {
+		t.Fatalf("selection = %q, want #desktop", got)
 	}
 	mark := m.ctrl.UnreadMarkRow()
 	if mark < 0 {
-		t.Fatal("#omarchy must carry an unread mark after the injected line")
+		t.Fatal("#desktop must carry an unread mark after the injected lines")
 	}
 	if m.transcriptFollowEnd {
-		t.Fatal("opening at unread must leave follow-the-end")
+		t.Fatal("opening a never-visited conversation at unread must leave follow-the-end")
 	}
 	if content := m.View().Content; !strings.Contains(content, "New messages") {
 		t.Fatalf("transcript must render the New messages boundary:\n%s", content)
@@ -162,8 +173,10 @@ func TestReopenSameConversationKeepsViewport(t *testing.T) {
 // even when the conversation behind it has a New messages mark.
 func TestStatusFollowsEndWithMark(t *testing.T) {
 	m, d := unreadDemoModel(t)
-	m = plantOmarchyUnread(t, m, d)
-	m = press(t, m, altKey(tea.KeyUp))
+	fillDesktopUnread(d)
+	m.switchSelection(func() {
+		m.ctrl.SelectConversation("omarchy", "#desktop")
+	})
 	if m.transcriptFollowEnd {
 		t.Fatal("precondition: the conversation must have landed on the mark")
 	}

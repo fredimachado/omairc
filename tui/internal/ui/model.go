@@ -127,7 +127,12 @@ type Model struct {
 	membersHidden       bool
 	transcriptScroll    int
 	transcriptFollowEnd bool
-	transcriptCursor    int
+	// suspendScrollMemory blocks a selection change from storing the
+	// destination's transitional pin. scrollRestorePending retries a saved
+	// line that is not in the loaded transcript yet.
+	suspendScrollMemory  bool
+	scrollRestorePending bool
+	transcriptCursor     int
 	// transcriptAnchorSequence names the top visible row to pin after a
 	// CHATHISTORY prepend, or -1 when inactive.
 	transcriptAnchorSequence int64
@@ -141,8 +146,12 @@ type Model struct {
 	// up, or -1 when nothing is waiting below. transcriptCount tracks the row
 	// count between notifications so a growth can be detected. They mirror
 	// TranscriptList's firstUnseenIndex and trackedCount.
-	firstUnseenRow       int
-	transcriptCount      int
+	firstUnseenRow  int
+	transcriptCount int
+	// transcriptLineCount is the rendered line count of transcriptArea(),
+	// including the typing footer. A detached append adds the increase to
+	// transcriptScroll so the top line stays put.
+	transcriptLineCount  int
 	find                 findState
 	nickComplete         nickCompleteSession
 	composerHistory      []string
@@ -248,6 +257,7 @@ func New(ctrl *controller.Controller, conn *connection.Connection) *Model {
 	m.resize()
 	m.draftKey = m.composerDraftKey()
 	m.transcriptCount = m.transcriptRowTotal()
+	m.landSavedTranscript()
 	if m.connectVisible() {
 		m.focus = focusConnect
 		m.composer.Blur()
@@ -453,6 +463,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 		m.resize()
+		m.landSavedTranscript()
 		// The program always sends a size message on start; it is the first
 		// test-safe place to arm the spinner and the theme read, because Init
 		// stays reserved for StartupMsg.
@@ -475,6 +486,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// have grown the transcript while the reader was scrolled up, which
 		// arms the jump-to-first-new marker.
 		m.noteTranscriptGrowth()
+		m.maybeLandSavedTranscript()
 		m.syncReadMarkerViewport()
 		return m, m.startBackgroundWork()
 	case ThemeChangedMsg:
@@ -566,6 +578,7 @@ func (m *Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	// chords, and String returns "." for ctrl+. instead of "ctrl+.".
 	key := normalizeChordKey(msg.Keystroke())
 	if key == "ctrl+q" {
+		m.rememberOpenTranscript()
 		return m, tea.Quit
 	}
 	// About is an informational modal that can sit on top of the Connect
@@ -647,17 +660,25 @@ func (m *Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 func (m *Model) sendComposer() {
 	value := m.composer.Value()
 	if strings.TrimSpace(value) != "" && m.ctrl != nil {
+		previousID, wasConsole := m.beginTranscriptSwitch()
 		sent := false
-		if m.ctrl.ConsoleOpen() {
+		if wasConsole {
 			sent = m.ctrl.ConsoleSubmit(value)
 		} else {
 			sent = m.ctrl.SendMessage(value)
 		}
 		if !sent {
+			m.suspendScrollMemory = false
 			m.syncChannelList()
 			return
 		}
 		m.rememberSentLine(value)
+		moved := wasConsole != m.ctrl.ConsoleOpen() || previousID != m.selectedConversationID()
+		if moved {
+			m.afterSelectionChange(previousID, wasConsole)
+		} else {
+			m.suspendScrollMemory = false
+		}
 	}
 	m.composer.Reset()
 	m.clearCurrentDraft()

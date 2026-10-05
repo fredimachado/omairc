@@ -321,8 +321,11 @@ reads the mark through `Controller.UnreadMarkRow` (which mirrors
 attaches `UnreadMark.qml`'s accent-mixed rule to the marked row's block, so the
 rendered row count keeps matching the message count find and copy index by.
 `Open conversations at unread` places the viewport like
-`placeTranscriptAfterSelect`: Status follows the end, a conversation lands on its
-mark, and re-selecting the same conversation keeps the reader's place. `Alt+U`
+`placeTranscriptAfterSelect` when the conversation has no saved scroll place:
+Status follows the end, a first visit lands on its mark, and re-selecting the
+same conversation keeps the reader's place. A saved place wins after that.
+The end stays pinned only when the reader was already there, and a scrolled
+line returns to that line across switches and restarts. `Alt+U`
 jumps to the first row that arrived while the reader was scrolled up, else to
 the newest row, with a `↓ new` marker in the transcript header. Because the
 runtime only repaints on a message, `Controller.Publish` calls `OnViewChanged`

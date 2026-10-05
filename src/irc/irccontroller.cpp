@@ -493,6 +493,7 @@ void IrcController::setEphemeral(bool ephemeral)
         m_reducer.setConversationLog(nullptr);
     m_openDirects.setEphemeral(ephemeral);
     m_playbackTimes.setEphemeral(ephemeral);
+    m_scrollPlaces.setEphemeral(ephemeral);
     m_autoawayRuntime.setEphemeral(ephemeral);
 }
 
@@ -633,6 +634,7 @@ void IrcController::forgetNetworkState(const QString &networkId)
     m_mutes.forget(networkId);
     m_openDirects.forget(networkId);
     m_playbackTimes.forget(networkId);
+    m_scrollPlaces.forget(networkId);
     m_playback.dropSnapshot(networkId);
     m_highlights.forget(networkId);
     for (auto it = m_readMarkerOutbound.begin(); it != m_readMarkerOutbound.end();) {
@@ -906,6 +908,132 @@ void IrcController::setMembershipNoise(IrcMembershipNoise noise)
     m_reducer.setMembershipNoise(noise);
     if (!m_ephemeral)
         saveMembershipNoise(noise);
+}
+
+namespace
+{
+QString scrollKindToken(IrcMessageKind kind)
+{
+    switch (kind) {
+    case IrcMessageKind::Action:
+        return QStringLiteral("action");
+    case IrcMessageKind::Event:
+    case IrcMessageKind::Error:
+        return QStringLiteral("event");
+    case IrcMessageKind::Whois:
+        return QStringLiteral("whois");
+    case IrcMessageKind::Notice:
+        return QStringLiteral("notice");
+    case IrcMessageKind::Message:
+        return QStringLiteral("message");
+    }
+    return QStringLiteral("message");
+}
+
+bool scrollPlaceMatches(const IrcScrollPlace& place, const IrcReducedMessage& message)
+{
+    if (!place.msgid.isEmpty())
+        return message.msgid.value == place.msgid;
+    if (scrollKindToken(message.kind) != place.kind
+        || message.author != place.author
+        || message.body != place.body)
+        return false;
+    if (!place.hasTime)
+        return true;
+    if (!message.timestamp.isValid())
+        return false;
+    return message.timestamp.toUTC().toMSecsSinceEpoch() == place.epochMs;
+}
+}
+
+void IrcController::rememberScrollPlace(bool followEnd, int anchorRow)
+{
+    if (m_console.isOpen() || !m_selected)
+        return;
+    const IrcConversationState *conversation = m_reducer.find(*m_selected);
+    if (!conversation)
+        return;
+
+    IrcScrollPlace place;
+    place.followEnd = followEnd;
+    if (!followEnd) {
+        int storeIndex = -1;
+        const int visualCount = m_messages.rowCount();
+        for (int row = std::max(0, anchorRow); row < visualCount; ++row) {
+            storeIndex = m_messages.storeIndexAt(row);
+            if (storeIndex >= 0)
+                break;
+        }
+        if (storeIndex < 0 || storeIndex >= int(conversation->messages.size()))
+            return;
+        const IrcReducedMessage& message = conversation->messages[size_t(storeIndex)];
+        place.msgid = message.msgid.value;
+        place.author = message.author;
+        place.body = message.body;
+        place.kind = scrollKindToken(message.kind);
+        if (message.timestamp.isValid()) {
+            place.epochMs = message.timestamp.toUTC().toMSecsSinceEpoch();
+            place.hasTime = true;
+        }
+    }
+
+    const IrcCaseMapping& mapping =
+        m_reducer.serverFeatures(m_selected->networkId).caseMapping();
+    m_scrollPlaces.remember(m_selected->networkId, m_selectedTarget, place, mapping);
+}
+
+void IrcController::plantScrollPlace(const QString& networkId, const QString& target,
+                                     const QString& body)
+{
+    if (networkId.isEmpty() || target.isEmpty())
+        return;
+    IrcScrollPlace place;
+    place.followEnd = false;
+    place.author = QStringLiteral("anna");
+    place.body = body;
+    place.kind = QStringLiteral("message");
+    const IrcCaseMapping& mapping = m_reducer.serverFeatures(networkId).caseMapping();
+    m_scrollPlaces.remember(networkId, target, place, mapping);
+}
+
+QVariantMap IrcController::currentScrollPlace() const
+{
+    QVariantMap result;
+    result.insert(QStringLiteral("known"), false);
+    result.insert(QStringLiteral("follow"), false);
+    result.insert(QStringLiteral("row"), -1);
+    if (m_console.isOpen() || !m_selected)
+        return result;
+
+    const IrcCaseMapping& mapping =
+        m_reducer.serverFeatures(m_selected->networkId).caseMapping();
+    const std::optional<IrcScrollPlace> place =
+        m_scrollPlaces.place(m_selected->networkId, m_selectedTarget, mapping);
+    if (!place)
+        return result;
+    result.insert(QStringLiteral("known"), true);
+    if (place->followEnd) {
+        result.insert(QStringLiteral("follow"), true);
+        return result;
+    }
+
+    const IrcConversationState *conversation = m_reducer.find(*m_selected);
+    if (!conversation)
+        return result;
+    int storeIndex = -1;
+    for (int index = 0; index < int(conversation->messages.size()); ++index) {
+        if (scrollPlaceMatches(*place, conversation->messages[size_t(index)])) {
+            storeIndex = index;
+            break;
+        }
+    }
+    if (storeIndex < 0)
+        return result;
+    const int visualRow = m_messages.visualRowForStoreIndex(storeIndex);
+    if (visualRow < 0)
+        return result;
+    result.insert(QStringLiteral("row"), visualRow);
+    return result;
 }
 
 void IrcController::setTranscriptCaughtUp(bool caughtUp)
@@ -2557,6 +2685,7 @@ void IrcController::apply(const IrcEvent& event)
         m_openDirects.rekey(nick->networkId, nick->oldNick, nick->newNick, mapping);
         m_openDirects.rekeyDismissed(nick->networkId, nick->oldNick, nick->newNick, mapping);
         m_playbackTimes.rekey(nick->networkId, nick->oldNick, nick->newNick, mapping);
+        m_scrollPlaces.rekey(nick->networkId, nick->oldNick, nick->newNick, mapping);
         m_playback.rekey(nick->networkId, nick->oldNick, nick->newNick);
     } else if (const auto *message = std::get_if<IrcMessageEvent>(&event)) {
         if (m_reducer.serverFeatures(message->conversation.networkId)

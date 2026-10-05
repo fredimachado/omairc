@@ -142,6 +142,11 @@ ApplicationWindow {
     readonly property string currentConversation: irc ? irc.selectedTarget : ""
     readonly property string currentNetworkId: irc ? irc.focusedNetworkId : ""
     readonly property string currentConversationId: irc ? irc.selectedConversationId : ""
+    // Blocks viewportSettled from writing the place while a selection change
+    // is still moving the list. Cleared once the landing callLater runs.
+    property bool suspendScrollMemory: false
+    // The saved line is not in the loaded transcript yet. Retried when rows arrive.
+    property bool scrollRestorePending: false
     onCurrentConversationIdChanged: {
         // Read the controller, not the sibling bindings: they share
         // selectionChanged and may not have refreshed yet.
@@ -153,6 +158,12 @@ ApplicationWindow {
             stashComposerDraft();
         restoreComposerDraft();
         resetComposerHistoryBrowse();
+        var id = currentConversationId;
+        Qt.callLater(function() {
+            if (win.currentConversationId !== id || win.consoleVisible)
+                return;
+            win.restoreRememberedTranscript();
+        });
     }
     onCurrentNetworkIdChanged: {
         if (!consoleVisible)
@@ -670,6 +681,7 @@ ApplicationWindow {
     }
 
     onClosing: {
+        rememberOpenTranscript();
         if (aboutUpdateCheck.status !== "readyToRestart")
             return;
         if (aboutUpdateCheck.launchAttempts !== 0)
@@ -720,8 +732,10 @@ ApplicationWindow {
             return;
         sidebarNetworkFocusId = "";
         var previousConversationId = currentConversationId;
+        beginTranscriptSwitch();
         irc.revealConversation(networkId, target);
         Qt.callLater(function() {
+            suspendScrollMemory = false;
             if (irc.selectedNetworkId !== networkId || irc.selectedTarget !== target)
                 return;
             if (irc.openConversationsAtUnread === true) {
@@ -747,9 +761,10 @@ ApplicationWindow {
         if (!irc)
             return;
         var previousConversationId = currentConversationId;
+        beginTranscriptSwitch();
         irc.openDirectMessage(nick);
         Qt.callLater(function() {
-            placeTranscriptAfterSelect(previousConversationId);
+            finishTranscriptSwitch(previousConversationId);
             conversation.composer.forceActiveFocus();
         });
     }
@@ -758,9 +773,10 @@ ApplicationWindow {
         if (!irc)
             return;
         var previousConversationId = currentConversationId;
+        beginTranscriptSwitch();
         irc.closeDirectMessage();
         Qt.callLater(function() {
-            placeTranscriptAfterSelect(previousConversationId);
+            finishTranscriptSwitch(previousConversationId);
             conversation.composer.forceActiveFocus();
         });
     }
@@ -797,9 +813,10 @@ ApplicationWindow {
         if (!irc)
             return;
         var previousConversationId = currentConversationId;
+        beginTranscriptSwitch();
         irc.closeConversationRow(networkId, target);
         Qt.callLater(function() {
-            placeTranscriptAfterSelect(previousConversationId);
+            finishTranscriptSwitch(previousConversationId);
             conversation.composer.forceActiveFocus();
         });
     }
@@ -819,6 +836,80 @@ ApplicationWindow {
         if (!canOpenDirectMessage(nick))
             return;
         win.openDirectMessage(nick);
+    }
+
+    function currentScrollPlaceMap() {
+        if (!irc || consoleVisible)
+            return null;
+        if (typeof irc.currentScrollPlace !== "function")
+            return null;
+        return irc.currentScrollPlace();
+    }
+
+    function rememberOpenTranscript() {
+        if (suspendScrollMemory || !irc || consoleVisible)
+            return;
+        if (typeof irc.rememberScrollPlace !== "function")
+            return;
+        if (scrollRestorePending)
+            return;
+        var list = conversation.messageList;
+        if (!list)
+            return;
+        if (list.viewportPinned()) {
+            irc.rememberScrollPlace(true, -1);
+            return;
+        }
+        var row = transcriptIndexAt(list, list.contentY + 1);
+        if (row < 0)
+            row = 0;
+        irc.rememberScrollPlace(false, row);
+    }
+
+    // "applied" landed on the saved place, "pending" is waiting for the line
+    // to load, and "absent" means this conversation has no saved place.
+    function restoreRememberedTranscript() {
+        var place = currentScrollPlaceMap();
+        var list = conversation.messageList;
+        if (!place || place.known !== true || !list) {
+            scrollRestorePending = false;
+            return "absent";
+        }
+        if (place.follow === true) {
+            scrollRestorePending = false;
+            list.pinToEnd();
+            return "applied";
+        }
+        if (place.row >= 0) {
+            scrollRestorePending = false;
+            list.pinToUnread(place.row);
+            return "applied";
+        }
+        scrollRestorePending = true;
+        return "pending";
+    }
+
+    function beginTranscriptSwitch() {
+        rememberOpenTranscript();
+        suspendScrollMemory = true;
+    }
+
+    function finishTranscriptSwitch(previousConversationId) {
+        if (consoleVisible) {
+            conversation.consoleList.pinToEnd();
+            suspendScrollMemory = false;
+            return;
+        }
+        if (irc && irc.openConversationsAtUnread === true
+                && previousConversationId
+                && previousConversationId === currentConversationId) {
+            suspendScrollMemory = false;
+            return;
+        }
+        var mode = restoreRememberedTranscript();
+        if (mode !== "applied" && mode !== "pending")
+            placeTranscriptAfterSelect(previousConversationId);
+        suspendScrollMemory = false;
     }
 
     function shouldOpenAtUnread(previousConversationId) {
@@ -856,7 +947,7 @@ ApplicationWindow {
         else if (fallbackPinToEnd)
             list.pinToEnd();
         else
-            list.adoptViewport();
+            list.adoptViewport(false);
     }
 
     // While the window is unfocused, new chat in the open channel or DM is
@@ -893,9 +984,10 @@ ApplicationWindow {
         if (!irc)
             return;
         var previousConversationId = currentConversationId;
+        beginTranscriptSwitch();
         irc.selectConversation(id, name);
         Qt.callLater(function() {
-            placeTranscriptAfterSelect(previousConversationId);
+            finishTranscriptSwitch(previousConversationId);
             conversation.composer.forceActiveFocus();
         });
     }
@@ -904,9 +996,11 @@ ApplicationWindow {
         sidebarNetworkFocusId = "";
         if (!irc)
             return;
+        beginTranscriptSwitch();
         irc.openStatus(networkId);
         Qt.callLater(function() {
             conversation.consoleList.pinToEnd();
+            suspendScrollMemory = false;
             conversation.composer.forceActiveFocus();
         });
     }
@@ -1500,12 +1594,14 @@ ApplicationWindow {
         var target = item.target || "";
         var msgid = item.msgid || "";
         var previousConversationId = currentConversationId;
+        beginTranscriptSwitch();
         irc.activateInboxItem(inboxSelectedIndex);
         inboxSheet.close();
         var scrollKinds = kind === "mention" || kind === "highlight" || kind === "direct";
         var id = msgid ? String(msgid).trim() : "";
         if (scrollKinds && id.length > 0) {
             Qt.callLater(function() {
+                suspendScrollMemory = false;
                 if (irc.selectedNetworkId !== networkId || irc.selectedTarget !== target)
                     return;
                 if (irc.openConversationsAtUnread === true) {
@@ -1523,7 +1619,7 @@ ApplicationWindow {
             return;
         }
         Qt.callLater(function() {
-            placeTranscriptAfterSelect(previousConversationId);
+            finishTranscriptSwitch(previousConversationId);
             conversation.composer.forceActiveFocus();
         });
     }
@@ -2247,7 +2343,7 @@ ApplicationWindow {
             list.positionViewAtIndex(Math.max(0, first - page), ListView.Beginning);
         else
             list.positionViewAtIndex(Math.min(list.count - 1, last + page), ListView.End);
-        Qt.callLater(function() { list.adoptViewport(); });
+        Qt.callLater(function() { list.adoptViewport(true); });
     }
 
     function jumpTranscript(toEnd) {
@@ -2492,6 +2588,7 @@ ApplicationWindow {
             composerDrafts[sentFromKey] = "";
         conversation.composer.clear();
 
+        beginTranscriptSwitch();
         var sent = dispatchComposerSend(fromConsole, original);
         suppressComposerStash = false;
 
@@ -2504,6 +2601,9 @@ ApplicationWindow {
                 conversation.consoleList.pinToEnd();
             else
                 conversation.messageList.pinToEnd();
+            suspendScrollMemory = false;
+            if (!fromConsole)
+                rememberOpenTranscript();
             return;
         }
 
@@ -2513,12 +2613,15 @@ ApplicationWindow {
         conversation.composer.cursorPosition = conversation.composer.text.length;
         if (consoleVisible) {
             conversation.consoleList.pinToEnd();
+            suspendScrollMemory = false;
         } else if (currentConversationId !== sentFromConversationId) {
             Qt.callLater(function() {
-                placeTranscriptAfterSelect(sentFromConversationId);
+                finishTranscriptSwitch(sentFromConversationId);
             });
         } else {
             conversation.messageList.pinToEnd();
+            suspendScrollMemory = false;
+            rememberOpenTranscript();
         }
         if (consoleVisible !== fromConsole
                 || currentConversationId !== sentFromConversationId) {
@@ -3349,6 +3452,7 @@ ApplicationWindow {
                 : ""
             currentConversation: win.currentConversation
             readMarkerSync: win.irc
+            rememberedTranscriptPlace: function() { return win.currentScrollPlaceMap(); }
             findActive: win.findActive
             composerEnabled: !win.connectionOverlayVisible
             fileHostOffered: win.irc && win.irc.fileHost.length > 0
@@ -3521,6 +3625,22 @@ ApplicationWindow {
             }
             onSlashHitActivated: function(index) {
                 win.handleSlashHitActivated(index);
+            }
+        }
+
+        Connections {
+            target: conversation.messageList
+            function onViewportSettled() {
+                win.rememberOpenTranscript();
+            }
+            function onUserViewportSettled() {
+                win.scrollRestorePending = false;
+                win.rememberOpenTranscript();
+            }
+            function onCountChanged() {
+                if (!win.scrollRestorePending || win.suspendScrollMemory || win.consoleVisible)
+                    return;
+                win.restoreRememberedTranscript();
             }
         }
 

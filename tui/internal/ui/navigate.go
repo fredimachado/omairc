@@ -542,12 +542,13 @@ func (m *Model) closeDirectMessage() {
 		return
 	}
 	m.saveDraft()
-	previousID := m.selectedConversationID()
+	previousID, wasConsole := m.beginTranscriptSwitch()
 	if !m.ctrl.CloseDirectMessage() {
+		m.suspendScrollMemory = false
 		return
 	}
 	m.loadDraft()
-	m.afterSelectionChange(previousID)
+	m.afterSelectionChange(previousID, wasConsole)
 }
 
 // focusMembers focuses the member list with Ctrl+Shift+P, reopening a hidden
@@ -596,11 +597,11 @@ func (m *Model) switchSelection(apply func()) {
 		m.leaveFind()
 	}
 	m.sidebarNetworkFocusID = ""
-	previousID := m.selectedConversationID()
+	previousID, wasConsole := m.beginTranscriptSwitch()
 	m.saveDraft()
 	apply()
 	m.loadDraft()
-	m.afterSelectionChange(previousID)
+	m.afterSelectionChange(previousID, wasConsole)
 }
 
 // selectedConversationID is the selected conversation's stable id, or "" for
@@ -615,9 +616,12 @@ func (m *Model) selectedConversationID() string {
 // afterSelectionChange resets the view state that does not survive a move to a
 // new conversation or Status surface, then places the transcript. previousID is
 // the conversation id before the change: re-selecting the same conversation
-// while "Open conversations at unread" is on keeps the reader's viewport. It
-// mirrors OmaircWindow.qml's placeTranscriptAfterSelect.
-func (m *Model) afterSelectionChange(previousID string) {
+// while "Open conversations at unread" is on keeps the reader's viewport.
+// wasConsole is true when the surface being left was Status, which shares this
+// viewport, so that return is not a re-select. A saved scroll place wins over
+// open-at-unread. It mirrors OmaircWindow.qml's finishTranscriptSwitch.
+func (m *Model) afterSelectionChange(previousID string, wasConsole bool) {
+	defer m.syncTranscriptLineCount()
 	// Every selection change, including a return from Status onto the
 	// conversation that was already selected. clearTitleMarkIfOpened itself
 	// keeps the mark while Status is open.
@@ -627,24 +631,38 @@ func (m *Model) afterSelectionChange(previousID string) {
 	}
 	m.firstUnseenRow = -1
 	m.transcriptCount = m.transcriptRowTotal()
-	if m.keepsViewportOnReselect(previousID) {
+	console := m.ctrl != nil && m.ctrl.ConsoleOpen()
+	if !wasConsole && !console && m.keepsViewportOnReselect(previousID) {
 		m.transcriptCursor = -1
 		m.resetHistoryBrowse()
 		m.memberFocus = false
 		m.memberIndex = 0
+		m.suspendScrollMemory = false
 		return
 	}
-	m.setTranscriptFollowEnd(true)
-	m.transcriptScroll = 0
 	m.transcriptCursor = -1
 	m.clearTranscriptAnchor()
 	m.resetHistoryBrowse()
 	m.memberFocus = false
 	m.memberIndex = 0
-	m.placeTranscriptAfterSelect()
-	if m.ctrl == nil || !m.ctrl.ConsoleOpen() {
-		m.syncReadMarkerViewport()
+	if console {
+		m.setTranscriptFollowEnd(true)
+		m.transcriptScroll = 0
+		m.suspendScrollMemory = false
+		return
 	}
+	mode := m.applyRememberedTranscript()
+	if mode == "absent" {
+		m.setTranscriptFollowEnd(true)
+		m.transcriptScroll = 0
+		m.placeTranscriptAfterSelect()
+		mode = "applied"
+	}
+	m.suspendScrollMemory = false
+	if mode == "applied" {
+		m.rememberOpenTranscript()
+	}
+	m.syncReadMarkerViewport()
 }
 
 // keepsViewportOnReselect reports whether re-selecting the current conversation

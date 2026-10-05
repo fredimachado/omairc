@@ -78,13 +78,55 @@ func TestNoteTranscriptGrowthRestoresFirstUnseenAfterOlderPage(t *testing.T) {
 	}
 }
 
+func TestDetachedGrowthKeepsTheTopLine(t *testing.T) {
+	m, d := unreadDemoModel(t)
+	m = press(t, m, tea.KeyPressMsg{Code: tea.KeyPgUp})
+	if m.transcriptFollowEnd {
+		t.Fatal("Page Up must leave follow-the-end")
+	}
+	top := m.firstVisibleMessageRow()
+	body := m.ctrl.Messages()[top].Body
+	scrollBefore := m.transcriptScroll
+	linesBefore := m.transcriptLineCount
+	d.InjectOmarchy([]byte(":anna!u@h PRIVMSG #omarchy :a line below the reader\r\n"))
+	m.noteTranscriptGrowth()
+	if m.transcriptFollowEnd {
+		t.Fatal("a detached reader must stay detached")
+	}
+	if got := m.ctrl.Messages()[m.firstVisibleMessageRow()].Body; got != body {
+		t.Fatalf("top body = %q, want %q", got, body)
+	}
+	delta := m.transcriptLineCount - linesBefore
+	if delta < 1 {
+		t.Fatalf("rendered lines grew by %d, want at least 1", delta)
+	}
+	if m.transcriptScroll != scrollBefore+delta {
+		t.Fatalf("scroll = %d, want %d", m.transcriptScroll, scrollBefore+delta)
+	}
+}
+
+func TestFollowEndGrowthLeavesScrollAtZero(t *testing.T) {
+	m, d := unreadDemoModel(t)
+	if !m.transcriptFollowEnd {
+		t.Fatal("startup must follow the end")
+	}
+	d.InjectOmarchy([]byte(":anna!u@h PRIVMSG #omarchy :a line at the end\r\n"))
+	m.noteTranscriptGrowth()
+	if !m.transcriptFollowEnd || m.transcriptScroll != 0 {
+		t.Fatalf("follow=%v scroll=%d, want pinned with scroll 0", m.transcriptFollowEnd, m.transcriptScroll)
+	}
+	if m.firstUnseenRow != -1 {
+		t.Fatalf("firstUnseenRow = %d, want -1", m.firstUnseenRow)
+	}
+}
+
 func TestLeavingConversationClearsHistoryPageCapTail(t *testing.T) {
 	m := seededModel(t)
 	key := m.ctrl.Reducer().ConversationKey("omarchy", "#omarchy")
 	m.ctrl.Reducer().MarkHistoryPageCapTail(key)
 	previousID := m.selectedConversationID()
 	m.ctrl.SelectConversation("omarchy", "#desktop")
-	m.afterSelectionChange(previousID)
+	m.afterSelectionChange(previousID, false)
 	conversation := m.ctrl.Reducer().Find(key)
 	if conversation == nil {
 		t.Fatal("omarchy channel must still exist")

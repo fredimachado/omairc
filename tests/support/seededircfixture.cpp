@@ -274,6 +274,14 @@ bool SeededIrcFixture::createWindow()
     return true;
 }
 
+void SeededIrcFixture::plantUnloadedScrollPlace(const QString &networkId,
+                                                const QString &target,
+                                                const QString &body)
+{
+    if (m_controller)
+        m_controller->plantScrollPlace(networkId, target, body);
+}
+
 void SeededIrcFixture::injectOmarchy(const QString &bytes)
 {
     if (m_demo)

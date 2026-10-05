@@ -40,6 +40,11 @@ ListView {
     property int prependSavedCount: 0
     property real previousContentHeight: 0
     property var readMarkerSync: null
+    // Window supplies the selected conversation's saved place, or null.
+    // {known, follow, row} matches IrcController.currentScrollPlace.
+    property var rememberedPlace: null
+    signal viewportSettled()
+    signal userViewportSettled()
 
     boundsBehavior: Flickable.StopAtBounds
     clip: true
@@ -141,7 +146,7 @@ ListView {
         });
     }
 
-    function adoptViewport() {
+    function adoptViewport(fromUser) {
         if (pinning)
             return;
         if (viewportPinned())
@@ -151,6 +156,29 @@ ListView {
             rememberDetachedViewportSequence();
         }
         syncReadMarkerViewport();
+        if (fromUser)
+            userViewportSettled();
+        else
+            viewportSettled();
+    }
+
+    function applyRememberedPlace() {
+        if (typeof rememberedPlace !== "function")
+            return false;
+        var place = rememberedPlace();
+        if (!place || place.known !== true)
+            return false;
+        if (place.follow === true) {
+            pinToEnd();
+            return true;
+        }
+        if (place.row >= 0) {
+            pinToUnread(place.row);
+            return true;
+        }
+        // The line is not loaded yet. Stay put so a later page can land
+        // on it, and do not fall through to the end.
+        return true;
     }
 
     function cancelDeferredPin() {
@@ -317,7 +345,7 @@ ListView {
                 if (generation !== pinGeneration)
                     return;
                 pinning = false;
-                adoptViewport();
+                adoptViewport(false);
             });
             return;
         }
@@ -336,7 +364,7 @@ ListView {
             if (generation !== pinGeneration)
                 return;
             pinning = false;
-            adoptViewport();
+            adoptViewport(false);
         });
     }
 
@@ -357,7 +385,7 @@ ListView {
                 return;
             positionViewAtIndex(row, ListView.Beginning);
             pinning = false;
-            adoptViewport();
+            adoptViewport(false);
         });
     }
 
@@ -371,11 +399,12 @@ ListView {
 
     onModelChanged: {
         refreshUnreadMarkRow();
-        pinToEnd();
+        if (!applyRememberedPlace())
+            pinToEnd();
     }
 
-    onMovementEnded: adoptViewport()
-    onFlickEnded: adoptViewport()
+    onMovementEnded: adoptViewport(true)
+    onFlickEnded: adoptViewport(true)
     onContentHeightChanged: {
         var wasAtEnd = previousContentHeight <= height
             || contentY + height >= originY + previousContentHeight - 2;
@@ -387,7 +416,7 @@ ListView {
         if (stick === stickFollowing)
             stickToEnd();
         else
-            adoptViewport();
+            adoptViewport(false);
     }
 
     Connections {
@@ -461,7 +490,8 @@ ListView {
 
     Component.onCompleted: {
         refreshUnreadMarkRow();
-        pinToEnd();
+        if (!applyRememberedPlace())
+            pinToEnd();
     }
 
     ScrollBar.vertical: ScrollBar {
@@ -469,7 +499,7 @@ ListView {
             ? ScrollBar.AlwaysOn : ScrollBar.AlwaysOff
         onPressedChanged: {
             if (!pressed)
-                list.adoptViewport();
+                list.adoptViewport(true);
         }
     }
 }

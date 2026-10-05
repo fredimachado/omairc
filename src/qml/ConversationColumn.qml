@@ -37,6 +37,7 @@ Item {
     property Component messageFooter
     property Component consoleDelegate
     property var readMarkerSync: null
+    property var rememberedTranscriptPlace: null
 
     property alias composer: composer
     property alias messageList: messageList
@@ -313,6 +314,7 @@ Item {
         anchors.bottom: composerShell.top
         anchors.bottomMargin: column.style.scaledSize(12)
         model: column.activeMessages
+        rememberedPlace: column.rememberedTranscriptPlace
         delegate: column.messageDelegate
         footer: column.messageFooter
         readMarkerSync: column.readMarkerSync

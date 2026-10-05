@@ -43,6 +43,9 @@ public:
     Q_INVOKABLE bool open();
     Q_INVOKABLE bool openWithAutoEcho();
     Q_INVOKABLE bool createWindow();
+    Q_INVOKABLE void plantUnloadedScrollPlace(const QString &networkId,
+                                              const QString &target,
+                                              const QString &body);
     Q_INVOKABLE void injectOmarchy(const QString &bytes);
     Q_INVOKABLE void injectOftc(const QString &bytes);
     Q_INVOKABLE void offerClipboardFile(const QString &path);

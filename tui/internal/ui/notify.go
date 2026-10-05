@@ -61,11 +61,31 @@ func (m *Model) activateNotifiedConversation(networkID, target, msgid string) {
 		return
 	}
 	m.sidebarNetworkFocusID = ""
+	previousID := m.selectedConversationID()
 	m.switchSelection(func() {
 		m.ctrl.RevealConversation(networkID, target)
 	})
-	if row := m.msgidRow(msgid); row >= 0 {
-		m.revealTranscriptRow(row)
+	// The notification's own landing wins over a saved scroll place, and it
+	// matches the Qt window: open-at-unread lands on the mark when the
+	// conversation changed, and a resolved msgid is revealed only when that
+	// setting is off, including when the conversation is already open.
+	if m.ctrl != nil && !m.ctrl.ConsoleOpen() {
+		same := previousID != "" && previousID == m.ctrl.SelectedConversationID()
+		if !same && m.ctrl.OpenAtUnread() {
+			m.setTranscriptFollowEnd(true)
+			m.transcriptScroll = 0
+			m.placeTranscriptAfterSelect()
+			m.rememberOpenTranscript()
+		} else if !m.ctrl.OpenAtUnread() {
+			if row := m.msgidRow(msgid); row >= 0 {
+				m.revealTranscriptRow(row)
+				m.rememberOpenTranscript()
+			} else if !same {
+				m.setTranscriptFollowEnd(true)
+				m.transcriptScroll = 0
+				m.rememberOpenTranscript()
+			}
+		}
 	}
 	_ = m.composer.Focus()
 }
