@@ -198,7 +198,36 @@ QString IrcNickPresence::avatar() const
 bool IrcNickPresence::isDefault() const noexcept
 {
     return !away.has_value() && keys.empty() && account.isEmpty()
-        && realname.isEmpty();
+        && !accountKnown && realname.isEmpty() && !serverOperator;
+}
+
+QString ircDisplayedRealname(const QString& realname, const QString& nick)
+{
+    const QString trimmed = realname.trimmed();
+    if (trimmed.isEmpty())
+        return {};
+    if (trimmed.compare(nick, Qt::CaseInsensitive) == 0)
+        return {};
+    if (trimmed.compare(QStringLiteral("realname"), Qt::CaseInsensitive) == 0
+        || trimmed.compare(QStringLiteral("unknown"), Qt::CaseInsensitive) == 0
+        || trimmed.compare(QStringLiteral("fullname"), Qt::CaseInsensitive) == 0) {
+        return {};
+    }
+    return trimmed;
+}
+
+QStringList ircPeerFactLabels(const IrcNickPresence& facts, bool accountMatchesNick)
+{
+    QStringList labels;
+    if (!facts.account.isEmpty() && !accountMatchesNick)
+        labels.append(facts.account);
+    else if (facts.accountKnown && facts.account.isEmpty())
+        labels.append(QStringLiteral("unauthenticated"));
+    if (facts.serverOperator)
+        labels.append(QStringLiteral("server operator"));
+    if (facts.isBot())
+        labels.append(QStringLiteral("bot"));
+    return labels;
 }
 
 IrcNickPresence& IrcNetworkPresence::entry(const QString& normalizedNick)
@@ -249,15 +278,19 @@ void IrcNetworkPresence::setAccount(const QString& normalizedNick,
     if (normalizedNick.isEmpty())
         return;
     const bool clear = account.isEmpty() || account == QLatin1String("*");
-    if (clear) {
-        const auto found = m_nicks.find(normalizedNick);
-        if (found == m_nicks.end())
-            return;
-        found->second.account.clear();
-        eraseIfDefault(normalizedNick);
+    IrcNickPresence& facts = entry(normalizedNick);
+    facts.accountKnown = true;
+    facts.account = clear ? QString{} : account;
+    eraseIfDefault(normalizedNick);
+}
+
+void IrcNetworkPresence::setServerOperator(const QString& normalizedNick,
+                                           bool serverOperator)
+{
+    if (normalizedNick.isEmpty())
         return;
-    }
-    entry(normalizedNick).account = account;
+    entry(normalizedNick).serverOperator = serverOperator;
+    eraseIfDefault(normalizedNick);
 }
 
 void IrcNetworkPresence::setRealname(const QString& normalizedNick,

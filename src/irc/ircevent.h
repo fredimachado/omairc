@@ -251,6 +251,17 @@ struct IrcChannelErrorEvent
     QString body;
 };
 
+// WHO 352, WHOIS 311, and WHOIS 313. A nullopt field is left unchanged.
+// 352 sets both when the trailing gecos is present and always sets the
+// operator flag. 311 sets the real name only. 313 sets operator true only.
+struct IrcNickFactsEvent
+{
+    QString networkId;
+    QString nick;
+    std::optional<QString> realname;
+    std::optional<bool> serverOperator;
+};
+
 using IrcEvent = std::variant<
     IrcWelcomeEvent,
     IrcMessageEvent,
@@ -271,4 +282,5 @@ using IrcEvent = std::variant<
     IrcTypingEvent,
     IrcHistoryEvent,
     IrcWhoisTranscriptEvent,
-    IrcChannelErrorEvent>;
+    IrcChannelErrorEvent,
+    IrcNickFactsEvent>;

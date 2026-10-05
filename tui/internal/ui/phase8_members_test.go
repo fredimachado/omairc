@@ -338,6 +338,38 @@ func TestMemberRowFocusAccentsOnlyTheFocusedRow(t *testing.T) {
 // TestMemberStatusSublineAlignsUnderTheLabel covers the status subline restyle:
 // it stays a separate muted line, blanked past the focus gutter and (with
 // away-notify on) the presence dot, so it hangs under the nick.
+func TestMemberFocusShowsIdentityTooltip(t *testing.T) {
+	m := seededModel(t)
+	unfocused := phase8MemberLine(t, m, "dax")
+	if strings.Contains(ansiPattern.ReplaceAllString(strings.Join(unfocused, "\n"), ""), "Packet Bot") {
+		t.Fatal("an unfocused member row must not show the real name")
+	}
+
+	m.memberFocus = true
+	m.memberIndex = phase8MemberIndex(t, m, "dax")
+	focused := phase8MemberLine(t, m, "dax")
+	if len(focused) < 2 {
+		t.Fatalf("focused dax must add a tooltip line: %#v", focused)
+	}
+	chrome := ansiPattern.ReplaceAllString(focused[0], "")
+	tip := ansiPattern.ReplaceAllString(focused[len(focused)-1], "")
+	if strings.Contains(chrome, "Packet Bot") {
+		t.Fatalf("the chrome line gained the real name: %q", chrome)
+	}
+	for _, want := range []string{"online", "Packet Bot", "bot"} {
+		if !strings.Contains(tip, want) {
+			t.Fatalf("dax tooltip = %q, want %q", tip, want)
+		}
+	}
+
+	m.memberIndex = phase8MemberIndex(t, m, "ivy")
+	ivyLines := phase8MemberLine(t, m, "ivy")
+	ivy := ansiPattern.ReplaceAllString(ivyLines[len(ivyLines)-1], "")
+	if !strings.Contains(ivy, "away") || !strings.Contains(ivy, "unauthenticated") {
+		t.Fatalf("ivy tooltip = %q, want away and unauthenticated", ivy)
+	}
+}
+
 func TestMemberStatusSublineAlignsUnderTheLabel(t *testing.T) {
 	m := seededModel(t)
 	anna := phase8MemberLine(t, m, "anna")

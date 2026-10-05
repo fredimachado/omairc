@@ -47,6 +47,8 @@ const (
 	EventWhoisTranscript
 	// EventChannelError is a ChannelErrorEvent.
 	EventChannelError
+	// EventNickFacts is a NickFactsEvent.
+	EventNickFacts
 )
 
 // Event is one translated IRC fact. The unexported method seals the interface
@@ -344,6 +346,19 @@ type ChannelErrorEvent struct {
 }
 
 func (ChannelErrorEvent) eventKind() EventKind { return EventChannelError }
+
+// NickFactsEvent is a WHO or WHOIS identity fact. A nil field is left
+// unchanged. It mirrors IrcNickFactsEvent. 352 sets both when the trailing
+// gecos is present and always sets the operator flag. 311 sets the real name
+// only. 313 sets operator true only.
+type NickFactsEvent struct {
+	NetworkID      string
+	Nick           string
+	Realname       *string
+	ServerOperator *bool
+}
+
+func (NickFactsEvent) eventKind() EventKind { return EventNickFacts }
 
 // KeptReplay is a replay line the reducer actually kept: inserted, or already
 // present so author/body/kind/time or msgid dedup skipped it. ServerTime is

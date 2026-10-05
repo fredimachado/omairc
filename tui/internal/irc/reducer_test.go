@@ -1783,6 +1783,7 @@ func TestAccountCommandAndTagShareOneField(t *testing.T) {
 
 	applyWire(t, reducer, ":Alice!a@h ACCOUNT *")
 	requireString(t, "account logout", reducer.NickPresence(networkA, "Alice").Account, "")
+	requireTrue(t, "logout is known", reducer.NickPresence(networkA, "Alice").AccountKnown)
 
 	applyWire(t, reducer, "@account=services :Alice!a@h PRIVMSG #room :one")
 	requireString(t, "account tag", reducer.NickPresence(networkA, "Alice").Account, "services")
@@ -1803,6 +1804,7 @@ func TestAccountCommandAndTagShareOneField(t *testing.T) {
 	applyWire(t, reducer, ":server 311 omairc Alice user host * :Alice Example")
 	requireString(t, "whois account kept", reducer.NickPresence(networkA, "Alice").Account, "whoisacct")
 	requireString(t, "whois realname", reducer.NickPresence(networkA, "Alice").Realname, "Alice Example")
+	requireString(t, "whois meaningful", reducer.MeaningfulRealname(networkA, "Alice"), "Alice Example")
 }
 
 func TestWhoAndWhoisStoreRealnameForJump(t *testing.T) {
@@ -1863,6 +1865,61 @@ func TestWhoAndWhoisStoreRealnameForJump(t *testing.T) {
 	if joined.NickPresence(networkA, "Alice").Away != nil {
 		t.Fatal("a classic JOIN must not mark Alice away")
 	}
+}
+
+func TestNickFactsFeedQueryHeader(t *testing.T) {
+	reducer := NewEventReducer()
+	welcome(reducer, networkA)
+	applyWire(t, reducer, ":Alice!a@h JOIN #room")
+	requireInt(t, "alice online", int(reducer.PeerPresence(networkA, "alice")), int(PeerOnline))
+
+	applyWire(t, reducer, ":server 352 omairc #room u h server Alice H* :0 Alice Example")
+	requireString(t, "who realname", reducer.NickPresence(networkA, "Alice").Realname, "Alice Example")
+	requireTrue(t, "who operator", reducer.NickPresence(networkA, "Alice").ServerOperator)
+	requireString(t, "who meaningful", reducer.MeaningfulRealname(networkA, "Alice"), "Alice Example")
+	requireStrings(t, "labels", reducer.PeerFactLabels(networkA, "Alice"), []string{"server operator"})
+
+	// A gecos equal to the nick is not a name. It must not erase Alice Example.
+	// The operator flag still follows this WHO reply.
+	applyWire(t, reducer, ":server 352 omairc #room u h server Alice G :0 Alice")
+	requireString(t, "placeholder keeps name", reducer.MeaningfulRealname(networkA, "Alice"), "Alice Example")
+	requireFalse(t, "operator cleared", reducer.NickPresence(networkA, "Alice").ServerOperator)
+	requireInt(t, "alice away", int(reducer.PeerPresence(networkA, "alice")), int(PeerAway))
+
+	applyWire(t, reducer, ":server 311 omairc Alice user host * :unknown")
+	requireString(t, "placeholder whois keeps name", reducer.NickPresence(networkA, "Alice").Realname, "Alice Example")
+	applyWire(t, reducer, ":server 311 omairc Alice user host * :A Custom Name")
+	requireString(t, "custom name", reducer.MeaningfulRealname(networkA, "Alice"), "A Custom Name")
+
+	applyWire(t, reducer, ":server 313 omairc Alice :is an IRC operator")
+	requireTrue(t, "whois operator", reducer.NickPresence(networkA, "Alice").ServerOperator)
+	requireString(t, "whois keeps name", reducer.MeaningfulRealname(networkA, "Alice"), "A Custom Name")
+
+	applyWire(t, reducer, ":Alice!a@h ACCOUNT *")
+	requireTrue(t, "logout known", reducer.NickPresence(networkA, "Alice").AccountKnown)
+	requireString(t, "logout account", reducer.NickPresence(networkA, "Alice").Account, "")
+	requireStrings(t, "labels", reducer.PeerFactLabels(networkA, "Alice"), []string{"unauthenticated", "server operator"})
+
+	applyWire(t, reducer, ":server 761 omairc Alice bot * :Helper")
+	requireStrings(t, "labels", reducer.PeerFactLabels(networkA, "Alice"), []string{"unauthenticated", "server operator", "bot"})
+
+	applyWire(t, reducer, ":Alice!a@h ACCOUNT Alice")
+	requireStrings(t, "labels", reducer.PeerFactLabels(networkA, "Alice"), []string{"server operator", "bot"})
+	requireString(t, "account matches nick", reducer.DisplayAccount(networkA, "Alice"), "")
+
+	applyWire(t, reducer, ":Bob!b@h JOIN #room")
+	requireStrings(t, "labels", reducer.PeerFactLabels(networkA, "Bob"), []string{})
+	requireFalse(t, "bob account unknown", reducer.NickPresence(networkA, "Bob").AccountKnown)
+	applyWire(t, reducer, ":server 311 omairc Bob user host * :realname")
+	requireString(t, "placeholder realname", reducer.MeaningfulRealname(networkA, "Bob"), "")
+	applyWire(t, reducer, ":server 311 omairc Bob user host * :Unknown")
+	requireString(t, "placeholder unknown", reducer.MeaningfulRealname(networkA, "Bob"), "")
+	applyWire(t, reducer, ":server 311 omairc Bob user host * :FullName")
+	requireString(t, "placeholder fullname", reducer.MeaningfulRealname(networkA, "Bob"), "")
+
+	applyWire(t, reducer, ":server 311 omairc Carol u h * :Carol Example")
+	requireString(t, "offline realname", reducer.MeaningfulRealname(networkA, "Carol"), "Carol Example")
+	requireInt(t, "carol offline", int(reducer.PeerPresence(networkA, "carol")), int(PeerUnknown))
 }
 
 func TestNickChangeKeepsServicesAccount(t *testing.T) {

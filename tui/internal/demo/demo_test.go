@@ -135,6 +135,64 @@ func TestSeedsServiceAccounts(t *testing.T) {
 	}
 }
 
+func TestSeedsQueryHeaderFacts(t *testing.T) {
+	c, _ := attachController(t, false)
+	reducer := c.Reducer()
+
+	if got := reducer.MeaningfulRealname("omarchy", "anna"); got != "Anna Vale" {
+		t.Fatalf("anna realname = %q, want Anna Vale", got)
+	}
+	if labels := reducer.PeerFactLabels("omarchy", "anna"); len(labels) != 0 {
+		t.Fatalf("anna labels = %v, want none", labels)
+	}
+	if got := reducer.PeerPresence("omarchy", "anna"); got != irc.PeerOnline {
+		t.Fatalf("anna presence = %v, want online", got)
+	}
+
+	if got := reducer.MeaningfulRealname("omarchy", "ivy"); got != "" {
+		t.Fatalf("ivy realname = %q, want empty", got)
+	}
+	ivy := reducer.PeerFactLabels("omarchy", "ivy")
+	if len(ivy) != 1 || ivy[0] != "unauthenticated" {
+		t.Fatalf("ivy labels = %v, want unauthenticated", ivy)
+	}
+	if got := reducer.PeerPresence("omarchy", "ivy"); got != irc.PeerAway {
+		t.Fatalf("ivy presence = %v, want away", got)
+	}
+
+	fred := reducer.PeerFactLabels("omarchy", "fred")
+	if len(fred) != 2 || fred[0] != "fredm" || fred[1] != "server operator" {
+		t.Fatalf("fred labels = %v, want fredm and server operator", fred)
+	}
+	if got := reducer.MeaningfulRealname("omarchy", "fred"); got != "Fred Machado" {
+		t.Fatalf("fred realname = %q", got)
+	}
+	if !reducer.NickPresence("omarchy", "fred").ServerOperator {
+		t.Fatal("fred must be a server operator on omarchy")
+	}
+
+	dax := reducer.PeerFactLabels("omarchy", "dax")
+	if len(dax) != 1 || dax[0] != "bot" {
+		t.Fatalf("dax labels = %v, want bot", dax)
+	}
+	if got := reducer.MeaningfulRealname("omarchy", "dax"); got != "Packet Bot" {
+		t.Fatalf("dax realname = %q", got)
+	}
+
+	lena := reducer.PeerFactLabels("omarchy", "lena")
+	if len(lena) != 1 || lena[0] != "pinkieval" {
+		t.Fatalf("lena labels = %v, want pinkieval", lena)
+	}
+	if got := reducer.PeerPresence("omarchy", "lena"); got != irc.PeerAway {
+		t.Fatalf("lena presence = %v, want away", got)
+	}
+
+	oak := reducer.NickPresence("oftc", "oak")
+	if oak.ServerOperator || oak.Realname != "" {
+		t.Fatalf("oak facts = %+v, want no operator and no real name", oak)
+	}
+}
+
 func TestSkipsRedundantAccountTag(t *testing.T) {
 	c, d := attachController(t, false)
 	epoch := c.PeerAccountEpoch()

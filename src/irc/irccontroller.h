@@ -208,6 +208,11 @@ public:
                               const QString& name,
                               const QString& detail) const;
     Q_INVOKABLE int jumpResultLimit() const;
+    // Query-header facts for one nick. `presence` is "online", "away", or
+    // "offline". `realname` is the meaningful gecos. `labels` is the short
+    // account, operator, and bot list. A nick who shares no channel is offline.
+    Q_INVOKABLE QVariantMap peerHeader(const QString& networkId,
+                                       const QString& nick) const;
 
     QStringList networkIds() const;
     IrcSession *session(const QString &networkId) const;

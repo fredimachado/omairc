@@ -18,6 +18,9 @@ Item {
     property var channelNameAt: null
     property var openAllowedUrl: null
     property var openChannelName: null
+    property bool queryIdentity: false
+    property string queryPresence: "offline"
+    property var queryLabels: []
     property string statusTitle: ""
     property string statusSubtitle: ""
     property string currentConversation: ""
@@ -64,6 +67,7 @@ Item {
             spacing: column.style.scaledSize(3)
 
             Text {
+                visible: !column.queryIdentity
                 width: parent.width
                 text: column.headerTitle
                 color: column.style.inkColor
@@ -71,6 +75,63 @@ Item {
                 font.family: "iA Writer Mono S"
                 font.bold: true
                 font.pixelSize: column.style.scaledSize(17)
+            }
+
+            Row {
+                id: queryTitleRow
+                visible: column.queryIdentity
+                width: parent.width
+                spacing: column.style.scaledSize(8)
+
+                Item {
+                    width: column.style.scaledSize(8)
+                    height: queryNick.implicitHeight
+
+                    Rectangle {
+                        objectName: "queryPresenceDot"
+                        visible: column.queryIdentity
+                        anchors.verticalCenter: parent.verticalCenter
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        width: column.style.scaledSize(8)
+                        height: width
+                        radius: width / 2
+                        color: column.style.presenceMarkColor(column.queryPresence)
+                    }
+                }
+
+                Text {
+                    id: queryNick
+                    text: column.headerTitle
+                    color: column.style.inkColor
+                    elide: Text.ElideRight
+                    font.family: "iA Writer Mono S"
+                    font.bold: true
+                    font.pixelSize: column.style.scaledSize(17)
+                    width: {
+                        var used = column.style.scaledSize(8) + queryTitleRow.spacing;
+                        for (var index = 0; index < queryLabelRepeater.count; ++index) {
+                            var label = queryLabelRepeater.itemAt(index);
+                            if (label)
+                                used += label.implicitWidth + queryTitleRow.spacing;
+                        }
+                        return Math.max(0, Math.min(implicitWidth, queryTitleRow.width - used));
+                    }
+                }
+
+                Repeater {
+                    id: queryLabelRepeater
+                    model: column.queryLabels
+
+                    Text {
+                        objectName: "queryFactLabel"
+                        text: modelData
+                        color: column.style.mutedColor
+                        font.family: "iA Writer Mono S"
+                        font.pixelSize: column.style.scaledSize(11)
+                        height: queryNick.implicitHeight
+                        verticalAlignment: Text.AlignVCenter
+                    }
+                }
             }
 
             TopicLine {

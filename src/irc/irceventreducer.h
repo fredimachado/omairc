@@ -66,6 +66,11 @@ struct IrcMemberView
     // Empty when unknown, logged out, or the same as the nick under the
     // network case mapping. Callers must not compare the raw account again.
     QString account;
+    // Meaningful gecos. Empty when the stored name is blank or a placeholder.
+    QString realname;
+    // Query-header labels: account or "unauthenticated", then "server operator",
+    // then "bot".
+    QStringList factLabels;
 
     bool isAway() const noexcept;
 };
@@ -292,6 +297,8 @@ public:
                                  const QString& nick) const;
     // Display label: empty unless the stored account adds information.
     QString displayAccount(const QString& networkId, const QString& nick) const;
+    QString meaningfulRealname(const QString& networkId, const QString& nick) const;
+    QStringList peerFactLabels(const QString& networkId, const QString& nick) const;
     IrcPeerPresence peerPresence(const QString& networkId,
                                  const QString& normalizedNick) const;
     QVector<IrcOrderedMember> orderedMembers(const IrcConversationKey& key) const;
@@ -414,6 +421,7 @@ private:
     void reduce(const IrcHistoryEvent& event);
     void reduce(const IrcWhoisTranscriptEvent& event);
     void reduce(const IrcChannelErrorEvent& event);
+    void reduce(const IrcNickFactsEvent& event);
 
     void clearTyping(IrcConversationState& conversation,
                      const QString& normalizedNick);

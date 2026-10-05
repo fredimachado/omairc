@@ -90,25 +90,66 @@ func TestPhase8TranscriptChannelHeaderHasNoPeopleCount(t *testing.T) {
 	}
 }
 
-// TestPhase8TranscriptDirectHeaderIsJustTheTopic proves a direct message header
-// is only the topic caption: no count, and no right-aligned tail.
-func TestPhase8TranscriptDirectHeaderIsJustTheTopic(t *testing.T) {
+// TestPhase8TranscriptDirectHeaderShowsPeerFacts proves a direct message header
+// shows who you are talking to: a presence dot, the nick, short labels, and
+// the real name. The topic property stays the direct-message caption, and the
+// header still has no people count.
+func TestPhase8TranscriptDirectHeaderShowsPeerFacts(t *testing.T) {
 	m := openPhase8AnnaDirect(t, seededModel(t))
+	if got := m.ctrl.Topic(); got != "Direct message with anna" {
+		t.Fatalf("Topic() = %q, want the direct-message caption", got)
+	}
 
 	lines, _ := m.transcriptLines()
-	if len(lines) == 0 {
-		t.Fatal("the anna DM transcript must have a header")
+	if len(lines) < 3 {
+		t.Fatalf("anna header has %d lines, want the title, real name, and blank", len(lines))
 	}
-	header := lines[0]
-	plain := ansiPattern.ReplaceAllString(header, "")
-	if !strings.Contains(plain, "Direct message with anna") {
-		t.Fatalf("DM header = %q, want the direct-message caption", plain)
+	title := ansiPattern.ReplaceAllString(lines[0], "")
+	name := ansiPattern.ReplaceAllString(lines[1], "")
+	if !strings.Contains(title, "anna") {
+		t.Fatalf("DM title = %q, want the nick", title)
 	}
-	if strings.Contains(plain, "PEOPLE") {
-		t.Fatalf("DM header = %q, must not carry a people count", plain)
+	if strings.Contains(title, "Direct message with anna") || strings.Contains(name, "Direct message with anna") {
+		t.Fatalf("DM header still shows the caption:\n%s\n%s", title, name)
 	}
-	if got, want := lipgloss.Width(header), m.transcriptWidth(); got != want {
-		t.Fatalf("DM header width = %d, want the full %d-cell band", got, want)
+	if strings.Contains(title, "PEOPLE") || strings.Contains(name, "PEOPLE") {
+		t.Fatalf("DM header must not carry a people count:\n%s", title)
+	}
+	if !strings.Contains(lines[0], m.styles.MemberPresenceOnline.Render("●")) {
+		t.Fatalf("anna's header dot is not online: %q", lines[0])
+	}
+	if !strings.Contains(name, "Anna Vale") {
+		t.Fatalf("DM subtitle = %q, want Anna Vale", name)
+	}
+	if strings.Contains(name, "Anna Docs") {
+		t.Fatalf("DM subtitle used the display-name: %q", name)
+	}
+	if strings.TrimSpace(ansiPattern.ReplaceAllString(lines[2], "")) != "" {
+		t.Fatalf("the header separator is not blank: %q", lines[2])
+	}
+	if got, want := lipgloss.Width(lines[0]), m.transcriptWidth(); got != want {
+		t.Fatalf("DM title width = %d, want the full %d-cell band", got, want)
+	}
+	if got, want := lipgloss.Width(lines[1]), m.transcriptWidth(); got != want {
+		t.Fatalf("DM name width = %d, want the full %d-cell band", got, want)
+	}
+
+	if !m.ctrl.OpenDirectMessage("ivy") {
+		t.Fatal("opening ivy's query failed")
+	}
+	lines, _ = m.transcriptLines()
+	if len(lines) < 2 {
+		t.Fatal("ivy's query must have a header")
+	}
+	ivy := ansiPattern.ReplaceAllString(lines[0], "")
+	if !strings.Contains(ivy, "ivy") || !strings.Contains(ivy, "unauthenticated") {
+		t.Fatalf("ivy header = %q, want the nick and unauthenticated", ivy)
+	}
+	if !strings.Contains(lines[0], m.styles.MemberPresenceAway.Render("●")) {
+		t.Fatalf("ivy's header dot is not away: %q", lines[0])
+	}
+	if strings.TrimSpace(ansiPattern.ReplaceAllString(lines[1], "")) != "" {
+		t.Fatalf("ivy has no real name, so the next header line must be blank: %q", lines[1])
 	}
 }
 

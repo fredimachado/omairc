@@ -187,6 +187,46 @@ func channelStateBytes(network SeedNetwork, channel SeedChannel) []byte {
 	return out
 }
 
+// identityLine is one RPL_WHOREPLY. oper is the server-operator `*` flag.
+// WHO replies land before AWAY so a later away notice restores the reason.
+func identityLine(self, channel, nick, realname string, oper bool) []byte {
+	flags := "H"
+	if oper {
+		flags = "H*"
+	}
+	return line(":server 352 " + self + " " + channel + " u h server " + nick + " " + flags + " :0 " + realname)
+}
+
+// identityBytes emits the fixed query-header gecos lines. The order matches
+// the C++ seed. Only omarchy's own nick is a server operator.
+func identityBytes(network SeedNetwork, members map[string]struct{}) []byte {
+	type identity struct {
+		nick          string
+		realname      string
+		operOnOmarchy bool
+	}
+	identities := []identity{
+		{"anna", "Anna Vale", false},
+		{"dax", "Packet Bot", false},
+		{"fred", "Fred Machado", true},
+		{"lena", "Lena Pink", false},
+		{"mira", "Mira Chen", false},
+	}
+	if len(network.Channels) == 0 {
+		return nil
+	}
+	channel := network.Channels[0].Name
+	omarchy := network.NetworkID == "omarchy"
+	var out []byte
+	for _, item := range identities {
+		if _, ok := members[item.nick]; !ok {
+			continue
+		}
+		out = append(out, identityLine(network.Nick, channel, item.nick, item.realname, item.operOnOmarchy && omarchy)...)
+	}
+	return out
+}
+
 // presenceBytes is the union of every channel's away and status facts plus the
 // deterministic avatar/bot/display-name/pronouns metadata lines. The C++
 // iterates QSet, so away and status line order is not part of the contract;
@@ -209,6 +249,7 @@ func presenceBytes(network SeedNetwork) []byte {
 	}
 
 	var out []byte
+	out = append(out, identityBytes(network, members)...)
 	for _, nick := range sortedSetKeys(away) {
 		out = append(out, line(":"+nick+"!u@h AWAY :away")...)
 	}
@@ -254,6 +295,8 @@ func accountBytes(network SeedNetwork) []byte {
 	var out []byte
 	out = append(out, accountLine("lena", "pinkieval")...)
 	out = append(out, accountLine(network.Nick, "fredm")...)
+	// A known logout, so the member tooltip can say unauthenticated.
+	out = append(out, accountLine("ivy", "*")...)
 	return out
 }
 

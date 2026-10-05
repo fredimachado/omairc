@@ -239,6 +239,13 @@ struct IrcViewClassifier {
     {
         return IrcViewNotify::transcript();
     }
+
+    IrcViewNotify operator()(const IrcNickFactsEvent& event) const
+    {
+        const IrcConversationKey key =
+            reducer.conversationKey(event.networkId, event.nick);
+        return IrcViewNotify::memberRow(key.normalizedTarget);
+    }
 };
 
 inline bool channelNamesSyncing(const IrcEventReducer& reducer,

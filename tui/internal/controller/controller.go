@@ -719,8 +719,10 @@ func (c *Controller) Apply(event irc.Event) {
 	// A redundant account tag never lands: the reducer would re-store the same
 	// value and the view would repaint for nothing.
 	if account, ok := event.(irc.AccountEvent); ok {
-		stored := c.reducer.NickPresence(account.NetworkID, account.Nick).Account
-		if servicesAccountMatches(stored, account.Account) {
+		stored := c.reducer.NickPresence(account.NetworkID, account.Nick)
+		// A first `*` is a logout we have not stored yet. A repeat of the
+		// same account, including a second logout, still changes nothing.
+		if stored.AccountKnown && servicesAccountMatches(stored.Account, account.Account) {
 			return
 		}
 	}
@@ -746,6 +748,8 @@ func (c *Controller) Apply(event irc.Event) {
 		c.peerMetadataEpoch++
 		c.replies.RouteOwnMetadataReply(metadata.NetworkID, metadata.Nick,
 			metadata.Key, metadata.Value)
+	} else if _, ok := event.(irc.NickFactsEvent); ok {
+		c.peerMetadataEpoch++
 	}
 	if accountsMoved(kind, event) {
 		c.peerAccountEpoch++
@@ -1498,6 +1502,37 @@ func JumpScore(query, name, detail string) int {
 
 // JumpResultLimit is how many Ctrl+K rows the overlay keeps.
 func JumpResultLimit() int { return irc.JumpResultLimit }
+
+// SelectedPeerHeader returns the query header for the selected direct message.
+// A channel, the console, and an empty selection report false. Presence is
+// "online", "away", or "offline". Realname is the meaningful gecos. Labels
+// are the short account, operator, and bot list.
+func (c *Controller) SelectedPeerHeader() (PeerHeader, bool) {
+	if c.consoleOpen || c.selected == nil || c.IsChannel() {
+		return PeerHeader{}, false
+	}
+	nick := c.SelectedTarget()
+	if conversation := c.reducer.Find(*c.selected); conversation != nil && conversation.Target != "" {
+		nick = conversation.Target
+	}
+	if nick == "" {
+		return PeerHeader{}, false
+	}
+	normalized := c.reducer.ConversationKey(c.selected.NetworkID, nick).NormalizedTarget
+	presence := "offline"
+	switch c.reducer.PeerPresence(c.selected.NetworkID, normalized) {
+	case irc.PeerOnline:
+		presence = "online"
+	case irc.PeerAway:
+		presence = "away"
+	}
+	return PeerHeader{
+		Nick:     nick,
+		Presence: presence,
+		Realname: c.reducer.MeaningfulRealname(c.selected.NetworkID, nick),
+		Labels:   c.reducer.PeerFactLabels(c.selected.NetworkID, nick),
+	}, true
+}
 
 // IsChannel reports whether the selected target is a channel under the
 // network's advertised CHANTYPES.

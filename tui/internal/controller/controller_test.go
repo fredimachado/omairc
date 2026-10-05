@@ -11,6 +11,7 @@ package controller
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -415,11 +416,22 @@ func memberSnapshotsEqual(left, right []MemberSnapshot) bool {
 		return false
 	}
 	for index := range left {
-		if left[index] != right[index] {
+		if !memberSnapshotEqual(left[index], right[index]) {
 			return false
 		}
 	}
 	return true
+}
+
+func memberSnapshotEqual(left, right MemberSnapshot) bool {
+	return left.Nick == right.Nick &&
+		left.Label == right.Label &&
+		left.Status == right.Status &&
+		left.Away == right.Away &&
+		left.Account == right.Account &&
+		left.Bot == right.Bot &&
+		left.Realname == right.Realname &&
+		slices.Equal(left.Labels, right.Labels)
 }
 
 // --- incomingNickRetargetsSelectedDirect ----------------------------------

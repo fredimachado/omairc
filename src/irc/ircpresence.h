@@ -44,10 +44,13 @@ struct IrcNickPresence
     std::optional<IrcAway> away;
     std::map<QString, QString> keys;
     // Services account from account-tag, account-notify, extended-join, or
-    // WHOIS 330. Empty means unknown or logged out; both display as nothing.
+    // WHOIS 330. Empty with accountKnown means logged out. Empty without
+    // accountKnown means no account fact has arrived. Both display as nothing.
     QString account;
+    bool accountKnown = false;
     // GECOS from extended-join, WHO (352), or WHOIS (311). Empty means unknown.
     QString realname;
+    bool serverOperator = false;
 
     QString metadata(const QString& key) const;
     bool hasKey(const QString& key) const;
@@ -64,11 +67,13 @@ public:
     void setMetadata(const QString& normalizedNick,
                      const QString& key,
                      const QString& value);
-    // `*` and an empty value clear. A missing tag never calls this.
+    // `*` and an empty value clear the account and record that the fact is
+    // known. A missing tag never calls this.
     void setAccount(const QString& normalizedNick, const QString& account);
     // An empty value clears. Callers skip a blank WHO or WHOIS field instead
     // of wiping a name they already stored.
     void setRealname(const QString& normalizedNick, const QString& realname);
+    void setServerOperator(const QString& normalizedNick, bool serverOperator);
 
     void rekey(const QString& fromNormalized, const QString& toNormalized);
 
@@ -99,3 +104,13 @@ inline bool ircMeaningfulRealname(const QString& realname, const QString& nick)
         && folded != QLatin1String("unknown")
         && folded != QLatin1String("fullname");
 }
+
+// A gecos worth showing on a query header: trimmed, not the nick, and not a
+// placeholder a client sends when it has no name. Comparison is
+// case-insensitive. Jump matching stays on ircMeaningfulRealname.
+QString ircDisplayedRealname(const QString& realname, const QString& nick);
+
+// Short labels for a query header or member tooltip, in display order.
+// accountMatchesNick uses the network case mapping. An unknown account adds
+// nothing; a known logout adds "unauthenticated".
+QStringList ircPeerFactLabels(const IrcNickPresence& facts, bool accountMatchesNick);

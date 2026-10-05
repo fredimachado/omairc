@@ -1071,6 +1071,34 @@ int IrcController::jumpResultLimit() const
     return ircJumpResultLimit;
 }
 
+QVariantMap IrcController::peerHeader(const QString& networkId,
+                                      const QString& nick) const
+{
+    QVariantMap result;
+    result.insert(QStringLiteral("presence"), QStringLiteral("offline"));
+    result.insert(QStringLiteral("realname"), QString());
+    result.insert(QStringLiteral("labels"), QStringList());
+    if (networkId.isEmpty() || nick.isEmpty())
+        return result;
+    const QString normalized =
+        m_reducer.conversationKey(networkId, nick).normalizedTarget;
+    switch (m_reducer.peerPresence(networkId, normalized)) {
+    case IrcPeerPresence::Online:
+        result.insert(QStringLiteral("presence"), QStringLiteral("online"));
+        break;
+    case IrcPeerPresence::Away:
+        result.insert(QStringLiteral("presence"), QStringLiteral("away"));
+        break;
+    case IrcPeerPresence::Unknown:
+        break;
+    }
+    result.insert(QStringLiteral("realname"),
+                  m_reducer.meaningfulRealname(networkId, nick));
+    result.insert(QStringLiteral("labels"),
+                  m_reducer.peerFactLabels(networkId, nick));
+    return result;
+}
+
 void IrcController::handleCapabilities(const QString& networkId,
                                        IrcCapabilitySet capabilities)
 {
@@ -2441,10 +2469,14 @@ void IrcController::adoptReducerSelection()
 void IrcController::apply(const IrcEvent& event)
 {
     if (const auto *account = std::get_if<IrcAccountEvent>(&event)) {
-        const QString stored =
-            m_reducer.nickPresence(account->networkId, account->nick).account;
-        if (servicesAccountMatches(stored, account->account))
+        const IrcNickPresence stored =
+            m_reducer.nickPresence(account->networkId, account->nick);
+        // A first `*` is a logout we have not stored yet. A repeat of the
+        // same account, including a second logout, still changes nothing.
+        if (stored.accountKnown
+            && servicesAccountMatches(stored.account, account->account)) {
             return;
+        }
     }
     const QString previousId = identityNetworkId();
     const bool previousAway = selfAway();
@@ -2466,6 +2498,9 @@ void IrcController::apply(const IrcEvent& event)
                                  metadata->nick,
                                  metadata->key,
                                  metadata->value);
+    } else if (std::holds_alternative<IrcNickFactsEvent>(event)) {
+        ++m_peerMetadataEpoch;
+        emit peerMetadataChanged();
     }
     const bool accountsMoved = std::holds_alternative<IrcAccountEvent>(event)
         || std::holds_alternative<IrcWelcomeEvent>(event)

@@ -1555,6 +1555,54 @@ TestCase {
         compare(item("messageList").Accessible.name, "Messages in anna");
     }
 
+    function test_queryHeaderShowsWhoYouAreTalkingTo() {
+        openSeededAppWindow();
+        compare(appWindow.currentConversation, "#omarchy");
+        compare(item("conversationTopic").text,
+                "A cozy corner for Omarchy users and builders.");
+        verify(!item("queryPresenceDot").visible);
+
+        var members = item("membersList");
+        function tip(nick) {
+            var delegate = members.itemAtIndex(memberIndex(nick));
+            verify(delegate !== null, "Could not render " + nick);
+            return delegate.memberTip;
+        }
+        var daxTip = tip("dax");
+        verify(daxTip.indexOf("online") === 0);
+        verify(daxTip.indexOf("Packet Bot") >= 0);
+        verify(daxTip.indexOf("\nbot") >= 0);
+        verify(daxTip.indexOf("unauthenticated") < 0);
+        var ivyTip = tip("ivy");
+        verify(ivyTip.indexOf("away") === 0);
+        verify(ivyTip.indexOf("unauthenticated") >= 0);
+        var lenaTip = tip("lena");
+        verify(lenaTip.indexOf("Lena Pink") >= 0);
+        verify(lenaTip.indexOf("pinkieval") >= 0);
+        var fredTip = tip("fred");
+        verify(fredTip.indexOf("Fred Machado") >= 0);
+        verify(fredTip.indexOf("fredm") >= 0);
+        verify(fredTip.indexOf("server operator") >= 0);
+        verify(item("member-bot-dax").visible);
+        compare(item("member-account-lena").text, "pinkieval");
+
+        keyClick(Qt.Key_Down, Qt.AltModifier);
+        keyClick(Qt.Key_Down, Qt.AltModifier);
+        tryCompare(appWindow, "currentConversation", "anna");
+        compare(appWindow.currentTopic, "Direct message with anna");
+        compare(item("conversationTopic").text, "Anna Vale");
+        verify(item("conversationTopic").text.indexOf("Anna Docs") < 0);
+        compare(item("queryPresenceDot").color, "#69b978");
+        verify(findChild(appWindow, "queryFactLabel") === null);
+
+        appWindow.openDirectMessage("ivy");
+        tryCompare(appWindow, "currentConversation", "ivy");
+        compare(appWindow.currentTopic, "Direct message with ivy");
+        compare(item("conversationTopic").text, "");
+        compare(item("queryPresenceDot").color, "#d6a552");
+        compare(findChild(appWindow, "queryFactLabel").text, "unauthenticated");
+    }
+
     function test_walkConversationsWrapsToLast() {
         openSeededAppWindow();
         mouseClick(namedItem(liveConversation("#desktop")));

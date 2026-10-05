@@ -161,7 +161,42 @@ func (m *Model) memberRow(index int, member controller.MemberSnapshot) []string 
 	if m.ctrl.HasMemberStatus() && member.Status != "" {
 		lines = append(lines, m.memberStatusLine(member.Status, presenceShown))
 	}
+	// The focused row is the keyboard tooltip: the same facts the Qt hover
+	// tip shows, without adding them to the unfocused chrome.
+	if focused {
+		if tip := m.memberTooltip(member, away); tip != "" {
+			lines = append(lines, m.memberFactLine(tip, presenceShown))
+		}
+	}
 	return lines
+}
+
+// memberTooltip joins the presence word, meaningful real name, and short
+// labels. A listed member is online or away, never offline.
+func (m *Model) memberTooltip(member controller.MemberSnapshot, away bool) string {
+	parts := []string{"online"}
+	if away {
+		parts[0] = "away"
+	}
+	if name := strings.TrimSpace(m.ctrl.PlainIrcText(member.Realname)); name != "" {
+		parts = append(parts, name)
+	}
+	for _, label := range member.Labels {
+		if label != "" {
+			parts = append(parts, label)
+		}
+	}
+	return strings.Join(parts, " · ")
+}
+
+// memberFactLine indents the tooltip under the nick, matching the status
+// subline's gutter without the status marker.
+func (m *Model) memberFactLine(text string, presenceShown bool) string {
+	indent := memberGutter
+	if presenceShown {
+		indent += 2
+	}
+	return m.styles.MemberAccount.Render(strings.Repeat(" ", indent) + text)
 }
 
 // memberAwayNickMix is how far an away member's nick color is mixed toward the
