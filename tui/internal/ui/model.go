@@ -466,6 +466,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case NotifyMsg:
 		m.ensureAvatars()
+		// A controller-driven selection, including the autojoin that claims
+		// the first channel, does not pass through switchSelection. Move the
+		// composer onto that conversation before the next keystroke.
+		m.followControllerSelection()
 		// A status change may have left the focused network disconnected, so
 		// restart the spinner if it stopped. A chat or membership publish may
 		// have grown the transcript while the reader was scrolled up, which

@@ -3048,6 +3048,18 @@ void IrcController::enqueueUploadBytes(const QByteArray &body, const QString &fi
     m_uploads->enqueue(std::move(job));
 }
 
+bool IrcController::clipboardOffersFile() const
+{
+#if !defined(QT_GUI_LIB)
+    return false;
+#else
+    const QClipboard *clipboard = QGuiApplication::clipboard();
+    if (!clipboard)
+        return false;
+    return ircClipboardOffer(clipboard->mimeData()).has_value();
+#endif
+}
+
 bool IrcController::uploadClipboard(const QString &draftKey)
 {
 #if !defined(QT_GUI_LIB)

@@ -12,6 +12,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
+	"github.com/fredimachado/omairc/tui/internal/connection"
 	"github.com/fredimachado/omairc/tui/internal/controller"
 	"github.com/fredimachado/omairc/tui/internal/irc"
 	"github.com/fredimachado/omairc/tui/internal/session"
@@ -160,6 +161,101 @@ func TestFileLinkStaysOnTheDraftThatQueuedIt(t *testing.T) {
 	}
 	if hits != 1 {
 		t.Fatalf("uploads = %d", hits)
+	}
+}
+
+func TestAutojoinKeepsTheTypedDraftWithTheFileLink(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.Copy(io.Discard, r.Body)
+		w.Header().Set("Location", "/files/note.txt")
+		w.WriteHeader(http.StatusCreated)
+	}))
+	defer server.Close()
+
+	clock := session.NewFakeClock(time.Date(2026, 10, 5, 9, 0, 0, 0, time.UTC))
+	ctrl := controller.New()
+	ctrl.SetClock(clock)
+	transport := session.NewLoopbackTransport()
+	conn := connection.New(ctrl, func() session.Transport { return transport })
+	profile := storedProfile("net", "irc.example")
+	profile.TLSEnabled = false
+	profile.Port = 6667
+	profile.AutojoinChannels = []string{"#files"}
+	conn.SetStoredProfiles([]connection.NetworkProfile{profile})
+	conn.Select("net")
+	m := New(ctrl, conn)
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 118, Height: 30})
+	m = updated.(*Model)
+	m.openConnect()
+	if !m.connectVisible() {
+		t.Fatal("model did not open on the Connect sheet")
+	}
+	m.applyConnect()
+	if m.connectVisible() {
+		t.Fatal("Connect sheet stayed open after Apply")
+	}
+	if !ctrl.ConsoleOpen() {
+		t.Fatal("Apply did not open Status")
+	}
+	transport.CompleteConnect()
+	endpoint := server.URL + "/upload"
+	transport.InjectBytes([]byte(":server CAP omairc LS :multi-prefix\r\n" +
+		":server 001 omairc :Welcome\r\n" +
+		":server 005 omairc CHANTYPES=# PREFIX=(ov)@+ soju.im/FILEHOST=" + endpoint +
+		" :are supported by this server\r\n"))
+	joined := false
+	for _, frame := range transport.WrittenFrames() {
+		if strings.Contains(string(frame), "JOIN #files") {
+			joined = true
+			break
+		}
+	}
+	if !joined {
+		t.Fatal("autojoin did not send JOIN #files")
+	}
+	transport.InjectBytes([]byte(":omairc!u@h JOIN :#files\r\n"))
+	if ctrl.ConsoleOpen() || ctrl.SelectedTarget() != "#files" {
+		t.Fatalf("after autojoin console=%v target=%q", ctrl.ConsoleOpen(), ctrl.SelectedTarget())
+	}
+	updated, _ = m.Update(NotifyMsg{})
+	m = updated.(*Model)
+	if m.draftKey != m.composerDraftKey() {
+		t.Fatalf("draftKey = %q, composerDraftKey = %q", m.draftKey, m.composerDraftKey())
+	}
+	channelKey := m.composerDraftKey()
+	m.composer.SetValue("words ")
+	m.composer.CursorEnd()
+	path := filepath.Join(t.TempDir(), "note.txt")
+	if err := os.WriteFile(path, []byte("hello"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan FileLinkMsg, 1)
+	m.ctrl.OnFileLink = func(url, message string) {
+		done <- FileLinkMsg{URL: url, Message: message}
+	}
+	updated, _ = m.Update(tea.PasteMsg{Content: path})
+	m = updated.(*Model)
+	select {
+	case msg := <-done:
+		updated, _ = m.Update(msg)
+		m = updated.(*Model)
+		if msg.URL == "" {
+			t.Fatalf("upload failed: %q", msg.Message)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("upload did not finish")
+	}
+	m.toggleStatus()
+	want := "words " + server.URL + "/files/note.txt"
+	if m.drafts[channelKey] != want {
+		t.Fatalf("channel draft = %q, want %q", m.drafts[channelKey], want)
+	}
+	statusKey := m.composerDraftKey()
+	if statusKey == channelKey {
+		t.Fatal("Status did not open")
+	}
+	if m.drafts[statusKey] != "" || m.composer.Value() != "" {
+		t.Fatalf("status draft = %q composer = %q", m.drafts[statusKey], m.composer.Value())
 	}
 }
 

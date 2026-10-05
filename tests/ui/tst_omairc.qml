@@ -11760,5 +11760,15 @@ TestCase {
         });
         compare(button.visible, false);
         compare(drop.enabled, false);
+        var name = appWindow.connection.name;
+        var nameField = findChild(appWindow, "connectionName");
+        nameField.forceActiveFocus();
+        seed.offerClipboardFile(Qt.resolvedUrl("../../version.pri").toString());
+        keyClick(Qt.Key_V, Qt.ControlModifier);
+        compare(appWindow.connection.name, name);
+        compare(nameField.text, name);
+        keyClick(Qt.Key_Insert, Qt.ShiftModifier);
+        compare(appWindow.connection.name, name);
+        compare(nameField.text, name);
     }
 }

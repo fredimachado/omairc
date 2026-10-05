@@ -40,6 +40,40 @@ Column {
         return true;
     }
 
+    function pasteModifiers(event) {
+        return event.modifiers & (Qt.ShiftModifier | Qt.ControlModifier
+            | Qt.AltModifier | Qt.MetaModifier);
+    }
+
+    function isFilePasteChord(event) {
+        var mods = field.pasteModifiers(event);
+        if (event.key === Qt.Key_V && mods === Qt.ControlModifier)
+            return true;
+        if ((Qt.platform.os === "osx" || Qt.platform.os === "macos")
+                && event.key === Qt.Key_V && mods === Qt.MetaModifier)
+            return true;
+        return event.key === Qt.Key_Insert && mods === Qt.ShiftModifier;
+    }
+
+    // The Connect sheet is the ancestor that owns irc. A file offer must not
+    // commit into Name through onTextEdited.
+    function clipboardOffersFile() {
+        var node = field.parent;
+        while (node) {
+            if (node.irc && node.irc.clipboardOffersFile)
+                return node.irc.clipboardOffersFile();
+            node = node.parent;
+        }
+        return false;
+    }
+
+    function acceptFilePaste(event) {
+        if (!field.clipboardOffersFile() || !field.isFilePasteChord(event))
+            return false;
+        event.accepted = true;
+        return true;
+    }
+
     function emitAboutShortcut(event) {
         if (event.isAutoRepeat || !field.isAboutShortcut(event))
             return false;
@@ -125,6 +159,8 @@ Column {
             background: Item {}
             onTextEdited: field.textEdited(text)
             Keys.onShortcutOverride: function(event) {
+                if (field.acceptFilePaste(event))
+                    return;
                 if (field.acceptAboutShortcut(event))
                     return;
                 var mods = event.modifiers & (Qt.ShiftModifier | Qt.ControlModifier
@@ -134,6 +170,8 @@ Column {
                     event.accepted = true;
             }
             Keys.onPressed: function(event) {
+                if (field.acceptFilePaste(event))
+                    return;
                 if (field.emitAboutShortcut(event))
                     return;
                 if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {

@@ -174,6 +174,7 @@ public:
     Q_INVOKABLE QString clampUtf8Prefix(const QString& text, int maxBytes) const;
     Q_INVOKABLE bool uploadClipboard(const QString& draftKey);
     Q_INVOKABLE void uploadLocalFile(const QString& path, const QString& draftKey);
+    Q_INVOKABLE bool clipboardOffersFile() const;
     Q_INVOKABLE bool requestOlderTranscriptHistory();
     Q_INVOKABLE bool transcriptHistoryPendingForSelection() const;
     Q_INVOKABLE void noteTranscriptFollowsEnd();
