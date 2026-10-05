@@ -21,6 +21,14 @@ public:
     static constexpr std::size_t kMaxFrameBytes = IrcProtocol::maxClassicFrameBytes;
 
     static IrcBuildResult line(std::string_view command);
+
+    // Bytes the composer may hold so one send stays inside a classic frame.
+    // An empty target is Status: a raw line, excluding CRLF (510). Any other
+    // target is the PRIVMSG trailing body that fits with that target
+    // (`PRIVMSG <target> :<body>\r\n`). A larger advertised LINELEN does not
+    // raise this ceiling; outbound sends still use kMaxFrameBytes.
+    static int composerByteBudget(std::string_view target);
+
     static std::vector<std::string> splitTrailingParam(std::string_view prefix,
                                                        std::string_view body,
                                                        std::string_view suffix = {});

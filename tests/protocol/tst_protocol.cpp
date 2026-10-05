@@ -99,6 +99,7 @@ private slots:
     void rejectsInvalidRegistration();
     void rejectsOutboundInjection();
     void enforcesOutboundBoundary();
+    void composerStopsAtOneFrame();
     void splitsOutboundChatOnWordBoundary();
     void splitsOutboundChatHardWhenTokenExceedsFrame();
     void privmsgUsesIrcv3TimeTag();
@@ -467,6 +468,25 @@ void ProtocolTest::enforcesOutboundBoundary()
 
     result = IrcCommandBuilder::line(std::string(511, 'A'));
     QVERIFY(!result);
+}
+
+void ProtocolTest::composerStopsAtOneFrame()
+{
+    QCOMPARE(IrcCommandBuilder::composerByteBudget({}), 510);
+    QCOMPARE(IrcCommandBuilder::composerByteBudget("#place"), 494);
+    QCOMPARE(IrcCommandBuilder::composerByteBudget("#omarchy"), 492);
+    QCOMPARE(IrcCommandBuilder::composerByteBudget(std::string(500, 'x')), 0);
+
+    const std::string target = "#place";
+    const int budget = IrcCommandBuilder::composerByteBudget(target);
+    const std::string prefix = "PRIVMSG " + target + " :";
+    const std::string body(static_cast<std::size_t>(budget), 'a');
+    const auto one = IrcCommandBuilder::splitTrailingParam(prefix, body);
+    QCOMPARE(one.size(), std::size_t(1));
+    QCOMPARE(prefix.size() + body.size() + 2, IrcProtocol::maxClassicFrameBytes);
+
+    const auto split = IrcCommandBuilder::splitTrailingParam(prefix, body + "b");
+    QVERIFY(split.size() > 1);
 }
 
 void ProtocolTest::splitsOutboundChatOnWordBoundary()

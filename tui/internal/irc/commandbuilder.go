@@ -20,6 +20,23 @@ func Line(command string) (string, error) {
 	return command + "\r\n", nil
 }
 
+// ComposerByteBudget is the maximum UTF-8 bytes the composer may hold so one
+// send stays inside a classic frame. An empty target is Status: a raw line,
+// excluding CRLF. Any other target is the PRIVMSG trailing body that fits
+// (`PRIVMSG <target> :<body>\r\n`), the same residual SplitTrailingParam uses
+// for that prefix and an empty suffix. A larger advertised line length does
+// not raise this ceiling; outbound sends still use MaxClassicFrameBytes.
+func ComposerByteBudget(target string) int {
+	if target == "" {
+		return MaxClassicFrameBytes - 2
+	}
+	prefix := "PRIVMSG " + target + " :"
+	if len(prefix)+3 > MaxClassicFrameBytes {
+		return 0
+	}
+	return MaxClassicFrameBytes - len(prefix) - 2
+}
+
 // SplitTrailingParam splits body into frame-sized chunks preceded by prefix and
 // followed by suffix. It prefers a space boundary and never splits a UTF-8
 // continuation byte from its lead byte. It mirrors splitTrailingParam.

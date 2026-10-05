@@ -89,7 +89,11 @@ func (m *Model) dispatchChord(key string, msg tea.KeyPressMsg) (bool, tea.Cmd) {
 		m.sendComposer()
 		return true, nil
 	case "tab":
-		m.completeNick()
+		m.completeNick(false)
+		m.syncSlash()
+		return true, nil
+	case "shift+tab":
+		m.completeNick(true)
 		m.syncSlash()
 		return true, nil
 	case "up":

@@ -1071,6 +1071,17 @@ func (c *Controller) ConsoleOpen() bool {
 	return c.consoleOpen || c.SelectedTarget() == ""
 }
 
+// ComposerByteBudget is the UTF-8 byte cap for the composer on the current
+// surface. Status is a raw line. A conversation is the PRIVMSG body that fits
+// in one classic frame for the selected target. It mirrors
+// IrcController::composerByteBudget.
+func (c *Controller) ComposerByteBudget() int {
+	if c == nil || c.ConsoleOpen() {
+		return irc.ComposerByteBudget("")
+	}
+	return irc.ComposerByteBudget(c.SelectedTarget())
+}
+
 // StatusConsoleOpen reports the raw Status-console model flag, mirroring
 // IrcStatusConsole::isOpen. It stays true after a cleared selection, exactly as
 // in the Qt client, so the focused network still follows the console and a

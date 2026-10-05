@@ -438,8 +438,10 @@ func (m *Model) ensureAvatars() {
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// Every composer mutation happens inside this call, so one deferred compare
 	// covers them all. It reports a real text change to the controller for the
-	// outbound typing hint (see notifyComposerTyping).
+	// outbound typing hint (see notifyComposerTyping). The send-limit clamp
+	// runs first so that hint sees the text the server will accept.
 	defer m.notifyComposerTyping()
+	defer m.clampComposer()
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
@@ -592,10 +594,10 @@ func (m *Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	if m.find.active {
 		return m.handleFindKey(key, msg)
 	}
-	// Any key but Tab ends a nick-completion session, mirroring the QML's
-	// resetNickComplete before its non-Tab branches. Tab alone starts or
-	// advances the session.
-	if key != "tab" {
+	// Any key but Tab or Shift+Tab ends a nick-completion session, mirroring
+	// the QML's resetNickComplete before its non-completion branches. Those
+	// two keys start or cycle the session.
+	if key != "tab" && key != "shift+tab" {
 		m.resetNickComplete()
 	}
 	key = nickJumpChordKey(key)

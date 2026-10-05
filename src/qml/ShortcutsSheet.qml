@@ -49,7 +49,7 @@ Popup {
                 { keys: "Page Up / Page Down", action: "scroll transcript" },
                 { keys: "Shift+Page Up / Shift+Page Down", action: "scroll transcript half page" },
                 { keys: "Ctrl+Home / Ctrl+End", action: "top / bottom" },
-                { keys: "Tab", action: "nick complete" },
+                { keys: "Tab / Shift+Tab", action: "complete nick or channel" },
                 { keys: "Up / Down", action: "history" },
                 { keys: "Escape", action: "dismiss" }
             ]

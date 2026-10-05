@@ -22,7 +22,7 @@ Preconditions:
 
 - The compiled list needs `slashCommands` bound (`control-omairc launch --demo-server`). Default Connect also binds it, but the composer sits under the sheet. Do not start this recipe there.
 - `qml-suite` covers open, Tab, Escape, Up/Down, and history walk past a bare `/j` with a JS stand-in. Existing nick-complete and history cases omit `slashCommands` and stay on today's Tab / Up / Down paths. That suite is not compiled-window proof.
-- There is no chord for this feature. Do not look for it on the `Ctrl+/` sheet. Tab there still says nick complete.
+- There is no chord for this feature. Do not look for it on the `Ctrl+/` sheet. The sheet's Tab row is nick and channel completion (`Tab / Shift+Tab`), not this list.
 
 ```desktop-recipe
 launch --demo-server

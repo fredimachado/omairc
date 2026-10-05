@@ -60,7 +60,7 @@ var shortcutGroups = []shortcutGroup{
 			{"Page Up / Page Down", "scroll transcript"},
 			{"Shift+Page Up / Shift+Page Down", "scroll transcript half page"},
 			{"Ctrl+Home / Ctrl+End", "top / bottom"},
-			{"Tab", "nick complete"},
+			{"Tab / Shift+Tab", "complete nick or channel"},
 			{"Up / Down", "history"},
 			{"Escape", "dismiss"},
 		},

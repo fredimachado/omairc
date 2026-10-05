@@ -1795,20 +1795,33 @@ ApplicationWindow {
     function nickCompleteCandidates() {
         if (consoleVisible)
             return [];
-        if (!currentConversationIsChannel)
-            return currentConversation.length > 0 ? [currentConversation] : [];
 
-        var nicks = [];
-        if (!irc)
-            return nicks;
-        var model = irc.members;
-        var count = liveMemberCount(model);
-        for (var row = 0; row < count; ++row) {
-            var liveNick = liveMemberNick(model, row);
-            if (liveNick.length > 0)
-                nicks.push(liveNick);
+        var names = [];
+        var seen = {};
+        function add(name) {
+            if (!name || name.length === 0 || seen[name])
+                return;
+            seen[name] = true;
+            names.push(name);
         }
-        return nicks;
+
+        if (!currentConversationIsChannel) {
+            add(currentConversation);
+        } else if (irc) {
+            var model = irc.members;
+            var count = liveMemberCount(model);
+            for (var row = 0; row < count; ++row)
+                add(liveMemberNick(model, row));
+        }
+
+        var rows = sidebarConversationRows();
+        for (var index = 0; index < rows.length; ++index) {
+            var channel = rows[index];
+            if (!channel || channel.direct || channel.networkId !== currentNetworkId)
+                continue;
+            add(channel.conversationName);
+        }
+        return names;
     }
 
     function nickMatchesForPrefix(prefix) {
@@ -1842,9 +1855,12 @@ ApplicationWindow {
         conversation.composer.cursorPosition = nickCompleteOrigin + insertion.length;
     }
 
-    function completeNick() {
-        if (nickCompleteMatches.length > 0 && nickCompleteIndex >= 0) {
-            nickCompleteIndex = (nickCompleteIndex + 1) % nickCompleteMatches.length;
+    function completeNick(backward) {
+        var count = nickCompleteMatches.length;
+        if (count > 0 && nickCompleteIndex >= 0) {
+            nickCompleteIndex = backward
+                ? (nickCompleteIndex + count - 1) % count
+                : (nickCompleteIndex + 1) % count;
             applyNickComplete();
             return;
         }
@@ -1861,9 +1877,74 @@ ApplicationWindow {
 
         nickCompletePrefix = token;
         nickCompleteMatches = matches;
-        nickCompleteIndex = 0;
+        nickCompleteIndex = backward ? matches.length - 1 : 0;
         nickCompleteOrigin = origin;
         applyNickComplete();
+    }
+
+    function composerByteBudget() {
+        if (!irc || !irc.composerByteBudget)
+            return -1;
+        return irc.composerByteBudget();
+    }
+
+    // Keep a prefix whose UTF-8 encoding fits in maxBytes. QML strings are
+    // UTF-16, and a surrogate pair is one 4-byte UTF-8 scalar.
+    function clampUtf8Prefix(text, maxBytes) {
+        if (!text || maxBytes <= 0)
+            return "";
+        var bytes = 0;
+        var index = 0;
+        while (index < text.length) {
+            var code = text.charCodeAt(index);
+            var units = 1;
+            var need = 1;
+            if (code < 0x80) {
+                need = 1;
+            } else if (code < 0x800) {
+                need = 2;
+            } else if (code >= 0xD800 && code <= 0xDBFF
+                    && index + 1 < text.length) {
+                var next = text.charCodeAt(index + 1);
+                if (next >= 0xDC00 && next <= 0xDFFF) {
+                    need = 4;
+                    units = 2;
+                } else {
+                    need = 3;
+                }
+            } else {
+                need = 3;
+            }
+            if (bytes + need > maxBytes)
+                break;
+            bytes += need;
+            index += units;
+        }
+        return text.substring(0, index);
+    }
+
+    function clampComposerToSendLimit(text) {
+        var budget = composerByteBudget();
+        if (budget < 0)
+            return false;
+        var clamped = clampUtf8Prefix(text, budget);
+        if (clamped === text)
+            return false;
+        var cursor = conversation.composer.cursorPosition;
+        conversation.composer.text = clamped;
+        conversation.composer.cursorPosition = Math.min(cursor, clamped.length);
+        return true;
+    }
+
+    function isForwardCompleteKey(event) {
+        return event.key === Qt.Key_Tab && composerHasPlainModifier(event);
+    }
+
+    function isBackwardCompleteKey(event) {
+        var mods = composerKeyModifiers(event);
+        if (event.key === Qt.Key_Backtab)
+            return mods === Qt.NoModifier || mods === Qt.ShiftModifier;
+        return event.key === Qt.Key_Tab && mods === Qt.ShiftModifier;
     }
 
     function composerHasPlainModifier(event) {
@@ -2093,6 +2174,8 @@ ApplicationWindow {
             advanceFind(true);
             return;
         }
+        if (clampComposerToSendLimit(text))
+            return;
         if (slashCommands) {
             if (composerHistoryIndex >= 0)
                 slashCommands.dismiss();
@@ -2122,7 +2205,7 @@ ApplicationWindow {
         }
 
         if (findActive) {
-            if (event.key === Qt.Key_Tab
+            if (event.key === Qt.Key_Tab || event.key === Qt.Key_Backtab
                 || ((event.key === Qt.Key_Up || event.key === Qt.Key_Down)
                     && composerHasPlainModifier(event))) {
                 event.accepted = true;
@@ -2146,8 +2229,8 @@ ApplicationWindow {
             }
         }
 
-        if (event.key === Qt.Key_Tab && composerHasPlainModifier(event)) {
-            completeNick();
+        if (isForwardCompleteKey(event) || isBackwardCompleteKey(event)) {
+            completeNick(isBackwardCompleteKey(event));
             event.accepted = true;
             return;
         }

@@ -1779,6 +1779,96 @@ TestCase {
         verify(composer.activeFocus);
     }
 
+    function repeatText(ch, count) {
+        var out = "";
+        for (var index = 0; index < count; ++index)
+            out += ch;
+        return out;
+    }
+
+    function test_shiftTabCyclesNicksBackward() {
+        openSeededAppWindow();
+        mouseClick(namedItem(liveConversation("#ricing")));
+        tryCompare(appWindow, "currentConversation", "#ricing");
+        var composer = item("messageComposer");
+        mouseClick(composer);
+        verify(composer.activeFocus);
+        typeText("s");
+        keyClick(Qt.Key_Backtab);
+
+        compare(composer.text, "sol: ");
+        keyClick(Qt.Key_Backtab);
+        compare(composer.text, "sam: ");
+        keyClick(Qt.Key_Tab);
+        compare(composer.text, "sol: ");
+        verify(composer.activeFocus);
+    }
+
+    function test_tabCompletesChannelName() {
+        openSeededAppWindow();
+        var composer = item("messageComposer");
+        mouseClick(composer);
+        verify(composer.activeFocus);
+        typeText("#d");
+        keyClick(Qt.Key_Tab);
+
+        compare(composer.text, "#desktop: ");
+        verify(composer.activeFocus);
+    }
+
+    function test_tabCompletesChannelAfterText() {
+        openSeededAppWindow();
+        var composer = item("messageComposer");
+        mouseClick(composer);
+        verify(composer.activeFocus);
+        typeText("see #d");
+        keyClick(Qt.Key_Tab);
+
+        compare(composer.text, "see #desktop ");
+        verify(composer.activeFocus);
+    }
+
+    function test_tabDoesNotCompleteAnotherNetworksChannel() {
+        openSeededAppWindow();
+        var composer = item("messageComposer");
+        mouseClick(composer);
+        verify(composer.activeFocus);
+        typeText("#b");
+        keyClick(Qt.Key_Tab);
+
+        compare(composer.text, "#b");
+    }
+
+    function test_composerStopsAtSendLimit() {
+        openSeededAppWindow();
+        var composer = item("messageComposer");
+        mouseClick(composer);
+        verify(composer.activeFocus);
+        compare(appWindow.currentConversation, "#omarchy");
+        compare(appWindow.irc.composerByteBudget(), 492);
+
+        composer.text = repeatText("a", 800);
+        compare(composer.text.length, 492);
+        compare(composer.text, repeatText("a", 492));
+
+        composer.cursorPosition = composer.text.length;
+        composer.insert(composer.cursorPosition, "b");
+        compare(composer.text, repeatText("a", 492));
+
+        composer.text = repeatText("a", 490) + "é";
+        compare(composer.text, repeatText("a", 490) + "é");
+
+        composer.text = repeatText("a", 491) + "é";
+        compare(composer.text, repeatText("a", 491));
+
+        keyClick(Qt.Key_QuoteLeft, Qt.ControlModifier);
+        tryCompare(appWindow, "consoleVisible", true);
+        compare(appWindow.irc.composerByteBudget(), 510);
+        composer.text = repeatText("c", 700);
+        compare(composer.text.length, 510);
+        compare(composer.text, repeatText("c", 510));
+    }
+
     function test_composerHistoryRecallsSentLines() {
         openSeededAppWindow();
         var composer = item("messageComposer");

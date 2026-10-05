@@ -237,3 +237,33 @@ func TestRejectsInvalidJoin(t *testing.T) {
 		t.Fatal("overlong Join unexpectedly succeeded")
 	}
 }
+
+func TestComposerByteBudgetMatchesOneFrame(t *testing.T) {
+	if got := ComposerByteBudget(""); got != 510 {
+		t.Fatalf("status budget = %d, want 510", got)
+	}
+	if got := ComposerByteBudget("#place"); got != 494 {
+		t.Fatalf("#place budget = %d, want 494", got)
+	}
+	if got := ComposerByteBudget("#omarchy"); got != 492 {
+		t.Fatalf("#omarchy budget = %d, want 492", got)
+	}
+	if got := ComposerByteBudget(strings.Repeat("x", 500)); got != 0 {
+		t.Fatalf("overlong target budget = %d, want 0", got)
+	}
+
+	target := "#place"
+	budget := ComposerByteBudget(target)
+	prefix := "PRIVMSG " + target + " :"
+	body := strings.Repeat("a", budget)
+	one := SplitTrailingParam(prefix, body, "")
+	if len(one) != 1 {
+		t.Fatalf("one frame split into %d chunks", len(one))
+	}
+	if len(prefix)+len(body)+2 != MaxClassicFrameBytes {
+		t.Fatalf("frame = %d, want %d", len(prefix)+len(body)+2, MaxClassicFrameBytes)
+	}
+	if split := SplitTrailingParam(prefix, body+"b", ""); len(split) < 2 {
+		t.Fatalf("one extra byte stayed in %d chunk(s)", len(split))
+	}
+}

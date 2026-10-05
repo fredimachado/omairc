@@ -4,6 +4,7 @@
 #include "ircavatarurl.h"
 #include "ircchannelmode.h"
 #include "irccommand.h"
+#include "irccommandbuilder.h"
 #include "irceventtranslator.h"
 #include "irchighlight.h"
 #include "ircignore.h"
@@ -1400,6 +1401,13 @@ bool IrcController::sendMessage(const QString& text)
     if (command.verb == IrcCommand::Verb::Empty)
         return false;
     return report(dispatch(command, IrcComposerSurface::Conversation), command);
+}
+
+int IrcController::composerByteBudget() const
+{
+    if (m_console.isOpen() || selectedTarget().isEmpty())
+        return IrcCommandBuilder::composerByteBudget({});
+    return IrcCommandBuilder::composerByteBudget(utf8(selectedTarget()));
 }
 
 bool IrcController::requestOlderTranscriptHistory()

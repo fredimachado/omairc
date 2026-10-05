@@ -33,6 +33,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   prefers a mention, then ordinary unread. When nothing is unread, it opens
   Status for the selected conversation's network. When Status is already open,
   it opens that Status network.
+- Tab completes channel names as well as nicks, and Shift+Tab cycles those
+  matches backward, in both clients. The first token of a message still gets
+  a colon. The composer stops at one classic 512-byte frame, including a
+  paste: 510 bytes on Status, and the PRIVMSG body that fits for the open
+  conversation. An advertised line length does not raise that ceiling.
+
 - The terminal client supports IRC read markers (`draft/read-marker`, and
   `soju.im/read` when that is the only token offered): a server marker clears
   unread another client already read, and Omairc publishes a marker when this

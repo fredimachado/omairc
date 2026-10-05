@@ -71,6 +71,19 @@ IrcBuildResult IrcCommandBuilder::line(std::string_view command)
     return IrcBuildResult::success(std::move(result));
 }
 
+int IrcCommandBuilder::composerByteBudget(std::string_view target)
+{
+    if (target.empty())
+        return int(kMaxFrameBytes) - 2;
+
+    // Same residual as splitTrailingParam for prefix "PRIVMSG <target> :"
+    // and an empty suffix: one chunk, including CRLF, stays within the frame.
+    const std::string prefix = std::string("PRIVMSG ") + std::string(target) + " :";
+    if (prefix.size() + 3 > kMaxFrameBytes)
+        return 0;
+    return int(kMaxFrameBytes - prefix.size() - 2);
+}
+
 std::vector<std::string> IrcCommandBuilder::splitTrailingParam(std::string_view prefix,
                                                               std::string_view body,
                                                               std::string_view suffix)
